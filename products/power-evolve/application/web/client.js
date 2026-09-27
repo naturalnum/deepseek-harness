@@ -7,12 +7,59 @@ const token = sessionStorage.getItem('pe-token')
 let sessionId = sessionStorage.getItem('pe-session')
 let events = new Map(), stream, request, generation = 0
 for (const [id, key] of Object.entries({ trial: 'trial', 'new-chat': 'newChat', 'history-label': 'history', signout: 'signout', send: 'send' })) element(id).textContent = t[key]
+for (const [id, key] of Object.entries({ 'target-label': 'targetLabel', 'devices-button': 'devicesButton',
+  'devices-title': 'devicesTitle', 'devices-close': 'devicesClose', 'devices-intro': 'devicesIntro',
+  'devices-pair': 'devicesPair', 'devices-refresh': 'devicesRefresh',
+  'devices-local-link': 'devicesOpenLocal' })) element(id).textContent = t[key]
 element('prompt').placeholder = t.placeholder
 element('approvals-link').textContent = t.approvals
 element('approvals-link').hidden = true
 void fetch('/config').then(response => response.json()).then(config => {
   element('approvals-link').href = config.approvalUrl; element('approvals-link').hidden = false
+  element('devices-local-link').href = config.deviceOrigin
 }).catch(() => {})
+function selectedTarget() {
+  const value = element('execution-target').value
+  if (!value || value === 'cloud') return { kind: 'cloud' }
+  const [, deviceId, directoryId] = value.split(':')
+  return { kind: 'desktop', deviceId, directoryId }
+}
+async function refreshDevices() {
+  const result = await rpc('devicesList', {})
+  const select = element('execution-target'), selected = select.value || 'cloud'
+  select.replaceChildren()
+  const cloud = document.createElement('option'); cloud.value = 'cloud'; cloud.textContent = t.targetCloud; select.append(cloud)
+  const list = element('devices-list'); list.replaceChildren()
+  const seen = new Set()
+  for (const item of result.items) {
+    const online = item.lastSeenAt && Date.now() - new Date(item.lastSeenAt).getTime() < 10_000
+    if (!seen.has(item.deviceId)) {
+      seen.add(item.deviceId)
+      const row = document.createElement('div'); row.className = 'device-management-row'
+      const title = document.createElement('strong'); title.textContent = `${item.name} · ${online ? t.devicesOnline : t.devicesOffline}`
+      const revoke = document.createElement('button'); revoke.className = 'quiet'; revoke.textContent = t.devicesRevoke
+      revoke.addEventListener('click', () => void rpc('devicesRevoke', { deviceId: item.deviceId }).then(refreshDevices).catch(showError))
+      row.append(title, revoke); list.append(row)
+    }
+    if (!item.directoryId || item.directoryRevokedAt) continue
+    const option = document.createElement('option'); option.value = `desktop:${item.deviceId}:${item.directoryId}`
+    option.textContent = `${t.targetDesktop} · ${item.name} / ${item.label}${online ? '' : ` (${t.devicesOffline})`}`
+    select.append(option)
+    const row = document.createElement('div'); row.className = 'device-management-row'
+    const label = document.createElement('span'); label.textContent = `${item.name} / ${item.label}`
+    const revoke = document.createElement('button'); revoke.className = 'quiet'; revoke.textContent = t.devicesRevokeDirectory
+    revoke.addEventListener('click', () => void rpc('directoriesRevoke', { directoryId: item.directoryId }).then(refreshDevices).catch(showError))
+    row.append(label, revoke); list.append(row)
+  }
+  select.value = [...select.options].some(option => option.value === selected) ? selected : 'cloud'
+}
+element('devices-button').addEventListener('click', () => { element('devices-dialog').showModal(); void refreshDevices().catch(showError) })
+element('devices-close').addEventListener('click', () => element('devices-dialog').close())
+element('devices-refresh').addEventListener('click', () => void refreshDevices().catch(showError))
+element('devices-pair').addEventListener('click', () => void rpc('devicesPair', {}).then(result => {
+  const code = element('devices-code'); code.textContent = `${t.devicesCode}: ${result.code}`; code.hidden = false
+}).catch(showError))
+element('execution-target').addEventListener('change', () => { request = undefined })
 async function login() { const config = await (await fetch('/config')).json(); location.replace(config.loginUrl) }
 async function rpc(method, value, signal) {
   const response = await fetch(`/api/powerEvolve/${method}`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ request: value }), signal })
@@ -34,7 +81,7 @@ function render() {
     if (value) {
       const text = value.content.filter(block => block.type === 'text').map(block => block.text).join('')
       if (text) target.append(message(event.type === 'user/message'
-        ? ['power-evolve-action', 'power-evolve-execution'].includes(value.source?.kind) ? 'platform' : 'user' : 'assistant', text))
+        ? ['power-evolve-action', 'power-evolve-execution', 'power-evolve-desktop-execution'].includes(value.source?.kind) ? 'platform' : 'user' : 'assistant', text))
     }
   }
   if (!target.children.length) {
@@ -111,7 +158,11 @@ element('composer').addEventListener('submit', async event => {
   try {
     if (!sessionId) { const result = await rpc('create', { requestId: crypto.randomUUID() }); await select(result.sessionId) }
     const text = element('prompt').value.trim(); if (!text) return
-    if (!request || request.text !== text || request.sessionId !== sessionId) request = { requestId: crypto.randomUUID(), text, sessionId }
+    const target = selectedTarget()
+    if (!request || request.text !== text || request.sessionId !== sessionId
+      || JSON.stringify(request.target) !== JSON.stringify(target)) {
+      request = { requestId: crypto.randomUUID(), text, sessionId, target }
+    }
     element('status').textContent = t.sending
     await rpc('prompt', request); request = undefined; element('prompt').value = ''; element('status').textContent = t.queued
     await refreshList()
@@ -126,6 +177,7 @@ else {
   try {
     const me = await rpc('me', {}); element('identity').textContent = me.username
     element('model').textContent = me.settings.model
+    await refreshDevices()
     const sessions = await refreshList()
     if (sessions.some(value => value.sessionId === sessionId)) await select(sessionId)
     else { sessionId = null; sessionStorage.removeItem('pe-session'); element('status').textContent = t.ready }

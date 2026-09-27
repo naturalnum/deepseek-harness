@@ -19,11 +19,16 @@ import { Scheduler } from './scheduler.ts'
 const requests = { me: z.object({}).strict(), logout: z.object({}).strict(), create: createRequest, list: listRequest, prompt: promptRequest, page: pageRequest, follow: pageRequest,
   filesList: filesListRequest, fileRead: fileReadRequest, filePut: filePutRequest, skillsList: z.object({}).strict(), skillsRead: skillRequest,
   skillsInstall: skillInstallRequest, skillsToggle: skillToggleRequest, actionsList: z.object({}).strict(),
-  executionsList: z.object({}).strict(), executionCancel: z.object({ executionId: z.uuid() }).strict() }
+  executionsList: z.object({}).strict(), executionCancel: z.object({ executionId: z.uuid() }).strict(),
+  devicesList: z.object({}).strict(), devicesPair: z.object({}).strict(),
+  devicesRevoke: z.object({ deviceId: z.uuid() }).strict(),
+  directoriesRevoke: z.object({ directoryId: z.uuid() }).strict() }
 const endpoint = { me: '/identity/me', logout: '/identity/logout', create: '/sessions/create', list: '/sessions/list', prompt: '/sessions/prompt', page: '/sessions/page',
   filesList: '/files/list', fileRead: '/files/read', filePut: '/files/put', skillsList: '/skills/list', skillsRead: '/skills/read',
   skillsInstall: '/skills/install', skillsToggle: '/skills/toggle', actionsList: '/connectors/actions',
-  executionsList: '/executions/list', executionCancel: '/executions/cancel' } as const
+  executionsList: '/executions/list', executionCancel: '/executions/cancel',
+  devicesList: '/devices/list', devicesPair: '/devices/pair',
+  devicesRevoke: '/devices/revoke', directoriesRevoke: '/devices/directories/revoke' } as const
 type Method = keyof typeof requests
 
 declare module '@deepseek-ai/cordis' { interface Context { powerEvolve: ProductRemote } }
@@ -55,6 +60,10 @@ class ProductRemote extends TypertRemoteService {
   @Remote actionsList(request: z.infer<typeof requests.actionsList>) { return this.call('actionsList', request) }
   @Remote executionsList(request: z.infer<typeof requests.executionsList>) { return this.call('executionsList', request) }
   @Remote executionCancel(request: z.infer<typeof requests.executionCancel>) { return this.call('executionCancel', request) }
+  @Remote devicesList(request: z.infer<typeof requests.devicesList>) { return this.call('devicesList', request) }
+  @Remote devicesPair(request: z.infer<typeof requests.devicesPair>) { return this.call('devicesPair', request) }
+  @Remote devicesRevoke(request: z.infer<typeof requests.devicesRevoke>) { return this.call('devicesRevoke', request) }
+  @Remote directoriesRevoke(request: z.infer<typeof requests.directoriesRevoke>) { return this.call('directoriesRevoke', request) }
   @Remote async *follow(request: z.infer<typeof pageRequest>, signal: AbortSignal): AsyncGenerator<unknown> {
     let after = request.after
     let previous = ''
@@ -74,6 +83,7 @@ export const name = 'power-evolve-host'
 export const inject = ['powerEvolveRuntime', 'sessionPersistence', 'agents', 'sessions', 'tools', 'webServer', 'typert', 'typertGateway', 'agentLoop']
 export const Config = schema.object({
   origin: schema.string().required(), platformOrigin: schema.string().required(),
+  deviceOrigin: schema.string().required(),
   concurrency: schema.number().step(1).min(1).required(), pollMs: schema.number().min(50).required(),
   renewMs: schema.number().min(100).required(), operationTimeoutMs: schema.number().min(1000).required(),
   maxRequestBytes: schema.number().min(1024).required(), maxStreams: schema.number().step(1).min(1).required(),
@@ -111,7 +121,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       if (req.method === 'GET' && path === '/health') {
         sendJson(res, { ready: true, service: 'host', activeAgents: ctx.agents.list().length, loadedSessions: ctx.sessions.list().length, activeGrants: ctx.powerEvolveRuntime.grants.size, instanceId }); return
       }
-      if (req.method === 'GET' && path === '/config') { sendJson(res, { loginUrl: `${config.platformOrigin}/login`, approvalUrl: `${config.platformOrigin}/approval` }); return }
+      if (req.method === 'GET' && path === '/config') { sendJson(res, { loginUrl: `${config.platformOrigin}/login`,
+        approvalUrl: `${config.platformOrigin}/approval`, deviceOrigin: config.deviceOrigin }); return }
       if (req.method === 'GET' && await serveUi(path, 'client', res)) return
       if (req.method !== 'POST' || !path.startsWith('/api/powerEvolve/')) throw new PlatformError(404, 'not_found')
       if (req.headers.origin !== undefined && req.headers.origin !== config.origin) throw new PlatformError(403, 'invalid_origin')

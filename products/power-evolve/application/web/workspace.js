@@ -78,7 +78,12 @@ export function initWorkspace({ rpc, t }) {
       cancelled: t.executionCancelled, uncertain: t.executionUncertain }
     for (const item of result.items) {
       const card = document.createElement('article'); card.className = 'approval-card'
-      const heading = document.createElement('strong'); heading.textContent = states[item.state] ?? item.state
+      const heading = document.createElement('strong')
+      const location = item.target?.kind === 'desktop'
+        ? `${t.targetDesktop} · ${item.targetLabel ?? item.target.directoryId}` : t.targetCloud
+      const state = item.target?.kind === 'desktop' && item.state === 'queued'
+        ? t.executionDesktopQueued : states[item.state] ?? item.state
+      heading.textContent = `${location} · ${state}`
       const command = document.createElement('pre'); command.textContent = item.command
       const time = document.createElement('small'); time.textContent = new Date(item.createdAt).toLocaleString()
       card.append(heading, command, time)
@@ -87,7 +92,7 @@ export function initWorkspace({ rpc, t }) {
         output.textContent = [item.result.stdout, item.result.stderr].filter(Boolean).join('\n')
         card.append(output)
       }
-      if (['queued', 'starting', 'running', 'cancelling', 'uncertain'].includes(item.state)) {
+      if (['queued', 'starting', 'running', 'cancelling'].includes(item.state)) {
         card.append(itemButton(t.executionCancel, async () => {
           await rpc('executionCancel', { executionId: item.executionId }); await refreshExecutions()
         }))

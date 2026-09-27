@@ -143,3 +143,51 @@ ALTER TABLE pe_sandbox_instances ADD COLUMN stop_pod_uid uuid;
 ALTER TABLE pe_sandbox_instances ADD COLUMN stop_evidence jsonb;
 UPDATE pe_schema SET version=6 WHERE version=5;
 `
+
+/** Device identity, local directory grants, and a separate durable desktop execution lane. */
+export const schemaV7 = `
+CREATE TABLE pe_device_pairings (
+  digest text PRIMARY KEY, user_id uuid NOT NULL REFERENCES pe_users(id),
+  expires_at timestamptz NOT NULL, created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE pe_devices (
+  id uuid PRIMARY KEY, user_id uuid NOT NULL REFERENCES pe_users(id),
+  name text NOT NULL, token_digest text UNIQUE NOT NULL, instance_id uuid NOT NULL,
+  last_seen_at timestamptz, revoked_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX pe_devices_user ON pe_devices(user_id,created_at DESC);
+CREATE TABLE pe_device_directories (
+  id uuid PRIMARY KEY, device_id uuid NOT NULL REFERENCES pe_devices(id),
+  user_id uuid NOT NULL REFERENCES pe_users(id), label text NOT NULL,
+  revoked_at timestamptz, created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX pe_device_directories_user ON pe_device_directories(user_id,created_at DESC);
+ALTER TABLE pe_operations ADD COLUMN execution_target jsonb NOT NULL DEFAULT '{"kind":"cloud"}'::jsonb;
+CREATE TABLE pe_desktop_executions (
+  id uuid PRIMARY KEY, user_id uuid NOT NULL REFERENCES pe_users(id),
+  session_id uuid NOT NULL REFERENCES pe_sessions(id), operation_id uuid NOT NULL REFERENCES pe_operations(id),
+  device_id uuid NOT NULL REFERENCES pe_devices(id), directory_id uuid NOT NULL REFERENCES pe_device_directories(id),
+  call_id text NOT NULL, command text NOT NULL, cwd text NOT NULL, request_digest text NOT NULL,
+  state text NOT NULL CHECK (state IN ('queued','running','cancelling','succeeded','failed','cancelled','uncertain')),
+  cancel_requested boolean NOT NULL DEFAULT false, result jsonb, error_code text,
+  device_instance_id uuid, continuation_request_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(operation_id,call_id), UNIQUE(continuation_request_id)
+);
+CREATE UNIQUE INDEX pe_desktop_executions_one_live_per_session ON pe_desktop_executions(session_id)
+  WHERE state IN ('queued','running','cancelling','uncertain');
+CREATE INDEX pe_desktop_executions_device ON pe_desktop_executions(device_id,created_at)
+  WHERE state IN ('queued','running','cancelling');
+ALTER TABLE pe_operations DROP CONSTRAINT pe_operations_source_check;
+ALTER TABLE pe_operations ADD CONSTRAINT pe_operations_source_check
+  CHECK (source IN ('user','platform_action','sandbox_result','desktop_result'));
+ALTER TABLE pe_operations ADD COLUMN source_desktop_execution_id uuid REFERENCES pe_desktop_executions(id);
+ALTER TABLE pe_operations DROP CONSTRAINT pe_operations_source_action;
+ALTER TABLE pe_operations ADD CONSTRAINT pe_operations_source_action CHECK (
+  (source='user' AND source_action_id IS NULL AND source_execution_id IS NULL AND source_desktop_execution_id IS NULL)
+  OR (source='platform_action' AND source_action_id IS NOT NULL AND source_execution_id IS NULL AND source_desktop_execution_id IS NULL)
+  OR (source='sandbox_result' AND source_action_id IS NULL AND source_execution_id IS NOT NULL AND source_desktop_execution_id IS NULL)
+  OR (source='desktop_result' AND source_action_id IS NULL AND source_execution_id IS NULL AND source_desktop_execution_id IS NOT NULL));
+UPDATE pe_schema SET version=7 WHERE version=6;
+`

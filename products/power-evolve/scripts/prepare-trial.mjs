@@ -16,7 +16,14 @@ const databasePort = port('PE_DATABASE_PORT', 18432)
 const hostPort = port('PE_HOST_PORT', 18880)
 const platformPort = port('PE_PLATFORM_PORT', 18881)
 const targetPort = port('PE_TARGET_PORT', 18884)
-if (new Set([databasePort, hostPort, platformPort, targetPort]).size !== 4) throw new Error('Trial ports must be distinct')
+const deviceEnabled = process.env.PE_DEVICE_ENABLED === '1'
+const devicePort = port('PE_DEVICE_PORT', 18891)
+const secondDeviceEnabled = process.env.PE_SECOND_DEVICE_ENABLED === '1'
+if (secondDeviceEnabled && !deviceEnabled) throw new Error('Second device requires PE_DEVICE_ENABLED=1')
+const secondDevicePort = port('PE_SECOND_DEVICE_PORT', 18896)
+const ports = [databasePort, hostPort, platformPort, targetPort, ...(deviceEnabled ? [devicePort] : []),
+  ...(secondDeviceEnabled ? [secondDevicePort] : [])]
+if (new Set(ports).size !== ports.length) throw new Error('Trial ports must be distinct')
 const privateDir = process.env.PE_PRIVATE_DIR ?? join(homedir(), '.config/power-evolve', `shared-host-${trialName}`)
 const output = join(root, '.artifacts/power-evolve', trialName === 'slice1' ? '' : trialName)
 await mkdir(privateDir, { recursive: true, mode: 0o700 }); await chmod(privateDir, 0o700)
@@ -29,6 +36,7 @@ if (sandbox) {
   if (resolve(sandbox.workspaceRoot) !== join(resolve(sandbox.localRoot), 'workspaces')) throw new Error('Workspace and Sandbox roots differ')
   if (sandbox.idleMs !== undefined && (!Number.isInteger(sandbox.idleMs) || sandbox.idleMs < 1000)) throw new Error('Invalid Sandbox idle time')
 }
+if (deviceEnabled && !(process.env.PE_DESKTOP_IMAGE || sandbox?.image)) throw new Error('Desktop image is required')
 async function provision(name, value) {
   const path = join(privateDir, name)
   try { await writeFile(path, value, { flag: 'wx', mode: 0o600 }) }
@@ -51,25 +59,30 @@ await provision('model-key', modelKey)
 await provision('users.json', JSON.stringify(['alice', 'bob'].map((username, index) => ({
   username, password: randomBytes(20).toString('base64url'), settings: { model: 'deepseek-flash', maxTokens: index === 0 ? 2048 : 1536, revision: 1 },
 })), null, 2) + '\n')
-for (const name of ['host', 'platform']) {
+for (const name of ['host', 'platform', ...(deviceEnabled ? ['device'] : []),
+  ...(secondDeviceEnabled ? ['device-bob'] : [])]) {
+  const bundleName = name === 'device-bob' ? 'device' : name
   const home = join(output, 'trial', name)
   const profile = join(home, 'profiles', `power-evolve-${name}`)
   const modules = join(profile, 'node_modules/@power-evolve')
   await mkdir(modules, { recursive: true, mode: 0o700 })
-  const manifest = { name: `power-evolve-trial-${name}`, private: true, type: 'module', dependencies: { [`@power-evolve/${name}`]: '0.1.0' }, dsh: { profile: { bundles: [`@power-evolve/${name}`] } } }
+  const manifest = { name: `power-evolve-trial-${name}`, private: true, type: 'module', dependencies: { [`@power-evolve/${bundleName}`]: '0.1.0' }, dsh: { profile: { bundles: [`@power-evolve/${bundleName}`] } } }
   await writeFile(join(profile, 'package.json'), JSON.stringify(manifest, null, 2) + '\n')
-  try { await symlink(join(root, 'products/power-evolve', name), join(modules, name), 'dir') }
+  try { await symlink(join(root, 'products/power-evolve', bundleName), join(modules, bundleName), 'dir') }
   catch (error) { if (error.code !== 'EEXIST') throw error }
   // A profile patch replaces a row's full config, so retain every bundle field.
-  const bundle = (await readFile(join(root, 'products/power-evolve', name, 'cordis.patch.yml'), 'utf8')).split('\n')
-  const values = { port: name === 'host' ? hostPort : platformPort,
+  const bundle = (await readFile(join(root, 'products/power-evolve', bundleName, 'cordis.patch.yml'), 'utf8')).split('\n')
+  const values = { port: name === 'host' ? hostPort : name === 'device' ? devicePort : name === 'device-bob' ? secondDevicePort : platformPort,
     hostOrigin: `http://127.0.0.1:${hostPort}`, origin: `http://127.0.0.1:${hostPort}`,
     platformOrigin: `http://127.0.0.1:${platformPort}`, platformUrl: `http://127.0.0.1:${platformPort}`,
+    deviceOrigin: `http://127.0.0.1:${devicePort}`,
+    image: process.env.PE_DESKTOP_IMAGE ?? sandbox?.image,
     connectorUrl: `http://127.0.0.1:${targetPort}`,
     ...(sandbox ? { workspaceRoot: sandbox.workspaceRoot, sandboxKubeconfigFile: sandbox.kubeconfigFile,
       sandboxNamespace: sandbox.namespace, sandboxImage: sandbox.image, sandboxLocalRoot: sandbox.localRoot,
       sandboxNodeRoot: sandbox.nodeRoot, ...(sandbox.idleMs ? { sandboxIdleMs: sandbox.idleMs } : {}) } : {}) }
-  const selected = name === 'host' ? ['web-server', 'power-evolve-host', 'power-evolve-runtime'] : ['web-server', 'power-evolve-platform']
+  const selected = name === 'host' ? ['web-server', 'power-evolve-host', 'power-evolve-runtime']
+    : bundleName === 'device' ? ['web-server', 'power-evolve-device'] : ['web-server', 'power-evolve-platform']
   const patch = selected.map(id => {
     const start = bundle.indexOf(`    - id: ${id}`)
     const end = bundle.findIndex((line, index) => index > start && line.startsWith('    - id: '))
@@ -79,6 +92,9 @@ for (const name of ['host', 'platform']) {
     const config = rows.slice(configStart).filter(line => line.startsWith('      ')).map(line => {
       const adjusted = line.slice(4)
       const match = /^    ([A-Za-z]+): /.exec(adjusted)
+      if (name === 'device-bob' && match?.[1] === 'privateDir') {
+        return "    privateDir: !!js process.env.PE_PRIVATE_DIR + '/device-bob'"
+      }
       return match && Object.hasOwn(values, match[1]) ? `    ${match[1]}: ${values[match[1]]}` : adjusted
     }).join('\n')
     return `- id: ${id}\n${config}\n`

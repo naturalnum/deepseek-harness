@@ -1,0 +1,19 @@
+- insert:
+    - id: logger-console
+      name: '@deepseek-ai/cordis-plugin-logger-console'
+      config:
+        colors: false
+        maxLength: 1200
+    - id: web-server
+      name: '@deepseek-ai/dsh-host-webserver'
+      config:
+        host: 127.0.0.1
+        port: 18891
+    - id: power-evolve-device
+      name: '@power-evolve/application/device'
+      config:
+        platformUrl: http://127.0.0.1:18881
+        privateDir: !!js process.env.PE_PRIVATE_DIR + '/device'
+        image: pe-shared-host-slice4-runner:s4-2ffb04551212
+        pollMs: 500
+        readyFile: !!js dshHomePath('ready.json')

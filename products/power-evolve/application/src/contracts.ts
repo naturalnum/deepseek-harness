@@ -20,8 +20,14 @@ export const settings = z.object({
 }).strict()
 export type Settings = z.infer<typeof settings>
 export const createRequest = z.object({ requestId }).strict()
+export const executionTarget = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('cloud') }).strict(),
+  z.object({ kind: z.literal('desktop'), deviceId: z.uuid(), directoryId: z.uuid() }).strict(),
+])
+export type ExecutionTarget = z.infer<typeof executionTarget>
 export const promptRequest = z.object({
   sessionId, requestId, text: z.string().trim().min(1).max(16_384),
+  target: executionTarget.default({ kind: 'cloud' }),
 }).strict()
 export const pageRequest = z.object({
   sessionId, after: z.number().int().min(-1), limit: z.number().int().min(1).max(200),
@@ -56,9 +62,11 @@ export const grant = z.object({
   token: z.string().min(32).max(256),
   epoch: z.number().int().positive(),
   settings,
-  source: z.enum(['user', 'platform_action', 'sandbox_result']).default('user'),
+  source: z.enum(['user', 'platform_action', 'sandbox_result', 'desktop_result']).default('user'),
   sourceActionId: z.uuid().nullable().default(null),
   sourceExecutionId: z.uuid().nullable().default(null),
+  sourceDesktopExecutionId: z.uuid().nullable().default(null),
+  target: executionTarget.default({ kind: 'cloud' }),
   executionEnabled: z.boolean().default(false),
   skills: z.array(skillSnapshot).max(8).default([]),
   selection: z.array(skillSelection).max(8).default([]),

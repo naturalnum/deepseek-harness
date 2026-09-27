@@ -2,7 +2,8 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import type { Pool, PoolClient } from 'pg'
 import { SESSION_FORMAT_VERSION, SessionId, type SessionHeader } from '@deepseek-ai/dsh-session'
-import { grant, skillSelection, PlatformError, settings, type Grant, type Identity, type RequestId, type Settings } from '../contracts.ts'
+import { executionTarget, grant, skillSelection, PlatformError, settings,
+  type ExecutionTarget, type Grant, type Identity, type RequestId, type Settings } from '../contracts.ts'
 import { z } from 'zod'
 import { digest } from './identity.ts'
 import { transaction } from './database.ts'
@@ -52,17 +53,31 @@ export class TaskStore {
   }
 
   /** Commit an input before returning acceptance; identical retries reuse the Operation. */
-  async accept(user: Identity, session: SessionId, requestId: RequestId, text: string, config: Settings): Promise<unknown> {
+  async accept(user: Identity, session: SessionId, requestId: RequestId, text: string, config: Settings,
+    target: ExecutionTarget = { kind: 'cloud' }): Promise<unknown> {
     return transaction(this.pool, async client => {
       await client.query('SELECT id FROM pe_users WHERE id=$1 FOR UPDATE', [user.userId])
       await this.owned(client, user, session)
-      const prior = await client.query<{ id: string; input: string; state: string }>(
-        'SELECT id,input,state FROM pe_operations WHERE session_id=$1 AND request_id=$2', [session, requestId],
+      const prior = await client.query<{ id: string; input: string; state: string; execution_target: unknown }>(
+        'SELECT id,input,state,execution_target FROM pe_operations WHERE session_id=$1 AND request_id=$2', [session, requestId],
       )
       const found = prior.rows[0]
       if (found) {
-        if (found.input !== text) throw new PlatformError(409, 'request_id_conflict')
+        const existingTarget = executionTarget.parse(found.execution_target)
+        if (found.input !== text || existingTarget.kind !== target.kind
+          || existingTarget.kind === 'desktop' && target.kind === 'desktop'
+            && (existingTarget.deviceId !== target.deviceId || existingTarget.directoryId !== target.directoryId)) {
+          throw new PlatformError(409, 'request_id_conflict')
+        }
         return { accepted: true, operationId: found.id, state: found.state }
+      }
+      if (target.kind === 'desktop') {
+        const available = await client.query(
+          `SELECT d.id FROM pe_devices d JOIN pe_device_directories dir ON dir.device_id=d.id
+           WHERE d.id=$1 AND dir.id=$2 AND d.user_id=$3 AND dir.user_id=$3
+             AND d.revoked_at IS NULL AND dir.revoked_at IS NULL`,
+          [target.deviceId, target.directoryId, user.userId])
+        if (!available.rowCount) throw new PlatformError(403, 'desktop_target_unavailable')
       }
       const count = await client.query<{ count: string }>(
         `SELECT count(*) FROM pe_operations o JOIN pe_sessions s ON s.id=o.session_id
@@ -75,8 +90,9 @@ export class TaskStore {
       const selection = z.array(skillSelection).max(8).parse(selected.rows)
       const id = randomUUID()
       await client.query(
-        `INSERT INTO pe_operations(id,session_id,request_id,input,settings,skill_selection,state) VALUES($1,$2,$3,$4,$5,$6,'queued')`,
-        [id, session, requestId, text, config, JSON.stringify(selection)],
+        `INSERT INTO pe_operations(id,session_id,request_id,input,settings,skill_selection,execution_target,state)
+         VALUES($1,$2,$3,$4,$5,$6,$7,'queued')`,
+        [id, session, requestId, text, config, JSON.stringify(selection), JSON.stringify(target)],
       )
       await client.query('SELECT pg_notify(\'pe_tasks\',$1)', [session])
       return { accepted: true, operationId: id, state: 'queued' }
@@ -88,11 +104,12 @@ export class TaskStore {
     return transaction(this.pool, async client => {
       const candidate = await client.query<{
         id: string; session_id: string; user_id: string; request_id: string; input: string; settings: unknown;
-        skill_selection: unknown; source: 'user' | 'platform_action' | 'sandbox_result';
-        source_action_id: string | null; source_execution_id: string | null;
+        skill_selection: unknown; execution_target: unknown;
+        source: 'user' | 'platform_action' | 'sandbox_result' | 'desktop_result';
+        source_action_id: string | null; source_execution_id: string | null; source_desktop_execution_id: string | null;
       }>(
         `SELECT o.id,o.session_id,s.user_id,o.request_id,o.input,o.settings,o.skill_selection,
-         o.source,o.source_action_id,o.source_execution_id
+         o.source,o.source_action_id,o.source_execution_id,o.source_desktop_execution_id,o.execution_target
          FROM pe_operations o JOIN pe_sessions s ON s.id=o.session_id
          WHERE o.state IN ('queued','running') AND (s.lease_until IS NULL OR s.lease_until<=now())
          AND (SELECT count(*) FROM pe_sessions active WHERE active.user_id=s.user_id AND active.lease_until>now())<$1
@@ -122,16 +139,17 @@ export class TaskStore {
         operationId: row.id, sessionId: row.session_id, userId: row.user_id, requestId: row.request_id,
         text: row.input, settings: settings.parse(row.settings), selection: z.array(skillSelection).max(8).parse(row.skill_selection),
         source: row.source, sourceActionId: row.source_action_id,
-        sourceExecutionId: row.source_execution_id, executionEnabled: this.limits.executionEnabled ?? false,
+        sourceExecutionId: row.source_execution_id, sourceDesktopExecutionId: row.source_desktop_execution_id,
+        target: executionTarget.parse(row.execution_target), executionEnabled: this.limits.executionEnabled ?? false,
         token, epoch,
       })
     })
   }
 
   /** Verify current write authority under the caller's transaction lock. */
-  async authorized(client: PoolClient, token: string): Promise<SessionRow & { operation_id: string; settings: unknown }> {
-    const result = await client.query<SessionRow & { operation_id: string; settings: unknown }>(
-      `SELECT s.*,o.id AS operation_id,o.settings FROM pe_sessions s JOIN pe_operations o ON o.session_id=s.id
+  async authorized(client: PoolClient, token: string): Promise<SessionRow & { operation_id: string; settings: unknown; execution_target: unknown }> {
+    const result = await client.query<SessionRow & { operation_id: string; settings: unknown; execution_target: unknown }>(
+      `SELECT s.*,o.id AS operation_id,o.settings,o.execution_target FROM pe_sessions s JOIN pe_operations o ON o.session_id=s.id
        WHERE s.grant_digest=$1 AND s.lease_until>now() AND o.state='running' FOR UPDATE OF s`, [digest(token)],
     )
     const row = result.rows[0]

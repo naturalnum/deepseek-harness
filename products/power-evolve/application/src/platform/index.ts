@@ -17,6 +17,7 @@ import { FileService } from './files.ts'
 import { SkillService } from './skills.ts'
 import { ConnectorService } from './connectors.ts'
 import { ExecutionService } from './executions.ts'
+import { DeviceService } from './devices.ts'
 import { KubernetesClient } from './kubernetes.ts'
 import { SandboxManager } from './sandbox.ts'
 import { proxyModel } from './model.ts'
@@ -92,11 +93,12 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       readyTimeoutMs: config.sandboxReadyTimeoutMs,
     }), config.sandboxConcurrency, config.sandboxPollMs, config.sandboxIdleMs, config.sandboxCommandTimeoutMs) : null
   if (executions) { executions.start(); ctx.effect(() => () => executions.close()) }
+  const devices = new DeviceService(tasks, config.sandboxCommandTimeoutMs, files)
   const loginAttempts = new Map<string, { since: number; count: number }>()
 
   const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const path = new URL(req.url ?? '/', config.platformOrigin).pathname
-    if (req.method === 'GET' && path === '/health') { sendJson(res, { ready: true, service: 'platform', schema: 6, executionEnabled, instanceId }); return }
+    if (req.method === 'GET' && path === '/health') { sendJson(res, { ready: true, service: 'platform', schema: 7, executionEnabled, instanceId }); return }
     if (req.method === 'GET' && path === '/config') { sendJson(res, { hostUrl: config.hostOrigin }); return }
     if (req.method === 'GET' && await serveUi(path, 'login', res)) return
     if (req.method !== 'POST') throw new PlatformError(404, 'not_found')
@@ -120,7 +122,47 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       sendJson(res, await identities.login(input.username, input.password, path === '/identity/approval-login' ? 'approval' : 'agent'))
       return
     }
+    if (path === '/devices/enroll') {
+      const input = z.object({ code: z.string().min(24).max(128), name: z.string().trim().min(1).max(80),
+        instanceId: z.uuid() }).strict().parse(await readJson(req, 4096))
+      sendJson(res, await devices.enroll(input.code, input.name, input.instanceId)); return
+    }
     const token = bearer(req)
+    if (path.startsWith('/devices/agent/')) {
+      const input = await readJson(req, config.maxRequestBytes)
+      switch (path) {
+        case '/devices/agent/directory': {
+          const value = z.object({ label: z.string().trim().min(1).max(100) }).strict().parse(input)
+          sendJson(res, await devices.directory(token, value.label)); return
+        }
+        case '/devices/agent/files/read': {
+          const value = z.object({ directoryId: z.uuid(), path: z.string().min(1).max(512) }).strict().parse(input)
+          sendJson(res, await devices.readCloud(token, value.directoryId, value.path)); return
+        }
+        case '/devices/agent/files/put': {
+          const value = z.object({ directoryId: z.uuid(), requestId: z.uuid(),
+            path: z.string().min(1).max(512), data: z.string().max(2_800_000) }).strict().parse(input)
+          sendJson(res, await devices.putCloud(token, value.directoryId, value.requestId, value.path, value.data)); return
+        }
+        case '/devices/agent/jobs': {
+          const value = z.object({ instanceId: z.uuid() }).strict().parse(input)
+          sendJson(res, await devices.jobs(token, value.instanceId)); return
+        }
+        case '/devices/agent/claim': {
+          const value = z.object({ instanceId: z.uuid(), executionId: z.uuid() }).strict().parse(input)
+          sendJson(res, await devices.claim(token, value.instanceId, value.executionId)); return
+        }
+        case '/devices/agent/finish': {
+          const value = z.object({ instanceId: z.uuid(), executionId: z.uuid(), result: z.object({
+            state: z.enum(['succeeded', 'failed', 'cancelled', 'uncertain']), exitCode: z.number().int().nullable(),
+            stdout: z.string().max(65_536), stderr: z.string().max(65_536),
+            stdoutTruncated: z.boolean(), stderrTruncated: z.boolean(), timedOut: z.boolean(),
+          }).strict() }).strict().parse(input)
+          sendJson(res, await devices.finish(token, value.instanceId, value.executionId, value.result)); return
+        }
+        default: throw new PlatformError(404, 'not_found')
+      }
+    }
     if (path.startsWith('/approvals/')) {
       if (req.headers.origin !== undefined && req.headers.origin !== config.platformOrigin) throw new PlatformError(403, 'invalid_origin')
       const user = await identities.authenticate(token, 'approval')
@@ -178,6 +220,12 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
           if (value.cwd.split('/').some(part => part === '..')) throw new PlatformError(400, 'invalid_cwd')
           sendJson(res, await executions.propose(token, value.callId, value.command, value.cwd)); return
         }
+        case '/runtime/desktop-executions/propose': {
+          const value = z.object({ callId: z.string().min(1).max(100), command: z.string().min(1).max(8192),
+            cwd: z.string().max(256).regex(/^(?:|[A-Za-z0-9._/-]{1,256})$/) }).strict().parse(input)
+          if (value.cwd.split('/').some(part => part === '..')) throw new PlatformError(400, 'invalid_cwd')
+          sendJson(res, await devices.propose(token, value.callId, value.command, value.cwd)); return
+        }
         default: throw new PlatformError(404, 'not_found')
       }
     }
@@ -192,8 +240,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         sendJson(res, await tasks.list(user, offset, limit)); return
       }
       case '/sessions/prompt': {
-        const { sessionId, requestId, text } = promptRequest.parse(input)
-        sendJson(res, await tasks.accept(user, sessionId, requestId, text, user.settings)); return
+        const { sessionId, requestId, text, target } = promptRequest.parse(input)
+        sendJson(res, await tasks.accept(user, sessionId, requestId, text, user.settings, target)); return
       }
       case '/sessions/page': {
         const { sessionId, after, limit } = pageRequest.parse(input)
@@ -217,13 +265,31 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       }
       case '/connectors/actions': z.object({}).strict().parse(input); sendJson(res, await connectors.list(user)); return
       case '/executions/list': {
-        if (!executions) throw new PlatformError(503, 'execution_unavailable')
-        z.object({}).strict().parse(input); sendJson(res, await executions.list(user)); return
+        z.object({}).strict().parse(input)
+        const cloudItems: Array<Record<string, unknown>> = executions
+          ? (await executions.list(user) as { items: Array<Record<string, unknown>> }).items : []
+        const desktop = await devices.executions(user) as { items: Array<Record<string, unknown>> }
+        sendJson(res, { items: [...cloudItems.map(item => ({ ...item, target: { kind: 'cloud' }, createdAt: String(item.createdAt) })),
+          ...desktop.items.map(item => ({ ...item, createdAt: String(item.createdAt) }))]
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 100) }); return
       }
       case '/executions/cancel': {
-        if (!executions) throw new PlatformError(503, 'execution_unavailable')
         const value = z.object({ executionId: z.uuid() }).strict().parse(input)
-        sendJson(res, await executions.cancel(user, value.executionId)); return
+        if (executions) {
+          try { sendJson(res, await executions.cancel(user, value.executionId)); return }
+          catch (error) { if (!(error instanceof PlatformError && error.status === 404)) throw error }
+        }
+        sendJson(res, await devices.cancel(user, value.executionId)); return
+      }
+      case '/devices/list': z.object({}).strict().parse(input); sendJson(res, await devices.list(user)); return
+      case '/devices/pair': z.object({}).strict().parse(input); sendJson(res, await devices.pair(user)); return
+      case '/devices/revoke': {
+        const value = z.object({ deviceId: z.uuid() }).strict().parse(input)
+        await devices.revoke(user, value.deviceId); sendJson(res, { ok: true }); return
+      }
+      case '/devices/directories/revoke': {
+        const value = z.object({ directoryId: z.uuid() }).strict().parse(input)
+        await devices.revokeDirectory(user, value.directoryId); sendJson(res, { ok: true }); return
       }
       default: throw new PlatformError(404, 'not_found')
     }

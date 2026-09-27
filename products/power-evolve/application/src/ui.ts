@@ -4,11 +4,11 @@ import type { ServerResponse } from 'node:http'
 
 /** Serve a known UI asset without resolving user-controlled filesystem paths.
  * @param path - decoded URL pathname.
- * @param application - login or conversation surface.
+ * @param application - login, conversation, or local device surface.
  * @param response - HTTP response owned by the caller.
  * @returns whether an asset matched.
  */
-export async function serveUi(path: string, application: 'login' | 'client', response: ServerResponse): Promise<boolean> {
+export async function serveUi(path: string, application: 'login' | 'client' | 'device', response: ServerResponse): Promise<boolean> {
   const assets: Record<string, [string, string]> = {
     '/': [`${application}.html`, 'text/html'],
     '/login': ['login.html', 'text/html'],

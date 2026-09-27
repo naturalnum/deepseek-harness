@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
 import type { Pool, PoolClient } from 'pg'
 import { z } from 'zod'
-import { PlatformError, type Identity } from '../contracts.ts'
+import { executionTarget, PlatformError, type Identity } from '../contracts.ts'
 import { transaction } from './database.ts'
 import { KubernetesError } from './kubernetes.ts'
 import { SandboxManager, type SandboxReady } from './sandbox.ts'
@@ -43,6 +43,7 @@ export class ExecutionService {
     const request = { command, cwd, timeoutMs: this.commandTimeoutMs }
     return transaction(this.pool, async client => {
       const grant = await this.tasks.authorized(client, token)
+      if (executionTarget.parse(grant.execution_target).kind !== 'cloud') throw new PlatformError(403, 'wrong_execution_target')
       const prior = await client.query<ExecutionRow>(
         'SELECT * FROM pe_cloud_executions WHERE operation_id=$1 AND call_id=$2', [grant.operation_id, callId])
       if (prior.rows[0]) {
@@ -51,7 +52,9 @@ export class ExecutionService {
       }
       const active = await client.query(
         `SELECT id FROM pe_cloud_executions WHERE session_id=$1
-         AND state IN ('queued','starting','running','cancelling','uncertain')`, [grant.id])
+         AND state IN ('queued','starting','running','cancelling','uncertain')
+         UNION ALL SELECT id FROM pe_desktop_executions WHERE session_id=$1
+         AND state IN ('queued','running','cancelling','uncertain')`, [grant.id])
       if (active.rowCount) throw new PlatformError(409, 'execution_busy')
       const instance = await client.query<{ state: string }>(
         'SELECT state FROM pe_sandbox_instances WHERE session_id=$1', [grant.id])

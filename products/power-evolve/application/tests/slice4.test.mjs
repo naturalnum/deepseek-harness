@@ -66,7 +66,7 @@ test('cloud execution persists acceptance and reconciles runner outcomes', { tim
       : token === 'other-grant' ? { session: otherSessionId, operation: otherOperationId } : null
     if (!selected) throw new Error('invalid grant')
     const result = await client.query('SELECT id,user_id FROM pe_sessions WHERE id=$1 FOR UPDATE', [selected.session])
-    return { ...result.rows[0], operation_id: selected.operation }
+    return { ...result.rows[0], operation_id: selected.operation, execution_target: { kind: 'cloud' } }
   } }
   const runnerInstanceId = randomUUID(), podUid = randomUUID()
   const records = new Map(), posted = [], removed = []

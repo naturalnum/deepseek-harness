@@ -12,6 +12,7 @@ declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
     'power-evolve-action': { readonly kind: 'power-evolve-action'; readonly actionId: string }
     'power-evolve-execution': { readonly kind: 'power-evolve-execution'; readonly executionId: string }
+    'power-evolve-desktop-execution': { readonly kind: 'power-evolve-desktop-execution'; readonly executionId: string }
   }
 }
 
@@ -94,7 +95,7 @@ export class Scheduler {
       })
       this.handles.add(handle)
       const { agent } = handle
-      if (grant.source === 'user' || grant.source === 'sandbox_result') {
+      if (grant.source === 'user' || grant.source === 'sandbox_result' || grant.source === 'desktop_result') {
         installConnectorTools(agent, grant, runtime)
         installExecutionTools(agent, grant, runtime)
       }
@@ -118,6 +119,7 @@ export class Scheduler {
         agent.followup({ id: MessageId(grant.requestId), role: 'user',
           source: grant.source === 'platform_action' ? { kind: 'power-evolve-action', actionId: grant.sourceActionId! }
             : grant.source === 'sandbox_result' ? { kind: 'power-evolve-execution', executionId: grant.sourceExecutionId! }
+              : grant.source === 'desktop_result' ? { kind: 'power-evolve-desktop-execution', executionId: grant.sourceDesktopExecutionId! }
               : { kind: 'user' },
           content: [{ type: 'text', text: grant.text }] })
         await agent.whenIdle()

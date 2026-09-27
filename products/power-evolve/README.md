@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-PowerEvolve lives separately from upstream DSH within the same repository. Start development with the [architecture decision](ARCHITECTURE.md), or use the [cloud execution trial guide](TRIAL-SLICE4.md). Earlier [slice 3](TRIAL-SLICE3.md), [slice 2](TRIAL-SLICE2.md), and [slice 1](TRIAL.md) trials remain isolated.
+PowerEvolve lives separately from upstream DSH within the same repository. Start development with the [architecture decision](ARCHITECTURE.md), or use the [desktop and cloud trial guide](TRIAL-SLICE5.md). Earlier [slice 4](TRIAL-SLICE4.md), [slice 3](TRIAL-SLICE3.md), [slice 2](TRIAL-SLICE2.md), and [slice 1](TRIAL.md) trials remain isolated.
 
 ```mermaid
 flowchart LR
@@ -16,13 +16,16 @@ flowchart LR
   P --> A[受控远程 API]
   P --> K[k3s / Agent Sandbox]
   K --> FS
+  D[本地设备 Profile] -->|设备令牌与任务| P
+  D --> L[(获授权的本地项目)]
 ```
 
 | Directory | Responsibility |
 | --- | --- |
 | `application/src/host` | User RPC, event subscriptions, scheduling, native Session persistence and model adapters |
 | `application/src/platform` | Identity, ownership, PG transactions, task leases, events, credentialed calls, and Sandbox management |
-| `application/web` | Conversation, files, skills, cloud execution, and a separate trusted approval page |
+| `application/src/device`, `device` | Local-only device UI, directory grants, durable command journal, and bounded Docker execution |
+| `application/web` | Conversation, files, skills, execution target selection, and a separate trusted approval page |
 | `sandbox`, `k8s` | Per-Sandbox command runner and namespace-scoped platform RBAC |
 | `host`, `platform` | Plugin composition and deployment settings for the two DSH Profiles |
 | `application/tests` | Regression tests using real PG and actual Profiles |

@@ -13892,6 +13892,18 @@ importers:
         specifier: ^8.15.5
         version: 8.23.1
 
+  products/power-evolve/device:
+    dependencies:
+      '@deepseek-ai/cordis-plugin-logger-console':
+        specifier: workspace:~
+        version: link:../../../vendor/logger-console
+      '@deepseek-ai/dsh-host-webserver':
+        specifier: workspace:*
+        version: link:../../../packages/host/webserver
+      '@power-evolve/application':
+        specifier: workspace:*
+        version: link:../application
+
   products/power-evolve/host:
     dependencies:
       '@deepseek-ai/cordis-plugin-logger-console':

@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PowerEvolve</title><link rel="stylesheet" href="/style.css"></head>
+<body class="device-page"><main class="device-shell"><header><span class="brand-mark">P</span><h1 id="device-title"></h1><span id="device-state" class="badge"></span></header><p id="device-intro" class="muted"></p>
+  <section id="pair-section" class="device-card"><h2 id="pair-title"></h2><form id="pair-form"><label for="pair-code" id="pair-code-label"></label><input id="pair-code" required autocomplete="off"><label for="device-name" id="device-name-label"></label><input id="device-name" required maxlength="80"><button id="pair-button" type="submit"></button></form></section>
+  <section id="folders-section" class="device-card" hidden><h2 id="folders-title"></h2><p id="folders-intro" class="muted"></p><div id="folder-list"></div><div class="device-actions"><button id="choose-folder" type="button"></button><form id="folder-form"><input id="folder-path" required><button id="authorize-folder" type="submit"></button></form></div></section>
+  <section id="transfer-section" class="device-card" hidden><h2 id="transfer-title"></h2><p id="transfer-intro" class="muted"></p><label for="transfer-directory" id="transfer-directory-label"></label><select id="transfer-directory"></select><label for="cloud-path" id="cloud-path-label"></label><input id="cloud-path" maxlength="512"><label for="local-path" id="local-path-label"></label><input id="local-path" maxlength="512"><div class="device-actions"><button id="import-file" type="button"></button><button id="export-file" type="button"></button></div><p id="transfer-result" role="status"></p></section>
+  <p id="device-error" role="alert"></p></main><script type="module" src="/app.js"></script></body>
+</html>
