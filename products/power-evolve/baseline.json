@@ -1,0 +1,10 @@
+{
+  "repository": "https://github.com/naturalnum/deepseek-harness",
+  "sourceBranch": "master",
+  "version": "0.1.7-rc.2",
+  "productBranch": "power-evolve/shared-host-slice-1",
+  "sessionFormat": 4,
+  "schemaVersion": 1,
+  "historyRetrieval": "depth-1 fetch after interrupted full-history transfers; previous local master retained",
+  "gitRef": "refs/tags/power-evolve-baseline-dsh-0.1.7-rc.2"
+}

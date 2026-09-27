@@ -1,0 +1,129 @@
+/** Authenticated product RPC carrier over the native Typert Gateway. */
+import { randomUUID } from 'node:crypto'
+import { writeFile } from 'node:fs/promises'
+import { setTimeout as delay } from 'node:timers/promises'
+import { Context } from '@deepseek-ai/cordis'
+import schema from '@deepseek-ai/schemastery'
+import { z } from 'zod'
+import type {} from '@deepseek-ai/dsh-api-gateway'
+import type {} from '@deepseek-ai/dsh-host-webserver'
+import type {} from '@deepseek-ai/dsh-typert-registry'
+import { brandString } from '@deepseek-ai/dsh-brand'
+import { createScope } from '@deepseek-ai/dsh-scope'
+import { TypertRemoteService, Remote, type PeerScope, type PeerId, type InvocationDescriptor } from '@deepseek-ai/dsh-typert-protocol'
+import { createRequest, listRequest, pageRequest, promptRequest, PlatformError } from '../contracts.ts'
+import { bearer, readJson, sendFailure, sendJson, writeLine } from '../http.ts'
+import { serveUi } from '../ui.ts'
+import { Scheduler } from './scheduler.ts'
+
+const requests = { me: z.object({}).strict(), logout: z.object({}).strict(), create: createRequest, list: listRequest, prompt: promptRequest, page: pageRequest, follow: pageRequest }
+const endpoint = { me: '/identity/me', logout: '/identity/logout', create: '/sessions/create', list: '/sessions/list', prompt: '/sessions/prompt', page: '/sessions/page' } as const
+type Method = keyof typeof requests
+
+declare module '@deepseek-ai/cordis' { interface Context { powerEvolve: ProductRemote } }
+
+class ProductRemote extends TypertRemoteService {
+  constructor(ctx: Context, private readonly options: { tokens: WeakMap<PeerScope, string>; pollMs: number }) { super(ctx, 'powerEvolve') }
+  private token(): string {
+    const peer = this.ctx.invocation?.peer
+    const token = peer && this.options.tokens.get(peer)
+    if (!token) throw new PlatformError(401, 'unauthorized_peer')
+    return token
+  }
+  private call(method: keyof typeof endpoint, request: unknown) {
+    return this.ctx.powerEvolveRuntime.call(endpoint[method], this.token(), request)
+  }
+  @Remote me(request: z.infer<typeof requests.me>) { return this.call('me', request) }
+  @Remote logout(request: z.infer<typeof requests.logout>) { return this.call('logout', request) }
+  @Remote create(request: z.infer<typeof createRequest>) { return this.call('create', request) }
+  @Remote list(request: z.infer<typeof listRequest>) { return this.call('list', request) }
+  @Remote prompt(request: z.infer<typeof promptRequest>) { return this.call('prompt', request) }
+  @Remote page(request: z.infer<typeof pageRequest>) { return this.call('page', request) }
+  @Remote async *follow(request: z.infer<typeof pageRequest>, signal: AbortSignal): AsyncGenerator<unknown> {
+    let after = request.after
+    let previous = ''
+    while (!signal.aborted) {
+      const result = await this.call('page', { ...request, after })
+      const parsed = z.object({ events: z.array(z.object({ seq: z.number().int() })), operations: z.array(z.json()) }).parse(result)
+      const signature = JSON.stringify(parsed.operations)
+      if (parsed.events.length || signature !== previous) { yield result; previous = signature }
+      after = parsed.events.at(-1)?.seq ?? after
+      try { await delay(this.options.pollMs, undefined, { signal }) }
+      catch (error) { if (signal.aborted) return; throw error }
+    }
+  }
+}
+
+export const name = 'power-evolve-host'
+export const inject = ['powerEvolveRuntime', 'sessionPersistence', 'agents', 'sessions', 'webServer', 'typert', 'typertGateway', 'agentLoop']
+export const Config = schema.object({
+  origin: schema.string().required(), platformOrigin: schema.string().required(),
+  concurrency: schema.number().step(1).min(1).required(), pollMs: schema.number().min(50).required(),
+  renewMs: schema.number().min(100).required(), operationTimeoutMs: schema.number().min(1000).required(),
+  maxRequestBytes: schema.number().min(1024).required(), maxStreams: schema.number().step(1).min(1).required(),
+  readyFile: schema.string().required(),
+})
+export type Config = ReturnType<typeof Config>
+
+/** Mount only product RPC methods; native global settings and execution endpoints stay unexposed.
+ * @param ctx - host profile plugin lifetime.
+ * @param config - admission, dispatch, and carrier bounds.
+ */
+export async function apply(ctx: Context, config: Config): Promise<void> {
+  const instanceId = randomUUID()
+  const tokens = new WeakMap<PeerScope, string>()
+  ctx.plugin(ProductRemote, { tokens, pollMs: config.pollMs })
+  const invocations: InvocationDescriptor[] = Object.entries(requests).map(([method, request]) => ({
+    id: `@power-evolve/application#powerEvolve/${method}`, service: 'powerEvolve', namespace: 'powerEvolve', method,
+    invocation: { kind: 'direct' },
+    parameters: [{ name: 'request', wire: 'request', source: 'json', codec: { mode: 'strict', typeSymbol: `PowerEvolve/${method}`, create: () => request } }],
+    result: { mode: 'strict', typeSymbol: 'PowerEvolve/Json', create: () => z.json() },
+    ...(method === 'follow' ? { mode: 'stream' as const, cancellation: { parameter: 'signal' } } : {}),
+  }))
+  ctx.typert.register({ package: '@power-evolve/application', face: 'host', schemas: [], model: { services: [], events: [], objects: [] }, invocations })
+  const scheduler = new Scheduler(ctx, config)
+  scheduler.start()
+  ctx.effect(() => () => scheduler.close())
+  let streams = 0
+  ctx.effect(() => ctx.webServer.registerFallback(async (req, res) => {
+    let peer: PeerScope | undefined
+    const abort = new AbortController()
+    res.on('close', () => abort.abort())
+    let streaming = false
+    try {
+      const path = new URL(req.url ?? '/', config.origin).pathname
+      if (req.method === 'GET' && path === '/health') {
+        sendJson(res, { ready: true, service: 'host', activeAgents: ctx.agents.list().length, loadedSessions: ctx.sessions.list().length, activeGrants: ctx.powerEvolveRuntime.grants.size, instanceId }); return
+      }
+      if (req.method === 'GET' && path === '/config') { sendJson(res, { loginUrl: `${config.platformOrigin}/login` }); return }
+      if (req.method === 'GET' && await serveUi(path, 'client', res)) return
+      if (req.method !== 'POST' || !path.startsWith('/api/powerEvolve/')) throw new PlatformError(404, 'not_found')
+      if (req.headers.origin !== undefined && req.headers.origin !== config.origin) throw new PlatformError(403, 'invalid_origin')
+      const method = z.enum(Object.keys(requests) as [Method, ...Method[]]).parse(path.slice('/api/powerEvolve/'.length))
+      const token = bearer(req)
+      await ctx.powerEvolveRuntime.call('/identity/me', token, {})
+      const input = z.object({ request: requests[method] }).strict().parse(await readJson(req, config.maxRequestBytes))
+      if (method === 'follow') {
+        if (streams >= config.maxStreams) throw new PlatformError(429, 'stream_limit')
+        // Check Session ownership before committing stream response headers.
+        await ctx.powerEvolveRuntime.call('/sessions/page', token, input.request)
+        streams++; streaming = true
+      }
+      const scope = createScope(ctx, {})
+      peer = { id: brandString<PeerId>(randomUUID()), ctx: scope.ctx, dispose: scope.dispose }
+      tokens.set(peer, token)
+      const invocation = { namespace: 'powerEvolve', method, args: { request: input.request }, peer, signal: abort.signal }
+      if (streaming) {
+        const iterable = await ctx.typertGateway.stream(invocation)
+        res.writeHead(200, { 'content-type': 'application/x-ndjson', 'cache-control': 'no-store', 'x-accel-buffering': 'no' })
+        for await (const item of iterable) await writeLine(res, item, abort.signal)
+        res.end()
+      } else sendJson(res, await ctx.typertGateway.invoke(invocation))
+    } catch (error) { if (!abort.signal.aborted) sendFailure(res, error) }
+    finally {
+      if (streaming) streams--
+      if (peer) { tokens.delete(peer); await peer.dispose() }
+    }
+  }))
+  await writeFile(config.readyFile, JSON.stringify({ pid: process.pid, url: `http://${ctx.webServer.host}:${ctx.webServer.port}`, instanceId }), { mode: 0o600 })
+}

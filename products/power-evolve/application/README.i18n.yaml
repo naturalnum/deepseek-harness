@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write products/power-evolve/application/README.md
+/powerevolve-application-plugins:
+  en: e02cad567fd39b19
+  zh: 6c9d4f866887e6f3
+/powerevolve-application-plugins/host:
+  en: eb97c1b07cf5c854
+  zh: e8b16d64a51665d9
+/powerevolve-application-plugins/trusted-platform:
+  en: 29cf58aeb66538e0
+  zh: 5d21b76ad940cccb
+/powerevolve-application-plugins/recovery-and-limits:
+  en: fbf3668a632e75ac
+  zh: df526782a6bfd2ff
+/powerevolve-application-plugins/verification:
+  en: fb0c8bf83abd27d1
+  zh: da80de4a0970220a

@@ -1,0 +1,8 @@
+version: 1
+scenario: conversation
+profile: power-evolve-host
+composition: shared-host-platform-pg
+recording: authored
+header:
+  class: power-evolve-text
+  pin: true

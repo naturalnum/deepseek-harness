@@ -1,0 +1,59 @@
+name: PowerEvolve slice 1
+on:
+  pull_request:
+    paths:
+      - 'products/power-evolve/**'
+      - 'snapshots/power-evolve/**'
+      - 'packages/**'
+      - 'vendor/**'
+      - 'apps/cli/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'tsconfig*.json'
+      - '.github/workflows/power-evolve.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: power-evolve-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  slice-1:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      DSH_TELEMETRY_DISABLED: '1'
+      PE_PRIVATE_DIR: ${{ runner.temp }}/power-evolve-config
+    services:
+      postgres:
+        image: postgres:17-bookworm
+        env:
+          POSTGRES_USER: powerevolve
+          POSTGRES_PASSWORD: local-ci-only
+          POSTGRES_DB: powerevolve
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd 'pg_isready -U powerevolve -d powerevolve'
+          --health-interval 2s --health-timeout 3s --health-retries 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+      - name: Prepare disposable test database access
+        env:
+          PE_DATABASE_PORT: ${{ job.services.postgres.ports[5432] }}
+        run: |
+          node --input-type=module <<'JS'
+          import {mkdir,writeFile} from 'node:fs/promises'
+          await mkdir(process.env.PE_PRIVATE_DIR,{recursive:true,mode:0o700})
+          await writeFile(process.env.PE_PRIVATE_DIR+'/database-url',`postgresql://powerevolve:local-ci-only@127.0.0.1:${process.env.PE_DATABASE_PORT}/powerevolve`,{mode:0o600})
+          JS
+      - run: pnpm run test:power-evolve

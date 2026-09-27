@@ -14,9 +14,12 @@
     "native/system",
     "native/system/packages/*",
     "apps/*",
+    "products/power-evolve/*",
     "website"
   ],
   "scripts": {
+    "build:power-evolve": "tsc -b products/power-evolve/application/tsconfig.json",
+    "check:power-evolve": "tsc -b products/power-evolve/application/tsconfig.json --pretty false",
     "prepare:primary-runtime": "tsx scripts/primary-runtime/prepare.ts",
     "build": "tsx scripts/build.ts",
     "build:bench": "npm run build:native-system && npm run build:lib && tsdown --config benchmarks/tsdown.config.ts",
@@ -200,7 +203,9 @@
     "mock:llm": "node --import tsx packages/test-support/llm-mock-server/src/bin.ts",
     "start:web": "node --import tsx/esm apps/cli/src/bin.ts web",
     "dev:web": "tsx scripts/dev-web.ts --poll",
-    "postinstall": "node scripts/install-lefthook.mjs"
+    "postinstall": "node scripts/install-lefthook.mjs",
+    "test:power-evolve": "pnpm run build:power-evolve && node --test products/power-evolve/application/tests/*.test.mjs",
+    "power-evolve:trial": "node products/power-evolve/scripts/trial.mjs"
   },
   "devDependencies": {
     "@deepseek-ai/dsh-agent": "workspace:*",

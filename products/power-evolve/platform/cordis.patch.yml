@@ -1,0 +1,37 @@
+- insert:
+    - id: logger-console
+      name: '@deepseek-ai/cordis-plugin-logger-console'
+      config:
+        colors: false
+        maxLength: 1200
+    - id: web-server
+      name: '@deepseek-ai/dsh-host-webserver'
+      config:
+        host: 127.0.0.1
+        port: 18881
+    - id: power-evolve-platform
+      name: '@power-evolve/application/platform'
+      config:
+        databaseUrlFile: !!js process.env.PE_PRIVATE_DIR + '/database-url'
+        workerTokenFile: !!js process.env.PE_PRIVATE_DIR + '/worker-token'
+        modelKeyFile: !!js process.env.PE_PRIVATE_DIR + '/model-key'
+        seedUsersFile: !!js process.env.PE_PRIVATE_DIR + '/users.json'
+        modelUrl: https://api.deepseek.com/anthropic/v1/messages
+        hostOrigin: http://127.0.0.1:18880
+        platformOrigin: http://127.0.0.1:18881
+        leaseMs: 30000
+        tokenLifetimeMs: 43200000
+        maxPendingPerUser: 8
+        maxActivePerUser: 1
+        maxHistoryBytes: 8388608
+        maxHistoryEvents: 20000
+        maxEventBytes: 524288
+        maxRequestBytes: 2097152
+        modelTimeoutMs: 120000
+        maxModelResponseBytes: 4194304
+        readyFile: !!js dshHomePath('ready.json')
+        databasePoolSize: 10
+        databaseTimeoutMs: 10000
+        loginWindowMs: 60000
+        loginAttemptsPerWindow: 20
+        loginTrackedAddresses: 1000

@@ -1,0 +1,23 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": { "rootDir": "src", "outDir": "lib" },
+  "include": ["src"],
+  "references": [
+    { "path": "../../../vendor/cordis" },
+    { "path": "../../../vendor/schemastery" },
+    { "path": "../../../packages/core/agent" },
+    { "path": "../../../packages/api/gateway/tsconfig.host.json" },
+    { "path": "../../../packages/util/brand" },
+    { "path": "../../../packages/host/webserver" },
+    { "path": "../../../packages/llm/llm" },
+    { "path": "../../../packages/llm/llm-deepseek" },
+    { "path": "../../../packages/identity/anonymous-user-id" },
+    { "path": "../../../packages/core/scope" },
+    { "path": "../../../packages/core/session" },
+    { "path": "../../../packages/session/session-persistence" },
+    { "path": "../../../packages/session/session-projection" },
+    { "path": "../../../packages/core/system-prompt" },
+    { "path": "../../../packages/typert/protocol" },
+    { "path": "../../../packages/typert/registry" }
+  ]
+}

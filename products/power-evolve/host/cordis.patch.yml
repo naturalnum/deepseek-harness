@@ -1,0 +1,62 @@
+- insert:
+    - id: logger-console
+      name: '@deepseek-ai/cordis-plugin-logger-console'
+      config:
+        colors: false
+        maxLength: 1200
+    - id: timer
+      name: '@deepseek-ai/cordis-plugin-timer'
+    - id: llm
+      name: '@deepseek-ai/dsh-llm'
+    - id: session
+      name: '@deepseek-ai/dsh-session'
+    - id: session-projection
+      name: '@deepseek-ai/dsh-session-projection'
+    - id: tools
+      name: '@deepseek-ai/dsh-tools'
+    - id: agent
+      name: '@deepseek-ai/dsh-agent'
+    - id: typert
+      name: '@deepseek-ai/dsh-typert-registry'
+    - id: api-gateway
+      name: '@deepseek-ai/dsh-api-gateway'
+    - id: system-prompt
+      name: '@deepseek-ai/dsh-system-prompt'
+      config:
+        includeHarnessIdentity: false
+        includeRuntimeContext: false
+        personaPrefix: 'You are PowerEvolve, a helpful assistant. This profile supports text conversations. No file, command, or external action tools are enabled.'
+    - id: agent-loop
+      name: '@deepseek-ai/dsh-agent-loop'
+      config:
+        agents: []
+    - id: web-server
+      name: '@deepseek-ai/dsh-host-webserver'
+      config:
+        host: 127.0.0.1
+        port: 18880
+    - id: power-evolve-runtime
+      name: '@power-evolve/application/scope'
+      config:
+        platformUrl: http://127.0.0.1:18881
+        workerTokenFile: !!js process.env.PE_PRIVATE_DIR + '/worker-token'
+        timeoutMs: 15000
+        maxResponseBytes: 12582912
+    - id: power-evolve-persistence
+      name: '@power-evolve/application/persistence'
+    - id: power-evolve-model
+      name: '@power-evolve/application/model'
+      config:
+        streamIdleTimeoutMs: 120000
+    - id: power-evolve-host
+      name: '@power-evolve/application/host'
+      config:
+        origin: http://127.0.0.1:18880
+        platformOrigin: http://127.0.0.1:18881
+        concurrency: 4
+        pollMs: 500
+        renewMs: 8000
+        operationTimeoutMs: 150000
+        maxRequestBytes: 65536
+        maxStreams: 100
+        readyFile: !!js dshHomePath('ready.json')

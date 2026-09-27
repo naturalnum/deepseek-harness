@@ -1,0 +1,4 @@
+[
+  [{"role":"user","text":"alpha"},{"role":"assistant","text":"reply:alpha"}],
+  [{"role":"user","text":"beta"},{"role":"assistant","text":"reply:beta"}]
+]
