@@ -51,19 +51,25 @@ test('cloud execution persists acceptance and reconciles runner outcomes', { tim
   await initializeDatabase(pool)
   const userId = randomUUID(), otherId = randomUUID(), sessionId = randomUUID(), otherSessionId = randomUUID()
   const operationId = randomUUID(), otherOperationId = randomUUID()
+  const slowSessionId = randomUUID(), slowOperationId = randomUUID()
   await pool.query(`INSERT INTO pe_users(id,username,password_hash,settings) VALUES
     ($1,'first','irrelevant','{}'),($2,'other','irrelevant','{}')`, [userId, otherId])
   await pool.query(`INSERT INTO pe_sessions(id,user_id,create_request_id,header) VALUES($1,$2,$3,'{}')`,
     [sessionId, userId, randomUUID()])
   await pool.query(`INSERT INTO pe_sessions(id,user_id,create_request_id,header) VALUES($1,$2,$3,'{}')`,
     [otherSessionId, otherId, randomUUID()])
+  await pool.query(`INSERT INTO pe_sessions(id,user_id,create_request_id,header) VALUES($1,$2,$3,'{}')`,
+    [slowSessionId, userId, randomUUID()])
   await pool.query(`INSERT INTO pe_operations(id,session_id,request_id,input,settings,state)
     VALUES($1,$2,$3,'test','{}','running')`, [operationId, sessionId, randomUUID()])
   await pool.query(`INSERT INTO pe_operations(id,session_id,request_id,input,settings,state)
     VALUES($1,$2,$3,'test','{}','running')`, [otherOperationId, otherSessionId, randomUUID()])
+  await pool.query(`INSERT INTO pe_operations(id,session_id,request_id,input,settings,state)
+    VALUES($1,$2,$3,'test','{}','running')`, [slowOperationId, slowSessionId, randomUUID()])
   const tasks = { pool, async authorized(client, token) {
     const selected = token === 'current-grant' ? { session: sessionId, operation: operationId }
-      : token === 'other-grant' ? { session: otherSessionId, operation: otherOperationId } : null
+      : token === 'other-grant' ? { session: otherSessionId, operation: otherOperationId }
+        : token === 'slow-grant' ? { session: slowSessionId, operation: slowOperationId } : null
     if (!selected) throw new Error('invalid grant')
     const result = await client.query('SELECT id,user_id FROM pe_sessions WHERE id=$1 FOR UPDATE', [selected.session])
     return { ...result.rows[0], operation_id: selected.operation, execution_target: { kind: 'cloud' } }
@@ -151,4 +157,21 @@ test('cloud execution persists acceptance and reconciles runner outcomes', { tim
   assert.equal(posted.filter(value => value.command === 'do-not-replay').length, 0)
   assert.equal((await pool.query('SELECT state FROM pe_sandbox_instances WHERE session_id=$1', [sessionId])).rows[0].state, 'unknown')
   await resumed.close()
+
+  // Two platform workers may share PG. A slow Sandbox start must retain its lease
+  // so the other worker cannot claim the same command while the first is active.
+  const slowSandbox = { ...sandbox, async ensureReady(id) {
+    if (id === slowSessionId) await delay(1500)
+    return sandbox.ensureReady(id)
+  } }
+  const slowFirst = new ExecutionService(tasks, slowSandbox, 2, 50, 10000, 2000, 450)
+  const slowSecond = new ExecutionService(tasks, slowSandbox, 2, 50, 10000, 2000, 450)
+  const slowCommand = await slowFirst.propose('slow-grant', 'slow-call', 'slow-start-once', '')
+  slowFirst.start(); slowSecond.start()
+  await eventually(async () => (await slowFirst.list(identity)).items.some(value =>
+    value.executionId === slowCommand.executionId && value.state === 'succeeded'), 'slow Sandbox start', 5000)
+  assert.equal((await pool.query('SELECT attempts FROM pe_cloud_executions WHERE id=$1',
+    [slowCommand.executionId])).rows[0].attempts, 1)
+  assert.equal(posted.filter(value => value.command === 'slow-start-once').length, 1)
+  await slowFirst.close(); await slowSecond.close()
 })

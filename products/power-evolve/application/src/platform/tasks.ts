@@ -110,12 +110,12 @@ export class TaskStore {
       }>(
         `SELECT o.id,o.session_id,s.user_id,o.request_id,o.input,o.settings,o.skill_selection,
          o.source,o.source_action_id,o.source_execution_id,o.source_desktop_execution_id,o.execution_target
-         FROM pe_operations o JOIN pe_sessions s ON s.id=o.session_id
+         FROM pe_operations o JOIN pe_sessions s ON s.id=o.session_id JOIN pe_users u ON u.id=s.user_id
          WHERE o.state IN ('queued','running') AND (s.lease_until IS NULL OR s.lease_until<=now())
          AND (SELECT count(*) FROM pe_sessions active WHERE active.user_id=s.user_id AND active.lease_until>now())<$1
          AND NOT EXISTS (SELECT 1 FROM pe_operations earlier WHERE earlier.session_id=s.id
            AND earlier.state IN ('queued','running') AND (earlier.created_at,earlier.id)<(o.created_at,o.id))
-         ORDER BY o.created_at,o.id LIMIT 1 FOR UPDATE OF s,o SKIP LOCKED`, [this.limits.maxActivePerUser],
+         ORDER BY u.last_claim_at NULLS FIRST,o.created_at,o.id LIMIT 1 FOR UPDATE OF s,o SKIP LOCKED`, [this.limits.maxActivePerUser],
       )
       const row = candidate.rows[0]
       if (!row) return null
@@ -126,6 +126,7 @@ export class TaskStore {
         'SELECT count(*) FROM pe_sessions WHERE user_id=$1 AND lease_until>now()', [row.user_id],
       )
       if (Number(active.rows[0]!.count) >= this.limits.maxActivePerUser) return null
+      await client.query('UPDATE pe_users SET last_claim_at=clock_timestamp() WHERE id=$1', [row.user_id])
       const token = randomBytes(32).toString('base64url')
       const updated = await client.query<{ lease_epoch: number }>(
         `UPDATE pe_sessions SET lease_epoch=lease_epoch+1,grant_digest=$2,

@@ -2,14 +2,17 @@
 
 [English](README.md) | 中文
 
-PowerEvolve 的产品实现与上游 DSH 分开组织，共用一个仓库。开发入口是 [架构决策](ARCHITECTURE.md)，当前试用入口见 [切片 5 试用指南](TRIAL-SLICE5.md)；[切片 4](TRIAL-SLICE4.md)、[切片 3](TRIAL-SLICE3.md)、[切片 2](TRIAL-SLICE2.md)和[切片 1](TRIAL.md)试用仍独立保留。
+PowerEvolve 的产品实现与上游 DSH 分开组织，共用一个仓库。开发入口是 [架构决策](ARCHITECTURE.md)，当前试用入口见 [切片 6 双宿主指南](TRIAL-SLICE6.md)；[切片 5](TRIAL-SLICE5.md)、[切片 4](TRIAL-SLICE4.md)、[切片 3](TRIAL-SLICE3.md)、[切片 2](TRIAL-SLICE2.md)和[切片 1](TRIAL.md)试用仍独立保留。
 
 ```mermaid
 flowchart LR
-  C[网页客户端] --> H[共享 DSH 宿主]
+  C[网页客户端] --> LB[负载均衡]
+  LB --> H1[共享 DSH 宿主 A]
+  LB --> H2[共享 DSH 宿主 B]
   C -->|登录| P[可信平台后台]
   C -->|独立审批| P
-  H -->|用户请求与任务授权| P
+  H1 -->|用户请求与任务授权| P
+  H2 -->|用户请求与任务授权| P
   P --> DB[(PostgreSQL)]
   P --> FS[(私有 POSIX 工作区)]
   P --> M[模型 API]

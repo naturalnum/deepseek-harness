@@ -2,14 +2,17 @@
 
 English | [中文](README.zh.md)
 
-PowerEvolve lives separately from upstream DSH within the same repository. Start development with the [architecture decision](ARCHITECTURE.md), or use the [desktop and cloud trial guide](TRIAL-SLICE5.md). Earlier [slice 4](TRIAL-SLICE4.md), [slice 3](TRIAL-SLICE3.md), [slice 2](TRIAL-SLICE2.md), and [slice 1](TRIAL.md) trials remain isolated.
+PowerEvolve lives separately from upstream DSH within the same repository. Start development with the [architecture decision](ARCHITECTURE.md), or use the [two-host trial guide](TRIAL-SLICE6.md). Earlier [slice 5](TRIAL-SLICE5.md), [slice 4](TRIAL-SLICE4.md), [slice 3](TRIAL-SLICE3.md), [slice 2](TRIAL-SLICE2.md), and [slice 1](TRIAL.md) trials remain isolated.
 
 ```mermaid
 flowchart LR
-  C[网页客户端] --> H[共享 DSH 宿主]
+  C[网页客户端] --> LB[负载均衡]
+  LB --> H1[共享 DSH 宿主 A]
+  LB --> H2[共享 DSH 宿主 B]
   C -->|登录| P[可信平台后台]
   C -->|独立审批| P
-  H -->|用户请求与任务授权| P
+  H1 -->|用户请求与任务授权| P
+  H2 -->|用户请求与任务授权| P
   P --> DB[(PostgreSQL)]
   P --> FS[(私有 POSIX 工作区)]
   P --> M[模型 API]

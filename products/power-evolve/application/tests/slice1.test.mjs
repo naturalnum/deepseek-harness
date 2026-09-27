@@ -36,7 +36,7 @@ test('shared host: isolated conversations, files, skills and approved remote act
   const temporary = await mkdtemp(join(tmpdir(), 'pe-slice1-'))
   const database = `pe_test_${randomBytes(10).toString('hex')}`
   const admin = new Pool({ connectionString: databaseUrl, max: 2 })
-  let pool, host, platform, model, connectorTarget, databaseCreated = false
+  let pool, host, hostB, balancer, platform, model, connectorTarget, databaseCreated = false
   const children = new Set()
   const stop = async (process, signal = 'SIGTERM') => {
     if (!process || process.exitCode !== null || process.signalCode !== null) return
@@ -130,8 +130,8 @@ test('shared host: isolated conversations, files, skills and approved remote act
   await new Promise(resolve => model.listen(0, '127.0.0.1', resolve))
   const modelUrl = `http://127.0.0.1:${model.address().port}/v1/messages`
 
-  async function start(name, platformUrl) {
-    const home = join(temporary, name), profile = join(home, 'profiles', `power-evolve-${name}`)
+  async function start(name, platformUrl, instance = name, listenPort = 0) {
+    const home = join(temporary, instance), profile = join(home, 'profiles', `power-evolve-${instance}`)
     await mkdir(join(profile, 'node_modules/@power-evolve'), { recursive: true })
     try { await symlink(join(product, name), join(profile, 'node_modules/@power-evolve', name), 'dir') }
     catch (error) { if (error.code !== 'EEXIST') throw error }
@@ -141,7 +141,7 @@ test('shared host: isolated conversations, files, skills and approved remote act
     const readyFile = join(home, 'ready.json')
     await rm(readyFile, { force: true })
     const update = (id, fields) => ({ id, config: { ...rows.find(row => row.id === id).config, ...fields } })
-    const patch = [update('web-server', { port: 0 })]
+    const patch = [update('web-server', { port: listenPort })]
     if (name === 'platform') patch.push(update('power-evolve-platform', {
       databaseUrlFile: join(temporary, 'database-url'), workerTokenFile: join(temporary, 'worker-token'),
       modelKeyFile: join(temporary, 'model-key'), connectorKeyFile: join(temporary, 'connector-key'), seedUsersFile: join(temporary, 'users.json'),
@@ -152,14 +152,14 @@ test('shared host: isolated conversations, files, skills and approved remote act
     }))
     else patch.push(update('power-evolve-runtime', { platformUrl, workerTokenFile: join(temporary, 'worker-token') }), update('power-evolve-host', { platformOrigin: platformUrl, readyFile, renewMs: 500, operationTimeoutMs: 20000, pollMs: 50, maxRequestBytes: 3145728 }))
     await writeFile(join(profile, 'cordis.patch.yml'), yaml.dump(patch))
-    const log = openSync(join(temporary, `${name}.log`), 'a', 0o600)
-    const child = spawn(process.execPath, ['apps/cli/lib/bin.js', '--profile', `power-evolve-${name}`], { cwd: root, env: { PATH: process.env.PATH, HOME: process.env.HOME, DSH_HOME: home, PE_PRIVATE_DIR: temporary }, stdio: ['ignore', log, log] })
+    const log = openSync(join(temporary, `${instance}.log`), 'a', 0o600)
+    const child = spawn(process.execPath, ['apps/cli/lib/bin.js', '--profile', `power-evolve-${instance}`], { cwd: root, env: { PATH: process.env.PATH, HOME: process.env.HOME, DSH_HOME: home, PE_PRIVATE_DIR: temporary }, stdio: ['ignore', log, log] })
     closeSync(log); children.add(child)
     const ready = await eventually(async () => {
-      if (child.exitCode !== null || child.signalCode !== null) throw new Error(`${name} exited before ready: ${await readFile(join(temporary, name+'.log'),'utf8')}`)
+      if (child.exitCode !== null || child.signalCode !== null) throw new Error(`${instance} exited before ready: ${await readFile(join(temporary, instance+'.log'),'utf8')}`)
       try { return JSON.parse(await readFile(readyFile, 'utf8')) }
       catch (error) { if (error.code === 'ENOENT' || error instanceof SyntaxError) return false; throw error }
-    }, `${name} ready`).catch(async error => { throw new Error(`${error.message}: ${await readFile(join(temporary, name+'.log'),'utf8')}`) })
+    }, `${instance} ready`).catch(async error => { throw new Error(`${error.message}: ${await readFile(join(temporary, instance+'.log'),'utf8')}`) })
     assert.equal((await fetch(`${ready.url}/health`)).status, 200)
     return { process: child, url: ready.url }
   }
@@ -423,5 +423,68 @@ test('shared host: isolated conversations, files, skills and approved remote act
     assert.equal(remoteNotes.filter(note => note.text === 'uncertain note').length, 1)
     const attempts = await pool.query('SELECT attempts FROM pe_connector_actions WHERE id=$1', [uncertain.actionId])
     assert(Number(attempts.rows[0].attempts) >= 2)
+  })
+  await t.test('two native hosts behind a balancer preserve a Session across host loss', async () => {
+    hostB = await start('host', platform.url, 'host-b')
+    const socket = createServer()
+    await new Promise(resolve => socket.listen(0, '127.0.0.1', resolve))
+    const balancerPort = socket.address().port
+    await new Promise(resolve => socket.close(resolve))
+    const log = openSync(join(temporary, 'balancer.log'), 'a', 0o600)
+    const balancerProcess = spawn(process.execPath, ['products/power-evolve/scripts/trial-lb.mjs'], {
+      cwd: root, env: { PATH: process.env.PATH, HOME: process.env.HOME,
+        PE_HOST_PORT: new URL(host.url).port, PE_HOST_SECOND_PORT: new URL(hostB.url).port,
+        PE_LOAD_BALANCER_PORT: String(balancerPort), PE_READY_FILE: join(temporary, 'balancer.json') },
+      stdio: ['ignore', log, log],
+    })
+    closeSync(log); children.add(balancerProcess)
+    balancer = { process: balancerProcess, url: `http://127.0.0.1:${balancerPort}` }
+    const health = () => fetch(`${balancer.url}/health`).then(response => response.json())
+    await eventually(async () => {
+      if (balancerProcess.exitCode !== null) throw new Error(await readFile(join(temporary, 'balancer.log'), 'utf8'))
+      return (await health().catch(() => null))?.backends.every(backend => backend.healthy)
+    }, 'both hosts behind balancer')
+    const request = async (method, value, user = 1) => {
+      const response = await post(`${balancer.url}/api/powerEvolve/${method}`, tokens[user], { request: value })
+      assert.equal(response.status, 200, JSON.stringify(await response.clone().json()))
+      return response.json()
+    }
+    const sessionId = (await request('create', { requestId: randomUUID() })).sessionId
+    for (let index = 0; index < 4; index++) await request('me', {})
+    const balanced = await health()
+    assert(balanced.backends.every(backend => backend.served > 0))
+    await request('prompt', { sessionId, requestId: randomUUID(), text: 'before-host-loss' })
+    await eventually(async () => (await request('page', { sessionId, after: -1, limit: 100 }))
+      .operations.at(-1)?.state === 'completed', 'balanced conversation')
+    const hostPort = Number(new URL(host.url).port)
+    await stop(host.process, 'SIGKILL')
+    await eventually(async () => {
+      const state = await health()
+      return !state.backends[0].healthy && state.backends[1].healthy
+    }, 'remaining host healthy')
+    await request('prompt', { sessionId, requestId: randomUUID(), text: 'after-host-loss' })
+    const recovered = await eventually(async () => {
+      const page = await request('page', { sessionId, after: -1, limit: 200 })
+      return page.operations.length === 2 && page.operations.every(operation => operation.state === 'completed') && page
+    }, 'conversation on second host')
+    assert.deepEqual(recovered.events.filter(event => event.type === 'user/message')
+      .map(event => event.data.content[0].text), ['before-host-loss', 'after-host-loss'])
+    host = await start('host', platform.url, 'host', hostPort)
+    await eventually(async () => (await health()).backends.every(backend => backend.healthy), 'first host rejoined')
+    const burst = await Promise.all(Array.from({ length: 16 }, async (_, index) => {
+      const user = index % 2
+      const sessionId = (await request('create', { requestId: randomUUID() }, user)).sessionId
+      await request('prompt', { sessionId, requestId: randomUUID(), text: `burst-${index}` }, user)
+      return { user, sessionId }
+    }))
+    await eventually(async () => {
+      const pages = await Promise.all(burst.map(({ user, sessionId }) =>
+        request('page', { sessionId, after: -1, limit: 100 }, user)))
+      return pages.every(page => page.operations[0]?.state === 'completed') && pages
+    }, '16 concurrent conversations on two hosts')
+    await eventually(async () => {
+      const statuses = await Promise.all([host.url, hostB.url].map(url => fetch(`${url}/health`).then(response => response.json())))
+      return statuses.every(value => value.activeAgents === 0 && value.loadedSessions === 0 && value.activeGrants === 0)
+    }, 'idle resources released after burst')
   })
 })

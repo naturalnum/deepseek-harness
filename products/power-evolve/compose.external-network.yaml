@@ -1,0 +1,5 @@
+# Local-only fallback when Docker's bridge address pools are exhausted.
+networks:
+  default:
+    name: ${PE_COMPOSE_EXTERNAL_NETWORK:?Set an existing Docker network}
+    external: true

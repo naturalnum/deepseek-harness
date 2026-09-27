@@ -191,3 +191,9 @@ ALTER TABLE pe_operations ADD CONSTRAINT pe_operations_source_action CHECK (
   OR (source='desktop_result' AND source_action_id IS NULL AND source_execution_id IS NULL AND source_desktop_execution_id IS NOT NULL));
 UPDATE pe_schema SET version=7 WHERE version=6;
 `
+
+/** Rotate eligible users when claiming work, while preserving FIFO within each user. */
+export const schemaV8 = `
+ALTER TABLE pe_users ADD COLUMN last_claim_at timestamptz;
+UPDATE pe_schema SET version=8 WHERE version=7;
+`

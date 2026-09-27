@@ -3,5 +3,5 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write products/power-evolve/README.md
 /powerevolve:
-  en: 19950c5a3ff07e5f
-  zh: 7e3feb2631650a47
+  en: b599e01263c39371
+  zh: 1222b759d4c0934d

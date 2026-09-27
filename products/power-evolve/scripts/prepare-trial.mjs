@@ -18,11 +18,15 @@ const platformPort = port('PE_PLATFORM_PORT', 18881)
 const targetPort = port('PE_TARGET_PORT', 18884)
 const deviceEnabled = process.env.PE_DEVICE_ENABLED === '1'
 const devicePort = port('PE_DEVICE_PORT', 18891)
+const multiHost = process.env.PE_MULTI_HOST === '1'
+const hostSecondPort = port('PE_HOST_SECOND_PORT', 18897)
+const loadBalancerPort = port('PE_LOAD_BALANCER_PORT', 18898)
 const secondDeviceEnabled = process.env.PE_SECOND_DEVICE_ENABLED === '1'
 if (secondDeviceEnabled && !deviceEnabled) throw new Error('Second device requires PE_DEVICE_ENABLED=1')
 const secondDevicePort = port('PE_SECOND_DEVICE_PORT', 18896)
 const ports = [databasePort, hostPort, platformPort, targetPort, ...(deviceEnabled ? [devicePort] : []),
-  ...(secondDeviceEnabled ? [secondDevicePort] : [])]
+  ...(secondDeviceEnabled ? [secondDevicePort] : []),
+  ...(multiHost ? [hostSecondPort, loadBalancerPort] : [])]
 if (new Set(ports).size !== ports.length) throw new Error('Trial ports must be distinct')
 const privateDir = process.env.PE_PRIVATE_DIR ?? join(homedir(), '.config/power-evolve', `shared-host-${trialName}`)
 const output = join(root, '.artifacts/power-evolve', trialName === 'slice1' ? '' : trialName)
@@ -59,9 +63,9 @@ await provision('model-key', modelKey)
 await provision('users.json', JSON.stringify(['alice', 'bob'].map((username, index) => ({
   username, password: randomBytes(20).toString('base64url'), settings: { model: 'deepseek-flash', maxTokens: index === 0 ? 2048 : 1536, revision: 1 },
 })), null, 2) + '\n')
-for (const name of ['host', 'platform', ...(deviceEnabled ? ['device'] : []),
+for (const name of ['host', ...(multiHost ? ['host-b'] : []), 'platform', ...(deviceEnabled ? ['device'] : []),
   ...(secondDeviceEnabled ? ['device-bob'] : [])]) {
-  const bundleName = name === 'device-bob' ? 'device' : name
+  const bundleName = name === 'device-bob' ? 'device' : name === 'host-b' ? 'host' : name
   const home = join(output, 'trial', name)
   const profile = join(home, 'profiles', `power-evolve-${name}`)
   const modules = join(profile, 'node_modules/@power-evolve')
@@ -72,8 +76,10 @@ for (const name of ['host', 'platform', ...(deviceEnabled ? ['device'] : []),
   catch (error) { if (error.code !== 'EEXIST') throw error }
   // A profile patch replaces a row's full config, so retain every bundle field.
   const bundle = (await readFile(join(root, 'products/power-evolve', bundleName, 'cordis.patch.yml'), 'utf8')).split('\n')
-  const values = { port: name === 'host' ? hostPort : name === 'device' ? devicePort : name === 'device-bob' ? secondDevicePort : platformPort,
-    hostOrigin: `http://127.0.0.1:${hostPort}`, origin: `http://127.0.0.1:${hostPort}`,
+  const values = { port: name === 'host' ? hostPort : name === 'host-b' ? hostSecondPort
+    : name === 'device' ? devicePort : name === 'device-bob' ? secondDevicePort : platformPort,
+    hostOrigin: `http://127.0.0.1:${multiHost ? loadBalancerPort : hostPort}`,
+    origin: `http://127.0.0.1:${multiHost ? loadBalancerPort : hostPort}`,
     platformOrigin: `http://127.0.0.1:${platformPort}`, platformUrl: `http://127.0.0.1:${platformPort}`,
     deviceOrigin: `http://127.0.0.1:${devicePort}`,
     image: process.env.PE_DESKTOP_IMAGE ?? sandbox?.image,
@@ -81,7 +87,7 @@ for (const name of ['host', 'platform', ...(deviceEnabled ? ['device'] : []),
     ...(sandbox ? { workspaceRoot: sandbox.workspaceRoot, sandboxKubeconfigFile: sandbox.kubeconfigFile,
       sandboxNamespace: sandbox.namespace, sandboxImage: sandbox.image, sandboxLocalRoot: sandbox.localRoot,
       sandboxNodeRoot: sandbox.nodeRoot, ...(sandbox.idleMs ? { sandboxIdleMs: sandbox.idleMs } : {}) } : {}) }
-  const selected = name === 'host' ? ['web-server', 'power-evolve-host', 'power-evolve-runtime']
+  const selected = bundleName === 'host' ? ['web-server', 'power-evolve-host', 'power-evolve-runtime']
     : bundleName === 'device' ? ['web-server', 'power-evolve-device'] : ['web-server', 'power-evolve-platform']
   const patch = selected.map(id => {
     const start = bundle.indexOf(`    - id: ${id}`)

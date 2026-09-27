@@ -23,6 +23,7 @@ const runnerResult = z.object({
   stdout: z.string().max(65_536), stderr: z.string().max(65_536),
   stdoutTruncated: z.boolean(), stderrTruncated: z.boolean(), timedOut: z.boolean(), instanceId: z.uuid(),
 }).strict()
+class ExecutionLeaseLost extends Error {}
 
 function digest(value: unknown): string { return createHash('sha256').update(JSON.stringify(value)).digest('hex') }
 
@@ -31,11 +32,13 @@ export class ExecutionService {
   private readonly stop = new AbortController()
   private readonly workerId = randomUUID()
   private readonly active = new Set<Promise<void>>()
+  private readonly activeIds = new Set<string>()
   private polling: Promise<void> | undefined
 
   constructor(private readonly tasks: TaskStore, private readonly sandboxes: SandboxManager,
     private readonly concurrency: number, private readonly pollMs: number,
-    private readonly idleMs: number, private readonly commandTimeoutMs: number) {}
+    private readonly idleMs: number, private readonly commandTimeoutMs: number,
+    private readonly leaseMs = 90_000) {}
   get pool(): Pool { return this.tasks.pool }
 
   /** Persist one tool request before returning an accepted receipt to the Agent. */
@@ -106,9 +109,10 @@ export class ExecutionService {
         if (this.active.size < this.concurrency) {
           const action = await this.claim()
           if (action) {
-            const running = this.process(action).catch(_unavailable => {
+            this.activeIds.add(action.id)
+            const running = this.processLeased(action).catch(_unavailable => {
               // The row remains leased for a later reconciliation pass.
-            }).finally(() => this.active.delete(running))
+            }).finally(() => { this.active.delete(running); this.activeIds.delete(action.id) })
             this.active.add(running)
             continue
           }
@@ -124,15 +128,45 @@ export class ExecutionService {
     return transaction(this.pool, async client => {
       const found = await client.query<ExecutionRow>(
         `SELECT * FROM pe_cloud_executions WHERE state IN ('queued','starting','running','cancelling','uncertain')
-         AND (lease_until IS NULL OR lease_until<=now()) ORDER BY created_at,id LIMIT 1 FOR UPDATE SKIP LOCKED`)
+         AND NOT (id = ANY($1::uuid[])) AND (lease_until IS NULL OR lease_until<=now())
+         ORDER BY created_at,id LIMIT 1 FOR UPDATE SKIP LOCKED`, [[...this.activeIds]])
       const row = found.rows[0]
       if (!row) return null
       const updated = await client.query<ExecutionRow>(
         `UPDATE pe_cloud_executions SET state=CASE WHEN state='queued' THEN 'starting' ELSE state END,
-         lease_owner=$2,lease_until=now()+interval '90 seconds',attempts=attempts+1,updated_at=now()
-         WHERE id=$1 RETURNING *`, [row.id, this.workerId])
+         lease_owner=$2,lease_until=now()+$3::double precision*interval '1 millisecond',
+         attempts=attempts+1,updated_at=now()
+         WHERE id=$1 RETURNING *`, [row.id, this.workerId, this.leaseMs])
       return updated.rows[0]!
     })
+  }
+
+  private async processLeased(row: ExecutionRow): Promise<void> {
+    const done = new AbortController()
+    let lost = false
+    const renew = (async () => {
+      while (!done.signal.aborted) {
+        try { await delay(Math.max(100, Math.floor(this.leaseMs / 3)), undefined, { signal: done.signal }) }
+        catch (_aborted) { return }
+        try {
+          const updated = await this.pool.query(
+            `UPDATE pe_cloud_executions SET lease_until=now()+$3::double precision*interval '1 millisecond'
+             WHERE id=$1 AND lease_owner=$2 AND lease_until>now()
+               AND state IN ('starting','running','cancelling','uncertain') RETURNING id`,
+            [row.id, this.workerId, this.leaseMs])
+          if (!updated.rowCount) { lost = true; return }
+        } catch (_databaseUnavailable) { lost = true; return }
+      }
+    })()
+    const assertLease = async () => {
+      if (lost) throw new ExecutionLeaseLost()
+      const current = await this.pool.query(
+        'SELECT id FROM pe_cloud_executions WHERE id=$1 AND lease_owner=$2 AND lease_until>now()',
+        [row.id, this.workerId])
+      if (!current.rowCount) throw new ExecutionLeaseLost()
+    }
+    try { await this.process(row, assertLease) }
+    finally { done.abort(); await renew }
   }
 
   private async currentCancel(row: ExecutionRow): Promise<boolean> {
@@ -141,8 +175,9 @@ export class ExecutionService {
     return result.rows[0]?.cancel_requested ?? true
   }
 
-  private async process(row: ExecutionRow): Promise<void> {
+  private async process(row: ExecutionRow, assertLease: () => Promise<void>): Promise<void> {
     try {
+      await assertLease()
       if (row.cancel_requested && !row.sandbox_name) {
         await this.sandboxes.remove(row.session_id)
         await this.settle(row, 'cancelled', null, null); return
@@ -167,7 +202,9 @@ export class ExecutionService {
       await this.pool.query(
         `INSERT INTO pe_sandbox_instances(session_id,user_id,name,state) VALUES($1,$2,$3,'creating')
          ON CONFLICT(session_id) DO NOTHING`, [row.session_id, row.user_id, expectedName])
+      await assertLease()
       const sandbox = await this.sandboxes.ensureReady(row.session_id, row.user_id)
+      await assertLease()
       if (row.runner_instance_id && (row.runner_instance_id !== sandbox.runnerInstanceId || row.pod_uid !== sandbox.podUid)
         || priorInstance?.state === 'ready' && (priorInstance.runner_instance_id !== sandbox.runnerInstanceId
           || priorInstance.pod_uid !== sandbox.podUid)) {
@@ -191,8 +228,9 @@ export class ExecutionService {
         await this.sandboxes.remove(row.session_id)
         await this.settle(row, 'cancelled', null, null); return
       }
-      await this.observe(row, sandbox, cancelled)
+      await this.observe(row, sandbox, cancelled, assertLease)
     } catch (error) {
+      if (error instanceof ExecutionLeaseLost) return
       const recorded = await this.pool.query<{ runner_instance_id: string | null }>(
         'SELECT runner_instance_id FROM pe_cloud_executions WHERE id=$1', [row.id])
       if (!recorded.rows[0]?.runner_instance_id && row.attempts >= 3) {
@@ -207,7 +245,8 @@ export class ExecutionService {
     }
   }
 
-  private async observe(row: ExecutionRow, sandbox: SandboxReady, cancelled: boolean): Promise<void> {
+  private async observe(row: ExecutionRow, sandbox: SandboxReady, cancelled: boolean,
+    assertLease: () => Promise<void>): Promise<void> {
     const request = { id: row.id, command: row.command, cwd: row.cwd, timeoutMs: this.commandTimeoutMs,
       instanceId: sandbox.runnerInstanceId }
     const path = `/executions/${row.id}`
@@ -215,11 +254,15 @@ export class ExecutionService {
     try { status = runnerResult.parse(await this.sandboxes.runner(sandbox.name, sandbox.token, 'GET', path)) }
     catch (error) { if (!(error instanceof KubernetesError && error.status === 404)) throw error }
     if (!status && cancelled) { await this.settle(row, 'cancelled', null, null); return }
-    if (!status) status = runnerResult.parse(await this.sandboxes.runner(sandbox.name, sandbox.token, 'POST', '/executions', request))
+    if (!status) {
+      await assertLease()
+      status = runnerResult.parse(await this.sandboxes.runner(sandbox.name, sandbox.token, 'POST', '/executions', request))
+    }
     if (status.id !== row.id || status.instanceId !== sandbox.runnerInstanceId || status.digest !== digest(request)) {
       await this.defer(row, 'uncertain', 'runner_identity_mismatch'); return
     }
     if (cancelled && status.state === 'running') {
+      await assertLease()
       status = runnerResult.parse(await this.sandboxes.runner(sandbox.name, sandbox.token, 'POST', `${path}/cancel`, {}))
     }
     if (status.state === 'running') {
@@ -236,14 +279,14 @@ export class ExecutionService {
     await this.pool.query(
       `UPDATE pe_cloud_executions SET state=$3,error_code=$4,lease_owner=NULL,
        lease_until=now()+$5::double precision*interval '1 millisecond',updated_at=now()
-       WHERE id=$1 AND lease_owner=$2`, [row.id, this.workerId, state, errorCode, this.pollMs])
+       WHERE id=$1 AND lease_owner=$2 AND lease_until>now()`, [row.id, this.workerId, state, errorCode, this.pollMs])
   }
 
   private async settle(row: ExecutionRow, state: State, result: unknown, errorCode: string | null): Promise<void> {
     await transaction(this.pool, async client => {
       const updated = await client.query<ExecutionRow>(
         `UPDATE pe_cloud_executions SET state=$3,result=$4,error_code=$5,lease_owner=NULL,lease_until=NULL,
-         updated_at=now() WHERE id=$1 AND lease_owner=$2 RETURNING *`,
+         updated_at=now() WHERE id=$1 AND lease_owner=$2 AND lease_until>now() RETURNING *`,
         [row.id, this.workerId, state, result === null ? null : JSON.stringify(result), errorCode])
       const final = updated.rows[0]
       if (!final || state === 'uncertain') return
