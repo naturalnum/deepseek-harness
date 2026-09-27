@@ -5,6 +5,13 @@ import { foldConsumedWork } from '@deepseek-ai/dsh-agent'
 import { MessageId } from '@deepseek-ai/dsh-llm'
 import { setTimeout as delay } from 'node:timers/promises'
 import type { Grant } from '../contracts.ts'
+import { installConnectorTools } from './connectors.ts'
+
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'power-evolve-action': { readonly kind: 'power-evolve-action'; readonly actionId: string }
+  }
+}
 
 /** Limits apply to active Agents, while inactive history remains in PG. */
 export interface SchedulerConfig {
@@ -85,6 +92,11 @@ export class Scheduler {
       })
       this.handles.add(handle)
       const { agent } = handle
+      if (grant.source === 'user') installConnectorTools(agent, grant, runtime)
+      else agent.ctx.effect(() => agent.ctx.systemPrompt.section({
+        name: 'power-evolve:action-result', order: 710, interpolate: false,
+        text: 'A trusted platform action result is arriving as the next message. Report its exact outcome to the user. Do not propose or repeat another external write in this turn.',
+      }))
       if (grant.skills.length) {
         const catalog = JSON.stringify(grant.skills)
         agent.ctx.effect(() => agent.ctx.systemPrompt.section({
@@ -98,7 +110,9 @@ export class Scheduler {
         // A restored pending input has not reached the model. Replace that pending entry
         // under the same durable request id before explicitly waking the native driver.
         agent.inbox.remove(MessageId(grant.requestId))
-        agent.followup({ id: MessageId(grant.requestId), role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: grant.text }] })
+        agent.followup({ id: MessageId(grant.requestId), role: 'user',
+          source: grant.source === 'platform_action' ? { kind: 'power-evolve-action', actionId: grant.sourceActionId! } : { kind: 'user' },
+          content: [{ type: 'text', text: grant.text }] })
         await agent.whenIdle()
       }
       await this.ctx.sessions.flush(agent.session)

@@ -15,7 +15,8 @@ const port = (key, fallback) => {
 const databasePort = port('PE_DATABASE_PORT', 18432)
 const hostPort = port('PE_HOST_PORT', 18880)
 const platformPort = port('PE_PLATFORM_PORT', 18881)
-if (new Set([databasePort, hostPort, platformPort]).size !== 3) throw new Error('Trial ports must be distinct')
+const targetPort = port('PE_TARGET_PORT', 18884)
+if (new Set([databasePort, hostPort, platformPort, targetPort]).size !== 4) throw new Error('Trial ports must be distinct')
 const privateDir = process.env.PE_PRIVATE_DIR ?? join(homedir(), '.config/power-evolve', `shared-host-${trialName}`)
 const output = join(root, '.artifacts/power-evolve', trialName === 'slice1' ? '' : trialName)
 await mkdir(privateDir, { recursive: true, mode: 0o700 }); await chmod(privateDir, 0o700)
@@ -29,6 +30,7 @@ async function provision(name, value) {
 const password = await provision('database-password', randomBytes(24).toString('base64url'))
 await provision('database-url', `postgresql://powerevolve:${password}@127.0.0.1:${databasePort}/powerevolve`)
 await provision('worker-token', randomBytes(32).toString('base64url'))
+await provision('connector-key', randomBytes(32).toString('base64url'))
 let modelKey = process.env.DEEPSEEK_API_KEY
 if (!modelKey) {
   const env = await readFile(join(privateDir, 'model.env'), 'utf8')
@@ -52,7 +54,8 @@ for (const name of ['host', 'platform']) {
   const bundle = (await readFile(join(root, 'products/power-evolve', name, 'cordis.patch.yml'), 'utf8')).split('\n')
   const values = { port: name === 'host' ? hostPort : platformPort,
     hostOrigin: `http://127.0.0.1:${hostPort}`, origin: `http://127.0.0.1:${hostPort}`,
-    platformOrigin: `http://127.0.0.1:${platformPort}`, platformUrl: `http://127.0.0.1:${platformPort}` }
+    platformOrigin: `http://127.0.0.1:${platformPort}`, platformUrl: `http://127.0.0.1:${platformPort}`,
+    connectorUrl: `http://127.0.0.1:${targetPort}` }
   const selected = name === 'host' ? ['web-server', 'power-evolve-host', 'power-evolve-runtime'] : ['web-server', 'power-evolve-platform']
   const patch = selected.map(id => {
     const start = bundle.indexOf(`    - id: ${id}`)

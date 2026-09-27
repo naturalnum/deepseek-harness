@@ -17,6 +17,7 @@
     { "path": "../../../packages/session/session-persistence" },
     { "path": "../../../packages/session/session-projection" },
     { "path": "../../../packages/core/system-prompt" },
+    { "path": "../../../packages/core/tools" },
     { "path": "../../../packages/typert/protocol" },
     { "path": "../../../packages/typert/registry" }
   ]

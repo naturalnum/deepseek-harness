@@ -14,7 +14,11 @@ const messageRequest = z.object({
   system: z.union([z.string(), z.array(z.json())]).optional(),
   thinking: z.json().optional(), output_config: z.json().optional(),
   temperature: z.number().optional(), stop_sequences: z.array(z.string()).optional(),
-  tools: z.array(z.json()).max(0).optional(),
+  tools: z.array(z.object({
+    name: z.enum(['trial_notes_list', 'trial_notes_append']),
+    description: z.string().max(1000), input_schema: z.record(z.string(), z.json()),
+    defer_loading: z.literal(true).optional(),
+  }).strict()).max(2).optional(),
 }).strict()
 
 export interface ModelProxyConfig {
@@ -25,7 +29,7 @@ export interface ModelProxyConfig {
   readonly maxResponseBytes: number
 }
 
-/** Forward text-only Messages requests, with bounded output and disconnect cancellation. */
+/** Forward allowlisted Messages requests, with bounded output and disconnect cancellation. */
 export async function proxyModel(
   tasks: TaskStore, config: ModelProxyConfig, request: IncomingMessage, response: ServerResponse,
 ): Promise<void> {

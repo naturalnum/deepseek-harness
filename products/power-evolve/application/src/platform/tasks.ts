@@ -86,9 +86,10 @@ export class TaskStore {
   async claim(workerId: string): Promise<Grant | null> {
     return transaction(this.pool, async client => {
       const candidate = await client.query<{
-        id: string; session_id: string; user_id: string; request_id: string; input: string; settings: unknown; skill_selection: unknown;
+        id: string; session_id: string; user_id: string; request_id: string; input: string; settings: unknown;
+        skill_selection: unknown; source: 'user' | 'platform_action'; source_action_id: string | null;
       }>(
-        `SELECT o.id,o.session_id,s.user_id,o.request_id,o.input,o.settings,o.skill_selection
+        `SELECT o.id,o.session_id,s.user_id,o.request_id,o.input,o.settings,o.skill_selection,o.source,o.source_action_id
          FROM pe_operations o JOIN pe_sessions s ON s.id=o.session_id
          WHERE o.state IN ('queued','running') AND (s.lease_until IS NULL OR s.lease_until<=now())
          AND (SELECT count(*) FROM pe_sessions active WHERE active.user_id=s.user_id AND active.lease_until>now())<$1
@@ -116,7 +117,8 @@ export class TaskStore {
       await client.query('INSERT INTO pe_attempts(operation_id,epoch,worker_id) VALUES($1,$2,$3)', [row.id, epoch, workerId])
       return grant.parse({
         operationId: row.id, sessionId: row.session_id, userId: row.user_id, requestId: row.request_id,
-        text: row.input, settings: settings.parse(row.settings), selection: z.array(skillSelection).max(8).parse(row.skill_selection), token, epoch,
+        text: row.input, settings: settings.parse(row.settings), selection: z.array(skillSelection).max(8).parse(row.skill_selection),
+        source: row.source, sourceActionId: row.source_action_id, token, epoch,
       })
     })
   }

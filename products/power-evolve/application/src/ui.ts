@@ -12,13 +12,15 @@ export async function serveUi(path: string, application: 'login' | 'client', res
   const assets: Record<string, [string, string]> = {
     '/': [`${application}.html`, 'text/html'],
     '/login': ['login.html', 'text/html'],
+    '/approval': ['approval.html', 'text/html'],
+    '/approval.js': ['approval.js', 'text/javascript'],
     '/app.js': [`${application}.js`, 'text/javascript'],
     '/locale.js': ['locale.js', 'text/javascript'],
     '/workspace.js': ['workspace.js', 'text/javascript'],
     '/style.css': ['style.css', 'text/css'],
   }
   const asset = assets[path]
-  if (!asset || (path === '/login' && application !== 'login')) return false
+  if (!asset || (['/login', '/approval', '/approval.js'].includes(path) && application !== 'login')) return false
   response.writeHead(200, {
     'content-type': `${asset[1]}; charset=utf-8`, 'cache-control': 'no-store',
     'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer',

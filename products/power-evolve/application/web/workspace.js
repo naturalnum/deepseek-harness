@@ -2,14 +2,17 @@
 export function initWorkspace({ rpc, t }) {
   const get = id => document.getElementById(id)
   let directory = '', file = null, fileBytes = null, viewEpoch = 0, installRequest = null
-  const labels = { 'files-link': t.files, 'skills-link': t.skills, 'toggle-panel': t.content,
-    'files-tab': t.files, 'skills-tab': t.skills, 'file-up': t.up, 'file-upload-label': t.upload,
+  const labels = { 'files-link': t.files, 'skills-link': t.skills, 'actions-link': t.actions, 'toggle-panel': t.content,
+    'files-tab': t.files, 'skills-tab': t.skills, 'actions-tab': t.actions,
+    'actions-refresh': t.actionRefresh, 'actions-approval': t.actionApproveAt,
+    'file-up': t.up, 'file-upload-label': t.upload,
     'file-save': t.save, 'file-download': t.download, 'skill-install-title': t.installSkill,
     'skill-install-button': t.install }
   for (const [id, value] of Object.entries(labels)) get(id).textContent = value
   get('skill-name').placeholder = t.skillName
   get('skill-description').placeholder = t.skillDescription
   get('skill-instructions').placeholder = t.skillInstructions
+  void fetch('/config').then(response => response.json()).then(config => { get('actions-approval').href = config.approvalUrl }).catch(() => {})
 
   function showError(error) { get('panel-error').textContent = error.message }
   async function attempt(action) {
@@ -32,18 +35,36 @@ export function initWorkspace({ rpc, t }) {
   function openPanel(name) {
     get('right-panel').hidden = false
     get('panel-title').textContent = t[name]
-    for (const section of ['files', 'skills']) {
+    for (const section of ['files', 'skills', 'actions']) {
       get(section + '-panel').hidden = name !== section
       get(section + '-tab').classList.toggle('selected', name === section)
     }
-    void attempt(name === 'files' ? refreshFiles : refreshSkills)
+    void attempt(name === 'files' ? refreshFiles : name === 'skills' ? refreshSkills : refreshActions)
   }
   get('toggle-panel').addEventListener('click', () => openPanel('files'))
   get('files-link').addEventListener('click', () => openPanel('files'))
   get('skills-link').addEventListener('click', () => openPanel('skills'))
+  get('actions-link').addEventListener('click', () => openPanel('actions'))
   get('files-tab').addEventListener('click', () => openPanel('files'))
   get('skills-tab').addEventListener('click', () => openPanel('skills'))
+  get('actions-tab').addEventListener('click', () => openPanel('actions'))
   get('close-panel').addEventListener('click', () => { get('right-panel').hidden = true })
+
+  async function refreshActions() {
+    const result = await rpc('actionsList', {})
+    const list = get('action-list'); list.replaceChildren()
+    if (!result.items.length) { const empty = document.createElement('p'); empty.className = 'muted'; empty.textContent = t.actionEmpty; list.append(empty) }
+    const states = { pending: t.approvalPending, rejected: t.approvalRejected, approved: t.approvalApproved,
+      dispatching: t.approvalDispatching, succeeded: t.approvalSucceeded, failed: t.approvalFailed, uncertain: t.approvalUncertain }
+    for (const item of result.items) {
+      const card = document.createElement('article'); card.className = 'approval-card'
+      const heading = document.createElement('strong'); heading.textContent = `${t.approvalAction} · ${states[item.state] ?? item.state}`
+      const body = document.createElement('p'); body.textContent = item.text
+      const time = document.createElement('small'); time.textContent = new Date(item.createdAt).toLocaleString()
+      card.append(heading, body, time); list.append(card)
+    }
+  }
+  get('actions-refresh').addEventListener('click', () => void attempt(refreshActions))
 
   async function refreshFiles() {
     const epoch = ++viewEpoch

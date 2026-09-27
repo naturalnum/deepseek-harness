@@ -62,3 +62,42 @@ ALTER TABLE pe_operations ADD COLUMN skill_selection jsonb NOT NULL DEFAULT '[]'
 CREATE INDEX pe_user_skills_user ON pe_user_skills(user_id,name);
 UPDATE pe_schema SET version=2 WHERE version=1;
 `
+
+/** Separate human approval credentials and durable, action-bound connector intent. */
+export const schemaV3 = `
+ALTER TABLE pe_credentials DROP CONSTRAINT pe_credentials_audience_check;
+ALTER TABLE pe_credentials ADD CONSTRAINT pe_credentials_audience_check CHECK (audience IN ('agent','approval'));
+CREATE TABLE pe_connector_actions (
+  id uuid PRIMARY KEY, user_id uuid NOT NULL REFERENCES pe_users(id),
+  session_id uuid NOT NULL REFERENCES pe_sessions(id), operation_id uuid NOT NULL REFERENCES pe_operations(id),
+  call_id text NOT NULL, action text NOT NULL CHECK (action IN ('trial_note_append')),
+  request jsonb NOT NULL, request_digest text NOT NULL,
+  state text NOT NULL CHECK (state IN ('pending','rejected','approved','dispatching','succeeded','failed','uncertain')),
+  result jsonb, error_code text, decided_at timestamptz,
+  lease_owner uuid, lease_until timestamptz, attempts integer NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(operation_id,call_id), UNIQUE(operation_id,action,request_digest)
+);
+CREATE TABLE pe_connector_permissions (
+  user_id uuid NOT NULL REFERENCES pe_users(id),
+  capability text NOT NULL CHECK (capability IN ('trial_note_query','trial_note_append')),
+  enabled boolean NOT NULL, updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id,capability)
+);
+CREATE INDEX pe_connector_actions_user ON pe_connector_actions(user_id,created_at DESC);
+CREATE INDEX pe_connector_actions_dispatch ON pe_connector_actions(created_at)
+  WHERE state IN ('approved','dispatching','uncertain');
+UPDATE pe_schema SET version=3 WHERE version=2;
+`
+
+/** Durable platform-origin continuation after a human decision or remote result. */
+export const schemaV4 = `
+ALTER TABLE pe_operations ADD COLUMN source text NOT NULL DEFAULT 'user'
+  CHECK (source IN ('user','platform_action'));
+ALTER TABLE pe_connector_actions ADD COLUMN continuation_request_id uuid NOT NULL DEFAULT gen_random_uuid();
+CREATE UNIQUE INDEX pe_connector_actions_continuation ON pe_connector_actions(continuation_request_id);
+ALTER TABLE pe_operations ADD COLUMN source_action_id uuid REFERENCES pe_connector_actions(id);
+ALTER TABLE pe_operations ADD CONSTRAINT pe_operations_source_action
+  CHECK ((source='user' AND source_action_id IS NULL) OR (source='platform_action' AND source_action_id IS NOT NULL));
+UPDATE pe_schema SET version=4 WHERE version=3;
+`

@@ -8,6 +8,11 @@ let sessionId = sessionStorage.getItem('pe-session')
 let events = new Map(), stream, request, generation = 0
 for (const [id, key] of Object.entries({ trial: 'trial', 'new-chat': 'newChat', 'history-label': 'history', signout: 'signout', send: 'send' })) element(id).textContent = t[key]
 element('prompt').placeholder = t.placeholder
+element('approvals-link').textContent = t.approvals
+element('approvals-link').hidden = true
+void fetch('/config').then(response => response.json()).then(config => {
+  element('approvals-link').href = config.approvalUrl; element('approvals-link').hidden = false
+}).catch(() => {})
 async function login() { const config = await (await fetch('/config')).json(); location.replace(config.loginUrl) }
 async function rpc(method, value, signal) {
   const response = await fetch(`/api/powerEvolve/${method}`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` }, body: JSON.stringify({ request: value }), signal })
@@ -26,7 +31,11 @@ function render() {
   const target = element('messages'); target.replaceChildren()
   for (const event of [...events.values()].sort((a,b) => a.seq-b.seq)) {
     const value = event.type === 'user/message' ? event.data : event.type === 'assistant/message' ? event.data.message : null
-    if (value) target.append(message(event.type === 'user/message' ? 'user' : 'assistant', value.content.filter(block => block.type === 'text').map(block => block.text).join('')))
+    if (value) {
+      const text = value.content.filter(block => block.type === 'text').map(block => block.text).join('')
+      if (text) target.append(message(event.type === 'user/message'
+        ? value.source?.kind === 'power-evolve-action' ? 'platform' : 'user' : 'assistant', text))
+    }
   }
   if (!target.children.length) {
     const welcome = document.createElement('div'); welcome.className = 'welcome'

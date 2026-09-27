@@ -15,6 +15,7 @@ import { TaskStore } from './tasks.ts'
 import { EventStore } from './events.ts'
 import { FileService } from './files.ts'
 import { SkillService } from './skills.ts'
+import { ConnectorService } from './connectors.ts'
 import { proxyModel } from './model.ts'
 import { serveUi } from '../ui.ts'
 
@@ -25,8 +26,10 @@ export const inject = ['webServer']
 export const Config = schema.object({
   databaseUrlFile: schema.string().required(), workerTokenFile: schema.string().required(),
   workspaceRoot: schema.string().required(),
-  modelKeyFile: schema.string().required(), seedUsersFile: schema.string().required(),
+  modelKeyFile: schema.string().required(), connectorKeyFile: schema.string().required(), seedUsersFile: schema.string().required(),
   modelUrl: schema.string().required(), hostOrigin: schema.string().required(), platformOrigin: schema.string().required(),
+  connectorUrl: schema.string().required(), connectorTimeoutMs: schema.number().min(1000).required(),
+  connectorPollMs: schema.number().min(100).required(),
   leaseMs: schema.number().min(1000).required(), tokenLifetimeMs: schema.number().min(1000).required(),
   maxPendingPerUser: schema.number().step(1).min(1).required(), maxActivePerUser: schema.number().step(1).min(1).required(),
   maxHistoryBytes: schema.number().step(1).min(1024).required(), maxHistoryEvents: schema.number().step(1).min(1).required(),
@@ -45,9 +48,9 @@ const seedUsers = z.array(z.object({
 /** Register the platform only after its schema and configured users are ready. */
 export async function apply(ctx: Context, config: Config): Promise<void> {
   const instanceId = randomUUID()
-  const [databaseUrl, workerToken, modelKey, seeds] = await Promise.all([
+  const [databaseUrl, workerToken, modelKey, connectorKey, seeds] = await Promise.all([
     readFile(config.databaseUrlFile, 'utf8'), readFile(config.workerTokenFile, 'utf8'),
-    readFile(config.modelKeyFile, 'utf8'), readFile(config.seedUsersFile, 'utf8'),
+    readFile(config.modelKeyFile, 'utf8'), readFile(config.connectorKeyFile, 'utf8'), readFile(config.seedUsersFile, 'utf8'),
   ])
   const pool = new Pool({ connectionString: databaseUrl.trim(), max: config.databasePoolSize, statement_timeout: config.databaseTimeoutMs })
   ctx.effect(() => () => pool.end())
@@ -56,18 +59,23 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   await files.init()
   const skills = new SkillService(pool, config.workspaceRoot)
   await skills.init()
-  for (const user of seedUsers.parse(JSON.parse(seeds))) {
+  const users = seedUsers.parse(JSON.parse(seeds))
+  for (const user of users) {
     await pool.query('INSERT INTO pe_users(id,username,password_hash,settings) VALUES($1,$2,$3,$4) ON CONFLICT(username) DO NOTHING',
       [randomUUID(), user.username, await hashPassword(user.password), user.settings])
   }
   const identities = new IdentityService(pool, config.tokenLifetimeMs)
   const tasks = new TaskStore(pool, config)
   const events = new EventStore(tasks, config)
+  const connectors = new ConnectorService(tasks, config.connectorUrl, connectorKey.trim(), config.connectorTimeoutMs, config.connectorPollMs)
+  await connectors.seedPermissions(users.map(user => user.username))
+  connectors.start()
+  ctx.effect(() => () => connectors.close())
   const loginAttempts = new Map<string, { since: number; count: number }>()
 
   const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const path = new URL(req.url ?? '/', config.platformOrigin).pathname
-    if (req.method === 'GET' && path === '/health') { sendJson(res, { ready: true, service: 'platform', schema: 2, instanceId }); return }
+    if (req.method === 'GET' && path === '/health') { sendJson(res, { ready: true, service: 'platform', schema: 4, instanceId }); return }
     if (req.method === 'GET' && path === '/config') { sendJson(res, { hostUrl: config.hostOrigin }); return }
     if (req.method === 'GET' && await serveUi(path, 'login', res)) return
     if (req.method !== 'POST') throw new PlatformError(404, 'not_found')
@@ -78,7 +86,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       }, req, res)
       return
     }
-    if (path === '/identity/login') {
+    if (path === '/identity/login' || path === '/identity/approval-login') {
       if (req.headers.origin !== undefined && req.headers.origin !== config.platformOrigin) throw new PlatformError(403, 'invalid_origin')
       const now = Date.now()
       for (const [key, value] of loginAttempts) if (now - value.since > config.loginWindowMs) loginAttempts.delete(key)
@@ -88,10 +96,30 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       attempt.count++
       loginAttempts.set(key, attempt)
       const input = loginRequest.parse(await readJson(req, 4096))
-      sendJson(res, await identities.login(input.username, input.password))
+      sendJson(res, await identities.login(input.username, input.password, path === '/identity/approval-login' ? 'approval' : 'agent'))
       return
     }
     const token = bearer(req)
+    if (path.startsWith('/approvals/')) {
+      if (req.headers.origin !== undefined && req.headers.origin !== config.platformOrigin) throw new PlatformError(403, 'invalid_origin')
+      const user = await identities.authenticate(token, 'approval')
+      const input = await readJson(req, 4096)
+      switch (path) {
+        case '/approvals/me': z.object({}).strict().parse(input); sendJson(res, user); return
+        case '/approvals/list': z.object({}).strict().parse(input); sendJson(res, await connectors.list(user)); return
+        case '/approvals/permissions': z.object({}).strict().parse(input); sendJson(res, await connectors.permissions(user)); return
+        case '/approvals/permission': {
+          const value = z.object({ capability: z.enum(['trial_note_query', 'trial_note_append']), enabled: z.boolean() }).strict().parse(input)
+          sendJson(res, await connectors.setPermission(user, value.capability, value.enabled)); return
+        }
+        case '/approvals/decide': {
+          const value = z.object({ actionId: z.uuid(), fingerprint: z.string().regex(/^[a-f0-9]{64}$/), approve: z.boolean() }).strict().parse(input)
+          sendJson(res, await connectors.decide(user, value.actionId, value.fingerprint, value.approve)); return
+        }
+        case '/approvals/logout': z.object({}).strict().parse(input); await identities.logout(token); sendJson(res, { ok: true }); return
+        default: throw new PlatformError(404, 'not_found')
+      }
+    }
     if (path === '/runtime/claim') {
       const expected = Buffer.from(workerToken.trim())
       const supplied = Buffer.from(token)
@@ -116,6 +144,11 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
           const result = z.object({ outcome: z.enum(['completed', 'failed']), errorCode: z.string().max(80).nullable() }).strict().parse(input)
           await tasks.finish(token, result.outcome, result.errorCode)
           sendJson(res, { ok: true }); return
+        }
+        case '/runtime/connectors/notes': z.object({}).strict().parse(input); sendJson(res, await connectors.notes(token)); return
+        case '/runtime/connectors/prepare': {
+          const value = z.object({ callId: z.string().min(1).max(100), text: z.string().trim().min(1).max(1000) }).strict().parse(input)
+          sendJson(res, await connectors.prepare(token, value.callId, value.text)); return
         }
         default: throw new PlatformError(404, 'not_found')
       }
@@ -154,6 +187,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         const value = skillToggleRequest.parse(input)
         sendJson(res, await skills.toggle(user, value.skillId, value.enabled)); return
       }
+      case '/connectors/actions': z.object({}).strict().parse(input); sendJson(res, await connectors.list(user)); return
       default: throw new PlatformError(404, 'not_found')
     }
   }

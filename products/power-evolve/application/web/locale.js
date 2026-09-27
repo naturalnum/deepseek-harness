@@ -1,6 +1,7 @@
 /** Chinese copy for the first trial surface. */
 export const t = {
   product: 'PowerEvolve', trial: '共享宿主', login: '登录', username: '账号', password: '密码',
+  platform: '可信平台',
   loginNote: '登录由可信平台处理。', signout: '退出', newChat: '新建对话', untitled: '新对话',
   welcome: '从一句 hi 开始', intro: '对话保存在云端，可以刷新或稍后回来继续。',
   placeholder: '发送消息…', send: '发送', user: '你', assistant: 'PowerEvolve',
@@ -13,4 +14,14 @@ export const t = {
   emptySkills: '尚未安装个人技能', installSkill: '安装个人技能', install: '安装',
   skillName: '技能名称', skillDescription: '用途说明', skillInstructions: '技能说明（不会在共享宿主运行代码）',
   enable: '启用', disable: '停用', fileTooLarge: '文件超过 2 MiB，暂不能在网页中处理',
+  approvals: '审批', approvalLogin: '登录可信审批页', approvalTitle: '可信审批',
+  approvalNote: '请核对具体操作与完整内容。这里使用独立的审批凭据。',
+  approvalPending: '等待审批', approvalRejected: '已拒绝', approvalApproved: '已批准，等待执行',
+  approvalDispatching: '正在执行', approvalSucceeded: '已执行', approvalFailed: '执行失败',
+  approvalUncertain: '等待核对外部结果', approvalApprove: '批准本次写入', approvalDeny: '拒绝',
+  approvalEmpty: '没有待处理或历史操作', approvalLogout: '退出审批页', approvalRefresh: '刷新',
+  approvalPermissions: '连接器权限', approvalQuery: '读取我的便签', approvalAppend: '申请写入便签',
+  approvalFingerprint: '操作指纹', approvalAction: '写入试用便签', approvalBack: '返回对话',
+  approvalError: '审批请求失败，请重试',
+  actions: '操作', actionEmpty: '尚无受控操作', actionRefresh: '刷新状态', actionApproveAt: '前往可信审批页',
 }

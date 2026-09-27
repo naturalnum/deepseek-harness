@@ -16,12 +16,12 @@ export async function hashPassword(password: string): Promise<string> {
   return `${salt}:${key.toString('hex')}`
 }
 
-/** Identity operations use PG as their authority and issue only Agent-audience credentials. */
+/** Identity operations use PG as their authority and keep Agent and approval audiences separate. */
 export class IdentityService {
   constructor(private readonly pool: Pool, private readonly tokenLifetimeMs: number) {}
 
-  /** Authenticate a password and return a bounded-lifetime Agent token. */
-  async login(username: string, password: string): Promise<{ token: string; user: Identity }> {
+  /** Authenticate a password and return one bounded, audience-specific token. */
+  async login(username: string, password: string, audience: 'agent' | 'approval' = 'agent'): Promise<{ token: string; user: Identity }> {
     const result = await this.pool.query<{ id: string; username: string; password_hash: string }>(
       'SELECT id, username, password_hash FROM pe_users WHERE username=$1', [username],
     )
@@ -32,23 +32,23 @@ export class IdentityService {
     const token = randomBytes(32).toString('base64url')
     await this.pool.query(
       'INSERT INTO pe_credentials(digest,user_id,audience,expires_at) VALUES ($1,$2,$3,now()+$4::double precision*interval \'1 millisecond\')',
-      [digest(token), row.id, 'agent', this.tokenLifetimeMs],
+      [digest(token), row.id, audience, this.tokenLifetimeMs],
     )
     return { token, user: identity.parse({ userId: row.id, username: row.username }) }
   }
 
   /** Resolve an unexpired credential and its current user configuration. */
-  async authenticate(token: string): Promise<Identity & { settings: ReturnType<typeof settings.parse> }> {
+  async authenticate(token: string, audience: 'agent' | 'approval' = 'agent'): Promise<Identity & { settings: ReturnType<typeof settings.parse> }> {
     const result = await this.pool.query<{ id: string; username: string; settings: unknown }>(
       `SELECT u.id,u.username,u.settings FROM pe_credentials c JOIN pe_users u ON u.id=c.user_id
-       WHERE c.digest=$1 AND c.audience='agent' AND c.expires_at>now()`, [digest(token)],
+       WHERE c.digest=$1 AND c.audience=$2 AND c.expires_at>now()`, [digest(token), audience],
     )
     const row = result.rows[0]
     if (!row) throw new PlatformError(401, 'unauthorized')
     return { ...identity.parse({ userId: row.id, username: row.username }), settings: settings.parse(row.settings) }
   }
 
-  /** Revoke only the presented Agent credential.
+  /** Revoke only the presented credential.
    * @param token - authenticated credential to revoke.
    */
   async logout(token: string): Promise<void> { await this.pool.query('DELETE FROM pe_credentials WHERE digest=$1', [digest(token)]) }

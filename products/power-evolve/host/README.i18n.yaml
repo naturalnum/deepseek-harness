@@ -3,5 +3,5 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write products/power-evolve/host/README.md
 /shared-host-bundle:
-  en: 9b8450b1eab09412
-  zh: fcdc40463b1467ce
+  en: 86b6052dafc48f58
+  zh: cfb8062141908de3

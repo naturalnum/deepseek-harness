@@ -16,8 +16,12 @@
         workspaceRoot: !!js process.env.PE_PRIVATE_DIR + '/workspaces'
         workerTokenFile: !!js process.env.PE_PRIVATE_DIR + '/worker-token'
         modelKeyFile: !!js process.env.PE_PRIVATE_DIR + '/model-key'
+        connectorKeyFile: !!js process.env.PE_PRIVATE_DIR + '/connector-key'
         seedUsersFile: !!js process.env.PE_PRIVATE_DIR + '/users.json'
         modelUrl: https://api.deepseek.com/anthropic/v1/messages
+        connectorUrl: http://127.0.0.1:18884
+        connectorTimeoutMs: 5000
+        connectorPollMs: 500
         hostOrigin: http://127.0.0.1:18880
         platformOrigin: http://127.0.0.1:18881
         leaseMs: 30000

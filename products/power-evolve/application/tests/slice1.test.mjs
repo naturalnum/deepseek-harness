@@ -32,11 +32,11 @@ async function post(url, token, body, signal) {
 }
 
 // Named database + mkdtemp + listen(0) allow independent test processes to overlap.
-test('slice 1: isolated users, durable acceptance, restart, fencing and native history', { timeout: 120000 }, async t => {
+test('shared host: isolated conversations, files, skills and approved remote actions', { timeout: 120000 }, async t => {
   const temporary = await mkdtemp(join(tmpdir(), 'pe-slice1-'))
   const database = `pe_test_${randomBytes(10).toString('hex')}`
   const admin = new Pool({ connectionString: databaseUrl, max: 2 })
-  let pool, host, platform, model, databaseCreated = false
+  let pool, host, platform, model, connectorTarget, databaseCreated = false
   const children = new Set()
   const stop = async (process, signal = 'SIGTERM') => {
     if (!process || process.exitCode !== null || process.signalCode !== null) return
@@ -48,6 +48,7 @@ test('slice 1: isolated users, durable acceptance, restart, fencing and native h
   t.after(async () => {
     for (const process of children) await stop(process)
     if (model) { model.closeAllConnections(); await new Promise(resolve => model.close(resolve)) }
+    if (connectorTarget) { connectorTarget.closeAllConnections(); await new Promise(resolve => connectorTarget.close(resolve)) }
     await pool?.end()
     if (databaseCreated) {
       await eventually(async()=>Number((await admin.query('SELECT count(*) FROM pg_stat_activity WHERE datname=$1',[database])).rows[0].count)===0,'database connections closed')
@@ -62,9 +63,40 @@ test('slice 1: isolated users, durable acceptance, restart, fencing and native h
   const users = ['alice', 'bob'].map((username, index) => ({ username, password: randomBytes(20).toString('base64url'), settings: { model: 'deepseek-flash', maxTokens: index ? 1536 : 2048, revision: 1 } }))
   const workerToken = randomBytes(32).toString('base64url')
   const providerKey = randomBytes(32).toString('base64url')
-  for (const [name, value] of Object.entries({ 'database-url': url.href, 'worker-token': workerToken, 'model-key': providerKey, 'users.json': JSON.stringify(users) })) await writeFile(join(temporary, name), value, { mode: 0o600 })
+  const connectorKey = randomBytes(32).toString('base64url')
+  for (const [name, value] of Object.entries({ 'database-url': url.href, 'worker-token': workerToken, 'model-key': providerKey,
+    'connector-key': connectorKey, 'users.json': JSON.stringify(users) })) await writeFile(join(temporary, name), value, { mode: 0o600 })
   const recorded = await recordedConversation()
   const calls = []
+  const remoteNotes = []
+  let dropNextRemoteResponse = false
+  connectorTarget = createServer(async (req, res) => {
+    try {
+      if (req.headers.authorization !== `Bearer ${connectorKey}`) { res.writeHead(401).end(); return }
+      const target = new URL(req.url, 'http://127.0.0.1')
+      const answer = (status, value) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(value)) }
+      if (req.method === 'GET' && target.pathname === '/v1/notes') {
+        answer(200, { items: remoteNotes.filter(note => note.owner === target.searchParams.get('owner')) }); return
+      }
+      const action = /^\/v1\/actions\/([a-f0-9-]{36})$/.exec(target.pathname)
+      if (req.method === 'GET' && action) {
+        const note = remoteNotes.find(note => note.actionId === action[1]); answer(note ? 200 : 404, note ?? { error: 'not_found' }); return
+      }
+      if (req.method === 'POST' && target.pathname === '/v1/notes') {
+        const payload = JSON.parse(Buffer.concat(await Array.fromAsync(req)).toString())
+        const actionId = req.headers['idempotency-key']
+        const prior = remoteNotes.find(note => note.actionId === actionId)
+        if (prior && (prior.owner !== payload.owner || prior.text !== payload.text)) { answer(409, { error: 'conflict' }); return }
+        const note = prior ?? { actionId, owner: payload.owner, text: payload.text, createdAt: new Date().toISOString() }
+        if (!prior) remoteNotes.push(note)
+        if (dropNextRemoteResponse) { dropNextRemoteResponse = false; res.destroy(); return }
+        answer(prior ? 200 : 201, note); return
+      }
+      answer(404, { error: 'not_found' })
+    } catch (_error) { res.writeHead(500).end() }
+  })
+  await new Promise(resolve => connectorTarget.listen(0, '127.0.0.1', resolve))
+  const connectorUrl = `http://127.0.0.1:${connectorTarget.address().port}`
   let hold = Promise.withResolvers(), held = Promise.withResolvers()
   model = createServer(async (req, res) => {
     try {
@@ -74,9 +106,17 @@ test('slice 1: isolated users, durable acceptance, restart, fencing and native h
       calls.push(body)
       const prompt = body.messages.at(-1).content.filter(block => block.type === 'text').map(block => block.text).join('')
       if (prompt === 'HOLD') { held.resolve(); await hold.promise }
+      const toolName = prompt.startsWith('TOOL_APPEND:') ? 'trial_notes_append' : prompt === 'TOOL_LIST' ? 'trial_notes_list' : null
       const text = prompt === recorded.input ? recorded.output : `reply:${prompt}`
       res.writeHead(200, { 'content-type': 'text/event-stream' })
-      for (const event of [
+      for (const event of toolName ? [
+        { type: 'message_start', message: { id: 'fixture-message', model: body.model, usage: { input_tokens: 3, output_tokens: 0 } } },
+        { type: 'content_block_start', index: 0, content_block: { type: 'tool_use', id: `call_${randomUUID()}`, name: toolName,
+          input: toolName === 'trial_notes_append' ? { text: prompt.slice('TOOL_APPEND:'.length) } : {} } },
+        { type: 'content_block_stop', index: 0 },
+        { type: 'message_delta', delta: { stop_reason: 'tool_use' }, usage: { output_tokens: 1 } },
+        { type: 'message_stop' },
+      ] : [
         { type: 'message_start', message: { id: 'fixture-message', model: body.model, usage: { input_tokens: 3, output_tokens: 0 } } },
         { type: 'content_block_start', index: 0, content_block: { type: 'text', text: '' } },
         { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text } },
@@ -103,8 +143,10 @@ test('slice 1: isolated users, durable acceptance, restart, fencing and native h
     const update = (id, fields) => ({ id, config: { ...rows.find(row => row.id === id).config, ...fields } })
     const patch = [update('web-server', { port: 0 })]
     if (name === 'platform') patch.push(update('power-evolve-platform', {
-      databaseUrlFile: join(temporary, 'database-url'), workerTokenFile: join(temporary, 'worker-token'), modelKeyFile: join(temporary, 'model-key'), seedUsersFile: join(temporary, 'users.json'),
-      readyFile, modelUrl, leaseMs: 3000, loginAttemptsPerWindow: 100, maxPendingPerUser: 8, workspaceRoot: join(temporary, 'workspaces'),
+      databaseUrlFile: join(temporary, 'database-url'), workerTokenFile: join(temporary, 'worker-token'),
+      modelKeyFile: join(temporary, 'model-key'), connectorKeyFile: join(temporary, 'connector-key'), seedUsersFile: join(temporary, 'users.json'),
+      readyFile, modelUrl, connectorUrl, connectorTimeoutMs: 1000, connectorPollMs: 200,
+      leaseMs: 3000, loginAttemptsPerWindow: 100, maxPendingPerUser: 8, workspaceRoot: join(temporary, 'workspaces'),
     }))
     else patch.push(update('power-evolve-runtime', { platformUrl, workerTokenFile: join(temporary, 'worker-token') }), update('power-evolve-host', { platformOrigin: platformUrl, readyFile, renewMs: 500, operationTimeoutMs: 20000, pollMs: 50, maxRequestBytes: 3145728 }))
     await writeFile(join(profile, 'cordis.patch.yml'), yaml.dump(patch))
@@ -301,5 +343,83 @@ test('slice 1: isolated users, durable acceptance, restart, fencing and native h
       const manifest=JSON.parse(await readFile(join(product,name,'package.json'),'utf8'))
       assert(!Object.keys(manifest.dependencies).some(name=>/sandbox|subprocess|terminal|fs-local|mcp-server/.test(name)))
     }
+  })
+  await t.test('connector approval uses a separate audience, exact action and remote reconciliation', async () => {
+    const agentLogin = await post(`${platform.url}/identity/login`, null, { username: users[0].username, password: users[0].password })
+    assert.equal(agentLogin.status, 200); tokens[0] = (await agentLogin.json()).token
+    const approvalLogin = async index => {
+      const response = await post(`${platform.url}/identity/approval-login`, null,
+        { username: users[index].username, password: users[index].password })
+      assert.equal(response.status, 200); return (await response.json()).token
+    }
+    const approvalAlice = await approvalLogin(0), approvalBob = await approvalLogin(1)
+    assert.equal((await post(`${platform.url}/approvals/list`, tokens[0], {})).status, 401)
+    assert.equal((await post(`${platform.url}/sessions/list`, approvalAlice, { offset: 0, limit: 10 })).status, 401)
+    assert.equal((await post(`${host.url}/api/powerEvolve/me`, approvalAlice, { request: {} })).status, 401)
+    const approvals = async token => (await (await post(`${platform.url}/approvals/list`, token, {})).json()).items
+    const id = await create(0)
+    await send(0, id, 'TOOL_APPEND:approved note'); await finished(0, id)
+    const proposed = (await approvals(approvalAlice))[0]
+    assert.equal(proposed.text, 'approved note'); assert.equal(proposed.state, 'pending')
+    assert.equal((await rpc(0, 'actionsList', {})).items[0].actionId, proposed.actionId)
+    assert.deepEqual((await rpc(1, 'actionsList', {})).items, [])
+    assert.equal(remoteNotes.length, 0)
+    assert.deepEqual(await approvals(approvalBob), [])
+    await stop(host.process); await stop(platform.process)
+    platform = await start('platform'); host = await start('host', platform.url)
+    assert.equal((await approvals(approvalAlice))[0].state, 'pending')
+    assert.equal(remoteNotes.length, 0)
+    const decide = (token, action, fingerprint, approve) => post(`${platform.url}/approvals/decide`, token,
+      { actionId: action.actionId, fingerprint, approve })
+    const continued = async action => {
+      const operation = await eventually(async () => {
+        const result = await pool.query(
+          'SELECT request_id,state FROM pe_operations WHERE source_action_id=$1', [action.actionId])
+        return result.rows[0]?.state === 'completed' && result.rows[0]
+      }, `continuation for ${action.actionId}`)
+      const events = (await page(0, id)).events
+      assert(events.some(event => event.type === 'user/message'
+        && event.data.id === operation.request_id
+        && event.data.source?.kind === 'power-evolve-action'
+        && event.data.source.actionId === action.actionId))
+      assert(calls.some(call => JSON.stringify(call.messages).includes(`操作 ${action.actionId}`)))
+    }
+    assert.equal((await decide(approvalBob, proposed, proposed.fingerprint, true)).status, 404)
+    assert.equal((await decide(approvalAlice, proposed, '0'.repeat(64), true)).status, 409)
+    assert.equal((await decide(approvalAlice, proposed, proposed.fingerprint, true)).status, 200)
+    assert.equal((await decide(approvalAlice, proposed, proposed.fingerprint, true)).status, 200)
+    await eventually(async () => (await approvals(approvalAlice))[0]?.state === 'succeeded', 'approved remote action')
+    await continued(proposed)
+    assert.deepEqual(remoteNotes.map(note => note.text), ['approved note'])
+    await send(0, id, 'TOOL_LIST'); await finished(0, id)
+    assert(calls.some(call => JSON.stringify(call.messages).includes('approved note')))
+
+    await send(0, id, 'TOOL_APPEND:rejected note'); await finished(0, id)
+    const rejected = (await approvals(approvalAlice))[0]
+    assert.equal((await decide(approvalAlice, rejected, rejected.fingerprint, false)).status, 200)
+    assert.equal((await approvals(approvalAlice))[0].state, 'rejected')
+    await continued(rejected)
+    assert.equal(remoteNotes.length, 1)
+    assert.equal((await post(`${platform.url}/approvals/permission`, approvalAlice,
+      { capability: 'trial_note_append', enabled: false })).status, 200)
+    await send(0, id, 'TOOL_APPEND:blocked note'); await finished(0, id)
+    assert.equal((await approvals(approvalAlice)).length, 2)
+    assert.equal(remoteNotes.length, 1)
+    assert.equal((await post(`${platform.url}/approvals/permission`, approvalAlice,
+      { capability: 'trial_note_append', enabled: true })).status, 200)
+
+    dropNextRemoteResponse = true
+    await send(0, id, 'TOOL_APPEND:uncertain note'); await finished(0, id)
+    const uncertain = (await approvals(approvalAlice))[0]
+    assert.equal((await decide(approvalAlice, uncertain, uncertain.fingerprint, true)).status, 200)
+    await eventually(async () => (await approvals(approvalAlice))[0]?.state === 'uncertain', 'uncertain remote response')
+    assert.equal(remoteNotes.filter(note => note.text === 'uncertain note').length, 1)
+    await stop(host.process); await stop(platform.process)
+    platform = await start('platform'); host = await start('host', platform.url)
+    await eventually(async () => (await approvals(approvalAlice))[0]?.state === 'succeeded', 'reconciled remote response', 15000)
+    await continued(uncertain)
+    assert.equal(remoteNotes.filter(note => note.text === 'uncertain note').length, 1)
+    const attempts = await pool.query('SELECT attempts FROM pe_connector_actions WHERE id=$1', [uncertain.actionId])
+    assert(Number(attempts.rows[0].attempts) >= 2)
   })
 })

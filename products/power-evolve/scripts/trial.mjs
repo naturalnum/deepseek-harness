@@ -12,9 +12,10 @@ if (!/^[a-z0-9-]{1,32}$/.test(trialName)) throw new Error('Invalid trial name')
 const privateDir = process.env.PE_PRIVATE_DIR ?? join(homedir(), '.config/power-evolve', `shared-host-${trialName}`)
 const output = join(root, '.artifacts/power-evolve', trialName === 'slice1' ? '' : trialName)
 const env = { PATH: process.env.PATH, HOME: process.env.HOME, PE_PRIVATE_DIR: privateDir, PE_TRIAL_NAME: trialName,
-  PE_DATABASE_PORT: process.env.PE_DATABASE_PORT, PE_HOST_PORT: process.env.PE_HOST_PORT, PE_PLATFORM_PORT: process.env.PE_PLATFORM_PORT }
+  PE_DATABASE_PORT: process.env.PE_DATABASE_PORT, PE_HOST_PORT: process.env.PE_HOST_PORT,
+  PE_PLATFORM_PORT: process.env.PE_PLATFORM_PORT, PE_TARGET_PORT: process.env.PE_TARGET_PORT }
 const command = process.argv[2] ?? 'status'
-const targets = ['platform', 'host']
+const targets = ['api', 'platform', 'host']
 const home = name => join(output, 'trial', name)
 const readyPath = name => join(home(name), 'ready.json')
 async function readReady(name) { try { return JSON.parse(await readFile(readyPath(name), 'utf8')) } catch (error) { if (error.code === 'ENOENT') return null; throw error } }
@@ -45,8 +46,10 @@ async function start(name) {
   }
   await rm(readyPath(name), { force:true })
   const log = openSync(join(output, `${name}.log`), 'a', 0o600)
-  const child = spawn(process.execPath, ['apps/cli/lib/bin.js', '--profile', `power-evolve-${name}`], {
-    cwd:root, env:{...env, DSH_HOME:home(name)}, detached:true, stdio:['ignore',log,log],
+  const child = spawn(process.execPath, name === 'api'
+    ? ['products/power-evolve/scripts/trial-api.mjs']
+    : ['apps/cli/lib/bin.js', '--profile', `power-evolve-${name}`], {
+    cwd:root, env:{...env, DSH_HOME:home(name), PE_READY_FILE:readyPath(name)}, detached:true, stdio:['ignore',log,log],
   })
   closeSync(log);child.unref()
   const deadline=Date.now()+20000
