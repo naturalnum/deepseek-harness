@@ -10,7 +10,7 @@ import type { TaskStore } from './tasks.ts'
 
 const messageRequest = z.object({
   model: z.string().min(1).max(100), max_tokens: z.number().int().positive(), stream: z.literal(true),
-  messages: z.array(z.object({ role: z.enum(['user', 'assistant']), content: z.union([z.string(), z.array(z.json())]) }).strict()).min(1),
+  messages: z.array(z.object({ role: z.enum(['user', 'assistant', 'system']), content: z.union([z.string(), z.array(z.json())]) }).strict()).min(1),
   system: z.union([z.string(), z.array(z.json())]).optional(),
   thinking: z.json().optional(), output_config: z.json().optional(),
   temperature: z.number().optional(), stop_sequences: z.array(z.string()).optional(),

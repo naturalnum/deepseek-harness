@@ -1,6 +1,6 @@
 /** Transaction and schema lifecycle owned by the trusted platform. */
 import { Pool, type PoolClient } from 'pg'
-import { schema } from './schema.ts'
+import { schema, schemaV2 } from './schema.ts'
 
 /** Run one operation in a transaction, retaining its original failure after rollback. */
 export async function transaction<T>(pool: Pool, operation: (client: PoolClient) => Promise<T>): Promise<T> {
@@ -22,7 +22,9 @@ export async function initializeDatabase(pool: Pool): Promise<void> {
   await transaction(pool, async client => {
     await client.query('SELECT pg_advisory_xact_lock(72819531)')
     await client.query(schema)
+    await client.query('INSERT INTO pe_schema(version) SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM pe_schema)')
     const versions = await client.query<{ version: number }>('SELECT version FROM pe_schema ORDER BY version')
-    if (versions.rows.length !== 1 || versions.rows[0]?.version !== 1) throw new Error('Unsupported PowerEvolve schema version')
+    if (versions.rows.length !== 1 || ![1, 2].includes(versions.rows[0]!.version)) throw new Error('Unsupported PowerEvolve schema version')
+    if (versions.rows[0]?.version === 1) await client.query(schemaV2)
   })
 }

@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-PowerEvolve 的产品实现与上游 DSH 分开组织，共用一个仓库。开发入口是 [架构决策](ARCHITECTURE.md)，试用入口见 [切片 1 试用指南](TRIAL.md)。
+PowerEvolve 的产品实现与上游 DSH 分开组织，共用一个仓库。开发入口是 [架构决策](ARCHITECTURE.md)，当前试用入口见 [切片 2 试用指南](TRIAL-SLICE2.md)；[切片 1 试用指南](TRIAL.md)仍对应独立保留的版本。
 
 ```mermaid
 flowchart LR
@@ -10,6 +10,7 @@ flowchart LR
   C -->|登录| P[可信平台后台]
   H -->|用户请求与任务授权| P
   P --> DB[(PostgreSQL)]
+  P --> FS[(私有 POSIX 工作区)]
   P --> M[模型 API]
 ```
 
@@ -17,7 +18,7 @@ flowchart LR
 | --- | --- |
 | `application/src/host` | 用户 RPC、事件订阅、任务调度、原生 Session 持久化适配、模型适配 |
 | `application/src/platform` | 身份、资源归属、PG 事务、任务租约、事件存储、模型凭据与出口 |
-| `application/web` | 登录页和双用户对话网页 |
+| `application/web` | 登录、对话、文件和个人技能页面 |
 | `host`、`platform` | 两个独立 DSH Profile 的插件清单与部署参数 |
 | `application/tests` | 真实 PG 与实际 Profile 的回归测试 |
 | `scripts` | 本机配置和进程管理 |

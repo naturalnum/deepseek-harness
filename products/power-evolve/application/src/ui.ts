@@ -14,6 +14,7 @@ export async function serveUi(path: string, application: 'login' | 'client', res
     '/login': ['login.html', 'text/html'],
     '/app.js': [`${application}.js`, 'text/javascript'],
     '/locale.js': ['locale.js', 'text/javascript'],
+    '/workspace.js': ['workspace.js', 'text/javascript'],
     '/style.css': ['style.css', 'text/css'],
   }
   const asset = assets[path]

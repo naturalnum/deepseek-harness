@@ -7,9 +7,12 @@ import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
 import { setTimeout as delay } from 'node:timers/promises'
 const root = resolve(fileURLToPath(new URL('../../..', import.meta.url)))
-const privateDir = process.env.PE_PRIVATE_DIR ?? join(homedir(), '.config/power-evolve/shared-host-slice-1')
-const output = join(root, '.artifacts/power-evolve')
-const env = { PATH: process.env.PATH, HOME: process.env.HOME, PE_PRIVATE_DIR: privateDir }
+const trialName = process.env.PE_TRIAL_NAME ?? 'slice1'
+if (!/^[a-z0-9-]{1,32}$/.test(trialName)) throw new Error('Invalid trial name')
+const privateDir = process.env.PE_PRIVATE_DIR ?? join(homedir(), '.config/power-evolve', `shared-host-${trialName}`)
+const output = join(root, '.artifacts/power-evolve', trialName === 'slice1' ? '' : trialName)
+const env = { PATH: process.env.PATH, HOME: process.env.HOME, PE_PRIVATE_DIR: privateDir, PE_TRIAL_NAME: trialName,
+  PE_DATABASE_PORT: process.env.PE_DATABASE_PORT, PE_HOST_PORT: process.env.PE_HOST_PORT, PE_PLATFORM_PORT: process.env.PE_PLATFORM_PORT }
 const command = process.argv[2] ?? 'status'
 const targets = ['platform', 'host']
 const home = name => join(output, 'trial', name)
@@ -61,7 +64,7 @@ if (command === 'up' || command === 'restart') {
   await mkdir(output, { recursive:true, mode:0o700 })
   const prepared=spawnSync(process.execPath,['products/power-evolve/scripts/prepare-trial.mjs'],{cwd:root,env,stdio:'inherit'})
   if (prepared.status!==0) throw new Error('Trial preparation failed')
-  const database=spawnSync('docker',['compose','-p','pe-shared-host-slice1','-f','products/power-evolve/compose.yaml','up','-d','--wait'],{cwd:root,env:{...process.env,PE_PRIVATE_DIR:privateDir},stdio:'inherit'})
+  const database=spawnSync('docker',['compose','-p',`pe-shared-host-${trialName}`,'-f','products/power-evolve/compose.yaml','up','-d','--wait'],{cwd:root,env:{...process.env,PE_PRIVATE_DIR:privateDir},stdio:'inherit'})
   if (database.status!==0) throw new Error('Trial PostgreSQL startup failed')
   for (const name of targets) await start(name)
 }

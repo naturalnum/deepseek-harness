@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-PowerEvolve lives separately from upstream DSH within the same repository. Start development with the [architecture decision](ARCHITECTURE.md), or use the [slice 1 trial guide](TRIAL.md).
+PowerEvolve lives separately from upstream DSH within the same repository. Start development with the [architecture decision](ARCHITECTURE.md), or use the [current trial guide](TRIAL-SLICE2.md). The [slice 1 guide](TRIAL.md) remains available for its isolated trial.
 
 ```mermaid
 flowchart LR
@@ -10,6 +10,7 @@ flowchart LR
   C -->|登录| P[可信平台后台]
   H -->|用户请求与任务授权| P
   P --> DB[(PostgreSQL)]
+  P --> FS[(私有 POSIX 工作区)]
   P --> M[模型 API]
 ```
 
@@ -17,7 +18,7 @@ flowchart LR
 | --- | --- |
 | `application/src/host` | User RPC, event subscriptions, scheduling, native Session persistence and model adapters |
 | `application/src/platform` | Identity, resource ownership, PG transactions, task leases, events, model credentials and egress |
-| `application/web` | Login and two-user conversation pages |
+| `application/web` | Login, conversation, file and personal skill pages |
 | `host`, `platform` | Plugin composition and deployment settings for the two DSH Profiles |
 | `application/tests` | Regression tests using real PG and actual Profiles |
 | `scripts` | Local configuration and process management |

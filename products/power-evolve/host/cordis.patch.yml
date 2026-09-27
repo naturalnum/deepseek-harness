@@ -57,6 +57,6 @@
         pollMs: 500
         renewMs: 8000
         operationTimeoutMs: 150000
-        maxRequestBytes: 65536
+        maxRequestBytes: 3145728
         maxStreams: 100
         readyFile: !!js dshHomePath('ready.json')

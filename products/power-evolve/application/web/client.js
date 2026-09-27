@@ -1,4 +1,5 @@
 import { t } from './locale.js'
+import { initWorkspace } from './workspace.js'
 const element = id => document.getElementById(id)
 const params = new URLSearchParams(location.hash.slice(1))
 if (params.has('token')) { sessionStorage.setItem('pe-token', params.get('token')); history.replaceState(null, '', '/') }
@@ -110,6 +111,7 @@ element('composer').addEventListener('submit', async event => {
 })
 element('prompt').addEventListener('keydown', event => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); element('composer').requestSubmit() } })
 render()
+initWorkspace({ rpc, t })
 if (!token) await login()
 else {
   try {

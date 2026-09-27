@@ -37,5 +37,28 @@ CREATE INDEX IF NOT EXISTS pe_operations_pending ON pe_operations (created_at) W
 CREATE INDEX IF NOT EXISTS pe_sessions_user ON pe_sessions (user_id, created_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS pe_sessions_grant ON pe_sessions (grant_digest) WHERE grant_digest IS NOT NULL;
 CREATE INDEX IF NOT EXISTS pe_credentials_expiration ON pe_credentials (expires_at);
-INSERT INTO pe_schema(version) VALUES (1) ON CONFLICT DO NOTHING;
+`
+
+/** Add persistent user workspaces and separately versioned personal skill packages. */
+export const schemaV2 = `
+CREATE TABLE pe_workspaces (
+  id uuid PRIMARY KEY, user_id uuid NOT NULL UNIQUE REFERENCES pe_users(id),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE pe_file_mutations (
+  user_id uuid NOT NULL REFERENCES pe_users(id), request_id uuid NOT NULL,
+  workspace_id uuid NOT NULL REFERENCES pe_workspaces(id), path text NOT NULL,
+  digest text NOT NULL, base_digest text, mime text NOT NULL, size bigint NOT NULL,
+  PRIMARY KEY (user_id,request_id)
+);
+CREATE TABLE pe_user_skills (
+  id uuid PRIMARY KEY, user_id uuid NOT NULL REFERENCES pe_users(id),
+  name text NOT NULL, description text NOT NULL, digest text NOT NULL,
+  enabled boolean NOT NULL DEFAULT true, revision integer NOT NULL DEFAULT 1,
+  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (user_id,name)
+);
+ALTER TABLE pe_operations ADD COLUMN skill_selection jsonb NOT NULL DEFAULT '[]'::jsonb;
+CREATE INDEX pe_user_skills_user ON pe_user_skills(user_id,name);
+UPDATE pe_schema SET version=2 WHERE version=1;
 `

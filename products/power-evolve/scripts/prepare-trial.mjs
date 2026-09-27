@@ -5,7 +5,19 @@ import { homedir } from 'node:os'
 import { resolve, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 const root = resolve(fileURLToPath(new URL('../../..', import.meta.url)))
-const privateDir = process.env.PE_PRIVATE_DIR ?? join(homedir(), '.config/power-evolve/shared-host-slice-1')
+const trialName = process.env.PE_TRIAL_NAME ?? 'slice1'
+if (!/^[a-z0-9-]{1,32}$/.test(trialName)) throw new Error('Invalid trial name')
+const port = (key, fallback) => {
+  const value = Number(process.env[key] ?? fallback)
+  if (!Number.isInteger(value) || value < 1024 || value > 65535) throw new Error(`Invalid ${key}`)
+  return value
+}
+const databasePort = port('PE_DATABASE_PORT', 18432)
+const hostPort = port('PE_HOST_PORT', 18880)
+const platformPort = port('PE_PLATFORM_PORT', 18881)
+if (new Set([databasePort, hostPort, platformPort]).size !== 3) throw new Error('Trial ports must be distinct')
+const privateDir = process.env.PE_PRIVATE_DIR ?? join(homedir(), '.config/power-evolve', `shared-host-${trialName}`)
+const output = join(root, '.artifacts/power-evolve', trialName === 'slice1' ? '' : trialName)
 await mkdir(privateDir, { recursive: true, mode: 0o700 }); await chmod(privateDir, 0o700)
 async function provision(name, value) {
   const path = join(privateDir, name)
@@ -15,7 +27,7 @@ async function provision(name, value) {
   return (await readFile(path, 'utf8')).trim()
 }
 const password = await provision('database-password', randomBytes(24).toString('base64url'))
-await provision('database-url', `postgresql://powerevolve:${password}@127.0.0.1:18432/powerevolve`)
+await provision('database-url', `postgresql://powerevolve:${password}@127.0.0.1:${databasePort}/powerevolve`)
 await provision('worker-token', randomBytes(32).toString('base64url'))
 let modelKey = process.env.DEEPSEEK_API_KEY
 if (!modelKey) {
@@ -28,7 +40,7 @@ await provision('users.json', JSON.stringify(['alice', 'bob'].map((username, ind
   username, password: randomBytes(20).toString('base64url'), settings: { model: 'deepseek-flash', maxTokens: index === 0 ? 2048 : 1536, revision: 1 },
 })), null, 2) + '\n')
 for (const name of ['host', 'platform']) {
-  const home = join(root, '.artifacts/power-evolve/trial', name)
+  const home = join(output, 'trial', name)
   const profile = join(home, 'profiles', `power-evolve-${name}`)
   const modules = join(profile, 'node_modules/@power-evolve')
   await mkdir(modules, { recursive: true, mode: 0o700 })
@@ -36,6 +48,25 @@ for (const name of ['host', 'platform']) {
   await writeFile(join(profile, 'package.json'), JSON.stringify(manifest, null, 2) + '\n')
   try { await symlink(join(root, 'products/power-evolve', name), join(modules, name), 'dir') }
   catch (error) { if (error.code !== 'EEXIST') throw error }
-  await writeFile(join(profile, 'cordis.patch.yml'), '[]\n')
+  // A profile patch replaces a row's full config, so retain every bundle field.
+  const bundle = (await readFile(join(root, 'products/power-evolve', name, 'cordis.patch.yml'), 'utf8')).split('\n')
+  const values = { port: name === 'host' ? hostPort : platformPort,
+    hostOrigin: `http://127.0.0.1:${hostPort}`, origin: `http://127.0.0.1:${hostPort}`,
+    platformOrigin: `http://127.0.0.1:${platformPort}`, platformUrl: `http://127.0.0.1:${platformPort}` }
+  const selected = name === 'host' ? ['web-server', 'power-evolve-host', 'power-evolve-runtime'] : ['web-server', 'power-evolve-platform']
+  const patch = selected.map(id => {
+    const start = bundle.indexOf(`    - id: ${id}`)
+    const end = bundle.findIndex((line, index) => index > start && line.startsWith('    - id: '))
+    const rows = bundle.slice(start, end < 0 ? undefined : end)
+    const configStart = rows.indexOf('      config:')
+    if (start < 0 || configStart < 0) throw new Error(`Bundle config missing: ${id}`)
+    const config = rows.slice(configStart).filter(line => line.startsWith('      ')).map(line => {
+      const adjusted = line.slice(4)
+      const match = /^    ([A-Za-z]+): /.exec(adjusted)
+      return match && Object.hasOwn(values, match[1]) ? `    ${match[1]}: ${values[match[1]]}` : adjusted
+    }).join('\n')
+    return `- id: ${id}\n${config}\n`
+  }).join('')
+  await writeFile(join(profile, 'cordis.patch.yml'), patch)
 }
 console.log('Prepared isolated PowerEvolve trial configuration; credentials were not printed.')

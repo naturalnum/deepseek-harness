@@ -11,13 +11,17 @@ import type {} from '@deepseek-ai/dsh-typert-registry'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import { TypertRemoteService, Remote, type PeerScope, type PeerId, type InvocationDescriptor } from '@deepseek-ai/dsh-typert-protocol'
-import { createRequest, listRequest, pageRequest, promptRequest, PlatformError } from '../contracts.ts'
+import { createRequest, filesListRequest, fileReadRequest, filePutRequest, listRequest, pageRequest, promptRequest, skillInstallRequest, skillRequest, skillToggleRequest, PlatformError } from '../contracts.ts'
 import { bearer, readJson, sendFailure, sendJson, writeLine } from '../http.ts'
 import { serveUi } from '../ui.ts'
 import { Scheduler } from './scheduler.ts'
 
-const requests = { me: z.object({}).strict(), logout: z.object({}).strict(), create: createRequest, list: listRequest, prompt: promptRequest, page: pageRequest, follow: pageRequest }
-const endpoint = { me: '/identity/me', logout: '/identity/logout', create: '/sessions/create', list: '/sessions/list', prompt: '/sessions/prompt', page: '/sessions/page' } as const
+const requests = { me: z.object({}).strict(), logout: z.object({}).strict(), create: createRequest, list: listRequest, prompt: promptRequest, page: pageRequest, follow: pageRequest,
+  filesList: filesListRequest, fileRead: fileReadRequest, filePut: filePutRequest, skillsList: z.object({}).strict(), skillsRead: skillRequest,
+  skillsInstall: skillInstallRequest, skillsToggle: skillToggleRequest }
+const endpoint = { me: '/identity/me', logout: '/identity/logout', create: '/sessions/create', list: '/sessions/list', prompt: '/sessions/prompt', page: '/sessions/page',
+  filesList: '/files/list', fileRead: '/files/read', filePut: '/files/put', skillsList: '/skills/list', skillsRead: '/skills/read',
+  skillsInstall: '/skills/install', skillsToggle: '/skills/toggle' } as const
 type Method = keyof typeof requests
 
 declare module '@deepseek-ai/cordis' { interface Context { powerEvolve: ProductRemote } }
@@ -39,6 +43,13 @@ class ProductRemote extends TypertRemoteService {
   @Remote list(request: z.infer<typeof listRequest>) { return this.call('list', request) }
   @Remote prompt(request: z.infer<typeof promptRequest>) { return this.call('prompt', request) }
   @Remote page(request: z.infer<typeof pageRequest>) { return this.call('page', request) }
+  @Remote filesList(request: z.infer<typeof filesListRequest>) { return this.call('filesList', request) }
+  @Remote fileRead(request: z.infer<typeof fileReadRequest>) { return this.call('fileRead', request) }
+  @Remote filePut(request: z.infer<typeof filePutRequest>) { return this.call('filePut', request) }
+  @Remote skillsList(request: z.infer<typeof requests.skillsList>) { return this.call('skillsList', request) }
+  @Remote skillsRead(request: z.infer<typeof skillRequest>) { return this.call('skillsRead', request) }
+  @Remote skillsInstall(request: z.infer<typeof skillInstallRequest>) { return this.call('skillsInstall', request) }
+  @Remote skillsToggle(request: z.infer<typeof skillToggleRequest>) { return this.call('skillsToggle', request) }
   @Remote async *follow(request: z.infer<typeof pageRequest>, signal: AbortSignal): AsyncGenerator<unknown> {
     let after = request.after
     let previous = ''

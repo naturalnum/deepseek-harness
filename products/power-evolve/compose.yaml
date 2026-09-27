@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: powerevolve
       POSTGRES_PASSWORD_FILE: /run/secrets/database-password
     secrets: [database-password]
-    ports: ["127.0.0.1:18432:5432"]
+    ports: ["127.0.0.1:${PE_DATABASE_PORT:-18432}:5432"]
     volumes: ["postgres-data:/var/lib/postgresql/data"]
     healthcheck:
       test: [CMD-SHELL, "pg_isready -U powerevolve -d powerevolve"]

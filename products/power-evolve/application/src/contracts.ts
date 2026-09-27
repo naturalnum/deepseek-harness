@@ -28,6 +28,25 @@ export const pageRequest = z.object({
 }).strict()
 export const sessionRequest = z.object({ sessionId }).strict()
 export const listRequest = z.object({ offset: z.number().int().min(0), limit: z.number().int().min(1).max(100) }).strict()
+export const filesListRequest = z.object({ directory: z.string().max(512) }).strict()
+export const fileReadRequest = z.object({ path: z.string().min(1).max(512) }).strict()
+export const filePutRequest = z.object({
+  requestId, path: z.string().min(1).max(512), baseRevision: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
+  data: z.string().max(2_800_000),
+}).strict()
+export const skillInstallRequest = z.object({
+  requestId, name: z.string().trim().min(1).max(80), description: z.string().trim().min(1).max(500),
+  instructions: z.string().trim().min(1).max(4096),
+}).strict()
+export const skillRequest = z.object({ skillId: z.uuid() }).strict()
+export const skillToggleRequest = z.object({ skillId: z.uuid(), enabled: z.boolean() }).strict()
+export const skillSnapshot = z.object({
+  name: z.string(), description: z.string(), instructions: z.string(), revision: z.number().int().positive(),
+}).strict()
+export const skillSelection = z.object({
+  skillId: z.uuid(), name: z.string(), description: z.string(), digest: z.string().regex(/^[a-f0-9]{64}$/),
+  revision: z.number().int().positive(),
+}).strict()
 export const loginRequest = z.object({
   username: z.string().min(1).max(80), password: z.string().min(1).max(256),
 }).strict()
@@ -37,6 +56,8 @@ export const grant = z.object({
   token: z.string().min(32).max(256),
   epoch: z.number().int().positive(),
   settings,
+  skills: z.array(skillSnapshot).max(8).default([]),
+  selection: z.array(skillSelection).max(8).default([]),
 }).strict()
 export type Grant = z.infer<typeof grant>
 

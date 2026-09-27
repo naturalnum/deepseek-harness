@@ -48,4 +48,8 @@ The selected upstream revision is pinned in [baseline.json](baseline.json). The 
 | T03 user configuration | User settings in PG, copied into accepted operations |
 | T05 credentials and model egress | `application/src/platform/model.ts` |
 
-These are responsibilities, not a requirement for a package or process per row. The two bundles explicitly install only the plugins needed by this slice. T04 files and T06 execution have no placeholder implementation.
+These are responsibilities, not a requirement for a package or process per row. The two bundles explicitly install only the plugins needed by this slice.
+
+## Slice 2 ownership
+
+T04 is implemented by `application/src/platform/files.ts` and `skills.ts`. PostgreSQL identifies each user's workspace, records conditional file mutations, owns the skill catalog, and freezes enabled skill revisions at task acceptance. A private POSIX root holds the file bytes and skill instructions. The platform checks identity on each operation; the shared host forwards bounded, validated requests and never reads the storage root. Ordinary file access and reading a skill do not create a sandbox. Skill instructions enter an Agent's prompt as selected user content; skill code cannot run in the host. T06 cloud execution and sandbox mounts remain for the execution slice. A writable sandbox mount will require stronger filesystem boundary enforcement than the current single-machine path checks.

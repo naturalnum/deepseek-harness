@@ -7,12 +7,14 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 import schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
 import { Pool } from 'pg'
-import { createRequest, listRequest, loginRequest, pageRequest, promptRequest, settings, PlatformError } from '../contracts.ts'
+import { createRequest, filesListRequest, fileReadRequest, filePutRequest, listRequest, loginRequest, pageRequest, promptRequest, skillInstallRequest, skillRequest, skillToggleRequest, settings, PlatformError } from '../contracts.ts'
 import { bearer, readJson, sendFailure, sendJson } from '../http.ts'
 import { initializeDatabase } from './database.ts'
 import { hashPassword, IdentityService } from './identity.ts'
 import { TaskStore } from './tasks.ts'
 import { EventStore } from './events.ts'
+import { FileService } from './files.ts'
+import { SkillService } from './skills.ts'
 import { proxyModel } from './model.ts'
 import { serveUi } from '../ui.ts'
 
@@ -22,6 +24,7 @@ export const inject = ['webServer']
 /** Platform settings contain file references; profile dumps do not contain secret values. */
 export const Config = schema.object({
   databaseUrlFile: schema.string().required(), workerTokenFile: schema.string().required(),
+  workspaceRoot: schema.string().required(),
   modelKeyFile: schema.string().required(), seedUsersFile: schema.string().required(),
   modelUrl: schema.string().required(), hostOrigin: schema.string().required(), platformOrigin: schema.string().required(),
   leaseMs: schema.number().min(1000).required(), tokenLifetimeMs: schema.number().min(1000).required(),
@@ -49,6 +52,10 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const pool = new Pool({ connectionString: databaseUrl.trim(), max: config.databasePoolSize, statement_timeout: config.databaseTimeoutMs })
   ctx.effect(() => () => pool.end())
   await initializeDatabase(pool)
+  const files = new FileService(pool, config.workspaceRoot)
+  await files.init()
+  const skills = new SkillService(pool, config.workspaceRoot)
+  await skills.init()
   for (const user of seedUsers.parse(JSON.parse(seeds))) {
     await pool.query('INSERT INTO pe_users(id,username,password_hash,settings) VALUES($1,$2,$3,$4) ON CONFLICT(username) DO NOTHING',
       [randomUUID(), user.username, await hashPassword(user.password), user.settings])
@@ -60,7 +67,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
 
   const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const path = new URL(req.url ?? '/', config.platformOrigin).pathname
-    if (req.method === 'GET' && path === '/health') { sendJson(res, { ready: true, service: 'platform', schema: 1, instanceId }); return }
+    if (req.method === 'GET' && path === '/health') { sendJson(res, { ready: true, service: 'platform', schema: 2, instanceId }); return }
     if (req.method === 'GET' && path === '/config') { sendJson(res, { hostUrl: config.hostOrigin }); return }
     if (req.method === 'GET' && await serveUi(path, 'login', res)) return
     if (req.method !== 'POST') throw new PlatformError(404, 'not_found')
@@ -90,7 +97,13 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       const supplied = Buffer.from(token)
       if (expected.length !== supplied.length || !timingSafeEqual(expected, supplied)) throw new PlatformError(401, 'unauthorized_worker')
       const input = z.object({ workerId: z.uuid() }).strict().parse(await readJson(req, 4096))
-      sendJson(res, await tasks.claim(input.workerId))
+      const claimed = await tasks.claim(input.workerId)
+      if (!claimed) { sendJson(res, null); return }
+      try { sendJson(res, { ...claimed, skills: await skills.snapshot(claimed.userId, claimed.selection) }) }
+      catch (_unavailableSkill) {
+        await tasks.finish(claimed.token, 'failed', 'skill_unavailable')
+        sendJson(res, null)
+      }
       return
     }
     if (path.startsWith('/runtime/')) {
@@ -124,6 +137,22 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       case '/sessions/page': {
         const { sessionId, after, limit } = pageRequest.parse(input)
         sendJson(res, await events.page(user, sessionId, after, limit)); return
+      }
+      case '/files/list': sendJson(res, await files.list(user, filesListRequest.parse(input).directory)); return
+      case '/files/read': sendJson(res, await files.read(user, fileReadRequest.parse(input).path)); return
+      case '/files/put': {
+        const value = filePutRequest.parse(input)
+        sendJson(res, await files.put(user, value.requestId, value.path, value.baseRevision, value.data)); return
+      }
+      case '/skills/list': z.object({}).strict().parse(input); sendJson(res, await skills.list(user)); return
+      case '/skills/read': sendJson(res, await skills.read(user, skillRequest.parse(input).skillId)); return
+      case '/skills/install': {
+        const value = skillInstallRequest.parse(input)
+        sendJson(res, await skills.install(user, value.requestId, value.name, value.description, value.instructions)); return
+      }
+      case '/skills/toggle': {
+        const value = skillToggleRequest.parse(input)
+        sendJson(res, await skills.toggle(user, value.skillId, value.enabled)); return
       }
       default: throw new PlatformError(404, 'not_found')
     }

@@ -2,7 +2,8 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import type { Pool, PoolClient } from 'pg'
 import { SESSION_FORMAT_VERSION, SessionId, type SessionHeader } from '@deepseek-ai/dsh-session'
-import { grant, PlatformError, settings, type Grant, type Identity, type RequestId, type Settings } from '../contracts.ts'
+import { grant, skillSelection, PlatformError, settings, type Grant, type Identity, type RequestId, type Settings } from '../contracts.ts'
+import { z } from 'zod'
 import { digest } from './identity.ts'
 import { transaction } from './database.ts'
 
@@ -67,10 +68,14 @@ export class TaskStore {
          WHERE s.user_id=$1 AND o.state IN ('queued','running')`, [user.userId],
       )
       if (Number(count.rows[0]!.count) >= this.limits.maxPendingPerUser) throw new PlatformError(429, 'pending_limit')
+      const selected = await client.query(
+        'SELECT id AS "skillId",name,description,digest,revision FROM pe_user_skills WHERE user_id=$1 AND enabled=true ORDER BY name,id', [user.userId],
+      )
+      const selection = z.array(skillSelection).max(8).parse(selected.rows)
       const id = randomUUID()
       await client.query(
-        `INSERT INTO pe_operations(id,session_id,request_id,input,settings,state) VALUES($1,$2,$3,$4,$5,'queued')`,
-        [id, session, requestId, text, config],
+        `INSERT INTO pe_operations(id,session_id,request_id,input,settings,skill_selection,state) VALUES($1,$2,$3,$4,$5,$6,'queued')`,
+        [id, session, requestId, text, config, JSON.stringify(selection)],
       )
       await client.query('SELECT pg_notify(\'pe_tasks\',$1)', [session])
       return { accepted: true, operationId: id, state: 'queued' }
@@ -81,9 +86,9 @@ export class TaskStore {
   async claim(workerId: string): Promise<Grant | null> {
     return transaction(this.pool, async client => {
       const candidate = await client.query<{
-        id: string; session_id: string; user_id: string; request_id: string; input: string; settings: unknown;
+        id: string; session_id: string; user_id: string; request_id: string; input: string; settings: unknown; skill_selection: unknown;
       }>(
-        `SELECT o.id,o.session_id,s.user_id,o.request_id,o.input,o.settings
+        `SELECT o.id,o.session_id,s.user_id,o.request_id,o.input,o.settings,o.skill_selection
          FROM pe_operations o JOIN pe_sessions s ON s.id=o.session_id
          WHERE o.state IN ('queued','running') AND (s.lease_until IS NULL OR s.lease_until<=now())
          AND (SELECT count(*) FROM pe_sessions active WHERE active.user_id=s.user_id AND active.lease_until>now())<$1
@@ -111,7 +116,7 @@ export class TaskStore {
       await client.query('INSERT INTO pe_attempts(operation_id,epoch,worker_id) VALUES($1,$2,$3)', [row.id, epoch, workerId])
       return grant.parse({
         operationId: row.id, sessionId: row.session_id, userId: row.user_id, requestId: row.request_id,
-        text: row.input, settings: settings.parse(row.settings), token, epoch,
+        text: row.input, settings: settings.parse(row.settings), selection: z.array(skillSelection).max(8).parse(row.skill_selection), token, epoch,
       })
     })
   }

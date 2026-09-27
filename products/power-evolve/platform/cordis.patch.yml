@@ -13,6 +13,7 @@
       name: '@power-evolve/application/platform'
       config:
         databaseUrlFile: !!js process.env.PE_PRIVATE_DIR + '/database-url'
+        workspaceRoot: !!js process.env.PE_PRIVATE_DIR + '/workspaces'
         workerTokenFile: !!js process.env.PE_PRIVATE_DIR + '/worker-token'
         modelKeyFile: !!js process.env.PE_PRIVATE_DIR + '/model-key'
         seedUsersFile: !!js process.env.PE_PRIVATE_DIR + '/users.json'
@@ -26,7 +27,7 @@
         maxHistoryBytes: 8388608
         maxHistoryEvents: 20000
         maxEventBytes: 524288
-        maxRequestBytes: 2097152
+        maxRequestBytes: 3145728
         modelTimeoutMs: 120000
         maxModelResponseBytes: 4194304
         readyFile: !!js dshHomePath('ready.json')

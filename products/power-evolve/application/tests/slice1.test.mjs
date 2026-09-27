@@ -104,9 +104,9 @@ test('slice 1: isolated users, durable acceptance, restart, fencing and native h
     const patch = [update('web-server', { port: 0 })]
     if (name === 'platform') patch.push(update('power-evolve-platform', {
       databaseUrlFile: join(temporary, 'database-url'), workerTokenFile: join(temporary, 'worker-token'), modelKeyFile: join(temporary, 'model-key'), seedUsersFile: join(temporary, 'users.json'),
-      readyFile, modelUrl, leaseMs: 3000, loginAttemptsPerWindow: 100, maxPendingPerUser: 8,
+      readyFile, modelUrl, leaseMs: 3000, loginAttemptsPerWindow: 100, maxPendingPerUser: 8, workspaceRoot: join(temporary, 'workspaces'),
     }))
-    else patch.push(update('power-evolve-runtime', { platformUrl, workerTokenFile: join(temporary, 'worker-token') }), update('power-evolve-host', { platformOrigin: platformUrl, readyFile, renewMs: 500, operationTimeoutMs: 20000, pollMs: 50 }))
+    else patch.push(update('power-evolve-runtime', { platformUrl, workerTokenFile: join(temporary, 'worker-token') }), update('power-evolve-host', { platformOrigin: platformUrl, readyFile, renewMs: 500, operationTimeoutMs: 20000, pollMs: 50, maxRequestBytes: 3145728 }))
     await writeFile(join(profile, 'cordis.patch.yml'), yaml.dump(patch))
     const log = openSync(join(temporary, `${name}.log`), 'a', 0o600)
     const child = spawn(process.execPath, ['apps/cli/lib/bin.js', '--profile', `power-evolve-${name}`], { cwd: root, env: { PATH: process.env.PATH, HOME: process.env.HOME, DSH_HOME: home, PE_PRIVATE_DIR: temporary }, stdio: ['ignore', log, log] })
@@ -130,7 +130,14 @@ test('slice 1: isolated users, durable acceptance, restart, fencing and native h
   const rpc = async (user, method, request) => { const response = await rpcResponse(user, method, request); assert.equal(response.status, 200, JSON.stringify(await response.clone().json())); return response.json() }
   const create = async user => (await rpc(user, 'create', { requestId: randomUUID() })).sessionId
   const page = (user, id) => rpc(user, 'page', { sessionId: id, after: -1, limit: 200 })
-  const finished = async (user, id, state = 'completed') => eventually(async () => { const value = await page(user,id); return value.operations[0]?.state === state && value }, `${state} operation`)
+  const finished = async (user, id, state = 'completed') => eventually(async () => {
+    const value = await page(user,id)
+    if (state === 'completed' && value.operations[0]?.state === 'failed') {
+      const ends = value.events.filter(event => event.type === 'turn/end' || event.type === 'request/error').slice(-2)
+      throw new Error(`Operation failed: ${value.operations[0]?.errorCode} ${JSON.stringify(ends).slice(0, 1000)}`)
+    }
+    return value.operations[0]?.state === state && value
+  }, `${state} operation`)
   const send = (user, id, text, requestId = randomUUID()) => rpc(user, 'prompt', { sessionId: id, requestId, text })
 
   await t.test('two identities, strict fields and credentials restricted to platform', async () => {
@@ -169,6 +176,68 @@ test('slice 1: isolated users, durable acceptance, restart, fencing and native h
   await t.test('recorded native Session is both replay input and complete output oracle',async()=> {
     await compareRecordedSession(await page(0,alice), recorded)
   })
+  await t.test('POSIX files preserve bytes and reject cross-user paths, links and stale writes', async () => {
+    const firstBytes = Buffer.from([0,1,2,255,32,10])
+    const id = randomUUID(), path = 'notes/probe.bin'
+    const input = { requestId:id,path,baseRevision:null,data:firstBytes.toString('base64') }
+    const first = await rpc(0,'filePut',input)
+    assert.equal((await rpc(0,'filePut',input)).revision,first.revision)
+    assert.equal((await rpcResponse(0,'filePut',{...input,data:Buffer.from('different').toString('base64')})).status,409)
+    assert.equal((await rpcResponse(0,'filePut',{...input,requestId:randomUUID()})).status,409)
+    assert.deepEqual(Buffer.from((await rpc(0,'fileRead',{path})).data,'base64'),firstBytes)
+    assert.equal((await rpcResponse(1,'fileRead',{path})).status,404)
+    assert.equal((await rpcResponse(1,'filePut',{...input,requestId:randomUUID(),path:'../escape'})).status,400)
+    const mine=await rpc(0,'filesList',{directory:'notes'})
+    const theirs=await rpc(1,'filesList',{directory:'notes'})
+    assert.deepEqual(mine.items.map(item=>item.name),['probe.bin'])
+    assert.deepEqual(theirs.items,[])
+    const updated=await rpc(0,'filePut',{requestId:randomUUID(),path,baseRevision:first.revision,data:Buffer.from('edited').toString('base64')})
+    assert.equal((await rpc(0,'fileRead',{path})).revision,updated.revision)
+    assert.equal((await rpcResponse(0,'filePut',{requestId:randomUUID(),path,baseRevision:first.revision,data:Buffer.from('lost update').toString('base64')})).status,409)
+    await symlink(join(temporary,'worker-token'),join(temporary,'workspaces',mine.workspace,'notes','link.txt'))
+    assert.equal((await rpcResponse(0,'fileRead',{path:'notes/link.txt'})).status,400)
+    assert.equal((await rpcResponse(1,'fileRead',{path:'notes/link.txt'})).status,404)
+    await stop(host.process); await stop(platform.process)
+    platform=await start('platform'); host=await start('host',platform.url)
+    assert.deepEqual(Buffer.from((await rpc(0,'fileRead',{path})).data,'base64'),Buffer.from('edited'))
+    assert.equal((await pool.query('SELECT count(*) FROM pe_workspaces')).rows[0].count,'2')
+  })
+  await t.test('personal skill bytes, ownership, toggle and task-time snapshot', async () => {
+    const marker='ALICE_SKILL_MARKER_ONLY'
+    const aliceSkill=await rpc(0,'skillsInstall',{requestId:randomUUID(),name:'文稿校对',description:'检查术语与错别字',instructions:`遇到校对任务先核对术语。${marker}`})
+    await rpc(1,'skillsInstall',{requestId:randomUUID(),name:'代码梳理',description:'整理代码结构',instructions:'先理解模块边界。'})
+    assert.deepEqual((await rpc(0,'skillsList',{})).items.map(skill=>skill.name),['文稿校对'])
+    assert.deepEqual((await rpc(1,'skillsList',{})).items.map(skill=>skill.name),['代码梳理'])
+    assert((await rpc(0,'skillsRead',{skillId:aliceSkill.skillId})).instructions.includes(marker))
+    assert.equal((await rpcResponse(1,'skillsRead',{skillId:aliceSkill.skillId})).status,404)
+    assert.equal((await rpcResponse(1,'skillsToggle',{skillId:aliceSkill.skillId,enabled:false})).status,404)
+    const aliceSkillRoot=join(temporary,'workspaces','extensions')
+    const aliceUser=(await pool.query("SELECT id FROM pe_users WHERE username='alice'")).rows[0].id
+    assert((await readFile(join(aliceSkillRoot,aliceUser,aliceSkill.skillId+'.md'),'utf8')).includes(marker))
+    await send(0,alice,'ALICE_SKILL_Q'); await send(1,bob,'BOB_SKILL_Q')
+    await Promise.all([finished(0,alice),finished(1,bob)])
+    const aliceCall=calls.find(call=>JSON.stringify(call).includes('ALICE_SKILL_Q'))
+    const bobCall=calls.find(call=>JSON.stringify(call).includes('BOB_SKILL_Q'))
+    assert(JSON.stringify(aliceCall).includes(marker));assert(!JSON.stringify(bobCall).includes(marker))
+    await stop(host.process)
+    const acceptedResponse=await post(`${platform.url}/sessions/prompt`,tokens[0],{sessionId:alice,requestId:randomUUID(),text:'SELECTED_BEFORE_TOGGLE'})
+    assert.equal(acceptedResponse.status,200)
+    const queued=await acceptedResponse.json()
+    assert.equal(queued.accepted,true)
+    const disabledResponse=await post(`${platform.url}/skills/toggle`,tokens[0],{skillId:aliceSkill.skillId,enabled:false})
+    assert.equal(disabledResponse.status,200)
+    const disabled=await disabledResponse.json()
+    assert.equal(disabled.enabled,false)
+    host=await start('host',platform.url)
+    await finished(0,alice)
+    const selectedCall=calls.find(call=>JSON.stringify(call).includes('SELECTED_BEFORE_TOGGLE'))
+    assert(JSON.stringify(selectedCall).includes(marker))
+    await send(0,alice,'AFTER_TOGGLE'); await finished(0,alice)
+    const nextCall=calls.find(call=>JSON.stringify(call).includes('AFTER_TOGGLE'))
+    const latestSystem=nextCall.messages.filter(message=>message.role==='system').at(-1)
+    assert(latestSystem)
+    assert(!JSON.stringify(latestSystem).includes(marker))
+  })
   await t.test('accepted before execution survives SIGKILL and completed history resumes', async () => {
     const id = await create(0)
     const blocker = await pool.connect()
@@ -181,9 +250,10 @@ test('slice 1: isolated users, durable acceptance, restart, fencing and native h
     host=await start('host',platform.url)
     await finished(0,id)
     assert.equal(calls.filter(call=>JSON.stringify(call).includes('after-restart')).length,1)
+    const priorCount=(await page(0,alice)).events.filter(event=>event.type==='user/message').length
     await send(0,alice,'followup')
     const restored=await finished(0,alice)
-    assert.equal(restored.events.filter(event=>event.type==='user/message').length,2)
+    assert.equal(restored.events.filter(event=>event.type==='user/message').length,priorCount+1)
     const request=calls.find(call=>JSON.stringify(call).includes('followup'))
     assert(JSON.stringify(request).includes('reply:alpha'))
     assert(!JSON.stringify(request).includes('beta'))
