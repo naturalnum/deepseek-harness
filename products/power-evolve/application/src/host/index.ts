@@ -18,10 +18,12 @@ import { Scheduler } from './scheduler.ts'
 
 const requests = { me: z.object({}).strict(), logout: z.object({}).strict(), create: createRequest, list: listRequest, prompt: promptRequest, page: pageRequest, follow: pageRequest,
   filesList: filesListRequest, fileRead: fileReadRequest, filePut: filePutRequest, skillsList: z.object({}).strict(), skillsRead: skillRequest,
-  skillsInstall: skillInstallRequest, skillsToggle: skillToggleRequest, actionsList: z.object({}).strict() }
+  skillsInstall: skillInstallRequest, skillsToggle: skillToggleRequest, actionsList: z.object({}).strict(),
+  executionsList: z.object({}).strict(), executionCancel: z.object({ executionId: z.uuid() }).strict() }
 const endpoint = { me: '/identity/me', logout: '/identity/logout', create: '/sessions/create', list: '/sessions/list', prompt: '/sessions/prompt', page: '/sessions/page',
   filesList: '/files/list', fileRead: '/files/read', filePut: '/files/put', skillsList: '/skills/list', skillsRead: '/skills/read',
-  skillsInstall: '/skills/install', skillsToggle: '/skills/toggle', actionsList: '/connectors/actions' } as const
+  skillsInstall: '/skills/install', skillsToggle: '/skills/toggle', actionsList: '/connectors/actions',
+  executionsList: '/executions/list', executionCancel: '/executions/cancel' } as const
 type Method = keyof typeof requests
 
 declare module '@deepseek-ai/cordis' { interface Context { powerEvolve: ProductRemote } }
@@ -51,6 +53,8 @@ class ProductRemote extends TypertRemoteService {
   @Remote skillsInstall(request: z.infer<typeof skillInstallRequest>) { return this.call('skillsInstall', request) }
   @Remote skillsToggle(request: z.infer<typeof skillToggleRequest>) { return this.call('skillsToggle', request) }
   @Remote actionsList(request: z.infer<typeof requests.actionsList>) { return this.call('actionsList', request) }
+  @Remote executionsList(request: z.infer<typeof requests.executionsList>) { return this.call('executionsList', request) }
+  @Remote executionCancel(request: z.infer<typeof requests.executionCancel>) { return this.call('executionCancel', request) }
   @Remote async *follow(request: z.infer<typeof pageRequest>, signal: AbortSignal): AsyncGenerator<unknown> {
     let after = request.after
     let previous = ''

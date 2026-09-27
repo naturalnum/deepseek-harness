@@ -6,10 +6,12 @@ import { MessageId } from '@deepseek-ai/dsh-llm'
 import { setTimeout as delay } from 'node:timers/promises'
 import type { Grant } from '../contracts.ts'
 import { installConnectorTools } from './connectors.ts'
+import { installExecutionTools } from './executions.ts'
 
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
     'power-evolve-action': { readonly kind: 'power-evolve-action'; readonly actionId: string }
+    'power-evolve-execution': { readonly kind: 'power-evolve-execution'; readonly executionId: string }
   }
 }
 
@@ -92,8 +94,11 @@ export class Scheduler {
       })
       this.handles.add(handle)
       const { agent } = handle
-      if (grant.source === 'user') installConnectorTools(agent, grant, runtime)
-      else agent.ctx.effect(() => agent.ctx.systemPrompt.section({
+      if (grant.source === 'user' || grant.source === 'sandbox_result') {
+        installConnectorTools(agent, grant, runtime)
+        installExecutionTools(agent, grant, runtime)
+      }
+      if (grant.source === 'platform_action') agent.ctx.effect(() => agent.ctx.systemPrompt.section({
         name: 'power-evolve:action-result', order: 710, interpolate: false,
         text: 'A trusted platform action result is arriving as the next message. Report its exact outcome to the user. Do not propose or repeat another external write in this turn.',
       }))
@@ -111,7 +116,9 @@ export class Scheduler {
         // under the same durable request id before explicitly waking the native driver.
         agent.inbox.remove(MessageId(grant.requestId))
         agent.followup({ id: MessageId(grant.requestId), role: 'user',
-          source: grant.source === 'platform_action' ? { kind: 'power-evolve-action', actionId: grant.sourceActionId! } : { kind: 'user' },
+          source: grant.source === 'platform_action' ? { kind: 'power-evolve-action', actionId: grant.sourceActionId! }
+            : grant.source === 'sandbox_result' ? { kind: 'power-evolve-execution', executionId: grant.sourceExecutionId! }
+              : { kind: 'user' },
           content: [{ type: 'text', text: grant.text }] })
         await agent.whenIdle()
       }

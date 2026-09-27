@@ -21,6 +21,7 @@ export interface TaskLimits {
   readonly leaseMs: number
   readonly maxPendingPerUser: number
   readonly maxActivePerUser: number
+  readonly executionEnabled?: boolean
 }
 
 /** Platform-owned state machine. Host callers never choose a task's user identity. */
@@ -87,9 +88,11 @@ export class TaskStore {
     return transaction(this.pool, async client => {
       const candidate = await client.query<{
         id: string; session_id: string; user_id: string; request_id: string; input: string; settings: unknown;
-        skill_selection: unknown; source: 'user' | 'platform_action'; source_action_id: string | null;
+        skill_selection: unknown; source: 'user' | 'platform_action' | 'sandbox_result';
+        source_action_id: string | null; source_execution_id: string | null;
       }>(
-        `SELECT o.id,o.session_id,s.user_id,o.request_id,o.input,o.settings,o.skill_selection,o.source,o.source_action_id
+        `SELECT o.id,o.session_id,s.user_id,o.request_id,o.input,o.settings,o.skill_selection,
+         o.source,o.source_action_id,o.source_execution_id
          FROM pe_operations o JOIN pe_sessions s ON s.id=o.session_id
          WHERE o.state IN ('queued','running') AND (s.lease_until IS NULL OR s.lease_until<=now())
          AND (SELECT count(*) FROM pe_sessions active WHERE active.user_id=s.user_id AND active.lease_until>now())<$1
@@ -118,7 +121,9 @@ export class TaskStore {
       return grant.parse({
         operationId: row.id, sessionId: row.session_id, userId: row.user_id, requestId: row.request_id,
         text: row.input, settings: settings.parse(row.settings), selection: z.array(skillSelection).max(8).parse(row.skill_selection),
-        source: row.source, sourceActionId: row.source_action_id, token, epoch,
+        source: row.source, sourceActionId: row.source_action_id,
+        sourceExecutionId: row.source_execution_id, executionEnabled: this.limits.executionEnabled ?? false,
+        token, epoch,
       })
     })
   }

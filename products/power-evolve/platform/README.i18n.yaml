@@ -3,5 +3,5 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write products/power-evolve/platform/README.md
 /trusted-platform-bundle:
-  en: 0b7b2296206e5cae
-  zh: f17882edff374716
+  en: 466957b0f8549897
+  zh: 3075a220dc302043

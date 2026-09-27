@@ -34,7 +34,7 @@ function render() {
     if (value) {
       const text = value.content.filter(block => block.type === 'text').map(block => block.text).join('')
       if (text) target.append(message(event.type === 'user/message'
-        ? value.source?.kind === 'power-evolve-action' ? 'platform' : 'user' : 'assistant', text))
+        ? ['power-evolve-action', 'power-evolve-execution'].includes(value.source?.kind) ? 'platform' : 'user' : 'assistant', text))
     }
   }
   if (!target.children.length) {

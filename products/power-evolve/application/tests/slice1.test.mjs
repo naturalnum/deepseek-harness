@@ -147,6 +147,8 @@ test('shared host: isolated conversations, files, skills and approved remote act
       modelKeyFile: join(temporary, 'model-key'), connectorKeyFile: join(temporary, 'connector-key'), seedUsersFile: join(temporary, 'users.json'),
       readyFile, modelUrl, connectorUrl, connectorTimeoutMs: 1000, connectorPollMs: 200,
       leaseMs: 3000, loginAttemptsPerWindow: 100, maxPendingPerUser: 8, workspaceRoot: join(temporary, 'workspaces'),
+      sandboxKubeconfigFile: '', sandboxKeyFile: '', sandboxNamespace: '', sandboxImage: '',
+      sandboxLocalRoot: '', sandboxNodeRoot: '',
     }))
     else patch.push(update('power-evolve-runtime', { platformUrl, workerTokenFile: join(temporary, 'worker-token') }), update('power-evolve-host', { platformOrigin: platformUrl, readyFile, renewMs: 500, operationTimeoutMs: 20000, pollMs: 50, maxRequestBytes: 3145728 }))
     await writeFile(join(profile, 'cordis.patch.yml'), yaml.dump(patch))
@@ -157,7 +159,7 @@ test('shared host: isolated conversations, files, skills and approved remote act
       if (child.exitCode !== null || child.signalCode !== null) throw new Error(`${name} exited before ready: ${await readFile(join(temporary, name+'.log'),'utf8')}`)
       try { return JSON.parse(await readFile(readyFile, 'utf8')) }
       catch (error) { if (error.code === 'ENOENT' || error instanceof SyntaxError) return false; throw error }
-    }, `${name} ready`)
+    }, `${name} ready`).catch(async error => { throw new Error(`${error.message}: ${await readFile(join(temporary, name+'.log'),'utf8')}`) })
     assert.equal((await fetch(`${ready.url}/health`)).status, 200)
     return { process: child, url: ready.url }
   }

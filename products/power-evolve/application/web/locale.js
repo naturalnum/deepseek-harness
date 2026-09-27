@@ -24,4 +24,8 @@ export const t = {
   approvalFingerprint: '操作指纹', approvalAction: '写入试用便签', approvalBack: '返回对话',
   approvalError: '审批请求失败，请重试',
   actions: '操作', actionEmpty: '尚无受控操作', actionRefresh: '刷新状态', actionApproveAt: '前往可信审批页',
+  executions: '云执行', executionEmpty: '还没有云端命令', executionRefresh: '刷新状态',
+  executionCancel: '取消命令', executionQueued: '等待沙盒', executionStarting: '启动沙盒',
+  executionRunning: '运行中', executionCancelling: '正在取消', executionSucceeded: '已成功',
+  executionFailed: '执行失败', executionCancelled: '已取消', executionUncertain: '等待核对',
 }

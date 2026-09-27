@@ -2,9 +2,10 @@
 export function initWorkspace({ rpc, t }) {
   const get = id => document.getElementById(id)
   let directory = '', file = null, fileBytes = null, viewEpoch = 0, installRequest = null
-  const labels = { 'files-link': t.files, 'skills-link': t.skills, 'actions-link': t.actions, 'toggle-panel': t.content,
-    'files-tab': t.files, 'skills-tab': t.skills, 'actions-tab': t.actions,
+  const labels = { 'files-link': t.files, 'skills-link': t.skills, 'actions-link': t.actions, 'executions-link': t.executions, 'toggle-panel': t.content,
+    'files-tab': t.files, 'skills-tab': t.skills, 'actions-tab': t.actions, 'executions-tab': t.executions,
     'actions-refresh': t.actionRefresh, 'actions-approval': t.actionApproveAt,
+    'executions-refresh': t.executionRefresh,
     'file-up': t.up, 'file-upload-label': t.upload,
     'file-save': t.save, 'file-download': t.download, 'skill-install-title': t.installSkill,
     'skill-install-button': t.install }
@@ -35,19 +36,21 @@ export function initWorkspace({ rpc, t }) {
   function openPanel(name) {
     get('right-panel').hidden = false
     get('panel-title').textContent = t[name]
-    for (const section of ['files', 'skills', 'actions']) {
+    for (const section of ['files', 'skills', 'actions', 'executions']) {
       get(section + '-panel').hidden = name !== section
       get(section + '-tab').classList.toggle('selected', name === section)
     }
-    void attempt(name === 'files' ? refreshFiles : name === 'skills' ? refreshSkills : refreshActions)
+    void attempt(name === 'files' ? refreshFiles : name === 'skills' ? refreshSkills : name === 'actions' ? refreshActions : refreshExecutions)
   }
   get('toggle-panel').addEventListener('click', () => openPanel('files'))
   get('files-link').addEventListener('click', () => openPanel('files'))
   get('skills-link').addEventListener('click', () => openPanel('skills'))
   get('actions-link').addEventListener('click', () => openPanel('actions'))
+  get('executions-link').addEventListener('click', () => openPanel('executions'))
   get('files-tab').addEventListener('click', () => openPanel('files'))
   get('skills-tab').addEventListener('click', () => openPanel('skills'))
   get('actions-tab').addEventListener('click', () => openPanel('actions'))
+  get('executions-tab').addEventListener('click', () => openPanel('executions'))
   get('close-panel').addEventListener('click', () => { get('right-panel').hidden = true })
 
   async function refreshActions() {
@@ -65,6 +68,34 @@ export function initWorkspace({ rpc, t }) {
     }
   }
   get('actions-refresh').addEventListener('click', () => void attempt(refreshActions))
+
+  async function refreshExecutions() {
+    const result = await rpc('executionsList', {})
+    const list = get('execution-list'); list.replaceChildren()
+    if (!result.items.length) { const empty = document.createElement('p'); empty.className = 'muted'; empty.textContent = t.executionEmpty; list.append(empty) }
+    const states = { queued: t.executionQueued, starting: t.executionStarting, running: t.executionRunning,
+      cancelling: t.executionCancelling, succeeded: t.executionSucceeded, failed: t.executionFailed,
+      cancelled: t.executionCancelled, uncertain: t.executionUncertain }
+    for (const item of result.items) {
+      const card = document.createElement('article'); card.className = 'approval-card'
+      const heading = document.createElement('strong'); heading.textContent = states[item.state] ?? item.state
+      const command = document.createElement('pre'); command.textContent = item.command
+      const time = document.createElement('small'); time.textContent = new Date(item.createdAt).toLocaleString()
+      card.append(heading, command, time)
+      if (item.result) {
+        const output = document.createElement('pre')
+        output.textContent = [item.result.stdout, item.result.stderr].filter(Boolean).join('\n')
+        card.append(output)
+      }
+      if (['queued', 'starting', 'running', 'cancelling', 'uncertain'].includes(item.state)) {
+        card.append(itemButton(t.executionCancel, async () => {
+          await rpc('executionCancel', { executionId: item.executionId }); await refreshExecutions()
+        }))
+      }
+      list.append(card)
+    }
+  }
+  get('executions-refresh').addEventListener('click', () => void attempt(refreshExecutions))
 
   async function refreshFiles() {
     const epoch = ++viewEpoch

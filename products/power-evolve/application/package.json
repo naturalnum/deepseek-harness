@@ -28,10 +28,12 @@
     "@deepseek-ai/dsh-tools": "workspace:*",
     "@deepseek-ai/dsh-typert-protocol": "workspace:*",
     "@deepseek-ai/dsh-typert-registry": "workspace:*",
+    "js-yaml": "^4.2.0",
     "pg": "^8.16.3",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
     "@types/pg": "^8.15.5",
     "@deepseek-ai/cordis": "workspace:~"
   },

@@ -56,8 +56,10 @@ export const grant = z.object({
   token: z.string().min(32).max(256),
   epoch: z.number().int().positive(),
   settings,
-  source: z.enum(['user', 'platform_action']).default('user'),
+  source: z.enum(['user', 'platform_action', 'sandbox_result']).default('user'),
   sourceActionId: z.uuid().nullable().default(null),
+  sourceExecutionId: z.uuid().nullable().default(null),
+  executionEnabled: z.boolean().default(false),
   skills: z.array(skillSnapshot).max(8).default([]),
   selection: z.array(skillSelection).max(8).default([]),
 }).strict()

@@ -13872,6 +13872,9 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
+      js-yaml:
+        specifier: ^4.2.0
+        version: 4.3.1
       pg:
         specifier: ^8.16.3
         version: 8.23.0
@@ -13882,6 +13885,9 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:~
         version: link:../../../vendor/cordis
+      '@types/js-yaml':
+        specifier: ^4.0.9
+        version: 4.0.9
       '@types/pg':
         specifier: ^8.15.5
         version: 8.23.1

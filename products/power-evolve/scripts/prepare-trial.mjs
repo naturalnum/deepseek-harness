@@ -20,6 +20,15 @@ if (new Set([databasePort, hostPort, platformPort, targetPort]).size !== 4) thro
 const privateDir = process.env.PE_PRIVATE_DIR ?? join(homedir(), '.config/power-evolve', `shared-host-${trialName}`)
 const output = join(root, '.artifacts/power-evolve', trialName === 'slice1' ? '' : trialName)
 await mkdir(privateDir, { recursive: true, mode: 0o700 }); await chmod(privateDir, 0o700)
+let sandbox = null
+try { sandbox = JSON.parse(await readFile(join(privateDir, 'sandbox.json'), 'utf8')) }
+catch (error) { if (error.code !== 'ENOENT') throw error }
+if (sandbox) {
+  const required = ['workspaceRoot', 'kubeconfigFile', 'namespace', 'image', 'localRoot', 'nodeRoot']
+  if (required.some(key => typeof sandbox[key] !== 'string' || sandbox[key].length === 0)) throw new Error('Incomplete Sandbox trial configuration')
+  if (resolve(sandbox.workspaceRoot) !== join(resolve(sandbox.localRoot), 'workspaces')) throw new Error('Workspace and Sandbox roots differ')
+  if (sandbox.idleMs !== undefined && (!Number.isInteger(sandbox.idleMs) || sandbox.idleMs < 1000)) throw new Error('Invalid Sandbox idle time')
+}
 async function provision(name, value) {
   const path = join(privateDir, name)
   try { await writeFile(path, value, { flag: 'wx', mode: 0o600 }) }
@@ -31,6 +40,7 @@ const password = await provision('database-password', randomBytes(24).toString('
 await provision('database-url', `postgresql://powerevolve:${password}@127.0.0.1:${databasePort}/powerevolve`)
 await provision('worker-token', randomBytes(32).toString('base64url'))
 await provision('connector-key', randomBytes(32).toString('base64url'))
+if (sandbox) await provision('runner-key', randomBytes(32).toString('base64url'))
 let modelKey = process.env.DEEPSEEK_API_KEY
 if (!modelKey) {
   const env = await readFile(join(privateDir, 'model.env'), 'utf8')
@@ -55,7 +65,10 @@ for (const name of ['host', 'platform']) {
   const values = { port: name === 'host' ? hostPort : platformPort,
     hostOrigin: `http://127.0.0.1:${hostPort}`, origin: `http://127.0.0.1:${hostPort}`,
     platformOrigin: `http://127.0.0.1:${platformPort}`, platformUrl: `http://127.0.0.1:${platformPort}`,
-    connectorUrl: `http://127.0.0.1:${targetPort}` }
+    connectorUrl: `http://127.0.0.1:${targetPort}`,
+    ...(sandbox ? { workspaceRoot: sandbox.workspaceRoot, sandboxKubeconfigFile: sandbox.kubeconfigFile,
+      sandboxNamespace: sandbox.namespace, sandboxImage: sandbox.image, sandboxLocalRoot: sandbox.localRoot,
+      sandboxNodeRoot: sandbox.nodeRoot, ...(sandbox.idleMs ? { sandboxIdleMs: sandbox.idleMs } : {}) } : {}) }
   const selected = name === 'host' ? ['web-server', 'power-evolve-host', 'power-evolve-runtime'] : ['web-server', 'power-evolve-platform']
   const patch = selected.map(id => {
     const start = bundle.indexOf(`    - id: ${id}`)

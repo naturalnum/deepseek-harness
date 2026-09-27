@@ -1,7 +1,7 @@
 /** Authorized POSIX workspace. The filesystem is authoritative so sandbox edits remain visible. */
 import { createHash, randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
-import { mkdir, lstat, open, opendir, rename, rm } from 'node:fs/promises'
+import { chown, mkdir, lstat, open, opendir, rename, rm } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
 import type { Pool } from 'pg'
 import { PlatformError, type Identity } from '../contracts.ts'
@@ -41,7 +41,13 @@ function decode(value: string): Buffer {
 /** All resource paths are derived from a server-owned workspace id after authentication. */
 export class FileService {
   private readonly root: string
-  constructor(private readonly pool: Pool, root: string) { this.root = resolve(root) }
+  constructor(private readonly pool: Pool, root: string, private readonly sandboxOwner?: { uid: number; gid: number }) {
+    this.root = resolve(root)
+  }
+
+  private async owned(path: string): Promise<void> {
+    if (this.sandboxOwner) await chown(path, this.sandboxOwner.uid, this.sandboxOwner.gid)
+  }
 
   async init(): Promise<void> {
     await mkdir(this.root, { recursive: true, mode: 0o700 })
@@ -49,26 +55,31 @@ export class FileService {
     if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('Workspace root must be a real directory')
   }
 
-  private async workspace(user: Identity): Promise<string> {
-    let result = await this.pool.query<{ id: string }>('SELECT id FROM pe_workspaces WHERE user_id=$1', [user.userId])
+  /** Return the authenticated user's existing or newly created Sandbox mount source. */
+  async workspaceForUser(userId: string): Promise<{ id: string; path: string }> {
+    let result = await this.pool.query<{ id: string }>('SELECT id FROM pe_workspaces WHERE user_id=$1', [userId])
     if (!result.rows[0]) {
-      await this.pool.query('INSERT INTO pe_workspaces(id,user_id) VALUES($1,$2) ON CONFLICT(user_id) DO NOTHING', [randomUUID(), user.userId])
-      result = await this.pool.query<{ id: string }>('SELECT id FROM pe_workspaces WHERE user_id=$1', [user.userId])
+      await this.pool.query('INSERT INTO pe_workspaces(id,user_id) VALUES($1,$2) ON CONFLICT(user_id) DO NOTHING', [randomUUID(), userId])
+      result = await this.pool.query<{ id: string }>('SELECT id FROM pe_workspaces WHERE user_id=$1', [userId])
     }
     const path = join(this.root, result.rows[0]!.id)
     try { await mkdir(path, { mode: 0o700 }) }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error }
     const stat = await lstat(path)
     if (!stat.isDirectory() || stat.isSymbolicLink()) throw new PlatformError(503, 'workspace_unavailable')
-    return path
+    await this.owned(path)
+    return { id: result.rows[0]!.id, path }
   }
+
+  private async workspace(user: Identity): Promise<string> { return (await this.workspaceForUser(user.userId)).path }
 
   private async parent(root: string, segments: string[], create: boolean): Promise<string> {
     let path = root
     for (const part of segments) {
       path = join(path, part)
+      let created = false
       if (create) {
-        try { await mkdir(path, { mode: 0o700 }) }
+        try { await mkdir(path, { mode: 0o700 }); created = true }
         catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error }
       }
       let stat
@@ -78,6 +89,7 @@ export class FileService {
         throw error
       }
       if (!stat.isDirectory() || stat.isSymbolicLink()) throw new PlatformError(400, 'invalid_path')
+      if (created) await this.owned(path)
     }
     return path
   }
@@ -174,7 +186,11 @@ export class FileService {
         const target = join(parent, segments.at(-1)!)
         const temporary = join(parent, `.pe-${randomUUID()}.tmp`)
         const file = await open(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600)
-        try { await file.writeFile(bytes); await file.sync() }
+        try {
+          await file.writeFile(bytes)
+          if (this.sandboxOwner) await file.chown(this.sandboxOwner.uid, this.sandboxOwner.gid)
+          await file.sync()
+        }
         finally { await file.close() }
         try {
           await rename(temporary, target)

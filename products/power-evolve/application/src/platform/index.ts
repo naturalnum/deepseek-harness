@@ -16,6 +16,9 @@ import { EventStore } from './events.ts'
 import { FileService } from './files.ts'
 import { SkillService } from './skills.ts'
 import { ConnectorService } from './connectors.ts'
+import { ExecutionService } from './executions.ts'
+import { KubernetesClient } from './kubernetes.ts'
+import { SandboxManager } from './sandbox.ts'
 import { proxyModel } from './model.ts'
 import { serveUi } from '../ui.ts'
 
@@ -30,6 +33,13 @@ export const Config = schema.object({
   modelUrl: schema.string().required(), hostOrigin: schema.string().required(), platformOrigin: schema.string().required(),
   connectorUrl: schema.string().required(), connectorTimeoutMs: schema.number().min(1000).required(),
   connectorPollMs: schema.number().min(100).required(),
+  sandboxKubeconfigFile: schema.string().default(''), sandboxKeyFile: schema.string().default(''),
+  sandboxNamespace: schema.string().default(''), sandboxImage: schema.string().default(''),
+  sandboxLocalRoot: schema.string().default(''), sandboxNodeRoot: schema.string().default(''),
+  sandboxReadyTimeoutMs: schema.number().min(1000).default(60000),
+  sandboxConcurrency: schema.number().step(1).min(1).default(4),
+  sandboxPollMs: schema.number().min(100).default(500), sandboxIdleMs: schema.number().min(1000).default(300000),
+  sandboxCommandTimeoutMs: schema.number().min(1000).default(60000),
   leaseMs: schema.number().min(1000).required(), tokenLifetimeMs: schema.number().min(1000).required(),
   maxPendingPerUser: schema.number().step(1).min(1).required(), maxActivePerUser: schema.number().step(1).min(1).required(),
   maxHistoryBytes: schema.number().step(1).min(1024).required(), maxHistoryEvents: schema.number().step(1).min(1).required(),
@@ -55,7 +65,10 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const pool = new Pool({ connectionString: databaseUrl.trim(), max: config.databasePoolSize, statement_timeout: config.databaseTimeoutMs })
   ctx.effect(() => () => pool.end())
   await initializeDatabase(pool)
-  const files = new FileService(pool, config.workspaceRoot)
+  const executionEnabled = config.sandboxKubeconfigFile.length > 0
+  if (executionEnabled && (!config.sandboxKeyFile || !config.sandboxNamespace || !config.sandboxImage
+    || !config.sandboxLocalRoot || !config.sandboxNodeRoot)) throw new Error('Incomplete Agent Sandbox configuration')
+  const files = new FileService(pool, config.workspaceRoot, executionEnabled ? { uid: 1000, gid: 1000 } : undefined)
   await files.init()
   const skills = new SkillService(pool, config.workspaceRoot)
   await skills.init()
@@ -65,17 +78,25 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       [randomUUID(), user.username, await hashPassword(user.password), user.settings])
   }
   const identities = new IdentityService(pool, config.tokenLifetimeMs)
-  const tasks = new TaskStore(pool, config)
+  const tasks = new TaskStore(pool, { ...config, executionEnabled })
   const events = new EventStore(tasks, config)
   const connectors = new ConnectorService(tasks, config.connectorUrl, connectorKey.trim(), config.connectorTimeoutMs, config.connectorPollMs)
   await connectors.seedPermissions(users.map(user => user.username))
   connectors.start()
   ctx.effect(() => () => connectors.close())
+  const executions = executionEnabled ? new ExecutionService(tasks, new SandboxManager(
+    await KubernetesClient.fromFile(config.sandboxKubeconfigFile), files, pool,
+    (await readFile(config.sandboxKeyFile, 'utf8')).trim(), {
+      namespace: config.sandboxNamespace, image: config.sandboxImage,
+      localRoot: config.sandboxLocalRoot, nodeRoot: config.sandboxNodeRoot,
+      readyTimeoutMs: config.sandboxReadyTimeoutMs,
+    }), config.sandboxConcurrency, config.sandboxPollMs, config.sandboxIdleMs, config.sandboxCommandTimeoutMs) : null
+  if (executions) { executions.start(); ctx.effect(() => () => executions.close()) }
   const loginAttempts = new Map<string, { since: number; count: number }>()
 
   const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const path = new URL(req.url ?? '/', config.platformOrigin).pathname
-    if (req.method === 'GET' && path === '/health') { sendJson(res, { ready: true, service: 'platform', schema: 4, instanceId }); return }
+    if (req.method === 'GET' && path === '/health') { sendJson(res, { ready: true, service: 'platform', schema: 6, executionEnabled, instanceId }); return }
     if (req.method === 'GET' && path === '/config') { sendJson(res, { hostUrl: config.hostOrigin }); return }
     if (req.method === 'GET' && await serveUi(path, 'login', res)) return
     if (req.method !== 'POST') throw new PlatformError(404, 'not_found')
@@ -150,6 +171,13 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
           const value = z.object({ callId: z.string().min(1).max(100), text: z.string().trim().min(1).max(1000) }).strict().parse(input)
           sendJson(res, await connectors.prepare(token, value.callId, value.text)); return
         }
+        case '/runtime/executions/propose': {
+          if (!executions) throw new PlatformError(503, 'execution_unavailable')
+          const value = z.object({ callId: z.string().min(1).max(100), command: z.string().min(1).max(8192),
+            cwd: z.string().max(256).regex(/^(?:|[A-Za-z0-9._/-]{1,256})$/) }).strict().parse(input)
+          if (value.cwd.split('/').some(part => part === '..')) throw new PlatformError(400, 'invalid_cwd')
+          sendJson(res, await executions.propose(token, value.callId, value.command, value.cwd)); return
+        }
         default: throw new PlatformError(404, 'not_found')
       }
     }
@@ -188,6 +216,15 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         sendJson(res, await skills.toggle(user, value.skillId, value.enabled)); return
       }
       case '/connectors/actions': z.object({}).strict().parse(input); sendJson(res, await connectors.list(user)); return
+      case '/executions/list': {
+        if (!executions) throw new PlatformError(503, 'execution_unavailable')
+        z.object({}).strict().parse(input); sendJson(res, await executions.list(user)); return
+      }
+      case '/executions/cancel': {
+        if (!executions) throw new PlatformError(503, 'execution_unavailable')
+        const value = z.object({ executionId: z.uuid() }).strict().parse(input)
+        sendJson(res, await executions.cancel(user, value.executionId)); return
+      }
       default: throw new PlatformError(404, 'not_found')
     }
   }

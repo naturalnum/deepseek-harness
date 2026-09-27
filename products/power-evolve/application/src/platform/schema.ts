@@ -101,3 +101,45 @@ ALTER TABLE pe_operations ADD CONSTRAINT pe_operations_source_action
   CHECK ((source='user' AND source_action_id IS NULL) OR (source='platform_action' AND source_action_id IS NOT NULL));
 UPDATE pe_schema SET version=4 WHERE version=3;
 `
+
+/** On-demand Sandbox instances and idempotent execution requests. */
+export const schemaV5 = `
+CREATE TABLE pe_sandbox_instances (
+  session_id uuid PRIMARY KEY REFERENCES pe_sessions(id), user_id uuid NOT NULL REFERENCES pe_users(id),
+  name text UNIQUE NOT NULL, state text NOT NULL CHECK (state IN ('creating','ready','deleting','deleted','unknown')),
+  pod_uid uuid, runner_instance_id uuid, last_used_at timestamptz NOT NULL DEFAULT now(),
+  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE TABLE pe_cloud_executions (
+  id uuid PRIMARY KEY, user_id uuid NOT NULL REFERENCES pe_users(id),
+  session_id uuid NOT NULL REFERENCES pe_sessions(id), operation_id uuid NOT NULL REFERENCES pe_operations(id),
+  call_id text NOT NULL, command text NOT NULL, cwd text NOT NULL, request_digest text NOT NULL,
+  state text NOT NULL CHECK (state IN ('queued','starting','running','cancelling','succeeded','failed','cancelled','uncertain')),
+  cancel_requested boolean NOT NULL DEFAULT false, result jsonb, error_code text,
+  sandbox_name text, pod_uid uuid, runner_instance_id uuid,
+  lease_owner uuid, lease_until timestamptz, attempts integer NOT NULL DEFAULT 0,
+  continuation_request_id uuid NOT NULL DEFAULT gen_random_uuid(),
+  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(operation_id,call_id), UNIQUE(continuation_request_id)
+);
+CREATE UNIQUE INDEX pe_cloud_executions_one_live_per_session ON pe_cloud_executions(session_id)
+  WHERE state IN ('queued','starting','running','cancelling','uncertain');
+CREATE INDEX pe_cloud_executions_user ON pe_cloud_executions(user_id,created_at DESC);
+ALTER TABLE pe_operations DROP CONSTRAINT pe_operations_source_check;
+ALTER TABLE pe_operations ADD CONSTRAINT pe_operations_source_check
+  CHECK (source IN ('user','platform_action','sandbox_result'));
+ALTER TABLE pe_operations ADD COLUMN source_execution_id uuid REFERENCES pe_cloud_executions(id);
+ALTER TABLE pe_operations DROP CONSTRAINT pe_operations_source_action;
+ALTER TABLE pe_operations ADD CONSTRAINT pe_operations_source_action CHECK (
+  (source='user' AND source_action_id IS NULL AND source_execution_id IS NULL)
+  OR (source='platform_action' AND source_action_id IS NOT NULL AND source_execution_id IS NULL)
+  OR (source='sandbox_result' AND source_action_id IS NULL AND source_execution_id IS NOT NULL));
+UPDATE pe_schema SET version=5 WHERE version=4;
+`
+
+/** Retain native Pod stop evidence before releasing a writable workspace mount. */
+export const schemaV6 = `
+ALTER TABLE pe_sandbox_instances ADD COLUMN stop_pod_uid uuid;
+ALTER TABLE pe_sandbox_instances ADD COLUMN stop_evidence jsonb;
+UPDATE pe_schema SET version=6 WHERE version=5;
+`

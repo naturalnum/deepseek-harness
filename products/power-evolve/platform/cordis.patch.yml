@@ -13,7 +13,18 @@
       name: '@power-evolve/application/platform'
       config:
         databaseUrlFile: !!js process.env.PE_PRIVATE_DIR + '/database-url'
-        workspaceRoot: !!js process.env.PE_PRIVATE_DIR + '/workspaces'
+        workspaceRoot: !!js process.env.PE_WORKSPACE_ROOT || process.env.PE_PRIVATE_DIR + '/workspaces'
+        sandboxKubeconfigFile: !!js process.env.PE_KUBECONFIG_FILE || ''
+        sandboxKeyFile: !!js process.env.PE_PRIVATE_DIR + '/runner-key'
+        sandboxNamespace: !!js process.env.PE_SANDBOX_NAMESPACE || ''
+        sandboxImage: !!js process.env.PE_SANDBOX_IMAGE || ''
+        sandboxLocalRoot: !!js process.env.PE_SANDBOX_LOCAL_ROOT || ''
+        sandboxNodeRoot: !!js process.env.PE_SANDBOX_NODE_ROOT || ''
+        sandboxReadyTimeoutMs: 60000
+        sandboxConcurrency: 4
+        sandboxPollMs: 500
+        sandboxIdleMs: 300000
+        sandboxCommandTimeoutMs: 60000
         workerTokenFile: !!js process.env.PE_PRIVATE_DIR + '/worker-token'
         modelKeyFile: !!js process.env.PE_PRIVATE_DIR + '/model-key'
         connectorKeyFile: !!js process.env.PE_PRIVATE_DIR + '/connector-key'

@@ -15,10 +15,10 @@ const messageRequest = z.object({
   thinking: z.json().optional(), output_config: z.json().optional(),
   temperature: z.number().optional(), stop_sequences: z.array(z.string()).optional(),
   tools: z.array(z.object({
-    name: z.enum(['trial_notes_list', 'trial_notes_append']),
+    name: z.enum(['trial_notes_list', 'trial_notes_append', 'cloud_exec']),
     description: z.string().max(1000), input_schema: z.record(z.string(), z.json()),
     defer_loading: z.literal(true).optional(),
-  }).strict()).max(2).optional(),
+  }).strict()).max(3).optional(),
 }).strict()
 
 export interface ModelProxyConfig {
