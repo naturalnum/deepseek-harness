@@ -7,7 +7,7 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 import schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
 import { Pool } from 'pg'
-import { createRequest, filesListRequest, fileReadRequest, filePutRequest, listRequest, loginRequest, pageRequest, promptRequest, sessionId, skillInstallRequest, skillRequest, skillToggleRequest, settings, PlatformError } from '../contracts.ts'
+import { createRequest, filesListRequest, fileReadRequest, filePutRequest, listRequest, loginRequest, pageRequest, promptRequest, sessionId, sessionRequest, skillInstallRequest, skillRequest, skillToggleRequest, settings, PlatformError } from '../contracts.ts'
 import { bearer, readJson, sendFailure, sendJson } from '../http.ts'
 import { initializeDatabase } from './database.ts'
 import { hashPassword, IdentityService } from './identity.ts'
@@ -208,7 +208,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       switch (path) {
         case '/runtime/snapshot': z.object({}).strict().parse(input); sendJson(res, await events.runtimeSnapshot(token)); return
         case '/runtime/append': sendJson(res, await events.append(token, z.object({ events: z.array(z.json()).max(256) }).strict().parse(input).events)); return
-        case '/runtime/renew': z.object({}).strict().parse(input); await tasks.renew(token); sendJson(res, { ok: true }); return
+        case '/runtime/renew': z.object({}).strict().parse(input); sendJson(res, await tasks.renew(token)); return
         case '/runtime/finish': {
           const result = z.object({ outcome: z.enum(['completed', 'failed']), errorCode: z.string().max(80).nullable() }).strict().parse(input)
           await tasks.finish(token, result.outcome, result.errorCode)
@@ -253,6 +253,10 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       case '/sessions/prompt': {
         const { sessionId, requestId, text, target } = promptRequest.parse(input)
         sendJson(res, await tasks.accept(user, sessionId, requestId, text, user.settings, target)); return
+      }
+      case '/sessions/cancel': {
+        const { sessionId } = sessionRequest.parse(input)
+        sendJson(res, await tasks.cancel(user, sessionId)); return
       }
       case '/sessions/page': {
         const { sessionId, after, limit } = pageRequest.parse(input)

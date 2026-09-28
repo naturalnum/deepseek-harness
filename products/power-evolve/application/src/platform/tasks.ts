@@ -99,6 +99,32 @@ export class TaskStore {
     })
   }
 
+  /** Request cancellation of the current turn, or settle its unclaimed input. */
+  async cancel(user: Identity, session: SessionId): Promise<{ accepted: true }> {
+    return transaction(this.pool, async client => {
+      const owned = await client.query('SELECT id FROM pe_sessions WHERE id=$1 AND user_id=$2 FOR UPDATE',
+        [session, user.userId])
+      if (!owned.rowCount) throw new PlatformError(404, 'session_not_found')
+      const result = await client.query<{ id: string; state: 'queued' | 'running' }>(
+        `SELECT id,state FROM pe_operations WHERE session_id=$1 AND state IN ('queued','running')
+         ORDER BY CASE state WHEN 'running' THEN 0 ELSE 1 END,created_at,id LIMIT 1 FOR UPDATE`, [session],
+      )
+      const operation = result.rows[0]
+      if (!operation) return { accepted: true }
+      if (operation.state === 'queued') {
+        await client.query(
+          `UPDATE pe_operations SET state='failed',error_code='turn_user',completed_at=now() WHERE id=$1`, [operation.id],
+        )
+      } else {
+        await client.query(
+          `UPDATE pe_operations SET error_code='cancel_requested' WHERE id=$1 AND error_code IS DISTINCT FROM 'cancel_requested'`,
+          [operation.id],
+        )
+      }
+      return { accepted: true }
+    })
+  }
+
   /** Claim one eligible Operation and its Session lease in the same transaction. */
   async claim(workerId: string): Promise<Grant | null> {
     return transaction(this.pool, async client => {
@@ -159,11 +185,15 @@ export class TaskStore {
   }
 
   /** Renew only an unexpired grant; an expired process cannot reacquire its former lease. */
-  async renew(token: string): Promise<void> {
-    await transaction(this.pool, async client => {
+  async renew(token: string): Promise<{ cancelRequested: boolean }> {
+    return transaction(this.pool, async client => {
       const row = await this.authorized(client, token)
       await client.query(`UPDATE pe_sessions SET lease_until=now()+$2::double precision*interval '1 millisecond' WHERE id=$1`,
         [row.id, this.limits.leaseMs])
+      const operation = await client.query<{ error_code: string | null }>(
+        'SELECT error_code FROM pe_operations WHERE id=$1', [row.operation_id],
+      )
+      return { cancelRequested: operation.rows[0]?.error_code === 'cancel_requested' }
     })
   }
 
@@ -171,8 +201,12 @@ export class TaskStore {
   async finish(token: string, outcome: 'completed' | 'failed', errorCode: string | null): Promise<void> {
     await transaction(this.pool, async client => {
       const row = await this.authorized(client, token)
+      const operation = await client.query<{ error_code: string | null }>(
+        'SELECT error_code FROM pe_operations WHERE id=$1', [row.operation_id],
+      )
+      const cancelled = operation.rows[0]?.error_code === 'cancel_requested'
       await client.query('UPDATE pe_operations SET state=$2,error_code=$3,completed_at=now() WHERE id=$1',
-        [row.operation_id, outcome, errorCode])
+        [row.operation_id, cancelled ? 'failed' : outcome, cancelled ? 'turn_user' : errorCode])
       await client.query('UPDATE pe_attempts SET ended_at=now() WHERE operation_id=$1 AND epoch=$2',
         [row.operation_id, row.lease_epoch])
       await client.query('UPDATE pe_sessions SET grant_digest=NULL,lease_until=NULL,updated_at=now() WHERE id=$1', [row.id])

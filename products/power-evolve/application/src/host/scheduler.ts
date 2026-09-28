@@ -6,6 +6,7 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import { foldConsumedWork } from '@deepseek-ai/dsh-agent'
 import { MessageId } from '@deepseek-ai/dsh-llm'
 import { setTimeout as delay } from 'node:timers/promises'
+import { z } from 'zod'
 import type { Grant } from '../contracts.ts'
 import { installConnectorTools } from './connectors.ts'
 import { installExecutionTools } from './executions.ts'
@@ -17,6 +18,8 @@ declare module '@deepseek-ai/dsh-llm' {
     'power-evolve-desktop-execution': { readonly kind: 'power-evolve-desktop-execution'; readonly executionId: string }
   }
 }
+
+const renewal = z.object({ cancelRequested: z.boolean() }).strict()
 
 /** Limits apply to active Agents, while inactive history remains in PG. */
 export interface SchedulerConfig {
@@ -69,10 +72,16 @@ export class Scheduler {
 
   private async run(grant: Grant): Promise<void> {
     const runtime = this.ctx.powerEvolveRuntime
+    const admitted = renewal.parse(await runtime.call('/runtime/renew', grant.token, {}))
+    if (admitted.cancelRequested) {
+      await runtime.call('/runtime/finish', grant.token, { outcome: 'failed', errorCode: 'turn_user' })
+      return
+    }
     runtime.grants.set(grant.sessionId, grant)
     const lifetime = new AbortController()
     let handle: AgentHandle | undefined
     let failure: string | null = null
+    let cancelRequested = false
     const timeout = setTimeout(() => {
       failure = 'operation_timeout'
       lifetime.abort()
@@ -82,7 +91,13 @@ export class Scheduler {
       while (!lifetime.signal.aborted) {
         try { await delay(this.config.renewMs, undefined, { signal: lifetime.signal }) }
         catch (error) { if (lifetime.signal.aborted) return; throw error }
-        try { await runtime.call('/runtime/renew', grant.token, {}) }
+        try {
+          const renewed = renewal.parse(await runtime.call('/runtime/renew', grant.token, {}))
+          if (renewed.cancelRequested && !cancelRequested && !lifetime.signal.aborted) {
+            cancelRequested = true
+            handle?.agent.cancel({ kind: 'user' }, { keepInbox: true })
+          }
+        }
         catch (_renewalFailed) {
           failure = 'lease_lost'
           lifetime.abort()
@@ -95,6 +110,7 @@ export class Scheduler {
         resumeSessionId: grant.sessionId, signal: lifetime.signal,
         agentOptions: { provider: 'power-evolve', model: grant.settings.model, maxTokens: grant.settings.maxTokens },
       })
+      if (cancelRequested) handle.agent.cancel({ kind: 'user' }, { keepInbox: true })
       this.handles.add(handle)
       const { agent } = handle
       if (grant.source === 'user' || grant.source === 'sandbox_result' || grant.source === 'desktop_result') {

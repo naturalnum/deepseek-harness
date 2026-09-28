@@ -137,6 +137,12 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
           text: value.content.map(part => part.text).join('\n'), target: selectedExecutionTarget(value.clientHints) }))
         return { accepted: accepted.accepted }
       }
+      case 'session/cancel': {
+        const { request } = withRequest(z.object({ sessionId }).strict()).parse(args)
+        return z.object({ accepted: z.literal(true) }).strict().parse(
+          await call('/sessions/cancel', token, request),
+        )
+      }
       case 'session/page': return call('/native/sessions/page', token, withRequest(page).parse(args).request)
       case 'session/projections': {
         const { sessionId: id } = withRequest(projectionRequest).parse(args).request

@@ -11,7 +11,7 @@
 
 `model` 使用原生 DeepSeek Messages 编解码器。它在推理前持久保存已消费输入和请求记录，然后向平台提交操作授权。`host` 通过经过身份验证的 JSON RPC 和有限额的 NDJSON 订阅，仅暴露产品 Typert 命名空间。按 Agent 装载的原生工具提供受控便签查询、审批申请，以及按本次选择的云端或桌面目标提交命令的回执。此组合没有原生操作者级全局配置、任意文件系统访问、进程工具、插件安装和执行路由。
 
-原生 Web 的登录页可把仅保存在内存中的 Agent 凭据 POST 到宿主 `/auth/exchange`。平台原子地注销这枚凭据，并签发保留原过期时间的新凭据；宿主将新凭据写入只发往 `/native/api` 和 `/api/powerEvolve` 的 HttpOnly、SameSite=Strict Cookie。URL 和浏览器存储不包含凭据。适配器对每次产品 RPC、事件流和 WebSocket 升级调用 `powerEvolveBrowserAuth.authenticate(request)`；Cookie 请求必须来自配置的宿主 Origin，交换请求必须来自配置的平台 Origin。平台仍负责校验到期和注销。除本机回环地址外必须使用 HTTPS。原生传输层在 `/native/api` 提供受限的会话列表、创建、文本输入、历史分页、投影、订阅、控制和获授权的工作区订阅基线；WebSocket 复用上游 Gateway 的流复用器，平台调用仍按用户授权。其余原生端点返回错误，宿主不开放上游操作员接口。
+原生 Web 的登录页可把仅保存在内存中的 Agent 凭据 POST 到宿主 `/auth/exchange`。平台原子地注销这枚凭据，并签发保留原过期时间的新凭据；宿主将新凭据写入只发往 `/native/api` 和 `/api/powerEvolve` 的 HttpOnly、SameSite=Strict Cookie。URL 和浏览器存储不包含凭据。适配器对每次产品 RPC、事件流和 WebSocket 升级调用 `powerEvolveBrowserAuth.authenticate(request)`；Cookie 请求必须来自配置的宿主 Origin，交换请求必须来自配置的平台 Origin。平台仍负责校验到期和注销。除本机回环地址外必须使用 HTTPS。原生传输层在 `/native/api` 提供受限的会话列表、创建、文本输入、取消、历史分页、投影、订阅、控制和获授权的工作区订阅基线；WebSocket 复用上游 Gateway 的流复用器，平台调用仍按用户授权。其余原生端点返回错误，宿主不开放上游操作员接口。
 
 <a id="trusted-platform"></a>
 ## 可信平台
@@ -29,6 +29,8 @@
 ## 恢复与限制
 
 操作提交后，客户端才收到 `accepted`。未消费的输入可以在重启后投递。已消费但没有完成轮次的输入由原生 DSH 恢复逻辑补齐中断记录，并报告失败，不会自动再次发送给模型。完成响应丢失时，重新领取租约后根据已保存的轮次核对结果。
+
+取消会话时，平台在 PG 中核对当前用户的归属。尚未领取的输入直接以失败终结，不启动模型调用；运行中的输入保存取消意图，由持有租约的宿主在续租时读取。仍在运行的宿主取消 Agent，并在释放授权前保存原生日志。接替宿主不会重放已取消输入，后续仍可在同一会话提问。没有活跃操作时重复取消只返回成功，不改动历史。
 
 本切片支持根会话文本对话、有限大小的文件传输和文本编辑、个人技能说明、两个受控远程 API 工具、云端命令及选定本地项目中的桌面命令。完成的输出通过持久事件订阅传送，部分模型 token 不广播到浏览器。私有 Profile 不承诺兼容所有原生 Controller 或 Session 存储消费者。它拒绝未知 Session 版本，不迁移旧 PowerEvolve 数据库。结果不明的远端写入或命令留在 PG 中等待对账；宿主不会盲目重放。
 
