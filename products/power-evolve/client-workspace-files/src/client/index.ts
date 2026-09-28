@@ -5,11 +5,14 @@ import type {} from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
+import { PreviewDownload } from './PreviewDownload.tsx'
 import { WorkspaceFileButton, type WorkspaceFileActions } from './WorkspaceFileButton.tsx'
 import { en, zh, type WorkspaceFileLocaleKey } from './locales.ts'
 import { installWorkspaceFileStyles } from './styles.ts'
 import { WorkspaceFileHttpClient } from './workspace-file-client.ts'
+import { WorkspaceFileDownloadClient } from './workspace-file-download.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -24,6 +27,7 @@ export const inject = ['slots', 'locale', 'workspaces']
 
 export function apply(ctx: Context): void {
   const client = new WorkspaceFileHttpClient()
+  const downloads = new WorkspaceFileDownloadClient()
   ctx.effect(() => ctx.locale.register(namespace, { zh, en }), 'PowerEvolve file labels')
   ctx.effect(() => installWorkspaceFileStyles(), 'PowerEvolve file styles')
   ctx.effect(() => ctx.slots.inject('conversation.input.left', () => ctx.slots.register({
@@ -42,4 +46,8 @@ export function apply(ctx: Context): void {
       },
     }),
   }, WorkspaceFileButton)), 'PowerEvolve composer file upload')
+  ctx.effect(() => ctx.slots.inject('sidebar.right.tab.document.actions', () => ctx.slots.register({
+    name: 'sidebar.right.tab.document.actions', id: 'power-evolve-workspace-download', order: 20,
+    locale: namespace, inject: () => ({ client: downloads }),
+  }, PreviewDownload)), 'PowerEvolve file preview download')
 }

@@ -14,6 +14,7 @@
     { "path": "../../../packages/client/ui-conversation/tsconfig.client.json" },
     { "path": "../../../packages/client/ui-primitives" },
     { "path": "../../../packages/client/ui-renderer" },
+    { "path": "../../../packages/client/ui-sidebar-documentpreview/tsconfig.client.json" },
     { "path": "../../../packages/client/ui-slots" }
   ]
 }
