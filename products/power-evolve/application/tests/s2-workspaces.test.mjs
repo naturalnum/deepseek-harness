@@ -85,6 +85,10 @@ test('S2 Workspaces bind Sessions immutably and scope native files to their owne
     assert.deepEqual(await tasks.create(alice, createId, workspaceId.parse(project.workspaceId)), first)
     await assert.rejects(tasks.create(alice, createId, workspaceId.parse(other.workspaceId)),
       { status: 409, code: 'request_id_conflict' })
+    await assert.rejects(tasks.create(alice, createId, workspaceId.parse(bobDefault.workspaceId)),
+      { status: 409, code: 'request_id_conflict' })
+    await assert.rejects(tasks.create(alice, createId, workspaceId.parse(randomUUID())),
+      { status: 409, code: 'request_id_conflict' })
     await assert.rejects(tasks.create(bob, requestId.parse(randomUUID()), workspaceId.parse(project.workspaceId)),
       { status: 404, code: 'workspace_not_found' })
     const defaultSession = await tasks.create(alice, requestId.parse(randomUUID()))

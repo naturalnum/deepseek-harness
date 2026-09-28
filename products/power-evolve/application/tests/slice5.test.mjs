@@ -32,8 +32,11 @@ test('desktop device ownership, file transfer and durable result', { timeout: 60
   for (const user of [alice, bob]) await pool.query(
     'INSERT INTO pe_users(id,username,password_hash,settings) VALUES($1,$2,$3,$4)',
     [user.userId, user.username, 'irrelevant', '{}'])
-  await pool.query('INSERT INTO pe_sessions(id,user_id,create_request_id,header) VALUES($1,$2,$3,$4)',
-    [sessionId, alice.userId, randomUUID(), '{}'])
+  const workspaceId = randomUUID()
+  await pool.query(`INSERT INTO pe_workspaces(id,user_id,title,is_default)
+    VALUES($1,$2,'Workspace',true)`, [workspaceId, alice.userId])
+  await pool.query('INSERT INTO pe_sessions(id,user_id,workspace_id,create_request_id,header) VALUES($1,$2,$3,$4,$5)',
+    [sessionId, alice.userId, workspaceId, randomUUID(), '{}'])
   await pool.query(`INSERT INTO pe_operations(id,session_id,request_id,input,settings,state)
     VALUES($1,$2,$3,'desktop test','{}','running')`, [operationId, sessionId, randomUUID()])
   const tasks = { pool, async authorized(client, grant) {

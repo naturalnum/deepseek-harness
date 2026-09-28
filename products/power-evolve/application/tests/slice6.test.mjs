@@ -50,11 +50,15 @@ test('two workers fence sessions and rotate eligible users', { timeout: 30000 },
   const [alice, bob] = [randomUUID(), randomUUID()]
   await pool.query(`INSERT INTO pe_users(id,username,password_hash,settings) VALUES
     ($1,'alice','unused','{}'),($2,'bob','unused','{}')`, [alice, bob])
+  const workspaceIds = new Map([[alice, randomUUID()], [bob, randomUUID()]])
+  for (const [userId, workspaceId] of workspaceIds) await pool.query(
+    `INSERT INTO pe_workspaces(id,user_id,title,is_default) VALUES($1,$2,'Workspace',true)`,
+    [workspaceId, userId])
   const operations = []
   for (const [userId, tag, seconds] of [[alice, 'a1', 1], [alice, 'a2', 2], [bob, 'b1', 3]]) {
     const sessionId = randomUUID(), operationId = randomUUID()
-    await pool.query('INSERT INTO pe_sessions(id,user_id,create_request_id,header) VALUES($1,$2,$3,$4)',
-      [sessionId, userId, randomUUID(), {}])
+    await pool.query('INSERT INTO pe_sessions(id,user_id,workspace_id,create_request_id,header) VALUES($1,$2,$3,$4,$5)',
+      [sessionId, userId, workspaceIds.get(userId), randomUUID(), {}])
     await pool.query(`INSERT INTO pe_operations(id,session_id,request_id,input,settings,state,created_at)
       VALUES($1,$2,$3,$4,$5,'queued',now()+$6::double precision*interval '1 second')`,
     [operationId, sessionId, randomUUID(), tag, { model: 'test', maxTokens: 32, revision: 1 }, seconds])

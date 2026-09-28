@@ -141,6 +141,11 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
       }
       case 'session/create': {
         const { request } = withRequest(z.object({ workspaceId: z.uuid().optional(), sessionId: sessionId.optional() }).strict()).parse(args)
+        // Check Session ownership before comparing its Workspace membership. A foreign
+        // Session must be indistinguishable from a missing one to this caller.
+        if (request.sessionId !== undefined) {
+          await call('/native/sessions/adopt', token, { sessionId: request.sessionId })
+        }
         if (request.workspaceId !== undefined) {
           const baseline = workspaceBaseline.parse(await call('/native/workspace/baseline', token, {}))
           const target = baseline.items.find(item => item.workspaceId === request.workspaceId)
@@ -154,7 +159,7 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
         return request.sessionId === undefined
           ? call('/sessions/create', token, { requestId: requestId.parse(rpcId),
             ...(request.workspaceId === undefined ? {} : { workspaceId: request.workspaceId }) })
-          : call('/native/sessions/adopt', token, { sessionId: request.sessionId })
+          : { sessionId: request.sessionId }
       }
       case 'workspace/create': {
         const { request } = withRequest(z.object({ path: z.string() }).strict()).parse(args)

@@ -38,15 +38,19 @@ export class TaskStore {
       await client.query(
         `INSERT INTO pe_workspaces(id,user_id,title,is_default) VALUES($1,$2,'Workspace',true)
          ON CONFLICT(user_id) WHERE is_default DO NOTHING`, [randomUUID(), user.userId])
+      const previous = await client.query<{ id: string; workspace_id: string }>(
+        'SELECT id,workspace_id FROM pe_sessions WHERE user_id=$1 AND create_request_id=$2',
+        [user.userId, requestId])
+      if (previous.rows[0] && workspaceId !== undefined) {
+        if (previous.rows[0].workspace_id !== workspaceId) throw new PlatformError(409, 'request_id_conflict')
+        return { sessionId: SessionId(previous.rows[0].id) }
+      }
       const target = await client.query<{ id: string }>(
         `SELECT id FROM pe_workspaces WHERE id=COALESCE($2::uuid,
            (SELECT id FROM pe_workspaces WHERE user_id=$1 AND is_default)) AND user_id=$1`,
         [user.userId, workspaceId ?? null])
       const chosen = target.rows[0]?.id
       if (!chosen) throw new PlatformError(404, 'workspace_not_found')
-      const previous = await client.query<{ id: string; workspace_id: string }>(
-        'SELECT id,workspace_id FROM pe_sessions WHERE user_id=$1 AND create_request_id=$2',
-        [user.userId, requestId])
       if (previous.rows[0]) {
         if (previous.rows[0].workspace_id !== chosen) throw new PlatformError(409, 'request_id_conflict')
         return { sessionId: SessionId(previous.rows[0].id) }

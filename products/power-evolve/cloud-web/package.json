@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@power-evolve/client-brand": "workspace:*",
+    "@power-evolve/client-cloud-workspaces": "workspace:*",
+    "@power-evolve/client-artifacts": "workspace:*",
     "@power-evolve/client-execution-target": "workspace:*",
     "@power-evolve/client-workspace-files": "workspace:*",
     "@deepseek-ai/dsh-client-modules": "workspace:*",

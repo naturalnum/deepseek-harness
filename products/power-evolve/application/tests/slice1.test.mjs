@@ -146,7 +146,8 @@ test('shared host: isolated conversations, files, skills and approved remote act
       databaseUrlFile: join(temporary, 'database-url'), workerTokenFile: join(temporary, 'worker-token'),
       modelKeyFile: join(temporary, 'model-key'), connectorKeyFile: join(temporary, 'connector-key'), seedUsersFile: join(temporary, 'users.json'),
       readyFile, modelUrl, connectorUrl, connectorTimeoutMs: 1000, connectorPollMs: 200,
-      leaseMs: 3000, loginAttemptsPerWindow: 100, maxPendingPerUser: 8, workspaceRoot: join(temporary, 'workspaces'),
+      leaseMs: 3000, loginAttemptsPerWindow: 100, maxPendingPerUser: 8,
+      workspaceRoot: join(temporary, 'workspaces'), artifactRoot: join(temporary, 'artifacts'),
       sandboxKubeconfigFile: '', sandboxKeyFile: '', sandboxNamespace: '', sandboxImage: '',
       sandboxLocalRoot: '', sandboxNodeRoot: '',
     }))
@@ -513,20 +514,21 @@ test('shared host: isolated conversations, files, skills and approved remote act
   await t.test('POSIX files preserve bytes and reject cross-user paths, links and stale writes', async () => {
     const firstBytes = Buffer.from([0,1,2,255,32,10])
     const id = randomUUID(), path = 'notes/probe.bin'
-    const input = { requestId:id,path,baseRevision:null,data:firstBytes.toString('base64') }
-    const first = await rpc(0,'filePut',input)
-    assert.equal((await rpc(0,'filePut',input)).revision,first.revision)
-    assert.equal((await rpcResponse(0,'filePut',{...input,data:Buffer.from('different').toString('base64')})).status,409)
-    assert.equal((await rpcResponse(0,'filePut',{...input,requestId:randomUUID()})).status,409)
-    assert.deepEqual(Buffer.from((await rpc(0,'fileRead',{path})).data,'base64'),firstBytes)
-    assert.equal((await rpcResponse(1,'fileRead',{path})).status,404)
-    assert.equal((await rpcResponse(1,'filePut',{...input,requestId:randomUUID(),path:'../escape'})).status,400)
-    const mine=await rpc(0,'filesList',{directory:'notes'})
-    const theirs=await rpc(1,'filesList',{directory:'notes'})
+    const input = { sessionId:alice,requestId:id,path,baseRevision:null,data:firstBytes.toString('base64') }
+    const first = await rpc(0,'filesPut',input)
+    assert.equal((await rpc(0,'filesPut',input)).revision,first.revision)
+    assert.equal((await rpcResponse(0,'filesPut',{...input,data:Buffer.from('different').toString('base64')})).status,409)
+    assert.equal((await rpcResponse(0,'filesPut',{...input,requestId:randomUUID()})).status,409)
+    assert.deepEqual(Buffer.from((await rpc(0,'filesRead',{sessionId:alice,path})).data,'base64'),firstBytes)
+    assert.equal((await rpcResponse(1,'filesRead',{sessionId:alice,path})).status,404)
+    assert.equal((await rpcResponse(1,'filesPut',{...input,requestId:randomUUID(),path:'../escape'})).status,404)
+    assert.equal((await rpcResponse(0,'filesPut',{...input,requestId:randomUUID(),path:'../escape'})).status,400)
+    const mine=await rpc(0,'filesList',{sessionId:alice,directory:'notes'})
+    const theirs=await rpc(1,'filesList',{sessionId:bob,directory:'notes'})
     assert.deepEqual(mine.items.map(item=>item.name),['probe.bin'])
     assert.deepEqual(theirs.items,[])
-    const updated=await rpc(0,'filePut',{requestId:randomUUID(),path,baseRevision:first.revision,data:Buffer.from('edited').toString('base64')})
-    assert.equal((await rpc(0,'fileRead',{path})).revision,updated.revision)
+    const updated=await rpc(0,'filesPut',{sessionId:alice,requestId:randomUUID(),path,baseRevision:first.revision,data:Buffer.from('edited').toString('base64')})
+    assert.equal((await rpc(0,'filesRead',{sessionId:alice,path})).revision,updated.revision)
     const nativeFile = async (user, method, args) => {
       const rpcId = randomUUID()
       const body = JSON.stringify({ type: 'client-request', rpcId, method, payload: { args } })
@@ -565,13 +567,13 @@ test('shared host: isolated conversations, files, skills and approved remote act
       path: '/workspace/notes/probe.bin' })).value.version, updated.revision)
     assert.equal((await nativeFile(0, 'workspaceFiles/read', { ...scoped,
       path: '/workspace/notes/probe.bin', range: {} })).value.text, 'edited')
-    assert.equal((await rpcResponse(0,'filePut',{requestId:randomUUID(),path,baseRevision:first.revision,data:Buffer.from('lost update').toString('base64')})).status,409)
+    assert.equal((await rpcResponse(0,'filesPut',{sessionId:alice,requestId:randomUUID(),path,baseRevision:first.revision,data:Buffer.from('lost update').toString('base64')})).status,409)
     await symlink(join(temporary,'worker-token'),join(temporary,'workspaces',mine.workspace,'notes','link.txt'))
-    assert.equal((await rpcResponse(0,'fileRead',{path:'notes/link.txt'})).status,400)
-    assert.equal((await rpcResponse(1,'fileRead',{path:'notes/link.txt'})).status,404)
+    assert.equal((await rpcResponse(0,'filesRead',{sessionId:alice,path:'notes/link.txt'})).status,400)
+    assert.equal((await rpcResponse(1,'filesRead',{sessionId:alice,path:'notes/link.txt'})).status,404)
     await stop(host.process); await stop(platform.process)
     platform=await start('platform'); host=await start('host',platform.url)
-    assert.deepEqual(Buffer.from((await rpc(0,'fileRead',{path})).data,'base64'),Buffer.from('edited'))
+    assert.deepEqual(Buffer.from((await rpc(0,'filesRead',{sessionId:alice,path})).data,'base64'),Buffer.from('edited'))
     assert.equal((await pool.query('SELECT count(*) FROM pe_workspaces')).rows[0].count,'2')
   })
   await t.test('personal skill bytes, ownership, toggle and task-time snapshot', async () => {

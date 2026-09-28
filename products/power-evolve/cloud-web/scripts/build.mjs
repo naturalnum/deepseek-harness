@@ -25,6 +25,8 @@ const roots = [
   '@deepseek-ai/dsh-client-ui-sidebar-documentpreview',
   '@power-evolve/client-brand',
   '@power-evolve/client-workspace-files',
+  '@power-evolve/client-cloud-workspaces',
+  '@power-evolve/client-artifacts',
   '@power-evolve/client-execution-target',
 ]
 const hash = value => createHash('sha256').update(value).digest('hex').slice(0, 16)

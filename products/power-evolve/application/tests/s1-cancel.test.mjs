@@ -221,7 +221,8 @@ test('native stop crosses hosts and leaves the Session usable', { timeout: 60000
       modelKeyFile: join(temporary, 'model-key'), connectorKeyFile: join(temporary, 'connector-key'),
       seedUsersFile: join(temporary, 'users.json'), readyFile, modelUrl, connectorUrl: modelUrl,
       leaseMs: 3000, loginAttemptsPerWindow: 100, maxPendingPerUser: 8,
-      workspaceRoot: join(temporary, 'workspaces'), sandboxKubeconfigFile: '', sandboxKeyFile: '',
+      workspaceRoot: join(temporary, 'workspaces'), artifactRoot: join(temporary, 'artifacts'),
+      sandboxKubeconfigFile: '', sandboxKeyFile: '',
       sandboxNamespace: '', sandboxImage: '', sandboxLocalRoot: '', sandboxNodeRoot: '',
     }))
     else patch.push(update('power-evolve-runtime', { platformUrl,
