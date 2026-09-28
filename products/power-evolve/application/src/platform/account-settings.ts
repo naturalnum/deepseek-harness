@@ -16,7 +16,7 @@ export type SeedModel = z.infer<typeof seedModel>
 /** Existing seed files implicitly grant only the initial model. */
 export function initialModels(initial: Settings, requested?: readonly SeedModel[]): SeedModel[] {
   const models = requested ? [...requested] : [seedModel.parse({
-    id: initial.model, label: initial.model, maxTokens: 8192, enabled: true,
+    id: initial.model, label: initial.model, maxTokens: initial.maxTokens, enabled: true,
   })]
   if (new Set(models.map(model => model.id)).size !== models.length) throw new Error('Duplicate seeded model ID')
   if (!models.some(model => model.id === initial.model && model.enabled && model.maxTokens >= initial.maxTokens)) {

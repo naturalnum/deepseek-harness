@@ -300,6 +300,6 @@ CREATE TABLE pe_settings_mutations (
   PRIMARY KEY(user_id,request_id)
 );
 INSERT INTO pe_user_models(user_id,model_id,label,max_tokens,enabled)
-  SELECT id,settings->>'model',settings->>'model',8192,true FROM pe_users;
+  SELECT id,settings->>'model',settings->>'model',(settings->>'maxTokens')::integer,true FROM pe_users;
 UPDATE pe_schema SET version=11 WHERE version=10;
 `

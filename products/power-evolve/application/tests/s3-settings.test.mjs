@@ -10,7 +10,7 @@ import { Pool } from 'pg'
 import { settingsUpdateRequest } from '../lib/contracts.js'
 import { initializeDatabase } from '../lib/platform/database.js'
 import { IdentityService, hashPassword } from '../lib/platform/identity.js'
-import { AccountSettingsService, initialModels, seedNewUser } from '../lib/platform/account-settings.js'
+import { AccountSettingsService, seedNewUser } from '../lib/platform/account-settings.js'
 import { TaskStore } from '../lib/platform/tasks.js'
 import { proxyModel } from '../lib/platform/model.js'
 import { schema, schemaV2, schemaV3, schemaV4, schemaV5, schemaV6, schemaV7, schemaV8,
@@ -37,7 +37,7 @@ async function isolated(run) {
 
 async function seeded(pool, identities, username, settings, models) {
   const password = randomBytes(24).toString('base64url')
-  await seedNewUser(pool, username, await hashPassword(password), settings, initialModels(settings, models))
+  await seedNewUser(pool, username, await hashPassword(password), settings, models)
   const { token } = await identities.login(username, password)
   return { token, user: await identities.authenticate(token) }
 }
@@ -66,6 +66,12 @@ test('S3 settings are user-scoped, revisioned, idempotent and snapshotted under 
         { id: 'fixture-c', label: 'Model C', maxTokens: 64, enabled: true },
         { id: 'fixture-b', label: 'Disabled B', maxTokens: 128, enabled: false },
       ])
+      const carol = await seeded(pool, identities, 'carol', { model: 'fixture-d', maxTokens: 40, revision: 1 })
+      assert.deepEqual(await account.modelsList(carol.user), { models: [
+        { id: 'fixture-d', label: 'fixture-d', maxTokens: 40 },
+      ] })
+      await assert.rejects(account.update(carol.user, { requestId: randomUUID(), expectedRevision: 1,
+        model: 'fixture-d', maxTokens: 41 }), { status: 403, code: 'model_not_authorized' })
       assert.deepEqual(await account.modelsList(alice.user), { models: [
         { id: 'fixture-a', label: 'Model A', maxTokens: 128 },
         { id: 'fixture-b', label: 'Model B', maxTokens: 256 },
@@ -186,7 +192,7 @@ test('V11 migrates only each existing user current model and never regrants on r
       await initializeDatabase(pool)
       assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 11)
       assert.deepEqual((await pool.query('SELECT model_id,label,max_tokens,enabled FROM pe_user_models WHERE user_id=$1',
-        [id])).rows, [{ model_id: 'fixture-legacy', label: 'fixture-legacy', max_tokens: 8192, enabled: true }])
+        [id])).rows, [{ model_id: 'fixture-legacy', label: 'fixture-legacy', max_tokens: 96, enabled: true }])
       await pool.query('UPDATE pe_user_models SET enabled=false WHERE user_id=$1', [id])
       await initializeDatabase(pool)
       assert.equal((await pool.query('SELECT enabled FROM pe_user_models WHERE user_id=$1', [id])).rows[0].enabled, false)
