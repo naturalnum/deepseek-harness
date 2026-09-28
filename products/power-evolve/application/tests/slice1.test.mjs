@@ -193,6 +193,13 @@ test('shared host: isolated conversations, files, skills and approved remote act
   })
   await t.test('browser exchange uses a scoped cookie, platform revocation and exact origins', async () => {
     const hostOrigin = 'http://127.0.0.1:18880' // External origin configured in the Host Profile.
+    const loginPage = await fetch(`${platform.url}/login`)
+    assert.equal(loginPage.status, 200)
+    assert(loginPage.headers.get('content-security-policy').includes(`connect-src 'self' ${hostOrigin}`))
+    const loginScript = await (await fetch(`${platform.url}/app.js`)).text()
+    assert(loginScript.includes('/auth/exchange'))
+    assert(loginScript.includes('/native/'))
+    assert(!loginScript.includes('#token='))
     const login = await post(`${platform.url}/identity/login`, null,
       { username: users[0].username, password: users[0].password })
     assert.equal(login.status, 200)
