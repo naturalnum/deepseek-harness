@@ -45,6 +45,7 @@ import {
   RemoteStreamMuxServer,
   rejectRemoteStreamUpgrade,
 } from './stream-server.ts'
+export { RemoteStreamMuxServer, rejectRemoteStreamUpgrade } from './stream-server.ts'
 import {
   REMOTE_EVENT_STREAM_ENDPOINT,
   REMOTE_EVENT_STREAM_READY,

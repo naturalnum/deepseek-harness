@@ -1,7 +1,7 @@
 /** Built-profile integration: real PostgreSQL, native Agent/Session, deterministic Messages transport. */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createServer } from 'node:http'
+import { createServer, request as httpRequest } from 'node:http'
 import { once } from 'node:events'
 import { randomUUID, randomBytes } from 'node:crypto'
 import { mkdtemp, mkdir, readFile, writeFile, symlink, rm } from 'node:fs/promises'
@@ -315,6 +315,102 @@ test('shared host: isolated conversations, files, skills and approved remote act
     const history = await earlier.json()
     assert(history.records.some(record => record.event.type === 'user/message'))
     assert(history.records.at(-1).event.seq < recent.records[0].event.seq)
+  })
+  await t.test('native DSH Host Remote routes authenticate and preserve tenant-scoped Session history', async () => {
+    const nativeRemote = async (user, method, args, rpcId = randomUUID()) => {
+      const body = JSON.stringify({ type: 'client-request', rpcId, method, payload: { args } })
+      const value = await new Promise((resolve, reject) => {
+        const request = httpRequest(`${host.url}/native/api/${method}`, { method: 'POST',
+          headers: { authorization: `Bearer ${tokens[user]}`, host: '127.0.0.1:18880',
+            'content-type': 'application/json', 'content-length': Buffer.byteLength(body) } }, response => {
+          const chunks = []
+          response.on('data', chunk => chunks.push(chunk))
+          response.on('end', () => {
+            assert.equal(response.statusCode, 200)
+            resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')))
+          })
+        })
+        request.on('error', reject)
+        request.end(body)
+      })
+      assert.equal(value.type, 'server-response')
+      assert.equal(value.rpcId, rpcId)
+      return value.result
+    }
+    const aliceList = await nativeRemote(0, 'session/list', {})
+    const bobList = await nativeRemote(1, 'session/list', {})
+    assert.equal((await post(`${host.url}/native/api/session/list`, tokens[0],
+      { type: 'client-request', rpcId: randomUUID(), method: 'session/list', payload: { args: {} } })).status, 403)
+    assert.equal(aliceList.ok, true)
+    assert.equal(bobList.ok, true)
+    assert(aliceList.value.items.some(item => item.sessionId === alice))
+    assert(bobList.value.items.every(item => item.sessionId !== alice))
+    const foreignPage = await nativeRemote(1, 'session/page',
+      { address: { kind: 'session', sessionId: alice }, throughSeq: 0 })
+    assert.equal(foreignPage.ok, false)
+    assert.equal(foreignPage.error.code, 'session/not-found')
+    const fixedId = randomUUID()
+    const first = await nativeRemote(0, 'session/create', {}, fixedId)
+    const repeated = await nativeRemote(0, 'session/create', {}, fixedId)
+    assert.equal(first.ok, true)
+    assert.deepEqual(repeated, first)
+    const newSession = first.value.sessionId
+    const request = { sessionId: newSession, requestId: randomUUID(), mode: 'queue',
+      content: [{ type: 'text', text: 'native transport trial' }] }
+    const accepted = await nativeRemote(0, 'session/prompt', request)
+    assert.equal(accepted.ok, true)
+    assert.equal(accepted.value.accepted, true)
+    const answered = await finished(0, newSession)
+    assert(answered.events.some(event => event.type === 'assistant/message'))
+    const opened = await nativeRemote(0, 'session/projections', { sessionId: newSession })
+    assert.equal(opened.ok, true)
+    const old = await nativeRemote(0, 'session/page',
+      { address: { kind: 'session', sessionId: newSession }, throughSeq: answered.watermark })
+    assert.equal(old.ok, true)
+    assert(old.value.records.some(record => record.event.type === 'assistant/message'))
+    const denied = await nativeRemote(0, 'settings/update', {})
+    assert.equal(denied.ok, false)
+    const WebSocket = createRequire(require.resolve('@deepseek-ai/dsh-api-gateway/package.json'))('ws')
+    const connect = async user => {
+      const login = await post(`${platform.url}/identity/login`, null,
+        { username: users[user].username, password: users[user].password })
+      const credential = (await login.json()).token
+      const exchange = await fetch(`${host.url}/auth/exchange`, { method: 'POST',
+        headers: { origin: platform.url, 'content-type': 'application/json' }, body: JSON.stringify({ token: credential }) })
+      assert.equal(exchange.status, 200)
+      const cookie = exchange.headers.getSetCookie().find(value => value.includes('Path=/native/api')).split(';')[0]
+      const socket = new WebSocket(`${host.url.replace('http:', 'ws:')}/native/api/remote.mux`,
+        { headers: { host: '127.0.0.1:18880', origin: 'http://127.0.0.1:18880', cookie } })
+      await once(socket, 'open')
+      return socket
+    }
+    const streamFirst = async (socket, endpoint, args) => {
+      const streamId = randomUUID()
+      const incoming = once(socket, 'message')
+      socket.send(JSON.stringify({ type: 'open', streamId, endpoint, payload: { args } }))
+      const [frame] = await incoming
+      return JSON.parse(frame.toString())
+    }
+    const aliceSocket = await connect(0)
+    const bobSocket = await connect(1)
+    try {
+      const generation = await streamFirst(aliceSocket, '$events', {})
+      assert.equal(generation.type, 'item')
+      assert.equal(generation.value.type, 'ready')
+      assert.equal(generation.value.host.home, '/workspace')
+      const opened = await streamFirst(aliceSocket, 'session/follow',
+        { address: { kind: 'session', sessionId: newSession }, assistantStream: true })
+      assert.equal(opened.type, 'item')
+      assert.equal(opened.value.type, 'snapshot')
+      assert.equal(opened.value.header.id, newSession)
+      const deniedFollow = await streamFirst(bobSocket, 'session/follow',
+        { address: { kind: 'session', sessionId: newSession }, assistantStream: true })
+      assert.equal(deniedFollow.type, 'error')
+      assert.equal(deniedFollow.error.code, 'session/not-found')
+    } finally {
+      aliceSocket.close()
+      bobSocket.close()
+    }
   })
   await t.test('POSIX files preserve bytes and reject cross-user paths, links and stale writes', async () => {
     const firstBytes = Buffer.from([0,1,2,255,32,10])

@@ -15,6 +15,7 @@ import { createRequest, filesListRequest, fileReadRequest, filePutRequest, listR
 import { readJson, sendFailure, sendJson, writeLine } from '../http.ts'
 import { serveNativeUi, serveUi } from '../ui.ts'
 import { BrowserAgentAuth } from './browser-auth.ts'
+import { installNativeRemote } from './native-remote.ts'
 import { Scheduler } from './scheduler.ts'
 
 const requests = { me: z.object({}).strict(), logout: z.object({}).strict(), create: createRequest, list: listRequest, prompt: promptRequest, page: pageRequest, follow: pageRequest,
@@ -100,6 +101,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const instanceId = randomUUID()
   const browserAuth = new BrowserAgentAuth(config.origin, config.platformOrigin, ctx.powerEvolveRuntime)
   ctx.provide('powerEvolveBrowserAuth', browserAuth)
+  installNativeRemote(ctx, browserAuth, config.origin, config.pollMs, config.maxRequestBytes)
   const tokens = new WeakMap<PeerScope, string>()
   ctx.plugin(ProductRemote, { tokens, pollMs: config.pollMs })
   const invocations: InvocationDescriptor[] = Object.entries(requests).map(([method, request]) => ({
