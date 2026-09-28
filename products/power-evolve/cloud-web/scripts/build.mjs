@@ -11,6 +11,7 @@ const root = fileURLToPath(new URL('..', import.meta.url))
 const dist = join(root, 'dist')
 const require = createRequire(import.meta.url)
 const upstreamRequire = createRequire(require.resolve('@deepseek-ai/dsh-web-app/package.json'))
+const applicationRequire = createRequire(new URL('../../application/package.json', import.meta.url))
 const roots = [
   '@deepseek-ai/dsh-client-modules',
   '@deepseek-ai/dsh-client-ui-chat',
@@ -19,10 +20,18 @@ const roots = [
   '@deepseek-ai/dsh-client-ui-attachment',
   '@deepseek-ai/dsh-client-ui-tool',
   '@deepseek-ai/dsh-client-ui-trajectory',
+  '@deepseek-ai/dsh-client-ui-sidebar-right',
+  '@deepseek-ai/dsh-client-ui-sidebar-files',
+  '@deepseek-ai/dsh-client-ui-sidebar-documentpreview',
 ]
 const hash = value => createHash('sha256').update(value).digest('hex').slice(0, 16)
 const packageJson = id => {
-  const path = upstreamRequire.resolve(`${id}/package.json`)
+  let path
+  try { path = upstreamRequire.resolve(`${id}/package.json`) }
+  catch (error) {
+    if (error.code !== 'MODULE_NOT_FOUND') throw error
+    path = applicationRequire.resolve(`${id}/package.json`)
+  }
   return { path, value: JSON.parse(readFileSync(path, 'utf8')) }
 }
 

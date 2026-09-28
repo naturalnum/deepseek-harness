@@ -444,6 +444,14 @@ test('shared host: isolated conversations, files, skills and approved remote act
         { request: { address: { kind: 'session', sessionId: newSession }, assistantStream: true } })
       assert.equal(deniedFollow.type, 'error')
       assert.equal(deniedFollow.error.code, 'session/not-found')
+      const filesReady = await streamFirst(aliceSocket, 'workspaceFiles/changes',
+        { workspaceFileScopeId: newSession, path: '/workspace' })
+      assert.equal(filesReady.type, 'item')
+      assert.equal(filesReady.value.kind, 'ready')
+      const deniedFiles = await streamFirst(bobSocket, 'workspaceFiles/changes',
+        { workspaceFileScopeId: newSession, path: '/workspace' })
+      assert.equal(deniedFiles.type, 'error')
+      assert.equal(deniedFiles.error.code, 'session/not-found')
     } finally {
       aliceSocket.close()
       bobSocket.close()
@@ -466,6 +474,44 @@ test('shared host: isolated conversations, files, skills and approved remote act
     assert.deepEqual(theirs.items,[])
     const updated=await rpc(0,'filePut',{requestId:randomUUID(),path,baseRevision:first.revision,data:Buffer.from('edited').toString('base64')})
     assert.equal((await rpc(0,'fileRead',{path})).revision,updated.revision)
+    const nativeFile = async (user, method, args) => {
+      const rpcId = randomUUID()
+      const body = JSON.stringify({ type: 'client-request', rpcId, method, payload: { args } })
+      const received = await new Promise((resolve, reject) => {
+        const request = httpRequest(`${host.url}/native/api/${method}`, { method: 'POST',
+          headers: { authorization: `Bearer ${tokens[user]}`, host: '127.0.0.1:18880',
+            'content-type': 'application/json', 'content-length': Buffer.byteLength(body) } }, response => {
+          const chunks = []
+          response.on('data', chunk => chunks.push(chunk))
+          response.on('end', () => resolve({ status: response.statusCode,
+            contentType: response.headers['content-type'], data: Buffer.concat(chunks) }))
+        })
+        request.on('error', reject)
+        request.end(body)
+      })
+      assert.equal(received.status, 200)
+      if (method !== 'workspaceFiles/readBytes') return JSON.parse(received.data.toString()).result
+      const parts = await new Response(received.data, { headers: { 'content-type': received.contentType } }).formData()
+      const envelope = JSON.parse(parts.get('metadata'))
+      assert.equal(envelope.rpcId, rpcId)
+      assert.equal(envelope.attachments[0].path[0], 'data')
+      return { ...envelope.result, bytes: Buffer.from(await parts.get('bytes-0').arrayBuffer()) }
+    }
+    const scoped = { workspaceFileScopeId: alice }
+    const fileList = await nativeFile(0, 'workspaceFiles/list', { ...scoped, path: '/workspace/notes' })
+    assert.deepEqual(fileList.value.entries.map(entry => entry.name), ['probe.bin'])
+    assert.equal((await nativeFile(1, 'workspaceFiles/list', { ...scoped, path: '/workspace/notes' })).error.code, 'session/not-found')
+    assert.equal((await nativeFile(0, 'workspaceFiles/list', { ...scoped, path: '/outside' })).error.code, 'workspace-file/outside-workspace')
+    assert.equal((await nativeFile(0, 'workspaceFiles/list', { ...scoped, path: '/workspace/missing' })).error.code, 'workspace-file/not-found')
+    assert.equal((await nativeFile(0, 'workspaceFiles/list', { ...scoped, path: '/workspace/notes/probe.bin' })).error.code, 'workspace-file/not-directory')
+    const binary = await nativeFile(0, 'workspaceFiles/readBytes', { ...scoped,
+      path: '/workspace/notes/probe.bin', options: {} })
+    assert.equal(binary.ok, true)
+    assert.deepEqual(binary.bytes, Buffer.from('edited'))
+    assert.equal((await nativeFile(0, 'workspaceFiles/stat', { ...scoped,
+      path: '/workspace/notes/probe.bin' })).value.version, updated.revision)
+    assert.equal((await nativeFile(0, 'workspaceFiles/read', { ...scoped,
+      path: '/workspace/notes/probe.bin', range: {} })).value.text, 'edited')
     assert.equal((await rpcResponse(0,'filePut',{requestId:randomUUID(),path,baseRevision:first.revision,data:Buffer.from('lost update').toString('base64')})).status,409)
     await symlink(join(temporary,'worker-token'),join(temporary,'workspaces',mine.workspace,'notes','link.txt'))
     assert.equal((await rpcResponse(0,'fileRead',{path:'notes/link.txt'})).status,400)

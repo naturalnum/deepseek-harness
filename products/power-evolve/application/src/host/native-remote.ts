@@ -29,6 +29,16 @@ const workspace = z.object({ workspaceId: z.uuid(), path: z.string(), title: z.s
   sessionIds: z.array(sessionId), createdAt: z.string(), updatedAt: z.string() }).strict()
 const workspaceBaseline = z.object({ items: z.array(workspace).max(1),
   archivedSessionIds: z.array(sessionId), pinnedSessionIds: z.array(sessionId) }).strict()
+const fileScope = z.object({ workspaceFileScopeId: sessionId, path: z.string().min(1).max(1024) }).strict()
+const fileRead = fileScope.extend({ range: z.object({ offset: z.number().int().min(1).optional(),
+  limit: z.number().int().min(1).max(5000).optional() }).strict() }).strict()
+const fileBytes = fileScope.extend({ options: z.object({
+  baseFile: z.string().min(1).max(1024).optional(),
+  range: z.object({ offset: z.number().int().min(0).optional(),
+    length: z.number().int().min(1).max(2 * 1024 * 1024).optional() }).strict().optional(),
+}).strict() }).strict()
+const binaryFileResult = z.object({ absolutePath: z.string(), version: z.string(), bytes: z.number(),
+  offset: z.number(), data: z.string(), eof: z.boolean() }).strict()
 const withRequest = <T extends z.ZodType>(request: T) => z.object({ request }).strict()
 
 type NativeCall = (path: string, token: string, input: unknown) => Promise<unknown>
@@ -41,6 +51,11 @@ function failure(error: unknown): { code: string; message: string; details: obje
     if (error.code === 'workspace_not_found') {
       return { code: 'workspace/not-found', message: 'Workspace not found', details: {} }
     }
+    if (error.code === 'file_not_found') return { code: 'workspace-file/not-found', message: 'File not found', details: { path: '' } }
+    if (error.code === 'file_not_directory') return { code: 'workspace-file/not-directory', message: 'Path is not a directory', details: { path: '', kind: 'file' } }
+    if (error.code === 'file_not_text') return { code: 'workspace-file/not-text', message: 'File is not UTF-8 text', details: { path: '' } }
+    if (error.code === 'file_too_large') return { code: 'workspace-file/too-large', message: 'File exceeds read limit', details: { path: '', limit: 2 * 1024 * 1024 } }
+    if (error.code === 'invalid_path') return { code: 'workspace-file/outside-workspace', message: 'File path is unavailable', details: { path: '' } }
     if (error.status === 404) return { code: 'session/not-found', message: 'Session not found', details: {} }
     if (error.status === 401 || error.status === 403) return { code: 'gateway/forbidden', message: 'Access denied', details: {} }
     if (error.status === 409) return { code: 'session/conflict', message: 'Session request conflicts with stored state', details: {} }
@@ -59,6 +74,21 @@ function assertHostAuthority(request: IncomingMessage, origin: string): void {
 async function waitForAbort(signal: AbortSignal): Promise<void> {
   if (signal.aborted) return
   await new Promise<void>(resolve => signal.addEventListener('abort', () => resolve(), { once: true }))
+}
+
+async function sendNativeBytes(response: ServerResponse, rpcId: string, raw: unknown): Promise<void> {
+  const { data, ...value } = binaryFileResult.parse(raw)
+  const bytes = Buffer.from(data, 'base64')
+  const parts = new FormData()
+  parts.set('bytes-0', new Blob([new Uint8Array(bytes)]))
+  parts.set('metadata', JSON.stringify({ type: 'server-response', rpcId,
+    result: { ok: true, value: { ...value, data: null } },
+    attachments: [{ path: ['data'], codec: 'bytes', part: 'bytes-0' }] }))
+  const encoded = new Response(parts)
+  const body = Buffer.from(await encoded.arrayBuffer())
+  response.writeHead(200, { 'content-type': encoded.headers.get('content-type') ?? 'multipart/form-data',
+    'content-length': String(body.length), 'cache-control': 'no-store' })
+  response.end(body)
 }
 
 /** Register one browser-authenticated native Session carrier without exposing Host-local Remotes. */
@@ -101,6 +131,24 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
         const snapshot = z.object({ projections: z.object({ asOfSeq: z.number().int(), values: z.record(z.string(), z.json()) }) })
           .parse(await call('/native/sessions/snapshot', token, { address: { kind: 'session', sessionId: id }, maxMessages: 1 }))
         return snapshot.projections
+      }
+      case 'workspaceFiles/list': {
+        const input = fileScope.parse(args)
+        return call('/native/files/list', token, { sessionId: input.workspaceFileScopeId, path: input.path })
+      }
+      case 'workspaceFiles/stat': {
+        const input = fileScope.parse(args)
+        return call('/native/files/stat', token, { sessionId: input.workspaceFileScopeId, path: input.path })
+      }
+      case 'workspaceFiles/read': {
+        const input = fileRead.parse(args)
+        return call('/native/files/read', token, { sessionId: input.workspaceFileScopeId,
+          path: input.path, range: input.range })
+      }
+      case 'workspaceFiles/readBytes': {
+        const input = fileBytes.parse(args)
+        return call('/native/files/readBytes', token, { sessionId: input.workspaceFileScopeId,
+          path: input.path, options: input.options })
       }
       case 'settings/describe': {
         z.object({}).strict().parse(args)
@@ -164,6 +212,21 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
         }
         return
       }
+      case 'workspaceFiles/changes': {
+        const input = fileScope.parse(args)
+        const request = { sessionId: input.workspaceFileScopeId, path: input.path }
+        let previous = await call('/native/files/observe', token, request)
+        yield { kind: 'ready' }
+        while (!signal.aborted) {
+          try { await delay(Math.max(pollMs, 2000), undefined, { signal }) }
+          catch (error) { if (signal.aborted) return; throw error }
+          const current = await call('/native/files/observe', token, request)
+          if (JSON.stringify(current) === JSON.stringify(previous)) continue
+          previous = current
+          yield { kind: 'change', change: current }
+        }
+        return
+      }
       default: throw new PlatformError(404, 'native_stream_not_enabled')
     }
   }
@@ -208,7 +271,8 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
       if (message.method !== method) throw new PlatformError(400, 'method_mismatch')
       try {
         const value = await unary(method, message.payload.args, credential.token, message.rpcId)
-        sendJson(res, { type: 'server-response', rpcId: message.rpcId, result: { ok: true, value } })
+        if (method === 'workspaceFiles/readBytes') await sendNativeBytes(res, message.rpcId, value)
+        else sendJson(res, { type: 'server-response', rpcId: message.rpcId, result: { ok: true, value } })
       } catch (error) {
         sendJson(res, { type: 'server-response', rpcId: message.rpcId, result: { ok: false, error: failure(error) } })
       }

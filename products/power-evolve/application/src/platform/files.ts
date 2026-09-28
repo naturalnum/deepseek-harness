@@ -73,6 +73,24 @@ export class FileService {
 
   private async workspace(user: Identity): Promise<string> { return (await this.workspaceForUser(user.userId)).path }
 
+  /** Inspect one authorized entry without following its final component. */
+  async kind(user: Identity, path: string): Promise<'file' | 'directory'> {
+    const root = await this.workspace(user)
+    const segments = parts(path, true)
+    if (!segments.length) return 'directory'
+    const parent = await this.parent(root, segments.slice(0, -1), false)
+    let entry
+    try { entry = await lstat(join(parent, segments.at(-1)!)) }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new PlatformError(404, 'file_not_found')
+      throw error
+    }
+    if (entry.isSymbolicLink()) throw new PlatformError(400, 'invalid_path')
+    if (entry.isDirectory()) return 'directory'
+    if (entry.isFile()) return 'file'
+    throw new PlatformError(400, 'invalid_path')
+  }
+
   private async parent(root: string, segments: string[], create: boolean): Promise<string> {
     let path = root
     for (const part of segments) {

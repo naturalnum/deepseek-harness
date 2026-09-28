@@ -15,6 +15,7 @@ import { TaskStore } from './tasks.ts'
 import { EventStore } from './events.ts'
 import { NativeSessionRead, nativeFollowRequest, nativePageRequest } from './native-session-read.ts'
 import { NativeWorkspaceRead } from './native-workspace-read.ts'
+import { NativeFileRead, nativeFileRequest, nativeFileTextRequest, nativeFileBytesRequest } from './native-files.ts'
 import { FileService } from './files.ts'
 import { SkillService } from './skills.ts'
 import { ConnectorService } from './connectors.ts'
@@ -85,6 +86,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const events = new EventStore(tasks, config)
   const nativeSessions = new NativeSessionRead(pool)
   const nativeWorkspaces = new NativeWorkspaceRead(pool, files, nativeSessions)
+  const nativeFiles = new NativeFileRead(pool, files)
   const connectors = new ConnectorService(tasks, config.connectorUrl, connectorKey.trim(), config.connectorTimeoutMs, config.connectorPollMs)
   await connectors.seedPermissions(users.map(user => user.username))
   connectors.start()
@@ -278,6 +280,11 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         const value = z.object({ sessionId, cursor: z.number().int().min(-1) }).strict().parse(input)
         sendJson(res, { events: await nativeSessions.after(user, value.sessionId, value.cursor) }); return
       }
+      case '/native/files/list': sendJson(res, await nativeFiles.list(user, nativeFileRequest.parse(input))); return
+      case '/native/files/stat': sendJson(res, await nativeFiles.stat(user, nativeFileRequest.parse(input))); return
+      case '/native/files/read': sendJson(res, await nativeFiles.read(user, nativeFileTextRequest.parse(input))); return
+      case '/native/files/readBytes': sendJson(res, await nativeFiles.readBytes(user, nativeFileBytesRequest.parse(input))); return
+      case '/native/files/observe': sendJson(res, await nativeFiles.observe(user, nativeFileRequest.parse(input))); return
       case '/files/list': sendJson(res, await files.list(user, filesListRequest.parse(input).directory)); return
       case '/files/read': sendJson(res, await files.read(user, fileReadRequest.parse(input).path)); return
       case '/files/put': {
