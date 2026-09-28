@@ -1,7 +1,7 @@
 /** Start and stop only the local trial processes named by their verified readiness records. */
 import { spawn, spawnSync } from 'node:child_process'
 import { openSync, closeSync } from 'node:fs'
-import { readFile, mkdir, rm } from 'node:fs/promises'
+import { readFile, mkdir, rm, cp, rename } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
@@ -16,7 +16,9 @@ const trialName = process.env.PE_TRIAL_NAME ?? 'slice1'
 if (!/^[a-z0-9-]{1,32}$/.test(trialName)) throw new Error('Invalid trial name')
 const privateDir = process.env.PE_PRIVATE_DIR ?? join(homedir(), '.config/power-evolve', `shared-host-${trialName}`)
 const output = join(root, '.artifacts/power-evolve', trialName === 'slice1' ? '' : trialName)
+const nativeWeb = join(output, 'native-web')
 const env = { PATH: process.env.PATH, HOME: process.env.HOME, PE_PRIVATE_DIR: privateDir, PE_TRIAL_NAME: trialName,
+  PE_NATIVE_WEB_DIST: nativeWeb,
   PE_DATABASE_PORT: process.env.PE_DATABASE_PORT, PE_HOST_PORT: process.env.PE_HOST_PORT,
   PE_PLATFORM_PORT: process.env.PE_PLATFORM_PORT, PE_TARGET_PORT: process.env.PE_TARGET_PORT }
 env.PE_DEVICE_PORT = process.env.PE_DEVICE_PORT
@@ -99,6 +101,14 @@ async function waitDatabase() {
 if (command === 'stop' || command === 'restart') for (const name of [...targets].reverse()) await stop(name)
 if (command === 'up' || command === 'restart') {
   await mkdir(output, { recursive:true, mode:0o700 })
+  try { await readFile(join(nativeWeb, 'asset-list.json')) }
+  catch (error) {
+    if (error.code !== 'ENOENT') throw error
+    const pending = `${nativeWeb}.pending`
+    await rm(pending, { recursive:true, force:true })
+    await cp(join(root, 'products/power-evolve/cloud-web/dist'), pending, { recursive:true })
+    await rename(pending, nativeWeb)
+  }
   const prepared=spawnSync(process.execPath,['products/power-evolve/scripts/prepare-trial.mjs'],{cwd:root,env,stdio:'inherit'})
   if (prepared.status!==0) throw new Error('Trial preparation failed')
   const database=spawnSync('docker',['compose','-p',`pe-shared-host-${trialName}`,...composeFiles,'up','-d','--wait'],{cwd:root,env:{...process.env,PE_PRIVATE_DIR:privateDir},stdio:'inherit'})

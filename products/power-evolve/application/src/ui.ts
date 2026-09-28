@@ -1,10 +1,12 @@
 /** Static product UI served from an explicit allowlist with a same-origin CSP. */
 import { readFile } from 'node:fs/promises'
 import type { ServerResponse } from 'node:http'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const nativeDist = fileURLToPath(new URL('../../cloud-web/dist/', import.meta.url))
+const nativeDist = process.env.PE_NATIVE_WEB_DIST
+  ? resolve(process.env.PE_NATIVE_WEB_DIST)
+  : fileURLToPath(new URL('../../cloud-web/dist/', import.meta.url))
 const nativeMime: Record<string, string> = {
   '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml',
   '.json': 'application/json', '.webmanifest': 'application/manifest+json',

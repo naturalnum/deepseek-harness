@@ -23,6 +23,7 @@ const roots = [
   '@deepseek-ai/dsh-client-ui-sidebar-right',
   '@deepseek-ai/dsh-client-ui-sidebar-files',
   '@deepseek-ai/dsh-client-ui-sidebar-documentpreview',
+  '@power-evolve/client-workspace-files',
 ]
 const hash = value => createHash('sha256').update(value).digest('hex').slice(0, 16)
 const packageJson = id => {
@@ -30,7 +31,11 @@ const packageJson = id => {
   try { path = upstreamRequire.resolve(`${id}/package.json`) }
   catch (error) {
     if (error.code !== 'MODULE_NOT_FOUND') throw error
-    path = applicationRequire.resolve(`${id}/package.json`)
+    try { path = applicationRequire.resolve(`${id}/package.json`) }
+    catch (nested) {
+      if (nested.code !== 'MODULE_NOT_FOUND') throw nested
+      path = require.resolve(`${id}/package.json`)
+    }
   }
   return { path, value: JSON.parse(readFileSync(path, 'utf8')) }
 }
