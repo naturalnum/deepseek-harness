@@ -14,6 +14,8 @@ The product cloud Workspace plugin occupies both existing `directoryFlow` slots.
 
 The product artifact plugin contributes an explicit Publish action to the native document preview toolbar for its selected file. It sends the Session ID, validated Workspace-relative path, and stable request ID through the authenticated product route. A native right-Sidebar page lists artifacts for the current Session or its Workspace, requests bounded preview data, and links to the authenticated streaming download route. The platform owns file authorization, immutable copies, and artifact metadata; the browser does not infer publication from model output.
 
+The existing composer upload and document preview edit/download actions pass the active Session ID on every file request. An edit retains the Session ID from its read and refuses to save under a different Session; missing Session context disables the preview actions. The native file tree already reads through Session-scoped Remotes.
+
 ## Alternatives considered
 
 **Build a separate cloud Workspace picker and file tree.** That would duplicate the native selection and file state and require two navigation paths for the same Session. The existing slots already provide the required user gestures.

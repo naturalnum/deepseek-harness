@@ -1,10 +1,12 @@
 /** Conditional text edits in a tenant-owned POSIX Workspace. */
 import { encodeWorkspaceBytes } from './workspace-file-client.ts'
 import { relativeWorkspacePath, WorkspaceDownloadError, WorkspaceFileDownloadClient } from './workspace-file-download.ts'
+import { requireFileSessionId } from './session-id.ts'
 
 const maxFileBytes = 2 * 1024 * 1024
 
 export interface EditableFile {
+  readonly sessionId: string
   readonly absolutePath: string
   readonly revision: string
   readonly text: string
@@ -22,9 +24,10 @@ export class WorkspaceFileEditorClient {
     private readonly request: typeof fetch = (...args) => globalThis.fetch(...args),
   ) {}
 
-  async open(absolutePath: string, signal: AbortSignal): Promise<EditableFile> {
+  async open(sessionId: string, absolutePath: string, signal: AbortSignal): Promise<EditableFile> {
+    requireFileSessionId(sessionId)
     let file
-    try { file = await this.files.read(absolutePath, signal) }
+    try { file = await this.files.read(sessionId, absolutePath, signal) }
     catch (error) {
       if (error instanceof WorkspaceDownloadError && error.status === 413) throw new WorkspaceFileEditError('large')
       throw error
@@ -33,17 +36,19 @@ export class WorkspaceFileEditorClient {
     try { text = new TextDecoder('utf-8', { fatal: true }).decode(file.bytes) }
     catch { throw new WorkspaceFileEditError('binary') }
     if (text.includes('\0')) throw new WorkspaceFileEditError('binary')
-    return { absolutePath, revision: file.revision, text }
+    return { sessionId, absolutePath, revision: file.revision, text }
   }
 
-  async save(file: EditableFile, text: string, requestId: string, signal: AbortSignal): Promise<string> {
+  async save(sessionId: string, file: EditableFile, text: string, requestId: string, signal: AbortSignal): Promise<string> {
+    requireFileSessionId(sessionId)
+    if (file.sessionId !== sessionId) throw new WorkspaceFileEditError('denied')
     const path = relativeWorkspacePath(file.absolutePath)
     const bytes = new TextEncoder().encode(text)
     if (bytes.length > maxFileBytes) throw new WorkspaceFileEditError('large')
-    const response = await this.request('/api/powerEvolve/filePut', {
+    const response = await this.request('/api/powerEvolve/filesPut', {
       method: 'POST', credentials: 'same-origin', redirect: 'error', signal,
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ request: { requestId, path, baseRevision: file.revision,
+      body: JSON.stringify({ request: { sessionId, requestId, path, baseRevision: file.revision,
         data: encodeWorkspaceBytes(bytes) } }),
     })
     if (!response.ok) throw new WorkspaceFileEditError(response.status === 409 ? 'conflict'

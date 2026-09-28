@@ -43,18 +43,16 @@ export function apply(ctx: Context): void {
           item => item.sessionIds.includes(sessionId),
         )
         if (workspace === undefined) throw new Error('Current Session has no active Workspace')
-        // The first cloud slice has one persistent Workspace per user. The
-        // platform derives its owner from the authenticated request cookie.
-        return client.upload(file, signal)
+        return client.upload(sessionId, file, signal)
       },
     }),
   }, WorkspaceFileButton)), 'PowerEvolve composer file upload')
   ctx.effect(() => ctx.slots.inject('sidebar.right.tab.document.actions', () => ctx.slots.register({
     name: 'sidebar.right.tab.document.actions', id: 'power-evolve-workspace-edit', order: 10,
-    locale: namespace, inject: () => ({ client: editor }),
+    locale: namespace, inject: (sessionId: string) => ({ sessionId, client: editor }),
   }, PreviewEdit)), 'PowerEvolve file preview editor')
   ctx.effect(() => ctx.slots.inject('sidebar.right.tab.document.actions', () => ctx.slots.register({
     name: 'sidebar.right.tab.document.actions', id: 'power-evolve-workspace-download', order: 20,
-    locale: namespace, inject: () => ({ client: downloads }),
+    locale: namespace, inject: (sessionId: string) => ({ sessionId, client: downloads }),
   }, PreviewDownload)), 'PowerEvolve file preview download')
 }

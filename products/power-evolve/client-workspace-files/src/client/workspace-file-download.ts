@@ -1,4 +1,5 @@
 /** Bounded, authenticated download of one file shown by the native DSH preview. */
+import { requireFileSessionId } from './session-id.ts'
 const workspaceRoot = '/workspace/'
 const maxBytes = 2 * 1024 * 1024
 
@@ -27,11 +28,12 @@ export function relativeWorkspacePath(absolutePath: string): string {
 export class WorkspaceFileDownloadClient {
   constructor(private readonly request: typeof fetch = (...args) => globalThis.fetch(...args)) {}
 
-  async read(absolutePath: string, signal: AbortSignal): Promise<DownloadedFile> {
+  async read(sessionId: string, absolutePath: string, signal: AbortSignal): Promise<DownloadedFile> {
+    requireFileSessionId(sessionId)
     const path = relativeWorkspacePath(absolutePath)
-    const response = await this.request('/api/powerEvolve/fileRead', {
+    const response = await this.request('/api/powerEvolve/filesRead', {
       method: 'POST', credentials: 'same-origin', redirect: 'error', signal,
-      headers: { 'content-type': 'application/json' }, body: JSON.stringify({ request: { path } }),
+      headers: { 'content-type': 'application/json' }, body: JSON.stringify({ request: { sessionId, path } }),
     })
     if (!response.ok) throw new WorkspaceDownloadError(response.status)
     const value: unknown = await response.json()

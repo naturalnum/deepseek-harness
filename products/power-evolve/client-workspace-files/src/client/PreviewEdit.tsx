@@ -4,17 +4,18 @@ import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots
 import type { WorkspaceFileLocaleKey } from './locales.ts'
 import { WorkspaceDownloadError } from './workspace-file-download.ts'
 import { type EditableFile, WorkspaceFileEditError, WorkspaceFileEditorClient } from './workspace-file-editor.ts'
+import { validFileSessionId } from './session-id.ts'
 
 type Props = PropsRuntime<'sidebar.right.tab.document.actions'>
   & PropsLocale<'powerEvolve.workspaceFiles'>
-  & { readonly client: WorkspaceFileEditorClient }
+  & { readonly sessionId: string; readonly client: WorkspaceFileEditorClient }
 
 /** A path change resets the editor and aborts reads for the previous preview. */
 export function PreviewEdit(props: Props) {
-  return <PreviewEditForPath key={props.absolutePath} {...props} />
+  return <PreviewEditForPath key={`${props.sessionId}:${props.absolutePath}`} {...props} />
 }
 
-function PreviewEditForPath({ absolutePath, client, t }: Props) {
+function PreviewEditForPath({ absolutePath, sessionId, client, t }: Props) {
   const [open, setOpen] = useState(false)
   const [file, setFile] = useState<EditableFile | null>(null)
   const [text, setText] = useState('')
@@ -42,7 +43,7 @@ function PreviewEditForPath({ absolutePath, client, t }: Props) {
     setBusy(true)
     setError(null)
     try {
-      const current = await client.open(absolutePath, controller.signal)
+      const current = await client.open(sessionId, absolutePath, controller.signal)
       if (!controller.signal.aborted) {
         setFile(current)
         setText(current.text)
@@ -65,7 +66,7 @@ function PreviewEditForPath({ absolutePath, client, t }: Props) {
     setError(null)
     if (attempt.current?.text !== text) attempt.current = { text, requestId: crypto.randomUUID() }
     try {
-      await client.save(file, text, attempt.current.requestId, controller.signal)
+      await client.save(sessionId, file, text, attempt.current.requestId, controller.signal)
       if (!controller.signal.aborted) close()
     } catch (failure) {
       if (!controller.signal.aborted) setError(editError(failure))
@@ -81,7 +82,7 @@ function PreviewEditForPath({ absolutePath, client, t }: Props) {
   return <span className="pe-workspace-edit" data-workspace-edit="">
     <Tooltip label={t('edit')} side="bottom" delayMs={500}>
       <button type="button" className="pe-workspace-download-button" aria-label={t('edit')}
-        onClick={() => { void begin() }}>
+        disabled={!validFileSessionId(sessionId)} onClick={() => { void begin() }}>
         <svg viewBox="0 0 16 16" width="16" height="16" fill="none" aria-hidden="true">
           <path d="m3 11 8-8 2 2-8 8-3 1 1-3ZM9.5 4.5l2 2" stroke="currentColor"
             strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />

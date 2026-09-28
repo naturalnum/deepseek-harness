@@ -1,4 +1,5 @@
 /** Uploads through the authenticated product API into the user's POSIX Workspace. */
+import { requireFileSessionId } from './session-id.ts'
 
 const maxFileBytes = 2 * 1024 * 1024
 
@@ -31,16 +32,17 @@ export class WorkspaceFileHttpClient {
 
   async capabilities(): Promise<WorkspaceFileCapabilities> { return { maxFileBytes } }
 
-  async upload(file: File, signal: AbortSignal): Promise<WorkspaceFileUpload> {
+  async upload(sessionId: string, file: File, signal: AbortSignal): Promise<WorkspaceFileUpload> {
+    requireFileSessionId(sessionId)
     const name = uploadName(file)
     if (file.size > maxFileBytes) throw new Error('File exceeds upload limit')
     const requestId = crypto.randomUUID()
     const path = `uploads/${requestId}/${name}`
     const data = encodeWorkspaceBytes(new Uint8Array(await file.arrayBuffer()))
     signal.throwIfAborted()
-    const response = await this.request('/api/powerEvolve/filePut', { method: 'POST',
+    const response = await this.request('/api/powerEvolve/filesPut', { method: 'POST',
       credentials: 'same-origin', headers: { 'content-type': 'application/json' }, signal,
-      body: JSON.stringify({ request: { requestId, path, baseRevision: null, data } }),
+      body: JSON.stringify({ request: { sessionId, requestId, path, baseRevision: null, data } }),
     })
     if (!response.ok) throw new Error(`Upload failed: ${response.status}`)
     const result: unknown = await response.json()
