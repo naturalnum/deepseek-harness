@@ -204,9 +204,12 @@ export class TaskStore {
       const operation = await client.query<{ error_code: string | null }>(
         'SELECT error_code FROM pe_operations WHERE id=$1', [row.operation_id],
       )
-      const cancelled = operation.rows[0]?.error_code === 'cancel_requested'
+      // The native turn can finish while its cancellation request is in flight.
+      // A completed durable turn remains completed; cancellation only settles
+      // work that the Host actually stopped.
+      const cancelled = errorCode === 'turn_aborted' && operation.rows[0]?.error_code === 'cancel_requested'
       await client.query('UPDATE pe_operations SET state=$2,error_code=$3,completed_at=now() WHERE id=$1',
-        [row.operation_id, cancelled ? 'failed' : outcome, cancelled ? 'turn_user' : errorCode])
+        [row.operation_id, outcome, cancelled ? 'turn_user' : errorCode])
       await client.query('UPDATE pe_attempts SET ended_at=now() WHERE operation_id=$1 AND epoch=$2',
         [row.operation_id, row.lease_epoch])
       await client.query('UPDATE pe_sessions SET grant_digest=NULL,lease_until=NULL,updated_at=now() WHERE id=$1', [row.id])

@@ -84,7 +84,23 @@ test('cancel owns one Session, survives grant replacement, and permits the next 
   assert.deepEqual(await tasks.renew(replacement.token), { cancelRequested: true })
   await tasks.finish(replacement.token, 'completed', null)
   assert.deepEqual((await pool.query('SELECT state,error_code,attempts FROM pe_operations WHERE id=$1',
-    [running.operationId])).rows[0], { state: 'failed', error_code: 'turn_user', attempts: 2 })
+    [running.operationId])).rows[0], { state: 'completed', error_code: null, attempts: 2 },
+  'a native turn that completed before cancellation was observed remains completed')
+
+  const stopped = await tasks.accept(alice, sessionId, randomUUID(), 'stop me', config)
+  const stoppedGrant = await tasks.claim(randomUUID())
+  assert.equal(stoppedGrant.operationId, stopped.operationId)
+  await tasks.cancel(alice, sessionId)
+  await tasks.finish(stoppedGrant.token, 'failed', 'turn_aborted')
+  assert.deepEqual((await pool.query('SELECT state,error_code FROM pe_operations WHERE id=$1',
+    [stopped.operationId])).rows[0], { state: 'failed', error_code: 'turn_user' })
+
+  const limited = await tasks.accept(alice, sessionId, randomUUID(), 'too long', config)
+  const limitedGrant = await tasks.claim(randomUUID())
+  await tasks.cancel(alice, sessionId)
+  await tasks.finish(limitedGrant.token, 'failed', 'turn_max-tokens')
+  assert.deepEqual((await pool.query('SELECT state,error_code FROM pe_operations WHERE id=$1',
+    [limited.operationId])).rows[0], { state: 'failed', error_code: 'turn_max-tokens' })
 
   const next = await tasks.accept(alice, sessionId, randomUUID(), 'after stop', config)
   const nextGrant = await tasks.claim(randomUUID())
@@ -114,8 +130,7 @@ test('cancel and finish serialize without losing a completed or cancelled turn',
   await Promise.all([tasks.cancel(alice, sessionId), tasks.finish(grant.token, 'completed', null)])
   const row = (await pool.query('SELECT state,error_code FROM pe_operations WHERE id=$1',
     [accepted.operationId])).rows[0]
-  assert(row.state === 'completed' && row.error_code === null
-    || row.state === 'failed' && row.error_code === 'turn_user')
+  assert.deepEqual(row, { state: 'completed', error_code: null })
   assert.deepEqual(await tasks.cancel(alice, sessionId), { accepted: true })
   assert.equal((await pool.query('SELECT grant_digest FROM pe_sessions WHERE id=$1', [sessionId])).rows[0].grant_digest, null)
 })
