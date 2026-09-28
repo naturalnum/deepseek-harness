@@ -29,12 +29,12 @@ flowchart LR
 | `application/src/platform` | 身份、资源归属、PG 事务、任务租约、事件存储、带凭据的调用与沙盒管理 |
 | `application/src/device`、`device` | 仅在本机开放的设备界面、目录授权、持久命令日志与受限 Docker 执行 |
 | `application/web` | 临时切片测试界面与独立的可信审批页面 |
-| `cloud-web` | 原生 DSH Web 外壳和封闭的上游客户端模块包；客户端传输接入期间由 `/native/` 提供 |
+| `cloud-web`、`client-*` | 原生 DSH Web 外壳及品牌、工作区文件和执行位置选择等产品客户端插件，由 `/native/` 提供 |
 | `sandbox`、`k8s` | 沙盒内命令执行器与仅限指定命名空间的平台权限 |
 | `host`、`platform` | 两个独立 DSH Profile 的插件清单与部署参数 |
 | `application/tests` | 真实 PG 与实际 Profile 的回归测试 |
 | `scripts` | 本机配置和进程管理 |
 
-产品包均为私有包。根构建包含产品 Host 和原生 Web 产物。`pnpm run test:power-evolve` 运行产品集成测试；`pnpm run test:power-evolve:web` 检查构建后的原生页面和 Host 静态路由。产品插件只使用当前基线的公开服务，不修改 Agent loop 或原生 Session 格式。目前 `/native/` 仅验证页面启动；产品登录和会话传输将另行接入。
+产品包均为私有包。根构建包含产品 Host 和原生 Web 产物。`pnpm run test:power-evolve` 运行产品集成测试；`pnpm run test:power-evolve:web` 检查构建后的原生页面和 Host 静态路由。产品插件只使用当前基线的公开服务，不修改 Agent loop 或原生 Session 格式。已通过 `/native/` 试用登录、对话、工作区文件和本地执行；技能和插件管理页面仍后置。
 
 会话回放资料保存在 [PowerEvolve snapshot](../../../snapshots/power-evolve/conversation/snapshot.yml)。产品测试使用其中的用户输入和助手回复，并逐事件比较完整 Session。该 Profile 需要真实 PG，使用产品测试命令运行；原生 `test:snapshot` 的四种 Profile 适配器不负责它。

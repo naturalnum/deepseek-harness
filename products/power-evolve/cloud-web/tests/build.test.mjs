@@ -11,7 +11,7 @@ const dist = fileURLToPath(new URL('../dist/', import.meta.url))
 test('native DSH shell uses the upstream page and a closed, external boot graph', async () => {
   const html = await readFile(join(dist, 'index.html'), 'utf8')
   assert.match(html, /<div id="root"><\/div>/u)
-  assert.match(html, /<title>DSH Local Build<\/title>/u)
+  assert.match(html, /<title>PowerEvolve<\/title>/u)
   assert.doesNotMatch(html, /<script>/u)
   assert.match(html, /<script src="\.\/boot\/inline\.[a-f0-9]+\.js"><\/script>/u)
   const assets = JSON.parse(await readFile(join(dist, 'asset-list.json'), 'utf8'))
@@ -27,10 +27,12 @@ test('native DSH shell uses the upstream page and a closed, external boot graph'
   const ids = new Set(graph.entries.map(row => row.id))
   for (const id of ['@deepseek-ai/dsh-client-modules', '@deepseek-ai/dsh-client-ui-chat',
     '@deepseek-ai/dsh-client-ui-conversation', '@deepseek-ai/dsh-client-ui-renderer',
-    '@power-evolve/client-execution-target']) assert(ids.has(id), id)
+    '@deepseek-ai/dsh-client-ui-settings-general',
+    '@power-evolve/client-brand', '@power-evolve/client-execution-target']) assert(ids.has(id), id)
   for (const id of ['@deepseek-ai/dsh-client-ui-skill', '@deepseek-ai/dsh-client-ui-plugin-manager']) {
     assert(!ids.has(id), `${id} is deferred`)
   }
+  assert(!ids.has('@deepseek-ai/dsh-client-ui-brand-official'), 'product brand owns the native slots')
   for (const row of graph.entries) {
     assert(row.url.startsWith('./plugins/'))
     assert(assets.includes(row.url.slice(2).split('?')[0]))

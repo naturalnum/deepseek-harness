@@ -19,8 +19,8 @@
   ],
   "scripts": {
     "build:power-evolve": "tsc -b products/power-evolve/application/tsconfig.json",
-    "build:power-evolve:web": "pnpm --filter @power-evolve/client-workspace-files run bundle && pnpm --filter @power-evolve/client-execution-target run bundle && pnpm --filter @power-evolve/cloud-web run build",
-    "check:power-evolve": "tsc -b products/power-evolve/application/tsconfig.json --pretty false && pnpm --filter @power-evolve/client-workspace-files run typecheck && pnpm --filter @power-evolve/client-execution-target run typecheck && pnpm --filter @power-evolve/cloud-web run check",
+    "build:power-evolve:web": "pnpm --filter @power-evolve/client-brand run bundle && pnpm --filter @power-evolve/client-workspace-files run bundle && pnpm --filter @power-evolve/client-execution-target run bundle && pnpm --filter @power-evolve/cloud-web run build",
+    "check:power-evolve": "tsc -b products/power-evolve/application/tsconfig.json --pretty false && pnpm --filter @power-evolve/client-brand run typecheck && pnpm --filter @power-evolve/client-workspace-files run typecheck && pnpm --filter @power-evolve/client-execution-target run typecheck && pnpm --filter @power-evolve/cloud-web run check",
     "test:power-evolve:web": "pnpm --filter @power-evolve/client-workspace-files run test && pnpm --filter @power-evolve/client-execution-target run test && pnpm --filter @power-evolve/cloud-web run test",
     "prepare:primary-runtime": "tsx scripts/primary-runtime/prepare.ts",
     "build": "tsx scripts/build.ts",

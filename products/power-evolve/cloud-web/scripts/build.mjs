@@ -16,13 +16,14 @@ const roots = [
   '@deepseek-ai/dsh-client-modules',
   '@deepseek-ai/dsh-client-ui-chat',
   '@deepseek-ai/dsh-client-ui-sidebar',
-  '@deepseek-ai/dsh-client-ui-brand-official',
+  '@deepseek-ai/dsh-client-ui-settings-general',
   '@deepseek-ai/dsh-client-ui-attachment',
   '@deepseek-ai/dsh-client-ui-tool',
   '@deepseek-ai/dsh-client-ui-trajectory',
   '@deepseek-ai/dsh-client-ui-sidebar-right',
   '@deepseek-ai/dsh-client-ui-sidebar-files',
   '@deepseek-ai/dsh-client-ui-sidebar-documentpreview',
+  '@power-evolve/client-brand',
   '@power-evolve/client-workspace-files',
   '@power-evolve/client-execution-target',
 ]
@@ -91,6 +92,7 @@ async function writeBoot(index, graph) {
   return html.replaceAll('href="/manifest.webmanifest"', 'href="./manifest.webmanifest"')
     .replaceAll('href="/favicon-dark.svg"', 'href="./favicon-dark.svg"')
     .replaceAll('href="/favicon.svg"', 'href="./favicon.svg"')
+    .replace(/<title>[^<]*<\/title>/u, '<title>PowerEvolve</title>')
 }
 
 async function listFiles(directory) {
@@ -134,7 +136,7 @@ async function main() {
   await writeFile(join(dist, 'index.html'), await writeBoot(index, graph))
   const files = (await listFiles(dist)).filter(name => name !== 'asset-list.json').sort()
   await writeFile(join(dist, 'asset-list.json'), `${JSON.stringify(files)}\n`)
-  console.log(`PowerEvolve native Web shell: ${rows.length} upstream client modules, ${files.length} static files`)
+  console.log(`PowerEvolve native Web shell: ${rows.length} client modules, ${files.length} static files`)
 }
 
 await main()
