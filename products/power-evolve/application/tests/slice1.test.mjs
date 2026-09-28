@@ -304,6 +304,17 @@ test('shared host: isolated conversations, files, skills and approved remote act
     const after = await native(0, 'after', { sessionId: alice, cursor: snapshot.cursor })
     assert.equal(after.status, 200)
     assert.deepEqual((await after.json()).events, [])
+    const short = await native(0, 'snapshot', { address, maxMessages: 1 })
+    assert.equal(short.status, 200)
+    const recent = await short.json()
+    assert.equal(recent.hasMore, true)
+    const earlier = await native(0, 'page', {
+      address, throughSeq: recent.cursor, beforeSeq: recent.records[0].event.seq, maxMessages: 1,
+    })
+    assert.equal(earlier.status, 200)
+    const history = await earlier.json()
+    assert(history.records.some(record => record.event.type === 'user/message'))
+    assert(history.records.at(-1).event.seq < recent.records[0].event.seq)
   })
   await t.test('POSIX files preserve bytes and reject cross-user paths, links and stale writes', async () => {
     const firstBytes = Buffer.from([0,1,2,255,32,10])

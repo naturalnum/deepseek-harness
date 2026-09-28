@@ -11,6 +11,16 @@ if (!Number.isInteger(port) || port < 1024 || port > 65535 || !process.env.PE_RE
 }
 const instanceId = randomUUID()
 let cursor = 0
+const upgraded = new Set()
+const publicHost = `127.0.0.1:${port}`
+function choose() {
+  const choices = backends.filter(backend => backend.healthy)
+  return choices.length ? choices[cursor++ % choices.length] : undefined
+}
+function authorityValid(request) {
+  return request.headers.host === publicHost
+    && (request.headers.origin === undefined || request.headers.origin === `http://${publicHost}`)
+}
 async function probe() {
   await Promise.all(backends.map(async backend => {
     try {
@@ -29,16 +39,20 @@ const server = http.createServer((request, response) => {
       instanceId, backends: backends.map(({ origin, healthy, served }) => ({ origin, healthy, served })) }))
     return
   }
-  const choices = backends.map((backend, index) => ({ backend, index })).filter(item => item.backend.healthy)
-  if (!choices.length) {
+  if (!authorityValid(request)) {
+    response.writeHead(403, { 'cache-control': 'no-store' })
+    response.end('forbidden')
+    return
+  }
+  const selected = choose()
+  if (!selected) {
     response.writeHead(503, { 'content-type': 'application/json', 'cache-control': 'no-store' })
     response.end('{"error":"hosts_unavailable"}')
     return
   }
-  const selected = choices[cursor++ % choices.length].backend
   selected.served++
-  const headers = { ...request.headers, host: new URL(selected.origin).host,
-    'x-forwarded-host': request.headers.host ?? '', 'x-forwarded-proto': 'http' }
+  const headers = { ...request.headers, host: publicHost,
+    'x-forwarded-host': publicHost, 'x-forwarded-proto': 'http' }
   for (const key of ['connection', 'proxy-connection', 'keep-alive', 'upgrade', 'te', 'trailer']) delete headers[key]
   const upstream = http.request(new URL(request.url ?? '/', selected.origin), {
     method: request.method, headers, agent: false,
@@ -57,14 +71,59 @@ const server = http.createServer((request, response) => {
   })
   request.pipe(upstream)
 })
-server.on('upgrade', (_request, socket) => socket.destroy())
+server.on('upgrade', (request, socket, head) => {
+  let target
+  try { target = new URL(request.url ?? '/', `http://${publicHost}`) }
+  catch { socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n'); return }
+  if (!authorityValid(request) || target.pathname !== '/native/api/remote.mux' || target.search) {
+    socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n')
+    return
+  }
+  const selected = choose()
+  if (!selected) {
+    socket.end('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n')
+    return
+  }
+  selected.served++
+  const headers = { ...request.headers, host: publicHost,
+    'x-forwarded-host': publicHost, 'x-forwarded-proto': 'http' }
+  delete headers['proxy-connection']
+  const upstream = http.request(new URL(request.url, selected.origin), {
+    method: 'GET', headers, agent: false,
+  })
+  let connected = false
+  const fail = () => {
+    if (connected) return
+    socket.end('HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n')
+  }
+  upstream.on('upgrade', (response, backendSocket, backendHead) => {
+    connected = true
+    upgraded.add(socket); upgraded.add(backendSocket)
+    const fields = response.rawHeaders.map((field, index) => index % 2 === 0
+      ? `${field}: ${response.rawHeaders[index + 1]}` : null).filter(Boolean)
+    socket.write(`HTTP/1.1 101 Switching Protocols\r\n${fields.join('\r\n')}\r\n\r\n`)
+    if (head.length) backendSocket.write(head)
+    if (backendHead.length) socket.write(backendHead)
+    socket.on('close', () => { upgraded.delete(socket); backendSocket.destroy() })
+    backendSocket.on('close', () => { upgraded.delete(backendSocket); socket.destroy() })
+    socket.pipe(backendSocket)
+    backendSocket.pipe(socket)
+  })
+  upstream.on('response', response => { response.resume(); fail() })
+  upstream.on('error', fail)
+  socket.on('close', () => upstream.destroy())
+  upstream.end()
+})
 await new Promise((resolve, reject) => server.once('error', reject).listen(port, '127.0.0.1', resolve))
 await writeFile(process.env.PE_READY_FILE, JSON.stringify({ pid: process.pid,
   url: `http://127.0.0.1:${port}`, instanceId }), { mode: 0o600 })
 const close = () => {
   clearInterval(timer)
   server.close()
-  setTimeout(() => server.closeAllConnections(), 3000).unref()
+  setTimeout(() => {
+    server.closeAllConnections()
+    for (const socket of upgraded) socket.destroy()
+  }, 3000).unref()
 }
 process.once('SIGTERM', close)
 process.once('SIGINT', close)
