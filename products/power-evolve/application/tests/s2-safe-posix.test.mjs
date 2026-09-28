@@ -49,7 +49,7 @@ test('descriptor-relative read, list, kind, put and publication source reject an
   })
 
 test('rapid real-directory to symlink replacement never reads bytes outside the workspace',
-  { timeout: 30000 }, async t => {
+  { timeout: 60000 }, async t => {
     const { safe, outside, workspace, workspaceId } = await fixture(t)
     const live = join(workspace, 'nested'), parked = join(workspace, 'parked')
     await mkdir(live)

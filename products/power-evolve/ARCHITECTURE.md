@@ -2,9 +2,9 @@
 
 ## Scope
 
-PowerEvolve uses a shared DSH application host and a separate trusted platform. The cloud service slices cover conversation, files, API authorization, cloud execution, desktop execution, and multiple hosts. Each slice includes persistence and failure checks. Client delivery now follows the native DSH Web path below; skill and plugin management are deferred until the core cloud path is usable there.
+PowerEvolve uses a shared DSH application host and a separate trusted platform. The cloud service slices cover conversation, files, API authorization, cloud execution, desktop execution, and multiple hosts. Each slice includes persistence and failure checks. Client delivery follows the native DSH Web path; cloud Workspace and artifact plugins are present. Further desktop features are deferred while cloud slices progress.
 
-The target browser is the native DSH Web shell, extended through product client plugins. The small `application/web` page used to verify the first cloud slices is a test interface, not the product frontend. Complete native Web login, two-user conversation/history, files, cloud execution, and desktop execution before adapting the Skills and Plugins pages from the existing PowerEvolve main branch. Those pages use an older DSH client API and require compatibility work; do not recreate them in the test interface.
+The target browser is the native DSH Web shell, extended through product client plugins. The small `application/web` page used to verify the first cloud slices is a test interface, not the product frontend. The Skills and Plugins pages from the existing PowerEvolve main branch use an older DSH client API and require compatibility work; do not recreate them in the test interface.
 
 ## Service ownership
 
@@ -16,7 +16,7 @@ PostgreSQL owns resource identity, input acceptance, Operation and Attempt state
 
 ## Files and execution
 
-A Workspace identifies authorized persistent files. An environment specification records the selected base image, configuration and mount policy; a persistent Home is stored separately from disposable computation. A SandboxInstance is one replaceable execution instance. None of these is the Session identity. The native browser creates one lightweight, tenant-owned Workspace record and directory when first opened; ordinary conversation does not create a SandboxInstance.
+A Workspace identifies authorized persistent files. A user retains one default Workspace and can create additional private Workspaces. Each Session binds one owned Workspace at creation. An environment specification records the selected base image, configuration and mount policy; a persistent Home is stored separately from disposable computation. A SandboxInstance is one replaceable execution instance. None of these is the Session identity. Ordinary conversation does not create a SandboxInstance.
 
 The execution slice adds k3s and Agent Sandbox through platform APIs. User code, process-based tools, Git, and executable skills run only in an authorized cloud sandbox or desktop executor. A live sandbox and the file service expose the same authorized workspace. Instance recycling preserves durable files and history, not process memory or PTYs.
 
@@ -54,7 +54,7 @@ These are responsibilities, not a requirement for a package or process per row. 
 
 ## Slice 2 ownership
 
-T04 is implemented by `application/src/platform/files.ts` and `skills.ts`. PostgreSQL identifies each user's workspace, records conditional file mutations, owns the skill catalog, and freezes enabled skill revisions at task acceptance. A private POSIX root holds the file bytes and skill instructions. The platform checks identity on each operation; the shared host forwards bounded, validated requests and never reads the storage root. Ordinary file access and reading a skill do not create a sandbox. Skill instructions enter an Agent's prompt as selected user content; skill code cannot run in the host. T06 cloud execution and sandbox mounts remain for the execution slice. A writable sandbox mount will require stronger filesystem boundary enforcement than the current single-machine path checks.
+T04 is implemented by `application/src/platform/files.ts`, `artifacts.ts`, and `skills.ts`. PostgreSQL owns Workspace and Session associations, conditional file mutations, immutable artifact metadata, and the skill catalog. A private POSIX root holds Workspace bytes; artifact snapshots live outside writable Sandbox mounts. The platform checks identity on each operation; the shared host forwards bounded, validated requests and never reads the storage root. Ordinary file access, publication, and reading a skill do not create a sandbox. Workspace file operations use descriptor-relative POSIX access through the [safe file helper](S2-SAFE-POSIX.md), preventing concurrent symlink swaps from redirecting them. Skill instructions enter an Agent's prompt as selected user content; skill code cannot run in the host.
 
 ## Slice 3 ownership
 
@@ -62,9 +62,9 @@ P05 supplies two native, Agent-scoped connector tools: a read-only note query an
 
 ## Slice 4 ownership
 
-P06 exposes one Agent-scoped `cloud_exec` tool. It submits a stable call ID and receives a durable receipt; the result later enters the same Session as one platform-origin operation. T06 owns a bounded execution queue in PG, Kubernetes credentials, per-Session Agent Sandbox resources, and a root-only runner token. Only the runner spawns user code as UID 1000. The platform mounts exactly the authorized user's workspace and Home; other users' paths and the storage root are not mounted. A root Session may reuse its live Sandbox, while recycling removes computation and retains POSIX files and Git history.
+P06 exposes one Agent-scoped `cloud_exec` tool. It submits a stable call ID and receives a durable receipt; the result later enters the same Session as one platform-origin operation. T06 owns a bounded execution queue in PG, Kubernetes credentials, and a root-only runner token. A user has one physical Kubernetes resource slot while the Home mount is shared, but each Session's Sandbox has its own Pod UID, runner identity, and execution record. Only the runner spawns user code as UID 1000. The platform mounts exactly the Session's owned Workspace and the user's Home; other users' paths and the storage root are not mounted. A Session may reuse its live Sandbox, while recycling removes computation and retains POSIX files and Git history.
 
-The platform queries runner status before dispatching an accepted command again. The runner also checks its instance ID before starting a command. A changed Pod or runner identity moves the execution and Sandbox to an uncertain state without replay. Before recycling a Sandbox with a writable mount, the platform retains its Pod with a finalizer, observes native kubelet termination, records the exact Pod UID and stop evidence in PG, and only then releases the Pod. Missing stop evidence blocks replacement. The trial uses a dedicated namespace and a namespace-scoped ServiceAccount; production ingress, network egress policy, descriptor-relative file access, multi-node POSIX mount consistency, and operator recovery from an unknown Pod remain separate deployment work.
+The platform queries runner status before dispatching an accepted command again. The runner also checks its instance ID before starting a command. A changed Pod or runner identity moves the execution and Sandbox to an uncertain state without replay. Before recycling or handing off a writable slot, the platform retains its Pod with a finalizer, observes native kubelet termination, records the exact Pod UID and stop evidence in PG, and only then releases the Pod. Missing stop evidence blocks replacement. The trial uses a dedicated namespace and a namespace-scoped ServiceAccount; production ingress, network egress policy, multi-node POSIX mount consistency, and operator recovery from an unknown Pod remain separate deployment work.
 
 ## Slice 5 ownership
 

@@ -176,12 +176,20 @@ export class ArtifactService {
   async preview(user: Identity, artifactId: string): Promise<unknown> {
     const { record, bytes } = await this.bytes(user, artifactId)
     if (record.mime.startsWith('text/')) {
-      const selected = bytes.subarray(0, MAX_TEXT_PREVIEW)
       let text: string
-      try { text = new TextDecoder('utf-8', { fatal: true }).decode(selected) }
+      const decoder = new TextDecoder('utf-8', { fatal: true })
+      try {
+        decoder.decode(bytes)
+        let end = Math.min(bytes.length, MAX_TEXT_PREVIEW)
+        // The byte limit can fall inside a multibyte UTF-8 character.
+        for (;;) {
+          try { text = decoder.decode(bytes.subarray(0, end)); break }
+          catch { if (--end < MAX_TEXT_PREVIEW - 3) throw new Error('Invalid UTF-8 prefix') }
+        }
+      }
       catch { throw new PlatformError(415, 'artifact_not_text') }
       return { artifactId, mime: record.mime, sizeBytes: bytes.length, text,
-        truncated: bytes.length > selected.length }
+        truncated: bytes.length > MAX_TEXT_PREVIEW }
     }
     if (record.mime === 'image/png' || record.mime === 'image/jpeg') {
       return { artifactId, mime: record.mime, sizeBytes: bytes.length, data: bytes.toString('base64'), truncated: false }

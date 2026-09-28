@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "files": ["lib", "src/platform/safe-posix.py", "web", "README.md", "README.zh.md"],
   "exports": {
     "./platform": "./lib/platform/index.js",
     "./scope": "./lib/host/scope.js",

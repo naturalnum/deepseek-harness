@@ -86,5 +86,12 @@ test('published bytes survive source edits and enforce user, Session, and reques
       new Set([published.artifactId, second.artifactId]))
     await assert.rejects(artifacts.list(bob, { limit: 1, cursor: firstPage.nextCursor }),
       { status: 400, code: 'invalid_cursor' })
+
+    const boundary = Buffer.concat([Buffer.alloc(128 * 1024 - 1, 65), Buffer.from('世界')])
+    await files.put(alice, randomUUID(), 'boundary.txt', null, boundary.toString('base64'))
+    const boundaryArtifact = await artifacts.publish(alice, randomUUID(), session, 'boundary.txt')
+    const preview = await artifacts.preview(alice, boundaryArtifact.artifactId)
+    assert.equal(preview.truncated, true)
+    assert.equal(preview.text, 'A'.repeat(128 * 1024 - 1))
   })
 })
