@@ -270,6 +270,34 @@ test('shared host: isolated conversations, files, skills and approved remote act
   await t.test('recorded native Session is both replay input and complete output oracle',async()=> {
     await compareRecordedSession(await page(0,alice), recorded)
   })
+  await t.test('native Web reads preserve tenant ownership and DSH history framing', async () => {
+    const native = (user, path, body) => post(`${platform.url}/native/sessions/${path}`, tokens[user], body)
+    const [aliceList, bobList] = await Promise.all([
+      native(0, 'list', {}), native(1, 'list', {}),
+    ])
+    assert.equal(aliceList.status, 200); assert.equal(bobList.status, 200)
+    assert.deepEqual((await aliceList.json()).items.map(item => item.sessionId), [alice])
+    assert.deepEqual((await bobList.json()).items.map(item => item.sessionId), [bob])
+    const address = { kind: 'session', sessionId: alice }
+    assert.equal((await native(1, 'snapshot', { address, assistantStream: true })).status, 404)
+    assert.equal((await native(1, 'page', { address, throughSeq: 0 })).status, 404)
+    const response = await native(0, 'snapshot', { address, assistantStream: true })
+    assert.equal(response.status, 200)
+    const snapshot = await response.json()
+    assert.equal(snapshot.type, 'snapshot')
+    assert.equal(snapshot.header.id, alice)
+    assert.equal(snapshot.header.cwd, '/workspace')
+    assert.equal(snapshot.cursor, snapshot.records.at(-1).event.seq)
+    assert.deepEqual(snapshot.assistantStream, { revision: 0 })
+    assert(snapshot.records.some(record => record.event.type === 'user/message'))
+    assert(snapshot.records.some(record => record.event.type === 'assistant/message'))
+    const older = await native(0, 'page', { address, throughSeq: snapshot.cursor, beforeSeq: snapshot.cursor + 1 })
+    assert.equal(older.status, 200)
+    assert.deepEqual((await older.json()).records, snapshot.records)
+    const after = await native(0, 'after', { sessionId: alice, cursor: snapshot.cursor })
+    assert.equal(after.status, 200)
+    assert.deepEqual((await after.json()).events, [])
+  })
   await t.test('POSIX files preserve bytes and reject cross-user paths, links and stale writes', async () => {
     const firstBytes = Buffer.from([0,1,2,255,32,10])
     const id = randomUUID(), path = 'notes/probe.bin'

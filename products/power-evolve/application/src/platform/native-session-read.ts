@@ -2,11 +2,10 @@
 import type { Pool, PoolClient } from 'pg'
 import { isAppendSurfaceEvent, type SessionEvent, type SessionId } from '@deepseek-ai/dsh-session'
 import type {
-  SessionFollowRequest, SessionFollowFrame, SessionListValue, SessionPage,
-  SessionPageRequest, SessionSummary,
+  SessionFollowFrame, SessionListValue, SessionPage, SessionSummary,
 } from '@deepseek-ai/dsh-api-session-controller/types'
 import { z } from 'zod'
-import { type Identity, PlatformError } from '../contracts.ts'
+import { sessionId, type Identity, PlatformError } from '../contracts.ts'
 import { headerSchema } from '../session-records.ts'
 import { transaction } from './database.ts'
 
@@ -15,7 +14,7 @@ const MAX_PAGE_MESSAGES = 200
 const READ_CHUNK = 256
 const MESSAGE_TYPES = new Set(['user/message', 'assistant/message'])
 
-const address = z.object({ kind: z.literal('session'), sessionId: z.uuid() }).strict()
+const address = z.object({ kind: z.literal('session'), sessionId }).strict()
 const turnWindow = z.object({ minMessages: z.number().int().positive(), minTurns: z.number().int().positive() }).strict()
 const windowRequest = z.object({
   address,
@@ -70,7 +69,7 @@ export class NativeSessionRead {
     return { items }
   }
 
-  async page(user: Identity, request: SessionPageRequest): Promise<SessionPage> {
+  async page(user: Identity, request: z.infer<typeof nativePageRequest>): Promise<SessionPage> {
     const parsed = nativePageRequest.parse(request)
     return transaction(this.pool, async client => {
       const row = await ownedSnapshot(client, user, parsed.address.sessionId)
@@ -80,7 +79,7 @@ export class NativeSessionRead {
   }
 
   /** One stable opening frame; the Host stream then polls for later events. */
-  async snapshot(user: Identity, request: SessionFollowRequest): Promise<Extract<SessionFollowFrame, { type: 'snapshot' }>> {
+  async snapshot(user: Identity, request: z.infer<typeof nativeFollowRequest>): Promise<Extract<SessionFollowFrame, { type: 'snapshot' }>> {
     const parsed = nativeFollowRequest.parse(request)
     return transaction(this.pool, async client => {
       const row = await ownedSnapshot(client, user, parsed.address.sessionId)

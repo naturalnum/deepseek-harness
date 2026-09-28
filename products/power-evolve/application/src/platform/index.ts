@@ -7,12 +7,13 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 import schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
 import { Pool } from 'pg'
-import { createRequest, filesListRequest, fileReadRequest, filePutRequest, listRequest, loginRequest, pageRequest, promptRequest, skillInstallRequest, skillRequest, skillToggleRequest, settings, PlatformError } from '../contracts.ts'
+import { createRequest, filesListRequest, fileReadRequest, filePutRequest, listRequest, loginRequest, pageRequest, promptRequest, sessionId, skillInstallRequest, skillRequest, skillToggleRequest, settings, PlatformError } from '../contracts.ts'
 import { bearer, readJson, sendFailure, sendJson } from '../http.ts'
 import { initializeDatabase } from './database.ts'
 import { hashPassword, IdentityService } from './identity.ts'
 import { TaskStore } from './tasks.ts'
 import { EventStore } from './events.ts'
+import { NativeSessionRead, nativeFollowRequest, nativePageRequest } from './native-session-read.ts'
 import { FileService } from './files.ts'
 import { SkillService } from './skills.ts'
 import { ConnectorService } from './connectors.ts'
@@ -81,6 +82,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const identities = new IdentityService(pool, config.tokenLifetimeMs)
   const tasks = new TaskStore(pool, { ...config, executionEnabled })
   const events = new EventStore(tasks, config)
+  const nativeSessions = new NativeSessionRead(pool)
   const connectors = new ConnectorService(tasks, config.connectorUrl, connectorKey.trim(), config.connectorTimeoutMs, config.connectorPollMs)
   await connectors.seedPermissions(users.map(user => user.username))
   connectors.start()
@@ -251,6 +253,20 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       case '/sessions/page': {
         const { sessionId, after, limit } = pageRequest.parse(input)
         sendJson(res, await events.page(user, sessionId, after, limit)); return
+      }
+      case '/native/sessions/list': {
+        z.object({}).strict().parse(input)
+        sendJson(res, await nativeSessions.list(user)); return
+      }
+      case '/native/sessions/page': {
+        sendJson(res, await nativeSessions.page(user, nativePageRequest.parse(input))); return
+      }
+      case '/native/sessions/snapshot': {
+        sendJson(res, await nativeSessions.snapshot(user, nativeFollowRequest.parse(input))); return
+      }
+      case '/native/sessions/after': {
+        const value = z.object({ sessionId, cursor: z.number().int().min(-1) }).strict().parse(input)
+        sendJson(res, { events: await nativeSessions.after(user, value.sessionId, value.cursor) }); return
       }
       case '/files/list': sendJson(res, await files.list(user, filesListRequest.parse(input).directory)); return
       case '/files/read': sendJson(res, await files.read(user, fileReadRequest.parse(input).path)); return
