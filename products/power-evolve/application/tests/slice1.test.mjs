@@ -262,6 +262,7 @@ test('shared host: isolated conversations, files, skills and approved remote act
     assert.equal((await rpcResponse(0,'prompt',{sessionId:alice,requestId,text:'different'})).status,409)
     const [a,b] = await Promise.all([finished(0,alice),finished(1,bob)])
     assert.equal(a.events.filter(event=>event.type==='user/message').length,1)
+    assert.equal(a.events.find(event=>event.type==='user/message').data.source.rpcId,requestId)
     assert.equal(b.events.filter(event=>event.type==='user/message').length,1)
     assert(!JSON.stringify(a).includes('beta')); assert(!JSON.stringify(b).includes('alpha'))
     const cancel = new AbortController()
@@ -279,12 +280,26 @@ test('shared host: isolated conversations, files, skills and approved remote act
   })
   await t.test('native Web reads preserve tenant ownership and DSH history framing', async () => {
     const native = (user, path, body) => post(`${platform.url}/native/sessions/${path}`, tokens[user], body)
+    const workspace = user => post(`${platform.url}/native/workspace/baseline`, tokens[user], {})
+    const [aliceWorkspaceResponse, bobWorkspaceResponse] = await Promise.all([workspace(0), workspace(1)])
+    assert.equal(aliceWorkspaceResponse.status, 200); assert.equal(bobWorkspaceResponse.status, 200)
+    const aliceWorkspace = await aliceWorkspaceResponse.json(), bobWorkspace = await bobWorkspaceResponse.json()
+    assert.equal(aliceWorkspace.items.length, 1); assert.equal(bobWorkspace.items.length, 1)
+    assert.notEqual(aliceWorkspace.items[0].workspaceId, bobWorkspace.items[0].workspaceId)
+    assert.equal(aliceWorkspace.items[0].path, '/workspace')
+    assert.equal(bobWorkspace.items[0].path, '/workspace')
+    assert.deepEqual(aliceWorkspace.items[0].sessionIds, [alice])
+    assert.deepEqual(bobWorkspace.items[0].sessionIds, [bob])
+    assert.deepEqual((await (await workspace(0)).json()).items[0].workspaceId, aliceWorkspace.items[0].workspaceId)
     const [aliceList, bobList] = await Promise.all([
       native(0, 'list', {}), native(1, 'list', {}),
     ])
     assert.equal(aliceList.status, 200); assert.equal(bobList.status, 200)
-    assert.deepEqual((await aliceList.json()).items.map(item => item.sessionId), [alice])
-    assert.deepEqual((await bobList.json()).items.map(item => item.sessionId), [bob])
+    const aliceItems = (await aliceList.json()).items, bobItems = (await bobList.json()).items
+    assert.deepEqual(aliceItems.map(item => item.sessionId), [alice])
+    assert.deepEqual(bobItems.map(item => item.sessionId), [bob])
+    assert.equal(typeof aliceItems[0].running, 'boolean')
+    assert.equal(typeof aliceItems[0].agentAvailable, 'boolean')
     const address = { kind: 'session', sessionId: alice }
     assert.equal((await native(1, 'snapshot', { address, assistantStream: true })).status, 404)
     assert.equal((await native(1, 'page', { address, throughSeq: 0 })).status, 404)
@@ -337,35 +352,51 @@ test('shared host: isolated conversations, files, skills and approved remote act
       assert.equal(value.rpcId, rpcId)
       return value.result
     }
-    const aliceList = await nativeRemote(0, 'session/list', {})
-    const bobList = await nativeRemote(1, 'session/list', {})
+    const aliceList = await nativeRemote(0, 'session/list', { _request: {} })
+    const bobList = await nativeRemote(1, 'session/list', { _request: {} })
     assert.equal((await post(`${host.url}/native/api/session/list`, tokens[0],
-      { type: 'client-request', rpcId: randomUUID(), method: 'session/list', payload: { args: {} } })).status, 403)
+      { type: 'client-request', rpcId: randomUUID(), method: 'session/list', payload: { args: { _request: {} } } })).status, 403)
     assert.equal(aliceList.ok, true)
     assert.equal(bobList.ok, true)
     assert(aliceList.value.items.some(item => item.sessionId === alice))
     assert(bobList.value.items.every(item => item.sessionId !== alice))
     const foreignPage = await nativeRemote(1, 'session/page',
-      { address: { kind: 'session', sessionId: alice }, throughSeq: 0 })
+      { request: { address: { kind: 'session', sessionId: alice }, throughSeq: 0 } })
     assert.equal(foreignPage.ok, false)
     assert.equal(foreignPage.error.code, 'session/not-found')
     const fixedId = randomUUID()
-    const first = await nativeRemote(0, 'session/create', {}, fixedId)
-    const repeated = await nativeRemote(0, 'session/create', {}, fixedId)
+    const first = await nativeRemote(0, 'session/create', { request: {} }, fixedId)
+    const repeated = await nativeRemote(0, 'session/create', { request: {} }, fixedId)
     assert.equal(first.ok, true)
     assert.deepEqual(repeated, first)
+    const ownWorkspace = await post(`${platform.url}/native/workspace/baseline`, tokens[0], {})
+    const foreignWorkspace = await post(`${platform.url}/native/workspace/baseline`, tokens[1], {})
+    const ownId = (await ownWorkspace.json()).items[0].workspaceId
+    const foreignId = (await foreignWorkspace.json()).items[0].workspaceId
+    assert.equal((await nativeRemote(0, 'session/create', { request: { workspaceId: foreignId } })).error.code, 'workspace/not-found')
+    const inWorkspace = await nativeRemote(0, 'session/create', { request: { workspaceId: ownId } })
+    assert.equal(inWorkspace.ok, true)
+    const adopted = await nativeRemote(0, 'session/create',
+      { request: { workspaceId: ownId, sessionId: inWorkspace.value.sessionId } })
+    assert.deepEqual(adopted, inWorkspace)
+    const foreignAdoption = await nativeRemote(1, 'session/create',
+      { request: { workspaceId: foreignId, sessionId: inWorkspace.value.sessionId } })
+    assert.equal(foreignAdoption.ok, false)
+    assert.equal(foreignAdoption.error.code, 'session/not-found')
     const newSession = first.value.sessionId
     const request = { sessionId: newSession, requestId: randomUUID(), mode: 'queue',
       content: [{ type: 'text', text: 'native transport trial' }] }
-    const accepted = await nativeRemote(0, 'session/prompt', request)
+    const accepted = await nativeRemote(0, 'session/prompt', { request })
     assert.equal(accepted.ok, true)
     assert.equal(accepted.value.accepted, true)
     const answered = await finished(0, newSession)
     assert(answered.events.some(event => event.type === 'assistant/message'))
-    const opened = await nativeRemote(0, 'session/projections', { sessionId: newSession })
+    assert.equal((await nativeRemote(0, 'session/create',
+      { request: { workspaceId: ownId, sessionId: newSession } })).error.code, 'session/conflict')
+    const opened = await nativeRemote(0, 'session/projections', { request: { sessionId: newSession } })
     assert.equal(opened.ok, true)
     const old = await nativeRemote(0, 'session/page',
-      { address: { kind: 'session', sessionId: newSession }, throughSeq: answered.watermark })
+      { request: { address: { kind: 'session', sessionId: newSession }, throughSeq: answered.watermark } })
     assert.equal(old.ok, true)
     assert(old.value.records.some(record => record.event.type === 'assistant/message'))
     const denied = await nativeRemote(0, 'settings/update', {})
@@ -398,13 +429,19 @@ test('shared host: isolated conversations, files, skills and approved remote act
       assert.equal(generation.type, 'item')
       assert.equal(generation.value.type, 'ready')
       assert.equal(generation.value.host.home, '/workspace')
+      const workspaceFrame = await streamFirst(aliceSocket, 'workspace/follow', {})
+      assert.equal(workspaceFrame.type, 'item')
+      assert.equal(workspaceFrame.value.type, 'baseline')
+      assert.equal(workspaceFrame.value.value.items[0].workspaceId, ownId)
+      assert(workspaceFrame.value.value.items[0].sessionIds.includes(inWorkspace.value.sessionId))
       const opened = await streamFirst(aliceSocket, 'session/follow',
-        { address: { kind: 'session', sessionId: newSession }, assistantStream: true })
+        { request: { address: { kind: 'session', sessionId: newSession }, assistantStream: true,
+          maxMessages: 500, turnWindow: { minMessages: 50, minTurns: 2 } } })
       assert.equal(opened.type, 'item')
       assert.equal(opened.value.type, 'snapshot')
       assert.equal(opened.value.header.id, newSession)
       const deniedFollow = await streamFirst(bobSocket, 'session/follow',
-        { address: { kind: 'session', sessionId: newSession }, assistantStream: true })
+        { request: { address: { kind: 'session', sessionId: newSession }, assistantStream: true } })
       assert.equal(deniedFollow.type, 'error')
       assert.equal(deniedFollow.error.code, 'session/not-found')
     } finally {

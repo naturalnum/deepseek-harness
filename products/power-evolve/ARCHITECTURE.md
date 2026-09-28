@@ -16,7 +16,7 @@ PostgreSQL owns resource identity, input acceptance, Operation and Attempt state
 
 ## Files and execution
 
-A Workspace identifies authorized persistent files. An environment specification records the selected base image, configuration and mount policy; a persistent Home is stored separately from disposable computation. A SandboxInstance is one replaceable execution instance. None of these is the Session identity. Ordinary conversation does not create a workspace or sandbox.
+A Workspace identifies authorized persistent files. An environment specification records the selected base image, configuration and mount policy; a persistent Home is stored separately from disposable computation. A SandboxInstance is one replaceable execution instance. None of these is the Session identity. The native browser creates one lightweight, tenant-owned Workspace record and directory when first opened; ordinary conversation does not create a SandboxInstance.
 
 The execution slice adds k3s and Agent Sandbox through platform APIs. User code, process-based tools, Git, and executable skills run only in an authorized cloud sandbox or desktop executor. A live sandbox and the file service expose the same authorized workspace. Instance recycling preserves durable files and history, not process memory or PTYs.
 

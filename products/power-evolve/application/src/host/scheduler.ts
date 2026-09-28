@@ -1,6 +1,8 @@
 /** Bounded operation dispatch into the native Agent loop; no execution environment is loaded. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { AgentHandle } from '@deepseek-ai/dsh-agent'
+import type { SessionRequestId } from '@deepseek-ai/dsh-api-session-controller/types'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import { foldConsumedWork } from '@deepseek-ai/dsh-agent'
 import { MessageId } from '@deepseek-ai/dsh-llm'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -120,7 +122,7 @@ export class Scheduler {
           source: grant.source === 'platform_action' ? { kind: 'power-evolve-action', actionId: grant.sourceActionId! }
             : grant.source === 'sandbox_result' ? { kind: 'power-evolve-execution', executionId: grant.sourceExecutionId! }
               : grant.source === 'desktop_result' ? { kind: 'power-evolve-desktop-execution', executionId: grant.sourceDesktopExecutionId! }
-              : { kind: 'user' },
+              : { kind: 'user', rpcId: brandString<SessionRequestId>(grant.requestId) },
           content: [{ type: 'text', text: grant.text }] })
         await agent.whenIdle()
       }

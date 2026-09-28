@@ -14,7 +14,7 @@ import { readJson, sendFailure, sendJson } from '../http.ts'
 import type { BrowserAgentAuth } from './browser-auth.ts'
 
 const address = z.object({ kind: z.literal('session'), sessionId }).strict()
-const window = z.object({ maxMessages: z.number().int().min(1).max(200).optional(),
+const window = z.object({ maxMessages: z.number().int().min(1).max(500).optional(),
   turnWindow: z.object({ minMessages: z.number().int().positive(), minTurns: z.number().int().positive() }).strict().optional() })
 const page = window.extend({ address, throughSeq: z.number().int().min(-1), beforeSeq: z.number().int().nonnegative().optional() }).strict()
 const follow = window.extend({ address, assistantStream: z.literal(true).optional() }).strict()
@@ -25,6 +25,11 @@ const envelope = z.object({ type: z.literal('client-request'), rpcId: z.string()
   method: z.string().min(1).max(120), payload: z.object({ args: z.unknown() }).strict() }).strict()
 const projectionRequest = z.object({ sessionId }).strict()
 const afterResult = z.object({ events: z.array(z.object({ seq: z.number().int().nonnegative() }).passthrough()) }).strict()
+const workspace = z.object({ workspaceId: z.uuid(), path: z.string(), title: z.string(),
+  sessionIds: z.array(sessionId), createdAt: z.string(), updatedAt: z.string() }).strict()
+const workspaceBaseline = z.object({ items: z.array(workspace).max(1),
+  archivedSessionIds: z.array(sessionId), pinnedSessionIds: z.array(sessionId) }).strict()
+const withRequest = <T extends z.ZodType>(request: T) => z.object({ request }).strict()
 
 type NativeCall = (path: string, token: string, input: unknown) => Promise<unknown>
 
@@ -32,6 +37,9 @@ function failure(error: unknown): { code: string; message: string; details: obje
   if (error instanceof PlatformError) {
     if (error.code === 'native_remote_not_enabled' || error.code === 'native_stream_not_enabled') {
       return { code: 'gateway/invocation-unavailable', message: 'Remote endpoint is not enabled', details: {} }
+    }
+    if (error.code === 'workspace_not_found') {
+      return { code: 'workspace/not-found', message: 'Workspace not found', details: {} }
     }
     if (error.status === 404) return { code: 'session/not-found', message: 'Session not found', details: {} }
     if (error.status === 401 || error.status === 403) return { code: 'gateway/forbidden', message: 'Access denied', details: {} }
@@ -54,7 +62,8 @@ async function waitForAbort(signal: AbortSignal): Promise<void> {
 }
 
 /** Register one browser-authenticated native Session carrier without exposing Host-local Remotes. */
-export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin: string, pollMs: number, maxRequestBytes: number): void {
+export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin: string,
+  pollMs: number, maxRequestBytes: number, maxStreams: number): void {
   const tokens = new WeakMap<PeerScope, string>()
   const call: NativeCall = (path, token, input) => ctx.powerEvolveRuntime.call(path, token, input)
   const tokenOf = (peer: PeerScope): string => {
@@ -65,22 +74,30 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
   const unary = async (method: string, args: unknown, token: string, rpcId: string): Promise<unknown> => {
     switch (method) {
       case 'session/list': {
-        z.object({}).strict().parse(args)
+        z.object({ _request: z.object({}).strict() }).strict().parse(args)
         return call('/native/sessions/list', token, {})
       }
       case 'session/create': {
-        z.object({}).strict().parse(args)
-        return call('/sessions/create', token, { requestId: requestId.parse(rpcId) })
+        const { request } = withRequest(z.object({ workspaceId: z.uuid().optional(), sessionId: sessionId.optional() }).strict()).parse(args)
+        if (request.workspaceId !== undefined) {
+          const baseline = workspaceBaseline.parse(await call('/native/workspace/baseline', token, {}))
+          if (!baseline.items.some(item => item.workspaceId === request.workspaceId)) {
+            throw new PlatformError(404, 'workspace_not_found')
+          }
+        }
+        return request.sessionId === undefined
+          ? call('/sessions/create', token, { requestId: requestId.parse(rpcId) })
+          : call('/native/sessions/adopt', token, { sessionId: request.sessionId })
       }
       case 'session/prompt': {
-        const value = prompt.parse(args)
+        const { request: value } = withRequest(prompt).parse(args)
         const accepted = z.object({ accepted: z.literal(true) }).parse(await call('/sessions/prompt', token, { sessionId: value.sessionId, requestId: value.requestId,
           text: value.content.map(part => part.text).join('\n'), target: { kind: 'cloud' } }))
         return { accepted: accepted.accepted }
       }
-      case 'session/page': return call('/native/sessions/page', token, page.parse(args))
+      case 'session/page': return call('/native/sessions/page', token, withRequest(page).parse(args).request)
       case 'session/projections': {
-        const { sessionId: id } = projectionRequest.parse(args)
+        const { sessionId: id } = withRequest(projectionRequest).parse(args).request
         const snapshot = z.object({ projections: z.object({ asOfSeq: z.number().int(), values: z.record(z.string(), z.json()) }) })
           .parse(await call('/native/sessions/snapshot', token, { address: { kind: 'session', sessionId: id }, maxMessages: 1 }))
         return snapshot.projections
@@ -107,8 +124,28 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
         await waitForAbort(signal)
         return
       }
+      case 'workspace/follow': {
+        z.object({}).strict().parse(args)
+        let baseline = workspaceBaseline.parse(await call('/native/workspace/baseline', token, {}))
+        yield { type: 'baseline', value: baseline }
+        while (!signal.aborted) {
+          try { await delay(Math.max(pollMs, 1000), undefined, { signal }) }
+          catch (error) { if (signal.aborted) return; throw error }
+          const current = workspaceBaseline.parse(await call('/native/workspace/baseline', token, {}))
+          if (JSON.stringify(current) === JSON.stringify(baseline)) continue
+          for (const item of current.items) yield { type: 'upsert', workspace: item }
+          if (JSON.stringify(current.archivedSessionIds) !== JSON.stringify(baseline.archivedSessionIds)) {
+            yield { type: 'archived', archivedSessionIds: current.archivedSessionIds }
+          }
+          if (JSON.stringify(current.pinnedSessionIds) !== JSON.stringify(baseline.pinnedSessionIds)) {
+            yield { type: 'pinned', pinnedSessionIds: current.pinnedSessionIds }
+          }
+          baseline = current
+        }
+        return
+      }
       case 'session/follow': {
-        const input = follow.parse(args)
+        const input = withRequest(follow).parse(args).request
         const snapshot = z.object({ cursor: z.number().int().min(-1) }).passthrough().parse(
           await call('/native/sessions/snapshot', token, input),
         )
@@ -130,9 +167,15 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
       default: throw new PlatformError(404, 'native_stream_not_enabled')
     }
   }
+  let activeStreams = 0
   const mux = new RemoteStreamMuxServer(async (method, payload, _uplink, peer, control) => {
     const value = z.object({ args: z.unknown() }).strict().parse(payload)
-    return stream(method, value.args, peer, control.signal)
+    if (activeStreams >= maxStreams) throw new PlatformError(429, 'native_stream_limit')
+    activeStreams++
+    return (async function* (): AsyncGenerator<unknown> {
+      try { yield* stream(method, value.args, peer, control.signal) }
+      finally { activeStreams-- }
+    })()
   }, failure, 2000, 262_144)
   ctx.effect(() => () => mux.close())
   ctx.effect(() => ctx.webServer.registerUpgrade({ path: '/native/api/remote.mux',

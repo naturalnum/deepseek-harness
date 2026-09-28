@@ -14,6 +14,7 @@ import { hashPassword, IdentityService } from './identity.ts'
 import { TaskStore } from './tasks.ts'
 import { EventStore } from './events.ts'
 import { NativeSessionRead, nativeFollowRequest, nativePageRequest } from './native-session-read.ts'
+import { NativeWorkspaceRead } from './native-workspace-read.ts'
 import { FileService } from './files.ts'
 import { SkillService } from './skills.ts'
 import { ConnectorService } from './connectors.ts'
@@ -83,6 +84,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const tasks = new TaskStore(pool, { ...config, executionEnabled })
   const events = new EventStore(tasks, config)
   const nativeSessions = new NativeSessionRead(pool)
+  const nativeWorkspaces = new NativeWorkspaceRead(pool, files, nativeSessions)
   const connectors = new ConnectorService(tasks, config.connectorUrl, connectorKey.trim(), config.connectorTimeoutMs, config.connectorPollMs)
   await connectors.seedPermissions(users.map(user => user.username))
   connectors.start()
@@ -257,6 +259,14 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       case '/native/sessions/list': {
         z.object({}).strict().parse(input)
         sendJson(res, await nativeSessions.list(user)); return
+      }
+      case '/native/sessions/adopt': {
+        const value = z.object({ sessionId }).strict().parse(input)
+        sendJson(res, await nativeSessions.adoptBlank(user, value.sessionId)); return
+      }
+      case '/native/workspace/baseline': {
+        z.object({}).strict().parse(input)
+        sendJson(res, await nativeWorkspaces.baseline(user)); return
       }
       case '/native/sessions/page': {
         sendJson(res, await nativeSessions.page(user, nativePageRequest.parse(input))); return

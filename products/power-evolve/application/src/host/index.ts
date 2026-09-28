@@ -101,7 +101,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const instanceId = randomUUID()
   const browserAuth = new BrowserAgentAuth(config.origin, config.platformOrigin, ctx.powerEvolveRuntime)
   ctx.provide('powerEvolveBrowserAuth', browserAuth)
-  installNativeRemote(ctx, browserAuth, config.origin, config.pollMs, config.maxRequestBytes)
+  installNativeRemote(ctx, browserAuth, config.origin, config.pollMs, config.maxRequestBytes, config.maxStreams)
   const tokens = new WeakMap<PeerScope, string>()
   ctx.plugin(ProductRemote, { tokens, pollMs: config.pollMs })
   const invocations: InvocationDescriptor[] = Object.entries(requests).map(([method, request]) => ({

@@ -10,7 +10,7 @@ import { headerSchema } from '../session-records.ts'
 import { transaction } from './database.ts'
 
 const MAX_LIST_SESSIONS = 1000
-const MAX_PAGE_MESSAGES = 200
+const MAX_PAGE_MESSAGES = 500
 const READ_CHUNK = 256
 const MESSAGE_TYPES = new Set(['user/message', 'assistant/message'])
 
@@ -48,9 +48,19 @@ interface NativeSessionRow {
 export class NativeSessionRead {
   constructor(private readonly pool: Pool) {}
 
+  /** A reconnecting native client may reselect an owned, still-empty Session. */
+  async adoptBlank(user: Identity, id: SessionId): Promise<{ sessionId: SessionId }> {
+    const result = await this.pool.query<{ event_count: number }>(
+      'SELECT event_count FROM pe_sessions WHERE id=$1 AND user_id=$2', [id, user.userId],
+    )
+    if (!result.rows[0]) throw new PlatformError(404, 'session_not_found')
+    if (result.rows[0].event_count !== 0) throw new PlatformError(409, 'session_not_blank')
+    return { sessionId: id }
+  }
+
   async list(user: Identity): Promise<SessionListValue> {
     const result = await this.pool.query<NativeSessionRow>(
-      `SELECT id,header,event_count,created_at,updated_at,lease_until>now() AS running
+      `SELECT id,header,event_count,created_at,updated_at,COALESCE(lease_until>now(),FALSE) AS running
        FROM pe_sessions WHERE user_id=$1 ORDER BY updated_at DESC,id LIMIT $2`,
       [user.userId, MAX_LIST_SESSIONS + 1],
     )
@@ -113,7 +123,7 @@ export class NativeSessionRead {
 
 async function ownedSnapshot(client: PoolClient, user: Identity, sessionId: string): Promise<NativeSessionRow> {
   const result = await client.query<NativeSessionRow>(
-    `SELECT id,header,event_count,created_at,updated_at,lease_until>now() AS running
+    `SELECT id,header,event_count,created_at,updated_at,COALESCE(lease_until>now(),FALSE) AS running
      FROM pe_sessions WHERE id=$1 AND user_id=$2 FOR SHARE`, [sessionId, user.userId],
   )
   const row = result.rows[0]

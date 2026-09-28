@@ -24,11 +24,15 @@ export async function recordedConversation() {
 }
 export async function compareRecordedSession(page, expected) {
   const ids = new Map([[page.header.id,'{{session:1}}']])
+  const rpcIds = new Map()
   const identity = value => { if (!ids.has(value)) ids.set(value,`{{message:${ids.size}}}`); return ids.get(value) }
+  const rpcIdentity = value => { if (!rpcIds.has(value)) rpcIds.set(value, `{{request:${rpcIds.size + 1}}}`); return rpcIds.get(value) }
   const normalizeIds = value => {
     if (Array.isArray(value)) return value.map(normalizeIds)
     if (!value || typeof value!=='object') return value
-    return Object.fromEntries(Object.entries(value).map(([key,item])=>[key, key==='id' && typeof item==='string' ? identity(item) : normalizeIds(item)]))
+    return Object.fromEntries(Object.entries(value).map(([key,item])=>[key,
+      key==='id' && typeof item==='string' ? identity(item)
+        : key==='rpcId' && typeof item==='string' ? rpcIdentity(item) : normalizeIds(item)]))
   }
   const rows = [normalizeIds({...page.header,createdAt:0}),...page.events.map(event=> {
     const {seq,time,...rest}=event
