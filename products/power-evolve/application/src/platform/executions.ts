@@ -6,7 +6,7 @@ import { z } from 'zod'
 import { executionTarget, PlatformError, type Identity } from '../contracts.ts'
 import { transaction } from './database.ts'
 import { KubernetesError } from './kubernetes.ts'
-import { SandboxManager, type SandboxReady } from './sandbox.ts'
+import { MountSlotBlocked, SandboxManager, type SandboxReady } from './sandbox.ts'
 import type { TaskStore } from './tasks.ts'
 
 type State = 'queued' | 'starting' | 'running' | 'cancelling' | 'succeeded' | 'failed' | 'cancelled' | 'uncertain'
@@ -179,62 +179,36 @@ export class ExecutionService {
     try {
       await assertLease()
       if (row.cancel_requested && !row.sandbox_name) {
-        await this.sandboxes.remove(row.session_id)
         await this.settle(row, 'cancelled', null, null); return
       }
-      const instance = await this.pool.query<{ user_id: string; name: string; state: string;
-        pod_uid: string | null; runner_instance_id: string | null }>(
-        'SELECT user_id,name,state,pod_uid,runner_instance_id FROM pe_sandbox_instances WHERE session_id=$1', [row.session_id])
-      const expectedName = this.sandboxes.name(row.session_id)
-      if (instance.rows[0] && (instance.rows[0].user_id !== row.user_id || instance.rows[0].name !== expectedName
-        || ['unknown', 'deleting'].includes(instance.rows[0].state))) {
-        await this.defer(row, 'uncertain', 'sandbox_stop_unconfirmed'); return
-      }
-      const priorInstance = instance.rows[0]
-      if (priorInstance?.state === 'ready') {
-        if (!priorInstance.pod_uid || !priorInstance.runner_instance_id
-          || !await this.sandboxes.matchesInstance(row.session_id, row.user_id,
-            priorInstance.pod_uid, priorInstance.runner_instance_id)) {
-          await this.pool.query("UPDATE pe_sandbox_instances SET state='unknown',updated_at=now() WHERE session_id=$1", [row.session_id])
-          await this.defer(row, 'uncertain', 'sandbox_instance_changed'); return
-        }
-      }
-      await this.pool.query(
-        `INSERT INTO pe_sandbox_instances(session_id,user_id,name,state) VALUES($1,$2,$3,'creating')
-         ON CONFLICT(session_id) DO NOTHING`, [row.session_id, row.user_id, expectedName])
       await assertLease()
-      const sandbox = await this.sandboxes.ensureReady(row.session_id, row.user_id)
+      const sandbox = await this.sandboxes.ensureReady(row.session_id, row.user_id, assertLease)
       await assertLease()
-      if (row.runner_instance_id && (row.runner_instance_id !== sandbox.runnerInstanceId || row.pod_uid !== sandbox.podUid)
-        || priorInstance?.state === 'ready' && (priorInstance.runner_instance_id !== sandbox.runnerInstanceId
-          || priorInstance.pod_uid !== sandbox.podUid)) {
-        await this.pool.query("UPDATE pe_sandbox_instances SET state='unknown',updated_at=now() WHERE session_id=$1", [row.session_id])
+      if (row.runner_instance_id
+        && (row.runner_instance_id !== sandbox.runnerInstanceId || row.pod_uid !== sandbox.podUid)) {
+        await this.sandboxes.quarantine(row.session_id, row.user_id)
         await this.defer(row, 'uncertain', 'sandbox_instance_changed'); return
       }
       const recorded = await this.pool.query(
-        `INSERT INTO pe_sandbox_instances(session_id,user_id,name,state,pod_uid,runner_instance_id)
-         VALUES($1,$2,$3,'ready',$4,$5)
-         ON CONFLICT(session_id) DO UPDATE SET state='ready',pod_uid=$4,runner_instance_id=$5,
-           stop_pod_uid=NULL,stop_evidence=NULL,last_used_at=now(),updated_at=now()
-         WHERE pe_sandbox_instances.state NOT IN ('unknown','deleting')`,
-        [row.session_id, row.user_id, sandbox.name, sandbox.podUid, sandbox.runnerInstanceId])
-      if (!recorded.rowCount) { await this.defer(row, 'uncertain', 'sandbox_stop_unconfirmed'); return }
-      await this.pool.query(
         `UPDATE pe_cloud_executions SET sandbox_name=$3,pod_uid=$4,runner_instance_id=$5
-         WHERE id=$1 AND lease_owner=$2 AND runner_instance_id IS NULL`,
+         WHERE id=$1 AND lease_owner=$2 AND lease_until>now() AND runner_instance_id IS NULL RETURNING id`,
         [row.id, this.workerId, sandbox.name, sandbox.podUid, sandbox.runnerInstanceId])
+      if (!recorded.rowCount && !row.runner_instance_id) throw new ExecutionLeaseLost()
       const cancelled = await this.currentCancel(row)
       if (cancelled && row.state === 'starting') {
-        await this.sandboxes.remove(row.session_id)
         await this.settle(row, 'cancelled', null, null); return
       }
       await this.observe(row, sandbox, cancelled, assertLease)
     } catch (error) {
       if (error instanceof ExecutionLeaseLost) return
+      if (error instanceof MountSlotBlocked) {
+        await this.defer(row, error.retryable ? 'starting' : 'uncertain', error.code); return
+      }
       const recorded = await this.pool.query<{ runner_instance_id: string | null }>(
         'SELECT runner_instance_id FROM pe_cloud_executions WHERE id=$1', [row.id])
-      if (!recorded.rows[0]?.runner_instance_id && row.attempts >= 3) {
-        await this.settle(row, 'failed', null, 'sandbox_unavailable')
+      if (!recorded.rows[0]?.runner_instance_id) {
+        // A timed-out Kubernetes creation may still have mounted the writable Home.
+        await this.defer(row, 'uncertain', 'sandbox_creation_unconfirmed')
       } else if (error instanceof KubernetesError && error.status === 400) {
         await this.settle(row, 'failed', null, 'runner_rejected_request')
       } else if (error instanceof KubernetesError && error.status === 409) {
@@ -251,11 +225,14 @@ export class ExecutionService {
       instanceId: sandbox.runnerInstanceId }
     const path = `/executions/${row.id}`
     let status: z.infer<typeof runnerResult> | null = null
+    await assertLease()
+    await this.sandboxes.assertCurrent(sandbox)
     try { status = runnerResult.parse(await this.sandboxes.runner(sandbox.name, sandbox.token, 'GET', path)) }
     catch (error) { if (!(error instanceof KubernetesError && error.status === 404)) throw error }
     if (!status && cancelled) { await this.settle(row, 'cancelled', null, null); return }
     if (!status) {
       await assertLease()
+      await this.sandboxes.assertCurrent(sandbox)
       status = runnerResult.parse(await this.sandboxes.runner(sandbox.name, sandbox.token, 'POST', '/executions', request))
     }
     if (status.id !== row.id || status.instanceId !== sandbox.runnerInstanceId || status.digest !== digest(request)) {
@@ -263,6 +240,7 @@ export class ExecutionService {
     }
     if (cancelled && status.state === 'running') {
       await assertLease()
+      await this.sandboxes.assertCurrent(sandbox)
       status = runnerResult.parse(await this.sandboxes.runner(sandbox.name, sandbox.token, 'POST', `${path}/cancel`, {}))
     }
     if (status.state === 'running') {
@@ -307,24 +285,7 @@ export class ExecutionService {
   }
 
   private async recycleIdle(): Promise<void> {
-    const candidate = await transaction(this.pool, async client => {
-      const found = await client.query<{ session_id: string }>(
-        `SELECT s.session_id FROM pe_sandbox_instances s JOIN pe_sessions owner ON owner.id=s.session_id
-         WHERE s.state IN ('creating','ready','deleting')
-         AND (s.state='deleting' OR s.last_used_at<now()-$1::double precision*interval '1 millisecond')
-         AND NOT EXISTS (SELECT 1 FROM pe_cloud_executions e WHERE e.session_id=s.session_id
-           AND e.state IN ('queued','starting','running','cancelling','uncertain'))
-         ORDER BY s.last_used_at LIMIT 1 FOR UPDATE OF s,owner SKIP LOCKED`, [this.idleMs])
-      if (!found.rows[0]) return null
-      await client.query("UPDATE pe_sandbox_instances SET state='deleting',updated_at=now() WHERE session_id=$1",
-        [found.rows[0].session_id])
-      return found.rows[0].session_id
-    })
-    if (!candidate) return
-    try {
-      await this.sandboxes.remove(candidate)
-      await this.pool.query("UPDATE pe_sandbox_instances SET state='deleted',pod_uid=NULL,runner_instance_id=NULL,updated_at=now() WHERE session_id=$1",
-        [candidate])
-    } catch (_stopUnconfirmed) { /* Keep deleting; a later poll must observe the Pod stop. */ }
+    try { await this.sandboxes.recycleIdle(this.idleMs) }
+    catch (_stopUnconfirmed) { /* The slot stays stopping until exact Pod UID evidence is durable. */ }
   }
 }
