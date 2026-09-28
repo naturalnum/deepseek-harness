@@ -429,6 +429,17 @@ test('shared host: isolated conversations, files, skills and approved remote act
       assert.equal(generation.type, 'item')
       assert.equal(generation.value.type, 'ready')
       assert.equal(generation.value.host.home, '/workspace')
+      const emitted = []
+      const collect = raw => { emitted.push(JSON.parse(raw.toString())) }
+      aliceSocket.on('message', collect)
+      try {
+        const created = await nativeRemote(0, 'session/create', { request: { workspaceId: ownId } })
+        assert.equal(created.ok, true)
+        const addition = await eventually(() => emitted.find(frame => frame.streamId === generation.streamId
+          && frame.value?.type === 'emit' && frame.value.event === 'api-session/added'
+          && frame.value.args?.[0]?.sessionId === created.value.sessionId), 'native Session upsert event', 5000)
+        assert.equal(addition.value.args[0].cwd, '/workspace')
+      } finally { aliceSocket.off('message', collect) }
       const workspaceFrame = await streamFirst(aliceSocket, 'workspace/follow', {})
       assert.equal(workspaceFrame.type, 'item')
       assert.equal(workspaceFrame.value.type, 'baseline')

@@ -29,6 +29,9 @@ const workspace = z.object({ workspaceId: z.uuid(), path: z.string(), title: z.s
   sessionIds: z.array(sessionId), createdAt: z.string(), updatedAt: z.string() }).strict()
 const workspaceBaseline = z.object({ items: z.array(workspace).max(1),
   archivedSessionIds: z.array(sessionId), pinnedSessionIds: z.array(sessionId) }).strict()
+const sessionSummary = z.object({ sessionId, updatedAt: z.number(), agentAvailable: z.boolean(),
+  running: z.boolean(), blank: z.boolean(), cwd: z.string().optional() }).passthrough()
+const sessionList = z.object({ items: z.array(sessionSummary) }).strict()
 const fileScope = z.object({ workspaceFileScopeId: sessionId, path: z.string().min(1).max(1024) }).strict()
 const fileRead = fileScope.extend({ range: z.object({ offset: z.number().int().min(1).optional(),
   limit: z.number().int().min(1).max(5000).optional() }).strict() }).strict()
@@ -162,8 +165,24 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
     switch (method) {
       case '$events': {
         z.object({}).strict().parse(args)
+        let previous = new Map(sessionList.parse(await call('/native/sessions/list', token, {})).items
+          .map(item => [item.sessionId, JSON.stringify(item)]))
         yield { type: 'ready', clientId: randomUUID(), host: { home: '/workspace' } }
-        await waitForAbort(signal)
+        while (!signal.aborted) {
+          try { await delay(Math.max(pollMs, 1000), undefined, { signal }) }
+          catch (error) { if (signal.aborted) return; throw error }
+          const items = sessionList.parse(await call('/native/sessions/list', token, {})).items
+          const current = new Map(items.map(item => [item.sessionId, JSON.stringify(item)]))
+          for (const item of items) {
+            if (current.get(item.sessionId) !== previous.get(item.sessionId)) {
+              yield { type: 'emit', event: 'api-session/added', args: [item] }
+            }
+          }
+          for (const id of previous.keys()) {
+            if (!current.has(id)) yield { type: 'emit', event: 'api-session/removed', args: [id] }
+          }
+          previous = current
+        }
         return
       }
       case 'session/control': {
