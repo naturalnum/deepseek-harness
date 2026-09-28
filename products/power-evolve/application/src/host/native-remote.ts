@@ -35,8 +35,11 @@ const projectionRequest = z.object({ sessionId }).strict()
 const afterResult = z.object({ events: z.array(z.object({ seq: z.number().int().nonnegative() }).passthrough()) }).strict()
 const workspace = z.object({ workspaceId: z.uuid(), path: z.string(), title: z.string(),
   sessionIds: z.array(sessionId), createdAt: z.string(), updatedAt: z.string() }).strict()
-const workspaceBaseline = z.object({ items: z.array(workspace).max(1),
+const workspaceBaseline = z.object({ items: z.array(workspace),
   archivedSessionIds: z.array(sessionId), pinnedSessionIds: z.array(sessionId) }).strict()
+const cloudWorkspaceTitlePrefix = 'power-evolve-cloud-title:'
+const cloudWorkspaceCreated = z.object({ workspaceId: z.uuid(), title: z.string(),
+  isDefault: z.literal(false), createdAt: z.string() }).strict()
 const sessionSummary = z.object({ sessionId, updatedAt: z.number(), agentAvailable: z.boolean(),
   running: z.boolean(), blank: z.boolean(), cwd: z.string().optional() }).passthrough()
 const sessionList = z.object({ items: z.array(sessionSummary) }).strict()
@@ -51,6 +54,22 @@ const fileBytes = fileScope.extend({ options: z.object({
 const binaryFileResult = z.object({ absolutePath: z.string(), version: z.string(), bytes: z.number(),
   offset: z.number(), data: z.string(), eof: z.boolean() }).strict()
 const withRequest = <T extends z.ZodType>(request: T) => z.object({ request }).strict()
+
+function cloudWorkspaceTitle(path: string): string {
+  if (!path.startsWith(cloudWorkspaceTitlePrefix) || path.length > 1024) {
+    throw new PlatformError(400, 'invalid_cloud_workspace_title')
+  }
+  let title: string
+  try { title = decodeURIComponent(path.slice(cloudWorkspaceTitlePrefix.length)) }
+  catch { throw new PlatformError(400, 'invalid_cloud_workspace_title') }
+  if (encodeURIComponent(title) !== path.slice(cloudWorkspaceTitlePrefix.length)
+    || title !== title.trim() || title.length < 1 || title.length > 80
+    || [...title].some(character => {
+      const point = character.codePointAt(0)
+      return point === undefined || point <= 0x1f || point === 0x7f
+    })) throw new PlatformError(400, 'invalid_cloud_workspace_title')
+  return title
+}
 
 type NativeCall = (path: string, token: string, input: unknown) => Promise<unknown>
 
@@ -68,6 +87,7 @@ function failure(error: unknown): { code: string; message: string; details: obje
     if (error.code === 'file_too_large') return { code: 'workspace-file/too-large', message: 'File exceeds read limit', details: { path: '', limit: 2 * 1024 * 1024 } }
     if (error.code === 'invalid_path') return { code: 'workspace-file/outside-workspace', message: 'File path is unavailable', details: { path: '' } }
     if (error.code === 'invalid_execution_target') return { code: 'gateway/arguments-invalid', message: 'Invalid execution target', details: {} }
+    if (error.code === 'invalid_cloud_workspace_title') return { code: 'workspace/invalid-path', message: 'Invalid cloud Workspace title', details: { path: '' } }
     if (error.status === 404) return { code: 'session/not-found', message: 'Session not found', details: {} }
     if (error.status === 401 || error.status === 403) return { code: 'gateway/forbidden', message: 'Access denied', details: {} }
     if (error.status === 409) return { code: 'session/conflict', message: 'Session request conflicts with stored state', details: {} }
@@ -123,13 +143,31 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
         const { request } = withRequest(z.object({ workspaceId: z.uuid().optional(), sessionId: sessionId.optional() }).strict()).parse(args)
         if (request.workspaceId !== undefined) {
           const baseline = workspaceBaseline.parse(await call('/native/workspace/baseline', token, {}))
-          if (!baseline.items.some(item => item.workspaceId === request.workspaceId)) {
+          const target = baseline.items.find(item => item.workspaceId === request.workspaceId)
+          if (target === undefined) {
             throw new PlatformError(404, 'workspace_not_found')
+          }
+          if (request.sessionId !== undefined && !target.sessionIds.includes(request.sessionId)) {
+            throw new PlatformError(409, 'workspace_session_mismatch')
           }
         }
         return request.sessionId === undefined
-          ? call('/sessions/create', token, { requestId: requestId.parse(rpcId) })
+          ? call('/sessions/create', token, { requestId: requestId.parse(rpcId),
+            ...(request.workspaceId === undefined ? {} : { workspaceId: request.workspaceId }) })
           : call('/native/sessions/adopt', token, { sessionId: request.sessionId })
+      }
+      case 'workspace/create': {
+        const { request } = withRequest(z.object({ path: z.string() }).strict()).parse(args)
+        const title = cloudWorkspaceTitle(request.path)
+        const created = cloudWorkspaceCreated.parse(await call('/workspaces/create', token, {
+          requestId: requestId.parse(rpcId), title,
+        }))
+        const baseline = workspaceBaseline.parse(await call('/native/workspace/baseline', token, {}))
+        const item = baseline.items.find(value => value.workspaceId === created.workspaceId)
+        if (item === undefined || item.title !== created.title || item.path !== '/workspace') {
+          throw new PlatformError(503, 'workspace_baseline_unavailable')
+        }
+        return { workspace: item, created: true }
       }
       case 'session/prompt': {
         const { request: value } = withRequest(prompt).parse(args)

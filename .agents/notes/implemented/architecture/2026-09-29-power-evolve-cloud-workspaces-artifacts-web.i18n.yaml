@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-09-29-power-evolve-cloud-workspaces-artifacts-web.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-29-power-evolve-cloud-workspaces-artifacts-web.md
+/agent-note-powerevolve-cloud-workspaces-and-artifacts-in-native-web:
+  en: 24665aa369472336
+  zh: 2fefb3a8433a0b45
+/agent-note-powerevolve-cloud-workspaces-and-artifacts-in-native-web/problem:
+  en: 0277bfcec395d0e7
+  zh: 52d4612c5df05fe2
+/agent-note-powerevolve-cloud-workspaces-and-artifacts-in-native-web/decision:
+  en: fb7dfef4929374e1
+  zh: 4649f470cb2d51b1
+/agent-note-powerevolve-cloud-workspaces-and-artifacts-in-native-web/alternatives-considered:
+  en: 88de685aa0fbdb95
+  zh: 936aac90f4154a2f
+/agent-note-powerevolve-cloud-workspaces-and-artifacts-in-native-web/consequences:
+  en: 22b0fc0b98ac9268
+  zh: 31574c80f2af6afd
