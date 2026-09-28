@@ -7,6 +7,7 @@
     { "path": "../../../vendor/schemastery" },
     { "path": "../../../packages/core/agent" },
     { "path": "../../../packages/api/gateway/tsconfig.host.json" },
+    { "path": "../../../packages/api/session-controller/tsconfig.host.json" },
     { "path": "../../../packages/util/brand" },
     { "path": "../../../packages/host/webserver" },
     { "path": "../../../packages/llm/llm" },
