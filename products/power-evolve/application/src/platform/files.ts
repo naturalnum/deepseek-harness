@@ -1,14 +1,13 @@
 /** Authorized POSIX workspace. The filesystem is authoritative so sandbox edits remain visible. */
 import { createHash, randomUUID } from 'node:crypto'
-import { constants } from 'node:fs'
-import { chown, mkdir, lstat, open, opendir, rename, rm } from 'node:fs/promises'
-import { basename, join, resolve } from 'node:path'
+import { mkdir, lstat } from 'node:fs/promises'
+import { basename, resolve } from 'node:path'
 import type { Pool } from 'pg'
 import { PlatformError, type Identity } from '../contracts.ts'
 import { transaction } from './database.ts'
+import { SafePosix, type SafePosixOptions } from './safe-posix.ts'
 
 const MAX_FILE_BYTES = 2 * 1024 * 1024
-const MAX_LIST_ITEMS = 200
 
 function sha256(bytes: Uint8Array): string { return createHash('sha256').update(bytes).digest('hex') }
 
@@ -41,32 +40,26 @@ function decode(value: string): Buffer {
 /** All resource paths are derived from a server-owned workspace id after authentication. */
 export class FileService {
   private readonly root: string
-  constructor(private readonly pool: Pool, root: string, private readonly sandboxOwner?: { uid: number; gid: number }) {
+  private readonly safe: SafePosix
+  constructor(private readonly pool: Pool, root: string, sandboxOwner?: { uid: number; gid: number },
+    safeOptions?: SafePosixOptions) {
     this.root = resolve(root)
-  }
-
-  private async owned(path: string): Promise<void> {
-    if (this.sandboxOwner) await chown(path, this.sandboxOwner.uid, this.sandboxOwner.gid)
+    this.safe = new SafePosix(this.root, sandboxOwner, safeOptions)
   }
 
   async init(): Promise<void> {
     await mkdir(this.root, { recursive: true, mode: 0o700 })
     const stat = await lstat(this.root)
     if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('Workspace root must be a real directory')
+    await this.safe.init()
   }
 
   private async directory(id: string): Promise<{ id: string; path: string }> {
-    const path = join(this.root, id)
-    try { await mkdir(path, { mode: 0o700 }) }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error }
-    const stat = await lstat(path)
-    if (!stat.isDirectory() || stat.isSymbolicLink()) throw new PlatformError(503, 'workspace_unavailable')
-    await this.owned(path)
-    return { id, path }
+    await this.safe.ensureWorkspace(id)
+    return { id, path: this.safe.path(id) }
   }
 
-  /** Return the authenticated user's default Sandbox mount source. */
-  async workspaceForUser(userId: string): Promise<{ id: string; path: string }> {
+  private async defaultWorkspaceId(userId: string): Promise<string> {
     let result = await this.pool.query<{ id: string }>('SELECT id FROM pe_workspaces WHERE user_id=$1 AND is_default', [userId])
     if (!result.rows[0]) {
       await this.pool.query(
@@ -74,119 +67,55 @@ export class FileService {
          ON CONFLICT(user_id) WHERE is_default DO NOTHING`, [randomUUID(), userId])
       result = await this.pool.query<{ id: string }>('SELECT id FROM pe_workspaces WHERE user_id=$1 AND is_default', [userId])
     }
-    return this.directory(result.rows[0]!.id)
+    return result.rows[0]!.id
+  }
+
+  private async ownedWorkspaceId(userId: string, workspaceId: string): Promise<string> {
+    const result = await this.pool.query<{ id: string }>(
+      'SELECT id FROM pe_workspaces WHERE id=$1 AND user_id=$2', [workspaceId, userId])
+    if (!result.rows[0]) throw new PlatformError(404, 'workspace_not_found')
+    return result.rows[0].id
+  }
+
+  /** Return the authenticated user's default Sandbox mount source. */
+  async workspaceForUser(userId: string): Promise<{ id: string; path: string }> {
+    return this.directory(await this.defaultWorkspaceId(userId))
   }
 
   /** Resolve only a workspace belonging to this user; callers never supply a filesystem root. */
   async workspaceForId(userId: string, workspaceId: string): Promise<{ id: string; path: string }> {
-    const result = await this.pool.query<{ id: string }>(
-      'SELECT id FROM pe_workspaces WHERE id=$1 AND user_id=$2', [workspaceId, userId])
-    if (!result.rows[0]) throw new PlatformError(404, 'workspace_not_found')
-    return this.directory(result.rows[0].id)
+    return this.directory(await this.ownedWorkspaceId(userId, workspaceId))
   }
 
   private async workspace(user: Identity, workspaceId?: string): Promise<{ id: string; path: string }> {
-    return workspaceId === undefined ? this.workspaceForUser(user.userId) : this.workspaceForId(user.userId, workspaceId)
+    const id = workspaceId === undefined
+      ? await this.defaultWorkspaceId(user.userId) : await this.ownedWorkspaceId(user.userId, workspaceId)
+    return { id, path: this.safe.path(id) }
   }
 
   /** Inspect one authorized entry without following its final component. */
   async kind(user: Identity, path: string, workspaceId?: string): Promise<'file' | 'directory'> {
-    const root = (await this.workspace(user, workspaceId)).path
+    const workspace = await this.workspace(user, workspaceId)
     const segments = parts(path, true)
-    if (!segments.length) return 'directory'
-    const parent = await this.parent(root, segments.slice(0, -1), false)
-    let entry
-    try { entry = await lstat(join(parent, segments.at(-1)!)) }
-    catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new PlatformError(404, 'file_not_found')
-      throw error
-    }
-    if (entry.isSymbolicLink()) throw new PlatformError(400, 'invalid_path')
-    if (entry.isDirectory()) return 'directory'
-    if (entry.isFile()) return 'file'
-    throw new PlatformError(400, 'invalid_path')
-  }
-
-  private async parent(root: string, segments: string[], create: boolean): Promise<string> {
-    let path = root
-    for (const part of segments) {
-      path = join(path, part)
-      let created = false
-      if (create) {
-        try { await mkdir(path, { mode: 0o700 }); created = true }
-        catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error }
-      }
-      let stat
-      try { stat = await lstat(path) }
-      catch (error) {
-        if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new PlatformError(404, 'file_not_found')
-        throw error
-      }
-      if (!stat.isDirectory() || stat.isSymbolicLink()) throw new PlatformError(400, 'invalid_path')
-      if (created) await this.owned(path)
-    }
-    return path
-  }
-
-  private async readAt(root: string, path: string): Promise<Buffer | null> {
-    const segments = parts(path)
-    let parent: string
-    try { parent = await this.parent(root, segments.slice(0, -1), false) }
-    catch (error) { if (error instanceof PlatformError && error.status === 404) return null; throw error }
-    let file
-    try { file = await open(join(parent, segments.at(-1)!), constants.O_RDONLY | constants.O_NOFOLLOW) }
-    catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
-      if ((error as NodeJS.ErrnoException).code === 'ELOOP') throw new PlatformError(400, 'invalid_path')
-      throw error
-    }
-    try {
-      const stat = await file.stat()
-      if (!stat.isFile()) throw new PlatformError(400, 'invalid_path')
-      if (stat.size > MAX_FILE_BYTES) throw new PlatformError(413, 'file_too_large')
-      const chunks: Buffer[] = []
-      let total = 0
-      while (true) {
-        const buffer = Buffer.allocUnsafe(Math.min(64 * 1024, MAX_FILE_BYTES + 1 - total))
-        const { bytesRead } = await file.read(buffer, 0, buffer.length, null)
-        if (bytesRead === 0) break
-        total += bytesRead
-        if (total > MAX_FILE_BYTES) throw new PlatformError(413, 'file_too_large')
-        chunks.push(buffer.subarray(0, bytesRead))
-      }
-      return Buffer.concat(chunks, total)
-    } finally { await file.close() }
+    return this.safe.kind(workspace.id, segments)
   }
 
   async list(user: Identity, directory: string, workspaceId?: string): Promise<unknown> {
-    const root = (await this.workspace(user, workspaceId)).path
+    const workspace = await this.workspace(user, workspaceId)
     const segments = parts(directory, true)
-    let parent: string
-    try { parent = await this.parent(root, segments, false) }
-    catch (error) { if (error instanceof PlatformError && error.status === 404) return { workspace: basename(root), directory, items: [] }; throw error }
-    const entries = []
-    const listing = await opendir(parent)
-    for await (const entry of listing) {
-      if (!entry.isDirectory() && !entry.isFile()) continue
-      entries.push(entry)
-      if (entries.length > MAX_LIST_ITEMS) throw new PlatformError(413, 'directory_too_large')
-    }
-    entries.sort((a, b) => a.name.localeCompare(b.name))
-    const items = []
-    for (const entry of entries) {
-      const stat = await lstat(join(parent, entry.name))
-      if (stat.isSymbolicLink()) continue
-      items.push({ path: [...segments, entry.name].join('/'), name: entry.name, kind: entry.isDirectory() ? 'directory' : 'file',
-        size: entry.isFile() ? stat.size : null, updatedAt: stat.mtime.toISOString(), mime: entry.isFile() ? mime(entry.name) : null })
-    }
-    return { workspace: basename(root), directory, items }
+    const listing = await this.safe.list(workspace.id, segments)
+    const items = listing.items.sort((a, b) => a.name.localeCompare(b.name)).map(entry => ({
+      path: [...segments, entry.name].join('/'), name: entry.name, kind: entry.kind,
+      size: entry.size, updatedAt: entry.updatedAt, mime: entry.kind === 'file' ? mime(entry.name) : null,
+    }))
+    return { workspace: workspace.id, directory, items }
   }
 
   async read(user: Identity, path: string, workspaceId?: string): Promise<{
     path: string; size: number; mime: string; revision: string; data: string
   }> {
-    const root = (await this.workspace(user, workspaceId)).path
-    const bytes = await this.readAt(root, path)
+    const workspace = await this.workspace(user, workspaceId)
+    const bytes = await this.safe.read(workspace.id, parts(path))
     if (!bytes) throw new PlatformError(404, 'file_not_found')
     return { path, size: bytes.length, mime: mime(path), revision: sha256(bytes), data: bytes.toString('base64') }
   }
@@ -203,7 +132,6 @@ export class FileService {
     const bytes = decode(data)
     const digest = sha256(bytes)
     const workspace = await this.workspace(user, workspaceId)
-    const root = workspace.path
     return transaction(this.pool, async client => {
       await client.query('SELECT id FROM pe_users WHERE id=$1 FOR UPDATE', [user.userId])
       const previous = await client.query<{ workspace_id: string; path: string; digest: string; base_digest: string | null; size: string }>(
@@ -219,33 +147,11 @@ export class FileService {
       const mount = await client.query<{ state: string }>(
         'SELECT state FROM pe_mount_slots WHERE user_id=$1 FOR UPDATE', [user.userId])
       if (mount.rows[0] && mount.rows[0].state !== 'free') throw new PlatformError(409, 'workspace_busy')
-      const existing = await this.readAt(root, path)
-      const current = existing === null ? null : sha256(existing)
-      if (current === digest && current !== baseRevision) {
-        const completed = await client.query('SELECT request_id FROM pe_file_mutations WHERE user_id=$1 AND workspace_id=$2 AND path=$3 AND digest=$4 LIMIT 1',
-          [user.userId, workspace.id, path, digest])
-        if (completed.rowCount) throw new PlatformError(409, 'file_revision_conflict')
-      }
-      // A crash between POSIX rename and PG commit can be completed by retrying
-      // the same bytes. Another request cannot overwrite an uncertain result.
-      if (current !== baseRevision && current !== digest) throw new PlatformError(409, 'file_revision_conflict')
-      if (current !== digest) {
-        const parent = await this.parent(root, segments.slice(0, -1), true)
-        const target = join(parent, segments.at(-1)!)
-        const temporary = join(parent, `.pe-${randomUUID()}.tmp`)
-        const file = await open(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600)
-        try {
-          await file.writeFile(bytes)
-          if (this.sandboxOwner) await file.chown(this.sandboxOwner.uid, this.sandboxOwner.gid)
-          await file.sync()
-        }
-        finally { await file.close() }
-        try {
-          await rename(temporary, target)
-          const directory = await open(parent, constants.O_RDONLY)
-          try { await directory.sync() } finally { await directory.close() }
-        } finally { await rm(temporary, { force: true }) }
-      }
+      const completed = await client.query('SELECT request_id FROM pe_file_mutations WHERE user_id=$1 AND workspace_id=$2 AND path=$3 AND digest=$4 LIMIT 1',
+        [user.userId, workspace.id, path, digest])
+      // The helper checks the old revision and renames under one retained parent
+      // descriptor. The PG lock still orders platform writes and idempotency.
+      await this.safe.put(workspace.id, segments, data, digest, baseRevision, !!completed.rowCount)
       await client.query(
         'INSERT INTO pe_file_mutations(user_id,request_id,workspace_id,path,digest,base_digest,mime,size) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',
         [user.userId, requestId, workspace.id, path, digest, baseRevision, mime(path), bytes.length],
