@@ -180,17 +180,24 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
     switch (method) {
       case '$events': {
         z.object({}).strict().parse(args)
-        let previous = new Map(sessionList.parse(await call('/native/sessions/list', token, {})).items
-          .map(item => [item.sessionId, JSON.stringify(item)]))
+        const initial = sessionList.parse(await call('/native/sessions/list', token, {})).items
+        let previous = new Map(initial.map(item => [item.sessionId, item]))
         yield { type: 'ready', clientId: randomUUID(), host: { home: '/workspace' } }
+        for (const item of initial) {
+          if (item.running) yield { type: 'emit', event: 'api-session/status', args: [item.sessionId, true] }
+        }
         while (!signal.aborted) {
           try { await delay(Math.max(pollMs, 1000), undefined, { signal }) }
           catch (error) { if (signal.aborted) return; throw error }
           const items = sessionList.parse(await call('/native/sessions/list', token, {})).items
-          const current = new Map(items.map(item => [item.sessionId, JSON.stringify(item)]))
+          const current = new Map(items.map(item => [item.sessionId, item]))
           for (const item of items) {
-            if (current.get(item.sessionId) !== previous.get(item.sessionId)) {
+            const before = previous.get(item.sessionId)
+            if (JSON.stringify(item) !== JSON.stringify(before)) {
               yield { type: 'emit', event: 'api-session/added', args: [item] }
+            }
+            if (item.running !== before?.running) {
+              yield { type: 'emit', event: 'api-session/status', args: [item.sessionId, item.running] }
             }
           }
           for (const id of previous.keys()) {

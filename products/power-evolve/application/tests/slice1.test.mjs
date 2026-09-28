@@ -470,6 +470,17 @@ test('shared host: isolated conversations, files, skills and approved remote act
           && frame.value?.type === 'emit' && frame.value.event === 'api-session/added'
           && frame.value.args?.[0]?.sessionId === created.value.sessionId), 'native Session upsert event', 5000)
         assert.equal(addition.value.args[0].cwd, '/workspace')
+        await pool.query("UPDATE pe_sessions SET lease_until=now()+interval '30 seconds' WHERE id=$1",
+          [created.value.sessionId])
+        await eventually(() => emitted.find(frame => frame.streamId === generation.streamId
+          && frame.value?.type === 'emit' && frame.value.event === 'api-session/status'
+          && frame.value.args?.[0] === created.value.sessionId && frame.value.args?.[1] === true),
+        'native Session running status event', 5000)
+        await pool.query('UPDATE pe_sessions SET lease_until=NULL WHERE id=$1', [created.value.sessionId])
+        await eventually(() => emitted.find(frame => frame.streamId === generation.streamId
+          && frame.value?.type === 'emit' && frame.value.event === 'api-session/status'
+          && frame.value.args?.[0] === created.value.sessionId && frame.value.args?.[1] === false),
+        'native Session idle status event', 5000)
       } finally { aliceSocket.off('message', collect) }
       const workspaceFrame = await streamFirst(aliceSocket, 'workspace/follow', {})
       assert.equal(workspaceFrame.type, 'item')
