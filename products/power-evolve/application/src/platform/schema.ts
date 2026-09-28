@@ -197,3 +197,63 @@ export const schemaV8 = `
 ALTER TABLE pe_users ADD COLUMN last_claim_at timestamptz;
 UPDATE pe_schema SET version=8 WHERE version=7;
 `
+
+/** Bind Sessions to persistent workspaces and reserve one writable cloud mount per user. */
+export const schemaV9 = `
+ALTER TABLE pe_workspaces ADD COLUMN title text NOT NULL DEFAULT 'Workspace'
+  CHECK (length(title) BETWEEN 1 AND 80);
+ALTER TABLE pe_workspaces ADD COLUMN is_default boolean NOT NULL DEFAULT true;
+ALTER TABLE pe_workspaces ADD COLUMN create_request_id uuid;
+ALTER TABLE pe_workspaces DROP CONSTRAINT pe_workspaces_user_id_key;
+CREATE UNIQUE INDEX pe_workspaces_default_user ON pe_workspaces(user_id) WHERE is_default;
+CREATE UNIQUE INDEX pe_workspaces_create_request ON pe_workspaces(user_id,create_request_id)
+  WHERE create_request_id IS NOT NULL;
+CREATE UNIQUE INDEX pe_workspaces_owned_id ON pe_workspaces(id,user_id);
+INSERT INTO pe_workspaces(id,user_id,title,is_default)
+  SELECT gen_random_uuid(),u.id,'Workspace',true FROM pe_users u
+  WHERE NOT EXISTS (SELECT 1 FROM pe_workspaces w WHERE w.user_id=u.id AND w.is_default);
+ALTER TABLE pe_sessions ADD COLUMN workspace_id uuid;
+UPDATE pe_sessions s SET workspace_id=w.id FROM pe_workspaces w WHERE w.user_id=s.user_id AND w.is_default;
+ALTER TABLE pe_sessions ALTER COLUMN workspace_id SET NOT NULL;
+ALTER TABLE pe_sessions ADD CONSTRAINT pe_sessions_owned_workspace
+  FOREIGN KEY (workspace_id,user_id) REFERENCES pe_workspaces(id,user_id);
+CREATE FUNCTION pe_session_workspace_immutable() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.workspace_id IS DISTINCT FROM OLD.workspace_id THEN
+    RAISE EXCEPTION 'Session Workspace is immutable';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+CREATE TRIGGER pe_session_workspace_immutable BEFORE UPDATE OF workspace_id ON pe_sessions
+  FOR EACH ROW EXECUTE FUNCTION pe_session_workspace_immutable();
+CREATE UNIQUE INDEX pe_sessions_owned_workspace_id ON pe_sessions(id,user_id,workspace_id);
+CREATE INDEX pe_sessions_workspace ON pe_sessions(workspace_id,updated_at DESC,id);
+CREATE TABLE pe_mount_slots (
+  user_id uuid PRIMARY KEY REFERENCES pe_users(id),
+  session_id uuid, workspace_id uuid,
+  generation bigint NOT NULL DEFAULT 0 CHECK (generation>=0),
+  state text NOT NULL DEFAULT 'free' CHECK (state IN ('free','reserved','ready','stopping','unknown')),
+  pod_uid uuid, runner_instance_id uuid, stop_pod_uid uuid, stop_evidence jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+  FOREIGN KEY (session_id,user_id,workspace_id) REFERENCES pe_sessions(id,user_id,workspace_id),
+  CHECK ((state='free' AND session_id IS NULL AND workspace_id IS NULL
+      AND pod_uid IS NULL AND runner_instance_id IS NULL)
+    OR (state='reserved' AND session_id IS NOT NULL AND workspace_id IS NOT NULL
+      AND pod_uid IS NULL AND runner_instance_id IS NULL)
+    OR (state IN ('ready','stopping') AND session_id IS NOT NULL AND workspace_id IS NOT NULL
+      AND pod_uid IS NOT NULL AND runner_instance_id IS NOT NULL)
+    OR (state='unknown' AND session_id IS NOT NULL AND workspace_id IS NOT NULL)),
+  CHECK ((stop_pod_uid IS NULL) = (stop_evidence IS NULL))
+);
+ALTER TABLE pe_sandbox_instances DROP CONSTRAINT pe_sandbox_instances_name_key;
+CREATE UNIQUE INDEX pe_sandbox_instances_live_name ON pe_sandbox_instances(name)
+  WHERE state IN ('creating','ready','deleting','unknown');
+INSERT INTO pe_mount_slots(user_id,session_id,workspace_id,generation,state,
+  pod_uid,runner_instance_id,stop_pod_uid,stop_evidence)
+  SELECT i.user_id,i.session_id,s.workspace_id,0,'unknown',
+    i.pod_uid,i.runner_instance_id,i.stop_pod_uid,i.stop_evidence
+  FROM pe_sandbox_instances i JOIN pe_sessions s ON s.id=i.session_id
+  WHERE i.state IN ('creating','ready','deleting','unknown');
+UPDATE pe_schema SET version=9 WHERE version=8;
+`

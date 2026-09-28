@@ -55,27 +55,43 @@ export class FileService {
     if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('Workspace root must be a real directory')
   }
 
-  /** Return the authenticated user's existing or newly created Sandbox mount source. */
-  async workspaceForUser(userId: string): Promise<{ id: string; path: string }> {
-    let result = await this.pool.query<{ id: string }>('SELECT id FROM pe_workspaces WHERE user_id=$1', [userId])
-    if (!result.rows[0]) {
-      await this.pool.query('INSERT INTO pe_workspaces(id,user_id) VALUES($1,$2) ON CONFLICT(user_id) DO NOTHING', [randomUUID(), userId])
-      result = await this.pool.query<{ id: string }>('SELECT id FROM pe_workspaces WHERE user_id=$1', [userId])
-    }
-    const path = join(this.root, result.rows[0]!.id)
+  private async directory(id: string): Promise<{ id: string; path: string }> {
+    const path = join(this.root, id)
     try { await mkdir(path, { mode: 0o700 }) }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error }
     const stat = await lstat(path)
     if (!stat.isDirectory() || stat.isSymbolicLink()) throw new PlatformError(503, 'workspace_unavailable')
     await this.owned(path)
-    return { id: result.rows[0]!.id, path }
+    return { id, path }
   }
 
-  private async workspace(user: Identity): Promise<string> { return (await this.workspaceForUser(user.userId)).path }
+  /** Return the authenticated user's default Sandbox mount source. */
+  async workspaceForUser(userId: string): Promise<{ id: string; path: string }> {
+    let result = await this.pool.query<{ id: string }>('SELECT id FROM pe_workspaces WHERE user_id=$1 AND is_default', [userId])
+    if (!result.rows[0]) {
+      await this.pool.query(
+        `INSERT INTO pe_workspaces(id,user_id,title,is_default) VALUES($1,$2,'Workspace',true)
+         ON CONFLICT(user_id) WHERE is_default DO NOTHING`, [randomUUID(), userId])
+      result = await this.pool.query<{ id: string }>('SELECT id FROM pe_workspaces WHERE user_id=$1 AND is_default', [userId])
+    }
+    return this.directory(result.rows[0]!.id)
+  }
+
+  /** Resolve only a workspace belonging to this user; callers never supply a filesystem root. */
+  async workspaceForId(userId: string, workspaceId: string): Promise<{ id: string; path: string }> {
+    const result = await this.pool.query<{ id: string }>(
+      'SELECT id FROM pe_workspaces WHERE id=$1 AND user_id=$2', [workspaceId, userId])
+    if (!result.rows[0]) throw new PlatformError(404, 'workspace_not_found')
+    return this.directory(result.rows[0].id)
+  }
+
+  private async workspace(user: Identity, workspaceId?: string): Promise<{ id: string; path: string }> {
+    return workspaceId === undefined ? this.workspaceForUser(user.userId) : this.workspaceForId(user.userId, workspaceId)
+  }
 
   /** Inspect one authorized entry without following its final component. */
-  async kind(user: Identity, path: string): Promise<'file' | 'directory'> {
-    const root = await this.workspace(user)
+  async kind(user: Identity, path: string, workspaceId?: string): Promise<'file' | 'directory'> {
+    const root = (await this.workspace(user, workspaceId)).path
     const segments = parts(path, true)
     if (!segments.length) return 'directory'
     const parent = await this.parent(root, segments.slice(0, -1), false)
@@ -142,8 +158,8 @@ export class FileService {
     } finally { await file.close() }
   }
 
-  async list(user: Identity, directory: string): Promise<unknown> {
-    const root = await this.workspace(user)
+  async list(user: Identity, directory: string, workspaceId?: string): Promise<unknown> {
+    const root = (await this.workspace(user, workspaceId)).path
     const segments = parts(directory, true)
     let parent: string
     try { parent = await this.parent(root, segments, false) }
@@ -166,34 +182,48 @@ export class FileService {
     return { workspace: basename(root), directory, items }
   }
 
-  async read(user: Identity, path: string): Promise<unknown> {
-    const root = await this.workspace(user)
+  async read(user: Identity, path: string, workspaceId?: string): Promise<{
+    path: string; size: number; mime: string; revision: string; data: string
+  }> {
+    const root = (await this.workspace(user, workspaceId)).path
     const bytes = await this.readAt(root, path)
     if (!bytes) throw new PlatformError(404, 'file_not_found')
     return { path, size: bytes.length, mime: mime(path), revision: sha256(bytes), data: bytes.toString('base64') }
   }
 
+  /** Read bytes only from an explicitly owned Workspace for immutable artifact publication. */
+  async readInWorkspace(user: Identity, workspaceId: string, path: string): ReturnType<FileService['read']> {
+    return this.read(user, path, workspaceId)
+  }
+
   /** Commit a conditional write under the user's PG lock; repeated request ids never reapply it. */
-  async put(user: Identity, requestId: string, path: string, baseRevision: string | null, data: string): Promise<unknown> {
+  async put(user: Identity, requestId: string, path: string, baseRevision: string | null, data: string,
+    workspaceId?: string): Promise<unknown> {
     const segments = parts(path)
     const bytes = decode(data)
     const digest = sha256(bytes)
-    const root = await this.workspace(user)
+    const workspace = await this.workspace(user, workspaceId)
+    const root = workspace.path
     return transaction(this.pool, async client => {
       await client.query('SELECT id FROM pe_users WHERE id=$1 FOR UPDATE', [user.userId])
-      const previous = await client.query<{ path: string; digest: string; base_digest: string | null; size: string }>(
-        'SELECT path,digest,base_digest,size FROM pe_file_mutations WHERE user_id=$1 AND request_id=$2', [user.userId, requestId],
+      const previous = await client.query<{ workspace_id: string; path: string; digest: string; base_digest: string | null; size: string }>(
+        'SELECT workspace_id,path,digest,base_digest,size FROM pe_file_mutations WHERE user_id=$1 AND request_id=$2', [user.userId, requestId],
       )
       if (previous.rows[0]) {
         const prior = previous.rows[0]
-        if (prior.path !== path || prior.digest !== digest || prior.base_digest !== baseRevision) throw new PlatformError(409, 'request_id_conflict')
+        if (prior.workspace_id !== workspace.id || prior.path !== path || prior.digest !== digest || prior.base_digest !== baseRevision) {
+          throw new PlatformError(409, 'request_id_conflict')
+        }
         return { path, size: Number(prior.size), mime: mime(path), revision: prior.digest }
       }
+      const mount = await client.query<{ state: string }>(
+        'SELECT state FROM pe_mount_slots WHERE user_id=$1 FOR UPDATE', [user.userId])
+      if (mount.rows[0] && mount.rows[0].state !== 'free') throw new PlatformError(409, 'workspace_busy')
       const existing = await this.readAt(root, path)
       const current = existing === null ? null : sha256(existing)
       if (current === digest && current !== baseRevision) {
-        const completed = await client.query('SELECT request_id FROM pe_file_mutations WHERE user_id=$1 AND path=$2 AND digest=$3 LIMIT 1',
-          [user.userId, path, digest])
+        const completed = await client.query('SELECT request_id FROM pe_file_mutations WHERE user_id=$1 AND workspace_id=$2 AND path=$3 AND digest=$4 LIMIT 1',
+          [user.userId, workspace.id, path, digest])
         if (completed.rowCount) throw new PlatformError(409, 'file_revision_conflict')
       }
       // A crash between POSIX rename and PG commit can be completed by retrying
@@ -217,8 +247,8 @@ export class FileService {
         } finally { await rm(temporary, { force: true }) }
       }
       await client.query(
-        'INSERT INTO pe_file_mutations(user_id,request_id,workspace_id,path,digest,base_digest,mime,size) SELECT $1,$2,id,$3,$4,$5,$6,$7 FROM pe_workspaces WHERE user_id=$1',
-        [user.userId, requestId, path, digest, baseRevision, mime(path), bytes.length],
+        'INSERT INTO pe_file_mutations(user_id,request_id,workspace_id,path,digest,base_digest,mime,size) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',
+        [user.userId, requestId, workspace.id, path, digest, baseRevision, mime(path), bytes.length],
       )
       return { path, size: bytes.length, mime: mime(path), revision: digest }
     })

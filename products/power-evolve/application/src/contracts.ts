@@ -6,9 +6,11 @@ import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
 export type UserId = Branded<'PowerEvolveUserId'>
 export type OperationId = Branded<'PowerEvolveOperationId'>
 export type RequestId = Branded<'PowerEvolveRequestId'>
+export type WorkspaceId = Branded<'PowerEvolveWorkspaceId'>
 export const userId = z.uuid().transform(value => brandString<UserId>(value))
 export const operationId = z.uuid().transform(value => brandString<OperationId>(value))
 export const requestId = z.uuid().transform(value => brandString<RequestId>(value))
+export const workspaceId = z.uuid().transform(value => brandString<WorkspaceId>(value))
 export const sessionId = z.uuid().transform(SessionId)
 
 export const identity = z.object({ userId, username: z.string().min(1).max(80) }).strict()
@@ -19,7 +21,8 @@ export const settings = z.object({
   revision: z.number().int().positive(),
 }).strict()
 export type Settings = z.infer<typeof settings>
-export const createRequest = z.object({ requestId }).strict()
+export const createRequest = z.object({ requestId, workspaceId: workspaceId.optional() }).strict()
+export const workspaceCreateRequest = z.object({ requestId, title: z.string().trim().min(1).max(80) }).strict()
 export const executionTarget = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('cloud') }).strict(),
   z.object({ kind: z.literal('desktop'), deviceId: z.uuid(), directoryId: z.uuid() }).strict(),

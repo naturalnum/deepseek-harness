@@ -3,7 +3,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import type { Pool, PoolClient } from 'pg'
 import { SESSION_FORMAT_VERSION, SessionId, type SessionHeader } from '@deepseek-ai/dsh-session'
 import { executionTarget, grant, skillSelection, PlatformError, settings,
-  type ExecutionTarget, type Grant, type Identity, type RequestId, type Settings } from '../contracts.ts'
+  type ExecutionTarget, type Grant, type Identity, type RequestId, type Settings, type WorkspaceId } from '../contracts.ts'
 import { z } from 'zod'
 import { digest } from './identity.ts'
 import { transaction } from './database.ts'
@@ -30,21 +30,38 @@ export class TaskStore {
   constructor(readonly pool: Pool, private readonly limits: TaskLimits) {}
 
   /** Create a durable empty native Session, deduplicated within one authenticated user. */
-  async create(user: Identity, requestId: RequestId): Promise<{ sessionId: SessionId }> {
+  async create(user: Identity, requestId: RequestId, workspaceId?: WorkspaceId): Promise<{ sessionId: SessionId }> {
     const id = randomUUID()
     const header: SessionHeader = { id: SessionId(id), version: SESSION_FORMAT_VERSION, createdAt: Date.now(), isSeeded: false }
-    const result = await this.pool.query<{ id: string }>(
-      `INSERT INTO pe_sessions(id,user_id,create_request_id,header) VALUES ($1,$2,$3,$4)
-       ON CONFLICT(user_id,create_request_id) DO UPDATE SET create_request_id=excluded.create_request_id RETURNING id`,
-      [id, user.userId, requestId, header],
-    )
-    return { sessionId: SessionId(result.rows[0]!.id) }
+    return transaction(this.pool, async client => {
+      await client.query('SELECT id FROM pe_users WHERE id=$1 FOR UPDATE', [user.userId])
+      await client.query(
+        `INSERT INTO pe_workspaces(id,user_id,title,is_default) VALUES($1,$2,'Workspace',true)
+         ON CONFLICT(user_id) WHERE is_default DO NOTHING`, [randomUUID(), user.userId])
+      const target = await client.query<{ id: string }>(
+        `SELECT id FROM pe_workspaces WHERE id=COALESCE($2::uuid,
+           (SELECT id FROM pe_workspaces WHERE user_id=$1 AND is_default)) AND user_id=$1`,
+        [user.userId, workspaceId ?? null])
+      const chosen = target.rows[0]?.id
+      if (!chosen) throw new PlatformError(404, 'workspace_not_found')
+      const previous = await client.query<{ id: string; workspace_id: string }>(
+        'SELECT id,workspace_id FROM pe_sessions WHERE user_id=$1 AND create_request_id=$2',
+        [user.userId, requestId])
+      if (previous.rows[0]) {
+        if (previous.rows[0].workspace_id !== chosen) throw new PlatformError(409, 'request_id_conflict')
+        return { sessionId: SessionId(previous.rows[0].id) }
+      }
+      await client.query(
+        `INSERT INTO pe_sessions(id,user_id,workspace_id,create_request_id,header)
+         VALUES ($1,$2,$3,$4,$5)`, [id, user.userId, chosen, requestId, header])
+      return { sessionId: SessionId(id) }
+    })
   }
 
   /** Return only the authenticated user's bounded Session catalog. */
   async list(user: Identity, offset: number, limit: number): Promise<unknown> {
     const result = await this.pool.query(
-      `SELECT id AS "sessionId", created_at AS "createdAt", event_count AS "eventCount",
+      `SELECT id AS "sessionId", workspace_id AS "workspaceId", created_at AS "createdAt", event_count AS "eventCount",
        (SELECT left(input,80) FROM pe_operations o WHERE o.session_id=s.id ORDER BY created_at,id LIMIT 1) AS title
        FROM pe_sessions s WHERE user_id=$1 ORDER BY created_at DESC,id OFFSET $2 LIMIT $3`,
       [user.userId, offset, limit],

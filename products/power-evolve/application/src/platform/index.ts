@@ -7,7 +7,7 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 import schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
 import { Pool } from 'pg'
-import { createRequest, filesListRequest, fileReadRequest, filePutRequest, listRequest, loginRequest, pageRequest, promptRequest, sessionId, sessionRequest, skillInstallRequest, skillRequest, skillToggleRequest, settings, PlatformError } from '../contracts.ts'
+import { createRequest, filesListRequest, fileReadRequest, filePutRequest, listRequest, loginRequest, pageRequest, promptRequest, sessionId, sessionRequest, skillInstallRequest, skillRequest, skillToggleRequest, settings, workspaceCreateRequest, PlatformError } from '../contracts.ts'
 import { bearer, readJson, sendFailure, sendJson } from '../http.ts'
 import { initializeDatabase } from './database.ts'
 import { hashPassword, IdentityService } from './identity.ts'
@@ -46,6 +46,7 @@ export const Config = schema.object({
   sandboxCommandTimeoutMs: schema.number().min(1000).default(60000),
   leaseMs: schema.number().min(1000).required(), tokenLifetimeMs: schema.number().min(1000).required(),
   maxPendingPerUser: schema.number().step(1).min(1).required(), maxActivePerUser: schema.number().step(1).min(1).required(),
+  maxWorkspacesPerUser: schema.number().step(1).min(1).default(16),
   maxHistoryBytes: schema.number().step(1).min(1024).required(), maxHistoryEvents: schema.number().step(1).min(1).required(),
   maxEventBytes: schema.number().step(1).min(1024).required(), maxRequestBytes: schema.number().step(1).min(1024).required(),
   modelTimeoutMs: schema.number().min(1000).required(), maxModelResponseBytes: schema.number().min(1024).required(),
@@ -85,7 +86,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const tasks = new TaskStore(pool, { ...config, executionEnabled })
   const events = new EventStore(tasks, config)
   const nativeSessions = new NativeSessionRead(pool)
-  const nativeWorkspaces = new NativeWorkspaceRead(pool, files, nativeSessions)
+  const nativeWorkspaces = new NativeWorkspaceRead(pool, files, nativeSessions, config.maxWorkspacesPerUser)
   const nativeFiles = new NativeFileRead(pool, files)
   const connectors = new ConnectorService(tasks, config.connectorUrl, connectorKey.trim(), config.connectorTimeoutMs, config.connectorPollMs)
   await connectors.seedPermissions(users.map(user => user.username))
@@ -104,7 +105,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
 
   const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const path = new URL(req.url ?? '/', config.platformOrigin).pathname
-    if (req.method === 'GET' && path === '/health') { sendJson(res, { ready: true, service: 'platform', schema: 7, executionEnabled, instanceId }); return }
+    if (req.method === 'GET' && path === '/health') { sendJson(res, { ready: true, service: 'platform', schema: 9, executionEnabled, instanceId }); return }
     if (req.method === 'GET' && path === '/config') { sendJson(res, { hostUrl: config.hostOrigin }); return }
     if (req.method === 'GET' && await serveUi(path, 'login', res, config.hostOrigin)) return
     if (req.method !== 'POST') throw new PlatformError(404, 'not_found')
@@ -245,7 +246,10 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     switch (path) {
       case '/identity/me': z.object({}).strict().parse(input); sendJson(res, user); return
       case '/identity/logout': z.object({}).strict().parse(input); await identities.logout(token); sendJson(res, { ok: true }); return
-      case '/sessions/create': sendJson(res, await tasks.create(user, createRequest.parse(input).requestId)); return
+      case '/sessions/create': {
+        const value = createRequest.parse(input)
+        sendJson(res, await tasks.create(user, value.requestId, value.workspaceId)); return
+      }
       case '/sessions/list': {
         const { offset, limit } = listRequest.parse(input)
         sendJson(res, await tasks.list(user, offset, limit)); return
@@ -273,6 +277,14 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       case '/native/workspace/baseline': {
         z.object({}).strict().parse(input)
         sendJson(res, await nativeWorkspaces.baseline(user)); return
+      }
+      case '/workspaces/list': {
+        z.object({}).strict().parse(input)
+        sendJson(res, await nativeWorkspaces.list(user)); return
+      }
+      case '/workspaces/create': {
+        const value = workspaceCreateRequest.parse(input)
+        sendJson(res, await nativeWorkspaces.create(user, value.requestId, value.title)); return
       }
       case '/native/sessions/page': {
         sendJson(res, await nativeSessions.page(user, nativePageRequest.parse(input))); return

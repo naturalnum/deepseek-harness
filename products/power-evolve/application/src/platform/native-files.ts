@@ -57,43 +57,45 @@ function textLines(bytes: Buffer, offset: number, limit: number): {
 export class NativeFileRead {
   constructor(private readonly pool: Pool, private readonly files: FileService) {}
 
-  private async owned(user: Identity, sessionId: string): Promise<void> {
-    const result = await this.pool.query('SELECT 1 FROM pe_sessions WHERE id=$1 AND user_id=$2', [sessionId, user.userId])
-    if (!result.rowCount) throw new PlatformError(404, 'session_not_found')
+  private async owned(user: Identity, sessionId: string): Promise<string> {
+    const result = await this.pool.query<{ workspace_id: string }>(
+      'SELECT workspace_id FROM pe_sessions WHERE id=$1 AND user_id=$2', [sessionId, user.userId])
+    if (!result.rows[0]) throw new PlatformError(404, 'session_not_found')
+    return result.rows[0].workspace_id
   }
 
   async list(user: Identity, request: z.infer<typeof nativeFileRequest>): Promise<unknown> {
-    await this.owned(user, request.sessionId)
+    const workspaceId = await this.owned(user, request.sessionId)
     const target = virtual(request.path)
-    if (await this.files.kind(user, target.relative) !== 'directory') throw new PlatformError(400, 'file_not_directory')
-    const value = listing.parse(await this.files.list(user, target.relative))
+    if (await this.files.kind(user, target.relative, workspaceId) !== 'directory') throw new PlatformError(400, 'file_not_directory')
+    const value = listing.parse(await this.files.list(user, target.relative, workspaceId))
     return { path: target.relative, entries: value.items.map(item => ({ name: item.name,
       type: item.kind, ...(item.kind === 'file' && item.size !== null ? { size: item.size } : {}) })), truncated: false }
   }
 
   async stat(user: Identity, request: z.infer<typeof nativeFileRequest>): Promise<unknown> {
-    await this.owned(user, request.sessionId)
+    const workspaceId = await this.owned(user, request.sessionId)
     const target = virtual(request.path)
     if (!target.relative) throw new PlatformError(400, 'invalid_path')
-    const value = file.parse(await this.files.read(user, target.relative))
+    const value = file.parse(await this.files.read(user, target.relative, workspaceId))
     return { absolutePath: target.absolute, version: value.revision, bytes: value.size }
   }
 
   async read(user: Identity, request: z.infer<typeof nativeFileTextRequest>): Promise<unknown> {
-    await this.owned(user, request.sessionId)
+    const workspaceId = await this.owned(user, request.sessionId)
     const target = virtual(request.path)
     if (!target.relative) throw new PlatformError(400, 'invalid_path')
-    const value = file.parse(await this.files.read(user, target.relative))
+    const value = file.parse(await this.files.read(user, target.relative, workspaceId))
     const range = textLines(Buffer.from(value.data, 'base64'), request.range.offset ?? 1,
       request.range.limit ?? 5000)
     return { absolutePath: target.absolute, version: value.revision, bytes: value.size, ...range }
   }
 
   async readBytes(user: Identity, request: z.infer<typeof nativeFileBytesRequest>): Promise<unknown> {
-    await this.owned(user, request.sessionId)
+    const workspaceId = await this.owned(user, request.sessionId)
     const target = baseRelative(request.path, request.options.baseFile)
     if (!target.relative) throw new PlatformError(400, 'invalid_path')
-    const value = file.parse(await this.files.read(user, target.relative))
+    const value = file.parse(await this.files.read(user, target.relative, workspaceId))
     const bytes = Buffer.from(value.data, 'base64')
     const offset = request.options.range?.offset ?? 0
     const length = request.options.range?.length ?? maxFileBytes
@@ -104,20 +106,20 @@ export class NativeFileRead {
   }
 
   async observe(user: Identity, request: z.infer<typeof nativeFileRequest>): Promise<unknown> {
-    await this.owned(user, request.sessionId)
+    const workspaceId = await this.owned(user, request.sessionId)
     const target = virtual(request.path)
     let kind: 'file' | 'directory'
     try {
-      kind = await this.files.kind(user, target.relative)
+      kind = await this.files.kind(user, target.relative, workspaceId)
     } catch (error) {
       if (error instanceof PlatformError && error.status === 404) return { absolutePath: target.absolute, absent: true }
       throw error
     }
     if (kind === 'file') {
-      const value = file.parse(await this.files.read(user, target.relative))
+      const value = file.parse(await this.files.read(user, target.relative, workspaceId))
       return { absolutePath: target.absolute, version: value.revision }
     }
-    const value = listing.parse(await this.files.list(user, target.relative))
+    const value = listing.parse(await this.files.list(user, target.relative, workspaceId))
     const version = createHash('sha256').update(JSON.stringify(value.items)).digest('hex')
     return { absolutePath: target.absolute, version }
   }
