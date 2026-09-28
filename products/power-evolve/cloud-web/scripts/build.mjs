@@ -24,6 +24,7 @@ const roots = [
   '@deepseek-ai/dsh-client-ui-sidebar-files',
   '@deepseek-ai/dsh-client-ui-sidebar-documentpreview',
   '@power-evolve/client-workspace-files',
+  '@power-evolve/client-execution-target',
 ]
 const hash = value => createHash('sha256').update(value).digest('hex').slice(0, 16)
 const packageJson = id => {

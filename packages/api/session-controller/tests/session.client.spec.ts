@@ -625,6 +625,16 @@ describe('prompt and cancel errors', () => {
     expect(session.getSnapshot()).toMatchObject({ running: true, awaitingFirstTurn: false })
   })
 
+  it('forwards optional client hints with the exact identified prompt', async ({ mock, start }) => {
+    const session = await sessionBench(mock, start, SID)
+    const hints = { 'trial.target': 'desktop' }
+    const result = await session.prompt([{ type: 'text', text: 'run' }], 'queue', undefined, 'fixed-request' as never, hints)
+    expect(result.ok).toBe(true)
+    expect(mock.log.requests('session/prompt')).toMatchObject([{
+      sessionId: SID, requestId: 'fixed-request', content: [{ type: 'text', text: 'run' }], clientHints: hints,
+    }])
+  })
+
   it('does not await a first turn when the history already contains one', async ({ mock, start }) => {
     const session = await sessionBench(mock, start, SID)
     session.handleBlank(false)

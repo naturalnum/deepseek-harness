@@ -11,11 +11,15 @@ const receipt = z.object({ executionId: z.uuid(), state: z.string(), command: z.
 export function installExecutionTools(agent: Agent, grant: Grant, runtime: RuntimeScope): void {
   if (grant.target.kind === 'cloud' && !grant.executionEnabled) return
   const desktop = grant.target.kind === 'desktop'
+  agent.ctx.effect(() => agent.ctx.systemPrompt.section({
+    name: 'power-evolve:execution-continuation', order: 705, interpolate: false,
+    text: 'Execution tools return a durable acceptance receipt before the command finishes. After a queued or running receipt, end this turn with one brief status. The trusted platform will automatically deliver the command result as a new message and resume this Session; do not poll with another command, retry the write, or ask the user to notify you. Only after that result arrives should you inspect it and decide the next command. Never claim a test passed from an acceptance receipt.',
+  }))
   agent.ctx.effect(() => agent.ctx.tools.register(defineTool({
     name: desktop ? 'desktop_exec' : 'cloud_exec',
     description: desktop
-      ? 'Run one Bash command on the user-selected desktop device, inside its locally authorized project directory. The command runs in a local container with only that directory mounted. The call returns an execution ID immediately; wait for the trusted platform result before deciding the next command. Do not assume cloud files appear on the desktop.'
-      : 'Run one Bash command in this conversation\'s authorized cloud Sandbox and persistent workspace. The call returns an execution ID immediately; do not claim it finished. Wait for the trusted platform result in this conversation before deciding the next command. Use this for Git, coding, dependency installation, and tests. Avoid background processes.',
+      ? 'Run one Bash command on the user-selected desktop device, inside its locally authorized project directory. The command runs in a local container with only that directory mounted. A queued receipt is not a result: end this turn and wait for the trusted platform to resume the Session automatically. Do not poll or issue another command until its result arrives. Cloud files are separate.'
+      : 'Run one Bash command in this conversation\'s authorized cloud Sandbox and persistent workspace. A queued receipt is not a result: end this turn and wait for the trusted platform to resume the Session automatically. Do not poll or issue another command until its result arrives. Use this for Git, coding, dependency installation, and tests. Avoid background processes.',
     parameters: {
       command: { type: 'string', required: true, description: 'Bash command, at most 8192 characters.' },
       cwd: { type: 'string', description: 'Relative directory inside the persistent workspace; default is its root.' },

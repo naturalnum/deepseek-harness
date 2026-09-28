@@ -391,6 +391,37 @@ test('shared host: isolated conversations, files, skills and approved remote act
     assert.equal(accepted.value.accepted, true)
     const answered = await finished(0, newSession)
     assert(answered.events.some(event => event.type === 'assistant/message'))
+    const pair = await post(`${platform.url}/devices/pair`, tokens[0], {})
+    assert.equal(pair.status, 200)
+    const { code } = await pair.json()
+    const enroll = await post(`${platform.url}/devices/enroll`, null,
+      { code, name: 'Alice test Mac', instanceId: randomUUID() })
+    assert.equal(enroll.status, 200)
+    const { deviceId, token: deviceToken } = await enroll.json()
+    const directory = await post(`${platform.url}/devices/agent/directory`, deviceToken, { label: 'project' })
+    assert.equal(directory.status, 200)
+    const { directoryId } = await directory.json()
+    const target = { kind: 'desktop', deviceId, directoryId }
+    const targetSession = (await nativeRemote(0, 'session/create', { request: {} })).value.sessionId
+    const targetRequest = { sessionId: targetSession, requestId: randomUUID(), mode: 'queue',
+      content: [{ type: 'text', text: 'Use the selected local project' }],
+      clientHints: { 'powerEvolve.executionTarget': JSON.stringify(target) } }
+    assert.equal((await nativeRemote(0, 'session/prompt', { request: targetRequest })).value.accepted, true)
+    const recordedTarget = (await pool.query(
+      'SELECT execution_target FROM pe_operations WHERE session_id=$1 AND request_id=$2',
+      [targetSession, targetRequest.requestId])).rows[0]?.execution_target
+    assert.deepEqual(recordedTarget, target)
+    assert.equal((await nativeRemote(0, 'session/prompt', { request: {
+      ...targetRequest, clientHints: { 'powerEvolve.executionTarget': JSON.stringify({ kind: 'cloud' }) },
+    } })).error.code, 'session/conflict')
+    assert.equal((await nativeRemote(0, 'session/prompt', { request: {
+      ...targetRequest, requestId: randomUUID(),
+      clientHints: { 'powerEvolve.executionTarget': 'broken-json' },
+    } })).error.code, 'gateway/arguments-invalid')
+    const bobTargetSession = (await nativeRemote(1, 'session/create', { request: {} })).value.sessionId
+    assert.equal((await nativeRemote(1, 'session/prompt', { request: {
+      ...targetRequest, sessionId: bobTargetSession, requestId: randomUUID(),
+    } })).error.code, 'gateway/forbidden')
     assert.equal((await nativeRemote(0, 'session/create',
       { request: { workspaceId: ownId, sessionId: newSession } })).error.code, 'session/conflict')
     const opened = await nativeRemote(0, 'session/projections', { request: { sessionId: newSession } })

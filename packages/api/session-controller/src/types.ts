@@ -338,6 +338,8 @@ export interface SessionPromptRequest {
   /** At least one non-whitespace text part or attachment. */
   readonly content: readonly PromptContentPart[]
   readonly clientTimeZone?: string
+  /** Untrusted client hints; a Host must validate every hint before use. */
+  readonly clientHints?: Readonly<Record<string, string>>
 }
 
 /** Receipt after one prompt enters the target Agent inbox. */

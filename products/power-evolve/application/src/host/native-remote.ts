@@ -9,7 +9,7 @@ import { RemoteStreamMuxServer, rejectRemoteStreamUpgrade } from '@deepseek-ai/d
 import type { PeerId, PeerScope } from '@deepseek-ai/dsh-typert-protocol'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import { z } from 'zod'
-import { requestId, sessionId, PlatformError } from '../contracts.ts'
+import { executionTarget, requestId, sessionId, PlatformError } from '../contracts.ts'
 import { readJson, sendFailure, sendJson } from '../http.ts'
 import type { BrowserAgentAuth } from './browser-auth.ts'
 
@@ -20,7 +20,15 @@ const page = window.extend({ address, throughSeq: z.number().int().min(-1), befo
 const follow = window.extend({ address, assistantStream: z.literal(true).optional() }).strict()
 const prompt = z.object({ sessionId, requestId, mode: z.literal('queue'),
   content: z.array(z.object({ type: z.literal('text'), text: z.string().min(1) }).strict()).min(1).max(8),
-  clientTimeZone: z.string().max(100).optional() }).strict()
+  clientTimeZone: z.string().max(100).optional(),
+  clientHints: z.object({ 'powerEvolve.executionTarget': z.string().max(256) }).strict().optional() }).strict()
+
+function selectedExecutionTarget(hints: z.infer<typeof prompt>['clientHints']) {
+  const value = hints?.['powerEvolve.executionTarget']
+  if (value === undefined) return { kind: 'cloud' as const }
+  try { return executionTarget.parse(JSON.parse(value)) }
+  catch { throw new PlatformError(400, 'invalid_execution_target') }
+}
 const envelope = z.object({ type: z.literal('client-request'), rpcId: z.string().min(1).max(128),
   method: z.string().min(1).max(120), payload: z.object({ args: z.unknown() }).strict() }).strict()
 const projectionRequest = z.object({ sessionId }).strict()
@@ -59,6 +67,7 @@ function failure(error: unknown): { code: string; message: string; details: obje
     if (error.code === 'file_not_text') return { code: 'workspace-file/not-text', message: 'File is not UTF-8 text', details: { path: '' } }
     if (error.code === 'file_too_large') return { code: 'workspace-file/too-large', message: 'File exceeds read limit', details: { path: '', limit: 2 * 1024 * 1024 } }
     if (error.code === 'invalid_path') return { code: 'workspace-file/outside-workspace', message: 'File path is unavailable', details: { path: '' } }
+    if (error.code === 'invalid_execution_target') return { code: 'gateway/arguments-invalid', message: 'Invalid execution target', details: {} }
     if (error.status === 404) return { code: 'session/not-found', message: 'Session not found', details: {} }
     if (error.status === 401 || error.status === 403) return { code: 'gateway/forbidden', message: 'Access denied', details: {} }
     if (error.status === 409) return { code: 'session/conflict', message: 'Session request conflicts with stored state', details: {} }
@@ -125,7 +134,7 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
       case 'session/prompt': {
         const { request: value } = withRequest(prompt).parse(args)
         const accepted = z.object({ accepted: z.literal(true) }).parse(await call('/sessions/prompt', token, { sessionId: value.sessionId, requestId: value.requestId,
-          text: value.content.map(part => part.text).join('\n'), target: { kind: 'cloud' } }))
+          text: value.content.map(part => part.text).join('\n'), target: selectedExecutionTarget(value.clientHints) }))
         return { accepted: accepted.accepted }
       }
       case 'session/page': return call('/native/sessions/page', token, withRequest(page).parse(args).request)

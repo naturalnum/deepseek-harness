@@ -13898,6 +13898,37 @@ importers:
         specifier: ^8.15.5
         version: 8.23.1
 
+  products/power-evolve/client-execution-target:
+    dependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:~
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-api-session-controller':
+        specifier: workspace:*
+        version: link:../../../packages/api/session-controller
+      '@deepseek-ai/dsh-client-locale':
+        specifier: workspace:*
+        version: link:../../../packages/client/locale
+      '@deepseek-ai/dsh-client-ui-conversation':
+        specifier: workspace:*
+        version: link:../../../packages/client/ui-conversation
+      '@deepseek-ai/dsh-client-ui-primitives':
+        specifier: workspace:*
+        version: link:../../../packages/client/ui-primitives
+      '@deepseek-ai/dsh-client-ui-renderer':
+        specifier: workspace:*
+        version: link:../../../packages/client/ui-renderer
+      '@deepseek-ai/dsh-client-ui-slots':
+        specifier: workspace:*
+        version: link:../../../packages/client/ui-slots
+      react:
+        specifier: ^18.2.0
+        version: 18.3.1
+    devDependencies:
+      '@types/react':
+        specifier: ~18.3.1
+        version: 18.3.31
+
   products/power-evolve/client-workspace-files:
     dependencies:
       '@deepseek-ai/cordis':
@@ -13949,6 +13980,9 @@ importers:
       '@deepseek-ai/dsh-web-frontend':
         specifier: workspace:*
         version: link:../../../apps/web
+      '@power-evolve/client-execution-target':
+        specifier: workspace:*
+        version: link:../client-execution-target
       '@power-evolve/client-workspace-files':
         specifier: workspace:*
         version: link:../client-workspace-files

@@ -510,6 +510,27 @@ describe('sendSession submission echo', () => {
     return { ...b, beginSubmission, begun: begun.promise, abandon, retire, revoked, restore }
   }
 
+  it('captures a prompt hint before the paint yield and keeps it on the identified submission', async () => {
+    const b = await echoBench()
+    try {
+      let target = 'desktop'
+      const dispose = b.root.registerPromptHint('trial.target', () => target)
+      const session = b.runtime.sessions.binding('s1')!.session
+      const sending = b.root.sendSession(session, 'run locally', [], 'queue')
+      target = 'cloud'
+      await expect(sending).resolves.toEqual({ kind: 'success' })
+      expect(b.prompt).toHaveBeenCalledWith(
+        [{ type: 'text', text: 'run locally' }], 'queue', undefined, 'req-echo', { 'trial.target': 'desktop' },
+      )
+      dispose()
+      await expect(b.root.sendSession(session, 'run in cloud', [], 'queue')).resolves.toEqual({ kind: 'success' })
+      expect(b.prompt).toHaveBeenLastCalledWith([{ type: 'text', text: 'run in cloud' }], 'queue', undefined, 'req-echo')
+    } finally {
+      b.restore()
+      await b.runtime.dispose()
+    }
+  })
+
   it('registers the echo before serialization and prompts with its identity', async () => {
     const b = await echoBench()
     try {

@@ -82,6 +82,7 @@ export interface ISession {
    * @param mode - 'queue' appends a turn; 'steer' interrupts the running one.
    * @param signal - optional caller cancellation for the complete admission round-trip.
    * @param requestId - identity from {@link beginSubmission}; a failed identified prompt retires its echo.
+   * @param clientHints - optional untrusted hints captured for this exact submission.
    * @returns acceptance, or the business error (also mirrored into snapshot.promptError).
    */
   prompt(
@@ -89,6 +90,7 @@ export interface ISession {
     mode: 'queue' | 'steer',
     signal?: AbortSignal,
     requestId?: SessionRequestId,
+    clientHints?: Readonly<Record<string, string>>,
   ): Promise<RemoteResult<{ accepted: true }>>
   /**
    * Resolve one durable image referenced by this session.

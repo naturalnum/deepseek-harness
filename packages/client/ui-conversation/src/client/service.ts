@@ -45,6 +45,8 @@ export interface IConversation {
    * cannot import makes a session's input inert with its own reason.
    */
   readonly blocks: ComposerBlocks
+  /** Register a synchronous, per-Session hint captured with each prompt submission. */
+  registerPromptHint(key: string, resolve: (sessionId: SessionId) => string | undefined): () => void
   /**
    * Send a prompt into the caller scope's session (queued turn).
    * @param text - prompt text, sent verbatim as one text block.
@@ -155,6 +157,7 @@ export class ConversationController extends Service implements IConversation {
   readonly input: SessionInputResolver
   /** The per-session composer-block registry. */
   readonly blocks: ComposerBlocks
+  private readonly promptHints = new Map<string, (sessionId: SessionId) => string | undefined>()
   /** Live upload state per file-kind draft; images never appear here. */
   readonly fileUploads: SnapshotStore<Record<string, DraftFileUpload>> = createSnapshotStore<Record<string, DraftFileUpload>>({})
   private readonly draftAttachments = new Map<DraftAttachmentId, ComposerAttachment>()
@@ -200,6 +203,26 @@ export class ConversationController extends Service implements IConversation {
     }, 'conversation draft attachments')
   }
 
+  registerPromptHint(key: string, resolve: (sessionId: SessionId) => string | undefined): () => void {
+    if (!/^[a-zA-Z][a-zA-Z0-9.-]{0,79}$/.test(key) || this.promptHints.has(key)) {
+      throw new Error(`conversation: invalid or duplicate prompt hint ${key}`)
+    }
+    this.promptHints.set(key, resolve)
+    return () => { if (this.promptHints.get(key) === resolve) this.promptHints.delete(key) }
+  }
+
+  private hintsFor(sessionId: SessionId): Readonly<Record<string, string>> | undefined {
+    const hints: Record<string, string> = {}
+    for (const [key, resolve] of this.promptHints) {
+      const value = resolve(sessionId)
+      if (value !== undefined) {
+        if (value.length > 1024) throw new Error(`conversation: prompt hint too large: ${key}`)
+        hints[key] = value
+      }
+    }
+    return Object.keys(hints).length === 0 ? undefined : hints
+  }
+
   /**
    * Send a prompt into the scoped session. Business failures also land in the
    * session snapshot's promptError (object-layer state); the rejection here
@@ -208,7 +231,10 @@ export class ConversationController extends Service implements IConversation {
    */
   async send(text: string): Promise<void> {
     const session = this.scopedSession('send')
-    const result = await session.prompt([{ type: 'text', text }], 'queue')
+    const hints = this.hintsFor(session.sessionId)
+    const result = hints === undefined
+      ? await session.prompt([{ type: 'text', text }], 'queue')
+      : await session.prompt([{ type: 'text', text }], 'queue', undefined, undefined, hints)
     if (!result.ok) throw new Error(`conversation.send failed: ${result.error.code}: ${result.error.message}`)
   }
 
@@ -233,6 +259,9 @@ export class ConversationController extends Service implements IConversation {
     mode: InputSubmitMode,
     signal?: AbortSignal,
   ): Promise<SubmitOutcome> {
+    // Capture before image serialization and the paint yield: another tab or
+    // control change must not retarget this already-submitted request.
+    const hints = this.hintsFor(session.sessionId)
     const attachments = this.resolveDraftAttachments(attachmentIds)
     if (attachments.length !== attachmentIds.length) {
       throw new Error('conversation.sendSession: one or more draft attachments are no longer available')
@@ -290,7 +319,9 @@ export class ConversationController extends Service implements IConversation {
       submission.abandon()
       throw error
     }
-    const result = await session.prompt(content, mode, signal, submission.requestId)
+    const result = hints === undefined
+      ? await session.prompt(content, mode, signal, submission.requestId)
+      : await session.prompt(content, mode, signal, submission.requestId, hints)
     if (!result.ok) return { kind: 'error' }
     if (retirement !== undefined && (await retirement).reason !== 'observed') return { kind: 'error' }
     return { kind: 'success' }
