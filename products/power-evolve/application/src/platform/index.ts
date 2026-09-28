@@ -102,7 +102,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     const path = new URL(req.url ?? '/', config.platformOrigin).pathname
     if (req.method === 'GET' && path === '/health') { sendJson(res, { ready: true, service: 'platform', schema: 7, executionEnabled, instanceId }); return }
     if (req.method === 'GET' && path === '/config') { sendJson(res, { hostUrl: config.hostOrigin }); return }
-    if (req.method === 'GET' && await serveUi(path, 'login', res)) return
+    if (req.method === 'GET' && await serveUi(path, 'login', res, config.hostOrigin)) return
     if (req.method !== 'POST') throw new PlatformError(404, 'not_found')
     if (path === '/model/v1/messages') {
       await proxyModel(tasks, {

@@ -14,7 +14,13 @@ element('login').addEventListener('submit', async event => {
     const { token } = await response.json()
     const { hostUrl } = await (await fetch('/config')).json()
     element('password').value = ''
-    location.replace(`${hostUrl}/#token=${encodeURIComponent(token)}`)
+    const exchange = await fetch(`${hostUrl}/auth/exchange`, {
+      method: 'POST', credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token }),
+    })
+    if (!exchange.ok) throw new Error(t.loginError)
+    location.replace(`${hostUrl}/native/`)
   } catch (error) { element('error').textContent = error.message }
   finally { element('submit').disabled = false }
 })
