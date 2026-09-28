@@ -8,7 +8,7 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 import schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
 import { Pool } from 'pg'
-import { createRequest, filesListRequest, fileReadRequest, filePutRequest, listRequest, loginRequest, pageRequest, promptRequest, sessionId, sessionRequest, skillInstallRequest, skillRequest, skillToggleRequest, settings, workspaceCreateRequest, PlatformError } from '../contracts.ts'
+import { createRequest, filesListRequest, fileReadRequest, filePutRequest, sessionFilesListRequest, sessionFileReadRequest, sessionFilePutRequest, listRequest, loginRequest, pageRequest, promptRequest, sessionId, sessionRequest, skillInstallRequest, skillRequest, skillToggleRequest, settings, workspaceCreateRequest, PlatformError } from '../contracts.ts'
 import { bearer, readJson, sendFailure, sendJson } from '../http.ts'
 import { initializeDatabase } from './database.ts'
 import { hashPassword, IdentityService } from './identity.ts'
@@ -263,6 +263,13 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     }
     const user = await identities.authenticate(token)
     const input = await readJson(req, config.maxRequestBytes)
+    const fileWorkspace = async (session: string): Promise<string> => {
+      const result = await pool.query<{ workspace_id: string }>(
+        'SELECT workspace_id FROM pe_sessions WHERE id=$1 AND user_id=$2', [session, user.userId],
+      )
+      if (!result.rows[0]) throw new PlatformError(404, 'session_not_found')
+      return result.rows[0].workspace_id
+    }
     switch (path) {
       case '/identity/me': z.object({}).strict().parse(input); sendJson(res, user); return
       case '/identity/logout': z.object({}).strict().parse(input); await identities.logout(token); sendJson(res, { ok: true }); return
@@ -334,6 +341,19 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       case '/native/files/read': sendJson(res, await nativeFiles.read(user, nativeFileTextRequest.parse(input))); return
       case '/native/files/readBytes': sendJson(res, await nativeFiles.readBytes(user, nativeFileBytesRequest.parse(input))); return
       case '/native/files/observe': sendJson(res, await nativeFiles.observe(user, nativeFileRequest.parse(input))); return
+      case '/files/session/list': {
+        const value = sessionFilesListRequest.parse(input)
+        sendJson(res, await files.list(user, value.directory, await fileWorkspace(value.sessionId))); return
+      }
+      case '/files/session/read': {
+        const value = sessionFileReadRequest.parse(input)
+        sendJson(res, await files.readInWorkspace(user, await fileWorkspace(value.sessionId), value.path)); return
+      }
+      case '/files/session/put': {
+        const value = sessionFilePutRequest.parse(input)
+        sendJson(res, await files.put(user, value.requestId, value.path, value.baseRevision, value.data,
+          await fileWorkspace(value.sessionId))); return
+      }
       case '/files/list': sendJson(res, await files.list(user, filesListRequest.parse(input).directory)); return
       case '/files/read': sendJson(res, await files.read(user, fileReadRequest.parse(input).path)); return
       case '/files/put': {

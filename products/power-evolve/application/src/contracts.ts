@@ -43,6 +43,9 @@ export const filePutRequest = z.object({
   requestId, path: z.string().min(1).max(512), baseRevision: z.string().regex(/^[a-f0-9]{64}$/).nullable(),
   data: z.string().max(2_800_000),
 }).strict()
+export const sessionFilesListRequest = filesListRequest.extend({ sessionId }).strict()
+export const sessionFileReadRequest = fileReadRequest.extend({ sessionId }).strict()
+export const sessionFilePutRequest = filePutRequest.extend({ sessionId }).strict()
 export const skillInstallRequest = z.object({
   requestId, name: z.string().trim().min(1).max(80), description: z.string().trim().min(1).max(500),
   instructions: z.string().trim().min(1).max(4096),

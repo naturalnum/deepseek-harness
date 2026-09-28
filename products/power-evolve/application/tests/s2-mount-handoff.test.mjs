@@ -114,7 +114,7 @@ async function fixture(t) {
           (state IN ('free','reserved','ready','stopping','unknown')),
         pod_uid uuid, runner_instance_id uuid, stop_pod_uid uuid, stop_evidence jsonb,
         updated_at timestamptz NOT NULL DEFAULT now());`)
-  } else assert.equal(version, 9)
+  } else assert.equal(version, 10)
   const kube = new FakeKubernetes()
   const localRoot = '/tmp/pe-s2-handoff-test'
   const files = { async workspaceForId(userId, workspaceId) {
@@ -127,7 +127,8 @@ async function fixture(t) {
   manager.home = async () => ({ local: '/tmp', node: '/tmp' })
   const createSession = async userId => {
     const workspaceId = randomUUID(), sessionId = randomUUID()
-    await pool.query('INSERT INTO pe_workspaces(id,user_id) VALUES($1,$2)', [workspaceId, userId])
+    await pool.query(`INSERT INTO pe_workspaces(id,user_id,is_default)
+      SELECT $1,$2,NOT EXISTS (SELECT 1 FROM pe_workspaces WHERE user_id=$2)`, [workspaceId, userId])
     await pool.query('INSERT INTO pe_sessions(id,user_id,workspace_id,create_request_id,header) VALUES($1,$2,$3,$4,$5)',
       [sessionId, userId, workspaceId, randomUUID(), '{}'])
     return { sessionId, workspaceId }
