@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-PowerEvolve lives separately from upstream DSH within the same repository. Start development with the [architecture decision](ARCHITECTURE.md), or use the [two-host trial guide](TRIAL-SLICE6.md). Earlier [slice 5](TRIAL-SLICE5.md), [slice 4](TRIAL-SLICE4.md), [slice 3](TRIAL-SLICE3.md), [slice 2](TRIAL-SLICE2.md), and [slice 1](TRIAL.md) trials remain isolated.
+PowerEvolve lives separately from upstream DSH within the same repository. Start development with the [architecture decision](ARCHITECTURE.md) and [delivery plan](DELIVERY-PLAN.md). The current native DSH Web trial is [S2 cloud Workspaces and artifacts](TRIAL-S2-NATIVE.md); [S1](TRIAL-S1-NATIVE.md) remains isolated. The earlier [two-host trial](TRIAL-SLICE6.md) and [slice 5](TRIAL-SLICE5.md), [slice 4](TRIAL-SLICE4.md), [slice 3](TRIAL-SLICE3.md), [slice 2](TRIAL-SLICE2.md), and [slice 1](TRIAL.md) trials remain available for reference.
 
 ```mermaid
 flowchart LR
