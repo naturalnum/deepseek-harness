@@ -48,6 +48,26 @@ export class IdentityService {
     return { ...identity.parse({ userId: row.id, username: row.username }), settings: settings.parse(row.settings) }
   }
 
+  /** Replace one Agent credential without extending its original lifetime.
+   * @param token - Agent credential consumed by this request.
+   * @returns the replacement Agent credential.
+   */
+  async exchange(token: string): Promise<string> {
+    const replacement = randomBytes(32).toString('base64url')
+    const result = await this.pool.query<{ user_id: string }>(
+      `WITH consumed AS (
+         DELETE FROM pe_credentials WHERE digest=$1 AND audience='agent' AND expires_at>now()
+         RETURNING user_id,expires_at
+       ), issued AS (
+         INSERT INTO pe_credentials(digest,user_id,audience,expires_at)
+         SELECT $2,user_id,'agent',expires_at FROM consumed RETURNING user_id
+       ) SELECT user_id FROM issued`,
+      [digest(token), digest(replacement)],
+    )
+    if (!result.rows[0]) throw new PlatformError(401, 'unauthorized')
+    return replacement
+  }
+
   /** Revoke only the presented credential.
    * @param token - authenticated credential to revoke.
    */

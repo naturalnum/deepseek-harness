@@ -12,8 +12,9 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import { TypertRemoteService, Remote, type PeerScope, type PeerId, type InvocationDescriptor } from '@deepseek-ai/dsh-typert-protocol'
 import { createRequest, filesListRequest, fileReadRequest, filePutRequest, listRequest, pageRequest, promptRequest, skillInstallRequest, skillRequest, skillToggleRequest, PlatformError } from '../contracts.ts'
-import { bearer, readJson, sendFailure, sendJson, writeLine } from '../http.ts'
+import { readJson, sendFailure, sendJson, writeLine } from '../http.ts'
 import { serveNativeUi, serveUi } from '../ui.ts'
+import { BrowserAgentAuth } from './browser-auth.ts'
 import { Scheduler } from './scheduler.ts'
 
 const requests = { me: z.object({}).strict(), logout: z.object({}).strict(), create: createRequest, list: listRequest, prompt: promptRequest, page: pageRequest, follow: pageRequest,
@@ -31,7 +32,7 @@ const endpoint = { me: '/identity/me', logout: '/identity/logout', create: '/ses
   devicesRevoke: '/devices/revoke', directoriesRevoke: '/devices/directories/revoke' } as const
 type Method = keyof typeof requests
 
-declare module '@deepseek-ai/cordis' { interface Context { powerEvolve: ProductRemote } }
+declare module '@deepseek-ai/cordis' { interface Context { powerEvolve: ProductRemote; powerEvolveBrowserAuth: BrowserAgentAuth } }
 
 class ProductRemote extends TypertRemoteService {
   constructor(ctx: Context, private readonly options: { tokens: WeakMap<PeerScope, string>; pollMs: number }) { super(ctx, 'powerEvolve') }
@@ -97,6 +98,8 @@ export type Config = ReturnType<typeof Config>
  */
 export async function apply(ctx: Context, config: Config): Promise<void> {
   const instanceId = randomUUID()
+  const browserAuth = new BrowserAgentAuth(config.origin, config.platformOrigin, ctx.powerEvolveRuntime)
+  ctx.provide('powerEvolveBrowserAuth', browserAuth)
   const tokens = new WeakMap<PeerScope, string>()
   ctx.plugin(ProductRemote, { tokens, pollMs: config.pollMs })
   const invocations: InvocationDescriptor[] = Object.entries(requests).map(([method, request]) => ({
@@ -117,19 +120,24 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     res.on('close', () => abort.abort())
     let streaming = false
     try {
-      const path = new URL(req.url ?? '/', config.origin).pathname
+      const url = new URL(req.url ?? '/', config.origin)
+      const path = url.pathname
       if (req.method === 'GET' && path === '/health') {
         sendJson(res, { ready: true, service: 'host', activeAgents: ctx.agents.list().length, loadedSessions: ctx.sessions.list().length, activeGrants: ctx.powerEvolveRuntime.grants.size, instanceId }); return
       }
       if (req.method === 'GET' && path === '/config') { sendJson(res, { loginUrl: `${config.platformOrigin}/login`,
         approvalUrl: `${config.platformOrigin}/approval`, deviceOrigin: config.deviceOrigin }); return }
       if (req.method === 'GET' && await serveNativeUi(path, res)) return
+      if (path === '/auth/exchange') {
+        if (url.search) throw new PlatformError(400, 'invalid_request')
+        await browserAuth.exchange(req, res)
+        return
+      }
       if (req.method === 'GET' && await serveUi(path, 'client', res)) return
       if (req.method !== 'POST' || !path.startsWith('/api/powerEvolve/')) throw new PlatformError(404, 'not_found')
-      if (req.headers.origin !== undefined && req.headers.origin !== config.origin) throw new PlatformError(403, 'invalid_origin')
       const method = z.enum(Object.keys(requests) as [Method, ...Method[]]).parse(path.slice('/api/powerEvolve/'.length))
-      const token = bearer(req)
-      await ctx.powerEvolveRuntime.call('/identity/me', token, {})
+      const credential = await browserAuth.authenticate(req)
+      const token = credential.token
       const input = z.object({ request: requests[method] }).strict().parse(await readJson(req, config.maxRequestBytes))
       if (method === 'follow') {
         if (streams >= config.maxStreams) throw new PlatformError(429, 'stream_limit')
@@ -146,7 +154,11 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         res.writeHead(200, { 'content-type': 'application/x-ndjson', 'cache-control': 'no-store', 'x-accel-buffering': 'no' })
         for await (const item of iterable) await writeLine(res, item, abort.signal)
         res.end()
-      } else sendJson(res, await ctx.typertGateway.invoke(invocation))
+      } else {
+        const result = await ctx.typertGateway.invoke(invocation)
+        if (method === 'logout' && credential.fromCookie) browserAuth.clear(res)
+        sendJson(res, result)
+      }
     } catch (error) { if (!abort.signal.aborted) sendFailure(res, error) }
     finally {
       if (streaming) streams--

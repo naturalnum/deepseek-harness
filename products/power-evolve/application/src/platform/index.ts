@@ -229,6 +229,11 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         default: throw new PlatformError(404, 'not_found')
       }
     }
+    if (path === '/identity/exchange') {
+      z.object({}).strict().parse(await readJson(req, 4096))
+      sendJson(res, { token: await identities.exchange(token) })
+      return
+    }
     const user = await identities.authenticate(token)
     const input = await readJson(req, config.maxRequestBytes)
     switch (path) {

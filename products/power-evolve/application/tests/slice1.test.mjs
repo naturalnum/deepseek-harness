@@ -191,6 +191,56 @@ test('shared host: isolated conversations, files, skills and approved remote act
     assert.equal((await post(`${host.url}/api/settings/get`, tokens[0], {})).status, 404)
     assert.equal((await post(`${platform.url}/runtime/claim`, tokens[0], { workerId: randomUUID() })).status, 401)
   })
+  await t.test('browser exchange uses a scoped cookie, platform revocation and exact origins', async () => {
+    const hostOrigin = 'http://127.0.0.1:18880' // External origin configured in the Host Profile.
+    const login = await post(`${platform.url}/identity/login`, null,
+      { username: users[0].username, password: users[0].password })
+    assert.equal(login.status, 200)
+    const { token } = await login.json()
+    const preflight = await fetch(`${host.url}/auth/exchange`, { method: 'OPTIONS', headers: {
+      origin: platform.url, 'access-control-request-method': 'POST', 'access-control-request-headers': 'content-type',
+    } })
+    assert.equal(preflight.status, 204)
+    assert.equal(preflight.headers.get('access-control-allow-origin'), platform.url)
+    const exchange = (origin, value = token) => fetch(`${host.url}/auth/exchange`, {
+      method: 'POST', headers: { origin, 'content-type': 'application/json' }, body: JSON.stringify({ token: value }),
+    })
+    assert.equal((await exchange('https://attacker.example')).status, 403)
+    const exchanged = await exchange(platform.url)
+    assert.equal(exchanged.status, 200)
+    assert.equal((await post(`${platform.url}/identity/me`, token, {})).status, 401)
+    assert.equal((await exchange(platform.url)).status, 401)
+    const setCookies = exchanged.headers.getSetCookie()
+    assert.equal(setCookies.length, 2)
+    assert(setCookies.some(value => /^pe_agent=[A-Za-z0-9_-]+; Path=\/native\/api; HttpOnly; SameSite=Strict/.test(value)))
+    const productCookie = setCookies.find(value => value.includes('Path=/api/powerEvolve'))
+    assert.match(productCookie, /^pe_agent=[A-Za-z0-9_-]+; Path=\/api\/powerEvolve; HttpOnly; SameSite=Strict/)
+    const cookie = productCookie.split(';')[0]
+    const browserRpc = (origin, method = 'me') => fetch(`${host.url}/api/powerEvolve/${method}`, {
+      method: 'POST', headers: { ...(origin ? { origin } : {}), cookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ request: {} }),
+    })
+    assert.equal((await browserRpc('https://attacker.example')).status, 403)
+    assert.equal((await browserRpc(undefined)).status, 403)
+    assert.equal((await browserRpc(hostOrigin)).status, 200)
+    assert.equal((await (await browserRpc(hostOrigin)).json()).userId.length, 36)
+    const approval = await post(`${platform.url}/identity/approval-login`, null,
+      { username: users[0].username, password: users[0].password })
+    assert.equal(approval.status, 200)
+    assert.equal((await exchange(platform.url, (await approval.json()).token)).status, 401)
+    assert.equal((await fetch(`${host.url}/api/powerEvolve/me`, { method: 'POST', headers: {
+      origin: hostOrigin, cookie, authorization: `Bearer ${tokens[1]}`, 'content-type': 'application/json',
+    }, body: JSON.stringify({ request: {} }) })).status, 401)
+    await stop(host.process)
+    host = await start('host', platform.url)
+    assert.equal((await browserRpc(hostOrigin)).status, 200)
+    const logout = await browserRpc(hostOrigin, 'logout')
+    assert.equal(logout.status, 200)
+    assert.equal(logout.headers.getSetCookie().length, 2)
+    assert(logout.headers.getSetCookie().every(value => value.includes('Max-Age=0')))
+    assert.equal((await browserRpc(hostOrigin)).status, 401)
+    assert.equal((await exchange(platform.url)).status, 401)
+  })
   const alice = await create(0), bob = await create(1)
   await t.test('cross-user history, writes and subscription are refused', async () => {
     assert.equal((await rpcResponse(1, 'page', { sessionId: alice, after:-1,limit:20 })).status,404)

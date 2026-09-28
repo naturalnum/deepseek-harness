@@ -9,6 +9,7 @@
     "./persistence": "./lib/host/persistence.js",
     "./model": "./lib/host/model.js",
     "./host": "./lib/host/index.js",
+    "./browser-auth": "./lib/host/browser-auth.js",
     "./device": "./lib/device/index.js",
     "./package.json": "./package.json"
   },
