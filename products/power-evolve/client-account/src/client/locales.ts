@@ -1,0 +1,53 @@
+export const NS = 'powerEvolve.account'
+
+export const zh = {
+  account: '账号',
+  settings: '设置',
+  signOut: '退出登录',
+  signingOut: '正在退出…',
+  signOutFailed: '退出失败，请重试。',
+  accountUnavailable: '账号信息暂不可用',
+  username: '用户名',
+  model: '授权模型',
+  maxTokens: '最大输出 token 数',
+  modelLimit: '该模型允许的最大值：',
+  noModels: '目前没有可用的授权模型。',
+  loadFailed: '设置加载失败，请重试。',
+  refresh: '重新读取',
+  save: '保存设置',
+  saving: '正在保存…',
+  saved: '设置已保存。',
+  conflict: '设置已在别处更新。已读取当前值，请重新选择。',
+  modelDenied: '该模型已不可用。已更新授权列表，请重新选择。',
+  saveRetry: '保存结果尚不确定。重试将使用同一个请求编号。',
+  retrySave: '重试保存',
+  invalidTokens: '请输入该模型允许范围内的整数。',
+  sessionExpired: '登录已失效，请重新登录。',
+} satisfies Record<string, string>
+
+export type AccountLocaleKey = keyof typeof zh
+
+export const en = {
+  account: 'Account',
+  settings: 'Settings',
+  signOut: 'Sign out',
+  signingOut: 'Signing out…',
+  signOutFailed: 'Could not sign out. Please try again.',
+  accountUnavailable: 'Account unavailable',
+  username: 'Username',
+  model: 'Authorized model',
+  maxTokens: 'Maximum output tokens',
+  modelLimit: 'Maximum for this model:',
+  noModels: 'No authorized models are available.',
+  loadFailed: 'Could not load settings. Please try again.',
+  refresh: 'Reload',
+  save: 'Save settings',
+  saving: 'Saving…',
+  saved: 'Settings saved.',
+  conflict: 'Settings changed elsewhere. The current values are loaded; choose again.',
+  modelDenied: 'This model is no longer available. Choose from the updated list.',
+  saveRetry: 'The save result is uncertain. Retry will use the same request ID.',
+  retrySave: 'Retry save',
+  invalidTokens: 'Enter an integer within this model’s allowed range.',
+  sessionExpired: 'Your sign-in expired. Please sign in again.',
+} satisfies Record<AccountLocaleKey, string>

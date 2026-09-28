@@ -24,6 +24,7 @@ const roots = [
   '@deepseek-ai/dsh-client-ui-sidebar-files',
   '@deepseek-ai/dsh-client-ui-sidebar-documentpreview',
   '@power-evolve/client-brand',
+  '@power-evolve/client-account',
   '@power-evolve/client-workspace-files',
   '@power-evolve/client-cloud-workspaces',
   '@power-evolve/client-artifacts',

@@ -28,7 +28,7 @@ test('native DSH shell uses the upstream page and a closed, external boot graph'
   for (const id of ['@deepseek-ai/dsh-client-modules', '@deepseek-ai/dsh-client-ui-chat',
     '@deepseek-ai/dsh-client-ui-conversation', '@deepseek-ai/dsh-client-ui-renderer',
     '@deepseek-ai/dsh-client-ui-settings-general',
-    '@power-evolve/client-brand', '@power-evolve/client-execution-target',
+    '@power-evolve/client-brand', '@power-evolve/client-account', '@power-evolve/client-execution-target',
     '@power-evolve/client-cloud-workspaces', '@power-evolve/client-artifacts']) assert(ids.has(id), id)
   for (const id of ['@deepseek-ai/dsh-client-ui-skill', '@deepseek-ai/dsh-client-ui-plugin-manager']) {
     assert(!ids.has(id), `${id} is deferred`)
