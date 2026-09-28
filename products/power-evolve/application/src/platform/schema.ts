@@ -280,3 +280,26 @@ CREATE INDEX pe_artifacts_user_page ON pe_artifacts(user_id,created_at DESC,id D
 CREATE INDEX pe_artifacts_workspace_page ON pe_artifacts(workspace_id,created_at DESC,id DESC);
 UPDATE pe_schema SET version=10 WHERE version=9;
 `
+
+/** Per-user model grants and durable, user-scoped setting mutation receipts. */
+export const schemaV11 = `
+CREATE TABLE pe_user_models (
+  user_id uuid NOT NULL REFERENCES pe_users(id),
+  model_id text NOT NULL CHECK (length(model_id) BETWEEN 1 AND 100),
+  label text NOT NULL CHECK (length(label) BETWEEN 1 AND 100),
+  max_tokens integer NOT NULL CHECK (max_tokens BETWEEN 1 AND 8192),
+  enabled boolean NOT NULL DEFAULT true,
+  PRIMARY KEY(user_id,model_id)
+);
+CREATE TABLE pe_settings_mutations (
+  user_id uuid NOT NULL REFERENCES pe_users(id),
+  request_id uuid NOT NULL,
+  request_digest text NOT NULL CHECK (request_digest ~ '^[a-f0-9]{64}$'),
+  result_settings jsonb NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(user_id,request_id)
+);
+INSERT INTO pe_user_models(user_id,model_id,label,max_tokens,enabled)
+  SELECT id,settings->>'model',settings->>'model',8192,true FROM pe_users;
+UPDATE pe_schema SET version=11 WHERE version=10;
+`

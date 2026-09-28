@@ -60,7 +60,11 @@ test('shared host: isolated conversations, files, skills and approved remote act
   await admin.query(`CREATE DATABASE "${database}"`); databaseCreated = true
   const url = new URL(databaseUrl); url.pathname = `/${database}`
   pool = new Pool({ connectionString: url.href, max: 5 })
-  const users = ['alice', 'bob'].map((username, index) => ({ username, password: randomBytes(20).toString('base64url'), settings: { model: 'deepseek-flash', maxTokens: index ? 1536 : 2048, revision: 1 } }))
+  const users = ['alice', 'bob'].map((username, index) => ({ username, password: randomBytes(20).toString('base64url'),
+    settings: { model: 'deepseek-flash', maxTokens: index ? 1536 : 2048, revision: 1 },
+    models: index ? [{ id: 'deepseek-flash', label: 'Flash', maxTokens: 4096 }]
+      : [{ id: 'deepseek-flash', label: 'Flash', maxTokens: 4096 },
+        { id: 'deepseek-v4-pro', label: 'V4 Pro', maxTokens: 4096 }] }))
   const workerToken = randomBytes(32).toString('base64url')
   const providerKey = randomBytes(32).toString('base64url')
   const connectorKey = randomBytes(32).toString('base64url')
@@ -816,5 +820,25 @@ test('shared host: isolated conversations, files, skills and approved remote act
       const statuses = await Promise.all([host.url, hostB.url].map(url => fetch(`${url}/health`).then(response => response.json())))
       return statuses.every(value => value.activeAgents === 0 && value.loadedSessions === 0 && value.activeGrants === 0)
     }, 'idle resources released after burst')
+  })
+  await t.test('platform settings routes expose only the current user grants and save once', async () => {
+    const models = await post(`${platform.url}/identity/models`, tokens[0], {})
+    assert.equal(models.status, 200)
+    assert.deepEqual((await models.json()).models.map(model => model.id), ['deepseek-flash', 'deepseek-v4-pro'])
+    const bobModels = await post(`${platform.url}/identity/models`, tokens[1], {})
+    assert.deepEqual((await bobModels.json()).models.map(model => model.id), ['deepseek-flash'])
+    const input = { requestId: randomUUID(), expectedRevision: 1, model: 'deepseek-v4-pro', maxTokens: 3000 }
+    const endpoint = `${platform.url}/identity/settings/update`
+    const saved = await post(endpoint, tokens[0], input)
+    assert.equal(saved.status, 200)
+    assert.deepEqual(await saved.json(), { model: 'deepseek-v4-pro', maxTokens: 3000, revision: 2 })
+    assert.deepEqual(await (await post(endpoint, tokens[0], input)).json(),
+      { model: 'deepseek-v4-pro', maxTokens: 3000, revision: 2 })
+    assert.equal((await post(endpoint, tokens[0], { ...input, maxTokens: 3001 })).status, 409)
+    assert.equal((await post(endpoint, tokens[0], { ...input, requestId: randomUUID(), expectedRevision: 1 })).status, 409)
+    assert.equal((await post(endpoint, tokens[1], { ...input, requestId: randomUUID() })).status, 403)
+    assert.equal((await post(endpoint, tokens[0], { ...input, requestId: randomUUID(), userId: users[1].username })).status, 400)
+    assert.equal((await (await post(`${platform.url}/identity/me`, tokens[0], {})).json()).settings.revision, 2)
+    assert.equal((await (await post(`${platform.url}/identity/me`, tokens[1], {})).json()).settings.revision, 1)
   })
 })

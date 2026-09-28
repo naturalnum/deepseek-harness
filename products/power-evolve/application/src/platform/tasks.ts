@@ -3,10 +3,11 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import type { Pool, PoolClient } from 'pg'
 import { SESSION_FORMAT_VERSION, SessionId, type SessionHeader } from '@deepseek-ai/dsh-session'
 import { executionTarget, grant, skillSelection, PlatformError, settings,
-  type ExecutionTarget, type Grant, type Identity, type RequestId, type Settings, type WorkspaceId } from '../contracts.ts'
+  type ExecutionTarget, type Grant, type Identity, type RequestId, type WorkspaceId } from '../contracts.ts'
 import { z } from 'zod'
 import { digest } from './identity.ts'
 import { transaction } from './database.ts'
+import { requireModelGrant } from './account-settings.ts'
 
 interface SessionRow {
   id: string
@@ -74,10 +75,12 @@ export class TaskStore {
   }
 
   /** Commit an input before returning acceptance; identical retries reuse the Operation. */
-  async accept(user: Identity, session: SessionId, requestId: RequestId, text: string, config: Settings,
+  async accept(user: Identity, session: SessionId, requestId: RequestId, text: string,
     target: ExecutionTarget = { kind: 'cloud' }): Promise<unknown> {
     return transaction(this.pool, async client => {
-      await client.query('SELECT id FROM pe_users WHERE id=$1 FOR UPDATE', [user.userId])
+      const current = await client.query<{ settings: unknown }>(
+        'SELECT settings FROM pe_users WHERE id=$1 FOR UPDATE', [user.userId])
+      if (!current.rows[0]) throw new PlatformError(401, 'unauthorized')
       await this.owned(client, user, session)
       const prior = await client.query<{ id: string; input: string; state: string; execution_target: unknown }>(
         'SELECT id,input,state,execution_target FROM pe_operations WHERE session_id=$1 AND request_id=$2', [session, requestId],
@@ -92,6 +95,8 @@ export class TaskStore {
         }
         return { accepted: true, operationId: found.id, state: found.state }
       }
+      const config = settings.parse(current.rows[0].settings)
+      await requireModelGrant(client, user.userId, config.model, config.maxTokens)
       if (target.kind === 'desktop') {
         const available = await client.query(
           `SELECT d.id FROM pe_devices d JOIN pe_device_directories dir ON dir.device_id=d.id

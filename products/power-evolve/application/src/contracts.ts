@@ -21,6 +21,12 @@ export const settings = z.object({
   revision: z.number().int().positive(),
 }).strict()
 export type Settings = z.infer<typeof settings>
+export const modelsListRequest = z.object({}).strict()
+export const settingsUpdateRequest = z.object({
+  requestId, expectedRevision: z.number().int().positive(),
+  model: z.string().min(1).max(100), maxTokens: z.number().int().min(1).max(8192),
+}).strict()
+export type SettingsUpdateRequest = z.infer<typeof settingsUpdateRequest>
 export const createRequest = z.object({ requestId, workspaceId: workspaceId.optional() }).strict()
 export const workspaceCreateRequest = z.object({ requestId, title: z.string().trim().min(1).max(80) }).strict()
 export const executionTarget = z.discriminatedUnion('kind', [

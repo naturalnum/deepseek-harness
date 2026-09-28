@@ -42,11 +42,14 @@ test('cancel owns one Session, survives grant replacement, and permits the next 
   t.after(async () => { await pool.end(); await admin.query(`DROP DATABASE "${database}"`); await admin.end() })
   await initializeDatabase(pool)
   const users = [{ userId: randomUUID(), username: 'alice' }, { userId: randomUUID(), username: 'bob' }]
-  for (const user of users) await pool.query(
-    'INSERT INTO pe_users(id,username,password_hash,settings) VALUES($1,$2,$3,$4)',
-    [user.userId, user.username, 'unused', {}])
-  const [alice, bob] = users
   const config = { model: 'fixture', maxTokens: 64, revision: 1 }
+  for (const user of users) {
+    await pool.query('INSERT INTO pe_users(id,username,password_hash,settings) VALUES($1,$2,$3,$4)',
+      [user.userId, user.username, 'unused', config])
+    await pool.query('INSERT INTO pe_user_models(user_id,model_id,label,max_tokens) VALUES($1,$2,$3,$4)',
+      [user.userId, 'fixture', 'Fixture', 64])
+  }
+  const [alice, bob] = users
   const tasks = new TaskStore(pool, { leaseMs: 3000, maxPendingPerUser: 8, maxActivePerUser: 1 })
   const events = new EventStore(tasks, { maxHistoryBytes: 1024 * 1024, maxHistoryEvents: 100,
     maxEventBytes: 64 * 1024 })
@@ -55,16 +58,16 @@ test('cancel owns one Session, survives grant replacement, and permits the next 
   assert.deepEqual(await tasks.cancel(alice, sessionId), { accepted: true }, 'no active turn is a no-op')
   await assert.rejects(tasks.cancel(bob, sessionId), /session_not_found/)
   const queuedRequest = randomUUID()
-  const queued = await tasks.accept(alice, sessionId, queuedRequest, 'queued', config)
+  const queued = await tasks.accept(alice, sessionId, queuedRequest, 'queued')
   assert.equal(queued.state, 'queued')
   assert.deepEqual(await tasks.cancel(alice, sessionId), { accepted: true })
   assert.deepEqual(await tasks.cancel(alice, sessionId), { accepted: true }, 'repeating a settled cancellation is a no-op')
-  assert.equal((await tasks.accept(alice, sessionId, queuedRequest, 'queued', config)).state, 'failed')
+  assert.equal((await tasks.accept(alice, sessionId, queuedRequest, 'queued')).state, 'failed')
   assert.equal((await pool.query('SELECT state,error_code,attempts FROM pe_operations WHERE id=$1',
     [queued.operationId])).rows[0].error_code, 'turn_user')
   assert.equal(await tasks.claim(randomUUID()), null, 'a cancelled queued input never starts')
 
-  const running = await tasks.accept(alice, sessionId, randomUUID(), 'running', config)
+  const running = await tasks.accept(alice, sessionId, randomUUID(), 'running')
   const old = await tasks.claim(randomUUID())
   assert.equal(old.operationId, running.operationId)
   await assert.rejects(tasks.cancel(bob, sessionId), /session_not_found/)
@@ -87,7 +90,7 @@ test('cancel owns one Session, survives grant replacement, and permits the next 
     [running.operationId])).rows[0], { state: 'completed', error_code: null, attempts: 2 },
   'a native turn that completed before cancellation was observed remains completed')
 
-  const stopped = await tasks.accept(alice, sessionId, randomUUID(), 'stop me', config)
+  const stopped = await tasks.accept(alice, sessionId, randomUUID(), 'stop me')
   const stoppedGrant = await tasks.claim(randomUUID())
   assert.equal(stoppedGrant.operationId, stopped.operationId)
   await tasks.cancel(alice, sessionId)
@@ -95,14 +98,14 @@ test('cancel owns one Session, survives grant replacement, and permits the next 
   assert.deepEqual((await pool.query('SELECT state,error_code FROM pe_operations WHERE id=$1',
     [stopped.operationId])).rows[0], { state: 'failed', error_code: 'turn_user' })
 
-  const limited = await tasks.accept(alice, sessionId, randomUUID(), 'too long', config)
+  const limited = await tasks.accept(alice, sessionId, randomUUID(), 'too long')
   const limitedGrant = await tasks.claim(randomUUID())
   await tasks.cancel(alice, sessionId)
   await tasks.finish(limitedGrant.token, 'failed', 'turn_max-tokens')
   assert.deepEqual((await pool.query('SELECT state,error_code FROM pe_operations WHERE id=$1',
     [limited.operationId])).rows[0], { state: 'failed', error_code: 'turn_max-tokens' })
 
-  const next = await tasks.accept(alice, sessionId, randomUUID(), 'after stop', config)
+  const next = await tasks.accept(alice, sessionId, randomUUID(), 'after stop')
   const nextGrant = await tasks.claim(randomUUID())
   assert.equal(nextGrant.operationId, next.operationId)
   assert.deepEqual(await tasks.renew(nextGrant.token), { cancelRequested: false })
@@ -121,11 +124,12 @@ test('cancel and finish serialize without losing a completed or cancelled turn',
   await initializeDatabase(pool)
   const alice = { userId: randomUUID(), username: 'alice' }
   await pool.query('INSERT INTO pe_users(id,username,password_hash,settings) VALUES($1,$2,$3,$4)',
-    [alice.userId, alice.username, 'unused', {}])
+    [alice.userId, alice.username, 'unused', { model: 'fixture', maxTokens: 64, revision: 1 }])
+  await pool.query('INSERT INTO pe_user_models(user_id,model_id,label,max_tokens) VALUES($1,$2,$3,$4)',
+    [alice.userId, 'fixture', 'Fixture', 64])
   const tasks = new TaskStore(pool, { leaseMs: 3000, maxPendingPerUser: 8, maxActivePerUser: 1 })
   const { sessionId } = await tasks.create(alice, randomUUID())
-  const accepted = await tasks.accept(alice, sessionId, randomUUID(), 'race',
-    { model: 'fixture', maxTokens: 64, revision: 1 })
+  const accepted = await tasks.accept(alice, sessionId, randomUUID(), 'race')
   const grant = await tasks.claim(randomUUID())
   await Promise.all([tasks.cancel(alice, sessionId), tasks.finish(grant.token, 'completed', null)])
   const row = (await pool.query('SELECT state,error_code FROM pe_operations WHERE id=$1',

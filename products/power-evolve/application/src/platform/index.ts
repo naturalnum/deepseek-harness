@@ -8,10 +8,11 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 import schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
 import { Pool } from 'pg'
-import { createRequest, filesListRequest, fileReadRequest, filePutRequest, sessionFilesListRequest, sessionFileReadRequest, sessionFilePutRequest, listRequest, loginRequest, pageRequest, promptRequest, sessionId, sessionRequest, skillInstallRequest, skillRequest, skillToggleRequest, settings, workspaceCreateRequest, PlatformError } from '../contracts.ts'
+import { createRequest, filesListRequest, fileReadRequest, filePutRequest, sessionFilesListRequest, sessionFileReadRequest, sessionFilePutRequest, listRequest, loginRequest, modelsListRequest, pageRequest, promptRequest, sessionId, sessionRequest, settingsUpdateRequest, skillInstallRequest, skillRequest, skillToggleRequest, settings, workspaceCreateRequest, PlatformError } from '../contracts.ts'
 import { bearer, readJson, sendFailure, sendJson } from '../http.ts'
 import { initializeDatabase } from './database.ts'
 import { hashPassword, IdentityService } from './identity.ts'
+import { AccountSettingsService, seedModel, seedNewUser } from './account-settings.ts'
 import { TaskStore } from './tasks.ts'
 import { EventStore } from './events.ts'
 import { NativeSessionRead, nativeFollowRequest, nativePageRequest } from './native-session-read.ts'
@@ -60,6 +61,7 @@ export type Config = ReturnType<typeof Config>
 
 const seedUsers = z.array(z.object({
   username: z.string().min(1).max(80), password: z.string().min(16).max(256), settings,
+  models: z.array(seedModel).min(1).max(16).optional(),
 }).strict()).min(2).max(100)
 
 /** Register the platform only after its schema and configured users are ready. */
@@ -87,10 +89,10 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   await skills.init()
   const users = seedUsers.parse(JSON.parse(seeds))
   for (const user of users) {
-    await pool.query('INSERT INTO pe_users(id,username,password_hash,settings) VALUES($1,$2,$3,$4) ON CONFLICT(username) DO NOTHING',
-      [randomUUID(), user.username, await hashPassword(user.password), user.settings])
+    await seedNewUser(pool, user.username, await hashPassword(user.password), user.settings, user.models)
   }
   const identities = new IdentityService(pool, config.tokenLifetimeMs)
+  const accountSettings = new AccountSettingsService(pool)
   const tasks = new TaskStore(pool, { ...config, executionEnabled })
   const events = new EventStore(tasks, config)
   const nativeSessions = new NativeSessionRead(pool)
@@ -113,7 +115,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
 
   const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const path = new URL(req.url ?? '/', config.platformOrigin).pathname
-    if (req.method === 'GET' && path === '/health') { sendJson(res, { ready: true, service: 'platform', schema: 10, executionEnabled, instanceId }); return }
+    if (req.method === 'GET' && path === '/health') { sendJson(res, { ready: true, service: 'platform', schema: 11, executionEnabled, instanceId }); return }
     if (req.method === 'GET' && path === '/config') { sendJson(res, { hostUrl: config.hostOrigin }); return }
     if (req.method === 'GET' && await serveUi(path, 'login', res, config.hostOrigin)) return
     const artifactContent = /^\/artifacts\/([^/]+)\/content$/u.exec(path)
@@ -272,6 +274,11 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     }
     switch (path) {
       case '/identity/me': z.object({}).strict().parse(input); sendJson(res, user); return
+      case '/identity/models': modelsListRequest.parse(input); sendJson(res, await accountSettings.modelsList(user)); return
+      case '/identity/settings/update': {
+        const value = settingsUpdateRequest.parse(input)
+        sendJson(res, await accountSettings.update(user, value)); return
+      }
       case '/identity/logout': z.object({}).strict().parse(input); await identities.logout(token); sendJson(res, { ok: true }); return
       case '/sessions/create': {
         const value = createRequest.parse(input)
@@ -283,7 +290,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       }
       case '/sessions/prompt': {
         const { sessionId, requestId, text, target } = promptRequest.parse(input)
-        sendJson(res, await tasks.accept(user, sessionId, requestId, text, user.settings, target)); return
+        sendJson(res, await tasks.accept(user, sessionId, requestId, text, target)); return
       }
       case '/sessions/cancel': {
         const { sessionId } = sessionRequest.parse(input)

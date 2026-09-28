@@ -7,6 +7,7 @@ import { bearer, readJson } from '../http.ts'
 import { PlatformError, settings } from '../contracts.ts'
 import { transaction } from './database.ts'
 import type { TaskStore } from './tasks.ts'
+import { requireModelGrant } from './account-settings.ts'
 
 const messageRequest = z.object({
   model: z.string().min(1).max(100), max_tokens: z.number().int().positive(), stream: z.literal(true),
@@ -34,9 +35,12 @@ export async function proxyModel(
   tasks: TaskStore, config: ModelProxyConfig, request: IncomingMessage, response: ServerResponse,
 ): Promise<void> {
   const body = messageRequest.parse(await readJson(request, config.maxRequestBytes))
-  const authorized = await transaction(tasks.pool, client => tasks.authorized(client, bearer(request)))
-  const selected = settings.parse(authorized.settings)
-  if (body.model !== selected.model || body.max_tokens > selected.maxTokens) throw new PlatformError(403, 'model_not_authorized')
+  await transaction(tasks.pool, async client => {
+    const authorized = await tasks.authorized(client, bearer(request))
+    const selected = settings.parse(authorized.settings)
+    if (body.model !== selected.model || body.max_tokens > selected.maxTokens) throw new PlatformError(403, 'model_not_authorized')
+    await requireModelGrant(client, authorized.user_id, selected.model, selected.maxTokens)
+  })
   const disconnected = new AbortController()
   const abort = () => { disconnected.abort() }
   response.once('close', abort)

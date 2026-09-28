@@ -114,7 +114,7 @@ async function fixture(t) {
           (state IN ('free','reserved','ready','stopping','unknown')),
         pod_uid uuid, runner_instance_id uuid, stop_pod_uid uuid, stop_evidence jsonb,
         updated_at timestamptz NOT NULL DEFAULT now());`)
-  } else assert.equal(version, 10)
+  } else assert.equal(version, 11)
   const kube = new FakeKubernetes()
   const localRoot = '/tmp/pe-s2-handoff-test'
   const files = { async workspaceForId(userId, workspaceId) {
