@@ -2,7 +2,9 @@
 
 ## Scope
 
-PowerEvolve uses a shared DSH application host and a separate trusted platform. The accepted delivery sequence is conversation, files and skills, API authorization, cloud execution, desktop execution, and multiple hosts. Each slice includes a working client and its applicable persistence and failure checks.
+PowerEvolve uses a shared DSH application host and a separate trusted platform. The cloud service slices cover conversation, files, API authorization, cloud execution, desktop execution, and multiple hosts. Each slice includes persistence and failure checks. Client delivery now follows the native DSH Web path below; skill and plugin management are deferred until the core cloud path is usable there.
+
+The target browser is the native DSH Web shell, extended through product client plugins. The small `application/web` page used to verify the first cloud slices is a test interface, not the product frontend. Complete native Web login, two-user conversation/history, files, cloud execution, and desktop execution before adapting the Skills and Plugins pages from the existing PowerEvolve main branch. Those pages use an older DSH client API and require compatibility work; do not recreate them in the test interface.
 
 ## Service ownership
 
