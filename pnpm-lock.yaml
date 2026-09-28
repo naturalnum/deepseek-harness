@@ -13824,6 +13824,9 @@ importers:
 
   products/power-evolve/application:
     dependencies:
+      '@power-evolve/cloud-web':
+        specifier: workspace:*
+        version: link:../cloud-web
       '@deepseek-ai/dsh-agent':
         specifier: workspace:*
         version: link:../../../packages/core/agent
@@ -13891,6 +13894,21 @@ importers:
       '@types/pg':
         specifier: ^8.15.5
         version: 8.23.1
+
+  products/power-evolve/cloud-web:
+    dependencies:
+      '@deepseek-ai/dsh-client-modules':
+        specifier: workspace:*
+        version: link:../../../packages/client/modules
+      '@deepseek-ai/dsh-host-webserver':
+        specifier: workspace:*
+        version: link:../../../packages/host/webserver
+      '@deepseek-ai/dsh-web-app':
+        specifier: workspace:*
+        version: link:../../../packages/bundle/web-app
+      '@deepseek-ai/dsh-web-frontend':
+        specifier: workspace:*
+        version: link:../../../apps/web
 
   products/power-evolve/device:
     dependencies:

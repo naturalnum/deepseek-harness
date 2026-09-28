@@ -13,7 +13,7 @@ import { createScope } from '@deepseek-ai/dsh-scope'
 import { TypertRemoteService, Remote, type PeerScope, type PeerId, type InvocationDescriptor } from '@deepseek-ai/dsh-typert-protocol'
 import { createRequest, filesListRequest, fileReadRequest, filePutRequest, listRequest, pageRequest, promptRequest, skillInstallRequest, skillRequest, skillToggleRequest, PlatformError } from '../contracts.ts'
 import { bearer, readJson, sendFailure, sendJson, writeLine } from '../http.ts'
-import { serveUi } from '../ui.ts'
+import { serveNativeUi, serveUi } from '../ui.ts'
 import { Scheduler } from './scheduler.ts'
 
 const requests = { me: z.object({}).strict(), logout: z.object({}).strict(), create: createRequest, list: listRequest, prompt: promptRequest, page: pageRequest, follow: pageRequest,
@@ -123,6 +123,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       }
       if (req.method === 'GET' && path === '/config') { sendJson(res, { loginUrl: `${config.platformOrigin}/login`,
         approvalUrl: `${config.platformOrigin}/approval`, deviceOrigin: config.deviceOrigin }); return }
+      if (req.method === 'GET' && await serveNativeUi(path, res)) return
       if (req.method === 'GET' && await serveUi(path, 'client', res)) return
       if (req.method !== 'POST' || !path.startsWith('/api/powerEvolve/')) throw new PlatformError(404, 'not_found')
       if (req.headers.origin !== undefined && req.headers.origin !== config.origin) throw new PlatformError(403, 'invalid_origin')

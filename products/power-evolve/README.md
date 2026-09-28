@@ -28,12 +28,13 @@ flowchart LR
 | `application/src/host` | User RPC, event subscriptions, scheduling, native Session persistence and model adapters |
 | `application/src/platform` | Identity, ownership, PG transactions, task leases, events, credentialed calls, and Sandbox management |
 | `application/src/device`, `device` | Local-only device UI, directory grants, durable command journal, and bounded Docker execution |
-| `application/web` | Conversation, files, skills, execution target selection, and a separate trusted approval page |
+| `application/web` | Temporary slice test interface and the separate trusted approval page |
+| `cloud-web` | Native DSH Web shell and its closed upstream client module bundle, served at `/native/` during client transport integration |
 | `sandbox`, `k8s` | Per-Sandbox command runner and namespace-scoped platform RBAC |
 | `host`, `platform` | Plugin composition and deployment settings for the two DSH Profiles |
 | `application/tests` | Regression tests using real PG and actual Profiles |
 | `scripts` | Local configuration and process management |
 
-All product packages are private. The root Host TypeScript build includes product code. `pnpm run test:power-evolve` runs product integration tests; the upstream default test command remains responsible for native packages. Product plugins use public services from the selected baseline without changing the Agent loop or native Session format.
+All product packages are private. The root build includes the product Host and native Web bundle. `pnpm run test:power-evolve` runs product integration tests; `pnpm run test:power-evolve:web` checks the built native shell and static Host route. Product plugins use public services from the selected baseline without changing the Agent loop or native Session format. The `/native/` page currently verifies shell boot; product login and conversation transport are separate follow-up work.
 
 Recorded conversations live in the [PowerEvolve snapshot](../../../snapshots/power-evolve/conversation/snapshot.yml). Product tests use its user input and assistant response and compare the complete Session event by event. This Profile requires real PG and runs through the product test command; the four native `test:snapshot` Profile adapters do not own it.
