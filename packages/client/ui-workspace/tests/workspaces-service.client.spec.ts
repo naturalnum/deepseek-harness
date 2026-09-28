@@ -665,7 +665,8 @@ describe('UiWorkspaceService', () => {
       })
     })
     expect(warning).toHaveBeenCalledExactlyOnceWith('new session failed:', refused)
-    expect(b.sessions.retain).not.toHaveBeenCalled()
+    expect(b.sessions.retain).toHaveBeenNthCalledWith(1, sid('created-a'), { source: 'workspaceOperation' })
+    expect(b.sessions.retain).toHaveBeenNthCalledWith(2, sid('created-a'), { source: 'mainView' })
 
     // The hero picker reaches the same creation through openWorkspace; a
     // failure that is not a Host refusal keeps its own message.
@@ -676,6 +677,72 @@ describe('UiWorkspaceService', () => {
     await expect(b.uiWorkspace.openWorkspace(wid('a'))).rejects.toBe('rejected without an Error')
     expect(b.notify).toHaveBeenLastCalledWith({ kind: 'createFailed', message: 'rejected without an Error' })
     expect(b.notify).toHaveBeenCalledTimes(3)
+  })
+
+  it('hides the previous main Session until a New Session is ready', async () => {
+    const b = bench({ workspaces: workspaceState([workspace('a')]), sessions: sessionState([], 'pending') })
+    b.uiWorkspace.openSession(sid('previous'))
+    b.selectPanel.mockClear()
+    const created = Promise.withResolvers<SessionId>()
+    b.sessions.create.mockReturnValueOnce(created.promise)
+
+    b.uiWorkspace.startSession(wid('a'))
+
+    expect(b.sessions.retained[0]!.release).toHaveBeenCalledOnce()
+    expect(b.sessions.retain).toHaveBeenLastCalledWith(sid('previous'), { source: 'workspaceOperation' })
+    expect(b.selectPanel).not.toHaveBeenCalled()
+    created.resolve(sid('next'))
+    await vi.waitFor(() => {
+      expect(b.sessions.retain).toHaveBeenLastCalledWith(sid('next'), { source: 'mainView' })
+    })
+    expect(b.sessions.retained[1]!.release).toHaveBeenCalledOnce()
+  })
+
+  it('restores the previous main Session when New Session creation fails or a panel supersedes it', async () => {
+    for (const superseded of [false, true]) {
+      const b = bench({ workspaces: workspaceState([workspace('a')]), sessions: sessionState([], 'pending') })
+      b.uiWorkspace.openSession(sid('previous'))
+      b.selectPanel.mockClear()
+      const created = Promise.withResolvers<SessionId>()
+      b.sessions.create.mockReturnValueOnce(created.promise)
+      const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+      b.uiWorkspace.startSession(wid('a'))
+
+      if (superseded) {
+        b.layout.selectPanel('other-panel' as MainPanelId)
+        created.resolve(sid('late'))
+      } else {
+        created.reject(new Error('creation failed'))
+      }
+      await vi.waitFor(() => {
+        expect(b.sessions.retain).toHaveBeenLastCalledWith(sid('previous'), { source: 'mainView' })
+      })
+      expect(b.sessions.retained[1]!.release).toHaveBeenCalledOnce()
+      expect(b.selectPanel).toHaveBeenCalledTimes(superseded ? 1 : 0)
+      if (superseded) {
+        expect(b.sessions.retain).not.toHaveBeenCalledWith(sid('late'), { source: 'mainView' })
+        expect(b.notify).not.toHaveBeenCalled()
+        expect(warning).not.toHaveBeenCalled()
+      } else {
+        expect(b.notify).toHaveBeenCalledExactlyOnceWith({ kind: 'createFailed', message: 'creation failed' })
+        expect(warning).toHaveBeenCalledExactlyOnceWith('new session failed:', expect.any(Error))
+      }
+      warning.mockRestore()
+    }
+  })
+
+  it('does not restore the previous Session over a later explicit Session selection', async () => {
+    const b = bench({ workspaces: workspaceState([workspace('a')]), sessions: sessionState([], 'pending') })
+    b.uiWorkspace.openSession(sid('previous'))
+    const created = Promise.withResolvers<SessionId>()
+    b.sessions.create.mockReturnValueOnce(created.promise)
+    b.uiWorkspace.startSession(wid('a'))
+
+    b.uiWorkspace.openSession(sid('chosen'))
+    created.resolve(sid('late'))
+    await vi.waitFor(() => { expect(b.sessions.retained[1]!.release).toHaveBeenCalledOnce() })
+    expect(b.sessions.retain).toHaveBeenLastCalledWith(sid('chosen'), { source: 'mainView' })
+    expect(b.sessions.retain).not.toHaveBeenCalledWith(sid('late'), { source: 'mainView' })
   })
 
   it('uses only an explicit Workspace or the recent-Workspace policy for new Sessions', async () => {

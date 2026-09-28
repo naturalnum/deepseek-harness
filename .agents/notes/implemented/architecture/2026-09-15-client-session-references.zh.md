@@ -151,6 +151,7 @@ Conversation 的引用属于其视图所有者，不属于 Chat、Trajectory 或
 | --- | --- |
 | Session 列表高亮与空白记录处理 | 从 `retainedBy.mainView` 派生主区域占用，不按已挂载 Session Provider 的数量判断 |
 | New Session 的 Workspace | 优先使用显式 Workspace，其次按既有查找规则使用主 Session 的 Workspace，最后使用既有最近 Workspace 策略 |
+| 待完成的新建会话 | 暂以 `workspaceOperation` 引用持有原 Session，并释放其 `mainView` 引用，直到新目标打开；创建失败或导航被替代时，若没有其他主目标接管，则恢复原主视图 |
 | Onboarding | 判断主区域 Session 是否缺失或为空白，不判断所有历史 Session |
 | 浏览器文档标题 | Conversation 显示 Session 标题与产品标题；全局面板显示产品标题 |
 | Chat/Trajectory 恢复 | 为显式选中的主目标恢复视图；独立绑定的视图保留自己的状态 |
@@ -161,6 +162,8 @@ DOM 焦点移动或全局面板隐藏仍被持有的视图时，来源元数据�
 Conversation 保留 `hero`、`settling`、`active` 组合与既有历史加载和 `openError` 处理。获取引用不增加外层 loading/error 阶段展示、额外隐藏 composer 的条件、Retry 按钮或替换 Sidebar 内容的恢复面板。已有错误处理方继续处理自己的错误；没有错误展示的调用点不增加展示。Promise 拒绝与正确释放引用不意味着额外增加 UI 处理方。
 
 Workspace 连接保持既有导航检查与面板切换失效规则。侧边栏 fork 不替代尚未完成的导航。直接打开 Session 不增加全局导航取消策略。Agent Team 刷新保留发起时选择仍然有效的条件，不在刷新前启动全局导航 token。引用获取不扩大取消范围，不影响无关导航或正在执行的操作；本地取消不回滚 Host 效果。
+
+待完成的新建会话规则避免原 Session 的 composer 和执行位置选择器接收本应发往新 Session 的提示词。临时引用保留原 binding 与持久化选择以供恢复；本地导航替代不取消 Host 端已发起的创建。后续显式选择的 Session 优先于恢复原视图。
 
 ### 预设与创建流程
 
@@ -196,6 +199,10 @@ Gateway 持有本地引用，直到 handler 使用与回复结算均结束。Con
 
 **以 Provider 呈现决定确认或释放。** 挂载既不等于所有者生命周期，也不等于基于选择的确认。它无法决定哪些后台或暂时隐藏的使用仍应存活，或应当算作已查看。
 
+**新建会话期间继续显示原主视图。** 创建尚未完成时，原 composer 可以接收执行位置选择，随后却在使用默认目标的新 Session 中提交提示词。临时的非主视图引用既保护恢复所需状态，也让原 composer 停止交互。
+
+**直接清空原 Session。** 丢弃其引用会连同 binding 持有的草稿状态一起丢失；创建失败时也无法恢复原主视图。
+
 **Provider 中的裸 ID 或全局 binding revision。** ID 不表达代际所有权，全局刷新会使无关 Session 使用方失效。
 
 **每个行动各自获取引用。** Provider 已经定义 Conversation 的使用生命周期；为每次点击重复持有会把视图所有权拆成大量细粒度来源。只有明确需要越过 Provider 生命周期的工作才另行持有引用。
@@ -213,6 +220,7 @@ Gateway 持有本地引用，直到 handler 使用与回复结算均结束。Con
 - UI 状态测试覆盖待处理优先级与清理、会被快照合批丢失的事件变化、初始与重连基线、主来源确认、无关来源持有，以及不存在 Provider 呈现事件。
 - 视图验证覆盖两个不同 Session 和同一 Session 多次使用的并行显式 Provider、互不重定向的 Conversation、独立 Slot store、作用域 preset、descriptor 更新，以及没有新恢复控件的 Sidebar 生命周期。
 - 实际组合浏览器场景保持主区域高亮、空白记录、onboarding、Workspace 默认值、标题与约定的导航或错误行为。只有 Client 所有权改变时，已有模型轮次录制仍作为行为输入。
+- Workspace 导航测试覆盖新建会话待完成时隐藏原视图、失败后恢复，以及面板和显式 Session 导航替代。本地 Web 试用通过不同 Session 的持久化操作及其桌面执行目标，核对新建后立即选择本地的行为。
 - 公开 `retain`、`using`、Provider、生成 API 目录、包约定与类型检查对 options 和所有权保持一致。Provider 子树不读取主区域引用，独立所有者各自释放自己的引用。
 
 ## 后果
@@ -224,3 +232,5 @@ Gateway 持有本地引用，直到 handler 使用与回复结算均结束。Con
 每次公开 `retain` 都会启动该 generation 共享的首次历史打开，包括普通 Session 重命名所用的临时引用。Fork 标题设置直接发送 rename 并应用返回的投影，不获取 Client 引用，也不读取历史。因此，仅修改元数据的 fork 操作不会创建列表临时行或切换主视图。
 
 目录、UI 状态与视图目标由不同所有者管理，可以独立发布。使用方不能仅从通知顺序推断生命周期变化。主视图仍是普通引用所有者，其导航与展示规则留在 UI，不进入引用分配器。
+
+新建会话尚未完成时，主 Conversation 暂无 composer。原 Session 的临时引用让 binding 持有的草稿可供恢复，并在成功、失败、导航替代或所有者销毁时释放。

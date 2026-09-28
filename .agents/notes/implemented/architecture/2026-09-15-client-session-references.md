@@ -151,6 +151,7 @@ The main view privately persists its target identity and subagent address under 
 | --- | --- |
 | Session-list highlight and blank-row treatment | Derive main-area occupancy from `retainedBy.mainView`, not the number of mounted Session Providers |
 | New Session Workspace | Explicit Workspace first, then the main Session's Workspace under the existing lookup rule, then the existing recent-Workspace policy |
+| Pending New Session | Hold the previous Session as a `workspaceOperation` reference and release its `mainView` reference until the new target opens; restore the previous main view on creation failure or navigation supersession unless another main target has taken over |
 | Onboarding | Evaluate absence or blankness of the main-area Session, not all historical Sessions |
 | Browser document title | Conversation shows Session title plus product title; a global panel shows product title |
 | Chat/Trajectory restoration | Restore the view for the explicitly selected main target; independently bound views keep their own state |
@@ -161,6 +162,8 @@ Source metadata does not change when DOM focus moves or when a global panel hide
 Conversation retains its `hero`, `settling`, and `active` composition and existing history-loading and `openError` handling. Acquisition adds no outer loading/error phase presentation, extra composer-hiding condition, Retry button, or replacement Sidebar recovery panel. Existing error handlers continue to handle their errors; call sites without error presentation gain none. Promise rejection and correct reference release do not imply an additional UI handler.
 
 Workspace connection preserves its navigation guards and panel-switch invalidation. Sidebar fork does not supersede an in-flight navigation. Direct Session opening gains no additional global-navigation cancellation policy. Agent Team refresh preserves its originating-selection validity condition instead of starting a global navigation token before refresh. Reference acquisition does not broaden cancellation to unrelated navigation or running operations, and local cancellation does not roll back Host effects.
+
+The pending New Session rule prevents the previous Session's composer and execution-target picker from accepting a prompt intended for the new Session. It retains the previous generation and persisted selection for recovery, while the pending Host creation continues after local navigation supersession. A later explicit Session selection takes precedence over restoration.
 
 ### Presets and creation flows
 
@@ -196,6 +199,10 @@ Gateway owns the local reference until both handler use and reply settlement end
 
 **Provider presence as acknowledgement or release.** Mounting is neither an owner's lifetime nor selection-based acknowledgement. It cannot decide which background or temporarily hidden uses remain alive or count as viewed.
 
+**Keep the previous main view during New Session creation.** The old composer can accept an execution-target choice while creation is pending, then submit the prompt in the new Session with its default target. A temporary non-main reference protects recovery without leaving the old composer interactive.
+
+**Clear the previous Session outright.** Discarding its reference also discards binding-owned draft state and leaves creation failure with no previous main view to restore.
+
 **Bare ids in Providers or a global binding revision.** An id does not express generation ownership, and global refresh invalidates unrelated Session consumers.
 
 **A reference for every action.** The Provider already defines the Conversation's usage lifetime. Reacquiring for every click fragments view ownership into fine-grained sources. Only work that must outlive the Provider acquires another reference.
@@ -213,6 +220,7 @@ Gateway owns the local reference until both handler use and reply settlement end
 - UI status tests cover pending precedence and teardown, event transitions lost by snapshot batching, initial and reconnect baselines, main-source acknowledgement, unrelated-source retention, and no Provider-presence event.
 - View tests cover explicit Providers for two different Sessions and for repeated uses of one Session, scoped presets, descriptor updates, and Sidebar occurrence/adoption lifetimes without new recovery controls.
 - Assembled browser scenarios preserve main-area highlighting, blank rows, onboarding, Workspace defaults, titles, and the defined navigation/error behavior. Existing recorded model turns remain the behavioral input when only Client ownership changes.
+- Workspace navigation tests cover pending New Session suspension, failure restoration, panel and explicit-Session supersession. A native Web trial verifies immediate local selection after New Session through distinct persisted Session operations and their desktop execution targets.
 - The public `retain` and `using` consumers, generated API catalogs, package contracts, and type checks agree on options and ownership. The helper keeps references through callback settlement and propagates both acquisition and operation failures.
 
 ## Consequences
@@ -224,3 +232,5 @@ Final release discards non-persisted binding-owned state, including loaded histo
 Every public `retain`, including the temporary reference used by ordinary Session rename, starts the generation's shared initial history opening. Fork-title assignment instead sends rename directly and applies its returned projection without a Client reference or history I/O. A metadata-only fork operation therefore cannot create a temporary list row or switch the main view.
 
 The catalog, UI status, and view target have separate owners and can publish independently. Their consumers must not infer a lifecycle transition solely from notification order. The main view remains an ordinary reference owner, while its navigation and presentation rules stay in UI rather than the reference allocator.
+
+While New Session creation is pending, the main Conversation has no composer. The temporary previous-Session reference keeps its binding-owned draft recoverable and is released on success, failure, supersession, or owner disposal.

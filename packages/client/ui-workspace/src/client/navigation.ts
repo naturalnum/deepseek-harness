@@ -25,6 +25,10 @@ interface MainSelection {
   readonly subagentAddress?: SubagentAddress
 }
 
+interface PendingNewSession {
+  readonly previous: SessionReference | undefined
+}
+
 /** Workspace archive and directory operations consumed by Client UI domains. */
 export interface UiWorkspace {
   /**
@@ -130,6 +134,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     {}, { persist: { name: 'dsh.sessions.current' } },
   )
   private mainReference: SessionReference | undefined
+  private pendingNewSession: PendingNewSession | undefined
 
   /**
    * @param ctx - Client root Context.
@@ -202,6 +207,14 @@ class UiWorkspaceService extends Service implements UiWorkspace {
 
   async openWorkspace(workspaceId: WorkspaceId, beforeOpen?: (sessionId: SessionId) => void): Promise<void> {
     const navigation = AbortSignal.any([this.ctx.layout.beginNavigation(), this.lifetime.signal])
+    return this.openWorkspaceForNavigation(workspaceId, navigation, beforeOpen)
+  }
+
+  private async openWorkspaceForNavigation(
+    workspaceId: WorkspaceId,
+    navigation: AbortSignal,
+    beforeOpen?: (sessionId: SessionId) => void,
+  ): Promise<void> {
     let sessionId: SessionId
     try {
       sessionId = await this.connectWorkspace(workspaceId)
@@ -220,9 +233,10 @@ class UiWorkspaceService extends Service implements UiWorkspace {
   }
 
   startSession(workspaceId?: WorkspaceId): void {
+    if (this.lifetime.signal.aborted) return
     const workspace = this.workspaces.list.getSnapshot()
     const sessions = this.sessions.list.getSnapshot()
-    const current = this.mainReference?.sessionId
+    const current = this.mainReference?.sessionId ?? this.pendingNewSession?.previous?.sessionId
     const currentWorkspaceId = current === undefined
       ? undefined
       : workspace.items.find(item => item.sessionIds.includes(current))?.workspaceId
@@ -234,9 +248,19 @@ class UiWorkspaceService extends Service implements UiWorkspace {
       this.clearMain()
       return
     }
-    void this.openWorkspace(target).catch(
-      (reason: unknown) => { console.warn('new session failed:', reason) },
-    )
+    const previous = this.pendingNewSession?.previous ?? (this.mainReference === undefined
+      ? undefined : this.sessions.retain(this.mainReference.sessionId, { source: 'workspaceOperation' }))
+    const currentReference = this.mainReference
+    this.mainReference = undefined
+    currentReference?.release()
+    const pending: PendingNewSession = { previous }
+    this.pendingNewSession = pending
+    const navigation = AbortSignal.any([this.ctx.layout.beginNavigation(), this.lifetime.signal])
+    navigation.addEventListener('abort', () => { this.settleNewSession(pending) }, { once: true })
+    void this.openWorkspaceForNavigation(target, navigation).catch((reason: unknown) => {
+      this.settleNewSession(pending)
+      console.warn('new session failed:', reason)
+    })
   }
 
   async archiveSession(sessionId: SessionId, options: { readonly stopActivity?: boolean } = {}): Promise<void> {
@@ -364,11 +388,30 @@ class UiWorkspaceService extends Service implements UiWorkspace {
   }
 
   private clearMain(): void {
+    this.pendingNewSession?.previous?.release()
+    this.pendingNewSession = undefined
     const previous = this.mainReference
     this.mainReference = undefined
     this.selection.set({})
     previous?.release()
     this.ctx.layout.selectPanel(null)
+  }
+
+  private settleNewSession(pending: PendingNewSession): void {
+    if (this.pendingNewSession !== pending) return
+    this.pendingNewSession = undefined
+    const previous = pending.previous
+    if (previous === undefined) return
+    try {
+      if (!this.lifetime.signal.aborted && this.mainReference === undefined
+        && !this.workspaces.list.getSnapshot().archivedSessionIds.includes(previous.sessionId)) {
+        this.replaceMain(previous.sessionId, this.lifetime.signal, 'preserve')
+      }
+    } catch (error: unknown) {
+      console.warn('previous session restoration failed:', error)
+    } finally {
+      previous.release()
+    }
   }
 
   private replaceMain(
