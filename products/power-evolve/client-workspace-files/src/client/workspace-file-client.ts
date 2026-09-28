@@ -18,7 +18,7 @@ function uploadName(file: File): string {
   return name
 }
 
-function encode(bytes: Uint8Array): string {
+export function encodeWorkspaceBytes(bytes: Uint8Array): string {
   const chunks: string[] = []
   for (let offset = 0; offset < bytes.length; offset += 8192) {
     chunks.push(String.fromCharCode(...bytes.subarray(offset, offset + 8192)))
@@ -36,7 +36,7 @@ export class WorkspaceFileHttpClient {
     if (file.size > maxFileBytes) throw new Error('File exceeds upload limit')
     const requestId = crypto.randomUUID()
     const path = `uploads/${requestId}/${name}`
-    const data = encode(new Uint8Array(await file.arrayBuffer()))
+    const data = encodeWorkspaceBytes(new Uint8Array(await file.arrayBuffer()))
     signal.throwIfAborted()
     const response = await this.request('/api/powerEvolve/filePut', { method: 'POST',
       credentials: 'same-origin', headers: { 'content-type': 'application/json' }, signal,

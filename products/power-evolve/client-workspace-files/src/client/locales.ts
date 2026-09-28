@@ -10,6 +10,20 @@ export const zh = {
   downloadLimit: '文件超过当前下载大小限制',
   downloadDenied: '没有下载此文件的权限',
   downloadFailed: '文件下载失败，请重试',
+  edit: '编辑文本',
+  editTitle: '编辑文件：{name}',
+  editText: '文件内容',
+  close: '关闭',
+  cancelEdit: '取消',
+  saveEdit: '保存',
+  loadingEdit: '正在读取文件…',
+  savingEdit: '正在保存…',
+  editBinary: '此文件不是 UTF-8 文本，无法在这里编辑',
+  editLarge: '文件超过当前编辑大小限制',
+  editConflict: '文件已被其他操作修改。请关闭后重新打开，再决定如何处理更改。',
+  editDenied: '没有编辑此文件的权限',
+  editMissing: '文件已不存在，请刷新后重试',
+  editFailed: '文件编辑失败，请重试',
 } as const
 
 export const en: Record<keyof typeof zh, string> = {
@@ -24,6 +38,20 @@ export const en: Record<keyof typeof zh, string> = {
   downloadLimit: 'File exceeds the current download size limit.',
   downloadDenied: 'You cannot download this file.',
   downloadFailed: 'File download failed. Try again.',
+  edit: 'Edit text',
+  editTitle: 'Edit file: {name}',
+  editText: 'File contents',
+  close: 'Close',
+  cancelEdit: 'Cancel',
+  saveEdit: 'Save',
+  loadingEdit: 'Reading file…',
+  savingEdit: 'Saving…',
+  editBinary: 'This is not UTF-8 text and cannot be edited here.',
+  editLarge: 'File exceeds the current editing size limit.',
+  editConflict: 'Another operation changed this file. Close and reopen it before deciding how to handle your edits.',
+  editDenied: 'You cannot edit this file.',
+  editMissing: 'File no longer exists. Refresh and try again.',
+  editFailed: 'File editing failed. Try again.',
 
 }
 

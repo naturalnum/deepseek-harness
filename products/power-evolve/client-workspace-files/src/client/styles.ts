@@ -13,6 +13,11 @@ const CSS = `
 .pe-workspace-download-button:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}
 .pe-workspace-download-button:disabled{opacity:.45;cursor:not-allowed}
 .pe-workspace-download-error{position:absolute;z-index:20;right:0;top:32px;width:220px;max-width:60vw;padding:8px 10px;border-radius:6px;background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-state-error-primary);box-shadow:0 2px 12px #0002;font-size:12px;white-space:normal}
+.pe-workspace-edit{display:inline-flex;align-items:center}
+.pe-workspace-edit-modal{width:min(900px,calc(100vw - 32px))}
+.pe-workspace-edit-modal textarea{box-sizing:border-box;width:100%;min-height:min(52vh,500px);resize:vertical;padding:12px;border:1px solid var(--dsw-alias-border-primary,#ccc);border-radius:6px;background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-primary);font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;tab-size:2}
+.pe-workspace-edit-modal textarea:focus-visible,.pe-workspace-download-button:focus-visible{outline:2px solid currentColor;outline-offset:2px}
+.pe-workspace-edit-modal [role=alert]{color:var(--dsw-alias-state-error-primary);font-size:12px}
 `
 
 export function installWorkspaceFileStyles(): () => void {

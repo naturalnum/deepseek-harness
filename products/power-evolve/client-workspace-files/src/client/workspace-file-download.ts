@@ -4,6 +4,7 @@ const maxBytes = 2 * 1024 * 1024
 
 export interface DownloadedFile {
   readonly name: string
+  readonly revision: string
   readonly bytes: Uint8Array<ArrayBuffer>
 }
 
@@ -36,13 +37,14 @@ export class WorkspaceFileDownloadClient {
     const value: unknown = await response.json()
     if (typeof value !== 'object' || value === null || !('path' in value) || value.path !== path
       || !('size' in value) || typeof value.size !== 'number' || value.size > maxBytes || value.size < 0
+      || !('revision' in value) || typeof value.revision !== 'string' || !/^[a-f0-9]{64}$/.test(value.revision)
       || !('data' in value) || typeof value.data !== 'string') throw new Error('Invalid file response')
     const binary = atob(value.data)
     if (binary.length !== value.size) throw new Error('File size mismatch')
     const bytes = new Uint8Array(binary.length)
     for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index)
     signal.throwIfAborted()
-    return { name: path.split('/').at(-1)!, bytes }
+    return { name: path.split('/').at(-1)!, revision: value.revision, bytes }
   }
 }
 
