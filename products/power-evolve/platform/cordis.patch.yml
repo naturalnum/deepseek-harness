@@ -14,6 +14,7 @@
       config:
         databaseUrlFile: !!js process.env.PE_PRIVATE_DIR + '/database-url'
         workspaceRoot: !!js process.env.PE_WORKSPACE_ROOT || process.env.PE_PRIVATE_DIR + '/workspaces'
+        artifactRoot: !!js process.env.PE_ARTIFACT_ROOT || process.env.PE_PRIVATE_DIR + '/artifacts'
         sandboxKubeconfigFile: !!js process.env.PE_KUBECONFIG_FILE || ''
         sandboxKeyFile: !!js process.env.PE_PRIVATE_DIR + '/runner-key'
         sandboxNamespace: !!js process.env.PE_SANDBOX_NAMESPACE || ''

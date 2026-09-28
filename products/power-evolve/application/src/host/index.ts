@@ -1,5 +1,6 @@
 /** Authenticated product RPC carrier over the native Typert Gateway. */
 import { randomUUID } from 'node:crypto'
+import { once } from 'node:events'
 import { writeFile } from 'node:fs/promises'
 import { setTimeout as delay } from 'node:timers/promises'
 import { Context } from '@deepseek-ai/cordis'
@@ -21,6 +22,10 @@ import { Scheduler } from './scheduler.ts'
 const requests = { me: z.object({}).strict(), logout: z.object({}).strict(), create: createRequest, list: listRequest, prompt: promptRequest, page: pageRequest, follow: pageRequest,
   filesList: filesListRequest, fileRead: fileReadRequest, filePut: filePutRequest, skillsList: z.object({}).strict(), skillsRead: skillRequest,
   skillsInstall: skillInstallRequest, skillsToggle: skillToggleRequest, actionsList: z.object({}).strict(),
+  artifactsPublish: z.object({ requestId: z.uuid(), sessionId: z.uuid(), path: z.string().min(1).max(512) }).strict(),
+  artifactsList: z.object({ workspaceId: z.uuid().optional(), sessionId: z.uuid().optional(),
+    cursor: z.uuid().optional(), limit: z.number().int().min(1).max(100).optional() }).strict(),
+  artifactsPreview: z.object({ artifactId: z.uuid() }).strict(),
   executionsList: z.object({}).strict(), executionCancel: z.object({ executionId: z.uuid() }).strict(),
   devicesList: z.object({}).strict(), devicesPair: z.object({}).strict(),
   devicesRevoke: z.object({ deviceId: z.uuid() }).strict(),
@@ -28,6 +33,7 @@ const requests = { me: z.object({}).strict(), logout: z.object({}).strict(), cre
 const endpoint = { me: '/identity/me', logout: '/identity/logout', create: '/sessions/create', list: '/sessions/list', prompt: '/sessions/prompt', page: '/sessions/page',
   filesList: '/files/list', fileRead: '/files/read', filePut: '/files/put', skillsList: '/skills/list', skillsRead: '/skills/read',
   skillsInstall: '/skills/install', skillsToggle: '/skills/toggle', actionsList: '/connectors/actions',
+  artifactsPublish: '/artifacts/publish', artifactsList: '/artifacts/list', artifactsPreview: '/artifacts/preview',
   executionsList: '/executions/list', executionCancel: '/executions/cancel',
   devicesList: '/devices/list', devicesPair: '/devices/pair',
   devicesRevoke: '/devices/revoke', directoriesRevoke: '/devices/directories/revoke' } as const
@@ -60,6 +66,9 @@ class ProductRemote extends TypertRemoteService {
   @Remote skillsInstall(request: z.infer<typeof skillInstallRequest>) { return this.call('skillsInstall', request) }
   @Remote skillsToggle(request: z.infer<typeof skillToggleRequest>) { return this.call('skillsToggle', request) }
   @Remote actionsList(request: z.infer<typeof requests.actionsList>) { return this.call('actionsList', request) }
+  @Remote artifactsPublish(request: z.infer<typeof requests.artifactsPublish>) { return this.call('artifactsPublish', request) }
+  @Remote artifactsList(request: z.infer<typeof requests.artifactsList>) { return this.call('artifactsList', request) }
+  @Remote artifactsPreview(request: z.infer<typeof requests.artifactsPreview>) { return this.call('artifactsPreview', request) }
   @Remote executionsList(request: z.infer<typeof requests.executionsList>) { return this.call('executionsList', request) }
   @Remote executionCancel(request: z.infer<typeof requests.executionCancel>) { return this.call('executionCancel', request) }
   @Remote devicesList(request: z.infer<typeof requests.devicesList>) { return this.call('devicesList', request) }
@@ -130,6 +139,31 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       if (req.method === 'GET' && path === '/config') { sendJson(res, { loginUrl: `${config.platformOrigin}/login`,
         approvalUrl: `${config.platformOrigin}/approval`, deviceOrigin: config.deviceOrigin }); return }
       if (req.method === 'GET' && await serveNativeUi(path, res)) return
+      const artifactContent = /^\/api\/powerEvolve\/artifacts\/([^/]+)\/content$/u.exec(path)
+      if (req.method === 'GET' && artifactContent) {
+        const artifactId = z.uuid().parse(artifactContent[1])
+        const credential = await browserAuth.authenticate(req, true)
+        const upstream = await fetch(`${config.platformOrigin}/artifacts/${artifactId}/content`, {
+          headers: { authorization: `Bearer ${credential.token}` }, signal: abort.signal,
+        })
+        if (!upstream.ok || !upstream.body) throw new PlatformError(upstream.status === 404 ? 404 : 503, 'artifact_unavailable')
+        const length = Number(upstream.headers.get('content-length'))
+        if (!Number.isInteger(length) || length < 0 || length > 2 * 1024 * 1024) throw new PlatformError(503, 'artifact_unavailable')
+        res.writeHead(200, { 'content-type': 'application/octet-stream',
+          'content-disposition': upstream.headers.get('content-disposition') ?? 'attachment',
+          'content-length': String(length), 'cache-control': 'no-store',
+          'x-content-type-options': 'nosniff' })
+        let received = 0
+        for await (const chunk of upstream.body) {
+          abort.signal.throwIfAborted()
+          received += chunk.byteLength
+          if (received > length) throw new PlatformError(503, 'artifact_unavailable')
+          if (!res.write(chunk)) await once(res, 'drain', { signal: abort.signal })
+        }
+        if (received !== length) throw new PlatformError(503, 'artifact_unavailable')
+        res.end()
+        return
+      }
       if (path === '/auth/exchange') {
         if (url.search) throw new PlatformError(400, 'invalid_request')
         await browserAuth.exchange(req, res)

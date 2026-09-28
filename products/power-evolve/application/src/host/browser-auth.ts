@@ -94,7 +94,7 @@ export class BrowserAgentAuth {
    * @param request - product RPC or native API request, including WebSocket upgrade.
    * @returns the current Agent credential and platform identity.
    */
-  async authenticate(request: IncomingMessage): Promise<{ token: string; fromCookie: boolean; user: z.infer<typeof agentIdentity> }> {
+  async authenticate(request: IncomingMessage, safeGet = false): Promise<{ token: string; fromCookie: boolean; user: z.infer<typeof agentIdentity> }> {
     const cookie = cookieToken(request, this.hostOrigin)
     if (request.headers.authorization !== undefined) {
       if (cookie !== undefined) throw new PlatformError(401, 'ambiguous_credential')
@@ -104,7 +104,10 @@ export class BrowserAgentAuth {
       const token = bearer(request)
       return { token, fromCookie: false, user: agentIdentity.parse(await this.verifier.call('/identity/me', token, {})) }
     }
-    if (request.headers.origin !== this.hostOrigin) throw new PlatformError(403, 'invalid_origin')
+    const sameOriginNavigation = safeGet && request.method === 'GET' && request.headers.origin === undefined
+      && (request.headers['sec-fetch-site'] === undefined
+        || request.headers['sec-fetch-site'] === 'same-origin' || request.headers['sec-fetch-site'] === 'none')
+    if (request.headers.origin !== this.hostOrigin && !sameOriginNavigation) throw new PlatformError(403, 'invalid_origin')
     if (!cookie) throw new PlatformError(401, 'unauthorized')
     return { token: cookie, fromCookie: true, user: agentIdentity.parse(await this.verifier.call('/identity/me', cookie, {})) }
   }

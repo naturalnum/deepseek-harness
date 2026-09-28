@@ -257,3 +257,26 @@ INSERT INTO pe_mount_slots(user_id,session_id,workspace_id,generation,state,
   WHERE i.state IN ('creating','ready','deleting','unknown');
 UPDATE pe_schema SET version=9 WHERE version=8;
 `
+
+/** Record immutable artifacts outside writable Sandbox mounts. */
+export const schemaV10 = `
+CREATE TABLE pe_artifacts (
+  id uuid PRIMARY KEY,
+  user_id uuid NOT NULL REFERENCES pe_users(id),
+  workspace_id uuid NOT NULL,
+  session_id uuid NOT NULL,
+  request_id uuid NOT NULL,
+  source_path text NOT NULL,
+  filename text NOT NULL,
+  mime text NOT NULL,
+  size_bytes bigint NOT NULL CHECK (size_bytes BETWEEN 0 AND 2097152),
+  sha256 text NOT NULL CHECK (sha256 ~ '^[a-f0-9]{64}$'),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(user_id,request_id),
+  FOREIGN KEY (workspace_id,user_id) REFERENCES pe_workspaces(id,user_id),
+  FOREIGN KEY (session_id,user_id,workspace_id) REFERENCES pe_sessions(id,user_id,workspace_id)
+);
+CREATE INDEX pe_artifacts_user_page ON pe_artifacts(user_id,created_at DESC,id DESC);
+CREATE INDEX pe_artifacts_workspace_page ON pe_artifacts(workspace_id,created_at DESC,id DESC);
+UPDATE pe_schema SET version=10 WHERE version=9;
+`

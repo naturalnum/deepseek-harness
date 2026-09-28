@@ -1,6 +1,7 @@
 /** Trusted platform profile: identity, durable tasks/events, and credentialed model egress. */
 import { readFile, writeFile } from 'node:fs/promises'
 import { randomUUID, timingSafeEqual } from 'node:crypto'
+import { relative, resolve } from 'node:path'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
@@ -17,6 +18,7 @@ import { NativeSessionRead, nativeFollowRequest, nativePageRequest } from './nat
 import { NativeWorkspaceRead } from './native-workspace-read.ts'
 import { NativeFileRead, nativeFileRequest, nativeFileTextRequest, nativeFileBytesRequest } from './native-files.ts'
 import { FileService } from './files.ts'
+import { ArtifactService } from './artifacts.ts'
 import { SkillService } from './skills.ts'
 import { ConnectorService } from './connectors.ts'
 import { ExecutionService } from './executions.ts'
@@ -32,7 +34,7 @@ export const inject = ['webServer']
 /** Platform settings contain file references; profile dumps do not contain secret values. */
 export const Config = schema.object({
   databaseUrlFile: schema.string().required(), workerTokenFile: schema.string().required(),
-  workspaceRoot: schema.string().required(),
+  workspaceRoot: schema.string().required(), artifactRoot: schema.string().required(),
   modelKeyFile: schema.string().required(), connectorKeyFile: schema.string().required(), seedUsersFile: schema.string().required(),
   modelUrl: schema.string().required(), hostOrigin: schema.string().required(), platformOrigin: schema.string().required(),
   connectorUrl: schema.string().required(), connectorTimeoutMs: schema.number().min(1000).required(),
@@ -75,6 +77,12 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     || !config.sandboxLocalRoot || !config.sandboxNodeRoot)) throw new Error('Incomplete Agent Sandbox configuration')
   const files = new FileService(pool, config.workspaceRoot, executionEnabled ? { uid: 1000, gid: 1000 } : undefined)
   await files.init()
+  const artifactRelative = relative(resolve(config.workspaceRoot), resolve(config.artifactRoot))
+  if (!artifactRelative || !artifactRelative.startsWith('..')) {
+    throw new Error('Artifact root cannot be inside the writable workspace root')
+  }
+  const artifacts = new ArtifactService(pool, files, config.artifactRoot)
+  await artifacts.init()
   const skills = new SkillService(pool, config.workspaceRoot)
   await skills.init()
   const users = seedUsers.parse(JSON.parse(seeds))
@@ -105,9 +113,21 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
 
   const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const path = new URL(req.url ?? '/', config.platformOrigin).pathname
-    if (req.method === 'GET' && path === '/health') { sendJson(res, { ready: true, service: 'platform', schema: 9, executionEnabled, instanceId }); return }
+    if (req.method === 'GET' && path === '/health') { sendJson(res, { ready: true, service: 'platform', schema: 10, executionEnabled, instanceId }); return }
     if (req.method === 'GET' && path === '/config') { sendJson(res, { hostUrl: config.hostOrigin }); return }
     if (req.method === 'GET' && await serveUi(path, 'login', res, config.hostOrigin)) return
+    const artifactContent = /^\/artifacts\/([^/]+)\/content$/u.exec(path)
+    if (req.method === 'GET' && artifactContent) {
+      const user = await identities.authenticate(bearer(req))
+      const artifactId = z.uuid().parse(artifactContent[1])
+      const { record, bytes } = await artifacts.bytes(user, artifactId)
+      res.writeHead(200, { 'content-type': 'application/octet-stream',
+        'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(record.filename)}`,
+        'content-length': String(bytes.length), 'cache-control': 'no-store',
+        'x-content-type-options': 'nosniff' })
+      res.end(bytes)
+      return
+    }
     if (req.method !== 'POST') throw new PlatformError(404, 'not_found')
     if (path === '/model/v1/messages') {
       await proxyModel(tasks, {
@@ -285,6 +305,19 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       case '/workspaces/create': {
         const value = workspaceCreateRequest.parse(input)
         sendJson(res, await nativeWorkspaces.create(user, value.requestId, value.title)); return
+      }
+      case '/artifacts/publish': {
+        const value = z.object({ requestId: z.uuid(), sessionId: z.uuid(), path: z.string().min(1).max(512) }).strict().parse(input)
+        sendJson(res, await artifacts.publish(user, value.requestId, value.sessionId, value.path)); return
+      }
+      case '/artifacts/list': {
+        const value = z.object({ workspaceId: z.uuid().optional(), sessionId: z.uuid().optional(),
+          cursor: z.uuid().optional(), limit: z.number().int().min(1).max(100).default(50) }).strict().parse(input)
+        sendJson(res, await artifacts.list(user, value)); return
+      }
+      case '/artifacts/preview': {
+        const value = z.object({ artifactId: z.uuid() }).strict().parse(input)
+        sendJson(res, await artifacts.preview(user, value.artifactId)); return
       }
       case '/native/sessions/page': {
         sendJson(res, await nativeSessions.page(user, nativePageRequest.parse(input))); return
