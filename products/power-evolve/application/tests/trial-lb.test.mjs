@@ -51,13 +51,15 @@ test('trial load balancer forwards native WebSocket and the public Host', { time
   })
   const first = await listen(backends[0])
   const second = await listen(backends[1])
+  const platformPort = 18900
   const reservation = createServer()
   const port = await listen(reservation)
   await new Promise(resolve => reservation.close(resolve))
   const child = spawn(process.execPath, [trialLb], {
     cwd: root,
     env: { ...process.env, PE_LOAD_BALANCER_PORT: String(port), PE_HOST_PORT: String(first),
-      PE_HOST_SECOND_PORT: String(second), PE_READY_FILE: join(temporary, 'ready.json') },
+      PE_HOST_SECOND_PORT: String(second), PE_MULTI_PLATFORM: '1',
+      PE_PLATFORM_LOAD_BALANCER_PORT: String(platformPort), PE_READY_FILE: join(temporary, 'ready.json') },
     stdio: ['ignore', 'pipe', 'pipe'],
   })
   let output = ''
@@ -82,6 +84,16 @@ test('trial load balancer forwards native WebSocket and the public Host', { time
   const response = await fetch(`${origin}/native/api/session/list`, { method: 'POST', body: '{}' })
   assert.equal(response.status, 200)
   assert.equal(seen[0].host, `127.0.0.1:${port}`)
+  const platformOrigin = `http://127.0.0.1:${platformPort}`
+  const exchange = await fetch(`${origin}/auth/exchange`, {
+    method: 'OPTIONS', headers: { origin: platformOrigin },
+  })
+  assert.equal(exchange.status, 200)
+  assert.equal(seen.at(-1).path, '/auth/exchange')
+  const unrelated = await fetch(`${origin}/native/api/session/list`, {
+    method: 'POST', headers: { origin: platformOrigin }, body: '{}',
+  })
+  assert.equal(unrelated.status, 403)
   const invalidHost = await new Promise((resolve, reject) => {
     const request = httpRequest(`${origin}/native/api/session/list`, {
       method: 'POST', headers: { host: 'wrong.example' },

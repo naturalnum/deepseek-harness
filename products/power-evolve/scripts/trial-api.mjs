@@ -16,6 +16,8 @@ try { notes = JSON.parse(await readFile(dataFile, 'utf8')) }
 catch (error) { if (error.code !== 'ENOENT') throw error; notes = [] }
 if (!Array.isArray(notes)) throw new Error('Invalid trial API data')
 let writes = Promise.resolve()
+let dropAfterPersist = process.env.PE_TARGET_DROP_AFTER_PERSIST === '1'
+let notePostAttempts = 0
 
 function send(res, status, body) {
   res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' })
@@ -48,7 +50,9 @@ async function persist() {
 const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url ?? '/', `http://127.0.0.1:${port}`)
-    if (req.method === 'GET' && url.pathname === '/health') { send(res, 200, { ready: true, service: 'trial-api', instanceId }); return }
+    if (req.method === 'GET' && url.pathname === '/health') {
+      send(res, 200, { ready: true, service: 'trial-api', instanceId, notePostAttempts }); return
+    }
     if (!authorized(req)) { send(res, 401, { error: 'unauthorized' }); return }
     if (req.method === 'GET' && url.pathname === '/v1/notes') {
       const owner = url.searchParams.get('owner')
@@ -61,6 +65,7 @@ const server = createServer(async (req, res) => {
       send(res, found ? 200 : 404, found ?? { error: 'not_found' }); return
     }
     if (req.method === 'POST' && url.pathname === '/v1/notes') {
+      notePostAttempts++
       const actionId = req.headers['idempotency-key']
       const input = await body(req)
       if (typeof actionId !== 'string' || !/^[a-f0-9-]{36}$/.test(actionId)
@@ -79,6 +84,11 @@ const server = createServer(async (req, res) => {
       })
       writes = operation.then(() => undefined, () => undefined)
       const result = await operation
+      if (dropAfterPersist && result.status === 201) {
+        dropAfterPersist = false
+        res.destroy()
+        return
+      }
       send(res, result.status, result.value); return
     }
     send(res, 404, { error: 'not_found' })

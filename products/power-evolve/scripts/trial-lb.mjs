@@ -13,13 +13,18 @@ const instanceId = randomUUID()
 let cursor = 0
 const upgraded = new Set()
 const publicHost = `127.0.0.1:${port}`
+const platformPort = process.env.PE_MULTI_PLATFORM === '1'
+  ? process.env.PE_PLATFORM_LOAD_BALANCER_PORT ?? '18900'
+  : process.env.PE_PLATFORM_PORT ?? '18881'
+const platformOrigin = `http://127.0.0.1:${platformPort}`
 function choose() {
   const choices = backends.filter(backend => backend.healthy)
   return choices.length ? choices[cursor++ % choices.length] : undefined
 }
 function authorityValid(request) {
   return request.headers.host === publicHost
-    && (request.headers.origin === undefined || request.headers.origin === `http://${publicHost}`)
+    && (request.headers.origin === undefined || request.headers.origin === `http://${publicHost}`
+      || (request.url === '/auth/exchange' && request.headers.origin === platformOrigin))
 }
 async function probe() {
   await Promise.all(backends.map(async backend => {

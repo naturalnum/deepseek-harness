@@ -15,6 +15,9 @@ const port = (key, fallback) => {
 const databasePort = port('PE_DATABASE_PORT', 18432)
 const hostPort = port('PE_HOST_PORT', 18880)
 const platformPort = port('PE_PLATFORM_PORT', 18881)
+const multiPlatform = process.env.PE_MULTI_PLATFORM === '1'
+const platformSecondPort = port('PE_PLATFORM_SECOND_PORT', 18899)
+const platformLoadBalancerPort = port('PE_PLATFORM_LOAD_BALANCER_PORT', 18900)
 const targetPort = port('PE_TARGET_PORT', 18884)
 const mcpEnabled = process.env.PE_MCP_ENABLED === '1'
 const sshEnabled = process.env.PE_SSH_ENABLED === '1'
@@ -30,7 +33,8 @@ const secondDevicePort = port('PE_SECOND_DEVICE_PORT', 18896)
 const ports = [databasePort, hostPort, platformPort, targetPort, ...(mcpEnabled ? [mcpPort] : []),
   ...(deviceEnabled ? [devicePort] : []),
   ...(secondDeviceEnabled ? [secondDevicePort] : []),
-  ...(multiHost ? [hostSecondPort, loadBalancerPort] : [])]
+  ...(multiHost ? [hostSecondPort, loadBalancerPort] : []),
+  ...(multiPlatform ? [platformSecondPort, platformLoadBalancerPort] : [])]
 if (new Set(ports).size !== ports.length) throw new Error('Trial ports must be distinct')
 const privateDir = process.env.PE_PRIVATE_DIR ?? join(homedir(), '.config/power-evolve', `shared-host-${trialName}`)
 const output = join(root, '.artifacts/power-evolve', trialName === 'slice1' ? '' : trialName)
@@ -83,9 +87,17 @@ await provision('users.json', JSON.stringify(['alice', 'bob'].map((username, ind
       { id: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro', maxTokens: 2048 }]
     : [{ id: 'deepseek-flash', label: 'DeepSeek Flash', maxTokens: 1536 }],
 })), null, 2) + '\n')
-for (const name of ['host', ...(multiHost ? ['host-b'] : []), 'platform', ...(deviceEnabled ? ['device'] : []),
+const modelUrl = process.env.PE_MODEL_URL
+if (modelUrl) {
+  const parsed = new URL(modelUrl)
+  if (parsed.protocol !== 'http:' || parsed.hostname !== '127.0.0.1' || parsed.username
+    || parsed.password || parsed.search || parsed.hash) throw new Error('PE_MODEL_URL must be a loopback HTTP URL')
+}
+for (const name of ['host', ...(multiHost ? ['host-b'] : []), 'platform',
+  ...(multiPlatform ? ['platform-b'] : []), ...(deviceEnabled ? ['device'] : []),
   ...(secondDeviceEnabled ? ['device-bob'] : [])]) {
-  const bundleName = name === 'device-bob' ? 'device' : name === 'host-b' ? 'host' : name
+  const bundleName = name === 'device-bob' ? 'device' : name === 'host-b' ? 'host'
+    : name === 'platform-b' ? 'platform' : name
   const home = join(output, 'trial', name)
   const profile = join(home, 'profiles', `power-evolve-${name}`)
   const modules = join(profile, 'node_modules/@power-evolve')
@@ -97,11 +109,14 @@ for (const name of ['host', ...(multiHost ? ['host-b'] : []), 'platform', ...(de
   // A profile patch replaces a row's full config, so retain every bundle field.
   const bundle = (await readFile(join(root, 'products/power-evolve', bundleName, 'cordis.patch.yml'), 'utf8')).split('\n')
   const values = { port: name === 'host' ? hostPort : name === 'host-b' ? hostSecondPort
-    : name === 'device' ? devicePort : name === 'device-bob' ? secondDevicePort : platformPort,
+    : name === 'device' ? devicePort : name === 'device-bob' ? secondDevicePort
+      : name === 'platform-b' ? platformSecondPort : platformPort,
     hostOrigin: `http://127.0.0.1:${multiHost ? loadBalancerPort : hostPort}`,
     origin: `http://127.0.0.1:${multiHost ? loadBalancerPort : hostPort}`,
-    platformOrigin: `http://127.0.0.1:${platformPort}`, platformUrl: `http://127.0.0.1:${platformPort}`,
+    platformOrigin: `http://127.0.0.1:${multiPlatform ? platformLoadBalancerPort : platformPort}`,
+    platformUrl: `http://127.0.0.1:${multiPlatform ? platformLoadBalancerPort : platformPort}`,
     deviceOrigin: `http://127.0.0.1:${devicePort}`,
+    ...(modelUrl ? { modelUrl: JSON.stringify(modelUrl) } : {}),
     image: process.env.PE_DESKTOP_IMAGE ?? sandbox?.image,
     connectorUrl: `http://127.0.0.1:${targetPort}`,
     ...(mcpEnabled ? { mcpUrl: JSON.stringify(`http://127.0.0.1:${mcpPort}/mcp`),
