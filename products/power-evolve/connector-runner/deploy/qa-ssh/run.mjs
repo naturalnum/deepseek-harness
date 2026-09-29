@@ -1,9 +1,9 @@
 /** Run and remove a real SSH Connector Runner check in a fresh k3d namespace. */
 import { randomBytes, randomUUID } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { homedir, tmpdir } from 'node:os'
+import { isAbsolute, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { KubernetesClient } from '../../../application/src/platform/kubernetes.ts'
 import { SshRunnerOrchestrator } from '../../../application/src/platform/ssh-runner.ts'
@@ -18,9 +18,19 @@ if (!cluster || !/^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/u.test(cluster)
 }
 
 const namespace = `pe-connector-qa-${randomBytes(4).toString('hex')}`
-const privateDir = await mkdtemp(join(tmpdir(), 'pe-connector-qa-'))
+const retainedDir = process.env.PE_SSH_TRIAL_PRIVATE_DIR
+const privateDir = retainedDir ? resolve(retainedDir) : await mkdtemp(join(tmpdir(), 'pe-connector-qa-'))
+if (retainedDir) {
+  const trialRoot = join(homedir(), '.config', 'power-evolve')
+  if (!isAbsolute(retainedDir) || !privateDir.startsWith(`${trialRoot}${sep}`)) {
+    throw new Error('PE_SSH_TRIAL_PRIVATE_DIR must be an absolute private trial directory')
+  }
+  await mkdir(privateDir, { mode: 0o700 })
+  if ((await lstat(privateDir)).isSymbolicLink()) throw new Error('Trial directory cannot be a symlink')
+}
 const kubeconfig = join(privateDir, 'connector-kubeconfig')
 let namespaceMayExist = false
+let retainedReady = false
 let orchestrator
 let activeCallId
 
@@ -161,8 +171,9 @@ try {
   const podName = `pe-cr-${activeCallId.replaceAll('-', '')}`
   const probe = JSON.parse(admin(['-n', namespace, 'exec', podName, '-c', 'runner', '--',
     'node', '-e', tcpProbeSource, targetIp, '2222', forbiddenIp, '8080']))
+  const listenerHealthy = await probeLive()
   if (probe.allowed !== 'connected' || !['denied', 'refused'].includes(probe.forbidden)
-    || !await probeLive()) throw new Error('Runner TCP egress policy check failed')
+    || !listenerHealthy) throw new Error(`Runner TCP egress policy check failed (allowed=${probe.allowed}, forbidden=${probe.forbidden}, listenerHealthy=${listenerHealthy})`)
   console.log(`Runner TCP probe: allowed ${probe.allowed}; forbidden ${probe.forbidden} with listener healthy`)
   const request = { kind: 'ssh.execute', credential: { kind: 'password', password },
     command: 'qa:ping', timeoutMs: 10_000, maxOutputBytes: 1024 }
@@ -180,14 +191,26 @@ try {
   }
   console.log('Pinned SSH password authentication and fixed command: succeeded')
   console.log('Forbidden listener: independently healthy; Runner egress gate ready during dispatch')
+  if (retainedDir) {
+    await writeFile(join(privateDir, 'ssh.json'), `${JSON.stringify({ kubeconfigFile: kubeconfig,
+      namespace, image, runtimeClass: 'gvisor', ingressCidrs: `${nodeIp}/32`,
+      destinationAllowlist: `${targetIp}:2222` }, null, 2)}\n`, { flag: 'wx', mode: 0o600 })
+    retainedReady = true
+    console.log(`Retained isolated SSH trial fixture in ${namespace}; private configuration: ${privateDir}`)
+  }
 } finally {
   if (orchestrator && activeCallId) {
     try { await orchestrator.cleanup(activeCallId) }
-    catch (_cleanupFailed) { console.error('Runner cleanup failed; namespace deletion follows') }
+    catch (_cleanupFailed) { console.error(retainedDir
+      ? `Runner cleanup failed; inspect retained namespace ${namespace}`
+      : 'Runner cleanup failed; namespace deletion follows') }
   }
-  if (namespaceMayExist) {
+  if (namespaceMayExist && !retainedDir) {
     try { admin(['delete', 'namespace', namespace, '--ignore-not-found', '--wait=true', '--timeout=180s']) }
     catch (_cleanupFailed) { console.error(`Namespace cleanup failed: ${namespace}`) }
   }
-  await rm(privateDir, { recursive: true, force: true })
+  if (namespaceMayExist && retainedDir && !retainedReady) {
+    console.error(`Retained incomplete SSH fixture for inspection: ${namespace}`)
+  }
+  if (!retainedDir) await rm(privateDir, { recursive: true, force: true })
 }

@@ -12,6 +12,7 @@ const equal = (candidate) => {
   return actual.length === expected.length && timingSafeEqual(actual, expected)
 }
 const server = new ssh2.Server({ hostKeys: [hostKey] }, (client) => {
+  client.on('error', (_disconnected) => { /* A credential-free canary may close before SSH writes finish. */ })
   client.on('authentication', (context) => {
     if (context.method === 'password' && context.username === 'qa'
       && equal(context.password)) context.accept()
