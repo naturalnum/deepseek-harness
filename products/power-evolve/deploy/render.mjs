@@ -153,7 +153,7 @@ function deployment(values, role) {
             failureThreshold: 30, periodSeconds: 2 },
           readinessProbe: { httpGet: { path: '/health', port: 'http' },
             periodSeconds: 3, timeoutSeconds: 2 },
-          livenessProbe: { httpGet: { path: '/health', port: 'http' },
+          livenessProbe: { httpGet: { path: host ? '/health' : '/live', port: 'http' },
             periodSeconds: 10, timeoutSeconds: 2 },
           resources,
           securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true,

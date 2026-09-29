@@ -103,7 +103,9 @@ test('Platform stays alive, becomes unready, and resumes only new requests after
       catch (error) { if (error.code === 'ENOENT' || error instanceof SyntaxError) return false; throw error }
     }, 'Platform ready')
     const health = () => fetch(`${ready.url}/health`, { signal: AbortSignal.timeout(1500) })
+    const live = () => fetch(`${ready.url}/live`, { signal: AbortSignal.timeout(1500) })
     assert.equal((await health()).status, 200)
+    assert.equal((await live()).status, 200)
     const idle = await admin.query('SELECT pid FROM pg_stat_activity WHERE datname=$1 AND state=$2',
       [database, 'idle'])
     assert(idle.rows.length > 0)
@@ -127,6 +129,7 @@ test('Platform stays alive, becomes unready, and resumes only new requests after
         return response.status === 503 && body.ready === false && body.database === 'unavailable'
       } catch { return false }
     }, 'Platform health unready')
+    assert.equal((await live()).status, 200)
     const denied = await fetch(`${ready.url}/identity/login`, { method: 'POST',
       headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'alice', password }),
       signal: AbortSignal.timeout(3000) })

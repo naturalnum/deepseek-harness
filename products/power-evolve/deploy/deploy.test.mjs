@@ -51,6 +51,10 @@ test('production profiles retain bundle fields and separate Host and Platform au
 test('sample bundle is parseable and rejects Host privilege or mount drift', () => {
   const items = buildManifests(values)
   assert.equal(validateBundle(values, items).resources, 23)
+  const platform = items.find(item => item.kind === 'Deployment'
+    && item.metadata.name === 'power-evolve-platform')
+  assert.equal(platform.spec.template.spec.containers[0].readinessProbe.httpGet.path, '/health')
+  assert.equal(platform.spec.template.spec.containers[0].livenessProbe.httpGet.path, '/live')
   const foundation = yaml.loadAll(render(values, 'foundation')).filter(Boolean)
   const workloads = yaml.loadAll(render(values, 'workloads')).filter(Boolean)
   assert.equal(foundation.length + workloads.length, items.length)

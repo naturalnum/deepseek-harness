@@ -237,6 +237,10 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
 
   const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const path = new URL(req.url ?? '/', config.platformOrigin).pathname
+    if (req.method === 'GET' && path === '/live') {
+      sendJson(res, { live: true, service: 'platform', instanceId })
+      return
+    }
     if (req.method === 'GET' && path === '/health') {
       try {
         await healthPool.query('SELECT 1')

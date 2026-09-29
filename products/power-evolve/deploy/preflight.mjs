@@ -33,6 +33,8 @@ export function validateBundle(values, items) {
   const host = resource(items, 'Deployment', 'power-evolve-host', app)
   const platform = resource(items, 'Deployment', 'power-evolve-platform', app)
   const hostSpec = host.spec.template.spec, platformSpec = platform.spec.template.spec
+  assert.equal(platformSpec.containers[0].readinessProbe?.httpGet?.path, '/health')
+  assert.equal(platformSpec.containers[0].livenessProbe?.httpGet?.path, '/live')
   assert.equal(hostSpec.automountServiceAccountToken, false)
   assert.equal(hostSpec.serviceAccountName, 'power-evolve-host')
   assert.equal(platformSpec.serviceAccountName, 'power-evolve-platform')
