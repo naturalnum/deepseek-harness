@@ -1,8 +1,9 @@
 import { IconPlusOutlineRegular, IconSearchOutlineRegular, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
-import { useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { SshHttpError, normalizeSshFingerprint, validSshCreate, type PersonalSshConnection,
-  type PersonalSshList, type PersonalSshPort, type SshCreateInput, type SshToggleInput } from './ssh-api.ts'
+  type PersonalSshList, type PersonalSshPort, type SshCheckCall, type SshCheckInput,
+  type SshCreateInput, type SshToggleInput } from './ssh-api.ts'
 import { SkillToggle } from './SkillToggle.tsx'
 
 type Translate = TranslateNS<'powerEvolve.extensionCenter'>
@@ -10,6 +11,7 @@ type Form = Omit<SshCreateInput, 'requestId' | 'port'> & { port: string }
 const blank = (): Form => ({ displayName: '', host: '', port: '22', username: '', hostKeySha256: '',
   password: '', enabled: false })
 const VALIDATION_REQUEST_ID = '00000000-0000-4000-8000-000000000000'
+const activeCheck = (state: SshCheckCall['state']): boolean => !['succeeded', 'failed', 'cancelled'].includes(state)
 
 /** Personal SSH management on the native Plugins page. Password bytes bypass the Host. */
 export function PersonalSshPage({ data, port, onChange, onReload, t }: {
@@ -26,6 +28,44 @@ export function PersonalSshPage({ data, port, onChange, onReload, t }: {
   const [pendingToggle, setPendingToggle] = useState<SshToggleInput>()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
+  const [checkedId, setCheckedId] = useState<string>()
+  const [call, setCall] = useState<SshCheckCall>()
+  const [pendingCheck, setPendingCheck] = useState<SshCheckInput>()
+  const [checkBusy, setCheckBusy] = useState(false)
+  const [cancelBusy, setCancelBusy] = useState(false)
+  const [cancelRequested, setCancelRequested] = useState(false)
+  const [checkError, setCheckError] = useState<string>()
+  const mounted = useRef(true)
+  const observeCall = useCallback((next: SshCheckCall): void => { setCall(previous => {
+    if (!previous || previous.callId !== next.callId) return previous
+    if (!activeCheck(previous.state) && activeCheck(next.state)) return previous
+    return next
+  }) }, [])
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
+  useEffect(() => {
+    if (!call || !activeCheck(call.state)) return
+    let stopped = false
+    let current = call
+    let controller: AbortController | undefined
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let wake: (() => void) | undefined
+    const poll = async (): Promise<void> => {
+      while (!stopped && activeCheck(current.state)) {
+        await new Promise<void>(resolve => { wake = resolve
+          timer = setTimeout(resolve, current.state === 'uncertain' ? 5000 : 3000) })
+        if (stopped) return
+        controller = new AbortController()
+        try {
+          current = await port.callStatus(current.callId, controller.signal)
+          if (!stopped) { observeCall(current); setCheckError(undefined) }
+        } catch (_cause) {
+          if (!stopped) setCheckError(t('sshCheckStatusUncertain'))
+        }
+      }
+    }
+    void poll()
+    return () => { stopped = true; controller?.abort(); if (timer) clearTimeout(timer); wake?.() }
+  }, [call?.callId, call === undefined ? false : activeCheck(call.state), observeCall, port, t])
   const visible = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase()
     return needle === '' ? data.items : data.items.filter(item =>
@@ -71,6 +111,43 @@ export function PersonalSshPage({ data, port, onChange, onReload, t }: {
     } finally { setBusy(false) }
   }
 
+  const check = async (input: SshCheckInput): Promise<void> => {
+    if (checkBusy || !data.available) return
+    setCheckBusy(true); setCheckedId(input.connectionId); setCheckError(undefined); setCancelRequested(false)
+    try {
+      const next = await port.check(input)
+      if (!mounted.current) return
+      setCall(next); setPendingCheck(undefined)
+    } catch (cause) {
+      if (!mounted.current) return
+      if (cause instanceof SshHttpError && [400, 401, 403, 404, 409].includes(cause.status)) {
+        setPendingCheck(undefined); setCheckError(t(cause.status === 401 ? 'sessionExpired' : 'sshCheckRejected'))
+      } else {
+        setPendingCheck(input); setCheckError(t('sshCheckAdmissionUncertain'))
+      }
+    } finally { if (mounted.current) setCheckBusy(false) }
+  }
+
+  const refreshCall = async (callId: string): Promise<void> => {
+    if (checkBusy) return
+    setCheckBusy(true); setCheckError(undefined)
+    try { const next = await port.callStatus(callId); if (mounted.current) observeCall(next) }
+    catch (_cause) { if (mounted.current) setCheckError(t('sshCheckStatusUncertain')) }
+    finally { if (mounted.current) setCheckBusy(false) }
+  }
+
+  const cancelCall = async (callId: string): Promise<void> => {
+    if (cancelBusy) return
+    setCancelBusy(true); setCancelRequested(true); setCheckError(undefined)
+    try { const next = await port.callCancel(callId); if (mounted.current) observeCall(next) }
+    catch (_cause) { if (mounted.current) setCheckError(t('sshCancelUncertain')) }
+    finally { if (mounted.current) setCancelBusy(false) }
+  }
+
+  const checkLabel = (state: SshCheckCall['state']): string => t(state === 'succeeded' ? 'sshCheckSucceeded'
+    : state === 'failed' ? 'sshCheckFailed' : state === 'uncertain' ? 'sshCheckUncertain'
+      : state === 'cancelled' ? 'sshCheckCancelled' : state === 'running' ? 'sshCheckRunning' : 'sshCheckPending')
+
   return <section className="pext-plugin-detail-content pext-ssh-page" data-power-evolve-ssh-page>
     <div className="pext-mcp-header"><div><h1>SSH</h1><p>{t('sshPluginDescription')}</p></div>
       <button type="button" className="pext-dialog-button pext-dialog-button-primary"
@@ -99,7 +176,25 @@ export function PersonalSshPage({ data, port, onChange, onReload, t }: {
             disabled={busy || pendingToggle !== undefined || !data.available}
             onChange={enabled => { void toggle({ connectionId: item.connectionId,
               requestId: crypto.randomUUID(), baseRevision: item.revision, enabled }) }} />
-          <button type="button" className="pext-dialog-button" disabled>{t('sshTestUnavailable')}</button></div>
+          <button type="button" className="pext-dialog-button" disabled={!data.available || !item.enabled
+            || checkBusy || (call !== undefined && activeCheck(call.state)) || pendingCheck !== undefined}
+            onClick={() => { setCall(undefined); void check({ requestId: crypto.randomUUID(),
+              connectionId: item.connectionId, connectionRevision: item.revision }) }}>
+            {t('sshTestAuthentication')}</button></div>
+        {checkedId === item.connectionId && (call || pendingCheck || checkError) && <div className="pext-ssh-check-state" role="status">
+          <strong>{call ? checkLabel(call.state) : t('sshCheckUncertain')}</strong>
+          <p>{t('sshCheckAuthenticationOnly')}</p>
+          {cancelRequested && call && activeCheck(call.state) && <p>{t('sshCancellationPending')}</p>}
+          {call?.errorCode && <small>{t('sshCheckErrorCode').replace('{code}', call.errorCode)}</small>}
+          {checkError && <p>{checkError}</p>}
+          <div>{pendingCheck && <button type="button" className="pext-dialog-button" disabled={checkBusy}
+            onClick={() => { void check(pendingCheck) }}>{t('sshRetryCheck')}</button>}
+            {call && <button type="button" className="pext-dialog-button" disabled={checkBusy}
+              onClick={() => { void refreshCall(call.callId) }}>{t('refreshList')}</button>}
+            {call && activeCheck(call.state) && <button type="button" className="pext-dialog-button"
+              disabled={cancelBusy} onClick={() => { void cancelCall(call.callId) }}>
+              {cancelBusy ? t('sshCancelling') : t('sshCancelCheck')}</button>}</div>
+        </div>}
       </article>)}</div>}
     <Modal open={formOpen} onClose={() => { if (!busy) { setFormOpen(false); setForm(blank()); setPendingCreate(undefined) } }}
       title={t('sshAddServer')} closeLabel={t('close')} className="pext-install-modal"

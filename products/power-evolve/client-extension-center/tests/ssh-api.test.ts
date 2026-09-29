@@ -72,3 +72,29 @@ test('a ready retry needs no second upload and field validation rejects unsafe d
   assert.equal(validSshCreate({ ...input, password: '你'.repeat(2731) }), false)
   assert.equal(validSshCreate({ ...input, host: 'user@server.example.com' }), false)
 })
+
+test('SSH credential check, status and cancel use only opaque identities and validate matching call IDs', async () => {
+  const calls: Array<{ url: string; request: unknown }> = []
+  const callId = '217d9a46-3b52-455b-bba6-7d9389c990bb'
+  const client = new PersonalSshHttpClient(async (url, init) => {
+    const request = (JSON.parse(String(init?.body)) as { request: unknown }).request
+    calls.push({ url: String(url), request })
+    return Response.json({ callId, state: calls.length === 1 ? 'accepted' : 'running' })
+  })
+  assert.equal((await client.check({ requestId, connectionId, connectionRevision: 2 })).state, 'accepted')
+  assert.equal((await client.callStatus(callId)).state, 'running')
+  assert.equal((await client.callCancel(callId)).state, 'running')
+  assert.deepEqual(calls, [
+    { url: '/api/powerEvolve/sshCheck', request: { requestId, connectionId, connectionRevision: 2 } },
+    { url: '/api/powerEvolve/sshCallStatus', request: { callId } },
+    { url: '/api/powerEvolve/sshCallCancel', request: { callId } },
+  ])
+  const wrong = new PersonalSshHttpClient(async () => Response.json({ callId: connectionId, state: 'succeeded' }))
+  await assert.rejects(wrong.callStatus(callId), /SSH call response mismatch/u)
+  await assert.rejects(wrong.callCancel(callId), /SSH call response mismatch/u)
+  const invalid = new PersonalSshHttpClient(async () => Response.json({ callId, state: 'pretend-success' }))
+  await assert.rejects(invalid.check({ requestId, connectionId, connectionRevision: 1 }), /Invalid SSH check response/u)
+  const oversized = new PersonalSshHttpClient(async () => Response.json({ callId, state: 'succeeded',
+    result: '你'.repeat(2731) }))
+  await assert.rejects(oversized.callStatus(callId), /Invalid SSH check result/u)
+})

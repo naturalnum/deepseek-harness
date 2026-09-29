@@ -39,10 +39,29 @@ export interface SshToggleInput {
   readonly enabled: boolean
 }
 
+export interface SshCheckInput {
+  readonly requestId: string
+  readonly connectionId: string
+  readonly connectionRevision: number
+}
+
+export type SshCheckState = 'accepted' | 'preparing' | 'ready' | 'dispatch-intent' | 'running'
+  | 'succeeded' | 'failed' | 'uncertain' | 'cancelled'
+
+export interface SshCheckCall {
+  readonly callId: string
+  readonly state: SshCheckState
+  readonly result?: unknown
+  readonly errorCode?: string
+}
+
 export interface PersonalSshPort {
   list(signal?: AbortSignal): Promise<PersonalSshList>
   createPassword(input: SshCreateInput): Promise<PersonalSshConnection>
   toggle(input: SshToggleInput): Promise<PersonalSshConnection>
+  check(input: SshCheckInput): Promise<SshCheckCall>
+  callStatus(callId: string, signal?: AbortSignal): Promise<SshCheckCall>
+  callCancel(callId: string): Promise<SshCheckCall>
 }
 
 export class SshHttpError extends Error {
@@ -53,6 +72,23 @@ const record = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 const bounded = (value: unknown, max: number): value is string =>
   typeof value === 'string' && value.length > 0 && value.length <= max
+const CHECK_STATES = new Set<SshCheckState>([
+  'accepted', 'preparing', 'ready', 'dispatch-intent', 'running', 'succeeded', 'failed', 'uncertain', 'cancelled',
+])
+
+function checkCall(value: unknown): SshCheckCall {
+  if (!record(value) || typeof value.callId !== 'string' || !UUID.test(value.callId)
+    || !CHECK_STATES.has(value.state as SshCheckState)
+    || (value.errorCode !== undefined && value.errorCode !== null && !bounded(value.errorCode, 100))) {
+    throw new Error('Invalid SSH check response')
+  }
+  if (value.result !== undefined && new TextEncoder().encode(JSON.stringify(value.result)).byteLength > 8192) {
+    throw new Error('Invalid SSH check result')
+  }
+  return { callId: value.callId, state: value.state as SshCheckState,
+    ...(value.result === undefined ? {} : { result: value.result }),
+    ...(typeof value.errorCode === 'string' ? { errorCode: value.errorCode } : {}) }
+}
 export const normalizeSshFingerprint = (value: string): string => {
   const trimmed = value.trim()
   return /^SHA256:[A-Za-z0-9+/]{43}=$/u.test(trimmed) ? trimmed.slice(0, -1) : trimmed
@@ -103,7 +139,7 @@ export function validSshCreate(input: SshCreateInput): boolean {
     && new TextEncoder().encode(input.password).byteLength <= 8192
 }
 
-/** The Host sees metadata and digest; credential bytes go only to the trusted Platform. */
+/** The Host sees metadata and byte count; credential bytes go only to the trusted Platform. */
 export class PersonalSshHttpClient implements PersonalSshPort {
   constructor(private readonly request: typeof fetch = (...args) => globalThis.fetch(...args)) {}
 
@@ -165,5 +201,27 @@ export class PersonalSshHttpClient implements PersonalSshPort {
     if (item.connectionId !== input.connectionId || item.enabled !== input.enabled
       || item.revision < input.baseRevision) throw new Error('SSH toggle response mismatch')
     return item
+  }
+
+  async check(input: SshCheckInput): Promise<SshCheckCall> {
+    if (!UUID.test(input.requestId) || !UUID.test(input.connectionId)
+      || !Number.isSafeInteger(input.connectionRevision) || input.connectionRevision < 1) {
+      throw new Error('Invalid SSH check request')
+    }
+    return checkCall(await this.post('sshCheck', input))
+  }
+
+  async callStatus(callId: string, signal?: AbortSignal): Promise<SshCheckCall> {
+    if (!UUID.test(callId)) throw new Error('Invalid SSH call ID')
+    const call = checkCall(await this.post('sshCallStatus', { callId }, signal))
+    if (call.callId !== callId) throw new Error('SSH call response mismatch')
+    return call
+  }
+
+  async callCancel(callId: string): Promise<SshCheckCall> {
+    if (!UUID.test(callId)) throw new Error('Invalid SSH call ID')
+    const call = checkCall(await this.post('sshCallCancel', { callId }))
+    if (call.callId !== callId) throw new Error('SSH call response mismatch')
+    return call
   }
 }
