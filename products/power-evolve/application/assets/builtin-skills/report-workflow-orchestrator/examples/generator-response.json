@@ -1,0 +1,41 @@
+{
+  "request_id": "req_example_001",
+  "skill_name": "power-grid-technical-report-writer",
+  "action": "generate_chapter",
+  "status": "success",
+  "artifact": {
+    "artifact_type": "chapter",
+    "artifact_id": "chapter_3",
+    "version": 1,
+    "content": "# 3 示例章节\n\n正文……",
+    "summary": "说明技术方案",
+    "quality_metrics": {
+      "chapter_length": {
+        "actual_words": 8420,
+        "planned_target_words": 10000,
+        "minimum_ratio": 0.8,
+        "minimum_required_words": 8000,
+        "length_ratio": 0.842,
+        "length_gate_passed": true,
+        "shortfall_words": 0
+      }
+    }
+  },
+  "metadata": {
+    "chapter_id": "chapter_3",
+    "assumptions": [],
+    "unresolved_items": [],
+    "validators_recommended": [
+      "validate_formulas.py",
+      "validate_report_language.py",
+      "validate_chapter_length.py"
+    ],
+    "next_required_handoff": {
+      "skill_name": "report-reviewer",
+      "action": "review_chapter",
+      "reviewed_artifact_id": "chapter_3",
+      "reviewed_version": 1
+    }
+  },
+  "error": null
+}

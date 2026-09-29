@@ -1,0 +1,32 @@
+# config.py - 科技报告编写配置文件
+
+# 模板文件名
+TEMPLATE_NAME = "report.docx"
+
+# 输出报告文件名格式（{title} 会被替换为报告标题简称）
+OUTPUT_NAME_FORMAT = "{title}_科技报告.docx"
+
+# 中国电科院技术报告管理办法附录 B 页面参数（毫米）
+PAGE_WIDTH_MM = 210
+PAGE_HEIGHT_MM = 297
+PAGE_MARGIN_TOP_MM = 30
+PAGE_MARGIN_BOTTOM_MM = 25
+PAGE_MARGIN_LEFT_MM = 25
+PAGE_MARGIN_RIGHT_MM = 25
+HEADER_DISTANCE_MM = 25
+FOOTER_DISTANCE_MM = 15
+
+# 封面字体字号（Word 字号换算：五号 10.5pt、小三 15pt、小二 18pt、四号 14pt）。
+COVER_HEITI_FONT = "黑体"
+COVER_METADATA_FONT_SIZE_PT = 10.5
+COVER_PROJECT_SOURCE_FONT_SIZE_PT = 15
+COVER_TITLE_CN_FONT_SIZE_PT = 18
+COVER_SERIES_FONT_SIZE_PT = 15
+COVER_BOTTOM_FONT_SIZE_PT = 14
+
+# 封面底部单位、合作单位和发布日期使用正文层中的无边框浮动文本框。
+COVER_BOTTOM_BLOCK_WIDTH_MM = 160
+
+REPORT_WRITING_UNIT = "中国电力科学研究院有限公司"
+
+DEFAULT_PROJECT_SOURCE = "国家电网有限公司总部科技项目"

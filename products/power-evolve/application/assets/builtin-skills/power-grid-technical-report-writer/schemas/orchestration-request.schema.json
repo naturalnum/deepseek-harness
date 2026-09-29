@@ -1,0 +1,228 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Generator Orchestration Request",
+  "type": "object",
+  "required": [
+    "orchestration",
+    "skill_name",
+    "action",
+    "payload"
+  ],
+  "properties": {
+    "orchestration": {
+      "type": "object",
+      "required": [
+        "enabled",
+        "request_id",
+        "caller_skill"
+      ],
+      "properties": {
+        "enabled": {
+          "const": true
+        },
+        "request_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "caller_skill": {
+          "const": "report-workflow-orchestrator"
+        }
+      },
+      "additionalProperties": true
+    },
+    "skill_name": {
+      "const": "power-grid-technical-report-writer"
+    },
+    "action": {
+      "enum": [
+        "build_project_profile",
+        "build_argument_architecture",
+        "generate_outline",
+        "revise_outline",
+        "search_references",
+        "prepare_chapter_materials",
+        "generate_chapter_plan",
+        "revise_chapter_plan",
+        "generate_chapter",
+        "revise_chapter",
+        "generate_abstract",
+        "assemble_report",
+        "revise_report"
+      ]
+    },
+    "payload": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "action": {
+            "const": "build_project_profile"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "required": [
+              "project_intake",
+              "fixed_questions_completed"
+            ],
+            "properties": {
+              "project_intake": {
+                "$ref": "project-intake.schema.json"
+              },
+              "fixed_questions_completed": {
+                "const": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "action": {
+            "const": "generate_outline"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "required": [
+              "chapter_content_briefs",
+              "preserve_existing_outline_rules"
+            ],
+            "properties": {
+              "chapter_content_briefs": {
+                "type": "object",
+                "required": [
+                  "status",
+                  "items"
+                ],
+                "properties": {
+                  "status": {
+                    "enum": [
+                      "confirmed",
+                      "not_required"
+                    ]
+                  },
+                  "items": {
+                    "type": "array"
+                  },
+                  "targets": {
+                    "type": "array"
+                  }
+                },
+                "additionalProperties": true
+              },
+              "preserve_existing_outline_rules": {
+                "const": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "action": {
+            "const": "generate_abstract"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "required": [
+              "abstract_generation_requirements"
+            ],
+            "properties": {
+              "abstract_generation_requirements": {
+                "type": "object",
+                "required": [
+                  "generate_bilingual",
+                  "paragraph_count",
+                  "chinese_total_words",
+                  "paragraph_1_words",
+                  "paragraph_2_words",
+                  "require_ordering_markers"
+                ],
+                "properties": {
+                  "generate_bilingual": {
+                    "const": true
+                  },
+                  "paragraph_count": {
+                    "const": 3
+                  },
+                  "chinese_total_words": {
+                    "type": "object",
+                    "properties": {
+                      "min": {
+                        "const": 700
+                      },
+                      "max": {
+                        "const": 800
+                      }
+                    },
+                    "required": [
+                      "min",
+                      "max"
+                    ]
+                  },
+                  "paragraph_1_words": {
+                    "type": "object",
+                    "properties": {
+                      "min": {
+                        "const": 200
+                      },
+                      "max": {
+                        "const": 250
+                      }
+                    },
+                    "required": [
+                      "min",
+                      "max"
+                    ]
+                  },
+                  "paragraph_2_words": {
+                    "type": "object",
+                    "properties": {
+                      "min": {
+                        "const": 300
+                      },
+                      "max": {
+                        "const": 350
+                      }
+                    },
+                    "required": [
+                      "min",
+                      "max"
+                    ]
+                  },
+                  "require_ordering_markers": {
+                    "const": true
+                  }
+                },
+                "additionalProperties": true
+              }
+            },
+            "additionalProperties": true
+          }
+        }
+      }
+    }
+  ]
+}

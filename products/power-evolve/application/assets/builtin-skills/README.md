@@ -1,0 +1,7 @@
+# Bundled Skill release assets
+
+These nine source directories and `generated/` artifacts are copied byte for byte from PowerEvolve `origin/main` commit `a03460fe66a3f77114ff3bb906476105e1d470b7`, under `services/cloud-server/assets/builtin-skills/`. `build-catalog.mjs` is copied from that commit's `services/cloud-server/scripts/build-builtin-skill-catalog.mjs` with only its package and asset-root paths adjusted. Regenerate with `node products/power-evolve/application/assets/builtin-skills/build-catalog.mjs`; the 19 generated files reproduce the imported bytes. The pinned `catalog.json` SHA-256 is `1cf2a06a890915d404266daf85b39e6cecb532a4385fb81c8c08704a575b494a`.
+
+The PDF source retains `pdf/SOURCE.json` and its Apache-2.0 `pdf/LICENSE.txt` in both source and ZIP. Other source directories are retained alongside the distribution ZIPs so the published bytes can be regenerated and reviewed.
+
+The S7 `extractSkillPackage` and `readNativeSkillMetadata` validators accept all nine ZIPs without relaxing the 1 MiB compressed, 256 file, 8 MiB expanded, or 256 KiB package `SKILL.md` limits. Four package instructions exceed the separate 16 KiB plain-text Skill read limit: `power-grid-technical-report-writer` (29,580 bytes), `report-reviewer` (31,864), `report-workflow-orchestrator` (23,341), and `tech-report-writer` (18,428). The existing per-user library and task-grant limits are eight Skills. Installation, prompt sizing, and selective disclosure require a later design before all nine can be used together; this asset reader adds no user route or installation.

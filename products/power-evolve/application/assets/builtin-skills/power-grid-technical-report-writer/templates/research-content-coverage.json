@@ -1,0 +1,411 @@
+{
+  "primary_research_points": [
+    {
+      "id": "RP-01",
+      "parent_task_id": "TASK-01",
+      "parent_task_order": 1,
+      "task_role": "technical-research",
+      "source_order": 1,
+      "source_summary": "{{来源研究内容小点原文}}",
+      "source_keywords": [
+        "{{来源研究内容中的电力对象关键词}}",
+        "{{来源研究内容中的关键技术词}}"
+      ],
+      "normalized_problem": "{{该来源研究内容小点对应的主要问题}}",
+      "chapter_technology": "{{按课题角色整理后的技术章标题}}",
+      "expected_capability": "{{来源研究内容预期形成的能力}}",
+      "planned_chapter_id": "{{技术章节编号}}",
+      "research_status_topic": "{{第一章1.2国内外研究现状中的对应三级技术类别}}",
+      "sub_item_ids": [
+        "RC-01",
+        "GO-01",
+        "SP-01",
+        "SP-02",
+        "AR-01"
+      ]
+    }
+  ],
+  "source_items": [
+    {
+      "id": "RC-01",
+      "source_type": "research-content",
+      "source_text": "{{来源研究内容原文}}",
+      "normalized_requirement": "{{规范化技术要求}}",
+      "research_point_id": "RP-01",
+      "parent_task_id": "TASK-01",
+      "task_role": "technical-research",
+      "planned_chapter_id": "{{章节编号}}",
+      "planned_section": "{{章节号}}.1",
+      "content_role": "method",
+      "evidence_needed": [],
+      "coverage_status": "planned",
+      "confirmed_location": "",
+      "notes": ""
+    },
+    {
+      "id": "GO-01",
+      "source_type": "expected-output",
+      "source_text": "{{预期目标中的关键技术内容}}",
+      "normalized_requirement": "{{预期形成的技术能力或技术结果}}",
+      "research_point_id": "RP-01",
+      "parent_task_id": "TASK-01",
+      "task_role": "technical-research",
+      "planned_chapter_id": "{{章节编号}}",
+      "planned_section": "{{章节号}}.1",
+      "content_role": "result",
+      "evidence_needed": [],
+      "coverage_status": "planned",
+      "confirmed_location": "",
+      "notes": ""
+    },
+    {
+      "id": "SP-01",
+      "source_type": "schedule-plan",
+      "source_text": "{{进度计划中的主要技术点一}}",
+      "normalized_requirement": "{{规范化技术点一}}",
+      "research_point_id": "RP-01",
+      "parent_task_id": "TASK-01",
+      "task_role": "technical-research",
+      "planned_chapter_id": "{{章节编号}}",
+      "planned_section": "{{章节号}}.1",
+      "content_role": "implementation",
+      "evidence_needed": [],
+      "coverage_status": "planned",
+      "confirmed_location": "",
+      "notes": ""
+    },
+    {
+      "id": "SP-02",
+      "source_type": "schedule-plan",
+      "source_text": "{{进度计划中的主要技术点二}}",
+      "normalized_requirement": "{{规范化技术点二}}",
+      "research_point_id": "RP-01",
+      "parent_task_id": "TASK-01",
+      "task_role": "technical-research",
+      "planned_chapter_id": "{{章节编号}}",
+      "planned_section": "{{章节号}}.2",
+      "content_role": "implementation",
+      "evidence_needed": [],
+      "coverage_status": "planned",
+      "confirmed_location": "",
+      "notes": ""
+    },
+    {
+      "id": "AR-01",
+      "source_type": "assessment-requirement",
+      "source_text": "{{考核要求原文}}",
+      "normalized_requirement": "{{规范化指标要求}}",
+      "assessment_name": "{{指标名称}}",
+      "target_value": "{{目标值或阈值}}",
+      "unit": "{{单位}}",
+      "test_conditions": "{{测试条件}}",
+      "research_point_id": "RP-01",
+      "parent_task_id": "TASK-01",
+      "task_role": "technical-research",
+      "planned_chapter_id": "{{章节编号}}",
+      "planned_section": "{{章节号}}.2",
+      "content_role": "metric",
+      "content_form": "mixed",
+      "evidence_status": "target-only",
+      "evidence_needed": [
+        "{{测试数据或第三方证据}}"
+      ],
+      "coverage_status": "planned",
+      "confirmed_location": "",
+      "notes": "正文转写为技术目标、性能约束、测试条件和能力边界，不暴露来源身份。",
+      "prose_realization": "mixed",
+      "source_identity_hidden": true,
+      "evidence_section": "",
+      "assessment_kind": "{{quantitative|qualitative|mixed}}",
+      "qualitative_result_expectation": "{{定性/混合指标对应的可观察能力、功能或成果；纯定量指标可留空}}"
+    }
+  ],
+  "chapter_mappings": [
+    {
+      "research_point_id": "RP-01",
+      "parent_task_id": "TASK-01",
+      "parent_task_order": 1,
+      "task_role": "technical-research",
+      "source_order": 1,
+      "chapter_id": "{{章节编号}}",
+      "chapter_title": "{{按课题角色整理后的章名}}",
+      "chapter_problem": "{{主要解决问题}}",
+      "chapter_technology": "{{具体技术}}",
+      "title_alignment_basis": "{{说明删减任务动作词及抽象标题词的必要整理，不得为新增信息辩护}}",
+      "research_status_topic": "{{第一章1.2研究现状技术类别}}",
+      "source_item_ids": [
+        "RC-01",
+        "GO-01",
+        "SP-01",
+        "SP-02",
+        "AR-01"
+      ],
+      "innovation_title_plans": [
+        {
+          "research_subpoint_index": 1,
+          "section_number": "{{章节号}}.1",
+          "title": "{{电力对象+具体技术+作用的研究小点一标题}}",
+          "derivation_basis": "{{研究内容/预期目标/进度计划/考核要求依据}}",
+          "parent_task_id": "TASK-01",
+          "power_element": "{{电力对象或约束}}",
+          "technical_object": "{{具体对象}}",
+          "technical_method": "{{具体技术或方法}}",
+          "technical_role": "{{处理链作用}}",
+          "specificity_basis": "{{三级展开依据}}",
+          "source_item_ids": [
+            "RC-01",
+            "SP-01"
+          ],
+          "assessment_item_ids": [],
+          "supporting_heading_numbers": [
+            "{{章节号}}.1.1"
+          ],
+          "notes": "",
+          "specific_computing_technology": "{{细粒度计算技术1}}",
+          "technology_specificity_basis": "{{技术具体性依据1}}",
+          "technology_origin": "model_suggested",
+          "shared_chapter_question": "{{三个研究小点共同回答的本章技术问题}}",
+          "chain_order": 1,
+          "chain_role": "{{技术链角色1}}",
+          "depends_on_previous": false,
+          "handoff_from_previous": "",
+          "output_to_next": "{{后序输出1}}",
+          "technical_signature": "{{中文语义技术签名1}}"
+        },
+        {
+          "research_subpoint_index": 2,
+          "section_number": "{{章节号}}.2",
+          "title": "{{电力对象+具体技术+作用的研究小点二标题}}",
+          "derivation_basis": "{{研究内容/预期目标/进度计划/考核要求依据}}",
+          "parent_task_id": "TASK-01",
+          "power_element": "{{电力对象或约束}}",
+          "technical_object": "{{具体对象}}",
+          "technical_method": "{{具体技术或方法}}",
+          "technical_role": "{{处理链作用}}",
+          "specificity_basis": "{{三级展开依据}}",
+          "source_item_ids": [
+            "SP-02",
+            "AR-01"
+          ],
+          "assessment_item_ids": [
+            "AR-01"
+          ],
+          "supporting_heading_numbers": [
+            "{{章节号}}.2.1"
+          ],
+          "notes": "",
+          "specific_computing_technology": "{{细粒度计算技术2}}",
+          "technology_specificity_basis": "{{技术具体性依据2}}",
+          "technology_origin": "model_suggested",
+          "shared_chapter_question": "{{三个研究小点共同回答的本章技术问题}}",
+          "chain_order": 2,
+          "chain_role": "{{技术链角色2}}",
+          "depends_on_previous": true,
+          "handoff_from_previous": "{{前序输出2}}",
+          "output_to_next": "{{后序输出2}}",
+          "technical_signature": "{{中文语义技术签名2}}"
+        },
+        {
+          "research_subpoint_index": 3,
+          "section_number": "{{章节号}}.3",
+          "title": "{{电力对象+具体技术+作用的研究小点三标题}}",
+          "derivation_basis": "{{研究内容/预期目标/进度计划/考核要求依据}}",
+          "parent_task_id": "TASK-01",
+          "power_element": "{{电力对象或约束}}",
+          "technical_object": "{{具体对象}}",
+          "technical_method": "{{具体技术或方法}}",
+          "technical_role": "{{处理链作用}}",
+          "specificity_basis": "{{三级展开依据}}",
+          "source_item_ids": [
+            "GO-01",
+            "SP-02"
+          ],
+          "assessment_item_ids": [],
+          "supporting_heading_numbers": [
+            "{{章节号}}.3.1"
+          ],
+          "notes": "",
+          "specific_computing_technology": "{{细粒度计算技术3}}",
+          "technology_specificity_basis": "{{技术具体性依据3}}",
+          "technology_origin": "model_suggested",
+          "shared_chapter_question": "{{三个研究小点共同回答的本章技术问题}}",
+          "chain_order": 3,
+          "chain_role": "{{技术链角色3}}",
+          "depends_on_previous": true,
+          "handoff_from_previous": "{{前序输出3}}",
+          "output_to_next": "",
+          "technical_signature": "{{中文语义技术签名3}}"
+        }
+      ],
+      "assessment_coverage_plans": [
+        {
+          "assessment_item_id": "AR-01",
+          "planned_section": "{{章节号}}.2",
+          "content_form": "mixed",
+          "evidence_status": "target-only",
+          "confirmed_location": "",
+          "notes": "在X.1—X.3正文中转写为技术目标、条件、阈值、结果或边界，不暴露外部来源身份。",
+          "prose_realization": "mixed",
+          "source_identity_hidden": true,
+          "evidence_section": "",
+          "assessment_kind": "{{quantitative|qualitative|mixed}}",
+          "result_realization": "{{定量写实际值/结果，定性写已形成能力、功能或完成状态；不得只复述考核要求}}"
+        }
+      ],
+      "standalone_validation_mode": "none",
+      "standalone_validation_reason": "",
+      "heading_source_term_plan": [
+        {
+          "source_item_id": "GO-01",
+          "source_type": "expected-output",
+          "term": "{{预期目标中的概括性技术词}}",
+          "granularity": "broad",
+          "target_heading_number": "{{章节号}}.1",
+          "target_heading_title": "{{包含该概括性技术词的二级标题}}"
+        },
+        {
+          "source_item_id": "SP-01",
+          "source_type": "schedule-plan",
+          "term": "{{进度计划中的窄技术点}}",
+          "granularity": "narrow",
+          "target_heading_number": "{{章节号}}.1.1",
+          "target_heading_title": "{{包含该窄技术点的三级标题}}"
+        },
+        {
+          "source_item_id": "SP-02",
+          "source_type": "schedule-plan",
+          "term": "{{进度计划中的概括性技术词}}",
+          "granularity": "broad",
+          "target_heading_number": "{{章节号}}.2",
+          "target_heading_title": "{{包含该概括性技术词的二级标题}}"
+        },
+        {
+          "source_item_id": "AR-01",
+          "source_type": "assessment-requirement",
+          "term": "{{考核要求中的实际技术词}}",
+          "granularity": "narrow",
+          "target_heading_number": "{{章节号}}.3.1",
+          "target_heading_title": "{{包含该实际技术词但不使用验证评估类章节词的三级标题}}"
+        }
+      ],
+      "technology_option_sets": [
+        {
+          "section_number": "{{章节号}}.1",
+          "problem_or_role": "{{该二级研究点需要解决的问题或承担的技术职责}}",
+          "source_locked": false,
+          "candidates": [
+            {
+              "candidate_id": "{{章节号}}.1-A",
+              "technology_name": "{{候选技术A原始名称}}",
+              "technical_signature_cn": "{{候选技术A中文技术签名}}",
+              "key_mechanisms": [
+                "{{关键机制A1}}",
+                "{{关键机制A2}}"
+              ],
+              "fit_reason": "{{为何适配本章对象、问题和上下游关系}}",
+              "origin": "model_suggested",
+              "scope_risk": "{{越界风险；无则写none}}",
+              "recommended": true
+            },
+            {
+              "candidate_id": "{{章节号}}.1-B",
+              "technology_name": "{{候选技术B原始名称}}",
+              "technical_signature_cn": "{{候选技术B中文技术签名}}",
+              "key_mechanisms": [
+                "{{关键机制B1}}",
+                "{{关键机制B2}}"
+              ],
+              "fit_reason": "{{为何也是可行替代路线}}",
+              "origin": "model_suggested",
+              "scope_risk": "{{越界风险；无则写none}}",
+              "recommended": false
+            }
+          ],
+          "recommended_candidate_id": "{{章节号}}.1-A",
+          "selected_candidate_id": "",
+          "selection_status": "recommended_pending_user_confirmation"
+        },
+        {
+          "section_number": "{{章节号}}.2",
+          "problem_or_role": "{{该二级研究点需要解决的问题或承担的技术职责}}",
+          "source_locked": false,
+          "candidates": [
+            {
+              "candidate_id": "{{章节号}}.2-A",
+              "technology_name": "{{候选技术A原始名称}}",
+              "technical_signature_cn": "{{候选技术A中文技术签名}}",
+              "key_mechanisms": [
+                "{{关键机制A1}}",
+                "{{关键机制A2}}"
+              ],
+              "fit_reason": "{{为何适配本章对象、问题和上下游关系}}",
+              "origin": "model_suggested",
+              "scope_risk": "{{越界风险；无则写none}}",
+              "recommended": true
+            },
+            {
+              "candidate_id": "{{章节号}}.2-B",
+              "technology_name": "{{候选技术B原始名称}}",
+              "technical_signature_cn": "{{候选技术B中文技术签名}}",
+              "key_mechanisms": [
+                "{{关键机制B1}}",
+                "{{关键机制B2}}"
+              ],
+              "fit_reason": "{{为何也是可行替代路线}}",
+              "origin": "model_suggested",
+              "scope_risk": "{{越界风险；无则写none}}",
+              "recommended": false
+            }
+          ],
+          "recommended_candidate_id": "{{章节号}}.2-A",
+          "selected_candidate_id": "",
+          "selection_status": "recommended_pending_user_confirmation"
+        },
+        {
+          "section_number": "{{章节号}}.3",
+          "problem_or_role": "{{该二级研究点需要解决的问题或承担的技术职责}}",
+          "source_locked": false,
+          "candidates": [
+            {
+              "candidate_id": "{{章节号}}.3-A",
+              "technology_name": "{{候选技术A原始名称}}",
+              "technical_signature_cn": "{{候选技术A中文技术签名}}",
+              "key_mechanisms": [
+                "{{关键机制A1}}",
+                "{{关键机制A2}}"
+              ],
+              "fit_reason": "{{为何适配本章对象、问题和上下游关系}}",
+              "origin": "model_suggested",
+              "scope_risk": "{{越界风险；无则写none}}",
+              "recommended": true
+            },
+            {
+              "candidate_id": "{{章节号}}.3-B",
+              "technology_name": "{{候选技术B原始名称}}",
+              "technical_signature_cn": "{{候选技术B中文技术签名}}",
+              "key_mechanisms": [
+                "{{关键机制B1}}",
+                "{{关键机制B2}}"
+              ],
+              "fit_reason": "{{为何也是可行替代路线}}",
+              "origin": "model_suggested",
+              "scope_risk": "{{越界风险；无则写none}}",
+              "recommended": false
+            }
+          ],
+          "recommended_candidate_id": "{{章节号}}.3-A",
+          "selected_candidate_id": "",
+          "selection_status": "recommended_pending_user_confirmation"
+        }
+      ]
+    }
+  ],
+  "coverage_summary": {
+    "total_items": 5,
+    "mapped_items": 5,
+    "confirmed_items": 0,
+    "unresolved_items": 0,
+    "unresolved_item_ids": []
+  },
+  "report_theme_type": "non-evaluation"
+}

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Word Report Metadata",
+  "type": "object",
+  "required": ["report_no", "class_no", "secret_level", "project_source", "title_cn", "title_en", "project_name", "series_no", "cooperator", "report_date", "work_period", "leader", "staff", "writer"],
+  "properties": {
+    "report_no": {"type": "string", "minLength": 1},
+    "class_no": {"type": "string", "minLength": 1},
+    "secret_level": {"type": "string", "minLength": 1},
+    "project_source": {"type": "string", "minLength": 1},
+    "title_cn": {"type": "string", "minLength": 1},
+    "title_en": {"type": "string", "minLength": 1},
+    "project_name": {"type": "string", "minLength": 1},
+    "series_no": {"type": "string"},
+    "cooperator": {"type": ["string", "array"]},
+    "report_date": {"type": "string", "minLength": 1},
+    "work_period": {"type": "string"},
+    "leader": {"type": "string"},
+    "staff": {"type": "string"},
+    "writer": {"type": "string"}
+  },
+  "additionalProperties": true
+}

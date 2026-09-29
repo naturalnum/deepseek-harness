@@ -1,0 +1,163 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Integrated Report Workflow State",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "project_id",
+    "stage",
+    "report_context",
+    "artifacts",
+    "chapters",
+    "revision_counters",
+    "confirmations",
+    "project_intake",
+    "chapter_content_briefs",
+    "word_report"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.1.3"
+    },
+    "project_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "stage": {
+      "type": "string"
+    },
+    "report_context": {
+      "type": "object"
+    },
+    "content_generation_mode": {
+      "enum": [
+        "pending_selection",
+        "source_grounded",
+        "model_autonomous"
+      ]
+    },
+    "current_chapter_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "chapter_order": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "artifacts": {
+      "type": "object"
+    },
+    "chapters": {
+      "type": "object"
+    },
+    "revision_counters": {
+      "type": "object"
+    },
+    "confirmations": {
+      "type": "object"
+    },
+    "pending_action": {
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "last_request_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "last_error": {
+      "type": [
+        "object",
+        "string",
+        "null"
+      ]
+    },
+    "history": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "quality_gates": {
+      "type": "object"
+    },
+    "project_intake": {
+      "type": "object",
+      "required": [
+        "status",
+        "answers"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "pending",
+            "confirmed"
+          ]
+        },
+        "answers": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": true
+    },
+    "chapter_content_briefs": {
+      "type": "object",
+      "required": [
+        "status",
+        "items"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "pending",
+            "confirmed",
+            "not_required"
+          ]
+        },
+        "targets": {
+          "type": "array"
+        },
+        "items": {
+          "type": "array"
+        }
+      },
+      "additionalProperties": true
+    },
+    "word_report": {
+      "type": "object",
+      "required": [
+        "metadata_status",
+        "metadata",
+        "status"
+      ],
+      "properties": {
+        "metadata_status": {
+          "enum": [
+            "pending",
+            "confirmed"
+          ]
+        },
+        "metadata": {
+          "type": "object"
+        },
+        "status": {
+          "enum": [
+            "not_started",
+            "generated",
+            "validated",
+            "confirmed"
+          ]
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

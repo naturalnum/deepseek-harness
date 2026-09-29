@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Tech Report Writer Orchestration Request",
+  "type": "object",
+  "required": ["orchestration", "skill_name", "action", "payload"],
+  "properties": {
+    "orchestration": {
+      "type": "object",
+      "required": ["enabled", "request_id", "caller_skill"],
+      "properties": {
+        "enabled": {"const": true},
+        "request_id": {"type": "string", "minLength": 1},
+        "caller_skill": {"const": "report-workflow-orchestrator"}
+      },
+      "additionalProperties": true
+    },
+    "skill_name": {"const": "tech-report-writer"},
+    "action": {"enum": ["create_word_report", "format_existing_word_report", "validate_word_report"]},
+    "payload": {"type": "object"}
+  },
+  "additionalProperties": false
+}

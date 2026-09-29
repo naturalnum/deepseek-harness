@@ -1,0 +1,19 @@
+{
+  "task_book": {
+    "available": true,
+    "scope": "课题",
+    "topic_name_or_number": "课题一"
+  },
+  "content_generation_mode": "source_grounded",
+  "report_constraints": {
+    "has_requirements": true,
+    "target_words": 50000,
+    "template": "用户提供模板",
+    "chapter_count": 6
+  },
+  "experimental_data": {
+    "available": true,
+    "description": "已有实验结果表和测试说明",
+    "files_or_locations": ["materials/experiment-data.xlsx"]
+  }
+}

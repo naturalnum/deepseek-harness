@@ -1,0 +1,4 @@
+interface:
+  display_name: "LaTeX Technical Report Writer"
+  short_description: "Generate and validate Chinese technical reports in LaTeX"
+  default_prompt: "Use $latex-report-writer to generate and validate a XeLaTeX technical report."

@@ -1,0 +1,239 @@
+{
+  "schemaVersion": 1,
+  "items": [
+    {
+      "extension": {
+        "id": "builtin.word",
+        "name": "Word 文档",
+        "summary": "创建、读取和修改 Word 文档。",
+        "description": "使用沙盒预装的 OfficeCLI 统一入口处理 .docx 文件，详细指南由程序按需返回。",
+        "category": "office",
+        "publisher": "PowerEvolve"
+      },
+      "release": {
+        "version": "1.0.0",
+        "state": "PUBLISHED",
+        "manifestDigest": "sha256:6eec0b5d6701fed1be9e5198a1b01915b5ca9b3805ac485ee28ed612091f4f39",
+        "targets": [
+          "cloud"
+        ],
+        "componentKinds": [
+          "skill"
+        ],
+        "permissions": [],
+        "artifactDigest": "bf7d2b3bb95da5e4770b0c34a27888b01a104137ce43e1af4719b364b6639fe7",
+        "artifactSize": 563,
+        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.word/releases/1.0.0/artifact",
+        "artifactPath": "extensions/builtin.word/1.0.0.zip"
+      }
+    },
+    {
+      "extension": {
+        "id": "builtin.excel",
+        "name": "Excel 表格",
+        "summary": "创建、读取和修改 Excel 工作簿。",
+        "description": "使用沙盒预装的 OfficeCLI 统一入口处理 .xlsx 文件，详细指南由程序按需返回。",
+        "category": "office",
+        "publisher": "PowerEvolve"
+      },
+      "release": {
+        "version": "1.0.0",
+        "state": "PUBLISHED",
+        "manifestDigest": "sha256:a388459c6ec946ba21dcb93646011bb4c5823753e590555839bf2b5fc14175ec",
+        "targets": [
+          "cloud"
+        ],
+        "componentKinds": [
+          "skill"
+        ],
+        "permissions": [],
+        "artifactDigest": "c0735e39b1c3ad62f65b400513a0d127c83bc6a3f029af5d896cc8986a22878c",
+        "artifactSize": 581,
+        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.excel/releases/1.0.0/artifact",
+        "artifactPath": "extensions/builtin.excel/1.0.0.zip"
+      }
+    },
+    {
+      "extension": {
+        "id": "builtin.powerpoint",
+        "name": "PowerPoint 演示文稿",
+        "summary": "创建、读取和修改 PowerPoint 演示文稿。",
+        "description": "使用沙盒预装的 OfficeCLI 统一入口处理 .pptx 文件，详细指南由程序按需返回。",
+        "category": "office",
+        "publisher": "PowerEvolve"
+      },
+      "release": {
+        "version": "1.0.0",
+        "state": "PUBLISHED",
+        "manifestDigest": "sha256:5ed84f559ead7d6e3f2f25abf1e2127407707ca738dc98043edd1686b800c4a8",
+        "targets": [
+          "cloud"
+        ],
+        "componentKinds": [
+          "skill"
+        ],
+        "permissions": [],
+        "artifactDigest": "8d8ecccd59e568975e750e973dae100c728f77b82fe9e85fb86b6c5952f2f523",
+        "artifactSize": 599,
+        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.powerpoint/releases/1.0.0/artifact",
+        "artifactPath": "extensions/builtin.powerpoint/1.0.0.zip"
+      }
+    },
+    {
+      "extension": {
+        "id": "builtin.pdf",
+        "name": "PDF",
+        "summary": "读取、生成并渲染检查 PDF 文件。",
+        "description": "固定版本的 OpenAI 公开 PDF 技能，配合沙盒内 Poppler 和 Python PDF 工具链使用。",
+        "category": "office",
+        "publisher": "OpenAI"
+      },
+      "release": {
+        "version": "1.0.0",
+        "state": "PUBLISHED",
+        "manifestDigest": "sha256:9a34e557e78a2406c0fb3b33a0a84725399feba989544c4c900ea7c898895291",
+        "targets": [
+          "cloud"
+        ],
+        "componentKinds": [
+          "skill"
+        ],
+        "permissions": [],
+        "artifactDigest": "c9938f33ccad6ade2c9673a8735f06ef13b28354db6325811d5638f07c620daf",
+        "artifactSize": 5718,
+        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.pdf/releases/1.0.0/artifact",
+        "artifactPath": "extensions/builtin.pdf/1.0.0.zip"
+      }
+    },
+    {
+      "extension": {
+        "id": "builtin.latex-report-writer",
+        "name": "LaTeX 技术报告",
+        "summary": "使用 XeLaTeX 编写、校验并渲染中文电力技术报告。",
+        "description": "包含中国电力技术报告 LaTeX 类、版式规范、转换脚本、编译脚本和逐页渲染工具。",
+        "category": "writing-office",
+        "publisher": "PowerEvolve"
+      },
+      "release": {
+        "version": "1.0.0",
+        "state": "PUBLISHED",
+        "manifestDigest": "sha256:fbc10bb3ec3a57091bb16c86b7785a72ed19f907f9f1e1fa9f740d154b347e59",
+        "targets": [
+          "cloud"
+        ],
+        "componentKinds": [
+          "skill"
+        ],
+        "permissions": [],
+        "artifactDigest": "9a5a3947700c198a0d2ecc18c440221ae921f4698aa59e84dd454107c90f6f1c",
+        "artifactSize": 61190,
+        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.latex-report-writer/releases/1.0.0/artifact",
+        "artifactPath": "extensions/builtin.latex-report-writer/1.0.0.zip"
+      }
+    },
+    {
+      "extension": {
+        "id": "builtin.power-grid-technical-report-writer",
+        "name": "电网技术报告写作",
+        "summary": "渐进式编写电网科技项目结题技术报告。",
+        "description": "提供项目档案、论证架构、目录、分章正文、摘要证据包和全文组装规则及确定性校验脚本。",
+        "category": "writing-office",
+        "publisher": "PowerEvolve"
+      },
+      "release": {
+        "version": "1.1.31",
+        "state": "PUBLISHED",
+        "manifestDigest": "sha256:639f8951ddbda70f270154b8f24314348e885b677b6c71964df9b927b17632ed",
+        "targets": [
+          "cloud"
+        ],
+        "componentKinds": [
+          "skill"
+        ],
+        "permissions": [],
+        "artifactDigest": "add67cf6f0578037787583df0946d36429ab07c3b264c5eef0f1ba6a6d642250",
+        "artifactSize": 637663,
+        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.power-grid-technical-report-writer/releases/1.1.31/artifact",
+        "artifactPath": "extensions/builtin.power-grid-technical-report-writer/1.1.31.zip"
+      }
+    },
+    {
+      "extension": {
+        "id": "builtin.report-reviewer",
+        "name": "技术报告审核",
+        "summary": "审核技术报告目录、章节和全文。",
+        "description": "检查任务完成度、内容完整性、逻辑结构、证据引用、术语一致性和中文长文表达，并输出结构化审核结论。",
+        "category": "writing-office",
+        "publisher": "PowerEvolve"
+      },
+      "release": {
+        "version": "1.1.0",
+        "state": "PUBLISHED",
+        "manifestDigest": "sha256:6d708a6d9eb6f05afb39bd2a2d2e7c737a1745523407e34b23797eda03da7be3",
+        "targets": [
+          "cloud"
+        ],
+        "componentKinds": [
+          "skill"
+        ],
+        "permissions": [],
+        "artifactDigest": "88cb679201c4c47eb2a34a9ab47d41d191a311bbdb2447c193e714bf19665e63",
+        "artifactSize": 13964,
+        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.report-reviewer/releases/1.1.0/artifact",
+        "artifactPath": "extensions/builtin.report-reviewer/1.1.0.zip"
+      }
+    },
+    {
+      "extension": {
+        "id": "builtin.report-workflow-orchestrator",
+        "name": "技术报告工作流",
+        "summary": "编排技术报告写作、审核、排版和逐页验收。",
+        "description": "通过文件化状态机连接电网报告生成、结构化审核、Word 排版、格式修复与视觉验收。",
+        "category": "writing-office",
+        "publisher": "PowerEvolve"
+      },
+      "release": {
+        "version": "1.1.21",
+        "state": "PUBLISHED",
+        "manifestDigest": "sha256:99ae60e492ce6ae8ca495a68c538b6347e57a45fa572b7057890cd78989e880c",
+        "targets": [
+          "cloud"
+        ],
+        "componentKinds": [
+          "skill"
+        ],
+        "permissions": [],
+        "artifactDigest": "c5bfc7065a2d330256b00fdc1318a265b9b79de36b46584b2463b18154ed22cf",
+        "artifactSize": 71302,
+        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.report-workflow-orchestrator/releases/1.1.21/artifact",
+        "artifactPath": "extensions/builtin.report-workflow-orchestrator/1.1.21.zip"
+      }
+    },
+    {
+      "extension": {
+        "id": "builtin.tech-report-writer",
+        "name": "技术报告 Word 排版",
+        "summary": "生成、重排和校验中国电科院技术报告 Word 文件。",
+        "description": "包含 Word 模板、结构化数据校验、DOCX 生成、格式修复、目录域处理、PDF 转换与逐页视觉验收脚本。",
+        "category": "writing-office",
+        "publisher": "PowerEvolve"
+      },
+      "release": {
+        "version": "1.1.31",
+        "state": "PUBLISHED",
+        "manifestDigest": "sha256:ba06543c6f4920826ba5cc8927fcc8715421a62974963f0bb26cca99451b59c0",
+        "targets": [
+          "cloud"
+        ],
+        "componentKinds": [
+          "skill"
+        ],
+        "permissions": [],
+        "artifactDigest": "997a8100608d42046df8b522dfdc74147dd7331e642eb15c72d0d2f69760b2cd",
+        "artifactSize": 233150,
+        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.tech-report-writer/releases/1.1.31/artifact",
+        "artifactPath": "extensions/builtin.tech-report-writer/1.1.31.zip"
+      }
+    }
+  ]
+}

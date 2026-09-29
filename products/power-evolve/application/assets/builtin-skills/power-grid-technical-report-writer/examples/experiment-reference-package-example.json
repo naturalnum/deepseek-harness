@@ -1,0 +1,124 @@
+{
+  "reference_only": true,
+  "evidence_status": "model_generated_reference",
+  "chapter_id": "2",
+  "research_question": "如何验证图Transformer与约束强化学习链路对电网调度风险识别与决策的参考效果？",
+  "experiment_objectives": [
+    "比较所提技术链与传统基线在风险识别和策略质量上的差异",
+    "通过消融实验观察图结构表征和约束机制的参考贡献",
+    "通过敏感性和鲁棒性实验检查参数与扰动下的稳定趋势"
+  ],
+  "dataset_plan": [
+    {
+      "dataset_or_source": "用户调度历史数据字段模板",
+      "source_status": "user_data_template",
+      "intended_use": "用户后续回填真实调度状态、告警、操作和结果字段",
+      "fields_or_features": [
+        "节点负荷",
+        "线路潮流",
+        "电压",
+        "告警事件",
+        "调度动作"
+      ],
+      "split_strategy": "建议按时间切分训练/验证/测试集，避免未来信息泄漏"
+    },
+    {
+      "dataset_or_source": "合成调度工况样本",
+      "source_status": "synthetic",
+      "intended_use": "在缺少真实数据时演示实验流程和表格结构",
+      "fields_or_features": [
+        "工况编号",
+        "风险等级",
+        "候选策略",
+        "约束违例量"
+      ],
+      "split_strategy": "仅用于示例，不作为真实项目证据"
+    }
+  ],
+  "experiment_settings": {
+    "random_seed_strategy": "建议固定3至5组随机种子并报告均值和标准差",
+    "hardware_assumption": "可按实际GPU/CPU环境回填",
+    "training_protocol": "保持各可学习方法相同的数据划分与早停原则"
+  },
+  "evaluation_metrics": [
+    {
+      "metric": "风险识别F1",
+      "role": "分类性能"
+    },
+    {
+      "metric": "约束违例率",
+      "role": "安全性"
+    },
+    {
+      "metric": "平均决策时延",
+      "role": "工程效率"
+    }
+  ],
+  "baseline_methods": [
+    {
+      "method": "XGBoost",
+      "baseline_role": "classical",
+      "selection_reason": "作为结构化特征分类的经典基线"
+    },
+    {
+      "method": "GCN",
+      "baseline_role": "mainstream",
+      "selection_reason": "作为图结构学习的常用基线"
+    },
+    {
+      "method": "PPO",
+      "baseline_role": "related",
+      "selection_reason": "作为不含显式安全约束的强化学习参考方法"
+    }
+  ],
+  "experiment_items": {
+    "comparison": [
+      "主方法与XGBoost/GCN/PPO在统一数据划分下比较"
+    ],
+    "ablation": [
+      "移除图Transformer",
+      "移除安全约束项",
+      "移除人机反馈"
+    ],
+    "sensitivity": [
+      "注意力层数",
+      "约束惩罚系数"
+    ],
+    "robustness": [
+      "负荷扰动",
+      "缺失观测"
+    ],
+    "generalization": [
+      "跨季节工况",
+      "跨区域拓扑"
+    ]
+  },
+  "simulated_reference_data": [
+    {
+      "data_status": "illustrative_example",
+      "purpose": "演示用户可如何填写对比实验表格",
+      "metric": "风险识别F1",
+      "method": "示例主方法",
+      "value": 0.91,
+      "note": "纯示例数值，必须由真实实验替换后才能作为项目结果"
+    },
+    {
+      "data_status": "expected_range",
+      "purpose": "给出约束违例率的参考填写范围",
+      "metric": "约束违例率",
+      "range": "1%—5%",
+      "note": "预期范围，不代表项目实测"
+    }
+  ],
+  "user_supplementation_checklist": [
+    "替换合成样本为真实数据并说明来源与时间范围",
+    "补充实际软硬件环境和训练参数",
+    "运行对比、消融和鲁棒性实验并回填原始结果",
+    "将所有模拟/示例数值替换为可追溯真实结果后再进入最终结论"
+  ],
+  "draft_report_inclusion": "allowed_with_chapter_end_notice",
+  "reference_result_analysis": [
+    "参考结果用于演示比较逻辑：主方法在风险识别F1上应体现相对于经典基线的优势，同时检查约束违例率是否处于可接受参考范围。",
+    "消融实验应重点观察移除图结构表征或安全约束后性能变化，以帮助用户判断后续真实实验需要重点核验的模块贡献。"
+  ]
+}

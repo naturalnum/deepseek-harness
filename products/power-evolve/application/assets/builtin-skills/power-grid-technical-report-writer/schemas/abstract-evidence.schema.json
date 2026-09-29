@@ -1,0 +1,449 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Three-Paragraph Abstract Evidence Package",
+  "description": "Stateful evidence store for a three-paragraph bilingual abstract. Paragraph 1 starts from a selected business-need opening candidate; paragraph 3 prioritizes task-book assessment results, including quantitative and qualitative requirements, and uses at most two non-task-book supplementary metrics.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "initialized",
+    "abstract_structure",
+    "use_default_three_research_point_grouping",
+    "domain_context",
+    "practical_need",
+    "business_need_opening_candidates",
+    "selected_business_need_opening",
+    "existing_limitations",
+    "key_challenges",
+    "research_points",
+    "task_book_assessment_results",
+    "supplementary_result_metrics",
+    "overall_conclusion",
+    "research_prospects",
+    "application_value",
+    "application_prospects",
+    "application_conditions",
+    "keyword_plan",
+    "last_updated_after_chapter"
+  ],
+  "$defs": {
+    "verified_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "claim",
+        "value_or_finding",
+        "test_condition",
+        "source_location"
+      ],
+      "properties": {
+        "claim": {
+          "type": "string"
+        },
+        "value_or_finding": {
+          "type": "string"
+        },
+        "comparison_object": {
+          "type": "string"
+        },
+        "test_condition": {
+          "type": "string"
+        },
+        "source_location": {
+          "type": "string"
+        },
+        "research_point_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      }
+    },
+    "assessment_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "assessment_item_id",
+        "assessment_name",
+        "assessment_kind",
+        "result_statement",
+        "evidence_status",
+        "source_location"
+      ],
+      "properties": {
+        "assessment_item_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "assessment_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "assessment_kind": {
+          "enum": [
+            "quantitative",
+            "qualitative",
+            "mixed"
+          ]
+        },
+        "result_statement": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Result phrasing for the abstract. Quantitative items state the achieved/measured value or supported result; qualitative items state the demonstrated capability/function/outcome. Do not repeat task-book source wording."
+        },
+        "value_or_finding": {
+          "type": "string"
+        },
+        "comparison_object": {
+          "type": "string"
+        },
+        "test_condition": {
+          "type": "string"
+        },
+        "applicable_condition": {
+          "type": "string"
+        },
+        "source_location": {
+          "type": "string",
+          "minLength": 1
+        },
+        "research_point_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "evidence_status": {
+          "enum": [
+            "planned",
+            "partially-verified",
+            "verified",
+            "insufficient"
+          ]
+        }
+      }
+    }
+  },
+  "properties": {
+    "initialized": {
+      "type": "boolean"
+    },
+    "abstract_structure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "paragraph_count",
+        "paragraph_1_focus",
+        "paragraph_2_focus",
+        "paragraph_3_focus"
+      ],
+      "properties": {
+        "paragraph_count": {
+          "const": 3
+        },
+        "paragraph_1_focus": {
+          "const": "domain_status_need_challenges"
+        },
+        "paragraph_2_focus": {
+          "const": "merged_research_points"
+        },
+        "paragraph_3_focus": {
+          "const": "task_book_assessment_results_and_research_application_prospects"
+        }
+      }
+    },
+    "use_default_three_research_point_grouping": {
+      "type": "boolean",
+      "default": true,
+      "description": "When true, organize the project into the default three main research points. The abstract still has exactly three paragraphs."
+    },
+    "domain_context": {
+      "type": "string"
+    },
+    "practical_need": {
+      "type": "string"
+    },
+    "business_need_opening_candidates": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 5,
+      "uniqueItems": true,
+      "description": "Three to five alternative first sentences for the Chinese abstract. Each sentence analyzes the concrete power-business need/background and must not introduce a method or result.",
+      "items": {
+        "type": "string",
+        "minLength": 12
+      }
+    },
+    "selected_business_need_opening": {
+      "type": "string",
+      "minLength": 12,
+      "description": "The selected/recommended opening sentence. It must be one of business_need_opening_candidates and become the first sentence of abstract_cn."
+    },
+    "existing_limitations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "key_challenges": {
+      "type": "array",
+      "description": "Key challenges for paragraph 1. The number should normally match the number of research points; exceptions must be explained in notes.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "description",
+          "technical_cause",
+          "research_point_ids"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "technical_cause": {
+            "type": "string"
+          },
+          "research_point_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "uniqueItems": true
+          }
+        }
+      },
+      "minItems": 1,
+      "maxItems": 6
+    },
+    "research_points": {
+      "type": "array",
+      "description": "All research points are merged into paragraph 2, while each point retains problem, technology, mechanism and capability semantics.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "challenge_ids",
+          "problem",
+          "technology",
+          "core_mechanism",
+          "capability",
+          "supporting_chapters",
+          "verified_results",
+          "applicable_conditions",
+          "evidence_status"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "challenge_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "uniqueItems": true
+          },
+          "problem": {
+            "type": "string"
+          },
+          "technology": {
+            "type": "string"
+          },
+          "core_mechanism": {
+            "type": "string"
+          },
+          "capability": {
+            "type": "string"
+          },
+          "supporting_chapters": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "verified_results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/verified_result"
+            }
+          },
+          "applicable_conditions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "evidence_status": {
+            "enum": [
+              "planned",
+              "partially-verified",
+              "verified",
+              "insufficient"
+            ]
+          }
+        }
+      },
+      "minItems": 1,
+      "maxItems": 6
+    },
+    "representative_quantitative_results": {
+      "type": "array",
+      "description": "Deprecated compatibility field. Do not use as the primary abstract metric plan in v1.1.30; current rules use task_book_assessment_results plus supplementary_result_metrics.",
+      "items": {
+        "$ref": "#/$defs/verified_result"
+      }
+    },
+    "task_book_assessment_results": {
+      "type": "array",
+      "description": "All in-scope task-book assessment requirements prepared for paragraph 3. Quantitative and qualitative requirements are both tracked; same-kind items may be compressed in prose but may not be silently omitted.",
+      "items": {
+        "$ref": "#/$defs/assessment_result"
+      }
+    },
+    "supplementary_result_metrics": {
+      "type": "array",
+      "maxItems": 2,
+      "description": "Optional non-task-book metrics used only when they materially help explain the result. Use zero, one, or two; never exceed two.",
+      "items": {
+        "$ref": "#/$defs/verified_result"
+      }
+    },
+    "overall_conclusion": {
+      "type": "string"
+    },
+    "research_prospects": {
+      "type": "array",
+      "description": "Evidence-grounded future research directions and unresolved technical questions for paragraph 3.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "application_value": {
+      "type": "string"
+    },
+    "application_prospects": {
+      "type": "array",
+      "description": "Application scenarios, engineering expansion directions and deployment prospects supported by verified capabilities.",
+      "items": {
+        "type": "string"
+      }
+    },
+    "application_conditions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "keyword_plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "use_default_five_keyword_rule",
+        "domain_keywords",
+        "research_point_keywords"
+      ],
+      "properties": {
+        "use_default_five_keyword_rule": {
+          "type": "boolean",
+          "default": true
+        },
+        "domain_keywords": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "research_point_keywords": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Exactly three computer/AI/algorithm technology terms corresponding to the three representative core research points; avoid pure power-business nouns or generic wording such as 智能化/数字化/技术研究."
+        },
+        "custom_keywords": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "use_default_five_keyword_rule": {
+                "const": true
+              }
+            },
+            "required": [
+              "use_default_five_keyword_rule"
+            ]
+          },
+          "then": {
+            "properties": {
+              "domain_keywords": {
+                "minItems": 2,
+                "maxItems": 2
+              },
+              "research_point_keywords": {
+                "minItems": 3,
+                "maxItems": 3
+              }
+            }
+          }
+        }
+      ]
+    },
+    "last_updated_after_chapter": {
+      "type": "string"
+    },
+    "pending_evidence": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "use_default_three_research_point_grouping": {
+            "const": true
+          }
+        },
+        "required": [
+          "use_default_three_research_point_grouping"
+        ]
+      },
+      "then": {
+        "properties": {
+          "key_challenges": {
+            "minItems": 3,
+            "maxItems": 3
+          },
+          "research_points": {
+            "minItems": 3,
+            "maxItems": 3
+          }
+        }
+      }
+    }
+  ]
+}
