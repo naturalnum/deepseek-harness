@@ -92,6 +92,8 @@ for (const name of ['host', ...(multiHost ? ['host-b'] : []), 'platform', ...(de
     deviceOrigin: `http://127.0.0.1:${devicePort}`,
     image: process.env.PE_DESKTOP_IMAGE ?? sandbox?.image,
     connectorUrl: `http://127.0.0.1:${targetPort}`,
+    ...(mcpEnabled ? { mcpUrl: JSON.stringify(`http://127.0.0.1:${mcpPort}/mcp`),
+      mcpTokenFile: JSON.stringify(join(privateDir, 'mcp-token')) } : {}),
     ...(sandbox ? { workspaceRoot: sandbox.workspaceRoot, sandboxKubeconfigFile: sandbox.kubeconfigFile,
       sandboxNamespace: sandbox.namespace, sandboxImage: sandbox.image, sandboxLocalRoot: sandbox.localRoot,
       sandboxNodeRoot: sandbox.nodeRoot, ...(sandbox.idleMs ? { sandboxIdleMs: sandbox.idleMs } : {}) } : {}) }
