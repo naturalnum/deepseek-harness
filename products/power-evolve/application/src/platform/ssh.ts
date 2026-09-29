@@ -84,7 +84,7 @@ export class SshConnectionService {
   }
 
   /** Platform-only lookup. Never expose this result through a Host or browser route. */
-  async credentialForCall(user: Identity, connectionId: string, revision: number) {
+  async credentialForCall(user: Pick<Identity, 'userId'>, connectionId: string, revision: number) {
     const key = this.requireAvailable()
     const found = await this.pool.query<Connection>(
       `SELECT * FROM pe_ssh_connections WHERE id=$1 AND user_id=$2 AND revision=$3
