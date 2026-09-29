@@ -10,7 +10,7 @@ Use a clean committed revision. An archive excludes local credentials, ignored b
 
 ```sh
 git status --short
-git archive HEAD | docker build -f products/power-evolve/deploy/Dockerfile -t REGISTRY/power-evolve:REV -
+git archive HEAD | docker build --build-arg SOURCE_COMMIT="$(git rev-parse HEAD)" -f products/power-evolve/deploy/Dockerfile -t REGISTRY/power-evolve:REV -
 git archive HEAD:products/power-evolve/sandbox | docker build -f Dockerfile -t REGISTRY/power-evolve-runner:REV -
 docker push REGISTRY/power-evolve:REV
 docker push REGISTRY/power-evolve-runner:REV
