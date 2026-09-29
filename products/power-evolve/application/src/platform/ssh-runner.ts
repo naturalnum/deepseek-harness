@@ -113,6 +113,10 @@ export class SshRunnerOrchestrator {
   private token(callId: string, role: Role): string {
     return createHmac('sha256', this.config.controlKey).update(`ssh-runner-v1:${callId}:${role}`).digest('hex')
   }
+  private async probeLive(): Promise<boolean> {
+    try { return await this.config.proveForbiddenListener() }
+    catch (_error) { return false }
+  }
   private labels(callId: string, role?: Role): Record<string, string> {
     return { 'app.kubernetes.io/name': 'power-evolve-connector-runner', [label]: callId,
       ...(role ? { 'powerevolve.dev/connector-role': role } : {}) }
@@ -223,7 +227,7 @@ export class SshRunnerOrchestrator {
   /** Creates policy before Pods, proves a forbidden listener is live, and inspects the allowed target without credentials. */
   async prepare(callId: string, target: SshRunnerDestination): Promise<SshRunnerHandle> {
     this.validate(callId, target)
-    if (!await this.config.proveForbiddenListener()) throw new SshRunnerBlocked('connector_runner_probe_unavailable')
+    if (!await this.probeLive()) throw new SshRunnerBlocked('connector_runner_probe_unavailable')
     await this.ensure('networkpolicies', nameOf(callId), this.policy(callId, target))
     try {
       const canaryName = await this.createPod(callId, 'canary', target)
@@ -294,7 +298,8 @@ export class SshRunnerOrchestrator {
     if (dispatched && !/^[0-9a-f]{64}$/u.test(expectedDigest ?? '')) {
       return { state: 'uncertain', reason: 'dispatch_digest_missing' }
     }
-    if (await this.identity(handle) !== 'same') return { state: 'uncertain', reason: 'runner_identity_changed' }
+    try { if (await this.identity(handle) !== 'same') return { state: 'uncertain', reason: 'runner_identity_changed' } }
+    catch (_error) { return { state: 'uncertain', reason: 'runner_identity_unavailable' } }
     try {
       const status = await this.runner<SshRunnerStatus>(nameOf(handle.callId), this.token(handle.callId, 'call'),
         'GET', `/calls/${handle.callId}`)
@@ -316,10 +321,11 @@ export class SshRunnerOrchestrator {
     const expectedDigest = this.digestFor(handle, request)
     const before = await this.reconcile(handle, false, expectedDigest)
     if (before.state !== 'absent') return before
-    if (!await this.config.proveForbiddenListener()) {
+    if (!await this.probeLive()) {
       return { state: 'uncertain', reason: 'forbidden_probe_unavailable' }
     }
-    if (await this.identity(handle) !== 'same') return { state: 'uncertain', reason: 'runner_identity_changed' }
+    try { if (await this.identity(handle) !== 'same') return { state: 'uncertain', reason: 'runner_identity_changed' } }
+    catch (_error) { return { state: 'uncertain', reason: 'runner_identity_unavailable' } }
     try {
       const status = await this.runner<SshRunnerStatus>(nameOf(handle.callId), token, 'POST', '/calls',
         { ...unsigned, digest: expectedDigest })
