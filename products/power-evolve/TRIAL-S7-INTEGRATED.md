@@ -12,6 +12,10 @@
 
 其他纵切面证据分别见 [S7a](TRIAL-S7A-LOCAL.md)、[S7b](TRIAL-S7B-LOCAL.md)、[S7c](TRIAL-S7C-BACKUP.md)、[简单对话容量](TRIAL-S7-CAPACITY.md)和[登录容量](TRIAL-S7-LOGIN-CAPACITY.md)。部署候选从干净提交的 Git archive 成功构建应用与 Runner 镜像，模板及 23 个资源通过本地解析和 `kubectl --dry-run=client`；这不是运行中生产集群的证据。
 
+后续[镜像启动演练](deploy/QA-S7D-IMAGE-STARTUP.md)发现运行层缺 Python，修复后在真实 PG、只读容器根、Host UID 10001 下通过 7 项启动／文件／内网 RPC 检查；[网络策略演练](TRIAL-S7D-POLICY.md)验证了本机两个 k3d 节点的允许与拒绝路径。两个演练分别验证相应组件，不代表整套生产部署通过。
+
+[当前恢复预览](TRIAL-S7-CURRENT-PREVIEW.md)又发现旧种子技能目录权限、恢复后 Git 所有者以及本地检查失败遗留沙盒槽位的问题。主线已补启动前 POSIX 所有权准备、符号链接目标保留和提交槽位前的本地检查；修复后的产品构建及挂载／POSIX 回归 **13/13 通过**，其中挂载测试使用真实 PG 和 Kubernetes 替身。独立 Linux 容器中 UID 1000 在恢复后的 Git 树提交成功，外链目标及技能包不变。全新恢复目标的双用户真实云 Git 仍须以预览报告为准，旧环境的人工修复不计为该项通过。
+
 ## 尚未达到的发布门槛
 
 本机 S7b 的两个 k3d Node 仍共处一台物理机器。需要在至少两台独立机器、真实 `ReadWriteMany` POSIX 卷、外部 PostgreSQL、实际 CNI 与 HTTPS Ingress 中，按 [部署验收步骤](deploy/README.md)重复双用户编程、Pod 跨节点接管、停止证明、权限拒绝、网络出口、流式请求、备份恢复与故障回滚。部署候选的 PVC `subPath` 和 in-cluster 权限已做静态及局部测试，尚无上述实机结果。目标硬件的持续混合负载、容量上限和生产 RPO/RTO 也未测定。因此 S7 和云端发布仍为**未完成**。
