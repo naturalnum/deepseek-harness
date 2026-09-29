@@ -165,7 +165,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       }
       if (req.method === 'GET' && path === '/config') { sendJson(res, { loginUrl: `${config.platformOrigin}/login`,
         approvalUrl: `${config.platformOrigin}/approval`, deviceOrigin: config.deviceOrigin }); return }
-      if (req.method === 'GET' && await serveNativeUi(path, res)) return
+      if (req.method === 'GET' && await serveNativeUi(path, res, config.platformOrigin)) return
       const artifactContent = /^\/api\/powerEvolve\/artifacts\/([^/]+)\/content$/u.exec(path)
       if (req.method === 'GET' && artifactContent) {
         const artifactId = z.uuid().parse(artifactContent[1])

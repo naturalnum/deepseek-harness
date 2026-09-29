@@ -100,6 +100,67 @@ export class SandboxManager {
     return { local, node: join(this.config.nodeRoot, 'homes', userId) }
   }
 
+  private async skillPackages(userId: string): Promise<void> {
+    const root = resolve(this.config.localRoot)
+    const parent = join(root, 'skill-packages'), directory = join(parent, userId)
+    const rootStat = await lstat(root)
+    if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) {
+      throw new MountSlotBlocked('mount_skill_package_root_unavailable', false)
+    }
+    await mkdir(parent, { recursive: true, mode: 0o700 })
+    const parentStat = await lstat(parent)
+    if (!parentStat.isDirectory() || parentStat.isSymbolicLink()) {
+      throw new MountSlotBlocked('mount_skill_package_root_unavailable', false)
+    }
+    await mkdir(directory, { mode: 0o755 }).catch(error => {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+    })
+    const stat = await lstat(directory)
+    if (!stat.isDirectory() || stat.isSymbolicLink() || (stat.mode & 0o005) !== 0o005) {
+      throw new MountSlotBlocked('mount_skill_package_root_unavailable', false)
+    }
+  }
+
+  private hasSkillPackageMount(spec: unknown, userId: string): boolean {
+    if (!spec || typeof spec !== 'object' || Array.isArray(spec)) return false
+    const { volumes, containers } = spec as Record<string, unknown>
+    if (!Array.isArray(volumes) || !Array.isArray(containers)) return false
+    const entries: unknown[] = volumes, workers: unknown[] = containers
+    const source = join(this.config.nodeRoot, 'skill-packages', userId)
+    const packageVolumes = entries.filter((value): value is Record<string, unknown> => typeof value === 'object'
+      && value !== null && !Array.isArray(value) && 'name' in value && value.name === 'skill-packages')
+    const volume = packageVolumes[0]
+    const sourceVolumes = entries.filter(value => {
+      if (typeof value !== 'object' || value === null || !('hostPath' in value)) return false
+      const hostPath = value.hostPath
+      return typeof hostPath === 'object' && hostPath !== null && 'path' in hostPath
+        && hostPath.path === source
+    })
+    const runner = workers.find((value): value is Record<string, unknown> => typeof value === 'object'
+      && value !== null && !Array.isArray(value) && 'name' in value && value.name === 'runner')
+    if (packageVolumes.length !== 1 || sourceVolumes.length !== 1 || sourceVolumes[0] !== volume
+      || !volume || !runner || !Array.isArray(runner.volumeMounts)) return false
+    const hostPath = volume.hostPath
+    const mounts: unknown[] = runner.volumeMounts
+    const packageMounts = mounts.filter((value): value is Record<string, unknown> => typeof value === 'object'
+      && value !== null && !Array.isArray(value) && 'name' in value && value.name === 'skill-packages')
+    const mount = packageMounts[0]
+    return typeof hostPath === 'object' && hostPath !== null
+      && 'path' in hostPath && hostPath.path === source
+      && 'type' in hostPath && hostPath.type === 'Directory'
+      && packageMounts.length === 1 && !!mount
+      && 'mountPath' in mount && mount.mountPath === '/opt/power-evolve/skills'
+      && 'readOnly' in mount && mount.readOnly === true
+      && !('subPath' in mount)
+  }
+
+  private hasSkillPackageIdentity(sandbox: Resource, pod: Pod, userId: string): boolean {
+    const template = sandbox.spec?.podTemplate
+    return typeof template === 'object' && template !== null && !Array.isArray(template)
+      && this.hasSkillPackageMount((template as Record<string, unknown>).spec, userId)
+      && this.hasSkillPackageMount(pod.spec, userId)
+  }
+
   private async workspaceId(sessionId: string, userId: string): Promise<string> {
     const result = await this.pool.query<{ workspace_id: string }>(
       `SELECT s.workspace_id FROM pe_sessions s JOIN pe_workspaces w
@@ -216,6 +277,7 @@ export class SandboxManager {
         throw new MountSlotBlocked('mount_workspace_root_changed', false)
       }
       await this.home(userId)
+      await this.skillPackages(userId)
       return this.createReserved(slot, workspaceId, assertLease)
     }
     throw new MountSlotBlocked('mount_handoff_incomplete', false)
@@ -254,11 +316,14 @@ export class SandboxManager {
             drop: ['ALL'], add: ['SETUID', 'SETGID', 'DAC_OVERRIDE', 'KILL'],
           }, readOnlyRootFilesystem: true, runAsUser: 0, runAsGroup: 0 },
           volumeMounts: [{ name: 'workspace', mountPath: '/workspace' }, { name: 'home', mountPath: '/home/agent' },
+            { name: 'skill-packages', mountPath: '/opt/power-evolve/skills', readOnly: true },
             { name: 'token', mountPath: '/run/power-evolve', readOnly: true }, { name: 'scratch', mountPath: '/tmp' }],
         }],
         volumes: [
           { name: 'workspace', hostPath: { path: join(this.config.nodeRoot, 'workspaces', workspaceId), type: 'Directory' } },
           { name: 'home', hostPath: { path: join(this.config.nodeRoot, 'homes', userId), type: 'Directory' } },
+          { name: 'skill-packages', hostPath: { path: join(this.config.nodeRoot, 'skill-packages', userId),
+            type: 'Directory' } },
           { name: 'token', secret: { secretName: name, defaultMode: 0o400,
             items: [{ key: 'token', path: 'runner-token', mode: 0o400 }] } },
           { name: 'scratch', emptyDir: { sizeLimit: '256Mi' } },
@@ -277,6 +342,9 @@ export class SandboxManager {
       if (ready && current?.metadata.uid && this.owned(current, labels)
         && current.metadata.ownerReferences?.some(ref => ref.uid === sandbox?.metadata.uid)
         && current.status?.phase === 'Running' && current.status.containerStatuses?.[0]?.ready) {
+        if (!sandbox || !this.hasSkillPackageIdentity(sandbox, current, userId)) {
+          throw new MountSlotBlocked('mount_skill_package_identity_changed', false)
+        }
         try {
           const health = await this.runner<{ ready: boolean; instanceId: string }>(name, token, 'GET', '/health')
           if (health.ready && /^[a-f0-9-]{36}$/.test(health.instanceId)) {
@@ -360,7 +428,8 @@ export class SandboxManager {
     if (!sandbox || sandbox.metadata.deletionTimestamp || !this.owned(sandbox, labels)
       || !pod || pod.metadata.deletionTimestamp || !this.owned(pod, labels)
       || pod.metadata.uid !== podUid || !pod.metadata.ownerReferences?.some(ref => ref.uid === sandbox.metadata.uid)
-      || !pod.metadata.finalizers?.includes(STOP_FINALIZER)) return false
+      || !pod.metadata.finalizers?.includes(STOP_FINALIZER)
+      || !this.hasSkillPackageIdentity(sandbox, pod, userId)) return false
     const health = await this.runner<{ ready: boolean; instanceId: string }>(name,
       this.token(name, sessionId, slot.generation), 'GET', '/health')
     return health.ready && health.instanceId === runnerInstanceId

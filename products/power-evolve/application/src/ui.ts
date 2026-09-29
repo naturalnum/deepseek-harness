@@ -18,7 +18,7 @@ const nativeMime: Record<string, string> = {
  * @param response - HTTP response owned by the Host.
  * @returns whether the native-shell route matched.
  */
-export async function serveNativeUi(path: string, response: ServerResponse): Promise<boolean> {
+export async function serveNativeUi(path: string, response: ServerResponse, platformOrigin?: string): Promise<boolean> {
   if (path === '/native') {
     response.writeHead(308, { location: '/native/' })
     response.end()
@@ -34,10 +34,14 @@ export async function serveNativeUi(path: string, response: ServerResponse): Pro
   }
   const extension = asset.slice(asset.lastIndexOf('.'))
   const body = await readFile(join(nativeDist, asset))
+  const platform = platformOrigin === undefined ? undefined : new URL(platformOrigin)
+  if (platform && (platform.origin !== platformOrigin || platform.username || platform.password)) {
+    throw new Error('Invalid platform origin for native Web CSP')
+  }
   response.writeHead(200, {
     'content-type': `${nativeMime[extension] ?? 'application/octet-stream'}; charset=utf-8`,
     'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer',
-    'content-security-policy': "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data: blob:; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+    'content-security-policy': `default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self'${platform ? ` ${platform.origin}` : ''}; img-src 'self' data: blob:; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`,
   })
   response.end(body)
   return true

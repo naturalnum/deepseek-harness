@@ -44,7 +44,7 @@ test('native DSH shell uses the upstream page and a closed, external boot graph'
 test('Host serves native static files separately from the existing trial root', async () => {
   const server = createServer((req, res) => {
     const path = new URL(req.url ?? '/', 'http://localhost').pathname
-    void serveNativeUi(path, res).then(matched => {
+    void serveNativeUi(path, res, 'http://127.0.0.1:18881').then(matched => {
       if (!matched) { res.writeHead(404); res.end() }
     }).catch(error => { res.writeHead(500); res.end(String(error)) })
   })
@@ -61,6 +61,7 @@ test('Host serves native static files separately from the existing trial root', 
   assert.equal(page.status, 200)
   assert.match(page.headers.get('content-security-policy') ?? '', /script-src 'self'/u)
   assert.match(page.headers.get('content-security-policy') ?? '', /'unsafe-eval'/u)
+  assert.match(page.headers.get('content-security-policy') ?? '', /connect-src 'self' http:\/\/127\.0\.0\.1:18881/u)
   assert.match(await page.text(), /<div id="root"><\/div>/u)
   const asset = await fetch(`${base}/native/favicon.svg`)
   assert.equal(asset.status, 200)

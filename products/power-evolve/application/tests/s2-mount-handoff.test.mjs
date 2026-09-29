@@ -2,8 +2,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { randomBytes, randomUUID } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
+import { mkdir, mkdtemp, readFile, rm, symlink } from 'node:fs/promises'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
 import { initializeDatabase } from '../lib/platform/database.js'
@@ -53,7 +53,7 @@ class FakeKubernetes {
         this.instances.set(id, randomUUID())
         const pod = { metadata: { name: id, uid: randomUUID(), resourceVersion: '1', generation: 1,
           labels: structuredClone(body.metadata.labels), ownerReferences: [{ uid: value.metadata.uid }], finalizers: [] },
-        spec: { nodeName: 'test-node', containers: [{ name: 'runner' }] },
+        spec: { ...structuredClone(body.spec.podTemplate.spec), nodeName: 'test-node' },
         status: { phase: 'Running', containerStatuses: [{ name: 'runner', ready: true, restartCount: 0 }] } }
         this.resources.set(`pods/${id}`, pod)
       }
@@ -114,9 +114,10 @@ async function fixture(t) {
           (state IN ('free','reserved','ready','stopping','unknown')),
         pod_uid uuid, runner_instance_id uuid, stop_pod_uid uuid, stop_evidence jsonb,
         updated_at timestamptz NOT NULL DEFAULT now());`)
-  } else assert.equal(version, 11)
+  } else assert.ok([11, 12].includes(version))
   const kube = new FakeKubernetes()
-  const localRoot = '/tmp/pe-s2-handoff-test'
+  const localRoot = await mkdtemp(join(tmpdir(), 'pe-s2-handoff-'))
+  t.after(() => rm(localRoot, { recursive: true, force: true }))
   const files = { async workspaceForId(userId, workspaceId) {
     const found = await pool.query('SELECT id FROM pe_workspaces WHERE id=$1 AND user_id=$2', [workspaceId, userId])
     if (!found.rowCount) throw new Error('workspace missing')
@@ -139,8 +140,72 @@ async function fixture(t) {
       [userId, `test-${userId}`, 'irrelevant', '{}'])
     return userId
   }
-  return { pool, kube, manager, createSession, createUser }
+  return { pool, kube, manager, localRoot, createSession, createUser }
 }
+
+test('S5 Sandboxes mount only their user package tree read-only and reuse the matching Pod',
+  { timeout: 30000 }, async t => {
+    const { kube, manager, createSession, createUser } = await fixture(t)
+    const alice = await createUser(), bob = await createUser()
+    const aliceSession = await createSession(alice), bobSession = await createSession(bob)
+    const first = await manager.ensureReady(aliceSession.sessionId, alice, async () => {})
+    const second = await manager.ensureReady(bobSession.sessionId, bob, async () => {})
+    for (const [userId, sandbox] of [[alice, first], [bob, second]]) {
+      const resource = kube.resource('sandboxes', sandbox.name)
+      const pod = kube.resource('pods', sandbox.name)
+      for (const spec of [resource.spec.podTemplate.spec, pod.spec]) {
+        const volume = spec.volumes.find(entry => entry.name === 'skill-packages')
+        const mount = spec.containers.find(entry => entry.name === 'runner').volumeMounts
+          .find(entry => entry.name === 'skill-packages')
+        assert.equal(volume.hostPath.path.endsWith(`/skill-packages/${userId}`), true)
+        assert.equal(volume.hostPath.type, 'Directory')
+        assert.deepEqual(mount, { name: 'skill-packages', mountPath: '/opt/power-evolve/skills', readOnly: true })
+        assert.equal(spec.volumes.some(entry => entry.name === 'skill-packages'
+          && entry.hostPath.path.endsWith(`/skill-packages/${userId === alice ? bob : alice}`)), false)
+      }
+    }
+    const count = kube.mutations.length
+    assert.deepEqual(await manager.ensureReady(aliceSession.sessionId, alice, async () => {}), first)
+    assert.equal(kube.mutations.length, count)
+  })
+
+test('S5 old running Pod without skill mount is quarantined rather than reused', { timeout: 30000 }, async t => {
+  const { pool, kube, manager, createSession, createUser } = await fixture(t)
+  const userId = await createUser(), session = await createSession(userId)
+  const ready = await manager.ensureReady(session.sessionId, userId, async () => {})
+  const pod = kube.resource('pods', ready.name)
+  pod.spec.containers[0].volumeMounts = pod.spec.containers[0].volumeMounts
+    .filter(entry => entry.name !== 'skill-packages')
+  const before = kube.mutations.length
+  await assert.rejects(manager.ensureReady(session.sessionId, userId, async () => {}),
+    /mount_instance_changed/)
+  const slot = (await pool.query('SELECT state,pod_uid FROM pe_mount_slots WHERE user_id=$1', [userId])).rows[0]
+  assert.deepEqual(slot, { state: 'unknown', pod_uid: ready.podUid })
+  assert.equal(kube.mutations.length, before)
+  assert.equal(kube.resource('pods', ready.name).metadata.uid, ready.podUid)
+})
+
+test('S5 changed Sandbox template is quarantined before another runner call', { timeout: 30000 }, async t => {
+  const { pool, kube, manager, createSession, createUser } = await fixture(t)
+  const userId = await createUser(), session = await createSession(userId)
+  const ready = await manager.ensureReady(session.sessionId, userId, async () => {})
+  const resource = kube.resource('sandboxes', ready.name)
+  resource.spec.podTemplate.spec.volumes.find(entry => entry.name === 'skill-packages').hostPath.path =
+    '/outside/user-package-tree'
+  await assert.rejects(manager.assertCurrent(ready), /mount_instance_changed/)
+  assert.equal((await pool.query('SELECT state FROM pe_mount_slots WHERE user_id=$1', [userId])).rows[0].state,
+    'unknown')
+})
+
+test('S5 refuses a symlinked package mount source before Kubernetes creation', { timeout: 30000 }, async t => {
+  const { kube, manager, localRoot, createSession, createUser } = await fixture(t)
+  const userId = await createUser(), session = await createSession(userId)
+  await mkdir(join(localRoot, 'skill-packages'), { recursive: true })
+  await symlink(tmpdir(), join(localRoot, 'skill-packages', userId))
+  await assert.rejects(manager.ensureReady(session.sessionId, userId, async () => {}),
+    /mount_skill_package_root_unavailable/)
+  assert.equal(kube.mutations.length, 0)
+})
 
 test('S2 serial handoff retains exact stopped Pod proof and distinct Session runners', { timeout: 30000 }, async t => {
   const { pool, kube, manager, createSession, createUser } = await fixture(t)
