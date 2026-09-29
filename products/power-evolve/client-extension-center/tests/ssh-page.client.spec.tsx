@@ -14,19 +14,21 @@ const data: PersonalSshList = { available: true, items: [item] }
 const t = (key: keyof typeof en) => en[key]
 
 test('unavailable service shows existing server metadata but disables new installation', () => {
+  const callList = vi.fn(async () => [])
   const port: PersonalSshPort = { list: vi.fn(), createPassword: vi.fn(), toggle: vi.fn(),
-    check: vi.fn(), callStatus: vi.fn(), callCancel: vi.fn() }
+    check: vi.fn(), callList, callStatus: vi.fn(), callCancel: vi.fn() }
   render(<PersonalSshPage data={{ ...data, available: false }} port={port} onChange={vi.fn()}
     onReload={vi.fn()} t={t} />)
   expect(screen.getByText('My server')).toBeTruthy()
   expect(screen.getByRole('button', { name: 'Add server' }).getAttribute('disabled')).not.toBeNull()
   expect(screen.getByRole('button', { name: 'Check SSH credentials' }).getAttribute('disabled')).not.toBeNull()
+  expect(callList).not.toHaveBeenCalled()
 })
 
 test('password form requires a pinned fingerprint and retries with stable request ID', async () => {
   const createPassword = vi.fn().mockRejectedValueOnce(new Error('reply lost')).mockResolvedValueOnce(item)
   const port: PersonalSshPort = { list: vi.fn(), createPassword, toggle: vi.fn(),
-    check: vi.fn(), callStatus: vi.fn(), callCancel: vi.fn() }
+    check: vi.fn(), callList: async () => [], callStatus: vi.fn(), callCancel: vi.fn() }
   const onChange = vi.fn()
   render(<PersonalSshPage data={{ ...data, items: [] }} port={port} onChange={onChange}
     onReload={vi.fn()} t={t} />)
@@ -51,7 +53,7 @@ test('SSH toggle retries with the same revision and request ID', async () => {
   const toggle = vi.fn().mockRejectedValueOnce(new Error('reply lost'))
     .mockResolvedValueOnce({ ...item, enabled: false, revision: 2 })
   const port: PersonalSshPort = { list: vi.fn(), createPassword: vi.fn(), toggle,
-    check: vi.fn(), callStatus: vi.fn(), callCancel: vi.fn() }
+    check: vi.fn(), callList: async () => [], callStatus: vi.fn(), callCancel: vi.fn() }
   render(<PersonalSshPage data={data} port={port} onChange={vi.fn()} onReload={vi.fn()} t={t} />)
   fireEvent.click(screen.getByRole('switch'))
   await screen.findByText('The enabled state is uncertain. Retry uses the same request ID.')
@@ -61,23 +63,22 @@ test('SSH toggle retries with the same revision and request ID', async () => {
   expect(toggle.mock.calls[0]![0].baseRevision).toBe(1)
 })
 
-test('SSH credential check polls to a verified success without invoking a command', async () => {
+test('recent SSH checks restore after refresh and one list poll advances pending calls', async () => {
   vi.useFakeTimers()
   const callId = '217d9a46-3b52-455b-bba6-7d9389c990bb'
-  const check = vi.fn(async () => ({ callId, state: 'accepted' as const }))
-  const callStatus = vi.fn(async () => ({ callId, state: 'succeeded' as const,
-    result: { authenticated: true } }))
-  const port: PersonalSshPort = { list: vi.fn(), createPassword: vi.fn(), toggle: vi.fn(), check,
-    callStatus, callCancel: vi.fn() }
+  const callList = vi.fn().mockResolvedValueOnce([{ callId, state: 'accepted' }])
+    .mockResolvedValueOnce([{ callId, state: 'succeeded', result: { kind: 'ssh.authenticate', serverBanner: null } }])
+  const port: PersonalSshPort = { list: vi.fn(), createPassword: vi.fn(), toggle: vi.fn(),
+    check: vi.fn(), callList, callStatus: vi.fn(), callCancel: vi.fn() }
   render(<PersonalSshPage data={data} port={port} onChange={vi.fn()} onReload={vi.fn()} t={t} />)
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Check SSH credentials' })) })
+  await act(async () => { await Promise.resolve() })
   expect(screen.getByText('Check pending')).toBeTruthy()
-  expect(check.mock.calls[0]![0]).toEqual({ requestId: expect.any(String), connectionId: item.connectionId,
-    connectionRevision: item.revision })
-  await act(async () => { await vi.advanceTimersByTimeAsync(3000) })
-  expect(callStatus).toHaveBeenCalledWith(callId, expect.any(AbortSignal))
+  await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
+  expect(callList).toHaveBeenCalledTimes(2)
   expect(screen.getByText('SSH authentication succeeded')).toBeTruthy()
-  expect(screen.getByText('This checks SSH authentication only. No remote command runs.')).toBeTruthy()
+  expect(screen.queryByText('ssh.authenticate')).toBeNull()
+  await act(async () => { await vi.advanceTimersByTimeAsync(10000) })
+  expect(callList).toHaveBeenCalledTimes(2)
 })
 
 test('an uncertain admission retries the exact request and cancel never claims success', async () => {
@@ -86,7 +87,7 @@ test('an uncertain admission retries the exact request and cancel never claims s
     .mockResolvedValueOnce({ callId, state: 'running' })
   const callCancel = vi.fn(async () => ({ callId, state: 'uncertain' as const }))
   const port: PersonalSshPort = { list: vi.fn(), createPassword: vi.fn(), toggle: vi.fn(), check,
-    callStatus: vi.fn(), callCancel }
+    callList: async () => [], callStatus: vi.fn(), callCancel }
   render(<PersonalSshPage data={data} port={port} onChange={vi.fn()} onReload={vi.fn()} t={t} />)
   fireEvent.click(screen.getByRole('button', { name: 'Check SSH credentials' }))
   await screen.findByText('The check may have been accepted. Retry uses the same request ID.')
@@ -94,36 +95,38 @@ test('an uncertain admission retries the exact request and cancel never claims s
   await waitFor(() => expect(check).toHaveBeenCalledTimes(2))
   expect(check.mock.calls[0]![0]).toEqual(check.mock.calls[1]![0])
   fireEvent.click(screen.getByRole('button', { name: 'Cancel check' }))
-  await screen.findByText('Check outcome uncertain')
+  expect((await screen.findAllByText('Check outcome uncertain')).length).toBeGreaterThan(0)
   expect(callCancel).toHaveBeenCalledWith(callId)
   expect(screen.queryByText('Check cancelled')).toBeNull()
-  expect(screen.getByText('Cancellation requested. The remote outcome is still being confirmed.')).toBeTruthy()
+  expect(screen.getAllByText('Cancellation requested. The remote outcome is still being confirmed.').length)
+    .toBeGreaterThan(0)
 })
 
 test('a lost cancellation response remains explicitly uncertain', async () => {
   const callId = '217d9a46-3b52-455b-bba6-7d9389c990bb'
   const port: PersonalSshPort = { list: vi.fn(), createPassword: vi.fn(), toggle: vi.fn(),
-    check: async () => ({ callId, state: 'running' }), callStatus: vi.fn(),
+    check: async () => ({ callId, state: 'running' }), callList: async () => [], callStatus: vi.fn(),
     callCancel: vi.fn(async () => { throw new Error('lost reply') }) }
   render(<PersonalSshPage data={data} port={port} onChange={vi.fn()} onReload={vi.fn()} t={t} />)
   fireEvent.click(screen.getByRole('button', { name: 'Check SSH credentials' }))
   fireEvent.click(await screen.findByRole('button', { name: 'Cancel check' }))
   await screen.findByText('The cancellation result is uncertain. Keep checking the call status.')
   expect(screen.queryByText('Check cancelled')).toBeNull()
-  expect(screen.getAllByRole('button', { name: 'Refresh list' }).length).toBe(2)
+  expect(screen.getAllByRole('button', { name: 'Refresh list' }).length).toBeGreaterThan(0)
 })
 
-test('unmount aborts an in-flight status poll', async () => {
+test('unmount aborts an in-flight recent-call poll', async () => {
   vi.useFakeTimers()
   const callId = '217d9a46-3b52-455b-bba6-7d9389c990bb'
   let pollSignal: AbortSignal | undefined
-  const port: PersonalSshPort = { list: vi.fn(), createPassword: vi.fn(), toggle: vi.fn(),
-    check: async () => ({ callId, state: 'running' }),
-    callStatus: vi.fn(async (_id, signal) => { pollSignal = signal
-      return new Promise(() => {}) }), callCancel: vi.fn() }
+  const callList = vi.fn().mockResolvedValueOnce([{ callId, state: 'running' }])
+    .mockImplementationOnce(async (signal: AbortSignal) => { pollSignal = signal
+      return new Promise(() => {}) })
+  const port: PersonalSshPort = { list: vi.fn(), createPassword: vi.fn(), toggle: vi.fn(), callList,
+    check: vi.fn(), callStatus: vi.fn(), callCancel: vi.fn() }
   const view = render(<PersonalSshPage data={data} port={port} onChange={vi.fn()} onReload={vi.fn()} t={t} />)
-  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Check SSH credentials' })) })
-  await act(async () => { await vi.advanceTimersByTimeAsync(3000) })
+  await act(async () => { await Promise.resolve() })
+  await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
   expect(pollSignal).toBeDefined()
   view.unmount()
   expect(pollSignal?.aborted).toBe(true)

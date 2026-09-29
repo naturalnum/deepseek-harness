@@ -33,39 +33,54 @@ export function PersonalSshPage({ data, port, onChange, onReload, t }: {
   const [pendingCheck, setPendingCheck] = useState<SshCheckInput>()
   const [checkBusy, setCheckBusy] = useState(false)
   const [cancelBusy, setCancelBusy] = useState(false)
-  const [cancelRequested, setCancelRequested] = useState(false)
+  const [cancelRequestedId, setCancelRequestedId] = useState<string>()
   const [checkError, setCheckError] = useState<string>()
+  const [recentCalls, setRecentCalls] = useState<readonly SshCheckCall[]>([])
+  const [callsError, setCallsError] = useState<string>()
+  const [pollGeneration, setPollGeneration] = useState(0)
   const mounted = useRef(true)
-  const observeCall = useCallback((next: SshCheckCall): void => { setCall(previous => {
-    if (!previous || previous.callId !== next.callId) return previous
-    if (!activeCheck(previous.state) && activeCheck(next.state)) return previous
-    return next
-  }) }, [])
+  const observeCall = useCallback((next: SshCheckCall): void => {
+    setCall(previous => {
+      if (!previous || previous.callId !== next.callId) return previous
+      if (!activeCheck(previous.state) && activeCheck(next.state)) return previous
+      return next
+    })
+    setRecentCalls(previous => {
+      const existing = previous.find(item => item.callId === next.callId)
+      const selected = existing && !activeCheck(existing.state) && activeCheck(next.state) ? existing : next
+      return [selected, ...previous.filter(item => item.callId !== next.callId)].slice(0, 100)
+    })
+  }, [])
   useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
   useEffect(() => {
-    if (!call || !activeCheck(call.state)) return
+    if (!data.available) return
     let stopped = false
-    let current = call
     let controller: AbortController | undefined
     let timer: ReturnType<typeof setTimeout> | undefined
     let wake: (() => void) | undefined
     const poll = async (): Promise<void> => {
-      while (!stopped && activeCheck(current.state)) {
-        await new Promise<void>(resolve => { wake = resolve
-          timer = setTimeout(resolve, current.state === 'uncertain' ? 5000 : 3000) })
-        if (stopped) return
+      while (!stopped) {
         controller = new AbortController()
         try {
-          current = await port.callStatus(current.callId, controller.signal)
-          if (!stopped) { observeCall(current); setCheckError(undefined) }
+          const items = await port.callList(controller.signal)
+          if (stopped) return
+          setRecentCalls(items)
+          setCall(previous => {
+            if (!previous) return previous
+            const updated = items.find(item => item.callId === previous.callId)
+            return updated && (activeCheck(previous.state) || !activeCheck(updated.state)) ? updated : previous
+          })
+          setCallsError(undefined)
+          if (!items.some(item => activeCheck(item.state))) return
         } catch (_cause) {
-          if (!stopped) setCheckError(t('sshCheckStatusUncertain'))
+          if (!stopped) setCallsError(t('sshCheckStatusUncertain'))
         }
+        await new Promise<void>(resolve => { wake = resolve; timer = setTimeout(resolve, 5000) })
       }
     }
     void poll()
     return () => { stopped = true; controller?.abort(); if (timer) clearTimeout(timer); wake?.() }
-  }, [call?.callId, call === undefined ? false : activeCheck(call.state), observeCall, port, t])
+  }, [data.available, pollGeneration, port, t])
   const visible = useMemo(() => {
     const needle = search.trim().toLocaleLowerCase()
     return needle === '' ? data.items : data.items.filter(item =>
@@ -113,11 +128,11 @@ export function PersonalSshPage({ data, port, onChange, onReload, t }: {
 
   const check = async (input: SshCheckInput): Promise<void> => {
     if (checkBusy || !data.available) return
-    setCheckBusy(true); setCheckedId(input.connectionId); setCheckError(undefined); setCancelRequested(false)
+    setCheckBusy(true); setCheckedId(input.connectionId); setCheckError(undefined); setCancelRequestedId(undefined)
     try {
       const next = await port.check(input)
       if (!mounted.current) return
-      setCall(next); setPendingCheck(undefined)
+      setCall(next); setPendingCheck(undefined); observeCall(next); setPollGeneration(value => value + 1)
     } catch (cause) {
       if (!mounted.current) return
       if (cause instanceof SshHttpError && [400, 401, 403, 404, 409].includes(cause.status)) {
@@ -138,7 +153,7 @@ export function PersonalSshPage({ data, port, onChange, onReload, t }: {
 
   const cancelCall = async (callId: string): Promise<void> => {
     if (cancelBusy) return
-    setCancelBusy(true); setCancelRequested(true); setCheckError(undefined)
+    setCancelBusy(true); setCancelRequestedId(callId); setCheckError(undefined)
     try { const next = await port.callCancel(callId); if (mounted.current) observeCall(next) }
     catch (_cause) { if (mounted.current) setCheckError(t('sshCancelUncertain')) }
     finally { if (mounted.current) setCancelBusy(false) }
@@ -160,7 +175,8 @@ export function PersonalSshPage({ data, port, onChange, onReload, t }: {
         onChange={event => { setSearch(event.target.value) }} /></label>
     <div className="pext-catalog-filter-row"><strong>{t('sshMyServers').replace('{count}', String(data.items.length))}</strong>
       <span>{t('sshEnabledCount').replace('{count}', String(count))}</span>
-      <button type="button" className="pext-card-action" onClick={onReload}>{t('refreshList')}</button></div>
+      <button type="button" className="pext-card-action" onClick={() => { onReload()
+        setPollGeneration(value => value + 1) }}>{t('refreshList')}</button></div>
     {error && !formOpen && <div className="pext-error" role="alert">{error}</div>}
     {pendingToggle && <button type="button" className="pext-dialog-button" disabled={busy}
       onClick={() => { void toggle(pendingToggle) }}>{t('sshRetryToggle')}</button>}
@@ -184,7 +200,7 @@ export function PersonalSshPage({ data, port, onChange, onReload, t }: {
         {checkedId === item.connectionId && (call || pendingCheck || checkError) && <div className="pext-ssh-check-state" role="status">
           <strong>{call ? checkLabel(call.state) : t('sshCheckUncertain')}</strong>
           <p>{t('sshCheckAuthenticationOnly')}</p>
-          {cancelRequested && call && activeCheck(call.state) && <p>{t('sshCancellationPending')}</p>}
+          {cancelRequestedId === call?.callId && call && activeCheck(call.state) && <p>{t('sshCancellationPending')}</p>}
           {call?.errorCode && <small>{t('sshCheckErrorCode').replace('{code}', call.errorCode)}</small>}
           {checkError && <p>{checkError}</p>}
           <div>{pendingCheck && <button type="button" className="pext-dialog-button" disabled={checkBusy}
@@ -196,6 +212,24 @@ export function PersonalSshPage({ data, port, onChange, onReload, t }: {
               {cancelBusy ? t('sshCancelling') : t('sshCancelCheck')}</button>}</div>
         </div>}
       </article>)}</div>}
+    {data.available && <section className="pext-ssh-recent" aria-label={t('sshRecentChecks')}>
+      <div className="pext-catalog-filter-row"><strong>{t('sshRecentChecks')}</strong>
+        <button type="button" className="pext-card-action" onClick={() => { setPollGeneration(value => value + 1) }}>
+          {t('refreshList')}</button></div>
+      {callsError && <div className="pext-error" role="alert">{callsError}</div>}
+      {recentCalls.length === 0 ? <p>{t('sshNoRecentChecks')}</p>
+        : <div className="pext-ssh-recent-list">{recentCalls.slice(0, 8).map(recent => <article key={recent.callId}>
+          <code>{recent.callId.slice(0, 8)}</code><strong>{checkLabel(recent.state)}</strong>
+          {recent.errorCode && <small>{t('sshCheckErrorCode').replace('{code}', recent.errorCode)}</small>}
+          {cancelRequestedId === recent.callId && activeCheck(recent.state) && <small>{t('sshCancellationPending')}</small>}
+          {cancelRequestedId === recent.callId && checkError && <small>{checkError}</small>}
+          <button type="button" className="pext-dialog-button" disabled={checkBusy}
+            onClick={() => { void refreshCall(recent.callId) }}>{t('sshRefreshCheck')}</button>
+          {activeCheck(recent.state) && <button type="button" className="pext-dialog-button" disabled={cancelBusy}
+            onClick={() => { void cancelCall(recent.callId) }}>{t('sshCancelCheck')}</button>}
+        </article>)}</div>}
+      {recentCalls.length > 8 && <small>{t('sshMoreRecentChecks').replace('{count}', String(recentCalls.length - 8))}</small>}
+    </section>}
     <Modal open={formOpen} onClose={() => { if (!busy) { setFormOpen(false); setForm(blank()); setPendingCreate(undefined) } }}
       title={t('sshAddServer')} closeLabel={t('close')} className="pext-install-modal"
       footer={<div className="pext-skill-dialog-footer"><button type="button" className="pext-dialog-button"

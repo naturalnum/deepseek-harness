@@ -98,3 +98,21 @@ test('SSH credential check, status and cancel use only opaque identities and val
     result: '你'.repeat(2731) }))
   await assert.rejects(oversized.callStatus(callId), /Invalid SSH check result/u)
 })
+
+test('recent SSH checks use one owner-scoped Host RPC and reject malformed lists', async () => {
+  const callId = '217d9a46-3b52-455b-bba6-7d9389c990bb'
+  const calls: Array<{ url: string; request: unknown }> = []
+  const client = new PersonalSshHttpClient(async (url, init) => {
+    calls.push({ url: String(url), request: (JSON.parse(String(init?.body)) as { request: unknown }).request })
+    return Response.json({ items: [{ callId, state: 'running' }] })
+  })
+  assert.deepEqual(await client.callList(), [{ callId, state: 'running' }])
+  assert.deepEqual(calls, [{ url: '/api/powerEvolve/sshCallList', request: {} }])
+  const duplicates = new PersonalSshHttpClient(async () => Response.json({ items: [
+    { callId, state: 'running' }, { callId, state: 'running' },
+  ] }))
+  await assert.rejects(duplicates.callList(), /Invalid SSH call list response/u)
+  const oversized = new PersonalSshHttpClient(async () => Response.json({ items: Array.from({ length: 101 },
+    () => ({ callId, state: 'running' })) }))
+  await assert.rejects(oversized.callList(), /Invalid SSH call list response/u)
+})

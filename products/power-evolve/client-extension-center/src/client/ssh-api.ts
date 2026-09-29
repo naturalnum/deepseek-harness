@@ -60,6 +60,7 @@ export interface PersonalSshPort {
   createPassword(input: SshCreateInput): Promise<PersonalSshConnection>
   toggle(input: SshToggleInput): Promise<PersonalSshConnection>
   check(input: SshCheckInput): Promise<SshCheckCall>
+  callList(signal?: AbortSignal): Promise<readonly SshCheckCall[]>
   callStatus(callId: string, signal?: AbortSignal): Promise<SshCheckCall>
   callCancel(callId: string): Promise<SshCheckCall>
 }
@@ -209,6 +210,18 @@ export class PersonalSshHttpClient implements PersonalSshPort {
       throw new Error('Invalid SSH check request')
     }
     return checkCall(await this.post('sshCheck', input))
+  }
+
+  async callList(signal?: AbortSignal): Promise<readonly SshCheckCall[]> {
+    const value = await this.post('sshCallList', {}, signal)
+    if (!record(value) || !Array.isArray(value.items) || value.items.length > 100) {
+      throw new Error('Invalid SSH call list response')
+    }
+    const calls = value.items.map(checkCall)
+    if (new Set(calls.map(call => call.callId)).size !== calls.length) {
+      throw new Error('Invalid SSH call list response')
+    }
+    return calls
   }
 
   async callStatus(callId: string, signal?: AbortSignal): Promise<SshCheckCall> {

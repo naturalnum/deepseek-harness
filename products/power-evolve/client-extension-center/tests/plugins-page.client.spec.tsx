@@ -19,7 +19,8 @@ const fixedMcp: FixedMcpPort = {
   install: vi.fn(), toggle: vi.fn(), check: vi.fn(),
 }
 const fixedSsh: PersonalSshPort = { list: async () => ({ available: false, items: [] }),
-  createPassword: vi.fn(), toggle: vi.fn(), check: vi.fn(), callStatus: vi.fn(), callCancel: vi.fn() }
+  createPassword: vi.fn(), toggle: vi.fn(), check: vi.fn(), callList: async () => [],
+  callStatus: vi.fn(), callCancel: vi.fn() }
 
 function page(plugins: PluginPort, getApproval = async () => 'http://127.0.0.1:19211/approval',
   mcp: FixedMcpPort = fixedMcp, ssh: PersonalSshPort = fixedSsh) {
