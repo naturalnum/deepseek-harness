@@ -56,6 +56,10 @@ export const skillInstallRequest = z.object({
   requestId, name: z.string().trim().min(1).max(80), description: z.string().trim().min(1).max(500),
   instructions: z.string().trim().min(1).max(4096),
 }).strict()
+export const builtinSkillInstallRequest = z.object({
+  requestId, catalogId: z.string().max(128).regex(/^builtin\.[a-z0-9]+(?:[._-][a-z0-9]+)*$/u),
+  version: z.string().max(64).regex(/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/u),
+}).strict()
 export const skillRequest = z.object({ skillId: z.uuid() }).strict()
 export const skillToggleRequest = z.object({ skillId: z.uuid(), enabled: z.boolean() }).strict()
 export const skillRevokeRequest = skillRequest
@@ -130,8 +134,8 @@ export const grant = z.object({
   sourceSshExecuteActionId: z.uuid().nullable().default(null),
   target: executionTarget.default({ kind: 'cloud' }),
   executionEnabled: z.boolean().default(false),
-  skills: z.array(skillSnapshot).max(8).default([]),
-  selection: z.array(skillSelection).max(8).default([]),
+  skills: z.array(skillSnapshot).max(256).default([]),
+  selection: z.array(skillSelection).max(256).default([]),
   mcpConnections: z.array(mcpSelection).max(1).default([]),
   stdioMcpConnections: z.array(stdioMcpSelection).max(1).default([]),
   sshConnections: z.array(sshSelection).max(8).default([]),

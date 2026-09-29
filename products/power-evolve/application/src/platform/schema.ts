@@ -624,3 +624,19 @@ CREATE INDEX pe_cloud_executions_active_leases ON pe_cloud_executions(lease_unti
   WHERE lease_owner IS NOT NULL AND state IN ('starting','running','cancelling','uncertain');
 UPDATE pe_schema SET version=19 WHERE version=18;
 `
+
+/** Deduplicate catalog installations even when several requests select an existing package version. */
+export const schemaV20 = `
+CREATE TABLE pe_builtin_skill_install_requests (
+  request_id uuid PRIMARY KEY,
+  user_id uuid NOT NULL REFERENCES pe_users(id),
+  catalog_id text NOT NULL CHECK (length(catalog_id) BETWEEN 1 AND 128),
+  version text NOT NULL CHECK (length(version) BETWEEN 1 AND 64),
+  archive_digest text NOT NULL CHECK (archive_digest ~ '^[a-f0-9]{64}$'),
+  package_version_id uuid NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  FOREIGN KEY(package_version_id,user_id) REFERENCES pe_skill_package_versions(id,user_id)
+);
+CREATE INDEX pe_builtin_skill_install_requests_user ON pe_builtin_skill_install_requests(user_id,catalog_id);
+UPDATE pe_schema SET version=20 WHERE version=19;
+`

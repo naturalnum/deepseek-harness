@@ -120,7 +120,7 @@ export class TaskStore {
          WHERE s.user_id=$1 AND s.enabled=true AND s.revoked_at IS NULL
            AND ($2='cloud' OR s.kind='text') ORDER BY s.name,s.id`, [user.userId, target.kind],
       )
-      const selection = z.array(skillSelection).max(8).parse(selected.rows)
+      const selection = z.array(skillSelection).max(256).parse(selected.rows)
       const mcpRows = this.limits.mcpEnabled && target.kind === 'cloud'
         ? await client.query<{ connectionId: string; revision: number }>(
           'SELECT id AS "connectionId",revision FROM pe_mcp_connections WHERE user_id=$1 AND enabled=true', [user.userId])
@@ -222,7 +222,7 @@ export class TaskStore {
       await client.query('INSERT INTO pe_attempts(operation_id,epoch,worker_id) VALUES($1,$2,$3)', [row.id, epoch, workerId])
       return grant.parse({
         operationId: row.id, sessionId: row.session_id, userId: row.user_id, requestId: row.request_id,
-        text: row.input, settings: settings.parse(row.settings), selection: z.array(skillSelection).max(8).parse(row.skill_selection),
+        text: row.input, settings: settings.parse(row.settings), selection: z.array(skillSelection).max(256).parse(row.skill_selection),
         mcpConnections: z.array(mcpSelection).max(1).parse(row.mcp_selection),
         stdioMcpConnections: z.array(stdioMcpSelection).max(1).parse(row.stdio_mcp_selection),
         sshConnections: z.array(sshSelection).max(8).parse(row.ssh_selection),
@@ -257,6 +257,19 @@ export class TaskStore {
         'SELECT error_code FROM pe_operations WHERE id=$1', [row.operation_id],
       )
       return { cancelRequested: operation.rows[0]?.error_code === 'cancel_requested' }
+    })
+  }
+
+  /** Read the operation's accepted skill metadata under its current lease.
+   * @param token - current operation grant, never a user-supplied identity.
+   * @returns owner and immutable skill selection for a bounded instruction read.
+   */
+  async selectedSkills(token: string): Promise<{ userId: string; selection: z.infer<typeof skillSelection>[] }> {
+    return transaction(this.pool, async client => {
+      const row = await this.authorized(client, token)
+      const operation = await client.query<{ skill_selection: unknown }>(
+        'SELECT skill_selection FROM pe_operations WHERE id=$1', [row.operation_id])
+      return { userId: row.user_id, selection: z.array(skillSelection).max(256).parse(operation.rows[0]!.skill_selection) }
     })
   }
 

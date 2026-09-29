@@ -246,11 +246,11 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         await healthPool.query('SELECT 1')
         if (!databaseReady) ctx.logger.info('Platform PostgreSQL connection recovered')
         databaseReady = true
-        sendJson(res, { ready: true, service: 'platform', schema: 19, executionEnabled,
+        sendJson(res, { ready: true, service: 'platform', schema: 20, executionEnabled,
           mcpAvailable: !!config.mcpUrl, stdioMcpAvailable: stdioMcp.available, sshAvailable, instanceId })
       } catch (error) {
         databaseUnavailable(error)
-        sendJson(res, { ready: false, service: 'platform', schema: 19, database: 'unavailable',
+        sendJson(res, { ready: false, service: 'platform', schema: 20, database: 'unavailable',
           executionEnabled, mcpAvailable: !!config.mcpUrl, stdioMcpAvailable: stdioMcp.available,
           sshAvailable, instanceId }, 503)
       }

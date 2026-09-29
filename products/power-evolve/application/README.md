@@ -42,6 +42,8 @@ Configuration is explicit in the three bundle patches. Required secret values ar
 
 The Platform logs a PostgreSQL connection-loss transition from either its request pool or bounded health pool. `/health` makes a read-only database probe; it returns HTTP 503 with `ready: false` while PG is unavailable and returns 200 after a successful reconnect, so the Platform load balancer stops routing to an unavailable replica. An interrupted login fails without issuing a credential; the client must explicitly retry after recovery. The health probe does not dispatch or replay work. Durable task and execution workers retain their existing lease and reconciliation rules.
 
+Schema 20 adds owner-bound catalog installation receipts, including retry IDs that reuse an existing package version. Accepted skill metadata allows up to 256 entries; claiming work does not require instruction files. Current grants can read only their persisted selection, and an expired grant is rejected.
+
 ## Recovery and limits
 
 A client receives `accepted` only after the operation commits. An unconsumed input can be delivered after restart. Consumed input with no completed turn is closed as interrupted by native DSH restoration and reported as failed. It is not automatically sent to the model again. A lost completion response is reconciled from the recorded turn when the lease is reclaimed.
