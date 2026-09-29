@@ -22,6 +22,8 @@ S6 在已有原生 DSH Web 扩展中心中增加“插件”入口。可信平�
 
 第一版 Runner 协议只提供带一次性控制令牌的 `GET /health`、`POST /calls` 和 `GET /calls/{callId}`。调用正文严格区分 `ssh.inspect`、`ssh.authenticate`、`ssh.execute`，包含稳定调用 ID、请求摘要、目的地、超时和输出上限；凭据仅在认证或执行调用正文中传送，不能进入 Pod 描述、环境变量或日志。同一 Runner 中，同 ID 同摘要只返回已有状态，异摘要拒绝；Runner 重启后由平台通过 Pod UID 与 Runner 实例 ID 识别状态丢失并标记不确定。平台在发出 `POST` 前先查询 `GET`，且在 Runner 证明出口策略生效前不下发凭据或用户进程代码。Runner 镜像无通用命令 HTTP 入口，非 root、只读根文件系统、无 ServiceAccount 和用户文件挂载。
 
+平台工作者只领取其实现的调用类型。当前 SSH 认证工作者只领取 `ssh.authenticate`；`ssh.execute` 在独立执行与审批流程就绪前不会被它领取或派发。
+
 当前 k3d 的实测发现：`NetworkPolicy` 已创建时，极短命 Pod 曾在策略规则追上新 Pod 前连接到未允许地址；存活更久的同配置 Pod 则被拒绝。证据保存在试用输出的 `qa/connector-network-policy-probe.txt`。因此不能以策略对象存在或 Pod 就绪作为出口隔离证明；应在 Runner 接收敏感调用前主动探测禁止目标并要求其被拒绝，同时完成允许目标和未允许目标的实际连接验收。若目标集群无法可靠满足这一关口，停止发放连接凭据。
 
 S6 固定试用版只有在 MCP／SSH 的真实云沙盒调用、双用户隔离、失败与恢复均有证据后才标记完成。第一条便签路径单独提交和测试，不能以其通过代替整个 S6。生产集群网络出口策略和多节点部署仍属于 S7 发布验收。

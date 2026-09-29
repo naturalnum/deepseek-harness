@@ -205,7 +205,7 @@ export class SshAuthenticationCheck {
 
   /** Claim one durable call; a reclaimed dispatch intent is recovered by GET only. */
   async pump(): Promise<boolean> {
-    const row = await this.calls.claim(this.options.ownerId, this.options.leaseMs)
+    const row = await this.calls.claim(this.options.ownerId, this.options.leaseMs, 'ssh.authenticate')
     if (!row) return false
     const lease: SshCallLease = { callId: row.id, owner: this.options.ownerId, epoch: row.lease_epoch }
     let lost = false

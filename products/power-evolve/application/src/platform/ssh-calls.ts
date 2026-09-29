@@ -130,15 +130,15 @@ export class SshCallStore {
     if (!updated.rowCount) throw new PlatformError(409, 'ssh_cleanup_state_changed')
   }
 
-  /** Claim expired work; a new epoch fences the previous Platform process. */
-  async claim(owner: string, leaseMs: number): Promise<SshCallRow | null> {
+  /** Claim only work this coordinator can handle; a new epoch fences the previous process. */
+  async claim(owner: string, leaseMs: number, kind: SshCallAdmission['kind']): Promise<SshCallRow | null> {
     if (!Number.isSafeInteger(leaseMs) || leaseMs < 1) throw new Error('Invalid SSH call lease')
     return transaction(this.pool, async client => {
       const found = await client.query<SshCallRow>(
-        `SELECT * FROM pe_ssh_calls WHERE state IN
+        `SELECT * FROM pe_ssh_calls WHERE kind=$1 AND state IN
            ('accepted','preparing','ready','dispatch-intent','running','uncertain')
          AND (lease_until IS NULL OR lease_until<=now())
-         ORDER BY created_at,id LIMIT 1 FOR UPDATE SKIP LOCKED`)
+         ORDER BY created_at,id LIMIT 1 FOR UPDATE SKIP LOCKED`, [kind])
       if (!found.rows[0]) return null
       const updated = await client.query<SshCallRow>(
         `UPDATE pe_ssh_calls SET lease_owner=$2,lease_epoch=lease_epoch+1,
