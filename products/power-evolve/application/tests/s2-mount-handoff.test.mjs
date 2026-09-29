@@ -2,7 +2,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { randomBytes, randomUUID } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, rm, symlink } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, rm, symlink } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
@@ -94,12 +94,12 @@ class FakeKubernetes {
   }
 }
 
-async function fixture(t, sandboxConfig = {}) {
+async function fixture(t, sandboxConfig = {}, poolMax = 10) {
   const admin = new Pool({ connectionString: databaseUrl })
   const name = `pe_s2_${randomBytes(10).toString('hex')}`
   await admin.query(`CREATE DATABASE "${name}"`)
   const url = new URL(databaseUrl); url.pathname = `/${name}`
-  const pool = new Pool({ connectionString: url.href })
+  const pool = new Pool({ connectionString: url.href, max: poolMax })
   t.after(async () => { await pool.end(); await admin.query(`DROP DATABASE "${name}"`); await admin.end() })
   await initializeDatabase(pool)
   const version = Number((await pool.query('SELECT version FROM pe_schema')).rows[0].version)
@@ -238,13 +238,38 @@ test('S5 changed Sandbox template is quarantined before another runner call', { 
 })
 
 test('S5 refuses a symlinked package mount source before Kubernetes creation', { timeout: 30000 }, async t => {
-  const { kube, manager, localRoot, createSession, createUser } = await fixture(t)
-  const userId = await createUser(), session = await createSession(userId)
+  const { pool, kube, manager, localRoot, createSession, createUser } = await fixture(t)
+  const userId = await createUser(), session = await createSession(userId), next = await createSession(userId)
   await mkdir(join(localRoot, 'skill-packages'), { recursive: true })
-  await symlink(tmpdir(), join(localRoot, 'skill-packages', userId))
+  const packageRoot = join(localRoot, 'skill-packages', userId)
+  await symlink(tmpdir(), packageRoot)
   await assert.rejects(manager.ensureReady(session.sessionId, userId, async () => {}),
     /mount_skill_package_root_unavailable/)
   assert.equal(kube.mutations.length, 0)
+  assert.equal((await pool.query('SELECT state FROM pe_mount_slots WHERE user_id=$1', [userId])).rowCount, 0)
+  assert.equal((await pool.query('SELECT state FROM pe_sandbox_instances WHERE session_id=$1',
+    [session.sessionId])).rowCount, 0)
+  await rm(packageRoot)
+  await mkdir(packageRoot, { mode: 0o755 })
+  const ready = await manager.ensureReady(next.sessionId, userId, async () => {})
+  assert.equal(ready.sessionId, next.sessionId)
+})
+
+test('S5 invalid package permissions leave no reservation before a different Session starts',
+  { timeout: 30000 }, async t => {
+    const { pool, kube, manager, localRoot, createSession, createUser } = await fixture(t, {}, 1)
+    const userId = await createUser(), session = await createSession(userId), next = await createSession(userId)
+    const packageRoot = join(localRoot, 'skill-packages', userId)
+    await mkdir(packageRoot, { recursive: true, mode: 0o700 })
+    await assert.rejects(manager.ensureReady(session.sessionId, userId, async () => {}),
+      /mount_skill_package_root_unavailable/)
+    assert.equal(kube.mutations.length, 0)
+    assert.equal((await pool.query('SELECT state FROM pe_mount_slots WHERE user_id=$1', [userId])).rowCount, 0)
+    assert.equal((await pool.query('SELECT state FROM pe_sandbox_instances WHERE session_id=$1',
+      [session.sessionId])).rowCount, 0)
+    await chmod(packageRoot, 0o755)
+    const ready = await manager.ensureReady(next.sessionId, userId, async () => {})
+    assert.equal(ready.sessionId, next.sessionId)
 })
 
 test('S2 serial handoff retains exact stopped Pod proof and distinct Session runners', { timeout: 30000 }, async t => {

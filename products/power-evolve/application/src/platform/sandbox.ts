@@ -247,6 +247,8 @@ export class SandboxManager {
         if (prior.rows[0] && prior.rows[0].state !== 'deleted') {
           return { kind: 'blocked', code: 'mount_instance_unreconciled', retryable: false }
         }
+        await this.home(userId)
+        await this.skillPackages(userId)
         const updated = await client.query<MountSlot>(
           `UPDATE pe_mount_slots SET state='reserved',session_id=$2,workspace_id=$3,
            generation=generation+1,pod_uid=NULL,runner_instance_id=NULL,updated_at=now()
@@ -318,6 +320,13 @@ export class SandboxManager {
     const workspaceId = await this.workspaceId(sessionId, userId)
     for (let handoffs = 0; handoffs < 3; handoffs++) {
       await assertLease()
+      const workspace = await (this.files as FileService & {
+        workspaceForId(userId: string, workspaceId: string): Promise<{ id: string; path: string }>
+      }).workspaceForId(userId, workspaceId)
+      if (workspace.id !== workspaceId
+        || resolve(workspace.path) !== join(resolve(this.config.localRoot), 'workspaces', workspaceId)) {
+        throw new MountSlotBlocked('mount_workspace_root_changed', false)
+      }
       const selected = await this.acquire(sessionId, userId, workspaceId)
       if (selected.kind === 'blocked') throw new MountSlotBlocked(selected.code, selected.retryable)
       if (selected.kind === 'stop') {
@@ -335,15 +344,6 @@ export class SandboxManager {
           token: this.token(this.name(userId), sessionId, slot.generation), restartCount: 0,
           generation: slot.generation, sessionId, userId }
       }
-      const workspace = await (this.files as FileService & {
-        workspaceForId(userId: string, workspaceId: string): Promise<{ id: string; path: string }>
-      }).workspaceForId(userId, workspaceId)
-      if (workspace.id !== workspaceId
-        || resolve(workspace.path) !== join(resolve(this.config.localRoot), 'workspaces', workspaceId)) {
-        throw new MountSlotBlocked('mount_workspace_root_changed', false)
-      }
-      await this.home(userId)
-      await this.skillPackages(userId)
       return this.createReserved(slot, workspaceId, assertLease)
     }
     throw new MountSlotBlocked('mount_handoff_incomplete', false)
