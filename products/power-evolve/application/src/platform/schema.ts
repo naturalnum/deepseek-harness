@@ -596,3 +596,31 @@ ALTER TABLE pe_operations ADD CONSTRAINT pe_operations_source_action CHECK (
     AND source_ssh_execute_action_id IS NOT NULL));
 UPDATE pe_schema SET version=18 WHERE version=17;
 `
+
+/** Share login windows and worker limits across trusted Platform replicas. */
+export const schemaV19 = `
+CREATE TABLE pe_platform_admission_policy (
+  singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
+  login_window_ms integer NOT NULL CHECK (login_window_ms>=1000),
+  login_attempts_per_window integer NOT NULL CHECK (login_attempts_per_window>0),
+  login_tracked_accounts integer NOT NULL CHECK (login_tracked_accounts>0),
+  login_global_attempts_per_window integer NOT NULL CHECK (login_global_attempts_per_window>0),
+  sandbox_concurrency integer NOT NULL CHECK (sandbox_concurrency>0)
+);
+CREATE TABLE pe_login_global_window (
+  singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
+  window_since timestamptz NOT NULL,
+  attempts integer NOT NULL CHECK (attempts>=0),
+  tracked_accounts integer NOT NULL DEFAULT 0 CHECK (tracked_accounts>=0)
+);
+INSERT INTO pe_login_global_window(singleton,window_since,attempts) VALUES(true,clock_timestamp(),0);
+CREATE TABLE pe_login_attempt_windows (
+  account_digest text PRIMARY KEY CHECK (account_digest ~ '^[a-f0-9]{64}$'),
+  window_since timestamptz NOT NULL,
+  attempts integer NOT NULL CHECK (attempts>0)
+);
+CREATE INDEX pe_login_attempt_windows_expiration ON pe_login_attempt_windows(window_since);
+CREATE INDEX pe_cloud_executions_active_leases ON pe_cloud_executions(lease_until)
+  WHERE lease_owner IS NOT NULL AND state IN ('starting','running','cancelling','uncertain');
+UPDATE pe_schema SET version=19 WHERE version=18;
+`

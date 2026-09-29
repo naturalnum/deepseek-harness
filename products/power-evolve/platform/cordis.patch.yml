@@ -63,4 +63,5 @@
         databaseTimeoutMs: 10000
         loginWindowMs: 60000
         loginAttemptsPerWindow: 20
-        loginTrackedAddresses: 1000
+        loginTrackedAccounts: 100000
+        loginGlobalAttemptsPerWindow: 100000

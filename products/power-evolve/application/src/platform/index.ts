@@ -34,6 +34,7 @@ import { SshAuthenticationCheck } from './ssh-check.ts'
 import { SshExecuteService } from './ssh-execute.ts'
 import { SshRunnerOrchestrator } from './ssh-runner.ts'
 import { ExecutionService } from './executions.ts'
+import { LoginAdmission } from './login-admission.ts'
 import { DeviceService } from './devices.ts'
 import { KubernetesClient } from './kubernetes.ts'
 import { SandboxManager } from './sandbox.ts'
@@ -73,8 +74,10 @@ export const Config = schema.object({
   maxEventBytes: schema.number().step(1).min(1024).required(), maxRequestBytes: schema.number().step(1).min(1024).required(),
   modelTimeoutMs: schema.number().min(1000).required(), maxModelResponseBytes: schema.number().min(1024).required(),
   readyFile: schema.string().required(), databasePoolSize: schema.number().step(1).min(1).required(),
-  databaseTimeoutMs: schema.number().min(100).required(), loginWindowMs: schema.number().min(1000).required(),
-  loginAttemptsPerWindow: schema.number().step(1).min(1).required(), loginTrackedAddresses: schema.number().step(1).min(1).required(),
+  databaseTimeoutMs: schema.number().min(100).required(), loginWindowMs: schema.number().step(1).min(1000).required(),
+  loginAttemptsPerWindow: schema.number().step(1).min(1).required(),
+  loginTrackedAccounts: schema.number().step(1).min(1).required(),
+  loginGlobalAttemptsPerWindow: schema.number().step(1).min(1).required(),
 })
 export type Config = ReturnType<typeof Config>
 
@@ -95,6 +98,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const pool = new Pool({ connectionString: databaseUrl.trim(), max: config.databasePoolSize, statement_timeout: config.databaseTimeoutMs })
   ctx.effect(() => () => pool.end())
   await initializeDatabase(pool)
+  const loginAdmission = new LoginAdmission(pool, config)
+  await loginAdmission.initialize()
   const executionEnabled = config.sandboxKubeconfigFile.length > 0
   if (executionEnabled && (!config.sandboxKeyFile || !config.sandboxNamespace || !config.sandboxImage
     || !config.sandboxLocalRoot || !config.sandboxNodeRoot)) throw new Error('Incomplete Agent Sandbox configuration')
@@ -208,11 +213,10 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     }), config.sandboxConcurrency, config.sandboxPollMs, config.sandboxIdleMs, config.sandboxCommandTimeoutMs) : null
   if (executions) { executions.start(); ctx.effect(() => () => executions.close()) }
   const devices = new DeviceService(tasks, config.sandboxCommandTimeoutMs, files)
-  const loginAttempts = new Map<string, { since: number; count: number }>()
 
   const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const path = new URL(req.url ?? '/', config.platformOrigin).pathname
-    if (req.method === 'GET' && path === '/health') { sendJson(res, { ready: true, service: 'platform', schema: 18, executionEnabled, mcpAvailable: !!config.mcpUrl, stdioMcpAvailable: stdioMcp.available, sshAvailable, instanceId }); return }
+    if (req.method === 'GET' && path === '/health') { sendJson(res, { ready: true, service: 'platform', schema: 19, executionEnabled, mcpAvailable: !!config.mcpUrl, stdioMcpAvailable: stdioMcp.available, sshAvailable, instanceId }); return }
     if (req.method === 'GET' && path === '/config') { sendJson(res, { hostUrl: config.hostOrigin }); return }
     if (req.method === 'GET' && await serveUi(path, 'login', res, config.hostOrigin)) return
     const artifactContent = /^\/artifacts\/([^/]+)\/content$/u.exec(path)
@@ -272,14 +276,9 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     }
     if (path === '/identity/login' || path === '/identity/approval-login') {
       if (req.headers.origin !== undefined && req.headers.origin !== config.platformOrigin) throw new PlatformError(403, 'invalid_origin')
-      const now = Date.now()
-      for (const [key, value] of loginAttempts) if (now - value.since > config.loginWindowMs) loginAttempts.delete(key)
-      const key = req.socket.remoteAddress ?? 'unknown'
-      const attempt = loginAttempts.get(key) ?? { since: now, count: 0 }
-      if (attempt.count >= config.loginAttemptsPerWindow || (!loginAttempts.has(key) && loginAttempts.size >= config.loginTrackedAddresses)) throw new PlatformError(429, 'login_rate_limit')
-      attempt.count++
-      loginAttempts.set(key, attempt)
+      await loginAdmission.chargeGlobal()
       const input = loginRequest.parse(await readJson(req, 4096))
+      await loginAdmission.chargeAccount(input.username)
       sendJson(res, await identities.login(input.username, input.password, path === '/identity/approval-login' ? 'approval' : 'agent'))
       return
     }

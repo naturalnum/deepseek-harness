@@ -35,6 +35,7 @@ test('two Platform backends share one origin and an interrupted POST is not repl
         return
       }
       seen.push({ index, host: request.headers.host, origin: request.headers.origin,
+        peer: request.socket.remoteAddress, forwardedFor: request.headers['x-forwarded-for'],
         path: request.url, method: request.method })
       if (request.url === '/accepted') { for await (const _chunk of request) { /* drain */ }
         response.destroy(); return }
@@ -72,10 +73,13 @@ test('two Platform backends share one origin and an interrupted POST is not repl
     }
     assert.equal(healthy.backends.filter(item => item.healthy).length, 2, output)
     const a = await fetch(`${origin}/config`)
-    const b = await fetch(`${origin}/config`, { headers: { origin: `http://127.0.0.1:${hostPort}` } })
+    const b = await fetch(`${origin}/config`, { headers: { origin: `http://127.0.0.1:${hostPort}`,
+      'x-forwarded-for': '203.0.113.123' } })
     assert.equal(a.headers.get('x-pe-trial-platform'), 'platform')
     assert.equal(b.headers.get('x-pe-trial-platform'), 'platform-b')
     assert.deepEqual(seen.map(item => item.host), [`127.0.0.1:${port}`, `127.0.0.1:${port}`])
+    assert.deepEqual(seen.map(item => item.peer), ['127.0.0.1', '127.0.0.1'])
+    assert.equal(seen[1].forwardedFor, '203.0.113.123')
     assert.equal((await fetch(`${origin}/config`, { headers: { origin: 'https://attacker.test' } })).status, 403)
     const wrongHost = await new Promise((resolve, reject) => {
       const request = httpRequest(`${origin}/config`, { headers: { host: 'wrong.test' } }, response => {

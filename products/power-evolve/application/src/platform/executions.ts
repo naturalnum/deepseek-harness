@@ -126,15 +126,22 @@ export class ExecutionService {
 
   private async claim(): Promise<ExecutionRow | null> {
     return transaction(this.pool, async client => {
+      // Serialize claims across Platform replicas before counting live worker leases.
+      await client.query('SELECT pg_advisory_xact_lock(72819532)')
+      const leased = await client.query<{ count: number }>(
+        `SELECT count(*)::integer AS count FROM pe_cloud_executions
+         WHERE lease_owner IS NOT NULL AND lease_until>clock_timestamp()
+           AND state IN ('starting','running','cancelling','uncertain')`)
+      if (leased.rows[0]!.count >= this.concurrency) return null
       const found = await client.query<ExecutionRow>(
         `SELECT * FROM pe_cloud_executions WHERE state IN ('queued','starting','running','cancelling','uncertain')
-         AND NOT (id = ANY($1::uuid[])) AND (lease_until IS NULL OR lease_until<=now())
+         AND NOT (id = ANY($1::uuid[])) AND (lease_until IS NULL OR lease_until<=clock_timestamp())
          ORDER BY created_at,id LIMIT 1 FOR UPDATE SKIP LOCKED`, [[...this.activeIds]])
       const row = found.rows[0]
       if (!row) return null
       const updated = await client.query<ExecutionRow>(
         `UPDATE pe_cloud_executions SET state=CASE WHEN state='queued' THEN 'starting' ELSE state END,
-         lease_owner=$2,lease_until=now()+$3::double precision*interval '1 millisecond',
+         lease_owner=$2,lease_until=clock_timestamp()+$3::double precision*interval '1 millisecond',
          attempts=attempts+1,updated_at=now()
          WHERE id=$1 RETURNING *`, [row.id, this.workerId, this.leaseMs])
       return updated.rows[0]!
@@ -149,12 +156,17 @@ export class ExecutionService {
         try { await delay(Math.max(100, Math.floor(this.leaseMs / 3)), undefined, { signal: done.signal }) }
         catch (_aborted) { return }
         try {
-          const updated = await this.pool.query(
-            `UPDATE pe_cloud_executions SET lease_until=now()+$3::double precision*interval '1 millisecond'
-             WHERE id=$1 AND lease_owner=$2 AND lease_until>now()
-               AND state IN ('starting','running','cancelling','uncertain') RETURNING id`,
-            [row.id, this.workerId, this.leaseMs])
-          if (!updated.rowCount) { lost = true; return }
+          const renewed = await transaction(this.pool, async client => {
+            // An expired lease cannot regain a slot while another replica claims it.
+            await client.query('SELECT pg_advisory_xact_lock(72819532)')
+            const updated = await client.query(
+              `UPDATE pe_cloud_executions SET lease_until=clock_timestamp()+$3::double precision*interval '1 millisecond'
+               WHERE id=$1 AND lease_owner=$2 AND lease_until>clock_timestamp()
+                 AND state IN ('starting','running','cancelling','uncertain') RETURNING id`,
+              [row.id, this.workerId, this.leaseMs])
+            return !!updated.rowCount
+          })
+          if (!renewed) { lost = true; return }
         } catch (_databaseUnavailable) { lost = true; return }
       }
     })()
