@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import type { PluginsPageProps } from '../src/client/PluginsPage.tsx'
 import { PluginsPage } from '../src/client/PluginsPage.tsx'
 import type { NotesPlugin, PluginPort } from '../src/client/plugins-api.ts'
+import type { FixedMcpPort } from '../src/client/mcp-api.ts'
 import { en } from '../src/client/locales.ts'
 
 afterEach(cleanup)
@@ -11,8 +12,15 @@ const initial: NotesPlugin = { id: 'notes', title: '受控便签', category: 'to
   enabled: true, revision: 1, requiresApproval: true }
 const t = (key: keyof typeof en) => en[key]
 
-function page(plugins: PluginPort, getApproval = async () => 'http://127.0.0.1:19211/approval') {
-  return render(<PluginsPage {...({ plugins, approvalUrl: getApproval, t } as PluginsPageProps)} />)
+const fixedMcp: FixedMcpPort = {
+  list: async () => ({ available: false,
+    preset: { toolName: 'mcp__personal__whoami', description: 'Fixed whoami' }, items: [] }),
+  install: vi.fn(), toggle: vi.fn(), check: vi.fn(),
+}
+
+function page(plugins: PluginPort, getApproval = async () => 'http://127.0.0.1:19211/approval',
+  mcp: FixedMcpPort = fixedMcp) {
+  return render(<PluginsPage {...({ plugins, mcp, approvalUrl: getApproval, t } as PluginsPageProps)} />)
 }
 
 test('native Plugins page lists a real personal card and labels unavailable future entries', async () => {
@@ -24,7 +32,7 @@ test('native Plugins page lists a real personal card and labels unavailable futu
   fireEvent.click(screen.getByRole('tab', { name: 'All plugins' }))
   expect(screen.getByText('MCP')).toBeTruthy()
   expect(screen.getByText('SSH')).toBeTruthy()
-  expect(screen.getAllByText('In development')).toHaveLength(2)
+  expect(screen.getByText('In development')).toBeTruthy()
   expect(screen.queryByRole('button', { name: 'MCP' })).toBeNull()
   fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'remote' } })
   expect(screen.getByText('SSH')).toBeTruthy()
@@ -57,4 +65,17 @@ test('revision conflict asks for refresh instead of replaying an obsolete mutati
   fireEvent.click(screen.getByRole('switch'))
   await screen.findByText('Plugin state changed. Refresh and retry.')
   expect(screen.queryByRole('button', { name: 'Retry this change' })).toBeNull()
+})
+
+test('installed fixed MCP appears in native My plugins and opens its real connection page', async () => {
+  const mcp: FixedMcpPort = { ...fixedMcp, list: async () => ({ available: true,
+    preset: { toolName: 'mcp__personal__whoami', description: 'Operator endpoint' },
+    items: [{ connectionId: 'f76e4521-45b0-4829-91dd-9a205c7ef68c', name: 'My whoami',
+      enabled: true, revision: 1, toolName: 'mcp__personal__whoami', description: 'Read only identity' }] }) }
+  page({ list: async () => [initial], setEnabled: vi.fn() }, undefined, mcp)
+  const tab = await screen.findByRole('tab', { name: 'My plugins2' })
+  expect(tab.getAttribute('aria-selected')).toBe('true')
+  fireEvent.click(screen.getByRole('button', { name: 'MCP' }))
+  expect(screen.getByRole('button', { name: 'My whoami' })).toBeTruthy()
+  expect(screen.getByText('Operator endpoint')).toBeTruthy()
 })
