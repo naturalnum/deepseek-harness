@@ -7,9 +7,9 @@ import { cp, mkdtemp, mkdir, open, readFile, readdir, rm, symlink, writeFile } f
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { BuiltinSkillCatalog, BuiltinSkillCatalogUnavailable,
-  builtinSkillAssetRoot } from '../src/platform/builtin-skills.ts'
-import { extractSkillPackage } from '../src/platform/skill-package-extraction.ts'
-import { readNativeSkillMetadata } from '../src/platform/skill-metadata.ts'
+  builtinSkillAssetRoot } from '../lib/platform/builtin-skills.js'
+import { extractSkillPackage } from '../lib/platform/skill-package-extraction.js'
+import { readNativeSkillMetadata } from '../lib/platform/skill-metadata.js'
 
 const digest = bytes => createHash('sha256').update(bytes).digest('hex')
 
