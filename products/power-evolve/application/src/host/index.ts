@@ -27,6 +27,9 @@ const requests = { me: z.object({}).strict(), logout: z.object({}).strict(), mod
   skillsUploadTicket: z.object({ requestId: z.uuid(), sizeBytes: z.number().int().min(1).max(1024 * 1024),
     sha256: z.string().regex(/^[0-9a-f]{64}$/u) }).strict(),
   skillsRevoke: skillRequest, actionsList: z.object({}).strict(),
+  pluginsList: z.object({}).strict(),
+  pluginsNotesSetEnabled: z.object({ requestId: z.uuid(), expectedRevision: z.number().int().positive(),
+    enabled: z.boolean() }).strict(),
   artifactsPublish: z.object({ requestId: z.uuid(), sessionId: z.uuid(), path: z.string().min(1).max(512) }).strict(),
   artifactsList: z.object({ workspaceId: z.uuid().optional(), sessionId: z.uuid().optional(),
     cursor: z.uuid().optional(), limit: z.number().int().min(1).max(100).optional() }).strict(),
@@ -41,6 +44,7 @@ const endpoint = { me: '/identity/me', logout: '/identity/logout', modelsList: '
   skillsList: '/skills/list', skillsRead: '/skills/read',
   skillsInstall: '/skills/install', skillsToggle: '/skills/toggle',
   skillsUploadTicket: '/skills/upload-ticket', skillsRevoke: '/skills/revoke', actionsList: '/connectors/actions',
+  pluginsList: '/plugins/list', pluginsNotesSetEnabled: '/plugins/notes/set-enabled',
   artifactsPublish: '/artifacts/publish', artifactsList: '/artifacts/list', artifactsPreview: '/artifacts/preview',
   executionsList: '/executions/list', executionCancel: '/executions/cancel',
   devicesList: '/devices/list', devicesPair: '/devices/pair',
@@ -93,6 +97,10 @@ class ProductRemote extends TypertRemoteService {
   }
   @Remote skillsRevoke(request: z.infer<typeof skillRequest>) { return this.call('skillsRevoke', request) }
   @Remote actionsList(request: z.infer<typeof requests.actionsList>) { return this.call('actionsList', request) }
+  @Remote pluginsList(request: z.infer<typeof requests.pluginsList>) { return this.call('pluginsList', request) }
+  @Remote pluginsNotesSetEnabled(request: z.infer<typeof requests.pluginsNotesSetEnabled>) {
+    return this.call('pluginsNotesSetEnabled', request)
+  }
   @Remote artifactsPublish(request: z.infer<typeof requests.artifactsPublish>) { return this.call('artifactsPublish', request) }
   @Remote artifactsList(request: z.infer<typeof requests.artifactsList>) { return this.call('artifactsList', request) }
   @Remote artifactsPreview(request: z.infer<typeof requests.artifactsPreview>) { return this.call('artifactsPreview', request) }
