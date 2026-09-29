@@ -11,12 +11,14 @@ import type { Grant } from '../contracts.ts'
 import { installConnectorTools } from './connectors.ts'
 import { installExecutionTools } from './executions.ts'
 import { installPersonalMcpTool } from './mcp.ts'
+import { installStdioMcpTool } from './stdio-mcp.ts'
 
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
     'power-evolve-action': { readonly kind: 'power-evolve-action'; readonly actionId: string }
     'power-evolve-execution': { readonly kind: 'power-evolve-execution'; readonly executionId: string }
     'power-evolve-desktop-execution': { readonly kind: 'power-evolve-desktop-execution'; readonly executionId: string }
+    'power-evolve-stdio-mcp': { readonly kind: 'power-evolve-stdio-mcp'; readonly callId: string }
   }
 }
 
@@ -118,6 +120,7 @@ export class Scheduler {
         installConnectorTools(agent, grant, runtime)
         installExecutionTools(agent, grant, runtime)
         installPersonalMcpTool(agent, grant, runtime)
+        installStdioMcpTool(agent, grant, runtime)
       }
       if (grant.source === 'platform_action') agent.ctx.effect(() => agent.ctx.systemPrompt.section({
         name: 'power-evolve:action-result', order: 710, interpolate: false,
@@ -142,6 +145,7 @@ export class Scheduler {
           source: grant.source === 'platform_action' ? { kind: 'power-evolve-action', actionId: grant.sourceActionId! }
             : grant.source === 'sandbox_result' ? { kind: 'power-evolve-execution', executionId: grant.sourceExecutionId! }
               : grant.source === 'desktop_result' ? { kind: 'power-evolve-desktop-execution', executionId: grant.sourceDesktopExecutionId! }
+                : grant.source === 'stdio_mcp_result' ? { kind: 'power-evolve-stdio-mcp', callId: grant.sourceStdioMcpCallId! }
               : { kind: 'user', rpcId: brandString<SessionRequestId>(grant.requestId) },
           content: [{ type: 'text', text: grant.text }] })
         await agent.whenIdle()

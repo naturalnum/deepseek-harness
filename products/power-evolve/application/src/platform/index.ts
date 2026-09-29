@@ -26,6 +26,8 @@ import { SkillService } from './skills.ts'
 import { ConnectorService } from './connectors.ts'
 import { PluginService } from './plugins.ts'
 import { PersonalMcpService } from './mcp.ts'
+import { StdioMcpService } from './stdio-mcp.ts'
+import { StdioRunnerOrchestrator } from './stdio-runner.ts'
 import { SshConnectionService } from './ssh.ts'
 import { SshCallStore } from './ssh-calls.ts'
 import { SshAuthenticationCheck } from './ssh-check.ts'
@@ -111,14 +113,16 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   }
   const identities = new IdentityService(pool, config.tokenLifetimeMs)
   const accountSettings = new AccountSettingsService(pool)
-  const tasks = new TaskStore(pool, { ...config, executionEnabled, mcpEnabled: !!config.mcpUrl })
+  const tasks = new TaskStore(pool, { ...config, executionEnabled, mcpEnabled: !!config.mcpUrl,
+    stdioMcpEnabled: !!config.sshRunnerKubeconfigFile })
   const mcp = new PersonalMcpService(tasks, config.mcpUrl, mcpToken.trim(), config.mcpTimeoutMs)
   const ssh = new SshConnectionService(pool, sshKey, config.sshDestinationAllowlist)
   const sshRunnerEnabled = config.sshRunnerKubeconfigFile.length > 0
-  if (sshRunnerEnabled && (!ssh.available || !config.sshRunnerNamespace || !config.sshRunnerImage
+  if (sshRunnerEnabled && (!config.sshRunnerNamespace || !config.sshRunnerImage
     || !config.sshRunnerRuntimeClass || !config.sshRunnerIngressCidrs)) {
-    throw new Error('Incomplete SSH Connector Runner configuration')
+    throw new Error('Incomplete Connector Runner configuration')
   }
+  let stdioRunner: StdioRunnerOrchestrator | null = null
   const sshCheck = sshRunnerEnabled ? await (async () => {
     const kube = await KubernetesClient.fromFile(config.sshRunnerKubeconfigFile)
     const namespace = config.sshRunnerNamespace, serviceName = 'power-evolve-forbidden-listener'
@@ -145,8 +149,14 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       platformIngressCidrs: config.sshRunnerIngressCidrs.split(',').map(value => value.trim()),
       forbiddenProbe: { ip: probeIp, port: 8080 }, proveForbiddenListener,
     })
-    return new SshAuthenticationCheck(new SshCallStore(pool), ssh, runner,
-      { ownerId: instanceId, requestKey: connectorKey.trim(), leaseMs: config.sshRunnerLeaseMs })
+    stdioRunner = new StdioRunnerOrchestrator(kube, {
+      namespace, image: config.sshRunnerImage, runtimeClassName: config.sshRunnerRuntimeClass,
+      controlKey: connectorKey.trim(), readyTimeoutMs: config.sshRunnerReadyTimeoutMs,
+      platformIngressCidrs: config.sshRunnerIngressCidrs.split(',').map(value => value.trim()),
+      forbiddenProbe: { ip: probeIp, port: 8080 }, proveForbiddenListener,
+    })
+    return ssh.available ? new SshAuthenticationCheck(new SshCallStore(pool), ssh, runner,
+      { ownerId: instanceId, requestKey: connectorKey.trim(), leaseMs: config.sshRunnerLeaseMs }) : null
   })() : null
   if (sshCheck) {
     const stop = new AbortController()
@@ -167,6 +177,9 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     ctx.effect(() => async () => { stop.abort(); await polling })
   }
   const sshAvailable = ssh.available && sshCheck !== null
+  const stdioMcp = new StdioMcpService(tasks, stdioRunner, instanceId, config.sshRunnerLeaseMs)
+  stdioMcp.start()
+  ctx.effect(() => () => stdioMcp.close())
   const events = new EventStore(tasks, config)
   const nativeSessions = new NativeSessionRead(pool)
   const nativeWorkspaces = new NativeWorkspaceRead(pool, files, nativeSessions, config.maxWorkspacesPerUser)
@@ -190,7 +203,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
 
   const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const path = new URL(req.url ?? '/', config.platformOrigin).pathname
-    if (req.method === 'GET' && path === '/health') { sendJson(res, { ready: true, service: 'platform', schema: 16, executionEnabled, mcpAvailable: !!config.mcpUrl, sshAvailable, instanceId }); return }
+    if (req.method === 'GET' && path === '/health') { sendJson(res, { ready: true, service: 'platform', schema: 17, executionEnabled, mcpAvailable: !!config.mcpUrl, stdioMcpAvailable: stdioMcp.available, sshAvailable, instanceId }); return }
     if (req.method === 'GET' && path === '/config') { sendJson(res, { hostUrl: config.hostOrigin }); return }
     if (req.method === 'GET' && await serveUi(path, 'login', res, config.hostOrigin)) return
     const artifactContent = /^\/artifacts\/([^/]+)\/content$/u.exec(path)
@@ -352,6 +365,11 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
           const value = z.object({ connectionId: z.uuid(), revision: z.number().int().positive() }).strict().parse(input)
           sendJson(res, await mcp.call(token, value.connectionId, value.revision)); return
         }
+        case '/runtime/stdio-mcp/call': {
+          const value = z.object({ connectionId: z.uuid(), revision: z.number().int().positive(),
+            callKey: z.string().min(1).max(100) }).strict().parse(input)
+          sendJson(res, await stdioMcp.call(token, value.connectionId, value.revision, value.callKey)); return
+        }
         case '/runtime/connectors/prepare': {
           const value = z.object({ callId: z.string().min(1).max(100), text: z.string().trim().min(1).max(1000) }).strict().parse(input)
           sendJson(res, await connectors.prepare(token, value.callId, value.text)); return
@@ -413,6 +431,22 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       case '/mcp/check': {
         const value = z.object({ connectionId: z.uuid() }).strict().parse(input)
         sendJson(res, await mcp.check(user, value.connectionId)); return
+      }
+      case '/stdio-mcp/list': z.object({}).strict().parse(input); sendJson(res, await stdioMcp.list(user)); return
+      case '/stdio-mcp/install': {
+        const value = z.object({ requestId: z.uuid(), name: z.string().trim().min(1).max(80) }).strict().parse(input)
+        sendJson(res, await stdioMcp.install(user, value.requestId, value.name)); return
+      }
+      case '/stdio-mcp/toggle': {
+        const value = z.object({ connectionId: z.uuid(), requestId: z.uuid(),
+          baseRevision: z.number().int().positive(), enabled: z.boolean() }).strict().parse(input)
+        sendJson(res, await stdioMcp.toggle(user, value.connectionId, value.requestId,
+          value.baseRevision, value.enabled)); return
+      }
+      case '/stdio-mcp/calls': z.object({}).strict().parse(input); sendJson(res, await stdioMcp.calls(user)); return
+      case '/stdio-mcp/status': {
+        const value = z.object({ callId: z.uuid() }).strict().parse(input)
+        sendJson(res, await stdioMcp.status(user, value.callId)); return
       }
       case '/ssh/list': {
         z.object({}).strict().parse(input)

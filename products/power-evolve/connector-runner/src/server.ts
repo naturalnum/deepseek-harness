@@ -5,6 +5,7 @@ import { EgressGate } from './egress.ts'
 import { CallValidationError, destinationKey, parseCallInput, validCallDigest,
   type CallInput, type CallResult } from './protocol.ts'
 import { SshFailure, type SshTransport } from './transport.ts'
+import { StdioFailure, StdioMcpTransport } from './stdio.ts'
 
 type CallState = 'running' | 'succeeded' | 'failed'
 interface CallRecord {
@@ -20,6 +21,7 @@ export interface RunnerOptions {
   readonly allowlist: ReadonlySet<string>
   readonly egress: EgressGate
   readonly transport: SshTransport
+  readonly stdioTransport?: StdioMcpTransport
   readonly instanceId?: string
   readonly maxConcurrent?: number
   readonly maxStored?: number
@@ -90,11 +92,15 @@ export function createConnectorRunner(options: RunnerOptions): ConnectorRunner {
   const run = (record: CallRecord, input: CallInput): void => {
     const controller = new AbortController()
     controllers.add(controller)
-    const work = options.transport.call(input, controller.signal).then(result => {
+    const call = input.kind === 'mcp.stdio.whoami'
+      ? (options.stdioTransport ?? new StdioMcpTransport()).call(input, controller.signal)
+      : options.transport.call(input, controller.signal)
+    const work = call.then(result => {
       record.state = 'succeeded'; record.result = result
     }, error => {
       record.state = 'failed'
-      record.errorCode = error instanceof SshFailure ? error.code : 'ssh_network_error'
+      record.errorCode = error instanceof SshFailure || error instanceof StdioFailure ? error.code
+        : input.kind === 'mcp.stdio.whoami' ? 'mcp_process_failed' : 'ssh_network_error'
     }).finally(() => { controllers.delete(controller); active.delete(work) })
     active.add(work)
   }
@@ -124,7 +130,8 @@ export function createConnectorRunner(options: RunnerOptions): ConnectorRunner {
             prior.digest === input.digest ? view(prior) : { error: 'call_id_conflict', instanceId })
           return
         }
-        if (!options.allowlist.has(destinationKey(input.destination.host, input.destination.port))) {
+        if (input.kind !== 'mcp.stdio.whoami'
+          && !options.allowlist.has(destinationKey(input.destination.host, input.destination.port))) {
           send(response, 403, { error: 'destination_denied', instanceId }); return
         }
         if (active.size >= maxConcurrent || records.size >= maxStored) {

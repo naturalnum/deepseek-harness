@@ -78,6 +78,7 @@ export const skillSelection = z.object({
   manifestDigest: z.string().regex(/^[a-f0-9]{64}$/).nullable().default(null),
 }).strict()
 export const mcpSelection = z.object({ connectionId: z.uuid(), revision: z.number().int().positive() }).strict()
+export const stdioMcpSelection = z.object({ connectionId: z.uuid(), revision: z.number().int().positive() }).strict()
 export const sshCreateTicketRequest = z.object({
   requestId, displayName: z.string().trim().min(1).max(100),
   host: z.string().trim().min(1).max(253), port: z.number().int().min(1).max(65_535),
@@ -105,15 +106,17 @@ export const grant = z.object({
   token: z.string().min(32).max(256),
   epoch: z.number().int().positive(),
   settings,
-  source: z.enum(['user', 'platform_action', 'sandbox_result', 'desktop_result']).default('user'),
+  source: z.enum(['user', 'platform_action', 'sandbox_result', 'desktop_result', 'stdio_mcp_result']).default('user'),
   sourceActionId: z.uuid().nullable().default(null),
   sourceExecutionId: z.uuid().nullable().default(null),
   sourceDesktopExecutionId: z.uuid().nullable().default(null),
+  sourceStdioMcpCallId: z.uuid().nullable().default(null),
   target: executionTarget.default({ kind: 'cloud' }),
   executionEnabled: z.boolean().default(false),
   skills: z.array(skillSnapshot).max(8).default([]),
   selection: z.array(skillSelection).max(8).default([]),
   mcpConnections: z.array(mcpSelection).max(1).default([]),
+  stdioMcpConnections: z.array(stdioMcpSelection).max(1).default([]),
 }).strict()
 export type Grant = z.infer<typeof grant>
 

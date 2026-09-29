@@ -2,7 +2,7 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import type { Pool, PoolClient } from 'pg'
 import { SESSION_FORMAT_VERSION, SessionId, type SessionHeader } from '@deepseek-ai/dsh-session'
-import { executionTarget, grant, mcpSelection, skillSelection, PlatformError, settings,
+import { executionTarget, grant, mcpSelection, stdioMcpSelection, skillSelection, PlatformError, settings,
   type ExecutionTarget, type Grant, type Identity, type RequestId, type WorkspaceId } from '../contracts.ts'
 import { z } from 'zod'
 import { digest } from './identity.ts'
@@ -25,6 +25,7 @@ export interface TaskLimits {
   readonly maxActivePerUser: number
   readonly executionEnabled?: boolean
   readonly mcpEnabled?: boolean
+  readonly stdioMcpEnabled?: boolean
 }
 
 /** Platform-owned state machine. Host callers never choose a task's user identity. */
@@ -124,11 +125,18 @@ export class TaskStore {
           'SELECT id AS "connectionId",revision FROM pe_mcp_connections WHERE user_id=$1 AND enabled=true', [user.userId])
         : { rows: [] }
       const mcp = z.array(mcpSelection).max(1).parse(mcpRows.rows)
+      const stdioRows = this.limits.stdioMcpEnabled && target.kind === 'cloud'
+        ? await client.query<{ connectionId: string; revision: number }>(
+          'SELECT id AS "connectionId",revision FROM pe_stdio_mcp_connections WHERE user_id=$1 AND enabled=true',
+          [user.userId]) : { rows: [] }
+      const stdio = z.array(stdioMcpSelection).max(1).parse(stdioRows.rows)
       const id = randomUUID()
       await client.query(
-        `INSERT INTO pe_operations(id,session_id,request_id,input,settings,skill_selection,mcp_selection,execution_target,state)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8,'queued')`,
-        [id, session, requestId, text, config, JSON.stringify(selection), JSON.stringify(mcp), JSON.stringify(target)],
+        `INSERT INTO pe_operations(id,session_id,request_id,input,settings,skill_selection,mcp_selection,
+          stdio_mcp_selection,execution_target,state)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'queued')`,
+        [id, session, requestId, text, config, JSON.stringify(selection), JSON.stringify(mcp),
+          JSON.stringify(stdio), JSON.stringify(target)],
       )
       await client.query('SELECT pg_notify(\'pe_tasks\',$1)', [session])
       return { accepted: true, operationId: id, state: 'queued' }
@@ -166,12 +174,14 @@ export class TaskStore {
     return transaction(this.pool, async client => {
       const candidate = await client.query<{
         id: string; session_id: string; user_id: string; request_id: string; input: string; settings: unknown;
-        skill_selection: unknown; mcp_selection: unknown; execution_target: unknown;
-        source: 'user' | 'platform_action' | 'sandbox_result' | 'desktop_result';
+        skill_selection: unknown; mcp_selection: unknown; stdio_mcp_selection: unknown; execution_target: unknown;
+        source: 'user' | 'platform_action' | 'sandbox_result' | 'desktop_result' | 'stdio_mcp_result';
         source_action_id: string | null; source_execution_id: string | null; source_desktop_execution_id: string | null;
+        source_stdio_mcp_call_id: string | null;
       }>(
         `SELECT o.id,o.session_id,s.user_id,o.request_id,o.input,o.settings,o.skill_selection,o.mcp_selection,
-         o.source,o.source_action_id,o.source_execution_id,o.source_desktop_execution_id,o.execution_target
+         o.stdio_mcp_selection,o.source,o.source_action_id,o.source_execution_id,
+         o.source_desktop_execution_id,o.source_stdio_mcp_call_id,o.execution_target
          FROM pe_operations o JOIN pe_sessions s ON s.id=o.session_id JOIN pe_users u ON u.id=s.user_id
          WHERE o.state IN ('queued','running') AND (s.lease_until IS NULL OR s.lease_until<=now())
          AND (SELECT count(*) FROM pe_sessions active WHERE active.user_id=s.user_id AND active.lease_until>now())<$1
@@ -202,8 +212,10 @@ export class TaskStore {
         operationId: row.id, sessionId: row.session_id, userId: row.user_id, requestId: row.request_id,
         text: row.input, settings: settings.parse(row.settings), selection: z.array(skillSelection).max(8).parse(row.skill_selection),
         mcpConnections: z.array(mcpSelection).max(1).parse(row.mcp_selection),
+        stdioMcpConnections: z.array(stdioMcpSelection).max(1).parse(row.stdio_mcp_selection),
         source: row.source, sourceActionId: row.source_action_id,
         sourceExecutionId: row.source_execution_id, sourceDesktopExecutionId: row.source_desktop_execution_id,
+        sourceStdioMcpCallId: row.source_stdio_mcp_call_id,
         target: executionTarget.parse(row.execution_target), executionEnabled: this.limits.executionEnabled ?? false,
         token, epoch,
       })

@@ -4,20 +4,23 @@ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-cli
 import type { FixedMcpList, FixedMcpPort } from './mcp-api.ts'
 import { PersonalMcpPage } from './PersonalMcpPage.tsx'
 import { PersonalSshPage } from './PersonalSshPage.tsx'
+import { StdioMcpPage } from './StdioMcpPage.tsx'
+import type { StdioMcpList, StdioMcpPort } from './stdio-mcp-api.ts'
 import type { PersonalSshList, PersonalSshPort } from './ssh-api.ts'
 import { PluginHttpError, type NotesPlugin, type NotesSetEnabled, type PluginPort } from './plugins-api.ts'
 import { SkillToggle } from './SkillToggle.tsx'
 
-type BuiltinId = 'notes' | 'mcp' | 'ssh'
+type BuiltinId = 'notes' | 'mcp' | 'stdio' | 'ssh'
 type Category = '' | 'tools' | 'remote'
 type View = 'installed' | 'all'
 
 export type PluginsPageProps = PropsRuntime<'main'> & PropsLocale<'powerEvolve.extensionCenter'>
-  & InjectFace<{ readonly plugins: PluginPort; readonly mcp: FixedMcpPort; readonly ssh: PersonalSshPort;
+  & InjectFace<{ readonly plugins: PluginPort; readonly mcp: FixedMcpPort;
+    readonly stdio: StdioMcpPort; readonly ssh: PersonalSshPort;
     readonly approvalUrl: () => Promise<string> }>
 
 /** The old PowerEvolve Plugins layout with platform-owned personal state. */
-export function PluginsPage({ plugins, mcp, ssh, approvalUrl, t }: PluginsPageProps): ReactNode {
+export function PluginsPage({ plugins, mcp, stdio, ssh, approvalUrl, t }: PluginsPageProps): ReactNode {
   const [items, setItems] = useState<readonly NotesPlugin[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string>()
@@ -33,11 +36,15 @@ export function PluginsPage({ plugins, mcp, ssh, approvalUrl, t }: PluginsPagePr
   const [mcpData, setMcpData] = useState<FixedMcpList>()
   const [mcpLoading, setMcpLoading] = useState(true)
   const [mcpLoadError, setMcpLoadError] = useState(false)
+  const [stdioData, setStdioData] = useState<StdioMcpList>()
+  const [stdioLoading, setStdioLoading] = useState(true)
+  const [stdioLoadError, setStdioLoadError] = useState(false)
   const [sshData, setSshData] = useState<PersonalSshList>()
   const [sshLoading, setSshLoading] = useState(true)
   const [sshLoadError, setSshLoadError] = useState(false)
   const request = useRef<AbortController>()
   const mcpRequest = useRef<AbortController>()
+  const stdioRequest = useRef<AbortController>()
   const sshRequest = useRef<AbortController>()
   const scrollTop = useRef(0)
   const list = useRef<HTMLElement>(null)
@@ -89,9 +96,21 @@ export function PluginsPage({ plugins, mcp, ssh, approvalUrl, t }: PluginsPagePr
     })
   }, [ssh])
 
-  useEffect(() => { reload(); reloadMcp(); reloadSsh(); return () => {
-    request.current?.abort(); mcpRequest.current?.abort(); sshRequest.current?.abort()
-  } }, [reload, reloadMcp, reloadSsh])
+  const reloadStdio = useCallback((): void => {
+    stdioRequest.current?.abort()
+    const controller = new AbortController()
+    stdioRequest.current = controller
+    setStdioLoading(true); setStdioLoadError(false)
+    void stdio.list(controller.signal).then(value => {
+      if (!controller.signal.aborted) setStdioData(value)
+    }).catch(() => {
+      if (!controller.signal.aborted) setStdioLoadError(true)
+    }).finally(() => { if (!controller.signal.aborted) setStdioLoading(false) })
+  }, [stdio])
+
+  useEffect(() => { reload(); reloadMcp(); reloadStdio(); reloadSsh(); return () => {
+    request.current?.abort(); mcpRequest.current?.abort(); stdioRequest.current?.abort(); sshRequest.current?.abort()
+  } }, [reload, reloadMcp, reloadStdio, reloadSsh])
   useEffect(() => {
     if (selected !== 'notes') return
     let active = true
@@ -104,16 +123,20 @@ export function PluginsPage({ plugins, mcp, ssh, approvalUrl, t }: PluginsPagePr
 
   const notes = items.find(item => item.id === 'notes')
   const mcpInstalled = (mcpData?.items.length ?? 0) > 0
+  const stdioInstalled = (stdioData?.items.length ?? 0) > 0
   const sshInstalled = (sshData?.items.length ?? 0) > 0
   const candidates: readonly BuiltinId[] = view === 'installed'
     ? [...(notes === undefined ? [] : ['notes'] as const), ...(mcpInstalled ? ['mcp'] as const : []),
+      ...(stdioInstalled ? ['stdio'] as const : []),
       ...(sshInstalled ? ['ssh'] as const : [])]
-    : ['notes', 'mcp', 'ssh']
+    : ['notes', 'mcp', 'stdio', 'ssh']
   const visible = useMemo(() => candidates.filter(id => {
     const group = id === 'ssh' ? 'remote' : 'tools'
-    const title = id === 'notes' ? t('notesPluginTitle') : id.toUpperCase()
+    const title = id === 'notes' ? t('notesPluginTitle')
+      : id === 'stdio' ? t('stdioMcpTitle') : id.toUpperCase()
     const description = id === 'notes' ? t('notesPluginDescription')
-      : id === 'mcp' ? t('mcpPluginDescription') : t('sshPluginDescription')
+      : id === 'mcp' ? t('mcpPluginDescription')
+        : id === 'stdio' ? t('stdioMcpDescription') : t('sshPluginDescription')
     const needle = search.trim().toLocaleLowerCase()
     return (category === '' || category === group)
       && (needle === '' || [title, description].some(value => value.toLocaleLowerCase().includes(needle)))
@@ -176,6 +199,15 @@ export function PluginsPage({ plugins, mcp, ssh, approvalUrl, t }: PluginsPagePr
     </main>
   }
 
+  if (selected === 'stdio' && stdioData) {
+    return <main className="pext-root pext-plugin-detail-page" data-power-evolve-plugin-detail="stdio">
+      <header className="pext-plugin-breadcrumb"><button type="button" onClick={() => { setSelected(undefined) }}>
+        {t('pluginsTitle')}</button><IconChevronRightOutlineRegular size={14} /><span>{t('stdioMcpTitle')}</span></header>
+      <StdioMcpPage data={stdioData} port={stdio} t={t}
+        onChange={next => { setStdioData(current => current === undefined ? current : { ...current, items: next }) }} />
+    </main>
+  }
+
   if (selected === 'ssh' && sshData) {
     return <main className="pext-root pext-plugin-detail-page" data-power-evolve-plugin-detail="ssh">
       <header className="pext-plugin-breadcrumb"><button type="button" onClick={() => { setSelected(undefined) }}>
@@ -188,7 +220,7 @@ export function PluginsPage({ plugins, mcp, ssh, approvalUrl, t }: PluginsPagePr
   return <main ref={list} className="pext-root pext-catalog-page" data-power-evolve-plugins-page>
     <header className="pext-catalog-header"><nav className="pext-catalog-tabs" role="tablist" aria-label={t('pluginsTitle')}>
       <button type="button" role="tab" aria-selected={view === 'installed'} onClick={() => { setView('installed') }}>
-        {t('myPlugins')}<small>{items.length + Number(mcpInstalled) + Number(sshInstalled)}</small></button>
+        {t('myPlugins')}<small>{items.length + Number(mcpInstalled) + Number(stdioInstalled) + Number(sshInstalled)}</small></button>
       <button type="button" role="tab" aria-selected={view === 'all'} onClick={() => { setView('all') }}>
         {t('allPlugins')}</button></nav></header>
     <section className="pext-catalog-content" role="tabpanel" aria-label={t('pluginsTitle')}>
@@ -200,19 +232,24 @@ export function PluginsPage({ plugins, mcp, ssh, approvalUrl, t }: PluginsPagePr
           aria-pressed={category === value} onClick={() => { setCategory(value) }}>
           {t(value === '' ? 'pluginCategoryAll' : value === 'tools' ? 'pluginCategoryTools' : 'pluginCategoryRemote')}</button>)}</div>
         <span>{t('resultCount').replace('{count}', String(visible.length))}</span></div>
-      <button type="button" className="pext-card-action" onClick={() => { reload(); reloadMcp(); reloadSsh() }}>{t('refreshList')}</button>
+      <button type="button" className="pext-card-action" onClick={() => {
+        reload(); reloadMcp(); reloadStdio(); reloadSsh() }}>{t('refreshList')}</button>
       {loadError && <div className="pext-error" role="alert">{loadError}</div>}
       {mcpLoadError && <div className="pext-error" role="alert">{t('mcpLoadFailed')}</div>}
+      {stdioLoadError && <div className="pext-error" role="alert">{t('stdioLoadFailed')}</div>}
       {sshLoadError && <div className="pext-error" role="alert">{t('sshLoadFailed')}</div>}
       {loading ? <div className="pext-loading" role="status">{t('pluginLoading')}</div>
         : loadError ? null : visible.length === 0 ? <div className="pext-empty">{t('pluginCatalogEmpty')}</div>
           : <div className="pext-card-grid">{visible.map(id => {
             const isNotes = id === 'notes'
             const isMcp = id === 'mcp'
+            const isStdio = id === 'stdio'
             const isSsh = id === 'ssh'
-            const title = isNotes ? t('notesPluginTitle') : id.toUpperCase()
+            const title = isNotes ? t('notesPluginTitle')
+              : isStdio ? t('stdioMcpTitle') : id.toUpperCase()
             const openable = isNotes && notes !== undefined || isMcp && mcpData !== undefined
-              && (mcpData.available || mcpInstalled) || isSsh && sshData !== undefined
+              && (mcpData.available || mcpInstalled) || isStdio && stdioData !== undefined
+              && (stdioData.available || stdioInstalled) || isSsh && sshData !== undefined
               && (sshData.available || sshInstalled)
             return <article className="pext-extension-card" key={id} data-plugin-id={id}>
               <div className="pext-extension-card-top"><span className="pext-extension-icon" aria-hidden="true">
@@ -221,13 +258,17 @@ export function PluginsPage({ plugins, mcp, ssh, approvalUrl, t }: PluginsPagePr
                   : isMcp && mcpInstalled ? t('mcpInstalled')
                     : isMcp && mcpLoading ? t('mcpLoading')
                       : isMcp && mcpData?.available ? t('pluginBuiltin')
+                        : isStdio && stdioInstalled ? t('mcpInstalled')
+                          : isStdio && stdioLoading ? t('mcpLoading')
+                            : isStdio && stdioData?.available ? t('pluginBuiltin')
                         : isSsh && sshInstalled ? t('mcpInstalled')
                           : isSsh && sshLoading ? t('sshLoading')
                             : isSsh && sshData?.available ? t('pluginBuiltin') : t('pluginNotAvailable')}</span></div>
               {openable ? <button className="pext-extension-title" type="button" onClick={() => {
                 scrollTop.current = list.current?.scrollTop ?? 0; setSelected(id) }}>{title}</button>
                 : <strong className="pext-extension-title">{title}</strong>}
-              <p>{t(isNotes ? 'notesPluginDescription' : isMcp ? 'mcpPluginDescription' : 'sshPluginDescription')}</p>
+              <p>{t(isNotes ? 'notesPluginDescription' : isMcp ? 'mcpPluginDescription'
+                : isStdio ? 'stdioMcpDescription' : 'sshPluginDescription')}</p>
               <div className="pext-extension-card-bottom"><span>{openable ? t('pluginBuiltin') : t('pluginNotAvailable')}</span>
                 {openable ? <button type="button" className="pext-card-action" onClick={() => {
                   scrollTop.current = list.current?.scrollTop ?? 0; setSelected(id) }}>{t('viewDetails')}</button> : null}</div>

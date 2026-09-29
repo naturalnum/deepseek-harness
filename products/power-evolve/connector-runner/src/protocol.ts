@@ -14,7 +14,7 @@ export interface Destination {
   readonly hostKeySha256?: string
 }
 
-export type CallInput = {
+export type SshCallInput = {
   readonly callId: string
   readonly instanceId: string
   readonly digest: string
@@ -30,6 +30,19 @@ export type CallInput = {
   readonly command: string
 })
 
+/** The process and tool are fixed in the Runner image; only the account scope varies. */
+export interface StdioCallInput {
+  readonly kind: 'mcp.stdio.whoami'
+  readonly callId: string
+  readonly instanceId: string
+  readonly digest: string
+  readonly accountId: string
+  readonly timeoutMs: number
+  readonly maxOutputBytes: number
+}
+
+export type CallInput = SshCallInput | StdioCallInput
+
 export type UnsignedCallInput = CallInput extends infer Member
   ? Member extends CallInput ? Omit<Member, 'digest'> : never : never
 
@@ -38,6 +51,7 @@ export type CallResult =
   | { readonly kind: 'ssh.authenticate'; readonly serverBanner: string | null }
   | { readonly kind: 'ssh.execute'; readonly exitCode: number | null; readonly signal: string | null;
       readonly stdout: string; readonly stderr: string }
+  | { readonly kind: 'mcp.stdio.whoami'; readonly text: string }
 
 export class CallValidationError extends Error {
   constructor(readonly code: string) { super(code) }
@@ -94,6 +108,19 @@ export function parseAllowlist(raw: string): ReadonlySet<string> {
 /** Strictly parse a request before reserving its stable call ID. */
 export function parseCallInput(value: unknown): CallInput {
   if (!record(value) || typeof value.kind !== 'string') throw new CallValidationError('invalid_call')
+  if (value.kind === 'mcp.stdio.whoami') {
+    if (!exact(value, ['kind', 'callId', 'instanceId', 'digest', 'accountId', 'timeoutMs', 'maxOutputBytes'])
+      || typeof value.callId !== 'string' || !uuid.test(value.callId)
+      || typeof value.instanceId !== 'string' || !uuid.test(value.instanceId)
+      || typeof value.digest !== 'string' || !hexDigest.test(value.digest)
+      || typeof value.accountId !== 'string' || !uuid.test(value.accountId)
+      || !bounded(value.timeoutMs, 30_000) || !bounded(value.maxOutputBytes, 8192)) {
+      throw new CallValidationError('invalid_call')
+    }
+    return { kind: value.kind, callId: value.callId, instanceId: value.instanceId,
+      digest: value.digest, accountId: value.accountId, timeoutMs: value.timeoutMs,
+      maxOutputBytes: value.maxOutputBytes }
+  }
   const common = ['callId', 'instanceId', 'digest', 'destination', 'timeoutMs', 'maxOutputBytes', 'kind']
   const fields = value.kind === 'ssh.inspect' ? common
     : value.kind === 'ssh.authenticate' ? [...common, 'credential']
@@ -112,7 +139,7 @@ export function parseCallInput(value: unknown): CallInput {
     || value.kind !== 'ssh.inspect' && (typeof destination.hostKeySha256 !== 'string'
       || !fingerprint.test(destination.hostKeySha256))) throw new CallValidationError('invalid_call')
   destinationKey(destination.host, destination.port)
-  if (value.kind === 'ssh.inspect') return value as CallInput
+  if (value.kind === 'ssh.inspect') return value as SshCallInput
   const credential = value.credential
   if (!record(credential) || typeof credential.kind !== 'string') throw new CallValidationError('invalid_call')
   if (credential.kind === 'password') {
@@ -128,7 +155,7 @@ export function parseCallInput(value: unknown): CallInput {
   } else throw new CallValidationError('invalid_call')
   if (value.kind === 'ssh.execute' && (!text(value.command, 16_384)
     || /\0/u.test(value.command))) throw new CallValidationError('invalid_call')
-  return value as CallInput
+  return value as SshCallInput
 }
 
 /** Canonical HMAC includes credentials without publishing an offline password hash. */

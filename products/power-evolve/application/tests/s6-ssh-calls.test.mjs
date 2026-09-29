@@ -30,7 +30,7 @@ test('S6 SSH calls retain exact user requests, fence workers, and reconcile a pe
     const url = new URL(databaseUrl); url.pathname = `/${database}`
     pool = new Pool({ connectionString: url.href, max: 8 })
     await initializeDatabase(pool)
-    assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 16)
+    assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 17)
     const alice = identity.parse({ userId: randomUUID(), username: 'alice' })
     const bob = identity.parse({ userId: randomUUID(), username: 'bob' })
     const connections = [randomUUID(), randomUUID()]

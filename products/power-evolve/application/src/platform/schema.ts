@@ -484,3 +484,64 @@ CREATE INDEX pe_ssh_calls_claim ON pe_ssh_calls(created_at,id)
 CREATE INDEX pe_ssh_calls_user ON pe_ssh_calls(user_id,created_at DESC,id DESC);
 UPDATE pe_schema SET version=16 WHERE version=15;
 `
+
+/** User-scoped process MCP preset, durable Runner calls, and one session continuation per result. */
+export const schemaV17 = `
+CREATE TABLE pe_stdio_mcp_connections (
+  id uuid PRIMARY KEY, user_id uuid NOT NULL UNIQUE REFERENCES pe_users(id),
+  install_request_id uuid NOT NULL, name text NOT NULL CHECK (length(name) BETWEEN 1 AND 80),
+  enabled boolean NOT NULL DEFAULT true, revision integer NOT NULL DEFAULT 1 CHECK (revision>0),
+  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(id,user_id), UNIQUE(user_id,install_request_id)
+);
+CREATE TABLE pe_stdio_mcp_updates (
+  user_id uuid NOT NULL REFERENCES pe_users(id), request_id uuid NOT NULL,
+  connection_id uuid NOT NULL, request_digest text NOT NULL CHECK (request_digest ~ '^[a-f0-9]{64}$'),
+  result jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(user_id,request_id),
+  FOREIGN KEY(connection_id,user_id) REFERENCES pe_stdio_mcp_connections(id,user_id)
+);
+CREATE TABLE pe_stdio_mcp_calls (
+  id uuid PRIMARY KEY, user_id uuid NOT NULL REFERENCES pe_users(id),
+  operation_id uuid NOT NULL REFERENCES pe_operations(id),
+  connection_id uuid NOT NULL, connection_revision integer NOT NULL CHECK (connection_revision>0),
+  call_key text NOT NULL CHECK (length(call_key) BETWEEN 1 AND 100),
+  state text NOT NULL CHECK (state IN ('accepted','preparing','ready','dispatch-intent','running',
+    'succeeded','failed','uncertain')),
+  pod_uid uuid, runner_instance_id uuid,
+  dispatch_digest text CHECK (dispatch_digest IS NULL OR dispatch_digest ~ '^[a-f0-9]{64}$'),
+  result text CHECK (result IS NULL OR octet_length(result)<=8192), error_code text,
+  cleanup_complete boolean NOT NULL DEFAULT false,
+  lease_owner uuid, lease_epoch integer NOT NULL DEFAULT 0 CHECK (lease_epoch>=0), lease_until timestamptz,
+  continuation_request_id uuid NOT NULL DEFAULT gen_random_uuid() UNIQUE,
+  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(operation_id,call_key),
+  FOREIGN KEY(connection_id,user_id) REFERENCES pe_stdio_mcp_connections(id,user_id),
+  CHECK ((pod_uid IS NULL AND runner_instance_id IS NULL)
+    OR (pod_uid IS NOT NULL AND runner_instance_id IS NOT NULL)),
+  CHECK (state NOT IN ('ready','dispatch-intent','running') OR pod_uid IS NOT NULL),
+  CHECK (state NOT IN ('dispatch-intent','running') OR dispatch_digest IS NOT NULL)
+);
+CREATE INDEX pe_stdio_mcp_calls_claim ON pe_stdio_mcp_calls(created_at,id)
+  WHERE state IN ('accepted','preparing','ready','dispatch-intent','running');
+CREATE INDEX pe_stdio_mcp_calls_cleanup ON pe_stdio_mcp_calls(updated_at,id)
+  WHERE cleanup_complete=false AND state IN ('succeeded','failed','uncertain');
+ALTER TABLE pe_operations ADD COLUMN stdio_mcp_selection jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE pe_operations ADD COLUMN source_stdio_mcp_call_id uuid REFERENCES pe_stdio_mcp_calls(id);
+ALTER TABLE pe_operations DROP CONSTRAINT pe_operations_source_check;
+ALTER TABLE pe_operations ADD CONSTRAINT pe_operations_source_check
+  CHECK (source IN ('user','platform_action','sandbox_result','desktop_result','stdio_mcp_result'));
+ALTER TABLE pe_operations DROP CONSTRAINT pe_operations_source_action;
+ALTER TABLE pe_operations ADD CONSTRAINT pe_operations_source_action CHECK (
+  (source='user' AND source_action_id IS NULL AND source_execution_id IS NULL
+    AND source_desktop_execution_id IS NULL AND source_stdio_mcp_call_id IS NULL)
+  OR (source='platform_action' AND source_action_id IS NOT NULL AND source_execution_id IS NULL
+    AND source_desktop_execution_id IS NULL AND source_stdio_mcp_call_id IS NULL)
+  OR (source='sandbox_result' AND source_action_id IS NULL AND source_execution_id IS NOT NULL
+    AND source_desktop_execution_id IS NULL AND source_stdio_mcp_call_id IS NULL)
+  OR (source='desktop_result' AND source_action_id IS NULL AND source_execution_id IS NULL
+    AND source_desktop_execution_id IS NOT NULL AND source_stdio_mcp_call_id IS NULL)
+  OR (source='stdio_mcp_result' AND source_action_id IS NULL AND source_execution_id IS NULL
+    AND source_desktop_execution_id IS NULL AND source_stdio_mcp_call_id IS NOT NULL));
+UPDATE pe_schema SET version=17 WHERE version=16;
+`

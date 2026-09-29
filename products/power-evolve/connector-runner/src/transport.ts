@@ -1,7 +1,7 @@
 /** SSH protocol transport; no database, filesystem mount, or shell entry point. */
 import { createHash, timingSafeEqual } from 'node:crypto'
 import ssh2, { type ClientChannel, type ConnectConfig } from 'ssh2'
-import type { CallInput, CallResult } from './protocol.ts'
+import type { CallResult, SshCallInput } from './protocol.ts'
 
 export class SshFailure extends Error {
   constructor(readonly code: string) { super(code) }
@@ -9,7 +9,7 @@ export class SshFailure extends Error {
 
 export interface SshTransport {
   /** Execute one already-authorized SSH request. */
-  call(input: CallInput, signal: AbortSignal): Promise<CallResult>
+  call(input: SshCallInput, signal: AbortSignal): Promise<CallResult>
 }
 
 function fingerprint(key: Buffer): string {
@@ -35,7 +35,7 @@ function classified(error: unknown, mismatch: boolean, timedOut: boolean, aborte
 
 /** ssh2 with credential-free discovery and pinned-key authentication. */
 export class Ssh2Transport implements SshTransport {
-  async call(input: CallInput, signal: AbortSignal): Promise<CallResult> {
+  async call(input: SshCallInput, signal: AbortSignal): Promise<CallResult> {
     if (signal.aborted) throw new SshFailure('ssh_cancelled')
     return new Promise((resolve, reject) => {
       const client = new ssh2.Client()

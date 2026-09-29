@@ -35,6 +35,11 @@ const requests = { me: z.object({}).strict(), logout: z.object({}).strict(), mod
   mcpToggle: z.object({ connectionId: z.uuid(), requestId: z.uuid(), baseRevision: z.number().int().positive(),
     enabled: z.boolean() }).strict(),
   mcpCheck: z.object({ connectionId: z.uuid() }).strict(),
+  stdioMcpList: z.object({}).strict(),
+  stdioMcpInstall: z.object({ requestId: z.uuid(), name: z.string().trim().min(1).max(80) }).strict(),
+  stdioMcpToggle: z.object({ connectionId: z.uuid(), requestId: z.uuid(),
+    baseRevision: z.number().int().positive(), enabled: z.boolean() }).strict(),
+  stdioMcpCalls: z.object({}).strict(), stdioMcpStatus: z.object({ callId: z.uuid() }).strict(),
   sshList: z.object({}).strict(), sshCreateTicket: sshCreateTicketRequest, sshToggle: sshToggleRequest,
   sshCheck: sshCheckRequest, sshCallStatus: sshCallRefRequest, sshCallCancel: sshCallRefRequest,
   sshCallList: z.object({}).strict(),
@@ -54,6 +59,9 @@ const endpoint = { me: '/identity/me', logout: '/identity/logout', modelsList: '
   skillsUploadTicket: '/skills/upload-ticket', skillsRevoke: '/skills/revoke', actionsList: '/connectors/actions',
   pluginsList: '/plugins/list', pluginsNotesSetEnabled: '/plugins/notes/set-enabled',
   mcpList: '/mcp/list', mcpInstall: '/mcp/install', mcpToggle: '/mcp/toggle', mcpCheck: '/mcp/check',
+  stdioMcpList: '/stdio-mcp/list', stdioMcpInstall: '/stdio-mcp/install',
+  stdioMcpToggle: '/stdio-mcp/toggle', stdioMcpCalls: '/stdio-mcp/calls',
+  stdioMcpStatus: '/stdio-mcp/status',
   sshList: '/ssh/list', sshCreateTicket: '/ssh/create-ticket', sshToggle: '/ssh/toggle',
   sshCheck: '/ssh/check', sshCallStatus: '/ssh/call-status', sshCallCancel: '/ssh/call-cancel',
   sshCallList: '/ssh/call-list',
@@ -117,6 +125,11 @@ class ProductRemote extends TypertRemoteService {
   @Remote mcpInstall(request: z.infer<typeof requests.mcpInstall>) { return this.call('mcpInstall', request) }
   @Remote mcpToggle(request: z.infer<typeof requests.mcpToggle>) { return this.call('mcpToggle', request) }
   @Remote mcpCheck(request: z.infer<typeof requests.mcpCheck>) { return this.call('mcpCheck', request) }
+  @Remote stdioMcpList(request: z.infer<typeof requests.stdioMcpList>) { return this.call('stdioMcpList', request) }
+  @Remote stdioMcpInstall(request: z.infer<typeof requests.stdioMcpInstall>) { return this.call('stdioMcpInstall', request) }
+  @Remote stdioMcpToggle(request: z.infer<typeof requests.stdioMcpToggle>) { return this.call('stdioMcpToggle', request) }
+  @Remote stdioMcpCalls(request: z.infer<typeof requests.stdioMcpCalls>) { return this.call('stdioMcpCalls', request) }
+  @Remote stdioMcpStatus(request: z.infer<typeof requests.stdioMcpStatus>) { return this.call('stdioMcpStatus', request) }
   @Remote sshList(request: z.infer<typeof requests.sshList>) { return this.call('sshList', request) }
   @Remote async sshCreateTicket(request: z.infer<typeof sshCreateTicketRequest>) {
     const item = z.object({ connectionId: z.uuid(), displayName: z.string(), host: z.string(),
