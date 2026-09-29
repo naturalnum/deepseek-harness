@@ -111,7 +111,11 @@ export class TaskStore {
       )
       if (Number(count.rows[0]!.count) >= this.limits.maxPendingPerUser) throw new PlatformError(429, 'pending_limit')
       const selected = await client.query(
-        'SELECT id AS "skillId",name,description,digest,revision FROM pe_user_skills WHERE user_id=$1 AND enabled=true ORDER BY name,id', [user.userId],
+        `SELECT s.id AS "skillId",s.name,s.description,s.digest,s.revision,s.kind,
+          v.version,v.archive_digest AS "packageDigest",v.manifest_digest AS "manifestDigest"
+         FROM pe_user_skills s LEFT JOIN pe_skill_package_versions v ON v.id=s.package_version_id
+         WHERE s.user_id=$1 AND s.enabled=true AND s.revoked_at IS NULL
+           AND ($2='cloud' OR s.kind='text') ORDER BY s.name,s.id`, [user.userId, target.kind],
       )
       const selection = z.array(skillSelection).max(8).parse(selected.rows)
       const id = randomUUID()

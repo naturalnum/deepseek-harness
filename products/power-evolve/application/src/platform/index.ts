@@ -8,7 +8,7 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 import schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
 import { Pool } from 'pg'
-import { createRequest, filesListRequest, fileReadRequest, filePutRequest, sessionFilesListRequest, sessionFileReadRequest, sessionFilePutRequest, listRequest, loginRequest, modelsListRequest, pageRequest, promptRequest, sessionId, sessionRequest, settingsUpdateRequest, skillInstallRequest, skillRequest, skillToggleRequest, settings, workspaceCreateRequest, PlatformError } from '../contracts.ts'
+import { createRequest, filesListRequest, fileReadRequest, filePutRequest, sessionFilesListRequest, sessionFileReadRequest, sessionFilePutRequest, listRequest, loginRequest, modelsListRequest, pageRequest, promptRequest, sessionId, sessionRequest, settingsUpdateRequest, skillInstallRequest, skillRequest, skillToggleRequest, skillUploadTicketRequest, settings, workspaceCreateRequest, PlatformError } from '../contracts.ts'
 import { bearer, readJson, sendFailure, sendJson } from '../http.ts'
 import { initializeDatabase } from './database.ts'
 import { hashPassword, IdentityService } from './identity.ts'
@@ -85,7 +85,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   }
   const artifacts = new ArtifactService(pool, files, config.artifactRoot)
   await artifacts.init()
-  const skills = new SkillService(pool, config.workspaceRoot)
+  const skills = new SkillService(pool, config.workspaceRoot, config.sandboxLocalRoot)
   await skills.init()
   const users = seedUsers.parse(JSON.parse(seeds))
   for (const user of users) {
@@ -115,7 +115,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
 
   const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const path = new URL(req.url ?? '/', config.platformOrigin).pathname
-    if (req.method === 'GET' && path === '/health') { sendJson(res, { ready: true, service: 'platform', schema: 11, executionEnabled, instanceId }); return }
+    if (req.method === 'GET' && path === '/health') { sendJson(res, { ready: true, service: 'platform', schema: 12, executionEnabled, instanceId }); return }
     if (req.method === 'GET' && path === '/config') { sendJson(res, { hostUrl: config.hostOrigin }); return }
     if (req.method === 'GET' && await serveUi(path, 'login', res, config.hostOrigin)) return
     const artifactContent = /^\/artifacts\/([^/]+)\/content$/u.exec(path)
@@ -128,6 +128,24 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         'content-length': String(bytes.length), 'cache-control': 'no-store',
         'x-content-type-options': 'nosniff' })
       res.end(bytes)
+      return
+    }
+    if (path === '/skills/upload') {
+      if (req.headers.origin !== config.hostOrigin) throw new PlatformError(403, 'invalid_origin')
+      res.setHeader('access-control-allow-origin', config.hostOrigin)
+      res.setHeader('vary', 'Origin')
+      res.setHeader('cache-control', 'no-store')
+      if (req.method === 'OPTIONS') {
+        if (req.headers['access-control-request-method'] !== 'POST') throw new PlatformError(405, 'method_not_allowed')
+        res.writeHead(204, { 'access-control-allow-methods': 'POST, OPTIONS',
+          'access-control-allow-headers': 'Authorization, Content-Type', 'access-control-max-age': '300' })
+        res.end()
+        return
+      }
+      if (req.method !== 'POST') throw new PlatformError(405, 'method_not_allowed')
+      if (req.headers['content-type'] !== 'application/zip') throw new PlatformError(415, 'invalid_content_type')
+      const uploaded = await skills.upload(bearer(req), req)
+      sendJson(res, uploaded.item, uploaded.created ? 201 : 200)
       return
     }
     if (req.method !== 'POST') throw new PlatformError(404, 'not_found')
@@ -373,9 +391,18 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         const value = skillInstallRequest.parse(input)
         sendJson(res, await skills.install(user, value.requestId, value.name, value.description, value.instructions)); return
       }
+      case '/skills/upload-ticket': {
+        const value = skillUploadTicketRequest.parse(input)
+        sendJson(res, await skills.issueUploadTicket(user, value.requestId, value.sizeBytes, value.sha256,
+          config.platformOrigin)); return
+      }
       case '/skills/toggle': {
         const value = skillToggleRequest.parse(input)
         sendJson(res, await skills.toggle(user, value.skillId, value.enabled)); return
+      }
+      case '/skills/revoke': {
+        const value = skillRequest.parse(input)
+        sendJson(res, await skills.revoke(user, value.skillId)); return
       }
       case '/connectors/actions': z.object({}).strict().parse(input); sendJson(res, await connectors.list(user)); return
       case '/executions/list': {

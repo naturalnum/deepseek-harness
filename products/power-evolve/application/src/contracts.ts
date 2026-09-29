@@ -58,12 +58,24 @@ export const skillInstallRequest = z.object({
 }).strict()
 export const skillRequest = z.object({ skillId: z.uuid() }).strict()
 export const skillToggleRequest = z.object({ skillId: z.uuid(), enabled: z.boolean() }).strict()
+export const skillRevokeRequest = skillRequest
+export const skillUploadTicketRequest = z.object({
+  requestId, sizeBytes: z.number().int().min(1).max(1_048_576),
+  sha256: z.string().regex(/^[a-f0-9]{64}$/),
+}).strict()
 export const skillSnapshot = z.object({
   name: z.string(), description: z.string(), instructions: z.string(), revision: z.number().int().positive(),
+  kind: z.enum(['text', 'package']).default('text'), version: z.string().nullable().default(null),
+  digest: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  packageDigest: z.string().regex(/^[a-f0-9]{64}$/).nullable().default(null),
+  manifestDigest: z.string().regex(/^[a-f0-9]{64}$/).nullable().default(null),
 }).strict()
 export const skillSelection = z.object({
   skillId: z.uuid(), name: z.string(), description: z.string(), digest: z.string().regex(/^[a-f0-9]{64}$/),
   revision: z.number().int().positive(),
+  kind: z.enum(['text', 'package']).default('text'), version: z.string().nullable().default(null),
+  packageDigest: z.string().regex(/^[a-f0-9]{64}$/).nullable().default(null),
+  manifestDigest: z.string().regex(/^[a-f0-9]{64}$/).nullable().default(null),
 }).strict()
 export const loginRequest = z.object({
   username: z.string().min(1).max(80), password: z.string().min(1).max(256),

@@ -3,7 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "files": ["lib", "src/platform/safe-posix.py", "web", "README.md", "README.zh.md"],
+  "files": [
+    "lib",
+    "src/platform/safe-posix.py",
+    "web",
+    "README.md",
+    "README.zh.md"
+  ],
   "exports": {
     "./platform": "./lib/platform/index.js",
     "./scope": "./lib/host/scope.js",
@@ -15,32 +21,36 @@
     "./package.json": "./package.json"
   },
   "dependencies": {
-    "@power-evolve/cloud-web": "workspace:*",
-    "@deepseek-ai/schemastery": "workspace:~",
     "@deepseek-ai/dsh-agent": "workspace:*",
+    "@deepseek-ai/dsh-anonymous-user-id": "workspace:*",
     "@deepseek-ai/dsh-api-gateway": "workspace:*",
     "@deepseek-ai/dsh-api-session-controller": "workspace:*",
     "@deepseek-ai/dsh-brand": "workspace:*",
     "@deepseek-ai/dsh-host-webserver": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-llm-deepseek": "workspace:*",
-    "@deepseek-ai/dsh-anonymous-user-id": "workspace:*",
     "@deepseek-ai/dsh-scope": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-session-persistence": "workspace:*",
     "@deepseek-ai/dsh-session-projection": "workspace:*",
+    "@deepseek-ai/dsh-skill": "workspace:*",
+    "@deepseek-ai/dsh-skill-filesystem": "workspace:*",
     "@deepseek-ai/dsh-system-prompt": "workspace:*",
     "@deepseek-ai/dsh-tools": "workspace:*",
     "@deepseek-ai/dsh-typert-protocol": "workspace:*",
     "@deepseek-ai/dsh-typert-registry": "workspace:*",
+    "@deepseek-ai/schemastery": "workspace:~",
+    "@power-evolve/cloud-web": "workspace:*",
     "js-yaml": "^4.2.0",
     "pg": "^8.16.3",
+    "unzipper": "^0.12.5",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
     "@types/js-yaml": "^4.0.9",
     "@types/pg": "^8.15.5",
-    "@deepseek-ai/cordis": "workspace:~"
+    "@types/unzipper": "^0.10.11"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~"

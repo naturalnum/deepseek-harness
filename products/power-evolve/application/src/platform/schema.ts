@@ -303,3 +303,35 @@ INSERT INTO pe_user_models(user_id,model_id,label,max_tokens,enabled)
   SELECT id,settings->>'model',settings->>'model',(settings->>'maxTokens')::integer,true FROM pe_users;
 UPDATE pe_schema SET version=11 WHERE version=10;
 `
+
+/** Immutable executable Skill versions and short-lived browser upload intent. */
+export const schemaV12 = `
+ALTER TABLE pe_user_skills ADD COLUMN kind text NOT NULL DEFAULT 'text'
+  CHECK (kind IN ('text','package'));
+ALTER TABLE pe_user_skills ADD COLUMN package_version_id uuid;
+ALTER TABLE pe_user_skills ADD COLUMN revoked_at timestamptz;
+ALTER TABLE pe_user_skills ADD CONSTRAINT pe_user_skills_id_user UNIQUE(id,user_id);
+CREATE TABLE pe_skill_package_versions (
+  id uuid PRIMARY KEY, user_id uuid NOT NULL REFERENCES pe_users(id),
+  skill_id uuid NOT NULL,
+  name text NOT NULL, description text NOT NULL, version text NOT NULL,
+  archive_digest text NOT NULL, archive_size integer NOT NULL,
+  instruction_digest text NOT NULL,
+  manifest_digest text NOT NULL, manifest text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(id,user_id), UNIQUE(user_id,name,version), UNIQUE(user_id,archive_digest),
+  FOREIGN KEY(skill_id,user_id) REFERENCES pe_user_skills(id,user_id)
+);
+CREATE INDEX pe_skill_package_versions_skill ON pe_skill_package_versions(skill_id,created_at);
+ALTER TABLE pe_user_skills ADD CONSTRAINT pe_user_skills_package_version
+  FOREIGN KEY(package_version_id,user_id) REFERENCES pe_skill_package_versions(id,user_id);
+CREATE TABLE pe_skill_upload_intents (
+  request_id uuid PRIMARY KEY, user_id uuid NOT NULL REFERENCES pe_users(id),
+  size_bytes integer NOT NULL CHECK (size_bytes BETWEEN 1 AND 1048576),
+  archive_digest text NOT NULL, token_digest text UNIQUE,
+  expires_at timestamptz, consumed_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX pe_skill_upload_intents_expiry ON pe_skill_upload_intents(expires_at);
+UPDATE pe_schema SET version=12 WHERE version=11;
+`
