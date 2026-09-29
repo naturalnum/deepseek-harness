@@ -130,7 +130,12 @@ async function rpc(page, method, request) {
 }
 async function send(page, text) {
   const composer = page.locator('[data-composer-input][contenteditable="true"]').last()
-  await composer.waitFor({ timeout: 20_000 })
+  try { await composer.waitFor({ timeout: 20_000 }) }
+  catch (error) {
+    await page.screenshot({ path: join(outputDir, 's7a-composer-failed.png') })
+    throw new Error(`Native composer unavailable at ${page.url()}: ${(await page.locator('body').innerText()).slice(0, 500)}`,
+      { cause: error })
+  }
   await composer.fill(text)
   await page.getByRole('button', { name: 'Send message', exact: true }).click()
 }
