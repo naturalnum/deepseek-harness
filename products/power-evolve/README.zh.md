@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-PowerEvolve 的产品实现与上游 DSH 分开组织，共用一个仓库。开发入口是 [架构决策](ARCHITECTURE.md)，当前试用入口见 [切片 6 双宿主指南](TRIAL-SLICE6.md)；[切片 5](TRIAL-SLICE5.md)、[切片 4](TRIAL-SLICE4.md)、[切片 3](TRIAL-SLICE3.md)、[切片 2](TRIAL-SLICE2.md)和[切片 1](TRIAL.md)试用仍独立保留。
+PowerEvolve 的产品实现与上游 DSH 分开组织，共用一个仓库。开发入口是[架构决策](ARCHITECTURE.md)和[纵切面计划](DELIVERY-PLAN.md)。当前原生 DSH Web 试用入口是 [S4 个人技能](TRIAL-S4-NATIVE.md)；[S3 账号设置](TRIAL-S3-NATIVE.md)、[S2 云工作区与产物](TRIAL-S2-NATIVE.md)及 [S1](TRIAL-S1-NATIVE.md) 仍独立保留。更早的[双宿主试用](TRIAL-SLICE6.md)、[切片 5](TRIAL-SLICE5.md)、[切片 4](TRIAL-SLICE4.md)、[切片 3](TRIAL-SLICE3.md)、[切片 2](TRIAL-SLICE2.md)和[切片 1](TRIAL.md)供参考。
 
 ```mermaid
 flowchart LR
@@ -35,6 +35,6 @@ flowchart LR
 | `application/tests` | 真实 PG 与实际 Profile 的回归测试 |
 | `scripts` | 本机配置和进程管理 |
 
-产品包均为私有包。根构建包含产品 Host 和原生 Web 产物。`pnpm run test:power-evolve` 运行产品集成测试；`pnpm run test:power-evolve:web` 检查构建后的原生页面和 Host 静态路由。产品插件只使用当前基线的公开服务，不修改 Agent loop 或原生 Session 格式。已通过 `/native/` 试用登录、对话、工作区文件和本地执行；技能和插件管理页面仍后置。
+产品包均为私有包。根构建包含产品 Host 和原生 Web 产物。`pnpm run test:power-evolve` 运行产品集成测试；`pnpm run test:power-evolve:web` 检查构建后的原生页面和 Host 静态路由。产品插件只使用当前基线的公开服务，不修改 Agent loop 或原生 Session 格式。`/native/` 已试用登录、对话、云工作区、文件、产物、账号设置和个人文本技能。可执行技能、插件与连接器仍按后续切片交付；桌面端暂缓新增功能。
 
 会话回放资料保存在 [PowerEvolve snapshot](../../../snapshots/power-evolve/conversation/snapshot.yml)。产品测试使用其中的用户输入和助手回复，并逐事件比较完整 Session。该 Profile 需要真实 PG，使用产品测试命令运行；原生 `test:snapshot` 的四种 Profile 适配器不负责它。

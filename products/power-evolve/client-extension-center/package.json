@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "files": ["lib", "README.md"],
+  "files": ["lib", "README.md", "README.zh.md"],
   "exports": {
     ".": "./lib/index.mjs",
     "./client": "./lib/client.js",
