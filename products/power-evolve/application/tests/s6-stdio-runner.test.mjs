@@ -10,6 +10,8 @@ class FakeKubernetes {
   runners = new Map()
   events = []
   losePost = false
+  serverDefaults = false
+  failPodCreateOnce = false
   resourcePath(namespace, kind, name) {
     return `/api/v1/namespaces/${namespace}/${kind}${name ? `/${name}` : ''}`
   }
@@ -31,9 +33,32 @@ class FakeKubernetes {
     }
     if (method === 'POST') {
       if (this.resources.has(key)) throw new KubernetesError(409, 'exists')
+      if (kind === 'pods' && this.failPodCreateOnce) {
+        this.failPodCreateOnce = false
+        throw new KubernetesError(503, 'temporary Pod create failure')
+      }
       const resource = structuredClone(body)
       if (kind === 'secrets') resource.data = { token: Buffer.from(body.stringData.token).toString('base64') }
+      if (this.serverDefaults && kind === 'services') {
+        Object.assign(resource.spec, { clusterIP: '10.43.0.23', clusterIPs: ['10.43.0.23'],
+          ipFamilies: ['IPv4'], ipFamilyPolicy: 'SingleStack', internalTrafficPolicy: 'Cluster',
+          sessionAffinity: 'None' })
+        resource.spec.ports[0].protocol = 'TCP'
+      }
       if (kind === 'pods') {
+        if (this.serverDefaults) {
+          Object.assign(resource.spec, { dnsPolicy: 'ClusterFirst', schedulerName: 'default-scheduler',
+            serviceAccountName: 'default', nodeName: 'worker-1', priority: 0,
+            preemptionPolicy: 'PreemptLowerPriority', tolerations: [
+              { key: 'node.kubernetes.io/not-ready', operator: 'Exists', effect: 'NoExecute', tolerationSeconds: 300 },
+              { key: 'node.kubernetes.io/unreachable', operator: 'Exists', effect: 'NoExecute', tolerationSeconds: 300 },
+            ] })
+          resource.spec.containers[0].ports[0].protocol = 'TCP'
+          Object.assign(resource.spec.containers[0], { terminationMessagePath: '/dev/termination-log',
+            terminationMessagePolicy: 'File' })
+          Object.assign(resource.spec.containers[0].readinessProbe,
+            { successThreshold: 1, failureThreshold: 3, initialDelaySeconds: 0 })
+        }
         resource.metadata.uid = randomUUID()
         resource.status = { phase: 'Running', containerStatuses: [{ ready: true, restartCount: 0 }] }
         this.runners.set(name, { instanceId: randomUUID(), calls: new Map() })
@@ -107,4 +132,32 @@ test('forbidden probe and uncertain POST response block replay', async () => {
   assert.deepEqual(await runner.reconcile(handle, true, runner.digestFor(handle, accountId)),
     { state: 'uncertain', reason: 'dispatched_call_missing' })
   assert.equal(kube.events.filter(event => event.path.endsWith('/proxy/calls') && event.method === 'POST').length, 1)
+})
+
+test('Kubernetes Service and Pod defaults allow recovery without accepting changed targets or identity', async () => {
+  const kube = new FakeKubernetes(), runner = make(kube), callId = randomUUID()
+  kube.serverDefaults = true
+  kube.failPodCreateOnce = true
+  await assert.rejects(runner.prepare(callId), { status: 503 })
+  const handle = await runner.prepare(callId)
+  assert.deepEqual(await runner.prepare(callId), handle)
+  assert.equal(kube.events.filter(event => event.method === 'POST' && event.path.endsWith('/services')).length, 1)
+  const name = `pe-mcp-${callId.replaceAll('-', '')}`
+  const service = kube.resources.get(`services/${name}`)
+  service.spec.selector['powerevolve.dev/stdio-call'] = randomUUID()
+  await assert.rejects(runner.prepare(callId), { code: 'mcp_runner_resource_changed' })
+  service.spec.selector['powerevolve.dev/stdio-call'] = callId
+  service.spec.ports[0].targetPort = 9090
+  await assert.rejects(runner.prepare(callId), { code: 'mcp_runner_resource_changed' })
+  service.spec.ports[0].targetPort = 8080
+  const pod = kube.resources.get(`pods/${name}`)
+  pod.spec.containers[0].image = 'changed:image'
+  await assert.rejects(runner.prepare(callId), { code: 'mcp_runner_resource_changed' })
+  pod.spec.containers[0].image = 'connector-runner:test'
+  pod.metadata.labels['powerevolve.dev/stdio-call'] = randomUUID()
+  await assert.rejects(runner.prepare(callId), { code: 'mcp_runner_resource_changed' })
+  pod.metadata.labels['powerevolve.dev/stdio-call'] = callId
+  pod.metadata.uid = randomUUID()
+  assert.deepEqual(await runner.reconcile(handle, false),
+    { state: 'uncertain', reason: 'runner_identity_changed' })
 })

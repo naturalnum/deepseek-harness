@@ -1,5 +1,6 @@
 /** Dedicated no-egress Kubernetes placement for one process MCP call. */
 import { createHmac } from 'node:crypto'
+import { isIP } from 'node:net'
 import { setTimeout as delay } from 'node:timers/promises'
 import { KubernetesError, type KubernetesClient } from './kubernetes.ts'
 import type { SshRunnerConfig } from './ssh-runner.ts'
@@ -27,6 +28,61 @@ const label = 'powerevolve.dev/stdio-call'
 const canonical = (value: unknown): unknown => Array.isArray(value) ? value.map(canonical)
   : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value)
     .sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => [key, canonical(item)])) : value
+const record = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+const equal = (left: unknown, right: unknown) =>
+  JSON.stringify(canonical(left)) === JSON.stringify(canonical(right))
+const dropDefault = (value: Record<string, unknown>, key: string, expected: unknown): void => {
+  if (value[key] === expected) delete value[key]
+}
+
+/** Remove only API-server defaults; all remaining placement and execution fields must match. */
+const comparableSpec = (kind: string, source: unknown): unknown => {
+  const spec: unknown = structuredClone(source)
+  if (!record(spec)) return spec
+  if (kind === 'services') {
+    const ip = spec.clusterIP
+    if (typeof ip === 'string' && isIP(ip)) {
+      delete spec.clusterIP
+      if (equal(spec.clusterIPs, [ip])) delete spec.clusterIPs
+      const family = isIP(ip) === 4 ? 'IPv4' : 'IPv6'
+      if (equal(spec.ipFamilies, [family])) delete spec.ipFamilies
+    }
+    dropDefault(spec, 'ipFamilyPolicy', 'SingleStack')
+    dropDefault(spec, 'internalTrafficPolicy', 'Cluster')
+    dropDefault(spec, 'sessionAffinity', 'None')
+    if (Array.isArray(spec.ports)) for (const port of spec.ports) {
+      if (record(port)) dropDefault(port, 'protocol', 'TCP')
+    }
+  }
+  if (kind === 'pods') {
+    dropDefault(spec, 'dnsPolicy', 'ClusterFirst')
+    dropDefault(spec, 'schedulerName', 'default-scheduler')
+    dropDefault(spec, 'serviceAccountName', 'default')
+    dropDefault(spec, 'priority', 0)
+    dropDefault(spec, 'preemptionPolicy', 'PreemptLowerPriority')
+    if (typeof spec.nodeName === 'string' && spec.nodeName) delete spec.nodeName
+    if (Array.isArray(spec.tolerations) && spec.tolerations.every(item =>
+      ['node.kubernetes.io/not-ready', 'node.kubernetes.io/unreachable'].some(key =>
+        equal(item, { key, operator: 'Exists', effect: 'NoExecute', tolerationSeconds: 300 })))) {
+      delete spec.tolerations
+    }
+    if (Array.isArray(spec.containers)) for (const container of spec.containers) {
+      if (!record(container)) continue
+      dropDefault(container, 'terminationMessagePath', '/dev/termination-log')
+      dropDefault(container, 'terminationMessagePolicy', 'File')
+      if (Array.isArray(container.ports)) for (const port of container.ports) {
+        if (record(port)) dropDefault(port, 'protocol', 'TCP')
+      }
+      if (record(container.readinessProbe)) {
+        dropDefault(container.readinessProbe, 'initialDelaySeconds', 0)
+        dropDefault(container.readinessProbe, 'successThreshold', 1)
+        dropDefault(container.readinessProbe, 'failureThreshold', 3)
+      }
+    }
+  }
+  return spec
+}
 
 /** A Pod has no egress exception; only a live forbidden-listener probe can open its call API. */
 export class StdioRunnerOrchestrator {
@@ -58,9 +114,9 @@ export class StdioRunnerOrchestrator {
   private async ensure(kind: string, name: string, desired: Record<string, unknown>, token?: string): Promise<void> {
     const matches = (value: Resource | null) => value?.metadata.name === name
       && !value.metadata.deletionTimestamp
-      && JSON.stringify(value.metadata.labels) === JSON.stringify((desired.metadata as Resource['metadata']).labels)
+      && equal(value.metadata.labels, (desired.metadata as Resource['metadata']).labels)
       && (kind === 'secrets' ? value.data?.token === Buffer.from(token!).toString('base64')
-        : JSON.stringify(canonical(value.spec)) === JSON.stringify(canonical(desired.spec)))
+        : equal(comparableSpec(kind, value.spec), comparableSpec(kind, desired.spec)))
     const prior = await this.get(kind, name)
     if (prior) { if (!matches(prior)) throw new StdioRunnerBlocked('mcp_runner_resource_changed'); return }
     try { await this.kube.call('POST', this.path(kind), desired) }
@@ -119,7 +175,7 @@ export class StdioRunnerOrchestrator {
     while (Date.now() < until) {
       const pod = await this.get('pods', name)
       if (!pod || pod.metadata.deletionTimestamp || !pod.metadata.uid
-        || JSON.stringify(pod.metadata.labels) !== JSON.stringify(labels)) {
+        || !equal(pod.metadata.labels, labels)) {
         throw new StdioRunnerBlocked('mcp_runner_pod_identity_changed')
       }
       if (pod.status?.phase === 'Running' && pod.status.containerStatuses?.[0]?.ready
@@ -192,7 +248,7 @@ export class StdioRunnerOrchestrator {
     const name = nameOf(callId)
     const pod = await this.get('pods', name)
     if (pod && (expectedPodUid && pod.metadata.uid !== expectedPodUid
-      || JSON.stringify(pod.metadata.labels) !== JSON.stringify(this.labels(callId)))) {
+      || !equal(pod.metadata.labels, this.labels(callId)))) {
       throw new StdioRunnerBlocked('mcp_runner_pod_identity_changed')
     }
     try { await this.kube.call('DELETE', this.path('pods', name)) }

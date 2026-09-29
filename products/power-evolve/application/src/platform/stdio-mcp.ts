@@ -150,11 +150,16 @@ export class StdioMcpService {
   async close(): Promise<void> { this.stop.abort(); await this.polling }
   private async poll(): Promise<void> {
     while (!this.stop.signal.aborted) {
+      let worked = false
       try {
         const row = await this.claim()
-        if (row) { await this.work(row); continue }
-        await this.cleanupPending()
+        if (row) { worked = true; await this.work(row) }
       } catch (_unavailable) { /* Durable rows are reclaimed after a lease or service recovery. */ }
+      if (!this.stop.signal.aborted) {
+        try { await this.cleanupPending() }
+        catch (_unavailable) { /* Cleanup resumes after the next worker pass or service recovery. */ }
+      }
+      if (worked) continue
       try { await delay(this.pollMs, undefined, { signal: this.stop.signal }) }
       catch (_aborted) { /* Stop the worker after shutdown. */ }
     }
