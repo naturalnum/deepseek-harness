@@ -30,6 +30,7 @@ async function eventually(check, done = value => Boolean(value)) {
 class FixtureRunner {
   handles = new Map()
   posts = 0
+  beforeDispatch
   async prepare(callId) {
     const prior = this.handles.get(callId)
     if (prior) return prior
@@ -39,6 +40,7 @@ class FixtureRunner {
   }
   digestFor(handle, userId) { return `${handle.callId.replaceAll('-', '')}${userId.replaceAll('-', '')}` }
   async dispatchFirst(handle, userId) {
+    await this.beforeDispatch?.()
     this.posts++
     return { state: 'known', status: { callId: handle.callId, instanceId: handle.instanceId,
       digest: this.digestFor(handle, userId), state: 'succeeded',
@@ -46,6 +48,23 @@ class FixtureRunner {
   }
   async reconcile() { return { state: 'absent' } }
   async cleanup(callId) { this.handles.delete(callId) }
+}
+
+function deferred() {
+  let resolve
+  const promise = new Promise(done => { resolve = done })
+  return { promise, resolve }
+}
+
+class PausingStdioMcpService extends StdioMcpService {
+  beforeIntent
+  afterIntent
+  async markDispatchIntent(...args) {
+    await this.beforeIntent?.()
+    const row = await super.markDispatchIntent(...args)
+    if (row) await this.afterIntent?.()
+    return row
+  }
 }
 
 test('STDIO calls pin owner and revision, deduplicate, and resume the same Session',
@@ -154,4 +173,118 @@ test('STDIO calls pin owner and revision, deduplicate, and resume the same Sessi
     assert.equal(recoveryContinuation.sourceStdioMcpCallId, recovering.callId)
     assert.match(recoveryContinuation.text, /结果不明/u)
     await tasks.finish(recoveryContinuation.token, 'completed', null)
+  })
+
+test('real PG fence orders connection disable with intent and the first Runner POST',
+  { timeout: 60_000 }, async t => {
+    const database = `pe_s6_stdio_fence_${randomBytes(10).toString('hex')}`
+    const admin = new Pool({ connectionString: databaseUrl, max: 2 })
+    let pool, created = false, stdio
+    const resumeIntent = deferred(), resumeDispatch = deferred(), resumeBeforeIntent = deferred()
+    t.after(async () => {
+      resumeIntent.resolve(); resumeDispatch.resolve(); resumeBeforeIntent.resolve()
+      await stdio?.close()
+      await pool?.end()
+      if (created) await admin.query(`DROP DATABASE IF EXISTS "${database}"`)
+      await admin.end()
+    })
+    await admin.query(`CREATE DATABASE "${database}"`)
+    created = true
+    const url = new URL(databaseUrl); url.pathname = `/${database}`
+    pool = new Pool({ connectionString: url.href, max: 8 })
+    const user = identity.parse({ userId: randomUUID(), username: 'alice' })
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      await client.query(migrations.schema)
+      await client.query('INSERT INTO pe_schema(version) VALUES(1)')
+      await client.query('INSERT INTO pe_users(id,username,password_hash,settings) VALUES($1,$2,$3,$4)',
+        [user.userId, user.username, 'test-only', { model: 'fixture', maxTokens: 64, revision: 1 }])
+      for (let version = 2; version <= 17; version++) await client.query(migrations[`schemaV${version}`])
+      await client.query('COMMIT')
+    } catch (error) { await client.query('ROLLBACK'); throw error }
+    finally { client.release() }
+    const tasks = new TaskStore(pool, { leaseMs: 30_000, maxPendingPerUser: 8,
+      maxActivePerUser: 1, stdioMcpEnabled: true })
+    const runner = new FixtureRunner()
+    stdio = new PausingStdioMcpService(tasks, runner, randomUUID(), 30_000, 100)
+    const connection = await stdio.install(user, randomUUID(), 'Fenced process MCP')
+    const session = await tasks.create(user, randomUUID())
+    const first = await tasks.accept(user, session.sessionId, randomUUID(), 'Call before disable')
+    const grant = await tasks.claim(randomUUID())
+    const call = await stdio.call(grant.token, connection.connectionId, 1, 'before-disable')
+    const intentReached = deferred()
+    stdio.afterIntent = async () => { intentReached.resolve(); await resumeIntent.promise }
+    stdio.start()
+    await intentReached.promise
+    assert.equal((await pool.query('SELECT state FROM pe_stdio_mcp_calls WHERE id=$1',
+      [call.callId])).rows[0].state, 'dispatch-intent')
+    const disabled = await stdio.toggle(user, connection.connectionId, randomUUID(), 1, false)
+    assert.equal(disabled.revision, 2)
+    resumeIntent.resolve()
+    const revoked = await eventually(() => stdio.status(user, call.callId),
+      value => value.state === 'failed')
+    assert.equal(revoked.errorCode, 'stdio_mcp_connection_revoked')
+    assert.equal(runner.posts, 0, 'disable committed before the first POST')
+    assert.equal((await pool.query('SELECT dispatch_digest FROM pe_stdio_mcp_calls WHERE id=$1',
+      [call.callId])).rows[0].dispatch_digest?.length, 64)
+    await tasks.finish(grant.token, 'completed', null)
+    const firstContinuation = await tasks.claim(randomUUID())
+    assert.equal(firstContinuation.sourceStdioMcpCallId, call.callId)
+    await tasks.finish(firstContinuation.token, 'completed', null)
+
+    const enabled = await stdio.toggle(user, connection.connectionId, randomUUID(), 2, true)
+    assert.equal(enabled.revision, 3)
+    stdio.afterIntent = undefined
+    const dispatchReached = deferred()
+    runner.beforeDispatch = async () => { dispatchReached.resolve(); await resumeDispatch.promise }
+    const second = await tasks.accept(user, session.sessionId, randomUUID(), 'Call while disabling')
+    const secondGrant = await tasks.claim(randomUUID())
+    const secondCall = await stdio.call(secondGrant.token, connection.connectionId, 3, 'during-disable')
+    await dispatchReached.promise
+    const toggle = stdio.toggle(user, connection.connectionId, randomUUID(), 3, false)
+    await eventually(async () => Number((await pool.query(
+      `SELECT count(*) FROM pg_stat_activity WHERE datname=current_database()
+       AND state='active' AND wait_event_type='Lock'
+       AND query LIKE '%pe_stdio_mcp_connections%' AND query LIKE '%FOR UPDATE%'`,
+    )).rows[0].count))
+    assert.equal(await Promise.race([toggle.then(() => 'committed'),
+      new Promise(resolve => setTimeout(() => resolve('waiting'), 150))]), 'waiting',
+    'disable must wait for the fenced first POST')
+    assert.equal(runner.posts, 0)
+    resumeDispatch.resolve()
+    const completed = await eventually(() => stdio.status(user, secondCall.callId),
+      value => value.state === 'succeeded')
+    assert.equal(completed.result, `user:${user.userId}`)
+    assert.equal(runner.posts, 1)
+    assert.equal((await toggle).revision, 4)
+    await tasks.finish(secondGrant.token, 'completed', null)
+    const secondContinuation = await tasks.claim(randomUUID())
+    assert.equal(secondContinuation.sourceStdioMcpCallId, secondCall.callId)
+    await tasks.finish(secondContinuation.token, 'completed', null)
+    assert.notEqual(first.operationId, second.operationId)
+
+    const reenabled = await stdio.toggle(user, connection.connectionId, randomUUID(), 4, true)
+    assert.equal(reenabled.revision, 5)
+    runner.beforeDispatch = undefined
+    const beforeIntentReached = deferred()
+    stdio.beforeIntent = async () => { beforeIntentReached.resolve(); await resumeBeforeIntent.promise }
+    await tasks.accept(user, session.sessionId, randomUUID(), 'Disable before intent')
+    const thirdGrant = await tasks.claim(randomUUID())
+    const thirdCall = await stdio.call(thirdGrant.token, connection.connectionId, 5, 'no-intent')
+    await beforeIntentReached.promise
+    const disabledBeforeIntent = await stdio.toggle(user, connection.connectionId, randomUUID(), 5, false)
+    assert.equal(disabledBeforeIntent.revision, 6)
+    resumeBeforeIntent.resolve()
+    const beforeIntentResult = await eventually(() => stdio.status(user, thirdCall.callId),
+      value => value.state === 'failed')
+    assert.equal(beforeIntentResult.errorCode, 'stdio_mcp_connection_revoked')
+    assert.equal(runner.posts, 1)
+    assert.equal((await pool.query('SELECT dispatch_digest FROM pe_stdio_mcp_calls WHERE id=$1',
+      [thirdCall.callId])).rows[0].dispatch_digest, null,
+    'disable committed before intent leaves no dispatch marker')
+    await tasks.finish(thirdGrant.token, 'completed', null)
+    const thirdContinuation = await tasks.claim(randomUUID())
+    assert.equal(thirdContinuation.sourceStdioMcpCallId, thirdCall.callId)
+    await tasks.finish(thirdContinuation.token, 'completed', null)
   })

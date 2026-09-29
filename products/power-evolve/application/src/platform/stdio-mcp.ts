@@ -181,6 +181,49 @@ export class StdioMcpService {
     if (!changed.rows[0]) throw new PlatformError(409, 'stdio_mcp_lease_lost')
     return changed.rows[0]
   }
+  /** Serialize revocation with the durable intent; a prior disable leaves no dispatch intent. */
+  private async markDispatchIntent(lease: Lease, row: Call, callDigest: string): Promise<Call | null> {
+    return transaction(this.pool, async client => {
+      const locked = await client.query<Call>(
+        `SELECT * FROM pe_stdio_mcp_calls WHERE id=$1 AND lease_owner=$2 AND lease_epoch=$3
+         AND lease_until>now() AND state='ready' FOR UPDATE`,
+        [lease.id, this.ownerId, lease.epoch])
+      if (!locked.rows[0]) throw new PlatformError(409, 'stdio_mcp_lease_lost')
+      const connection = await client.query<Connection>(
+        `SELECT * FROM pe_stdio_mcp_connections WHERE id=$1 AND user_id=$2 FOR SHARE`,
+        [row.connection_id, row.user_id])
+      const current = connection.rows[0]
+      if (!current || !current.enabled || current.revision !== row.connection_revision) return null
+      const changed = await client.query<Call>(
+        `UPDATE pe_stdio_mcp_calls SET state='dispatch-intent',dispatch_digest=$4,updated_at=now()
+         WHERE id=$1 AND lease_owner=$2 AND lease_epoch=$3 AND lease_until>now()
+         AND state='ready' RETURNING *`,
+        [lease.id, this.ownerId, lease.epoch, callDigest])
+      if (!changed.rows[0]) throw new PlatformError(409, 'stdio_mcp_lease_lost')
+      return changed.rows[0]
+    })
+  }
+  /** Hold the connection row through the sole first POST, ordered against a concurrent toggle. */
+  private async dispatchWithLock(lease: Lease, row: Call, handle: StdioRunnerHandle): Promise<
+    { readonly state: 'dispatched'; readonly observation: StdioObservation }
+    | { readonly state: 'revoked' | 'stopped' }> {
+    return transaction(this.pool, async client => {
+      const locked = await client.query<Call>(
+        `SELECT * FROM pe_stdio_mcp_calls WHERE id=$1 AND lease_owner=$2 AND lease_epoch=$3
+         AND lease_until>now() AND state='dispatch-intent' AND dispatch_digest=$4 FOR UPDATE`,
+        [lease.id, this.ownerId, lease.epoch, row.dispatch_digest])
+      if (!locked.rows[0]) throw new PlatformError(409, 'stdio_mcp_lease_lost')
+      const connection = await client.query<Connection>(
+        `SELECT * FROM pe_stdio_mcp_connections WHERE id=$1 AND user_id=$2 FOR SHARE`,
+        [row.connection_id, row.user_id])
+      const current = connection.rows[0]
+      if (!current || !current.enabled || current.revision !== row.connection_revision) {
+        return { state: 'revoked' }
+      }
+      if (this.stop.signal.aborted) return { state: 'stopped' }
+      return { state: 'dispatched', observation: await this.requireRunner().dispatchFirst(handle, row.user_id) }
+    })
+  }
   private handle(row: Call): StdioRunnerHandle | null {
     return row.pod_uid && row.runner_instance_id
       ? { callId: row.id, podUid: row.pod_uid, instanceId: row.runner_instance_id } : null
@@ -207,16 +250,16 @@ export class StdioMcpService {
       if (!handle) throw new PlatformError(409, 'stdio_mcp_runner_handle_missing')
       if (row.state === 'ready') {
         if (this.stop.signal.aborted) return
-        const current = await this.pool.query<Connection>(
-          `SELECT * FROM pe_stdio_mcp_connections WHERE id=$1 AND user_id=$2
-           AND revision=$3 AND enabled=true`, [row.connection_id, row.user_id, row.connection_revision])
-        if (!current.rows[0]) { await this.settle(lease, 'failed', null, 'stdio_mcp_connection_revoked'); return }
         const callDigest = this.requireRunner().digestFor(handle, row.user_id)
-        if (this.stop.signal.aborted) return
-        row = await this.change(lease, 'dispatch-intent', ',dispatch_digest=$5', [callDigest])
+        const intent = await this.markDispatchIntent(lease, row, callDigest)
+        if (!intent) { await this.settle(lease, 'failed', null, 'stdio_mcp_connection_revoked'); return }
+        row = intent
         if (lost || this.stop.signal.aborted) return
-        const observation = await this.requireRunner().dispatchFirst(handle, row.user_id)
-        await this.observe(lease, row, observation)
+        const dispatch = await this.dispatchWithLock(lease, row, handle)
+        if (dispatch.state === 'revoked') {
+          await this.settle(lease, 'failed', null, 'stdio_mcp_connection_revoked'); return
+        }
+        if (dispatch.state === 'dispatched') await this.observe(lease, row, dispatch.observation)
       } else {
         await this.observe(lease, row, await this.requireRunner().reconcile(handle, true,
           row.dispatch_digest ?? undefined))
