@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-This private package copies the DSH Web shell and assembles native client modules through the public DSH boot injection API. The roster includes authenticated conversation, multiple cloud Workspaces, Session-scoped file controls, explicit artifact publication and browsing, personal account settings, execution target selection, and a product brand/About plugin. The Settings shell comes from upstream DSH. Skill and plugin management pages are deferred until the core flows are complete.
+This private package copies the DSH Web shell and assembles native client modules through the public DSH boot injection API. The roster includes authenticated conversation, multiple cloud Workspaces, Session-scoped file controls, explicit artifact publication and browsing, personal account settings, personal text skill management, execution target selection, and a product brand/About plugin. The Settings shell comes from upstream DSH. Plugin and connector management pages remain for S6.
 
 `pnpm run build:power-evolve:web` requires the upstream Web frontend and client bundles built first. The product Host serves the output at `/native/`; its earlier slice test page remains at `/`. Login is served by the trusted platform and exchanges a scoped browser credential for the native Session transport. The current cloud trial is described in [TRIAL-S3-NATIVE](../TRIAL-S3-NATIVE.md).
 
