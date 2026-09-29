@@ -470,10 +470,19 @@ test('shared host: isolated conversations, files, skills and approved remote act
     }
     const streamFirst = async (socket, endpoint, args) => {
       const streamId = randomUUID()
-      const incoming = once(socket, 'message')
+      const incoming = new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => { cleanup(); reject(new Error(`Timed out waiting for ${endpoint}`)) }, 5000)
+        const onMessage = raw => {
+          let frame
+          try { frame = JSON.parse(raw.toString()) } catch (error) { cleanup(); reject(error); return }
+          if (frame.streamId !== streamId) return
+          cleanup(); resolve(frame)
+        }
+        const cleanup = () => { clearTimeout(timeout); socket.off('message', onMessage) }
+        socket.on('message', onMessage)
+      })
       socket.send(JSON.stringify({ type: 'open', streamId, endpoint, payload: { args } }))
-      const [frame] = await incoming
-      return JSON.parse(frame.toString())
+      return incoming
     }
     const aliceSocket = await connect(0)
     const bobSocket = await connect(1)
