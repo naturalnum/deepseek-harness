@@ -94,7 +94,7 @@ class FakeKubernetes {
   }
 }
 
-async function fixture(t) {
+async function fixture(t, sandboxConfig = {}) {
   const admin = new Pool({ connectionString: databaseUrl })
   const name = `pe_s2_${randomBytes(10).toString('hex')}`
   await admin.query(`CREATE DATABASE "${name}"`)
@@ -124,7 +124,8 @@ async function fixture(t) {
     return { id: workspaceId, path: join(localRoot, 'workspaces', workspaceId) }
   } }
   const manager = new SandboxManager(kube, files, pool, 'test-key',
-    { namespace: 's2-test', image: 'runner:test', localRoot, nodeRoot: localRoot, readyTimeoutMs: 600 })
+    { namespace: 's2-test', image: 'runner:test', localRoot, nodeRoot: localRoot,
+      readyTimeoutMs: 600, ...sandboxConfig })
   manager.home = async () => ({ local: '/tmp', node: '/tmp' })
   const createSession = async userId => {
     const workspaceId = randomUUID(), sessionId = randomUUID()
@@ -142,6 +143,45 @@ async function fixture(t) {
   }
   return { pool, kube, manager, localRoot, createSession, createUser }
 }
+
+test('S7d PVC mounts only exact user paths and refuses a changed Home subPath',
+  { timeout: 30000 }, async t => {
+    const { pool, kube, manager, createSession, createUser } = await fixture(t,
+      { nodeRoot: '', volumeClaimName: 'pe-shared-posix' })
+    const alice = await createUser(), bob = await createUser()
+    const a = await createSession(alice), b = await createSession(bob)
+    const first = await manager.ensureReady(a.sessionId, alice, async () => {})
+    const second = await manager.ensureReady(b.sessionId, bob, async () => {})
+    for (const [userId, session, sandbox] of [[alice, a, first], [bob, b, second]]) {
+      const pod = kube.resource('pods', sandbox.name)
+      const template = kube.resource('sandboxes', sandbox.name).spec.podTemplate.spec
+      for (const spec of [template, pod.spec]) {
+        assert.equal(spec.automountServiceAccountToken, false)
+        assert.equal(spec.serviceAccountName, 'power-evolve-runner')
+        assert.equal(spec.containers[0].imagePullPolicy, 'IfNotPresent')
+        assert.equal(spec.volumes.some(volume => volume.hostPath), false)
+        for (const [name, subPath] of [
+          ['workspace', `workspaces/${session.workspaceId}`],
+          ['home', `homes/${userId}`],
+          ['skill-packages', `skill-packages/${userId}`],
+        ]) {
+          const volume = spec.volumes.find(volume => volume.name === name)
+          const mount = spec.containers[0].volumeMounts.find(mount => mount.name === name)
+          assert.equal(volume.persistentVolumeClaim.claimName, 'pe-shared-posix')
+          assert.equal(mount.subPath, subPath)
+          assert.equal(mount.readOnly === true, name === 'skill-packages')
+        }
+        assert.equal(spec.containers[0].volumeMounts.some(mount => mount.mountPath === '/data'), false)
+      }
+    }
+    assert.notEqual(a.workspaceId, b.workspaceId)
+    kube.resource('pods', first.name).spec.containers[0].volumeMounts
+      .find(mount => mount.name === 'home').subPath = `homes/${bob}`
+    await assert.rejects(manager.ensureReady(a.sessionId, alice, async () => {}), /mount_instance_changed/)
+    assert.equal((await pool.query('SELECT state FROM pe_mount_slots WHERE user_id=$1', [alice])).rows[0].state,
+      'unknown')
+    assert.equal(kube.resource('pods', first.name).metadata.uid, first.podUid)
+  })
 
 test('S5 Sandboxes mount only their user package tree read-only and reuse the matching Pod',
   { timeout: 30000 }, async t => {

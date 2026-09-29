@@ -1,0 +1,38 @@
+{
+  "namespace": "pe-production",
+  "runnerNamespace": "pe-production-runners",
+  "appImage": "registry.example.invalid/power-evolve@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "sandboxImage": "registry.example.invalid/power-evolve-runner@sha256:2222222222222222222222222222222222222222222222222222222222222222",
+  "imagePullSecretName": "pe-registry-auth",
+  "hostPublicOrigin": "https://app.example.invalid",
+  "platformPublicOrigin": "https://platform.example.invalid",
+  "ingressClassName": "nginx",
+  "ingressNamespace": "ingress-nginx",
+  "ingressPodLabels": { "app.kubernetes.io/name": "ingress-nginx" },
+  "tlsSecretName": "pe-public-tls",
+  "modelUrl": "https://model.example.invalid/v1/messages",
+  "connectorUrl": "https://connector.example.invalid/v1",
+  "storage": {
+    "nfsServer": "192.0.2.10",
+    "nfsPath": "/exports/power-evolve",
+    "size": "100Gi",
+    "platformPv": "pe-production-platform-posix",
+    "runnerPv": "pe-production-runner-posix",
+    "platformClaim": "pe-production-platform-posix",
+    "runnerClaim": "pe-production-runner-posix"
+  },
+  "network": {
+    "postgresCidrs": ["192.0.2.20/32"],
+    "postgresPort": 5432,
+    "modelCidrs": ["198.51.100.10/32"],
+    "connectorCidrs": ["198.51.100.20/32"],
+    "apiServerCidrs": ["10.43.0.1/32"],
+    "apiServerPort": 443,
+    "runnerProxySourceCidrs": ["192.0.2.30/32"],
+    "sandboxEgressCidrs": []
+  },
+  "secrets": {
+    "shared": "pe-worker-credential",
+    "platform": "pe-platform-credentials"
+  }
+}

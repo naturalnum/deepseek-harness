@@ -2,7 +2,7 @@
 import { readFile, writeFile } from 'node:fs/promises'
 import { randomUUID, timingSafeEqual } from 'node:crypto'
 import { isIP } from 'node:net'
-import { relative, resolve } from 'node:path'
+import { join, relative, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
@@ -63,6 +63,7 @@ export const Config = schema.object({
   sandboxKubeconfigFile: schema.string().default(''), sandboxKeyFile: schema.string().default(''),
   sandboxNamespace: schema.string().default(''), sandboxImage: schema.string().default(''),
   sandboxLocalRoot: schema.string().default(''), sandboxNodeRoot: schema.string().default(''),
+  sandboxVolumeClaimName: schema.string().default(''),
   sandboxReadyTimeoutMs: schema.number().min(1000).default(60000),
   sandboxConcurrency: schema.number().step(1).min(1).default(4),
   sandboxPollMs: schema.number().min(100).default(500), sandboxIdleMs: schema.number().min(1000).default(300000),
@@ -116,7 +117,12 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   await loginAdmission.initialize()
   const executionEnabled = config.sandboxKubeconfigFile.length > 0
   if (executionEnabled && (!config.sandboxKeyFile || !config.sandboxNamespace || !config.sandboxImage
-    || !config.sandboxLocalRoot || !config.sandboxNodeRoot)) throw new Error('Incomplete Agent Sandbox configuration')
+    || !config.sandboxLocalRoot || Boolean(config.sandboxNodeRoot) === Boolean(config.sandboxVolumeClaimName))) {
+    throw new Error('Incomplete Agent Sandbox configuration')
+  }
+  if (executionEnabled && resolve(config.workspaceRoot) !== join(resolve(config.sandboxLocalRoot), 'workspaces')) {
+    throw new Error('Workspace and Sandbox roots differ')
+  }
   const files = new FileService(pool, config.workspaceRoot, executionEnabled ? { uid: 1000, gid: 1000 } : undefined)
   await files.init()
   const artifactRelative = relative(resolve(config.workspaceRoot), resolve(config.artifactRoot))
@@ -223,6 +229,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     (await readFile(config.sandboxKeyFile, 'utf8')).trim(), {
       namespace: config.sandboxNamespace, image: config.sandboxImage,
       localRoot: config.sandboxLocalRoot, nodeRoot: config.sandboxNodeRoot,
+      ...(config.sandboxVolumeClaimName ? { volumeClaimName: config.sandboxVolumeClaimName } : {}),
       readyTimeoutMs: config.sandboxReadyTimeoutMs,
     }), config.sandboxConcurrency, config.sandboxPollMs, config.sandboxIdleMs, config.sandboxCommandTimeoutMs) : null
   if (executions) { executions.start(); ctx.effect(() => () => executions.close()) }

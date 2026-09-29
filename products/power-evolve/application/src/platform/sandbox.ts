@@ -27,6 +27,7 @@ export interface SandboxConfig {
   readonly image: string
   readonly localRoot: string
   readonly nodeRoot: string
+  readonly volumeClaimName?: string
   readonly readyTimeoutMs: number
 }
 
@@ -42,7 +43,14 @@ type Acquired = { kind: 'reserved' | 'ready'; slot: MountSlot }
 /** The platform owns Kubernetes credentials; neither Host nor browser receives a Pod or mount path. */
 export class SandboxManager {
   constructor(private readonly kube: KubernetesClient, private readonly files: FileService, private readonly pool: Pool,
-    private readonly key: string, private readonly config: SandboxConfig) {}
+    private readonly key: string, private readonly config: SandboxConfig) {
+    if (Boolean(config.volumeClaimName) === Boolean(config.nodeRoot)) {
+      throw new Error('Configure exactly one Sandbox volume source')
+    }
+    if (config.volumeClaimName && !/^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$/u.test(config.volumeClaimName)) {
+      throw new Error('Invalid Sandbox PVC claim name')
+    }
+  }
 
   /** The physical resource name is stable for the user's shared writable Home. */
   name(userId: string): string { return `pe-sb-${userId.replaceAll('-', '')}` }
@@ -130,7 +138,7 @@ export class SandboxManager {
     const packageVolumes = entries.filter((value): value is Record<string, unknown> => typeof value === 'object'
       && value !== null && !Array.isArray(value) && 'name' in value && value.name === 'skill-packages')
     const volume = packageVolumes[0]
-    const sourceVolumes = entries.filter(value => {
+    const sourceVolumes = this.config.volumeClaimName ? [] : entries.filter(value => {
       if (typeof value !== 'object' || value === null || !('hostPath' in value)) return false
       const hostPath = value.hostPath
       return typeof hostPath === 'object' && hostPath !== null && 'path' in hostPath
@@ -138,27 +146,85 @@ export class SandboxManager {
     })
     const runner = workers.find((value): value is Record<string, unknown> => typeof value === 'object'
       && value !== null && !Array.isArray(value) && 'name' in value && value.name === 'runner')
-    if (packageVolumes.length !== 1 || sourceVolumes.length !== 1 || sourceVolumes[0] !== volume
+    if (packageVolumes.length !== 1 || (!this.config.volumeClaimName
+      && (sourceVolumes.length !== 1 || sourceVolumes[0] !== volume))
       || !volume || !runner || !Array.isArray(runner.volumeMounts)) return false
     const hostPath = volume.hostPath
     const mounts: unknown[] = runner.volumeMounts
     const packageMounts = mounts.filter((value): value is Record<string, unknown> => typeof value === 'object'
       && value !== null && !Array.isArray(value) && 'name' in value && value.name === 'skill-packages')
     const mount = packageMounts[0]
-    return typeof hostPath === 'object' && hostPath !== null
-      && 'path' in hostPath && hostPath.path === source
-      && 'type' in hostPath && hostPath.type === 'Directory'
-      && packageMounts.length === 1 && !!mount
+    if (!mount) return false
+    const common = packageMounts.length === 1 && !!mount
       && 'mountPath' in mount && mount.mountPath === '/opt/power-evolve/skills'
       && 'readOnly' in mount && mount.readOnly === true
+    if (this.config.volumeClaimName) {
+      const claim = volume.persistentVolumeClaim
+      return common && !('hostPath' in volume)
+        && typeof claim === 'object' && claim !== null && 'claimName' in claim
+        && claim.claimName === this.config.volumeClaimName
+        && 'subPath' in mount && mount.subPath === `skill-packages/${userId}`
+        && !('subPathExpr' in mount)
+    }
+    return common && typeof hostPath === 'object' && hostPath !== null
+      && 'path' in hostPath && hostPath.path === source
+      && 'type' in hostPath && hostPath.type === 'Directory'
       && !('subPath' in mount)
   }
 
-  private hasSkillPackageIdentity(sandbox: Resource, pod: Pod, userId: string): boolean {
+  private hasPvcDataMounts(spec: unknown, userId: string, workspaceId: string): boolean {
+    if (!this.config.volumeClaimName) return true
+    if (!spec || typeof spec !== 'object' || Array.isArray(spec)) return false
+    const { volumes, containers } = spec as Record<string, unknown>
+    if (!Array.isArray(volumes) || !Array.isArray(containers)) return false
+    if (volumes.length !== 5 || containers.length !== 1
+      || !('automountServiceAccountToken' in spec) || spec.automountServiceAccountToken !== false
+      || !('serviceAccountName' in spec) || spec.serviceAccountName !== 'power-evolve-runner'
+      || !('runtimeClassName' in spec) || spec.runtimeClassName !== 'gvisor'
+      || volumes.some(value => typeof value !== 'object' || value === null || 'hostPath' in value)) return false
+    const runner = containers.find(value => typeof value === 'object' && value !== null
+      && 'name' in value && value.name === 'runner') as Record<string, unknown> | undefined
+    if (!runner || !Array.isArray(runner.volumeMounts) || runner.volumeMounts.length !== 5) return false
+    const volumeMounts: unknown[] = runner.volumeMounts
+    const names = ['workspace', 'home', 'skill-packages', 'token', 'scratch']
+    const named = (items: unknown[], name: string): Record<string, unknown> | null => {
+      const found = items.filter(value => typeof value === 'object' && value !== null
+        && 'name' in value && value.name === name) as Record<string, unknown>[]
+      return found.length === 1 ? found[0]! : null
+    }
+    if (!names.every(name => named(volumes, name) && named(volumeMounts, name))) return false
+    const token = named(volumes, 'token'), scratch = named(volumes, 'scratch')
+    const tokenMount = named(volumeMounts, 'token'), scratchMount = named(volumeMounts, 'scratch')
+    const secret = token?.secret as Record<string, unknown> | undefined
+    if (secret?.secretName !== this.name(userId) || !scratch?.emptyDir
+      || tokenMount?.mountPath !== '/run/power-evolve' || tokenMount.readOnly !== true
+      || 'subPath' in tokenMount || scratchMount?.mountPath !== '/tmp'
+      || 'subPath' in scratchMount) return false
+    const expected = [
+      ['workspace', '/workspace', `workspaces/${workspaceId}`],
+      ['home', '/home/agent', `homes/${userId}`],
+    ]
+    return expected.every(([name, mountPath, subPath]) => {
+      const matches = volumes.filter(value => typeof value === 'object' && value !== null
+        && 'name' in value && value.name === name) as Record<string, unknown>[]
+      const mounts = volumeMounts.filter(value => typeof value === 'object' && value !== null
+        && 'name' in value && value.name === name) as Record<string, unknown>[]
+      const volume = matches[0], mount = mounts[0]
+      if (matches.length !== 1 || mounts.length !== 1 || !volume || !mount) return false
+      const claim = volume.persistentVolumeClaim as Record<string, unknown> | undefined
+      return !('hostPath' in volume) && !!claim && claim.claimName === this.config.volumeClaimName
+        && claim.readOnly !== true && mount.mountPath === mountPath && mount.subPath === subPath
+        && mount.readOnly !== true && !('subPathExpr' in mount)
+    })
+  }
+
+  private hasSkillPackageIdentity(sandbox: Resource, pod: Pod, userId: string, workspaceId: string): boolean {
     const template = sandbox.spec?.podTemplate
     return typeof template === 'object' && template !== null && !Array.isArray(template)
       && this.hasSkillPackageMount((template as Record<string, unknown>).spec, userId)
       && this.hasSkillPackageMount(pod.spec, userId)
+      && this.hasPvcDataMounts((template as Record<string, unknown>).spec, userId, workspaceId)
+      && this.hasPvcDataMounts(pod.spec, userId, workspaceId)
   }
 
   private async workspaceId(sessionId: string, userId: string): Promise<string> {
@@ -302,28 +368,43 @@ export class SandboxManager {
         ports: [{ name: 'http', port: 8080, targetPort: 8080 }] },
     }, labels, token)
     await check()
+    const claim = this.config.volumeClaimName
+    const volumeMounts = [
+      { name: 'workspace', mountPath: '/workspace', ...(claim ? { subPath: `workspaces/${workspaceId}` } : {}) },
+      { name: 'home', mountPath: '/home/agent', ...(claim ? { subPath: `homes/${userId}` } : {}) },
+      { name: 'skill-packages', mountPath: '/opt/power-evolve/skills', readOnly: true,
+        ...(claim ? { subPath: `skill-packages/${userId}` } : {}) },
+      { name: 'token', mountPath: '/run/power-evolve', readOnly: true },
+      { name: 'scratch', mountPath: '/tmp' },
+    ]
+    const dataVolumes = claim ? [
+      { name: 'workspace', persistentVolumeClaim: { claimName: claim } },
+      { name: 'home', persistentVolumeClaim: { claimName: claim } },
+      { name: 'skill-packages', persistentVolumeClaim: { claimName: claim } },
+    ] : [
+      { name: 'workspace', hostPath: { path: join(this.config.nodeRoot, 'workspaces', workspaceId), type: 'Directory' } },
+      { name: 'home', hostPath: { path: join(this.config.nodeRoot, 'homes', userId), type: 'Directory' } },
+      { name: 'skill-packages', hostPath: { path: join(this.config.nodeRoot, 'skill-packages', userId),
+        type: 'Directory' } },
+    ]
     await this.ensure('sandboxes', name, {
       apiVersion: 'agents.x-k8s.io/v1beta1', kind: 'Sandbox', metadata: { name, namespace, labels },
       spec: { podTemplate: { metadata: { labels }, spec: {
         automountServiceAccountToken: false, runtimeClassName: 'gvisor', restartPolicy: 'Always',
+        ...(claim ? { serviceAccountName: 'power-evolve-runner' } : {}),
         terminationGracePeriodSeconds: 8,
         securityContext: { seccompProfile: { type: 'RuntimeDefault' } },
-        containers: [{ name: 'runner', image: this.config.image, imagePullPolicy: 'Never',
+        containers: [{ name: 'runner', image: this.config.image, imagePullPolicy: claim ? 'IfNotPresent' : 'Never',
           ports: [{ name: 'http', containerPort: 8080 }],
           readinessProbe: { tcpSocket: { port: 8080 }, periodSeconds: 2, timeoutSeconds: 2 },
           resources: { requests: { cpu: '100m', memory: '128Mi' }, limits: { cpu: '1', memory: '768Mi' } },
           securityContext: { allowPrivilegeEscalation: false, capabilities: {
             drop: ['ALL'], add: ['SETUID', 'SETGID', 'DAC_OVERRIDE', 'KILL'],
           }, readOnlyRootFilesystem: true, runAsUser: 0, runAsGroup: 0 },
-          volumeMounts: [{ name: 'workspace', mountPath: '/workspace' }, { name: 'home', mountPath: '/home/agent' },
-            { name: 'skill-packages', mountPath: '/opt/power-evolve/skills', readOnly: true },
-            { name: 'token', mountPath: '/run/power-evolve', readOnly: true }, { name: 'scratch', mountPath: '/tmp' }],
+          volumeMounts,
         }],
         volumes: [
-          { name: 'workspace', hostPath: { path: join(this.config.nodeRoot, 'workspaces', workspaceId), type: 'Directory' } },
-          { name: 'home', hostPath: { path: join(this.config.nodeRoot, 'homes', userId), type: 'Directory' } },
-          { name: 'skill-packages', hostPath: { path: join(this.config.nodeRoot, 'skill-packages', userId),
-            type: 'Directory' } },
+          ...dataVolumes,
           { name: 'token', secret: { secretName: name, defaultMode: 0o400,
             items: [{ key: 'token', path: 'runner-token', mode: 0o400 }] } },
           { name: 'scratch', emptyDir: { sizeLimit: '256Mi' } },
@@ -342,7 +423,7 @@ export class SandboxManager {
       if (ready && current?.metadata.uid && this.owned(current, labels)
         && current.metadata.ownerReferences?.some(ref => ref.uid === sandbox?.metadata.uid)
         && current.status?.phase === 'Running' && current.status.containerStatuses?.[0]?.ready) {
-        if (!sandbox || !this.hasSkillPackageIdentity(sandbox, current, userId)) {
+        if (!sandbox || !this.hasSkillPackageIdentity(sandbox, current, userId, workspaceId)) {
           throw new MountSlotBlocked('mount_skill_package_identity_changed', false)
         }
         try {
@@ -429,7 +510,7 @@ export class SandboxManager {
       || !pod || pod.metadata.deletionTimestamp || !this.owned(pod, labels)
       || pod.metadata.uid !== podUid || !pod.metadata.ownerReferences?.some(ref => ref.uid === sandbox.metadata.uid)
       || !pod.metadata.finalizers?.includes(STOP_FINALIZER)
-      || !this.hasSkillPackageIdentity(sandbox, pod, userId)) return false
+      || !this.hasSkillPackageIdentity(sandbox, pod, userId, slot.workspace_id!)) return false
     const health = await this.runner<{ ready: boolean; instanceId: string }>(name,
       this.token(name, sessionId, slot.generation), 'GET', '/health')
     return health.ready && health.instanceId === runnerInstanceId

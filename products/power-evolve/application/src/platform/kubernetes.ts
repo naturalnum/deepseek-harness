@@ -22,9 +22,20 @@ export class KubernetesError extends Error {
 export class KubernetesClient {
   private constructor(private readonly server: URL, private readonly ca: Buffer | undefined,
     private readonly cert: Buffer | undefined, private readonly key: Buffer | undefined,
-    private readonly token: string | undefined) {}
+    private readonly token: string | undefined, private readonly tokenFile?: string) {}
 
   static async fromFile(path: string): Promise<KubernetesClient> {
+    if (path === 'in-cluster') {
+      const host = process.env.KUBERNETES_SERVICE_HOST
+      const port = Number(process.env.KUBERNETES_SERVICE_PORT)
+      if (!host || !Number.isInteger(port) || port < 1 || port > 65535) {
+        throw new Error('Kubernetes in-cluster service is unavailable')
+      }
+      const authority = host.includes(':') ? `[${host}]` : host
+      return this.fromServiceAccount(`https://${authority}:${port}`,
+        '/var/run/secrets/kubernetes.io/serviceaccount/ca.crt',
+        '/var/run/secrets/kubernetes.io/serviceaccount/token')
+    }
     const config = kubeconfig.parse(yaml.load(await readFile(path, 'utf8')))
     const current = config.contexts.find(item => item.name === config['current-context'])?.context
     const cluster = config.clusters.find(item => item.name === current?.cluster)?.cluster
@@ -39,15 +50,29 @@ export class KubernetesClient {
       user['client-key-data'] ? Buffer.from(user['client-key-data'], 'base64') : undefined, user.token)
   }
 
+  /** Read the rotating projected token for every request; no long-lived token copy is retained. */
+  static async fromServiceAccount(serverUrl: string, caPath: string, tokenPath: string): Promise<KubernetesClient> {
+    const server = new URL(serverUrl)
+    if (server.protocol !== 'https:' || server.pathname !== '/' || server.search || server.hash
+      || server.username || server.password) throw new Error('Invalid Kubernetes service URL')
+    const ca = await readFile(caPath)
+    if (!ca.length || !(await readFile(tokenPath, 'utf8')).trim()) {
+      throw new Error('Kubernetes service account credentials are unavailable')
+    }
+    return new KubernetesClient(server, ca, undefined, undefined, undefined, tokenPath)
+  }
+
   async call<T>(method: 'GET' | 'POST' | 'DELETE' | 'PATCH', path: string, body?: unknown,
     timeoutMs = 10_000, runnerToken?: string): Promise<T> {
+    const token = this.tokenFile ? (await readFile(this.tokenFile, 'utf8')).trim() : this.token
+    if (!token && !this.cert) throw new Error('Kubernetes service account token is unavailable')
     const payload = body === undefined ? undefined : JSON.stringify(body)
     const url = new URL(path, this.server)
     if (url.origin !== this.server.origin) throw new Error('Kubernetes request origin changed')
     return new Promise<T>((resolve, reject) => {
       const request = httpsRequest(url, {
         method, ca: this.ca, cert: this.cert, key: this.key, rejectUnauthorized: true,
-        headers: { accept: 'application/json', ...(this.token ? { authorization: `Bearer ${this.token}` } : {}),
+        headers: { accept: 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}),
           ...(runnerToken === undefined ? {} : { 'x-power-evolve-runner-token': runnerToken }),
           ...(payload === undefined ? {} : { 'content-type': method === 'PATCH' ? 'application/merge-patch+json' : 'application/json',
             'content-length': Buffer.byteLength(payload) }) },

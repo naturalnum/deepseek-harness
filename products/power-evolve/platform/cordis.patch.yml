@@ -21,6 +21,7 @@
         sandboxImage: !!js process.env.PE_SANDBOX_IMAGE || ''
         sandboxLocalRoot: !!js process.env.PE_SANDBOX_LOCAL_ROOT || ''
         sandboxNodeRoot: !!js process.env.PE_SANDBOX_NODE_ROOT || ''
+        sandboxVolumeClaimName: !!js process.env.PE_SANDBOX_VOLUME_CLAIM || ''
         sandboxReadyTimeoutMs: 60000
         sandboxConcurrency: 4
         sandboxPollMs: 500
