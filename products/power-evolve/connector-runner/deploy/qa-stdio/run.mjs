@@ -1,9 +1,9 @@
 /** Disposable real k3d proof for two isolated STDIO MCP calls. */
 import { randomBytes, randomUUID } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
-import { mkdtemp, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { lstat, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { homedir, tmpdir } from 'node:os'
+import { isAbsolute, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { KubernetesClient } from '../../../application/src/platform/kubernetes.ts'
 import { StdioRunnerOrchestrator } from '../../../application/src/platform/stdio-runner.ts'
@@ -17,9 +17,19 @@ if (!cluster || !/^[a-z0-9]([-a-z0-9]*[a-z0-9])?$/u.test(cluster)
   throw new Error('Set PE_K3D_CLUSTER, matching PE_KUBE_CONTEXT, and tagged PE_CONNECTOR_IMAGE')
 }
 const namespace = `pe-connector-qa-${randomBytes(4).toString('hex')}`
-const privateDir = await mkdtemp(join(tmpdir(), 'pe-stdio-qa-'))
+const retainedDir = process.env.PE_STDIO_TRIAL_PRIVATE_DIR
+const privateDir = retainedDir ? resolve(retainedDir) : await mkdtemp(join(tmpdir(), 'pe-stdio-qa-'))
+if (retainedDir) {
+  const trialRoot = join(homedir(), '.config', 'power-evolve')
+  if (!isAbsolute(retainedDir) || !privateDir.startsWith(`${trialRoot}${sep}`)) {
+    throw new Error('PE_STDIO_TRIAL_PRIVATE_DIR must be an absolute private trial directory')
+  }
+  await mkdir(privateDir, { mode: 0o700 })
+  if ((await lstat(privateDir)).isSymbolicLink()) throw new Error('Trial directory cannot be a symlink')
+}
 const kubeconfig = join(privateDir, 'connector-kubeconfig')
 let namespaceMayExist = false
+let retainedReady = false
 let runner
 const handles = []
 
@@ -105,14 +115,26 @@ try {
     throw new Error('Two users shared a process Pod identity')
   }
   console.log('Two user calls: separate Pods and account-scoped results')
+  if (retainedDir) {
+    await writeFile(join(privateDir, 'ssh.json'), `${JSON.stringify({ kubeconfigFile: kubeconfig,
+      namespace, image, runtimeClass: 'gvisor', ingressCidrs: `${nodeIp}/32`,
+      destinationAllowlist: '192.0.2.1:22' }, null, 2)}\n`, { flag: 'wx', mode: 0o600 })
+    retainedReady = true
+    console.log(`Retained isolated STDIO trial fixture in ${namespace}; private configuration: ${privateDir}`)
+  }
 } finally {
   if (runner) for (const handle of handles) {
     try { await runner.cleanup(handle.callId, handle.podUid) }
-    catch (_cleanupFailed) { console.error('Runner cleanup failed; namespace deletion follows') }
+    catch (_cleanupFailed) { console.error(retainedDir
+      ? `Runner cleanup failed; inspect retained namespace ${namespace}`
+      : 'Runner cleanup failed; namespace deletion follows') }
   }
-  if (namespaceMayExist) {
+  if (namespaceMayExist && !retainedDir) {
     try { admin(['delete', 'namespace', namespace, '--ignore-not-found', '--wait=true', '--timeout=180s']) }
     catch (_cleanupFailed) { console.error(`Namespace cleanup failed: ${namespace}`) }
   }
-  await rm(privateDir, { recursive: true, force: true })
+  if (namespaceMayExist && retainedDir && !retainedReady) {
+    console.error(`Retained incomplete STDIO fixture for inspection: ${namespace}`)
+  }
+  if (!retainedDir) await rm(privateDir, { recursive: true, force: true })
 }

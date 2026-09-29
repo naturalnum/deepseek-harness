@@ -15,3 +15,21 @@ node --import tsx/esm products/power-evolve/connector-runner/deploy/qa-stdio/run
 ```
 
 脚本不打印 Runner 令牌、kubeconfig 或单次调用摘要。若删除命名空间失败，会打印随机命名空间名称，供人工检查。
+
+## 原生浏览器与真实模型验收
+
+若需独立的双用户浏览器试用，保留 Runner 检查创建的命名空间与限定权限 kubeconfig。在 `~/.config/power-evolve/` 下使用新的私密目录；保留模式会在其中写入 `ssh.json`，包含无法路由的 SSH 白名单地址，因为当前 Platform 通过共用 Connector 配置启用 STDIO。浏览器检查仅调用固定的 STDIO whoami 工具。
+
+```sh
+export PE_STDIO_TRIAL_PRIVATE_DIR="$HOME/.config/power-evolve/shared-host-native-s6-stdio-qa"
+node --import tsx/esm products/power-evolve/connector-runner/deploy/qa-stdio/run.mjs
+# 按其他真实模型试用的方式，将有效的 model.env 放入该私密目录。
+export PE_PRIVATE_DIR="$PE_STDIO_TRIAL_PRIVATE_DIR"
+export PE_TRIAL_NAME=native-s6-stdio-qa
+export PE_DATABASE_PORT=18532 PE_HOST_PORT=19350 PE_PLATFORM_PORT=19351 PE_TARGET_PORT=19352
+export PE_SSH_ENABLED=1 PE_COMPOSE_EXTERNAL_NETWORK=pe-shared-host-slice5_default
+node products/power-evolve/scripts/trial.mjs up
+PE_STDIO_RESTART=1 node products/power-evolve/scripts/qa-stdio-browser.mjs
+```
+
+将 `PE_KUBE_CONTEXT` 设为同一个明确选定的集群 context。试用端口、名称和命名空间必须未被占用，不要复用稳定试用或其他正在运行的试用。浏览器脚本在两个独立 Chromium 上下文中登录预置用户，通过原生界面创建云 Workspace，在 Plugins 中安装并开关固定的 Process MCP 连接，分别从会话发送真实模型消息，并检查调用归属、独立 Runner 身份、原 Session 续接、刷新后记录、资源清理与重启恢复。可针对同一试用重复运行；不设置 `PE_STDIO_RESTART=1` 即跳过最后的重启检查。命名空间与试用会保留以供检查。检查完毕后，在相同环境下执行 `node products/power-evolve/scripts/trial.mjs stop`，再删除专用命名空间。
