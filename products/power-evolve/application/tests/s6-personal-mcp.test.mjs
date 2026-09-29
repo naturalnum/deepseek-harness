@@ -83,7 +83,7 @@ test('S6 personal MCP snapshots one fixed whoami tool and revokes per user',
     finally { client.release() }
     await initializeDatabase(pool)
     await initializeDatabase(pool)
-    assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 14)
+    assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 15)
 
     assert.throws(() => new PersonalMcpService(new TaskStore(pool, { leaseMs: 30_000,
       maxPendingPerUser: 8, maxActivePerUser: 1 }), 'http://example.com/mcp', token, 5000))

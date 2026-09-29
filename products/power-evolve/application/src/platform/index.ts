@@ -8,7 +8,7 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 import schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
 import { Pool } from 'pg'
-import { createRequest, filesListRequest, fileReadRequest, filePutRequest, sessionFilesListRequest, sessionFileReadRequest, sessionFilePutRequest, listRequest, loginRequest, modelsListRequest, pageRequest, promptRequest, sessionId, sessionRequest, settingsUpdateRequest, skillInstallRequest, skillRequest, skillToggleRequest, skillUploadTicketRequest, settings, workspaceCreateRequest, PlatformError } from '../contracts.ts'
+import { createRequest, filesListRequest, fileReadRequest, filePutRequest, sessionFilesListRequest, sessionFileReadRequest, sessionFilePutRequest, listRequest, loginRequest, modelsListRequest, pageRequest, promptRequest, sessionId, sessionRequest, settingsUpdateRequest, skillInstallRequest, skillRequest, skillToggleRequest, skillUploadTicketRequest, sshCreateTicketRequest, sshToggleRequest, settings, workspaceCreateRequest, PlatformError } from '../contracts.ts'
 import { bearer, readJson, sendFailure, sendJson } from '../http.ts'
 import { initializeDatabase } from './database.ts'
 import { hashPassword, IdentityService } from './identity.ts'
@@ -24,6 +24,7 @@ import { SkillService } from './skills.ts'
 import { ConnectorService } from './connectors.ts'
 import { PluginService } from './plugins.ts'
 import { PersonalMcpService } from './mcp.ts'
+import { SshConnectionService } from './ssh.ts'
 import { ExecutionService } from './executions.ts'
 import { DeviceService } from './devices.ts'
 import { KubernetesClient } from './kubernetes.ts'
@@ -42,6 +43,7 @@ export const Config = schema.object({
   modelUrl: schema.string().required(), hostOrigin: schema.string().required(), platformOrigin: schema.string().required(),
   mcpUrl: schema.string().default(''), mcpTokenFile: schema.string().default(''),
   mcpTimeoutMs: schema.number().min(1000).default(5000),
+  sshCredentialKeyFile: schema.string().default(''), sshDestinationAllowlist: schema.string().default(''),
   connectorUrl: schema.string().required(), connectorTimeoutMs: schema.number().min(1000).required(),
   connectorPollMs: schema.number().min(100).required(),
   sandboxKubeconfigFile: schema.string().default(''), sandboxKeyFile: schema.string().default(''),
@@ -71,10 +73,11 @@ const seedUsers = z.array(z.object({
 /** Register the platform only after its schema and configured users are ready. */
 export async function apply(ctx: Context, config: Config): Promise<void> {
   const instanceId = randomUUID()
-  const [databaseUrl, workerToken, modelKey, connectorKey, seeds, mcpToken] = await Promise.all([
+  const [databaseUrl, workerToken, modelKey, connectorKey, seeds, mcpToken, sshKey] = await Promise.all([
     readFile(config.databaseUrlFile, 'utf8'), readFile(config.workerTokenFile, 'utf8'),
     readFile(config.modelKeyFile, 'utf8'), readFile(config.connectorKeyFile, 'utf8'), readFile(config.seedUsersFile, 'utf8'),
     config.mcpTokenFile ? readFile(config.mcpTokenFile, 'utf8') : Promise.resolve(''),
+    config.sshCredentialKeyFile ? readFile(config.sshCredentialKeyFile, 'utf8') : Promise.resolve(''),
   ])
   const pool = new Pool({ connectionString: databaseUrl.trim(), max: config.databasePoolSize, statement_timeout: config.databaseTimeoutMs })
   ctx.effect(() => () => pool.end())
@@ -100,6 +103,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const accountSettings = new AccountSettingsService(pool)
   const tasks = new TaskStore(pool, { ...config, executionEnabled, mcpEnabled: !!config.mcpUrl })
   const mcp = new PersonalMcpService(tasks, config.mcpUrl, mcpToken.trim(), config.mcpTimeoutMs)
+  const ssh = new SshConnectionService(pool, sshKey, config.sshDestinationAllowlist)
   const events = new EventStore(tasks, config)
   const nativeSessions = new NativeSessionRead(pool)
   const nativeWorkspaces = new NativeWorkspaceRead(pool, files, nativeSessions, config.maxWorkspacesPerUser)
@@ -123,7 +127,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
 
   const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const path = new URL(req.url ?? '/', config.platformOrigin).pathname
-    if (req.method === 'GET' && path === '/health') { sendJson(res, { ready: true, service: 'platform', schema: 14, executionEnabled, mcpAvailable: !!config.mcpUrl, instanceId }); return }
+    if (req.method === 'GET' && path === '/health') { sendJson(res, { ready: true, service: 'platform', schema: 15, executionEnabled, mcpAvailable: !!config.mcpUrl, sshAvailable: ssh.available, instanceId }); return }
     if (req.method === 'GET' && path === '/config') { sendJson(res, { hostUrl: config.hostOrigin }); return }
     if (req.method === 'GET' && await serveUi(path, 'login', res, config.hostOrigin)) return
     const artifactContent = /^\/artifacts\/([^/]+)\/content$/u.exec(path)
@@ -154,6 +158,23 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       if (req.headers['content-type'] !== 'application/zip') throw new PlatformError(415, 'invalid_content_type')
       const uploaded = await skills.upload(bearer(req), req)
       sendJson(res, uploaded.item, uploaded.created ? 201 : 200)
+      return
+    }
+    if (path === '/ssh/upload') {
+      if (req.headers.origin !== config.hostOrigin) throw new PlatformError(403, 'invalid_origin')
+      res.setHeader('access-control-allow-origin', config.hostOrigin)
+      res.setHeader('vary', 'Origin')
+      res.setHeader('cache-control', 'no-store')
+      if (req.method === 'OPTIONS') {
+        if (req.headers['access-control-request-method'] !== 'POST') throw new PlatformError(405, 'method_not_allowed')
+        res.writeHead(204, { 'access-control-allow-methods': 'POST, OPTIONS',
+          'access-control-allow-headers': 'Authorization, Content-Type', 'access-control-max-age': '300' })
+        res.end()
+        return
+      }
+      if (req.method !== 'POST') throw new PlatformError(405, 'method_not_allowed')
+      if (req.headers['content-type'] !== 'application/octet-stream') throw new PlatformError(415, 'invalid_content_type')
+      sendJson(res, await ssh.upload(bearer(req), req), 201)
       return
     }
     if (req.method !== 'POST') throw new PlatformError(404, 'not_found')
@@ -329,6 +350,16 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       case '/mcp/check': {
         const value = z.object({ connectionId: z.uuid() }).strict().parse(input)
         sendJson(res, await mcp.check(user, value.connectionId)); return
+      }
+      case '/ssh/list': z.object({}).strict().parse(input); sendJson(res, await ssh.list(user)); return
+      case '/ssh/create-ticket': {
+        const value = sshCreateTicketRequest.parse(input)
+        sendJson(res, await ssh.issueTicket(user, value, config.platformOrigin)); return
+      }
+      case '/ssh/toggle': {
+        const value = sshToggleRequest.parse(input)
+        sendJson(res, await ssh.toggle(user, value.connectionId, value.requestId,
+          value.baseRevision, value.enabled)); return
       }
       case '/sessions/create': {
         const value = createRequest.parse(input)

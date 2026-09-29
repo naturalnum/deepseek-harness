@@ -114,7 +114,7 @@ async function fixture(t) {
           (state IN ('free','reserved','ready','stopping','unknown')),
         pod_uid uuid, runner_instance_id uuid, stop_pod_uid uuid, stop_evidence jsonb,
         updated_at timestamptz NOT NULL DEFAULT now());`)
-  } else assert.ok([11, 12, 13, 14].includes(version))
+  } else assert.ok([11, 12, 13, 14, 15].includes(version))
   const kube = new FakeKubernetes()
   const localRoot = await mkdtemp(join(tmpdir(), 'pe-s2-handoff-'))
   t.after(() => rm(localRoot, { recursive: true, force: true }))

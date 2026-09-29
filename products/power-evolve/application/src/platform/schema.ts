@@ -388,3 +388,52 @@ CREATE TABLE pe_mcp_updates (
 ALTER TABLE pe_operations ADD COLUMN mcp_selection jsonb NOT NULL DEFAULT '[]'::jsonb;
 UPDATE pe_schema SET version=14 WHERE version=13;
 `
+
+/** Personal SSH metadata, one-use credential intake, and encrypted credential revisions. */
+export const schemaV15 = `
+CREATE TABLE pe_ssh_connections (
+  id uuid PRIMARY KEY,
+  user_id uuid NOT NULL REFERENCES pe_users(id),
+  install_request_id uuid NOT NULL,
+  install_digest text NOT NULL CHECK (install_digest ~ '^[a-f0-9]{64}$'),
+  display_name text NOT NULL CHECK (length(display_name) BETWEEN 1 AND 100),
+  host text NOT NULL CHECK (length(host) BETWEEN 1 AND 253),
+  port integer NOT NULL CHECK (port BETWEEN 1 AND 65535),
+  username text NOT NULL CHECK (length(username) BETWEEN 1 AND 100),
+  host_key_sha256 text NOT NULL CHECK (host_key_sha256 ~ '^SHA256:[A-Za-z0-9+/]{43}$'),
+  credential_kind text NOT NULL CHECK (credential_kind='password'),
+  credential_revision integer NOT NULL DEFAULT 1 CHECK (credential_revision>0),
+  encrypted_credential bytea NOT NULL,
+  enabled boolean NOT NULL DEFAULT false,
+  revision integer NOT NULL DEFAULT 1 CHECK (revision>0),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(user_id,install_request_id), UNIQUE(id,user_id)
+);
+CREATE INDEX pe_ssh_connections_user ON pe_ssh_connections(user_id,created_at DESC);
+CREATE TABLE pe_ssh_upload_intents (
+  request_id uuid PRIMARY KEY,
+  user_id uuid NOT NULL REFERENCES pe_users(id),
+  request_digest text NOT NULL CHECK (request_digest ~ '^[a-f0-9]{64}$'),
+  config jsonb NOT NULL,
+  size_bytes integer NOT NULL CHECK (size_bytes BETWEEN 1 AND 8192),
+  secret_digest text CHECK (secret_digest IS NULL OR secret_digest ~ '^[a-f0-9]{64}$'),
+  token_digest text NOT NULL UNIQUE CHECK (token_digest ~ '^[a-f0-9]{64}$'),
+  expires_at timestamptz NOT NULL,
+  consumed_at timestamptz,
+  result jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX pe_ssh_upload_intents_user ON pe_ssh_upload_intents(user_id,expires_at DESC);
+CREATE TABLE pe_ssh_updates (
+  user_id uuid NOT NULL REFERENCES pe_users(id),
+  request_id uuid NOT NULL,
+  connection_id uuid NOT NULL,
+  request_digest text NOT NULL CHECK (request_digest ~ '^[a-f0-9]{64}$'),
+  result jsonb NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(user_id,request_id),
+  FOREIGN KEY(connection_id,user_id) REFERENCES pe_ssh_connections(id,user_id)
+);
+UPDATE pe_schema SET version=15 WHERE version=14;
+`

@@ -12,7 +12,7 @@ import type {} from '@deepseek-ai/dsh-typert-registry'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import { TypertRemoteService, Remote, type PeerScope, type PeerId, type InvocationDescriptor } from '@deepseek-ai/dsh-typert-protocol'
-import { createRequest, sessionFilesListRequest, sessionFileReadRequest, sessionFilePutRequest, listRequest, pageRequest, promptRequest, settingsUpdateRequest, skillInstallRequest, skillRequest, skillToggleRequest, PlatformError } from '../contracts.ts'
+import { createRequest, sessionFilesListRequest, sessionFileReadRequest, sessionFilePutRequest, listRequest, pageRequest, promptRequest, settingsUpdateRequest, skillInstallRequest, skillRequest, skillToggleRequest, sshCreateTicketRequest, sshToggleRequest, PlatformError } from '../contracts.ts'
 import { readJson, sendFailure, sendJson, writeLine } from '../http.ts'
 import { serveNativeUi, serveUi } from '../ui.ts'
 import { BrowserAgentAuth } from './browser-auth.ts'
@@ -35,6 +35,7 @@ const requests = { me: z.object({}).strict(), logout: z.object({}).strict(), mod
   mcpToggle: z.object({ connectionId: z.uuid(), requestId: z.uuid(), baseRevision: z.number().int().positive(),
     enabled: z.boolean() }).strict(),
   mcpCheck: z.object({ connectionId: z.uuid() }).strict(),
+  sshList: z.object({}).strict(), sshCreateTicket: sshCreateTicketRequest, sshToggle: sshToggleRequest,
   artifactsPublish: z.object({ requestId: z.uuid(), sessionId: z.uuid(), path: z.string().min(1).max(512) }).strict(),
   artifactsList: z.object({ workspaceId: z.uuid().optional(), sessionId: z.uuid().optional(),
     cursor: z.uuid().optional(), limit: z.number().int().min(1).max(100).optional() }).strict(),
@@ -51,6 +52,7 @@ const endpoint = { me: '/identity/me', logout: '/identity/logout', modelsList: '
   skillsUploadTicket: '/skills/upload-ticket', skillsRevoke: '/skills/revoke', actionsList: '/connectors/actions',
   pluginsList: '/plugins/list', pluginsNotesSetEnabled: '/plugins/notes/set-enabled',
   mcpList: '/mcp/list', mcpInstall: '/mcp/install', mcpToggle: '/mcp/toggle', mcpCheck: '/mcp/check',
+  sshList: '/ssh/list', sshCreateTicket: '/ssh/create-ticket', sshToggle: '/ssh/toggle',
   artifactsPublish: '/artifacts/publish', artifactsList: '/artifacts/list', artifactsPreview: '/artifacts/preview',
   executionsList: '/executions/list', executionCancel: '/executions/cancel',
   devicesList: '/devices/list', devicesPair: '/devices/pair',
@@ -111,6 +113,26 @@ class ProductRemote extends TypertRemoteService {
   @Remote mcpInstall(request: z.infer<typeof requests.mcpInstall>) { return this.call('mcpInstall', request) }
   @Remote mcpToggle(request: z.infer<typeof requests.mcpToggle>) { return this.call('mcpToggle', request) }
   @Remote mcpCheck(request: z.infer<typeof requests.mcpCheck>) { return this.call('mcpCheck', request) }
+  @Remote sshList(request: z.infer<typeof requests.sshList>) { return this.call('sshList', request) }
+  @Remote async sshCreateTicket(request: z.infer<typeof sshCreateTicketRequest>) {
+    const item = z.object({ connectionId: z.uuid(), displayName: z.string(), host: z.string(),
+      port: z.number().int(), username: z.string(), hostKeySha256: z.string(), enabled: z.boolean(),
+      revision: z.number().int(), credentialRevision: z.number().int() }).strict()
+    const result = z.discriminatedUnion('state', [
+      z.object({ state: z.literal('ready'), item }).strict(),
+      z.object({ state: z.literal('pending'), ticket: z.string().regex(/^[A-Za-z0-9_-]{32,256}$/u),
+        uploadUrl: z.url(), expiresAt: z.iso.datetime() }).strict(),
+    ]).parse(await this.call('sshCreateTicket', request))
+    if (result.state === 'pending') {
+      const upload = new URL(result.uploadUrl)
+      if (upload.origin !== this.options.platformOrigin || upload.pathname !== '/ssh/upload'
+        || upload.username || upload.password || upload.search || upload.hash) {
+        throw new PlatformError(503, 'ssh_upload_unavailable')
+      }
+    }
+    return result
+  }
+  @Remote sshToggle(request: z.infer<typeof sshToggleRequest>) { return this.call('sshToggle', request) }
   @Remote artifactsPublish(request: z.infer<typeof requests.artifactsPublish>) { return this.call('artifactsPublish', request) }
   @Remote artifactsList(request: z.infer<typeof requests.artifactsList>) { return this.call('artifactsList', request) }
   @Remote artifactsPreview(request: z.infer<typeof requests.artifactsPreview>) { return this.call('artifactsPreview', request) }
