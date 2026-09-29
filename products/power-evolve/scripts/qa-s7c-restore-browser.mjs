@@ -108,7 +108,7 @@ try {
       const packageFile = `package-${marker.slice(-8)}.txt`
       for (const [directory, name] of [['homes', homeFile], ['skill-packages', packageFile]]) {
         const owner = join(sandbox.localRoot, directory, owned.user_id)
-        await mkdir(owner, { recursive: true, mode: 0o700 })
+        await mkdir(owner, { recursive: true, mode: directory === 'skill-packages' ? 0o755 : 0o700 })
         await writeFile(join(owner, name), `${marker}:${directory}\n`, { mode: 0o600, flag: 'wx' })
       }
       outcomes.push({ username: user.username, ...owned, marker, file, skillName, homeFile, packageFile,

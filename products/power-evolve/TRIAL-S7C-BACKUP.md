@@ -34,6 +34,8 @@ node products/power-evolve/scripts/backup-trial.mjs restore
 
 `restore` 在改动目标前核验清单，拒绝已有 PG 卷、非空数据目录和已存在的备份私有文件。它等待 PG 连续可连接，确认 `public` schema 中没有关系对象后，严格检查 `pg_restore --exit-on-error` 的退出码；随后启动当前代码并检查迁移后 schema。失败后的目标可能已含部分复制内容或部分 PG 表，**不能在该目标上直接重试**。先停止该目标，用其 Compose project 执行 `down -v`，确认本目标的 Sandbox/Runner 已清理，再删除仅属于该目标的私有目录和 POSIX 子目录；更稳妥的方式是新建另一个试用名、端口、卷、命名空间重新恢复。保留源端和备份不动。
 
+云执行目标在启动前，按恢复 PG 中的工作区和用户归属，把 Workspace 与 Home 的复制条目设为执行器的 `1000:1000`，保留文件字节和权限位；只更改符号链接本身的所有者，不跟随目标。平台持有的技能包和产物不做该所有权转换；旧备份的 `0700` 用户技能挂载根仅转换为 Runner 可遍历的 `0755`，包内容、私有父目录及未知用户目录保持原样。修复数量写入 `restore-evidence.json`。运行恢复的身份必须有目标卷的相应 `chown` 权限，否则恢复失败且不启动写入者。新备份和恢复复制保留符号链接的原始目标文本；旧工具已改写的链接目标不能由该步骤推断还原。
+
 源端可运行 `qa-s7c-restore-browser.mjs seed`，恢复后运行同脚本的 `verify`。需要设置源或目标的 `PE_PRIVATE_DIR`、`PE_HOST_PORT`、`PE_PLATFORM_PORT`，并把 `PE_S7C_EVIDENCE_FILE` 指向源端私有 `s7c-seed-v2.json`；同一文件用于恢复后比对。验证脚本在原生 Web 中分别登录 Alice/Bob，打开历史 Session，核对历史 STDIO 返回、Files、Artifacts 预览和 Plugins；通过 Host API 读回文件、技能、STDIO 连接，并检查 Git HEAD、Home、技能包字节及跨用户 404。`PE_S7C_NATIVE_PANE=files` 和 `artifacts` 分别验证两个右侧栏视图。测试数据文件和账号信息只保存在私有目录。
 
 ## 本机实测与故障恢复
@@ -52,6 +54,8 @@ node products/power-evolve/scripts/backup-trial.mjs restore
 | 用户技能 | 5 | 5 |
 
 在最终自动恢复的 `s7c-dst-b2` 上，Alice/Bob 的原生 Files 和 Artifacts 两轮验证都通过：历史 Session ID 与实际 transcript、文件内容、Git commit、工件预览、STDIO 连接 ID/修订/启用状态、技能、Home/技能包字节一致；跨用户读文件、预览工件和切换连接均返回 404。源端与目标端健康接口分别返回 V18/V19、`stdioMcpAvailable` 和 `sshAvailable` 为 true；检查时两个 Sandbox 命名空间无活动 Sandbox，Connector 命名空间无 `pe-cr-*`/`pe-mcp-*` Runner Pod。验证记录位于目标私有目录的 `restore-evidence.json`、`native-files-verify.json`、`native-artifacts-verify.json`；种子记录位于源私有目录。登录密码和密钥均不在报告中。
+
+以上恢复结果验证了历史读取；后续[当前版本预览](TRIAL-S7-CURRENT-PREVIEW.md)发现旧种子技能目录为 `0700`，且复制后的 `.git` 所有者无法供 Runner 写入。因此这些旧结果不构成“恢复后可继续云编程”的验收。上述启动前所有权准备、技能根兼容和本地挂载检查失败不占槽的修复，仍须以全新目标的双用户云 Git 验证封口；旧备份的技能目录只有状态标记，并非真实安装包的恢复演练。
 
 本次 RPO 是**备份捕获时刻**：成功停止写入后，已确认的源端状态完整进入快照。若发生在两次备份之间的故障，可恢复到的最近时点取决于备份频率；本演练未验证定时备份。34,356 ms 是这一台本机从启动恢复到服务健康的 RTO；两轮顺序浏览器核验分别在恢复开始后约 76.7 秒和 123.3 秒完成，包含测试脚本调度时间。该 k3d 与 POSIX 卷都位于同一台 OrbStack 主机，结果不证明异机共享存储一致性、备份异地保存、物理节点损坏后的恢复或生产级 RPO/RTO。
 

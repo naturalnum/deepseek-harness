@@ -2,12 +2,13 @@
 import { randomBytes, createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { constants, closeSync, openSync, readFileSync } from 'node:fs'
-import { chmod, copyFile, cp, lstat, mkdir, readFile, readdir, readlink, rename, rm, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, lstat, mkdir, readFile, readdir, readlink, rename, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
+import { copyPosixTree, prepareRestoredExecutionMounts, prepareRestoredSkillMounts } from './backup-posix.mjs'
 
 const root = resolve(fileURLToPath(new URL('../../..', import.meta.url)))
 const { Client } = createRequire(new URL('../application/package.json', import.meta.url))('pg')
@@ -144,14 +145,6 @@ function restoreDump(path) {
   }
   finally { closeSync(fd) }
 }
-async function copyTree(source, target) {
-  if (!(await exists(source))) { await mkdir(target, { mode: 0o700 }); return }
-  if (!(await lstat(source)).isDirectory() || (await lstat(source)).isSymbolicLink()) {
-    throw new Error('POSIX backup source must be a real directory')
-  }
-  await cp(source, target, { recursive: true, preserveTimestamps: true, errorOnExist: true })
-}
-
 if (command === 'create') {
   if (await exists(bundlePath)) throw new Error('Backup destination already exists')
   const { sandbox, shared } = await roots()
@@ -174,7 +167,7 @@ if (command === 'create') {
     requireNoKubernetesWriters(sandbox)
     dump(join(stage, 'database.dump'))
     await mkdir(join(stage, 'data'), { mode: 0o700 })
-    for (const name of dataNames) await copyTree(join(name === 'artifacts' ? privatePath : shared, name),
+    for (const name of dataNames) await copyPosixTree(join(name === 'artifacts' ? privatePath : shared, name),
       join(stage, 'data', name))
     await mkdir(join(stage, 'config'), { mode: 0o700 })
     const included = []
@@ -219,7 +212,7 @@ if (command === 'create') {
   if (JSON.stringify(actual) !== JSON.stringify(manifest.files)) {
     throw new Error('Backup integrity check failed before restore')
   }
-  const { shared } = await roots()
+  const { shared, sandbox } = await roots()
   if (shared === manifest.sourceSharedRoot || bundlePath.startsWith(`${shared}/`)
     || bundlePath.startsWith(`${privatePath}/`)) throw new Error('Restore paths overlap the source or bundle')
   for (const name of dataNames) {
@@ -245,7 +238,7 @@ if (command === 'create') {
   for (const name of dataNames) {
     const target = join(name === 'artifacts' ? privatePath : shared, name)
     if (await exists(target)) await rm(target, { recursive: true })
-    await copyTree(join(bundlePath, 'data', name), target)
+    await copyPosixTree(join(bundlePath, 'data', name), target)
   }
   run(process.execPath, [prepareScript])
   run('docker', ['compose', '-p', `pe-shared-host-${trialName}`,
@@ -263,6 +256,21 @@ if (command === 'create') {
   restoreDump(join(bundlePath, 'database.dump'))
   const restored = await version((await readFile(join(privatePath, 'database-url'), 'utf8')).trim())
   if (restored.schema !== manifest.schema) throw new Error('Restored database schema differs from the source snapshot')
+  const owners = new Client({ connectionString: targetUrl })
+  let skillMountPermissionsRepaired
+  let executionEntriesPrepared = 0
+  try {
+    await owners.connect()
+    const users = await owners.query('SELECT id FROM pe_users ORDER BY id')
+    const userIds = users.rows.map(user => user.id)
+    skillMountPermissionsRepaired = await prepareRestoredSkillMounts(
+      join(shared, 'skill-packages'), userIds)
+    if (sandbox) {
+      const workspaces = await owners.query('SELECT id FROM pe_workspaces ORDER BY id')
+      executionEntriesPrepared = await prepareRestoredExecutionMounts(shared,
+        { userIds, workspaceIds: workspaces.rows.map(workspace => workspace.id) }, { uid: 1000, gid: 1000 })
+    }
+  } finally { await owners.end() }
   run(process.execPath, [trialScript, 'up'])
   const readyAt = Date.now()
   const ready = await version((await readFile(join(privatePath, 'database-url'), 'utf8')).trim())
@@ -270,7 +278,7 @@ if (command === 'create') {
   await writeFile(join(privatePath, 'restore-evidence.json'), `${JSON.stringify({ sourceTrial: manifest.sourceTrial,
     restoredTrial: trialName, startedAt, readyAt, rtoToHealthMs: readyAt - startedAt,
     sourceCapturedAt: manifest.capturedAt, schemaBeforeStartup: restored.schema,
-    schemaAfterStartup: ready.schema }, null, 2)}\n`,
+    schemaAfterStartup: ready.schema, skillMountPermissionsRepaired, executionEntriesPrepared }, null, 2)}\n`,
   { mode: 0o600, flag: 'wx' })
   console.log(`Restored trial ${trialName}: schema ${restored.schema} -> ${ready.schema}; health RTO ${readyAt - startedAt} ms`)
 }
