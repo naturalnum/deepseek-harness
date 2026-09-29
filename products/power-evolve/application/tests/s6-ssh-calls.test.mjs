@@ -79,7 +79,7 @@ test('S6 SSH calls retain exact user requests, fence workers, and reconcile a pe
     assert.equal((await store.cancel(bob, second.id)).state, 'cancelled')
 
     const workerA = randomUUID(), workerB = randomUUID()
-    const claimed = await store.claim(workerA, 150, 'ssh.authenticate')
+    const claimed = await store.claim(workerA, 5000, 'ssh.authenticate')
     assert.equal(claimed.id, first.id)
     const leaseA = { callId: first.id, owner: workerA, epoch: claimed.lease_epoch }
     await store.startPreparing(leaseA)
@@ -94,7 +94,7 @@ test('S6 SSH calls retain exact user requests, fence workers, and reconcile a pe
     assert.equal(intent.runner_instance_id, handle.instanceId)
     assert.equal(intent.dispatch_digest, runnerDigest)
     await store.assertDispatchLease(leaseA)
-    await new Promise(resolve => setTimeout(resolve, 200))
+    await pool.query("UPDATE pe_ssh_calls SET lease_until=now()-interval '1 second' WHERE id=$1", [first.id])
     const recovered = new SshCallStore(pool)
     const reclaimed = await recovered.claim(workerB, 5000, 'ssh.authenticate')
     assert.equal(reclaimed.id, first.id)
@@ -115,12 +115,12 @@ test('S6 SSH calls retain exact user requests, fence workers, and reconcile a pe
     assert.equal((await recovered.get(alice, first.id)).state, 'succeeded')
     assert.equal(await recovered.claim(workerA, 150, 'ssh.authenticate'), null,
       'the authentication worker must not claim an execute call it cannot handle')
-    const executeClaim = await recovered.claim(workerA, 150, 'ssh.execute')
+    const executeClaim = await recovered.claim(workerA, 5000, 'ssh.execute')
     assert.equal(executeClaim.id, execute.id)
     const oldExecuteLease = { callId: execute.id, owner: workerA, epoch: executeClaim.lease_epoch }
     await recovered.startPreparing(oldExecuteLease)
     await recovered.markReady(oldExecuteLease, { ...handle, callId: execute.id })
-    await new Promise(resolve => setTimeout(resolve, 200))
+    await pool.query("UPDATE pe_ssh_calls SET lease_until=now()-interval '1 second' WHERE id=$1", [execute.id])
     const executeReclaimed = await recovered.claim(workerB, 5000, 'ssh.execute')
     assert.equal(executeReclaimed.id, execute.id)
     const executeLease = { callId: execute.id, owner: workerB, epoch: executeReclaimed.lease_epoch }

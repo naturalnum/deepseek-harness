@@ -56,6 +56,15 @@ function deferred() {
   return { promise, resolve }
 }
 
+async function reached(promise, stage) {
+  let timer
+  try {
+    await Promise.race([promise, new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`STDIO MCP did not reach ${stage}`)), 15_000)
+    })])
+  } finally { clearTimeout(timer) }
+}
+
 class PausingStdioMcpService extends StdioMcpService {
   beforeIntent
   afterIntent
@@ -216,7 +225,7 @@ test('real PG fence orders connection disable with intent and the first Runner P
     const intentReached = deferred()
     stdio.afterIntent = async () => { intentReached.resolve(); await resumeIntent.promise }
     stdio.start()
-    await intentReached.promise
+    await reached(intentReached.promise, 'persisted intent')
     assert.equal((await pool.query('SELECT state FROM pe_stdio_mcp_calls WHERE id=$1',
       [call.callId])).rows[0].state, 'dispatch-intent')
     const disabled = await stdio.toggle(user, connection.connectionId, randomUUID(), 1, false)
@@ -241,7 +250,7 @@ test('real PG fence orders connection disable with intent and the first Runner P
     const second = await tasks.accept(user, session.sessionId, randomUUID(), 'Call while disabling')
     const secondGrant = await tasks.claim(randomUUID())
     const secondCall = await stdio.call(secondGrant.token, connection.connectionId, 3, 'during-disable')
-    await dispatchReached.promise
+    await reached(dispatchReached.promise, 'first Runner POST')
     const toggle = stdio.toggle(user, connection.connectionId, randomUUID(), 3, false)
     await eventually(async () => Number((await pool.query(
       `SELECT count(*) FROM pg_stat_activity WHERE datname=current_database()
@@ -272,7 +281,7 @@ test('real PG fence orders connection disable with intent and the first Runner P
     await tasks.accept(user, session.sessionId, randomUUID(), 'Disable before intent')
     const thirdGrant = await tasks.claim(randomUUID())
     const thirdCall = await stdio.call(thirdGrant.token, connection.connectionId, 5, 'no-intent')
-    await beforeIntentReached.promise
+    await reached(beforeIntentReached.promise, 'pre-intent pause')
     const disabledBeforeIntent = await stdio.toggle(user, connection.connectionId, randomUUID(), 5, false)
     assert.equal(disabledBeforeIntent.revision, 6)
     resumeBeforeIntent.resolve()
