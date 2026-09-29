@@ -2,6 +2,27 @@
 
 Tested on 2026-09-30 in an isolated worktree whose product source matches `dd38d5b5dd`. The first SSH pass ran on `e82917b6fa`; after the `d152958970` SSH scheduling fix and `1e614a5e8b` STDIO recovery fix were included, SSH and STDIO were exercised again. The trial remains available for review.
 
+## Try the retained trial
+
+1. Open <http://127.0.0.1:19371/login>. Read either Alice's or Bob's trial password from the private `users.json` file in the directory below; do not copy it into a chat or repository. Login opens the native DSH Web at <http://127.0.0.1:19370/native/>.
+2. In the native Plugins page, inspect your own SSH connection and fixed process MCP. Ask the Agent to call `mcp__stdio__whoami` in a cloud Session; its result should return to the same Session without exposing the other user's account ID.
+3. In a fresh cloud Session, ask the Agent to propose `qa:ping` using your listed SSH connection and then stop. Open <http://127.0.0.1:19371/approval>, log in separately, inspect the exact command and target, and approve. The Session should later show `qa:ssh-ok` after a refresh. To try rejection, propose a new `qa:ping` and reject it; no Runner call should be created.
+4. Repeat with the other trial account. Its Plugins entries, SSH approvals and Session history should remain separate.
+
+Manage this isolated trial from `/Users/jingchao/agent_work/main_agent/power-evolve-s6-final-qa` with the following environment. `status` has been verified after final QA; `stop` preserves PG data and private configuration. Logs are in that worktree's `.artifacts/power-evolve/native-s6-final-f2/` directory.
+
+```sh
+export PE_TRIAL_NAME=native-s6-final-f2 PE_DATABASE_PORT=18534
+export PE_HOST_PORT=19370 PE_PLATFORM_PORT=19371 PE_TARGET_PORT=19372
+export PE_PRIVATE_DIR=/Users/jingchao/.config/power-evolve/shared-host-native-s6-final-f2
+export PE_SSH_ENABLED=1 PE_COMPOSE_EXTERNAL_NETWORK=pe-shared-host-slice5_default
+node products/power-evolve/scripts/trial.mjs status
+node products/power-evolve/scripts/trial.mjs stop
+node products/power-evolve/scripts/trial.mjs up
+```
+
+This trial uses a fixed read-only STDIO MCP preset and an allowlisted SSH test target. Production multi-node storage, ingress, global capacity and backup recovery remain S7 work.
+
 | Item | Isolated acceptance value |
 | --- | --- |
 | Trial | `native-s6-final-f2` |
