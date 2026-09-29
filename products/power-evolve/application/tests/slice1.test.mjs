@@ -582,7 +582,11 @@ test('shared host: isolated conversations, files, skills and approved remote act
   })
   await t.test('personal skill bytes, ownership, toggle and task-time snapshot', async () => {
     const marker='ALICE_SKILL_MARKER_ONLY'
-    const aliceSkill=await rpc(0,'skillsInstall',{requestId:randomUUID(),name:'文稿校对',description:'检查术语与错别字',instructions:`遇到校对任务先核对术语。${marker}`})
+    const install={requestId:randomUUID(),name:'文稿校对',description:'检查术语与错别字',instructions:`遇到校对任务先核对术语。${marker}`}
+    const aliceSkill=await rpc(0,'skillsInstall',install)
+    assert.deepEqual(await rpc(0,'skillsInstall',install),aliceSkill)
+    assert.equal((await rpcResponse(0,'skillsInstall',{...install,instructions:'另一份说明'})).status,409)
+    assert.equal((await rpcResponse(1,'skillsInstall',install)).status,409)
     await rpc(1,'skillsInstall',{requestId:randomUUID(),name:'代码梳理',description:'整理代码结构',instructions:'先理解模块边界。'})
     assert.deepEqual((await rpc(0,'skillsList',{})).items.map(skill=>skill.name),['文稿校对'])
     assert.deepEqual((await rpc(1,'skillsList',{})).items.map(skill=>skill.name),['代码梳理'])
@@ -606,6 +610,9 @@ test('shared host: isolated conversations, files, skills and approved remote act
     assert.equal(disabledResponse.status,200)
     const disabled=await disabledResponse.json()
     assert.equal(disabled.enabled,false)
+    const repeatedToggle=await post(`${platform.url}/skills/toggle`,tokens[0],{skillId:aliceSkill.skillId,enabled:false})
+    assert.equal(repeatedToggle.status,200)
+    assert.equal((await repeatedToggle.json()).revision,disabled.revision)
     host=await start('host',platform.url)
     await finished(0,alice)
     const selectedCall=calls.find(call=>JSON.stringify(call).includes('SELECTED_BEFORE_TOGGLE'))

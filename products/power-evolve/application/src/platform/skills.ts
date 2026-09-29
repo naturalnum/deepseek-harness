@@ -72,9 +72,11 @@ export class SkillService {
     const digest = hash(instructions)
     return transaction(this.pool, async client => {
       await client.query('SELECT id FROM pe_users WHERE id=$1 FOR UPDATE', [user.userId])
-      const prior = await client.query<SkillRow>('SELECT id,name,description,digest,enabled,revision FROM pe_user_skills WHERE id=$1 AND user_id=$2', [id, user.userId])
+      const prior = await client.query<SkillRow & { user_id: string }>(
+        'SELECT id,user_id,name,description,digest,enabled,revision FROM pe_user_skills WHERE id=$1', [id])
       if (prior.rows[0]) {
         const skill = prior.rows[0]
+        if (skill.user_id !== user.userId) throw new PlatformError(409, 'request_id_conflict')
         if (skill.name !== name || skill.description !== description || skill.digest !== digest) throw new PlatformError(409, 'request_id_conflict')
         return { skillId: id, name, description, enabled: skill.enabled, revision: skill.revision }
       }
