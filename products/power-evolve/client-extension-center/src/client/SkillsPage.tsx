@@ -3,14 +3,15 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { SkillHttpError, type PersonalSkill, type SkillPort } from './skills-api.ts'
 import { SkillDetailDialog } from './SkillDetailDialog.tsx'
+import { SkillImportPanel } from './SkillImportPanel.tsx'
 import { SkillInstallPanel } from './SkillInstallPanel.tsx'
 import { SkillToggle } from './SkillToggle.tsx'
 
 export type SkillsPageProps = PropsRuntime<'main'> & PropsLocale<'powerEvolve.extensionCenter'>
-  & InjectFace<{ readonly client: SkillPort }>
+  & InjectFace<{ readonly client: SkillPort; readonly trySkill: (skill: PersonalSkill) => Promise<void> }>
 
 /** The old PowerEvolve Skills card layout with the current personal-skill RPC. */
-export function SkillsPage({ client, t }: SkillsPageProps): ReactNode {
+export function SkillsPage({ client, t, trySkill }: SkillsPageProps): ReactNode {
   const [items, setItems] = useState<readonly PersonalSkill[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string>()
@@ -19,6 +20,7 @@ export function SkillsPage({ client, t }: SkillsPageProps): ReactNode {
   const [search, setSearch] = useState('')
   const [selectedId, setSelectedId] = useState<string>()
   const [installOpen, setInstallOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   const [busyId, setBusyId] = useState<string>()
   const request = useRef<AbortController>()
   const busy = useRef(false)
@@ -53,6 +55,25 @@ export function SkillsPage({ client, t }: SkillsPageProps): ReactNode {
     } finally { busy.current = false; setBusyId(undefined) }
   }
 
+  const revoke = async (skillId: string): Promise<void> => {
+    if (busy.current) return
+    busy.current = true; setBusyId(skillId); setMutationError(undefined); setNotice(undefined)
+    try {
+      const updated = await client.revoke(skillId)
+      setItems(current => current.map(item => item.skillId === skillId ? updated : item))
+      setNotice(t('skillRevoked'))
+    } catch (cause) {
+      setMutationError(cause instanceof SkillHttpError && cause.status === 401
+        ? t('sessionExpired') : t('revokeFailed'))
+    } finally { busy.current = false; setBusyId(undefined) }
+  }
+
+  const installed = (skill: PersonalSkill): void => {
+    setItems(current => [...current.filter(item => item.skillId !== skill.skillId), skill]
+      .sort((left, right) => left.name.localeCompare(right.name)))
+    setInstallOpen(false); setImportOpen(false); setNotice(t('installed'))
+  }
+
   const visible = useMemo(() => {
     const query = search.trim().toLocaleLowerCase()
     return query ? items.filter(item => [item.name, item.description]
@@ -64,9 +85,12 @@ export function SkillsPage({ client, t }: SkillsPageProps): ReactNode {
     <header className="pext-catalog-header">
       <div className="pext-catalog-tabs"><span className="pext-catalog-current">
         {t('mySkills')}<small>{items.length}</small></span></div>
-      <button type="button" className="pext-dialog-button" onClick={() => { setMutationError(undefined); setInstallOpen(true) }}>
-        <IconPlusOutlineRegular size={15} />{t('installSkill')}
-      </button>
+      <div className="pext-catalog-actions">
+        <button type="button" className="pext-dialog-button" onClick={() => { setMutationError(undefined); setInstallOpen(true) }}>
+          <IconPlusOutlineRegular size={15} />{t('installSkill')}</button>
+        <button type="button" className="pext-dialog-button pext-dialog-button-primary"
+          onClick={() => { setMutationError(undefined); setImportOpen(true) }}>{t('importSkillPackage')}</button>
+      </div>
     </header>
     <section className="pext-catalog-content" aria-label={t('skillsTitle')}>
       <label className="pext-catalog-search"><span className="pext-visually-hidden">{t('searchMySkills')}</span>
@@ -83,27 +107,31 @@ export function SkillsPage({ client, t }: SkillsPageProps): ReactNode {
           : <div className="pext-card-grid">{visible.map(skill => <article className="pext-extension-card" key={skill.skillId}>
             <div className="pext-extension-card-top">
               <span className="pext-extension-icon" aria-hidden="true"><IconSkillOutlineRegular size={21} /></span>
-              <span className="pext-extension-badge" data-enabled={skill.enabled || undefined}>
-                {t(skill.enabled ? 'enabledState' : 'disabledState')}</span>
+              <span className="pext-extension-badge" data-enabled={skill.enabled && skill.observedState === 'ready' || undefined}>
+                {t(skill.observedState === 'revoked' ? 'revokedState' : skill.enabled ? 'enabledState' : 'disabledState')}</span>
             </div>
             <button type="button" className="pext-extension-title" onClick={() => { setSelectedId(skill.skillId); setMutationError(undefined) }}>
               {skill.name}</button>
             <p>{skill.description}</p>
             <div className="pext-extension-card-bottom">
-              <span>{t('revision').replace('{count}', String(skill.revision))}</span>
+              <span>{skill.kind === 'package' ? `${t('skillVersion').replace('{version}', skill.version ?? '')} · ${t(skill.observedState === 'ready' ? 'readyState' : 'revokedState')}`
+                : t('revision').replace('{count}', String(skill.revision))}</span>
               <div><button type="button" className="pext-card-action" onClick={() => { setSelectedId(skill.skillId); setMutationError(undefined) }}>
                 {t('viewDetails')}</button>
-                <SkillToggle label={`${skill.name} ${t('enable')}`} checked={skill.enabled} disabled={busyId !== undefined}
+                <SkillToggle label={`${skill.name} ${t('enable')}`} checked={skill.enabled}
+                  disabled={busyId !== undefined || skill.observedState === 'revoked'}
                   onChange={enabled => { void toggle(skill.skillId, enabled) }} /></div>
             </div>
           </article>)}</div>}
       <aside className="pext-catalog-note">{t('nextTaskHint')}</aside>
     </section>
     <SkillInstallPanel open={installOpen} client={client} t={t} onClose={() => { setInstallOpen(false) }}
-      onInstalled={skill => { setItems(current => [...current.filter(item => item.skillId !== skill.skillId), skill]
-        .sort((left, right) => left.name.localeCompare(right.name))); setInstallOpen(false); setNotice(t('installed')) }} />
+      onInstalled={installed} />
+    <SkillImportPanel open={importOpen} client={client} t={t} onClose={() => { setImportOpen(false) }}
+      onImported={() => { setImportOpen(false); setNotice(t('installed')); reload() }} />
     {selected && <SkillDetailDialog skill={selected} client={client} busy={busyId !== undefined}
       mutationError={mutationError} t={t} onClose={() => { setSelectedId(undefined); setMutationError(undefined) }}
-      onToggle={enabled => { void toggle(selected.skillId, enabled) }} />}
+      onToggle={enabled => { void toggle(selected.skillId, enabled) }}
+      onRevoke={() => { void revoke(selected.skillId) }} onTry={() => trySkill(selected)} />}
   </main>
 }

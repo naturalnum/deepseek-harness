@@ -153,7 +153,7 @@ test('shared host: isolated conversations, files, skills and approved remote act
       leaseMs: 3000, loginAttemptsPerWindow: 100, maxPendingPerUser: 8,
       workspaceRoot: join(temporary, 'workspaces'), artifactRoot: join(temporary, 'artifacts'),
       sandboxKubeconfigFile: '', sandboxKeyFile: '', sandboxNamespace: '', sandboxImage: '',
-      sandboxLocalRoot: '', sandboxNodeRoot: '',
+      sandboxLocalRoot: join(temporary, 'sandbox-local'), sandboxNodeRoot: '',
     }))
     else patch.push(update('power-evolve-runtime', { platformUrl, workerTokenFile: join(temporary, 'worker-token') }), update('power-evolve-host', { platformOrigin: platformUrl, readyFile, renewMs: 500, operationTimeoutMs: 20000, pollMs: 50, maxRequestBytes: 3145728 }))
     await writeFile(join(profile, 'cordis.patch.yml'), yaml.dump(patch))
@@ -236,6 +236,17 @@ test('shared host: isolated conversations, files, skills and approved remote act
     assert.equal((await browserRpc(undefined)).status, 403)
     assert.equal((await browserRpc(hostOrigin)).status, 200)
     assert.equal((await (await browserRpc(hostOrigin)).json()).userId.length, 36)
+    const ticketRequest = { requestId: randomUUID(), sizeBytes: 4, sha256: 'a'.repeat(64) }
+    const browserTicket = (origin, body = JSON.stringify({ request: ticketRequest }), contentType = 'application/json') =>
+      fetch(`${host.url}/api/powerEvolve/skillsUploadTicket`, { method: 'POST',
+        headers: { origin, cookie, 'content-type': contentType }, body })
+    assert.equal((await browserTicket('https://attacker.example')).status, 403)
+    assert.equal((await browserTicket(hostOrigin, 'ZIP!', 'application/zip')).status, 415)
+    const ticketResponse = await browserTicket(hostOrigin)
+    // This fixture binds the Platform to an ephemeral test port while its public Origin stays at :18881.
+    // The Host rejects that mismatch before disclosing a browser upload ticket.
+    assert.equal(ticketResponse.status, 503)
+    assert.deepEqual(await ticketResponse.json(), { error: 'skill_upload_unavailable' })
     const approval = await post(`${platform.url}/identity/approval-login`, null,
       { username: users[0].username, password: users[0].password })
     assert.equal(approval.status, 200)

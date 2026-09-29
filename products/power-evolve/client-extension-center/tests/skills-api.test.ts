@@ -1,10 +1,14 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { test } from 'node:test'
 import { SkillHttpClient, SkillHttpError } from '../src/client/skills-api.ts'
+import { skillImportFileIssue } from '../src/client/skill-import.ts'
 
 const id = '5a010346-693c-4204-a386-29f66b11a057'
 const other = 'd5bb4412-5b5b-4477-8518-d78e79b67146'
-const item = { skillId: id, name: 'Proofreading', description: 'Check wording', enabled: true, revision: 1 }
+const item = { skillId: id, name: 'Proofreading', description: 'Check wording', enabled: true, revision: 1,
+  kind: 'text', version: null, digest: 'a'.repeat(64), packageDigest: null,
+  manifestDigest: null, observedState: 'ready' }
 
 test('personal skill operations use only same-origin product RPCs and preserve installation identity', async () => {
   const calls: Request[] = []
@@ -15,6 +19,7 @@ test('personal skill operations use only same-origin product RPCs and preserve i
     if (route.endsWith('skillsList')) return Response.json({ items: [item] })
     if (route.endsWith('skillsRead')) return Response.json({ ...item, instructions: '# Instructions\nCheck wording.' })
     if (route.endsWith('skillsInstall')) return Response.json({ ...item, skillId: other })
+    if (route.endsWith('skillsRevoke')) return Response.json({ ...item, enabled: false, observedState: 'revoked', revision: 3 })
     return Response.json({ ...item, enabled: false, revision: 2 })
   })
   assert.deepEqual(await client.list(), [item])
@@ -22,13 +27,15 @@ test('personal skill operations use only same-origin product RPCs and preserve i
   const input = { requestId: other, name: 'Proofreading', description: 'Check wording', instructions: 'Check wording.' }
   assert.equal((await client.install(input)).skillId, other)
   assert.equal((await client.toggle(id, false)).enabled, false)
+  assert.equal((await client.revoke(id)).observedState, 'revoked')
   assert.deepEqual(calls.map(call => new URL(call.url).pathname), [
     '/api/powerEvolve/skillsList', '/api/powerEvolve/skillsRead',
-    '/api/powerEvolve/skillsInstall', '/api/powerEvolve/skillsToggle',
+    '/api/powerEvolve/skillsInstall', '/api/powerEvolve/skillsToggle', '/api/powerEvolve/skillsRevoke',
   ])
   assert(calls.every(call => call.method === 'POST' && call.credentials === 'same-origin'))
   assert.deepEqual(await calls[2]!.json(), { request: input })
   assert.deepEqual(await calls[3]!.json(), { request: { skillId: id, enabled: false } })
+  assert.deepEqual(await calls[4]!.json(), { request: { skillId: id } })
 })
 
 test('malformed responses and mismatched identities cannot reach the page', async () => {
@@ -46,4 +53,50 @@ test('HTTP status is retained without exposing private server details', async ()
   assert(error instanceof SkillHttpError)
   assert.equal(error.status, 409)
   assert(!String(error).includes('secret'))
+})
+
+test('package bytes use a scoped ticket and bypass the Host', async () => {
+  const bytes = 'ZIP bytes'
+  const digest = createHash('sha256').update(bytes).digest('hex')
+  const file = new File([bytes], 'proofreading.zip', { type: 'application/zip' })
+  const packaged = { ...item, kind: 'package', version: '1.0.0', packageDigest: digest,
+    manifestDigest: 'b'.repeat(64) }
+  const calls: Request[] = []
+  const client = new SkillHttpClient(async (input, init) => {
+    const request = new Request(new URL(String(input), 'http://localhost'), init)
+    calls.push(request)
+    if (new URL(request.url).pathname.endsWith('skillsUploadTicket')) {
+      return Response.json({ state: 'pending', ticket: 't'.repeat(48),
+        uploadUrl: 'https://platform.example/skills/upload', expiresAt: new Date(Date.now() + 60_000).toISOString() })
+    }
+    return Response.json(packaged, { status: 201 })
+  })
+  assert.deepEqual(await client.importPackage(file, other), packaged)
+  assert.equal(new URL(calls[0]!.url).pathname, '/api/powerEvolve/skillsUploadTicket')
+  assert.deepEqual(await calls[0]!.json(), { request: { requestId: other, sizeBytes: file.size, sha256: digest } })
+  assert.equal(calls[0]!.credentials, 'same-origin')
+  assert.equal(calls[1]!.url, 'https://platform.example/skills/upload')
+  assert.equal(calls[1]!.credentials, 'omit')
+  assert.equal(calls[1]!.headers.get('authorization'), `Bearer ${'t'.repeat(48)}`)
+  assert.equal(calls[1]!.headers.get('content-type'), 'application/zip')
+  assert.equal(await calls[1]!.text(), bytes)
+})
+
+test('an already committed ticket result needs no second upload', async () => {
+  const file = new File(['ZIP bytes'], 'proofreading.skill')
+  const digest = createHash('sha256').update('ZIP bytes').digest('hex')
+  const packaged = { ...item, kind: 'package', version: `sha256:${digest}`,
+    packageDigest: digest, manifestDigest: 'b'.repeat(64) }
+  let calls = 0
+  const client = new SkillHttpClient(async () => { calls++; return Response.json({ state: 'ready', item: packaged }) })
+  assert.deepEqual(await client.importPackage(file, other), packaged)
+  assert.equal(calls, 1)
+})
+
+test('browser rejects empty, oversized, and wrong suffix before requesting a ticket', async () => {
+  assert.equal(skillImportFileIssue({ name: 'empty.zip', size: 0 }), 'empty')
+  assert.equal(skillImportFileIssue({ name: 'large.zip', size: 1024 * 1024 + 1 }), 'too-large')
+  assert.equal(skillImportFileIssue({ name: 'source.js', size: 10 }), 'invalid-type')
+  const client = new SkillHttpClient(async () => { throw new Error('unexpected network request') })
+  await assert.rejects(client.importPackage(new File(['source'], 'source.js'), other), /Invalid skill package/u)
 })

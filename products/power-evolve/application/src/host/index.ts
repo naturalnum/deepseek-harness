@@ -23,7 +23,10 @@ const requests = { me: z.object({}).strict(), logout: z.object({}).strict(), mod
   create: createRequest, list: listRequest, prompt: promptRequest, page: pageRequest, follow: pageRequest,
   filesList: sessionFilesListRequest, filesRead: sessionFileReadRequest, filesPut: sessionFilePutRequest,
   skillsList: z.object({}).strict(), skillsRead: skillRequest,
-  skillsInstall: skillInstallRequest, skillsToggle: skillToggleRequest, actionsList: z.object({}).strict(),
+  skillsInstall: skillInstallRequest, skillsToggle: skillToggleRequest,
+  skillsUploadTicket: z.object({ requestId: z.uuid(), sizeBytes: z.number().int().min(1).max(1024 * 1024),
+    sha256: z.string().regex(/^[0-9a-f]{64}$/u) }).strict(),
+  skillsRevoke: skillRequest, actionsList: z.object({}).strict(),
   artifactsPublish: z.object({ requestId: z.uuid(), sessionId: z.uuid(), path: z.string().min(1).max(512) }).strict(),
   artifactsList: z.object({ workspaceId: z.uuid().optional(), sessionId: z.uuid().optional(),
     cursor: z.uuid().optional(), limit: z.number().int().min(1).max(100).optional() }).strict(),
@@ -36,7 +39,8 @@ const endpoint = { me: '/identity/me', logout: '/identity/logout', modelsList: '
   create: '/sessions/create', list: '/sessions/list', prompt: '/sessions/prompt', page: '/sessions/page',
   filesList: '/files/session/list', filesRead: '/files/session/read', filesPut: '/files/session/put',
   skillsList: '/skills/list', skillsRead: '/skills/read',
-  skillsInstall: '/skills/install', skillsToggle: '/skills/toggle', actionsList: '/connectors/actions',
+  skillsInstall: '/skills/install', skillsToggle: '/skills/toggle',
+  skillsUploadTicket: '/skills/upload-ticket', skillsRevoke: '/skills/revoke', actionsList: '/connectors/actions',
   artifactsPublish: '/artifacts/publish', artifactsList: '/artifacts/list', artifactsPreview: '/artifacts/preview',
   executionsList: '/executions/list', executionCancel: '/executions/cancel',
   devicesList: '/devices/list', devicesPair: '/devices/pair',
@@ -46,7 +50,8 @@ type Method = keyof typeof requests
 declare module '@deepseek-ai/cordis' { interface Context { powerEvolve: ProductRemote; powerEvolveBrowserAuth: BrowserAgentAuth } }
 
 class ProductRemote extends TypertRemoteService {
-  constructor(ctx: Context, private readonly options: { tokens: WeakMap<PeerScope, string>; pollMs: number }) { super(ctx, 'powerEvolve') }
+  constructor(ctx: Context, private readonly options: { tokens: WeakMap<PeerScope, string>; pollMs: number;
+    platformOrigin: string }) { super(ctx, 'powerEvolve') }
   private token(): string {
     const peer = this.ctx.invocation?.peer
     const token = peer && this.options.tokens.get(peer)
@@ -71,6 +76,22 @@ class ProductRemote extends TypertRemoteService {
   @Remote skillsRead(request: z.infer<typeof skillRequest>) { return this.call('skillsRead', request) }
   @Remote skillsInstall(request: z.infer<typeof skillInstallRequest>) { return this.call('skillsInstall', request) }
   @Remote skillsToggle(request: z.infer<typeof skillToggleRequest>) { return this.call('skillsToggle', request) }
+  @Remote async skillsUploadTicket(request: z.infer<typeof requests.skillsUploadTicket>) {
+    const result = z.discriminatedUnion('state', [
+      z.object({ state: z.literal('ready'), item: z.json() }).strict(),
+      z.object({ state: z.literal('pending'), ticket: z.string().regex(/^[A-Za-z0-9_-]{32,256}$/u),
+        uploadUrl: z.url(), expiresAt: z.iso.datetime() }).strict(),
+    ]).parse(await this.call('skillsUploadTicket', request))
+    if (result.state === 'pending') {
+      const upload = new URL(result.uploadUrl)
+      if (upload.origin !== this.options.platformOrigin || upload.pathname !== '/skills/upload'
+        || upload.username || upload.password || upload.search || upload.hash) {
+        throw new PlatformError(503, 'skill_upload_unavailable')
+      }
+    }
+    return result
+  }
+  @Remote skillsRevoke(request: z.infer<typeof skillRequest>) { return this.call('skillsRevoke', request) }
   @Remote actionsList(request: z.infer<typeof requests.actionsList>) { return this.call('actionsList', request) }
   @Remote artifactsPublish(request: z.infer<typeof requests.artifactsPublish>) { return this.call('artifactsPublish', request) }
   @Remote artifactsList(request: z.infer<typeof requests.artifactsList>) { return this.call('artifactsList', request) }
@@ -118,7 +139,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   ctx.provide('powerEvolveBrowserAuth', browserAuth)
   installNativeRemote(ctx, browserAuth, config.origin, config.pollMs, config.maxRequestBytes, config.maxStreams)
   const tokens = new WeakMap<PeerScope, string>()
-  ctx.plugin(ProductRemote, { tokens, pollMs: config.pollMs })
+  ctx.plugin(ProductRemote, { tokens, pollMs: config.pollMs, platformOrigin: config.platformOrigin })
   const invocations: InvocationDescriptor[] = Object.entries(requests).map(([method, request]) => ({
     id: `@power-evolve/application#powerEvolve/${method}`, service: 'powerEvolve', namespace: 'powerEvolve', method,
     invocation: { kind: 'direct' },
@@ -180,6 +201,9 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       const method = z.enum(Object.keys(requests) as [Method, ...Method[]]).parse(path.slice('/api/powerEvolve/'.length))
       const credential = await browserAuth.authenticate(req)
       const token = credential.token
+      if (!/^application\/json(?:;\s*charset=utf-8)?$/iu.test(req.headers['content-type'] ?? '')) {
+        throw new PlatformError(415, 'invalid_content_type')
+      }
       const input = z.object({ request: requests[method] }).strict().parse(await readJson(req, config.maxRequestBytes))
       if (method === 'follow') {
         if (streams >= config.maxStreams) throw new PlatformError(429, 'stream_limit')
