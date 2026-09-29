@@ -11,6 +11,7 @@ import { transaction } from './database.ts'
 import { extractSkillPackage, MAX_ARCHIVE_BYTES, type ExtractedSkillFile } from './skill-package-extraction.ts'
 import { readNativeSkillMetadata } from './skill-metadata.ts'
 import { skillPackageManifest, skillPackageVersion, verifyPublishedSkillPackage } from './skill-package-manifest.ts'
+import { BuiltinSkillCatalog, type BuiltinSkillRelease } from './builtin-skills.ts'
 
 const SHA256 = /^[a-f0-9]{64}$/u
 const TICKET_LIFETIME_MS = 5 * 60_000
@@ -57,12 +58,39 @@ interface UploadIntentRow {
   consumed_at: Date | null
 }
 
+interface BuiltinInstallRequestRow {
+  request_id: string
+  user_id: string
+  catalog_id: string
+  version: string
+  archive_digest: string
+  package_version_id: string
+}
+
+interface PreparedPackage {
+  unpacked: string
+  files: readonly ExtractedSkillFile[]
+  metadata: { name: string; description: string }
+  version: string
+  manifest: string
+  manifestDigest: string
+  instructionDigest: string
+}
+
 const skillColumns = `s.id,s.user_id AS "userId",s.name,s.description,s.digest,s.enabled,s.revision,s.kind,
   s.revoked_at AS "revokedAt",s.package_version_id AS "packageVersionId",v.version,
   v.archive_digest AS "packageDigest",v.manifest_digest AS "manifestDigest",v.manifest`
 const skillJoin = 'pe_user_skills s LEFT JOIN pe_skill_package_versions v ON v.id=s.package_version_id'
 
 function hash(bytes: string | Buffer): string { return createHash('sha256').update(bytes).digest('hex') }
+
+function builtinRequestId(userId: string, catalogId: string, version: string): string {
+  const bytes = createHash('sha256').update(`pe-builtin\0${userId}\0${catalogId}\0${version}`).digest()
+  bytes[6] = (bytes[6]! & 0x0f) | 0x50
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80
+  const hex = bytes.toString('hex')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`
+}
 
 function publicItem(row: SkillRow): Record<string, unknown> {
   return { skillId: row.id, name: row.name, description: row.description, kind: row.kind,
@@ -119,10 +147,15 @@ function manifestFiles(manifest: string, expectedArchive: string): ExtractedSkil
 export class SkillService {
   private readonly textRoot: string
   private readonly packageRoot: string | null
+  private readonly builtinCatalog: BuiltinSkillCatalog
 
-  constructor(private readonly pool: Pool, workspaceRoot: string, sandboxLocalRoot = '') {
+  constructor(private readonly pool: Pool, workspaceRoot: string, sandboxLocalRoot = '',
+    private readonly maxSkillsPerUser = 64) {
+    if (!Number.isInteger(maxSkillsPerUser) || maxSkillsPerUser < 1 || maxSkillsPerUser > 256)
+      throw new RangeError('maxSkillsPerUser must be an integer from 1 to 256')
     this.textRoot = join(resolve(workspaceRoot), 'extensions')
     this.packageRoot = sandboxLocalRoot ? join(resolve(sandboxLocalRoot), 'skill-packages') : null
+    this.builtinCatalog = new BuiltinSkillCatalog()
   }
 
   async init(): Promise<void> {
@@ -176,6 +209,18 @@ export class SkillService {
     return { items: result.rows.map(publicItem) }
   }
 
+  /** Public fixed-catalog metadata plus this user's current matching package version. */
+  async catalog(user: Identity): Promise<{ items: (BuiltinSkillRelease & { installedSkillId: string | null })[] }> {
+    const releases = await this.builtinCatalog.list()
+    const installed = await this.pool.query<{ skill_id: string; archive_digest: string; version: string }>(
+      `SELECT s.id AS skill_id,v.archive_digest,v.version FROM pe_user_skills s
+       JOIN pe_skill_package_versions v ON v.id=s.package_version_id
+       WHERE s.user_id=$1`, [user.userId])
+    const byVersion = new Map(installed.rows.map(row => [`${row.archive_digest}:${row.version}`, row.skill_id]))
+    return { items: releases.map(release => ({ ...release,
+      installedSkillId: byVersion.get(`${release.archiveDigest}:${release.version}`) ?? null })) }
+  }
+
   async read(user: Identity, id: string): Promise<Record<string, unknown>> {
     const result = await this.pool.query<SkillRow>(
       `SELECT ${skillColumns} FROM ${skillJoin} WHERE s.id=$1 AND s.user_id=$2`, [id, user.userId])
@@ -202,7 +247,7 @@ export class SkillService {
       const conflict = await client.query('SELECT id FROM pe_user_skills WHERE user_id=$1 AND name=$2', [user.userId, name])
       if (conflict.rowCount) throw new PlatformError(409, 'skill_name_conflict')
       const count = await client.query<{ n: string }>('SELECT count(*) AS n FROM pe_user_skills WHERE user_id=$1', [user.userId])
-      if (Number(count.rows[0]!.n) >= 8) throw new PlatformError(413, 'skill_limit')
+      if (Number(count.rows[0]!.n) >= this.maxSkillsPerUser) throw new PlatformError(413, 'skill_limit')
       const root = await this.textUserRoot(user.userId)
       const temporary = join(root, `.pe-${id}.tmp`)
       await rm(temporary, { force: true })
@@ -254,6 +299,7 @@ export class SkillService {
     if (this.packageRoot === null) throw new PlatformError(503, 'skill_package_unavailable')
     return transaction(this.pool, async client => {
       await client.query('SELECT id FROM pe_users WHERE id=$1 FOR UPDATE', [user.userId])
+      await client.query('SELECT pg_advisory_xact_lock(72819532,hashtext($1))', [requestId])
       const prior = await client.query<PackageVersionRow>(
         'SELECT * FROM pe_skill_package_versions WHERE id=$1', [requestId])
       if (prior.rows[0]) {
@@ -264,6 +310,9 @@ export class SkillService {
       }
       const occupied = await client.query('SELECT id FROM pe_user_skills WHERE id=$1', [requestId])
       if (occupied.rowCount) throw new PlatformError(409, 'request_id_conflict')
+      const builtinRequest = await client.query(
+        'SELECT request_id FROM pe_builtin_skill_install_requests WHERE request_id=$1', [requestId])
+      if (builtinRequest.rowCount) throw new PlatformError(409, 'request_id_conflict')
       const existing = await client.query<UploadIntentRow>(
         'SELECT * FROM pe_skill_upload_intents WHERE request_id=$1', [requestId])
       const intent = existing.rows[0]
@@ -302,6 +351,149 @@ export class SkillService {
       enabled: skill.packageVersionId === version.id && skill.enabled && skill.revokedAt === null }
   }
 
+  private async preparePackage(stage: string, archiveDigest: string,
+    pinnedVersion?: string): Promise<PreparedPackage> {
+    const archive = join(stage, 'archive.zip')
+    const unpacked = join(stage, 'unpacked')
+    await mkdir(unpacked, { mode: 0o700 })
+    let files: readonly ExtractedSkillFile[]
+    try { files = await extractSkillPackage(archive, unpacked) }
+    catch (error) {
+      if (error instanceof PlatformError) throw error
+      throw new PlatformError(400, 'invalid_skill_package')
+    }
+    const metadata = await readNativeSkillMetadata(join(unpacked, 'skill'))
+    const authoredVersion = await skillPackageVersion(join(unpacked, 'skill'), archiveDigest, files)
+    if (pinnedVersion && authoredVersion !== `sha256:${archiveDigest}` && authoredVersion !== pinnedVersion)
+      throw new PlatformError(503, 'skill_package_unavailable')
+    const version = pinnedVersion ?? authoredVersion
+    const manifest = skillPackageManifest(archiveDigest, files)
+    if (Buffer.byteLength(manifest) > MANIFEST_MAX_BYTES) throw new PlatformError(400, 'invalid_skill_package')
+    const manifestDigest = hash(manifest)
+    await writeFile(join(unpacked, 'manifest.json'), manifest, { flag: 'wx', mode: 0o444 })
+    await chmod(join(unpacked, 'manifest.json'), 0o444)
+    const manifestHandle = await open(join(unpacked, 'manifest.json'), constants.O_RDONLY | constants.O_NOFOLLOW)
+    try { await manifestHandle.sync() } finally { await manifestHandle.close() }
+    const instructionDigest = files.find(file => file.path === 'skill/SKILL.md')!.sha256
+    return { unpacked, files, metadata, version, manifest, manifestDigest, instructionDigest }
+  }
+
+  /** Install only a pinned, verified built-in archive through the package publisher. */
+  async installBuiltin(user: Identity, requestId: string, catalogId: string,
+    version: string): Promise<Record<string, unknown>> {
+    if (this.packageRoot === null) throw new PlatformError(503, 'skill_package_unavailable')
+    const existingRequest = await this.pool.query<BuiltinInstallRequestRow>(
+      'SELECT * FROM pe_builtin_skill_install_requests WHERE request_id=$1', [requestId])
+    if (existingRequest.rows[0] && (existingRequest.rows[0].user_id !== user.userId
+      || existingRequest.rows[0].catalog_id !== catalogId || existingRequest.rows[0].version !== version))
+      throw new PlatformError(409, 'request_id_conflict')
+    const release = await this.builtinCatalog.get(catalogId, version)
+    if (!release) throw new PlatformError(404, 'builtin_skill_not_found')
+    const { archive } = release
+    const stage = await mkdtemp(join(this.packageRoot, '.staging', 'pe-'))
+    try {
+      await writeFile(join(stage, 'archive.zip'), archive, { flag: 'wx', mode: 0o600 })
+      const prepared = await this.preparePackage(stage, release.release.archiveDigest, version)
+      const { unpacked, files, metadata, manifest, manifestDigest, instructionDigest } = prepared
+      return await transaction(this.pool, async client => {
+        await client.query('SELECT id FROM pe_users WHERE id=$1 FOR UPDATE', [user.userId])
+        await client.query('SELECT pg_advisory_xact_lock(72819532,hashtext($1))', [requestId])
+        const bound = await client.query<BuiltinInstallRequestRow>(
+          'SELECT * FROM pe_builtin_skill_install_requests WHERE request_id=$1', [requestId])
+        if (bound.rows[0]) {
+          const prior = bound.rows[0]
+          if (prior.user_id !== user.userId || prior.catalog_id !== catalogId || prior.version !== version
+            || prior.archive_digest !== release.release.archiveDigest)
+            throw new PlatformError(409, 'request_id_conflict')
+          const result = await client.query<PackageVersionRow>(
+            'SELECT * FROM pe_skill_package_versions WHERE id=$1 AND user_id=$2',
+            [prior.package_version_id, user.userId])
+          if (!result.rows[0]) throw new PlatformError(503, 'skill_package_unavailable')
+          return this.versionItem(client, result.rows[0])
+        }
+        const occupied = await client.query(
+          `SELECT id FROM pe_user_skills WHERE id=$1
+           UNION ALL SELECT id FROM pe_skill_package_versions WHERE id=$1
+           UNION ALL SELECT request_id AS id FROM pe_skill_upload_intents WHERE request_id=$1`, [requestId])
+        if (occupied.rowCount) throw new PlatformError(409, 'request_id_conflict')
+        const priorPackage = await client.query<PackageVersionRow>(
+          'SELECT * FROM pe_skill_package_versions WHERE user_id=$1 AND archive_digest=$2',
+          [user.userId, release.release.archiveDigest])
+        if (priorPackage.rows[0]) {
+          const existing = priorPackage.rows[0]
+          if (existing.name !== metadata.name || existing.version !== version
+            || existing.manifest_digest !== manifestDigest)
+            throw new PlatformError(409, 'skill_version_conflict')
+          await client.query(
+            `INSERT INTO pe_builtin_skill_install_requests(request_id,user_id,catalog_id,version,
+               archive_digest,package_version_id) VALUES($1,$2,$3,$4,$5,$6)`,
+            [requestId, user.userId, catalogId, version, release.release.archiveDigest, existing.id])
+          return this.versionItem(client, existing)
+        }
+        const existing = await client.query<SkillRow>(`SELECT ${skillColumns} FROM ${skillJoin}
+          WHERE s.user_id=$1 AND s.name=$2 FOR UPDATE OF s`, [user.userId, metadata.name])
+        const skill = existing.rows[0]
+        if (skill) {
+          if (skill.kind !== 'package') throw new PlatformError(409, 'skill_name_conflict')
+          if (skill.revokedAt !== null) throw new PlatformError(409, 'skill_revoked')
+          const sameVersion = await client.query(
+            'SELECT id FROM pe_skill_package_versions WHERE user_id=$1 AND name=$2 AND version=$3',
+            [user.userId, metadata.name, version])
+          if (sameVersion.rowCount) throw new PlatformError(409, 'skill_version_conflict')
+        } else {
+          const count = await client.query<{ n: string }>(
+            'SELECT count(*) AS n FROM pe_user_skills WHERE user_id=$1', [user.userId])
+          if (Number(count.rows[0]!.n) >= this.maxSkillsPerUser) throw new PlatformError(413, 'skill_limit')
+        }
+        await this.publish(user.userId, release.release.archiveDigest, unpacked, manifest, files)
+        const skillId = skill?.id ?? requestId
+        if (!skill) await client.query(
+          `INSERT INTO pe_user_skills(id,user_id,name,description,digest,kind)
+           VALUES($1,$2,$3,$4,$5,'package')`,
+          [skillId, user.userId, metadata.name, metadata.description, instructionDigest])
+        await client.query(
+          `INSERT INTO pe_skill_package_versions(id,user_id,skill_id,name,description,version,
+           archive_digest,archive_size,instruction_digest,manifest_digest,manifest)
+           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+          [requestId, user.userId, skillId, metadata.name, metadata.description, version,
+            release.release.archiveDigest, archive.length, instructionDigest, manifestDigest, manifest])
+        await client.query(
+          `UPDATE pe_user_skills SET description=$2,digest=$3,package_version_id=$4,
+           updated_at=now() WHERE id=$1`, [skillId, metadata.description, instructionDigest, requestId])
+        await client.query(
+          `INSERT INTO pe_builtin_skill_install_requests(request_id,user_id,catalog_id,version,
+             archive_digest,package_version_id) VALUES($1,$2,$3,$4,$5,$6)`,
+          [requestId, user.userId, catalogId, version, release.release.archiveDigest, requestId])
+        const inserted = await client.query<SkillRow>(
+          `SELECT ${skillColumns} FROM ${skillJoin} WHERE s.id=$1`, [skillId])
+        return publicItem(inserted.rows[0]!)
+      })
+    } finally { await removeStage(stage) }
+  }
+
+  /** Presets are applied lazily and never revive an existing package or revoked skill. */
+  async ensurePreinstalled(user: Identity, catalogIds: readonly string[]): Promise<void> {
+    const releases = await this.builtinCatalog.list()
+    const known = new Map(releases.map(release => [release.id, release]))
+    for (const catalogId of new Set(catalogIds)) {
+      const release = known.get(catalogId)
+      if (!release) throw new PlatformError(404, 'builtin_skill_not_found')
+      const history = await this.pool.query(
+        `SELECT 1 FROM pe_builtin_skill_install_requests WHERE user_id=$1 AND catalog_id=$2
+         UNION ALL SELECT 1 FROM pe_skill_package_versions WHERE user_id=$1 AND archive_digest=$3`,
+        [user.userId, catalogId, release.archiveDigest])
+      if (history.rowCount) continue
+      try {
+        await this.installBuiltin(user, builtinRequestId(user.userId, catalogId, release.version),
+          catalogId, release.version)
+      } catch (error) {
+        if (error instanceof PlatformError && ['skill_name_conflict', 'skill_version_conflict', 'skill_revoked'].includes(error.code))
+          continue
+        throw error
+      }
+    }
+  }
+
   /** Consume one bounded ZIP and commit its immutable version after private extraction. */
   async upload(ticket: string, body: IncomingMessage): Promise<{ item: Record<string, unknown>; created: boolean }> {
     if (this.packageRoot === null) throw new PlatformError(503, 'skill_package_unavailable')
@@ -329,24 +521,8 @@ export class SkillService {
       } finally { await output.close() }
       if (size !== intent.size_bytes || digest.digest('hex') !== intent.archive_digest)
         throw new PlatformError(400, 'skill_archive_mismatch')
-      const unpacked = join(stage, 'unpacked')
-      await mkdir(unpacked, { mode: 0o700 })
-      let files: readonly ExtractedSkillFile[]
-      try { files = await extractSkillPackage(archive, unpacked) }
-      catch (error) {
-        if (error instanceof PlatformError) throw error
-        throw new PlatformError(400, 'invalid_skill_package')
-      }
-      const metadata = await readNativeSkillMetadata(join(unpacked, 'skill'))
-      const version = await skillPackageVersion(join(unpacked, 'skill'), intent.archive_digest, files)
-      const manifest = skillPackageManifest(intent.archive_digest, files)
-      if (Buffer.byteLength(manifest) > MANIFEST_MAX_BYTES) throw new PlatformError(400, 'invalid_skill_package')
-      const manifestDigest = hash(manifest)
-      await writeFile(join(unpacked, 'manifest.json'), manifest, { flag: 'wx', mode: 0o444 })
-      await chmod(join(unpacked, 'manifest.json'), 0o444)
-      const manifestHandle = await open(join(unpacked, 'manifest.json'), constants.O_RDONLY | constants.O_NOFOLLOW)
-      try { await manifestHandle.sync() } finally { await manifestHandle.close() }
-      const instructionDigest = files.find(file => file.path === 'skill/SKILL.md')!.sha256
+      const { unpacked, files, metadata, version, manifest, manifestDigest, instructionDigest } =
+        await this.preparePackage(stage, intent.archive_digest)
       return await transaction(this.pool, async client => {
         await client.query('SELECT id FROM pe_users WHERE id=$1 FOR UPDATE', [intent.user_id])
         const current = await client.query<UploadIntentRow>(
@@ -373,7 +549,7 @@ export class SkillService {
           if (sameVersion.rowCount) throw new PlatformError(409, 'skill_version_conflict')
         } else {
           const count = await client.query<{ n: string }>('SELECT count(*) AS n FROM pe_user_skills WHERE user_id=$1', [intent.user_id])
-          if (Number(count.rows[0]!.n) >= 8) throw new PlatformError(413, 'skill_limit')
+          if (Number(count.rows[0]!.n) >= this.maxSkillsPerUser) throw new PlatformError(413, 'skill_limit')
         }
         await this.publish(intent.user_id, intent.archive_digest, unpacked, manifest, files)
         const skillId = skill?.id ?? intent.request_id
@@ -432,6 +608,20 @@ export class SkillService {
     }
   }
 
+  /** Load one accepted skill body for a runner, checking current ownership and revocation. */
+  async readSelected(userId: string, selection: z.infer<typeof skillSelection>, skillId: string): Promise<unknown> {
+    if (selection.skillId !== skillId) throw new PlatformError(404, 'skill_not_found')
+    const result = await this.pool.query<SkillRow>(
+      `SELECT ${skillColumns} FROM ${skillJoin} WHERE s.id=$1 AND s.user_id=$2`, [skillId, userId])
+    const skill = result.rows[0]
+    if (!skill || skill.kind !== selection.kind) throw new PlatformError(404, 'skill_not_found')
+    if (skill.revokedAt !== null) throw new PlatformError(409, 'skill_revoked')
+    if (skill.kind === 'text' && (skill.digest !== selection.digest || skill.name !== selection.name
+      || skill.description !== selection.description))
+      throw new PlatformError(503, 'skill_unavailable')
+    return (await this.snapshot(userId, [selection]))[0]
+  }
+
   /** Resolve exactly the accepted version; later upgrades and revocation do not rewrite an Operation. */
   async snapshot(userId: string, selection: z.infer<typeof skillSelection>[]): Promise<unknown[]> {
     return Promise.all(selection.map(async selected => {
@@ -445,7 +635,8 @@ export class SkillService {
         [userId, selected.packageDigest, selected.manifestDigest])
       const version = result.rows[0]
       if (!version || version.skill_id !== selected.skillId || version.version !== selected.version
-        || version.instruction_digest !== selected.digest) throw new PlatformError(503, 'skill_package_unavailable')
+        || version.instruction_digest !== selected.digest || version.name !== selected.name
+        || version.description !== selected.description) throw new PlatformError(503, 'skill_package_unavailable')
       return { name: selected.name, description: selected.description,
         instructions: await this.packageContent(userId, selected.packageDigest, selected.manifestDigest,
           selected.digest, version.manifest), revision: selected.revision, kind: 'package',

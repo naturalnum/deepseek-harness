@@ -72,20 +72,18 @@ async function file(path: string, maximum: number): Promise<Buffer> {
   } finally { await handle.close() }
 }
 
-type Item = { readonly entry: BuiltinSkillRelease; readonly archive: Buffer }
-
 /** Fixed asset root relative to the built Platform module. */
 export function builtinSkillAssetRoot(): string {
   return fileURLToPath(new URL('../../assets/builtin-skills/generated/', import.meta.url))
 }
 
-/** Every call rechecks the committed catalog and all nine ZIPs before returning data. */
+/** Verify catalog metadata and manifests; verify only the selected ZIP on get. */
 export class BuiltinSkillCatalog {
   private readonly root: string
 
   constructor(root = builtinSkillAssetRoot()) { this.root = resolve(root) }
 
-  private async load(): Promise<readonly Item[]> {
+  private async loadMetadata(): Promise<readonly BuiltinSkillRelease[]> {
     try {
       await directory(this.root, ['catalog.json', 'extensions'])
       const bytes = await file(join(this.root, 'catalog.json'), MAX_CATALOG_BYTES)
@@ -95,7 +93,7 @@ export class BuiltinSkillCatalog {
       if (new Set(ids).size !== 9) unavailable()
       const extensions = join(this.root, 'extensions')
       await directory(extensions, ids)
-      const items: Item[] = []
+      const items: BuiltinSkillRelease[] = []
       for (const { extension: identity, release: version } of parsed.items) {
         const { id } = identity
         const archiveName = `${version.version}.zip`
@@ -110,26 +108,33 @@ export class BuiltinSkillCatalog {
         if (details.extensionId !== id || details.version !== version.version
           || details.artifact.sha256 !== version.artifactDigest
           || details.artifact.size !== version.artifactSize) unavailable()
-        const archive = await file(join(folder, archiveName), MAX_ARCHIVE_BYTES)
-        if (archive.length !== version.artifactSize || sha256(archive) !== version.artifactDigest) unavailable()
-        items.push({ entry: { id, name: identity.name, summary: identity.summary,
+        items.push(Object.freeze({ id, name: identity.name, summary: identity.summary,
           description: identity.description, category: identity.category, publisher: identity.publisher,
           version: version.version, manifestDigest: version.manifestDigest,
-          archiveDigest: version.artifactDigest, archiveSize: version.artifactSize }, archive })
+          archiveDigest: version.artifactDigest, archiveSize: version.artifactSize }))
       }
       return items
     } catch (_error) { unavailable() }
   }
 
+  private load(): Promise<readonly BuiltinSkillRelease[]> {
+    return this.loadMetadata()
+  }
+
   /** List pinned releases without exposing paths or archive bytes. */
   async list(): Promise<readonly BuiltinSkillRelease[]> {
-    return (await this.load()).map(item => Object.freeze(item.entry))
+    return this.load()
   }
 
   /** Return one verified ZIP by catalog identity, or null for an unknown ID/version. */
   async get(id: string, version: string): Promise<{ readonly release: BuiltinSkillRelease; readonly archive: Buffer } | null> {
     if (!ID.test(id) || !VERSION.test(version)) return null
-    const item = (await this.load()).find(item => item.entry.id === id && item.entry.version === version)
-    return item ? { release: Object.freeze(item.entry), archive: item.archive } : null
+    const release = (await this.load()).find(item => item.id === id && item.version === version)
+    if (!release) return null
+    try {
+      const archive = await file(join(this.root, 'extensions', id, `${version}.zip`), MAX_ARCHIVE_BYTES)
+      if (archive.length !== release.archiveSize || sha256(archive) !== release.archiveDigest) unavailable()
+      return { release, archive }
+    } catch (_error) { unavailable() }
   }
 }

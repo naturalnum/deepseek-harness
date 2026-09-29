@@ -65,7 +65,10 @@ test('catalog, manifest, archive and directory tampering fail closed', async t =
   const zipBytes = await readFile(zip)
   zipBytes[0] ^= 1
   await writeFile(zip, zipBytes)
-  await assert.rejects(new BuiltinSkillCatalog(damagedZip).list(), BuiltinSkillCatalogUnavailable)
+  const lazyCatalog = new BuiltinSkillCatalog(damagedZip)
+  assert.equal((await lazyCatalog.list()).length, 9)
+  await assert.rejects(lazyCatalog.get('builtin.word', '1.0.0'), BuiltinSkillCatalogUnavailable)
+  assert((await lazyCatalog.get('builtin.pdf', '1.0.0'))?.archive.length)
 
   const damagedManifest = await clone('manifest')
   const manifest = join(damagedManifest, 'extensions/builtin.word/1.0.0.manifest.json')
