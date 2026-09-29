@@ -275,11 +275,16 @@ export class SshExecuteService {
   async close(): Promise<void> { this.stop.abort(); await this.polling }
   private async poll(): Promise<void> {
     while (!this.stop.signal.aborted) {
+      let worked = false
       try {
         const row = await this.calls.claim(this.ownerId, this.leaseMs, 'ssh.execute')
-        if (row) { await this.pump(row); continue }
-        await this.reconcileTerminals()
+        if (row) { worked = true; await this.pump(row) }
       } catch (_unavailable) { /* A later lease or poll reconciles durable state. */ }
+      if (!this.stop.signal.aborted) {
+        try { await this.reconcileTerminals() }
+        catch (_unavailable) { /* A later pass reconciles durable terminal state. */ }
+      }
+      if (worked) continue
       try { await delay(this.pollMs, undefined, { signal: this.stop.signal }) }
       catch (_aborted) { /* Stop after shutdown. */ }
     }

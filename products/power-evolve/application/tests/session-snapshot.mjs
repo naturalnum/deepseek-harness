@@ -61,7 +61,7 @@ export async function compareRecordedSession(page, expected, targetDirectory = d
     if(row.type==='system/message') for(const block of row.data.message.content) if(block.type==='text') block.text='{{system}}'
     return row
   })]
-  const system = page.events.filter(event=>event.type==='system/message').flatMap(event=>event.data.message.content.filter(block=>block.type==='text').map(block=>block.text)).join('\n')+'\n'
+  const system = page.events.filter(event=>event.type==='system/message').flatMap(event=>event.data.message.content.filter(block=>block.type==='text').map(block=>block.text)).join('\n\n')+'\n'
   if(record) {
     await writeFile(new URL('session.v4.jsonl', targetDirectory),rows.map(row=>JSON.stringify(row)).join('\n')+'\n')
     await writeFile(new URL('system-prompt.expected.md',targetDirectory),system)
