@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: power-evolve-connector-platform
+  namespace: placeholder
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: power-evolve-connector-platform
+  namespace: placeholder
+rules:
+  - apiGroups: ['']
+    resources: [pods, services, secrets]
+    verbs: [get, create, delete]
+  - apiGroups: ['']
+    resources: [services/proxy]
+    verbs: [get, create]
+  - apiGroups: [networking.k8s.io]
+    resources: [networkpolicies]
+    verbs: [get, create, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: power-evolve-connector-platform
+  namespace: placeholder
+subjects:
+  - kind: ServiceAccount
+    name: power-evolve-connector-platform
+    namespace: placeholder
+roleRef:
+  kind: Role
+  name: power-evolve-connector-platform
+  apiGroup: rbac.authorization.k8s.io

@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write products/power-evolve/connector-runner/deploy/README.md
+/local-k3d-connector-runner-preparation:
+  en: 227a66c0375e3b9d
+  zh: e7ea6a84fe9a37db
+/local-k3d-connector-runner-preparation/prepare-the-image-and-scoped-access:
+  en: 0afd9e7583ffec16
+  zh: 2ced218665e8ef19
+/local-k3d-connector-runner-preparation/verify-scope-and-configure-the-platform:
+  en: 1ffbb22403eda5b3
+  zh: fb9d06b0407b3bdf
+/local-k3d-connector-runner-preparation/remove-a-disposable-setup:
+  en: d7e0601ab544e522
+  zh: 10aed8393262e608

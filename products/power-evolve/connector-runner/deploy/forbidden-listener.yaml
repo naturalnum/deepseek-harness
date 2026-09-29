@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: power-evolve-forbidden-listener
+  namespace: placeholder
+  labels:
+    app.kubernetes.io/name: power-evolve-forbidden-listener
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: power-evolve-forbidden-listener
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: power-evolve-forbidden-listener
+    spec:
+      automountServiceAccountToken: false
+      runtimeClassName: gvisor
+      terminationGracePeriodSeconds: 5
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: listener
+          image: image-placeholder
+          imagePullPolicy: IfNotPresent
+          command: [node, --input-type=module, -e]
+          args:
+            - |
+              import { createServer } from 'node:http'
+              createServer((request, response) => {
+                const healthy = request.url === '/health'
+                response.writeHead(healthy ? 200 : 404, { 'content-type': 'application/json' })
+                response.end(JSON.stringify({ healthy }))
+              }).listen(8080, '0.0.0.0')
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 2
+          resources:
+            requests:
+              cpu: 20m
+              memory: 48Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            capabilities:
+              drop: [ALL]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: power-evolve-forbidden-listener
+  namespace: placeholder
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: power-evolve-forbidden-listener
+  ports:
+    - name: http
+      protocol: TCP
+      port: 8080
+      targetPort: http
