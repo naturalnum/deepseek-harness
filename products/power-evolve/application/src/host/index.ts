@@ -12,14 +12,15 @@ import type {} from '@deepseek-ai/dsh-typert-registry'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import { TypertRemoteService, Remote, type PeerScope, type PeerId, type InvocationDescriptor } from '@deepseek-ai/dsh-typert-protocol'
-import { createRequest, sessionFilesListRequest, sessionFileReadRequest, sessionFilePutRequest, listRequest, pageRequest, promptRequest, skillInstallRequest, skillRequest, skillToggleRequest, PlatformError } from '../contracts.ts'
+import { createRequest, sessionFilesListRequest, sessionFileReadRequest, sessionFilePutRequest, listRequest, pageRequest, promptRequest, settingsUpdateRequest, skillInstallRequest, skillRequest, skillToggleRequest, PlatformError } from '../contracts.ts'
 import { readJson, sendFailure, sendJson, writeLine } from '../http.ts'
 import { serveNativeUi, serveUi } from '../ui.ts'
 import { BrowserAgentAuth } from './browser-auth.ts'
 import { installNativeRemote } from './native-remote.ts'
 import { Scheduler } from './scheduler.ts'
 
-const requests = { me: z.object({}).strict(), logout: z.object({}).strict(), create: createRequest, list: listRequest, prompt: promptRequest, page: pageRequest, follow: pageRequest,
+const requests = { me: z.object({}).strict(), logout: z.object({}).strict(), modelsList: z.object({}).strict(), settingsUpdate: settingsUpdateRequest,
+  create: createRequest, list: listRequest, prompt: promptRequest, page: pageRequest, follow: pageRequest,
   filesList: sessionFilesListRequest, filesRead: sessionFileReadRequest, filesPut: sessionFilePutRequest,
   skillsList: z.object({}).strict(), skillsRead: skillRequest,
   skillsInstall: skillInstallRequest, skillsToggle: skillToggleRequest, actionsList: z.object({}).strict(),
@@ -31,7 +32,8 @@ const requests = { me: z.object({}).strict(), logout: z.object({}).strict(), cre
   devicesList: z.object({}).strict(), devicesPair: z.object({}).strict(),
   devicesRevoke: z.object({ deviceId: z.uuid() }).strict(),
   directoriesRevoke: z.object({ directoryId: z.uuid() }).strict() }
-const endpoint = { me: '/identity/me', logout: '/identity/logout', create: '/sessions/create', list: '/sessions/list', prompt: '/sessions/prompt', page: '/sessions/page',
+const endpoint = { me: '/identity/me', logout: '/identity/logout', modelsList: '/identity/models', settingsUpdate: '/identity/settings/update',
+  create: '/sessions/create', list: '/sessions/list', prompt: '/sessions/prompt', page: '/sessions/page',
   filesList: '/files/session/list', filesRead: '/files/session/read', filesPut: '/files/session/put',
   skillsList: '/skills/list', skillsRead: '/skills/read',
   skillsInstall: '/skills/install', skillsToggle: '/skills/toggle', actionsList: '/connectors/actions',
@@ -56,6 +58,8 @@ class ProductRemote extends TypertRemoteService {
   }
   @Remote me(request: z.infer<typeof requests.me>) { return this.call('me', request) }
   @Remote logout(request: z.infer<typeof requests.logout>) { return this.call('logout', request) }
+  @Remote modelsList(request: z.infer<typeof requests.modelsList>) { return this.call('modelsList', request) }
+  @Remote settingsUpdate(request: z.infer<typeof settingsUpdateRequest>) { return this.call('settingsUpdate', request) }
   @Remote create(request: z.infer<typeof createRequest>) { return this.call('create', request) }
   @Remote list(request: z.infer<typeof listRequest>) { return this.call('list', request) }
   @Remote prompt(request: z.infer<typeof promptRequest>) { return this.call('prompt', request) }

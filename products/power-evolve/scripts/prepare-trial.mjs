@@ -62,6 +62,10 @@ if (!modelKey) throw new Error('Provide a model.env or DEEPSEEK_API_KEY before p
 await provision('model-key', modelKey)
 await provision('users.json', JSON.stringify(['alice', 'bob'].map((username, index) => ({
   username, password: randomBytes(20).toString('base64url'), settings: { model: 'deepseek-flash', maxTokens: index === 0 ? 2048 : 1536, revision: 1 },
+  models: index === 0
+    ? [{ id: 'deepseek-flash', label: 'DeepSeek Flash', maxTokens: 4096 },
+      { id: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro', maxTokens: 2048 }]
+    : [{ id: 'deepseek-flash', label: 'DeepSeek Flash', maxTokens: 1536 }],
 })), null, 2) + '\n')
 for (const name of ['host', ...(multiHost ? ['host-b'] : []), 'platform', ...(deviceEnabled ? ['device'] : []),
   ...(secondDeviceEnabled ? ['device-bob'] : [])]) {
