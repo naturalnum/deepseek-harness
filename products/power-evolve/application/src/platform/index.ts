@@ -22,6 +22,7 @@ import { FileService } from './files.ts'
 import { ArtifactService } from './artifacts.ts'
 import { SkillService } from './skills.ts'
 import { ConnectorService } from './connectors.ts'
+import { PluginService } from './plugins.ts'
 import { ExecutionService } from './executions.ts'
 import { DeviceService } from './devices.ts'
 import { KubernetesClient } from './kubernetes.ts'
@@ -99,6 +100,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const nativeWorkspaces = new NativeWorkspaceRead(pool, files, nativeSessions, config.maxWorkspacesPerUser)
   const nativeFiles = new NativeFileRead(pool, files)
   const connectors = new ConnectorService(tasks, config.connectorUrl, connectorKey.trim(), config.connectorTimeoutMs, config.connectorPollMs)
+  const plugins = new PluginService(pool)
+  await plugins.seedUsers(users.map(user => user.username))
   await connectors.seedPermissions(users.map(user => user.username))
   connectors.start()
   ctx.effect(() => () => connectors.close())
@@ -115,7 +118,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
 
   const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const path = new URL(req.url ?? '/', config.platformOrigin).pathname
-    if (req.method === 'GET' && path === '/health') { sendJson(res, { ready: true, service: 'platform', schema: 12, executionEnabled, instanceId }); return }
+    if (req.method === 'GET' && path === '/health') { sendJson(res, { ready: true, service: 'platform', schema: 13, executionEnabled, instanceId }); return }
     if (req.method === 'GET' && path === '/config') { sendJson(res, { hostUrl: config.hostOrigin }); return }
     if (req.method === 'GET' && await serveUi(path, 'login', res, config.hostOrigin)) return
     const artifactContent = /^\/artifacts\/([^/]+)\/content$/u.exec(path)
@@ -298,6 +301,12 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         sendJson(res, await accountSettings.update(user, value)); return
       }
       case '/identity/logout': z.object({}).strict().parse(input); await identities.logout(token); sendJson(res, { ok: true }); return
+      case '/plugins/list': z.object({}).strict().parse(input); sendJson(res, await plugins.list(user)); return
+      case '/plugins/notes/set-enabled': {
+        const value = z.object({ requestId: z.uuid(), expectedRevision: z.number().int().positive(),
+          enabled: z.boolean() }).strict().parse(input)
+        sendJson(res, await plugins.notesSetEnabled(user, value)); return
+      }
       case '/sessions/create': {
         const value = createRequest.parse(input)
         sendJson(res, await tasks.create(user, value.requestId, value.workspaceId)); return

@@ -38,10 +38,14 @@ export class ConnectorService {
       WHERE u.username=ANY($1::text[]) ON CONFLICT DO NOTHING`, [usernames])
   }
 
-  private async allowed(userId: string, capability: Capability): Promise<void> {
-    const result = await this.pool.query<{ enabled: boolean }>(
-      'SELECT enabled FROM pe_connector_permissions WHERE user_id=$1 AND capability=$2', [userId, capability])
-    if (result.rows[0]?.enabled !== true) throw new PlatformError(403, 'connector_permission_denied')
+  /** Shared row locks make a completed disable/revoke a hard boundary before new egress. */
+  private async allowed(client: PoolClient, userId: string, capability: Capability): Promise<void> {
+    const plugin = await client.query<{ enabled: boolean }>(
+      `SELECT enabled FROM pe_user_plugins WHERE user_id=$1 AND plugin_id='notes' FOR SHARE`, [userId])
+    if (plugin.rows[0]?.enabled !== true) throw new PlatformError(403, 'plugin_disabled')
+    const permission = await client.query<{ enabled: boolean }>(
+      'SELECT enabled FROM pe_connector_permissions WHERE user_id=$1 AND capability=$2 FOR SHARE', [userId, capability])
+    if (permission.rows[0]?.enabled !== true) throw new PlatformError(403, 'connector_permission_denied')
   }
 
   async permissions(user: Identity): Promise<unknown> {
@@ -61,11 +65,13 @@ export class ConnectorService {
   /** A query has no approval state and never starts a sandbox. */
   async notes(token: string): Promise<unknown> {
     const grant = await transaction(this.pool, client => this.tasks.authorized(client, token))
-    await this.allowed(grant.user_id, 'trial_note_query')
-    const notes = z.object({ items: z.array(remoteNote).max(100) }).strict().parse(
-      await this.remote(`/v1/notes?owner=${encodeURIComponent(grant.user_id)}`, 'GET'))
-    if (notes.items.some(item => item.owner !== grant.user_id)) throw new PlatformError(502, 'external_scope_mismatch')
-    return notes
+    return transaction(this.pool, async client => {
+      await this.allowed(client, grant.user_id, 'trial_note_query')
+      const notes = z.object({ items: z.array(remoteNote).max(100) }).strict().parse(
+        await this.remote(`/v1/notes?owner=${encodeURIComponent(grant.user_id)}`, 'GET'))
+      if (notes.items.some(item => item.owner !== grant.user_id)) throw new PlatformError(502, 'external_scope_mismatch')
+      return notes
+    })
   }
 
   /** Persist the exact action before the tool returns a pending receipt. */
@@ -74,9 +80,7 @@ export class ConnectorService {
     const digest = hash({ action: 'trial_note_append', request })
     return transaction(this.pool, async client => {
       const grant = await this.tasks.authorized(client, token)
-      const permission = await client.query<{ enabled: boolean }>(
-        'SELECT enabled FROM pe_connector_permissions WHERE user_id=$1 AND capability=$2', [grant.user_id, 'trial_note_append'])
-      if (!permission.rows[0]?.enabled) throw new PlatformError(403, 'connector_permission_denied')
+      await this.allowed(client, grant.user_id, 'trial_note_append')
       const prior = await client.query<ActionRow>(
         'SELECT * FROM pe_connector_actions WHERE operation_id=$1 AND call_id=$2', [grant.operation_id, callId])
       if (prior.rows[0]) {
@@ -163,15 +167,21 @@ export class ConnectorService {
       try { note = remoteNote.parse(await this.remote(`/v1/actions/${action.id}`, 'GET')) }
       catch (error) { if (!(error instanceof PlatformError && error.status === 404)) throw error }
       if (!note) {
-        await this.allowed(action.user_id, 'trial_note_append')
-        note = remoteNote.parse(await this.remote('/v1/notes', 'POST', { owner: action.user_id, text: action.request.text }, action.id))
+        note = await transaction(this.pool, async client => {
+          await this.allowed(client, action.user_id, 'trial_note_append')
+          return remoteNote.parse(await this.remote('/v1/notes', 'POST',
+            { owner: action.user_id, text: action.request.text }, action.id))
+        })
       }
       if (note.actionId !== action.id || note.owner !== action.user_id || note.text !== action.request.text) {
         await this.settle(action, 'failed', null, 'external_conflict'); return
       }
       await this.settle(action, 'succeeded', { actionId: note.actionId, text: note.text, createdAt: note.createdAt }, null)
     } catch (error) {
-      if (error instanceof PlatformError && error.status === 403) await this.settle(action, 'failed', null, 'connector_permission_denied')
+      if (error instanceof PlatformError && error.status === 403) {
+        await this.settle(action, 'failed', null, error.code === 'plugin_disabled'
+          ? 'plugin_disabled' : 'connector_permission_denied')
+      }
       else if (error instanceof PlatformError && [400, 409].includes(error.status)) await this.settle(action, 'failed', null, 'external_rejected')
       else await this.settle(action, 'uncertain', null, 'external_unconfirmed')
     }

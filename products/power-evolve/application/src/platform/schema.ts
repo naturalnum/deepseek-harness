@@ -335,3 +335,29 @@ CREATE TABLE pe_skill_upload_intents (
 CREATE INDEX pe_skill_upload_intents_expiry ON pe_skill_upload_intents(expires_at);
 UPDATE pe_schema SET version=12 WHERE version=11;
 `
+
+/** User-controlled built-in Plugin state, separate from platform connector capabilities. */
+export const schemaV13 = `
+CREATE TABLE pe_user_plugins (
+  user_id uuid NOT NULL REFERENCES pe_users(id),
+  plugin_id text NOT NULL CHECK (plugin_id IN ('notes')),
+  enabled boolean NOT NULL DEFAULT true,
+  revision integer NOT NULL DEFAULT 1 CHECK (revision>0),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(user_id,plugin_id)
+);
+CREATE TABLE pe_plugin_mutations (
+  user_id uuid NOT NULL,
+  plugin_id text NOT NULL,
+  request_id uuid NOT NULL,
+  request_digest text NOT NULL CHECK (request_digest ~ '^[a-f0-9]{64}$'),
+  result_enabled boolean NOT NULL,
+  result_revision integer NOT NULL CHECK (result_revision>0),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(user_id,request_id),
+  FOREIGN KEY(user_id,plugin_id) REFERENCES pe_user_plugins(user_id,plugin_id)
+);
+INSERT INTO pe_user_plugins(user_id,plugin_id,enabled,revision)
+  SELECT id,'notes',true,1 FROM pe_users;
+UPDATE pe_schema SET version=13 WHERE version=12;
+`
