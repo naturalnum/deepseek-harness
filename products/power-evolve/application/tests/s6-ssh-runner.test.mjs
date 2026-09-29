@@ -102,6 +102,8 @@ test('policy precedes Pod, canary precedes credential, and request is observed b
   assert.equal(callPod.spec.automountServiceAccountToken, false)
   assert.equal(callPod.spec.containers[0].securityContext.readOnlyRootFilesystem, true)
   assert.equal(callPod.spec.containers[0].securityContext.runAsNonRoot, true)
+  assert.deepEqual(callPod.spec.containers[0].env.find(item => item.name === 'CONNECTOR_RUNNER_REFUSED_PROVES_DENIAL'),
+    { name: 'CONNECTOR_RUNNER_REFUSED_PROVES_DENIAL', value: '1' })
   assert.equal(callPod.spec.volumes.some(volume => volume.hostPath || volume.persistentVolumeClaim), false)
   assert.equal(JSON.stringify(kube.events.filter(event => !/\/proxy\/calls$/u.test(event.path))).includes(password), false)
   assert.equal(kube.events.some(event => /-check:8080\/proxy\/calls$/u.test(event.path)), true)

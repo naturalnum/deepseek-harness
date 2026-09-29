@@ -174,7 +174,10 @@ export class SshRunnerOrchestrator {
           imagePullPolicy: this.config.imagePullPolicy ?? 'IfNotPresent',
           ports: [{ name: 'http', containerPort: 8080 }],
           env: [{ name: 'CONNECTOR_RUNNER_ALLOWED_DESTINATIONS', value: keyOf(target.ip, target.port) },
-            { name: 'CONNECTOR_RUNNER_FORBIDDEN_PROBE', value: keyOf(this.config.forbiddenProbe.ip, this.config.forbiddenProbe.port) }],
+            { name: 'CONNECTOR_RUNNER_FORBIDDEN_PROBE', value: keyOf(this.config.forbiddenProbe.ip, this.config.forbiddenProbe.port) },
+            // This cluster reports denied TCP as ECONNREFUSED. The Platform
+            // independently proves the listener is live before trusting it.
+            { name: 'CONNECTOR_RUNNER_REFUSED_PROVES_DENIAL', value: '1' }],
           readinessProbe: { tcpSocket: { port: 8080 }, periodSeconds: 1, timeoutSeconds: 1 },
           resources: { requests: { cpu: '50m', memory: '96Mi' }, limits: { cpu: '500m', memory: '384Mi' } },
           securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true,
@@ -199,6 +202,7 @@ export class SshRunnerOrchestrator {
         try {
           const health = await this.runner<Health>(name, this.token(callId, role), 'GET', '/health')
           if (health.ready && uuid.test(health.instanceId)) {
+            if (!await this.probeLive()) throw new SshRunnerBlocked('connector_runner_probe_unavailable')
             const current = await this.get<Pod>('pods', name)
             if (current?.metadata.uid !== pod.metadata.uid || current.metadata.deletionTimestamp
               || (current.status?.containerStatuses?.[0]?.restartCount ?? 0) !== 0) {
