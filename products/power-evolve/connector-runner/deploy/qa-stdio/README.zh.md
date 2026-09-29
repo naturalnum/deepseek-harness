@@ -23,7 +23,7 @@ node --import tsx/esm products/power-evolve/connector-runner/deploy/qa-stdio/run
 ```sh
 export PE_STDIO_TRIAL_PRIVATE_DIR="$HOME/.config/power-evolve/shared-host-native-s6-stdio-qa"
 node --import tsx/esm products/power-evolve/connector-runner/deploy/qa-stdio/run.mjs
-# 按其他真实模型试用的方式，将有效的 model.env 放入该私密目录。
+# Put a valid model.env in that private directory as for the other real-model trials.
 export PE_PRIVATE_DIR="$PE_STDIO_TRIAL_PRIVATE_DIR"
 export PE_TRIAL_NAME=native-s6-stdio-qa
 export PE_DATABASE_PORT=18532 PE_HOST_PORT=19350 PE_PLATFORM_PORT=19351 PE_TARGET_PORT=19352

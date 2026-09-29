@@ -1,5 +1,7 @@
 # PowerEvolve S7d deployment candidate
 
+English | [中文](README.zh.md)
+
 This directory renders a **candidate**, not a released production deployment. It runs the existing DSH Host and Platform bundles as two independent, two-replica Deployments. The Host uses an internal Platform Service for server-side calls and exposes its own HTTPS Origin; browser calls to Platform use a separate HTTPS Origin. The Platform alone gets PostgreSQL credentials, provider credentials, a shared POSIX volume, and a projected Kubernetes ServiceAccount token. Sandbox Pods run in a separate namespace without a ServiceAccount token.
 
 The S7b `hostPath` and static kubeconfig trial remains available. Production configuration selects a PVC and an in-cluster, rotating ServiceAccount token. The Platform refuses execution configuration with both a node path and a PVC (or neither). Each Sandbox mounts only its Session Workspace, its user's Home, and its user's read-only Skill package subdirectory from the runner namespace PVC. The Platform compares those subpaths against the Sandbox and live Pod before use.

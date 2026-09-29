@@ -5,3 +5,6 @@
 /disposable-k3d-stdio-mcp-acceptance-check:
   en: 0b00d3d3dc24a65d
   zh: f31bfb8cabe181b8
+/disposable-k3d-stdio-mcp-acceptance-check/native-browser-and-real-model-acceptance:
+  en: f308c697743ed765
+  zh: 4be9e4a744918c5f
