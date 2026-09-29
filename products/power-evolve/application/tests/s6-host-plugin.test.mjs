@@ -10,11 +10,13 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { spawn } from 'node:child_process'
+import { createRequire } from 'node:module'
 import { setTimeout as delay } from 'node:timers/promises'
 import yaml from 'js-yaml'
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url))
 const product = join(root, 'products/power-evolve')
+const require = createRequire(new URL('../package.json', import.meta.url))
 const manifestSchema = yaml.DEFAULT_SCHEMA.extend(new yaml.Type('tag:yaml.org,2002:js', {
   kind: 'scalar', construct: value => value,
 }))
@@ -39,6 +41,7 @@ test('native Host plugin RPC forwards only authenticated, strict user-scoped fie
   const directory = await mkdtemp(join(tmpdir(), 'pe-s6-host-plugin-'))
   let host
   let platform
+  let publicPlatform
   let proxy
   t.after(async () => {
     if (host && host.exitCode === null && host.signalCode === null) {
@@ -51,6 +54,10 @@ test('native Host plugin RPC forwards only authenticated, strict user-scoped fie
       platform.closeAllConnections()
       await new Promise(resolve => platform.close(resolve))
     }
+    if (publicPlatform) {
+      publicPlatform.closeAllConnections()
+      await new Promise(resolve => publicPlatform.close(resolve))
+    }
     if (proxy) {
       proxy.closeAllConnections()
       await new Promise(resolve => proxy.close(resolve))
@@ -62,6 +69,11 @@ test('native Host plugin RPC forwards only authenticated, strict user-scoped fie
     token: randomBytes(32).toString('base64url') }))
   const mcpIds = new Map(users.map(user => [user.token, randomUUID()]))
   const loginToken = randomBytes(32).toString('base64url')
+  const issuedLoginTokens = new Set([loginToken])
+  const artifactId = randomUUID(), redirectArtifactId = randomUUID()
+  const artifactBytes = Buffer.from('internal artifact bytes')
+  const sessionId = randomUUID()
+  let revoked = false
   const calls = []
   platform = createServer(async (request, response) => {
     const answer = (status, value) => {
@@ -71,18 +83,53 @@ test('native Host plugin RPC forwards only authenticated, strict user-scoped fie
     try {
       const path = new URL(request.url, 'http://127.0.0.1').pathname
       const token = request.headers.authorization?.replace(/^Bearer /, '')
-      const body = JSON.parse(Buffer.concat(await Array.fromAsync(request)).toString('utf8'))
-      if (path === '/runtime/claim') { answer(token === workerToken ? 200 : 401, null); return }
-      if (path === '/identity/exchange') {
-        answer(token === loginToken ? 200 : 401, token === loginToken ? { token: users[0].token } : { error: 'unauthorized' })
+      if (request.method === 'GET' && path === `/artifacts/${redirectArtifactId}/content`) {
+        response.writeHead(302, { location: `${platformOrigin}/artifacts/${artifactId}/content` })
+        response.end()
         return
       }
-      const user = users.find(item => item.token === token)
+      if (request.method === 'GET' && path === `/artifacts/${artifactId}/content`) {
+        calls.push({ path, token })
+        if (token !== users[0].token || revoked) { answer(404, { error: 'artifact_not_found' }); return }
+        response.writeHead(200, { 'content-type': 'application/octet-stream',
+          'content-length': String(artifactBytes.length), 'content-disposition': 'attachment; filename="fixture.txt"' })
+        response.end(artifactBytes)
+        return
+      }
+      const body = JSON.parse(Buffer.concat(await Array.fromAsync(request)).toString('utf8'))
+      if (path === '/runtime/claim') { answer(token === workerToken ? 200 : 401, null); return }
+      if (path === '/identity/login') {
+        const issued = randomBytes(32).toString('base64url')
+        issuedLoginTokens.add(issued)
+        answer(200, { token: issued }); return
+      }
+      if (path === '/identity/exchange') {
+        const accepted = issuedLoginTokens.delete(token)
+        answer(accepted ? 200 : 401, accepted ? { token: users[0].token } : { error: 'unauthorized' })
+        return
+      }
+      const user = revoked ? undefined : users.find(item => item.token === token)
       if (!user) { answer(401, { error: 'unauthorized' }); return }
+      if (path === '/identity/logout') { revoked = true; answer(200, { ok: true }); return }
       if (path === '/identity/me') {
         answer(200, { userId: user.userId, username: user.username,
           settings: { model: 'fixture', maxTokens: 32, revision: 1 } })
         return
+      }
+      if (path === '/native/sessions/list') {
+        calls.push({ path, token, body })
+        answer(200, { items: user.username === 'alice' ? [{ sessionId, updatedAt: 1,
+          agentAvailable: true, running: false, blank: false }] : [] }); return
+      }
+      if (path === '/native/sessions/snapshot') {
+        calls.push({ path, token, body })
+        answer(body.address?.sessionId === sessionId && user.username === 'alice' ? 200 : 404,
+          body.address?.sessionId === sessionId && user.username === 'alice'
+            ? { cursor: -1, records: [] } : { error: 'session_not_found' }); return
+      }
+      if (path === '/native/sessions/after') {
+        calls.push({ path, token, body })
+        answer(200, { events: [] }); return
       }
       if (path === '/plugins/list' || path === '/plugins/notes/set-enabled') {
         calls.push({ path, token, body })
@@ -119,7 +166,20 @@ test('native Host plugin RPC forwards only authenticated, strict user-scoped fie
       answer(404, { error: 'not_found' })
     } catch (_error) { answer(500, { error: 'fixture_error' }) }
   })
-  const platformOrigin = await listen(platform)
+  const platformInternalUrl = await listen(platform)
+  const publicRequests = []
+  publicPlatform = createServer((request, response) => {
+    publicRequests.push({ method: request.method, path: request.url })
+    const upstream = httpRequest(new URL(request.url, platformInternalUrl), {
+      method: request.method, headers: request.headers,
+    }, fromPlatform => {
+      response.writeHead(fromPlatform.statusCode, fromPlatform.headers)
+      fromPlatform.pipe(response)
+    })
+    upstream.on('error', () => response.destroy())
+    request.pipe(upstream)
+  })
+  const platformOrigin = await listen(publicPlatform)
   const workerToken = randomBytes(32).toString('base64url')
   await writeFile(join(directory, 'worker-token'), workerToken, { mode: 0o600 })
 
@@ -148,7 +208,7 @@ test('native Host plugin RPC forwards only authenticated, strict user-scoped fie
   const readyFile = join(home, 'ready.json')
   await writeFile(join(profile, 'cordis.patch.yml'), yaml.dump([
     update('web-server', { port: 0 }),
-    update('power-evolve-runtime', { platformUrl: platformOrigin, workerTokenFile: join(directory, 'worker-token') }),
+    update('power-evolve-runtime', { platformUrl: platformInternalUrl, workerTokenFile: join(directory, 'worker-token') }),
     update('power-evolve-host', { origin: hostOrigin, platformOrigin, readyFile, pollMs: 50 }),
   ]))
   const logPath = join(directory, 'host.log')
@@ -232,4 +292,86 @@ test('native Host plugin RPC forwards only authenticated, strict user-scoped fie
     {}, {}, mcpInstall, mcpToggle, mcpToggle, { connectionId: mcpIds.get(users[0].token) },
     { connectionId: mcpIds.get(users[0].token) }, mcpToggle,
   ])
+
+  assert.equal(publicRequests.length, 0, 'Host RPC used only the internal Platform URL')
+  const config = await (await fetch(`${hostOrigin}/config`)).json()
+  assert.equal(config.loginUrl, `${platformOrigin}/login`)
+  assert.equal(config.approvalUrl, `${platformOrigin}/approval`)
+  const nativePage = await fetch(`${hostOrigin}/native/`)
+  assert(nativePage.headers.get('content-security-policy').includes(`connect-src 'self' ${platformOrigin}`))
+  const browserLogin = await fetch(`${platformOrigin}/identity/login`, { method: 'POST',
+    headers: { 'content-type': 'application/json' }, body: '{}' })
+  assert.equal(browserLogin.status, 200)
+  const browserToken = (await browserLogin.json()).token
+  assert.deepEqual(publicRequests, [{ method: 'POST', path: '/identity/login' }])
+  const browserExchange = await fetch(`${hostOrigin}/auth/exchange`, { method: 'POST',
+    headers: { origin: platformOrigin, 'content-type': 'application/json' },
+    body: JSON.stringify({ token: browserToken }) })
+  assert.equal(browserExchange.status, 200)
+  assert.equal(browserExchange.headers.get('access-control-allow-origin'), platformOrigin)
+  const productCookie = browserExchange.headers.getSetCookie()
+    .find(value => value.includes('Path=/api/powerEvolve')).split(';')[0]
+  const nativeCookie = browserExchange.headers.getSetCookie()
+    .find(value => value.includes('Path=/native/api')).split(';')[0]
+  const nativeRequest = (cookie, rpcId = randomUUID()) => fetch(`${hostOrigin}/native/api/session/list`, {
+    method: 'POST', headers: { origin: hostOrigin, cookie, 'content-type': 'application/json' },
+    body: JSON.stringify({ type: 'client-request', rpcId, method: 'session/list',
+      payload: { args: { _request: {} } } }),
+  })
+  const ownSessions = await nativeRequest(nativeCookie)
+  assert.equal(ownSessions.status, 200)
+  assert.deepEqual((await ownSessions.json()).result.value.items.map(item => item.sessionId), [sessionId])
+  const foreignSessions = await fetch(`${hostOrigin}/native/api/session/list`, { method: 'POST',
+    headers: { origin: hostOrigin, authorization: `Bearer ${users[1].token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ type: 'client-request', rpcId: randomUUID(), method: 'session/list',
+      payload: { args: { _request: {} } } }),
+  })
+  assert.deepEqual((await foreignSessions.json()).result.value.items, [])
+  const WebSocket = createRequire(require.resolve('@deepseek-ai/dsh-api-gateway/package.json'))('ws')
+  const socket = new WebSocket(`${hostTarget.replace('http:', 'ws:')}/native/api/remote.mux`, {
+    headers: { host: new URL(hostOrigin).host, origin: hostOrigin, cookie: nativeCookie },
+  })
+  await once(socket, 'open')
+  try {
+    const streamId = randomUUID()
+    const first = new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => { cleanup(); reject(new Error('Native follow stream timed out')) }, 5000)
+      const onMessage = raw => {
+        const frame = JSON.parse(raw.toString())
+        if (frame.streamId !== streamId) return
+        cleanup(); resolve(frame)
+      }
+      const cleanup = () => { clearTimeout(timeout); socket.off('message', onMessage) }
+      socket.on('message', onMessage)
+    })
+    socket.send(JSON.stringify({ type: 'open', streamId, endpoint: 'session/follow',
+      payload: { args: { request: { address: { kind: 'session', sessionId } } } } }))
+    const frame = await first
+    assert.equal(frame.type, 'item')
+    assert.equal(frame.value.cursor, -1)
+  } finally { socket.close(); await once(socket, 'close') }
+  const download = await fetch(`${hostOrigin}/api/powerEvolve/artifacts/${artifactId}/content`, {
+    headers: { origin: hostOrigin, cookie: productCookie },
+  })
+  assert.equal(download.status, 200)
+  assert.deepEqual(Buffer.from(await download.arrayBuffer()), artifactBytes)
+  assert(calls.some(call => call.path === `/artifacts/${artifactId}/content` && call.token === users[0].token))
+  const foreignDownload = await fetch(`${hostOrigin}/api/powerEvolve/artifacts/${artifactId}/content`, {
+    headers: { origin: hostOrigin, authorization: `Bearer ${users[1].token}` },
+  })
+  assert.equal(foreignDownload.status, 404)
+  const redirected = await fetch(`${hostOrigin}/api/powerEvolve/artifacts/${redirectArtifactId}/content`, {
+    headers: { origin: hostOrigin, cookie: productCookie },
+  })
+  assert.notEqual(redirected.status, 200)
+  assert.deepEqual(publicRequests, [{ method: 'POST', path: '/identity/login' }],
+    'Host exchange, native Session and stream, and download never reached the public Platform Origin')
+  const browserLogout = await rpc('logout', null, {}, { origin: hostOrigin, cookie: productCookie })
+  assert.equal(browserLogout.status, 200)
+  assert.equal(browserLogout.headers.getSetCookie().length, 2)
+  assert.equal((await nativeRequest(nativeCookie)).status, 401)
+  assert.equal((await fetch(`${hostOrigin}/api/powerEvolve/artifacts/${artifactId}/content`, {
+    headers: { origin: hostOrigin, cookie: productCookie },
+  })).status, 401)
+  assert.equal(publicRequests.length, 1, 'logout also used only the internal Platform URL')
 })

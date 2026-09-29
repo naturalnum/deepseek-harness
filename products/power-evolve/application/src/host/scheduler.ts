@@ -28,6 +28,7 @@ const renewal = z.object({ cancelRequested: z.boolean() }).strict()
 
 /** Limits apply to active Agents, while inactive history remains in PG. */
 export interface SchedulerConfig {
+  platformOrigin: string
   concurrency: number
   pollMs: number
   renewMs: number
@@ -119,11 +120,11 @@ export class Scheduler {
       this.handles.add(handle)
       const { agent } = handle
       if (grant.source === 'user' || grant.source === 'sandbox_result' || grant.source === 'desktop_result') {
-        installConnectorTools(agent, grant, runtime)
+        installConnectorTools(agent, grant, runtime, this.config.platformOrigin)
         installExecutionTools(agent, grant, runtime)
         installPersonalMcpTool(agent, grant, runtime)
         installStdioMcpTool(agent, grant, runtime)
-        installSshExecuteTool(agent, grant, runtime)
+        installSshExecuteTool(agent, grant, runtime, this.config.platformOrigin)
       }
       if (grant.source === 'platform_action') agent.ctx.effect(() => agent.ctx.systemPrompt.section({
         name: 'power-evolve:action-result', order: 710, interpolate: false,

@@ -11,6 +11,8 @@
 
 `model` 使用原生 DeepSeek Messages 编解码器。它在推理前持久保存已消费输入和请求记录，然后向平台提交操作授权。`host` 通过经过身份验证的 JSON RPC 和有限额的 NDJSON 订阅，仅暴露产品 Typert 命名空间。按 Agent 装载的原生工具提供受控便签查询、审批申请，以及按本次选择的云端或桌面目标提交命令的回执。此组合没有原生操作者级全局配置、任意文件系统访问、进程工具、插件安装和执行路由。
 
+宿主的所有服务端 Platform 请求，包括凭据交换、原生会话与事件、模型调用和鉴权产物下载，都通过配置的内网 `scope.platformUrl`；产物下载不跟随重定向。浏览器跳转、上传票据、CSP、Origin 校验和审批链接使用独立的公开 `host.platformOrigin`；浏览器输入不能选择内网目标。
+
 原生 Web 的登录页可把仅保存在内存中的 Agent 凭据 POST 到宿主 `/auth/exchange`。平台原子地注销这枚凭据，并签发保留原过期时间的新凭据；宿主将新凭据写入只发往 `/native/api` 和 `/api/powerEvolve` 的 HttpOnly、SameSite=Strict Cookie。URL 和浏览器存储不包含凭据。适配器对每次产品 RPC、事件流和 WebSocket 升级调用 `powerEvolveBrowserAuth.authenticate(request)`；Cookie 请求必须来自配置的宿主 Origin，交换请求必须来自配置的平台 Origin。平台仍负责校验到期和注销。除本机回环地址外必须使用 HTTPS。原生传输层在 `/native/api` 提供受限的会话列表、创建、文本输入、取消、历史分页、投影、订阅、控制和获授权的工作区订阅基线，也提供归属会话的文件列表、状态、文本、字节预览和变更订阅。浏览器看到的路径以 `/workspace` 为根；平台按每个已鉴权会话绑定的 POSIX 工作区解析路径，并逐次核验归属。WebSocket 复用上游 Gateway 的流复用器，平台调用仍按用户授权。其余原生端点返回错误，宿主不开放上游操作员接口。
 
 <a id="trusted-platform"></a>

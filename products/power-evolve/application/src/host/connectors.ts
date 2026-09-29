@@ -10,7 +10,7 @@ const noteList = z.object({ items: z.array(note).max(100) }).strict()
 const receipt = z.object({ actionId: z.uuid(), state: z.string(), text: z.string() }).passthrough()
 
 /** Register only on this Agent's child context, never on the shared host root. */
-export function installConnectorTools(agent: Agent, grant: Grant, runtime: RuntimeScope): void {
+export function installConnectorTools(agent: Agent, grant: Grant, runtime: RuntimeScope, platformOrigin: string): void {
   agent.ctx.effect(() => agent.ctx.tools.register(defineTool({
     name: 'trial_notes_list',
     description: 'List this user\'s notes from the controlled remote trial API. This is a read-only network call and needs no sandbox.',
@@ -37,7 +37,7 @@ export function installConnectorTools(agent: Agent, grant: Grant, runtime: Runti
         callId: String(exec.callId), text: args.text,
       }))
       return { actionId: response.actionId, state: response.state, text: response.text,
-        approvalUrl: new URL('/approval', runtime.config.platformUrl).toString() }
+        approvalUrl: new URL('/approval', platformOrigin).toString() }
     },
   })))
 }

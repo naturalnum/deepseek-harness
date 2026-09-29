@@ -253,8 +253,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       if (req.method === 'GET' && artifactContent) {
         const artifactId = z.uuid().parse(artifactContent[1])
         const credential = await browserAuth.authenticate(req, true)
-        const upstream = await fetch(`${config.platformOrigin}/artifacts/${artifactId}/content`, {
-          headers: { authorization: `Bearer ${credential.token}` }, signal: abort.signal,
+        const upstream = await fetch(new URL(`/artifacts/${artifactId}/content`, ctx.powerEvolveRuntime.config.platformUrl), {
+          headers: { authorization: `Bearer ${credential.token}` }, signal: abort.signal, redirect: 'error',
         })
         if (!upstream.ok || !upstream.body) throw new PlatformError(upstream.status === 404 ? 404 : 503, 'artifact_unavailable')
         const length = Number(upstream.headers.get('content-length'))

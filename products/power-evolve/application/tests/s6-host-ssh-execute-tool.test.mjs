@@ -19,13 +19,13 @@ test('only a pinned user cloud grant proposes the exact command with its native 
   const selected = { connectionId, revision: 4, credentialRevision: 2,
     displayName: 'QA', host: 'fixture.example.test', port: 2222, username: 'alice' }
   const grant = { source: 'user', target: { kind: 'cloud' }, token, sshConnections: [selected] }
-  const calls = [], runtime = { config: { platformUrl: 'https://platform.example.test' },
+  const calls = [], runtime = { config: { platformUrl: 'http://platform.internal.test' },
     async call(path, supplied, body) {
       calls.push({ path, supplied, body })
       return { actionId, state: 'pending', fingerprint: 'a'.repeat(64) }
     } }
   const { agent, registered, prompts } = agentTools()
-  installSshExecuteTool(agent, grant, runtime)
+  installSshExecuteTool(agent, grant, runtime, 'https://platform.example.test')
   assert.deepEqual(registered.map(value => value.name), ['ssh_execute_propose'])
   assert.equal(prompts.length, 1)
   assert.match(prompts[0].text, /fixture\.example\.test:2222/u)
@@ -47,7 +47,7 @@ test('only a pinned user cloud grant proposes the exact command with its native 
     { ...grant, target: { kind: 'desktop' } },
   ]) {
     const next = agentTools()
-    installSshExecuteTool(next.agent, variant, runtime)
+    installSshExecuteTool(next.agent, variant, runtime, 'https://platform.example.test')
     assert.equal(next.registered.length, 0)
   }
 })
@@ -57,10 +57,10 @@ test('Host refuses malformed platform receipts before presenting them to the mod
   const grant = { source: 'user', target: { kind: 'cloud' }, token: 'grant',
     sshConnections: [{ connectionId, revision: 1, credentialRevision: 1 }] }
   let result
-  const runtime = { config: { platformUrl: 'https://platform.example.test' },
+  const runtime = { config: { platformUrl: 'http://platform.internal.test' },
     async call() { return result } }
   const { agent, registered } = agentTools()
-  installSshExecuteTool(agent, grant, runtime)
+  installSshExecuteTool(agent, grant, runtime, 'https://platform.example.test')
   for (result of [
     { actionId: randomUUID(), state: 'pending', fingerprint: 'a'.repeat(64), credential: 'secret' },
     { actionId: randomUUID(), state: 'pending', fingerprint: 'plain-sha256' },

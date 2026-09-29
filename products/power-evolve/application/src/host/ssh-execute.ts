@@ -10,7 +10,7 @@ const receipt = z.object({ actionId: z.uuid(), state: z.enum(['pending', 'reject
   callId: z.uuid().optional(), errorCode: z.string().max(100).optional() }).strict()
 
 /** Install only on this Agent's child context for its pinned cloud connections. */
-export function installSshExecuteTool(agent: Agent, grant: Grant, runtime: RuntimeScope): void {
+export function installSshExecuteTool(agent: Agent, grant: Grant, runtime: RuntimeScope, platformOrigin: string): void {
   if (grant.source !== 'user' || grant.target.kind !== 'cloud' || !grant.sshConnections.length) return
   const connections = grant.sshConnections.map(item =>
     `${item.connectionId}@${item.username}@${item.host}:${item.port}`).join('; ')
@@ -38,7 +38,7 @@ export function installSshExecuteTool(agent: Agent, grant: Grant, runtime: Runti
         command: args.command,
       }))
       return { actionId: value.actionId, state: value.state, fingerprint: value.fingerprint,
-        approvalUrl: new URL('/approval', runtime.config.platformUrl).toString() }
+        approvalUrl: new URL('/approval', platformOrigin).toString() }
     },
   })))
 }
