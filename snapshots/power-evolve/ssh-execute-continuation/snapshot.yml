@@ -1,0 +1,8 @@
+version: 1
+scenario: ssh-execute-continuation
+profile: power-evolve-host
+composition: shared-host-platform-pg
+recording: authored
+header:
+  class: power-evolve-ssh-execute
+  pin: true

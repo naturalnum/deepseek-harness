@@ -5,6 +5,7 @@ import assert from 'node:assert/strict'
 import yaml from 'js-yaml'
 const directory = new URL('../../../../snapshots/power-evolve/conversation/', import.meta.url)
 const canonical = new URL('session.v4.jsonl', directory)
+const sshDirectory = new URL('../ssh-execute-continuation/', directory)
 const record = process.env.PE_RECORD_SNAPSHOT === '1'
 export async function recordedConversation() {
   const manifest = yaml.load(await readFile(new URL('snapshot.yml', directory), 'utf8'))
@@ -22,7 +23,20 @@ export async function recordedConversation() {
     throw error
   }
 }
-export async function compareRecordedSession(page, expected) {
+export async function recordedSshContinuation() {
+  const manifest = yaml.load(await readFile(new URL('snapshot.yml', sshDirectory), 'utf8'))
+  assert.deepEqual(manifest, { version: 1, scenario: 'ssh-execute-continuation', profile: 'power-evolve-host',
+    composition: 'shared-host-platform-pg', recording: 'authored',
+    header: { class: 'power-evolve-ssh-execute', pin: true } })
+  try {
+    return { rows: (await readFile(new URL('session.v4.jsonl', sshDirectory), 'utf8'))
+      .trim().split('\n').map(line => JSON.parse(line)) }
+  } catch (error) {
+    if (record && error.code === 'ENOENT') return { rows: null }
+    throw error
+  }
+}
+export async function compareRecordedSession(page, expected, targetDirectory = directory) {
   const ids = new Map([[page.header.id,'{{session:1}}']])
   const rpcIds = new Map()
   const identity = value => { if (!ids.has(value)) ids.set(value,`{{message:${ids.size}}}`); return ids.get(value) }
@@ -49,10 +63,12 @@ export async function compareRecordedSession(page, expected) {
   })]
   const system = page.events.filter(event=>event.type==='system/message').flatMap(event=>event.data.message.content.filter(block=>block.type==='text').map(block=>block.text)).join('\n')+'\n'
   if(record) {
-    await writeFile(canonical,rows.map(row=>JSON.stringify(row)).join('\n')+'\n')
-    await writeFile(new URL('system-prompt.expected.md',directory),system)
+    await writeFile(new URL('session.v4.jsonl', targetDirectory),rows.map(row=>JSON.stringify(row)).join('\n')+'\n')
+    await writeFile(new URL('system-prompt.expected.md',targetDirectory),system)
   } else {
-    assert.deepEqual(rows,expected.rows,`Recorded native Session differs: ${fileURLToPath(canonical)}`)
-    assert.equal(system,await readFile(new URL('system-prompt.expected.md',directory),'utf8'))
+    const target = new URL('session.v4.jsonl', targetDirectory)
+    assert.deepEqual(rows,expected.rows,`Recorded native Session differs: ${fileURLToPath(target)}`)
+    assert.equal(system,await readFile(new URL('system-prompt.expected.md',targetDirectory),'utf8'))
   }
 }
+export { sshDirectory }

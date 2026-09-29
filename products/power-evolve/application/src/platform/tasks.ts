@@ -2,7 +2,7 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import type { Pool, PoolClient } from 'pg'
 import { SESSION_FORMAT_VERSION, SessionId, type SessionHeader } from '@deepseek-ai/dsh-session'
-import { executionTarget, grant, mcpSelection, stdioMcpSelection, skillSelection, PlatformError, settings,
+import { executionTarget, grant, mcpSelection, stdioMcpSelection, sshSelection, skillSelection, PlatformError, settings,
   type ExecutionTarget, type Grant, type Identity, type RequestId, type WorkspaceId } from '../contracts.ts'
 import { z } from 'zod'
 import { digest } from './identity.ts'
@@ -26,6 +26,7 @@ export interface TaskLimits {
   readonly executionEnabled?: boolean
   readonly mcpEnabled?: boolean
   readonly stdioMcpEnabled?: boolean
+  readonly sshEnabled?: boolean
 }
 
 /** Platform-owned state machine. Host callers never choose a task's user identity. */
@@ -130,13 +131,21 @@ export class TaskStore {
           'SELECT id AS "connectionId",revision FROM pe_stdio_mcp_connections WHERE user_id=$1 AND enabled=true',
           [user.userId]) : { rows: [] }
       const stdio = z.array(stdioMcpSelection).max(1).parse(stdioRows.rows)
+      const sshRows = this.limits.sshEnabled && target.kind === 'cloud'
+        ? await client.query<{ connectionId: string; revision: number; credentialRevision: number;
+            displayName: string; host: string; port: number; username: string }>(
+          `SELECT id AS "connectionId",revision,credential_revision AS "credentialRevision",
+            display_name AS "displayName",host,port,username
+           FROM pe_ssh_connections WHERE user_id=$1 AND enabled=true ORDER BY created_at,id`, [user.userId])
+        : { rows: [] }
+      const ssh = z.array(sshSelection).max(8).parse(sshRows.rows)
       const id = randomUUID()
       await client.query(
         `INSERT INTO pe_operations(id,session_id,request_id,input,settings,skill_selection,mcp_selection,
-          stdio_mcp_selection,execution_target,state)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'queued')`,
+          stdio_mcp_selection,ssh_selection,execution_target,state)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'queued')`,
         [id, session, requestId, text, config, JSON.stringify(selection), JSON.stringify(mcp),
-          JSON.stringify(stdio), JSON.stringify(target)],
+          JSON.stringify(stdio), JSON.stringify(ssh), JSON.stringify(target)],
       )
       await client.query('SELECT pg_notify(\'pe_tasks\',$1)', [session])
       return { accepted: true, operationId: id, state: 'queued' }
@@ -174,14 +183,17 @@ export class TaskStore {
     return transaction(this.pool, async client => {
       const candidate = await client.query<{
         id: string; session_id: string; user_id: string; request_id: string; input: string; settings: unknown;
-        skill_selection: unknown; mcp_selection: unknown; stdio_mcp_selection: unknown; execution_target: unknown;
-        source: 'user' | 'platform_action' | 'sandbox_result' | 'desktop_result' | 'stdio_mcp_result';
+        skill_selection: unknown; mcp_selection: unknown; stdio_mcp_selection: unknown; ssh_selection: unknown;
+        execution_target: unknown;
+        source: 'user' | 'platform_action' | 'sandbox_result' | 'desktop_result' | 'stdio_mcp_result'
+          | 'ssh_execute_result';
         source_action_id: string | null; source_execution_id: string | null; source_desktop_execution_id: string | null;
         source_stdio_mcp_call_id: string | null;
+        source_ssh_execute_action_id: string | null;
       }>(
         `SELECT o.id,o.session_id,s.user_id,o.request_id,o.input,o.settings,o.skill_selection,o.mcp_selection,
-         o.stdio_mcp_selection,o.source,o.source_action_id,o.source_execution_id,
-         o.source_desktop_execution_id,o.source_stdio_mcp_call_id,o.execution_target
+         o.stdio_mcp_selection,o.ssh_selection,o.source,o.source_action_id,o.source_execution_id,
+         o.source_desktop_execution_id,o.source_stdio_mcp_call_id,o.source_ssh_execute_action_id,o.execution_target
          FROM pe_operations o JOIN pe_sessions s ON s.id=o.session_id JOIN pe_users u ON u.id=s.user_id
          WHERE o.state IN ('queued','running') AND (s.lease_until IS NULL OR s.lease_until<=now())
          AND (SELECT count(*) FROM pe_sessions active WHERE active.user_id=s.user_id AND active.lease_until>now())<$1
@@ -213,9 +225,11 @@ export class TaskStore {
         text: row.input, settings: settings.parse(row.settings), selection: z.array(skillSelection).max(8).parse(row.skill_selection),
         mcpConnections: z.array(mcpSelection).max(1).parse(row.mcp_selection),
         stdioMcpConnections: z.array(stdioMcpSelection).max(1).parse(row.stdio_mcp_selection),
+        sshConnections: z.array(sshSelection).max(8).parse(row.ssh_selection),
         source: row.source, sourceActionId: row.source_action_id,
         sourceExecutionId: row.source_execution_id, sourceDesktopExecutionId: row.source_desktop_execution_id,
         sourceStdioMcpCallId: row.source_stdio_mcp_call_id,
+        sourceSshExecuteActionId: row.source_ssh_execute_action_id,
         target: executionTarget.parse(row.execution_target), executionEnabled: this.limits.executionEnabled ?? false,
         token, epoch,
       })

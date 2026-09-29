@@ -79,6 +79,10 @@ export const skillSelection = z.object({
 }).strict()
 export const mcpSelection = z.object({ connectionId: z.uuid(), revision: z.number().int().positive() }).strict()
 export const stdioMcpSelection = z.object({ connectionId: z.uuid(), revision: z.number().int().positive() }).strict()
+export const sshSelection = z.object({ connectionId: z.uuid(), revision: z.number().int().positive(),
+  credentialRevision: z.number().int().positive(), displayName: z.string().min(1).max(100),
+  host: z.string().min(1).max(253), port: z.number().int().min(1).max(65_535),
+  username: z.string().min(1).max(100) }).strict()
 export const sshCreateTicketRequest = z.object({
   requestId, displayName: z.string().trim().min(1).max(100),
   host: z.string().trim().min(1).max(253), port: z.number().int().min(1).max(65_535),
@@ -91,6 +95,17 @@ export const sshToggleRequest = z.object({ connectionId: z.uuid(), requestId,
 export const sshCheckRequest = z.object({ requestId, connectionId: z.uuid(),
   connectionRevision: z.number().int().positive() }).strict()
 export const sshCallRefRequest = z.object({ callId: z.uuid() }).strict()
+export const sshExecuteProposeRequest = z.object({ callKey: z.string().min(1).max(100),
+  connectionId: z.uuid(), connectionRevision: z.number().int().positive(),
+  credentialRevision: z.number().int().positive(), command: z.string().min(1).max(16_384) }).strict()
+export const sshExecuteRefRequest = z.object({ actionId: z.uuid() }).strict()
+export const sshExecuteView = z.object({ actionId: z.uuid(),
+  state: z.enum(['pending', 'rejected', 'approved', 'succeeded', 'failed', 'uncertain', 'cancelled']),
+  fingerprint: z.string().regex(/^[a-f0-9]{64}$/u), callId: z.uuid().optional(),
+  errorCode: z.string().regex(/^[a-z][a-z0-9_]{0,99}$/u).optional(),
+  result: z.object({ kind: z.literal('ssh.execute'), exitCode: z.number().int().nullable(),
+    signal: z.string().max(100).nullable(), stdout: z.string(), stderr: z.string() }).strict().optional(),
+}).strict()
 export const sshCheckView = z.object({ callId: z.uuid(),
   state: z.enum(['accepted', 'preparing', 'ready', 'dispatch-intent', 'running',
     'succeeded', 'failed', 'uncertain', 'cancelled']),
@@ -106,17 +121,20 @@ export const grant = z.object({
   token: z.string().min(32).max(256),
   epoch: z.number().int().positive(),
   settings,
-  source: z.enum(['user', 'platform_action', 'sandbox_result', 'desktop_result', 'stdio_mcp_result']).default('user'),
+  source: z.enum(['user', 'platform_action', 'sandbox_result', 'desktop_result', 'stdio_mcp_result',
+    'ssh_execute_result']).default('user'),
   sourceActionId: z.uuid().nullable().default(null),
   sourceExecutionId: z.uuid().nullable().default(null),
   sourceDesktopExecutionId: z.uuid().nullable().default(null),
   sourceStdioMcpCallId: z.uuid().nullable().default(null),
+  sourceSshExecuteActionId: z.uuid().nullable().default(null),
   target: executionTarget.default({ kind: 'cloud' }),
   executionEnabled: z.boolean().default(false),
   skills: z.array(skillSnapshot).max(8).default([]),
   selection: z.array(skillSelection).max(8).default([]),
   mcpConnections: z.array(mcpSelection).max(1).default([]),
   stdioMcpConnections: z.array(stdioMcpSelection).max(1).default([]),
+  sshConnections: z.array(sshSelection).max(8).default([]),
 }).strict()
 export type Grant = z.infer<typeof grant>
 

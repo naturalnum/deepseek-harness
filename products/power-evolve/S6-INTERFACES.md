@@ -24,7 +24,7 @@ S6 在已有原生 DSH Web 扩展中心中增加“插件”入口。可信平�
 
 第一版 Runner 协议只提供带一次性控制令牌的 `GET /health`、`POST /calls` 和 `GET /calls/{callId}`。调用正文严格区分 `ssh.inspect`、`ssh.authenticate`、`ssh.execute`，包含稳定调用 ID、请求摘要、目的地、超时和输出上限；凭据仅在认证或执行调用正文中传送，不能进入 Pod 描述、环境变量或日志。同一 Runner 中，同 ID 同摘要只返回已有状态，异摘要拒绝；Runner 重启后由平台通过 Pod UID 与 Runner 实例 ID 识别状态丢失并标记不确定。平台在发出 `POST` 前先查询 `GET`，且在 Runner 证明出口策略生效前不下发凭据或用户进程代码。Runner 镜像无通用命令 HTTP 入口，非 root、只读根文件系统、无 ServiceAccount 和用户文件挂载。
 
-平台工作者只领取其实现的调用类型。当前 SSH 认证工作者只领取 `ssh.authenticate`；`ssh.execute` 在独立执行与审批流程就绪前不会被它领取或派发。
+平台工作者只领取其实现的调用类型。SSH 认证工作者只领取 `ssh.authenticate`；独立执行工作者只领取经审批的 `ssh.execute`。任务受理固定连接及凭据修订，Agent 只提交一条确切命令；可信平台以 AES-GCM 保存命令，并要求独立审批身份核对原文、目标和带密钥的动作指纹。批准后才创建执行调用。首次带凭据派发时再次锁定连接，停用先提交则阻止派发；已提交派发意图只按 Pod UID、Runner 实例和摘要查询，绝不重发。命令、口令和结果明文不进入 `pe_ssh_calls`，有界结果只向原会话续接一次。真实双用户 k3d 审批执行路径由 `connector-runner/deploy/qa-ssh/run.mjs` 的可选独立数据库验收模式检查。
 
 SSH 连接的停用与首次凭据派发在平台数据库中串行化：派发事务锁定连接并复核启用状态、连接修订与凭据版本，之后才向 Runner 发送凭据。停用先提交时，已受理的旧调用以 `ssh_connection_changed` 失败并清理 Runner 资源。
 

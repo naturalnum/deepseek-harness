@@ -3,10 +3,20 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
+import { createRequire } from 'node:module'
 import { isAbsolute, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { Readable } from 'node:stream'
+import { identity } from '../../../application/src/contracts.ts'
+import { initializeDatabase } from '../../../application/src/platform/database.ts'
 import { KubernetesClient } from '../../../application/src/platform/kubernetes.ts'
+import { SshCallStore } from '../../../application/src/platform/ssh-calls.ts'
+import { SshConnectionService } from '../../../application/src/platform/ssh.ts'
+import { SshExecuteService } from '../../../application/src/platform/ssh-execute.ts'
 import { SshRunnerOrchestrator } from '../../../application/src/platform/ssh-runner.ts'
+import { TaskStore } from '../../../application/src/platform/tasks.ts'
+
+const { Pool } = createRequire(new URL('../../../application/package.json', import.meta.url))('pg')
 
 const cluster = process.env.PE_K3D_CLUSTER
 const context = process.env.PE_KUBE_CONTEXT
@@ -100,6 +110,108 @@ function sshFixture(serverSource) {
         ports: [{ protocol: 'TCP', port: 2222 }] }] } })
 }
 
+/** Exercise the complete approval-to-Runner path in a fresh PG database, never the stable trial. */
+async function approvedExecuteForTwoUsers(targetIp, hostKeySha256) {
+  const urlFile = process.env.PE_SSH_EXECUTE_DATABASE_URL_FILE
+  if (!urlFile) return
+  const adminUrl = (await readFile(urlFile, 'utf8')).trim()
+  const database = `pe_ssh_execute_qa_${randomBytes(9).toString('hex')}`
+  const adminPool = new Pool({ connectionString: adminUrl, max: 2 })
+  let pool, created = false, service
+  const executed = []
+  try {
+    await adminPool.query(`CREATE DATABASE "${database}"`)
+    created = true
+    const databaseUrl = new URL(adminUrl); databaseUrl.pathname = `/${database}`
+    pool = new Pool({ connectionString: databaseUrl.href, max: 12 })
+    await initializeDatabase(pool)
+    const users = [identity.parse({ userId: randomUUID(), username: 'alice' }),
+      identity.parse({ userId: randomUUID(), username: 'bob' })]
+    for (const user of users) {
+      await pool.query('INSERT INTO pe_users(id,username,password_hash,settings) VALUES($1,$2,$3,$4)',
+        [user.userId, user.username, 'test-only', { model: 'fixture', maxTokens: 64, revision: 1 }])
+      await pool.query(`INSERT INTO pe_user_models(user_id,model_id,label,max_tokens,enabled)
+        VALUES($1,'fixture','fixture',64,true)`, [user.userId])
+    }
+    const key = randomBytes(32).toString('base64url')
+    const connections = new SshConnectionService(pool, key, `${targetIp}:2222`)
+    const saved = []
+    for (const user of users) {
+      const requestId = randomUUID()
+      const ticket = await connections.issueTicket(user, { requestId,
+        displayName: `${user.username} QA server`, host: targetIp, port: 2222, username: 'qa',
+        hostKeySha256, credentialKind: 'password', sizeBytes: Buffer.byteLength(password),
+        enabled: true }, 'http://127.0.0.1:19221')
+      saved.push((await connections.upload(ticket.ticket, Readable.from([Buffer.from(password)]))).item)
+    }
+    const tasks = new TaskStore(pool, { leaseMs: 90_000, maxPendingPerUser: 8,
+      maxActivePerUser: 1, sshEnabled: true })
+    const calls = new SshCallStore(pool)
+    service = new SshExecuteService(tasks, calls, connections, orchestrator,
+      key, randomUUID(), 90_000, 250, async () => targetIp)
+    service.start()
+    for (let i = 0; i < users.length; i++) {
+      const user = users[i], connection = saved[i]
+      const session = await tasks.create(user, randomUUID())
+      await tasks.accept(user, session.sessionId, randomUUID(), 'Execute one approved SSH fixture command')
+      const grant = await tasks.claim(randomUUID())
+      if (grant.userId !== user.userId || grant.sshConnections.length !== 1
+        || grant.sshConnections[0].connectionId !== connection.connectionId) {
+        throw new Error('SSH trial task selection crossed a user boundary')
+      }
+      const proposed = await service.propose(grant.token, `qa-call-${i}`, connection.connectionId,
+        connection.revision, connection.credentialRevision, 'qa:ping')
+      await tasks.finish(grant.token, 'completed', null)
+      const reviewed = (await service.approvals(user)).items.find(item => item.actionId === proposed.actionId)
+      if (reviewed?.command !== 'qa:ping' || reviewed.fingerprint !== proposed.fingerprint
+        || (await service.approvals(users[1 - i])).items.some(item => item.actionId === proposed.actionId)) {
+        throw new Error('SSH approval did not show the exact owner-scoped command')
+      }
+      await service.decide(user, proposed.actionId, proposed.fingerprint, true)
+      const until = Date.now() + 90_000
+      let result
+      while (Date.now() < until) {
+        result = await service.status(user, proposed.actionId)
+        if (['succeeded', 'failed'].includes(result.state)) break
+        await new Promise(resolve => setTimeout(resolve, 250))
+      }
+      if (result?.state !== 'succeeded' || result.result?.stdout !== 'qa:ssh-ok\n'
+        || result.result?.exitCode !== 0) throw new Error('Approved SSH execution did not return fixture output')
+      const call = await calls.get(user, proposed.actionId)
+      if (!call.pod_uid || call.result !== null || call.kind !== 'ssh.execute') {
+        throw new Error('SSH execution status or encrypted storage is invalid')
+      }
+      executed.push(call)
+      const stored = await pool.query('SELECT command_sealed FROM pe_ssh_execute_actions WHERE id=$1',
+        [proposed.actionId])
+      if (stored.rows[0].command_sealed.includes(Buffer.from('qa:ping'))
+        || JSON.stringify(call).includes(password)) throw new Error('SSH command or password leaked into call storage')
+      const continuation = await tasks.claim(randomUUID())
+      if (continuation.sessionId !== session.sessionId
+        || continuation.sourceSshExecuteActionId !== proposed.actionId
+        || !continuation.text.includes('qa:ssh-ok')) {
+        throw new Error('SSH result did not continue its original Session')
+      }
+      await tasks.finish(continuation.token, 'completed', null)
+      await orchestrator.cleanup(proposed.actionId)
+      await calls.markCleanupComplete(proposed.actionId, call.pod_uid)
+      console.log(`Approved SSH user ${i + 1}: isolated Runner, bounded output, original Session`)
+    }
+    if (executed[0].pod_uid === executed[1].pod_uid
+      || executed[0].user_id === executed[1].user_id) throw new Error('SSH users shared a Runner identity')
+    console.log('Two user SSH approval-to-execute paths: distinct Pod UIDs and owner-scoped results')
+  } finally {
+    await service?.close()
+    for (const call of executed) {
+      try { await orchestrator.cleanup(call.id) }
+      catch (_alreadyDeleted) { /* The namespace cleanup below remains a final backstop. */ }
+    }
+    await pool?.end()
+    if (created) await adminPool.query(`DROP DATABASE IF EXISTS "${database}"`)
+    await adminPool.end()
+  }
+}
+
 let hostKey = ''
 let password = ''
 try {
@@ -191,6 +303,7 @@ try {
   }
   console.log('Pinned SSH password authentication and fixed command: succeeded')
   console.log('Forbidden listener: independently healthy; Runner egress gate ready during dispatch')
+  await approvedExecuteForTwoUsers(targetIp, hostKeySha256)
   if (retainedDir) {
     await writeFile(join(privateDir, 'ssh.json'), `${JSON.stringify({ kubeconfigFile: kubeconfig,
       namespace, image, runtimeClass: 'gvisor', ingressCidrs: `${nodeIp}/32`,

@@ -1,0 +1,7 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write products/power-evolve/connector-runner/deploy/qa-ssh/README.md
+/disposable-k3d-ssh-acceptance-check:
+  en: 9ca0aac65e0cc0cd
+  zh: ef3caa40741bd1ee

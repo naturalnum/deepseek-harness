@@ -248,6 +248,17 @@ export class SshCallStore {
     return changed.rows[0]
   }
 
+  /** A running execute call can be polled soon under a fresh epoch, without waiting for its long prepare lease. */
+  async deferRunning(lease: SshCallLease, pollMs: number): Promise<void> {
+    const changed = await this.pool.query(
+      `UPDATE pe_ssh_calls SET lease_owner=NULL,
+         lease_until=now()+$4::double precision*interval '1 millisecond',updated_at=now()
+       WHERE id=$1 AND lease_owner=$2 AND lease_epoch=$3 AND lease_until>now()
+         AND kind='ssh.execute' AND state='running' RETURNING id`,
+      [lease.callId, lease.owner, lease.epoch, pollMs])
+    if (!changed.rowCount) throw new PlatformError(409, 'ssh_call_lease_lost')
+  }
+
   /** Quarantine an unverified outcome while retaining Pod identity for lookup or deletion. */
   async markUncertain(lease: SshCallLease, expected: SshCallRow['state'], reason: string): Promise<SshCallRow> {
     if (!['preparing', 'ready', 'dispatch-intent', 'running', 'uncertain'].includes(expected)) {

@@ -17,10 +17,10 @@ const messageRequest = z.object({
   temperature: z.number().optional(), stop_sequences: z.array(z.string()).optional(),
   tools: z.array(z.object({
     name: z.enum(['trial_notes_list', 'trial_notes_append', 'cloud_exec', 'desktop_exec',
-      'mcp__personal__whoami', 'mcp__stdio__whoami']),
+      'mcp__personal__whoami', 'mcp__stdio__whoami', 'ssh_execute_propose']),
     description: z.string().max(1000), input_schema: z.record(z.string(), z.json()),
     defer_loading: z.literal(true).optional(),
-  }).strict()).max(5).optional(),
+  }).strict()).max(6).optional(),
 }).strict()
 
 export interface ModelProxyConfig {

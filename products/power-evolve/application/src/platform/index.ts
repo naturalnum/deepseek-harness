@@ -10,7 +10,7 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 import schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
 import { Pool } from 'pg'
-import { createRequest, filesListRequest, fileReadRequest, filePutRequest, sessionFilesListRequest, sessionFileReadRequest, sessionFilePutRequest, listRequest, loginRequest, modelsListRequest, pageRequest, promptRequest, sessionId, sessionRequest, settingsUpdateRequest, skillInstallRequest, skillRequest, skillToggleRequest, skillUploadTicketRequest, sshCreateTicketRequest, sshToggleRequest, sshCheckRequest, sshCallRefRequest, settings, workspaceCreateRequest, PlatformError } from '../contracts.ts'
+import { createRequest, filesListRequest, fileReadRequest, filePutRequest, sessionFilesListRequest, sessionFileReadRequest, sessionFilePutRequest, listRequest, loginRequest, modelsListRequest, pageRequest, promptRequest, sessionId, sessionRequest, settingsUpdateRequest, skillInstallRequest, skillRequest, skillToggleRequest, skillUploadTicketRequest, sshCreateTicketRequest, sshToggleRequest, sshCheckRequest, sshCallRefRequest, sshExecuteProposeRequest, sshExecuteRefRequest, settings, workspaceCreateRequest, PlatformError } from '../contracts.ts'
 import { bearer, readJson, sendFailure, sendJson } from '../http.ts'
 import { initializeDatabase } from './database.ts'
 import { hashPassword, IdentityService } from './identity.ts'
@@ -31,6 +31,7 @@ import { StdioRunnerOrchestrator } from './stdio-runner.ts'
 import { SshConnectionService } from './ssh.ts'
 import { SshCallStore } from './ssh-calls.ts'
 import { SshAuthenticationCheck } from './ssh-check.ts'
+import { SshExecuteService } from './ssh-execute.ts'
 import { SshRunnerOrchestrator } from './ssh-runner.ts'
 import { ExecutionService } from './executions.ts'
 import { DeviceService } from './devices.ts'
@@ -114,7 +115,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const identities = new IdentityService(pool, config.tokenLifetimeMs)
   const accountSettings = new AccountSettingsService(pool)
   const tasks = new TaskStore(pool, { ...config, executionEnabled, mcpEnabled: !!config.mcpUrl,
-    stdioMcpEnabled: !!config.sshRunnerKubeconfigFile })
+    stdioMcpEnabled: !!config.sshRunnerKubeconfigFile,
+    sshEnabled: !!config.sshRunnerKubeconfigFile && !!config.sshCredentialKeyFile })
   const mcp = new PersonalMcpService(tasks, config.mcpUrl, mcpToken.trim(), config.mcpTimeoutMs)
   const ssh = new SshConnectionService(pool, sshKey, config.sshDestinationAllowlist)
   const sshRunnerEnabled = config.sshRunnerKubeconfigFile.length > 0
@@ -123,7 +125,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     throw new Error('Incomplete Connector Runner configuration')
   }
   let stdioRunner: StdioRunnerOrchestrator | null = null
-  const sshCheck = sshRunnerEnabled ? await (async () => {
+  const sshServices = sshRunnerEnabled ? await (async () => {
     const kube = await KubernetesClient.fromFile(config.sshRunnerKubeconfigFile)
     const namespace = config.sshRunnerNamespace, serviceName = 'power-evolve-forbidden-listener'
     const servicePath = kube.resourcePath(namespace, 'services', serviceName)
@@ -155,9 +157,14 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       platformIngressCidrs: config.sshRunnerIngressCidrs.split(',').map(value => value.trim()),
       forbiddenProbe: { ip: probeIp, port: 8080 }, proveForbiddenListener,
     })
-    return ssh.available ? new SshAuthenticationCheck(new SshCallStore(pool), ssh, runner,
-      { ownerId: instanceId, requestKey: connectorKey.trim(), leaseMs: config.sshRunnerLeaseMs }) : null
+    if (!ssh.available) return null
+    return { execute: new SshExecuteService(tasks, new SshCallStore(pool), ssh, runner,
+      sshKey, instanceId, config.sshRunnerLeaseMs),
+    check: new SshAuthenticationCheck(new SshCallStore(pool), ssh, runner,
+      { ownerId: instanceId, requestKey: connectorKey.trim(), leaseMs: config.sshRunnerLeaseMs }) }
   })() : null
+  const sshCheck = sshServices?.check ?? null
+  const sshExecute = sshServices?.execute ?? null
   if (sshCheck) {
     const stop = new AbortController()
     const polling = (async () => {
@@ -177,6 +184,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     ctx.effect(() => async () => { stop.abort(); await polling })
   }
   const sshAvailable = ssh.available && sshCheck !== null
+  sshExecute?.start()
+  ctx.effect(() => () => sshExecute?.close())
   const stdioMcp = new StdioMcpService(tasks, stdioRunner, instanceId, config.sshRunnerLeaseMs)
   stdioMcp.start()
   ctx.effect(() => () => stdioMcp.close())
@@ -203,7 +212,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
 
   const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const path = new URL(req.url ?? '/', config.platformOrigin).pathname
-    if (req.method === 'GET' && path === '/health') { sendJson(res, { ready: true, service: 'platform', schema: 17, executionEnabled, mcpAvailable: !!config.mcpUrl, stdioMcpAvailable: stdioMcp.available, sshAvailable, instanceId }); return }
+    if (req.method === 'GET' && path === '/health') { sendJson(res, { ready: true, service: 'platform', schema: 18, executionEnabled, mcpAvailable: !!config.mcpUrl, stdioMcpAvailable: stdioMcp.available, sshAvailable, instanceId }); return }
     if (req.method === 'GET' && path === '/config') { sendJson(res, { hostUrl: config.hostOrigin }); return }
     if (req.method === 'GET' && await serveUi(path, 'login', res, config.hostOrigin)) return
     const artifactContent = /^\/artifacts\/([^/]+)\/content$/u.exec(path)
@@ -331,6 +340,20 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
           const value = z.object({ actionId: z.uuid(), fingerprint: z.string().regex(/^[a-f0-9]{64}$/), approve: z.boolean() }).strict().parse(input)
           sendJson(res, await connectors.decide(user, value.actionId, value.fingerprint, value.approve)); return
         }
+        case '/approvals/ssh-execute/list': {
+          z.object({}).strict().parse(input)
+          sendJson(res, sshExecute ? await sshExecute.approvals(user) : { items: [] }); return
+        }
+        case '/approvals/ssh-execute/decide': {
+          if (!sshExecute) throw new PlatformError(503, 'ssh_unavailable')
+          const value = z.object({ actionId: z.uuid(), fingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
+            approve: z.boolean() }).strict().parse(input)
+          sendJson(res, await sshExecute.decide(user, value.actionId, value.fingerprint, value.approve)); return
+        }
+        case '/approvals/ssh-execute/cancel': {
+          if (!sshExecute) throw new PlatformError(503, 'ssh_unavailable')
+          sendJson(res, await sshExecute.cancel(user, sshExecuteRefRequest.parse(input).actionId)); return
+        }
         case '/approvals/logout': z.object({}).strict().parse(input); await identities.logout(token); sendJson(res, { ok: true }); return
         default: throw new PlatformError(404, 'not_found')
       }
@@ -369,6 +392,12 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
           const value = z.object({ connectionId: z.uuid(), revision: z.number().int().positive(),
             callKey: z.string().min(1).max(100) }).strict().parse(input)
           sendJson(res, await stdioMcp.call(token, value.connectionId, value.revision, value.callKey)); return
+        }
+        case '/runtime/ssh-execute/propose': {
+          if (!sshExecute) throw new PlatformError(503, 'ssh_unavailable')
+          const value = sshExecuteProposeRequest.parse(input)
+          sendJson(res, await sshExecute.propose(token, value.callKey, value.connectionId,
+            value.connectionRevision, value.credentialRevision, value.command)); return
         }
         case '/runtime/connectors/prepare': {
           const value = z.object({ callId: z.string().min(1).max(100), text: z.string().trim().min(1).max(1000) }).strict().parse(input)
@@ -479,6 +508,19 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       case '/ssh/call-cancel': {
         if (!sshCheck) throw new PlatformError(503, 'ssh_unavailable')
         sendJson(res, await sshCheck.cancel(user, sshCallRefRequest.parse(input).callId)); return
+      }
+      case '/ssh/execute/status': {
+        if (!sshExecute) throw new PlatformError(503, 'ssh_unavailable')
+        sendJson(res, await sshExecute.status(user, sshExecuteRefRequest.parse(input).actionId)); return
+      }
+      case '/ssh/execute/list': {
+        if (!sshExecute) throw new PlatformError(503, 'ssh_unavailable')
+        z.object({}).strict().parse(input)
+        sendJson(res, await sshExecute.list(user)); return
+      }
+      case '/ssh/execute/cancel': {
+        if (!sshExecute) throw new PlatformError(503, 'ssh_unavailable')
+        sendJson(res, await sshExecute.cancel(user, sshExecuteRefRequest.parse(input).actionId)); return
       }
       case '/sessions/create': {
         const value = createRequest.parse(input)

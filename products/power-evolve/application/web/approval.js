@@ -3,10 +3,12 @@ import { t } from './locale.js'
 const get = id => document.getElementById(id)
 let token = sessionStorage.getItem('pe-approval-token')
 const stateLabels = { pending: t.approvalPending, rejected: t.approvalRejected, approved: t.approvalApproved,
-  dispatching: t.approvalDispatching, succeeded: t.approvalSucceeded, failed: t.approvalFailed, uncertain: t.approvalUncertain }
+  dispatching: t.approvalDispatching, succeeded: t.approvalSucceeded, failed: t.approvalFailed,
+  uncertain: t.approvalUncertain, cancelled: t.approvalCancelled }
 for (const [id, value] of Object.entries({ title: t.approvalTitle, note: t.approvalNote, 'username-label': t.username,
   'password-label': t.password, 'login-button': t.approvalLogin, refresh: t.approvalRefresh,
-  logout: t.approvalLogout, 'actions-title': t.approvals, 'permissions-title': t.approvalPermissions, back: t.approvalBack })) get(id).textContent = value
+  logout: t.approvalLogout, 'ssh-actions-title': t.approvalSshTitle,
+  'actions-title': t.approvals, 'permissions-title': t.approvalPermissions, back: t.approvalBack })) get(id).textContent = value
 void fetch('/config').then(response => response.json()).then(config => { get('back').href = config.hostUrl }).catch(() => {})
 function showError(error) { get('error').textContent = error.message }
 async function rpc(path, body = {}) {
@@ -24,8 +26,47 @@ function button(label, action, quiet = false) {
   return control
 }
 async function refresh() {
-  const [user, actions, permissions] = await Promise.all([rpc('/approvals/me'), rpc('/approvals/list'), rpc('/approvals/permissions')])
+  const [user, actions, permissions, sshActions] = await Promise.all([
+    rpc('/approvals/me'), rpc('/approvals/list'), rpc('/approvals/permissions'),
+    rpc('/approvals/ssh-execute/list')])
   get('identity').textContent = user.username
+  const sshList = get('ssh-actions'); sshList.replaceChildren()
+  if (!sshActions.items.length) {
+    const empty = document.createElement('p'); empty.className = 'muted'; empty.textContent = t.approvalEmpty
+    sshList.append(empty)
+  }
+  for (const action of sshActions.items) {
+    const card = document.createElement('article'); card.className = 'approval-card'
+    const heading = document.createElement('strong')
+    heading.textContent = `${t.approvalSshAction} · ${stateLabels[action.state] ?? action.state}`
+    const target = document.createElement('p')
+    target.textContent = `${t.approvalSshTarget}: ${action.displayName} · ${action.username}@${action.host}:${action.port}`
+    const label = document.createElement('p'); label.textContent = t.approvalSshCommand
+    const command = document.createElement('pre'); command.textContent = action.command
+    const fingerprint = document.createElement('code')
+    fingerprint.textContent = `${t.approvalFingerprint}: ${action.fingerprint}`
+    const time = document.createElement('small')
+    time.textContent = ` ${new Date(action.createdAt).toLocaleString()}`
+    card.append(heading, target, label, command, fingerprint, time)
+    if (action.state === 'pending') {
+      const controls = document.createElement('div'); controls.className = 'approval-actions'
+      controls.append(button(t.approvalSshApprove, async () => {
+        await rpc('/approvals/ssh-execute/decide', { actionId: action.actionId,
+          fingerprint: action.fingerprint, approve: true }); await refresh()
+      }), button(t.approvalDeny, async () => {
+        await rpc('/approvals/ssh-execute/decide', { actionId: action.actionId,
+          fingerprint: action.fingerprint, approve: false }); await refresh()
+      }, true))
+      card.append(controls)
+    } else if (action.state === 'approved' || action.state === 'uncertain') {
+      const controls = document.createElement('div'); controls.className = 'approval-actions'
+      controls.append(button(t.approvalSshCancel, async () => {
+        await rpc('/approvals/ssh-execute/cancel', { actionId: action.actionId }); await refresh()
+      }, true))
+      card.append(controls)
+    }
+    sshList.append(card)
+  }
   const list = get('actions'); list.replaceChildren()
   if (!actions.items.length) { const empty = document.createElement('p'); empty.className = 'muted'; empty.textContent = t.approvalEmpty; list.append(empty) }
   for (const action of actions.items) {

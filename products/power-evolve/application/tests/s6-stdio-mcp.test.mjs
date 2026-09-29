@@ -106,7 +106,7 @@ test('STDIO calls pin owner and revision, deduplicate, and resume the same Sessi
     } catch (error) { await client.query('ROLLBACK'); throw error }
     finally { client.release() }
     await initializeDatabase(pool)
-    assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 17)
+    assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 18)
     const tasks = new TaskStore(pool, { leaseMs: 30_000, maxPendingPerUser: 8,
       maxActivePerUser: 1, stdioMcpEnabled: true })
     const runner = new FixtureRunner()
@@ -209,7 +209,7 @@ test('real PG fence orders connection disable with intent and the first Runner P
       await client.query('INSERT INTO pe_schema(version) VALUES(1)')
       await client.query('INSERT INTO pe_users(id,username,password_hash,settings) VALUES($1,$2,$3,$4)',
         [user.userId, user.username, 'test-only', { model: 'fixture', maxTokens: 64, revision: 1 }])
-      for (let version = 2; version <= 17; version++) await client.query(migrations[`schemaV${version}`])
+      for (let version = 2; version <= 18; version++) await client.query(migrations[`schemaV${version}`])
       await client.query('COMMIT')
     } catch (error) { await client.query('ROLLBACK'); throw error }
     finally { client.release() }

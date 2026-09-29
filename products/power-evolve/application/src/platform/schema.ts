@@ -545,3 +545,54 @@ ALTER TABLE pe_operations ADD CONSTRAINT pe_operations_source_action CHECK (
     AND source_desktop_execution_id IS NULL AND source_stdio_mcp_call_id IS NOT NULL));
 UPDATE pe_schema SET version=17 WHERE version=16;
 `
+
+/** Encrypted, approval-bound SSH command proposals and Session-visible outcomes. */
+export const schemaV18 = `
+CREATE TABLE pe_ssh_execute_actions (
+  id uuid PRIMARY KEY,
+  user_id uuid NOT NULL REFERENCES pe_users(id),
+  session_id uuid NOT NULL REFERENCES pe_sessions(id),
+  operation_id uuid NOT NULL REFERENCES pe_operations(id),
+  call_key text NOT NULL CHECK (length(call_key) BETWEEN 1 AND 100),
+  connection_id uuid NOT NULL,
+  connection_revision integer NOT NULL CHECK (connection_revision>0),
+  credential_revision integer NOT NULL CHECK (credential_revision>0),
+  command_sealed bytea NOT NULL CHECK (octet_length(command_sealed) BETWEEN 29 AND 16412),
+  request_digest text NOT NULL CHECK (request_digest ~ '^[a-f0-9]{64}$'),
+  state text NOT NULL CHECK (state IN ('pending','rejected','approved','succeeded','failed','uncertain','cancelled')),
+  result_sealed bytea,
+  error_code text,
+  decided_at timestamptz,
+  continuation_request_id uuid NOT NULL DEFAULT gen_random_uuid() UNIQUE,
+  created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(operation_id), UNIQUE(operation_id,call_key),
+  FOREIGN KEY(connection_id,user_id) REFERENCES pe_ssh_connections(id,user_id)
+);
+CREATE INDEX pe_ssh_execute_actions_user ON pe_ssh_execute_actions(user_id,created_at DESC,id DESC);
+ALTER TABLE pe_operations ADD COLUMN ssh_selection jsonb NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE pe_operations ADD COLUMN source_ssh_execute_action_id uuid REFERENCES pe_ssh_execute_actions(id);
+ALTER TABLE pe_operations DROP CONSTRAINT pe_operations_source_check;
+ALTER TABLE pe_operations ADD CONSTRAINT pe_operations_source_check
+  CHECK (source IN ('user','platform_action','sandbox_result','desktop_result','stdio_mcp_result','ssh_execute_result'));
+ALTER TABLE pe_operations DROP CONSTRAINT pe_operations_source_action;
+ALTER TABLE pe_operations ADD CONSTRAINT pe_operations_source_action CHECK (
+  (source='user' AND source_action_id IS NULL AND source_execution_id IS NULL
+    AND source_desktop_execution_id IS NULL AND source_stdio_mcp_call_id IS NULL
+    AND source_ssh_execute_action_id IS NULL)
+  OR (source='platform_action' AND source_action_id IS NOT NULL AND source_execution_id IS NULL
+    AND source_desktop_execution_id IS NULL AND source_stdio_mcp_call_id IS NULL
+    AND source_ssh_execute_action_id IS NULL)
+  OR (source='sandbox_result' AND source_action_id IS NULL AND source_execution_id IS NOT NULL
+    AND source_desktop_execution_id IS NULL AND source_stdio_mcp_call_id IS NULL
+    AND source_ssh_execute_action_id IS NULL)
+  OR (source='desktop_result' AND source_action_id IS NULL AND source_execution_id IS NULL
+    AND source_desktop_execution_id IS NOT NULL AND source_stdio_mcp_call_id IS NULL
+    AND source_ssh_execute_action_id IS NULL)
+  OR (source='stdio_mcp_result' AND source_action_id IS NULL AND source_execution_id IS NULL
+    AND source_desktop_execution_id IS NULL AND source_stdio_mcp_call_id IS NOT NULL
+    AND source_ssh_execute_action_id IS NULL)
+  OR (source='ssh_execute_result' AND source_action_id IS NULL AND source_execution_id IS NULL
+    AND source_desktop_execution_id IS NULL AND source_stdio_mcp_call_id IS NULL
+    AND source_ssh_execute_action_id IS NOT NULL));
+UPDATE pe_schema SET version=18 WHERE version=17;
+`
