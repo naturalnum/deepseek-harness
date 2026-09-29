@@ -32,6 +32,8 @@ Use external PostgreSQL with a trusted server certificate and a `sslmode=verify-
 
 The `users.json` format is the existing Platform seed-user format. Keep Secret creation outside the rendered bundle and your shell history. Use the same worker token in both replicas and both tiers. Rotate it as a coordinated rollout. The runner key signs per-Sandbox runner tokens and must stay Platform-only.
 
+This seed format currently accepts at most 100 users, and each Platform replica hashes those seed passwords during startup. It is suitable for staged trials; enterprise account provisioning, revocation, and identity-provider integration are separate release gates for a large rollout.
+
 The bundle declares two static `ReadWriteMany` NFS PVs, each bound to a PVC in its own namespace, both pointing to the **same server and export path**. The administrator must prepare that export for POSIX ownership changes by the Platform, and validate data and file permissions from both physical nodes. The Platform uses `/data`; the runner's PVC is accessed only through exact `subPath` mounts. An NFS export with root squash that prevents the Platform's required `chown` is incompatible until ownership is provisioned separately.
 
 Set the real Ingress class, controller Pod labels, public DNS names, TLS Secret, and egress CIDRs in values. `runnerProxySourceCidrs` must identify the actual source IPs observed by Sandbox Pods for Kubernetes API Service proxy traffic. `apiServerCidrs` must cover the API endpoint that the Platform's in-cluster client reaches. The default-deny policies select every Pod in both namespaces; Host, Platform, and runner policies allow only the listed flows. Verify the CNI actually enforces these policies before traffic is admitted.
