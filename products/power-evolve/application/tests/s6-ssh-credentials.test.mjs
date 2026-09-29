@@ -69,6 +69,14 @@ test('S6 SSH credential ticket keeps password out of Host, encrypts it, and scop
       { status: 409, code: 'ssh_credential_conflict' })
     assert.deepEqual(await ssh.issueTicket(alice, input, 'http://127.0.0.1:19221'),
       { state: 'ready', item: uploaded.item })
+    const callCredential = await ssh.credentialForCall(alice, uploaded.item.connectionId, 1)
+    assert.equal(callCredential.credential.password, password.toString('utf8'))
+    assert.equal(callCredential.hostKeySha256, input.hostKeySha256)
+    await assert.rejects(ssh.credentialForCall(bob, uploaded.item.connectionId, 1),
+      { status: 404, code: 'ssh_connection_not_found' })
+    await assert.rejects(new SshConnectionService(pool, randomBytes(32).toString('base64url'),
+      'fixture.example.test:2222').credentialForCall(alice, uploaded.item.connectionId, 1),
+    { status: 503, code: 'ssh_credential_unavailable' })
     await assert.rejects(ssh.issueTicket(alice, { ...input, displayName: 'changed' }, 'http://127.0.0.1:19221'),
       { status: 409, code: 'request_id_conflict' })
     const stored = await pool.query('SELECT encrypted_credential FROM pe_ssh_connections WHERE id=$1', [input.requestId])
@@ -85,6 +93,8 @@ test('S6 SSH credential ticket keeps password out of Host, encrypts it, and scop
     const disabled = await ssh.toggle(alice, uploaded.item.connectionId, toggleId, 1, false)
     assert.equal(disabled.enabled, false)
     assert.equal(disabled.revision, 2)
+    await assert.rejects(ssh.credentialForCall(alice, uploaded.item.connectionId, 2),
+      { status: 404, code: 'ssh_connection_not_found' })
     assert.deepEqual(await ssh.toggle(alice, uploaded.item.connectionId, toggleId, 1, false), disabled)
     await assert.rejects(ssh.toggle(alice, uploaded.item.connectionId, toggleId, 1, true),
       { status: 409, code: 'request_id_conflict' })

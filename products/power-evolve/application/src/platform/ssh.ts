@@ -1,5 +1,5 @@
 /** Personal SSH metadata and direct, encrypted credential intake. Execution uses a separate Runner. */
-import { createCipheriv, createHash, createHmac, randomBytes } from 'node:crypto'
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from 'node:crypto'
 import type { IncomingMessage } from 'node:http'
 import { isIP } from 'node:net'
 import type { Pool } from 'pg'
@@ -14,7 +14,8 @@ type Request = z.infer<typeof sshCreateTicketRequest>
 type Connection = {
   id: string; user_id: string; install_request_id: string; install_digest: string;
   display_name: string; host: string; port: number; username: string; host_key_sha256: string;
-  credential_kind: 'password'; credential_revision: number; enabled: boolean; revision: number
+  credential_kind: 'password'; credential_revision: number; encrypted_credential: Buffer;
+  enabled: boolean; revision: number
 }
 type Intent = {
   request_id: string; user_id: string; request_digest: string; config: unknown;
@@ -80,6 +81,36 @@ export class SshConnectionService {
     const rows = await this.pool.query<Connection>(
       'SELECT * FROM pe_ssh_connections WHERE user_id=$1 ORDER BY created_at DESC,id', [user.userId])
     return { available: this.available, items: rows.rows.map(row => this.present(row)) }
+  }
+
+  /** Platform-only lookup. Never expose this result through a Host or browser route. */
+  async credentialForCall(user: Identity, connectionId: string, revision: number) {
+    const key = this.requireAvailable()
+    const found = await this.pool.query<Connection>(
+      `SELECT * FROM pe_ssh_connections WHERE id=$1 AND user_id=$2 AND revision=$3
+       AND enabled=true`, [connectionId, user.userId, revision])
+    const row = found.rows[0]
+    if (!row) throw new PlatformError(404, 'ssh_connection_not_found')
+    this.checkDestination(row.host, row.port)
+    if (row.credential_kind !== 'password' || row.encrypted_credential.length < 29) {
+      throw new PlatformError(503, 'ssh_credential_unavailable')
+    }
+    const sealed = row.encrypted_credential
+    const decipher = createDecipheriv('aes-256-gcm', key, sealed.subarray(0, 12))
+    decipher.setAAD(Buffer.from(['power-evolve-ssh-v1', row.user_id, row.install_request_id,
+      String(row.credential_revision)].join('\0')))
+    decipher.setAuthTag(sealed.subarray(12, 28))
+    let plain: Buffer | undefined
+    try {
+      plain = Buffer.concat([decipher.update(sealed.subarray(28)), decipher.final()])
+      if (!plain.length || !Buffer.from(plain.toString('utf8'), 'utf8').equals(plain)) {
+        throw new PlatformError(503, 'ssh_credential_unavailable')
+      }
+      return { host: row.host, port: row.port, username: row.username,
+        hostKeySha256: row.host_key_sha256, credentialRevision: row.credential_revision,
+        credential: { kind: 'password' as const, password: plain.toString('utf8') } }
+    } catch (_error) { throw new PlatformError(503, 'ssh_credential_unavailable') }
+    finally { plain?.fill(0) }
   }
 
   /** Reserve a fixed-size secret upload while Host sees only its size and metadata. */
