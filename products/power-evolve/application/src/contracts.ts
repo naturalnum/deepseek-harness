@@ -77,6 +77,7 @@ export const skillSelection = z.object({
   packageDigest: z.string().regex(/^[a-f0-9]{64}$/).nullable().default(null),
   manifestDigest: z.string().regex(/^[a-f0-9]{64}$/).nullable().default(null),
 }).strict()
+export const mcpSelection = z.object({ connectionId: z.uuid(), revision: z.number().int().positive() }).strict()
 export const loginRequest = z.object({
   username: z.string().min(1).max(80), password: z.string().min(1).max(256),
 }).strict()
@@ -94,6 +95,7 @@ export const grant = z.object({
   executionEnabled: z.boolean().default(false),
   skills: z.array(skillSnapshot).max(8).default([]),
   selection: z.array(skillSelection).max(8).default([]),
+  mcpConnections: z.array(mcpSelection).max(1).default([]),
 }).strict()
 export type Grant = z.infer<typeof grant>
 

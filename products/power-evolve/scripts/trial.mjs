@@ -28,10 +28,17 @@ env.PE_SECOND_DEVICE_ENABLED = process.env.PE_SECOND_DEVICE_ENABLED
 env.PE_DESKTOP_IMAGE = process.env.PE_DESKTOP_IMAGE
 env.PE_COMPOSE_EXTERNAL_NETWORK = process.env.PE_COMPOSE_EXTERNAL_NETWORK
 env.PE_MULTI_HOST = process.env.PE_MULTI_HOST
+env.PE_MCP_ENABLED = process.env.PE_MCP_ENABLED
+env.PE_MCP_PORT = process.env.PE_MCP_PORT
+env.PE_MCP_URL = process.env.PE_MCP_ENABLED === '1'
+  ? `http://127.0.0.1:${process.env.PE_MCP_PORT ?? 18943}/mcp` : process.env.PE_MCP_URL
+env.PE_MCP_TOKEN_FILE = process.env.PE_MCP_ENABLED === '1' ? join(privateDir, 'mcp-token')
+  : process.env.PE_MCP_TOKEN_FILE
 env.PE_HOST_SECOND_PORT = process.env.PE_HOST_SECOND_PORT
 env.PE_LOAD_BALANCER_PORT = process.env.PE_LOAD_BALANCER_PORT
 const command = process.argv[2] ?? 'status'
-const targets = ['api', 'platform', 'host', ...(process.env.PE_MULTI_HOST === '1' ? ['host-b', 'lb'] : []),
+const targets = ['api', ...(process.env.PE_MCP_ENABLED === '1' ? ['mcp'] : []),
+  'platform', 'host', ...(process.env.PE_MULTI_HOST === '1' ? ['host-b', 'lb'] : []),
   ...(process.env.PE_DEVICE_ENABLED === '1' ? ['device'] : []),
   ...(process.env.PE_SECOND_DEVICE_ENABLED === '1' ? ['device-bob'] : [])]
 const home = name => join(output, 'trial', name)
@@ -65,8 +72,9 @@ async function start(name) {
   }
   await rm(readyPath(name), { force:true })
   const log = openSync(join(output, `${name}.log`), 'a', 0o600)
-  const child = spawn(process.execPath, name === 'api' || name === 'lb'
-    ? [`products/power-evolve/scripts/trial-${name}.mjs`]
+  const child = spawn(process.execPath, name === 'api' || name === 'lb' || name === 'mcp'
+    ? [name === 'mcp' ? 'products/power-evolve/application/scripts/personal-mcp-fixture.mjs'
+      : `products/power-evolve/scripts/trial-${name}.mjs`]
     : ['apps/cli/lib/bin.js', '--profile', `power-evolve-${name}`], {
     cwd:root, env:{...env, DSH_HOME:home(name), PE_READY_FILE:readyPath(name)}, detached:true, stdio:['ignore',log,log],
   })

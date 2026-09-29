@@ -31,6 +31,9 @@
         connectorKeyFile: !!js process.env.PE_PRIVATE_DIR + '/connector-key'
         seedUsersFile: !!js process.env.PE_PRIVATE_DIR + '/users.json'
         modelUrl: https://api.deepseek.com/anthropic/v1/messages
+        mcpUrl: !!js process.env.PE_MCP_URL || ''
+        mcpTokenFile: !!js process.env.PE_MCP_TOKEN_FILE || ''
+        mcpTimeoutMs: 5000
         connectorUrl: http://127.0.0.1:18884
         connectorTimeoutMs: 5000
         connectorPollMs: 500

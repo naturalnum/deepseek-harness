@@ -16,6 +16,8 @@ const databasePort = port('PE_DATABASE_PORT', 18432)
 const hostPort = port('PE_HOST_PORT', 18880)
 const platformPort = port('PE_PLATFORM_PORT', 18881)
 const targetPort = port('PE_TARGET_PORT', 18884)
+const mcpEnabled = process.env.PE_MCP_ENABLED === '1'
+const mcpPort = port('PE_MCP_PORT', 18943)
 const deviceEnabled = process.env.PE_DEVICE_ENABLED === '1'
 const devicePort = port('PE_DEVICE_PORT', 18891)
 const multiHost = process.env.PE_MULTI_HOST === '1'
@@ -24,7 +26,8 @@ const loadBalancerPort = port('PE_LOAD_BALANCER_PORT', 18898)
 const secondDeviceEnabled = process.env.PE_SECOND_DEVICE_ENABLED === '1'
 if (secondDeviceEnabled && !deviceEnabled) throw new Error('Second device requires PE_DEVICE_ENABLED=1')
 const secondDevicePort = port('PE_SECOND_DEVICE_PORT', 18896)
-const ports = [databasePort, hostPort, platformPort, targetPort, ...(deviceEnabled ? [devicePort] : []),
+const ports = [databasePort, hostPort, platformPort, targetPort, ...(mcpEnabled ? [mcpPort] : []),
+  ...(deviceEnabled ? [devicePort] : []),
   ...(secondDeviceEnabled ? [secondDevicePort] : []),
   ...(multiHost ? [hostSecondPort, loadBalancerPort] : [])]
 if (new Set(ports).size !== ports.length) throw new Error('Trial ports must be distinct')
@@ -52,6 +55,7 @@ const password = await provision('database-password', randomBytes(24).toString('
 await provision('database-url', `postgresql://powerevolve:${password}@127.0.0.1:${databasePort}/powerevolve`)
 await provision('worker-token', randomBytes(32).toString('base64url'))
 await provision('connector-key', randomBytes(32).toString('base64url'))
+if (mcpEnabled) await provision('mcp-token', randomBytes(32).toString('base64url'))
 if (sandbox) await provision('runner-key', randomBytes(32).toString('base64url'))
 let modelKey = process.env.DEEPSEEK_API_KEY
 if (!modelKey) {
