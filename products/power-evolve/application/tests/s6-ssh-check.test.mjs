@@ -30,6 +30,10 @@ class FakeRunner {
   }
   async dispatchFirst(handle, request) {
     this.posts.push({ handle, request })
+    if (this.unknownAfterPost) {
+      this.unknownAfterPost = false
+      return { state: 'uncertain', reason: 'dispatch_outcome_unknown' }
+    }
     if (this.crashAtIntent) {
       this.crashAtIntent = false
       throw new PlatformError(409, 'ssh_call_lease_lost')
@@ -146,5 +150,46 @@ test('authentication admission is owner scoped and a restarted worker never repe
     assert.equal(runner.posts.length, 2, 'cancellation during preparation prevents dispatch')
     assert.ok(runner.cleaned.includes(cancelled.callId))
     assert.equal(await restarted.pump(), false)
+
+    runner.onPrepared = undefined
+    runner.observation = undefined
+    runner.unknownAfterPost = true
+    const unknown = await restarted.submit(users[0], { requestId: randomUUID(),
+      connectionId: saved[0].connectionId, connectionRevision: 1 })
+    assert.equal(await restarted.pump(), true)
+    assert.equal((await restarted.status(users[0], unknown.callId)).state, 'uncertain')
+    await pool.query(`UPDATE pe_ssh_calls SET created_at=now()-interval '6 minutes',
+      lease_until=now()-interval '1 second' WHERE id=$1`, [unknown.callId])
+    assert.equal(await restarted.pump(), true)
+    assert.equal((await calls.get(users[0], unknown.callId)).cleanup_complete, true,
+      'an old uncertain call releases its Runner without claiming the remote effect failed')
+    assert.ok(runner.cleaned.includes(unknown.callId))
+    assert.equal((await restarted.status(users[0], unknown.callId)).state, 'uncertain')
+    assert.equal(await restarted.pump(), false, 'a quarantined uncertain call is not reclaimed forever')
+
+    const racingConnections = new SshConnectionService(pool, key, 'fixture.example.test:2222')
+    const credentialForCall = racingConnections.credentialForCall.bind(racingConnections)
+    let credentialRead, resumeDispatch
+    const read = new Promise(resolve => { credentialRead = resolve })
+    const resume = new Promise(resolve => { resumeDispatch = resolve })
+    racingConnections.credentialForCall = async (...args) => {
+      const credential = await credentialForCall(...args)
+      credentialRead()
+      await resume
+      return credential
+    }
+    const racing = new SshAuthenticationCheck(new SshCallStore(pool), racingConnections, runner,
+      { ...options, ownerId: randomUUID() })
+    const disabledDuringDispatch = await racing.submit(users[0], { requestId: randomUUID(),
+      connectionId: saved[0].connectionId, connectionRevision: 1 })
+    const working = racing.pump()
+    await read
+    await connections.toggle(users[0], saved[0].connectionId, randomUUID(), 1, false)
+    resumeDispatch()
+    assert.equal(await working, true)
+    assert.equal((await racing.status(users[0], disabledDuringDispatch.callId)).state, 'failed')
+    assert.equal(runner.posts.length, 3, 'disabling after credential read still prevents the first POST')
+    await racing.cleanupPending()
+    assert.ok(runner.cleaned.includes(disabledDuringDispatch.callId))
     assert.equal(JSON.stringify(await pool.query('SELECT * FROM pe_ssh_calls')).includes('private-password'), false)
   })

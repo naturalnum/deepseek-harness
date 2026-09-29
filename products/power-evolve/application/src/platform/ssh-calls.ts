@@ -126,7 +126,7 @@ export class SshCallStore {
   async markCleanupComplete(callId: string, podUid: string): Promise<void> {
     const updated = await this.pool.query(
       `UPDATE pe_ssh_calls SET cleanup_complete=true,updated_at=now()
-       WHERE id=$1 AND pod_uid=$2 AND state IN ('succeeded','failed','cancelled')`, [callId, podUid])
+       WHERE id=$1 AND pod_uid=$2 AND state IN ('succeeded','failed','cancelled','uncertain')`, [callId, podUid])
     if (!updated.rowCount) throw new PlatformError(409, 'ssh_cleanup_state_changed')
   }
 
@@ -138,6 +138,7 @@ export class SshCallStore {
         `SELECT * FROM pe_ssh_calls WHERE kind=$1 AND state IN
            ('accepted','preparing','ready','dispatch-intent','running','uncertain')
          AND (lease_until IS NULL OR lease_until<=now())
+         AND NOT (state='uncertain' AND cleanup_complete=true)
          ORDER BY created_at,id LIMIT 1 FOR UPDATE SKIP LOCKED`, [kind])
       if (!found.rows[0]) return null
       const updated = await client.query<SshCallRow>(
@@ -169,16 +170,29 @@ export class SshCallStore {
     if (!found.rowCount) throw new PlatformError(409, 'ssh_call_lease_lost')
   }
 
-  /** Linearize the first Runner POST against cancellation and lease takeover. */
-  async withDispatchLock<T>(lease: SshCallLease, action: () => Promise<T>): Promise<T> {
+  /** Linearize the first Runner POST against cancellation, lease takeover, and connection disable. */
+  async withDispatchLock<T>(lease: SshCallLease, action: () => Promise<T>): Promise<
+    { readonly dispatched: true; readonly value: T } | { readonly dispatched: false }> {
     return transaction(this.pool, async client => {
-      const found = await client.query(
-        `SELECT id FROM pe_ssh_calls WHERE id=$1 AND lease_owner=$2 AND lease_epoch=$3
+      const found = await client.query<SshCallRow>(
+        `SELECT * FROM pe_ssh_calls WHERE id=$1 AND lease_owner=$2 AND lease_epoch=$3
          AND dispatch_owner=$2 AND dispatch_epoch=$3 AND lease_until>now()
          AND state='dispatch-intent' AND cancel_requested=false FOR UPDATE`,
         [lease.callId, lease.owner, lease.epoch])
-      if (!found.rowCount) throw new PlatformError(409, 'ssh_call_lease_lost')
-      return action()
+      const call = found.rows[0]
+      if (!call) throw new PlatformError(409, 'ssh_call_lease_lost')
+      const connection = await client.query<{ enabled: boolean; revision: number; credential_revision: number }>(
+        `SELECT enabled,revision,credential_revision FROM pe_ssh_connections
+         WHERE id=$1 AND user_id=$2 FOR SHARE`, [call.connection_id, call.user_id])
+      const current = connection.rows[0]
+      if (!current || !current.enabled || current.revision !== call.connection_revision
+        || current.credential_revision !== call.credential_revision) {
+        await client.query(
+          `UPDATE pe_ssh_calls SET state='failed',error_code='ssh_connection_changed',updated_at=now()
+           WHERE id=$1`, [call.id])
+        return { dispatched: false }
+      }
+      return { dispatched: true, value: await action() }
     })
   }
 

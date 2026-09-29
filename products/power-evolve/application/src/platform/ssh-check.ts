@@ -10,6 +10,8 @@ import { SshRunnerBlocked, SshRunnerOrchestrator, type SshRunnerHandle,
 
 const TIMEOUT_MS = 10_000
 const MAX_OUTPUT_BYTES = 1024
+// The Runner Pod has a 180-second active deadline; retain uncertain status beyond cleanup.
+const UNCERTAIN_CLEANUP_GRACE_MS = 5 * 60_000
 const safeCode = /^[a-z][a-z0-9_]{0,99}$/u
 const safeBanner = (value: unknown): value is string | null => value === null || typeof value === 'string'
   && Buffer.byteLength(value) <= 512 && !/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/u.test(value)
@@ -176,6 +178,17 @@ export class SshAuthenticationCheck {
       await this.calls.markUncertain(lease, row.state, 'runner_handle_missing')
       return
     }
+    if (row.state === 'uncertain' && row.dispatch_digest
+      && Date.now() - row.created_at.getTime() >= UNCERTAIN_CLEANUP_GRACE_MS) {
+      const finalObservation = await this.runner.reconcile(handle, true, row.dispatch_digest)
+      if (finalObservation.state === 'known' && finalObservation.status.state !== 'running') {
+        await this.observe(lease, row, finalObservation)
+      } else {
+        await this.runner.cleanup(row.id)
+        await this.calls.markCleanupComplete(row.id, handle.podUid)
+      }
+      return
+    }
     if (row.cancel_requested) {
       if (!row.dispatch_digest) await this.settleBeforeDispatch(lease, row, 'cancelled', null)
       else {
@@ -198,9 +211,9 @@ export class SshAuthenticationCheck {
       timeoutMs: TIMEOUT_MS, maxOutputBytes: MAX_OUTPUT_BYTES }
     const digest = this.runner.digestFor(handle, request)
     row = await this.calls.markDispatchIntent(lease, digest)
-    const observation = await this.calls.withDispatchLock(lease,
+    const dispatch = await this.calls.withDispatchLock(lease,
       () => this.runner.dispatchFirst(handle, request))
-    await this.observe(lease, row, observation)
+    if (dispatch.dispatched) await this.observe(lease, row, dispatch.value)
   }
 
   /** Claim one durable call; a reclaimed dispatch intent is recovered by GET only. */
