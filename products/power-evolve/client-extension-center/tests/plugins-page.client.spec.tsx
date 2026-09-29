@@ -4,6 +4,7 @@ import type { PluginsPageProps } from '../src/client/PluginsPage.tsx'
 import { PluginsPage } from '../src/client/PluginsPage.tsx'
 import type { NotesPlugin, PluginPort } from '../src/client/plugins-api.ts'
 import type { FixedMcpPort } from '../src/client/mcp-api.ts'
+import type { PersonalSshPort } from '../src/client/ssh-api.ts'
 import { en } from '../src/client/locales.ts'
 
 afterEach(cleanup)
@@ -17,10 +18,12 @@ const fixedMcp: FixedMcpPort = {
     preset: { toolName: 'mcp__personal__whoami', description: 'Fixed whoami' }, items: [] }),
   install: vi.fn(), toggle: vi.fn(), check: vi.fn(),
 }
+const fixedSsh: PersonalSshPort = { list: async () => ({ available: false, items: [] }),
+  createPassword: vi.fn(), toggle: vi.fn() }
 
 function page(plugins: PluginPort, getApproval = async () => 'http://127.0.0.1:19211/approval',
-  mcp: FixedMcpPort = fixedMcp) {
-  return render(<PluginsPage {...({ plugins, mcp, approvalUrl: getApproval, t } as PluginsPageProps)} />)
+  mcp: FixedMcpPort = fixedMcp, ssh: PersonalSshPort = fixedSsh) {
+  return render(<PluginsPage {...({ plugins, mcp, ssh, approvalUrl: getApproval, t } as PluginsPageProps)} />)
 }
 
 test('native Plugins page lists a real personal card and labels unavailable future entries', async () => {
@@ -32,11 +35,19 @@ test('native Plugins page lists a real personal card and labels unavailable futu
   fireEvent.click(screen.getByRole('tab', { name: 'All plugins' }))
   expect(screen.getByText('MCP')).toBeTruthy()
   expect(screen.getByText('SSH')).toBeTruthy()
-  expect(screen.getByText('In development')).toBeTruthy()
+  expect(screen.getAllByText('Unavailable').length).toBeGreaterThan(0)
   expect(screen.queryByRole('button', { name: 'MCP' })).toBeNull()
-  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'remote' } })
+  fireEvent.change(screen.getByRole('searchbox'), { target: { value: 'server' } })
   expect(screen.getByText('SSH')).toBeTruthy()
   expect(screen.queryByText('MCP')).toBeNull()
+})
+
+test('available SSH opens the native personal server page', async () => {
+  const ssh: PersonalSshPort = { ...fixedSsh, list: async () => ({ available: true, items: [] }) }
+  page({ list: async () => [initial], setEnabled: vi.fn() }, undefined, fixedMcp, ssh)
+  fireEvent.click(screen.getByRole('tab', { name: 'All plugins' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'SSH' }))
+  expect(screen.getByRole('button', { name: 'Add server' }).getAttribute('disabled')).toBeNull()
 })
 
 test('notes detail links the trusted approval page and retries the same request ID', async () => {
