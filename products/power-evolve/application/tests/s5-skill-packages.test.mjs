@@ -16,7 +16,7 @@ import { identity } from '../lib/contracts.js'
 const privateDir = process.env.PE_PRIVATE_DIR ?? join(homedir(), '.config/power-evolve/shared-host-slice2')
 const databaseUrl = (await readFile(join(privateDir, 'database-url'), 'utf8')).trim()
 
-test('existing v11 database upgrades once and v13 restart is inert', { timeout: 30000 }, async t => {
+test('existing v11 database upgrades once and v14 restart is inert', { timeout: 30000 }, async t => {
   const database = `pe_s5_upgrade_${randomBytes(10).toString('hex')}`
   const admin = new Pool({ connectionString: databaseUrl, max: 2 })
   let pool
@@ -40,7 +40,7 @@ test('existing v11 database upgrades once and v13 restart is inert', { timeout: 
   finally { client.release() }
   await initializeDatabase(pool)
   await initializeDatabase(pool)
-  assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 13)
+  assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 14)
   assert.equal((await pool.query(`SELECT count(*)::integer AS n FROM information_schema.tables
     WHERE table_name IN ('pe_skill_package_versions','pe_skill_upload_intents')`)).rows[0].n, 2)
 })
@@ -97,7 +97,7 @@ test('ZIP ticket installs exact user version, retries by request ID, and preserv
   pool = new Pool({ connectionString: url.href, max: 5 })
   await initializeDatabase(pool)
   await initializeDatabase(pool)
-  assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 13)
+  assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 14)
 
   const alice = await addUser(pool, 'alice')
   const bob = await addUser(pool, 'bob')

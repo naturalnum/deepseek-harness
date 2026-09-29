@@ -361,3 +361,30 @@ INSERT INTO pe_user_plugins(user_id,plugin_id,enabled,revision)
   SELECT id,'notes',true,1 FROM pe_users;
 UPDATE pe_schema SET version=13 WHERE version=12;
 `
+
+/** One user-scoped, operator-owned, read-only remote MCP connection. */
+export const schemaV14 = `
+CREATE TABLE pe_mcp_connections (
+  id uuid PRIMARY KEY,
+  user_id uuid NOT NULL UNIQUE REFERENCES pe_users(id),
+  install_request_id uuid NOT NULL,
+  name text NOT NULL CHECK (length(name) BETWEEN 1 AND 80),
+  enabled boolean NOT NULL DEFAULT true,
+  revision integer NOT NULL DEFAULT 1 CHECK (revision>0),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(user_id,install_request_id), UNIQUE(id,user_id)
+);
+CREATE TABLE pe_mcp_updates (
+  user_id uuid NOT NULL REFERENCES pe_users(id),
+  request_id uuid NOT NULL,
+  connection_id uuid NOT NULL,
+  request_digest text NOT NULL CHECK (request_digest ~ '^[a-f0-9]{64}$'),
+  result jsonb NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY(user_id,request_id),
+  FOREIGN KEY(connection_id,user_id) REFERENCES pe_mcp_connections(id,user_id)
+);
+ALTER TABLE pe_operations ADD COLUMN mcp_selection jsonb NOT NULL DEFAULT '[]'::jsonb;
+UPDATE pe_schema SET version=14 WHERE version=13;
+`

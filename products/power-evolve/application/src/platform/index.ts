@@ -23,6 +23,7 @@ import { ArtifactService } from './artifacts.ts'
 import { SkillService } from './skills.ts'
 import { ConnectorService } from './connectors.ts'
 import { PluginService } from './plugins.ts'
+import { PersonalMcpService } from './mcp.ts'
 import { ExecutionService } from './executions.ts'
 import { DeviceService } from './devices.ts'
 import { KubernetesClient } from './kubernetes.ts'
@@ -39,6 +40,8 @@ export const Config = schema.object({
   workspaceRoot: schema.string().required(), artifactRoot: schema.string().required(),
   modelKeyFile: schema.string().required(), connectorKeyFile: schema.string().required(), seedUsersFile: schema.string().required(),
   modelUrl: schema.string().required(), hostOrigin: schema.string().required(), platformOrigin: schema.string().required(),
+  mcpUrl: schema.string().default(''), mcpTokenFile: schema.string().default(''),
+  mcpTimeoutMs: schema.number().min(1000).default(5000),
   connectorUrl: schema.string().required(), connectorTimeoutMs: schema.number().min(1000).required(),
   connectorPollMs: schema.number().min(100).required(),
   sandboxKubeconfigFile: schema.string().default(''), sandboxKeyFile: schema.string().default(''),
@@ -68,9 +71,10 @@ const seedUsers = z.array(z.object({
 /** Register the platform only after its schema and configured users are ready. */
 export async function apply(ctx: Context, config: Config): Promise<void> {
   const instanceId = randomUUID()
-  const [databaseUrl, workerToken, modelKey, connectorKey, seeds] = await Promise.all([
+  const [databaseUrl, workerToken, modelKey, connectorKey, seeds, mcpToken] = await Promise.all([
     readFile(config.databaseUrlFile, 'utf8'), readFile(config.workerTokenFile, 'utf8'),
     readFile(config.modelKeyFile, 'utf8'), readFile(config.connectorKeyFile, 'utf8'), readFile(config.seedUsersFile, 'utf8'),
+    config.mcpTokenFile ? readFile(config.mcpTokenFile, 'utf8') : Promise.resolve(''),
   ])
   const pool = new Pool({ connectionString: databaseUrl.trim(), max: config.databasePoolSize, statement_timeout: config.databaseTimeoutMs })
   ctx.effect(() => () => pool.end())
@@ -94,7 +98,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   }
   const identities = new IdentityService(pool, config.tokenLifetimeMs)
   const accountSettings = new AccountSettingsService(pool)
-  const tasks = new TaskStore(pool, { ...config, executionEnabled })
+  const tasks = new TaskStore(pool, { ...config, executionEnabled, mcpEnabled: !!config.mcpUrl })
+  const mcp = new PersonalMcpService(tasks, config.mcpUrl, mcpToken.trim(), config.mcpTimeoutMs)
   const events = new EventStore(tasks, config)
   const nativeSessions = new NativeSessionRead(pool)
   const nativeWorkspaces = new NativeWorkspaceRead(pool, files, nativeSessions, config.maxWorkspacesPerUser)
@@ -118,7 +123,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
 
   const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const path = new URL(req.url ?? '/', config.platformOrigin).pathname
-    if (req.method === 'GET' && path === '/health') { sendJson(res, { ready: true, service: 'platform', schema: 13, executionEnabled, instanceId }); return }
+    if (req.method === 'GET' && path === '/health') { sendJson(res, { ready: true, service: 'platform', schema: 14, executionEnabled, mcpAvailable: !!config.mcpUrl, instanceId }); return }
     if (req.method === 'GET' && path === '/config') { sendJson(res, { hostUrl: config.hostOrigin }); return }
     if (req.method === 'GET' && await serveUi(path, 'login', res, config.hostOrigin)) return
     const artifactContent = /^\/artifacts\/([^/]+)\/content$/u.exec(path)
@@ -259,6 +264,10 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
           sendJson(res, { ok: true }); return
         }
         case '/runtime/connectors/notes': z.object({}).strict().parse(input); sendJson(res, await connectors.notes(token)); return
+        case '/runtime/mcp/call': {
+          const value = z.object({ connectionId: z.uuid(), revision: z.number().int().positive() }).strict().parse(input)
+          sendJson(res, await mcp.call(token, value.connectionId, value.revision)); return
+        }
         case '/runtime/connectors/prepare': {
           const value = z.object({ callId: z.string().min(1).max(100), text: z.string().trim().min(1).max(1000) }).strict().parse(input)
           sendJson(res, await connectors.prepare(token, value.callId, value.text)); return
@@ -306,6 +315,20 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         const value = z.object({ requestId: z.uuid(), expectedRevision: z.number().int().positive(),
           enabled: z.boolean() }).strict().parse(input)
         sendJson(res, await plugins.notesSetEnabled(user, value)); return
+      }
+      case '/mcp/list': z.object({}).strict().parse(input); sendJson(res, await mcp.list(user)); return
+      case '/mcp/install': {
+        const value = z.object({ requestId: z.uuid(), name: z.string().trim().min(1).max(80) }).strict().parse(input)
+        sendJson(res, await mcp.install(user, value.requestId, value.name)); return
+      }
+      case '/mcp/toggle': {
+        const value = z.object({ connectionId: z.uuid(), requestId: z.uuid(),
+          baseRevision: z.number().int().positive(), enabled: z.boolean() }).strict().parse(input)
+        sendJson(res, await mcp.toggle(user, value.connectionId, value.requestId, value.baseRevision, value.enabled)); return
+      }
+      case '/mcp/check': {
+        const value = z.object({ connectionId: z.uuid() }).strict().parse(input)
+        sendJson(res, await mcp.check(user, value.connectionId)); return
       }
       case '/sessions/create': {
         const value = createRequest.parse(input)
