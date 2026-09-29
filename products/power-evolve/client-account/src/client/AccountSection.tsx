@@ -116,6 +116,7 @@ export function AccountSection({ client, t }: AccountSectionProps) {
   const editable = phase === 'ready' && models.length > 0
   const changed = account !== undefined &&
     (model !== account.settings.model || tokens !== String(account.settings.maxTokens))
+  const saveDisabled = !editable || !changed || !validSelection(model, tokens, models)
 
   return <div style={pageStyle} data-power-evolve-account-settings="">
     <h2 style={{ margin: 0, fontSize: 20 }}>{t('account')}</h2>
@@ -146,7 +147,8 @@ export function AccountSection({ client, t }: AccountSectionProps) {
       {problem && <p role="alert" style={{ margin: 0, color: 'var(--dsw-alias-state-error-primary)' }}>{t(problem)}</p>}
       {phase === 'retry'
         ? <button type="button" style={buttonStyle} onClick={() => { if (pending) void submit(pending) }}>{t('retrySave')}</button>
-        : <button type="submit" style={buttonStyle} disabled={!editable || !changed || !validSelection(model, tokens, models)}>
+        : <button type="submit" style={{ ...buttonStyle, opacity: saveDisabled ? 0.48 : 1,
+          cursor: saveDisabled ? 'not-allowed' : 'pointer' }} disabled={saveDisabled}>
           {t(phase === 'saving' ? 'saving' : 'save')}
         </button>}
     </form>}
