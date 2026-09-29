@@ -1,4 +1,4 @@
-/** Reject maintained references to repository commits and the disallowed organization URL. */
+/** Reject repository commit references outside fixed product evidence and disallowed organization URLs. */
 
 import { execFileSync } from 'node:child_process'
 import { lstatSync, readFileSync, readlinkSync } from 'node:fs'
@@ -14,6 +14,14 @@ const kitRepositoryUrl = new RegExp(`\\bgithub\\.com/${organization}/libreoffice
 const commitCandidate = /(?<![a-z0-9])[\da-f]{7,40}(?![a-z0-9])/gi
 const excludedPrefixes = ['vendor/', '.agents/notes/archived/']
 const gitOutputLimit = 64 * 1024 * 1024
+
+function recordsProductRevision(file: string): boolean {
+  // Product baselines and trial/audit records retain the exact code that was tested.
+  // Living references and executable sources still use release tags.
+  return file === 'products/power-evolve/baseline.json'
+    || file === 'products/power-evolve/PARITY-AUDIT.md'
+    || /^products\/power-evolve\/TRIAL(?:-[A-Z0-9-]+)?\.md$/.test(file)
+}
 
 /** One prohibited reference in a maintained source file. */
 export interface RepositoryReference {
@@ -34,7 +42,8 @@ function isMaintained(file: string): boolean {
  * @param file - Repository-relative path used in diagnostics and exclusions.
  * @param source - File text or a symlink's stored target.
  * @param commits - Lowercase, unambiguous full or abbreviated commit identifiers.
- * @returns One finding per line and reference kind; digests and other Git object types are accepted.
+ * @returns Findings by line and kind, except commits in fixed product evidence;
+ * digests and other Git object types are accepted.
  */
 export function findRepositoryReferences(
   file: string,
@@ -47,7 +56,8 @@ export function findRepositoryReferences(
     if (organizationUrl.test(canonicalReferenceText(line).replace(kitRepositoryUrl, ''))) {
       references.push({ file, line: index + 1, kind: 'organization-url' })
     }
-    if ([...line.matchAll(commitCandidate)].some(match => commits.has(match[0].toLowerCase()))) {
+    if (!recordsProductRevision(file)
+      && [...line.matchAll(commitCandidate)].some(match => commits.has(match[0].toLowerCase()))) {
       references.push({ file, line: index + 1, kind: 'commit-hash' })
     }
   }
@@ -105,7 +115,7 @@ const invokedPath = process.argv[1]
 if (invokedPath !== undefined && import.meta.url === pathToFileURL(resolve(invokedPath)).href) {
   const references = scanRepositoryReferences(root)
   if (references.length === 0) {
-    console.log('verify-repository-references: maintained files contain no repository commit identifiers or disallowed organization URLs.')
+    console.log('verify-repository-references: maintained links and fixed product evidence satisfy the reference policy.')
   } else {
     console.error('verify-repository-references: use release tags or maintained repository links:')
     for (const { file, line, kind } of references) console.error(`  ${file}:${String(line)} ${kind}`)

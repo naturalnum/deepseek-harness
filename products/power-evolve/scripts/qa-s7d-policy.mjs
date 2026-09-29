@@ -10,7 +10,7 @@ import { buildManifests } from '../deploy/render.mjs'
 
 const root = fileURLToPath(new URL('../../../', import.meta.url))
 const context = process.env.PE_S7D_KUBE_CONTEXT ?? 'k3d-pe-s7b-multinode'
-const image = process.env.PE_S7D_PROBE_IMAGE ?? 'pe-s7b-runner:65c4ecf'
+const image = process.env.PE_S7D_PROBE_IMAGE ?? 'pe-s7b-runner:local'
 const name = `s7d-policy-${randomBytes(4).toString('hex')}`
 const app = `${name}-app`, runner = `${name}-runner`, external = `${name}-external`
 const namespaces = [app, runner, external]

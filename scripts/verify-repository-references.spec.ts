@@ -44,6 +44,24 @@ function repository(test: TestContext) {
 }
 
 describe('maintained repository reference policy', () => {
+  it('retains exact product trial revisions without exempting executable sources or organization URLs', (test) => {
+    const fixture = repository(test)
+    for (const file of ['products/power-evolve/baseline.json', 'products/power-evolve/TRIAL.md',
+      'products/power-evolve/TRIAL-S7D-POLICY.md', 'products/power-evolve/PARITY-AUDIT.md']) {
+      fixture.write(file, fixture.commit)
+    }
+    fixture.write('products/power-evolve/TRIAL-S1-NATIVE.md', `${fixture.commit}\n${organizationUrl}`)
+    const maintained = ['products/power-evolve/ARCHITECTURE.md', 'products/power-evolve/application/src/host.ts',
+      'products/power-evolve/scripts/qa.mjs', 'products/power-evolve/TRIAL-S7.mjs',
+      'products/power-evolve/nested/TRIAL-S7.md', 'products/another-product/TRIAL-S7.md']
+    for (const file of maintained) fixture.write(file, fixture.commit)
+    expect(scanRepositoryReferences(fixture.root)).toEqual(expect.arrayContaining([
+      ...maintained.map(file => ({ file, line: 1, kind: 'commit-hash' })),
+      { file: 'products/power-evolve/TRIAL-S1-NATIVE.md', line: 2, kind: 'organization-url' },
+    ]))
+    expect(scanRepositoryReferences(fixture.root)).toHaveLength(maintained.length + 1)
+  })
+
   it('permits only the independent kit repository and its source URLs', () => {
     for (const suffix of ['', '.git', '/tree/main/packages/entry']) {
       expect(findRepositoryReferences('package.json', `${organizationUrl}/libreoffice-kit${suffix}`, new Set())).toEqual([])
