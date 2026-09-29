@@ -95,8 +95,22 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     config.mcpTokenFile ? readFile(config.mcpTokenFile, 'utf8') : Promise.resolve(''),
     config.sshCredentialKeyFile ? readFile(config.sshCredentialKeyFile, 'utf8') : Promise.resolve(''),
   ])
-  const pool = new Pool({ connectionString: databaseUrl.trim(), max: config.databasePoolSize, statement_timeout: config.databaseTimeoutMs })
+  const pool = new Pool({ connectionString: databaseUrl.trim(), max: config.databasePoolSize,
+    connectionTimeoutMillis: config.databaseTimeoutMs, statement_timeout: config.databaseTimeoutMs })
+  // Keep readiness independent of busy task workers and bound outage probes to one second.
+  const healthPool = new Pool({ connectionString: databaseUrl.trim(), max: 1,
+    connectionTimeoutMillis: 1000, query_timeout: 1000, statement_timeout: 1000 })
+  let databaseReady = true
+  const databaseUnavailable = (error: unknown) => {
+    if (!databaseReady) return
+    databaseReady = false
+    ctx.logger.error('Platform PostgreSQL connection lost (%s)',
+      error instanceof Error ? error.message : 'unknown error')
+  }
+  pool.on('error', databaseUnavailable)
+  healthPool.on('error', databaseUnavailable)
   ctx.effect(() => () => pool.end())
+  ctx.effect(() => () => healthPool.end())
   await initializeDatabase(pool)
   const loginAdmission = new LoginAdmission(pool, config)
   await loginAdmission.initialize()
@@ -216,7 +230,21 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
 
   const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const path = new URL(req.url ?? '/', config.platformOrigin).pathname
-    if (req.method === 'GET' && path === '/health') { sendJson(res, { ready: true, service: 'platform', schema: 19, executionEnabled, mcpAvailable: !!config.mcpUrl, stdioMcpAvailable: stdioMcp.available, sshAvailable, instanceId }); return }
+    if (req.method === 'GET' && path === '/health') {
+      try {
+        await healthPool.query('SELECT 1')
+        if (!databaseReady) ctx.logger.info('Platform PostgreSQL connection recovered')
+        databaseReady = true
+        sendJson(res, { ready: true, service: 'platform', schema: 19, executionEnabled,
+          mcpAvailable: !!config.mcpUrl, stdioMcpAvailable: stdioMcp.available, sshAvailable, instanceId })
+      } catch (error) {
+        databaseUnavailable(error)
+        sendJson(res, { ready: false, service: 'platform', schema: 19, database: 'unavailable',
+          executionEnabled, mcpAvailable: !!config.mcpUrl, stdioMcpAvailable: stdioMcp.available,
+          sshAvailable, instanceId }, 503)
+      }
+      return
+    }
     if (req.method === 'GET' && path === '/config') { sendJson(res, { hostUrl: config.hostOrigin }); return }
     if (req.method === 'GET' && await serveUi(path, 'login', res, config.hostOrigin)) return
     const artifactContent = /^\/artifacts\/([^/]+)\/content$/u.exec(path)
