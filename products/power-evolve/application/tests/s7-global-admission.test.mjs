@@ -214,6 +214,11 @@ test('two Platform replicas isolate account limits behind one peer and retain gl
     await pool.query("UPDATE pe_login_global_window SET window_since=clock_timestamp()-interval '61 seconds'")
     await pool.query("UPDATE pe_login_attempt_windows SET window_since=clock_timestamp()-interval '61 seconds'")
     assert.equal((await login(origin, 'bob')).status, 200)
+    await pool.query('UPDATE pe_login_global_window SET window_since=clock_timestamp(),attempts=0')
+    const globalRace = await Promise.allSettled(Array.from({ length: 30 }, () => admission.chargeGlobal()))
+    assert.equal(globalRace.filter(result => result.status === 'fulfilled').length, 20)
+    assert.equal(globalRace.filter(result => result.status === 'rejected').length, 10)
+    assert.equal((await pool.query('SELECT attempts FROM pe_login_global_window')).rows[0].attempts, 20)
   })
 
 test('two PG-connected workers claim one global slot and recover after lease expiry',
