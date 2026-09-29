@@ -39,6 +39,10 @@ class FakeKubernetes {
       }
       const resource = structuredClone(body)
       if (kind === 'secrets') resource.data = { token: Buffer.from(body.stringData.token).toString('base64') }
+      if (this.serverDefaults && kind === 'networkpolicies') {
+        resource.spec.ingress[0].ports[0].protocol = 'TCP'
+        delete resource.spec.egress
+      }
       if (this.serverDefaults && kind === 'services') {
         Object.assign(resource.spec, { clusterIP: '10.43.0.23', clusterIPs: ['10.43.0.23'],
           ipFamilies: ['IPv4'], ipFamilyPolicy: 'SingleStack', internalTrafficPolicy: 'Cluster',
@@ -48,7 +52,7 @@ class FakeKubernetes {
       if (kind === 'pods') {
         if (this.serverDefaults) {
           Object.assign(resource.spec, { dnsPolicy: 'ClusterFirst', schedulerName: 'default-scheduler',
-            serviceAccountName: 'default', nodeName: 'worker-1', priority: 0,
+            serviceAccount: 'default', serviceAccountName: 'default', nodeName: 'worker-1', priority: 0,
             preemptionPolicy: 'PreemptLowerPriority', tolerations: [
               { key: 'node.kubernetes.io/not-ready', operator: 'Exists', effect: 'NoExecute', tolerationSeconds: 300 },
               { key: 'node.kubernetes.io/unreachable', operator: 'Exists', effect: 'NoExecute', tolerationSeconds: 300 },
@@ -143,6 +147,16 @@ test('Kubernetes Service and Pod defaults allow recovery without accepting chang
   assert.deepEqual(await runner.prepare(callId), handle)
   assert.equal(kube.events.filter(event => event.method === 'POST' && event.path.endsWith('/services')).length, 1)
   const name = `pe-mcp-${callId.replaceAll('-', '')}`
+  const policy = kube.resources.get(`networkpolicies/${name}`)
+  policy.spec.ingress[0].ports[0].protocol = 'UDP'
+  await assert.rejects(runner.prepare(callId), { code: 'mcp_runner_resource_changed' })
+  policy.spec.ingress[0].ports[0].protocol = 'TCP'
+  policy.spec.podSelector.matchLabels['powerevolve.dev/stdio-call'] = randomUUID()
+  await assert.rejects(runner.prepare(callId), { code: 'mcp_runner_resource_changed' })
+  policy.spec.podSelector.matchLabels['powerevolve.dev/stdio-call'] = callId
+  policy.spec.egress = [{ to: [{ ipBlock: { cidr: '0.0.0.0/0' } }] }]
+  await assert.rejects(runner.prepare(callId), { code: 'mcp_runner_resource_changed' })
+  delete policy.spec.egress
   const service = kube.resources.get(`services/${name}`)
   service.spec.selector['powerevolve.dev/stdio-call'] = randomUUID()
   await assert.rejects(runner.prepare(callId), { code: 'mcp_runner_resource_changed' })
@@ -151,6 +165,9 @@ test('Kubernetes Service and Pod defaults allow recovery without accepting chang
   await assert.rejects(runner.prepare(callId), { code: 'mcp_runner_resource_changed' })
   service.spec.ports[0].targetPort = 8080
   const pod = kube.resources.get(`pods/${name}`)
+  pod.spec.serviceAccount = 'changed-account'
+  await assert.rejects(runner.prepare(callId), { code: 'mcp_runner_resource_changed' })
+  pod.spec.serviceAccount = 'default'
   pod.spec.containers[0].image = 'changed:image'
   await assert.rejects(runner.prepare(callId), { code: 'mcp_runner_resource_changed' })
   pod.spec.containers[0].image = 'connector-runner:test'

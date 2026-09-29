@@ -36,10 +36,17 @@ const dropDefault = (value: Record<string, unknown>, key: string, expected: unkn
   if (value[key] === expected) delete value[key]
 }
 
-/** Remove only API-server defaults; all remaining placement and execution fields must match. */
+/** Normalize API-server defaults and omitted empty egress; all other execution fields must match. */
 const comparableSpec = (kind: string, source: unknown): unknown => {
   const spec: unknown = structuredClone(source)
   if (!record(spec)) return spec
+  if (kind === 'networkpolicies') {
+    if (equal(spec.egress, [])) delete spec.egress
+    if (Array.isArray(spec.ingress)) for (const rule of spec.ingress) {
+      if (!record(rule) || !Array.isArray(rule.ports)) continue
+      for (const port of rule.ports) if (record(port)) dropDefault(port, 'protocol', 'TCP')
+    }
+  }
   if (kind === 'services') {
     const ip = spec.clusterIP
     if (typeof ip === 'string' && isIP(ip)) {
@@ -58,6 +65,7 @@ const comparableSpec = (kind: string, source: unknown): unknown => {
   if (kind === 'pods') {
     dropDefault(spec, 'dnsPolicy', 'ClusterFirst')
     dropDefault(spec, 'schedulerName', 'default-scheduler')
+    dropDefault(spec, 'serviceAccount', 'default')
     dropDefault(spec, 'serviceAccountName', 'default')
     dropDefault(spec, 'priority', 0)
     dropDefault(spec, 'preemptionPolicy', 'PreemptLowerPriority')
