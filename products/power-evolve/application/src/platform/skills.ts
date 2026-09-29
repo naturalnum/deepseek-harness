@@ -434,20 +434,15 @@ export class SkillService {
           WHERE s.user_id=$1 AND s.name=$2 FOR UPDATE OF s`, [user.userId, metadata.name])
         const skill = existing.rows[0]
         if (skill) {
-          if (skill.kind !== 'package') throw new PlatformError(409, 'skill_name_conflict')
           if (skill.revokedAt !== null) throw new PlatformError(409, 'skill_revoked')
-          const sameVersion = await client.query(
-            'SELECT id FROM pe_skill_package_versions WHERE user_id=$1 AND name=$2 AND version=$3',
-            [user.userId, metadata.name, version])
-          if (sameVersion.rowCount) throw new PlatformError(409, 'skill_version_conflict')
-        } else {
-          const count = await client.query<{ n: string }>(
-            'SELECT count(*) AS n FROM pe_user_skills WHERE user_id=$1', [user.userId])
-          if (Number(count.rows[0]!.n) >= this.maxSkillsPerUser) throw new PlatformError(413, 'skill_limit')
+          throw new PlatformError(409, 'skill_name_conflict')
         }
+        const count = await client.query<{ n: string }>(
+          'SELECT count(*) AS n FROM pe_user_skills WHERE user_id=$1', [user.userId])
+        if (Number(count.rows[0]!.n) >= this.maxSkillsPerUser) throw new PlatformError(413, 'skill_limit')
         await this.publish(user.userId, release.release.archiveDigest, unpacked, manifest, files)
-        const skillId = skill?.id ?? requestId
-        if (!skill) await client.query(
+        const skillId = requestId
+        await client.query(
           `INSERT INTO pe_user_skills(id,user_id,name,description,digest,kind)
            VALUES($1,$2,$3,$4,$5,'package')`,
           [skillId, user.userId, metadata.name, metadata.description, instructionDigest])

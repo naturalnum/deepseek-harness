@@ -1,10 +1,12 @@
 /** Built-in Skills use the real per-user package publisher and isolated PostgreSQL state. */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { randomBytes, randomUUID } from 'node:crypto'
-import { chmod, lstat, mkdtemp, readFile, readdir, rm } from 'node:fs/promises'
+import { createHash, randomBytes, randomUUID } from 'node:crypto'
+import { execFileSync } from 'node:child_process'
+import { chmod, lstat, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { Readable } from 'node:stream'
 import { Pool } from 'pg'
 import { initializeDatabase } from '../lib/platform/database.js'
 import { SkillService } from '../lib/platform/skills.js'
@@ -57,6 +59,7 @@ test('built-in catalog and installs isolate users, bind requests, and preserve d
     const alice = await addUser(pool, 'alice')
     const bob = await addUser(pool, 'bob')
     const charlie = await addUser(pool, 'charlie')
+    const dana = await addUser(pool, 'dana')
     const skills = new SkillService(pool, join(root, 'workspaces'), join(root, 'sandbox'))
     await skills.init()
 
@@ -119,6 +122,24 @@ test('built-in catalog and installs isolate users, bind requests, and preserve d
     assert.equal(afterRestart.length, 2)
     assert.equal(afterRestart.find(item => item.skillId === word.skillId).observedState, 'revoked')
     assert.equal(afterRestart.find(item => item.skillId === pdf.skillId).enabled, false)
+
+    const manualRoot = join(root, 'manual-source')
+    await mkdir(join(manualRoot, 'custom-pdf'), { recursive: true })
+    await writeFile(join(manualRoot, 'custom-pdf', 'SKILL.md'),
+      '---\nname: pdf\ndescription: User PDF package\n---\nKeep the user package.\n')
+    await writeFile(join(manualRoot, 'custom-pdf', 'skill-package.json'),
+      JSON.stringify({ schemaVersion: 1, version: '2.0.0' }))
+    const archivePath = join(manualRoot, 'custom.zip')
+    execFileSync('zip', ['-q', '-r', '-X', archivePath, 'custom-pdf'], { cwd: manualRoot })
+    const manualArchive = await readFile(archivePath)
+    const manualDigest = createHash('sha256').update(manualArchive).digest('hex')
+    const manualTicket = await skills.issueUploadTicket(dana, randomUUID(), manualArchive.length,
+      manualDigest, 'http://127.0.0.1:18881')
+    const manual = await skills.upload(manualTicket.ticket, Readable.from([manualArchive]))
+    await skills.ensurePreinstalled(dana, ['builtin.pdf'])
+    assert.equal((await skills.list(dana)).items.length, 1)
+    assert.equal((await skills.list(dana)).items[0].skillId, manual.item.skillId)
+    assert.equal((await skills.list(dana)).items[0].packageDigest, manualDigest)
 
     const racedRequestId = randomUUID()
     const raced = await Promise.allSettled([
