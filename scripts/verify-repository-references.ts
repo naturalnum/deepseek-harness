@@ -21,6 +21,7 @@ function recordsProductRevision(file: string): boolean {
   return file === 'products/power-evolve/baseline.json'
     || file === 'products/power-evolve/PARITY-AUDIT.md'
     || /^products\/power-evolve\/TRIAL(?:-[A-Z0-9-]+)?\.md$/.test(file)
+    || /^products\/power-evolve\/deploy\/QA-[A-Z0-9-]+\.md$/.test(file)
 }
 
 /** One prohibited reference in a maintained source file. */

@@ -47,7 +47,8 @@ describe('maintained repository reference policy', () => {
   it('retains exact product trial revisions without exempting executable sources or organization URLs', (test) => {
     const fixture = repository(test)
     for (const file of ['products/power-evolve/baseline.json', 'products/power-evolve/TRIAL.md',
-      'products/power-evolve/TRIAL-S7D-POLICY.md', 'products/power-evolve/PARITY-AUDIT.md']) {
+      'products/power-evolve/TRIAL-S7D-POLICY.md', 'products/power-evolve/PARITY-AUDIT.md',
+      'products/power-evolve/deploy/QA-S7D-IMAGE-STARTUP.md']) {
       fixture.write(file, fixture.commit)
     }
     fixture.write('products/power-evolve/TRIAL-S1-NATIVE.md', `${fixture.commit}\n${organizationUrl}`)
