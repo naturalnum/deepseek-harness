@@ -30,6 +30,11 @@ const requests = { me: z.object({}).strict(), logout: z.object({}).strict(), mod
   pluginsList: z.object({}).strict(),
   pluginsNotesSetEnabled: z.object({ requestId: z.uuid(), expectedRevision: z.number().int().positive(),
     enabled: z.boolean() }).strict(),
+  mcpList: z.object({}).strict(),
+  mcpInstall: z.object({ requestId: z.uuid(), name: z.string().trim().min(1).max(80) }).strict(),
+  mcpToggle: z.object({ connectionId: z.uuid(), requestId: z.uuid(), baseRevision: z.number().int().positive(),
+    enabled: z.boolean() }).strict(),
+  mcpCheck: z.object({ connectionId: z.uuid() }).strict(),
   artifactsPublish: z.object({ requestId: z.uuid(), sessionId: z.uuid(), path: z.string().min(1).max(512) }).strict(),
   artifactsList: z.object({ workspaceId: z.uuid().optional(), sessionId: z.uuid().optional(),
     cursor: z.uuid().optional(), limit: z.number().int().min(1).max(100).optional() }).strict(),
@@ -45,6 +50,7 @@ const endpoint = { me: '/identity/me', logout: '/identity/logout', modelsList: '
   skillsInstall: '/skills/install', skillsToggle: '/skills/toggle',
   skillsUploadTicket: '/skills/upload-ticket', skillsRevoke: '/skills/revoke', actionsList: '/connectors/actions',
   pluginsList: '/plugins/list', pluginsNotesSetEnabled: '/plugins/notes/set-enabled',
+  mcpList: '/mcp/list', mcpInstall: '/mcp/install', mcpToggle: '/mcp/toggle', mcpCheck: '/mcp/check',
   artifactsPublish: '/artifacts/publish', artifactsList: '/artifacts/list', artifactsPreview: '/artifacts/preview',
   executionsList: '/executions/list', executionCancel: '/executions/cancel',
   devicesList: '/devices/list', devicesPair: '/devices/pair',
@@ -101,6 +107,10 @@ class ProductRemote extends TypertRemoteService {
   @Remote pluginsNotesSetEnabled(request: z.infer<typeof requests.pluginsNotesSetEnabled>) {
     return this.call('pluginsNotesSetEnabled', request)
   }
+  @Remote mcpList(request: z.infer<typeof requests.mcpList>) { return this.call('mcpList', request) }
+  @Remote mcpInstall(request: z.infer<typeof requests.mcpInstall>) { return this.call('mcpInstall', request) }
+  @Remote mcpToggle(request: z.infer<typeof requests.mcpToggle>) { return this.call('mcpToggle', request) }
+  @Remote mcpCheck(request: z.infer<typeof requests.mcpCheck>) { return this.call('mcpCheck', request) }
   @Remote artifactsPublish(request: z.infer<typeof requests.artifactsPublish>) { return this.call('artifactsPublish', request) }
   @Remote artifactsList(request: z.infer<typeof requests.artifactsList>) { return this.call('artifactsList', request) }
   @Remote artifactsPreview(request: z.infer<typeof requests.artifactsPreview>) { return this.call('artifactsPreview', request) }

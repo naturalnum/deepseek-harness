@@ -60,6 +60,7 @@ test('native Host plugin RPC forwards only authenticated, strict user-scoped fie
 
   const users = ['alice', 'bob'].map(username => ({ userId: randomUUID(), username,
     token: randomBytes(32).toString('base64url') }))
+  const mcpIds = new Map(users.map(user => [user.token, randomUUID()]))
   const loginToken = randomBytes(32).toString('base64url')
   const calls = []
   platform = createServer(async (request, response) => {
@@ -91,6 +92,29 @@ test('native Host plugin RPC forwards only authenticated, strict user-scoped fie
           : { id: 'notes', title: '受控便签', category: 'tools', kind: 'builtin',
             enabled: body.enabled, revision: 2, requiresApproval: true })
         return
+      }
+      if (path.startsWith('/mcp/')) {
+        calls.push({ path, token, body })
+        if ((path === '/mcp/check' || path === '/mcp/toggle') && body.connectionId !== mcpIds.get(token)) {
+          answer(404, { error: 'mcp_connection_not_found' }); return
+        }
+        if (path === '/mcp/list') {
+          answer(200, { available: true, items: [{ connectionId: mcpIds.get(token),
+            name: `${user.username} MCP`, enabled: true, revision: 1,
+            toolName: 'mcp__personal__whoami', description: 'Read account identity' }] }); return
+        }
+        if (path === '/mcp/install') {
+          answer(200, { connectionId: body.requestId, name: body.name, enabled: true,
+            revision: 1, toolName: 'mcp__personal__whoami', description: 'Read account identity' }); return
+        }
+        if (path === '/mcp/toggle') {
+          answer(200, { connectionId: body.connectionId, name: `${user.username} MCP`,
+            enabled: body.enabled, revision: body.baseRevision + 1,
+            toolName: 'mcp__personal__whoami', description: 'Read account identity' }); return
+        }
+        if (path === '/mcp/check') {
+          answer(200, { toolName: 'mcp__personal__whoami', result: `user:${user.userId}` }); return
+        }
       }
       answer(404, { error: 'not_found' })
     } catch (_error) { answer(500, { error: 'fixture_error' }) }
@@ -182,4 +206,30 @@ test('native Host plugin RPC forwards only authenticated, strict user-scoped fie
   assert.equal((await cookieRpc('https://attacker.example', 'pluginsNotesSetEnabled', mutation)).status, 403)
   assert.equal((await cookieRpc(hostOrigin, 'pluginsNotesSetEnabled', mutation)).status, 200)
   assert.deepEqual(calls[4], { path: '/plugins/notes/set-enabled', token: users[0].token, body: mutation })
+
+  const mcpListAlice = await rpc('mcpList', users[0].token, {})
+  const mcpListBob = await rpc('mcpList', users[1].token, {})
+  assert.equal((await mcpListAlice.json()).items[0].connectionId, mcpIds.get(users[0].token))
+  assert.equal((await mcpListBob.json()).items[0].connectionId, mcpIds.get(users[1].token))
+  const mcpInstall = { requestId: randomUUID(), name: 'Personal read-only MCP' }
+  assert.equal((await rpc('mcpInstall', users[0].token, { ...mcpInstall, url: 'https://attacker.example' })).status, 400)
+  assert.equal((await rpc('mcpInstall', users[0].token, { ...mcpInstall, token: 'secret' })).status, 400)
+  assert.equal((await rpc('mcpInstall', users[0].token, mcpInstall)).status, 200)
+  const mcpToggle = { connectionId: mcpIds.get(users[0].token), requestId: randomUUID(),
+    baseRevision: 1, enabled: false }
+  assert.equal((await rpc('mcpToggle', users[0].token, { ...mcpToggle, baseRevision: 0 })).status, 400)
+  assert.equal((await rpc('mcpToggle', users[0].token, mcpToggle)).status, 200)
+  assert.equal((await rpc('mcpToggle', users[1].token, mcpToggle)).status, 404)
+  assert.equal((await rpc('mcpCheck', users[1].token,
+    { connectionId: mcpIds.get(users[0].token) })).status, 404)
+  assert.equal((await rpc('mcpCheck', users[0].token,
+    { connectionId: mcpIds.get(users[0].token), toolName: 'write' })).status, 400)
+  const mcpCheck = await rpc('mcpCheck', users[0].token, { connectionId: mcpIds.get(users[0].token) })
+  assert.deepEqual(await mcpCheck.json(), { toolName: 'mcp__personal__whoami', result: `user:${users[0].userId}` })
+  assert.equal((await cookieRpc('https://attacker.example', 'mcpToggle', mcpToggle)).status, 403)
+  assert.equal((await cookieRpc(hostOrigin, 'mcpToggle', mcpToggle)).status, 200)
+  assert.deepEqual(calls.filter(call => call.path.startsWith('/mcp/')).map(call => call.body), [
+    {}, {}, mcpInstall, mcpToggle, mcpToggle, { connectionId: mcpIds.get(users[0].token) },
+    { connectionId: mcpIds.get(users[0].token) }, mcpToggle,
+  ])
 })

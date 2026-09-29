@@ -10,6 +10,7 @@ import { z } from 'zod'
 import type { Grant } from '../contracts.ts'
 import { installConnectorTools } from './connectors.ts'
 import { installExecutionTools } from './executions.ts'
+import { installPersonalMcpTool } from './mcp.ts'
 
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
@@ -116,6 +117,7 @@ export class Scheduler {
       if (grant.source === 'user' || grant.source === 'sandbox_result' || grant.source === 'desktop_result') {
         installConnectorTools(agent, grant, runtime)
         installExecutionTools(agent, grant, runtime)
+        installPersonalMcpTool(agent, grant, runtime)
       }
       if (grant.source === 'platform_action') agent.ctx.effect(() => agent.ctx.systemPrompt.section({
         name: 'power-evolve:action-result', order: 710, interpolate: false,
