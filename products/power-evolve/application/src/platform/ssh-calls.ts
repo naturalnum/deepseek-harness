@@ -1,0 +1,244 @@
+/** Durable, owner-scoped SSH call state for the trusted Platform. */
+import { randomUUID } from 'node:crypto'
+import type { Pool } from 'pg'
+import { PlatformError, type Identity } from '../contracts.ts'
+import { transaction } from './database.ts'
+import type { SshRunnerHandle, SshRunnerStatus } from './ssh-runner.ts'
+
+/** The caller computes a keyed HMAC over the entire canonical request, including any command. */
+export interface SshCallAdmission {
+  readonly requestId: string
+  readonly connectionId: string
+  readonly connectionRevision: number
+  readonly kind: 'ssh.authenticate' | 'ssh.execute'
+  readonly operationId?: string
+  /** HMAC-SHA-256 hex; never a bare hash of a password or command. */
+  readonly requestDigest: string
+}
+
+/** A row is internal to Platform and must not be serialized directly to Host. */
+export interface SshCallRow {
+  readonly id: string
+  readonly user_id: string
+  readonly request_id: string
+  readonly connection_id: string
+  readonly connection_revision: number
+  readonly credential_revision: number
+  readonly operation_id: string | null
+  readonly kind: 'ssh.authenticate' | 'ssh.execute'
+  readonly request_digest: string
+  readonly state: 'accepted' | 'preparing' | 'ready' | 'dispatch-intent' | 'running'
+    | 'succeeded' | 'failed' | 'uncertain' | 'cancelled'
+  readonly cancel_requested: boolean
+  readonly destination: SshRunnerHandle['destination'] | null
+  readonly pod_uid: string | null
+  readonly runner_instance_id: string | null
+  readonly dispatch_digest: string | null
+  readonly dispatch_owner: string | null
+  readonly dispatch_epoch: number | null
+  readonly result: unknown
+  readonly error_code: string | null
+  readonly lease_owner: string | null
+  readonly lease_epoch: number
+  readonly lease_until: Date | null
+  readonly created_at: Date
+  readonly updated_at: Date
+}
+
+const hexDigest = /^[a-f0-9]{64}$/u
+const terminal = new Set(['succeeded', 'failed', 'cancelled'])
+
+/** One lease epoch grants one worker authority to change or first-dispatch a call. */
+export interface SshCallLease {
+  readonly callId: string
+  readonly owner: string
+  readonly epoch: number
+}
+
+/** Persisted admission and expected-state transitions for SSH Connector Runner work. */
+export class SshCallStore {
+  constructor(private readonly pool: Pool) {}
+
+  /** Admit a verified user's exact request; replay returns the original call even after connection changes. */
+  async admit(user: Identity, input: SshCallAdmission): Promise<SshCallRow> {
+    if (!hexDigest.test(input.requestDigest)) throw new PlatformError(400, 'ssh_request_digest_invalid')
+    if ((input.kind === 'ssh.authenticate' && input.operationId !== undefined)
+      || (input.kind === 'ssh.execute' && input.operationId === undefined)) {
+      throw new PlatformError(400, 'ssh_operation_invalid')
+    }
+    return transaction(this.pool, async client => {
+      const owner = await client.query('SELECT id FROM pe_users WHERE id=$1 FOR UPDATE', [user.userId])
+      if (!owner.rowCount) throw new PlatformError(401, 'unauthorized')
+      const prior = await client.query<SshCallRow>(
+        'SELECT * FROM pe_ssh_calls WHERE user_id=$1 AND request_id=$2', [user.userId, input.requestId])
+      if (prior.rows[0]) {
+        const row = prior.rows[0]
+        if (row.connection_id !== input.connectionId || row.connection_revision !== input.connectionRevision
+          || row.kind !== input.kind || row.operation_id !== (input.operationId ?? null)
+          || row.request_digest !== input.requestDigest) throw new PlatformError(409, 'request_id_conflict')
+        return row
+      }
+      const connection = await client.query<{ credential_revision: number }>(
+        `SELECT credential_revision FROM pe_ssh_connections
+         WHERE id=$1 AND user_id=$2 AND revision=$3 AND enabled=true`,
+        [input.connectionId, user.userId, input.connectionRevision])
+      if (!connection.rows[0]) throw new PlatformError(404, 'ssh_connection_not_found')
+      if (input.kind === 'ssh.execute') {
+        const operation = await client.query(
+          `SELECT o.id FROM pe_operations o JOIN pe_sessions s ON s.id=o.session_id
+           WHERE o.id=$1 AND s.user_id=$2 AND o.state='running'`, [input.operationId, user.userId])
+        if (!operation.rowCount) throw new PlatformError(403, 'ssh_operation_not_owned')
+      }
+      const inserted = await client.query<SshCallRow>(
+        `INSERT INTO pe_ssh_calls(id,user_id,request_id,connection_id,connection_revision,
+           credential_revision,operation_id,kind,request_digest,state)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'accepted') RETURNING *`,
+        [randomUUID(), user.userId, input.requestId, input.connectionId, input.connectionRevision,
+          connection.rows[0].credential_revision, input.operationId ?? null, input.kind, input.requestDigest])
+      return inserted.rows[0]!
+    })
+  }
+
+  /** Return an owner-scoped call, including state needed by a trusted Platform coordinator. */
+  async get(user: Identity, callId: string): Promise<SshCallRow> {
+    const found = await this.pool.query<SshCallRow>(
+      'SELECT * FROM pe_ssh_calls WHERE id=$1 AND user_id=$2', [callId, user.userId])
+    if (!found.rows[0]) throw new PlatformError(404, 'ssh_call_not_found')
+    return found.rows[0]
+  }
+
+  /** List only the verified user's recent calls. */
+  async list(user: Identity): Promise<readonly SshCallRow[]> {
+    const found = await this.pool.query<SshCallRow>(
+      'SELECT * FROM pe_ssh_calls WHERE user_id=$1 ORDER BY created_at DESC,id DESC LIMIT 100', [user.userId])
+    return found.rows
+  }
+
+  /** Claim expired work; a new epoch fences the previous Platform process. */
+  async claim(owner: string, leaseMs: number): Promise<SshCallRow | null> {
+    if (!Number.isSafeInteger(leaseMs) || leaseMs < 1) throw new Error('Invalid SSH call lease')
+    return transaction(this.pool, async client => {
+      const found = await client.query<SshCallRow>(
+        `SELECT * FROM pe_ssh_calls WHERE state IN
+           ('accepted','preparing','ready','dispatch-intent','running','uncertain')
+         AND (lease_until IS NULL OR lease_until<=now())
+         ORDER BY created_at,id LIMIT 1 FOR UPDATE SKIP LOCKED`)
+      if (!found.rows[0]) return null
+      const updated = await client.query<SshCallRow>(
+        `UPDATE pe_ssh_calls SET lease_owner=$2,lease_epoch=lease_epoch+1,
+           lease_until=now()+$3::double precision*interval '1 millisecond',updated_at=now()
+         WHERE id=$1 RETURNING *`, [found.rows[0].id, owner, leaseMs])
+      return updated.rows[0]!
+    })
+  }
+
+  /** Renew only the current unexpired epoch. */
+  async renew(lease: SshCallLease, leaseMs: number): Promise<void> {
+    if (!Number.isSafeInteger(leaseMs) || leaseMs < 1) throw new Error('Invalid SSH call lease')
+    const renewed = await this.pool.query(
+      `UPDATE pe_ssh_calls SET lease_until=now()+$4::double precision*interval '1 millisecond'
+       WHERE id=$1 AND lease_owner=$2 AND lease_epoch=$3 AND lease_until>now()
+         AND state NOT IN ('succeeded','failed','cancelled') RETURNING id`,
+      [lease.callId, lease.owner, lease.epoch, leaseMs])
+    if (!renewed.rowCount) throw new PlatformError(409, 'ssh_call_lease_lost')
+  }
+
+  /** Check the epoch immediately before the only permitted first POST. Reclaimed intent is read only. */
+  async assertDispatchLease(lease: SshCallLease): Promise<void> {
+    const found = await this.pool.query(
+      `SELECT id FROM pe_ssh_calls WHERE id=$1 AND lease_owner=$2 AND lease_epoch=$3
+       AND dispatch_owner=$2 AND dispatch_epoch=$3
+       AND lease_until>now() AND state='dispatch-intent' AND cancel_requested=false`,
+      [lease.callId, lease.owner, lease.epoch])
+    if (!found.rowCount) throw new PlatformError(409, 'ssh_call_lease_lost')
+  }
+
+  private async change(lease: SshCallLease, expected: SshCallRow['state'], next: SshCallRow['state'],
+    values: readonly unknown[] = [], assignments = ''): Promise<SshCallRow> {
+    const changed = await this.pool.query<SshCallRow>(
+      `UPDATE pe_ssh_calls SET state=$5,updated_at=now()${assignments}
+       WHERE id=$1 AND lease_owner=$2 AND lease_epoch=$3 AND lease_until>now()
+         AND state=$4 RETURNING *`, [lease.callId, lease.owner, lease.epoch, expected, next, ...values])
+    if (!changed.rows[0]) throw new PlatformError(409, 'ssh_call_state_or_lease_changed')
+    return changed.rows[0]
+  }
+
+  /** Begin Pod preparation after the accepted row commits. */
+  async startPreparing(lease: SshCallLease): Promise<SshCallRow> {
+    return this.change(lease, 'accepted', 'preparing')
+  }
+
+  /** Save the exact Pod and Runner identity before any credential reaches the Runner. */
+  async markReady(lease: SshCallLease, handle: SshRunnerHandle): Promise<SshCallRow> {
+    if (handle.callId !== lease.callId) throw new PlatformError(400, 'ssh_call_identity_invalid')
+    return this.change(lease, 'preparing', 'ready',
+      [handle.destination, handle.podUid, handle.instanceId],
+      ',destination=$6,pod_uid=$7,runner_instance_id=$8')
+  }
+
+  /** Commit the keyed Runner digest before a credential-bearing POST. */
+  async markDispatchIntent(lease: SshCallLease, digest: string): Promise<SshCallRow> {
+    if (!hexDigest.test(digest)) throw new PlatformError(400, 'ssh_dispatch_digest_invalid')
+    const changed = await this.pool.query<SshCallRow>(
+      `UPDATE pe_ssh_calls SET state='dispatch-intent',dispatch_digest=$4,
+         dispatch_owner=$2,dispatch_epoch=$3,updated_at=now()
+       WHERE id=$1 AND lease_owner=$2 AND lease_epoch=$3 AND lease_until>now()
+         AND state='ready' AND cancel_requested=false AND pod_uid IS NOT NULL
+         AND runner_instance_id IS NOT NULL RETURNING *`,
+      [lease.callId, lease.owner, lease.epoch, digest])
+    if (!changed.rows[0]) throw new PlatformError(409, 'ssh_call_state_or_lease_changed')
+    return changed.rows[0]
+  }
+
+  /** Record only an observation with the persisted call, Runner, and keyed request identity. */
+  async recordStatus(lease: SshCallLease, status: SshRunnerStatus): Promise<SshCallRow> {
+    if (status.callId !== lease.callId) throw new PlatformError(409, 'ssh_runner_identity_changed')
+    const next = status.state === 'running' ? 'running' : status.state
+    const changed = await this.pool.query<SshCallRow>(
+      `UPDATE pe_ssh_calls SET state=$4,result=$5,error_code=$6,updated_at=now()
+       WHERE id=$1 AND lease_owner=$2 AND lease_epoch=$3 AND lease_until>now()
+         AND state IN ('dispatch-intent','running','uncertain')
+         AND runner_instance_id=$7 AND dispatch_digest=$8 RETURNING *`,
+      [lease.callId, lease.owner, lease.epoch, next, status.result ?? null,
+        status.errorCode ?? null, status.instanceId, status.digest])
+    if (!changed.rows[0]) throw new PlatformError(409, 'ssh_call_state_or_identity_changed')
+    return changed.rows[0]
+  }
+
+  /** Quarantine an unverified outcome while retaining Pod identity for lookup or deletion. */
+  async markUncertain(lease: SshCallLease, expected: SshCallRow['state'], reason: string): Promise<SshCallRow> {
+    if (!['preparing', 'ready', 'dispatch-intent', 'running', 'uncertain'].includes(expected)) {
+      throw new PlatformError(400, 'ssh_call_state_invalid')
+    }
+    return this.change(lease, expected, 'uncertain', [reason], ',error_code=$6')
+  }
+
+  /** Settle without dispatch, after any prepared Pod has been deleted. */
+  async settleWithoutDispatch(lease: SshCallLease, expected: 'accepted' | 'preparing' | 'ready' | 'uncertain',
+    next: 'failed' | 'cancelled', reason: string | null): Promise<SshCallRow> {
+    const changed = await this.pool.query<SshCallRow>(
+      `UPDATE pe_ssh_calls SET state=$5,error_code=$6,updated_at=now()
+       WHERE id=$1 AND lease_owner=$2 AND lease_epoch=$3 AND lease_until>now()
+         AND state=$4 AND dispatch_digest IS NULL RETURNING *`,
+      [lease.callId, lease.owner, lease.epoch, expected, next, reason])
+    if (!changed.rows[0]) throw new PlatformError(409, 'ssh_call_state_or_lease_changed')
+    return changed.rows[0]
+  }
+
+  /** A pre-prepare cancel settles immediately; later work must confirm cleanup or remote outcome. */
+  async cancel(user: Identity, callId: string): Promise<SshCallRow> {
+    return transaction(this.pool, async client => {
+      const found = await client.query<SshCallRow>(
+        'SELECT * FROM pe_ssh_calls WHERE id=$1 AND user_id=$2 FOR UPDATE', [callId, user.userId])
+      const row = found.rows[0]
+      if (!row) throw new PlatformError(404, 'ssh_call_not_found')
+      if (terminal.has(row.state)) return row
+      const state = row.state === 'accepted' ? 'cancelled'
+        : row.dispatch_digest ? 'uncertain' : row.state
+      const updated = await client.query<SshCallRow>(
+        `UPDATE pe_ssh_calls SET cancel_requested=true,state=$2,updated_at=now()
+         WHERE id=$1 RETURNING *`, [callId, state])
+      return updated.rows[0]!
+    })
+  }
+}

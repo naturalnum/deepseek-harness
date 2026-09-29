@@ -437,3 +437,49 @@ CREATE TABLE pe_ssh_updates (
 );
 UPDATE pe_schema SET version=15 WHERE version=14;
 `
+
+/** Durable SSH call admission and fenced Runner dispatch without plaintext credentials or commands. */
+export const schemaV16 = `
+CREATE TABLE pe_ssh_calls (
+  id uuid PRIMARY KEY,
+  user_id uuid NOT NULL REFERENCES pe_users(id),
+  request_id uuid NOT NULL,
+  connection_id uuid NOT NULL,
+  connection_revision integer NOT NULL CHECK (connection_revision>0),
+  credential_revision integer NOT NULL CHECK (credential_revision>0),
+  operation_id uuid REFERENCES pe_operations(id),
+  kind text NOT NULL CHECK (kind IN ('ssh.authenticate','ssh.execute')),
+  request_digest text NOT NULL CHECK (request_digest ~ '^[a-f0-9]{64}$'),
+  state text NOT NULL CHECK (state IN ('accepted','preparing','ready','dispatch-intent','running',
+    'succeeded','failed','uncertain','cancelled')),
+  cancel_requested boolean NOT NULL DEFAULT false,
+  destination jsonb,
+  pod_uid uuid,
+  runner_instance_id uuid,
+  dispatch_digest text CHECK (dispatch_digest IS NULL OR dispatch_digest ~ '^[a-f0-9]{64}$'),
+  dispatch_owner uuid,
+  dispatch_epoch integer CHECK (dispatch_epoch IS NULL OR dispatch_epoch>0),
+  result jsonb,
+  error_code text,
+  lease_owner uuid,
+  lease_epoch integer NOT NULL DEFAULT 0 CHECK (lease_epoch>=0),
+  lease_until timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE(user_id,request_id),
+  FOREIGN KEY(connection_id,user_id) REFERENCES pe_ssh_connections(id,user_id),
+  CHECK ((kind='ssh.authenticate' AND operation_id IS NULL)
+    OR (kind='ssh.execute' AND operation_id IS NOT NULL)),
+  CHECK ((pod_uid IS NULL AND runner_instance_id IS NULL)
+    OR (pod_uid IS NOT NULL AND runner_instance_id IS NOT NULL AND destination IS NOT NULL)),
+  CHECK ((dispatch_digest IS NULL AND dispatch_owner IS NULL AND dispatch_epoch IS NULL)
+    OR (dispatch_digest IS NOT NULL AND dispatch_owner IS NOT NULL AND dispatch_epoch IS NOT NULL
+      AND pod_uid IS NOT NULL AND runner_instance_id IS NOT NULL)),
+  CHECK (state NOT IN ('ready','dispatch-intent','running') OR pod_uid IS NOT NULL),
+  CHECK (state NOT IN ('dispatch-intent','running') OR dispatch_digest IS NOT NULL)
+);
+CREATE INDEX pe_ssh_calls_claim ON pe_ssh_calls(created_at,id)
+  WHERE state IN ('accepted','preparing','ready','dispatch-intent','running','uncertain');
+CREATE INDEX pe_ssh_calls_user ON pe_ssh_calls(user_id,created_at DESC,id DESC);
+UPDATE pe_schema SET version=16 WHERE version=15;
+`
