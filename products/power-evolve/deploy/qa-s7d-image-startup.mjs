@@ -160,6 +160,8 @@ try {
     assert.equal(docker(['exec', names.host, 'test', '-e', '/run/power-evolve/private/database-url'],
       10_000, true).status, 1)
     assert.equal(docker(['exec', names.host, 'test', '-e', '/data'], 10_000, true).status, 1)
+    assert.equal(docker(['exec', names.host, 'test', '-e',
+      '/var/run/secrets/kubernetes.io/serviceaccount/token'], 10_000, true).status, 1)
     assert.equal(mounts(names.host).some(item => item.Destination === '/data'), false)
     for (const name of [names.host, names.platform]) {
       const inspect = JSON.parse(docker(['inspect', name]).stdout)[0]
@@ -172,6 +174,9 @@ try {
       { username: users[0].username, password: users[0].password })
     const token = login.token
     assert.equal(typeof token, 'string')
+    const me = await post(`${hostUrl}/api/powerEvolve/me`, { request: {} }, token)
+    assert.equal(me.settings.maxTokens, 2048)
+    checked.push('Host authenticated RPC reaches internal Platform address')
     const body = Buffer.from('safe-posix image startup proof\n')
     const created = await post(`${platformUrl}/files/put`, { requestId: randomUUID(), path: 'qa/proof.txt',
       baseRevision: null, data: body.toString('base64') }, token)
