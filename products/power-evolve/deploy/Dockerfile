@@ -4,7 +4,9 @@ WORKDIR /opt/power-evolve
 ENV CI=true
 RUN corepack enable
 COPY . .
-RUN pnpm install --frozen-lockfile
+RUN --mount=type=cache,target=/root/.local/share/pnpm/store pnpm install --frozen-lockfile
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential git python3 \
+    && rm -rf /var/lib/apt/lists/*
 ARG SOURCE_COMMIT
 ENV DSH_CLIENT_COMMIT_HASH=${SOURCE_COMMIT}
 RUN pnpm run build && pnpm run build:power-evolve
