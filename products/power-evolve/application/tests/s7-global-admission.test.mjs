@@ -254,8 +254,8 @@ test('two PG-connected workers claim one global slot and recover after lease exp
         VALUES($1,$2,$3,$4,$5,'echo test','','${'a'.repeat(64)}','queued')`,
       [randomUUID(), userId, sessionId, operationId, `call-${index}`])
     }
-    const first = new ExecutionService({ pool: firstPool }, null, 1, 100, 1000, 2000, 1000)
-    const second = new ExecutionService({ pool: secondPool }, null, 1, 100, 1000, 2000, 1000)
+    const first = new ExecutionService({ pool: firstPool }, null, 1, 100, 1000, 2000, 30_000)
+    const second = new ExecutionService({ pool: secondPool }, null, 1, 100, 1000, 2000, 30_000)
     const claimed = await Promise.all([first.claim(), second.claim()])
     assert.equal(claimed.filter(Boolean).length, 1)
     assert.equal((await firstPool.query(`SELECT count(*)::integer AS count FROM pe_cloud_executions
