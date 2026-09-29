@@ -7,7 +7,7 @@ import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { Pool } from 'pg'
-import { identity } from '../lib/contracts.js'
+import { identity, sshCreateTicketRequest } from '../lib/contracts.js'
 import { initializeDatabase } from '../lib/platform/database.js'
 import { SshConnectionService } from '../lib/platform/ssh.js'
 import * as migrations from '../lib/platform/schema.js'
@@ -67,8 +67,20 @@ test('S6 SSH credential ticket keeps password out of Host, encrypts it, and scop
     assert.deepEqual(await ssh.upload(issued.ticket, Readable.from([password])), uploaded)
     await assert.rejects(ssh.upload(issued.ticket, Readable.from([Buffer.from('x'.repeat(password.length))])),
       { status: 409, code: 'ssh_credential_conflict' })
-    assert.deepEqual(await ssh.issueTicket(alice, input, 'http://127.0.0.1:19221'),
-      { state: 'ready', item: uploaded.item })
+    const retry = await ssh.issueTicket(alice, input, 'http://127.0.0.1:19221')
+    assert.equal(retry.state, 'pending')
+    assert.notEqual(retry.ticket, issued.ticket)
+    await assert.rejects(ssh.upload(issued.ticket, Readable.from([password])),
+      { status: 401, code: 'invalid_ssh_ticket' })
+    await assert.rejects(ssh.upload(retry.ticket, Readable.from([Buffer.from('x'.repeat(password.length))])),
+      { status: 409, code: 'ssh_credential_conflict' })
+    assert.deepEqual(await ssh.upload(retry.ticket, Readable.from([password])), uploaded)
+    await assert.rejects(ssh.upload(retry.ticket, Readable.from([Buffer.from('x'.repeat(password.length))])),
+      { status: 409, code: 'ssh_credential_conflict' })
+    await assert.rejects(ssh.upload(retry.ticket, Readable.from([password])),
+      { status: 409, code: 'ssh_credential_retry_limit' })
+    await assert.rejects(ssh.issueTicket(alice, input, 'http://127.0.0.1:19221'),
+      { status: 409, code: 'ssh_credential_retry_limit' })
     const callCredential = await ssh.credentialForCall(alice, uploaded.item.connectionId, 1)
     assert.equal(callCredential.credential.password, password.toString('utf8'))
     assert.equal(callCredential.hostKeySha256, input.hostKeySha256)
@@ -87,9 +99,12 @@ test('S6 SSH credential ticket keeps password out of Host, encrypts it, and scop
     const stored = await pool.query('SELECT encrypted_credential FROM pe_ssh_connections WHERE id=$1', [input.requestId])
     assert.equal(stored.rows[0].encrypted_credential.includes(password), false)
     assert.ok(stored.rows[0].encrypted_credential.length > password.length)
-    const intent = await pool.query('SELECT config FROM pe_ssh_upload_intents WHERE request_id=$1', [input.requestId])
+    const intent = await pool.query('SELECT config,result,secret_digest FROM pe_ssh_upload_intents WHERE request_id=$1', [input.requestId])
     assert.equal(JSON.stringify(intent.rows[0].config).includes(password.toString()), false)
     assert.equal(JSON.stringify(intent.rows[0].config).includes('secretDigest'), false)
+    assert.equal(JSON.stringify(intent.rows[0]).includes(password.toString()), false)
+    assert.equal(intent.rows[0].result.failedVerifications, 3)
+    assert.match(intent.rows[0].secret_digest, /^[a-f0-9]{64}$/u)
     assert.deepEqual((await ssh.list(alice)).items, [uploaded.item])
     assert.deepEqual((await bobSsh.list(bob)).items, [])
     await assert.rejects(ssh.toggle(bob, uploaded.item.connectionId, randomUUID(), 1, false),
@@ -107,6 +122,18 @@ test('S6 SSH credential ticket keeps password out of Host, encrypts it, and scop
       { status: 409, code: 'revision_conflict' })
     assert.deepEqual((await new SshConnectionService(pool, key, 'fixture.example.test:2222').list(alice)).items,
       [disabled])
+    const maximumPassword = Buffer.from('p'.repeat(4096))
+    const maximumInput = { ...input, requestId: randomUUID(), sizeBytes: maximumPassword.length }
+    assert.equal(sshCreateTicketRequest.safeParse(maximumInput).success, true)
+    assert.equal(sshCreateTicketRequest.safeParse({ ...maximumInput, sizeBytes: 4097 }).success, false)
+    const maximumTicket = await ssh.issueTicket(alice, maximumInput, 'http://127.0.0.1:19221')
+    const maximumResult = await ssh.upload(maximumTicket.ticket, Readable.from([maximumPassword]))
+    assert.equal((await ssh.credentialForCall(alice, maximumResult.item.connectionId, 1))
+      .credential.password.length, 4096)
+    const oversizedTicket = await ssh.issueTicket(alice,
+      { ...input, requestId: randomUUID(), sizeBytes: 4096 }, 'http://127.0.0.1:19221')
+    await assert.rejects(ssh.upload(oversizedTicket.ticket, Readable.from([Buffer.from('q'.repeat(4097))])),
+      { status: 413, code: 'ssh_credential_too_large' })
     const unavailable = new SshConnectionService(pool, '', '')
     assert.equal((await unavailable.list(alice)).available, false)
     await assert.rejects(unavailable.issueTicket(alice, { ...input, requestId: randomUUID() },

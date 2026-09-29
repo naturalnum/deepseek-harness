@@ -84,7 +84,7 @@ export const sshCreateTicketRequest = z.object({
   host: z.string().trim().min(1).max(253), port: z.number().int().min(1).max(65_535),
   username: z.string().trim().min(1).max(100),
   hostKeySha256: z.string().regex(/^SHA256:[A-Za-z0-9+/]{43}$/u),
-  credentialKind: z.literal('password'), sizeBytes: z.number().int().min(1).max(8192), enabled: z.boolean(),
+  credentialKind: z.literal('password'), sizeBytes: z.number().int().min(1).max(4096), enabled: z.boolean(),
 }).strict()
 export const sshToggleRequest = z.object({ connectionId: z.uuid(), requestId,
   baseRevision: z.number().int().positive(), enabled: z.boolean() }).strict()

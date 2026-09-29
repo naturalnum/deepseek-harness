@@ -137,7 +137,7 @@ export function validSshCreate(input: SshCreateInput): boolean {
     && bounded(input.username.trim(), 100) && !/\s/u.test(input.username)
     && validSshFingerprint(input.hostKeySha256) && typeof input.enabled === 'boolean'
     && new TextEncoder().encode(input.password).byteLength > 0
-    && new TextEncoder().encode(input.password).byteLength <= 8192
+    && new TextEncoder().encode(input.password).byteLength <= 4096
 }
 
 /** The Host sees metadata and byte count; credential bytes go only to the trusted Platform. */
@@ -171,7 +171,6 @@ export class PersonalSshHttpClient implements PersonalSshPort {
         credentialKind: 'password', sizeBytes: bytes.byteLength, enabled: input.enabled }
       const ticket = await this.post('sshCreateTicket', metadata)
       if (!record(ticket)) throw new Error('Invalid SSH upload ticket')
-      if (ticket.state === 'ready') return createdConnection(ticket.item, input)
       if (ticket.state !== 'pending' || !bounded(ticket.ticket, 256) || !TICKET.test(ticket.ticket)
         || !bounded(ticket.uploadUrl, 2048) || !bounded(ticket.expiresAt, 64)) {
         throw new Error('Invalid SSH upload ticket')

@@ -10,6 +10,8 @@ import { transaction } from './database.ts'
 const TICKET_LIFETIME_MS = 5 * 60_000
 const MAX_CONNECTIONS = 8
 const MAX_PENDING = 8
+const MAX_PASSWORD_BYTES = 4096
+const MAX_COMPLETED_MISMATCHES = 3
 type Request = z.infer<typeof sshCreateTicketRequest>
 type Connection = {
   id: string; user_id: string; install_request_id: string; install_digest: string;
@@ -20,7 +22,8 @@ type Connection = {
 type Intent = {
   request_id: string; user_id: string; request_digest: string; config: unknown;
   size_bytes: number; secret_digest: string | null; token_digest: string;
-  expires_at: Date; consumed_at: Date | null; result: { item: ReturnType<SshConnectionService['present']> } | null
+  expires_at: Date; consumed_at: Date | null;
+  result: { item: ReturnType<SshConnectionService['present']>; failedVerifications?: number } | null
 }
 
 const hash = (input: string | Buffer) => createHash('sha256').update(input).digest('hex')
@@ -128,7 +131,7 @@ export class SshConnectionService {
     finally { plain?.fill(0) }
   }
 
-  /** Reserve a fixed-size secret upload while Host sees only its size and metadata. */
+  /** Reserve a fixed-size upload; a completed request still verifies password bytes before replay. */
   async issueTicket(user: Identity, input: Request, platformOrigin: string) {
     this.requireAvailable()
     const host = input.host.toLowerCase()
@@ -149,12 +152,19 @@ export class SshConnectionService {
         if (row.user_id !== user.userId || row.install_digest !== requestDigest) {
           throw new PlatformError(409, 'request_id_conflict')
         }
-        return { state: 'ready' as const, item: this.present(row) }
       }
       const prior = await client.query<Intent>(
         'SELECT * FROM pe_ssh_upload_intents WHERE request_id=$1', [input.requestId])
       if (prior.rows[0] && (prior.rows[0].user_id !== user.userId
         || prior.rows[0].request_digest !== requestDigest)) throw new PlatformError(409, 'request_id_conflict')
+      if (installed.rows[0] && (!prior.rows[0]?.consumed_at
+        || !prior.rows[0].secret_digest || !prior.rows[0].result)
+        || !installed.rows[0] && prior.rows[0]?.consumed_at) {
+        throw new PlatformError(503, 'ssh_upload_unavailable')
+      }
+      if ((prior.rows[0]?.result?.failedVerifications ?? 0) >= MAX_COMPLETED_MISMATCHES) {
+        throw new PlatformError(409, 'ssh_credential_retry_limit')
+      }
       if (!prior.rows[0]) {
         const count = await client.query<{ n: string }>('SELECT count(*) AS n FROM pe_ssh_connections WHERE user_id=$1', [user.userId])
         if (Number(count.rows[0]!.n) >= MAX_CONNECTIONS) throw new PlatformError(413, 'ssh_connection_limit')
@@ -170,8 +180,7 @@ export class SshConnectionService {
          VALUES($1,$2,$3,$4,$5,$6,$7)
          ON CONFLICT(request_id) DO UPDATE SET token_digest=EXCLUDED.token_digest,expires_at=EXCLUDED.expires_at
          WHERE pe_ssh_upload_intents.user_id=EXCLUDED.user_id
-           AND pe_ssh_upload_intents.request_digest=EXCLUDED.request_digest
-           AND pe_ssh_upload_intents.consumed_at IS NULL RETURNING request_id`,
+           AND pe_ssh_upload_intents.request_digest=EXCLUDED.request_digest RETURNING request_id`,
         [input.requestId, user.userId, requestDigest, config, input.sizeBytes, hash(ticket), expiresAt])
       if (!issued.rowCount) throw new PlatformError(409, 'request_id_conflict')
       return { state: 'pending' as const, ticket, uploadUrl: new URL('/ssh/upload', platformOrigin).href,
@@ -195,7 +204,7 @@ export class SshConnectionService {
         const chunk = Buffer.from(value as Buffer)
         chunks.push(chunk)
         size += chunk.length
-        if (size > 8192 || size > intent.size_bytes) throw new PlatformError(413, 'ssh_credential_too_large')
+        if (size > MAX_PASSWORD_BYTES || size > intent.size_bytes) throw new PlatformError(413, 'ssh_credential_too_large')
       }
       plain = Buffer.concat(chunks)
       if (plain.length !== intent.size_bytes || !Buffer.from(plain.toString('utf8'), 'utf8').equals(plain)) {
@@ -210,7 +219,7 @@ export class SshConnectionService {
       cipher.setAAD(Buffer.from(['power-evolve-ssh-v1', intent.user_id, intent.request_id, '1'].join('\0')))
       const ciphertext = Buffer.concat([cipher.update(plain), cipher.final()])
       const sealed = Buffer.concat([iv, cipher.getAuthTag(), ciphertext])
-      return transaction(this.pool, async client => {
+      const outcome = await transaction(this.pool, async client => {
         await client.query('SELECT id FROM pe_users WHERE id=$1 FOR UPDATE', [intent.user_id])
         const current = await client.query<Intent>(
           'SELECT * FROM pe_ssh_upload_intents WHERE request_id=$1 FOR UPDATE', [intent.request_id])
@@ -219,9 +228,15 @@ export class SshConnectionService {
           throw new PlatformError(401, 'invalid_ssh_ticket')
         }
         if (row.consumed_at) {
-          if (row.secret_digest !== secretDigest) throw new PlatformError(409, 'ssh_credential_conflict')
           if (!row.result) throw new PlatformError(503, 'ssh_upload_unavailable')
-          return row.result
+          const attempts = row.result.failedVerifications ?? 0
+          if (attempts >= MAX_COMPLETED_MISMATCHES) throw new PlatformError(409, 'ssh_credential_retry_limit')
+          if (row.secret_digest !== secretDigest) {
+            await client.query('UPDATE pe_ssh_upload_intents SET result=$2 WHERE request_id=$1',
+              [intent.request_id, { ...row.result, failedVerifications: attempts + 1 }])
+            return { conflict: true as const }
+          }
+          return { value: { item: row.result.item } }
         }
         const created = await client.query<Connection>(
           `INSERT INTO pe_ssh_connections(id,user_id,install_request_id,install_digest,display_name,host,port,
@@ -233,8 +248,10 @@ export class SshConnectionService {
         const result = { item: this.present(created.rows[0]!) }
         await client.query('UPDATE pe_ssh_upload_intents SET consumed_at=now(),secret_digest=$2,result=$3 WHERE request_id=$1',
           [intent.request_id, secretDigest, result])
-        return result
+        return { value: result }
       })
+      if ('conflict' in outcome) throw new PlatformError(409, 'ssh_credential_conflict')
+      return outcome.value
     } finally {
       plain?.fill(0)
       for (const chunk of chunks) chunk.fill(0)

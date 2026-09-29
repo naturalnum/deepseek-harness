@@ -59,17 +59,19 @@ test('SSH upload rejects a redirected destination before credential bytes leave 
   }
 })
 
-test('a ready retry needs no second upload and field validation rejects unsafe drafts', async () => {
+test('a ready response cannot skip password verification and field validation rejects unsafe drafts', async () => {
   const calls: string[] = []
   const client = new PersonalSshHttpClient(async url => {
     calls.push(String(url))
     return Response.json({ state: 'ready', item })
   })
-  assert.deepEqual(await client.createPassword(input), item)
+  await assert.rejects(client.createPassword(input), /Invalid SSH upload ticket/u)
   assert.deepEqual(calls, ['/api/powerEvolve/sshCreateTicket'])
   assert.equal(validSshCreate({ ...input, hostKeySha256: '' }), false)
   assert.equal(validSshCreate({ ...input, password: '' }), false)
-  assert.equal(validSshCreate({ ...input, password: '你'.repeat(2731) }), false)
+  assert.equal(validSshCreate({ ...input, password: 'p'.repeat(4096) }), true)
+  assert.equal(validSshCreate({ ...input, password: 'p'.repeat(4097) }), false)
+  assert.equal(validSshCreate({ ...input, password: '你'.repeat(1366) }), false)
   assert.equal(validSshCreate({ ...input, host: 'user@server.example.com' }), false)
 })
 
