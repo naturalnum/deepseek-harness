@@ -30,6 +30,7 @@ env.PE_COMPOSE_EXTERNAL_NETWORK = process.env.PE_COMPOSE_EXTERNAL_NETWORK
 env.PE_MULTI_HOST = process.env.PE_MULTI_HOST
 env.PE_MCP_ENABLED = process.env.PE_MCP_ENABLED
 env.PE_MCP_PORT = process.env.PE_MCP_PORT
+env.PE_SSH_ENABLED = process.env.PE_SSH_ENABLED
 env.PE_MCP_TOKEN_FILE = process.env.PE_MCP_ENABLED === '1' ? join(privateDir, 'mcp-token')
   : process.env.PE_MCP_TOKEN_FILE
 env.PE_HOST_SECOND_PORT = process.env.PE_HOST_SECOND_PORT

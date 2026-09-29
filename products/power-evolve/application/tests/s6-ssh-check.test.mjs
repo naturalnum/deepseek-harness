@@ -46,7 +46,10 @@ class FakeRunner {
     this.lookups.push({ handle, dispatched: true, digest, cancel: true })
     return { state: 'uncertain', reason: 'cancel_effect_unknown' }
   }
-  async cleanup(callId) { this.cleaned.push(callId) }
+  async cleanup(callId) {
+    if (this.failCleanupOnce) { this.failCleanupOnce = false; throw new Error('fixture cleanup failed') }
+    this.cleaned.push(callId)
+  }
 }
 
 test('authentication admission is owner scoped and a restarted worker never repeats a dispatch intent',
@@ -125,6 +128,13 @@ test('authentication admission is owner scoped and a restarted worker never repe
     assert.deepEqual(await restarted.status(users[0], first.callId),
       { callId: first.callId, state: 'succeeded',
         result: { kind: 'ssh.authenticate', serverBanner: 'recovered server' } })
+    assert.equal((await calls.get(users[0], first.callId)).cleanup_complete, true)
+    await pool.query('UPDATE pe_ssh_calls SET cleanup_complete=false WHERE id=$1', [first.callId])
+    runner.failCleanupOnce = true
+    await restarted.cleanupPending()
+    assert.equal((await calls.get(users[0], first.callId)).cleanup_complete, false)
+    await restarted.cleanupPending()
+    assert.equal((await calls.get(users[0], first.callId)).cleanup_complete, true)
     assert.equal(await restarted.pump(), true)
     assert.equal(runner.posts.length, 2, 'the other user has an independent call')
     assert.equal((await restarted.status(users[1], second.callId)).state, 'succeeded')

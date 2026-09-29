@@ -1,14 +1,16 @@
 /** Trusted platform profile: identity, durable tasks/events, and credentialed model egress. */
 import { readFile, writeFile } from 'node:fs/promises'
 import { randomUUID, timingSafeEqual } from 'node:crypto'
+import { isIP } from 'node:net'
 import { relative, resolve } from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
 import { Pool } from 'pg'
-import { createRequest, filesListRequest, fileReadRequest, filePutRequest, sessionFilesListRequest, sessionFileReadRequest, sessionFilePutRequest, listRequest, loginRequest, modelsListRequest, pageRequest, promptRequest, sessionId, sessionRequest, settingsUpdateRequest, skillInstallRequest, skillRequest, skillToggleRequest, skillUploadTicketRequest, sshCreateTicketRequest, sshToggleRequest, settings, workspaceCreateRequest, PlatformError } from '../contracts.ts'
+import { createRequest, filesListRequest, fileReadRequest, filePutRequest, sessionFilesListRequest, sessionFileReadRequest, sessionFilePutRequest, listRequest, loginRequest, modelsListRequest, pageRequest, promptRequest, sessionId, sessionRequest, settingsUpdateRequest, skillInstallRequest, skillRequest, skillToggleRequest, skillUploadTicketRequest, sshCreateTicketRequest, sshToggleRequest, sshCheckRequest, sshCallRefRequest, settings, workspaceCreateRequest, PlatformError } from '../contracts.ts'
 import { bearer, readJson, sendFailure, sendJson } from '../http.ts'
 import { initializeDatabase } from './database.ts'
 import { hashPassword, IdentityService } from './identity.ts'
@@ -25,6 +27,9 @@ import { ConnectorService } from './connectors.ts'
 import { PluginService } from './plugins.ts'
 import { PersonalMcpService } from './mcp.ts'
 import { SshConnectionService } from './ssh.ts'
+import { SshCallStore } from './ssh-calls.ts'
+import { SshAuthenticationCheck } from './ssh-check.ts'
+import { SshRunnerOrchestrator } from './ssh-runner.ts'
 import { ExecutionService } from './executions.ts'
 import { DeviceService } from './devices.ts'
 import { KubernetesClient } from './kubernetes.ts'
@@ -44,6 +49,11 @@ export const Config = schema.object({
   mcpUrl: schema.string().default(''), mcpTokenFile: schema.string().default(''),
   mcpTimeoutMs: schema.number().min(1000).default(5000),
   sshCredentialKeyFile: schema.string().default(''), sshDestinationAllowlist: schema.string().default(''),
+  sshRunnerKubeconfigFile: schema.string().default(''), sshRunnerNamespace: schema.string().default(''),
+  sshRunnerImage: schema.string().default(''), sshRunnerRuntimeClass: schema.string().default('gvisor'),
+  sshRunnerIngressCidrs: schema.string().default(''),
+  sshRunnerReadyTimeoutMs: schema.number().min(1000).default(30000),
+  sshRunnerLeaseMs: schema.number().min(1000).default(90000),
   connectorUrl: schema.string().required(), connectorTimeoutMs: schema.number().min(1000).required(),
   connectorPollMs: schema.number().min(100).required(),
   sandboxKubeconfigFile: schema.string().default(''), sandboxKeyFile: schema.string().default(''),
@@ -104,6 +114,59 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const tasks = new TaskStore(pool, { ...config, executionEnabled, mcpEnabled: !!config.mcpUrl })
   const mcp = new PersonalMcpService(tasks, config.mcpUrl, mcpToken.trim(), config.mcpTimeoutMs)
   const ssh = new SshConnectionService(pool, sshKey, config.sshDestinationAllowlist)
+  const sshRunnerEnabled = config.sshRunnerKubeconfigFile.length > 0
+  if (sshRunnerEnabled && (!ssh.available || !config.sshRunnerNamespace || !config.sshRunnerImage
+    || !config.sshRunnerRuntimeClass || !config.sshRunnerIngressCidrs)) {
+    throw new Error('Incomplete SSH Connector Runner configuration')
+  }
+  const sshCheck = sshRunnerEnabled ? await (async () => {
+    const kube = await KubernetesClient.fromFile(config.sshRunnerKubeconfigFile)
+    const namespace = config.sshRunnerNamespace, serviceName = 'power-evolve-forbidden-listener'
+    const servicePath = kube.resourcePath(namespace, 'services', serviceName)
+    const service = await kube.call<{ metadata?: { name?: string }; spec?: { clusterIP?: string;
+      selector?: Record<string, string>; ports?: Array<{ port?: number }> } }>('GET', servicePath)
+    const probeIp = service.spec?.clusterIP
+    if (service.metadata?.name !== serviceName || !probeIp || !isIP(probeIp)
+      || service.spec?.selector?.['app.kubernetes.io/name'] !== serviceName
+      || service.spec?.ports?.[0]?.port !== 8080) throw new Error('SSH forbidden listener identity invalid')
+    const proveForbiddenListener = async () => {
+      try {
+        const current = await kube.call<typeof service>('GET', servicePath)
+        if (current.spec?.clusterIP !== probeIp || current.spec?.ports?.[0]?.port !== 8080) return false
+        const health = await kube.call<{ healthy?: boolean }>('GET',
+          kube.proxyPath(namespace, serviceName, '/health'), undefined, 3000)
+        return health.healthy === true
+      } catch (_unavailable) { return false }
+    }
+    if (!await proveForbiddenListener()) throw new Error('SSH forbidden listener unavailable')
+    const runner = new SshRunnerOrchestrator(kube, {
+      namespace, image: config.sshRunnerImage, runtimeClassName: config.sshRunnerRuntimeClass,
+      controlKey: connectorKey.trim(), readyTimeoutMs: config.sshRunnerReadyTimeoutMs,
+      platformIngressCidrs: config.sshRunnerIngressCidrs.split(',').map(value => value.trim()),
+      forbiddenProbe: { ip: probeIp, port: 8080 }, proveForbiddenListener,
+    })
+    return new SshAuthenticationCheck(new SshCallStore(pool), ssh, runner,
+      { ownerId: instanceId, requestKey: connectorKey.trim(), leaseMs: config.sshRunnerLeaseMs })
+  })() : null
+  if (sshCheck) {
+    const stop = new AbortController()
+    const polling = (async () => {
+      let nextCleanup = 0
+      while (!stop.signal.aborted) {
+        try { if (await sshCheck.pump()) continue }
+        catch (_error) { /* Persisted state is reconciled on a later claim. */ }
+        if (Date.now() >= nextCleanup) {
+          nextCleanup = Date.now() + 10_000
+          try { await sshCheck.cleanupPending() }
+          catch (_unavailable) { /* Retry cleanup after DB recovery. */ }
+        }
+        try { await delay(500, undefined, { signal: stop.signal }) }
+        catch (_aborted) { /* Stop the loop on shutdown. */ }
+      }
+    })()
+    ctx.effect(() => async () => { stop.abort(); await polling })
+  }
+  const sshAvailable = ssh.available && sshCheck !== null
   const events = new EventStore(tasks, config)
   const nativeSessions = new NativeSessionRead(pool)
   const nativeWorkspaces = new NativeWorkspaceRead(pool, files, nativeSessions, config.maxWorkspacesPerUser)
@@ -127,7 +190,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
 
   const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const path = new URL(req.url ?? '/', config.platformOrigin).pathname
-    if (req.method === 'GET' && path === '/health') { sendJson(res, { ready: true, service: 'platform', schema: 16, executionEnabled, mcpAvailable: !!config.mcpUrl, sshAvailable: ssh.available, instanceId }); return }
+    if (req.method === 'GET' && path === '/health') { sendJson(res, { ready: true, service: 'platform', schema: 16, executionEnabled, mcpAvailable: !!config.mcpUrl, sshAvailable, instanceId }); return }
     if (req.method === 'GET' && path === '/config') { sendJson(res, { hostUrl: config.hostOrigin }); return }
     if (req.method === 'GET' && await serveUi(path, 'login', res, config.hostOrigin)) return
     const artifactContent = /^\/artifacts\/([^/]+)\/content$/u.exec(path)
@@ -351,15 +414,37 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         const value = z.object({ connectionId: z.uuid() }).strict().parse(input)
         sendJson(res, await mcp.check(user, value.connectionId)); return
       }
-      case '/ssh/list': z.object({}).strict().parse(input); sendJson(res, await ssh.list(user)); return
+      case '/ssh/list': {
+        z.object({}).strict().parse(input)
+        sendJson(res, { ...(await ssh.list(user)), available: sshAvailable }); return
+      }
       case '/ssh/create-ticket': {
+        if (!sshAvailable) throw new PlatformError(503, 'ssh_unavailable')
         const value = sshCreateTicketRequest.parse(input)
         sendJson(res, await ssh.issueTicket(user, value, config.platformOrigin)); return
       }
       case '/ssh/toggle': {
         const value = sshToggleRequest.parse(input)
+        if (value.enabled && !sshAvailable) throw new PlatformError(503, 'ssh_unavailable')
         sendJson(res, await ssh.toggle(user, value.connectionId, value.requestId,
           value.baseRevision, value.enabled)); return
+      }
+      case '/ssh/check': {
+        if (!sshCheck) throw new PlatformError(503, 'ssh_unavailable')
+        sendJson(res, await sshCheck.submit(user, sshCheckRequest.parse(input))); return
+      }
+      case '/ssh/call-status': {
+        if (!sshCheck) throw new PlatformError(503, 'ssh_unavailable')
+        sendJson(res, await sshCheck.status(user, sshCallRefRequest.parse(input).callId)); return
+      }
+      case '/ssh/call-list': {
+        if (!sshCheck) throw new PlatformError(503, 'ssh_unavailable')
+        z.object({}).strict().parse(input)
+        sendJson(res, await sshCheck.list(user)); return
+      }
+      case '/ssh/call-cancel': {
+        if (!sshCheck) throw new PlatformError(503, 'ssh_unavailable')
+        sendJson(res, await sshCheck.cancel(user, sshCallRefRequest.parse(input).callId)); return
       }
       case '/sessions/create': {
         const value = createRequest.parse(input)

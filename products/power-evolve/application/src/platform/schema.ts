@@ -453,6 +453,7 @@ CREATE TABLE pe_ssh_calls (
   state text NOT NULL CHECK (state IN ('accepted','preparing','ready','dispatch-intent','running',
     'succeeded','failed','uncertain','cancelled')),
   cancel_requested boolean NOT NULL DEFAULT false,
+  cleanup_complete boolean NOT NULL DEFAULT false,
   destination jsonb,
   pod_uid uuid,
   runner_instance_id uuid,

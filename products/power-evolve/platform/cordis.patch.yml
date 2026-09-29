@@ -36,6 +36,13 @@
         mcpTimeoutMs: 5000
         sshCredentialKeyFile: ''
         sshDestinationAllowlist: ''
+        sshRunnerKubeconfigFile: ''
+        sshRunnerNamespace: ''
+        sshRunnerImage: ''
+        sshRunnerRuntimeClass: gvisor
+        sshRunnerIngressCidrs: ''
+        sshRunnerReadyTimeoutMs: 30000
+        sshRunnerLeaseMs: 90000
         connectorUrl: http://127.0.0.1:18884
         connectorTimeoutMs: 5000
         connectorPollMs: 500

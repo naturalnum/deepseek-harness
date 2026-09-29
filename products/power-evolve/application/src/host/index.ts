@@ -12,7 +12,7 @@ import type {} from '@deepseek-ai/dsh-typert-registry'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import { TypertRemoteService, Remote, type PeerScope, type PeerId, type InvocationDescriptor } from '@deepseek-ai/dsh-typert-protocol'
-import { createRequest, sessionFilesListRequest, sessionFileReadRequest, sessionFilePutRequest, listRequest, pageRequest, promptRequest, settingsUpdateRequest, skillInstallRequest, skillRequest, skillToggleRequest, sshCreateTicketRequest, sshToggleRequest, PlatformError } from '../contracts.ts'
+import { createRequest, sessionFilesListRequest, sessionFileReadRequest, sessionFilePutRequest, listRequest, pageRequest, promptRequest, settingsUpdateRequest, skillInstallRequest, skillRequest, skillToggleRequest, sshCreateTicketRequest, sshToggleRequest, sshCheckRequest, sshCallRefRequest, sshCheckView, PlatformError } from '../contracts.ts'
 import { readJson, sendFailure, sendJson, writeLine } from '../http.ts'
 import { serveNativeUi, serveUi } from '../ui.ts'
 import { BrowserAgentAuth } from './browser-auth.ts'
@@ -36,6 +36,8 @@ const requests = { me: z.object({}).strict(), logout: z.object({}).strict(), mod
     enabled: z.boolean() }).strict(),
   mcpCheck: z.object({ connectionId: z.uuid() }).strict(),
   sshList: z.object({}).strict(), sshCreateTicket: sshCreateTicketRequest, sshToggle: sshToggleRequest,
+  sshCheck: sshCheckRequest, sshCallStatus: sshCallRefRequest, sshCallCancel: sshCallRefRequest,
+  sshCallList: z.object({}).strict(),
   artifactsPublish: z.object({ requestId: z.uuid(), sessionId: z.uuid(), path: z.string().min(1).max(512) }).strict(),
   artifactsList: z.object({ workspaceId: z.uuid().optional(), sessionId: z.uuid().optional(),
     cursor: z.uuid().optional(), limit: z.number().int().min(1).max(100).optional() }).strict(),
@@ -53,6 +55,8 @@ const endpoint = { me: '/identity/me', logout: '/identity/logout', modelsList: '
   pluginsList: '/plugins/list', pluginsNotesSetEnabled: '/plugins/notes/set-enabled',
   mcpList: '/mcp/list', mcpInstall: '/mcp/install', mcpToggle: '/mcp/toggle', mcpCheck: '/mcp/check',
   sshList: '/ssh/list', sshCreateTicket: '/ssh/create-ticket', sshToggle: '/ssh/toggle',
+  sshCheck: '/ssh/check', sshCallStatus: '/ssh/call-status', sshCallCancel: '/ssh/call-cancel',
+  sshCallList: '/ssh/call-list',
   artifactsPublish: '/artifacts/publish', artifactsList: '/artifacts/list', artifactsPreview: '/artifacts/preview',
   executionsList: '/executions/list', executionCancel: '/executions/cancel',
   devicesList: '/devices/list', devicesPair: '/devices/pair',
@@ -133,6 +137,18 @@ class ProductRemote extends TypertRemoteService {
     return result
   }
   @Remote sshToggle(request: z.infer<typeof sshToggleRequest>) { return this.call('sshToggle', request) }
+  @Remote async sshCheck(request: z.infer<typeof sshCheckRequest>) {
+    return sshCheckView.parse(await this.call('sshCheck', request))
+  }
+  @Remote async sshCallStatus(request: z.infer<typeof sshCallRefRequest>) {
+    return sshCheckView.parse(await this.call('sshCallStatus', request))
+  }
+  @Remote async sshCallCancel(request: z.infer<typeof sshCallRefRequest>) {
+    return sshCheckView.parse(await this.call('sshCallCancel', request))
+  }
+  @Remote async sshCallList(request: Record<string, never>) {
+    return z.object({ items: z.array(sshCheckView).max(100) }).strict().parse(await this.call('sshCallList', request))
+  }
   @Remote artifactsPublish(request: z.infer<typeof requests.artifactsPublish>) { return this.call('artifactsPublish', request) }
   @Remote artifactsList(request: z.infer<typeof requests.artifactsList>) { return this.call('artifactsList', request) }
   @Remote artifactsPreview(request: z.infer<typeof requests.artifactsPreview>) { return this.call('artifactsPreview', request) }

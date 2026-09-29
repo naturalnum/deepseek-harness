@@ -83,6 +83,21 @@ export class SshConnectionService {
     return { available: this.available, items: rows.rows.map(row => this.present(row)) }
   }
 
+  /** Preflight metadata without decrypting the credential before policy readiness. */
+  async metadataForCall(user: Pick<Identity, 'userId'>, connectionId: string, revision: number) {
+    this.requireAvailable()
+    const found = await this.pool.query<Pick<Connection,
+      'host' | 'port' | 'username' | 'host_key_sha256' | 'credential_revision'>>(
+      `SELECT host,port,username,host_key_sha256,credential_revision FROM pe_ssh_connections
+       WHERE id=$1 AND user_id=$2 AND revision=$3 AND enabled=true`,
+      [connectionId, user.userId, revision])
+    const row = found.rows[0]
+    if (!row) throw new PlatformError(404, 'ssh_connection_not_found')
+    this.checkDestination(row.host, row.port)
+    return { host: row.host, port: row.port, username: row.username,
+      hostKeySha256: row.host_key_sha256, credentialRevision: row.credential_revision }
+  }
+
   /** Platform-only lookup. Never expose this result through a Host or browser route. */
   async credentialForCall(user: Pick<Identity, 'userId'>, connectionId: string, revision: number) {
     const key = this.requireAvailable()

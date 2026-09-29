@@ -72,6 +72,11 @@ test('S6 SSH credential ticket keeps password out of Host, encrypts it, and scop
     const callCredential = await ssh.credentialForCall(alice, uploaded.item.connectionId, 1)
     assert.equal(callCredential.credential.password, password.toString('utf8'))
     assert.equal(callCredential.hostKeySha256, input.hostKeySha256)
+    assert.deepEqual(await ssh.metadataForCall(alice, uploaded.item.connectionId, 1),
+      { host: input.host, port: input.port, username: input.username,
+        hostKeySha256: input.hostKeySha256, credentialRevision: 1 })
+    await assert.rejects(ssh.metadataForCall(bob, uploaded.item.connectionId, 1),
+      { status: 404, code: 'ssh_connection_not_found' })
     await assert.rejects(ssh.credentialForCall(bob, uploaded.item.connectionId, 1),
       { status: 404, code: 'ssh_connection_not_found' })
     await assert.rejects(new SshConnectionService(pool, randomBytes(32).toString('base64url'),

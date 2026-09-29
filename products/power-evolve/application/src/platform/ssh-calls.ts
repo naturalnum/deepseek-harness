@@ -30,6 +30,7 @@ export interface SshCallRow {
   readonly state: 'accepted' | 'preparing' | 'ready' | 'dispatch-intent' | 'running'
     | 'succeeded' | 'failed' | 'uncertain' | 'cancelled'
   readonly cancel_requested: boolean
+  readonly cleanup_complete: boolean
   readonly destination: SshRunnerHandle['destination'] | null
   readonly pod_uid: string | null
   readonly runner_instance_id: string | null
@@ -114,6 +115,21 @@ export class SshCallStore {
     return found.rows
   }
 
+  /** Retry cleanup after a crash between terminal persistence and Pod deletion. */
+  async cleanupCandidates(): Promise<readonly { id: string; pod_uid: string }[]> {
+    const found = await this.pool.query<{ id: string; pod_uid: string }>(
+      `SELECT id,pod_uid FROM pe_ssh_calls WHERE state IN ('succeeded','failed','cancelled')
+       AND pod_uid IS NOT NULL AND cleanup_complete=false ORDER BY updated_at,id LIMIT 20`)
+    return found.rows
+  }
+
+  async markCleanupComplete(callId: string, podUid: string): Promise<void> {
+    const updated = await this.pool.query(
+      `UPDATE pe_ssh_calls SET cleanup_complete=true,updated_at=now()
+       WHERE id=$1 AND pod_uid=$2 AND state IN ('succeeded','failed','cancelled')`, [callId, podUid])
+    if (!updated.rowCount) throw new PlatformError(409, 'ssh_cleanup_state_changed')
+  }
+
   /** Claim expired work; a new epoch fences the previous Platform process. */
   async claim(owner: string, leaseMs: number): Promise<SshCallRow | null> {
     if (!Number.isSafeInteger(leaseMs) || leaseMs < 1) throw new Error('Invalid SSH call lease')
@@ -151,6 +167,19 @@ export class SshCallStore {
        AND lease_until>now() AND state='dispatch-intent' AND cancel_requested=false`,
       [lease.callId, lease.owner, lease.epoch])
     if (!found.rowCount) throw new PlatformError(409, 'ssh_call_lease_lost')
+  }
+
+  /** Linearize the first Runner POST against cancellation and lease takeover. */
+  async withDispatchLock<T>(lease: SshCallLease, action: () => Promise<T>): Promise<T> {
+    return transaction(this.pool, async client => {
+      const found = await client.query(
+        `SELECT id FROM pe_ssh_calls WHERE id=$1 AND lease_owner=$2 AND lease_epoch=$3
+         AND dispatch_owner=$2 AND dispatch_epoch=$3 AND lease_until>now()
+         AND state='dispatch-intent' AND cancel_requested=false FOR UPDATE`,
+        [lease.callId, lease.owner, lease.epoch])
+      if (!found.rowCount) throw new PlatformError(409, 'ssh_call_lease_lost')
+      return action()
+    })
   }
 
   private async change(lease: SshCallLease, expected: SshCallRow['state'], next: SshCallRow['state'],

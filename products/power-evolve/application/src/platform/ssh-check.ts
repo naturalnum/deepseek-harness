@@ -71,6 +71,22 @@ export class SshAuthenticationCheck {
     return this.present(await this.calls.get(user, callId))
   }
 
+  /** Restore recent owner-scoped checks after a browser refresh. */
+  async list(user: Identity): Promise<{ items: SshCheckView[] }> {
+    return { items: (await this.calls.list(user)).filter(row => row.kind === 'ssh.authenticate')
+      .map(row => this.present(row)) }
+  }
+
+  /** A terminal status is durable before cleanup; retry any orphaned Runner resource. */
+  async cleanupPending(): Promise<void> {
+    for (const row of await this.calls.cleanupCandidates()) {
+      try {
+        await this.runner.cleanup(row.id)
+        await this.calls.markCleanupComplete(row.id, row.pod_uid)
+      } catch (_unavailable) { /* Keep the candidate for the next sweep. */ }
+    }
+  }
+
   /** Request cancellation; prepared Pods are removed by the leased worker. */
   async cancel(user: Identity, callId: string): Promise<SshCheckView> {
     return this.present(await this.calls.cancel(user, callId))
@@ -91,7 +107,10 @@ export class SshAuthenticationCheck {
         return
       }
       await this.calls.recordStatus(lease, status)
-      if (status.state !== 'running') await this.runner.cleanup(row.id)
+      if (status.state !== 'running') {
+        await this.runner.cleanup(row.id)
+        if (row.pod_uid) await this.calls.markCleanupComplete(row.id, row.pod_uid)
+      }
     } else {
       const reason = observation.state === 'uncertain' ? observation.reason : 'runner_call_absent'
       await this.calls.markUncertain(lease, row.state, safeCode.test(reason) ? reason : 'runner_status_unavailable')
@@ -140,7 +159,7 @@ export class SshAuthenticationCheck {
     }
     if (row.state === 'accepted') row = await this.calls.startPreparing(lease)
     if (row.state === 'preparing') {
-      const connection = await this.connections.credentialForCall({ userId: row.user_id as Identity['userId'] },
+      const connection = await this.connections.metadataForCall({ userId: row.user_id as Identity['userId'] },
         row.connection_id, row.connection_revision)
       if (connection.credentialRevision !== row.credential_revision) {
         await this.settleBeforeDispatch(lease, row, 'failed', 'ssh_credential_changed')
@@ -204,7 +223,7 @@ export class SshAuthenticationCheck {
       if (lost || error instanceof PlatformError && error.status === 409) return true
       const current = await this.calls.get({ userId: row.user_id as Identity['userId'], username: '' }, row.id)
       if (current.dispatch_digest) {
-        if (current.state !== 'uncertain') await this.calls.markUncertain(lease, current.state,
+        if (['dispatch-intent', 'running'].includes(current.state)) await this.calls.markUncertain(lease, current.state,
           'ssh_check_unavailable')
       } else if (current.state === 'accepted' || current.state === 'preparing'
         || current.state === 'ready' || current.state === 'uncertain') {

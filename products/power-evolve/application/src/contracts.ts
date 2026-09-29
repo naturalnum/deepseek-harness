@@ -87,6 +87,15 @@ export const sshCreateTicketRequest = z.object({
 }).strict()
 export const sshToggleRequest = z.object({ connectionId: z.uuid(), requestId,
   baseRevision: z.number().int().positive(), enabled: z.boolean() }).strict()
+export const sshCheckRequest = z.object({ requestId, connectionId: z.uuid(),
+  connectionRevision: z.number().int().positive() }).strict()
+export const sshCallRefRequest = z.object({ callId: z.uuid() }).strict()
+export const sshCheckView = z.object({ callId: z.uuid(),
+  state: z.enum(['accepted', 'preparing', 'ready', 'dispatch-intent', 'running',
+    'succeeded', 'failed', 'uncertain', 'cancelled']),
+  result: z.object({ kind: z.literal('ssh.authenticate'), serverBanner: z.string().max(512).nullable() }).strict().optional(),
+  errorCode: z.string().regex(/^[a-z][a-z0-9_]{0,99}$/u).optional(),
+}).strict()
 export const loginRequest = z.object({
   username: z.string().min(1).max(80), password: z.string().min(1).max(256),
 }).strict()

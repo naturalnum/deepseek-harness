@@ -2,7 +2,7 @@
 import { randomBytes } from 'node:crypto'
 import { mkdir, readFile, writeFile, symlink, chmod } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { resolve, join } from 'node:path'
+import { isAbsolute, resolve, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 const root = resolve(fileURLToPath(new URL('../../..', import.meta.url)))
 const trialName = process.env.PE_TRIAL_NAME ?? 'slice1'
@@ -17,6 +17,7 @@ const hostPort = port('PE_HOST_PORT', 18880)
 const platformPort = port('PE_PLATFORM_PORT', 18881)
 const targetPort = port('PE_TARGET_PORT', 18884)
 const mcpEnabled = process.env.PE_MCP_ENABLED === '1'
+const sshEnabled = process.env.PE_SSH_ENABLED === '1'
 const mcpPort = port('PE_MCP_PORT', 18943)
 const deviceEnabled = process.env.PE_DEVICE_ENABLED === '1'
 const devicePort = port('PE_DEVICE_PORT', 18891)
@@ -43,6 +44,16 @@ if (sandbox) {
   if (resolve(sandbox.workspaceRoot) !== join(resolve(sandbox.localRoot), 'workspaces')) throw new Error('Workspace and Sandbox roots differ')
   if (sandbox.idleMs !== undefined && (!Number.isInteger(sandbox.idleMs) || sandbox.idleMs < 1000)) throw new Error('Invalid Sandbox idle time')
 }
+let ssh = null
+if (sshEnabled) {
+  ssh = JSON.parse(await readFile(join(privateDir, 'ssh.json'), 'utf8'))
+  const required = ['kubeconfigFile', 'namespace', 'image', 'ingressCidrs', 'destinationAllowlist']
+  if (required.some(key => typeof ssh[key] !== 'string' || !ssh[key].length)
+    || !isAbsolute(ssh.kubeconfigFile)
+    || !/^pe-connector-[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$/u.test(ssh.namespace)) {
+    throw new Error('Incomplete SSH Connector Runner trial configuration')
+  }
+}
 if (deviceEnabled && !(process.env.PE_DESKTOP_IMAGE || sandbox?.image)) throw new Error('Desktop image is required')
 async function provision(name, value) {
   const path = join(privateDir, name)
@@ -56,6 +67,7 @@ await provision('database-url', `postgresql://powerevolve:${password}@127.0.0.1:
 await provision('worker-token', randomBytes(32).toString('base64url'))
 await provision('connector-key', randomBytes(32).toString('base64url'))
 if (mcpEnabled) await provision('mcp-token', randomBytes(32).toString('base64url'))
+if (sshEnabled) await provision('ssh-credential-key', randomBytes(32).toString('base64url'))
 if (sandbox) await provision('runner-key', randomBytes(32).toString('base64url'))
 let modelKey = process.env.DEEPSEEK_API_KEY
 if (!modelKey) {
@@ -94,6 +106,12 @@ for (const name of ['host', ...(multiHost ? ['host-b'] : []), 'platform', ...(de
     connectorUrl: `http://127.0.0.1:${targetPort}`,
     ...(mcpEnabled ? { mcpUrl: JSON.stringify(`http://127.0.0.1:${mcpPort}/mcp`),
       mcpTokenFile: JSON.stringify(join(privateDir, 'mcp-token')) } : {}),
+    ...(ssh ? { sshCredentialKeyFile: JSON.stringify(join(privateDir, 'ssh-credential-key')),
+      sshDestinationAllowlist: JSON.stringify(ssh.destinationAllowlist),
+      sshRunnerKubeconfigFile: JSON.stringify(ssh.kubeconfigFile),
+      sshRunnerNamespace: JSON.stringify(ssh.namespace), sshRunnerImage: JSON.stringify(ssh.image),
+      sshRunnerRuntimeClass: JSON.stringify(ssh.runtimeClass ?? 'gvisor'),
+      sshRunnerIngressCidrs: JSON.stringify(ssh.ingressCidrs) } : {}),
     ...(sandbox ? { workspaceRoot: sandbox.workspaceRoot, sandboxKubeconfigFile: sandbox.kubeconfigFile,
       sandboxNamespace: sandbox.namespace, sandboxImage: sandbox.image, sandboxLocalRoot: sandbox.localRoot,
       sandboxNodeRoot: sandbox.nodeRoot, ...(sandbox.idleMs ? { sandboxIdleMs: sandbox.idleMs } : {}) } : {}) }
