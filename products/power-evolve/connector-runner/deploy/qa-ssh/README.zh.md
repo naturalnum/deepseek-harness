@@ -21,4 +21,4 @@ node --import tsx/esm products/power-evolve/connector-runner/deploy/qa-ssh/run.m
 
 独立浏览器试用可在运行 `run.mjs` 前将 `PE_SSH_TRIAL_PRIVATE_DIR` 设为 `~/.config/power-evolve/` 下新的绝对路径。相同的 Runner 检查通过后，脚本保留 SSH 目标、禁止访问监听器、受限 kubeconfig 和目录中的 `ssh.json`。准备试用时将 `PE_PRIVATE_DIR` 指向此目录并设置 `PE_SSH_ENABLED=1`；浏览器所需的测试密码保存在私有 `password` 文件。保留模式失败时会打印命名空间供检查，并且不会写入 `ssh.json`。停止试用后再删除该命名空间和私有目录。
 
-独立原生试用启动后，设置 `PE_PRIVATE_DIR`、`PE_HOST_PORT`、`PE_PLATFORM_PORT` 和 `PE_KUBE_CONTEXT`，然后从仓库根目录运行 `node products/power-evolve/scripts/qa-ssh-browser.mjs`。脚本使用 Alice 和 Bob 两个独立浏览器上下文，核对密码直接上传和用户隔离，按新调用 ID 等待认证结果，验证刷新恢复、错误指纹和拒绝目标，并核对 PG 状态与 Runner 清理。重复运行会复用同名连接，但会创建新的检查调用。
+独立原生试用启动后，设置 `PE_PRIVATE_DIR`、`PE_HOST_PORT`、`PE_PLATFORM_PORT` 和 `PE_KUBE_CONTEXT`，然后从仓库根目录运行 `node products/power-evolve/scripts/qa-ssh-browser.mjs`。脚本使用 Alice 和 Bob 两个独立浏览器上下文，核对密码直接上传和用户隔离，按新调用 ID 等待认证结果，验证刷新恢复、错误指纹和拒绝目标，并核对 PG 状态与 Runner 清理。对已安装的连接，它确认新票据接受完全相同的密码字节、拒绝变化的字节，且加密凭据和修订号不变。重复运行会复用同名连接，但会创建新的检查调用。

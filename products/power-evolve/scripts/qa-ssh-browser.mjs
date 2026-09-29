@@ -182,6 +182,52 @@ try {
   console.log('Wrong fingerprint failed; non-allowlisted destination rejected before upload')
   const pool = new Pool({ connectionString: (await readFile(join(privateDir, 'database-url'), 'utf8')).trim() })
   try {
+    const installed = await pool.query(`SELECT install_request_id,encrypted_credential
+      FROM pe_ssh_connections WHERE id=$1`, [connections[0].connectionId])
+    assert.equal(installed.rows.length, 1)
+    const metadata = { requestId: installed.rows[0].install_request_id,
+      displayName: connections[0].displayName, host: connections[0].host,
+      port: connections[0].port, username: connections[0].username,
+      hostKeySha256: connections[0].hostKeySha256, credentialKind: 'password',
+      sizeBytes: Buffer.byteLength(password), enabled: connections[0].enabled }
+    const before = await pool.query(`SELECT coalesce((result->>'failedVerifications')::integer,0) AS mismatches
+      FROM pe_ssh_upload_intents WHERE request_id=$1`, [metadata.requestId])
+    assert.equal(before.rows.length, 1)
+    const upload = (ticket, value) => alice.evaluate(async ({ ticket, value }) => {
+      const response = await fetch(ticket.uploadUrl, { method: 'POST', credentials: 'omit',
+        redirect: 'error', referrerPolicy: 'no-referrer',
+        headers: { authorization: `Bearer ${ticket.ticket}`, 'content-type': 'application/octet-stream',
+          accept: 'application/json' }, body: new TextEncoder().encode(value) })
+      return { status: response.status, body: response.ok ? await response.json() : null }
+    }, { ticket, value })
+    const issued = await rpc(alice, 'sshCreateTicket', metadata)
+    assert.equal(issued.status, 200)
+    assert.equal(issued.body.state, 'pending')
+    const replay = await upload(issued.body, password)
+    assert.equal(replay.status, 201)
+    assert.equal(replay.body.item.connectionId, connections[0].connectionId)
+    if (before.rows[0].mismatches === 0) {
+      const rotated = await rpc(alice, 'sshCreateTicket', metadata)
+      assert.equal(rotated.status, 200)
+      assert.equal(rotated.body.state, 'pending')
+      assert.ok(rotated.body.ticket !== issued.body.ticket, 'Completed retry must rotate its upload ticket')
+      const mismatch = await upload(rotated.body, 'x'.repeat(Buffer.byteLength(password)))
+      assert.equal(mismatch.status, 409)
+      const recovered = await rpc(alice, 'sshCreateTicket', metadata)
+      assert.equal(recovered.status, 200)
+      const same = await upload(recovered.body, password)
+      assert.equal(same.status, 201)
+      assert.equal(same.body.item.connectionId, connections[0].connectionId)
+    }
+    const after = await pool.query(`SELECT coalesce((i.result->>'failedVerifications')::integer,0) AS mismatches,
+      c.encrypted_credential,c.revision,c.credential_revision FROM pe_ssh_upload_intents i
+      JOIN pe_ssh_connections c ON c.install_request_id=i.request_id WHERE i.request_id=$1`, [metadata.requestId])
+    assert.equal(after.rows[0].mismatches, Math.max(1, before.rows[0].mismatches))
+    assert.ok(after.rows[0].encrypted_credential.equals(installed.rows[0].encrypted_credential))
+    assert.equal(after.rows[0].revision, connections[0].revision)
+    assert.equal(after.rows[0].credential_revision, connections[0].credentialRevision)
+    assert.equal(credentialReachedHost, false)
+    console.log('Completed SSH install retry: exact password replay accepted, changed bytes rejected, stored credential unchanged')
     const rows = await pool.query(`SELECT c.id,u.username,c.state,c.error_code,c.result->>'kind' AS result_kind,
       c.dispatch_digest IS NOT NULL AS dispatched,c.cleanup_complete FROM pe_ssh_calls c
       JOIN pe_users u ON u.id=c.user_id WHERE c.id=ANY($1::uuid[])`, [[...succeededIds, wrongId]])
