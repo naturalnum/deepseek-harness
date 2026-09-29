@@ -59,7 +59,15 @@ export class LoginAdmission {
          AND (statement_timestamp()>g.window_since+p.login_window_ms*interval '1 millisecond'
            OR g.attempts<p.login_global_attempts_per_window)
        RETURNING g.attempts`)
-    if (!charged.rowCount) throw new PlatformError(429, 'login_rate_limit')
+    if (!charged.rowCount) {
+      const availability = await this.pool.query<{ policy: boolean; window: boolean }>(
+        `SELECT EXISTS(SELECT 1 FROM pe_platform_admission_policy WHERE singleton=true) AS policy,
+          EXISTS(SELECT 1 FROM pe_login_global_window WHERE singleton=true) AS window`)
+      if (!availability.rows[0]?.policy || !availability.rows[0].window) {
+        throw new PlatformError(503, 'login_rate_limit_unavailable')
+      }
+      throw new PlatformError(429, 'login_rate_limit')
+    }
   }
 
   /** Limit guesses for one exact account name independently of the proxy peer address. */

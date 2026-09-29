@@ -219,6 +219,9 @@ test('two Platform replicas isolate account limits behind one peer and retain gl
     assert.equal(globalRace.filter(result => result.status === 'fulfilled').length, 20)
     assert.equal(globalRace.filter(result => result.status === 'rejected').length, 10)
     assert.equal((await pool.query('SELECT attempts FROM pe_login_global_window')).rows[0].attempts, 20)
+    await pool.query('DELETE FROM pe_login_global_window WHERE singleton=true')
+    await assert.rejects(admission.chargeGlobal(),
+      { status: 503, code: 'login_rate_limit_unavailable' })
   })
 
 test('two PG-connected workers claim one global slot and recover after lease expiry',
