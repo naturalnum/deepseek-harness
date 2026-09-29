@@ -55,7 +55,7 @@ node products/power-evolve/scripts/backup-trial.mjs restore
 
 在最终自动恢复的 `s7c-dst-b2` 上，Alice/Bob 的原生 Files 和 Artifacts 两轮验证都通过：历史 Session ID 与实际 transcript、文件内容、Git commit、工件预览、STDIO 连接 ID/修订/启用状态、技能、Home/技能包字节一致；跨用户读文件、预览工件和切换连接均返回 404。源端与目标端健康接口分别返回 V18/V19、`stdioMcpAvailable` 和 `sshAvailable` 为 true；检查时两个 Sandbox 命名空间无活动 Sandbox，Connector 命名空间无 `pe-cr-*`/`pe-mcp-*` Runner Pod。验证记录位于目标私有目录的 `restore-evidence.json`、`native-files-verify.json`、`native-artifacts-verify.json`；种子记录位于源私有目录。登录密码和密钥均不在报告中。
 
-以上恢复结果验证了历史读取；后续[当前版本预览](TRIAL-S7-CURRENT-PREVIEW.md)发现旧种子技能目录为 `0700`，且复制后的 `.git` 所有者无法供 Runner 写入。因此这些旧结果不构成“恢复后可继续云编程”的验收。上述启动前所有权准备、技能根兼容和本地挂载检查失败不占槽的修复，仍须以全新目标的双用户云 Git 验证封口；旧备份的技能目录只有状态标记，并非真实安装包的恢复演练。
+以上恢复结果验证了历史读取；后续[当前版本预览](TRIAL-S7-CURRENT-PREVIEW.md)发现旧种子技能目录为 `0700`，且复制后的 `.git` 所有者无法供 Runner 写入。修复启动前所有权准备、技能根兼容和本地挂载检查后，全新 c3 从原 b1 自动恢复，两位用户均完成真实云 Git 提交及重启后读回，未人工修改权限或 PG。其恢复耗时和逐项证据以预览报告为准；旧备份的技能目录只有状态标记，并非真实安装包的恢复演练。
 
 本次 RPO 是**备份捕获时刻**：成功停止写入后，已确认的源端状态完整进入快照。若发生在两次备份之间的故障，可恢复到的最近时点取决于备份频率；本演练未验证定时备份。34,356 ms 是这一台本机从启动恢复到服务健康的 RTO；两轮顺序浏览器核验分别在恢复开始后约 76.7 秒和 123.3 秒完成，包含测试脚本调度时间。该 k3d 与 POSIX 卷都位于同一台 OrbStack 主机，结果不证明异机共享存储一致性、备份异地保存、物理节点损坏后的恢复或生产级 RPO/RTO。
 
