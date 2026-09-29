@@ -2,9 +2,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
-import { SshRunnerOrchestrator } from '../src/platform/ssh-runner.ts'
-import { KubernetesError } from '../src/platform/kubernetes.ts'
-import { requestDigest } from '../../connector-runner/src/protocol.ts'
+import { SshRunnerOrchestrator } from '../lib/platform/ssh-runner.js'
+import { KubernetesError } from '../lib/platform/kubernetes.js'
+import { requestDigest } from '../../connector-runner/lib/protocol.js'
 
 const target = { ip: '203.0.113.12', port: 2222, username: 'alice',
   hostKeySha256: `SHA256:${'A'.repeat(43)}` }
