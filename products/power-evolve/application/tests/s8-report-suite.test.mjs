@@ -10,6 +10,7 @@ import { Pool } from 'pg'
 import { initializeDatabase } from '../lib/platform/database.js'
 import { SkillService } from '../lib/platform/skills.js'
 import { identity } from '../lib/contracts.js'
+import { BuiltinSkillCatalog } from '../lib/platform/builtin-skills.js'
 
 const privateDir = process.env.PE_PRIVATE_DIR ?? join(homedir(), '.config/power-evolve/shared-host-slice2')
 const databaseUrl = process.env.PE_TEST_DATABASE_URL ?? (await readFile(join(privateDir, 'database-url'), 'utf8')).trim()
@@ -84,6 +85,13 @@ test('report suite copies four exact versions once per user and never repairs a 
     const aliceSelection = await installReport(skills, alice)
     const bobSelection = await installReport(skills, bob)
     const first = aliceSelection[0]
+    // Accepted versions remain executable after catalog publication changes or
+    // its distribution files become unavailable; receipts authorize the suite.
+    const catalogRead = t.mock.method(BuiltinSkillCatalog.prototype, 'list', async () => {
+      throw new Error('Current distribution catalog unavailable')
+    })
+    assert.equal((await skills.runtimeResourceBase(alice.userId, aliceSelection, first.skillId)).suiteAvailable, true)
+    catalogRead.mock.restore()
     const word = selected(await skills.installBuiltin(alice, randomUUID(), 'builtin.word', '1.0.0'))
     assert.deepEqual(await skills.runtimeResourceBase(alice.userId, [word], word.skillId), {
       runtimePath: `/opt/power-evolve/skills/sha256/${word.packageDigest}/skill`, suiteAvailable: false })

@@ -140,6 +140,46 @@ test('built-in catalog and installs isolate users, bind requests, and preserve d
     assert.equal((await skills.list(dana)).items.length, 1)
     assert.equal((await skills.list(dana)).items[0].skillId, manual.item.skillId)
     assert.equal((await skills.list(dana)).items[0].packageDigest, manualDigest)
+    await assert.rejects(skills.installBuiltin(dana, randomUUID(), 'builtin.pdf', '1.0.0'),
+      { status: 409, code: 'skill_name_conflict' })
+
+    // A historical catalog fixture uses real imported bytes and PG receipts. It
+    // exercises upgrades without changing the production catalog trust root.
+    const upgradedUser = await addUser(pool, 'upgrade-owner')
+    const oldRoot = join(root, 'old-release')
+    await mkdir(join(oldRoot, 'pdf'), { recursive: true })
+    await writeFile(join(oldRoot, 'pdf', 'SKILL.md'),
+      '---\nname: pdf\ndescription: Previous PDF release\n---\nImmutable previous instructions.\n')
+    await writeFile(join(oldRoot, 'pdf', 'skill-package.json'),
+      JSON.stringify({ schemaVersion: 1, version: '0.9.0' }))
+    const oldZip = join(oldRoot, 'old.zip')
+    execFileSync('zip', ['-q', '-r', '-X', oldZip, 'pdf'], { cwd: oldRoot })
+    const oldBytes = await readFile(oldZip)
+    const oldDigest = createHash('sha256').update(oldBytes).digest('hex')
+    const oldRequest = randomUUID()
+    const oldTicket = await skills.issueUploadTicket(upgradedUser, oldRequest, oldBytes.length,
+      oldDigest, 'http://127.0.0.1:18881')
+    const old = (await skills.upload(oldTicket.ticket, Readable.from([oldBytes]))).item
+    await pool.query(`INSERT INTO pe_builtin_skill_install_requests
+      (request_id,user_id,catalog_id,version,archive_digest,package_version_id)
+      VALUES($1,$2,'builtin.pdf','0.9.0',$3,$4)`,
+    [randomUUID(), upgradedUser.userId, oldDigest, oldRequest])
+    await skills.toggle(upgradedUser, old.skillId, false)
+    await skills.ensurePreinstalled(upgradedUser, ['builtin.pdf'])
+    assert.equal((await skills.list(upgradedUser)).items[0].version, '0.9.0')
+    const disabledRevision = (await skills.list(upgradedUser)).items[0].revision
+    const upgradeId = randomUUID()
+    const upgraded = await skills.installBuiltin(upgradedUser, upgradeId, 'builtin.pdf', '1.0.0')
+    assert.equal(upgraded.skillId, old.skillId)
+    assert.equal(upgraded.version, '1.0.0')
+    assert.equal(upgraded.enabled, false)
+    assert.equal(upgraded.revision, disabledRevision + 1)
+    assert.equal((await skills.list(upgradedUser)).items.length, 1)
+    assert.match((await skills.readSelected(upgradedUser.userId, old, old.skillId)).instructions,
+      /Immutable previous instructions/)
+    assert.deepEqual(await skills.installBuiltin(upgradedUser, upgradeId, 'builtin.pdf', '1.0.0'), upgraded)
+    assert.equal((await skills.catalog(upgradedUser)).items.find(item => item.id === 'builtin.pdf').installedSkillId,
+      old.skillId)
 
     const racedRequestId = randomUUID()
     const raced = await Promise.allSettled([

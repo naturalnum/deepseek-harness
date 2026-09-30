@@ -454,14 +454,23 @@ export class SkillService {
         const skill = existing.rows[0]
         if (skill) {
           if (skill.revokedAt !== null) throw new PlatformError(409, 'skill_revoked')
-          throw new PlatformError(409, 'skill_name_conflict')
+          const origin = await client.query(
+            `SELECT 1 FROM pe_builtin_skill_install_requests
+             WHERE user_id=$1 AND catalog_id=$2 AND package_version_id=$3`,
+            [user.userId, catalogId, skill.packageVersionId])
+          if (skill.kind !== 'package' || !origin.rowCount) throw new PlatformError(409, 'skill_name_conflict')
+          const sameVersion = await client.query(
+            'SELECT 1 FROM pe_skill_package_versions WHERE user_id=$1 AND name=$2 AND version=$3',
+            [user.userId, metadata.name, version])
+          if (sameVersion.rowCount) throw new PlatformError(409, 'skill_version_conflict')
+        } else {
+          const count = await client.query<{ n: string }>(
+            'SELECT count(*) AS n FROM pe_user_skills WHERE user_id=$1', [user.userId])
+          if (Number(count.rows[0]!.n) >= this.maxSkillsPerUser) throw new PlatformError(413, 'skill_limit')
         }
-        const count = await client.query<{ n: string }>(
-          'SELECT count(*) AS n FROM pe_user_skills WHERE user_id=$1', [user.userId])
-        if (Number(count.rows[0]!.n) >= this.maxSkillsPerUser) throw new PlatformError(413, 'skill_limit')
         await this.publish(user.userId, release.release.archiveDigest, unpacked, manifest, files)
-        const skillId = requestId
-        await client.query(
+        const skillId = skill?.id ?? requestId
+        if (!skill) await client.query(
           `INSERT INTO pe_user_skills(id,user_id,name,description,digest,kind)
            VALUES($1,$2,$3,$4,$5,'package')`,
           [skillId, user.userId, metadata.name, metadata.description, instructionDigest])
@@ -473,7 +482,8 @@ export class SkillService {
             release.release.archiveDigest, archive.length, instructionDigest, manifestDigest, manifest])
         await client.query(
           `UPDATE pe_user_skills SET description=$2,digest=$3,package_version_id=$4,
-           updated_at=now() WHERE id=$1`, [skillId, metadata.description, instructionDigest, requestId])
+           revision=revision+$5,updated_at=now() WHERE id=$1`,
+          [skillId, metadata.description, instructionDigest, requestId, skill ? 1 : 0])
         await client.query(
           `INSERT INTO pe_builtin_skill_install_requests(request_id,user_id,catalog_id,version,
              archive_digest,package_version_id) VALUES($1,$2,$3,$4,$5,$6)`,
@@ -727,13 +737,10 @@ export class SkillService {
     await verifyPublishedSkillPackage(packageRoot, requestedVersion.manifest, requestedFiles)
     const ordinary = { runtimePath: `/opt/power-evolve/skills/sha256/${requestedVersion.archive_digest}/skill`,
       suiteAvailable: false }
-    const releases = await this.builtinCatalog.list()
-    const report = REPORT_SKILLS.map(role => ({ ...role, release: releases.find(item => item.id === role.id)! }))
-    const requestedRole = report.find(role => role.release.archiveDigest === requestedVersion.archive_digest
-      && role.release.version === requestedVersion.version)
+    const requestedRole = REPORT_SKILLS.find(role => role.folder === selected.name)
     if (!requestedRole) return ordinary
-    const roles = report.map(role => ({ ...role, selected: selection.find(item => item.kind === 'package'
-      && item.packageDigest === role.release.archiveDigest && item.version === role.release.version) }))
+    const roles = REPORT_SKILLS.map(role => ({ ...role, selected: selection.find(item => item.kind === 'package'
+      && item.name === role.folder) }))
     if (roles.some(role => !role.selected)) return ordinary
     const key = hash(JSON.stringify({ userId, roles: roles.map(role => ({ catalogId: role.id,
       skillId: role.selected!.skillId, version: role.selected!.version,
