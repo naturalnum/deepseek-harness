@@ -26,14 +26,16 @@ const errorLabels = {
 } as const satisfies Record<PersonalMcpConnectionCheckErrorCode, ExtensionCenterLocaleKey>
 
 /** Resolve only a sanitized fixed refusal code for both saved and draft check results.
- * @param code - browser adapter's allowlisted check failure. @returns its locale-owned explanation.
+ * @param code - browser adapter's allowlisted check failure.
+ * @returns its locale-owned explanation.
  */
 export function personalMcpCheckErrorLabel(code: PersonalMcpConnectionCheckErrorCode): ExtensionCenterLocaleKey {
   return errorLabels[code]
 }
 
 /** Match saved discovery material; enablement-only authority revisions do not change that material.
- * @param connection - current saved metadata. @param check - historical saved check, never a draft.
+ * @param connection - current saved metadata.
+ * @param check - historical saved check, never a draft.
  * @returns whether its connection, configuration or credentials differ from the current material.
  */
 export function personalMcpSavedCheckIsStale(connection: PersonalMcpConnection, check: PersonalMcpConnectionCheck): boolean {
@@ -53,7 +55,8 @@ export interface PersonalMcpCheckView {
 }
 
 /** Project a saved check without converting stale or empty results to failures.
- * @param connection - saved metadata and latest check. @returns locale keys and durable status.
+ * @param connection - saved metadata and latest check.
+ * @returns locale keys and durable status.
  */
 export function personalMcpCheckView(connection: PersonalMcpConnection): PersonalMcpCheckView {
   const check = connection.latest_check
