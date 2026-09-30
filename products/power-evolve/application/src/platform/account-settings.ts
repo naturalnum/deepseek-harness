@@ -3,17 +3,25 @@ import { createHash, randomUUID } from 'node:crypto'
 import type { Pool, PoolClient } from 'pg'
 import { z } from 'zod'
 import { PlatformError, settings, type Identity, type Settings, type SettingsUpdateRequest } from '../contracts.ts'
+import { lockAccountAdministration, requireBrowserAccount } from './account-authority.ts'
 import { transaction } from './database.ts'
 
+/** Operator seed grant fields; existing seeds never update persisted authorization. */
 export const seedModel = z.object({
   id: z.string().min(1).max(100).regex(/^[a-z0-9][a-z0-9._-]*$/),
   label: z.string().trim().min(1).max(100),
   maxTokens: z.number().int().min(1).max(8192),
   enabled: z.boolean().default(true),
 }).strict()
+/** Validated initial platform-owned model grant. */
 export type SeedModel = z.infer<typeof seedModel>
 
-/** Existing seed files implicitly grant only the initial model. */
+/**
+ * Existing seed files implicitly grant only the initial model.
+ * @param initial Validated initial user settings.
+ * @param requested Optional explicit seed grants.
+ * @returns Unique grants covering the initial settings.
+ */
 export function initialModels(initial: Settings, requested?: readonly SeedModel[]): SeedModel[] {
   const models = requested ? [...requested] : [seedModel.parse({
     id: initial.model, label: initial.model, maxTokens: initial.maxTokens, enabled: true,
@@ -25,10 +33,22 @@ export function initialModels(initial: Settings, requested?: readonly SeedModel[
   return models
 }
 
-/** Never reseed grants or password for an existing username after a restart. */
+/**
+ * Never reseed grants or password for an existing username or tombstone after a restart.
+ * @param pool Platform database pool.
+ * @param username Exact existing seed login name.
+ * @param passwordHash Salted password record used only for a new identity.
+ * @param initial Initial settings used only for a new identity.
+ * @param requested Optional initial grants used only for a new identity.
+ */
 export async function seedNewUser(pool: Pool, username: string, passwordHash: string,
   initial: Settings, requested?: readonly SeedModel[]): Promise<void> {
   await transaction(pool, async client => {
+    await lockAccountAdministration(client)
+    if ((await client.query('SELECT 1 FROM pe_users WHERE username=$1', [username])).rowCount) return
+    if ((await client.query('SELECT 1 FROM pe_users WHERE lower(username)=lower($1)', [username])).rowCount) {
+      throw new Error('Seed username conflicts with an existing account identity')
+    }
     const inserted = await client.query<{ id: string }>(
       `INSERT INTO pe_users(id,username,password_hash,settings) VALUES($1,$2,$3,$4)
        ON CONFLICT(username) DO NOTHING RETURNING id`,
@@ -44,7 +64,13 @@ export async function seedNewUser(pool: Pool, username: string, passwordHash: st
   })
 }
 
-/** Check the current grant even when the operation was accepted earlier. */
+/**
+ * Check the current model grant even when the operation was accepted earlier.
+ * @param client The caller's transaction query interface.
+ * @param userId User owning the execution grant.
+ * @param model Requested deployment model ID.
+ * @param maxTokens Requested token ceiling.
+ */
 export async function requireModelGrant(client: Pick<PoolClient, 'query'>, userId: string,
   model: string, maxTokens: number): Promise<void> {
   const result = await client.query(
@@ -58,21 +84,40 @@ export async function requireModelGrant(client: Pick<PoolClient, 'query'>, userI
 export class AccountSettingsService {
   constructor(private readonly pool: Pool) {}
 
-  async modelsList(user: Identity): Promise<{ models: { id: string; label: string; maxTokens: number }[] }> {
-    const result = await this.pool.query<{ id: string; label: string; maxTokens: number }>(
-      `SELECT model_id AS id,label,max_tokens AS "maxTokens" FROM pe_user_models
-       WHERE user_id=$1 AND enabled=true ORDER BY model_id`, [user.userId],
-    )
-    return { models: result.rows }
+  /**
+   * Return model grants after checking the raw browser credential in the read transaction.
+   * @param user Stable identity from the outer authentication step.
+   * @param credentialToken Raw Agent bearer rechecked against the locked user.
+   * @returns Current enabled model grants.
+   */
+  async modelsList(user: Identity, credentialToken: string): Promise<{ models: { id: string; label: string; maxTokens: number }[] }> {
+    return transaction(this.pool, async client => {
+      const authority = await requireBrowserAccount(client, credentialToken)
+      if (authority.userId !== user.userId) throw new PlatformError(401, 'unauthorized')
+      const result = await client.query<{ id: string; label: string; maxTokens: number }>(
+        `SELECT model_id AS id,label,max_tokens AS "maxTokens" FROM pe_user_models
+         WHERE user_id=$1 AND enabled=true ORDER BY model_id`, [user.userId],
+      )
+      return { models: result.rows }
+    })
   }
 
-  async update(user: Identity, input: SettingsUpdateRequest): Promise<Settings> {
+  /**
+   * Persist a revisioned settings mutation after transaction-local credential and grant checks.
+   * @param user Stable identity from the outer authentication step.
+   * @param input Parsed settings request and expected revision.
+   * @param credentialToken Raw Agent bearer rechecked under the exclusive user lock.
+   * @returns New settings or the original settings receipt for an identical request.
+   */
+  async update(user: Identity, input: SettingsUpdateRequest, credentialToken: string): Promise<Settings> {
     const fingerprint = createHash('sha256').update(JSON.stringify([
       input.expectedRevision, input.model, input.maxTokens,
     ])).digest('hex')
     return transaction(this.pool, async client => {
+      const authority = await requireBrowserAccount(client, credentialToken, { lock: 'update' })
+      if (authority.userId !== user.userId) throw new PlatformError(401, 'unauthorized')
       const current = await client.query<{ settings: unknown }>(
-        'SELECT settings FROM pe_users WHERE id=$1 FOR UPDATE', [user.userId],
+        'SELECT settings FROM pe_users WHERE id=$1', [user.userId],
       )
       if (!current.rows[0]) throw new PlatformError(401, 'unauthorized')
       const prior = await client.query<{ request_digest: string; result_settings: unknown }>(

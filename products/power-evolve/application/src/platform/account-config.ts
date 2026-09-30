@@ -5,13 +5,15 @@ import { z } from 'zod'
 import { accountNewPassword, accountNewUsername, accountUserId } from '../account-contracts.ts'
 
 const model = z.object({ id: z.string().min(1).max(100).regex(/^[a-z0-9][a-z0-9._-]*$/u),
-  label: z.string().trim().min(1).max(200), maxTokens: z.number().int().min(1).max(8192) }).strict()
+  label: z.string().trim().min(1).max(200).refine(value => !value.includes('\0')),
+  maxTokens: z.number().int().min(1).max(8192) }).strict()
 /** All replicas use the same bounded model catalog; account requests cannot invent model IDs. */
 export const accountManagementConfig = z.object({
   maxUsers: z.number().int().min(1).max(1_000_000), models: z.array(model).min(1).max(64),
   initialSettings: z.object({ model: model.shape.id, maxTokens: model.shape.maxTokens }).strict(),
 }).strict().refine(value => new Set(value.models.map(item => item.id)).size === value.models.length
   && value.models.some(item => item.id === value.initialSettings.model && item.maxTokens >= value.initialSettings.maxTokens))
+/** Validated deployment account limit and available model catalog. */
 export type AccountManagementConfig = z.infer<typeof accountManagementConfig>
 
 /** Existing databases require the exact existing ID and login name; create is allowed only in an empty database. */
@@ -20,6 +22,7 @@ export const accountBootstrapConfig = z.discriminatedUnion('mode', [
   z.object({ mode: z.literal('create'), userId: accountUserId, username: accountNewUsername,
     displayName: z.string().trim().min(1).max(200).refine(value => !value.includes('\0')), password: accountNewPassword }).strict(),
 ])
+/** Explicit existing-identity promotion or empty-database administrator creation. */
 export type AccountBootstrapConfig = z.infer<typeof accountBootstrapConfig>
 
 /**
