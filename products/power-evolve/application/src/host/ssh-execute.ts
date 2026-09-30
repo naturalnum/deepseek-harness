@@ -19,7 +19,7 @@ const receipt = z.object({ actionId: z.uuid(), state: z.enum(['pending', 'reject
 export function installSshExecuteTool(agent: Agent, grant: Grant, runtime: RuntimeScope, platformOrigin: string): void {
   if (grant.source !== 'user' || grant.target.kind !== 'cloud' || !grant.sshConnections.length) return
   const connections = grant.sshConnections.map(item =>
-    JSON.stringify({ connectionId: item.connectionId, username: item.username,
+    JSON.stringify({ connectionId: item.connectionId, displayName: item.displayName, username: item.username,
       host: item.host, port: item.port })).join('\n')
   agent.ctx.effect(() => agent.ctx.systemPrompt.section({ name: 'power-evolve:ssh-execute-approval',
     order: 707, interpolate: false,

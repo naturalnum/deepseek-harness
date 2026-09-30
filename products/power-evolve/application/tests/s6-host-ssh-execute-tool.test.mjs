@@ -30,7 +30,7 @@ test('only a pinned user cloud grant proposes the exact command with its native 
   assert.deepEqual(registered.map(value => value.name), ['ssh_execute_propose'])
   assert.equal(prompts.length, 1)
   const pinned = prompts[0].text.split('\n').slice(1).map(value => JSON.parse(value))
-  assert.deepEqual(pinned, [{ connectionId, username: 'alice', host: 'fixture.example.test', port: 2222 }])
+  assert.deepEqual(pinned, [{ connectionId, displayName: 'QA', username: 'alice', host: 'fixture.example.test', port: 2222 }])
   assert.match(registered[0].parameters.properties.connectionId.description, /only that UUID/u)
   const declaration = modelMessageTool.parse({ name: registered[0].name,
     description: registered[0].description, input_schema: registered[0].parameters })
@@ -63,6 +63,34 @@ test('only a pinned user cloud grant proposes the exact command with its native 
     installSshExecuteTool(next.agent, variant, runtime, 'https://platform.example.test')
     assert.equal(next.registered.length, 0)
   }
+})
+
+test('connections sharing a login destination expose distinct pinned names and require their exact UUIDs', async () => {
+  const sameTarget = { host: 'fixture.example.test', port: 2222, username: 'alice' }
+  const connections = [
+    { ...sameTarget, connectionId: randomUUID(), displayName: 'Primary "East"', revision: 7, credentialRevision: 3 },
+    { ...sameTarget, connectionId: randomUUID(), displayName: 'Secondary', revision: 2, credentialRevision: 1 },
+  ]
+  const grant = { source: 'user', target: { kind: 'cloud' }, token: 'operation-token', sshConnections: connections }
+  const calls = [], runtime = { async call(_path, _token, body) {
+    calls.push(body)
+    return { actionId: randomUUID(), state: 'pending', fingerprint: 'a'.repeat(64) }
+  } }
+  const { agent, registered, prompts } = agentTools()
+  installSshExecuteTool(agent, grant, runtime, 'https://platform.example.test')
+  const pinned = prompts[0].text.split('\n').slice(1).map(value => JSON.parse(value))
+  assert.deepEqual(pinned, connections.map(({ connectionId, displayName, username, host, port }) =>
+    ({ connectionId, displayName, username, host, port })))
+  assert.equal(calls.length, 0)
+  for (const connection of connections) {
+    await assert.rejects(registered[0].execute({ connectionId: connection.displayName, command: 'id' },
+      { callId: 'name' }), /SSH command or connection invalid/u)
+    await registered[0].execute({ connectionId: connection.connectionId, command: 'id' },
+      { callId: `selected-${connection.revision}` })
+  }
+  assert.deepEqual(calls, connections.map(connection => ({ callKey: `selected-${connection.revision}`,
+    connectionId: connection.connectionId, connectionRevision: connection.revision,
+    credentialRevision: connection.credentialRevision, command: 'id' })))
 })
 
 test('Host refuses malformed platform receipts before presenting them to the model', async () => {

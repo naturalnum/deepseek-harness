@@ -621,7 +621,8 @@ test('shared host: isolated conversations, files, skills and approved remote act
     const text = history.events.filter(event => event.type === 'system/message')
       .flatMap(event => event.data.message.content.filter(block => block.type === 'text').map(block => block.text)).join('\n')
     const selected = text.split('\n').find(line => line.startsWith('{"connectionId":'))
-    assert.deepEqual(JSON.parse(selected), { connectionId, username: 'alice', host: 'fixture.example.test', port: 2222 })
+    assert.deepEqual(JSON.parse(selected), { connectionId, displayName: 'Snapshot SSH', username: 'alice',
+      host: 'fixture.example.test', port: 2222 })
     const declarations = history.events.find(event => event.type === 'request/header').data.header.tools
     const proposed = declarations.find(tool => tool.name === 'ssh_execute_propose')
     assert.match(proposed.parameters.properties.connectionId.description, /only that UUID/u)
