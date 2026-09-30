@@ -1,0 +1,53 @@
+{
+  "credentialKeyFile": "/run/secrets/remote-mcp-key",
+  "pollMs": 500,
+  "renewMs": 5000,
+  "cleanupMs": 60000,
+  "cleanupBatchSize": 16,
+  "management": {
+    "maxConnections": 16,
+    "maxPendingTickets": 8,
+    "maxActiveChecks": 4,
+    "maxDrafts": 8,
+    "maxDraftsPerHour": 30,
+    "maxTools": 64,
+    "maxCatalogBytes": 262144,
+    "maxToolBytes": 32768,
+    "ticketLifetimeMs": 60000,
+    "checkLifetimeMs": 120000,
+    "draftLifetimeMs": 300000,
+    "retentionMs": 86400000,
+    "checkLeaseMs": 30000
+  },
+  "admission": {
+    "maxTools": 64,
+    "maxSnapshotBytes": 524288,
+    "maxToolBytes": 32768,
+    "maxDescriptionBytes": 8192
+  },
+  "actions": {
+    "maxArgumentBytes": 65536,
+    "maxResultBytes": 262144,
+    "maxCallsPerChain": 16,
+    "maxPendingPerUser": 16,
+    "chainLifetimeMs": 3600000,
+    "approvalLifetimeMs": 1800000,
+    "leaseMs": 30000,
+    "listLimit": 100
+  },
+  "transport": {
+    "timeoutMs": 60000,
+    "idleTimeoutMs": 10000,
+    "maxRequestBytes": 131072,
+    "maxResponseBytes": 524288,
+    "maxTotalResponseBytes": 1048576,
+    "maxResponseHeaderBytes": 16384,
+    "maxRequests": 32,
+    "maxHeaderBytes": 16384,
+    "maxHeaders": 16,
+    "maxPages": 8,
+    "maxTools": 64,
+    "maxCatalogBytes": 262144
+  },
+  "internalExceptions": []
+}

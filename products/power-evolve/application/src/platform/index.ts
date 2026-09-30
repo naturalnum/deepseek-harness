@@ -12,7 +12,7 @@ import { z } from 'zod'
 import { Pool } from 'pg'
 import { createRequest, filesListRequest, fileReadRequest, filePutRequest, sessionFilesListRequest, sessionFileReadRequest, sessionFilePutRequest, listRequest, loginRequest, modelsListRequest, pageRequest, promptRequest, sessionId, sessionRequest, settingsUpdateRequest, builtinSkillInstallRequest, skillInstallRequest, skillRequest, skillResourceRequest, skillToggleRequest, skillUploadTicketRequest, sshCreateTicketRequest, sshToggleRequest, sshCheckRequest, sshCallRefRequest, sshExecuteProposeRequest, sshExecuteRefRequest, settings, workspaceCreateRequest, PlatformError } from '../contracts.ts'
 import { bearer, readJson, sendFailure, sendJson } from '../http.ts'
-import { initializeDatabase } from './database.ts'
+import { initializeDatabase, transaction } from './database.ts'
 import { hashPassword, IdentityService } from './identity.ts'
 import { AccountSettingsService, seedModel, seedNewUser } from './account-settings.ts'
 import { TaskStore } from './tasks.ts'
@@ -27,6 +27,14 @@ import { readRuntimeSkill, readRuntimeSkillResource } from './runtime-skills.ts'
 import { ConnectorService } from './connectors.ts'
 import { PluginService } from './plugins.ts'
 import { PersonalMcpService } from './mcp.ts'
+import { McpConnectionService } from './mcp-connections.ts'
+import { McpActionStore } from './mcp-actions.ts'
+import { loadMcpPlatformConfig, assertMcpPlatformEndpoint } from './mcp-platform-config.ts'
+import { routeMcpManagement, routeMcpApproval } from './mcp-routes.ts'
+import { mcpActionId, mcpActionRequest } from '../mcp-action-contracts.ts'
+import { mcpLeaseOwnerId } from '../mcp-contracts.ts'
+import { McpCheckWorker } from './mcp-check-worker.ts'
+import { McpActionWorker } from './mcp-action-worker.ts'
 import { StdioMcpService } from './stdio-mcp.ts'
 import { StdioRunnerOrchestrator } from './stdio-runner.ts'
 import { SshConnectionService } from './ssh.ts'
@@ -52,6 +60,7 @@ export const Config = schema.object({
   modelKeyFile: schema.string().required(), connectorKeyFile: schema.string().required(), seedUsersFile: schema.string().required(),
   modelUrl: schema.string().required(), hostOrigin: schema.string().required(), platformOrigin: schema.string().required(),
   mcpUrl: schema.string().default(''), mcpTokenFile: schema.string().default(''),
+  remoteMcpConfigFile: schema.string().default(''),
   mcpTimeoutMs: schema.number().min(1000).default(5000),
   sshCredentialKeyFile: schema.string().default(''), sshDestinationAllowlist: schema.string().default(''),
   sshRunnerKubeconfigFile: schema.string().default(''), sshRunnerNamespace: schema.string().default(''),
@@ -94,6 +103,7 @@ const seedUsers = z.array(z.object({
 /** Register the platform only after its schema and configured users are ready. */
 export async function apply(ctx: Context, config: Config): Promise<void> {
   const instanceId = randomUUID()
+  const remoteMcpConfig = await loadMcpPlatformConfig(config.remoteMcpConfigFile)
   const [databaseUrl, workerToken, modelKey, connectorKey, seeds, mcpToken, sshKey] = await Promise.all([
     readFile(config.databaseUrlFile, 'utf8'), readFile(config.workerTokenFile, 'utf8'),
     readFile(config.modelKeyFile, 'utf8'), readFile(config.connectorKeyFile, 'utf8'), readFile(config.seedUsersFile, 'utf8'),
@@ -101,7 +111,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     config.sshCredentialKeyFile ? readFile(config.sshCredentialKeyFile, 'utf8') : Promise.resolve(''),
   ])
   const pool = new Pool({ connectionString: databaseUrl.trim(), max: config.databasePoolSize,
-    connectionTimeoutMillis: config.databaseTimeoutMs, statement_timeout: config.databaseTimeoutMs })
+    connectionTimeoutMillis: config.databaseTimeoutMs, query_timeout: config.databaseTimeoutMs,
+    statement_timeout: config.databaseTimeoutMs })
   // Keep readiness independent of busy task workers and bound outage probes to one second.
   const healthPool = new Pool({ connectionString: databaseUrl.trim(), max: 1,
     connectionTimeoutMillis: 1000, query_timeout: 1000, statement_timeout: 1000 })
@@ -114,7 +125,12 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   }
   pool.on('error', databaseUnavailable)
   healthPool.on('error', databaseUnavailable)
-  ctx.effect(() => () => pool.end())
+  const mcpShutdown = new Set<() => Promise<void>>()
+  // Cordis disposers run concurrently; terminal MCP writes must settle before this pool enters ending.
+  ctx.effect(() => async () => {
+    await Promise.allSettled([...mcpShutdown].map(stop => stop()))
+    await pool.end()
+  })
   ctx.effect(() => () => healthPool.end())
   await initializeDatabase(pool)
   const loginAdmission = new LoginAdmission(pool, config)
@@ -149,9 +165,50 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const identities = new IdentityService(pool, config.tokenLifetimeMs)
   const accountSettings = new AccountSettingsService(pool)
   const tasks = new TaskStore(pool, { ...config, executionEnabled, mcpEnabled: !!config.mcpUrl,
+    ...(remoteMcpConfig ? { remoteMcpAdmission: remoteMcpConfig.settings.admission } : {}),
     stdioMcpEnabled: !!config.sshRunnerKubeconfigFile,
     sshEnabled: !!config.sshRunnerKubeconfigFile && !!config.sshCredentialKeyFile })
   const mcp = new PersonalMcpService(tasks, config.mcpUrl, mcpToken.trim(), config.mcpTimeoutMs)
+  const remoteMcp = remoteMcpConfig ? new McpConnectionService(pool, remoteMcpConfig.credentialKey, {
+    ...remoteMcpConfig.settings.management, assertEndpoint: endpoint => assertMcpPlatformEndpoint(remoteMcpConfig, endpoint),
+  }) : null
+  const remoteMcpActions = remoteMcpConfig
+    ? new McpActionStore(tasks, remoteMcpConfig.credentialKey, remoteMcpConfig.settings.actions) : null
+  if (remoteMcpConfig && remoteMcp && remoteMcpActions) {
+    const { settings: remoteSettings, networkPolicy } = remoteMcpConfig
+    const options = { ownerId: mcpLeaseOwnerId.parse(instanceId), pollMs: remoteSettings.pollMs,
+      renewMs: remoteSettings.renewMs, budgets: remoteSettings.transport, networkPolicy }
+    const checkWorker = new McpCheckWorker(remoteMcp, { ...options, toolLimits: remoteSettings.admission })
+    const actionWorker = new McpActionWorker(remoteMcpActions, { ...options,
+      snapshot: preparation => transaction(pool, client => remoteMcp.runtimeSnapshot(client, preparation.owner, {
+        connectionId: preparation.tool.connectionId, revision: preparation.tool.connectionRevision,
+        configurationRevision: preparation.tool.configurationRevision,
+        credentialRevision: preparation.tool.credentialRevision, catalogId: preparation.tool.catalogId,
+      })),
+    })
+    const jobs: [string, (signal: AbortSignal) => Promise<void>, number][] = [
+      ['discovery', signal => checkWorker.run(signal), remoteSettings.pollMs],
+      ['action', signal => actionWorker.run(signal), remoteSettings.pollMs],
+      ['cleanup', async () => { await remoteMcp.prunePendingChecks(remoteSettings.cleanupBatchSize) }, remoteSettings.cleanupMs],
+    ]
+    for (const [label, work, intervalMs] of jobs) {
+      ctx.effect(() => {
+        const controller = new AbortController()
+        const run = (async () => {
+          while (!controller.signal.aborted) {
+            try { await work(controller.signal) }
+            catch { ctx.logger.warn('Remote MCP %s worker restarting after uncertain persistence', label) }
+            if (controller.signal.aborted) return
+            try { await delay(intervalMs, undefined, { signal: controller.signal }) }
+            catch (error) { if (controller.signal.aborted) return; throw error }
+          }
+        })()
+        const stop = async () => { controller.abort(); await run }
+        mcpShutdown.add(stop)
+        return stop
+      })
+    }
+  }
   const ssh = new SshConnectionService(pool, sshKey, config.sshDestinationAllowlist)
   const sshRunnerEnabled = config.sshRunnerKubeconfigFile.length > 0
   if (sshRunnerEnabled && (!config.sshRunnerNamespace || !config.sshRunnerImage
@@ -257,11 +314,13 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         if (!databaseReady) ctx.logger.info('Platform PostgreSQL connection recovered')
         databaseReady = true
         sendJson(res, { ready: true, service: 'platform', schema: versions.rows[0]!.version, executionEnabled,
-          mcpAvailable: !!config.mcpUrl, stdioMcpAvailable: stdioMcp.available, sshAvailable, instanceId })
+          mcpAvailable: !!config.mcpUrl, remoteMcpAvailable: remoteMcp !== null,
+          stdioMcpAvailable: stdioMcp.available, sshAvailable, instanceId })
       } catch (error) {
         databaseUnavailable(error)
         sendJson(res, { ready: false, service: 'platform', schema: null, database: 'unavailable',
-          executionEnabled, mcpAvailable: !!config.mcpUrl, stdioMcpAvailable: stdioMcp.available,
+          executionEnabled, mcpAvailable: !!config.mcpUrl, remoteMcpAvailable: remoteMcp !== null,
+          stdioMcpAvailable: stdioMcp.available,
           sshAvailable, instanceId }, 503)
       }
       return
@@ -298,7 +357,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       sendJson(res, uploaded.item, uploaded.created ? 201 : 200)
       return
     }
-    if (path === '/ssh/upload') {
+    if (path === '/ssh/upload' || path === '/mcp/connections/upload') {
       if (req.headers.origin !== config.hostOrigin) throw new PlatformError(403, 'invalid_origin')
       res.setHeader('access-control-allow-origin', config.hostOrigin)
       res.setHeader('vary', 'Origin')
@@ -312,7 +371,10 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       }
       if (req.method !== 'POST') throw new PlatformError(405, 'method_not_allowed')
       if (req.headers['content-type'] !== 'application/octet-stream') throw new PlatformError(415, 'invalid_content_type')
-      sendJson(res, await ssh.upload(bearer(req), req), 201)
+      if (path === '/mcp/connections/upload') {
+        if (!remoteMcp) throw new PlatformError(503, 'mcp_unavailable')
+        sendJson(res, await remoteMcp.upload(bearer(req), req), 201)
+      } else sendJson(res, await ssh.upload(bearer(req), req), 201)
       return
     }
     if (req.method !== 'POST') throw new PlatformError(404, 'not_found')
@@ -376,6 +438,9 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       if (req.headers.origin !== undefined && req.headers.origin !== config.platformOrigin) throw new PlatformError(403, 'invalid_origin')
       const user = await identities.authenticate(token, 'approval')
       const input = await readJson(req, 4096)
+      if (path.startsWith('/approvals/mcp/')) {
+        sendJson(res, await routeMcpApproval(remoteMcpActions, path, user, input)); return
+      }
       switch (path) {
         case '/approvals/me': z.object({}).strict().parse(input); sendJson(res, user); return
         case '/approvals/list': z.object({}).strict().parse(input); sendJson(res, await connectors.list(user)); return
@@ -434,6 +499,10 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
           sendJson(res, { ok: true }); return
         }
         case '/runtime/connectors/notes': z.object({}).strict().parse(input); sendJson(res, await connectors.notes(token)); return
+        case '/runtime/mcp/actions/propose': {
+          if (!remoteMcpActions) throw new PlatformError(503, 'mcp_unavailable')
+          sendJson(res, await remoteMcpActions.propose(token, mcpActionRequest.parse(input))); return
+        }
         case '/runtime/mcp/call': {
           const value = z.object({ connectionId: z.uuid(), revision: z.number().int().positive() }).strict().parse(input)
           sendJson(res, await mcp.call(token, value.connectionId, value.revision)); return
@@ -476,6 +545,15 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     }
     const user = await identities.authenticate(token)
     const input = await readJson(req, config.maxRequestBytes)
+    if (path.startsWith('/mcp/connections/')) {
+      sendJson(res, await routeMcpManagement(remoteMcp, path, user, input, config.platformOrigin)); return
+    }
+    if (path === '/mcp/actions/status' || path === '/mcp/actions/cancel') {
+      if (!remoteMcpActions) throw new PlatformError(503, 'mcp_unavailable')
+      const value = z.object({ actionId: mcpActionId }).strict().parse(input)
+      sendJson(res, path === '/mcp/actions/status' ? await remoteMcpActions.status(user, value.actionId)
+        : await remoteMcpActions.cancel(user, value.actionId)); return
+    }
     const fileWorkspace = async (session: string): Promise<string> => {
       const result = await pool.query<{ workspace_id: string }>(
         'SELECT workspace_id FROM pe_sessions WHERE id=$1 AND user_id=$2', [session, user.userId],

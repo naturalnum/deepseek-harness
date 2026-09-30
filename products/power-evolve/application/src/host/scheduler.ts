@@ -11,7 +11,7 @@ import type { Grant } from '../contracts.ts'
 import type { McpActionId } from '../mcp-action-contracts.ts'
 import { installConnectorTools } from './connectors.ts'
 import { installExecutionTools } from './executions.ts'
-import { installPersonalMcpTool } from './mcp.ts'
+import { installPersonalMcpTool, installRemoteMcpTools } from './mcp.ts'
 import { installStdioMcpTool } from './stdio-mcp.ts'
 import { installSshExecuteTool } from './ssh-execute.ts'
 import { installSelectedSkills } from './skills.ts'
@@ -124,6 +124,7 @@ export class Scheduler {
       this.handles.add(handle)
       const { agent } = handle
       installSelectedSkills(agent, grant, runtime)
+      installRemoteMcpTools(agent, grant, runtime, this.config.platformOrigin)
       if (grant.source === 'user' || grant.source === 'sandbox_result' || grant.source === 'desktop_result') {
         installConnectorTools(agent, grant, runtime, this.config.platformOrigin)
         installExecutionTools(agent, grant, runtime)

@@ -69,6 +69,7 @@ export async function renderProfile(role, env, dshHome) {
       sandboxNodeRoot: '', sandboxVolumeClaimName: required(env, 'PE_SANDBOX_VOLUME_CLAIM'),
       modelUrl: endpoint(required(env, 'PE_MODEL_URL'), 'model URL'),
       connectorUrl: endpoint(required(env, 'PE_CONNECTOR_URL'), 'connector URL'),
+      remoteMcpConfigFile: env.PE_REMOTE_MCP_CONFIG_FILE || '',
       hostOrigin, platformOrigin,
     }),
   ]

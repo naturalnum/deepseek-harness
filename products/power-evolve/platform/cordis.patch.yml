@@ -47,6 +47,7 @@
         mcpUrl: ''
         mcpTokenFile: ''
         mcpTimeoutMs: 5000
+        remoteMcpConfigFile: ''
         sshCredentialKeyFile: ''
         sshDestinationAllowlist: ''
         sshRunnerKubeconfigFile: ''

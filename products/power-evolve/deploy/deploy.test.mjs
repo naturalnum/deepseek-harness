@@ -46,7 +46,15 @@ test('production profiles retain bundle fields and separate Host and Platform au
         assert.equal(config.skillLibraryRoot, '/data')
         assert.equal(config.preinstalledSkills.length, 9)
         assert.equal(config.modelUrl, values.modelUrl)
+        assert.equal(config.remoteMcpConfigFile, '')
       }
+    }
+    for (const role of ['host', 'platform']) {
+      const configured = { ...env, PE_REMOTE_MCP_CONFIG_FILE: '/run/private/remote-mcp.json' }
+      const { profile } = await renderProfile(role, configured, join(home, `${role}-mcp`))
+      const rows = yaml.load(await readFile(join(profile, 'cordis.patch.yml'), 'utf8'), { schema: manifestSchema })
+      if (role === 'platform') assert.equal(rows[1].config.remoteMcpConfigFile, configured.PE_REMOTE_MCP_CONFIG_FILE)
+      else assert(!JSON.stringify(rows).includes('remote-mcp.json'))
     }
   } finally { await rm(home, { recursive: true, force: true }) }
 })
