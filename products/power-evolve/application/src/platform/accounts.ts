@@ -187,7 +187,10 @@ export class AccountService {
 
   private async administrator(client: PoolClient, token: string, targets: readonly UserId[] = []): Promise<AccountAuthority> {
     await lockAccountAdministration(client)
-    const actor = await requireBrowserAccount(client, token, { audience: 'account', lock: 'update', participants: targets })
+    // Lock existing participants together; missing targets are reported after the actor's receipt check.
+    const participants = targets.length ? (await client.query<{ id: string }>(
+      'SELECT id FROM pe_users WHERE id=ANY($1::uuid[])', [targets])).rows.map(row => accountUserId.parse(row.id)) : targets
+    const actor = await requireBrowserAccount(client, token, { audience: 'account', lock: 'update', participants })
     assertAccountAdministrator(actor)
     return actor
   }

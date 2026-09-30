@@ -8,7 +8,7 @@ import { setTimeout as pause } from 'node:timers/promises'
 import { test } from 'node:test'
 import { Pool } from 'pg'
 import { ACCOUNT_ROUTES, accountChangePasswordRequest, accountCreateRequest, accountListRequest,
-  accountTargetMutationRequest, accountUpdateRequest } from '../src/account-contracts.ts'
+  accountTargetMutationRequest, accountUpdateRequest, type AccountTargetMutationRequest } from '../src/account-contracts.ts'
 import { settings, settingsUpdateRequest, type UserId } from '../src/contracts.ts'
 import { bootstrapAccount } from '../src/platform/account-bootstrap.ts'
 import { accountBootstrapConfig, accountManagementConfig, loadAccountBootstrapConfig, loadAccountManagementConfig } from '../src/platform/account-config.ts'
@@ -261,6 +261,53 @@ test('reset receipts do not rotate twice and restarted seeds never restore crede
     assert.equal((await f.pool.query('SELECT password_hash FROM pe_users WHERE id=$1', [alice.account.userId])).rows[0].password_hash, passwordHash)
     assert.equal((await f.pool.query('SELECT grant_digest FROM pe_sessions WHERE id=$1', [accepted.sessionId])).rows[0].grant_digest, 'accepted-execution-grant')
     assert.equal(f.revoked.length, 0)
+  })
+})
+
+test('target mutations resolve actor-owned receipt conflicts before missing targets and retain current administrator checks', pgTest, async () => {
+  await isolated(async f => {
+    const admin = await f.accounts.login('admin', initialPassword)
+    const other = await unrestricted(f, admin.token, 'other-admin', 'ADMIN')
+    const ordinary = await unrestricted(f, admin.token, 'ordinary-user')
+    const restrictedUser = await f.accounts.create(admin.token, creation('restricted-user'))
+    assert.ok(restrictedUser.temporaryPassword)
+    const restricted = await f.accounts.login('restricted-user', restrictedUser.temporaryPassword)
+    const agent = await f.identities.login('admin', initialPassword)
+    const mutations = [
+      { kind: 'update', apply: (token: string, input: AccountTargetMutationRequest) => f.accounts.update(token,
+        accountUpdateRequest.parse({ ...input, displayName: 'Updated target' })) },
+      { kind: 'reset', apply: (token: string, input: AccountTargetMutationRequest) => f.accounts.resetPassword(token, input) },
+      { kind: 'remove', apply: (token: string, input: AccountTargetMutationRequest) => f.accounts.remove(token, input) },
+    ]
+    const completed = []
+    for (const mutation of mutations) {
+      const target = await f.accounts.create(admin.token, creation(`receipt-${mutation.kind}`))
+      const request = accountTargetMutationRequest.parse({ requestId: randomUUID(), userId: target.receipt.account.userId,
+        expectedRevision: target.receipt.account.revision })
+      const first = await mutation.apply(admin.token, request)
+      const replay = await mutation.apply(admin.token, request)
+      assert.deepEqual(replay.receipt, first.receipt)
+      assert.equal(replay.replay, true)
+      if ('temporaryPassword' in replay) assert.equal(replay.temporaryPassword, null)
+      const missing = accountTargetMutationRequest.parse({ ...request, userId: randomUUID() })
+      await assert.rejects(mutation.apply(admin.token, missing), { status: 409, code: 'request_id_conflict' })
+      await assert.rejects(mutation.apply(admin.token, { ...missing, requestId: randomUUID() }), { status: 404, code: 'account_not_found' })
+      await assert.rejects(mutation.apply(other.login.token, missing), { status: 404, code: 'account_not_found' })
+      await assert.rejects(mutation.apply(ordinary.login.token, missing), { status: 403, code: 'account_forbidden' })
+      await assert.rejects(mutation.apply(restricted.token, missing), { status: 403, code: 'password_change_required' })
+      await assert.rejects(mutation.apply(agent.token, missing), { status: 401, code: 'account_unauthorized' })
+      assert.equal((await f.pool.query(`SELECT count(*)::integer AS count FROM pe_account_mutations
+        WHERE actor_user_id=$1 AND request_id=$2`, [f.adminId, request.requestId])).rows[0].count, 1)
+      completed.push({ apply: mutation.apply, missing })
+    }
+    const own = (await f.accounts.me(admin.token)).user
+    await f.accounts.update(other.login.token, accountUpdateRequest.parse({ requestId: randomUUID(), userId: own.userId,
+      expectedRevision: own.revision, role: 'USER' }))
+    for (const mutation of completed) await assert.rejects(mutation.apply(admin.token, mutation.missing),
+      { status: 403, code: 'account_forbidden' })
+    await f.accounts.logout(admin.token)
+    for (const mutation of completed) await assert.rejects(mutation.apply(admin.token, mutation.missing),
+      { status: 401, code: 'account_unauthorized' })
   })
 })
 
