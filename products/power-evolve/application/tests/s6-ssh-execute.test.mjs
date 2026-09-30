@@ -64,7 +64,7 @@ async function setup(t) {
   const url = new URL(databaseUrl); url.pathname = `/${database}`
   pool = new Pool({ connectionString: url.href, max: 8 })
   await initializeDatabase(pool)
-  assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 22)
+  assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 23)
   const users = [identity.parse({ userId: randomUUID(), username: 'alice' }),
     identity.parse({ userId: randomUUID(), username: 'bob' })]
   for (const user of users) await pool.query(

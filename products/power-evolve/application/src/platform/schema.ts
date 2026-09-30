@@ -1,8 +1,9 @@
 /** Initial PG schema. Session bytes and operation ownership commit in the same database. */
 import { mcpConnectionsSchemaV22 } from './mcp-connections-schema.ts'
+import { mcpActionsSchemaV23 } from './mcp-actions-schema.ts'
 
 /** Latest supported product database version; older binaries reject newer state. */
-export const CURRENT_SCHEMA_VERSION = 22
+export const CURRENT_SCHEMA_VERSION = 23
 
 export const schema = `
 CREATE TABLE IF NOT EXISTS pe_schema (version integer PRIMARY KEY);
@@ -659,4 +660,9 @@ UPDATE pe_schema SET version=21 WHERE version=20;
 export const schemaV22 = `${mcpConnectionsSchemaV22}
 ALTER TABLE pe_operations ADD COLUMN remote_mcp_selection json NOT NULL DEFAULT '[]'::json;
 UPDATE pe_schema SET version=22 WHERE version=21;
+`
+
+/** Revocable MCP approvals, one-use dispatch intent, and continuation budgets. */
+export const schemaV23 = `${mcpActionsSchemaV23}
+UPDATE pe_schema SET version=23 WHERE version=22;
 `

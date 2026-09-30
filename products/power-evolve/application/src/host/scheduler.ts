@@ -8,6 +8,7 @@ import { MessageId } from '@deepseek-ai/dsh-llm'
 import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
 import type { Grant } from '../contracts.ts'
+import type { McpActionId } from '../mcp-action-contracts.ts'
 import { installConnectorTools } from './connectors.ts'
 import { installExecutionTools } from './executions.ts'
 import { installPersonalMcpTool } from './mcp.ts'
@@ -23,6 +24,7 @@ declare module '@deepseek-ai/dsh-llm' {
     'power-evolve-desktop-execution': { readonly kind: 'power-evolve-desktop-execution'; readonly executionId: string }
     'power-evolve-stdio-mcp': { readonly kind: 'power-evolve-stdio-mcp'; readonly callId: string }
     'power-evolve-ssh-execute': { readonly kind: 'power-evolve-ssh-execute'; readonly actionId: string }
+    'power-evolve-remote-mcp': { readonly kind: 'power-evolve-remote-mcp'; readonly actionId: McpActionId }
   }
 }
 
@@ -150,6 +152,7 @@ export class Scheduler {
               : grant.source === 'desktop_result' ? { kind: 'power-evolve-desktop-execution', executionId: grant.sourceDesktopExecutionId! }
                 : grant.source === 'stdio_mcp_result' ? { kind: 'power-evolve-stdio-mcp', callId: grant.sourceStdioMcpCallId! }
                   : grant.source === 'ssh_execute_result' ? { kind: 'power-evolve-ssh-execute', actionId: grant.sourceSshExecuteActionId! }
+                    : grant.source === 'remote_mcp_result' ? { kind: 'power-evolve-remote-mcp', actionId: grant.sourceMcpActionId! }
               : { kind: 'user', rpcId: brandString<SessionRequestId>(grant.requestId) },
           content: [{ type: 'text', text: grant.text }] })
         await agent.whenIdle()

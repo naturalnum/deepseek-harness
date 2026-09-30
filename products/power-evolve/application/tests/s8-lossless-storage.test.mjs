@@ -61,7 +61,7 @@ test('V20 opaque records survive V21 and preserve NUL, escapes and Unicode', { t
   await assert.rejects(pool.query('SELECT $1::jsonb', [JSON.stringify(payload)]), { code: '22P05' })
   await initializeDatabase(pool)
   await initializeDatabase(pool)
-  assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 22)
+  assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 23)
   for (const [index, [table, column]] of columns.entries()) {
     const migrated = (await pool.query(`SELECT ${column} AS value,pg_typeof(${column})::text AS type FROM ${table}`)).rows[0]
     assert.equal(migrated.type, 'json')

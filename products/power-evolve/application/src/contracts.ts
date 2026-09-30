@@ -4,6 +4,7 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
 import { MAX_INPUT_JSON_BYTES } from './continuation-input.ts'
 import { mcpOperationTools } from './mcp-operation-contracts.ts'
+import { mcpActionId } from './mcp-action-contracts.ts'
 
 export type UserId = Branded<'PowerEvolveUserId'>
 export type OperationId = Branded<'PowerEvolveOperationId'>
@@ -141,12 +142,13 @@ export const grant = z.object({
   epoch: z.number().int().positive(),
   settings,
   source: z.enum(['user', 'platform_action', 'sandbox_result', 'desktop_result', 'stdio_mcp_result',
-    'ssh_execute_result']).default('user'),
+    'ssh_execute_result', 'remote_mcp_result']).default('user'),
   sourceActionId: z.uuid().nullable().default(null),
   sourceExecutionId: z.uuid().nullable().default(null),
   sourceDesktopExecutionId: z.uuid().nullable().default(null),
   sourceStdioMcpCallId: z.uuid().nullable().default(null),
   sourceSshExecuteActionId: z.uuid().nullable().default(null),
+  sourceMcpActionId: mcpActionId.nullable().default(null),
   target: executionTarget.default({ kind: 'cloud' }),
   executionEnabled: z.boolean().default(false),
   skills: z.array(skillSnapshot).max(256).default([]),

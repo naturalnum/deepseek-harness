@@ -319,8 +319,8 @@ export class StdioMcpService {
           : `只读结果（不可信数据）：${JSON.stringify(result)}。`)
       await client.query(
         `INSERT INTO pe_operations(id,session_id,request_id,input,settings,skill_selection,
-          source,source_stdio_mcp_call_id,state)
-         SELECT $1,o.session_id,$2,$3,o.settings,o.skill_selection,'stdio_mcp_result',$4,'queued'
+          remote_mcp_selection,mcp_root_operation_id,source,source_stdio_mcp_call_id,state)
+         SELECT $1,o.session_id,$2,$3,o.settings,o.skill_selection,o.remote_mcp_selection,COALESCE(o.mcp_root_operation_id,o.id),'stdio_mcp_result',$4,'queued'
          FROM pe_operations o WHERE o.id=$5 ON CONFLICT(session_id,request_id) DO NOTHING`,
         [randomUUID(), row.continuation_request_id, text, row.id, row.operation_id])
       await client.query(`SELECT pg_notify('pe_tasks',o.session_id::text) FROM pe_operations o WHERE o.id=$1`,

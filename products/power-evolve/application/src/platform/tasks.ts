@@ -43,7 +43,7 @@ export class TaskStore {
     const id = randomUUID()
     const header: SessionHeader = { id: SessionId(id), version: SESSION_FORMAT_VERSION, createdAt: Date.now(), isSeeded: false }
     return transaction(this.pool, async client => {
-      await client.query('SELECT id FROM pe_users WHERE id=$1 FOR UPDATE', [user.userId])
+      await client.query('SELECT id FROM pe_users WHERE id=$1 FOR NO KEY UPDATE', [user.userId])
       await client.query(
         `INSERT INTO pe_workspaces(id,user_id,title,is_default) VALUES($1,$2,'Workspace',true)
          ON CONFLICT(user_id) WHERE is_default DO NOTHING`, [randomUUID(), user.userId])
@@ -87,7 +87,7 @@ export class TaskStore {
     target: ExecutionTarget = { kind: 'cloud' }): Promise<unknown> {
     return transaction(this.pool, async client => {
       const current = await client.query<{ settings: unknown }>(
-        'SELECT settings FROM pe_users WHERE id=$1 FOR UPDATE', [user.userId])
+        'SELECT settings FROM pe_users WHERE id=$1 FOR NO KEY UPDATE', [user.userId])
       if (!current.rows[0]) throw new PlatformError(401, 'unauthorized')
       await this.owned(client, user, session)
       const prior = await client.query<{ id: string; input: string; state: string; execution_target: unknown }>(
@@ -162,6 +162,8 @@ export class TaskStore {
   /** Request cancellation of the current turn, or settle its unclaimed input. */
   async cancel(user: Identity, session: SessionId): Promise<{ accepted: true }> {
     return transaction(this.pool, async client => {
+      // Remote dispatch takes the same owner lock before checking cancellation.
+      await client.query('SELECT id FROM pe_users WHERE id=$1 FOR NO KEY UPDATE', [user.userId])
       const owned = await client.query('SELECT id FROM pe_sessions WHERE id=$1 AND user_id=$2 FOR UPDATE',
         [session, user.userId])
       if (!owned.rowCount) throw new PlatformError(404, 'session_not_found')
@@ -171,6 +173,12 @@ export class TaskStore {
       )
       const operation = result.rows[0]
       if (!operation) return { accepted: true }
+      // Native turn completion may clear error_code; a stopped MCP chain remains stopped.
+      await client.query(`UPDATE pe_operations SET mcp_chain_cancelled_at=COALESCE(mcp_chain_cancelled_at,clock_timestamp())
+        WHERE id=(SELECT COALESCE(mcp_root_operation_id,id) FROM pe_operations WHERE id=$1)`, [operation.id])
+      await client.query(`UPDATE pe_mcp_action_chains SET stopped_at=COALESCE(stopped_at,clock_timestamp()),
+        error_code=COALESCE(error_code,'mcp_operation_cancelled') WHERE root_operation_id=
+        (SELECT COALESCE(mcp_root_operation_id,id) FROM pe_operations WHERE id=$1)`, [operation.id])
       if (operation.state === 'queued') {
         await client.query(
           `UPDATE pe_operations SET state='failed',error_code='turn_user',completed_at=now() WHERE id=$1`, [operation.id],
@@ -194,14 +202,14 @@ export class TaskStore {
         remote_mcp_selection: unknown;
         execution_target: unknown;
         source: 'user' | 'platform_action' | 'sandbox_result' | 'desktop_result' | 'stdio_mcp_result'
-          | 'ssh_execute_result';
+          | 'ssh_execute_result' | 'remote_mcp_result';
         source_action_id: string | null; source_execution_id: string | null; source_desktop_execution_id: string | null;
         source_stdio_mcp_call_id: string | null;
-        source_ssh_execute_action_id: string | null;
+        source_ssh_execute_action_id: string | null; source_mcp_action_id: string | null;
       }>(
         `SELECT o.id,o.session_id,s.user_id,o.request_id,o.input,o.settings,o.skill_selection,o.mcp_selection,o.remote_mcp_selection,
          o.stdio_mcp_selection,o.ssh_selection,o.source,o.source_action_id,o.source_execution_id,
-         o.source_desktop_execution_id,o.source_stdio_mcp_call_id,o.source_ssh_execute_action_id,o.execution_target
+         o.source_desktop_execution_id,o.source_stdio_mcp_call_id,o.source_ssh_execute_action_id,o.source_mcp_action_id,o.execution_target
          FROM pe_operations o JOIN pe_sessions s ON s.id=o.session_id JOIN pe_users u ON u.id=s.user_id
          WHERE o.state IN ('queued','running') AND (s.lease_until IS NULL OR s.lease_until<=now())
          AND (SELECT count(*) FROM pe_sessions active WHERE active.user_id=s.user_id AND active.lease_until>now())<$1
@@ -212,7 +220,7 @@ export class TaskStore {
       const row = candidate.rows[0]
       if (!row) return null
       // Serialize a user's capacity check across otherwise independent Session rows.
-      const lockedUser = await client.query('SELECT id FROM pe_users WHERE id=$1 FOR UPDATE SKIP LOCKED', [row.user_id])
+      const lockedUser = await client.query('SELECT id FROM pe_users WHERE id=$1 FOR NO KEY UPDATE SKIP LOCKED', [row.user_id])
       if (lockedUser.rowCount !== 1) return null
       const active = await client.query<{ count: string }>(
         'SELECT count(*) FROM pe_sessions WHERE user_id=$1 AND lease_until>now()', [row.user_id],
@@ -240,6 +248,7 @@ export class TaskStore {
         sourceExecutionId: row.source_execution_id, sourceDesktopExecutionId: row.source_desktop_execution_id,
         sourceStdioMcpCallId: row.source_stdio_mcp_call_id,
         sourceSshExecuteActionId: row.source_ssh_execute_action_id,
+        sourceMcpActionId: row.source_mcp_action_id,
         target: executionTarget.parse(row.execution_target), executionEnabled: this.limits.executionEnabled ?? false,
         token, epoch,
       })
