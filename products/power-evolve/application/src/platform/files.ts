@@ -5,6 +5,8 @@ import { basename, resolve } from 'node:path'
 import type { Pool } from 'pg'
 import { PlatformError, type Identity } from '../contracts.ts'
 import { transaction } from './database.ts'
+import { requireActiveAccount } from './account-authority.ts'
+import { accountUserId } from '../account-contracts.ts'
 import { SafePosix, type SafePosixOptions } from './safe-posix.ts'
 
 const MAX_FILE_BYTES = 2 * 1024 * 1024
@@ -60,14 +62,16 @@ export class FileService {
   }
 
   private async defaultWorkspaceId(userId: string): Promise<string> {
-    let result = await this.pool.query<{ id: string }>('SELECT id FROM pe_workspaces WHERE user_id=$1 AND is_default', [userId])
-    if (!result.rows[0]) {
-      await this.pool.query(
+    const existing = await this.pool.query<{ id: string }>('SELECT id FROM pe_workspaces WHERE user_id=$1 AND is_default', [userId])
+    if (existing.rows[0]) return existing.rows[0].id
+    return transaction(this.pool, async client => {
+      await requireActiveAccount(client, accountUserId.parse(userId), 'update')
+      await client.query(
         `INSERT INTO pe_workspaces(id,user_id,title,is_default) VALUES($1,$2,'Workspace',true)
          ON CONFLICT(user_id) WHERE is_default DO NOTHING`, [randomUUID(), userId])
-      result = await this.pool.query<{ id: string }>('SELECT id FROM pe_workspaces WHERE user_id=$1 AND is_default', [userId])
-    }
-    return result.rows[0]!.id
+      const result = await client.query<{ id: string }>('SELECT id FROM pe_workspaces WHERE user_id=$1 AND is_default', [userId])
+      return result.rows[0]!.id
+    })
   }
 
   private async ownedWorkspaceId(userId: string, workspaceId: string): Promise<string> {
@@ -133,7 +137,7 @@ export class FileService {
     const digest = sha256(bytes)
     const workspace = await this.workspace(user, workspaceId)
     return transaction(this.pool, async client => {
-      await client.query('SELECT id FROM pe_users WHERE id=$1 FOR UPDATE', [user.userId])
+      await requireActiveAccount(client, user.userId, 'update')
       const previous = await client.query<{ workspace_id: string; path: string; digest: string; base_digest: string | null; size: string }>(
         'SELECT workspace_id,path,digest,base_digest,size FROM pe_file_mutations WHERE user_id=$1 AND request_id=$2', [user.userId, requestId],
       )

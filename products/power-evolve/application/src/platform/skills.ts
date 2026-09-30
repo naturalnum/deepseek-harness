@@ -8,6 +8,8 @@ import type { Pool, PoolClient } from 'pg'
 import { z } from 'zod'
 import { PlatformError, type Identity, type skillSelection } from '../contracts.ts'
 import { transaction } from './database.ts'
+import { requireActiveAccount } from './account-authority.ts'
+import { accountUserId } from '../account-contracts.ts'
 import { extractSkillPackage, MAX_ARCHIVE_BYTES, type ExtractedSkillFile } from './skill-package-extraction.ts'
 import { readNativeSkillMetadata } from './skill-metadata.ts'
 import { skillPackageManifest, skillPackageVersion, verifyPublishedSkillPackage } from './skill-package-manifest.ts'
@@ -254,7 +256,7 @@ export class SkillService {
   async install(user: Identity, id: string, name: string, description: string, instructions: string): Promise<Record<string, unknown>> {
     const digest = hash(instructions)
     return transaction(this.pool, async client => {
-      await client.query('SELECT id FROM pe_users WHERE id=$1 FOR UPDATE', [user.userId])
+      await requireActiveAccount(client, user.userId, 'update')
       const prior = await client.query<SkillRow>(`SELECT ${skillColumns} FROM ${skillJoin} WHERE s.id=$1`, [id])
       if (prior.rows[0]) {
         const skill = prior.rows[0]
@@ -286,7 +288,7 @@ export class SkillService {
 
   async toggle(user: Identity, id: string, enabled: boolean): Promise<Record<string, unknown>> {
     return transaction(this.pool, async client => {
-      await client.query('SELECT id FROM pe_users WHERE id=$1 FOR UPDATE', [user.userId])
+      await requireActiveAccount(client, user.userId, 'update')
       const result = await client.query<SkillRow>(`SELECT ${skillColumns} FROM ${skillJoin}
         WHERE s.id=$1 AND s.user_id=$2 FOR UPDATE OF s`, [id, user.userId])
       const skill = result.rows[0]
@@ -301,7 +303,7 @@ export class SkillService {
 
   async revoke(user: Identity, id: string): Promise<Record<string, unknown>> {
     return transaction(this.pool, async client => {
-      await client.query('SELECT id FROM pe_users WHERE id=$1 FOR UPDATE', [user.userId])
+      await requireActiveAccount(client, user.userId, 'update')
       const result = await client.query<SkillRow>(`SELECT ${skillColumns} FROM ${skillJoin}
         WHERE s.id=$1 AND s.user_id=$2 FOR UPDATE OF s`, [id, user.userId])
       if (!result.rows[0]) throw new PlatformError(404, 'skill_not_found')
@@ -317,7 +319,7 @@ export class SkillService {
     platformOrigin: string): Promise<Record<string, unknown>> {
     if (this.packageRoot === null) throw new PlatformError(503, 'skill_package_unavailable')
     return transaction(this.pool, async client => {
-      await client.query('SELECT id FROM pe_users WHERE id=$1 FOR UPDATE', [user.userId])
+      await requireActiveAccount(client, user.userId, 'update')
       await client.query('SELECT pg_advisory_xact_lock(72819532,hashtext($1))', [requestId])
       const prior = await client.query<PackageVersionRow>(
         'SELECT * FROM pe_skill_package_versions WHERE id=$1', [requestId])
@@ -415,7 +417,7 @@ export class SkillService {
       const prepared = await this.preparePackage(stage, release.release.archiveDigest, version)
       const { unpacked, files, metadata, manifest, manifestDigest, instructionDigest } = prepared
       return await transaction(this.pool, async client => {
-        await client.query('SELECT id FROM pe_users WHERE id=$1 FOR UPDATE', [user.userId])
+        await requireActiveAccount(client, user.userId, 'update')
         await client.query('SELECT pg_advisory_xact_lock(72819532,hashtext($1))', [requestId])
         const bound = await client.query<BuiltinInstallRequestRow>(
           'SELECT * FROM pe_builtin_skill_install_requests WHERE request_id=$1', [requestId])
@@ -549,7 +551,7 @@ export class SkillService {
       const { unpacked, files, metadata, version, manifest, manifestDigest, instructionDigest } =
         await this.preparePackage(stage, intent.archive_digest)
       return await transaction(this.pool, async client => {
-        await client.query('SELECT id FROM pe_users WHERE id=$1 FOR UPDATE', [intent.user_id])
+        await requireActiveAccount(client, accountUserId.parse(intent.user_id), 'update')
         const current = await client.query<UploadIntentRow>(
           'SELECT * FROM pe_skill_upload_intents WHERE request_id=$1 FOR UPDATE', [intent.request_id])
         const ticketRow = current.rows[0]

@@ -6,6 +6,7 @@ import { basename, isAbsolute, join, resolve } from 'node:path'
 import type { Pool } from 'pg'
 import { PlatformError, type Identity } from '../contracts.ts'
 import { transaction } from './database.ts'
+import { requireActiveAccount } from './account-authority.ts'
 import type { FileService } from './files.ts'
 
 const MAX_BYTES = 2 * 1024 * 1024
@@ -68,7 +69,7 @@ export class ArtifactService {
   /** Publish one file from the Session's immutable workspace; a retry returns its first result. */
   async publish(user: Identity, requestId: string, sessionId: string, sourcePath: string): Promise<ReturnType<typeof publicRecord>> {
     return transaction(this.pool, async client => {
-      await client.query('SELECT id FROM pe_users WHERE id=$1 FOR UPDATE', [user.userId])
+      await requireActiveAccount(client, user.userId, 'update')
       const prior = await client.query<ArtifactRow>(
         'SELECT * FROM pe_artifacts WHERE user_id=$1 AND request_id=$2', [user.userId, requestId],
       )

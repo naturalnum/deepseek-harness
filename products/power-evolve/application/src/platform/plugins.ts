@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import type { Pool, PoolClient } from 'pg'
 import { PlatformError, type Identity } from '../contracts.ts'
 import { transaction } from './database.ts'
+import { requireActiveAccount } from './account-authority.ts'
 
 type PluginRow = { enabled: boolean; revision: number }
 type MutationRow = { request_digest: string; result_enabled: boolean; result_revision: number }
@@ -40,7 +41,10 @@ export class PluginService {
   }
 
   async list(user: Identity): Promise<{ items: ReturnType<typeof item>[] }> {
-    const row = await transaction(this.pool, client => this.ensureUser(client, user.userId))
+    const row = await transaction(this.pool, async client => {
+      await requireActiveAccount(client, user.userId, 'update')
+      return this.ensureUser(client, user.userId)
+    })
     return { items: [item(row)] }
   }
 
@@ -48,8 +52,7 @@ export class PluginService {
   async notesSetEnabled(user: Identity, choice: NotesPluginChoice): Promise<ReturnType<typeof item>> {
     const fingerprint = choiceDigest(choice)
     return transaction(this.pool, async client => {
-      const locked = await client.query('SELECT id FROM pe_users WHERE id=$1 FOR UPDATE', [user.userId])
-      if (!locked.rowCount) throw new PlatformError(401, 'unauthorized')
+      await requireActiveAccount(client, user.userId, 'update')
       await this.ensureUser(client, user.userId)
       const previous = await client.query<MutationRow>(
         'SELECT request_digest,result_enabled,result_revision FROM pe_plugin_mutations WHERE user_id=$1 AND request_id=$2',

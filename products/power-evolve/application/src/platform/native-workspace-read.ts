@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import type { Pool } from 'pg'
 import { PlatformError, type Identity, type RequestId } from '../contracts.ts'
 import { transaction } from './database.ts'
+import { requireActiveAccount } from './account-authority.ts'
 import type { FileService } from './files.ts'
 import type { NativeSessionRead } from './native-session-read.ts'
 
@@ -32,7 +33,7 @@ export class NativeWorkspaceRead {
   async create(user: Identity, requestId: RequestId, title: string): Promise<ReturnType<typeof view>> {
     await this.files.workspaceForUser(user.userId)
     const created = await transaction(this.pool, async client => {
-      await client.query('SELECT id FROM pe_users WHERE id=$1 FOR UPDATE', [user.userId])
+      await requireActiveAccount(client, user.userId, 'update')
       const prior = await client.query<WorkspaceRow>(
         'SELECT id,title,is_default,created_at FROM pe_workspaces WHERE user_id=$1 AND create_request_id=$2',
         [user.userId, requestId])
