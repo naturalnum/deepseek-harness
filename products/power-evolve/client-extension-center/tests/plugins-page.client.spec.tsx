@@ -20,7 +20,7 @@ const fixedMcp: FixedMcpPort = {
   install: vi.fn(), toggle: vi.fn(), check: vi.fn(),
 }
 const fixedSsh: PersonalSshPort = { list: async () => ({ available: false, items: [] }),
-  createPassword: vi.fn(), toggle: vi.fn(), check: vi.fn(), callList: async () => [],
+  create: vi.fn(), update: vi.fn(), remove: vi.fn(), toggle: vi.fn(), check: vi.fn(), callList: async () => [],
   callStatus: vi.fn(), callCancel: vi.fn() }
 const fixedStdio: StdioMcpPort = { list: async () => ({ available: false,
   preset: { toolName: 'mcp__stdio__whoami', description: 'Isolated process' }, items: [] }),

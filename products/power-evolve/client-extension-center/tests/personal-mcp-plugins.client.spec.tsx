@@ -34,7 +34,7 @@ test('Remote MCP and fixed MCP keep separate installed cards and open their own 
     stdio: { list: async () => ({ available: false, items: [],
       preset: { toolName: 'mcp__stdio__whoami', description: 'Process identity' } }),
     install: vi.fn(), toggle: vi.fn(), calls: vi.fn(), status: vi.fn() },
-    ssh: { list: async () => ({ available: false, items: [] }), createPassword: vi.fn(), toggle: vi.fn(),
+    ssh: { list: async () => ({ available: false, items: [] }), create: vi.fn(), update: vi.fn(), remove: vi.fn(), toggle: vi.fn(),
       check: vi.fn(), callList: vi.fn(), callStatus: vi.fn(), callCancel: vi.fn() },
     approvalUrl: async () => 'https://platform.example.test/approval', t: (key: keyof typeof en) => en[key],
   } as PluginsPageProps

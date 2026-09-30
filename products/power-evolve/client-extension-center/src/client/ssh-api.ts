@@ -1,53 +1,97 @@
+/** Browser SSH management. Only replacement credential envelopes go directly to Platform. */
 import { approvalUrl } from './plugins-api.ts'
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu
 const TICKET = /^[A-Za-z0-9_-]{32,256}$/u
 const FINGERPRINT = /^SHA256:[A-Za-z0-9+/]{43}$/u
+const CONTROL = /[\u0000-\u001f\u007f]/u
+// Mirrors application/ssh-management-contracts; that Node/Zod module cannot enter the browser bundle.
+const UPLOAD_MAX_BYTES = 65_536
 
-export interface PersonalSshConnection {
-  readonly connectionId: string
+/** Metadata-only credential instructions from the fixed SSH management DTO. */
+export type SshAuthenticationPlan =
+  | { readonly kind: 'password'; readonly password: 'retain' | 'replace' }
+  | { readonly kind: 'private_key'; readonly privateKey: 'retain' | 'replace'; readonly passphrase: 'retain' | 'replace' | 'clear' }
+
+/** Complete configuration; secret values never belong in Host RPC. */
+export interface SshConfigurationInput {
   readonly displayName: string
   readonly host: string
   readonly port: number
   readonly username: string
   readonly hostKeySha256: string
+  readonly workingDirectory: string | null
+  readonly authentication: SshAuthenticationPlan
   readonly enabled: boolean
-  readonly revision: number
-  readonly credentialRevision: number
 }
 
+/** Write-only format two envelope, used solely by direct Platform upload. */
+export interface SshCredentialUpload {
+  readonly formatVersion: 2
+  readonly password?: string
+  readonly privateKey?: string
+  readonly passphrase?: string
+}
+
+/** Public metadata, including deletion identity retained for existing execution records. */
+export interface PersonalSshConnection extends Omit<SshConfigurationInput, 'authentication'> {
+  readonly connectionId: string
+  readonly revision: number
+  readonly credentialRevision: number
+  readonly authentication: 'password' | 'private_key'
+  readonly secretConfigured: boolean
+  readonly passphraseConfigured: boolean
+  readonly deletedAt: string | null
+  readonly createdAt: string
+  readonly updatedAt: string
+}
+
+/** Owner-scoped live connections and deployment availability. */
 export interface PersonalSshList {
   readonly available: boolean
   readonly items: readonly PersonalSshConnection[]
 }
 
+/** Browser-local creation input; credentials are excluded explicitly from Host requests. */
 export interface SshCreateInput {
   readonly requestId: string
-  readonly displayName: string
-  readonly host: string
-  readonly port: number
-  readonly username: string
-  readonly hostKeySha256: string
-  readonly password: string
-  readonly enabled: boolean
+  readonly configuration: SshConfigurationInput
+  readonly credentials: SshCredentialUpload
 }
 
-export interface SshToggleInput {
+/** Browser-local update; absent credentials means metadata or an explicit clear only. */
+export interface SshUpdateInput {
+  readonly requestId: string
+  readonly connectionId: string
+  readonly baseRevision: number
+  readonly configuration: SshConfigurationInput
+  readonly credentials?: SshCredentialUpload
+}
+
+/** Compare-and-swap deletion or enablement identity. */
+export interface SshDeleteInput {
   readonly connectionId: string
   readonly requestId: string
   readonly baseRevision: number
+}
+
+/** Enablement preserves credential bytes. */
+export interface SshToggleInput extends SshDeleteInput {
   readonly enabled: boolean
 }
 
+/** Check only a persisted connection revision. */
 export interface SshCheckInput {
   readonly requestId: string
   readonly connectionId: string
   readonly connectionRevision: number
 }
 
+/** Durable authentication check states; uncertain calls remain eligible for reconciliation. */
 export type SshCheckState = 'accepted' | 'preparing' | 'ready' | 'dispatch-intent' | 'running'
   | 'succeeded' | 'failed' | 'uncertain' | 'cancelled'
 
+/** Bounded owner-visible check result. */
 export interface SshCheckCall {
   readonly callId: string
   readonly state: SshCheckState
@@ -55,16 +99,57 @@ export interface SshCheckCall {
   readonly errorCode?: string
 }
 
+/** Browser operations. Retrying a write keeps its original request and immutable input. */
 export interface PersonalSshPort {
+  /** Read live public metadata.
+   * @param signal - abort an obsolete read.
+   * @returns availability and owner-visible records.
+   */
   list(signal?: AbortSignal): Promise<PersonalSshList>
-  createPassword(input: SshCreateInput): Promise<PersonalSshConnection>
+  /** Create through a ticket and direct upload; retries always verify the bytes again.
+   * @param input - immutable creation and stable request identity.
+   * @returns the created public record.
+   */
+  create(input: SshCreateInput): Promise<PersonalSshConnection>
+  /** Replace metadata against a saved revision, uploading only replacement secret fields.
+   * @param input - immutable edit and expected revision.
+   * @returns the updated public record.
+   */
+  update(input: SshUpdateInput): Promise<PersonalSshConnection>
+  /** Change enablement without replacing credentials.
+   * @param input - stable request and expected revision.
+   * @returns the updated public record.
+   */
   toggle(input: SshToggleInput): Promise<PersonalSshConnection>
+  /** Delete while retaining the connection identity for execution records.
+   * @param input - stable request and expected revision.
+   * @returns the public tombstone.
+   */
+  remove(input: SshDeleteInput): Promise<PersonalSshConnection>
+  /** Authenticate the saved version without running a remote command.
+   * @param input - stable request and saved revision.
+   * @returns the durable authentication call.
+   */
   check(input: SshCheckInput): Promise<SshCheckCall>
+  /** Restore bounded call history after refresh.
+   * @param signal - abort an obsolete poll.
+   * @returns owner-visible call states.
+   */
   callList(signal?: AbortSignal): Promise<readonly SshCheckCall[]>
+  /** Read one accepted call's state.
+   * @param callId - opaque durable call identity.
+   * @param signal - abort an obsolete poll.
+   * @returns the matching call.
+   */
   callStatus(callId: string, signal?: AbortSignal): Promise<SshCheckCall>
+  /** Request cancellation; the response may still describe an uncertain outcome.
+   * @param callId - opaque durable call identity.
+   * @returns the matching call's current state.
+   */
   callCancel(callId: string): Promise<SshCheckCall>
 }
 
+/** Sanitized HTTP failure; callers may unlock a definitely rejected write. */
 export class SshHttpError extends Error {
   constructor(readonly status: number) { super(`SSH request failed: ${status}`) }
 }
@@ -73,6 +158,11 @@ const record = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 const bounded = (value: unknown, max: number): value is string =>
   typeof value === 'string' && value.length > 0 && value.length <= max
+const exact = (value: object, keys: readonly string[]): boolean =>
+  Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key))
+const revision = (value: unknown): value is number => Number.isSafeInteger(value) && Number(value) > 0
+const timestamp = (value: unknown): value is string => typeof value === 'string'
+  && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$/u.test(value) && Number.isFinite(Date.parse(value))
 const CHECK_STATES = new Set<SshCheckState>([
   'accepted', 'preparing', 'ready', 'dispatch-intent', 'running', 'succeeded', 'failed', 'uncertain', 'cancelled',
 ])
@@ -90,57 +180,146 @@ function checkCall(value: unknown): SshCheckCall {
     ...(value.result === undefined ? {} : { result: value.result }),
     ...(typeof value.errorCode === 'string' ? { errorCode: value.errorCode } : {}) }
 }
+
+/** Strip only the optional base64 padding accepted by the original SSH form.
+ * @param value - fingerprint entered by the user.
+ * @returns canonical SHA-256 fingerprint text.
+ */
 export const normalizeSshFingerprint = (value: string): string => {
   const trimmed = value.trim()
   return /^SHA256:[A-Za-z0-9+/]{43}=$/u.test(trimmed) ? trimmed.slice(0, -1) : trimmed
 }
+/** Validate the original form's pinned host fingerprint.
+ * @param value - entered fingerprint.
+ * @returns whether its canonical value is accepted.
+ */
 export const validSshFingerprint = (value: string): boolean => FINGERPRINT.test(normalizeSshFingerprint(value))
 const normalizeHost = (value: string): string => value.trim().replace(/^\[([^\]]+)\]$/u, '$1')
+const label = (value: unknown, max: number): value is string => bounded(value, max) && !CONTROL.test(value)
 
-function connection(value: unknown): PersonalSshConnection {
-  if (!record(value) || typeof value.connectionId !== 'string' || !UUID.test(value.connectionId)
-    || !bounded(value.displayName, 100) || !bounded(value.host, 253)
-    || !Number.isInteger(value.port) || Number(value.port) < 1 || Number(value.port) > 65535
-    || !bounded(value.username, 100) || !bounded(value.hostKeySha256, 51)
-    || !validSshFingerprint(value.hostKeySha256) || typeof value.enabled !== 'boolean'
-    || !Number.isSafeInteger(value.revision) || Number(value.revision) < 1
-    || !Number.isSafeInteger(value.credentialRevision) || Number(value.credentialRevision) < 1) {
-    throw new Error('Invalid SSH connection response')
-  }
-  return { connectionId: value.connectionId, displayName: value.displayName, host: value.host,
-    port: Number(value.port), username: value.username, hostKeySha256: normalizeSshFingerprint(value.hostKeySha256),
-    enabled: value.enabled, revision: Number(value.revision), credentialRevision: Number(value.credentialRevision) }
+function validConfiguration(value: SshConfigurationInput): boolean {
+  const auth = value.authentication
+  const plan = auth.kind === 'password'
+    ? exact(auth, ['kind', 'password']) && ['retain', 'replace'].includes(auth.password)
+    : auth.kind === 'private_key' && exact(auth, ['kind', 'privateKey', 'passphrase'])
+      && ['retain', 'replace'].includes(auth.privateKey) && ['retain', 'replace', 'clear'].includes(auth.passphrase)
+  return plan && label(value.displayName.trim(), 100) && label(normalizeHost(value.host), 253)
+    && !/[\s/@?#]/u.test(normalizeHost(value.host))
+    && Number.isInteger(value.port) && value.port >= 1 && value.port <= 65535
+    && label(value.username.trim(), 100) && !/\s/u.test(value.username.trim())
+    && validSshFingerprint(value.hostKeySha256) && typeof value.enabled === 'boolean'
+    && (value.workingDirectory === null || label(value.workingDirectory.trim(), 1024))
 }
 
-function createdConnection(value: unknown, input: SshCreateInput): PersonalSshConnection {
+function configuration(value: SshConfigurationInput): SshConfigurationInput {
+  return { displayName: value.displayName.trim(), host: normalizeHost(value.host), port: value.port,
+    username: value.username.trim(), hostKeySha256: normalizeSshFingerprint(value.hostKeySha256),
+    workingDirectory: value.workingDirectory === null ? null : value.workingDirectory.trim(),
+    authentication: value.authentication.kind === 'password'
+      ? { kind: 'password', password: value.authentication.password }
+      : { kind: 'private_key', privateKey: value.authentication.privateKey, passphrase: value.authentication.passphrase },
+    enabled: value.enabled }
+}
+
+function replacementFields(plan: SshAuthenticationPlan): Array<'password' | 'privateKey' | 'passphrase'> {
+  if (plan.kind === 'password') return plan.password === 'replace' ? ['password'] : []
+  return [...(plan.privateKey === 'replace' ? ['privateKey' as const] : []),
+    ...(plan.passphrase === 'replace' ? ['passphrase' as const] : [])]
+}
+
+function credentialBytes(plan: SshAuthenticationPlan, envelope: SshCredentialUpload | undefined): Uint8Array<ArrayBuffer> | undefined {
+  const fields = replacementFields(plan)
+  if (fields.length === 0) {
+    if (envelope !== undefined) throw new Error('Unexpected SSH credentials')
+    return undefined
+  }
+  if (!envelope || envelope.formatVersion !== 2 || !exact(envelope, ['formatVersion', ...fields])) {
+    throw new Error('Invalid SSH credential fields')
+  }
+  const limits = { password: 4096, privateKey: 7168, passphrase: 1024 }
+  for (const field of fields) {
+    const value = envelope[field]
+    if (typeof value !== 'string' || value.length === 0 || value.includes('\0')) throw new Error('Invalid SSH credential')
+    const bytes = new TextEncoder().encode(value)
+    const valid = bytes.length <= limits[field] && new TextDecoder().decode(bytes) === value
+    bytes.fill(0)
+    if (!valid) throw new Error('Invalid SSH credential')
+  }
+  const bytes = new TextEncoder().encode(JSON.stringify(envelope))
+  if (bytes.length > UPLOAD_MAX_BYTES) { bytes.fill(0); throw new Error('Invalid SSH credential size') }
+  return bytes
+}
+
+/** Validate a new connection and its exact replacement fields before reserving a ticket.
+ * @param input - browser-local input including the write-only envelope.
+ * @returns whether creation can be submitted.
+ */
+export function validSshCreate(input: SshCreateInput): boolean {
+  const auth = input.configuration.authentication
+  if (!UUID.test(input.requestId) || !validConfiguration(input.configuration)
+    || !(auth.kind === 'password' ? auth.password === 'replace' : auth.privateKey === 'replace' && auth.passphrase !== 'retain')) return false
+  try { const bytes = credentialBytes(auth, input.credentials); bytes?.fill(0); return bytes !== undefined }
+  catch (_cause) { return false } // Validation never reports secret-bearing input.
+}
+
+/** Validate an edit, with no envelope for retain/clear instructions.
+ * @param input - frozen update and expected saved revision.
+ * @returns whether its configuration and replacement fields are consistent.
+ */
+export function validSshUpdate(input: SshUpdateInput): boolean {
+  if (!validIdentity(input) || !validConfiguration(input.configuration)) return false
+  try { const bytes = credentialBytes(input.configuration.authentication, input.credentials); bytes?.fill(0); return true }
+  catch (_cause) { return false } // Form validation only needs a boolean.
+}
+
+function validIdentity(input: SshDeleteInput): boolean {
+  return UUID.test(input.requestId) && UUID.test(input.connectionId) && revision(input.baseRevision)
+}
+
+function connection(value: unknown): PersonalSshConnection {
+  if (!record(value) || !exact(value, ['connectionId', 'revision', 'credentialRevision', 'displayName', 'host', 'port',
+    'username', 'hostKeySha256', 'workingDirectory', 'authentication', 'secretConfigured', 'passphraseConfigured',
+    'enabled', 'deletedAt', 'createdAt', 'updatedAt'])
+    || typeof value.connectionId !== 'string' || !UUID.test(value.connectionId)
+    || !label(value.displayName, 100) || !bounded(value.host, 253)
+    || !Number.isInteger(value.port) || Number(value.port) < 1 || Number(value.port) > 65535
+    || !label(value.username, 100) || typeof value.hostKeySha256 !== 'string' || !FINGERPRINT.test(value.hostKeySha256)
+    || !(value.workingDirectory === null || bounded(value.workingDirectory, 1024))
+    || (value.authentication !== 'password' && value.authentication !== 'private_key')
+    || typeof value.secretConfigured !== 'boolean' || typeof value.passphraseConfigured !== 'boolean'
+    || typeof value.enabled !== 'boolean' || !revision(value.revision) || !revision(value.credentialRevision)
+    || !(value.deletedAt === null || timestamp(value.deletedAt)) || !timestamp(value.createdAt) || !timestamp(value.updatedAt)) {
+    throw new Error('Invalid SSH connection response')
+  }
+  return { connectionId: value.connectionId, displayName: value.displayName, host: value.host, port: Number(value.port),
+    username: value.username, hostKeySha256: value.hostKeySha256, workingDirectory: value.workingDirectory,
+    authentication: value.authentication, secretConfigured: value.secretConfigured, passphraseConfigured: value.passphraseConfigured,
+    enabled: value.enabled, revision: value.revision, credentialRevision: value.credentialRevision,
+    deletedAt: value.deletedAt, createdAt: value.createdAt, updatedAt: value.updatedAt }
+}
+
+function writtenConnection(value: unknown, input: SshCreateInput | SshUpdateInput): PersonalSshConnection {
   const item = connection(value)
-  if (item.displayName !== input.displayName.trim() || item.host !== normalizeHost(input.host)
-    || item.port !== input.port || item.username !== input.username.trim()
-    || item.hostKeySha256 !== normalizeSshFingerprint(input.hostKeySha256)
-    || item.enabled !== input.enabled) throw new Error('SSH creation response mismatch')
+  const expected = configuration(input.configuration)
+  if (item.deletedAt !== null || !item.secretConfigured || item.displayName !== expected.displayName
+    || item.host !== expected.host || item.port !== expected.port || item.username !== expected.username
+    || item.hostKeySha256 !== expected.hostKeySha256 || item.enabled !== expected.enabled
+    || item.workingDirectory !== expected.workingDirectory || item.authentication !== expected.authentication.kind
+    || (expected.authentication.kind === 'password' && item.passphraseConfigured)
+    || (expected.authentication.kind === 'private_key' && expected.authentication.passphrase !== 'retain'
+      && item.passphraseConfigured !== (expected.authentication.passphrase === 'replace'))
+    || ('connectionId' in input && (item.connectionId !== input.connectionId || item.revision <= input.baseRevision))) {
+    throw new Error('SSH write response mismatch')
+  }
   return item
 }
 
-function validHost(value: string): boolean {
-  if (!bounded(value, 253) || /[\s/@?#]/u.test(value)) return false
-  if (value.includes(':')) {
-    try { return new URL(`http://[${value}]/`).hostname.startsWith('[') } catch { return false }
-  }
-  if (/^[\d.]+$/u.test(value)) return /^(?:\d{1,3}\.){3}\d{1,3}$/u.test(value)
-    && value.split('.').every(part => Number(part) <= 255)
-  return value.split('.').every(label => /^[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?$/iu.test(label))
+function receiptItem(value: unknown): unknown {
+  if (!record(value) || !exact(value, ['item'])) throw new Error('Invalid SSH receipt response')
+  return value.item
 }
 
-export function validSshCreate(input: SshCreateInput): boolean {
-  return UUID.test(input.requestId) && bounded(input.displayName.trim(), 100) && validHost(normalizeHost(input.host))
-    && Number.isInteger(input.port) && input.port >= 1 && input.port <= 65535
-    && bounded(input.username.trim(), 100) && !/\s/u.test(input.username)
-    && validSshFingerprint(input.hostKeySha256) && typeof input.enabled === 'boolean'
-    && new TextEncoder().encode(input.password).byteLength > 0
-    && new TextEncoder().encode(input.password).byteLength <= 4096
-}
-
-/** The Host sees metadata and byte count; credential bytes go only to the trusted Platform. */
+/** Fixed management RPC with direct, pinned credential upload and explicit lost-response recovery. */
 export class PersonalSshHttpClient implements PersonalSshPort {
   constructor(private readonly request: typeof fetch = (...args) => globalThis.fetch(...args)) {}
 
@@ -154,58 +333,92 @@ export class PersonalSshHttpClient implements PersonalSshPort {
   }
 
   async list(signal?: AbortSignal): Promise<PersonalSshList> {
-    const value = await this.post('sshList', {}, signal)
-    if (!record(value) || typeof value.available !== 'boolean' || !Array.isArray(value.items)
-      || value.items.length > 50) throw new Error('Invalid SSH list response')
+    const value = await this.post('sshConnectionsList', {}, signal)
+    if (!record(value) || !exact(value, ['available', 'items']) || typeof value.available !== 'boolean'
+      || !Array.isArray(value.items) || value.items.length > 50) throw new Error('Invalid SSH list response')
     const items = value.items.map(connection)
-    if (new Set(items.map(item => item.connectionId)).size !== items.length) throw new Error('Invalid SSH list response')
+    if (items.some(item => item.deletedAt !== null) || new Set(items.map(item => item.connectionId)).size !== items.length) {
+      throw new Error('Invalid SSH list response')
+    }
     return { available: value.available, items }
   }
 
-  async createPassword(input: SshCreateInput): Promise<PersonalSshConnection> {
+  async create(input: SshCreateInput): Promise<PersonalSshConnection> {
     if (!validSshCreate(input)) throw new Error('Invalid SSH connection')
-    const bytes = new TextEncoder().encode(input.password)
+    return this.upload('create', input)
+  }
+
+  async update(input: SshUpdateInput): Promise<PersonalSshConnection> {
+    if (!validSshUpdate(input)) throw new Error('Invalid SSH update')
+    if (replacementFields(input.configuration.authentication).length > 0) return this.upload('update', input)
+    return writtenConnection(await this.post('sshConnectionsUpdate', {
+      requestId: input.requestId, connectionId: input.connectionId, baseRevision: input.baseRevision,
+      configuration: configuration(input.configuration),
+    }), input)
+  }
+
+  private async recoverUpload(input: SshCreateInput | SshUpdateInput): Promise<PersonalSshConnection> {
+    const item = receiptItem(await this.post('sshConnectionsReceipt', { requestId: input.requestId }))
+    if (item === null) throw new Error('SSH upload outcome uncertain')
+    return writtenConnection(item, input)
+  }
+
+  private async upload(purpose: 'create' | 'update', input: SshCreateInput | SshUpdateInput): Promise<PersonalSshConnection> {
+    const bytes = credentialBytes(input.configuration.authentication, input.credentials)
+    if (!bytes) throw new Error('Missing SSH credentials')
     try {
-      const metadata = { requestId: input.requestId, displayName: input.displayName.trim(), host: normalizeHost(input.host),
-        port: input.port, username: input.username.trim(), hostKeySha256: normalizeSshFingerprint(input.hostKeySha256),
-        credentialKind: 'password', sizeBytes: bytes.byteLength, enabled: input.enabled }
-      const ticket = await this.post('sshCreateTicket', metadata)
-      if (!record(ticket)) throw new Error('Invalid SSH upload ticket')
-      if (ticket.state !== 'pending' || !bounded(ticket.ticket, 256) || !TICKET.test(ticket.ticket)
-        || !bounded(ticket.uploadUrl, 2048) || !bounded(ticket.expiresAt, 64)) {
-        throw new Error('Invalid SSH upload ticket')
-      }
+      const ticket = await this.post('sshConnectionsTicket', { purpose, requestId: input.requestId,
+        configuration: configuration(input.configuration), sizeBytes: bytes.byteLength,
+        ...('connectionId' in input ? { connectionId: input.connectionId, baseRevision: input.baseRevision } : {}) })
+      if (!record(ticket) || !exact(ticket, ['state', 'requestId', 'ticket', 'uploadUrl', 'expiresAt'])
+        || ticket.state !== 'pending' || ticket.requestId !== input.requestId
+        || typeof ticket.ticket !== 'string' || !TICKET.test(ticket.ticket)
+        || !bounded(ticket.uploadUrl, 2048) || !timestamp(ticket.expiresAt)) throw new Error('Invalid SSH upload ticket')
       const trusted = new URL(await approvalUrl(this.request))
       const destination = new URL(ticket.uploadUrl)
       if (destination.origin !== trusted.origin || destination.pathname !== '/ssh/upload'
         || destination.username || destination.password || destination.search || destination.hash) {
         throw new Error('Invalid SSH upload destination')
       }
-      const response = await this.request(destination.href, {
-        method: 'POST', credentials: 'omit', redirect: 'error', referrerPolicy: 'no-referrer',
-        headers: { authorization: `Bearer ${ticket.ticket}`, 'content-type': 'application/octet-stream',
-          accept: 'application/json' }, body: bytes,
-      })
+      let response: Response
+      try {
+        response = await this.request(destination.href, {
+          method: 'POST', credentials: 'omit', redirect: 'error', referrerPolicy: 'no-referrer',
+          headers: { authorization: `Bearer ${ticket.ticket}`, 'content-type': 'application/octet-stream',
+            accept: 'application/json' }, body: bytes,
+        })
+      } catch (_cause) { return await this.recoverUpload(input) } // Upload response was lost after dispatch.
       if (!response.ok) throw new SshHttpError(response.status)
-      const uploaded: unknown = await response.json()
-      if (!record(uploaded)) throw new Error('Invalid SSH upload response')
-      return createdConnection(uploaded.item, input)
+      let body: string
+      try { body = await response.text() }
+      catch (_cause) { return await this.recoverUpload(input) } // Reading the successful upload response was interrupted.
+      let uploaded: unknown
+      try { uploaded = JSON.parse(body) }
+      catch (_cause) { throw new Error('Invalid SSH upload response') } // A received invalid body is not a lost response.
+      return writtenConnection(receiptItem(uploaded), input)
     } finally { bytes.fill(0) }
   }
 
   async toggle(input: SshToggleInput): Promise<PersonalSshConnection> {
-    if (!UUID.test(input.connectionId) || !UUID.test(input.requestId)
-      || !Number.isSafeInteger(input.baseRevision) || input.baseRevision < 1
-      || typeof input.enabled !== 'boolean') throw new Error('Invalid SSH toggle')
-    const item = connection(await this.post('sshToggle', input))
+    if (!validIdentity(input) || typeof input.enabled !== 'boolean') throw new Error('Invalid SSH toggle')
+    const item = connection(await this.post('sshConnectionsToggle', { requestId: input.requestId,
+      connectionId: input.connectionId, baseRevision: input.baseRevision, enabled: input.enabled }))
     if (item.connectionId !== input.connectionId || item.enabled !== input.enabled
-      || item.revision < input.baseRevision) throw new Error('SSH toggle response mismatch')
+      || item.deletedAt !== null || item.revision <= input.baseRevision) throw new Error('SSH toggle response mismatch')
+    return item
+  }
+
+  async remove(input: SshDeleteInput): Promise<PersonalSshConnection> {
+    if (!validIdentity(input)) throw new Error('Invalid SSH deletion')
+    const item = connection(await this.post('sshConnectionsDelete', { requestId: input.requestId,
+      connectionId: input.connectionId, baseRevision: input.baseRevision }))
+    if (item.connectionId !== input.connectionId || item.deletedAt === null || item.enabled
+      || item.revision <= input.baseRevision) throw new Error('SSH deletion response mismatch')
     return item
   }
 
   async check(input: SshCheckInput): Promise<SshCheckCall> {
-    if (!UUID.test(input.requestId) || !UUID.test(input.connectionId)
-      || !Number.isSafeInteger(input.connectionRevision) || input.connectionRevision < 1) {
+    if (!UUID.test(input.requestId) || !UUID.test(input.connectionId) || !revision(input.connectionRevision)) {
       throw new Error('Invalid SSH check request')
     }
     return checkCall(await this.post('sshCheck', input))
@@ -213,13 +426,9 @@ export class PersonalSshHttpClient implements PersonalSshPort {
 
   async callList(signal?: AbortSignal): Promise<readonly SshCheckCall[]> {
     const value = await this.post('sshCallList', {}, signal)
-    if (!record(value) || !Array.isArray(value.items) || value.items.length > 100) {
-      throw new Error('Invalid SSH call list response')
-    }
+    if (!record(value) || !Array.isArray(value.items) || value.items.length > 100) throw new Error('Invalid SSH call list response')
     const calls = value.items.map(checkCall)
-    if (new Set(calls.map(call => call.callId)).size !== calls.length) {
-      throw new Error('Invalid SSH call list response')
-    }
+    if (new Set(calls.map(call => call.callId)).size !== calls.length) throw new Error('Invalid SSH call list response')
     return calls
   }
 

@@ -1,19 +1,25 @@
 import { IconPlusOutlineRegular, IconSearchOutlineRegular, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
-import { SshHttpError, normalizeSshFingerprint, validSshCreate, type PersonalSshConnection,
+import { SshHttpError, type PersonalSshConnection,
   type PersonalSshList, type PersonalSshPort, type SshCheckCall, type SshCheckInput,
-  type SshCreateInput, type SshToggleInput } from './ssh-api.ts'
+  type SshCreateInput, type SshUpdateInput, type SshDeleteInput, type SshToggleInput } from './ssh-api.ts'
+import { CONNECTION_MODAL_CONTENT_CLASS_NAME, connectionModalClassName } from './connection-modal-layout.ts'
+import { emptyPersonalSshForm, personalSshFormFromConnection, validPersonalSshForm,
+  buildPersonalSshCreate, buildPersonalSshUpdate, type PersonalSshFormValue } from './personal-ssh-view.ts'
 import { SkillToggle } from './SkillToggle.tsx'
 
 type Translate = TranslateNS<'powerEvolve.extensionCenter'>
-type Form = Omit<SshCreateInput, 'requestId' | 'port'> & { port: string }
-const blank = (): Form => ({ displayName: '', host: '', port: '22', username: '', hostKeySha256: '',
-  password: '', enabled: false })
-const VALIDATION_REQUEST_ID = '00000000-0000-4000-8000-000000000000'
+type Mutation = { readonly kind: 'create'; readonly input: SshCreateInput }
+  | { readonly kind: 'update'; readonly input: SshUpdateInput }
+  | { readonly kind: 'toggle'; readonly input: SshToggleInput }
+  | { readonly kind: 'delete'; readonly input: SshDeleteInput }
 const activeCheck = (state: SshCheckCall['state']): boolean => !['succeeded', 'failed', 'cancelled'].includes(state)
 
-/** Personal SSH management on the native Plugins page. Password bytes bypass the Host. */
+/** Personal SSH management using the original write-only form and saved checks.
+ * @param props - public connections, browser operations, and native locale.
+ * @returns personal SSH management and authentication check status.
+ */
 export function PersonalSshPage({ data, port, onChange, onReload, t }: {
   readonly data: PersonalSshList
   readonly port: PersonalSshPort
@@ -23,9 +29,13 @@ export function PersonalSshPage({ data, port, onChange, onReload, t }: {
 }): ReactNode {
   const [search, setSearch] = useState('')
   const [formOpen, setFormOpen] = useState(false)
-  const [form, setForm] = useState<Form>(blank)
-  const [pendingCreate, setPendingCreate] = useState<SshCreateInput>()
-  const [pendingToggle, setPendingToggle] = useState<SshToggleInput>()
+  const [form, setForm] = useState<PersonalSshFormValue>(emptyPersonalSshForm)
+  const [editing, setEditing] = useState<PersonalSshConnection>()
+  const [deleteId, setDeleteId] = useState<string>()
+  const [pending, setPending] = useState<Mutation>()
+  const busyRef = useRef(false)
+  const latestItems = useRef(data.items)
+  latestItems.current = data.items
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
   const [checkedId, setCheckedId] = useState<string>()
@@ -87,43 +97,47 @@ export function PersonalSshPage({ data, port, onChange, onReload, t }: {
       [item.displayName, item.host, item.username].some(value => value.toLocaleLowerCase().includes(needle)))
   }, [data.items, search])
   const count = data.items.filter(item => item.enabled).length
-  const portNumber = Number(form.port)
-  const valid = validSshCreate({ ...form, requestId: VALIDATION_REQUEST_ID, port: portNumber })
-
-  const create = async (input: SshCreateInput): Promise<void> => {
-    if (busy) return
-    setBusy(true); setError(undefined)
-    try {
-      const item = await port.createPassword(input)
-      onChange([...data.items.filter(row => row.connectionId !== item.connectionId), item])
-      setPendingCreate(undefined); setForm(blank()); setFormOpen(false)
-    } catch (cause) {
-      if (cause instanceof SshHttpError && cause.status === 409) {
-        setPendingCreate(undefined); setError(t('sshConflict'))
-      } else if (cause instanceof SshHttpError && cause.status === 401) {
-        setPendingCreate(undefined); setError(t('sessionExpired'))
-      } else {
-        setPendingCreate(input); setError(t('sshCreateUncertain'))
-      }
-    } finally { setBusy(false) }
+  const valid = validPersonalSshForm(form, editing)
+  const locked = busy || pending !== undefined
+  const openEditor = (current?: PersonalSshConnection): void => {
+    if (locked || !data.available) return
+    setEditing(current); setForm(current ? personalSshFormFromConnection(current) : emptyPersonalSshForm())
+    setFormOpen(true); setError(undefined); setDeleteId(undefined)
   }
-
-  const toggle = async (input: SshToggleInput): Promise<void> => {
-    if (busy) return
-    setBusy(true); setError(undefined)
+  const closeEditor = (): void => {
+    if (locked) return
+    setFormOpen(false); setEditing(undefined); setForm(emptyPersonalSshForm()); setError(undefined)
+  }
+  const patch = (fields: Partial<PersonalSshFormValue>): void => { setForm(previous => ({ ...previous, ...fields })) }
+  const mutate = async (mutation: Mutation): Promise<void> => {
+    if (busyRef.current || !data.available) return
+    busyRef.current = true
+    setBusy(true); setPending(mutation); setError(undefined)
     try {
-      const item = await port.toggle(input)
-      onChange(data.items.map(row => row.connectionId === item.connectionId ? item : row))
-      setPendingToggle(undefined)
-    } catch (cause) {
-      if (cause instanceof SshHttpError && cause.status === 409) {
-        setPendingToggle(undefined); setError(t('sshConflict'))
-      } else if (cause instanceof SshHttpError && cause.status === 401) {
-        setPendingToggle(undefined); setError(t('sessionExpired'))
-      } else {
-        setPendingToggle(input); setError(t('sshToggleUncertain'))
+      const item = mutation.kind === 'create' ? await port.create(mutation.input)
+        : mutation.kind === 'update' ? await port.update(mutation.input)
+          : mutation.kind === 'toggle' ? await port.toggle(mutation.input) : await port.remove(mutation.input)
+      if (!mounted.current) return
+      const rows = latestItems.current
+      onChange(item.deletedAt !== null
+        ? rows.filter(row => row.connectionId !== item.connectionId || row.revision > item.revision)
+        : rows.some(row => row.connectionId === item.connectionId)
+          ? rows.map(row => row.connectionId === item.connectionId && row.revision <= item.revision ? item : row)
+          : mutation.kind === 'create' ? [...rows, item] : rows)
+      setPending(undefined); setDeleteId(undefined)
+      if (mutation.kind === 'create' || mutation.kind === 'update') {
+        setForm(emptyPersonalSshForm()); setEditing(undefined); setFormOpen(false)
       }
-    } finally { setBusy(false) }
+    } catch (cause) {
+      if (!mounted.current) return
+      if (cause instanceof SshHttpError && [400, 401, 403, 404, 409].includes(cause.status)) {
+        setPending(undefined)
+        setError(t(cause.status === 401 ? 'sessionExpired' : cause.status === 409 ? 'sshConflict' : 'sshWriteRejected'))
+      } else {
+        setError(t(mutation.kind === 'toggle' ? 'sshToggleUncertain'
+          : mutation.kind === 'delete' ? 'sshDeleteUncertain' : 'sshCreateUncertain'))
+      }
+    } finally { busyRef.current = false; if (mounted.current) setBusy(false) }
   }
 
   const check = async (input: SshCheckInput): Promise<void> => {
@@ -166,7 +180,7 @@ export function PersonalSshPage({ data, port, onChange, onReload, t }: {
   return <section className="pext-plugin-detail-content pext-ssh-page" data-power-evolve-ssh-page>
     <div className="pext-mcp-header"><div><h1>SSH</h1><p>{t('sshPluginDescription')}</p></div>
       <button type="button" className="pext-dialog-button pext-dialog-button-primary"
-        disabled={!data.available || busy} onClick={() => { setFormOpen(true); setError(undefined) }}>
+        disabled={!data.available || locked} onClick={() => { openEditor() }}>
         <IconPlusOutlineRegular size={15} />{t('sshAddServer')}</button></div>
     <p className="pext-catalog-note">{t('sshNextTaskNotice')}</p>
     {!data.available && <div className="pext-error" role="status">{t('sshUnavailable')}</div>}
@@ -178,25 +192,35 @@ export function PersonalSshPage({ data, port, onChange, onReload, t }: {
       <button type="button" className="pext-card-action" onClick={() => { onReload()
         setPollGeneration(value => value + 1) }}>{t('refreshList')}</button></div>
     {error && !formOpen && <div className="pext-error" role="alert">{error}</div>}
-    {pendingToggle && <button type="button" className="pext-dialog-button" disabled={busy}
-      onClick={() => { void toggle(pendingToggle) }}>{t('sshRetryToggle')}</button>}
+    {pending && !formOpen && <button type="button" className="pext-dialog-button" disabled={busy || !data.available}
+      onClick={() => { void mutate(pending) }}>{t(pending.kind === 'delete' ? 'sshRetryDelete' : 'sshRetryToggle')}</button>}
     {visible.length === 0 ? <div className="pext-empty">{t(search ? 'sshNoMatch' : 'sshEmpty')}</div>
       : <div className="pext-ssh-list">{visible.map(item => <article className="pext-ssh-row" key={item.connectionId}>
         <div className="pext-ssh-row-copy"><strong>{item.displayName}</strong>
           <code>{item.username}@{item.host}:{item.port}</code>
+          <small>{t(item.authentication === 'password' ? 'sshPassword' : 'sshPrivateKey')}
+            {item.workingDirectory === null ? '' : ` · ${item.workingDirectory}`}</small>
           <small>{t('sshHostKey')} <code>{item.hostKeySha256}</code></small>
           <small>{t('revision').replace('{count}', String(item.revision))}</small></div>
         <div className="pext-ssh-row-actions"><span className="pext-extension-badge" data-enabled={item.enabled || undefined}>
           {t(item.enabled ? 'enabledState' : 'disabledState')}</span>
           <SkillToggle label={`${item.displayName} ${t('pluginEnable')}`} checked={item.enabled}
-            disabled={busy || pendingToggle !== undefined || !data.available}
-            onChange={enabled => { void toggle({ connectionId: item.connectionId,
-              requestId: crypto.randomUUID(), baseRevision: item.revision, enabled }) }} />
+            disabled={locked || !data.available}
+            onChange={enabled => { void mutate({ kind: 'toggle', input: { connectionId: item.connectionId,
+              requestId: crypto.randomUUID(), baseRevision: item.revision, enabled } }) }} />
           <button type="button" className="pext-dialog-button" disabled={!data.available || !item.enabled
             || checkBusy || (call !== undefined && activeCheck(call.state)) || pendingCheck !== undefined}
             onClick={() => { setCall(undefined); void check({ requestId: crypto.randomUUID(),
               connectionId: item.connectionId, connectionRevision: item.revision }) }}>
-            {t('sshTestAuthentication')}</button></div>
+            {t('sshTestAuthentication')}</button>
+          <button type="button" className="pext-dialog-button" disabled={locked || !data.available}
+            onClick={() => { openEditor(item) }}>{t('sshEditServer')}</button>
+          <button type="button" className="pext-dialog-button" disabled={locked || !data.available}
+            onClick={() => {
+              if (deleteId !== item.connectionId) { setDeleteId(item.connectionId); return }
+              void mutate({ kind: 'delete', input: { requestId: crypto.randomUUID(),
+                connectionId: item.connectionId, baseRevision: item.revision } })
+            }}>{t(deleteId === item.connectionId ? 'sshConfirmDeleteServer' : 'sshDeleteServer')}</button></div>
         {checkedId === item.connectionId && (call || pendingCheck || checkError) && <div className="pext-ssh-check-state" role="status">
           <strong>{call ? checkLabel(call.state) : t('sshCheckUncertain')}</strong>
           <p>{t('sshCheckAuthenticationOnly')}</p>
@@ -230,40 +254,66 @@ export function PersonalSshPage({ data, port, onChange, onReload, t }: {
         </article>)}</div>}
       {recentCalls.length > 8 && <small>{t('sshMoreRecentChecks').replace('{count}', String(recentCalls.length - 8))}</small>}
     </section>}
-    <Modal open={formOpen} onClose={() => { if (!busy) { setFormOpen(false); setForm(blank()); setPendingCreate(undefined) } }}
-      title={t('sshAddServer')} closeLabel={t('close')} className="pext-install-modal"
+    <Modal open={formOpen} onClose={closeEditor}
+      title={t(editing ? 'sshEditServer' : 'sshAddServer')} closeLabel={t('close')}
+      className={connectionModalClassName('pext-install-modal pext-mcp-modal')}
+      contentClassName={CONNECTION_MODAL_CONTENT_CLASS_NAME}
       footer={<div className="pext-skill-dialog-footer"><button type="button" className="pext-dialog-button"
-        disabled={busy} onClick={() => { setFormOpen(false); setForm(blank()); setPendingCreate(undefined); setError(undefined) }}>
-        {t('cancel')}</button><button type="button" className="pext-dialog-button pext-dialog-button-primary"
-          disabled={busy || pendingCreate !== undefined || !valid || !data.available} onClick={() => { void create({
-            ...form, requestId: crypto.randomUUID(), port: portNumber,
-            hostKeySha256: normalizeSshFingerprint(form.hostKeySha256),
-          }) }}>{busy ? t('sshSaving') : t('sshSaveServer')}</button></div>}>
-      <div className="pext-ssh-form">
-        <p>{t('sshFingerprintHint')}</p>
-        <label>{t('sshDisplayName')}<input value={form.displayName} maxLength={100}
-          disabled={busy || pendingCreate !== undefined} onChange={event => { setForm({ ...form, displayName: event.target.value }) }} /></label>
-        <div className="pext-ssh-form-row"><label>{t('sshHost')}<input value={form.host} maxLength={253}
-          disabled={busy || pendingCreate !== undefined} placeholder="server.example.com"
-          onChange={event => { setForm({ ...form, host: event.target.value, hostKeySha256: '' }) }} /></label>
-          <label>{t('sshPort')}<input type="number" min="1" max="65535" value={form.port}
-            disabled={busy || pendingCreate !== undefined}
-            onChange={event => { setForm({ ...form, port: event.target.value, hostKeySha256: '' }) }} /></label></div>
-        <label>{t('sshUsername')}<input value={form.username} maxLength={100} autoComplete="username"
-          disabled={busy || pendingCreate !== undefined} onChange={event => { setForm({ ...form, username: event.target.value }) }} /></label>
-        <label>{t('sshHostKey')}<input value={form.hostKeySha256} maxLength={52} spellCheck={false}
-          placeholder="SHA256:…" disabled={busy || pendingCreate !== undefined}
-          onChange={event => { setForm({ ...form, hostKeySha256: event.target.value }) }} /></label>
-        <label>{t('sshPassword')}<input type="password" value={form.password} autoComplete="new-password"
-          disabled={busy || pendingCreate !== undefined} onChange={event => { setForm({ ...form, password: event.target.value }) }} /></label>
-        <p>{t('sshPasswordOnly')}</p>
-        <label className="pext-ssh-checkbox"><input type="checkbox" checked={form.enabled}
-          disabled={busy || pendingCreate !== undefined}
-          onChange={event => { setForm({ ...form, enabled: event.target.checked }) }} />{t('sshEnabledOnCreate')}</label>
+        disabled={locked} onClick={closeEditor}>{t('cancel')}</button>
+        <button type="button" className="pext-dialog-button pext-dialog-button-primary"
+          disabled={locked || !valid || !data.available} onClick={() => {
+            const requestId = crypto.randomUUID()
+            void mutate(editing ? { kind: 'update', input: buildPersonalSshUpdate(form, editing, requestId) }
+              : { kind: 'create', input: buildPersonalSshCreate(form, requestId) })
+          }}>{busy ? t('sshSaving') : t('sshSaveServer')}</button></div>}>
+      <p className="pext-catalog-note">{t('sshFingerprintHint')}</p>
+      <div className="pext-ssh-form pext-install-form">
+        <SshField label={t('sshDisplayName')}><input value={form.displayName} maxLength={100} disabled={locked}
+          onChange={event => { patch({ displayName: event.target.value }) }} /></SshField>
+        <div className="pext-ssh-form-row">
+          <SshField label={t('sshHost')}><input value={form.host} maxLength={253} disabled={locked}
+            placeholder="server.example.com" onChange={event => { patch({ host: event.target.value, hostKeySha256: '' }) }} /></SshField>
+          <SshField label={t('sshPort')}><input type="number" min="1" max="65535" value={form.port} disabled={locked}
+            onChange={event => { patch({ port: event.target.value, hostKeySha256: '' }) }} /></SshField>
+        </div>
+        <SshField label={t('sshUsername')}><input value={form.username} maxLength={100} autoComplete="username" disabled={locked}
+          onChange={event => { patch({ username: event.target.value }) }} /></SshField>
+        <SshField label={t('mcpAuthentication')}><select value={form.authenticationKind} disabled={locked}
+          onChange={event => { patch({ authenticationKind: event.target.value === 'private_key' ? 'private_key' : 'password',
+            password: '', privateKey: '', passphrase: '', clearPassphrase: false }) }}>
+          <option value="password">{t('sshPassword')}</option><option value="private_key">{t('sshPrivateKey')}</option>
+        </select></SshField>
+        {form.authenticationKind === 'password'
+          ? <SshField label={t('sshPassword')}><input type="password" value={form.password} autoComplete="new-password" disabled={locked}
+            placeholder={editing?.authentication === 'password' && editing.secretConfigured ? t('sshSecretPreserve') : undefined}
+            onChange={event => { patch({ password: event.target.value }) }} /></SshField>
+          : <>
+            <SshField label={t('sshPrivateKey')}><textarea rows={5} value={form.privateKey} spellCheck={false} disabled={locked}
+              placeholder={editing?.authentication === 'private_key' && editing.secretConfigured ? t('sshSecretPreserve') : undefined}
+              onChange={event => { patch({ privateKey: event.target.value }) }} /></SshField>
+            <SshField label={t('sshPassphrase')}><input type="password" value={form.passphrase} autoComplete="new-password"
+              disabled={locked || form.clearPassphrase}
+              placeholder={editing?.authentication === 'private_key' && editing.passphraseConfigured ? t('sshSecretPreserve') : t('sshOptional')}
+              onChange={event => { patch({ passphrase: event.target.value }) }} /></SshField>
+            {editing?.authentication === 'private_key' && <label className="pext-ssh-checkbox">
+              <input type="checkbox" checked={form.clearPassphrase} disabled={locked}
+                onChange={event => { patch({ clearPassphrase: event.target.checked, passphrase: '' }) }} />{t('sshClearPassphrase')}</label>}
+          </>}
+        <p>{t('sshCredentialUploadHint')}</p>
+        <SshField label={t('sshWorkingDirectory')}><input value={form.workingDirectory} maxLength={1024} disabled={locked}
+          placeholder="~/project" onChange={event => { patch({ workingDirectory: event.target.value }) }} /></SshField>
+        <SshField label={t('sshHostKey')}><input value={form.hostKeySha256} maxLength={52} spellCheck={false} disabled={locked}
+          placeholder="SHA256:…" onChange={event => { patch({ hostKeySha256: event.target.value }) }} /></SshField>
+        <label className="pext-ssh-checkbox"><input type="checkbox" checked={form.enabled} disabled={locked}
+          onChange={event => { patch({ enabled: event.target.checked }) }} />{t('sshConnectionEnabled')}</label>
         {error && <div className="pext-error" role="alert">{error}</div>}
-        {pendingCreate && <button type="button" className="pext-dialog-button" disabled={busy}
-          onClick={() => { void create(pendingCreate) }}>{t('sshRetryCreate')}</button>}
+        {pending && <button type="button" className="pext-dialog-button" disabled={busy || !data.available}
+          onClick={() => { void mutate(pending) }}>{t('sshRetryCreate')}</button>}
       </div>
     </Modal>
   </section>
+}
+
+function SshField({ label, children }: { readonly label: string; readonly children: ReactNode }): ReactNode {
+  return <label className="pext-mcp-form-field"><span>{label}</span>{children}</label>
 }
