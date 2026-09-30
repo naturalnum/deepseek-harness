@@ -1,9 +1,10 @@
 /** Durable, owner-scoped SSH call state for the trusted Platform. */
 import { randomUUID } from 'node:crypto'
 import type { Pool } from 'pg'
-import { PlatformError, type Identity } from '../contracts.ts'
+import { PlatformError, userId as executionUserId, type Identity } from '../contracts.ts'
 import { transaction } from './database.ts'
 import type { SshRunnerHandle, SshRunnerStatus } from './ssh-runner.ts'
+import { requireActiveAccount, requireBrowserAccount } from './account-authority.ts'
 
 /** The caller computes a keyed HMAC over the entire canonical request, including any command. */
 export interface SshCallAdmission {
@@ -64,18 +65,19 @@ export class SshCallStore {
    * New calls require the owned, enabled connection revision; execution also requires an owned running operation.
    * @param user - verified owner of the connection and request.
    * @param input - stable request identity, pinned revision, call kind and keyed request digest.
+   * @param credentialToken Original Agent bearer rechecked inside admission.
    * @returns the committed accepted row, or the original row for an identical replay.
    * @throws PlatformError for invalid admission, missing authority or a conflicting request identity.
    */
-  async admit(user: Identity, input: SshCallAdmission): Promise<SshCallRow> {
+  async admit(user: Identity, input: SshCallAdmission, credentialToken: string): Promise<SshCallRow> {
     if (!hexDigest.test(input.requestDigest)) throw new PlatformError(400, 'ssh_request_digest_invalid')
     if ((input.kind === 'ssh.authenticate' && input.operationId !== undefined)
       || (input.kind === 'ssh.execute' && input.operationId === undefined)) {
       throw new PlatformError(400, 'ssh_operation_invalid')
     }
     return transaction(this.pool, async client => {
-      const owner = await client.query('SELECT id FROM pe_users WHERE id=$1 FOR UPDATE', [user.userId])
-      if (!owner.rowCount) throw new PlatformError(401, 'unauthorized')
+      const actor = await requireBrowserAccount(client, credentialToken, { lock: 'update' })
+      if (actor.userId !== user.userId) throw new PlatformError(401, 'unauthorized')
       const prior = await client.query<SshCallRow>(
         'SELECT * FROM pe_ssh_calls WHERE user_id=$1 AND request_id=$2', [user.userId, input.requestId])
       if (prior.rows[0]) {
@@ -248,6 +250,9 @@ export class SshCallStore {
   async markDispatchIntent(lease: SshCallLease, digest: string): Promise<SshCallRow> {
     if (!hexDigest.test(digest)) throw new PlatformError(400, 'ssh_dispatch_digest_invalid')
     return transaction(this.pool, async client => {
+      const owner = await client.query<{ user_id: string }>('SELECT user_id FROM pe_ssh_calls WHERE id=$1', [lease.callId])
+      if (!owner.rows[0]) throw new PlatformError(409, 'ssh_call_state_or_lease_changed')
+      await requireActiveAccount(client, executionUserId.parse(owner.rows[0].user_id), 'update')
       const found = await client.query<SshCallRow>(
         `SELECT * FROM pe_ssh_calls WHERE id=$1 AND lease_owner=$2 AND lease_epoch=$3
          AND lease_until>clock_timestamp() AND state='ready' AND cancel_requested=false

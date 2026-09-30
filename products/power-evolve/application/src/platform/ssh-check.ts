@@ -60,15 +60,20 @@ export class SshAuthenticationCheck {
       ? { ...view, errorCode: row.error_code } : view
   }
 
-  /** The keyed digest binds every accepted request field, including the verified owner. */
+  /** Admit a check with a digest binding every submitted field to its verified owner.
+   * @param user Authenticated check owner.
+   * @param input Durable request and selected connection revision.
+   * @param credentialToken Raw agent bearer rechecked by admission under the account lock.
+   * @returns Original receipt for an identical retry.
+   */
   async submit(user: Identity, input: { readonly requestId: string; readonly connectionId: string;
-    readonly connectionRevision: number }): Promise<SshCheckView> {
+    readonly connectionRevision: number }, credentialToken: string): Promise<SshCheckView> {
     const requestDigest = createHmac('sha256', this.options.requestKey)
       .update(JSON.stringify({ kind: 'ssh.authenticate', userId: user.userId,
         requestId: input.requestId, connectionId: input.connectionId,
         connectionRevision: input.connectionRevision, timeoutMs: TIMEOUT_MS,
         maxOutputBytes: MAX_OUTPUT_BYTES })).digest('hex')
-    return this.present(await this.calls.admit(user, { ...input, kind: 'ssh.authenticate', requestDigest }))
+    return this.present(await this.calls.admit(user, { ...input, kind: 'ssh.authenticate', requestDigest }, credentialToken))
   }
 
   /** Return only safe owner-scoped status fields. */

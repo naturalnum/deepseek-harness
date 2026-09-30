@@ -7,6 +7,8 @@ import type { Pool, PoolClient } from 'pg'
 import { z } from 'zod'
 import { executionTarget, sshSelection, PlatformError, type Identity, type sshExecuteView } from '../contracts.ts'
 import { transaction } from './database.ts'
+import { lockAccountAuthorities, requireBrowserAccount } from './account-authority.ts'
+import { userId as executionUserId } from '../contracts.ts'
 import { SshCallStore, type SshCallLease, type SshCallRow } from './ssh-calls.ts'
 import { SshConnectionService } from './ssh.ts'
 import { renderSshCommand } from './ssh-command.ts'
@@ -208,10 +210,13 @@ export class SshExecuteService {
    * @param actionId - owned pending action.
    * @param fingerprint - keyed digest displayed in the reviewed proposal.
    * @param approve - approve the exact command, or reject it without dispatch.
+   * @param credentialToken - raw approval bearer rechecked under the account lock.
    * @returns durable decision receipt; matching retries return the existing decision.
    */
-  async decide(user: Identity, actionId: string, fingerprint: string, approve: boolean): Promise<ActionView> {
+  async decide(user: Identity, actionId: string, fingerprint: string, approve: boolean, credentialToken: string): Promise<ActionView> {
     return transaction(this.pool, async client => {
+      const actor = await requireBrowserAccount(client, credentialToken, { audience: 'approval', lock: 'update' })
+      if (actor.userId !== user.userId) throw new PlatformError(401, 'unauthorized')
       const found = await client.query<Action>(
         'SELECT * FROM pe_ssh_execute_actions WHERE id=$1 AND user_id=$2 FOR UPDATE', [actionId, user.userId])
       const action = found.rows[0]
@@ -289,6 +294,7 @@ export class SshExecuteService {
       if (!peek.rows[0]) throw new PlatformError(404, 'ssh_action_not_found')
       if (peek.rows[0].state === 'pending') {
         const pending = await transaction(this.pool, async client => {
+          await lockAccountAuthorities(client, [executionUserId.parse(user.userId)], 'update')
           const found = await client.query<Action>(
             'SELECT * FROM pe_ssh_execute_actions WHERE id=$1 AND user_id=$2 FOR UPDATE',
             [actionId, user.userId])
@@ -304,6 +310,7 @@ export class SshExecuteService {
       }
       if (peek.rows[0].state !== 'approved') return this.present(peek.rows[0])
       return transaction(this.pool, async client => {
+        await lockAccountAuthorities(client, [executionUserId.parse(user.userId)], 'update')
         // Match the worker's call-then-action lock order.
         const result = await client.query<SshCallRow>(
           'SELECT * FROM pe_ssh_calls WHERE id=$1 AND user_id=$2 FOR UPDATE', [actionId, user.userId])
@@ -483,9 +490,10 @@ export class SshExecuteService {
   private async finalize(lease: Lease, row: SshCallRow,
     state: 'succeeded' | 'failed' | 'uncertain', result: Output | null, code: string | null): Promise<void> {
     await transaction(this.pool, async client => {
+      await lockAccountAuthorities(client, [executionUserId.parse(row.user_id)], 'update')
       const changed = await client.query<SshCallRow>(
-        `UPDATE pe_ssh_calls SET state=$4,result=NULL,error_code=$5,updated_at=now()
-         WHERE id=$1 AND lease_owner=$2 AND lease_epoch=$3 AND lease_until>now()
+        `UPDATE pe_ssh_calls SET state=$4,result=NULL,error_code=CASE WHEN error_code='account_disabled' THEN error_code ELSE $5 END,updated_at=now()
+         WHERE id=$1 AND lease_owner=$2 AND lease_epoch=$3 AND lease_until>clock_timestamp()
          AND state IN ('dispatch-intent','running','uncertain')
          AND runner_instance_id=$6 AND dispatch_digest=$7 RETURNING *`,
         [lease.callId, lease.owner, lease.epoch, state, code, row.runner_instance_id, row.dispatch_digest])
@@ -494,30 +502,36 @@ export class SshExecuteService {
       const action = found.rows[0]
       if (!action || action.state !== 'approved') throw new PlatformError(409, 'ssh_action_state_changed')
       const sealed = result ? this.cipher.seal(action, 'result', JSON.stringify(result)) : null
-      await client.query(`UPDATE pe_ssh_execute_actions SET state=$2,result_sealed=$3,error_code=$4,
+      await client.query(`UPDATE pe_ssh_execute_actions SET state=$2,result_sealed=$3,error_code=CASE WHEN error_code='account_disabled' THEN error_code ELSE $4 END,
         updated_at=now() WHERE id=$1`, [action.id, state, sealed, code])
-      await this.enqueue(client, { ...action, state, result_sealed: sealed, error_code: code }, result)
+      if (action.error_code !== 'account_disabled') {
+        await this.enqueue(client, { ...action, state, result_sealed: sealed, error_code: code }, result)
+      }
     })
   }
   private async reconcileTerminals(onlyId?: string): Promise<void> {
-    const found = await this.pool.query<{ id: string; state: SshCallRow['state']; error_code: string | null }>(
-      `SELECT c.id,c.state,c.error_code FROM pe_ssh_calls c
+    const found = await this.pool.query<{ id: string; user_id: string; state: SshCallRow['state']; error_code: string | null }>(
+      `SELECT c.id,c.user_id,c.state,c.error_code FROM pe_ssh_calls c
        JOIN pe_ssh_execute_actions a ON a.id=c.id WHERE a.state='approved'
        AND c.state IN ('succeeded','failed','cancelled')
        AND ($1::uuid IS NULL OR c.id=$1) ORDER BY c.updated_at,c.id LIMIT 20`, [onlyId ?? null])
     for (const row of found.rows) await transaction(this.pool, async client => {
+      await lockAccountAuthorities(client, [executionUserId.parse(row.user_id)], 'update')
       const action = await client.query<Action>(
         `SELECT * FROM pe_ssh_execute_actions WHERE id=$1 AND state='approved' FOR UPDATE`, [row.id])
       if (!action.rows[0]) return
       const state: ActionState = row.state === 'failed' ? 'failed'
         : row.state === 'cancelled' ? 'cancelled' : 'uncertain'
       const code = row.state === 'succeeded' ? 'ssh_result_missing' : row.error_code
-      await client.query(`UPDATE pe_ssh_execute_actions SET state=$2,error_code=$3,updated_at=now()
+      await client.query(`UPDATE pe_ssh_execute_actions SET state=$2,error_code=CASE WHEN error_code='account_disabled' THEN error_code ELSE $3 END,updated_at=now()
         WHERE id=$1`, [row.id, state, code])
-      await this.enqueue(client, { ...action.rows[0], state, error_code: code }, null)
+      if (action.rows[0].error_code !== 'account_disabled') {
+        await this.enqueue(client, { ...action.rows[0], state, error_code: code }, null)
+      }
     })
   }
   private async enqueue(client: PoolClient, action: Action, result: Output | null): Promise<void> {
+    if (action.error_code === 'account_disabled') return
     const detail = action.state === 'rejected' ? '审批人拒绝，未执行。'
       : action.state === 'cancelled' ? '已取消；未派发时未执行，派发后结果需以状态为准。'
         : action.state === 'succeeded' && result

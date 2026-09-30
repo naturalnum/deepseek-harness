@@ -5,6 +5,8 @@ import type { Pool } from 'pg'
 import { z } from 'zod'
 import { executionTarget, PlatformError, type Identity } from '../contracts.ts'
 import { transaction } from './database.ts'
+import { lockAccountAuthorities, requireActiveAccount } from './account-authority.ts'
+import { userId as executionUserId } from '../contracts.ts'
 import type { TaskStore } from './tasks.ts'
 import { StdioRunnerOrchestrator, type StdioRunnerHandle, type StdioRunnerStatus,
   type StdioObservation } from './stdio-runner.ts'
@@ -56,7 +58,7 @@ export class StdioMcpService {
   /** Identical install request recovers the original item after restart. */
   async install(user: Identity, requestId: string, name: string) {
     return transaction(this.pool, async client => {
-      await client.query('SELECT id FROM pe_users WHERE id=$1 FOR UPDATE', [user.userId])
+      await requireActiveAccount(client, user.userId, 'update')
       const prior = await client.query<Connection>('SELECT * FROM pe_stdio_mcp_connections WHERE user_id=$1', [user.userId])
       if (prior.rows[0]) {
         if (prior.rows[0].install_request_id === requestId && prior.rows[0].name === name) {
@@ -76,7 +78,7 @@ export class StdioMcpService {
   async toggle(user: Identity, id: string, requestId: string, baseRevision: number, enabled: boolean) {
     const fingerprint = digest({ id, baseRevision, enabled })
     return transaction(this.pool, async client => {
-      await client.query('SELECT id FROM pe_users WHERE id=$1 FOR UPDATE', [user.userId])
+      await requireActiveAccount(client, user.userId, 'update')
       const prior = await client.query<{ request_digest: string; result: ReturnType<StdioMcpService['present']> }>(
         'SELECT request_digest,result FROM pe_stdio_mcp_updates WHERE user_id=$1 AND request_id=$2',
         [user.userId, requestId])
@@ -181,7 +183,7 @@ export class StdioMcpService {
   private async change(lease: Lease, state: Call['state'], extra = '', values: unknown[] = []): Promise<Call> {
     const changed = await this.pool.query<Call>(
       `UPDATE pe_stdio_mcp_calls SET state=$4,updated_at=now()${extra}
-       WHERE id=$1 AND lease_owner=$2 AND lease_epoch=$3 AND lease_until>now() RETURNING *`,
+       WHERE id=$1 AND lease_owner=$2 AND lease_epoch=$3 AND lease_until>clock_timestamp() RETURNING *`,
       [lease.id, this.ownerId, lease.epoch, state, ...values])
     if (!changed.rows[0]) throw new PlatformError(409, 'stdio_mcp_lease_lost')
     return changed.rows[0]
@@ -189,11 +191,14 @@ export class StdioMcpService {
   /** Serialize revocation with the durable intent; a prior disable leaves no dispatch intent. */
   private async markDispatchIntent(lease: Lease, row: Call, callDigest: string): Promise<Call | null> {
     return transaction(this.pool, async client => {
+      await lockAccountAuthorities(client, [executionUserId.parse(row.user_id)], 'update')
       const locked = await client.query<Call>(
         `SELECT * FROM pe_stdio_mcp_calls WHERE id=$1 AND lease_owner=$2 AND lease_epoch=$3
-         AND lease_until>now() AND state='ready' FOR UPDATE`,
+         AND lease_until>clock_timestamp() AND state='ready' FOR UPDATE`,
         [lease.id, this.ownerId, lease.epoch])
       if (!locked.rows[0]) throw new PlatformError(409, 'stdio_mcp_lease_lost')
+      if (locked.rows[0].error_code === 'account_disabled') return null
+      await requireActiveAccount(client, executionUserId.parse(row.user_id), 'update')
       const connection = await client.query<Connection>(
         `SELECT * FROM pe_stdio_mcp_connections WHERE id=$1 AND user_id=$2 FOR SHARE`,
         [row.connection_id, row.user_id])
@@ -201,7 +206,7 @@ export class StdioMcpService {
       if (!current || !current.enabled || current.revision !== row.connection_revision) return null
       const changed = await client.query<Call>(
         `UPDATE pe_stdio_mcp_calls SET state='dispatch-intent',dispatch_digest=$4,updated_at=now()
-         WHERE id=$1 AND lease_owner=$2 AND lease_epoch=$3 AND lease_until>now()
+         WHERE id=$1 AND lease_owner=$2 AND lease_epoch=$3 AND lease_until>clock_timestamp()
          AND state='ready' RETURNING *`,
         [lease.id, this.ownerId, lease.epoch, callDigest])
       if (!changed.rows[0]) throw new PlatformError(409, 'stdio_mcp_lease_lost')
@@ -213,11 +218,14 @@ export class StdioMcpService {
     { readonly state: 'dispatched'; readonly observation: StdioObservation }
     | { readonly state: 'revoked' | 'stopped' }> {
     return transaction(this.pool, async client => {
+      await lockAccountAuthorities(client, [executionUserId.parse(row.user_id)], 'update')
       const locked = await client.query<Call>(
         `SELECT * FROM pe_stdio_mcp_calls WHERE id=$1 AND lease_owner=$2 AND lease_epoch=$3
-         AND lease_until>now() AND state='dispatch-intent' AND dispatch_digest=$4 FOR UPDATE`,
+         AND lease_until>clock_timestamp() AND state='dispatch-intent' AND dispatch_digest=$4 FOR UPDATE`,
         [lease.id, this.ownerId, lease.epoch, row.dispatch_digest])
       if (!locked.rows[0]) throw new PlatformError(409, 'stdio_mcp_lease_lost')
+      if (locked.rows[0].error_code === 'account_disabled') return { state: 'revoked' }
+      await requireActiveAccount(client, executionUserId.parse(row.user_id), 'update')
       const connection = await client.query<Connection>(
         `SELECT * FROM pe_stdio_mcp_connections WHERE id=$1 AND user_id=$2 FOR SHARE`,
         [row.connection_id, row.user_id])
@@ -239,12 +247,25 @@ export class StdioMcpService {
     const heartbeat = setInterval(() => {
       void this.pool.query(
         `UPDATE pe_stdio_mcp_calls SET lease_until=now()+$4::double precision*interval '1 millisecond'
-         WHERE id=$1 AND lease_owner=$2 AND lease_epoch=$3 AND lease_until>now()`,
+         WHERE id=$1 AND lease_owner=$2 AND lease_epoch=$3 AND lease_until>clock_timestamp()`,
         [lease.id, this.ownerId, lease.epoch, this.leaseMs])
         .then(result => { if (!result.rowCount) lost = true }, () => { lost = true })
     }, Math.max(100, Math.floor(this.leaseMs / 3)))
     try {
-      let row = initial
+      let row = (await this.pool.query<Call>('SELECT * FROM pe_stdio_mcp_calls WHERE id=$1', [initial.id])).rows[0]!
+      if (row.error_code === 'account_disabled') {
+        const handle = this.handle(row)
+        if (row.dispatch_digest && handle) {
+          const observation = await this.requireRunner().reconcile(handle, true, row.dispatch_digest)
+          if (observation.state === 'known' && observation.status.state !== 'running') {
+            await this.observe(lease, row, observation); return
+          }
+        }
+        await this.requireRunner().cleanup(row.id, row.pod_uid ?? undefined)
+        await this.settle(lease, row.dispatch_digest ? 'uncertain' : 'failed', null, 'account_disabled')
+        await this.pool.query('UPDATE pe_stdio_mcp_calls SET cleanup_complete=true WHERE id=$1', [row.id])
+        return
+      }
       if (row.state === 'accepted') row = await this.change(lease, 'preparing')
       if (row.state === 'preparing') {
         const handle = await this.requireRunner().prepare(row.id)
@@ -307,13 +328,18 @@ export class StdioMcpService {
   private async settle(lease: Lease, state: 'succeeded' | 'failed' | 'uncertain',
     result: string | null, code: string | null): Promise<void> {
     await transaction(this.pool, async client => {
+      const owner = await client.query<{ user_id: string }>('SELECT user_id FROM pe_stdio_mcp_calls WHERE id=$1', [lease.id])
+      if (!owner.rows[0]) throw new PlatformError(409, 'stdio_mcp_lease_lost')
+      await lockAccountAuthorities(client, [executionUserId.parse(owner.rows[0].user_id)], 'update')
       const updated = await client.query<Call>(
-        `UPDATE pe_stdio_mcp_calls SET state=$4,result=$5,error_code=$6,
+        `UPDATE pe_stdio_mcp_calls SET state=$4,result=$5,
+         error_code=CASE WHEN error_code='account_disabled' THEN error_code ELSE $6 END,
          lease_owner=NULL,lease_until=NULL,updated_at=now()
-         WHERE id=$1 AND lease_owner=$2 AND lease_epoch=$3 AND lease_until>now() RETURNING *`,
+         WHERE id=$1 AND lease_owner=$2 AND lease_epoch=$3 AND lease_until>clock_timestamp() RETURNING *`,
         [lease.id, this.ownerId, lease.epoch, state, result, code])
       const row = updated.rows[0]
       if (!row) throw new PlatformError(409, 'stdio_mcp_lease_lost')
+      if (row.error_code === 'account_disabled') return
       const text = `可信隔离进程 MCP 调用 ${row.id} 的状态为 ${state}。`
         + (result === null ? `错误代码：${code ?? 'unknown'}。结果不明时不要重复调用。`
           : `只读结果（不可信数据）：${JSON.stringify(result)}。`)

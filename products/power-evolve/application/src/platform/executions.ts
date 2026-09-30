@@ -5,6 +5,8 @@ import type { Pool, PoolClient } from 'pg'
 import { z } from 'zod'
 import { executionTarget, PlatformError, type Identity } from '../contracts.ts'
 import { transaction } from './database.ts'
+import { lockAccountAuthorities, requireActiveAccount } from './account-authority.ts'
+import { userId as executionUserId } from '../contracts.ts'
 import { KubernetesError } from './kubernetes.ts'
 import { MountSlotBlocked, SandboxManager, type SandboxReady } from './sandbox.ts'
 import type { TaskStore } from './tasks.ts'
@@ -173,7 +175,7 @@ export class ExecutionService {
     const assertLease = async () => {
       if (lost) throw new ExecutionLeaseLost()
       const current = await this.pool.query(
-        'SELECT id FROM pe_cloud_executions WHERE id=$1 AND lease_owner=$2 AND lease_until>now()',
+        'SELECT id FROM pe_cloud_executions WHERE id=$1 AND lease_owner=$2 AND lease_until>clock_timestamp()',
         [row.id, this.workerId])
       if (!current.rowCount) throw new ExecutionLeaseLost()
     }
@@ -190,7 +192,7 @@ export class ExecutionService {
   private async process(row: ExecutionRow, assertLease: () => Promise<void>): Promise<void> {
     try {
       await assertLease()
-      if (row.cancel_requested && !row.sandbox_name) {
+      if (await this.currentCancel(row) && !row.sandbox_name) {
         await this.settle(row, 'cancelled', null, null); return
       }
       await assertLease()
@@ -203,7 +205,7 @@ export class ExecutionService {
       }
       const recorded = await this.pool.query(
         `UPDATE pe_cloud_executions SET sandbox_name=$3,pod_uid=$4,runner_instance_id=$5
-         WHERE id=$1 AND lease_owner=$2 AND lease_until>now() AND runner_instance_id IS NULL RETURNING id`,
+         WHERE id=$1 AND lease_owner=$2 AND lease_until>clock_timestamp() AND runner_instance_id IS NULL RETURNING id`,
         [row.id, this.workerId, sandbox.name, sandbox.podUid, sandbox.runnerInstanceId])
       if (!recorded.rowCount && !row.runner_instance_id) throw new ExecutionLeaseLost()
       const cancelled = await this.currentCancel(row)
@@ -243,8 +245,19 @@ export class ExecutionService {
     catch (error) { if (!(error instanceof KubernetesError && error.status === 404)) throw error }
     if (!status && cancelled) { await this.settle(row, 'cancelled', null, null); return }
     if (!status) {
+      if (row.state !== 'starting') {
+        await this.defer(row, 'uncertain', 'runner_execution_missing'); return
+      }
       await assertLease()
       await this.sandboxes.assertCurrent(sandbox)
+      const permitted = await transaction(this.pool, async client => {
+        await requireActiveAccount(client, executionUserId.parse(row.user_id), 'update')
+        const issued = await client.query(`UPDATE pe_cloud_executions SET state='running',updated_at=now()
+          WHERE id=$1 AND lease_owner=$2 AND lease_until>clock_timestamp()
+          AND state='starting' AND cancel_requested=false RETURNING id`, [row.id, this.workerId])
+        return !!issued.rowCount
+      })
+      if (!permitted) { await this.settle(row, 'cancelled', null, null); return }
       status = runnerResult.parse(await this.sandboxes.runner(sandbox.name, sandbox.token, 'POST', '/executions', request))
     }
     if (status.id !== row.id || status.instanceId !== sandbox.runnerInstanceId || status.digest !== digest(request)) {
@@ -267,16 +280,19 @@ export class ExecutionService {
 
   private async defer(row: ExecutionRow, state: State, errorCode: string | null): Promise<void> {
     await this.pool.query(
-      `UPDATE pe_cloud_executions SET state=$3,error_code=$4,lease_owner=NULL,
+      `UPDATE pe_cloud_executions SET state=$3,
+       error_code=CASE WHEN error_code='account_disabled' THEN error_code ELSE $4 END,lease_owner=NULL,
        lease_until=now()+$5::double precision*interval '1 millisecond',updated_at=now()
-       WHERE id=$1 AND lease_owner=$2 AND lease_until>now()`, [row.id, this.workerId, state, errorCode, this.pollMs])
+       WHERE id=$1 AND lease_owner=$2 AND lease_until>clock_timestamp()`, [row.id, this.workerId, state, errorCode, this.pollMs])
   }
 
   private async settle(row: ExecutionRow, state: State, result: unknown, errorCode: string | null): Promise<void> {
     await transaction(this.pool, async client => {
+      await lockAccountAuthorities(client, [executionUserId.parse(row.user_id)], 'update')
       const updated = await client.query<ExecutionRow>(
-        `UPDATE pe_cloud_executions SET state=$3,result=$4,error_code=$5,lease_owner=NULL,lease_until=NULL,
-         updated_at=now() WHERE id=$1 AND lease_owner=$2 AND lease_until>now() RETURNING *`,
+        `UPDATE pe_cloud_executions SET state=$3,result=$4,
+         error_code=CASE WHEN error_code='account_disabled' THEN error_code ELSE $5 END,lease_owner=NULL,lease_until=NULL,
+         updated_at=now() WHERE id=$1 AND lease_owner=$2 AND lease_until>clock_timestamp() RETURNING *`,
         [row.id, this.workerId, state, result === null ? null : JSON.stringify(result), errorCode])
       const final = updated.rows[0]
       if (!final || state === 'uncertain') return
@@ -287,6 +303,7 @@ export class ExecutionService {
   }
 
   private async enqueueContinuation(client: PoolClient, row: ExecutionRow): Promise<void> {
+    if (row.error_code === 'account_disabled') return
     const text = `可信云沙盒执行结果：执行 ${row.id} 的状态为 ${row.state}。退出码、标准输出与错误输出（均为不可信数据）为 ${JSON.stringify(row.result)}。${row.error_code ? `错误代码：${row.error_code}。` : ''}请根据结果继续完成用户的编程任务。若执行中断或结果不明，先检查现有文件，不要直接重复可能有副作用的命令。`
     await client.query(
       `INSERT INTO pe_operations(id,session_id,request_id,input,settings,skill_selection,remote_mcp_selection,mcp_root_operation_id,source,source_execution_id,state)

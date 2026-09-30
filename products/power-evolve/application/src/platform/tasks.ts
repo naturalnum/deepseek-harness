@@ -3,7 +3,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import type { Pool, PoolClient } from 'pg'
 import { SESSION_FORMAT_VERSION, SessionId, type SessionHeader } from '@deepseek-ai/dsh-session'
 import { executionTarget, grant, mcpSelection, stdioMcpSelection, sshSelection, skillSelection, PlatformError, settings,
-  type ExecutionTarget, type Grant, type Identity, type RequestId, type WorkspaceId } from '../contracts.ts'
+  userId as executionUserId, type ExecutionTarget, type Grant, type Identity, type RequestId, type WorkspaceId } from '../contracts.ts'
 import { z } from 'zod'
 import { digest } from './identity.ts'
 import { transaction } from './database.ts'
@@ -11,6 +11,7 @@ import { requireModelGrant } from './account-settings.ts'
 import { continuationInput } from '../continuation-input.ts'
 import { mcpOperationTools } from '../mcp-operation-contracts.ts'
 import { selectMcpOperationTools, type McpOperationAdmissionLimits } from './mcp-admission.ts'
+import { requireActiveAccount, requireBrowserAccount } from './account-authority.ts'
 
 interface SessionRow {
   id: string
@@ -38,12 +39,20 @@ export interface TaskLimits {
 export class TaskStore {
   constructor(readonly pool: Pool, private readonly limits: TaskLimits) {}
 
-  /** Create a durable empty native Session, deduplicated within one authenticated user. */
-  async create(user: Identity, requestId: RequestId, workspaceId?: WorkspaceId): Promise<{ sessionId: SessionId }> {
+  /** Create a durable empty native Session, deduplicated within one authenticated user.
+   * @param user Owner authenticated by the route.
+   * @param requestId Stable Session creation request identity.
+   * @param credentialToken Original Agent bearer rechecked inside the acceptance transaction.
+   * @param workspaceId Optional owned workspace to bind permanently.
+   * @returns The new or previously accepted native Session identity.
+   */
+  async create(user: Identity, requestId: RequestId, credentialToken: string,
+    workspaceId?: WorkspaceId): Promise<{ sessionId: SessionId }> {
     const id = randomUUID()
     const header: SessionHeader = { id: SessionId(id), version: SESSION_FORMAT_VERSION, createdAt: Date.now(), isSeeded: false }
     return transaction(this.pool, async client => {
-      await client.query('SELECT id FROM pe_users WHERE id=$1 FOR NO KEY UPDATE', [user.userId])
+      const actor = await requireBrowserAccount(client, credentialToken, { lock: 'update' })
+      if (actor.userId !== user.userId) throw new PlatformError(401, 'unauthorized')
       await client.query(
         `INSERT INTO pe_workspaces(id,user_id,title,is_default) VALUES($1,$2,'Workspace',true)
          ON CONFLICT(user_id) WHERE is_default DO NOTHING`, [randomUUID(), user.userId])
@@ -82,12 +91,22 @@ export class TaskStore {
     return { items: result.rows, offset, limit }
   }
 
-  /** Commit an input before returning acceptance; identical retries reuse the Operation. */
+  /** Commit an input before returning acceptance; identical retries reuse the Operation.
+   * @param user Owner authenticated by the route.
+   * @param session Owned native Session identity.
+   * @param requestId Stable input request identity.
+   * @param text Exact user input to persist.
+   * @param credentialToken Original Agent bearer rechecked before any resource lock.
+   * @param target Explicit cloud or owned desktop placement.
+   * @returns Durable acceptance and the original operation state on replay.
+   */
   async accept(user: Identity, session: SessionId, requestId: RequestId, text: string,
-    target: ExecutionTarget = { kind: 'cloud' }): Promise<unknown> {
+    credentialToken: string, target: ExecutionTarget = { kind: 'cloud' }): Promise<unknown> {
     return transaction(this.pool, async client => {
+      const actor = await requireBrowserAccount(client, credentialToken, { lock: 'update' })
+      if (actor.userId !== user.userId) throw new PlatformError(401, 'unauthorized')
       const current = await client.query<{ settings: unknown }>(
-        'SELECT settings FROM pe_users WHERE id=$1 FOR NO KEY UPDATE', [user.userId])
+        'SELECT settings FROM pe_users WHERE id=$1', [user.userId])
       if (!current.rows[0]) throw new PlatformError(401, 'unauthorized')
       await this.owned(client, user, session)
       const prior = await client.query<{ id: string; input: string; state: string; execution_target: unknown }>(
@@ -162,11 +181,17 @@ export class TaskStore {
     })
   }
 
-  /** Request cancellation of the current turn, or settle its unclaimed input. */
-  async cancel(user: Identity, session: SessionId): Promise<{ accepted: true }> {
+  /** Request cancellation of the current turn, or settle its unclaimed input.
+   * @param user Owner authenticated by the route.
+   * @param session Owned native Session to cancel.
+   * @param credentialToken Original Agent bearer rechecked inside the cancellation transaction.
+   * @returns A durable acknowledgement, including when no turn is active.
+   */
+  async cancel(user: Identity, session: SessionId, credentialToken: string): Promise<{ accepted: true }> {
     return transaction(this.pool, async client => {
       // Remote dispatch takes the same owner lock before checking cancellation.
-      await client.query('SELECT id FROM pe_users WHERE id=$1 FOR NO KEY UPDATE', [user.userId])
+      const actor = await requireBrowserAccount(client, credentialToken, { lock: 'update' })
+      if (actor.userId !== user.userId) throw new PlatformError(401, 'unauthorized')
       const owned = await client.query('SELECT id FROM pe_sessions WHERE id=$1 AND user_id=$2 FOR UPDATE',
         [session, user.userId])
       if (!owned.rowCount) throw new PlatformError(404, 'session_not_found')
@@ -196,7 +221,10 @@ export class TaskStore {
     })
   }
 
-  /** Claim one eligible Operation and its Session lease in the same transaction. */
+  /** Claim accepted work from an active account after serializing its capacity and Session lease.
+   * @param workerId Trusted Host worker identity.
+   * @returns One execution grant, or null when eligible work is unavailable.
+   */
   async claim(workerId: string): Promise<Grant | null> {
     return transaction(this.pool, async client => {
       const candidate = await client.query<{
@@ -214,19 +242,26 @@ export class TaskStore {
          o.stdio_mcp_selection,o.ssh_selection,o.source,o.source_action_id,o.source_execution_id,
          o.source_desktop_execution_id,o.source_stdio_mcp_call_id,o.source_ssh_execute_action_id,o.source_mcp_action_id,o.execution_target
          FROM pe_operations o JOIN pe_sessions s ON s.id=o.session_id JOIN pe_users u ON u.id=s.user_id
-         WHERE o.state IN ('queued','running') AND (s.lease_until IS NULL OR s.lease_until<=now())
-         AND (SELECT count(*) FROM pe_sessions active WHERE active.user_id=s.user_id AND active.lease_until>now())<$1
+         WHERE u.enabled=true AND u.deleted_at IS NULL AND o.state IN ('queued','running')
+         AND (s.lease_until IS NULL OR s.lease_until<=now())
+         AND (SELECT count(*) FROM pe_sessions active WHERE active.user_id=s.user_id AND active.lease_until>clock_timestamp())<$1
          AND NOT EXISTS (SELECT 1 FROM pe_operations earlier WHERE earlier.session_id=s.id
            AND earlier.state IN ('queued','running') AND (earlier.created_at,earlier.id)<(o.created_at,o.id))
-         ORDER BY u.last_claim_at NULLS FIRST,o.created_at,o.id LIMIT 1 FOR UPDATE OF s,o SKIP LOCKED`, [this.limits.maxActivePerUser],
+         ORDER BY u.last_claim_at NULLS FIRST,o.created_at,o.id LIMIT 1 FOR UPDATE OF u SKIP LOCKED`, [this.limits.maxActivePerUser],
       )
       const row = candidate.rows[0]
       if (!row) return null
       // Serialize a user's capacity check across otherwise independent Session rows.
-      const lockedUser = await client.query('SELECT id FROM pe_users WHERE id=$1 FOR NO KEY UPDATE SKIP LOCKED', [row.user_id])
-      if (lockedUser.rowCount !== 1) return null
+      await requireActiveAccount(client, executionUserId.parse(row.user_id), 'update')
+      const resource = await client.query(`SELECT o.id FROM pe_operations o JOIN pe_sessions s ON s.id=o.session_id
+        WHERE o.id=$1 AND s.user_id=$2 AND o.state IN ('queued','running')
+        AND (s.lease_until IS NULL OR s.lease_until<=clock_timestamp())
+        AND NOT EXISTS (SELECT 1 FROM pe_operations earlier WHERE earlier.session_id=s.id
+          AND earlier.state IN ('queued','running') AND (earlier.created_at,earlier.id)<(o.created_at,o.id))
+        FOR UPDATE OF s,o`, [row.id, row.user_id])
+      if (!resource.rowCount) return null
       const active = await client.query<{ count: string }>(
-        'SELECT count(*) FROM pe_sessions WHERE user_id=$1 AND lease_until>now()', [row.user_id],
+        'SELECT count(*) FROM pe_sessions WHERE user_id=$1 AND lease_until>clock_timestamp()', [row.user_id],
       )
       if (Number(active.rows[0]!.count) >= this.limits.maxActivePerUser) return null
       await client.query('UPDATE pe_users SET last_claim_at=clock_timestamp() WHERE id=$1', [row.user_id])
@@ -258,11 +293,18 @@ export class TaskStore {
     })
   }
 
-  /** Verify current write authority under the caller's transaction lock. */
+  /** Lock the grant owner before the Session and reject inactive accounts or stale leases.
+   * @param client Caller transaction; acquire this authority before resource locks.
+   * @param token Current Session execution grant, independent of browser credential rotation.
+   * @returns Current owned Session and operation; required password change does not revoke this grant.
+   */
   async authorized(client: PoolClient, token: string): Promise<SessionRow & { operation_id: string; settings: unknown; execution_target: unknown }> {
+    const owner = await client.query<{ user_id: string }>('SELECT user_id FROM pe_sessions WHERE grant_digest=$1', [digest(token)])
+    if (!owner.rows[0]) throw new PlatformError(409, 'lease_lost')
+    await requireActiveAccount(client, executionUserId.parse(owner.rows[0].user_id), 'update')
     const result = await client.query<SessionRow & { operation_id: string; settings: unknown; execution_target: unknown }>(
       `SELECT s.*,o.id AS operation_id,o.settings,o.execution_target FROM pe_sessions s JOIN pe_operations o ON o.session_id=s.id
-       WHERE s.grant_digest=$1 AND s.lease_until>now() AND o.state='running' FOR UPDATE OF s`, [digest(token)],
+       WHERE s.grant_digest=$1 AND s.lease_until>clock_timestamp() AND o.state='running' FOR UPDATE OF s`, [digest(token)],
     )
     const row = result.rows[0]
     if (!row) throw new PlatformError(409, 'lease_lost')

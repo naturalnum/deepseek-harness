@@ -9,6 +9,7 @@ import { sshConfigurationInput, sshConnectionUpdateRequest, sshConnectionToggleR
   SSH_CREDENTIAL_UPLOAD_MAX_BYTES, type SshConnection, type SshConfigurationInput,
   type SshCredentialTicketRequest, type SshCredentialUpload, type sshCredentialTicketValue } from '../ssh-management-contracts.ts'
 import { transaction } from './database.ts'
+import { requireActiveAccount } from './account-authority.ts'
 import { SshCredentialCipher, sshCanonicalJson, sshNeedsUpload, sshChangesCredential,
   sshUploadForPlan, mergeSshCredential, type SshCredential } from './ssh-credentials.ts'
 
@@ -128,9 +129,7 @@ export class SshConnectionService {
     return parsed.data
   }
   private async owner(client: PoolClient, user: Owner): Promise<void> {
-    if (!(await client.query('SELECT id FROM pe_users WHERE id=$1 FOR UPDATE', [user.userId])).rowCount) {
-      throw new PlatformError(401, 'unauthorized')
-    }
+    await requireActiveAccount(client, user.userId, 'update')
   }
   private async owned(client: PoolClient, user: Owner, id: string, revision?: number): Promise<Connection> {
     const found = await client.query<Connection>(`${connectionSql}
@@ -330,7 +329,7 @@ export class SshConnectionService {
         if (spec.purpose === 'create') await this.capacity(client, user)
       }
       const pending = await client.query<{ n: string }>(`SELECT count(*) AS n FROM pe_ssh_upload_intents
-        WHERE user_id=$1 AND request_id<>$2 AND consumed_at IS NULL AND expires_at>now()`, [user.userId, spec.requestId])
+        WHERE user_id=$1 AND request_id<>$2 AND consumed_at IS NULL AND expires_at>clock_timestamp()`, [user.userId, spec.requestId])
       if (Number(pending.rows[0]!.n) >= this.options.maxPendingTickets) throw new PlatformError(429, 'ssh_upload_limit')
       const token = randomBytes(32).toString('base64url')
       const expiresAt = new Date(Date.now() + this.options.ticketLifetimeMs)

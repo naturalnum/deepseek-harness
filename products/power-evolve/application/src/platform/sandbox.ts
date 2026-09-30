@@ -6,6 +6,8 @@ import { setTimeout as delay } from 'node:timers/promises'
 import type { Pool, PoolClient } from 'pg'
 import type { FileService } from './files.ts'
 import { transaction } from './database.ts'
+import { userId as executionUserId } from '../contracts.ts'
+import { lockAccountAuthorities, requireActiveAccount } from './account-authority.ts'
 import { KubernetesClient, KubernetesError, RUNNER_RESPONSE_MAX_BYTES } from './kubernetes.ts'
 import { kubernetesPodStopStatus } from './pod-stop-status.ts'
 
@@ -63,8 +65,7 @@ export class SandboxManager {
       'powerevolve.dev/generation': generation }
   }
   private async lockUser(client: PoolClient, userId: string): Promise<void> {
-    const result = await client.query('SELECT id FROM pe_users WHERE id=$1 FOR UPDATE', [userId])
-    if (!result.rowCount) throw new MountSlotBlocked('mount_user_missing', false)
+    await lockAccountAuthorities(client, [executionUserId.parse(userId)], 'update')
   }
   private async get(resource: 'sandboxes' | 'pods' | 'services' | 'secrets', name: string): Promise<Resource | null> {
     try { return await this.kube.call<Resource>('GET', this.kube.resourcePath(this.config.namespace, resource, name)) }
@@ -242,6 +243,7 @@ export class SandboxManager {
       const selected = await client.query<MountSlot>('SELECT * FROM pe_mount_slots WHERE user_id=$1 FOR UPDATE', [userId])
       const slot = selected.rows[0]!
       if (slot.state === 'free') {
+        await requireActiveAccount(client, executionUserId.parse(userId), 'update')
         const prior = await client.query<{ state: string }>(
           'SELECT state FROM pe_sandbox_instances WHERE session_id=$1 FOR UPDATE', [sessionId])
         if (prior.rows[0] && prior.rows[0].state !== 'deleted') {
@@ -673,7 +675,9 @@ export class SandboxManager {
     const candidate = await this.pool.query<{ user_id: string }>(
       `SELECT m.user_id FROM pe_mount_slots m JOIN pe_sandbox_instances s ON s.session_id=m.session_id
        WHERE m.state IN ('ready','stopping')
-       AND (m.state='stopping' OR s.last_used_at<now()-$1::double precision*interval '1 millisecond')
+       AND (m.state='stopping' OR s.last_used_at<now()-$1::double precision*interval '1 millisecond'
+         OR EXISTS(SELECT 1 FROM pe_cloud_executions e WHERE e.session_id=m.session_id
+           AND e.error_code='account_disabled' AND e.state IN ('uncertain','succeeded','failed','cancelled')))
        ORDER BY s.last_used_at LIMIT 1`, [idleMs])
     const userId = candidate.rows[0]?.user_id
     if (!userId) return
@@ -685,13 +689,17 @@ export class SandboxManager {
         || !['ready', 'stopping'].includes(slot.state)) return null
       const active = await client.query(
         `SELECT id FROM pe_cloud_executions WHERE session_id=$1
-         AND state IN ('queued','starting','running','cancelling','uncertain') LIMIT 1`, [slot.session_id])
+         AND state IN ('queued','starting','running','cancelling','uncertain')
+         AND NOT (state='uncertain' AND cancel_requested AND error_code='account_disabled') LIMIT 1`, [slot.session_id])
       if (active.rowCount) return null
       if (slot.state === 'ready') {
         const old = await client.query(
           `UPDATE pe_sandbox_instances SET state='deleting',updated_at=now()
            WHERE session_id=$1 AND user_id=$2 AND state='ready' AND pod_uid=$3
-           AND last_used_at<now()-$4::double precision*interval '1 millisecond' RETURNING session_id`,
+           AND (last_used_at<now()-$4::double precision*interval '1 millisecond'
+             OR EXISTS(SELECT 1 FROM pe_cloud_executions e WHERE e.session_id=$1
+               AND e.error_code='account_disabled' AND e.state IN ('uncertain','succeeded','failed','cancelled')))
+           RETURNING session_id`,
           [slot.session_id, userId, slot.pod_uid, idleMs])
         if (!old.rowCount) {
           return null

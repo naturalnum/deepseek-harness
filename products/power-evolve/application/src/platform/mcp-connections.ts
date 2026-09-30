@@ -11,6 +11,7 @@ import { mcpCatalogId, mcpCheckId, mcpCheckRequest, mcpConnectionId, mcpCreateRe
   type McpManagementOptions, type McpManagementResult, type McpPinnedConnection,
   type McpPrivateSnapshot, type McpResourceId } from '../mcp-contracts.ts'
 import { transaction } from './database.ts'
+import { lockAccountAuthorities, requireActiveAccount } from './account-authority.ts'
 import { mcpCatalogDigest, mcpCatalogTools } from './mcp-catalog.ts'
 import { McpCredentialCipher, mcpCanonicalJson, normalizeMcpConfiguration,
   normalizeMcpUpload } from './mcp-credentials.ts'
@@ -90,8 +91,7 @@ export class McpConnectionService {
       catalogDigest: row.catalog_digest, tools: row.tools, createdAt: row.created_at.toISOString() }
   }
   private async owner(client: PoolClient, user: Owner): Promise<void> {
-    const found = await client.query('SELECT id FROM pe_users WHERE id=$1 FOR NO KEY UPDATE', [user.userId])
-    if (!found.rowCount) throw new PlatformError(401, 'unauthorized')
+    await requireActiveAccount(client, user.userId, 'update')
   }
   private async owned(client: PoolClient, user: Owner, id: McpConnectionId, base?: number): Promise<ConnectionRow> {
     const found = await client.query<ConnectionRow>(`${connectionSql}
@@ -195,7 +195,7 @@ export class McpConnectionService {
   }
   private async checkCapacity(client: PoolClient, user: Owner): Promise<void> {
     const found = await client.query<{ n: string }>(`SELECT count(*) AS n FROM pe_mcp_checks
-      WHERE user_id=$1 AND state IN ('queued','running') AND expires_at>now()`, [user.userId])
+      WHERE user_id=$1 AND state IN ('queued','running') AND expires_at>clock_timestamp()`, [user.userId])
     if (Number(found.rows[0]!.n) >= this.options.maxActiveChecks) throw new PlatformError(429, 'mcp_check_limit')
   }
   private async insertCheck(client: PoolClient, user: Owner, sessionId: NonNullable<Mutation['sessionId']>,
@@ -400,7 +400,7 @@ export class McpConnectionService {
         if (purpose === 'draft') await this.session(client, user, input.sessionId)
       }
       const count = await client.query<{ n: string }>(`SELECT count(*) AS n FROM pe_mcp_credential_tickets
-        WHERE user_id=$1 AND consumed_at IS NULL AND expires_at>now() AND request_id<>$2`, [user.userId, input.requestId])
+        WHERE user_id=$1 AND consumed_at IS NULL AND expires_at>clock_timestamp() AND request_id<>$2`, [user.userId, input.requestId])
       if (Number(count.rows[0]!.n) >= this.options.maxPendingTickets) throw new PlatformError(429, 'mcp_ticket_limit')
       const token = randomBytes(32).toString('base64url')
       const row = (await client.query<{ expires_at: Date }>(`INSERT INTO pe_mcp_credential_tickets
@@ -423,7 +423,7 @@ export class McpConnectionService {
   async upload(ticket: string, body: AsyncIterable<Uint8Array>): Promise<McpManagementResult> {
     const tokenDigest = hashToken(ticket)
     const intent = (await this.pool.query<TicketRow>(`SELECT * FROM pe_mcp_credential_tickets
-      WHERE token_digest=$1 AND consumed_at IS NULL AND expires_at>now()`, [tokenDigest])).rows[0]
+      WHERE token_digest=$1 AND consumed_at IS NULL AND expires_at>clock_timestamp()`, [tokenDigest])).rows[0]
     if (!intent) throw new PlatformError(401, 'invalid_mcp_ticket')
     const chunks: Buffer[] = []
     let bytes: Buffer | undefined
@@ -445,7 +445,7 @@ export class McpConnectionService {
       return await transaction(this.pool, async client => {
         await this.owner(client, { userId: intent.user_id })
         const current = (await client.query<TicketRow>(`SELECT * FROM pe_mcp_credential_tickets
-          WHERE token_digest=$1 AND consumed_at IS NULL AND expires_at>now() FOR UPDATE`, [tokenDigest])).rows[0]
+          WHERE token_digest=$1 AND consumed_at IS NULL AND expires_at>clock_timestamp() FOR UPDATE`, [tokenDigest])).rows[0]
         if (!current) throw new PlatformError(401, 'invalid_mcp_ticket')
         const result = await this.apply(client, { userId: current.user_id }, current.input, supplied,
           current.size_bytes, current.resource_id)
@@ -532,7 +532,7 @@ export class McpConnectionService {
         lease_owner=NULL,lease_until=NULL,updated_at=now()
         WHERE state IN ('queued','running') AND expires_at<=now()`)
       const row = (await client.query<CheckRow>(`SELECT * FROM pe_mcp_checks
-        WHERE state IN ('queued','running') AND cancel_requested=false AND expires_at>now()
+        WHERE state IN ('queued','running') AND cancel_requested=false AND expires_at>clock_timestamp()
           AND (lease_until IS NULL OR lease_until<=now()) ORDER BY created_at,id LIMIT 1 FOR UPDATE SKIP LOCKED`)).rows[0]
       if (!row) return null
       const next = (await client.query<CheckRow>(`UPDATE pe_mcp_checks SET state='running',lease_owner=$2,
@@ -542,8 +542,11 @@ export class McpConnectionService {
     })
   }
   private async leased(client: PoolClient, lease: McpCheckLease): Promise<CheckRow> {
+    const owner = (await client.query<{ user_id: UserId }>('SELECT user_id FROM pe_mcp_checks WHERE id=$1', [lease.checkId])).rows[0]
+    if (!owner) throw new PlatformError(409, 'mcp_check_lease_lost')
+    await lockAccountAuthorities(client, [owner.user_id], 'update')
     const row = (await client.query<CheckRow>(`SELECT * FROM pe_mcp_checks WHERE id=$1 AND lease_owner=$2
-      AND lease_epoch=$3 AND lease_until>now() AND expires_at>now() AND state='running'
+      AND lease_epoch=$3 AND lease_until>clock_timestamp() AND expires_at>clock_timestamp() AND state='running'
       AND cancel_requested=false FOR UPDATE`, [lease.checkId, lease.ownerId, lease.epoch])).rows[0]
     if (!row) throw new PlatformError(409, 'mcp_check_lease_lost')
     return row
@@ -576,6 +579,7 @@ export class McpConnectionService {
   async checkSnapshot(lease: McpCheckLease): Promise<McpPrivateSnapshot> {
     return transaction(this.pool, async client => {
       const check = await this.leased(client, lease)
+      await requireActiveAccount(client, check.user_id, 'update')
       if (check.connection_id) {
         const row = await this.owned(client, { userId: check.user_id }, check.connection_id, check.connection_revision!)
         if (row.configuration_revision !== check.configuration_revision || row.credential_revision !== check.credential_revision) {
@@ -584,7 +588,7 @@ export class McpConnectionService {
         return this.material(row.user_id, mcpResourceId.parse(row.id), row.configuration_revision,
           row.credential_revision, row.configuration, await this.credentials(client, row))
       }
-      const draft = (await client.query<DraftRow>('SELECT * FROM pe_mcp_drafts WHERE id=$1 AND user_id=$2 AND expires_at>now()',
+      const draft = (await client.query<DraftRow>('SELECT * FROM pe_mcp_drafts WHERE id=$1 AND user_id=$2 AND expires_at>clock_timestamp()',
         [check.draft_id, check.user_id])).rows[0]
       if (!draft) throw new PlatformError(409, 'mcp_check_stale')
       if (draft.source_connection_id) await this.owned(client, { userId: check.user_id },
@@ -665,6 +669,7 @@ export class McpConnectionService {
    * @returns Current enabled formal connections with their matching immutable catalogs.
    */
   async admissionCatalogs(client: PoolClient, user: Owner): Promise<{ connection: McpConnection; catalog: McpCatalog }[]> {
+    await requireActiveAccount(client, user.userId, 'update')
     const rows = await client.query<ConnectionRow>(`${connectionSql}
       WHERE c.user_id=$1 AND c.enabled=true AND c.deleted_at IS NULL AND c.current_catalog_id IS NOT NULL
       ORDER BY c.id FOR SHARE OF c`, [user.userId])
@@ -685,6 +690,7 @@ export class McpConnectionService {
    * @returns Endpoint and authentication material for Platform transport only.
    */
   async runtimeSnapshot(client: PoolClient, user: Owner, pinned: McpPinnedConnection): Promise<McpPrivateSnapshot> {
+    await requireActiveAccount(client, user.userId, 'update')
     const row = (await client.query<ConnectionRow>(`${connectionSql} JOIN pe_mcp_catalog_versions k
       ON k.id=c.current_catalog_id AND k.user_id=c.user_id AND k.connection_id=c.id AND k.draft_id IS NULL
       AND k.configuration_revision=c.configuration_revision AND k.credential_revision IS NOT DISTINCT FROM v.credential_revision
@@ -703,7 +709,7 @@ export class McpConnectionService {
    */
   async pruneChecks(user: Owner): Promise<{ checks: number; drafts: number }> {
     return transaction(this.pool, async client => {
-      await this.owner(client, user)
+      await lockAccountAuthorities(client, [user.userId], 'update')
       return this.pruneOwnedChecks(client, user)
     })
   }
@@ -722,7 +728,7 @@ export class McpConnectionService {
           AND d.expires_at<clock_timestamp()-$1::double precision*interval '1 millisecond'
           AND d.created_at<=clock_timestamp()-interval '1 hour'
           AND NOT EXISTS(SELECT 1 FROM pe_mcp_checks c WHERE c.draft_id=d.id))
-        ORDER BY u.id LIMIT $2 FOR NO KEY UPDATE OF u SKIP LOCKED`, [this.options.retentionMs, maxUsers])
+        ORDER BY u.id LIMIT $2 FOR UPDATE OF u SKIP LOCKED`, [this.options.retentionMs, maxUsers])
       const counts = { users: owners.rows.length, checks: 0, drafts: 0 }
       for (const owner of owners.rows) {
         const removed = await this.pruneOwnedChecks(client, { userId: owner.id })

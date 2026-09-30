@@ -5,6 +5,8 @@ import type { Pool, PoolClient } from 'pg'
 import { z } from 'zod'
 import { PlatformError, type Identity } from '../contracts.ts'
 import { transaction } from './database.ts'
+import { lockAccountAuthorities, requireActiveAccount, requireBrowserAccount } from './account-authority.ts'
+import { userId as executionUserId } from '../contracts.ts'
 import type { TaskStore } from './tasks.ts'
 
 type Capability = 'trial_note_query' | 'trial_note_append'
@@ -40,6 +42,7 @@ export class ConnectorService {
 
   /** Shared row locks make a completed disable/revoke a hard boundary before new egress. */
   private async allowed(client: PoolClient, userId: string, capability: Capability): Promise<void> {
+    await requireActiveAccount(client, executionUserId.parse(userId), 'update')
     const plugin = await client.query<{ enabled: boolean }>(
       `SELECT enabled FROM pe_user_plugins WHERE user_id=$1 AND plugin_id='notes' FOR SHARE`, [userId])
     if (plugin.rows[0]?.enabled !== true) throw new PlatformError(403, 'plugin_disabled')
@@ -111,9 +114,18 @@ export class ConnectorService {
     return { items: result.rows.map(row => ({ ...this.receipt(row) as object, createdAt: row.created_at.toISOString() })) }
   }
 
-  /** The approval credential's user must own the pending action and match its reviewed fingerprint. */
-  async decide(user: Identity, actionId: string, fingerprint: string, approve: boolean): Promise<unknown> {
+  /** Decide the owned action after rechecking the approval bearer under its account lock.
+   * @param user Independently authenticated action owner.
+   * @param actionId Durable pending action.
+   * @param fingerprint Exact reviewed request digest.
+   * @param approve Whether to authorize the reviewed request.
+   * @param credentialToken Raw approval bearer, checked again in this transaction.
+   * @returns Durable decision receipt.
+   */
+  async decide(user: Identity, actionId: string, fingerprint: string, approve: boolean, credentialToken: string): Promise<unknown> {
     return transaction(this.pool, async client => {
+      const actor = await requireBrowserAccount(client, credentialToken, { audience: 'approval', lock: 'update' })
+      if (actor.userId !== user.userId) throw new PlatformError(401, 'unauthorized')
       const result = await client.query<ActionRow>(
         'SELECT * FROM pe_connector_actions WHERE id=$1 AND user_id=$2 FOR UPDATE', [actionId, user.userId])
       const row = result.rows[0]
@@ -169,6 +181,9 @@ export class ConnectorService {
       if (!note) {
         note = await transaction(this.pool, async client => {
           await this.allowed(client, action.user_id, 'trial_note_append')
+          const current = await client.query<{ error_code: string | null }>(
+            'SELECT error_code FROM pe_connector_actions WHERE id=$1 FOR UPDATE', [action.id])
+          if (current.rows[0]?.error_code === 'account_disabled') throw new PlatformError(409, 'account_disabled')
           return remoteNote.parse(await this.remote('/v1/notes', 'POST',
             { owner: action.user_id, text: action.request.text }, action.id))
         })
@@ -178,7 +193,9 @@ export class ConnectorService {
       }
       await this.settle(action, 'succeeded', { actionId: note.actionId, text: note.text, createdAt: note.createdAt }, null)
     } catch (error) {
-      if (error instanceof PlatformError && error.status === 403) {
+      if (error instanceof PlatformError && error.code === 'account_disabled') {
+        await this.settle(action, 'uncertain', null, 'account_disabled')
+      } else if (error instanceof PlatformError && error.status === 403) {
         await this.settle(action, 'failed', null, error.code === 'plugin_disabled'
           ? 'plugin_disabled' : 'connector_permission_denied')
       }
@@ -190,8 +207,10 @@ export class ConnectorService {
   private async settle(action: ActionRow, state: ActionState, result: unknown, errorCode: string | null): Promise<void> {
     const backoffMs = Math.min(300_000, 2000 * 2 ** Math.min(action.attempts - 1, 8))
     await transaction(this.pool, async client => {
+      await lockAccountAuthorities(client, [executionUserId.parse(action.user_id)], 'update')
       const updated = await client.query<ActionRow>(
-        `UPDATE pe_connector_actions SET state=$3,result=$4,error_code=$5,lease_owner=NULL,
+        `UPDATE pe_connector_actions SET state=$3,result=$4,
+         error_code=CASE WHEN error_code='account_disabled' THEN error_code ELSE $5 END,lease_owner=NULL,
          lease_until=CASE WHEN $3='uncertain' THEN now()+$6::double precision*interval '1 millisecond' ELSE NULL END,
          updated_at=now() WHERE id=$1 AND lease_owner=$2 AND state='dispatching' RETURNING *`,
         [action.id, this.workerId, state, result === null ? null : JSON.stringify(result), errorCode, backoffMs])
@@ -201,6 +220,7 @@ export class ConnectorService {
 
   /** Commit one platform-origin Agent follow-up in the same transaction as the terminal action state. */
   private async enqueueContinuation(client: PoolClient, action: ActionRow): Promise<void> {
+    if (action.error_code === 'account_disabled') return
     const result = action.state === 'succeeded'
       ? '已由外部 API 确认写入。'
       : action.state === 'rejected' ? '已被用户拒绝，未执行写入。'
