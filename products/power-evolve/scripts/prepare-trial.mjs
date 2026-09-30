@@ -4,6 +4,7 @@ import { mkdir, readFile, writeFile, symlink, chmod } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { isAbsolute, resolve, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { resolveTrialStorage } from './backup-posix.mjs'
 const root = resolve(fileURLToPath(new URL('../../..', import.meta.url)))
 const trialName = process.env.PE_TRIAL_NAME ?? 'slice1'
 if (!/^[a-z0-9-]{1,32}$/.test(trialName)) throw new Error('Invalid trial name')
@@ -48,6 +49,7 @@ if (sandbox) {
   if (resolve(sandbox.workspaceRoot) !== join(resolve(sandbox.localRoot), 'workspaces')) throw new Error('Workspace and Sandbox roots differ')
   if (sandbox.idleMs !== undefined && (!Number.isInteger(sandbox.idleMs) || sandbox.idleMs < 1000)) throw new Error('Invalid Sandbox idle time')
 }
+const storage = await resolveTrialStorage(privateDir, sandbox, process.env)
 let ssh = null
 if (sshEnabled) {
   ssh = JSON.parse(await readFile(join(privateDir, 'ssh.json'), 'utf8'))
@@ -119,6 +121,8 @@ for (const name of ['host', ...(multiHost ? ['host-b'] : []), 'platform',
     ...(modelUrl ? { modelUrl: JSON.stringify(modelUrl) } : {}),
     image: process.env.PE_DESKTOP_IMAGE ?? sandbox?.image,
     connectorUrl: `http://127.0.0.1:${targetPort}`,
+    workspaceRoot: JSON.stringify(storage.workspaceRoot), artifactRoot: JSON.stringify(storage.artifactRoot),
+    skillLibraryRoot: JSON.stringify(storage.skillLibraryRoot),
     ...(mcpEnabled ? { mcpUrl: JSON.stringify(`http://127.0.0.1:${mcpPort}/mcp`),
       mcpTokenFile: JSON.stringify(join(privateDir, 'mcp-token')) } : {}),
     ...(ssh ? { sshCredentialKeyFile: JSON.stringify(join(privateDir, 'ssh-credential-key')),
@@ -127,9 +131,8 @@ for (const name of ['host', ...(multiHost ? ['host-b'] : []), 'platform',
       sshRunnerNamespace: JSON.stringify(ssh.namespace), sshRunnerImage: JSON.stringify(ssh.image),
       sshRunnerRuntimeClass: JSON.stringify(ssh.runtimeClass ?? 'gvisor'),
       sshRunnerIngressCidrs: JSON.stringify(ssh.ingressCidrs) } : {}),
-    ...(sandbox ? { workspaceRoot: sandbox.workspaceRoot, sandboxKubeconfigFile: sandbox.kubeconfigFile,
+    ...(sandbox ? { sandboxKubeconfigFile: sandbox.kubeconfigFile,
       sandboxNamespace: sandbox.namespace, sandboxImage: sandbox.image, sandboxLocalRoot: sandbox.localRoot,
-      skillLibraryRoot: sandbox.localRoot,
       sandboxNodeRoot: sandbox.nodeRoot, ...(sandbox.idleMs ? { sandboxIdleMs: sandbox.idleMs } : {}) } : {}) }
   const selected = bundleName === 'host' ? ['web-server', 'power-evolve-host', 'power-evolve-runtime']
     : bundleName === 'device' ? ['web-server', 'power-evolve-device'] : ['web-server', 'power-evolve-platform']
@@ -151,4 +154,6 @@ for (const name of ['host', ...(multiHost ? ['host-b'] : []), 'platform',
   }).join('')
   await writeFile(join(profile, 'cordis.patch.yml'), patch)
 }
+await writeFile(join(privateDir, 'storage-layout.json'), `${JSON.stringify(storage, null, 2)}\n`, { mode: 0o600 })
+await chmod(join(privateDir, 'storage-layout.json'), 0o600)
 console.log('Prepared isolated PowerEvolve trial configuration; credentials were not printed.')

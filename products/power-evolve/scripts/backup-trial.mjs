@@ -8,7 +8,8 @@ import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
-import { copyPosixTree, prepareRestoredExecutionMounts, prepareRestoredSkillMounts } from './backup-posix.mjs'
+import { backupSourceRoots, copyPosixTree, prepareRestoredExecutionMounts, prepareRestoredSkillMounts,
+  requireSkillPackageVersions, resolveTrialStorage, trialDataPath } from './backup-posix.mjs'
 
 const root = resolve(fileURLToPath(new URL('../../..', import.meta.url)))
 const { Client } = createRequire(new URL('../application/package.json', import.meta.url))('pg')
@@ -48,7 +49,7 @@ async function exists(path) {
   catch (error) { if (error.code === 'ENOENT') return null; throw error }
 }
 async function json(path) { return JSON.parse(await readFile(path, 'utf8')) }
-async function roots() {
+async function roots(requireRecorded = false) {
   const sandbox = await exists(join(privatePath, 'sandbox.json'))
     ? await json(join(privatePath, 'sandbox.json')) : null
   const shared = sandbox ? resolve(sandbox.localRoot) : privatePath
@@ -59,7 +60,8 @@ async function roots() {
   if (!(await exists(shared))?.isDirectory() || (await lstat(shared)).isSymbolicLink()) {
     throw new Error('Shared POSIX root must be a real directory')
   }
-  return { sandbox, shared }
+  const storage = await resolveTrialStorage(privatePath, sandbox, process.env, requireRecorded)
+  return { sandbox, shared, storage }
 }
 function sha(bytes) { return createHash('sha256').update(bytes).digest('hex') }
 async function inventory(directory) {
@@ -88,7 +90,8 @@ async function version(url) {
       (SELECT count(*)::integer FROM pe_cloud_executions WHERE state IN ('queued','starting','running','cancelling','uncertain')) AS executions,
       (SELECT count(*)::integer FROM pe_stdio_mcp_calls WHERE state IN ('accepted','preparing','ready','dispatch-intent','running','uncertain')) AS stdio,
       (SELECT count(*)::integer FROM pe_ssh_calls WHERE state IN ('accepted','preparing','ready','dispatch-intent','running','uncertain')) AS ssh`)
-    return { schema: schema.rows[0]?.version, active: active.rows[0] }
+    const packages = await client.query('SELECT user_id,archive_digest,manifest_digest,manifest FROM pe_skill_package_versions')
+    return { schema: schema.rows[0]?.version, active: active.rows[0], packages: packages.rows }
   } finally { await client.end() }
 }
 async function waitStableDatabase(url) {
@@ -147,7 +150,12 @@ function restoreDump(path) {
 }
 if (command === 'create') {
   if (await exists(bundlePath)) throw new Error('Backup destination already exists')
-  const { sandbox, shared } = await roots()
+  const { sandbox, shared, storage } = await roots(true)
+  if (dataNames.some(name => bundlePath.startsWith(`${trialDataPath(storage, name)}/`)
+    || bundlePath === trialDataPath(storage, name))) throw new Error('Backup destination overlaps source data')
+  if (!(await exists(trialDataPath(storage, 'skill-packages')))?.isDirectory()) {
+    throw new Error('Prepared Skill package storage is missing')
+  }
   const stage = `${bundlePath}.partial-${randomBytes(5).toString('hex')}`
   await mkdir(dirname(bundlePath), { recursive: true, mode: 0o700 })
   await mkdir(stage, { mode: 0o700 })
@@ -165,9 +173,10 @@ if (command === 'create') {
       throw new Error('Backup requires schema 18+ with no pending operations or Runner calls')
     }
     requireNoKubernetesWriters(sandbox)
+    await requireSkillPackageVersions(trialDataPath(storage, 'skill-packages'), status.packages)
     dump(join(stage, 'database.dump'))
     await mkdir(join(stage, 'data'), { mode: 0o700 })
-    for (const name of dataNames) await copyPosixTree(join(name === 'artifacts' ? privatePath : shared, name),
+    for (const name of dataNames) await copyPosixTree(trialDataPath(storage, name),
       join(stage, 'data', name))
     await mkdir(join(stage, 'config'), { mode: 0o700 })
     const included = []
@@ -182,9 +191,9 @@ if (command === 'create') {
       .every(name => included.includes(name))) throw new Error('Required private configuration missing')
     const files = await inventory(stage)
     const capturedAt = Date.now()
-    await writeFile(join(stage, 'manifest.json'), `${JSON.stringify({ format: 1, sourceTrial: trialName,
+    await writeFile(join(stage, 'manifest.json'), `${JSON.stringify({ format: 2, sourceTrial: trialName,
       schema: status.schema, startedAt, stoppedAt, capturedAt, sourceSharedRoot: shared,
-      configFiles: included, files }, null, 2)}\n`, { mode: 0o600, flag: 'wx' })
+      storage, configFiles: included, files }, null, 2)}\n`, { mode: 0o600, flag: 'wx' })
     await rename(stage, bundlePath)
     console.log(`Backup ready; writer freeze ${capturedAt - stoppedAt} ms; bundle ${bundlePath}`)
   } catch (error) {
@@ -203,7 +212,8 @@ if (command === 'create') {
 } else {
   const startedAt = Date.now()
   const manifest = await json(join(bundlePath, 'manifest.json'))
-  if (manifest.format !== 1 || !Number.isInteger(manifest.schema) || manifest.schema < 18
+  const sourceRoots = backupSourceRoots(manifest)
+  if (!Number.isInteger(manifest.schema) || manifest.schema < 18
     || manifest.sourceTrial === trialName
     || !Array.isArray(manifest.files) || !Array.isArray(manifest.configFiles)) {
     throw new Error('Unsupported backup or source/restore trial collision')
@@ -212,11 +222,15 @@ if (command === 'create') {
   if (JSON.stringify(actual) !== JSON.stringify(manifest.files)) {
     throw new Error('Backup integrity check failed before restore')
   }
-  const { shared, sandbox } = await roots()
-  if (shared === manifest.sourceSharedRoot || bundlePath.startsWith(`${shared}/`)
-    || bundlePath.startsWith(`${privatePath}/`)) throw new Error('Restore paths overlap the source or bundle')
+  const { shared, sandbox, storage } = await roots()
+  const targetRoots = [privatePath, shared, ...dataNames.map(name => trialDataPath(storage, name))]
+  if (targetRoots.some(target => sourceRoots.some(source => target === source
+    || target.startsWith(`${source}/`) || source.startsWith(`${target}/`))
+    || bundlePath === target || bundlePath.startsWith(`${target}/`) || target.startsWith(`${bundlePath}/`))) {
+    throw new Error('Restore paths overlap the source or bundle')
+  }
   for (const name of dataNames) {
-    const target = join(name === 'artifacts' ? privatePath : shared, name)
+    const target = trialDataPath(storage, name)
     const current = await exists(target)
     if (current && (!current.isDirectory() || (await readdir(target)).length)) {
       throw new Error(`Restore target ${name} must be empty`)
@@ -236,7 +250,8 @@ if (command === 'create') {
     await chmod(join(privatePath, name), 0o600)
   }
   for (const name of dataNames) {
-    const target = join(name === 'artifacts' ? privatePath : shared, name)
+    const target = trialDataPath(storage, name)
+    await mkdir(dirname(target), { recursive: true, mode: 0o700 })
     if (await exists(target)) await rm(target, { recursive: true })
     await copyPosixTree(join(bundlePath, 'data', name), target)
   }
@@ -256,6 +271,7 @@ if (command === 'create') {
   restoreDump(join(bundlePath, 'database.dump'))
   const restored = await version((await readFile(join(privatePath, 'database-url'), 'utf8')).trim())
   if (restored.schema !== manifest.schema) throw new Error('Restored database schema differs from the source snapshot')
+  await requireSkillPackageVersions(trialDataPath(storage, 'skill-packages'), restored.packages)
   const owners = new Client({ connectionString: targetUrl })
   let skillMountPermissionsRepaired
   let executionEntriesPrepared = 0
@@ -264,7 +280,7 @@ if (command === 'create') {
     const users = await owners.query('SELECT id FROM pe_users ORDER BY id')
     const userIds = users.rows.map(user => user.id)
     skillMountPermissionsRepaired = await prepareRestoredSkillMounts(
-      join(shared, 'skill-packages'), userIds)
+      trialDataPath(storage, 'skill-packages'), userIds)
     if (sandbox) {
       const workspaces = await owners.query('SELECT id FROM pe_workspaces ORDER BY id')
       executionEntriesPrepared = await prepareRestoredExecutionMounts(shared,

@@ -5,8 +5,8 @@ import { randomUUID } from 'node:crypto'
 import { chmod, lstat, mkdir, mkdtemp, readFile, readlink, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { copyPosixTree, prepareRestoredExecutionMounts,
-  prepareRestoredSkillMounts } from '../../scripts/backup-posix.mjs'
+import { backupSourceRoots, copyPosixTree, prepareRestoredExecutionMounts,
+  prepareRestoredSkillMounts, resolveTrialStorage, trialDataPath } from '../../scripts/backup-posix.mjs'
 
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), 'pe-backup-posix-'))
@@ -17,6 +17,44 @@ async function fixture(t) {
   return root
 }
 const mode = async path => (await lstat(path)).mode & 0o7777
+
+test('prepared storage retains a custom no-Sandbox Skill root across filtered startup environments', async t => {
+  const root = await fixture(t), privateDir = join(root, 'private'), custom = join(root, 'custom skills')
+  await mkdir(privateDir)
+  const defaults = await resolveTrialStorage(privateDir, null, {})
+  assert.equal(trialDataPath(defaults, 'skill-packages'), join(privateDir, 'skill-library', 'skill-packages'))
+  await assert.rejects(resolveTrialStorage(privateDir, null, {}, true), /Prepare.*layout/)
+  const layout = await resolveTrialStorage(privateDir, null, { PE_SKILL_LIBRARY_ROOT: custom })
+  await writeFile(join(privateDir, 'storage-layout.json'), JSON.stringify(layout))
+  assert.deepEqual(await resolveTrialStorage(privateDir, null, {}, true), layout)
+  assert.equal(trialDataPath(layout, 'skill-packages'), join(custom, 'skill-packages'))
+  await assert.rejects(resolveTrialStorage(privateDir, null,
+    { PE_SKILL_LIBRARY_ROOT: join(root, 'other') }, true), /recorded layout/)
+  await assert.rejects(resolveTrialStorage(join(root, 'new'), null,
+    { PE_SKILL_LIBRARY_ROOT: 'relative' }), /absolute/)
+  await writeFile(join(privateDir, 'storage-layout.json'), JSON.stringify({ ...layout, format: 99 }))
+  await assert.rejects(resolveTrialStorage(privateDir, null, {}), /Unknown.*layout/)
+})
+
+test('Sandbox storage and legacy backup data map to the same shared mount', async t => {
+  const root = await fixture(t), privateDir = join(root, 'private'), shared = join(root, 'sandbox')
+  const sandbox = { localRoot: shared, workspaceRoot: join(shared, 'workspaces') }
+  const layout = await resolveTrialStorage(privateDir, sandbox, {})
+  assert.equal(trialDataPath(layout, 'skill-packages'), join(shared, 'skill-packages'))
+  assert.equal(trialDataPath(layout, 'homes'), join(shared, 'homes'))
+  await assert.rejects(resolveTrialStorage(privateDir, sandbox,
+    { PE_SKILL_LIBRARY_ROOT: join(root, 'elsewhere') }), /Sandbox.*differ/)
+  assert.deepEqual(backupSourceRoots({ format: 1, sourceSharedRoot: shared }), [shared])
+  assert.deepEqual(backupSourceRoots({ format: 2, sourceSharedRoot: shared, storage: layout }),
+    [shared, sandbox.workspaceRoot, join(privateDir, 'artifacts'), shared])
+  for (const manifest of [
+    { format: 3, sourceSharedRoot: shared },
+    { format: 1, sourceSharedRoot: shared, storage: layout },
+    { format: 2, sourceSharedRoot: shared, storage: { ...layout, format: 2 } },
+    { format: 2, sourceSharedRoot: shared, storage: { ...layout, extra: true } },
+    { format: 2, sourceSharedRoot: join(root, 'other'), storage: layout },
+  ]) assert.throws(() => backupSourceRoots(manifest), /backup storage|trial storage/)
+})
 
 test('backup and restore preserve relative symlink text, file modes and bytes', async t => {
   const root = await fixture(t)
