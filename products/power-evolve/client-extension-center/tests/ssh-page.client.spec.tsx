@@ -321,3 +321,64 @@ test('English SSH editor records localized labels, retention and available actio
     }
   `)
 })
+
+for (const directory of [' ~/project ', ' relative directory ', '  ', '', '\uFEFFrelative']) {
+  test(`editing sends the literal directory ${JSON.stringify(directory)} with only empty mapped to null`, async () => {
+    const expected = directory === '' ? null : directory
+    const update = vi.fn(async (_input: SshUpdateInput) => ({ ...keyItem, workingDirectory: expected, revision: 2 }))
+    render(<PersonalSshPage data={{ available: true, items: [keyItem] }} port={testPort({ update })}
+      onChange={vi.fn()} onReload={vi.fn()} t={t} />)
+    fireEvent.click(screen.getByRole('button', { name: en.sshEditServer }))
+    fireEvent.change(screen.getByLabelText(en.sshWorkingDirectory), { target: { value: directory } })
+    const save = screen.getByRole('button', { name: en.sshSaveServer })
+    expect(save.hasAttribute('disabled')).toBe(false)
+    fireEvent.click(save)
+    await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
+    expect(update.mock.calls[0]![0].configuration.workingDirectory).toBe(expected)
+  })
+}
+
+test('the form rejects directory controls, lossy UTF-8 and more than 1024 UTF16 units before saving', () => {
+  const update = vi.fn()
+  render(<PersonalSshPage data={data} port={testPort({ update })} onChange={vi.fn()} onReload={vi.fn()} t={t} />)
+  fireEvent.click(screen.getByRole('button', { name: en.sshEditServer }))
+  const field = screen.getByLabelText(en.sshWorkingDirectory)
+  const save = screen.getByRole('button', { name: en.sshSaveServer })
+  for (const value of ['\0', 'a\tpath', '\u007f', '\u0085', '\u009f', '\ud800', '\udc00', 'x'.repeat(1025), '😀'.repeat(513)]) {
+    fireEvent.change(field, { target: { value } })
+    expect(save.hasAttribute('disabled')).toBe(true)
+    fireEvent.click(save)
+  }
+  expect(update).not.toHaveBeenCalled()
+  fireEvent.change(field, { target: { value: '😀'.repeat(512) } })
+  expect(save.hasAttribute('disabled')).toBe(false)
+})
+
+test('the editor trims usernames while enforcing the 256-byte and lossless UTF-8 limits', async () => {
+  const username = `${'你'.repeat(85)}a`
+  const update = vi.fn(async (_input: SshUpdateInput) => ({ ...item, username, revision: 2 }))
+  render(<PersonalSshPage data={data} port={testPort({ update })} onChange={vi.fn()} onReload={vi.fn()} t={t} />)
+  fireEvent.click(screen.getByRole('button', { name: en.sshEditServer }))
+  const field = screen.getByLabelText(en.sshUsername)
+  const save = screen.getByRole('button', { name: en.sshSaveServer })
+  for (const value of ['你'.repeat(86), '\ud800', '\udc00', 'a b', ' ']) {
+    fireEvent.change(field, { target: { value } })
+    expect(save.hasAttribute('disabled')).toBe(true)
+  }
+  fireEvent.change(field, { target: { value: ` ${username} ` } })
+  expect(save.hasAttribute('disabled')).toBe(false)
+  fireEvent.click(save)
+  await waitFor(() => expect(update).toHaveBeenCalledTimes(1))
+  expect(update.mock.calls[0]![0].configuration.username).toBe(username)
+})
+
+test('an out-of-range saved revision cannot be submitted from the editor', () => {
+  const update = vi.fn()
+  render(<PersonalSshPage data={{ ...data, items: [{ ...item, revision: 2_147_483_648 }] }}
+    port={testPort({ update })} onChange={vi.fn()} onReload={vi.fn()} t={t} />)
+  fireEvent.click(screen.getByRole('button', { name: en.sshEditServer }))
+  const save = screen.getByRole('button', { name: en.sshSaveServer })
+  expect(save.hasAttribute('disabled')).toBe(true)
+  fireEvent.click(save)
+  expect(update).not.toHaveBeenCalled()
+})

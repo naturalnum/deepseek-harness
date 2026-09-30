@@ -51,7 +51,7 @@ function write(form: PersonalSshFormValue, current?: PersonalSshConnection): {
       ...(form.clearPassphrase || form.passphrase === '' ? {} : { passphrase: form.passphrase }) }
   return { configuration: { displayName: form.displayName.trim(), host: form.host.trim().replace(/^\[([^\]]+)\]$/u, '$1'),
     port: Number(form.port), username: form.username.trim(), authentication: auth,
-    workingDirectory: form.workingDirectory.trim() === '' ? null : form.workingDirectory.trim(),
+    workingDirectory: form.workingDirectory === '' ? null : form.workingDirectory,
     hostKeySha256: normalizeSshFingerprint(form.hostKeySha256), enabled: form.enabled },
     ...(Object.keys(fields).length === 0 ? {} : { credentials: { formatVersion: 2, ...fields } }) }
 }
@@ -76,14 +76,12 @@ export function buildPersonalSshUpdate(form: PersonalSshFormValue, current: Pers
   return { requestId, connectionId: current.connectionId, baseRevision: current.revision, ...write(form, current) }
 }
 
-/** Preserve the old form's remote path and PEM validation, with the fixed DTO byte budgets.
+/** Validate literal remote directories and the original PEM fields with fixed DTO budgets.
  * @param form - current editor fields.
  * @param current - saved metadata when editing, otherwise absent.
  * @returns whether submission is valid; a changed authentication kind requires a new secret.
  */
 export function validPersonalSshForm(form: PersonalSshFormValue, current?: PersonalSshConnection): boolean {
-  const directory = form.workingDirectory.trim()
-  if (directory !== '' && !/^(?:\/|~(?:\/|$))/u.test(directory)) return false
   const secret = form.authenticationKind === 'password' ? form.password : form.privateKey
   if (secret === '' && !(current?.authentication === form.authenticationKind && current.secretConfigured)) return false
   if (form.authenticationKind === 'private_key' && form.privateKey !== ''

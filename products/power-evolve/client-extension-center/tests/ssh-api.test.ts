@@ -87,6 +87,7 @@ test('tickets cannot skip byte verification and must name the original request',
 
 test('secret budgets, valid UTF-8, creation and exact replacement fields are checked before dispatch', async () => {
   assert.equal(validSshCreate(input), true)
+  assert.equal(validSshCreate({ ...input, credentials: { formatVersion: 2, password: '\uFEFFsecret' } }), true)
   for (const secret of ['', 'p'.repeat(4097), '你'.repeat(1366), '\0', '\ud800']) {
     assert.equal(validSshCreate({ ...input, credentials: { formatVersion: 2, password: secret } }), false)
   }
@@ -291,4 +292,78 @@ test('recent SSH checks use one owner-scoped Host RPC and reject malformed lists
   const oversized = new PersonalSshHttpClient(async () => Response.json({ items: Array.from({ length: 101 },
     () => ({ callId, state: 'running' })) }))
   await assert.rejects(oversized.callList(), /Invalid SSH call list response/u)
+})
+
+test('literal directories retain leading and trailing spaces through tickets, direct updates and responses', async () => {
+  for (const workingDirectory of [' ~/project ', ' relative directory ', '/absolute path ', '  ', '\uFEFFrelative']) {
+    const create: SshCreateInput = { ...input, configuration: { ...input.configuration, workingDirectory } }
+    const created = { ...item, workingDirectory }
+    const requests: Array<Record<string, unknown>> = []
+    const client = new PersonalSshHttpClient(async (url, init) => {
+      if (String(url).endsWith('/sshConnectionsTicket')) { requests.push(requestBody(init)); return Response.json(ticket) }
+      if (String(url) === '/config') return Response.json(config)
+      return Response.json({ item: created })
+    })
+    assert.deepEqual(await client.create(create), created)
+    assert.deepEqual(requests[0]!.configuration, create.configuration)
+    const update: SshUpdateInput = { requestId, connectionId, baseRevision: 1,
+      configuration: { ...create.configuration, authentication: { kind: 'password', password: 'retain' } } }
+    const updated = { ...created, revision: 2 }
+    const updateClient = new PersonalSshHttpClient(async (url, init) => {
+      assert.equal(String(url), '/api/powerEvolve/sshConnectionsUpdate')
+      assert.deepEqual(requestBody(init), update)
+      return Response.json(updated)
+    })
+    assert.deepEqual(await updateClient.update(update), updated)
+  }
+  assert.equal(validSshCreate({ ...input, configuration: { ...input.configuration, workingDirectory: null } }), true)
+  assert.equal(validSshCreate({ ...input, configuration: { ...input.configuration, workingDirectory: '😀'.repeat(512) } }), true)
+  let dispatched = 0
+  const client = new PersonalSshHttpClient(async () => { dispatched += 1; throw new Error('Unexpected dispatch') })
+  for (const workingDirectory of ['', 'x'.repeat(1025), '😀'.repeat(513), '\0', '\n', '\t', '\u007f', '\u0085', '\u009f', '\ud800', '\udc00']) {
+    const configuration = { ...input.configuration, workingDirectory }
+    assert.equal(validSshCreate({ ...input, configuration }), false)
+    await assert.rejects(client.create({ ...input, configuration }), /Invalid SSH connection/u)
+    await assert.rejects(client.update({ requestId, connectionId, baseRevision: 1,
+      configuration: { ...configuration, authentication: { kind: 'password', password: 'retain' } } }), /Invalid SSH update/u)
+  }
+  assert.equal(dispatched, 0)
+})
+
+test('trimmed usernames require lossless UTF-8 and at most 256 bytes before any mutation', async () => {
+  const username = `${'你'.repeat(85)}a`
+  const paddedUsername = ` ${username} `
+  const configuration = { ...input.configuration, username: paddedUsername }
+  assert.equal(Buffer.byteLength(username), 256)
+  assert.equal(validSshCreate({ ...input, configuration }), true)
+  const created = { ...item, username }
+  let reserved: Record<string, unknown> | undefined
+  const client = new PersonalSshHttpClient(async (url, init) => {
+    if (String(url).endsWith('/sshConnectionsTicket')) { reserved = requestBody(init); return Response.json(ticket) }
+    if (String(url) === '/config') return Response.json(config)
+    return Response.json({ item: created })
+  })
+  assert.deepEqual(await client.create({ ...input, configuration }), created)
+  assert.deepEqual(reserved?.configuration, { ...configuration, username })
+  for (const invalid of ['你'.repeat(86), '\ud800', '\udc00', 'a b', ' ', 'x'.repeat(101)]) {
+    const configuration = { ...input.configuration, username: invalid }
+    assert.equal(validSshCreate({ ...input, configuration }), false)
+    assert.equal(validSshUpdate({ requestId, connectionId, baseRevision: 1,
+      configuration: { ...configuration, authentication: { kind: 'password', password: 'retain' } } }), false)
+  }
+})
+
+test('management base revisions use positive PostgreSQL int32 values and reject overflow before dispatch', async () => {
+  const configuration = { ...input.configuration, authentication: { kind: 'password' as const, password: 'retain' as const } }
+  assert.equal(validSshUpdate({ requestId, connectionId, baseRevision: 2_147_483_647, configuration }), true)
+  let dispatched = 0
+  const client = new PersonalSshHttpClient(async () => { dispatched += 1; throw new Error('Unexpected dispatch') })
+  for (const baseRevision of [0, -1, 1.5, 2_147_483_648, Number.MAX_SAFE_INTEGER, Number.NaN]) {
+    await assert.rejects(client.update({ requestId, connectionId, baseRevision, configuration }), /Invalid SSH update/u)
+    await assert.rejects(client.toggle({ requestId, connectionId, baseRevision, enabled: false }), /Invalid SSH toggle/u)
+    await assert.rejects(client.remove({ requestId, connectionId, baseRevision }), /Invalid SSH deletion/u)
+  }
+  assert.equal(dispatched, 0)
+  const boundary = new PersonalSshHttpClient(async () => Response.json({ ...item, revision: 2_147_483_647, enabled: false }))
+  assert.equal((await boundary.toggle({ requestId, connectionId, baseRevision: 2_147_483_646, enabled: false })).revision, 2_147_483_647)
 })

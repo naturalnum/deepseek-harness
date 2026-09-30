@@ -5,6 +5,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu
 const TICKET = /^[A-Za-z0-9_-]{32,256}$/u
 const FINGERPRINT = /^SHA256:[A-Za-z0-9+/]{43}$/u
 const CONTROL = /[\u0000-\u001f\u007f]/u
+const DIRECTORY_CONTROL = /[\u0000-\u001f\u007f-\u009f]/u
 // Mirrors application/ssh-management-contracts; that Node/Zod module cannot enter the browser bundle.
 const UPLOAD_MAX_BYTES = 65_536
 
@@ -20,6 +21,7 @@ export interface SshConfigurationInput {
   readonly port: number
   readonly username: string
   readonly hostKeySha256: string
+  /** Literal remote path; only null omits the override. */
   readonly workingDirectory: string | null
   readonly authentication: SshAuthenticationPlan
   readonly enabled: boolean
@@ -160,7 +162,8 @@ const bounded = (value: unknown, max: number): value is string =>
   typeof value === 'string' && value.length > 0 && value.length <= max
 const exact = (value: object, keys: readonly string[]): boolean =>
   Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key))
-const revision = (value: unknown): value is number => Number.isSafeInteger(value) && Number(value) > 0
+const revision = (value: unknown): value is number => Number.isSafeInteger(value)
+  && Number(value) > 0 && Number(value) <= 2_147_483_647
 const timestamp = (value: unknown): value is string => typeof value === 'string'
   && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$/u.test(value) && Number.isFinite(Date.parse(value))
 const CHECK_STATES = new Set<SshCheckState>([
@@ -196,6 +199,15 @@ export const normalizeSshFingerprint = (value: string): string => {
 export const validSshFingerprint = (value: string): boolean => FINGERPRINT.test(normalizeSshFingerprint(value))
 const normalizeHost = (value: string): string => value.trim().replace(/^\[([^\]]+)\]$/u, '$1')
 const label = (value: unknown, max: number): value is string => bounded(value, max) && !CONTROL.test(value)
+const losslessUtf8 = (value: string): boolean =>
+  new TextDecoder('utf-8', { ignoreBOM: true }).decode(new TextEncoder().encode(value)) === value
+const validWorkingDirectory = (value: string | null): boolean => value === null
+  || (bounded(value, 1024) && !DIRECTORY_CONTROL.test(value) && losslessUtf8(value))
+const validUsername = (value: string): boolean => {
+  const username = value.trim()
+  return label(username, 100) && !/\s/u.test(username)
+    && new TextEncoder().encode(username).byteLength <= 256 && losslessUtf8(username)
+}
 
 function validConfiguration(value: SshConfigurationInput): boolean {
   const auth = value.authentication
@@ -206,15 +218,15 @@ function validConfiguration(value: SshConfigurationInput): boolean {
   return plan && label(value.displayName.trim(), 100) && label(normalizeHost(value.host), 253)
     && !/[\s/@?#]/u.test(normalizeHost(value.host))
     && Number.isInteger(value.port) && value.port >= 1 && value.port <= 65535
-    && label(value.username.trim(), 100) && !/\s/u.test(value.username.trim())
+    && validUsername(value.username)
     && validSshFingerprint(value.hostKeySha256) && typeof value.enabled === 'boolean'
-    && (value.workingDirectory === null || label(value.workingDirectory.trim(), 1024))
+    && validWorkingDirectory(value.workingDirectory)
 }
 
 function configuration(value: SshConfigurationInput): SshConfigurationInput {
   return { displayName: value.displayName.trim(), host: normalizeHost(value.host), port: value.port,
     username: value.username.trim(), hostKeySha256: normalizeSshFingerprint(value.hostKeySha256),
-    workingDirectory: value.workingDirectory === null ? null : value.workingDirectory.trim(),
+    workingDirectory: value.workingDirectory,
     authentication: value.authentication.kind === 'password'
       ? { kind: 'password', password: value.authentication.password }
       : { kind: 'private_key', privateKey: value.authentication.privateKey, passphrase: value.authentication.passphrase },
@@ -241,7 +253,7 @@ function credentialBytes(plan: SshAuthenticationPlan, envelope: SshCredentialUpl
     const value = envelope[field]
     if (typeof value !== 'string' || value.length === 0 || value.includes('\0')) throw new Error('Invalid SSH credential')
     const bytes = new TextEncoder().encode(value)
-    const valid = bytes.length <= limits[field] && new TextDecoder().decode(bytes) === value
+    const valid = bytes.length <= limits[field] && new TextDecoder('utf-8', { ignoreBOM: true }).decode(bytes) === value
     bytes.fill(0)
     if (!valid) throw new Error('Invalid SSH credential')
   }
