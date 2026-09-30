@@ -134,6 +134,8 @@ test('readSelectedResource lists and reads only owned, intact UTF-8 files from t
     await mkdir(join(source, 'big-skill'), { recursive: true })
     await writeFile(join(source, 'big-skill', 'SKILL.md'),
       '---\nname: big-resource\ndescription: Large resource fixture\n---\nRead reference when needed.\n')
+    const bomBytes = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from('BOM reference')])
+    await writeFile(join(source, 'big-skill', 'bom.md'), bomBytes)
     await writeFile(join(source, 'big-skill', 'large.md'), 'a'.repeat(256 * 1024 + 1))
     const archivePath = join(source, 'big.zip')
     execFileSync('zip', ['-q', '-r', '-X', archivePath, 'big-skill'], { cwd: source })
@@ -141,7 +143,15 @@ test('readSelectedResource lists and reads only owned, intact UTF-8 files from t
     const ticket = await skills.issueUploadTicket(alice, randomUUID(), archive.length, digest(archive),
       'http://127.0.0.1:18881')
     const big = selected((await skills.upload(ticket.ticket, Readable.from([archive]))).item)
-    assert((await skills.readSelectedResource(alice.userId, big)).files.some(file => file.path === 'large.md'))
+    const bigFiles = (await skills.readSelectedResource(alice.userId, big)).files
+    assert(bigFiles.some(file => file.path === 'large.md'))
+    assert.deepEqual(bigFiles.find(file => file.path === 'bom.md'),
+      { path: 'bom.md', size: bomBytes.length, sha256: digest(bomBytes) })
+    const bom = await skills.readSelectedResource(alice.userId, big, 'bom.md')
+    assert.equal(bom.kind, 'text')
+    assert.equal(bom.text, '\uFEFFBOM reference')
+    assert.equal(Buffer.byteLength(bom.text), bomBytes.length)
+    assert.equal(digest(bom.text), bom.sha256)
     await assert.rejects(skills.readSelectedResource(alice.userId, big, 'large.md'),
       { status: 413, code: 'skill_resource_too_large' })
 

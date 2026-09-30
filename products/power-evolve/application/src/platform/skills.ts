@@ -705,7 +705,7 @@ export class SkillService {
     if (bytes.length !== item.size || hash(bytes) !== item.sha256)
       throw new PlatformError(503, 'skill_package_unavailable')
     let text: string
-    try { text = new TextDecoder('utf-8', { fatal: true }).decode(bytes) }
+    try { text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes) }
     catch { throw new PlatformError(415, 'skill_resource_not_text') }
     if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/u.test(text))
       throw new PlatformError(415, 'skill_resource_not_text')
