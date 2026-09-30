@@ -2,7 +2,7 @@
 
 ## 范围
 
-2026-09-30 至 2026-10-01，使用原生 DSH Web、真实 DeepSeek、独立 PG 数据库和 gVisor 中的 OpenSSH 目标进行验收。起始提交为 `171f2b98e6`；三项修复在 `c4964c1cad` 复验，连接名称与运行中故障场景在 `c0957b17e0` 复验，备份恢复及无需刷新的会话接管在 `31943714fb` 复验。真实 SSH 子切面已完成下列验收，独立固定试用快照仍在准备；完整边界见[连接器完成出口](S6-CONNECTOR-COMPLETION.md)。
+2026-09-30 至 2026-10-01，使用原生 DSH Web、真实 DeepSeek、独立 PG 数据库和 gVisor 中的 OpenSSH 目标进行验收。起始提交为 `171f2b98e6`；三项修复在 `c4964c1cad` 复验，连接名称与运行中故障场景在 `c0957b17e0` 复验，备份恢复及无需刷新的会话接管在 `31943714fb` 复验。真实 SSH 子切面已完成下列验收，并固定为可按需启动的独立试用，见[固定试用快照](#固定试用快照)；完整边界见[连接器完成出口](S6-CONNECTOR-COMPLETION.md)。
 
 ## 环境
 
@@ -54,7 +54,7 @@ SSH 定向轮询／租约／恢复检查 8 项通过；原生 Host／Platform／
 
 此次重启暴露原生会话自动恢复缺口：浏览器到 Host 的连接仍在，但平台短暂不可用导致历史读取失败，页面未自动显示后续结果，只能手动刷新。修复前证据为 `inflight-restart-*.json` 和 `bob-inflight-restart-*.txt`；下述复验单独验证无需刷新的客户端恢复。
 
-动作 `ab4b0067-be86-4800-81ca-068c95de3e8b` 在观察到远端已写入一行后，删除经 UID 核验的该调用 Runner Pod，再从本人 Host RPC 请求取消。调用与动作均保留 `uncertain`、错误码 `ssh_cancel_effect_unknown`，且 `cleanup_complete=true`；命名空间内无 Connector Runner，续接只有一次，原会话明确展示结果不确定并未重试。远端文件仍为一行。此检查不声称取消能撤回已发出的远端效果；该不确定记录还须通过备份恢复验收。
+动作 `ab4b0067-be86-4800-81ca-068c95de3e8b` 在观察到远端已写入一行后，删除经 UID 核验的该调用 Runner Pod，再从本人 Host RPC 请求取消。调用与动作均保留 `uncertain`、错误码 `ssh_cancel_effect_unknown`，且 `cleanup_complete=true`；命名空间内无 Connector Runner，续接只有一次，原会话明确展示结果不确定并未重试。远端文件仍为一行。此检查不声称取消能撤回已发出的远端效果；该不确定记录在下述备份恢复和固定版本重启后仍保持原状态。
 
 `e96fca0ed3` 修复产品 Host 的原生会话读取：临时网络错误及 502／503／504 沿原游标重试，权限拒绝、非法响应和历史缺口仍终止。恢复后的动作 `f9fb844e-d4c1-4e50-a143-1f8cba1bab53` 在运行中再次强制终止平台，等待 5 秒后重启；原页面未经刷新自动得到退出码 0 和 `restored-recovery-finished`。原 Pod、Runner、dispatch 摘要未改变，派发 epoch 为 1，续接只有一条，远端文件只有一行。旧不确定动作仍保留原状态及一条续接。证据为 `restored-restart-*.json` 和 `restored-restart-no-refresh.txt`；28 项源代码回归与应用构建通过，源代码测试已纳入产品测试命令。
 
@@ -72,4 +72,28 @@ Alice 对动作 `6ead1da5-b1af-4d59-a8dd-f0f8e8a4dc92` 先提交审批，再停�
 
 目标使用独立受限 kubeconfig 与 Runner 命名空间，试验 SSH 服务作为固定外部目标继续保留；目标网络策略只额外允许恢复命名空间的 Connector Runner 访问该 SSH 端口。启动恢复版本后，Alice 加密私钥调用 `710bc67b-c89e-4aa0-b04d-afee6e6bf0c0` 真实成功，两用户原生历史读回，Bob 完成上述无需刷新的恢复命令。PG 中工作区 Sandbox 和 cloud execution 仍为 0。备份恢复与后续人工核验分开执行，不报告连续健康 RTO。证据见 `backup-restore-evidence.json`、`backup-rbac.json` 和 `restored-*.txt`。
 
-剩余工作为固定独立代码与构建产物、验证启停入口并交付试用。生产多节点、共享卷、生产入口及真实容量仍按 S7 验收。
+## 固定试用快照
+
+固定提交为 `0f7a58fd5f61e48e380e0a67112dcfaff5e9533e`，本地标签为 `power-evolve-native-s6-ssh-trial`。独立 checkout 为 `/Users/jingchao/agent_work/main_agent/power-evolve-s6-stdio-recovery`；目录沿用准备工作树名称，内容为本节的 SSH 版本。它使用恢复库 `pe_ssh_p24_restored_20261001`、schema 24、私有目录 `~/.config/power-evolve/shared-host-s6-ssh-p24-restored`，与 MCP、S8 的持久数据分开。
+
+构建产物、依赖、原生 Web、Profile 和链接已复制并逐项校验；运行时不引用主开发 checkout。以下本机控制器在启动前核对固定提交、产物、原容器身份、数据库版本以及现有 SSH 目标。启动使用已固定的 Profile，自动更新 PG 动态映射端口，不重新准备配置或创建集群。
+
+```sh
+/Users/jingchao/.nvm/versions/node/v22.22.1/bin/node /Users/jingchao/agent_work/main_agent/power-evolve-s6-stdio-recovery/.artifacts/power-evolve/s6-ssh-p24-restored/snapshot-tools/fixed-trial.mjs start
+/Users/jingchao/.nvm/versions/node/v22.22.1/bin/node /Users/jingchao/agent_work/main_agent/power-evolve-s6-stdio-recovery/.artifacts/power-evolve/s6-ssh-p24-restored/snapshot-tools/fixed-trial.mjs status
+/Users/jingchao/.nvm/versions/node/v22.22.1/bin/node /Users/jingchao/agent_work/main_agent/power-evolve-s6-stdio-recovery/.artifacts/power-evolve/s6-ssh-p24-restored/snapshot-tools/fixed-trial.mjs stop
+```
+
+试用步骤：
+
+1. 确认现有 `pe-e32-session-probe` 集群及固定 SSH 目标可用，执行 `start`，打开 `http://127.0.0.1:19670/`。Alice／Bob 登录信息由上述私有目录的 `users.json` 在本机读取，不复制到聊天或文档。
+2. 登录 Alice，读取原 SSH 会话的 `p24-alice-ok` 结果，进入“插件 → SSH”，查看自己的两条连接和检查历史。
+3. 退出后登录 Bob，读取 `restored-recovery-finished` 的原会话结果，查看自己的两条连接；Alice 的清单不应出现。新建会话发送 `hi` 可验证普通对话。
+4. 若需新命令，明确指定本人连接及命令，在独立可信入口 `http://127.0.0.1:19671/approval` 登录同一账号审核。历史中的旧源环境链接仍保留原地址，当前新审批使用此恢复环境地址。
+5. 用完执行 `stop`。控制器只停止经 PID、工作目录和健康身份核对的三个进程；共享测试 PG 无其他客户端时随之停止，数据库与文件保留。控制器不停止共享 k3d。
+
+固定版本实际通过三角色启动、停止、再次启动，PG 动态端口更新，以及 Alice／Bob 顺序全新登录、历史和连接清单读取。Bob 新检查 `937bbfa4-800a-4e79-9d96-ed15929e4c37` 使用真实 SSH 私钥成功，`cleanup_complete=true`、派发 epoch 为 1。再次启动后，原有 19 条完成操作仍在；真实 DeepSeek 的新 `hi` 为第 20 条完成操作，工作区 Sandbox 仍为 0，原不确定执行没有重放。原生 Host／Platform／PG 的 23 项确定性组合回归在集成代码上再次通过。
+
+本机证据及日志位于该 checkout 的 `.artifacts/power-evolve/s6-ssh-p24-restored/`：`freeze-evidence.json`、`browser-evidence/`、`snapshot-tools/preparation.json` 和三个角色日志。默认停止此试用以降低笔记本负载。可先运行 `status` 检查；源码、产物、数据库版本或固定目标不符时启动拒绝，不会自动替换现有环境。若 SSH 目标 Pod 被重建，需明确恢复或更新目标配置，不能把变化后的主机静默当成原目标。
+
+下一组补齐账号生命周期，再补文件与产物入口；生产多节点、共享卷、生产入口及真实容量仍按 S7 验收。
