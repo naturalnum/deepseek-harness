@@ -73,6 +73,7 @@ export const Config = schema.object({
   sshRunnerIngressCidrs: schema.string().default(''),
   sshRunnerReadyTimeoutMs: schema.number().min(1000).default(30000),
   sshRunnerLeaseMs: schema.number().min(1000).default(90000),
+  sshRunnerPollMs: schema.number().step(1).min(100).default(500),
   connectorUrl: schema.string().required(), connectorTimeoutMs: schema.number().min(1000).required(),
   connectorPollMs: schema.number().min(100).required(),
   sandboxKubeconfigFile: schema.string().default(''), sandboxKeyFile: schema.string().default(''),
@@ -258,9 +259,10 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     })
     if (!ssh.available) return null
     return { execute: new SshExecuteService(tasks, new SshCallStore(pool), ssh, runner,
-      sshKey, instanceId, config.sshRunnerLeaseMs),
+      sshKey, instanceId, config.sshRunnerLeaseMs, config.sshRunnerPollMs),
     check: new SshAuthenticationCheck(new SshCallStore(pool), ssh, runner,
-      { ownerId: instanceId, requestKey: connectorKey.trim(), leaseMs: config.sshRunnerLeaseMs }) }
+      { ownerId: instanceId, requestKey: connectorKey.trim(), leaseMs: config.sshRunnerLeaseMs,
+        pollMs: config.sshRunnerPollMs }) }
   })() : null
   const sshCheck = sshServices?.check ?? null
   const sshExecute = sshServices?.execute ?? null
@@ -276,7 +278,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
           try { await sshCheck.cleanupPending() }
           catch (_unavailable) { /* Retry cleanup after DB recovery. */ }
         }
-        try { await delay(500, undefined, { signal: stop.signal }) }
+        try { await delay(config.sshRunnerPollMs, undefined, { signal: stop.signal }) }
         catch (_aborted) { /* Stop the loop on shutdown. */ }
       }
     })()
