@@ -24,7 +24,13 @@ V20 把命令结果存为 JSONB，含 NUL 的成功结果触发 PostgreSQL `22P0
 
 构建命令 `node node_modules/typescript/bin/tsc -b products/power-evolve/application`、README 配对检查、提交 lint 和空白检查通过。其他只更新 schema 版本断言的测试未在本轮全部重跑。
 
-## 复跑
+## Runner 传输边界补充
+
+固定提交 `0fec8964e0` 修复了存储之前的响应上限：两路各 65,536 字节的合法 NUL 输出经 JSON 转义后超过原 256 KiB 限制，云沙盒与 SSH Runner 现显式使用 1 MiB；普通资源预算保持不变。同时修复了 HTTPS 响应半途断开后 Promise 未及时结束的问题。
+
+隔离分支的真实 TLS 公共适配器测试最终 8/8 通过：满额双流 NUL／中文／emoji／字面量转义完整读回，1 MiB 与 256 KiB 的精确边界接受、超一字节拒绝，SSH reconcile 接受合法输出并将超限结果标为不确定，断开及超时关闭连接，后续健康请求可完成。已有 ServiceAccount 令牌轮换和 SSH 权限回归另有通过证据；测试使用 HTTPS fixture，未执行真实命令，也不代替 k3s 端到端验收。复跑入口为 `application/tests/s7d-kubernetes-bounded-response.test.mjs`。
+
+## 复跑命令范围
 
 从上述提交构建 application，设置 `PE_PRIVATE_DIR` 指向可创建独立测试数据库的私有 PG 配置目录；测试使用随机数据库并清理。备份项另外设置 `PE_TEST_BACKUP_POSTGRES_IMAGE` 为本地 PostgreSQL 17 镜像。使用 `node --test` 运行 `application/tests/` 下的 `s8-lossless-storage.test.mjs`、`slice4.test.mjs`、`slice5.test.mjs`、`s6-notes-plugin.test.mjs`、`s8-backup-skill-storage.test.mjs` 和 `slice1.test.mjs`。普通回放不设置 `PE_RECORD_SNAPSHOT`，不能在失败时自动刷新快照。
 

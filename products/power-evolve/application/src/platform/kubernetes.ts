@@ -65,6 +65,17 @@ export class KubernetesClient {
     return new KubernetesClient(server, ca, undefined, undefined, undefined, tokenPath)
   }
 
+  /**
+   * Read one bounded JSON response; transport failure or an incomplete body rejects.
+   * Oversized and timed-out requests reject before their connection is destroyed.
+   * @param method Kubernetes or Runner HTTP method.
+   * @param path Path resolved only against the configured Kubernetes origin.
+   * @param body Optional JSON request payload.
+   * @param timeoutMs Socket inactivity deadline in milliseconds.
+   * @param runnerToken Optional token for the separate Runner authorization boundary.
+   * @param maxResponseBytes Resource responses use 256 KiB; Runner adapters explicitly select 1 MiB.
+   * @returns Parsed JSON whose resource or Runner shape must be validated by the consumer.
+   */
   async call<T>(method: 'GET' | 'POST' | 'DELETE' | 'PATCH', path: string, body?: unknown,
     timeoutMs = 10_000, runnerToken?: string,
     maxResponseBytes: 262_144 | typeof RUNNER_RESPONSE_MAX_BYTES = 262_144): Promise<T> {
