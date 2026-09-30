@@ -1,7 +1,7 @@
 import { afterEach, expect, test, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { PersonalSshPage } from '../src/client/PersonalSshPage.tsx'
-import type { PersonalSshConnection, PersonalSshList, PersonalSshPort } from '../src/client/ssh-api.ts'
+import type { PersonalSshConnection, PersonalSshList, PersonalSshPort, SshCheckCall } from '../src/client/ssh-api.ts'
 import { en, zh } from '../src/client/locales.ts'
 import { SshHttpError, type SshUpdateInput, type SshCreateInput, type SshCheckInput } from '../src/client/ssh-api.ts'
 
@@ -150,8 +150,10 @@ for (const [language, locale] of [['en', en], ['zh', zh]] as const) {
   test(`${language}: changing password authentication to an encrypted key makes the old success historical`, async () => {
     const oldCall = { callId: '217d9a46-3b52-455b-bba6-7d9389c990bb', state: 'succeeded' as const }
     const newCall = { callId: 'b12820cb-9e7d-4c41-8512-6f678115ea89', state: 'succeeded' as const }
+    let finishNewCheck: ((call: SshCheckCall) => void) | undefined
+    const newAdmission = new Promise<SshCheckCall>(resolve => { finishNewCheck = resolve })
     const saved = { ...keyItem, revision: 2, credentialRevision: 2, workingDirectory: "~/quote's space" }
-    const check = vi.fn(async (input: SshCheckInput) => input.connectionRevision === 1 ? oldCall : newCall)
+    const check = vi.fn(async (input: SshCheckInput) => input.connectionRevision === 1 ? oldCall : newAdmission)
     const update = vi.fn(async (_input: SshUpdateInput) => saved)
     const port = testPort({ check, update, callList: async () => check.mock.calls.length === 0 ? []
       : check.mock.calls.length === 1 ? [oldCall] : [newCall, oldCall] })
@@ -185,6 +187,15 @@ for (const [language, locale] of [['en', en], ['zh', zh]] as const) {
       history: Array.from(history.querySelectorAll('article strong'), element => element.textContent),
     }).toMatchSnapshot()
     fireEvent.click(within(row).getByRole('button', { name: locale.sshTestAuthentication }))
+    expect(status.querySelector('strong')?.textContent).toBe(locale.sshCheckPending)
+    expect(within(row).queryByText(locale.sshCheckSucceeded)).toBeNull()
+    expect(within(row).queryByText(locale.mcpCheckPreviousResult.replace('{result}', locale.sshCheckSucceeded))).toBeNull()
+    expect(within(history).getByText(locale.sshCheckSucceeded)).toBeTruthy()
+    expect({ current: status.querySelector('strong')?.textContent, state: status.getAttribute('data-state'),
+      history: Array.from(history.querySelectorAll('article strong'), element => element.textContent),
+      checkDisabled: within(row).getByRole('button', { name: locale.sshTestAuthentication }).hasAttribute('disabled'),
+    }).toMatchSnapshot('new revision awaiting admission')
+    await act(async () => { finishNewCheck!(newCall) })
     await within(row).findByText(locale.sshCheckSucceeded)
     expect(check.mock.calls.map(([input]) => input.connectionRevision)).toEqual([1, 2])
     expect(within(row).queryByText(locale.mcpCheckStale)).toBeNull()
@@ -253,6 +264,78 @@ for (const [language, locale] of [['en', en], ['zh', zh]] as const) {
       .toEqual({ kind: 'private_key', privateKey: 'replace', passphrase: 'clear' })
   })
 }
+
+for (const [failure, cause, message, canRetry] of [
+  ['uncertain', new Error('reply lost'), en.sshCheckAdmissionUncertain, true],
+  ['rejected', new SshHttpError(409), en.sshCheckRejected, false],
+] as const) {
+  test(`a ${failure} POST for a new revision cannot restore the previous successful call`, async () => {
+    const oldCall = { callId: '217d9a46-3b52-455b-bba6-7d9389c990bb', state: 'succeeded' as const }
+    let failNewCheck: ((cause: Error) => void) | undefined
+    const newAdmission = new Promise<SshCheckCall>((_resolve, reject) => { failNewCheck = reject })
+    const check = vi.fn(async (input: SshCheckInput) => input.connectionRevision === 1 ? oldCall : newAdmission)
+    const port = testPort({ check, callList: async () => check.mock.calls.length === 0 ? [] : [oldCall] })
+    const view = render(<PersonalSshPage data={data} port={port} onChange={vi.fn()} onReload={vi.fn()} t={t} />)
+    const row = screen.getByText(item.displayName).closest('article')!
+    fireEvent.click(within(row).getByRole('button', { name: en.sshTestAuthentication }))
+    await within(row).findByText(en.sshCheckSucceeded)
+    view.rerender(<PersonalSshPage data={{ ...data, items: [{ ...item, revision: 2 }] }}
+      port={port} onChange={vi.fn()} onReload={vi.fn()} t={t} />)
+    fireEvent.click(within(row).getByRole('button', { name: en.sshTestAuthentication }))
+    const status = within(row).getByRole('status')
+    expect(status.querySelector('strong')?.textContent).toBe(en.sshCheckPending)
+    await act(async () => { failNewCheck!(cause) })
+    expect(status.querySelector('strong')?.textContent).toBe(en.sshCheckUncertain)
+    expect(within(status).getByText(message)).toBeTruthy()
+    expect(within(status).queryByText(en.sshCheckSucceeded)).toBeNull()
+    expect(within(status).queryByText(en.mcpCheckPreviousResult.replace('{result}', en.sshCheckSucceeded))).toBeNull()
+    expect(Boolean(within(status).queryByRole('button', { name: en.sshRetryCheck }))).toBe(canRetry)
+    const history = screen.getByRole('region', { name: en.sshRecentChecks })
+    expect(within(history).getByText(en.sshCheckSucceeded)).toBeTruthy()
+    expect(check.mock.calls[1]![0]).toMatchObject({ connectionId: item.connectionId, connectionRevision: 2 })
+    expect(check.mock.calls[1]![0].requestId).not.toBe(check.mock.calls[0]![0].requestId)
+  })
+}
+
+test('old list results arriving during and after a new POST cannot supply its current call', async () => {
+  const oldCall = { callId: '217d9a46-3b52-455b-bba6-7d9389c990bb', state: 'succeeded' as const }
+  const newCall = { callId: 'b12820cb-9e7d-4c41-8512-6f678115ea89', state: 'running' as const }
+  let finishOldPoll: ((calls: readonly SshCheckCall[]) => void) | undefined
+  let finishStaleList: ((calls: readonly SshCheckCall[]) => void) | undefined
+  let finishNewCheck: ((call: SshCheckCall) => void) | undefined
+  const oldPoll = new Promise<readonly SshCheckCall[]>(resolve => { finishOldPoll = resolve })
+  const staleList = new Promise<readonly SshCheckCall[]>(resolve => { finishStaleList = resolve })
+  const newAdmission = new Promise<SshCheckCall>(resolve => { finishNewCheck = resolve })
+  const callList = vi.fn<PersonalSshPort['callList']>().mockResolvedValueOnce([]).mockResolvedValueOnce([oldCall])
+    .mockReturnValueOnce(oldPoll).mockReturnValueOnce(staleList)
+  const check = vi.fn(async (input: SshCheckInput) => input.connectionRevision === 1 ? oldCall : newAdmission)
+  const port = testPort({ check, callList })
+  const view = render(<PersonalSshPage data={data} port={port} onChange={vi.fn()} onReload={vi.fn()} t={t} />)
+  await act(async () => { await Promise.resolve() })
+  const row = screen.getByText(item.displayName).closest('article')!
+  fireEvent.click(within(row).getByRole('button', { name: en.sshTestAuthentication }))
+  await within(row).findByText(en.sshCheckSucceeded)
+  await waitFor(() => expect(callList).toHaveBeenCalledTimes(2))
+  view.rerender(<PersonalSshPage data={{ ...data, items: [{ ...item, revision: 2 }] }}
+    port={port} onChange={vi.fn()} onReload={vi.fn()} t={t} />)
+  const history = screen.getByRole('region', { name: en.sshRecentChecks })
+  fireEvent.click(within(history).getByRole('button', { name: en.refreshList }))
+  await waitFor(() => expect(callList).toHaveBeenCalledTimes(3))
+  fireEvent.click(within(row).getByRole('button', { name: en.sshTestAuthentication }))
+  const status = within(row).getByRole('status')
+  expect(status.querySelector('strong')?.textContent).toBe(en.sshCheckPending)
+  await act(async () => { finishOldPoll!([oldCall]) })
+  expect(status.querySelector('strong')?.textContent).toBe(en.sshCheckPending)
+  expect(within(row).queryByText(en.sshCheckSucceeded)).toBeNull()
+  expect(within(history).getByText(en.sshCheckSucceeded)).toBeTruthy()
+  await act(async () => { finishNewCheck!(newCall) })
+  await waitFor(() => expect(callList).toHaveBeenCalledTimes(4))
+  expect(status.querySelector('strong')?.textContent).toBe(en.sshCheckRunning)
+  await act(async () => { finishStaleList!([oldCall]) })
+  expect(status.querySelector('strong')?.textContent).toBe(en.sshCheckRunning)
+  expect(within(row).queryByText(en.sshCheckSucceeded)).toBeNull()
+  expect(within(row).getByRole('button', { name: en.sshTestAuthentication }).hasAttribute('disabled')).toBe(true)
+})
 
 test('a late check reply and subsequent status refresh cannot validate a newer saved revision', async () => {
   const callId = '217d9a46-3b52-455b-bba6-7d9389c990bb'

@@ -14,10 +14,12 @@ type Mutation = { readonly kind: 'create'; readonly input: SshCreateInput }
   | { readonly kind: 'update'; readonly input: SshUpdateInput }
   | { readonly kind: 'toggle'; readonly input: SshToggleInput }
   | { readonly kind: 'delete'; readonly input: SshDeleteInput }
+type CheckAttempt = { readonly input: SshCheckInput; readonly call?: SshCheckCall; readonly admitting: boolean }
 const activeCheck = (state: SshCheckCall['state']): boolean => !['succeeded', 'failed', 'cancelled'].includes(state)
 
 /** Personal SSH management using the original write-only form and saved checks.
- * Check results apply only to the saved revision submitted with the request.
+ * Check results stay paired with the request that obtained them and apply only
+ * to its saved revision; a new admission waits for its own result.
  * @param props - public connections, browser operations, and native locale.
  * @returns personal SSH management and authentication check status.
  */
@@ -39,8 +41,10 @@ export function PersonalSshPage({ data, port, onChange, onReload, t }: {
   latestItems.current = data.items
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
-  const [checkedRequest, setCheckedRequest] = useState<SshCheckInput>()
-  const [call, setCall] = useState<SshCheckCall>()
+  const [checkAttempt, setCheckAttempt] = useState<CheckAttempt>()
+  const checkedRequest = checkAttempt?.input
+  const call = checkAttempt?.call
+  const admitting = checkAttempt?.admitting === true
   const [pendingCheck, setPendingCheck] = useState<SshCheckInput>()
   const [checkBusy, setCheckBusy] = useState(false)
   const [cancelBusy, setCancelBusy] = useState(false)
@@ -51,10 +55,10 @@ export function PersonalSshPage({ data, port, onChange, onReload, t }: {
   const [pollGeneration, setPollGeneration] = useState(0)
   const mounted = useRef(true)
   const observeCall = useCallback((next: SshCheckCall): void => {
-    setCall(previous => {
-      if (!previous || previous.callId !== next.callId) return previous
-      if (!activeCheck(previous.state) && activeCheck(next.state)) return previous
-      return next
+    setCheckAttempt(previous => {
+      if (!previous?.call || previous.call.callId !== next.callId) return previous
+      if (!activeCheck(previous.call.state) && activeCheck(next.state)) return previous
+      return { ...previous, call: next }
     })
     setRecentCalls(previous => {
       const existing = previous.find(item => item.callId === next.callId)
@@ -76,10 +80,12 @@ export function PersonalSshPage({ data, port, onChange, onReload, t }: {
           const items = await port.callList(controller.signal)
           if (stopped) return
           setRecentCalls(items)
-          setCall(previous => {
-            if (!previous) return previous
-            const updated = items.find(item => item.callId === previous.callId)
-            return updated && (activeCheck(previous.state) || !activeCheck(updated.state)) ? updated : previous
+          setCheckAttempt(previous => {
+            if (!previous?.call) return previous
+            const callId = previous.call.callId
+            const updated = items.find(item => item.callId === callId)
+            return updated && (activeCheck(previous.call.state) || !activeCheck(updated.state))
+              ? { ...previous, call: updated } : previous
           })
           setCallsError(undefined)
           if (!items.some(item => activeCheck(item.state))) return
@@ -145,13 +151,15 @@ export function PersonalSshPage({ data, port, onChange, onReload, t }: {
 
   const check = async (input: SshCheckInput): Promise<void> => {
     if (checkBusy || !data.available) return
-    setCheckBusy(true); setCheckedRequest(input); setCheckError(undefined); setCancelRequestedId(undefined)
+    setCheckBusy(true); setCheckAttempt({ input, admitting: true }); setCheckError(undefined); setCancelRequestedId(undefined)
     try {
       const next = await port.check(input)
       if (!mounted.current) return
-      setCall(next); setPendingCheck(undefined); observeCall(next); setPollGeneration(value => value + 1)
+      setCheckAttempt(previous => previous?.input.requestId === input.requestId ? { input, call: next, admitting: false } : previous)
+      setPendingCheck(undefined); observeCall(next); setPollGeneration(value => value + 1)
     } catch (cause) {
       if (!mounted.current) return
+      setCheckAttempt(previous => previous?.input.requestId === input.requestId ? { input, admitting: false } : previous)
       if (cause instanceof SshHttpError && [400, 401, 403, 404, 409].includes(cause.status)) {
         setPendingCheck(undefined); setCheckError(t(cause.status === 401 ? 'sessionExpired' : 'sshCheckRejected'))
       } else {
@@ -213,7 +221,7 @@ export function PersonalSshPage({ data, port, onChange, onReload, t }: {
               requestId: crypto.randomUUID(), baseRevision: item.revision, enabled } }) }} />
           <button type="button" className="pext-dialog-button" disabled={!data.available || !item.enabled
             || checkBusy || (call !== undefined && activeCheck(call.state)) || pendingCheck !== undefined}
-            onClick={() => { setCall(undefined); void check({ requestId: crypto.randomUUID(),
+            onClick={() => { void check({ requestId: crypto.randomUUID(),
               connectionId: item.connectionId, connectionRevision: item.revision }) }}>
             {t('sshTestAuthentication')}</button>
           <button type="button" className="pext-dialog-button" disabled={locked || !data.available}
@@ -224,9 +232,11 @@ export function PersonalSshPage({ data, port, onChange, onReload, t }: {
               void mutate({ kind: 'delete', input: { requestId: crypto.randomUUID(),
                 connectionId: item.connectionId, baseRevision: item.revision } })
             }}>{t(deleteId === item.connectionId ? 'sshConfirmDeleteServer' : 'sshDeleteServer')}</button></div>
-        {checkedRequest?.connectionId === item.connectionId && (call || pendingCheck || checkError)
-          && <div className="pext-ssh-check-state" role="status" data-state={checkIsCurrent ? call?.state : 'stale'}>
-          <strong>{!checkIsCurrent ? t('mcpCheckCurrentNotChecked') : call ? checkLabel(call.state) : t('sshCheckUncertain')}</strong>
+        {checkedRequest?.connectionId === item.connectionId && (call || pendingCheck || checkError || admitting)
+          && <div className="pext-ssh-check-state" role="status"
+            data-state={checkIsCurrent ? call?.state ?? (admitting ? 'pending' : 'uncertain') : 'stale'}>
+          <strong>{!checkIsCurrent ? t('mcpCheckCurrentNotChecked') : call ? checkLabel(call.state)
+            : t(admitting ? 'sshCheckPending' : 'sshCheckUncertain')}</strong>
           {!checkIsCurrent && <p>{t('mcpCheckStale')}</p>}
           {!checkIsCurrent && call && <p>{t('mcpCheckPreviousResult').replace('{result}', checkLabel(call.state))}</p>}
           <p>{t('sshCheckAuthenticationOnly')}</p>
