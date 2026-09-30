@@ -1,7 +1,7 @@
 /** Stop writers, snapshot PG and POSIX bytes, then restore into a fresh trial. */
 import { randomBytes, createHash } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
-import { constants, readFileSync } from 'node:fs'
+import { constants } from 'node:fs'
 import { chmod, copyFile, lstat, mkdir, readFile, readdir, readlink, rename, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
@@ -11,7 +11,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { backupSourceRoots, copyPosixTree, prepareRestoredExecutionMounts, prepareRestoredSkillMounts,
   requireSkillPackageVersions, resolveTrialStorage, trialDataPath } from './backup-posix.mjs'
 import { backupDatabaseIdentity, requireEmptyBackupDatabase, requireSeparateBackupPaths,
-  runningBackupTargets, verifyBackupPgTools, dumpBackupDatabase, restoreBackupDatabase,
+  runningBackupTargets, requireNoKubernetesWriters, verifyBackupPgTools, dumpBackupDatabase, restoreBackupDatabase,
   captureBackupMcpConfiguration, prepareRestoredMcpConfiguration, writeRestoredMcpConfiguration } from './backup-support.mjs'
 
 const root = resolve(fileURLToPath(new URL('../../..', import.meta.url)))
@@ -97,11 +97,24 @@ async function version(url) {
     client = new Client({ connectionString: url, connectionTimeoutMillis: 10000 })
     await client.connect()
     const schema = await client.query('SELECT version FROM pe_schema')
+    // Cleaned quarantine stays uncertain; approved actions still need durable finalization and continuation.
     const active = await client.query(`SELECT
       (SELECT count(*)::integer FROM pe_operations WHERE state IN ('queued','running')) AS operations,
       (SELECT count(*)::integer FROM pe_cloud_executions WHERE state IN ('queued','starting','running','cancelling','uncertain')) AS executions,
       (SELECT count(*)::integer FROM pe_stdio_mcp_calls WHERE state IN ('accepted','preparing','ready','dispatch-intent','running','uncertain')) AS stdio,
-      (SELECT count(*)::integer FROM pe_ssh_calls WHERE state IN ('accepted','preparing','ready','dispatch-intent','running','uncertain')) AS ssh`)
+      (SELECT count(*)::integer FROM pe_ssh_calls c
+        WHERE c.state IN ('accepted','preparing','ready','dispatch-intent','running')
+          OR (c.state='uncertain' AND (c.cleanup_complete IS NOT TRUE
+            OR (c.kind='ssh.execute' AND NOT EXISTS (
+              SELECT 1 FROM pe_ssh_execute_actions a WHERE a.id=c.id AND a.user_id=c.user_id
+                AND a.operation_id=c.operation_id AND a.connection_id=c.connection_id
+                AND a.connection_revision=c.connection_revision AND a.credential_revision=c.credential_revision
+                AND a.request_digest=c.request_digest AND a.state='uncertain'))))) AS ssh,
+      (SELECT count(*)::integer FROM pe_ssh_execute_actions WHERE state='approved') AS sshActions`)
+    const { rows: [ssh] } = await client.query(`SELECT
+      (SELECT count(*) FROM pe_ssh_connections)+(SELECT count(*) FROM pe_ssh_calls)
+        +(SELECT count(*) FROM pe_ssh_execute_actions) AS records,
+      (SELECT count(*) FROM pe_ssh_calls WHERE state='uncertain' AND cleanup_complete=true) AS quarantined`)
     let mcpRecords = 0
     if (schema.rows[0]?.version >= 22) {
       active.rows[0].mcpChecks = (await client.query("SELECT count(*)::integer AS n FROM pe_mcp_checks WHERE state IN ('queued','running')")).rows[0].n
@@ -112,7 +125,8 @@ async function version(url) {
       active.rows[0].mcpActions = (await client.query("SELECT count(*)::integer AS n FROM pe_mcp_actions WHERE state IN ('approved','preparing','dispatch-intent')")).rows[0].n
     }
     const packages = await client.query('SELECT user_id,archive_digest,manifest_digest,manifest FROM pe_skill_package_versions')
-    return { schema: schema.rows[0]?.version, active: active.rows[0], packages: packages.rows, mcpRecords: Number(mcpRecords) }
+    return { schema: schema.rows[0]?.version, active: active.rows[0], packages: packages.rows,
+      mcpRecords: Number(mcpRecords), sshRecords: Number(ssh.records), sshQuarantined: Number(ssh.quarantined) }
   } catch { throw new Error('Cannot inspect backup PostgreSQL state') }
   finally { await client?.end().catch(() => {}) }
 }
@@ -130,24 +144,6 @@ async function waitStableDatabase(url) {
     await delay(300)
   }
   throw new Error('Restore PostgreSQL did not become stable')
-}
-function requireNoKubernetesWriters(sandbox) {
-  if (!sandbox) return
-  if (!kubeContext) throw new Error('PE_KUBE_CONTEXT is required to check Sandbox writers')
-  const sandboxes = JSON.parse(run('kubectl', ['--context', kubeContext, '-n', sandbox.namespace,
-    'get', 'sandboxes.agents.x-k8s.io', '-o', 'json']))
-  if (sandboxes.items.length) throw new Error('Sandbox objects remain active during backup')
-  const ssh = (() => {
-    try { return JSON.parse(readFileSync(join(privatePath, 'ssh.json'), 'utf8')) }
-    catch (error) { if (error.code === 'ENOENT') return null; throw error }
-  })()
-  if (ssh) {
-    const resources = JSON.parse(run('kubectl', ['--context', kubeContext, '-n', ssh.namespace,
-      'get', 'pods', '-o', 'json']))
-    if (resources.items.some(item => /^pe-(cr|mcp)-/u.test(item.metadata.name))) {
-      throw new Error('Connector Runner Pods remain active during backup')
-    }
-  }
 }
 if (command === 'create') {
   if (await exists(bundlePath)) throw new Error('Backup destination already exists')
@@ -175,7 +171,11 @@ if (command === 'create') {
       || Object.values(status.active).some(count => count !== 0)) {
       throw new Error('Backup requires schema 18+ with no active operations, Runner calls or MCP discovery/dispatch')
     }
-    requireNoKubernetesWriters(sandbox)
+    const ssh = await exists(join(privatePath, 'ssh.json')) ? await json(join(privatePath, 'ssh.json')) : null
+    requireNoKubernetesWriters({ sandbox, ssh, kubeContext, sshRequired: status.sshQuarantined > 0 }, run)
+    if (status.sshRecords && !(await exists(join(privatePath, 'ssh-credential-key')))?.isFile()) {
+      throw new Error('Existing SSH history requires its credential key for backup')
+    }
     await requireSkillPackageVersions(trialDataPath(storage, 'skill-packages'), status.packages)
     if (status.mcpRecords && !process.env.PE_REMOTE_MCP_CONFIG_FILE) {
       throw new Error('Existing MCP history requires explicit PE_REMOTE_MCP_CONFIG_FILE for backup')

@@ -100,6 +100,40 @@ export async function runningBackupTargets(directory) {
   return targets.sort((left, right) => order.indexOf(left) - order.indexOf(right))
 }
 
+/** Require independent cluster evidence after writers stop; a cleanup flag alone is insufficient. */
+export function requireNoKubernetesWriters({ sandbox, ssh, kubeContext, sshRequired = false }, run) {
+  if (sshRequired && !ssh) throw new Error('Quarantined SSH calls require SSH Connector Runner configuration for backup')
+  if (!sandbox && !ssh) return
+  if (typeof kubeContext !== 'string' || !kubeContext.trim()) {
+    throw new Error('PE_KUBE_CONTEXT is required to check Kubernetes writers')
+  }
+  const list = (configuration, resource) => {
+    if (typeof configuration.namespace !== 'string' || configuration.namespace.length > 63
+      || !/^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$/u.test(configuration.namespace)
+      || typeof configuration.kubeconfigFile !== 'string' || !configuration.kubeconfigFile) {
+      throw new Error('Invalid Kubernetes writer configuration')
+    }
+    const result = JSON.parse(run('kubectl', ['--kubeconfig', configuration.kubeconfigFile,
+      '--context', kubeContext, '-n', configuration.namespace, 'get', resource, '-o', 'json']))
+    if (!Array.isArray(result.items)) throw new Error('Cannot verify Kubernetes writer absence')
+    return result.items
+  }
+  if (sandbox && list(sandbox, 'sandboxes.agents.x-k8s.io').length) {
+    throw new Error('Sandbox objects remain active during backup')
+  }
+  if (ssh) {
+    if (!isAbsolute(ssh.kubeconfigFile ?? '')) throw new Error('Invalid SSH Connector Runner kubeconfig')
+    const pods = list(ssh, 'pods')
+    if (pods.some(pod => typeof pod?.metadata?.name !== 'string')) {
+      throw new Error('Cannot verify Connector Runner Pod absence')
+    }
+    // Include canaries and terminating Pods; SSH target servers are separate resources.
+    if (pods.some(pod => /^pe-(cr|mcp)-/u.test(pod.metadata.name))) {
+      throw new Error('Connector Runner Pods remain active during backup')
+    }
+  }
+}
+
 function pgInvocation(tool, url, env) {
   let parsed
   try { parsed = new URL(url) }
