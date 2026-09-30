@@ -24,11 +24,13 @@ export interface SshCheckView {
   readonly errorCode?: string
 }
 
-/** Deployment-owned worker identity, keyed admission, lease duration, and optional DNS policy. */
+/** Deployment-owned worker identity, keyed admission, lease and poll durations, and optional DNS policy. */
 export interface SshCheckOptions {
   readonly ownerId: string
   readonly requestKey: string
   readonly leaseMs: number
+  /** Delay before a confirmed running call can be reclaimed for GET-only observation. */
+  readonly pollMs: number
   readonly resolveHost?: (host: string) => Promise<string>
 }
 
@@ -39,7 +41,8 @@ export class SshAuthenticationCheck {
   constructor(private readonly calls: SshCallStore, private readonly connections: SshConnectionService,
     private readonly runner: SshRunnerOrchestrator, private readonly options: SshCheckOptions) {
     if (!options.ownerId || options.requestKey.length < 32
-      || !Number.isSafeInteger(options.leaseMs) || options.leaseMs < 1000) {
+      || !Number.isSafeInteger(options.leaseMs) || options.leaseMs < 1000
+      || !Number.isSafeInteger(options.pollMs) || options.pollMs < 100) {
       throw new Error('Invalid SSH check configuration')
     }
     this.resolveHost = options.resolveHost ?? (async host => isIP(host) ? host
@@ -109,7 +112,9 @@ export class SshAuthenticationCheck {
         return
       }
       await this.calls.recordStatus(lease, status)
-      if (status.state !== 'running') {
+      if (status.state === 'running') {
+        await this.calls.deferRunning(lease, this.options.pollMs)
+      } else {
         await this.runner.cleanup(row.id)
         if (row.pod_uid) await this.calls.markCleanupComplete(row.id, row.pod_uid)
       }

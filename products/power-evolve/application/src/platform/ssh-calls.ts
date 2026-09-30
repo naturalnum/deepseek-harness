@@ -302,17 +302,18 @@ export class SshCallStore {
     return changed.rows[0]
   }
 
-  /** Release ownership of a running execution call and defer its next claim until the poll delay expires.
-   * @param lease - current call, owner and epoch for running execution work.
-   * @param pollMs - delay in milliseconds before another coordinator may claim it.
-   * @throws PlatformError if the kind, state or unexpired lease changed.
+  /** Release a confirmed running SSH call for later observation without granting another dispatch permit.
+   * @param lease - current call, owner and epoch for running authentication or execution work.
+   * @param pollMs - positive safe-integer delay in milliseconds before another coordinator may claim it.
+   * @throws Error for an invalid delay; PlatformError if the kind, state or unexpired lease changed.
    */
   async deferRunning(lease: SshCallLease, pollMs: number): Promise<void> {
+    if (!Number.isSafeInteger(pollMs) || pollMs < 1) throw new Error('Invalid SSH call poll delay')
     const changed = await this.pool.query(
       `UPDATE pe_ssh_calls SET lease_owner=NULL,
          lease_until=now()+$4::double precision*interval '1 millisecond',updated_at=now()
        WHERE id=$1 AND lease_owner=$2 AND lease_epoch=$3 AND lease_until>now()
-         AND kind='ssh.execute' AND state='running' RETURNING id`,
+         AND kind IN ('ssh.authenticate','ssh.execute') AND state='running' RETURNING id`,
       [lease.callId, lease.owner, lease.epoch, pollMs])
     if (!changed.rowCount) throw new PlatformError(409, 'ssh_call_lease_lost')
   }

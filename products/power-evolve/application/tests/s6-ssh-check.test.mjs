@@ -91,7 +91,7 @@ test('authentication admission is owner scoped and a restarted worker never repe
     const calls = new SshCallStore(pool)
     const runner = new FakeRunner()
     const requestKey = randomBytes(32).toString('base64url')
-    const options = { ownerId: randomUUID(), requestKey, leaseMs: 1000,
+    const options = { ownerId: randomUUID(), requestKey, leaseMs: 1000, pollMs: 100,
       resolveHost: async () => '192.0.2.42' }
     const coordinator = new SshAuthenticationCheck(calls, connections, runner, options)
     const requestId = randomUUID()
