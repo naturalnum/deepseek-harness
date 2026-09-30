@@ -5,7 +5,7 @@ import { isIP } from 'node:net'
 import { setTimeout as delay } from 'node:timers/promises'
 import type { Pool, PoolClient } from 'pg'
 import { z } from 'zod'
-import { executionTarget, sshSelection, PlatformError, type Identity } from '../contracts.ts'
+import { executionTarget, sshSelection, PlatformError, type Identity, type sshExecuteView } from '../contracts.ts'
 import { transaction } from './database.ts'
 import { SshCallStore, type SshCallLease, type SshCallRow } from './ssh-calls.ts'
 import { SshConnectionService } from './ssh.ts'
@@ -33,6 +33,10 @@ type ApprovalAction = Action & { display_name: string; host: string; port: numbe
   host_key_sha256: string; working_directory: string | null }
 type CallView = Pick<SshCallRow, 'id' | 'state'>
 type Lease = SshCallLease
+type ActionView = z.infer<typeof sshExecuteView>
+type ApprovalView = ActionView & { command: string; displayName: string; host: string; port: number;
+  username: string; hostKeySha256: string; workingDirectory: string | null;
+  connectionRevision: number; credentialRevision: number; createdAt: string }
 
 /** AES-GCM binds every ciphertext to its approved owner, operation, connection and revision. */
 export class SshActionCipher {
@@ -43,6 +47,10 @@ export class SshActionCipher {
     if (key.length !== 32 || key.toString('base64url') !== encoded) throw new Error('Invalid SSH action key')
     this.key = key
   }
+  /** Bind a proposed command to its owner and accepted configuration.
+   * @param action - exact command and immutable execution identities.
+   * @returns keyed SHA-256 hex digest for approval and retry comparison.
+   */
   fingerprint(action: { userId: string; operationId: string; connectionId: string;
     connectionRevision: number; credentialRevision: number; command: string }): string {
     return createHmac('sha256', this.key).update(JSON.stringify({ kind: 'ssh.execute', ...action })).digest('hex')
@@ -52,6 +60,12 @@ export class SshActionCipher {
       action.operation_id, action.connection_id, String(action.connection_revision),
       String(action.credential_revision), action.request_digest].join('\0'))
   }
+  /** Encrypt text with distinct command and result authentication contexts.
+   * @param action - persisted owner, action, operation, configuration and request digest.
+   * @param kind - payload purpose, also authenticated with the ciphertext.
+   * @param value - exact plaintext stored only as ciphertext in PG.
+   * @returns nonce, authentication tag and ciphertext bytes.
+   */
   seal(action: CipherContext, kind: 'command' | 'result', value: string): Buffer {
     const iv = randomBytes(12)
     const cipher = createCipheriv('aes-256-gcm', this.key, iv)
@@ -59,6 +73,12 @@ export class SshActionCipher {
     const ciphertext = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()])
     return Buffer.concat([iv, cipher.getAuthTag(), ciphertext])
   }
+  /** Authenticate and decrypt one action payload; failures expose no secret material.
+   * @param action - original identities and request digest used when sealing.
+   * @param kind - original payload purpose.
+   * @param sealed - nonce, authentication tag and ciphertext bytes.
+   * @returns exact UTF-8 plaintext for trusted approval or execution.
+   */
   open(action: CipherContext, kind: 'command' | 'result', sealed: Buffer): string {
     if (!Buffer.isBuffer(sealed) || sealed.length < 29) throw new PlatformError(503, 'ssh_action_unavailable')
     try {
@@ -91,7 +111,7 @@ export class SshExecuteService {
     this.resolveHost = resolveHost ?? (async host => isIP(host) ? host : (await lookup(host)).address)
   }
   private get pool(): Pool { return this.tasks.pool }
-  private present(action: Action, call?: CallView | null) {
+  private present(action: Action, call?: CallView | null): ActionView {
     const state = action.state === 'approved' && call?.state === 'uncertain' ? 'uncertain' : action.state
     return { actionId: action.id, state, fingerprint: action.request_digest,
       ...(call ? { callId: call.id } : {}),
@@ -100,9 +120,17 @@ export class SshExecuteService {
         ? { result: output.parse(JSON.parse(this.cipher.open(action, 'result', action.result_sealed))) } : {}) }
   }
 
-  /** The Host forwards an Agent tool-call ID and pinned metadata, never a credential. */
+  /** Persist a proposal using the operation's configuration and a stable tool-call identity.
+   * @param token - current fenced Agent grant, which may propose but never approve.
+   * @param callKey - stable native tool-call ID for idempotent proposal retries.
+   * @param connectionId - connection included in the operation's accepted selection.
+   * @param connectionRevision - immutable accepted configuration revision.
+   * @param credentialRevision - immutable accepted credential revision.
+   * @param command - exact user command before the frozen working-directory prefix.
+   * @returns durable proposal receipt without command or credential plaintext.
+   */
   async propose(token: string, callKey: string, connectionId: string, connectionRevision: number,
-    credentialRevision: number, command: string) {
+    credentialRevision: number, command: string): Promise<ActionView> {
     if (!callKey || Buffer.byteLength(callKey) > 100 || !command || command.includes('\0')
       || Buffer.byteLength(command) > MAX_COMMAND_BYTES) throw new PlatformError(400, 'ssh_command_invalid')
     return transaction(this.pool, async client => {
@@ -155,8 +183,11 @@ export class SshExecuteService {
     })
   }
 
-  /** Only the approval audience receives decrypted command bytes and exact target metadata. */
-  async approvals(user: Identity) {
+  /** Only the approval audience receives decrypted command bytes and historical target metadata.
+   * @param user - identity independently authenticated by the trusted approval entry.
+   * @returns at most 100 owned actions with their frozen review details.
+   */
+  async approvals(user: Identity): Promise<{ items: ApprovalView[] }> {
     const found = await this.pool.query<ApprovalAction & { call_state: SshCallRow['state'] | null }>(
       `SELECT a.*,c.display_name,c.host,c.port,c.username,c.host_key_sha256,c.working_directory,x.state AS call_state
        FROM pe_ssh_execute_actions a
@@ -172,8 +203,14 @@ export class SshExecuteService {
       createdAt: row.created_at.toISOString() })) }
   }
 
-  /** The approval credential's owner and reviewed keyed fingerprint must match exactly. */
-  async decide(user: Identity, actionId: string, fingerprint: string, approve: boolean) {
+  /** Apply one decision to the exact reviewed fingerprint; stale authority cannot create a call.
+   * @param user - identity independently authenticated by the trusted approval entry.
+   * @param actionId - owned pending action.
+   * @param fingerprint - keyed digest displayed in the reviewed proposal.
+   * @param approve - approve the exact command, or reject it without dispatch.
+   * @returns durable decision receipt; matching retries return the existing decision.
+   */
+  async decide(user: Identity, actionId: string, fingerprint: string, approve: boolean): Promise<ActionView> {
     return transaction(this.pool, async client => {
       const found = await client.query<Action>(
         'SELECT * FROM pe_ssh_execute_actions WHERE id=$1 AND user_id=$2 FOR UPDATE', [actionId, user.userId])
@@ -213,7 +250,12 @@ export class SshExecuteService {
     })
   }
 
-  async status(user: Identity, actionId: string) {
+  /** Read one owned action without granting dispatch authority.
+   * @param user - authenticated action owner.
+   * @param actionId - durable action identity.
+   * @returns status and any persisted execution result, without credentials or command text.
+   */
+  async status(user: Identity, actionId: string): Promise<ActionView> {
     const found = await this.pool.query<Action & { call_state: SshCallRow['state'] | null }>(
       `SELECT a.*,c.state AS call_state FROM pe_ssh_execute_actions a
        LEFT JOIN pe_ssh_calls c ON c.id=a.id WHERE a.id=$1 AND a.user_id=$2`, [actionId, user.userId])
@@ -222,7 +264,11 @@ export class SshExecuteService {
       ? { id: actionId, state: found.rows[0].call_state } : null)
   }
 
-  async list(user: Identity) {
+  /** List recent actions for their authenticated owner.
+   * @param user - identity that owns the requested execution history.
+   * @returns at most 100 receipts, newest first.
+   */
+  async list(user: Identity): Promise<{ items: ActionView[] }> {
     const found = await this.pool.query<Action & { call_state: SshCallRow['state'] | null }>(
       `SELECT a.*,c.state AS call_state FROM pe_ssh_execute_actions a
        LEFT JOIN pe_ssh_calls c ON c.id=a.id WHERE a.user_id=$1 ORDER BY a.created_at DESC,a.id DESC LIMIT 100`,
@@ -231,8 +277,12 @@ export class SshExecuteService {
       ? { id: row.id, state: row.call_state } : null)) }
   }
 
-  /** Cancellation fences a first POST and never claims that an in-flight remote effect was undone. */
-  async cancel(user: Identity, actionId: string) {
+  /** Cancellation fences a first POST and never claims that an in-flight remote effect was undone.
+   * @param user - authenticated action owner.
+   * @param actionId - owned action whose future dispatch is to be cancelled.
+   * @returns current receipt; a previously permitted remote effect can remain uncertain.
+   */
+  async cancel(user: Identity, actionId: string): Promise<ActionView> {
     for (let attempt = 0; attempt < 2; attempt++) {
       const peek = await this.pool.query<Action>(
         'SELECT * FROM pe_ssh_execute_actions WHERE id=$1 AND user_id=$2', [actionId, user.userId])
@@ -283,7 +333,9 @@ export class SshExecuteService {
     throw new PlatformError(409, 'ssh_action_state_changed')
   }
 
+  /** Start the configured execution worker once during Platform initialization. */
   start(): void { this.polling = this.poll() }
+  /** Stop polling and wait for the current worker iteration before closing PG. */
   async close(): Promise<void> { this.stop.abort(); await this.polling }
   private async poll(): Promise<void> {
     while (!this.stop.signal.aborted) {
