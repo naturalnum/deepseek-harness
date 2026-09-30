@@ -2,19 +2,35 @@
 import { Pool, type PoolClient } from 'pg'
 import { schema, schemaV2, schemaV3, schemaV4, schemaV5, schemaV6, schemaV7, schemaV8, schemaV9, schemaV10, schemaV11, schemaV12, schemaV13, schemaV14, schemaV15, schemaV16, schemaV17, schemaV18, schemaV19, schemaV20 } from './schema.ts'
 
-/** Run one operation in a transaction, retaining its original failure after rollback. */
+/**
+ * Run one operation in a transaction; retain its failure and discard disconnected clients.
+ * @param pool Pool supplying the transaction's exclusive client.
+ * @param operation Work that settles before the client is released.
+ * @returns The operation's result after commit succeeds.
+ */
 export async function transaction<T>(pool: Pool, operation: (client: PoolClient) => Promise<T>): Promise<T> {
   const client = await pool.connect()
+  let connectionError: Error | undefined
+  let discard = false
+  const onConnectionError = (error: Error) => { connectionError ??= error }
+  client.on('error', onConnectionError)
   try {
     await client.query('BEGIN')
+    if (connectionError) throw connectionError
     const result = await operation(client)
+    if (connectionError) throw connectionError
     await client.query('COMMIT')
     return result
   } catch (error) {
-    try { await client.query('ROLLBACK') }
-    catch (_connectionUnavailable) { /* Retain the transaction's original failure. */ }
+    if (!connectionError) {
+      try { await client.query('ROLLBACK') }
+      catch (_connectionUnavailable) { discard = true /* Retain the transaction's original failure. */ }
+    }
     throw error
-  } finally { client.release() }
+  } finally {
+    client.release(discard || !!connectionError)
+    client.removeListener('error', onConnectionError)
+  }
 }
 
 /** Initialize the product schema once under a database lock; refuse newer schemas. */
