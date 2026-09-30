@@ -12,6 +12,7 @@ import { z } from 'zod'
 import { executionTarget, requestId, sessionId, PlatformError } from '../contracts.ts'
 import { readJson, sendFailure, sendJson } from '../http.ts'
 import type { BrowserAgentAuth } from './browser-auth.ts'
+import { followNativeSession } from './native-session-follow.ts'
 
 const address = z.object({ kind: z.literal('session'), sessionId }).strict()
 const window = z.object({ maxMessages: z.number().int().min(1).max(500).optional(),
@@ -32,7 +33,6 @@ function selectedExecutionTarget(hints: z.infer<typeof prompt>['clientHints']) {
 const envelope = z.object({ type: z.literal('client-request'), rpcId: z.string().min(1).max(128),
   method: z.string().min(1).max(120), payload: z.object({ args: z.unknown() }).strict() }).strict()
 const projectionRequest = z.object({ sessionId }).strict()
-const afterResult = z.object({ events: z.array(z.object({ seq: z.number().int().nonnegative() }).passthrough()) }).strict()
 const workspace = z.object({ workspaceId: z.uuid(), path: z.string(), title: z.string(),
   sessionIds: z.array(sessionId), createdAt: z.string(), updatedAt: z.string() }).strict()
 const workspaceBaseline = z.object({ items: z.array(workspace),
@@ -123,7 +123,14 @@ async function sendNativeBytes(response: ServerResponse, rpcId: string, raw: unk
   response.end(body)
 }
 
-/** Register one browser-authenticated native Session carrier without exposing Host-local Remotes. */
+/** Register one browser-authenticated native Session carrier without exposing Host-local Remotes.
+ * @param ctx - Host plugin lifetime and configured Platform runtime.
+ * @param auth - browser credential verification at the Platform.
+ * @param origin - permitted Host authority for HTTP and WebSocket requests.
+ * @param pollMs - configured interval for live reads and temporary Session read failures.
+ * @param maxRequestBytes - maximum native HTTP request body size.
+ * @param maxStreams - maximum concurrent native logical streams.
+ */
 export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin: string,
   pollMs: number, maxRequestBytes: number, maxStreams: number): void {
   const tokens = new WeakMap<PeerScope, string>()
@@ -278,22 +285,7 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
       }
       case 'session/follow': {
         const input = withRequest(follow).parse(args).request
-        const snapshot = z.object({ cursor: z.number().int().min(-1) }).passthrough().parse(
-          await call('/native/sessions/snapshot', token, input),
-        )
-        yield snapshot
-        let cursor = snapshot.cursor
-        while (!signal.aborted) {
-          const next = afterResult.parse(await call('/native/sessions/after', token, { sessionId: input.address.sessionId, cursor }))
-          for (const event of next.events) {
-            if (event.seq !== cursor + 1) throw new PlatformError(503, 'native_history_gap')
-            cursor = event.seq
-            yield { type: 'event', event }
-          }
-          if (next.events.length) continue
-          try { await delay(pollMs, undefined, { signal }) }
-          catch (error) { if (signal.aborted) return; throw error }
-        }
+        yield* followNativeSession((path, request) => call(path, token, request), input, pollMs, signal)
         return
       }
       case 'workspaceFiles/changes': {

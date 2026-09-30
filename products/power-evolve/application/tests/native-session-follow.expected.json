@@ -1,0 +1,25 @@
+[
+  {
+    "type": "snapshot",
+    "cursor": 0,
+    "records": [],
+    "hasMore": false,
+    "projections": { "asOfSeq": 0, "values": {} }
+  },
+  {
+    "type": "event",
+    "event": { "seq": 1, "type": "user/message", "data": { "text": "wait for the approved result" } }
+  },
+  {
+    "type": "event",
+    "event": {
+      "seq": 2,
+      "type": "platform/result",
+      "data": { "actionId": "960968a7-ac55-4f25-b81e-19538534a92a", "exitCode": 0 }
+    }
+  },
+  {
+    "type": "event",
+    "event": { "seq": 3, "type": "assistant/message", "data": { "text": "recovery-finished" } }
+  }
+]
