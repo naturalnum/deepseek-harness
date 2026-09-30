@@ -2,7 +2,7 @@
 
 ## 状态与范围
 
-此记录描述通用 Streamable HTTP MCP 的原生客户端验收，不替代 [S6 固定连接器试用](TRIAL-S6-FINAL-QA.md)。两个账号已用真实 DeepSeek 完成多连接、同名工具选择、可信审批和连续工具调用；当前 V23 数据已备份、恢复到独立数据库，并通过恢复后的原生客户端重新登录与连接检查。MCP 独立版本冻结仍待完成。原 [S8 稳定试用](TRIAL-S8-NATIVE.md)保持独立。
+此记录描述通用 Streamable HTTP MCP 的原生客户端验收，不替代 [S6 固定连接器试用](TRIAL-S6-FINAL-QA.md)。两个账号已用真实 DeepSeek 完成多连接、同名工具选择、可信审批和连续工具调用；当前 V23 数据已备份、恢复到独立数据库，并通过恢复后的原生客户端重新登录与连接检查。MCP 已固定为可按需启动的独立试用快照，启停方式见下节。原 [S8 稳定试用](TRIAL-S8-NATIVE.md)保持独立。
 
 本轮代码包含原生 Session 快照 `fbed71b517`、客户端错误提示 `2ba48cf1fd`、复用 PG 的试用启动器 `90ce5c2caf`、标准 SDK schema 适配 `beaafce507`、输出验证接线 `b36070fb4c`、原生工具变更协议适配 `6ed3f15307`，以及历史检查状态修复 `52010b8b4c`。官方 DSH 基线仍以 [baseline.json](baseline.json) 为准。
 
@@ -68,6 +68,28 @@
 
 部署适配 `1d49d2c2ef` 为 Platform 单独投影 MCP 配置、密钥及可选 CA，并按明确 origin／IP／端口生成出口规则；运行时与预检要求部署配置启用严格 origin 模式。上述本地检查不证明真实集群的 Secret 挂载、CNI 出口或生产 TLS 可达性；这些仍归 S7 物理部署验收。
 
+## 固定试用快照
+
+固定提交为 `bddb027682b223276f02e48c601596ca1117fda9`，本地标签为 `power-evolve-native-s6-remote-mcp-trial`。独立 checkout 位于 `/Users/jingchao/agent_work/main_agent/power-evolve-s6-stdio-mcp`，使用恢复库 `pe_mcp_restored_20260930`、schema 23 和私有目录 `~/.config/power-evolve/shared-host-s6-mcp-restored`。构建产物与 workspace 链接均属于该 checkout；原生静态资源逐文件核对哈希，开发分支后续变更不改变这份快照。
+
+以下为本机已验证命令，可从任意目录执行。控制器检查固定提交、源文件状态、运行产物和容器身份，启动时自动更新 PG 的动态映射端口；不会创建容器或镜像。它是本机快照辅助文件，不是通用部署入口。
+
+```sh
+/Users/jingchao/.nvm/versions/node/v22.22.1/bin/node /Users/jingchao/agent_work/main_agent/power-evolve-s6-stdio-mcp/.artifacts/power-evolve/s6-mcp-restored/snapshot-tools/fixed-trial.mjs start
+/Users/jingchao/.nvm/versions/node/v22.22.1/bin/node /Users/jingchao/agent_work/main_agent/power-evolve-s6-stdio-mcp/.artifacts/power-evolve/s6-mcp-restored/snapshot-tools/fixed-trial.mjs status
+/Users/jingchao/.nvm/versions/node/v22.22.1/bin/node /Users/jingchao/agent_work/main_agent/power-evolve-s6-stdio-mcp/.artifacts/power-evolve/s6-mcp-restored/snapshot-tools/fixed-trial.mjs stop
+```
+
+试用步骤：
+
+1. 执行 `start`，打开 `http://127.0.0.1:19650/`；从上述私有目录的 `users.json` 在本机安全读取 Alice／Bob 测试登录信息，不复制到聊天或文档。
+2. 登录 Alice，打开已有会话，查看查询结果及授权撤销历史；进入“插件 → 远程 MCP”，应显示自己的两个连接。
+3. 退出后登录 Bob，查看原会话 11／7 CNY 的双连接比较及自己的两个连接；不应看到 Alice 的清单。
+4. 如需新任务，指定本人连接查询 notebook；需要确认时在独立可信入口 `http://127.0.0.1:19651/approval` 登录同一账号审核。此步骤使用真实模型，合成 MCP 目标只返回测试商品数据；先前完整调用证据见上文，本次固定快照复验只重新登录、读取历史和清单。
+5. 用完执行 `stop`。四个试用进程正常关闭；共享测试 PG 无其他客户端时随之停止，数据库和文件保留。有其他客户端时保留 PG，本轮以一个真实 PG 连接验证了该分支。
+
+本次固定 checkout 的四角色健康启动、两用户原生登录及界面读取、持有共享 PG 客户端时保留数据库、释放后正常停库均已验证。证据、截图和日志位于该 checkout 的 `.artifacts/power-evolve/s6-mcp-restored/`，其中 `freeze-evidence.json` 记录结果，`snapshot-tools/preparation.json` 记录产物哈希。当前默认停止此快照以降低笔记本负载；稳定 S8 页面及数据库继续保留，闲置 k3s 集群按需启动。启动异常可先查看日志，再运行 `status`；控制器拒绝未知进程时应核对 PID 和端口归属，不能盲目终止。
+
 ## 本机环境与恢复
 
 私有配置位于 `~/.config/power-evolve/shared-host-s6-mcp-browser`，其中 `trial-env.sh` 仅保存环境选择及文件路径，账号和模型凭据保存在同目录的私有文件中。数据库 `pe_mcp_browser_20260930` 使用已有 `pe-s6-mcp-dev-postgres` 容器，与 S8 的数据库、文件根及 schema 分开。该测试容器使用动态映射端口，重启后必须按 `docker port pe-s6-mcp-dev-postgres 5432/tcp` 核对私有 `database-url` 和 `trial-env.sh`；不能沿用旧端口。此次重启由 32961 变为 32962，修正配置后完成备份恢复。
@@ -83,4 +105,4 @@ node products/power-evolve/scripts/trial.mjs stop
 
 启动后的 Host 为 `http://127.0.0.1:19650/`，可信平台为 19651，受控便签目标为 19652，合成 MCP 目标为 19653。日志及原生静态资源快照位于 `.artifacts/power-evolve/s6-mcp-browser/`。临时服务只在验收时启动，用完执行 `stop`，保留数据库、文件和独立的 S8 稳定试用。使用原生界面登录 `users.json` 中的独立测试账号，凭据不要复制到验收记录或聊天中。
 
-当前临时应用和测试 PG 均已停止，保留稳定 S8 所需的数据库和集群两个容器。下一步核对 [MCP 验收次序](S6-CONNECTOR-COMPLETION.md#验收次序)及发布产物，固定可按需启动的 MCP 版本；随后完成 SSH 私钥、编辑删除、普通命令与故障对账。当前不宣称 S6 通用连接器完成。
+开发环境与上述固定快照共用端口，不能同时启动。后续按 [连接器验收次序](S6-CONNECTOR-COMPLETION.md#验收次序)完成 SSH 私钥、编辑删除、普通命令与故障对账；MCP 快照不代表 S6 通用连接器全部完成。
