@@ -12,11 +12,18 @@ import { extractSkillPackage, MAX_ARCHIVE_BYTES, type ExtractedSkillFile } from 
 import { readNativeSkillMetadata } from './skill-metadata.ts'
 import { skillPackageManifest, skillPackageVersion, verifyPublishedSkillPackage } from './skill-package-manifest.ts'
 import { BuiltinSkillCatalog, type BuiltinSkillRelease } from './builtin-skills.ts'
+import { publishReportSuite, type ReportSuiteSource } from './report-skill-suite.ts'
 
 const SHA256 = /^[a-f0-9]{64}$/u
 const TICKET_LIFETIME_MS = 5 * 60_000
 const MANIFEST_MAX_BYTES = 128 * 1024
 const RESOURCE_MAX_BYTES = 256 * 1024
+const REPORT_SKILLS = [
+  { id: 'builtin.report-workflow-orchestrator', folder: 'report-workflow-orchestrator' },
+  { id: 'builtin.power-grid-technical-report-writer', folder: 'power-grid-technical-report-writer' },
+  { id: 'builtin.report-reviewer', folder: 'report-reviewer' },
+  { id: 'builtin.tech-report-writer', folder: 'tech-report-writer' },
+] as const
 
 type Selection = z.infer<typeof skillSelection>
 type SkillResource = { kind: 'list'; files: { path: string; size: number; sha256: string }[] }
@@ -615,8 +622,9 @@ export class SkillService {
     }
   }
 
-  private async activeSelectedSkill(userId: string, selection: Selection): Promise<SkillRow> {
-    const result = await this.pool.query<SkillRow>(
+  private async activeSelectedSkill(userId: string, selection: Selection,
+    database: Pool | PoolClient = this.pool): Promise<SkillRow> {
+    const result = await database.query<SkillRow>(
       `SELECT ${skillColumns} FROM ${skillJoin} WHERE s.id=$1 AND s.user_id=$2`, [selection.skillId, userId])
     const skill = result.rows[0]
     if (!skill || skill.kind !== selection.kind) throw new PlatformError(404, 'skill_not_found')
@@ -627,10 +635,11 @@ export class SkillService {
     return skill
   }
 
-  private async selectedPackageVersion(userId: string, selected: Selection): Promise<PackageVersionRow> {
+  private async selectedPackageVersion(userId: string, selected: Selection,
+    database: Pool | PoolClient = this.pool): Promise<PackageVersionRow> {
     if (!selected.packageDigest || !selected.manifestDigest || !selected.version)
       throw new PlatformError(503, 'skill_package_unavailable')
-    const result = await this.pool.query<PackageVersionRow>(
+    const result = await database.query<PackageVersionRow>(
       `SELECT * FROM pe_skill_package_versions WHERE user_id=$1 AND archive_digest=$2 AND manifest_digest=$3`,
       [userId, selected.packageDigest, selected.manifestDigest])
     const version = result.rows[0]
@@ -701,6 +710,51 @@ export class SkillService {
     if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/u.test(text))
       throw new PlatformError(415, 'skill_resource_not_text')
     return { kind: 'text', path: relative, text, sha256: item.sha256 }
+  }
+
+  /** Resolve one accepted package path; build the pinned four-Skill report layout on demand. */
+  async runtimeResourceBase(userId: string, selection: readonly Selection[], skillId: string):
+    Promise<{ runtimePath: string | null; suiteAvailable: boolean }> {
+    const selected = selection.find(item => item.skillId === skillId)
+    if (!selected) throw new PlatformError(404, 'skill_not_found')
+    await this.activeSelectedSkill(userId, selected)
+    if (selected.kind === 'text') return { runtimePath: null, suiteAvailable: false }
+    const requestedVersion = await this.selectedPackageVersion(userId, selected)
+    const userRoot = await this.packageUserRoot(userId)
+    const packageRoot = join(userRoot, 'sha256', requestedVersion.archive_digest)
+    const requestedFiles = manifestFiles(requestedVersion.manifest, requestedVersion.archive_digest)
+    await verifyPublishedSkillPackage(packageRoot, requestedVersion.manifest, requestedFiles)
+    const ordinary = { runtimePath: `/opt/power-evolve/skills/sha256/${requestedVersion.archive_digest}/skill`,
+      suiteAvailable: false }
+    const releases = await this.builtinCatalog.list()
+    const report = REPORT_SKILLS.map(role => ({ ...role, release: releases.find(item => item.id === role.id)! }))
+    const requestedRole = report.find(role => role.release.archiveDigest === requestedVersion.archive_digest
+      && role.release.version === requestedVersion.version)
+    if (!requestedRole) return ordinary
+    const roles = report.map(role => ({ ...role, selected: selection.find(item => item.kind === 'package'
+      && item.packageDigest === role.release.archiveDigest && item.version === role.release.version) }))
+    if (roles.some(role => !role.selected)) return ordinary
+    const key = hash(JSON.stringify({ userId, roles: roles.map(role => ({ catalogId: role.id,
+      skillId: role.selected!.skillId, version: role.selected!.version,
+      archiveDigest: role.selected!.packageDigest, manifestDigest: role.selected!.manifestDigest })) }))
+    return transaction(this.pool, async client => {
+      await client.query('SELECT pg_advisory_xact_lock(72819534,hashtext($1))', [`${userId}:${key}`])
+      const sources: ReportSuiteSource[] = []
+      for (const role of roles) {
+        const item = role.selected!
+        await this.activeSelectedSkill(userId, item, client)
+        const version = await this.selectedPackageVersion(userId, item, client)
+        const receipt = await client.query(
+          `SELECT 1 FROM pe_builtin_skill_install_requests
+           WHERE user_id=$1 AND catalog_id=$2 AND package_version_id=$3`, [userId, role.id, version.id])
+        if (!receipt.rowCount) return ordinary
+        sources.push({ folder: role.folder, packageRoot: join(userRoot, 'sha256', version.archive_digest),
+          manifest: version.manifest, files: manifestFiles(version.manifest, version.archive_digest) })
+      }
+      await publishReportSuite(userRoot, join(this.packageRoot!, '.staging'), key, sources)
+      return { runtimePath: `/opt/power-evolve/skills/report-suites/${key}/${requestedRole.folder}`,
+        suiteAvailable: true }
+    })
   }
 
   /** Resolve exactly the accepted version; later upgrades and revocation do not rewrite an Operation. */
