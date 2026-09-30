@@ -21,8 +21,10 @@ import { Scheduler } from './scheduler.ts'
 import { mcpManagementRequests, mcpManagementEndpoints, mcpTicketValue } from '../mcp-management-rpc.ts'
 import { sshManagementRequests, sshManagementEndpoints, sshConnectionValue,
   sshCredentialTicketValue, sshMutationReceiptValue } from '../ssh-management-contracts.ts'
+import { ACCOUNT_ROUTES, accountCapabilitiesValue, accountEmptyRequest } from '../account-contracts.ts'
 
 const requests = { ...mcpManagementRequests, ...sshManagementRequests, me: z.object({}).strict(), logout: z.object({}).strict(), modelsList: z.object({}).strict(), settingsUpdate: settingsUpdateRequest,
+  accountCapabilities: accountEmptyRequest,
   create: createRequest, list: listRequest, prompt: promptRequest, page: pageRequest, follow: pageRequest,
   filesList: sessionFilesListRequest, filesRead: sessionFileReadRequest, filesPut: sessionFilePutRequest,
   skillsList: z.object({}).strict(), skillsRead: skillRequest,
@@ -58,6 +60,7 @@ const requests = { ...mcpManagementRequests, ...sshManagementRequests, me: z.obj
   devicesRevoke: z.object({ deviceId: z.uuid() }).strict(),
   directoriesRevoke: z.object({ directoryId: z.uuid() }).strict() }
 const endpoint = { ...mcpManagementEndpoints, ...sshManagementEndpoints, me: '/identity/me', logout: '/identity/logout', modelsList: '/identity/models', settingsUpdate: '/identity/settings/update',
+  accountCapabilities: ACCOUNT_ROUTES.capabilities,
   create: '/sessions/create', list: '/sessions/list', prompt: '/sessions/prompt', page: '/sessions/page',
   filesList: '/files/session/list', filesRead: '/files/session/read', filesPut: '/files/session/put',
   skillsList: '/skills/list', skillsRead: '/skills/read',
@@ -97,6 +100,9 @@ class ProductRemote extends TypertRemoteService {
   @Remote me(request: z.infer<typeof requests.me>) { return this.call('me', request) }
   @Remote logout(request: z.infer<typeof requests.logout>) { return this.call('logout', request) }
   @Remote modelsList(request: z.infer<typeof requests.modelsList>) { return this.call('modelsList', request) }
+  @Remote async accountCapabilities(request: z.infer<typeof requests.accountCapabilities>) {
+    return accountCapabilitiesValue.parse(await this.call('accountCapabilities', request))
+  }
   @Remote settingsUpdate(request: z.infer<typeof settingsUpdateRequest>) { return this.call('settingsUpdate', request) }
   @Remote mcpConnectionsList(request: z.infer<typeof requests.mcpConnectionsList>) {
     return this.call('mcpConnectionsList', request)

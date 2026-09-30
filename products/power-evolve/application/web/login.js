@@ -10,8 +10,16 @@ element('login').addEventListener('submit', async event => {
   element('error').textContent = ''
   try {
     const response = await fetch('/identity/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: element('username').value, password: element('password').value }) })
-    if (!response.ok) throw new Error(t.loginError)
-    const { token } = await response.json()
+    const result = await response.json()
+    if (!response.ok) {
+      if (response.status === 403 && result?.error === 'password_change_required') {
+        element('password').value = ''
+        location.replace('/account#password')
+        return
+      }
+      throw new Error(t.loginError)
+    }
+    const { token } = result
     const { hostUrl } = await (await fetch('/config')).json()
     element('password').value = ''
     const exchange = await fetch(`${hostUrl}/auth/exchange`, {
