@@ -12,6 +12,7 @@ import { mcpLeaseOwnerId } from '../lib/mcp-contracts.js'
 import { initializeDatabase, transaction } from '../lib/platform/database.js'
 import { McpConnectionService } from '../lib/platform/mcp-connections.js'
 import { mcpConnectionsSchemaV22 } from '../lib/platform/mcp-connections-schema.js'
+import { mcpCatalogDigest, mcpCatalogTools } from '../lib/platform/mcp-catalog.js'
 
 const privateDir = process.env.PE_PRIVATE_DIR ?? join(homedir(), '.config/power-evolve/shared-host-s6-mcp-dev')
 const databaseUrl = (await readFile(join(privateDir, 'database-url'), 'utf8')).trim()
@@ -68,6 +69,34 @@ async function fixture(t, overrides = {}) {
     return { ...result, snapshot }
   }
   return { pool, alice, bob, sessions, key, service, discover }
+}
+
+/** Insert retained history at its original timestamps without updating immutable snapshots. */
+async function retainedDraft(pool, user, sessionId, { ageMinutes = 120, withCheck = false, live = false } = {}) {
+  const draftId = randomUUID(), checkId = randomUUID(), catalogId = randomUUID(), workerId = ownerId()
+  const raw = [{ name: 'retained', inputSchema: { type: 'object' } }]
+  await transaction(pool, async client => {
+    await client.query(`INSERT INTO pe_mcp_drafts(id,user_id,session_id,configuration,configuration_revision,
+      created_at,expires_at) VALUES($1,$2,$3,$4::json,1,
+        clock_timestamp()-$5::double precision*interval '1 minute',
+        clock_timestamp()+$6::double precision*interval '1 minute')`,
+    [draftId, user.userId, sessionId, JSON.stringify({ displayName: 'Retained fixture',
+      serverUrl: 'https://fixture.example.test/mcp', serverName: `c_${draftId.replaceAll('-', '')}`,
+      authentication: 'none', headerNames: [], secretConfigured: false }), ageMinutes, live ? 60 : -5])
+    await client.query(`INSERT INTO pe_mcp_catalog_versions(id,user_id,draft_id,configuration_revision,
+      catalog_digest,tools,created_at) VALUES($1,$2,$3,1,$4,$5::json,
+        clock_timestamp()-$6::double precision*interval '1 minute')`,
+    [catalogId, user.userId, draftId, mcpCatalogDigest(raw), JSON.stringify(mcpCatalogTools(draftId, raw)), ageMinutes])
+    if (withCheck) await client.query(`INSERT INTO pe_mcp_checks(id,user_id,session_id,draft_id,
+      configuration_revision,state,catalog_id,lease_owner,lease_epoch,lease_until,created_at,expires_at)
+      VALUES($1,$2,$3,$4,1,$5,$6,$7,$8,
+        CASE WHEN $9::boolean THEN clock_timestamp()+interval '5 minutes' ELSE NULL END,
+        clock_timestamp()-$10::double precision*interval '1 minute',
+        clock_timestamp()+$11::double precision*interval '1 minute')`,
+    [checkId, user.userId, sessionId, draftId, live ? 'running' : 'succeeded', catalogId,
+      live ? workerId : null, live ? 1 : 0, live, ageMinutes, live ? 60 : -5])
+  })
+  return { draftId, checkId, catalogId, lease: { checkId, ownerId: workerId, epoch: 1 } }
 }
 
 test('metadata CRUD isolates multiple connections, serializes CAS, preserves legacy and durable replay', async t => {
@@ -362,7 +391,61 @@ test('deployment limits serialize quotas and expire/clean independent drafts wit
   await new Promise(resolve => setTimeout(resolve, 350))
   await assert.rejects(service.upload(ticket.ticket, Readable.from([bytes])), { code: 'invalid_mcp_ticket' })
   assert.equal(await service.claimCheck(ownerId()), null)
-  assert.deepEqual(await service.pruneChecks(alice), { checks: 1, drafts: 1 })
-  assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_mcp_drafts')).rows[0].n, 0)
+  assert.deepEqual(await service.pruneChecks(alice), { checks: 1, drafts: 0 })
+  assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_mcp_drafts')).rows[0].n, 1)
+  await assert.rejects(service.startDraftCheck(alice, { requestId: randomUUID(), sessionId: sessions.get(alice.userId),
+    configuration: configuration() }), { code: 'mcp_draft_limit' })
+  assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_operations')).rows[0].n, 0)
+})
+
+test('expired drafts free live capacity while short retention preserves the hourly creation limit per owner', async t => {
+  const { pool, alice, bob, sessions, service } = await fixture(t, { maxDrafts: 1, maxDraftsPerHour: 2,
+    checkLifetimeMs: 120, draftLifetimeMs: 180, checkLeaseMs: 50, retentionMs: 5 })
+  const request = user => ({ requestId: randomUUID(), sessionId: sessions.get(user.userId), configuration: configuration() })
+  const first = await service.startDraftCheck(alice, request(alice))
+  await new Promise(resolve => setTimeout(resolve, 210))
+  assert.deepEqual(await service.pruneChecks(alice), { checks: 1, drafts: 0 })
+  const second = await service.startDraftCheck(alice, request(alice))
+  assert.notEqual(second.draftId, first.draftId)
+  await new Promise(resolve => setTimeout(resolve, 210))
+  assert.deepEqual(await service.pruneChecks(alice), { checks: 1, drafts: 0 })
+  await assert.rejects(service.startDraftCheck(alice, request(alice)), { code: 'mcp_draft_limit' })
+  assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_mcp_drafts WHERE user_id=$1', [alice.userId])).rows[0].n, 2)
+  assert.deepEqual(await service.prunePendingChecks(1), { users: 0, checks: 0, drafts: 0 })
+  const other = await service.startDraftCheck(bob, request(bob))
+  assert.equal(other.state, 'queued')
+  assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_operations')).rows[0].n, 0)
+})
+
+test('bounded cleanup skips protected recent drafts and busy owners, deletes old catalogs, and keeps live checks', async t => {
+  const { pool, alice, bob, sessions, service } = await fixture(t, { retentionMs: 5 })
+  for (const limit of [0, -1, 1.5, NaN]) await assert.rejects(service.prunePendingChecks(limit), /batch size/)
+  const [recentOwner, oldOwner] = [alice, bob].sort((left, right) => left.userId.localeCompare(right.userId))
+  const recent = await retainedDraft(pool, recentOwner, sessions.get(recentOwner.userId), { ageMinutes: 10 })
+  const old = await retainedDraft(pool, oldOwner, sessions.get(oldOwner.userId), { withCheck: true })
+  const blocker = await pool.connect()
+  await blocker.query('BEGIN')
+  try {
+    await blocker.query('SELECT id FROM pe_users WHERE id=$1 FOR NO KEY UPDATE', [oldOwner.userId])
+    assert.deepEqual(await service.prunePendingChecks(1), { users: 0, checks: 0, drafts: 0 })
+  } finally { await blocker.query('ROLLBACK'); blocker.release() }
+  assert.deepEqual(await service.prunePendingChecks(1), { users: 1, checks: 1, drafts: 1 })
+  await assert.rejects(service.getCatalog(oldOwner, old.catalogId), { code: 'mcp_catalog_not_found' })
+  await assert.rejects(service.check(oldOwner, old.checkId), { code: 'mcp_check_not_found' })
+  assert.equal((await service.getCatalog(recentOwner, recent.catalogId)).draftId, recent.draftId)
+  assert.deepEqual(await service.prunePendingChecks(1), { users: 0, checks: 0, drafts: 0 })
+
+  const live = await retainedDraft(pool, recentOwner, sessions.get(recentOwner.userId), { withCheck: true, live: true })
+  const historical = await retainedDraft(pool, recentOwner, sessions.get(recentOwner.userId), { withCheck: true })
+  const secondOwnerHistory = await retainedDraft(pool, oldOwner, sessions.get(oldOwner.userId))
+  assert.deepEqual(await service.prunePendingChecks(1), { users: 1, checks: 1, drafts: 1 })
+  await assert.rejects(service.getCatalog(recentOwner, historical.catalogId), { code: 'mcp_catalog_not_found' })
+  assert.equal((await service.check(recentOwner, live.checkId)).state, 'running')
+  await service.renewCheck(live.lease)
+  assert.equal((await service.checkSnapshot(live.lease)).resourceId, live.draftId)
+  assert.equal((await service.getCatalog(oldOwner, secondOwnerHistory.catalogId)).draftId, secondOwnerHistory.draftId)
+  assert.deepEqual(await service.prunePendingChecks(1), { users: 1, checks: 0, drafts: 1 })
+  assert.deepEqual(await service.prunePendingChecks(2), { users: 0, checks: 0, drafts: 0 })
+  assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_mcp_drafts')).rows[0].n, 2)
   assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_operations')).rows[0].n, 0)
 })

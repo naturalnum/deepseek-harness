@@ -227,8 +227,10 @@ export class McpConnectionService {
     if (input.purpose === 'draft') {
       await this.session(client, user, input.sessionId)
       await this.checkCapacity(client, user)
-      const count = await client.query<{ total: string; recent: string }>(`SELECT count(*) AS total,
-        count(*) FILTER(WHERE created_at>now()-interval '1 hour') AS recent FROM pe_mcp_drafts WHERE user_id=$1`, [user.userId])
+      const count = await client.query<{ total: string; recent: string }>(`SELECT
+        count(*) FILTER(WHERE expires_at>clock_timestamp()) AS total,
+        count(*) FILTER(WHERE created_at>clock_timestamp()-interval '1 hour') AS recent
+        FROM pe_mcp_drafts WHERE user_id=$1`, [user.userId])
       if (Number(count.rows[0]!.total) >= this.options.maxDrafts
         || Number(count.rows[0]!.recent) >= this.options.maxDraftsPerHour) throw new PlatformError(429, 'mcp_draft_limit')
       const id = mcpDraftId.parse(resourceId), name = `c_${id.replaceAll('-', '')}`
@@ -237,8 +239,8 @@ export class McpConnectionService {
       const sealed = credentialRevision === null ? null : this.cipher.seal({ kind: 'draft', userId: user.userId,
         resourceId, configurationRevision: 1, credentialRevision }, secret)
       await client.query(`INSERT INTO pe_mcp_drafts(id,user_id,session_id,source_connection_id,source_revision,
-        configuration,configuration_revision,credential_revision,credential_sealed,expires_at)
-        VALUES($1,$2,$3,$4,$5,$6::json,1,$7,$8,now()+$9::double precision*interval '1 millisecond')`,
+        configuration,configuration_revision,credential_revision,credential_sealed,created_at,expires_at)
+        VALUES($1,$2,$3,$4,$5,$6::json,1,$7,$8,clock_timestamp(),now()+$9::double precision*interval '1 millisecond')`,
       [id, user.userId, input.sessionId, previous?.id ?? null, previous?.revision ?? null,
         JSON.stringify(configuration), credentialRevision, sealed, this.options.draftLifetimeMs])
       const item = await this.insertCheck(client, user, input.sessionId!, { connectionId: null, draftId: id,
@@ -695,27 +697,57 @@ export class McpConnectionService {
     return this.material(row.user_id, mcpResourceId.parse(row.id), row.configuration_revision,
       row.credential_revision, row.configuration, await this.credentials(client, row))
   }
-  /** Remove expired terminal discovery state after retention; formal versions and audit receipts remain.
+  /** Remove expired discovery state after retention, preserving the one-hour draft frequency history.
    * @param user Platform-authenticated discovery owner.
    * @returns Counts of deleted checks and drafts for this owner.
    */
   async pruneChecks(user: Owner): Promise<{ checks: number; drafts: number }> {
     return transaction(this.pool, async client => {
       await this.owner(client, user)
-      await client.query(`UPDATE pe_mcp_checks SET state='expired',error_code='mcp_check_expired',
-        lease_owner=NULL,lease_until=NULL,updated_at=now() WHERE user_id=$1
-        AND state IN ('queued','running') AND expires_at<=now()`, [user.userId])
-      const removed = await client.query(`DELETE FROM pe_mcp_checks WHERE user_id=$1
-        AND state NOT IN ('queued','running') AND expires_at<now()-$2::double precision*interval '1 millisecond'
-        RETURNING draft_id`, [user.userId, this.options.retentionMs])
-      await client.query(`DELETE FROM pe_mcp_catalog_versions k WHERE k.user_id=$1 AND k.draft_id IS NOT NULL
-        AND NOT EXISTS(SELECT 1 FROM pe_mcp_checks c WHERE c.draft_id=k.draft_id)
-        AND EXISTS(SELECT 1 FROM pe_mcp_drafts d WHERE d.id=k.draft_id
-          AND d.expires_at<now()-$2::double precision*interval '1 millisecond')`, [user.userId, this.options.retentionMs])
-      const drafts = await client.query(`DELETE FROM pe_mcp_drafts d WHERE d.user_id=$1
-        AND d.expires_at<now()-$2::double precision*interval '1 millisecond'
-        AND NOT EXISTS(SELECT 1 FROM pe_mcp_checks c WHERE c.draft_id=d.id) RETURNING id`, [user.userId, this.options.retentionMs])
-      return { checks: removed.rowCount ?? 0, drafts: drafts.rowCount ?? 0 }
+      return this.pruneOwnedChecks(client, user)
     })
+  }
+
+  /** Clean a bounded set of owners with deletable records; busy owners and recent drafts cannot block others.
+   * @param maxUsers Positive deployment limit on owners processed in this transaction.
+   * @returns Aggregate counts of selected owners and deleted checks and drafts.
+   */
+  async prunePendingChecks(maxUsers: number): Promise<{ users: number; checks: number; drafts: number }> {
+    if (!Number.isSafeInteger(maxUsers) || maxUsers < 1) throw new Error('Invalid MCP cleanup batch size')
+    return transaction(this.pool, async client => {
+      const owners = await client.query<{ id: UserId }>(`SELECT u.id FROM pe_users u WHERE
+        EXISTS(SELECT 1 FROM pe_mcp_checks c WHERE c.user_id=u.id
+          AND c.expires_at<clock_timestamp()-$1::double precision*interval '1 millisecond')
+        OR EXISTS(SELECT 1 FROM pe_mcp_drafts d WHERE d.user_id=u.id
+          AND d.expires_at<clock_timestamp()-$1::double precision*interval '1 millisecond'
+          AND d.created_at<=clock_timestamp()-interval '1 hour'
+          AND NOT EXISTS(SELECT 1 FROM pe_mcp_checks c WHERE c.draft_id=d.id))
+        ORDER BY u.id LIMIT $2 FOR NO KEY UPDATE OF u SKIP LOCKED`, [this.options.retentionMs, maxUsers])
+      const counts = { users: owners.rows.length, checks: 0, drafts: 0 }
+      for (const owner of owners.rows) {
+        const removed = await this.pruneOwnedChecks(client, { userId: owner.id })
+        counts.checks += removed.checks; counts.drafts += removed.drafts
+      }
+      return counts
+    })
+  }
+
+  private async pruneOwnedChecks(client: PoolClient, user: Owner): Promise<{ checks: number; drafts: number }> {
+    await client.query(`UPDATE pe_mcp_checks SET state='expired',error_code='mcp_check_expired',
+      lease_owner=NULL,lease_until=NULL,updated_at=now() WHERE user_id=$1
+      AND state IN ('queued','running') AND expires_at<=clock_timestamp()`, [user.userId])
+    const removed = await client.query(`DELETE FROM pe_mcp_checks WHERE user_id=$1
+      AND state NOT IN ('queued','running') AND expires_at<clock_timestamp()-$2::double precision*interval '1 millisecond'
+      RETURNING draft_id`, [user.userId, this.options.retentionMs])
+    await client.query(`DELETE FROM pe_mcp_catalog_versions k WHERE k.user_id=$1 AND k.draft_id IS NOT NULL
+      AND NOT EXISTS(SELECT 1 FROM pe_mcp_checks c WHERE c.draft_id=k.draft_id)
+      AND EXISTS(SELECT 1 FROM pe_mcp_drafts d WHERE d.id=k.draft_id
+        AND d.expires_at<clock_timestamp()-$2::double precision*interval '1 millisecond'
+        AND d.created_at<=clock_timestamp()-interval '1 hour')`, [user.userId, this.options.retentionMs])
+    const drafts = await client.query(`DELETE FROM pe_mcp_drafts d WHERE d.user_id=$1
+      AND d.expires_at<clock_timestamp()-$2::double precision*interval '1 millisecond'
+      AND d.created_at<=clock_timestamp()-interval '1 hour'
+      AND NOT EXISTS(SELECT 1 FROM pe_mcp_checks c WHERE c.draft_id=d.id) RETURNING id`, [user.userId, this.options.retentionMs])
+    return { checks: removed.rowCount ?? 0, drafts: drafts.rowCount ?? 0 }
   }
 }
