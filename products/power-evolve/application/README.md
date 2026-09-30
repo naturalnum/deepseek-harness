@@ -48,6 +48,8 @@ Schema 20 adds owner-bound catalog installation receipts, including retry IDs th
 
 ## Recovery and limits
 
+Schema 21 stores native events and cloud, desktop, and connector result payloads as PostgreSQL `json`. These opaque values preserve escaped NUL and other JSON string contents that `jsonb` cannot represent. Read whole values through the driver; do not cast them to `jsonb` or extract arbitrary text in SQL. Ownership, ordering, state and indexes use separate typed columns. Apply the migration with Platform writers stopped and a verified backup; older Platform builds refuse this schema, so returning to an older build requires restoring its pre-upgrade database and files.
+
 Platform-origin continuation input retains up to 256 KiB of JSON-encoded text, further bounded to half `maxEventBytes`. Larger results become explicitly labeled head/tail excerpts; the original Operation input and execution result remain unchanged in PG. Claims apply the same bound to already queued results after restart. User prompts remain limited to 16,384 characters.
 
 A client receives `accepted` only after the operation commits. An unconsumed input can be delivered after restart. Consumed input with no completed turn is closed as interrupted by native DSH restoration and reported as failed. It is not automatically sent to the model again. A lost completion response is reconciled from the recorded turn when the lease is reclaimed.

@@ -137,6 +137,18 @@ test('custom no-Sandbox storage restores old, disabled, revoked and report-suite
     const user = { userId: randomUUID(), username: 'alice' }
     await sourcePool.query('INSERT INTO pe_users(id,username,password_hash,settings) VALUES($1,$2,$3,$4)',
       [user.userId, user.username, 'fixture-only', { model: 'fixture', maxTokens: 100, revision: 1 }])
+    // Terminal rows are storage fixtures; this backup drill executes no commands.
+    const workspaceId = randomUUID(), sessionId = randomUUID(), operationId = randomUUID(), executionId = randomUUID()
+    const output = { stdout: '\u0000表😀', stderr: 'literal \\u0000', exitCode: 0 }
+    await sourcePool.query('INSERT INTO pe_workspaces(id,user_id) VALUES($1,$2)', [workspaceId, user.userId])
+    await sourcePool.query(`INSERT INTO pe_sessions(id,user_id,workspace_id,create_request_id,header)
+      VALUES($1,$2,$3,$4,'{}')`, [sessionId, user.userId, workspaceId, randomUUID()])
+    await sourcePool.query(`INSERT INTO pe_operations(id,session_id,request_id,input,settings,state)
+      VALUES($1,$2,$3,'backup storage fixture','{}','completed')`, [operationId, sessionId, randomUUID()])
+    await sourcePool.query('INSERT INTO pe_events(session_id,seq,event) VALUES($1,0,$2)', [sessionId, output])
+    await sourcePool.query(`INSERT INTO pe_cloud_executions(id,user_id,session_id,operation_id,call_id,command,cwd,
+      request_digest,state,result) VALUES($1,$2,$3,$4,'fixture','true','','digest','succeeded',$5)`,
+    [executionId, user.userId, sessionId, operationId, output])
     const skills = new SkillService(sourcePool, source.workspaceRoot, source.skillLibraryRoot)
     await skills.init()
     const reports = []
@@ -195,7 +207,10 @@ test('custom no-Sandbox storage restores old, disabled, revoked and report-suite
     await assert.rejects(restored.readSelected(user.userId, revoked, revoked.skillId), { code: 'skill_revoked' })
     assert.deepEqual(await restored.runtimeResourceBase(user.userId, reports, reports[0].skillId), suite)
     assert.deepEqual(await inventory(trialDataPath(target, 'skill-packages')), originalTree)
-    assert.equal((await targetPool.query('SELECT count(*)::integer AS n FROM pe_cloud_executions')).rows[0].n, 0)
+    assert.equal((await targetPool.query('SELECT count(*)::integer AS n FROM pe_cloud_executions')).rows[0].n, 1)
+    assert.deepEqual((await targetPool.query('SELECT result FROM pe_cloud_executions WHERE id=$1', [executionId])).rows[0].result, output)
+    assert.deepEqual((await targetPool.query('SELECT event FROM pe_events WHERE session_id=$1', [sessionId])).rows[0].event, output)
+    assert.equal((await targetPool.query('SELECT count(*)::integer AS n FROM pe_sandbox_instances')).rows[0].n, 0)
     const legacyManifest = { format: 1, sourceSharedRoot: source.sharedRoot }
     assert.deepEqual(backupSourceRoots(legacyManifest), [source.sharedRoot])
     const legacyPrivate = join(root, 'legacy-target')

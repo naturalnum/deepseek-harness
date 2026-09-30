@@ -60,7 +60,7 @@ test('S6 Notes plugin migrates, isolates users, fences egress, and reconciles a 
 
     await initializeDatabase(pool)
     await initializeDatabase(pool)
-    assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 20)
+    assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 21)
     const plugins = new PluginService(pool)
     const expected = { id: 'notes', title: '受控便签', category: 'tools', kind: 'builtin',
       enabled: true, revision: 1, requiresApproval: true }
@@ -100,7 +100,7 @@ test('S6 Notes plugin migrates, isolates users, fences egress, and reconciles a 
         if (!notes.has(actionId)) {
           posts++
           notes.set(actionId, { actionId, owner: request.owner, text: request.text,
-            createdAt: new Date().toISOString() })
+            createdAt: 'fixture-metadata\u0000表😀 literal \\u0000' })
         }
         if (dropPostOnce) { dropPostOnce = false; res.destroy(); return }
         send(200, notes.get(actionId))
@@ -150,5 +150,7 @@ test('S6 Notes plugin migrates, isolates users, fences egress, and reconciles a 
       item.actionId === uncertain.actionId && item.state === 'succeeded'), 'reconciled remote result')
     assert.equal(posts, 1)
     assert.equal(notes.get(uncertain.actionId).owner, alice.userId)
+    const stored = (await pool.query('SELECT result FROM pe_connector_actions WHERE id=$1', [uncertain.actionId])).rows[0].result
+    assert.equal(stored.createdAt, notes.get(uncertain.actionId).createdAt)
     assert.deepEqual(await plugins.list(bob), { items: [expected] })
   })

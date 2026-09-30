@@ -13,7 +13,7 @@ import { execFileSync, spawn } from 'node:child_process'
 import { setTimeout as delay } from 'node:timers/promises'
 import { createRequire } from 'node:module'
 import yaml from 'js-yaml'
-import { recordedConversation, recordedSshContinuation, compareRecordedSession, sshDirectory, recordedSandboxContinuation, sandboxDirectory } from './session-snapshot.mjs'
+import { recordedConversation, recordedSshContinuation, compareRecordedSession, sshDirectory, recordedSandboxContinuation, sandboxDirectory, recordedLosslessOutput, losslessDirectory } from './session-snapshot.mjs'
 import { SshActionCipher } from '../lib/platform/ssh-execute.js'
 import { encodeOfficeCommand } from '../lib/host/office.js'
 const require = createRequire(new URL('../package.json', import.meta.url))
@@ -73,6 +73,7 @@ test('shared host: isolated conversations, files, skills and approved remote act
   for (const [name, value] of Object.entries({ 'database-url': url.href, 'worker-token': workerToken, 'model-key': providerKey,
     'connector-key': connectorKey, 'users.json': JSON.stringify(users) })) await writeFile(join(temporary, name), value, { mode: 0o600 })
   const recorded = await recordedConversation()
+  const lossless = await recordedLosslessOutput()
   const calls = []
   const remoteNotes = []
   let dropNextRemoteResponse = false
@@ -121,6 +122,7 @@ test('shared host: isolated conversations, files, skills and approved remote act
       if (prompt === 'HOLD') { sawHold = true; held.resolve(); await hold.promise }
       const toolName = prompt.startsWith('TOOL_APPEND:') ? 'trial_notes_append' : prompt === 'TOOL_LIST' ? 'trial_notes_list' : null
       const text = prompt.includes('continuation-output-fixture') ? 'Processed execution output.'
+        : prompt === lossless.input ? lossless.output
         : prompt === recorded.input ? recorded.output : `reply:${prompt}`
       res.writeHead(200, { 'content-type': 'text/event-stream' })
       for (const event of toolName ? [
@@ -641,6 +643,22 @@ test('shared host: isolated conversations, files, skills and approved remote act
     await stop(host.process); await stop(platform.process)
     platform = await start('platform'); host = await start('host', platform.url)
   })
+  await t.test('native model output preserves NUL through PG, restart, and recorded replay', async () => {
+    const session = await create(0)
+    await send(0, session, lossless.input)
+    const completed = await finished(0, session)
+    const reply = completed.events.find(event => event.type === 'assistant/message')
+    assert.equal(reply.data.message.content[0].text, lossless.output)
+    assert(lossless.output.includes('\u0000'))
+    assert(lossless.output.includes('\\u0000'))
+    await compareRecordedSession(completed, lossless, losslessDirectory)
+    await stop(host.process); await stop(platform.process)
+    platform = await start('platform'); host = await start('host', platform.url)
+    assert.deepEqual((await page(0, session)).events, completed.events)
+    assert.equal((await rpcResponse(1, 'page', { sessionId: session, after: -1, limit: 200 })).status, 404)
+    assert.equal(calls.filter(call => call.messages.some(message =>
+      message.content.some(block => block.text === lossless.input))).length, 1)
+  })
   await t.test('POSIX files preserve bytes and reject cross-user paths, links and stale writes', async () => {
     const firstBytes = Buffer.from([0,1,2,255,32,10])
     const id = randomUUID(), path = 'notes/probe.bin'
@@ -807,8 +825,8 @@ test('shared host: isolated conversations, files, skills and approved remote act
       const status=await (await fetch(host.url+'/health')).json()
       return status.activeAgents===0 && status.loadedSessions===0 && status.activeGrants===0
     },'idle Agent and Session release')
-    const count=await pool.query("SELECT count(*) FROM pe_events WHERE event->>'type'='tool/call'")
-    assert.equal(count.rows[0].count,'0')
+    const stored=await pool.query('SELECT event FROM pe_events')
+    assert.equal(stored.rows.filter(row=>row.event.type==='tool/call').length,0)
     for(const name of ['host','platform']) {
       const manifest=JSON.parse(await readFile(join(product,name,'package.json'),'utf8'))
       assert(!Object.keys(manifest.dependencies).some(name=>/sandbox|subprocess|terminal|fs-local|mcp-server/.test(name)))

@@ -45,7 +45,7 @@ test('S6 SSH credential ticket keeps password out of Host, encrypts it, and scop
     finally { client.release() }
     await initializeDatabase(pool)
     await initializeDatabase(pool)
-    assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 20)
+    assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 21)
 
     const key = randomBytes(32).toString('base64url')
     const ssh = new SshConnectionService(pool, key, 'fixture.example.test:2222')

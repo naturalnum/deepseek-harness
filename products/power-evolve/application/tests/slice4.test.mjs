@@ -9,6 +9,7 @@ import { createRequire } from 'node:module'
 import { setTimeout as delay } from 'node:timers/promises'
 import { ExecutionService } from '../lib/platform/executions.js'
 import { initializeDatabase } from '../lib/platform/database.js'
+import * as migrations from '../lib/platform/schema.js'
 import { KubernetesError } from '../lib/platform/kubernetes.js'
 import { kubernetesPodStopStatus } from '../lib/platform/pod-stop-status.js'
 
@@ -43,12 +44,16 @@ test('cloud execution persists acceptance and reconciles runner outcomes', { tim
   await admin.query(`CREATE DATABASE "${name}"`)
   const url = new URL(databaseUrl); url.pathname = `/${name}`
   const pool = new Pool({ connectionString: url.href })
+  const workers = []
   t.after(async () => {
+    await Promise.allSettled(workers.map(worker => worker.close()))
     await pool.end()
     await admin.query(`DROP DATABASE "${name}"`)
     await admin.end()
   })
-  await initializeDatabase(pool)
+  await pool.query(migrations.schema)
+  await pool.query('INSERT INTO pe_schema(version) VALUES(1)')
+  for (let version = 2; version <= 20; version++) await pool.query(migrations[`schemaV${version}`])
   const userId = randomUUID(), otherId = randomUUID(), sessionId = randomUUID(), otherSessionId = randomUUID()
   const operationId = randomUUID(), otherOperationId = randomUUID()
   const slowSessionId = randomUUID(), slowOperationId = randomUUID()
@@ -78,6 +83,7 @@ test('cloud execution persists acceptance and reconciles runner outcomes', { tim
     return { ...result.rows[0], operation_id: selected.operation, execution_target: { kind: 'cloud' } }
   } }
   const runnerInstanceId = randomUUID(), podUid = randomUUID()
+  const rawOutput = 'done\u0000表😀 literal \\u0000'
   const records = new Map(), posted = []
   const sandbox = {
     name: id => `pe-sb-${id.replaceAll('-', '')}`,
@@ -109,13 +115,17 @@ test('cloud execution persists acceptance and reconciles runner outcomes', { tim
       posted.push(value)
       const state = value.command === 'wait' ? 'running' : value.command === 'fail' ? 'failed' : 'succeeded'
       const result = { id: value.id, state, digest: digest(value), exitCode: state === 'running' ? null : state === 'failed' ? 1 : 0,
-        stdout: state === 'succeeded' ? 'done' : '', stderr: '', stdoutTruncated: false,
+        stdout: value.command === 'echo yes' ? rawOutput : state === 'succeeded' ? 'done' : '', stderr: '', stdoutTruncated: false,
         stderrTruncated: false, timedOut: false, instanceId: runnerInstanceId }
       records.set(value.id, result)
       return result
     },
   }
-  const service = () => new ExecutionService(tasks, sandbox, 4, 50, 1000, 2000)
+  const service = () => {
+    const worker = new ExecutionService(tasks, sandbox, 4, 50, 1000, 2000)
+    workers.push(worker)
+    return worker
+  }
   const identity = { userId, username: 'first', settings: {} }
   const other = { userId: otherId, username: 'other', settings: {} }
   const first = service()
@@ -127,15 +137,31 @@ test('cloud execution persists acceptance and reconciles runner outcomes', { tim
   assert.equal((await first.list(other)).items.length, 0)
   await assert.rejects(first.cancel(other, accepted.executionId), /execution_not_found/)
 
-  // No worker ran before this restart. A replacement discovers the committed row.
+  // V20 cannot settle the observed NUL output. Migration must reconcile that exact execution.
+  first.start()
+  await eventually(async () => (await first.list(identity)).items.some(value =>
+    value.executionId === accepted.executionId && value.state === 'uncertain'
+      && value.errorCode === 'sandbox_or_runner_unavailable'), 'V20 NUL result storage failure')
+  await first.close()
+  assert.equal(posted.length, 1)
+  assert.equal((await pool.query("SELECT count(*) FROM pe_operations WHERE source='sandbox_result'")).rows[0].count, '0')
+  await initializeDatabase(pool)
+  await initializeDatabase(pool)
+  assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 21)
   const replacement = service(); replacement.start()
   const finished = await eventually(async () => {
     const item = (await replacement.list(identity)).items.find(value => value.executionId === accepted.executionId)
     return item?.state === 'succeeded' ? item : null
   }, 'accepted command after restart')
-  assert.equal(finished.result.stdout, 'done')
+  assert.equal(finished.result.stdout, rawOutput)
   assert.equal(posted.length, 1)
   assert.equal((await pool.query('SELECT count(*) FROM pe_operations WHERE source=$1', ['sandbox_result'])).rows[0].count, '1')
+  const stored = (await pool.query('SELECT result FROM pe_cloud_executions WHERE id=$1', [accepted.executionId])).rows[0].result
+  assert.equal(stored.stdout, rawOutput)
+  const continued = (await pool.query('SELECT input FROM pe_operations WHERE source_execution_id=$1', [accepted.executionId])).rows[0].input
+  assert(continued.includes(JSON.stringify(stored)))
+  assert(!continued.includes('\u0000'))
+  assert.equal((await replacement.propose('current-grant', 'call-one', 'echo yes', '')).result.stdout, rawOutput)
 
   const waiting = await replacement.propose('current-grant', 'call-wait', 'wait', '')
   await eventually(async () => (await replacement.list(identity)).items.some(value =>
@@ -173,15 +199,16 @@ test('cloud execution persists acceptance and reconciles runner outcomes', { tim
   // Two platform workers may share PG. A slow Sandbox start must retain its lease
   // so the other worker cannot claim the same command while the first is active.
   const slowSandbox = { ...sandbox, async ensureReady(id, owner, assertLease) {
-    if (id === slowSessionId) await delay(1500)
+    if (id === slowSessionId) await delay(5000)
     return sandbox.ensureReady(id, owner, assertLease)
   } }
-  const slowFirst = new ExecutionService(tasks, slowSandbox, 2, 50, 10000, 2000, 450)
-  const slowSecond = new ExecutionService(tasks, slowSandbox, 2, 50, 10000, 2000, 450)
+  const slowFirst = new ExecutionService(tasks, slowSandbox, 2, 50, 10000, 2000, 3000)
+  const slowSecond = new ExecutionService(tasks, slowSandbox, 2, 50, 10000, 2000, 3000)
+  workers.push(slowFirst, slowSecond)
   const slowCommand = await slowFirst.propose('slow-grant', 'slow-call', 'slow-start-once', '')
   slowFirst.start(); slowSecond.start()
   await eventually(async () => (await slowFirst.list(identity)).items.some(value =>
-    value.executionId === slowCommand.executionId && value.state === 'succeeded'), 'slow Sandbox start', 5000)
+    value.executionId === slowCommand.executionId && value.state === 'succeeded'), 'slow Sandbox start', 15000)
   assert.equal((await pool.query('SELECT attempts FROM pe_cloud_executions WHERE id=$1',
     [slowCommand.executionId])).rows[0].attempts, 1)
   assert.equal(posted.filter(value => value.command === 'slow-start-once').length, 1)

@@ -640,3 +640,12 @@ CREATE TABLE pe_builtin_skill_install_requests (
 CREATE INDEX pe_builtin_skill_install_requests_user ON pe_builtin_skill_install_requests(user_id,catalog_id);
 UPDATE pe_schema SET version=20 WHERE version=19;
 `
+
+/** Preserve opaque native events and command results, including escaped NUL characters. */
+export const schemaV21 = `
+ALTER TABLE pe_cloud_executions ALTER COLUMN result TYPE json USING result::json;
+ALTER TABLE pe_desktop_executions ALTER COLUMN result TYPE json USING result::json;
+ALTER TABLE pe_connector_actions ALTER COLUMN result TYPE json USING result::json;
+ALTER TABLE pe_events ALTER COLUMN event TYPE json USING event::json;
+UPDATE pe_schema SET version=21 WHERE version=20;
+`

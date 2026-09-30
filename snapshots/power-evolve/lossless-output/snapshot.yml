@@ -1,0 +1,8 @@
+version: 1
+scenario: lossless-output
+profile: power-evolve-host
+composition: shared-host-platform-pg
+recording: authored
+header:
+  class: power-evolve-lossless-output
+  pin: true

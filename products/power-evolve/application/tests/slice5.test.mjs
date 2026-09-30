@@ -80,14 +80,19 @@ test('desktop device ownership, file transfer and durable result', { timeout: 60
   await assert.rejects(devices.claim(enrollment.token, randomUUID(), accepted.executionId), /device_instance_changed/)
   await devices.claim(enrollment.token, instanceId, accepted.executionId)
   await devices.claim(enrollment.token, instanceId, accepted.executionId)
-  const result = { state: 'succeeded', exitCode: 0, stdout: 'local\n', stderr: '',
+  const result = { state: 'succeeded', exitCode: 0, stdout: 'local\u0000表😀\n', stderr: 'literal \\u0000',
     stdoutTruncated: false, stderrTruncated: false, timedOut: false }
   const completed = await devices.finish(enrollment.token, instanceId, accepted.executionId, result)
   assert.equal(completed.state, 'succeeded')
+  assert.deepEqual(completed.result, result)
   assert.equal((await devices.finish(enrollment.token, instanceId, accepted.executionId, result)).state, 'succeeded')
   await assert.rejects(devices.finish(enrollment.token, instanceId, accepted.executionId,
     { ...result, stdout: 'different' }), /result_conflict/)
   assert.equal((await pool.query("SELECT count(*) FROM pe_operations WHERE source='desktop_result'")).rows[0].count, '1')
+  assert.deepEqual((await pool.query('SELECT result FROM pe_desktop_executions WHERE id=$1', [accepted.executionId])).rows[0].result, result)
+  const continuation = (await pool.query("SELECT input FROM pe_operations WHERE source='desktop_result'")).rows[0].input
+  assert(continuation.includes(JSON.stringify(result)))
+  assert(!continuation.includes('\u0000'))
 
   const queued = await devices.propose('alice-grant', 'call-queued', 'echo never', '')
   await devices.revokeDirectory(alice, dir.directoryId)

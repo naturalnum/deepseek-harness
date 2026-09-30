@@ -7,6 +7,7 @@ const directory = new URL('../../../../snapshots/power-evolve/conversation/', im
 const canonical = new URL('session.v4.jsonl', directory)
 const sshDirectory = new URL('../ssh-execute-continuation/', directory)
 const sandboxDirectory = new URL('../sandbox-output-continuation/', directory)
+const losslessDirectory = new URL('../lossless-output/', directory)
 const record = process.env.PE_RECORD_SNAPSHOT === '1'
 export async function recordedConversation() {
   const manifest = yaml.load(await readFile(new URL('snapshot.yml', directory), 'utf8'))
@@ -87,3 +88,20 @@ export async function recordedSandboxContinuation() {
   }
 }
 export { sandboxDirectory }
+
+/** Replay the exact model text, including NUL and literal escape sequences. */
+export async function recordedLosslessOutput() {
+  const manifest = yaml.load(await readFile(new URL('snapshot.yml', losslessDirectory), 'utf8'))
+  assert.equal(manifest.scenario, 'lossless-output')
+  try {
+    const rows = (await readFile(new URL('session.v4.jsonl', losslessDirectory), 'utf8'))
+      .trim().split('\n').map(line => JSON.parse(line))
+    return { rows, input: rows.find(row => row.type === 'user/message').data.content[0].text,
+      output: rows.find(row => row.type === 'assistant/message').data.message.content[0].text }
+  } catch (error) {
+    if (record && error.code === 'ENOENT') return { rows: null, input: 'lossless-output-fixture',
+      output: 'Observed output: \u0000表😀; literal \\u0000; complete.' }
+    throw error
+  }
+}
+export { losslessDirectory }
