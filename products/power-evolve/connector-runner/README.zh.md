@@ -20,4 +20,6 @@ Runner 要求连续三次 TCP 禁止目标探测被拒绝才进入就绪；后�
 
 平台使用导出的 `requestDigest(unsignedCall, podToken)` 计算 `digest`。算法对不含 `digest` 的调用正文递归按键排序，再用 Pod 令牌计算 HMAC-SHA256；凭据正文也参与计算。返回的摘要不会成为离线猜测密码的公开校验值。同一 ID 和摘要返回已有状态；同一 ID 的不同摘要返回冲突。Runner 默认在生命周期中只接受一个不同的调用 ID。平台在 POST 前查询 GET；恢复时比较 Pod UID 和 `instanceId`，不自动重试结果不明的 SSH 写操作。每个 Pod 只执行一次批准调用，使用新令牌并设置短寿命。
 
-SSH 命令输入上限为 16 KiB，标准输出与错误输出合计 128 KiB，超时上限为 60 秒。STDIO MCP 文本上限为 8 KiB，超时上限为 30 秒。Runner 不提供文件传输、PTY、端口转发、本地 Shell 或任意进程型 MCP 命令；这些能力需分别审查和开发。
+SSH 失败保留 `state:'failed'` 和 `errorCode`，并包含 `effectMayHaveOccurred`。Runner 尝试 `exec` 前为 `false`，包括认证与指纹失败；调用 `exec` 时变为 `true`。此后的断开、超时、取消和输出超限始终保留 `true`；未分类的执行异常也保守返回 `true`。命令通道关闭时，若未观察到退出码或非空退出信号，则以 `ssh_exit_missing` 失败。GET 与重复 POST 返回相同的已记录效果位。对于执行调用，效果位为 `true` 或旧 Runner 缺少该字段时，平台必须将命令结果视为不确定。STDIO 响应保持现有结构。
+
+整个 HTTP JSON 正文上限为 256 KiB（`MAX_CALL_BODY_BYTES`），包括 JSON 转义；超过上限时在占用调用 ID 前返回 413。各 UTF-8 字段上限保持不变：命令 16 KiB、密码 4096 字节、私钥 7168 字节、私钥口令 1024 字节。SSH 标准输出与错误输出合计上限为 128 KiB，超时上限为 60 秒。STDIO MCP 文本上限为 8 KiB，超时上限为 30 秒。Runner 不提供文件传输、PTY、端口转发、本地 Shell 或任意进程型 MCP 命令；这些能力需分别审查和开发。

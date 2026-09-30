@@ -52,6 +52,7 @@ test('Runner fences process calls on egress readiness, instance and stable diges
     await new Promise(resolve => setTimeout(resolve, 50))
   }
   assert.equal(state.state, 'succeeded')
+  assert.equal('effectMayHaveOccurred' in state, false)
   assert.deepEqual(state.result, { kind: 'mcp.stdio.whoami', text: `user:${unsigned.accountId}` })
   const conflict = { ...unsigned, accountId: randomUUID() }
   assert.equal((await post({ ...conflict, digest: requestDigest(conflict, token) })).status, 409)

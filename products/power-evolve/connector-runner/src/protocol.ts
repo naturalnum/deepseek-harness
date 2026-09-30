@@ -1,7 +1,10 @@
-/** Bounded, explicit wire format for one SSH connector call. */
+/** Bounded, explicit wire format for SSH and fixed STDIO connector calls. */
 import { createHmac, timingSafeEqual } from 'node:crypto'
 import { domainToASCII } from 'node:url'
 import { isIP } from 'node:net'
+
+/** Entire JSON request cap, allowing maximum SSH fields even after sixfold string escaping. */
+export const MAX_CALL_BODY_BYTES = 256 * 1024
 
 export type SshCredential =
   | { readonly kind: 'password'; readonly password: string }

@@ -2,7 +2,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import { randomUUID, timingSafeEqual } from 'node:crypto'
 import { EgressGate } from './egress.ts'
-import { CallValidationError, destinationKey, parseCallInput, validCallDigest,
+import { CallValidationError, MAX_CALL_BODY_BYTES, destinationKey, parseCallInput, validCallDigest,
   type CallInput, type CallResult } from './protocol.ts'
 import { SshFailure, type SshTransport } from './transport.ts'
 import { StdioFailure, StdioMcpTransport } from './stdio.ts'
@@ -14,6 +14,7 @@ interface CallRecord {
   state: CallState
   result?: CallResult
   errorCode?: string
+  effectMayHaveOccurred?: boolean
 }
 
 export interface RunnerOptions {
@@ -34,7 +35,6 @@ export interface ConnectorRunner {
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
-const MAX_BODY_BYTES = 16_384
 
 function send(response: ServerResponse, status: number, value: unknown): void {
   const body = JSON.stringify(value)
@@ -54,14 +54,14 @@ async function body(request: IncomingMessage): Promise<unknown> {
   if (!/^application\/json(?:;\s*charset=utf-8)?$/iu.test(request.headers['content-type'] ?? '')) {
     throw new CallValidationError('invalid_content_type')
   }
-  if (Number(request.headers['content-length'] ?? 0) > MAX_BODY_BYTES) {
+  if (Number(request.headers['content-length'] ?? 0) > MAX_CALL_BODY_BYTES) {
     throw new CallValidationError('request_too_large')
   }
   const chunks: Buffer[] = []
   let length = 0
   for await (const chunk of request) {
     length += chunk.length
-    if (length > MAX_BODY_BYTES) throw new CallValidationError('request_too_large')
+    if (length > MAX_CALL_BODY_BYTES) throw new CallValidationError('request_too_large')
     chunks.push(chunk)
   }
   try { return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown }
@@ -88,19 +88,24 @@ export function createConnectorRunner(options: RunnerOptions): ConnectorRunner {
   let closingWork: Promise<void> | undefined
   const view = (record: CallRecord) => ({ callId: record.callId, instanceId, digest: record.digest,
     state: record.state, ...(record.result === undefined ? {} : { result: record.result }),
-    ...(record.errorCode === undefined ? {} : { errorCode: record.errorCode }) })
+    ...(record.errorCode === undefined ? {} : { errorCode: record.errorCode }),
+    ...(record.effectMayHaveOccurred === undefined ? {} : { effectMayHaveOccurred: record.effectMayHaveOccurred }) })
   const run = (record: CallRecord, input: CallInput): void => {
     const controller = new AbortController()
     controllers.add(controller)
     const call = input.kind === 'mcp.stdio.whoami'
       ? (options.stdioTransport ?? new StdioMcpTransport()).call(input, controller.signal)
-      : options.transport.call(input, controller.signal)
+      : Promise.resolve().then(() => options.transport.call(input, controller.signal))
     const work = call.then(result => {
       record.state = 'succeeded'; record.result = result
     }, error => {
       record.state = 'failed'
       record.errorCode = error instanceof SshFailure || error instanceof StdioFailure ? error.code
         : input.kind === 'mcp.stdio.whoami' ? 'mcp_process_failed' : 'ssh_network_error'
+      if (input.kind !== 'mcp.stdio.whoami') {
+        record.effectMayHaveOccurred = error instanceof SshFailure ? error.effectMayHaveOccurred
+          : input.kind === 'ssh.execute'
+      }
     }).finally(() => { controllers.delete(controller); active.delete(work) })
     active.add(work)
   }

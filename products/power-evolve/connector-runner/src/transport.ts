@@ -3,8 +3,9 @@ import { createHash, timingSafeEqual } from 'node:crypto'
 import ssh2, { type ClientChannel, type ConnectConfig } from 'ssh2'
 import type { CallResult, SshCallInput } from './protocol.ts'
 
+/** Failures before exec have no command effect; once exec is attempted this flag stays true. */
 export class SshFailure extends Error {
-  constructor(readonly code: string) { super(code) }
+  constructor(readonly code: string, readonly effectMayHaveOccurred: boolean) { super(code) }
 }
 
 export interface SshTransport {
@@ -21,27 +22,32 @@ function sameFingerprint(actual: string, expected: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b)
 }
 
-function classified(error: unknown, mismatch: boolean, timedOut: boolean, aborted: boolean): SshFailure {
-  if (mismatch) return new SshFailure('ssh_host_key_mismatch')
-  if (timedOut) return new SshFailure('ssh_timeout')
-  if (aborted) return new SshFailure('ssh_cancelled')
-  if (error instanceof SshFailure) return error
-  const value = error as { code?: unknown; level?: unknown }
-  if (value.level === 'client-authentication') return new SshFailure('ssh_authentication_failed')
-  if (value.code === 'ECONNREFUSED') return new SshFailure('ssh_connection_refused')
-  if (value.code === 'ETIMEDOUT' || value.level === 'client-timeout') return new SshFailure('ssh_timeout')
-  return new SshFailure('ssh_network_error')
+function classified(error: unknown, mismatch: boolean, timedOut: boolean, aborted: boolean,
+  execAttempted: boolean): SshFailure {
+  const effectMayHaveOccurred = execAttempted || error instanceof SshFailure && error.effectMayHaveOccurred
+  if (mismatch) return new SshFailure('ssh_host_key_mismatch', effectMayHaveOccurred)
+  if (timedOut) return new SshFailure('ssh_timeout', effectMayHaveOccurred)
+  if (aborted) return new SshFailure('ssh_cancelled', effectMayHaveOccurred)
+  if (error instanceof SshFailure) return new SshFailure(error.code, effectMayHaveOccurred)
+  const level = typeof error === 'object' && error !== null && 'level' in error ? error.level : undefined
+  const code = typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined
+  if (level === 'client-authentication') return new SshFailure('ssh_authentication_failed', effectMayHaveOccurred)
+  if (code === 'ECONNREFUSED') return new SshFailure('ssh_connection_refused', effectMayHaveOccurred)
+  if (code === 'ETIMEDOUT' || level === 'client-timeout') return new SshFailure('ssh_timeout', effectMayHaveOccurred)
+  return new SshFailure('ssh_network_error', effectMayHaveOccurred)
 }
 
 /** ssh2 with credential-free discovery and pinned-key authentication. */
 export class Ssh2Transport implements SshTransport {
   async call(input: SshCallInput, signal: AbortSignal): Promise<CallResult> {
-    if (signal.aborted) throw new SshFailure('ssh_cancelled')
+    if (signal.aborted) throw new SshFailure('ssh_cancelled', false)
     return new Promise((resolve, reject) => {
       const client = new ssh2.Client()
       let settled = false
       let mismatch = false
       let timedOut = false
+      // Monotonic: invoking exec can have a remote effect even if no acknowledgement arrives.
+      let execAttempted = false
       let banner: string | null = null
       const finish = (error?: unknown, result?: CallResult): void => {
         if (settled) return
@@ -49,9 +55,9 @@ export class Ssh2Transport implements SshTransport {
         clearTimeout(timer)
         signal.removeEventListener('abort', abort)
         client.destroy()
-        if (error !== undefined) reject(classified(error, mismatch, timedOut, signal.aborted))
+        if (error !== undefined) reject(classified(error, mismatch, timedOut, signal.aborted, execAttempted))
         else if (result !== undefined) resolve(result)
-        else reject(new SshFailure('ssh_network_error'))
+        else reject(new SshFailure('ssh_network_error', execAttempted))
       }
       const abort = (): void => finish(new Error('cancelled'))
       const timer = setTimeout(() => { timedOut = true; finish(new Error('timeout')) }, input.timeoutMs)
@@ -92,7 +98,9 @@ export class Ssh2Transport implements SshTransport {
           return
         }
         if (input.kind === 'ssh.execute') {
-          execute(client, input.command, input.maxOutputBytes, finish)
+          try {
+            execute(client, input.command, input.maxOutputBytes, () => { execAttempted = true }, finish)
+          } catch (error) { finish(error) }
         }
       })
       try { client.connect(config) } catch (error) { finish(error) }
@@ -101,7 +109,9 @@ export class Ssh2Transport implements SshTransport {
 }
 
 function execute(client: ssh2.Client, command: string, maximum: number,
+  onDispatch: () => void,
   finish: (error?: unknown, result?: CallResult) => void): void {
+  onDispatch()
   client.exec(command, (error, channel: ClientChannel) => {
     if (error) { finish(error); return }
     const stdout: Buffer[] = [], stderr: Buffer[] = []
@@ -110,8 +120,7 @@ function execute(client: ssh2.Client, command: string, maximum: number,
       const data = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
       bytes += data.length
       if (bytes > maximum) {
-        channel.close()
-        finish(new SshFailure('ssh_output_limit'))
+        finish(new SshFailure('ssh_output_limit', true))
         return
       }
       target.push(data)
@@ -120,10 +129,15 @@ function execute(client: ssh2.Client, command: string, maximum: number,
     channel.stderr.on('data', (chunk: Buffer | string) => collect(stderr, chunk))
     channel.once('error', (remoteError: Error) => finish(remoteError))
     channel.on('exit', (code: number | null, remoteSignal?: string) => {
-      exitCode = code
-      exitSignal = remoteSignal ?? null
+      exitCode = code ?? null
+      exitSignal = remoteSignal || null
     })
-    channel.once('close', () => finish(undefined, { kind: 'ssh.execute', exitCode, signal: exitSignal,
-      stdout: Buffer.concat(stdout).toString('utf8'), stderr: Buffer.concat(stderr).toString('utf8') }))
+    channel.once('close', () => {
+      if (exitCode === null && exitSignal === null) {
+        finish(new SshFailure('ssh_exit_missing', true)); return
+      }
+      finish(undefined, { kind: 'ssh.execute', exitCode, signal: exitSignal,
+        stdout: Buffer.concat(stdout).toString('utf8'), stderr: Buffer.concat(stderr).toString('utf8') })
+    })
   })
 }
