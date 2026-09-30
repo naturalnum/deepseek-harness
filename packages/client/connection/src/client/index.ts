@@ -147,6 +147,11 @@ export interface ConnectionHandle {
   /** Reset retry progression and replace the current attempt immediately. */
   reconnect(): void
   /**
+   * Stop the active generation and its retry loop, withdrawing observable state.
+   * Repeated calls are harmless; reconnect remains idle until the loop owner starts again.
+   */
+  stop(): void
+  /**
    * Register the sole source defining Host generations. The source reports
    * ready only after its incremental listeners are attached.
    * @param source - long-lived generation source owned by the push carrier.
@@ -263,6 +268,9 @@ export function installConnection(ctx: Context, options: ConnectionInstallOption
     rpc,
     reconnect() {
       owner?.controller.reconnect()
+    },
+    stop() {
+      if (owner !== undefined) releaseOwner(owner)
     },
     registerGenerationSource(source) {
       if (generationSource !== undefined) {

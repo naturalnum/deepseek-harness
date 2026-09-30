@@ -55,6 +55,8 @@ An ended `$events` stream, a Remote stream error, a non-ready opening item, or a
 
 `ctx.connection.reconnect()` interrupts active work, resets the sequence, and starts retry 1 immediately. Browser `offline` aborts active work, publishes `disconnected`, and suspends automatic attempts; the next `online` transition resets the sequence and starts at the 500ms tier. Only a ready item publishes `connected`. Gateway mux owns no independent retry schedule.
 
+`ctx.connection.stop()` cancels the current generation and pending retries, removes the network watcher, and clears both observable sources. Repeated stops are harmless. `reconnect()` stays idle after a stop; the loop owner may explicitly start a fresh loop. A retained stop handle from an earlier loop cannot stop its replacement. Alternate Connection implementations and typed fixtures must provide this browser service method when upgrading.
+
 Set the Host Connection row's `config.recovery` to override retry caps, the growth factor, or handshake warning and cancellation times; the [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-client-connection) lists accepted fields. The Host validates these values and injects them into each served page. The Client validates the bootstrap data before providing Connection and uses those defaults when Gateway starts its loop; explicit `start()` timing overrides take precedence. The growth factor must be finite and at least one. Readiness, failure, cancellation, or a hard deadline that occurs before the warning cancels that warning. Reload the page after changing Host recovery configuration.
 
 

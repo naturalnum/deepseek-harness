@@ -30,6 +30,64 @@ async function mount(): Promise<ConnectionHandle> {
 }
 
 describe('Connection generation facts', () => {
+  it('public stop aborts the active source once and stale loop controls preserve a later owner', async () => {
+    const connection = await mount()
+    const signals: AbortSignal[] = []
+    connection.registerGenerationSource((signal, ready) => {
+      signals.push(signal)
+      ready({ home: '/home/fixture' })
+      return new Promise<void>((resolve) => { signal.addEventListener('abort', () => { resolve() }, { once: true }) })
+    })
+    connection.stop()
+    const first = connection.start({})
+    await vi.waitFor(() => { expect(connection.generation.getSnapshot()?.id).toBe(1) })
+    connection.stop()
+    connection.stop()
+    connection.reconnect()
+    expect(signals[0]?.aborted).toBe(true)
+    expect(signals).toHaveLength(1)
+    expect(connection.generation.getSnapshot()).toBeUndefined()
+    expect(connection.state.getSnapshot()).toBeUndefined()
+    const second = connection.start({})
+    try {
+      await vi.waitFor(() => { expect(connection.generation.getSnapshot()?.id).toBe(2) })
+      first.stop()
+      expect(connection.generation.getSnapshot()?.id).toBe(2)
+      expect(signals[1]?.aborted).toBe(false)
+    } finally { second.stop() }
+  })
+
+  it('public stop cancels pending reconnect without disabling ordinary recovery before the stop', async () => {
+    vi.useFakeTimers()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const connection = await mount()
+    let available = false
+    let attempts = 0
+    connection.registerGenerationSource((signal, ready) => {
+      attempts++
+      if (!available) return Promise.reject(new Error('network unavailable'))
+      ready({ home: '/home/recovered' })
+      return new Promise<void>((resolve) => { signal.addEventListener('abort', () => { resolve() }, { once: true }) })
+    })
+    const loop = connection.start({}, { backoffBaseMs: 10, backoffMaxMs: 10, generationReadyTimeoutMs: 100 })
+    try {
+      await vi.advanceTimersByTimeAsync(0)
+      available = true
+      await vi.advanceTimersByTimeAsync(10)
+      expect(attempts).toBe(2)
+      expect(connection.state.getSnapshot()).toBe('connected')
+      connection.reconnect()
+      available = false
+      await vi.advanceTimersByTimeAsync(0)
+      expect(connection.state.getSnapshot()).toBe('connecting')
+      connection.stop()
+      const stoppedAttempts = attempts
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(attempts).toBe(stoppedAttempts)
+      expect(connection.state.getSnapshot()).toBeUndefined()
+    } finally { loop.stop(); vi.useRealTimers(); warn.mockRestore() }
+  })
+
   it('publishes ready-frame Host facts and retracts them when the loop stops', async () => {
     const connection = await mount()
     const source: ConnectionGenerationSource = (signal, ready) => {
