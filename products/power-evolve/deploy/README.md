@@ -73,7 +73,7 @@ Platform startup validates the mounted material and strict origin mode. The read
 
 Before release, run on **two physical machines** with the production CNI, ingress controller, PostgreSQL, and NFS export:
 
-1. Confirm Host Pods have no database environment, Platform Secret, PVC, or Kubernetes API token; deny Host and runner ServiceAccounts access to Secrets and Pods. Confirm the Platform Role is limited to its runner namespace and excludes list/watch and cluster-scoped PV/RBAC verbs.
+1. Confirm Host Pods have no database environment, Platform Secret, PVC, or Kubernetes API token; deny Host and runner ServiceAccounts access to Secrets and Pods. Confirm the Platform Role is limited to its runner namespace: `list` is allowed only for Sandboxes so backup can verify their absence. Deny Sandbox listing in other namespaces, Pod listing/creation, Secret listing, `watch`, and cluster-scoped PV/RBAC verbs.
 2. Create a Sandbox on node A, write Workspace/Home/Git data and a Skill package, record its Pod UID, then stop it and verify kubelet-stop evidence. Start its replacement on node B; verify the same bytes and permissions, with no replay of an uncertain command. Check a second user cannot mount or read the first user's subpaths.
 3. Exercise Host and Platform replica failure/rejoin, authenticated login and approval, native Web streaming and a long response through both public TLS Origins. Check browser Origin/CSP behavior, no Ingress retry of a failed POST, and session recovery against external PostgreSQL.
 4. From each Pod, verify required DNS, PostgreSQL, model, connector, Kubernetes API, and runner proxy flows. Verify denied destinations and CNI policy enforcement, including the API server source IP actually seen at the runner.

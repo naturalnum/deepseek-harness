@@ -97,10 +97,13 @@ export function validateBundle(values, items) {
   const binding = resource(items, 'RoleBinding', 'power-evolve-platform-runner', runner)
   assert.deepEqual(binding.subjects, [{ kind: 'ServiceAccount', name: 'power-evolve-platform',
     namespace: app }])
+  assert.deepEqual(binding.roleRef, { apiGroup: 'rbac.authorization.k8s.io', kind: 'Role',
+    name: 'power-evolve-platform-runner' })
   const role = resource(items, 'Role', 'power-evolve-platform-runner', runner)
   assert.equal(items.some(item => item.kind === 'ClusterRole' || item.kind === 'ClusterRoleBinding'), false)
-  assert.equal(role.rules.some(rule => rule.verbs.includes('*') || rule.resources.includes('*')
-    || rule.verbs.includes('list') || rule.verbs.includes('watch')), false)
+  assert(isDeepStrictEqual(role.rules,
+    resource(expected, 'Role', 'power-evolve-platform-runner', runner).rules),
+  'Platform runner Role permissions differ')
   assert.equal(resource(items, 'ServiceAccount', 'power-evolve-runner', runner)
     .automountServiceAccountToken, false)
   for (const namespace of [app, runner]) resource(items, 'NetworkPolicy', 'default-deny', namespace)
@@ -264,15 +267,22 @@ export async function checkCluster(values, context) {
     assert.equal(pv.spec.nfs?.path, values.storage.nfsPath)
   }
   const platformSubject = `${app}:power-evolve-platform`
-  for (const [verb, resourceName] of [['create', 'sandboxes.agents.x-k8s.io'],
+  for (const [verb, resourceName] of [['list', 'sandboxes.agents.x-k8s.io'],
+    ['create', 'sandboxes.agents.x-k8s.io'],
     ['delete', 'sandboxes.agents.x-k8s.io'], ['patch', 'pods'], ['get', 'services/proxy']]) {
     assert(can(context, runner, platformSubject, verb, resourceName), `Platform lacks ${verb} ${resourceName}`)
   }
   for (const [namespace, subject, verb, resourceName] of [
     [runner, platformSubject, 'list', 'secrets'],
+    [runner, platformSubject, 'watch', 'sandboxes.agents.x-k8s.io'],
+    [runner, platformSubject, 'list', 'pods'],
+    [runner, platformSubject, 'create', 'pods'],
+    [app, platformSubject, 'list', 'sandboxes.agents.x-k8s.io'],
     [app, platformSubject, 'get', 'secrets'],
     [runner, `${app}:power-evolve-host`, 'get', 'secrets'],
+    [runner, `${app}:power-evolve-host`, 'list', 'sandboxes.agents.x-k8s.io'],
     [runner, `${runner}:power-evolve-runner`, 'get', 'pods'],
+    [runner, `${runner}:power-evolve-runner`, 'list', 'sandboxes.agents.x-k8s.io'],
   ]) assert.equal(can(context, namespace, subject, verb, resourceName), false,
     `${subject} has unexpected ${verb} ${resourceName} in ${namespace}`)
   return { ...remoteMcp, ...accounts, readyNodes: nodes.length, controllerReady: true, secretsPresent: true,

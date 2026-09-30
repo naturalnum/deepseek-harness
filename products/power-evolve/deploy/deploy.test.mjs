@@ -72,6 +72,47 @@ const mcpValues = () => ({ ...structuredClone(values), remoteMcp: {
 } })
 const resource = (items, kind, name) => items.find(item => item.kind === kind && item.metadata.name === name)
 
+test('Platform can list Sandboxes for backup only through its runner namespace Role', () => {
+  const items = buildManifests(values)
+  const role = resource(items, 'Role', 'power-evolve-platform-runner')
+  const binding = resource(items, 'RoleBinding', 'power-evolve-platform-runner')
+  assert.equal(role.metadata.namespace, values.runnerNamespace)
+  assert.deepEqual(role.rules, [
+    { apiGroups: ['agents.x-k8s.io'], resources: ['sandboxes'], verbs: ['get', 'list', 'create', 'delete'] },
+    { apiGroups: [''], resources: ['pods'], verbs: ['get', 'patch'] },
+    { apiGroups: [''], resources: ['services', 'secrets'], verbs: ['get', 'create', 'delete'] },
+    { apiGroups: [''], resources: ['services/proxy'], verbs: ['get', 'create'] },
+  ])
+  assert.equal(binding.metadata.namespace, values.runnerNamespace)
+  assert.deepEqual(binding.subjects, [{ kind: 'ServiceAccount', name: 'power-evolve-platform',
+    namespace: values.namespace }])
+  assert.equal(validateBundle(values, items).roleNamespace, values.runnerNamespace)
+})
+
+test('preflight rejects missing Sandbox listing, wider permissions and changed RoleBinding scope', () => {
+  const edits = [
+    (role) => role.rules[0].verbs.splice(1, 1),
+    (role) => role.rules[0].verbs.push('watch'),
+    (role) => role.rules[1].verbs.push('list'),
+    (role) => role.rules[1].verbs.push('create'),
+    (role) => role.rules[2].verbs.push('list'),
+    (role) => role.rules[0].apiGroups.push('*'),
+    (role) => role.rules[0].resources.push('*'),
+    (role) => role.rules[0].verbs.push('*'),
+    (role) => role.metadata.namespace = values.namespace,
+    (role, binding) => binding.metadata.namespace = values.namespace,
+    (role, binding) => binding.subjects[0].namespace = values.runnerNamespace,
+    (role, binding) => binding.roleRef.kind = 'ClusterRole',
+    (role, binding) => binding.roleRef.name = 'broader-role',
+  ]
+  for (const edit of edits) {
+    const items = buildManifests(values)
+    edit(resource(items, 'Role', 'power-evolve-platform-runner'),
+      resource(items, 'RoleBinding', 'power-evolve-platform-runner'))
+    assert.throws(() => validateBundle(values, items))
+  }
+})
+
 test('optional MCP deployment projects only private Platform files and pairs each IP with its own origin port', () => {
   const configured = mcpValues(), items = buildManifests(configured)
   assert.equal(validateBundle(configured, items).resources, 23)

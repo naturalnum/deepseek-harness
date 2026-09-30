@@ -216,7 +216,7 @@ export function buildManifests(input) {
     metadata: metadata(name, app), data })
   const role = { apiVersion: 'rbac.authorization.k8s.io/v1', kind: 'Role',
     metadata: metadata('power-evolve-platform-runner', runner), rules: [
-      { apiGroups: ['agents.x-k8s.io'], resources: ['sandboxes'], verbs: ['get', 'create', 'delete'] },
+      { apiGroups: ['agents.x-k8s.io'], resources: ['sandboxes'], verbs: ['get', 'list', 'create', 'delete'] },
       { apiGroups: [''], resources: ['pods'], verbs: ['get', 'patch'] },
       { apiGroups: [''], resources: ['services', 'secrets'], verbs: ['get', 'create', 'delete'] },
       { apiGroups: [''], resources: ['services/proxy'], verbs: ['get', 'create'] },

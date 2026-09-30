@@ -150,16 +150,24 @@ try {
   }
   const rbac = []
   for (const [accountNamespace, account, namespace, verb, resource, expected] of [
+    [app, 'power-evolve-platform', runner, 'list', 'sandboxes.agents.x-k8s.io', true],
     [app, 'power-evolve-platform', runner, 'create', 'sandboxes.agents.x-k8s.io', true],
     [app, 'power-evolve-platform', runner, 'patch', 'pods', true],
     [app, 'power-evolve-platform', runner, 'list', 'secrets', false],
+    [app, 'power-evolve-platform', runner, 'watch', 'sandboxes.agents.x-k8s.io', false],
+    [app, 'power-evolve-platform', runner, 'list', 'pods', false],
+    [app, 'power-evolve-platform', runner, 'create', 'pods', false],
+    [app, 'power-evolve-platform', app, 'list', 'sandboxes.agents.x-k8s.io', false],
+    [app, 'power-evolve-platform', external, 'list', 'sandboxes.agents.x-k8s.io', false],
     [app, 'power-evolve-platform', app, 'get', 'secrets', false],
     [app, 'power-evolve-host', runner, 'get', 'secrets', false],
+    [app, 'power-evolve-host', runner, 'list', 'sandboxes.agents.x-k8s.io', false],
     [runner, 'power-evolve-runner', runner, 'get', 'pods', false],
+    [runner, 'power-evolve-runner', runner, 'list', 'sandboxes.agents.x-k8s.io', false],
   ]) {
     const allowed = can(namespace, accountNamespace, account, verb, resource)
     assert.equal(allowed, expected, `${account} ${verb} ${resource}`)
-    rbac.push({ account, verb, resource, allowed })
+    rbac.push({ accountNamespace, account, namespace, verb, resource, allowed })
   }
   values.network.sandboxEgressCidrs = [`${ip('target')}/32`]
   apply(buildManifests(values).filter(item => item.kind === 'NetworkPolicy' && item.metadata.name === 'allow-runner'))

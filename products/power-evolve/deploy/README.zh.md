@@ -73,7 +73,7 @@ Platform 启动时校验挂载材料和严格 origin 模式。只读 `--ready` �
 
 发布前，在配有生产 CNI、ingress 控制器、PostgreSQL 和 NFS 导出的**两台物理机器**上执行：
 
-1. 确认 Host Pod 没有数据库环境变量、Platform Secret、PVC 或 Kubernetes API 令牌；确认 Host 和运行器 ServiceAccount 无权访问 Secret 和 Pod。确认 Platform Role 仅限其运行器命名空间，且不含 list/watch 以及集群范围的 PV/RBAC 动词权限。
+1. 确认 Host Pod 没有数据库环境变量、Platform Secret、PVC 或 Kubernetes API 令牌；确认 Host 和运行器 ServiceAccount 无权访问 Secret 和 Pod。确认 Platform Role 仅限其运行器命名空间：只有 Sandbox 允许 `list`，供备份核实没有残留实例。拒绝列出其他命名空间的 Sandbox、列出或创建 Pod、列出 Secret、`watch` 以及集群范围的 PV/RBAC 动词权限。
 2. 在节点 A 创建 Sandbox，写入 Workspace/Home/Git 数据和一个 Skill 包，记录其 Pod UID，再停止它并核对 kubelet 停止证据。在节点 B 启动替代实例，核对字节和权限完全一致，且不会重放结果不确定的命令。检查第二个用户无法挂载或读取第一个用户的子路径。
 3. 测试 Host 和 Platform 副本故障与重新加入、身份验证登录和审批、原生 Web 流式传输，以及经由两个公开 TLS Origin 的长响应。检查浏览器 Origin/CSP 行为、Ingress 不会重试失败的 POST，以及针对外部 PostgreSQL 的会话恢复。
 4. 从每个 Pod 验证所需 DNS、PostgreSQL、模型、连接器、Kubernetes API 和运行器代理流量；验证禁止访问的目标与 CNI 策略执行情况，包括运行器实际观察到的 API server 源 IP。
