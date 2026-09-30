@@ -17,6 +17,7 @@ import yaml from 'js-yaml'
 import { recordedConversation, recordedSshContinuation, compareRecordedSession, compareRecordedSshUncertainSession, recordedSandboxContinuation, sandboxDirectory, recordedLosslessOutput, losslessDirectory } from './session-snapshot.mjs'
 import { SshActionCipher } from '../lib/platform/ssh-execute.js'
 import { SshConnectionService } from '../lib/platform/ssh.js'
+import { TaskStore } from '../lib/platform/tasks.js'
 import { encodeOfficeCommand } from '../lib/host/office.js'
 const require = createRequire(new URL('../package.json', import.meta.url))
 const { Pool } = require('pg')
@@ -588,6 +589,48 @@ test('shared host: isolated conversations, files, skills and approved remote act
       aliceSocket.close()
       bobSocket.close()
     }
+  })
+  await t.test('recorded SSH selected connection context separates the UUID from the login destination', async () => {
+    const targetDirectory = new URL('../../../../snapshots/power-evolve/ssh-selected-context/', import.meta.url)
+    const manifest = yaml.load(await readFile(new URL('snapshot.yml', targetDirectory), 'utf8'))
+    assert.deepEqual(manifest, { version: 1, scenario: 'ssh-selected-context', profile: 'power-evolve-host',
+      composition: 'shared-host-platform-pg', recording: 'authored',
+      header: { class: 'power-evolve-ssh-selected-context', pin: true } })
+    let expected
+    try {
+      const rows = (await readFile(new URL('session.v4.jsonl', targetDirectory), 'utf8'))
+        .trim().split('\n').map(line => JSON.parse(line))
+      expected = { rows, targetDirectory,
+        input: rows.find(row => row.type === 'user/message' && row.data.source.kind === 'user').data.content[0].text }
+    } catch (error) {
+      if (process.env.PE_RECORD_SNAPSHOT !== '1' || error.code !== 'ENOENT') throw error
+      expected = { rows: null, targetDirectory, input: 'Show the selected SSH connections without proposing a command.' }
+    }
+    const session = await create(0), user = await rpc(0, 'me', {})
+    const connectionId = '00000000-0000-4000-8000-000000000121'
+    const connections = new SshConnectionService(pool, sshKey, 'fixture.example.test:2222')
+    const ticket = await connections.issueTicket(user, { requestId: connectionId, displayName: 'Snapshot SSH',
+      host: 'fixture.example.test', port: 2222, username: 'alice', hostKeySha256: `SHA256:${'A'.repeat(43)}`,
+      credentialKind: 'password', sizeBytes: 7, enabled: true }, 'http://127.0.0.1:19221')
+    await connections.upload(ticket.ticket, Readable.from([Buffer.from('fixture')]))
+    // Select real owned versions for this descriptor recording; no Runner dispatch is requested.
+    const admission = new TaskStore(pool, { maxEventBytes: 524288, leaseMs: 3000,
+      maxPendingPerUser: 8, maxActivePerUser: 1, sshEnabled: true })
+    await admission.accept(user, session, randomUUID(), expected.input)
+    const history = await finished(0, session)
+    const text = history.events.filter(event => event.type === 'system/message')
+      .flatMap(event => event.data.message.content.filter(block => block.type === 'text').map(block => block.text)).join('\n')
+    const selected = text.split('\n').find(line => line.startsWith('{"connectionId":'))
+    assert.deepEqual(JSON.parse(selected), { connectionId, username: 'alice', host: 'fixture.example.test', port: 2222 })
+    const declarations = history.events.find(event => event.type === 'request/header').data.header.tools
+    const proposed = declarations.find(tool => tool.name === 'ssh_execute_propose')
+    assert.match(proposed.parameters.properties.connectionId.description, /only that UUID/u)
+    const modelCall = calls.find(call => JSON.stringify(call.messages).includes(expected.input))
+    assert(modelCall.tools.some(tool => tool.name === 'ssh_execute_propose'))
+    assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_ssh_execute_actions WHERE session_id=$1',
+      [session])).rows[0].n, 0)
+    await compareRecordedSshUncertainSession(history, expected)
+    await connections.toggle(user, connectionId, randomUUID(), 1, false)
   })
   for (const terminalState of ['succeeded', 'uncertain']) {
     await t.test(`recorded SSH ${terminalState} outcome resumes the original native Session with an owned source`, async () => {

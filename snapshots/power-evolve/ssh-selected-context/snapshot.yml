@@ -1,0 +1,8 @@
+version: 1
+scenario: ssh-selected-context
+profile: power-evolve-host
+composition: shared-host-platform-pg
+recording: authored
+header:
+  class: power-evolve-ssh-selected-context
+  pin: true

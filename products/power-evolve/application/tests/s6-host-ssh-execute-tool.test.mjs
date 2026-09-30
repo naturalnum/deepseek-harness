@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import { installSshExecuteTool } from '../lib/host/ssh-execute.js'
+import { assertModelToolDeclarations, modelMessageTool } from '../lib/mcp-model-tools.js'
 
 function agentTools() {
   const registered = [], prompts = []
@@ -28,7 +29,14 @@ test('only a pinned user cloud grant proposes the exact command with its native 
   installSshExecuteTool(agent, grant, runtime, 'https://platform.example.test')
   assert.deepEqual(registered.map(value => value.name), ['ssh_execute_propose'])
   assert.equal(prompts.length, 1)
-  assert.match(prompts[0].text, /fixture\.example\.test:2222/u)
+  const pinned = prompts[0].text.split('\n').slice(1).map(value => JSON.parse(value))
+  assert.deepEqual(pinned, [{ connectionId, username: 'alice', host: 'fixture.example.test', port: 2222 }])
+  assert.match(registered[0].parameters.properties.connectionId.description, /only that UUID/u)
+  const declaration = modelMessageTool.parse({ name: registered[0].name,
+    description: registered[0].description, input_schema: registered[0].parameters })
+  assertModelToolDeclarations([declaration], [])
+  assert.equal(declaration.input_schema.properties.connectionId.type, 'string')
+  assert.deepEqual(declaration.input_schema.required, ['connectionId', 'command'])
   const value = await registered[0].execute({ connectionId, command: 'printf exact' },
     { callId: 'native-call-42' })
   assert.deepEqual(value, { actionId, state: 'pending', fingerprint: 'a'.repeat(64),
@@ -38,6 +46,11 @@ test('only a pinned user cloud grant proposes the exact command with its native 
       credentialRevision: 2, command: 'printf exact' } }])
   await assert.rejects(registered[0].execute({ connectionId: randomUUID(), command: 'echo no' },
     { callId: 'other' }))
+  for (const decorated of [`${connectionId}@alice@fixture.example.test:2222`,
+    'alice@fixture.example.test:2222']) {
+    await assert.rejects(registered[0].execute({ connectionId: decorated, command: 'echo no' },
+      { callId: 'decorated' }), /SSH command or connection invalid/u)
+  }
   await assert.rejects(registered[0].execute({ connectionId, command: 'x'.repeat(16_385) },
     { callId: 'oversized' }))
   assert.equal(calls.length, 1)
