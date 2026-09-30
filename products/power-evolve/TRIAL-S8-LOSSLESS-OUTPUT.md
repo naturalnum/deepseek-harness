@@ -1,6 +1,6 @@
 # S8 执行结果与原生日志的无损存储
 
-日期：2026-09-30。实现固定提交：`d34f077a7c`。本记录覆盖真实 PostgreSQL、构建后的 DSH Profiles 和确定性模型／Runner；实际 k3s 中的 NUL 命令输出验收另行记录，不能由这些测试代替。
+日期：2026-09-30。实现固定提交：`d34f077a7c`。本记录覆盖真实 PostgreSQL、构建后的 DSH Profiles 和确定性模型／Runner；随后[真实 k3s 验收](TRIAL-S8-SKILLS-QA.md#real-nul-output-after-runner-response-fix-at-ba1307f14d)分别验证了小样本和双流满额 NUL 输出、原会话续接、刷新与跨用户拒绝，测试替身不能代替该证据。
 
 ## 修复边界
 

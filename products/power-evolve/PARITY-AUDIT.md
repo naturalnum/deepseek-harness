@@ -4,6 +4,8 @@
 
 证据等级：**实现**表示调用链在构建入口和服务端均可追到；**本地实测**表示既有真实浏览器、模型、PG、Pod 或文件验收有记录及本机留存证据；**未验收**表示当前提交或目标生产环境没有对应实测。单元测试与文档文字本身不提升为生产验收。
 
+后续补齐：下表保留上述基线的审计结果。内置 9 包目录、预置、显式升级、说明资源读取和代表性沙盒执行已由[固定 S8 试用](TRIAL-S8-NATIVE.md)补齐，原 8 包限额也已修正；逐包及业务流程未覆盖项以[S8 当前矩阵](TRIAL-S8-SKILLS-QA.md#current-acceptance-summary-at-ba1307f14d)为准。通用 MCP／SSH、账号生命周期及文件／产物入口缺口仍按[交付计划](DELIVERY-PLAN.md)推进。
+
 | 范围 | 旧 `origin/main` 的真实实现 | 当前 `5c87bcdaa7` 的真实实现与验收 | 缺口判定 |
 | --- | --- | --- | --- |
 | 账号与设置 | [账号插件](https://github.com/naturalnum/power-evolve/blob/a03460fe66a3f77114ff3bb906476105e1d470b7/packages/dsh-client-account/src/client/index.ts#L20-L63)注册账号菜单、改密码跳转及按管理权限显示的账号管理设置；管理界面有列表、新建、更新、重置密码和删除。服务端有[本地改密码路由](https://github.com/naturalnum/power-evolve/blob/a03460fe66a3f77114ff3bb906476105e1d470b7/services/cloud-server/src/identity/local-login-routes.ts#L60-L100)。 | [原生设置挂载](client-account/src/client/index.ts#L17-L29)和[个人模型、maxTokens 设置](client-account/src/client/AccountSection.tsx#L43-L110)已实现；[账号菜单](client-account/src/client/AccountMenu.tsx#L50-L55)仅设置、登出。Platform 从私有 `users.json` [播种账号](application/src/platform/index.ts#L86-L141)，开放模型与个人设置更新 [RPC](application/src/platform/index.ts#L476-L479)。[S3 本地双用户试用](TRIAL-S3-NATIVE.md)及 [S7 集成说明](TRIAL-S7-INTEGRATED.md)支持登录与个人设置路径；未在当前提交重跑浏览器。 | **真实缺失**：管理员开通、停用/删除、重置密码和个人改密码；试用账号播种不能替代账号生命周期，也未验收万人组织身份同步。 |
