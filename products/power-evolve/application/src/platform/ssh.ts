@@ -7,7 +7,7 @@ import { sshCreateTicketRequest, userId, PlatformError, type Identity } from '..
 import { sshConfigurationInput, sshConnectionUpdateRequest, sshConnectionToggleRequest,
   sshConnectionDeleteRequest, sshCredentialTicketRequest, sshConnectionValue, sshManagementRequestId,
   SSH_CREDENTIAL_UPLOAD_MAX_BYTES, type SshConnection, type SshConfigurationInput,
-  type SshCredentialTicketRequest, type SshCredentialUpload } from '../ssh-management-contracts.ts'
+  type SshCredentialTicketRequest, type SshCredentialUpload, type sshCredentialTicketValue } from '../ssh-management-contracts.ts'
 import { transaction } from './database.ts'
 import { SshCredentialCipher, sshCanonicalJson, sshNeedsUpload, sshChangesCredential,
   sshUploadForPlan, mergeSshCredential, type SshCredential } from './ssh-credentials.ts'
@@ -29,6 +29,13 @@ type Intent = { request_id: string; user_id: string; request_digest: string; con
   format_version: 1 | 2; purpose: 'create' | 'update'; verification_failures: number }
 type Spec = { requestId: string; purpose: Purpose; formatVersion: 1 | 2; digest: string; input: unknown;
   connectionId?: string; baseRevision?: number; sizeBytes?: number; configuration?: SshConfigurationInput }
+type LegacyConnection = Pick<SshConnection, 'connectionId' | 'displayName' | 'host' | 'port' | 'username'
+  | 'hostKeySha256' | 'enabled' | 'revision' | 'credentialRevision'>
+type Metadata = Pick<SshConnection, 'host' | 'port' | 'username' | 'hostKeySha256'
+  | 'credentialRevision' | 'workingDirectory'>
+type VersionMetadata = Metadata & Pick<SshConnection, 'displayName' | 'revision' | 'authentication' | 'passphraseConfigured'>
+type LegacyTicket = Omit<z.infer<typeof sshCredentialTicketValue>, 'requestId'>
+type ManagedTicket = LegacyTicket & Pick<Spec, 'requestId'>
 
 /** Existing deployment defaults remain compatible; callers may explicitly configure these budgets. */
 export interface SshManagementOptions {
@@ -63,7 +70,7 @@ function parseAllowlist(raw: string): ReadonlySet<string> {
   return new Set(entries)
 }
 /** Only metadata is projected through the historical Host methods. */
-function legacy(item: SshConnection) {
+function legacy(item: SshConnection): LegacyConnection {
   return { connectionId: item.connectionId, displayName: item.displayName, host: item.host,
     port: item.port, username: item.username, hostKeySha256: item.hostKeySha256,
     enabled: item.enabled, revision: item.revision, credentialRevision: item.credentialRevision }
@@ -74,6 +81,13 @@ export class SshConnectionService {
   private readonly cipher: SshCredentialCipher | null
   private readonly allowed: ReadonlySet<string>
   private readonly options: Required<SshManagementOptions>
+  /**
+   * Configure owner-scoped SSH management and direct credential intake.
+   * @param pool Trusted Platform database pool.
+   * @param keyText Backend credential key; blank with a blank allowlist disables intake and execution.
+   * @param allowlist Comma-separated operator-approved host and port pairs.
+   * @param options Optional connection, pending-ticket, lifetime and completed-mismatch budgets.
+   */
   constructor(private readonly pool: Pool, keyText: string, allowlist: string, options: SshManagementOptions = {}) {
     this.allowed = parseAllowlist(allowlist)
     this.options = { ...defaults, ...options }
@@ -85,6 +99,7 @@ export class SshConnectionService {
     if (!encoded || this.allowed.size === 0) throw new Error('SSH credential key and destination allowlist must both be configured')
     this.cipher = new SshCredentialCipher(encoded)
   }
+  /** Whether the backend key and operator allowlist are configured for intake and execution. */
   get available(): boolean { return this.cipher !== null }
   private requireAvailable(): SshCredentialCipher {
     if (!this.cipher) throw new PlatformError(503, 'ssh_unavailable')
@@ -135,21 +150,37 @@ export class SshConnectionService {
       credentialRevision: row.credential_revision, credentialKind: row.credential_kind,
       formatVersion: row.format_version, aadRequestId: row.aad_request_id }, row.encrypted_credential)
   }
-  private metadata(row: Connection) {
+  private metadata(row: Connection): Metadata {
     return { host: row.host, port: row.port, username: row.username, hostKeySha256: row.host_key_sha256,
       credentialRevision: row.credential_revision, workingDirectory: row.working_directory }
   }
+  /**
+   * List the owner's current non-deleted connections without credential values.
+   * @param user Verified owner whose connections are visible.
+   * @returns Backend availability and full public records for the owner's live connections.
+   */
   async listManaged(user: Owner): Promise<{ available: boolean; items: SshConnection[] }> {
     const rows = await this.pool.query<Connection>(`${connectionSql}
       WHERE c.user_id=$1 AND c.deleted_at IS NULL ORDER BY c.created_at DESC,c.id`, [user.userId])
     return { available: this.available, items: rows.rows.map(row => this.present(row)) }
   }
-  async list(user: Identity) {
+  /**
+   * List current connections through the historical Host metadata projection.
+   * @param user Verified owner whose connections are visible.
+   * @returns Backend availability and connection records with the original nine public fields.
+   */
+  async list(user: Identity): Promise<{ available: boolean; items: LegacyConnection[] }> {
     const found = await this.listManaged(user)
     return { available: found.available, items: found.items.map(legacy) }
   }
-  /** Historical metadata stays readable after disablement/deletion, without decrypting a secret. */
-  async metadataForVersion(user: Owner, id: string, revision: number) {
+  /**
+   * Read owned immutable configuration metadata after disablement or deletion without decrypting.
+   * @param user Verified owner of the connection.
+   * @param id Stable connection identity.
+   * @param revision Immutable configuration revision to read.
+   * @returns Historical target metadata, authentication kind and passphrase-presence flag.
+   */
+  async metadataForVersion(user: Owner, id: string, revision: number): Promise<VersionMetadata> {
     const found = await this.pool.query<Connection>(`SELECT c.id,c.user_id,c.enabled,c.deleted_at,c.created_at,c.updated_at,
       v.revision,v.credential_revision,v.display_name,v.host,v.port,v.username,v.host_key_sha256,v.working_directory,
       k.credential_kind,k.passphrase_configured FROM pe_ssh_connections c
@@ -162,7 +193,14 @@ export class SshConnectionService {
     return { ...this.metadata(row), displayName: row.display_name, revision: row.revision,
       authentication: row.credential_kind, passphraseConfigured: row.passphrase_configured }
   }
-  async metadataForCall(user: Owner, id: string, revision: number) {
+  /**
+   * Read current metadata only for an enabled, live and operator-allowed call target.
+   * @param user Verified owner of the connection.
+   * @param id Stable connection identity.
+   * @param revision Expected current configuration revision.
+   * @returns Call target metadata and credential revision without decrypting credential values.
+   */
+  async metadataForCall(user: Owner, id: string, revision: number): Promise<Metadata> {
     this.requireAvailable()
     const found = await this.pool.query<Connection>(`${connectionSql}
       WHERE c.id=$1 AND c.user_id=$2 AND c.revision=$3 AND c.enabled=true AND c.deleted_at IS NULL`,
@@ -172,8 +210,14 @@ export class SshConnectionService {
     this.checkDestination(row.host, row.port)
     return this.metadata(row)
   }
-  /** Platform-only secret material; the caller must still atomically commit a dispatch permit. */
-  async credentialForCall(user: Owner, id: string, revision: number) {
+  /**
+   * Read Platform-only secret material; the caller must still atomically commit a dispatch permit.
+   * @param user Verified owner of the connection.
+   * @param id Stable identity of an enabled, live and operator-allowed connection.
+   * @param revision Expected current configuration revision.
+   * @returns Current target metadata and the decrypted password or private-key credential.
+   */
+  async credentialForCall(user: Owner, id: string, revision: number): Promise<Metadata & { credential: SshCredential }> {
     this.requireAvailable()
     const found = await this.pool.query<Connection>(`${connectionSql}
       WHERE c.id=$1 AND c.user_id=$2 AND c.revision=$3 AND c.enabled=true AND c.deleted_at IS NULL`,
@@ -183,6 +227,12 @@ export class SshConnectionService {
     this.checkDestination(row.host, row.port)
     return { ...this.metadata(row), credential: this.decode(row) }
   }
+  /**
+   * Read an owner's original durable public mutation receipt after a lost response.
+   * @param user Verified owner whose request ledger is queried.
+   * @param requestId Stable management request identity.
+   * @returns Original completed public record, or null when no completed owned receipt exists.
+   */
   async receipt(user: Owner, requestId: string): Promise<{ item: SshConnection | null }> {
     const row = (await this.pool.query<RequestRow>(`SELECT * FROM pe_ssh_management_requests
       WHERE user_id=$1 AND request_id=$2`, [user.userId, sshManagementRequestId.parse(requestId)])).rows[0]
@@ -258,7 +308,7 @@ export class SshConnectionService {
       ...(parsed.purpose === 'update' ? { connectionId: parsed.connectionId, baseRevision: parsed.baseRevision } : {}),
       sizeBytes: parsed.sizeBytes, configuration })
   }
-  private async ticket(user: Owner, spec: Spec, platformOrigin: string) {
+  private async ticket(user: Owner, spec: Spec, platformOrigin: string): Promise<ManagedTicket> {
     this.requireAvailable()
     const origin = new URL(platformOrigin)
     if (!['http:', 'https:'].includes(origin.protocol) || origin.username || origin.password || origin.search || origin.hash) {
@@ -303,11 +353,24 @@ export class SshConnectionService {
         uploadUrl: new URL('/ssh/upload', origin).href, expiresAt: expiresAt.toISOString() }
     })
   }
-  async issueManagedTicket(user: Owner, input: SshCredentialTicketRequest, platformOrigin: string) {
+  /**
+   * Reserve or renew a direct format-two replacement upload bound to owner and request metadata.
+   * @param user Verified owner creating or updating a connection.
+   * @param input Request identity, complete configuration, purpose and exact upload byte length.
+   * @param platformOrigin Platform HTTP origin used to construct the direct upload URL.
+   * @returns Pending upload capability, request identity, URL and expiration time.
+   */
+  async issueManagedTicket(user: Owner, input: SshCredentialTicketRequest, platformOrigin: string): Promise<ManagedTicket> {
     return this.ticket(user, this.ticketSpec(user, input), platformOrigin)
   }
-  /** Legacy capabilities explicitly accept raw password bytes and keep their original wire shape. */
-  async issueTicket(user: Identity, input: LegacyCreate, platformOrigin: string) {
+  /**
+   * Reserve a legacy raw-password upload capability with its original wire shape.
+   * @param user Verified owner creating the connection.
+   * @param input Legacy request identity, connection metadata and exact password byte length.
+   * @param platformOrigin Platform HTTP origin used to construct the direct upload URL.
+   * @returns Pending upload capability, URL and expiration without a new requestId field.
+   */
+  async issueTicket(user: Identity, input: LegacyCreate, platformOrigin: string): Promise<LegacyTicket> {
     const value = await this.ticket(user, this.legacySpec(input), platformOrigin)
     return { state: value.state, ticket: value.ticket, uploadUrl: value.uploadUrl, expiresAt: value.expiresAt }
   }
@@ -373,6 +436,12 @@ export class SshConnectionService {
       return this.commit(client, user, spec, config, source, credential, spec.purpose === 'delete')
     })
   }
+  /**
+   * Compare-and-swap a complete configuration that retains credentials or clears a passphrase.
+   * @param user Verified owner of the connection.
+   * @param input Request identity, connection identity, base revision and complete configuration.
+   * @returns Committed public connection record or the original receipt for an identical retry.
+   */
   async update(user: Owner, input: z.infer<typeof sshConnectionUpdateRequest>): Promise<SshConnection> {
     const parsed = sshConnectionUpdateRequest.parse(input)
     const configuration = this.configuration(parsed.configuration)
@@ -380,23 +449,49 @@ export class SshConnectionService {
     return this.mutate(user, this.managedSpec(user, 'update', { ...parsed, configuration },
       { ...parsed, configuration }))
   }
+  /**
+   * Compare-and-swap enablement while preserving target metadata and credential bytes.
+   * @param user Verified owner of the connection.
+   * @param input Request identity, connection identity, base revision and desired enablement.
+   * @returns Committed public connection record or the original receipt for an identical retry.
+   */
   async toggleManaged(user: Owner, input: z.infer<typeof sshConnectionToggleRequest>): Promise<SshConnection> {
     const parsed = sshConnectionToggleRequest.parse(input)
     return this.mutate(user, this.managedSpec(user, 'toggle', parsed, parsed), parsed.enabled)
   }
+  /**
+   * Tombstone an owned connection while preserving its immutable history and receipts.
+   * @param user Verified owner of the connection.
+   * @param input Request identity, connection identity and expected base revision.
+   * @returns Disabled public tombstone or the original deletion receipt for an identical retry.
+   */
   async remove(user: Owner, input: z.infer<typeof sshConnectionDeleteRequest>): Promise<SshConnection> {
     const parsed = sshConnectionDeleteRequest.parse(input)
     return this.mutate(user, this.managedSpec(user, 'delete', parsed, parsed), false)
   }
-  async toggle(user: Identity, connectionId: string, requestId: string, baseRevision: number, enabled: boolean) {
+  /**
+   * Compare-and-swap enablement through the historical Host request and response projections.
+   * @param user Verified owner of the connection.
+   * @param connectionId Stable identity of the owned connection.
+   * @param requestId Stable identity used to replay the original toggle result.
+   * @param baseRevision Expected current configuration revision.
+   * @param enabled Desired connection enablement.
+   * @returns Original nine-field public projection of the committed connection or retry receipt.
+   */
+  async toggle(user: Identity, connectionId: string, requestId: string, baseRevision: number, enabled: boolean): Promise<LegacyConnection> {
     const parsed = sshConnectionToggleRequest.parse({ connectionId, requestId, baseRevision, enabled })
     const oldInput = { connectionId: parsed.connectionId, baseRevision: parsed.baseRevision, enabled: parsed.enabled }
     return legacy(await this.mutate(user, { ...parsed, purpose: 'toggle', formatVersion: 1,
       input: oldInput, digest: hash(JSON.stringify(oldInput)) }, enabled))
   }
 
-  /** Explicit ticket format selects raw intake or the strict JSON replacement envelope. */
-  async upload(ticket: string, body: AsyncIterable<Uint8Array>) {
+  /**
+   * Consume exact upload bytes using the ticket's explicit raw-password or JSON-envelope format.
+   * @param ticket Direct Platform capability issued for a fixed owner, request and byte length.
+   * @param body Credential byte stream received directly by the trusted Platform.
+   * @returns Original verified public receipt; format one uses the legacy projection and format two the full record.
+   */
+  async upload(ticket: string, body: AsyncIterable<Uint8Array>): Promise<{ item: LegacyConnection | SshConnection }> {
     const cipher = this.requireAvailable(), tokenDigest = hash(ticket)
     const intent = (await this.pool.query<Intent>('SELECT * FROM pe_ssh_upload_intents WHERE token_digest=$1', [tokenDigest])).rows[0]
     if (!intent || intent.expires_at.getTime() <= Date.now()) throw new PlatformError(401, 'invalid_ssh_ticket')

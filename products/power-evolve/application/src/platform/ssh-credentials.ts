@@ -19,7 +19,11 @@ export interface SshCredentialIdentity {
   readonly aadRequestId: string | null
 }
 
-/** Stable object-key ordering; arrays preserve their declared order. */
+/**
+ * Serialize JSON with stable object-key ordering while preserving array order.
+ * @param value JSON-compatible value to serialize.
+ * @returns Canonical JSON text used in credential envelopes and replay identities.
+ */
 export function sshCanonicalJson(value: unknown): string {
   const canonical = (item: unknown): unknown => {
     if (Array.isArray(item)) return item.map(canonical)
@@ -33,18 +37,31 @@ export function sshCanonicalJson(value: unknown): string {
   return encoded
 }
 
-/** Determine whether this plan needs a direct upload; clear never carries secret bytes. */
+/**
+ * Determine whether an authentication plan requires replacement secret bytes.
+ * @param plan Explicit instructions for retaining, replacing or clearing credential fields.
+ * @returns Whether at least one credential field must arrive through direct upload.
+ */
 export function sshNeedsUpload(plan: SshConfigurationInput['authentication']): boolean {
   return plan.kind === 'password' ? plan.password === 'replace'
     : plan.privateKey === 'replace' || plan.passphrase === 'replace'
 }
 
-/** A deliberate replacement or clear creates a new immutable credential version. */
+/**
+ * Determine whether an authentication plan changes the immutable credential version.
+ * @param plan Explicit instructions for retaining, replacing or clearing credential fields.
+ * @returns Whether a replacement or passphrase clear creates a credential version.
+ */
 export function sshChangesCredential(plan: SshConfigurationInput['authentication']): boolean {
   return sshNeedsUpload(plan) || plan.kind === 'private_key' && plan.passphrase === 'clear'
 }
 
-/** Validate replacement fields exactly; retained and cleared fields must be absent. */
+/**
+ * Validate replacement fields exactly; retained and cleared fields must be absent.
+ * @param plan Ticket-bound authentication plan defining which secret fields may be supplied.
+ * @param value Untrusted format-two upload body to validate.
+ * @returns Validated envelope containing exactly the plan's replacement fields.
+ */
 export function sshUploadForPlan(plan: SshConfigurationInput['authentication'], value: unknown): SshCredentialUpload {
   const parsed = sshCredentialUpload.safeParse(value)
   if (!parsed.success) throw new PlatformError(400, 'ssh_credential_invalid')
@@ -61,7 +78,13 @@ export function sshUploadForPlan(plan: SshConfigurationInput['authentication'], 
   return parsed.data
 }
 
-/** Retention reads only the ticket's fixed owned source; changing kind cannot retain its secrets. */
+/**
+ * Merge replacements with explicitly retained fields from the ticket's fixed owned source.
+ * @param plan Authentication plan; changing kind cannot retain another kind's secrets.
+ * @param supplied Upload envelope containing exactly the replacement fields.
+ * @param previous Decrypted owned source credential when the plan retains any field.
+ * @returns Complete password or private-key credential with a cleared passphrase omitted.
+ */
 export function mergeSshCredential(plan: SshConfigurationInput['authentication'],
   supplied: SshCredentialUpload, previous?: SshCredential): SshCredential {
   const upload = sshUploadForPlan(plan, supplied)
@@ -92,18 +115,31 @@ function envelope(credential: SshCredential): SshCredentialUpload {
 /** AES-GCM and keyed replay identity use the existing backend key with explicit format domains. */
 export class SshCredentialCipher {
   private readonly key: Buffer
+  /**
+   * Configure the Platform's encryption and replay-verification key.
+   * @param keyText Canonical base64url encoding of a 32-byte backend key.
+   */
   constructor(keyText: string) {
     const encoded = keyText.trim(), key = Buffer.from(encoded, 'base64url')
     if (key.length !== 32 || key.toString('base64url') !== encoded) throw new Error('Invalid SSH credential key')
     this.key = key
   }
 
-  /** Legacy replay identity must continue to compare the original raw password bytes. */
+  /**
+   * Compute the historical keyed replay identity from raw password bytes.
+   * @param value Original format-one password bytes, including any JSON-shaped text.
+   * @returns Hexadecimal HMAC-SHA256 matching historical credential receipts.
+   */
   legacyFingerprint(value: Buffer): string {
     return createHmac('sha256', this.key).update(value).digest('hex')
   }
 
-  /** Never publish an unkeyed verifier of replacement secrets. */
+  /**
+   * Compute a domain-separated keyed replay identity for replacement secrets.
+   * @param domain Purpose separating this verifier from other format-two uses.
+   * @param value JSON-compatible request and replacement fields to canonicalize.
+   * @returns Hexadecimal HMAC-SHA256 without an unkeyed secret verifier.
+   */
   fingerprint(domain: string, value: unknown): string {
     return createHmac('sha256', this.key).update(`power-evolve-ssh-v2\0${domain}\0`)
       .update(sshCanonicalJson(value)).digest('hex')
@@ -124,7 +160,12 @@ export class SshCredentialCipher {
       String(identity.credentialRevision), identity.credentialKind].join('\0'))
   }
 
-  /** Caller persists the immutable identity and ciphertext in the same mutation transaction. */
+  /**
+   * Encrypt a credential with AES-GCM bound to its immutable format-specific identity.
+   * @param identity Owner and credential-version identity persisted with the ciphertext.
+   * @param credential Complete secret matching the identity's authentication kind.
+   * @returns Ciphertext containing the nonce, authentication tag and encrypted secret bytes.
+   */
   seal(identity: SshCredentialIdentity, credential: SshCredential): Buffer {
     if (credential.kind !== identity.credentialKind) throw new Error('SSH credential kind mismatch')
     const plaintext = identity.formatVersion === 1 && credential.kind === 'password'
@@ -140,7 +181,12 @@ export class SshCredentialCipher {
     } finally { plaintext.fill(0) }
   }
 
-  /** Reject identity/key/ciphertext/format errors uniformly; never guess a predecessor format. */
+  /**
+   * Decrypt only the declared format, rejecting identity, key and ciphertext errors uniformly.
+   * @param identity Immutable owner, version and format identity loaded with the ciphertext.
+   * @param sealed Stored nonce, authentication tag and encrypted credential bytes.
+   * @returns Complete password or private-key secret for trusted Platform and Runner use.
+   */
   open(identity: SshCredentialIdentity, sealed: Buffer): SshCredential {
     let plaintext: Buffer | undefined
     try {
