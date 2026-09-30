@@ -90,7 +90,7 @@ export class McpConnectionService {
       catalogDigest: row.catalog_digest, tools: row.tools, createdAt: row.created_at.toISOString() }
   }
   private async owner(client: PoolClient, user: Owner): Promise<void> {
-    const found = await client.query('SELECT id FROM pe_users WHERE id=$1 FOR UPDATE', [user.userId])
+    const found = await client.query('SELECT id FROM pe_users WHERE id=$1 FOR NO KEY UPDATE', [user.userId])
     if (!found.rowCount) throw new PlatformError(401, 'unauthorized')
   }
   private async owned(client: PoolClient, user: Owner, id: McpConnectionId, base?: number): Promise<ConnectionRow> {
