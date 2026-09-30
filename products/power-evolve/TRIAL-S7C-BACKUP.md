@@ -3,17 +3,33 @@
 本演练在独立的 PostgreSQL 卷、POSIX 子目录、私有配置、端口和 Kubernetes 命名空间中，从仍运行 V18 的源试用制作一致性快照，再用当前 V19 程序恢复到全新试用。脚本只管理指定试用，不清理其他试用。备份包含 PG 自定义格式 dump、`workspaces`、`homes`、`skill-packages`、`artifacts` 的字节，以及重建登录、模型和加密状态所需的私有配置。Kubernetes kubeconfig、Sandbox 与 Connector Runner 的调度配置由目标试用单独创建，不能照搬源环境的路径或命名空间。
 
 
-## 当前脚本的存储布局
+## 当前脚本（参考）
+
+本节按 `87c6ec4fc0` 的 [备份入口](scripts/backup-trial.mjs) 与 [PG、MCP 私有文件处理](scripts/backup-support.mjs) 核对当前行为。下文 V18→V19 的数据、耗时、浏览器验收及当时的脚本描述保留为固定版本的历史证据；当前 V23 MCP 试用的真实备份及保持应用停止的恢复结果见 [远端 MCP QA 记录](TRIAL-S6-REMOTE-MCP-QA.md)。该新恢复目标的应用健康和 UI 尚未验收，不报告可用 RTO；本次文档更新没有运行备份、恢复或服务生命周期复测。
+
+### 存储布局
 
 `prepare-trial.mjs` 在私有目录记录 `storage-layout.json`（0600），并把实际工作区、产物及技能根写入生成的 Profile。无沙盒的技能根默认为 `$PE_PRIVATE_DIR/skill-library`；云沙盒使用 `sandbox.json` 的 `localRoot`。自定义 `PE_SKILL_LIBRARY_ROOT` 须在首次准备时指定，后续启动保留记录的路径；改变根会被拒绝，应通过新试用恢复迁移，不能直接修改记录冒充数据迁移。已有试用升级后，首次备份前须以原实际存储根运行 `prepare-trial.mjs`，缺少记录时备份不会猜测路径。
 
 新备份使用格式 2，在清单中保存存储布局；归档内仍以 `data/skill-packages` 命名。创建和恢复按各自实际技能根映射，并核对 PG 中全部包版本的文件、大小与哈希，包含历史版本、停用及撤销包；完整技能树也保留报告套件。恢复继续接受有效的格式 1 备份。旧备份若已漏掉 PG 记录对应的包字节，恢复会明确失败，不能靠重装当前目录替代丢失的历史版本。
 
-这些规则适用于当前脚本；下文记录的 V18→V19 数据、耗时及浏览器验收仍是原固定版本的证据。真实包的定向恢复回归覆盖布局映射、PG dump/restore 和包读取；完整生命周期的独立复测另行记录，不把定向测试计为生产 RTO 验收。
+### PostgreSQL 与工具选择
+
+`PE_TRIAL_DATABASE` 默认为 `compose`，恢复要求目标试用的 PG 卷尚不存在。设为 `external` 时，脚本使用操作者预先提供的 `$PE_PRIVATE_DIR/database-url`，不创建数据库、容器或卷；源 PG 必须可连接，目标必须是独立的空数据库，不能把源库的 URL 复制到目标。库名、用户及密码取自该私有 URL，不固定为 `powerevolve`。
+
+`external` 默认从本机 `PATH` 使用 `psql`、`pg_dump`、`pg_restore`，也可用 `PE_BACKUP_PG_BIN_DIR` 指定工具目录，或用 `PE_BACKUP_PG_CONTAINER` 显式选择已经存在的工具容器。容器内默认连接本地 socket，可用 `PE_BACKUP_PG_HOST`、`PE_BACKUP_PG_PORT` 指定其连接目的地；选择容器不等于选择了正确数据库，身份核验必须通过。`compose` 未指定工具容器时使用该试用对应的 PostgreSQL 容器。URL 和密码不进入工具 argv 或失败诊断，连接凭据通过子进程环境传递。
+
+执行 dump 或恢复前，脚本比较 Node 客户端与 `psql` 读到的集群标识摘要和数据库 OID；备份清单记录源数据库身份。操作者须有读取 `pg_control_system()` 的权限。`external` 恢复在复制目标文件前拒绝同源数据库；缺少源身份元数据的旧备份还须设置 `PE_BACKUP_SOURCE_DATABASE_URL_FILE`，指向源私有 `database-url` 文件进行核验。字面库名含 `=` 或以 `postgres://`、`postgresql://` 起始时会被拒绝，防止 `pg_restore --dbname` 把库名解释成另一连接。
+
+### 远端 MCP 私有配置
+
+备份已有通用远端 MCP 连接或草稿时，必须显式设置 `PE_REMOTE_MCP_CONFIG_FILE`。脚本校验该配置，并把配置原始字节、其 `credentialKeyFile` 指定的原密封密钥及每个 `internalExceptions[].caFile` 引用的 CA 文件一并归档；私有目录为 0700，文件为 0600，文件字节和权限位进入完整性清单。不能用新密钥替代原密钥，否则历史加密凭据无法解密。
+
+恢复把这些文件写入新目标的 `$PE_PRIVATE_DIR/remote-mcp/`：配置为 `configuration.json`，密钥为 `credential-key`，CA 为 `ca-<索引>.pem`；索引对应 `internalExceptions` 的原数组位置。配置只重写密钥及 CA 文件引用，保留其余设置。新配置绝对路径写入 `restore-evidence.json` 的 `remoteMcpConfigFile`；以后启动该目标须把 `PE_REMOTE_MCP_CONFIG_FILE` 显式设为此路径，不能沿用源路径。归档遗漏已有 MCP 历史所需的配置或密钥时，恢复拒绝启动应用。
 
 ## 使用方法
 
-在仓库根目录安装依赖并构建产品及原生 Web。试用还需要 Docker/OrbStack、kubectl、可用的 Sandbox 控制器与 Runner 镜像、Playwright Chromium，以及目标试用独有的 `sandbox.json`、`ssh.json` 和限权 kubeconfig。准备方式沿用 [S6 原生试用](TRIAL-S6-FINAL-QA.md)；两个 JSON 的 `localRoot`、`nodeRoot`、`workspaceRoot`、命名空间和端口应指向目标独有资源。目标私有目录必须位于 `~/.config/power-evolve/` 下，目标 PG 卷尚不存在。`model.env` 留在私有目录，不能提交到仓库。
+备份依赖已构建的产品代码；恢复后启动应用还需要产品及原生 Web 构建产物。使用 Compose 或现有工具容器时需要 Docker/OrbStack；启用云 Sandbox、SSH Runner 或浏览器验收时，另需 kubectl、可用的 Sandbox 控制器与 Runner 镜像、Playwright Chromium，以及目标试用独有的 `sandbox.json`、`ssh.json` 和限权 kubeconfig。准备方式沿用 [S6 原生试用](TRIAL-S6-FINAL-QA.md)；两个 JSON 的 `localRoot`、`nodeRoot`、`workspaceRoot`、命名空间和端口应指向目标独有资源。目标私有目录必须位于 `~/.config/power-evolve/` 下，`model.env` 留在私有目录，不能提交到仓库。以下命令块保留 V18→V19 历史 Compose 演练的参数；当前外部 PG 与 MCP 配置按上节提供。
 
 源试用已有 Alice/Bob 的真实模型对话、Session 历史和 STDIO 调用时，可用以下模式复跑。每个试用都设置自己的 `PE_TRIAL_NAME`、三个端口、`PE_PRIVATE_DIR` 和 Kubernetes 配置；以下为本机实测值。`PE_BACKUP_BUNDLE` 须为一个尚不存在的绝对路径，其父目录只供本机当前用户访问。
 
@@ -28,9 +44,11 @@ node products/power-evolve/scripts/prepare-trial.mjs
 node products/power-evolve/scripts/backup-trial.mjs create
 ```
 
-`create` 先停止指定试用的 Host/Platform 写入进程，确认没有未结束的 PG 操作、Sandbox 对象或 Connector Runner Pod，再执行 `pg_dump` 和 POSIX/私有配置复制；目录清单记录每个文件的 SHA-256 和符号链接目标。完成后原子发布备份目录并重启源试用。失败时删除未完成的临时目录并尝试重启源试用；若重启失败，应立即用同一组环境变量运行 `trial.mjs status`、检查日志并修复源试用。源端运行期间不要直接复制卷来替代此停写步骤。
+`create` 先通过 PID 和健康接口的 `instanceId` 确认源试用原先存活的服务，再逐个执行 `stop-one`；无法核实的存活进程会使备份被拒绝。脚本确认没有活跃 PG 操作、Runner 调用、MCP 发现或派发；有 `sandbox.json` 时，还检查相应命名空间内没有 Sandbox 对象及所配 SSH 环境中的 Connector Runner Pod，才执行 dump 与复制。MCP `queued`/`running` 发现检查和 `approved`/`preparing`/`dispatch-intent` 动作阻止备份；MCP 待人工决定的 `pending` 和终态 `uncertain` 可以原样保存，恢复不会把它们变成自动派发许可。新清单记录文件 SHA-256、权限位和符号链接原始目标，旧格式 1/2 清单仍按其已有字段核验。
 
-恢复前创建全新目标私有目录及独有 `sandbox.json`、`ssh.json`、kubeconfig 和命名空间，不运行 `prepare-trial.mjs`，以免预先生成本应从备份恢复的私有文件。示例目标环境：
+成功后脚本原子发布备份目录；失败时清理未完成目录。默认只尝试重启本次通过 `stop-one` 停止并记录的服务，预先已停止的服务不会因备份被唤醒。设置 `PE_BACKUP_KEEP_STOPPED=1` 时，创建备份后不重启这些服务，恢复后也不启动应用；该选项不停止 PG，Compose 恢复仍会准备并启动目标 PG。若源服务重启失败，用同一组环境变量运行 `trial.mjs status`、检查日志并修复源试用。源端运行期间不要直接复制卷来替代停写步骤。
+
+恢复前创建全新目标私有目录；启用云执行时另准备其独有 `sandbox.json`、`ssh.json`、kubeconfig 和命名空间。不先运行 `prepare-trial.mjs`，以免生成本应从备份恢复的私有文件；`external` 模式另预先写入目标空库的私有 `database-url`。以下仍是历史 Compose 目标参数：
 
 ```sh
 export PE_TRIAL_NAME=s7c-dst-b2 PE_DATABASE_PORT=18537
@@ -42,7 +60,11 @@ export PE_BACKUP_BUNDLE=/Users/jingchao/.config/power-evolve/s7c-backups/b1
 node products/power-evolve/scripts/backup-trial.mjs restore
 ```
 
-`restore` 在改动目标前核验清单，拒绝已有 PG 卷、非空数据目录和已存在的备份私有文件。它等待 PG 连续可连接，确认 `public` schema 中没有关系对象后，严格检查 `pg_restore --exit-on-error` 的退出码；随后启动当前代码并检查迁移后 schema。失败后的目标可能已含部分复制内容或部分 PG 表，**不能在该目标上直接重试**。先停止该目标，用其 Compose project 执行 `down -v`，确认本目标的 Sandbox/Runner 已清理，再删除仅属于该目标的私有目录和 POSIX 子目录；更稳妥的方式是新建另一个试用名、端口、卷、命名空间重新恢复。保留源端和备份不动。
+`restore` 先核验清单及源/目标路径，拒绝路径重叠（包括符号链接别名）、存活目标服务、非空数据目录和已存在的备份私有文件。`external` 在复制前完成数据库身份及空库核验；Compose 则先拒绝已有目标 PG 卷，准备新 PG 并等待连续可连接，再核验身份及空库。空库允许初始化内建对象和空 `public` schema；用户关系、函数、类型、collation、大对象、语言、事件触发器、FDW/server、publication/subscription、默认权限、数据库本地设置及内置 operator family 新增的 loose 成员都会导致拒绝。具体对象检查由上节链接的 PG 处理代码维护。
+
+脚本使用 `pg_restore --exit-on-error --single-transaction` 并检查退出码。单事务只覆盖 dump 的数据库还原，不覆盖已复制的私有文件、POSIX 数据、权限准备或 Compose 资源；后续 schema、技能包或启动检查失败时，数据库还原也可能已经提交。默认恢复后启动应用并核对 schema；`PE_BACKUP_KEEP_STOPPED=1` 时保持应用停止，`restore-evidence.json` 记录 `keptStopped=true`，`readyAt` 与 `rtoToHealthMs` 为 null，不报告健康 RTO，也不代表已验证启动迁移。
+
+失败后的目标可能保留复制内容、资源或已提交的还原数据，**不能在该目标上直接重试**。先停止目标应用并确认其 Sandbox/Runner 已清理：Compose 目标只对自己的 project 执行 `down -v`；外部 PG 由数据库操作者清理或重建本次独占的目标数据库，不删除复用的 PG 容器或共享资源。再清理仅属于该目标的私有目录和 POSIX 子目录，或改用另一套全新目标资源重新恢复。保留源端和备份不动。
 
 云执行目标在启动前，按恢复 PG 中的工作区和用户归属，把 Workspace 与 Home 的复制条目设为执行器的 `1000:1000`，保留文件字节和权限位；只更改符号链接本身的所有者，不跟随目标。平台持有的技能包和产物不做该所有权转换；旧备份的 `0700` 用户技能挂载根仅转换为 Runner 可遍历的 `0755`，包内容、私有父目录及未知用户目录保持原样。修复数量写入 `restore-evidence.json`。运行恢复的身份必须有目标卷的相应 `chown` 权限，否则恢复失败且不启动写入者。新备份和恢复复制保留符号链接的原始目标文本；旧工具已改写的链接目标不能由该步骤推断还原。
 
