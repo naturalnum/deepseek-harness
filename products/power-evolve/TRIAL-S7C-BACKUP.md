@@ -2,6 +2,15 @@
 
 本演练在独立的 PostgreSQL 卷、POSIX 子目录、私有配置、端口和 Kubernetes 命名空间中，从仍运行 V18 的源试用制作一致性快照，再用当前 V19 程序恢复到全新试用。脚本只管理指定试用，不清理其他试用。备份包含 PG 自定义格式 dump、`workspaces`、`homes`、`skill-packages`、`artifacts` 的字节，以及重建登录、模型和加密状态所需的私有配置。Kubernetes kubeconfig、Sandbox 与 Connector Runner 的调度配置由目标试用单独创建，不能照搬源环境的路径或命名空间。
 
+
+## 当前脚本的存储布局
+
+`prepare-trial.mjs` 在私有目录记录 `storage-layout.json`（0600），并把实际工作区、产物及技能根写入生成的 Profile。无沙盒的技能根默认为 `$PE_PRIVATE_DIR/skill-library`；云沙盒使用 `sandbox.json` 的 `localRoot`。自定义 `PE_SKILL_LIBRARY_ROOT` 须在首次准备时指定，后续启动保留记录的路径；改变根会被拒绝，应通过新试用恢复迁移，不能直接修改记录冒充数据迁移。已有试用升级后，首次备份前须以原实际存储根运行 `prepare-trial.mjs`，缺少记录时备份不会猜测路径。
+
+新备份使用格式 2，在清单中保存存储布局；归档内仍以 `data/skill-packages` 命名。创建和恢复按各自实际技能根映射，并核对 PG 中全部包版本的文件、大小与哈希，包含历史版本、停用及撤销包；完整技能树也保留报告套件。恢复继续接受有效的格式 1 备份。旧备份若已漏掉 PG 记录对应的包字节，恢复会明确失败，不能靠重装当前目录替代丢失的历史版本。
+
+这些规则适用于当前脚本；下文记录的 V18→V19 数据、耗时及浏览器验收仍是原固定版本的证据。真实包的定向恢复回归覆盖布局映射、PG dump/restore 和包读取；完整生命周期的独立复测另行记录，不把定向测试计为生产 RTO 验收。
+
 ## 使用方法
 
 在仓库根目录安装依赖并构建产品及原生 Web。试用还需要 Docker/OrbStack、kubectl、可用的 Sandbox 控制器与 Runner 镜像、Playwright Chromium，以及目标试用独有的 `sandbox.json`、`ssh.json` 和限权 kubeconfig。准备方式沿用 [S6 原生试用](TRIAL-S6-FINAL-QA.md)；两个 JSON 的 `localRoot`、`nodeRoot`、`workspaceRoot`、命名空间和端口应指向目标独有资源。目标私有目录必须位于 `~/.config/power-evolve/` 下，目标 PG 卷尚不存在。`model.env` 留在私有目录，不能提交到仓库。
@@ -15,6 +24,7 @@ export PE_PRIVATE_DIR=/Users/jingchao/.config/power-evolve/shared-host-s7c-src-b
 export PE_SSH_ENABLED=1 PE_KUBE_CONTEXT=k3d-pe-e32-session-probe
 export PE_COMPOSE_EXTERNAL_NETWORK=pe-shared-host-slice5_default
 export PE_BACKUP_BUNDLE=/Users/jingchao/.config/power-evolve/s7c-backups/b1
+node products/power-evolve/scripts/prepare-trial.mjs
 node products/power-evolve/scripts/backup-trial.mjs create
 ```
 
