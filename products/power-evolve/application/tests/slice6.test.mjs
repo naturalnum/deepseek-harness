@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { createRequire } from 'node:module'
 import { EventEmitter } from 'node:events'
 import { initializeDatabase } from '../lib/platform/database.js'
-import { TaskStore } from '../lib/platform/tasks.js'
+import { TaskFixtureStore as TaskStore } from './task-credential-fixture.mjs'
 import { writeLine } from '../lib/http.js'
 
 const require = createRequire(new URL('../package.json', import.meta.url))

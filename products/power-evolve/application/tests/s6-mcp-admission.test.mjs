@@ -20,12 +20,12 @@ import { installRemoteMcpTools } from '../lib/host/mcp.js'
 import { compileMcpModelTool } from '../lib/mcp-model-tools.js'
 import { initializeDatabase, transaction } from '../lib/platform/database.js'
 import { EventStore } from '../lib/platform/events.js'
-import { McpActionStore } from '../lib/platform/mcp-actions.js'
+import { McpActionFixtureStore as McpActionStore } from './task-credential-fixture.mjs'
 import { selectMcpOperationTools } from '../lib/platform/mcp-admission.js'
 import { proxyModel } from '../lib/platform/model.js'
 import { mcpCatalogTools, mcpCatalogDigest } from '../lib/platform/mcp-catalog.js'
 import { mcpCanonicalJson } from '../lib/platform/mcp-credentials.js'
-import { TaskStore } from '../lib/platform/tasks.js'
+import { TaskFixtureStore as TaskStore } from './task-credential-fixture.mjs'
 import * as migrations from '../lib/platform/schema.js'
 
 const privateDir = process.env.PE_PRIVATE_DIR ?? join(homedir(), '.config/power-evolve/shared-host-slice-1')
@@ -51,7 +51,7 @@ async function fixture(t) {
   for (let version = 2; version <= 21; version++) await pool.query(migrations[`schemaV${version}`])
   await initializeDatabase(pool)
   await initializeDatabase(pool)
-  assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 24)
+  assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 25)
   const users = ['alice', 'bob'].map(username => identity.parse({ username, userId: randomUUID() }))
   for (const user of users) {
     await pool.query('INSERT INTO pe_users(id,username,password_hash,settings) VALUES($1,$2,$3,$4)',

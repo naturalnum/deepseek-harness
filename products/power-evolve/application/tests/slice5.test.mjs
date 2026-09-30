@@ -6,7 +6,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
-import { DeviceService } from '../lib/platform/devices.js'
+import { DeviceFixtureService as DeviceService } from './task-credential-fixture.mjs'
 import { FileService } from '../lib/platform/files.js'
 import { initializeDatabase } from '../lib/platform/database.js'
 

@@ -10,7 +10,7 @@ import { Pool } from 'pg'
 import { identity } from '../lib/contracts.js'
 import { initializeDatabase } from '../lib/platform/database.js'
 import { PersonalMcpService } from '../lib/platform/mcp.js'
-import { TaskStore } from '../lib/platform/tasks.js'
+import { TaskFixtureStore as TaskStore } from './task-credential-fixture.mjs'
 import * as migrations from '../lib/platform/schema.js'
 
 const privateDir = process.env.PE_PRIVATE_DIR ?? join(homedir(), '.config/power-evolve/shared-host-native-s5')
@@ -83,7 +83,7 @@ test('S6 personal MCP snapshots one fixed whoami tool and revokes per user',
     finally { client.release() }
     await initializeDatabase(pool)
     await initializeDatabase(pool)
-    assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 24)
+    assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 25)
 
     assert.throws(() => new PersonalMcpService(new TaskStore(pool, { maxEventBytes: 524288, leaseMs: 30_000,
       maxPendingPerUser: 8, maxActivePerUser: 1 }), 'http://example.com/mcp', token, 5000))

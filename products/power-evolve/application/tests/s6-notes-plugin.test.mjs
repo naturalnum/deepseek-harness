@@ -10,8 +10,8 @@ import { Pool } from 'pg'
 import { identity } from '../lib/contracts.js'
 import { initializeDatabase } from '../lib/platform/database.js'
 import { PluginService } from '../lib/platform/plugins.js'
-import { ConnectorService } from '../lib/platform/connectors.js'
-import { TaskStore } from '../lib/platform/tasks.js'
+import { ConnectorFixtureService as ConnectorService } from './task-credential-fixture.mjs'
+import { TaskFixtureStore as TaskStore } from './task-credential-fixture.mjs'
 import * as migrations from '../lib/platform/schema.js'
 
 const privateDir = process.env.PE_PRIVATE_DIR ?? join(homedir(), '.config/power-evolve/shared-host-native-s5')
@@ -60,7 +60,7 @@ test('S6 Notes plugin migrates, isolates users, fences egress, and reconciles a 
 
     await initializeDatabase(pool)
     await initializeDatabase(pool)
-    assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 24)
+    assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 25)
     const plugins = new PluginService(pool)
     const expected = { id: 'notes', title: '受控便签', category: 'tools', kind: 'builtin',
       enabled: true, revision: 1, requiresApproval: true }

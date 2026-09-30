@@ -11,7 +11,7 @@ import { settingsUpdateRequest } from '../lib/contracts.js'
 import { initializeDatabase } from '../lib/platform/database.js'
 import { IdentityService, hashPassword } from '../lib/platform/identity.js'
 import { AccountSettingsService, seedNewUser } from '../lib/platform/account-settings.js'
-import { TaskStore } from '../lib/platform/tasks.js'
+import { TaskFixtureStore as TaskStore } from './task-credential-fixture.mjs'
 import { proxyModel } from '../lib/platform/model.js'
 import { schema, schemaV2, schemaV3, schemaV4, schemaV5, schemaV6, schemaV7, schemaV8,
   schemaV9, schemaV10 } from '../lib/platform/schema.js'
@@ -67,34 +67,35 @@ test('S3 settings are user-scoped, revisioned, idempotent and snapshotted under 
         { id: 'fixture-b', label: 'Disabled B', maxTokens: 128, enabled: false },
       ])
       const carol = await seeded(pool, identities, 'carol', { model: 'fixture-d', maxTokens: 40, revision: 1 })
-      assert.deepEqual(await account.modelsList(carol.user), { models: [
+      assert.deepEqual(await account.modelsList(carol.user, carol.token), { models: [
         { id: 'fixture-d', label: 'fixture-d', maxTokens: 40 },
       ] })
       await assert.rejects(account.update(carol.user, { requestId: randomUUID(), expectedRevision: 1,
-        model: 'fixture-d', maxTokens: 41 }), { status: 403, code: 'model_not_authorized' })
-      assert.deepEqual(await account.modelsList(alice.user), { models: [
+        model: 'fixture-d', maxTokens: 41 }, carol.token), { status: 403, code: 'model_not_authorized' })
+      assert.deepEqual(await account.modelsList(alice.user, alice.token), { models: [
         { id: 'fixture-a', label: 'Model A', maxTokens: 128 },
         { id: 'fixture-b', label: 'Model B', maxTokens: 256 },
       ] })
-      assert.deepEqual(await account.modelsList(bob.user), { models: [
+      assert.deepEqual(await account.modelsList(bob.user, bob.token), { models: [
         { id: 'fixture-c', label: 'Model C', maxTokens: 64 },
       ] })
       assert.throws(() => settingsUpdateRequest.parse({ requestId: randomUUID(), expectedRevision: 1,
         model: 'fixture-a', maxTokens: 64, userId: bob.user.userId }))
       await assert.rejects(account.update(bob.user, { requestId: randomUUID(), expectedRevision: 1,
-        model: 'fixture-a', maxTokens: 32 }), { status: 403, code: 'model_not_authorized' })
+        model: 'fixture-a', maxTokens: 32 }, bob.token), { status: 403, code: 'model_not_authorized' })
       await assert.rejects(account.update(alice.user, { requestId: randomUUID(), expectedRevision: 1,
-        model: 'fixture-b', maxTokens: 257 }), { status: 403, code: 'model_not_authorized' })
+        model: 'fixture-b', maxTokens: 257 }, alice.token), { status: 403, code: 'model_not_authorized' })
 
       const tasks = new TaskStore(pool, { maxEventBytes: 524288, leaseMs: 3000, maxPendingPerUser: 8, maxActivePerUser: 1 })
+      tasks.setCredential(alice.user, alice.token)
       const { sessionId } = await tasks.create(alice.user, randomUUID())
       const oldRequest = randomUUID()
       const old = await tasks.accept(alice.user, sessionId, oldRequest, 'before update')
       const staleAuthentication = await identities.authenticate(alice.token)
       const mutation = { requestId: randomUUID(), expectedRevision: 1, model: 'fixture-b', maxTokens: 200 }
-      assert.deepEqual(await account.update(alice.user, mutation), { model: 'fixture-b', maxTokens: 200, revision: 2 })
-      assert.deepEqual(await account.update(alice.user, mutation), { model: 'fixture-b', maxTokens: 200, revision: 2 })
-      await assert.rejects(account.update(alice.user, { ...mutation, maxTokens: 201 }),
+      assert.deepEqual(await account.update(alice.user, mutation, alice.token), { model: 'fixture-b', maxTokens: 200, revision: 2 })
+      assert.deepEqual(await account.update(alice.user, mutation, alice.token), { model: 'fixture-b', maxTokens: 200, revision: 2 })
+      await assert.rejects(account.update(alice.user, { ...mutation, maxTokens: 201 }, alice.token),
         { status: 409, code: 'request_id_conflict' })
       const fresh = await tasks.accept(staleAuthentication, sessionId, randomUUID(), 'after update')
       const snapshots = await pool.query('SELECT id,settings FROM pe_operations WHERE id=ANY($1::uuid[])',
@@ -109,9 +110,9 @@ test('S3 settings are user-scoped, revisioned, idempotent and snapshotted under 
 
       const contenders = await Promise.allSettled([
         account.update(alice.user, { requestId: randomUUID(), expectedRevision: 2,
-          model: 'fixture-a', maxTokens: 80 }),
+          model: 'fixture-a', maxTokens: 80 }, alice.token),
         account.update(alice.user, { requestId: randomUUID(), expectedRevision: 2,
-          model: 'fixture-b', maxTokens: 220 }),
+          model: 'fixture-b', maxTokens: 220 }, alice.token),
       ])
       assert.equal(contenders.filter(result => result.status === 'fulfilled').length, 1)
       assert.deepEqual(contenders.filter(result => result.status === 'rejected').map(result =>
@@ -124,7 +125,7 @@ test('S3 settings are user-scoped, revisioned, idempotent and snapshotted under 
       await seedNewUser(pool, 'alice', 'replacement-password-hash',
         { model: 'fixture-a', maxTokens: 64, revision: 1 },
         [{ id: 'fixture-b', label: 'Changed seed', maxTokens: 256, enabled: true }])
-      assert.deepEqual((await account.modelsList(alice.user)).models.map(model => model.id), ['fixture-b'],
+      assert.deepEqual((await account.modelsList(alice.user, alice.token)).models.map(model => model.id), ['fixture-b'],
         'restart seeding must not restore a revoked grant')
       assert.equal((await tasks.accept(alice.user, sessionId, oldRequest, 'before update')).operationId, old.operationId,
         'idempotent prompt retry keeps the old operation even after revocation')
@@ -139,6 +140,7 @@ test('model egress refuses revoked grants before sending upstream', { timeout: 3
       { id: 'fixture-a', label: 'Model A', maxTokens: 100, enabled: true },
     ])
     const tasks = new TaskStore(pool, { maxEventBytes: 524288, leaseMs: 30_000, maxPendingPerUser: 8, maxActivePerUser: 1 })
+    tasks.setCredential(alice.user, alice.token)
     const { sessionId } = await tasks.create(alice.user, randomUUID())
     await tasks.accept(alice.user, sessionId, randomUUID(), 'egress')
     const grant = await tasks.claim(randomUUID())
@@ -190,7 +192,7 @@ test('V11 migrates only each existing user current model and never regrants on r
       await pool.query('INSERT INTO pe_users(id,username,password_hash,settings) VALUES($1,$2,$3,$4)',
         [id, 'legacy', 'test-only', { model: 'fixture-legacy', maxTokens: 96, revision: 7 }])
       await initializeDatabase(pool)
-      assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 24)
+      assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 25)
       assert.deepEqual((await pool.query('SELECT model_id,label,max_tokens,enabled FROM pe_user_models WHERE user_id=$1',
         [id])).rows, [{ model_id: 'fixture-legacy', label: 'fixture-legacy', max_tokens: 96, enabled: true }])
       await pool.query('UPDATE pe_user_models SET enabled=false WHERE user_id=$1', [id])

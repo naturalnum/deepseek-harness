@@ -17,7 +17,7 @@ import yaml from 'js-yaml'
 import { recordedConversation, recordedSshContinuation, compareRecordedSession, compareRecordedSshUncertainSession, recordedSandboxContinuation, sandboxDirectory, recordedLosslessOutput, losslessDirectory } from './session-snapshot.mjs'
 import { SshActionCipher } from '../lib/platform/ssh-execute.js'
 import { SshConnectionService } from '../lib/platform/ssh.js'
-import { TaskStore } from '../lib/platform/tasks.js'
+import { TaskFixtureStore as TaskStore } from './task-credential-fixture.mjs'
 import { encodeOfficeCommand } from '../lib/host/office.js'
 const require = createRequire(new URL('../package.json', import.meta.url))
 const { Pool } = require('pg')

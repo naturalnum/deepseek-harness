@@ -13,10 +13,10 @@ import { Pool } from 'pg'
 import { identity, PlatformError } from '../lib/contracts.js'
 import { mcpLeaseOwnerId } from '../lib/mcp-contracts.js'
 import { initializeDatabase, transaction } from '../lib/platform/database.js'
-import { McpActionStore } from '../lib/platform/mcp-actions.js'
+import { McpActionFixtureStore as McpActionStore } from './task-credential-fixture.mjs'
 import { McpConnectionService } from '../lib/platform/mcp-connections.js'
 import { McpActionWorker, McpActionWorkerError } from '../lib/platform/mcp-action-worker.js'
-import { TaskStore } from '../lib/platform/tasks.js'
+import { TaskFixtureStore as TaskStore } from './task-credential-fixture.mjs'
 
 const privateDir = process.env.PE_PRIVATE_DIR ?? join(homedir(), '.config/power-evolve/shared-host-s6-mcp-dev')
 const databaseUrl = (await readFile(join(privateDir, 'database-url'), 'utf8')).trim()
@@ -64,7 +64,7 @@ async function fixture(t) {
   pool = new Pool({ connectionString: url.href, max: 6, connectionTimeoutMillis: 5_000,
     statement_timeout: 15_000 })
   await initializeDatabase(pool)
-  assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 24)
+  assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 25)
   const users = ['alice', 'bob'].map(username => identity.parse({ userId: randomUUID(), username }))
   for (const user of users) {
     await pool.query('INSERT INTO pe_users(id,username,password_hash,settings) VALUES($1,$2,$3,$4)',

@@ -9,7 +9,7 @@ import { Pool } from 'pg'
 import { identity } from '../lib/contracts.js'
 import { initializeDatabase } from '../lib/platform/database.js'
 import { StdioMcpService } from '../lib/platform/stdio-mcp.js'
-import { TaskStore } from '../lib/platform/tasks.js'
+import { TaskFixtureStore as TaskStore } from './task-credential-fixture.mjs'
 import * as migrations from '../lib/platform/schema.js'
 
 const privateDir = process.env.PE_PRIVATE_DIR ?? join(homedir(), '.config/power-evolve/shared-host-native-s5')
@@ -106,7 +106,7 @@ test('STDIO calls pin owner and revision, deduplicate, and resume the same Sessi
     } catch (error) { await client.query('ROLLBACK'); throw error }
     finally { client.release() }
     await initializeDatabase(pool)
-    assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 24)
+    assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 25)
     const tasks = new TaskStore(pool, { maxEventBytes: 524288, leaseMs: 30_000, maxPendingPerUser: 8,
       maxActivePerUser: 1, stdioMcpEnabled: true })
     const runner = new FixtureRunner()
@@ -256,7 +256,8 @@ test('real PG fence orders connection disable with intent and the first Runner P
     await eventually(async () => Number((await pool.query(
       `SELECT count(*) FROM pg_stat_activity WHERE datname=current_database()
        AND state='active' AND wait_event_type='Lock'
-       AND query LIKE '%pe_stdio_mcp_connections%' AND query LIKE '%FOR UPDATE%'`,
+       AND (query LIKE '%pe_stdio_mcp_connections%' OR query LIKE '%pe_users%')
+       AND (query LIKE '%FOR UPDATE%' OR query LIKE '%FOR NO KEY UPDATE%')`,
     )).rows[0].count))
     assert.equal(await Promise.race([toggle.then(() => 'committed'),
       new Promise(resolve => setTimeout(() => resolve('waiting'), 150))]), 'waiting',

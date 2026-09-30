@@ -11,11 +11,12 @@ import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { Pool } from 'pg'
 import { initializeDatabase } from '../lib/platform/database.js'
-import { SshCallStore } from '../lib/platform/ssh-calls.js'
-import { SshAuthenticationCheck } from '../lib/platform/ssh-check.js'
+import { SshCallFixtureStore as SshCallStore } from './task-credential-fixture.mjs'
+import { SshAuthenticationFixtureCheck as SshAuthenticationCheck } from './task-credential-fixture.mjs'
 import { SshConnectionService } from '../lib/platform/ssh.js'
-import { SshActionCipher, SshExecuteService } from '../lib/platform/ssh-execute.js'
-import { TaskStore } from '../lib/platform/tasks.js'
+import { SshActionCipher } from '../lib/platform/ssh-execute.js'
+import { SshExecuteFixtureService as SshExecuteService } from './task-credential-fixture.mjs'
+import { TaskFixtureStore as TaskStore } from './task-credential-fixture.mjs'
 
 const execute = promisify(execFile)
 const root = fileURLToPath(new URL('../../../../', import.meta.url))

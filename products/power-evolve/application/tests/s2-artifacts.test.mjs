@@ -9,7 +9,7 @@ import { Pool } from 'pg'
 import { initializeDatabase } from '../lib/platform/database.js'
 import { FileService } from '../lib/platform/files.js'
 import { ArtifactService } from '../lib/platform/artifacts.js'
-import { TaskStore } from '../lib/platform/tasks.js'
+import { TaskFixtureStore as TaskStore } from './task-credential-fixture.mjs'
 import { identity, requestId } from '../lib/contracts.js'
 
 const privateDir = process.env.PE_PRIVATE_DIR ?? join(homedir(), '.config/power-evolve/shared-host-slice2')

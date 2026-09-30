@@ -10,8 +10,8 @@ import test from 'node:test'
 import { Pool } from 'pg'
 import { identity } from '../lib/contracts.js'
 import { initializeDatabase } from '../lib/platform/database.js'
-import { SshCallStore } from '../lib/platform/ssh-calls.js'
-import { SshAuthenticationCheck } from '../lib/platform/ssh-check.js'
+import { SshCallFixtureStore as SshCallStore } from './task-credential-fixture.mjs'
+import { SshAuthenticationFixtureCheck as SshAuthenticationCheck } from './task-credential-fixture.mjs'
 import { SshConnectionService } from '../lib/platform/ssh.js'
 
 class Runner {

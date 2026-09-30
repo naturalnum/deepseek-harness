@@ -6,11 +6,12 @@ import { join } from 'node:path'
 import test from 'node:test'
 import { setTimeout as delay } from 'node:timers/promises'
 import { Pool } from 'pg'
+import { lockAccountAuthorities } from '../lib/platform/account-authority.js'
 import { identity } from '../lib/contracts.js'
 import { initializeDatabase, transaction } from '../lib/platform/database.js'
-import { McpActionStore } from '../lib/platform/mcp-actions.js'
+import { taskCredential, disableFixtureAccount, enableFixtureAccount, McpActionFixtureStore as McpActionStore } from './task-credential-fixture.mjs'
 import { mcpCatalogTools, mcpCatalogDigest } from '../lib/platform/mcp-catalog.js'
-import { TaskStore } from '../lib/platform/tasks.js'
+import { TaskFixtureStore as TaskStore } from './task-credential-fixture.mjs'
 import * as migrations from '../lib/platform/schema.js'
 
 const testClients = new WeakMap()
@@ -40,7 +41,7 @@ async function fixture(t, overrides = {}) {
   await pool.query(migrations.schema); await pool.query('INSERT INTO pe_schema(version) VALUES(1)')
   for (let version = 2; version <= 22; version++) await pool.query(migrations[`schemaV${version}`])
   await initializeDatabase(pool); await initializeDatabase(pool)
-  assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 24)
+  assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 25)
   const users = ['alice', 'bob'].map(username => identity.parse({ username, userId: randomUUID() }))
   for (const user of users) {
     await pool.query('INSERT INTO pe_users(id,username,password_hash,settings) VALUES($1,$2,$3,$4)',
@@ -273,11 +274,12 @@ test('a connection lock wait cannot extend an expired worker dispatch lease', as
   assert.equal((await f.pool.query('SELECT dispatch_id FROM pe_mcp_actions WHERE id=$1', [action.actionId])).rows[0].dispatch_id, null)
 })
 
-test('owner serialization admits connection foreign-key writes and avoids a user/connection deadlock', async t => {
+test('account-first connection writes serialize catalog foreign keys with dispatch', async t => {
   const f = await fixture(t), action = await f.store.propose(f.grant.token, f.input())
   await f.approve(action)
   const lease = await f.store.claim(randomUUID()), locked = await blocker(t, f.pool)
   await locked.client.query("SET LOCAL lock_timeout='1500ms'")
+  await lockAccountAuthorities(locked.client, [f.alice.userId], 'update')
   await locked.client.query('SELECT id FROM pe_mcp_remote_connections WHERE id=$1 FOR UPDATE', [f.connectionId])
   const permitted = f.store.authorizeDispatch(lease, f.catalogDigest)
   await waitForBlocked(f.pool, locked.pid)
@@ -328,4 +330,40 @@ test('a sibling intent expiring during a connection lock wait also prevents a ne
   await locked.client.query('SELECT pg_sleep(0.6)')
   await locked.release(); await denied
   assert.equal((await f.pool.query('SELECT count(dispatch_id)::integer AS n FROM pe_mcp_actions')).rows[0].n, 1)
+})
+
+test('account disablement stops pending approval and preserves a late committed MCP reply without continuation', async t => {
+  const f = await fixture(t), pending = await f.store.propose(f.grant.token, f.input())
+  const accepted = await f.store.propose(f.grant.token, f.input(1))
+  await f.approve(accepted, 'persistent')
+  const lease = await f.store.claim(randomUUID())
+  assert.equal(await f.store.authorizeDispatch(lease, f.catalogDigest), true)
+  await disableFixtureAccount(f.pool, f.alice)
+  await assert.rejects(f.store.renew(lease), { code: 'mcp_action_lease_lost' })
+  await enableFixtureAccount(f.pool, f.alice)
+  assert.equal((await f.store.status(f.alice, pending.actionId)).state, 'cancelled')
+  await assert.rejects(f.approve(pending), { code: 'mcp_action_already_decided' })
+  const receipt = await f.store.finish(lease, { result })
+  assert.equal(receipt.state, 'succeeded'); assert.equal(receipt.errorCode, 'account_disabled')
+  assert.deepEqual((await f.store.status(f.alice, accepted.actionId)).result, result)
+  assert.equal((await f.pool.query('SELECT count(*)::integer AS n FROM pe_mcp_permissions WHERE revoked_at IS NULL')).rows[0].n, 0)
+  assert.equal((await f.pool.query("SELECT count(*)::integer AS n FROM pe_operations WHERE source='remote_mcp_result'")).rows[0].n, 0)
+  assert.equal(await f.tasks.claim(randomUUID()), null)
+  assert.equal(await f.store.claim(randomUUID()), null)
+})
+
+test('MCP approval rechecks the original bearer audience, owner and credential version inside the transaction', async t => {
+  const f = await fixture(t), action = await f.store.propose(f.grant.token, f.input())
+  const agent = await taskCredential(f.pool, f.alice)
+  const foreignApproval = await taskCredential(f.pool, f.bob, 'approval')
+  const staleApproval = await taskCredential(f.pool, f.alice, 'approval')
+  await assert.rejects(f.store.decide(f.alice, action.actionId, action.fingerprint, 'once', agent), { status: 401 })
+  await assert.rejects(f.store.decide(f.alice, action.actionId, action.fingerprint, 'once', foreignApproval), { status: 401 })
+  await transaction(f.pool, async client => {
+    await lockAccountAuthorities(client, [f.alice.userId], 'update')
+    await client.query('UPDATE pe_users SET credential_version=credential_version+1 WHERE id=$1', [f.alice.userId])
+  })
+  await assert.rejects(f.store.decide(f.alice, action.actionId, action.fingerprint, 'once', staleApproval), { status: 401 })
+  assert.equal((await f.store.status(f.alice, action.actionId)).state, 'pending')
+  assert.equal(await f.store.claim(randomUUID()), null)
 })

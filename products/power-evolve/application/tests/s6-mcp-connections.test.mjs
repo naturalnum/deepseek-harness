@@ -7,6 +7,8 @@ import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { Pool } from 'pg'
+import { lockAccountAuthorities } from '../lib/platform/account-authority.js'
+import { disableFixtureAccount, enableFixtureAccount } from './task-credential-fixture.mjs'
 import { identity, PlatformError } from '../lib/contracts.js'
 import { mcpLeaseOwnerId } from '../lib/mcp-contracts.js'
 import { initializeDatabase, transaction } from '../lib/platform/database.js'
@@ -124,7 +126,7 @@ test('metadata CRUD isolates multiple connections, serializes CAS, preserves leg
     requestId: randomUUID(), connectionId: first.connectionId, baseRevision: 1,
     ...(method === 'toggle' ? { enabled: false } : {}),
   }), { status: 404, code: 'mcp_connection_not_found' })
-  await assert.rejects(service.create({ userId: randomUUID() }, request), { status: 401, code: 'unauthorized' })
+  await assert.rejects(service.create({ userId: randomUUID() }, request), { status: 404, code: 'account_not_found' })
   await assert.rejects(service.create(alice, { requestId: randomUUID(), configuration: configuration({
     serverUrl: 'https://denied.example.test/mcp' }) }), { status: 403, code: 'mcp_destination_denied' })
   const update = { requestId: randomUUID(), connectionId: first.connectionId, baseRevision: 1,
@@ -448,4 +450,77 @@ test('bounded cleanup skips protected recent drafts and busy owners, deletes old
   assert.deepEqual(await service.prunePendingChecks(2), { users: 0, checks: 0, drafts: 0 })
   assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_mcp_drafts')).rows[0].n, 2)
   assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_operations')).rows[0].n, 0)
+})
+
+async function blockedBy(pool, pid) {
+  const deadline = Date.now() + 5000
+  while (Date.now() < deadline) {
+    const blocked = await pool.query('SELECT 1 FROM pg_stat_activity WHERE $1=ANY(pg_blocking_pids(pid))', [pid])
+    if (blocked.rowCount) return
+    await new Promise(done => setTimeout(done, 10))
+  }
+  throw new Error('Expected discovery completion to wait on account lock')
+}
+
+test('MCP discovery completion locks the account before check and catalog foreign keys', async t => {
+  const f = await fixture(t)
+  const connection = await f.service.create(f.alice, { requestId: randomUUID(), configuration: configuration() })
+  const check = await f.service.startCheck(f.alice, { requestId: randomUUID(), sessionId: f.sessions.get(f.alice.userId),
+    connectionId: connection.connectionId, baseRevision: 1 })
+  const lease = await f.service.claimCheck(ownerId()), blocker = await f.pool.connect()
+  let outcome
+  try {
+    await blocker.query('BEGIN')
+    await lockAccountAuthorities(blocker, [f.alice.userId], 'update')
+    const pid = (await blocker.query('SELECT pg_backend_pid() AS pid')).rows[0].pid
+    outcome = f.service.finishCheck(lease, { tools: [{ name: 'synthetic', inputSchema: { type: 'object' } }] })
+      .then(value => ({ value }), error => ({ error }))
+    await blockedBy(f.pool, pid)
+    // A completion blocked on user authority must not hold the check row yet.
+    await blocker.query('SELECT id FROM pe_mcp_checks WHERE id=$1 FOR UPDATE NOWAIT', [check.checkId])
+    await blocker.query('SELECT id FROM pe_mcp_remote_connections WHERE id=$1 FOR UPDATE', [connection.connectionId])
+    await blocker.query('COMMIT')
+  } finally { await blocker.query('ROLLBACK'); blocker.release() }
+  const observed = await outcome
+  assert.equal(observed.error, undefined)
+  assert.equal(observed.value.state, 'succeeded')
+  assert.ok(observed.value.catalogId)
+})
+
+test('account disablement cancels old MCP discovery and active checks do not return after re-enable', async t => {
+  const f = await fixture(t)
+  const connection = await f.service.create(f.alice, { requestId: randomUUID(), configuration: configuration() })
+  const check = await f.service.startCheck(f.alice, { requestId: randomUUID(), sessionId: f.sessions.get(f.alice.userId),
+    connectionId: connection.connectionId, baseRevision: 1 })
+  const lease = await f.service.claimCheck(ownerId())
+  await disableFixtureAccount(f.pool, f.alice)
+  await assert.rejects(f.service.create(f.alice, { requestId: randomUUID(), configuration: configuration() }), { status: 401 })
+  await enableFixtureAccount(f.pool, f.alice)
+  for (const action of [() => f.service.renewCheck(lease), () => f.service.checkSnapshot(lease),
+    () => f.service.finishCheck(lease, { tools: [] })]) await assert.rejects(action(), { code: 'mcp_check_lease_lost' })
+  assert.equal((await f.service.check(f.alice, check.checkId)).state, 'cancelled')
+  assert.equal(await f.service.claimCheck(ownerId()), null)
+})
+
+test('MCP credential upload rechecks ticket expiration after waiting for the account lock', async t => {
+  const f = await fixture(t)
+  const bytes = Buffer.from(JSON.stringify({ formatVersion: 1, bearerToken: 'synthetic-expiring-credential' }))
+  const ticket = await f.service.issueTicket(f.alice, { purpose: 'create', requestId: randomUUID(), sizeBytes: bytes.length,
+    configuration: configuration({ authentication: { kind: 'bearer', action: 'replace' } }) }, 'https://platform.example.test')
+  await f.pool.query("UPDATE pe_mcp_credential_tickets SET expires_at=clock_timestamp()+interval '1 second' WHERE user_id=$1", [f.alice.userId])
+  const blocker = await f.pool.connect()
+  let outcome
+  try {
+    await blocker.query('BEGIN')
+    await lockAccountAuthorities(blocker, [f.alice.userId], 'update')
+    const pid = (await blocker.query('SELECT pg_backend_pid() AS pid')).rows[0].pid
+    outcome = f.service.upload(ticket.ticket, Readable.from([bytes])).then(value => ({ value }), error => ({ error }))
+    await blockedBy(f.pool, pid)
+    await blocker.query("SELECT pg_sleep(1.1)")
+    assert.equal((await blocker.query('SELECT expires_at<clock_timestamp() AS expired FROM pe_mcp_credential_tickets WHERE user_id=$1',
+      [f.alice.userId])).rows[0].expired, true)
+    await blocker.query('COMMIT')
+  } finally { await blocker.query('ROLLBACK'); blocker.release() }
+  assert.equal((await outcome).error.code, 'invalid_mcp_ticket')
+  assert.equal((await f.pool.query('SELECT count(*)::integer AS n FROM pe_mcp_remote_connections')).rows[0].n, 0)
 })

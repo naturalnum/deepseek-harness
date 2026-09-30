@@ -7,7 +7,7 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Pool } from 'pg'
 import { initializeDatabase } from '../lib/platform/database.js'
-import { TaskStore } from '../lib/platform/tasks.js'
+import { TaskFixtureStore as TaskStore } from './task-credential-fixture.mjs'
 import { SkillService } from '../lib/platform/skills.js'
 import { readRuntimeSkill, readRuntimeSkillResource } from '../lib/platform/runtime-skills.js'
 

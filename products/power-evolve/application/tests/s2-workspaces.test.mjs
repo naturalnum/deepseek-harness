@@ -12,7 +12,7 @@ import { FileService } from '../lib/platform/files.js'
 import { NativeWorkspaceRead } from '../lib/platform/native-workspace-read.js'
 import { NativeFileRead } from '../lib/platform/native-files.js'
 import { NativeSessionRead } from '../lib/platform/native-session-read.js'
-import { TaskStore } from '../lib/platform/tasks.js'
+import { TaskFixtureStore as TaskStore } from './task-credential-fixture.mjs'
 import { identity, requestId, workspaceId } from '../lib/contracts.js'
 import { schema, schemaV2, schemaV3, schemaV4, schemaV5, schemaV6, schemaV7, schemaV8 } from '../lib/platform/schema.js'
 
@@ -128,7 +128,7 @@ test('V8 migration retains default Workspace bytes and blocks a legacy live Pod'
     await writeFile(join(directory, 'history.txt'), 'old Git and file bytes')
 
     await initializeDatabase(pool)
-    assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 24)
+    assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 25)
     assert.equal((await pool.query('SELECT workspace_id FROM pe_sessions WHERE id=$1', [legacySession])).rows[0].workspace_id,
       legacyWorkspace)
     assert.equal((await pool.query('SELECT id FROM pe_workspaces WHERE user_id=$1 AND is_default', [alice.userId])).rows[0].id,

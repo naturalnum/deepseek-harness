@@ -8,15 +8,15 @@ import { mkdtemp, mkdir, readFile, writeFile, rm, stat, chmod, symlink, readdir,
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { Readable } from 'node:stream'
 import { Pool, Client } from 'pg'
 import { initializeDatabase, transaction } from '../lib/platform/database.js'
 import * as migrations from '../lib/platform/schema.js'
 import { McpConnectionService } from '../lib/platform/mcp-connections.js'
+import { seedV21Session, seedV22Mcp } from './legacy-mcp-backup-fixture.mjs'
 import { McpCredentialCipher } from '../lib/platform/mcp-credentials.js'
-import { McpActionStore } from '../lib/platform/mcp-actions.js'
+import { McpActionFixtureStore as McpActionStore } from './task-credential-fixture.mjs'
 import { selectMcpOperationTools } from '../lib/platform/mcp-admission.js'
-import { TaskStore } from '../lib/platform/tasks.js'
+import { TaskFixtureStore as TaskStore } from './task-credential-fixture.mjs'
 import { loadMcpPlatformConfig } from '../lib/platform/mcp-platform-config.js'
 import { requireSeparateBackupPaths, runningBackupTargets, dumpBackupDatabase,
   backupDatabaseIdentity, requireEmptyBackupDatabase } from '../../scripts/backup-support.mjs'
@@ -130,7 +130,7 @@ test('external backup preserves V21 history, V22 MCP versions, V23 outcomes and 
     await source.query("INSERT INTO pe_users(id,username,password_hash,settings) VALUES($1,$2,'fixture',$3)",
       [owner.userId, owner.username, { model: 'fixture', maxTokens: 64, revision: 1 }])
     await source.query("INSERT INTO pe_user_models(user_id,model_id,label,max_tokens,enabled) VALUES($1,'fixture','fixture',64,true)", [owner.userId])
-    const { sessionId } = await new TaskStore(source, taskLimits).create(owner, randomUUID())
+    const { sessionId } = await seedV21Session(source, owner)
     const fixedId = randomUUID(), oldOperation = randomUUID()
     await source.query('INSERT INTO pe_mcp_connections(id,user_id,install_request_id,name) VALUES($1,$2,$3,$4)',
       [fixedId, owner.userId, randomUUID(), 'legacy whoami'])
@@ -153,7 +153,7 @@ test('external backup preserves V21 history, V22 MCP versions, V23 outcomes and 
       assert.equal((await seed22.query('SELECT version FROM pe_schema')).rows[0].version, 21)
       assert.deepEqual(await legacyRows(seed22), old)
       await initializeDatabase(source); await initializeDatabase(source)
-      assert.equal((await source.query('SELECT version FROM pe_schema')).rows[0].version, 24)
+      assert.equal((await source.query('SELECT version FROM pe_schema')).rows[0].version, 25)
       assert.deepEqual(await legacyRows(source), old)
       assert.deepEqual((await source.query('SELECT remote_mcp_selection FROM pe_operations')).rows[0].remote_mcp_selection, [])
       assert.deepEqual(await readFile(join(privatePaths[1], 'workspaces/marker')), marker)
@@ -163,21 +163,10 @@ test('external backup preserves V21 history, V22 MCP versions, V23 outcomes and 
     })
     await seed22.query(migrations.schemaV22)
     const source22ConfigPath = join(privatePaths[1], 'remote-mcp/configuration.json')
-    const service = new McpConnectionService(seed22, key, { ...management, assertEndpoint: async () => {} })
     const secret = 'fixture-bearer-credential'
-    const bytes = Buffer.from(JSON.stringify({ formatVersion: 1, bearerToken: secret }))
-    const ticket = await service.issueTicket(owner, { purpose: 'create', requestId: randomUUID(), sizeBytes: bytes.length,
-      configuration: { displayName: 'MCP storage fixture', serverUrl: 'https://fixture.example.test/mcp', enabled: true,
-        authentication: { kind: 'bearer', action: 'replace' } } }, 'https://platform.example.test')
-    const connection = (await service.upload(ticket.ticket, Readable.from([bytes]))).item
-    const check = await service.startCheck(owner, { requestId: randomUUID(), sessionId, connectionId: connection.connectionId,
-      baseRevision: connection.revision })
-    const lease = await service.claimCheck(randomUUID())
-    await service.checkSnapshot(lease)
     const raw = { name: 'lookup', description: 'Opaque descriptor\0表😀', inputSchema: { type: 'object',
       properties: { text: { type: 'string' } }, required: ['text'] }, extension: { original: '\0' } }
-    const found = await service.finishCheck(lease, { tools: [raw] })
-    assert.equal(found.checkId, check.checkId)
+    const found = await seedV22Mcp(seed22, owner, sessionId, key, secret, [raw])
     const selection = await transaction(seed22, client => selectMcpOperationTools(client, owner.userId, admission))
     const operation22 = randomUUID()
     await seed22.query(`INSERT INTO pe_operations(id,session_id,request_id,input,settings,state,remote_mcp_selection)
@@ -187,11 +176,13 @@ test('external backup preserves V21 history, V22 MCP versions, V23 outcomes and 
     const versions22 = await Promise.all(versionTables.map(async table => (await seed22.query(`SELECT * FROM ${table}`)).rows))
     await t.test('V22 immutable MCP bytes and the accepted selection survive V23 and repeated initialization', async () => {
       await initializeDatabase(seed22); await initializeDatabase(seed22)
-      assert.equal((await seed22.query('SELECT version FROM pe_schema')).rows[0].version, 24)
+      assert.equal((await seed22.query('SELECT version FROM pe_schema')).rows[0].version, 25)
       for (const [index, table] of versionTables.entries()) assert.deepEqual((await seed22.query(`SELECT * FROM ${table}`)).rows, versions22[index])
       assert.deepEqual((await seed22.query('SELECT remote_mcp_selection FROM pe_operations WHERE id=$1', [operation22])).rows[0].remote_mcp_selection, selection)
       assert.deepEqual((await seed22.query('SELECT event FROM pe_events WHERE session_id=$1', [sessionId])).rows[0].event, event)
     })
+    const service = new McpConnectionService(seed22, key, { ...management, assertEndpoint: async () => {} })
+    const connection = { connectionId: found.connectionId, revision: 1, configurationRevision: 1, credentialRevision: 1 }
     const tasks = new TaskStore(seed22, taskLimits), actionStore = new McpActionStore(tasks, key, actions)
     const propose = grant => actionStore.propose(grant.token, { callKey: randomUUID(), toolName: selection[0].model.name,
       arguments: { text: 'argument\0表😀' } })

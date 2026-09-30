@@ -13,7 +13,7 @@ import { join } from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import yaml from 'js-yaml'
-import { TaskStore } from '../lib/platform/tasks.js'
+import { TaskFixtureStore as TaskStore } from './task-credential-fixture.mjs'
 import { EventStore } from '../lib/platform/events.js'
 import { initializeDatabase } from '../lib/platform/database.js'
 

@@ -9,11 +9,11 @@ import test from 'node:test'
 import { Pool } from 'pg'
 import { identity } from '../lib/contracts.js'
 import { initializeDatabase } from '../lib/platform/database.js'
-import { SshCallStore } from '../lib/platform/ssh-calls.js'
+import { SshCallFixtureStore as SshCallStore } from './task-credential-fixture.mjs'
 import { SshConnectionService } from '../lib/platform/ssh.js'
-import { SshExecuteService } from '../lib/platform/ssh-execute.js'
+import { disableFixtureAccount, enableFixtureAccount, SshExecuteFixtureService as SshExecuteService } from './task-credential-fixture.mjs'
 import { renderSshCommand } from '../lib/platform/ssh-command.js'
-import { TaskStore } from '../lib/platform/tasks.js'
+import { TaskFixtureStore as TaskStore } from './task-credential-fixture.mjs'
 
 const privateDir = process.env.PE_PRIVATE_DIR ?? join(homedir(), '.config/power-evolve/shared-host-native-s5')
 const databaseUrl = (await readFile(join(privateDir, 'database-url'), 'utf8')).trim()
@@ -67,7 +67,7 @@ async function setup(t) {
   const url = new URL(databaseUrl); url.pathname = `/${database}`
   pool = new Pool({ connectionString: url.href, max: 8 })
   await initializeDatabase(pool)
-  assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 24)
+  assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 25)
   const users = [identity.parse({ userId: randomUUID(), username: 'alice' }),
     identity.parse({ userId: randomUUID(), username: 'bob' })]
   for (const user of users) await pool.query(
@@ -450,3 +450,32 @@ test('SSH approval freezes its historical directory and target, and dispatch sen
     assert.equal(f.runner.posts[0].handle.destination.username, 'other-login')
     assert.equal((await service.status(alice, fresh.action.actionId)).state, 'succeeded')
   })
+
+test('account disablement during SSH POST preserves the observed reply after re-enable without an Agent continuation', async t => {
+  const f = await setup(t), service = f.makeService(), alice = f.users[0]
+  const submitted = await propose(f, service, alice, f.saved[0], 'echo synthetic-late-result')
+  await service.decide(alice, submitted.action.actionId, submitted.action.fingerprint, true)
+  f.runner.beforePost = async () => {
+    await disableFixtureAccount(f.pool, alice)
+    await enableFixtureAccount(f.pool, alice)
+  }
+  const row = await f.calls.claim(service.ownerId, 60_000, 'ssh.execute')
+  await service.pump(row)
+  assert.equal(f.runner.posts.length, 1)
+  const result = await service.status(alice, submitted.action.actionId)
+  assert.equal(result.state, 'succeeded'); assert.equal(result.result.stdout, 'output:alice')
+  assert.equal(result.errorCode, 'account_disabled')
+  assert.equal((await f.pool.query("SELECT count(*)::integer AS n FROM pe_operations WHERE source='ssh_execute_result'")).rows[0].n, 0)
+  assert.equal(await f.tasks.claim(randomUUID()), null)
+})
+
+test('account disablement before SSH approval cannot be undone by re-enable or a fresh approval bearer', async t => {
+  const f = await setup(t), service = f.makeService(), alice = f.users[0]
+  const submitted = await propose(f, service, alice, f.saved[0], 'echo synthetic-blocked-command')
+  await disableFixtureAccount(f.pool, alice)
+  await enableFixtureAccount(f.pool, alice)
+  await assert.rejects(service.decide(alice, submitted.action.actionId, submitted.action.fingerprint, true),
+    { code: 'ssh_action_already_decided' })
+  assert.equal(await f.calls.claim(service.ownerId, 60_000, 'ssh.execute'), null)
+  assert.equal(f.runner.posts.length, 0)
+})

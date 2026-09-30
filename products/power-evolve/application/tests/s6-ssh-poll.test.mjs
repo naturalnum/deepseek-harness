@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 import { randomBytes, randomUUID } from 'node:crypto'
 import test from 'node:test'
-import { SshExecuteService } from '../lib/platform/ssh-execute.js'
+import { SshExecuteFixtureService as SshExecuteService } from './task-credential-fixture.mjs'
 
 test('continuous SSH claims do not starve terminal continuation reconciliation', async () => {
   const calls = { claim: async () => ({ id: randomUUID() }) }

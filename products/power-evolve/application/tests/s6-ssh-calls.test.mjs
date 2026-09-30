@@ -9,7 +9,7 @@ import { Readable } from 'node:stream'
 import { Pool } from 'pg'
 import { identity } from '../lib/contracts.js'
 import { initializeDatabase } from '../lib/platform/database.js'
-import { SshCallStore } from '../lib/platform/ssh-calls.js'
+import { SshCallFixtureStore as SshCallStore } from './task-credential-fixture.mjs'
 import { SshConnectionService } from '../lib/platform/ssh.js'
 
 const privateDir = process.env.PE_PRIVATE_DIR ?? join(homedir(), '.config/power-evolve/shared-host-native-s5')
@@ -32,7 +32,7 @@ test('S6 SSH calls retain exact user requests, fence workers, and reconcile a pe
     const url = new URL(databaseUrl); url.pathname = `/${database}`
     pool = new Pool({ connectionString: url.href, max: 8 })
     await initializeDatabase(pool)
-    assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 24)
+    assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 25)
     const alice = identity.parse({ userId: randomUUID(), username: 'alice' })
     const bob = identity.parse({ userId: randomUUID(), username: 'bob' })
     const connections = [randomUUID(), randomUUID()]
