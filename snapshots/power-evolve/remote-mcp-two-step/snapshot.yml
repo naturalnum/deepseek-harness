@@ -1,0 +1,9 @@
+version: 1
+scenario: remote-mcp-two-step
+profile: power-evolve-host
+composition: shared-host-platform-pg
+recording: authored
+header:
+  class: remote-mcp-two-step
+  pin: true
+  changes: 2

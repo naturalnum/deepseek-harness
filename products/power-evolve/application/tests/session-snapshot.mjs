@@ -1,8 +1,14 @@
 /** Product profile snapshot adapter: compare complete native records after volatile identity/clock normalization. */
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile, writeFile, readdir } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import assert from 'node:assert/strict'
 import yaml from 'js-yaml'
+import { prepareSessionSnapshotFixtureForComparison } from '@deepseek-ai/dsh-llm-replay'
+import { toHeaderLine } from '../../../../packages/session/session-persistence-jsonl/lib/types/format.js'
+// Pure built leaves avoid the support package's Vitest-only suite entry in this Node adapter.
+import { redactSessionSnapshotIds } from '../../../../packages/test-support/session-snapshot/lib/types/identity.js'
+import { normalizeSessionLog, scrubSystemPrompts, scrubToolSchemas } from '../../../../packages/test-support/session-snapshot/lib/types/normalize.js'
+import { sessionFixtureFiles } from '../../../../packages/test-support/session-snapshot/lib/types/session-files.js'
 const directory = new URL('../../../../snapshots/power-evolve/conversation/', import.meta.url)
 const canonical = new URL('session.v4.jsonl', directory)
 const sshDirectory = new URL('../ssh-execute-continuation/', directory)
@@ -105,3 +111,92 @@ export async function recordedLosslessOutput() {
   }
 }
 export { losslessDirectory }
+
+const mcpScenarios = { 'remote-mcp-two-step': 'alice', 'remote-mcp-rejected': 'bob' }
+
+/** Read only the newest owned native generation; its user task and model replies are replay input. */
+export async function recordedMcpSession(scenario) {
+  assert(Object.hasOwn(mcpScenarios, scenario))
+  const targetDirectory = new URL(`../${scenario}/`, directory)
+  const manifest = yaml.load(await readFile(new URL('snapshot.yml', targetDirectory), 'utf8'))
+  assert.deepEqual(manifest, { version: 1, scenario, profile: 'power-evolve-host',
+    composition: 'shared-host-platform-pg', recording: 'authored',
+    header: { class: scenario, pin: true, changes: scenario === 'remote-mcp-two-step' ? 2 : 1 } })
+  const files = await readdir(targetDirectory)
+  const selected = files.some(name => /^session(?:\.v\d+)?\.jsonl$/u.test(name)) ? sessionFixtureFiles(files)[0] : undefined
+  if (!selected) {
+    assert(record, `Missing native MCP fixture: ${scenario}`)
+    return { targetDirectory, rows: null, input: `MCP_TWO_STEPS:${mcpScenarios[scenario]}`, replies: [] }
+  }
+  const source = await readFile(new URL(selected.name, targetDirectory), 'utf8')
+  prepareSessionSnapshotFixtureForComparison(source)
+  const rows = source.trim().split('\n').map(line => JSON.parse(line))
+  assert.equal(rows[0].version, selected.version)
+  const input = rows.find(row => row.type === 'user/message' && row.data.source.kind === 'user').data.content[0].text
+  const replies = rows.filter(row => row.type === 'assistant/message').map(row => row.data.message.content)
+  return { targetDirectory, rows, input, replies }
+}
+
+/** Normalize only issued identities and structured Platform envelopes; arbitrary text remains visible. */
+function normalizeMcpValues(value, actions, toolNames, platformOrigin) {
+  if (typeof value === 'string') {
+    if (toolNames.has(value)) return toolNames.get(value)
+    let envelope
+    try { envelope = JSON.parse(value) } catch { return value }
+    if (!envelope || typeof envelope !== 'object' || !actions.has(envelope.actionId)
+      || !(envelope.kind === 'remote_mcp_result' || Object.hasOwn(envelope, 'approvalUrl'))) return value
+    const action = actions.get(envelope.actionId)
+    envelope.actionId = action.id
+    if (Object.hasOwn(envelope, 'fingerprint')) {
+      assert.equal(envelope.fingerprint, action.fingerprint)
+      envelope.fingerprint = action.token
+    }
+    if (Object.hasOwn(envelope, 'approvalUrl')) {
+      assert.equal(envelope.approvalUrl, new URL('/approval', platformOrigin).toString())
+      envelope.approvalUrl = '{{platform-origin}}/approval'
+    }
+    return JSON.stringify(envelope)
+  }
+  if (Array.isArray(value)) return value.map(item => normalizeMcpValues(item, actions, toolNames, platformOrigin))
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, item]) => [key,
+    key === 'actionId' && actions.has(item) ? actions.get(item).id
+      : normalizeMcpValues(item, actions, toolNames, platformOrigin)]))
+  return value
+}
+
+/** Compare complete persisted native events plus readable request headers, with no writes during replay. */
+export async function compareRecordedMcpSession(page, expected, { actions, tools, platformOrigin }) {
+  const actionIds = new Map(actions.map((action, index) => [action.actionId,
+    { id: `{{approval:${index + 1}}}`, fingerprint: action.fingerprint, token: `{{mcp-fingerprint:${index + 1}}}` }]))
+  const toolNames = new Map(tools.map((tool, index) => [tool.model.name, `{{mcp-tool:${index + 1}}}`]))
+  // Match the native JSONL persistence adapter's conversion from optional logical metadata.
+  const header = toHeaderLine({ ...page.header, createdAt: 0 })
+  const native = [header, ...page.events]
+  const values = normalizeMcpValues(native, actionIds, toolNames, platformOrigin)
+  const text = values.map(row => JSON.stringify(row)).join('\n') + '\n'
+  const [redacted] = redactSessionSnapshotIds([text])
+  const normalized = normalizeSessionLog(redacted, { cwd: '', sessionIds: [] }, { identityMode: 'preserve' })
+  const complete = normalized.trim().split('\n').map(line => JSON.parse(line))
+  const headers = complete.filter(row => row.type === 'request/header')
+  const schemas = { initial: headers[0].data.header.tools, changes: headers.slice(1).map(row => row.data.header.tools) }
+  const system = complete.filter(row => row.type === 'system/message')
+    .flatMap(row => row.data.message.content.filter(block => block.type === 'text').map(block => block.text)).join('\n\n') + '\n'
+  const snapshot = scrubToolSchemas(scrubSystemPrompts(normalized)).trim().split('\n').map(line => {
+    const { seq, time, ...row } = JSON.parse(line); return row
+  })
+  const serialized = snapshot.map(row => JSON.stringify(row)).join('\n') + '\n'
+  prepareSessionSnapshotFixtureForComparison(serialized)
+  assert.deepEqual(redactSessionSnapshotIds([serialized]), [serialized], 'Native MCP identity normalization is a fixed point')
+  assert.equal(scrubToolSchemas(scrubSystemPrompts(serialized)), serialized)
+  if (record) {
+    // Version-named output preserves every previously committed generation.
+    await writeFile(new URL(`session.v${page.header.version}.jsonl`, expected.targetDirectory), serialized)
+    await writeFile(new URL('system-prompt.expected.md', expected.targetDirectory), system)
+    await writeFile(new URL('tool-schemas.expected.json', expected.targetDirectory), JSON.stringify(schemas, null, 2) + '\n')
+  } else {
+    assert.deepEqual(snapshot, expected.rows, `Recorded native MCP Session differs: ${expected.targetDirectory.pathname}`)
+    assert.equal(system, await readFile(new URL('system-prompt.expected.md', expected.targetDirectory), 'utf8'))
+    assert.deepEqual(schemas, JSON.parse(await readFile(new URL('tool-schemas.expected.json', expected.targetDirectory), 'utf8')),
+      'Recorded native MCP tool schemas differ')
+  }
+}

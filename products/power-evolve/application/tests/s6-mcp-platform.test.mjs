@@ -7,13 +7,14 @@ import { createServer, request as httpRequest } from 'node:http'
 import { spawn } from 'node:child_process'
 import { openSync, closeSync } from 'node:fs'
 import { mkdtemp, mkdir, readFile, writeFile, rm, symlink } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import { Pool } from 'pg'
 import yaml from 'js-yaml'
 import { loadMcpPlatformConfig, assertMcpPlatformEndpoint } from '../lib/platform/mcp-platform-config.js'
+import { recordedMcpSession, compareRecordedMcpSession } from './session-snapshot.mjs'
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url))
 const product = join(root, 'products/power-evolve')
@@ -81,8 +82,12 @@ test('remote MCP private configuration fails before resources open and admission
 
 test('native Agent and trusted Platform compose owner-scoped discovery, approval, two-tool continuation and uncertain recovery',
   { timeout: 90000 }, async t => {
+    const twoStep = await recordedMcpSession('remote-mcp-two-step')
+    const rejected = await recordedMcpSession('remote-mcp-rejected')
+    const replay = [{ owner: 'alice', fixture: twoStep, next: 0 }, { owner: 'bob', fixture: rejected, next: 0 }]
     const directory = await mkdtemp(join(tmpdir(), 'pe-mcp-platform-'))
-    const databaseUrl = (await readFile(join(process.env.PE_PRIVATE_DIR, 'database-url'), 'utf8')).trim()
+    const privateDir = process.env.PE_PRIVATE_DIR ?? join(homedir(), '.config/power-evolve/shared-host-s6-mcp-dev')
+    const databaseUrl = (await readFile(join(privateDir, 'database-url'), 'utf8')).trim()
     const database = `pe_mcp_profile_${randomBytes(10).toString('hex')}`
     const admin = new Pool({ connectionString: databaseUrl, max: 1 })
     const children = new Set(), servers = new Set()
@@ -164,6 +169,20 @@ test('native Agent and trusted Platform compose owner-scoped discovery, approval
           else final = `Completed two MCP steps for ${owner}.`
         } else if (outcome.kind === 'remote_mcp_result') final = `MCP stopped: ${outcome.state}.`
       } else if (text === 'hi') final = 'Hello.'
+      // The selected Session is replay input as well as the persisted-output oracle.
+      const recorded = replay.find(value => value.fixture.rows && value.next < value.fixture.replies.length
+        && body.messages.some(message => message.content.some(block => block.type === 'text' && block.text === value.fixture.input)))
+      if (recorded) {
+        const blocks = recorded.fixture.replies[recorded.next++]
+        assert.equal(blocks.length, 1)
+        const block = blocks[0]
+        owner = recorded.owner
+        if (block.type === 'tool-call') {
+          assert(['{{mcp-tool:1}}', '{{mcp-tool:2}}'].includes(block.name))
+          step = block.name === '{{mcp-tool:1}}' ? 'first' : 'second'
+          args = JSON.parse(block.arguments)
+        } else { assert.equal(block.type, 'text'); step = undefined; final = block.text }
+      }
       const tool = step && body.tools.find(value => value.description.includes(`FIXTURE_${owner}_${step}`))
       if (step) assert(tool, 'the admitted native tool must reach the real model proxy')
       const events = [
@@ -254,6 +273,10 @@ test('native Agent and trusted Platform compose owner-scoped discovery, approval
       const requestId = randomUUID()
       const ticket = await rpc(i, 'mcpConnectionsTicket', { purpose: 'create', requestId, configuration, sizeBytes: Buffer.byteLength(bytes) })
       assert.equal(new URL(ticket.uploadUrl).pathname, '/mcp/connections/upload')
+      // Native declarations sort by public name. Stable fixture namespaces keep that observed order stable;
+      // each process owns a separate database, while endpoints and credential tickets remain ephemeral.
+      assert.equal((await pool.query('UPDATE pe_mcp_credential_tickets SET resource_id=$1 WHERE request_id=$2',
+        [`00000000-0000-4000-8000-00000000013${i}`, requestId])).rowCount, 1)
       const upload = origin => fetch(`${platform.url}/mcp/connections/upload`, { method: 'POST', headers: {
         origin, authorization: `Bearer ${ticket.ticket}`, 'content-type': 'application/octet-stream' }, body: bytes })
       assert.equal((await upload('https://foreign.invalid')).status, 403)
@@ -277,7 +300,9 @@ test('native Agent and trusted Platform compose owner-scoped discovery, approval
     assert.equal((await post(`${platform.url}/approvals/mcp/list`, tokens[0], {})).status, 401)
     assert.equal((await post(`${platform.url}/mcp/connections/list`, approvals[0], {})).status, 401)
     assert.equal((await post(`${platform.url}/approvals/mcp/list`, approvals[0], {}, { origin: 'https://foreign.invalid' })).status, 403)
-    const firstRequest = { sessionId: sessions[0], requestId: randomUUID(), text: 'MCP_TWO_STEPS:alice' }
+    // Keep the owner fixture focused on the accepted MCP task; the earlier hello remains independently tested.
+    sessions[0] = (await rpc(0, 'create', { requestId: randomUUID() })).sessionId
+    const firstRequest = { sessionId: sessions[0], requestId: randomUUID(), text: twoStep.input }
     const accepted = await rpc(0, 'prompt', firstRequest), repeated = await rpc(0, 'prompt', firstRequest)
     assert.equal(accepted.accepted, true); assert.equal(repeated.accepted, true)
     assert.equal(accepted.operationId, repeated.operationId)
@@ -296,26 +321,72 @@ test('native Agent and trusted Platform compose owner-scoped discovery, approval
     const second = await nextAction(0, 2)
     assert.equal(second.tool.raw.name, 'second')
     await approve(0, second, 'session')
-    await eventually(async () => {
+    const aliceHistory = await eventually(async () => {
       const page = await rpc(0, 'page', { sessionId: sessions[0], after: -1, limit: 200 })
       return JSON.stringify(page.events).includes('Completed two MCP steps for alice.')
-        && page.operations.every(row => ['completed', 'failed'].includes(row.state))
+        && page.operations.every(row => ['completed', 'failed'].includes(row.state)) && page
     }, 'native continuation finishes the original task')
     assert.deepEqual(remoteCalls.map(value => [value.owner, value.name]), [['alice', 'first'], ['alice', 'second']])
     const saved = (await pool.query('SELECT result FROM pe_mcp_actions WHERE id=$1', [second.actionId])).rows[0].result
     assert.equal(saved.extension, '\0retained')
     assert.equal(saved.structuredContent.text, 'exact\0结果')
+    const aliceOutcomes = aliceHistory.events.filter(event => event.type === 'user/message'
+      && event.data.source.kind === 'power-evolve-remote-mcp')
+    assert.deepEqual(aliceOutcomes.map(event => event.data.source.actionId), [first.actionId, second.actionId])
+    for (const event of aliceOutcomes) {
+      const outcome = JSON.parse(event.data.content[0].text)
+      assert.equal(outcome.actionId, event.data.source.actionId); assert.equal(outcome.state, 'succeeded')
+      assert.deepEqual(outcome.result, (await pool.query('SELECT result FROM pe_mcp_actions WHERE id=$1', [outcome.actionId])).rows[0].result)
+      assert(modelRequests.some(body => body.messages.some(message => message.content.some(block => block.type === 'text'
+        && block.text === event.data.content[0].text))), 'persisted original outcome reaches the real model proxy')
+    }
+    const snapshotFacts = { actions: [first, second], tools: [first.tool, second.tool], platformOrigin }
+    await compareRecordedMcpSession(aliceHistory, twoStep, snapshotFacts)
+    if (twoStep.rows) {
+      assert.equal(replay[0].next, twoStep.replies.length)
+      if (process.env.PE_RECORD_SNAPSHOT !== '1') {
+        const changed = structuredClone(aliceHistory)
+        changed.events.find(event => event.type === 'request/header').data.header.tools
+          .find(tool => tool.description.includes('FIXTURE_alice_first')).description += ' DECLARATION_DRIFT'
+        await assert.rejects(compareRecordedMcpSession(changed, twoStep, snapshotFacts), /Recorded native MCP tool schemas differ/)
+        const changedResult = structuredClone(aliceHistory)
+        const resultEvent = changedResult.events.find(event => event.type === 'user/message'
+          && event.data.source.kind === 'power-evolve-remote-mcp')
+        const envelope = JSON.parse(resultEvent.data.content[0].text)
+        envelope.result.structuredContent.text += ' RESULT_DRIFT'
+        resultEvent.data.content[0].text = JSON.stringify(envelope)
+        await assert.rejects(compareRecordedMcpSession(changedResult, twoStep, snapshotFacts), /Recorded native MCP Session differs/)
+      }
+    }
     const { items } = await json(await post(`${platform.url}/approvals/mcp/list`, approvals[0], {}))
     const permissionId = items.find(item => item.actionId === second.actionId).permissionId
     assert(permissionId)
     assert.equal((await post(`${platform.url}/approvals/mcp/revoke`, approvals[1], { permissionId })).status, 404)
     await json(await post(`${platform.url}/approvals/mcp/revoke`, approvals[0], { permissionId }))
 
-    await rpc(1, 'prompt', { sessionId: sessions[1], requestId: randomUUID(), text: 'MCP_TWO_STEPS:bob' })
+    await rpc(1, 'prompt', { sessionId: sessions[1], requestId: randomUUID(), text: rejected.input })
     const bobAction = await nextAction(1, 1)
     assert.equal(bobAction.configuration.displayName, 'bob')
     await approve(1, bobAction, 'reject')
     assert.equal(remoteCalls.length, 2)
+    const bobHistory = await eventually(async () => {
+      const page = await rpc(1, 'page', { sessionId: sessions[1], after: -1, limit: 200 })
+      return JSON.stringify(page.events).includes('MCP stopped: rejected.')
+        && page.operations.every(row => row.state === 'completed') && page
+    }, 'rejected approval resumes the native Session')
+    const bobOutcome = bobHistory.events.find(event => event.type === 'user/message'
+      && event.data.source.kind === 'power-evolve-remote-mcp')
+    assert.equal(bobOutcome.data.source.actionId, bobAction.actionId)
+    assert.equal(JSON.parse(bobOutcome.data.content[0].text).state, 'rejected')
+    // Admission headers preserve both selected declarations even though the human rejected the first call.
+    const declarations = bobHistory.events.find(event => event.type === 'request/header').data.header.tools
+    const names = ['first', 'second'].map(step => {
+      const tool = declarations.find(tool => tool.description.includes(`FIXTURE_bob_${step}`))
+      assert(tool); return { model: { name: tool.name } }
+    })
+    await compareRecordedMcpSession(bobHistory, rejected,
+      { actions: [bobAction], tools: names, platformOrigin })
+    if (rejected.rows) assert.equal(replay[1].next, rejected.replies.length)
     await rpc(0, 'prompt', { sessionId: sessions[0], requestId: randomUUID(), text: 'MCP_SHUTDOWN' })
     const shutdown = await nextAction(0, 3); await approve(0, shutdown, 'once')
     await shutdownRequested.promise
