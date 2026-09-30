@@ -40,7 +40,7 @@ export interface McpNetworkPolicy {
 export type McpTransportErrorCode = 'invalid_config' | 'invalid_endpoint' | 'invalid_headers'
   | 'address_denied' | 'dns_failed' | 'request_limit' | 'response_limit' | 'catalog_limit'
   | 'invalid_catalog' | 'tool_not_found' | 'endpoint_changed' | 'redirect_denied'
-  | 'unsupported_response' | 'transport_error' | 'protocol_error' | 'timeout' | 'aborted'
+  | 'unsupported_response' | 'transport_error' | 'protocol_error' | 'auth_rejected' | 'timeout' | 'aborted'
   | 'dispatch_rejected' | 'callback_uncertain' | 'dispatch_replay_denied'
 
 /** dispatched is conservative: an interrupted pending permission callback may already have committed. */
@@ -303,6 +303,8 @@ export class McpNetworkOperation {
         },
       }, response => {
         const status = response.statusCode ?? 500
+        // Preserve authentication denial before SDK connect cleanup aborts the request.
+        if (status === 401 || status === 403) { fail('auth_rejected'); response.destroy(); return }
         if (status >= 300 && status < 400) { response.destroy(); fail('redirect_denied'); return }
         if (response.headers['content-encoding'] && response.headers['content-encoding'] !== 'identity') {
           response.destroy(); fail('unsupported_response'); return

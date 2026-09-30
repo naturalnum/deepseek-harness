@@ -41,7 +41,7 @@ test('remote MCP uses pinned TLS sockets and a one-use dispatch gate', { timeout
   if (spawnSync('openssl', ['version']).status !== 0) { t.skip('OpenSSL is unavailable'); return }
   const temporary = await mkdtemp(join(tmpdir(), 'pe-s6-mcp-'))
   let server
-  const socketCloses = [], seen = [], sessions = new Map(), ownedChildren = new Set()
+  const socketCloses = [], seen = [], sessions = new Map(), ownedChildren = new Set(), handshakeStarted = new Map()
   t.after(async () => {
     for (const child of ownedChildren) child.kill()
     await Promise.all([...ownedChildren].map(child => once(child, 'close')))
@@ -76,6 +76,14 @@ test('remote MCP uses pinned TLS sockets and a one-use dispatch gate', { timeout
         const payload = modern ? { ...result, resultType: 'complete', ttlMs: 0, cacheScope: 'private' } : result
         if (path === '/modern-missing-list-cache' && message.method === 'tools/list') delete payload.ttlMs
         json({ jsonrpc: '2.0', id: message.id, result: payload })
+      }
+      if (path === '/auth-handshake-401' || path === '/auth-handshake-403') {
+        response.writeHead(path.endsWith('401') ? 401 : 403,
+          { 'www-authenticate': 'Bearer error="insufficient_scope", resource_metadata="https://127.0.0.1:1/oauth"' })
+        response.end(JSON.stringify({ private: request.headers.authorization })); return
+      }
+      if (path === '/handshake-cancel' || path === '/handshake-timeout') {
+        handshakeStarted.get(path)?.resolve(); return
       }
       if (request.method === 'GET') { response.writeHead(405).end(); return }
       if (request.method === 'DELETE') { sessions.delete(request.headers['mcp-session-id']); response.writeHead(200).end(); return }
@@ -215,6 +223,34 @@ test('remote MCP uses pinned TLS sockets and a one-use dispatch gate', { timeout
       : item.path === '/bearer' ? item.authorization === 'Bearer fixture-b' && !item.key
       : item.key === 'fixture-key' && !item.authorization))
     assert.equal(sessions.size, 0)
+  })
+  await t.test('HTTP handshake 401 and 403 remain authentication refusals through SDK connect cleanup', async () => {
+    for (const path of ['/auth-handshake-401', '/auth-handshake-403']) {
+      await assert.rejects(discoverMcp(target(path, { Authorization: 'Bearer deliberately-wrong' }), options()),
+        rejects('auth_rejected'))
+      assert.deepEqual(seen.filter(item => item.path === path).map(item => [item.method, item.rpc]),
+        [['POST', 'server/discover']])
+      assert.equal(calls(path), 0)
+    }
+    assert.equal(sessions.size, 0)
+  })
+  await t.test('explicit handshake cancellation and deadline retain their codes and send no tools/call', async () => {
+    const entered = deferred(), controller = new AbortController()
+    handshakeStarted.set('/handshake-cancel', entered)
+    const failed = assert.rejects(discoverMcp(target('/handshake-cancel'), options({ signal: controller.signal })),
+      rejects('aborted'))
+    await entered.promise
+    controller.abort()
+    await failed
+    await assert.rejects(discoverMcp(target('/handshake-timeout'), options({
+      budgets: { ...budgets, timeoutMs: 100, idleTimeoutMs: 100 },
+    })), rejects('timeout'))
+    for (const path of ['/handshake-cancel', '/handshake-timeout']) {
+      assert.deepEqual(seen.filter(item => item.path === path).map(item => [item.method, item.rpc]),
+        [['POST', 'server/discover']])
+      assert.equal(calls(path), 0)
+    }
+    await Promise.all(socketCloses)
   })
   await t.test('zero tools is valid; missing tool, duplicate names and cyclic pagination reject explicitly', async () => {
     assert.deepEqual(await discoverMcp(target('/zero'), options()), { tools: [] })
@@ -402,9 +438,18 @@ test('remote MCP uses pinned TLS sockets and a one-use dispatch gate', { timeout
     const httpTarget = { endpoint: plainOrigin + '/http-explicit', headers: {} }
     await assert.rejects(discoverMcp(httpTarget, options()), rejects('address_denied'))
     assert.equal(seen.filter(item => item.path === '/http-explicit').length, 0)
-    const catalog = await discoverMcp(httpTarget, options({ networkPolicy: {
-      internalExceptions: [{ origin: plainOrigin, addresses: ['127.0.0.1'], allowHttp: true }] } }))
+    const httpOptions = options({ networkPolicy: {
+      internalExceptions: [{ origin: plainOrigin, addresses: ['127.0.0.1'], allowHttp: true }] } })
+    const catalog = await discoverMcp(httpTarget, httpOptions)
     assert.deepEqual(catalog.tools, tools)
+    for (const path of ['/auth-handshake-401', '/auth-handshake-403']) {
+      const before = seen.length
+      await assert.rejects(discoverMcp({ endpoint: plainOrigin + path,
+        headers: { Authorization: 'Bearer deliberately-wrong' } }, httpOptions), rejects('auth_rejected'))
+      assert.deepEqual(seen.slice(before).map(item => [item.path, item.method, item.rpc]),
+        [[path, 'POST', 'server/discover']])
+      assert.equal(calls(path), 0)
+    }
   })
   await t.test('credentials cannot override headers or appear in errors; HTTP auth challenges are never retried', async () => {
     const before = seen.length
@@ -415,7 +460,7 @@ test('remote MCP uses pinned TLS sockets and a one-use dispatch gate', { timeout
       await assert.rejects(discoverMcp(target('/invalid-header', headers), options()), rejects('invalid_headers'))
     }
     assert.equal(seen.length, before)
-    await assert.rejects(call('/auth-fail-on-call'), rejects('protocol_error', true))
+    await assert.rejects(call('/auth-fail-on-call'), rejects('auth_rejected', true))
     assert.equal(calls('/auth-fail-on-call'), 1)
     assert.equal(seen.filter(item => item.path === '/oauth').length, 0)
   })
