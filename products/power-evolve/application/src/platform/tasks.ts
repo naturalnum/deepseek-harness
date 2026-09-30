@@ -268,7 +268,7 @@ export class TaskStore {
       const token = randomBytes(32).toString('base64url')
       const updated = await client.query<{ lease_epoch: number }>(
         `UPDATE pe_sessions SET lease_epoch=lease_epoch+1,grant_digest=$2,
-         lease_until=now()+$3::double precision*interval '1 millisecond' WHERE id=$1 RETURNING lease_epoch`,
+         lease_until=clock_timestamp()+$3::double precision*interval '1 millisecond' WHERE id=$1 RETURNING lease_epoch`,
         [row.session_id, digest(token), this.limits.leaseMs],
       )
       const epoch = updated.rows[0]!.lease_epoch
@@ -293,7 +293,7 @@ export class TaskStore {
     })
   }
 
-  /** Lock the grant owner before the Session and reject inactive accounts or stale leases.
+  /** Lock the grant owner before the Session, then recheck expiry against the current PG clock.
    * @param client Caller transaction; acquire this authority before resource locks.
    * @param token Current Session execution grant, independent of browser credential rotation.
    * @returns Current owned Session and operation; required password change does not revoke this grant.
@@ -308,15 +308,26 @@ export class TaskStore {
     )
     const row = result.rows[0]
     if (!row) throw new PlatformError(409, 'lease_lost')
+    // PG can test WHERE before a row lock wait without rechecking an unchanged tuple afterward.
+    const live = await client.query(`SELECT id FROM pe_sessions WHERE id=$1
+      AND grant_digest=$2 AND lease_epoch=$3 AND lease_until>clock_timestamp()`,
+      [row.id, digest(token), row.lease_epoch])
+    if (!live.rowCount) throw new PlatformError(409, 'lease_lost')
     return row
   }
 
-  /** Renew only an unexpired grant; an expired process cannot reacquire its former lease. */
+  /** Renew only a grant still live at the lease update, after any authorization lock waits.
+   * @param token Current execution grant, independent of browser credential rotation.
+   * @returns Cancellation status after extending the live lease from the current PG clock.
+   */
   async renew(token: string): Promise<{ cancelRequested: boolean }> {
     return transaction(this.pool, async client => {
       const row = await this.authorized(client, token)
-      await client.query(`UPDATE pe_sessions SET lease_until=now()+$2::double precision*interval '1 millisecond' WHERE id=$1`,
-        [row.id, this.limits.leaseMs])
+      const renewed = await client.query(`UPDATE pe_sessions
+        SET lease_until=clock_timestamp()+$2::double precision*interval '1 millisecond'
+        WHERE id=$1 AND grant_digest=$3 AND lease_epoch=$4 AND lease_until>clock_timestamp() RETURNING id`,
+        [row.id, this.limits.leaseMs, digest(token), row.lease_epoch])
+      if (!renewed.rowCount) throw new PlatformError(409, 'lease_lost')
       const operation = await client.query<{ error_code: string | null }>(
         'SELECT error_code FROM pe_operations WHERE id=$1', [row.operation_id],
       )
