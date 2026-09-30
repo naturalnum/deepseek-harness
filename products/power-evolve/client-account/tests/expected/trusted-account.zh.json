@@ -1,0 +1,26 @@
+{
+  "headings": [
+    "首次登录，请修改密码"
+  ],
+  "actions": [
+    "修改密码",
+    "退出登录",
+    "保存并重新登录"
+  ],
+  "passwordFields": [
+    {
+      "label": "当前密码",
+      "autocomplete": "current-password"
+    },
+    {
+      "label": "新密码",
+      "autocomplete": "new-password"
+    },
+    {
+      "label": "确认新密码",
+      "autocomplete": "new-password"
+    }
+  ],
+  "links": [],
+  "firstChangeHint": "完成改密并重新登录后即可使用对话和工作区。"
+}

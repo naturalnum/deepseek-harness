@@ -1,0 +1,26 @@
+{
+  "headings": [
+    "Change your password before continuing"
+  ],
+  "actions": [
+    "Change password",
+    "Sign out",
+    "Save and sign in again"
+  ],
+  "passwordFields": [
+    {
+      "label": "Current password",
+      "autocomplete": "current-password"
+    },
+    {
+      "label": "New password",
+      "autocomplete": "new-password"
+    },
+    {
+      "label": "Confirm new password",
+      "autocomplete": "new-password"
+    }
+  ],
+  "links": [],
+  "firstChangeHint": "Change your password and sign in again to use conversations and workspaces."
+}

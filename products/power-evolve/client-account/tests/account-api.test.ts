@@ -61,3 +61,21 @@ test('sign-out uses product RPC and redirects only to the Host-advertised login 
   const bad = new AccountHttpClient(async () => Response.json({ loginUrl: 'javascript:alert(1)' }))
   await assert.rejects(bad.loginUrl(), /Invalid login destination/u)
 })
+
+test('native capabilities carry only display navigation and must match the configured Platform origin', async () => {
+  const capability = { userId, username: 'alice', displayName: 'Alice', role: 'ADMIN', canManage: true,
+    accountUrl: 'https://platform.test/account' }
+  const calls: Request[] = []
+  const client = new AccountHttpClient(async (input, init) => {
+    const request = new Request(new URL(String(input), 'https://host.test'), init)
+    calls.push(request)
+    return Response.json(request.url.endsWith('/config') ? { loginUrl: 'https://platform.test/login' } : capability)
+  })
+  assert.deepEqual(await client.navigation(new AbortController().signal),
+    { displayName: 'Alice', canManage: true, accountUrl: 'https://platform.test/account' })
+  assert.deepEqual(await calls.find(request => request.method === 'POST')?.json(), { request: {} })
+  assert(calls.every(request => !request.headers.has('authorization') && new URL(request.url).origin === 'https://host.test'))
+  const foreign = new AccountHttpClient(async input => Response.json(String(input).endsWith('/config')
+    ? { loginUrl: 'https://platform.test/login' } : { ...capability, accountUrl: 'https://foreign.test/account' }))
+  await assert.rejects(foreign.navigation(new AbortController().signal), /Unexpected account origin/u)
+})

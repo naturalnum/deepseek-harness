@@ -9,23 +9,58 @@ import { en } from '../src/client/locales.ts'
 
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
   Menu: ({ anchor, open, items, onSelect }: {
-    anchor: ReactNode; open: boolean; items: Array<{ id: string; label?: string }>;
+    anchor: ReactNode; open: boolean; items: Array<{ id: string; label?: string; disabled?: boolean }>;
     onSelect: (id: string) => void
   }) => <div>{anchor}{open && items.filter(item => item.label).map(item =>
-    <button key={item.id} type="button" onClick={() => onSelect(item.id)}>{item.label}</button>)}</div>,
+    <button key={item.id} type="button" disabled={item.disabled} onClick={() => onSelect(item.id)}>{item.label}</button>)}</div>,
 }))
 
 const userId = '54f0f232-a068-4223-96e8-d0cff78d0f1c'
 const t: AccountMenuProps['t'] = key => key in en ? en[key as keyof typeof en] : String(key)
 const me = vi.fn(async () => ({ userId, username: 'alice', settings: { model: 'one', maxTokens: 512, revision: 1 } }))
 
-function mount(client: AccountHttpClient, navigate = vi.fn(), openSettings = vi.fn()) {
+function mount(client: AccountHttpClient, navigate = vi.fn(), openSettings = vi.fn(),
+  loadNavigation: AccountMenuProps['loadNavigation'] = async () => ({ displayName: 'Alice', canManage: false, accountUrl: 'https://platform.example.test/account' })) {
   render(<AccountMenu client={client} navigate={navigate} openSettings={openSettings}
+    loadNavigation={loadNavigation}
     openOnboarding={() => undefined} settingsOpen={false} wide t={t} />)
   return { navigate, openSettings }
 }
 
 afterEach(() => { cleanup(); vi.clearAllMocks() })
+
+it('opens password change on the trusted Platform and hides account management from ordinary users', async () => {
+  const navigate = vi.fn()
+  mount(Object.assign(new AccountHttpClient(), { me }), navigate)
+  await screen.findByText('alice')
+  fireEvent.click(screen.getByRole('button', { name: 'alice' }))
+  await screen.findByRole('button', { name: en.changePassword })
+  expect(screen.queryByRole('button', { name: en.managementNav })).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: en.changePassword }))
+  expect(navigate).toHaveBeenCalledWith('https://platform.example.test/account#password')
+})
+
+it('opens the trusted administrator view only after the readonly capability permits it', async () => {
+  const navigate = vi.fn()
+  mount(Object.assign(new AccountHttpClient(), { me }), navigate, vi.fn(), async () =>
+    ({ displayName: 'Alice', canManage: true, accountUrl: 'https://platform.example.test/account' }))
+  await screen.findByText('alice')
+  fireEvent.click(screen.getByRole('button', { name: 'alice' }))
+  fireEvent.click(await screen.findByRole('button', { name: en.managementNav }))
+  expect(navigate).toHaveBeenCalledWith('https://platform.example.test/account#admin')
+})
+
+it('keeps trusted actions unavailable if capability loading fails', async () => {
+  const navigate = vi.fn()
+  mount(Object.assign(new AccountHttpClient(), { me }), navigate, vi.fn(), async () => { throw new Error('unavailable') })
+  await screen.findByText('alice')
+  fireEvent.click(screen.getByRole('button', { name: 'alice' }))
+  const password = screen.getByRole('button', { name: en.changePassword })
+  expect(password).toHaveProperty('disabled', true)
+  expect(screen.queryByRole('button', { name: en.managementNav })).toBeNull()
+  fireEvent.click(password)
+  expect(navigate).not.toHaveBeenCalled()
+})
 
 it('uses the native launcher seat to open native Settings and sign out through product RPC', async () => {
   const logout = vi.fn(async () => undefined)

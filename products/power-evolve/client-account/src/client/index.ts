@@ -17,11 +17,12 @@ export const inject = ['slots', 'locale']
 /** Register one cloud account launcher and its personal native Settings section. */
 export function apply(ctx: Context): void {
   const client = new AccountHttpClient()
+  const loadNavigation = (signal: AbortSignal) => client.navigation(signal)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'PowerEvolve account labels')
   const t = ctx.locale.bind(NS)
   ctx.slots.inject('settings.launcher', () => ctx.slots.register({
     name: 'settings.launcher', locale: NS,
-    inject: () => ({ client, navigate: (url: string) => { window.location.assign(url) } }),
+    inject: () => ({ client, loadNavigation, navigate: (url: string) => { window.location.assign(url) } }),
   }, AccountMenu))
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section', id: 'account', order: -10, label: () => t('account'), locale: NS,
