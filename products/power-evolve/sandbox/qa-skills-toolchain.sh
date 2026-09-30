@@ -74,6 +74,8 @@ officecli set qa.xlsx /Sheet1/A1 --prop value=42 >/dev/null
 officecli close qa.xlsx >/dev/null
 officecli validate qa.xlsx >/dev/null
 officecli get qa.xlsx /Sheet1/A1 --json | grep --fixed-strings '"text": "42"' >/dev/null
+officecli set qa.xlsx /Sheet1/A2 --prop 'value=Workbook QA' >/dev/null
+officecli close qa.xlsx >/dev/null
 
 printf 'Pandoc QA\n' > sample.md
 pandoc sample.md -o pandoc.docx
@@ -81,13 +83,26 @@ python3 - <<'PY'
 from docx import Document
 assert any('Pandoc QA' in paragraph.text for paragraph in Document('pandoc.docx').paragraphs)
 PY
-libreoffice -env:UserInstallation="file://$HOME/lo-qa-profile" --headless --convert-to pdf \
-  --outdir "$qa_dir" qa.docx >/dev/null
-test -s qa.pdf
-pdftotext qa.pdf - | grep --fixed-strings 'Document QA' >/dev/null
+for format in docx pptx xlsx; do
+  render_dir="$qa_dir/$format-pdf"
+  mkdir "$render_dir"
+  libreoffice -env:UserInstallation="file://$qa_dir/lo-$format-profile" --headless --convert-to pdf \
+    --outdir "$render_dir" "qa.$format" >/dev/null
+  # LibreOffice can return zero for an unsupported source. Verify the artifact.
+  test -s "$render_dir/qa.pdf"
+  case "$format" in
+    docx) expected_text='Document QA' ;;
+    pptx) expected_text='Slide QA' ;;
+    xlsx) expected_text='Workbook QA' ;;
+  esac
+  pdftotext "$render_dir/qa.pdf" "$render_dir/qa.txt"
+  grep --fixed-strings "$expected_text" "$render_dir/qa.txt" >/dev/null
+  pdftoppm -f 1 -l 1 -scale-to 512 -singlefile -png "$render_dir/qa.pdf" "$render_dir/page-1" >/dev/null 2>&1
+  test -s "$render_dir/page-1.png"
+done
 
 if command -v javac >/dev/null || command -v mvn >/dev/null || command -v chromium >/dev/null; then
   echo 'Unexpected JDK, Maven or Chromium executable in skills image' >&2
   exit 1
 fi
-printf 'PASS uid=1000 officecli=1.0.151 python=venv pdf=chinese-extract-render latex=ctex docx=pandoc+officecli+libreoffice pptx=officecli xlsx=officecli home/tmp/workspace=writable\n'
+printf 'PASS uid=1000 officecli=1.0.151 python=venv uno=system-python pdf=chinese-extract-render latex=ctex docx=pandoc+officecli+libreoffice pptx=officecli+libreoffice xlsx=officecli+libreoffice office-pdf=text+png home/tmp/workspace=writable\n'
