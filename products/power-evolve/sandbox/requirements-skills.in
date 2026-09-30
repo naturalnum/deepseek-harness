@@ -1,0 +1,10 @@
+# Direct document-tool dependencies retained from the legacy Sandbox image.
+beautifulsoup4==4.14.3
+json-repair==0.52.4
+lxml==6.0.2
+pdfplumber==0.11.10
+pillow==12.3.0
+pypdf==6.19.0
+python-docx==1.2.0
+reportlab==5.0.1
+requests==2.32.5
