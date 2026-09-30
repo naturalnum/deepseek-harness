@@ -3,6 +3,7 @@
   "compilerOptions": { "rootDir": "src", "outDir": "lib" },
   "include": ["src"],
   "references": [
+    { "path": "../contracts" },
     { "path": "../../../vendor/cordis" },
     { "path": "../../../vendor/schemastery" },
     { "path": "../../../packages/core/agent" },

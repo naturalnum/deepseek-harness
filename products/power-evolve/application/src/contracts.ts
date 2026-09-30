@@ -6,7 +6,8 @@ import { MAX_INPUT_JSON_BYTES } from './continuation-input.ts'
 import { mcpOperationTools } from './mcp-operation-contracts.ts'
 import { mcpActionId } from './mcp-action-contracts.ts'
 
-export type UserId = Branded<'PowerEvolveUserId'>
+import type { UserId } from '@power-evolve/contracts/account'
+export type { UserId } from '@power-evolve/contracts/account'
 export type OperationId = Branded<'PowerEvolveOperationId'>
 export type RequestId = Branded<'PowerEvolveRequestId'>
 export type WorkspaceId = Branded<'PowerEvolveWorkspaceId'>

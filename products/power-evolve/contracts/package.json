@@ -1,0 +1,27 @@
+{
+  "name": "@power-evolve/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser-safe PowerEvolve wire validation and identifiers",
+  "files": [
+    "lib",
+    "README.md",
+    "README.zh.md"
+  ],
+  "exports": {
+    "./account": {
+      "types": "./lib/account.d.ts",
+      "default": "./lib/account.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit --pretty false"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-brand": "workspace:*",
+    "zod": "^4.4.3"
+  }
+}

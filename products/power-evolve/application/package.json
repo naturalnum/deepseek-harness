@@ -46,6 +46,7 @@
     "@modelcontextprotocol/node": "2.0.0",
     "@modelcontextprotocol/server": "2.0.0",
     "@power-evolve/cloud-web": "workspace:*",
+    "@power-evolve/contracts": "workspace:*",
     "ajv": "^8.20.0",
     "ipaddr.js": "^2.5.0",
     "js-yaml": "^4.2.0",
