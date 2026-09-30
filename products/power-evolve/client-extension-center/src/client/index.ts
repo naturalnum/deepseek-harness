@@ -8,7 +8,7 @@ import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import { SkillHttpClient } from './skills-api.ts'
-import { fillSkillDraft } from './skill-try.ts'
+import { fillSkillDraft, skillInvocationName } from './skill-try.ts'
 import { SkillsPage } from './SkillsPage.tsx'
 import { SkillsPanelIcon } from './SkillsPanelIcon.tsx'
 import { PluginsPage } from './PluginsPage.tsx'
@@ -41,7 +41,7 @@ export function apply(ctx: Context): void {
   ctx.slots.inject('main', () => ctx.slots.register({
     name: 'main', key: SKILLS_PANEL_ID, locale: NS, inject: () => ({ client,
       trySkill: (skill: import('./skills-api.ts').PersonalSkill) => fillSkillDraft(ctx,
-        t('skillTryPrompt').replace('{name}', skill.name)) }),
+        t('skillTryPrompt').replace('{alias}', skillInvocationName(skill)).replace('{name}', skill.name)) }),
   }, SkillsPage))
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
     name: 'sidebar.panellist', id: SKILLS_PANEL_ID, order: 20,

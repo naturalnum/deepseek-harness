@@ -9,6 +9,13 @@ const other = 'd5bb4412-5b5b-4477-8518-d78e79b67146'
 const item = { skillId: id, name: 'Proofreading', description: 'Check wording', enabled: true, revision: 1,
   kind: 'text', version: null, digest: 'a'.repeat(64), packageDigest: null,
   manifestDigest: null, observedState: 'ready' }
+const builtinItems = Array.from({ length: 9 }, (_, index) => ({
+  id: index === 0 ? 'builtin.word' : `builtin.example-${index}`,
+  name: index === 0 ? 'word' : `Skill ${index}`, summary: `Summary ${index}`,
+  description: `Description ${index}`, category: 'office', publisher: 'PowerEvolve',
+  version: '1.0.0', manifestDigest: `sha256:${'b'.repeat(64)}`,
+  archiveDigest: 'c'.repeat(64), archiveSize: 100, installedSkillId: null,
+}))
 
 test('personal skill operations use only same-origin product RPCs and preserve installation identity', async () => {
   const calls: Request[] = []
@@ -45,6 +52,55 @@ test('malformed responses and mismatched identities cannot reach the page', asyn
   await assert.rejects(wrong.read(id), /Invalid skill detail/u)
   const noCall = new SkillHttpClient(async () => { throw new Error('unexpected call') })
   await assert.rejects(noCall.install({ requestId: id, name: ' ', description: 'd', instructions: 'i' }), /Invalid skill installation/u)
+})
+
+test('built-in catalog and installation use bounded same-origin product RPCs', async () => {
+  const calls: Request[] = []
+  const packaged = { ...item, skillId: other, name: 'word', kind: 'package', version: '1.0.0',
+    packageDigest: 'c'.repeat(64), manifestDigest: 'b'.repeat(64) }
+  const client = new SkillHttpClient(async (input, init) => {
+    const request = new Request(new URL(String(input), 'http://localhost'), init)
+    calls.push(request)
+    return Response.json(request.url.endsWith('skillsCatalog') ? { items: builtinItems } : packaged)
+  })
+  assert.deepEqual(await client.catalog(), builtinItems)
+  const input = { requestId: id, catalogId: 'builtin.word', version: '1.0.0' }
+  assert.deepEqual(await client.installBuiltin(input), packaged)
+  assert.deepEqual(calls.map(call => new URL(call.url).pathname), [
+    '/api/powerEvolve/skillsCatalog', '/api/powerEvolve/skillsInstallBuiltin',
+  ])
+  assert(calls.every(call => call.method === 'POST' && call.credentials === 'same-origin'))
+  assert.deepEqual(await calls[0]!.json(), { request: {} })
+  assert.deepEqual(await calls[1]!.json(), { request: input })
+})
+
+test('catalog outage and malformed catalog are errors, not a sample catalog', async () => {
+  const outage = new SkillHttpClient(async () => Response.json({ error: 'unavailable' }, { status: 503 }))
+  await assert.rejects(outage.catalog(), (error: unknown) => error instanceof SkillHttpError && error.status === 503)
+  const short = new SkillHttpClient(async () => Response.json({ items: builtinItems.slice(0, 8) }))
+  await assert.rejects(short.catalog(), /Invalid builtin skill catalog/u)
+  const duplicate = new SkillHttpClient(async () => Response.json({ items: [...builtinItems.slice(0, 8), builtinItems[0]] }))
+  await assert.rejects(duplicate.catalog(), /Invalid builtin skill catalog/u)
+  const badDigest = new SkillHttpClient(async () => Response.json({ items: [
+    { ...builtinItems[0], manifestDigest: 'b'.repeat(64) }, ...builtinItems.slice(1),
+  ] }))
+  await assert.rejects(badDigest.catalog(), /Invalid builtin skill response/u)
+  const noCall = new SkillHttpClient(async () => { throw new Error('unexpected request') })
+  await assert.rejects(noCall.installBuiltin({ requestId: id, catalogId: '../word', version: '1.0.0' }),
+    /Invalid builtin skill installation/u)
+  const wrongVersion = new SkillHttpClient(async () => Response.json({ ...item, kind: 'package', version: '2.0.0',
+    packageDigest: 'c'.repeat(64), manifestDigest: 'b'.repeat(64) }))
+  await assert.rejects(wrongVersion.installBuiltin({ requestId: id, catalogId: 'builtin.word', version: '1.0.0' }),
+    /Builtin skill installation response mismatch/u)
+})
+
+test('personal list accepts 256 entries but rejects 257', async () => {
+  const items = Array.from({ length: 256 }, (_, index) => ({ ...item,
+    skillId: `00000000-0000-4000-8000-${index.toString(16).padStart(12, '0')}` }))
+  const accepted = new SkillHttpClient(async () => Response.json({ items }))
+  assert.equal((await accepted.list()).length, 256)
+  const rejected = new SkillHttpClient(async () => Response.json({ items: [...items, item] }))
+  await assert.rejects(rejected.list(), /Invalid skill list/u)
 })
 
 test('HTTP status is retained without exposing private server details', async () => {

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { Context } from '@deepseek-ai/cordis'
-import { fillSkillDraft } from '../src/client/skill-try.ts'
+import { fillSkillDraft, skillInvocationName } from '../src/client/skill-try.ts'
 
 test('skill trial creates a native session and fills an editable draft without sending it', async () => {
   const events: string[] = []
@@ -23,4 +23,13 @@ test('skill trial creates a native session and fills an editable draft without s
   } as Context
   await fillSkillDraft(ctx, 'Use my skill')
   assert.deepEqual(events, ['create', 'retain', 'scope', 'draft:Use my skill', `open:${id}`, 'release'])
+})
+
+test('native skill invocation alias preserves legal names and maps other names to the Host alias', () => {
+  const skillId = '5a010346-693c-4204-a386-29f66b11a057'
+  assert.equal(skillInvocationName({ skillId, name: 'word' }), 'word')
+  assert.equal(skillInvocationName({ skillId, name: 'report-reviewer' }), 'report-reviewer')
+  for (const name of ['My Report', 'Word', 'pe-user-skill-fake', 'word_skill', '文档']) {
+    assert.equal(skillInvocationName({ skillId, name }), `pe-user-skill-${skillId}`)
+  }
 })

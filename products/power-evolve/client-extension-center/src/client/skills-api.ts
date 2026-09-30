@@ -3,6 +3,8 @@ import { skillImportFileIssue } from './skill-import.ts'
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu
 const SHA256 = /^[0-9a-f]{64}$/u
 const TICKET = /^[A-Za-z0-9_-]{32,256}$/u
+const BUILTIN_ID = /^builtin\.[a-z0-9]+(?:[._-][a-z0-9]+)*$/u
+const VERSION = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/u
 
 export interface PersonalSkill {
   readonly skillId: string
@@ -32,10 +34,32 @@ export interface InstallSkillInput {
   readonly instructions: string
 }
 
+export interface BuiltinSkill {
+  readonly id: string
+  readonly name: string
+  readonly summary: string
+  readonly description: string
+  readonly category: string
+  readonly publisher: string
+  readonly version: string
+  readonly manifestDigest: string
+  readonly archiveDigest: string
+  readonly archiveSize: number
+  readonly installedSkillId: string | null
+}
+
+export interface InstallBuiltinSkillInput {
+  readonly requestId: string
+  readonly catalogId: string
+  readonly version: string
+}
+
 export interface SkillPort {
   list(signal?: AbortSignal): Promise<readonly PersonalSkill[]>
+  catalog(signal?: AbortSignal): Promise<readonly BuiltinSkill[]>
   read(skillId: string, signal?: AbortSignal): Promise<PersonalSkillDetail>
   install(input: InstallSkillInput): Promise<PersonalSkill>
+  installBuiltin(input: InstallBuiltinSkillInput, signal?: AbortSignal): Promise<PersonalSkill>
   importPackage(file: File, requestId: string, signal?: AbortSignal): Promise<PersonalSkill>
   toggle(skillId: string, enabled: boolean): Promise<PersonalSkill>
   revoke(skillId: string): Promise<PersonalSkill>
@@ -73,6 +97,24 @@ function parseSkill(value: unknown): PersonalSkill {
     enabled: value.enabled, revision: Number(value.revision), kind: value.kind,
     version: value.version, digest: value.digest, packageDigest: value.packageDigest,
     manifestDigest: value.manifestDigest, observedState: value.observedState }
+}
+
+function parseBuiltin(value: unknown): BuiltinSkill {
+  if (!record(value) || typeof value.id !== 'string' || !BUILTIN_ID.test(value.id)
+    || !bounded(value.name, 200) || !bounded(value.summary, 500)
+    || !bounded(value.description, 10_000) || !bounded(value.category, 100)
+    || !bounded(value.publisher, 200) || typeof value.version !== 'string' || !VERSION.test(value.version)
+    || typeof value.manifestDigest !== 'string' || !/^sha256:[a-f0-9]{64}$/u.test(value.manifestDigest)
+    || !sha256(value.archiveDigest) || !Number.isSafeInteger(value.archiveSize)
+    || Number(value.archiveSize) < 1 || Number(value.archiveSize) > 1024 * 1024
+    || (value.installedSkillId !== null && !uuid(value.installedSkillId))) {
+    throw new Error('Invalid builtin skill response')
+  }
+  return { id: value.id, name: value.name, summary: value.summary,
+    description: value.description, category: value.category, publisher: value.publisher,
+    version: value.version, manifestDigest: value.manifestDigest,
+    archiveDigest: value.archiveDigest, archiveSize: Number(value.archiveSize),
+    installedSkillId: value.installedSkillId }
 }
 
 export function validInstall(input: InstallSkillInput): boolean {
@@ -114,11 +156,25 @@ export class SkillHttpClient implements SkillPort {
 
   async list(signal?: AbortSignal): Promise<readonly PersonalSkill[]> {
     const result = await this.post('skillsList', {}, signal)
-    if (!record(result) || !Array.isArray(result.items) || result.items.length > 8) {
+    if (!record(result) || !Array.isArray(result.items) || result.items.length > 256) {
       throw new Error('Invalid skill list response')
     }
     const items = result.items.map(parseSkill)
     if (new Set(items.map(item => item.skillId)).size !== items.length) throw new Error('Invalid skill list response')
+    return items
+  }
+
+  async catalog(signal?: AbortSignal): Promise<readonly BuiltinSkill[]> {
+    const result = await this.post('skillsCatalog', {}, signal)
+    if (!record(result) || !Array.isArray(result.items) || result.items.length !== 9) {
+      throw new Error('Invalid builtin skill catalog response')
+    }
+    const items = result.items.map(parseBuiltin)
+    if (new Set(items.map(item => item.id)).size !== items.length
+      || new Set(items.map(item => item.installedSkillId).filter(id => id !== null)).size
+        !== items.filter(item => item.installedSkillId !== null).length) {
+      throw new Error('Invalid builtin skill catalog response')
+    }
     return items
   }
 
@@ -137,6 +193,17 @@ export class SkillHttpClient implements SkillPort {
     if (!validInstall(input)) throw new Error('Invalid skill installation')
     const result = parseSkill(await this.post('skillsInstall', input))
     if (result.skillId !== input.requestId || result.kind !== 'text') throw new Error('Skill installation response mismatch')
+    return result
+  }
+
+  async installBuiltin(input: InstallBuiltinSkillInput, signal?: AbortSignal): Promise<PersonalSkill> {
+    if (!uuid(input.requestId) || !BUILTIN_ID.test(input.catalogId) || !VERSION.test(input.version)) {
+      throw new Error('Invalid builtin skill installation')
+    }
+    const result = parseSkill(await this.post('skillsInstallBuiltin', input, signal))
+    if (result.kind !== 'package' || result.version !== input.version || result.observedState !== 'ready') {
+      throw new Error('Builtin skill installation response mismatch')
+    }
     return result
   }
 
