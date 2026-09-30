@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createMcpToolDefinition } from '@deepseek-ai/dsh-mcp-client'
-import { assertMcpToolArguments, assertModelToolDeclarations, compileMcpModelTool,
+import { assertMcpToolArguments, assertModelToolChanges, assertModelToolDeclarations, compileMcpModelTool,
   modelMessageTool } from '../lib/mcp-model-tools.js'
 
 const limits = { maxToolBytes: 65_536, maxDescriptionBytes: 8192 }
@@ -41,7 +41,6 @@ test('Platform checks exact names, descriptions and schemas, rather than admitti
     { ...declared, name: 'mcp__connection_b__sum' },
     { ...declared, description: 'silently changed by Host' },
     { ...declared, input_schema: { type: 'object' } },
-    { ...declared, defer_loading: true },
   ]
   for (const attempted of attempts) assert.throws(() => assertModelToolDeclarations([attempted], [model]),
     { code: 'model_tool_not_authorized' })
@@ -49,6 +48,7 @@ test('Platform checks exact names, descriptions and schemas, rather than admitti
   assert.throws(() => assertModelToolDeclarations([declared, declared], [model]), { code: 'model_tool_duplicate' })
   assert.throws(() => assertModelToolDeclarations([], [model, model]), { code: 'mcp_snapshot_conflict' })
   assertModelToolDeclarations([], [model])
+  assertModelToolDeclarations([{ ...declared, defer_loading: true }], [model])
 })
 
 test('two connections may expose the same raw tool without sharing model routing or mutable schemas', () => {
@@ -59,6 +59,31 @@ test('two connections may expose the same raw tool without sharing model routing
   assert.throws(() => assertModelToolDeclarations([messagesTool(changed)], [second]),
     { code: 'model_tool_not_authorized' })
   assert.deepEqual(second.parameters.required, ['left', 'right'])
+})
+
+test('defer metadata requires a true literal and one ordered activation of every deferred declaration', () => {
+  const declaration = messagesTool(model), deferred = { ...declaration, defer_loading: true }
+  const reference = { type: 'tool_addition', tool: { type: 'tool_reference', name: declaration.name } }
+  const user = { role: 'user', content: 'Use the new tool' }, change = { role: 'system', content: [reference] }
+  for (const value of [false, 'true', 1, null]) {
+    assert.equal(modelMessageTool.safeParse({ ...declaration, defer_loading: value }).success, false)
+  }
+  assert.equal(modelMessageTool.safeParse({ ...deferred, metadata: 'extra' }).success, false)
+  assert.equal(assertModelToolChanges('deepseek-flash', [deferred], [user, change]),
+    'mid-conversation-tool-changes-2026-07-01')
+  const second = { ...deferred, name: 'mcp__connection_b__sum' }
+  assert.throws(() => assertModelToolChanges('deepseek-flash', [deferred, second], [user, change]),
+    { code: 'model_tool_changes_invalid' })
+  const secondChange = { ...reference, tool: { ...reference.tool, name: second.name } }
+  assert.equal(assertModelToolChanges('deepseek-flash', [deferred, second],
+    [user, { role: 'system', content: [reference, secondChange] }]), 'mid-conversation-tool-changes-2026-07-01')
+  assert.throws(() => assertModelToolChanges('deepseek-flash', [declaration], [user, change]),
+    { code: 'model_tool_changes_invalid' })
+  assert.throws(() => assertModelToolChanges('deepseek-v4-pro', [deferred], [user, change]),
+    { code: 'model_tool_changes_invalid' })
+  assert.equal(assertModelToolChanges('deepseek-v4-pro', [], [{ role: 'assistant', content: [
+    { type: 'tool_use', id: 'old', name: declaration.name, input: { old: true } },
+  ] }, { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'old', content: 'old result' }] }]), undefined)
 })
 
 test('unsupported schemas, required MCP tasks and oversize descriptions fail explicitly', () => {

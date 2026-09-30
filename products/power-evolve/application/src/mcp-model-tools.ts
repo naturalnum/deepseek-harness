@@ -1,5 +1,6 @@
 /** Platform-admitted MCP tool declarations and argument checks shared with the native Host adapter. */
 import { isDeepStrictEqual } from 'node:util'
+import { resolveAdapterOptions } from '@deepseek-ai/dsh-llm-deepseek'
 import { z } from 'zod'
 import type { McpCatalogTool, McpDiscoveredTool } from './mcp-contracts.ts'
 import { compileMcpJsonSchema, type McpJsonSchemaValidator } from './mcp-json-schema.ts'
@@ -99,9 +100,66 @@ export function assertModelToolDeclarations(declared: readonly ModelMessageTool[
       continue
     }
     const expected = known.get(tool.name)
-    if (!expected || tool.description !== expected.description || tool.defer_loading !== undefined
+    if (!expected || tool.description !== expected.description
       || !isDeepStrictEqual(tool.input_schema, expected.parameters)) {
       throw new McpToolAdmissionError('model_tool_not_authorized')
     }
   }
+}
+
+/** Native Messages turns retain ordinary historical calls independently of today's tool selection. */
+export interface ModelToolMessage {
+  /** Serialized Messages role; native developer changes use system turns. */
+  role: 'user' | 'assistant' | 'system'
+  /** Original content, including preserved historical calls and results. */
+  content: string | readonly unknown[]
+}
+
+const toolChange = z.object({
+  type: z.enum(['tool_addition', 'tool_removal']),
+  tool: z.object({ type: z.literal('tool_reference'), name: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/u) }).strict(),
+}).strict()
+const toolChangesBeta = 'mid-conversation-tool-changes-2026-07-01'
+
+function changeBlock(block: unknown): boolean {
+  return typeof block === 'object' && block !== null && 'type' in block
+    && (block.type === 'tool_addition' || block.type === 'tool_removal')
+}
+
+/**
+ * Validate native tool availability against declarations already checked against the current operation.
+ * The product uses the Host's default model catalog: Flash supports additions, while Pro uses
+ * complete immediate declarations. Neither route retains inactive definitions through removals.
+ * Ordinary past tool_use/tool_result names remain historical data and cannot declare tools.
+ * @param model Platform-authorized route using the same default catalog as PlatformModel.
+ * @param declared Exact wire declarations already authorized by assertModelToolDeclarations.
+ * @param messages Original serialized Messages turns, including native system-role changes.
+ * @param system Original leading system content; changes are permitted only after user turns.
+ * @returns The fixed beta opt-in for validated additions, or undefined when none are present.
+ */
+export function assertModelToolChanges(model: string, declared: readonly ModelMessageTool[],
+  messages: readonly ModelToolMessage[], system?: string | readonly unknown[]): string | undefined {
+  const mode = resolveAdapterOptions({ thinking: 'disabled' }).models.find(entry => entry.id === model)?.toolUpdate
+  const known = new Set(declared.map(tool => tool.name))
+  const offered = new Set(declared.filter(tool => tool.defer_loading !== true).map(tool => tool.name))
+  const refuse = (): never => { throw new McpToolAdmissionError('model_tool_changes_invalid') }
+  if (known.size !== declared.length || (mode !== 'addition-only' && offered.size !== known.size)) refuse()
+  if (Array.isArray(system) && system.some(changeBlock)) refuse()
+  let previousRole: 'user' | 'assistant' | undefined, changed = false
+  for (const message of messages) {
+    if (typeof message.content !== 'string') for (const block of message.content) {
+      if (changeBlock(block)) {
+        const parsed = toolChange.safeParse(block)
+        if (!parsed.success) return refuse()
+        if (message.role !== 'system' || previousRole !== 'user' || mode !== 'addition-only') refuse()
+        const change = parsed.data
+        if (change.type !== 'tool_addition' || !known.has(change.tool.name) || offered.has(change.tool.name)) refuse()
+        offered.add(change.tool.name); changed = true
+      } else if (typeof block === 'object' && block !== null && 'type' in block && block.type === 'tool_result'
+        && 'content' in block && Array.isArray(block.content) && block.content.some(changeBlock)) refuse()
+    }
+    if (message.role !== 'system') previousRole = message.role
+  }
+  if (offered.size !== known.size) refuse()
+  return changed ? toolChangesBeta : undefined
 }

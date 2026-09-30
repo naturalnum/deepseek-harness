@@ -8,7 +8,7 @@ import { PlatformError, settings } from '../contracts.ts'
 import { transaction } from './database.ts'
 import type { TaskStore } from './tasks.ts'
 import { requireModelGrant } from './account-settings.ts'
-import { assertModelToolDeclarations, McpToolAdmissionError, modelMessageTool } from '../mcp-model-tools.ts'
+import { assertModelToolChanges, assertModelToolDeclarations, McpToolAdmissionError, modelMessageTool } from '../mcp-model-tools.ts'
 import { mcpOperationTools } from '../mcp-operation-contracts.ts'
 
 const messageRequest = z.object({
@@ -20,6 +20,7 @@ const messageRequest = z.object({
   tools: z.array(modelMessageTool).optional(),
 }).strict()
 
+/** Operator-owned provider endpoint, credential and per-request transport limits. */
 export interface ModelProxyConfig {
   readonly url: string
   readonly apiKey: string
@@ -28,12 +29,19 @@ export interface ModelProxyConfig {
   readonly maxResponseBytes: number
 }
 
-/** Forward allowlisted Messages requests, with bounded output and disconnect cancellation. */
+/**
+ * Forward admitted Messages declarations and validated additions with bounded output and cancellation.
+ * @param tasks Current operation grants and immutable admitted MCP selections.
+ * @param config Operator-owned provider transport and credential.
+ * @param request Host request carrying its current fenced operation grant.
+ * @param response SSE response to the Host, cancelled when it disconnects.
+ * @returns Completion after the upstream stream ends or a redacted failure is raised.
+ */
 export async function proxyModel(
   tasks: TaskStore, config: ModelProxyConfig, request: IncomingMessage, response: ServerResponse,
 ): Promise<void> {
   const body = messageRequest.parse(await readJson(request, config.maxRequestBytes))
-  await transaction(tasks.pool, async client => {
+  const beta = await transaction(tasks.pool, async client => {
     const authorized = await tasks.authorized(client, bearer(request))
     const selected = settings.parse(authorized.settings)
     if (body.model !== selected.model || body.max_tokens > selected.maxTokens) throw new PlatformError(403, 'model_not_authorized')
@@ -41,7 +49,10 @@ export async function proxyModel(
     const record = await client.query<{ remote_mcp_selection: unknown }>(
       'SELECT remote_mcp_selection FROM pe_operations WHERE id=$1', [authorized.operation_id])
     const admitted = mcpOperationTools.parse(record.rows[0]!.remote_mcp_selection).map(tool => tool.model)
-    try { assertModelToolDeclarations(body.tools ?? [], admitted) }
+    try {
+      assertModelToolDeclarations(body.tools ?? [], admitted)
+      return assertModelToolChanges(body.model, body.tools ?? [], body.messages, body.system)
+    }
     catch (error) {
       if (error instanceof McpToolAdmissionError) throw new PlatformError(403, error.code)
       throw error
@@ -57,6 +68,7 @@ export async function proxyModel(
       headers: {
         ...attributionHeaders(), 'content-type': 'application/json', accept: 'text/event-stream',
         'anthropic-version': '2023-06-01', 'x-api-key': config.apiKey,
+        ...beta === undefined ? {} : { 'anthropic-beta': beta },
       },
       body: JSON.stringify(body),
     })
