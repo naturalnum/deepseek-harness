@@ -45,13 +45,13 @@ test('S6 SSH credential ticket keeps password out of Host, encrypts it, and scop
     finally { client.release() }
     await initializeDatabase(pool)
     await initializeDatabase(pool)
-    assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 23)
+    assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 24)
 
     const key = randomBytes(32).toString('base64url')
     const ssh = new SshConnectionService(pool, key, 'fixture.example.test:2222')
     const bobSsh = new SshConnectionService(pool, key, 'fixture.example.test:2222')
     assert.deepEqual(await ssh.list(alice), { available: true, items: [] })
-    const password = Buffer.from('test-only-password-γ', 'utf8')
+    const password = Buffer.from('{"formatVersion":2,"password":"test-only-password-γ"}', 'utf8')
     const input = { requestId: randomUUID(), displayName: 'Alice server', host: 'fixture.example.test',
       port: 2222, username: 'alice', hostKeySha256: `SHA256:${'A'.repeat(43)}`,
       credentialKind: 'password', sizeBytes: password.length, enabled: true }
@@ -86,7 +86,7 @@ test('S6 SSH credential ticket keeps password out of Host, encrypts it, and scop
     assert.equal(callCredential.hostKeySha256, input.hostKeySha256)
     assert.deepEqual(await ssh.metadataForCall(alice, uploaded.item.connectionId, 1),
       { host: input.host, port: input.port, username: input.username,
-        hostKeySha256: input.hostKeySha256, credentialRevision: 1 })
+        hostKeySha256: input.hostKeySha256, credentialRevision: 1, workingDirectory: null })
     await assert.rejects(ssh.metadataForCall(bob, uploaded.item.connectionId, 1),
       { status: 404, code: 'ssh_connection_not_found' })
     await assert.rejects(ssh.credentialForCall(bob, uploaded.item.connectionId, 1),
