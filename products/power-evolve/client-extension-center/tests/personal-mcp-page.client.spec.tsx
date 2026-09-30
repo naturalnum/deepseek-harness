@@ -85,6 +85,28 @@ async function openCreate(port = fixture([])) {
 }
 
 describe('Migrated personal MCP page with an explicit Port substitute', () => {
+  it.each([['English', en], ['Chinese', zh]] as const)('limits saved-check cancellation progress to pending states in %s', async (_language, dictionary) => {
+    const states = [
+      ['queued', 'mcpCheckQueued'], ['running', 'mcpCheckRunning'],
+      ['canceled', 'mcpCheckCanceled'], ['failed', 'personalMcpCheckFailed'],
+      ['succeeded', 'mcpCheckSucceededZero'], ['timed_out', 'mcpCheckTimedOut'], ['expired', 'mcpCheckExpired'],
+    ] as const
+    const translate = (key: keyof typeof en): string => dictionary[key]
+    for (const [state, label] of states) for (const cancelRequested of [false, true]) {
+      const saved = { ...connection(), latest_check: { ...check(state, connection().connection_id),
+        cancel_requested: cancelRequested } }
+      const port = fixture([saved])
+      const view = render(<PersonalMcpPage personalMcp={port} sessions={sessions} t={translate} />)
+      fireEvent.click(await screen.findByRole('button', { name: `${dictionary.openMcpConnection} Knowledge` }))
+      const pending = state === 'queued' || state === 'running'
+      expect(view.container.querySelector('.pext-mcp-check-result strong')?.textContent).toBe(dictionary[label])
+      expect(screen.queryByText(dictionary.mcpCancelingCheck) !== null).toBe(pending && cancelRequested)
+      expect(screen.queryByRole('button', { name: dictionary.mcpCancelCheck }) !== null).toBe(pending)
+      expect(port.cancelCheck).not.toHaveBeenCalled()
+      view.unmount()
+    }
+  })
+
   it.each([['English', en], ['Chinese', zh]] as const)('separates an old saved success from the edited configuration in %s', async (_language, dictionary) => {
     const saved: PersonalMcpConnection = { ...connection(), enabled: true, credential_revision: 1,
       authentication: { kind: 'bearer', secret_configured: true },
@@ -267,6 +289,28 @@ describe('Migrated personal MCP page with an explicit Port substitute', () => {
     expect(port.getCheck).toHaveBeenCalledTimes(1)
   })
 
+  it.each(['canceled', 'failed', 'succeeded'] as const)('clears saved-check cancellation progress when polling reports %s', async state => {
+    const saved = { ...connection(), latest_check: check('running', connection().connection_id) }
+    const port = fixture([saved])
+    port.cancelCheck.mockResolvedValueOnce({ ...check('running', saved.connection_id), cancel_requested: true })
+    port.getCheck.mockResolvedValueOnce({ ...check(state, saved.connection_id), cancel_requested: true })
+    const view = render(<PersonalMcpPage personalMcp={port} sessions={sessions} t={t} />)
+    const open = await screen.findByRole('button', { name: 'View MCP connection Knowledge' })
+    vi.useFakeTimers()
+    await act(async () => { fireEvent.click(open) })
+    expect(screen.queryByText(en.mcpCancelingCheck)).toBeNull()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: en.mcpCancelCheck })) })
+    expect(screen.getByText(en.mcpCancelingCheck)).toBeTruthy()
+    await act(async () => { await vi.advanceTimersByTimeAsync(1000) })
+    const label = state === 'canceled' ? en.mcpCheckCanceled
+      : state === 'failed' ? en.personalMcpCheckFailed : en.mcpCheckSucceededZero
+    expect(view.container.querySelector('.pext-mcp-check-result strong')?.textContent).toBe(label)
+    expect(screen.queryByText(en.mcpCancelingCheck)).toBeNull()
+    expect(screen.queryByRole('button', { name: en.mcpCancelCheck })).toBeNull()
+    expect(port.list).toHaveBeenCalledTimes(1)
+    expect(port.getCheck).toHaveBeenCalledTimes(1)
+  })
+
   it('resumes the saved-check poll after an explicit refresh following a status failure', async () => {
     const saved = { ...connection(), latest_check: check('running', connection().connection_id) }
     const port = fixture([saved])
@@ -306,6 +350,7 @@ describe('Migrated personal MCP page with an explicit Port substitute', () => {
 
   it('does not overwrite canceled draft state with a late in-flight poll', async () => {
     const port = await openCreate()
+    port.cancelDraftCheck.mockResolvedValueOnce({ ...check('canceled'), cancel_requested: true })
     let resolve!: (value: PersonalMcpConnectionCheck) => void
     port.getDraftCheck.mockImplementationOnce(() => new Promise(land => { resolve = land }))
     vi.useFakeTimers()
@@ -315,6 +360,7 @@ describe('Migrated personal MCP page with an explicit Port substitute', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Cancel check' })) })
     await act(async () => { resolve(check('succeeded')) })
     expect(screen.getByText('Check canceled')).toBeTruthy()
+    expect(screen.queryByText(en.mcpCancelingCheck)).toBeNull()
     expect(screen.queryByText('Check succeeded; the service validly returned 0 tools')).toBeNull()
     expect(port.getDraftCheck.mock.calls[0]?.[1]?.aborted).toBe(true)
     expect(port.cancelDraftCheck.mock.calls[0]?.[1]).toMatch(/^[0-9a-f-]{36}$/u)

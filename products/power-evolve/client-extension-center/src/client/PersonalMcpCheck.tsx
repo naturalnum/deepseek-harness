@@ -291,7 +291,8 @@ function DraftCheckResult({ check, stale, t }: {
       <strong>{stale ? t('mcpCheckCurrentNotChecked') : labelText}</strong>
       {stale && <small className="pext-mcp-check-stale">{t('mcpCheckStale')}</small>}
       {stale && <span>{t('mcpCheckPreviousResult').replace('{result}', labelText)}</span>}
-      {check.cancel_requested && <span>{t('mcpCancelingCheck')}</span>}
+      {check.cancel_requested && (check.state === 'queued' || check.state === 'running')
+        && <span>{t('mcpCancelingCheck')}</span>}
       {check.error_code === null ? null : <span>{t(personalMcpCheckErrorLabel(check.error_code))}</span>}
     </div>
   )
