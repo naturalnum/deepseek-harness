@@ -1,0 +1,319 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Migrated personal MCP page with an explicit Port substitute > keeps the original multi-connection layout and searches actual metadata 1`] = `
+<main
+  class="pext-mcp-page"
+  data-power-evolve-mcp-page="true"
+>
+  <header
+    class="pext-mcp-page-header"
+  >
+    <h1>
+      MCP
+    </h1>
+    <p>
+      Manage remote MCP services connected to this account
+    </p>
+  </header>
+  <div
+    class="pext-mcp-primary-toolbar"
+  >
+    <nav
+      aria-label="My connections"
+      class="pext-mcp-tabs"
+    >
+      <span
+        data-active="true"
+      >
+        <svg
+          aria-hidden="true"
+          fill="none"
+          height="16"
+          stroke-width="1"
+          viewBox="0 0 16 16"
+          width="16"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M3 4L7 8L3 12"
+            stroke="currentColor"
+          />
+          <path
+            d="M9 12H13"
+            stroke="currentColor"
+          />
+        </svg>
+        My connections
+        <small>
+          2
+        </small>
+      </span>
+    </nav>
+    <label
+      class="pext-mcp-search"
+    >
+      <span
+        class="pext-visually-hidden"
+      >
+        Search connections
+      </span>
+      <svg
+        aria-hidden="true"
+        fill="none"
+        height="16"
+        stroke-width="1"
+        viewBox="0 0 16 16"
+        width="16"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <path
+          d="M6.58727 11.8586C9.55061 11.8586 11.9529 9.45637 11.9529 6.49304C11.9529 3.5297 9.55061 1.12744 6.58727 1.12744C3.62394 1.12744 1.22168 3.5297 1.22168 6.49304C1.22168 9.45637 3.62394 11.8586 6.58727 11.8586Z"
+          stroke="currentColor"
+        />
+        <path
+          d="M10.2991 10.3933L14.7783 14.8725"
+          stroke="currentColor"
+        />
+      </svg>
+      <input
+        placeholder="Search connections"
+        type="search"
+        value=""
+      />
+    </label>
+  </div>
+  <div
+    class="pext-mcp-management-toolbar"
+  >
+    <span>
+      New tasks adopt the updated configuration. Disabling, deleting, or updating blocks new dispatch permission for older versions; actions already permitted may still complete.
+    </span>
+    <div
+      class="pext-mcp-toolbar-actions"
+    >
+      <button
+        class="pext-mcp-button"
+        type="button"
+      >
+        <svg
+          aria-hidden="true"
+          fill="none"
+          height="15"
+          stroke-width="1"
+          viewBox="0 0 16 16"
+          width="15"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M14.5001 8C14.5 9.28552 14.1188 10.5422 13.4045 11.611C12.6903 12.6799 11.6752 13.5129 10.4875 14.0049C9.29982 14.4968 7.99295 14.6255 6.73212 14.3747C5.4713 14.124 4.31314 13.505 3.4041 12.596C2.49514 11.687 1.87614 10.5288 1.62537 9.26798C1.37459 8.00716 1.50331 6.70028 1.99525 5.51261C2.48719 4.32494 3.32025 3.30981 4.3891 2.59557C5.45795 1.88134 6.71458 1.50008 8.0001 1.5C9.9001 1.5 11.7001 2.3 13.0001 3.6L14.5001 5.1"
+            stroke="currentColor"
+          />
+          <path
+            d="M14.4999 1.5V5.1H10.8999"
+            stroke="currentColor"
+          />
+        </svg>
+        Refresh list
+      </button>
+      <button
+        class="pext-mcp-button pext-mcp-button-primary"
+        type="button"
+      >
+        <svg
+          aria-hidden="true"
+          fill="none"
+          height="15"
+          stroke-width="1"
+          viewBox="0 0 16 16"
+          width="15"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M8 2V14"
+            stroke="currentColor"
+          />
+          <path
+            d="M2 8H14"
+            stroke="currentColor"
+          />
+        </svg>
+        Add connection
+      </button>
+    </div>
+  </div>
+  <div
+    class="pext-mcp-list"
+  >
+    <article
+      class="pext-mcp-row"
+    >
+      <button
+        aria-label="View MCP connection Knowledge"
+        class="pext-mcp-row-primary"
+        type="button"
+      >
+        <span
+          aria-hidden="true"
+          class="pext-mcp-glyph"
+        >
+          <svg
+            aria-hidden="true"
+            fill="none"
+            height="18"
+            stroke-width="1"
+            viewBox="0 0 16 16"
+            width="18"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M3 4L7 8L3 12"
+              stroke="currentColor"
+            />
+            <path
+              d="M9 12H13"
+              stroke="currentColor"
+            />
+          </svg>
+        </span>
+        <span
+          class="pext-mcp-row-copy"
+        >
+          <span
+            class="pext-mcp-row-title"
+          >
+            <strong>
+              Knowledge
+            </strong>
+          </span>
+          <span
+            class="pext-mcp-row-description"
+          >
+            https://mcp1.example.test/mcp
+          </span>
+          <small>
+            mcp_1 · Configuration revision 1
+          </small>
+        </span>
+        <svg
+          aria-hidden="true"
+          class="pext-mcp-row-chevron"
+          fill="none"
+          height="15"
+          stroke-width="1"
+          viewBox="0 0 16 16"
+          width="15"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M6 12L9.29289 8.70711C9.68342 8.31658 9.68342 7.68342 9.29289 7.29289L6 4"
+            stroke="currentColor"
+          />
+        </svg>
+      </button>
+      <div
+        class="pext-mcp-row-actions"
+      >
+        <span
+          class="pext-mcp-state"
+        >
+          Disabled
+        </span>
+        <button
+          aria-checked="false"
+          aria-label="Knowledge Enable"
+          class="pext-skill-toggle"
+          role="switch"
+          type="button"
+        >
+          <span />
+        </button>
+      </div>
+    </article>
+    <article
+      class="pext-mcp-row"
+    >
+      <button
+        aria-label="View MCP connection Database"
+        class="pext-mcp-row-primary"
+        type="button"
+      >
+        <span
+          aria-hidden="true"
+          class="pext-mcp-glyph"
+        >
+          <svg
+            aria-hidden="true"
+            fill="none"
+            height="18"
+            stroke-width="1"
+            viewBox="0 0 16 16"
+            width="18"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M3 4L7 8L3 12"
+              stroke="currentColor"
+            />
+            <path
+              d="M9 12H13"
+              stroke="currentColor"
+            />
+          </svg>
+        </span>
+        <span
+          class="pext-mcp-row-copy"
+        >
+          <span
+            class="pext-mcp-row-title"
+          >
+            <strong>
+              Database
+            </strong>
+          </span>
+          <span
+            class="pext-mcp-row-description"
+          >
+            https://mcp2.example.test/mcp
+          </span>
+          <small>
+            mcp_2 · Configuration revision 1
+          </small>
+        </span>
+        <svg
+          aria-hidden="true"
+          class="pext-mcp-row-chevron"
+          fill="none"
+          height="15"
+          stroke-width="1"
+          viewBox="0 0 16 16"
+          width="15"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M6 12L9.29289 8.70711C9.68342 8.31658 9.68342 7.68342 9.29289 7.29289L6 4"
+            stroke="currentColor"
+          />
+        </svg>
+      </button>
+      <div
+        class="pext-mcp-row-actions"
+      >
+        <span
+          class="pext-mcp-state"
+        >
+          Disabled
+        </span>
+        <button
+          aria-checked="false"
+          aria-label="Database Enable"
+          class="pext-skill-toggle"
+          role="switch"
+          type="button"
+        >
+          <span />
+        </button>
+      </div>
+    </article>
+  </div>
+</main>
+`;

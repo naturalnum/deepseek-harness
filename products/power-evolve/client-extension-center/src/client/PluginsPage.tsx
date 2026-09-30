@@ -2,7 +2,10 @@ import { IconApiOutlineRegular, IconChevronRightOutlineRegular, IconSearchOutlin
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { FixedMcpList, FixedMcpPort } from './mcp-api.ts'
+import { FixedMcpPage } from './FixedMcpPage.tsx'
 import { PersonalMcpPage } from './PersonalMcpPage.tsx'
+import type { PersonalMcpConnection, PersonalMcpConnectionPage, PersonalMcpConnectionPort } from './personal-mcp-client.ts'
+import type { PersonalMcpSessionSource } from './personal-mcp-session-view.ts'
 import { PersonalSshPage } from './PersonalSshPage.tsx'
 import { StdioMcpPage } from './StdioMcpPage.tsx'
 import type { StdioMcpList, StdioMcpPort } from './stdio-mcp-api.ts'
@@ -10,17 +13,18 @@ import type { PersonalSshList, PersonalSshPort } from './ssh-api.ts'
 import { PluginHttpError, type NotesPlugin, type NotesSetEnabled, type PluginPort } from './plugins-api.ts'
 import { SkillToggle } from './SkillToggle.tsx'
 
-type BuiltinId = 'notes' | 'mcp' | 'stdio' | 'ssh'
+type BuiltinId = 'notes' | 'mcp' | 'personal-mcp' | 'stdio' | 'ssh'
 type Category = '' | 'tools' | 'remote'
 type View = 'installed' | 'all'
 
 export type PluginsPageProps = PropsRuntime<'main'> & PropsLocale<'powerEvolve.extensionCenter'>
   & InjectFace<{ readonly plugins: PluginPort; readonly mcp: FixedMcpPort;
+    readonly personalMcp?: PersonalMcpConnectionPort; readonly mcpSessions?: PersonalMcpSessionSource;
     readonly stdio: StdioMcpPort; readonly ssh: PersonalSshPort;
     readonly approvalUrl: () => Promise<string> }>
 
 /** The old PowerEvolve Plugins layout with platform-owned personal state. */
-export function PluginsPage({ plugins, mcp, stdio, ssh, approvalUrl, t }: PluginsPageProps): ReactNode {
+export function PluginsPage({ plugins, mcp, personalMcp, mcpSessions, stdio, ssh, approvalUrl, t }: PluginsPageProps): ReactNode {
   const [items, setItems] = useState<readonly NotesPlugin[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string>()
@@ -36,6 +40,9 @@ export function PluginsPage({ plugins, mcp, stdio, ssh, approvalUrl, t }: Plugin
   const [mcpData, setMcpData] = useState<FixedMcpList>()
   const [mcpLoading, setMcpLoading] = useState(true)
   const [mcpLoadError, setMcpLoadError] = useState(false)
+  const [personalMcpData, setPersonalMcpData] = useState<PersonalMcpConnectionPage>()
+  const [personalMcpLoading, setPersonalMcpLoading] = useState(true)
+  const [personalMcpLoadError, setPersonalMcpLoadError] = useState(false)
   const [stdioData, setStdioData] = useState<StdioMcpList>()
   const [stdioLoading, setStdioLoading] = useState(true)
   const [stdioLoadError, setStdioLoadError] = useState(false)
@@ -44,6 +51,7 @@ export function PluginsPage({ plugins, mcp, stdio, ssh, approvalUrl, t }: Plugin
   const [sshLoadError, setSshLoadError] = useState(false)
   const request = useRef<AbortController>()
   const mcpRequest = useRef<AbortController>()
+  const personalMcpRequest = useRef<AbortController>()
   const stdioRequest = useRef<AbortController>()
   const sshRequest = useRef<AbortController>()
   const scrollTop = useRef(0)
@@ -96,6 +104,22 @@ export function PluginsPage({ plugins, mcp, stdio, ssh, approvalUrl, t }: Plugin
     })
   }, [ssh])
 
+  const reloadPersonalMcp = useCallback((): void => {
+    personalMcpRequest.current?.abort()
+    if (personalMcp === undefined) { setPersonalMcpLoading(false); return }
+    const controller = new AbortController()
+    personalMcpRequest.current = controller
+    setPersonalMcpLoading(true); setPersonalMcpLoadError(false)
+    void personalMcp.list({}, controller.signal).then(value => {
+      if (!controller.signal.aborted) setPersonalMcpData(value)
+    }).catch(() => {
+      if (!controller.signal.aborted) setPersonalMcpLoadError(true)
+    }).finally(() => { if (!controller.signal.aborted) setPersonalMcpLoading(false) })
+  }, [personalMcp])
+  const updatePersonalMcpItems = useCallback((next: readonly PersonalMcpConnection[]): void => {
+    setPersonalMcpData(current => current === undefined ? current : { ...current, items: next })
+  }, [])
+
   const reloadStdio = useCallback((): void => {
     stdioRequest.current?.abort()
     const controller = new AbortController()
@@ -108,9 +132,10 @@ export function PluginsPage({ plugins, mcp, stdio, ssh, approvalUrl, t }: Plugin
     }).finally(() => { if (!controller.signal.aborted) setStdioLoading(false) })
   }, [stdio])
 
-  useEffect(() => { reload(); reloadMcp(); reloadStdio(); reloadSsh(); return () => {
+  useEffect(() => { reload(); reloadMcp(); reloadPersonalMcp(); reloadStdio(); reloadSsh(); return () => {
     request.current?.abort(); mcpRequest.current?.abort(); stdioRequest.current?.abort(); sshRequest.current?.abort()
-  } }, [reload, reloadMcp, reloadStdio, reloadSsh])
+    personalMcpRequest.current?.abort()
+  } }, [reload, reloadMcp, reloadPersonalMcp, reloadStdio, reloadSsh])
   useEffect(() => {
     if (selected !== 'notes') return
     let active = true
@@ -123,18 +148,22 @@ export function PluginsPage({ plugins, mcp, stdio, ssh, approvalUrl, t }: Plugin
 
   const notes = items.find(item => item.id === 'notes')
   const mcpInstalled = (mcpData?.items.length ?? 0) > 0
+  const personalMcpInstalled = (personalMcpData?.items.length ?? 0) > 0
   const stdioInstalled = (stdioData?.items.length ?? 0) > 0
   const sshInstalled = (sshData?.items.length ?? 0) > 0
   const candidates: readonly BuiltinId[] = view === 'installed'
     ? [...(notes === undefined ? [] : ['notes'] as const), ...(mcpInstalled ? ['mcp'] as const : []),
+      ...(personalMcpInstalled ? ['personal-mcp'] as const : []),
       ...(stdioInstalled ? ['stdio'] as const : []),
       ...(sshInstalled ? ['ssh'] as const : [])]
-    : ['notes', 'mcp', 'stdio', 'ssh']
+    : ['notes', 'mcp', ...(personalMcp === undefined ? [] : ['personal-mcp'] as const), 'stdio', 'ssh']
   const visible = useMemo(() => candidates.filter(id => {
     const group = id === 'ssh' ? 'remote' : 'tools'
     const title = id === 'notes' ? t('notesPluginTitle')
+      : id === 'personal-mcp' ? t('personalMcpPluginTitle')
       : id === 'stdio' ? t('stdioMcpTitle') : id.toUpperCase()
     const description = id === 'notes' ? t('notesPluginDescription')
+      : id === 'personal-mcp' ? t('personalMcpPluginDescription')
       : id === 'mcp' ? t('mcpPluginDescription')
         : id === 'stdio' ? t('stdioMcpDescription') : t('sshPluginDescription')
     const needle = search.trim().toLocaleLowerCase()
@@ -193,8 +222,8 @@ export function PluginsPage({ plugins, mcp, stdio, ssh, approvalUrl, t }: Plugin
   if (selected === 'mcp' && mcpData) {
     return <main className="pext-root pext-plugin-detail-page" data-power-evolve-plugin-detail="mcp">
       <header className="pext-plugin-breadcrumb"><button type="button" onClick={() => { setSelected(undefined) }}>
-        {t('pluginsTitle')}</button><IconChevronRightOutlineRegular size={14} /><span>MCP</span></header>
-      <PersonalMcpPage data={mcpData} port={mcp} t={t} onReload={reloadMcp}
+        {t('pluginsTitle')}</button><IconChevronRightOutlineRegular size={14} /><span>{t('mcp')}</span></header>
+      <FixedMcpPage data={mcpData} port={mcp} t={t} onReload={reloadMcp}
         onChange={next => { setMcpData(current => current === undefined ? current : { ...current, items: next }) }} />
     </main>
   }
@@ -205,6 +234,14 @@ export function PluginsPage({ plugins, mcp, stdio, ssh, approvalUrl, t }: Plugin
         {t('pluginsTitle')}</button><IconChevronRightOutlineRegular size={14} /><span>{t('stdioMcpTitle')}</span></header>
       <StdioMcpPage data={stdioData} port={stdio} t={t}
         onChange={next => { setStdioData(current => current === undefined ? current : { ...current, items: next }) }} />
+    </main>
+  }
+
+  if (selected === 'personal-mcp' && personalMcp !== undefined && mcpSessions !== undefined) {
+    return <main className="pext-root pext-plugin-detail-page" data-power-evolve-plugin-detail="personal-mcp">
+      <header className="pext-plugin-breadcrumb"><button type="button" onClick={() => { setSelected(undefined) }}>
+        {t('pluginsTitle')}</button><IconChevronRightOutlineRegular size={14} /><span>{t('personalMcpPluginTitle')}</span></header>
+      <PersonalMcpPage personalMcp={personalMcp} sessions={mcpSessions} t={t} onConnectionsChange={updatePersonalMcpItems} />
     </main>
   }
 
@@ -220,7 +257,7 @@ export function PluginsPage({ plugins, mcp, stdio, ssh, approvalUrl, t }: Plugin
   return <main ref={list} className="pext-root pext-catalog-page" data-power-evolve-plugins-page>
     <header className="pext-catalog-header"><nav className="pext-catalog-tabs" role="tablist" aria-label={t('pluginsTitle')}>
       <button type="button" role="tab" aria-selected={view === 'installed'} onClick={() => { setView('installed') }}>
-        {t('myPlugins')}<small>{items.length + Number(mcpInstalled) + Number(stdioInstalled) + Number(sshInstalled)}</small></button>
+        {t('myPlugins')}<small>{items.length + Number(mcpInstalled) + Number(personalMcpInstalled) + Number(stdioInstalled) + Number(sshInstalled)}</small></button>
       <button type="button" role="tab" aria-selected={view === 'all'} onClick={() => { setView('all') }}>
         {t('allPlugins')}</button></nav></header>
     <section className="pext-catalog-content" role="tabpanel" aria-label={t('pluginsTitle')}>
@@ -233,9 +270,10 @@ export function PluginsPage({ plugins, mcp, stdio, ssh, approvalUrl, t }: Plugin
           {t(value === '' ? 'pluginCategoryAll' : value === 'tools' ? 'pluginCategoryTools' : 'pluginCategoryRemote')}</button>)}</div>
         <span>{t('resultCount').replace('{count}', String(visible.length))}</span></div>
       <button type="button" className="pext-card-action" onClick={() => {
-        reload(); reloadMcp(); reloadStdio(); reloadSsh() }}>{t('refreshList')}</button>
+        reload(); reloadMcp(); reloadPersonalMcp(); reloadStdio(); reloadSsh() }}>{t('refreshList')}</button>
       {loadError && <div className="pext-error" role="alert">{loadError}</div>}
       {mcpLoadError && <div className="pext-error" role="alert">{t('mcpLoadFailed')}</div>}
+      {personalMcpLoadError && <div className="pext-error" role="alert">{t('mcpLoadFailed')}</div>}
       {stdioLoadError && <div className="pext-error" role="alert">{t('stdioLoadFailed')}</div>}
       {sshLoadError && <div className="pext-error" role="alert">{t('sshLoadFailed')}</div>}
       {loading ? <div className="pext-loading" role="status">{t('pluginLoading')}</div>
@@ -243,18 +281,25 @@ export function PluginsPage({ plugins, mcp, stdio, ssh, approvalUrl, t }: Plugin
           : <div className="pext-card-grid">{visible.map(id => {
             const isNotes = id === 'notes'
             const isMcp = id === 'mcp'
+            const isPersonalMcp = id === 'personal-mcp'
             const isStdio = id === 'stdio'
             const isSsh = id === 'ssh'
             const title = isNotes ? t('notesPluginTitle')
+              : isPersonalMcp ? t('personalMcpPluginTitle')
               : isStdio ? t('stdioMcpTitle') : id.toUpperCase()
             const openable = isNotes && notes !== undefined || isMcp && mcpData !== undefined
               && (mcpData.available || mcpInstalled) || isStdio && stdioData !== undefined
-              && (stdioData.available || stdioInstalled) || isSsh && sshData !== undefined
+              && (stdioData.available || stdioInstalled) || isPersonalMcp && personalMcp !== undefined
+              && mcpSessions !== undefined && personalMcpData !== undefined && (personalMcpData.available || personalMcpInstalled)
+              || isSsh && sshData !== undefined
               && (sshData.available || sshInstalled)
             return <article className="pext-extension-card" key={id} data-plugin-id={id}>
               <div className="pext-extension-card-top"><span className="pext-extension-icon" aria-hidden="true">
                 <IconApiOutlineRegular size={21} /></span><span className="pext-extension-badge">
                 {isNotes && notes ? t(notes.enabled ? 'enabledState' : 'disabledState')
+                  : isPersonalMcp && personalMcpInstalled ? t('mcpInstalled')
+                    : isPersonalMcp && personalMcpLoading ? t('mcpLoading')
+                      : isPersonalMcp && personalMcpData?.available ? t('pluginBuiltin')
                   : isMcp && mcpInstalled ? t('mcpInstalled')
                     : isMcp && mcpLoading ? t('mcpLoading')
                       : isMcp && mcpData?.available ? t('pluginBuiltin')
@@ -267,7 +312,7 @@ export function PluginsPage({ plugins, mcp, stdio, ssh, approvalUrl, t }: Plugin
               {openable ? <button className="pext-extension-title" type="button" onClick={() => {
                 scrollTop.current = list.current?.scrollTop ?? 0; setSelected(id) }}>{title}</button>
                 : <strong className="pext-extension-title">{title}</strong>}
-              <p>{t(isNotes ? 'notesPluginDescription' : isMcp ? 'mcpPluginDescription'
+              <p>{t(isNotes ? 'notesPluginDescription' : isPersonalMcp ? 'personalMcpPluginDescription' : isMcp ? 'mcpPluginDescription'
                 : isStdio ? 'stdioMcpDescription' : 'sshPluginDescription')}</p>
               <div className="pext-extension-card-bottom"><span>{openable ? t('pluginBuiltin') : t('pluginNotAvailable')}</span>
                 {openable ? <button type="button" className="pext-card-action" onClick={() => {
