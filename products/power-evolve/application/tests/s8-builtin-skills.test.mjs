@@ -61,19 +61,19 @@ test('catalog, manifest, archive and directory tampering fail closed', async t =
     return target
   }
   const damagedZip = await clone('zip')
-  const zip = join(damagedZip, 'extensions/builtin.word/1.0.0.zip')
+  const zip = join(damagedZip, 'extensions/builtin.word/1.0.1.zip')
   const zipBytes = await readFile(zip)
   zipBytes[0] ^= 1
   await writeFile(zip, zipBytes)
   const lazyCatalog = new BuiltinSkillCatalog(damagedZip)
   assert.equal((await lazyCatalog.list()).length, 9)
-  await assert.rejects(lazyCatalog.get('builtin.word', '1.0.0'), BuiltinSkillCatalogUnavailable)
+  await assert.rejects(lazyCatalog.get('builtin.word', '1.0.1'), BuiltinSkillCatalogUnavailable)
   assert((await lazyCatalog.get('builtin.pdf', '1.0.0'))?.archive.length)
 
   const damagedManifest = await clone('manifest')
-  const manifest = join(damagedManifest, 'extensions/builtin.word/1.0.0.manifest.json')
+  const manifest = join(damagedManifest, 'extensions/builtin.word/1.0.1.manifest.json')
   await writeFile(manifest, '{}')
-  await assert.rejects(new BuiltinSkillCatalog(damagedManifest).get('builtin.word', '1.0.0'),
+  await assert.rejects(new BuiltinSkillCatalog(damagedManifest).get('builtin.word', '1.0.1'),
     BuiltinSkillCatalogUnavailable)
 
   const damagedCatalog = await clone('catalog')

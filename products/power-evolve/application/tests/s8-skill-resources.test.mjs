@@ -74,7 +74,7 @@ test('readSelectedResource lists and reads only owned, intact UTF-8 files from t
     const bobGrid = selected(await skills.installBuiltin(bob, randomUUID(),
       'builtin.power-grid-technical-report-writer', '1.1.31'))
     const format = selected(await skills.installBuiltin(alice, randomUUID(),
-      'builtin.tech-report-writer', '1.1.31'))
+      'builtin.tech-report-writer', '1.1.32'))
     const listed = await skills.readSelectedResource(alice.userId, grid)
     assert.equal(listed.kind, 'list')
     const rule = listed.files.find(file => file.path === 'references/chapter-summary.md')

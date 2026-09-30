@@ -11,9 +11,9 @@
         "publisher": "PowerEvolve"
       },
       "release": {
-        "version": "1.0.0",
+        "version": "1.0.1",
         "state": "PUBLISHED",
-        "manifestDigest": "sha256:6eec0b5d6701fed1be9e5198a1b01915b5ca9b3805ac485ee28ed612091f4f39",
+        "manifestDigest": "sha256:6c33e6d2df7fe25665b8914cd8dba1b111302df06c945b2af1c97e741ff926b9",
         "targets": [
           "cloud"
         ],
@@ -21,10 +21,10 @@
           "skill"
         ],
         "permissions": [],
-        "artifactDigest": "bf7d2b3bb95da5e4770b0c34a27888b01a104137ce43e1af4719b364b6639fe7",
-        "artifactSize": 563,
-        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.word/releases/1.0.0/artifact",
-        "artifactPath": "extensions/builtin.word/1.0.0.zip"
+        "artifactDigest": "6fde86b6fd7811cda52c84d75b53dde8219e439351e60f3521cbe577b0615b85",
+        "artifactSize": 1857,
+        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.word/releases/1.0.1/artifact",
+        "artifactPath": "extensions/builtin.word/1.0.1.zip"
       }
     },
     {
@@ -37,9 +37,9 @@
         "publisher": "PowerEvolve"
       },
       "release": {
-        "version": "1.0.0",
+        "version": "1.0.1",
         "state": "PUBLISHED",
-        "manifestDigest": "sha256:a388459c6ec946ba21dcb93646011bb4c5823753e590555839bf2b5fc14175ec",
+        "manifestDigest": "sha256:37fe701b1fdaeea3a32ef3dfd98c4b02e4ee8f19665047ae4bf98b72bd6e0a5f",
         "targets": [
           "cloud"
         ],
@@ -47,10 +47,10 @@
           "skill"
         ],
         "permissions": [],
-        "artifactDigest": "c0735e39b1c3ad62f65b400513a0d127c83bc6a3f029af5d896cc8986a22878c",
-        "artifactSize": 581,
-        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.excel/releases/1.0.0/artifact",
-        "artifactPath": "extensions/builtin.excel/1.0.0.zip"
+        "artifactDigest": "3225070298e9338a0dd84f2a583699104e19527dbf370113c85d969e7b6ad184",
+        "artifactSize": 1871,
+        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.excel/releases/1.0.1/artifact",
+        "artifactPath": "extensions/builtin.excel/1.0.1.zip"
       }
     },
     {
@@ -63,9 +63,9 @@
         "publisher": "PowerEvolve"
       },
       "release": {
-        "version": "1.0.0",
+        "version": "1.0.1",
         "state": "PUBLISHED",
-        "manifestDigest": "sha256:5ed84f559ead7d6e3f2f25abf1e2127407707ca738dc98043edd1686b800c4a8",
+        "manifestDigest": "sha256:5d94d9e5cf22ece654853bd39a97805f516283ba2d0a80640e01d058750d3c5e",
         "targets": [
           "cloud"
         ],
@@ -73,10 +73,10 @@
           "skill"
         ],
         "permissions": [],
-        "artifactDigest": "8d8ecccd59e568975e750e973dae100c728f77b82fe9e85fb86b6c5952f2f523",
-        "artifactSize": 599,
-        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.powerpoint/releases/1.0.0/artifact",
-        "artifactPath": "extensions/builtin.powerpoint/1.0.0.zip"
+        "artifactDigest": "3fd2211b7941a89400ff6b337714d98d081408c442460a90d4f59a94d4c1863f",
+        "artifactSize": 1881,
+        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.powerpoint/releases/1.0.1/artifact",
+        "artifactPath": "extensions/builtin.powerpoint/1.0.1.zip"
       }
     },
     {
@@ -115,9 +115,9 @@
         "publisher": "PowerEvolve"
       },
       "release": {
-        "version": "1.0.0",
+        "version": "1.0.1",
         "state": "PUBLISHED",
-        "manifestDigest": "sha256:fbc10bb3ec3a57091bb16c86b7785a72ed19f907f9f1e1fa9f740d154b347e59",
+        "manifestDigest": "sha256:1909b665c40503c468120435c2ef42cf162fb0c419791fc9db22967b28862bf8",
         "targets": [
           "cloud"
         ],
@@ -125,10 +125,10 @@
           "skill"
         ],
         "permissions": [],
-        "artifactDigest": "9a5a3947700c198a0d2ecc18c440221ae921f4698aa59e84dd454107c90f6f1c",
-        "artifactSize": 61190,
-        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.latex-report-writer/releases/1.0.0/artifact",
-        "artifactPath": "extensions/builtin.latex-report-writer/1.0.0.zip"
+        "artifactDigest": "fe80da7441666cc8a2d9b3cf83d0a12ebb6145c9f314b40522809ef6a5e70a86",
+        "artifactSize": 60456,
+        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.latex-report-writer/releases/1.0.1/artifact",
+        "artifactPath": "extensions/builtin.latex-report-writer/1.0.1.zip"
       }
     },
     {
@@ -219,9 +219,9 @@
         "publisher": "PowerEvolve"
       },
       "release": {
-        "version": "1.1.31",
+        "version": "1.1.32",
         "state": "PUBLISHED",
-        "manifestDigest": "sha256:ba06543c6f4920826ba5cc8927fcc8715421a62974963f0bb26cca99451b59c0",
+        "manifestDigest": "sha256:4421997e7caf0fac061b0a7ef4fa5374627fdbfbb1bf43562ef09dfe68762823",
         "targets": [
           "cloud"
         ],
@@ -229,10 +229,10 @@
           "skill"
         ],
         "permissions": [],
-        "artifactDigest": "997a8100608d42046df8b522dfdc74147dd7331e642eb15c72d0d2f69760b2cd",
-        "artifactSize": 233150,
-        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.tech-report-writer/releases/1.1.31/artifact",
-        "artifactPath": "extensions/builtin.tech-report-writer/1.1.31.zip"
+        "artifactDigest": "f1bb9fcb1f50e81f5ea098b58553f6ead9b6c5f861235d98c5517128bcc38d4a",
+        "artifactSize": 245288,
+        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.tech-report-writer/releases/1.1.32/artifact",
+        "artifactPath": "extensions/builtin.tech-report-writer/1.1.32.zip"
       }
     }
   ]

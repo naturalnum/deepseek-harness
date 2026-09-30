@@ -12,19 +12,19 @@ const root = dirname(fileURLToPath(import.meta.url))
 const outputRoot = join(root, 'generated')
 const definitions = [
   {
-    directory: 'word', extensionId: 'builtin.word', version: '1.0.0', name: 'Word 文档',
+    directory: 'word', extensionId: 'builtin.word', version: '1.0.1', name: 'Word 文档',
     summary: '创建、读取和修改 Word 文档。',
     description: '使用沙盒预装的 OfficeCLI 统一入口处理 .docx 文件，详细指南由程序按需返回。',
     category: 'office', publisher: 'PowerEvolve',
   },
   {
-    directory: 'excel', extensionId: 'builtin.excel', version: '1.0.0', name: 'Excel 表格',
+    directory: 'excel', extensionId: 'builtin.excel', version: '1.0.1', name: 'Excel 表格',
     summary: '创建、读取和修改 Excel 工作簿。',
     description: '使用沙盒预装的 OfficeCLI 统一入口处理 .xlsx 文件，详细指南由程序按需返回。',
     category: 'office', publisher: 'PowerEvolve',
   },
   {
-    directory: 'powerpoint', extensionId: 'builtin.powerpoint', version: '1.0.0', name: 'PowerPoint 演示文稿',
+    directory: 'powerpoint', extensionId: 'builtin.powerpoint', version: '1.0.1', name: 'PowerPoint 演示文稿',
     summary: '创建、读取和修改 PowerPoint 演示文稿。',
     description: '使用沙盒预装的 OfficeCLI 统一入口处理 .pptx 文件，详细指南由程序按需返回。',
     category: 'office', publisher: 'PowerEvolve',
@@ -36,7 +36,7 @@ const definitions = [
     category: 'office', publisher: 'OpenAI',
   },
   {
-    directory: 'latex-report-writer', extensionId: 'builtin.latex-report-writer', version: '1.0.0',
+    directory: 'latex-report-writer', extensionId: 'builtin.latex-report-writer', version: '1.0.1',
     name: 'LaTeX 技术报告',
     summary: '使用 XeLaTeX 编写、校验并渲染中文电力技术报告。',
     description: '包含中国电力技术报告 LaTeX 类、版式规范、转换脚本、编译脚本和逐页渲染工具。',
@@ -66,7 +66,7 @@ const definitions = [
     category: 'writing-office', publisher: 'PowerEvolve',
   },
   {
-    directory: 'tech-report-writer', extensionId: 'builtin.tech-report-writer', version: '1.1.31',
+    directory: 'tech-report-writer', extensionId: 'builtin.tech-report-writer', version: '1.1.32',
     name: '技术报告 Word 排版',
     summary: '生成、重排和校验中国电科院技术报告 Word 文件。',
     description: '包含 Word 模板、结构化数据校验、DOCX 生成、格式修复、目录域处理、PDF 转换与逐页视觉验收脚本。',

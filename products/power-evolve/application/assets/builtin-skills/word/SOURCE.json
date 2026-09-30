@@ -1,0 +1,11 @@
+{
+  "sourceRepository": "https://github.com/naturalnum/power-evolve",
+  "sourceCommit": "a03460fe66a3f77114ff3bb906476105e1d470b7",
+  "sourcePath": "services/cloud-server/assets/builtin-skills/word",
+  "productVersion": "1.0.1",
+  "changes": [
+    "Explain direct file execution and asynchronous result ordering.",
+    "Use Sandbox LibreOffice and Poppler for render previews without optional OfficeCLI exporters.",
+    "Distinguish completed rendering from actual visual inspection."
+  ]
+}

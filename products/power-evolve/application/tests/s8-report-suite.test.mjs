@@ -18,7 +18,7 @@ const report = [
   ['builtin.report-workflow-orchestrator', '1.1.21', 'report-workflow-orchestrator'],
   ['builtin.power-grid-technical-report-writer', '1.1.31', 'power-grid-technical-report-writer'],
   ['builtin.report-reviewer', '1.1.0', 'report-reviewer'],
-  ['builtin.tech-report-writer', '1.1.31', 'tech-report-writer'],
+  ['builtin.tech-report-writer', '1.1.32', 'tech-report-writer'],
 ]
 const digest = bytes => createHash('sha256').update(bytes).digest('hex')
 
@@ -92,7 +92,7 @@ test('report suite copies four exact versions once per user and never repairs a 
     })
     assert.equal((await skills.runtimeResourceBase(alice.userId, aliceSelection, first.skillId)).suiteAvailable, true)
     catalogRead.mock.restore()
-    const word = selected(await skills.installBuiltin(alice, randomUUID(), 'builtin.word', '1.0.0'))
+    const word = selected(await skills.installBuiltin(alice, randomUUID(), 'builtin.word', '1.0.1'))
     assert.deepEqual(await skills.runtimeResourceBase(alice.userId, [word], word.skillId), {
       runtimePath: `/opt/power-evolve/skills/sha256/${word.packageDigest}/skill`, suiteAvailable: false })
     const note = selected(await skills.install(alice, randomUUID(), 'short-note', 'Short note', 'Read me.'))

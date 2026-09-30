@@ -11,7 +11,7 @@
 - 私有 venv 中的 Python 3.11：`requirements-skills.lock` 固定全部直接和间接依赖的版本及发行文件 SHA256，由 `requirements-skills.in` 生成。runner 限制命令 `PATH`，`/usr/local/bin/python3` 包装脚本仍会调用该 venv。
 - OfficeCLI 1.0.151：amd64 二进制的 SHA256 必须是 `8e2512234ae1111e51ad3a9fadbdeca266adfa7f683773469aa45b83fe06dc7f`；arm64 必须是 `fccb7d7841c9ec93593a62181544c893ee184455421cf15bd76110bf0ad29c41`。
 
-镜像包含 LibreOffice Writer、Pandoc、Poppler、XeLaTeX/CTeX、Noto CJK 及 Debian 的文泉驿和 TeX 字体。不安装 JDK、Maven、Chromium 或 Windows 字体。Debian 指定日期快照固定 apt 软件包集合，基础镜像摘要固定初始系统状态。本地 QA 标签可以改变；用 `docker image inspect pe-s8-skills-runner:qa --format '{{.Id}}'` 记录准确的本地镜像 ID。推送后才能获得部署用的不可变 registry digest。
+镜像包含 LibreOffice Writer、Calc、Impress、Python UNO、Pandoc、Poppler、XeLaTeX/CTeX、Noto CJK 及 Debian 的文泉驿和 TeX 字体。报告目录更新器通过 `/usr/bin/python3` 使用 UNO；文档编辑使用私有 venv。不安装 JDK、Maven、Chromium 或 Windows 字体。Debian 指定日期快照固定 apt 软件包集合，基础镜像摘要固定初始系统状态。本地 QA 标签可以改变；用 `docker image inspect pe-s8-skills-runner:qa --format '{{.Id}}'` 记录准确的本地镜像 ID。推送后才能获得部署用的不可变 registry digest。
 
 runner 为子进程提供固定环境，不转发镜像的 `ENV` 值。需要 `OFFICECLI_SKIP_UPDATE=1` 的文档命令必须在该命令内显式设置。
 
@@ -28,4 +28,4 @@ docker run --rm --user 1000:1000 --read-only \
   --entrypoint /bin/bash pe-s8-skills-runner:qa /qa-skills-toolchain.sh
 ```
 
-脚本实际创建和校验 OfficeCLI 文件、导入锁定的 Python 包、生成和提取中文 PDF 并渲染页面、编译中文 CTeX 文档，还会创建并读取 DOCX、PPTX、XLSX 文件；另检查 Pandoc、LibreOffice、可写挂载和排除的软件。这是工具链烟测，不代表九项内置技能的完整工作流验收，也不涵盖 Platform 文档命令桥。
+脚本实际创建和校验 OfficeCLI 文件、导入锁定的 Python 包、生成和提取中文 PDF 并渲染页面、编译中文 CTeX 文档，还会创建并读取 DOCX、PPTX、XLSX 文件。每种 Office 格式均在独立目录导出 PDF，检查非空字节和预期文本，再用 Poppler 渲染 PNG。LibreOffice 可能未生成文件却返回零，因此仅凭退出码不能确认渲染成功。脚本另检查 Pandoc、可写挂载和排除的软件。此烟测覆盖工具链；内置技能完整工作流及 Platform 文档命令桥须另行验收。
