@@ -11,6 +11,24 @@ Date: 2026-09-30. Base commit: `e452a21d24`; the first trial's Host and Platform
 
 Each trial has its own private profile, database volume, POSIX workspace root, and namespace-scoped Kubernetes credential. Neither uses the frozen S7 c3 namespace or ports. Both initially used source and compiled artifacts from the clean base commit; focused fixes were compiled and applied only to the named trial processes above. This QA checkout owns its new scripts and this report. Local sanitized JSON/PNG evidence is under `.artifacts/power-evolve/<trial>/evidence/` and `evidence-qa3/` in this checkout. Credential files are outside the repository and are absent from evidence.
 
+## Current acceptance summary at `ba1307f14d`
+
+The current catalog has nine packages. Both users' built-in instructions and owner boundaries were checked; five changed packages were explicitly upgraded through native browser API, and `tech-report-writer` was upgraded again to `1.1.33`. Actual DeepSeek, Office tool, k3s Runner, PG, trusted continuation, and native browser evidence covers representative actions below. The earlier base-version matrix remains below as a historical record; its pending statements do not override these later results.
+
+| Built-in package | Current version | Real evidence | Remaining boundary |
+| --- | --- | --- | --- |
+| Word | `1.0.1` | Explicit upgrade; direct Office DOCX create/add/validate and Writer PDF visually checked under the earlier runtime fix; full upstream guide plus stateless prefix read in Session | Full authoring and native slash-to-Office on `1.0.1` not repeated; OfficeCLI screenshot path unavailable |
+| Excel | `1.0.1` | New qa3 Session used Office create/set/formula/validate; Calc PDF showed `21 42` | No broad spreadsheet feature matrix or native slash-to-Office test |
+| PowerPoint | `1.0.1` | New qa3 Session used Office create/add/validate; Impress PDF showed slide title and body | No presentation design matrix or native slash-to-Office test |
+| PDF | `1.0.0` | Native `/pdf`, real cloud execution, PDF text and PNG readback | One-page smoke only |
+| LaTeX report writer | `1.0.1` | Native slash, packaged sample, two-pass XeLaTeX, validator, ten-page PDF and PNGs | Linux font fallback warning; no supplied real report or exact template fidelity |
+| Power-grid report generator | `1.1.31` | Native instruction read; orchestrator's real Runner quality gate executed this package's `validate_outline.py`, 0 errors and 6 warnings | No full chapter generation or evidence-grounded report |
+| Report reviewer | `1.1.0` | Native slash produced structured blocked `review_outline` for incomplete evidence, with must-fix fields | No pass/revise/approval loop |
+| Report orchestrator | `1.1.21` | Native slash, registry resource, suite mount, state init, intake confirmation, next generator request, quality and consistency gates | No complete multi-stage project workflow |
+| Word report formatter | `1.1.33` | `1.1.32` Session generated/validated/rendered a six-page DOCX/PDF sample; new `1.1.33` Session passed the formerly failing consistency gate | DOCX generation has not been repeated on `1.1.33`; no sourced final report |
+
+The older backup/restore trial separately demonstrated disabled Word persistence and revoked PDF read refusal for its then-current versions; see [that report](TRIAL-S8-BACKUP-RESTORE.md). This QA did not rerun those lifecycle cases on every upgraded version. Exact Word/LaTeX template fidelity and a complete sourced report workflow remain open.
+
 ## Verified
 
 - Alice and Bob logged in through the trusted Platform page and separate native browser contexts. Each received nine enabled, ready package Skills. Native My/All cards, search, Word detail preview, Alice Word disable/enable, one Alice-only text Skill revoke, and persistence across a Host/Platform restart passed. Bob remained enabled during Alice's toggle. Cross-user `skillsRead` returned 404.
@@ -60,6 +78,26 @@ Before V21, the `s8-office-qa` schema-20 trial was backed up to `/Users/jingchao
 
 The QA branch then merged fixed mainline `52f52cff13` at `124113e277`, compiled the application, and verified PG schema `21`. The new catalog SHA-256 is `2a8ffa998a876b298822e5281e3ea736d9344d21ae2ef8f5e05750ca80f706e6`. Alice and Bob each explicitly upgraded `tech-report-writer` to `1.1.33` through the native browser API; both retained their Skill ID and the `1.1.32` receipt. Bob's earlier accepted report operation still records `1.1.32`. A newly created Session selected `1.1.33` and resolved a different suite mount, `/opt/power-evolve/skills/report-suites/cab8954a3af1d73bf80f1219d6677d95faf615d315a558741f9b81dae2a165fe`. Its real qa3 `cloud_exec` ran `validate_rule_consistency.py` from that new mount and returned exit 0 with `rule consistency validation passed: 0 errors`; trusted continuation completed. This closes the earlier literal-string mismatch for the new package version without changing the old accepted selection.
 
+### Real NUL output after Runner response fix at `ba1307f14d`
+
+Mainline `631f8062e3` was merged into this QA branch at `ba1307f14d`; only `s8-office-qa` Host and Platform were rebuilt and restarted. A real Alice browser Session caused one qa3 `cloud_exec` command to write the same 19-byte sequence to stdout and stderr: `A`, NUL, `中文`, emoji, literal backslash `u0000`, `Z`. PG `result` is `json`; both streams matched the expected byte length and SHA-256, with no truncation. The trusted continuation completed. The persisted native event matched the full Operation input for this small result, survived page refresh, and Bob's read of Alice's Session returned 404.
+
+Another new Session wrote 65,536 bytes to **each** stream: NUL padding ending in `中`, emoji, and literal backslash `u0000`. The actual Pod image ID was `sha256:ceaf2b51bc789a2284b532bfa9b4a887ec4e55a4c4cf1637319b574a5b7ccf71`. Both PG streams matched the expected 65,536-byte SHA-256, `stdoutTruncated=false`, `stderrTruncated=false`, exit 0, and there was exactly one execution row in that Session. The full trusted Operation input is 786,541 characters and contains both complete escaped streams. The persisted native event intentionally uses `continuation-input.ts`'s `Internal result truncated.` and `[... omitted ...]` markers; its 224,584-character text retains matching head and tail, with JSON-encoded size exactly 262,144 bytes. The continuation completed, a refreshed Alice browser read back the exact persisted event, and Bob again received 404. This verifies lossless durable result plus bounded model-visible text at the legal dual-stream output cap.
+
+An initial full-size probe also executed once and completed successfully, but this QA script incorrectly asserted that its bounded native event must equal the complete Operation input. That assertion failed after the platform work had succeeded. The corrected script intentionally created a second independent Session to finish native refresh and cross-user checks; each Session has one execution, and there is no automatic duplicate or command retry. The original failed QA assertion and first successful execution remain recorded in the isolated database.
+
+The verified startup command for the current trial, including its required existing Docker network, is:
+
+```sh
+PE_TRIAL_NAME=s8-office-qa \
+PE_PRIVATE_DIR=/Users/jingchao/.config/power-evolve/shared-host-s8-office-qa \
+PE_COMPOSE_EXTERNAL_NETWORK=pe-shared-host-slice5_default \
+PE_DATABASE_PORT=18553 PE_HOST_PORT=19550 PE_PLATFORM_PORT=19551 PE_TARGET_PORT=19552 \
+node products/power-evolve/scripts/trial.mjs up
+```
+
+The QA browser scripts also use `PE_S8_EVIDENCE_DIR=/Users/jingchao/agent_work/main_agent/power-evolve-parity-audit/.artifacts/power-evolve/s8-office-qa/evidence-qa3`. No password or key value is in these commands or the tracked report.
+
 ## Blocking findings
 
 ### Long Office guide initially left a queued operation and starved other continuations; fixed and replayed
@@ -99,5 +137,6 @@ Run against an already prepared trial with `PE_PRIVATE_DIR`, `PE_HOST_PORT`, `PE
 | `qa-s8-specialist-session.mjs <latex\|reviewer>` | Native LaTeX and reviewer Skill invocations |
 | `qa-s8-latex-command.mjs <action>` | Real XeLaTeX build, validation, and PDF render through cloud Sandbox |
 | `qa-s8-report-rule-hotfix.mjs` | V21 schema check, two-user `1.1.33` API upgrade, old/new accepted selection comparison, and new-suite Runner gate |
+| `qa-s8-lossless-browser.mjs small\|full` | Real dual-stream NUL/Unicode, PG JSON bytes, bounded continuation, native refresh and cross-user 404 |
 
 The Office command script keeps later mutations in the Session and Workspace recorded by its matching `*-create` evidence. An early exploratory `excel-set` accidentally selected a different Workspace with the same title and returned `File not found`; the corrected script does not reuse a title to identify a file's Workspace. An `uncertain` state during Sandbox Pod replacement was transient and later settled to success; the script now waits for an actual terminal execution state.
