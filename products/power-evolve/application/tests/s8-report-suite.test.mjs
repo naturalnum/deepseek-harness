@@ -18,7 +18,7 @@ const report = [
   ['builtin.report-workflow-orchestrator', '1.1.21', 'report-workflow-orchestrator'],
   ['builtin.power-grid-technical-report-writer', '1.1.31', 'power-grid-technical-report-writer'],
   ['builtin.report-reviewer', '1.1.0', 'report-reviewer'],
-  ['builtin.tech-report-writer', '1.1.32', 'tech-report-writer'],
+  ['builtin.tech-report-writer', '1.1.33', 'tech-report-writer'],
 ]
 const digest = bytes => createHash('sha256').update(bytes).digest('hex')
 

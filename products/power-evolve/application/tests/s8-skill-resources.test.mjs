@@ -74,7 +74,7 @@ test('readSelectedResource lists and reads only owned, intact UTF-8 files from t
     const bobGrid = selected(await skills.installBuiltin(bob, randomUUID(),
       'builtin.power-grid-technical-report-writer', '1.1.31'))
     const format = selected(await skills.installBuiltin(alice, randomUUID(),
-      'builtin.tech-report-writer', '1.1.32'))
+      'builtin.tech-report-writer', '1.1.33'))
     const listed = await skills.readSelectedResource(alice.userId, grid)
     assert.equal(listed.kind, 'list')
     const rule = listed.files.find(file => file.path === 'references/chapter-summary.md')
@@ -119,7 +119,7 @@ test('readSelectedResource lists and reads only owned, intact UTF-8 files from t
     await writeFile(join(upgradeRoot, 'new-grid', 'SKILL.md'),
       '---\nname: power-grid-technical-report-writer\ndescription: Newer report package\n---\nNew version.\n')
     await writeFile(join(upgradeRoot, 'new-grid', 'skill-package.json'),
-      JSON.stringify({ schemaVersion: 1, version: '1.1.32' }))
+      JSON.stringify({ schemaVersion: 1, version: '1.1.33' }))
     const upgradePath = join(upgradeRoot, 'upgrade.zip')
     execFileSync('zip', ['-q', '-r', '-X', upgradePath, 'new-grid'], { cwd: upgradeRoot })
     const upgradeArchive = await readFile(upgradePath)
@@ -127,7 +127,7 @@ test('readSelectedResource lists and reads only owned, intact UTF-8 files from t
       digest(upgradeArchive), 'http://127.0.0.1:18881')
     const upgraded = (await skills.upload(upgradeTicket.ticket, Readable.from([upgradeArchive]))).item
     assert.equal(upgraded.skillId, grid.skillId)
-    assert.equal(upgraded.version, '1.1.32')
+    assert.equal(upgraded.version, '1.1.33')
     assert.equal((await skills.readSelectedResource(alice.userId, grid, rule.path)).text, loaded.text)
 
     const source = join(root, 'oversize-source')
