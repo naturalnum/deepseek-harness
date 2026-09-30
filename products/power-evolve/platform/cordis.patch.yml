@@ -43,6 +43,8 @@
         modelKeyFile: !!js process.env.PE_PRIVATE_DIR + '/model-key'
         connectorKeyFile: !!js process.env.PE_PRIVATE_DIR + '/connector-key'
         seedUsersFile: !!js process.env.PE_PRIVATE_DIR + '/users.json'
+        accountManagementFile: !!js process.env.PE_PRIVATE_DIR + '/account-management.json'
+        accountBootstrapFile: !!js process.env.PE_ACCOUNT_BOOTSTRAP_FILE || ''
         modelUrl: https://api.deepseek.com/anthropic/v1/messages
         mcpUrl: ''
         mcpTokenFile: ''

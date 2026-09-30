@@ -4,6 +4,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { remoteMcpConfigPath, remoteMcpEgress, remoteMcpSources, remoteMcpValues } from './remote-mcp.mjs'
+import { accountBootstrapEnabled, accountBootstrapPath } from './accounts.mjs'
 
 const require = createRequire(new URL('../application/package.json', import.meta.url))
 const yaml = require('js-yaml')
@@ -86,6 +87,7 @@ export function validateValues(input) {
   named(secrets.platform, 'Platform Secret')
   if (secrets.shared === secrets.platform) throw new Error('Host must not mount Platform credentials')
   remoteMcpValues(value.remoteMcp, secrets.shared)
+  accountBootstrapEnabled(value.accounts)
   return value
 }
 
@@ -115,7 +117,8 @@ function secretVolume(values, role) {
   const sources = [{ secret: { name: values.secrets.shared,
     items: [{ key: 'worker-token', path: 'worker-token' }] } }]
   if (role === 'platform') sources.push({ secret: { name: values.secrets.platform,
-    items: ['database-url', 'model-key', 'connector-key', 'runner-key', 'users.json']
+    items: ['database-url', 'model-key', 'connector-key', 'runner-key', 'users.json', 'account-management.json',
+      ...(accountBootstrapEnabled(values.accounts) ? ['account-bootstrap.json'] : [])]
       .map(key => ({ key, path: key })) } })
   if (role === 'platform') sources.push(...remoteMcpSources(remoteMcpValues(values.remoteMcp, values.secrets.shared)))
   return { name: 'private', projected: { defaultMode: 0o440, sources } }
@@ -207,6 +210,7 @@ export function buildManifests(input) {
     PE_SANDBOX_NAMESPACE: runner, PE_SANDBOX_IMAGE: values.sandboxImage,
     PE_SANDBOX_VOLUME_CLAIM: storage.runnerClaim,
     ...(remoteMcp === null ? {} : { PE_REMOTE_MCP_CONFIG_FILE: remoteMcpConfigPath }),
+    ...(accountBootstrapEnabled(values.accounts) ? { PE_ACCOUNT_BOOTSTRAP_FILE: accountBootstrapPath } : {}),
     PE_PRIVATE_DIR: '/run/power-evolve/private', DSH_HOME: '/var/lib/dsh' }
   const configMap = (name, data) => ({ apiVersion: 'v1', kind: 'ConfigMap',
     metadata: metadata(name, app), data })

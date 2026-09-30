@@ -9,6 +9,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { buildManifests, validateValues } from './render.mjs'
 import { remoteMcpCaPath, remoteMcpConfigPath, remoteMcpKeyPath,
   remoteMcpMountedMetadata, remoteMcpValues } from './remote-mcp.mjs'
+import { accountBootstrapEnabled, accountBootstrapPath, accountManagementPath, validateAccountStartup } from './accounts.mjs'
 
 const require = createRequire(new URL('../application/package.json', import.meta.url))
 const yaml = require('js-yaml')
@@ -194,6 +195,24 @@ export async function validateRemoteMcpMaterials(values, getObject) {
   } catch { throw new Error('Invalid remote MCP deployment materials') }
 }
 
+/** Validate only the declared Platform account files; the result contains no secret material.
+ * @param values Deployment values selecting the optional bootstrap projection.
+ * @param platformSecret The already-selected Platform Secret, without any resource enumeration.
+ * @returns Configuration readiness without private bytes.
+ */
+export async function validateAccountMaterials(values, platformSecret) {
+  try {
+    const bootstrap = accountBootstrapEnabled(values.accounts)
+    const files = new Map([[accountManagementPath, secretBytes(platformSecret, 'account-management.json').toString('utf8')]])
+    if (bootstrap) files.set(accountBootstrapPath, secretBytes(platformSecret, 'account-bootstrap.json').toString('utf8'))
+    await validateAccountStartup(bootstrap ? accountBootstrapPath : '', async path => {
+      if (!files.has(path)) throw new Error('Unprojected file')
+      return files.get(path)
+    })
+    return { accountConfigurationReady: true, accountBootstrapConfigured: bootstrap }
+  } catch { throw new Error('Invalid account deployment materials') }
+}
+
 /** Inspect declared dependencies without deploying resources or enumerating MCP Secrets.
  * @param values Deployment values with explicit resource names.
  * @param context Selected kubectl context.
@@ -220,6 +239,7 @@ export async function checkCluster(values, context) {
     throw new Error('External PostgreSQL URL must use TLS verify-full')
   }
   for (const key of ['model-key', 'connector-key', 'runner-key', 'users.json']) secretBytes(platform, key)
+  const accounts = await validateAccountMaterials(values, platform)
   const remoteMcp = await validateRemoteMcpMaterials(values, (kind, name) => get(context, app, kind, name))
   if (values.imagePullSecretName) {
     get(context, app, 'secret', values.imagePullSecretName)
@@ -255,7 +275,7 @@ export async function checkCluster(values, context) {
     [runner, `${runner}:power-evolve-runner`, 'get', 'pods'],
   ]) assert.equal(can(context, namespace, subject, verb, resourceName), false,
     `${subject} has unexpected ${verb} ${resourceName} in ${namespace}`)
-  return { ...remoteMcp, readyNodes: nodes.length, controllerReady: true, secretsPresent: true,
+  return { ...remoteMcp, ...accounts, readyNodes: nodes.length, controllerReady: true, secretsPresent: true,
     tlsCoversPublicOrigins: true, sharedPvcBound: true, namespaceRbacChecked: true,
     crossMachineStorageVerified: false, ingressStreamingVerified: false,
     networkPolicyEnforcementVerified: false }

@@ -42,10 +42,11 @@ export async function routeMcpManagement(service: McpConnectionService | null, p
  * @param path Approval route; never call this dispatcher for Agent-audience credentials.
  * @param user Independently authenticated approval-audience identity.
  * @param input Bounded approval JSON; all choices bind an exact action and fingerprint.
+ * @param credentialToken Raw approval bearer rechecked inside the mutation transaction.
  * @returns Durable receipt or approval metadata, never a new execution grant.
  */
 export async function routeMcpApproval(store: McpActionStore | null, path: string,
-  user: Identity, input: unknown): Promise<unknown> {
+  user: Identity, input: unknown, credentialToken: string): Promise<unknown> {
   if (path === '/approvals/mcp/list') {
     z.object({}).strict().parse(input)
     return store ? store.approvals(user) : { items: [] }
@@ -55,7 +56,7 @@ export async function routeMcpApproval(store: McpActionStore | null, path: strin
     case '/approvals/mcp/decide': {
       const value = z.object({ actionId: mcpActionId, fingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
         decision: mcpActionDecision }).strict().parse(input)
-      return store.decide(user, value.actionId, value.fingerprint, value.decision)
+      return store.decide(user, value.actionId, value.fingerprint, value.decision, credentialToken)
     }
     case '/approvals/mcp/cancel': return store.cancel(user, z.object({ actionId: mcpActionId }).strict().parse(input).actionId)
     case '/approvals/mcp/revoke': {

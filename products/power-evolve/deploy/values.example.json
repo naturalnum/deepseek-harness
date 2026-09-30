@@ -12,6 +12,7 @@
   "tlsSecretName": "pe-public-tls",
   "modelUrl": "https://model.example.invalid/v1/messages",
   "connectorUrl": "https://connector.example.invalid/v1",
+  "accounts": { "bootstrap": false },
   "storage": {
     "nfsServer": "192.0.2.10",
     "nfsPath": "/exports/power-evolve",

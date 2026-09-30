@@ -4,6 +4,7 @@ import { readFile, mkdir, symlink, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { remoteMcpConfigPath, remoteMcpMountedMetadata } from './remote-mcp.mjs'
+import { accountManagementPath, accountBootstrapPath, validateAccountStartup } from './accounts.mjs'
 
 const root = resolve(fileURLToPath(new URL('../../..', import.meta.url)))
 const self = fileURLToPath(import.meta.url)
@@ -52,6 +53,8 @@ function row(source, id, replacements) {
 export async function renderProfile(role, env, dshHome) {
   if (!['host', 'platform'].includes(role)) throw new Error('Choose host or platform')
   const remoteMcpPath = role === 'platform' ? env.PE_REMOTE_MCP_CONFIG_FILE || '' : ''
+  const bootstrapPath = role === 'platform' ? env.PE_ACCOUNT_BOOTSTRAP_FILE || '' : ''
+  if (bootstrapPath && bootstrapPath !== accountBootstrapPath) throw new Error('Invalid account bootstrap deployment path')
   if (remoteMcpPath && remoteMcpPath !== remoteMcpConfigPath) throw new Error('Invalid remote MCP deployment configuration path')
   const hostOrigin = origin(required(env, 'PE_HOST_PUBLIC_ORIGIN'), 'Host public Origin')
   const platformOrigin = origin(required(env, 'PE_PLATFORM_PUBLIC_ORIGIN'), 'Platform public Origin')
@@ -73,6 +76,7 @@ export async function renderProfile(role, env, dshHome) {
       modelUrl: endpoint(required(env, 'PE_MODEL_URL'), 'model URL'),
       connectorUrl: endpoint(required(env, 'PE_CONNECTOR_URL'), 'connector URL'),
       remoteMcpConfigFile: remoteMcpPath,
+      accountManagementFile: accountManagementPath, accountBootstrapFile: bootstrapPath,
       hostOrigin, platformOrigin,
     }),
   ]
@@ -116,15 +120,17 @@ async function main() {
   const privateDir = required(process.env, 'PE_PRIVATE_DIR')
   const names = role === 'host' ? ['worker-token']
     : role === 'platform' ? ['database-url', 'worker-token', 'model-key', 'connector-key',
-      'runner-key', 'users.json'] : []
+      'runner-key', 'users.json', 'account-management.json'] : []
   if (!names.length) throw new Error('Choose host or platform')
   for (const name of names) if (!(await readFile(join(privateDir, name))).length) {
     throw new Error(`Empty deployment credential: ${name}`)
   }
   if (role === 'platform') await validateRemoteMcpStartup(process.env.PE_REMOTE_MCP_CONFIG_FILE)
+  if (role === 'platform') await validateAccountStartup(process.env.PE_ACCOUNT_BOOTSTRAP_FILE)
   const { name } = await renderProfile(role, process.env, dshHome)
   const childEnv = { ...process.env }
   if (role === 'host') delete childEnv.PE_REMOTE_MCP_CONFIG_FILE
+  if (role === 'host') delete childEnv.PE_ACCOUNT_BOOTSTRAP_FILE
   const child = spawn(process.execPath, [join(root, 'apps/cli/lib/bin.js'), '--profile', name],
     { cwd: root, env: childEnv, stdio: 'inherit' })
   for (const signal of ['SIGTERM', 'SIGINT']) process.once(signal, () => child.kill(signal))

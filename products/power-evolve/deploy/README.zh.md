@@ -29,7 +29,7 @@ node products/power-evolve/deploy/preflight.mjs /private/path/values.json /priva
 | Secret | 键 | 使用者 |
 | --- | --- | --- |
 | shared | `worker-token` | Host 和 Platform |
-| platform | `database-url`, `model-key`, `connector-key`, `runner-key`, `users.json` | 仅 Platform |
+| platform | `database-url`, `model-key`, `connector-key`, `runner-key`, `users.json`, `account-management.json` | 仅 Platform |
 | TLS | `tls.crt`, `tls.key` | Ingress 控制器 |
 
 `users.json` 沿用现有 Platform 种子用户格式。通过渲染产物以外的流程创建 Secret，且不要把凭据写进 shell 历史记录。两个副本及 Host、Platform 两层必须使用同一个 worker 令牌，并通过协调滚动更新来轮换。runner 密钥签发每个 Sandbox 的 runner 令牌，必须仅由 Platform 持有。
@@ -54,6 +54,12 @@ kubectl --context YOUR_CONTEXT -n YOUR_APP_NAMESPACE rollout status deployment/p
 ```
 
 首次安装时，通过常规变更控制流程分阶段部署基础资源和工作负载，让 `--ready` 与物理检查在 Ingress 接纳流量之前完成。`--ready` 至少检查两个 Ready 节点、Sandbox CRD/控制器、gVisor RuntimeClass、Secret 键是否存在、TLS SAN、已绑定的 PVC，以及 RBAC 的允许和拒绝行为。它有意不打印 Secret 值，只检查 PostgreSQL URL 形式和 TLS 证书。检查通过**不能**证明跨物理机器的 POSIX 一致性或 ingress 行为。
+
+## 账号配置
+
+`account-management.json` 包含 `maxUsers`、`models` 目录（`id`、`label`、`maxTokens`）及 `initialSettings`（`model`、`maxTokens`）。两个 Platform 副本读取相同的私有文件。Host 不获取此文件或管理员凭据。本机试用准备此文件，但不提升种子用户权限。
+
+管理员初始化须显式启用：将 `accounts.bootstrap` 设为 `true`，并在 Platform Secret 中加入 `account-bootstrap.json`。已有数据库使用 `mode: "existing"`、准确的 `userId` 和 `username`；空数据库使用 `mode: "create"`，另外提供 `displayName` 和私有初始 `password`。初始化后可省略 bootstrap 或设为 `false`。文件内容不进入渲染的 manifest。启动与只读就绪检查共用账号解析器；数据库初始化及账号生命周期验收见[账号切片](../S3-ACCOUNT-COMPLETION.md)。
 
 ## 可选的远程 MCP
 

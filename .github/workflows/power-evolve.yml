@@ -47,6 +47,7 @@ jobs:
           node-version: '24'
       - run: pnpm install --frozen-lockfile
       - run: pnpm run build
+      - run: pnpm run test:power-evolve:web:built
       - name: Prepare disposable test database access
         env:
           PE_DATABASE_PORT: ${{ job.services.postgres.ports[5432] }}

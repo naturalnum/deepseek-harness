@@ -16,6 +16,12 @@ import { bearer, readJson, sendFailure, sendJson } from '../http.ts'
 import { initializeDatabase, transaction } from './database.ts'
 import { hashPassword, IdentityService } from './identity.ts'
 import { AccountSettingsService, seedModel, seedNewUser } from './account-settings.ts'
+import { loadAccountManagementConfig, loadAccountBootstrapConfig } from './account-config.ts'
+import { bootstrapAccount } from './account-bootstrap.ts'
+import { AccountService } from './accounts.ts'
+import { routeAccount, ACCOUNT_ROUTES } from './account-routes.ts'
+import { accountLoginRequest } from '../account-contracts.ts'
+import { revokeAccountExecutions } from './account-execution-revocation.ts'
 import { TaskStore } from './tasks.ts'
 import { EventStore } from './events.ts'
 import { NativeSessionRead, nativeFollowRequest, nativePageRequest } from './native-session-read.ts'
@@ -62,7 +68,8 @@ export const inject = ['webServer']
 export const Config = schema.object({
   databaseUrlFile: schema.string().required(), workerTokenFile: schema.string().required(),
   workspaceRoot: schema.string().required(), artifactRoot: schema.string().required(),
-  modelKeyFile: schema.string().required(), connectorKeyFile: schema.string().required(), seedUsersFile: schema.string().required(),
+  modelKeyFile: schema.string().required(), connectorKeyFile: schema.string().required(), seedUsersFile: schema.string().default(''),
+  accountManagementFile: schema.string().default(''), accountBootstrapFile: schema.string().default(''),
   modelUrl: schema.string().required(), hostOrigin: schema.string().required(), platformOrigin: schema.string().required(),
   mcpUrl: schema.string().default(''), mcpTokenFile: schema.string().default(''),
   remoteMcpConfigFile: schema.string().default(''),
@@ -103,20 +110,27 @@ export const Config = schema.object({
   loginTrackedAccounts: schema.number().step(1).min(1).required(),
   loginGlobalAttemptsPerWindow: schema.number().step(1).min(1).required(),
 })
+/** Validated Platform profile configuration; private resources are referenced by file path. */
 export type Config = ReturnType<typeof Config>
 
 const seedUsers = z.array(z.object({
   username: z.string().min(1).max(80), password: z.string().min(16).max(256), settings,
   models: z.array(seedModel).min(1).max(16).optional(),
-}).strict()).min(2).max(100)
+}).strict()).max(100)
 
 /** Register the platform only after its schema and configured users are ready. */
 export async function apply(ctx: Context, config: Config): Promise<void> {
   const instanceId = randomUUID()
   const remoteMcpConfig = await loadMcpPlatformConfig(config.remoteMcpConfigFile)
+  if (config.accountBootstrapFile && !config.accountManagementFile) throw new Error('Account bootstrap requires management configuration')
+  const [accountManagement, accountBootstrap] = await Promise.all([
+    config.accountManagementFile ? loadAccountManagementConfig(config.accountManagementFile) : Promise.resolve(null),
+    loadAccountBootstrapConfig(config.accountBootstrapFile),
+  ])
   const [databaseUrl, workerToken, modelKey, connectorKey, seeds, mcpToken, sshKey] = await Promise.all([
     readFile(config.databaseUrlFile, 'utf8'), readFile(config.workerTokenFile, 'utf8'),
-    readFile(config.modelKeyFile, 'utf8'), readFile(config.connectorKeyFile, 'utf8'), readFile(config.seedUsersFile, 'utf8'),
+    readFile(config.modelKeyFile, 'utf8'), readFile(config.connectorKeyFile, 'utf8'),
+    config.seedUsersFile ? readFile(config.seedUsersFile, 'utf8') : Promise.resolve('[]'),
     config.mcpTokenFile ? readFile(config.mcpTokenFile, 'utf8') : Promise.resolve(''),
     config.sshCredentialKeyFile ? readFile(config.sshCredentialKeyFile, 'utf8') : Promise.resolve(''),
   ])
@@ -169,10 +183,16 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const skills = new SkillService(pool, config.workspaceRoot, skillLibraryRoot, config.maxSkillsPerUser)
   await skills.init()
   const users = seedUsers.parse(JSON.parse(seeds))
+  if (accountManagement && accountBootstrap?.mode === 'create') await bootstrapAccount(pool, accountBootstrap, accountManagement)
   for (const user of users) {
     await seedNewUser(pool, user.username, await hashPassword(user.password), user.settings, user.models)
   }
+  if (accountManagement && accountBootstrap?.mode === 'existing') await bootstrapAccount(pool, accountBootstrap, accountManagement)
   const identities = new IdentityService(pool, config.tokenLifetimeMs)
+  const accounts = accountManagement ? new AccountService(pool, identities, {
+    platformOrigin: config.platformOrigin, workspaceRoot: config.workspaceRoot,
+    management: accountManagement, revokeExecutions: revokeAccountExecutions,
+  }) : null
   const accountSettings = new AccountSettingsService(pool)
   const tasks = new TaskStore(pool, { ...config, executionEnabled, mcpEnabled: !!config.mcpUrl,
     ...(remoteMcpConfig ? { remoteMcpAdmission: remoteMcpConfig.settings.admission } : {}),
@@ -408,6 +428,21 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       sendJson(res, await identities.login(input.username, input.password, path === '/identity/approval-login' ? 'approval' : 'agent'))
       return
     }
+    if (path.startsWith('/account/')) {
+      if (req.headers.origin !== config.platformOrigin) throw new PlatformError(403, 'invalid_origin')
+      if (!accounts) throw new PlatformError(503, 'account_unavailable')
+      if (path === ACCOUNT_ROUTES.login) {
+        await loginAdmission.chargeGlobal()
+        const input = accountLoginRequest.parse(await readJson(req, 4096))
+        await loginAdmission.chargeAccount(input.username)
+        sendJson(res, await routeAccount(accounts, path, undefined, input, req.headers.origin))
+      } else {
+        const token = bearer(req)
+        const input = await readJson(req, config.maxRequestBytes)
+        sendJson(res, await routeAccount(accounts, path, token, input, req.headers.origin))
+      }
+      return
+    }
     if (path === '/devices/enroll') {
       const input = z.object({ code: z.string().min(24).max(128), name: z.string().trim().min(1).max(80),
         instanceId: z.uuid() }).strict().parse(await readJson(req, 4096))
@@ -454,7 +489,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       const user = await identities.authenticate(token, 'approval')
       const input = await readJson(req, 4096)
       if (path.startsWith('/approvals/mcp/')) {
-        sendJson(res, await routeMcpApproval(remoteMcpActions, path, user, input)); return
+        sendJson(res, await routeMcpApproval(remoteMcpActions, path, user, input, token)); return
       }
       switch (path) {
         case '/approvals/me': z.object({}).strict().parse(input); sendJson(res, user); return
@@ -466,7 +501,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         }
         case '/approvals/decide': {
           const value = z.object({ actionId: z.uuid(), fingerprint: z.string().regex(/^[a-f0-9]{64}$/), approve: z.boolean() }).strict().parse(input)
-          sendJson(res, await connectors.decide(user, value.actionId, value.fingerprint, value.approve)); return
+          sendJson(res, await connectors.decide(user, value.actionId, value.fingerprint, value.approve, token)); return
         }
         case '/approvals/ssh-execute/list': {
           z.object({}).strict().parse(input)
@@ -476,7 +511,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
           if (!sshExecute) throw new PlatformError(503, 'ssh_unavailable')
           const value = z.object({ actionId: z.uuid(), fingerprint: z.string().regex(/^[a-f0-9]{64}$/u),
             approve: z.boolean() }).strict().parse(input)
-          sendJson(res, await sshExecute.decide(user, value.actionId, value.fingerprint, value.approve)); return
+          sendJson(res, await sshExecute.decide(user, value.actionId, value.fingerprint, value.approve, token)); return
         }
         case '/approvals/ssh-execute/cancel': {
           if (!sshExecute) throw new PlatformError(503, 'ssh_unavailable')
@@ -578,10 +613,14 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     }
     switch (path) {
       case '/identity/me': z.object({}).strict().parse(input); sendJson(res, user); return
-      case '/identity/models': modelsListRequest.parse(input); sendJson(res, await accountSettings.modelsList(user)); return
+      case '/identity/models': modelsListRequest.parse(input); sendJson(res, await accountSettings.modelsList(user, token)); return
+      case ACCOUNT_ROUTES.capabilities: {
+        if (!accounts) throw new PlatformError(503, 'account_unavailable')
+        sendJson(res, await routeAccount(accounts, path, token, input, req.headers.origin)); return
+      }
       case '/identity/settings/update': {
         const value = settingsUpdateRequest.parse(input)
-        sendJson(res, await accountSettings.update(user, value)); return
+        sendJson(res, await accountSettings.update(user, value, token)); return
       }
       case '/identity/logout': z.object({}).strict().parse(input); await identities.logout(token); sendJson(res, { ok: true }); return
       case '/plugins/list': z.object({}).strict().parse(input); sendJson(res, await plugins.list(user)); return
@@ -663,7 +702,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       }
       case '/ssh/check': {
         if (!sshCheck) throw new PlatformError(503, 'ssh_unavailable')
-        sendJson(res, await sshCheck.submit(user, sshCheckRequest.parse(input))); return
+        sendJson(res, await sshCheck.submit(user, sshCheckRequest.parse(input), token)); return
       }
       case '/ssh/call-status': {
         if (!sshCheck) throw new PlatformError(503, 'ssh_unavailable')
@@ -694,7 +733,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       case '/sessions/create': {
         const value = createRequest.parse(input)
         await skills.ensurePreinstalled(user, config.preinstalledSkills)
-        sendJson(res, await tasks.create(user, value.requestId, value.workspaceId)); return
+        sendJson(res, await tasks.create(user, value.requestId, token, value.workspaceId)); return
       }
       case '/sessions/list': {
         const { offset, limit } = listRequest.parse(input)
@@ -703,11 +742,11 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       case '/sessions/prompt': {
         const { sessionId, requestId, text, target } = promptRequest.parse(input)
         await skills.ensurePreinstalled(user, config.preinstalledSkills)
-        sendJson(res, await tasks.accept(user, sessionId, requestId, text, target)); return
+        sendJson(res, await tasks.accept(user, sessionId, requestId, text, token, target)); return
       }
       case '/sessions/cancel': {
         const { sessionId } = sessionRequest.parse(input)
-        sendJson(res, await tasks.cancel(user, sessionId)); return
+        sendJson(res, await tasks.cancel(user, sessionId, token)); return
       }
       case '/sessions/page': {
         const { sessionId, after, limit } = pageRequest.parse(input)
@@ -828,7 +867,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         sendJson(res, await devices.cancel(user, value.executionId)); return
       }
       case '/devices/list': z.object({}).strict().parse(input); sendJson(res, await devices.list(user)); return
-      case '/devices/pair': z.object({}).strict().parse(input); sendJson(res, await devices.pair(user)); return
+      case '/devices/pair': z.object({}).strict().parse(input); sendJson(res, await devices.pair(user, token)); return
       case '/devices/revoke': {
         const value = z.object({ deviceId: z.uuid() }).strict().parse(input)
         await devices.revoke(user, value.deviceId); sendJson(res, { ok: true }); return

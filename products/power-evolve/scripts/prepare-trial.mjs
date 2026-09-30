@@ -89,6 +89,12 @@ await provision('users.json', JSON.stringify(['alice', 'bob'].map((username, ind
       { id: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro', maxTokens: 2048 }]
     : [{ id: 'deepseek-flash', label: 'DeepSeek Flash', maxTokens: 1536 }],
 })), null, 2) + '\n')
+await provision('account-management.json', JSON.stringify({
+  maxUsers: 10000, models: [
+    { id: 'deepseek-flash', label: 'DeepSeek Flash', maxTokens: 4096 },
+    { id: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro', maxTokens: 2048 },
+  ], initialSettings: { model: 'deepseek-flash', maxTokens: 1536 },
+}, null, 2) + '\n')
 const modelUrl = process.env.PE_MODEL_URL
 if (modelUrl) {
   const parsed = new URL(modelUrl)
@@ -119,6 +125,7 @@ for (const name of ['host', ...(multiHost ? ['host-b'] : []), 'platform',
     platformUrl: `http://127.0.0.1:${multiPlatform ? platformLoadBalancerPort : platformPort}`,
     deviceOrigin: `http://127.0.0.1:${devicePort}`,
     ...(modelUrl ? { modelUrl: JSON.stringify(modelUrl) } : {}),
+    accountBootstrapFile: JSON.stringify(process.env.PE_ACCOUNT_BOOTSTRAP_FILE ?? ''),
     image: process.env.PE_DESKTOP_IMAGE ?? sandbox?.image,
     connectorUrl: `http://127.0.0.1:${targetPort}`,
     workspaceRoot: JSON.stringify(storage.workspaceRoot), artifactRoot: JSON.stringify(storage.artifactRoot),

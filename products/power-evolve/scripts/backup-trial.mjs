@@ -40,7 +40,7 @@ const pgEnv = { ...process.env, ...(databaseMode === 'compose' && !process.env.P
   ? { PE_BACKUP_PG_CONTAINER: `pe-shared-host-${trialName}-postgres-1` } : {}) }
 const trialOutput = join(root, '.artifacts/power-evolve', trialName === 'slice1' ? '' : trialName)
 const secretNames = ['users.json', 'worker-token', 'connector-key', 'model-key', 'model.env',
-  'runner-key', 'ssh-credential-key']
+  'runner-key', 'ssh-credential-key', 'account-management.json', 'account-bootstrap.json']
 const dataNames = ['workspaces', 'homes', 'skill-packages', 'artifacts']
 const trialScript = join(root, 'products/power-evolve/scripts/trial.mjs')
 const prepareScript = join(root, 'products/power-evolve/scripts/prepare-trial.mjs')

@@ -29,7 +29,7 @@ Use external PostgreSQL with a trusted server certificate and a `sslmode=verify-
 | Secret | Keys | Consumer |
 | --- | --- | --- |
 | shared | `worker-token` | Host and Platform |
-| platform | `database-url`, `model-key`, `connector-key`, `runner-key`, `users.json` | Platform only |
+| platform | `database-url`, `model-key`, `connector-key`, `runner-key`, `users.json`, `account-management.json` | Platform only |
 | TLS | `tls.crt`, `tls.key` | Ingress controller |
 
 The `users.json` format is the existing Platform seed-user format. Keep Secret creation outside the rendered bundle and your shell history. Use the same worker token in both replicas and both tiers. Rotate it as a coordinated rollout. The runner key signs per-Sandbox runner tokens and must stay Platform-only.
@@ -54,6 +54,12 @@ kubectl --context YOUR_CONTEXT -n YOUR_APP_NAMESPACE rollout status deployment/p
 ```
 
 On first installation, stage the foundation and workload resources through your normal change-control mechanism so `--ready` and the physical checks finish before Ingress admits traffic. `--ready` checks at least two Ready nodes, the Sandbox CRD/controller and gVisor RuntimeClass, Secret key presence, TLS SANs, bound PVCs, and allow/deny RBAC. It intentionally does not print Secret values; it inspects the PostgreSQL URL shape and TLS certificate. A passing result is **not** proof of multi-machine POSIX consistency or ingress behavior.
+
+## Account configuration
+
+`account-management.json` contains `maxUsers`, a `models` catalog (`id`, `label`, `maxTokens`) and `initialSettings` (`model`, `maxTokens`). Both Platform replicas load the same private file. The Host receives neither this file nor administrator credentials. Local trials provision this file without promoting a seed user.
+
+Administrator initialization is explicit: set `accounts.bootstrap` to `true` and add `account-bootstrap.json` to the Platform Secret. For an existing database it identifies `mode: "existing"`, the exact `userId` and `username`; for an empty database it uses `mode: "create"` and also supplies `displayName` and a private initial `password`. Omit bootstrap or set it to `false` after initialization. Its contents never enter rendered manifests. The account parser is shared by startup and the read-only readiness check; database initialization and account lifecycle acceptance are described in the [account slice](../S3-ACCOUNT-COMPLETION.md).
 
 ## Optional remote MCP
 
