@@ -153,7 +153,7 @@ test('external backup preserves V21 history, V22 MCP versions, V23 outcomes and 
       assert.equal((await seed22.query('SELECT version FROM pe_schema')).rows[0].version, 21)
       assert.deepEqual(await legacyRows(seed22), old)
       await initializeDatabase(source); await initializeDatabase(source)
-      assert.equal((await source.query('SELECT version FROM pe_schema')).rows[0].version, 23)
+      assert.equal((await source.query('SELECT version FROM pe_schema')).rows[0].version, 24)
       assert.deepEqual(await legacyRows(source), old)
       assert.deepEqual((await source.query('SELECT remote_mcp_selection FROM pe_operations')).rows[0].remote_mcp_selection, [])
       assert.deepEqual(await readFile(join(privatePaths[1], 'workspaces/marker')), marker)
@@ -187,7 +187,7 @@ test('external backup preserves V21 history, V22 MCP versions, V23 outcomes and 
     const versions22 = await Promise.all(versionTables.map(async table => (await seed22.query(`SELECT * FROM ${table}`)).rows))
     await t.test('V22 immutable MCP bytes and the accepted selection survive V23 and repeated initialization', async () => {
       await initializeDatabase(seed22); await initializeDatabase(seed22)
-      assert.equal((await seed22.query('SELECT version FROM pe_schema')).rows[0].version, 23)
+      assert.equal((await seed22.query('SELECT version FROM pe_schema')).rows[0].version, 24)
       for (const [index, table] of versionTables.entries()) assert.deepEqual((await seed22.query(`SELECT * FROM ${table}`)).rows, versions22[index])
       assert.deepEqual((await seed22.query('SELECT remote_mcp_selection FROM pe_operations WHERE id=$1', [operation22])).rows[0].remote_mcp_selection, selection)
       assert.deepEqual((await seed22.query('SELECT event FROM pe_events WHERE session_id=$1', [sessionId])).rows[0].event, event)

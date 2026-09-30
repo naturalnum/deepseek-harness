@@ -147,7 +147,7 @@ test('cloud execution persists acceptance and reconciles runner outcomes', { tim
   assert.equal((await pool.query("SELECT count(*) FROM pe_operations WHERE source='sandbox_result'")).rows[0].count, '0')
   await initializeDatabase(pool)
   await initializeDatabase(pool)
-  assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 23)
+  assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 24)
   const replacement = service(); replacement.start()
   const finished = await eventually(async () => {
     const item = (await replacement.list(identity)).items.find(value => value.executionId === accepted.executionId)

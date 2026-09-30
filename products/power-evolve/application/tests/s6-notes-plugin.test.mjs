@@ -60,7 +60,7 @@ test('S6 Notes plugin migrates, isolates users, fences egress, and reconciles a 
 
     await initializeDatabase(pool)
     await initializeDatabase(pool)
-    assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 23)
+    assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 24)
     const plugins = new PluginService(pool)
     const expected = { id: 'notes', title: '受控便签', category: 'tools', kind: 'builtin',
       enabled: true, revision: 1, requiresApproval: true }

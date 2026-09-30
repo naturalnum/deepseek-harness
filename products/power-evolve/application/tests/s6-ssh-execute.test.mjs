@@ -12,6 +12,7 @@ import { initializeDatabase } from '../lib/platform/database.js'
 import { SshCallStore } from '../lib/platform/ssh-calls.js'
 import { SshConnectionService } from '../lib/platform/ssh.js'
 import { SshExecuteService } from '../lib/platform/ssh-execute.js'
+import { renderSshCommand } from '../lib/platform/ssh-command.js'
 import { TaskStore } from '../lib/platform/tasks.js'
 
 const privateDir = process.env.PE_PRIVATE_DIR ?? join(homedir(), '.config/power-evolve/shared-host-native-s5')
@@ -66,7 +67,7 @@ async function setup(t) {
   const url = new URL(databaseUrl); url.pathname = `/${database}`
   pool = new Pool({ connectionString: url.href, max: 8 })
   await initializeDatabase(pool)
-  assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 23)
+  assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 24)
   const users = [identity.parse({ userId: randomUUID(), username: 'alice' }),
     identity.parse({ userId: randomUUID(), username: 'bob' })]
   for (const user of users) await pool.query(
@@ -401,4 +402,51 @@ test('execute failure effects and missing exit status remain uncertain after res
       await f.tasks.finish(continuation.token, 'completed', null)
       assert.equal(await f.tasks.claim(randomUUID()), null)
     }
+  })
+
+test('SSH approval freezes its historical directory and target, and dispatch sends exactly the reviewed command',
+  { timeout: 60_000 }, async t => {
+    const f = await setup(t), [alice] = f.users, service = f.makeService()
+    const configuration = { displayName: 'Project host', host: 'fixture.example.test', port: 2222,
+      username: 'alice', hostKeySha256: fingerprint, workingDirectory: "~/space ' quote", enabled: true,
+      authentication: { kind: 'password', password: 'retain' } }
+    const selected = await f.connections.update(alice, { requestId: randomUUID(),
+      connectionId: f.saved[0].connectionId, baseRevision: 1, configuration })
+    const session = await f.tasks.create(alice, randomUUID())
+    await f.tasks.accept(alice, session.sessionId, randomUUID(), 'Use the configured project')
+    const grant = await f.tasks.claim(randomUUID())
+    await assert.rejects(service.propose(grant.token, 'oversize', selected.connectionId,
+      selected.revision, selected.credentialRevision, 'x'.repeat(16_384)),
+    { status: 400, code: 'ssh_command_invalid' })
+    const command = 'pwd || printf fallback'
+    const action = await service.propose(grant.token, 'one-call', selected.connectionId,
+      selected.revision, selected.credentialRevision, command)
+    const edited = await f.connections.update(alice, { requestId: randomUUID(),
+      connectionId: selected.connectionId, baseRevision: selected.revision,
+      configuration: { ...configuration, displayName: 'Changed host', username: 'other-login', workingDirectory: '/different' } })
+    const approval = (await service.approvals(alice)).items.find(item => item.actionId === action.actionId)
+    assert.equal(approval.displayName, 'Project host')
+    assert.equal(approval.username, 'alice')
+    assert.equal(approval.hostKeySha256, fingerprint)
+    assert.equal(approval.connectionRevision, selected.revision)
+    assert.equal(approval.workingDirectory, configuration.workingDirectory)
+    assert.equal(approval.command, renderSshCommand(command, configuration.workingDirectory))
+    assert.deepEqual(await service.propose(grant.token, 'one-call', selected.connectionId,
+      selected.revision, selected.credentialRevision, command), action)
+    await f.tasks.finish(grant.token, 'completed', null)
+    assert.equal((await service.decide(alice, action.actionId, action.fingerprint, true)).state, 'failed')
+    assert.equal(f.runner.posts.length, 0)
+    const continuation = await f.tasks.claim(randomUUID())
+    await f.tasks.finish(continuation.token, 'completed', null)
+
+    const fresh = await propose(f, service, alice, edited, 'pwd')
+    const reviewed = (await service.approvals(alice)).items.find(item => item.actionId === fresh.action.actionId)
+    await service.decide(alice, fresh.action.actionId, fresh.action.fingerprint, true)
+    const row = await f.calls.claim(service.ownerId, 60_000, 'ssh.execute')
+    await service.pump(row)
+    assert.equal(f.runner.posts.length, 1)
+    assert.equal(f.runner.posts[0].request.command, reviewed.command)
+    assert.equal(f.runner.posts[0].request.command, renderSshCommand('pwd', '/different'))
+    assert.equal(f.runner.posts[0].handle.destination.username, 'other-login')
+    assert.equal((await service.status(alice, fresh.action.actionId)).state, 'succeeded')
   })

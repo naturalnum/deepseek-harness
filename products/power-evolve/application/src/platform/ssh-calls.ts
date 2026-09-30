@@ -81,7 +81,7 @@ export class SshCallStore {
       }
       const connection = await client.query<{ credential_revision: number }>(
         `SELECT credential_revision FROM pe_ssh_connections
-         WHERE id=$1 AND user_id=$2 AND revision=$3 AND enabled=true`,
+         WHERE id=$1 AND user_id=$2 AND revision=$3 AND enabled=true AND deleted_at IS NULL`,
         [input.connectionId, user.userId, input.connectionRevision])
       if (!connection.rows[0]) throw new PlatformError(404, 'ssh_connection_not_found')
       if (input.kind === 'ssh.execute') {
@@ -193,9 +193,9 @@ export class SshCallStore {
       ',destination=$6,pod_uid=$7,runner_instance_id=$8')
   }
 
-  /** Commit one dispatch permit under call and connection locks, without network I/O.
+  /** Commit one dispatch permit under call, approval and connection locks, without network I/O.
    * A fresh dispatch-intent return authorizes one POST; later revocation cannot retract it.
-   * A changed connection returns failed without a permit. Recovery only queries the original Runner.
+   * A missing approval or changed connection fails without a permit. Recovery only queries the original Runner.
    */
   async markDispatchIntent(lease: SshCallLease, digest: string): Promise<SshCallRow> {
     if (!hexDigest.test(digest)) throw new PlatformError(400, 'ssh_dispatch_digest_invalid')
@@ -207,11 +207,17 @@ export class SshCallStore {
         [lease.callId, lease.owner, lease.epoch])
       const call = found.rows[0]
       if (!call) throw new PlatformError(409, 'ssh_call_state_or_lease_changed')
+      const approved = call.kind === 'ssh.authenticate' || !!(await client.query(
+        `SELECT id FROM pe_ssh_execute_actions WHERE id=$1 AND user_id=$2 AND state='approved'
+         AND operation_id=$3 AND connection_id=$4 AND connection_revision=$5
+         AND credential_revision=$6 AND request_digest=$7 FOR SHARE`,
+        [call.id, call.user_id, call.operation_id, call.connection_id, call.connection_revision,
+          call.credential_revision, call.request_digest])).rowCount
       const connection = await client.query<{ enabled: boolean; revision: number; credential_revision: number }>(
         `SELECT enabled,revision,credential_revision FROM pe_ssh_connections
-         WHERE id=$1 AND user_id=$2 FOR SHARE`, [call.connection_id, call.user_id])
+         WHERE id=$1 AND user_id=$2 AND deleted_at IS NULL FOR SHARE`, [call.connection_id, call.user_id])
       const current = connection.rows[0]
-      const authorized = current?.enabled === true && current.revision === call.connection_revision
+      const authorized = approved && current?.enabled === true && current.revision === call.connection_revision
         && current.credential_revision === call.credential_revision
       // Waiting for a connection lock can outlive the lease; transaction-start now() is insufficient.
       const changed = await client.query<SshCallRow>(
@@ -221,7 +227,7 @@ export class SshCallStore {
            AND state='ready' AND cancel_requested=false RETURNING *`,
         [lease.callId, lease.owner, lease.epoch, authorized ? 'dispatch-intent' : 'failed',
           authorized ? digest : null, authorized ? lease.owner : null, authorized ? lease.epoch : null,
-          authorized ? null : 'ssh_connection_changed'])
+          authorized ? null : approved ? 'ssh_connection_changed' : 'ssh_action_not_approved'])
       if (!changed.rows[0]) throw new PlatformError(409, 'ssh_call_state_or_lease_changed')
       return changed.rows[0]
     })

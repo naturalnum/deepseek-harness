@@ -3,6 +3,7 @@ import { createHmac } from 'node:crypto'
 import { isIP } from 'node:net'
 import { setTimeout as delay } from 'node:timers/promises'
 import { KubernetesError, RUNNER_RESPONSE_MAX_BYTES, type KubernetesClient } from './kubernetes.ts'
+import type { SshCredential } from './ssh-credentials.ts'
 
 type Kube = Pick<KubernetesClient, 'call' | 'resourcePath' | 'proxyPath'>
 type Method = 'GET' | 'POST'
@@ -40,8 +41,8 @@ export interface SshRunnerHandle {
   readonly destination: SshRunnerDestination
 }
 export type SshRunnerRequest =
-  | { readonly kind: 'ssh.authenticate'; readonly credential: { readonly kind: 'password'; readonly password: string }; readonly timeoutMs: number; readonly maxOutputBytes: number }
-  | { readonly kind: 'ssh.execute'; readonly credential: { readonly kind: 'password'; readonly password: string }; readonly command: string; readonly timeoutMs: number; readonly maxOutputBytes: number }
+  | { readonly kind: 'ssh.authenticate'; readonly credential: SshCredential; readonly timeoutMs: number; readonly maxOutputBytes: number }
+  | { readonly kind: 'ssh.execute'; readonly credential: SshCredential; readonly command: string; readonly timeoutMs: number; readonly maxOutputBytes: number }
 export interface SshRunnerStatus {
   readonly callId: string
   readonly instanceId: string
@@ -79,6 +80,10 @@ function canonical(value: unknown): unknown {
 }
 function digest(value: object, token: string): string {
   return createHmac('sha256', token).update(JSON.stringify(canonical(value))).digest('hex')
+}
+function validSecret(value: string, maxBytes: number): boolean {
+  return value.length > 0 && !value.includes('\0') && Buffer.byteLength(value) <= maxBytes
+    && Buffer.from(value, 'utf8').toString('utf8') === value
 }
 function equal(expected: unknown, actual: unknown): boolean {
   if (expected && typeof expected === 'object') {
@@ -279,13 +284,15 @@ export class SshRunnerOrchestrator {
   /** Persist this keyed digest with the dispatch intent; it is not an offline password verifier. */
   digestFor(handle: SshRunnerHandle, request: SshRunnerRequest): string {
     this.validate(handle.callId, handle.destination)
-    if (request.credential.kind !== 'password' || !request.credential.password
-      || request.credential.password.includes('\0')
-      || Buffer.byteLength(request.credential.password) > 4096
+    const credential = request.credential
+    const validCredential = credential.kind === 'password' ? validSecret(credential.password, 4096)
+      : credential.kind === 'private_key' && validSecret(credential.privateKey, 7168)
+        && (credential.passphrase === undefined || validSecret(credential.passphrase, 1024))
+    if (!validCredential
       || !Number.isSafeInteger(request.timeoutMs) || request.timeoutMs < 1 || request.timeoutMs > 60_000
       || !Number.isSafeInteger(request.maxOutputBytes) || request.maxOutputBytes < 1
       || request.maxOutputBytes > 131_072 || request.kind === 'ssh.execute'
-      && (!request.command || Buffer.byteLength(request.command) > 16_384 || request.command.includes('\0'))) {
+      && !validSecret(request.command, 16_384)) {
       throw new SshRunnerBlocked('connector_runner_request_invalid')
     }
     return digest(this.unsigned(handle, request), this.token(handle.callId, 'call'))

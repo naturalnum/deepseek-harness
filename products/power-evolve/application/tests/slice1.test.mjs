@@ -12,9 +12,11 @@ import { fileURLToPath } from 'node:url'
 import { execFileSync, spawn } from 'node:child_process'
 import { setTimeout as delay } from 'node:timers/promises'
 import { createRequire } from 'node:module'
+import { Readable } from 'node:stream'
 import yaml from 'js-yaml'
 import { recordedConversation, recordedSshContinuation, compareRecordedSession, compareRecordedSshUncertainSession, recordedSandboxContinuation, sandboxDirectory, recordedLosslessOutput, losslessDirectory } from './session-snapshot.mjs'
 import { SshActionCipher } from '../lib/platform/ssh-execute.js'
+import { SshConnectionService } from '../lib/platform/ssh.js'
 import { encodeOfficeCommand } from '../lib/host/office.js'
 const require = createRequire(new URL('../package.json', import.meta.url))
 const { Pool } = require('pg')
@@ -70,8 +72,9 @@ test('shared host: isolated conversations, files, skills and approved remote act
   const workerToken = randomBytes(32).toString('base64url')
   const providerKey = randomBytes(32).toString('base64url')
   const connectorKey = randomBytes(32).toString('base64url')
+  const sshKey = randomBytes(32).toString('base64url')
   for (const [name, value] of Object.entries({ 'database-url': url.href, 'worker-token': workerToken, 'model-key': providerKey,
-    'connector-key': connectorKey, 'users.json': JSON.stringify(users) })) await writeFile(join(temporary, name), value, { mode: 0o600 })
+    'connector-key': connectorKey, 'ssh-key': sshKey, 'users.json': JSON.stringify(users) })) await writeFile(join(temporary, name), value, { mode: 0o600 })
   const recorded = await recordedConversation()
   const lossless = await recordedLosslessOutput()
   const calls = []
@@ -167,6 +170,7 @@ test('shared host: isolated conversations, files, skills and approved remote act
       sandboxKubeconfigFile: '', sandboxKeyFile: '', sandboxNamespace: '', sandboxImage: '',
       sandboxLocalRoot: join(temporary, 'sandbox-local'), sandboxNodeRoot: '',
       skillLibraryRoot: join(temporary, 'sandbox-local'), preinstalledSkills: [],
+      sshCredentialKeyFile: join(temporary, 'ssh-key'), sshDestinationAllowlist: 'fixture.example.test:2222',
     }))
     else patch.push(update('power-evolve-runtime', { platformUrl, workerTokenFile: join(temporary, 'worker-token') }), update('power-evolve-host', { platformOrigin: platformUrl, readyFile, renewMs: 500, operationTimeoutMs: 20000, pollMs: 50, maxRequestBytes: 3145728 }))
     await writeFile(join(profile, 'cordis.patch.yml'), yaml.dump(patch))
@@ -208,6 +212,43 @@ test('shared host: isolated conversations, files, skills and approved remote act
     assert.equal((await rpcResponse(0, 'me', { userId: randomUUID() })).status, 400)
     assert.equal((await post(`${host.url}/api/settings/get`, tokens[0], {})).status, 404)
     assert.equal((await post(`${platform.url}/runtime/claim`, tokens[0], { workerId: randomUUID() })).status, 401)
+  })
+  await t.test('native SSH management RPC scopes edits, receipts and tombstones while execution is unavailable', async () => {
+    const { userId, username } = await rpc(0, 'me', {})
+    const service = new SshConnectionService(pool, sshKey, 'fixture.example.test:2222')
+    const createRequestId = randomUUID()
+    const ticket = await service.issueTicket({ userId, username }, { requestId: createRequestId,
+      displayName: 'RPC fixture', host: 'fixture.example.test', port: 2222, username: 'alice',
+      hostKeySha256: `SHA256:${'A'.repeat(43)}`, credentialKind: 'password', sizeBytes: 7, enabled: false }, platform.url)
+    const { item: saved } = await service.upload(ticket.ticket, Readable.from([Buffer.from('fixture')]))
+    const listing = await rpc(0, 'sshConnectionsList', {})
+    assert.equal(listing.available, false)
+    assert.equal(listing.items[0].connectionId, saved.connectionId)
+    assert.deepEqual((await rpc(1, 'sshConnectionsList', {})).items, [])
+    const configuration = { displayName: 'Updated RPC fixture', host: 'fixture.example.test', port: 2222,
+      username: 'alice', hostKeySha256: `SHA256:${'A'.repeat(43)}`, workingDirectory: ' project ',
+      authentication: { kind: 'password', password: 'retain' }, enabled: false }
+    const mutation = { requestId: randomUUID(), connectionId: saved.connectionId, baseRevision: 1, configuration }
+    assert.equal((await rpcResponse(1, 'sshConnectionsUpdate', mutation)).status, 404)
+    assert.equal((await rpcResponse(0, 'sshConnectionsUpdate', { ...mutation, userId })).status, 400)
+    const updated = await rpc(0, 'sshConnectionsUpdate', mutation)
+    assert.equal(updated.workingDirectory, ' project ')
+    assert.equal(updated.revision, 2)
+    assert.deepEqual(await rpc(0, 'sshConnectionsUpdate', mutation), updated)
+    assert.deepEqual(await rpc(0, 'sshConnectionsReceipt', { requestId: mutation.requestId }), { item: updated })
+    assert.deepEqual(await rpc(1, 'sshConnectionsReceipt', { requestId: mutation.requestId }), { item: null })
+    assert.equal((await rpcResponse(0, 'sshConnectionsToggle', { requestId: randomUUID(),
+      connectionId: saved.connectionId, baseRevision: 2, enabled: true })).status, 503)
+    const deletion = { requestId: randomUUID(), connectionId: saved.connectionId, baseRevision: 2 }
+    assert.equal((await rpcResponse(1, 'sshConnectionsDelete', deletion)).status, 404)
+    const removed = await rpc(0, 'sshConnectionsDelete', deletion)
+    assert.equal(removed.enabled, false)
+    assert(removed.deletedAt)
+    assert.deepEqual(await rpc(0, 'sshConnectionsDelete', deletion), removed)
+    assert.deepEqual((await rpc(0, 'sshConnectionsList', {})).items, [])
+    assert.deepEqual(await rpc(0, 'sshConnectionsReceipt', { requestId: mutation.requestId }), { item: updated })
+    assert.equal(Number((await pool.query('SELECT count(*) FROM pe_sandbox_instances')).rows[0].count), 0)
+    assert.equal(Number((await pool.query('SELECT count(*) FROM pe_ssh_calls')).rows[0].count), 0)
   })
   await t.test('browser exchange uses a scoped cookie, platform revocation and exact origins', async () => {
     const hostOrigin = 'http://127.0.0.1:18880' // External origin configured in the Host Profile.
@@ -563,10 +604,13 @@ test('shared host: isolated conversations, files, skills and approved remote act
       const action = { id: actionId, user_id: user.userId, operation_id: admitted.operationId,
         connection_id: connectionId, connection_revision: 1, credential_revision: 1,
         request_digest: 'a'.repeat(64) }
-      await pool.query(`INSERT INTO pe_ssh_connections(id,user_id,install_request_id,install_digest,
-        display_name,host,port,username,host_key_sha256,credential_kind,encrypted_credential,enabled)
-        VALUES($1,$2,$1,$3,'Snapshot SSH','fixture.example.test',2222,'alice',$4,'password',$5,false)`,
-      [connectionId, user.userId, 'b'.repeat(64), `SHA256:${'A'.repeat(43)}`, randomBytes(29)])
+      const sshConnections = new SshConnectionService(pool, randomBytes(32).toString('base64url'),
+        'fixture.example.test:2222')
+      const ticket = await sshConnections.issueTicket(user, { requestId: connectionId,
+        displayName: 'Snapshot SSH', host: 'fixture.example.test', port: 2222, username: 'alice',
+        hostKeySha256: `SHA256:${'A'.repeat(43)}`, credentialKind: 'password', sizeBytes: 7,
+        enabled: false }, 'http://127.0.0.1:19221')
+      await sshConnections.upload(ticket.ticket, Readable.from([Buffer.from('fixture')]))
       // Terminal Runner records are fixtures; the native Host/Session, model transport and PG are real.
       await pool.query(`INSERT INTO pe_ssh_execute_actions(id,user_id,session_id,operation_id,call_key,
         connection_id,connection_revision,credential_revision,command_sealed,request_digest,state,

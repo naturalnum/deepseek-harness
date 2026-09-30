@@ -51,7 +51,7 @@ async function fixture(t) {
   for (let version = 2; version <= 21; version++) await pool.query(migrations[`schemaV${version}`])
   await initializeDatabase(pool)
   await initializeDatabase(pool)
-  assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 23)
+  assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 24)
   const users = ['alice', 'bob'].map(username => identity.parse({ username, userId: randomUUID() }))
   for (const user of users) {
     await pool.query('INSERT INTO pe_users(id,username,password_hash,settings) VALUES($1,$2,$3,$4)',

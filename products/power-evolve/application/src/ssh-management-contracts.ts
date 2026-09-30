@@ -12,7 +12,7 @@ export const sshManagementRequestId = z.uuid().transform(value => brandString<Re
 
 /** Maximum serialized credential envelope, including JSON escaping of bounded secret fields. */
 export const SSH_CREDENTIAL_UPLOAD_MAX_BYTES = 65_536
-const revision = z.number().int().positive()
+const revision = z.number().int().positive().max(2_147_483_647)
 const label = z.string().trim().min(1).max(100)
   .refine(value => !/[\u0000-\u001f\u007f]/u.test(value))
 const secret = (bytes: number) => z.string().min(1).max(bytes)
@@ -31,10 +31,12 @@ export const sshConfigurationInput = z.object({
   displayName: label,
   host: z.string().trim().min(1).max(253).refine(value => !/[\s\u0000-\u001f\u007f/@?#]/u.test(value)),
   port: z.number().int().min(1).max(65_535),
-  username: label.refine(value => !/\s/u.test(value)),
+  username: label.refine(value => !/\s/u.test(value) && Buffer.byteLength(value, 'utf8') <= 256
+    && Buffer.from(value, 'utf8').toString('utf8') === value),
   hostKeySha256: z.string().regex(/^SHA256:[A-Za-z0-9+/]{43}$/u),
-  workingDirectory: z.string().trim().min(1).max(1024)
-    .refine(value => !/[\u0000-\u001f\u007f]/u.test(value)).nullable(),
+  workingDirectory: z.string().min(1).max(1024)
+    .refine(value => !/[\u0000-\u001f\u007f-\u009f]/u.test(value)
+      && Buffer.from(value, 'utf8').toString('utf8') === value).nullable(),
   authentication: sshAuthenticationPlan,
   enabled: z.boolean(),
 }).strict()

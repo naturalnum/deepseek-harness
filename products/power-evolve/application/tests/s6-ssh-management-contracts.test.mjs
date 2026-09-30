@@ -81,3 +81,15 @@ test('public receipts preserve deletion metadata but cannot contain plaintext or
     ticket: 'a'.repeat(43), uploadUrl: 'https://platform.example.test/ssh/upload',
     expiresAt: '2026-09-30T02:00:00.000Z' }).success, true)
 })
+
+test('management input respects Runner UTF-8 budgets and preserves literal directory whitespace', () => {
+  assert.equal(sshConfigurationInput.safeParse({ ...configuration, username: '人'.repeat(85) }).success, true)
+  assert.equal(sshConfigurationInput.safeParse({ ...configuration, username: '人'.repeat(86) }).success, false)
+  for (const value of ['\ud800', 'a\0b']) {
+    assert.equal(sshConfigurationInput.safeParse({ ...configuration, username: value }).success, false)
+    assert.equal(sshConfigurationInput.safeParse({ ...configuration, workingDirectory: value }).success, false)
+  }
+  assert.equal(sshConfigurationInput.parse({ ...configuration, workingDirectory: ' folder ' }).workingDirectory, ' folder ')
+  assert.equal(sshConnectionUpdateRequest.safeParse({ ...request(), connectionId: randomUUID(),
+    baseRevision: 2_147_483_648 }).success, false)
+})

@@ -19,8 +19,10 @@ import { BrowserAgentAuth } from './browser-auth.ts'
 import { installNativeRemote } from './native-remote.ts'
 import { Scheduler } from './scheduler.ts'
 import { mcpManagementRequests, mcpManagementEndpoints, mcpTicketValue } from '../mcp-management-rpc.ts'
+import { sshManagementRequests, sshManagementEndpoints, sshConnectionValue,
+  sshCredentialTicketValue, sshMutationReceiptValue } from '../ssh-management-contracts.ts'
 
-const requests = { ...mcpManagementRequests, me: z.object({}).strict(), logout: z.object({}).strict(), modelsList: z.object({}).strict(), settingsUpdate: settingsUpdateRequest,
+const requests = { ...mcpManagementRequests, ...sshManagementRequests, me: z.object({}).strict(), logout: z.object({}).strict(), modelsList: z.object({}).strict(), settingsUpdate: settingsUpdateRequest,
   create: createRequest, list: listRequest, prompt: promptRequest, page: pageRequest, follow: pageRequest,
   filesList: sessionFilesListRequest, filesRead: sessionFileReadRequest, filesPut: sessionFilePutRequest,
   skillsList: z.object({}).strict(), skillsRead: skillRequest,
@@ -55,7 +57,7 @@ const requests = { ...mcpManagementRequests, me: z.object({}).strict(), logout: 
   devicesList: z.object({}).strict(), devicesPair: z.object({}).strict(),
   devicesRevoke: z.object({ deviceId: z.uuid() }).strict(),
   directoriesRevoke: z.object({ directoryId: z.uuid() }).strict() }
-const endpoint = { ...mcpManagementEndpoints, me: '/identity/me', logout: '/identity/logout', modelsList: '/identity/models', settingsUpdate: '/identity/settings/update',
+const endpoint = { ...mcpManagementEndpoints, ...sshManagementEndpoints, me: '/identity/me', logout: '/identity/logout', modelsList: '/identity/models', settingsUpdate: '/identity/settings/update',
   create: '/sessions/create', list: '/sessions/list', prompt: '/sessions/prompt', page: '/sessions/page',
   filesList: '/files/session/list', filesRead: '/files/session/read', filesPut: '/files/session/put',
   skillsList: '/skills/list', skillsRead: '/skills/read',
@@ -181,6 +183,31 @@ class ProductRemote extends TypertRemoteService {
   @Remote stdioMcpCalls(request: z.infer<typeof requests.stdioMcpCalls>) { return this.call('stdioMcpCalls', request) }
   @Remote stdioMcpStatus(request: z.infer<typeof requests.stdioMcpStatus>) { return this.call('stdioMcpStatus', request) }
   @Remote sshList(request: z.infer<typeof requests.sshList>) { return this.call('sshList', request) }
+  @Remote async sshConnectionsList(request: z.infer<typeof requests.sshConnectionsList>) {
+    return z.object({ available: z.boolean(), items: z.array(sshConnectionValue) }).strict()
+      .parse(await this.call('sshConnectionsList', request))
+  }
+  @Remote async sshConnectionsUpdate(request: z.infer<typeof requests.sshConnectionsUpdate>) {
+    return sshConnectionValue.parse(await this.call('sshConnectionsUpdate', request))
+  }
+  @Remote async sshConnectionsToggle(request: z.infer<typeof requests.sshConnectionsToggle>) {
+    return sshConnectionValue.parse(await this.call('sshConnectionsToggle', request))
+  }
+  @Remote async sshConnectionsDelete(request: z.infer<typeof requests.sshConnectionsDelete>) {
+    return sshConnectionValue.parse(await this.call('sshConnectionsDelete', request))
+  }
+  @Remote async sshConnectionsTicket(request: z.infer<typeof requests.sshConnectionsTicket>) {
+    const result = sshCredentialTicketValue.parse(await this.call('sshConnectionsTicket', request))
+    const upload = new URL(result.uploadUrl)
+    if (upload.origin !== this.options.platformOrigin || upload.pathname !== '/ssh/upload'
+      || upload.username || upload.password || upload.search || upload.hash) {
+      throw new PlatformError(503, 'ssh_upload_unavailable')
+    }
+    return result
+  }
+  @Remote async sshConnectionsReceipt(request: z.infer<typeof requests.sshConnectionsReceipt>) {
+    return sshMutationReceiptValue.parse(await this.call('sshConnectionsReceipt', request))
+  }
   @Remote async sshCreateTicket(request: z.infer<typeof sshCreateTicketRequest>) {
     const item = z.object({ connectionId: z.uuid(), displayName: z.string(), host: z.string(),
       port: z.number().int(), username: z.string(), hostKeySha256: z.string(), enabled: z.boolean(),

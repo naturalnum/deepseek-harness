@@ -243,13 +243,17 @@ async function refresh() {
     heading.textContent = `${t.approvalSshAction} · ${stateLabels[action.state] ?? action.state}`
     const target = document.createElement('p')
     target.textContent = `${t.approvalSshTarget}: ${action.displayName} · ${action.username}@${action.host}:${action.port}`
+    const location = document.createElement('p')
+    location.textContent = `${t.approvalSshDirectory}: ${action.workingDirectory ?? t.approvalSshDefaultDirectory}`
+    const identity = document.createElement('p')
+    identity.textContent = `${t.approvalSshHostKey}: ${action.hostKeySha256} · ${t.approvalSshConfiguration}: ${action.connectionRevision} · ${t.approvalSshCredential}: ${action.credentialRevision}`
     const label = document.createElement('p'); label.textContent = t.approvalSshCommand
     const command = document.createElement('pre'); command.textContent = action.command
     const fingerprint = document.createElement('code')
     fingerprint.textContent = `${t.approvalFingerprint}: ${action.fingerprint}`
     const time = document.createElement('small')
     time.textContent = ` ${new Date(action.createdAt).toLocaleString()}`
-    card.append(heading, target, label, command, fingerprint, time)
+    card.append(heading, target, location, identity, label, command, fingerprint, time)
     if (action.state === 'pending') {
       const controls = document.createElement('div'); controls.className = 'approval-actions'
       controls.append(button(t.approvalSshApprove, async () => {

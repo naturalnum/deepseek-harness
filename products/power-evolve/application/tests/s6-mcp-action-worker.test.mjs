@@ -64,7 +64,7 @@ async function fixture(t) {
   pool = new Pool({ connectionString: url.href, max: 6, connectionTimeoutMillis: 5_000,
     statement_timeout: 15_000 })
   await initializeDatabase(pool)
-  assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 23)
+  assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 24)
   const users = ['alice', 'bob'].map(username => identity.parse({ userId: randomUUID(), username }))
   for (const user of users) {
     await pool.query('INSERT INTO pe_users(id,username,password_hash,settings) VALUES($1,$2,$3,$4)',

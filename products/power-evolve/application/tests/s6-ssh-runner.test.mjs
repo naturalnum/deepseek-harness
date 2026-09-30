@@ -176,3 +176,30 @@ test('withdrawn forbidden-listener proof blocks the credential POST', async () =
   assert.equal(kube.events.some(event => event.path.endsWith(`/http:pe-cr-${callId.replaceAll('-', '')}:8080/proxy/calls`)
     && event.method === 'POST'), false)
 })
+
+test('private keys and passphrases enter only the bounded, digest-bound Runner POST', async () => {
+  const kube = new FakeKubernetes(), service = make(kube), callId = randomUUID()
+  const handle = await service.prepare(callId, target)
+  const credential = { kind: 'private_key', privateKey: 'fixture-private-key\n', passphrase: 'phrase-γ' }
+  const request = { kind: 'ssh.execute', credential, command: 'pwd', timeoutMs: 3000, maxOutputBytes: 1024 }
+  const digest = service.digestFor(handle, request)
+  assert.notEqual(service.digestFor(handle, { ...request, credential: { ...credential, passphrase: 'changed' } }), digest)
+  assert.equal((await service.dispatchFirst(handle, request)).state, 'known')
+  const posts = kube.events.filter(event => event.method === 'POST' && event.path.endsWith(
+    `/http:pe-cr-${callId.replaceAll('-', '')}:8080/proxy/calls`))
+  assert.equal(posts.length, 1)
+  assert.deepEqual(posts[0].body.credential, credential)
+  assert.equal(posts[0].body.digest, digest)
+  assert.equal(JSON.stringify(kube.events.filter(event => !event.path.endsWith('/proxy/calls')))
+    .includes(credential.privateKey), false)
+  for (const invalid of [
+    { ...credential, privateKey: '密'.repeat(2390) },
+    { ...credential, passphrase: '密'.repeat(342) },
+    { ...credential, privateKey: 'bad\ud800' },
+    { ...credential, passphrase: '' },
+    { ...credential, privateKey: '\0' },
+  ]) assert.throws(() => service.digestFor(handle, { ...request, credential: invalid }),
+    { code: 'connector_runner_request_invalid' })
+  await service.cleanup(callId)
+  assert.equal(kube.resources.size, 0)
+})

@@ -141,9 +141,12 @@ export class TaskStore {
       const sshRows = this.limits.sshEnabled && target.kind === 'cloud'
         ? await client.query<{ connectionId: string; revision: number; credentialRevision: number;
             displayName: string; host: string; port: number; username: string }>(
-          `SELECT id AS "connectionId",revision,credential_revision AS "credentialRevision",
-            display_name AS "displayName",host,port,username
-           FROM pe_ssh_connections WHERE user_id=$1 AND enabled=true ORDER BY created_at,id`, [user.userId])
+          `SELECT c.id AS "connectionId",v.revision,v.credential_revision AS "credentialRevision",
+            v.display_name AS "displayName",v.host,v.port,v.username
+           FROM pe_ssh_connections c JOIN pe_ssh_configuration_versions v
+             ON v.connection_id=c.id AND v.user_id=c.user_id AND v.revision=c.revision
+               AND v.credential_revision=c.credential_revision
+           WHERE c.user_id=$1 AND c.enabled=true AND c.deleted_at IS NULL ORDER BY c.created_at,c.id`, [user.userId])
         : { rows: [] }
       const ssh = z.array(sshSelection).max(8).parse(sshRows.rows)
       const id = randomUUID()

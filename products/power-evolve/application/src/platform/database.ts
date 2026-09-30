@@ -1,6 +1,6 @@
 /** Transaction and schema lifecycle owned by the trusted platform. */
 import { Pool, type PoolClient } from 'pg'
-import { CURRENT_SCHEMA_VERSION, schema, schemaV2, schemaV3, schemaV4, schemaV5, schemaV6, schemaV7, schemaV8, schemaV9, schemaV10, schemaV11, schemaV12, schemaV13, schemaV14, schemaV15, schemaV16, schemaV17, schemaV18, schemaV19, schemaV20, schemaV21, schemaV22, schemaV23 } from './schema.ts'
+import { CURRENT_SCHEMA_VERSION, schema, schemaV2, schemaV3, schemaV4, schemaV5, schemaV6, schemaV7, schemaV8, schemaV9, schemaV10, schemaV11, schemaV12, schemaV13, schemaV14, schemaV15, schemaV16, schemaV17, schemaV18, schemaV19, schemaV20, schemaV21, schemaV22, schemaV23, schemaV24 } from './schema.ts'
 
 /**
  * Run one operation in a transaction; retain its failure and discard disconnected clients.
@@ -65,5 +65,6 @@ export async function initializeDatabase(pool: Pool): Promise<void> {
     if (initialVersion < 21) await client.query(schemaV21)
     if (initialVersion < 22) await client.query(schemaV22)
     if (initialVersion < 23) await client.query(schemaV23)
+    if (initialVersion < 24) await client.query(schemaV24)
   })
 }

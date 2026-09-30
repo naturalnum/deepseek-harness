@@ -50,6 +50,10 @@
         remoteMcpConfigFile: ''
         sshCredentialKeyFile: ''
         sshDestinationAllowlist: ''
+        sshMaxConnections: 8
+        sshMaxPendingTickets: 8
+        sshTicketLifetimeMs: 300000
+        sshMaxCompletedMismatches: 3
         sshRunnerKubeconfigFile: ''
         sshRunnerNamespace: ''
         sshRunnerImage: ''

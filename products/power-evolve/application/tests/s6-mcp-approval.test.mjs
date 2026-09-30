@@ -306,9 +306,36 @@ test('MCP unavailability preserves the existing notes and SSH review layout', as
     if (call.path === '/approvals/mcp/list') return Response.json({ error: 'unavailable' }, { status: 503 })
   }, notes: [{ actionId, state: 'pending', text: 'Existing note', fingerprint: 'old-note', createdAt: action().createdAt }],
   ssh: [{ actionId, state: 'pending', displayName: 'Existing SSH', username: 'worker', host: 'host.test', port: 22,
+    workingDirectory: null, hostKeySha256: `SHA256:${'A'.repeat(43)}`, connectionRevision: 2, credentialRevision: 1,
     command: 'printf exact', fingerprint: 'old-ssh', createdAt: action().createdAt }] })
   await until(() => view.document.getElementById('mcp-actions').textContent.includes('无法读取 MCP 操作'))
   assert(view.document.getElementById('actions').textContent.includes('Existing note'))
   assert(view.document.getElementById('ssh-actions').textContent.includes('printf exact'))
   assert.equal(view.mutations().length, 0)
+})
+
+test('SSH review preserves the frozen directory, host key and command in its text snapshot', async context => {
+  const record = { actionId, state: 'pending', displayName: '<b>Project host</b>', username: 'worker',
+    host: 'host.test', port: 2222, workingDirectory: ' project ',
+    hostKeySha256: `SHA256:${'A'.repeat(43)}`, connectionRevision: 4, credentialRevision: 2,
+    command: 'CDPATH=; export CDPATH\ncd -- "${HOME:?}"/\' project \' || exit\nprintf "<script>literal</script>"',
+    fingerprint: 'f'.repeat(64), createdAt: action().createdAt }
+  const view = page(context, { ssh: [record], fetch(call) {
+    if (call.path === '/approvals/ssh-execute/decide') {
+      record.state = 'approved'
+      return Response.json(record)
+    }
+  } })
+  await view.ready()
+  const card = view.document.querySelector('#ssh-actions article')
+  const snapshot = [...card.children].filter(element => element.tagName !== 'SMALL')
+    .map(element => ({ tag: element.tagName.toLowerCase(), text: element.textContent }))
+  assert.deepEqual(snapshot, JSON.parse(readFileSync(new URL('./expected/ssh-approval.json', import.meta.url), 'utf8')))
+  assert.equal(card.querySelector('script, b, img, iframe, a, input'), null)
+  card.querySelector('button').click()
+  await until(() => view.calls.some(call => call.path === '/approvals/ssh-execute/decide'))
+  const sent = view.calls.find(call => call.path === '/approvals/ssh-execute/decide')
+  assert.deepEqual(sent.body, { actionId, fingerprint: record.fingerprint, approve: true })
+  assert.equal(sent.headers.authorization, `Bearer ${approvalToken}`)
+  await until(() => view.document.querySelector('#ssh-actions button')?.textContent === t.approvalSshCancel)
 })

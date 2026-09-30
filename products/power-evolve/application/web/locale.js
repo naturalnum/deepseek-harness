@@ -27,6 +27,8 @@ export const t = {
   approvalSshTitle: 'SSH 命令审批', approvalSshAction: '执行 SSH 命令',
   approvalSshApprove: '批准本次命令', approvalSshTarget: '目标', approvalSshCommand: '确切命令',
   approvalSshCancel: '取消执行',
+  approvalSshDirectory: '远端工作目录', approvalSshDefaultDirectory: '远端默认目录',
+  approvalSshHostKey: '主机密钥指纹', approvalSshConfiguration: '连接版本', approvalSshCredential: '凭据版本',
   actions: '操作', actionEmpty: '尚无受控操作', actionRefresh: '刷新状态', actionApproveAt: '前往可信审批页',
   executions: '执行记录', executionEmpty: '还没有执行命令', executionRefresh: '刷新状态',
   executionCancel: '取消命令', executionQueued: '等待沙盒', executionStarting: '启动沙盒',

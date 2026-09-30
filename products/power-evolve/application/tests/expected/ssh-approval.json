@@ -1,0 +1,10 @@
+[
+  { "tag": "strong", "text": "执行 SSH 命令 · 等待审批" },
+  { "tag": "p", "text": "目标: <b>Project host</b> · worker@host.test:2222" },
+  { "tag": "p", "text": "远端工作目录:  project " },
+  { "tag": "p", "text": "主机密钥指纹: SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA · 连接版本: 4 · 凭据版本: 2" },
+  { "tag": "p", "text": "确切命令" },
+  { "tag": "pre", "text": "CDPATH=; export CDPATH\ncd -- \"${HOME:?}\"/' project ' || exit\nprintf \"<script>literal</script>\"" },
+  { "tag": "code", "text": "操作指纹: ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff" },
+  { "tag": "div", "text": "批准本次命令拒绝" }
+]

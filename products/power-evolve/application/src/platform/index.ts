@@ -38,6 +38,7 @@ import { McpActionWorker } from './mcp-action-worker.ts'
 import { StdioMcpService } from './stdio-mcp.ts'
 import { StdioRunnerOrchestrator } from './stdio-runner.ts'
 import { SshConnectionService } from './ssh.ts'
+import { sshManagementRequests } from '../ssh-management-contracts.ts'
 import { SshCallStore } from './ssh-calls.ts'
 import { SshAuthenticationCheck } from './ssh-check.ts'
 import { SshExecuteService } from './ssh-execute.ts'
@@ -63,6 +64,10 @@ export const Config = schema.object({
   remoteMcpConfigFile: schema.string().default(''),
   mcpTimeoutMs: schema.number().min(1000).default(5000),
   sshCredentialKeyFile: schema.string().default(''), sshDestinationAllowlist: schema.string().default(''),
+  sshMaxConnections: schema.number().step(1).min(1).max(8).default(8),
+  sshMaxPendingTickets: schema.number().step(1).min(1).default(8),
+  sshTicketLifetimeMs: schema.number().step(1).min(1000).default(300000),
+  sshMaxCompletedMismatches: schema.number().step(1).min(1).default(3),
   sshRunnerKubeconfigFile: schema.string().default(''), sshRunnerNamespace: schema.string().default(''),
   sshRunnerImage: schema.string().default(''), sshRunnerRuntimeClass: schema.string().default('gvisor'),
   sshRunnerIngressCidrs: schema.string().default(''),
@@ -209,7 +214,10 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       })
     }
   }
-  const ssh = new SshConnectionService(pool, sshKey, config.sshDestinationAllowlist)
+  const ssh = new SshConnectionService(pool, sshKey, config.sshDestinationAllowlist, {
+    maxConnections: config.sshMaxConnections, maxPendingTickets: config.sshMaxPendingTickets,
+    ticketLifetimeMs: config.sshTicketLifetimeMs, maxCompletedMismatches: config.sshMaxCompletedMismatches,
+  })
   const sshRunnerEnabled = config.sshRunnerKubeconfigFile.length > 0
   if (sshRunnerEnabled && (!config.sshRunnerNamespace || !config.sshRunnerImage
     || !config.sshRunnerRuntimeClass || !config.sshRunnerIngressCidrs)) {
@@ -604,6 +612,32 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       case '/stdio-mcp/status': {
         const value = z.object({ callId: z.uuid() }).strict().parse(input)
         sendJson(res, await stdioMcp.status(user, value.callId)); return
+      }
+      case '/ssh/connections/list': {
+        sshManagementRequests.sshConnectionsList.parse(input)
+        sendJson(res, { ...(await ssh.listManaged(user)), available: sshAvailable }); return
+      }
+      case '/ssh/connections/update': {
+        const value = sshManagementRequests.sshConnectionsUpdate.parse(input)
+        if (value.configuration.enabled && !sshAvailable) throw new PlatformError(503, 'ssh_unavailable')
+        sendJson(res, await ssh.update(user, value)); return
+      }
+      case '/ssh/connections/toggle': {
+        const value = sshManagementRequests.sshConnectionsToggle.parse(input)
+        if (value.enabled && !sshAvailable) throw new PlatformError(503, 'ssh_unavailable')
+        sendJson(res, await ssh.toggleManaged(user, value)); return
+      }
+      case '/ssh/connections/delete': {
+        sendJson(res, await ssh.remove(user, sshManagementRequests.sshConnectionsDelete.parse(input))); return
+      }
+      case '/ssh/connections/ticket': {
+        if (!sshAvailable) throw new PlatformError(503, 'ssh_unavailable')
+        sendJson(res, await ssh.issueManagedTicket(user,
+          sshManagementRequests.sshConnectionsTicket.parse(input), config.platformOrigin)); return
+      }
+      case '/ssh/connections/receipt': {
+        const value = sshManagementRequests.sshConnectionsReceipt.parse(input)
+        sendJson(res, await ssh.receipt(user, value.requestId)); return
       }
       case '/ssh/list': {
         z.object({}).strict().parse(input)

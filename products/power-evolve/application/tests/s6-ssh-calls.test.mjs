@@ -5,10 +5,12 @@ import { createHmac, randomBytes, randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { Readable } from 'node:stream'
 import { Pool } from 'pg'
 import { identity } from '../lib/contracts.js'
 import { initializeDatabase } from '../lib/platform/database.js'
 import { SshCallStore } from '../lib/platform/ssh-calls.js'
+import { SshConnectionService } from '../lib/platform/ssh.js'
 
 const privateDir = process.env.PE_PRIVATE_DIR ?? join(homedir(), '.config/power-evolve/shared-host-native-s5')
 const databaseUrl = (await readFile(join(privateDir, 'database-url'), 'utf8')).trim()
@@ -30,19 +32,20 @@ test('S6 SSH calls retain exact user requests, fence workers, and reconcile a pe
     const url = new URL(databaseUrl); url.pathname = `/${database}`
     pool = new Pool({ connectionString: url.href, max: 8 })
     await initializeDatabase(pool)
-    assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 23)
+    assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 24)
     const alice = identity.parse({ userId: randomUUID(), username: 'alice' })
     const bob = identity.parse({ userId: randomUUID(), username: 'bob' })
     const connections = [randomUUID(), randomUUID()]
+    const connectionService = new SshConnectionService(pool, randomBytes(32).toString('base64url'),
+      'fixture.example.test:2222')
     for (const [index, user] of [alice, bob].entries()) {
       await pool.query('INSERT INTO pe_users(id,username,password_hash,settings) VALUES($1,$2,$3,$4)',
         [user.userId, user.username, 'test-only', { model: 'fixture', maxTokens: 64, revision: 1 }])
-      await pool.query(
-        `INSERT INTO pe_ssh_connections(id,user_id,install_request_id,install_digest,display_name,
-           host,port,username,host_key_sha256,credential_kind,encrypted_credential,enabled)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'password',$10,true)`,
-        [connections[index], user.userId, randomUUID(), 'a'.repeat(64), `${user.username} server`,
-          'fixture.example.test', 2222, user.username, `SHA256:${'A'.repeat(43)}`, Buffer.from([1])])
+      const ticket = await connectionService.issueTicket(user, { requestId: connections[index],
+        displayName: `${user.username} server`, host: 'fixture.example.test', port: 2222,
+        username: user.username, hostKeySha256: `SHA256:${'A'.repeat(43)}`,
+        credentialKind: 'password', sizeBytes: 7, enabled: true }, 'http://127.0.0.1:19221')
+      await connectionService.upload(ticket.ticket, Readable.from([Buffer.from('fixture')]))
     }
     const sessionId = randomUUID(), operationId = randomUUID(), workspaceId = randomUUID()
     await pool.query('INSERT INTO pe_workspaces(id,user_id,title,is_default) VALUES($1,$2,$3,true)',
@@ -74,6 +77,10 @@ test('S6 SSH calls retain exact user requests, fence workers, and reconcile a pe
     const command = 'echo sensitive-command'
     const execute = await store.admit(alice, { ...check, requestId: randomUUID(), kind: 'ssh.execute',
       operationId, requestDigest: digest({ kind: 'ssh.execute', command, timeoutMs: 5000 }) })
+    await pool.query(`INSERT INTO pe_ssh_execute_actions(id,user_id,session_id,operation_id,call_key,
+      connection_id,connection_revision,credential_revision,command_sealed,request_digest,state)
+      VALUES($1,$2,$3,$4,'store-fixture',$5,1,1,$6,$7,'approved')`,
+    [execute.id, alice.userId, sessionId, operationId, connections[0], randomBytes(29), execute.request_digest])
     assert.equal(JSON.stringify(execute).includes(command), false)
     assert.equal(execute.operation_id, operationId)
     assert.equal((await store.cancel(bob, second.id)).state, 'cancelled')
@@ -171,4 +178,17 @@ test('S6 SSH calls retain exact user requests, fence workers, and reconcile a pe
     const expired = await recovered.get(alice, waiting.id)
     assert.equal(expired.state, 'ready')
     assert.equal(expired.dispatch_digest, null, 'lease expiry during lock wait prevents a permit')
+
+    await recovered.markCleanupComplete(execute.id, handle.podUid)
+    const unapproved = await recovered.admit(alice, { ...check, requestId: randomUUID(),
+      kind: 'ssh.execute', operationId, requestDigest: digest({ command: 'unapproved' }) })
+    const unapprovedClaim = await recovered.claim(workerA, 5000, 'ssh.execute')
+    assert.equal(unapprovedClaim.id, unapproved.id)
+    const unapprovedLease = { callId: unapproved.id, owner: workerA, epoch: unapprovedClaim.lease_epoch }
+    await recovered.startPreparing(unapprovedLease)
+    await recovered.markReady(unapprovedLease, { ...handle, callId: unapproved.id })
+    const refused = await recovered.markDispatchIntent(unapprovedLease, runnerDigest)
+    assert.equal(refused.state, 'failed')
+    assert.equal(refused.error_code, 'ssh_action_not_approved')
+    assert.equal(refused.dispatch_digest, null, 'a call without matching approval grants no POST')
   })

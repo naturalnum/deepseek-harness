@@ -9,6 +9,7 @@ import { executionTarget, sshSelection, PlatformError, type Identity } from '../
 import { transaction } from './database.ts'
 import { SshCallStore, type SshCallLease, type SshCallRow } from './ssh-calls.ts'
 import { SshConnectionService } from './ssh.ts'
+import { renderSshCommand } from './ssh-command.ts'
 import { SshRunnerBlocked, SshRunnerOrchestrator, type SshRunnerHandle,
   type SshRunnerObservation } from './ssh-runner.ts'
 import type { TaskStore } from './tasks.ts'
@@ -28,7 +29,8 @@ type Action = { id: string; user_id: string; session_id: string; operation_id: s
   error_code: string | null; continuation_request_id: string; created_at: Date }
 type CipherContext = Pick<Action, 'id' | 'user_id' | 'operation_id' | 'connection_id'
   | 'connection_revision' | 'credential_revision' | 'request_digest'>
-type ApprovalAction = Action & { display_name: string; host: string; port: number; username: string }
+type ApprovalAction = Action & { display_name: string; host: string; port: number; username: string;
+  host_key_sha256: string; working_directory: string | null }
 type CallView = Pick<SshCallRow, 'id' | 'state'>
 type Lease = SshCallLease
 
@@ -114,8 +116,15 @@ export class SshExecuteService {
         value.connectionId === connectionId && value.revision === connectionRevision
         && value.credentialRevision === credentialRevision)
       if (!pinned) throw new PlatformError(403, 'ssh_connection_not_in_operation')
+      const configuration = await client.query<{ working_directory: string | null }>(
+        `SELECT working_directory FROM pe_ssh_configuration_versions
+         WHERE connection_id=$1 AND user_id=$2 AND revision=$3 AND credential_revision=$4`,
+        [connectionId, grant.user_id, connectionRevision, credentialRevision])
+      const version = configuration.rows[0]
+      if (!version) throw new PlatformError(409, 'ssh_configuration_unavailable')
+      const frozenCommand = renderSshCommand(command, version.working_directory)
       const requestDigest = this.cipher.fingerprint({ userId: grant.user_id,
-        operationId: grant.operation_id, connectionId, connectionRevision, credentialRevision, command })
+        operationId: grant.operation_id, connectionId, connectionRevision, credentialRevision, command: frozenCommand })
       const prior = await client.query<Action>(
         'SELECT * FROM pe_ssh_execute_actions WHERE operation_id=$1', [grant.operation_id])
       if (prior.rows[0]) {
@@ -126,7 +135,7 @@ export class SshExecuteService {
       }
       const connection = await client.query<{ credential_revision: number }>(
         `SELECT credential_revision FROM pe_ssh_connections WHERE id=$1 AND user_id=$2
-         AND revision=$3 AND enabled=true FOR SHARE`,
+         AND revision=$3 AND enabled=true AND deleted_at IS NULL FOR SHARE`,
         [connectionId, grant.user_id, connectionRevision])
       if (connection.rows[0]?.credential_revision !== credentialRevision) {
         throw new PlatformError(403, 'ssh_connection_revoked')
@@ -135,7 +144,7 @@ export class SshExecuteService {
       const action = { id, user_id: grant.user_id, operation_id: grant.operation_id,
         connection_id: connectionId, connection_revision: connectionRevision,
         credential_revision: credentialRevision, request_digest: requestDigest }
-      const sealed = this.cipher.seal(action, 'command', command)
+      const sealed = this.cipher.seal(action, 'command', frozenCommand)
       const inserted = await client.query<Action>(
         `INSERT INTO pe_ssh_execute_actions(id,user_id,session_id,operation_id,call_key,
            connection_id,connection_revision,credential_revision,command_sealed,request_digest,state)
@@ -149,14 +158,17 @@ export class SshExecuteService {
   /** Only the approval audience receives decrypted command bytes and exact target metadata. */
   async approvals(user: Identity) {
     const found = await this.pool.query<ApprovalAction & { call_state: SshCallRow['state'] | null }>(
-      `SELECT a.*,c.display_name,c.host,c.port,c.username,x.state AS call_state
+      `SELECT a.*,c.display_name,c.host,c.port,c.username,c.host_key_sha256,c.working_directory,x.state AS call_state
        FROM pe_ssh_execute_actions a
-       JOIN pe_ssh_connections c ON c.id=a.connection_id
+       JOIN pe_ssh_configuration_versions c ON c.connection_id=a.connection_id AND c.user_id=a.user_id
+         AND c.revision=a.connection_revision AND c.credential_revision=a.credential_revision
        LEFT JOIN pe_ssh_calls x ON x.id=a.id
        WHERE a.user_id=$1 ORDER BY a.created_at DESC,a.id DESC LIMIT 100`, [user.userId])
     return { items: found.rows.map(row => ({ ...this.present(row, row.call_state
       ? { id: row.id, state: row.call_state } : null), command: this.cipher.open(row, 'command', row.command_sealed),
       displayName: row.display_name, host: row.host, port: row.port, username: row.username,
+      hostKeySha256: row.host_key_sha256, workingDirectory: row.working_directory,
+      connectionRevision: row.connection_revision, credentialRevision: row.credential_revision,
       createdAt: row.created_at.toISOString() })) }
   }
 
@@ -181,7 +193,7 @@ export class SshExecuteService {
       }
       const current = await client.query<{ credential_revision: number }>(
         `SELECT credential_revision FROM pe_ssh_connections WHERE id=$1 AND user_id=$2
-         AND revision=$3 AND enabled=true FOR SHARE`,
+         AND revision=$3 AND enabled=true AND deleted_at IS NULL FOR SHARE`,
         [action.connection_id, action.user_id, action.connection_revision])
       if (current.rows[0]?.credential_revision !== action.credential_revision) {
         await client.query(`UPDATE pe_ssh_execute_actions SET state='failed',error_code='ssh_connection_revoked',
