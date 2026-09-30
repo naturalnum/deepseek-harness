@@ -206,7 +206,7 @@
     "start:web": "node --import tsx/esm apps/cli/src/bin.ts web",
     "dev:web": "tsx scripts/dev-web.ts --poll",
     "postinstall": "node scripts/install-lefthook.mjs",
-    "test:power-evolve": "pnpm run build:power-evolve && node --test products/power-evolve/application/tests/*.test.mjs",
+    "test:power-evolve": "pnpm run build:power-evolve && node --test products/power-evolve/application/tests/*.test.mjs && node --import tsx/esm --test products/power-evolve/application/tests/*.test.ts",
     "power-evolve:trial": "node products/power-evolve/scripts/trial.mjs"
   },
   "devDependencies": {
