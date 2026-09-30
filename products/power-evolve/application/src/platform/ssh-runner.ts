@@ -12,6 +12,7 @@ interface Metadata { name: string; uid?: string; labels?: Record<string, string>
 interface Resource { metadata: Metadata; spec?: unknown; data?: Record<string, string> }
 interface Pod extends Resource { status?: { phase?: string; containerStatuses?: Array<{ ready?: boolean; restartCount?: number }> } }
 interface Health { ready: boolean; instanceId: string }
+/** Platform-pinned SSH endpoint and host-key fingerprint used by policy and Runner identity checks. */
 export interface SshRunnerDestination {
   /** A platform-pinned IP literal. DNS resolution cannot change the policy target. */
   readonly ip: string
@@ -19,6 +20,7 @@ export interface SshRunnerDestination {
   readonly username: string
   readonly hostKeySha256: string
 }
+/** Dedicated Runner placement, control authentication and independent forbidden-listener verification. */
 export interface SshRunnerConfig {
   /** Dedicated, preprovisioned namespace; never the writable Sandbox namespace. */
   readonly namespace: string
@@ -34,15 +36,22 @@ export interface SshRunnerConfig {
   readonly proveForbiddenListener: () => Promise<boolean>
   readonly imagePullPolicy?: 'Always' | 'IfNotPresent' | 'Never'
 }
+/** Exact prepared call, Pod UID, Runner instance and destination to persist before dispatch. */
 export interface SshRunnerHandle {
   readonly callId: string
   readonly podUid: string
   readonly instanceId: string
   readonly destination: SshRunnerDestination
 }
+/** Secret-bearing Platform-to-Runner request using a password or private key with optional passphrase.
+ * Execution carries the complete frozen, approved command; authentication sends no remote command.
+ */
 export type SshRunnerRequest =
   | { readonly kind: 'ssh.authenticate'; readonly credential: SshCredential; readonly timeoutMs: number; readonly maxOutputBytes: number }
   | { readonly kind: 'ssh.execute'; readonly credential: SshCredential; readonly command: string; readonly timeoutMs: number; readonly maxOutputBytes: number }
+/** Correlated Runner report; failed execution may already have caused a remote effect.
+ * An absent failure-phase flag leaves that effect uncertain.
+ */
 export interface SshRunnerStatus {
   readonly callId: string
   readonly instanceId: string
@@ -53,10 +62,14 @@ export interface SshRunnerStatus {
   /** Failure phase reported by newer Runners; absence does not establish that exec was never sent. */
   readonly effectMayHaveOccurred?: boolean
 }
+/** Matched Runner status, verified absence before first dispatch, or an unverified outcome.
+ * An uncertain observation never grants permission to repeat a dispatch POST.
+ */
 export type SshRunnerObservation = { readonly state: 'absent' }
   | { readonly state: 'known'; readonly status: SshRunnerStatus }
   | { readonly state: 'uncertain'; readonly reason: string }
 
+/** Named Runner configuration, destination, readiness or resource refusal for Platform coordinators. */
 export class SshRunnerBlocked extends Error {
   constructor(readonly code: string) { super(code) }
 }
@@ -95,7 +108,9 @@ function equal(expected: unknown, actual: unknown): boolean {
   return expected === actual
 }
 
-/** The caller persists the handle and dispatch intent before invoking dispatchFirst. */
+/** Provision isolated Runner resources and correlate observations with their persisted identities.
+ * The caller persists the handle and commits a fresh dispatch permit before invoking dispatchFirst once.
+ */
 export class SshRunnerOrchestrator {
   constructor(private readonly kube: Kube, private readonly config: SshRunnerConfig) {
     if (!config.namespace || !config.image || !config.runtimeClassName || config.controlKey.length < 32
@@ -236,7 +251,13 @@ export class SshRunnerOrchestrator {
     await this.deleteOne('secrets', name)
   }
 
-  /** Creates policy before Pods, proves a forbidden listener is live, and inspects the allowed target without credentials. */
+  /** Create policy before Pods and verify the live forbidden listener and pinned SSH host key without credentials.
+   * Canary deletion is requested before creating the call Runner; partially prepared resources require caller cleanup.
+   * @param callId - durable UUID used for the isolated call's resources.
+   * @param target - pinned IP, port, username and independently verified host-key fingerprint.
+   * @returns the ready call Pod UID, Runner instance and destination for durable persistence.
+   * @throws SshRunnerBlocked for an invalid destination, changed resources, failed probes or readiness failure.
+   */
   async prepare(callId: string, target: SshRunnerDestination): Promise<SshRunnerHandle> {
     this.validate(callId, target)
     if (!await this.probeLive()) throw new SshRunnerBlocked('connector_runner_probe_unavailable')
@@ -281,7 +302,13 @@ export class SshRunnerOrchestrator {
     } catch (_error) { return 'changed' }
   }
 
-  /** Persist this keyed digest with the dispatch intent; it is not an offline password verifier. */
+  /** Validate request limits and compute a keyed digest to persist with the dispatch permit.
+   * The per-call control key protects password, private-key and optional passphrase bytes from offline verification.
+   * @param handle - persisted call, Runner instance and pinned destination.
+   * @param request - exact credential, command when executing, and timeout/output limits to send.
+   * @returns the canonical request's HMAC-SHA-256 hex digest under the call Runner's control token.
+   * @throws SshRunnerBlocked for an invalid destination, credential bytes, command or execution limits.
+   */
   digestFor(handle: SshRunnerHandle, request: SshRunnerRequest): string {
     this.validate(handle.callId, handle.destination)
     const credential = request.credential
@@ -306,7 +333,12 @@ export class SshRunnerOrchestrator {
       credential: request.credential, ...(request.kind === 'ssh.execute' ? { command: request.command } : {}) }
   }
 
-  /** Read-only recovery. A missing in-memory call after a persisted dispatch intent is uncertain. */
+  /** Recover by reading the original Runner; a missing in-memory call after committed dispatch is uncertain.
+   * @param handle - exact persisted Pod, Runner instance and destination to observe.
+   * @param dispatched - whether the caller already committed dispatch intent.
+   * @param expectedDigest - persisted keyed request digest; required when dispatched is true.
+   * @returns matching status, absence before dispatch, or uncertainty for missing calls or unverified identities.
+   */
   async reconcile(handle: SshRunnerHandle, dispatched: boolean, expectedDigest?: string): Promise<SshRunnerObservation> {
     this.validate(handle.callId, handle.destination)
     if (dispatched && !/^[0-9a-f]{64}$/u.test(expectedDigest ?? '')) {
@@ -327,7 +359,13 @@ export class SshRunnerOrchestrator {
     }
   }
 
-  /** Invoke once after the caller durably marks dispatch intent. Never retry a transport-uncertain POST. */
+  /** Invoke once with a newly committed dispatch permit; existing Runner status is returned before any POST.
+   * A transport-uncertain POST must be recovered through reconcile, never another dispatchFirst invocation.
+   * @param handle - persisted Pod, Runner instance and pinned destination authorized by the fresh permit.
+   * @param request - immutable authentication or approved execution request bound to that permit's digest.
+   * @returns matching Runner status, or uncertainty when identity, probe availability or the POST outcome is unverified.
+   * @throws SshRunnerBlocked when the destination or bounded request is invalid.
+   */
   async dispatchFirst(handle: SshRunnerHandle, request: SshRunnerRequest): Promise<SshRunnerObservation> {
     this.validate(handle.callId, handle.destination)
     const unsigned = this.unsigned(handle, request)
@@ -349,7 +387,13 @@ export class SshRunnerOrchestrator {
     } catch (_error) { return { state: 'uncertain', reason: 'dispatch_outcome_unknown' } }
   }
 
-  /** A Pod deletion cancels work physically; its prior remote effect remains uncertain. */
+  /** Read the original Runner outcome, then request deletion of its Pod.
+   * A previously observed terminal result is retained; deletion alone leaves remote effects uncertain.
+   * This method does not wait for Pod disappearance; cleanup confirms removal.
+   * @param handle - exact persisted Runner identity whose Pod is to be deleted.
+   * @param expectedDigest - persisted keyed request digest used to correlate the prior status.
+   * @returns a known terminal status observed before deletion, or an uncertain cancellation outcome.
+   */
   async cancel(handle: SshRunnerHandle, expectedDigest: string): Promise<SshRunnerObservation> {
     const prior = await this.reconcile(handle, true, expectedDigest)
     await this.deleteOne('pods', nameOf(handle.callId))
@@ -357,7 +401,11 @@ export class SshRunnerOrchestrator {
       : { state: 'uncertain', reason: 'cancel_effect_unknown' }
   }
 
-  /** Call only after durable terminal status or explicit uncertain-state quarantine. */
+  /** Delete call and canary resources after durable terminal status or explicit uncertain-state quarantine.
+   * Wait for call Pod disappearance before removing its Service, control Secret and NetworkPolicy.
+   * @param callId - durable UUID naming only this call's isolated resources.
+   * @throws SshRunnerBlocked for an invalid call identity or unconfirmed Pod deletion before the readiness timeout.
+   */
   async cleanup(callId: string): Promise<void> {
     if (!uuid.test(callId)) throw new SshRunnerBlocked('connector_runner_call_id_invalid')
     await this.clearCanary(callId)

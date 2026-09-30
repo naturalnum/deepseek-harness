@@ -49,18 +49,24 @@ export interface SshCallRow {
 const hexDigest = /^[a-f0-9]{64}$/u
 const terminal = new Set(['succeeded', 'failed', 'cancelled'])
 
-/** One lease epoch grants one worker authority to change or first-dispatch a call. */
+/** Current worker epoch for fenced transitions; first dispatch also requires a committed permit. */
 export interface SshCallLease {
   readonly callId: string
   readonly owner: string
   readonly epoch: number
 }
 
-/** Persisted admission and expected-state transitions for SSH Connector Runner work. */
+/** Platform database admissions, worker lease fences and dispatch permits for SSH Runner calls. */
 export class SshCallStore {
   constructor(private readonly pool: Pool) {}
 
-  /** Admit a verified user's exact request; replay returns the original call even after connection changes. */
+  /** Admit a verified user's exact request; replay returns the original call even after connection changes.
+   * New calls require the owned, enabled connection revision; execution also requires an owned running operation.
+   * @param user - verified owner of the connection and request.
+   * @param input - stable request identity, pinned revision, call kind and keyed request digest.
+   * @returns the committed accepted row, or the original row for an identical replay.
+   * @throws PlatformError for invalid admission, missing authority or a conflicting request identity.
+   */
   async admit(user: Identity, input: SshCallAdmission): Promise<SshCallRow> {
     if (!hexDigest.test(input.requestDigest)) throw new PlatformError(400, 'ssh_request_digest_invalid')
     if ((input.kind === 'ssh.authenticate' && input.operationId !== undefined)
@@ -100,7 +106,12 @@ export class SshCallStore {
     })
   }
 
-  /** Return an owner-scoped call, including state needed by a trusted Platform coordinator. */
+  /** Read the internal call row visible to its verified owner.
+   * @param user - verified owner of the call.
+   * @param callId - durable call identity.
+   * @returns internal state for a trusted Platform coordinator.
+   * @throws PlatformError when the call is absent or belongs to another user.
+   */
   async get(user: Identity, callId: string): Promise<SshCallRow> {
     const found = await this.pool.query<SshCallRow>(
       'SELECT * FROM pe_ssh_calls WHERE id=$1 AND user_id=$2', [callId, user.userId])
@@ -108,14 +119,19 @@ export class SshCallStore {
     return found.rows[0]
   }
 
-  /** List only the verified user's recent calls. */
+  /** List only the verified user's recent calls.
+   * @param user - verified owner whose calls are read.
+   * @returns at most 100 internal rows, ordered by descending creation time and identity.
+   */
   async list(user: Identity): Promise<readonly SshCallRow[]> {
     const found = await this.pool.query<SshCallRow>(
       'SELECT * FROM pe_ssh_calls WHERE user_id=$1 ORDER BY created_at DESC,id DESC LIMIT 100', [user.userId])
     return found.rows
   }
 
-  /** Retry cleanup after a crash between terminal persistence and Pod deletion. */
+  /** Find terminal calls whose recorded Pod cleanup remains incomplete after a crash.
+   * @returns at most 20 succeeded, failed or cancelled call/Pod identities, ordered by update time and identity.
+   */
   async cleanupCandidates(): Promise<readonly { id: string; pod_uid: string }[]> {
     const found = await this.pool.query<{ id: string; pod_uid: string }>(
       `SELECT id,pod_uid FROM pe_ssh_calls WHERE state IN ('succeeded','failed','cancelled')
@@ -123,6 +139,11 @@ export class SshCallStore {
     return found.rows
   }
 
+  /** Record cleanup after the caller confirms deletion of the recorded Pod.
+   * @param callId - durable call identity in a terminal or quarantined uncertain state.
+   * @param podUid - exact persisted Pod UID whose cleanup was confirmed.
+   * @throws PlatformError if the call, Pod identity or eligible state changed.
+   */
   async markCleanupComplete(callId: string, podUid: string): Promise<void> {
     const updated = await this.pool.query(
       `UPDATE pe_ssh_calls SET cleanup_complete=true,updated_at=now()
@@ -130,7 +151,13 @@ export class SshCallStore {
     if (!updated.rowCount) throw new PlatformError(409, 'ssh_cleanup_state_changed')
   }
 
-  /** Claim only work this coordinator can handle; a new epoch fences the previous process. */
+  /** Claim unleased or expired work of one kind; a new epoch fences the previous process.
+   * Uncertain calls with completed cleanup are excluded. Claiming does not grant a first-dispatch permit.
+   * @param owner - coordinator identity recorded as the lease owner.
+   * @param leaseMs - positive safe-integer lease duration in milliseconds.
+   * @param kind - authentication or execution work handled by this coordinator.
+   * @returns the claimed row with its incremented epoch, or null when no eligible row is available.
+   */
   async claim(owner: string, leaseMs: number, kind: SshCallAdmission['kind']): Promise<SshCallRow | null> {
     if (!Number.isSafeInteger(leaseMs) || leaseMs < 1) throw new Error('Invalid SSH call lease')
     return transaction(this.pool, async client => {
@@ -149,7 +176,11 @@ export class SshCallStore {
     })
   }
 
-  /** Renew only the current unexpired epoch. */
+  /** Extend only the current unexpired lease of a nonterminal call.
+   * @param lease - current call, owner and epoch.
+   * @param leaseMs - positive safe-integer renewal duration in milliseconds.
+   * @throws PlatformError when the lease expired, changed or belongs to a terminal call.
+   */
   async renew(lease: SshCallLease, leaseMs: number): Promise<void> {
     if (!Number.isSafeInteger(leaseMs) || leaseMs < 1) throw new Error('Invalid SSH call lease')
     const renewed = await this.pool.query(
@@ -160,7 +191,11 @@ export class SshCallStore {
     if (!renewed.rowCount) throw new PlatformError(409, 'ssh_call_lease_lost')
   }
 
-  /** Inspect the original dispatch epoch; reading an intent never grants another POST. */
+  /** Verify the original dispatch epoch is still leased, in dispatch-intent and not cancelled.
+   * Reading an intent never grants another POST.
+   * @param lease - original call, dispatch owner and epoch to verify.
+   * @throws PlatformError when the dispatch identity, lease or cancellation state no longer matches.
+   */
   async assertDispatchLease(lease: SshCallLease): Promise<void> {
     const found = await this.pool.query(
       `SELECT id FROM pe_ssh_calls WHERE id=$1 AND lease_owner=$2 AND lease_epoch=$3
@@ -180,12 +215,21 @@ export class SshCallStore {
     return changed.rows[0]
   }
 
-  /** Begin Pod preparation after the accepted row commits. */
+  /** Begin Pod preparation after the accepted row commits.
+   * @param lease - current call, owner and epoch for the accepted row.
+   * @returns the row transitioned from accepted to preparing.
+   * @throws PlatformError if the expected state or unexpired lease changed.
+   */
   async startPreparing(lease: SshCallLease): Promise<SshCallRow> {
     return this.change(lease, 'accepted', 'preparing')
   }
 
-  /** Save the exact Pod and Runner identity before any credential reaches the Runner. */
+  /** Save the exact Pod and Runner identity before any credential reaches the Runner.
+   * @param lease - current call, owner and epoch for the preparing row.
+   * @param handle - prepared destination, Pod UID and Runner instance for the same call.
+   * @returns the ready row with the persisted Runner identity.
+   * @throws PlatformError for a different call identity or a changed state or lease.
+   */
   async markReady(lease: SshCallLease, handle: SshRunnerHandle): Promise<SshCallRow> {
     if (handle.callId !== lease.callId) throw new PlatformError(400, 'ssh_call_identity_invalid')
     return this.change(lease, 'preparing', 'ready',
@@ -196,6 +240,10 @@ export class SshCallStore {
   /** Commit one dispatch permit under call, approval and connection locks, without network I/O.
    * A fresh dispatch-intent return authorizes one POST; later revocation cannot retract it.
    * A missing approval or changed connection fails without a permit. Recovery only queries the original Runner.
+   * @param lease - current call, owner and epoch for the ready, uncancelled row.
+   * @param digest - keyed digest of the exact request to send to the persisted Runner.
+   * @returns dispatch-intent with a new permit, or failed when approval or the current connection denies dispatch.
+   * @throws PlatformError for an invalid digest or a changed state, cancellation or lease.
    */
   async markDispatchIntent(lease: SshCallLease, digest: string): Promise<SshCallRow> {
     if (!hexDigest.test(digest)) throw new PlatformError(400, 'ssh_dispatch_digest_invalid')
@@ -233,7 +281,13 @@ export class SshCallStore {
     })
   }
 
-  /** Record only an observation with the persisted call, Runner, and keyed request identity. */
+  /** Persist a Runner observation only when its call, instance and digest match the leased row.
+   * The coordinator interprets execution failure phases before recording a terminal execution outcome.
+   * @param lease - current call, owner and epoch in dispatch-intent, running or uncertain state.
+   * @param status - matching Runner state, result and optional error code.
+   * @returns the row updated with the observed state and result.
+   * @throws PlatformError if the call, Runner identity, digest, eligible state or lease changed.
+   */
   async recordStatus(lease: SshCallLease, status: SshRunnerStatus): Promise<SshCallRow> {
     if (status.callId !== lease.callId) throw new PlatformError(409, 'ssh_runner_identity_changed')
     const next = status.state === 'running' ? 'running' : status.state
@@ -248,7 +302,11 @@ export class SshCallStore {
     return changed.rows[0]
   }
 
-  /** A running execute call can be polled soon under a fresh epoch, without waiting for its long prepare lease. */
+  /** Release ownership of a running execution call and defer its next claim until the poll delay expires.
+   * @param lease - current call, owner and epoch for running execution work.
+   * @param pollMs - delay in milliseconds before another coordinator may claim it.
+   * @throws PlatformError if the kind, state or unexpired lease changed.
+   */
   async deferRunning(lease: SshCallLease, pollMs: number): Promise<void> {
     const changed = await this.pool.query(
       `UPDATE pe_ssh_calls SET lease_owner=NULL,
@@ -259,7 +317,13 @@ export class SshCallStore {
     if (!changed.rowCount) throw new PlatformError(409, 'ssh_call_lease_lost')
   }
 
-  /** Quarantine an unverified outcome while retaining Pod identity for lookup or deletion. */
+  /** Quarantine an unverified outcome while retaining Pod identity for lookup or deletion.
+   * @param lease - current call, owner and epoch.
+   * @param expected - preparing, ready, dispatch-intent, running or uncertain state to replace.
+   * @param reason - coordinator-selected error code for the uncertain outcome.
+   * @returns the uncertain row, preserving its recorded Runner and dispatch identities.
+   * @throws PlatformError for an ineligible expected state or a changed state or lease.
+   */
   async markUncertain(lease: SshCallLease, expected: SshCallRow['state'], reason: string): Promise<SshCallRow> {
     if (!['preparing', 'ready', 'dispatch-intent', 'running', 'uncertain'].includes(expected)) {
       throw new PlatformError(400, 'ssh_call_state_invalid')
@@ -267,7 +331,14 @@ export class SshCallStore {
     return this.change(lease, expected, 'uncertain', [reason], ',error_code=$6')
   }
 
-  /** Settle without dispatch, after any prepared Pod has been deleted. */
+  /** Settle without dispatch after the caller has deleted any prepared Pod.
+   * @param lease - current call, owner and epoch.
+   * @param expected - accepted, preparing, ready or uncertain state to replace.
+   * @param next - failed or cancelled terminal outcome.
+   * @param reason - coordinator-selected error code, or null for cancellation without an error.
+   * @returns the terminal row only when no dispatch digest has been committed.
+   * @throws PlatformError if the state or lease changed, or dispatch was already committed.
+   */
   async settleWithoutDispatch(lease: SshCallLease, expected: 'accepted' | 'preparing' | 'ready' | 'uncertain',
     next: 'failed' | 'cancelled', reason: string | null): Promise<SshCallRow> {
     const changed = await this.pool.query<SshCallRow>(
@@ -279,7 +350,14 @@ export class SshCallStore {
     return changed.rows[0]
   }
 
-  /** A pre-prepare cancel settles immediately; later work must confirm cleanup or remote outcome. */
+  /** Request cancellation for an owned call; an accepted call becomes cancelled immediately.
+   * Terminal rows are unchanged. Prepared work retains its state until cleanup; a committed dispatch
+   * becomes uncertain and its permit remains valid, so the coordinator must confirm the remote outcome.
+   * @param user - verified owner requesting cancellation.
+   * @param callId - durable call identity.
+   * @returns the terminal row unchanged, or the row with cancellation requested and its resulting state.
+   * @throws PlatformError when the call is absent or belongs to another user.
+   */
   async cancel(user: Identity, callId: string): Promise<SshCallRow> {
     return transaction(this.pool, async client => {
       const found = await client.query<SshCallRow>(
