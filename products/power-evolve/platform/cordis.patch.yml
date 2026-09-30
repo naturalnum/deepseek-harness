@@ -22,6 +22,18 @@
         sandboxLocalRoot: !!js process.env.PE_SANDBOX_LOCAL_ROOT || ''
         sandboxNodeRoot: !!js process.env.PE_SANDBOX_NODE_ROOT || ''
         sandboxVolumeClaimName: !!js process.env.PE_SANDBOX_VOLUME_CLAIM || ''
+        skillLibraryRoot: !!js process.env.PE_SKILL_LIBRARY_ROOT || process.env.PE_SANDBOX_LOCAL_ROOT || process.env.PE_PRIVATE_DIR + '/skill-library'
+        maxSkillsPerUser: 64
+        preinstalledSkills:
+          - builtin.word
+          - builtin.excel
+          - builtin.powerpoint
+          - builtin.pdf
+          - builtin.latex-report-writer
+          - builtin.power-grid-technical-report-writer
+          - builtin.report-reviewer
+          - builtin.report-workflow-orchestrator
+          - builtin.tech-report-writer
         sandboxReadyTimeoutMs: 60000
         sandboxConcurrency: 4
         sandboxPollMs: 500

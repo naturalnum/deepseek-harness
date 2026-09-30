@@ -13910,6 +13910,9 @@ importers:
       '@deepseek-ai/cordis':
         specifier: workspace:~
         version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-tool-skill':
+        specifier: workspace:*
+        version: link:../../../packages/skill/tool-skill
       '@types/js-yaml':
         specifier: ^4.0.9
         version: 4.0.9
@@ -14314,9 +14317,15 @@ importers:
       '@deepseek-ai/dsh-session-projection':
         specifier: workspace:*
         version: link:../../../packages/session/session-projection
+      '@deepseek-ai/dsh-skill':
+        specifier: workspace:*
+        version: link:../../../packages/skill/skill
       '@deepseek-ai/dsh-system-prompt':
         specifier: workspace:*
         version: link:../../../packages/core/system-prompt
+      '@deepseek-ai/dsh-tool-skill':
+        specifier: workspace:*
+        version: link:../../../packages/skill/tool-skill
       '@deepseek-ai/dsh-tools':
         specifier: workspace:*
         version: link:../../../packages/core/tools

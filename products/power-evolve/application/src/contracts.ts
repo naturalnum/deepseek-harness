@@ -61,6 +61,15 @@ export const builtinSkillInstallRequest = z.object({
   version: z.string().max(64).regex(/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/u),
 }).strict()
 export const skillRequest = z.object({ skillId: z.uuid() }).strict()
+export const skillResourceRequest = skillRequest.extend({ path: z.string().min(1).max(512).optional() }).strict()
+export const skillResourceView = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('list'), files: z.array(z.object({
+    path: z.string().min(1).max(512), size: z.number().int().min(0),
+    sha256: z.string().regex(/^[a-f0-9]{64}$/u),
+  }).strict()).max(256) }).strict(),
+  z.object({ kind: z.literal('text'), path: z.string().min(1).max(512), text: z.string().max(262144),
+    sha256: z.string().regex(/^[a-f0-9]{64}$/u) }).strict(),
+])
 export const skillToggleRequest = z.object({ skillId: z.uuid(), enabled: z.boolean() }).strict()
 export const skillRevokeRequest = skillRequest
 export const skillUploadTicketRequest = z.object({
@@ -73,6 +82,9 @@ export const skillSnapshot = z.object({
   digest: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   packageDigest: z.string().regex(/^[a-f0-9]{64}$/).nullable().default(null),
   manifestDigest: z.string().regex(/^[a-f0-9]{64}$/).nullable().default(null),
+}).strict()
+export const runtimeSkillSnapshot = skillSnapshot.extend({
+  runtimePath: z.string().max(512).nullable().optional(), suiteAvailable: z.boolean().optional(),
 }).strict()
 export const skillSelection = z.object({
   skillId: z.uuid(), name: z.string(), description: z.string(), digest: z.string().regex(/^[a-f0-9]{64}$/),

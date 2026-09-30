@@ -1,6 +1,6 @@
 # Sandbox document toolchain
 
-[中文](README.zh.md)
+English | [中文](README.zh.md)
 
 The Sandbox image retains the existing HTTP runner. Its trusted process starts as root so `runner.mjs` can launch user commands as UID/GID 1000. The deployed pod mounts `/workspace`, `/home/agent`, and `/tmp` as writable volumes, and mounts the image filesystem read-only. The toolchain and OfficeCLI stay in the image; package Skills are mounted separately by the platform.
 

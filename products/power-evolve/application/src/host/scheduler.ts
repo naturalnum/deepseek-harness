@@ -14,6 +14,7 @@ import { installPersonalMcpTool } from './mcp.ts'
 import { installStdioMcpTool } from './stdio-mcp.ts'
 import { installSshExecuteTool } from './ssh-execute.ts'
 import { installSelectedSkills } from './skills.ts'
+import { installOfficeTool } from './office.ts'
 
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
@@ -124,6 +125,7 @@ export class Scheduler {
       if (grant.source === 'user' || grant.source === 'sandbox_result' || grant.source === 'desktop_result') {
         installConnectorTools(agent, grant, runtime, this.config.platformOrigin)
         installExecutionTools(agent, grant, runtime)
+        installOfficeTool(agent, grant, runtime)
         installPersonalMcpTool(agent, grant, runtime)
         installStdioMcpTool(agent, grant, runtime)
         installSshExecuteTool(agent, grant, runtime, this.config.platformOrigin)

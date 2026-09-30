@@ -129,6 +129,7 @@ for (const name of ['host', ...(multiHost ? ['host-b'] : []), 'platform',
       sshRunnerIngressCidrs: JSON.stringify(ssh.ingressCidrs) } : {}),
     ...(sandbox ? { workspaceRoot: sandbox.workspaceRoot, sandboxKubeconfigFile: sandbox.kubeconfigFile,
       sandboxNamespace: sandbox.namespace, sandboxImage: sandbox.image, sandboxLocalRoot: sandbox.localRoot,
+      skillLibraryRoot: sandbox.localRoot,
       sandboxNodeRoot: sandbox.nodeRoot, ...(sandbox.idleMs ? { sandboxIdleMs: sandbox.idleMs } : {}) } : {}) }
   const selected = bundleName === 'host' ? ['web-server', 'power-evolve-host', 'power-evolve-runtime']
     : bundleName === 'device' ? ['web-server', 'power-evolve-device'] : ['web-server', 'power-evolve-platform']

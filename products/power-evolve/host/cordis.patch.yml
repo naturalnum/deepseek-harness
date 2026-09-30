@@ -16,6 +16,10 @@
       name: '@deepseek-ai/dsh-tools'
     - id: agent
       name: '@deepseek-ai/dsh-agent'
+    - id: skill
+      name: '@deepseek-ai/dsh-skill'
+    - id: tool-skill
+      name: '@deepseek-ai/dsh-tool-skill'
     - id: typert
       name: '@deepseek-ai/dsh-typert-registry'
     - id: api-gateway

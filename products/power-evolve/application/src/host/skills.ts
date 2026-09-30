@@ -2,7 +2,8 @@
 import { createHash } from 'node:crypto'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { isSkillName, type SkillCandidate, type SkillDefinition, type SkillResourceBase } from '@deepseek-ai/dsh-skill'
-import { skillSnapshot, type Grant } from '../contracts.ts'
+import { defineTool } from '@deepseek-ai/dsh-tools'
+import { runtimeSkillSnapshot, skillResourceView, type Grant } from '../contracts.ts'
 import type RuntimeScope from './scope.ts'
 
 type Selection = Grant['selection'][number]
@@ -27,10 +28,10 @@ export function selectedSkillAliases(selection: readonly Selection[]): ReadonlyM
   return aliases
 }
 
-function resourceBase(item: Selection): SkillResourceBase {
+function resourceBase(item: Selection, runtimePath = `/opt/power-evolve/skills/sha256/${item.packageDigest}/skill`): SkillResourceBase {
   return item.kind === 'package'
-    ? { kind: 'opaque', description: `Package files exist only in the authorized cloud Sandbox at /opt/power-evolve/skills/sha256/${item.packageDigest}/skill. This is not a Host filesystem path; read resources through cloud execution only.` }
-    : { kind: 'opaque', description: 'This text skill has no local Host filesystem resources.' }
+    ? { kind: 'opaque', description: `Read referenced text or list files with skill_resource; this does not start a Sandbox. To execute code, use the authorized cloud Sandbox path ${runtimePath}. This is not a Host filesystem path.` }
+    : { kind: 'opaque', description: 'Read SKILL.md with skill_resource. This text skill has no executable package files.' }
 }
 
 /** Register one grant's immutable catalog in this Agent's native skill layer. */
@@ -44,6 +45,33 @@ export function installSelectedSkills(agent: Agent, grant: Grant, runtime: Runti
   const aliases = selectedSkillAliases(selection)
   const selected = new Map(selection.map(item => [item.skillId, item] as const))
   const token = grant.token
+  if (selection.length) agent.ctx.effect(() => agent.ctx.tools.register(defineTool({
+    name: 'skill_resource',
+    description: 'Read a selected skill reference or script as text, or list its packaged files. Does not execute code or start a Sandbox. Paths are relative to the skill package; omit path to list files.',
+    parameters: {
+      name: { type: 'string', required: true, description: 'Exact skill name from the available skills catalog.' },
+      path: { type: 'string', description: 'Relative file path from this skill\'s manifest; omit to list files.' },
+    },
+    output: { schema: { type: 'object', additionalProperties: false,
+      properties: { result: { type: 'string', required: true } } },
+      render: (_args, value) => [{ type: 'text', text: value.result }] },
+    async execute(args, exec) {
+      exec.signal.throwIfAborted()
+      const item = selection.find(value => aliases.get(value.skillId) === args.name)
+      if (!item) throw new Error('Skill is not selected by this operation')
+      const value = skillResourceView.parse(await runtime.call('/runtime/skills/resource', token,
+        { skillId: item.skillId, ...(args.path === undefined ? {} : { path: args.path }) }))
+      exec.signal.throwIfAborted()
+      if (value.kind === 'text' && (value.path !== args.path
+        || createHash('sha256').update(value.text).digest('hex') !== value.sha256)) {
+        throw new Error('Selected Skill resource differs from its verified bytes')
+      }
+      return { result: JSON.stringify(value) }
+    },
+    presentCall(args) {
+      return { card: 'generic', title: `Read skill resource ${args.name}`, kind: 'read', rawInput: args.path ?? args.name }
+    },
+  })))
   const skills = agent.ctx.get('skills')
   if (!skills) throw new Error('Native Skill registry is unavailable')
   agent.ctx.effect(() => skills.registerProvider(control => ({
@@ -66,7 +94,7 @@ export function installSelectedSkills(agent: Agent, grant: Grant, runtime: Runti
       options.signal?.throwIfAborted()
       const item = selected.get(String(candidate.locator))
       if (!item || aliases.get(item.skillId) !== candidate.name) return undefined
-      const body = skillSnapshot.parse(await runtime.call('/runtime/skills/read', token,
+      const body = runtimeSkillSnapshot.parse(await runtime.call('/runtime/skills/read', token,
         { skillId: item.skillId }))
       control.signal.throwIfAborted()
       options.signal?.throwIfAborted()
@@ -77,7 +105,17 @@ export function installSelectedSkills(agent: Agent, grant: Grant, runtime: Runti
         || createHash('sha256').update(body.instructions).digest('hex') !== item.digest) {
         throw new Error('Selected Skill snapshot differs from the accepted operation')
       }
-      return { ...candidate, content: body.instructions }
+      let resources = resourceBase(item)
+      if (body.runtimePath !== undefined && body.runtimePath !== null) {
+        const original = `/opt/power-evolve/skills/sha256/${item.packageDigest}/skill`
+        const suite = /^\/opt\/power-evolve\/skills\/report-suites\/[a-f0-9]{64}\/(report-workflow-orchestrator|power-grid-technical-report-writer|report-reviewer|tech-report-writer)$/u.exec(body.runtimePath)
+        if (item.kind !== 'package' || (body.runtimePath !== original
+          && (!body.suiteAvailable || suite?.[1] !== item.name))) {
+          throw new Error('Selected Skill runtime path differs from its package')
+        }
+        resources = resourceBase(item, body.runtimePath)
+      }
+      return { ...candidate, content: body.instructions, resourceBase: resources }
     },
   })))
 }

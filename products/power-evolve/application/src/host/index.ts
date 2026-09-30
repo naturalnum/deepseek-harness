@@ -12,7 +12,7 @@ import type {} from '@deepseek-ai/dsh-typert-registry'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import { TypertRemoteService, Remote, type PeerScope, type PeerId, type InvocationDescriptor } from '@deepseek-ai/dsh-typert-protocol'
-import { createRequest, sessionFilesListRequest, sessionFileReadRequest, sessionFilePutRequest, listRequest, pageRequest, promptRequest, settingsUpdateRequest, skillInstallRequest, skillRequest, skillToggleRequest, sshCreateTicketRequest, sshToggleRequest, sshCheckRequest, sshCallRefRequest, sshCheckView, sshExecuteRefRequest, sshExecuteView, PlatformError } from '../contracts.ts'
+import { createRequest, sessionFilesListRequest, sessionFileReadRequest, sessionFilePutRequest, listRequest, pageRequest, promptRequest, settingsUpdateRequest, builtinSkillInstallRequest, skillInstallRequest, skillRequest, skillToggleRequest, sshCreateTicketRequest, sshToggleRequest, sshCheckRequest, sshCallRefRequest, sshCheckView, sshExecuteRefRequest, sshExecuteView, PlatformError } from '../contracts.ts'
 import { readJson, sendFailure, sendJson, writeLine } from '../http.ts'
 import { serveNativeUi, serveUi } from '../ui.ts'
 import { BrowserAgentAuth } from './browser-auth.ts'
@@ -23,6 +23,7 @@ const requests = { me: z.object({}).strict(), logout: z.object({}).strict(), mod
   create: createRequest, list: listRequest, prompt: promptRequest, page: pageRequest, follow: pageRequest,
   filesList: sessionFilesListRequest, filesRead: sessionFileReadRequest, filesPut: sessionFilePutRequest,
   skillsList: z.object({}).strict(), skillsRead: skillRequest,
+  skillsCatalog: z.object({}).strict(), skillsInstallBuiltin: builtinSkillInstallRequest,
   skillsInstall: skillInstallRequest, skillsToggle: skillToggleRequest,
   skillsUploadTicket: z.object({ requestId: z.uuid(), sizeBytes: z.number().int().min(1).max(1024 * 1024),
     sha256: z.string().regex(/^[0-9a-f]{64}$/u) }).strict(),
@@ -57,6 +58,7 @@ const endpoint = { me: '/identity/me', logout: '/identity/logout', modelsList: '
   create: '/sessions/create', list: '/sessions/list', prompt: '/sessions/prompt', page: '/sessions/page',
   filesList: '/files/session/list', filesRead: '/files/session/read', filesPut: '/files/session/put',
   skillsList: '/skills/list', skillsRead: '/skills/read',
+  skillsCatalog: '/skills/catalog', skillsInstallBuiltin: '/skills/install-builtin',
   skillsInstall: '/skills/install', skillsToggle: '/skills/toggle',
   skillsUploadTicket: '/skills/upload-ticket', skillsRevoke: '/skills/revoke', actionsList: '/connectors/actions',
   pluginsList: '/plugins/list', pluginsNotesSetEnabled: '/plugins/notes/set-enabled',
@@ -100,6 +102,8 @@ class ProductRemote extends TypertRemoteService {
   @Remote filesList(request: z.infer<typeof sessionFilesListRequest>) { return this.call('filesList', request) }
   @Remote filesRead(request: z.infer<typeof sessionFileReadRequest>) { return this.call('filesRead', request) }
   @Remote filesPut(request: z.infer<typeof sessionFilePutRequest>) { return this.call('filesPut', request) }
+  @Remote skillsCatalog(request: z.infer<typeof requests.skillsCatalog>) { return this.call('skillsCatalog', request) }
+  @Remote skillsInstallBuiltin(request: z.infer<typeof builtinSkillInstallRequest>) { return this.call('skillsInstallBuiltin', request) }
   @Remote skillsList(request: z.infer<typeof requests.skillsList>) { return this.call('skillsList', request) }
   @Remote skillsRead(request: z.infer<typeof skillRequest>) { return this.call('skillsRead', request) }
   @Remote skillsInstall(request: z.infer<typeof skillInstallRequest>) { return this.call('skillsInstall', request) }

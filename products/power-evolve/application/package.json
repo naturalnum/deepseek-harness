@@ -6,6 +6,7 @@
   "files": [
     "lib",
     "src/platform/safe-posix.py",
+    "assets/builtin-skills/generated",
     "web",
     "README.md",
     "README.zh.md"
@@ -51,6 +52,7 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/dsh-tool-skill": "workspace:*",
     "@types/js-yaml": "^4.0.9",
     "@types/pg": "^8.15.5",
     "@types/unzipper": "^0.10.11"

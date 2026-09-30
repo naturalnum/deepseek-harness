@@ -1,6 +1,6 @@
 # 沙盒文档工具链
 
-[English](README.md)
+[English](README.md) | 中文
 
 沙盒镜像保留现有 HTTP runner。可信进程以 root 启动，使 `runner.mjs` 能以 UID/GID 1000 运行用户命令。部署时 `/workspace`、`/home/agent`、`/tmp` 是可写挂载，镜像根文件系统只读。工具链和 OfficeCLI 位于镜像内；Platform 另行挂载用户的包技能。
 

@@ -103,6 +103,8 @@ test('shared host: isolated conversations, files, skills and approved remote act
   await new Promise(resolve => connectorTarget.listen(0, '127.0.0.1', resolve))
   const connectorUrl = `http://127.0.0.1:${connectorTarget.address().port}`
   let hold = Promise.withResolvers(), held = Promise.withResolvers()
+  let sawHold = false
+  t.signal.addEventListener('abort', () => { hold.resolve(); held.resolve() }, { once: true })
   model = createServer(async (req, res) => {
     try {
       assert.equal(req.headers['x-api-key'], providerKey)
@@ -115,7 +117,7 @@ test('shared host: isolated conversations, files, skills and approved remote act
         if (!outcome) throw new Error('SSH continuation lacked its user message')
         prompt = outcome.content.filter(block => block.type === 'text').map(block => block.text).join('')
       }
-      if (prompt === 'HOLD') { held.resolve(); await hold.promise }
+      if (prompt === 'HOLD') { sawHold = true; held.resolve(); await hold.promise }
       const toolName = prompt.startsWith('TOOL_APPEND:') ? 'trial_notes_append' : prompt === 'TOOL_LIST' ? 'trial_notes_list' : null
       const text = prompt === recorded.input ? recorded.output : `reply:${prompt}`
       res.writeHead(200, { 'content-type': 'text/event-stream' })
@@ -160,6 +162,7 @@ test('shared host: isolated conversations, files, skills and approved remote act
       workspaceRoot: join(temporary, 'workspaces'), artifactRoot: join(temporary, 'artifacts'),
       sandboxKubeconfigFile: '', sandboxKeyFile: '', sandboxNamespace: '', sandboxImage: '',
       sandboxLocalRoot: join(temporary, 'sandbox-local'), sandboxNodeRoot: '',
+      skillLibraryRoot: join(temporary, 'sandbox-local'), preinstalledSkills: [],
     }))
     else patch.push(update('power-evolve-runtime', { platformUrl, workerTokenFile: join(temporary, 'worker-token') }), update('power-evolve-host', { platformOrigin: platformUrl, readyFile, renewMs: 500, operationTimeoutMs: 20000, pollMs: 50, maxRequestBytes: 3145728 }))
     await writeFile(join(profile, 'cordis.patch.yml'), yaml.dump(patch))
@@ -665,13 +668,13 @@ test('shared host: isolated conversations, files, skills and approved remote act
     const aliceSkillRoot=join(temporary,'workspaces','extensions')
     const aliceUser=(await pool.query("SELECT id FROM pe_users WHERE username='alice'")).rows[0].id
     assert((await readFile(join(aliceSkillRoot,aliceUser,aliceSkill.skillId+'.md'),'utf8')).includes(marker))
-    await send(0,alice,'ALICE_SKILL_Q'); await send(1,bob,'BOB_SKILL_Q')
+    await send(0,alice,`/pe-user-skill-${aliceSkill.skillId} ALICE_SKILL_Q`); await send(1,bob,'BOB_SKILL_Q')
     await Promise.all([finished(0,alice),finished(1,bob)])
     const aliceCall=calls.find(call=>JSON.stringify(call).includes('ALICE_SKILL_Q'))
     const bobCall=calls.find(call=>JSON.stringify(call).includes('BOB_SKILL_Q'))
     assert(JSON.stringify(aliceCall).includes(marker));assert(!JSON.stringify(bobCall).includes(marker))
     await stop(host.process)
-    const acceptedResponse=await post(`${platform.url}/sessions/prompt`,tokens[0],{sessionId:alice,requestId:randomUUID(),text:'SELECTED_BEFORE_TOGGLE'})
+    const acceptedResponse=await post(`${platform.url}/sessions/prompt`,tokens[0],{sessionId:alice,requestId:randomUUID(),text:`/pe-user-skill-${aliceSkill.skillId} SELECTED_BEFORE_TOGGLE`})
     assert.equal(acceptedResponse.status,200)
     const queued=await acceptedResponse.json()
     assert.equal(queued.accepted,true)
@@ -688,9 +691,10 @@ test('shared host: isolated conversations, files, skills and approved remote act
     assert(JSON.stringify(selectedCall).includes(marker))
     await send(0,alice,'AFTER_TOGGLE'); await finished(0,alice)
     const nextCall=calls.find(call=>JSON.stringify(call).includes('AFTER_TOGGLE'))
-    const latestSystem=nextCall.messages.filter(message=>message.role==='system').at(-1)
-    assert(latestSystem)
-    assert(!JSON.stringify(latestSystem).includes(marker))
+    assert(!JSON.stringify(nextCall.system ?? []).includes(marker))
+    const disabledHistory=await page(0,alice)
+    const latestCatalog=disabledHistory.events.findLast(event=>event.type==='user/message' && event.data.source.kind==='skill-catalog')
+    assert.deepEqual(latestCatalog.data.source.entries,[])
   })
   await t.test('accepted before execution survives SIGKILL and completed history resumes', async () => {
     const id = await create(0)
@@ -715,7 +719,7 @@ test('shared host: isolated conversations, files, skills and approved remote act
   await t.test('consumed input is not blindly replayed after interrupted inference', async () => {
     const id=await create(0)
     await send(0,id,'HOLD')
-    await held.promise
+    await eventually(() => sawHold, 'model received HOLD')
     await stop(host.process,'SIGKILL')
     hold.resolve()
     await pool.query("UPDATE pe_sessions SET lease_until=now()-interval '1 second' WHERE id=$1",[id])
@@ -877,7 +881,7 @@ test('shared host: isolated conversations, files, skills and approved remote act
       const page = await request('page', { sessionId, after: -1, limit: 200 })
       return page.operations.length === 2 && page.operations.every(operation => operation.state === 'completed') && page
     }, 'conversation on second host')
-    assert.deepEqual(recovered.events.filter(event => event.type === 'user/message')
+    assert.deepEqual(recovered.events.filter(event => event.type === 'user/message' && event.data.source.kind === 'user')
       .map(event => event.data.content[0].text), ['before-host-loss', 'after-host-loss'])
     host = await start('host', platform.url, 'host', hostPort)
     await eventually(async () => (await health()).backends.every(backend => backend.healthy), 'first host rejoined')

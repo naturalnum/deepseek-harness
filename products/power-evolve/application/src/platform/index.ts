@@ -10,7 +10,7 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 import schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
 import { Pool } from 'pg'
-import { createRequest, filesListRequest, fileReadRequest, filePutRequest, sessionFilesListRequest, sessionFileReadRequest, sessionFilePutRequest, listRequest, loginRequest, modelsListRequest, pageRequest, promptRequest, sessionId, sessionRequest, settingsUpdateRequest, skillInstallRequest, skillRequest, skillToggleRequest, skillUploadTicketRequest, sshCreateTicketRequest, sshToggleRequest, sshCheckRequest, sshCallRefRequest, sshExecuteProposeRequest, sshExecuteRefRequest, settings, workspaceCreateRequest, PlatformError } from '../contracts.ts'
+import { createRequest, filesListRequest, fileReadRequest, filePutRequest, sessionFilesListRequest, sessionFileReadRequest, sessionFilePutRequest, listRequest, loginRequest, modelsListRequest, pageRequest, promptRequest, sessionId, sessionRequest, settingsUpdateRequest, builtinSkillInstallRequest, skillInstallRequest, skillRequest, skillResourceRequest, skillToggleRequest, skillUploadTicketRequest, sshCreateTicketRequest, sshToggleRequest, sshCheckRequest, sshCallRefRequest, sshExecuteProposeRequest, sshExecuteRefRequest, settings, workspaceCreateRequest, PlatformError } from '../contracts.ts'
 import { bearer, readJson, sendFailure, sendJson } from '../http.ts'
 import { initializeDatabase } from './database.ts'
 import { hashPassword, IdentityService } from './identity.ts'
@@ -23,6 +23,7 @@ import { NativeFileRead, nativeFileRequest, nativeFileTextRequest, nativeFileByt
 import { FileService } from './files.ts'
 import { ArtifactService } from './artifacts.ts'
 import { SkillService } from './skills.ts'
+import { readRuntimeSkill, readRuntimeSkillResource } from './runtime-skills.ts'
 import { ConnectorService } from './connectors.ts'
 import { PluginService } from './plugins.ts'
 import { PersonalMcpService } from './mcp.ts'
@@ -71,6 +72,9 @@ export const Config = schema.object({
   leaseMs: schema.number().min(1000).required(), tokenLifetimeMs: schema.number().min(1000).required(),
   maxPendingPerUser: schema.number().step(1).min(1).required(), maxActivePerUser: schema.number().step(1).min(1).required(),
   maxWorkspacesPerUser: schema.number().step(1).min(1).default(16),
+  maxSkillsPerUser: schema.number().step(1).min(1).max(256).default(64),
+  skillLibraryRoot: schema.string().default(''),
+  preinstalledSkills: schema.array(schema.string()).default([]),
   maxHistoryBytes: schema.number().step(1).min(1024).required(), maxHistoryEvents: schema.number().step(1).min(1).required(),
   maxEventBytes: schema.number().step(1).min(1024).required(), maxRequestBytes: schema.number().step(1).min(1024).required(),
   modelTimeoutMs: schema.number().min(1000).required(), maxModelResponseBytes: schema.number().min(1024).required(),
@@ -131,7 +135,12 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   }
   const artifacts = new ArtifactService(pool, files, config.artifactRoot)
   await artifacts.init()
-  const skills = new SkillService(pool, config.workspaceRoot, config.sandboxLocalRoot)
+  const skillLibraryRoot = config.skillLibraryRoot || config.sandboxLocalRoot
+  if (executionEnabled && resolve(skillLibraryRoot) !== resolve(config.sandboxLocalRoot)) {
+    throw new Error('Skill library and Sandbox roots differ')
+  }
+  if (config.preinstalledSkills.length && !skillLibraryRoot) throw new Error('Missing Skill library root')
+  const skills = new SkillService(pool, config.workspaceRoot, skillLibraryRoot, config.maxSkillsPerUser)
   await skills.init()
   const users = seedUsers.parse(JSON.parse(seeds))
   for (const user of users) {
@@ -402,19 +411,21 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       if (expected.length !== supplied.length || !timingSafeEqual(expected, supplied)) throw new PlatformError(401, 'unauthorized_worker')
       const input = z.object({ workerId: z.uuid() }).strict().parse(await readJson(req, 4096))
       const claimed = await tasks.claim(input.workerId)
-      if (!claimed) { sendJson(res, null); return }
-      try { sendJson(res, { ...claimed, skills: await skills.snapshot(claimed.userId, claimed.selection) }) }
-      catch (_unavailableSkill) {
-        await tasks.finish(claimed.token, 'failed', 'skill_unavailable')
-        sendJson(res, null)
-      }
-      return
+      sendJson(res, claimed); return
     }
     if (path.startsWith('/runtime/')) {
       const input = await readJson(req, config.maxRequestBytes)
       switch (path) {
         case '/runtime/snapshot': z.object({}).strict().parse(input); sendJson(res, await events.runtimeSnapshot(token)); return
         case '/runtime/append': sendJson(res, await events.append(token, z.object({ events: z.array(z.json()).max(256) }).strict().parse(input).events)); return
+        case '/runtime/skills/resource': {
+          const value = skillResourceRequest.parse(input)
+          sendJson(res, await readRuntimeSkillResource(tasks, skills, token, value.skillId, value.path)); return
+        }
+        case '/runtime/skills/read': {
+          const value = skillRequest.parse(input)
+          sendJson(res, await readRuntimeSkill(tasks, skills, token, value.skillId)); return
+        }
         case '/runtime/renew': z.object({}).strict().parse(input); sendJson(res, await tasks.renew(token)); return
         case '/runtime/finish': {
           const result = z.object({ outcome: z.enum(['completed', 'failed']), errorCode: z.string().max(80).nullable() }).strict().parse(input)
@@ -562,6 +573,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       }
       case '/sessions/create': {
         const value = createRequest.parse(input)
+        await skills.ensurePreinstalled(user, config.preinstalledSkills)
         sendJson(res, await tasks.create(user, value.requestId, value.workspaceId)); return
       }
       case '/sessions/list': {
@@ -570,6 +582,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       }
       case '/sessions/prompt': {
         const { sessionId, requestId, text, target } = promptRequest.parse(input)
+        await skills.ensurePreinstalled(user, config.preinstalledSkills)
         sendJson(res, await tasks.accept(user, sessionId, requestId, text, target)); return
       }
       case '/sessions/cancel': {
@@ -586,6 +599,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       }
       case '/native/sessions/adopt': {
         const value = z.object({ sessionId }).strict().parse(input)
+        await skills.ensurePreinstalled(user, config.preinstalledSkills)
         sendJson(res, await nativeSessions.adoptBlank(user, value.sessionId)); return
       }
       case '/native/workspace/baseline': {
@@ -647,7 +661,16 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         const value = filePutRequest.parse(input)
         sendJson(res, await files.put(user, value.requestId, value.path, value.baseRevision, value.data)); return
       }
-      case '/skills/list': z.object({}).strict().parse(input); sendJson(res, await skills.list(user)); return
+      case '/skills/list': {
+        z.object({}).strict().parse(input)
+        await skills.ensurePreinstalled(user, config.preinstalledSkills)
+        sendJson(res, await skills.list(user)); return
+      }
+      case '/skills/catalog': z.object({}).strict().parse(input); sendJson(res, await skills.catalog(user)); return
+      case '/skills/install-builtin': {
+        const value = builtinSkillInstallRequest.parse(input)
+        sendJson(res, await skills.installBuiltin(user, value.requestId, value.catalogId, value.version)); return
+      }
       case '/skills/read': sendJson(res, await skills.read(user, skillRequest.parse(input).skillId)); return
       case '/skills/install': {
         const value = skillInstallRequest.parse(input)

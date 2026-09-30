@@ -10,8 +10,20 @@ import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { createScope, scopeOf } from '@deepseek-ai/dsh-scope'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
-import * as nativeToolSkill from '../../../../packages/skill/tool-skill/lib/index.js'
+import * as nativeToolSkill from '@deepseek-ai/dsh-tool-skill'
 import { installSelectedSkills, selectedSkillAliases } from '../lib/host/skills.js'
+
+async function testContext() {
+  const root = new Context()
+  await root.plugin(SystemPrompt)
+  await root.plugin(ToolRuntime)
+  await root.plugin(AgentRegistry)
+  await root.plugin(SkillRegistry)
+  await root.plugin(nativeToolSkill)
+  let selected
+  await root.inject(['tools', 'skills', 'systemPrompt', 'agents'], ctx => { selected = ctx })
+  return selected
+}
 
 function selection(name, instructions, fields = {}) {
   return { skillId: randomUUID(), name, description: `Description for ${name}`,
@@ -32,8 +44,7 @@ function mount(ctx, scopeName, token, items, runtime) {
 }
 
 test('selected skill catalogs are Agent-scoped metadata; only get reads the selected body', async () => {
-  const ctx = new Context()
-  await ctx.plugin(SkillRegistry)
+  const ctx = await testContext()
   const aliceSkill = selection('word', 'Alice body')
   const bobSkill = selection('中文 技能', 'Bob body')
   const calls = []
@@ -69,8 +80,7 @@ test('selected skill catalogs are Agent-scoped metadata; only get reads the sele
 })
 
 test('package path is only a cloud resource hint and retained package is read through Platform', async () => {
-  const ctx = new Context()
-  await ctx.plugin(SkillRegistry)
+  const ctx = await testContext()
   const packageDigest = 'a'.repeat(64)
   const packageSkill = selection('build-assets', 'Package body', { kind: 'package', version: '1.0.0',
     packageDigest, manifestDigest: 'b'.repeat(64) })
@@ -86,7 +96,7 @@ test('package path is only a cloud resource hint and retained package is read th
   assert.match(listed[0].resourceBase.description, new RegExp(`/opt/power-evolve/skills/sha256/${packageDigest}/skill`))
   assert.equal(calls.length, 0)
   const loaded = await ctx.skills.get('build-assets', owner.view)
-  assert.match(renderSkillContent(loaded), /only in the authorized cloud Sandbox/)
+  assert.match(renderSkillContent(loaded), /authorized cloud Sandbox path/)
   assert.equal(calls.length, 1)
   await owner.scope.dispose()
 })
@@ -106,8 +116,7 @@ test('native aliases preserve unique /word names and prevent legacy or duplicate
 })
 
 test('mismatched snapshots and revoked or expired grants fail closed', async () => {
-  const ctx = new Context()
-  await ctx.plugin(SkillRegistry)
+  const ctx = await testContext()
   const item = selection('private-skill', 'Original body')
   let result = snapshot(item, 'Original body')
   const runtime = { async call(_path, token) {
@@ -136,16 +145,13 @@ test('mismatched snapshots and revoked or expired grants fail closed', async () 
 })
 
 test('native skill tool publishes a durable metadata-only catalog and renders on-demand body', async () => {
-  const ctx = new Context()
-  await ctx.plugin(SystemPrompt)
-  await ctx.plugin(ToolRuntime)
-  await ctx.plugin(AgentRegistry)
-  await ctx.plugin(SkillRegistry)
-  await ctx.plugin(nativeToolSkill)
+  const ctx = await testContext()
   const item = selection('word', 'Read this only on demand')
   const calls = []
   const runtime = { async call(path, token, body) {
     calls.push({ path, token, body })
+    if (path === '/runtime/skills/resource') return { kind: 'text', path: 'SKILL.md',
+      text: 'Read this only on demand', sha256: item.digest }
     return snapshot(item, 'Read this only on demand')
   } }
   const id = SessionId(randomUUID())
@@ -185,5 +191,35 @@ test('native skill tool publishes a durable metadata-only catalog and renders on
   assert.deepEqual(invocation.data.source, { kind: 'skill-invocation', name: 'word', form: 'instructions' })
   assert.match(invocation.data.content[0].text, /Read this only on demand/)
   assert.equal(calls.length, 2)
+  const resource = await ctx.tools.execute({ signal, callId: ToolCallId('resource-call-1'),
+    name: 'skill_resource', arguments: { name: 'word', path: 'SKILL.md' }, agent })
+  assert.equal(resource.isError, false)
+  assert.equal(JSON.parse(resource.content[0].text).text, 'Read this only on demand')
+  assert.deepEqual(calls.at(-1), { path: '/runtime/skills/resource', token: 'native-token',
+    body: { skillId: item.skillId, path: 'SKILL.md' } })
+  const foreign = await ctx.tools.execute({ signal, callId: ToolCallId('resource-call-2'),
+    name: 'skill_resource', arguments: { name: 'unselected-skill', path: 'SKILL.md' }, agent })
+  assert.equal(foreign.isError, true)
+  assert.equal(calls.length, 3)
   await scope.dispose()
+  assert.equal(ctx.tools.get('skill_resource', agent), undefined)
+})
+
+test('report suite paths must be the exact named package under an immutable suite', async () => {
+  const ctx = await testContext()
+  const item = selection('report-reviewer', 'Review report', { kind: 'package', version: '1.1.0',
+    packageDigest: 'a'.repeat(64), manifestDigest: 'b'.repeat(64) })
+  let runtimePath = `/opt/power-evolve/skills/report-suites/${'c'.repeat(64)}/report-reviewer`
+  let suiteAvailable = true
+  const runtime = { async call() { return { ...snapshot(item, 'Review report'), runtimePath, suiteAvailable } } }
+  const owner = mount(ctx, 'report-owner', 'report-token', [item], runtime)
+  assert.match(renderSkillContent(await ctx.skills.get(item.name, owner.view)), /report-suites\/c{64}\/report-reviewer/)
+  suiteAvailable = false
+  await assert.rejects(ctx.skills.get(item.name, owner.view), /runtime path/)
+  suiteAvailable = true
+  for (runtimePath of ['/tmp/host-file', `/opt/power-evolve/skills/report-suites/${'c'.repeat(64)}/tech-report-writer`,
+    `/opt/power-evolve/skills/report-suites/${'c'.repeat(64)}/../report-reviewer`]) {
+    await assert.rejects(ctx.skills.get(item.name, owner.view), /runtime path/)
+  }
+  await owner.scope.dispose()
 })
