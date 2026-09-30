@@ -74,21 +74,6 @@ export function SkillsPage({ client, t, trySkill }: SkillsPageProps): ReactNode 
   const busy = useRef(false)
   const alive = useRef(false)
 
-  const reload = useCallback((): void => {
-    listRequest.current?.abort()
-    const controller = new AbortController()
-    listRequest.current = controller
-    setLoading(true); setLoadError(undefined)
-    void client.list(controller.signal).then(value => {
-      if (!controller.signal.aborted) setItems(value)
-    }).catch((cause: unknown) => {
-      if (!controller.signal.aborted) setLoadError(cause instanceof SkillHttpError && cause.status === 401
-        ? t('sessionExpired') : t('loadFailed'))
-    }).finally(() => {
-      if (!controller.signal.aborted) setLoading(false)
-    })
-  }, [client, t])
-
   const reloadCatalog = useCallback((): void => {
     catalogRequest.current?.abort()
     const controller = new AbortController()
@@ -104,6 +89,27 @@ export function SkillsPage({ client, t, trySkill }: SkillsPageProps): ReactNode 
     })
   }, [client, t])
 
+  /** Listing may lazily preinstall built-ins, so read the catalog only after it settles. */
+  const reload = useCallback((): void => {
+    listRequest.current?.abort(); catalogRequest.current?.abort()
+    const controller = new AbortController()
+    listRequest.current = controller
+    setLoading(true); setLoadError(undefined)
+    setCatalogLoading(true); setCatalogError(undefined)
+    void client.list(controller.signal).then(value => {
+      if (controller.signal.aborted) return
+      setItems(value)
+      reloadCatalog()
+    }).catch((cause: unknown) => {
+      if (controller.signal.aborted) return
+      setLoadError(cause instanceof SkillHttpError && cause.status === 401
+        ? t('sessionExpired') : t('loadFailed'))
+      setCatalogLoading(false)
+    }).finally(() => {
+      if (!controller.signal.aborted) setLoading(false)
+    })
+  }, [client, reloadCatalog, t])
+
   useEffect(() => {
     if (currentClient.current !== client) {
       currentClient.current = client
@@ -113,16 +119,16 @@ export function SkillsPage({ client, t, trySkill }: SkillsPageProps): ReactNode 
       setInstallOpen(false); setImportOpen(false); setMutationError(undefined); setNotice(undefined)
     }
     alive.current = true
-    reload(); reloadCatalog()
+    reload()
     return () => {
       alive.current = false
       listRequest.current?.abort(); catalogRequest.current?.abort(); mutationRequest.current?.abort()
     }
-  }, [client, reload, reloadCatalog])
+  }, [client, reload])
 
   const toggle = async (skillId: string, enabled: boolean): Promise<void> => {
     if (busy.current) return
-    busy.current = true; listRequest.current?.abort(); setLoading(false)
+    busy.current = true; listRequest.current?.abort(); setLoading(false); setCatalogLoading(false)
     setBusyId(skillId); setMutationError(undefined); setNotice(undefined)
     try {
       const updated = await client.toggle(skillId, enabled)
@@ -137,7 +143,7 @@ export function SkillsPage({ client, t, trySkill }: SkillsPageProps): ReactNode 
 
   const revoke = async (skillId: string): Promise<void> => {
     if (busy.current) return
-    busy.current = true; listRequest.current?.abort(); setLoading(false)
+    busy.current = true; listRequest.current?.abort(); setLoading(false); setCatalogLoading(false)
     setBusyId(skillId); setMutationError(undefined); setNotice(undefined)
     try {
       const updated = await client.revoke(skillId)
@@ -154,7 +160,7 @@ export function SkillsPage({ client, t, trySkill }: SkillsPageProps): ReactNode 
   const installed = (skill: PersonalSkill): void => {
     if (!alive.current || currentClient.current !== client) return
     listRequest.current?.abort()
-    setLoading(false); setLoadError(undefined)
+    setLoading(false); setCatalogLoading(false); setLoadError(undefined)
     setItems(current => [...current.filter(item => item.skillId !== skill.skillId), skill]
       .sort((left, right) => left.name.localeCompare(right.name)))
     setInstallOpen(false); setImportOpen(false); setNotice(t('installed'))
@@ -208,7 +214,7 @@ export function SkillsPage({ client, t, trySkill }: SkillsPageProps): ReactNode 
   const pageLoading = clientChanged || loading || (view === 'all' && catalogLoading)
   const pageError = clientChanged ? undefined : loadError ?? (view === 'all' ? catalogError : undefined)
   const visibleCount = view === 'all' ? visibleCatalog.length : visiblePersonal.length
-  const refresh = (): void => { reload(); if (view === 'all') reloadCatalog() }
+  const refresh = (): void => { reload() }
 
   return <main className="pext-root pext-catalog-page" data-power-evolve-skills-page>
     <header className="pext-catalog-header">

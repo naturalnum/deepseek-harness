@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from 'vitest'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import type { SkillsPageProps } from '../src/client/SkillsPage.tsx'
 import { SkillsPage } from '../src/client/SkillsPage.tsx'
 import type { BuiltinSkill, PersonalSkill, SkillPort } from '../src/client/skills-api.ts'
@@ -211,33 +211,67 @@ test('disabled catalog installation uses the personal state and can be enabled',
   await within(card).findByText('Enabled')
 })
 
-test('unmount aborts personal and catalog reads', async () => {
+test('catalog waits for the personal list to finish preinstalling', async () => {
+  const packaged: PersonalSkill = { ...item, name: 'word', kind: 'package', version: '1.0.0',
+    packageDigest: 'c'.repeat(64), manifestDigest: 'b'.repeat(64) }
+  let finishPreinstall!: () => void
+  let preinstalled = false
+  const list = vi.fn(() => new Promise<readonly PersonalSkill[]>(resolve => {
+    finishPreinstall = () => { preinstalled = true; resolve([packaged]) }
+  }))
+  const catalogCall = vi.fn(async () => [{ ...catalog[0]!, installedSkillId: preinstalled ? id : null }, ...catalog.slice(1)])
+  fixture(port({ list, catalog: catalogCall }))
+  fireEvent.click(screen.getByRole('tab', { name: 'All skills' }))
+  expect(catalogCall).not.toHaveBeenCalled()
+  await act(async () => { finishPreinstall() })
+  const card = (await screen.findByRole('button', { name: 'word' })).closest('article')!
+  expect(catalogCall).toHaveBeenCalledTimes(1)
+  expect(within(card).getByText('Enabled')).toBeTruthy()
+  expect(within(card).queryByRole('button', { name: 'Install built-in skill' })).toBeNull()
+})
+
+test('unmount aborts a pending personal read before starting the catalog', async () => {
   let listSignal: AbortSignal | undefined
-  let catalogSignal: AbortSignal | undefined
+  const catalogCall = vi.fn(async () => catalog)
   const client = port({
     list: (signal?: AbortSignal) => { listSignal = signal; return new Promise(() => {}) },
-    catalog: (signal?: AbortSignal) => { catalogSignal = signal; return new Promise(() => {}) },
+    catalog: catalogCall,
   })
   const page = fixture(client)
   expect(listSignal?.aborted).toBe(false)
-  expect(catalogSignal?.aborted).toBe(false)
+  expect(catalogCall).not.toHaveBeenCalled()
   page.unmount()
   expect(listSignal?.aborted).toBe(true)
+  expect(catalogCall).not.toHaveBeenCalled()
+})
+
+test('unmount aborts the catalog once the personal list has settled', async () => {
+  let catalogSignal: AbortSignal | undefined
+  const catalogCall = vi.fn((signal?: AbortSignal): Promise<readonly BuiltinSkill[]> => {
+    catalogSignal = signal; return new Promise(() => {})
+  })
+  const page = fixture(port({ catalog: catalogCall }))
+  await waitFor(() => expect(catalogCall).toHaveBeenCalledTimes(1))
+  expect(catalogSignal?.aborted).toBe(false)
+  page.unmount()
   expect(catalogSignal?.aborted).toBe(true)
 })
 
 test('changing the injected client aborts reads from the prior account', async () => {
   let oldList: AbortSignal | undefined
-  let oldCatalog: AbortSignal | undefined
+  let resolveOld!: (items: readonly PersonalSkill[]) => void
+  const oldCatalog = vi.fn(async () => catalog)
   const prior = port({
-    list: (signal?: AbortSignal) => { oldList = signal; return new Promise(() => {}) },
-    catalog: (signal?: AbortSignal) => { oldCatalog = signal; return new Promise(() => {}) },
+    list: (signal?: AbortSignal) => { oldList = signal; return new Promise<readonly PersonalSkill[]>(resolve => { resolveOld = resolve }) },
+    catalog: oldCatalog,
   })
   const next = port()
   const page = fixture(prior)
   page.rerender(<SkillsPage {...({ client: next, t, trySkill: vi.fn() } as SkillsPageProps)} />)
   expect(oldList?.aborted).toBe(true)
-  expect(oldCatalog?.aborted).toBe(true)
+  await act(async () => { resolveOld([item]) })
+  expect(oldCatalog).not.toHaveBeenCalled()
+  expect(screen.queryByRole('button', { name: 'Proofreading' })).toBeNull()
   await screen.findByText('No skills are installed for this account')
 })
 
@@ -249,4 +283,15 @@ test('changing accounts immediately hides the prior personal library', async () 
   page.rerender(<SkillsPage {...({ client: next, t, trySkill: vi.fn() } as SkillsPageProps)} />)
   expect(screen.queryByRole('button', { name: 'Proofreading' })).toBeNull()
   expect(screen.getByText('Loading skills…')).toBeTruthy()
+})
+
+test('changing accounts aborts a catalog read already in progress', async () => {
+  let priorCatalogSignal: AbortSignal | undefined
+  const priorCatalog = vi.fn((signal?: AbortSignal): Promise<readonly BuiltinSkill[]> => {
+    priorCatalogSignal = signal; return new Promise(() => {})
+  })
+  const page = fixture(port({ catalog: priorCatalog }))
+  await waitFor(() => expect(priorCatalog).toHaveBeenCalledTimes(1))
+  page.rerender(<SkillsPage {...({ client: port(), t, trySkill: vi.fn() } as SkillsPageProps)} />)
+  expect(priorCatalogSignal?.aborted).toBe(true)
 })
