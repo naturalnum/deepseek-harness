@@ -18,7 +18,8 @@ const budgets = { timeoutMs: 10_000, idleTimeoutMs: 5_000, maxRequestBytes: 65_5
 const tools = [
   { name: 'sum', description: '加总\u0000 literal \\u0000', inputSchema: { type: 'object',
     properties: { a: { type: 'number' }, b: { type: 'number' } }, required: ['a', 'b'] },
-  annotations: { readOnlyHint: true } },
+  annotations: { readOnlyHint: true, extension: { original: '\u0000' } },
+  extension: { original: '\u0000', nested: [{ message: '表😀', literal: '\\u0000' }] } },
   { name: 'echo', inputSchema: { type: 'object', properties: { message: { type: 'string' } }, required: ['message'] } },
 ]
 const deferred = () => {
@@ -71,8 +72,11 @@ test('remote MCP uses pinned TLS sockets and a one-use dispatch gate', { timeout
         lastEventId: request.headers['last-event-id'] })
       const json = value => { response.writeHead(200, { 'content-type': 'application/json' }); response.end(JSON.stringify(value)) }
       const modern = path?.startsWith('/modern')
-      const rpc = result => json({ jsonrpc: '2.0', id: message.id,
-        result: modern ? { ...result, resultType: 'complete', ttlMs: 0, cacheScope: 'private' } : result })
+      const rpc = result => {
+        const payload = modern ? { ...result, resultType: 'complete', ttlMs: 0, cacheScope: 'private' } : result
+        if (path === '/modern-missing-list-cache' && message.method === 'tools/list') delete payload.ttlMs
+        json({ jsonrpc: '2.0', id: message.id, result: payload })
+      }
       if (request.method === 'GET') { response.writeHead(405).end(); return }
       if (request.method === 'DELETE') { sessions.delete(request.headers['mcp-session-id']); response.writeHead(200).end(); return }
       if (message.method === 'server/discover') {
@@ -95,7 +99,8 @@ test('remote MCP uses pinned TLS sockets and a one-use dispatch gate', { timeout
       }
       if (message.method === 'notifications/initialized') { response.writeHead(202).end(); return }
       if (message.method === 'tools/list') {
-        if (modern) rpc({ tools: [{ ...tools[0], inputSchema: { type: 'object',
+        if (path === '/invalid-list' || path === '/modern-invalid-list') rpc({ tools: [{ name: 'invalid', inputSchema: { type: 'string' } }] })
+        else if (modern) rpc({ tools: [{ ...tools[0], inputSchema: { type: 'object',
           properties: { a: { type: 'number', 'x-mcp-header': 'Authorization' }, b: { type: 'number' } } } }] })
         else if (path === '/zero') rpc({ tools: [] })
         else if (path === '/cycle') rpc({ tools: [], nextCursor: 'same' })
@@ -110,9 +115,12 @@ test('remote MCP uses pinned TLS sockets and a one-use dispatch gate', { timeout
       if (message.method !== 'tools/call') { response.writeHead(404).end(); return }
       const args = message.params.arguments
       const result = message.params.name === 'sum'
-        ? { content: [{ type: 'text', text: String(args.a + args.b) }], structuredContent: { sum: args.a + args.b } }
-        : { content: [{ type: 'text', text: args.message }, { type: 'resource_link', name: 'opaque',
+        ? { content: [{ type: 'text', text: String(args.a + args.b), extension: { original: '\u0000' } }],
+          structuredContent: { sum: args.a + args.b }, extension: { nested: ['\u0000', { message: '表😀' }] } }
+        : { content: [{ type: 'text', text: args.message, extension: { original: '\u0000' } }, { type: 'resource_link', name: 'opaque',
           uri: 'https://127.0.0.1:1/do-not-fetch' }], structuredContent: { message: args.message }, _meta: { raw: '\u0000' } }
+      if (path === '/invalid-call' || path === '/modern-invalid-call') { rpc({ content: [{ type: 'text', text: 42 }] }); return }
+      if (path === '/contentless-call') { rpc({ structuredContent: { value: 42 }, extension: { original: '\u0000' } }); return }
       if (path === '/drop') { request.socket.destroy(); return }
       if (path === '/half') {
         response.writeHead(200, { 'content-type': 'application/json', 'content-length': 1_000 })
@@ -183,6 +191,8 @@ test('remote MCP uses pinned TLS sockets and a one-use dispatch gate', { timeout
     } })
     assert.equal(gates, 1)
     assert.equal(sum.structuredContent.sum, 42)
+    assert.deepEqual(sum.extension, { nested: ['\u0000', { message: '表😀' }] })
+    assert.deepEqual(sum.content[0].extension, { original: '\u0000' })
     const message = '\u0000表😀 literal \\u0000'
     const echoed = await callMcp(target(), { name: 'echo', arguments: { message } },
       { ...options(), onBeforeDispatch: async () => {} })
@@ -190,6 +200,7 @@ test('remote MCP uses pinned TLS sockets and a one-use dispatch gate', { timeout
     assert.equal(echoed.structuredContent.message, message)
     assert.equal(echoed._meta.raw, '\u0000')
     assert.equal(echoed.content[1].uri, 'https://127.0.0.1:1/do-not-fetch')
+    assert.deepEqual(echoed.content[0].extension, { original: '\u0000' })
     assert(seen.every(item => item.sni === 'mcp-fixture.test'))
   })
   await t.test('none, Bearer and private custom headers use fresh principal-specific sessions', async () => {
@@ -249,10 +260,26 @@ test('remote MCP uses pinned TLS sockets and a one-use dispatch gate', { timeout
     assert.equal(catalog.tools.length, 1)
     assert.equal(catalog.tools[0].inputSchema.properties.a['x-mcp-header'], 'Authorization')
     assert.equal(catalog.ttlMs, 0)
-    assert.equal((await call('/modern')).structuredContent.sum, 42)
+    assert.deepEqual(catalog.tools[0].extension, tools[0].extension)
+    assert.deepEqual(catalog.tools[0].annotations.extension, tools[0].annotations.extension)
+    const result = await call('/modern')
+    assert.equal(result.structuredContent.sum, 42)
+    assert.deepEqual(result.extension, { nested: ['\u0000', { message: '表😀' }] })
+    assert.deepEqual(result.content[0].extension, { original: '\u0000' })
     await assert.rejects(call('/modern-header-error'), rejects('protocol_error', true))
     assert.equal(calls('/modern-header-error'), 1)
     assert.equal(seen.filter(item => item.path === '/modern-header-error' && item.rpc === 'tools/list').length, 1)
+  })
+  await t.test('raw preservation retains SDK validation, modern cache metadata requirements and legacy content defaults', async () => {
+    for (const path of ['/invalid-list', '/modern-invalid-list', '/modern-missing-list-cache']) {
+      await assert.rejects(discoverMcp(target(path), options()), rejects('protocol_error'))
+      assert.equal(calls(path), 0)
+    }
+    for (const path of ['/invalid-call', '/modern-invalid-call']) {
+      await assert.rejects(call(path), rejects('protocol_error', true))
+      assert.equal(calls(path), 1)
+    }
+    assert.deepEqual(await call('/contentless-call'), { content: [], structuredContent: { value: 42 }, extension: { original: '\u0000' } })
   })
   await t.test('pending permission abort stays uncertain and late success cannot send a request', async () => {
     const entered = deferred(), release = deferred(), controller = new AbortController()

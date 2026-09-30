@@ -1,5 +1,6 @@
 /** Generic remote MCP over SDK 2.0 and operator-controlled HTTP sockets; persistence stays with callers. */
-import { Client, StreamableHTTPClientTransport, type CallToolResult, type ListToolsResult } from '@modelcontextprotocol/client'
+import { Client, StreamableHTTPClientTransport, isSpecType, specTypeSchemas,
+  type CallToolResult, type ListToolsResult, type StandardSchemaV1 } from '@modelcontextprotocol/client'
 import { McpNetworkOperation, McpTransportError, McpDispatchRejected, validateMcpBudgets, validateMcpHeaders,
   type McpNetworkPolicy, type McpTransportBudgets } from './mcp-network.ts'
 
@@ -36,6 +37,23 @@ export interface McpToolCall {
   arguments?: Record<string, unknown>
 }
 
+// The public request schema runs after the SDK's era decode and modern wire validation.
+// Return the validated original object: SDK legacy parsers otherwise strip descriptor extensions.
+const rawDirectorySchema: StandardSchemaV1<unknown, ListToolsResult> = { '~standard': {
+  version: 1, vendor: 'power-evolve-mcp',
+  validate: value => isSpecType.ListToolsResult(value) ? { value }
+    : { issues: [{ message: 'Invalid MCP directory' }] },
+} }
+
+const rawCallSchema: StandardSchemaV1<unknown, CallToolResult> = { '~standard': {
+  version: 1, vendor: 'power-evolve-mcp',
+  async validate(value) {
+    const parsed = await specTypeSchemas.CallToolResult['~standard'].validate(value)
+    if (parsed.issues || !isSpecType.CallToolResult(value)) return { issues: [{ message: 'Invalid MCP tool result' }] }
+    return { value: { ...value, ...parsed.value, content: value.content ?? parsed.value.content } }
+  },
+} }
+
 async function directory(client: Client, operation: McpNetworkOperation): Promise<ListToolsResult> {
   if (!client.getServerCapabilities()?.tools) return { tools: [] }
   let catalog: ListToolsResult | undefined
@@ -44,7 +62,7 @@ async function directory(client: Client, operation: McpNetworkOperation): Promis
   for (let pageNumber = 0; pageNumber < operation.budgets.maxPages; pageNumber++) {
     operation.check()
     // Public request preserves raw tools; listTools() can silently filter modern header declarations.
-    const page = await client.request({ method: 'tools/list', ...(cursor === undefined ? {} : { params: { cursor } }) },
+    const page = await client.request({ method: 'tools/list', ...(cursor === undefined ? {} : { params: { cursor } }) }, rawDirectorySchema,
       { signal: operation.signal, timeout: operation.budgets.timeoutMs })
     for (const tool of page.tools) {
       if (names.has(tool.name)) throw new McpTransportError('invalid_catalog', false)
@@ -140,7 +158,7 @@ export async function callMcp(target: McpTransportTarget, call: McpToolCall,
     catalog = await directory(client, operation)
     if (!catalog.tools.some(tool => tool.name === frozen.name)) throw new McpTransportError('tool_not_found', false)
     // Client.callTool() has header-mismatch retries. request() uses the SDK codec without those retries.
-    return client.request({ method: 'tools/call', params: { ...frozen } },
+    return client.request({ method: 'tools/call', params: { ...frozen } }, rawCallSchema,
       { signal: operation.signal, timeout: operation.budgets.timeoutMs })
   })
 }
