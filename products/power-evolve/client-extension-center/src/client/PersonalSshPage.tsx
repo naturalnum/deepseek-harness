@@ -17,6 +17,7 @@ type Mutation = { readonly kind: 'create'; readonly input: SshCreateInput }
 const activeCheck = (state: SshCheckCall['state']): boolean => !['succeeded', 'failed', 'cancelled'].includes(state)
 
 /** Personal SSH management using the original write-only form and saved checks.
+ * Check results apply only to the saved revision submitted with the request.
  * @param props - public connections, browser operations, and native locale.
  * @returns personal SSH management and authentication check status.
  */
@@ -38,7 +39,7 @@ export function PersonalSshPage({ data, port, onChange, onReload, t }: {
   latestItems.current = data.items
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
-  const [checkedId, setCheckedId] = useState<string>()
+  const [checkedRequest, setCheckedRequest] = useState<SshCheckInput>()
   const [call, setCall] = useState<SshCheckCall>()
   const [pendingCheck, setPendingCheck] = useState<SshCheckInput>()
   const [checkBusy, setCheckBusy] = useState(false)
@@ -97,6 +98,8 @@ export function PersonalSshPage({ data, port, onChange, onReload, t }: {
       [item.displayName, item.host, item.username].some(value => value.toLocaleLowerCase().includes(needle)))
   }, [data.items, search])
   const count = data.items.filter(item => item.enabled).length
+  const checkIsCurrent = checkedRequest !== undefined && data.items.some(item =>
+    item.connectionId === checkedRequest.connectionId && item.revision === checkedRequest.connectionRevision)
   const valid = validPersonalSshForm(form, editing)
   const locked = busy || pending !== undefined
   const openEditor = (current?: PersonalSshConnection): void => {
@@ -142,7 +145,7 @@ export function PersonalSshPage({ data, port, onChange, onReload, t }: {
 
   const check = async (input: SshCheckInput): Promise<void> => {
     if (checkBusy || !data.available) return
-    setCheckBusy(true); setCheckedId(input.connectionId); setCheckError(undefined); setCancelRequestedId(undefined)
+    setCheckBusy(true); setCheckedRequest(input); setCheckError(undefined); setCancelRequestedId(undefined)
     try {
       const next = await port.check(input)
       if (!mounted.current) return
@@ -221,8 +224,11 @@ export function PersonalSshPage({ data, port, onChange, onReload, t }: {
               void mutate({ kind: 'delete', input: { requestId: crypto.randomUUID(),
                 connectionId: item.connectionId, baseRevision: item.revision } })
             }}>{t(deleteId === item.connectionId ? 'sshConfirmDeleteServer' : 'sshDeleteServer')}</button></div>
-        {checkedId === item.connectionId && (call || pendingCheck || checkError) && <div className="pext-ssh-check-state" role="status">
-          <strong>{call ? checkLabel(call.state) : t('sshCheckUncertain')}</strong>
+        {checkedRequest?.connectionId === item.connectionId && (call || pendingCheck || checkError)
+          && <div className="pext-ssh-check-state" role="status" data-state={checkIsCurrent ? call?.state : 'stale'}>
+          <strong>{!checkIsCurrent ? t('mcpCheckCurrentNotChecked') : call ? checkLabel(call.state) : t('sshCheckUncertain')}</strong>
+          {!checkIsCurrent && <p>{t('mcpCheckStale')}</p>}
+          {!checkIsCurrent && call && <p>{t('mcpCheckPreviousResult').replace('{result}', checkLabel(call.state))}</p>}
           <p>{t('sshCheckAuthenticationOnly')}</p>
           {cancelRequestedId === call?.callId && call && activeCheck(call.state) && <p>{t('sshCancellationPending')}</p>}
           {call?.errorCode && <small>{t('sshCheckErrorCode').replace('{code}', call.errorCode)}</small>}

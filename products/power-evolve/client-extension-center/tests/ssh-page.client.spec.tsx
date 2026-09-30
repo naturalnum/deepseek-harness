@@ -79,6 +79,8 @@ test('recent SSH checks restore after refresh and one list poll advances pending
   await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
   expect(callList).toHaveBeenCalledTimes(2)
   expect(screen.getByText('SSH authentication succeeded')).toBeTruthy()
+  const row = screen.getByText(item.displayName).closest('article')!
+  expect(within(row).queryByText(en.sshCheckSucceeded)).toBeNull()
   expect(screen.queryByText('ssh.authenticate')).toBeNull()
   await act(async () => { await vi.advanceTimersByTimeAsync(10000) })
   expect(callList).toHaveBeenCalledTimes(2)
@@ -145,6 +147,50 @@ const testPort = (overrides: Partial<PersonalSshPort> = {}): PersonalSshPort => 
 for (const [language, locale] of [['en', en], ['zh', zh]] as const) {
   const translate = (key: keyof typeof en) => locale[key]
 
+  test(`${language}: changing password authentication to an encrypted key makes the old success historical`, async () => {
+    const oldCall = { callId: '217d9a46-3b52-455b-bba6-7d9389c990bb', state: 'succeeded' as const }
+    const newCall = { callId: 'b12820cb-9e7d-4c41-8512-6f678115ea89', state: 'succeeded' as const }
+    const saved = { ...keyItem, revision: 2, credentialRevision: 2, workingDirectory: "~/quote's space" }
+    const check = vi.fn(async (input: SshCheckInput) => input.connectionRevision === 1 ? oldCall : newCall)
+    const update = vi.fn(async (_input: SshUpdateInput) => saved)
+    const port = testPort({ check, update, callList: async () => check.mock.calls.length === 0 ? []
+      : check.mock.calls.length === 1 ? [oldCall] : [newCall, oldCall] })
+    const onChange = vi.fn()
+    const view = render(<PersonalSshPage data={data} port={port} onChange={onChange} onReload={vi.fn()} t={translate} />)
+    const row = screen.getByText(item.displayName).closest('article')!
+    fireEvent.click(within(row).getByRole('button', { name: locale.sshTestAuthentication }))
+    await within(row).findByText(locale.sshCheckSucceeded)
+    fireEvent.click(within(row).getByRole('button', { name: locale.sshEditServer }))
+    fireEvent.change(screen.getByLabelText(locale.mcpAuthentication), { target: { value: 'private_key' } })
+    fireEvent.change(screen.getByLabelText(locale.sshPrivateKey), { target: { value: privateKey } })
+    fireEvent.change(screen.getByLabelText(locale.sshPassphrase), { target: { value: 'key passphrase' } })
+    fireEvent.change(screen.getByLabelText(locale.sshWorkingDirectory), { target: { value: saved.workingDirectory } })
+    fireEvent.click(screen.getByRole('button', { name: locale.sshSaveServer }))
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith([saved]))
+    expect(update.mock.calls[0]![0]).toMatchObject({ baseRevision: 1,
+      configuration: { workingDirectory: saved.workingDirectory,
+        authentication: { kind: 'private_key', privateKey: 'replace', passphrase: 'replace' } },
+      credentials: { formatVersion: 2, privateKey, passphrase: 'key passphrase' } })
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    view.rerender(<PersonalSshPage data={{ ...data, items: [saved] }} port={port}
+      onChange={onChange} onReload={vi.fn()} t={translate} />)
+    const status = within(row).getByRole('status')
+    const history = screen.getByRole('region', { name: locale.sshRecentChecks })
+    expect(status.querySelector('strong')?.textContent).toBe(locale.mcpCheckCurrentNotChecked)
+    expect(within(status).queryByText(locale.sshCheckSucceeded)).toBeNull()
+    expect(within(history).getByText(locale.sshCheckSucceeded)).toBeTruthy()
+    expect({ revision: within(row).getByText(locale.revision.replace('{count}', '2')).textContent,
+      current: status.querySelector('strong')?.textContent,
+      messages: Array.from(status.querySelectorAll('p'), element => element.textContent),
+      history: Array.from(history.querySelectorAll('article strong'), element => element.textContent),
+    }).toMatchSnapshot()
+    fireEvent.click(within(row).getByRole('button', { name: locale.sshTestAuthentication }))
+    await within(row).findByText(locale.sshCheckSucceeded)
+    expect(check.mock.calls.map(([input]) => input.connectionRevision)).toEqual([1, 2])
+    expect(within(row).queryByText(locale.mcpCheckStale)).toBeNull()
+    await waitFor(() => expect(within(history).getAllByText(locale.sshCheckSucceeded)).toHaveLength(2))
+  })
+
   test(`${language}: private-key creation preserves the original fields and home-relative working directory`, async () => {
     const create = vi.fn(async (_input: SshCreateInput) => keyItem)
     render(<PersonalSshPage data={{ available: true, items: [] }} port={testPort({ create })}
@@ -207,6 +253,74 @@ for (const [language, locale] of [['en', en], ['zh', zh]] as const) {
       .toEqual({ kind: 'private_key', privateKey: 'replace', passphrase: 'clear' })
   })
 }
+
+test('a late check reply and subsequent status refresh cannot validate a newer saved revision', async () => {
+  const callId = '217d9a46-3b52-455b-bba6-7d9389c990bb'
+  const oldCall = { callId, state: 'succeeded' as const }
+  let finishCheck: ((call: typeof oldCall) => void) | undefined
+  const check = vi.fn((_input: SshCheckInput) => new Promise<typeof oldCall>(resolve => { finishCheck = resolve }))
+  const callStatus = vi.fn(async () => oldCall)
+  const port = testPort({ check, callStatus, callList: async () => finishCheck ? [oldCall] : [] })
+  const view = render(<PersonalSshPage data={data} port={port} onChange={vi.fn()} onReload={vi.fn()} t={t} />)
+  await act(async () => { await Promise.resolve() })
+  const row = screen.getByText(item.displayName).closest('article')!
+  fireEvent.click(within(row).getByRole('button', { name: en.sshTestAuthentication }))
+  view.rerender(<PersonalSshPage data={{ ...data, items: [{ ...item, revision: 2, credentialRevision: 2 }] }}
+    port={port} onChange={vi.fn()} onReload={vi.fn()} t={t} />)
+  await act(async () => { finishCheck!(oldCall) })
+  const status = within(row).getByRole('status')
+  expect(status.querySelector('strong')?.textContent).toBe(en.mcpCheckCurrentNotChecked)
+  const history = screen.getByRole('region', { name: en.sshRecentChecks })
+  fireEvent.click(within(history).getByRole('button', { name: en.sshRefreshCheck }))
+  await waitFor(() => expect(callStatus).toHaveBeenCalledWith(callId))
+  expect(status.querySelector('strong')?.textContent).toBe(en.mcpCheckCurrentNotChecked)
+  expect(check.mock.calls[0]![0].connectionRevision).toBe(1)
+})
+
+test('a late list poll updates the old running check while the newer revision remains unchecked', async () => {
+  vi.useFakeTimers()
+  const callId = '217d9a46-3b52-455b-bba6-7d9389c990bb'
+  const callList = vi.fn().mockResolvedValueOnce([]).mockResolvedValueOnce([{ callId, state: 'running' }])
+    .mockResolvedValueOnce([{ callId, state: 'succeeded' }])
+  const port = testPort({ callList, check: async () => ({ callId, state: 'running' }) })
+  const view = render(<PersonalSshPage data={data} port={port} onChange={vi.fn()} onReload={vi.fn()} t={t} />)
+  await act(async () => { await Promise.resolve() })
+  const row = screen.getByText(item.displayName).closest('article')!
+  await act(async () => { fireEvent.click(within(row).getByRole('button', { name: en.sshTestAuthentication })) })
+  expect(within(row).getByText(en.sshCheckRunning)).toBeTruthy()
+  view.rerender(<PersonalSshPage data={{ ...data, items: [{ ...item, revision: 2 }] }}
+    port={port} onChange={vi.fn()} onReload={vi.fn()} t={t} />)
+  const status = within(row).getByRole('status')
+  expect(status.querySelector('strong')?.textContent).toBe(en.mcpCheckCurrentNotChecked)
+  expect(within(status).getByRole('button', { name: en.sshCancelCheck }).hasAttribute('disabled')).toBe(false)
+  expect(within(row).getByRole('button', { name: en.sshTestAuthentication }).hasAttribute('disabled')).toBe(true)
+  await act(async () => { await vi.advanceTimersByTimeAsync(5000) })
+  expect(callList).toHaveBeenCalledTimes(3)
+  expect(status.querySelector('strong')?.textContent).toBe(en.mcpCheckCurrentNotChecked)
+  expect(within(status).getByText(en.mcpCheckPreviousResult.replace('{result}', en.sshCheckSucceeded))).toBeTruthy()
+  expect(within(row).getByRole('button', { name: en.sshTestAuthentication }).hasAttribute('disabled')).toBe(false)
+})
+
+test('retrying an uncertain admission after an edit retains the original request and cannot validate the new revision', async () => {
+  const oldCall = { callId: '217d9a46-3b52-455b-bba6-7d9389c990bb', state: 'succeeded' as const }
+  const check = vi.fn().mockRejectedValueOnce(new Error('reply lost')).mockResolvedValueOnce(oldCall)
+  const port = testPort({ check, callList: async () => check.mock.calls.length < 2 ? [] : [oldCall] })
+  const view = render(<PersonalSshPage data={data} port={port} onChange={vi.fn()} onReload={vi.fn()} t={t} />)
+  const row = screen.getByText(item.displayName).closest('article')!
+  fireEvent.click(within(row).getByRole('button', { name: en.sshTestAuthentication }))
+  await within(row).findByText(en.sshCheckAdmissionUncertain)
+  view.rerender(<PersonalSshPage data={{ ...data, items: [{ ...item, revision: 2, credentialRevision: 2 }] }}
+    port={port} onChange={vi.fn()} onReload={vi.fn()} t={t} />)
+  const status = within(row).getByRole('status')
+  expect(status.querySelector('strong')?.textContent).toBe(en.mcpCheckCurrentNotChecked)
+  expect(within(row).getByRole('button', { name: en.sshTestAuthentication }).hasAttribute('disabled')).toBe(true)
+  fireEvent.click(within(status).getByRole('button', { name: en.sshRetryCheck }))
+  await within(status).findByText(en.mcpCheckPreviousResult.replace('{result}', en.sshCheckSucceeded))
+  expect(check.mock.calls[1]![0]).toEqual(check.mock.calls[0]![0])
+  expect(check.mock.calls[1]![0].connectionRevision).toBe(1)
+  expect(status.querySelector('strong')?.textContent).toBe(en.mcpCheckCurrentNotChecked)
+  expect(within(row).getByRole('button', { name: en.sshTestAuthentication }).hasAttribute('disabled')).toBe(false)
+})
 
 test('metadata edit retries the captured revision and freezes all draft inputs after an ambiguous reply', async () => {
   const update = vi.fn().mockRejectedValueOnce(new Error('lost'))
