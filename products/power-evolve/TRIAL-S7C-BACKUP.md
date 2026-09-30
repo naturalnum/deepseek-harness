@@ -5,7 +5,7 @@
 
 ## 当前脚本（参考）
 
-本节按 `87c6ec4fc0` 的 [备份入口](scripts/backup-trial.mjs) 与 [PG、MCP 私有文件处理](scripts/backup-support.mjs) 核对当前行为。下文 V18→V19 的数据、耗时、浏览器验收及当时的脚本描述保留为固定版本的历史证据；当前 V23 MCP 试用的真实备份、独立恢复及随后进行的健康和原生客户端复验见 [远端 MCP QA 记录](TRIAL-S6-REMOTE-MCP-QA.md)。V23 恢复脚本保持应用停止，后续启动另行执行，不报告连续的可用 RTO。
+本节按 `3aa65817cc` 的 [备份入口](scripts/backup-trial.mjs) 与 [PG、私有文件和运行器检查](scripts/backup-support.mjs) 核对当前行为。下文 V18→V19 的数据、耗时、浏览器验收及当时的脚本描述保留为固定版本的历史证据；V23 MCP 试用的真实备份、独立恢复及随后进行的健康和原生客户端复验见 [远端 MCP QA 记录](TRIAL-S6-REMOTE-MCP-QA.md)，V24 SSH 进度见 [SSH QA 记录](TRIAL-S6-SSH-P24-QA.md)。保持应用停止的恢复不报告健康 RTO，后续启动另行验证。
 
 ### 存储布局
 
@@ -27,6 +27,12 @@
 
 恢复把这些文件写入新目标的 `$PE_PRIVATE_DIR/remote-mcp/`：配置为 `configuration.json`，密钥为 `credential-key`，CA 为 `ca-<索引>.pem`；索引对应 `internalExceptions` 的原数组位置。配置只重写密钥及 CA 文件引用，保留其余设置。新配置绝对路径写入 `restore-evidence.json` 的 `remoteMcpConfigFile`；以后启动该目标须把 `PE_REMOTE_MCP_CONFIG_FILE` 显式设为此路径，不能沿用源路径。归档遗漏已有 MCP 历史所需的配置或密钥时，恢复拒绝启动应用。
 
+### SSH 不确定结果与运行器检查
+
+SSH `uncertain` 调用只有在 `cleanup_complete=true` 时才允许备份；执行调用还须有归属、操作、连接及凭据版本、请求摘要均匹配的 `uncertain` 动作。待执行动作、活跃调用和排队或运行中的续接继续阻止备份。已有 SSH 历史必须保留原 `ssh-credential-key`。恢复原样保留不确定状态和历史凭据版本，不把它们改成成功或重新派发。
+
+停止应用后，脚本分别使用 `sandbox.json` 和 `ssh.json` 中固定 kubeconfig 的 `current-context` 检查对应命名空间；不使用全局 context 替换运行器实际配置。即使没有 `sandbox.json`，已有 SSH 配置也必须检查 Pod；已清理的不确定调用缺少 SSH 配置时拒绝备份。缺少 context、列举失败、残留或正在删除的 Connector Runner Pod 都会拒绝备份。受限 Connector Role 须有本命名空间的 Pod `list` 权限，见[部署权限说明](connector-runner/deploy/README.zh.md)。清理标记不能代替实际资源检查。
+
 ## 使用方法
 
 备份依赖已构建的产品代码；恢复后启动应用还需要产品及原生 Web 构建产物。使用 Compose 或现有工具容器时需要 Docker/OrbStack；启用云 Sandbox、SSH Runner 或浏览器验收时，另需 kubectl、可用的 Sandbox 控制器与 Runner 镜像、Playwright Chromium，以及目标试用独有的 `sandbox.json`、`ssh.json` 和限权 kubeconfig。准备方式沿用 [S6 原生试用](TRIAL-S6-FINAL-QA.md)；两个 JSON 的 `localRoot`、`nodeRoot`、`workspaceRoot`、命名空间和端口应指向目标独有资源。目标私有目录必须位于 `~/.config/power-evolve/` 下，`model.env` 留在私有目录，不能提交到仓库。以下命令块保留 V18→V19 历史 Compose 演练的参数；当前外部 PG 与 MCP 配置按上节提供。
@@ -44,7 +50,7 @@ node products/power-evolve/scripts/prepare-trial.mjs
 node products/power-evolve/scripts/backup-trial.mjs create
 ```
 
-`create` 先通过 PID 和健康接口的 `instanceId` 确认源试用原先存活的服务，再逐个执行 `stop-one`；无法核实的存活进程会使备份被拒绝。脚本确认没有活跃 PG 操作、Runner 调用、MCP 发现或派发；有 `sandbox.json` 时，还检查相应命名空间内没有 Sandbox 对象及所配 SSH 环境中的 Connector Runner Pod，才执行 dump 与复制。MCP `queued`/`running` 发现检查和 `approved`/`preparing`/`dispatch-intent` 动作阻止备份；MCP 待人工决定的 `pending` 和终态 `uncertain` 可以原样保存，恢复不会把它们变成自动派发许可。新清单记录文件 SHA-256、权限位和符号链接原始目标，旧格式 1/2 清单仍按其已有字段核验。
+`create` 先通过 PID 和健康接口的 `instanceId` 确认源试用原先存活的服务，再逐个执行 `stop-one`；无法核实的存活进程会使备份被拒绝。脚本完成上述 PG 与运行器检查后才执行 dump 与复制。MCP `queued`/`running` 发现检查和 `approved`/`preparing`/`dispatch-intent` 动作阻止备份；MCP 待人工决定的 `pending` 和终态 `uncertain` 可以原样保存，恢复不会把它们变成自动派发许可。新清单记录文件 SHA-256、权限位和符号链接原始目标，旧格式 1/2 清单仍按其已有字段核验。
 
 成功后脚本原子发布备份目录；失败时清理未完成目录。默认只尝试重启本次通过 `stop-one` 停止并记录的服务，预先已停止的服务不会因备份被唤醒。设置 `PE_BACKUP_KEEP_STOPPED=1` 时，创建备份后不重启这些服务，恢复后也不启动应用；该选项不停止 PG，Compose 恢复仍会准备并启动目标 PG。若源服务重启失败，用同一组环境变量运行 `trial.mjs status`、检查日志并修复源试用。源端运行期间不要直接复制卷来替代停写步骤。
 

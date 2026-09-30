@@ -31,16 +31,18 @@ Run the following checks without printing the token:
 
 ```sh
 kubectl --kubeconfig "$PE_CONNECTOR_KUBECONFIG" -n "$PE_CONNECTOR_NAMESPACE" auth can-i create pods
+kubectl --kubeconfig "$PE_CONNECTOR_KUBECONFIG" -n "$PE_CONNECTOR_NAMESPACE" auth can-i list pods
 kubectl --kubeconfig "$PE_CONNECTOR_KUBECONFIG" -n "$PE_CONNECTOR_NAMESPACE" auth can-i create networkpolicies.networking.k8s.io
 kubectl --kubeconfig "$PE_CONNECTOR_KUBECONFIG" -n "$PE_CONNECTOR_NAMESPACE" auth can-i get services/proxy
 kubectl --kubeconfig "$PE_CONNECTOR_KUBECONFIG" -n "$PE_CONNECTOR_NAMESPACE" auth can-i create sandboxes.agents.x-k8s.io
 kubectl --kubeconfig "$PE_CONNECTOR_KUBECONFIG" -n "$PE_CONNECTOR_NAMESPACE" auth can-i create deployments.apps
+kubectl --kubeconfig "$PE_CONNECTOR_KUBECONFIG" -n "$PE_CONNECTOR_NAMESPACE" auth can-i list secrets
 kubectl --kubeconfig "$PE_CONNECTOR_KUBECONFIG" get namespaces
 kubectl --kubeconfig "$PE_CONNECTOR_KUBECONFIG" get --raw "/api/v1/namespaces/$PE_CONNECTOR_NAMESPACE/services/http:power-evolve-forbidden-listener:8080/proxy/health"
 kubectl --context "$PE_KUBE_CONTEXT" -n "$PE_CONNECTOR_NAMESPACE" get service power-evolve-forbidden-listener -o jsonpath='{.spec.clusterIP}'
 ```
 
-The first three authorization checks return `yes`; the next three return `no`. The health response is `{"healthy":true}`. Configure the Platform `SshRunnerConfig` with this kubeconfig path, namespace, image, `runtimeClassName: 'gvisor'`, and `forbiddenProbe` set to the Service ClusterIP and port 8080. Its `proveForbiddenListener` callback must query the fixed Service proxy and require a healthy response immediately before preparation and credential dispatch. Do not put the probe ClusterIP in the Runner's allowed egress target. The scoped Role permits `get/create/delete` on Pods, Services, Secrets, and NetworkPolicies, plus `get/create` on `services/proxy`; it has no cluster-level grant.
+The first four authorization checks return `yes`; the next three return `no`, and listing namespaces is forbidden. The health response is `{"healthy":true}`. Configure the Platform `SshRunnerConfig` with this kubeconfig path, namespace, image, `runtimeClassName: 'gvisor'`, and `forbiddenProbe` set to the Service ClusterIP and port 8080. Its `proveForbiddenListener` callback must query the fixed Service proxy and require a healthy response immediately before preparation and credential dispatch. Do not put the probe ClusterIP in the Runner's allowed egress target. The scoped Role permits `get/create/delete` on Pods, Services, Secrets, and NetworkPolicies, `list` on Pods to verify that execution has stopped before backup, and `get/create` on `services/proxy`; it has no cluster-level grant or Secret listing permission.
 
 The Runner requires three consecutive denied TCP probes before `/health` is ready. A healthy Platform proxy check alone does not establish Runner egress isolation. Verify an allowed target connection and denial of the live forbidden listener from an identically labeled, policy-selected Pod in this namespace before using credentials. If denial is inconclusive, keep credential dispatch disabled. Do not set `CONNECTOR_RUNNER_REFUSED_PROVES_DENIAL=1` unless the fixed listener remains independently healthy and the cluster's refusal behavior has been verified. The local procedure does not enable an SSH trial or contact an external target.
 

@@ -31,16 +31,18 @@ node products/power-evolve/connector-runner/deploy/prepare-forbidden-listener.mj
 
 ```sh
 kubectl --kubeconfig "$PE_CONNECTOR_KUBECONFIG" -n "$PE_CONNECTOR_NAMESPACE" auth can-i create pods
+kubectl --kubeconfig "$PE_CONNECTOR_KUBECONFIG" -n "$PE_CONNECTOR_NAMESPACE" auth can-i list pods
 kubectl --kubeconfig "$PE_CONNECTOR_KUBECONFIG" -n "$PE_CONNECTOR_NAMESPACE" auth can-i create networkpolicies.networking.k8s.io
 kubectl --kubeconfig "$PE_CONNECTOR_KUBECONFIG" -n "$PE_CONNECTOR_NAMESPACE" auth can-i get services/proxy
 kubectl --kubeconfig "$PE_CONNECTOR_KUBECONFIG" -n "$PE_CONNECTOR_NAMESPACE" auth can-i create sandboxes.agents.x-k8s.io
 kubectl --kubeconfig "$PE_CONNECTOR_KUBECONFIG" -n "$PE_CONNECTOR_NAMESPACE" auth can-i create deployments.apps
+kubectl --kubeconfig "$PE_CONNECTOR_KUBECONFIG" -n "$PE_CONNECTOR_NAMESPACE" auth can-i list secrets
 kubectl --kubeconfig "$PE_CONNECTOR_KUBECONFIG" get namespaces
 kubectl --kubeconfig "$PE_CONNECTOR_KUBECONFIG" get --raw "/api/v1/namespaces/$PE_CONNECTOR_NAMESPACE/services/http:power-evolve-forbidden-listener:8080/proxy/health"
 kubectl --context "$PE_KUBE_CONTEXT" -n "$PE_CONNECTOR_NAMESPACE" get service power-evolve-forbidden-listener -o jsonpath='{.spec.clusterIP}'
 ```
 
-前三项权限检查返回 `yes`，后三项返回 `no`。健康响应为 `{"healthy":true}`。平台 `SshRunnerConfig` 使用此 kubeconfig 路径、命名空间、镜像和 `runtimeClassName: 'gvisor'`，并将 `forbiddenProbe` 设为 Service 的 ClusterIP 和端口 8080。`proveForbiddenListener` 回调必须在准备和派发凭据前立即查询固定 Service 的代理，并要求健康响应。不得将探针 ClusterIP 加入 Runner 允许的出口目标。受限 Role 对 Pod、Service、Secret 和 NetworkPolicy 只有 `get/create/delete` 权限，对 `services/proxy` 只有 `get/create` 权限；没有集群级授权。
+前四项权限检查返回 `yes`，后三项返回 `no`，列举命名空间被拒绝。健康响应为 `{"healthy":true}`。平台 `SshRunnerConfig` 使用此 kubeconfig 路径、命名空间、镜像和 `runtimeClassName: 'gvisor'`，并将 `forbiddenProbe` 设为 Service 的 ClusterIP 和端口 8080。`proveForbiddenListener` 回调必须在准备和派发凭据前立即查询固定 Service 的代理，并要求健康响应。不得将探针 ClusterIP 加入 Runner 允许的出口目标。受限 Role 对 Pod、Service、Secret 和 NetworkPolicy 有 `get/create/delete` 权限，对 Pod 有 `list` 权限以在备份前确认执行已停止，对 `services/proxy` 有 `get/create` 权限；没有集群级授权或 Secret 列举权限。
 
 Runner 需要连续三次被拒绝的 TCP 探测才能使 `/health` 就绪。平台能通过代理访问健康监听器，本身不能证明 Runner 出口隔离。在使用凭据前，需要从该命名空间内带相同标签且被策略选中的 Pod 验证允许目标可连接、活动的禁止监听器不可连接。如果禁止结果不明确，应停止派发凭据。只有固定监听器持续独立保持健康，且已验证集群的拒绝行为，才能设置 `CONNECTOR_RUNNER_REFUSED_PROVES_DENIAL=1`。本地准备流程不启用 SSH 试用，也不连接外部目标。
 
