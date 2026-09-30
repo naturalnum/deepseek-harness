@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { homedir } from 'node:os'
 import test from 'node:test'
 import { Pool } from 'pg'
 import { identity } from '../lib/contracts.js'
@@ -12,7 +13,7 @@ import { EventStore } from '../lib/platform/events.js'
 import { taskCredential } from './task-credential-fixture.mjs'
 
 const databaseUrl = process.env.PE_TEST_DATABASE_URL ?? (await readFile(join(
-  process.env.PE_PRIVATE_DIR ?? '/Users/jingchao/.config/power-evolve/shared-host-s3-account-v25-qa', 'database-url'), 'utf8')).trim()
+  process.env.PE_PRIVATE_DIR ?? join(homedir(), '.config/power-evolve/shared-host-slice-1'), 'database-url'), 'utf8')).trim()
 const limits = { maxEventBytes: 524288, leaseMs: 5000, maxPendingPerUser: 8, maxActivePerUser: 1 }
 const eventLimits = { maxHistoryBytes: 1048576, maxHistoryEvents: 100, maxEventBytes: 65536 }
 
