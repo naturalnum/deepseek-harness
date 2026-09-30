@@ -14,10 +14,16 @@ const authority = z.object({
   enabled: z.boolean(), revision: z.number().int().positive(), credentialVersion: z.number().int().positive(),
   passwordChangeRequired: z.boolean(), deletedAt: z.date().nullable(),
 }).strict()
+/** Current persisted user authority; credential version remains private to Platform services. */
 export type AccountAuthority = Readonly<z.infer<typeof authority>>
+/** User and credential locking options for new browser admission or account lifecycle work. */
 export interface BrowserAccountOptions {
   readonly audience?: AccountAudience
   readonly lock?: AccountLockMode
+  /** Exchange consumes a credential under an exclusive lock, avoiding a SHARE-to-UPDATE upgrade race. */
+  readonly credentialLock?: 'share' | 'update'
+  /** Lifecycle mutations lock actor and targets together in UUID order before checking any credential. */
+  readonly participants?: readonly UserId[]
   /** Only account status, own-password change, logout and own receipt lookup may allow this. */
   readonly allowPasswordChangeRequired?: boolean
 }
@@ -114,10 +120,14 @@ export async function requireBrowserAccount(client: PoolClient, token: string,
   const hint = await client.query<{ user_id: string }>(
     'SELECT user_id FROM pe_credentials WHERE digest=$1 AND audience=$2 AND expires_at>clock_timestamp()', [hashed, audience])
   if (!hint.rows[0]) throw new PlatformError(401, ACCOUNT_ERROR_CODES.unauthorized)
-  const row = await requireActiveAccount(client, accountUserId.parse(hint.rows[0].user_id), options.lock ?? 'share')
+  const userId = accountUserId.parse(hint.rows[0].user_id)
+  const users = await lockAccountAuthorities(client, [userId, ...(options.participants ?? [])], options.lock ?? 'share')
+  const row = users.find(value => value.userId === userId)!
+  assertActiveAccount(row)
+  const credentialClause = options.credentialLock === 'update' ? 'FOR UPDATE' : 'FOR SHARE'
   const credential = await client.query(`SELECT digest FROM pe_credentials
     WHERE digest=$1 AND user_id=$2 AND audience=$3 AND credential_version=$4
-      AND expires_at>clock_timestamp() FOR SHARE`, [hashed, row.userId, audience, row.credentialVersion])
+      AND expires_at>clock_timestamp() ${credentialClause}`, [hashed, row.userId, audience, row.credentialVersion])
   if (!credential.rowCount) throw new PlatformError(401, ACCOUNT_ERROR_CODES.unauthorized)
   if (!options.allowPasswordChangeRequired) assertProductLoginAllowed(row)
   return row
