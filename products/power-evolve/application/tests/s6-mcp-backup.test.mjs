@@ -46,6 +46,15 @@ async function legacyRows(pool) {
   }
 }
 
+async function restoreTargetObjects(pool) {
+  return (await pool.query(`SELECT
+    (SELECT coalesce(jsonb_agg(to_jsonb(c) ORDER BY c.oid),'[]') FROM pg_class c WHERE c.oid>=16384) AS relations,
+    (SELECT coalesce(jsonb_agg(to_jsonb(t) ORDER BY t.oid),'[]') FROM pg_type t WHERE t.oid>=16384) AS types,
+    (SELECT coalesce(jsonb_agg(to_jsonb(l) ORDER BY l.oid),'[]') FROM pg_largeobject_metadata l) AS large_objects,
+    (SELECT coalesce(jsonb_agg(jsonb_build_object('oid',loid,'page',pageno,'data',encode(data,'hex')) ORDER BY loid,pageno),'[]')
+      FROM pg_largeobject) AS large_object_bytes`)).rows[0]
+}
+
 test('external backup preserves V21 history, V22 MCP versions, V23 outcomes and private operator files',
   { timeout: 90000, skip: process.platform === 'win32' && 'Trial backup requires POSIX permissions and signals' }, async t => {
     const sourceUrlFile = join(process.env.PE_PRIVATE_DIR
@@ -298,9 +307,6 @@ test('external backup preserves V21 history, V22 MCP versions, V23 outcomes and 
           .map(({ mode, ...file }) => file)
         await writeFile(join(bundle, 'manifest.json'), JSON.stringify(manifest), { mode: 0o600 })
         await target.query('DROP SCHEMA public CASCADE'); await target.query('CREATE SCHEMA public')
-        await target.query("CREATE TYPE backup_occupied_type AS ENUM ('occupied')")
-        await assert.rejects(requireEmptyBackupDatabase(Client, urls[2]), /Restore database is not empty/u)
-        await target.query('DROP TYPE backup_occupied_type')
         await mkdir(privateDir, { mode: 0o700 })
         await writeFile(join(privateDir, 'database-url'), urls[2], { mode: 0o600 })
         await cli('restore', 2, bundle, { PE_PRIVATE_DIR: privateDir,
@@ -308,6 +314,100 @@ test('external backup preserves V21 history, V22 MCP versions, V23 outcomes and 
         assert.equal((await target.query('SELECT version FROM pe_schema')).rows[0].version, 21)
         assert.deepEqual(await legacyRows(target), old)
       }
+    })
+    await target.query('DROP SCHEMA public CASCADE'); await target.query('CREATE SCHEMA public')
+    await t.test('PostgreSQL URI-like literal database names are rejected by the real CLI before any target copies or restore', async () => {
+      for (const prefix of ['postgres', 'postgresql']) {
+        const literalName = `${prefix}:///${databases[2]}`
+        await admin.query(`CREATE DATABASE "${literalName}"`); acquired.push(literalName)
+        const url = new URL(databaseUrl); url.pathname = `/${literalName}`
+        const literal = new Pool({ connectionString: url.href, max: 1 }); pools.push(literal)
+        assert.equal((await literal.query('SELECT current_database() AS name')).rows[0].name, literalName)
+        const privateDir = join(directory, `uri-target-${prefix}`)
+        await mkdir(privateDir, { mode: 0o700 })
+        const literalBefore = await restoreTargetObjects(literal), expandedBefore = await restoreTargetObjects(target)
+        for (const pathname of [`/${literalName}`, `/${encodeURIComponent(literalName)}`]) {
+          url.pathname = pathname
+          await writeFile(join(privateDir, 'database-url'), url.href, { mode: 0o600 })
+          await refused('restore', 2, preBundle, /Invalid backup PostgreSQL database name/u, { PE_PRIVATE_DIR: privateDir })
+          assert.deepEqual(await readdir(privateDir), ['database-url'])
+          assert.equal(await readFile(join(privateDir, 'database-url'), 'utf8'), url.href)
+          assert.deepEqual(await restoreTargetObjects(literal), literalBefore)
+          assert.deepEqual(await restoreTargetObjects(target), expandedBefore)
+        }
+      }
+    })
+    const objectCases = [
+      { name: 'large-object', create: async () => (await target.query("SELECT lo_from_bytea(0,decode('000102ff','hex')) AS oid")).rows[0].oid,
+        inspect: 'SELECT oid,encode(lo_get(oid),\'hex\') AS bytes FROM pg_largeobject_metadata ORDER BY oid',
+        drop: oid => target.query('SELECT lo_unlink($1)', [oid]) },
+      { name: 'collation', create: "CREATE COLLATION backup_occupied_collation (provider=libc,locale='C')",
+        inspect: "SELECT * FROM pg_collation WHERE collname='backup_occupied_collation'", drop: 'DROP COLLATION backup_occupied_collation' },
+      { name: 'type', create: "CREATE TYPE backup_occupied_type AS ENUM ('occupied')",
+        inspect: "SELECT * FROM pg_type WHERE typname='backup_occupied_type'", drop: 'DROP TYPE backup_occupied_type' },
+      { name: 'language', create: 'CREATE LANGUAGE backup_occupied_language HANDLER pg_catalog.plpgsql_call_handler',
+        inspect: "SELECT * FROM pg_language WHERE lanname='backup_occupied_language'", drop: 'DROP LANGUAGE backup_occupied_language' },
+      { name: 'access-method', create: 'CREATE ACCESS METHOD backup_occupied_am TYPE INDEX HANDLER pg_catalog.bthandler',
+        inspect: "SELECT * FROM pg_am WHERE amname='backup_occupied_am'", drop: 'DROP ACCESS METHOD backup_occupied_am' },
+      { name: 'foreign-data-wrapper', create: 'CREATE FOREIGN DATA WRAPPER backup_occupied_fdw',
+        inspect: "SELECT * FROM pg_foreign_data_wrapper WHERE fdwname='backup_occupied_fdw'", drop: 'DROP FOREIGN DATA WRAPPER backup_occupied_fdw' },
+      { name: 'foreign-server', create: ['CREATE FOREIGN DATA WRAPPER backup_occupied_fdw',
+        'CREATE SERVER backup_occupied_server FOREIGN DATA WRAPPER backup_occupied_fdw'],
+        inspect: "SELECT * FROM pg_foreign_server WHERE srvname='backup_occupied_server'",
+        drop: ['DROP SERVER backup_occupied_server', 'DROP FOREIGN DATA WRAPPER backup_occupied_fdw'] },
+      { name: 'user-mapping', create: ['CREATE FOREIGN DATA WRAPPER backup_occupied_fdw',
+        'CREATE SERVER backup_occupied_server FOREIGN DATA WRAPPER backup_occupied_fdw',
+        'CREATE USER MAPPING FOR CURRENT_USER SERVER backup_occupied_server'], inspect: 'SELECT * FROM pg_user_mapping',
+        drop: ['DROP USER MAPPING FOR CURRENT_USER SERVER backup_occupied_server', 'DROP SERVER backup_occupied_server',
+          'DROP FOREIGN DATA WRAPPER backup_occupied_fdw'] },
+      { name: 'publication', create: 'CREATE PUBLICATION backup_occupied_publication',
+        inspect: "SELECT * FROM pg_publication WHERE pubname='backup_occupied_publication'", drop: 'DROP PUBLICATION backup_occupied_publication' },
+      { name: 'disabled-subscription', create: "CREATE SUBSCRIPTION backup_occupied_subscription CONNECTION 'host=127.0.0.1 port=1 dbname=unused' PUBLICATION unused WITH (connect=false,enabled=false,create_slot=false,slot_name=NONE)",
+        inspect: "SELECT oid,subdbid,subname,subenabled,subslotname FROM pg_subscription WHERE subname='backup_occupied_subscription'",
+        drop: 'DROP SUBSCRIPTION backup_occupied_subscription' },
+      { name: 'event-trigger', create: [
+        'CREATE FUNCTION pg_catalog.backup_occupied_event() RETURNS event_trigger LANGUAGE plpgsql AS $$BEGIN END$$',
+        "CREATE EVENT TRIGGER backup_occupied_trigger ON ddl_command_end WHEN TAG IN ('CREATE TABLE') EXECUTE FUNCTION pg_catalog.backup_occupied_event()"],
+        inspect: "SELECT * FROM pg_event_trigger WHERE evtname='backup_occupied_trigger'",
+        drop: ['DROP EVENT TRIGGER backup_occupied_trigger', 'DROP FUNCTION pg_catalog.backup_occupied_event()'] },
+      { name: 'default-privileges', create: 'ALTER DEFAULT PRIVILEGES GRANT SELECT ON TABLES TO PUBLIC',
+        inspect: 'SELECT * FROM pg_default_acl', drop: 'ALTER DEFAULT PRIVILEGES REVOKE SELECT ON TABLES FROM PUBLIC' },
+      { name: 'cast', create: 'CREATE CAST (json AS integer) WITH INOUT',
+        inspect: "SELECT * FROM pg_cast WHERE castsource='json'::regtype AND casttarget='integer'::regtype", drop: 'DROP CAST (json AS integer)' },
+      { name: 'operator', create: 'CREATE OPERATOR public.=== (FUNCTION=pg_catalog.int4eq,LEFTARG=integer,RIGHTARG=integer)',
+        inspect: "SELECT * FROM pg_operator WHERE oprname='==='", drop: 'DROP OPERATOR public.=== (integer,integer)' },
+      { name: 'operator-family', create: 'CREATE OPERATOR FAMILY backup_occupied_family USING btree',
+        inspect: "SELECT * FROM pg_opfamily WHERE opfname='backup_occupied_family'", drop: 'DROP OPERATOR FAMILY backup_occupied_family USING btree' },
+      { name: 'text-search', create: 'CREATE TEXT SEARCH CONFIGURATION backup_occupied_search (COPY=pg_catalog.simple)',
+        inspect: "SELECT * FROM pg_ts_config WHERE cfgname='backup_occupied_search'", drop: 'DROP TEXT SEARCH CONFIGURATION backup_occupied_search' },
+      { name: 'database-setting', create: `ALTER DATABASE "${databases[2]}" SET statement_timeout='5s'`,
+        inspect: 'SELECT * FROM pg_db_role_setting WHERE setdatabase=(SELECT oid FROM pg_database WHERE datname=current_database())',
+        drop: `ALTER DATABASE "${databases[2]}" RESET statement_timeout` },
+    ]
+    const objectCommand = async value => {
+      if (typeof value === 'function') return value()
+      for (const sql of Array.isArray(value) ? value : [value]) await target.query(sql)
+    }
+    for (const fixture of objectCases) await t.test(`the real CLI refuses a target containing ${fixture.name} before copying and retains its object`, async () => {
+      await requireEmptyBackupDatabase(Client, urls[2])
+      const handle = await objectCommand(fixture.create)
+      try {
+        const objectBefore = (await target.query(fixture.inspect)).rows
+        assert(objectBefore.length > 0, `${fixture.name} fixture must exist before CLI restore`)
+        const allBefore = await restoreTargetObjects(target)
+        const privateDir = join(directory, `occupied-${fixture.name}`)
+        await mkdir(privateDir, { mode: 0o700 })
+        await writeFile(join(privateDir, 'database-url'), urls[2], { mode: 0o600 })
+        await refused('restore', 2, preBundle, /Restore database is not empty/u, { PE_PRIVATE_DIR: privateDir })
+        assert.deepEqual(await readdir(privateDir), ['database-url'])
+        assert.equal(await readFile(join(privateDir, 'database-url'), 'utf8'), urls[2])
+        assert.deepEqual((await target.query(fixture.inspect)).rows, objectBefore)
+        assert.deepEqual(await restoreTargetObjects(target), allBefore)
+      } finally {
+        if (typeof fixture.drop === 'function') await fixture.drop(handle)
+        else await objectCommand(fixture.drop)
+      }
+      await requireEmptyBackupDatabase(Client, urls[2])
     })
   })
 

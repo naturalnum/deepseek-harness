@@ -6,6 +6,14 @@ import { lstat, mkdir, readFile, readdir, realpath, writeFile } from 'node:fs/pr
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 
 const digest = value => createHash('sha256').update(value).digest('hex')
+// FirstNormalObjectId: initdb reserves OIDs below 16384; normal operation allocates above that boundary.
+// Include schema-independent objects and user objects placed inside pg_catalog by an operator.
+const databaseObjectCatalogs = ['pg_class', 'pg_proc', 'pg_type', 'pg_collation',
+  'pg_conversion', 'pg_operator', 'pg_opclass', 'pg_opfamily', 'pg_ts_config', 'pg_ts_dict',
+  'pg_ts_parser', 'pg_ts_template', 'pg_cast', 'pg_transform', 'pg_am', 'pg_language',
+  'pg_extension', 'pg_event_trigger', 'pg_foreign_data_wrapper', 'pg_foreign_server',
+  'pg_user_mapping', 'pg_publication', 'pg_default_acl', 'pg_constraint', 'pg_trigger',
+  'pg_rewrite', 'pg_policy', 'pg_statistic_ext', 'pg_attrdef']
 
 /** Read a cluster/database identity without recording its address, username or password. */
 export async function backupDatabaseIdentity(Client, url) {
@@ -21,23 +29,21 @@ export async function backupDatabaseIdentity(Client, url) {
   finally { await client?.end().catch(() => {}) }
 }
 
-/** Refuse an occupied target, including user functions and non-public schemas, before copying files. */
+/** Refuse user database objects, large objects and database-local settings before copying files. */
 export async function requireEmptyBackupDatabase(Client, url) {
   let client, occupied = false
   try {
     client = new Client({ connectionString: url, connectionTimeoutMillis: 10000 })
     await client.connect()
-    const { rows: [row] } = await client.query(`SELECT
-      (SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
-        WHERE n.nspname !~ '^pg_' AND n.nspname<>'information_schema')
-      + (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
-        WHERE n.nspname !~ '^pg_' AND n.nspname<>'information_schema')
-      + (SELECT count(*) FROM pg_type t JOIN pg_namespace n ON n.oid=t.typnamespace
-        WHERE n.nspname !~ '^pg_' AND n.nspname<>'information_schema')
-      + (SELECT count(*) FROM pg_extension WHERE extname<>'plpgsql')
-      + (SELECT count(*) FROM pg_namespace WHERE nspname !~ '^pg_'
-        AND nspname NOT IN ('public','information_schema')) AS objects`)
-    occupied = Number(row.objects) !== 0
+    const { rows: [row] } = await client.query(`WITH objects AS (
+      ${databaseObjectCatalogs.map(catalog => `SELECT oid FROM pg_catalog.${catalog}`).join(' UNION ALL ')}
+      UNION ALL SELECT oid FROM pg_catalog.pg_namespace WHERE nspname<>'public'
+    ), target AS (SELECT oid FROM pg_catalog.pg_database WHERE datname=pg_catalog.current_database())
+    SELECT EXISTS(SELECT 1 FROM objects WHERE oid>=16384)
+      OR EXISTS(SELECT 1 FROM pg_catalog.pg_largeobject_metadata)
+      OR EXISTS(SELECT 1 FROM pg_catalog.pg_subscription WHERE subdbid=(SELECT oid FROM target))
+      OR EXISTS(SELECT 1 FROM pg_catalog.pg_db_role_setting WHERE setdatabase=(SELECT oid FROM target)) AS occupied`)
+    occupied = row.occupied
     if (occupied) throw new Error('Restore database is not empty')
   } catch { throw new Error(occupied ? 'Restore database is not empty' : 'Cannot verify empty restore PostgreSQL database') }
   finally { await client?.end().catch(() => {}) }
@@ -105,7 +111,10 @@ function pgInvocation(tool, url, env) {
     username = decodeURIComponent(parsed.username)
     password = decodeURIComponent(parsed.password)
   } catch { throw new Error('Invalid backup PostgreSQL configuration') }
-  if (!database || /[=\0\r\n]/u.test(database)) throw new Error('Invalid backup PostgreSQL database name')
+  // libpq expands --dbname values containing '=' or a PostgreSQL URI prefix into connection settings.
+  if (!database || /[=\0\r\n]/u.test(database) || /^postgres(?:ql)?:\/\//iu.test(database)) {
+    throw new Error('Invalid backup PostgreSQL database name')
+  }
   const inherited = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('PG')))
   const childEnv = { ...inherited, PGDATABASE: database, PGUSER: username,
     PGPASSWORD: password, PGCONNECT_TIMEOUT: '10' }
@@ -141,6 +150,8 @@ function pgRun(tool, url, args, env, stdio) {
 
 /** Check that local libpq or the operator-selected existing container reaches the configured database. */
 export async function verifyBackupPgTools(Client, url, env) {
+  // Validate literal dbname semantics before opening either the Node or libpq connection.
+  pgInvocation('psql', url, env)
   const expected = await backupDatabaseIdentity(Client, url)
   const result = pgRun('psql', url, ['--no-psqlrc', '--tuples-only', '--no-align', '--command',
     "SELECT system_identifier::text,(SELECT oid::text FROM pg_database WHERE datname=current_database()) FROM pg_control_system()"],
@@ -158,7 +169,7 @@ export function dumpBackupDatabase(path, url, env) {
   finally { closeSync(fd) }
 }
 
-/** Restore all-or-nothing to the already-verified empty database, without creating a database or container. */
+/** Restore the dump in one database transaction; previously copied private files remain if restoration fails. */
 export function restoreBackupDatabase(path, url, env) {
   const fd = openSync(path, 'r')
   try { pgRun('pg_restore', url, ['--no-owner', '--no-acl', '--exit-on-error',
