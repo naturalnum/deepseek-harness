@@ -404,11 +404,15 @@ export class SshExecuteService {
     }
     if (status.state === 'failed' && status.result === undefined && status.errorCode
       && safeCode.test(status.errorCode)) {
-      await this.finalize(lease, row, 'failed', null, status.errorCode); return
+      await this.finalize(lease, row, status.effectMayHaveOccurred === false ? 'failed' : 'uncertain',
+        null, status.errorCode); return
     }
     const parsed = output.safeParse(status.result)
     if (status.state === 'succeeded' && parsed.success && status.errorCode === undefined
       && Buffer.byteLength(parsed.data.stdout) + Buffer.byteLength(parsed.data.stderr) <= MAX_OUTPUT_BYTES) {
+      if (parsed.data.exitCode === null && !parsed.data.signal) {
+        await this.finalize(lease, row, 'uncertain', null, 'ssh_exit_missing'); return
+      }
       await this.finalize(lease, row, 'succeeded', parsed.data, null); return
     }
     await this.calls.markUncertain(lease, row.state, 'runner_result_invalid')

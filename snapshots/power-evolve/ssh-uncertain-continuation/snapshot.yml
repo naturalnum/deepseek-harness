@@ -1,0 +1,8 @@
+version: 1
+scenario: ssh-uncertain-continuation
+profile: power-evolve-host
+composition: shared-host-platform-pg
+recording: authored
+header:
+  class: power-evolve-ssh-uncertain
+  pin: true

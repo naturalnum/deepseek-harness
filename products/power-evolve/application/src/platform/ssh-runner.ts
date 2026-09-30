@@ -49,6 +49,8 @@ export interface SshRunnerStatus {
   readonly state: 'running' | 'succeeded' | 'failed'
   readonly result?: unknown
   readonly errorCode?: string
+  /** Failure phase reported by newer Runners; absence does not establish that exec was never sent. */
+  readonly effectMayHaveOccurred?: boolean
 }
 export type SshRunnerObservation = { readonly state: 'absent' }
   | { readonly state: 'known'; readonly status: SshRunnerStatus }

@@ -140,7 +140,7 @@ test('HTTP accepts maximum escaped SSH fields and enforces the entire body cap a
         response.once('end', () => {
           outgoing.destroy()
           resolve({ status: response.statusCode ?? 0,
-            value: JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown })
+            value: JSON.parse(Buffer.concat(chunks).toString('utf8')) })
         })
       })
       outgoing.setTimeout(5000, () => outgoing.destroy(new Error('HTTP rejection timed out')))

@@ -31,16 +31,20 @@ export async function recordedConversation() {
     throw error
   }
 }
-export async function recordedSshContinuation() {
-  const manifest = yaml.load(await readFile(new URL('snapshot.yml', sshDirectory), 'utf8'))
-  assert.deepEqual(manifest, { version: 1, scenario: 'ssh-execute-continuation', profile: 'power-evolve-host',
+export async function recordedSshContinuation(scenario = 'ssh-execute-continuation') {
+  assert(['ssh-execute-continuation', 'ssh-uncertain-continuation'].includes(scenario))
+  const targetDirectory = new URL(`../${scenario}/`, directory)
+  const manifest = yaml.load(await readFile(new URL('snapshot.yml', targetDirectory), 'utf8'))
+  assert.deepEqual(manifest, { version: 1, scenario, profile: 'power-evolve-host',
     composition: 'shared-host-platform-pg', recording: 'authored',
-    header: { class: 'power-evolve-ssh-execute', pin: true } })
+    header: { class: scenario === 'ssh-execute-continuation' ? 'power-evolve-ssh-execute' : 'power-evolve-ssh-uncertain', pin: true } })
   try {
-    return { rows: (await readFile(new URL('session.v4.jsonl', sshDirectory), 'utf8'))
-      .trim().split('\n').map(line => JSON.parse(line)) }
+    const rows = (await readFile(new URL('session.v4.jsonl', targetDirectory), 'utf8'))
+      .trim().split('\n').map(line => JSON.parse(line))
+    return { rows, targetDirectory,
+      input: rows.find(row => row.type === 'user/message' && row.data.source.kind === 'user').data.content[0].text }
   } catch (error) {
-    if (record && error.code === 'ENOENT') return { rows: null }
+    if (record && error.code === 'ENOENT') return { rows: null, targetDirectory, input: 'SSH continuation fixture' }
     throw error
   }
 }
@@ -173,6 +177,15 @@ export async function compareRecordedMcpSession(page, expected, { actions, tools
   const header = toHeaderLine({ ...page.header, createdAt: 0 })
   const native = [header, ...page.events]
   const values = normalizeMcpValues(native, actionIds, toolNames, platformOrigin)
+  await comparePinnedSession(page, expected, values)
+}
+
+/** Pin the uncertain SSH outcome with readable schemas and relationship-preserving identities. */
+export async function compareRecordedSshUncertainSession(page, expected) {
+  await comparePinnedSession(page, expected, [toHeaderLine({ ...page.header, createdAt: 0 }), ...page.events])
+}
+
+async function comparePinnedSession(page, expected, values) {
   const text = values.map(row => JSON.stringify(row)).join('\n') + '\n'
   const [redacted] = redactSessionSnapshotIds([text])
   const normalized = normalizeSessionLog(redacted, { cwd: '', sessionIds: [] }, { identityMode: 'preserve' })
@@ -186,7 +199,7 @@ export async function compareRecordedMcpSession(page, expected, { actions, tools
   })
   const serialized = snapshot.map(row => JSON.stringify(row)).join('\n') + '\n'
   prepareSessionSnapshotFixtureForComparison(serialized)
-  assert.deepEqual(redactSessionSnapshotIds([serialized]), [serialized], 'Native MCP identity normalization is a fixed point')
+  assert.deepEqual(redactSessionSnapshotIds([serialized]), [serialized], 'Native Session identity normalization is a fixed point')
   assert.equal(scrubToolSchemas(scrubSystemPrompts(serialized)), serialized)
   if (record) {
     // Version-named output preserves every previously committed generation.
@@ -194,9 +207,9 @@ export async function compareRecordedMcpSession(page, expected, { actions, tools
     await writeFile(new URL('system-prompt.expected.md', expected.targetDirectory), system)
     await writeFile(new URL('tool-schemas.expected.json', expected.targetDirectory), JSON.stringify(schemas, null, 2) + '\n')
   } else {
-    assert.deepEqual(snapshot, expected.rows, `Recorded native MCP Session differs: ${expected.targetDirectory.pathname}`)
+    assert.deepEqual(snapshot, expected.rows, `Recorded native Session differs: ${expected.targetDirectory.pathname}`)
     assert.equal(system, await readFile(new URL('system-prompt.expected.md', expected.targetDirectory), 'utf8'))
     assert.deepEqual(schemas, JSON.parse(await readFile(new URL('tool-schemas.expected.json', expected.targetDirectory), 'utf8')),
-      'Recorded native MCP tool schemas differ')
+      'Recorded native tool schemas differ')
   }
 }

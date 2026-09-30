@@ -36,6 +36,8 @@ class FakeRunner {
     await this.beforePost?.()
     this.posts.push({ handle, request })
     if (this.unknownOnce) { this.unknownOnce = false; return { state: 'uncertain', reason: 'dispatch_outcome_unknown' } }
+    if (this.reply) return { state: 'known', status: { callId: handle.callId, instanceId: handle.instanceId,
+      digest: this.digestFor(handle, request), ...this.reply } }
     return { state: 'known', status: { callId: handle.callId, instanceId: handle.instanceId,
       digest: this.digestFor(handle, request), state: 'succeeded',
       result: { kind: 'ssh.execute', exitCode: 0, signal: null,
@@ -297,4 +299,51 @@ test('connection disable serializes with the first credential-bearing execute PO
     await service.pump(blocked)
     assert.equal(f.runner.posts.length, 1, 'disable before first POST blocks credential dispatch')
     assert.equal((await service.status(alice, later.action.actionId)).state, 'failed')
+  })
+
+test('execute failure effects and missing exit status remain uncertain after restart without replay',
+  { timeout: 60_000 }, async t => {
+    const f = await setup(t)
+    const [alice] = f.users
+    const cases = [
+      { reply: { state: 'failed', errorCode: 'ssh_authentication_failed', effectMayHaveOccurred: false }, state: 'failed' },
+      { reply: { state: 'failed', errorCode: 'ssh_timeout', effectMayHaveOccurred: true }, state: 'uncertain' },
+      { reply: { state: 'failed', errorCode: 'ssh_cancelled', effectMayHaveOccurred: true }, state: 'uncertain' },
+      { reply: { state: 'failed', errorCode: 'ssh_network_error' }, state: 'uncertain' },
+      { reply: { state: 'succeeded', result: { kind: 'ssh.execute', exitCode: null,
+        signal: null, stdout: 'effect may already exist', stderr: '' } }, state: 'uncertain' },
+      { reply: { state: 'succeeded', result: { kind: 'ssh.execute', exitCode: 7,
+        signal: null, stdout: '', stderr: 'known nonzero exit' } }, state: 'succeeded' },
+      { reply: { state: 'succeeded', result: { kind: 'ssh.execute', exitCode: null,
+        signal: 'TERM', stdout: '', stderr: 'known signal' } }, state: 'succeeded' },
+    ]
+    for (const [index, entry] of cases.entries()) {
+      const service = f.makeService(randomUUID())
+      const proposed = await propose(f, service, alice, f.saved[0], `printf 'case-${index}'`)
+      await service.decide(alice, proposed.action.actionId, proposed.action.fingerprint, true)
+      f.runner.reply = entry.reply
+      const row = await f.calls.claim(service.ownerId, 60_000, 'ssh.execute')
+      await service.pump(row)
+      const restarted = f.makeService(randomUUID())
+      const result = await restarted.status(alice, proposed.action.actionId)
+      assert.equal(result.state, entry.state)
+      if (entry.state === 'succeeded') assert.deepEqual(result.result, entry.reply.result)
+      if (index === 4) assert.equal(result.errorCode, 'ssh_exit_missing')
+      assert.equal((await f.calls.get(alice, proposed.action.actionId)).state, entry.state)
+      if (entry.state === 'uncertain') {
+        await f.pool.query("UPDATE pe_ssh_calls SET lease_until=now()-interval '1 second' WHERE id=$1",
+          [proposed.action.actionId])
+        const cleanup = await f.calls.claim(restarted.ownerId, 60_000, 'ssh.execute')
+        assert.equal(cleanup.id, proposed.action.actionId)
+        await restarted.pump(cleanup)
+        assert.equal((await f.calls.get(alice, proposed.action.actionId)).cleanup_complete, true)
+      }
+      assert.equal(f.runner.posts.length, index + 1)
+      const continuation = await f.tasks.claim(randomUUID())
+      assert.equal(continuation.sourceSshExecuteActionId, proposed.action.actionId)
+      assert.equal(continuation.source, 'ssh_execute_result')
+      if (entry.state === 'uncertain') assert.match(continuation.text, /远端执行结果不明，不得自动重试。/u)
+      await f.tasks.finish(continuation.token, 'completed', null)
+      assert.equal(await f.tasks.claim(randomUUID()), null)
+    }
   })

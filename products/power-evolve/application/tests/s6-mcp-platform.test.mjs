@@ -381,14 +381,14 @@ test('native Agent and trusted Platform compose owner-scoped discovery, approval
         const changed = structuredClone(aliceHistory)
         changed.events.find(event => event.type === 'request/header').data.header.tools
           .find(tool => tool.description.includes('FIXTURE_alice_first')).description += ' DECLARATION_DRIFT'
-        await assert.rejects(compareRecordedMcpSession(changed, twoStep, snapshotFacts), /Recorded native MCP tool schemas differ/)
+        await assert.rejects(compareRecordedMcpSession(changed, twoStep, snapshotFacts), /Recorded native tool schemas differ/)
         const changedResult = structuredClone(aliceHistory)
         const resultEvent = changedResult.events.find(event => event.type === 'user/message'
           && event.data.source.kind === 'power-evolve-remote-mcp')
         const envelope = JSON.parse(resultEvent.data.content[0].text)
         envelope.result.structuredContent.text += ' RESULT_DRIFT'
         resultEvent.data.content[0].text = JSON.stringify(envelope)
-        await assert.rejects(compareRecordedMcpSession(changedResult, twoStep, snapshotFacts), /Recorded native MCP Session differs/)
+        await assert.rejects(compareRecordedMcpSession(changedResult, twoStep, snapshotFacts), /Recorded native Session differs/)
       }
     }
     const { items } = await json(await post(`${platform.url}/approvals/mcp/list`, approvals[0], {}))
