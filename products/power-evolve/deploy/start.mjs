@@ -3,6 +3,7 @@ import { spawn } from 'node:child_process'
 import { readFile, mkdir, symlink, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { remoteMcpConfigPath, remoteMcpMountedMetadata } from './remote-mcp.mjs'
 
 const root = resolve(fileURLToPath(new URL('../../..', import.meta.url)))
 const self = fileURLToPath(import.meta.url)
@@ -50,6 +51,8 @@ function row(source, id, replacements) {
 /** Keep the bundle as the source of plugin selection and every unchanged config field. */
 export async function renderProfile(role, env, dshHome) {
   if (!['host', 'platform'].includes(role)) throw new Error('Choose host or platform')
+  const remoteMcpPath = role === 'platform' ? env.PE_REMOTE_MCP_CONFIG_FILE || '' : ''
+  if (remoteMcpPath && remoteMcpPath !== remoteMcpConfigPath) throw new Error('Invalid remote MCP deployment configuration path')
   const hostOrigin = origin(required(env, 'PE_HOST_PUBLIC_ORIGIN'), 'Host public Origin')
   const platformOrigin = origin(required(env, 'PE_PLATFORM_PUBLIC_ORIGIN'), 'Platform public Origin')
   if (hostOrigin === platformOrigin) throw new Error('Host and Platform public Origins must differ')
@@ -69,7 +72,7 @@ export async function renderProfile(role, env, dshHome) {
       sandboxNodeRoot: '', sandboxVolumeClaimName: required(env, 'PE_SANDBOX_VOLUME_CLAIM'),
       modelUrl: endpoint(required(env, 'PE_MODEL_URL'), 'model URL'),
       connectorUrl: endpoint(required(env, 'PE_CONNECTOR_URL'), 'connector URL'),
-      remoteMcpConfigFile: env.PE_REMOTE_MCP_CONFIG_FILE || '',
+      remoteMcpConfigFile: remoteMcpPath,
       hostOrigin, platformOrigin,
     }),
   ]
@@ -87,6 +90,26 @@ export async function renderProfile(role, env, dshHome) {
   return { name, profile }
 }
 
+/** Validate MCP material and strict origin mode before a deployment profile or child is created.
+ * @param path Optional fixed Platform config projection; omission disables MCP.
+ * @param readText Trusted reader restricted here to the fixed JSON/key and declared CA projections.
+ * @returns Completion after the real runtime parser accepts all private material.
+ */
+export async function validateRemoteMcpStartup(path,
+  readText = filename => readFile(filename, 'utf8')) {
+  if (!path) return
+  try {
+    if (path !== remoteMcpConfigPath) throw new Error('Invalid projection')
+    const body = await readText(path)
+    const metadata = remoteMcpMountedMetadata(JSON.parse(body))
+    const { loadMcpPlatformConfig } = await import('../application/lib/platform/mcp-platform-config.js')
+    await loadMcpPlatformConfig(path, filename => {
+      if (!metadata.paths.includes(filename)) throw new Error('Unprojected file')
+      return filename === path ? Promise.resolve(body) : readText(filename)
+    })
+  } catch { throw new Error('Invalid remote MCP deployment configuration') }
+}
+
 async function main() {
   const role = process.argv[2]
   const dshHome = required(process.env, 'DSH_HOME')
@@ -98,9 +121,12 @@ async function main() {
   for (const name of names) if (!(await readFile(join(privateDir, name))).length) {
     throw new Error(`Empty deployment credential: ${name}`)
   }
+  if (role === 'platform') await validateRemoteMcpStartup(process.env.PE_REMOTE_MCP_CONFIG_FILE)
   const { name } = await renderProfile(role, process.env, dshHome)
+  const childEnv = { ...process.env }
+  if (role === 'host') delete childEnv.PE_REMOTE_MCP_CONFIG_FILE
   const child = spawn(process.execPath, [join(root, 'apps/cli/lib/bin.js'), '--profile', name],
-    { cwd: root, env: process.env, stdio: 'inherit' })
+    { cwd: root, env: childEnv, stdio: 'inherit' })
   for (const signal of ['SIGTERM', 'SIGINT']) process.once(signal, () => child.kill(signal))
   child.once('error', error => { console.error(error); process.exitCode = 1 })
   child.once('exit', (code, signal) => { process.exitCode = code ?? (signal ? 1 : 0) })

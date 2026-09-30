@@ -1,12 +1,15 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { randomBytes } from 'node:crypto'
+import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
-import { renderProfile } from './start.mjs'
-import { buildManifests, render } from './render.mjs'
-import { validateBundle, readyValues } from './preflight.mjs'
+import { renderProfile, validateRemoteMcpStartup } from './start.mjs'
+import { buildManifests, render, validateValues } from './render.mjs'
+import { validateBundle, readyValues, validateRemoteMcpMaterials } from './preflight.mjs'
+import { remoteMcpCaPath, remoteMcpConfigPath, remoteMcpKeyPath, remoteMcpValues } from './remote-mcp.mjs'
 
 const require = createRequire(new URL('../application/package.json', import.meta.url))
 const yaml = require('js-yaml')
@@ -50,13 +53,197 @@ test('production profiles retain bundle fields and separate Host and Platform au
       }
     }
     for (const role of ['host', 'platform']) {
-      const configured = { ...env, PE_REMOTE_MCP_CONFIG_FILE: '/run/private/remote-mcp.json' }
+      const configured = { ...env, PE_REMOTE_MCP_CONFIG_FILE: remoteMcpConfigPath }
       const { profile } = await renderProfile(role, configured, join(home, `${role}-mcp`))
       const rows = yaml.load(await readFile(join(profile, 'cordis.patch.yml'), 'utf8'), { schema: manifestSchema })
       if (role === 'platform') assert.equal(rows[1].config.remoteMcpConfigFile, configured.PE_REMOTE_MCP_CONFIG_FILE)
-      else assert(!JSON.stringify(rows).includes('remote-mcp.json'))
+      else assert(!JSON.stringify(rows).includes('/remote-mcp/'))
     }
+    await assert.rejects(renderProfile('platform', { ...env, PE_REMOTE_MCP_CONFIG_FILE: '/arbitrary/config.json' }, home),
+      /Invalid remote MCP deployment configuration path/u)
   } finally { await rm(home, { recursive: true, force: true }) }
+})
+
+const mcpValues = () => ({ ...structuredClone(values), remoteMcp: {
+  secretName: 'pe-mcp-operator', caConfigMapName: 'pe-mcp-ca', destinations: [
+    { origin: 'https://quotes.internal:8443', addresses: ['::ffff:10.70.0.12', '10.70.0.13'], caKey: 'quotes.pem' },
+    { origin: 'https://inventory.internal:9443', addresses: ['fd00:70::1'] },
+  ],
+} })
+const resource = (items, kind, name) => items.find(item => item.kind === kind && item.metadata.name === name)
+
+test('optional MCP deployment projects only private Platform files and pairs each IP with its own origin port', () => {
+  const configured = mcpValues(), items = buildManifests(configured)
+  assert.equal(validateBundle(configured, items).resources, 23)
+  const host = resource(items, 'Deployment', 'power-evolve-host').spec.template.spec
+  const platform = resource(items, 'Deployment', 'power-evolve-platform').spec.template.spec
+  assert.deepEqual(host.volumes, resource(buildManifests(values), 'Deployment', 'power-evolve-host').spec.template.spec.volumes)
+  const privateVolume = platform.volumes.find(item => item.name === 'private')
+  assert.equal(privateVolume.projected.defaultMode, 0o440)
+  assert.deepEqual(privateVolume.projected.sources.slice(2), [
+    { secret: { name: 'pe-mcp-operator', items: [
+      { key: 'remote-mcp.json', path: 'remote-mcp/config.json' }, { key: 'remote-mcp-key', path: 'remote-mcp/credential-key' },
+    ] } },
+    { configMap: { name: 'pe-mcp-ca', items: [{ key: 'quotes.pem', path: 'remote-mcp/ca/quotes.pem' }] } },
+  ])
+  assert.equal(platform.containers[0].volumeMounts.find(item => item.name === 'private').readOnly, true)
+  assert.equal(resource(items, 'ConfigMap', 'power-evolve-platform-config').data.PE_REMOTE_MCP_CONFIG_FILE, remoteMcpConfigPath)
+  assert.equal(resource(items, 'ConfigMap', 'power-evolve-host-config').data.PE_REMOTE_MCP_CONFIG_FILE, undefined)
+  assert.deepEqual(resource(items, 'NetworkPolicy', 'allow-platform').spec.egress.slice(-2), [
+    { to: [{ ipBlock: { cidr: 'fd00:70::1/128' } }], ports: [{ protocol: 'TCP', port: 9443 }] },
+    { to: [{ ipBlock: { cidr: '10.70.0.12/32' } }, { ipBlock: { cidr: '10.70.0.13/32' } }],
+      ports: [{ protocol: 'TCP', port: 8443 }] },
+  ])
+  for (const name of ['allow-host', 'allow-runner', 'default-deny']) {
+    assert.deepEqual(resource(items, 'NetworkPolicy', name).spec, resource(buildManifests(values), 'NetworkPolicy', name).spec)
+  }
+  assert.equal(items.some(item => item.kind === 'Secret'), false)
+  const deny = { ...structuredClone(values), remoteMcp: { secretName: 'pe-mcp-operator', destinations: [] } }
+  assert.deepEqual(resource(buildManifests(deny), 'NetworkPolicy', 'allow-platform').spec,
+    resource(buildManifests(values), 'NetworkPolicy', 'allow-platform').spec)
+  const http = { ...structuredClone(values), remoteMcp: { secretName: 'pe-mcp-operator', destinations: [
+    { origin: 'http://allowed.internal', addresses: ['10.70.0.12'], allowHttp: true },
+  ] } }
+  assert.equal(resource(buildManifests(http), 'NetworkPolicy', 'allow-platform').spec.egress.at(-1).ports[0].port, 80)
+})
+
+test('MCP values reject broad destinations, arbitrary mounts, ambiguous paths and shared Host credentials', () => {
+  const valid = mcpValues().remoteMcp
+  const badDestinations = [
+    { origin: 'http://plain.internal' }, { origin: 'https://quotes.internal/path' },
+    { origin: 'https://quotes.internal?token=secret-fixture' }, { origin: 'https://user:secret@quotes.internal' },
+    { origin: 'https://*.internal' }, { origin: 'https://quotes.internal:0' },
+    { addresses: [] }, { addresses: ['0.0.0.0/0'] }, { addresses: ['::/0'] }, { addresses: ['localhost'] },
+    { addresses: ['fe80::1%eth0'] }, { addresses: ['127.0.0.1', '::ffff:127.0.0.1'] },
+    { caKey: '../secret.pem' }, { allowHttp: 'true' }, { ports: [443, 8443] },
+  ]
+  const attempts = [null, { ...valid, secretName: values.secrets.shared }, { ...valid, secretName: '../secret' },
+    { ...valid, volumeMounts: [{ mountPath: '/arbitrary' }] }, { ...valid, caConfigMapName: undefined },
+    { ...valid, destinations: [...valid.destinations, valid.destinations[0]] },
+    ...badDestinations.map(change => ({ ...valid, destinations: [{ ...valid.destinations[0], ...change }] })),
+  ]
+  for (const remoteMcp of attempts) assert.throws(() => validateValues({ ...values, remoteMcp }),
+    { message: 'Invalid remote MCP deployment metadata' })
+})
+
+test('preflight rejects edited mounts, environments, inline secrets and widened policies without exposing material', () => {
+  const configured = mcpValues()
+  const secretText = 'sensitive-fixture-must-not-appear'
+  const edits = [
+    items => resource(items, 'Deployment', 'power-evolve-host').spec.template.spec.volumes.push({
+      name: 'mcp', secret: { secretName: configured.remoteMcp.secretName } }),
+    items => resource(items, 'Deployment', 'power-evolve-host').spec.template.spec.volumes[0].projected.sources.push({
+      secret: { name: configured.remoteMcp.secretName, items: [{ key: 'remote-mcp-key', path: 'credential-key' }] } }),
+    items => resource(items, 'Deployment', 'power-evolve-host').spec.template.spec.volumes[0].projected.sources[0]
+      .secret.items[0].key = secretText,
+    items => resource(items, 'Deployment', 'power-evolve-host').spec.template.spec.containers[0].env = [{
+      name: 'PRIVATE', value: secretText }],
+    items => resource(items, 'Deployment', 'power-evolve-host').spec.template.spec.containers[0].envFrom.push({
+      secretRef: { name: configured.remoteMcp.secretName } }),
+    items => resource(items, 'Deployment', 'power-evolve-platform').spec.template.spec.containers[0].command = ['node', 'bypass.js'],
+    items => resource(items, 'ConfigMap', 'power-evolve-host-config').data.PE_REMOTE_MCP_CONFIG_FILE = remoteMcpConfigPath,
+    items => resource(items, 'Deployment', 'power-evolve-platform').spec.template.spec.volumes[0].projected.defaultMode = 0o777,
+    items => resource(items, 'Deployment', 'power-evolve-platform').spec.template.spec.volumes[0].projected.sources.at(-1)
+      .configMap.items[0].path = 'outside/ca.pem',
+    items => resource(items, 'Deployment', 'power-evolve-platform').spec.template.spec.containers[0].volumeMounts[0].readOnly = false,
+    items => resource(items, 'ConfigMap', 'power-evolve-platform-config').data.PE_REMOTE_MCP_CONFIG_FILE = '/outside/private.json',
+    items => resource(items, 'NetworkPolicy', 'allow-platform').spec.egress.push({ to: [{ ipBlock: { cidr: '0.0.0.0/0' } }] }),
+    items => resource(items, 'NetworkPolicy', 'allow-host').spec.egress.push({}),
+    items => resource(items, 'NetworkPolicy', 'default-deny').spec.egress.push({}),
+    items => items.push({ apiVersion: 'networking.k8s.io/v1', kind: 'NetworkPolicy', metadata: {
+      name: 'extra-allow', namespace: values.namespace }, spec: { podSelector: {}, egress: [{}], policyTypes: ['Egress'] } }),
+    items => items.push({ kind: 'Secret', metadata: { name: 'inline', namespace: values.namespace }, stringData: { key: secretText } }),
+  ]
+  for (const edit of edits) {
+    const items = buildManifests(configured); edit(items)
+    assert.throws(() => validateBundle(configured, items), error => {
+      assert.equal(error.message.includes(secretText), false)
+      return true
+    })
+  }
+})
+
+test('MCP readiness reuses the real config parser with only named Secret and CA lookups', async t => {
+  if (spawnSync('openssl', ['version']).status !== 0) { t.skip('OpenSSL is unavailable'); return }
+  const temporary = await mkdtemp(join(tmpdir(), 'pe-deploy-mcp-'))
+  t.after(() => rm(temporary, { recursive: true, force: true }))
+  const keyPath = join(temporary, 'key.pem'), caPath = join(temporary, 'ca.pem'), leafPath = join(temporary, 'leaf.pem')
+  const generated = spawnSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', keyPath,
+    '-out', caPath, '-days', '1', '-subj', '/CN=deployment-fixture', '-addext', 'basicConstraints=critical,CA:TRUE'],
+  { encoding: 'utf8', timeout: 10000 })
+  assert.equal(generated.status, 0, generated.stderr)
+  const leaf = spawnSync('openssl', ['req', '-x509', '-key', keyPath, '-out', leafPath, '-days', '1',
+    '-subj', '/CN=non-ca-fixture', '-addext', 'basicConstraints=critical,CA:FALSE'], { encoding: 'utf8', timeout: 10000 })
+  assert.equal(leaf.status, 0, leaf.stderr)
+  const ca = await readFile(caPath, 'utf8'), nonCa = await readFile(leafPath, 'utf8')
+  const configured = mcpValues(), remote = remoteMcpValues(configured.remoteMcp, configured.secrets.shared)
+  const settings = { ...JSON.parse(await readFile(new URL('../platform/remote-mcp.example.json', import.meta.url), 'utf8')),
+    credentialKeyFile: remoteMcpKeyPath, requireOriginException: true,
+    internalExceptions: remote.destinations.map(item => ({ origin: item.origin, addresses: item.addresses,
+      ...(item.allowHttp ? { allowHttp: true } : {}), ...(item.caKey ? { caFile: remoteMcpCaPath(item.caKey) } : {}) })),
+  }
+  const encoded = text => Buffer.from(text).toString('base64')
+  const secret = { data: { 'remote-mcp.json': encoded(JSON.stringify(settings)),
+    'remote-mcp-key': encoded(randomBytes(32).toString('base64url')) } }
+  const configMap = { data: { 'quotes.pem': ca, 'unselected.pem': 'secret-fixture' } }
+  const reads = []
+  const readObject = async (kind, name) => {
+    reads.push([kind, name])
+    if (kind === 'secret' && name === remote.secretName) return secret
+    if (kind === 'configmap' && name === remote.caConfigMapName) return configMap
+    throw new Error('Unexpected resource containing secret-fixture')
+  }
+  assert.deepEqual(await validateRemoteMcpMaterials(values, readObject), { remoteMcpReady: false })
+  assert.deepEqual(reads, [])
+  assert.deepEqual(await validateRemoteMcpMaterials(configured, readObject), { remoteMcpReady: true })
+  assert.deepEqual(reads, [['secret', 'pe-mcp-operator'], ['configmap', 'pe-mcp-ca']])
+  const fileReads = [], files = new Map([[remoteMcpConfigPath, JSON.stringify(settings)],
+    [remoteMcpKeyPath, Buffer.from(secret.data['remote-mcp-key'], 'base64').toString('utf8')],
+    [remoteMcpCaPath('quotes.pem'), ca]])
+  const readText = async filename => {
+    fileReads.push(filename)
+    if (!files.has(filename)) throw new Error('unprovided secret-fixture')
+    return files.get(filename)
+  }
+  await validateRemoteMcpStartup('', readText)
+  assert.deepEqual(fileReads, [])
+  await validateRemoteMcpStartup(remoteMcpConfigPath, readText)
+  assert.deepEqual(fileReads, [remoteMcpConfigPath, remoteMcpKeyPath, remoteMcpCaPath('quotes.pem')])
+  await assert.rejects(validateRemoteMcpStartup('/arbitrary/secret-fixture', readText),
+    { message: 'Invalid remote MCP deployment configuration' })
+  const invalidStartupSettings = [
+    { ...settings, requireOriginException: false }, { ...settings, requireOriginException: undefined },
+    { ...settings, credentialKeyFile: '/unprojected/secret-fixture' }, { ...settings, pollMs: 0 },
+    { ...settings, surprise: 'secret-fixture' },
+    { ...settings, internalExceptions: settings.internalExceptions.map(item => ({ ...item, caFile: '/arbitrary/secret-fixture.pem' })) },
+  ]
+  const mismatchedDestinations = [
+    { ...settings, internalExceptions: [] },
+    { ...settings, internalExceptions: [{ origin: 'https://other.internal:8443', addresses: ['10.70.0.12'] }] },
+    { ...settings, internalExceptions: settings.internalExceptions.map(item => ({ ...item, addresses: ['10.70.0.99'] })) },
+    { ...settings, internalExceptions: settings.internalExceptions.map(item => ({ ...item, allowHttp: true })) },
+  ]
+  for (const changed of [...invalidStartupSettings, ...mismatchedDestinations]) {
+    const attempted = { data: { ...secret.data, 'remote-mcp.json': encoded(JSON.stringify(changed)) } }
+    await assert.rejects(validateRemoteMcpMaterials(configured, async kind => kind === 'secret' ? attempted : configMap),
+      { message: 'Invalid remote MCP deployment materials' })
+  }
+  for (const changed of invalidStartupSettings) {
+    await assert.rejects(validateRemoteMcpStartup(remoteMcpConfigPath, async filename => {
+      if (filename === remoteMcpConfigPath) return JSON.stringify(changed)
+      return readText(filename)
+    }), { message: 'Invalid remote MCP deployment configuration' })
+  }
+  for (const changed of [{ data: {} }, { data: { ...secret.data, 'remote-mcp-key': '' } },
+    { data: { ...secret.data, 'remote-mcp-key': encoded('secret-fixture') } },
+    { data: { ...secret.data, 'remote-mcp.json': encoded('{secret-fixture') } }]) {
+    await assert.rejects(validateRemoteMcpMaterials(configured, async kind => kind === 'secret' ? changed : configMap),
+      { message: 'Invalid remote MCP deployment materials' })
+  }
+  for (const changed of [{ data: {} }, { data: { 'quotes.pem': 'secret-fixture' } }, { data: { 'quotes.pem': nonCa } }]) {
+    await assert.rejects(validateRemoteMcpMaterials(configured, async kind => kind === 'secret' ? secret : changed),
+      { message: 'Invalid remote MCP deployment materials' })
+  }
 })
 
 test('sample bundle is parseable and rejects Host privilege or mount drift', () => {

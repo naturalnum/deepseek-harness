@@ -3,6 +3,7 @@ import { isIP } from 'node:net'
 import { readFile, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
+import { remoteMcpConfigPath, remoteMcpEgress, remoteMcpSources, remoteMcpValues } from './remote-mcp.mjs'
 
 const require = createRequire(new URL('../application/package.json', import.meta.url))
 const yaml = require('js-yaml')
@@ -84,6 +85,7 @@ export function validateValues(input) {
   named(secrets.shared, 'shared Secret')
   named(secrets.platform, 'Platform Secret')
   if (secrets.shared === secrets.platform) throw new Error('Host must not mount Platform credentials')
+  remoteMcpValues(value.remoteMcp, secrets.shared)
   return value
 }
 
@@ -115,6 +117,7 @@ function secretVolume(values, role) {
   if (role === 'platform') sources.push({ secret: { name: values.secrets.platform,
     items: ['database-url', 'model-key', 'connector-key', 'runner-key', 'users.json']
       .map(key => ({ key, path: key })) } })
+  if (role === 'platform') sources.push(...remoteMcpSources(remoteMcpValues(values.remoteMcp, values.secrets.shared)))
   return { name: 'private', projected: { defaultMode: 0o440, sources } }
 }
 function deployment(values, role) {
@@ -183,6 +186,7 @@ function staticVolume(name, claim, namespace, storage) {
 
 export function buildManifests(input) {
   const values = validateValues(input)
+  const remoteMcp = remoteMcpValues(values.remoteMcp, values.secrets.shared)
   const app = values.namespace, runner = values.runnerNamespace, storage = values.storage
   const hostLabels = { 'app.kubernetes.io/name': 'power-evolve-host' }
   const platformLabels = { 'app.kubernetes.io/name': 'power-evolve-platform' }
@@ -202,6 +206,7 @@ export function buildManifests(input) {
     PE_MODEL_URL: values.modelUrl, PE_CONNECTOR_URL: values.connectorUrl,
     PE_SANDBOX_NAMESPACE: runner, PE_SANDBOX_IMAGE: values.sandboxImage,
     PE_SANDBOX_VOLUME_CLAIM: storage.runnerClaim,
+    ...(remoteMcp === null ? {} : { PE_REMOTE_MCP_CONFIG_FILE: remoteMcpConfigPath }),
     PE_PRIVATE_DIR: '/run/power-evolve/private', DSH_HOME: '/var/lib/dsh' }
   const configMap = (name, data) => ({ apiVersion: 'v1', kind: 'ConfigMap',
     metadata: metadata(name, app), data })
@@ -252,7 +257,7 @@ export function buildManifests(input) {
       [dnsEgress(), egressCidrs(values.network.postgresCidrs, values.network.postgresPort),
         egressCidrs(values.network.modelCidrs, Number(new URL(values.modelUrl).port || 443)),
         egressCidrs(values.network.connectorCidrs, Number(new URL(values.connectorUrl).port || 443)),
-        egressCidrs(values.network.apiServerCidrs, values.network.apiServerPort)]),
+        egressCidrs(values.network.apiServerCidrs, values.network.apiServerPort), ...remoteMcpEgress(remoteMcp)]),
     networkPolicy('allow-runner', runner, runnerLabels,
       [{ from: peerCidrs(values.network.runnerProxySourceCidrs),
         ports: [{ protocol: 'TCP', port: 8080 }] }],

@@ -13,6 +13,7 @@ const timer = positive.max(2_147_483_647)
 const filePath = z.string().min(1).refine(isAbsolute)
 const configuration = z.object({
   credentialKeyFile: filePath,
+  requireOriginException: z.boolean().optional(),
   pollMs: timer, renewMs: timer, cleanupMs: timer, cleanupBatchSize: positive,
   management: z.object({ maxConnections: positive, maxPendingTickets: positive, maxActiveChecks: positive,
     maxDrafts: positive, maxDraftsPerHour: positive, maxTools: positive, maxCatalogBytes: positive,
@@ -41,18 +42,20 @@ export interface McpPlatformConfig {
 
 /** Read required limits and trusted network exceptions before opening platform resources.
  * @param path Absolute configuration filename; an empty string disables generic remote MCP.
+ * @param readText Trusted text reader; deployment preflight supplies only explicitly projected Secret/CA paths.
  * @returns Validated private settings, or null when this feature is disabled.
  */
-export async function loadMcpPlatformConfig(path: string): Promise<McpPlatformConfig | null> {
+export async function loadMcpPlatformConfig(path: string,
+  readText: (filename: string) => Promise<string> = filename => readFile(filename, 'utf8')): Promise<McpPlatformConfig | null> {
   if (!path) return null
   try {
     filePath.parse(path)
-    const settings = configuration.parse(JSON.parse(await readFile(path, 'utf8')))
+    const settings = configuration.parse(JSON.parse(await readText(path)))
     validateMcpBudgets(settings.transport)
     if (settings.renewMs >= Math.min(settings.management.checkLeaseMs, settings.actions.leaseMs)
       || settings.management.checkLeaseMs > settings.management.checkLifetimeMs
       || settings.actions.leaseMs > settings.actions.approvalLifetimeMs) throw new Error('Invalid lease timing')
-    const credentialKey = (await readFile(settings.credentialKeyFile, 'utf8')).trim()
+    const credentialKey = (await readText(settings.credentialKeyFile)).trim()
     new McpCredentialCipher(credentialKey)
     const origins = new Set<string>()
     const internalExceptions = []
@@ -64,7 +67,7 @@ export async function loadMcpPlatformConfig(path: string): Promise<McpPlatformCo
       origins.add(url.origin)
       let ca: string | undefined
       if (exception.caFile) {
-        ca = await readFile(exception.caFile, 'utf8')
+        ca = await readText(exception.caFile)
         const certificates = ca.match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/gu)
         if (!certificates?.length || certificates.some(pem => !new X509Certificate(pem).ca)) {
           throw new Error('Invalid CA bundle')
@@ -74,7 +77,8 @@ export async function loadMcpPlatformConfig(path: string): Promise<McpPlatformCo
         ...(exception.allowHttp === undefined ? {} : { allowHttp: exception.allowHttp }),
         ...(ca === undefined ? {} : { ca }) })
     }
-    return { settings, credentialKey, networkPolicy: { internalExceptions } }
+    return { settings, credentialKey, networkPolicy: { internalExceptions,
+      ...(settings.requireOriginException === undefined ? {} : { requireOriginException: settings.requireOriginException }) } }
   } catch {
     // Filenames, parser inputs and credential bytes remain private even in startup diagnostics.
     throw new Error('Invalid remote MCP platform configuration')

@@ -5,7 +5,10 @@ import { spawnSync } from 'node:child_process'
 import { readFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
+import { isDeepStrictEqual } from 'node:util'
 import { buildManifests, validateValues } from './render.mjs'
+import { remoteMcpCaPath, remoteMcpConfigPath, remoteMcpKeyPath,
+  remoteMcpMountedMetadata, remoteMcpValues } from './remote-mcp.mjs'
 
 const require = createRequire(new URL('../application/package.json', import.meta.url))
 const yaml = require('js-yaml')
@@ -30,6 +33,7 @@ function isDocumentationAddress(value) {
 export function validateBundle(values, items) {
   validateValues(values)
   const app = values.namespace, runner = values.runnerNamespace
+  const expected = buildManifests(values)
   const host = resource(items, 'Deployment', 'power-evolve-host', app)
   const platform = resource(items, 'Deployment', 'power-evolve-platform', app)
   const hostSpec = host.spec.template.spec, platformSpec = platform.spec.template.spec
@@ -43,14 +47,29 @@ export function validateBundle(values, items) {
     'Host must not mount shared POSIX storage')
   assert.equal(hostSpec.volumes.some(item => item.projected?.sources?.some(source =>
     source.secret?.name === values.secrets.platform)), false, 'Host must not mount Platform Secret')
-  assert.deepEqual(hostSpec.volumes.find(item => item.name === 'private').projected.sources
-    .flatMap(source => source.secret.items.map(item => item.key)), ['worker-token'])
+  assert(isDeepStrictEqual(hostSpec.volumes.find(item => item.name === 'private').projected.sources
+    .flatMap(source => source.secret?.items?.map(item => item.key) ?? []), ['worker-token']),
+  'Host private projection differs')
+  for (const [role, spec] of [['host', hostSpec], ['platform', platformSpec]]) {
+    const wanted = resource(expected, 'Deployment', `power-evolve-${role}`, app).spec.template.spec
+    assert(isDeepStrictEqual(spec.volumes, wanted.volumes), `${role} volume sources differ from declared projections`)
+    assert.equal(spec.containers.length, 1, `${role} has unexpected containers`)
+    assert(spec.initContainers === undefined, `${role} has unexpected init containers`)
+    assert(spec.ephemeralContainers === undefined, `${role} has unexpected ephemeral containers`)
+    for (const field of ['volumeMounts', 'envFrom', 'env', 'command', 'args', 'workingDir', 'securityContext']) {
+      assert(isDeepStrictEqual(spec.containers[0][field], wanted.containers[0][field]), `${role} ${field} differs`)
+    }
+  }
   assert.equal(platformSpec.volumes.find(item => item.name === 'shared-posix')
     .persistentVolumeClaim.claimName, values.storage.platformClaim)
   assert.equal(hostSpec.containers[0].image, platformSpec.containers[0].image)
   assert.equal(hostSpec.containers[0].image, values.appImage)
   const hostConfig = resource(items, 'ConfigMap', 'power-evolve-host-config', app).data
   const platformConfig = resource(items, 'ConfigMap', 'power-evolve-platform-config', app).data
+  for (const role of ['host', 'platform']) {
+    assert(isDeepStrictEqual(resource(items, 'ConfigMap', `power-evolve-${role}-config`, app).data,
+      resource(expected, 'ConfigMap', `power-evolve-${role}-config`, app).data), `${role} configuration differs`)
+  }
   assert.equal(hostConfig.PE_HOST_PUBLIC_ORIGIN, values.hostPublicOrigin)
   assert.equal(hostConfig.PE_PLATFORM_PUBLIC_ORIGIN, values.platformPublicOrigin)
   assert.equal(platformConfig.PE_HOST_PUBLIC_ORIGIN, values.hostPublicOrigin)
@@ -87,6 +106,15 @@ export function validateBundle(values, items) {
   resource(items, 'NetworkPolicy', 'allow-host', app)
   resource(items, 'NetworkPolicy', 'allow-platform', app)
   resource(items, 'NetworkPolicy', 'allow-runner', runner)
+  const ownedPolicies = list => list.filter(item => item.kind === 'NetworkPolicy'
+    && [app, runner].includes(item.metadata?.namespace)).map(item => ({
+    name: item.metadata.name, namespace: item.metadata.namespace, spec: item.spec,
+  })).sort((a, b) => `${a.namespace}/${a.name}`.localeCompare(`${b.namespace}/${b.name}`))
+  assert(isDeepStrictEqual(ownedPolicies(items), ownedPolicies(expected)), 'Deployment NetworkPolicy permissions differ')
+  assert.equal(items.some(item => item.kind === 'Secret' && [app, runner].includes(item.metadata?.namespace)), false,
+    'Deployment Secrets must remain externally provisioned')
+  assert.equal(items.filter(item => item.kind === 'ConfigMap' && item.metadata?.namespace === app).length, 2,
+    'Unexpected application ConfigMap')
   return { resources: items.length, namespaces: [app, runner],
     hostOrigin: values.hostPublicOrigin, platformOrigin: values.platformPublicOrigin,
     imagesPinned: true, hostHasPlatformSecret: false, hostHasPvc: false,
@@ -115,6 +143,7 @@ function secretBytes(secret, key) {
 
 /** Check provisioned dependencies without printing credential values or mutating the cluster. */
 export function readyValues(values) {
+  validateValues(values)
   for (const field of ['hostPublicOrigin', 'platformPublicOrigin', 'modelUrl', 'connectorUrl']) {
     if (exampleAddress.test(new URL(values[field]).hostname)) throw new Error(`Replace example ${field}`)
   }
@@ -128,9 +157,49 @@ export function readyValues(values) {
       && item.some(value => isDocumentationAddress(value)))) {
     throw new Error('Replace documentation network addresses')
   }
+  const remote = remoteMcpValues(values.remoteMcp, values.secrets.shared)
+  if (remote?.destinations.some(item => exampleAddress.test(new URL(item.origin).hostname)
+    || item.addresses.some(isDocumentationAddress))) throw new Error('Replace documentation MCP destinations')
 }
 
-export function checkCluster(values, context) {
+/** Validate only the declared MCP Secret/CA entries with the Platform's real parser and a closed text reader.
+ * @param values Validated deployment values; omission leaves MCP disabled.
+ * @param getObject Read-only lookup scoped by the caller to this deployment's application namespace.
+ * @returns A material-free readiness flag; errors never include JSON, filenames, credentials or CA bytes.
+ */
+export async function validateRemoteMcpMaterials(values, getObject) {
+  try {
+    const remote = remoteMcpValues(values.remoteMcp, values.secrets.shared)
+    if (remote === null) return { remoteMcpReady: false }
+    const secret = await getObject('secret', remote.secretName)
+    const body = secretBytes(secret, 'remote-mcp.json').toString('utf8')
+    const metadata = remoteMcpMountedMetadata(JSON.parse(body))
+    if (!isDeepStrictEqual(metadata.destinations, remote.destinations)) throw new Error('Destination mismatch')
+    const files = new Map([[remoteMcpConfigPath, body],
+      [remoteMcpKeyPath, secretBytes(secret, 'remote-mcp-key').toString('utf8')]])
+    if (remote.caConfigMapName) {
+      const ca = await getObject('configmap', remote.caConfigMapName)
+      for (const destination of remote.destinations) if (destination.caKey !== undefined) {
+        const pem = ca.data?.[destination.caKey]
+        if (typeof pem !== 'string' || !pem.length) throw new Error('Missing CA')
+        files.set(remoteMcpCaPath(destination.caKey), pem)
+      }
+    }
+    const { loadMcpPlatformConfig } = await import('../application/lib/platform/mcp-platform-config.js')
+    await loadMcpPlatformConfig(remoteMcpConfigPath, async filename => {
+      if (!files.has(filename)) throw new Error('Unprojected file')
+      return files.get(filename)
+    })
+    return { remoteMcpReady: true }
+  } catch { throw new Error('Invalid remote MCP deployment materials') }
+}
+
+/** Inspect declared dependencies without deploying resources or enumerating MCP Secrets.
+ * @param values Deployment values with explicit resource names.
+ * @param context Selected kubectl context.
+ * @returns Readiness observations without credential material.
+ */
+export async function checkCluster(values, context) {
   readyValues(values)
   const app = values.namespace, runner = values.runnerNamespace
   const nodes = JSON.parse(kubectl(context, ['get', 'nodes', '-o', 'json'])).items
@@ -151,6 +220,7 @@ export function checkCluster(values, context) {
     throw new Error('External PostgreSQL URL must use TLS verify-full')
   }
   for (const key of ['model-key', 'connector-key', 'runner-key', 'users.json']) secretBytes(platform, key)
+  const remoteMcp = await validateRemoteMcpMaterials(values, (kind, name) => get(context, app, kind, name))
   if (values.imagePullSecretName) {
     get(context, app, 'secret', values.imagePullSecretName)
     get(context, runner, 'secret', values.imagePullSecretName)
@@ -185,7 +255,7 @@ export function checkCluster(values, context) {
     [runner, `${runner}:power-evolve-runner`, 'get', 'pods'],
   ]) assert.equal(can(context, namespace, subject, verb, resourceName), false,
     `${subject} has unexpected ${verb} ${resourceName} in ${namespace}`)
-  return { readyNodes: nodes.length, controllerReady: true, secretsPresent: true,
+  return { ...remoteMcp, readyNodes: nodes.length, controllerReady: true, secretsPresent: true,
     tlsCoversPublicOrigins: true, sharedPvcBound: true, namespaceRbacChecked: true,
     crossMachineStorageVerified: false, ingressStreamingVerified: false,
     networkPolicyEnforcementVerified: false }
@@ -206,7 +276,7 @@ if (process.argv[1] === self) {
   }
   if (flags.includes('--ready')) {
     if (!context) throw new Error('--ready requires --context')
-    Object.assign(report, checkCluster(values, context))
+    Object.assign(report, await checkCluster(values, context))
   }
   console.log(JSON.stringify(report, null, 2))
 }

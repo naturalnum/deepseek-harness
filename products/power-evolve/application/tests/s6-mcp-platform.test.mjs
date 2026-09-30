@@ -57,6 +57,7 @@ test('remote MCP private configuration fails before resources open and admission
   const path = join(directory, 'config.json'), valid = settings(directory, origin)
   await writeFile(path, JSON.stringify(valid), { mode: 0o600 })
   const config = await loadMcpPlatformConfig(path)
+  assert.equal(config.networkPolicy.requireOriginException, undefined)
   assert.equal(await loadMcpPlatformConfig(''), null)
   await assertMcpPlatformEndpoint(config, `${origin}/mcp`)
   assert.equal(requests, 0)
@@ -65,7 +66,15 @@ test('remote MCP private configuration fails before resources open and admission
   const example = JSON.parse(await readFile(join(product, 'platform/remote-mcp.example.json'), 'utf8'))
   await writeFile(path, JSON.stringify({ ...example, credentialKeyFile: valid.credentialKeyFile }))
   assert.equal((await loadMcpPlatformConfig(path)).networkPolicy.internalExceptions.length, 0)
+  await writeFile(path, JSON.stringify({ ...valid, requireOriginException: true }))
+  const restricted = await loadMcpPlatformConfig(path)
+  assert.equal(restricted.networkPolicy.requireOriginException, true)
+  await assertMcpPlatformEndpoint(restricted, `${origin}/mcp`)
+  await assert.rejects(assertMcpPlatformEndpoint(restricted, 'https://unlisted.example.test/mcp'),
+    { status: 400, code: 'mcp_address_denied' })
+  assert.equal(requests, 0)
   const invalid = [
+    { ...valid, requireOriginException: 'true' },
     { ...valid, renewMs: valid.actions.leaseMs }, { ...valid, pollMs: 0 },
     { ...valid, credentialKeyFile: 'relative-key' }, { ...valid, surprise: 'ignored-config' },
     { ...valid, transport: { ...valid.transport, idleTimeoutMs: valid.transport.timeoutMs + 1 } },
@@ -78,6 +87,30 @@ test('remote MCP private configuration fails before resources open and admission
     await writeFile(path, JSON.stringify(value))
     await assert.rejects(loadMcpPlatformConfig(path), { message: 'Invalid remote MCP platform configuration' })
   }
+})
+
+test('remote MCP text reader resolves only supplied private files and redacts reader failures', async () => {
+  const settings = JSON.parse(await readFile(join(product, 'platform/remote-mcp.example.json'), 'utf8'))
+  const path = '/closed/config.json', keyPath = '/closed/key'
+  const secret = randomBytes(32).toString('base64url')
+  const files = new Map([[path, JSON.stringify({ ...settings, credentialKeyFile: keyPath, requireOriginException: true })],
+    [keyPath, secret]])
+  const reads = []
+  const reader = async filename => {
+    reads.push(filename)
+    if (!files.has(filename)) throw new Error('private reader failure containing secret-fixture')
+    return files.get(filename)
+  }
+  const config = await loadMcpPlatformConfig(path, reader)
+  assert.equal(config.credentialKey, secret)
+  assert.equal(config.networkPolicy.requireOriginException, true)
+  assert.deepEqual(reads, [path, keyPath])
+  await assert.rejects(assertMcpPlatformEndpoint(config, 'https://any-public.example/mcp'),
+    { code: 'mcp_address_denied' })
+  assert.equal(await loadMcpPlatformConfig('', reader), null)
+  assert.deepEqual(reads, [path, keyPath])
+  files.set(path, JSON.stringify({ ...settings, credentialKeyFile: '/closed/unprovided', requireOriginException: true }))
+  await assert.rejects(loadMcpPlatformConfig(path, reader), { message: 'Invalid remote MCP platform configuration' })
 })
 
 test('native Agent and trusted Platform compose owner-scoped discovery, approval, two-tool continuation and uncertain recovery',

@@ -33,6 +33,8 @@ export interface McpInternalException {
 /** Resolver injection and private CAs belong to operator configuration, never connection credentials. */
 export interface McpNetworkPolicy {
   internalExceptions?: readonly McpInternalException[]
+  /** Require an exact operator origin before DNS; omitted policies retain public HTTPS compatibility. */
+  requireOriginException?: boolean
   resolve?: (hostname: string) => Promise<readonly { address: string; family: number }[]>
 }
 
@@ -218,6 +220,7 @@ export class McpNetworkOperation {
       exception.addresses.forEach(canonicalAddress)
     }
     const exception = exceptions.find(item => item.origin === url.origin)
+    if (policy.requireOriginException && !exception) throw new McpTransportError('address_denied', false)
     if (url.protocol !== 'https:' && !exception?.allowHttp) throw new McpTransportError('address_denied', false)
     const hostname = url.hostname.replace(/^\[|\]$/g, '')
     let resolved: readonly { address: string; family: number }[]

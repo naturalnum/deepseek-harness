@@ -411,6 +411,37 @@ test('remote MCP uses pinned TLS sockets and a one-use dispatch gate', { timeout
     assert.equal(calls('/pinned'), 1)
     assert(seen.filter(item => item.path === '/pinned').every(item => item.sni === 'mcp-fixture.test'))
   })
+
+  await t.test('strict origin permission precedes DNS and cannot authorize another origin on the same IP or port', async () => {
+    let resolutions = 0
+    const policy = { requireOriginException: true, internalExceptions: [{ origin, addresses: ['127.0.0.1'], ca }],
+      resolve: async () => { resolutions++; return [{ address: '127.0.0.1', family: 4 }] } }
+    const before = seen.length
+    for (const unlisted of [`https://unlisted.test:${server.address().port}/origin-denied`,
+      `https://mcp-fixture.test:${server.address().port + 1}/origin-denied`, 'https://8.8.8.8/origin-denied']) {
+      await assert.rejects(discoverMcp({ endpoint: unlisted, headers: {} }, options({ networkPolicy: policy })),
+        rejects('address_denied'))
+    }
+    assert.equal(resolutions, 0); assert.equal(seen.length, before)
+    await assert.rejects(discoverMcp(target('/origin-empty'), options({ networkPolicy: {
+      ...policy, internalExceptions: [],
+    } })), rejects('address_denied'))
+    assert.equal(resolutions, 0); assert.equal(seen.length, before)
+    await call('/origin-permitted', { networkPolicy: policy })
+    assert.equal(resolutions, 1); assert.equal(calls('/origin-permitted'), 1)
+    const afterAllowed = seen.length
+    await assert.rejects(discoverMcp(target('/origin-mixed-dns'), options({ networkPolicy: {
+      ...policy, resolve: async () => [{ address: '127.0.0.1', family: 4 }, { address: '8.8.8.8', family: 4 }],
+    } })), rejects('address_denied'))
+    assert.equal(seen.length, afterAllowed)
+    // Legacy policy still resolves public HTTPS without an exception; this check opens no socket.
+    const operation = new McpNetworkOperation(budgets, new AbortController().signal)
+    try {
+      await operation.fetchFor('https://public-compatible.test/mcp', {
+        resolve: async () => [{ address: '8.8.8.8', family: 4 }],
+      }, async () => {})
+    } finally { await operation.dispose() }
+  })
   await t.test('TLS verification, endpoint protocol and redirects cannot bypass the destination policy', async () => {
     await assert.rejects(discoverMcp(target(), options({ networkPolicy: {
       internalExceptions: [{ origin, addresses: ['127.0.0.1'] }], resolve: async () => [{ address: '127.0.0.1', family: 4 }] } })),
