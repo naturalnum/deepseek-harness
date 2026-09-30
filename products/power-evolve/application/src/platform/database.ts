@@ -1,6 +1,6 @@
 /** Transaction and schema lifecycle owned by the trusted platform. */
 import { Pool, type PoolClient } from 'pg'
-import { schema, schemaV2, schemaV3, schemaV4, schemaV5, schemaV6, schemaV7, schemaV8, schemaV9, schemaV10, schemaV11, schemaV12, schemaV13, schemaV14, schemaV15, schemaV16, schemaV17, schemaV18, schemaV19, schemaV20, schemaV21 } from './schema.ts'
+import { CURRENT_SCHEMA_VERSION, schema, schemaV2, schemaV3, schemaV4, schemaV5, schemaV6, schemaV7, schemaV8, schemaV9, schemaV10, schemaV11, schemaV12, schemaV13, schemaV14, schemaV15, schemaV16, schemaV17, schemaV18, schemaV19, schemaV20, schemaV21, schemaV22 } from './schema.ts'
 
 /**
  * Run one operation in a transaction; retain its failure and discard disconnected clients.
@@ -40,7 +40,8 @@ export async function initializeDatabase(pool: Pool): Promise<void> {
     await client.query(schema)
     await client.query('INSERT INTO pe_schema(version) SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM pe_schema)')
     const versions = await client.query<{ version: number }>('SELECT version FROM pe_schema ORDER BY version')
-    if (versions.rows.length !== 1 || ![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21].includes(versions.rows[0]!.version)) throw new Error('Unsupported PowerEvolve schema version')
+    if (versions.rows.length !== 1 || versions.rows[0]!.version < 1
+      || versions.rows[0]!.version > CURRENT_SCHEMA_VERSION) throw new Error('Unsupported PowerEvolve schema version')
     const initialVersion = versions.rows[0]!.version
     if (initialVersion < 2) await client.query(schemaV2)
     if (initialVersion < 3) await client.query(schemaV3)
@@ -62,5 +63,6 @@ export async function initializeDatabase(pool: Pool): Promise<void> {
     if (initialVersion < 19) await client.query(schemaV19)
     if (initialVersion < 20) await client.query(schemaV20)
     if (initialVersion < 21) await client.query(schemaV21)
+    if (initialVersion < 22) await client.query(schemaV22)
   })
 }

@@ -106,7 +106,7 @@ test('STDIO calls pin owner and revision, deduplicate, and resume the same Sessi
     } catch (error) { await client.query('ROLLBACK'); throw error }
     finally { client.release() }
     await initializeDatabase(pool)
-    assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 21)
+    assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 22)
     const tasks = new TaskStore(pool, { maxEventBytes: 524288, leaseMs: 30_000, maxPendingPerUser: 8,
       maxActivePerUser: 1, stdioMcpEnabled: true })
     const runner = new FixtureRunner()

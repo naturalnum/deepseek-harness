@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
 import { MAX_INPUT_JSON_BYTES } from './continuation-input.ts'
+import { mcpOperationTools } from './mcp-operation-contracts.ts'
 
 export type UserId = Branded<'PowerEvolveUserId'>
 export type OperationId = Branded<'PowerEvolveOperationId'>
@@ -151,6 +152,7 @@ export const grant = z.object({
   skills: z.array(skillSnapshot).max(256).default([]),
   selection: z.array(skillSelection).max(256).default([]),
   mcpConnections: z.array(mcpSelection).max(1).default([]),
+  remoteMcpTools: mcpOperationTools.default([]),
   stdioMcpConnections: z.array(stdioMcpSelection).max(1).default([]),
   sshConnections: z.array(sshSelection).max(8).default([]),
 }).strict().refine(value => value.source !== 'user' || value.text.length <= 16_384,

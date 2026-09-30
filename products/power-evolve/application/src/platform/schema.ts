@@ -1,4 +1,9 @@
 /** Initial PG schema. Session bytes and operation ownership commit in the same database. */
+import { mcpConnectionsSchemaV22 } from './mcp-connections-schema.ts'
+
+/** Latest supported product database version; older binaries reject newer state. */
+export const CURRENT_SCHEMA_VERSION = 22
+
 export const schema = `
 CREATE TABLE IF NOT EXISTS pe_schema (version integer PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS pe_users (
@@ -648,4 +653,10 @@ ALTER TABLE pe_desktop_executions ALTER COLUMN result TYPE json USING result::js
 ALTER TABLE pe_connector_actions ALTER COLUMN result TYPE json USING result::json;
 ALTER TABLE pe_events ALTER COLUMN event TYPE json USING event::json;
 UPDATE pe_schema SET version=21 WHERE version=20;
+`
+
+/** Remote MCP management versions and exact per-operation tool snapshots. */
+export const schemaV22 = `${mcpConnectionsSchemaV22}
+ALTER TABLE pe_operations ADD COLUMN remote_mcp_selection json NOT NULL DEFAULT '[]'::json;
+UPDATE pe_schema SET version=22 WHERE version=21;
 `

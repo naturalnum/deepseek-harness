@@ -190,7 +190,7 @@ test('V11 migrates only each existing user current model and never regrants on r
       await pool.query('INSERT INTO pe_users(id,username,password_hash,settings) VALUES($1,$2,$3,$4)',
         [id, 'legacy', 'test-only', { model: 'fixture-legacy', maxTokens: 96, revision: 7 }])
       await initializeDatabase(pool)
-      assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 21)
+      assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 22)
       assert.deepEqual((await pool.query('SELECT model_id,label,max_tokens,enabled FROM pe_user_models WHERE user_id=$1',
         [id])).rows, [{ model_id: 'fixture-legacy', label: 'fixture-legacy', max_tokens: 96, enabled: true }])
       await pool.query('UPDATE pe_user_models SET enabled=false WHERE user_id=$1', [id])

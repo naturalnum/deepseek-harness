@@ -9,6 +9,8 @@ import { digest } from './identity.ts'
 import { transaction } from './database.ts'
 import { requireModelGrant } from './account-settings.ts'
 import { continuationInput } from '../continuation-input.ts'
+import { mcpOperationTools } from '../mcp-operation-contracts.ts'
+import { selectMcpOperationTools, type McpOperationAdmissionLimits } from './mcp-admission.ts'
 
 interface SessionRow {
   id: string
@@ -27,6 +29,7 @@ export interface TaskLimits {
   readonly maxActivePerUser: number
   readonly executionEnabled?: boolean
   readonly mcpEnabled?: boolean
+  readonly remoteMcpAdmission?: McpOperationAdmissionLimits
   readonly stdioMcpEnabled?: boolean
   readonly sshEnabled?: boolean
 }
@@ -128,6 +131,8 @@ export class TaskStore {
           'SELECT id AS "connectionId",revision FROM pe_mcp_connections WHERE user_id=$1 AND enabled=true', [user.userId])
         : { rows: [] }
       const mcp = z.array(mcpSelection).max(1).parse(mcpRows.rows)
+      const remoteMcp = this.limits.remoteMcpAdmission && target.kind === 'cloud'
+        ? await selectMcpOperationTools(client, user.userId, this.limits.remoteMcpAdmission) : []
       const stdioRows = this.limits.stdioMcpEnabled && target.kind === 'cloud'
         ? await client.query<{ connectionId: string; revision: number }>(
           'SELECT id AS "connectionId",revision FROM pe_stdio_mcp_connections WHERE user_id=$1 AND enabled=true',
@@ -144,10 +149,10 @@ export class TaskStore {
       const id = randomUUID()
       await client.query(
         `INSERT INTO pe_operations(id,session_id,request_id,input,settings,skill_selection,mcp_selection,
-          stdio_mcp_selection,ssh_selection,execution_target,state)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'queued')`,
+          stdio_mcp_selection,ssh_selection,execution_target,remote_mcp_selection,state)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'queued')`,
         [id, session, requestId, text, config, JSON.stringify(selection), JSON.stringify(mcp),
-          JSON.stringify(stdio), JSON.stringify(ssh), JSON.stringify(target)],
+          JSON.stringify(stdio), JSON.stringify(ssh), JSON.stringify(target), JSON.stringify(remoteMcp)],
       )
       await client.query('SELECT pg_notify(\'pe_tasks\',$1)', [session])
       return { accepted: true, operationId: id, state: 'queued' }
@@ -186,6 +191,7 @@ export class TaskStore {
       const candidate = await client.query<{
         id: string; session_id: string; user_id: string; request_id: string; input: string; settings: unknown;
         skill_selection: unknown; mcp_selection: unknown; stdio_mcp_selection: unknown; ssh_selection: unknown;
+        remote_mcp_selection: unknown;
         execution_target: unknown;
         source: 'user' | 'platform_action' | 'sandbox_result' | 'desktop_result' | 'stdio_mcp_result'
           | 'ssh_execute_result';
@@ -193,7 +199,7 @@ export class TaskStore {
         source_stdio_mcp_call_id: string | null;
         source_ssh_execute_action_id: string | null;
       }>(
-        `SELECT o.id,o.session_id,s.user_id,o.request_id,o.input,o.settings,o.skill_selection,o.mcp_selection,
+        `SELECT o.id,o.session_id,s.user_id,o.request_id,o.input,o.settings,o.skill_selection,o.mcp_selection,o.remote_mcp_selection,
          o.stdio_mcp_selection,o.ssh_selection,o.source,o.source_action_id,o.source_execution_id,
          o.source_desktop_execution_id,o.source_stdio_mcp_call_id,o.source_ssh_execute_action_id,o.execution_target
          FROM pe_operations o JOIN pe_sessions s ON s.id=o.session_id JOIN pe_users u ON u.id=s.user_id
@@ -227,6 +233,7 @@ export class TaskStore {
         text: row.source === 'user' ? row.input : continuationInput(row.input, this.limits.maxEventBytes),
         settings: settings.parse(row.settings), selection: z.array(skillSelection).max(256).parse(row.skill_selection),
         mcpConnections: z.array(mcpSelection).max(1).parse(row.mcp_selection),
+        remoteMcpTools: mcpOperationTools.parse(row.remote_mcp_selection),
         stdioMcpConnections: z.array(stdioMcpSelection).max(1).parse(row.stdio_mcp_selection),
         sshConnections: z.array(sshSelection).max(8).parse(row.ssh_selection),
         source: row.source, sourceActionId: row.source_action_id,

@@ -8,6 +8,8 @@ import { PlatformError, settings } from '../contracts.ts'
 import { transaction } from './database.ts'
 import type { TaskStore } from './tasks.ts'
 import { requireModelGrant } from './account-settings.ts'
+import { assertModelToolDeclarations, McpToolAdmissionError, modelMessageTool } from '../mcp-model-tools.ts'
+import { mcpOperationTools } from '../mcp-operation-contracts.ts'
 
 const messageRequest = z.object({
   model: z.string().min(1).max(100), max_tokens: z.number().int().positive(), stream: z.literal(true),
@@ -15,12 +17,7 @@ const messageRequest = z.object({
   system: z.union([z.string(), z.array(z.json())]).optional(),
   thinking: z.json().optional(), output_config: z.json().optional(),
   temperature: z.number().optional(), stop_sequences: z.array(z.string()).optional(),
-  tools: z.array(z.object({
-    name: z.enum(['trial_notes_list', 'trial_notes_append', 'cloud_exec', 'desktop_exec',
-      'mcp__personal__whoami', 'mcp__stdio__whoami', 'ssh_execute_propose', 'skill', 'skill_resource', 'office']),
-    description: z.string().max(1000), input_schema: z.record(z.string(), z.json()),
-    defer_loading: z.literal(true).optional(),
-  }).strict()).max(9).optional(),
+  tools: z.array(modelMessageTool).optional(),
 }).strict()
 
 export interface ModelProxyConfig {
@@ -41,6 +38,14 @@ export async function proxyModel(
     const selected = settings.parse(authorized.settings)
     if (body.model !== selected.model || body.max_tokens > selected.maxTokens) throw new PlatformError(403, 'model_not_authorized')
     await requireModelGrant(client, authorized.user_id, selected.model, selected.maxTokens)
+    const record = await client.query<{ remote_mcp_selection: unknown }>(
+      'SELECT remote_mcp_selection FROM pe_operations WHERE id=$1', [authorized.operation_id])
+    const admitted = mcpOperationTools.parse(record.rows[0]!.remote_mcp_selection).map(tool => tool.model)
+    try { assertModelToolDeclarations(body.tools ?? [], admitted) }
+    catch (error) {
+      if (error instanceof McpToolAdmissionError) throw new PlatformError(403, error.code)
+      throw error
+    }
   })
   const disconnected = new AbortController()
   const abort = () => { disconnected.abort() }
