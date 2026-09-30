@@ -89,6 +89,11 @@ test('SSH quarantine backs up only after durable action, operation and Pod check
 import { appendFileSync, readFileSync } from 'node:fs'
 appendFileSync(process.env.PE_BACKUP_TEST_LOG,JSON.stringify(process.argv.slice(2))+'\\n')
 const mode=JSON.parse(readFileSync(process.env.PE_BACKUP_TEST_CONTROL,'utf8'))
+if(process.argv[4]==='config') {
+  process.stdout.write(mode.contextOutput ?? 'ssh-current')
+  process.exit(0)
+}
+if(process.argv[4]!=='--context'||process.argv[5]!=='ssh-current') process.exit(2)
 if(mode.exit) process.exit(mode.exit)
 process.stdout.write(JSON.stringify({items:mode.items ?? []}))
 `, { mode: 0o700 })
@@ -97,7 +102,7 @@ process.stdout.write(JSON.stringify({items:mode.items ?? []}))
     const cli = async (command, index, bundle, overrides = {}) => execute(process.execPath, [script, command], {
       cwd: root, maxBuffer: 2 * 1024 * 1024, env: { ...process.env, PE_TRIAL_DATABASE: 'external',
         PE_BACKUP_KEEP_STOPPED: '1', PE_TRIAL_NAME: trials[index], PE_PRIVATE_DIR: privatePaths[index],
-        PE_BACKUP_BUNDLE: bundle, PE_KUBE_CONTEXT: 'backup-test', PE_REMOTE_MCP_CONFIG_FILE: '',
+        PE_BACKUP_BUNDLE: bundle, PE_KUBE_CONTEXT: 'unrelated-outer-context', PE_REMOTE_MCP_CONFIG_FILE: '',
         PATH: `${bin}:${process.env.PATH}`, PE_BACKUP_TEST_CONTROL: control, PE_BACKUP_TEST_LOG: log, ...overrides } })
     let blocked = 0
     const refuse = async (pattern, overrides = {}) => {
@@ -183,7 +188,7 @@ process.stdout.write(JSON.stringify({items:mode.items ?? []}))
       await source.query("UPDATE pe_operations SET state='completed' WHERE id=$1", [continuation.operationId])
     })
     await t.test('cleanup flags do not bypass configuration, context, Pod absence or credential-key evidence', async () => {
-      await refuse(/PE_KUBE_CONTEXT/u, { PE_KUBE_CONTEXT: '' })
+      await configureKube({ contextOutput: '' }); await refuse(/Cannot verify Kubernetes writer current-context/u)
       for (const pod of [{ metadata: { name: 'pe-cr-active' } },
         { metadata: { name: 'pe-cr-canary-check', deletionTimestamp: '2026-10-01T00:00:00Z' } }]) {
         await configureKube({ items: [pod] }); await refuse(/Connector Runner Pods remain active/u)
@@ -200,8 +205,9 @@ process.stdout.write(JSON.stringify({items:mode.items ?? []}))
     await cli('create', 0, bundle)
     const kubeCalls = (await readFile(log, 'utf8')).trim().split('\n').map(line => JSON.parse(line))
     assert(kubeCalls.length > 0)
-    for (const args of kubeCalls) assert.deepEqual(args, ['--kubeconfig', ssh.kubeconfigFile,
-      '--context', 'backup-test', '-n', ssh.namespace, 'get', 'pods', '-o', 'json'])
+    for (const args of kubeCalls) assert.deepEqual(args, args[2] === 'config'
+      ? ['--kubeconfig', ssh.kubeconfigFile, 'config', 'current-context']
+      : ['--kubeconfig', ssh.kubeconfigFile, '--context', 'ssh-current', '-n', ssh.namespace, 'get', 'pods', '-o', 'json'])
     await cli('restore', 1, bundle)
     for (const [index, table] of stateTables.entries()) assert.deepEqual((await target.query(`SELECT * FROM ${table} ORDER BY 1`)).rows, before[index])
     const restoredKey = (await readFile(join(privateTarget, 'ssh-credential-key'), 'utf8')).trim()

@@ -101,20 +101,22 @@ export async function runningBackupTargets(directory) {
 }
 
 /** Require independent cluster evidence after writers stop; a cleanup flag alone is insufficient. */
-export function requireNoKubernetesWriters({ sandbox, ssh, kubeContext, sshRequired = false }, run) {
+export function requireNoKubernetesWriters({ sandbox, ssh, sshRequired = false }, run) {
   if (sshRequired && !ssh) throw new Error('Quarantined SSH calls require SSH Connector Runner configuration for backup')
   if (!sandbox && !ssh) return
-  if (typeof kubeContext !== 'string' || !kubeContext.trim()) {
-    throw new Error('PE_KUBE_CONTEXT is required to check Kubernetes writers')
-  }
   const list = (configuration, resource) => {
     if (typeof configuration.namespace !== 'string' || configuration.namespace.length > 63
       || !/^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$/u.test(configuration.namespace)
       || typeof configuration.kubeconfigFile !== 'string' || !configuration.kubeconfigFile) {
       throw new Error('Invalid Kubernetes writer configuration')
     }
+    // Mirror KubernetesClient.fromFile: each Runner uses its pinned file's current-context.
+    const context = run('kubectl', ['--kubeconfig', configuration.kubeconfigFile, 'config', 'current-context']).trim()
+    if (!context || /[\u0000-\u001f\u007f]/u.test(context)) {
+      throw new Error('Cannot verify Kubernetes writer current-context')
+    }
     const result = JSON.parse(run('kubectl', ['--kubeconfig', configuration.kubeconfigFile,
-      '--context', kubeContext, '-n', configuration.namespace, 'get', resource, '-o', 'json']))
+      '--context', context, '-n', configuration.namespace, 'get', resource, '-o', 'json']))
     if (!Array.isArray(result.items)) throw new Error('Cannot verify Kubernetes writer absence')
     return result.items
   }

@@ -17,20 +17,28 @@ test('SSH-only backup checks its configured cluster and rejects live or terminat
 import { appendFileSync, readFileSync } from 'node:fs'
 appendFileSync(process.env.PE_BACKUP_TEST_LOG, JSON.stringify(process.argv.slice(2))+'\\n')
 const mode=JSON.parse(readFileSync(process.env.PE_BACKUP_TEST_CONTROL,'utf8'))
+const context=process.argv[3].includes('sandbox')?'sandbox-current':'ssh-current'
+if(process.argv[4]==='config') {
+  if(mode.contextExit) process.exit(mode.contextExit)
+  process.stdout.write(mode.contextOutput ?? context)
+  process.exit(0)
+}
+if(process.argv[4]!=='--context'||process.argv[5]!==context) process.exit(2)
 if(mode.exit) process.exit(mode.exit)
 process.stdout.write(mode.raw ?? JSON.stringify({items:mode.items ?? []}))
 `, { mode: 0o700 })
     const run = (exe, args) => {
       assert.equal(exe, 'kubectl')
       const result = spawnSync(kubectl, args, { encoding: 'utf8',
-        env: { ...process.env, PE_BACKUP_TEST_CONTROL: control, PE_BACKUP_TEST_LOG: log } })
+        env: { ...process.env, PE_KUBE_CONTEXT: 'unrelated-outer-context',
+          PE_BACKUP_TEST_CONTROL: control, PE_BACKUP_TEST_LOG: log } })
       if (result.error || result.status !== 0) throw new Error('kubectl failed')
       return result.stdout
     }
     const configure = mode => writeFile(control, JSON.stringify(mode), { mode: 0o600 })
     const ssh = { namespace: 'pe-connector-backup-test', kubeconfigFile: '/synthetic/ssh-kubeconfig' }
     const sandbox = { namespace: 'pe-sandbox-backup-test', kubeconfigFile: '/synthetic/sandbox-kubeconfig' }
-    const check = overrides => requireNoKubernetesWriters({ ssh, kubeContext: 'backup-test', ...overrides }, run)
+    const check = overrides => requireNoKubernetesWriters({ ssh, ...overrides }, run)
     const calls = async () => (await readFile(log, 'utf8')).trim().split('\n').map(line => JSON.parse(line))
 
     await t.test('SSH configuration alone enumerates Pods, including authentication canaries', async () => {
@@ -40,29 +48,38 @@ process.stdout.write(mode.raw ?? JSON.stringify({items:mode.items ?? []}))
         assert.throws(() => check(), /Connector Runner Pods remain active/u)
       }
       const recorded = await calls()
-      assert.equal(recorded.length, 4)
-      for (const args of recorded) assert.deepEqual(args, ['--kubeconfig', ssh.kubeconfigFile,
-        '--context', 'backup-test', '-n', ssh.namespace, 'get', 'pods', '-o', 'json'])
+      assert.equal(recorded.length, 8)
+      for (const [index, args] of recorded.entries()) assert.deepEqual(args, index % 2 === 0
+        ? ['--kubeconfig', ssh.kubeconfigFile, 'config', 'current-context']
+        : ['--kubeconfig', ssh.kubeconfigFile, '--context', 'ssh-current', '-n', ssh.namespace, 'get', 'pods', '-o', 'json'])
     })
-    await t.test('SSH target servers are permitted; Sandbox and SSH checks use their own kubeconfigs', async () => {
+    await t.test('SSH target servers are permitted; independent kubeconfigs use different current-context names', async () => {
       await configure({ items: [{ metadata: { name: 'ssh-target-fixture' } }] })
       assert.doesNotThrow(() => check())
       await configure({ items: [] })
       assert.doesNotThrow(() => check({ sandbox }))
       const recorded = await calls()
-      assert.deepEqual(recorded.at(-2), ['--kubeconfig', sandbox.kubeconfigFile,
-        '--context', 'backup-test', '-n', sandbox.namespace, 'get', 'sandboxes.agents.x-k8s.io', '-o', 'json'])
+      assert.deepEqual(recorded.at(-4), ['--kubeconfig', sandbox.kubeconfigFile, 'config', 'current-context'])
+      assert.deepEqual(recorded.at(-3), ['--kubeconfig', sandbox.kubeconfigFile,
+        '--context', 'sandbox-current', '-n', sandbox.namespace, 'get', 'sandboxes.agents.x-k8s.io', '-o', 'json'])
+      assert.deepEqual(recorded.at(-2), ['--kubeconfig', ssh.kubeconfigFile, 'config', 'current-context'])
       assert.deepEqual(recorded.at(-1), ['--kubeconfig', ssh.kubeconfigFile,
-        '--context', 'backup-test', '-n', ssh.namespace, 'get', 'pods', '-o', 'json'])
+        '--context', 'ssh-current', '-n', ssh.namespace, 'get', 'pods', '-o', 'json'])
       await configure({ items: [{ metadata: { name: 'sandbox-writer' } }] })
       assert.throws(() => check({ sandbox }), /Sandbox objects remain active/u)
     })
     await t.test('missing context, invalid configuration and unavailable or malformed enumeration fail closed', async () => {
       const before = (await calls()).length
-      for (const kubeContext of [undefined, '', ' ']) assert.throws(() => check({ kubeContext }), /PE_KUBE_CONTEXT/u)
       assert.throws(() => check({ ssh: { ...ssh, kubeconfigFile: 'relative' } }), /Invalid SSH/u)
       assert.throws(() => check({ ssh: { ...ssh, namespace: '' } }), /Invalid Kubernetes/u)
       assert.equal((await calls()).length, before)
+      for (const contextOutput of ['', ' ', '\n', 'ssh-current\nother']) {
+        await configure({ contextOutput })
+        assert.throws(() => check(), /Cannot verify Kubernetes writer current-context/u)
+        assert.equal((await calls()).at(-1)[2], 'config', 'No namespace query follows an unverified context')
+      }
+      await configure({ contextExit: 1 })
+      assert.throws(() => check(), /kubectl failed/u)
       for (const mode of [{ exit: 1 }, { raw: 'not json' }, { raw: '{}' }, { items: [{}] }]) {
         await configure(mode)
         assert.throws(() => check())
@@ -70,6 +87,6 @@ process.stdout.write(mode.raw ?? JSON.stringify({items:mode.items ?? []}))
     })
     await t.test('quarantine cannot substitute for a configured namespace to inspect', async () => {
       assert.throws(() => check({ ssh: null, sshRequired: true }), /Quarantined SSH calls require/u)
-      assert.doesNotThrow(() => check({ ssh: null, sandbox: null, kubeContext: undefined }))
+      assert.doesNotThrow(() => check({ ssh: null, sandbox: null }))
     })
   })

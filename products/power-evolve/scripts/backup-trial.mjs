@@ -20,7 +20,6 @@ const command = process.argv[2]
 const bundle = process.env.PE_BACKUP_BUNDLE
 const trialName = process.env.PE_TRIAL_NAME
 const privateDir = process.env.PE_PRIVATE_DIR
-const kubeContext = process.env.PE_KUBE_CONTEXT
 if (!['create', 'restore'].includes(command) || !bundle || !isAbsolute(bundle)
   || !trialName || !/^[a-z0-9-]{1,32}$/u.test(trialName)
   || !privateDir || !isAbsolute(privateDir)) {
@@ -172,7 +171,7 @@ if (command === 'create') {
       throw new Error('Backup requires schema 18+ with no active operations, Runner calls or MCP discovery/dispatch')
     }
     const ssh = await exists(join(privatePath, 'ssh.json')) ? await json(join(privatePath, 'ssh.json')) : null
-    requireNoKubernetesWriters({ sandbox, ssh, kubeContext, sshRequired: status.sshQuarantined > 0 }, run)
+    requireNoKubernetesWriters({ sandbox, ssh, sshRequired: status.sshQuarantined > 0 }, run)
     if (status.sshRecords && !(await exists(join(privatePath, 'ssh-credential-key')))?.isFile()) {
       throw new Error('Existing SSH history requires its credential key for backup')
     }
