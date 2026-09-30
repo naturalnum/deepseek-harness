@@ -74,7 +74,8 @@ function parseModels(value: unknown): AuthorizedModel[] {
 
 /** Same-origin native client that never handles an account-audience bearer. */
 export class AccountHttpClient {
-  constructor(private readonly request: typeof fetch = (...args) => globalThis.fetch(...args)) {}
+  constructor(private readonly request: typeof fetch = (...args) => globalThis.fetch(...args),
+    private readonly onIdentityExpired?: () => void) {}
 
   private async post(route: string, request: object, signal?: AbortSignal): Promise<unknown> {
     const response = await this.request(`/api/powerEvolve/${route}`, {
@@ -85,12 +86,16 @@ export class AccountHttpClient {
     return response.json()
   }
 
-  /** Read the signed-in product user's personal identity and settings.
+  /** Read the signed-in product user's personal identity and settings; report only an un-aborted HTTP 401 as login expiry.
    * @param signal - read lifetime.
    * @returns permitted personal metadata.
    */
   async me(signal?: AbortSignal): Promise<CurrentAccount> {
-    return parseAccount(await this.post('me', {}, signal))
+    try { return parseAccount(await this.post('me', {}, signal)) }
+    catch (error) {
+      if (!signal?.aborted && error instanceof AccountHttpError && error.status === 401) this.onIdentityExpired?.()
+      throw error
+    }
   }
 
   /** Read only the native launcher's display and navigation capabilities.

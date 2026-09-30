@@ -13,6 +13,8 @@
   "dsh": {
     "client": {
       "inject": [
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-ui-layout",
         "@deepseek-ai/dsh-client-ui-settings",
         "@deepseek-ai/dsh-client-ui-settings-general",
         "@deepseek-ai/dsh-client-ui-renderer",
@@ -40,6 +42,8 @@
     "react-dom": "^18.2.0"
   },
   "devDependencies": {
+    "@deepseek-ai/dsh-client-connection": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-layout": "workspace:*",
     "@types/react": "~18.3.1",
     "@types/react-dom": "~18.3.0",
     "@testing-library/react": "^16.3.2",

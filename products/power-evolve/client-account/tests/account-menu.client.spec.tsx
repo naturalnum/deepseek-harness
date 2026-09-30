@@ -87,19 +87,37 @@ it('retains the launcher and shows a local failure when logout is refused', asyn
   expect(actions.navigate).not.toHaveBeenCalled()
 })
 
-it('registers exactly one native launcher and personal section with no old footer action', () => {
+it('registers the native account seats and owns the independent identity listener through disposal', async () => {
   const entries: Array<{ name: string; id?: string; label?: () => string; inject?: () => unknown }> = []
+  const disposers: Array<() => void> = []
+  const listeners = new Set<() => void>()
+  const connection = { state: { getSnapshot: () => 'connected', subscribe: (listener: () => void) => {
+    listeners.add(listener); return () => { listeners.delete(listener) }
+  } }, stop: vi.fn() }
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => String(input).endsWith('/config')
+    ? Response.json({ loginUrl: 'https://platform.example.test/login' })
+    : Response.json(await me())))
   const ctx = {
-    effect: (setup: () => unknown) => { setup() },
+    get: (name: string) => { expect(name).toBe('connection'); return connection },
+    effect: (setup: () => unknown) => { const dispose = setup(); if (typeof dispose === 'function') disposers.push(() => { dispose() }) },
     locale: { register: () => () => undefined, bind: () => t },
     slots: {
       inject: (_slot: string, register: () => unknown) => register(),
       register: (entry: typeof entries[number]) => { entries.push(entry); return () => undefined },
     },
   }
-  apply(ctx as Context)
-  expect(entries.map(entry => entry.name)).toEqual(['settings.launcher', 'settings.section'])
-  expect(entries[1]).toMatchObject({ id: 'account' })
-  expect(entries[1]?.label?.()).toBe(en.account)
-  expect(entries[0]?.inject?.()).toHaveProperty('client')
+  try {
+    apply(ctx as Context)
+    expect(entries.map(entry => entry.name)).toEqual(['settings.launcher', 'settings.section', 'shell.overlay'])
+    expect(entries[1]).toMatchObject({ id: 'account' })
+    expect(entries[1]?.label?.()).toBe(en.account)
+    expect(entries[0]?.inject?.()).toHaveProperty('client')
+    expect(entries[2]?.inject?.()).toHaveProperty('hooks.accountExpiry')
+    expect(listeners.size).toBe(1)
+    await waitFor(() => { expect(connection.stop).not.toHaveBeenCalled() })
+  } finally {
+    for (const dispose of disposers.reverse()) dispose()
+    vi.unstubAllGlobals()
+  }
+  expect(listeners.size).toBe(0)
 })

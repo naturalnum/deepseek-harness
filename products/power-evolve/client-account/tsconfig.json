@@ -8,6 +8,8 @@
   "include": ["src"],
   "references": [
     { "path": "../contracts" },
+    { "path": "../../../packages/client/connection/tsconfig.client.json" },
+    { "path": "../../../packages/client/ui-layout" },
     { "path": "../../../vendor/cordis" },
     { "path": "../../../packages/client/locale/tsconfig.client.json" },
     { "path": "../../../packages/client/ui-primitives" },
