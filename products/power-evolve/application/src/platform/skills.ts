@@ -16,6 +16,11 @@ import { BuiltinSkillCatalog, type BuiltinSkillRelease } from './builtin-skills.
 const SHA256 = /^[a-f0-9]{64}$/u
 const TICKET_LIFETIME_MS = 5 * 60_000
 const MANIFEST_MAX_BYTES = 128 * 1024
+const RESOURCE_MAX_BYTES = 256 * 1024
+
+type Selection = z.infer<typeof skillSelection>
+type SkillResource = { kind: 'list'; files: { path: string; size: number; sha256: string }[] }
+  | { kind: 'text'; path: string; text: string; sha256: string }
 
 interface SkillRow {
   id: string
@@ -83,6 +88,13 @@ const skillColumns = `s.id,s.user_id AS "userId",s.name,s.description,s.digest,s
 const skillJoin = 'pe_user_skills s LEFT JOIN pe_skill_package_versions v ON v.id=s.package_version_id'
 
 function hash(bytes: string | Buffer): string { return createHash('sha256').update(bytes).digest('hex') }
+
+function resourcePath(path: string): string {
+  if (path.length < 1 || path.length > 1024 || path.startsWith('/') || /[\0\\:]/u.test(path)
+    || path.split('/').some(part => part === '' || part === '.' || part === '..'))
+    throw new PlatformError(400, 'invalid_skill_resource_path')
+  return path
+}
 
 function builtinRequestId(userId: string, catalogId: string, version: string): string {
   const bytes = createHash('sha256').update(`pe-builtin\0${userId}\0${catalogId}\0${version}`).digest()
@@ -603,18 +615,92 @@ export class SkillService {
     }
   }
 
-  /** Load one accepted skill body for a runner, checking current ownership and revocation. */
-  async readSelected(userId: string, selection: z.infer<typeof skillSelection>, skillId: string): Promise<unknown> {
-    if (selection.skillId !== skillId) throw new PlatformError(404, 'skill_not_found')
+  private async activeSelectedSkill(userId: string, selection: Selection): Promise<SkillRow> {
     const result = await this.pool.query<SkillRow>(
-      `SELECT ${skillColumns} FROM ${skillJoin} WHERE s.id=$1 AND s.user_id=$2`, [skillId, userId])
+      `SELECT ${skillColumns} FROM ${skillJoin} WHERE s.id=$1 AND s.user_id=$2`, [selection.skillId, userId])
     const skill = result.rows[0]
     if (!skill || skill.kind !== selection.kind) throw new PlatformError(404, 'skill_not_found')
     if (skill.revokedAt !== null) throw new PlatformError(409, 'skill_revoked')
     if (skill.kind === 'text' && (skill.digest !== selection.digest || skill.name !== selection.name
       || skill.description !== selection.description))
       throw new PlatformError(503, 'skill_unavailable')
+    return skill
+  }
+
+  private async selectedPackageVersion(userId: string, selected: Selection): Promise<PackageVersionRow> {
+    if (!selected.packageDigest || !selected.manifestDigest || !selected.version)
+      throw new PlatformError(503, 'skill_package_unavailable')
+    const result = await this.pool.query<PackageVersionRow>(
+      `SELECT * FROM pe_skill_package_versions WHERE user_id=$1 AND archive_digest=$2 AND manifest_digest=$3`,
+      [userId, selected.packageDigest, selected.manifestDigest])
+    const version = result.rows[0]
+    if (!version || version.skill_id !== selected.skillId || version.version !== selected.version
+      || version.instruction_digest !== selected.digest || version.name !== selected.name
+      || version.description !== selected.description || hash(version.manifest) !== selected.manifestDigest)
+      throw new PlatformError(503, 'skill_package_unavailable')
+    return version
+  }
+
+  /** Load one accepted skill body for a runner, checking current ownership and revocation. */
+  async readSelected(userId: string, selection: Selection, skillId: string): Promise<unknown> {
+    if (selection.skillId !== skillId) throw new PlatformError(404, 'skill_not_found')
+    await this.activeSelectedSkill(userId, selection)
     return (await this.snapshot(userId, [selection]))[0]
+  }
+
+  /** Read one verified UTF-8 resource, or list manifest names, from an accepted version. */
+  async readSelectedResource(userId: string, selected: Selection, path?: string): Promise<SkillResource> {
+    const relative = path === undefined ? undefined : resourcePath(path)
+    await this.activeSelectedSkill(userId, selected)
+    if (selected.kind === 'text') {
+      const text = await this.textContent(userId, selected.skillId, selected.digest)
+      if (relative === undefined) return { kind: 'list', files: [
+        { path: 'SKILL.md', size: Buffer.byteLength(text), sha256: selected.digest }] }
+      if (relative !== 'SKILL.md') throw new PlatformError(404, 'skill_resource_not_found')
+      return { kind: 'text', path: relative, text, sha256: selected.digest }
+    }
+    const version = await this.selectedPackageVersion(userId, selected)
+    const files = manifestFiles(version.manifest, version.archive_digest)
+    const packagePath = join(await this.packageUserRoot(userId), 'sha256', version.archive_digest)
+    await verifyPublishedSkillPackage(packagePath, version.manifest, files)
+    const resources = files.map(file => ({ path: file.path.slice('skill/'.length),
+      size: file.size, sha256: file.sha256 })).sort((a, b) => a.path.localeCompare(b.path))
+    if (relative === undefined) return { kind: 'list', files: resources }
+    const item = resources.find(file => file.path === relative)
+    if (!item) throw new PlatformError(404, 'skill_resource_not_found')
+    if (item.size > RESOURCE_MAX_BYTES) throw new PlatformError(413, 'skill_resource_too_large')
+    const parts = relative.split('/')
+    let parent = join(packagePath, 'skill')
+    try {
+      for (const part of parts.slice(0, -1)) {
+        parent = join(parent, part)
+        const stat = await lstat(parent)
+        if (!stat.isDirectory() || stat.isSymbolicLink()) throw new PlatformError(503, 'skill_package_unavailable')
+      }
+    } catch (_error) {
+      throw new PlatformError(503, 'skill_package_unavailable')
+    }
+    let bytes: Buffer
+    try {
+      const file = await open(join(parent, parts.at(-1)!), constants.O_RDONLY | constants.O_NOFOLLOW)
+      try {
+        const stat = await file.stat()
+        if (!stat.isFile() || stat.size !== item.size || stat.size > RESOURCE_MAX_BYTES)
+          throw new PlatformError(503, 'skill_package_unavailable')
+        bytes = await file.readFile()
+      } finally { await file.close() }
+    } catch (error) {
+      if (error instanceof PlatformError) throw error
+      throw new PlatformError(503, 'skill_package_unavailable')
+    }
+    if (bytes.length !== item.size || hash(bytes) !== item.sha256)
+      throw new PlatformError(503, 'skill_package_unavailable')
+    let text: string
+    try { text = new TextDecoder('utf-8', { fatal: true }).decode(bytes) }
+    catch { throw new PlatformError(415, 'skill_resource_not_text') }
+    if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/u.test(text))
+      throw new PlatformError(415, 'skill_resource_not_text')
+    return { kind: 'text', path: relative, text, sha256: item.sha256 }
   }
 
   /** Resolve exactly the accepted version; later upgrades and revocation do not rewrite an Operation. */
@@ -623,18 +709,10 @@ export class SkillService {
       if (selected.kind === 'text') return { name: selected.name, description: selected.description,
         instructions: await this.textContent(userId, selected.skillId, selected.digest), revision: selected.revision,
         kind: 'text', version: null, digest: selected.digest, packageDigest: null, manifestDigest: null }
-      if (!selected.packageDigest || !selected.manifestDigest || !selected.version)
-        throw new PlatformError(503, 'skill_package_unavailable')
-      const result = await this.pool.query<PackageVersionRow>(
-        `SELECT * FROM pe_skill_package_versions WHERE user_id=$1 AND archive_digest=$2 AND manifest_digest=$3`,
-        [userId, selected.packageDigest, selected.manifestDigest])
-      const version = result.rows[0]
-      if (!version || version.skill_id !== selected.skillId || version.version !== selected.version
-        || version.instruction_digest !== selected.digest || version.name !== selected.name
-        || version.description !== selected.description) throw new PlatformError(503, 'skill_package_unavailable')
+      const version = await this.selectedPackageVersion(userId, selected)
       return { name: selected.name, description: selected.description,
-        instructions: await this.packageContent(userId, selected.packageDigest, selected.manifestDigest,
-          selected.digest, version.manifest), revision: selected.revision, kind: 'package',
+        instructions: await this.packageContent(userId, version.archive_digest, version.manifest_digest,
+          version.instruction_digest, version.manifest), revision: selected.revision, kind: 'package',
         version: selected.version, digest: selected.digest, packageDigest: selected.packageDigest,
         manifestDigest: selected.manifestDigest }
     }))
