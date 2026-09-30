@@ -1,8 +1,8 @@
 /** Platform-admitted MCP tool declarations and argument checks shared with the native Host adapter. */
 import { isDeepStrictEqual } from 'node:util'
-import { assertObjectJsonSchema, assertSupportedJsonSchema, validateJsonSchemaValue } from '@deepseek-ai/dsh-tools'
 import { z } from 'zod'
 import type { McpCatalogTool, McpDiscoveredTool } from './mcp-contracts.ts'
+import { compileMcpJsonSchema, type McpJsonSchemaValidator } from './mcp-json-schema.ts'
 
 /** Native model declaration persisted with an accepted Operation, before any approval decision. */
 export const mcpModelTool = z.object({
@@ -53,8 +53,8 @@ export function compileMcpModelTool(tool: Pick<McpCatalogTool, 'publicName' | 'r
     throw new McpToolAdmissionError('mcp_tasks_unsupported')
   }
   try {
-    assertObjectJsonSchema(tool.raw.inputSchema)
-    if (tool.raw.outputSchema !== undefined) assertSupportedJsonSchema(tool.raw.outputSchema)
+    compileMcpJsonSchema(tool.raw.inputSchema, true)
+    if (tool.raw.outputSchema !== undefined) compileMcpJsonSchema(tool.raw.outputSchema)
   } catch (_unsupportedSchema) { throw new McpToolAdmissionError('mcp_schema_unsupported') }
   const description = `${receiptGuidance}\n\nRemote tool description:\n${tool.raw.description ?? ''}`
   if (Buffer.byteLength(description) > limits.maxDescriptionBytes) {
@@ -70,9 +70,10 @@ export function compileMcpModelTool(tool: Pick<McpCatalogTool, 'publicName' | 'r
  * @returns Nothing when the original schema accepts the value; otherwise a redacted refusal.
  */
 export function assertMcpToolArguments(tool: McpDiscoveredTool, args: unknown): void {
-  try { assertObjectJsonSchema(tool.inputSchema) }
+  let validate: McpJsonSchemaValidator
+  try { validate = compileMcpJsonSchema(tool.inputSchema, true) }
   catch (_unsupportedSchema) { throw new McpToolAdmissionError('mcp_schema_unsupported') }
-  if (validateJsonSchemaValue(tool.inputSchema, args).length !== 0) {
+  if (!validate(args)) {
     throw new McpToolAdmissionError('mcp_arguments_invalid')
   }
 }

@@ -7,6 +7,7 @@ import { z } from 'zod'
 import type { Grant } from '../contracts.ts'
 import type RuntimeScope from './scope.ts'
 import { mcpActionReceipt } from '../mcp-action-contracts.ts'
+import { assertMcpToolArguments } from '../mcp-model-tools.ts'
 
 const TOOL = 'mcp__personal__whoami'
 const response = z.object({ toolName: z.literal(TOOL), result: z.string().min(1).max(8192) }).strict()
@@ -20,18 +21,28 @@ const response = z.object({ toolName: z.literal(TOOL), result: z.string().min(1)
 export function installRemoteMcpTools(agent: Agent, grant: Grant, runtime: RuntimeScope, platformOrigin: string): void {
   if (grant.target.kind !== 'cloud') return
   for (const selected of grant.remoteMcpTools) {
-    agent.ctx.effect(() => agent.ctx.tools.register(createMcpToolDefinition(agent.ctx, {
-      name: selected.model.name, rawName: selected.raw.name, description: selected.model.description,
-      inputSchema: selected.model.parameters,
-      // This bridge returns an acceptance receipt; the Platform validates the eventual remote output schema.
-      async call(args, execution) {
-        execution.signal.throwIfAborted()
-        const receipt = mcpActionReceipt.parse(await runtime.call('/runtime/mcp/actions/propose', grant.token,
-          { callKey: String(execution.callId), toolName: selected.model.name, arguments: args }))
-        const value = { ...receipt, approvalUrl: new URL('/approval', platformOrigin).toString() }
-        return { content: [{ type: 'text', text: JSON.stringify(value) }] }
-      },
-    })))
+    agent.ctx.effect(() => {
+      const definition = createMcpToolDefinition(agent.ctx, {
+        name: selected.model.name, rawName: selected.raw.name, description: selected.model.description,
+        inputSchema: selected.model.parameters,
+        // This bridge returns an acceptance receipt; the Platform validates the eventual remote output schema.
+        async call(args, execution) {
+          execution.signal.throwIfAborted()
+          const receipt = mcpActionReceipt.parse(await runtime.call('/runtime/mcp/actions/propose', grant.token,
+            { callKey: String(execution.callId), toolName: selected.model.name, arguments: args }))
+          const value = { ...receipt, approvalUrl: new URL('/approval', platformOrigin).toString() }
+          return { content: [{ type: 'text', text: JSON.stringify(value) }] }
+        },
+      })
+      return agent.ctx.tools.register({
+        ...definition,
+        async execute(args, execution) {
+          // Validate before the upstream adapter can replace a non-object input with an empty object.
+          assertMcpToolArguments(selected.raw, args)
+          return definition.execute(args, execution)
+        },
+      })
+    })
   }
 }
 

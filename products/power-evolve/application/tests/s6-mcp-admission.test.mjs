@@ -50,7 +50,8 @@ async function fixture(t) {
 }
 
 function rawTool(name, description = 'A fixture tool\0including preserved JSON data') {
-  return { name, description, inputSchema: { type: 'object', properties: { count: { type: 'integer' } },
+  return { name, description, inputSchema: { type: 'object', $schema: 'https://json-schema.org/draft/2020-12/schema',
+    properties: { count: { type: 'integer', minimum: 1, maximum: 100 } },
     required: ['count'], additionalProperties: false }, icons: [{ src: 'https://example.org/icon.svg' }] }
 }
 
@@ -99,6 +100,9 @@ test('V22 admission pins owner catalogs across retries, changes and task-store r
     assert.ok(before.every(tool => tool.model.name !== bobTool.publicName))
     assert.ok(before.every(tool => tool.raw.description.includes('\0')))
     assert.ok(before.every(tool => !('headers' in tool) && !('serverUrl' in tool)))
+    assert.ok(before.every(tool => tool.model.parameters.$schema === 'https://json-schema.org/draft/2020-12/schema'))
+    assert.ok(before.every(tool => tool.model.parameters.properties.count.minimum === 1
+      && tool.model.parameters.properties.count.maximum === 100))
     assert.deepEqual(before[0].raw.icons, [{ src: 'https://example.org/icon.svg' }])
     await assert.rejects(tasks.accept(bob, session.sessionId, randomUUID(), 'Cross-owner'),
       { status: 404, code: 'session_not_found' })
