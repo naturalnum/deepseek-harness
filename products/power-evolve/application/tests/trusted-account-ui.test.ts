@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test, type TestContext } from 'node:test'
 import { serveTrustedAccountUi } from '../src/trusted-account-ui.ts'
+import { sendFailure } from '../src/http.ts'
 
 async function fixture(t: TestContext) {
   const root = await mkdtemp(join(tmpdir(), 'pe-account-assets-'))
@@ -19,7 +20,7 @@ async function fixture(t: TestContext) {
   const server = createServer((req, res) => {
     void serveTrustedAccountUi(req.url ?? '/', res, directory).then(handled => {
       if (!handled) { res.writeHead(404); res.end('other route') }
-    }).catch(() => { res.writeHead(503); res.end('asset unavailable') })
+    }).catch(error => sendFailure(res, error))
   })
   t.after(async () => {
     server.closeAllConnections()
@@ -84,6 +85,6 @@ test('a malformed manifest cannot expose paths outside the packaged public asset
     await writeFile(join(directory, 'asset-list.json'), JSON.stringify(paths))
     const response = await read('/account')
     assert.equal(response.status, 503)
-    assert.equal(response.body, 'asset unavailable')
+    assert.deepEqual(JSON.parse(response.body), { error: 'service_unavailable' })
   }
 })

@@ -24,8 +24,9 @@ export async function serveTrustedAccountUi(path: string, response: ServerRespon
   directory: string): Promise<boolean> {
   if (path !== '/account' && !path.startsWith('/account/')) return false
   const asset = path === '/account' || path === '/account/' ? 'index.html' : path.slice('/account/'.length)
-  const assets = manifest.parse(JSON.parse(await readFile(join(directory, 'asset-list.json'), 'utf8')))
-  if (!assets.includes(asset)) {
+  const assets = manifest.safeParse(JSON.parse(await readFile(join(directory, 'asset-list.json'), 'utf8')))
+  if (!assets.success) throw new Error('Invalid trusted account asset manifest')
+  if (!assets.data.includes(asset)) {
     response.writeHead(404, { 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' })
     response.end()
     return true
