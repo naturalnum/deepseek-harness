@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { PersonalMcpPage } from '../src/client/PersonalMcpPage.tsx'
-import { en } from '../src/client/locales.ts'
+import { en, zh } from '../src/client/locales.ts'
 import { PersonalMcpConnectionRequestError, type PersonalMcpConnection,
   type PersonalMcpConnectionCheck, type PersonalMcpConnectionPort } from '../src/client/personal-mcp-client.ts'
 import { personalMcpSessionSource, type PersonalMcpSessionSource,
@@ -77,6 +77,34 @@ async function openCreate(port = fixture([])) {
 }
 
 describe('Migrated personal MCP page with an explicit Port substitute', () => {
+  it.each([['English', en], ['Chinese', zh]] as const)('renders a saved unsupported-schema check in %s', async (_language, dictionary) => {
+    const saved = { ...connection(), latest_check: { ...check('failed', connection().connection_id),
+      error_code: 'MCP_SCHEMA_UNSUPPORTED' as const } }
+    const port = fixture([saved])
+    const translate = (key: keyof typeof en): string => dictionary[key]
+    const view = render(<PersonalMcpPage personalMcp={port} sessions={sessions} t={translate} />)
+    fireEvent.click(await screen.findByRole('button', { name: `${dictionary.openMcpConnection} Knowledge` }))
+    expect(screen.getByText(dictionary.mcpCheckErrorSchemaUnsupported)).toBeTruthy()
+    expect(screen.queryByText(dictionary.mcpCheckErrorGeneric)).toBeNull()
+    expect(view.container.querySelector('.pext-mcp-check-result')).toMatchSnapshot()
+    expect(port.createCheck).not.toHaveBeenCalled()
+  })
+
+  it.each([['English', en], ['Chinese', zh]] as const)('renders a draft requiring unsupported MCP Tasks in %s', async (_language, dictionary) => {
+    const port = fixture([])
+    port.createDraftCheck.mockResolvedValueOnce({ ...check('failed'), error_code: 'MCP_TASKS_UNSUPPORTED' })
+    const translate = (key: keyof typeof en): string => dictionary[key]
+    render(<PersonalMcpPage personalMcp={port} sessions={sessions} t={translate} />)
+    await screen.findByText(dictionary.personalMcpEmpty)
+    fireEvent.click(screen.getByRole('button', { name: dictionary.addMcpConnection }))
+    fireEvent.change(screen.getByLabelText(dictionary.mcpDisplayName), { target: { value: 'Draft MCP' } })
+    fireEvent.change(screen.getByLabelText(dictionary.mcpServerUrl), { target: { value: 'https://draft.example.test/mcp' } })
+    fireEvent.click(screen.getByRole('button', { name: dictionary.mcpStartCheck }))
+    await screen.findByText(dictionary.mcpCheckErrorTasksUnsupported)
+    expect(screen.queryByText(dictionary.mcpCheckErrorGeneric)).toBeNull()
+    expect(port.create).not.toHaveBeenCalled()
+  })
+
   it('keeps the original multi-connection layout and searches actual metadata', async () => {
     const port = fixture()
     const view = render(<PersonalMcpPage personalMcp={port} sessions={sessions} t={t} />)

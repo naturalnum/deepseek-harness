@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
+import { readFileSync } from 'node:fs'
 import { PersonalMcpConnectionHttpClient } from '../src/client/personal-mcp-api.ts'
 import { PersonalMcpConnectionRequestError, type PersonalMcpConnectionCreateRequest } from '../src/client/personal-mcp-client.ts'
+import { personalMcpCheckErrorLabel } from '../src/client/personal-mcp-check-view.ts'
+import { en, zh } from '../src/client/locales.ts'
 
 // Network substitutes validate browser transport; this file is not real-backend evidence.
 const connectionId = '00000000-0000-4000-8000-000000000001'
@@ -257,4 +260,60 @@ test('wire parsing rejects mismatched identities, secret fields and duplicate li
   const duplicate = new PersonalMcpConnectionHttpClient(async () => Response.json({ available: true,
     items: [{ connection: item, latestCheck: null }, { connection: item, latestCheck: null }] }))
   await assert.rejects(duplicate.list())
+})
+
+test('all fixed worker refusals preserve a specific bilingual explanation instead of connection failure', async () => {
+  const worker = readFileSync(new URL('../../application/src/platform/mcp-check-worker.ts', import.meta.url), 'utf8')
+  const network = readFileSync(new URL('../../application/src/platform/mcp-network.ts', import.meta.url), 'utf8')
+  const codes = []
+  for (const name of ['admissionCodes', 'storeCodes']) {
+    const declaration = worker.match(new RegExp(`const ${name} = new Set\\(\\[([\\s\\S]*?)\\]\\)`, 'u'))
+    assert(declaration, `Worker ${name} declaration must remain discoverable`)
+    codes.push(...[...declaration[1]!.matchAll(/'([^']+)'/gu)].map(match => match[1]!))
+  }
+  const transport = network.match(/export type McpTransportErrorCode =([\s\S]*?)\n\n/u)
+  assert(transport, 'Transport error declaration must remain discoverable')
+  codes.push(...[...transport[1]!.matchAll(/'([^']+)'/gu)].map(match => `mcp_${match[1]}`),
+    'mcp_check_snapshot_failed', 'mcp_check_discovery_failed', 'mcp_check_expired')
+  for (const errorCode of new Set(codes)) {
+    const client = new PersonalMcpConnectionHttpClient(async () => Response.json({ ...pendingCheck, state: 'failed', errorCode }))
+    const check = await client.getCheck(connectionId, checkId)
+    assert.equal(check.state, 'failed')
+    assert.notEqual(check.error_code, 'MCP_CONNECTION_FAILED', errorCode)
+    assert(check.error_code)
+    const label = personalMcpCheckErrorLabel(check.error_code)
+    assert(en[label].length > 0 && zh[label].length > 0, errorCode)
+    assert.notEqual(en[label], 'Connection failed', errorCode)
+    assert.notEqual(zh[label], '连接失败', errorCode)
+  }
+})
+
+test('admission and catalog limits keep their exact public category without remote detail', async () => {
+  const cases = [
+    ['mcp_schema_unsupported', 'MCP_SCHEMA_UNSUPPORTED', 'mcpCheckErrorSchemaUnsupported'],
+    ['mcp_tasks_unsupported', 'MCP_TASKS_UNSUPPORTED', 'mcpCheckErrorTasksUnsupported'],
+    ['mcp_tool_size_limit', 'MCP_TOOL_SIZE_LIMIT', 'mcpCheckErrorToolSizeLimit'],
+    ['mcp_description_size_limit', 'MCP_DESCRIPTION_SIZE_LIMIT', 'mcpCheckErrorDescriptionSizeLimit'],
+    ['mcp_catalog_limit', 'MCP_CATALOG_LIMIT', 'mcpCheckErrorCatalogLimit'],
+    ['revision_conflict', 'MCP_CHECK_STALE', 'mcpCheckErrorStale'],
+    ['mcp_timeout', 'MCP_CHECK_TIMEOUT', 'mcpCheckErrorTimeout'],
+  ] as const
+  for (const [errorCode, sanitized, label] of cases) {
+    const client = new PersonalMcpConnectionHttpClient(async () => Response.json({ ...pendingCheck, state: 'failed', errorCode }))
+    const check = await client.getCheck(connectionId, checkId)
+    assert.equal(check.error_code, sanitized)
+    assert.equal(personalMcpCheckErrorLabel(sanitized), label)
+  }
+})
+
+test('unknown error codes remain masked and do not claim the HTTP connection failed', async () => {
+  for (const errorCode of ['remote_private_token', 'mcp_schema_unsupported_private_detail']) {
+    const client = new PersonalMcpConnectionHttpClient(async () => Response.json({ ...pendingCheck, state: 'failed', errorCode }))
+    const check = await client.getCheck(connectionId, checkId)
+    assert.equal(check.error_code, 'MCP_CONNECTION_FAILED')
+    assert.equal(personalMcpCheckErrorLabel(check.error_code), 'mcpCheckErrorGeneric')
+    assert.equal(en.mcpCheckErrorGeneric, 'The check could not be completed')
+    assert.equal(zh.mcpCheckErrorGeneric, '检查未完成')
+    assert.equal(JSON.stringify(check).includes(errorCode), false)
+  }
 })

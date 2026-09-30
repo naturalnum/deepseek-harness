@@ -317,3 +317,31 @@ exports[`Migrated personal MCP page with an explicit Port substitute > keeps the
   </div>
 </main>
 `;
+
+exports[`Migrated personal MCP page with an explicit Port substitute > renders a saved unsupported-schema check in Chinese 1`] = `
+<div
+  class="pext-mcp-check-result"
+  data-state="failed"
+>
+  <strong>
+    检查失败
+  </strong>
+  <span>
+    工具 JSON Schema 超出平台支持范围
+  </span>
+</div>
+`;
+
+exports[`Migrated personal MCP page with an explicit Port substitute > renders a saved unsupported-schema check in English 1`] = `
+<div
+  class="pext-mcp-check-result"
+  data-state="failed"
+>
+  <strong>
+    Check failed
+  </strong>
+  <span>
+    The tool JSON Schema is unsupported by this platform
+  </span>
+</div>
+`;

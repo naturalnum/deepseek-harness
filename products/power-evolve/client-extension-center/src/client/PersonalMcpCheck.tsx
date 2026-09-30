@@ -7,6 +7,7 @@ import type {
   PersonalMcpConnectionCreateRequest,
 } from './personal-mcp-client.ts'
 import { McpDetailCard } from './McpPresentation.tsx'
+import { personalMcpCheckErrorLabel } from './personal-mcp-check-view.ts'
 import type { PersonalMcpPageProps } from './PersonalMcpPage.tsx'
 import {
   createPersonalMcpCheckIdempotencyKey,
@@ -282,13 +283,6 @@ function DraftCheckResult({ check, t }: {
     failed: 'personalMcpCheckFailed', canceled: 'mcpCheckCanceled', timed_out: 'mcpCheckTimedOut',
     expired: 'mcpCheckExpired',
   } as const
-  const errorLabels = {
-    MCP_DNS_FAILED: 'mcpCheckErrorDns', MCP_CONNECT_TIMEOUT: 'mcpCheckErrorConnectTimeout',
-    MCP_TLS_FAILED: 'mcpCheckErrorTls', MCP_AUTH_REJECTED: 'mcpCheckErrorAuth',
-    MCP_PROTOCOL_INVALID: 'mcpCheckErrorProtocol', MCP_DISCOVERY_FAILED: 'mcpCheckErrorDiscovery',
-    MCP_RESPONSE_LIMIT: 'mcpCheckErrorResponseLimit', MCP_CANCELED: 'mcpCheckErrorCanceled',
-    MCP_CONNECTION_FAILED: 'mcpCheckErrorGeneric',
-  } as const
   const label = labels[check.state]
   const labelText = label === 'personalMcpCheckSucceeded'
     ? t(label).replace('{count}', String(check.discovered_tools))
@@ -297,7 +291,7 @@ function DraftCheckResult({ check, t }: {
     <div className="pext-mcp-check-result" data-state={check.state}>
       <strong>{labelText}</strong>
       {check.cancel_requested && <span>{t('mcpCancelingCheck')}</span>}
-      {check.error_code === null ? null : <span>{t(errorLabels[check.error_code])}</span>}
+      {check.error_code === null ? null : <span>{t(personalMcpCheckErrorLabel(check.error_code))}</span>}
     </div>
   )
 }
