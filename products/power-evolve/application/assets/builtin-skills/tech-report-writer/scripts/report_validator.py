@@ -25,6 +25,7 @@ from config import (
     REPORT_WRITING_UNIT,
 )
 from cover_layout import calculate_cover_metadata_indents_twips
+from catalog_cache import _ranges
 
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
@@ -570,6 +571,11 @@ def validate_report(path):
         # 收集图题/表题，并复用 TOC 样式，因此更新域后可得到与主目录
         # 一致的字体、行距、点引导线和页码对齐。
         field_instructions = [_field_instructions(paragraph) for paragraph in paragraphs]
+        try:
+            toc_cache_paragraph_ids = {id(node) for _, nodes in _ranges(document).values() for node in nodes}
+        except ValueError as exc:
+            errors.append("目录域结构错误: " + str(exc))
+            toc_cache_paragraph_ids = set()
         if not any("TOC" in ins and '\\o "1-3"' in ins for ins in field_instructions):
             errors.append("缺少主目录 TOC 域")
         if not any(re.search(r"\\f\s+F(?:\s|$)", ins) for ins in field_instructions if "TOC" in ins):
@@ -586,6 +592,8 @@ def validate_report(path):
             r"显示|表明|说明|反映|可见|所示|用于表达|用于展示|用于说明|用于给出)"
         )
         for paragraph in paragraphs:
+            if id(paragraph) in toc_cache_paragraph_ids:
+                continue
             text = re.sub(r"\s+", " ", _paragraph_text(paragraph).strip())
             instruction = _field_instructions(paragraph)
             has_fig_tc = bool(re.search(r"\bTC\b.*\\f\s+F(?:\s|$)", instruction))
@@ -822,25 +830,23 @@ def validate_report(path):
             ):
                 errors.append("封面技术报告中文名称应为小二号黑体、非粗体")
 
-            source_paragraph = next(
-                (
-                    paragraph
-                    for paragraph in reversed(cover_paragraphs[:title_index])
-                    if _paragraph_text(paragraph).strip()
-                    and not re.match(
-                        r"^(?:报告编号|分类号|密级)[:：]",
-                        _paragraph_text(paragraph).strip(),
-                    )
-                ),
-                None,
-            )
-            if source_paragraph is None or not _paragraph_format_matches(
+            source_paragraph = next((paragraph for paragraph in cover_paragraphs[:title_index]
+                if any(node.get(f"{W}name") == "PEReportSource"
+                       for node in paragraph.iter(f"{W}bookmarkStart"))), None)
+            if source_paragraph is None:
+                source_paragraph = next(
+                    (paragraph for paragraph in reversed(cover_paragraphs[:title_index])
+                     if _paragraph_text(paragraph).strip() and not re.match(
+                         r"^(?:报告编号|分类号|密级)[:：]", _paragraph_text(paragraph).strip())),
+                    None,
+                )
+            if source_paragraph is None or (_paragraph_text(source_paragraph).strip() and not _paragraph_format_matches(
                 source_paragraph,
                 east_asia=COVER_HEITI_FONT,
                 ascii_font=COVER_HEITI_FONT,
                 size=round(COVER_PROJECT_SOURCE_FONT_SIZE_PT * 2),
                 bold=False,
-            ):
+            )):
                 errors.append("封面科研项目来源应为小三号黑体、非粗体")
 
             bottom_index = len(cover_paragraphs)
@@ -975,7 +981,8 @@ def validate_report(path):
                 )
 
         for paragraph in paragraphs:
-            if _paragraph_text(paragraph).strip() in ("内容摘要i", "ABSTRACTi"):
+            if (id(paragraph) not in toc_cache_paragraph_ids
+                    and _paragraph_text(paragraph).strip() in ("内容摘要i", "ABSTRACTi")):
                 errors.append("目录摘要条目不应使用固定文本，应由 TOC 域自动生成")
 
         paragraph_texts = [_paragraph_text(paragraph).strip() for paragraph in paragraphs]

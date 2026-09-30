@@ -75,6 +75,11 @@ ENV HOME=/home/agent \
   PYTHONUNBUFFERED=1
 
 COPY runner.mjs /opt/power-evolve/runner.mjs
+# UNO uses Debian's system Python; the isolated report Python environment stays unchanged.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends python3-uno \
+  && /usr/bin/python3 -c 'import uno' \
+  && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
 WORKDIR /workspace
 EXPOSE 8080
 CMD ["node", "/opt/power-evolve/runner.mjs"]

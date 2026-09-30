@@ -1,0 +1,7 @@
+{
+  "originalCommit": "a03460fe66a3f77114ff3bb906476105e1d470b7",
+  "originalPath": "services/cloud-server/assets/builtin-skills/latex-report-writer",
+  "originalRelease": "1.0.0",
+  "productRelease": "1.0.1",
+  "maintenance": "PowerEvolve product fork: explicit English title and supplied bilingual metadata; see tests/test_compatibility.py. Original class, logo and specification retained."
+}

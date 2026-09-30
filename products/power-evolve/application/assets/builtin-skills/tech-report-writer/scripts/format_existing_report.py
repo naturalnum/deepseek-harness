@@ -464,22 +464,28 @@ def _is_english_dominant(text):
 
 def _cover_boundaries(doc):
     paragraphs = doc.paragraphs
-    approval_start = next(
-        i for i, paragraph in enumerate(paragraphs)
-        if paragraph.text.strip().startswith("工作单位：")
-    )
-    source_index = next(
-        i for i, paragraph in enumerate(paragraphs[:approval_start])
-        if "科技项目" in paragraph.text.strip()
-    )
-    cover_section_end_index = next(
-        i
-        for i, paragraph in enumerate(paragraphs[:approval_start])
-        if (
-            paragraph._p.pPr is not None
-            and paragraph._p.pPr.find(qn("w:sectPr")) is not None
-        )
-    )
+    approval_start = next((i for i, p in enumerate(paragraphs)
+                           if p.text.strip().startswith("工作单位：")), None)
+    if approval_start is None:
+        raise ValueError("封面结构缺少审批页“工作单位：”标识")
+    cover_section_end_index = next((i for i, p in enumerate(paragraphs[:approval_start])
+        if p._p.pPr is not None and p._p.pPr.find(qn("w:sectPr")) is not None), None)
+    if cover_section_end_index is None:
+        raise ValueError("封面结构缺少封面与审批页之间的分节符")
+    source_index = next((i for i, p in enumerate(paragraphs[:cover_section_end_index])
+        if any(b.get(qn("w:name")) == "PEReportSource"
+               for b in p._p.iter(qn("w:bookmarkStart")))), None)
+    if source_index is None:
+        # Older reports have no semantic bookmark. Locate their source through
+        # the three cover metadata rows, never through the source's wording.
+        metadata = [i for i, p in enumerate(paragraphs[:cover_section_end_index])
+                    if COVER_METADATA_RE.match(p.text.strip())]
+        if len(metadata) != 3:
+            raise ValueError("封面结构缺少报告编号、分类号或密级")
+        source_index = next((i for i in range(metadata[-1] + 1, cover_section_end_index)
+                             if paragraphs[i].text.strip()), None)
+    if source_index is None or source_index + 1 >= cover_section_end_index:
+        raise ValueError("封面结构缺少项目来源或报告标题")
     cover_content_end_index = next(
         (
             i
@@ -1467,12 +1473,11 @@ def format_report(input_path, output_path):
 
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     doc.save(output_path)
-    # Prefer an actual Microsoft Word refresh when the runtime provides Word.
-    # This populates the cached results of the main TOC and the custom F/T TOCs
-    # before delivery. Non-Windows runtimes keep dirty fields + updateFields so
-    # the next Word open can refresh them; LibreOffice is intentionally not used
-    # for this step because it does not reliably preserve Word TC custom lists.
-    refresh_word_fields(output_path)
+    # Windows updates through Word; Linux writes visible caches from UNO layout
+    # while retaining the original Word custom TC instructions and sections.
+    refresh_result = refresh_word_fields(output_path)
+    if not refresh_result.get("success"):
+        raise RuntimeError("目录刷新失败: " + str(refresh_result.get("error", "unknown error")))
     return output_path
 
 

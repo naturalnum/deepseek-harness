@@ -393,7 +393,14 @@ def validate_word(request: dict[str, Any]) -> dict[str, Any]:
     visual_status = supplied_visual.get("status") or ("rendered_pending_inspection" if render.get("success") else "blocked")
     visual_issues = list(supplied_visual.get("issues", []))
     catalog_qa = render.get("catalog_qa") or {}
+    if not render.get("success") or catalog_qa.get("checked") is not True:
+        visual_issues.append("渲染或目录实证检查失败：" + str(render.get("error", "目录未通过检查")))
+        visual_status = "failed"
     if catalog_qa.get("checked") and catalog_qa.get("ok") is False:
+        if catalog_qa.get("missing_main_catalog_entries"):
+            visual_issues.append("主目录未显示完整标题及页码：" + "、".join(catalog_qa["missing_main_catalog_entries"][:5]))
+        if catalog_qa.get("incorrect_catalog_pages"):
+            visual_issues.append("目录页码缓存与实际分页不一致")
         if catalog_qa.get("not_found_markers"):
             visual_issues.append("目录区域仍显示“未找到目录项”类错误文本")
         if catalog_qa.get("missing_figure_catalog_entries"):

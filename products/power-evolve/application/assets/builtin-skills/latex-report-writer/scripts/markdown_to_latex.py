@@ -23,101 +23,6 @@ EQUATION_TAG = re.compile(r"\s*\\tag\{[^{}]*\}")
 EQUATION_LABEL = re.compile(r"\s*\\label\{[^{}]*\}")
 SENTENCE_END = re.compile(r"(?:[。！？.!?…]|\\text\{[。！？.!?…]+\})\s*$")
 
-# The converter must never leave the cover's English report-title field empty.
-# Keep verified title translations here for supplied reports whose Markdown has
-# no separate English title field.
-TITLE_TRANSLATION_FALLBACKS = {
-    "基于深度神经网络的小样本训练方法及其在输配电缺陷和异常识别中的应用": (
-        "Few-Shot Training Methods Based on Deep Neural Networks and Their "
-        "Applications to Defect and Anomaly Recognition in Power Transmission "
-        "and Distribution"
-    ),
-    "电力设备运检认知大模型多业务迁移适配技术研究": (
-        "Research on Multi-Business Transfer Adaptation Technology for a "
-        "Cognitive Large Model for Power Equipment Operation and Maintenance"
-    ),
-    "输配电线路缺陷中基于深度神经网络的小样本类别的检测方法的报告": (
-        "Few-Shot Defect Detection for Power Transmission and Distribution "
-        "Lines Based on Deep Neural Networks"
-    ),
-}
-
-
-ABSTRACT_TRANSLATION_FALLBACKS = {
-    "电力设备运检认知大模型多业务迁移适配技术研究": (
-        "Power equipment operation and maintenance is moving from isolated defect "
-        "recognition and experience-based diagnosis toward multi-source data fusion, "
-        "knowledge-driven analysis, and intelligent support. This report studies "
-        "multi-business transfer adaptation for a cognitive large model and addresses "
-        "three challenges: structuring equipment entities and business relations, "
-        "aligning visual events with knowledge across modalities, and reasoning over "
-        "major-equipment faults. The technical route combines token-pair relation-table "
-        "extraction, hierarchical recognition of equipment, components, and abnormal "
-        "regions, and fine-grained alignment based on CLIP-like vision-language models. "
-        "It also combines memory networks, graph neural networks, sentence-embedding "
-        "retrieval, and retrieval-augmented generation to produce evidence-constrained "
-        "candidate causes and response options. Since real experimental data and a "
-        "unified test set are not yet available, the stated accuracy and efficiency "
-        "thresholds are objectives for subsequent validation, not achieved results. The "
-        "report establishes an equipment-centered loop from text and image knowledge "
-        "extraction to cross-modal alignment and reviewable fault reasoning."
-    ),
-    "输配电线路缺陷中基于深度神经网络的小样本类别的检测方法的报告": (
-        "Transmission and distribution line inspection images feature high resolution, "
-        "dense equipment components, strong background interference, and small defect "
-        "targets. This report studies few-shot defect detection for rare categories "
-        "under limited and imbalanced annotations. It compares the transferability of "
-        "large- and few-sample defect categories through feature embeddings and relation "
-        "modeling, prioritizes highly related categories for training, diagnoses weak "
-        "layers in few-shot models, and improves them with residual connections. It also "
-        "aligns source, target, and shared feature distributions using s-VAE, t-VAE, and "
-        "st-VAE, and combines equipment relations with coarse-to-fine reinforcement-learning "
-        "search for high-resolution images. Confirmed results report mAP values of 80.2% "
-        "and 81.4% on transmission and distribution line defect datasets, respectively, "
-        "with an average of 80.8%."
-    ),
-}
-
-
-ABSTRACT_CN_FALLBACKS = {
-    "电力设备运检认知大模型多业务迁移适配技术研究": (
-        "电力设备运检业务正由单点缺陷识别和人工经验诊断转向多源数据融合、知识驱动分析与智能辅助处置。针对运检文本、设备图像和跨模态材料中设备对象、部件层级、缺陷现象、故障原因及处置措施难以统一表达的问题，本文研究面向认知大模型的多业务迁移适配技术：采用词对关系表开展文本实体关系联合抽取，采用设备本体—部件—异常区域层级化识别和CLIP类模型实现图文细粒度对齐，构建视觉事件知识；采用记忆网络、图神经网络、句向量检索和RAG框架开展主设备故障原因推理与处置方案检索。由于尚无真实实验数据和统一测试集，知识抽取准确率不低于90%、知识推理准确率不低于85%、标注工作量降低不低于80%、识别精度提升不低于5%均为后续验证目标。研究形成以电力设备为核心、以文本图像和知识库为输入、以实体关系视觉事件和故障推理结果为输出的技术闭环，后续需通过真实数据、专家复核和持续知识库更新开展工程验证。"
-    ),
-}
-
-
-ABSTRACT_CN_FALLBACKS = {
-    "输配电线路缺陷中基于深度神经网络的小样本类别的检测方法的报告": (
-        "输配电线路巡检图像具有分辨率高、设备部件密集、背景干扰强和缺陷目标小等特点，少见缺陷还存在标注样本不足和类别不均衡问题。本文面向输配电线路小样本缺陷检测，研究大样本知识选择性迁移、源目标域特征对齐和高分辨率视觉关系提取三项方法：通过特征嵌入与关系比较筛选高相关类别，利用特征诊断和残差连接增强小样本模型；通过s-VAE、t-VAE和st-VAE压缩域间分布差异；结合设备关系与强化学习粗细粒度搜索提升微小缺陷候选保留能力。已确认结果显示，输电和配电线路缺陷数据集mAP分别达到80.2%和81.4%，平均为80.8%。研究为复杂巡检场景下的少样本缺陷检测和后续工程验证提供了技术基础。"
-    ),
-}
-
-
-KEYWORDS_TRANSLATION_FALLBACKS = {
-    "电力设备运检认知大模型多业务迁移适配技术研究": (
-        "power equipment; cognitive large model for operation and maintenance; "
-        "entity-relation extraction; visual-event knowledge alignment; fault knowledge reasoning"
-    ),
-    "输配电线路缺陷中基于深度神经网络的小样本类别的检测方法的报告": (
-        "transmission and distribution line defects; few-shot object detection; "
-        "relatedness comparison; feature alignment; visual relation extraction"
-    ),
-}
-
-
-def auto_translate_title(title: str) -> str:
-    """Return a semantic English cover title when the source omits one."""
-
-    normalized = re.sub(r"\s+", "", title)
-    fallback = TITLE_TRANSLATION_FALLBACKS.get(normalized)
-    if fallback:
-        return fallback
-    raise ValueError(
-        "The Markdown has no English cover title and no verified automatic "
-        f"translation is registered for: {title}"
-    )
-
-
 def escape_plain(text: str) -> str:
     """Escape LaTeX special characters in non-math text."""
 
@@ -213,23 +118,11 @@ def parse_front_matter(lines: list[str]) -> tuple[str, str, str, str, str, int, 
         else:
             en_paragraphs.append(line)
 
-    if not en_paragraphs:
-        en_abstract_fallback = ABSTRACT_TRANSLATION_FALLBACKS.get(re.sub(r"\s+", "", title))
-        if not en_abstract_fallback:
-            raise ValueError(
-                "The Markdown has no English abstract and no verified translation "
-                f"is registered for: {title}"
-            )
-        en_paragraphs = [en_abstract_fallback]
-    if not en_keywords:
-        en_keywords = KEYWORDS_TRANSLATION_FALLBACKS.get(re.sub(r"\s+", "", title), "")
-    if not en_keywords:
-        raise ValueError(f"The Markdown has no English keywords for: {title}")
-
+    if not cn_paragraphs or not cn_keywords:
+        raise ValueError("The Chinese abstract and keywords are required")
+    if not en_paragraphs or not en_keywords:
+        raise ValueError("The English abstract and keywords must be supplied explicitly")
     abstract_cn = " ".join(cn_paragraphs)
-    abstract_cn = ABSTRACT_CN_FALLBACKS.get(
-        re.sub(r"\s+", "", title), abstract_cn
-    )
     return (
         title,
         abstract_cn,
@@ -621,10 +514,12 @@ def render_references(lines: list[str]) -> str:
     return "\n".join(output) + "\n"
 
 
-def build_tex(source: Path, destination: Path) -> None:
+def build_tex(source: Path, destination: Path, title_en: str) -> None:
+    if not title_en.strip():
+        raise ValueError("--title-en must contain the supplied English cover title")
+    title_en = title_en.strip()
     lines = source.read_text(encoding="utf-8-sig").splitlines()
     title, abstract_cn, keywords_cn, abstract_en, keywords_en, body_start, refs_start = parse_front_matter(lines)
-    title_en = auto_translate_title(title)
     body = render_body(lines[body_start:refs_start])
     references = render_references(lines[refs_start + 1 :])
     today = dt.date.today()
@@ -640,7 +535,7 @@ def build_tex(source: Path, destination: Path) -> None:
 \hbadness=10000
 
 % Generated from the supplied Markdown. Missing metadata remains blank unless the
-% report-generation date or a faithful English translation is required by the format.
+% report-generation date is required by the format. English metadata is supplied explicitly.
 \techreportsetup{
   report-no={},
   class-no={},
@@ -693,8 +588,12 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("source", type=Path)
     parser.add_argument("destination", type=Path)
+    parser.add_argument("--title-en", required=True, help="Supplied English cover title; no automatic translation")
     args = parser.parse_args()
-    build_tex(args.source.resolve(), args.destination.resolve())
+    try:
+        build_tex(args.source.resolve(), args.destination.resolve(), args.title_en)
+    except ValueError as exc:
+        parser.error(str(exc))
     print(f"Wrote {args.destination.resolve()}")
     return 0
 

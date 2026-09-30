@@ -346,7 +346,8 @@ python3 <skill-dir>/scripts/repair_json.py
 最终告知用户：
 
 - 报告位于当前工作区的 `output/`。
-- 生成链会在 Microsoft Word 可用时自动更新并保存主目录、图条目和表条目；视觉 QA 必须确认目录区域不再出现“未找到目录项”，且存在图题/表题时相应条目已生成。Word 不可用的运行环境仍保留 dirty field 与 `w:updateFields=true`，供后续 Word 打开时刷新。
+- 生成链必须保存可见的主目录、图条目和表条目。Windows 使用 Microsoft Word 自动更新；Linux 使用 LibreOffice UNO 的实际分页生成目录缓存，保留原 Word TOC/TC 字段、分节和样式。Linux 需要 `libreoffice`、Debian `python3-uno`（通过 `/usr/bin/python3` 运行）、`pdftotext` 和 `pdftoppm`；普通报告脚本仍使用隔离 Python 环境。分页失败或目录页码不收敛时生成失败。
+- 视觉 QA 只验收现有目录缓存，不会偷偷修复空目录。必须检查主目录标题、所有正文标题和图表条目及其实际页码；空目录、缺条目和错误页码均失败，外部提供的视觉通过结果不得覆盖这些失败。
 - 审批区需要打印后手工填写。
 - 图表占位位置需要手动插入实际图表。
 

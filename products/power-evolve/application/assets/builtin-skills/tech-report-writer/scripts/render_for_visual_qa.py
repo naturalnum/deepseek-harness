@@ -7,9 +7,10 @@ import json
 import re
 import shutil
 import subprocess
-import tempfile
 from pathlib import Path
 from zipfile import ZipFile
+
+from catalog_cache import paginate, _load, _ranges, _text
 
 
 def run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
@@ -33,7 +34,8 @@ def _tc_entries(docx: Path) -> dict[str, list[str]]:
     return entries
 
 
-def _catalog_visual_qa(docx: Path, pdf: Path) -> dict:
+def _catalog_visual_qa(docx: Path, pdf: Path, layout: dict | None = None) -> dict:
+    layout = layout or paginate(docx)
     pdftotext = shutil.which("pdftotext")
     if not pdftotext:
         return {"checked": False, "ok": None, "reason": "pdftotext not found"}
@@ -45,22 +47,47 @@ def _catalog_visual_qa(docx: Path, pdf: Path) -> dict:
     if proc.returncode != 0:
         return {"checked": False, "ok": None, "reason": proc.stderr.strip()}
     visible = proc.stdout
+    physical_pages = visible.split("\f")
+    catalog_locations = [value["physical"] for key, value in layout["pages"].items() if key.startswith("PECatalog")]
+    start = min(catalog_locations) if catalog_locations else 0
+    end = max(catalog_locations) if catalog_locations else 0
+    catalog_visible = "\n".join(physical_pages[start - 1:end]) if start else ""
     missing_markers = re.findall(
         r"未找到[^\n。；;]{0,30}目录项|No table of (?:contents|figures|tables) entries found",
         visible,
         flags=re.IGNORECASE,
     )
-    normalized_visible = _normalize_catalog_text(visible)
+    normalized_visible = _normalize_catalog_text(catalog_visible)
     tc_entries = _tc_entries(docx)
     missing_entries: dict[str, list[str]] = {"figures": [], "tables": []}
     for identifier, key in (("F", "figures"), ("T", "tables")):
         for entry in tc_entries[identifier]:
-            # A populated catalog repeats each caption once in front matter and
-            # once at its actual body location. Count normalized occurrences so
-            # Word-added spacing around numbers does not produce false negatives.
-            if normalized_visible.count(_normalize_catalog_text(entry)) < 2:
+            if _normalize_catalog_text(entry) not in normalized_visible:
                 missing_entries[key].append(entry)
-    ok = not missing_markers and not missing_entries["figures"] and not missing_entries["tables"]
+    _, root = _load(docx)
+    caches = {key: [_text(p).strip() for p in nodes if _text(p).strip()]
+              for key, (_, nodes) in _ranges(root).items()}
+    missing_main = []
+    incorrect_pages = []
+    missing_title = not any(re.fullmatch(r"\s*目\s*录\s*", line) for line in catalog_visible.splitlines())
+    for key, entries in layout["entries"].items():
+        for entry in entries:
+            expected = layout["pages"][entry["bookmark"]]["label"]
+            pair = _normalize_catalog_text(entry["title"] + expected)
+            if not any(_normalize_catalog_text(row) == pair for row in caches[key]):
+                incorrect_pages.append({"title": entry["title"], "expected_page": expected})
+            actual_locations = [page for index, page in enumerate(physical_pages, 1)
+                                if not (start <= index <= end)
+                                and _normalize_catalog_text(entry["title"]) in _normalize_catalog_text(page)]
+            if not any(re.search(r"(?:^|\n)\s*" + re.escape(expected) + r"\s*$", page) for page in actual_locations):
+                incorrect_pages.append({"title": entry["title"], "expected_page": expected,
+                                        "reason": "target PDF page/footer not found"})
+            # PDF must visibly contain the title followed by its actual page;
+            # punctuation leaders are ignored, but unrelated body text is excluded.
+            searchable = re.sub(r"[.·…．]{2,}", "", normalized_visible)
+            if pair not in searchable and key == "C":
+                missing_main.append(entry["title"])
+    ok = bool(caches["C"]) and not missing_title and not missing_markers and not missing_main and not incorrect_pages and not missing_entries["figures"] and not missing_entries["tables"]
     return {
         "checked": True,
         "ok": ok,
@@ -69,6 +96,12 @@ def _catalog_visual_qa(docx: Path, pdf: Path) -> dict:
         "missing_table_catalog_entries": missing_entries["tables"],
         "figure_tc_entries": len(tc_entries["F"]),
         "table_tc_entries": len(tc_entries["T"]),
+        "main_entries": len(layout["entries"]["C"]),
+        "main_cached_entries": len(caches["C"]),
+        "missing_contents_title": missing_title,
+        "missing_main_catalog_entries": missing_main,
+        "incorrect_catalog_pages": incorrect_pages,
+        "catalog_physical_pages": [start, end],
     }
 
 
@@ -82,29 +115,25 @@ def render(docx: Path, output_dir: Path) -> dict:
     if not libreoffice:
         return {"success": False, "error": "libreoffice/soffice not found", "docx_path": str(docx)}
 
-    with tempfile.TemporaryDirectory(prefix="tech-report-lo-") as profile:
-        cmd = [
-            libreoffice, "--headless", f"-env:UserInstallation=file://{profile}",
-            "--convert-to", "pdf", "--outdir", str(output_dir), str(docx),
-        ]
-        proc = run(cmd)
-
     pdf = output_dir / f"{docx.stem}.pdf"
+    # Rendering is a read-only validation operation: blank/stale source caches
+    # must fail instead of being repaired invisibly by the QA path.
+    if pdf.exists():
+        pdf.unlink()
+    layout = paginate(docx, pdf)
     if not pdf.is_file() or pdf.stat().st_size == 0:
         return {
             "success": False,
             "error": "PDF conversion did not produce a non-empty file",
-            "stdout": proc.stdout,
-            "stderr": proc.stderr,
             "docx_path": str(docx),
         }
 
-    catalog_qa = _catalog_visual_qa(docx, pdf)
+    catalog_qa = _catalog_visual_qa(docx, pdf, layout)
 
     pdftoppm = shutil.which("pdftoppm")
     if not pdftoppm:
         return {
-            "success": True,
+            "success": False,
             "docx_path": str(docx),
             "pdf_path": str(pdf),
             "png_paths": [],
@@ -117,7 +146,7 @@ def render(docx: Path, output_dir: Path) -> dict:
     run([pdftoppm, "-png", "-r", "150", str(pdf), str(prefix)])
     pngs = sorted(output_dir.glob("page-*.png"))
     return {
-        "success": bool(pngs),
+        "success": bool(pngs) and catalog_qa.get("ok") is True,
         "docx_path": str(docx),
         "pdf_path": str(pdf),
         "png_paths": [str(x) for x in pngs],

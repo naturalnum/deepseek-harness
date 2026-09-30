@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Refresh Word fields/TOCs automatically when desktop Microsoft Word is available.
+"""Refresh report catalogs using Word COM or isolated Linux UNO pagination.
 
-The report writer always leaves TOC fields dirty and sets w:updateFields=true. On
-Windows this helper additionally opens the DOCX in Microsoft Word, updates all
-fields (including the main TOC and the custom-TC figure/table TOCs), and saves the
-refreshed cached results so the document opens with populated catalogs.
+Windows updates all fields with Word COM. Linux obtains actual page labels from
+LibreOffice UNO and writes visible caches into the original DOCX without passing
+Word's custom TC fields through LibreOffice's lossy DOCX export filter.
 """
 from __future__ import annotations
 
@@ -143,23 +142,21 @@ try {{
 
 
 def refresh_word_fields(path: str | os.PathLike[str]) -> dict:
-    """Update and save all Word fields when Microsoft Word automation is usable.
+    """Populate catalog caches while preserving custom Word TC instructions.
 
-    Non-Windows runtimes return ``available=False`` instead of attempting to use
-    LibreOffice: LibreOffice does not preserve/refresh Word's custom TC/TOC \f
-    catalogs reliably.  The DOCX still carries dirty fields and updateFields=true
-    so a later Word open can refresh them.
+    Linux uses a disposable rendering copy and writes only the caches into the
+    source OOXML. Debian python3-uno and LibreOffice are required.
     """
     path = Path(path).resolve()
     if not path.is_file():
         return {"success": False, "available": False, "method": None, "error": f"file not found: {path}"}
     if os.name != "nt":
-        return {
-            "success": False,
-            "available": False,
-            "method": None,
-            "error": "Microsoft Word COM automation is only available on Windows",
-        }
+        try:
+            from catalog_cache import refresh_catalogs
+            return refresh_catalogs(path)
+        except Exception as exc:
+            return {"success": False, "available": True,
+                    "method": "libreoffice-uno-cache", "error": str(exc)}
 
     first = _refresh_with_pywin32(path)
     if first.get("success"):
@@ -178,7 +175,7 @@ def refresh_word_fields(path: str | os.PathLike[str]) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("docx", type=Path)
-    parser.add_argument("--require-word", action="store_true", help="Word 不可用或更新失败时返回非零状态")
+    parser.add_argument("--require-refresh", "--require-word", action="store_true", help="兼容选项；任何刷新失败均返回非零状态")
     parser.add_argument("--json-out", type=Path)
     args = parser.parse_args()
     result = refresh_word_fields(args.docx)
@@ -189,9 +186,7 @@ def main() -> int:
         args.json_out.write_text(text + "\n", encoding="utf-8")
     if result.get("success"):
         return 0
-    if args.require_word:
-        return 2
-    return 0
+    return 2
 
 
 if __name__ == "__main__":

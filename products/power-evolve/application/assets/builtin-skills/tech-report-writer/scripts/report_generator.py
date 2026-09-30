@@ -16,6 +16,9 @@ from io import BytesIO
 from bs4 import BeautifulSoup
 from bs4.element import NavigableString
 from PIL import Image, ImageDraw
+from docx import Document
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 
 from config import DEFAULT_PROJECT_SOURCE, REPORT_WRITING_UNIT
 from engine import generate_from_template
@@ -301,6 +304,13 @@ def generate_report() -> dict:
     # 提取数据
     # ============================================================
     cover = loaded.get("cover_info.json", {})
+    missing_cover = [key for key in ("title_cn", "title_en", "project_name", "report_date")
+                     if not isinstance(cover.get(key), str) or not cover[key].strip()]
+    if "project_source" not in cover or not isinstance(cover["project_source"], str):
+        missing_cover.append("project_source")
+    if missing_cover:
+        return {"success": False, "output": None,
+                "errors": ["封面缺少必需数据: " + ", ".join(missing_cover)]}
     abstract_data = loaded.get("abstract.json", {})
     ref_data = loaded.get("references.json", {})
     appendices_data = loaded.get("appendices.json", {})
@@ -373,6 +383,28 @@ def generate_report() -> dict:
 
     if result.get("success") and result.get("output"):
         generated_path = os.path.abspath(str(result["output"]))
+        # Preserve a semantic source anchor even when the legal source is blank
+        # or does not contain a particular project-category phrase.
+        generated_doc = Document(generated_path)
+        title_index = next((i for i, p in enumerate(generated_doc.paragraphs)
+                            if p.text.strip() == cover["title_cn"].strip()), None)
+        if title_index is None or title_index == 0:
+            return {"success": False, "output": generated_path,
+                    "errors": ["模板封面缺少中文报告标题位置"]}
+        source = generated_doc.paragraphs[title_index - 1]
+        if source.text.strip() != cover["project_source"].strip():
+            return {"success": False, "output": generated_path,
+                    "errors": ["模板封面项目来源位置与输入不一致"]}
+        bookmark_id = str(max([int(b.get(qn("w:id"), "0"))
+            for b in generated_doc.element.iter(qn("w:bookmarkStart"))] + [0]) + 1)
+        start = OxmlElement("w:bookmarkStart")
+        start.set(qn("w:id"), bookmark_id)
+        start.set(qn("w:name"), "PEReportSource")
+        end = OxmlElement("w:bookmarkEnd")
+        end.set(qn("w:id"), bookmark_id)
+        source._p.append(start)
+        source._p.append(end)
+        generated_doc.save(generated_path)
         with tempfile.NamedTemporaryFile(
             suffix=".docx",
             dir=os.path.dirname(generated_path),

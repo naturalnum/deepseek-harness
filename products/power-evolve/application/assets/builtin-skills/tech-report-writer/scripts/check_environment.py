@@ -9,6 +9,7 @@ import json
 import shutil
 import sys
 import os
+import subprocess
 from pathlib import Path
 
 
@@ -42,8 +43,19 @@ def collect_status() -> dict:
         if not (SKILL_DIR / relative_path).is_file()
     ]
     python_ok = sys.version_info >= (3, 10)
+    missing_tools = []
+    if sys.platform.startswith("linux"):
+        for tool in ("libreoffice", "pdftotext", "pdftoppm"):
+            if not shutil.which(tool):
+                missing_tools.append(tool)
+        try:
+            probe = subprocess.run(["/usr/bin/python3", "-c", "import uno"], capture_output=True, timeout=5)
+            if probe.returncode:
+                missing_tools.append("Debian python3-uno (/usr/bin/python3)")
+        except (OSError, subprocess.TimeoutExpired):
+            missing_tools.append("Debian python3-uno (/usr/bin/python3)")
     return {
-        "ok": python_ok and not missing_packages and not missing_files,
+        "ok": python_ok and not missing_packages and not missing_files and not missing_tools,
         "python": {
             "version": ".".join(map(str, sys.version_info[:3])),
             "minimum": "3.10",
@@ -51,6 +63,7 @@ def collect_status() -> dict:
         },
         "missing_packages": missing_packages,
         "missing_files": missing_files,
+        "missing_tools": missing_tools,
         "optional_tools": {
             "pandoc": shutil.which("pandoc"),
             "libreoffice": shutil.which("libreoffice") or shutil.which("soffice"),
@@ -81,6 +94,8 @@ def print_human(status: dict) -> None:
         print("Skill 文件：通过")
 
     optional_tools = status["optional_tools"]
+    if status["missing_tools"]:
+        print("缺少目录分页/验收工具：" + "、".join(status["missing_tools"]))
     print("可选工具：")
     print(f"  pandoc（公式标记转换）：{optional_tools['pandoc'] or '未检测到'}")
     print(
@@ -90,7 +105,7 @@ def print_human(status: dict) -> None:
     print(f"  pdftoppm（逐页渲染）：{optional_tools['pdftoppm'] or '未检测到'}")
     print(
         "  Microsoft Word 自动更新目录域："
-        f"{optional_tools['microsoft_word_automation'] or '当前平台不可用；DOCX 将保留自动更新标志'}"
+        f"{optional_tools['microsoft_word_automation'] or '使用 Linux LibreOffice UNO 生成可见目录缓存'}"
     )
 
 

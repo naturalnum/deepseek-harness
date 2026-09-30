@@ -15,7 +15,7 @@ Use this skill as the LaTeX backend for formal Chinese technical reports. Keep r
 4. Treat an explicitly supplied Word/PDF template as the visual authority for local positions. Render the reference before changing the class.
 5. Preserve confirmed report content. Do not invent project data, results, conclusions, or references.
 6. If the source does not provide a cover date, fill it with the report-generation date in `YYYY年M月D日` form. Do not infer a project completion date or a publication date from surrounding prose.
-7. If the source does not provide an English cover title, generate a semantically faithful English translation from the Chinese report title and place it directly below the Chinese title. Never leave the English cover-title field blank.
+7. Require a supplied English cover title and place it directly below the Chinese title. The converter requires `--title-en`; it does not translate titles or supply report-specific abstracts and keywords. If bilingual metadata is missing, request it before conversion.
 
 The current project variant intentionally places the Chinese and English abstracts on separate pages. This overrides the older source specification that places them together.
 
@@ -29,6 +29,14 @@ The current project variant intentionally places the Chinese and English abstrac
 - Prefer structured fields such as `cover_info.json`, `abstract.json`, chapter JSON, and references JSON when they are available.
 
 ### 2. Build the LaTeX project
+
+For Markdown with a Chinese title, Chinese/English abstract blocks and bilingual keywords:
+
+```bash
+python scripts/markdown_to_latex.py report.md report.tex --title-en 'Supplied English Report Title'
+```
+
+The Markdown must include `# 摘要`, `# Abstract`, `# 第一章 ...` and `# 参考文献`. Abstracts and keywords are preserved from the input. Missing or blank required English metadata fails explicitly.
 
 - Copy the class and required assets into the working project, or add the template directory to the project search path.
 - Put metadata in `\techreportsetup{...}` in the main `.tex` file.
@@ -126,5 +134,6 @@ Deliver only after the latest compile, structural validation, and PNG inspection
 - `references/technical-report-format.md`: technical-report requirements.
 - `references/latex-layout-rules.md`: implementation-specific layout decisions.
 - `scripts/build_latex_report.py`: deterministic XeLaTeX build helper.
+- `scripts/markdown_to_latex.py`: Markdown converter requiring an explicit English cover title.
 - `scripts/validate_latex_report.py`: PDF, font, log, and placeholder validator.
 - `scripts/render_pdf.py`: Poppler-based page renderer for visual QA.

@@ -15,6 +15,7 @@ import bs4, docx, json_repair, lxml, pdfplumber, PIL, pypdf, reportlab, requests
 import sys
 assert sys.prefix == '/opt/power-evolve/venv', sys.prefix
 PY
+/usr/bin/python3 -c 'import uno'
 fc-match 'Noto Sans CJK SC' | grep --fixed-strings 'NotoSansCJK' >/dev/null
 kpsewhich pzdr.tfm >/dev/null
 
