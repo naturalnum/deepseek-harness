@@ -86,7 +86,7 @@ test('S3 settings are user-scoped, revisioned, idempotent and snapshotted under 
       await assert.rejects(account.update(alice.user, { requestId: randomUUID(), expectedRevision: 1,
         model: 'fixture-b', maxTokens: 257 }), { status: 403, code: 'model_not_authorized' })
 
-      const tasks = new TaskStore(pool, { leaseMs: 3000, maxPendingPerUser: 8, maxActivePerUser: 1 })
+      const tasks = new TaskStore(pool, { maxEventBytes: 524288, leaseMs: 3000, maxPendingPerUser: 8, maxActivePerUser: 1 })
       const { sessionId } = await tasks.create(alice.user, randomUUID())
       const oldRequest = randomUUID()
       const old = await tasks.accept(alice.user, sessionId, oldRequest, 'before update')
@@ -138,7 +138,7 @@ test('model egress refuses revoked grants before sending upstream', { timeout: 3
     const alice = await seeded(pool, identities, 'alice', { model: 'fixture-a', maxTokens: 64, revision: 1 }, [
       { id: 'fixture-a', label: 'Model A', maxTokens: 100, enabled: true },
     ])
-    const tasks = new TaskStore(pool, { leaseMs: 30_000, maxPendingPerUser: 8, maxActivePerUser: 1 })
+    const tasks = new TaskStore(pool, { maxEventBytes: 524288, leaseMs: 30_000, maxPendingPerUser: 8, maxActivePerUser: 1 })
     const { sessionId } = await tasks.create(alice.user, randomUUID())
     await tasks.accept(alice.user, sessionId, randomUUID(), 'egress')
     const grant = await tasks.claim(randomUUID())

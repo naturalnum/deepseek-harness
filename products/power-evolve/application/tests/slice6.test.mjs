@@ -64,8 +64,8 @@ test('two workers fence sessions and rotate eligible users', { timeout: 30000 },
     [operationId, sessionId, randomUUID(), tag, { model: 'test', maxTokens: 32, revision: 1 }, seconds])
     operations.push({ tag, operationId })
   }
-  const first = new TaskStore(pool, { leaseMs: 3000, maxPendingPerUser: 8, maxActivePerUser: 1 })
-  const second = new TaskStore(pool, { leaseMs: 3000, maxPendingPerUser: 8, maxActivePerUser: 1 })
+  const first = new TaskStore(pool, { maxEventBytes: 524288, leaseMs: 3000, maxPendingPerUser: 8, maxActivePerUser: 1 })
+  const second = new TaskStore(pool, { maxEventBytes: 524288, leaseMs: 3000, maxPendingPerUser: 8, maxActivePerUser: 1 })
   const a1 = await first.claim(randomUUID())
   assert.equal(a1?.text, 'a1')
   await first.finish(a1.token, 'completed', null)

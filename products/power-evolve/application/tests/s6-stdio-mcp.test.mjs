@@ -107,7 +107,7 @@ test('STDIO calls pin owner and revision, deduplicate, and resume the same Sessi
     finally { client.release() }
     await initializeDatabase(pool)
     assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 20)
-    const tasks = new TaskStore(pool, { leaseMs: 30_000, maxPendingPerUser: 8,
+    const tasks = new TaskStore(pool, { maxEventBytes: 524288, leaseMs: 30_000, maxPendingPerUser: 8,
       maxActivePerUser: 1, stdioMcpEnabled: true })
     const runner = new FixtureRunner()
     stdio = new StdioMcpService(tasks, runner, randomUUID(), 30_000, 100)
@@ -213,7 +213,7 @@ test('real PG fence orders connection disable with intent and the first Runner P
       await client.query('COMMIT')
     } catch (error) { await client.query('ROLLBACK'); throw error }
     finally { client.release() }
-    const tasks = new TaskStore(pool, { leaseMs: 30_000, maxPendingPerUser: 8,
+    const tasks = new TaskStore(pool, { maxEventBytes: 524288, leaseMs: 30_000, maxPendingPerUser: 8,
       maxActivePerUser: 1, stdioMcpEnabled: true })
     const runner = new FixtureRunner()
     stdio = new PausingStdioMcpService(tasks, runner, randomUUID(), 30_000, 100)

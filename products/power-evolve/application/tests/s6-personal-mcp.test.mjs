@@ -85,9 +85,9 @@ test('S6 personal MCP snapshots one fixed whoami tool and revokes per user',
     await initializeDatabase(pool)
     assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 20)
 
-    assert.throws(() => new PersonalMcpService(new TaskStore(pool, { leaseMs: 30_000,
+    assert.throws(() => new PersonalMcpService(new TaskStore(pool, { maxEventBytes: 524288, leaseMs: 30_000,
       maxPendingPerUser: 8, maxActivePerUser: 1 }), 'http://example.com/mcp', token, 5000))
-    const tasks = new TaskStore(pool, { leaseMs: 30_000, maxPendingPerUser: 8,
+    const tasks = new TaskStore(pool, { maxEventBytes: 524288, leaseMs: 30_000, maxPendingPerUser: 8,
       maxActivePerUser: 1, mcpEnabled: true })
     const mcp = new PersonalMcpService(tasks, `${fixture.url}/mcp`, token, 5000)
     const empty = await mcp.list(alice)

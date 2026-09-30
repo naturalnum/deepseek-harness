@@ -50,7 +50,7 @@ test('cancel owns one Session, survives grant replacement, and permits the next 
       [user.userId, 'fixture', 'Fixture', 64])
   }
   const [alice, bob] = users
-  const tasks = new TaskStore(pool, { leaseMs: 3000, maxPendingPerUser: 8, maxActivePerUser: 1 })
+  const tasks = new TaskStore(pool, { maxEventBytes: 524288, leaseMs: 3000, maxPendingPerUser: 8, maxActivePerUser: 1 })
   const events = new EventStore(tasks, { maxHistoryBytes: 1024 * 1024, maxHistoryEvents: 100,
     maxEventBytes: 64 * 1024 })
   const { sessionId } = await tasks.create(alice, randomUUID())
@@ -127,7 +127,7 @@ test('cancel and finish serialize without losing a completed or cancelled turn',
     [alice.userId, alice.username, 'unused', { model: 'fixture', maxTokens: 64, revision: 1 }])
   await pool.query('INSERT INTO pe_user_models(user_id,model_id,label,max_tokens) VALUES($1,$2,$3,$4)',
     [alice.userId, 'fixture', 'Fixture', 64])
-  const tasks = new TaskStore(pool, { leaseMs: 3000, maxPendingPerUser: 8, maxActivePerUser: 1 })
+  const tasks = new TaskStore(pool, { maxEventBytes: 524288, leaseMs: 3000, maxPendingPerUser: 8, maxActivePerUser: 1 })
   const { sessionId } = await tasks.create(alice, randomUUID())
   const accepted = await tasks.accept(alice, sessionId, randomUUID(), 'race')
   const grant = await tasks.claim(randomUUID())

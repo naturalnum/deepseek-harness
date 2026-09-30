@@ -13,7 +13,7 @@ import { spawn } from 'node:child_process'
 import { setTimeout as delay } from 'node:timers/promises'
 import { createRequire } from 'node:module'
 import yaml from 'js-yaml'
-import { recordedConversation, recordedSshContinuation, compareRecordedSession, sshDirectory } from './session-snapshot.mjs'
+import { recordedConversation, recordedSshContinuation, compareRecordedSession, sshDirectory, recordedSandboxContinuation, sandboxDirectory } from './session-snapshot.mjs'
 import { SshActionCipher } from '../lib/platform/ssh-execute.js'
 const require = createRequire(new URL('../package.json', import.meta.url))
 const { Pool } = require('pg')
@@ -119,7 +119,8 @@ test('shared host: isolated conversations, files, skills and approved remote act
       }
       if (prompt === 'HOLD') { sawHold = true; held.resolve(); await hold.promise }
       const toolName = prompt.startsWith('TOOL_APPEND:') ? 'trial_notes_append' : prompt === 'TOOL_LIST' ? 'trial_notes_list' : null
-      const text = prompt === recorded.input ? recorded.output : `reply:${prompt}`
+      const text = prompt.includes('continuation-output-fixture') ? 'Processed execution output.'
+        : prompt === recorded.input ? recorded.output : `reply:${prompt}`
       res.writeHead(200, { 'content-type': 'text/event-stream' })
       for (const event of toolName ? [
         { type: 'message_start', message: { id: 'fixture-message', model: body.model, usage: { input_tokens: 3, output_tokens: 0 } } },
@@ -142,7 +143,7 @@ test('shared host: isolated conversations, files, skills and approved remote act
   await new Promise(resolve => model.listen(0, '127.0.0.1', resolve))
   const modelUrl = `http://127.0.0.1:${model.address().port}/v1/messages`
 
-  async function start(name, platformUrl, instance = name, listenPort = 0) {
+  async function start(name, platformUrl, instance = name, listenPort = 0, maxEventBytes = 524288) {
     const home = join(temporary, instance), profile = join(home, 'profiles', `power-evolve-${instance}`)
     await mkdir(join(profile, 'node_modules/@power-evolve'), { recursive: true })
     try { await symlink(join(product, name), join(profile, 'node_modules/@power-evolve', name), 'dir') }
@@ -157,7 +158,7 @@ test('shared host: isolated conversations, files, skills and approved remote act
     if (name === 'platform') patch.push(update('power-evolve-platform', {
       databaseUrlFile: join(temporary, 'database-url'), workerTokenFile: join(temporary, 'worker-token'),
       modelKeyFile: join(temporary, 'model-key'), connectorKeyFile: join(temporary, 'connector-key'), seedUsersFile: join(temporary, 'users.json'),
-      readyFile, modelUrl, connectorUrl, connectorTimeoutMs: 1000, connectorPollMs: 200,
+      readyFile, modelUrl, connectorUrl, maxEventBytes, connectorTimeoutMs: 1000, connectorPollMs: 200,
       leaseMs: 3000, loginAttemptsPerWindow: 100, maxPendingPerUser: 8,
       workspaceRoot: join(temporary, 'workspaces'), artifactRoot: join(temporary, 'artifacts'),
       sandboxKubeconfigFile: '', sandboxKeyFile: '', sandboxNamespace: '', sandboxImage: '',
@@ -586,6 +587,56 @@ test('shared host: isolated conversations, files, skills and approved remote act
         && block.text.includes('qa:ssh-ok'))))
     assert(calls.some(call => JSON.stringify(call.messages).includes(`可信 SSH 操作 ${actionId}`)))
     await compareRecordedSession(history, expected, sshDirectory)
+  })
+  await t.test('large cloud results resume without starving another user; bounded excerpts replay', async () => {
+    async function resume(text, record = false) {
+      const session = await create(0)
+      const admitted = await send(0, session, 'continuation-output-fixture')
+      await finished(0, session)
+      const user = await rpc(0, 'me', {})
+      const executionId = '00000000-0000-4000-8000-000000000120'
+      // Settled runner records are fixtures; Host, native Session, model transport and PG are real.
+      const id = record ? executionId : randomUUID(), requestId = randomUUID()
+      await pool.query(`INSERT INTO pe_cloud_executions(id,user_id,session_id,operation_id,call_id,
+        command,cwd,request_digest,state,result,continuation_request_id)
+        VALUES($1,$2,$3,$4,'output-fixture','fixture','','digest','succeeded',$5,$6)`,
+      [id, user.userId, session, admitted.operationId, { stdout: text, exitCode: 0 }, requestId])
+      await pool.query(`INSERT INTO pe_operations(id,session_id,request_id,input,settings,skill_selection,
+        source,source_execution_id,state)
+        SELECT $1,o.session_id,$2,$3,o.settings,o.skill_selection,'sandbox_result',$4,'queued'
+        FROM pe_operations o WHERE o.id=$5`,
+      [randomUUID(), requestId, text, id, admitted.operationId])
+      const other = await create(1)
+      await send(1, other, 'other-user-after-large-output')
+      await Promise.all([finished(1, other), eventually(async () =>
+        (await pool.query('SELECT state FROM pe_operations WHERE request_id=$1', [requestId])).rows[0]?.state === 'completed',
+      'large result continuation')])
+      const history = await page(0, session)
+      const input = history.events.find(event => event.type === 'user/message' && event.data.id === requestId)
+      assert.equal(input.data.source.kind, 'power-evolve-execution')
+      assert.equal(input.data.source.executionId, id)
+      const received = input.data.content[0].text
+      assert(calls.some(call => call.messages.some(message => message.content.some(part => part.text === received))))
+      assert.equal((await pool.query('SELECT input FROM pe_operations WHERE request_id=$1', [requestId])).rows[0].input, text)
+      assert.equal((await pool.query('SELECT result FROM pe_cloud_executions WHERE id=$1', [id])).rows[0].result.stdout, text)
+      assert.equal((await rpcResponse(1, 'page', { sessionId: session, after: -1, limit: 200 })).status, 404)
+      if (record) await compareRecordedSession(history, await recordedSandboxContinuation(), sandboxDirectory)
+      return received
+    }
+    const large = 'continuation-output-fixture: ' + 'document guide '.repeat(3100)
+    assert.equal(await resume(large), large)
+    const escaped = 'continuation-output-fixture: ' + '\u0001表😀'.repeat(40000) + ':completed'
+    const excerpt = await resume(escaped)
+    assert.match(excerpt, /Internal result truncated/u)
+    assert(excerpt.endsWith(':completed'))
+    assert(Buffer.byteLength(JSON.stringify(excerpt)) <= 262144)
+    assert.equal((await rpcResponse(0, 'prompt', { sessionId: alice, requestId: randomUUID(), text: 'x'.repeat(16385) })).status, 400)
+    await stop(host.process); await stop(platform.process)
+    platform = await start('platform', undefined, 'platform-small-event', 0, 8192)
+    host = await start('host', platform.url)
+    await resume('continuation-output-fixture: ' + 'output line\n'.repeat(1000) + ':completed', true)
+    await stop(host.process); await stop(platform.process)
+    platform = await start('platform'); host = await start('host', platform.url)
   })
   await t.test('POSIX files preserve bytes and reject cross-user paths, links and stale writes', async () => {
     const firstBytes = Buffer.from([0,1,2,255,32,10])

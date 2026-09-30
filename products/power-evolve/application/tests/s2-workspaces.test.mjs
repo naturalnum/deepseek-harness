@@ -62,7 +62,7 @@ test('S2 Workspaces bind Sessions immutably and scope native files to their owne
     const bob = await user(pool, 'bob')
     const files = new FileService(pool, join(root, 'workspaces'))
     await files.init()
-    const tasks = new TaskStore(pool, { leaseMs: 3000, maxPendingPerUser: 8, maxActivePerUser: 1 })
+    const tasks = new TaskStore(pool, { maxEventBytes: 524288, leaseMs: 3000, maxPendingPerUser: 8, maxActivePerUser: 1 })
     const workspaces = new NativeWorkspaceRead(pool, files, new NativeSessionRead(pool), 3)
     const nativeFiles = new NativeFileRead(pool, files)
     const aliceDefault = (await workspaces.list(alice)).items[0]

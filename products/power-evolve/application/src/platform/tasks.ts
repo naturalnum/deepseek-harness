@@ -8,6 +8,7 @@ import { z } from 'zod'
 import { digest } from './identity.ts'
 import { transaction } from './database.ts'
 import { requireModelGrant } from './account-settings.ts'
+import { continuationInput } from '../continuation-input.ts'
 
 interface SessionRow {
   id: string
@@ -20,6 +21,7 @@ interface SessionRow {
 
 /** Limits are deployment inputs, applied atomically during acceptance and claiming. */
 export interface TaskLimits {
+  readonly maxEventBytes: number
   readonly leaseMs: number
   readonly maxPendingPerUser: number
   readonly maxActivePerUser: number
@@ -222,7 +224,8 @@ export class TaskStore {
       await client.query('INSERT INTO pe_attempts(operation_id,epoch,worker_id) VALUES($1,$2,$3)', [row.id, epoch, workerId])
       return grant.parse({
         operationId: row.id, sessionId: row.session_id, userId: row.user_id, requestId: row.request_id,
-        text: row.input, settings: settings.parse(row.settings), selection: z.array(skillSelection).max(256).parse(row.skill_selection),
+        text: row.source === 'user' ? row.input : continuationInput(row.input, this.limits.maxEventBytes),
+        settings: settings.parse(row.settings), selection: z.array(skillSelection).max(256).parse(row.skill_selection),
         mcpConnections: z.array(mcpSelection).max(1).parse(row.mcp_selection),
         stdioMcpConnections: z.array(stdioMcpSelection).max(1).parse(row.stdio_mcp_selection),
         sshConnections: z.array(sshSelection).max(8).parse(row.ssh_selection),

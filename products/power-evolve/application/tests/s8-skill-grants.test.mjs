@@ -51,7 +51,7 @@ test('V19 upgrade preserves selections and grants nine skills without loading th
   assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 20)
   assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_user_skills')).rows[0].n, 9)
   assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_builtin_skill_install_requests')).rows[0].n, 0)
-  const tasks = new TaskStore(pool, { leaseMs: 30000, maxPendingPerUser: 4, maxActivePerUser: 1 })
+  const tasks = new TaskStore(pool, { maxEventBytes: 524288, leaseMs: 30000, maxPendingPerUser: 4, maxActivePerUser: 1 })
   const a = await tasks.create(alice, randomUUID())
   const b = await tasks.create(bob, randomUUID())
   await tasks.accept(alice, a.sessionId, randomUUID(), 'hi')

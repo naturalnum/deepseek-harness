@@ -108,7 +108,7 @@ test('S6 Notes plugin migrates, isolates users, fences egress, and reconciles a 
     })
     await new Promise(resolve => target.listen(0, '127.0.0.1', resolve))
     const targetUrl = `http://127.0.0.1:${target.address().port}`
-    const tasks = new TaskStore(pool, { leaseMs: 30_000, maxPendingPerUser: 8, maxActivePerUser: 1 })
+    const tasks = new TaskStore(pool, { maxEventBytes: 524288, leaseMs: 30_000, maxPendingPerUser: 8, maxActivePerUser: 1 })
     worker = new ConnectorService(tasks, targetUrl, 'fixture-secret', 1000, 100)
     await worker.seedPermissions(['alice', 'bob'])
     const session = await tasks.create(alice, randomUUID())

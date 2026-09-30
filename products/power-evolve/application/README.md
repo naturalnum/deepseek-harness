@@ -48,6 +48,8 @@ Schema 20 adds owner-bound catalog installation receipts, including retry IDs th
 
 ## Recovery and limits
 
+Platform-origin continuation input retains up to 256 KiB of JSON-encoded text, further bounded to half `maxEventBytes`. Larger results become explicitly labeled head/tail excerpts; the original Operation input and execution result remain unchanged in PG. Claims apply the same bound to already queued results after restart. User prompts remain limited to 16,384 characters.
+
 A client receives `accepted` only after the operation commits. An unconsumed input can be delivered after restart. Consumed input with no completed turn is closed as interrupted by native DSH restoration and reported as failed. It is not automatically sent to the model again. A lost completion response is reconciled from the recorded turn when the lease is reclaimed.
 
 Session cancellation checks the authenticated owner in PG. An unclaimed input settles as failed without starting a model call; a running input stores a cancellation request that the leased Host sees on renewal. A live Host cancels its Agent and flushes the native log before releasing its grant. A replacement Host does not replay a cancelled input, and a later prompt can use the same Session. Repeating cancel with no active operation succeeds without changing history. If a turn finishes before the Host observes the request, its recorded completion or failure wins over the late cancellation.

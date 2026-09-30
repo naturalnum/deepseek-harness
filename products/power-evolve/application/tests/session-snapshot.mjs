@@ -6,6 +6,7 @@ import yaml from 'js-yaml'
 const directory = new URL('../../../../snapshots/power-evolve/conversation/', import.meta.url)
 const canonical = new URL('session.v4.jsonl', directory)
 const sshDirectory = new URL('../ssh-execute-continuation/', directory)
+const sandboxDirectory = new URL('../sandbox-output-continuation/', directory)
 const record = process.env.PE_RECORD_SNAPSHOT === '1'
 export async function recordedConversation() {
   const manifest = yaml.load(await readFile(new URL('snapshot.yml', directory), 'utf8'))
@@ -72,3 +73,17 @@ export async function compareRecordedSession(page, expected, targetDirectory = d
   }
 }
 export { sshDirectory }
+
+/** Read the native continuation fixture, including its bounded model-visible excerpt. */
+export async function recordedSandboxContinuation() {
+  const manifest = yaml.load(await readFile(new URL('snapshot.yml', sandboxDirectory), 'utf8'))
+  assert.equal(manifest.scenario, 'sandbox-output-continuation')
+  try {
+    return { rows: (await readFile(new URL('session.v4.jsonl', sandboxDirectory), 'utf8'))
+      .trim().split('\n').map(line => JSON.parse(line)) }
+  } catch (error) {
+    if (record && error.code === 'ENOENT') return { rows: null }
+    throw error
+  }
+}
+export { sandboxDirectory }

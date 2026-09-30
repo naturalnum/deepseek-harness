@@ -85,7 +85,7 @@ async function setup(t) {
     const ticket = await connections.issueTicket(user, input, 'http://127.0.0.1:19221')
     saved.push((await connections.upload(ticket.ticket, Readable.from([Buffer.from(password)]))).item)
   }
-  const tasks = new TaskStore(pool, { leaseMs: 60_000, maxPendingPerUser: 8,
+  const tasks = new TaskStore(pool, { maxEventBytes: 524288, leaseMs: 60_000, maxPendingPerUser: 8,
     maxActivePerUser: 1, sshEnabled: true })
   const calls = new SshCallStore(pool)
   const runner = new FakeRunner()

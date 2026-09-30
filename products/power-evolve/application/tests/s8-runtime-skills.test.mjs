@@ -45,7 +45,7 @@ test('runtime skills use accepted owner and version, reject foreign IDs and fenc
     await skills.init()
     const a = await skills.install(alice, randomUUID(), 'alice-skill', 'Alice description', 'Alice private body')
     const b = await skills.install(bob, randomUUID(), 'bob-skill', 'Bob description', 'Bob private body')
-    const tasks = new TaskStore(pool, { leaseMs: 30000, maxPendingPerUser: 4, maxActivePerUser: 1 })
+    const tasks = new TaskStore(pool, { maxEventBytes: 524288, leaseMs: 30000, maxPendingPerUser: 4, maxActivePerUser: 1 })
     const session = await tasks.create(alice, randomUUID())
     await tasks.accept(alice, session.sessionId, randomUUID(), 'Explain my skill')
     const grant = await tasks.claim(randomUUID())

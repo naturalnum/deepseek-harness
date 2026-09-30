@@ -2,6 +2,7 @@
 import { z } from 'zod'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
+import { MAX_INPUT_JSON_BYTES } from './continuation-input.ts'
 
 export type UserId = Branded<'PowerEvolveUserId'>
 export type OperationId = Branded<'PowerEvolveOperationId'>
@@ -133,7 +134,8 @@ export const loginRequest = z.object({
 }).strict()
 export const grant = z.object({
   operationId, sessionId, userId, requestId,
-  text: z.string().max(16_384),
+  text: z.string().max(MAX_INPUT_JSON_BYTES)
+    .refine(value => Buffer.byteLength(JSON.stringify(value)) <= MAX_INPUT_JSON_BYTES),
   token: z.string().min(32).max(256),
   epoch: z.number().int().positive(),
   settings,
@@ -151,7 +153,8 @@ export const grant = z.object({
   mcpConnections: z.array(mcpSelection).max(1).default([]),
   stdioMcpConnections: z.array(stdioMcpSelection).max(1).default([]),
   sshConnections: z.array(sshSelection).max(8).default([]),
-}).strict()
+}).strict().refine(value => value.source !== 'user' || value.text.length <= 16_384,
+  { path: ['text'], message: 'User input exceeds 16384 characters' })
 export type Grant = z.infer<typeof grant>
 
 /** HTTP refusal safe to return without exposing database or upstream diagnostics. */

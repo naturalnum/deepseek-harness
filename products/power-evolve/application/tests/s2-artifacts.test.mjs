@@ -50,7 +50,7 @@ test('published bytes survive source edits and enforce user, Session, and reques
     await files.init()
     const artifacts = new ArtifactService(pool, files, join(root, 'artifacts'))
     await artifacts.init()
-    const tasks = new TaskStore(pool, { leaseMs: 3000, maxPendingPerUser: 8, maxActivePerUser: 1 })
+    const tasks = new TaskStore(pool, { maxEventBytes: 524288, leaseMs: 3000, maxPendingPerUser: 8, maxActivePerUser: 1 })
     const session = (await tasks.create(alice, requestId.parse(randomUUID()))).sessionId
     const firstFile = await files.put(alice, randomUUID(), 'result.txt', null, Buffer.from('first result').toString('base64'))
     const publishId = randomUUID()
