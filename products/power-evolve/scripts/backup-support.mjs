@@ -10,7 +10,7 @@ const digest = value => createHash('sha256').update(value).digest('hex')
 // Include schema-independent objects and user objects placed inside pg_catalog by an operator.
 const databaseObjectCatalogs = ['pg_class', 'pg_proc', 'pg_type', 'pg_collation',
   'pg_conversion', 'pg_operator', 'pg_opclass', 'pg_opfamily', 'pg_ts_config', 'pg_ts_dict',
-  'pg_ts_parser', 'pg_ts_template', 'pg_cast', 'pg_transform', 'pg_am', 'pg_language',
+  'pg_ts_parser', 'pg_ts_template', 'pg_cast', 'pg_transform', 'pg_am', 'pg_amop', 'pg_amproc', 'pg_language',
   'pg_extension', 'pg_event_trigger', 'pg_foreign_data_wrapper', 'pg_foreign_server',
   'pg_user_mapping', 'pg_publication', 'pg_default_acl', 'pg_constraint', 'pg_trigger',
   'pg_rewrite', 'pg_policy', 'pg_statistic_ext', 'pg_attrdef']
