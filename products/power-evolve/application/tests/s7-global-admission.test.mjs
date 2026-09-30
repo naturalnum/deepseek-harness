@@ -135,7 +135,7 @@ test('two Platform replicas isolate account limits behind one peer and retain gl
           catch (error) { if (error.code === 'ENOENT' || error instanceof SyntaxError) return false; throw error }
         }, `${name} ready`, 15000)
         const health = await (await fetch(`${ready.url}/health`)).json()
-        assert.equal(health.schema, 20)
+        assert.equal(health.schema, (await pool.query('SELECT version FROM pe_schema')).rows[0].version)
         return { child, url: ready.url }
       } catch (error) {
         await stop(child)

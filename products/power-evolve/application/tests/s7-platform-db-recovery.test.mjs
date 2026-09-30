@@ -128,6 +128,7 @@ test('Platform stays alive, becomes unready, and resumes only new requests after
         const response = await health()
         const body = await response.json()
         return response.status === 503 && body.ready === false && body.database === 'unavailable'
+          && body.schema === null
       } catch { return false }
     }, 'Platform health unready')
     assert.equal((await live()).status, 200)
@@ -147,6 +148,8 @@ test('Platform stays alive, becomes unready, and resumes only new requests after
     const check = new Pool({ connectionString: url.href, max: 1 })
     try {
       assert.equal((await check.query('SELECT count(*)::integer AS count FROM pe_credentials')).rows[0].count, 1)
+      const version = (await check.query('SELECT version FROM pe_schema')).rows[0].version
+      assert.equal((await (await health()).json()).schema, version)
     } finally { await check.end() }
     assert.match(await readFile(logPath, 'utf8'), /Platform PostgreSQL connection recovered/)
   })

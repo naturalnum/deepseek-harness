@@ -252,14 +252,15 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     }
     if (req.method === 'GET' && path === '/health') {
       try {
-        await healthPool.query('SELECT 1')
+        const versions = await healthPool.query<{ version: number }>('SELECT version FROM pe_schema')
+        if (versions.rows.length !== 1) throw new Error('PowerEvolve schema version is unavailable')
         if (!databaseReady) ctx.logger.info('Platform PostgreSQL connection recovered')
         databaseReady = true
-        sendJson(res, { ready: true, service: 'platform', schema: 20, executionEnabled,
+        sendJson(res, { ready: true, service: 'platform', schema: versions.rows[0]!.version, executionEnabled,
           mcpAvailable: !!config.mcpUrl, stdioMcpAvailable: stdioMcp.available, sshAvailable, instanceId })
       } catch (error) {
         databaseUnavailable(error)
-        sendJson(res, { ready: false, service: 'platform', schema: 20, database: 'unavailable',
+        sendJson(res, { ready: false, service: 'platform', schema: null, database: 'unavailable',
           executionEnabled, mcpAvailable: !!config.mcpUrl, stdioMcpAvailable: stdioMcp.available,
           sshAvailable, instanceId }, 503)
       }
