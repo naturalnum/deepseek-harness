@@ -58,10 +58,10 @@ SSH 继续复用固定主机密钥、受控地址和隔离 Runner。编辑连接
 
 | 所有者 | 文件与工作 |
 | --- | --- |
-| 集成者 | `contracts.ts` 及新连接器 DTO、`schema.ts`、数据库初始化、TaskStore、模型代理、Platform／Host 路由、Profile、依赖与锁文件、续接字段；分配下一迁移版本，最终联调与试用冻结 |
+| 集成者 | 公共 DTO、正式迁移、TaskStore、模型代理、Platform／Host 路由、`platform/mcp-actions.ts`、`host/mcp.ts`、可信审批页、Profile、依赖与锁文件及续接；最终联调与试用冻结 |
 | 配置实现者 | 新 `platform/mcp-connections.ts` 及凭据／目录仓储辅助文件、对应独立测试；SSH 阶段再分配管理代码 |
-| 调用实现者 | 新 `platform/mcp-transport.ts`、`platform/mcp-actions.ts`，发现、受控网络、审批状态及派发实现、独立 TLS／协议和恢复测试 |
-| 客户端实现者 | 旧个人 MCP 页面与 Port 适配、`host/mcp.ts` 的动态工具登记、相应客户端与 Host 测试；按约定扩展现有可信审批页，不创建替代产品页面 |
+| 传输实现者 | 新 `platform/mcp-transport.ts`、`platform/mcp-network.ts`，发现、受控网络、单次工具调用及独立 TLS／协议测试；持久审批和派发许可由集成者接线 |
+| 客户端实现者 | 旧个人 MCP 页面、Port 与浏览器 HTTP 适配、原生客户端装配及对应测试；在约定文件内迁移，不创建替代产品页面 |
 
 共同字段和服务方法先在集成者维护的 DTO 中落定，再并行实现。可信审批页的具体文件一次只交给一个所有者。任何需要修改他人文件的情况先回报集成者，由所有者修改或重新划分；隔离分支提交后串行合并。
 
