@@ -76,7 +76,8 @@ try {
   let acceptedId
   if (isCreate) {
     await page.getByRole('button', { name: 'Choose workspace', exact: true }).click()
-    const workspaceName = `qa-s8-${username}`
+    const workspaceName = process.env.PE_S8_WORKSPACE_NAME ?? `qa-s8-${username}`
+    assert.match(workspaceName, /^[a-z0-9-]{1,48}$/u)
     await page.getByText(workspaceName, { exact: true }).first().waitFor({ timeout: 3000 }).catch(() => {})
     if (await page.getByText(workspaceName, { exact: true }).count() > 0) {
       await page.getByText(workspaceName, { exact: true }).last().click()

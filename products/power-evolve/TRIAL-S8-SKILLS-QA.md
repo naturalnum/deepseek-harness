@@ -9,7 +9,7 @@ Date: 2026-09-30. Base commit: `e452a21d24`; the first trial's Host and Platform
 | `s8-skills-qa` | 18552 | 19540 | 19541 | `pe-s8-skills-qa` | Two-user Skills UI, persistence, model discovery, and preserved long-output failure |
 | `s8-office-qa` | 18553 | 19550 | 19551 | `pe-s8-office-qa` | Fresh-state Office and PDF file execution |
 
-Each trial has its own private profile, database volume, POSIX workspace root, and namespace-scoped Kubernetes credential. Neither uses the frozen S7 c3 namespace or ports. Both initially used source and compiled artifacts from the clean base commit; focused fixes were compiled and applied only to the named trial processes above. This QA checkout owns its new scripts and this report. Local sanitized JSON/PNG evidence is under `.artifacts/power-evolve/<trial>/evidence/` in this checkout. Credential files are outside the repository and are absent from evidence.
+Each trial has its own private profile, database volume, POSIX workspace root, and namespace-scoped Kubernetes credential. Neither uses the frozen S7 c3 namespace or ports. Both initially used source and compiled artifacts from the clean base commit; focused fixes were compiled and applied only to the named trial processes above. This QA checkout owns its new scripts and this report. Local sanitized JSON/PNG evidence is under `.artifacts/power-evolve/<trial>/evidence/` and `evidence-qa3/` in this checkout. Credential files are outside the repository and are absent from evidence.
 
 ## Verified
 
@@ -40,6 +40,20 @@ These are small integration probes. They do not establish production-quality Wor
 
 The five report-package statements above are pending independent E2E retest against the next explicit catalog version. They are not acceptance claims for their current executable workflows.
 
+## Published catalog and qa3 follow-up on `b7157ed7a2`
+
+The isolated QA checkout merged the published `59b736bafe` mainline at `b7157ed7a2`. The catalog SHA-256 is `a83063fea6ca0b35aab0bf28c3aaee8d8e36e29d927ecdf684dfb42a8ffa97df`. The qa3 Runner tag `pe-s8-skills-runner:qa3` resolves to image ID `sha256:ceaf2b51bc789a2284b532bfa9b4a887ec4e55a4c4cf1637319b574a5b7ccf71`. It was imported only into the isolated k3d probe cluster. The second trial's Platform profile was regenerated and restarted with that image; Kubernetes Pod status reported the same full image ID for the actual executions.
+
+Alice and Bob separately used trusted Platform login and native `skillsInstallBuiltin` to explicitly upgrade Word, Excel, PowerPoint, and LaTeX to `1.0.1`, and `tech-report-writer` to `1.1.32`. All ten installs returned success. Each user's Skill ID stayed stable; previous version receipts and immutable package files remained readable. New instruction bodies passed SHA-256. Alice's disabled PowerPoint state stayed disabled across its upgrade; it was then re-enabled through the native API.
+
+With newly claimed qa3 Pods, Bob's native Office Session created an XLSX, set `A1=21` and `B1=A1*2`, and validated it. `cloud_exec` then converted it using LibreOffice Calc to a one-page PDF. `pdftotext` and PNG inspection both showed `21 42`. Alice's native Office Session created a one-slide PPTX with `S8 PPT` and `Real office tool`, validated it, and `cloud_exec` converted it using LibreOffice Impress to a one-page PDF; extracted text and the rendered page contained both strings. Both chains had one real execution and completed trusted continuation per command. This resolves the original Runner's Calc/Impress rendering gap for these small files. OfficeCLI `view ... screenshot` remains a separate unproven path.
+
+Bob invoked `/report-workflow-orchestrator` in a real DeepSeek Session. The native event supplied the authorized four-package suite path under `/opt/power-evolve/skills/report-suites/7d84dcd7f7362b5e284a58b2dbb9292794e521b810fe261217461bac8188718a`. In that same Session, actual `cloud_exec` calls in qa3 initialized the workflow state, returned `project_intake`, passed the example outline quality gate, confirmed the formatter environment, generated a sample DOCX through `tech-report-writer/scripts/main.py create-report`, passed `validate-report`, and rendered a six-page PDF with six PNGs. The rendered catalog had three visible entries with correct Roman and Arabic page numbers and no missing entries. The cover, approval, Chinese and English abstracts, catalog, and body were visually inspected. A synthetic four-answer intake then advanced the state to `build_project_profile` through `workflow_cli.py` in the same Session. This is a workflow entry and output smoke, not a full project report with sourced chapters and formal reviewer approval.
+
+A new `/report-reviewer` Session returned the required structured `review_outline` response for an intentionally incomplete outline: `status=blocked`, `decision=blocked`, the submitted artifact ID and version, required missing inputs, and specific `must_fix` items. It did not invent project evidence or pass the outline. A `/latex-report-writer` Session loaded the upgraded package and, through qa3 `cloud_exec`, copied its sample source to the Workspace, compiled twice with XeLaTeX, validated a ten-page A4 PDF, and rendered ten PNGs. Cover, catalog, body, and references pages were inspected. The validator exited zero after sample placeholders were replaced or removed. It warned that the actual embedded fonts were Noto CJKjp and TeXGyreTermes fallbacks, so exact Songti/Heiti/Times visual fidelity is **not** accepted in this Linux image. The sample reference entry is synthetic and is not a sourced final report.
+
+The real suite rule-consistency gate **failed** on this published combination. `validate_rule_consistency.py` requires the literal phrase `Microsoft Word` in `tech-report-writer/scripts/word_field_refresh.py`; version `1.1.32` has functioning Word COM branches and `TablesOfContents`/`Fields.Update`, but its module docstring says `Word COM`. The actual Runner returned `tech-report-writer/word_field_refresh.py: 缺少Word自动更新能力 Microsoft Word`, exit 1. Mainline is publishing a corrected `1.1.33`; this QA does not waive the gate. An exploratory attempt to run the entire formatter compatibility unittest as one `cloud_exec` hit the 60-second execution limit after three tests passed, so its fourth result is unverified; focused create/validate/render calls above all completed. A long base64 fixture command was copied incorrectly by the model, and an initial synthetic intake file had host-only `0600` permissions; both were corrected for subsequent short probes without changing PG rows.
+
 ## Blocking findings
 
 ### Long Office guide initially left a queued operation and starved other continuations; fixed and replayed
@@ -56,9 +70,9 @@ The built-in Word, Excel, and PowerPoint Skill wrappers tell the model to load t
 
 The `0e2f62b05b` runtime fix prepends fixed product instructions to `load_skill` output while preserving the upstream guide. The real Alice replay verified both exact guide preservation and a later direct file write in the same Session. The three catalog Skill wrapper revisions are still pending their next explicit package version; this runtime proof does not imply full document workflow acceptance.
 
-### Visual renderer availability in the current Runner
+### Visual renderer availability in the original Runner
 
-The real Office command `view /workspace/s8-word.docx pdf --out /workspace/s8-word-preview.pdf` exited 1 with `No exporter plugin found for .docx → .pdf`. OfficeCLI `view ... screenshot` exited 1 for all three formats: Word and PPTX reported `No headless backend available`; Excel's clipped range reported `clip mode requires a Chrome-family browser`. The image has LibreOffice Writer. Its Writer conversion passed for Word, but the same LibreOffice command for XLSX and PPTX exited 0 while printing `Error: source file could not be loaded` and creating no PDF. File existence and PDF magic checks prevented a false success claim. Excel and PPTX visual acceptance awaits a Runner with Calc and Impress, or another actual renderer.
+The real Office command `view /workspace/s8-word.docx pdf --out /workspace/s8-word-preview.pdf` exited 1 with `No exporter plugin found for .docx → .pdf`. OfficeCLI `view ... screenshot` exited 1 for all three formats: Word and PPTX reported `No headless backend available`; Excel's clipped range reported `clip mode requires a Chrome-family browser`. The original image has LibreOffice Writer. Its Writer conversion passed for Word, but the same LibreOffice command for XLSX and PPTX exited 0 while printing `Error: source file could not be loaded` and creating no PDF. File existence and PDF magic checks prevented a false success claim. The qa3 follow-up above passed LibreOffice Calc/Impress PDF rendering in real Sessions.
 
 ## Reproduction scripts
 
@@ -74,5 +88,9 @@ Run against an already prepared trial with `PE_PRIVATE_DIR`, `PE_HOST_PORT`, `PE
 | `qa-s8-cloud-render.mjs <alice\|bob> <word\|excel\|pptx>` | Actual LibreOffice conversion in the matching file's Sandbox Session and PDF magic check |
 | `qa-s8-office-guide-browser.mjs` | Real prefixed `load_skill word`, full upstream guide comparison, and same-Session direct write |
 | `qa-s8-report-resource.mjs` | Real `skill_resource` of the orchestrator registry, SHA check, zero Sandbox rows |
+| `qa-s8-upgrade-browser.mjs` | Two-user explicit five-package API upgrade, stable IDs, old receipts, disabled state, and SHA checks |
+| `qa-s8-report-session.mjs` / `qa-s8-report-command.mjs <action>` | Native report slash, actual suite path, workflow and formatter commands in k3s |
+| `qa-s8-specialist-session.mjs <latex\|reviewer>` | Native LaTeX and reviewer Skill invocations |
+| `qa-s8-latex-command.mjs <action>` | Real XeLaTeX build, validation, and PDF render through cloud Sandbox |
 
 The Office command script keeps later mutations in the Session and Workspace recorded by its matching `*-create` evidence. An early exploratory `excel-set` accidentally selected a different Workspace with the same title and returned `File not found`; the corrected script does not reuse a title to identify a file's Workspace. An `uncertain` state during Sandbox Pod replacement was transient and later settled to success; the script now waits for an actual terminal execution state.
