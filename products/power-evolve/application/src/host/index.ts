@@ -18,8 +18,9 @@ import { serveNativeUi, serveUi } from '../ui.ts'
 import { BrowserAgentAuth } from './browser-auth.ts'
 import { installNativeRemote } from './native-remote.ts'
 import { Scheduler } from './scheduler.ts'
+import { mcpManagementRequests, mcpManagementEndpoints, mcpTicketValue } from '../mcp-management-rpc.ts'
 
-const requests = { me: z.object({}).strict(), logout: z.object({}).strict(), modelsList: z.object({}).strict(), settingsUpdate: settingsUpdateRequest,
+const requests = { ...mcpManagementRequests, me: z.object({}).strict(), logout: z.object({}).strict(), modelsList: z.object({}).strict(), settingsUpdate: settingsUpdateRequest,
   create: createRequest, list: listRequest, prompt: promptRequest, page: pageRequest, follow: pageRequest,
   filesList: sessionFilesListRequest, filesRead: sessionFileReadRequest, filesPut: sessionFilePutRequest,
   skillsList: z.object({}).strict(), skillsRead: skillRequest,
@@ -54,7 +55,7 @@ const requests = { me: z.object({}).strict(), logout: z.object({}).strict(), mod
   devicesList: z.object({}).strict(), devicesPair: z.object({}).strict(),
   devicesRevoke: z.object({ deviceId: z.uuid() }).strict(),
   directoriesRevoke: z.object({ directoryId: z.uuid() }).strict() }
-const endpoint = { me: '/identity/me', logout: '/identity/logout', modelsList: '/identity/models', settingsUpdate: '/identity/settings/update',
+const endpoint = { ...mcpManagementEndpoints, me: '/identity/me', logout: '/identity/logout', modelsList: '/identity/models', settingsUpdate: '/identity/settings/update',
   create: '/sessions/create', list: '/sessions/list', prompt: '/sessions/prompt', page: '/sessions/page',
   filesList: '/files/session/list', filesRead: '/files/session/read', filesPut: '/files/session/put',
   skillsList: '/skills/list', skillsRead: '/skills/read',
@@ -95,6 +96,47 @@ class ProductRemote extends TypertRemoteService {
   @Remote logout(request: z.infer<typeof requests.logout>) { return this.call('logout', request) }
   @Remote modelsList(request: z.infer<typeof requests.modelsList>) { return this.call('modelsList', request) }
   @Remote settingsUpdate(request: z.infer<typeof settingsUpdateRequest>) { return this.call('settingsUpdate', request) }
+  @Remote mcpConnectionsList(request: z.infer<typeof requests.mcpConnectionsList>) {
+    return this.call('mcpConnectionsList', request)
+  }
+  @Remote mcpConnectionsCreate(request: z.infer<typeof requests.mcpConnectionsCreate>) {
+    return this.call('mcpConnectionsCreate', request)
+  }
+  @Remote mcpConnectionsUpdate(request: z.infer<typeof requests.mcpConnectionsUpdate>) {
+    return this.call('mcpConnectionsUpdate', request)
+  }
+  @Remote mcpConnectionsToggle(request: z.infer<typeof requests.mcpConnectionsToggle>) {
+    return this.call('mcpConnectionsToggle', request)
+  }
+  @Remote mcpConnectionsDelete(request: z.infer<typeof requests.mcpConnectionsDelete>) {
+    return this.call('mcpConnectionsDelete', request)
+  }
+  @Remote async mcpConnectionsTicket(request: z.infer<typeof requests.mcpConnectionsTicket>) {
+    const result = mcpTicketValue.parse(await this.call('mcpConnectionsTicket', request))
+    if (result.state === 'pending') {
+      const upload = new URL(result.uploadUrl)
+      if (upload.origin !== this.options.platformOrigin || upload.pathname !== '/mcp/connections/upload'
+        || upload.username || upload.password || upload.search || upload.hash) {
+        throw new PlatformError(503, 'mcp_upload_unavailable')
+      }
+    }
+    return result
+  }
+  @Remote mcpConnectionsReceipt(request: z.infer<typeof requests.mcpConnectionsReceipt>) {
+    return this.call('mcpConnectionsReceipt', request)
+  }
+  @Remote mcpConnectionsCheck(request: z.infer<typeof requests.mcpConnectionsCheck>) {
+    return this.call('mcpConnectionsCheck', request)
+  }
+  @Remote mcpConnectionsDraftCheck(request: z.infer<typeof requests.mcpConnectionsDraftCheck>) {
+    return this.call('mcpConnectionsDraftCheck', request)
+  }
+  @Remote mcpConnectionsCheckStatus(request: z.infer<typeof requests.mcpConnectionsCheckStatus>) {
+    return this.call('mcpConnectionsCheckStatus', request)
+  }
+  @Remote mcpConnectionsCheckCancel(request: z.infer<typeof requests.mcpConnectionsCheckCancel>) {
+    return this.call('mcpConnectionsCheckCancel', request)
+  }
   @Remote create(request: z.infer<typeof createRequest>) { return this.call('create', request) }
   @Remote list(request: z.infer<typeof listRequest>) { return this.call('list', request) }
   @Remote prompt(request: z.infer<typeof promptRequest>) { return this.call('prompt', request) }

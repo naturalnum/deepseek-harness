@@ -67,6 +67,8 @@ SSH 继续复用固定主机密钥、受控地址和隔离 Runner。编辑连接
 
 首轮分配：配置实现者独占新 `application/src/mcp-contracts.ts` 的初始 DTO 与候选迁移 SQL，交集成者审核后才供其他实现消费；原 `contracts.ts` 和正式迁移仍由集成者修改。客户端实现者先迁移旧个人 MCP 页面及 Port，`host/mcp.ts` 和可信审批页暂留集成者，避免未固定后端协议时重复实现。S8 QA 工作区保留，MCP 页面在新的隔离工作区开发。
 
+管理请求及返回值以 [`mcp-management-rpc.ts`](application/src/mcp-management-rpc.ts) 为准，沿用扁平的 `powerEvolve.mcpConnections*` 方法和 `{request}` HTTP 包装。列表返回 `{available,items:[{connection,latestCheck}]}`；创建、更新、启停、删除返回 `McpConnection`，检查相关方法返回 `McpCheck`。检查 ID 本身是幂等取消标识。上传票据返回待上传能力或已保存结果；浏览器直接向 Platform 的 `/mcp/connections/upload` 发送带票据的 UTF-8 凭据封装。响应丢失时按原请求 ID 查询 Receipt；Host 请求不得包含凭据值。该协议随当前连接器切片联调，单独的页面或 DTO 通过不算完成。
+
 ## 验收次序
 
 1. 两个真实浏览器身份分别创建至少两个连接，发现不同带参数工具并调用；验证名称碰撞、空目录、Bearer／自定义头、设置隔离及不创建沙盒。凭据上传必须直达 Platform。
