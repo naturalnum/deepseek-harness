@@ -77,9 +77,9 @@ export function normalizeMcpConfiguration(value: unknown): McpConfigurationInput
 export function normalizeMcpUpload(value: unknown): McpCredentialUpload {
   const input = mcpCredentialUpload.parse(value)
   if (input.bearerToken !== undefined && (!input.bearerToken || Buffer.byteLength(input.bearerToken) > 8192
-    || /[\u0000-\u0020\u007f]/u.test(input.bearerToken))) throw new PlatformError(400, 'mcp_credential_invalid')
+    || /[^\u0021-\u007e]/u.test(input.bearerToken))) throw new PlatformError(400, 'mcp_credential_invalid')
   const headers = input.headers?.map(header => {
-    if (/[\u0000-\u001f\u007f]/u.test(header.value) || Buffer.byteLength(header.value) > 8192) {
+    if (/[^\u0020-\u007e\u0080-\u00ff]/u.test(header.value) || Buffer.byteLength(header.value) > 8192) {
       throw new PlatformError(400, 'mcp_credential_invalid')
     }
     return { name: mcpHeaderName(header.name), value: header.value }

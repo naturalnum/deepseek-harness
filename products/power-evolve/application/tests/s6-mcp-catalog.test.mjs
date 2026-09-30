@@ -55,6 +55,11 @@ test('canonical JSON rejects non-JSON/deep values and header normalization block
   assert.throws(() => normalizeMcpUpload({ formatVersion: 1, headers: [{ name: 'X-Key', value: 'value\nInjected' }] }),
     { code: 'mcp_credential_invalid' })
   assert.throws(() => normalizeMcpUpload({ formatVersion: 1, bearerToken: 'token value' }), { code: 'mcp_credential_invalid' })
+  assert.throws(() => normalizeMcpUpload({ formatVersion: 1, bearerToken: 'token\u4e2d' }), { code: 'mcp_credential_invalid' })
+  assert.throws(() => normalizeMcpUpload({ formatVersion: 1, headers: [{ name: 'X-Key', value: 'value\u4e2d' }] }),
+    { code: 'mcp_credential_invalid' })
+  assert.equal(normalizeMcpUpload({ formatVersion: 1, headers: [{ name: 'X-Key', value: 'value\u00e9' }] })
+    .headers[0].value, 'value\u00e9')
   assert.throws(() => normalizeMcpUpload({ formatVersion: 1, unexpected: 'secret' }))
 })
 
