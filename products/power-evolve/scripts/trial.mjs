@@ -14,6 +14,8 @@ const composeFiles = ['-f', 'products/power-evolve/compose.yaml',
   ...(process.env.PE_COMPOSE_EXTERNAL_NETWORK ? ['-f', 'products/power-evolve/compose.external-network.yaml'] : [])]
 const trialName = process.env.PE_TRIAL_NAME ?? 'slice1'
 if (!/^[a-z0-9-]{1,32}$/.test(trialName)) throw new Error('Invalid trial name')
+const databaseMode = process.env.PE_TRIAL_DATABASE ?? 'compose'
+if (!['compose', 'external'].includes(databaseMode)) throw new Error('PE_TRIAL_DATABASE must be compose or external')
 const privateDir = process.env.PE_PRIVATE_DIR ?? join(homedir(), '.config/power-evolve', `shared-host-${trialName}`)
 const output = join(root, '.artifacts/power-evolve', trialName === 'slice1' ? '' : trialName)
 const nativeWeb = join(output, 'native-web')
@@ -35,6 +37,7 @@ env.PE_MODEL_URL = process.env.PE_MODEL_URL
 env.PE_TARGET_DROP_AFTER_PERSIST = process.env.PE_TARGET_DROP_AFTER_PERSIST
 env.PE_MCP_ENABLED = process.env.PE_MCP_ENABLED
 env.PE_MCP_PORT = process.env.PE_MCP_PORT
+env.PE_REMOTE_MCP_PORT = process.env.PE_REMOTE_MCP_PORT
 env.PE_SSH_ENABLED = process.env.PE_SSH_ENABLED
 env.PE_MCP_TOKEN_FILE = process.env.PE_MCP_ENABLED === '1' ? join(privateDir, 'mcp-token')
   : process.env.PE_MCP_TOKEN_FILE
@@ -42,6 +45,7 @@ env.PE_HOST_SECOND_PORT = process.env.PE_HOST_SECOND_PORT
 env.PE_LOAD_BALANCER_PORT = process.env.PE_LOAD_BALANCER_PORT
 const command = process.argv[2] ?? 'status'
 const targets = ['api', ...(process.env.PE_MCP_ENABLED === '1' ? ['mcp'] : []),
+  ...(process.env.PE_REMOTE_MCP_FIXTURE === '1' ? ['remote-mcp'] : []),
   'platform', ...(process.env.PE_MULTI_PLATFORM === '1' ? ['platform-b', 'platform-lb'] : []),
   'host', ...(process.env.PE_MULTI_HOST === '1' ? ['host-b', 'lb'] : []),
   ...(process.env.PE_DEVICE_ENABLED === '1' ? ['device'] : []),
@@ -77,8 +81,9 @@ async function start(name) {
   }
   await rm(readyPath(name), { force:true })
   const log = openSync(join(output, `${name}.log`), 'a', 0o600)
-  const child = spawn(process.execPath, name === 'api' || name === 'lb' || name === 'platform-lb' || name === 'mcp'
-    ? [name === 'mcp' ? 'products/power-evolve/application/scripts/personal-mcp-fixture.mjs'
+  const child = spawn(process.execPath, name === 'api' || name === 'lb' || name === 'platform-lb' || name === 'mcp' || name === 'remote-mcp'
+    ? [name === 'remote-mcp' ? 'products/power-evolve/application/scripts/remote-mcp-fixture.mjs'
+      : name === 'mcp' ? 'products/power-evolve/application/scripts/personal-mcp-fixture.mjs'
       : `products/power-evolve/scripts/trial-${name}.mjs`]
     : ['apps/cli/lib/bin.js', '--profile', `power-evolve-${name}`], {
     cwd:root, env:{...env, DSH_HOME:home(name), PE_READY_FILE:readyPath(name)}, detached:true, stdio:['ignore',log,log],
@@ -119,6 +124,9 @@ if (command === 'stop-one' || command === 'start-one') {
   else await start(name)
 }
 if (command === 'up' || command === 'restart') {
+  if (databaseMode === 'external' && !(await readFile(join(privateDir, 'database-url'), 'utf8')).trim()) {
+    throw new Error('External trial PostgreSQL requires a pre-provisioned private database-url')
+  }
   await mkdir(output, { recursive:true, mode:0o700 })
   try { await readFile(join(nativeWeb, 'asset-list.json')) }
   catch (error) {
@@ -128,10 +136,13 @@ if (command === 'up' || command === 'restart') {
     await cp(join(root, 'products/power-evolve/cloud-web/dist'), pending, { recursive:true })
     await rename(pending, nativeWeb)
   }
-  const prepared=spawnSync(process.execPath,['products/power-evolve/scripts/prepare-trial.mjs'],{cwd:root,env,stdio:'inherit'})
+  const prepared=spawnSync(process.execPath,['products/power-evolve/scripts/prepare-trial.mjs'],{
+    cwd:root,env:{...env,PE_REMOTE_MCP_CONFIG_FILE:process.env.PE_REMOTE_MCP_CONFIG_FILE},stdio:'inherit'})
   if (prepared.status!==0) throw new Error('Trial preparation failed')
-  const database=spawnSync('docker',['compose','-p',`pe-shared-host-${trialName}`,...composeFiles,'up','-d','--wait'],{cwd:root,env:{...process.env,PE_PRIVATE_DIR:privateDir},stdio:'inherit'})
-  if (database.status!==0) throw new Error('Trial PostgreSQL startup failed')
+  if (databaseMode === 'compose') {
+    const database=spawnSync('docker',['compose','-p',`pe-shared-host-${trialName}`,...composeFiles,'up','-d','--wait'],{cwd:root,env:{...process.env,PE_PRIVATE_DIR:privateDir},stdio:'inherit'})
+    if (database.status!==0) throw new Error('Trial PostgreSQL startup failed')
+  }
   await waitDatabase()
   for (const name of targets) await start(name)
 }

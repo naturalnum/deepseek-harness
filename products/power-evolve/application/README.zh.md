@@ -52,6 +52,8 @@ Platform 的请求连接池或有界健康检查连接池失去 PostgreSQL 连�
 
 Schema 20 增加归属用户的目录安装回执，包括复用既有包版本的重试 ID。已受理的技能元数据最多包含 256 项；领取任务不依赖说明文件。当前授权只能读取其持久选用记录，过期授权会被拒绝。
 
+本机 `scripts/trial.mjs` 启动器支持通过 `PE_TRIAL_DATABASE=external` 复用现有 PostgreSQL 服务。启动前先创建独立的试用数据库及私有 `database-url`；该模式检查数据库就绪状态，不创建数据库容器。默认仍为 `compose`。合成 MCP 验收可用 `PE_REMOTE_MCP_FIXTURE=1` 在 `PE_REMOTE_MCP_PORT` 启动归启动器管理的回环目标；私有 `remote-mcp-fixture-users.json` 提供至少两个 `{username, token, unitPrice}` 记录（令牌至少 24 个字符）。目标只查询私有测试商品和计算报价，在本机记录合成调用，不执行购买；使用相同开关执行 `stop` 时会一并关闭。启动器仅向 Profile 准备步骤传入 `PE_REMOTE_MCP_CONFIG_FILE`，由其写入 Platform 配置；Host 进程不接收该环境变量。
+
 ## 恢复与限制
 
 Schema 22 独立保存远程 MCP 的不可变配置、凭据和目录版本，不替换固定连接器预设。为 `TaskStore` 提供远程 MCP 受理策略时，输入受理在同一事务中保存该用户完整的已启用工具选择、原始模式及精确的原生模型声明。目录变化后，重复受理和任务恢复仍保留原声明。不支持的模式、必需的 MCP Task 扩展、名称碰撞和整体选择超限会拒绝受理，不会静默丢弃工具。模型代理从 PG 读取已受理定义，拒绝宿主篡改名称、描述或参数模式。该路径不创建执行沙盒，也不授予工具调用权限。只有为 Platform Profile 指定私有配置文件，才会启用通用 MCP。
