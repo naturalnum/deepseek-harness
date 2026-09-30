@@ -1,5 +1,6 @@
 /** Locale-owned projections of saved MCP discovery results. */
-import type { PersonalMcpConnection, PersonalMcpConnectionCheckErrorCode } from './personal-mcp-client.ts'
+import type { PersonalMcpConnection, PersonalMcpConnectionCheck,
+  PersonalMcpConnectionCheckErrorCode } from './personal-mcp-client.ts'
 import type { ExtensionCenterLocaleKey } from './locales.ts'
 
 const errorLabels = {
@@ -29,6 +30,17 @@ const errorLabels = {
  */
 export function personalMcpCheckErrorLabel(code: PersonalMcpConnectionCheckErrorCode): ExtensionCenterLocaleKey {
   return errorLabels[code]
+}
+
+/** Match saved discovery material; enablement-only authority revisions do not change that material.
+ * @param connection - current saved metadata. @param check - historical saved check, never a draft.
+ * @returns whether its connection, configuration or credentials differ from the current material.
+ */
+export function personalMcpSavedCheckIsStale(connection: PersonalMcpConnection, check: PersonalMcpConnectionCheck): boolean {
+  return check.connection_id !== connection.connection_id
+    || check.configuration_revision !== (connection.configuration_revision ?? connection.revision)
+    || check.credential_revision !== undefined && connection.credential_revision !== undefined
+      && check.credential_revision !== connection.credential_revision
 }
 
 /** Localized check status with its original revision and zero-tool result retained. */
@@ -64,9 +76,7 @@ export function personalMcpCheckView(connection: PersonalMcpConnection): Persona
   return {
     state: check.state,
     label: labels[check.state],
-    stale: check.configuration_revision !== (connection.configuration_revision ?? connection.revision)
-      || check.credential_revision !== undefined && connection.credential_revision !== undefined
-        && check.credential_revision !== connection.credential_revision,
+    stale: personalMcpSavedCheckIsStale(connection, check),
     discoveredTools: check.discovered_tools,
     ...(check.error_code === null ? {} : { errorLabel: personalMcpCheckErrorLabel(check.error_code) }),
   }

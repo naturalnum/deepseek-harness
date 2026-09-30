@@ -3,7 +3,7 @@ import { test } from 'node:test'
 import { readFileSync } from 'node:fs'
 import { PersonalMcpConnectionHttpClient } from '../src/client/personal-mcp-api.ts'
 import { PersonalMcpConnectionRequestError, type PersonalMcpConnectionCreateRequest } from '../src/client/personal-mcp-client.ts'
-import { personalMcpCheckErrorLabel } from '../src/client/personal-mcp-check-view.ts'
+import { personalMcpCheckErrorLabel, personalMcpCheckView } from '../src/client/personal-mcp-check-view.ts'
 import { en, zh } from '../src/client/locales.ts'
 
 // Network substitutes validate browser transport; this file is not real-backend evidence.
@@ -69,6 +69,24 @@ test('one bounded native list restores multiple masked connections and exact che
   assert.equal(page.items[0]?.latest_check?.discovered_tools, 0)
   assert.equal(page.items[0]?.latest_check?.started_at, null)
   assert.equal(page.items[0]?.latest_check?.finished_at, null)
+})
+
+test('native list retains historical discovery versions after a configuration edit', async () => {
+  const client = new PersonalMcpConnectionHttpClient(async () => Response.json({ available: true, items: [{
+    connection: { ...item, revision: 3, credentialRevision: 2, authentication: 'bearer', secretConfigured: true },
+    latestCheck: { ...pendingCheck, connectionRevision: 1, configurationRevision: 1, credentialRevision: 1,
+      state: 'succeeded', discoveredTools: 2 },
+  }] }))
+  const saved = (await client.list()).items[0]
+  assert(saved)
+  assert.equal(saved.revision, 3)
+  assert.equal(saved.configuration_revision, 2)
+  assert.equal(saved.credential_revision, 2)
+  assert.equal(saved.latest_check?.configuration_revision, 1)
+  assert.equal(saved.latest_check?.credential_revision, 1)
+  assert.deepEqual(personalMcpCheckView(saved), {
+    state: 'succeeded', label: 'personalMcpCheckSucceeded', stale: true, discoveredTools: 2,
+  })
 })
 
 test('none, retained and cleared credentials use metadata-only writes; toggle and delete use exact revisions', async () => {

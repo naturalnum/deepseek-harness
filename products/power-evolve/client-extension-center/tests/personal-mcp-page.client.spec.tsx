@@ -18,7 +18,8 @@ const sessions: PersonalMcpSessionSource = { list: {
 
 function connection(index = 1): PersonalMcpConnection {
   return { connection_id: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
-    revision: 1, display_name: index === 1 ? 'Knowledge' : 'Database', server_name: `mcp_${index}`,
+    revision: 1, configuration_revision: 1, credential_revision: null,
+    display_name: index === 1 ? 'Knowledge' : 'Database', server_name: `mcp_${index}`,
     server_url: `https://mcp${index}.example.test/mcp`, authentication: { kind: 'none', secret_configured: false },
     enabled: false, latest_check: null, created_at: '2026-09-30T00:00:00.000Z', updated_at: '2026-09-30T00:00:00.000Z' }
 }
@@ -29,7 +30,7 @@ function check(state: PersonalMcpConnectionCheck['state'], connectionId: string 
 }
 
 /** Port substitute: these tests exercise the migrated UI, without claiming backend integration. */
-function fixture(initial: readonly PersonalMcpConnection[] = [connection(), connection(2)]) {
+function fixture(initial: readonly PersonalMcpConnection[] = [connection(), connection(2)], savedCheckResult?: PersonalMcpConnectionCheck) {
   let items = initial
   const port = {
     list: vi.fn<PersonalMcpConnectionPort['list']>(async () => ({ items })),
@@ -42,10 +43,13 @@ function fixture(initial: readonly PersonalMcpConnection[] = [connection(), conn
     update: vi.fn<PersonalMcpConnectionPort['update']>(async (id, input) => {
       const current = items.find(item => item.connection_id === id)
       if (current === undefined) throw new Error('Fixture connection is absent')
+      const configurationRevision = (current.configuration_revision ?? current.revision) + 1
       const updated = { ...current, revision: current.revision + 1, display_name: input.display_name,
+        configuration_revision: configurationRevision,
+        credential_revision: current.authentication.secret_configured ? configurationRevision : null,
         server_url: input.server_url, enabled: input.enabled }
       items = items.map(item => item.connection_id === id ? updated : item)
-      return updated
+      return { ...updated, latest_check: null }
     }),
     toggle: vi.fn<PersonalMcpConnectionPort['toggle']>(async (id, _revision, enabled) => {
       const current = items.find(item => item.connection_id === id)
@@ -57,7 +61,11 @@ function fixture(initial: readonly PersonalMcpConnection[] = [connection(), conn
     remove: vi.fn<PersonalMcpConnectionPort['remove']>(async id => {
       items = items.filter(item => item.connection_id !== id)
     }),
-    createCheck: vi.fn<PersonalMcpConnectionPort['createCheck']>(async id => check('queued', id)),
+    createCheck: vi.fn<PersonalMcpConnectionPort['createCheck']>(async id => {
+      const result = savedCheckResult ?? check('queued', id)
+      items = items.map(item => item.connection_id === id ? { ...item, latest_check: result } : item)
+      return result
+    }),
     getCheck: vi.fn<PersonalMcpConnectionPort['getCheck']>(async id => check('succeeded', id)),
     cancelCheck: vi.fn<PersonalMcpConnectionPort['cancelCheck']>(async id => check('canceled', id)),
     createDraftCheck: vi.fn<PersonalMcpConnectionPort['createDraftCheck']>(async () => check('queued')),
@@ -77,6 +85,62 @@ async function openCreate(port = fixture([])) {
 }
 
 describe('Migrated personal MCP page with an explicit Port substitute', () => {
+  it.each([['English', en], ['Chinese', zh]] as const)('separates an old saved success from the edited configuration in %s', async (_language, dictionary) => {
+    const saved: PersonalMcpConnection = { ...connection(), enabled: true, credential_revision: 1,
+      authentication: { kind: 'bearer', secret_configured: true },
+      latest_check: { ...check('succeeded', connection().connection_id), credential_revision: 1, discovered_tools: 2 } }
+    const port = fixture([saved], { ...check('succeeded', saved.connection_id), check_id: 'check-2',
+      configuration_revision: 2, credential_revision: 2, discovered_tools: 2 })
+    port.createDraftCheck.mockResolvedValueOnce({ ...check('succeeded'), credential_revision: 1, discovered_tools: 2 })
+    const translate = (key: keyof typeof en): string => dictionary[key]
+    const view = render(<PersonalMcpPage personalMcp={port} sessions={sessions} t={translate} />)
+    fireEvent.click(await screen.findByRole('button', { name: `${dictionary.openMcpConnection} Knowledge` }))
+    const success = dictionary.personalMcpCheckSucceeded.replace('{count}', '2')
+    expect(screen.getByText(success)).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: dictionary.editMcpConnection }))
+    const dialog = within(screen.getByRole('dialog'))
+    fireEvent.change(dialog.getByLabelText(dictionary.mcpDisplayName), { target: { value: 'Knowledge v2' } })
+    expect(dialog.getByLabelText(dictionary.mcpBearerToken).getAttribute('value')).toBe('')
+    fireEvent.click(dialog.getByRole('button', { name: dictionary.mcpStartCheck }))
+    await dialog.findByText(success)
+    expect(port.createCheck).not.toHaveBeenCalled()
+    fireEvent.click(dialog.getByRole('button', { name: dictionary.saveMcpConnection }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(screen.getByRole('heading', { name: 'Knowledge v2' })).toBeTruthy()
+    expect(port.update.mock.calls[0]?.[1]).not.toHaveProperty('secrets')
+    expect(screen.getByText(dictionary.mcpCheckCurrentNotChecked)).toBeTruthy()
+    expect(screen.getByText(dictionary.mcpCheckPreviousResult.replace('{result}', success))).toBeTruthy()
+    expect(screen.queryByText(success)).toBeNull()
+    expect(view.container.querySelector('.pext-mcp-check-result')).toMatchSnapshot()
+    fireEvent.click(screen.getByRole('button', { name: dictionary.mcpStartCheck }))
+    await screen.findByText(success)
+    expect(port.createCheck.mock.calls[0]?.[1].expected_revision).toBe(2)
+    expect(screen.queryByText(dictionary.mcpCheckCurrentNotChecked)).toBeNull()
+    expect(view.container.querySelector('.pext-mcp-check-result')?.getAttribute('data-state')).toBe('succeeded')
+    fireEvent.click(screen.getByRole('switch'))
+    await waitFor(() => expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('false'))
+    expect(screen.getByText(`mcp_1 · ${dictionary.mcpRevision} 3`)).toBeTruthy()
+    expect(screen.getByText(success)).toBeTruthy()
+    expect(screen.queryByText(dictionary.mcpCheckCurrentNotChecked)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: dictionary.backToMcpConnections }))
+    expect(screen.getByText(`mcp_1 · ${dictionary.mcpRevision} 3`)).toBeTruthy()
+  })
+
+  it('compares an edit draft to its form instead of the saved configuration version', async () => {
+    const saved = { ...connection(), revision: 3, configuration_revision: 2, credential_revision: null }
+    const port = fixture([saved])
+    port.createDraftCheck.mockResolvedValueOnce(check('succeeded'))
+    render(<PersonalMcpPage personalMcp={port} sessions={sessions} t={t} />)
+    fireEvent.click(await screen.findByRole('button', { name: `${en.openMcpConnection} Knowledge` }))
+    fireEvent.click(screen.getByRole('button', { name: en.editMcpConnection }))
+    const dialog = within(screen.getByRole('dialog'))
+    fireEvent.click(dialog.getByRole('button', { name: en.mcpStartCheck }))
+    await dialog.findByText(en.mcpCheckSucceededZero)
+    expect(dialog.queryByText(en.mcpCheckCurrentNotChecked)).toBeNull()
+    expect(dialog.queryByText(en.mcpCheckStale)).toBeNull()
+    expect(port.update).not.toHaveBeenCalled()
+  })
+
   it.each([['English', en], ['Chinese', zh]] as const)('renders a saved unsupported-schema check in %s', async (_language, dictionary) => {
     const saved = { ...connection(), latest_check: { ...check('failed', connection().connection_id),
       error_code: 'MCP_SCHEMA_UNSUPPORTED' as const } }

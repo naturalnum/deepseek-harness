@@ -7,7 +7,7 @@ import type {
   PersonalMcpConnectionCreateRequest,
 } from './personal-mcp-client.ts'
 import { McpDetailCard } from './McpPresentation.tsx'
-import { personalMcpCheckErrorLabel } from './personal-mcp-check-view.ts'
+import { personalMcpCheckErrorLabel, personalMcpSavedCheckIsStale } from './personal-mcp-check-view.ts'
 import type { PersonalMcpPageProps } from './PersonalMcpPage.tsx'
 import {
   createPersonalMcpCheckIdempotencyKey,
@@ -108,6 +108,8 @@ export function DraftCheckControls({
   const draftKey = personalMcpDraftCheckKey(configuration, connection, sessionId)
   const priorDraftKey = useRef(draftKey)
   const currentCheck = model === undefined ? check : initialCheck
+  const stale = model !== undefined && connection !== undefined && currentCheck !== null && currentCheck !== undefined
+    && personalMcpSavedCheckIsStale(connection, currentCheck)
   const pending = currentCheck?.state === 'queued' || currentCheck?.state === 'running'
   const sessions = personalMcpSessionOptions(sessionList)
 
@@ -260,18 +262,14 @@ export function DraftCheckControls({
           setError(undefined); setPollError(false)
           if (model !== undefined) void model.reload()
         }}>{t('mcpRefreshCheck')}</button>}
-      <DraftCheckResult check={currentCheck} t={t} />
-      {connection !== undefined && currentCheck !== null && currentCheck !== undefined
-        && (currentCheck.configuration_revision !== (connection.configuration_revision ?? connection.revision)
-          || currentCheck.credential_revision !== undefined && connection.credential_revision !== undefined
-            && currentCheck.credential_revision !== connection.credential_revision)
-        && <small className="pext-mcp-check-stale">{t('mcpCheckStale')}</small>}
+      <DraftCheckResult check={currentCheck} stale={stale} t={t} />
     </div>
   )
 }
 
-function DraftCheckResult({ check, t }: {
+function DraftCheckResult({ check, stale, t }: {
   readonly check: PersonalMcpConnectionCheck | null | undefined
+  readonly stale: boolean
   readonly t: PersonalMcpPageProps['t']
 }): ReactNode {
   if (check === null || check === undefined) return <div className="pext-mcp-check-result">{t('mcpCheckNever')}</div>
@@ -288,8 +286,11 @@ function DraftCheckResult({ check, t }: {
     ? t(label).replace('{count}', String(check.discovered_tools))
     : t(label)
   return (
-    <div className="pext-mcp-check-result" data-state={check.state}>
-      <strong>{labelText}</strong>
+    <div className="pext-mcp-check-result" data-state={stale ? 'stale' : check.state}
+      data-check-state={stale ? check.state : undefined}>
+      <strong>{stale ? t('mcpCheckCurrentNotChecked') : labelText}</strong>
+      {stale && <small className="pext-mcp-check-stale">{t('mcpCheckStale')}</small>}
+      {stale && <span>{t('mcpCheckPreviousResult').replace('{result}', labelText)}</span>}
       {check.cancel_requested && <span>{t('mcpCancelingCheck')}</span>}
       {check.error_code === null ? null : <span>{t(personalMcpCheckErrorLabel(check.error_code))}</span>}
     </div>

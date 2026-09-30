@@ -191,7 +191,7 @@ exports[`Migrated personal MCP page with an explicit Port substitute > keeps the
             https://mcp1.example.test/mcp
           </span>
           <small>
-            mcp_1 · Configuration revision 1
+            mcp_1 · Connection revision 1
           </small>
         </span>
         <svg
@@ -276,7 +276,7 @@ exports[`Migrated personal MCP page with an explicit Port substitute > keeps the
             https://mcp2.example.test/mcp
           </span>
           <small>
-            mcp_2 · Configuration revision 1
+            mcp_2 · Connection revision 1
           </small>
         </span>
         <svg
@@ -342,6 +342,46 @@ exports[`Migrated personal MCP page with an explicit Port substitute > renders a
   </strong>
   <span>
     The tool JSON Schema is unsupported by this platform
+  </span>
+</div>
+`;
+
+exports[`Migrated personal MCP page with an explicit Port substitute > separates an old saved success from the edited configuration in Chinese 1`] = `
+<div
+  class="pext-mcp-check-result"
+  data-check-state="succeeded"
+  data-state="stale"
+>
+  <strong>
+    当前配置尚未检查
+  </strong>
+  <small
+    class="pext-mcp-check-stale"
+  >
+    历史检查结果，不适用于当前配置
+  </small>
+  <span>
+    旧检查结果：检查成功；发现 2 个工具
+  </span>
+</div>
+`;
+
+exports[`Migrated personal MCP page with an explicit Port substitute > separates an old saved success from the edited configuration in English 1`] = `
+<div
+  class="pext-mcp-check-result"
+  data-check-state="succeeded"
+  data-state="stale"
+>
+  <strong>
+    The current configuration has not been checked
+  </strong>
+  <small
+    class="pext-mcp-check-stale"
+  >
+    Historical check result; it does not apply to the current configuration
+  </small>
+  <span>
+    Previous check: Check succeeded; discovered 2 tools
   </span>
 </div>
 `;

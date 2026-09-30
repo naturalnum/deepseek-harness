@@ -37,6 +37,27 @@ describe('Personal MCP check presentation', () => {
     })
   })
 
+  it('keeps discovery current when only the connection authority revision changes', () => {
+    const current = { ...connection(check({ state: 'succeeded', discovered_tools: 2, credential_revision: 1 }), 3),
+      configuration_revision: 1, credential_revision: 1 }
+    expect(personalMcpCheckView(current)).toMatchObject({
+      state: 'succeeded', stale: false, discoveredTools: 2,
+    })
+  })
+
+  it.each([
+    { connection_id: '00000000-0000-4000-8000-000000000002' },
+    { configuration_revision: 2 },
+    { credential_revision: 2 },
+    { credential_revision: null },
+  ])('marks different saved discovery material stale: %j', overrides => {
+    const current = { ...connection(check({ state: 'succeeded', discovered_tools: 2, credential_revision: 1, ...overrides })),
+      configuration_revision: 1, credential_revision: 1 }
+    expect(personalMcpCheckView(current)).toMatchObject({
+      state: 'succeeded', stale: true, discoveredTools: 2,
+    })
+  })
+
   it('keeps cancellation and timeout distinct', () => {
     expect(personalMcpCheckView(connection(check({ state: 'canceled', error_code: 'MCP_CANCELED' }))))
       .toMatchObject({ state: 'canceled', label: 'mcpCheckCanceled' })
