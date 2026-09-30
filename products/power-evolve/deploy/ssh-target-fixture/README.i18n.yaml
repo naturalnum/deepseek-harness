@@ -1,0 +1,31 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write products/power-evolve/deploy/ssh-target-fixture/README.md
+/:
+  en: 4e0e5f5622755077
+  zh: b08d42f1a146e516
+/openssh-target-for-isolated-qa:
+  en: db15143bacf67f9f
+  zh: ab4f2b49cbd2e9eb
+/openssh-target-for-isolated-qa/summary:
+  en: 72c9bcbf61a0fcef
+  zh: 61445046dd3706ed
+/openssh-target-for-isolated-qa/table-of-contents:
+  en: 2cf2bc543458bccb
+  zh: 6f9bf1f0a9feb70e
+/openssh-target-for-isolated-qa/accounts-and-runtime-files:
+  en: 9334c365c53531ff
+  zh: 439bc27fa4239a46
+/openssh-target-for-isolated-qa/integration-reference:
+  en: ab82966179ff5dd6
+  zh: ab8daa947bc27cbd
+/openssh-target-for-isolated-qa/acceptance-coverage:
+  en: 19e81d915d0fcb14
+  zh: e9e3cf40980679b1
+/openssh-target-for-isolated-qa/known-limitations:
+  en: 9703a9c8c8247e53
+  zh: 1d958d4a58d65e03
+/openssh-target-for-isolated-qa/dev-note:
+  en: b75c8458928b72b9
+  zh: 45e76642489dcc3c

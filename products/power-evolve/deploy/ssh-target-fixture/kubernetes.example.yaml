@@ -1,0 +1,120 @@
+# Replace namespace and image in a private copy; provision the Secret separately from private files.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: power-evolve-ssh-target
+  namespace: pe-connector-real-ssh-qa
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: power-evolve-ssh-target
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: power-evolve-ssh-target
+    spec:
+      runtimeClassName: gvisor
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 10
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: sshd
+          image: pe-ssh-target-fixture:qa
+          imagePullPolicy: Never
+          ports:
+            - name: ssh
+              containerPort: 2222
+          readinessProbe:
+            tcpSocket:
+              port: ssh
+            periodSeconds: 2
+          resources:
+            requests:
+              cpu: 20m
+              memory: 48Mi
+            limits:
+              cpu: 250m
+              memory: 192Mi
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+              # Debian OpenSSH can write login audit records when the kernel supports them.
+              add: [AUDIT_WRITE, CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID, SYS_CHROOT]
+          volumeMounts:
+            - name: input
+              mountPath: /run/ssh-target-input
+              readOnly: true
+            - name: runtime
+              mountPath: /run/sshd
+            - name: homes
+              mountPath: /home
+            - name: temporary
+              mountPath: /tmp
+      volumes:
+        - name: input
+          secret:
+            secretName: power-evolve-ssh-target-input
+            defaultMode: 256 # 0400 in octal; avoid YAML integer-version ambiguity.
+            items:
+              - key: ssh_host_ed25519_key
+                path: ssh_host_ed25519_key
+              - key: qa-alice.password
+                path: qa-alice.password
+              - key: qa-bob.password
+                path: qa-bob.password
+              - key: qa-alice.authorized_keys
+                path: qa-alice.authorized_keys
+              - key: qa-bob.authorized_keys
+                path: qa-bob.authorized_keys
+        - name: runtime
+          emptyDir:
+            medium: Memory
+            sizeLimit: 8Mi
+        - name: homes
+          emptyDir:
+            sizeLimit: 64Mi
+        - name: temporary
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: power-evolve-ssh-target
+  namespace: pe-connector-real-ssh-qa
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: power-evolve-ssh-target
+  ports:
+    - name: ssh
+      port: 2222
+      targetPort: ssh
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: power-evolve-ssh-target
+  namespace: pe-connector-real-ssh-qa
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: power-evolve-ssh-target
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: power-evolve-connector-runner
+      ports:
+        - protocol: TCP
+          port: 2222
+  egress: []

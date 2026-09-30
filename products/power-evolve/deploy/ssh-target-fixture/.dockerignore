@@ -1,0 +1,6 @@
+*
+!Dockerfile
+!.dockerignore
+!configure.mjs
+!entrypoint.sh
+!sshd_config
