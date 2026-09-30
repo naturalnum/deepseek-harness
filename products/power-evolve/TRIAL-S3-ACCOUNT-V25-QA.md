@@ -4,8 +4,8 @@
 
 ## 版本与环境
 
-- 2026-10-01，分支 `power-evolve/native-cloud-client`；组合代码 `8e88f9aa50`。账号接线为 `b8a15e788d`，租约过期修复为 `256cac514a`，账号 receipt 冲突修复为 `417fec35e1`。
-- 一个原生 DSH Host `http://127.0.0.1:19680/`、独立 Platform `http://127.0.0.1:19681/login`、受控测试 API `http://127.0.0.1:19682/`。账号管理在 Platform `/account`；当前未启用本验收环境的 SSH／Sandbox。
+- 2026-10-01，分支 `power-evolve/native-cloud-client`；当前组合代码 `5c114f8c37`；原生失效处理为 `76a405b77b`，连接停止接口为 `99980121cf`。账号接线为 `b8a15e788d`，租约过期修复为 `256cac514a`，账号 receipt 冲突修复为 `417fec35e1`。
+- 两个原生 DSH Host 经 `http://127.0.0.1:19680/` 访问，两个独立 Platform 经 `http://127.0.0.1:19681/login` 访问，受控测试 API 为 `http://127.0.0.1:19682/`。Host 副本端口为 `19683/19684`，Platform 为 `19685/19686`。账号管理在 Platform `/account`；当前未启用本验收环境的 SSH／Sandbox。
 - PG 使用现有容器的独立库 `pe_account_v25_20261001`，端口 `32971`。没有新增容器，仍为两套既有 PG 和一套既有 k3d。
 - 私有配置为 `~/.config/power-evolve/shared-host-s3-account-v25-qa`。`users.json` 保存 Alice／Bob 验收凭据，`browser-accountqa.json` 保存浏览器创建的新用户凭据；均不进入版本库。临时密码完成首次改密后已经失效。
 - 原 S8、MCP、SSH 固定试用库和 checkout 未迁移。此环境代码仍随本片修复更新，不用于承诺稳定版本。
@@ -22,8 +22,12 @@
 | 两用户隔离 | Bob 用真实登录凭据读取新用户的会话与文件均返回 404。管理员 Agent／approval 凭据不能管理账号，均返回 401；普通 account 凭据返回 403；错误 Origin 返回 403。 |
 | 停用与重启 | 管理页停用 `accountqa` 后，原生 follow 和新输入被拒绝，PG 仍只有原来一个完成操作。停用种子账号 Bob 后重启 Host／Platform，Bob 与新用户均保持停用，旧配置未覆盖状态。 |
 | 再启用 | 管理页重新启用两账号；新用户旧浏览器登录仍收到 401，新密码重新登录成功；原生编辑过的文件重启后可读。账号和固定试用数据未删除。 |
+| 双副本撤销 | 真实 HTTP 改密后，两个 Host 的原生 WebSocket follow 均终止，两个 Platform 拒绝旧 Agent／approval／account 凭据；新密码有效，Bob 的既有登录不受影响。定向检查 10/10 通过。 |
+| 已受理任务连续性 | 真实 DeepSeek 操作 `07b01750-7b45-4960-9932-2dd0177ea842` 在改密前已运行，改密于 UTC `22:23:20.723` 完成，任务于 `22:23:26.232` 完成。该时间关系来自 HTTP／PG 验收；较早的浏览器改密尝试发生在任务完成后，不计作连续性证据。 |
+| 管理操作回执 | 两个 Platform 经实际 HTTP 完成 138 次请求、209/209 断言，包括开通、更新、重置、删除空账号、相同请求重放及 receipt 查询；临时密码仅首次返回，冲突及有内容账号删除被拒绝。两个副本各处理 68 次请求，另 2 次错误 Origin 被入口拒绝。已验证最后管理员停用／降级拒绝；不据此宣称真实并发管理员变更已覆盖。 |
+| 原生登录失效 | 更新后的原生页面保持已登录历史视图；管理员从真实可信页面停用账号后自动返回 `/login`。重新启用、新登录恢复历史；随后在可信页面个人改密，原生页面再次自动返回 `/login`。临时网络失败和资源拒绝的区分由定向代码回归覆盖。 |
 
-无凭据证据位于 `.artifacts/power-evolve/s3-account-v25-qa/`：`v24-before-migration.json`、`migration-preservation.json`、`first-browser-http-checks.json`、`first-browser-state.json`、`disabled-restart.json`、`native-file-readback.json`。服务日志在同目录；不能将私有配置复制进该记录。
+无凭据证据位于 `.artifacts/power-evolve/s3-account-v25-qa/`：`v24-before-migration.json`、`migration-preservation.json`、`first-browser-http-checks.json`、`first-browser-state.json`、`disabled-restart.json`、`native-file-readback.json`、`multi-host-rotation-http.json`、`http-receipt-e1-results.json`、`native-expiry-disabled-dom.txt`、`native-expiry-password-dom.txt`。服务日志在同目录；不能将私有配置复制进该记录。
 
 ## 回归及发现
 
@@ -31,12 +35,11 @@
 
 独立审查发现，Session 锁等待可能跨过授权到期时间。真实 PG 负控制先复现了过期 renew、过期事件追加、claim 返回已过期租约和 renew 最终更新窗口；修复使用拿锁后的数据库时钟检查及最终条件更新。主线定向回归 4/4 通过，临时测试库均清理。
 
-真实浏览器另发现：账号停用后，后端正确拒绝，但原生页面仍显示重连中。正在补独立身份探针及明确重新登录流程；资源级拒绝和暂时网络故障不能触发全局登出。此项未完成前，不将账号切片标记为交付。
+原生登录失效修复通过独立身份接口确认 401，停止原生连接并跳转可信登录页。主线连接与账号 TypeScript 编译、账号 bundle、原生静态资源生成通过；主线账号 Node 回归 13/13、原生 Web 构建检查 2/2 通过。开发分支额外的连接／组件／构建后回归总计 53 项通过；真实浏览器结果见上表。
 
 ## 剩余验收
 
-- 两个真实 Platform 并发初始化及多 Host 旧登录／follow／审批凭据撤销；个人改密不能中止已持久受理的任务。
-- 管理重置、删除空账号、响应丢失与 receipt 查询、最后管理员并发保护的完整浏览器／HTTP 组合验收；已有代码回归不替代这些组合场景。
+- 两个真实 Platform 首次并发初始化，以及最后管理员并发变更的实际 HTTP 验收；现有双副本启动为已有初始化记录后的重启。
 - 真实运行中的云／SSH 执行停用、取消／对账、晚结果保存与再启用不续接；当前仅有相应定向 PG 测试，尚未跑本 V25 环境的真实 Runner。
 - V25 停写备份恢复、发布资源检查和独立试用快照；不复用或覆盖既有固定试用。
 
