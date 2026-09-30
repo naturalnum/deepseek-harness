@@ -3,6 +3,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { randomUUID, timingSafeEqual } from 'node:crypto'
 import { isIP } from 'node:net'
 import { join, relative, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
@@ -50,6 +51,9 @@ import { KubernetesClient } from './kubernetes.ts'
 import { SandboxManager } from './sandbox.ts'
 import { proxyModel } from './model.ts'
 import { serveUi } from '../ui.ts'
+import { serveTrustedAccountUi } from '../trusted-account-ui.ts'
+
+const accountUiDirectory = fileURLToPath(new URL('../../../client-account/lib/trusted/', import.meta.url))
 
 export const name = 'power-evolve-platform'
 export const inject = ['webServer']
@@ -336,6 +340,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       return
     }
     if (req.method === 'GET' && path === '/config') { sendJson(res, { hostUrl: config.hostOrigin }); return }
+    if (req.method === 'GET' && await serveTrustedAccountUi(path, res, accountUiDirectory)) return
     if (req.method === 'GET' && await serveUi(path, 'login', res, config.hostOrigin)) return
     const artifactContent = /^\/artifacts\/([^/]+)\/content$/u.exec(path)
     if (req.method === 'GET' && artifactContent) {
