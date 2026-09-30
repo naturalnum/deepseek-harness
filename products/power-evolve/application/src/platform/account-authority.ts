@@ -7,8 +7,8 @@ import { PlatformError, type UserId } from '../contracts.ts'
 
 /** This namespace is distinct from schema, execution capacity and Skill advisory locks. */
 export const ACCOUNT_ADMINISTRATION_LOCK_ID = 72819535
+/** Update mode uses NO KEY UPDATE so result observation can retain foreign-key references during lifecycle work. */
 export type AccountLockMode = 'share' | 'update'
-const lockMode = z.enum(['share', 'update'])
 const authority = z.object({
   userId: accountUserId, username: z.string().min(1).max(80), displayName: z.string().min(1).max(200), role: accountRole,
   enabled: z.boolean(), revision: z.number().int().positive(), credentialVersion: z.number().int().positive(),
@@ -43,7 +43,7 @@ export async function lockAccountAdministration(client: PoolClient): Promise<voi
 export async function lockAccountAuthorities(client: PoolClient, userIds: readonly UserId[],
   mode: AccountLockMode = 'share'): Promise<readonly AccountAuthority[]> {
   const ids = [...new Set(userIds.map(id => id.toLowerCase()))].sort()
-  const clause = lockMode.parse(mode) === 'update' ? 'FOR UPDATE' : 'FOR SHARE'
+  const clause = mode === 'update' ? 'FOR NO KEY UPDATE' : 'FOR SHARE'
   if (!ids.length) return []
   const result = await client.query(`SELECT id AS "userId",username,display_name AS "displayName",role,
     enabled,account_revision AS revision,credential_version AS "credentialVersion",
