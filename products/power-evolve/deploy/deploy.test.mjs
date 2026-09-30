@@ -42,6 +42,9 @@ test('production profiles retain bundle fields and separate Host and Platform au
         assert.equal(config.sandboxNodeRoot, '')
         assert.equal(config.sandboxVolumeClaimName, values.storage.runnerClaim)
         assert.equal(config.workspaceRoot, '/data/workspaces')
+        assert.equal(config.skillLibraryRoot, config.sandboxLocalRoot)
+        assert.equal(config.skillLibraryRoot, '/data')
+        assert.equal(config.preinstalledSkills.length, 9)
         assert.equal(config.modelUrl, values.modelUrl)
       }
     }

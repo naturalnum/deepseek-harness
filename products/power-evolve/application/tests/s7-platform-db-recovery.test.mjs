@@ -85,6 +85,7 @@ test('Platform stays alive, becomes unready, and resumes only new requests after
         readyFile, modelUrl: 'http://127.0.0.1:9/model', connectorUrl: 'http://127.0.0.1:9',
         sandboxKubeconfigFile: '', sandboxKeyFile: '', sandboxNamespace: '', sandboxImage: '',
         sandboxLocalRoot: '', sandboxNodeRoot: '', databaseTimeoutMs: 2000,
+        skillLibraryRoot: '', preinstalledSkills: [],
       },
     }))
     await writeFile(join(profile, 'cordis.patch.yml'), yaml.dump(patch))

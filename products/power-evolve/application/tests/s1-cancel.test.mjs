@@ -228,6 +228,7 @@ test('native stop crosses hosts and leaves the Session usable', { timeout: 60000
       workspaceRoot: join(temporary, 'workspaces'), artifactRoot: join(temporary, 'artifacts'),
       sandboxKubeconfigFile: '', sandboxKeyFile: '',
       sandboxNamespace: '', sandboxImage: '', sandboxLocalRoot: '', sandboxNodeRoot: '',
+      skillLibraryRoot: '', preinstalledSkills: [],
     }))
     else patch.push(update('power-evolve-runtime', { platformUrl,
       workerTokenFile: join(temporary, 'worker-token') }),

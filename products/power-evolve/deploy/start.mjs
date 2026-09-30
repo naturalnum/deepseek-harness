@@ -65,6 +65,7 @@ export async function renderProfile(role, env, dshHome) {
       workspaceRoot: '/data/workspaces', artifactRoot: '/data/artifacts',
       sandboxKubeconfigFile: 'in-cluster', sandboxNamespace: required(env, 'PE_SANDBOX_NAMESPACE'),
       sandboxImage: required(env, 'PE_SANDBOX_IMAGE'), sandboxLocalRoot: '/data',
+      skillLibraryRoot: '/data',
       sandboxNodeRoot: '', sandboxVolumeClaimName: required(env, 'PE_SANDBOX_VOLUME_CLAIM'),
       modelUrl: endpoint(required(env, 'PE_MODEL_URL'), 'model URL'),
       connectorUrl: endpoint(required(env, 'PE_CONNECTOR_URL'), 'connector URL'),

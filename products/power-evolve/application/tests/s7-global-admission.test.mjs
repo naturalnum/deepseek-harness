@@ -108,6 +108,7 @@ test('two Platform replicas isolate account limits behind one peer and retain gl
           connectorUrl: 'http://127.0.0.1:9', connectorPollMs: 1000,
           sandboxKubeconfigFile: '', sandboxKeyFile: '', sandboxNamespace: '', sandboxImage: '',
           sandboxLocalRoot: '', sandboxNodeRoot: '', loginWindowMs: 60000,
+          skillLibraryRoot: '', preinstalledSkills: [],
           loginAttemptsPerWindow: 2, loginTrackedAccounts: 3,
           loginGlobalAttemptsPerWindow: 20, sandboxConcurrency: 1,
           ...limits,

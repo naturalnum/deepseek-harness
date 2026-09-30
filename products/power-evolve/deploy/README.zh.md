@@ -36,7 +36,7 @@ node products/power-evolve/deploy/preflight.mjs /private/path/values.json /priva
 
 这种种子格式目前最多接受 100 个用户，每个 Platform 副本都会在启动时对这些种子密码进行哈希处理。它适用于分阶段试用；大规模发布还需要另行满足企业账户开通、撤销和身份提供方集成的发布条件。
 
-该部署包声明两个静态 `ReadWriteMany` NFS PV，分别绑定各自命名空间中的 PVC，且都指向**同一服务器与导出路径**。管理员必须确保该导出允许 Platform 修改 POSIX 所有权，并从两台物理节点验证数据及文件权限。Platform 使用 `/data`；运行器的 PVC 仅通过精确的 `subPath` 挂载访问。如果 NFS 导出的 root squash 阻止 Platform 所需的 `chown`，则必须先另行配置所有权，否则该导出不可用。
+该部署包声明两个静态 `ReadWriteMany` NFS PV，分别绑定各自命名空间中的 PVC，且都指向**同一服务器与导出路径**。管理员必须确保该导出允许 Platform 修改 POSIX 所有权，并从两台物理节点验证数据及文件权限。Platform 的 `sandboxLocalRoot` 和 `skillLibraryRoot` 均使用 `/data`；运行器的 PVC 仅通过精确的 `subPath` 挂载访问。如果 NFS 导出的 root squash 阻止 Platform 所需的 `chown`，则必须先另行配置所有权，否则该导出不可用。
 
 Platform 的 `/health` 检查 PostgreSQL 并控制就绪状态；`/live` 不依赖 PostgreSQL，只检查服务进程并控制存活状态。数据库故障期间，Platform Pod 应从 Service endpoint 中移除，而不被重启。验证故障持续超过三个存活检查间隔时 `restartCount` 保持不变，然后确认 PostgreSQL 恢复后 Pod 再次就绪。
 

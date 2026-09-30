@@ -487,6 +487,7 @@ export class SkillService {
 
   /** Presets are applied lazily and never revive an existing package or revoked skill. */
   async ensurePreinstalled(user: Identity, catalogIds: readonly string[]): Promise<void> {
+    if (catalogIds.length === 0) return
     const releases = await this.builtinCatalog.list()
     const known = new Map(releases.map(release => [release.id, release]))
     for (const catalogId of new Set(catalogIds)) {
