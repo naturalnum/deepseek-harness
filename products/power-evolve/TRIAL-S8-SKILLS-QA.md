@@ -86,6 +86,10 @@ Another new Session wrote 65,536 bytes to **each** stream: NUL padding ending in
 
 An initial full-size probe also executed once and completed successfully, but this QA script incorrectly asserted that its bounded native event must equal the complete Operation input. That assertion failed after the platform work had succeeded. The corrected script intentionally created a second independent Session to finish native refresh and cross-user checks; each Session has one execution, and there is no automatic duplicate or command retry. The original failed QA assertion and first successful execution remain recorded in the isolated database.
 
+### Health-only final check at `92dfac1b4c`
+
+The mainline health fix `5f1cf19fdc` was cherry-picked into this QA branch as `92dfac1b4c`. The application compiled, and only the `s8-office-qa` Platform was restarted with the trial's existing external Docker network. Its `/health` returned `ready:true` and `schema:21`, matching a direct read-only `SELECT version FROM pe_schema` result of `21`. The trial Host and API `/health` endpoints both returned `ready:true`. This follow-up checked health and the running source version only; it did not repeat Skills, Office, report, or NUL execution probes or change trial data.
+
 The verified startup command for the current trial, including its required existing Docker network, is:
 
 ```sh
