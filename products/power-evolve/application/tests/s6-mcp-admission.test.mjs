@@ -1,6 +1,6 @@
 /** Real PG and HTTP proxy checks; tool catalogs and the model response are deterministic fixtures. */
 import assert from 'node:assert/strict'
-import { randomBytes, randomUUID } from 'node:crypto'
+import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { once } from 'node:events'
 import { readFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
@@ -17,11 +17,14 @@ import ToolRuntime from '@deepseek-ai/dsh-tools'
 import { Pool } from 'pg'
 import { identity } from '../lib/contracts.js'
 import { installRemoteMcpTools } from '../lib/host/mcp.js'
+import { compileMcpModelTool } from '../lib/mcp-model-tools.js'
 import { initializeDatabase, transaction } from '../lib/platform/database.js'
 import { EventStore } from '../lib/platform/events.js'
 import { McpActionStore } from '../lib/platform/mcp-actions.js'
+import { selectMcpOperationTools } from '../lib/platform/mcp-admission.js'
 import { proxyModel } from '../lib/platform/model.js'
 import { mcpCatalogTools, mcpCatalogDigest } from '../lib/platform/mcp-catalog.js'
+import { mcpCanonicalJson } from '../lib/platform/mcp-credentials.js'
 import { TaskStore } from '../lib/platform/tasks.js'
 import * as migrations from '../lib/platform/schema.js'
 
@@ -65,15 +68,15 @@ function rawTool(name, description = 'A fixture tool\0including preserved JSON d
     required: ['count'], additionalProperties: false }, icons: [{ src: 'https://example.org/icon.svg' }] }
 }
 
-async function connection(pool, user, rawTools, withCatalog = true) {
+async function connection(pool, user, rawTools, withCatalog = true, displayName = 'Fixture') {
   const connectionId = randomUUID(), catalogId = randomUUID()
   const tools = mcpCatalogTools(connectionId, rawTools)
   await transaction(pool, async client => {
     await client.query(`INSERT INTO pe_mcp_remote_connections(id,user_id,server_name,revision,configuration_revision,enabled)
       VALUES($1,$2,$3,1,1,true)`, [connectionId, user.userId, connectionId])
     await client.query(`INSERT INTO pe_mcp_configuration_versions(connection_id,user_id,configuration_revision,configuration)
-      VALUES($1,$2,1,$3)`, [connectionId, user.userId, { displayName: 'Fixture', serverUrl: 'https://example.org/mcp',
-      enabled: true, authentication: { kind: 'none' } }])
+      VALUES($1,$2,1,$3)`, [connectionId, user.userId, { displayName, serverUrl: 'https://example.org/mcp',
+      serverName: connectionId, authentication: 'none', headerNames: [], secretConfigured: false }])
     if (withCatalog) {
       await client.query(`INSERT INTO pe_mcp_catalog_versions(id,user_id,connection_id,configuration_revision,catalog_digest,tools)
         VALUES($1,$2,$3,1,$4,$5)`, [catalogId, user.userId, connectionId, mcpCatalogDigest(rawTools), JSON.stringify(tools)])
@@ -82,6 +85,9 @@ async function connection(pool, user, rawTools, withCatalog = true) {
   })
   return { connectionId, catalogId, tools }
 }
+
+const connectionMetadata = tool => JSON.parse(tool.model.description.split('\n').find(line => line.startsWith('{')))
+const modelDigest = model => createHash('sha256').update(mcpCanonicalJson(model)).digest('hex')
 
 async function startServer(t, handler) {
   const server = createServer(handler)
@@ -94,8 +100,8 @@ async function startServer(t, handler) {
 test('V22 admission pins owner catalogs across retries, changes and task-store restart; model proxy uses PG definitions',
   { timeout: 30000 }, async t => {
     const { pool, users: [alice, bob], tasks } = await fixture(t)
-    const aliceFirst = await connection(pool, alice, [rawTool('sum'), rawTool('lookup')])
-    await connection(pool, alice, [rawTool('sum')])
+    const aliceFirst = await connection(pool, alice, [rawTool('sum'), rawTool('lookup')], true, 'Alice 私有报价 v2')
+    const aliceSecond = await connection(pool, alice, [rawTool('sum')], true, 'Alice 请求头报价')
     await connection(pool, alice, [])
     await connection(pool, alice, [], false)
     const bobConnection = await connection(pool, bob, [rawTool('sum')])
@@ -108,6 +114,18 @@ test('V22 admission pins owner catalogs across retries, changes and task-store r
     assert.equal(before.length, 3)
     assert.equal(new Set(before.map(tool => tool.model.name)).size, 3)
     assert.ok(before.every(tool => tool.model.name !== bobTool.publicName))
+    const sums = before.filter(tool => tool.raw.name === 'sum')
+    assert.equal(sums.length, 2)
+    assert.deepEqual(sums[0].raw, sums[1].raw)
+    const labels = new Map([[aliceFirst.connectionId, 'Alice 私有报价 v2'], [aliceSecond.connectionId, 'Alice 请求头报价']])
+    assert.ok(before.every(tool => tool.modelDigest === modelDigest(tool.model)))
+    for (const tool of before) {
+      assert.deepEqual(connectionMetadata(tool), { displayName: labels.get(tool.connectionId),
+        connectionId: tool.connectionId, toolName: tool.raw.name })
+      assert.ok(tool.model.description.endsWith(`Remote tool description:\n${tool.raw.description}`))
+      assert.equal(tool.model.description.includes('https://example.org/mcp'), false)
+    }
+    assert.notEqual(sums[0].model.description, sums[1].model.description)
     assert.ok(before.every(tool => tool.raw.description.includes('\0')))
     assert.ok(before.every(tool => !('headers' in tool) && !('serverUrl' in tool)))
     assert.ok(before.every(tool => tool.model.parameters.$schema === 'https://json-schema.org/draft/2020-12/schema'))
@@ -156,6 +174,7 @@ test('V22 admission pins owner catalogs across retries, changes and task-store r
     for (const changed of [
       { ...declarations[0], name: bobTool.publicName },
       { ...declarations[0], description: 'forged' },
+      { ...declarations[0], description: declarations[0].description.replace('Alice', 'Bob') },
       { ...declarations[0], input_schema: { type: 'object' } },
     ]) {
       const denied = await call([changed]); assert.equal(denied.status, 403)
@@ -178,6 +197,69 @@ test('V22 admission pins owner catalogs across retries, changes and task-store r
       .rows[0].remote_mcp_selection, before)
   })
 
+test('connection renames affect only new admission; retries and restored legacy descriptions retain their saved bytes',
+  { timeout: 30000 }, async t => {
+    const { pool, users: [alice], tasks } = await fixture(t)
+    const raw = rawTool('quote', 'Same remote quote description')
+    const first = await connection(pool, alice, [raw], true, 'Alice 私有报价 v2')
+    const second = await connection(pool, alice, [raw], true, 'Alice 请求头报价')
+    const { sessionId } = await tasks.create(alice, randomUUID())
+    const requestId = randomUUID(), text = 'Use Alice 请求头报价 only'
+    const accepted = await tasks.accept(alice, sessionId, requestId, text)
+    const storedSelection = async id => (await pool.query('SELECT remote_mcp_selection FROM pe_operations WHERE id=$1', [id]))
+      .rows[0].remote_mcp_selection
+    const before = await storedSelection(accepted.operationId)
+    const original = before.find(tool => tool.connectionId === first.connectionId)
+    const catalogId = randomUUID(), renamed = 'Alice "新名称"'
+    await transaction(pool, async client => {
+      await client.query(`INSERT INTO pe_mcp_configuration_versions(connection_id,user_id,configuration_revision,configuration)
+        SELECT connection_id,user_id,2,jsonb_set(configuration::jsonb,'{displayName}',to_jsonb($2::text))::json
+        FROM pe_mcp_configuration_versions WHERE connection_id=$1 AND configuration_revision=1`, [first.connectionId, renamed])
+      await client.query(`INSERT INTO pe_mcp_catalog_versions(id,user_id,connection_id,configuration_revision,catalog_digest,tools)
+        VALUES($1,$2,$3,2,$4,$5)`, [catalogId, alice.userId, first.connectionId, mcpCatalogDigest([raw]), JSON.stringify(first.tools)])
+      await client.query(`UPDATE pe_mcp_remote_connections SET revision=revision+1,configuration_revision=2,current_catalog_id=$2
+        WHERE id=$1`, [first.connectionId, catalogId])
+    })
+    const restored = new TaskStore(pool, limits)
+    assert.deepEqual(await restored.accept(alice, sessionId, requestId, text), accepted)
+    assert.deepEqual(await storedSelection(accepted.operationId), before)
+    const oldGrant = await restored.claim(randomUUID())
+    assert.equal(oldGrant.operationId, accepted.operationId)
+    assert.deepEqual(oldGrant.remoteMcpTools, before)
+    await restored.finish(oldGrant.token, 'completed', null)
+    const next = await restored.accept(alice, sessionId, randomUUID(), 'Use the renamed connection')
+    const after = await storedSelection(next.operationId)
+    const changed = after.find(tool => tool.connectionId === first.connectionId)
+    assert.deepEqual(connectionMetadata(changed), { displayName: renamed, connectionId: first.connectionId, toolName: raw.name })
+    assert.equal(changed.connectionRevision, 2); assert.equal(changed.configurationRevision, 2)
+    assert.equal(changed.model.name, original.model.name)
+    assert.deepEqual(changed.raw, original.raw); assert.deepEqual(changed.model.parameters, original.model.parameters)
+    assert.notEqual(changed.model.description, original.model.description)
+    assert.notEqual(changed.modelDigest, original.modelDigest)
+    assert.equal(changed.modelDigest, modelDigest(changed.model))
+    assert.deepEqual(after.find(tool => tool.connectionId === second.connectionId),
+      before.find(tool => tool.connectionId === second.connectionId))
+    assert.deepEqual(await storedSelection(accepted.operationId), before)
+    const nextGrant = await restored.claim(randomUUID())
+    assert.deepEqual(nextGrant.remoteMcpTools, after)
+    await restored.finish(nextGrant.token, 'completed', null)
+
+    // Simulate a pre-label durable Operation before claim; recovery must not recompile its stored description.
+    const legacy = await tasks.accept(alice, sessionId, randomUUID(), 'Restore a pre-label operation')
+    const legacySelection = (await storedSelection(legacy.operationId)).map(tool => {
+      const model = compileMcpModelTool({ publicName: tool.model.name, raw: tool.raw }, limits.remoteMcpAdmission)
+      return { ...tool, model, modelDigest: modelDigest(model) }
+    })
+    await pool.query('UPDATE pe_operations SET remote_mcp_selection=$2 WHERE id=$1', [legacy.operationId, JSON.stringify(legacySelection)])
+    const eventsBefore = (await pool.query('SELECT count(*)::integer AS n FROM pe_events WHERE session_id=$1', [sessionId])).rows[0].n
+    const legacyGrant = await new TaskStore(pool, limits).claim(randomUUID())
+    assert.equal(legacyGrant.operationId, legacy.operationId)
+    assert.deepEqual(legacyGrant.remoteMcpTools, legacySelection)
+    assert.deepEqual(await storedSelection(legacy.operationId), legacySelection)
+    assert.equal((await pool.query('SELECT count(*)::integer AS n FROM pe_events WHERE session_id=$1', [sessionId])).rows[0].n, eventsBefore)
+    await restored.finish(legacyGrant.token, 'completed', null)
+  })
+
 test('whole-selection budgets roll back admission, and disabled/deleted connections cannot enter new inputs',
   { timeout: 30000 }, async t => {
     const { pool, users: [alice], tasks } = await fixture(t)
@@ -187,6 +269,25 @@ test('whole-selection budgets roll back admission, and disabled/deleted connecti
     const constrained = new TaskStore(pool, { ...limits, remoteMcpAdmission: { ...limits.remoteMcpAdmission, maxTools: 1 } })
     const requestId = randomUUID()
     await assert.rejects(constrained.accept(alice, session.sessionId, requestId, 'Too many'),
+      { status: 429, code: 'mcp_operation_tool_limit' })
+    assert.equal((await pool.query('SELECT count(*)::integer AS count FROM pe_operations')).rows[0].count, 0)
+    const discovery = compileMcpModelTool(first.tools[0], limits.remoteMcpAdmission)
+    const descriptionConstrained = new TaskStore(pool, { ...limits, remoteMcpAdmission: {
+      ...limits.remoteMcpAdmission, maxDescriptionBytes: Buffer.byteLength(discovery.description),
+    } })
+    await assert.rejects(descriptionConstrained.accept(alice, session.sessionId, randomUUID(), 'Labels exceed description budget'),
+      { status: 409, code: 'mcp_description_size_limit' })
+    const selected = await transaction(pool, client => selectMcpOperationTools(client, alice.userId, limits.remoteMcpAdmission))
+    const unlabeled = selected.map(tool => {
+      const model = compileMcpModelTool({ publicName: tool.model.name, raw: tool.raw }, limits.remoteMcpAdmission)
+      return { ...tool, model, modelDigest: modelDigest(model) }
+    })
+    const unlabeledBytes = Buffer.byteLength(JSON.stringify(unlabeled))
+    assert.ok(Buffer.byteLength(JSON.stringify(selected)) > unlabeledBytes)
+    const snapshotConstrained = new TaskStore(pool, { ...limits, remoteMcpAdmission: {
+      ...limits.remoteMcpAdmission, maxSnapshotBytes: unlabeledBytes,
+    } })
+    await assert.rejects(snapshotConstrained.accept(alice, session.sessionId, randomUUID(), 'Labels exceed snapshot budget'),
       { status: 429, code: 'mcp_operation_tool_limit' })
     assert.equal((await pool.query('SELECT count(*)::integer AS count FROM pe_operations')).rows[0].count, 0)
     await pool.query('UPDATE pe_mcp_remote_connections SET enabled=false,revision=revision+1 WHERE id=$1', [first.connectionId])

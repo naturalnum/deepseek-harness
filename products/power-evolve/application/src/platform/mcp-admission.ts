@@ -2,7 +2,7 @@
 import type { PoolClient } from 'pg'
 import { createHash } from 'node:crypto'
 import { PlatformError, type UserId } from '../contracts.ts'
-import { mcpDiscoveredTool, mcpToolId } from '../mcp-contracts.ts'
+import { mcpDiscoveredTool, mcpToolId, type McpConnectionId } from '../mcp-contracts.ts'
 import { compileMcpModelTool, McpToolAdmissionError, type McpToolAdmissionLimits } from '../mcp-model-tools.ts'
 import { mcpOperationTool, type McpOperationTool } from '../mcp-operation-contracts.ts'
 import { z } from 'zod'
@@ -25,10 +25,11 @@ const catalogTools = z.array(z.object({ toolId: mcpToolId, publicName: z.string(
  */
 export async function selectMcpOperationTools(client: PoolClient, userId: UserId,
   limits: McpOperationAdmissionLimits): Promise<McpOperationTool[]> {
-  const catalogs = await client.query<{ connection_id: string; revision: number; configuration_revision: number;
+  const catalogs = await client.query<{ connection_id: McpConnectionId; display_name: string;
+    revision: number; configuration_revision: number;
     credential_revision: number | null; catalog_id: string; tools: unknown }>(
     `SELECT c.id AS connection_id,c.revision,c.configuration_revision,v.credential_revision,
-      cat.id AS catalog_id,cat.tools FROM pe_mcp_remote_connections c
+      v.configuration->>'displayName' AS display_name,cat.id AS catalog_id,cat.tools FROM pe_mcp_remote_connections c
      JOIN pe_mcp_configuration_versions v ON v.connection_id=c.id AND v.user_id=c.user_id
        AND v.configuration_revision=c.configuration_revision
      JOIN pe_mcp_catalog_versions cat ON cat.id=c.current_catalog_id AND cat.user_id=c.user_id
@@ -43,7 +44,8 @@ export async function selectMcpOperationTools(client: PoolClient, userId: UserId
       if (names.has(tool.publicName)) throw new PlatformError(409, 'mcp_tool_name_conflict')
       names.add(tool.publicName)
       let model
-      try { model = compileMcpModelTool(tool, limits) }
+      try { model = compileMcpModelTool(tool, limits,
+        { connectionId: row.connection_id, displayName: row.display_name }) }
       catch (error) {
         if (error instanceof McpToolAdmissionError) throw new PlatformError(409, error.code)
         throw error
