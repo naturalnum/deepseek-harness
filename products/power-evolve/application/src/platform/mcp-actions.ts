@@ -161,7 +161,7 @@ export class McpActionStore {
    * @param id Durable action identity.
    * @returns Receipt and original completed result, when present.
    */
-  async status(owner: Owner, id: McpActionId) {
+  async status(owner: Owner, id: McpActionId): Promise<McpActionReceipt & { result: unknown }> {
     const row = (await this.pool.query<Action>('SELECT * FROM pe_mcp_actions WHERE id=$1 AND user_id=$2',
       [mcpActionId.parse(id), owner.userId])).rows[0]
     if (!row) throw new PlatformError(404, 'mcp_action_not_found')
@@ -172,7 +172,8 @@ export class McpActionStore {
    * @param owner Independently authenticated approval identity.
    * @returns Bounded recent actions; no endpoint credential bytes are included.
    */
-  async approvals(owner: Owner) {
+  async approvals(owner: Owner): Promise<{ items: (McpActionReceipt & { tool: McpOperationTool;
+    arguments: unknown; configuration: unknown; createdAt: string; expiresAt: string; permissionId: McpPermissionId | null })[] }> {
     const rows = await this.pool.query<Action & { configuration: unknown }>(
       `SELECT a.*,v.configuration FROM pe_mcp_actions a
        JOIN pe_mcp_configuration_versions v ON v.connection_id=(a.tool->>'connectionId')::uuid
@@ -180,7 +181,7 @@ export class McpActionStore {
        WHERE a.user_id=$1 ORDER BY a.created_at DESC,a.id DESC LIMIT $2`, [owner.userId, this.limits.listLimit])
     return { items: rows.rows.map(row => ({ ...this.receipt(row), tool: mcpOperationTool.parse(row.tool),
       arguments: row.arguments, configuration: row.configuration, createdAt: row.created_at.toISOString(),
-      expiresAt: row.expires_at.toISOString(), permissionId: row.permission_id })) }
+      expiresAt: row.expires_at.toISOString(), permissionId: row.permission_id === null ? null : mcpPermissionId.parse(row.permission_id) })) }
   }
 
   /** Decide exactly the reviewed invocation; broader scopes are explicit human choices.

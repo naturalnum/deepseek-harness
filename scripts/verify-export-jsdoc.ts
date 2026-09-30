@@ -562,13 +562,20 @@ function loadCompilerOptions(scanRoot: string): ts.CompilerOptions {
  * throwing so tests assert on the list; the CLI entry turns a non-empty list
  * into exit 1.
  * @param scanRoot - the repo root to scan; tests pass a fixture dir.
+ * @param sourceFiles - optional explicit source files, including product packages; every named export is checked.
  * @returns every violation, in file order, one human-readable line each.
  */
-export function collectExportJsdocViolations(scanRoot: string = root): string[] {
+export function collectExportJsdocViolations(scanRoot: string = root, sourceFiles?: readonly string[]): string[] {
   const violations: string[] = []
-  const rels = globSync('packages/*/*/src/**/*.ts', { cwd: scanRoot })
-    .map(path => path.split(sep).join('/'))
+  if (sourceFiles?.length === 0) throw new Error('Explicit JSDoc source selection must not be empty')
+  const rels = (sourceFiles ?? globSync('packages/*/*/src/**/*.ts', { cwd: scanRoot }))
+    .map(path => relative(scanRoot, resolve(scanRoot, path)).split(sep).join('/'))
     .sort()
+  for (const rel of rels) {
+    if (rel.startsWith('../') || !rel.endsWith('.ts') || !existsSync(resolve(scanRoot, rel))) {
+      throw new Error(`Invalid JSDoc source file: ${rel}`)
+    }
+  }
   const program = ts.createProgram(rels.map(rel => resolve(scanRoot, rel)), loadCompilerOptions(scanRoot))
   const checker = program.getTypeChecker()
   const { restrictedPackages, namesByFile } = restrictedPublicNames(scanRoot, rels, program, checker)
@@ -578,7 +585,8 @@ export function collectExportJsdocViolations(scanRoot: string = root): string[] 
     // A script-style declaration file (no imports/exports) is one big ambient
     // scope; a module-style .d.ts still honors explicit export modifiers.
     const packageDir = rel.split('/').slice(0, 3).join('/')
-    const allowedNames = restrictedPackages.has(packageDir) ? namesByFile.get(rel) ?? new Set<string>() : undefined
+    const allowedNames = !sourceFiles && restrictedPackages.has(packageDir)
+      ? namesByFile.get(rel) ?? new Set<string>() : undefined
     checkScope(
       sf.statements,
       '',
@@ -592,9 +600,11 @@ export function collectExportJsdocViolations(scanRoot: string = root): string[] 
 
 /** CLI entry: list every violation and exit 1, or confirm a documented API. */
 function main(): void {
-  const violations = collectExportJsdocViolations()
+  const sourceFiles = process.argv.slice(2)
+  const violations = collectExportJsdocViolations(root, sourceFiles.length ? sourceFiles : undefined)
   if (violations.length === 0) {
-    console.log('verify-export-jsdoc: every exported name in each package API is documented.')
+    console.log(sourceFiles.length ? `verify-export-jsdoc: checked ${sourceFiles.length} selected source file(s).`
+      : 'verify-export-jsdoc: every exported name in each package API is documented.')
     return
   }
   console.error(`verify-export-jsdoc: ${violations.length} JSDoc completeness violation(s) (see AGENTS.md):`)

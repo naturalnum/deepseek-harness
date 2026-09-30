@@ -70,4 +70,6 @@ Kubernetes 资源响应限制为 256 KiB。云沙盒与 SSH Runner 适配器显�
 
 ## 验证
 
+产品 JSDoc 定向检查需向 `node --import tsx/esm scripts/verify-export-jsdoc.ts` 显式传入源文件路径；不传文件时，上游检查仅扫描 `packages`。产品回归包含一个缺失导出说明时必须失败的反例。
+
 `pnpm run test:power-evolve` 使用构建后的 `dsh` Profile、真实且唯一命名的测试数据库，以及确定性模型、远端 API 和沙盒执行器。测试覆盖身份和配置区分、授权拒绝、订阅、重复受理、中断/重启、旧授权、退出、原生历史回放、Agent/Session 回收、文件字节、个人技能、审批、远端对账、云端和设备执行、取消、实例变化及原会话续接。测试监听端口由 OS 分配，清理时等待子进程退出和数据库连接关闭。本机浏览器试用另行验证真实 DeepSeek、k3s 和已配对的本机设备。

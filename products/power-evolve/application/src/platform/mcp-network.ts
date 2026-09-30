@@ -45,6 +45,7 @@ export type McpTransportErrorCode = 'invalid_config' | 'invalid_endpoint' | 'inv
 
 /** dispatched is conservative: an interrupted pending permission callback may already have committed. */
 export class McpTransportError extends Error {
+  /** Conservative phase used to reconcile a possibly committed dispatch intent. */
   readonly phase: 'before-dispatch' | 'after-dispatch'
   constructor(readonly code: McpTransportErrorCode, readonly dispatched: boolean) {
     super(code)
@@ -115,8 +116,11 @@ export function validateMcpHeaders(headers: Readonly<Record<string, string>>,
 
 /** One operation owns all sockets, deadline, byte counters, and its single dispatch gate. */
 export class McpNetworkOperation {
+  /** Cancels every socket and bounded operation owned by this invocation. */
   readonly controller = new AbortController()
+  /** Combined caller cancellation and operation deadline. */
   readonly signal: AbortSignal
+  /** True once a permission callback might have committed; it does not prove a remote send. */
   dispatched = false
   private readonly deadline: ReturnType<typeof setTimeout>
   private readonly requests = new Set<ClientRequest>()

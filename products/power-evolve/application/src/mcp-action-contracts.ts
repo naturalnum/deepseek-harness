@@ -13,6 +13,7 @@ export const mcpActionId = z.uuid().transform(value => brandString<McpActionId>(
 export const mcpPermissionId = z.uuid().transform(value => brandString<McpPermissionId>(value))
 /** The Platform resolves routing and versions from the accepted operation's tool name. */
 export const mcpActionRequest = z.object({
+  // oxlint-disable-next-line no-control-regex -- Durable call keys intentionally exclude every control character.
   callKey: z.string().min(1).max(200).regex(/^[^\u0000-\u001f\u007f]+$/u),
   toolName: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/u), arguments: z.record(z.string(), z.json()),
 }).strict()

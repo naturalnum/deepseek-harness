@@ -68,4 +68,6 @@ The local trial runs separate host and platform processes under the current OS u
 
 ## Verification
 
+Focused product JSDoc checks pass explicit source filenames to `node --import tsx/esm scripts/verify-export-jsdoc.ts`; without filenames, that upstream gate scans only `packages`. The product regression includes a negative fixture that rejects undocumented product exports.
+
 `pnpm run test:power-evolve` runs built `dsh` profiles with real, uniquely named test databases and deterministic model, remote API, and Sandbox runner endpoints. It checks identity and configuration separation, authorization refusal, streams, duplicate acceptance, interruption/restart, stale grants, logout, native history replay, Agent/Session cleanup, file bytes, personal skills, approvals, remote reconciliation, cloud and device execution, cancellation, instance mismatch, and continuation. Test listeners use OS-assigned ports; teardown waits for child exits and database connections to close. The local browser trial separately verifies real DeepSeek, k3s, and paired local devices.
