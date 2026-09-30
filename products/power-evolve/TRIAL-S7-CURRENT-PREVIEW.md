@@ -1,6 +1,6 @@
 # S7 当前代码独立恢复预览
 
-2026-09-30 从只读 S7c b1 备份恢复到全新的 `s7-preview-v19-c3`，没有改动源 V18、S6 固定试用或旧 S7c 目标。原生 Web 静态快照来自固定产品提交 `8dc235181f294c331c0b364849f11b0bd5308633`（36 个客户端模块、231 个静态文件）；当前恢复脚本和 Platform 运行时代码为预览分支提交 **`1b2e70319c8533a59146ba02de958e40f66df969`**，含主线修复 `a7a7d4e131` 与 `6eca12da2e`。两个修复没有改前端源码；本 worktree 使用既有静态快照和定向 `pnpm exec tsc -b products/power-evolve/application/tsconfig.json --pretty false`，没有重新运行全仓构建。本机预览不等于跨物理机生产发布验收。
+2026-09-30 从只读 S7c b1 备份恢复到全新的 `s7-preview-v19-c3`，没有改动源 V18、S6 固定试用或旧 S7c 目标。原生 Web 静态快照来自固定产品提交 `8dc235181f294c331c0b364849f11b0bd5308633`（36 个客户端模块、231 个静态文件）；当前恢复脚本和 Platform 运行时代码为预览分支提交 **`8402d104d975822cd7e318f82e32a696aa17a69b`**，含主线修复 `a7a7d4e131` 与 `6eca12da2e`。两个修复没有改前端源码；本 worktree 使用既有静态快照和定向 `pnpm exec tsc -b products/power-evolve/application/tsconfig.json --pretty false`，没有重新运行全仓构建。本机预览不等于跨物理机生产发布验收。
 
 ## 保留的 c3 试用
 
@@ -28,6 +28,10 @@ node products/power-evolve/scripts/trial.mjs stop
 ```
 
 `stop` 保留 PG 卷与文件。最后一次重启后的 `status` 为 API `19442`、Platform `19441`、Host `19440` 均运行；Platform `/health` 为 `ready: true`、schema **19**，`sshAvailable: false`、`stdioMcpAvailable: false`。本预览没有新 SSH/STDIO 调用验收；恢复后的旧 STDIO 结果与连接元数据只验证可读，S6 连接器专项试用仍独立保留。
+
+## 事务断连修复
+
+2026-09-30 的后续健康检查发现 c3 Platform 已因 PostgreSQL 连接中断退出，日志为 `Connection terminated unexpectedly`，触发中断的外部原因未确认。隔离数据库回归复现了事务在两次 SQL 之间等待 JavaScript 时丢失租用连接导致进程退出的路径；修复捕获连接错误、拒绝提交并丢弃坏连接，保留业务原异常。主线提交 `f315d54246` 已定向移植为本预览运行时 `8402d104d975822cd7e318f82e32a696aa17a69b`，构建后重启 Platform。当前 `/health` 为 `ready: true`、schema 19；Host 和 API 沿用原进程、静态页面和数据。事务两种断连场景的隔离 PG 测试均通过；这次没有重复宣称整套浏览器场景已在新提交重测。
 
 ## 干净恢复与双用户实测
 
