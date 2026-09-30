@@ -13897,6 +13897,9 @@ importers:
       '@power-evolve/cloud-web':
         specifier: workspace:*
         version: link:../cloud-web
+      ajv:
+        specifier: ^8.20.0
+        version: 8.20.0
       ipaddr.js:
         specifier: ^2.5.0
         version: 2.5.0

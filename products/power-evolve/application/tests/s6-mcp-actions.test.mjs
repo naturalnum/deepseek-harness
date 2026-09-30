@@ -22,7 +22,8 @@ const limits = { maxArgumentBytes: 8192, maxResultBytes: 32768, maxCallsPerChain
 const tools = ['first', 'second'].map(name => ({ name, inputSchema: { type: 'object', properties: {
   text: { type: 'string' } }, required: ['text'], additionalProperties: false },
   annotations: { readOnlyHint: true, idempotentHint: true },
-  outputSchema: { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] } }))
+  outputSchema: { $schema: 'https://json-schema.org/draft/2020-12/schema', type: 'object',
+    properties: { text: { type: 'string', minLength: 1, maxLength: 20 } }, required: ['text'] } }))
 const result = { content: [{ type: 'text', text: 'exact\0结果' }], structuredContent: { text: 'exact\0结果' } }
 
 async function fixture(t, overrides = {}) {
@@ -215,6 +216,8 @@ test('expired pending approval remains expired across restart and cannot issue a
 for (const [title, reply, errorCode] of [
   ['remote tool error', { content: [{ type: 'text', text: 'fixture failure' }], isError: true }, 'mcp_tool_error'],
   ['invalid structured result', { content: [], structuredContent: { text: 4 } }, 'mcp_result_schema_invalid'],
+  ['structured result below advertised minimum', { content: [], structuredContent: { text: '' } }, 'mcp_result_schema_invalid'],
+  ['structured result above advertised maximum', { content: [], structuredContent: { text: 'x'.repeat(21) } }, 'mcp_result_schema_invalid'],
 ]) test(`${title} keeps the original data, stops automatic calls, and never becomes a retry`, async t => {
   const f = await fixture(t), action = await f.store.propose(f.grant.token, f.input())
   await f.approve(action)

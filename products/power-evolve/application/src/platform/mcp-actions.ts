@@ -2,7 +2,7 @@
 import { randomUUID } from 'node:crypto'
 import type { PoolClient } from 'pg'
 import { z } from 'zod'
-import { validateJsonSchemaValue } from '@deepseek-ai/dsh-tools'
+import { validateMcpJsonSchemaValue } from '../mcp-json-schema.ts'
 import { PlatformError, executionTarget, userId, type Identity } from '../contracts.ts'
 import { mcpActionId, mcpActionRequest, mcpActionReceipt, mcpPermissionId,
   type McpActionDecision, type McpActionLease, type McpActionReceipt, type McpActionState,
@@ -374,7 +374,7 @@ export class McpActionStore {
       }
       const tool = mcpOperationTool.parse(row.tool)
       const invalid = !Array.isArray(result.content) || result.isError !== true && tool.raw.outputSchema !== undefined
-        && validateJsonSchemaValue(tool.raw.outputSchema, result.structuredContent).length !== 0
+        && !validateMcpJsonSchemaValue(tool.raw.outputSchema, result.structuredContent)
       return this.end(client, row, invalid || result.isError === true ? 'failed' : 'succeeded',
         invalid ? 'mcp_result_schema_invalid' : result.isError === true ? 'mcp_tool_error' : null, result)
     })
