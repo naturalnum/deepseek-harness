@@ -9,12 +9,13 @@ import { openSync, closeSync } from 'node:fs'
 import { tmpdir, homedir } from 'node:os'
 import { resolve, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { spawn } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { setTimeout as delay } from 'node:timers/promises'
 import { createRequire } from 'node:module'
 import yaml from 'js-yaml'
 import { recordedConversation, recordedSshContinuation, compareRecordedSession, sshDirectory, recordedSandboxContinuation, sandboxDirectory } from './session-snapshot.mjs'
 import { SshActionCipher } from '../lib/platform/ssh-execute.js'
+import { encodeOfficeCommand } from '../lib/host/office.js'
 const require = createRequire(new URL('../package.json', import.meta.url))
 const { Pool } = require('pg')
 const root = fileURLToPath(new URL('../../../../', import.meta.url))
@@ -634,7 +635,9 @@ test('shared host: isolated conversations, files, skills and approved remote act
     await stop(host.process); await stop(platform.process)
     platform = await start('platform', undefined, 'platform-small-event', 0, 8192)
     host = await start('host', platform.url)
-    await resume('continuation-output-fixture: ' + 'output line\n'.repeat(1000) + ':completed', true)
+    const officeCommand = encodeOfficeCommand('load_skill word')
+    const runtimeGuide = execFileSync('/bin/sh', ['-c', officeCommand.slice(0, officeCommand.indexOf(' && '))], { encoding: 'utf8' })
+    await resume(runtimeGuide + 'continuation-output-fixture: ' + 'output line\n'.repeat(1000) + ':completed', true)
     await stop(host.process); await stop(platform.process)
     platform = await start('platform'); host = await start('host', platform.url)
   })

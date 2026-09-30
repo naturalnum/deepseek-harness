@@ -1,6 +1,7 @@
 /** OfficeCLI is proposed through the cloud execution seam as one guarded command. */
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
+import { execFileSync } from 'node:child_process'
 import test from 'node:test'
 import {
   encodeOfficeCommand, installOfficeTool, OfficeCommandError, parseOfficeCommand,
@@ -14,6 +15,20 @@ function agentTools() {
   } }
   return { agent, registered }
 }
+
+test('guide commands print runtime constraints before invoking the unchanged upstream guide', () => {
+  for (const request of ['load_skill', 'load_skill word', 'load_skill excel', 'load_skill pptx']) {
+    const command = encodeOfficeCommand(request)
+    const separator = command.indexOf(' && ')
+    assert(separator > 0)
+    const prefix = execFileSync('/bin/sh', ['-c', command.slice(0, separator)], { encoding: 'utf8' })
+    assert.match(prefix, /^\[PowerEvolve Office runtime constraint\]/u)
+    assert.match(prefix, /skip its open\/edit\/save lifecycle/u)
+    assert.match(prefix, /Replace guide variables such as \$FILE with the actual path/u)
+    assert(prefix.endsWith('\n\n'))
+    assert.match(command.slice(separator + 4), /^'\/usr\/bin\/env' '--' /u)
+  }
+})
 
 test('parser confines OfficeCLI argv and quotes shell characters as literals', () => {
   assert.deepEqual(parseOfficeCommand(String.raw`officecli set book.xlsx '/Sheet1/A1' --prop 'value=$(id); $50'`),

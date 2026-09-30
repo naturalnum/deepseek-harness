@@ -18,6 +18,14 @@ const OFFICECLI_ENVIRONMENT = Object.freeze([
   'OFFICECLI_RESIDENT_FLUSH=each',
   'OFFICECLI_SKIP_UPDATE=1',
 ] as const)
+const STATELESS_RUNTIME_GUIDANCE = [
+  '[PowerEvolve Office runtime constraint]',
+  'Resident mode is disabled for Office tool calls. Each command reads or writes the saved file directly.',
+  'The following upstream guide also describes resident mode; skip its open/edit/save lifecycle.',
+  'Name the target file in every command. Replace guide variables such as $FILE with the actual path.',
+  'Use direct create, add, set, remove, or batch commands, which persist before returning; use batch for grouped edits.',
+  'Read and verify the saved file with direct get, query, view, and validate commands.',
+].join('\n')
 const receipt = z.object({
   executionId: z.uuid(), state: z.string(), command: z.string(), cwd: z.string(),
 }).passthrough()
@@ -67,10 +75,12 @@ export function installOfficeTool(agent: Agent, grant: Grant, runtime: RuntimeSc
   })))
 }
 
-/** Encode only parsed OfficeCLI arguments into the fixed executable proposal. */
+/** Quote parsed arguments; guide calls print fixed runtime instructions before the upstream guide. */
 export function encodeOfficeCommand(input: string): string {
   const argv = parseOfficeCommand(input)
-  const command = [ENV_EXECUTABLE, '--', ...OFFICECLI_ENVIRONMENT, OFFICECLI, ...argv].map(shellQuote).join(' ')
+  const execute = [ENV_EXECUTABLE, '--', ...OFFICECLI_ENVIRONMENT, OFFICECLI, ...argv].map(shellQuote).join(' ')
+  const command = argv[0] === 'load_skill'
+    ? `printf '%s\\n\\n' ${shellQuote(STATELESS_RUNTIME_GUIDANCE)} && ${execute}` : execute
   if (command.length > MAX_PROPOSAL_LENGTH) {
     throw new OfficeCommandError(`Encoded OfficeCLI command exceeds ${String(MAX_PROPOSAL_LENGTH)} characters`)
   }
