@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Refresh report catalogs using Word COM or isolated Linux UNO pagination.
+"""Refresh report catalogs using Microsoft Word COM or Linux UNO pagination.
 
 Windows updates all fields with Word COM. Linux obtains actual page labels from
 LibreOffice UNO and writes visible caches into the original DOCX without passing
