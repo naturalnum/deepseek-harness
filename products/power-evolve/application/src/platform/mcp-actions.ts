@@ -264,7 +264,7 @@ export class McpActionStore {
         (state IN ('approved','preparing','dispatch-intent') AND (lease_until IS NULL OR lease_until<=now()))
         OR (state='pending' AND expires_at<=now()) ORDER BY created_at,id LIMIT 1`)).rows[0]
       if (!peek) return null
-      const locked = await client.query('SELECT id FROM pe_users WHERE id=$1 FOR UPDATE SKIP LOCKED', [peek.user_id])
+      const locked = await client.query('SELECT id FROM pe_users WHERE id=$1 FOR NO KEY UPDATE SKIP LOCKED', [peek.user_id])
       if (!locked.rowCount) return null
       const row = await this.action(client, { userId: userId.parse(peek.user_id) }, peek.id)
       if (terminal.has(row.state) || row.lease_until && row.lease_until.getTime() > (await this.now(client))) return null

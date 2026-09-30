@@ -247,7 +247,7 @@ export class TaskStore {
          AND (SELECT count(*) FROM pe_sessions active WHERE active.user_id=s.user_id AND active.lease_until>clock_timestamp())<$1
          AND NOT EXISTS (SELECT 1 FROM pe_operations earlier WHERE earlier.session_id=s.id
            AND earlier.state IN ('queued','running') AND (earlier.created_at,earlier.id)<(o.created_at,o.id))
-         ORDER BY u.last_claim_at NULLS FIRST,o.created_at,o.id LIMIT 1 FOR UPDATE OF u SKIP LOCKED`, [this.limits.maxActivePerUser],
+         ORDER BY u.last_claim_at NULLS FIRST,o.created_at,o.id LIMIT 1 FOR NO KEY UPDATE OF u SKIP LOCKED`, [this.limits.maxActivePerUser],
       )
       const row = candidate.rows[0]
       if (!row) return null

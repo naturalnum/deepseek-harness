@@ -13,7 +13,7 @@ export interface AccountExecutionRevocation {
 
 /**
  * Fence all existing account work in the account service's state-change transaction.
- * The caller holds the user's UPDATE lock before any resource lock. Provider
+ * The caller holds the account helper's update lock before any resource lock. Provider
  * leases and execution identities survive cancellation so workers can observe results
  * and confirm cleanup without an Agent grant. Repeated calls do not revive any work.
  * @param client Account update transaction, with the target user row already locked.

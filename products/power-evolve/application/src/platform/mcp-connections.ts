@@ -728,7 +728,7 @@ export class McpConnectionService {
           AND d.expires_at<clock_timestamp()-$1::double precision*interval '1 millisecond'
           AND d.created_at<=clock_timestamp()-interval '1 hour'
           AND NOT EXISTS(SELECT 1 FROM pe_mcp_checks c WHERE c.draft_id=d.id))
-        ORDER BY u.id LIMIT $2 FOR UPDATE OF u SKIP LOCKED`, [this.options.retentionMs, maxUsers])
+        ORDER BY u.id LIMIT $2 FOR NO KEY UPDATE OF u SKIP LOCKED`, [this.options.retentionMs, maxUsers])
       const counts = { users: owners.rows.length, checks: 0, drafts: 0 }
       for (const owner of owners.rows) {
         const removed = await this.pruneOwnedChecks(client, { userId: owner.id })
