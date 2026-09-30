@@ -55,6 +55,14 @@ kubectl --context YOUR_CONTEXT -n YOUR_APP_NAMESPACE rollout status deployment/p
 
 首次安装时，通过常规变更控制流程分阶段部署基础资源和工作负载，让 `--ready` 与物理检查在 Ingress 接纳流量之前完成。`--ready` 至少检查两个 Ready 节点、Sandbox CRD/控制器、gVisor RuntimeClass、Secret 键是否存在、TLS SAN、已绑定的 PVC，以及 RBAC 的允许和拒绝行为。它有意不打印 Secret 值，只检查 PostgreSQL URL 形式和 TLS 证书。检查通过**不能**证明跨物理机器的 POSIX 一致性或 ingress 行为。
 
+## 可选的远程 MCP
+
+values 省略 `remoteMcp` 时不启用此功能。启用时提供 `secretName` 和 `destinations`；每个目标包含规范的 `origin`、准确的 IP 地址 `addresses`、可选的 `allowHttp: true` 和 `caKey`。使用 CA 时还须提供 `caConfigMapName`。Secret 必须不同于 Host 的共享 Secret。渲染器仅将各 origin 自身的 TCP 端口和获准 IP 加入 Platform 出口；Host 和运行器策略保持不变。
+
+在该 Secret 中提供 `remote-mcp.json` 和 `remote-mcp-key`。JSON 沿用 [Platform 配置](../platform/remote-mcp.example.json)，并设置 `requireOriginException: true`，将 `credentialKeyFile` 设为 `/run/power-evolve/private/remote-mcp/credential-key`。`internalExceptions` 必须与 values 目标完全一致；CA 路径为 `/run/power-evolve/private/remote-mcp/ca/<caKey>`。在指定的 CA ConfigMap 中保存所引用的 PEM 项。只有 Platform 获得这些只读投影和固定配置路径；渲染后的 YAML 不含秘密字节。
+
+Platform 启动时校验挂载材料和严格 origin 模式。只读 `--ready` 检查只获取指定的 MCP Secret 与 CA ConfigMap，使用运行时解析器校验内容，并与 values 权限核对。渲染及本机解析器测试不能证明实际 CNI 执行、Secret 挂载或目标连通；这些仍属于物理验收内容。
+
 ## 物理验收条件
 
 发布前，在配有生产 CNI、ingress 控制器、PostgreSQL 和 NFS 导出的**两台物理机器**上执行：

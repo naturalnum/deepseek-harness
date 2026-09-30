@@ -2,7 +2,7 @@
 
 ## 状态与范围
 
-此记录描述通用 Streamable HTTP MCP 的原生客户端验收，不替代 [S6 固定连接器试用](TRIAL-S6-FINAL-QA.md)。两个账号已用真实 DeepSeek 完成“已有 hi 会话 → 新增工具 → 独立可信审批 → 两个工具自动续接”，但本轮尚未完成全部 MCP 验收或冻结可交付版本。原 [S8 稳定试用](TRIAL-S8-NATIVE.md)保持独立。
+此记录描述通用 Streamable HTTP MCP 的原生客户端验收，不替代 [S6 固定连接器试用](TRIAL-S6-FINAL-QA.md)。两个账号已用真实 DeepSeek 完成多连接、同名工具选择、可信审批和连续工具调用；当前 V23 数据已备份、恢复到独立数据库，并通过恢复后的原生客户端重新登录与连接检查。MCP 独立版本冻结仍待完成。原 [S8 稳定试用](TRIAL-S8-NATIVE.md)保持独立。
 
 本轮代码包含原生 Session 快照 `fbed71b517`、客户端错误提示 `2ba48cf1fd`、复用 PG 的试用启动器 `90ce5c2caf`、标准 SDK schema 适配 `beaafce507`、输出验证接线 `b36070fb4c`、原生工具变更协议适配 `6ed3f15307`，以及历史检查状态修复 `52010b8b4c`。官方 DSH 基线仍以 [baseline.json](baseline.json) 为准。
 
@@ -37,11 +37,42 @@
 
 本机证据在 `.artifacts/power-evolve/s6-mcp-browser/`：`live-protocol-evidence.json` 保存实际身份拒绝和重复决定结果；`live-pg-evidence.json` 保存动作、续接和撤销元数据；`bob-two-step.png`、`alice-two-step.png`、`stale-check.png` 保存原生界面。合成远端调用日志位于私有配置目录的 `remote-mcp-fixture-calls.jsonl`。真实模型使用 DeepSeek，MCP 目标使用标准 SDK 的合成商品数据；本轮回环 HTTP 不充当真实 TLS 验收。
 
+### 多连接、授权与检查终态
+
+以下复验使用连接元数据适配 `6d4bc1f11a`、标准 SDK 附加目标 `f6cde3ebe6`、认证拒绝修复 `3f9143bf13` 和取消提示修复 `9819336753`。表内模型调用均为真实 DeepSeek；远端商品和报价数据仍为合成测试数据。
+
+| 检查 | 实际结果 |
+| --- | --- |
+| 同名工具选择 | Alice 同时启用两个连接，均公布 `lookup_item`。模型按用户指定的“请求头报价”连接查询 pencil；独立审批显示匹配的连接 ID、配置及凭据版本，远端只记录该连接的一次调用。 |
+| 跨会话持久授权 | Alice 在可信入口授予该版本工具持久许可；新会话的 notebook 查询复用许可且返回 7 CNY。撤销后再查询 pencil 重新等待审批，拒绝后原会话停止，远端调用数不增加。 |
+| Bob 两个连接 | Bob 新增无需认证的公共连接，与自己的 Bearer 连接同时启用。一次任务分别查询 notebook，两个动作各审批一次；模型比较私有 11 CNY 和公共 7 CNY，远端各调用一次。Bob 页面不显示 Alice 连接。 |
+| 凭据编辑与认证失败 | Alice 将自定义头改为错误凭据，实际检查显示“远端拒绝认证”；重新编辑为有效凭据后成功发现 2 个工具。401／403 不再被 SDK 后续清理覆盖成取消。 |
+| 空目录、超时、删除 | Bob 临时连接合法返回 0 个工具；改用慢响应目标后检查超时。删除临时连接后列表消失，最终两个账号各保留两个连接。 |
+| 运行中取消 | PG 确认检查已进入 `running`、租约 epoch 为 1 后，从原生页面取消。最终持久状态为 `cancelled`，界面显示“检查已取消”，不再保留取消中的提示。另一次较早点击已错过超时，不计作取消证据。 |
+| 拒绝和去重 | 使用新登录凭据验证：各自列表 2 项；跨用户启停 404，伪造用户字段 400，Agent 审批入口 401，跨用户审批 404；重复已完成动作的相同决定返回 200，远端总调用数维持 8。 |
+| 持久记录 | 8 条成功、2 条拒绝、10 条 `remote_mcp_result` 续接全部完成；2 条许可已撤销；执行沙盒为 0。此前诊断误用 `source='platform'` 的空查询结果已按真实来源字段修正。 |
+
+两用户仍使用同一浏览器依次重新登录；这不作为两个同时独立浏览器上下文的证据。实际产品协议拒绝使用新登录身份直接调用 Host／Platform，未从浏览器存储提取令牌。
+
+`multi-connection-evidence.json` 保存 PG 与远端调用元数据，`multi-connection-protocol-evidence.json` 保存授权拒绝及去重结果。`alice-header-selection.png`、`persistent-revoked.png`、`bob-two-connections.png`、`auth-denial.png`、`empty-catalog.png`、`check-timeout.png` 和 `check-cancelled-fixed.png` 保存对应原生界面；旧 `check-cancelled.png` 记录修复前的残留提示，不用于通过声明。
+
+### 当前备份、恢复与部署验证
+
+在 `87c6ec4fc0` 上，两个应用均停止时，使用现有 PG 执行 `backup-trial.mjs create` 和 `restore`，均设置 `PE_TRIAL_DATABASE=external`、`PE_BACKUP_PG_CONTAINER=pe-s6-mcp-dev-postgres`、`PE_BACKUP_KEEP_STOPPED=1`。备份位于 `~/.config/power-evolve/backups/s6-mcp-browser-v23-20260930-final`；恢复目标为独立数据库 `pe_mcp_restored_20260930` 和 `~/.config/power-evolve/shared-host-s6-mcp-restored`。
+
+恢复核对通过：51 张 public 表逐行一致，414 个文件／符号链接及文件模式一致，6 个连接凭据版本可用恢复密钥解密；8 条成功、2 条拒绝和 10 条已完成续接均保留。恢复的私有 MCP 目录为 0700，密钥文件为 0600。schema 为 23→23；恢复脚本保持应用停止，之后另行启动复验，不将两次操作之间的人工检查时间报为可用 RTO。实际记录见 `backup-restore-evidence.json`；备份操作方法和失败边界见 [S7c 备份说明](TRIAL-S7C-BACKUP.md)。
+
+恢复后的 Host／Platform 健康接口均返回 200。Bob、Alice 依次全新登录原生页面，各自读到原会话及两条私有连接；Bob 原报价比较、Alice 跨会话许可及撤销后的历史均可读。用恢复后的 Bearer 和自定义头凭据分别发起新的真实 SDK 发现，两项检查成功并各发现 2 个工具；未重新执行历史动作，远端工具调用为 0，恢复库仍是 8 成功／2 拒绝且无执行沙盒。此项没有重新发起模型任务。截图为 `restored-bob-history.png`、`restored-alice-history.png`、`restored-bob-connection.png` 和 `restored-alice-connection.png`。验证后四个临时进程及测试 PG 已再次停止。
+
+本轮定向证据：备份及 POSIX 回归 34/34 通过，使用真实既有 PG、独立临时库和 CLI dump／restore；未启动模型或远端工具。TLS／HTTP 受控传输、配置和原生 PG 组合 30/30 通过，其中组合模型为确定性替身。部署渲染及预检 6/6 通过；application 类型检查、客户端类型检查、扩展中心 bundle 和 36 模块 Web 组装通过。原生 MCP 两个 Session 快照已录制并回放，工具描述包含可恢复的连接标签。
+
+部署适配 `1d49d2c2ef` 为 Platform 单独投影 MCP 配置、密钥及可选 CA，并按明确 origin／IP／端口生成出口规则；运行时与预检要求部署配置启用严格 origin 模式。上述本地检查不证明真实集群的 Secret 挂载、CNI 出口或生产 TLS 可达性；这些仍归 S7 物理部署验收。
+
 ## 本机环境与恢复
 
-私有配置位于 `~/.config/power-evolve/shared-host-s6-mcp-browser`，其中 `trial-env.sh` 仅保存环境选择及文件路径，账号和模型凭据保存在同目录的私有文件中。数据库 `pe_mcp_browser_20260930` 使用已有 `pe-s6-mcp-dev-postgres` 容器的 32961 端口，与 S8 的数据库、文件根及 schema 分开。
+私有配置位于 `~/.config/power-evolve/shared-host-s6-mcp-browser`，其中 `trial-env.sh` 仅保存环境选择及文件路径，账号和模型凭据保存在同目录的私有文件中。数据库 `pe_mcp_browser_20260930` 使用已有 `pe-s6-mcp-dev-postgres` 容器，与 S8 的数据库、文件根及 schema 分开。该测试容器使用动态映射端口，重启后必须按 `docker port pe-s6-mcp-dev-postgres 5432/tcp` 核对私有 `database-url` 和 `trial-env.sh`；不能沿用旧端口。此次重启由 32961 变为 32962，修正配置后完成备份恢复。
 
-从本开发仓库执行以下命令管理临时环境；该环境用于未完成的验收，不是稳定试用入口。`stop` 关闭本轮四个 Node 进程，保留独立数据库与文件；不会停止共享 PG 容器。
+从本开发仓库执行以下命令管理临时环境；先启动上述测试 PG 并核对动态端口。该环境用于未完成的验收，不是稳定试用入口。`stop` 关闭本轮四个 Node 进程，保留独立数据库与文件；不会停止共享 PG 容器。
 
 ```sh
 source ~/.config/power-evolve/shared-host-s6-mcp-browser/trial-env.sh
@@ -52,4 +83,4 @@ node products/power-evolve/scripts/trial.mjs stop
 
 启动后的 Host 为 `http://127.0.0.1:19650/`，可信平台为 19651，受控便签目标为 19652，合成 MCP 目标为 19653。日志及原生静态资源快照位于 `.artifacts/power-evolve/s6-mcp-browser/`。临时服务只在验收时启动，用完执行 `stop`，保留数据库、文件和独立的 S8 稳定试用。使用原生界面登录 `users.json` 中的独立测试账号，凭据不要复制到验收记录或聊天中。
 
-下一轮继续 [MCP 验收次序](S6-CONNECTOR-COMPLETION.md#验收次序)中的双用户各两连接及同时启用、同名工具路由、自定义头实际调用、无认证和空目录、删除与凭据编辑、检查取消／超时，以及持久授权的完整试用。还需核对 TLS／DNS 受控传输证据、迁移备份与恢复及发布产物，随后才能固定 MCP 试用版；SSH 完整功能仍在其后。当前不宣称 S6 通用连接器完成。
+当前临时应用和测试 PG 均已停止，保留稳定 S8 所需的数据库和集群两个容器。下一步核对 [MCP 验收次序](S6-CONNECTOR-COMPLETION.md#验收次序)及发布产物，固定可按需启动的 MCP 版本；随后完成 SSH 私钥、编辑删除、普通命令与故障对账。当前不宣称 S6 通用连接器完成。

@@ -55,6 +55,14 @@ kubectl --context YOUR_CONTEXT -n YOUR_APP_NAMESPACE rollout status deployment/p
 
 On first installation, stage the foundation and workload resources through your normal change-control mechanism so `--ready` and the physical checks finish before Ingress admits traffic. `--ready` checks at least two Ready nodes, the Sandbox CRD/controller and gVisor RuntimeClass, Secret key presence, TLS SANs, bound PVCs, and allow/deny RBAC. It intentionally does not print Secret values; it inspects the PostgreSQL URL shape and TLS certificate. A passing result is **not** proof of multi-machine POSIX consistency or ingress behavior.
 
+## Optional remote MCP
+
+Omitting `remoteMcp` in values leaves the feature disabled. To enable it, provide `secretName` and `destinations`, where each destination has a canonical `origin`, exact literal-IP `addresses`, optional `allowHttp: true`, and optional `caKey`. A CA entry also requires `caConfigMapName`. The Secret must differ from the Host's shared Secret. The renderer adds only each origin's own TCP port and approved IPs to Platform egress; Host and runner policies remain unchanged.
+
+Provision `remote-mcp.json` and `remote-mcp-key` in that Secret. The JSON uses the [Platform configuration](../platform/remote-mcp.example.json), with `requireOriginException: true` and `credentialKeyFile` set to `/run/power-evolve/private/remote-mcp/credential-key`. Its `internalExceptions` must match values destinations exactly; CA paths are `/run/power-evolve/private/remote-mcp/ca/<caKey>`. Store the referenced PEM entries in the declared CA ConfigMap. Only Platform receives these read-only projections and the fixed config path; rendered YAML contains no private bytes.
+
+Platform startup validates the mounted material and strict origin mode. The read-only `--ready` check fetches only the named MCP Secret and CA ConfigMap, validates their contents with the runtime parser, and compares permissions with values. Rendering and local parser tests do not demonstrate actual CNI enforcement, Secret mounting or target connectivity; those checks remain part of physical acceptance.
+
 ## Physical acceptance gates
 
 Before release, run on **two physical machines** with the production CNI, ingress controller, PostgreSQL, and NFS export:

@@ -5,7 +5,7 @@
 
 ## 当前脚本（参考）
 
-本节按 `87c6ec4fc0` 的 [备份入口](scripts/backup-trial.mjs) 与 [PG、MCP 私有文件处理](scripts/backup-support.mjs) 核对当前行为。下文 V18→V19 的数据、耗时、浏览器验收及当时的脚本描述保留为固定版本的历史证据；当前 V23 MCP 试用的真实备份及保持应用停止的恢复结果见 [远端 MCP QA 记录](TRIAL-S6-REMOTE-MCP-QA.md)。该新恢复目标的应用健康和 UI 尚未验收，不报告可用 RTO；本次文档更新没有运行备份、恢复或服务生命周期复测。
+本节按 `87c6ec4fc0` 的 [备份入口](scripts/backup-trial.mjs) 与 [PG、MCP 私有文件处理](scripts/backup-support.mjs) 核对当前行为。下文 V18→V19 的数据、耗时、浏览器验收及当时的脚本描述保留为固定版本的历史证据；当前 V23 MCP 试用的真实备份、独立恢复及随后进行的健康和原生客户端复验见 [远端 MCP QA 记录](TRIAL-S6-REMOTE-MCP-QA.md)。V23 恢复脚本保持应用停止，后续启动另行执行，不报告连续的可用 RTO。
 
 ### 存储布局
 

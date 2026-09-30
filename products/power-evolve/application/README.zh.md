@@ -30,7 +30,7 @@
 
 MCP 在原生模型请求中保留已声明的 JSON Schema，并独立校验参数与结构化结果。产品验证器支持 draft 2020-12（默认）、2019-09 和 draft-07，包括数值界限、字符串长度、数组界限、组合及有界的非循环文档内引用。正则或格式约束、`uniqueItems: true`、动态或递归引用、外部引用、嵌套方言或 ID 变化、异步验证及自定义词汇表会被拒绝。固定的深度、schema 大小、引用展开和估算工作量上限限制共享服务内的同步验证，准确数值见[验证器](src/mcp-json-schema.ts)。不支持的约束会使发现明确失败，绝不删除或忽略。
 
-设置 `PE_REMOTE_MCP_CONFIG_FILE`，指向仅 Platform 可读的绝对 JSON 路径，内容参考[完整示例](../platform/remote-mcp.example.json)。其中 `credentialKeyFile` 保存私有的 32 字节 base64url 密钥。管理、受理、动作和传输限额均须提供；`renewMs` 必须小于两类 worker 的租约时长。`cleanupMs` 和 `cleanupBatchSize` 限定按用户定期清理的周期与批量。过期草稿释放容量，创建记录仍保留以执行一小时频率限额。默认仅允许 HTTPS 公网出口；运营例外指定准确 origin、获准 IP 地址、可选 `allowHttp`，以及 CA 证书包的绝对 `caFile`。个人连接请求不能设置这些例外。配置无效时拒绝启动；不得把该文件或密钥挂载给 Host。
+设置 `PE_REMOTE_MCP_CONFIG_FILE`，指向仅 Platform 可读的绝对 JSON 路径，内容参考[完整示例](../platform/remote-mcp.example.json)。其中 `credentialKeyFile` 保存私有的 32 字节 base64url 密钥。管理、受理、动作和传输限额均须提供；`renewMs` 必须小于两类 worker 的租约时长。`cleanupMs` 和 `cleanupBatchSize` 限定按用户定期清理的周期与批量。过期草稿释放容量，创建记录仍保留以执行一小时频率限额。默认仅允许 HTTPS 公网出口；运营例外指定准确 origin、获准 IP 地址、可选 `allowHttp`，以及 CA 证书包的绝对 `caFile`。设置 `requireOriginException: true` 后，未列明的 origin 会在 DNS 解析前被拒绝；此时空例外列表拒绝所有远程 MCP 目标。个人连接请求不能设置这些例外。配置无效时拒绝启动；不得把该文件或密钥挂载给 Host。
 
 平台签发绑定用户、短时有效的 SSH 凭据上传票据。浏览器只经宿主发送元数据和口令字节长度，再把最多 4096 字节的 UTF-8 口令直接上传到平台域名。同一安装请求 ID 重试时，平台重新签发票据，收到口令后核对带密钥摘要；相同口令返回原结果，不同口令拒绝；三次不匹配后阻止该请求 ID 继续重试。平台按用户、连接和版本加密凭据；PG 不保存明文。独立 Connector Runner 和目的地策略尚未配置时，原生插件页不能开放安装。这条接收链路不会授权共享宿主或带可写工作区的编程沙盒运行 SSH 命令。
 
@@ -54,11 +54,13 @@ Platform 的请求连接池或有界健康检查连接池失去 PostgreSQL 连�
 
 Schema 20 增加归属用户的目录安装回执，包括复用既有包版本的重试 ID。已受理的技能元数据最多包含 256 项；领取任务不依赖说明文件。当前授权只能读取其持久选用记录，过期授权会被拒绝。
 
-本机 `scripts/trial.mjs` 启动器支持通过 `PE_TRIAL_DATABASE=external` 复用现有 PostgreSQL 服务。启动前先创建独立的试用数据库及私有 `database-url`；该模式检查数据库就绪状态，不创建数据库容器。默认仍为 `compose`。合成 MCP 验收可用 `PE_REMOTE_MCP_FIXTURE=1` 在 `PE_REMOTE_MCP_PORT` 启动归启动器管理的回环目标；私有 `remote-mcp-fixture-users.json` 提供至少两个 `{username, token, unitPrice}` 记录（令牌至少 24 个字符）。目标只查询私有测试商品和计算报价，在本机记录合成调用，不执行购买；使用相同开关执行 `stop` 时会一并关闭。启动器仅向 Profile 准备步骤传入 `PE_REMOTE_MCP_CONFIG_FILE`，由其写入 Platform 配置；Host 进程不接收该环境变量。
+本机 `scripts/trial.mjs` 启动器支持通过 `PE_TRIAL_DATABASE=external` 复用现有 PostgreSQL 服务。启动前先创建独立的试用数据库及私有 `database-url`；该模式检查数据库就绪状态，不创建数据库容器。默认仍为 `compose`。合成 MCP 验收可用 `PE_REMOTE_MCP_FIXTURE=1` 在 `PE_REMOTE_MCP_PORT` 启动归启动器管理的回环目标；私有 `remote-mcp-fixture-users.json` 提供至少两个 `{username, token, unitPrice}` 记录（令牌至少 24 个字符）。目标只查询私有测试商品和计算报价，在本机记录合成调用，不执行购买。`/mcp/public` 无需认证并提供固定公共测试数据，`/mcp/empty` 返回空工具目录，`/mcp/slow` 延迟请求以验证取消和超时；断开及停服会释放等待中的请求。使用相同开关执行 `stop` 时会一并关闭。启动器仅向 Profile 准备步骤传入 `PE_REMOTE_MCP_CONFIG_FILE`，由其写入 Platform 配置；Host 进程不接收该环境变量。
 
 ## 恢复与限制
 
-Schema 22 独立保存远程 MCP 的不可变配置、凭据和目录版本，不替换固定连接器预设。为 `TaskStore` 提供远程 MCP 受理策略时，输入受理在同一事务中保存该用户完整的已启用工具选择、原始模式及精确的原生模型声明。目录变化后，重复受理和任务恢复仍保留原声明。不支持的模式、必需的 MCP Task 扩展、名称碰撞和整体选择超限会拒绝受理，不会静默丢弃工具。模型代理从 PG 读取已受理定义，拒绝宿主篡改名称、描述或参数模式。它根据这些声明核验原生会话中途新增的工具，并从合法的 system 角色引用派生固定的模型服务 beta 请求头。默认 Flash 路由支持延迟新增；Pro 接收完整且立即可用的工具声明。历史调用与结果保持不变，不授予新动作权限；宿主提供的 beta 请求头不会转发。该路径不创建执行沙盒，也不授予工具调用权限。只有为 Platform Profile 指定私有配置文件，才会启用通用 MCP。
+本地备份 CLI 支持既有 PostgreSQL 服务，并保留 MCP 配置、加密密钥和引用的 CA 文件。恢复需要独立的空数据库及私有存储路径。`PE_BACKUP_KEEP_STOPPED=1` 保持应用停止，不会停止 PostgreSQL。使用任一数据库模式前，请阅读[备份前置条件与失败边界](../TRIAL-S7C-BACKUP.md)。
+
+Schema 22 独立保存远程 MCP 的不可变配置、凭据和目录版本，不替换固定连接器预设。为 `TaskStore` 提供远程 MCP 受理策略时，输入受理在同一事务中保存该用户完整的已启用工具选择、原始模式及精确的原生模型声明。每次新选择会将当前连接显示名、稳定 ID 和原工具名作为引用的元数据写入持久模型描述；标签不授予权限。目录或显示名变化后，重复受理和任务恢复仍保留原声明。不支持的模式、必需的 MCP Task 扩展、名称碰撞和整体选择超限会拒绝受理，不会静默丢弃工具。模型代理从 PG 读取已受理定义，拒绝宿主篡改名称、描述或参数模式。它根据这些声明核验原生会话中途新增的工具，并从合法的 system 角色引用派生固定的模型服务 beta 请求头。默认 Flash 路由支持延迟新增；Pro 接收完整且立即可用的工具声明。历史调用与结果保持不变，不授予新动作权限；宿主提供的 beta 请求头不会转发。该路径不创建执行沙盒，也不授予工具调用权限。只有为 Platform Profile 指定私有配置文件，才会启用通用 MCP。
 
 Schema 21 用 PostgreSQL `json` 保存原生事件及云端、桌面、连接器的结果载荷。这些不透明值完整保留转义的 NUL 及 `jsonb` 无法表示的其他 JSON 字符串内容。通过驱动整值读取，不转换为 `jsonb`，也不在 SQL 中提取任意文本；归属、排序、状态和索引使用独立的类型化列。迁移前停止 Platform 写入者并验证备份；旧版 Platform 拒绝此 schema，回退旧程序须恢复升级前的数据库和文件。
 
