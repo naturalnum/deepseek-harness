@@ -4,6 +4,9 @@ import { request as httpsRequest } from 'node:https'
 import yaml from 'js-yaml'
 import { z } from 'zod'
 
+/** Two 64 KiB Sandbox streams or 128 KiB aggregate SSH output can expand sixfold in JSON. */
+export const RUNNER_RESPONSE_MAX_BYTES = 1_048_576
+
 const named = <T extends z.ZodType>(value: T) => z.array(z.object({ name: z.string(), cluster: value.optional(),
   context: value.optional(), user: value.optional() }).passthrough())
 const kubeconfig = z.object({
@@ -63,7 +66,8 @@ export class KubernetesClient {
   }
 
   async call<T>(method: 'GET' | 'POST' | 'DELETE' | 'PATCH', path: string, body?: unknown,
-    timeoutMs = 10_000, runnerToken?: string): Promise<T> {
+    timeoutMs = 10_000, runnerToken?: string,
+    maxResponseBytes: 262_144 | typeof RUNNER_RESPONSE_MAX_BYTES = 262_144): Promise<T> {
     const token = this.tokenFile ? (await readFile(this.tokenFile, 'utf8')).trim() : this.token
     if (!token && !this.cert) throw new Error('Kubernetes service account token is unavailable')
     const payload = body === undefined ? undefined : JSON.stringify(body)
@@ -79,9 +83,19 @@ export class KubernetesClient {
         timeout: timeoutMs,
       }, response => {
         const chunks: Buffer[] = []; let size = 0
+        response.once('error', reject)
+        response.once('aborted', () => reject(new Error('Kubernetes response aborted')))
+        response.once('close', () => {
+          if (!response.complete) reject(new Error('Kubernetes response closed before completion'))
+        })
         response.on('data', (chunk: Buffer) => {
           size += chunk.length
-          if (size > 262_144) { request.destroy(new Error('Kubernetes response exceeds limit')); return }
+          if (size > maxResponseBytes) {
+            const error = new Error('Kubernetes response exceeds limit')
+            reject(error)
+            request.destroy(error)
+            return
+          }
           chunks.push(chunk)
         })
         response.once('end', () => {
@@ -92,7 +106,11 @@ export class KubernetesClient {
           try { resolve((raw ? JSON.parse(raw) : null) as T) } catch (error) { reject(error) }
         })
       })
-      request.once('timeout', () => request.destroy(new Error('Kubernetes request timed out')))
+      request.once('timeout', () => {
+        const error = new Error('Kubernetes request timed out')
+        reject(error)
+        request.destroy(error)
+      })
       request.once('error', reject)
       if (payload !== undefined) request.write(payload)
       request.end()

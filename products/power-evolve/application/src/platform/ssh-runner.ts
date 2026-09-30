@@ -2,7 +2,7 @@
 import { createHmac } from 'node:crypto'
 import { isIP } from 'node:net'
 import { setTimeout as delay } from 'node:timers/promises'
-import { KubernetesError, type KubernetesClient } from './kubernetes.ts'
+import { KubernetesError, RUNNER_RESPONSE_MAX_BYTES, type KubernetesClient } from './kubernetes.ts'
 
 type Kube = Pick<KubernetesClient, 'call' | 'resourcePath' | 'proxyPath'>
 type Method = 'GET' | 'POST'
@@ -143,7 +143,8 @@ export class SshRunnerOrchestrator {
     }
   }
   private async runner<T>(name: string, token: string, method: Method, path: string, body?: unknown): Promise<T> {
-    return this.kube.call<T>(method, this.kube.proxyPath(this.config.namespace, name, path), body, 10_000, token)
+    return this.kube.call<T>(method, this.kube.proxyPath(this.config.namespace, name, path), body,
+      10_000, token, RUNNER_RESPONSE_MAX_BYTES)
   }
   private policy(callId: string, target: SshRunnerDestination): Record<string, unknown> {
     const name = nameOf(callId)

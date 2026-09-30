@@ -6,7 +6,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import type { Pool, PoolClient } from 'pg'
 import type { FileService } from './files.ts'
 import { transaction } from './database.ts'
-import { KubernetesClient, KubernetesError } from './kubernetes.ts'
+import { KubernetesClient, KubernetesError, RUNNER_RESPONSE_MAX_BYTES } from './kubernetes.ts'
 import { kubernetesPodStopStatus } from './pod-stop-status.ts'
 
 const STOP_FINALIZER = 'powerevolve.dev/retain-stop-observation'
@@ -528,7 +528,8 @@ export class SandboxManager {
   }
 
   runner<T>(name: string, token: string, method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
-    return this.kube.call<T>(method, this.kube.proxyPath(this.config.namespace, name, path), body, 10_000, token)
+    return this.kube.call<T>(method, this.kube.proxyPath(this.config.namespace, name, path), body,
+      10_000, token, RUNNER_RESPONSE_MAX_BYTES)
   }
 
   private async stopping(slot: MountSlot): Promise<MountSlot> {
