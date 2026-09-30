@@ -2,9 +2,10 @@
 import { mcpConnectionsSchemaV22 } from './mcp-connections-schema.ts'
 import { mcpActionsSchemaV23 } from './mcp-actions-schema.ts'
 import { sshSchemaV24 } from './ssh-schema.ts'
+import { accountSchemaV25 } from './account-schema.ts'
 
 /** Latest supported product database version; older binaries reject newer state. */
-export const CURRENT_SCHEMA_VERSION = 24
+export const CURRENT_SCHEMA_VERSION = 25
 
 export const schema = `
 CREATE TABLE IF NOT EXISTS pe_schema (version integer PRIMARY KEY);
@@ -671,4 +672,9 @@ UPDATE pe_schema SET version=23 WHERE version=22;
 /** Immutable SSH configuration and credential versions with owner-scoped mutation receipts. */
 export const schemaV24 = `${sshSchemaV24}
 UPDATE pe_schema SET version=24 WHERE version=23;
+`
+
+/** Account authority, audience isolation, durable mutation receipts and identity tombstones. */
+export const schemaV25 = `${accountSchemaV25}
+UPDATE pe_schema SET version=25 WHERE version=24;
 `
