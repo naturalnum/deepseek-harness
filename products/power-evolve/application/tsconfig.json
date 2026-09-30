@@ -12,6 +12,7 @@
     { "path": "../../../packages/host/webserver" },
     { "path": "../../../packages/llm/llm" },
     { "path": "../../../packages/llm/llm-deepseek" },
+    { "path": "../../../packages/mcp/mcp-client" },
     { "path": "../../../packages/identity/anonymous-user-id" },
     { "path": "../../../packages/core/scope" },
     { "path": "../../../packages/core/session" },
