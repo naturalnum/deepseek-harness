@@ -274,7 +274,10 @@ export class McpConnectionService {
       { kind: 'connection', item: this.present(await this.owned(client, user, id)) }, digest)
   }
 
-  /** List only this owner's live connections; endpoint metadata contains no authentication values. */
+  /** List only this owner's live connections; endpoint metadata contains no authentication values.
+   * @param user Platform-authenticated connection owner.
+   * @returns Live connections with their latest check metadata, when present.
+   */
   async list(user: Owner): Promise<{ items: { connection: McpConnection; latestCheck: McpCheck | null }[] }> {
     const rows = await this.pool.query<ConnectionRow>(`${connectionSql}
       WHERE c.user_id=$1 AND c.deleted_at IS NULL ORDER BY c.created_at,c.id`, [user.userId])
@@ -286,19 +289,35 @@ export class McpConnectionService {
     }
     return { items }
   }
-  /** Query only the owner's durable original management result after an upload response is lost. */
+  /** Query only the owner's durable original management result after an upload response is lost.
+   * @param user Platform-authenticated request owner.
+   * @param requestId Original management request identity.
+   * @returns The original completed result, or null if no owned result exists.
+   */
   async receipt(user: Owner, requestId: RequestId): Promise<{ result: McpManagementResult | null }> {
     const row = (await this.pool.query<RequestRow>(`SELECT result FROM pe_mcp_management_requests
       WHERE user_id=$1 AND request_id=$2`, [user.userId, mcpRequestId.parse(requestId)])).rows[0]
     return { result: row?.result ?? null }
   }
-  /** Read one owned connection. Foreign IDs and deleted identities are indistinguishable. */
+  /** Read one owned connection. Foreign IDs and deleted identities are indistinguishable.
+   * @param user Platform-authenticated connection owner.
+   * @param id Exact connection identity.
+   * @returns Current live connection metadata, excluding credential values.
+   */
   async get(user: Owner, id: McpConnectionId): Promise<McpConnection> {
     return transaction(this.pool, async client => this.present(await this.owned(client, user, mcpConnectionId.parse(id))))
   }
-  /** Create without replacement secrets; credentials must otherwise arrive using a ticket. */
+  /** Create without replacement secrets; credentials must otherwise arrive using a ticket.
+   * @param user Platform-authenticated connection owner.
+   * @param value Untrusted create metadata and its stable request identity.
+   * @returns Created connection metadata, or the original result on identical replay.
+   */
   async create(user: Owner, value: unknown): Promise<McpConnection> { return this.mutate(user, 'create', value) }
-  /** Update using explicit retain/clear instructions. Replacement values never enter this method. */
+  /** Update using explicit retain/clear instructions. Replacement values never enter this method.
+   * @param user Platform-authenticated connection owner.
+   * @param value Untrusted complete configuration, base revision and request identity.
+   * @returns Updated connection metadata, or the original result on identical replay.
+   */
   async update(user: Owner, value: unknown): Promise<McpConnection> { return this.mutate(user, 'update', value) }
   private async mutate(user: Owner, purpose: 'create' | 'update', value: unknown): Promise<McpConnection> {
     const input = this.normalized(purpose, value)
@@ -311,7 +330,11 @@ export class McpConnectionService {
     if (result.kind !== 'connection') throw new PlatformError(503, 'mcp_request_unavailable')
     return result.item
   }
-  /** Compare-and-swap current authority; an identical request returns its original result. */
+  /** Compare-and-swap current authority; an identical request returns its original result.
+   * @param user Platform-authenticated connection owner.
+   * @param value Untrusted enablement, connection identity, base revision and request identity.
+   * @returns Connection metadata with the resulting authority revision.
+   */
   async toggle(user: Owner, value: unknown): Promise<McpConnection> {
     const input = mcpToggleRequest.parse(value)
     return transaction(this.pool, async client => {
@@ -329,7 +352,11 @@ export class McpConnectionService {
       return item
     })
   }
-  /** Soft-delete once, retaining immutable versions and original receipts. */
+  /** Soft-delete once, retaining immutable versions and original receipts.
+   * @param user Platform-authenticated connection owner.
+   * @param value Untrusted connection identity, base revision and deletion request identity.
+   * @returns Deleted connection metadata, or the original result on identical replay.
+   */
   async remove(user: Owner, value: unknown): Promise<McpConnection> {
     const input = mcpDeleteRequest.parse(value)
     return transaction(this.pool, async client => {
@@ -347,8 +374,15 @@ export class McpConnectionService {
     })
   }
 
-  /** Reserve a one-use direct Platform capability. Reissuing invalidates the previous token. */
-  async issueTicket(user: Owner, value: unknown, platformOrigin: string) {
+  /** Reserve a one-use direct Platform capability. Reissuing invalidates the previous token.
+   * @param user Platform-authenticated credential request owner.
+   * @param value Untrusted create/update/draft metadata and exact upload byte count.
+   * @param platformOrigin Trusted Platform origin used to construct the direct upload URL.
+   * @returns A pending upload ticket; completed secret replays are verified during upload.
+   */
+  async issueTicket(user: Owner, value: unknown, platformOrigin: string): Promise<{
+    state: 'pending'; requestId: RequestId; ticket: string; uploadUrl: string; expiresAt: string
+  }> {
     const parsed = mcpTicketRequest.parse(value)
     const { purpose, sizeBytes, ...metadata } = parsed
     const input = this.normalized(purpose, metadata)
@@ -379,7 +413,11 @@ export class McpConnectionService {
         expiresAt: row.expires_at.toISOString() }
     })
   }
-  /** Consume exact UTF-8 secret bytes; identical fresh-ticket replay returns the original receipt. */
+  /** Consume exact UTF-8 secret bytes; identical fresh-ticket replay returns the original receipt.
+   * @param ticket One-use bearer capability issued for this credential request.
+   * @param body Direct Platform upload stream containing the versioned secret envelope.
+   * @returns The original connection or draft-check result after credential verification.
+   */
   async upload(ticket: string, body: AsyncIterable<Uint8Array>): Promise<McpManagementResult> {
     const tokenDigest = hashToken(ticket)
     const intent = (await this.pool.query<TicketRow>(`SELECT * FROM pe_mcp_credential_tickets
@@ -415,7 +453,11 @@ export class McpConnectionService {
     } finally { bytes?.fill(0); for (const chunk of chunks) chunk.fill(0) }
   }
 
-  /** Persist an independent unsaved snapshot; replacement credentials use a draft ticket. */
+  /** Persist an independent unsaved snapshot; replacement credentials use a draft ticket.
+   * @param user Platform-authenticated draft owner.
+   * @param value Untrusted draft configuration, owned Session and request identity.
+   * @returns Queued draft-check metadata, or the original result on identical replay.
+   */
   async startDraftCheck(user: Owner, value: unknown): Promise<McpCheck> {
     const input = this.normalized('draft', value)
     if (this.replacement(input.configuration)) throw new PlatformError(400, 'mcp_ticket_required')
@@ -427,7 +469,11 @@ export class McpConnectionService {
     if (result.kind !== 'check') throw new PlatformError(503, 'mcp_request_unavailable')
     return result.item
   }
-  /** Enqueue discovery of an exact saved version, including intentionally disabled connections. */
+  /** Enqueue discovery of an exact saved version, including intentionally disabled connections.
+   * @param user Platform-authenticated connection and Session owner.
+   * @param value Untrusted connection revision, Session and stable check request identity.
+   * @returns Queued saved-check metadata, or the original result on identical replay.
+   */
   async startCheck(user: Owner, value: unknown): Promise<McpCheck> {
     const input = mcpCheckRequest.parse(value)
     const completed = await this.existingRequest(this.pool, user, input.requestId, 'check', input)
@@ -446,14 +492,22 @@ export class McpConnectionService {
       return item
     })
   }
-  /** Owner-only polling, including historical terminal check metadata. */
+  /** Owner-only polling, including historical terminal check metadata.
+   * @param user Platform-authenticated check owner.
+   * @param id Exact saved or draft check identity.
+   * @returns Current retained check metadata without private credentials.
+   */
   async check(user: Owner, id: McpCheckId): Promise<McpCheck> {
     const row = (await this.pool.query<CheckRow>('SELECT * FROM pe_mcp_checks WHERE id=$1 AND user_id=$2',
       [mcpCheckId.parse(id), user.userId])).rows[0]
     if (!row) throw new PlatformError(404, 'mcp_check_not_found')
     return this.checkView(row)
   }
-  /** Cancellation fences completion writes and is idempotent for every terminal state. */
+  /** Cancellation fences completion writes and is idempotent for every terminal state.
+   * @param user Platform-authenticated check owner.
+   * @param id Exact check identity to cancel.
+   * @returns Cancelled metadata, or the existing terminal result if already settled.
+   */
   async cancelCheck(user: Owner, id: McpCheckId): Promise<McpCheck> {
     return transaction(this.pool, async client => {
       const row = (await client.query<CheckRow>(
@@ -465,7 +519,10 @@ export class McpConnectionService {
       return this.checkView(updated.rows[0]!)
     })
   }
-  /** Claim/recover metadata for handshake/listTools only. Network work happens after this commits. */
+  /** Claim/recover metadata for handshake/listTools only. Network work happens after this commits.
+   * @param ownerId Platform check worker identity.
+   * @returns A current check lease and epoch, or null when no check can be claimed.
+   */
   async claimCheck(ownerId: McpCheckLease['ownerId']): Promise<McpCheckLease | null> {
     mcpLeaseOwnerId.parse(ownerId)
     return transaction(this.pool, async client => {
@@ -489,7 +546,10 @@ export class McpConnectionService {
     if (!row) throw new PlatformError(409, 'mcp_check_lease_lost')
     return row
   }
-  /** Renew only live epochs; expired workers cannot reacquire their former claim. */
+  /** Renew only live epochs; expired workers cannot reacquire their former claim.
+   * @param lease Exact worker identity and epoch of the current check claim.
+   * @returns Nothing once the live lease is extended within the check lifetime.
+   */
   async renewCheck(lease: McpCheckLease): Promise<void> {
     await transaction(this.pool, async client => {
       await this.leased(client, lease)
@@ -507,7 +567,10 @@ export class McpConnectionService {
       serverUrl: configuration.serverUrl, serverName: configuration.serverName,
       authentication: configuration.authentication, headers }
   }
-  /** Platform-only credentials of the exact leased snapshot; never serve through Host RPC. */
+  /** Platform-only credentials of the exact leased snapshot; never serve through Host RPC.
+   * @param lease Exact live check worker identity and epoch.
+   * @returns Private endpoint and authentication material for handshake/listTools only.
+   */
   async checkSnapshot(lease: McpCheckLease): Promise<McpPrivateSnapshot> {
     return transaction(this.pool, async client => {
       const check = await this.leased(client, lease)
@@ -531,7 +594,11 @@ export class McpConnectionService {
     })
   }
 
-  /** Save complete prevalidated catalogs; only the newest check of the current authority publishes or revokes. */
+  /** Save complete prevalidated catalogs; only the newest check of the current authority publishes or revokes.
+   * @param lease Exact live check worker identity and epoch.
+   * @param outcome Complete tools already validated for admission, or a safe failure code.
+   * @returns Terminal check metadata with its immutable catalog identity on success.
+   */
   async finishCheck(lease: McpCheckLease, outcome: { tools: readonly McpDiscoveredTool[] } | { errorCode: string }): Promise<McpCheck> {
     let tools: McpCatalog['tools'] | undefined, digest: string | undefined
     if ('tools' in outcome) {
@@ -578,14 +645,23 @@ export class McpConnectionService {
       return this.checkView(updated)
     })
   }
-  /** Owner-only immutable catalog read; drafts remain separate from admission selection. */
+  /** Owner-only immutable catalog read; drafts remain separate from admission selection.
+   * @param user Platform-authenticated catalog owner.
+   * @param id Exact immutable catalog identity.
+   * @param client Existing caller transaction, when the read must share its locks.
+   * @returns The retained catalog, including every original tool descriptor.
+   */
   async getCatalog(user: Owner, id: McpCatalogId, client?: PoolClient): Promise<McpCatalog> {
     const row = (await (client ?? this.pool).query<CatalogRow>(
       'SELECT * FROM pe_mcp_catalog_versions WHERE id=$1 AND user_id=$2', [mcpCatalogId.parse(id), user.userId])).rows[0]
     if (!row) throw new PlatformError(404, 'mcp_catalog_not_found')
     return this.catalogView(row)
   }
-  /** Admission reads current enabled formal catalogs under its existing transaction; no credentials return. */
+  /** Admission reads current enabled formal catalogs under its existing transaction; no credentials return.
+   * @param client Existing admission transaction holding the authenticated owner's lock.
+   * @param user Platform-authenticated connection owner.
+   * @returns Current enabled formal connections with their matching immutable catalogs.
+   */
   async admissionCatalogs(client: PoolClient, user: Owner): Promise<{ connection: McpConnection; catalog: McpCatalog }[]> {
     const rows = await client.query<ConnectionRow>(`${connectionSql}
       WHERE c.user_id=$1 AND c.enabled=true AND c.deleted_at IS NULL AND c.current_catalog_id IS NOT NULL
@@ -619,7 +695,10 @@ export class McpConnectionService {
     return this.material(row.user_id, mcpResourceId.parse(row.id), row.configuration_revision,
       row.credential_revision, row.configuration, await this.credentials(client, row))
   }
-  /** Bounded cleanup only of expired terminal discovery state; formal versions and audit receipts remain. */
+  /** Remove expired terminal discovery state after retention; formal versions and audit receipts remain.
+   * @param user Platform-authenticated discovery owner.
+   * @returns Counts of deleted checks and drafts for this owner.
+   */
   async pruneChecks(user: Owner): Promise<{ checks: number; drafts: number }> {
     return transaction(this.pool, async client => {
       await this.owner(client, user)
