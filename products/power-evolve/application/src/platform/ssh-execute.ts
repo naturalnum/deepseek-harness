@@ -381,10 +381,9 @@ export class SshExecuteService {
       command, timeoutMs: TIMEOUT_MS, maxOutputBytes: MAX_OUTPUT_BYTES }
     const digest = this.runner.digestFor(handle, request)
     row = await this.calls.markDispatchIntent(lease, digest)
-    const dispatched = await this.calls.withDispatchLock(lease,
-      () => this.runner.dispatchFirst(handle, request))
-    if (dispatched.dispatched) await this.observe(lease, row, dispatched.value)
-    else await this.reconcileTerminals(row.id)
+    if (row.state === 'dispatch-intent') {
+      await this.observe(lease, row, await this.runner.dispatchFirst(handle, request))
+    } else await this.reconcileTerminals(row.id)
   }
   private async observe(lease: Lease, row: SshCallRow, observation: SshRunnerObservation): Promise<void> {
     if (observation.state !== 'known') {

@@ -211,9 +211,9 @@ export class SshAuthenticationCheck {
       timeoutMs: TIMEOUT_MS, maxOutputBytes: MAX_OUTPUT_BYTES }
     const digest = this.runner.digestFor(handle, request)
     row = await this.calls.markDispatchIntent(lease, digest)
-    const dispatch = await this.calls.withDispatchLock(lease,
-      () => this.runner.dispatchFirst(handle, request))
-    if (dispatch.dispatched) await this.observe(lease, row, dispatch.value)
+    if (row.state === 'dispatch-intent') {
+      await this.observe(lease, row, await this.runner.dispatchFirst(handle, request))
+    }
   }
 
   /** Claim one durable call; a reclaimed dispatch intent is recovered by GET only. */

@@ -93,6 +93,8 @@ test('S6 SSH calls retain exact user requests, fence workers, and reconcile a pe
     assert.equal(intent.pod_uid, handle.podUid)
     assert.equal(intent.runner_instance_id, handle.instanceId)
     assert.equal(intent.dispatch_digest, runnerDigest)
+    await assert.rejects(store.markDispatchIntent(leaseA, runnerDigest),
+      { status: 409, code: 'ssh_call_state_or_lease_changed' }, 'a committed permit cannot be granted twice')
     await store.assertDispatchLease(leaseA)
     await pool.query("UPDATE pe_ssh_calls SET lease_until=now()-interval '1 second' WHERE id=$1", [first.id])
     const recovered = new SshCallStore(pool)
@@ -133,4 +135,40 @@ test('S6 SSH calls retain exact user requests, fence workers, and reconcile a pe
     await assert.rejects(recovered.assertDispatchLease(executeLease),
       { status: 409, code: 'ssh_call_lease_lost' })
     assert.equal(JSON.stringify(await pool.query('SELECT * FROM pe_ssh_calls')).includes(command), false)
+
+    const waiting = await recovered.admit(alice, { ...check, requestId: randomUUID() })
+    const waitingClaim = await recovered.claim(workerA, 5000, 'ssh.authenticate')
+    assert.equal(waitingClaim.id, waiting.id)
+    const waitingLease = { callId: waiting.id, owner: workerA, epoch: waitingClaim.lease_epoch }
+    await recovered.startPreparing(waitingLease)
+    await recovered.markReady(waitingLease, { ...handle, callId: waiting.id })
+    const blocker = await pool.connect()
+    let pending
+    try {
+      await blocker.query('BEGIN')
+      const blockerPid = (await blocker.query('SELECT pg_backend_pid() AS pid')).rows[0].pid
+      await blocker.query('SELECT id FROM pe_ssh_connections WHERE id=$1 FOR UPDATE', [connections[0]])
+      await pool.query("UPDATE pe_ssh_calls SET lease_until=clock_timestamp()+interval '1 second' WHERE id=$1", [waiting.id])
+      pending = assert.rejects(recovered.markDispatchIntent(waitingLease, runnerDigest),
+        { status: 409, code: 'ssh_call_state_or_lease_changed' })
+      let observedWait = false
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const blocked = await pool.query(
+          'SELECT pid FROM pg_stat_activity WHERE datname=current_database() AND $1=ANY(pg_blocking_pids(pid))',
+          [blockerPid])
+        if (blocked.rowCount) { observedWait = true; break }
+        await new Promise(resolve => setTimeout(resolve, 10))
+      }
+      assert.equal(observedWait, true, 'the worker is waiting for the connection lock')
+      await blocker.query(
+        `SELECT pg_sleep(GREATEST(0,EXTRACT(EPOCH FROM (lease_until-clock_timestamp())))+0.05)
+         FROM pe_ssh_calls WHERE id=$1`, [waiting.id])
+    } finally {
+      await blocker.query('ROLLBACK')
+      blocker.release()
+      await pending
+    }
+    const expired = await recovered.get(alice, waiting.id)
+    assert.equal(expired.state, 'ready')
+    assert.equal(expired.dispatch_digest, null, 'lease expiry during lock wait prevents a permit')
   })

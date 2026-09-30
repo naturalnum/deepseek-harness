@@ -160,7 +160,7 @@ export class SshCallStore {
     if (!renewed.rowCount) throw new PlatformError(409, 'ssh_call_lease_lost')
   }
 
-  /** Check the epoch immediately before the only permitted first POST. Reclaimed intent is read only. */
+  /** Inspect the original dispatch epoch; reading an intent never grants another POST. */
   async assertDispatchLease(lease: SshCallLease): Promise<void> {
     const found = await this.pool.query(
       `SELECT id FROM pe_ssh_calls WHERE id=$1 AND lease_owner=$2 AND lease_epoch=$3
@@ -168,32 +168,6 @@ export class SshCallStore {
        AND lease_until>now() AND state='dispatch-intent' AND cancel_requested=false`,
       [lease.callId, lease.owner, lease.epoch])
     if (!found.rowCount) throw new PlatformError(409, 'ssh_call_lease_lost')
-  }
-
-  /** Linearize the first Runner POST against cancellation, lease takeover, and connection disable. */
-  async withDispatchLock<T>(lease: SshCallLease, action: () => Promise<T>): Promise<
-    { readonly dispatched: true; readonly value: T } | { readonly dispatched: false }> {
-    return transaction(this.pool, async client => {
-      const found = await client.query<SshCallRow>(
-        `SELECT * FROM pe_ssh_calls WHERE id=$1 AND lease_owner=$2 AND lease_epoch=$3
-         AND dispatch_owner=$2 AND dispatch_epoch=$3 AND lease_until>now()
-         AND state='dispatch-intent' AND cancel_requested=false FOR UPDATE`,
-        [lease.callId, lease.owner, lease.epoch])
-      const call = found.rows[0]
-      if (!call) throw new PlatformError(409, 'ssh_call_lease_lost')
-      const connection = await client.query<{ enabled: boolean; revision: number; credential_revision: number }>(
-        `SELECT enabled,revision,credential_revision FROM pe_ssh_connections
-         WHERE id=$1 AND user_id=$2 FOR SHARE`, [call.connection_id, call.user_id])
-      const current = connection.rows[0]
-      if (!current || !current.enabled || current.revision !== call.connection_revision
-        || current.credential_revision !== call.credential_revision) {
-        await client.query(
-          `UPDATE pe_ssh_calls SET state='failed',error_code='ssh_connection_changed',updated_at=now()
-           WHERE id=$1`, [call.id])
-        return { dispatched: false }
-      }
-      return { dispatched: true, value: await action() }
-    })
   }
 
   private async change(lease: SshCallLease, expected: SshCallRow['state'], next: SshCallRow['state'],
@@ -219,18 +193,38 @@ export class SshCallStore {
       ',destination=$6,pod_uid=$7,runner_instance_id=$8')
   }
 
-  /** Commit the keyed Runner digest before a credential-bearing POST. */
+  /** Commit one dispatch permit under call and connection locks, without network I/O.
+   * A fresh dispatch-intent return authorizes one POST; later revocation cannot retract it.
+   * A changed connection returns failed without a permit. Recovery only queries the original Runner.
+   */
   async markDispatchIntent(lease: SshCallLease, digest: string): Promise<SshCallRow> {
     if (!hexDigest.test(digest)) throw new PlatformError(400, 'ssh_dispatch_digest_invalid')
-    const changed = await this.pool.query<SshCallRow>(
-      `UPDATE pe_ssh_calls SET state='dispatch-intent',dispatch_digest=$4,
-         dispatch_owner=$2,dispatch_epoch=$3,updated_at=now()
-       WHERE id=$1 AND lease_owner=$2 AND lease_epoch=$3 AND lease_until>now()
-         AND state='ready' AND cancel_requested=false AND pod_uid IS NOT NULL
-         AND runner_instance_id IS NOT NULL RETURNING *`,
-      [lease.callId, lease.owner, lease.epoch, digest])
-    if (!changed.rows[0]) throw new PlatformError(409, 'ssh_call_state_or_lease_changed')
-    return changed.rows[0]
+    return transaction(this.pool, async client => {
+      const found = await client.query<SshCallRow>(
+        `SELECT * FROM pe_ssh_calls WHERE id=$1 AND lease_owner=$2 AND lease_epoch=$3
+         AND lease_until>clock_timestamp() AND state='ready' AND cancel_requested=false
+         AND pod_uid IS NOT NULL AND runner_instance_id IS NOT NULL FOR UPDATE`,
+        [lease.callId, lease.owner, lease.epoch])
+      const call = found.rows[0]
+      if (!call) throw new PlatformError(409, 'ssh_call_state_or_lease_changed')
+      const connection = await client.query<{ enabled: boolean; revision: number; credential_revision: number }>(
+        `SELECT enabled,revision,credential_revision FROM pe_ssh_connections
+         WHERE id=$1 AND user_id=$2 FOR SHARE`, [call.connection_id, call.user_id])
+      const current = connection.rows[0]
+      const authorized = current?.enabled === true && current.revision === call.connection_revision
+        && current.credential_revision === call.credential_revision
+      // Waiting for a connection lock can outlive the lease; transaction-start now() is insufficient.
+      const changed = await client.query<SshCallRow>(
+        `UPDATE pe_ssh_calls SET state=$4,dispatch_digest=$5,
+           dispatch_owner=$6,dispatch_epoch=$7,error_code=$8,updated_at=clock_timestamp()
+         WHERE id=$1 AND lease_owner=$2 AND lease_epoch=$3 AND lease_until>clock_timestamp()
+           AND state='ready' AND cancel_requested=false RETURNING *`,
+        [lease.callId, lease.owner, lease.epoch, authorized ? 'dispatch-intent' : 'failed',
+          authorized ? digest : null, authorized ? lease.owner : null, authorized ? lease.epoch : null,
+          authorized ? null : 'ssh_connection_changed'])
+      if (!changed.rows[0]) throw new PlatformError(409, 'ssh_call_state_or_lease_changed')
+      return changed.rows[0]
+    })
   }
 
   /** Record only an observation with the persisted call, Runner, and keyed request identity. */

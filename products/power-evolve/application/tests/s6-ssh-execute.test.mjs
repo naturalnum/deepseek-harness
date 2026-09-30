@@ -260,7 +260,7 @@ test('cancellation during preparation and uncertain POST reconcile without repla
     await f.tasks.finish(result.token, 'completed', null)
   })
 
-test('connection disable serializes with the first credential-bearing execute POST',
+test('connection disable commits during a permitted POST and prevents later permits',
   { timeout: 60_000 }, async t => {
     const f = await setup(t)
     const service = f.makeService()
@@ -274,17 +274,22 @@ test('connection disable serializes with the first credential-bearing execute PO
     const row = await f.calls.claim(service.ownerId, 60_000, 'ssh.execute')
     const pumping = service.pump(row)
     await atPost
-    let disabled = false
-    const disabling = f.connections.toggle(alice, f.saved[0].connectionId, randomUUID(), 1, false)
-      .then(value => { disabled = true; return value })
-    // The POST is still in the call-and-connection lock; a concurrent disable cannot commit yet.
-    await new Promise(resolve => setTimeout(resolve, 50))
-    assert.equal(disabled, false)
-    assert.equal(f.runner.posts.length, 0)
-    release()
-    await pumping
-    const changed = await disabling
-    assert.equal(changed.enabled, false)
+    let deadline
+    try {
+      const intent = await f.calls.get(alice, row.id)
+      assert.equal(intent.state, 'dispatch-intent', 'the permit commits before Runner I/O')
+      assert.ok(intent.dispatch_digest)
+      const changed = await Promise.race([
+        f.connections.toggle(alice, f.saved[0].connectionId, randomUUID(), 1, false),
+        new Promise((_, reject) => { deadline = setTimeout(() => reject(new Error('disable blocked by POST')), 2000) }),
+      ])
+      assert.equal(changed.enabled, false)
+      assert.equal(f.runner.posts.length, 0, 'revocation can finish while the permitted POST is pending')
+    } finally {
+      clearTimeout(deadline)
+      release()
+      await pumping
+    }
     assert.equal(f.runner.posts.length, 1)
     assert.equal((await service.status(alice, approved.action.actionId)).state, 'succeeded')
     const continuation = await f.tasks.claim(randomUUID())
@@ -293,12 +298,62 @@ test('connection disable serializes with the first credential-bearing execute PO
     const enabled = await f.connections.toggle(alice, f.saved[0].connectionId, randomUUID(), 2, true)
     const later = await propose(f, service, alice, enabled, 'echo never')
     await service.decide(alice, later.action.actionId, later.action.fingerprint, true)
-    await f.connections.toggle(alice, enabled.connectionId, randomUUID(), 3, false)
+    const credentialForCall = f.connections.credentialForCall.bind(f.connections)
+    f.connections.credentialForCall = async (...args) => {
+      const credential = await credentialForCall(...args)
+      await f.connections.toggle(alice, enabled.connectionId, randomUUID(), 3, false)
+      return credential
+    }
     f.runner.beforePost = undefined
     const blocked = await f.calls.claim(service.ownerId, 60_000, 'ssh.execute')
     await service.pump(blocked)
-    assert.equal(f.runner.posts.length, 1, 'disable before first POST blocks credential dispatch')
+    assert.equal(f.runner.posts.length, 1, 'disable after credential read prevents a new permit')
     assert.equal((await service.status(alice, later.action.actionId)).state, 'failed')
+    const refused = await f.calls.get(alice, blocked.id)
+    assert.equal(refused.dispatch_digest, null, 'no dispatch intent is recorded for a refused permit')
+    assert.equal(refused.error_code, 'ssh_connection_changed')
+    assert.ok((await f.calls.cleanupCandidates()).some(item => item.id === blocked.id))
+  })
+
+test('cancellation commits during a permitted POST and recovery reconciles without another POST',
+  { timeout: 60_000 }, async t => {
+    const f = await setup(t)
+    const service = f.makeService()
+    const [alice] = f.users
+    const approved = await propose(f, service, alice, f.saved[0], 'echo may-have-run')
+    await service.decide(alice, approved.action.actionId, approved.action.fingerprint, true)
+    let entered, release, deadline
+    const atPost = new Promise(resolve => { entered = resolve })
+    const mayFinish = new Promise(resolve => { release = resolve })
+    f.runner.beforePost = async () => { entered(); await mayFinish }
+    f.runner.unknownOnce = true
+    const row = await f.calls.claim(service.ownerId, 60_000, 'ssh.execute')
+    const pumping = service.pump(row)
+    await atPost
+    try {
+      const cancelled = await Promise.race([
+        service.cancel(alice, approved.action.actionId),
+        new Promise((_, reject) => { deadline = setTimeout(() => reject(new Error('cancel blocked by POST')), 2000) }),
+      ])
+      assert.equal(cancelled.state, 'uncertain')
+      assert.equal((await f.calls.get(alice, row.id)).cancel_requested, true)
+    } finally {
+      clearTimeout(deadline)
+      release()
+      await pumping
+    }
+    assert.equal(f.runner.posts.length, 1)
+    const recovered = f.makeService(randomUUID())
+    const claimed = await f.calls.claim(recovered.ownerId, 60_000, 'ssh.execute')
+    assert.equal(claimed.id, row.id)
+    await recovered.pump(claimed)
+    assert.equal(f.runner.posts.length, 1)
+    assert.equal(f.runner.lookups.at(-1).handle.callId, row.id)
+    assert.equal((await recovered.status(alice, approved.action.actionId)).state, 'uncertain')
+    assert.equal((await f.calls.get(alice, row.id)).cleanup_complete, true)
+    const continuations = await f.pool.query(
+      'SELECT id FROM pe_operations WHERE source_ssh_execute_action_id=$1', [row.id])
+    assert.equal(continuations.rowCount, 1)
   })
 
 test('execute failure effects and missing exit status remain uncertain after restart without replay',
