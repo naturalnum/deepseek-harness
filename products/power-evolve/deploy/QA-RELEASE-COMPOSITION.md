@@ -13,7 +13,7 @@ The deployment renderer is from `399896d103`. An isolated QA adapter retains its
 | Cloud Runner | `sha256:ce9a705b429721328c34e68869a940839ab05d17a601176e3b392ca7a056b67d` |
 | Connector Runner | `sha256:d6febdee0e8048816841e1e51dc14a0c79f6d66015083110c2eeeacae1a94778` |
 
-The QA database has a new non-superuser owner, separate data and fresh test login passwords. Files use a separate POSIX root. Model credentials come from the already-authorized private configuration. Runner images were imported; empty Docker credential Secrets test the configured references only. No authenticated private-registry pull occurred. The notes API and remote HTTP MCP are not configured in this composition.
+The QA database has a new non-superuser owner, separate data and fresh test login passwords. Files use a separate POSIX root. Model credentials come from the already-authorized private configuration. This composition imported Runner images; empty Docker credential Secrets test the configured references only. A separate [private-registry authentication check](QA-RELEASE-BUILD.md#private-registry-authentication) subsequently passed against these exact images. The notes API and remote HTTP MCP are not configured in this composition.
 
 The initial Platform startup was refused at the Kubernetes API. This CNI applies egress matching after service address translation: allowing `10.43.0.1:443` did not admit its endpoint `172.30.247.2:6443`. Setting the existing deployment values to that exact endpoint restored startup. No application authorization or policy enforcement was disabled.
 
@@ -47,4 +47,4 @@ A fresh real-model Session received the fenced connection records, selected the 
 
 ## Remaining gates
 
-The new composition still needs native browser login, streaming, file controls and approval-page acceptance with trusted HTTPS. The local certificate expires after three days; trusting it requires the user's confirmation. This protocol result cannot close that browser gate. Private-registry pulls, the target architecture, external PostgreSQL, shared storage across physical nodes, production ingress, mixed-load capacity and organization identity integration remain subject to S7 target-environment acceptance. Existing fixed-trial evidence retains its recorded scope.
+The new composition still needs native browser login, streaming, file controls and approval-page acceptance with trusted HTTPS. The local certificate expires after three days; trusting it requires the user's confirmation. This protocol result cannot close that browser gate. Organization-registry pulls, the target architecture, external PostgreSQL, shared storage across physical nodes, production ingress, mixed-load capacity and organization identity integration remain subject to S7 target-environment acceptance. Existing fixed-trial evidence retains its recorded scope.

@@ -1,6 +1,6 @@
 # Current release build evidence
 
-This record covers clean-source image builds and their component checks. It does not replace two-user product acceptance, registry pulls or S7 target-infrastructure acceptance. The [fixed cloud candidate](../TRIAL-CLOUD-CANDIDATE.md) retains its existing checkout, data and images.
+This record covers clean-source image builds, component checks and local authenticated registry pulls. It does not replace two-user product acceptance or S7 target-infrastructure acceptance. The [fixed cloud candidate](../TRIAL-CLOUD-CANDIDATE.md) retains its existing checkout, data and images.
 
 ## Cloud Runner
 
@@ -19,11 +19,11 @@ The existing [toolchain script](../sandbox/qa-skills-toolchain.sh) ran in a disp
 
 The first Linux probe reached the container before its HTTP listener was ready and failed with connection refused. After adding a bounded readiness check to the local verification driver, the Linux check passed. The already-passing toolchain check was retained. Both containers and the temporary token directory were removed; three existing infrastructure containers remained running.
 
-Local evidence is under `.artifacts/power-evolve/release-build/cloud-runner/`: `source.json`, `build.log`, `toolchain.log`, `linux-runner.json`, and `image-verification.json`. The image has not been pushed; its local image ID is not a registry manifest digest. AMD64 and production registry pulls remain unverified.
+Local evidence is under `.artifacts/power-evolve/release-build/cloud-runner/`: `source.json`, `build.log`, `toolchain.log`, `linux-runner.json`, and `image-verification.json`. Its local image ID is not a registry manifest digest; the [local registry check](#private-registry-authentication) retains the verified manifest. AMD64 and production registry pulls remain unverified.
 
 ## Connector recovery prerequisite
 
-`5d499bdcb3719cd1a86bcc238cc0bfe91afeb48a` adds the explicit operator registry reference to SSH and STDIO Runner Pods. The old STDIO implementation refused recovery after Kubernetes injected an `imagePullSecrets` reference from its ServiceAccount. A focused regression first reproduced `mcp_runner_resource_changed`; the change retains exact matching and rejects changed or additional references. Application leaf compilation, ten SSH/STDIO tests, lint and the affected bilingual pair passed. Those tests use a Kubernetes/Runner substitute; actual admission and recovery are covered by the local k3s check below, while authenticated registry pulls remain unverified.
+`5d499bdcb3719cd1a86bcc238cc0bfe91afeb48a` adds the explicit operator registry reference to SSH and STDIO Runner Pods. The old STDIO implementation refused recovery after Kubernetes injected an `imagePullSecrets` reference from its ServiceAccount. A focused regression first reproduced `mcp_runner_resource_changed`; the change retains exact matching and rejects changed or additional references. Application leaf compilation, ten SSH/STDIO tests, lint and the affected bilingual pair passed. Those tests use a Kubernetes/Runner substitute; actual admission and recovery are covered by the local k3s check below, and authentication by the [registry check](#private-registry-authentication).
 
 ## Connector Runner
 
@@ -78,6 +78,16 @@ The first attempt ended before compilation because the local driver started the 
 
 Evidence is under `.artifacts/power-evolve/release-integration/`: `application-requalified-attempt-2/build.json`, its complete `build.log`, `application-package-size.json`, `application-requalified-rollout.json` and `ssh-requalified-proof.json`. The [composition record](QA-RELEASE-COMPOSITION.md#application-requalification) distinguishes earlier full protocol evidence from the checks after this image update. Cloud Runner and Connector images are unchanged.
 
+## Private-registry authentication
+
+The three exact ARM64 images were exported as OCI archives and published to an isolated, bcrypt-authenticated TLS Registry 3 fixture. Each remote manifest digest matched its recorded imported digest. The publisher was the official Darwin ARM64 `regctl` v0.11.6 binary, verified against SHA256 `5b52b71861abc300ab513e87a4c3794cff6508035ac7f6b6bdfa1fa5688c0040`. Its configuration, CA and login were confined to a temporary private directory, with Docker credentials disabled. [regctl supports OCI archive import](https://regclient.org/cli/regctl/image/import/) and [an explicit configuration path](https://regclient.org/cli/regctl/config/).
+
+Six real kubelet checks passed in three disposable namespaces. With `imagePullPolicy: Always`, an untrusted certificate, missing credentials and wrong credentials each produced `ErrImagePull`. Correct namespace-scoped pull Secrets admitted through the rendered ServiceAccounts then started the application, Cloud Runner and Connector images with exit zero and UIDs 10001, 1000 and 10001. Both execution images used the existing `gvisor` RuntimeClass. The Pods had read-only roots, no API tokens or credential volumes, and deny-all Pod networking. Existing image layers were cached; this verifies remote TLS/authentication and manifest resolution, not cold-cache layer transfer or the organization's registry.
+
+The node trusted only the fixture registry's CA through a temporary per-registry `hosts.toml`; it contained no login credential. [containerd documents this host configuration](https://github.com/containerd/containerd/blob/main/docs/hosts.md). No OS/browser trust change or cluster restart occurred. The registry was limited to half a CPU and 256 MiB. The namespaces, private files, pulled reference aliases, registry and node CA directory were removed; existing application Deployment identities, generations and images remained unchanged.
+
+Evidence is under `.artifacts/power-evolve/release-integration/`: `registry-pull-proof.json`, `registry-pull-qa.mjs` and `registry-driver.json`. Earlier failed drivers and partial checks remain in `registry-pull-*-attempt-1` through `-attempt-3`. The first `ctr` publisher stalled with zero-byte uploads while a small request using the same CA and authentication succeeded; its precise cause is unknown. Later driver corrections applied CA configuration before login and used the actual RuntimeClass name. These corrections did not change product code.
+
 ## Remaining release checks
 
-All three local ARM64 images now have clean-source build and component evidence. Their [local composition](QA-RELEASE-COMPOSITION.md) also passed real-model native HTTP requests, files, PVC-mounted cloud Git, SSH and restart checks through the formal deployment entry points with explicit local resource overrides. Browser acceptance remains blocked by the local certificate's trust status. The images have not been pushed or promoted into the fixed candidate. Private-registry pulls, complete browser acceptance and target-infrastructure S7 acceptance remain unverified. AMD64 remains unverified. These results do not establish a complete release.
+All three ARM64 images have clean-source build, component and local authenticated-registry evidence. Their [local composition](QA-RELEASE-COMPOSITION.md) also passed real-model native HTTP requests, files, PVC-mounted cloud Git, SSH and restart checks through the formal deployment entry points with explicit local resource overrides. Browser acceptance remains blocked by the local certificate's trust status. The images have not been promoted into the fixed candidate or an organization registry. Complete browser acceptance, AMD64, cold-cache production pulls and target-infrastructure S7 acceptance remain unverified. These results do not establish a complete release.
