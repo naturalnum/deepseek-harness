@@ -24,13 +24,12 @@ export class NativeWorkspaceRead {
     private readonly sessions: NativeSessionRead, private readonly maxPerUser: number) {}
 
   /**
-   * List owned metadata even when a previously ready binding is missing.
+   * List owned metadata without probing physical storage.
    * @param user Authenticated Workspace owner.
    * @returns Logical Workspace metadata without physical paths.
    */
   async list(user: Identity): Promise<{ items: ReturnType<typeof view>[] }> {
     await this.files.defaultWorkspaceId(user.userId)
-    await this.files.bindings.missing(user)
     const result = await this.pool.query<WorkspaceRow>(
       'SELECT id,title,is_default,created_at,binding_updated_at FROM pe_workspaces WHERE user_id=$1 ORDER BY is_default DESC,created_at,id',
       [user.userId])

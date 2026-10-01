@@ -130,6 +130,27 @@ test('V27 retains legacy bytes, stable Session identity, mutation generation and
 
 test('storage selection and recovery use actual PG and POSIX without creating Sandbox resources', { timeout: 90000 }, async t => {
   await isolated(async c => {
+    await t.test('native list and baseline retain Session membership without probing storage', async () => {
+      const alice = await owner(c.pool), workspace = await c.files.workspaceForUser(alice.userId)
+      const sessionId = await session(c.pool, alice, workspace.id)
+      await rename(workspace.path, `${workspace.path}-saved`)
+      const originalMissing = c.bindings.missing, originalProbe = c.files.safe.probeDirectory
+      let missingCalls = 0, probeCalls = 0
+      c.bindings.missing = async (...args) => { missingCalls++; return originalMissing.apply(c.bindings, args) }
+      c.files.safe.probeDirectory = async (...args) => { probeCalls++; return originalProbe.apply(c.files.safe, args) }
+      try {
+        assert((await c.workspaces.list(alice)).items.some(item => item.workspaceId === workspace.id))
+        const baseline = (await c.workspaces.baseline(alice)).items.find(item => item.workspaceId === workspace.id)
+        assert.deepEqual(baseline.sessionIds, [sessionId])
+        assert.equal(missingCalls, 0); assert.equal(probeCalls, 0)
+        assert.equal((await c.pool.query('SELECT binding_state FROM pe_workspaces WHERE id=$1', [workspace.id])).rows[0].binding_state, 'ready')
+        const missing = (await c.bindings.missing(alice)).items.find(item => item.workspaceId === workspace.id)
+        assert.equal(missing.state, 'missing'); assert.equal(missingCalls, 1); assert(probeCalls > 0)
+      } finally {
+        c.bindings.missing = originalMissing; c.files.safe.probeDirectory = originalProbe
+      }
+    })
+
     await t.test('provisioning metadata is ordinary; ready roots never silently recreate after loss', async () => {
       const alice = await owner(c.pool)
       const id = await c.files.defaultWorkspaceId(alice.userId)

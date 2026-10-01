@@ -12,6 +12,8 @@ V27 将稳定的 Workspace 身份与物理目录分开。`pe_storage_spaces` 保
 
 FileService 与存储服务共用 SafePosix。访问以描述符验证 rootKey、绑定目录和每个相对分量，不跟随链接，不读取特殊文件。只有 provisioning 根和显式目录创建允许 mkdir；ready 根或绑定丢失时返回 503，不自动重建。缺失状态仍进入原生工作区元数据，普通对话和 Session 列举可继续读取。
 
+原生工作区 list/baseline 只读取元数据，不探测物理目录。显式 `workspaceBindingsMissing` RPC 检测丢失并更新绑定状态，恢复弹窗调用该入口；文件操作仍验证当前绑定及目录。
+
 文件读取在账户和绑定锁内固定目录及代次。发布可传入已有 PoolClient，避免嵌套账户锁。下载的 `readBytesInWorkspace` 可接收预期代次；变代返回 `409 file_binding_changed`。文件写回执保存绑定代次，同请求在换代后拒绝重用。
 
 ## 持久恢复
