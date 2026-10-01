@@ -25,15 +25,18 @@
 - 两用户分别通过原生 `skill` 读取 PDF、Word 说明；Alice 在恢复后的原 Session 额外用 `skill_resource` 读取 `SKILL.md`。PG 记录实际工具调用及返回摘要，云执行记录保持 14 条、沙盒实例历史保持 8 条。读取说明没有创建执行环境。
 - Alice 在同一 Session 经 `office` 创建、写入并校验 Word 文件，再经原生报告技能调用已选版本的套件脚本，初始化工作流并执行同级生成器的样例目录门禁。四次执行均成功并完成可信续接；实际 Pod 同时挂载代次 4 工作区、用户 Home 和用户独立只读技能库。沙盒内读取 Word 技能摘要与受控文件服务返回一致，`statvfs` 也确认只读挂载；既有 Git HEAD 和标记保持不变。
 - 原生文件按钮发布当前 Word 版本后，Host 工作区下载、Platform 不可变产物下载与实际文件字节一致；旧布局和旧相对目录没有新增同名文件。Bob 读取 Alice 技能、准备该文件下载或直接下载其产物均返回 404。旧轮次指向的文件已被后续命令修改时，原生入口拒绝发布旧摘要；当前版本可正常发布。
+- 在已恢复的 Alice Session 从原生插件页创建一条 SSH 连接，经独立可信页核对并批准只读命令。实际 gVisor Connector Pod 只挂载令牌与临时目录，UID 与 PG 调用记录一致；命令在远端 `/home/qa-alice` 成功，原 Session 恰好续接一次，临时资源清理完成。期间工作区执行记录保持 18 条、沙盒实例历史保持 8 条。随后用户在同一 Session 发起云命令，新的工作区 Pod 使用代次 4 绑定，读回既有标记和 Git HEAD；SSH 远端目录与云工作区各自保持原职责。
 
 以上技能联测验证版本、挂载、执行、文件归属与续接。Word 结构校验通过，但样例使用未定义的 `Heading1` 样式产生警告；报告门禁返回 0 错误、6 个样例内容警告。两者均保留在实际回执中，不作为完整文档版式或业务报告质量验收。
 
 定向回归使用真实独立临时 PG 与 POSIX。Sandbox fixture 中的 Kubernetes 回复明确是替身，与上面的真实 k3s 演练分别记录：`s2-sandbox-bindings` 23 项、`storage-disabled-cleanup` 3 项、`storage-recovery-shutdown` 4 项、`sandbox-stop-finalizer` 6 项、`account-storage-composition` 23 项、`storage-browser-admission` 8 项通过。各缺陷先用原代码复现；新增浏览器授权测试通过真实 Platform HTTP 入口。Application 叶编译、相应提交 lint 与 whitespace 检查通过，未运行仓库全量矩阵。
 
-本地证据位于 `.artifacts/power-evolve/cloud-combined-qa/`：`facts-before-hi.json`、`facts-after-hi.json`、`execution-proof.json`、`combined-http-readback.json`、两用户浏览器记录、`disabled-cleanup-k3s-proof.json`、`graceful-recovery-{observe,stopped,proof}.json`、`graceful-recovery-browser.txt`、`skill-description-proof.json`、`skill-execution-proof.json`、`skill-file-readback.json` 和 `skill-combined-browser.txt`。秘密配置只在用户私有目录，未写入证据正文。
+审计另发现三个 S8 验收驱动仍按 `workspaceId` 拼接旧物理目录，已在 `1a16b39857` 改为读取实际 ready binding，并对照该次执行的 Pod 快照。新 helper 的 16 项离线检查使用真实临时 POSIX 与显式 PG 结果替身；没有重跑旧浏览器全矩阵。集成后又在上述真实 SSH→云执行场景使用该 helper，核对当前绑定、实际文件与执行快照，通过真实 PG／POSIX 验证。
+
+本地证据位于 `.artifacts/power-evolve/cloud-combined-qa/`：`facts-before-hi.json`、`facts-after-hi.json`、`execution-proof.json`、`combined-http-readback.json`、两用户浏览器记录、`disabled-cleanup-k3s-proof.json`、`graceful-recovery-{observe,stopped,proof}.json`、`graceful-recovery-browser.txt`、`skill-description-proof.json`、`skill-execution-proof.json`、`skill-file-readback.json`、`skill-combined-browser.txt`、`ssh-{pending,observed,final}.json`、`ssh-cloud-followup.json` 和 SSH 浏览器记录。秘密配置只在用户私有目录，未写入证据正文。
 
 ## 环境与后续关口
 
 开发验收入口为 `http://127.0.0.1:19746/login`，原生客户端为 `http://127.0.0.1:19744/native/`。数据库 `pe_cloud_combined_20261001`、文件根 `pe-cloud-combined-qa` 与同名 namespace 均独立于固定试用。复用现有 PG 容器和 k3s，不新增 Docker 基础设施；启停使用本地证据目录中的 `control.mjs up|stop|restart|status`，日志同目录，运行 Node 22。
 
-下一步只核对尚未覆盖且确实受 S2 变更影响的连接器、技能及撤销组合路径，然后冻结候选版。正常关闭的真实演练已覆盖恢复中断，不代表所有网络故障或多物理节点场景。k3s 与 POSIX 仍在同一笔记本；目标服务器、真实跨机共享卷、外部 PG、生产入口、容量及组织身份源保持 S7 未完成项。本轮受控 namespace 禁止通用外连，因此没有把本地 Git 测试计为远端 Git 下载或依赖安装验收。
+本轮受影响路径的组合验收已通过，下一步为独立备份恢复与候选版冻结。SSH 复用既有测试目标及独立的 `pe-connector-s3-account-v25-qa` namespace，两个 Platform 使用本环境单独的凭据加密 key；没有新增常驻 Docker 基础设施。正常关闭的真实演练已覆盖恢复中断，不代表所有网络故障或多物理节点场景。k3s 与 POSIX 仍在同一笔记本；目标服务器、真实跨机共享卷、外部 PG、生产入口、容量及组织身份源保持 S7 未完成项。工作区 namespace 禁止通用外连，Connector namespace 仅准许固定测试目标，因此没有把本地 Git 测试计为远端 Git 下载或依赖安装验收。
