@@ -39,3 +39,27 @@ test('a finalizer removed without durable stop proof never releases the writer',
   assert.deepEqual(slot, { state: 'stopping', stop_evidence: null })
   assert.equal(f.kube.mutations.length, mutations)
 })
+
+for (const missing of ['slot proof', 'instance proof', 'current termination']) {
+  test(`a retained Pod without ${missing} keeps its writer fenced`, { timeout: 10000 }, async t => {
+    const f = await createSandboxFixture(t)
+    const userId = await f.createUser(), { sessionId } = await f.createSession(userId)
+    const ready = await f.manager.ensureReady(sessionId, userId, async () => {})
+    const call = f.kube.call.bind(f.kube)
+    let retained
+    f.kube.call = async (method, path, body) => {
+      if (method === 'GET' && path.endsWith(`/pods/${ready.name}`) && retained) return structuredClone(retained)
+      const result = await call(method, path, body)
+      if (method === 'PATCH' && path.endsWith(`/pods/${ready.name}`)) {
+        retained = structuredClone(result)
+        if (missing === 'slot proof') await f.pool.query('UPDATE pe_mount_slots SET stop_pod_uid=NULL,stop_evidence=NULL WHERE user_id=$1', [userId])
+        else if (missing === 'instance proof') await f.pool.query('UPDATE pe_sandbox_instances SET stop_pod_uid=NULL,stop_evidence=NULL WHERE session_id=$1', [sessionId])
+        else retained.status = { phase: 'Running', containerStatuses: [{ name: 'runner', ready: true, restartCount: 0 }] }
+      }
+      return result
+    }
+    await assert.rejects(f.manager.recycleIdle(0), { code: 'mount_stop_pod_identity_changed' })
+    assert.equal((await f.pool.query('SELECT state FROM pe_mount_slots WHERE user_id=$1', [userId])).rows[0].state, 'stopping')
+    assert.equal((await f.pool.query('SELECT state FROM pe_sandbox_instances WHERE session_id=$1', [sessionId])).rows[0].state, 'deleting')
+  })
+}
