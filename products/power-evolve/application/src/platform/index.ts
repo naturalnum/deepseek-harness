@@ -29,6 +29,8 @@ import { NativeWorkspaceRead } from './native-workspace-read.ts'
 import { NativeFileRead, nativeFileRequest, nativeFileTextRequest, nativeFileBytesRequest } from './native-files.ts'
 import { FileService } from './files.ts'
 import { FileDownloadService } from './file-downloads.ts'
+import { WORKSPACE_BINDING_ROUTES, storageDirectoriesRequest, storageDirectoryCreateRequest,
+  workspaceBindingRestoreRequest, workspaceBindingStatusRequest } from '@power-evolve/contracts/workspace-binding'
 import { FILE_DOWNLOAD_MAX_FILES, FILE_DOWNLOAD_MAX_SOURCE_BYTES, FILE_DOWNLOAD_PLATFORM_PATH,
   fileDownloadPrepareRequest } from '@power-evolve/contracts/file-download'
 import { fileDownloadDisposition, parseFileDownloadQuery, writeFileDownload } from '../file-download-http.ts'
@@ -116,6 +118,8 @@ export const Config = schema.object({
   leaseMs: schema.number().min(1000).required(), tokenLifetimeMs: schema.number().min(1000).required(),
   maxPendingPerUser: schema.number().step(1).min(1).required(), maxActivePerUser: schema.number().step(1).min(1).required(),
   maxWorkspacesPerUser: schema.number().step(1).min(1).default(16),
+  workspaceRecoveryPollMs: schema.number().step(1).min(100).default(500),
+  workspaceRecoveryLeaseMs: schema.number().step(1).min(1000).max(300000).default(90000),
   maxSkillsPerUser: schema.number().step(1).min(1).max(256).default(64),
   skillLibraryRoot: schema.string().default(''),
   preinstalledSkills: schema.array(schema.string()).default([]),
@@ -349,7 +353,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   await connectors.seedPermissions(users.map(user => user.username))
   connectors.start()
   ctx.effect(() => () => connectors.close())
-  const executions = executionEnabled ? new ExecutionService(tasks, new SandboxManager(
+  const sandboxManager = executionEnabled ? new SandboxManager(
     await KubernetesClient.fromFile(config.sandboxKubeconfigFile), files, pool,
     (await readFile(config.sandboxKeyFile, 'utf8')).trim(), {
       namespace: config.sandboxNamespace, image: config.sandboxImage,
@@ -361,9 +365,36 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         timeoutMs: config.sandboxScanTimeoutMs, maxSnapshotBytes: config.sandboxScanMaxSnapshotBytes,
         maxFiles: config.sandboxScanMaxFiles,
       },
-    }), { service: executionFiles, timeoutMs: config.sandboxFileVerifyTimeoutMs },
+    }) : null
+  const executions = sandboxManager ? new ExecutionService(tasks, sandboxManager,
+    { service: executionFiles, timeoutMs: config.sandboxFileVerifyTimeoutMs },
     config.sandboxConcurrency, config.sandboxPollMs, config.sandboxIdleMs, config.sandboxCommandTimeoutMs) : null
   if (executions) { executions.start(); ctx.effect(() => () => executions.close()) }
+  const recoveryStop = new AbortController()
+  const recoveryPolling = (async () => {
+    let unavailable = false
+    while (!recoveryStop.signal.aborted) {
+      try {
+        await files.bindings.poll(async (claim, assertLease) => {
+          if (!sandboxManager) throw new PlatformError(503, 'workspace_execution_unavailable')
+          return sandboxManager.stopForRecovery(claim, assertLease)
+        }, recoveryStop.signal, { ownerId: instanceId, leaseMs: config.workspaceRecoveryLeaseMs })
+        if (unavailable) ctx.logger.info('Workspace recovery polling resumed')
+        unavailable = false
+      } catch (error) {
+        if (!recoveryStop.signal.aborted && !unavailable) {
+          ctx.logger.warn('Workspace recovery polling unavailable (%s)',
+            error instanceof PlatformError ? error.code : 'internal_error')
+        }
+        unavailable = true
+      }
+      try { await delay(config.workspaceRecoveryPollMs, undefined, { signal: recoveryStop.signal }) }
+      catch (_aborted) { /* Shutdown interrupts the polling interval. */ }
+    }
+  })()
+  const closeRecovery = async () => { recoveryStop.abort(); await recoveryPolling }
+  mcpShutdown.add(closeRecovery)
+  ctx.effect(() => closeRecovery)
   const devices = new DeviceService(tasks, config.sandboxCommandTimeoutMs, files)
 
   const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
@@ -832,7 +863,27 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       }
       case '/workspaces/create': {
         const value = workspaceCreateRequest.parse(input)
-        sendJson(res, await nativeWorkspaces.create(user, value.requestId, value.title)); return
+        sendJson(res, await nativeWorkspaces.create(user, value.requestId, value.title, value.target)); return
+      }
+      case WORKSPACE_BINDING_ROUTES.storageSpaces: {
+        z.object({}).strict().parse(input)
+        sendJson(res, await files.bindings.spaces(user)); return
+      }
+      case WORKSPACE_BINDING_ROUTES.storageDirectories: {
+        sendJson(res, await files.bindings.directories(user, storageDirectoriesRequest.parse(input))); return
+      }
+      case WORKSPACE_BINDING_ROUTES.storageDirectoryCreate: {
+        sendJson(res, await files.bindings.createDirectory(user, storageDirectoryCreateRequest.parse(input))); return
+      }
+      case WORKSPACE_BINDING_ROUTES.workspaceBindingsMissing: {
+        z.object({}).strict().parse(input)
+        sendJson(res, await files.bindings.missing(user)); return
+      }
+      case WORKSPACE_BINDING_ROUTES.workspaceBindingRestore: {
+        sendJson(res, await files.bindings.restore(user, workspaceBindingRestoreRequest.parse(input))); return
+      }
+      case WORKSPACE_BINDING_ROUTES.workspaceBindingStatus: {
+        sendJson(res, await files.bindings.status(user, workspaceBindingStatusRequest.parse(input))); return
       }
       case '/artifacts/publish': {
         const value = artifactPublishRequest.parse(input)

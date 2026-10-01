@@ -126,6 +126,32 @@ test('S2 downloads use real isolated PostgreSQL and descriptor-relative workspac
       assert.deepEqual(await readOnlyCounts(pool), before)
     })
 
+    await t.test('a new binding generation invalidates prepared downloads even when bytes match', async () => {
+      const f = await fixture(pool, root)
+      const service = new FileDownloadService(pool, f.files, limits)
+      const input = request(f.session, ['one.bin'])
+      const prepared = await service.prepare(f.user, input, signal())
+      await pool.query('UPDATE pe_workspaces SET binding_generation=binding_generation+1 WHERE id=$1', [f.workspace.id])
+      await assert.rejects(service.open(f.user, content(input, prepared), signal()), { status: 409, code: 'download_changed' })
+      const current = await service.prepare(f.user, input, signal())
+      assert.notEqual(current.revision, prepared.revision)
+      assert.equal(current.sourceBytes, prepared.sourceBytes)
+    })
+
+    await t.test('one preparation cannot combine reads from different binding generations', async () => {
+      const f = await fixture(pool, root, { 'a.txt': Buffer.from('a'), 'b.txt': Buffer.from('b') })
+      const wrapped = controlled(f.files)
+      const service = new FileDownloadService(pool, wrapped, limits)
+      wrapped.blockNext()
+      const pending = service.prepare(f.user, request(f.session, ['a.txt', 'b.txt']), signal())
+      const rejected = assert.rejects(pending, { status: 409, code: 'download_changed' })
+      await wrapped.entered.promise
+      await pool.query('UPDATE pe_workspaces SET binding_generation=binding_generation+1 WHERE id=$1', [f.workspace.id])
+      wrapped.release.resolve()
+      await rejected
+      assert.equal(wrapped.calls, 1)
+    })
+
     await t.test('foreign Session, missing, unsafe and oversized selections are denied', async () => {
       const f = await fixture(pool, root)
       const bob = await fixture(pool, root)
@@ -282,8 +308,8 @@ test('S2 downloads use real isolated PostgreSQL and descriptor-relative workspac
       await assert.rejects(service.prepare(f.user, input, signal()), { status: 429 })
       wrapped.release.resolve()
       await wrapped.pending
-      clockTest.mock.timers.reset()
       await service.prepare(f.user, input, signal())
+      clockTest.mock.timers.reset()
     })
 
     await t.test('ZIP backpressure keeps the second file unread until the first is consumed', async () => {

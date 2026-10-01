@@ -42,6 +42,8 @@
         sandboxReadyTimeoutMs: 60000
         sandboxConcurrency: 4
         sandboxPollMs: 500
+        workspaceRecoveryPollMs: 500
+        workspaceRecoveryLeaseMs: 90000
         sandboxIdleMs: 300000
         sandboxCommandTimeoutMs: 60000
         sandboxFileVerifyTimeoutMs: 15000

@@ -2,6 +2,7 @@
 import { createHash } from 'node:crypto'
 import { posix } from 'node:path'
 import type { Pool } from 'pg'
+import { bindingGeneration } from '@power-evolve/contracts/workspace-binding'
 import {
   FILE_DOWNLOAD_MAX_FILE_BYTES, FILE_DOWNLOAD_MAX_FILES, FILE_DOWNLOAD_MAX_SOURCE_BYTES,
   fileDownloadPrepareRequest, fileDownloadContentRequest, fileDownloadUrl, fileDownloadView,
@@ -24,7 +25,8 @@ export interface FileDownloadLimits {
   readonly transferTimeoutMs: number
 }
 interface PreparedFile { path: string; size: number; sha256: string }
-interface Prepared { view: FileDownloadView; files: PreparedFile[] }
+interface DownloadBinding { workspaceId: string; generation: number }
+interface Prepared { view: FileDownloadView; files: PreparedFile[]; binding: DownloadBinding }
 type Authorize = () => Promise<void>
 
 /** Downloads never create Workspaces, mutate files, or read storage from the Host. */
@@ -73,10 +75,10 @@ export class FileDownloadService {
     try {
       const prepared = await this.inspect(user, input, lifetime, authorize, true)
       if (prepared.view.revision !== request.revision) throw new PlatformError(409, 'download_changed')
-      await this.authorize(user, input.sessionId, lifetime, authorize, prepared.view.workspaceId)
+      await this.authorize(user, input.sessionId, lifetime, authorize, prepared.binding)
       const body = createDownloadStream(streamSignal => {
         const chunks = (file: PreparedFile) => this.verifiedChunks(user, input.sessionId,
-          prepared.view.workspaceId, file, lifetime, streamSignal, authorize)
+          prepared.binding, file, lifetime, streamSignal, authorize)
         if (prepared.files.length === 1) return chunks(prepared.files[0]!)
         async function* entries(): AsyncGenerator<DownloadZipEntry> {
           for (const file of prepared.files) yield { path: file.path, chunks: chunks(file) }
@@ -120,68 +122,74 @@ export class FileDownloadService {
   }
 
   private async authorize(user: Identity, session: string, lifetime: TransferLifetime,
-    authorize?: Authorize, expectedWorkspace?: string, signal = lifetime.signal): Promise<string> {
+    authorize?: Authorize, expected?: DownloadBinding, signal = lifetime.signal): Promise<DownloadBinding> {
     signal.throwIfAborted()
     if (authorize) await lifetime.wait(authorize(), signal)
-    const workspace = await lifetime.wait(transaction(this.pool, async client => {
+    const binding = await lifetime.wait(transaction(this.pool, async client => {
       assertProductLoginAllowed(await requireActiveAccount(client, user.userId))
-      const result = await client.query<{ workspace_id: string }>(`SELECT s.workspace_id FROM pe_sessions s
+      const result = await client.query<{ workspace_id: string; binding_generation: string; binding_state: string }>(
+        `SELECT s.workspace_id,w.binding_generation,w.binding_state FROM pe_sessions s
         JOIN pe_workspaces w ON w.id=s.workspace_id AND w.user_id=$2 WHERE s.id=$1 AND s.user_id=$2`, [session, user.userId])
       if (!result.rows[0]) throw new PlatformError(404, 'session_not_found')
-      return result.rows[0].workspace_id
+      const row = result.rows[0]
+      if (row.binding_state !== 'ready') throw new PlatformError(409, 'download_changed')
+      return { workspaceId: row.workspace_id, generation: bindingGeneration.parse(Number(row.binding_generation)) }
     }), signal)
     signal.throwIfAborted()
-    if (expectedWorkspace !== undefined && workspace !== expectedWorkspace) throw new PlatformError(409, 'download_changed')
-    return workspace
+    if (expected !== undefined && (binding.workspaceId !== expected.workspaceId || binding.generation !== expected.generation)) {
+      throw new PlatformError(409, 'download_changed')
+    }
+    return binding
   }
 
-  private async read(user: Identity, session: string, workspace: string, path: string,
+  private async read(user: Identity, session: string, binding: DownloadBinding, path: string,
     lifetime: TransferLifetime, signal: AbortSignal, authorize?: Authorize, changed = false): Promise<Buffer> {
-    await this.authorize(user, session, lifetime, authorize, workspace, signal)
+    await this.authorize(user, session, lifetime, authorize, binding, signal)
     let bytes: Buffer
-    try { bytes = await lifetime.wait(this.files.readBytesInWorkspace(user, workspace, path, signal), signal) }
+    try { bytes = await lifetime.wait(this.files.readBytesInWorkspace(user, binding.workspaceId, path, signal, binding.generation), signal) }
     catch (error) {
-      if (changed && error instanceof PlatformError && ['file_not_found', 'file_too_large', 'invalid_path'].includes(error.code)) {
+      if (error instanceof PlatformError && (error.code === 'file_binding_changed'
+        || changed && ['file_not_found', 'file_too_large', 'invalid_path'].includes(error.code))) {
         throw new PlatformError(409, 'download_changed')
       }
       throw error
     }
-    await this.authorize(user, session, lifetime, authorize, workspace, signal)
+    await this.authorize(user, session, lifetime, authorize, binding, signal)
     if (bytes.length > FILE_DOWNLOAD_MAX_FILE_BYTES) throw new PlatformError(413, 'download_too_large')
     return bytes
   }
 
   private async inspect(user: Identity, request: FileDownloadPrepareRequest, lifetime: TransferLifetime,
     authorize?: Authorize, changed = false): Promise<Prepared> {
-    const workspace = await this.authorize(user, request.sessionId, lifetime, authorize)
+    const binding = await this.authorize(user, request.sessionId, lifetime, authorize)
     const files: PreparedFile[] = []
     let sourceBytes = 0
     for (const path of request.paths) {
-      const bytes = await this.read(user, request.sessionId, workspace, path, lifetime, lifetime.signal, authorize, changed)
+      const bytes = await this.read(user, request.sessionId, binding, path, lifetime, lifetime.signal, authorize, changed)
       sourceBytes += bytes.length
       if (sourceBytes > this.limits.maxTotalBytes) throw new PlatformError(changed ? 409 : 413,
         changed ? 'download_changed' : 'download_too_large')
       files.push({ path, size: bytes.length, sha256: sha256(bytes) })
     }
-    const revision = sha256(Buffer.from(JSON.stringify(files)))
+    const revision = sha256(Buffer.from(JSON.stringify({ binding, files })))
     const multiple = files.length > 1
     const totalBytes = sourceBytes + (multiple ? files.reduce((total, file) => total + 92 + 2 * Buffer.byteLength(file.path), 22) : 0)
-    const view = fileDownloadView.parse({ sessionId: request.sessionId, workspaceId: workspace, revision,
+    const view = fileDownloadView.parse({ sessionId: request.sessionId, workspaceId: binding.workspaceId, revision,
       downloadUrl: this.url({ ...request, revision }), fileName: multiple ? 'workspace-files.zip' : posix.basename(files[0]!.path),
       contentType: multiple ? 'application/zip' : 'application/octet-stream', fileCount: files.length, sourceBytes, totalBytes })
-    return { view, files }
+    return { view, files, binding }
   }
 
-  private async* verifiedChunks(user: Identity, session: string, workspace: string, file: PreparedFile,
+  private async* verifiedChunks(user: Identity, session: string, binding: DownloadBinding, file: PreparedFile,
     lifetime: TransferLifetime, signal: AbortSignal, authorize?: Authorize): AsyncGenerator<Uint8Array> {
-    const bytes = await this.read(user, session, workspace, file.path, lifetime, signal, authorize, true)
+    const bytes = await this.read(user, session, binding, file.path, lifetime, signal, authorize, true)
     if (bytes.length !== file.size || sha256(bytes) !== file.sha256) throw new PlatformError(409, 'download_changed')
     for (let offset = 0; offset < bytes.length; offset += CHUNK_BYTES) {
-      await this.authorize(user, session, lifetime, authorize, workspace, signal)
+      await this.authorize(user, session, lifetime, authorize, binding, signal)
       yield bytes.subarray(offset, offset + CHUNK_BYTES)
     }
     // Empty files and final ZIP records also require current authority.
-    await this.authorize(user, session, lifetime, authorize, workspace, signal)
+    await this.authorize(user, session, lifetime, authorize, binding, signal)
   }
 }
 

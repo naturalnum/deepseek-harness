@@ -96,7 +96,7 @@ export class ArtifactService {
       )
       const workspaceId = session.rows[0]?.workspace_id
       if (!workspaceId) throw new PlatformError(404, 'session_not_found')
-      const source = await this.files.readInWorkspace(user, workspaceId, sourcePath)
+      const source = await this.files.readInWorkspace(user, workspaceId, sourcePath, client)
       const bytes = Buffer.from(source.data, 'base64')
       if (bytes.length !== source.size || bytes.length > MAX_BYTES || digest(bytes) !== source.revision) {
         throw new PlatformError(503, 'artifact_source_changed')

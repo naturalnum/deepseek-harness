@@ -18,7 +18,7 @@ const fact = (path, bytes) => ({ path, sizeBytes: bytes.length, sha256: sha256(b
 const observation = (files, status = 'complete', reasons = []) => ({ status, files, reasons })
 const request = (sessionId, executionIds) => ({ sessionId, executionIds })
 
-async function isolated(run, initialVersion = 26) {
+async function isolated(run, initialVersion = schemaVersions.CURRENT_SCHEMA_VERSION) {
   const privateDir = process.env.PE_PRIVATE_DIR ?? join(homedir(), '.config/power-evolve/shared-host-s3-account-v25-qa')
   const databaseUrl = (await readFile(join(privateDir, 'database-url'), 'utf8')).trim()
   const name = `pe_s2_facts_e2_${randomBytes(10).toString('hex')}`
@@ -290,12 +290,21 @@ test('S2 B file facts and conditional artifacts use real isolated PG and private
   })
 })
 
-// Apply the real released migrations through V25, then exercise the ordinary V26 initializer.
+// Legacy bytes and rows are prepared without calling services that require newer tables.
 test('V25 to V26 preserves an existing artifact, null expected revision and successful legacy retry', { timeout: 30000 }, async () => {
   await isolated(async (pool, root, files) => {
-    const { user } = await owner(pool, files), s = await session(pool, files, user)
+    const user = identity.parse({ userId: randomUUID(), username: `legacy-${randomUUID()}` })
+    const workspaceId = randomUUID(), sessionId = randomUUID()
+    await pool.query('INSERT INTO pe_users(id,username,password_hash,settings) VALUES($1,$2,$3,$4)',
+      [user.userId, user.username, 'fixture-only', { model: 'fixture', maxTokens: 100, revision: 1 }])
+    await pool.query('INSERT INTO pe_workspaces(id,user_id,title,is_default) VALUES($1,$2,$3,true)',
+      [workspaceId, user.userId, 'Legacy Workspace'])
+    await pool.query('INSERT INTO pe_sessions(id,user_id,create_request_id,header,workspace_id) VALUES($1,$2,$3,$4,$5)',
+      [sessionId, user.userId, randomUUID(), {}, workspaceId])
+    const s = { id: sessionId, workspace: { id: workspaceId, path: join(root, 'workspaces', workspaceId) } }
+    await mkdir(s.workspace.path, { mode: 0o700 })
     const original = Buffer.from('published before migration')
-    await put(files, user, s.workspace, 'result.txt', original)
+    await writeFile(join(s.workspace.path, 'result.txt'), original)
     const artifactRoot = join(root, 'legacy-artifacts'), id = randomUUID()
     const directory = join(artifactRoot, user.userId)
     await mkdir(directory, { recursive: true, mode: 0o700 })
@@ -306,10 +315,13 @@ test('V25 to V26 preserves an existing artifact, null expected revision and succ
     assert.equal((await pool.query(`SELECT count(*)::int AS count FROM information_schema.columns
       WHERE table_schema='public' AND table_name='pe_artifacts' AND column_name='expected_revision'`)).rows[0].count, 0)
     const before = await counts(pool)
-    await initializeDatabase(pool)
+    await transaction(pool, client => client.query(schemaVersions.schemaV26))
     assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 26)
     assert.deepEqual(await counts(pool), before)
     assert.equal((await pool.query('SELECT expected_revision FROM pe_artifacts WHERE id=$1', [id])).rows[0].expected_revision, null)
+    await initializeDatabase(pool)
+    assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, schemaVersions.CURRENT_SCHEMA_VERSION)
+    assert.deepEqual(await counts(pool), before)
     await writeFile(join(s.workspace.path, 'result.txt'), 'later workspace edit')
     const artifacts = new ArtifactService(pool, files, artifactRoot)
     await artifacts.init()

@@ -123,6 +123,12 @@ async function version(url) {
       // Pending human review needs a fresh decision; terminal uncertainty remains uncertainty after restore.
       active.rows[0].mcpActions = (await client.query("SELECT count(*)::integer AS n FROM pe_mcp_actions WHERE state IN ('approved','preparing','dispatch-intent')")).rows[0].n
     }
+    if (schema.rows[0]?.version >= 27) {
+      active.rows[0].workspaceRecoveries = (await client.query(
+        "SELECT count(*)::integer AS n FROM pe_workspace_binding_requests WHERE state IN ('accepted','stopping')")).rows[0].n
+      active.rows[0].storageDirectories = (await client.query(
+        "SELECT count(*)::integer AS n FROM pe_storage_directory_requests WHERE state='accepted'")).rows[0].n
+    }
     const packages = await client.query('SELECT user_id,archive_digest,manifest_digest,manifest FROM pe_skill_package_versions')
     return { schema: schema.rows[0]?.version, active: active.rows[0], packages: packages.rows,
       mcpRecords: Number(mcpRecords), sshRecords: Number(ssh.records), sshQuarantined: Number(ssh.quarantined) }
