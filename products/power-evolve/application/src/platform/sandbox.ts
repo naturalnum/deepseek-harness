@@ -923,6 +923,8 @@ export class SandboxManager {
     const candidate = await this.pool.query<{ user_id: string }>(
       `SELECT m.user_id FROM pe_mount_slots m JOIN pe_sandbox_instances s ON s.session_id=m.session_id
        WHERE m.state IN ('ready','stopping')
+       AND NOT EXISTS(SELECT 1 FROM pe_workspaces w WHERE w.user_id=m.user_id
+         AND w.binding_state IN ('recovering','blocked'))
        AND (m.state='stopping' OR s.last_used_at<now()-$1::double precision*interval '1 millisecond'
          OR EXISTS(SELECT 1 FROM pe_cloud_executions e WHERE e.session_id=m.session_id
            AND e.error_code='account_disabled' AND e.state IN ('uncertain','succeeded','failed','cancelled')))

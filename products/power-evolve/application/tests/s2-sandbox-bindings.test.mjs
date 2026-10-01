@@ -35,6 +35,30 @@ const captured = ready => ({ kind: 'pod', mountGeneration: ready.generation, ses
   podUid: ready.podUid, runnerInstanceId: ready.runnerInstanceId })
 const stopped = ready => ({ kind: 'kubelet_stopped', mountGeneration: ready.generation, podUid: ready.podUid })
 
+test('the oldest recovery-fenced stopping slot does not starve another owner idle writer', options, async t => {
+  for (const state of ['recovering', 'blocked']) await t.test(state, async t => {
+    const f = await setup(t), first = await f.manager.ensureReady(f.sessionId, f.userId, async () => {})
+    const otherUserId = await f.createUser(), otherSession = await f.createSession(otherUserId)
+    const other = await f.manager.ensureReady(otherSession.sessionId, otherUserId, async () => {})
+    await recovery(f, captured(first))
+    await f.pool.query('UPDATE pe_workspaces SET binding_state=$2 WHERE id=$1', [f.workspaceId, state])
+    await f.pool.query("UPDATE pe_mount_slots SET state='stopping' WHERE user_id=$1", [f.userId])
+    await f.pool.query("UPDATE pe_sandbox_instances SET state='deleting',last_used_at='2020-01-01' WHERE session_id=$1", [first.sessionId])
+    await f.pool.query("UPDATE pe_sandbox_instances SET last_used_at='2021-01-01' WHERE session_id=$1", [other.sessionId])
+    const pending = (await f.pool.query('SELECT * FROM pe_mount_slots WHERE user_id=$1', [f.userId])).rows[0]
+    const mutations = f.kube.mutations.length
+    await f.manager.recycleIdle(0)
+    assert.deepEqual((await f.pool.query('SELECT * FROM pe_mount_slots WHERE user_id=$1', [f.userId])).rows[0], pending)
+    assert.equal(f.kube.resource('pods', first.name).metadata.uid, first.podUid)
+    const deleted = (await f.pool.query('SELECT state,stop_pod_uid FROM pe_mount_slots WHERE user_id=$1', [otherUserId])).rows[0]
+    assert.equal(deleted.state, 'free')
+    assert.equal(deleted.stop_pod_uid, other.podUid)
+    assert.equal((await f.pool.query('SELECT state FROM pe_sandbox_instances WHERE session_id=$1', [other.sessionId])).rows[0].state, 'deleted')
+    assert(f.kube.mutations.length > mutations)
+    assert(f.kube.mutations.slice(mutations).every(value => value.name === other.name))
+  })
+})
+
 test('recovery owns cleanup against both a new idle recycler and one already stopping the captured writer', options, async t => {
   for (const idleStartedFirst of [false, true]) await t.test(idleStartedFirst ? 'idle stop already in progress' : 'recovery already accepted', async t => {
     const f = await setup(t), ready = await f.manager.ensureReady(f.sessionId, f.userId, async () => {})

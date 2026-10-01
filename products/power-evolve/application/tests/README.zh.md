@@ -24,7 +24,7 @@ PVC 挂载使用 `workspaces/<rootKey>/<rootRelativePath>` 作为 kubelet `subPa
 
 任何 recovering 或 blocked Workspace 都会阻止其所有者的新 Sandbox 预留与命令派发。准入依次锁定账号、Workspace、挂载槽和实例。Kubernetes 请求在这些 PostgreSQL 事务之外执行。
 
-恢复 worker 在隔离期间负责写者清理。空闲回收器在账号锁内让出清理；已开始停止 Pod 的回收器会在每次清理变更和最终释放前重新核验恢复所有权与捕获的 stopping 槽。
+恢复 worker 在隔离期间负责写者清理。空闲候选选择排除已隔离所有者，使其他所有者的空闲写者可以回收。空闲回收器在账号锁内复核所有权；已开始停止 Pod 的回收器会在每次清理变更和最终释放前重新核验恢复所有权与捕获的 stopping 槽。
 
 [ExecutionService](../src/platform/executions.ts) 通过 `observeReady` 观察已捕获的 Pod 与 Runner 身份；观察时不初始化存储。恢复隔离期间仍可查询状态和取消。新命令 POST 必须在派发前调用 `assertDispatchAllowed`。旧 Runner 上缺失执行记录不能授权通过 blocked 绑定重放命令。
 
