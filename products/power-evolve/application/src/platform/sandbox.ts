@@ -22,8 +22,10 @@ interface Metadata { name: string; uid?: string; resourceVersion?: string; label
   finalizers?: string[]; ownerReferences?: Array<{ uid?: string }> }
 interface Resource { metadata: Metadata; spec?: Record<string, unknown>; status?: Record<string, unknown>; data?: Record<string, string> }
 interface Pod extends Resource { status?: { phase?: string; containerStatuses?: Array<{ ready?: boolean; restartCount?: number }> } }
+/** Ready writer identity and platform-only token, valid while its mount slot remains current. */
 export interface SandboxReady { name: string; podUid: string; runnerInstanceId: string; token: string; restartCount: number;
   generation: string; sessionId: string; userId: string }
+/** Deployment values resolved by the Platform Profile before creating Sandbox resources. */
 export interface SandboxConfig {
   readonly namespace: string
   readonly image: string
@@ -62,7 +64,11 @@ export class SandboxManager {
     }
   }
 
-  /** The physical resource name is stable for the user's shared writable Home. */
+  /**
+   * The physical resource name is stable for the user's shared writable Home.
+   * @param userId - Owner of the writable Home.
+   * @returns Kubernetes resource name shared by that user's sequential writers.
+   */
   name(userId: string): string { return `pe-sb-${userId.replaceAll('-', '')}` }
   private token(name: string, sessionId: string, generation: string): string {
     return createHmac('sha256', this.key).update(`${name}:${sessionId}:${generation}`).digest('hex')
@@ -325,7 +331,13 @@ export class SandboxManager {
     }
   }
 
-  /** Creating is persisted before the first Kubernetes mutation; an interrupted creation stays blocked. */
+  /**
+   * Creating is persisted before the first Kubernetes mutation; an interrupted creation stays blocked.
+   * @param sessionId - Session requesting its owned workspace.
+   * @param userId - Owner whose shared Home limits the active writer.
+   * @param assertLease - Rejects when the calling execution worker loses its lease.
+   * @returns Current ready writer; rejects if reservation, identity, readiness, or stop evidence is unavailable.
+   */
   async ensureReady(sessionId: string, userId: string, assertLease: () => Promise<void>): Promise<SandboxReady> {
     const workspaceId = await this.workspaceId(sessionId, userId)
     for (let handoffs = 0; handoffs < 3; handoffs++) {
@@ -499,7 +511,10 @@ export class SandboxManager {
     return Object.entries(labels).every(([key, value]) => resource.metadata.labels?.[key] === value)
   }
 
-  /** Verify the slot first; a prior Session cannot recreate a Pod after handoff. */
+  /**
+   * Verify the slot first; a prior Session cannot recreate a Pod after handoff.
+   * @param sandbox - Previously issued writer identity; an instance mismatch quarantines the slot and rejects.
+   */
   async assertCurrent(sandbox: SandboxReady): Promise<void> {
     const slot = await this.pool.query<MountSlot>('SELECT * FROM pe_mount_slots WHERE user_id=$1', [sandbox.userId])
     const row = slot.rows[0]
@@ -515,7 +530,14 @@ export class SandboxManager {
     }
   }
 
-  /** Check a previously admitted writer without creating any Kubernetes resource. */
+  /**
+   * Check a previously admitted writer without creating any Kubernetes resource.
+   * @param sessionId - Session recorded as the writer.
+   * @param userId - Owner of its mount slot.
+   * @param podUid - Expected Kubernetes Pod identity.
+   * @param runnerInstanceId - Expected live Runner process identity.
+   * @returns Whether the slot, resources, mounts and live Runner match; provider errors reject.
+   */
   async matchesInstance(sessionId: string, userId: string, podUid: string, runnerInstanceId: string): Promise<boolean> {
     const selected = await this.pool.query<MountSlot>('SELECT * FROM pe_mount_slots WHERE user_id=$1', [userId])
     const slot = selected.rows[0]
@@ -533,7 +555,11 @@ export class SandboxManager {
     return health.ready && health.instanceId === runnerInstanceId
   }
 
-  /** Quarantine an identity mismatch, preserving the Pod and denying new writers. */
+  /**
+   * Quarantine an identity mismatch, preserving the Pod and denying new writers.
+   * @param sessionId - Session to quarantine; a slot handed to another Session is unchanged.
+   * @param userId - Owner of the mount slot to lock.
+   */
   async quarantine(sessionId: string, userId: string): Promise<void> {
     await transaction(this.pool, async client => {
       await this.lockUser(client, userId)
@@ -544,6 +570,15 @@ export class SandboxManager {
     })
   }
 
+  /**
+   * Call a Runner through the namespace-scoped Kubernetes service proxy with bounded response bytes.
+   * @param name - Authorized service resource name.
+   * @param token - Platform-only Runner authentication token.
+   * @param method - Observation or command operation.
+   * @param path - Runner endpoint path.
+   * @param body - Optional JSON request body.
+   * @returns Decoded Runner response; transport, timeout and response-size errors reject without replay.
+   */
   runner<T>(name: string, token: string, method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
     return this.kube.call<T>(method, this.kube.proxyPath(this.config.namespace, name, path), body,
       10_000, token, RUNNER_RESPONSE_MAX_BYTES)
@@ -685,7 +720,10 @@ export class SandboxManager {
     })
   }
 
-  /** Recycle one idle writer; incomplete stop evidence leaves its slot blocked for reconciliation. */
+  /**
+   * Recycle one idle writer; incomplete stop evidence leaves its slot blocked for reconciliation.
+   * @param idleMs - Inactivity threshold; already stopping or disabled-account writers are also eligible.
+   */
   async recycleIdle(idleMs: number): Promise<void> {
     const candidate = await this.pool.query<{ user_id: string }>(
       `SELECT m.user_id FROM pe_mount_slots m JOIN pe_sandbox_instances s ON s.session_id=m.session_id
