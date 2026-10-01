@@ -23,8 +23,30 @@ Local evidence is under `.artifacts/power-evolve/release-build/cloud-runner/`: `
 
 ## Connector recovery prerequisite
 
-`5d499bdcb3719cd1a86bcc238cc0bfe91afeb48a` adds the explicit operator registry reference to SSH and STDIO Runner Pods. The old STDIO implementation refused recovery after Kubernetes injected an `imagePullSecrets` reference from its ServiceAccount. A focused regression first reproduced `mcp_runner_resource_changed`; the change retains exact matching and rejects changed or additional references. Application leaf compilation, ten SSH/STDIO tests, lint and the affected bilingual pair passed. These tests use a Kubernetes/Runner substitute; actual private-registry admission and recovery remain integration checks.
+`5d499bdcb3719cd1a86bcc238cc0bfe91afeb48a` adds the explicit operator registry reference to SSH and STDIO Runner Pods. The old STDIO implementation refused recovery after Kubernetes injected an `imagePullSecrets` reference from its ServiceAccount. A focused regression first reproduced `mcp_runner_resource_changed`; the change retains exact matching and rejects changed or additional references. Application leaf compilation, ten SSH/STDIO tests, lint and the affected bilingual pair passed. Those tests use a Kubernetes/Runner substitute; actual admission and recovery are covered by the local k3s check below, while authenticated registry pulls remain unverified.
 
-## Remaining work
+## Connector Runner
 
-Host and Platform share one application image; Connector Runner has a separate image. Both still need a current clean-source build and image startup/runtime evidence. The existing S7D application result predates current account configuration. Optional Connector deployment wiring, its namespace/credentials/policies and image pull references must also pass integration before this build group is complete. No current component result establishes a complete release.
+| Item | Verified value |
+| --- | --- |
+| Source archive | `8a170414c7c31d3a7f43c40248252d68b9d27b71`, complete Git archive without development outputs |
+| Package | Frozen-lockfile filtered install, TypeScript build and production deploy inside pinned Linux ARM64 Node 22.23.2; lifecycle scripts disabled for deploy |
+| Build | Committed `connector-runner/Dockerfile`, isolated production deploy directory |
+| Local image | `pe-release-connector:8a170414c7` |
+| Image ID | `sha256:adc21117231b65252e3c85924bba9fc05ed624852b36da091d953bae3b05afdc` |
+| Image size | 269,244,922 bytes |
+| Container checks | UID 10001, read-only root, no network; unauthorized HTTP returns 401, unavailable egress verification keeps calls at 503, real packaged STDIO child returns its assigned account |
+| Formal deployment | `4f62160ee0c42d332b5dab2a45ecd56122f73e58`; 15 focused deployment tests passed after integration |
+| Real k3s checks | Eight formal Connector resources, scoped Platform identity, two separate gVisor Pods, live-listener denial, same-Pod recovery, stable duplicate result and changed-account refusal |
+
+The initial package install stopped on npm socket errors before compilation. The same lockfile succeeded with the Connector dependency filter and download concurrency four. Compilation and deploy ran in a disposable two-CPU, 2 GiB container. Image component checks used a separate disposable half-CPU, 256 MiB container. Both were removed.
+
+The new image was imported into the existing single-node k3d cluster and selected by its imported manifest digest, `sha256:d6febdee0e8048816841e1e51dc14a0c79f6d66015083110c2eeeacae1a94778`. An empty Docker credential Secret exercised the configured ServiceAccount and Pod reference; it did not authenticate a registry pull. A fresh orchestrator recovered each existing Pod with its expected reference, while omitting that reference was refused. The forbidden listener stayed healthy through the scoped API proxy while each call Pod received `ECONNREFUSED`; this matches the runtime's independently verified live-listener denial rule. Both calls returned the assigned account, duplicate requests retained their digest, and changing accounts on the same call was refused. Calls, listener, three temporary namespaces and private access files were removed.
+
+The first local test driver incorrectly encoded a kubectl subresource and later required a timeout despite this CNI returning a refusal. These were driver corrections; the committed preflight already uses `--subresource`, and the runtime already requires an independently healthy listener before accepting refusal as denial. Local evidence is under `.artifacts/power-evolve/release-build/connector/`: package/build logs, `image-verification.json`, and `k3s-verification.json`. These are component checks without browser, model or remote SSH execution.
+
+## Application build and remaining work
+
+Host and Platform share one application image. Its clean build at `4f62160ee0c42d332b5dab2a45ecd56122f73e58` reached native client TypeScript compilation and failed in three test fixtures: injected-provider factory types, a missing file-mention title, and a generic render-slot mock. The full Dockerfile remains an open requirement until those fixtures compile and the current image passes startup. The updated startup drill includes the required account policy and limits temporary container resources; its pure checks do not establish image startup.
+
+The application builder is limited to two CPUs and 4 GiB, stopped between build attempts. Logs are under `.artifacts/power-evolve/release-build/application/`. Private-registry pulls, remote SSH through the formal deployment, the complete application image and target-infrastructure S7 acceptance remain unverified. No current component result establishes a complete release.
