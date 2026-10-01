@@ -22,10 +22,15 @@
 - 真实 Host RPC／Platform HTTP 核对两账号历史、README、下载及 5 个既有不可变产物；Bob 读取 Alice 文件或直接下载其产物均返回 404。
 - 在实际 k3s 上注入一次 DELETE 前 503，使恢复阻塞，再停用专用测试账号。旧 Pod 最终按 kubelet 证明移除、挂载槽释放；绑定仍阻塞、代次不变，没有创建替代 Pod。首轮发现的 finalizer 等待误判实例也依据已存证明完成清理。
 - 原生页面受理 Alice 的目录恢复后，以测试 finalizer 暂缓旧 Pod 消失。在 kubelet 停止证明已持久化时正常关闭开发环境，确认请求仍为 `stopping`、租约释放、绑定代次仍为 3。撤去测试阻塞并重启后，原请求完成，租约代次 1→2、绑定代次 3→4，原页面显示恢复成功。测试 finalizer 已撤去；同一 Session 随后在代次 4 的新 Pod 中读回原标记与 Git HEAD，再次通过 2 项测试。
+- 两用户分别通过原生 `skill` 读取 PDF、Word 说明；Alice 在恢复后的原 Session 额外用 `skill_resource` 读取 `SKILL.md`。PG 记录实际工具调用及返回摘要，云执行记录保持 14 条、沙盒实例历史保持 8 条。读取说明没有创建执行环境。
+- Alice 在同一 Session 经 `office` 创建、写入并校验 Word 文件，再经原生报告技能调用已选版本的套件脚本，初始化工作流并执行同级生成器的样例目录门禁。四次执行均成功并完成可信续接；实际 Pod 同时挂载代次 4 工作区、用户 Home 和用户独立只读技能库。沙盒内读取 Word 技能摘要与受控文件服务返回一致，`statvfs` 也确认只读挂载；既有 Git HEAD 和标记保持不变。
+- 原生文件按钮发布当前 Word 版本后，Host 工作区下载、Platform 不可变产物下载与实际文件字节一致；旧布局和旧相对目录没有新增同名文件。Bob 读取 Alice 技能、准备该文件下载或直接下载其产物均返回 404。旧轮次指向的文件已被后续命令修改时，原生入口拒绝发布旧摘要；当前版本可正常发布。
+
+以上技能联测验证版本、挂载、执行、文件归属与续接。Word 结构校验通过，但样例使用未定义的 `Heading1` 样式产生警告；报告门禁返回 0 错误、6 个样例内容警告。两者均保留在实际回执中，不作为完整文档版式或业务报告质量验收。
 
 定向回归使用真实独立临时 PG 与 POSIX。Sandbox fixture 中的 Kubernetes 回复明确是替身，与上面的真实 k3s 演练分别记录：`s2-sandbox-bindings` 23 项、`storage-disabled-cleanup` 3 项、`storage-recovery-shutdown` 4 项、`sandbox-stop-finalizer` 6 项、`account-storage-composition` 23 项、`storage-browser-admission` 8 项通过。各缺陷先用原代码复现；新增浏览器授权测试通过真实 Platform HTTP 入口。Application 叶编译、相应提交 lint 与 whitespace 检查通过，未运行仓库全量矩阵。
 
-本地证据位于 `.artifacts/power-evolve/cloud-combined-qa/`：`facts-before-hi.json`、`facts-after-hi.json`、`execution-proof.json`、`combined-http-readback.json`、两用户浏览器记录、`disabled-cleanup-k3s-proof.json`、`graceful-recovery-{observe,stopped,proof}.json` 和 `graceful-recovery-browser.txt`。秘密配置只在用户私有目录，未写入证据正文。
+本地证据位于 `.artifacts/power-evolve/cloud-combined-qa/`：`facts-before-hi.json`、`facts-after-hi.json`、`execution-proof.json`、`combined-http-readback.json`、两用户浏览器记录、`disabled-cleanup-k3s-proof.json`、`graceful-recovery-{observe,stopped,proof}.json`、`graceful-recovery-browser.txt`、`skill-description-proof.json`、`skill-execution-proof.json`、`skill-file-readback.json` 和 `skill-combined-browser.txt`。秘密配置只在用户私有目录，未写入证据正文。
 
 ## 环境与后续关口
 
