@@ -1,5 +1,6 @@
 /** Trusted Platform records joining storage selection, mount admission and recovery. */
 import { z } from 'zod'
+import type { PoolClient } from 'pg'
 import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
 import { accountUserId } from '@power-evolve/contracts/account'
 import { workspaceStorageTarget, bindingWorkspaceId, bindingRequestId,
@@ -38,5 +39,7 @@ export type RecoveryStopTarget = z.infer<typeof recoveryStopTarget>
 export type WorkspaceRecoveryClaim = z.infer<typeof workspaceRecoveryClaim>
 /** Evidence returned after the captured writer can no longer use its mounts. */
 export type RecoveryStopProof = z.infer<typeof recoveryStopProof>
-/** Stop only the captured writer; the callback renews and validates the worker lease. */
-export type StopWorkspaceWriter = (claim: WorkspaceRecoveryClaim, assertLease: () => Promise<void>) => Promise<RecoveryStopProof>
+/** Renew and validate the recovery lease; a supplied client already holds the owner's update lock. */
+export type AssertWorkspaceRecoveryLease = (client?: PoolClient) => Promise<void>
+/** Stop only the captured writer; lease checks reuse the caller's transaction when it holds locks. */
+export type StopWorkspaceWriter = (claim: WorkspaceRecoveryClaim, assertLease: AssertWorkspaceRecoveryLease) => Promise<RecoveryStopProof>
