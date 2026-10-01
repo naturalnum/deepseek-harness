@@ -62,6 +62,22 @@ The earlier clean build at `4f62160ee0c42d332b5dab2a45ecd56122f73e58` failed in 
 
 The [current startup drill](qa-s7d-image-startup.mjs) ran against the new image with its required account policy, temporary private credentials, and bounded containers. It removed all three containers, its network, data volume and private files. The builder was stopped before the drill. Local evidence is under `.artifacts/power-evolve/release-build/application/`: `source-fixed.json`, `build-fixed-6g.log`, `startup.log`, and `image-verification.json`. Cloud Runner source and Connector packaged runtime inputs are unchanged between their recorded archives and the application revision; their existing component evidence remains applicable.
 
+## Application requalification
+
+The current application image is rebuilt from the clean archive `447938c23258b36a63e6b9913fc3df6cf586857c`, including the fenced SSH connection metadata and operator preflight correction. The complete committed Dockerfile passed Host, Client, native Web and product compilation under the same two-CPU, 6 GiB limit. The builder was stopped after export.
+
+| Item | Verified value |
+| --- | --- |
+| Local image | `pe-release-app:447938c232` |
+| Image ID | `sha256:523ccf22ac29463ca9ca0a58679368ffe85bcc602f1543f4706653ceb90aa72d` |
+| Image size | 2,431,284,107 bytes |
+| Imported manifest digest | `sha256:c63cf1cb9d191c4fe5ffa13fa98fe2a216888a853aaccbdd3c4530260f5bb703` |
+| Running composition | Three ready QA Pods use this digest; real-model SSH approval, execution, one Session continuation and Connector cleanup passed |
+
+The first attempt ended before compilation because the local driver started the build before BuildKit's socket was ready. A bounded bootstrap check corrected the driver; the original attempt's archive and logs remain separate. Read-only package inspection located the image-size increase in three lockfile-declared optional packages: Linux ARM64 Codex, Claude Agent SDK and LibreOffice WASM. Earlier install logs contain socket failures for those packages, and the previous image lacks them. The lockfile and Dockerfile are unchanged. This build includes them; the size increase is packaged dependencies, not runtime memory allocation.
+
+Evidence is under `.artifacts/power-evolve/release-integration/`: `application-requalified-attempt-2/build.json`, its complete `build.log`, `application-package-size.json`, `application-requalified-rollout.json` and `ssh-requalified-proof.json`. The [composition record](QA-RELEASE-COMPOSITION.md#application-requalification) distinguishes earlier full protocol evidence from the checks after this image update. Cloud Runner and Connector images are unchanged.
+
 ## Remaining release checks
 
 All three local ARM64 images now have clean-source build and component evidence. Their [local composition](QA-RELEASE-COMPOSITION.md) also passed real-model native HTTP requests, files, PVC-mounted cloud Git, SSH and restart checks through the formal deployment entry points with explicit local resource overrides. Browser acceptance remains blocked by the local certificate's trust status. The images have not been pushed or promoted into the fixed candidate. Private-registry pulls, complete browser acceptance and target-infrastructure S7 acceptance remain unverified. AMD64 remains unverified. These results do not establish a complete release.

@@ -8,7 +8,8 @@ The deployment renderer is from `399896d103`. An isolated QA adapter retains its
 
 | Image | Imported manifest digest |
 | --- | --- |
-| Application | `sha256:61ef3bb0c925b15905b6f686477f833c4e2fc94fdc089188c0047f591ca1e64e` |
+| Application, initial protocol run | `sha256:61ef3bb0c925b15905b6f686477f833c4e2fc94fdc089188c0047f591ca1e64e` |
+| Application, current SSH requalification | `sha256:c63cf1cb9d191c4fe5ffa13fa98fe2a216888a853aaccbdd3c4530260f5bb703` |
 | Cloud Runner | `sha256:ce9a705b429721328c34e68869a940839ab05d17a601176e3b392ca7a056b67d` |
 | Connector Runner | `sha256:d6febdee0e8048816841e1e51dc14a0c79f6d66015083110c2eeeacae1a94778` |
 
@@ -35,6 +36,14 @@ All requests below use the real product HTTP protocols over HTTPS with the exact
 The initial cloud driver checked execution too early, because a user turn may complete while its Sandbox result is still pending. It was corrected to observe the existing execution and continuation without resubmitting the command. The approval driver initially omitted the documented working-directory wrapper from its expected command; after inspecting that exact wrapper, the same pending proposal was verified and approved. Neither issue required a product code change.
 
 Evidence resides in `.artifacts/power-evolve/release-integration/`: the nonsecret values and resource bundle, `hi-proof.json`, `files-proof.json`, `cloud-proof.json`, `ssh-auth-proof.json`, `recovery-before.json`, `recovery-after.json`, `ssh-execute-proof.json` and `readback-proof.json`. Private configuration remains outside the repository. The adapter's SHA256 is `0ac45c950e63d23d1ac2d180429a3070001adbfab6c31d2dd4e9c9a0fe2b7faa`.
+
+## Application requalification
+
+The clean application image from `447938c23258b36a63e6b9913fc3df6cf586857c` replaced only the QA Host, Platform and TLS-proxy image references after existing work settled. All three Pods became ready with the recorded imported digest. The fixed candidate, Runner images, credentials, database and storage roots were preserved. The only application runtime change since the initial image is the fenced SSH metadata; the other code correction affects operator preflight.
+
+A fresh real-model Session received the fenced connection records, selected the existing connection by name and proposed the exact controlled SSH command. The independent approval login authorized it; the real Connector returned the expected account, working directory and marker with exit zero. PG recorded one call and one completed Session continuation, and Connector cleanup completed. Fresh logins also reread both users' earlier histories against PG and downloaded the unchanged cloud Workspace markers; another user's SSH result remained inaccessible. These are protocol checks over certificate-pinned HTTPS. Browser acceptance remains separate.
+
+`application-requalified-rollout.json` records the image references and ready Pod identities; `ssh-requalified-proof.json` records the fresh command and continuation. `readback-proof.json` contains the post-update readback. Focused SSH tests, application compilation, the original Markdown-wrap check and README pairing passed before packaging. No unrelated full regression was repeated.
 
 ## Remaining gates
 
