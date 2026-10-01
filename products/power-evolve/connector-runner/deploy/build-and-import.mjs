@@ -4,6 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { readConnectorProductionLock, verifyConnectorProductionLock } from './production-lock.mjs'
 
 const packageRoot = fileURLToPath(new URL('../', import.meta.url))
 const repoRoot = resolve(packageRoot, '../../..')
@@ -35,20 +36,25 @@ export function connectorImageConfig(argv, environment) {
 }
 
 /**
- * Build an isolated deploy artifact and image, optionally import it, and remove the artifact on success or failure.
+ * Compare a completed deploy's production lock with the captured source, then build/import and remove the artifact.
  * @param argv CLI flags; no flags preserves build plus import, --build-only omits import.
  * @param environment Command environment containing PE_CONNECTOR_IMAGE and, for import, PE_K3D_CLUSTER.
  * @param execute Awaited command runner; tests inject a recorder without spawning pnpm, Docker, or k3d.
+ * @param readSource Source snapshot reader; the default reads this repository and tests read private fixture files.
  * @returns The built image and optional import cluster after all commands and cleanup complete.
  */
-export async function buildAndImport(argv = [], environment = process.env, execute = run) {
+export async function buildAndImport(argv = [], environment = process.env, execute = run,
+  readSource = readConnectorProductionLock) {
   const config = connectorImageConfig(argv, environment)
+  const source = await readSource(repoRoot)
   const context = await mkdtemp(join(tmpdir(), 'power-evolve-connector-image-'))
   try {
     await execute('pnpm', ['--filter', '@power-evolve/connector-runner', 'build'], environment)
     await execute('pnpm', ['--filter', '@power-evolve/connector-runner', 'deploy', '--legacy', '--prod',
       '--ignore-scripts', '--frozen-lockfile', context],
     { ...environment, npm_config_strict_dep_builds: 'true', npm_config_ignore_scripts: 'true' })
+    // pnpm 11's legacy deploy disables frozen-lockfile internally; compare the completed closure explicitly.
+    await verifyConnectorProductionLock(source, context)
     await execute('docker', ['build', '-f', join(packageRoot, 'Dockerfile'), '-t', config.image, context], environment)
     if (config.cluster) await execute('k3d', ['image', 'import', config.image, '-c', config.cluster], environment)
     return config
