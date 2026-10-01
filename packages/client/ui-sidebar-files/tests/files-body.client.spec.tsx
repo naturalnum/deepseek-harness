@@ -30,16 +30,20 @@ function names(root: HTMLElement): string[] {
 
 describe('FilesBody', () => {
   it('passes the displayed root and tab to optional controls, with row controls outside the open button', async () => {
-    const renderSlot = vi.fn<FilesBodyProps['renderSlot']>((name, owner) =>
-      name === 'sidebar.right.tab.files.entry.leading'
-        ? <input type="checkbox" aria-label={'path' in owner ? owner.path : ''} /> : <button type="button">Extension</button>)
+    const rendered = vi.fn<(name: string, owner: object, options?: object) => void>()
+    const renderSlot: FilesBodyProps['renderSlot'] = (name, owner, options) => {
+      rendered(name, owner, options)
+      return name === 'sidebar.right.tab.files.entry.leading'
+        ? <input type="checkbox" aria-label={'path' in owner && typeof owner.path === 'string' ? owner.path : ''} />
+        : <button type="button">Extension</button>
+    }
     const { view, script, tabActions } = mountBody(ROOT, undefined, renderSlot)
     await act(() => script.watches.ready(ROOT))
     await act(() => script.settle({ ok: true, value: ROOT_LEVEL }))
-    expect(renderSlot).toHaveBeenCalledWith('sidebar.right.tab.files.actions', { tabId: TAB, root: ROOT },
+    expect(rendered).toHaveBeenCalledWith('sidebar.right.tab.files.actions', { tabId: TAB, root: ROOT },
       { hookContext: expect.any(Function) })
     for (const entry of ROOT_LEVEL.entries) {
-      expect(renderSlot).toHaveBeenCalledWith('sidebar.right.tab.files.entry.leading',
+      expect(rendered).toHaveBeenCalledWith('sidebar.right.tab.files.entry.leading',
         { tabId: TAB, root: ROOT, path: `${ROOT}/${entry.name}`, type: entry.type }, { hookContext: expect.any(Function) })
     }
     expect(view.container.querySelector('button input')).toBeNull()

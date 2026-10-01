@@ -134,8 +134,9 @@ describe('Chat inject API', () => {
     try {
       const entry = b.runtime.slots.entries('conversation.chat.node').find(item => item.options.key === 'assistant-step')!
       const other = 'other-session' as SessionId
-      const rootSource = (entry.inject!(ROOT) as AssistantInjected).hooks.fileMentionRevision
-      const otherSource = (entry.inject!(other) as AssistantInjected).hooks.fileMentionRevision
+      const peek = entry.inject as (sessionId: SessionId) => Pick<AssistantInjected, 'hooks'>
+      const rootSource = peek(ROOT).hooks.fileMentionRevision
+      const otherSource = peek(other).hooks.fileMentionRevision
       expect(rootSource.getSnapshot()).toBe(0)
       expect(otherSource.getSnapshot()).toBe(0)
       const rootChanged = vi.fn()

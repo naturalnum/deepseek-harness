@@ -628,6 +628,7 @@ describe('Chat node rendering', () => {
       resolve: value => value === 'report.html' ? {
         open: () => { void h.openFile('site/report.html') },
         label: '打开 site/report.html',
+        title: 'site/report.html',
       } : undefined,
     } : undefined
     const view = render(<h.ChatView {...h.props} />)
