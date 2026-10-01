@@ -127,6 +127,23 @@ def parent_fd(workspace_fd, parts, create=False, owner=None):
     return walk(os.dup(workspace_fd), parts[:-1], create, owner)
 
 
+def empty_directories(fd, parts):
+    selected = None
+    with os.scandir(fd) as listing:
+        for entry in listing:
+            if not parts or selected is not None or entry.name != parts[0] \
+                    or not entry.is_dir(follow_symlinks=False):
+                return False
+            selected = entry.name
+    if selected is None:
+        return True
+    child = directory(fd, selected)
+    try:
+        return empty_directories(child, parts[1:])
+    finally:
+        os.close(child)
+
+
 def put(workspace_fd, parts, request, owner):
     try:
         parent = parent_fd(workspace_fd, parts)
@@ -208,11 +225,15 @@ def execute(request):
         if error.errno == errno.ENOENT:
             if operation == 'directory_probe':
                 return {'exists': False}
+            if operation == 'empty':
+                return {'empty': True}
             raise Refusal('workspace_unavailable') from error
         raise
     os.close(fd)
     parts = segments(request.get('parts'))
     try:
+        if operation == 'empty':
+            return {'empty': empty_directories(workspace, parts)}
         if operation == 'directory_probe':
             try:
                 selected = walk(os.dup(workspace), parts)

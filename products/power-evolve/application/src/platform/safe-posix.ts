@@ -16,7 +16,7 @@ export interface SafePosixOptions { executable?: string; timeoutMs?: number }
 export type StoragePath = Pick<StorageBinding, 'rootKey' | 'rootRelativePath'>
 type Location = string | StoragePath
 type Operation = 'probe' | 'ensure_workspace' | 'kind' | 'read' | 'list' | 'put'
-  | 'directory_probe' | 'create_directory' | 'directories'
+  | 'directory_probe' | 'create_directory' | 'directories' | 'empty'
 interface Request {
   op: Operation; root: string; owner?: { uid: number; gid: number }; workspaceId?: string
   parts?: string[]; data?: string; digest?: string; baseRevision?: string | null; priorSameDigest?: boolean
@@ -81,6 +81,18 @@ export class SafePosix {
     const value = await this.call({ op: 'directory_probe', root: this.root, ...address(location), parts }) as { exists: boolean }
     if (typeof value.exists !== 'boolean') throw unavailable()
     return value.exists
+  }
+
+  /**
+   * Inspect all entries without following links, permitting only an empty directory chain from a default binding.
+   * @param rootKey Server-owned immutable root key.
+   * @param permittedPath Canonical components of the owner's persisted default binding; other entries are content.
+   * @returns Whether the root is absent or has only the permitted empty directories; access errors reject.
+   */
+  async isEmpty(rootKey: string, permittedPath: string[] = []): Promise<boolean> {
+    const value = await this.call({ op: 'empty', root: this.root, workspaceId: rootKey, parts: permittedPath }) as { empty: boolean }
+    if (typeof value.empty !== 'boolean') throw unavailable()
+    return value.empty
   }
 
   /**

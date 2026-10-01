@@ -1,9 +1,9 @@
 /** Trusted account lifecycle; every operation derives actor authority from a transaction-checked bearer. */
 import { randomBytes, randomUUID } from 'node:crypto'
-import { lstat, readdir } from 'node:fs/promises'
-import { isAbsolute, join, resolve } from 'node:path'
+import { isAbsolute, resolve } from 'node:path'
 import type { Pool, PoolClient } from 'pg'
 import { z } from 'zod'
+import { storageRelativePath } from '@power-evolve/contracts/workspace-binding'
 import { ACCOUNT_ERROR_CODES, ACCOUNT_MAX_MODELS_PER_USER, ACCOUNT_MAX_PAGE_ITEMS, ACCOUNT_PAGE_PATH,
   ACCOUNT_PASSWORD_MAX_BYTES, ACCOUNT_PASSWORD_MIN_BYTES, accountCapabilitiesValue, accountListRequest, accountListValue, accountLoginValue,
   accountMeValue, accountModelCatalogValue, accountMutationReceipt, accountMutationValue, accountReceiptValue,
@@ -17,6 +17,7 @@ import type { AccountManagementConfig } from './account-config.ts'
 import { revokeAccountCredentials } from './account-credentials.ts'
 import { transaction } from './database.ts'
 import { digest, hashPassword, IdentityService, verifyPassword } from './identity.ts'
+import { SafePosix } from './safe-posix.ts'
 
 /** Invoked under the target user's exclusive lock; durable cancellation and grant fencing share the lifecycle transaction. */
 export type AccountExecutionRevoker = (client: PoolClient, userId: UserId) => Promise<unknown>
@@ -81,14 +82,14 @@ function revisionMatches(target: AccountAuthority, expected: number): void {
 export class AccountService {
   /** Exact trusted browser origin enforced by the account route adapter. */
   readonly platformOrigin: string
-  private readonly workspaceRoot: string
+  private readonly storage: SafePosix
   constructor(private readonly pool: Pool, private readonly identities: IdentityService,
     private readonly options: AccountServiceOptions) {
     const origin = new URL(options.platformOrigin)
     if (origin.origin !== options.platformOrigin || !['http:', 'https:'].includes(origin.protocol)
       || origin.username || origin.password || !isAbsolute(options.workspaceRoot)) throw new Error('Invalid account service configuration')
     this.platformOrigin = origin.origin
-    this.workspaceRoot = resolve(options.workspaceRoot)
+    this.storage = new SafePosix(resolve(options.workspaceRoot))
   }
 
   /**
@@ -320,7 +321,8 @@ export class AccountService {
   }
 
   /**
-   * Tombstone only an account without durable business data or live/uncertain execution.
+   * Tombstone only an account without durable business data, storage intent or live/uncertain execution.
+   * Every owned storage root is inspected; only empty default binding directories and their ancestors are exempt.
    * @param token Unrestricted account administrator bearer.
    * @param input Parsed target, expected revision and stable request ID.
    * @returns Stable deletion receipt; identity, audit and history rows remain intact.
@@ -354,28 +356,41 @@ export class AccountService {
       OR EXISTS(SELECT 1 FROM pe_ssh_execute_actions WHERE user_id=$1 AND state IN ('pending','approved','dispatching','uncertain'))
       OR EXISTS(SELECT 1 FROM pe_mcp_actions WHERE user_id=$1 AND state IN ('pending','approved','preparing','dispatch-intent','uncertain'))
       OR EXISTS(SELECT 1 FROM pe_mcp_checks WHERE user_id=$1 AND state IN ('queued','running'))
+      OR EXISTS(SELECT 1 FROM pe_storage_directory_requests WHERE user_id=$1 AND state='accepted')
+      OR EXISTS(SELECT 1 FROM pe_workspace_binding_requests WHERE user_id=$1 AND state IN ('accepted','stopping','blocked'))
+      OR EXISTS(SELECT 1 FROM pe_workspaces WHERE user_id=$1 AND binding_state IN ('recovering','blocked'))
       OR EXISTS(SELECT 1 FROM pe_mount_slots WHERE user_id=$1 AND state<>'free')
       OR EXISTS(SELECT 1 FROM pe_sandbox_instances WHERE user_id=$1 AND state IN ('creating','ready','deleting','unknown')) AS active`, [userId])).rows[0]!
     if (execution.active) throw new PlatformError(409, ACCOUNT_ERROR_CODES.executionActive)
     const tables = ['pe_sessions', 'pe_file_mutations', 'pe_artifacts', 'pe_user_skills', 'pe_skill_package_versions',
       'pe_devices', 'pe_device_directories', 'pe_mcp_connections', 'pe_ssh_connections', 'pe_stdio_mcp_connections',
-      'pe_mcp_remote_connections', 'pe_mcp_drafts', 'pe_mcp_checks', 'pe_connector_actions']
+      'pe_mcp_remote_connections', 'pe_mcp_drafts', 'pe_mcp_checks', 'pe_connector_actions',
+      'pe_storage_directory_requests', 'pe_workspace_binding_requests']
     const content = (await client.query<{ content: boolean }>(`SELECT ${tables.map(table => `EXISTS(SELECT 1 FROM ${table} WHERE user_id=$1)`).join(' OR ')}
       OR EXISTS(SELECT 1 FROM pe_workspaces WHERE user_id=$1 AND (NOT is_default OR create_request_id IS NOT NULL)) AS content`, [userId])).rows[0]!
     if (content.content) throw new PlatformError(409, ACCOUNT_ERROR_CODES.notEmpty)
-    const root = await lstat(this.workspaceRoot)
-    if (!root.isDirectory() || root.isSymbolicLink()) throw new PlatformError(409, ACCOUNT_ERROR_CODES.notEmpty)
-    const workspaces = await client.query<{ id: string }>('SELECT id FROM pe_workspaces WHERE user_id=$1 ORDER BY id', [userId])
-    for (const workspace of workspaces.rows) {
-      const path = join(this.workspaceRoot, z.uuid().parse(workspace.id))
-      let stat
-      try { stat = await lstat(path) } catch (error) {
-        if (error instanceof Error && 'code' in error && error.code === 'ENOENT') continue
+    try { await this.storage.init() }
+    catch (error) {
+      if (error instanceof PlatformError) throw new PlatformError(409, ACCOUNT_ERROR_CODES.notEmpty)
+      throw error
+    }
+    const roots = await client.query<{ root_key: string; root_relative_path: string | null }>(`SELECT s.root_key,b.root_relative_path
+      FROM pe_storage_spaces s LEFT JOIN pe_workspace_bindings b ON b.space_id=s.id AND b.user_id=s.user_id
+        AND EXISTS(SELECT 1 FROM pe_workspaces w WHERE w.id=b.workspace_id AND w.user_id=b.user_id AND w.is_default)
+      WHERE s.user_id=$1
+      UNION ALL SELECT w.id AS root_key,'' AS root_relative_path FROM pe_workspaces w
+      WHERE w.user_id=$1 AND NOT EXISTS(SELECT 1 FROM pe_workspace_bindings b WHERE b.workspace_id=w.id AND b.user_id=w.user_id)
+      ORDER BY root_key`, [userId])
+    for (const storage of roots.rows) {
+      const rootKey = z.uuid().parse(storage.root_key)
+      const permittedPath = storage.root_relative_path === null ? '' : storageRelativePath.parse(storage.root_relative_path)
+      let empty
+      try { empty = await this.storage.isEmpty(rootKey, permittedPath === '' ? [] : permittedPath.split('/')) }
+      catch (error) {
+        if (error instanceof PlatformError) throw new PlatformError(409, ACCOUNT_ERROR_CODES.notEmpty)
         throw error
       }
-      if (!stat.isDirectory() || stat.isSymbolicLink() || (await readdir(path)).length) {
-        throw new PlatformError(409, ACCOUNT_ERROR_CODES.notEmpty)
-      }
+      if (!empty) throw new PlatformError(409, ACCOUNT_ERROR_CODES.notEmpty)
     }
   }
 }
