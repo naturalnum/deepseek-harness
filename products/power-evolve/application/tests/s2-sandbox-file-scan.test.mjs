@@ -190,3 +190,33 @@ test('helper cancellation and its hard deadline await real child termination bef
   assert.equal(timed.status, 'unavailable')
   assert.ok(child.exitCode !== null || child.signalCode !== null)
 })
+
+test('namespace cleanup refuses a local Runner and never enumerates the local execution UID', nonRoot, async t => {
+  const { scanner } = await fixture(t)
+  assert.equal(await scanner.cleanup(), false)
+})
+
+test('namespace cleanup targets escaped same-user writers, excludes itself/root/zombies and fails closed on unreadable proc', nonRoot, async () => {
+  const script = `import importlib.util,resource,sys,types
+spec=importlib.util.spec_from_file_location('scan',sys.argv[1]);m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+resource.setrlimit=lambda *args:None
+clock=[0.0];m.time.monotonic=lambda:clock[0];m.time.sleep=lambda seconds:clock.__setitem__(0,clock[0]+seconds)
+m.os.getpid=lambda:999
+states={1:b'S',999:b'S',101:b'S',102:b'S',103:b'Z'};killed=[]
+class Entries:
+ def __enter__(self):return iter(types.SimpleNamespace(name=str(pid)) for pid in states)
+ def __exit__(self,*args):pass
+m.os.scandir=lambda path:Entries()
+def read(pid,name):
+ if name=='status':return b'Uid: 0 0 0 0' if pid in (1,102) else b'Uid: 1000 1000 1000 1000'
+ return str(pid).encode()+b' (escaped) '+states[pid]+b' 1 777 777'
+m.read_proc=read
+def kill(pid,sig):killed.append(pid);states[pid]=b'Z'
+m.os.kill=kill
+assert m.kill_namespace_users() is True and killed==[101]
+m.read_proc=lambda *args:(_ for _ in ()).throw(PermissionError())
+assert m.kill_namespace_users() is False
+print('bounded namespace cleanup policy passed; all process data and signals substituted')`
+  const result = await execute('/usr/bin/python3', ['-I', '-B', '-c', script, helper])
+  assert.match(result.stdout, /namespace cleanup policy passed/u)
+})

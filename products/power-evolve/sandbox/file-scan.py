@@ -3,6 +3,7 @@ import hashlib
 import json
 import math
 import os
+import signal
 import stat
 import sys
 import time
@@ -240,27 +241,70 @@ def changes(before, after, maximum):
             'reasons': sorted(reasons)}
 
 
-def group_quiet(group):
-    deadline = time.monotonic() + 3
+def read_proc(pid, name):
+    with open(f'/proc/{pid}/{name}', 'rb') as source:
+        result = source.read(16385)
+    if len(result) > 16384:
+        raise ValueError('proc_record_too_large')
+    return result
+
+
+def cleanup_namespace(runner_pid):
+    # A host/local Runner cannot authorize a UID sweep. The immutable container CMD is the root PID1 Runner.
+    if (sys.platform != 'linux' or os.getuid() != 1000 or os.geteuid() != 1000
+            or os.getgid() != 1000 or os.getegid() != 1000 or type(runner_pid) is not int
+            or runner_pid != 1 or os.getppid() != 1):
+        return False
+    try:
+        argv = read_proc(1, 'cmdline').split(b'\0')
+        uid = next(line for line in read_proc(1, 'status').splitlines() if line.startswith(b'Uid:'))
+        if (len(argv) != 3 or argv[0] not in (b'node', b'/usr/local/bin/node')
+                or argv[1] != b'/opt/power-evolve/runner.mjs' or argv[2] != b''
+                or list(map(int, uid.split()[1:])) != [0, 0, 0, 0]):
+            return False
+    except (OSError, ValueError, StopIteration):
+        return False
+    return kill_namespace_users()
+
+
+def kill_namespace_users():
+    import resource
+    resource.setrlimit(resource.RLIMIT_AS, (128 * 1024 * 1024, 128 * 1024 * 1024))
+    resource.setrlimit(resource.RLIMIT_NOFILE, (64, 64))
+    resource.setrlimit(resource.RLIMIT_CPU, (3, 3))
+    deadline = time.monotonic() + 2.5
+    checked = 0
+    quiet_passes = 0
     while time.monotonic() < deadline:
-        alive = False
+        found = False
         with os.scandir('/proc') as processes:
             for count, process in enumerate(processes):
-                if count >= 4096:
+                checked += 1
+                if count >= 4096 or checked > 65536 or time.monotonic() >= deadline:
                     return False
-                if not process.name.isdecimal():
+                if not process.name.isdecimal() or int(process.name) in (1, os.getpid()):
                     continue
                 try:
-                    with open(f'/proc/{process.name}/stat', 'rb') as source:
-                        fields = source.read(4096).decode('ascii').rsplit(')', 1)[1].split()
-                    if int(fields[2]) == group and fields[0] not in ('Z', 'X'):
-                        alive = True
-                        break
+                    uid = next(line for line in read_proc(int(process.name), 'status').splitlines() if line.startswith(b'Uid:'))
+                    ids = list(map(int, uid.split()[1:]))
+                    if len(ids) != 4:
+                        return False
+                    if 1000 not in ids:
+                        continue
+                    state = read_proc(int(process.name), 'stat').rsplit(b')', 1)[1].split()[0]
+                    if state in (b'Z', b'X'):
+                        continue
+                    found = True
+                    # Single active execution, no supported background tasks: all other UID1000 processes are writers.
+                    os.kill(int(process.name), signal.SIGKILL)
                 except FileNotFoundError:
-                    continue
-                except (OSError, ValueError, IndexError, UnicodeError):
+                    found = True  # A racing process disappearance cannot certify a quiet pass.
+                except ProcessLookupError:
+                    found = True
+                except (OSError, ValueError, IndexError, StopIteration):
                     return False
-        if not alive:
+        quiet_passes = 0 if found else quiet_passes + 1
+        if quiet_passes == 2:
             return True
         time.sleep(0.02)
     return False
@@ -293,8 +337,8 @@ def main():
             return {'valid': False, 'status': 400}
         except OutsideWorkspace:
             return {'valid': False, 'status': 403}
-    if mode == 'group':
-        return {'quiet': group_quiet(request['group'])}
+    if mode == 'cleanup':
+        return {'quiet': cleanup_namespace(request['runnerPid'])}
     limits = request['limits']
     if sys.platform == 'linux':
         import resource

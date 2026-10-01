@@ -29,7 +29,16 @@ async function fixture(t, modify = () => {}) {
     children.add(child); child.once('close', () => children.delete(child))
     return child
   })
-  modify(scanner)
+  // Local tests certify only their own known process group. They never enumerate or signal a local UID.
+  scanner.cleanup = async group => {
+    const deadline = Date.now() + 1000
+    do {
+      try { process.kill(-group, 0) } catch (error) { return error.code === 'ESRCH' }
+      await delay(10)
+    } while (Date.now() < deadline)
+    return false
+  }
+  modify(scanner, root)
   const token = randomBytes(32).toString('base64url')
   const runner = createRunner({ token, workspace: root, limits: scanLimits({}) }, { scanner })
   t.after(async () => {
@@ -214,4 +223,95 @@ test('shutdown during a real postscan waits for the TERM-resistant helper close'
   await f.runner.shutdown()
   assert.equal(closed, true); assert.equal(f.children.size, 0)
   assert.equal(await readFile(join(f.root, 'complete.txt'), 'utf8'), 'complete')
+})
+
+const escapeCommand = code => `/usr/bin/python3 -I -B <<'PY'
+import os,time
+r,w=os.pipe()
+pid=os.fork()
+if pid==0:
+ os.close(r)
+ os.setsid()
+ with open('escape.pid','w') as target: target.write(str(os.getpid()))
+ output=os.open('escaped-write.txt',os.O_WRONLY|os.O_CREAT|os.O_APPEND,0o600)
+ os.write(output,b'first'+bytes([10]))
+ os.write(w,b'ready');os.close(w)
+ while True:
+  os.write(output,b'continued'+bytes([10]));time.sleep(0.02)
+else:
+ os.close(w);os.read(r,5);os.close(r);os._exit(${code})
+PY`
+
+async function escapedFixture(t, cleanup) {
+  let ownedPid, entered
+  const cleaning = new Promise(resolve => { entered = resolve })
+  const f = await fixture(t, (scanner, root) => {
+    // Only this fixture's forked PID is ever signalled; production namespace sweeps are not used on macOS.
+    t.after(async () => {
+      if (!ownedPid) return
+      try { process.kill(ownedPid, 'SIGKILL') } catch (error) { if (error.code !== 'ESRCH') throw error }
+      await eventually(() => { try { process.kill(ownedPid, 0); return false } catch (error) { return error.code === 'ESRCH' } })
+    })
+    scanner.cleanup = async () => {
+      ownedPid = Number(await readFile(join(root, 'escape.pid'), 'utf8'))
+      assert.ok(Number.isSafeInteger(ownedPid) && ownedPid > 1)
+      entered()
+      const quiet = await cleanup(ownedPid)
+      if (quiet) ownedPid = undefined
+      return quiet
+    }
+  })
+  return { ...f, cleaning }
+}
+
+test('setsid descendants holding output are terminated before pipe close and another execution is admitted', nonRoot, async t => {
+  const f = await escapedFixture(t, async pid => {
+    await delay(1100) // Cleanup must not rewrite the known exit with the command's one-second timeout.
+    process.kill(pid, 'SIGKILL')
+    await eventually(() => { try { process.kill(pid, 0); return false } catch (error) { return error.code === 'ESRCH' } })
+    return true
+  })
+  const value = { ...f.request(escapeCommand(7)), timeoutMs: 1000 }
+  assert.equal((await f.post(value)).status, 202)
+  await f.cleaning
+  assert.equal((await f.post(f.request('true'))).status, 409)
+  const result = await f.terminal(value.id)
+  assert.equal(result.state, 'failed'); assert.equal(result.exitCode, 7); assert.equal(result.timedOut, false)
+  assert.notEqual(result.fileChanges.status, 'unavailable')
+  const size = (await readFile(join(f.root, 'escaped-write.txt'))).length
+  await delay(60)
+  assert.equal((await readFile(join(f.root, 'escaped-write.txt'))).length, size, 'The escaped writer must be dead before scanning')
+  // Restore the fixture's ordinary group-only cleanup proof for a subsequent non-escaping command.
+  f.scanner.cleanup = async () => true
+  const next = f.request('printf safe > next.txt')
+  assert.equal((await f.post(next)).status, 202)
+  assert.equal((await f.terminal(next.id)).state, 'succeeded')
+})
+
+test('a cleanup which cannot certify an escaped writer converges within its deadline and keeps the execution fence', nonRoot, async t => {
+  const f = await escapedFixture(t, () => new Promise(() => {}))
+  const value = f.request(escapeCommand(0))
+  assert.equal((await f.post(value)).status, 202)
+  await f.cleaning
+  const started = Date.now()
+  const result = await f.terminal(value.id)
+  assert.ok(Date.now() - started < 4800, 'An inherited output pipe must not prevent bounded terminal status')
+  assert.equal(result.state, 'succeeded'); assert.equal(result.exitCode, 0); assert.equal(result.timedOut, false)
+  assert.deepEqual(result.fileChanges, unavailableChanges())
+  assert.equal(result.stdoutTruncated, true); assert.equal(result.stderrTruncated, true)
+  assert.equal((await f.post(f.request('printf unsafe > unsafe.txt'))).status, 409)
+  assert.equal(f.commands.length, 1)
+  await f.runner.shutdown()
+  assert.equal(f.children.size, 0)
+})
+
+test('shutdown while an escaped writer holds output also converges within the cleanup deadline', nonRoot, async t => {
+  const f = await escapedFixture(t, () => new Promise(() => {}))
+  assert.equal((await f.post(f.request(escapeCommand(0)))).status, 202)
+  await f.cleaning
+  const started = Date.now()
+  await f.runner.shutdown()
+  assert.ok(Date.now() - started < 4800, 'Shutdown must not wait indefinitely for escaped output holders')
+  assert.equal(f.children.size, 0); assert.equal(f.runner.server.listening, false)
+  assert.equal(f.commands.length, 1)
 })

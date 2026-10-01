@@ -87,25 +87,50 @@ export function createRunner({ token, workspace = '/workspace', limits = scanLim
       child.once('error', () => {
         commandFailed = true; entry.stderr.text = 'command_start_failed'
       })
+      const closed = new Promise(resolve => child.once('close', resolve))
       let timer
-      child.once('exit', () => {
-        clearTimeout(timer)
-        entry.phase = 'cleanup'
-        // Leader exit precedes pipe close; background group members cannot keep the command's output pipes alive.
-        try { signalGroup(child.pid, 'SIGKILL') } catch (error) { if (error.code !== 'ESRCH') quiet = false }
+      const exited = new Promise(resolve => {
+        child.once('error', () => resolve(null))
+        child.once('exit', code => {
+          clearTimeout(timer)
+          entry.phase = 'cleanup'
+          resolve(code)
+        })
       })
       timer = setTimeout(() => {
         if (entry.phase === 'command') { try { stop(entry, 'timeout') } catch (_signalUnavailable) { quiet = false } }
       }, value.timeoutMs)
       timer.unref()
-      entry.exitCode = await new Promise(resolve => child.once('close', resolve))
+      entry.exitCode = await exited
       clearTimeout(timer); clearTimeout(entry.killTimer)
-      entry.child = null
       entry.phase = 'cleanup'
       if (child.pid) {
-        try { signalGroup(child.pid, 0); quiet = await scanner.groupQuiet(child.pid) && quiet }
-        catch (error) { if (error.code !== 'ESRCH') quiet = false }
+        try { signalGroup(child.pid, 'SIGKILL') } catch (error) { if (error.code !== 'ESRCH') quiet = false }
+        let cleanupTimer
+        try {
+          quiet = await Promise.race([scanner.cleanup(child.pid), new Promise(resolve => {
+            cleanupTimer = setTimeout(() => resolve(false), 4000)
+            cleanupTimer.unref()
+          })]) && quiet
+        } catch (_cleanupUnavailable) { quiet = false }
+        finally { clearTimeout(cleanupTimer) }
       }
+      // Cleanup runs before waiting on inherited pipes, including descendants which called setsid().
+      // If verification fails, close transport only after cleanup attempts and retain the admission fence.
+      const closeOutput = () => {
+        if (!child.stdout.readableEnded) entry.stdout.truncated = true
+        if (!child.stderr.readableEnded) entry.stderr.truncated = true
+        child.stdout.destroy(); child.stderr.destroy()
+      }
+      if (!quiet) closeOutput()
+      const pipeTimer = setTimeout(() => {
+        quiet = false
+        closeOutput()
+      }, 500)
+      pipeTimer.unref()
+      await closed
+      clearTimeout(pipeTimer)
+      entry.child = null
       if (!quiet || shuttingDown) { entry.fileChanges = unavailableChanges(); return }
       entry.phase = 'after'
       entry.scanAbort = new AbortController()

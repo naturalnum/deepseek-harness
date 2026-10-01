@@ -117,8 +117,9 @@ export class FileScanner {
     const value = await this.run({ mode: 'cwd', cwd }, signal, 1024, 4000)
     return value?.valid === true ? { valid: true } : { valid: false, status: value?.status === 403 ? 403 : 400 }
   }
-  async groupQuiet(group) {
-    const value = await this.run({ mode: 'group', group }, undefined, 1024, 4000)
+  async cleanup() {
+    // Only the Linux helper can certify its private PID1 Runner namespace; local users are never enumerated here.
+    const value = await this.run({ mode: 'cleanup', runnerPid: process.pid }, undefined, 1024, 3000)
     return value?.quiet === true
   }
   command(value) {

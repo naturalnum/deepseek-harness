@@ -21,7 +21,9 @@ runner 为子进程提供固定环境，不转发镜像的 `ENV` 值。需要 `O
 
 扫描范围是文件下载契约接受的规范路径：最多 16 段、路径最多 512 个 UTF-16 码元、每段最多 100 个码元。扫描拒绝链接、多重硬链接文件和特殊文件；在任意深度跳过 `.git`、`node_modules`、`.venv`、`__pycache__`、`.cache`；排除超过 2 MiB 的文件。实际遇到排除项会返回 `partial` 和 `excluded_paths`。预算耗尽、路径不可读、读取期间检测到改变，分别产生 `budget_exceeded`、`read_failed`、`changed_during_scan`。只有两次扫描均在该范围内完成且没有排除或错误时，才返回无原因的 `complete`。缺失扫描返回 `unavailable`、空文件列表和 `scan_unavailable`。快照描述观察到的字节，不提供原子视图，也不能识别命令可能创建的所有产物。
 
-root Runner 读取挂载的 Runner token；cwd 校验、命令启动和扫描仅在不含凭据的 UID/GID 1000 子进程中访问用户路径。Python helper 使用目录描述符，扫描不穿越符号链接。命令保留原有 cwd 行为：接受指向工作区内目录的符号链接，外部目标返回 HTTP 403。前扫描、命令执行、进程组清理和后扫描共用一个准入锁；完成前，其他执行 ID 返回 HTTP 409。重复已接受的 ID 只返回已存储状态，不会重新执行。主进程退出后先清理进程组，再扫描；无法确认进程组已静止时继续关闭准入。取消 helper 时发送 TERM，300 ms 后升级为 KILL，并等待进程关闭。后扫描期间取消保留已经确定的命令结果。扫描失败不改变退出码、超时或取消结果。
+root Runner 读取挂载的 Runner token；cwd 校验、命令启动和扫描仅在不含凭据的 UID/GID 1000 子进程中访问用户路径。Python helper 使用目录描述符，扫描不穿越符号链接。命令保留原有 cwd 行为：接受指向工作区内目录的符号链接，外部目标返回 HTTP 403。前扫描、命令执行、写入者清理和后扫描共用一个准入锁；完成前，其他执行 ID 返回 HTTP 409。重复已接受的 ID 只返回已存储状态，不会重新执行。主进程退出后先清理，再等待继承的输出管道关闭或扫描；无法确认写入者已退出时继续关闭准入。取消 helper 时发送 TERM，300 ms 后升级为 KILL，并等待进程关闭。后扫描期间取消保留已经确定的命令结果。扫描失败不改变退出码、超时或取消结果。
+
+沙盒要求隔离的容器 PID 命名空间，root Node Runner 为 PID1。Linux 清理先校验 UID/GID 1000、父 PID1，以及 PID1 的 root 身份和精确 Runner 命令行；不满足则拒绝按 UID 清理。清理终止其他 UID 1000 进程，包括调用 `setsid` 的后代，排除自身和僵尸进程，再验证两轮无活跃进程。后台任务不受支持。清理内部期限为 2.5 秒，每轮最多 4096 个进程条目、总共最多 65536 个条目，地址空间限制 128 MiB、描述符 64 个、CPU 时间三秒；父进程期限为三秒。Runner 对清理另设四秒期限，管道关闭最多等待 500 ms。验证失败时，在尝试清理后关闭剩余输出传输，返回 `unavailable`，并保留准入锁直到 Pod 被替换。关闭输出管道不能作为写入者已停止的证明。
 
 下列整数环境字段分别限制每次扫描。无效值会阻止 Runner 启动；最终列表始终不超过 100 个文件。
 
@@ -33,7 +35,7 @@ root Runner 读取挂载的 Runner token；cwd 校验、命令启动和扫描仅
 | `PE_RUNNER_SCAN_MAX_SNAPSHOT_BYTES` | 1048576 | 1024–4194304 |
 | `PE_RUNNER_SCAN_MAX_FILES` | 100 | 1–100 |
 
-父进程限制 helper 输出，扫描期限后再给予 500 ms 才终止进程。Linux 扫描子进程限制地址空间为 128 MiB、描述符为 64 个、CPU 时间为 `ceil(timeoutMs / 1000) + 1` 秒；命令子进程不继承扫描资源限制。专项测试位于 `application/tests/s2-sandbox-file-scan.test.mjs` 和 `application/tests/s2-sandbox-runner.test.mjs`。macOS 测试使用真实 POSIX 文件、Bash、HTTP 和子进程关闭事件，以本地 UID 替代生产 UID/GID 1000；Linux 权限隔离、`/proc` 进程组检查和 Kubernetes 部署须另行集成验收。
+父进程限制 helper 输出，扫描期限后再给予 500 ms 才终止进程。Linux 扫描子进程限制地址空间为 128 MiB、描述符为 64 个、CPU 时间为 `ceil(timeoutMs / 1000) + 1` 秒；命令子进程不继承扫描资源限制。专项测试位于 `application/tests/s2-sandbox-file-scan.test.mjs` 和 `application/tests/s2-sandbox-runner.test.mjs`。macOS 测试使用真实 POSIX 文件、Bash、HTTP 和子进程关闭事件，以本地 UID 替代生产 UID/GID 1000；Linux 权限隔离、`/proc` 命名空间清理和 Kubernetes 部署须另行集成验收。
 
 ## 构建与烟测
 
