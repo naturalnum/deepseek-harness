@@ -52,7 +52,9 @@ export const storageDirectoryCreateRequest = z.object({
 export const workspaceBindingView = z.object({
   workspaceId: bindingWorkspaceId, title, generation: bindingGeneration,
   state: z.enum(['ready', 'missing', 'recovering', 'blocked']), target: workspaceStorageTarget.nullable(),
-}).strict().refine(value => value.state !== 'ready' || value.target !== null)
+  recoveryRequestId: bindingRequestId.nullable(),
+}).strict().refine(value => (value.state !== 'ready' || value.target !== null)
+  && (!['recovering', 'blocked'].includes(value.state) || value.recoveryRequestId !== null))
 /** Existing Workspaces which need explicit storage recovery. */
 export const workspaceBindingsMissingView = z.object({ items: z.array(workspaceBindingView).max(200) }).strict()
 /** Explicit recovery binds its target and expected generation to one stable request. */

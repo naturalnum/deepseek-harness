@@ -51,5 +51,9 @@ test('recovery progress cannot claim completion without advancing exactly one ge
   assert.equal(workspaceBindingReceipt.safeParse({ ...receipt, state: 'blocked', bindingGeneration: null,
     errorCode: 'mount_stop_proof_missing' }).success, true)
   assert.equal(workspaceBindingView.safeParse({ workspaceId: request.workspaceId, title: 'Project',
-    generation: 1, state: 'ready', target: null }).success, false)
+    generation: 1, state: 'ready', target: null, recoveryRequestId: null }).success, false)
+  const recovering = { workspaceId: request.workspaceId, title: 'Project', generation: 3,
+    state: 'recovering', target: null, recoveryRequestId: request.requestId }
+  assert.deepEqual(workspaceBindingView.parse(recovering), recovering)
+  assert.equal(workspaceBindingView.safeParse({ ...recovering, recoveryRequestId: null }).success, false)
 })
