@@ -16,6 +16,7 @@ import os
 import secrets
 import stat
 import sys
+import unicodedata
 
 MAX_BYTES = 2 * 1024 * 1024
 MAX_ITEMS = 200
@@ -30,8 +31,11 @@ class Refusal(Exception):
 
 
 def component(value):
-    if not isinstance(value, str) or not value or value in ('.', '..') or len(value) > 100 \
-            or '/' in value or '\\' in value or '\x00' in value:
+    if not isinstance(value, str) or not value or value in ('.', '..') \
+            or len(value.encode('utf-16-le', 'surrogatepass')) // 2 > 100 \
+            or unicodedata.normalize('NFC', value) != value \
+            or '/' in value or '\\' in value \
+            or any(ord(c) < 32 or ord(c) == 127 or 0xd800 <= ord(c) <= 0xdfff for c in value):
         raise Refusal('invalid_path')
     return value
 
@@ -194,20 +198,58 @@ def execute(request):
             os.close(workspace)
             os.close(fd)
             return {}
-        workspace = directory(fd, workspace_id, True, owner)
-        if owner is not None:
-            os.fchown(workspace, owner['uid'], owner['gid'])
+        workspace = directory(fd, workspace_id)
+        workspace = walk(workspace, segments(request.get('rootParts', [])))
     except Refusal as error:
         os.close(fd)
         raise Refusal('workspace_unavailable') from error
     except OSError as error:
         os.close(fd)
         if error.errno == errno.ENOENT:
+            if operation == 'directory_probe':
+                return {'exists': False}
             raise Refusal('workspace_unavailable') from error
         raise
     os.close(fd)
     parts = segments(request.get('parts'))
     try:
+        if operation == 'directory_probe':
+            try:
+                selected = walk(os.dup(workspace), parts)
+            except FileNotFoundError:
+                return {'exists': False}
+            os.close(selected)
+            return {'exists': True}
+        if operation == 'create_directory':
+            parent = walk(os.dup(workspace), parts)
+            try:
+                selected = directory(parent, component(request['name']), True, owner)
+                os.close(selected)
+            finally:
+                os.close(parent)
+            return {}
+        if operation == 'directories':
+            listed = walk(os.dup(workspace), parts)
+            names = []
+            try:
+                with os.scandir(listed) as listing:
+                    for count, entry in enumerate(listing):
+                        if count >= MAX_SCANNED:
+                            raise Refusal('directory_too_large')
+                        try:
+                            component(entry.name)
+                            if stat.S_ISDIR(entry.stat(follow_symlinks=False).st_mode):
+                                names.append(entry.name)
+                        except (FileNotFoundError, Refusal):
+                            continue
+            finally:
+                os.close(listed)
+            names.sort()
+            remaining = [name for name in names if request.get('after') is None or name > request['after']]
+            limit = request['limit']
+            if not isinstance(limit, int) or limit < 1 or limit > MAX_ITEMS:
+                raise Refusal('invalid_path')
+            return {'names': remaining[:limit], 'more': len(remaining) > limit}
         if operation == 'kind':
             if not parts:
                 return {'kind': 'directory'}

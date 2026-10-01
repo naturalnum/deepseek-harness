@@ -2,12 +2,15 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, lstat } from 'node:fs/promises'
 import { basename, resolve } from 'node:path'
-import type { Pool } from 'pg'
+import type { Pool, PoolClient } from 'pg'
 import { PlatformError, type Identity } from '../contracts.ts'
 import { transaction } from './database.ts'
 import { requireActiveAccount } from './account-authority.ts'
 import { accountUserId } from '../account-contracts.ts'
 import { SafePosix, type SafePosixOptions } from './safe-posix.ts'
+import { StorageBindingService } from './storage-bindings.ts'
+import type { StorageBinding } from './workspace-binding-types.ts'
+import { fileDownloadPath } from '@power-evolve/contracts/file-download'
 
 const MAX_FILE_BYTES = 2 * 1024 * 1024
 
@@ -15,10 +18,8 @@ function sha256(bytes: Uint8Array): string { return createHash('sha256').update(
 
 function parts(input: string, directory = false): string[] {
   if (directory && input === '') return []
-  if (input.length === 0 || input.length > 512 || input.includes('\\') || input.includes('\0')) throw new PlatformError(400, 'invalid_path')
-  const value = input.split('/')
-  if (value.length > 16 || value.some(part => !part || part === '.' || part === '..' || part.length > 100)) throw new PlatformError(400, 'invalid_path')
-  return value
+  if (!fileDownloadPath.safeParse(input).success) throw new PlatformError(400, 'invalid_path')
+  return input.split('/')
 }
 
 function mime(path: string): string {
@@ -43,12 +44,18 @@ function decode(value: string): Buffer {
 export class FileService {
   private readonly root: string
   private readonly safe: SafePosix
+  /** Registered storage and recovery use the same descriptor helper as ordinary files. */
+  readonly bindings: StorageBindingService
   constructor(private readonly pool: Pool, root: string, sandboxOwner?: { uid: number; gid: number },
     safeOptions?: SafePosixOptions) {
     this.root = resolve(root)
     this.safe = new SafePosix(this.root, sandboxOwner, safeOptions)
+    this.bindings = new StorageBindingService(pool, this.safe)
   }
 
+  /**
+   * Initialize the configured managed root and verify descriptor support.
+   */
   async init(): Promise<void> {
     await mkdir(this.root, { recursive: true, mode: 0o700 })
     const stat = await lstat(this.root)
@@ -56,77 +63,127 @@ export class FileService {
     await this.safe.init()
   }
 
-  private async directory(id: string): Promise<{ id: string; path: string }> {
-    await this.safe.ensureWorkspace(id)
-    return { id, path: this.safe.path(id) }
-  }
-
-  private async defaultWorkspaceId(userId: string): Promise<string> {
-    const existing = await this.pool.query<{ id: string }>('SELECT id FROM pe_workspaces WHERE user_id=$1 AND is_default', [userId])
-    if (existing.rows[0]) return existing.rows[0].id
-    return transaction(this.pool, async client => {
-      await requireActiveAccount(client, accountUserId.parse(userId), 'update')
-      await client.query(
+  /**
+   * Ensure default metadata without probing or replacing existing bytes.
+   * @param userId Authenticated owner identity.
+   * @param client Optional transaction already holding the owner lock.
+   * @returns The durable default Workspace identity.
+   */
+  async defaultWorkspaceId(userId: string, client?: PoolClient): Promise<string> {
+    const ensure = async (current: PoolClient) => {
+      await requireActiveAccount(current, accountUserId.parse(userId), 'update')
+      await current.query(
         `INSERT INTO pe_workspaces(id,user_id,title,is_default) VALUES($1,$2,'Workspace',true)
          ON CONFLICT(user_id) WHERE is_default DO NOTHING`, [randomUUID(), userId])
-      const result = await client.query<{ id: string }>('SELECT id FROM pe_workspaces WHERE user_id=$1 AND is_default', [userId])
+      const result = await current.query<{ id: string }>('SELECT id FROM pe_workspaces WHERE user_id=$1 AND is_default', [userId])
       return result.rows[0]!.id
+    }
+    return client ? ensure(client) : transaction(this.pool, ensure)
+  }
+
+  /**
+   * Resolve the owner's default writable mount source.
+   * @param userId Authenticated owner identity.
+   * @returns The stable Workspace identity and verified physical mount path.
+   */
+  async workspaceForUser(userId: string): Promise<{ id: string; path: string }> {
+    return this.workspaceForId(userId, await this.defaultWorkspaceId(userId))
+  }
+
+  /**
+   * Resolve an explicitly owned Workspace without replacing missing ready storage.
+   * @param userId Authenticated owner identity.
+   * @param workspaceId Stable owned Workspace identity.
+   * @returns The stable identity and descriptor-verified current mount path.
+   */
+  async workspaceForId(userId: string, workspaceId: string): Promise<{ id: string; path: string }> {
+    const binding = await this.bindingForId(userId, workspaceId)
+    return { id: binding.workspaceId, path: this.safe.path(binding) }
+  }
+
+  /**
+   * Resolve the complete storage identity under the caller's admission transaction.
+   * @param userId Authenticated owner identity.
+   * @param workspaceId Stable owned Workspace identity.
+   * @param client Optional transaction already holding the account update lock.
+   * @returns Current owned binding; missing or recovering storage rejects with 503.
+   */
+  async bindingForId(userId: string, workspaceId: string, client?: PoolClient): Promise<StorageBinding> {
+    if (client) await requireActiveAccount(client, accountUserId.parse(userId), 'update')
+    return this.bindings.resolve(userId, workspaceId, client)
+  }
+
+  private async withBinding<T>(user: Identity, workspaceId: string | undefined,
+    action: (binding: StorageBinding) => Promise<T>, client?: PoolClient): Promise<T> {
+    // Default metadata is accepted before its persisted provisioning intent creates bytes.
+    const id = workspaceId ?? await this.defaultWorkspaceId(user.userId)
+    const run = async (current: PoolClient) => {
+      await requireActiveAccount(current, user.userId, 'update')
+      const binding = await this.bindingForId(user.userId, id, current)
+      return action(binding)
+    }
+    return client ? run(client) : transaction(this.pool, run)
+  }
+
+  /**
+   * Inspect an authorized entry without following links.
+   * @param user Authenticated owner.
+   * @param path Canonical path relative to the bound directory.
+   * @param workspaceId Explicit owned Workspace, otherwise the default.
+   * @returns The regular entry kind.
+   */
+  async kind(user: Identity, path: string, workspaceId?: string): Promise<'file' | 'directory'> {
+    const segments = parts(path, true)
+    return this.withBinding(user, workspaceId, binding => this.safe.kind(binding, segments))
+  }
+
+  /**
+   * List an authorized directory while holding its binding generation.
+   * @param user Authenticated owner.
+   * @param directory Canonical relative directory or the empty root.
+   * @param workspaceId Explicit owned Workspace, otherwise the default.
+   * @returns Bounded visible entries and their logical Workspace scope.
+   */
+  async list(user: Identity, directory: string, workspaceId?: string): Promise<unknown> {
+    const segments = parts(directory, true)
+    return this.withBinding(user, workspaceId, async binding => {
+      const listing = await this.safe.list(binding, segments)
+      const items = listing.items.sort((a, b) => a.name.localeCompare(b.name)).map(entry => ({
+        path: [...segments, entry.name].join('/'), name: entry.name, kind: entry.kind,
+        size: entry.size, updatedAt: entry.updatedAt, mime: entry.kind === 'file' ? mime(entry.name) : null,
+      }))
+      return { workspace: binding.workspaceId, directory, items }
     })
   }
 
-  private async ownedWorkspaceId(userId: string, workspaceId: string): Promise<string> {
-    const result = await this.pool.query<{ id: string }>(
-      'SELECT id FROM pe_workspaces WHERE id=$1 AND user_id=$2', [workspaceId, userId])
-    if (!result.rows[0]) throw new PlatformError(404, 'workspace_not_found')
-    return result.rows[0].id
-  }
-
-  /** Return the authenticated user's default Sandbox mount source. */
-  async workspaceForUser(userId: string): Promise<{ id: string; path: string }> {
-    return this.directory(await this.defaultWorkspaceId(userId))
-  }
-
-  /** Resolve only a workspace belonging to this user; callers never supply a filesystem root. */
-  async workspaceForId(userId: string, workspaceId: string): Promise<{ id: string; path: string }> {
-    return this.directory(await this.ownedWorkspaceId(userId, workspaceId))
-  }
-
-  private async workspace(user: Identity, workspaceId?: string): Promise<{ id: string; path: string }> {
-    const id = workspaceId === undefined
-      ? await this.defaultWorkspaceId(user.userId) : await this.ownedWorkspaceId(user.userId, workspaceId)
-    return { id, path: this.safe.path(id) }
-  }
-
-  /** Inspect one authorized entry without following its final component. */
-  async kind(user: Identity, path: string, workspaceId?: string): Promise<'file' | 'directory'> {
-    const workspace = await this.workspace(user, workspaceId)
-    const segments = parts(path, true)
-    return this.safe.kind(workspace.id, segments)
-  }
-
-  async list(user: Identity, directory: string, workspaceId?: string): Promise<unknown> {
-    const workspace = await this.workspace(user, workspaceId)
-    const segments = parts(directory, true)
-    const listing = await this.safe.list(workspace.id, segments)
-    const items = listing.items.sort((a, b) => a.name.localeCompare(b.name)).map(entry => ({
-      path: [...segments, entry.name].join('/'), name: entry.name, kind: entry.kind,
-      size: entry.size, updatedAt: entry.updatedAt, mime: entry.kind === 'file' ? mime(entry.name) : null,
-    }))
-    return { workspace: workspace.id, directory, items }
-  }
-
+  /**
+   * Read bounded source bytes from the current owned binding.
+   * @param user Authenticated owner.
+   * @param path Canonical relative file path.
+   * @param workspaceId Explicit owned Workspace, otherwise the default.
+   * @returns Base64 bytes, content digest, size and MIME.
+   */
   async read(user: Identity, path: string, workspaceId?: string): Promise<{
     path: string; size: number; mime: string; revision: string; data: string
   }> {
-    const workspace = await this.workspace(user, workspaceId)
-    const bytes = await this.safe.read(workspace.id, parts(path))
-    if (!bytes) throw new PlatformError(404, 'file_not_found')
-    return { path, size: bytes.length, mime: mime(path), revision: sha256(bytes), data: bytes.toString('base64') }
+    return this.readInWorkspace(user, workspaceId ?? await this.defaultWorkspaceId(user.userId), path)
   }
 
-  /** Read bytes only from an explicitly owned Workspace for immutable artifact publication. */
-  async readInWorkspace(user: Identity, workspaceId: string, path: string): ReturnType<FileService['read']> {
-    return this.read(user, path, workspaceId)
+  /**
+   * Read an explicitly owned source using an existing publication transaction.
+   * @param user Authenticated owner.
+   * @param workspaceId Stable owned Workspace identity.
+   * @param path Canonical relative file path.
+   * @param client Optional caller transaction; prevents nested account-lock waits.
+   * @returns Source bytes and their metadata from one binding generation.
+   */
+  async readInWorkspace(user: Identity, workspaceId: string, path: string, client?: PoolClient): ReturnType<FileService['read']> {
+    const segments = parts(path)
+    return this.withBinding(user, workspaceId, async binding => {
+      const bytes = await this.safe.read(binding, segments)
+      if (!bytes) throw new PlatformError(404, 'file_not_found')
+      return { path, size: bytes.length, mime: mime(path), revision: sha256(bytes), data: bytes.toString('base64') }
+    }, client)
   }
 
   /**
@@ -135,47 +192,63 @@ export class FileService {
    * @param workspaceId Explicit owned Workspace, without creating a default Workspace.
    * @param path Canonical relative file path.
    * @param signal Cancellation kills the helper and waits for its process to close.
+   * @param expectedGeneration A prepared multi-file download must keep this binding generation.
    * @returns Original bytes; missing or unsafe files fail with a Platform error.
    */
-  async readBytesInWorkspace(user: Identity, workspaceId: string, path: string, signal?: AbortSignal): Promise<Buffer> {
+  async readBytesInWorkspace(user: Identity, workspaceId: string, path: string, signal?: AbortSignal,
+    expectedGeneration?: number): Promise<Buffer> {
     signal?.throwIfAborted()
-    const id = await this.ownedWorkspaceId(user.userId, workspaceId)
-    signal?.throwIfAborted()
-    const bytes = await this.safe.read(id, parts(path), signal)
-    if (!bytes) throw new PlatformError(404, 'file_not_found')
-    return bytes
+    const segments = parts(path)
+    return this.withBinding(user, workspaceId, async binding => {
+      signal?.throwIfAborted()
+      if (expectedGeneration !== undefined && binding.generation !== expectedGeneration) throw new PlatformError(409, 'file_binding_changed')
+      const bytes = await this.safe.read(binding, segments, signal)
+      if (!bytes) throw new PlatformError(404, 'file_not_found')
+      return bytes
+    })
   }
 
-  /** Commit a conditional write under the user's PG lock; repeated request ids never reapply it. */
+  /**
+   * Commit a conditional write under the account and current binding locks.
+   * @param user Authenticated owner.
+   * @param requestId Stable owner-scoped mutation identity.
+   * @param path Canonical relative file path.
+   * @param baseRevision Expected previous digest or null for a new file.
+   * @param data Bounded canonical base64 bytes.
+   * @param workspaceId Explicit owned Workspace, otherwise the default.
+   * @returns Committed metadata; retries after rebinding reject with file_binding_changed.
+   */
   async put(user: Identity, requestId: string, path: string, baseRevision: string | null, data: string,
     workspaceId?: string): Promise<unknown> {
     const segments = parts(path)
     const bytes = decode(data)
     const digest = sha256(bytes)
-    const workspace = await this.workspace(user, workspaceId)
+    const id = workspaceId ?? await this.defaultWorkspaceId(user.userId)
     return transaction(this.pool, async client => {
       await requireActiveAccount(client, user.userId, 'update')
-      const previous = await client.query<{ workspace_id: string; path: string; digest: string; base_digest: string | null; size: string }>(
-        'SELECT workspace_id,path,digest,base_digest,size FROM pe_file_mutations WHERE user_id=$1 AND request_id=$2', [user.userId, requestId],
+      const binding = await this.bindingForId(user.userId, id, client)
+      const previous = await client.query<{ workspace_id: string; path: string; digest: string; base_digest: string | null; size: string; binding_generation: string }>(
+        'SELECT workspace_id,path,digest,base_digest,size,binding_generation FROM pe_file_mutations WHERE user_id=$1 AND request_id=$2', [user.userId, requestId],
       )
       if (previous.rows[0]) {
         const prior = previous.rows[0]
-        if (prior.workspace_id !== workspace.id || prior.path !== path || prior.digest !== digest || prior.base_digest !== baseRevision) {
+        if (prior.workspace_id !== binding.workspaceId || prior.path !== path || prior.digest !== digest || prior.base_digest !== baseRevision) {
           throw new PlatformError(409, 'request_id_conflict')
         }
+        if (Number(prior.binding_generation) !== binding.generation) throw new PlatformError(409, 'file_binding_changed')
         return { path, size: Number(prior.size), mime: mime(path), revision: prior.digest }
       }
       const mount = await client.query<{ state: string }>(
         'SELECT state FROM pe_mount_slots WHERE user_id=$1 FOR UPDATE', [user.userId])
       if (mount.rows[0] && mount.rows[0].state !== 'free') throw new PlatformError(409, 'workspace_busy')
-      const completed = await client.query('SELECT request_id FROM pe_file_mutations WHERE user_id=$1 AND workspace_id=$2 AND path=$3 AND digest=$4 LIMIT 1',
-        [user.userId, workspace.id, path, digest])
+      const completed = await client.query('SELECT request_id FROM pe_file_mutations WHERE user_id=$1 AND workspace_id=$2 AND path=$3 AND digest=$4 AND binding_generation=$5 LIMIT 1',
+        [user.userId, binding.workspaceId, path, digest, binding.generation])
       // The helper checks the old revision and renames under one retained parent
       // descriptor. The PG lock still orders platform writes and idempotency.
-      await this.safe.put(workspace.id, segments, data, digest, baseRevision, !!completed.rowCount)
+      await this.safe.put(binding, segments, data, digest, baseRevision, !!completed.rowCount)
       await client.query(
-        'INSERT INTO pe_file_mutations(user_id,request_id,workspace_id,path,digest,base_digest,mime,size) VALUES($1,$2,$3,$4,$5,$6,$7,$8)',
-        [user.userId, requestId, workspace.id, path, digest, baseRevision, mime(path), bytes.length],
+        'INSERT INTO pe_file_mutations(user_id,request_id,workspace_id,path,digest,base_digest,mime,size,binding_generation) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)',
+        [user.userId, requestId, binding.workspaceId, path, digest, baseRevision, mime(path), bytes.length, binding.generation],
       )
       return { path, size: bytes.length, mime: mime(path), revision: digest }
     })

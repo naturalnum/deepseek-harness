@@ -4,20 +4,31 @@ import { lstat, realpath } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { PlatformError } from '../contracts.ts'
+import type { StorageBinding } from './workspace-binding-types.ts'
 
 const MAX_IPC_BYTES = 4 * 1024 * 1024
 const MAX_ACTIVE = 8
 const HELPER = fileURLToPath(new URL('../../src/platform/safe-posix.py', import.meta.url))
 
+/** Deployment-selected Python executable and bounded helper deadline. */
 export interface SafePosixOptions { executable?: string; timeoutMs?: number }
+/** Validated location beneath the managed POSIX root, independent of Workspace identity. */
+export type StoragePath = Pick<StorageBinding, 'rootKey' | 'rootRelativePath'>
+type Location = string | StoragePath
 type Operation = 'probe' | 'ensure_workspace' | 'kind' | 'read' | 'list' | 'put'
+  | 'directory_probe' | 'create_directory' | 'directories'
 interface Request {
   op: Operation; root: string; owner?: { uid: number; gid: number }; workspaceId?: string
   parts?: string[]; data?: string; digest?: string; baseRevision?: string | null; priorSameDigest?: boolean
+  rootParts?: string[]; name?: string; after?: string; limit?: number
 }
 interface Response { ok: boolean; code?: string; value?: unknown }
 
 function unavailable(): PlatformError { return new PlatformError(503, 'workspace_unavailable') }
+function address(location: Location): Pick<Request, 'workspaceId' | 'rootParts'> {
+  return typeof location === 'string' ? { workspaceId: location }
+    : { workspaceId: location.rootKey, rootParts: location.rootRelativePath === '' ? [] : location.rootRelativePath.split('/') }
+}
 
 const statuses: Record<string, number> = {
   invalid_path: 400, invalid_file_data: 400, file_not_found: 404,
@@ -39,6 +50,9 @@ export class SafePosix {
     this.timeoutMs = options.timeoutMs ?? 10_000
   }
 
+  /**
+   * Verify the configured root and POSIX descriptor helper.
+   */
   async init(): Promise<void> {
     const stat = await lstat(this.root).catch(() => { throw unavailable() })
     if (!stat.isDirectory() || stat.isSymbolicLink()) throw unavailable()
@@ -47,22 +61,86 @@ export class SafePosix {
     if (probe?.ready !== true || typeof probe.python !== 'string') throw unavailable()
   }
 
-  path(workspaceId: string): string { return resolve(this.presentedRoot, workspaceId) }
+  /**
+   * Project a validated storage address into its mount path.
+   * @param location Server-owned root key and canonical relative binding.
+   * @returns The physical path; actual access still requires descriptor verification.
+   */
+  path(location: Location): string {
+    const selected = address(location)
+    return resolve(this.presentedRoot, selected.workspaceId!, ...(selected.rootParts ?? []))
+  }
 
+  /**
+   * Probe existing directories without creating the root or binding target.
+   * @param location Validated storage address.
+   * @param parts Optional canonical directory components beneath that address.
+   * @returns Whether the real directory exists; links and access errors reject.
+   */
+  async probeDirectory(location: Location, parts: string[] = []): Promise<boolean> {
+    const value = await this.call({ op: 'directory_probe', root: this.root, ...address(location), parts }) as { exists: boolean }
+    if (typeof value.exists !== 'boolean') throw unavailable()
+    return value.exists
+  }
+
+  /**
+   * Create one child beneath an existing descriptor-verified parent.
+   * @param location Validated storage address.
+   * @param parts Existing parent components.
+   * @param name One canonical child component.
+   */
+  async createDirectory(location: Location, parts: string[], name: string): Promise<void> {
+    await this.call({ op: 'create_directory', root: this.root, ...address(location), parts, name,
+      ...(this.owner ? { owner: this.owner } : {}) })
+  }
+
+  /**
+   * Page real immediate directories with bounded enumeration.
+   * @param location Validated storage address.
+   * @param parts Existing parent components.
+   * @param limit Maximum entries, from one through 200.
+   * @param after Optional preceding name in code-point order.
+   * @returns Names and whether another page exists.
+   */
+  async directories(location: Location, parts: string[], limit: number, after?: string): Promise<{ names: string[]; more: boolean }> {
+    const value = await this.call({ op: 'directories', root: this.root, ...address(location), parts, limit,
+      ...(after === undefined ? {} : { after }) }) as { names: string[]; more: boolean }
+    if (!Array.isArray(value.names) || value.names.length > limit || value.names.some(name => typeof name !== 'string')
+      || typeof value.more !== 'boolean') throw unavailable()
+    return value
+  }
+
+  /**
+   * Initialize only an explicitly accepted provisioning root.
+   * @param workspaceId Server-owned immutable root key.
+   */
   async ensureWorkspace(workspaceId: string): Promise<void> {
     await this.call({ op: 'ensure_workspace', root: this.root, workspaceId,
       ...(this.owner ? { owner: this.owner } : {}) })
   }
 
-  async kind(workspaceId: string, parts: string[]): Promise<'file' | 'directory'> {
-    const result = await this.call({ op: 'kind', root: this.root, workspaceId, parts,
+  /**
+   * Inspect a regular entry without following its final component.
+   * @param location Validated existing storage address.
+   * @param parts Canonical relative entry components.
+   * @returns The regular file or directory kind.
+   */
+  async kind(location: Location, parts: string[]): Promise<'file' | 'directory'> {
+    const result = await this.call({ op: 'kind', root: this.root, ...address(location), parts,
       ...(this.owner ? { owner: this.owner } : {}) }) as { kind: 'file' | 'directory' }
     if (result?.kind !== 'file' && result?.kind !== 'directory') throw unavailable()
     return result.kind
   }
 
-  async read(workspaceId: string, parts: string[], signal?: AbortSignal): Promise<Buffer | null> {
-    const result = await this.call({ op: 'read', root: this.root, workspaceId, parts,
+  /**
+   * Read a bounded regular file through retained directory descriptors.
+   * @param location Validated existing storage address.
+   * @param parts Canonical relative file components.
+   * @param signal Cancellation waits for the actual helper close event.
+   * @returns Original bytes, or null when the file is absent.
+   */
+  async read(location: Location, parts: string[], signal?: AbortSignal): Promise<Buffer | null> {
+    const result = await this.call({ op: 'read', root: this.root, ...address(location), parts,
       ...(this.owner ? { owner: this.owner } : {}) }, signal) as { data: string | null }
     if (result?.data === null) return null
     if (typeof result?.data !== 'string' || result.data.length > MAX_IPC_BYTES) throw unavailable()
@@ -71,10 +149,16 @@ export class SafePosix {
     return bytes
   }
 
-  async list(workspaceId: string, parts: string[]): Promise<{ missing: boolean; items: Array<{
+  /**
+   * List bounded regular entries beneath an existing storage address.
+   * @param location Validated existing storage address.
+   * @param parts Canonical relative directory components.
+   * @returns Entry metadata; a missing child directory is marked separately.
+   */
+  async list(location: Location, parts: string[]): Promise<{ missing: boolean; items: Array<{
     name: string; kind: 'file' | 'directory'; size: number | null; updatedAt: string
   }> }> {
-    const result = await this.call({ op: 'list', root: this.root, workspaceId, parts,
+    const result = await this.call({ op: 'list', root: this.root, ...address(location), parts,
       ...(this.owner ? { owner: this.owner } : {}) }) as {
       missing: boolean; items: Array<{ name: string; kind: 'file' | 'directory'; size: number | null; updatedAt: string }>
     }
@@ -85,9 +169,18 @@ export class SafePosix {
     return result
   }
 
-  async put(workspaceId: string, parts: string[], data: string, digest: string,
+  /**
+   * Check the prior digest and atomically replace bytes under a retained parent.
+   * @param location Validated existing storage address.
+   * @param parts Canonical relative file components.
+   * @param data Canonical bounded base64 bytes.
+   * @param digest Digest of the proposed bytes.
+   * @param baseRevision Expected previous digest or null.
+   * @param priorSameDigest Whether this generation already committed that digest.
+   */
+  async put(location: Location, parts: string[], data: string, digest: string,
     baseRevision: string | null, priorSameDigest: boolean): Promise<void> {
-    const result = await this.call({ op: 'put', root: this.root, workspaceId, parts, data, digest,
+    const result = await this.call({ op: 'put', root: this.root, ...address(location), parts, data, digest,
       baseRevision, priorSameDigest, ...(this.owner ? { owner: this.owner } : {}) }) as { written: boolean }
     if (typeof result?.written !== 'boolean') throw unavailable()
   }
