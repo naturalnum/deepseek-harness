@@ -217,6 +217,7 @@ export class ExecutionService {
     try {
       await assertLease()
       if (await this.currentCancel(row) && !row.sandbox_name) {
+        await this.sandboxes.cancelCreation(row.id, row.session_id, row.user_id, this.workerId, assertLease)
         await this.settle(row, 'cancelled', null, null); return
       }
       await assertLease()

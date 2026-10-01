@@ -23,6 +23,11 @@ interface MountSlot {
 }
 interface BindingWorkspace { binding_generation: string; binding_state: string; recovery_request_id: string | null }
 interface StopInstance { stop_pod_uid: string | null; stop_evidence: unknown; binding_snapshot: unknown }
+interface CreatingInstance extends StopInstance {
+  state: string; user_id: string; name: string; pod_uid: string | null; runner_instance_id: string | null
+}
+interface CreationCancellation { executionId: string; sessionId: string; userId: string; ownerId: string }
+interface CreatingStop { cancellation: CreationCancellation; slot: MountSlot; podUid: string; instance: CreatingInstance }
 type SandboxFiles = Pick<FileService, 'workspaceForId'> & {
   bindingForId(userId: string, workspaceId: string, client?: PoolClient): Promise<StorageBinding>
 }
@@ -134,8 +139,8 @@ export class SandboxManager {
     }
     return binding
   }
-  private async storedBinding(userId: string, workspaceId: string): Promise<StorageBinding | null> {
-    const selected = await this.pool.query<{ workspace_id: string; space_id: string; root_key: string;
+  private async storedBinding(userId: string, workspaceId: string, client?: PoolClient): Promise<StorageBinding | null> {
+    const selected = await (client ?? this.pool).query<{ workspace_id: string; space_id: string; root_key: string;
       root_relative_path: string; binding_generation: string }>(
       `SELECT b.workspace_id,b.space_id,s.root_key,b.root_relative_path,w.binding_generation
        FROM pe_workspaces w JOIN pe_workspace_bindings b ON b.workspace_id=w.id AND b.user_id=w.user_id
@@ -401,6 +406,218 @@ export class SandboxManager {
         WHERE session_id=$1 AND state='creating' AND pod_uid IS NULL RETURNING session_id`, [slot.session_id, uid])
       if (!instance.rowCount) throw new MountSlotBlocked('mount_reservation_changed', false)
       return uid
+    })
+  }
+
+  private async cancelledCreation(cancellation: CreationCancellation, client: PoolClient,
+    expected?: CreatingStop): Promise<CreatingStop | null> {
+    const { executionId, sessionId, userId } = cancellation
+    await this.lockUser(client, userId)
+    const hint = await client.query<{ workspace_id: string | null }>('SELECT workspace_id FROM pe_mount_slots WHERE user_id=$1', [userId])
+    if (hint.rows[0]?.workspace_id) await this.lockWorkspace(client, userId, hint.rows[0].workspace_id)
+    const selected = await client.query<MountSlot>('SELECT * FROM pe_mount_slots WHERE user_id=$1 FOR UPDATE', [userId])
+    const instances = await client.query<CreatingInstance>(
+      'SELECT * FROM pe_sandbox_instances WHERE session_id=$1 AND user_id=$2 FOR UPDATE', [sessionId, userId])
+    await this.cancelExecution(cancellation, client)
+    const slot = selected.rows[0], instance = instances.rows[0]
+    if (!expected && (!slot || slot.session_id !== sessionId || slot.state === 'ready')) return null
+    if (slot?.state === 'free' && !expected && (!instance || instance.state === 'deleted')) return null
+    if (await this.recoveryOwnsCleanup(client, userId)) throw new MountSlotBlocked('mount_workspace_recovering', false)
+    if (!slot || slot.state !== 'reserved' || slot.session_id !== sessionId || !slot.workspace_id
+      || slot.pod_uid !== null || slot.runner_instance_id !== null
+      || !instance || !['creating', 'deleting'].includes(instance.state) || instance.name !== this.name(userId)
+      || !instance.pod_uid || instance.runner_instance_id !== null
+      || expected && (slot.generation !== expected.slot.generation || instance.pod_uid !== expected.podUid
+        || !this.sameBinding(slot.binding_snapshot, this.snapshot(expected.slot)))) {
+      throw new MountSlotBlocked('mount_creation_cancel_identity_changed', false)
+    }
+    const binding = await this.storedBinding(userId, slot.workspace_id, client)
+    if (!binding || !this.sameBinding(slot.binding_snapshot, binding) || !this.sameBinding(instance.binding_snapshot, binding)) {
+      throw new MountSlotBlocked('mount_reservation_changed', false)
+    }
+    const active = await client.query(`SELECT id FROM pe_cloud_executions WHERE session_id=$1 AND id<>$2
+      AND state IN ('queued','starting','running','cancelling','uncertain')
+      AND (cancel_requested=false OR sandbox_name IS NOT NULL OR pod_uid IS NOT NULL OR runner_instance_id IS NOT NULL)
+      LIMIT 1`, [sessionId, executionId])
+    if (active.rowCount) throw new MountSlotBlocked('mount_slot_busy', false)
+    const target = { cancellation, slot, podUid: instance.pod_uid, instance }
+    if ((slot.stop_pod_uid !== null || slot.stop_evidence !== null
+      || instance.stop_pod_uid !== null || instance.stop_evidence !== null) && !this.creationProof(target)) {
+      throw new MountSlotBlocked('mount_stop_proof_missing', false)
+    }
+    return target
+  }
+
+  private async cancelExecution(cancellation: CreationCancellation, client: PoolClient): Promise<void> {
+    const { executionId, sessionId, userId, ownerId } = cancellation
+    const execution = await client.query<{ state: string; cancel_requested: boolean; sandbox_name: string | null;
+      pod_uid: string | null; runner_instance_id: string | null }>(
+      `SELECT state,cancel_requested,sandbox_name,pod_uid,runner_instance_id FROM pe_cloud_executions
+       WHERE id=$1 AND session_id=$2 AND user_id=$3 AND lease_owner=$4
+       AND lease_until>clock_timestamp() FOR UPDATE`, [executionId, sessionId, userId, ownerId])
+    const row = execution.rows[0]
+    if (!row || !['starting', 'uncertain'].includes(row.state) || !row.cancel_requested
+      || row.sandbox_name !== null || row.pod_uid !== null || row.runner_instance_id !== null) {
+      throw new MountSlotBlocked('mount_creation_cancel_fence_changed', false)
+    }
+  }
+
+  private creationProof(target: CreatingStop): { status: 'UNSCHEDULED_DELETING' | 'KUBELET_STOPPED'; sandboxUid: string } | null {
+    const { slot, instance, podUid } = target, binding = this.snapshot(slot)
+    const matches = (value: unknown): value is Record<string, unknown> => {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+      const item = value as Record<string, unknown>
+      return (item.status === 'UNSCHEDULED_DELETING' || item.status === 'KUBELET_STOPPED')
+        && item.podUid === podUid && item.generation === slot.generation && item.sessionId === slot.session_id
+        && item.runnerInstanceId === null && typeof item.sandboxUid === 'string' && item.sandboxUid.length > 0
+        && this.sameBinding(item.bindingSnapshot, binding)
+    }
+    const evidence = slot.stop_evidence, prior = instance.stop_evidence
+    if (slot.stop_pod_uid !== podUid || instance.stop_pod_uid !== podUid || !matches(evidence) || !matches(prior)
+      || evidence.status !== prior.status || evidence.sandboxUid !== prior.sandboxUid) return null
+    return { status: evidence.status as 'UNSCHEDULED_DELETING' | 'KUBELET_STOPPED', sandboxUid: String(evidence.sandboxUid) }
+  }
+
+  private async creationStep(target: CreatingStop, assertLease: () => Promise<void>,
+    operation?: (client: PoolClient, current: CreatingStop) => Promise<void>): Promise<CreatingStop> {
+    await assertLease()
+    return transaction(this.pool, async client => {
+      const current = await this.cancelledCreation(target.cancellation, client, target)
+      if (!current || current.instance.state !== 'deleting') throw new MountSlotBlocked('mount_reservation_changed', false)
+      if (operation) await operation(client, current)
+      await this.cancelExecution(target.cancellation, client)
+      return current
+    })
+  }
+
+  /**
+   * Stop a captured, undispatched creation before its cancelling execution becomes terminal.
+   * Failed observations retain the reservation and use the original execution lease on retry.
+   * @param executionId - Original stable execution whose cancellation is persisted.
+   * @param sessionId - Session owning the creation reservation.
+   * @param userId - Owner whose writable Home remains reserved until stop evidence is durable.
+   * @param ownerId - Execution worker whose current database lease fences every cleanup write.
+   * @param assertLease - Rejects when the execution worker loses its lease.
+   */
+  async cancelCreation(executionId: string, sessionId: string, userId: string, ownerId: string,
+    assertLease: () => Promise<void>): Promise<void> {
+    await assertLease()
+    const selected = await transaction(this.pool, async client => {
+      const current = await this.cancelledCreation({ executionId, sessionId, userId, ownerId }, client)
+      if (current?.instance.state === 'creating') {
+        await client.query("UPDATE pe_sandbox_instances SET state='deleting',updated_at=now() WHERE session_id=$1 AND state='creating'", [sessionId])
+      }
+      await this.cancelExecution({ executionId, sessionId, userId, ownerId }, client)
+      return current
+    })
+    if (!selected) return
+    const target = selected, name = this.name(userId), labels = this.labels(sessionId, userId, name, target.slot.generation)
+    const resources = await Promise.all([this.get('sandboxes', name), this.get('pods', name),
+      this.get('services', name), this.get('secrets', name)])
+    const [sandbox, firstPod] = resources
+    let proof = this.creationProof(target)
+    if (!proof && ((!sandbox && target.instance.state === 'creating') || !resources[2] || !resources[3])) {
+      throw new MountSlotBlocked('mount_creation_cancel_resources_missing', false)
+    }
+    if (resources.slice(2).some(resource => resource && (!resource.metadata.uid || !this.owned(resource, labels)))) {
+      throw new MountSlotBlocked('mount_creation_cancel_identity_changed', false)
+    }
+    const owners = firstPod?.metadata.ownerReferences?.map(ref => ref.uid).filter((uid): uid is string => !!uid) ?? []
+    const sandboxUid = proof?.sandboxUid ?? sandbox?.metadata.uid ?? (owners.length === 1 ? owners[0] : undefined)
+    if (!sandboxUid) throw new MountSlotBlocked('mount_stop_sandbox_identity_changed', false)
+    const parentMatches = (value: Resource | null): boolean => value === null
+      || value.metadata.uid === sandboxUid && this.owned(value, labels)
+        && (value.metadata.finalizers ?? []).every(finalizer => finalizer === 'foregroundDeletion')
+    const podMatches = (value: Resource): boolean => value.metadata.uid === target.podUid && this.owned(value, labels)
+      && value.metadata.ownerReferences?.some(ref => ref.uid === sandboxUid) === true
+      && this.hasDataMounts(value.spec, userId, this.snapshot(target.slot))
+    if (!parentMatches(sandbox) || firstPod && !podMatches(firstPod)) {
+      throw new MountSlotBlocked('mount_stop_pod_identity_changed', false)
+    }
+    if (!firstPod && !proof) throw new MountSlotBlocked('mount_stop_proof_missing', false)
+    if (firstPod && !firstPod.metadata.finalizers?.includes(STOP_FINALIZER)) {
+      if (!proof || !firstPod.metadata.deletionTimestamp || kubernetesPodStopStatus(firstPod) !== proof.status) {
+        if (firstPod.metadata.deletionTimestamp || !firstPod.metadata.resourceVersion
+          || (firstPod.metadata.finalizers?.length ?? 0) > 16) throw new MountSlotBlocked('mount_pod_finalizer_unavailable', false)
+        await this.creationStep(target, assertLease, async () => {
+          await this.kube.call('PATCH', this.kube.resourcePath(this.config.namespace, 'pods', name), {
+            metadata: { uid: target.podUid, resourceVersion: firstPod.metadata.resourceVersion,
+              finalizers: [...(firstPod.metadata.finalizers ?? []), STOP_FINALIZER] },
+          })
+        })
+      }
+    }
+    if (sandbox && !sandbox.metadata.deletionTimestamp) {
+      await this.creationStep(target, assertLease, async () => {
+        try { await this.kube.call('DELETE', this.kube.resourcePath(this.config.namespace, 'sandboxes', name),
+          { apiVersion: 'v1', kind: 'DeleteOptions', propagationPolicy: 'Background', preconditions: { uid: sandboxUid } }) }
+        catch (error) { if (!(error instanceof KubernetesError && error.status === 404)) throw error }
+      })
+    }
+    const deadline = Date.now() + this.config.readyTimeoutMs
+    while (Date.now() < deadline) {
+      const current = await this.creationStep(target, assertLease)
+      proof = this.creationProof(current)
+      const [pod, parent] = await Promise.all([this.get('pods', name), this.get('sandboxes', name)])
+      if (!parentMatches(parent) || pod && !podMatches(pod)) throw new MountSlotBlocked('mount_stop_pod_identity_changed', false)
+      if (!pod && !proof) throw new MountSlotBlocked('mount_stop_proof_missing', false)
+      if (pod && !pod.metadata.finalizers?.includes(STOP_FINALIZER)
+        && (!proof || !pod.metadata.deletionTimestamp || kubernetesPodStopStatus(pod) !== proof.status)) {
+        throw new MountSlotBlocked('mount_stop_pod_identity_changed', false)
+      }
+      const status = pod && kubernetesPodStopStatus(pod)
+      if (pod && status && (!parent || parent.metadata.deletionTimestamp) && pod.metadata.finalizers?.includes(STOP_FINALIZER)) {
+        if (proof && proof.status !== status) throw new MountSlotBlocked('mount_stop_proof_missing', false)
+        if (!proof) {
+          const evidence = { status, podUid: target.podUid, sandboxUid, generation: target.slot.generation,
+            sessionId, runnerInstanceId: null, bindingSnapshot: this.snapshot(target.slot), observedAt: new Date().toISOString() }
+          await this.creationStep(target, assertLease, async client => {
+            await client.query(`UPDATE pe_sandbox_instances SET stop_pod_uid=$2,stop_evidence=$3::jsonb,updated_at=now()
+              WHERE session_id=$1 AND state='deleting' AND pod_uid=$2 AND runner_instance_id IS NULL`,
+            [sessionId, target.podUid, JSON.stringify(evidence)])
+            await client.query(`UPDATE pe_mount_slots SET stop_pod_uid=$2,stop_evidence=$3::jsonb,updated_at=now()
+              WHERE user_id=$1 AND state='reserved' AND generation=$4`,
+            [userId, target.podUid, JSON.stringify(evidence), target.slot.generation])
+          })
+          proof = { status, sandboxUid }
+        }
+        if (!pod.metadata.resourceVersion) throw new MountSlotBlocked('mount_stop_pod_version_missing', false)
+        await this.creationStep(target, assertLease, async () => {
+          try { await this.kube.call('PATCH', this.kube.resourcePath(this.config.namespace, 'pods', name), {
+            metadata: { uid: target.podUid, resourceVersion: pod.metadata.resourceVersion,
+              finalizers: pod.metadata.finalizers!.filter(value => value !== STOP_FINALIZER) },
+          }) }
+          catch (error) { if (!(error instanceof KubernetesError && [404, 409].includes(error.status))) throw error }
+        })
+      }
+      if (!pod && !parent) break
+      await delay(250)
+    }
+    if (await this.get('pods', name) || await this.get('sandboxes', name)) throw new MountSlotBlocked('mount_stop_unconfirmed', false)
+    const stopped = await this.creationStep(target, assertLease)
+    if (!this.creationProof(stopped)) throw new MountSlotBlocked('mount_stop_proof_missing', false)
+    for (const resource of ['services', 'secrets'] as const) {
+      const existing = await this.get(resource, name)
+      if (existing) {
+        if (!existing.metadata.uid || !this.owned(existing, labels)) throw new MountSlotBlocked(`mount_stop_${resource}_identity_changed`, false)
+        await this.creationStep(target, assertLease, async () => {
+          try { await this.kube.call('DELETE', this.kube.resourcePath(this.config.namespace, resource, name),
+            { apiVersion: 'v1', kind: 'DeleteOptions', preconditions: { uid: existing.metadata.uid } }) }
+          catch (error) { if (!(error instanceof KubernetesError && error.status === 404)) throw error }
+        })
+      }
+      if (await this.get(resource, name)) throw new MountSlotBlocked(`mount_stop_${resource}_unconfirmed`, false)
+    }
+    await this.creationStep(target, assertLease, async (client, current) => {
+      if (!this.creationProof(current)) throw new MountSlotBlocked('mount_stop_proof_missing', false)
+      const remaining = await Promise.all(['sandboxes', 'pods', 'services', 'secrets'].map(resource =>
+        this.get(resource as 'sandboxes' | 'pods' | 'services' | 'secrets', name)))
+      if (remaining.some(resource => resource !== null)) throw new MountSlotBlocked('mount_stop_unconfirmed', false)
+      await this.cancelExecution(target.cancellation, client)
+      await client.query(`UPDATE pe_sandbox_instances SET state='deleted',pod_uid=NULL,updated_at=now()
+        WHERE session_id=$1 AND state='deleting' AND pod_uid=$2 AND runner_instance_id IS NULL`, [sessionId, target.podUid])
+      await client.query(`UPDATE pe_mount_slots SET state='free',session_id=NULL,workspace_id=NULL,updated_at=now()
+        WHERE user_id=$1 AND state='reserved' AND generation=$2`, [userId, target.slot.generation])
     })
   }
 

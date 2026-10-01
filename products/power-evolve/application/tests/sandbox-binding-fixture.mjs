@@ -65,6 +65,7 @@ export class FakeKubernetes {
     if (method === 'DELETE') {
       if (body?.preconditions?.uid !== value.metadata.uid) throw new KubernetesError(409, 'UID changed')
       if (resource === 'sandboxes') {
+        value.metadata.deletionTimestamp = '2026-09-29T00:00:00Z'
         const pod = this.resource('pods', name)
         if (pod) {
           pod.metadata.deletionTimestamp = '2026-09-29T00:00:00Z'
@@ -81,9 +82,10 @@ export class FakeKubernetes {
       return null
     }
     if (method === 'PATCH' && resource === 'pods') {
+      if (body.metadata.uid !== undefined && body.metadata.uid !== value.metadata.uid) throw new KubernetesError(409, 'UID changed')
       if (body.metadata.resourceVersion !== value.metadata.resourceVersion) throw new KubernetesError(409, 'version changed')
       value.metadata.finalizers = body.metadata.finalizers
-      value.metadata.resourceVersion = '2'
+      value.metadata.resourceVersion = String(Number(value.metadata.resourceVersion) + 1)
       if (value.metadata.deletionTimestamp && !value.metadata.finalizers.length) {
         this.resources.delete(key)
         this.resources.delete(`sandboxes/${name}`)
@@ -100,7 +102,10 @@ export async function createSandboxFixture(t, sandboxConfig = {}, poolMax = 10) 
   await admin.query(`CREATE DATABASE "${name}"`)
   const url = new URL(databaseUrl); url.pathname = `/${name}`
   const pool = new Pool({ connectionString: url.href, max: poolMax })
-  t.after(async () => { await pool.end(); await admin.query(`DROP DATABASE "${name}"`); await admin.end() })
+  t.after(async () => {
+    try { await pool.end() }
+    finally { try { await admin.query(`DROP DATABASE "${name}"`) } finally { await admin.end() } }
+  })
   await initializeDatabase(pool)
   const version = Number((await pool.query('SELECT version FROM pe_schema')).rows[0].version)
   assert.equal(version, CURRENT_SCHEMA_VERSION)

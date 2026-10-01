@@ -66,6 +66,10 @@ SSH Runner 只有明确报告 `effectMayHaveOccurred` 为 false 时，失败才�
 
 创建中断后，重试仅观察同一会话的预留、归属、代次、存储绑定及已有 Secret、Service、Sandbox。Pending Pod UID 保存在创建中的实例记录；两张记录一同就绪前，预留槽位的 Pod 和 Runner 身份保持为空。finalizer 写入断连后可继续处理已捕获的同一 UID。资源缺失或已捕获 Pod 变化，都不能放行创建、释放槽位或替代实例。
 
+取消已捕获 Pending Pod UID、结果不明的创建时，原执行保持可认领，直到清理完成。worker 保持挂载槽位预留并将实例标记为 deleting，阻止晚到的就绪观察。它按 UID 以后台传播删除本人 Sandbox，保留原 Pod finalizer，直到两张 PG 记录都提交原生删除证据。未调度且已进入删除的 Pod 使用 `UNSCHEDULED_DELETING`；已分配节点的 Pod 必须具备严格的 `KUBELET_STOPPED` 证据。这些创建证明的 Runner 身份为空，不放宽就绪 writer 或工作区恢复证明。只有确认 Pod、Sandbox、Service 和 Secret 均已移除，才释放槽位并把取消执行结算为终态。账号撤销允许这项清理、抑制续接消息，并且不会派发已取消命令。原身份缺失、资源被替换、父资源出现未知 finalizer、停止证据不足或租约丢失时，预留保持阻塞，由同一执行的下一次认领继续核对。
+
+升级前应检查仍占用创建预留记录的终态取消执行。此清理需要非终态、已请求取消的执行租约，不会自动认领旧版本已遗留的预留。应保留这些身份供运维核对；直接清空槽位或将资源不存在当作停止证据都不安全。
+
 首次向 Runner POST 前，执行 worker 必须在当前租约下持久记录就绪 Pod 和 Runner 身份。创建结果不明且尚未记录这些身份时，只有原获授权 Sandbox 就绪后才能恢复为 `starting`；首次派发前仍先查询状态。已记录身份的结果不明命令若在 Runner 上缺失，继续保持结果不明，不再派发。取消、账号权限和挂载授权仍约束派发。
 
 `sandboxConcurrency` 限制所有 Platform 副本合计的活跃执行 worker。认领 worker 时，在共享事务锁下统计 PG 有效租约；崩溃 worker 的租约过期后释放容量，由接替者核对执行状态。已进入 `running` 并延期观察的命令会释放 worker 租约，因此此限额不同于存活 Pod 数量；用户挂载槽位另行约束 Pod 替换。

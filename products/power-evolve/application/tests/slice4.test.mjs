@@ -16,7 +16,7 @@ import { kubernetesPodStopStatus } from '../lib/platform/pod-stop-status.js'
 const require = createRequire(new URL('../package.json', import.meta.url))
 const { Pool } = require('pg')
 const privateDir = process.env.PE_PRIVATE_DIR ?? join(homedir(), '.config/power-evolve/shared-host-slice-1')
-const databaseUrl = (await readFile(join(privateDir, 'database-url'), 'utf8')).trim()
+const databaseUrl = process.env.PE_TEST_DATABASE_URL ?? (await readFile(join(privateDir, 'database-url'), 'utf8')).trim()
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 const fileVerification = { service: { async verify() { throw new Error('Legacy Runner fixture has no file observation') } }, timeoutMs: 1000 }
 async function eventually(check, label, timeout = 10000) {
@@ -48,9 +48,8 @@ test('cloud execution persists acceptance and reconciles runner outcomes', { tim
   const workers = []
   t.after(async () => {
     await Promise.allSettled(workers.map(worker => worker.close()))
-    await pool.end()
-    await admin.query(`DROP DATABASE "${name}"`)
-    await admin.end()
+    try { await pool.end() }
+    finally { try { await admin.query(`DROP DATABASE "${name}"`) } finally { await admin.end() } }
   })
   await pool.query(migrations.schema)
   await pool.query('INSERT INTO pe_schema(version) VALUES(1)')
@@ -110,6 +109,7 @@ test('cloud execution persists acceptance and reconciles runner outcomes', { tim
       await pool.query("UPDATE pe_sandbox_instances SET state='unknown' WHERE session_id=$1", [id])
     },
     async recycleIdle() {},
+    async cancelCreation() {},
     async runner(_name, _token, method, path, value) {
       if (method === 'GET') {
         const found = records.get(path.split('/').at(-1))
