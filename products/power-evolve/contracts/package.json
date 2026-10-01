@@ -10,6 +10,10 @@
     "README.zh.md"
   ],
   "exports": {
+    "./workspace-binding": {
+      "types": "./lib/workspace-binding.d.ts",
+      "default": "./lib/workspace-binding.js"
+    },
     "./execution-files": {
       "types": "./lib/execution-files.d.ts",
       "default": "./lib/execution-files.js"
