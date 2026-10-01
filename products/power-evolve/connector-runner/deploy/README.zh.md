@@ -21,7 +21,11 @@ node products/power-evolve/scripts/prepare-connector-access.mjs
 node products/power-evolve/connector-runner/deploy/prepare-forbidden-listener.mjs
 ```
 
-默认情况下，镜像脚本先构建包，再在仓库外创建临时的 `pnpm deploy --legacy --prod --ignore-scripts --frozen-lockfile` 产物，并设置 `strict-dep-builds=true`；随后以这个产物和固定基础镜像的 Dockerfile 构建镜像，导入指定 k3d 集群，最后清除临时产物。构建或导入失败时也会清理。根工作区必须继续执行严格安装策略；`ssh2` 和 `cpu-features` 的安装脚本被禁止。访问脚本只创建 `pe-connector-*` 命名空间，拒绝没有归属标签的已有命名空间，并在权限为 0700 的私密目录内以 0600 权限写入令牌 kubeconfig。它不修改平台配置。kubeconfig 是凭据，不得提交或显示其内容。
+默认情况下，镜像脚本先记录源锁文件和 Connector 清单，再构建包，并在仓库外创建临时的 `pnpm deploy --legacy --prod --ignore-scripts --frozen-lockfile` 产物，设置 `strict-dep-builds=true`。Legacy deploy 即使带有 frozen 标志也可能重新解析依赖。Docker 构建或 k3d 导入前，脚本要求源文件未变，且生产及可选依赖的锁元数据一致，包括依赖边、peer 与平台约束及完整性值。元数据缺失或漂移会拒绝准备。这个检查只比较锁元数据，不验证安装字节或运行架构。
+
+校验通过后，脚本以这个产物和固定基础镜像的 Dockerfile 构建镜像，并导入指定集群。成功或准备、校验、构建、导入失败后，脚本都会清除临时产物。根工作区必须继续执行严格安装策略；`ssh2` 和 `cpu-features` 的安装脚本被禁止。
+
+访问脚本只创建 `pe-connector-*` 命名空间，拒绝没有归属标签的已有命名空间，并在权限为 0700 的私密目录内以 0600 权限写入令牌 kubeconfig。它不修改平台配置。kubeconfig 是凭据，不得提交或显示其内容。
 
 只构建镜像而不导入集群时，使用 `--build-only`。这个模式需要 Node 22.19+、pnpm 11、Docker，以及带标签的 `PE_CONNECTOR_IMAGE`；它不读取 `PE_K3D_CLUSTER`，也不调用 k3d。构建完成并清除临时产物后，脚本输出 `Built IMAGE`。镜像仓库传输和集群导入由单独的发布操作完成。
 
