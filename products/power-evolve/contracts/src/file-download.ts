@@ -49,7 +49,27 @@ export const fileDownloadView = z.object({
   fileCount: z.number().int().min(1).max(FILE_DOWNLOAD_MAX_FILES),
   sourceBytes: z.number().int().min(0).max(FILE_DOWNLOAD_MAX_SOURCE_BYTES),
   totalBytes: z.number().int().min(0).max(FILE_DOWNLOAD_MAX_SOURCE_BYTES + 1024 * 1024),
-}).strict()
+}).strict().refine(value => {
+  if (!value.downloadUrl.startsWith(`${FILE_DOWNLOAD_CONTENT_PATH}?`)) return false
+  try {
+    const url = new URL(value.downloadUrl, 'https://power-evolve.invalid')
+    if (url.hash || [...url.searchParams.keys()].length !== 3
+      || ['sessionId', 'paths', 'revision'].some(name => url.searchParams.getAll(name).length !== 1)) return false
+    const request = fileDownloadContentRequest.parse({ sessionId: url.searchParams.get('sessionId'),
+      paths: JSON.parse(url.searchParams.get('paths')!), revision: url.searchParams.get('revision') })
+    return value.downloadUrl === fileDownloadUrl(request) && value.sessionId === request.sessionId
+      && value.revision === request.revision && value.fileCount === request.paths.length
+      && value.sourceBytes <= value.fileCount * FILE_DOWNLOAD_MAX_FILE_BYTES
+      && value.totalBytes >= value.sourceBytes
+      && (value.fileCount === 1
+        ? value.contentType === 'application/octet-stream' && value.fileName === request.paths[0]!.split('/').at(-1)
+          && value.totalBytes === value.sourceBytes
+        : value.contentType === 'application/zip' && value.fileName === 'workspace-files.zip')
+  } catch (_error) {
+    // An invalid or oversized URL must never become a browser navigation target.
+    return false
+  }
+})
 /** Validated preparation input. */
 export type FileDownloadPrepareRequest = z.infer<typeof fileDownloadPrepareRequest>
 /** Validated content input. */

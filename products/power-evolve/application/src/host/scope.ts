@@ -50,11 +50,13 @@ export default class RuntimeScope extends Service {
    * @param path - product-owned endpoint path.
    * @param token - user or operation bearer credential.
    * @param input - JSON request fields.
+   * @param signal - Optional caller lifetime; the configured request timeout still applies.
    * @returns bounded decoded JSON, validated by its consumer.
    */
-  async call(path: string, token: string, input: unknown): Promise<unknown> {
+  async call(path: string, token: string, input: unknown, signal?: AbortSignal): Promise<unknown> {
+    const timeout = AbortSignal.timeout(this.config.timeoutMs)
     const response = await fetch(new URL(path, this.config.platformUrl), {
-      method: 'POST', redirect: 'error', signal: AbortSignal.timeout(this.config.timeoutMs),
+      method: 'POST', redirect: 'error', signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify(input),
     })
     if (!response.body) throw new PlatformError(502, 'platform_empty_response')

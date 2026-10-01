@@ -48,6 +48,7 @@
     "@power-evolve/cloud-web": "workspace:*",
     "@power-evolve/contracts": "workspace:*",
     "ajv": "^8.20.0",
+    "fflate": "^0.8.2",
     "ipaddr.js": "^2.5.0",
     "js-yaml": "^4.2.0",
     "pg": "^8.16.3",

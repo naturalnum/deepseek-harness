@@ -13903,6 +13903,9 @@ importers:
       ajv:
         specifier: ^8.20.0
         version: 8.20.0
+      fflate:
+        specifier: ^0.8.2
+        version: 0.8.3
       ipaddr.js:
         specifier: ^2.5.0
         version: 2.5.0
@@ -14219,9 +14222,15 @@ importers:
       '@deepseek-ai/dsh-client-ui-sidebar-documentpreview':
         specifier: workspace:*
         version: link:../../../packages/client/ui-sidebar-documentpreview
+      '@deepseek-ai/dsh-client-ui-sidebar-files':
+        specifier: workspace:*
+        version: link:../../../packages/client/ui-sidebar-files
       '@deepseek-ai/dsh-client-ui-slots':
         specifier: workspace:*
         version: link:../../../packages/client/ui-slots
+      '@power-evolve/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       react:
         specifier: ^18.2.0
         version: 18.3.1
