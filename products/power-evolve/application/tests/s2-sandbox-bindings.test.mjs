@@ -1,5 +1,6 @@
 /** Real PG binding, admission and exact stopped-writer evidence; kubelet mount behavior is a separate integration gate. */
 import test from 'node:test'
+import { taskCredential } from './task-credential-fixture.mjs'
 import assert from 'node:assert/strict'
 import { createHash, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
@@ -87,14 +88,14 @@ test('recovery owns cleanup against both a new idle recycler and one already sto
       const idle = f.manager.recycleIdle(0).then(() => null, error => error)
       await entered
       assert.equal((await f.pool.query('SELECT state FROM pe_mount_slots WHERE user_id=$1', [f.userId])).rows[0].state, 'stopping')
-      await files.bindings.restore(user, request)
+      await files.bindings.restore(user, request, await taskCredential(f.pool, user))
       await poll()
       const mutations = f.kube.mutations.length
       release()
       assert.match((await idle)?.message ?? '', /mount_(workspace_recovering|stop_generation_changed)/u)
       assert.equal(f.kube.mutations.length, mutations)
     } else {
-      await files.bindings.restore(user, request)
+      await files.bindings.restore(user, request, await taskCredential(f.pool, user))
       const recovering = poll()
       await entered
       try { await f.manager.recycleIdle(0) }
@@ -130,15 +131,15 @@ test('actual storage recovery worker stops the captured Pod, preserves Git bytes
   manager.home = f.manager.home
   const user = { userId: f.userId, username: `test-${f.userId}` }
   const space = (await files.bindings.spaces(user)).items.find(value => value.isDefault)
-  await files.bindings.createDirectory(user, { requestId: randomUUID(), spaceId: space.spaceId, parentPath: '', name: 'existing' })
-  await files.bindings.createDirectory(user, { requestId: randomUUID(), spaceId: space.spaceId, parentPath: 'existing', name: '.git' })
+  await files.bindings.createDirectory(user, { requestId: randomUUID(), spaceId: space.spaceId, parentPath: '', name: 'existing' }, await taskCredential(f.pool, user))
+  await files.bindings.createDirectory(user, { requestId: randomUUID(), spaceId: space.spaceId, parentPath: 'existing', name: '.git' }, await taskCredential(f.pool, user))
   const rootKey = (await f.pool.query('SELECT root_key FROM pe_storage_spaces WHERE id=$1', [space.spaceId])).rows[0].root_key
   const headPath = join(f.localRoot, 'workspaces', rootKey, 'existing', '.git', 'HEAD')
   await writeFile(headPath, 'ref: refs/heads/preserved\n')
   const ready = await manager.ensureReady(f.sessionId, f.userId, async () => {})
   const request = { requestId: randomUUID(), workspaceId: f.workspaceId, spaceId: space.spaceId,
     rootRelativePath: 'existing', expectedGeneration: 1 }
-  const accepted = await files.bindings.restore(user, request)
+  const accepted = await files.bindings.restore(user, request, await taskCredential(f.pool, user))
   assert.equal(accepted.state, 'accepted')
   assert.deepEqual((await f.pool.query('SELECT stop_target FROM pe_workspace_binding_requests WHERE request_id=$1',
     [request.requestId])).rows[0].stop_target, captured(ready))

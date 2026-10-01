@@ -873,14 +873,14 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         sendJson(res, await files.bindings.directories(user, storageDirectoriesRequest.parse(input))); return
       }
       case WORKSPACE_BINDING_ROUTES.storageDirectoryCreate: {
-        sendJson(res, await files.bindings.createDirectory(user, storageDirectoryCreateRequest.parse(input))); return
+        sendJson(res, await files.bindings.createDirectory(user, storageDirectoryCreateRequest.parse(input), token)); return
       }
       case WORKSPACE_BINDING_ROUTES.workspaceBindingsMissing: {
         z.object({}).strict().parse(input)
         sendJson(res, await files.bindings.missing(user)); return
       }
       case WORKSPACE_BINDING_ROUTES.workspaceBindingRestore: {
-        sendJson(res, await files.bindings.restore(user, workspaceBindingRestoreRequest.parse(input))); return
+        sendJson(res, await files.bindings.restore(user, workspaceBindingRestoreRequest.parse(input), token)); return
       }
       case WORKSPACE_BINDING_ROUTES.workspaceBindingStatus: {
         sendJson(res, await files.bindings.status(user, workspaceBindingStatusRequest.parse(input))); return

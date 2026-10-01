@@ -1,5 +1,6 @@
 /** Real PG and Sandbox recovery; Kubernetes replies come from the existing deterministic fixture. */
 import test from 'node:test'
+import { taskCredential } from './task-credential-fixture.mjs'
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
@@ -27,7 +28,7 @@ async function setup(t) {
   managerA.home = f.manager.home; managerB.home = f.manager.home
   const user = { userId, username: `test-${userId}` }
   const space = (await filesA.bindings.spaces(user)).items.find(item => item.isDefault)
-  await filesA.bindings.createDirectory(user, { requestId: randomUUID(), spaceId: space.spaceId, parentPath: '', name: 'target' })
+  await filesA.bindings.createDirectory(user, { requestId: randomUUID(), spaceId: space.spaceId, parentPath: '', name: 'target' }, await taskCredential(f.pool, user))
   const rootKey = (await f.pool.query('SELECT root_key FROM pe_storage_spaces WHERE id=$1', [space.spaceId])).rows[0].root_key
   const target = join(f.localRoot, 'workspaces', rootKey, 'target', 'marker.txt')
   await writeFile(target, 'preserved target bytes')
@@ -36,7 +37,7 @@ async function setup(t) {
   const creations = f.kube.mutations.filter(item => item.method === 'POST').length
   const request = { requestId: randomUUID(), workspaceId: session.workspaceId, spaceId: space.spaceId,
     rootRelativePath: 'target', expectedGeneration: 1 }
-  assert.equal((await filesA.bindings.restore(user, request)).state, 'accepted')
+  assert.equal((await filesA.bindings.restore(user, request, await taskCredential(f.pool, user))).state, 'accepted')
   return { ...f, ...session, user, request, ready, sandboxUid, filesA, filesB, managerA, managerB, rootKey, target, creations }
 }
 

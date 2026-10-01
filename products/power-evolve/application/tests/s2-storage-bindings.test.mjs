@@ -1,5 +1,6 @@
 /** Real isolated PG and descriptor-relative POSIX; Pod stop callbacks are explicit infrastructure substitutes. */
 import test from 'node:test'
+import { taskCredential } from './task-credential-fixture.mjs'
 import assert from 'node:assert/strict'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { mkdtemp, mkdir, readFile, writeFile, rename, rm, symlink, access } from 'node:fs/promises'
@@ -71,7 +72,7 @@ async function personal(context, user) {
   return { ...space, path: join(context.root, 'workspaces', row.root_key) }
 }
 async function directory(context, user, space, name, parentPath = '') {
-  return context.bindings.createDirectory(user, { requestId: randomUUID(), spaceId: space.spaceId, parentPath, name })
+  return context.bindings.createDirectory(user, { requestId: randomUUID(), spaceId: space.spaceId, parentPath, name }, await taskCredential(context.pool, user))
 }
 async function readyWriter(context, user, workspaceId, generation = '7') {
   const sessionId = await session(context.pool, user, workspaceId), podUid = randomUUID(), runnerInstanceId = randomUUID()
@@ -193,14 +194,14 @@ test('storage selection and recovery use actual PG and POSIX without creating Sa
         if (fail) { fail = false; throw new Error('fixture interrupted after mkdir') }
       }
       try {
-        await assert.rejects(c.bindings.createDirectory(alice, input), /fixture interrupted/u)
+        await assert.rejects(c.bindings.createDirectory(alice, input, await taskCredential(c.pool, alice)), /fixture interrupted/u)
         assert.equal((await c.pool.query('SELECT state FROM pe_storage_directory_requests WHERE request_id=$1', [input.requestId])).rows[0].state, 'accepted')
         await writeFile(join(space.path, 'project', 'keep.txt'), 'keep original bytes')
-        const result = await c.bindings.createDirectory(alice, input)
+        const result = await c.bindings.createDirectory(alice, input, await taskCredential(c.pool, alice))
         assert.deepEqual(result, { name: 'project', path: 'project' })
-        assert.deepEqual(await c.bindings.createDirectory(alice, input), result)
+        assert.deepEqual(await c.bindings.createDirectory(alice, input, await taskCredential(c.pool, alice)), result)
         assert.equal(await readFile(join(space.path, 'project', 'keep.txt'), 'utf8'), 'keep original bytes')
-        await assert.rejects(c.bindings.createDirectory(alice, { ...input, name: 'different' }), { status: 409, code: 'request_id_conflict' })
+        await assert.rejects(c.bindings.createDirectory(alice, { ...input, name: 'different' }, await taskCredential(c.pool, alice)), { status: 409, code: 'request_id_conflict' })
       } finally { c.files.safe.createDirectory = original }
     })
 
@@ -258,7 +259,7 @@ test('storage selection and recovery use actual PG and POSIX without creating Sa
       await rename(workspace.path, join(space.path, 'restored-project'))
       const before = (await c.workspaces.baseline(alice)).items.find(item => item.workspaceId === workspace.id).updatedAt
       const input = restore(workspace.id, space, 'restored-project')
-      assert.equal((await c.bindings.restore(alice, input)).state, 'accepted')
+      assert.equal((await c.bindings.restore(alice, input, await taskCredential(c.pool, alice))).state, 'accepted')
       const refreshed = (await c.bindings.missing(alice)).items.find(item => item.workspaceId === workspace.id)
       assert.equal(refreshed.state, 'recovering'); assert.equal(refreshed.recoveryRequestId, input.requestId)
       await assert.rejects(c.files.readInWorkspace(alice, workspace.id, 'marker.txt'), { status: 503 })
@@ -266,13 +267,13 @@ test('storage selection and recovery use actual PG and POSIX without creating Sa
       const completed = await c.bindings.status(alice, { requestId: input.requestId })
       assert.equal(completed.state, 'completed'); assert.equal(completed.bindingGeneration, 2)
       assert.equal((await c.pool.query('SELECT recovery_request_id FROM pe_workspaces WHERE id=$1', [workspace.id])).rows[0].recovery_request_id, null)
-      assert.deepEqual(await c.bindings.restore(alice, input), completed)
+      assert.deepEqual(await c.bindings.restore(alice, input, await taskCredential(c.pool, alice)), completed)
       assert.equal((await c.pool.query('SELECT workspace_id FROM pe_sessions WHERE id=$1', [sessionId])).rows[0].workspace_id, workspace.id)
       await assert.rejects(c.pool.query('UPDATE pe_sessions SET workspace_id=$2 WHERE id=$1', [sessionId, randomUUID()]), /immutable/u)
       assert.equal((await c.files.readBytesInWorkspace(alice, workspace.id, 'marker.txt', undefined, 2)).toString(), 'retained bytes')
       await assert.rejects(c.files.readBytesInWorkspace(alice, workspace.id, 'marker.txt', undefined, 1), { status: 409, code: 'file_binding_changed' })
       await assert.rejects(c.files.put(alice, mutation, 'marker.txt', null, Buffer.from('retained bytes').toString('base64'), workspace.id), { status: 409, code: 'file_binding_changed' })
-      await assert.rejects(c.bindings.restore(alice, restore(workspace.id, space, 'restored-project', 1)), { status: 409 })
+      await assert.rejects(c.bindings.restore(alice, restore(workspace.id, space, 'restored-project', 1), await taskCredential(c.pool, alice)), { status: 409 })
       const after = (await c.workspaces.baseline(alice)).items.find(item => item.workspaceId === workspace.id).updatedAt
       assert(Date.parse(after) > Date.parse(before))
       await transaction(c.pool, async client => {
@@ -289,14 +290,14 @@ test('storage selection and recovery use actual PG and POSIX without creating Sa
       }
       assert.deepEqual(await c.bindings.status(alice, { requestId: input.requestId }), completed)
       const second = restore(workspace.id, space, 'restored-again', 2)
-      assert.equal((await c.bindings.restore(alice, second)).state, 'accepted')
+      assert.equal((await c.bindings.restore(alice, second, await taskCredential(c.pool, alice))).state, 'accepted')
       const recovering = (await c.bindings.missing(alice)).items.find(item => item.workspaceId === workspace.id)
       assert.equal(recovering.state, 'recovering'); assert.equal(recovering.recoveryRequestId, second.requestId)
       assert.equal(await c.bindings.poll(noKubernetes, signal(), worker()), true)
       const completedAgain = await c.bindings.status(alice, { requestId: second.requestId })
       assert.equal(completedAgain.state, 'completed'); assert.equal(completedAgain.bindingGeneration, 3)
-      assert.deepEqual(await c.bindings.restore(alice, second), completedAgain)
-      assert.deepEqual(await c.bindings.restore(alice, input), completed)
+      assert.deepEqual(await c.bindings.restore(alice, second, await taskCredential(c.pool, alice)), completedAgain)
+      assert.deepEqual(await c.bindings.restore(alice, input, await taskCredential(c.pool, alice)), completed)
       const current = (await c.pool.query('SELECT binding_generation,recovery_request_id FROM pe_workspaces WHERE id=$1', [workspace.id])).rows[0]
       assert.equal(current.binding_generation, '3'); assert.equal(current.recovery_request_id, null)
       assert.equal((await c.pool.query('SELECT workspace_id FROM pe_sessions WHERE id=$1', [sessionId])).rows[0].workspace_id, workspace.id)
@@ -314,10 +315,10 @@ test('storage selection and recovery use actual PG and POSIX without creating Sa
       await c.pool.query("INSERT INTO pe_cloud_executions(id,user_id,session_id,operation_id,call_id,command,cwd,request_digest,state) VALUES($1,$2,$3,$4,'fixture','true','',$5,'queued')",
         [executionId, alice.userId, sessionId, operationId, '0'.repeat(64)])
       const input = restore(workspace.id, space, 'target')
-      await assert.rejects(c.bindings.restore(alice, input), { status: 409, code: 'workspace_execution_active' })
+      await assert.rejects(c.bindings.restore(alice, input, await taskCredential(c.pool, alice)), { status: 409, code: 'workspace_execution_active' })
       await c.pool.query("UPDATE pe_cloud_executions SET state='cancelled' WHERE id=$1", [executionId])
       await c.pool.query("INSERT INTO pe_mount_slots(user_id,session_id,workspace_id,state) VALUES($1,$2,$3,'unknown')", [alice.userId, sessionId, workspace.id])
-      await assert.rejects(c.bindings.restore(alice, input), { status: 409, code: 'workspace_writer_unconfirmed' })
+      await assert.rejects(c.bindings.restore(alice, input, await taskCredential(c.pool, alice)), { status: 409, code: 'workspace_writer_unconfirmed' })
       assert.equal((await c.pool.query('SELECT count(*)::int AS count FROM pe_workspace_binding_requests WHERE request_id=$1', [input.requestId])).rows[0].count, 0)
     })
 
@@ -326,13 +327,13 @@ test('storage selection and recovery use actual PG and POSIX without creating Sa
       await directory(c, alice, space, 'first'); await directory(c, alice, space, 'second')
       const writer = await readyWriter(c, alice, workspace.id)
       const first = restore(workspace.id, space, 'first')
-      await c.bindings.restore(alice, first)
+      await c.bindings.restore(alice, first, await taskCredential(c.pool, alice))
       await c.bindings.poll(async claim => ({ kind: 'kubelet_stopped', mountGeneration: claim.stopTarget.mountGeneration, podUid: randomUUID() }), signal(), worker())
       assert.equal((await c.bindings.status(alice, { requestId: first.requestId })).errorCode, 'workspace_stop_proof_mismatch')
       assert.equal((await c.bindings.missing(alice)).items.find(item => item.workspaceId === workspace.id).recoveryRequestId, first.requestId)
       const second = restore(workspace.id, space, 'second')
-      await c.bindings.restore(alice, second)
-      assert.equal((await c.bindings.restore(alice, first)).state, 'blocked')
+      await c.bindings.restore(alice, second, await taskCredential(c.pool, alice))
+      assert.equal((await c.bindings.restore(alice, first, await taskCredential(c.pool, alice))).state, 'blocked')
       await c.bindings.poll((claim, lease) => {
         assert.equal(claim.stopTarget.podUid, writer.podUid)
         return stoppedFixture(c, claim, lease)
@@ -347,7 +348,7 @@ test('storage selection and recovery use actual PG and POSIX without creating Sa
       await directory(c, alice, space, 'target')
       await readyWriter(c, alice, workspace.id)
       const input = restore(workspace.id, space, 'target')
-      await c.bindings.restore(alice, input)
+      await c.bindings.restore(alice, input, await taskCredential(c.pool, alice))
       let entered, release
       const started = new Promise(resolve => { entered = resolve }), continued = new Promise(resolve => { release = resolve })
       const first = c.bindings.poll(async (_claim, assertLease) => { entered(); await continued; await assertLease(); throw new Error('stale worker crossed lease') }, signal(), worker())
@@ -364,14 +365,14 @@ test('storage selection and recovery use actual PG and POSIX without creating Sa
       const alice = await owner(c.pool), workspace = await c.files.workspaceForUser(alice.userId), space = await personal(c, alice)
       await directory(c, alice, space, 'target')
       const input = restore(workspace.id, space, 'target')
-      await c.bindings.restore(alice, input)
+      await c.bindings.restore(alice, input, await taskCredential(c.pool, alice))
       const original = c.files.safe.probeDirectory.bind(c.files.safe)
       c.files.safe.probeDirectory = async (location, ...args) => location.rootRelativePath === 'target' ? false : original(location, ...args)
       try { await c.bindings.poll(noKubernetes, signal(), worker()) }
       finally { c.files.safe.probeDirectory = original }
       assert.equal((await c.bindings.status(alice, { requestId: input.requestId })).state, 'blocked')
       assert.equal((await c.pool.query('SELECT stop_proof FROM pe_workspace_binding_requests WHERE request_id=$1', [input.requestId])).rows[0].stop_proof.kind, 'no_writer')
-      assert.equal((await c.bindings.restore(alice, input)).state, 'accepted')
+      assert.equal((await c.bindings.restore(alice, input, await taskCredential(c.pool, alice))).state, 'accepted')
       await c.bindings.poll(noKubernetes, signal(), worker())
       assert.equal((await c.bindings.status(alice, { requestId: input.requestId })).state, 'completed')
     })

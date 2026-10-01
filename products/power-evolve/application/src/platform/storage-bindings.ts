@@ -15,7 +15,7 @@ import { storageSpacesView, storageDirectoryView, workspaceBindingsMissingView,
 import { storageBinding, recoveryStopTarget, recoveryStopProof, workspaceRecoveryClaim,
   type StorageBinding, type RecoveryStopTarget, type StopWorkspaceWriter } from './workspace-binding-types.ts'
 import { transaction } from './database.ts'
-import { requireActiveAccount, lockAccountAuthorities } from './account-authority.ts'
+import { requireActiveAccount, requireBrowserAccount, lockAccountAuthorities } from './account-authority.ts'
 import { accountUserId } from '../account-contracts.ts'
 import type { SafePosix, StoragePath } from './safe-posix.ts'
 
@@ -28,12 +28,22 @@ export interface StorageBindingApi {
   spaces(user: Identity): Promise<z.infer<typeof storageSpacesView>>
   /** List a bounded immediate directory page through retained descriptors. */
   directories(user: Identity, request: StorageDirectoriesRequest): Promise<StorageDirectoriesView>
-  /** Persist directory creation intent before mkdir; uncertain retries reconcile that same target. */
-  createDirectory(user: Identity, request: StorageDirectoryCreateRequest): Promise<z.infer<typeof storageDirectoryView>>
+  /** Persist directory intent under current browser authority; accepted mkdir continues independently of that bearer.
+   * @param user Initially authenticated browser identity.
+   * @param request Stable intent and directory target.
+   * @param credentialToken Agent bearer rechecked under the account lock before acceptance.
+   * @returns The created or reconciled directory.
+   */
+  createDirectory(user: Identity, request: StorageDirectoryCreateRequest, credentialToken: string): Promise<z.infer<typeof storageDirectoryView>>
   /** List existing unavailable bindings without creating replacement directories. */
   missing(user: Identity): Promise<z.infer<typeof workspaceBindingsMissingView>>
-  /** Capture and fence the current writer before acknowledging a generation-conditional recovery. */
-  restore(user: Identity, request: WorkspaceBindingRestoreRequest): Promise<WorkspaceBindingReceipt>
+  /** Capture and fence the writer under current browser authority; workers continue the durable request independently.
+   * @param user Initially authenticated browser identity.
+   * @param request Stable recovery target and expected generation.
+   * @param credentialToken Agent bearer rechecked under the account lock before acceptance or retry.
+   * @returns The durable recovery receipt.
+   */
+  restore(user: Identity, request: WorkspaceBindingRestoreRequest, credentialToken: string): Promise<WorkspaceBindingReceipt>
   /** Read the accepted owner's durable recovery receipt. */
   status(user: Identity, request: { requestId: string }): Promise<WorkspaceBindingReceipt>
   /** Claim at most one recovery; infrastructure cleanup uses only the captured stop target. */
@@ -252,11 +262,12 @@ export class StorageBindingService implements StorageBindingApi {
   }
 
   /** A durable mkdir intent permits reconciliation of an already-created directory after a lost response. */
-  async createDirectory(user: Identity, request: StorageDirectoryCreateRequest): Promise<z.infer<typeof storageDirectoryView>> {
+  async createDirectory(user: Identity, request: StorageDirectoryCreateRequest, credentialToken: string): Promise<z.infer<typeof storageDirectoryView>> {
     const input = parsed(storageDirectoryCreateRequest, request)
     const path = storageRelativePath.parse([input.parentPath, input.name].filter(Boolean).join('/'))
     await transaction(this.pool, async client => {
-      await requireActiveAccount(client, user.userId, 'update')
+      const actor = await requireBrowserAccount(client, credentialToken, { audience: 'agent', lock: 'update' })
+      if (actor.userId !== user.userId) throw new PlatformError(401, 'unauthorized')
       const prior = await client.query<DirectoryRow>('SELECT * FROM pe_storage_directory_requests WHERE user_id=$1 AND request_id=$2', [user.userId, input.requestId])
       if (prior.rows[0]) {
         if (prior.rows[0].space_id !== input.spaceId || prior.rows[0].parent_path !== input.parentPath || prior.rows[0].name !== input.name) {
@@ -335,10 +346,11 @@ export class StorageBindingService implements StorageBindingApi {
   }
 
   /** Save a stable target and exact old writer under the owner, Workspace and mount locks. */
-  async restore(user: Identity, request: WorkspaceBindingRestoreRequest): Promise<WorkspaceBindingReceipt> {
+  async restore(user: Identity, request: WorkspaceBindingRestoreRequest, credentialToken: string): Promise<WorkspaceBindingReceipt> {
     const input = parsed(workspaceBindingRestoreRequest, request)
     return transaction(this.pool, async client => {
-      await requireActiveAccount(client, user.userId, 'update')
+      const actor = await requireBrowserAccount(client, credentialToken, { audience: 'agent', lock: 'update' })
+      if (actor.userId !== user.userId) throw new PlatformError(401, 'unauthorized')
       const prior = await client.query<RequestRow>('SELECT * FROM pe_workspace_binding_requests WHERE user_id=$1 AND request_id=$2', [user.userId, input.requestId])
       if (prior.rows[0]) {
         const row = prior.rows[0]
