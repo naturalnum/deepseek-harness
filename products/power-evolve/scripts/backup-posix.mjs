@@ -146,7 +146,7 @@ export async function copyPosixTree(source, target) {
  * Assign copied Workspace/Home entries to the cloud executor without following symlinks.
  * The caller has stopped writers and checked the fresh target; other users cannot mutate this tree.
  * @param {string} root - Restored shared POSIX root.
- * @param {{workspaceIds: readonly string[], userIds: readonly string[]}} resources - Owners from restored PG rows.
+ * @param {{storageRootKeys: readonly string[], userIds: readonly string[]}} resources - Immutable physical roots and Home owners from restored PG rows.
  * @param {{uid: number, gid: number}} owner - Execution identity used by the target Sandbox runner.
  * @returns {Promise<number>} Number of entries prepared; bytes and permission modes are preserved.
  */
@@ -177,7 +177,7 @@ export async function prepareRestoredExecutionMounts(root, resources, owner) {
     }
     entries++
   }
-  for (const [directory, ids] of [['workspaces', resources.workspaceIds], ['homes', resources.userIds]]) {
+  for (const [directory, ids] of [['workspaces', resources.storageRootKeys], ['homes', resources.userIds]]) {
     const parent = join(root, directory)
     await realRoot(parent)
     for (const id of ids) { requireUuid(id); await prepare(join(parent, id), true) }

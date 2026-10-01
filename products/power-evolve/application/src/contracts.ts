@@ -5,6 +5,7 @@ import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
 import { MAX_INPUT_JSON_BYTES } from './continuation-input.ts'
 import { mcpOperationTools } from './mcp-operation-contracts.ts'
 import { mcpActionId } from './mcp-action-contracts.ts'
+import { workspaceCreateSelection } from '@power-evolve/contracts/workspace-binding'
 
 import type { UserId } from '@power-evolve/contracts/account'
 export type { UserId } from '@power-evolve/contracts/account'
@@ -32,7 +33,7 @@ export const settingsUpdateRequest = z.object({
 }).strict()
 export type SettingsUpdateRequest = z.infer<typeof settingsUpdateRequest>
 export const createRequest = z.object({ requestId, workspaceId: workspaceId.optional() }).strict()
-export const workspaceCreateRequest = z.object({ requestId, title: z.string().trim().min(1).max(80) }).strict()
+export const workspaceCreateRequest = workspaceCreateSelection.extend({ requestId }).strict()
 export const executionTarget = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('cloud') }).strict(),
   z.object({ kind: z.literal('desktop'), deviceId: z.uuid(), directoryId: z.uuid() }).strict(),

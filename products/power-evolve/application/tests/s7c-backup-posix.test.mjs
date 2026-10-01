@@ -105,7 +105,7 @@ test('execution ownership preparation retains Git modes and does not touch symli
   const before = await lstat(outside, { bigint: true })
   const owner = { uid: process.getuid(), gid: process.getgid() }
   assert.equal(await prepareRestoredExecutionMounts(root,
-    { userIds: [user], workspaceIds: [workspace] }, owner), 6)
+    { userIds: [user], storageRootKeys: [workspace] }, owner), 6)
   assert.equal(await mode(join(owned, '.git')), 0o700)
   assert.equal(await mode(gitHead), 0o644)
   assert.equal(await readFile(gitHead, 'utf8'), 'ref: refs/heads/main\n')
@@ -124,5 +124,18 @@ test('mount roots must be real directories addressed by restored UUID owners', a
   await assert.rejects(prepareRestoredSkillMounts(packages, ['../outside']), /UUID/)
   await symlink(tmpdir(), join(root, 'workspaces', user))
   await assert.rejects(prepareRestoredExecutionMounts(root,
-    { workspaceIds: [user], userIds: [] }, { uid: process.getuid(), gid: process.getgid() }), /real directory/)
+    { storageRootKeys: [user], userIds: [] }, { uid: process.getuid(), gid: process.getgid() }), /real directory/)
+})
+
+test('storage recovery prepares the recorded physical root and leaves missing roots absent', async t => {
+  const root = await fixture(t), storageRootKey = randomUUID(), workspaceId = randomUUID(), missingRoot = randomUUID()
+  const repository = join(root, 'workspaces', storageRootKey, 'existing', 'repo')
+  await mkdir(join(repository, '.git'), { recursive: true, mode: 0o700 })
+  await writeFile(join(repository, '.git', 'HEAD'), 'ref: refs/heads/existing\n')
+  const prepared = await prepareRestoredExecutionMounts(root,
+    { storageRootKeys: [storageRootKey, missingRoot], userIds: [] }, { uid: process.getuid(), gid: process.getgid() })
+  assert.equal(prepared, 5)
+  assert.equal(await readFile(join(repository, '.git', 'HEAD'), 'utf8'), 'ref: refs/heads/existing\n')
+  await assert.rejects(lstat(join(root, 'workspaces', workspaceId)), { code: 'ENOENT' })
+  await assert.rejects(lstat(join(root, 'workspaces', missingRoot)), { code: 'ENOENT' })
 })

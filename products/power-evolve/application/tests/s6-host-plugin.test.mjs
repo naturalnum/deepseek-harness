@@ -73,6 +73,8 @@ test('native Host plugin RPC forwards only authenticated, strict user-scoped fie
   const artifactId = randomUUID(), redirectArtifactId = randomUUID()
   const artifactBytes = Buffer.from('internal artifact bytes')
   const sessionId = randomUUID()
+  const storageIds = new Map(users.map(user => [user.token, randomUUID()]))
+  const createdWorkspaces = new Map()
   let revoked = false
   const calls = []
   platform = createServer(async (request, response) => {
@@ -130,6 +132,38 @@ test('native Host plugin RPC forwards only authenticated, strict user-scoped fie
       if (path === '/native/sessions/after') {
         calls.push({ path, token, body })
         answer(200, { events: [] }); return
+      }
+      if (path === '/storage/spaces') {
+        calls.push({ path, token, body })
+        answer(200, { items: [{ spaceId: storageIds.get(token), title: user.username, isDefault: true, available: true }] }); return
+      }
+      if (path === '/storage/directories' || path === '/storage/directories/create') {
+        calls.push({ path, token, body })
+        if (body.spaceId !== storageIds.get(token)) { answer(404, { error: 'storage_not_found' }); return }
+        answer(200, path === '/storage/directories'
+          ? { spaceId: body.spaceId, parentPath: body.parentPath, entries: [{ name: 'repo', path: 'repo' }] }
+          : { name: body.name, path: `${body.parentPath ? `${body.parentPath}/` : ''}${body.name}` }); return
+      }
+      if (path === '/workspaces/create') {
+        calls.push({ path, token, body })
+        if (body.target && body.target.spaceId !== storageIds.get(token)) { answer(404, { error: 'workspace_not_found' }); return }
+        const key = `${token}:${body.requestId}`
+        if (!createdWorkspaces.has(key)) createdWorkspaces.set(key, { owner: token, workspaceId: randomUUID(),
+          title: body.title, isDefault: false, createdAt: new Date(0).toISOString() })
+        const { owner: omitted, ...created } = createdWorkspaces.get(key)
+        answer(200, created); return
+      }
+      if (path === '/native/workspace/baseline') {
+        answer(200, { items: [...createdWorkspaces.values()].filter(w => w.owner === token).map(w => ({
+          workspaceId: w.workspaceId, title: w.title, path: '/workspace', sessionIds: [],
+          createdAt: w.createdAt, updatedAt: w.createdAt })), archivedSessionIds: [], pinnedSessionIds: [] }); return
+      }
+      if (path === '/workspaces/bindings/missing') { answer(200, { items: [] }); return }
+      if (path === '/workspaces/bindings/restore') {
+        calls.push({ path, token, body })
+        if (body.spaceId !== storageIds.get(token)) { answer(404, { error: 'storage_not_found' }); return }
+        answer(200, { requestId: body.requestId, workspaceId: body.workspaceId, state: 'accepted',
+          expectedGeneration: body.expectedGeneration, bindingGeneration: null, errorCode: null }); return
       }
       if (path === '/plugins/list' || path === '/plugins/notes/set-enabled') {
         calls.push({ path, token, body })
@@ -313,6 +347,37 @@ test('native Host plugin RPC forwards only authenticated, strict user-scoped fie
     .find(value => value.includes('Path=/api/powerEvolve')).split(';')[0]
   const nativeCookie = browserExchange.headers.getSetCookie()
     .find(value => value.includes('Path=/native/api')).split(';')[0]
+  const spaces = await (await rpc('storageSpaces', users[0].token, {})).json()
+  assert.equal(spaces.items[0].spaceId, storageIds.get(users[0].token))
+  const directoryRequest = { spaceId: spaces.items[0].spaceId, parentPath: '', limit: 10 }
+  assert.equal((await rpc('storageDirectories', users[0].token, directoryRequest)).status, 200)
+  assert.equal((await rpc('storageDirectories', users[1].token, directoryRequest)).status, 404)
+  assert.equal((await rpc('storageDirectories', users[0].token, { ...directoryRequest, userId: users[1].userId })).status, 400)
+  assert.equal((await rpc('storageDirectoryCreate', users[0].token,
+    { ...directoryRequest, limit: undefined, requestId: randomUUID(), name: 'new' })).status, 200)
+  assert.deepEqual(await (await rpc('workspaceBindingsMissing', users[0].token, {})).json(), { items: [] })
+  const creation = { requestId: randomUUID(), title: 'Existing Git', target: { spaceId: directoryRequest.spaceId, rootRelativePath: 'repo' } }
+  const createNative = async value => {
+    const response = await fetch(`${hostOrigin}/native/api/workspace/create`, { method: 'POST',
+      headers: { origin: hostOrigin, cookie: nativeCookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ type: 'client-request', rpcId: randomUUID(), method: 'workspace/create',
+        payload: { args: { request: { path: `power-evolve-cloud-selection:${encodeURIComponent(JSON.stringify(value))}` } } } }) })
+    assert.equal(response.status, 200)
+    return (await response.json()).result
+  }
+  const first = await createNative(creation), retry = await createNative(creation)
+  assert.equal(first.ok, true)
+  assert.equal(retry.value.workspace.workspaceId, first.value.workspace.workspaceId)
+  assert.deepEqual(calls.filter(call => call.path === '/workspaces/create').map(call => call.body), [creation, creation])
+  assert.equal((await createNative({ ...creation, userId: users[1].userId })).ok, false)
+  assert.equal((await createNative({ ...creation, target: { ...creation.target, rootKey: randomUUID() } })).ok, false)
+  assert.equal((await createNative({ ...creation, target: { ...creation.target, rootRelativePath: '../other' } })).ok, false)
+  assert.equal(calls.filter(call => call.path === '/workspaces/create').length, 2)
+  const recovery = { ...creation.target, requestId: randomUUID(), workspaceId: first.value.workspace.workspaceId, expectedGeneration: 1 }
+  assert.equal((await rpc('workspaceBindingRestore', users[0].token, recovery)).status, 200)
+  assert.equal((await rpc('workspaceBindingRestore', users[1].token, recovery)).status, 404)
+  assert.equal((await rpc('workspaceBindingRestore', users[0].token, { ...recovery, expectedGeneration: 0 })).status, 400)
+  assert.equal((await rpc('workspaceBindingRestore', users[0].token, { ...recovery, podStopped: true })).status, 400)
   const nativeRequest = (cookie, rpcId = randomUUID()) => fetch(`${hostOrigin}/native/api/session/list`, {
     method: 'POST', headers: { origin: hostOrigin, cookie, 'content-type': 'application/json' },
     body: JSON.stringify({ type: 'client-request', rpcId, method: 'session/list',

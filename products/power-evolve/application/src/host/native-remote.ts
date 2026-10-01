@@ -13,6 +13,7 @@ import { executionTarget, requestId, sessionId, PlatformError } from '../contrac
 import { readJson, sendFailure, sendJson } from '../http.ts'
 import type { BrowserAgentAuth } from './browser-auth.ts'
 import { followNativeSession } from './native-session-follow.ts'
+import { workspaceCreateSelection } from '@power-evolve/contracts/workspace-binding'
 
 const address = z.object({ kind: z.literal('session'), sessionId }).strict()
 const window = z.object({ maxMessages: z.number().int().min(1).max(500).optional(),
@@ -38,6 +39,7 @@ const workspace = z.object({ workspaceId: z.uuid(), path: z.string(), title: z.s
 const workspaceBaseline = z.object({ items: z.array(workspace),
   archivedSessionIds: z.array(sessionId), pinnedSessionIds: z.array(sessionId) }).strict()
 const cloudWorkspaceTitlePrefix = 'power-evolve-cloud-title:'
+const cloudWorkspaceSelectionPrefix = 'power-evolve-cloud-selection:'
 const cloudWorkspaceCreated = z.object({ workspaceId: z.uuid(), title: z.string(),
   isDefault: z.literal(false), createdAt: z.string() }).strict()
 const sessionSummary = z.object({ sessionId, updatedAt: z.number(), agentAvailable: z.boolean(),
@@ -170,10 +172,22 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
       }
       case 'workspace/create': {
         const { request } = withRequest(z.object({ path: z.string() }).strict()).parse(args)
-        const title = cloudWorkspaceTitle(request.path)
-        const created = cloudWorkspaceCreated.parse(await call('/workspaces/create', token, {
-          requestId: requestId.parse(rpcId), title,
-        }))
+        let selection: z.infer<typeof workspaceCreateSelection>
+        if (request.path.startsWith(cloudWorkspaceSelectionPrefix)) {
+          const encoded = request.path.slice(cloudWorkspaceSelectionPrefix.length)
+          if (encoded.length > 8192) throw new PlatformError(400, 'invalid_cloud_workspace_title')
+          let decoded: string
+          try { decoded = decodeURIComponent(encoded) }
+          catch (_invalidEncoding) { throw new PlatformError(400, 'invalid_cloud_workspace_title') }
+          if (encodeURIComponent(decoded) !== encoded) throw new PlatformError(400, 'invalid_cloud_workspace_title')
+          let value: unknown
+          try { value = JSON.parse(decoded) }
+          catch (_invalidJson) { throw new PlatformError(400, 'invalid_cloud_workspace_title') }
+          selection = workspaceCreateSelection.parse(value)
+        } else {
+          selection = workspaceCreateSelection.parse({ requestId: rpcId, title: cloudWorkspaceTitle(request.path) })
+        }
+        const created = cloudWorkspaceCreated.parse(await call('/workspaces/create', token, selection))
         const baseline = workspaceBaseline.parse(await call('/native/workspace/baseline', token, {}))
         const item = baseline.items.find(value => value.workspaceId === created.workspaceId)
         if (item === undefined || item.title !== created.title || item.path !== '/workspace') {

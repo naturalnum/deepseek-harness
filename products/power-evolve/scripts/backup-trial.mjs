@@ -321,9 +321,11 @@ if (command === 'create') {
     skillMountPermissionsRepaired = await prepareRestoredSkillMounts(
       trialDataPath(storage, 'skill-packages'), userIds)
     if (sandbox) {
-      const workspaces = await owners.query('SELECT id FROM pe_workspaces ORDER BY id')
+      const workspaces = await owners.query(restored.schema >= 27
+        ? 'SELECT root_key FROM pe_storage_spaces ORDER BY root_key'
+        : 'SELECT id AS root_key FROM pe_workspaces ORDER BY id')
       executionEntriesPrepared = await prepareRestoredExecutionMounts(shared,
-        { userIds, workspaceIds: workspaces.rows.map(workspace => workspace.id) }, { uid: 1000, gid: 1000 })
+        { userIds, storageRootKeys: workspaces.rows.map(workspace => workspace.root_key) }, { uid: 1000, gid: 1000 })
     }
   } finally { await owners.end() }
   if (!keepStopped) run(process.execPath, [trialScript, 'up'])

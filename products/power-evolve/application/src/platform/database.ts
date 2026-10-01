@@ -1,5 +1,6 @@
 /** Transaction and schema lifecycle owned by the trusted platform. */
 import { Pool, type PoolClient } from 'pg'
+import { schemaV27 } from './storage-binding-schema.ts'
 import { CURRENT_SCHEMA_VERSION, schema, schemaV2, schemaV3, schemaV4, schemaV5, schemaV6, schemaV7, schemaV8, schemaV9, schemaV10, schemaV11, schemaV12, schemaV13, schemaV14, schemaV15, schemaV16, schemaV17, schemaV18, schemaV19, schemaV20, schemaV21, schemaV22, schemaV23, schemaV24, schemaV25, schemaV26 } from './schema.ts'
 
 /**
@@ -68,5 +69,6 @@ export async function initializeDatabase(pool: Pool): Promise<void> {
     if (initialVersion < 24) await client.query(schemaV24)
     if (initialVersion < 25) await client.query(schemaV25)
     if (initialVersion < 26) await client.query(schemaV26)
+    if (initialVersion < 27) await client.query(schemaV27)
   })
 }

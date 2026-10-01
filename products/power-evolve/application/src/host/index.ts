@@ -25,10 +25,16 @@ import { ACCOUNT_ROUTES, accountCapabilitiesValue, accountEmptyRequest } from '.
 import { FILE_DOWNLOAD_CONTENT_PATH, fileDownloadPrepareRequest, fileDownloadView,
   fileDownloadUrl } from '@power-evolve/contracts/file-download'
 import { parseFileDownloadQuery, proxyFileDownload } from '../file-download-http.ts'
+import { WORKSPACE_BINDING_ROUTES, storageDirectoriesRequest, storageDirectoryCreateRequest,
+  storageSpacesView, storageDirectoriesView, storageDirectoryView, workspaceBindingsMissingView,
+  workspaceBindingRestoreRequest, workspaceBindingStatusRequest, workspaceBindingReceipt } from '@power-evolve/contracts/workspace-binding'
 import { artifactPublishRequest, executionFilesRequest, executionFilesView,
   EXECUTION_FILES_PLATFORM_PATH } from '@power-evolve/contracts/execution-files'
 
 const requests = { ...mcpManagementRequests, ...sshManagementRequests, me: z.object({}).strict(), logout: z.object({}).strict(), modelsList: z.object({}).strict(), settingsUpdate: settingsUpdateRequest,
+  storageSpaces: z.object({}).strict(), storageDirectories: storageDirectoriesRequest,
+  storageDirectoryCreate: storageDirectoryCreateRequest, workspaceBindingsMissing: z.object({}).strict(),
+  workspaceBindingRestore: workspaceBindingRestoreRequest, workspaceBindingStatus: workspaceBindingStatusRequest,
   accountCapabilities: accountEmptyRequest,
   create: createRequest, list: listRequest, prompt: promptRequest, page: pageRequest, follow: pageRequest,
   filesList: sessionFilesListRequest, filesRead: sessionFileReadRequest, filesPut: sessionFilePutRequest,
@@ -66,7 +72,7 @@ const requests = { ...mcpManagementRequests, ...sshManagementRequests, me: z.obj
   devicesList: z.object({}).strict(), devicesPair: z.object({}).strict(),
   devicesRevoke: z.object({ deviceId: z.uuid() }).strict(),
   directoriesRevoke: z.object({ directoryId: z.uuid() }).strict() }
-const endpoint = { ...mcpManagementEndpoints, ...sshManagementEndpoints, me: '/identity/me', logout: '/identity/logout', modelsList: '/identity/models', settingsUpdate: '/identity/settings/update',
+const endpoint = { ...mcpManagementEndpoints, ...sshManagementEndpoints, ...WORKSPACE_BINDING_ROUTES, me: '/identity/me', logout: '/identity/logout', modelsList: '/identity/models', settingsUpdate: '/identity/settings/update',
   accountCapabilities: ACCOUNT_ROUTES.capabilities,
   create: '/sessions/create', list: '/sessions/list', prompt: '/sessions/prompt', page: '/sessions/page',
   filesList: '/files/session/list', filesRead: '/files/session/read', filesPut: '/files/session/put',
@@ -107,6 +113,24 @@ class ProductRemote extends TypertRemoteService {
     return this.ctx.powerEvolveRuntime.call(endpoint[method], this.token(), request)
   }
   @Remote me(request: z.infer<typeof requests.me>) { return this.call('me', request) }
+  @Remote async storageSpaces(request: z.infer<typeof requests.storageSpaces>) {
+    return storageSpacesView.parse(await this.call('storageSpaces', request))
+  }
+  @Remote async storageDirectories(request: z.infer<typeof storageDirectoriesRequest>) {
+    return storageDirectoriesView.parse(await this.call('storageDirectories', request))
+  }
+  @Remote async storageDirectoryCreate(request: z.infer<typeof storageDirectoryCreateRequest>) {
+    return storageDirectoryView.parse(await this.call('storageDirectoryCreate', request))
+  }
+  @Remote async workspaceBindingsMissing(request: z.infer<typeof requests.workspaceBindingsMissing>) {
+    return workspaceBindingsMissingView.parse(await this.call('workspaceBindingsMissing', request))
+  }
+  @Remote async workspaceBindingRestore(request: z.infer<typeof workspaceBindingRestoreRequest>) {
+    return workspaceBindingReceipt.parse(await this.call('workspaceBindingRestore', request))
+  }
+  @Remote async workspaceBindingStatus(request: z.infer<typeof workspaceBindingStatusRequest>) {
+    return workspaceBindingReceipt.parse(await this.call('workspaceBindingStatus', request))
+  }
   @Remote logout(request: z.infer<typeof requests.logout>) { return this.call('logout', request) }
   @Remote modelsList(request: z.infer<typeof requests.modelsList>) { return this.call('modelsList', request) }
   @Remote async accountCapabilities(request: z.infer<typeof requests.accountCapabilities>) {
