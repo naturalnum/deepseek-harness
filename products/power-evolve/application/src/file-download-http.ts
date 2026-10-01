@@ -2,7 +2,7 @@
 import type { ServerResponse } from 'node:http'
 import { once } from 'node:events'
 import { z } from 'zod'
-import { FILE_DOWNLOAD_CONTENT_PATH, FILE_DOWNLOAD_MAX_SOURCE_BYTES, FILE_DOWNLOAD_MAX_URL_BYTES,
+import { FILE_DOWNLOAD_CONTENT_PATH, FILE_DOWNLOAD_MAX_FILE_BYTES, FILE_DOWNLOAD_MAX_URL_BYTES,
   FILE_DOWNLOAD_PLATFORM_PATH, fileDownloadContentRequest, fileDownloadUrl,
   type FileDownloadContentRequest } from '@power-evolve/contracts/file-download'
 import { PlatformError } from './contracts.ts'
@@ -107,8 +107,9 @@ export async function proxyFileDownload(platformUrl: string, token: string, requ
   const rawLength = upstream.headers.get('content-length')
   const length = rawLength && /^[0-9]+$/u.test(rawLength) ? Number(rawLength) : NaN
   const contentType = request.paths.length === 1 ? 'application/octet-stream' : 'application/zip'
+  const maxBytes = request.paths.length * FILE_DOWNLOAD_MAX_FILE_BYTES + (request.paths.length > 1 ? 1024 * 1024 : 0)
   if (!upstream.body || !Number.isSafeInteger(length) || length < 0
-    || length > FILE_DOWNLOAD_MAX_SOURCE_BYTES + 1024 * 1024
+    || length > maxBytes
     || upstream.headers.get('content-type') !== contentType) {
     await upstream.body?.cancel()
     throw new PlatformError(502, 'download_unavailable')
