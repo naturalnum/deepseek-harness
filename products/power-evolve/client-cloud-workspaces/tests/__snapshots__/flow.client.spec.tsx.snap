@@ -1,0 +1,17 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`creates from a nonempty existing private directory through the native picker (en) > existing directory 1`] = `"Cloud WorkspacesNew directoryExisting directoryRecover bindingWorkspace namePrivate storagePrivate filesParent directoryStorage rootSelected directory: ExistingThis directory has no child directories.New directory nameCreate child directoryCloseCreate"`;
+
+exports[`creates from a nonempty existing private directory through the native picker (en) > new directory 1`] = `"Cloud WorkspacesNew directoryExisting directoryRecover bindingWorkspace nameCreate a separate private directory for the new Workspace.CloseCreate"`;
+
+exports[`creates from a nonempty existing private directory through the native picker (zh) > existing directory 1`] = `"云工作区新建目录选择已有目录恢复绑定工作区名称私人存储Private files上一级存储根目录选中的目录: Existing此目录没有子目录新目录名称新建子目录关闭创建"`;
+
+exports[`creates from a nonempty existing private directory through the native picker (zh) > new directory 1`] = `"云工作区新建目录选择已有目录恢复绑定工作区名称为新工作区创建独立的私人目录关闭创建"`;
+
+exports[`recovers the original binding through accepted, stopping and completed without creating a Workspace (en) > accepted recovery 1`] = `"Cloud WorkspacesNew directoryExisting directoryRecover bindingSelect the original Workspace and a replacement directory. Recovery waits for old execution to stop and keeps existing Sessions.Workspace to recoverOriginalPrivate storagePrivate filesParent directoryStorage rootSelected directory: ExistingThis directory has no child directories.New directory nameCreate child directoryRecovery accepted. Check for the latest status.Check recovery statusCloseRecover original Workspace"`;
+
+exports[`recovers the original binding through accepted, stopping and completed without creating a Workspace (en) > completed recovery 1`] = `"Cloud WorkspacesNew directoryExisting directoryRecover bindingSelect the original Workspace and a replacement directory. Recovery waits for old execution to stop and keeps existing Sessions.Workspace to recoverNo Workspaces need recovery.Private storagePrivate filesParent directoryStorage rootSelected directory: ExistingThis directory has no child directories.New directory nameCreate child directoryBinding recovered. The original Workspace and existing Sessions are retained.Check recovery statusCloseRecover original Workspace"`;
+
+exports[`recovers the original binding through accepted, stopping and completed without creating a Workspace (zh) > accepted recovery 1`] = `"云工作区新建目录选择已有目录恢复绑定选择原工作区和新的目录。恢复会等待旧执行停止，并保留已有会话需要恢复的工作区Original私人存储Private files上一级存储根目录选中的目录: Existing此目录没有子目录新目录名称新建子目录恢复请求已受理。可查询最新状态查询恢复状态关闭恢复原工作区"`;
+
+exports[`recovers the original binding through accepted, stopping and completed without creating a Workspace (zh) > completed recovery 1`] = `"云工作区新建目录选择已有目录恢复绑定选择原工作区和新的目录。恢复会等待旧执行停止，并保留已有会话需要恢复的工作区没有需要恢复的工作区私人存储Private files上一级存储根目录选中的目录: Existing此目录没有子目录新目录名称新建子目录绑定已恢复，原工作区和已有会话保持不变查询恢复状态关闭恢复原工作区"`;

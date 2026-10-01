@@ -1,13 +1,10 @@
-const prefix = 'power-evolve-cloud-title:'
+/** Native creation carries an explicit retry identity and an optional private directory selection. */
+import { workspaceCreateSelection, type WorkspaceCreateSelection } from '@power-evolve/contracts/workspace-binding'
 
-/** The native workspace/create path field is an opaque title transport, never a filesystem path. */
-export function cloudWorkspaceTitlePath(value: string): string {
-  const title = value.trim()
-  if (title.length < 1 || title.length > 80 || [...title].some(character => {
-    const point = character.codePointAt(0)
-    return point === undefined || point <= 0x1f || point === 0x7f
-  })) throw new Error('Invalid cloud Workspace title')
-  const path = `${prefix}${encodeURIComponent(title)}`
-  if (path.length > 1024) throw new Error('Cloud Workspace title is too long')
-  return path
+/** Encode a creation selection for the native Workspace Controller.
+ * @param selection - creation input with an owner-scoped stable request identity.
+ * @returns an opaque transport value; it never names a physical filesystem path.
+ */
+export function cloudWorkspaceSelectionPath(selection: WorkspaceCreateSelection): string {
+  return `power-evolve-cloud-selection:${encodeURIComponent(JSON.stringify(workspaceCreateSelection.parse(selection)))}`
 }

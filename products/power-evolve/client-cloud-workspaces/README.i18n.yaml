@@ -3,5 +3,8 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write products/power-evolve/client-cloud-workspaces/README.md
 /powerevolve-cloud-workspaces-client:
-  en: d2eedce7b4fd9e5c
-  zh: c7651ec4313ea112
+  en: dc2828a5e8f6077a
+  zh: 1c8265567498125e
+/powerevolve-cloud-workspaces-client/model-experience:
+  en: c271edcc967d5a77
+  zh: 29ed4ac2dde730a3
