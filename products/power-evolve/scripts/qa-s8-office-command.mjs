@@ -5,6 +5,7 @@ import { createRequire } from 'node:module'
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
+import { withEvidenceWorkspace } from './qa-s8-workspace-binding.mjs'
 
 const [username, action] = process.argv.slice(2)
 const commands = {
@@ -128,22 +129,24 @@ try {
   assert.equal(continuation.state, 'completed', `${action} continuation: ${continuation.error_code}`)
   const extension = action.split('-', 1)[0]
   const file = extension === 'word' ? 's8-word.docx' : extension === 'excel' ? 's8-excel.xlsx' : 's8-deck.pptx'
-  const filePath = join(sandbox.workspaceRoot, operation.workspace_id, file)
-  const fileSize = (await stat(filePath)).size
-  assert(fileSize > 500, `${action}: missing or empty file`)
-  let renderedFile
-  let renderedSize
-  if (action.endsWith('-render') || action.endsWith('-screenshot')) {
-    renderedFile = `s8-${extension === 'pptx' ? 'deck' : extension}-preview.${action.endsWith('-render') ? 'pdf' : 'png'}`
-    renderedSize = (await stat(join(sandbox.workspaceRoot, operation.workspace_id, renderedFile))).size
-    assert(renderedSize > 500, `${action}: missing or empty PDF render`)
-  }
+  const { binding, value: { fileSize, renderedFile, renderedSize } } = await withEvidenceWorkspace(db, sandbox.workspaceRoot,
+    { username, sessionId: operation.session_id, workspaceId: operation.workspace_id, executionId: execution.id }, async workspace => {
+      const fileSize = (await stat(join(workspace, file))).size
+      assert(fileSize > 500, `${action}: missing or empty file`)
+      let renderedFile, renderedSize
+      if (action.endsWith('-render') || action.endsWith('-screenshot')) {
+        renderedFile = `s8-${extension === 'pptx' ? 'deck' : extension}-preview.${action.endsWith('-render') ? 'pdf' : 'png'}`
+        renderedSize = (await stat(join(workspace, renderedFile))).size
+        assert(renderedSize > 500, `${action}: missing or empty PDF render`)
+      }
+      return { fileSize, renderedFile, renderedSize }
+    })
   const evidence = { checkedAt: new Date().toISOString(), username, action, officeCommand: commands[action],
     operationId: operation.id, sessionId: operation.session_id, workspaceId: operation.workspace_id,
     executionId: execution.id, podUid: execution.pod_uid, runnerInstanceId: execution.runner_instance_id,
     exitCode: execution.result.exitCode, stdout: execution.result.stdout.slice(0, 2000),
     stderr: execution.result.stderr.slice(0, 2000), continuationId: continuation.id,
-    file, fileSize, renderedFile, renderedSize }
+    binding, file, fileSize, renderedFile, renderedSize }
   await writeFile(join(outputDir, `office-${username}-${action}.json`), `${JSON.stringify(evidence, null, 2)}\n`,
     { flag: 'wx', mode: 0o600 })
   console.log(`${username} ${action}: office succeeded in Pod ${execution.pod_uid}; continuation completed; ${file} ${fileSize} bytes`)

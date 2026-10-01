@@ -4,6 +4,7 @@ import { createRequire } from 'node:module'
 import { readFile, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
+import { withEvidenceWorkspace } from './qa-s8-workspace-binding.mjs'
 
 const privateDir = process.env.PE_PRIVATE_DIR
 const outputDir = process.env.PE_S8_EVIDENCE_DIR
@@ -73,15 +74,19 @@ try {
     return result.rows[0]
   }, value => value && ['completed', 'failed'].includes(value.state), 'PDF continuation')
   assert.equal(continuation.state, 'completed', continuation.error_code)
-  const file = join(sandbox.workspaceRoot, operation.workspace_id, 's8-pdf.pdf')
-  const bytes = await readFile(file)
-  assert(bytes.subarray(0, 5).equals(Buffer.from('%PDF-')))
-  const fileSize = (await stat(file)).size
-  assert(fileSize > 500)
+  const { binding, value: fileSize } = await withEvidenceWorkspace(db, sandbox.workspaceRoot,
+    { username: user.username, sessionId: operation.session_id, workspaceId: operation.workspace_id, executionId: execution.id }, async workspace => {
+      const file = join(workspace, 's8-pdf.pdf')
+      const bytes = await readFile(file)
+      assert(bytes.subarray(0, 5).equals(Buffer.from('%PDF-')))
+      const fileSize = (await stat(file)).size
+      assert(fileSize > 500)
+      return fileSize
+    })
   const evidence = { checkedAt: new Date().toISOString(), operationId: operation.id,
     sessionId: operation.session_id, workspaceId: operation.workspace_id, executionId: execution.id,
     continuationId: continuation.id, podUid: execution.pod_uid, runnerInstanceId: execution.runner_instance_id,
-    exitCode: execution.result.exitCode, file: 's8-pdf.pdf', fileSize }
+    exitCode: execution.result.exitCode, binding, file: 's8-pdf.pdf', fileSize }
   await writeFile(join(outputDir, 'cloud-pdf-alice.json'), `${JSON.stringify(evidence, null, 2)}\n`,
     { flag: 'wx', mode: 0o600 })
   console.log(`Alice /pdf → cloud_exec succeeded in Pod ${execution.pod_uid}; continuation completed; ${fileSize} PDF bytes`)
