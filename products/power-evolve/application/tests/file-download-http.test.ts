@@ -431,7 +431,7 @@ test('prepare cancellation reaches a real Platform ownership query and retains a
     const blocker = await f.pool.connect()
     const cancelled = new AbortController(), pending = new AbortController()
     t.after(() => { cancelled.abort(); pending.abort() })
-    let second: Promise<Response> | undefined
+    let second: Promise<Response> | undefined, admittedAfterCancellation: Promise<Response> | undefined
     const waiting = async () => Number((await f.pool.query(`SELECT count(*) AS count FROM pg_stat_activity
       WHERE datname=current_database() AND wait_event_type='Lock'
       AND query LIKE 'SELECT s.workspace_id FROM pe_sessions s%'`)).rows[0].count)
@@ -451,6 +451,13 @@ test('prepare cancellation reaches a real Platform ownership query and retains a
       await eventually(async () => await waiting() === 2, 'second prepare occupies the other user slot')
       await error(await f.rpcResponse(alice, 'filesDownloadPrepare', { sessionId: session.sessionId, paths: [paths[0]] },
         AbortSignal.timeout(2000)), 429, 'download_busy')
+      // Queue another exclusive lock in the same PG round trip. The original SELECTs can finish,
+      // but the next prepare authorization cannot read files until this second lock is released.
+      await blocker.query('COMMIT; BEGIN; LOCK TABLE pe_sessions IN ACCESS EXCLUSIVE MODE')
+      admittedAfterCancellation = f.rpcResponse(alice, 'filesDownloadPrepare',
+        { sessionId: session.sessionId, paths: [paths[0]] }, pending.signal)
+      void admittedAfterCancellation.catch(() => { /* Preserve rejection for the response assertion after unlock. */ })
+      await eventually(async () => await waiting() === 2, 'the cancelled prepare releases one slot after its PG query finishes')
     } finally {
       cancelled.abort()
       await blocker.query('ROLLBACK')
@@ -458,9 +465,13 @@ test('prepare cancellation reaches a real Platform ownership query and retains a
     }
     try {
       assert.ok(second)
+      assert.ok(admittedAfterCancellation)
       const completed = await second
       assert.equal(completed.status, 200)
       fileDownloadView.parse(await completed.json())
+      const admitted = await admittedAfterCancellation
+      assert.equal(admitted.status, 200, 'Cancellation must reach Platform; an uncancelled original prepare would still occupy this slot')
+      fileDownloadView.parse(await admitted.json())
       await eventually(async () => await waiting() === 0, 'underlying PG operations finish after releasing the lock')
       const retry = await f.prepare(alice, session, [paths[0]!])
       const response = await f.content(alice, retry.downloadUrl)
