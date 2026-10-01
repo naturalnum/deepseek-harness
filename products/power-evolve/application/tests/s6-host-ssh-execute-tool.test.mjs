@@ -15,6 +15,15 @@ function agentTools() {
   return { agent, registered, prompts }
 }
 
+/** Read the distinct JSONL block without treating its fence or approval instructions as connection metadata. */
+function pinnedConnections(prompt) {
+  const [instructions, block, extra] = prompt.split('\n\n```jsonl\n')
+  assert.match(instructions, /Pinned SSH connections:$/u)
+  assert.equal(extra, undefined)
+  assert.ok(block?.endsWith('\n```'))
+  return block.slice(0, -4).split('\n').map(value => JSON.parse(value))
+}
+
 test('only a pinned user cloud grant proposes the exact command with its native tool ID', async () => {
   const connectionId = randomUUID(), token = 'operation-token', actionId = randomUUID()
   const selected = { connectionId, revision: 4, credentialRevision: 2,
@@ -29,7 +38,7 @@ test('only a pinned user cloud grant proposes the exact command with its native 
   installSshExecuteTool(agent, grant, runtime, 'https://platform.example.test')
   assert.deepEqual(registered.map(value => value.name), ['ssh_execute_propose'])
   assert.equal(prompts.length, 1)
-  const pinned = prompts[0].text.split('\n').slice(1).map(value => JSON.parse(value))
+  const pinned = pinnedConnections(prompts[0].text)
   assert.deepEqual(pinned, [{ connectionId, displayName: 'QA', username: 'alice', host: 'fixture.example.test', port: 2222 }])
   assert.match(registered[0].parameters.properties.connectionId.description, /only that UUID/u)
   const declaration = modelMessageTool.parse({ name: registered[0].name,
@@ -78,7 +87,7 @@ test('connections sharing a login destination expose distinct pinned names and r
   } }
   const { agent, registered, prompts } = agentTools()
   installSshExecuteTool(agent, grant, runtime, 'https://platform.example.test')
-  const pinned = prompts[0].text.split('\n').slice(1).map(value => JSON.parse(value))
+  const pinned = pinnedConnections(prompts[0].text)
   assert.deepEqual(pinned, connections.map(({ connectionId, displayName, username, host, port }) =>
     ({ connectionId, displayName, username, host, port })))
   assert.equal(calls.length, 0)

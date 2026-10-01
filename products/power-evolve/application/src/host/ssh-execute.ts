@@ -23,7 +23,7 @@ export function installSshExecuteTool(agent: Agent, grant: Grant, runtime: Runti
       host: item.host, port: item.port })).join('\n')
   agent.ctx.effect(() => agent.ctx.systemPrompt.section({ name: 'power-evolve:ssh-execute-approval',
     order: 707, interpolate: false,
-    text: `The SSH tool only proposes one exact command. It does not execute until the user reviews and approves it on the trusted platform page. After a pending receipt, end this turn and do not repeat the proposal. The trusted platform will deliver the outcome in this Session. Pinned SSH connections:\n${connections}`,
+    text: `The SSH tool only proposes one exact command. It does not execute until the user reviews and approves it on the trusted platform page. After a pending receipt, end this turn and do not repeat the proposal. The trusted platform will deliver the outcome in this Session. Pinned SSH connections:\n\n\`\`\`jsonl\n${connections}\n\`\`\``,
   }))
   agent.ctx.effect(() => agent.ctx.tools.register(defineTool({
     name: 'ssh_execute_propose',
