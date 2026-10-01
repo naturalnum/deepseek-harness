@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
 import type { Pool, PoolClient } from 'pg'
 import { z } from 'zod'
+import { runnerFileChanges, type VerifiedExecutionFiles } from '@power-evolve/contracts/execution-files'
 import { executionTarget, PlatformError, type Identity } from '../contracts.ts'
 import { transaction } from './database.ts'
 import { lockAccountAuthorities, requireActiveAccount } from './account-authority.ts'
@@ -10,6 +11,7 @@ import { userId as executionUserId } from '../contracts.ts'
 import { KubernetesError } from './kubernetes.ts'
 import { MountSlotBlocked, SandboxManager, type SandboxReady } from './sandbox.ts'
 import type { TaskStore } from './tasks.ts'
+import type { ExecutionFileFactsService } from './execution-file-facts.ts'
 
 type State = 'queued' | 'starting' | 'running' | 'cancelling' | 'succeeded' | 'failed' | 'cancelled' | 'uncertain'
 interface ExecutionRow {
@@ -24,6 +26,7 @@ const runnerResult = z.object({
   digest: z.string().regex(/^[a-f0-9]{64}$/), exitCode: z.number().int().nullable(),
   stdout: z.string().max(65_536), stderr: z.string().max(65_536),
   stdoutTruncated: z.boolean(), stderrTruncated: z.boolean(), timedOut: z.boolean(), instanceId: z.uuid(),
+  fileChanges: z.unknown().optional(),
 }).strict()
 class ExecutionLeaseLost extends Error {}
 
@@ -38,6 +41,7 @@ export class ExecutionService {
   private polling: Promise<void> | undefined
 
   constructor(private readonly tasks: TaskStore, private readonly sandboxes: SandboxManager,
+    private readonly fileVerification: { service: Pick<ExecutionFileFactsService, 'verify'>; timeoutMs: number },
     private readonly concurrency: number, private readonly pollMs: number,
     private readonly idleMs: number, private readonly commandTimeoutMs: number,
     private readonly leaseMs = 90_000) {}
@@ -267,14 +271,41 @@ export class ExecutionService {
       await assertLease()
       await this.sandboxes.assertCurrent(sandbox)
       status = runnerResult.parse(await this.sandboxes.runner(sandbox.name, sandbox.token, 'POST', `${path}/cancel`, {}))
+      if (status.id !== row.id || status.instanceId !== sandbox.runnerInstanceId || status.digest !== digest(request)) {
+        await this.defer(row, 'uncertain', 'runner_identity_mismatch'); return
+      }
     }
     if (status.state === 'running') {
       await this.defer(row, cancelled ? 'cancelling' : 'running', null)
       return
     }
+    let verifiedFiles: VerifiedExecutionFiles = { status: 'unavailable', files: [], reasons: ['legacy_runner'] }
+    const observedFiles = status.fileChanges === undefined ? undefined : runnerFileChanges.safeParse(status.fileChanges)
+    if (observedFiles && !observedFiles.success) {
+      verifiedFiles = { status: 'unavailable', files: [], reasons: ['verification_failed'] }
+    } else if (observedFiles?.success) {
+      const deadline = AbortSignal.timeout(this.fileVerification.timeoutMs)
+      const signal = AbortSignal.any([this.stop.signal, deadline])
+      try {
+        verifiedFiles = await this.fileVerification.service.verify(
+          executionUserId.parse(row.user_id), row.session_id, observedFiles.data, signal)
+      } catch (error) {
+        if (this.stop.signal.aborted) throw error
+        if (deadline.aborted) {
+          verifiedFiles = { status: 'unavailable', files: [], reasons: ['verification_failed'] }
+        } else if (error instanceof PlatformError && ['account_disabled', 'account_deleted'].includes(error.code)) {
+          verifiedFiles = { status: 'unavailable', files: [], reasons: ['execution_unavailable'] }
+        } else {
+          // File discovery is auxiliary; its failure cannot erase an authenticated terminal command result.
+          verifiedFiles = { status: 'unavailable', files: [], reasons: ['verification_failed'] }
+        }
+      }
+    }
+    await assertLease()
     await this.settle(row, status.state, {
       exitCode: status.exitCode, stdout: status.stdout, stderr: status.stderr,
       stdoutTruncated: status.stdoutTruncated, stderrTruncated: status.stderrTruncated, timedOut: status.timedOut,
+      verifiedFiles,
     }, null)
   }
 

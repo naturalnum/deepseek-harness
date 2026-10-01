@@ -25,6 +25,8 @@ import { ACCOUNT_ROUTES, accountCapabilitiesValue, accountEmptyRequest } from '.
 import { FILE_DOWNLOAD_CONTENT_PATH, fileDownloadPrepareRequest, fileDownloadView,
   fileDownloadUrl } from '@power-evolve/contracts/file-download'
 import { parseFileDownloadQuery, proxyFileDownload } from '../file-download-http.ts'
+import { artifactPublishRequest, executionFilesRequest, executionFilesView,
+  EXECUTION_FILES_PLATFORM_PATH } from '@power-evolve/contracts/execution-files'
 
 const requests = { ...mcpManagementRequests, ...sshManagementRequests, me: z.object({}).strict(), logout: z.object({}).strict(), modelsList: z.object({}).strict(), settingsUpdate: settingsUpdateRequest,
   accountCapabilities: accountEmptyRequest,
@@ -55,11 +57,12 @@ const requests = { ...mcpManagementRequests, ...sshManagementRequests, me: z.obj
   sshCallList: z.object({}).strict(),
   sshExecuteList: z.object({}).strict(), sshExecuteStatus: sshExecuteRefRequest,
   sshExecuteCancel: sshExecuteRefRequest,
-  artifactsPublish: z.object({ requestId: z.uuid(), sessionId: z.uuid(), path: z.string().min(1).max(512) }).strict(),
+  artifactsPublish: artifactPublishRequest,
   artifactsList: z.object({ workspaceId: z.uuid().optional(), sessionId: z.uuid().optional(),
     cursor: z.uuid().optional(), limit: z.number().int().min(1).max(100).optional() }).strict(),
   artifactsPreview: z.object({ artifactId: z.uuid() }).strict(),
   executionsList: z.object({}).strict(), executionCancel: z.object({ executionId: z.uuid() }).strict(),
+  executionFiles: executionFilesRequest,
   devicesList: z.object({}).strict(), devicesPair: z.object({}).strict(),
   devicesRevoke: z.object({ deviceId: z.uuid() }).strict(),
   directoriesRevoke: z.object({ directoryId: z.uuid() }).strict() }
@@ -84,6 +87,7 @@ const endpoint = { ...mcpManagementEndpoints, ...sshManagementEndpoints, me: '/i
   sshExecuteCancel: '/ssh/execute/cancel',
   artifactsPublish: '/artifacts/publish', artifactsList: '/artifacts/list', artifactsPreview: '/artifacts/preview',
   executionsList: '/executions/list', executionCancel: '/executions/cancel',
+  executionFiles: EXECUTION_FILES_PLATFORM_PATH,
   devicesList: '/devices/list', devicesPair: '/devices/pair',
   devicesRevoke: '/devices/revoke', directoriesRevoke: '/devices/directories/revoke' } as const
 type Method = keyof typeof requests
@@ -270,6 +274,10 @@ class ProductRemote extends TypertRemoteService {
     return sshExecuteView.parse(await this.call('sshExecuteCancel', request))
   }
   @Remote artifactsPublish(request: z.infer<typeof requests.artifactsPublish>) { return this.call('artifactsPublish', request) }
+  @Remote async executionFiles(request: z.infer<typeof executionFilesRequest>, signal: AbortSignal) {
+    return executionFilesView.parse(await this.ctx.powerEvolveRuntime.call(
+      EXECUTION_FILES_PLATFORM_PATH, this.token(), request, signal))
+  }
   @Remote artifactsList(request: z.infer<typeof requests.artifactsList>) { return this.call('artifactsList', request) }
   @Remote artifactsPreview(request: z.infer<typeof requests.artifactsPreview>) { return this.call('artifactsPreview', request) }
   @Remote executionsList(request: z.infer<typeof requests.executionsList>) { return this.call('executionsList', request) }
@@ -323,7 +331,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     parameters: [{ name: 'request', wire: 'request', source: 'json', codec: { mode: 'strict', typeSymbol: `PowerEvolve/${method}`, create: () => request } }],
     result: { mode: 'strict', typeSymbol: 'PowerEvolve/Json', create: () => z.json() },
     ...(method === 'follow' ? { mode: 'stream' as const } : {}),
-    ...(['follow', 'filesDownloadPrepare'].includes(method) ? { cancellation: { parameter: 'signal' } } : {}),
+    ...(['follow', 'filesDownloadPrepare', 'executionFiles'].includes(method) ? { cancellation: { parameter: 'signal' } } : {}),
   }))
   ctx.typert.register({ package: '@power-evolve/application', face: 'host', schemas: [], model: { services: [], events: [], objects: [] }, invocations })
   const scheduler = new Scheduler(ctx, config)

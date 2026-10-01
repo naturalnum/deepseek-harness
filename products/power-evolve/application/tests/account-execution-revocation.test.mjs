@@ -134,7 +134,9 @@ test('cloud revocation preserves actual output, suppresses continuation and neve
     if (method === 'POST') this.posts++
     throw new KubernetesError(404, 'Synthetic missing execution')
   } }
-  const executions = new ExecutionService(f.tasks, sandboxes, 1, 100, 1000, 1000)
+  const executions = new ExecutionService(f.tasks, sandboxes,
+    { service: { async verify() { throw new Error('Revocation fixture does not scan files') } }, timeoutMs: 1000 },
+    1, 100, 1000, 1000)
   const receipt = await executions.propose(grant.token, 'cloud-call', 'synthetic-command', '/workspace')
   const row = await executions.claim()
   await f.revoke(f.alice)

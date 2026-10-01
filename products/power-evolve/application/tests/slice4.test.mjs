@@ -18,6 +18,7 @@ const { Pool } = require('pg')
 const privateDir = process.env.PE_PRIVATE_DIR ?? join(homedir(), '.config/power-evolve/shared-host-slice-1')
 const databaseUrl = (await readFile(join(privateDir, 'database-url'), 'utf8')).trim()
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex')
+const fileVerification = { service: { async verify() { throw new Error('Legacy Runner fixture has no file observation') } }, timeoutMs: 1000 }
 async function eventually(check, label, timeout = 10000) {
   const deadline = Date.now() + timeout
   while (Date.now() < deadline) { const value = await check(); if (value) return value; await delay(25) }
@@ -122,7 +123,7 @@ test('cloud execution persists acceptance and reconciles runner outcomes', { tim
     },
   }
   const service = () => {
-    const worker = new ExecutionService(tasks, sandbox, 4, 50, 1000, 2000)
+    const worker = new ExecutionService(tasks, sandbox, fileVerification, 4, 50, 1000, 2000)
     workers.push(worker)
     return worker
   }
@@ -137,17 +138,20 @@ test('cloud execution persists acceptance and reconciles runner outcomes', { tim
   assert.equal((await first.list(other)).items.length, 0)
   await assert.rejects(first.cancel(other, accepted.executionId), /execution_not_found/)
 
-  // V20 cannot settle the observed NUL output. Migration must reconcile that exact execution.
-  first.start()
-  await eventually(async () => (await first.list(identity)).items.some(value =>
-    value.executionId === accepted.executionId && value.state === 'uncertain'
-      && value.errorCode === 'sandbox_or_runner_unavailable'), 'V20 NUL result storage failure')
-  await first.close()
+  // Materialize the historical result before starting the current worker, which requires current account columns.
+  const historicalSandbox = await sandbox.ensureReady(sessionId, userId)
+  const historicalResult = await sandbox.runner(historicalSandbox.name, historicalSandbox.token, 'POST', '/executions',
+    { id: accepted.executionId, command: 'echo yes', cwd: '', timeoutMs: 2000, instanceId: runnerInstanceId })
+  await assert.rejects(pool.query('UPDATE pe_cloud_executions SET result=$2 WHERE id=$1',
+    [accepted.executionId, JSON.stringify(historicalResult)]), { code: '22P05' })
+  await pool.query(`UPDATE pe_cloud_executions SET state='uncertain',error_code='sandbox_or_runner_unavailable',
+    sandbox_name=$2,pod_uid=$3,runner_instance_id=$4 WHERE id=$1`,
+    [accepted.executionId, historicalSandbox.name, podUid, runnerInstanceId])
   assert.equal(posted.length, 1)
   assert.equal((await pool.query("SELECT count(*) FROM pe_operations WHERE source='sandbox_result'")).rows[0].count, '0')
   await initializeDatabase(pool)
   await initializeDatabase(pool)
-  assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 24)
+  assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, migrations.CURRENT_SCHEMA_VERSION)
   const replacement = service(); replacement.start()
   const finished = await eventually(async () => {
     const item = (await replacement.list(identity)).items.find(value => value.executionId === accepted.executionId)
@@ -202,8 +206,8 @@ test('cloud execution persists acceptance and reconciles runner outcomes', { tim
     if (id === slowSessionId) await delay(5000)
     return sandbox.ensureReady(id, owner, assertLease)
   } }
-  const slowFirst = new ExecutionService(tasks, slowSandbox, 2, 50, 10000, 2000, 3000)
-  const slowSecond = new ExecutionService(tasks, slowSandbox, 2, 50, 10000, 2000, 3000)
+  const slowFirst = new ExecutionService(tasks, slowSandbox, fileVerification, 2, 50, 10000, 2000, 3000)
+  const slowSecond = new ExecutionService(tasks, slowSandbox, fileVerification, 2, 50, 10000, 2000, 3000)
   workers.push(slowFirst, slowSecond)
   const slowCommand = await slowFirst.propose('slow-grant', 'slow-call', 'slow-start-once', '')
   slowFirst.start(); slowSecond.start()

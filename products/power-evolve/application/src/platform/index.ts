@@ -55,6 +55,9 @@ import { SshAuthenticationCheck } from './ssh-check.ts'
 import { SshExecuteService } from './ssh-execute.ts'
 import { SshRunnerOrchestrator } from './ssh-runner.ts'
 import { ExecutionService } from './executions.ts'
+import { ExecutionFileFactsService } from './execution-file-facts.ts'
+import { artifactPublishRequest, executionFilesRequest,
+  EXECUTION_FILES_PLATFORM_PATH } from '@power-evolve/contracts/execution-files'
 import { LoginAdmission } from './login-admission.ts'
 import { DeviceService } from './devices.ts'
 import { KubernetesClient } from './kubernetes.ts'
@@ -104,6 +107,7 @@ export const Config = schema.object({
   sandboxConcurrency: schema.number().step(1).min(1).default(4),
   sandboxPollMs: schema.number().min(100).default(500), sandboxIdleMs: schema.number().min(1000).default(300000),
   sandboxCommandTimeoutMs: schema.number().min(1000).default(60000),
+  sandboxFileVerifyTimeoutMs: schema.number().step(1).min(100).max(60000).default(15000),
   leaseMs: schema.number().min(1000).required(), tokenLifetimeMs: schema.number().min(1000).required(),
   maxPendingPerUser: schema.number().step(1).min(1).required(), maxActivePerUser: schema.number().step(1).min(1).required(),
   maxWorkspacesPerUser: schema.number().step(1).min(1).default(16),
@@ -190,6 +194,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   }
   const artifacts = new ArtifactService(pool, files, config.artifactRoot)
   await artifacts.init()
+  const executionFiles = new ExecutionFileFactsService(pool, files)
   const skillLibraryRoot = config.skillLibraryRoot || config.sandboxLocalRoot
   if (executionEnabled && resolve(skillLibraryRoot) !== resolve(config.sandboxLocalRoot)) {
     throw new Error('Skill library and Sandbox roots differ')
@@ -346,7 +351,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       localRoot: config.sandboxLocalRoot, nodeRoot: config.sandboxNodeRoot,
       ...(config.sandboxVolumeClaimName ? { volumeClaimName: config.sandboxVolumeClaimName } : {}),
       readyTimeoutMs: config.sandboxReadyTimeoutMs,
-    }), config.sandboxConcurrency, config.sandboxPollMs, config.sandboxIdleMs, config.sandboxCommandTimeoutMs) : null
+    }), { service: executionFiles, timeoutMs: config.sandboxFileVerifyTimeoutMs },
+    config.sandboxConcurrency, config.sandboxPollMs, config.sandboxIdleMs, config.sandboxCommandTimeoutMs) : null
   if (executions) { executions.start(); ctx.effect(() => () => executions.close()) }
   const devices = new DeviceService(tasks, config.sandboxCommandTimeoutMs, files)
 
@@ -819,8 +825,11 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         sendJson(res, await nativeWorkspaces.create(user, value.requestId, value.title)); return
       }
       case '/artifacts/publish': {
-        const value = z.object({ requestId: z.uuid(), sessionId: z.uuid(), path: z.string().min(1).max(512) }).strict().parse(input)
-        sendJson(res, await artifacts.publish(user, value.requestId, value.sessionId, value.path)); return
+        const value = artifactPublishRequest.parse(input)
+        sendJson(res, await artifacts.publish(user, value.requestId, value.sessionId, value.path, value.expectedRevision)); return
+      }
+      case EXECUTION_FILES_PLATFORM_PATH: {
+        sendJson(res, await executionFiles.read(user, executionFilesRequest.parse(input))); return
       }
       case '/artifacts/list': {
         const value = z.object({ workspaceId: z.uuid().optional(), sessionId: z.uuid().optional(),
