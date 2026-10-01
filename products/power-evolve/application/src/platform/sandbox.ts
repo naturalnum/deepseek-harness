@@ -801,6 +801,11 @@ export class SandboxManager {
     return !!instance.rows[0] && this.hasProof(current, instance.rows[0], slot.pod_uid!)
   }
 
+  private async releasedStopFinalizer(pod: Resource, slot: MountSlot): Promise<boolean> {
+    return Boolean(pod.metadata.deletionTimestamp) && kubernetesPodStopStatus(pod) === 'KUBELET_STOPPED'
+      && await this.proof(slot)
+  }
+
   private async persistProof(slot: MountSlot, sandboxUid: string | null): Promise<void> {
     const uid = slot.pod_uid!
     const evidence = { status: 'KUBELET_STOPPED', podUid: uid, sandboxUid,
@@ -840,7 +845,7 @@ export class SandboxManager {
       throw new MountSlotBlocked('mount_stop_sandbox_identity_changed', false)
     }
     if (firstPod && (!this.owned(firstPod, labels) || firstPod.metadata.uid !== uid
-      || !firstPod.metadata.finalizers?.includes(STOP_FINALIZER)
+      || !firstPod.metadata.finalizers?.includes(STOP_FINALIZER) && !await this.releasedStopFinalizer(firstPod, slot)
       || sandbox && !firstPod.metadata.ownerReferences?.some(ref => ref.uid === sandbox.metadata.uid))) {
       throw new MountSlotBlocked('mount_stop_pod_identity_changed', false)
     }
@@ -858,10 +863,10 @@ export class SandboxManager {
       const [pod, currentSandbox] = await Promise.all([this.get('pods', name), this.get('sandboxes', name)])
       if (pod) {
         if (!this.owned(pod, labels) || pod.metadata.uid !== uid
-          || !pod.metadata.finalizers?.includes(STOP_FINALIZER)) {
+          || !pod.metadata.finalizers?.includes(STOP_FINALIZER) && !await this.releasedStopFinalizer(pod, slot)) {
           throw new MountSlotBlocked('mount_stop_pod_identity_changed', false)
         }
-        if (kubernetesPodStopStatus(pod) === 'KUBELET_STOPPED') {
+        if (kubernetesPodStopStatus(pod) === 'KUBELET_STOPPED' && pod.metadata.finalizers?.includes(STOP_FINALIZER)) {
           if (!await this.proof(slot)) await this.persistProof(slot, currentSandbox?.metadata.uid ?? sandbox?.metadata.uid ?? null)
           if (!pod.metadata.resourceVersion) throw new MountSlotBlocked('mount_stop_pod_version_missing', false)
           await assertLease()
