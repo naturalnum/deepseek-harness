@@ -7,7 +7,6 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { SafePosix } from '../lib/platform/safe-posix.js'
-import { FileService } from '../lib/platform/files.js'
 
 const digest = data => createHash('sha256').update(data).digest('hex')
 const status = (number, code) => ({ status: number, code })
@@ -25,9 +24,9 @@ async function fixture(t) {
   return { base, root, outside, safe, workspaceId, workspace: join(root, workspaceId) }
 }
 
-test('descriptor-relative read, list, kind, put and publication source reject an intermediate symlink',
+test('descriptor-relative read, list, kind and put reject an intermediate symlink',
   { timeout: 30000 }, async t => {
-    const { safe, root, outside, workspace, workspaceId } = await fixture(t)
+    const { safe, outside, workspace, workspaceId } = await fixture(t)
     const secret = Buffer.from('outside secret')
     await writeFile(join(outside, 'secret.txt'), secret)
     await symlink(outside, join(workspace, 'link'))
@@ -38,11 +37,8 @@ test('descriptor-relative read, list, kind, put and publication source reject an
       () => safe.put(workspaceId, ['link', 'secret.txt'], Buffer.from('changed').toString('base64'),
         digest('changed'), digest(secret), false),
     ]) await assert.rejects(operation(), status(400, 'invalid_path'))
-    const userId = randomUUID()
-    const files = new FileService({ async query() { return { rows: [{ id: workspaceId }] } } }, root)
-    await files.init()
-    await assert.rejects(files.readInWorkspace({ userId }, workspaceId, 'link/secret.txt'),
-      status(400, 'invalid_path'))
+    // FileService publication reads now require binding/account transactions;
+    // their real-PG coverage lives in s2-storage-bindings.test.mjs.
     assert.deepEqual(await readFile(join(outside, 'secret.txt')), secret)
     const listed = await safe.list(workspaceId, [])
     assert.equal(listed.items.some(item => item.name === 'link'), false)

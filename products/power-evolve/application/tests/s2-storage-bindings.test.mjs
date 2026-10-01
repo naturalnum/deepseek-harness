@@ -183,6 +183,27 @@ test('storage selection and recovery use actual PG and POSIX without creating Sa
       } finally { c.files.safe.createDirectory = original }
     })
 
+    await t.test('bound publication source rejects intermediate symlinks with real account transactions', async () => {
+      const alice = await owner(c.pool)
+      const created = await c.workspaces.create(alice, requestId.parse(randomUUID()), 'Publication source')
+      const binding = await c.files.bindingForId(alice.userId, created.workspaceId)
+      assert.notEqual(binding.rootRelativePath, '')
+      const workspace = await c.files.workspaceForId(alice.userId, created.workspaceId)
+      const outside = join(c.root, `outside-${randomUUID()}`), secret = 'outside secret'
+      await mkdir(outside); await writeFile(join(outside, 'secret.txt'), secret)
+      await symlink(outside, join(workspace.path, 'link'))
+      await assert.rejects(c.files.readInWorkspace(alice, created.workspaceId, 'link/secret.txt'),
+        { status: 400, code: 'invalid_path' })
+      await assert.rejects(c.files.readBytesInWorkspace(alice, created.workspaceId, 'link/secret.txt'),
+        { status: 400, code: 'invalid_path' })
+      await transaction(c.pool, async client => {
+        await requireActiveAccount(client, alice.userId, 'update')
+        await assert.rejects(c.files.readInWorkspace(alice, created.workspaceId, 'link/secret.txt', client),
+          { status: 400, code: 'invalid_path' })
+      })
+      assert.equal(await readFile(join(outside, 'secret.txt'), 'utf8'), secret)
+    })
+
     await t.test('nonempty selected directories retain real Git, deny overlap and bind explicit creation retries', async () => {
       const alice = await owner(c.pool), bob = await owner(c.pool), space = await personal(c, alice)
       await directory(c, alice, space, 'project-a'); await directory(c, alice, space, 'project-b')
