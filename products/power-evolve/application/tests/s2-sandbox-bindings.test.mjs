@@ -35,6 +35,68 @@ const captured = ready => ({ kind: 'pod', mountGeneration: ready.generation, ses
   podUid: ready.podUid, runnerInstanceId: ready.runnerInstanceId })
 const stopped = ready => ({ kind: 'kubelet_stopped', mountGeneration: ready.generation, podUid: ready.podUid })
 
+test('recovery owns cleanup against both a new idle recycler and one already stopping the captured writer', options, async t => {
+  for (const idleStartedFirst of [false, true]) await t.test(idleStartedFirst ? 'idle stop already in progress' : 'recovery already accepted', async t => {
+    const f = await setup(t), ready = await f.manager.ensureReady(f.sessionId, f.userId, async () => {})
+    const files = new FileService(f.pool, join(f.localRoot, 'workspaces'))
+    await files.init()
+    const recoveryManager = new SandboxManager(f.kube, files, f.pool, 'test-key', f.managerOptions)
+    recoveryManager.home = f.manager.home
+    const user = { userId: f.userId, username: `test-${f.userId}` }
+    const request = { requestId: randomUUID(), workspaceId: f.workspaceId, spaceId: ready.binding.spaceId,
+      rootRelativePath: ready.binding.rootRelativePath, expectedGeneration: 1 }
+    let reached, release
+    const entered = new Promise(resolve => { reached = resolve })
+    const held = new Promise(resolve => { release = resolve })
+    const call = f.kube.call.bind(f.kube)
+    let gated = false
+    f.kube.call = async (method, path, body) => {
+      const result = await call(method, path, body)
+      if (!gated && method === 'GET' && path.endsWith(`/sandboxes/${ready.name}`)) {
+        gated = true; reached(); await held
+      }
+      return result
+    }
+    const poll = () => files.bindings.poll((claim, lease) => recoveryManager.stopForRecovery(claim, lease),
+      new AbortController().signal, { ownerId: randomUUID(), leaseMs: 5000 })
+    if (idleStartedFirst) {
+      const idle = f.manager.recycleIdle(0).then(() => null, error => error)
+      await entered
+      assert.equal((await f.pool.query('SELECT state FROM pe_mount_slots WHERE user_id=$1', [f.userId])).rows[0].state, 'stopping')
+      await files.bindings.restore(user, request)
+      await poll()
+      const mutations = f.kube.mutations.length
+      release()
+      assert.match((await idle)?.message ?? '', /mount_(workspace_recovering|stop_generation_changed)/u)
+      assert.equal(f.kube.mutations.length, mutations)
+    } else {
+      await files.bindings.restore(user, request)
+      const recovering = poll()
+      await entered
+      try { await f.manager.recycleIdle(0) }
+      finally { release() }
+      await recovering
+    }
+    const receipt = await files.bindings.status(user, { requestId: request.requestId })
+    assert.equal(receipt.state, 'completed')
+    assert.equal(receipt.bindingGeneration, 2)
+    const row = (await f.pool.query('SELECT stop_target,stop_proof FROM pe_workspace_binding_requests WHERE request_id=$1', [request.requestId])).rows[0]
+    assert.deepEqual(row.stop_target, captured(ready))
+    assert.deepEqual(row.stop_proof, stopped(ready))
+    const slot = (await f.pool.query('SELECT state,stop_pod_uid,stop_evidence,binding_snapshot FROM pe_mount_slots WHERE user_id=$1', [f.userId])).rows[0]
+    assert.equal(slot.state, 'free'); assert.equal(slot.stop_pod_uid, ready.podUid)
+    assert.deepEqual(slot.binding_snapshot, ready.binding)
+    assert.equal(slot.stop_evidence.runnerInstanceId, ready.runnerInstanceId)
+    if (!idleStartedFirst) {
+      const next = await recoveryManager.ensureReady(f.sessionId, f.userId, async () => {})
+      await f.manager.recycleIdle(0)
+      const recycled = (await f.pool.query('SELECT state,stop_pod_uid FROM pe_mount_slots WHERE user_id=$1', [f.userId])).rows[0]
+      assert.equal(recycled.state, 'free')
+      assert.equal(recycled.stop_pod_uid, next.podUid)
+    }
+  })
+})
+
 test('actual storage recovery worker stops the captured Pod, preserves Git bytes and rebinds the same Session', options, async t => {
   const f = await setup(t)
   await f.files.workspaceForId(f.userId, f.workspaceId)

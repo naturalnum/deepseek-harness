@@ -109,10 +109,13 @@ export class SandboxManager {
     if (!selected.rows[0]) throw new MountSlotBlocked('mount_session_workspace_missing', false)
     return selected.rows[0]
   }
-  private async assertAdmission(client: PoolClient, userId: string): Promise<void> {
+  private async recoveryOwnsWriter(client: PoolClient, userId: string): Promise<boolean> {
     const fenced = await client.query(
       "SELECT id FROM pe_workspaces WHERE user_id=$1 AND binding_state IN ('recovering','blocked') LIMIT 1", [userId])
-    if (fenced.rowCount) throw new MountSlotBlocked('mount_workspace_recovering', false)
+    return !!fenced.rowCount
+  }
+  private async assertAdmission(client: PoolClient, userId: string): Promise<void> {
+    if (await this.recoveryOwnsWriter(client, userId)) throw new MountSlotBlocked('mount_workspace_recovering', false)
   }
   private async readyBinding(client: PoolClient, userId: string, workspaceId: string): Promise<StorageBinding> {
     const workspace = await this.lockWorkspace(client, userId, workspaceId)
@@ -757,8 +760,9 @@ export class SandboxManager {
     })
   }
 
-  private async stopping(slot: MountSlot): Promise<MountSlot> {
-    const selected = await this.pool.query<MountSlot>('SELECT * FROM pe_mount_slots WHERE user_id=$1', [slot.user_id])
+  private async stopping(slot: MountSlot, client?: PoolClient): Promise<MountSlot> {
+    const selected = await (client ?? this.pool).query<MountSlot>(
+      `SELECT * FROM pe_mount_slots WHERE user_id=$1${client ? ' FOR UPDATE' : ''}`, [slot.user_id])
     const current = selected.rows[0]
     if (!current || current.state !== 'stopping' || current.session_id !== slot.session_id
       || current.generation !== slot.generation || current.pod_uid !== slot.pod_uid
@@ -912,6 +916,7 @@ export class SandboxManager {
 
   /**
    * Recycle one idle writer; incomplete stop evidence leaves its slot blocked for reconciliation.
+   * Recovery fences transfer cleanup to the recovery worker; an earlier recycler rechecks its slot before progress.
    * @param idleMs - Inactivity threshold; already stopping or disabled-account writers are also eligible.
    */
   async recycleIdle(idleMs: number): Promise<void> {
@@ -928,6 +933,7 @@ export class SandboxManager {
       await this.lockUser(client, userId)
       const hint = await client.query<{ workspace_id: string | null }>('SELECT workspace_id FROM pe_mount_slots WHERE user_id=$1', [userId])
       if (hint.rows[0]?.workspace_id) await this.lockWorkspace(client, userId, hint.rows[0].workspace_id)
+      if (await this.recoveryOwnsWriter(client, userId)) return null
       const result = await client.query<MountSlot>('SELECT * FROM pe_mount_slots WHERE user_id=$1 FOR UPDATE', [userId])
       const slot = result.rows[0]
       if (!slot || !slot.session_id || !slot.pod_uid || !slot.runner_instance_id
@@ -953,6 +959,17 @@ export class SandboxManager {
       }
       return { ...slot, state: 'stopping' as const }
     })
-    if (selected) await this.stopAndRelease(selected, async () => {})
+    if (selected) {
+      const checkLocked = async (client: PoolClient) => {
+        await this.assertAdmission(client, userId)
+        await this.stopping(selected, client)
+      }
+      const check = () => transaction(this.pool, async client => {
+        await this.lockUser(client, userId)
+        await this.lockWorkspace(client, userId, selected.workspace_id!)
+        await checkLocked(client)
+      })
+      await this.stopAndRelease(selected, check, checkLocked)
+    }
   }
 }

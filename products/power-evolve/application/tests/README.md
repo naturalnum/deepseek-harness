@@ -24,6 +24,8 @@ PVC mounts use `workspaces/<rootKey>/<rootRelativePath>` as kubelet `subPath`. Q
 
 Any recovering or blocked Workspace fences new Sandbox reservations and command dispatch for its owner. Admission locks the account, Workspace, mount slot and instance in that order. Kubernetes requests run outside these PostgreSQL transactions.
 
+The recovery worker owns writer cleanup through this fence. Idle recyclers yield under the account lock; a recycler already stopping the Pod rechecks recovery ownership and its captured stopping slot before each cleanup mutation and final release.
+
 [ExecutionService](../src/platform/executions.ts) observes an already captured Pod and Runner identity through `observeReady`; it does not provision storage for observation. Status and cancellation remain available through the recovery fence. A new command POST requires `assertDispatchAllowed` immediately before dispatch. A missing execution on an old Runner does not authorize replay through a blocked binding.
 
 ## Recovery stop proof
