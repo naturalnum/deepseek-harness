@@ -1,4 +1,4 @@
-/** Real PG and built DSH Profiles. Model/connector egress is a rejecting fixture and must remain unused. */
+/** Real PG and built DSH Profiles, without browser or Sandbox execution. Model/connector egress is an unused rejecting fixture. */
 import assert from 'node:assert/strict'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomBytes, randomUUID } from 'node:crypto'
@@ -264,9 +264,10 @@ async function fixture(t: TestContext) {
   const platformOrigin = `http://127.0.0.1:${platformPort}`, hostOrigin = `http://127.0.0.1:${hostPort}`
   const users = ['alice', 'bob'].map(username => ({ username, password: randomBytes(24).toString('base64url'),
     settings: { model: 'download-fixture', maxTokens: 64, revision: 1 } }))
-  for (const [name, value] of Object.entries({ 'database-url': url.href, 'users.json': JSON.stringify(users),
+  const privateFiles = { 'database-url': url.href, 'users.json': JSON.stringify(users),
     'worker-token': randomBytes(32).toString('base64url'), 'model-key': randomBytes(32).toString('base64url'),
-    'connector-key': randomBytes(32).toString('base64url') })) {
+    'connector-key': randomBytes(32).toString('base64url') }
+  for (const [name, value] of Object.entries(privateFiles)) {
     await writeFile(join(temporary, name), value, { mode: 0o600 })
   }
 
@@ -299,7 +300,7 @@ async function fixture(t: TestContext) {
     }))
     else patch.push(update('power-evolve-runtime', { platformUrl: platformOrigin,
       workerTokenFile: join(temporary, 'worker-token') }), update('power-evolve-host', {
-      origin: hostOrigin, platformOrigin, readyFile, pollMs: 100,
+      origin: hostOrigin, platformOrigin, readyFile, pollMs: 100, concurrency: 1,
     }))
     await writeFile(join(profile, 'cordis.patch.yml'), yaml.dump(patch))
     const log = openSync(join(temporary, `${name}.log`), 'a', 0o600)
@@ -320,7 +321,15 @@ async function fixture(t: TestContext) {
         if ((error as NodeJS.ErrnoException).code === 'ENOENT' || error instanceof SyntaxError) return false
         throw error
       }
-    }, `${name} Profile readiness`, 30000)
+    }, `${name} Profile readiness`, 30000).catch(async (failure: unknown) => {
+      let diagnostic = (await readFile(join(temporary, `${name}.log`), 'utf8')).slice(-12000)
+      const secrets = [source.href, source.password, decodeURIComponent(source.password), url.href,
+        ...Object.values(privateFiles), ...users.map(user => user.password)].filter(Boolean).sort((a, b) => b.length - a.length)
+      for (const secret of secrets) diagnostic = diagnostic.replaceAll(secret, '[redacted]')
+      diagnostic = diagnostic.replace(/Bearer\s+\S+/giu, 'Bearer [redacted]')
+        .replace(/[a-z0-9_-]{32,}/giu, '[opaque]')
+      throw new Error(`${failure instanceof Error ? failure.message : 'Profile startup failed'}\n${diagnostic}`)
+    })
     assert.equal(ready.pid, child.pid)
     assert.equal(ready.url, name === 'platform' ? platformOrigin : hostOrigin)
     assert.equal((await fetch(`${ready.url}/health`, { signal: AbortSignal.timeout(2000) })).status, 200)
@@ -410,6 +419,54 @@ async function error(response: Response, status: number, code?: string): Promise
   if (code) assert.equal(value.error, code)
   else assert.match(value.error, /^[a-z][a-z0-9_]*$/u)
 }
+
+test('prepare cancellation reaches a real Platform ownership query and retains admission until PG finishes',
+  { skip: privateDir ? false : 'Set PE_FILE_DOWNLOAD_TEST_PRIVATE_DIR to an existing PG private configuration', timeout: 45000 }, async t => {
+    const f = await fixture(t), alice = f.browsers[0]!
+    const session = await f.create(alice)
+    const paths = Array.from({ length: 16 }, (_, i) => `cancel-${i}.bin`)
+    const data = Buffer.alloc(1024 * 1024)
+    for (const path of paths) await writeFile(f.file(session, path), data)
+    const blocker = await f.pool.connect()
+    const cancelled = new AbortController(), pending = new AbortController()
+    t.after(() => { cancelled.abort(); pending.abort() })
+    let second: Promise<Response> | undefined
+    const waiting = async () => Number((await f.pool.query(`SELECT count(*) AS count FROM pg_stat_activity
+      WHERE datname=current_database() AND wait_event_type='Lock'
+      AND query LIKE 'SELECT s.workspace_id FROM pe_sessions s%'`)).rows[0].count)
+    try {
+      await blocker.query('BEGIN')
+      await blocker.query('LOCK TABLE pe_sessions IN ACCESS EXCLUSIVE MODE')
+      const first = f.rpcResponse(alice, 'filesDownloadPrepare', { sessionId: session.sessionId, paths }, cancelled.signal)
+      // Attach the rejection handler before observation so cancellation never creates an unhandled rejection.
+      const aborted = assert.rejects(first, { name: 'AbortError' })
+      await eventually(async () => await waiting() === 1, 'the real Platform prepare ownership SELECT enters PG')
+      t.diagnostic('Cancellation sent only after the real Platform prepare ownership SELECT was observed waiting in PostgreSQL')
+      cancelled.abort()
+      await aborted
+      assert.equal(await waiting(), 1, 'Cancelling the caller must retain the still-running underlying PG operation')
+      second = f.rpcResponse(alice, 'filesDownloadPrepare', { sessionId: session.sessionId, paths: [paths[0]] }, pending.signal)
+      void second.catch(() => { /* The finally block cancels this request if any intermediate assertion fails. */ })
+      await eventually(async () => await waiting() === 2, 'second prepare occupies the other user slot')
+      await error(await f.rpcResponse(alice, 'filesDownloadPrepare', { sessionId: session.sessionId, paths: [paths[0]] },
+        AbortSignal.timeout(2000)), 429, 'download_busy')
+    } finally {
+      cancelled.abort()
+      await blocker.query('ROLLBACK')
+      blocker.release()
+    }
+    try {
+      assert.ok(second)
+      const completed = await second
+      assert.equal(completed.status, 200)
+      fileDownloadView.parse(await completed.json())
+      await eventually(async () => await waiting() === 0, 'underlying PG operations finish after releasing the lock')
+      const retry = await f.prepare(alice, session, [paths[0]!])
+      const response = await f.content(alice, retry.downloadUrl)
+      headers(response, retry)
+      assert.equal((await response.arrayBuffer()).byteLength, data.length)
+    } finally { pending.abort() }
+  })
 
 test('workspace downloads cross real Host and Platform Profiles with V25 accounts and bounded cancellation',
   { skip: privateDir ? false : 'Set PE_FILE_DOWNLOAD_TEST_PRIVATE_DIR to an existing PG private configuration', timeout: 120000 }, async t => {
@@ -546,17 +603,6 @@ test('workspace downloads cross real Host and Platform Profiles with V25 account
       const paths = Array.from({ length: 16 }, (_, i) => `stream-${String(i).padStart(2, '0')}.bin`)
       const data = randomBytes(1024 * 1024)
       for (const path of paths) await writeFile(f.file(aliceProject, path), data)
-      const abort = new AbortController()
-      const interrupted = f.rpcResponse(alice, 'filesDownloadPrepare', { sessionId: aliceProject.sessionId, paths }, abort.signal)
-      const cancel = setTimeout(() => abort.abort(), 5)
-      try { await assert.rejects(interrupted, { name: 'AbortError' }) } finally { clearTimeout(cancel) }
-      await eventually(async () => {
-        const probe = await f.rpcResponse(alice, 'filesDownloadPrepare', { sessionId: aliceProject.sessionId, paths: ['scope.txt'] })
-        if (probe.status === 429) { await probe.body?.cancel(); return false }
-        assert.equal(probe.status, 200)
-        await probe.body?.cancel()
-        return true
-      }, 'prepare admission released after cancellation')
       const view = await f.prepare(alice, aliceProject, paths)
       const first = await f.pausedContent(alice, view.downloadUrl), second = await f.pausedContent(alice, view.downloadUrl)
       try {
