@@ -17,6 +17,7 @@ import { apply as hostApply } from '../src/index.ts'
 import { FilesBody } from '../src/client/FilesBody.tsx'
 import { FilesTitle } from '../src/client/FilesTitle.tsx'
 import { en, zh } from '../src/client/locales.ts'
+import { filesTabInfoFactory } from '../src/client/slots.ts'
 
 interface Recorded {
   name: string
@@ -25,6 +26,7 @@ interface Recorded {
   store: unknown
   inject: unknown
   component: unknown
+  children?: unknown
 }
 
 async function boot() {
@@ -103,6 +105,10 @@ describe('ui-sidebar-files apply', () => {
     ])
     expect(registered[0]?.store).toBeDefined()
     expect(typeof registered[0]?.inject).toBe('function')
+    expect(registered[0]?.children).toEqual({
+      'sidebar.right.tab.files.entry.leading': { kind: 'list', scope: 'session', inject: { hooks: { tabInfo: filesTabInfoFactory } } },
+      'sidebar.right.tab.files.actions': { kind: 'list', scope: 'session', inject: { hooks: { tabInfo: filesTabInfoFactory } } },
+    })
   })
 
   it('takes every registration back when the plugin is disposed', async () => {

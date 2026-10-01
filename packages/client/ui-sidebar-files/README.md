@@ -30,7 +30,11 @@ The `workspace.files` command opens or focuses the file page in the focused pane
 - **The body** — the keyed `sidebar.right.pane.tab` seat under that id: a header row under the strip, then the tree. The shared [`PathLabel`](../ui-primitives/README.md#component-catalog) displays the root path with subdued directories and a primary final segment. A clipped path retains its trailing characters with a left-edge fade; hovering reveals the full path. The reload control stays at its right.
 - **The chip title** — the keyed `sidebar.right.pane.tab.title` seat under that id: a shared `FileTypeIcon` folder glyph at 16px before the type's label. The tree's own rows never draw this sheet.
 
-Source files under `src/client/`: `definition.tsx` (the type), `store.ts` (what it keeps), `face.ts` (Remote reads and watches), `directory-node.ts` (open directories and their lifetimes), `FilesBody.tsx` (what it draws, with its ordering and failure-line helpers), `FilesTitle.tsx` (the chip title), `locales.ts` (what it says), and `index.ts` (the wiring).
+The body declares two optional Session-scoped list slots. `sidebar.right.tab.files.entry.leading` receives `tabId`, `root`, `path`, and `type` before each row's open or expand button. `sidebar.right.tab.files.actions` receives `tabId` and `root` after the root label and before reload. The package exports their owner types as `FilesEntryOwner` and `FilesActionsOwner` from its `/client` entry. Paths are absolute paths in the displayed Session's execution environment; contributors must verify any native Host mapping they require. The controls are siblings of the row button, so selecting a file need not open it.
+
+Both slots receive the enclosing viewed Session through the renderer and its tab-bound `useTabInfo` through `hookContext`. A contribution can attach cleanup to `useTabInfo().tab.signal`; hiding the tree unmounts its controls without ending the tab record. Persistent view state belongs in a contribution's Session-scoped store, keyed by tab and root. The slots add no selection or download behavior on their own.
+
+Source files under `src/client/`: `definition.tsx` (the type), `store.ts` (what it keeps), `face.ts` (Remote reads and watches), `directory-node.ts` (open directories and their lifetimes), `FilesBody.tsx` (what it draws, with its ordering and failure-line helpers), `FilesTitle.tsx` (the chip title), `slots.ts` (optional controls), `locales.ts` (what it says), and `index.ts` (the wiring).
 
 <a id="the-tree"></a>
 ## The tree

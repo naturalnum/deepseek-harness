@@ -6,6 +6,7 @@ import { makeTranslate, RemoteError } from '@deepseek-ai/dsh-client-test-runtime
 import type { RemoteFailure } from '@deepseek-ai/dsh-api-remotes/client'
 import { fileAddressFor } from '@deepseek-ai/dsh-util-workspace-path'
 import { failureLine, orderEntries } from '../src/client/FilesBody.tsx'
+import type { FilesBodyProps } from '../src/client/FilesBody.tsx'
 import type { DirLevel } from '../src/client/store.ts'
 import { zh } from '../src/client/locales.ts'
 import { mountBody, ROOT, SESSION, TAB } from './mount.client.tsx'
@@ -28,6 +29,25 @@ function names(root: HTMLElement): string[] {
 }
 
 describe('FilesBody', () => {
+  it('passes the displayed root and tab to optional controls, with row controls outside the open button', async () => {
+    const renderSlot = vi.fn<FilesBodyProps['renderSlot']>((name, owner) =>
+      name === 'sidebar.right.tab.files.entry.leading'
+        ? <input type="checkbox" aria-label={'path' in owner ? owner.path : ''} /> : <button type="button">Extension</button>)
+    const { view, script, tabActions } = mountBody(ROOT, undefined, renderSlot)
+    await act(() => script.watches.ready(ROOT))
+    await act(() => script.settle({ ok: true, value: ROOT_LEVEL }))
+    expect(renderSlot).toHaveBeenCalledWith('sidebar.right.tab.files.actions', { tabId: TAB, root: ROOT },
+      { hookContext: expect.any(Function) })
+    for (const entry of ROOT_LEVEL.entries) {
+      expect(renderSlot).toHaveBeenCalledWith('sidebar.right.tab.files.entry.leading',
+        { tabId: TAB, root: ROOT, path: `${ROOT}/${entry.name}`, type: entry.type }, { hookContext: expect.any(Function) })
+    }
+    expect(view.container.querySelector('button input')).toBeNull()
+    fireEvent.click(view.getByRole('checkbox', { name: `${ROOT}/README.md` }))
+    expect(tabActions.openResource).not.toHaveBeenCalled()
+    fireEvent.click(view.getByRole('button', { name: 'README.md' }))
+    expect(tabActions.openResource).toHaveBeenCalledTimes(1)
+  })
   it('displays the effective file-tree refresh accelerator', async () => {
     const { view, script } = mountBody(ROOT, { id: 'page.refresh' as never, label: 'Refresh', aliases: [],
       binding: null, keys: ['Ctrl', 'R'], aria: 'Control+R', modified: true, conflicts: [], issue: null })
@@ -121,7 +141,7 @@ describe('FilesBody', () => {
     const { view, script } = mountBody()
     await act(() => script.watches.ready(ROOT))
     await act(() => script.settle({ ok: true, value: ROOT_LEVEL }))
-    const dir = view.container.querySelector(`[data-files-path="${ROOT}/src"] > button`)!
+    const dir = view.container.querySelector(`[data-files-path="${ROOT}/src"] > div > button`)!
     act(() => { fireEvent.click(dir) })
     expect(script.list).toHaveBeenCalledTimes(1)
     const childStream = await act(() => script.watches.ready(`${ROOT}/src`))
@@ -149,7 +169,7 @@ describe('FilesBody', () => {
     const { view, script, tabActions } = mountBody()
     await act(() => script.watches.ready(ROOT))
     await act(() => script.settle({ ok: true, value: ROOT_LEVEL }))
-    fireEvent.click(view.container.querySelector(`[data-files-path="${ROOT}/README.md"] > button`)!)
+    fireEvent.click(view.container.querySelector(`[data-files-path="${ROOT}/README.md"] > div > button`)!)
     // Every row sits under the tree's root, so the address is the path relative to it.
     expect(tabActions.openResource).toHaveBeenCalledWith(fileAddressFor(SESSION, ROOT, `${ROOT}/README.md`))
     expect(tabActions.openResource).toHaveBeenCalledWith('dsh-resource://file/session/s-test/README.md')
@@ -163,7 +183,7 @@ describe('FilesBody', () => {
     await act(() => script.watches.ready(ROOT))
     await act(() => script.settle({ ok: true, value: { entries: [{ name: 'd', type: 'directory' }], truncated: true } }))
     expect(view.container.querySelector('[data-files-row="truncated"]')?.textContent).toBe(zh.truncated)
-    act(() => { fireEvent.click(view.container.querySelector(`[data-files-path="${ROOT}/d"] > button`)!) })
+    act(() => { fireEvent.click(view.container.querySelector(`[data-files-path="${ROOT}/d"] > div > button`)!) })
     await act(() => script.watches.ready(`${ROOT}/d`))
     await act(() => script.settle({ ok: true, value: { entries: [], truncated: false } }))
     expect(view.container.querySelector('[data-files-row="empty"]')?.textContent).toBe(zh.empty)
@@ -205,7 +225,7 @@ describe('FilesBody', () => {
     const collapsed = `${ROOT}/docs`
     const rootStream = await act(() => script.watches.ready(ROOT))
     await act(() => script.settle({ ok: true, value: ROOT_LEVEL }))
-    act(() => { fireEvent.click(view.container.querySelector(`[data-files-path="${child}"] > button`)!) })
+    act(() => { fireEvent.click(view.container.querySelector(`[data-files-path="${child}"] > div > button`)!) })
     await act(() => script.watches.ready(child))
     await act(() => script.settle({ ok: true, value: ROOT_LEVEL }))
     act(() => { instance.actions.loaded(TAB, collapsed, ROOT_LEVEL) })

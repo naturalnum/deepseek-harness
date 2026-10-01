@@ -1,6 +1,12 @@
 const STYLE_ID = '@power-evolve/dsh-client-workspace-files'
 
 const CSS = `
+.pe-download-controls{display:flex;align-items:center;gap:2px;flex:none}
+.pe-download-checkbox,.pe-download-checkbox-space{box-sizing:border-box;flex:none;width:14px;height:14px;margin:0 0 0 6px;accent-color:var(--dsw-alias-interactive-primary,currentColor)}
+.pe-download-checkbox:disabled{cursor:not-allowed;opacity:.45}
+.pe-download-checkbox:focus-visible{outline:2px solid currentColor;outline-offset:2px}
+.pe-download-button{position:relative;min-width:28px;width:auto;gap:3px;padding:4px 6px}
+.pe-download-count{font-size:10px;font-variant-numeric:tabular-nums}
 .pe-workspace-file{display:flex;align-items:center;gap:6px;min-width:0}
 .pe-workspace-file-button{display:inline-flex;width:28px;height:28px;align-items:center;justify-content:center;border:0;border-radius:50%;background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}
 .pe-workspace-file-button:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-primary)}

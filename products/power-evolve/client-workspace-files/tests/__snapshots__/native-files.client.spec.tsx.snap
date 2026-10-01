@@ -1,0 +1,567 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`records en native Files selection, preparation, cancellation, failure and browser handoff 1`] = `
+{
+  "changed": {
+    "controls": [
+      {
+        "disabled": false,
+        "label": "Clear selection",
+        "preparing": null,
+      },
+      {
+        "disabled": false,
+        "label": "Download selected files (2)",
+        "preparing": "false",
+      },
+    ],
+    "error": "Files changed. Prepare the download again.",
+    "root": "/workspace",
+    "rows": [
+      {
+        "label": null,
+        "path": "/workspace/nested",
+        "selection": null,
+        "type": "directory",
+      },
+      {
+        "label": "Select file: /workspace/image.bin",
+        "path": "/workspace/image.bin",
+        "selection": true,
+        "type": "file",
+      },
+      {
+        "label": null,
+        "path": "/workspace/pipe",
+        "selection": null,
+        "type": "other",
+      },
+      {
+        "label": "Select file: /workspace/same.txt",
+        "path": "/workspace/same.txt",
+        "selection": false,
+        "type": "file",
+      },
+      {
+        "label": "Select file: /workspace/中文.txt",
+        "path": "/workspace/中文.txt",
+        "selection": true,
+        "type": "file",
+      },
+    ],
+  },
+  "cleared": {
+    "controls": [
+      {
+        "disabled": true,
+        "label": "Download file",
+        "preparing": "false",
+      },
+    ],
+    "error": null,
+    "root": "/workspace",
+    "rows": [
+      {
+        "label": null,
+        "path": "/workspace/nested",
+        "selection": null,
+        "type": "directory",
+      },
+      {
+        "label": "Select file: /workspace/image.bin",
+        "path": "/workspace/image.bin",
+        "selection": false,
+        "type": "file",
+      },
+      {
+        "label": null,
+        "path": "/workspace/pipe",
+        "selection": null,
+        "type": "other",
+      },
+      {
+        "label": "Select file: /workspace/same.txt",
+        "path": "/workspace/same.txt",
+        "selection": false,
+        "type": "file",
+      },
+      {
+        "label": "Select file: /workspace/中文.txt",
+        "path": "/workspace/中文.txt",
+        "selection": false,
+        "type": "file",
+      },
+    ],
+  },
+  "downloaded": {
+    "controls": [
+      {
+        "disabled": false,
+        "label": "Clear selection",
+        "preparing": null,
+      },
+      {
+        "disabled": false,
+        "label": "Download selected files (2)",
+        "preparing": "false",
+      },
+    ],
+    "error": null,
+    "root": "/workspace",
+    "rows": [
+      {
+        "label": null,
+        "path": "/workspace/nested",
+        "selection": null,
+        "type": "directory",
+      },
+      {
+        "label": "Select file: /workspace/image.bin",
+        "path": "/workspace/image.bin",
+        "selection": true,
+        "type": "file",
+      },
+      {
+        "label": null,
+        "path": "/workspace/pipe",
+        "selection": null,
+        "type": "other",
+      },
+      {
+        "label": "Select file: /workspace/same.txt",
+        "path": "/workspace/same.txt",
+        "selection": false,
+        "type": "file",
+      },
+      {
+        "label": "Select file: /workspace/中文.txt",
+        "path": "/workspace/中文.txt",
+        "selection": true,
+        "type": "file",
+      },
+    ],
+  },
+  "initial": {
+    "controls": [
+      {
+        "disabled": true,
+        "label": "Download file",
+        "preparing": "false",
+      },
+    ],
+    "error": null,
+    "root": "/workspace",
+    "rows": [
+      {
+        "label": null,
+        "path": "/workspace/nested",
+        "selection": null,
+        "type": "directory",
+      },
+      {
+        "label": "Select file: /workspace/image.bin",
+        "path": "/workspace/image.bin",
+        "selection": false,
+        "type": "file",
+      },
+      {
+        "label": null,
+        "path": "/workspace/pipe",
+        "selection": null,
+        "type": "other",
+      },
+      {
+        "label": "Select file: /workspace/same.txt",
+        "path": "/workspace/same.txt",
+        "selection": false,
+        "type": "file",
+      },
+      {
+        "label": "Select file: /workspace/中文.txt",
+        "path": "/workspace/中文.txt",
+        "selection": false,
+        "type": "file",
+      },
+    ],
+  },
+  "preparing": {
+    "controls": [
+      {
+        "disabled": false,
+        "label": "Clear selection",
+        "preparing": null,
+      },
+      {
+        "disabled": false,
+        "label": "Cancel download preparation",
+        "preparing": "true",
+      },
+    ],
+    "error": null,
+    "root": "/workspace",
+    "rows": [
+      {
+        "label": null,
+        "path": "/workspace/nested",
+        "selection": null,
+        "type": "directory",
+      },
+      {
+        "label": "Select file: /workspace/image.bin",
+        "path": "/workspace/image.bin",
+        "selection": true,
+        "type": "file",
+      },
+      {
+        "label": null,
+        "path": "/workspace/pipe",
+        "selection": null,
+        "type": "other",
+      },
+      {
+        "label": "Select file: /workspace/same.txt",
+        "path": "/workspace/same.txt",
+        "selection": false,
+        "type": "file",
+      },
+      {
+        "label": "Select file: /workspace/中文.txt",
+        "path": "/workspace/中文.txt",
+        "selection": true,
+        "type": "file",
+      },
+    ],
+  },
+  "selected": {
+    "controls": [
+      {
+        "disabled": false,
+        "label": "Clear selection",
+        "preparing": null,
+      },
+      {
+        "disabled": false,
+        "label": "Download selected files (2)",
+        "preparing": "false",
+      },
+    ],
+    "error": null,
+    "root": "/workspace",
+    "rows": [
+      {
+        "label": null,
+        "path": "/workspace/nested",
+        "selection": null,
+        "type": "directory",
+      },
+      {
+        "label": "Select file: /workspace/image.bin",
+        "path": "/workspace/image.bin",
+        "selection": true,
+        "type": "file",
+      },
+      {
+        "label": null,
+        "path": "/workspace/pipe",
+        "selection": null,
+        "type": "other",
+      },
+      {
+        "label": "Select file: /workspace/same.txt",
+        "path": "/workspace/same.txt",
+        "selection": false,
+        "type": "file",
+      },
+      {
+        "label": "Select file: /workspace/中文.txt",
+        "path": "/workspace/中文.txt",
+        "selection": true,
+        "type": "file",
+      },
+    ],
+  },
+}
+`;
+
+exports[`records zh native Files selection, preparation, cancellation, failure and browser handoff 1`] = `
+{
+  "changed": {
+    "controls": [
+      {
+        "disabled": false,
+        "label": "清除选择",
+        "preparing": null,
+      },
+      {
+        "disabled": false,
+        "label": "下载所选文件（2）",
+        "preparing": "false",
+      },
+    ],
+    "error": "文件已更改，请重新下载",
+    "root": "/workspace",
+    "rows": [
+      {
+        "label": null,
+        "path": "/workspace/nested",
+        "selection": null,
+        "type": "directory",
+      },
+      {
+        "label": "选择文件：/workspace/image.bin",
+        "path": "/workspace/image.bin",
+        "selection": true,
+        "type": "file",
+      },
+      {
+        "label": null,
+        "path": "/workspace/pipe",
+        "selection": null,
+        "type": "other",
+      },
+      {
+        "label": "选择文件：/workspace/same.txt",
+        "path": "/workspace/same.txt",
+        "selection": false,
+        "type": "file",
+      },
+      {
+        "label": "选择文件：/workspace/中文.txt",
+        "path": "/workspace/中文.txt",
+        "selection": true,
+        "type": "file",
+      },
+    ],
+  },
+  "cleared": {
+    "controls": [
+      {
+        "disabled": true,
+        "label": "下载文件",
+        "preparing": "false",
+      },
+    ],
+    "error": null,
+    "root": "/workspace",
+    "rows": [
+      {
+        "label": null,
+        "path": "/workspace/nested",
+        "selection": null,
+        "type": "directory",
+      },
+      {
+        "label": "选择文件：/workspace/image.bin",
+        "path": "/workspace/image.bin",
+        "selection": false,
+        "type": "file",
+      },
+      {
+        "label": null,
+        "path": "/workspace/pipe",
+        "selection": null,
+        "type": "other",
+      },
+      {
+        "label": "选择文件：/workspace/same.txt",
+        "path": "/workspace/same.txt",
+        "selection": false,
+        "type": "file",
+      },
+      {
+        "label": "选择文件：/workspace/中文.txt",
+        "path": "/workspace/中文.txt",
+        "selection": false,
+        "type": "file",
+      },
+    ],
+  },
+  "downloaded": {
+    "controls": [
+      {
+        "disabled": false,
+        "label": "清除选择",
+        "preparing": null,
+      },
+      {
+        "disabled": false,
+        "label": "下载所选文件（2）",
+        "preparing": "false",
+      },
+    ],
+    "error": null,
+    "root": "/workspace",
+    "rows": [
+      {
+        "label": null,
+        "path": "/workspace/nested",
+        "selection": null,
+        "type": "directory",
+      },
+      {
+        "label": "选择文件：/workspace/image.bin",
+        "path": "/workspace/image.bin",
+        "selection": true,
+        "type": "file",
+      },
+      {
+        "label": null,
+        "path": "/workspace/pipe",
+        "selection": null,
+        "type": "other",
+      },
+      {
+        "label": "选择文件：/workspace/same.txt",
+        "path": "/workspace/same.txt",
+        "selection": false,
+        "type": "file",
+      },
+      {
+        "label": "选择文件：/workspace/中文.txt",
+        "path": "/workspace/中文.txt",
+        "selection": true,
+        "type": "file",
+      },
+    ],
+  },
+  "initial": {
+    "controls": [
+      {
+        "disabled": true,
+        "label": "下载文件",
+        "preparing": "false",
+      },
+    ],
+    "error": null,
+    "root": "/workspace",
+    "rows": [
+      {
+        "label": null,
+        "path": "/workspace/nested",
+        "selection": null,
+        "type": "directory",
+      },
+      {
+        "label": "选择文件：/workspace/image.bin",
+        "path": "/workspace/image.bin",
+        "selection": false,
+        "type": "file",
+      },
+      {
+        "label": null,
+        "path": "/workspace/pipe",
+        "selection": null,
+        "type": "other",
+      },
+      {
+        "label": "选择文件：/workspace/same.txt",
+        "path": "/workspace/same.txt",
+        "selection": false,
+        "type": "file",
+      },
+      {
+        "label": "选择文件：/workspace/中文.txt",
+        "path": "/workspace/中文.txt",
+        "selection": false,
+        "type": "file",
+      },
+    ],
+  },
+  "preparing": {
+    "controls": [
+      {
+        "disabled": false,
+        "label": "清除选择",
+        "preparing": null,
+      },
+      {
+        "disabled": false,
+        "label": "取消准备下载",
+        "preparing": "true",
+      },
+    ],
+    "error": null,
+    "root": "/workspace",
+    "rows": [
+      {
+        "label": null,
+        "path": "/workspace/nested",
+        "selection": null,
+        "type": "directory",
+      },
+      {
+        "label": "选择文件：/workspace/image.bin",
+        "path": "/workspace/image.bin",
+        "selection": true,
+        "type": "file",
+      },
+      {
+        "label": null,
+        "path": "/workspace/pipe",
+        "selection": null,
+        "type": "other",
+      },
+      {
+        "label": "选择文件：/workspace/same.txt",
+        "path": "/workspace/same.txt",
+        "selection": false,
+        "type": "file",
+      },
+      {
+        "label": "选择文件：/workspace/中文.txt",
+        "path": "/workspace/中文.txt",
+        "selection": true,
+        "type": "file",
+      },
+    ],
+  },
+  "selected": {
+    "controls": [
+      {
+        "disabled": false,
+        "label": "清除选择",
+        "preparing": null,
+      },
+      {
+        "disabled": false,
+        "label": "下载所选文件（2）",
+        "preparing": "false",
+      },
+    ],
+    "error": null,
+    "root": "/workspace",
+    "rows": [
+      {
+        "label": null,
+        "path": "/workspace/nested",
+        "selection": null,
+        "type": "directory",
+      },
+      {
+        "label": "选择文件：/workspace/image.bin",
+        "path": "/workspace/image.bin",
+        "selection": true,
+        "type": "file",
+      },
+      {
+        "label": null,
+        "path": "/workspace/pipe",
+        "selection": null,
+        "type": "other",
+      },
+      {
+        "label": "选择文件：/workspace/same.txt",
+        "path": "/workspace/same.txt",
+        "selection": false,
+        "type": "file",
+      },
+      {
+        "label": "选择文件：/workspace/中文.txt",
+        "path": "/workspace/中文.txt",
+        "selection": true,
+        "type": "file",
+      },
+    ],
+  },
+}
+`;

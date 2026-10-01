@@ -59,7 +59,7 @@ export interface Mounted {
 }
 
 /** One store instance, one face, one owner share. */
-function harness(cwd: string | null, refreshShortcut?: ReturnType<FilesBodyProps['useTabInfo']>['tab']['refreshShortcut']) {
+function harness(cwd: string | null, refreshShortcut?: ReturnType<FilesBodyProps['useTabInfo']>['tab']['refreshShortcut'], renderSlot: FilesBodyProps['renderSlot'] = vi.fn(() => null)) {
   const instance = createFilesStore().create()
   const script = scriptedList()
   const face = filesFace(script.list, script.watch)(SESSION, instance.actions)
@@ -93,6 +93,7 @@ function harness(cwd: string | null, refreshShortcut?: ReturnType<FilesBodyProps
     actions: instance.actions,
     ...face,
     t: makeTranslate(zh),
+    renderSlot,
   }
   return { instance, script, face, controller, tabActions, shared }
 }
@@ -101,9 +102,10 @@ function harness(cwd: string | null, refreshShortcut?: ReturnType<FilesBodyProps
  * Mount the body.
  * @param cwd - the session's working directory as `useSessions` reports it; `null` for a session without one.
  * @param refreshShortcut - effective binding advertised by the tab owner.
+ * @param renderSlot - optional contribution renderer; omitted seats remain empty.
  */
-export function mountBody(cwd: string | null = ROOT, refreshShortcut?: ReturnType<FilesBodyProps['useTabInfo']>['tab']['refreshShortcut']): Mounted {
-  const { shared, ...hands } = harness(cwd, refreshShortcut)
+export function mountBody(cwd: string | null = ROOT, refreshShortcut?: ReturnType<FilesBodyProps['useTabInfo']>['tab']['refreshShortcut'], renderSlot?: FilesBodyProps['renderSlot']): Mounted {
+  const { shared, ...hands } = harness(cwd, refreshShortcut, renderSlot)
   const view = render(<FilesBody {...shared as unknown as FilesBodyProps} />)
   return { ...hands, view, remount: () => render(<FilesBody {...shared as unknown as FilesBodyProps} />) }
 }

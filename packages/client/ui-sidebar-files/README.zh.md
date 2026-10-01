@@ -30,7 +30,11 @@ kind: "package-reference"
 - **正文**：以该 id 为键的 `sidebar.right.pane.tab` slot：strip 下的一行标题行，然后是树。共享的 [`PathLabel`](../ui-primitives/README.zh.md#component-catalog) 显示根路径，目录使用弱化颜色，最后一段使用主色。路径过长时保留尾部字符并在左侧渐隐；悬停显示完整路径。重新读取控件位于右端。
 - **标签页标题**：以该 id 为键的 `sidebar.right.pane.tab.title` slot：类型标签前的一枚 16px 共享 `FileTypeIcon` 文件夹图标。树本身的行不画这枚图标。
 
-`src/client/` 下的源文件：`definition.tsx`（类型是什么）、`store.ts`（它保存什么）、`face.ts`（Remote 读取与监听）、`directory-node.ts`（打开的目录及其生命周期）、`FilesBody.tsx`（它画什么，含排序与失败行两个辅助函数）、`FilesTitle.tsx`（标签页标题）、`locales.ts`（它说什么）、`index.ts`（接线）。
+正文声明两个可选的 Session 作用域列表 slot。`sidebar.right.tab.files.entry.leading` 在每行打开或展开按钮前接收 `tabId`、`root`、`path` 和 `type`。`sidebar.right.tab.files.actions` 在根路径标签后、重新读取按钮前接收 `tabId` 和 `root`。本包从 `/client` 入口导出其 owner 类型 `FilesEntryOwner` 和 `FilesActionsOwner`。路径是显示中 Session 执行环境内的绝对路径；贡献者须核验自己所需的原生 Host 映射。控件与行按钮并列，因此选择文件无需打开它。
+
+两个 slot 都通过 renderer 接收所在视图的 Session，并通过 `hookContext` 接收该 tab 绑定的 `useTabInfo`。贡献者可将清理绑定到 `useTabInfo().tab.signal`；隐藏树只会卸载控件，不会终结 tab 记录。需要保留的视图状态应放在贡献者的 Session 作用域存储中，以 tab 和 root 为键。这些 slot 本身不添加选择或下载行为。
+
+`src/client/` 下的源文件：`definition.tsx`（类型是什么）、`store.ts`（它保存什么）、`face.ts`（Remote 读取与监听）、`directory-node.ts`（打开的目录及其生命周期）、`FilesBody.tsx`（它画什么，含排序与失败行两个辅助函数）、`FilesTitle.tsx`（标签页标题）、`slots.ts`（可选控件）、`locales.ts`（它说什么）、`index.ts`（接线）。
 
 <a id="the-tree"></a>
 ## 树

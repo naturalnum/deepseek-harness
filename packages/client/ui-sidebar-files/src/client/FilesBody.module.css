@@ -85,6 +85,16 @@
   cursor: pointer;
 }
 
+.entryRow {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.entryRow > .row {
+  flex: 1 1 auto;
+}
+
 .row:hover {
   background: var(--dsw-alias-interactive-bg-hover);
 }

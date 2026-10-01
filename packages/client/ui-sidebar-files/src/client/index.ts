@@ -22,11 +22,13 @@ import { FilesBody } from './FilesBody.tsx'
 import { FilesTitle } from './FilesTitle.tsx'
 import { en, zh } from './locales.ts'
 import { createFilesStore } from './store.ts'
+import { filesTabInfoFactory } from './slots.ts'
 
 export type { SidebarFilesKey } from './locales.ts'
 export type { DirLevel, FilesState, FilesTabState, LevelState } from './store.ts'
 export type { FilesInjected, ListWorkspaceDirectory, WorkspaceFilesListRemote } from './face.ts'
 export type { FilesBodyProps } from './FilesBody.tsx'
+export type { FilesActionsOwner, FilesEntryOwner } from './slots.ts'
 
 /** This package's copy namespace. */
 const NS = 'sidebarFiles'
@@ -70,7 +72,13 @@ export function apply(ctx: ClientContext): void {
   const store = createFilesStore()
   const inject = filesFace(createList(ctx.remote), createWatch(ctx.remote))
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register(
-    { name: 'sidebar.right.pane.tab', key: FILES_ID, locale: NS, store, inject },
+    {
+      name: 'sidebar.right.pane.tab', key: FILES_ID, locale: NS, store, inject,
+      children: {
+        'sidebar.right.tab.files.entry.leading': { kind: 'list', scope: 'session', inject: { hooks: { tabInfo: filesTabInfoFactory } } },
+        'sidebar.right.tab.files.actions': { kind: 'list', scope: 'session', inject: { hooks: { tabInfo: filesTabInfoFactory } } },
+      },
+    },
     FilesBody,
   )), 'ui-sidebar-files: files tab body')
   ctx.effect(() => ctx.slots.inject('sidebar.right.pane.tab.title', () => ctx.slots.register(
