@@ -1,6 +1,6 @@
 # 云端组合验收：账号、存储绑定与执行
 
-本轮核对 S2 A–C 与已交付账号、云执行功能的衔接，使用两个 Host、两个 Platform、真实 PG、DeepSeek 和本机 k3s。当前是开发验收环境，尚未冻结为发布候选；[S2 固定试用](TRIAL-S2-STORAGE-BINDINGS-QA.md)保持独立可用。桌面、外部生产基础设施和新增连接器不在本轮范围。
+本轮核对 S2 A–C 与已交付账号、云执行功能的衔接，使用两个 Host、两个 Platform、真实 PG、DeepSeek 和本机 k3s。本开发验收环境随后已停止，独立恢复及固定试用见[云端候选版](TRIAL-CLOUD-CANDIDATE.md)；[S2 固定试用](TRIAL-S2-STORAGE-BINDINGS-QA.md)保持独立可用。桌面、外部生产基础设施和新增连接器不在本轮范围。
 
 ## 路线与发现
 
@@ -39,4 +39,4 @@
 
 开发验收入口为 `http://127.0.0.1:19746/login`，原生客户端为 `http://127.0.0.1:19744/native/`。数据库 `pe_cloud_combined_20261001`、文件根 `pe-cloud-combined-qa` 与同名 namespace 均独立于固定试用。复用现有 PG 容器和 k3s，不新增 Docker 基础设施；启停使用本地证据目录中的 `control.mjs up|stop|restart|status`，日志同目录，运行 Node 22。
 
-本轮受影响路径的组合验收已通过，下一步为独立备份恢复与候选版冻结。SSH 复用既有测试目标及独立的 `pe-connector-s3-account-v25-qa` namespace，两个 Platform 使用本环境单独的凭据加密 key；没有新增常驻 Docker 基础设施。正常关闭的真实演练已覆盖恢复中断，不代表所有网络故障或多物理节点场景。k3s 与 POSIX 仍在同一笔记本；目标服务器、真实跨机共享卷、外部 PG、生产入口、容量及组织身份源保持 S7 未完成项。工作区 namespace 禁止通用外连，Connector namespace 仅准许固定测试目标，因此没有把本地 Git 测试计为远端 Git 下载或依赖安装验收。
+本轮受影响路径的组合验收已通过，后续独立备份恢复与候选版冻结也已完成，当前试用入口见上述候选版文档。此开发组合的 SSH 复用既有测试目标及独立的 `pe-connector-s3-account-v25-qa` namespace，两个 Platform 使用本环境单独的凭据加密 key；没有新增常驻 Docker 基础设施。正常关闭的真实演练已覆盖恢复中断，不代表所有网络故障或多物理节点场景。k3s 与 POSIX 仍在同一笔记本；目标服务器、真实跨机共享卷、外部 PG、生产入口、容量及组织身份源保持 S7 未完成项。工作区 namespace 禁止通用外连，Connector namespace 仅准许固定测试目标，因此没有把本地 Git 测试计为远端 Git 下载或依赖安装验收。
