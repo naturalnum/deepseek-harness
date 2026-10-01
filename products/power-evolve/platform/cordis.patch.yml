@@ -44,6 +44,12 @@
         sandboxPollMs: 500
         sandboxIdleMs: 300000
         sandboxCommandTimeoutMs: 60000
+        sandboxFileVerifyTimeoutMs: 15000
+        sandboxScanMaxEntries: 4096
+        sandboxScanMaxHashBytes: 33554432
+        sandboxScanTimeoutMs: 5000
+        sandboxScanMaxSnapshotBytes: 1048576
+        sandboxScanMaxFiles: 100
         workerTokenFile: !!js process.env.PE_PRIVATE_DIR + '/worker-token'
         modelKeyFile: !!js process.env.PE_PRIVATE_DIR + '/model-key'
         connectorKeyFile: !!js process.env.PE_PRIVATE_DIR + '/connector-key'

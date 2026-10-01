@@ -108,6 +108,11 @@ export const Config = schema.object({
   sandboxPollMs: schema.number().min(100).default(500), sandboxIdleMs: schema.number().min(1000).default(300000),
   sandboxCommandTimeoutMs: schema.number().min(1000).default(60000),
   sandboxFileVerifyTimeoutMs: schema.number().step(1).min(100).max(60000).default(15000),
+  sandboxScanMaxEntries: schema.number().step(1).min(1).max(65536).default(4096),
+  sandboxScanMaxHashBytes: schema.number().step(1).min(1).max(209715200).default(33554432),
+  sandboxScanTimeoutMs: schema.number().step(1).min(1).max(30000).default(5000),
+  sandboxScanMaxSnapshotBytes: schema.number().step(1).min(1024).max(4194304).default(1048576),
+  sandboxScanMaxFiles: schema.number().step(1).min(1).max(100).default(100),
   leaseMs: schema.number().min(1000).required(), tokenLifetimeMs: schema.number().min(1000).required(),
   maxPendingPerUser: schema.number().step(1).min(1).required(), maxActivePerUser: schema.number().step(1).min(1).required(),
   maxWorkspacesPerUser: schema.number().step(1).min(1).default(16),
@@ -351,6 +356,11 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       localRoot: config.sandboxLocalRoot, nodeRoot: config.sandboxNodeRoot,
       ...(config.sandboxVolumeClaimName ? { volumeClaimName: config.sandboxVolumeClaimName } : {}),
       readyTimeoutMs: config.sandboxReadyTimeoutMs,
+      fileScan: {
+        maxEntries: config.sandboxScanMaxEntries, maxHashBytes: config.sandboxScanMaxHashBytes,
+        timeoutMs: config.sandboxScanTimeoutMs, maxSnapshotBytes: config.sandboxScanMaxSnapshotBytes,
+        maxFiles: config.sandboxScanMaxFiles,
+      },
     }), { service: executionFiles, timeoutMs: config.sandboxFileVerifyTimeoutMs },
     config.sandboxConcurrency, config.sandboxPollMs, config.sandboxIdleMs, config.sandboxCommandTimeoutMs) : null
   if (executions) { executions.start(); ctx.effect(() => () => executions.close()) }

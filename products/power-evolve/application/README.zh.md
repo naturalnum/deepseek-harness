@@ -62,6 +62,8 @@ SSH Runner 只有明确报告 `effectMayHaveOccurred` 为 false 时，失败才�
 
 `sandboxConcurrency` 限制所有 Platform 副本合计的活跃执行 worker。认领 worker 时，在共享事务锁下统计 PG 有效租约；崩溃 worker 的租约过期后释放容量，由接替者核对执行状态。已进入 `running` 并延期观察的命令会释放 worker 租约，因此此限额不同于存活 Pod 数量；用户挂载槽位另行约束 Pod 替换。
 
+新建 Sandbox Pod 从 Platform Profile 接收文件扫描预算：`sandboxScanMaxEntries`（默认 4,096，上限 65,536）、`sandboxScanMaxHashBytes`（32 MiB，200 MiB）、`sandboxScanTimeoutMs`（5,000，30,000）、`sandboxScanMaxSnapshotBytes`（1 MiB，4 MiB）和 `sandboxScanMaxFiles`（100，100）。这些值均为正整数，快照字节数下限为 1 KiB。命令执行前、执行后的扫描分别使用独立预算，配置变更适用于新建 Pod。Platform 字节核验另用 `sandboxFileVerifyTimeoutMs`（默认 15,000，范围 100–60,000）。扫描受限或失败不能视为完整且为空的结果；元数据核验失败也不会丢弃已认证的命令终态。
+
 平台还保存设备身份、目录授权和本地命令状态。独立的本机设备 Profile 使用短期配对码接入，绝对路径和设备令牌只留在本机；命令在仅挂载一个获授权目录的临时 Docker 容器中执行。设备先记下命令身份，再创建容器，重启后核对容器状态。桌面与云端文件只通过明确的受限设备操作传输。
 
 配置在三个 Bundle 补丁中显式声明。必需的秘密值在启动时从私密文件读取。私有产物根目录必须位于可写工作区根目录之外。工作区文件访问需要 Python 3.9+ 和随包部署的[目录描述符助手](../S2-SAFE-POSIX.md)；缺少时启动会拒绝就绪。数据库连接池、超时、请求/历史/输出限制、用户准入及工作区数量、宿主并发、轮询、租约续期和订阅上限均可配置。就绪文件记录所属进程实例，供试用生命周期脚本核验。

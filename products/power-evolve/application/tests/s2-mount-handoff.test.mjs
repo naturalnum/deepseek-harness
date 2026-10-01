@@ -7,6 +7,7 @@ import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
 import { initializeDatabase } from '../lib/platform/database.js'
+import { CURRENT_SCHEMA_VERSION } from '../lib/platform/schema.js'
 import { KubernetesError } from '../lib/platform/kubernetes.js'
 import { SandboxManager } from '../lib/platform/sandbox.js'
 
@@ -103,18 +104,7 @@ async function fixture(t, sandboxConfig = {}, poolMax = 10) {
   t.after(async () => { await pool.end(); await admin.query(`DROP DATABASE "${name}"`); await admin.end() })
   await initializeDatabase(pool)
   const version = Number((await pool.query('SELECT version FROM pe_schema')).rows[0].version)
-  if (version === 8) {
-    await pool.query(`ALTER TABLE pe_workspaces DROP CONSTRAINT pe_workspaces_user_id_key;
-      ALTER TABLE pe_sessions ADD COLUMN workspace_id uuid REFERENCES pe_workspaces(id);
-      ALTER TABLE pe_sandbox_instances DROP CONSTRAINT pe_sandbox_instances_name_key;
-      CREATE UNIQUE INDEX pe_sandbox_instances_active_name ON pe_sandbox_instances(name) WHERE state <> 'deleted';
-      CREATE TABLE pe_mount_slots (user_id uuid PRIMARY KEY REFERENCES pe_users(id),
-        session_id uuid REFERENCES pe_sessions(id), workspace_id uuid REFERENCES pe_workspaces(id),
-        generation bigint NOT NULL DEFAULT 0, state text NOT NULL CHECK
-          (state IN ('free','reserved','ready','stopping','unknown')),
-        pod_uid uuid, runner_instance_id uuid, stop_pod_uid uuid, stop_evidence jsonb,
-        updated_at timestamptz NOT NULL DEFAULT now());`)
-  } else assert.ok([11, 12, 13, 14, 15, 16, 17, 18, 19].includes(version))
+  assert.equal(version, CURRENT_SCHEMA_VERSION)
   const kube = new FakeKubernetes()
   const localRoot = await mkdtemp(join(tmpdir(), 'pe-s2-handoff-'))
   t.after(() => rm(localRoot, { recursive: true, force: true }))
@@ -125,6 +115,7 @@ async function fixture(t, sandboxConfig = {}, poolMax = 10) {
   } }
   const manager = new SandboxManager(kube, files, pool, 'test-key',
     { namespace: 's2-test', image: 'runner:test', localRoot, nodeRoot: localRoot,
+      fileScan: { maxEntries: 4096, maxHashBytes: 33554432, timeoutMs: 5000, maxSnapshotBytes: 1048576, maxFiles: 100 },
       readyTimeoutMs: 600, ...sandboxConfig })
   manager.home = async () => ({ local: '/tmp', node: '/tmp' })
   const createSession = async userId => {
@@ -143,6 +134,21 @@ async function fixture(t, sandboxConfig = {}, poolMax = 10) {
   }
   return { pool, kube, manager, localRoot, createSession, createUser }
 }
+
+test('S2 new Sandboxes receive the configured file scan budgets', { timeout: 30000 }, async t => {
+  const fileScan = { maxEntries: 123, maxHashBytes: 456789, timeoutMs: 750, maxSnapshotBytes: 16384, maxFiles: 7 }
+  const { kube, manager, createSession, createUser } = await fixture(t, { fileScan })
+  const userId = await createUser(), session = await createSession(userId)
+  const sandbox = await manager.ensureReady(session.sessionId, userId, async () => {})
+  const expected = {
+    PE_RUNNER_SCAN_MAX_ENTRIES: '123', PE_RUNNER_SCAN_MAX_HASH_BYTES: '456789',
+    PE_RUNNER_SCAN_TIMEOUT_MS: '750', PE_RUNNER_SCAN_MAX_SNAPSHOT_BYTES: '16384', PE_RUNNER_SCAN_MAX_FILES: '7',
+  }
+  for (const resource of [kube.resource('sandboxes', sandbox.name).spec.podTemplate, kube.resource('pods', sandbox.name)]) {
+    const runner = resource.spec.containers.find(container => container.name === 'runner')
+    assert.deepEqual(Object.fromEntries(runner.env.map(({ name, value }) => [name, value])), expected)
+  }
+})
 
 test('S7d PVC mounts only exact user paths and refuses a changed Home subPath',
   { timeout: 30000 }, async t => {

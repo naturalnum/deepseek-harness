@@ -89,7 +89,8 @@ test('Runner service proxy preserves maximum output with bounded TLS responses',
     const client = await KubernetesClient.fromServiceAccount(origin, caPath, tokenPath)
     // Only runner() is exercised; no file, database, or command execution dependency is invoked.
     const sandbox = new SandboxManager(client, null, null, 'fixture-key', { namespace,
-      image: 'fixture', localRoot: temporary, nodeRoot: '/fixture', readyTimeoutMs: 1000 })
+      image: 'fixture', localRoot: temporary, nodeRoot: '/fixture', readyTimeoutMs: 1000,
+      fileScan: { maxEntries: 4096, maxHashBytes: 33554432, timeoutMs: 5000, maxSnapshotBytes: 1048576, maxFiles: 100 } })
 
     await t.test('Sandbox dual-stream NUL and Unicode survive GET, POST and token rotation', async () => {
       assert.deepEqual(await sandbox.runner('sandbox', 'sandbox-token', 'GET', `/executions/${executionId}`), cloud)

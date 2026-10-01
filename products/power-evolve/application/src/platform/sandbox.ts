@@ -31,6 +31,14 @@ export interface SandboxConfig {
   readonly nodeRoot: string
   readonly volumeClaimName?: string
   readonly readyTimeoutMs: number
+  /** Independent limits for each scan before and after a command. */
+  readonly fileScan: {
+    readonly maxEntries: number
+    readonly maxHashBytes: number
+    readonly timeoutMs: number
+    readonly maxSnapshotBytes: number
+    readonly maxFiles: number
+  }
 }
 
 /** Retryable means another live Session currently owns the slot; all other cases require reconciliation. */
@@ -397,6 +405,13 @@ export class SandboxManager {
         terminationGracePeriodSeconds: 8,
         securityContext: { seccompProfile: { type: 'RuntimeDefault' } },
         containers: [{ name: 'runner', image: this.config.image, imagePullPolicy: claim ? 'IfNotPresent' : 'Never',
+          env: [
+            { name: 'PE_RUNNER_SCAN_MAX_ENTRIES', value: String(this.config.fileScan.maxEntries) },
+            { name: 'PE_RUNNER_SCAN_MAX_HASH_BYTES', value: String(this.config.fileScan.maxHashBytes) },
+            { name: 'PE_RUNNER_SCAN_TIMEOUT_MS', value: String(this.config.fileScan.timeoutMs) },
+            { name: 'PE_RUNNER_SCAN_MAX_SNAPSHOT_BYTES', value: String(this.config.fileScan.maxSnapshotBytes) },
+            { name: 'PE_RUNNER_SCAN_MAX_FILES', value: String(this.config.fileScan.maxFiles) },
+          ],
           ports: [{ name: 'http', containerPort: 8080 }],
           readinessProbe: { tcpSocket: { port: 8080 }, periodSeconds: 2, timeoutSeconds: 2 },
           resources: { requests: { cpu: '100m', memory: '128Mi' }, limits: { cpu: '1', memory: '768Mi' } },
