@@ -12,7 +12,7 @@
 
 本次路线复查纠正“单项功能先行、组合冻结与发布构建滞后”的节奏。正式镜像通过组合验收后才替换候选版。目标基础设施访问未就绪时，可继续独立的发布准备，不能将本机单节点结果标成 S7 完成，也不以新增功能填补等待时间。Connector 正式打包已加入生产锁校验及现有 CI 的部署测试入口；[构建记录](deploy/QA-RELEASE-BUILD.md#connector-production-lock-validation)区分命令替身回归与真实产物元数据验证。
 
-当前[发布构建记录](deploy/QA-RELEASE-BUILD.md)覆盖各记录版本的 ARM64 干净源码构建、组件检查和本机 TLS 私库认证拉取，并补充应用和 Connector AMD64 的模拟构建与离线组件检查、Cloud Runner AMD64 的构建与文档工具链检查；其模拟环境中的命令清理检查未通过，目标物理机完整链路仍待验收。最新修复应用镜像尚未重复认证拉取。[新镜像组合](deploy/QA-RELEASE-COMPOSITION.md)已通过真实模型、原生 HTTP 会话协议、文件、PVC 云 Git、双用户公开仓库克隆与在线依赖安装、SSH 及待审批状态重启恢复。创建超时接续修复已通过真实原 Pending Pod 跨 Platform 容器重启恢复；另有旧版未捕获身份的请求接续证据，两者范围分别记录。创建超时后的取消与账号撤销清理也已修复并通过真实 PG、k3s 和原生协议验收，释放占用后同一用户的新会话可执行一次；详情见[组合记录](deploy/QA-RELEASE-COMPOSITION.md#creation-cancellation-and-account-revocation)。当前补浏览器受信 HTTPS 和 S7 目标基础设施及组织仓库验证。部署保留正式入口与权限配置，存储和入口采用明确的本机覆盖。新镜像尚未替换固定试用版，协议验证不能替代浏览器验收。
+当前[发布构建记录](deploy/QA-RELEASE-BUILD.md)覆盖各记录版本的 ARM64 干净源码构建、组件检查和本机 TLS 私库认证拉取，并补充应用和 Connector AMD64 的模拟构建与离线组件检查、Cloud Runner AMD64 的构建与文档工具链检查；其模拟环境中的命令清理检查未通过，目标物理机完整链路仍待验收。最新 ARM64 应用镜像已通过独立客户端的本地 TLS 私库完整上传下载和逐层摘要核验；当前镜像的 kubelet 认证拉取仍未复验。[新镜像组合](deploy/QA-RELEASE-COMPOSITION.md)已通过真实模型、原生 HTTP 会话协议、文件、PVC 云 Git、双用户公开仓库克隆与在线依赖安装、SSH 及待审批状态重启恢复。创建超时接续修复已通过真实原 Pending Pod 跨 Platform 容器重启恢复；另有旧版未捕获身份的请求接续证据，两者范围分别记录。创建超时后的取消与账号撤销清理也已修复并通过真实 PG、k3s 和原生协议验收，释放占用后同一用户的新会话可执行一次；详情见[组合记录](deploy/QA-RELEASE-COMPOSITION.md#creation-cancellation-and-account-revocation)。当前补浏览器受信 HTTPS 和 S7 目标基础设施及组织仓库验证。部署保留正式入口与权限配置，存储和入口采用明确的本机覆盖。新镜像尚未替换固定试用版，协议验证不能替代浏览器验收。
 
 ## 计数口径与现状
 
