@@ -20,6 +20,8 @@ FileService 与存储服务共用 SafePosix。访问以描述符验证 rootKey�
 
 恢复请求固定 requestId、Workspace、预期代次和目标。锁顺序为账户用户、Workspace、挂载槽及 Sandbox。仍有 queued、starting、running、cancelling 或 uncertain 执行时要求先取消；reserved、unknown 或不完整身份拒绝当作无写者。接收记录与 recovering 状态在返回回执前提交，恢复请求 ID 可在刷新后的缺失列表中读取。
 
+恢复成功的原子提交清空 Workspace 的当前恢复请求引用，历史请求回执保持不变。缺失列表只在 recovering/blocked 状态返回当前请求 ID；其他状态返回 null，包括旧 V27 记录残留的已完成请求引用。
+
 轮询显式接收 worker identity 和租期。每次续租和提交检查请求、owner、epoch、有效期、原停止目标及当前 Workspace 的恢复请求 ID；调用方已持锁时复用其 PoolClient。free/no_writer 在 PG 内核验挂载代次和无活动实例；Pod 目标交给注入的停止服务，要求精确旧 Pod UID 和 kubelet 停止证据。证明持久化后重新验证目录、归属、重叠及代次，原子换绑并递增代次。
 
 失败保存 blocked 回执并保留恢复 fence。同请求重试继续原目标和已有证明；blocked 状态可用新请求选择替代目标，旧 worker 无法越过新请求提交。绑定状态变化更新时间进入原生 baseline.updatedAt，沿既有 follow 刷新。

@@ -250,7 +250,7 @@ test('storage selection and recovery use actual PG and POSIX without creating Sa
       assert.notEqual(created.workspaceId, sibling.workspaceId)
     })
 
-    await t.test('free recovery keeps Session identity, rejects stale reads/mutations and refreshes baseline', async () => {
+    await t.test('successive free recoveries keep Session identity and ignore completed request references', async () => {
       const alice = await owner(c.pool), workspace = await c.files.workspaceForUser(alice.userId)
       const sessionId = await session(c.pool, alice, workspace.id), mutation = randomUUID()
       await c.files.put(alice, mutation, 'marker.txt', null, Buffer.from('retained bytes').toString('base64'), workspace.id)
@@ -265,6 +265,7 @@ test('storage selection and recovery use actual PG and POSIX without creating Sa
       assert.equal(await c.bindings.poll(noKubernetes, signal(), worker()), true)
       const completed = await c.bindings.status(alice, { requestId: input.requestId })
       assert.equal(completed.state, 'completed'); assert.equal(completed.bindingGeneration, 2)
+      assert.equal((await c.pool.query('SELECT recovery_request_id FROM pe_workspaces WHERE id=$1', [workspace.id])).rows[0].recovery_request_id, null)
       assert.deepEqual(await c.bindings.restore(alice, input), completed)
       assert.equal((await c.pool.query('SELECT workspace_id FROM pe_sessions WHERE id=$1', [sessionId])).rows[0].workspace_id, workspace.id)
       await assert.rejects(c.pool.query('UPDATE pe_sessions SET workspace_id=$2 WHERE id=$1', [sessionId, randomUUID()]), /immutable/u)
@@ -278,6 +279,30 @@ test('storage selection and recovery use actual PG and POSIX without creating Sa
         await requireActiveAccount(client, alice.userId, 'update')
         assert.equal(Buffer.from((await c.files.readInWorkspace(alice, workspace.id, 'marker.txt', client)).data, 'base64').toString(), 'retained bytes')
       })
+      await rename(join(space.path, 'restored-project'), join(space.path, 'restored-again'))
+      // Previously completed V27 recoveries left this reference on their ready Workspace.
+      await c.pool.query('UPDATE pe_workspaces SET recovery_request_id=$2 WHERE id=$1', [workspace.id, input.requestId])
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const missing = (await c.bindings.missing(alice)).items.find(item => item.workspaceId === workspace.id)
+        assert.equal(missing.state, 'missing'); assert.equal(missing.generation, 2)
+        assert.equal(missing.recoveryRequestId, null)
+      }
+      assert.deepEqual(await c.bindings.status(alice, { requestId: input.requestId }), completed)
+      const second = restore(workspace.id, space, 'restored-again', 2)
+      assert.equal((await c.bindings.restore(alice, second)).state, 'accepted')
+      const recovering = (await c.bindings.missing(alice)).items.find(item => item.workspaceId === workspace.id)
+      assert.equal(recovering.state, 'recovering'); assert.equal(recovering.recoveryRequestId, second.requestId)
+      assert.equal(await c.bindings.poll(noKubernetes, signal(), worker()), true)
+      const completedAgain = await c.bindings.status(alice, { requestId: second.requestId })
+      assert.equal(completedAgain.state, 'completed'); assert.equal(completedAgain.bindingGeneration, 3)
+      assert.deepEqual(await c.bindings.restore(alice, second), completedAgain)
+      assert.deepEqual(await c.bindings.restore(alice, input), completed)
+      const current = (await c.pool.query('SELECT binding_generation,recovery_request_id FROM pe_workspaces WHERE id=$1', [workspace.id])).rows[0]
+      assert.equal(current.binding_generation, '3'); assert.equal(current.recovery_request_id, null)
+      assert.equal((await c.pool.query('SELECT workspace_id FROM pe_sessions WHERE id=$1', [sessionId])).rows[0].workspace_id, workspace.id)
+      assert.deepEqual((await c.workspaces.baseline(alice)).items.find(item => item.workspaceId === workspace.id).sessionIds, [sessionId])
+      assert.equal((await c.files.readBytesInWorkspace(alice, workspace.id, 'marker.txt', undefined, 3)).toString(), 'retained bytes')
+      assert.deepEqual((await c.bindings.missing(alice)).items, [])
     })
 
     await t.test('active and unknown writers cannot be accepted as no_writer', async () => {
@@ -304,6 +329,7 @@ test('storage selection and recovery use actual PG and POSIX without creating Sa
       await c.bindings.restore(alice, first)
       await c.bindings.poll(async claim => ({ kind: 'kubelet_stopped', mountGeneration: claim.stopTarget.mountGeneration, podUid: randomUUID() }), signal(), worker())
       assert.equal((await c.bindings.status(alice, { requestId: first.requestId })).errorCode, 'workspace_stop_proof_mismatch')
+      assert.equal((await c.bindings.missing(alice)).items.find(item => item.workspaceId === workspace.id).recoveryRequestId, first.requestId)
       const second = restore(workspace.id, space, 'second')
       await c.bindings.restore(alice, second)
       assert.equal((await c.bindings.restore(alice, first)).state, 'blocked')

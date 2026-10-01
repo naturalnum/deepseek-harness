@@ -286,7 +286,7 @@ export class StorageBindingService implements StorageBindingApi {
     })
   }
 
-  /** Persist missing state only for previously usable bindings; metadata remains readable. */
+  /** Persist missing state for previously usable bindings; only recovering/blocked exposes a current request. */
   async missing(user: Identity): Promise<z.infer<typeof workspaceBindingsMissingView>> {
     return transaction(this.pool, async client => {
       await requireActiveAccount(client, user.userId, 'update')
@@ -304,7 +304,8 @@ export class StorageBindingService implements StorageBindingApi {
         const target = workspaceStorageTarget.safeParse({ spaceId: row.space_id, rootRelativePath: row.root_relative_path })
         items.push({ workspaceId: row.id, title: row.title, generation: Number(row.binding_generation),
           state: row.binding_state,
-          recoveryRequestId: row.recovery_request_id, target: target.success ? target.data : null })
+          recoveryRequestId: row.binding_state === 'recovering' || row.binding_state === 'blocked'
+            ? row.recovery_request_id : null, target: target.success ? target.data : null })
       }
       return workspaceBindingsMissingView.parse({ items })
     })
@@ -475,7 +476,7 @@ export class StorageBindingService implements StorageBindingApi {
           state: 'completed', expectedGeneration: Number(row.expected_generation),
           bindingGeneration: Number(row.expected_generation) + 1, errorCode: null })
         const updated = await client.query(`UPDATE pe_workspaces SET binding_generation=binding_generation+1,
-          binding_state='ready',binding_updated_at=GREATEST(clock_timestamp(),binding_updated_at+interval '1 millisecond') WHERE id=$1 AND recovery_request_id=$2
+          binding_state='ready',recovery_request_id=NULL,binding_updated_at=GREATEST(clock_timestamp(),binding_updated_at+interval '1 millisecond') WHERE id=$1 AND recovery_request_id=$2
           AND binding_generation=$3 AND binding_state='recovering' RETURNING id`, [row.workspace_id, row.request_id, row.expected_generation])
         if (!updated.rowCount) throw new PlatformError(409, 'workspace_binding_changed')
         await client.query(`UPDATE pe_workspace_binding_requests SET state='completed',stop_proof=$3,result=$4,
