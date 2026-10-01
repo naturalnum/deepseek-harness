@@ -15,6 +15,26 @@ The image includes LibreOffice Writer, Calc, Impress, Python UNO, Pandoc, Popple
 
 The runner supplies a fixed child environment and does not forward image `ENV` values. A document command that requires `OFFICECLI_SKIP_UPDATE=1` must set it in that command.
 
+## Execution file candidates
+
+Terminal execution responses include optional `fileChanges` with `status`, `files`, and `reasons`. Each file has a canonical path relative to `/workspace`, `sizeBytes` from zero through 2 MiB, and a lowercase SHA256 of the scanned bytes. Candidates are regular files proven new or changed between bounded scans before and after the command; printed paths, unchanged files, timestamp-only updates, and deletions do not produce candidates. An incomplete baseline permits a new-file claim only below a directory whose enumeration completed; a previously observed size change or known digest change can still prove a changed file. The platform separately authorizes and verifies downloads.
+
+The declared scan scope is canonical paths accepted by the file-download contract, with at most 16 segments, 512 UTF-16 units per path, and 100 units per segment. Scans reject links, files with multiple hard links, and special files; skip `.git`, `node_modules`, `.venv`, `__pycache__`, and `.cache` at any depth; and exclude files larger than 2 MiB. Actual exclusions produce `partial` with `excluded_paths`. Exhausted budgets, unreadable paths, and changes detected while reading produce `budget_exceeded`, `read_failed`, and `changed_during_scan`. `complete` requires both scans to finish within this scope without exclusions or errors; it has no reasons. Missing scans produce `unavailable` with no files and `scan_unavailable`. Snapshots describe observed bytes and do not provide an atomic view or identify every artifact a command may create.
+
+The root Runner reads the mounted Runner token; cwd validation, command startup, and scans access user paths only in credential-free UID/GID 1000 children. The Python helper uses directory descriptors and refuses symlink traversal for scans. Commands retain the existing cwd behavior: an internal directory symlink is accepted and an outside target returns HTTP 403. Before scanning, command execution, process-group cleanup, and after scanning share one admission fence: another execution ID returns HTTP 409 until they finish. Repeating an accepted ID returns its stored status without executing again. Leader exit triggers group cleanup before scanning; an unverified surviving group keeps the fence closed. Helper cancellation sends TERM, then KILL after 300 ms, and awaits process close. Cancelling during the final scan preserves the already known command outcome. Scan failure does not change the exit code, timeout, or cancellation result.
+
+These integer environment fields set separate budgets for each scan. Invalid values prevent Runner startup; the final list is always limited to 100 files.
+
+| Environment field | Default | Allowed range |
+| --- | ---: | ---: |
+| `PE_RUNNER_SCAN_MAX_ENTRIES` | 4096 | 1–65536 |
+| `PE_RUNNER_SCAN_MAX_HASH_BYTES` | 33554432 | 1–209715200 |
+| `PE_RUNNER_SCAN_TIMEOUT_MS` | 5000 | 1–30000 |
+| `PE_RUNNER_SCAN_MAX_SNAPSHOT_BYTES` | 1048576 | 1024–4194304 |
+| `PE_RUNNER_SCAN_MAX_FILES` | 100 | 1–100 |
+
+The parent caps helper output and permits 500 ms beyond the scan deadline before terminating it. Linux scan children have a 128 MiB address-space limit, 64 descriptors, and a CPU limit of `ceil(timeoutMs / 1000) + 1` seconds; command children do not inherit those scan limits. Focused tests are `application/tests/s2-sandbox-file-scan.test.mjs` and `application/tests/s2-sandbox-runner.test.mjs`. Their macOS fixtures use real POSIX files, Bash, HTTP, and child-close events with the local UID substituted for production UID/GID 1000; Linux privilege isolation, `/proc` group checks, and Kubernetes deployment require separate integration acceptance.
+
 ## Build and smoke test
 
 ```sh

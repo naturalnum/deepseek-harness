@@ -74,7 +74,7 @@ ENV HOME=/home/agent \
   PYTHONDONTWRITEBYTECODE=1 \
   PYTHONUNBUFFERED=1
 
-COPY runner.mjs /opt/power-evolve/runner.mjs
+COPY --chmod=0444 runner.mjs file-scan.mjs file-scan.py /opt/power-evolve/
 # UNO uses Debian's system Python; the isolated report Python environment stays unchanged.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends python3-uno \
