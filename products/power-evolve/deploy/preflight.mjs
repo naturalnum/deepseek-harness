@@ -10,6 +10,8 @@ import { buildManifests, validateValues } from './render.mjs'
 import { remoteMcpCaPath, remoteMcpConfigPath, remoteMcpKeyPath,
   remoteMcpMountedMetadata, remoteMcpValues } from './remote-mcp.mjs'
 import { accountBootstrapEnabled, accountBootstrapPath, accountManagementPath, validateAccountStartup } from './accounts.mjs'
+import { connectorRunnerValues, validateConnectorBundle, validateConnectorMaterials,
+  checkConnectorCluster, connectorListenerName } from './connectors.mjs'
 
 const require = createRequire(new URL('../application/package.json', import.meta.url))
 const yaml = require('js-yaml')
@@ -35,6 +37,8 @@ export function validateBundle(values, items) {
   validateValues(values)
   const app = values.namespace, runner = values.runnerNamespace
   const expected = buildManifests(values)
+  const connectors = connectorRunnerValues(values.connectorRunner, values)
+  const namespaces = [app, runner, ...(connectors ? [connectors.namespace] : [])]
   const host = resource(items, 'Deployment', 'power-evolve-host', app)
   const platform = resource(items, 'Deployment', 'power-evolve-platform', app)
   const hostSpec = host.spec.template.spec, platformSpec = platform.spec.template.spec
@@ -106,20 +110,23 @@ export function validateBundle(values, items) {
   'Platform runner Role permissions differ')
   assert.equal(resource(items, 'ServiceAccount', 'power-evolve-runner', runner)
     .automountServiceAccountToken, false)
-  for (const namespace of [app, runner]) resource(items, 'NetworkPolicy', 'default-deny', namespace)
+  for (const namespace of namespaces) resource(items, 'NetworkPolicy', 'default-deny', namespace)
   resource(items, 'NetworkPolicy', 'allow-host', app)
   resource(items, 'NetworkPolicy', 'allow-platform', app)
   resource(items, 'NetworkPolicy', 'allow-runner', runner)
   const ownedPolicies = list => list.filter(item => item.kind === 'NetworkPolicy'
-    && [app, runner].includes(item.metadata?.namespace)).map(item => ({
+    && namespaces.includes(item.metadata?.namespace)).map(item => ({
     name: item.metadata.name, namespace: item.metadata.namespace, spec: item.spec,
   })).sort((a, b) => `${a.namespace}/${a.name}`.localeCompare(`${b.namespace}/${b.name}`))
   assert(isDeepStrictEqual(ownedPolicies(items), ownedPolicies(expected)), 'Deployment NetworkPolicy permissions differ')
-  assert.equal(items.some(item => item.kind === 'Secret' && [app, runner].includes(item.metadata?.namespace)), false,
+  assert.equal(items.some(item => item.kind === 'Secret' && namespaces.includes(item.metadata?.namespace)), false,
     'Deployment Secrets must remain externally provisioned')
   assert.equal(items.filter(item => item.kind === 'ConfigMap' && item.metadata?.namespace === app).length, 2,
     'Unexpected application ConfigMap')
-  return { resources: items.length, namespaces: [app, runner],
+  validateConnectorBundle(values, items)
+  const roles = list => list.filter(item => ['Role', 'RoleBinding'].includes(item.kind))
+  assert(isDeepStrictEqual(roles(items), roles(expected)), 'Deployment RBAC scope differs')
+  return { resources: items.length, namespaces,
     hostOrigin: values.hostPublicOrigin, platformOrigin: values.platformPublicOrigin,
     imagesPinned: true, hostHasPlatformSecret: false, hostHasPvc: false,
     runnerServiceAccountToken: false, roleNamespace: runner }
@@ -169,6 +176,23 @@ export function readyValues(values) {
   const remote = remoteMcpValues(values.remoteMcp, values.secrets.shared)
   if (remote?.destinations.some(item => exampleAddress.test(new URL(item.origin).hostname)
     || item.addresses.some(isDocumentationAddress))) throw new Error('Replace documentation MCP destinations')
+  const connectors = connectorRunnerValues(values.connectorRunner, values)
+  if (connectors && (/^([0-9a-f])\1{63}$/u.test(connectors.image.split('@sha256:')[1])
+    || connectors.sshDestinations.some(item => isDocumentationAddress(item.ip))
+    || connectors.proxySourceCidrs.some(isDocumentationAddress))) {
+    throw new Error('Replace example Connector Runner image or addresses')
+  }
+}
+
+/** Validate only the existing Platform control key and the optional SSH encryption key. */
+export async function validateConnectorSecret(values, platformSecret) {
+  const selected = connectorRunnerValues(values.connectorRunner, values)
+  if (selected === null) return {}
+  try {
+    return await validateConnectorMaterials(selected,
+      secretBytes(platformSecret, 'connector-key').toString('utf8'),
+      selected.sshDestinations.length ? secretBytes(platformSecret, 'ssh-credential-key').toString('utf8') : '')
+  } catch { throw new Error('Invalid Connector Runner deployment materials') }
 }
 
 /** Validate only the declared MCP Secret/CA entries with the Platform's real parser and a closed text reader.
@@ -249,6 +273,19 @@ export async function checkCluster(values, context) {
   for (const key of ['model-key', 'connector-key', 'runner-key', 'users.json']) secretBytes(platform, key)
   const accounts = await validateAccountMaterials(values, platform)
   const remoteMcp = await validateRemoteMcpMaterials(values, (kind, name) => get(context, app, kind, name))
+  const connectors = connectorRunnerValues(values.connectorRunner, values)
+  const connectorMaterials = await validateConnectorSecret(values, platform)
+  const connectorCluster = await checkConnectorCluster(connectors, values, {
+    get: (namespace, kind, name) => get(context, namespace, kind, name),
+    can: (namespace, subject, verb, resourceName) => can(context, namespace, subject, verb, resourceName),
+    proxy: (namespace, subject) => {
+      try {
+        return JSON.parse(kubectl(context, ['get', '--raw',
+          '/api/v1/namespaces/' + namespace + '/services/http:' + connectorListenerName + ':8080/proxy/health',
+          '--as=system:serviceaccount:' + subject]))
+      } catch { throw new Error('Forbidden listener control health unavailable') }
+    },
+  })
   if (values.imagePullSecretName) {
     get(context, app, 'secret', values.imagePullSecretName)
     get(context, runner, 'secret', values.imagePullSecretName)
@@ -290,7 +327,8 @@ export async function checkCluster(values, context) {
     [runner, `${runner}:power-evolve-runner`, 'list', 'sandboxes.agents.x-k8s.io'],
   ]) assert.equal(can(context, namespace, subject, verb, resourceName), false,
     `${subject} has unexpected ${verb} ${resourceName} in ${namespace}`)
-  return { ...remoteMcp, ...accounts, readyNodes: nodes.length, controllerReady: true, secretsPresent: true,
+  return { ...remoteMcp, ...accounts, ...connectorMaterials, ...connectorCluster,
+    readyNodes: nodes.length, controllerReady: true, secretsPresent: true,
     tlsCoversPublicOrigins: true, sharedPvcBound: true, namespaceRbacChecked: true,
     crossMachineStorageVerified: false, ingressStreamingVerified: false,
     networkPolicyEnforcementVerified: false }

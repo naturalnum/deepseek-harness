@@ -5,6 +5,7 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import { remoteMcpConfigPath, remoteMcpEgress, remoteMcpSources, remoteMcpValues } from './remote-mcp.mjs'
 import { accountBootstrapEnabled, accountBootstrapPath } from './accounts.mjs'
+import { connectorRunnerValues, connectorRunnerEnvironment, connectorRunnerManifests } from './connectors.mjs'
 
 const require = createRequire(new URL('../application/package.json', import.meta.url))
 const yaml = require('js-yaml')
@@ -88,6 +89,7 @@ export function validateValues(input) {
   if (secrets.shared === secrets.platform) throw new Error('Host must not mount Platform credentials')
   remoteMcpValues(value.remoteMcp, secrets.shared)
   accountBootstrapEnabled(value.accounts)
+  connectorRunnerValues(value.connectorRunner, value)
   return value
 }
 
@@ -118,6 +120,7 @@ function secretVolume(values, role) {
     items: [{ key: 'worker-token', path: 'worker-token' }] } }]
   if (role === 'platform') sources.push({ secret: { name: values.secrets.platform,
     items: ['database-url', 'model-key', 'connector-key', 'runner-key', 'users.json', 'account-management.json',
+      ...(connectorRunnerValues(values.connectorRunner, values)?.sshDestinations.length ? ['ssh-credential-key'] : []),
       ...(accountBootstrapEnabled(values.accounts) ? ['account-bootstrap.json'] : [])]
       .map(key => ({ key, path: key })) } })
   if (role === 'platform') sources.push(...remoteMcpSources(remoteMcpValues(values.remoteMcp, values.secrets.shared)))
@@ -190,6 +193,7 @@ function staticVolume(name, claim, namespace, storage) {
 export function buildManifests(input) {
   const values = validateValues(input)
   const remoteMcp = remoteMcpValues(values.remoteMcp, values.secrets.shared)
+  const connectors = connectorRunnerValues(values.connectorRunner, values)
   const app = values.namespace, runner = values.runnerNamespace, storage = values.storage
   const hostLabels = { 'app.kubernetes.io/name': 'power-evolve-host' }
   const platformLabels = { 'app.kubernetes.io/name': 'power-evolve-platform' }
@@ -209,6 +213,8 @@ export function buildManifests(input) {
     PE_MODEL_URL: values.modelUrl, PE_CONNECTOR_URL: values.connectorUrl,
     PE_SANDBOX_NAMESPACE: runner, PE_SANDBOX_IMAGE: values.sandboxImage,
     PE_SANDBOX_VOLUME_CLAIM: storage.runnerClaim,
+    ...connectorRunnerEnvironment(connectors),
+    ...(connectors === null ? {} : { PE_APPLICATION_NAMESPACE: app }),
     ...(remoteMcp === null ? {} : { PE_REMOTE_MCP_CONFIG_FILE: remoteMcpConfigPath }),
     ...(accountBootstrapEnabled(values.accounts) ? { PE_ACCOUNT_BOOTSTRAP_FILE: accountBootstrapPath } : {}),
     PE_PRIVATE_DIR: '/run/power-evolve/private', DSH_HOME: '/var/lib/dsh' }
@@ -267,6 +273,7 @@ export function buildManifests(input) {
         ports: [{ protocol: 'TCP', port: 8080 }] }],
       [dnsEgress(), ...(!values.network.sandboxEgressCidrs.length ? []
         : [egressCidrs(values.network.sandboxEgressCidrs, 443)])]),
+    ...connectorRunnerManifests(values, connectors),
   ]
 }
 
@@ -274,7 +281,8 @@ export function render(input, phase = 'all') {
   if (!['all', 'foundation', 'workloads'].includes(phase)) throw new Error('Choose all, foundation, or workloads')
   const workload = new Set(['Deployment', 'Service', 'Ingress'])
   return buildManifests(input).filter(item => phase === 'all'
-    || (phase === 'workloads') === workload.has(item.kind)).map(item => yaml.dump(item,
+    || (phase === 'workloads') === (workload.has(item.kind)
+      && item.metadata.namespace !== input.connectorRunner?.namespace)).map(item => yaml.dump(item,
     { noRefs: true, lineWidth: 120 })).join('---\n')
 }
 

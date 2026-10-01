@@ -40,7 +40,7 @@ The bundle declares two static `ReadWriteMany` NFS PVs, each bound to a PVC in i
 
 Platform `/health` tests PostgreSQL and controls readiness; `/live` tests the serving process without PostgreSQL and controls liveness. During a database outage, Platform Pods should leave Service endpoints without being restarted. Verify `restartCount` remains unchanged through an outage longer than three liveness intervals, then confirm the Pods become ready after PostgreSQL returns.
 
-Set the real Ingress class, controller Pod labels, public DNS names, TLS Secret, and egress CIDRs in values. `runnerProxySourceCidrs` must identify the actual source IPs observed by Sandbox Pods for Kubernetes API Service proxy traffic. `apiServerCidrs` must cover the API endpoint that the Platform's in-cluster client reaches. The default-deny policies select every Pod in both namespaces; Host, Platform, and runner policies allow only the listed flows. Verify the CNI actually enforces these policies before traffic is admitted.
+Set the real Ingress class, controller Pod labels, public DNS names, TLS Secret, and egress CIDRs in values. `runnerProxySourceCidrs` must identify the actual source IPs observed by Sandbox Pods for Kubernetes API Service proxy traffic. `apiServerCidrs` must cover the API endpoint that the Platform's in-cluster client reaches. The default-deny policies select every Pod in the application and writable runner namespaces; Host, Platform, and runner policies allow only the listed flows. Verify the CNI actually enforces these policies before traffic is admitted.
 
 Apply only in an isolated namespace and after reviewing the rendered manifest. The bundle creates namespace-scoped ServiceAccounts, a Role and RoleBinding in the runner namespace, two Deployments/Services, TLS Ingress, and NetworkPolicies. It contains no Secret values. Apply the foundation first; then provision the referenced Secrets, registry pull Secrets (when configured), and TLS Secret in the new namespace. The cluster check expects bound PVCs and the RoleBinding; run it before applying workloads or opening public traffic. It is read-only.
 
@@ -69,14 +69,39 @@ Provision `remote-mcp.json` and `remote-mcp-key` in that Secret. The JSON uses t
 
 Platform startup validates the mounted material and strict origin mode. The read-only `--ready` check fetches only the named MCP Secret and CA ConfigMap, validates their contents with the runtime parser, and compares permissions with values. Rendering and local parser tests do not demonstrate actual CNI enforcement, Secret mounting or target connectivity; those checks remain part of physical acceptance.
 
+## Optional process connectors
+
+Leave `connectorRunner` absent or `null` to retain the default disabled behavior. To enable the existing isolated SSH and fixed STDIO transports, add:
+
+```json
+{
+  "connectorRunner": {
+    "namespace": "pe-production-connectors",
+    "image": "registry.example.invalid/power-evolve-connector@sha256:3333333333333333333333333333333333333333333333333333333333333333",
+    "proxySourceCidrs": ["192.0.2.30/32"],
+    "sshDestinations": [{ "ip": "198.51.100.30", "port": 2222 }]
+  }
+}
+```
+
+Replace the example digest and addresses. The connector namespace must differ from both the application and writable cloud runner namespaces. Build and push the existing Connector Runner image, then use its immutable digest for both calls and the forbidden listener. `proxySourceCidrs` must be the observed API server proxy source addresses, each exactly `/32` or `/128`. SSH destinations are exact IPv4/port pairs, at most 32; DNS names and IPv6 SSH are rejected because the current Application SSH allowlist parser cannot accept IPv6. An empty `sshDestinations` array enables only the existing fixed `whoami` process MCP; it requires no SSH key and provides no arbitrary user process launch. This switch does not change the separate remote MCP origin-exception requirements.
+
+When SSH destinations are nonempty, provision `ssh-credential-key` in the existing Platform Secret: a canonical base64url encoding of exactly 32 random bytes, shared by both Platform replicas and preserved with encrypted connection history. The existing Platform-only `connector-key` also controls per-call Runner authentication. No user SSH password, private key, encryption-key bytes or Kubernetes token belongs in values or rendered YAML. Users save personal SSH credentials through the existing direct-to-Platform upload form and approve each command on the trusted Platform page. Startup and readiness use the existing Application constructors to validate the key, allowlist and Runner settings before admission.
+
+The connector Role allows only Pod/Service/Secret get/create/delete, Service proxy get/create and NetworkPolicy get/create/delete within the connector namespace. It grants no list/watch, Deployment, exec or RBAC management authority. Its RoleBinding names only the application's Platform ServiceAccount; cloud Role permissions remain unchanged. Connector and listener Pods have no API token, shared volume, user Home or Workspace mount. Host receives no additional configuration, credentials, egress or Kubernetes authority. The namespace starts with default deny; the listener permits only declared proxy sources on TCP 8080, and each call's existing orchestrator creates its own restricted policies. Fixed STDIO has no egress exception.
+
+Both process orchestrators use the connector namespace's `default` ServiceAccount. The foundation configures its `imagePullSecrets` when `imagePullSecretName` is set, and the Platform profile explicitly passes the same reference to desired call Pods so recovery compares the exact admitted field. Provision that registry Secret in the connector namespace as well as the application and cloud runner namespaces. The listener uses the same digest and default ServiceAccount. A pre-imported local image does not verify registry credentials or admission.
+
+With process connectors enabled, `foundation` includes the listener Deployment and Service as well as its namespace, ServiceAccount, RoleBinding and policies; `workloads` contains only the application Deployments/Services and public Ingress. After applying foundation and provisioning private material, wait for the listener to become Ready before `--ready` and application startup. Readiness checks the listener's current generation, pinned image, Service identity, actual Platform-impersonated Service proxy `/health`, and allowed/denied namespace permissions. Missing or malformed material, a stale listener or an unreachable control path fails the gate. This does not prove CNI denial from a real call Pod or connectivity to an SSH target; root's serial physical acceptance must verify those flows, registry pulls, approval, single Session continuation and resource cleanup.
+
 ## Physical acceptance gates
 
 Before release, run on **two physical machines** with the production CNI, ingress controller, PostgreSQL, and NFS export:
 
-1. Confirm Host Pods have no database environment, Platform Secret, PVC, or Kubernetes API token; deny Host and runner ServiceAccounts access to Secrets and Pods. Confirm the Platform Role is limited to its runner namespace: `list` is allowed only for Sandboxes so backup can verify their absence. Deny Sandbox listing in other namespaces, Pod listing/creation, Secret listing, `watch`, and cluster-scoped PV/RBAC verbs.
+1. Confirm Host Pods have no database environment, Platform Secret, PVC, or Kubernetes API token; deny Host and runner ServiceAccounts access to Secrets and Pods. Confirm the cloud Platform Role is limited to its writable runner namespace: `list` is allowed only for Sandboxes so backup can verify their absence. Deny Sandbox listing in other namespaces, Pod listing/creation, Secret listing, `watch`, and cluster-scoped PV/RBAC verbs.
 2. Create a Sandbox on node A, write Workspace/Home/Git data and a Skill package, record its Pod UID, then stop it and verify kubelet-stop evidence. Start its replacement on node B; verify the same bytes and permissions, with no replay of an uncertain command. Check a second user cannot mount or read the first user's subpaths.
 3. Exercise Host and Platform replica failure/rejoin, authenticated login and approval, native Web streaming and a long response through both public TLS Origins. Check browser Origin/CSP behavior, no Ingress retry of a failed POST, and session recovery against external PostgreSQL.
 4. From each Pod, verify required DNS, PostgreSQL, model, connector, Kubernetes API, and runner proxy flows. Verify denied destinations and CNI policy enforcement, including the API server source IP actually seen at the runner.
 5. Confirm NFS permissions, capacity, backup/restore, volume fencing, gVisor compatibility with PVC `subPath`, image pull on each node, rollout and rollback behavior under a real node outage.
 
-The local k3d two-node S7b drill shared one physical host. It does not satisfy these gates. This template also does not deploy a public model gateway, controlled connector API, desktop Device service, SSH runner, or MCP runner; supply the configured model and connector HTTPS endpoints and deploy optional services separately. Do not promote this candidate based solely on rendered YAML or local dry-run.
+The local k3d two-node S7b drill shared one physical host. It does not satisfy these gates. This template does not deploy a public model gateway, controlled connector API, or desktop Device service; supply the configured model and connector HTTPS endpoints. Optional process connectors use the separate namespace described above. Do not promote this candidate based solely on rendered YAML or local dry-run.

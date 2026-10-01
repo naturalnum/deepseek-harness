@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { remoteMcpConfigPath, remoteMcpMountedMetadata } from './remote-mcp.mjs'
 import { accountManagementPath, accountBootstrapPath, validateAccountStartup } from './accounts.mjs'
+import { connectorRunnerFromEnvironment, connectorRunnerProfile, validateConnectorStartup } from './connectors.mjs'
 
 const root = resolve(fileURLToPath(new URL('../../..', import.meta.url)))
 const self = fileURLToPath(import.meta.url)
@@ -54,6 +55,7 @@ export async function renderProfile(role, env, dshHome) {
   if (!['host', 'platform'].includes(role)) throw new Error('Choose host or platform')
   const remoteMcpPath = role === 'platform' ? env.PE_REMOTE_MCP_CONFIG_FILE || '' : ''
   const bootstrapPath = role === 'platform' ? env.PE_ACCOUNT_BOOTSTRAP_FILE || '' : ''
+  const connectors = role === 'platform' ? connectorRunnerFromEnvironment(env) : null
   if (bootstrapPath && bootstrapPath !== accountBootstrapPath) throw new Error('Invalid account bootstrap deployment path')
   if (remoteMcpPath && remoteMcpPath !== remoteMcpConfigPath) throw new Error('Invalid remote MCP deployment configuration path')
   const hostOrigin = origin(required(env, 'PE_HOST_PUBLIC_ORIGIN'), 'Host public Origin')
@@ -77,6 +79,7 @@ export async function renderProfile(role, env, dshHome) {
       connectorUrl: endpoint(required(env, 'PE_CONNECTOR_URL'), 'connector URL'),
       remoteMcpConfigFile: remoteMcpPath,
       accountManagementFile: accountManagementPath, accountBootstrapFile: bootstrapPath,
+      ...connectorRunnerProfile(connectors),
       hostOrigin, platformOrigin,
     }),
   ]
@@ -127,10 +130,15 @@ async function main() {
   }
   if (role === 'platform') await validateRemoteMcpStartup(process.env.PE_REMOTE_MCP_CONFIG_FILE)
   if (role === 'platform') await validateAccountStartup(process.env.PE_ACCOUNT_BOOTSTRAP_FILE)
+  if (role === 'platform') await validateConnectorStartup(process.env, path => readFile(path, 'utf8'))
   const { name } = await renderProfile(role, process.env, dshHome)
   const childEnv = { ...process.env }
   if (role === 'host') delete childEnv.PE_REMOTE_MCP_CONFIG_FILE
   if (role === 'host') delete childEnv.PE_ACCOUNT_BOOTSTRAP_FILE
+  if (role === 'host') for (const key of Object.keys(childEnv)) {
+    if (key.startsWith('PE_CONNECTOR_RUNNER_') || key === 'PE_CONNECTOR_IMAGE_PULL_SECRET_NAME'
+      || key === 'PE_SSH_DESTINATIONS' || key === 'PE_APPLICATION_NAMESPACE') delete childEnv[key]
+  }
   const child = spawn(process.execPath, [join(root, 'apps/cli/lib/bin.js'), '--profile', name],
     { cwd: root, env: childEnv, stdio: 'inherit' })
   for (const signal of ['SIGTERM', 'SIGINT']) process.once(signal, () => child.kill(signal))

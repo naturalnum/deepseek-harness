@@ -69,14 +69,39 @@ values 省略 `remoteMcp` 时不启用此功能。启用时提供 `secretName` �
 
 Platform 启动时校验挂载材料和严格 origin 模式。只读 `--ready` 检查只获取指定的 MCP Secret 与 CA ConfigMap，使用运行时解析器校验内容，并与 values 权限核对。渲染及本机解析器测试不能证明实际 CNI 执行、Secret 挂载或目标连通；这些仍属于物理验收内容。
 
+## 可选的进程连接器
+
+省略 `connectorRunner` 或设为 `null`，保持默认关闭。启用已有的隔离 SSH 和固定 STDIO 传输时，加入：
+
+```json
+{
+  "connectorRunner": {
+    "namespace": "pe-production-connectors",
+    "image": "registry.example.invalid/power-evolve-connector@sha256:3333333333333333333333333333333333333333333333333333333333333333",
+    "proxySourceCidrs": ["192.0.2.30/32"],
+    "sshDestinations": [{ "ip": "198.51.100.30", "port": 2222 }]
+  }
+}
+```
+
+替换示例 digest 和地址。连接器命名空间必须与应用、可写云运行器命名空间均不同。构建并推送现有 Connector Runner 镜像，将不可变 digest 同时用于调用与禁止访问的监听器。`proxySourceCidrs` 必须是实际观察到的 API server 代理来源，每项精确到 `/32` 或 `/128`。SSH 目标为固定 IPv4/端口组合，最多 32 项；拒绝 DNS 名称和 IPv6 SSH，因为当前 Application SSH allowlist 解析器不支持 IPv6。空 `sshDestinations` 数组只启用现有固定 `whoami` 进程 MCP，不要求 SSH key，也不提供任意用户进程启动能力。此开关不改变独立远程 MCP 的 origin exception 要求。
+
+SSH 目标非空时，在现有 Platform Secret 中提供 `ssh-credential-key`：准确 32 个随机字节的规范 base64url 编码，两个 Platform 副本共用，并随加密连接历史保留。已有 Platform 专用 `connector-key` 同时用于每次调用的 Runner 认证。用户 SSH 密码、私钥、加密 key 字节或 Kubernetes token 均不得进入 values 或渲染后的 YAML。用户通过现有直接上传到 Platform 的表单保存个人 SSH 凭据，在可信 Platform 页面逐条审批命令。启动和就绪检查使用已有 Application 构造器，在准入前校验 key、allowlist 与 Runner 配置。
+
+连接器 Role 只允许在连接器命名空间内 get/create/delete Pod、Service、Secret，get/create Service proxy，以及 get/create/delete NetworkPolicy。不授予 list/watch、Deployment、exec 或 RBAC 管理权限。RoleBinding 只绑定应用命名空间中的 Platform ServiceAccount；云端 Role 权限保持不变。连接器与监听 Pod 无 API token、共享卷、用户 Home 或 Workspace 挂载。Host 不增加配置、凭据、出口或 Kubernetes 权限。命名空间默认拒绝；监听器只允许声明的代理来源访问 TCP 8080，每次调用仍由已有 orchestrator 建立受限策略。固定 STDIO 没有出口例外。
+
+两个进程 orchestrator 都使用连接器命名空间的 `default` ServiceAccount。设置 `imagePullSecretName` 时，基础资源为该账号配置 `imagePullSecrets`；Platform Profile 向预期调用 Pod 显式传递同名引用，让恢复时准确比对 admission 后的字段。除应用与云运行器命名空间外，还须在连接器命名空间提供该仓库 Secret。监听器使用相同 digest 和 default ServiceAccount。本机预导入镜像不能验证仓库凭据或 admission。
+
+启用进程连接器后，`foundation` 除命名空间、ServiceAccount、RoleBinding 和策略外，还包含监听器 Deployment 与 Service；`workloads` 只包含应用 Deployment/Service 和公开 Ingress。应用基础资源、准备私有材料后，须等监听器 Ready，再执行 `--ready` 并启动应用。就绪检查核对监听器当前 generation、固定镜像、Service 身份、真正以 Platform 身份访问的 Service proxy `/health`，以及命名空间权限的允许与拒绝。材料缺失或非法、旧 generation 的监听器或控制路径不可达都会拒绝通过。它不能证明真实调用 Pod 的 CNI 拒绝或 SSH 目标连通；主 agent 串行物理验收仍须核对这些流量、仓库拉取、审批、原 Session 单次续接与资源回收。
+
 ## 物理验收条件
 
 发布前，在配有生产 CNI、ingress 控制器、PostgreSQL 和 NFS 导出的**两台物理机器**上执行：
 
-1. 确认 Host Pod 没有数据库环境变量、Platform Secret、PVC 或 Kubernetes API 令牌；确认 Host 和运行器 ServiceAccount 无权访问 Secret 和 Pod。确认 Platform Role 仅限其运行器命名空间：只有 Sandbox 允许 `list`，供备份核实没有残留实例。拒绝列出其他命名空间的 Sandbox、列出或创建 Pod、列出 Secret、`watch` 以及集群范围的 PV/RBAC 动词权限。
+1. 确认 Host Pod 没有数据库环境变量、Platform Secret、PVC 或 Kubernetes API 令牌；确认 Host 和运行器 ServiceAccount 无权访问 Secret 和 Pod。确认云端 Platform Role 仅限其可写运行器命名空间：只有 Sandbox 允许 `list`，供备份核实没有残留实例。拒绝列出其他命名空间的 Sandbox、列出或创建 Pod、列出 Secret、`watch` 以及集群范围的 PV/RBAC 动词权限。
 2. 在节点 A 创建 Sandbox，写入 Workspace/Home/Git 数据和一个 Skill 包，记录其 Pod UID，再停止它并核对 kubelet 停止证据。在节点 B 启动替代实例，核对字节和权限完全一致，且不会重放结果不确定的命令。检查第二个用户无法挂载或读取第一个用户的子路径。
 3. 测试 Host 和 Platform 副本故障与重新加入、身份验证登录和审批、原生 Web 流式传输，以及经由两个公开 TLS Origin 的长响应。检查浏览器 Origin/CSP 行为、Ingress 不会重试失败的 POST，以及针对外部 PostgreSQL 的会话恢复。
 4. 从每个 Pod 验证所需 DNS、PostgreSQL、模型、连接器、Kubernetes API 和运行器代理流量；验证禁止访问的目标与 CNI 策略执行情况，包括运行器实际观察到的 API server 源 IP。
 5. 确认 NFS 权限、容量、备份与恢复、卷隔离、gVisor 与 PVC `subPath` 的兼容性、每个节点的镜像拉取，以及真实节点故障下的滚动更新与回滚行为。
 
-本地 k3d 双节点 S7b 演练共用一台物理主机，不能满足这些条件。此模板也不部署公共模型网关、受控连接器 API、桌面 Device 服务、SSH 运行器或 MCP 运行器；须提供已配置的模型与连接器 HTTPS endpoint，并单独部署可选服务。不得仅凭渲染后的 YAML 或本地演练结果将此候选配置提升为生产部署。
+本地 k3d 双节点 S7b 演练共用一台物理主机，不能满足这些条件。此模板不部署公共模型网关、受控连接器 API 或桌面 Device 服务；须提供已配置的模型与连接器 HTTPS endpoint。可选进程连接器使用上文所述的独立命名空间。不得仅凭渲染后的 YAML 或本地演练结果将此候选配置提升为生产部署。

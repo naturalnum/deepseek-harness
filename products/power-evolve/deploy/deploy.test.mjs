@@ -148,10 +148,16 @@ test('cluster readiness accepts normal RBAC denials and rejects missing, excessi
     key(runner, 'delete', 'sandboxes.agents.x-k8s.io'), key(runner, 'patch', 'pods'), key(runner, 'get', 'services/proxy'),
   ])
   let invalidReply
+  let listenerHealthy = true
+  const proxyReads = []
   const subprocess = require('node:child_process')
   t.mock.method(subprocess, 'spawnSync', (program, args) => {
     assert.equal(program, 'kubectl')
     const namespace = args.includes('-n') ? args[args.indexOf('-n') + 1] : null
+    if (args.includes('--raw')) {
+      proxyReads.push(args)
+      return { status: 0, stdout: JSON.stringify({ healthy: listenerHealthy }), stderr: '' }
+    }
     const canIndex = args.indexOf('can-i')
     if (canIndex >= 0) {
       if (invalidReply) return invalidReply
@@ -159,7 +165,7 @@ test('cluster readiness accepts normal RBAC denials and rejects missing, excessi
       const resourceType = args[canIndex + 2]
       assert.equal(resourceType.includes('/'), false, 'auth can-i TYPE/NAME does not query a subresource')
       const subresource = args.find(value => value.startsWith('--subresource='))
-      if (resourceType === 'services') assert.equal(subresource, '--subresource=proxy')
+      if (subresource) assert.equal(resourceType, subresource === '--subresource=proxy' ? 'services' : 'pods')
       const resourceName = subresource ? `${resourceType}/${subresource.slice('--subresource='.length)}` : resourceType
       const allowed = permissions.has(`${namespace}|${account}|${args[canIndex + 1]}|${resourceName}`)
       return { status: allowed ? 0 : 1, stdout: allowed ? 'yes\n' : 'no\n', stderr: '' }
@@ -167,7 +173,21 @@ test('cluster readiness accepts normal RBAC denials and rejects missing, excessi
     const index = args.indexOf('get'), kind = args[index + 1], name = args[index + 2]
     let object = {}
     if (kind === 'nodes') object = { items: [1, 2].map(() => ({ status: { conditions: [{ type: 'Ready', status: 'True' }] } })) }
-    else if (kind === 'deployment') object = { status: { availableReplicas: 1 } }
+    else if (configured.connectorRunner && namespace === configured.connectorRunner.namespace
+      && ['deployment', 'service', 'serviceaccount', 'role', 'rolebinding', 'networkpolicy'].includes(kind)) {
+      object = structuredClone(buildManifests(configured).find(item => item.kind.toLowerCase() === kind
+        && item.metadata.name === name && item.metadata.namespace === namespace))
+      if (kind === 'service') object.spec.clusterIP = '10.43.12.10'
+      if (kind === 'deployment') {
+        object.metadata.generation = 1
+        object.status = { availableReplicas: 1, observedGeneration: 1 }
+        object.spec.template.spec.containers[0].ports[0].protocol = 'TCP'
+      }
+      if (kind === 'networkpolicy') {
+        if (!object.spec.ingress.length) delete object.spec.ingress
+        if (!object.spec.egress.length) delete object.spec.egress
+      }
+    } else if (kind === 'deployment') object = { status: { availableReplicas: 1 } }
     else if (kind === 'secret') object = name === configured.secrets.platform ? platformSecret
       : name === configured.tlsSecretName ? tlsSecret : { data: { 'worker-token': encode('private-fixture') } }
     else if (kind === 'pvc') object = { status: { phase: 'Bound' }, spec: {
@@ -195,6 +215,32 @@ test('cluster readiness accepts normal RBAC denials and rejects missing, excessi
     invalidReply = reply
     await assert.rejects(checkCluster(configured, 'fixture'), /failed|Invalid namespace RBAC observation/u)
   }
+  invalidReply = undefined
+  configured.connectorRunner = { namespace: 'pe-fixture-connectors',
+    image: 'registry.internal/connector@sha256:' + 'ab012345'.repeat(8),
+    proxySourceCidrs: ['10.42.0.1/32'], sshDestinations: [{ ip: '10.70.0.11', port: 2222 }] }
+  platformSecret.data['connector-key'] = encode('private-control-key-'.repeat(3))
+  platformSecret.data['ssh-credential-key'] = encode(randomBytes(32).toString('base64url'))
+  const connectorRole = buildManifests(configured).find(item => item.kind === 'Role'
+    && item.metadata.namespace === configured.connectorRunner.namespace)
+  for (const rule of connectorRole.rules) for (const resource of rule.resources) for (const verb of rule.verbs) {
+    permissions.add(key(configured.connectorRunner.namespace, verb,
+      resource + (rule.apiGroups[0] ? '.' + rule.apiGroups[0] : '')))
+  }
+  const report = await checkCluster(configured, 'fixture')
+  assert.equal(report.sshConfigured, true)
+  assert.equal(report.connectorControlHealthVerified, true)
+  assert.equal(report.connectorNetworkEnforcementVerified, false)
+  assert.equal(proxyReads.length, 1)
+  assert(proxyReads[0].includes('--as=system:serviceaccount:' + subject))
+  assert(proxyReads[0].includes('/api/v1/namespaces/pe-fixture-connectors/services/http:power-evolve-forbidden-listener:8080/proxy/health'))
+  listenerHealthy = false
+  await assert.rejects(checkCluster(configured, 'fixture'), /control health failed/u)
+  listenerHealthy = true
+  const credential = platformSecret.data['ssh-credential-key']
+  delete platformSecret.data['ssh-credential-key']
+  await assert.rejects(checkCluster(configured, 'fixture'), /Invalid Connector Runner deployment materials/u)
+  platformSecret.data['ssh-credential-key'] = credential
 })
 
 test('optional MCP deployment projects only private Platform files and pairs each IP with its own origin port', () => {

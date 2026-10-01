@@ -6,7 +6,7 @@
   en: a72699b709b45895
   zh: 429f2191335db7a8
 /powerevolve-s7d-deployment-candidate/build-and-configure:
-  en: 6f0ed8cbae790f0a
+  en: 09eb8d6b9cfa66fe
   zh: eb3d6a8d2ccd6dce
 /powerevolve-s7d-deployment-candidate/account-configuration:
   en: a2f748b333fc900e
@@ -14,6 +14,9 @@
 /powerevolve-s7d-deployment-candidate/optional-remote-mcp:
   en: 6e5aff5167f4652e
   zh: 5b81501ec439e1cb
+/powerevolve-s7d-deployment-candidate/optional-process-connectors:
+  en: 419f5ac551689ad2
+  zh: 9a23f4288383b1f1
 /powerevolve-s7d-deployment-candidate/physical-acceptance-gates:
-  en: 5e8f22245bfd674e
-  zh: 53832f7cba8248c6
+  en: 472a51d9d93d299e
+  zh: 3bb1dd73bd275998
