@@ -64,7 +64,8 @@ export function bundleRoster(
     if (disabledContext !== undefined
       && disabled.some(value => isJsExpr(value) && Boolean(evaluate(disabledContext, value.__jsExpr)))) continue
     seen.add(name)
-    const manifestPath = locateManifest(anchors, name)
+    // Linked bundles can register their own Host entry without a second self-link in node_modules.
+    const manifestPath = layers[bundles.indexOf(name)]?.manifestPath ?? locateManifest(anchors, name)
     if (manifestPath === undefined) {
       throw new Error(`client-test-runtime: cannot resolve plugin package ${name} from ${bundles.join(', ')}`)
     }
