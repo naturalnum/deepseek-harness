@@ -18,6 +18,7 @@ interface ArtifactRow {
   workspace_id: string
   session_id: string
   source_path: string
+  expected_revision: string | null
   filename: string
   mime: string
   size_bytes: string
@@ -42,6 +43,7 @@ export class ArtifactService {
     this.root = resolve(root)
   }
 
+  /** Initialize a private real directory for immutable snapshots. */
   async init(): Promise<void> {
     await mkdir(this.root, { recursive: true, mode: 0o700 })
     const stat = await lstat(this.root)
@@ -66,15 +68,25 @@ export class ArtifactService {
     return result.rows[0]
   }
 
-  /** Publish one file from the Session's immutable workspace; a retry returns its first result. */
-  async publish(user: Identity, requestId: string, sessionId: string, sourcePath: string): Promise<ReturnType<typeof publicRecord>> {
+  /**
+   * Publish one file from the Session's bound Workspace; a retry returns its first immutable result.
+   * @param user Authenticated owner.
+   * @param requestId Idempotency key bound to Session, path and expected revision.
+   * @param sessionId Owned Session determining the Workspace.
+   * @param sourcePath Relative path of a bounded regular file.
+   * @param expectedRevision Optional content SHA256 from a previously verified file fact.
+   * @returns Published metadata; a changed source or different reuse of the key fails with 409.
+   */
+  async publish(user: Identity, requestId: string, sessionId: string, sourcePath: string,
+    expectedRevision?: string): Promise<ReturnType<typeof publicRecord>> {
     return transaction(this.pool, async client => {
       await requireActiveAccount(client, user.userId, 'update')
       const prior = await client.query<ArtifactRow>(
         'SELECT * FROM pe_artifacts WHERE user_id=$1 AND request_id=$2', [user.userId, requestId],
       )
       if (prior.rows[0]) {
-        if (prior.rows[0].session_id !== sessionId || prior.rows[0].source_path !== sourcePath) {
+        if (prior.rows[0].session_id !== sessionId || prior.rows[0].source_path !== sourcePath
+          || prior.rows[0].expected_revision !== (expectedRevision ?? null)) {
           throw new PlatformError(409, 'request_id_conflict')
         }
         return publicRecord(prior.rows[0])
@@ -88,6 +100,9 @@ export class ArtifactService {
       const bytes = Buffer.from(source.data, 'base64')
       if (bytes.length !== source.size || bytes.length > MAX_BYTES || digest(bytes) !== source.revision) {
         throw new PlatformError(503, 'artifact_source_changed')
+      }
+      if (expectedRevision !== undefined && source.revision !== expectedRevision) {
+        throw new PlatformError(409, 'artifact_source_changed')
       }
       const directory = await this.userDirectory(user.userId)
       const target = join(directory, `${requestId}.bin`)
@@ -104,16 +119,21 @@ export class ArtifactService {
       } finally { await rm(temporary, { force: true }) }
       const result = await client.query<ArtifactRow>(
         `INSERT INTO pe_artifacts(id,user_id,workspace_id,session_id,request_id,source_path,
-           filename,mime,size_bytes,sha256)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+           filename,mime,size_bytes,sha256,expected_revision)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
         [requestId, user.userId, workspaceId, sessionId, requestId, sourcePath,
-          basename(sourcePath), source.mime, bytes.length, source.revision],
+          basename(sourcePath), source.mime, bytes.length, source.revision, expectedRevision ?? null],
       )
       return publicRecord(result.rows[0]!)
     })
   }
 
-  /** Return one bounded page, optionally narrowed to an owned Workspace or Session. */
+  /**
+   * Return one bounded page, optionally narrowed to an owned Workspace or Session.
+   * @param user Authenticated owner.
+   * @param filters Optional owned scope, pagination cursor and page limit.
+   * @returns Artifact metadata and the next owned cursor, without file bytes.
+   */
   async list(user: Identity, filters: { workspaceId?: string | undefined; sessionId?: string | undefined;
     cursor?: string | undefined; limit: number }): Promise<{
     items: ReturnType<typeof publicRecord>[]; nextCursor: string | null
@@ -151,7 +171,12 @@ export class ArtifactService {
     return { items: page.map(publicRecord), nextCursor: result.rows.length > filters.limit ? page.at(-1)!.id : null }
   }
 
-  /** Verify immutable bytes against PG metadata before returning a preview or download. */
+  /**
+   * Verify immutable bytes against PG metadata before returning a preview or download.
+   * @param user Authenticated owner.
+   * @param artifactId Identity of an owned published snapshot.
+   * @returns Metadata and bytes matching the stored size and SHA256; missing or changed snapshots fail.
+   */
   async bytes(user: Identity, artifactId: string): Promise<{ record: ReturnType<typeof publicRecord>; bytes: Buffer }> {
     const row = await this.owned(user, artifactId)
     const path = join(await this.userDirectory(user.userId), `${row.id}.bin`)
@@ -174,6 +199,12 @@ export class ArtifactService {
     } finally { await file.close() }
   }
 
+  /**
+   * Return a bounded preview of an owned immutable snapshot.
+   * @param user Authenticated owner.
+   * @param artifactId Identity of the published snapshot.
+   * @returns UTF-8 text, supported image bytes or metadata for other types; invalid text fails.
+   */
   async preview(user: Identity, artifactId: string): Promise<unknown> {
     const { record, bytes } = await this.bytes(user, artifactId)
     if (record.mime.startsWith('text/')) {
