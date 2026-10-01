@@ -125,17 +125,20 @@ export function validateBundle(values, items) {
     runnerServiceAccountToken: false, roleNamespace: runner }
 }
 
-function kubectl(context, args) {
+function kubectl(context, args, acceptDenial = false) {
   const result = spawnSync('kubectl', ['--context', context, ...args], { encoding: 'utf8',
     timeout: 30_000, maxBuffer: 2 * 1024 * 1024 })
-  if (result.status !== 0) throw new Error(`kubectl ${args.slice(0, 3).join(' ')} failed: ${(result.stderr || result.stdout).slice(-500)}`)
+  const denied = acceptDenial && result.status === 1 && result.stdout?.trim() === 'no'
+  if (result.status !== 0 && !denied) throw new Error(`kubectl ${args.slice(0, 3).join(' ')} failed: ${(result.stderr || result.stdout || '').slice(-500)}`)
   return result.stdout.trim()
 }
 const get = (context, namespace, kind, name) => JSON.parse(kubectl(context,
   [...(namespace ? ['-n', namespace] : []), 'get', kind, name, '-o', 'json']))
 function can(context, namespace, subject, verb, resourceName) {
-  return kubectl(context, ['-n', namespace, 'auth', 'can-i', verb, resourceName,
-    `--as=system:serviceaccount:${subject}`]) === 'yes'
+  const decision = kubectl(context, ['-n', namespace, 'auth', 'can-i', verb, resourceName,
+    `--as=system:serviceaccount:${subject}`], true)
+  assert(['yes', 'no'].includes(decision), 'Invalid namespace RBAC observation')
+  return decision === 'yes'
 }
 function secretBytes(secret, key) {
   const encoded = secret.data?.[key]

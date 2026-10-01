@@ -5,10 +5,10 @@ import { randomBytes } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createRequire } from 'node:module'
+import { createRequire, syncBuiltinESMExports } from 'node:module'
 import { renderProfile, validateRemoteMcpStartup } from './start.mjs'
 import { buildManifests, render, validateValues } from './render.mjs'
-import { validateBundle, readyValues, validateRemoteMcpMaterials } from './preflight.mjs'
+import { checkCluster, validateBundle, readyValues, validateRemoteMcpMaterials } from './preflight.mjs'
 import { remoteMcpCaPath, remoteMcpConfigPath, remoteMcpKeyPath, remoteMcpValues } from './remote-mcp.mjs'
 
 const require = createRequire(new URL('../application/package.json', import.meta.url))
@@ -110,6 +110,82 @@ test('preflight rejects missing Sandbox listing, wider permissions and changed R
     edit(resource(items, 'Role', 'power-evolve-platform-runner'),
       resource(items, 'RoleBinding', 'power-evolve-platform-runner'))
     assert.throws(() => validateBundle(values, items))
+  }
+})
+
+test('cluster readiness accepts normal RBAC denials and rejects missing, excessive or unobservable permission', async t => {
+  if (spawnSync('openssl', ['version']).status !== 0) { t.skip('OpenSSL is unavailable'); return }
+  const temporary = await mkdtemp(join(tmpdir(), 'pe-deploy-rbac-'))
+  t.after(() => rm(temporary, { recursive: true, force: true }))
+  const certificatePath = join(temporary, 'tls.crt')
+  const generated = spawnSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes',
+    '-keyout', join(temporary, 'tls.key'), '-out', certificatePath, '-days', '1', '-subj', '/CN=host.qa.internal',
+    '-addext', 'subjectAltName=DNS:host.qa.internal,DNS:platform.qa.internal'], { encoding: 'utf8', timeout: 10000 })
+  assert.equal(generated.status, 0, generated.stderr)
+  const configured = { ...structuredClone(values), imagePullSecretName: '',
+    hostPublicOrigin: 'https://host.qa.internal', platformPublicOrigin: 'https://platform.qa.internal',
+    modelUrl: 'https://model.qa.internal/v1/messages', connectorUrl: 'https://connector.qa.internal/v1' }
+  configured.appImage = `registry.internal/app@sha256:${'0123456789abcdef'.repeat(4)}`
+  configured.sandboxImage = `registry.internal/runner@sha256:${'abcdef0123456789'.repeat(4)}`
+  configured.storage.nfsServer = '10.70.0.10'
+  for (const key of ['postgresCidrs', 'modelCidrs', 'connectorCidrs', 'runnerProxySourceCidrs']) {
+    configured.network[key] = ['10.70.0.20/32']
+  }
+  const encode = text => Buffer.from(text).toString('base64')
+  const platformSecret = { data: Object.fromEntries(['model-key', 'connector-key', 'runner-key', 'users.json']
+    .map(key => [key, encode('private-fixture')])) }
+  platformSecret.data['database-url'] = encode('postgresql://fixture:fixture@db.qa.internal/fixture?sslmode=verify-full')
+  platformSecret.data['account-management.json'] = encode(JSON.stringify({ maxUsers: 100,
+    models: [{ id: 'fixture-model', label: 'Fixture', maxTokens: 128 }],
+    initialSettings: { model: 'fixture-model', maxTokens: 64 } }))
+  const tlsSecret = { type: 'kubernetes.io/tls', data: {
+    'tls.crt': encode(await readFile(certificatePath, 'utf8')), 'tls.key': encode('private-fixture') } }
+  const app = configured.namespace, runner = configured.runnerNamespace
+  const subject = `${app}:power-evolve-platform`
+  const key = (namespace, verb, resourceName) => `${namespace}|${subject}|${verb}|${resourceName}`
+  const permissions = new Set([
+    key(runner, 'list', 'sandboxes.agents.x-k8s.io'), key(runner, 'create', 'sandboxes.agents.x-k8s.io'),
+    key(runner, 'delete', 'sandboxes.agents.x-k8s.io'), key(runner, 'patch', 'pods'), key(runner, 'get', 'services/proxy'),
+  ])
+  let invalidReply
+  const subprocess = require('node:child_process')
+  t.mock.method(subprocess, 'spawnSync', (program, args) => {
+    assert.equal(program, 'kubectl')
+    const namespace = args.includes('-n') ? args[args.indexOf('-n') + 1] : null
+    const canIndex = args.indexOf('can-i')
+    if (canIndex >= 0) {
+      if (invalidReply) return invalidReply
+      const account = args.find(value => value.startsWith('--as=system:serviceaccount:')).slice('--as=system:serviceaccount:'.length)
+      const allowed = permissions.has(`${namespace}|${account}|${args[canIndex + 1]}|${args[canIndex + 2]}`)
+      return { status: allowed ? 0 : 1, stdout: allowed ? 'yes\n' : 'no\n', stderr: '' }
+    }
+    const index = args.indexOf('get'), kind = args[index + 1], name = args[index + 2]
+    let object = {}
+    if (kind === 'nodes') object = { items: [1, 2].map(() => ({ status: { conditions: [{ type: 'Ready', status: 'True' }] } })) }
+    else if (kind === 'deployment') object = { status: { availableReplicas: 1 } }
+    else if (kind === 'secret') object = name === configured.secrets.platform ? platformSecret
+      : name === configured.tlsSecretName ? tlsSecret : { data: { 'worker-token': encode('private-fixture') } }
+    else if (kind === 'pvc') object = { status: { phase: 'Bound' }, spec: {
+      volumeName: namespace === app ? configured.storage.platformPv : configured.storage.runnerPv } }
+    else if (kind === 'pv') object = { spec: { nfs: { server: configured.storage.nfsServer, path: configured.storage.nfsPath } } }
+    return { status: 0, stdout: JSON.stringify(object), stderr: '' }
+  })
+  syncBuiltinESMExports()
+  t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports() })
+  assert.equal((await checkCluster(configured, 'fixture')).namespaceRbacChecked, true)
+  permissions.delete(key(runner, 'list', 'sandboxes.agents.x-k8s.io'))
+  await assert.rejects(checkCluster(configured, 'fixture'), /Platform lacks list sandboxes/u)
+  permissions.add(key(runner, 'list', 'sandboxes.agents.x-k8s.io'))
+  for (const [namespace, verb, resourceName] of [[runner, 'list', 'pods'], [runner, 'create', 'pods'],
+    [runner, 'list', 'secrets'], [app, 'list', 'sandboxes.agents.x-k8s.io']]) {
+    permissions.add(key(namespace, verb, resourceName))
+    await assert.rejects(checkCluster(configured, 'fixture'), /has unexpected/u)
+    permissions.delete(key(namespace, verb, resourceName))
+  }
+  for (const reply of [{ status: 1, stdout: '', stderr: 'unavailable fixture' },
+    { status: 0, stdout: 'unknown', stderr: '' }, { status: 1, stdout: 'yes', stderr: '' }]) {
+    invalidReply = reply
+    await assert.rejects(checkCluster(configured, 'fixture'), /failed|Invalid namespace RBAC observation/u)
   }
 })
 
