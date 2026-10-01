@@ -95,6 +95,7 @@ export const Config = schema.object({
   sshMaxCompletedMismatches: schema.number().step(1).min(1).default(3),
   sshRunnerKubeconfigFile: schema.string().default(''), sshRunnerNamespace: schema.string().default(''),
   sshRunnerImage: schema.string().default(''), sshRunnerRuntimeClass: schema.string().default('gvisor'),
+  sshRunnerImagePullSecretName: schema.string().default(''),
   sshRunnerIngressCidrs: schema.string().default(''),
   sshRunnerReadyTimeoutMs: schema.number().min(1000).default(30000),
   sshRunnerLeaseMs: schema.number().min(1000).default(90000),
@@ -273,6 +274,10 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     ticketLifetimeMs: config.sshTicketLifetimeMs, maxCompletedMismatches: config.sshMaxCompletedMismatches,
   })
   const sshRunnerEnabled = config.sshRunnerKubeconfigFile.length > 0
+  if (config.sshRunnerImagePullSecretName && (!sshRunnerEnabled
+    || !/^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$/u.test(config.sshRunnerImagePullSecretName))) {
+    throw new Error('Invalid Connector Runner image pull Secret reference')
+  }
   if (sshRunnerEnabled && (!config.sshRunnerNamespace || !config.sshRunnerImage
     || !config.sshRunnerRuntimeClass || !config.sshRunnerIngressCidrs)) {
     throw new Error('Incomplete Connector Runner configuration')
@@ -300,12 +305,14 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     if (!await proveForbiddenListener()) throw new Error('SSH forbidden listener unavailable')
     const runner = new SshRunnerOrchestrator(kube, {
       namespace, image: config.sshRunnerImage, runtimeClassName: config.sshRunnerRuntimeClass,
+      ...(config.sshRunnerImagePullSecretName ? { imagePullSecretName: config.sshRunnerImagePullSecretName } : {}),
       controlKey: connectorKey.trim(), readyTimeoutMs: config.sshRunnerReadyTimeoutMs,
       platformIngressCidrs: config.sshRunnerIngressCidrs.split(',').map(value => value.trim()),
       forbiddenProbe: { ip: probeIp, port: 8080 }, proveForbiddenListener,
     })
     stdioRunner = new StdioRunnerOrchestrator(kube, {
       namespace, image: config.sshRunnerImage, runtimeClassName: config.sshRunnerRuntimeClass,
+      ...(config.sshRunnerImagePullSecretName ? { imagePullSecretName: config.sshRunnerImagePullSecretName } : {}),
       controlKey: connectorKey.trim(), readyTimeoutMs: config.sshRunnerReadyTimeoutMs,
       platformIngressCidrs: config.sshRunnerIngressCidrs.split(',').map(value => value.trim()),
       forbiddenProbe: { ip: probeIp, port: 8080 }, proveForbiddenListener,

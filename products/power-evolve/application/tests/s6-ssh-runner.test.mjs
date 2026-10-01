@@ -79,12 +79,25 @@ class FakeKubernetes {
   }
 }
 
-function make(kube, proof = async () => true) {
+function make(kube, proof = async () => true, options = {}) {
   return new SshRunnerOrchestrator(kube, { namespace: 'pe-connector-only', image: 'connector-runner:test',
     runtimeClassName: 'gvisor', controlKey: 'x'.repeat(32), readyTimeoutMs: 1200,
     platformIngressCidrs: ['198.51.100.8/32'], forbiddenProbe: { ip: '198.51.100.44', port: 443 },
-    proveForbiddenListener: proof })
+    proveForbiddenListener: proof, ...options })
 }
+
+test('canary and command Pods explicitly select the operator registry credential reference', async () => {
+  const kube = new FakeKubernetes(), callId = randomUUID()
+  const options = { imagePullSecretName: 'pe-registry-auth' }
+  const handle = await make(kube, undefined, options).prepare(callId, target)
+  const pods = kube.events.filter(event => event.method === 'POST' && event.path.endsWith('/pods'))
+  assert.equal(pods.length, 2)
+  for (const { body } of pods) {
+    assert.deepEqual(body.spec.imagePullSecrets, [{ name: 'pe-registry-auth' }])
+    assert.equal(body.spec.volumes.some(volume => volume.secret?.secretName === 'pe-registry-auth'), false)
+  }
+  assert.deepEqual(await make(kube, undefined, options).prepare(callId, target), handle)
+})
 
 test('policy precedes Pod, canary precedes credential, and request is observed before replay', async () => {
   const kube = new FakeKubernetes(), service = make(kube), callId = randomUUID()

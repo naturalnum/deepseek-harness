@@ -11,6 +11,7 @@ class FakeKubernetes {
   events = []
   losePost = false
   serverDefaults = false
+  imagePullSecretName = undefined
   failPodCreateOnce = false
   resourcePath(namespace, kind, name) {
     return `/api/v1/namespaces/${namespace}/${kind}${name ? `/${name}` : ''}`
@@ -50,6 +51,9 @@ class FakeKubernetes {
         resource.spec.ports[0].protocol = 'TCP'
       }
       if (kind === 'pods') {
+        if (this.imagePullSecretName && !resource.spec.imagePullSecrets) {
+          resource.spec.imagePullSecrets = [{ name: this.imagePullSecretName }]
+        }
         if (this.serverDefaults) {
           Object.assign(resource.spec, { dnsPolicy: 'ClusterFirst', schedulerName: 'default-scheduler',
             serviceAccount: 'default', serviceAccountName: 'default', nodeName: 'worker-1', priority: 0,
@@ -93,10 +97,26 @@ class FakeKubernetes {
   }
 }
 
-const make = (kube, proof = async () => true) => new StdioRunnerOrchestrator(kube, {
+const make = (kube, proof = async () => true, options = {}) => new StdioRunnerOrchestrator(kube, {
   namespace: 'pe-connector-only', image: 'connector-runner:test', runtimeClassName: 'gvisor',
   controlKey: 'x'.repeat(32), readyTimeoutMs: 1000, platformIngressCidrs: ['198.51.100.8/32'],
   forbiddenProbe: { ip: '198.51.100.44', port: 8080 }, proveForbiddenListener: proof,
+  ...options,
+})
+
+test('private registry admission retains the configured pull reference across worker recovery', async () => {
+  const kube = new FakeKubernetes(), callId = randomUUID()
+  kube.serverDefaults = true
+  kube.imagePullSecretName = 'pe-registry-auth'
+  const options = { imagePullSecretName: 'pe-registry-auth' }
+  const handle = await make(kube, undefined, options).prepare(callId)
+  assert.deepEqual(await make(kube, undefined, options).prepare(callId), handle)
+  assert.equal(kube.events.filter(event => event.method === 'POST' && event.path.endsWith('/pods')).length, 1)
+  const pod = kube.resources.get(`pods/pe-mcp-${callId.replaceAll('-', '')}`)
+  pod.spec.imagePullSecrets = [{ name: 'changed-registry' }]
+  await assert.rejects(make(kube, undefined, options).prepare(callId), { code: 'mcp_runner_resource_changed' })
+  pod.spec.imagePullSecrets = [{ name: 'pe-registry-auth' }, { name: 'extra-registry' }]
+  await assert.rejects(make(kube, undefined, options).prepare(callId), { code: 'mcp_runner_resource_changed' })
 })
 
 test('policy has no egress exception and one process call is never replayed', async () => {

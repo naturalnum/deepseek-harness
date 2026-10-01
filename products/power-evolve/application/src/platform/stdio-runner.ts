@@ -160,6 +160,7 @@ export class StdioRunnerOrchestrator {
     await this.ensure('pods', name, { apiVersion: 'v1', kind: 'Pod',
       metadata: { name, namespace: this.config.namespace, labels },
       spec: { automountServiceAccountToken: false, runtimeClassName: this.config.runtimeClassName,
+        ...(this.config.imagePullSecretName ? { imagePullSecrets: [{ name: this.config.imagePullSecretName }] } : {}),
         restartPolicy: 'Never', terminationGracePeriodSeconds: 5, activeDeadlineSeconds: 180,
         enableServiceLinks: false,
         securityContext: { runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001,

@@ -52,6 +52,8 @@ MCP 在原生模型请求中保留已声明的 JSON Schema，并独立校验参�
 
 资源恢复接受已识别的 Kubernetes NetworkPolicy、Service 和 Pod 默认字段，同时拒绝 selector、端口、执行配置及 Pod 身份变化。即使仍有新调用排队，终态资源也会获得清理机会。
 
+可选的 `sshRunnerImagePullSecretName` 为 SSH 和进程型 MCP Pod 指定 Connector namespace 中的一个镜像仓库 Secret。名称必须是 DNS label，且要求 Runner 已启用；空值不添加引用。运维人员单独配置该 Secret；只有名称进入 Pod 的 `imagePullSecrets`，秘密字节不会进入 Host 或 Runner 文件系统。进程型 MCP 恢复会核对预期引用，拒绝名称变化或额外的拉取引用，不把它们当作 API 默认字段忽略。
+
 SSH 认证或命令已确认处于 `running` 并持久化后，worker 释放租约，在 `sshRunnerPollMs` 后允许再次观察（默认 500 毫秒，最小 100 毫秒）。下一个 worker 查询原 Runner，无须等完整恢复租约过期，也不会再次发送命令。owner 和 epoch 检查拒绝旧执行者续租或释放租约；结果不明的调用沿用原有对账节奏。
 
 启用 SSH 连接后，任务受理固定连接和凭据版本。原生 Agent 工具使用稳定的工具调用 ID，为每次操作提交一条确切命令。系统说明将连接 UUID 与用户名、主机和端口分别列出；`connectionId` 参数只接受选中连接的原始 UUID。可信平台先把配置的工作目录固定到命令中，再计算指纹并加密保存在 `pe_ssh_execute_actions`。绝对路径按字面使用，相对路径和 `~` 使用远端 HOME。目录字节（包括空格）保持不变；切换目录失败时退出，不运行所提交的命令。完整命令限制为 16,384 个 UTF-8 字节。独立审批身份在平台页面核对该命令、历史目标、主机密钥指纹和版本。后续编辑不会改变已有审批。

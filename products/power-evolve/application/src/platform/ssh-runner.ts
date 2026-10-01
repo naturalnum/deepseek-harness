@@ -25,6 +25,8 @@ export interface SshRunnerConfig {
   /** Dedicated, preprovisioned namespace; never the writable Sandbox namespace. */
   readonly namespace: string
   readonly image: string
+  /** Expected registry credential reference in this namespace; credential bytes are never mounted. */
+  readonly imagePullSecretName?: string
   readonly runtimeClassName: string
   readonly controlKey: string
   readonly readyTimeoutMs: number
@@ -189,6 +191,7 @@ export class SshRunnerOrchestrator {
     await this.ensure('pods', name, { apiVersion: 'v1', kind: 'Pod',
       metadata: { name, namespace: this.config.namespace, labels },
       spec: { automountServiceAccountToken: false,
+        ...(this.config.imagePullSecretName ? { imagePullSecrets: [{ name: this.config.imagePullSecretName }] } : {}),
         runtimeClassName: this.config.runtimeClassName, restartPolicy: 'Never',
         terminationGracePeriodSeconds: 5, activeDeadlineSeconds: 180, enableServiceLinks: false,
         securityContext: { runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001,
