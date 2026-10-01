@@ -21,7 +21,14 @@ node products/power-evolve/scripts/prepare-connector-access.mjs
 node products/power-evolve/connector-runner/deploy/prepare-forbidden-listener.mjs
 ```
 
-The image helper builds the package, creates a temporary `pnpm deploy --legacy --prod --ignore-scripts --frozen-lockfile` artifact outside the repository with `strict-dep-builds=true`, builds the pinned-base Dockerfile from that artifact, imports the image into the named k3d cluster, and removes the artifact. The root workspace install policy must remain strict; `ssh2` and `cpu-features` install scripts are denied. The access helper creates only a `pe-connector-*` namespace, refuses an existing namespace without its ownership labels, and writes the token kubeconfig with mode 0600 under a private 0700 directory. It does not edit the Platform configuration. Treat the kubeconfig as a credential; never commit it or display its contents.
+By default, the image helper builds the package, creates a temporary `pnpm deploy --legacy --prod --ignore-scripts --frozen-lockfile` artifact outside the repository with `strict-dep-builds=true`, builds the pinned-base Dockerfile from that artifact, imports the image into the named k3d cluster, and removes the artifact. Cleanup also runs after a failed build or import. The root workspace install policy must remain strict; `ssh2` and `cpu-features` install scripts are denied. The access helper creates only a `pe-connector-*` namespace, refuses an existing namespace without its ownership labels, and writes the token kubeconfig with mode 0600 under a private 0700 directory. It does not edit the Platform configuration. Treat the kubeconfig as a credential; never commit it or display its contents.
+
+For a build without cluster import, use `--build-only`. This mode needs Node 22.19+, pnpm 11, Docker, and a tagged `PE_CONNECTOR_IMAGE`; it does not read `PE_K3D_CLUSTER` or invoke k3d. The helper prints `Built IMAGE` after building and removing its temporary artifact. Registry transfer and cluster import are separate release operations.
+
+```sh
+PE_CONNECTOR_IMAGE=pe-connector-runner:s6-local \
+  node products/power-evolve/connector-runner/deploy/build-and-import.mjs --build-only
+```
 
 The listener helper applies a gVisor Deployment and ClusterIP Service named `power-evolve-forbidden-listener`, waits for readiness, and checks `/health` through the scoped Platform Service proxy. It uses the imported image with a fixed Node HTTP listener command and no Runner token or SSH credentials. Keep the Deployment running throughout Connector calls. The Service ClusterIP may change if the Service is recreated; read it again before configuring the Platform.
 

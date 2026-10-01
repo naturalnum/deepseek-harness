@@ -16,6 +16,17 @@ The runtime stage now installs `python3` using Debian packages with `--no-instal
 
 `qa-s7d-image-startup.mjs` creates random, single-use Docker names and an explicit unused subnet. It starts its own real PostgreSQL 17, creates two seed users and disposable credentials, starts the existing DSH Platform/Host bundles, runs HTTP checks, then removes its containers, network, volume, and private files. The Host receives only a worker token. The Platform receives the database/provider keys, a data volume, and a startup-only ServiceAccount placeholder; no Sandbox execution request is made.
 
+The Platform private directory also contains `account-management.json` with `maxUsers: 2`, the `deepseek-flash` model catalog with a 4096-token limit, and initial settings for that model with 2048 tokens. The script writes this file and `users.json` with mode 0600. Both seed users use the same catalog; their settings remain within its token limit. The current account-management parser accepts this fixture policy.
+
+Every disposable container has explicit CPU and memory limits. `--memory-swap` equals `--memory`, so the container receives no additional swap allowance. The Python probe finishes before PostgreSQL, Platform, and Host start; those three containers have a combined limit of 2.5 CPUs and 2.5 GiB of memory.
+
+| Container | CPU limit | Memory limit |
+| --- | --- | --- |
+| Python availability probe | 0.5 | 128 MiB |
+| PostgreSQL | 0.5 | 512 MiB |
+| Platform | 1 | 1 GiB |
+| Host | 1 | 1 GiB |
+
 The script checks Platform `/health` and `/live`, Host `/health`, Host UID 10001, both read-only root filesystems, Host absence of Platform secrets/PVC/SA token, an authenticated Host RPC over its internal Platform URL, SafePosix file write/read and `../` denial, plus the native Web and Platform login pages. It does not verify NFS, gVisor, real Kubernetes ServiceAccount authorization, CNI policy, TLS ingress, or two physical machines.
 
 ## Result

@@ -21,7 +21,14 @@ node products/power-evolve/scripts/prepare-connector-access.mjs
 node products/power-evolve/connector-runner/deploy/prepare-forbidden-listener.mjs
 ```
 
-镜像脚本先构建包，再在仓库外创建临时的 `pnpm deploy --legacy --prod --ignore-scripts --frozen-lockfile` 产物，并设置 `strict-dep-builds=true`；随后以这个产物和固定基础镜像的 Dockerfile 构建镜像，导入指定 k3d 集群，最后清除临时产物。根工作区必须继续执行严格安装策略；`ssh2` 和 `cpu-features` 的安装脚本被禁止。访问脚本只创建 `pe-connector-*` 命名空间，拒绝没有归属标签的已有命名空间，并在权限为 0700 的私密目录内以 0600 权限写入令牌 kubeconfig。它不修改平台配置。kubeconfig 是凭据，不得提交或显示其内容。
+默认情况下，镜像脚本先构建包，再在仓库外创建临时的 `pnpm deploy --legacy --prod --ignore-scripts --frozen-lockfile` 产物，并设置 `strict-dep-builds=true`；随后以这个产物和固定基础镜像的 Dockerfile 构建镜像，导入指定 k3d 集群，最后清除临时产物。构建或导入失败时也会清理。根工作区必须继续执行严格安装策略；`ssh2` 和 `cpu-features` 的安装脚本被禁止。访问脚本只创建 `pe-connector-*` 命名空间，拒绝没有归属标签的已有命名空间，并在权限为 0700 的私密目录内以 0600 权限写入令牌 kubeconfig。它不修改平台配置。kubeconfig 是凭据，不得提交或显示其内容。
+
+只构建镜像而不导入集群时，使用 `--build-only`。这个模式需要 Node 22.19+、pnpm 11、Docker，以及带标签的 `PE_CONNECTOR_IMAGE`；它不读取 `PE_K3D_CLUSTER`，也不调用 k3d。构建完成并清除临时产物后，脚本输出 `Built IMAGE`。镜像仓库传输和集群导入由单独的发布操作完成。
+
+```sh
+PE_CONNECTOR_IMAGE=pe-connector-runner:s6-local \
+  node products/power-evolve/connector-runner/deploy/build-and-import.mjs --build-only
+```
 
 监听器脚本部署名为 `power-evolve-forbidden-listener` 的 gVisor Deployment 和 ClusterIP Service，等待就绪，再通过平台受限的 Service 代理检查 `/health`。它使用已导入镜像和固定的 Node HTTP 监听命令，不需要 Runner 令牌或 SSH 凭据。Connector 调用期间必须保持 Deployment 运行。重新创建 Service 后 ClusterIP 可能改变，配置平台前须重新读取。
 
