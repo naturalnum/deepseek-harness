@@ -2,10 +2,12 @@
 import assert from 'node:assert/strict'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomBytes, randomUUID } from 'node:crypto'
-import { EventEmitter, once } from 'node:events'
+import { once } from 'node:events'
 import { closeSync, openSync } from 'node:fs'
 import { chmod, link, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
-import { createServer, request as httpRequest, type IncomingMessage, type ServerResponse } from 'node:http'
+import { createServer, IncomingMessage, request as httpRequest, ServerResponse,
+  type OutgoingHttpHeader, type OutgoingHttpHeaders } from 'node:http'
+import { Socket } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { test, type TestContext } from 'node:test'
@@ -28,16 +30,31 @@ const manifestSchema = yaml.DEFAULT_SCHEMA.extend(new yaml.Type('tag:yaml.org,20
 }))
 
 // A controllable socket adapter is used only by focused writer tests, never by the Profile integration below.
-class SocketFixture extends EventEmitter {
+class SocketFixture extends ServerResponse {
   chunks: Uint8Array[] = []
   ended = false
   status = 0
   headers: Record<string, string> = {}
   block = false
-  write(chunk: Uint8Array): boolean { this.chunks.push(chunk); return !this.block }
-  end(): void { this.ended = true }
-  writeHead(status: number, headers: Record<string, string>): void { this.status = status; this.headers = headers }
-  get response(): ServerResponse { return this as unknown as ServerResponse }
+  constructor() { super(new IncomingMessage(new Socket())) }
+  override write(chunk: unknown): boolean {
+    assert.ok(chunk instanceof Uint8Array)
+    this.chunks.push(chunk)
+    return !this.block
+  }
+  override end(): this { this.ended = true; return this }
+  override writeHead(status: number, messageOrHeaders?: string | OutgoingHttpHeaders | OutgoingHttpHeader[],
+    explicitHeaders?: OutgoingHttpHeaders | OutgoingHttpHeader[]): this {
+    const headers = typeof messageOrHeaders === 'string' ? explicitHeaders : messageOrHeaders
+    assert.ok(headers && !Array.isArray(headers))
+    this.status = status
+    for (const [name, value] of Object.entries(headers)) {
+      assert.equal(typeof value, 'string')
+      this.headers[name] = String(value)
+    }
+    return this
+  }
+  get response(): ServerResponse { return this }
 }
 
 test('actual content-query parser rejects duplicate authority, extra fields, malformed JSON and wire overflow', () => {
@@ -122,7 +139,7 @@ test('Host proxy binds its credential-free query, safe headers, error codes and 
   let mode = 'valid', observed = 0
   const upstream = createServer((incoming, response) => {
     observed++
-    assert.equal(incoming.headers.authorization, `Bearer ${token}`)
+    assert.ok(incoming.headers.authorization === `Bearer ${token}`, 'Only the authenticated credential may reach Platform')
     const url = new URL(incoming.url!, 'http://127.0.0.1')
     assert.equal(url.pathname, FILE_DOWNLOAD_PLATFORM_PATH)
     assert.deepEqual(parseFileDownloadQuery(url), request)
