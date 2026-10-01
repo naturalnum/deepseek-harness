@@ -4,7 +4,7 @@
 
 证据等级：**实现**表示调用链在构建入口和服务端均可追到；**本地实测**表示既有真实浏览器、模型、PG、Pod 或文件验收有记录及本机留存证据；**未验收**表示当前提交或目标生产环境没有对应实测。单元测试与文档文字本身不提升为生产验收。
 
-后续补齐：下表保留上述基线的审计结果。内置 9 包目录、预置、显式升级、说明资源读取和代表性沙盒执行已由[固定 S8 试用](TRIAL-S8-NATIVE.md)补齐，原 8 包限额也已修正；逐包及业务流程未覆盖项以[S8 当前矩阵](TRIAL-S8-SKILLS-QA.md#current-acceptance-summary-at-ba1307f14d)为准。通用 MCP／SSH、账号生命周期及文件／产物入口缺口仍按[交付计划](DELIVERY-PLAN.md)推进。
+后续补齐：下表保留上述基线的审计结果。内置 9 包目录及代表性执行已有[固定 S8 试用](TRIAL-S8-NATIVE.md)，逐包范围见[S8 当前矩阵](TRIAL-S8-SKILLS-QA.md)；多连接 MCP、真实 SSH 和账号生命周期分别有[远程 MCP](TRIAL-S6-REMOTE-MCP-QA.md)、[SSH](TRIAL-S6-SSH-P24-QA.md)、[账号 V25](TRIAL-S3-ACCOUNT-V25-QA.md)固定试用。原生 Files 多选及批量下载已通过[双用户浏览器验收](TRIAL-S2-BATCH-DOWNLOAD-QA.md)。每轮产出、内联文件动作、工作区绑定恢复及发布验收仍按[交付计划](DELIVERY-PLAN.md)推进。
 
 | 范围 | 旧 `origin/main` 的真实实现 | 当前 `5c87bcdaa7` 的真实实现与验收 | 缺口判定 |
 | --- | --- | --- | --- |
