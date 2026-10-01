@@ -61,9 +61,9 @@ export class SafePosix {
     return result.kind
   }
 
-  async read(workspaceId: string, parts: string[]): Promise<Buffer | null> {
+  async read(workspaceId: string, parts: string[], signal?: AbortSignal): Promise<Buffer | null> {
     const result = await this.call({ op: 'read', root: this.root, workspaceId, parts,
-      ...(this.owner ? { owner: this.owner } : {}) }) as { data: string | null }
+      ...(this.owner ? { owner: this.owner } : {}) }, signal) as { data: string | null }
     if (result?.data === null) return null
     if (typeof result?.data !== 'string' || result.data.length > MAX_IPC_BYTES) throw unavailable()
     const bytes = Buffer.from(result.data, 'base64')
@@ -92,18 +92,19 @@ export class SafePosix {
     if (typeof result?.written !== 'boolean') throw unavailable()
   }
 
-  private async call(request: Request): Promise<unknown> {
+  private async call(request: Request, signal?: AbortSignal): Promise<unknown> {
+    signal?.throwIfAborted()
     if (this.active >= MAX_ACTIVE) throw unavailable()
     this.active += 1
-    try { return await this.dispatch(request) }
+    try { return await this.dispatch(request, signal) }
     finally { this.active -= 1 }
   }
 
-  private async dispatch(request: Request): Promise<unknown> {
+  private async dispatch(request: Request, signal?: AbortSignal): Promise<unknown> {
     const payload = JSON.stringify(request)
     if (Buffer.byteLength(payload) > MAX_IPC_BYTES) throw unavailable()
     const output = await new Promise<Buffer>((resolveResult, rejectResult) => {
-      let done = false, tooLarge = false, timedOut = false, total = 0
+      let done = false, tooLarge = false, timedOut = false, processError = false, total = 0
       const chunks: Buffer[] = []
       let child
       try {
@@ -115,10 +116,15 @@ export class SafePosix {
         if (done) return
         done = true
         clearTimeout(timer)
+        signal?.removeEventListener('abort', abort)
         if (error) rejectResult(error)
         else resolveResult(value!)
       }
       const timer = setTimeout(() => { timedOut = true; child.kill('SIGKILL') }, this.timeoutMs)
+      // Keep the operation active until close confirms the killed helper has exited.
+      const abort = () => { child.kill('SIGKILL') }
+      signal?.addEventListener('abort', abort, { once: true })
+      if (signal?.aborted) abort()
       child.stdout.on('data', (chunk: Buffer) => {
         total += chunk.length
         if (total > MAX_IPC_BYTES) { tooLarge = true; child.kill('SIGKILL') }
@@ -126,8 +132,10 @@ export class SafePosix {
       })
       child.stderr.on('data', () => { /* Drain without exposing filesystem paths or private data. */ })
       child.stdin.on('error', () => { /* The close/error event below owns the outcome. */ })
-      child.once('error', () => finish(unavailable()))
-      child.once('close', code => finish(code === 0 && !tooLarge && !timedOut ? undefined : unavailable(),
+      child.once('error', () => { processError = true; child.kill('SIGKILL') })
+      child.once('close', code => finish(signal?.aborted
+        ? signal.reason instanceof Error ? signal.reason : new DOMException('Download canceled', 'AbortError')
+        : code === 0 && !tooLarge && !timedOut && !processError ? undefined : unavailable(),
         tooLarge ? Buffer.alloc(0) : Buffer.concat(chunks, total)))
       child.stdin.end(payload)
     })

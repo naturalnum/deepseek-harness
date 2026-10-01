@@ -129,6 +129,23 @@ export class FileService {
     return this.read(user, path, workspaceId)
   }
 
+  /**
+   * Read bounded original bytes through the descriptor helper without a second base64 conversion.
+   * @param user Authenticated resource owner.
+   * @param workspaceId Explicit owned Workspace, without creating a default Workspace.
+   * @param path Canonical relative file path.
+   * @param signal Cancellation kills the helper and waits for its process to close.
+   * @returns Original bytes; missing or unsafe files fail with a Platform error.
+   */
+  async readBytesInWorkspace(user: Identity, workspaceId: string, path: string, signal?: AbortSignal): Promise<Buffer> {
+    signal?.throwIfAborted()
+    const id = await this.ownedWorkspaceId(user.userId, workspaceId)
+    signal?.throwIfAborted()
+    const bytes = await this.safe.read(id, parts(path), signal)
+    if (!bytes) throw new PlatformError(404, 'file_not_found')
+    return bytes
+  }
+
   /** Commit a conditional write under the user's PG lock; repeated request ids never reapply it. */
   async put(user: Identity, requestId: string, path: string, baseRevision: string | null, data: string,
     workspaceId?: string): Promise<unknown> {
