@@ -23,6 +23,8 @@ kind: "package-library"
 
 从 `@power-evolve/contracts/file-download` 导入下载请求及同源 URL 构造函数。[下载源码](src/file-download.ts) 定义规范相对路径、元数据摘要和协议上限。部署限额与授权仍由平台负责，见[文件切片](../S2-COMPLETION.md)。
 
+从 `@power-evolve/contracts/execution-files` 导入 Runner 观察、已核验执行文件记录和条件发布请求。平台通过获授权工作区重新读取候选，再持久化其大小与 SHA-256。记录标识执行后观察到的版本，不证明命令是唯一写入者。扫描缺失或不完整会明确标示。带预期摘要的发布会拒绝已变化的源字节。
+
 ## 实现 {#implementation}
 
 运行时仅依赖 Zod 和上游品牌类型工具。TypeScript 一并生成兼容浏览器的 ESM 和声明文件。应用为现有内部导入重新导出这些账号定义。此包没有进程状态、凭据存储、授权检查或独立的生命周期不变量。

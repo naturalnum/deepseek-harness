@@ -5,7 +5,7 @@ import { sshSchemaV24 } from './ssh-schema.ts'
 import { accountSchemaV25 } from './account-schema.ts'
 
 /** Latest supported product database version; older binaries reject newer state. */
-export const CURRENT_SCHEMA_VERSION = 25
+export const CURRENT_SCHEMA_VERSION = 26
 
 export const schema = `
 CREATE TABLE IF NOT EXISTS pe_schema (version integer PRIMARY KEY);
@@ -677,4 +677,11 @@ UPDATE pe_schema SET version=24 WHERE version=23;
 /** Account authority, audience isolation, durable mutation receipts and identity tombstones. */
 export const schemaV25 = `${accountSchemaV25}
 UPDATE pe_schema SET version=25 WHERE version=24;
+`
+
+/** Bind immutable publication retries to an optional expected source digest. */
+export const schemaV26 = `
+ALTER TABLE pe_artifacts ADD COLUMN expected_revision text
+  CHECK (expected_revision IS NULL OR expected_revision ~ '^[a-f0-9]{64}$');
+UPDATE pe_schema SET version=26 WHERE version=25;
 `

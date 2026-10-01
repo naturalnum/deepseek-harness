@@ -10,6 +10,10 @@
     "README.zh.md"
   ],
   "exports": {
+    "./execution-files": {
+      "types": "./lib/execution-files.d.ts",
+      "default": "./lib/execution-files.js"
+    },
     "./file-download": {
       "types": "./lib/file-download.d.ts",
       "default": "./lib/file-download.js"

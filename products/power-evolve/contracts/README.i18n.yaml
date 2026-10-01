@@ -3,20 +3,20 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write products/power-evolve/contracts/README.md
 /:
-  en: 22088b62e6b5c787
-  zh: 231ad956cbf12d77
+  en: b03ffd9e400bc593
+  zh: 5327acce89a8bb80
 /powerevolve-wire-records:
   en: 959733041c2d7051
   zh: 998e5c1a7ab3a634
 /powerevolve-wire-records/summary:
-  en: e81cf52809b4e9a1
-  zh: b8ba80d0f7b78f52
+  en: 961db0a0aa9ebc2d
+  zh: 72eae69b19dff06d
 /powerevolve-wire-records/table-of-contents:
   en: 10bda947b77521d2
   zh: b2a9ba7954400f65
 /powerevolve-wire-records/use-this-package:
-  en: 371c46352b6ce115
-  zh: 47764c5428127b25
+  en: b1aa82eca7a596fa
+  zh: 47593296dd03a8b7
 /powerevolve-wire-records/implementation:
   en: 7ee3631921e3b7f4
   zh: c1a4fdf969967340

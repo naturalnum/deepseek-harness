@@ -74,6 +74,8 @@ The local `scripts/trial.mjs` launcher accepts `PE_TRIAL_DATABASE=external` to r
 
 ## Recovery and limits
 
+Schema 26 stores an optional expected source digest with each immutable artifact publication request. Existing publications retain a null value. The same request ID must retain its Session, path and expected digest; conditional publication rejects changed source bytes. Execution file observations use the existing execution result column, without changing native Session event types. See the [file completion slice](../S2-COMPLETION.md) for verification and rollout requirements.
+
 Schema 24 separates immutable SSH configuration and credential versions from current connection pointers and owner-scoped mutation receipts. Migration preserves existing ciphertext and its original encryption context, including historical calls and approvals. Missing historical credentials, inconsistent historical targets or conflicting request IDs abort the entire migration. Stop Platform writers and retain a verified database and key backup before upgrading; an older build requires restoring that backup rather than downgrading these records.
 
 The local backup CLI supports an existing PostgreSQL server and preserves MCP configuration, encryption keys and referenced CA files. Restoring requires an independent empty database and private storage paths. `PE_BACKUP_KEEP_STOPPED=1` preserves the stopped application state; it does not stop PostgreSQL. See [backup prerequisites and failure boundaries](../TRIAL-S7C-BACKUP.md) before using either database mode.
