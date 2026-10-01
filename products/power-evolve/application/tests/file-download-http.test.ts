@@ -146,10 +146,14 @@ test('Host proxy binds its credential-free query, safe headers, error codes and 
     assert.equal(url.href.includes(token), false)
     if (mode === 'redirect') { response.writeHead(302, { location: '/must-not-follow' }).end(); return }
     if (mode === 'changed') { response.writeHead(409).end('{"error":"download_changed"}'); return }
+    if (mode === 'timeout') { response.writeHead(504).end('{"error":"download_timeout"}'); return }
     if (mode === 'private-error') { response.writeHead(404).end('{"error":"file_not_found","token":"must-not-pass"}'); return }
     if (mode === 'large-error') { response.writeHead(413).end('x'.repeat(1100)); return }
     if (mode === 'malformed-error') { response.writeHead(404).end('not JSON'); return }
     if (mode === 'unexpected-error') { response.writeHead(503).end('{"error":"private_internal_reason"}'); return }
+    if (mode === 'no-length') {
+      response.writeHead(200, { 'content-type': 'application/octet-stream' }); response.flushHeaders(); response.end('data'); return
+    }
     const headers = { 'content-type': mode === 'wrong-mime' ? 'text/plain' : 'application/octet-stream',
       'content-length': mode === 'too-large' ? String(2 * 1024 * 1024 + 1) : '4',
       'content-disposition': 'inline; filename="untrusted.html"', 'cache-control': 'public' }
@@ -170,10 +174,11 @@ test('Host proxy binds its credential-free query, safe headers, error codes and 
   assert.equal(socket.headers['cache-control'], 'no-store')
   assert.equal(socket.headers['x-content-type-options'], 'nosniff')
   assert.equal(socket.ended, true)
-  for (const [next, status, code] of [['changed', 409, 'download_changed'], ['private-error', 502, 'download_unavailable'],
+  for (const [next, status, code] of [['changed', 409, 'download_changed'], ['timeout', 504, 'download_timeout'],
+    ['private-error', 502, 'download_unavailable'],
     ['large-error', 502, 'download_unavailable'], ['malformed-error', 502, 'download_unavailable'],
     ['unexpected-error', 502, 'download_unavailable'], ['wrong-mime', 502, 'download_unavailable'],
-    ['too-large', 502, 'download_unavailable']] as const) {
+    ['too-large', 502, 'download_unavailable'], ['no-length', 502, 'download_unavailable']] as const) {
     mode = next
     const denied = new SocketFixture()
     await assert.rejects(proxyFileDownload(origin, token, request, denied.response, AbortSignal.timeout(2000)), { status, code })
@@ -184,6 +189,13 @@ test('Host proxy binds its credential-free query, safe headers, error codes and 
   const before = observed
   await assert.rejects(proxyFileDownload(origin, token, request, new SocketFixture().response, AbortSignal.timeout(2000)))
   assert.equal(observed, before + 1, 'Redirect targets must never receive a request')
+  mode = 'valid'; request.paths[0] = "报告/结果 ('x')*.bin"
+  const punctuation = new SocketFixture()
+  await proxyFileDownload(origin, token, request, punctuation.response, AbortSignal.timeout(2000))
+  const filename = punctuation.headers['content-disposition']!.split("UTF-8''")[1]!
+  assert.match(filename, /^(?:[A-Za-z0-9!#$&+.^_`|~-]|%[a-f0-9]{2})+$/iu,
+    'RFC 8187 attr-char excludes unescaped apostrophes, parentheses and asterisks')
+  assert.equal(decodeURIComponent(filename), "结果 ('x')*.bin")
 })
 
 async function eventually<T>(check: () => Promise<T | false>, label: string, timeout = 10000): Promise<T> {
@@ -316,8 +328,7 @@ async function fixture(t: TestContext) {
   }
   const platform = await start('platform'), host = await start('host')
   assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 25)
-  const browsers: Browser[] = []
-  for (const user of users) {
+  async function login(user: { username: string; password: string }): Promise<Browser> {
     const login = await fetch(`${platform.url}/identity/login`, { method: 'POST',
       headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: user.username, password: user.password }) })
     assert.equal(login.status, 200)
@@ -327,8 +338,10 @@ async function fixture(t: TestContext) {
     assert.equal(exchange.status, 200)
     const cookie = exchange.headers.getSetCookie().find(value => value.includes('Path=/api/powerEvolve'))?.split(';')[0]
     assert.ok(cookie)
-    browsers.push({ ...user, cookie, userId: identity.user.userId })
+    return { ...user, cookie, userId: identity.user.userId }
   }
+  const browsers: Browser[] = []
+  for (const user of users) browsers.push(await login(user))
 
   function rpcResponse(browser: Browser | undefined, method: string, request: unknown, signal?: AbortSignal) {
     return fetch(`${host.url}/api/powerEvolve/${method}`, { method: 'POST',
@@ -372,7 +385,7 @@ async function fixture(t: TestContext) {
     })
   }
   function file(session: Session, path: string) { return join(temporary, 'workspaces', session.workspaceId, path) }
-  return { pool, temporary, host, platform, browsers, rpc, rpcResponse, create, put, prepare, content, pausedContent, file }
+  return { pool, temporary, host, platform, browsers, login, rpc, rpcResponse, create, put, prepare, content, pausedContent, file }
 }
 
 function headers(response: Response, view: FileDownloadView): void {
@@ -385,6 +398,7 @@ function headers(response: Response, view: FileDownloadView): void {
   assert.match(disposition, /^attachment;/u)
   const encoded = /filename\*=UTF-8''([^;]+)/iu.exec(disposition)?.[1]
   assert.ok(encoded, 'Attachment name must support Unicode without header injection')
+  assert.match(encoded, /^(?:[A-Za-z0-9!#$&+.^_`|~-]|%[a-f0-9]{2})+$/iu)
   assert.equal(decodeURIComponent(encoded), view.fileName)
 }
 
@@ -409,6 +423,7 @@ test('workspace downloads cross real Host and Platform Profiles with V25 account
     const aliceProject = await f.create(alice, project.workspaceId)
     const selected = new Map([
       ['报告/结果 #1%.txt', Buffer.from('带有换行的真实下载\nsecond line\n')],
+      ["报告/结果 ('x')*.txt", Buffer.from('attachment parameter punctuation')],
       ['left/same.bin', Buffer.from([0, 255, 128, 13, 10, 0, 1])],
       ['right/same.bin', Buffer.from([1, 0, 254, 127])], ['empty.bin', Buffer.alloc(0)],
     ])
@@ -585,13 +600,24 @@ test('workspace downloads cross real Host and Platform Profiles with V25 account
       assert.deepEqual(await archive.files.at(-1)!.buffer(), await readFile(f.file(aliceProject, paths.at(-1)!)))
     })
 
-    await t.test('credential revocation between prepare and GET is authoritative in Host and direct Platform', async () => {
+    await t.test('credential revocation between requests and during a stream is authoritative in Host and Platform', async () => {
       const view = await f.prepare(alice, aliceProject, ['scope.txt'])
       await f.pool.query('UPDATE pe_users SET credential_version=credential_version+1 WHERE id=$1', [alice.userId])
       await error(await f.content(alice, view.downloadUrl), 401)
       await error(await f.rpcResponse(alice, 'filesDownloadPrepare', { sessionId: aliceProject.sessionId, paths: ['scope.txt'] }), 401)
       const direct = `${FILE_DOWNLOAD_PLATFORM_PATH}${view.downloadUrl.slice(FILE_DOWNLOAD_CONTENT_PATH.length)}`
       await error(await fetch(new URL(direct, f.platform.url), { headers: { authorization: `Bearer ${alice.cookie.slice('pe_agent='.length)}` } }), 401)
+      const fresh = await f.login(alice)
+      const paths = Array.from({ length: 16 }, (_, i) => `stream-${String(i).padStart(2, '0')}.bin`)
+      const streaming = await f.prepare(fresh, aliceProject, paths)
+      const response = await f.pausedContent(fresh, streaming.downloadUrl)
+      assert.equal(response.statusCode, 200)
+      await f.pool.query('UPDATE pe_users SET enabled=false WHERE id=$1', [alice.userId])
+      let received = 0
+      await assert.rejects(async () => {
+        for await (const chunk of response) received += (chunk as Buffer).length
+      })
+      assert.ok(received < streaming.totalBytes, 'Disabling an account must abort later stream output')
       assert.equal(await (await f.content(bob, (await f.prepare(bob, bobDefault, ['scope.txt'])).downloadUrl)).text(), 'bob workspace')
     })
     assert.deepEqual(await counts(), baseline, 'Downloads must create no persistent mutation, artifact, operation or Sandbox')
