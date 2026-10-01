@@ -1,5 +1,5 @@
 ---
-description: "Shared PowerEvolve account records for browser clients and the trusted Platform."
+description: "Shared PowerEvolve wire records for browser clients and the trusted Platform."
 kind: "package-library"
 ---
 # PowerEvolve wire records
@@ -8,7 +8,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This private library supplies account request validation, response records, route names and branded user identifiers. Both browser clients and the trusted Platform consume the same definitions. It imports no Platform services or Node APIs and registers no DSH plugin.
+This private library supplies account and file-download validation, response records, route names and branded identifiers. Both browser clients and the trusted Platform consume the same definitions. It imports no Platform services or Node APIs and registers no DSH plugin.
 
 ## Table of Contents
 
@@ -20,6 +20,8 @@ This private library supplies account request validation, response records, rout
 ## Use this package
 
 Import account records from `@power-evolve/contracts/account`. Zod parsers reject invalid wire values; their inferred types describe validated values. The [account source](src/account.ts) owns the fields and routes. Consumers declare a workspace dependency and a TypeScript project reference to this package.
+
+Import download requests and the same-origin URL builder from `@power-evolve/contracts/file-download`. The [download source](src/file-download.ts) defines canonical relative paths, metadata digests and protocol ceilings. Deployment limits and authorization remain with the Platform; see the [file slice](../S2-COMPLETION.md).
 
 ## Implementation
 

@@ -1,5 +1,5 @@
 ---
-description: "浏览器客户端与可信平台共用的 PowerEvolve 账号记录。"
+description: "浏览器客户端与可信平台共用的 PowerEvolve 协议记录。"
 kind: "package-library"
 ---
 # PowerEvolve 协议记录
@@ -8,7 +8,7 @@ kind: "package-library"
 
 ## 摘要
 
-此私有库提供账号请求校验、响应记录、路由名和品牌化用户标识符。浏览器客户端与可信平台消费相同的定义。它不导入平台服务或 Node API，也不注册 DSH 插件。
+此私有库提供账号与文件下载校验、响应记录、路由名和品牌化标识符。浏览器客户端与可信平台消费相同的定义。它不导入平台服务或 Node API，也不注册 DSH 插件。
 
 ## 目录
 
@@ -20,6 +20,8 @@ kind: "package-library"
 ## 使用此包 {#use-this-package}
 
 从 `@power-evolve/contracts/account` 导入账号记录。Zod 解析器拒绝无效协议值，其推导类型描述已校验的值。[账号源码](src/account.ts) 定义字段与路由。消费者声明对此包的工作区依赖和 TypeScript 项目引用。
+
+从 `@power-evolve/contracts/file-download` 导入下载请求及同源 URL 构造函数。[下载源码](src/file-download.ts) 定义规范相对路径、元数据摘要和协议上限。部署限额与授权仍由平台负责，见[文件切片](../S2-COMPLETION.md)。
 
 ## 实现 {#implementation}
 

@@ -29,6 +29,7 @@
     // under its own tsconfig boundary.
     "paths": {
       "@power-evolve/contracts/account": ["./products/power-evolve/contracts/src/account.ts"],
+      "@power-evolve/contracts/file-download": ["./products/power-evolve/contracts/src/file-download.ts"],
       "@deepseek-ai/dsh-client-ui-settings-account": ["./packages/client/ui-settings-account/src/index.ts"],
       "@deepseek-ai/dsh-client-ui-settings-account/client": ["./packages/client/ui-settings-account/src/client/index.ts"],
       "@deepseek-ai/dsh-api-gateway/stream-protocol": ["./packages/api/gateway/src/stream-protocol.ts"],
