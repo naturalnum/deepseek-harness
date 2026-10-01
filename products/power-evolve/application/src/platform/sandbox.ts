@@ -57,6 +57,7 @@ export class MountSlotBlocked extends Error {
 }
 
 type Acquired = { kind: 'reserved' | 'ready'; slot: MountSlot; binding: StorageBinding }
+  | { kind: 'observing'; slot: MountSlot; binding: StorageBinding; podUid: string | null }
   | { kind: 'stop'; slot: MountSlot }
   | { kind: 'blocked'; code: string; retryable: boolean }
 
@@ -152,7 +153,7 @@ export class SandboxManager {
   }
   private async ensure(resource: 'sandboxes' | 'services' | 'secrets', name: string,
     body: Record<string, unknown>, labels: Record<string, string>, token: string,
-    assertCurrent: () => Promise<void>): Promise<void> {
+    assertCurrent: () => Promise<void>, observeOnly = false): Promise<void> {
     const matches = (expected: unknown, actual: unknown): boolean => {
       if (typeof expected !== 'object' || expected === null) return expected === actual
       if (Array.isArray(expected)) return Array.isArray(actual) && expected.length === actual.length
@@ -172,6 +173,7 @@ export class SandboxManager {
       }
       return
     }
+    if (observeOnly) throw new MountSlotBlocked(`mount_${resource}_creation_missing`, false)
     await assertCurrent()
     try { await this.kube.call('POST', this.kube.resourcePath(this.config.namespace, resource), body) }
     catch (error) {
@@ -314,7 +316,15 @@ export class SandboxManager {
         if (!created.rowCount) throw new MountSlotBlocked('mount_instance_unreconciled', false)
         return { kind: 'reserved', slot: updated.rows[0]!, binding }
       }
-      if (slot.state === 'unknown' || slot.state === 'reserved') {
+      if (slot.state === 'reserved') {
+        if (slot.session_id !== sessionId || slot.workspace_id !== workspaceId
+          || !this.sameBinding(slot.binding_snapshot, binding)) {
+          return { kind: 'blocked', code: 'mount_slot_reserved', retryable: false }
+        }
+        const podUid = await this.reserved(slot, client)
+        return { kind: 'observing', slot, binding, podUid }
+      }
+      if (slot.state === 'unknown') {
         return { kind: 'blocked', code: `mount_slot_${slot.state}`, retryable: false }
       }
       if (slot.state === 'stopping') {
@@ -356,23 +366,46 @@ export class SandboxManager {
     })
   }
 
-  private async assertReserved(slot: MountSlot, assertLease: () => Promise<void>): Promise<void> {
+  private async assertReserved(slot: MountSlot, assertLease: () => Promise<void>, podUid: string | null): Promise<void> {
     await assertLease()
-    await transaction(this.pool, async client => {
-      await this.lockUser(client, slot.user_id)
-      const binding = await this.readyBinding(client, slot.user_id, slot.workspace_id!)
-      const result = await client.query<MountSlot>('SELECT * FROM pe_mount_slots WHERE user_id=$1 FOR UPDATE', [slot.user_id])
-      const current = result.rows[0]
-      if (!current || current.state !== 'reserved' || current.generation !== slot.generation
-        || current.session_id !== slot.session_id || current.workspace_id !== slot.workspace_id
-        || !this.sameBinding(slot.binding_snapshot, binding) || !this.sameBinding(current.binding_snapshot, binding)) {
-        throw new MountSlotBlocked('mount_reservation_changed', false)
-      }
+    await transaction(this.pool, client => this.reserved(slot, client, podUid))
+  }
+
+  private async reserved(slot: MountSlot, client: PoolClient, podUid?: string | null): Promise<string | null> {
+    await this.lockUser(client, slot.user_id)
+    const binding = await this.readyBinding(client, slot.user_id, slot.workspace_id!)
+    const result = await client.query<MountSlot>('SELECT * FROM pe_mount_slots WHERE user_id=$1 FOR UPDATE', [slot.user_id])
+    const current = result.rows[0]
+    const instance = await client.query<{ state: string; user_id: string; name: string; pod_uid: string | null;
+      runner_instance_id: string | null; binding_snapshot: unknown }>(
+      'SELECT state,user_id,name,pod_uid,runner_instance_id,binding_snapshot FROM pe_sandbox_instances WHERE session_id=$1 FOR UPDATE',
+      [slot.session_id])
+    const row = instance.rows[0]
+    if (!current || current.state !== 'reserved' || current.generation !== slot.generation
+      || current.session_id !== slot.session_id || current.workspace_id !== slot.workspace_id
+      || current.pod_uid !== null || current.runner_instance_id !== null
+      || !this.sameBinding(slot.binding_snapshot, binding) || !this.sameBinding(current.binding_snapshot, binding)
+      || !row || row.state !== 'creating' || row.user_id !== slot.user_id || row.name !== this.name(slot.user_id)
+      || podUid !== undefined && row.pod_uid !== podUid || row.runner_instance_id !== null
+      || !this.sameBinding(row.binding_snapshot, binding)) {
+      throw new MountSlotBlocked('mount_reservation_changed', false)
+    }
+    return row.pod_uid
+  }
+
+  private async retainCreatingPod(slot: MountSlot, uid: string, assertLease: () => Promise<void>): Promise<string> {
+    await assertLease()
+    return transaction(this.pool, async client => {
+      await this.reserved(slot, client, null)
+      const instance = await client.query(`UPDATE pe_sandbox_instances SET pod_uid=$2,updated_at=now()
+        WHERE session_id=$1 AND state='creating' AND pod_uid IS NULL RETURNING session_id`, [slot.session_id, uid])
+      if (!instance.rowCount) throw new MountSlotBlocked('mount_reservation_changed', false)
+      return uid
     })
   }
 
   /**
-   * Creating is persisted before the first Kubernetes mutation; an interrupted creation stays blocked.
+   * Persist creation before Kubernetes mutation; a retry observes only the same owned reservation and resources.
    * @param sessionId - Session requesting its owned workspace.
    * @param userId - Owner whose shared Home limits the active writer.
    * @param assertLease - Rejects when the calling execution worker loses its lease.
@@ -400,30 +433,31 @@ export class SandboxManager {
           token: this.token(this.name(userId), sessionId, slot.generation), restartCount: 0,
           generation: slot.generation, sessionId, userId, binding: selected.binding }
       }
-      return this.createReserved(slot, selected.binding, assertLease)
+      return this.createReserved(slot, selected.binding, assertLease, selected.kind === 'observing',
+        selected.kind === 'observing' ? selected.podUid : null)
     }
     throw new MountSlotBlocked('mount_handoff_incomplete', false)
   }
 
   private async createReserved(slot: MountSlot, binding: StorageBinding,
-    assertLease: () => Promise<void>): Promise<SandboxReady> {
+    assertLease: () => Promise<void>, observeOnly = false, podUid: string | null = null): Promise<SandboxReady> {
     const workspaceId = binding.workspaceId
     const sessionId = slot.session_id!, userId = slot.user_id, generation = slot.generation
     const name = this.name(userId), labels = this.labels(sessionId, userId, name, generation)
     const namespace = this.config.namespace, token = this.token(name, sessionId, generation)
-    const check = () => this.assertReserved(slot, assertLease)
+    const check = () => this.assertReserved(slot, assertLease, podUid)
     await check()
     await this.ensure('secrets', name, {
       apiVersion: 'v1', kind: 'Secret', metadata: { name, namespace, labels }, type: 'Opaque',
       stringData: { token },
-    }, labels, token, check)
+    }, labels, token, check, observeOnly)
     await check()
     await this.ensure('services', name, {
       apiVersion: 'v1', kind: 'Service', metadata: { name, namespace, labels },
       spec: { type: 'ClusterIP', selector: { 'app.kubernetes.io/instance': name,
         'powerevolve.dev/session': sessionId, 'powerevolve.dev/generation': generation },
         ports: [{ name: 'http', port: 8080, targetPort: 8080 }] },
-    }, labels, token, check)
+    }, labels, token, check, observeOnly)
     await check()
     const claim = this.config.volumeClaimName
     const volumeMounts = [
@@ -476,7 +510,7 @@ export class SandboxManager {
           { name: 'scratch', emptyDir: { sizeLimit: '256Mi' } },
         ],
       } } },
-    }, labels, token, check)
+    }, labels, token, check, observeOnly)
     const deadline = Date.now() + this.config.readyTimeoutMs
     while (Date.now() < deadline) {
       await check()
@@ -486,6 +520,30 @@ export class SandboxManager {
         typeof value === 'object' && value !== null && 'type' in value && value.type === 'Ready'
         && 'status' in value && value.status === 'True')
       const current = pod as Pod | null
+      if (!sandbox || sandbox.metadata.deletionTimestamp || !sandbox.metadata.uid || !this.owned(sandbox, labels)) {
+        throw new MountSlotBlocked('mount_sandboxes_identity_changed', false)
+      }
+      if (!current && podUid || current && (!current.metadata.uid || current.metadata.deletionTimestamp
+        || !this.owned(current, labels) || !current.metadata.ownerReferences?.some(ref => ref.uid === sandbox.metadata.uid)
+        || podUid !== null && current.metadata.uid !== podUid)) {
+        throw new MountSlotBlocked('mount_pod_identity_changed', false)
+      }
+      if (current?.metadata.uid) {
+        if (!this.hasSkillPackageIdentity(sandbox, current, userId, binding)) {
+          throw new MountSlotBlocked('mount_skill_package_identity_changed', false)
+        }
+        if (!podUid) podUid = await this.retainCreatingPod(slot, current.metadata.uid, assertLease)
+        const finalizers = current.metadata.finalizers ?? []
+        if (!finalizers.includes(STOP_FINALIZER)) {
+          if (!current.metadata.resourceVersion || finalizers.length > 16) {
+            throw new MountSlotBlocked('mount_pod_finalizer_unavailable', false)
+          }
+          await check()
+          await this.kube.call('PATCH', this.kube.resourcePath(namespace, 'pods', name), {
+            metadata: { resourceVersion: current.metadata.resourceVersion, finalizers: [...finalizers, STOP_FINALIZER] },
+          })
+        }
+      }
       if (ready && current?.metadata.uid && this.owned(current, labels)
         && current.metadata.ownerReferences?.some(ref => ref.uid === sandbox?.metadata.uid)
         && current.status?.phase === 'Running' && current.status.containerStatuses?.[0]?.ready) {
@@ -495,16 +553,6 @@ export class SandboxManager {
         try {
           const health = await this.runner<{ ready: boolean; instanceId: string }>(name, token, 'GET', '/health')
           if (health.ready && /^[a-f0-9-]{36}$/.test(health.instanceId)) {
-            const finalizers = current.metadata.finalizers ?? []
-            if (!finalizers.includes(STOP_FINALIZER)) {
-              if (!current.metadata.resourceVersion || current.metadata.deletionTimestamp || finalizers.length > 16) {
-                throw new MountSlotBlocked('mount_pod_finalizer_unavailable', false)
-              }
-              await check()
-              await this.kube.call('PATCH', this.kube.resourcePath(namespace, 'pods', name), {
-                metadata: { resourceVersion: current.metadata.resourceVersion, finalizers: [...finalizers, STOP_FINALIZER] },
-              })
-            }
             const retained = await this.get('pods', name)
             if (!retained || retained.metadata.uid !== current.metadata.uid || retained.metadata.deletionTimestamp
               || !retained.metadata.finalizers?.includes(STOP_FINALIZER) || !this.owned(retained, labels)) {
@@ -518,11 +566,12 @@ export class SandboxManager {
               const value = currentSlot.rows[0]
               if (!value || value.state !== 'reserved' || value.generation !== generation
                 || value.session_id !== sessionId || value.workspace_id !== workspaceId
+                || value.pod_uid !== null || value.runner_instance_id !== null
                 || !this.sameBinding(value.binding_snapshot, binding) || !this.sameBinding(currentBinding, binding)) return false
               const instance = await client.query(
                 `UPDATE pe_sandbox_instances SET state='ready',pod_uid=$2,runner_instance_id=$3,
                  last_used_at=now(),updated_at=now() WHERE session_id=$1 AND user_id=$4 AND name=$5
-                 AND state='creating' AND binding_snapshot=$6::jsonb RETURNING session_id`,
+                 AND state='creating' AND pod_uid=$2 AND binding_snapshot=$6::jsonb RETURNING session_id`,
                 [sessionId, retained.metadata.uid, health.instanceId, userId, name, JSON.stringify(binding)])
               if (!instance.rowCount) return false
               await client.query(
