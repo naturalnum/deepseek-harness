@@ -19,13 +19,17 @@ export interface ArtifactTurnData {
 }
 
 declare module '@deepseek-ai/dsh-client-ui-conversation/client' {
-  interface ConversationTurnDataMap { powerEvolveArtifacts: ArtifactTurnData }
+  interface ConversationTurnDataMap {
+    powerEvolveArtifacts: ArtifactTurnData
+    powerEvolveArtifactAssociations: readonly ExecutionReference[]
+  }
 }
 
 interface ArtifactState extends ArtifactTurnData {
   readonly turn: number | undefined
   readonly known: readonly ExecutionReference[]
   readonly calls: ReadonlySet<string>
+  readonly associationTurn: number | undefined
 }
 
 /** Data-only Conversation definition; it publishes no files from tool arguments, receipts or prose. */
@@ -48,13 +52,16 @@ export const artifactDefinition: ConversationNodeDefinition<ArtifactState> = {
         ? source.executionId : undefined
       const valid = executionFilesRequest.shape.executionIds.element.safeParse(executionId)
       const reference = known.find(item => item.executionId === executionId)
-      return { turn: undefined, known, calls: new Set(), executions: [],
-        associated: !valid.success ? [] : [{ executionId: valid.data, callId: reference?.callId,
-          turn: reference?.turn, seq: match.event.seq }] }
+      const associationTurn = match.location.kind === 'turn' || match.location.kind === 'step' ? match.location.turn.turn : undefined
+      const associated = associationTurn !== undefined && previous?.associationTurn === associationTurn ? previous.associated : []
+      return { turn: undefined, known, calls: new Set(), executions: [], associationTurn,
+        associated: !valid.success ? associated : [...associated.filter(item => item.executionId !== valid.data),
+          { executionId: valid.data, callId: reference?.callId, turn: reference?.turn, seq: match.event.seq }] }
     }
     if (match.event.type !== 'turn/start') throw new Error('Execution references require native turn/start')
-    return { turn: match.event.data.turn, known, calls: new Set(), executions: [],
-      associated: previous?.turn === undefined ? previous?.associated ?? [] : [] }
+    const associated = previous !== undefined && previous.turn === undefined && previous.associationTurn === undefined ? previous.associated : []
+    return { turn: match.event.data.turn, known, calls: new Set(), executions: [], associated,
+      associationTurn: associated.length === 0 ? undefined : match.event.data.turn }
   },
   update: (context, match) => {
     if (match.event.type === 'tool/call') {
@@ -87,6 +94,24 @@ export const artifactDefinition: ConversationNodeDefinition<ArtifactState> = {
   },
 }
 
+interface AssociationClosing { readonly turn: number; readonly associated: readonly ExecutionReference[] }
+
+/** Native inputs are logged after turn/start; collect their trusted associations once the closing is known. */
+export const artifactAssociationsDefinition: ConversationNodeDefinition<AssociationClosing> = {
+  kind: 'powerEvolveArtifactAssociations',
+  match: event => event.type === 'turn/end' ? { id: String(event.data.turn), role: 'start' } : null,
+  start: (_context, match, reader) => {
+    if (match.event.type !== 'turn/end') throw new Error('Execution associations require native turn/end')
+    const turn = match.event.data.turn
+    const previous = reader.previous<ArtifactState>('powerEvolveArtifacts')?.state
+    return { turn, associated: previous?.associationTurn === turn ? previous.associated : [] }
+  },
+  update: context => context.state,
+  buildLocationData: (context, scope) => scope !== 'turn' || context.state === undefined ? null : {
+    kind: 'turn', turn: context.state.turn, key: 'powerEvolveArtifactAssociations', value: context.state.associated,
+  },
+}
+
 /** Select only native receipts present at this closing, optionally including a trusted continuation.
  * @param owner - native closing turn and its sequence.
  * @param associated - include continuation references for prose, never for the original output row.
@@ -95,7 +120,10 @@ export const artifactDefinition: ConversationNodeDefinition<ArtifactState> = {
 export function referencesForClosing(owner: TurnTailOwnerProps, associated = false): readonly ExecutionReference[] {
   const data = owner.turn.data.get('powerEvolveArtifacts')
   const through = associated ? owner.seq : owner.turn.end?.seq ?? owner.seq
-  return (associated ? [...data?.executions ?? [], ...data?.associated ?? []] : data?.executions ?? [])
+  const references = associated
+    ? [...data?.executions ?? [], ...data?.associated ?? [], ...owner.turn.data.get('powerEvolveArtifactAssociations') ?? []]
+    : data?.executions ?? []
+  return [...new Map(references.map(item => [JSON.stringify([item.executionId, item.callId, item.seq]), item])).values()]
     .filter(item => item.seq <= through).sort((left, right) => left.seq - right.seq)
 }
 

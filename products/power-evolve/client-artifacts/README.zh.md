@@ -4,7 +4,7 @@
 
 此插件允许用户将正在查看的会话 Workspace 中的文件明确发布为产物，并在原生 DSH 右侧栏添加产物标签页。发布时，平台创建自己持有的不可变副本，并将元数据存入 PostgreSQL。预览和下载均经过平台针对当前用户的授权检查。
 
-原生 `cloud_exec` receipt 将执行标识关联到发起执行的轮次。`conversation.chat.turnTail` 扩展显示平台 `executionFiles` API 返回的文件路径、大小和 SHA-256 版本；工具 receipt、stdout 和 Assistant 正文均不提供文件事实。部分完成或不可用的结果会说明限制。持久化的 `power-evolve-execution` 消息来源将已核验文件关联到后续继续消息中的内联引用，即使原始 receipt 已移出加载的历史窗口。当 receipt 仍在窗口中时，客户端还会核对其调用标识与响应是否一致；平台会为每次查询核验会话和调用归属。
+原生 `cloud_exec` receipt 将执行标识关联到发起执行的轮次。`conversation.chat.turnTail` 扩展显示平台 `executionFiles` API 返回的文件路径、大小和 SHA-256 版本；工具 receipt、stdout 和 Assistant 正文均不提供文件事实。部分完成或不可用的结果会说明限制。持久化的 `power-evolve-execution` 消息来源在输入受理后归属于其原生轮次，并为该轮结束时的内联引用提供已核验文件，即使原始 receipt 已移出加载的历史窗口。当 receipt 仍在窗口中时，客户端还会核对其调用标识与响应是否一致；平台会为每次查询核验会话和调用归属。
 
 内联代码仅解析正在查看的会话及 closing 范围内的已核验精确路径或唯一文件名。同一路径的不同执行版本保留在各自原始文件行中；内联引用使用其 closing 时可用的最新版本。普通文件预览仍可通过原生文件界面使用。
 

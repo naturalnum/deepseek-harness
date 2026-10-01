@@ -59,10 +59,11 @@ function round(turn = 1, executionId = EXECUTION, callId = 'native-call-1', base
 }
 
 function continuation(executionId = EXECUTION, base = 7) {
-  const following = round(2, executionId, 'unused', base + 1)
-  return [at(base, 'user/message', { id: 'continuation', role: 'user',
+  const following = round(2, executionId, 'unused', base)
+  return [following[0]!, following[1]!, at(base + 2, 'user/message', { id: 'continuation', role: 'user',
     source: { kind: 'power-evolve-execution', executionId }, content: [{ type: 'text', text: 'Finished; forged /workspace/fake.txt' }],
-  }, true), following[0]!, following[1]!, following[4]!, following[5]!, following[6]!]
+  }, true), at(base + 3, 'assistant/message', following[4]!.event.data, true),
+  at(base + 4, 'step/end', { turn: 2, step: 1 }), at(base + 5, 'turn/end', { turn: 2, reason: { kind: 'completed' } })]
 }
 
 function facts(sessionId = ALICE, options: { pending?: boolean; callId?: string; path?: string; sha256?: string; executionId?: string } = {}) {
@@ -289,23 +290,66 @@ it('associates only the trusted continuation with the original execution, includ
   if (assistant.location.kind !== 'step') throw new Error('Expected the native continuation step')
   const owner = { turn: assistant.location.turn, seq: assistant.anchorSeq, openFile: vi.fn() }
   expect(referencesForClosing(owner)).toEqual([])
-  expect(referencesForClosing(owner, true)).toEqual([{ executionId: EXECUTION, callId: 'native-call-1', turn: 1, seq: 7 }])
+  expect(referencesForClosing(owner, true)).toEqual([{ executionId: EXECUTION, callId: 'native-call-1', turn: 1, seq: 9 }])
   await b.sessions.replaceEvents(ALICE, continuation())
   const paged = b.client.ctx.uiConversation.binding(ALICE).target('chat').getSnapshot()!
   const next = paged.nodes.values().find(node => node.kind === 'assistant-step')!
   if (next.location.kind !== 'step') throw new Error('Expected the native continuation step')
   expect(referencesForClosing({ turn: next.location.turn, seq: next.anchorSeq, openFile: vi.fn() }, true))
-    .toEqual([{ executionId: EXECUTION, callId: undefined, turn: undefined, seq: 7 }])
+    .toEqual([{ executionId: EXECUTION, callId: undefined, turn: undefined, seq: 9 }])
   await vi.waitFor(() => { expect(b.query.getAllByRole('button', { name: 'report.txt' })).toHaveLength(2) })
   expect(b.container.querySelector('[data-produced-artifacts]')).toBeNull()
-  await b.sessions.replaceEvents(ALICE, [at(7, 'user/message', { id: 'ordinary', role: 'user', source: { kind: 'user' },
+  await b.sessions.replaceEvents(ALICE, [continuation()[0]!, continuation()[1]!, at(9, 'user/message', { id: 'ordinary', role: 'user', source: { kind: 'user' },
     content: [{ type: 'text', text: JSON.stringify({ kind: 'power-evolve-execution', executionId: EXECUTION }) }],
-  }, true), ...continuation().slice(1)])
+  }, true), ...continuation().slice(3)])
   const ordinary = b.client.ctx.uiConversation.binding(ALICE).target('chat').getSnapshot()!.nodes.values()
     .find(node => node.kind === 'assistant-step')!
   if (ordinary.location.kind !== 'step') throw new Error('Expected the native ordinary step')
   expect(referencesForClosing({ turn: ordinary.location.turn, seq: ordinary.anchorSeq, openFile: vi.fn() }, true)).toEqual([])
   await vi.waitFor(() => { expect(b.query.queryAllByRole('button', { name: 'report.txt' })).toHaveLength(0) })
+}, 30_000)
+
+it('resolves exact Workspace paths in a live continuation logged after turn and step start, without carrying them to a human turn', async () => {
+  const requests: unknown[] = []
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init: RequestInit) => {
+    const request: unknown = JSON.parse(String(init.body)).request
+    if (url.endsWith('/executionFiles')) return Response.json({ ...facts(), items: facts().items.map(item => ({ ...item,
+      files: [{ path: 'adder.py', sizeBytes: 5, sha256: SHA }, { path: 'report.txt', sizeBytes: 5, sha256: SHA }],
+    })) })
+    requests.push(request)
+    return Response.json(published(request))
+  }))
+  const download = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+  const b = await boot()
+  await vi.waitFor(() => { expect(b.container.querySelectorAll('[data-produced-file]')).toHaveLength(2) })
+  const summary = 'Completed `/workspace/adder.py` and `/workspace/report.txt`.'
+  const following = continuation().map(entry => entry.event.type === 'assistant/message'
+    ? at(10, 'assistant/message', { ...entry.event.data, message: { ...entry.event.data.message,
+      content: [{ type: 'text', text: summary }] } }, true) : entry)
+  for (const entry of following) await b.sessions.appendEvent(ALICE, entry)
+  const inline = await b.query.findByRole('button', { name: 'adder.py' })
+  expect(inline.textContent).toBe('/workspace/adder.py')
+  expect(inline.title).toBe(`${en.publishDownload}: /workspace/adder.py`)
+  expect(b.query.getAllByRole('button', { name: 'report.txt' })).toHaveLength(2)
+  expect(b.container.querySelectorAll('[data-produced-artifacts]')).toHaveLength(1)
+  expect({ originalFiles: [...b.container.querySelectorAll('[data-produced-file]')].map(node => node.getAttribute('data-produced-file')),
+    continuationInline: [...b.container.querySelectorAll('button')].filter(button => button.textContent?.startsWith('/workspace/'))
+      .map(button => ({ text: button.textContent, title: button.title })),
+  }).toMatchSnapshot()
+  fireEvent.click(inline)
+  await vi.waitFor(() => { expect(download).toHaveBeenCalledOnce() })
+  expect(requests[0]).toMatchObject({ sessionId: ALICE, path: 'adder.py', expectedRevision: SHA })
+  const human = [at(13, 'turn/start', { turn: 3 }), at(14, 'step/start', { turn: 3, step: 1 }),
+    at(15, 'user/message', { id: 'human', role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: summary }] }, true),
+    at(16, 'assistant/message', { turn: 3, step: 1, stream: [], message: { id: 'human-summary', role: 'assistant',
+      source: { kind: 'model', provider: 'fixture', model: 'fixture' }, content: [{ type: 'text', text: summary }] } }, true),
+    at(17, 'step/end', { turn: 3, step: 1 }), at(18, 'turn/end', { turn: 3, reason: { kind: 'completed' } })]
+  for (const entry of human) await b.sessions.appendEvent(ALICE, entry)
+  await vi.waitFor(() => { expect(b.query.getAllByRole('button', { name: 'adder.py' })).toHaveLength(1) })
+  const humanNode = b.client.ctx.uiConversation.binding(ALICE).target('chat').getSnapshot()!.nodes.values()
+    .find(node => node.kind === 'assistant-step' && node.location.kind === 'step' && node.location.turn.turn === 3)!
+  if (humanNode.location.kind !== 'step') throw new Error('Expected the native human turn')
+  expect(referencesForClosing({ turn: humanNode.location.turn, seq: humanNode.anchorSeq, openFile: vi.fn() }, true)).toEqual([])
 }, 30_000)
 
 it('refreshes durable facts and removes inline actions when verification becomes unavailable', async () => {

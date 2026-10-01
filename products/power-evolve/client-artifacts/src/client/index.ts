@@ -3,7 +3,7 @@ import type { ChatFileMentions, TurnTailOwnerProps } from '@deepseek-ai/dsh-clie
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { Session } from '@deepseek-ai/dsh-api-session-controller/client'
 import { ExecutionFacts, filesForClosing, producedFileKey } from './execution-facts.ts'
-import { artifactDefinition, basename, referencesForClosing, resolveArtifactMention } from './produced-artifacts.ts'
+import { artifactAssociationsDefinition, artifactDefinition, basename, referencesForClosing, resolveArtifactMention } from './produced-artifacts.ts'
 import { ProducedArtifacts } from './ProducedArtifacts.tsx'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-workspace-controller/client'
@@ -40,6 +40,7 @@ export function apply(ctx: Context): void {
   })
   ctx.effect(() => () => { facts.dispose() }, 'PowerEvolve execution observations')
   ctx.uiConversation.events.register(artifactDefinition)
+  ctx.uiConversation.events.register(artifactAssociationsDefinition)
   const mentions = {
     changesForSession: (sessionId: Session['sessionId']) => facts.changesForSession(sessionId),
     forClosing: (owner, sessionId) => {

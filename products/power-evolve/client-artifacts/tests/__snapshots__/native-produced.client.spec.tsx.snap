@@ -20,6 +20,25 @@ exports[`resolves arriving Platform facts through native Chat and publishes the 
 }
 `;
 
+exports[`resolves exact Workspace paths in a live continuation logged after turn and step start, without carrying them to a human turn 1`] = `
+{
+  "continuationInline": [
+    {
+      "text": "/workspace/adder.py",
+      "title": "Publish and download: /workspace/adder.py",
+    },
+    {
+      "text": "/workspace/report.txt",
+      "title": "Publish and download: /workspace/report.txt",
+    },
+  ],
+  "originalFiles": [
+    "adder.py",
+    "report.txt",
+  ],
+}
+`;
+
 exports[`retries one version with the same request id, suppresses duplicate clicks and shows a changed source 1`] = `"Execution filesRefreshout/report.txtPublish and downloadThe source file changed. This version cannot be published."`;
 
 exports[`shows unavailable facts without claiming file absence (en) 1`] = `"Execution filesRefreshOnly verified files are shown; scanning or verification was incompleteFile facts are unavailable for this execution"`;
