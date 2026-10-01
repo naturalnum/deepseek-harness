@@ -7,6 +7,16 @@ import { FILE_DOWNLOAD_CONTENT_PATH, FILE_DOWNLOAD_MAX_FILE_BYTES, FILE_DOWNLOAD
   type FileDownloadContentRequest } from '@power-evolve/contracts/file-download'
 import { PlatformError } from './contracts.ts'
 
+/** Encode an attachment name with the RFC 8187 extended parameter character set.
+ * @param fileName - Validated basename chosen from the prepared selection.
+ * @returns Content-Disposition value without unescaped quotes or delimiters.
+ */
+export function fileDownloadDisposition(fileName: string): string {
+  const encoded = encodeURIComponent(fileName).replace(/['()*]/gu,
+    character => `%${character.charCodeAt(0).toString(16).toUpperCase()}`)
+  return `attachment; filename*=UTF-8''${encoded}`
+}
+
 /** Parse a credential-free content query, rejecting duplicate and unexpected fields.
  * @param url - Actual incoming URL; the caller owns route matching.
  * @returns Validated Session, paths and prepared metadata digest.
@@ -116,7 +126,7 @@ export async function proxyFileDownload(platformUrl: string, token: string, requ
   }
   const fileName = request.paths.length === 1 ? request.paths[0]!.split('/').at(-1)! : 'workspace-files.zip'
   response.writeHead(200, { 'content-type': contentType,
-    'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
+    'content-disposition': fileDownloadDisposition(fileName),
     'content-length': String(length), 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' })
   await writeFileDownload(upstream.body, response, length, signal)
 }

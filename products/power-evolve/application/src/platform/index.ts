@@ -28,6 +28,10 @@ import { NativeSessionRead, nativeFollowRequest, nativePageRequest } from './nat
 import { NativeWorkspaceRead } from './native-workspace-read.ts'
 import { NativeFileRead, nativeFileRequest, nativeFileTextRequest, nativeFileBytesRequest } from './native-files.ts'
 import { FileService } from './files.ts'
+import { FileDownloadService } from './file-downloads.ts'
+import { FILE_DOWNLOAD_MAX_FILES, FILE_DOWNLOAD_MAX_SOURCE_BYTES, FILE_DOWNLOAD_PLATFORM_PATH,
+  fileDownloadPrepareRequest } from '@power-evolve/contracts/file-download'
+import { fileDownloadDisposition, parseFileDownloadQuery, writeFileDownload } from '../file-download-http.ts'
 import { ArtifactService } from './artifacts.ts'
 import { SkillService } from './skills.ts'
 import { readRuntimeSkill, readRuntimeSkillResource } from './runtime-skills.ts'
@@ -68,6 +72,11 @@ export const inject = ['webServer']
 export const Config = schema.object({
   databaseUrlFile: schema.string().required(), workerTokenFile: schema.string().required(),
   workspaceRoot: schema.string().required(), artifactRoot: schema.string().required(),
+  fileDownloadMaxFiles: schema.number().step(1).min(1).max(FILE_DOWNLOAD_MAX_FILES).default(32),
+  fileDownloadMaxTotalBytes: schema.number().step(1).min(1).max(FILE_DOWNLOAD_MAX_SOURCE_BYTES).default(32 * 1024 * 1024),
+  fileDownloadMaxConcurrentTransfers: schema.number().step(1).min(1).default(4),
+  fileDownloadMaxUserConcurrentTransfers: schema.number().step(1).min(1).default(2),
+  fileDownloadTransferTimeoutMs: schema.number().step(1).min(1).default(60_000),
   modelKeyFile: schema.string().required(), connectorKeyFile: schema.string().required(), seedUsersFile: schema.string().default(''),
   accountManagementFile: schema.string().default(''), accountBootstrapFile: schema.string().default(''),
   modelUrl: schema.string().required(), hostOrigin: schema.string().required(), platformOrigin: schema.string().required(),
@@ -168,6 +177,12 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     throw new Error('Workspace and Sandbox roots differ')
   }
   const files = new FileService(pool, config.workspaceRoot, executionEnabled ? { uid: 1000, gid: 1000 } : undefined)
+  const fileDownloads = new FileDownloadService(pool, files, {
+    maxFiles: config.fileDownloadMaxFiles, maxTotalBytes: config.fileDownloadMaxTotalBytes,
+    maxConcurrentTransfers: config.fileDownloadMaxConcurrentTransfers,
+    maxUserConcurrentTransfers: config.fileDownloadMaxUserConcurrentTransfers,
+    transferTimeoutMs: config.fileDownloadTransferTimeoutMs,
+  })
   await files.init()
   const artifactRelative = relative(resolve(config.workspaceRoot), resolve(config.artifactRoot))
   if (!artifactRelative || !artifactRelative.startsWith('..')) {
@@ -336,7 +351,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const devices = new DeviceService(tasks, config.sandboxCommandTimeoutMs, files)
 
   const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
-    const path = new URL(req.url ?? '/', config.platformOrigin).pathname
+    const url = new URL(req.url ?? '/', config.platformOrigin)
+    const path = url.pathname
     if (req.method === 'GET' && path === '/live') {
       sendJson(res, { live: true, service: 'platform', instanceId })
       return
@@ -362,6 +378,28 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     if (req.method === 'GET' && path === '/config') { sendJson(res, { hostUrl: config.hostOrigin }); return }
     if (req.method === 'GET' && await serveTrustedAccountUi(path, res, accountUiDirectory)) return
     if (req.method === 'GET' && await serveUi(path, 'login', res, config.hostOrigin)) return
+    if (req.method === 'GET' && path === FILE_DOWNLOAD_PLATFORM_PATH) {
+      const token = bearer(req)
+      const user = await identities.authenticate(token)
+      const request = parseFileDownloadQuery(url)
+      const abort = new AbortController()
+      res.once('close', () => abort.abort())
+      const signal = AbortSignal.any([abort.signal, AbortSignal.timeout(config.fileDownloadTransferTimeoutMs)])
+      const authorize = async (): Promise<void> => { await identities.authenticate(token) }
+      try {
+        const result = await fileDownloads.open(user, request, signal, authorize)
+        res.writeHead(200, { 'content-type': result.view.contentType,
+          'content-disposition': fileDownloadDisposition(result.view.fileName),
+          'content-length': String(result.view.totalBytes), 'cache-control': 'no-store',
+          'x-content-type-options': 'nosniff' })
+        await writeFileDownload(result.body, res, result.view.totalBytes, signal, authorize)
+      } catch (error) {
+        if (!(error instanceof PlatformError) && signal.aborted && signal.reason instanceof DOMException
+          && signal.reason.name === 'TimeoutError') throw new PlatformError(504, 'download_timeout')
+        throw error
+      }
+      return
+    }
     const artifactContent = /^\/artifacts\/([^/]+)\/content$/u.exec(path)
     if (req.method === 'GET' && artifactContent) {
       const user = await identities.authenticate(bearer(req))
@@ -612,6 +650,13 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       return result.rows[0].workspace_id
     }
     switch (path) {
+      case '/files/download/prepare': {
+        const request = fileDownloadPrepareRequest.parse(input)
+        const abort = new AbortController()
+        res.once('close', () => abort.abort())
+        sendJson(res, await fileDownloads.prepare(user, request, abort.signal, async () => { await identities.authenticate(token) }))
+        return
+      }
       case '/identity/me': z.object({}).strict().parse(input); sendJson(res, user); return
       case '/identity/models': modelsListRequest.parse(input); sendJson(res, await accountSettings.modelsList(user, token)); return
       case ACCOUNT_ROUTES.capabilities: {

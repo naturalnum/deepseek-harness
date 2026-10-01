@@ -22,11 +22,15 @@ import { mcpManagementRequests, mcpManagementEndpoints, mcpTicketValue } from '.
 import { sshManagementRequests, sshManagementEndpoints, sshConnectionValue,
   sshCredentialTicketValue, sshMutationReceiptValue } from '../ssh-management-contracts.ts'
 import { ACCOUNT_ROUTES, accountCapabilitiesValue, accountEmptyRequest } from '../account-contracts.ts'
+import { FILE_DOWNLOAD_CONTENT_PATH, fileDownloadPrepareRequest, fileDownloadView,
+  fileDownloadUrl } from '@power-evolve/contracts/file-download'
+import { parseFileDownloadQuery, proxyFileDownload } from '../file-download-http.ts'
 
 const requests = { ...mcpManagementRequests, ...sshManagementRequests, me: z.object({}).strict(), logout: z.object({}).strict(), modelsList: z.object({}).strict(), settingsUpdate: settingsUpdateRequest,
   accountCapabilities: accountEmptyRequest,
   create: createRequest, list: listRequest, prompt: promptRequest, page: pageRequest, follow: pageRequest,
   filesList: sessionFilesListRequest, filesRead: sessionFileReadRequest, filesPut: sessionFilePutRequest,
+  filesDownloadPrepare: fileDownloadPrepareRequest,
   skillsList: z.object({}).strict(), skillsRead: skillRequest,
   skillsCatalog: z.object({}).strict(), skillsInstallBuiltin: builtinSkillInstallRequest,
   skillsInstall: skillInstallRequest, skillsToggle: skillToggleRequest,
@@ -63,6 +67,7 @@ const endpoint = { ...mcpManagementEndpoints, ...sshManagementEndpoints, me: '/i
   accountCapabilities: ACCOUNT_ROUTES.capabilities,
   create: '/sessions/create', list: '/sessions/list', prompt: '/sessions/prompt', page: '/sessions/page',
   filesList: '/files/session/list', filesRead: '/files/session/read', filesPut: '/files/session/put',
+  filesDownloadPrepare: '/files/download/prepare',
   skillsList: '/skills/list', skillsRead: '/skills/read',
   skillsCatalog: '/skills/catalog', skillsInstallBuiltin: '/skills/install-builtin',
   skillsInstall: '/skills/install', skillsToggle: '/skills/toggle',
@@ -152,6 +157,15 @@ class ProductRemote extends TypertRemoteService {
   @Remote filesList(request: z.infer<typeof sessionFilesListRequest>) { return this.call('filesList', request) }
   @Remote filesRead(request: z.infer<typeof sessionFileReadRequest>) { return this.call('filesRead', request) }
   @Remote filesPut(request: z.infer<typeof sessionFilePutRequest>) { return this.call('filesPut', request) }
+  @Remote async filesDownloadPrepare(request: z.infer<typeof fileDownloadPrepareRequest>, signal: AbortSignal) {
+    const value = fileDownloadView.parse(await this.ctx.powerEvolveRuntime.call(
+      endpoint.filesDownloadPrepare, this.token(), request, signal))
+    if (value.sessionId !== request.sessionId || value.fileCount !== request.paths.length
+      || value.downloadUrl !== fileDownloadUrl({ ...request, revision: value.revision })) {
+      throw new PlatformError(502, 'download_unavailable')
+    }
+    return value
+  }
   @Remote skillsCatalog(request: z.infer<typeof requests.skillsCatalog>) { return this.call('skillsCatalog', request) }
   @Remote skillsInstallBuiltin(request: z.infer<typeof builtinSkillInstallRequest>) { return this.call('skillsInstallBuiltin', request) }
   @Remote skillsList(request: z.infer<typeof requests.skillsList>) { return this.call('skillsList', request) }
@@ -287,6 +301,7 @@ export const Config = schema.object({
   concurrency: schema.number().step(1).min(1).required(), pollMs: schema.number().min(50).required(),
   renewMs: schema.number().min(100).required(), operationTimeoutMs: schema.number().min(1000).required(),
   maxRequestBytes: schema.number().min(1024).required(), maxStreams: schema.number().step(1).min(1).required(),
+  fileDownloadTimeoutMs: schema.number().step(1).min(1).default(60_000),
   readyFile: schema.string().required(),
 })
 export type Config = ReturnType<typeof Config>
@@ -307,7 +322,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     invocation: { kind: 'direct' },
     parameters: [{ name: 'request', wire: 'request', source: 'json', codec: { mode: 'strict', typeSymbol: `PowerEvolve/${method}`, create: () => request } }],
     result: { mode: 'strict', typeSymbol: 'PowerEvolve/Json', create: () => z.json() },
-    ...(method === 'follow' ? { mode: 'stream' as const, cancellation: { parameter: 'signal' } } : {}),
+    ...(method === 'follow' ? { mode: 'stream' as const } : {}),
+    ...(['follow', 'filesDownloadPrepare'].includes(method) ? { cancellation: { parameter: 'signal' } } : {}),
   }))
   ctx.typert.register({ package: '@power-evolve/application', face: 'host', schemas: [], model: { services: [], events: [], objects: [] }, invocations })
   const scheduler = new Scheduler(ctx, config)
@@ -328,6 +344,20 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       if (req.method === 'GET' && path === '/config') { sendJson(res, { loginUrl: `${config.platformOrigin}/login`,
         approvalUrl: `${config.platformOrigin}/approval`, deviceOrigin: config.deviceOrigin }); return }
       if (req.method === 'GET' && await serveNativeUi(path, res, config.platformOrigin)) return
+      if (req.method === 'GET' && path === FILE_DOWNLOAD_CONTENT_PATH) {
+        const credential = await browserAuth.authenticate(req, true)
+        const request = parseFileDownloadQuery(url)
+        if (streams >= config.maxStreams) throw new PlatformError(429, 'download_busy')
+        streams++; streaming = true
+        const signal = AbortSignal.any([abort.signal, AbortSignal.timeout(config.fileDownloadTimeoutMs)])
+        try { await proxyFileDownload(ctx.powerEvolveRuntime.config.platformUrl, credential.token, request, res, signal) }
+        catch (error) {
+          if (!(error instanceof PlatformError) && signal.aborted && signal.reason instanceof DOMException
+            && signal.reason.name === 'TimeoutError') throw new PlatformError(504, 'download_timeout')
+          throw error
+        }
+        return
+      }
       const artifactContent = /^\/api\/powerEvolve\/artifacts\/([^/]+)\/content$/u.exec(path)
       if (req.method === 'GET' && artifactContent) {
         const artifactId = z.uuid().parse(artifactContent[1])

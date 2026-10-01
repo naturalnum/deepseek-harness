@@ -64,4 +64,5 @@
         operationTimeoutMs: 150000
         maxRequestBytes: 3145728
         maxStreams: 100
+        fileDownloadTimeoutMs: 60000
         readyFile: !!js dshHomePath('ready.json')
