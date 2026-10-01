@@ -8,6 +8,9 @@
   "dsh": {
     "client": {
       "inject": [
+        "@deepseek-ai/dsh-client-ui-chat",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-api-session-controller",
         "@deepseek-ai/dsh-client-ui-sidebar-documentpreview",
         "@deepseek-ai/dsh-client-ui-sidebar-right",
         "@deepseek-ai/dsh-api-workspace-controller",
@@ -20,6 +23,11 @@
   "scripts": { "bundle": "tsdown", "typecheck": "tsc -b tsconfig.json --pretty false", "test": "tsx --test tests/*.test.ts && vitest run --config vitest.config.ts" },
   "dependencies": {
     "@deepseek-ai/cordis": "workspace:~",
+    "@power-evolve/contracts": "workspace:*",
+    "@deepseek-ai/dsh-api-session-controller": "workspace:*",
+    "@deepseek-ai/dsh-client-store": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-chat": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-conversation": "workspace:*",
     "@deepseek-ai/dsh-api-workspace-controller": "workspace:*",
     "@deepseek-ai/dsh-client-locale": "workspace:*",
     "@deepseek-ai/dsh-client-ui-primitives": "workspace:*",
@@ -30,6 +38,8 @@
     "react": "^18.2.0"
   },
   "devDependencies": {
+    "@deepseek-ai/dsh-client-test-runtime": "workspace:*",
+    "@deepseek-ai/dsh-remote-mock": "workspace:*",
     "@types/react": "~18.3.1",
     "@testing-library/react": "^16.3.2",
     "jsdom": "29.1.1",

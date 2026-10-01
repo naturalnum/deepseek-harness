@@ -3,6 +3,11 @@
   "compilerOptions": { "rootDir": "src", "outDir": "lib/types", "tsBuildInfoFile": "lib/tsconfig.client.tsbuildinfo" },
   "include": ["src"],
   "references": [
+    { "path": "../contracts" },
+    { "path": "../../../packages/api/session-controller/tsconfig.client.json" },
+    { "path": "../../../packages/client/store" },
+    { "path": "../../../packages/client/ui-chat/tsconfig.client.json" },
+    { "path": "../../../packages/client/ui-conversation/tsconfig.client.json" },
     { "path": "../../../vendor/cordis" },
     { "path": "../../../packages/api/workspace-controller/tsconfig.client.json" },
     { "path": "../../../packages/client/locale/tsconfig.client.json" },
