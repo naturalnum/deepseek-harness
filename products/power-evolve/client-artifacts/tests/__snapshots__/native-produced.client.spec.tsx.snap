@@ -1,0 +1,27 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`resolves arriving Platform facts through native Chat and publishes the verified version (en) 1`] = `
+{
+  "inline": [
+    "Publish and download: /workspace/out/report.txt",
+    "Publish and download: /workspace/out/report.txt",
+  ],
+  "row": "Execution filesRefreshout/report.txtPublish and download",
+}
+`;
+
+exports[`resolves arriving Platform facts through native Chat and publishes the verified version (zh) 1`] = `
+{
+  "inline": [
+    "发布并下载: /workspace/out/report.txt",
+    "发布并下载: /workspace/out/report.txt",
+  ],
+  "row": "执行产物刷新out/report.txt发布并下载",
+}
+`;
+
+exports[`retries one version with the same request id, suppresses duplicate clicks and shows a changed source 1`] = `"Execution filesRefreshout/report.txtPublish and downloadThe source file changed. This version cannot be published."`;
+
+exports[`shows unavailable facts without claiming file absence (en) 1`] = `"Execution filesRefreshOnly verified files are shown; scanning or verification was incompleteFile facts are unavailable for this execution"`;
+
+exports[`shows unavailable facts without claiming file absence (zh) 1`] = `"执行产物刷新仅显示已核验的文件；扫描或核验未完整完成此次执行的文件事实不可用"`;
