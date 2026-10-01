@@ -16,6 +16,8 @@ The QA database has a new non-superuser owner, separate data and fresh test logi
 
 The initial Platform startup was refused at the Kubernetes API. This CNI applies egress matching after service address translation: allowing `10.43.0.1:443` did not admit its endpoint `172.30.247.2:6443`. Setting the existing deployment values to that exact endpoint restored startup. No application authorization or policy enforcement was disabled.
 
+The operator-side preflight correction in `98a3d0366f` rejects Pod isolation changes for both Host and Platform. Eight invalid manifest cases first reproduced acceptance of host network/PID/IPC sharing and a changed Pod security context. After the correction, 25 deployment and Connector checks passed, including rejection of process sharing, runtime selection and malformed namespace flags. Read-only inspection of the actual QA Deployments confirmed the expected Pod/container security contexts, no shared host namespaces, and a Host with no PVC or API token and only the worker credential projection. This correction does not change the running application image; `live-isolation.json` records the cluster inspection.
+
 ## Verified paths
 
 All requests below use the real product HTTP protocols over HTTPS with the exact QA certificate supplied as the client CA. They are protocol acceptance, not browser automation. DeepSeek, PostgreSQL, gVisor Runners and the OpenSSH target are real services.
