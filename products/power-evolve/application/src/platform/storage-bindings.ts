@@ -398,7 +398,7 @@ export class StorageBindingService implements StorageBindingApi {
     return !!current.rowCount
   }
 
-  /** Claim one durable intent with an explicit deployment lease; failures retain the Workspace fence. */
+  /** Claim one durable intent; shutdown releases its lease and retains the captured writer, proof and Workspace fence for takeover. */
   async poll(stopWriter: StopWorkspaceWriter, signal: AbortSignal, worker: StorageBindingWorker): Promise<boolean> {
     const configuration = workerRecord.parse(worker)
     if (signal.aborted) return false
@@ -464,6 +464,7 @@ export class StorageBindingService implements StorageBindingApi {
         await requireActiveAccount(client, accountUserId.parse(row.user_id), 'update')
         await this.owned(client, row.user_id, row.workspace_id)
         if (!await this.lease(client, row, configuration)) throw new PlatformError(409, 'workspace_recovery_lease_lost')
+        signal.throwIfAborted()
         if (await this.noWriter(client, row.user_id) !== proof.mountGeneration) throw new PlatformError(409, 'workspace_writer_changed')
         const space = await this.space(client, row.user_id, row.space_id)
         if (space.root_state !== 'ready' || !await this.present(this.location(space, row.root_relative_path))) throw unavailable()
@@ -482,13 +483,19 @@ export class StorageBindingService implements StorageBindingApi {
         await client.query(`UPDATE pe_workspace_binding_requests SET state='completed',stop_proof=$3,result=$4,
           lease_owner=NULL,lease_until=NULL,updated_at=clock_timestamp() WHERE user_id=$1 AND request_id=$2`,
         [row.user_id, row.request_id, proof, result])
+        signal.throwIfAborted()
       })
     } catch (error) {
       await transaction(this.pool, async client => {
         await lockAccountAuthorities(client, [accountUserId.parse(row.user_id)], 'update')
         await this.owned(client, row.user_id, row.workspace_id)
         if (!await this.lease(client, row, configuration)) return
-        const code = error instanceof PlatformError ? error.code : signal.aborted ? 'workspace_recovery_interrupted' : 'workspace_stop_unconfirmed'
+        if (signal.aborted) {
+          await client.query(`UPDATE pe_workspace_binding_requests SET lease_owner=NULL,lease_until=NULL,
+            updated_at=clock_timestamp() WHERE user_id=$1 AND request_id=$2`, [row.user_id, row.request_id])
+          return
+        }
+        const code = error instanceof PlatformError ? error.code : 'workspace_stop_unconfirmed'
         await client.query(`UPDATE pe_workspace_binding_requests SET state='blocked',error_code=$3,
           lease_owner=NULL,lease_until=NULL,updated_at=clock_timestamp() WHERE user_id=$1 AND request_id=$2`, [row.user_id, row.request_id, code])
         await client.query("UPDATE pe_workspaces SET binding_state='blocked',binding_updated_at=GREATEST(clock_timestamp(),binding_updated_at+interval '1 millisecond') WHERE id=$1 AND recovery_request_id=$2", [row.workspace_id, row.request_id])
