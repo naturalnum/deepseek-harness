@@ -86,6 +86,12 @@ test('cloud execution persists acceptance and reconciles runner outcomes', { tim
   const runnerInstanceId = randomUUID(), podUid = randomUUID()
   const rawOutput = 'done\u0000表😀 literal \\u0000'
   const records = new Map(), posted = []
+  const writer = async (id,owner) => {
+    const row = (await pool.query('SELECT workspace_id FROM pe_sessions WHERE id=$1 AND user_id=$2',[id,owner])).rows[0]
+    return { name: `pe-sb-${id.replaceAll('-','')}`,podUid,runnerInstanceId,token:'runner',restartCount:0,
+      generation:'1',sessionId:id,userId:owner,binding:{workspaceId:row.workspace_id,spaceId:row.workspace_id,
+        rootKey:row.workspace_id,rootRelativePath:'',generation:1} }
+  }
   const sandbox = {
     name: id => `pe-sb-${id.replaceAll('-', '')}`,
     async matchesInstance(_sessionId, _userId, expectedPodUid, expectedRunnerId) {
@@ -95,10 +101,11 @@ test('cloud execution persists acceptance and reconciles runner outcomes', { tim
       await pool.query(`INSERT INTO pe_sandbox_instances(session_id,user_id,name,state,pod_uid,runner_instance_id)
         VALUES($1,$2,$3,'ready',$4,$5) ON CONFLICT(session_id) DO NOTHING`,
       [id, owner, this.name(id), podUid, runnerInstanceId])
-      return { name: this.name(id), podUid, runnerInstanceId, token: 'runner',
-        restartCount: 0, generation: '1', sessionId: id, userId: owner }
+      return writer(id, owner)
     },
+    async observeReady(id, owner) { return writer(id, owner) },
     async assertCurrent() {},
+    async assertDispatchAllowed() {},
     async quarantine(id) {
       await pool.query("UPDATE pe_sandbox_instances SET state='unknown' WHERE session_id=$1", [id])
     },

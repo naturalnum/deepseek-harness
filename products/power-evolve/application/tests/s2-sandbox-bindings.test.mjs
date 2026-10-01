@@ -3,7 +3,9 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { createHash, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
+import { readFile, writeFile } from 'node:fs/promises'
 import { SandboxManager } from '../lib/platform/sandbox.js'
+import { FileService } from '../lib/platform/files.js'
 import { ExecutionService } from '../lib/platform/executions.js'
 import { KubernetesError } from '../lib/platform/kubernetes.js'
 import { workspaceRecoveryClaim } from '../lib/platform/workspace-binding-types.js'
@@ -32,6 +34,70 @@ async function recovery(f, stopTarget, expectedGeneration = 1) {
 const captured = ready => ({ kind: 'pod', mountGeneration: ready.generation, sessionId: ready.sessionId,
   podUid: ready.podUid, runnerInstanceId: ready.runnerInstanceId })
 const stopped = ready => ({ kind: 'kubelet_stopped', mountGeneration: ready.generation, podUid: ready.podUid })
+
+test('actual storage recovery worker stops the captured Pod, preserves Git bytes and rebinds the same Session', options, async t => {
+  const f = await setup(t)
+  await f.files.workspaceForId(f.userId, f.workspaceId)
+  const files = new FileService(f.pool, join(f.localRoot, 'workspaces'))
+  await files.init()
+  const manager = new SandboxManager(f.kube, files, f.pool, 'test-key', f.managerOptions)
+  manager.home = f.manager.home
+  const user = { userId: f.userId, username: `test-${f.userId}` }
+  const space = (await files.bindings.spaces(user)).items.find(value => value.isDefault)
+  await files.bindings.createDirectory(user, { requestId: randomUUID(), spaceId: space.spaceId, parentPath: '', name: 'existing' })
+  await files.bindings.createDirectory(user, { requestId: randomUUID(), spaceId: space.spaceId, parentPath: 'existing', name: '.git' })
+  const rootKey = (await f.pool.query('SELECT root_key FROM pe_storage_spaces WHERE id=$1', [space.spaceId])).rows[0].root_key
+  const headPath = join(f.localRoot, 'workspaces', rootKey, 'existing', '.git', 'HEAD')
+  await writeFile(headPath, 'ref: refs/heads/preserved\n')
+  const ready = await manager.ensureReady(f.sessionId, f.userId, async () => {})
+  const request = { requestId: randomUUID(), workspaceId: f.workspaceId, spaceId: space.spaceId,
+    rootRelativePath: 'existing', expectedGeneration: 1 }
+  const accepted = await files.bindings.restore(user, request)
+  assert.equal(accepted.state, 'accepted')
+  assert.deepEqual((await f.pool.query('SELECT stop_target FROM pe_workspace_binding_requests WHERE request_id=$1',
+    [request.requestId])).rows[0].stop_target, captured(ready))
+  await assert.rejects(manager.assertDispatchAllowed(ready), { code: 'mount_workspace_recovering' })
+  // A short lock timeout turns accidental nested lease transactions into a failing recovery receipt.
+  f.pool.on('connect', client => { void client.query("SET lock_timeout='300ms'") })
+  const clients = await Promise.all(Array.from({ length: 10 }, () => f.pool.connect()))
+  for (const client of clients) await client.query("SET lock_timeout='300ms'")
+  clients.forEach(client => client.release())
+  let callbackCalls = 0, suppliedClientCalls = 0
+  const worked = await files.bindings.poll(async (claim, assertLease) => {
+    callbackCalls++
+    assert.deepEqual(claim.stopTarget, captured(ready))
+    return manager.stopForRecovery(claim, async client => {
+      if (client) suppliedClientCalls++
+      await assertLease(client)
+    })
+  }, new AbortController().signal, { ownerId: randomUUID(), leaseMs: 5000 })
+  assert.equal(worked, true)
+  assert.equal(callbackCalls, 1)
+  assert(suppliedClientCalls >= 4)
+  const receipt = await files.bindings.status(user, { requestId: request.requestId })
+  assert.equal(receipt.state, 'completed')
+  assert.equal(receipt.bindingGeneration, 2)
+  const binding = await files.bindingForId(f.userId, f.workspaceId)
+  assert.deepEqual(binding, { workspaceId: f.workspaceId, spaceId: space.spaceId, rootKey,
+    rootRelativePath: 'existing', generation: 2 })
+  assert.equal((await f.pool.query('SELECT workspace_id FROM pe_sessions WHERE id=$1', [f.sessionId])).rows[0].workspace_id, f.workspaceId)
+  assert.equal(await readFile(headPath, 'utf8'), 'ref: refs/heads/preserved\n')
+  const requestRow = (await f.pool.query('SELECT stop_proof FROM pe_workspace_binding_requests WHERE request_id=$1', [request.requestId])).rows[0]
+  assert.deepEqual(requestRow.stop_proof, stopped(ready))
+  const slot = (await f.pool.query('SELECT state,stop_pod_uid,binding_snapshot FROM pe_mount_slots WHERE user_id=$1', [f.userId])).rows[0]
+  assert.equal(slot.state, 'free'); assert.equal(slot.stop_pod_uid, ready.podUid)
+  assert.deepEqual(slot.binding_snapshot, ready.binding)
+  assert.equal(await files.bindings.poll(async () => { throw new Error('Completed recovery must not stop again') },
+    new AbortController().signal, { ownerId: randomUUID(), leaseMs: 5000 }), false)
+  const next = await manager.ensureReady(f.sessionId, f.userId, async () => {})
+  assert.deepEqual(next.binding, binding)
+  assert.notEqual(next.podUid, ready.podUid)
+  assert.notEqual(next.generation, ready.generation)
+  for (const spec of specifications(f, next)) {
+    assert.equal(workspaceVolume(spec).hostPath.path, join(f.localRoot, 'workspaces', rootKey))
+    assert.equal(workspaceMount(spec).subPath, 'existing')
+  }
+})
 
 test('hostPath pins an owned root key and delegates nested selection to subPath, freezing both binding snapshots', options, async t => {
   const rootKey = randomUUID(), spaceId = randomUUID()

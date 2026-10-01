@@ -44,9 +44,11 @@ async function fixture(t) {
   const files = new FileService(pool, join(root, 'workspaces')); await files.init()
   await files.put(user, randomUUID(), 'result.txt', null, Buffer.from('verified output').toString('base64'))
   const facts = new ExecutionFileFactsService(pool, files)
-  const sandbox = { name: 'fixture', podUid: randomUUID(), runnerInstanceId: randomUUID(), token: 'fixture' }
+  const workspaceId = (await pool.query('SELECT workspace_id FROM pe_sessions WHERE id=$1',[sessionId])).rows[0].workspace_id
+  const sandbox = { name: 'fixture', podUid: randomUUID(), runnerInstanceId: randomUUID(), token: 'fixture',
+    sessionId,userId:user.userId,generation:'1',binding:await files.bindingForId(user.userId,workspaceId) }
   let observation, posts = 0
-  const runner = { async assertCurrent() {}, async runner(_name, _token, method) {
+  const runner = { async assertCurrent() {}, async assertDispatchAllowed() {}, async runner(_name, _token, method) {
     if (method === 'POST') posts++
     return observation
   } }

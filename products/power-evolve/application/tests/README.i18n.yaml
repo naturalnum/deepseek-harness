@@ -1,0 +1,28 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write products/power-evolve/application/tests/README.md
+/s2-sandbox-storage-bindings:
+  en: c87d1491d9b5bc44
+  zh: 950e4d9d9e3e0713
+/s2-sandbox-storage-bindings/summary:
+  en: e72e8b3b78f32900
+  zh: 75d39f58a0f48e3d
+/s2-sandbox-storage-bindings/table-of-contents:
+  en: befc96c57a9f29f5
+  zh: e52328137aab7378
+/s2-sandbox-storage-bindings/mount-identity:
+  en: 724f26093ba36976
+  zh: bbb394a1b1a468c9
+/s2-sandbox-storage-bindings/admission-and-observation:
+  en: 1f12578276468253
+  zh: 8748a40b55afe45a
+/s2-sandbox-storage-bindings/recovery-stop-proof:
+  en: a0a392ef88ab0481
+  zh: a717040dbf65ed8f
+/s2-sandbox-storage-bindings/verification:
+  en: 2bd8dea86ef72e4d
+  zh: 928a849c0deb62d7
+/s2-sandbox-storage-bindings/dev-note:
+  en: 63fde87a031595b5
+  zh: 7941ed573b9e941e

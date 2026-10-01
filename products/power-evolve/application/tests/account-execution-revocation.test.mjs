@@ -129,8 +129,11 @@ test('STDIO disablement blocks a ready call before its only POST', async t => {
 test('cloud revocation preserves actual output, suppresses continuation and never replays an uncertain command', async t => {
   const f = await fixture(t), task = await f.operation(f.alice)
   const grant = await f.tasks.claim(randomUUID())
-  const sandbox = { name: 'synthetic-sandbox', podUid: randomUUID(), runnerInstanceId: randomUUID(), token: 'fixture' }
-  const sandboxes = { posts: 0, async assertCurrent() {}, async runner(_name, _token, method) {
+  const workspace = (await f.pool.query('SELECT workspace_id FROM pe_sessions WHERE id=$1',[task.sessionId])).rows[0].workspace_id
+  const sandbox = { name: 'synthetic-sandbox', podUid: randomUUID(), runnerInstanceId: randomUUID(), token: 'fixture',
+    sessionId:task.sessionId,userId:f.alice.userId,generation:'1',binding:{workspaceId:workspace,spaceId:workspace,
+      rootKey:workspace,rootRelativePath:'',generation:1} }
+  const sandboxes = { posts: 0, async assertCurrent() {}, async assertDispatchAllowed() {}, async runner(_name, _token, method) {
     if (method === 'POST') this.posts++
     throw new KubernetesError(404, 'Synthetic missing execution')
   } }
