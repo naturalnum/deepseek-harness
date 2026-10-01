@@ -140,7 +140,7 @@ describe('WorkspacePicker', () => {
     chooseAdd()
     expect(b.onClose).toHaveBeenCalled()
     expect(screen.getByTestId('directory-flow')).toBeTruthy()
-    await act(async () => { b.probe.owner!.onPicked('/tmp/project') })
+    await act(async () => { expect(await b.probe.owner!.onPicked('/tmp/project')).toBe(true) })
     expect(createWorkspace).toHaveBeenCalledWith({ path: '/tmp/project' })
     await waitFor(() => { expect(b.onPick).toHaveBeenCalledWith(created.workspaceId) })
     // Successful adoption withdraws the flow request.
@@ -170,7 +170,7 @@ describe('WorkspacePicker', () => {
   it('reports a non-Error adoption failure in the folder-error surface', async () => {
     const b = mount([workspace('alpha', 'Alpha')], vi.fn(async () => { throw 'permission denied' }))
     chooseAdd()
-    await act(async () => { b.probe.owner!.onPicked('/one/project') })
+    await act(async () => { expect(await b.probe.owner!.onPicked('/one/project')).toBe(false) })
     await waitFor(() => {
       expect(screen.getByRole('dialog', { name: '无法打开文件夹' })).toBeTruthy()
     })

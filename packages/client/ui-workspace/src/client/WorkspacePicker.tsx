@@ -128,14 +128,16 @@ export function WorkspacePickFlow({
   }
 
   /** Adopt a picked directory; failures land in the folder-error dialog (Choose again reopens the flow). */
-  const adoptDirectory = (path: string): Promise<void> =>
+  const adoptDirectory = (path: string): Promise<boolean> =>
     createWorkspace({ path }).then((workspace) => {
       setFlowOpen(false)
       onPick(workspace.workspaceId)
+      return true
     }).catch((reason: unknown) => {
       setModalError(reason instanceof Error ? reason.message : String(reason))
       setFlowOpen(false)
       setErrorOpen(true)
+      return false
     })
 
   const openDirectoryFlow = useCallback((): void => {
@@ -167,7 +169,7 @@ export function WorkspacePickFlow({
     busy: pickingFolder,
     onPicked: (path) => {
       setPickingFolder(true)
-      void adoptDirectory(path).finally(() => { setPickingFolder(false) })
+      return adoptDirectory(path).finally(() => { setPickingFolder(false) })
     },
     onCancel: () => { setFlowOpen(false) },
     onError: (message) => {

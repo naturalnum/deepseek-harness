@@ -64,8 +64,8 @@ export interface DirectoryFlowOwnerProps {
   open: boolean
   /** True while the owner adopts a picked path (`createWorkspace` in flight); occupants disable their commit affordances. */
   busy: boolean
-  /** The operator picked a directory (absolute host path); the owner adopts it. */
-  onPicked: (path: string) => void
+  /** Adopt the selected path; a returned promise confirms success or the owner's handled failure. */
+  onPicked: (path: string) => void | Promise<boolean>
   /** The operator dismissed the interaction; the owner just closes the flow. */
   onCancel: () => void
   /** The interaction itself failed (chooser missing, listing denied); the owner shows its error surface. */
