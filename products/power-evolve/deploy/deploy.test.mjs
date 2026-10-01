@@ -72,6 +72,60 @@ const mcpValues = () => ({ ...structuredClone(values), remoteMcp: {
 } })
 const resource = (items, kind, name) => items.find(item => item.kind === kind && item.metadata.name === name)
 
+for (const role of ['host', 'platform']) {
+  for (const [field, value] of [
+    ['hostNetwork', true], ['hostPID', true], ['hostIPC', true],
+    ['securityContext', { runAsUser: 0, runAsGroup: 0, seccompProfile: { type: 'Unconfined' } }],
+  ]) {
+    test('preflight rejects ' + role + ' Pod ' + field + ' isolation drift', () => {
+      const items = buildManifests(values)
+      resource(items, 'Deployment', 'power-evolve-' + role).spec.template.spec[field] = value
+      assert.throws(() => validateBundle(values, items))
+    })
+  }
+}
+
+test('preflight rejects Pod process sharing, runtime changes and Pod security additions or removal', () => {
+  for (const role of ['host', 'platform']) {
+    for (const edit of [
+      spec => { spec.shareProcessNamespace = true },
+      spec => { spec.runtimeClassName = 'gvisor' },
+      spec => { spec.runtimeClassName = '' },
+      spec => { spec.hostUsers = false },
+      spec => { spec.os = { name: 'windows' } },
+      spec => { delete spec.securityContext },
+      spec => { delete spec.securityContext.seccompProfile },
+      spec => { spec.securityContext.runAsUser = role === 'host' ? 0 : 10001 },
+      spec => { spec.securityContext.runAsGroup = role === 'host' ? 0 : 10001 },
+      spec => { spec.securityContext.fsGroup = 0 },
+      spec => { spec.securityContext.runAsNonRoot = false },
+      spec => { spec.securityContext.sysctls = [{ name: 'net.ipv4.ip_forward', value: '1' }] },
+    ]) {
+      const items = buildManifests(values)
+      edit(resource(items, 'Deployment', 'power-evolve-' + role).spec.template.spec)
+      assert.throws(() => validateBundle(values, items))
+    }
+  }
+})
+
+test('preflight accepts explicit false namespace flags and refuses nonboolean defaults', () => {
+  const isolated = buildManifests(values)
+  for (const role of ['host', 'platform']) {
+    const spec = resource(isolated, 'Deployment', 'power-evolve-' + role).spec.template.spec
+    for (const field of ['hostNetwork', 'hostPID', 'hostIPC', 'shareProcessNamespace']) spec[field] = false
+  }
+  assert.equal(validateBundle(values, isolated).resources, 23)
+  for (const role of ['host', 'platform']) {
+    for (const field of ['hostNetwork', 'hostPID', 'hostIPC', 'shareProcessNamespace']) {
+      for (const invalid of [null, 'false', 0]) {
+        const items = buildManifests(values)
+        resource(items, 'Deployment', 'power-evolve-' + role).spec.template.spec[field] = invalid
+        assert.throws(() => validateBundle(values, items))
+      }
+    }
+  }
+})
+
 test('Platform can list Sandboxes for backup only through its runner namespace Role', () => {
   const items = buildManifests(values)
   const role = resource(items, 'Role', 'power-evolve-platform-runner')

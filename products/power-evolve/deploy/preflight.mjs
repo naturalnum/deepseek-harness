@@ -32,7 +32,7 @@ function isDocumentationAddress(value) {
     || parts[0] === 203 && parts[1] === 0 && parts[2] === 113)
 }
 
-/** Enforce authority and mount separation even when a manifest is edited after rendering. */
+/** Enforce Pod isolation, authority and mount separation after manifest edits. */
 export function validateBundle(values, items) {
   validateValues(values)
   const app = values.namespace, runner = values.runnerNamespace
@@ -57,6 +57,12 @@ export function validateBundle(values, items) {
   'Host private projection differs')
   for (const [role, spec] of [['host', hostSpec], ['platform', platformSpec]]) {
     const wanted = resource(expected, 'Deployment', `power-evolve-${role}`, app).spec.template.spec
+    for (const field of ['hostNetwork', 'hostPID', 'hostIPC', 'shareProcessNamespace']) {
+      assert(spec[field] === undefined || spec[field] === false, `${role} Pod ${field} must be false or absent`)
+    }
+    for (const field of ['securityContext', 'runtimeClassName', 'hostUsers', 'os']) {
+      assert(isDeepStrictEqual(spec[field], wanted[field]), `${role} Pod ${field} differs`)
+    }
     assert(isDeepStrictEqual(spec.volumes, wanted.volumes), `${role} volume sources differ from declared projections`)
     assert.equal(spec.containers.length, 1, `${role} has unexpected containers`)
     assert(spec.initContainers === undefined, `${role} has unexpected init containers`)

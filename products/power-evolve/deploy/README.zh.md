@@ -40,9 +40,11 @@ node products/power-evolve/deploy/preflight.mjs /private/path/values.json /priva
 
 Platform 的 `/health` 检查 PostgreSQL 并控制就绪状态；`/live` 不依赖 PostgreSQL，只检查服务进程并控制存活状态。数据库故障期间，Platform Pod 应从 Service endpoint 中移除，而不被重启。验证故障持续超过三个存活检查间隔时 `restartCount` 保持不变，然后确认 PostgreSQL 恢复后 Pod 再次就绪。
 
-在 values 中设置真实的 Ingress 类、控制器 Pod 标签、公网 DNS 名称、TLS Secret 和出口 CIDR。`runnerProxySourceCidrs` 必须涵盖 Sandbox Pod 实际观察到的 Kubernetes API Service 代理流量源 IP。`apiServerCidrs` 必须涵盖 Platform 集群内客户端访问的 API endpoint。默认拒绝的策略选中两个命名空间中的每个 Pod；Host、Platform 和运行器策略仅允许列明的流量。接入流量前，要验证 CNI 确实执行这些策略。
+在 values 中设置真实的 Ingress 类、控制器 Pod 标签、公网 DNS 名称、TLS Secret 和出口 CIDR。`runnerProxySourceCidrs` 必须涵盖 Sandbox Pod 实际观察到的 Kubernetes API Service 代理流量源 IP。将 `apiServerCidrs` 和 `apiServerPort` 设为 CNI 实际匹配的 API 目标地址与端口。若 Service NAT 改变了目标，则应实测 endpoint 地址与端口；示例端口 443 可能不适用。默认拒绝的策略选中两个命名空间中的每个 Pod；Host、Platform 和运行器策略仅允许列明的流量。接入流量前，要验证 CNI 确实执行这些策略。
 
 仅在隔离的命名空间中、审阅渲染后的 manifest 之后应用。部署包会创建命名空间范围的 ServiceAccount、运行器命名空间内的 Role 和 RoleBinding、两个 Deployment/Service、TLS Ingress 以及 NetworkPolicy；它不包含 Secret 值。先应用基础资源，再在新命名空间中配置所引用的 Secret、镜像仓库拉取 Secret（如已配置）和 TLS Secret。集群检查要求 PVC 已绑定且 RoleBinding 存在；应在应用工作负载或开放公网流量之前运行，检查只读。
+
+静态预检会检查 Host 与 Platform 的 Pod 模板。主机网络、PID、IPC 以及共享进程命名空间标志只接受缺省或布尔值 false；Pod 安全上下文须与渲染器完全一致，包括 UID/GID、文件系统组及 seccomp 设置。运行时类、用户命名空间和操作系统选择也须与渲染器一致。既有 Secret 投影、PVC 挂载、ServiceAccount 与容器安全检查继续生效。这些检查验证所提供的 manifest；实际准入后的 Pod 与 CNI 执行效果须通过集群验收。
 
 ```sh
 kubectl --context YOUR_CONTEXT apply -f /private/path/foundation.yaml
