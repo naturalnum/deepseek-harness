@@ -120,6 +120,10 @@ test('cloud execution persists acceptance and reconciles runner outcomes', { tim
         const found = records.get(path.split('/')[2]); found.state = 'cancelled'; return found
       }
       assert.equal(value.instanceId, runnerInstanceId)
+      if (value.command === 'first-start-after-recovery') {
+        assert.deepEqual((await pool.query('SELECT state,pod_uid,runner_instance_id FROM pe_cloud_executions WHERE id=$1',
+          [value.id])).rows[0], { state: 'running', pod_uid: podUid, runner_instance_id: runnerInstanceId })
+      }
       posted.push(value)
       const state = value.command === 'wait' ? 'running' : value.command === 'fail' ? 'failed' : 'succeeded'
       const result = { id: value.id, state, digest: digest(value), exitCode: state === 'running' ? null : state === 'failed' ? 1 : 0,
@@ -191,6 +195,34 @@ test('cloud execution persists acceptance and reconciles runner outcomes', { tim
     value.executionId === failing.executionId && value.state === 'failed'), 'failed command')
 
   await replacement.close()
+  const creationUncertain = await replacement.propose('current-grant', 'call-creation-uncertain', 'first-start-after-recovery', '')
+  await pool.query("UPDATE pe_cloud_executions SET state='uncertain',error_code='mount_slot_reserved' WHERE id=$1",
+    [creationUncertain.executionId])
+  const creationRow = await replacement.claim()
+  assert.equal(creationRow.id, creationUncertain.executionId)
+  assert.equal(creationRow.runner_instance_id, null)
+  await replacement.process(creationRow, async () => {})
+  const creationResult = (await pool.query('SELECT state,runner_instance_id FROM pe_cloud_executions WHERE id=$1',
+    [creationUncertain.executionId])).rows[0]
+  assert.equal(creationResult.state, 'succeeded')
+  assert.equal(creationResult.runner_instance_id, runnerInstanceId)
+  assert.equal(posted.filter(value => value.command === 'first-start-after-recovery').length, 1)
+
+  const capturedMissing = await replacement.propose('current-grant', 'call-captured-missing', 'missing-must-not-replay', '')
+  await pool.query(`UPDATE pe_cloud_executions SET state='uncertain',sandbox_name=$2,pod_uid=$3,runner_instance_id=$4
+    WHERE id=$1`, [capturedMissing.executionId, sandbox.name(sessionId), podUid, runnerInstanceId])
+  const capturedRow = await replacement.claim()
+  assert.equal(capturedRow.id, capturedMissing.executionId)
+  await replacement.process(capturedRow, async () => {})
+  assert.deepEqual((await pool.query('SELECT state,error_code FROM pe_cloud_executions WHERE id=$1',
+    [capturedMissing.executionId])).rows[0], { state: 'uncertain', error_code: 'runner_execution_missing' })
+  assert.equal(posted.filter(value => value.command === 'missing-must-not-replay').length, 0)
+  await replacement.cancel(identity, capturedMissing.executionId)
+  // The live command lease remains fenced; expire it before this synthetic worker reclaims cancellation.
+  await pool.query('UPDATE pe_cloud_executions SET lease_until=clock_timestamp() WHERE id=$1', [capturedMissing.executionId])
+  await replacement.process(await replacement.claim(), async () => {})
+  assert.equal((await pool.query('SELECT state FROM pe_cloud_executions WHERE id=$1', [capturedMissing.executionId])).rows[0].state, 'cancelled')
+
   const beforeStart = await replacement.propose('current-grant', 'call-pre-cancel', 'never-start', '')
   await replacement.cancel(identity, beforeStart.executionId)
   const resumed = service(); resumed.start()

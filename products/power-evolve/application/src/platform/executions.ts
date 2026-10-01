@@ -229,11 +229,14 @@ export class ExecutionService {
         await this.sandboxes.quarantine(row.session_id, row.user_id)
         await this.defer(row, 'uncertain', 'sandbox_instance_changed'); return
       }
-      const recorded = await this.pool.query(
-        `UPDATE pe_cloud_executions SET sandbox_name=$3,pod_uid=$4,runner_instance_id=$5
-         WHERE id=$1 AND lease_owner=$2 AND lease_until>clock_timestamp() AND runner_instance_id IS NULL RETURNING id`,
+      // No command can reach a Runner before this first durable identity capture.
+      const recorded = await this.pool.query<{ state: State }>(
+        `UPDATE pe_cloud_executions SET sandbox_name=$3,pod_uid=$4,runner_instance_id=$5,
+         state=CASE WHEN state='uncertain' THEN 'starting' ELSE state END
+         WHERE id=$1 AND lease_owner=$2 AND lease_until>clock_timestamp() AND runner_instance_id IS NULL RETURNING state`,
         [row.id, this.workerId, sandbox.name, sandbox.podUid, sandbox.runnerInstanceId])
       if (!recorded.rowCount && !row.runner_instance_id) throw new ExecutionLeaseLost()
+      if (recorded.rowCount) row = { ...row, state: recorded.rows[0]!.state }
       const cancelled = await this.currentCancel(row)
       if (cancelled && row.state === 'starting') {
         await this.settle(row, 'cancelled', null, null); return

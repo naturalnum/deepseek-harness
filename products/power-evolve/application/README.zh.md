@@ -64,6 +64,8 @@ SSH Runner 只有明确报告 `effectMayHaveOccurred` 为 false 时，失败才�
 
 执行服务仅在当前会话授权下受理命令，返回前先保存调用 ID。首次需要执行时，它为根会话创建一个 Agent Sandbox，只挂载该会话绑定的本人 POSIX 工作区和用户 Home；重试前先查询执行器状态。Home 仍为用户共享，因此每个用户只有一个 Kubernetes 物理资源槽位；前一个 Pod UID 的 kubelet 原生停止证据写入 PG 后，另一会话才可使用。本人工作区的挂载源在获取槽位前准备；Home 和 Skill 包挂载源在用户事务锁内完成准备与校验，之后才提交预留。本地准备失败不会留下预留或触发 Kubernetes 变更。新会话获得不同的 Pod UID、runner 身份和令牌。Kubernetes 创建中断或缺少停止证据时，即使租约过期也不能放行替代实例。终态结果在同一会话中排入平台消息，空闲回收保留 Git 文件和历史。Kubernetes 凭据只留在平台进程。
 
+首次向 Runner POST 前，执行 worker 必须在当前租约下持久记录就绪 Pod 和 Runner 身份。创建结果不明且尚未记录这些身份时，只有原获授权 Sandbox 就绪后才能恢复为 `starting`；首次派发前仍先查询状态。已记录身份的结果不明命令若在 Runner 上缺失，继续保持结果不明，不再派发。取消、账号权限和挂载授权仍约束派发。
+
 `sandboxConcurrency` 限制所有 Platform 副本合计的活跃执行 worker。认领 worker 时，在共享事务锁下统计 PG 有效租约；崩溃 worker 的租约过期后释放容量，由接替者核对执行状态。已进入 `running` 并延期观察的命令会释放 worker 租约，因此此限额不同于存活 Pod 数量；用户挂载槽位另行约束 Pod 替换。
 
 新建 Sandbox Pod 从 Platform Profile 接收文件扫描预算：`sandboxScanMaxEntries`（默认 4,096，上限 65,536）、`sandboxScanMaxHashBytes`（32 MiB，200 MiB）、`sandboxScanTimeoutMs`（5,000，30,000）、`sandboxScanMaxSnapshotBytes`（1 MiB，4 MiB）和 `sandboxScanMaxFiles`（100，100）。这些值均为正整数，快照字节数下限为 1 KiB。命令执行前、执行后的扫描分别使用独立预算，配置变更适用于新建 Pod。Platform 字节核验另用 `sandboxFileVerifyTimeoutMs`（默认 15,000，范围 100–60,000）。扫描受限或失败不能视为完整且为空的结果；元数据核验失败也不会丢弃已认证的命令终态。
