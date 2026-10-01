@@ -114,6 +114,12 @@ export class SandboxManager {
       "SELECT id FROM pe_workspaces WHERE user_id=$1 AND binding_state IN ('recovering','blocked') LIMIT 1", [userId])
     return !!fenced.rowCount
   }
+  private async recoveryOwnsCleanup(client: PoolClient, userId: string): Promise<boolean> {
+    const fenced = await client.query(`SELECT w.id FROM pe_workspaces w JOIN pe_users u ON u.id=w.user_id
+      WHERE w.user_id=$1 AND (w.binding_state='recovering'
+        OR w.binding_state='blocked' AND u.enabled AND u.deleted_at IS NULL) LIMIT 1`, [userId])
+    return !!fenced.rowCount
+  }
   private async assertAdmission(client: PoolClient, userId: string): Promise<void> {
     if (await this.recoveryOwnsWriter(client, userId)) throw new MountSlotBlocked('mount_workspace_recovering', false)
   }
@@ -916,15 +922,17 @@ export class SandboxManager {
 
   /**
    * Recycle one idle writer; incomplete stop evidence leaves its slot blocked for reconciliation.
-   * Recovery fences transfer cleanup to the recovery worker; an earlier recycler rechecks its slot before progress.
+   * Recovery owns cleanup until blocked; disabled accounts then permit cleanup without rebinding.
+   * Account authority and the exact slot are rechecked before each cleanup step.
    * @param idleMs - Inactivity threshold; already stopping or disabled-account writers are also eligible.
    */
   async recycleIdle(idleMs: number): Promise<void> {
     const candidate = await this.pool.query<{ user_id: string }>(
       `SELECT m.user_id FROM pe_mount_slots m JOIN pe_sandbox_instances s ON s.session_id=m.session_id
        WHERE m.state IN ('ready','stopping')
-       AND NOT EXISTS(SELECT 1 FROM pe_workspaces w WHERE w.user_id=m.user_id
-         AND w.binding_state IN ('recovering','blocked'))
+       AND NOT EXISTS(SELECT 1 FROM pe_workspaces w JOIN pe_users u ON u.id=w.user_id
+         WHERE w.user_id=m.user_id AND (w.binding_state='recovering'
+           OR w.binding_state='blocked' AND u.enabled AND u.deleted_at IS NULL))
        AND (m.state='stopping' OR s.last_used_at<now()-$1::double precision*interval '1 millisecond'
          OR EXISTS(SELECT 1 FROM pe_cloud_executions e WHERE e.session_id=m.session_id
            AND e.error_code='account_disabled' AND e.state IN ('uncertain','succeeded','failed','cancelled')))
@@ -935,7 +943,7 @@ export class SandboxManager {
       await this.lockUser(client, userId)
       const hint = await client.query<{ workspace_id: string | null }>('SELECT workspace_id FROM pe_mount_slots WHERE user_id=$1', [userId])
       if (hint.rows[0]?.workspace_id) await this.lockWorkspace(client, userId, hint.rows[0].workspace_id)
-      if (await this.recoveryOwnsWriter(client, userId)) return null
+      if (await this.recoveryOwnsCleanup(client, userId)) return null
       const result = await client.query<MountSlot>('SELECT * FROM pe_mount_slots WHERE user_id=$1 FOR UPDATE', [userId])
       const slot = result.rows[0]
       if (!slot || !slot.session_id || !slot.pod_uid || !slot.runner_instance_id
@@ -963,7 +971,7 @@ export class SandboxManager {
     })
     if (selected) {
       const checkLocked = async (client: PoolClient) => {
-        await this.assertAdmission(client, userId)
+        if (await this.recoveryOwnsCleanup(client, userId)) throw new MountSlotBlocked('mount_workspace_recovering', false)
         await this.stopping(selected, client)
       }
       const check = () => transaction(this.pool, async client => {
