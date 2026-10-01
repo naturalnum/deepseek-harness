@@ -45,8 +45,23 @@ The new image was imported into the existing single-node k3d cluster and selecte
 
 The first local test driver incorrectly encoded a kubectl subresource and later required a timeout despite this CNI returning a refusal. These were driver corrections; the committed preflight already uses `--subresource`, and the runtime already requires an independently healthy listener before accepting refusal as denial. Local evidence is under `.artifacts/power-evolve/release-build/connector/`: package/build logs, `image-verification.json`, and `k3s-verification.json`. These are component checks without browser, model or remote SSH execution.
 
-## Application build and remaining work
+## Host and Platform application image
 
-Host and Platform share one application image. Its clean build at `4f62160ee0c42d332b5dab2a45ecd56122f73e58` reached native client TypeScript compilation and failed in three test fixtures: injected-provider factory types, a missing file-mention title, and a generic render-slot mock. The full Dockerfile remains an open requirement until those fixtures compile and the current image passes startup. The updated startup drill includes the required account policy and limits temporary container resources; its pure checks do not establish image startup.
+| Item | Verified value |
+| --- | --- |
+| Source archive | `40ba53dcbc91f554b103ec3d0e6edea21990ae6f`, complete clean Git archive |
+| Build | Complete committed `deploy/Dockerfile`, Linux ARM64; Host, Client, native Web and product compilation passed |
+| Local image | `pe-release-app:40ba53dcbc` |
+| Image ID | `sha256:432137863ed75bb722f0cf9385f44dec173d17d7147b51c9d11ebc51cda76f1a` |
+| Image size | 1,771,834,547 bytes |
+| Startup | Real disposable PG 17, separate Host and Platform containers, current account policy; seven checks passed |
+| Authority and files | Host UID 10001, read-only roots, no Platform secret/storage/SA mounts; authenticated RPC, SafePosix byte round-trip and traversal refusal passed |
+| HTTP resources | Native Web and Platform login pages loaded; this drill does not automate a browser or call a model |
 
-The application builder is limited to two CPUs and 4 GiB, stopped between build attempts. Logs are under `.artifacts/power-evolve/release-build/application/`. Private-registry pulls, remote SSH through the formal deployment, the complete application image and target-infrastructure S7 acceptance remain unverified. No current component result establishes a complete release.
+The earlier clean build at `4f62160ee0c42d332b5dab2a45ecd56122f73e58` failed in three client test fixtures: injected-provider factory types, a missing file-mention title, and a generic render-slot mock. The fixture-only correction passed 178 targeted tests; the full client compiler subsequently passed in the image build. No test was excluded and no compiler check was disabled. The corrected archive initially exhausted the 4 GiB builder limit during Host compilation (exit 137 and BuildKit `ResourceExhausted`); the same archive passed with two CPUs and 6 GiB. This is build-time memory, not a per-user runtime allocation.
+
+The [current startup drill](qa-s7d-image-startup.mjs) ran against the new image with its required account policy, temporary private credentials, and bounded containers. It removed all three containers, its network, data volume and private files. The builder was stopped before the drill. Local evidence is under `.artifacts/power-evolve/release-build/application/`: `source-fixed.json`, `build-fixed-6g.log`, `startup.log`, and `image-verification.json`. Cloud Runner source and Connector packaged runtime inputs are unchanged between their recorded archives and the application revision; their existing component evidence remains applicable.
+
+## Remaining release checks
+
+All three local ARM64 images now have clean-source build and component evidence. They have not been pushed or promoted into the fixed candidate. Private-registry pulls, remote SSH through the formal deployment, full product acceptance on the new image composition and target-infrastructure S7 acceptance remain unverified. AMD64 remains unverified. No current component result establishes a complete release.
