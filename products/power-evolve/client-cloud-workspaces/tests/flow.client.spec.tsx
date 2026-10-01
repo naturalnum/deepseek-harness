@@ -403,3 +403,32 @@ it('reloads the product through the native Loader and prevents the old directory
   expect(b.query.queryByRole('button', { name: 'Late' })).toBeNull()
   expect(b.query.getByRole('button', { name: 'Current' })).toBeTruthy()
 }, 30_000)
+
+it('closes an in-flight restore, aborts its browser request and resumes the durable operation without accepting a late completion', async () => {
+  const delayed = Promise.withResolvers<Response>()
+  let request: WorkspaceBindingRestoreRequest | undefined
+  let complete = false
+  const calls = server(async call => {
+    if (call.key === 'workspaceBindingRestore') { request = workspaceBindingRestoreRequest.parse(call.request); return delayed.promise }
+    if (call.key === 'workspaceBindingsMissing' && request) return Response.json({ items: complete ? []
+      : [{ ...missing.items[0], state: 'recovering', recoveryRequestId: request.requestId }] })
+    if (call.key === 'workspaceBindingStatus') { complete = true; return Response.json(receipt(request!, 'completed')) }
+    return undefined
+  })
+  const b = await boot()
+  await b.open()
+  fireEvent.click(b.query.getByRole('tab', { name: en.recovery }))
+  await b.query.findByRole('button', { name: 'Existing' })
+  fireEvent.click(b.query.getByRole('button', { name: en.restore }))
+  await vi.waitFor(() => { expect(request).toBeDefined() })
+  fireEvent.click(b.query.getAllByRole('button', { name: en.cancel, exact: true }).at(-1)!)
+  expect(calls.find(call => call.key === 'workspaceBindingRestore')!.signal.aborted).toBe(true)
+  await act(async () => { delayed.resolve(Response.json(receipt(request!, 'completed'))) })
+  expect(b.query.queryByText(en.completed)).toBeNull()
+  await b.open()
+  await vi.waitFor(() => { expect(b.query.getByRole('button', { name: en.restore }).hasAttribute('disabled')).toBe(true) })
+  fireEvent.click(b.query.getByRole('button', { name: en.checkStatus }))
+  await b.query.findByText(en.completed)
+  expect(calls.filter(call => call.key === 'workspaceBindingRestore')).toHaveLength(1)
+  expect(calls.find(call => call.key === 'workspaceBindingStatus')!.request).toEqual({ requestId: request!.requestId })
+}, 30_000)

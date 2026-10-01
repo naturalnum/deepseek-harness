@@ -191,9 +191,9 @@ export function CloudWorkspaceFlow({ open, busy, onPicked, onCancel, t, useStore
   const progress = receipt?.state === 'accepted' ? 'accepted' : receipt?.state === 'stopping' ? 'stopping'
     : receipt?.state === 'completed' ? 'completed' : receipt?.state === 'blocked' ? 'blocked' : null
 
-  return <Modal open={open} onClose={() => { if (!busy && !working) onCancel() }} title={t('title')}
+  return <Modal open={open} onClose={() => { if (!busy) onCancel() }} title={t('title')}
     closeLabel={t('close')} footer={<>
-      <Button disabled={busy || working} onClick={onCancel}>{t('cancel')}</Button>
+      <Button disabled={busy} onClick={onCancel}>{t('cancel')}</Button>
       {mode === 'restore'
         ? <Button variant="primary" disabled={locked || !workspace || !selected || unknownRecoveryTarget} aria-busy={working}
             onClick={() => { void recover(false) }}>{t('restore')}</Button>
