@@ -13,6 +13,7 @@ export default defineConfig([
       alwaysBundle: [protocol, /^zod(?:\/|$)/u, '@deepseek-ai/dsh-brand'],
       onlyBundle: ['zod'],
       neverBundle: ['react', 'react/jsx-runtime', '@deepseek-ai/cordis',
+        '@deepseek-ai/dsh-client-store',
         '@deepseek-ai/dsh-client-ui-slots', '@deepseek-ai/dsh-client-ui-primitives'],
     },
     outputOptions: {
