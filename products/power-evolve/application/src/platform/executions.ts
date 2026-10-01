@@ -45,9 +45,17 @@ export class ExecutionService {
     private readonly concurrency: number, private readonly pollMs: number,
     private readonly idleMs: number, private readonly commandTimeoutMs: number,
     private readonly leaseMs = 90_000) {}
+  /** PostgreSQL pool shared with the durable task store. */
   get pool(): Pool { return this.tasks.pool }
 
-  /** Persist one tool request before returning an accepted receipt to the Agent. */
+  /**
+   * Persist one tool request before returning an accepted receipt to the Agent.
+   * @param token Current operation grant.
+   * @param callId Stable tool call identifier for retries.
+   * @param command Shell command accepted for cloud execution.
+   * @param cwd Workspace-relative working directory.
+   * @returns Persisted execution receipt.
+   */
   async propose(token: string, callId: string, command: string, cwd: string): Promise<unknown> {
     const request = { command, cwd, timeoutMs: this.commandTimeoutMs }
     return transaction(this.pool, async client => {
@@ -84,13 +92,23 @@ export class ExecutionService {
       result: row.result, errorCode: row.error_code }
   }
 
+  /**
+   * Read the owner's recent executions.
+   * @param user Authenticated execution owner.
+   * @returns Receipts ordered from newest to oldest.
+   */
   async list(user: Identity): Promise<unknown> {
     const result = await this.pool.query<ExecutionRow>(
       'SELECT * FROM pe_cloud_executions WHERE user_id=$1 ORDER BY created_at DESC,id DESC LIMIT 100', [user.userId])
     return { items: result.rows.map(row => ({ ...this.receipt(row) as object, createdAt: row.created_at.toISOString() })) }
   }
 
-  /** A cancellation request is durable; terminal state waits for the runner or Pod to stop. */
+  /**
+   * Persist cancellation; terminal state waits for the runner or Pod to stop.
+   * @param user Authenticated execution owner.
+   * @param executionId Execution to cancel.
+   * @returns Current receipt with the durable cancellation request.
+   */
   async cancel(user: Identity, executionId: string): Promise<unknown> {
     return transaction(this.pool, async client => {
       const result = await client.query<ExecutionRow>(
@@ -106,7 +124,9 @@ export class ExecutionService {
     })
   }
 
+  /** Start the execution admission and reconciliation worker. */
   start(): void { this.polling = this.poll() }
+  /** Stop polling and wait for active reconciliation attempts to finish. */
   async close(): Promise<void> { this.stop.abort(); await this.polling; await Promise.allSettled(this.active) }
 
   private async poll(): Promise<void> {
@@ -200,7 +220,9 @@ export class ExecutionService {
         await this.settle(row, 'cancelled', null, null); return
       }
       await assertLease()
-      const sandbox = await this.sandboxes.ensureReady(row.session_id, row.user_id, assertLease)
+      const sandbox = row.runner_instance_id && row.pod_uid
+        ? await this.sandboxes.observeReady(row.session_id, row.user_id, row.pod_uid, row.runner_instance_id)
+        : await this.sandboxes.ensureReady(row.session_id, row.user_id, assertLease)
       await assertLease()
       if (row.runner_instance_id
         && (row.runner_instance_id !== sandbox.runnerInstanceId || row.pod_uid !== sandbox.podUid)) {
@@ -253,7 +275,7 @@ export class ExecutionService {
         await this.defer(row, 'uncertain', 'runner_execution_missing'); return
       }
       await assertLease()
-      await this.sandboxes.assertCurrent(sandbox)
+      await this.sandboxes.assertDispatchAllowed(sandbox)
       const permitted = await transaction(this.pool, async client => {
         await requireActiveAccount(client, executionUserId.parse(row.user_id), 'update')
         const issued = await client.query(`UPDATE pe_cloud_executions SET state='running',updated_at=now()
@@ -262,6 +284,8 @@ export class ExecutionService {
         return !!issued.rowCount
       })
       if (!permitted) { await this.settle(row, 'cancelled', null, null); return }
+      await assertLease()
+      await this.sandboxes.assertDispatchAllowed(sandbox)
       status = runnerResult.parse(await this.sandboxes.runner(sandbox.name, sandbox.token, 'POST', '/executions', request))
     }
     if (status.id !== row.id || status.instanceId !== sandbox.runnerInstanceId || status.digest !== digest(request)) {
