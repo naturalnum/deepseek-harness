@@ -116,6 +116,12 @@ export interface ChatFileMentions {
    * @returns link resolver when available.
    */
   forClosing(owner: TurnTailOwnerProps, sessionId: SessionId): MarkdownFileMentions | undefined
+  /**
+   * Observe asynchronous mention changes for the viewed Session.
+   * @param sessionId - viewed Session whose facts and action state may change after its turn closes.
+   * @returns Stable revision source; publish a new revision after changing resolver output and clear it on disposal.
+   */
+  changesForSession?(sessionId: SessionId): ObservableSnapshot<number>
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -194,6 +200,14 @@ export interface PresentationInjected {
   hooks: {
     /** Live presentation policy derived from the accepted work-details mode. */
     presentation: ObservableSnapshot<ChatPresentationPolicy>
+  }
+}
+
+/** Assistant renderers observe presentation policy and asynchronous file-mention changes. */
+export interface AssistantInjected extends PresentationInjected {
+  hooks: PresentationInjected['hooks'] & {
+    /** Revision of the optional file-mention provider for the viewed Session. */
+    fileMentionRevision: ObservableSnapshot<number>
   }
 }
 

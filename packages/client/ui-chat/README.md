@@ -67,6 +67,8 @@ Preference menus restore focus to their trigger without scrolling before publish
 
 Artifact extensions can subscribe to one Turn and Node kind through `ChatNodeStore.turnDataSource`. The source includes hidden Nodes and exposes their business data in anchor order. Membership updates incrementally; only observed collections materialize ordered arrays, and unrelated Turns or kinds do not notify them.
 
+`ChatFileMentions.changesForSession` optionally returns a stable revision source for the viewed Session. Providers publish a new revision after asynchronous facts or actions change what `forClosing` resolves, and clear their facts on disposal. The Assistant renderer subscribes through its injected framework hook, so settled inline links update without another Session event. Provider mounting, removal, and replacement refresh existing renderers; renderer unmount releases both provider and fact subscriptions. Providers without this method retain synchronous resolution.
+
 The completed-turn action footer follows the recorded Turn end. Its action row starts 20px below preceding prose or extension content. Actions remain visible only on the latest Turn when its final visible content is a reply; other endings and historical Turns reveal actions on hover or keyboard focus. Devices without hover keep actions visible.
 
 -----

@@ -308,6 +308,8 @@ function makeHarness(
   const chat = createChatStore().create()
   const transcriptView = createSnapshotStore<TranscriptViewMode>('compact')
   const performanceUsage = createSnapshotStore<'compact' | 'detailed'>('detailed')
+  const fileMentionRevision = createSnapshotStore(0)
+  const useFileMentionRevision = bindSnapshotSelector(fileMentionRevision)
   const t = makeTranslate(zh, commonZh)
   const toolOwners: Array<{
     callId: string
@@ -340,7 +342,8 @@ function makeHarness(
       case 'context':
         return <ContextMessageNodeView {...nodeProps} node={nodeOwner.node} />
       case 'assistant-step':
-        return <AssistantNodeView {...nodeProps} node={nodeOwner.node} usePresentation={props.usePresentation} />
+        return <AssistantNodeView {...nodeProps} node={nodeOwner.node} usePresentation={props.usePresentation}
+          useFileMentionRevision={useFileMentionRevision} />
       case 'command':
         return (
           <CommandNodeView
@@ -480,6 +483,7 @@ function makeHarness(
     openFile, openSkill, loadOlder, loadThrough, openView,
     setOutline: (value: unknown) => { outlineValue = value },
     chatScroll, forkAt, toolOwners,
+    refreshFileMentions: () => { fileMentionRevision.set(fileMentionRevision.getSnapshot() + 1) },
     setPerformanceUsage: (mode: 'compact' | 'detailed') => { performanceUsage.set(mode) },
     setGrouped: (value: ConversationGroupedView<ProcessGroupData> | undefined) => {
       grouped = value
@@ -612,6 +616,37 @@ describe('Chat node rendering', () => {
     fireEvent.click(mention)
     // The vocabulary was built from the closing message's own owner currency.
     expect(h.openFile).toHaveBeenCalledWith('for-seq-4/site/report.html')
+  })
+
+  it('refreshes settled inline file actions when asynchronous facts arrive and are cleared', () => {
+    const h = makeHarness({
+      nodes: [user(1, 'build it'), assistant(2, 'Wrote `report.html`.', 1)],
+      turnEnds: new Map([[1, 2]]),
+    })
+    let available = false
+    h.props.fileMentions = () => available ? {
+      resolve: value => value === 'report.html' ? {
+        open: () => { void h.openFile('site/report.html') },
+        label: '打开 site/report.html',
+      } : undefined,
+    } : undefined
+    const view = render(<h.ChatView {...h.props} />)
+    expect(view.queryByRole('button', { name: '打开 site/report.html' })).toBeNull()
+
+    // Only the mention source changes; no Session event or parent rerender arrives.
+    act(() => {
+      available = true
+      h.refreshFileMentions()
+    })
+    fireEvent.click(view.getByRole('button', { name: '打开 site/report.html' }))
+    expect(h.openFile).toHaveBeenCalledWith('site/report.html')
+
+    act(() => {
+      available = false
+      h.refreshFileMentions()
+    })
+    expect(view.queryByRole('button', { name: '打开 site/report.html' })).toBeNull()
+    expect(view.getByText('report.html', { selector: 'code' })).toBeTruthy()
   })
 
   it('formatRunDuration localizes units and floors partial seconds', () => {

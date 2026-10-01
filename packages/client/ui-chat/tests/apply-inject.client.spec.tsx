@@ -15,7 +15,7 @@ import {
   type GroupKey,
 } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import {
-  apply as applyChat, inject as injectChat, type ChatViewInjected,
+  apply as applyChat, inject as injectChat, type AssistantInjected, type ChatViewInjected,
 } from '@deepseek-ai/dsh-client-ui-chat/client'
 import { SessionSeq, type SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
@@ -129,6 +129,73 @@ async function bench(initialSettings?: ChatSettings, withBrowserRegistry = true,
 }
 
 describe('Chat inject API', () => {
+  it('observes mention revisions for the viewed Session across optional provider replacement', async () => {
+    const b = await bench()
+    try {
+      const entry = b.runtime.slots.entries('conversation.chat.node').find(item => item.options.key === 'assistant-step')!
+      const other = 'other-session' as SessionId
+      const rootSource = (entry.inject!(ROOT) as AssistantInjected).hooks.fileMentionRevision
+      const otherSource = (entry.inject!(other) as AssistantInjected).hooks.fileMentionRevision
+      expect(rootSource.getSnapshot()).toBe(0)
+      expect(otherSource.getSnapshot()).toBe(0)
+      const rootChanged = vi.fn()
+      const otherChanged = vi.fn()
+      const stopRoot = rootSource.subscribe(rootChanged)
+      const stopOther = otherSource.subscribe(otherChanged)
+      const rootRevision = createSnapshotStore(0)
+      const otherRevision = createSnapshotStore(0)
+      const stopRootProvider = vi.fn()
+      const rootProviderSource = {
+        getSnapshot: () => rootRevision.getSnapshot(),
+        subscribe: (listener: () => void) => {
+          const stop = rootRevision.subscribe(listener)
+          return () => { stop(); stopRootProvider() }
+        },
+      }
+      const changesForSession = vi.fn((sessionId: SessionId) => sessionId === ROOT ? rootProviderSource : otherRevision)
+      const provider = await b.runtime.mount({ apply: (ctx) => {
+        ctx.provide('chatFileMentions', { forClosing: () => undefined, changesForSession })
+      } })
+      expect(rootChanged).toHaveBeenCalled()
+      expect(changesForSession).toHaveBeenCalledWith(ROOT)
+      expect(changesForSession).toHaveBeenCalledWith(other)
+      const initial = rootSource.getSnapshot()
+      const otherInitial = otherSource.getSnapshot()
+      expect(initial).toBeGreaterThan(0)
+      rootChanged.mockClear()
+      otherChanged.mockClear()
+
+      rootRevision.set(1)
+      expect(rootChanged).toHaveBeenCalledOnce()
+      expect(otherChanged).not.toHaveBeenCalled()
+      expect(rootSource.getSnapshot()).toBeGreaterThan(initial)
+      expect(otherSource.getSnapshot()).toBe(otherInitial)
+      const beforeRemoval = rootSource.getSnapshot()
+      await provider.dispose()
+      expect(rootSource.getSnapshot()).toBeGreaterThan(beforeRemoval)
+      expect(stopRootProvider).toHaveBeenCalledOnce()
+      rootChanged.mockClear()
+      rootRevision.set(2)
+      expect(rootChanged).not.toHaveBeenCalled()
+
+      const replacement = await b.runtime.mount({ apply: (ctx) => {
+        ctx.provide('chatFileMentions', { forClosing: () => undefined, changesForSession })
+      } })
+      rootChanged.mockClear()
+      rootRevision.set(3)
+      expect(rootChanged).toHaveBeenCalledOnce()
+      stopRoot()
+      stopOther()
+      expect(stopRootProvider).toHaveBeenCalledTimes(2)
+      rootChanged.mockClear()
+      rootRevision.set(4)
+      await replacement.dispose()
+      expect(rootChanged).not.toHaveBeenCalled()
+    } finally {
+      await b.runtime.dispose()
+    }
+  })
+
   it('resolves keyed Group sources across registration, activation, and removal', async () => {
     const b = await bench(undefined, true, false)
     try {

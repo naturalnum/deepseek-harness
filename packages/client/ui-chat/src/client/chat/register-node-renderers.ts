@@ -1,7 +1,9 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { PerformanceUsageMode } from '../../chat-settings.ts'
 import type { ChatPresentationPolicy } from '../presentation-policy.ts'
+import type { ChatFileMentions } from '../contract/slots.ts'
 import { NS } from '../locale.ts'
 import { AssistantNodeView } from './AssistantNodeView.tsx'
 import { CommandNodeView, ManualCompactionNodeView } from './CommandNodeView.tsx'
@@ -13,6 +15,43 @@ import { SystemPromptNodeView } from './SystemPromptRow.tsx'
 import { TurnProcessNodeView } from './TurnProcessNodeView.tsx'
 import { TurnTailNodeView } from './TurnTailNodeView.tsx'
 import { TurnTriggerNodeView } from './TurnTriggerNodeView.tsx'
+
+// Follow the optional provider's lifetime as well as its Session-local facts.
+// Each renderer subscription releases both listeners when it unmounts.
+function fileMentionChanges(ctx: Context, sessionId: SessionId): ObservableSnapshot<number> {
+  let revision = 0
+  let previousProvider: ChatFileMentions | undefined
+  let previousSource: ObservableSnapshot<number> | undefined
+  let previousValue: number | undefined
+  return {
+    getSnapshot: () => {
+      const provider = ctx.get('chatFileMentions')
+      const source = provider?.changesForSession?.(sessionId)
+      const value = source?.getSnapshot()
+      if (provider !== previousProvider || source !== previousSource || value !== previousValue) {
+        previousProvider = provider
+        previousSource = source
+        previousValue = value
+        revision++
+      }
+      return revision
+    },
+    subscribe: (listener) => {
+      const subscribe = () => ctx.get('chatFileMentions')?.changesForSession?.(sessionId).subscribe(listener)
+      let stopSource = subscribe()
+      const stopProvider = ctx.on('internal/service', (name) => {
+        if (name !== 'chatFileMentions') return
+        stopSource?.()
+        stopSource = subscribe()
+        listener()
+      })
+      return () => {
+        stopProvider()
+        stopSource?.()
+      }
+    },
+  }
+}
 
 /**
  * Register this package's business renderers behind the keyed Chat Node seat.
@@ -41,7 +80,9 @@ export function registerChatNodeRenderers(
     name: 'conversation.chat.node',
     key: 'assistant-step',
     locale: NS,
-    inject: () => ({ hooks: { presentation } }),
+    inject: (sessionId: SessionId) => ({
+      hooks: { presentation, fileMentionRevision: fileMentionChanges(ctx, sessionId) },
+    }),
   }, AssistantNodeView))
   ctx.slots.inject('conversation.chat.node', () => ctx.slots.register({
     name: 'conversation.chat.node',
