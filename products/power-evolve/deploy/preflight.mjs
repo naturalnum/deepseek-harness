@@ -135,7 +135,9 @@ function kubectl(context, args, acceptDenial = false) {
 const get = (context, namespace, kind, name) => JSON.parse(kubectl(context,
   [...(namespace ? ['-n', namespace] : []), 'get', kind, name, '-o', 'json']))
 function can(context, namespace, subject, verb, resourceName) {
-  const decision = kubectl(context, ['-n', namespace, 'auth', 'can-i', verb, resourceName,
+  const [resourceType, subresource] = resourceName.split('/')
+  const decision = kubectl(context, ['-n', namespace, 'auth', 'can-i', verb, resourceType,
+    ...(subresource ? [`--subresource=${subresource}`] : []),
     `--as=system:serviceaccount:${subject}`], true)
   assert(['yes', 'no'].includes(decision), 'Invalid namespace RBAC observation')
   return decision === 'yes'

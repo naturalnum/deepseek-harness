@@ -63,7 +63,9 @@ function connect(namespace, podName, host, port) {
     s.setTimeout(1500,()=>end(false,'TIMEOUT'));s.once('connect',()=>end(true,'CONNECTED'));s.once('error',e=>end(false,e.code))`)
 }
 function can(namespace, accountNamespace, account, verb, resource) {
-  const result = spawnSync('kubectl', ['--context', context, '-n', namespace, 'auth', 'can-i', verb, resource,
+  const [resourceType, subresource] = resource.split('/')
+  const result = spawnSync('kubectl', ['--context', context, '-n', namespace, 'auth', 'can-i', verb, resourceType,
+    ...(subresource ? [`--subresource=${subresource}`] : []),
     `--as=system:serviceaccount:${accountNamespace}:${account}`], { encoding: 'utf8', timeout: 10_000 })
   if (result.error || ![0, 1].includes(result.status)) throw new Error('RBAC probe failed')
   assert(['yes', 'no'].includes(result.stdout.trim()))
@@ -153,6 +155,7 @@ try {
     [app, 'power-evolve-platform', runner, 'list', 'sandboxes.agents.x-k8s.io', true],
     [app, 'power-evolve-platform', runner, 'create', 'sandboxes.agents.x-k8s.io', true],
     [app, 'power-evolve-platform', runner, 'patch', 'pods', true],
+    [app, 'power-evolve-platform', runner, 'get', 'services/proxy', true],
     [app, 'power-evolve-platform', runner, 'list', 'secrets', false],
     [app, 'power-evolve-platform', runner, 'watch', 'sandboxes.agents.x-k8s.io', false],
     [app, 'power-evolve-platform', runner, 'list', 'pods', false],

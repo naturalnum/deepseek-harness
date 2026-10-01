@@ -156,7 +156,12 @@ test('cluster readiness accepts normal RBAC denials and rejects missing, excessi
     if (canIndex >= 0) {
       if (invalidReply) return invalidReply
       const account = args.find(value => value.startsWith('--as=system:serviceaccount:')).slice('--as=system:serviceaccount:'.length)
-      const allowed = permissions.has(`${namespace}|${account}|${args[canIndex + 1]}|${args[canIndex + 2]}`)
+      const resourceType = args[canIndex + 2]
+      assert.equal(resourceType.includes('/'), false, 'auth can-i TYPE/NAME does not query a subresource')
+      const subresource = args.find(value => value.startsWith('--subresource='))
+      if (resourceType === 'services') assert.equal(subresource, '--subresource=proxy')
+      const resourceName = subresource ? `${resourceType}/${subresource.slice('--subresource='.length)}` : resourceType
+      const allowed = permissions.has(`${namespace}|${account}|${args[canIndex + 1]}|${resourceName}`)
       return { status: allowed ? 0 : 1, stdout: allowed ? 'yes\n' : 'no\n', stderr: '' }
     }
     const index = args.indexOf('get'), kind = args[index + 1], name = args[index + 2]
@@ -176,6 +181,9 @@ test('cluster readiness accepts normal RBAC denials and rejects missing, excessi
   permissions.delete(key(runner, 'list', 'sandboxes.agents.x-k8s.io'))
   await assert.rejects(checkCluster(configured, 'fixture'), /Platform lacks list sandboxes/u)
   permissions.add(key(runner, 'list', 'sandboxes.agents.x-k8s.io'))
+  permissions.delete(key(runner, 'get', 'services/proxy'))
+  await assert.rejects(checkCluster(configured, 'fixture'), /Platform lacks get services\/proxy/u)
+  permissions.add(key(runner, 'get', 'services/proxy'))
   for (const [namespace, verb, resourceName] of [[runner, 'list', 'pods'], [runner, 'create', 'pods'],
     [runner, 'list', 'secrets'], [app, 'list', 'sandboxes.agents.x-k8s.io']]) {
     permissions.add(key(namespace, verb, resourceName))
