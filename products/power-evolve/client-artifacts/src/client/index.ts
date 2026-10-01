@@ -1,5 +1,5 @@
 /** Native publication, verified execution rows and closing-scoped inline file actions. */
-import type { ChatFileMentions } from '@deepseek-ai/dsh-client-ui-chat/client'
+import type { ChatFileMentions, TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-chat/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { Session } from '@deepseek-ai/dsh-api-session-controller/client'
 import { ExecutionFacts, filesForClosing, producedFileKey } from './execution-facts.ts'
@@ -59,7 +59,13 @@ export function apply(ctx: Context): void {
   ctx.provide('chatFileMentions', mentions)
   ctx.effect(() => ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register({
     name: 'conversation.chat.turnTail', id: 'power-evolve-produced-artifacts', order: 20, locale: namespace,
-    inject: (sessionId: Session['sessionId']) => ({ sessionId, facts, keyedHooks: { closingFacts: (key: string) => facts.source(sessionId, key) } }),
+    inject: (sessionId: Session['sessionId']) => ({
+      forClosing: (owner: TurnTailOwnerProps) => {
+        const source = facts.forClosing(sessionId, owner)
+        return { key: source.key, refresh: source.refresh, publish: source.publish }
+      },
+      keyedHooks: { closingFacts: (key: string) => facts.source(sessionId, key) },
+    }),
   }, ProducedArtifacts)), 'PowerEvolve native execution file rows')
   ctx.effect(() => ctx.locale.register(namespace, { zh, en }), 'PowerEvolve artifact labels')
   ctx.effect(() => installArtifactStyles(), 'PowerEvolve artifact styles')

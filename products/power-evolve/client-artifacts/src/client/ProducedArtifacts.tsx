@@ -1,17 +1,21 @@
 /** Platform-verified file versions displayed at their invoking native turn. */
-import type { Session } from '@deepseek-ai/dsh-api-session-controller/client'
 import { useState } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { ClosingFactsSource, ExecutionFacts } from './execution-facts.ts'
+import type { TurnTailOwnerProps } from '@deepseek-ai/dsh-client-ui-chat/client'
+import type { ClosingFactsSource } from './execution-facts.ts'
 import { filesForClosing, producedFileKey } from './execution-facts.ts'
 import { referencesForClosing } from './produced-artifacts.ts'
 
 /** The renderer synthesizes the subscription hook; source identities are local to this plugin. */
 export interface ProducedArtifactsInjected {
-  readonly sessionId: Session['sessionId']
-  readonly facts: ExecutionFacts
+  /** Borrow plain actions for one closing; the observable remains in the registration closure.
+   * @param owner - native turn and closing coordinates.
+   * @returns an opaque hook key and explicit file actions.
+   */
+  readonly forClosing: (owner: TurnTailOwnerProps) => ClosingActions
   readonly keyedHooks: { readonly closingFacts: (key: string) => ClosingFactsSource | undefined }
 }
+type ClosingActions = Pick<ClosingFactsSource, 'key' | 'refresh' | 'publish'>
 type Props = PropsRuntime<'conversation.chat.turnTail'> & PropsLocale<'powerEvolve.artifacts'> & InjectFace<ProducedArtifactsInjected>
 
 /** Observe one closing, including trusted continuation associations; only original receipts render a row.
@@ -19,12 +23,12 @@ type Props = PropsRuntime<'conversation.chat.turnTail'> & PropsLocale<'powerEvol
  * @returns the verified file row, or no visible row for a continuation without new executions.
  */
 export function ProducedArtifacts(props: Props) {
-  const source = props.facts.forClosing(props.sessionId, props)
-  return <ClosingArtifacts key={source.key} {...props} source={source} />
+  const closing = props.forClosing(props)
+  return <ClosingArtifacts key={closing.key} {...props} closing={closing} />
 }
 
-function ClosingArtifacts({ source, useClosingFacts, t, ...owner }: Props & { readonly source: ClosingFactsSource }) {
-  const snapshot = useClosingFacts(source.key)
+function ClosingArtifacts({ closing, useClosingFacts, t, ...owner }: Props & { readonly closing: ClosingActions }) {
+  const snapshot = useClosingFacts(closing.key)
   const [expanded, setExpanded] = useState(false)
   const references = referencesForClosing(owner)
   if (references.length === 0 || snapshot === undefined) return null
@@ -36,7 +40,7 @@ function ClosingArtifacts({ source, useClosingFacts, t, ...owner }: Props & { re
   const visible = expanded ? files : files.slice(0, 6)
   return <section className="pe-produced" data-produced-artifacts="" aria-label={t('producedTitle')}>
     <div className="pe-produced-heading"><strong>{t('producedTitle')}</strong>
-      <button type="button" onClick={() => { source.refresh() }} disabled={snapshot.state === 'loading'}>{t('refresh')}</button>
+      <button type="button" onClick={() => { closing.refresh() }} disabled={snapshot.state === 'loading'}>{t('refresh')}</button>
     </div>
     {(snapshot.state === 'idle' || snapshot.state === 'loading' || pending) && <span role="status">{t('factsPending')}</span>}
     {snapshot.state === 'failed' && <span role="alert">{t('factsFailed')}</span>}
@@ -48,7 +52,7 @@ function ClosingArtifacts({ source, useClosingFacts, t, ...owner }: Props & { re
       const state = snapshot.publications[key]
       return <li key={key} data-produced-file={file.path}>
         <button type="button" title={`/workspace/${file.path}`} aria-label={`${file.path}: ${t(state === 'busy' ? 'publishing' : 'publishDownload')}`} aria-busy={state === 'busy'}
-          disabled={state === 'busy' || state === 'changed'} onClick={() => { void source.publish(file) }}>
+          disabled={state === 'busy' || state === 'changed'} onClick={() => { void closing.publish(file) }}>
           <span className="pe-produced-path">{file.path}</span>
           <span>{t(state === 'busy' ? 'publishing' : 'publishDownload')}</span>
         </button>
