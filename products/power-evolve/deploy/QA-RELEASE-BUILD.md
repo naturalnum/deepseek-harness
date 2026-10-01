@@ -64,4 +64,4 @@ The [current startup drill](qa-s7d-image-startup.mjs) ran against the new image 
 
 ## Remaining release checks
 
-All three local ARM64 images now have clean-source build and component evidence. They have not been pushed or promoted into the fixed candidate. Private-registry pulls, remote SSH through the formal deployment, full product acceptance on the new image composition and target-infrastructure S7 acceptance remain unverified. AMD64 remains unverified. No current component result establishes a complete release.
+All three local ARM64 images now have clean-source build and component evidence. Their [local composition](QA-RELEASE-COMPOSITION.md) also passed real-model native HTTP requests, files, PVC-mounted cloud Git, SSH and restart checks through the formal deployment entry points with explicit local resource overrides. Browser acceptance remains blocked by the local certificate's trust status. The images have not been pushed or promoted into the fixed candidate. Private-registry pulls, complete browser acceptance and target-infrastructure S7 acceptance remain unverified. AMD64 remains unverified. These results do not establish a complete release.
