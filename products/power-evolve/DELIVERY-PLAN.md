@@ -14,7 +14,7 @@
 
 本次路线复查纠正“单项功能先行、组合冻结与发布构建滞后”的节奏。正式镜像通过组合验收后才替换候选版。当前按上面的本机交付范围继续，不以新增页面或连接器种类填补验收，也不将本机结果标成物理节点验收。Connector 正式打包已加入生产锁校验及现有 CI 的部署测试入口；[构建记录](deploy/QA-RELEASE-BUILD.md#connector-production-lock-validation)区分命令替身回归与真实产物元数据验证。
 
-正式 ARM64 应用的本机 HTTP 浏览器验收已覆盖双用户登录、`hi`、追问及历史恢复、文本上传编辑、独立工作区云 Git／Python 测试、批量 ZIP 下载和对话产物发布／预览／下载。`hi` 无执行沙盒，两用户执行 Pod 不同，越权访问拒绝，空闲回收后文件保留。受控 API 审批、待审批状态的 Platform 重启恢复、公开 MCP 的两次独立审批及私有 Bearer MCP 的凭据保留／撤销也已通过。新镜像已通过入口状态码 101→503→101、错误凭据及 Origin／Host 拒绝和浏览器历史读回，以及 Header MCP 生命周期和双用户私钥 SSH 正常执行。当前两个 Host、两个 Platform 已 Ready，经本机负载均衡完成两用户新的真实对话和历史读回；尚未完成当前镜像的副本故障恢复。各流程保持其实际镜像版本，见[构建记录](deploy/QA-RELEASE-BUILD.md)和[组合记录](deploy/QA-RELEASE-COMPOSITION.md#local-http-native-browser-acceptance)。接下来完成故障恢复、备份恢复和固定试用，正式镜像尚未替换固定候选版。物理目标架构、生产私库及生产网络验收保留各自范围。
+正式 ARM64 应用的本机 HTTP 浏览器验收已覆盖双用户登录、`hi`、追问及历史恢复、文本上传编辑、独立工作区云 Git／Python 测试、批量 ZIP 下载和对话产物发布／预览／下载。`hi` 无执行沙盒，两用户执行 Pod 不同，越权访问拒绝，空闲回收后文件保留。受控 API 审批、待审批状态的 Platform 重启恢复、公开 MCP 的两次独立审批及私有 Bearer MCP 的凭据保留／撤销也已通过。新镜像已通过入口状态码 101→503→101、错误凭据及 Origin／Host 拒绝和浏览器历史读回，以及 Header MCP 生命周期和双用户私钥 SSH 正常执行。当前两个 Host、两个 Platform 经本机负载均衡完成两用户新对话及两次真实容器故障演练：运行中 SSH 在原 Platform 退出后由同一 Runner 完成，结果续接一次；已消费的模型输入在 Host 退出后安全终止，新消息正常完成。原生 Chat 的中断显示修复已通过源代码回归、正式镜像构建和实际浏览器读回；更新后两用户各完成一个无沙盒新对话。各流程保持其实际镜像版本，见[构建记录](deploy/QA-RELEASE-BUILD.md)和[组合记录](deploy/QA-RELEASE-COMPOSITION.md#local-http-native-browser-acceptance)。接下来完成备份恢复和固定试用，正式镜像尚未替换固定候选版。物理目标架构、生产私库及生产网络验收保留各自范围。
 
 ## 计数口径与现状
 

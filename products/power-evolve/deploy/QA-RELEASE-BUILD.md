@@ -2,6 +2,10 @@
 
 This record covers clean-source image builds, component checks and local authenticated registry pulls. It does not replace two-user product acceptance or S7 target-infrastructure acceptance. The [fixed cloud candidate](../TRIAL-CLOUD-CANDIDATE.md) retains its existing checkout, data and images.
 
+## Native interruption display image
+
+The clean application archive `54c4fe23f57258f53682a4500747e986b097c137` passed the complete committed Dockerfile for Linux ARM64, including Host, Client, native Web and product compilation, under two CPUs and 6 GiB. The image is `pe-release-app:54c4fe23f5`, image ID `sha256:648baa1639250897c7d13a4a6c7be04abaac78c1297dd790655799da6dc78329`, size 2,431,523,374 bytes, and imported manifest digest `sha256:ba24807afab11b884e95ef32db09a9d0b620815c462dc9d3903014269778ec16`. The builder stopped after export. The existing cluster imported this image directly; only the two QA application Deployment image fields changed, and both Platform and both Host Pods became Ready with their configuration preserved. Runner images, PG, file roots, credentials and public loopback Origins were retained. Build and rollout evidence is under `.artifacts/power-evolve/release-integration/application-interrupted-turn/`; [composition qualification](QA-RELEASE-COMPOSITION.md#local-replica-interruption-drills) records actual browser scope. This image has not repeated the earlier private-registry checks.
+
 ## Cloud Runner
 
 | Item | Verified value |
