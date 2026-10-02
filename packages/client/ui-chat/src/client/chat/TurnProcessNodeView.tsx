@@ -31,17 +31,19 @@ export const TurnProcessNodeView = memo(function TurnProcessNodeView({
     : Math.max(1000, (turn.end?.time ?? now) - turn.start.time)
   const duration = elapsedMs === undefined ? undefined
     : running ? formatLiveRunDuration(elapsedMs, t) : formatRunDuration(elapsedMs, t)
-  // Other end reasons retain elapsed time; only cancellation and failure replace it.
+  // Cancellation, interruption, and failure replace elapsed time with their status.
   const label = running
     ? duration === undefined ? t('chat.deepDiving') : t('message.turnProcess.deepDivingFor', { duration })
     : reason === 'aborted' ? t('message.stopped')
-      : reason === 'error' ? t('message.turnProcess.failed')
-        : duration === undefined ? t('message.turnProcess.worked')
-          : t('message.turnProcess.took', { duration })
+      : reason === 'interrupted' ? t('message.interrupted')
+        : reason === 'error' ? t('message.turnProcess.failed')
+          : duration === undefined ? t('message.turnProcess.worked')
+            : t('message.turnProcess.took', { duration })
   const announcement = running ? t('chat.deepDiving')
     : reason === 'aborted' ? t('message.stopped')
-      : reason === 'error' ? t('message.turnProcess.failed')
-        : t('message.turnProcess.worked')
+      : reason === 'interrupted' ? t('message.interrupted')
+        : reason === 'error' ? t('message.turnProcess.failed')
+          : t('message.turnProcess.worked')
   return (
     <>
       <span className={a11yCss.visuallyHidden} role="status" aria-live="polite" aria-atomic="true">{announcement}</span>

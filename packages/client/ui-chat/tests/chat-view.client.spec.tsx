@@ -2517,6 +2517,72 @@ describe('ChatView', () => {
     expect(processRow.getAttribute('hidden')).toBeNull()
   }))
 
+  it.each([
+    { partialReply: false, grouped: false },
+    { partialReply: true, grouped: false },
+    { partialReply: true, grouped: true },
+  ])('shows a recorded interrupted Turn without announcing completion (partial=$partialReply, grouped=$grouped)', ({ partialReply, grouped }) => {
+    const source = chatSnapshotFixture({
+      nodes: [user(1, 'question'), ...(grouped ? [reasoningAssistant(2, 'partial process')] : []),
+        ...(partialReply ? [assistant(4, 'partial reply', 1, 2)] : [])],
+      turnEnds: new Map([[1, 5]]),
+      turnTimings: new Map([[1, { startTime: 1_000, endTime: 5_000 }]]),
+    })
+    const original = source.timeline.turns.get(1)
+    if (original === undefined) throw new Error('fixture lacks a Turn')
+    const turn: TurnLocation = {
+      ...original,
+      end: { type: 'turn/end', seq: SessionSeq(5), time: 5_000, data: { turn: 1, reason: { kind: 'interrupted' } } },
+    }
+    const builder = new ChatSnapshotBuilder()
+    const chat = builder.replace({
+      nodes: source.nodes.values().map(node => node.location.kind === 'turn' || node.location.kind === 'step'
+        ? { ...node, location: { ...node.location, turn } } : node),
+      timeline: { ...source.timeline, turns: new Map([[1, turn]]) },
+    })
+    const groups = new ConversationGroupStore<ProcessGroupData>()
+    if (grouped) {
+      const state = new ProcessState()
+      const input = builder.groupInput()
+      state.accept(input)
+      const update = state.output()
+      if (update !== null) groups.prepareAndInstall(update, input.readNode)
+      groups.publish()
+    }
+    const h = makeHarness({ chat })
+    if (grouped) h.setGrouped(groups)
+    h.setTranscriptView('compact')
+    const view = render(<h.ChatView {...h.props} />)
+    const control = turnProcessControl(view.container)
+    expect(control).not.toBeNull()
+    expect({ label: control?.textContent, announcement: view.getByRole('status').textContent,
+      canCollapse: !control?.disabled }).toMatchInlineSnapshot(`
+      {
+        "announcement": "已中断",
+        "canCollapse": false,
+        "label": "已中断",
+      }
+    `)
+    expect(view.queryByText('已完成工作')).toBeNull()
+    if (partialReply) {
+      const row = view.getByText('partial reply').closest('[data-chat-flow-key]')
+      expect(row).not.toBeNull()
+      expect(row!.closest('[hidden]')).toBeNull()
+    }
+    if (grouped) {
+      const group = view.container.querySelector<HTMLElement>('[data-chat-group-key]')
+      expect(group).not.toBeNull()
+      expect(group!.closest('[hidden]')).toBeNull()
+      const toggle = group!.querySelector<HTMLButtonElement>('[data-process-activity]')!
+      expect(toggle.getAttribute('aria-expanded')).toBe('false')
+      fireEvent.click(toggle)
+      expect(toggle.getAttribute('aria-expanded')).toBe('true')
+      const body = group!.querySelector('[data-step-process-body]')
+      expect(body).not.toBeNull()
+      expect(body!.hasAttribute('hidden')).toBe(false)
+    }
+  })
+
   it('preserves whole-Turn folding and manual expansion across work-details modes', () => {
     const process = assistant(2, 'inspect', 1, 1)
     const h = makeHarness({

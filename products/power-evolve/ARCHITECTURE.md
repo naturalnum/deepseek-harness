@@ -80,6 +80,8 @@ Files move between cloud and desktop only through an explicit action on the loca
 
 Two identical host Profiles may serve the same client origin behind a load balancer. The balancer checks readiness and routes each request to a healthy host without replaying a failed POST. It does not own Session affinity or task state. Both hosts claim work from PG; the platform's per-Session lease and epoch select one active writer. The current grant gates native event append, renewal, and completion. An interrupted model turn whose input was consumed is marked failed rather than reissued.
 
+Native Chat labels and announces the recorded `interrupted` end reason as interruption, including when no answer was recorded. Its process remains accessible in grouped views. This presentation uses a minimal upstream correction in `ui-chat`'s `TurnProcessNodeView.tsx`, `ChatGroupSeat.tsx`, `contract/turn-process.ts` and `locale.ts`; review those files when rebasing. It does not change Session events or task recovery.
+
 The platform rotates eligible users when claiming work, subject to its per-user pending and active limits. Cloud execution workers renew leases during slow Sandbox creation and check ownership before dispatch or cancellation; a runner request keeps its stable execution ID. Completed results enqueue one durable continuation. Event streams await socket drain and stop on disconnect. Idle host Agents and Sessions are released; ordinary conversation still creates no Sandbox. The trial proxies are local test components, not production ingress controllers. Cross-node platform deployment and large-scale capacity remain separate deployment gates.
 
 ## Slice 7a local platform replica trial
