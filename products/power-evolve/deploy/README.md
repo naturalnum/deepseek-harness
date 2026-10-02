@@ -57,6 +57,23 @@ kubectl --context YOUR_CONTEXT -n YOUR_APP_NAMESPACE rollout status deployment/p
 
 On first installation, stage the foundation and workload resources through your normal change-control mechanism so `--ready` and the physical checks finish before Ingress admits traffic. `--ready` checks at least two Ready nodes, the Sandbox CRD/controller and gVisor RuntimeClass, Secret key presence, TLS SANs, bound PVCs, and allow/deny RBAC, including explicitly selected Service proxy subresource access. Expected permission denials pass; failed probes and unknown answers reject readiness. It intentionally does not print Secret values; it inspects the PostgreSQL URL shape and TLS certificate. A passing result is **not** proof of multi-machine POSIX consistency or ingress behavior.
 
+## Local HTTP development deployment
+
+`local-http.mjs` renders a separate single-machine development bundle. Set distinct `hostPublicOrigin` and `platformPublicOrigin` values to canonical loopback HTTP Origins, using the same hostname; for example, `http://127.0.0.1:19804` and `http://127.0.0.1:19806`. The remaining values use the fields described above, including immutable image digests and private Secret references. The cluster must already provide Agent Sandbox and gVisor, and each referenced Secret must be provisioned privately before starting the workloads.
+
+```sh
+node products/power-evolve/deploy/local-http.mjs /private/path/local-values.json /private/path/new-local-resources.json /var/lib/power-evolve-local 1 1
+kubectl --context LOCAL_CONTEXT apply -f /private/path/new-local-resources.json
+kubectl --context LOCAL_CONTEXT -n LOCAL_NAMESPACE rollout status deployment/power-evolve-platform
+kubectl --context LOCAL_CONTEXT -n LOCAL_NAMESPACE rollout status deployment/power-evolve-host
+kubectl --context LOCAL_CONTEXT -n LOCAL_NAMESPACE port-forward --address=127.0.0.1 service/power-evolve-host 19804:18880
+kubectl --context LOCAL_CONTEXT -n LOCAL_NAMESPACE port-forward --address=127.0.0.1 service/power-evolve-platform 19806:18881
+```
+
+The output must be a new `.json`, `.yaml` or `.yml` file. The node path must be an isolated absolute directory inside the Kubernetes node, not the Mac path. Both PVs use that directory through `hostPath`; the original PVC mounts, Secret separation, resource authorization, RBAC and NetworkPolicies remain. The renderer removes Ingress, adds no public Service or proxy, and sets `PE_LOCAL_HTTP=1` in both application ConfigMaps. The startup entry permits only canonical loopback HTTP Origins in this mode; the default startup and production renderer still require HTTPS. The production preflight does not accept this local bundle.
+
+The optional final arguments select one or two Host and Platform replicas independently; both default to one. Two replicas on one node test process failure and durable recovery, not physical-node failover or cross-machine POSIX consistency. Keep the two port-forward processes running during browser use and stop them when the trial ends. HTTP is for the loopback development trial; production HTTPS and physical deployment acceptance remain separate.
+
 ## Account configuration
 
 `account-management.json` contains `maxUsers`, a `models` catalog (`id`, `label`, `maxTokens`) and `initialSettings` (`model`, `maxTokens`). Both Platform replicas load the same private file. The Host receives neither this file nor administrator credentials. Local trials provision this file without promoting a seed user.

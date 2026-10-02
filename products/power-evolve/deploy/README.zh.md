@@ -57,6 +57,23 @@ kubectl --context YOUR_CONTEXT -n YOUR_APP_NAMESPACE rollout status deployment/p
 
 首次安装时，通过常规变更控制流程分阶段部署基础资源和工作负载，让 `--ready` 与物理检查在 Ingress 接纳流量之前完成。`--ready` 至少检查两个 Ready 节点、Sandbox CRD/控制器、gVisor RuntimeClass、Secret 键是否存在、TLS SAN、已绑定的 PVC，以及 RBAC 的允许和拒绝行为，包括明确指定 Service proxy 子资源的访问。预期的权限拒绝会通过，探测失败或未知回答会拒绝就绪。它有意不打印 Secret 值，只检查 PostgreSQL URL 形式和 TLS 证书。检查通过**不能**证明跨物理机器的 POSIX 一致性或 ingress 行为。
 
+## 本机 HTTP 开发部署
+
+`local-http.mjs` 渲染独立的单机开发部署包。将 `hostPublicOrigin` 和 `platformPublicOrigin` 设置为不同的规范 loopback HTTP Origin，并使用同一个 hostname，例如 `http://127.0.0.1:19804` 和 `http://127.0.0.1:19806`。其余 values 沿用上文的字段，包括不可变镜像摘要和私有 Secret 引用。集群须已安装 Agent Sandbox 和 gVisor；启动工作负载前，须通过私有流程配置所引用的 Secret。
+
+```sh
+node products/power-evolve/deploy/local-http.mjs /private/path/local-values.json /private/path/new-local-resources.json /var/lib/power-evolve-local 1 1
+kubectl --context LOCAL_CONTEXT apply -f /private/path/new-local-resources.json
+kubectl --context LOCAL_CONTEXT -n LOCAL_NAMESPACE rollout status deployment/power-evolve-platform
+kubectl --context LOCAL_CONTEXT -n LOCAL_NAMESPACE rollout status deployment/power-evolve-host
+kubectl --context LOCAL_CONTEXT -n LOCAL_NAMESPACE port-forward --address=127.0.0.1 service/power-evolve-host 19804:18880
+kubectl --context LOCAL_CONTEXT -n LOCAL_NAMESPACE port-forward --address=127.0.0.1 service/power-evolve-platform 19806:18881
+```
+
+输出须为新建的 `.json`、`.yaml` 或 `.yml` 文件。节点路径须是 Kubernetes 节点内独立的绝对目录，不是 Mac 路径。两个 PV 通过 `hostPath` 使用该目录；原有 PVC 挂载、Secret 分离、资源授权、RBAC 和 NetworkPolicy 保留。渲染器移除 Ingress，不新增公开 Service 或代理，并在两个应用 ConfigMap 中设置 `PE_LOCAL_HTTP=1`。此模式下，启动入口仅允许规范的 loopback HTTP Origin；默认启动和生产渲染器仍要求 HTTPS。生产预检不接受这个本机部署包。
+
+末尾两个可选参数分别选择一个或两个 Host、Platform 副本，默认都为一个。同一节点上的双副本验证进程故障和持久状态恢复，不代表物理节点故障转移或跨机器 POSIX 一致性。浏览器使用期间保持两个 port-forward 进程运行，结束试用时停止它们。HTTP 用于 loopback 开发试用；生产 HTTPS 和物理部署验收仍需分别完成。
+
 ## 账号配置
 
 `account-management.json` 包含 `maxUsers`、`models` 目录（`id`、`label`、`maxTokens`）及 `initialSettings`（`model`、`maxTokens`）。两个 Platform 副本读取相同的私有文件。Host 不获取此文件或管理员凭据。本机试用准备此文件，但不提升种子用户权限。
