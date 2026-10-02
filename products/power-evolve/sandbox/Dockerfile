@@ -85,6 +85,11 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends libreoffice-calc libreoffice-impress \
   && dpkg-query --show libreoffice-writer libreoffice-calc libreoffice-impress python3-uno \
   && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
+# Writer needs Math to render editable OMML equations when exporting PDF.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends libreoffice-math \
+  && dpkg-query --show libreoffice-math \
+  && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
 WORKDIR /workspace
 EXPOSE 8080
 CMD ["node", "/opt/power-evolve/runner.mjs"]

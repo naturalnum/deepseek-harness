@@ -60,7 +60,20 @@ officecli close qa.docx >/dev/null
 officecli validate qa.docx >/dev/null
 python3 - <<'PY'
 from docx import Document
-assert any('Document QA' in paragraph.text for paragraph in Document('qa.docx').paragraphs)
+from docx.oxml import OxmlElement
+document = Document('qa.docx')
+assert any('Document QA' in paragraph.text for paragraph in document.paragraphs)
+paragraph = document.add_paragraph()
+math_paragraph = OxmlElement('m:oMathPara')
+math = OxmlElement('m:oMath')
+run = OxmlElement('m:r')
+text = OxmlElement('m:t')
+text.text = '42'
+run.append(text)
+math.append(run)
+math_paragraph.append(math)
+paragraph._p.append(math_paragraph)
+document.save('qa.docx')
 PY
 
 officecli create qa.pptx >/dev/null
@@ -97,6 +110,10 @@ for format in docx pptx xlsx; do
   esac
   pdftotext "$render_dir/qa.pdf" "$render_dir/qa.txt"
   grep --fixed-strings "$expected_text" "$render_dir/qa.txt" >/dev/null
+  if test "$format" = docx; then
+    # Plain body text succeeding does not establish that editable math rendered.
+    grep --extended-regexp --word-regexp '42' "$render_dir/qa.txt" >/dev/null
+  fi
   pdftoppm -f 1 -l 1 -scale-to 512 -singlefile -png "$render_dir/qa.pdf" "$render_dir/page-1" >/dev/null 2>&1
   test -s "$render_dir/page-1.png"
 done
@@ -105,4 +122,4 @@ if command -v javac >/dev/null || command -v mvn >/dev/null || command -v chromi
   echo 'Unexpected JDK, Maven or Chromium executable in skills image' >&2
   exit 1
 fi
-printf 'PASS uid=1000 officecli=1.0.151 python=venv uno=system-python pdf=chinese-extract-render latex=ctex docx=pandoc+officecli+libreoffice pptx=officecli+libreoffice xlsx=officecli+libreoffice office-pdf=text+png home/tmp/workspace=writable\n'
+printf 'PASS uid=1000 officecli=1.0.151 python=venv uno=system-python pdf=chinese-extract-render latex=ctex docx=pandoc+officecli+libreoffice+omml pptx=officecli+libreoffice xlsx=officecli+libreoffice office-pdf=text+png home/tmp/workspace=writable\n'
