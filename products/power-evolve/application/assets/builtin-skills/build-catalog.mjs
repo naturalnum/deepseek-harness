@@ -36,7 +36,7 @@ const definitions = [
     category: 'office', publisher: 'OpenAI',
   },
   {
-    directory: 'latex-report-writer', extensionId: 'builtin.latex-report-writer', version: '1.0.1',
+    directory: 'latex-report-writer', extensionId: 'builtin.latex-report-writer', version: '1.0.2',
     name: 'LaTeX 技术报告',
     summary: '使用 XeLaTeX 编写、校验并渲染中文电力技术报告。',
     description: '包含中国电力技术报告 LaTeX 类、版式规范、转换脚本、编译脚本和逐页渲染工具。',
@@ -44,7 +44,7 @@ const definitions = [
   },
   {
     directory: 'power-grid-technical-report-writer',
-    extensionId: 'builtin.power-grid-technical-report-writer', version: '1.1.32',
+    extensionId: 'builtin.power-grid-technical-report-writer', version: '1.1.33',
     name: '电网技术报告写作',
     summary: '渐进式编写电网科技项目结题技术报告。',
     description: '提供项目档案、论证架构、目录、分章正文、摘要证据包和全文组装规则及确定性校验脚本。',
@@ -59,14 +59,14 @@ const definitions = [
   },
   {
     directory: 'report-workflow-orchestrator',
-    extensionId: 'builtin.report-workflow-orchestrator', version: '1.1.22',
+    extensionId: 'builtin.report-workflow-orchestrator', version: '1.1.23',
     name: '技术报告工作流',
     summary: '编排技术报告写作、审核、排版和逐页验收。',
     description: '通过文件化状态机连接电网报告生成、结构化审核、Word 排版、格式修复与视觉验收。',
     category: 'writing-office', publisher: 'PowerEvolve',
   },
   {
-    directory: 'tech-report-writer', extensionId: 'builtin.tech-report-writer', version: '1.1.35',
+    directory: 'tech-report-writer', extensionId: 'builtin.tech-report-writer', version: '1.1.36',
     name: '技术报告 Word 排版',
     summary: '生成、重排和校验中国电科院技术报告 Word 文件。',
     description: '包含 Word 模板、结构化数据校验、DOCX 生成、格式修复、目录域处理、PDF 转换与逐页视觉验收脚本。',

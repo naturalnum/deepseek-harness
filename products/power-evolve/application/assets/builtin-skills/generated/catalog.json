@@ -115,9 +115,9 @@
         "publisher": "PowerEvolve"
       },
       "release": {
-        "version": "1.0.1",
+        "version": "1.0.2",
         "state": "PUBLISHED",
-        "manifestDigest": "sha256:1909b665c40503c468120435c2ef42cf162fb0c419791fc9db22967b28862bf8",
+        "manifestDigest": "sha256:a1a1f94f244b5fa11bd93a3b64b79fdeddeb71fa7f7dd5e3fdec3575d79ed7ed",
         "targets": [
           "cloud"
         ],
@@ -125,10 +125,10 @@
           "skill"
         ],
         "permissions": [],
-        "artifactDigest": "fe80da7441666cc8a2d9b3cf83d0a12ebb6145c9f314b40522809ef6a5e70a86",
-        "artifactSize": 60456,
-        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.latex-report-writer/releases/1.0.1/artifact",
-        "artifactPath": "extensions/builtin.latex-report-writer/1.0.1.zip"
+        "artifactDigest": "4ede77f3fff66d1794b51eabb62f4ce108a2af254b6bbee4feb02bce99fe10f7",
+        "artifactSize": 65757,
+        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.latex-report-writer/releases/1.0.2/artifact",
+        "artifactPath": "extensions/builtin.latex-report-writer/1.0.2.zip"
       }
     },
     {
@@ -141,9 +141,9 @@
         "publisher": "PowerEvolve"
       },
       "release": {
-        "version": "1.1.32",
+        "version": "1.1.33",
         "state": "PUBLISHED",
-        "manifestDigest": "sha256:e791df21b0440f3849c5f37637632d6d8b67a5db3d6249c2d99c9b1669281639",
+        "manifestDigest": "sha256:2bdb7c02a03cc8d5cd7d5207bc258b94f807d5cccd1353954fadbf1c352fa1a4",
         "targets": [
           "cloud"
         ],
@@ -151,10 +151,10 @@
           "skill"
         ],
         "permissions": [],
-        "artifactDigest": "6a4b001c0700571f26dbdd1d228fd02bf021cbdbfb65423809812f33e9cb2b50",
-        "artifactSize": 638469,
-        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.power-grid-technical-report-writer/releases/1.1.32/artifact",
-        "artifactPath": "extensions/builtin.power-grid-technical-report-writer/1.1.32.zip"
+        "artifactDigest": "fdff6353fbcc206a375e929cd1510192ac8ad3c3d314851eb6388a8d25d3a074",
+        "artifactSize": 639160,
+        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.power-grid-technical-report-writer/releases/1.1.33/artifact",
+        "artifactPath": "extensions/builtin.power-grid-technical-report-writer/1.1.33.zip"
       }
     },
     {
@@ -193,9 +193,9 @@
         "publisher": "PowerEvolve"
       },
       "release": {
-        "version": "1.1.22",
+        "version": "1.1.23",
         "state": "PUBLISHED",
-        "manifestDigest": "sha256:a352b8e25031fd5255b79907fb8f105cc0ac1cccbde11d2839b9f8dece84e8ab",
+        "manifestDigest": "sha256:9e3a1b89421ddfc081ed26a03735e1fc3551d7de367cb7bcc2911a63e564d97c",
         "targets": [
           "cloud"
         ],
@@ -203,10 +203,10 @@
           "skill"
         ],
         "permissions": [],
-        "artifactDigest": "964fbc85356d12ff2e2658c0089699e50c748e8733e34c2e985412fa8fb4138f",
-        "artifactSize": 76576,
-        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.report-workflow-orchestrator/releases/1.1.22/artifact",
-        "artifactPath": "extensions/builtin.report-workflow-orchestrator/1.1.22.zip"
+        "artifactDigest": "a2efe5dc1d2e683d1aaaa51b7c2af2c38d8f8964f7bf487cdc20957a8b1b9778",
+        "artifactSize": 79121,
+        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.report-workflow-orchestrator/releases/1.1.23/artifact",
+        "artifactPath": "extensions/builtin.report-workflow-orchestrator/1.1.23.zip"
       }
     },
     {
@@ -219,9 +219,9 @@
         "publisher": "PowerEvolve"
       },
       "release": {
-        "version": "1.1.35",
+        "version": "1.1.36",
         "state": "PUBLISHED",
-        "manifestDigest": "sha256:821030d07f692e4a84c5a3da02fe353024ad641a4dfddc51fb7eb80bef7a290a",
+        "manifestDigest": "sha256:1a08d84f36cca3f15d0de4195dfce1844e1a3be8d2c73149561e4e3952e453f1",
         "targets": [
           "cloud"
         ],
@@ -229,10 +229,10 @@
           "skill"
         ],
         "permissions": [],
-        "artifactDigest": "5d3c3dc736386b5f269e3ae8201a540ed867ba9607ec9531d6b744d0eae4d843",
-        "artifactSize": 253095,
-        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.tech-report-writer/releases/1.1.35/artifact",
-        "artifactPath": "extensions/builtin.tech-report-writer/1.1.35.zip"
+        "artifactDigest": "cfe6ac8a02c05e4fb2b3cb3537353ab38c4d6e7b7a4460124df2fcd78ed6e9ee",
+        "artifactSize": 254179,
+        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.tech-report-writer/releases/1.1.36/artifact",
+        "artifactPath": "extensions/builtin.tech-report-writer/1.1.36.zip"
       }
     }
   ]
