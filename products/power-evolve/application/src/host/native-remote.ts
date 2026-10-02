@@ -126,6 +126,7 @@ async function sendNativeBytes(response: ServerResponse, rpcId: string, raw: unk
 }
 
 /** Register one browser-authenticated native Session carrier without exposing Host-local Remotes.
+ * Upgrade admission preserves 401/403 refusals and rejects unavailable verification with 503.
  * @param ctx - Host plugin lifetime and configured Platform runtime.
  * @param auth - browser credential verification at the Platform.
  * @param origin - permitted Host authority for HTTP and WebSocket requests.
@@ -341,7 +342,8 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
         tokens.set(peer, credential.token)
         mux.handleUpgrade(req, socket, head, peer)
       } catch (error) {
-        rejectRemoteStreamUpgrade(socket, error instanceof PlatformError && error.status === 403 ? 403 : 401)
+        rejectRemoteStreamUpgrade(socket,
+          error instanceof PlatformError && (error.status === 401 || error.status === 403) ? error.status : 503)
       }
     },
   }))
