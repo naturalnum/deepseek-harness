@@ -1,8 +1,8 @@
 /** Stop writers, snapshot PG and POSIX bytes, then restore into a fresh trial. */
-import { randomBytes, createHash } from 'node:crypto'
+import { randomBytes } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { constants } from 'node:fs'
-import { chmod, copyFile, lstat, mkdir, readFile, readdir, readlink, rename, rm, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, lstat, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { createRequire } from 'node:module'
@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import { backupSourceRoots, copyPosixTree, prepareRestoredExecutionMounts, prepareRestoredSkillMounts,
   requireSkillPackageVersions, resolveTrialStorage, trialDataPath } from './backup-posix.mjs'
+import { inspectBackupState, inventoryBackupTree, requireIdleBackupState } from './backup-state.mjs'
 import { backupDatabaseIdentity, requireEmptyBackupDatabase, requireSeparateBackupPaths,
   runningBackupTargets, requireNoKubernetesWriters, verifyBackupPgTools, dumpBackupDatabase, restoreBackupDatabase,
   captureBackupMcpConfiguration, prepareRestoredMcpConfiguration, writeRestoredMcpConfiguration } from './backup-support.mjs'
@@ -73,68 +74,6 @@ async function roots(requireRecorded = false) {
   const storage = await resolveTrialStorage(privatePath, sandbox, process.env, requireRecorded)
   return { sandbox, shared, storage }
 }
-function sha(bytes) { return createHash('sha256').update(bytes).digest('hex') }
-async function inventory(directory) {
-  const entries = []
-  async function walk(path, relative) {
-    const value = await lstat(path)
-    if (value.isDirectory()) {
-      for (const name of (await readdir(path)).sort()) await walk(join(path, name), relative ? `${relative}/${name}` : name)
-    } else if (value.isFile()) {
-      entries.push({ path: relative, kind: 'file', size: value.size,
-        sha256: sha(await readFile(path)), mode: value.mode & 0o7777 })
-    } else if (value.isSymbolicLink()) {
-      entries.push({ path: relative, kind: 'symlink', target: await readlink(path) })
-    } else throw new Error(`Unsupported backup file type: ${relative}`)
-  }
-  await walk(directory, '')
-  return entries
-}
-async function version(url) {
-  let client
-  try {
-    client = new Client({ connectionString: url, connectionTimeoutMillis: 10000 })
-    await client.connect()
-    const schema = await client.query('SELECT version FROM pe_schema')
-    // Cleaned quarantine stays uncertain; approved actions still need durable finalization and continuation.
-    const active = await client.query(`SELECT
-      (SELECT count(*)::integer FROM pe_operations WHERE state IN ('queued','running')) AS operations,
-      (SELECT count(*)::integer FROM pe_cloud_executions WHERE state IN ('queued','starting','running','cancelling','uncertain')) AS executions,
-      (SELECT count(*)::integer FROM pe_stdio_mcp_calls WHERE state IN ('accepted','preparing','ready','dispatch-intent','running','uncertain')) AS stdio,
-      (SELECT count(*)::integer FROM pe_ssh_calls c
-        WHERE c.state IN ('accepted','preparing','ready','dispatch-intent','running')
-          OR (c.state='uncertain' AND (c.cleanup_complete IS NOT TRUE
-            OR (c.kind='ssh.execute' AND NOT EXISTS (
-              SELECT 1 FROM pe_ssh_execute_actions a WHERE a.id=c.id AND a.user_id=c.user_id
-                AND a.operation_id=c.operation_id AND a.connection_id=c.connection_id
-                AND a.connection_revision=c.connection_revision AND a.credential_revision=c.credential_revision
-                AND a.request_digest=c.request_digest AND a.state='uncertain'))))) AS ssh,
-      (SELECT count(*)::integer FROM pe_ssh_execute_actions WHERE state='approved') AS sshActions`)
-    const { rows: [ssh] } = await client.query(`SELECT
-      (SELECT count(*) FROM pe_ssh_connections)+(SELECT count(*) FROM pe_ssh_calls)
-        +(SELECT count(*) FROM pe_ssh_execute_actions) AS records,
-      (SELECT count(*) FROM pe_ssh_calls WHERE state='uncertain' AND cleanup_complete=true) AS quarantined`)
-    let mcpRecords = 0
-    if (schema.rows[0]?.version >= 22) {
-      active.rows[0].mcpChecks = (await client.query("SELECT count(*)::integer AS n FROM pe_mcp_checks WHERE state IN ('queued','running')")).rows[0].n
-      mcpRecords = (await client.query('SELECT (SELECT count(*) FROM pe_mcp_remote_connections)+(SELECT count(*) FROM pe_mcp_drafts) AS n')).rows[0].n
-    }
-    if (schema.rows[0]?.version >= 23) {
-      // Pending human review needs a fresh decision; terminal uncertainty remains uncertainty after restore.
-      active.rows[0].mcpActions = (await client.query("SELECT count(*)::integer AS n FROM pe_mcp_actions WHERE state IN ('approved','preparing','dispatch-intent')")).rows[0].n
-    }
-    if (schema.rows[0]?.version >= 27) {
-      active.rows[0].workspaceRecoveries = (await client.query(
-        "SELECT count(*)::integer AS n FROM pe_workspace_binding_requests WHERE state IN ('accepted','stopping')")).rows[0].n
-      active.rows[0].storageDirectories = (await client.query(
-        "SELECT count(*)::integer AS n FROM pe_storage_directory_requests WHERE state='accepted'")).rows[0].n
-    }
-    const packages = await client.query('SELECT user_id,archive_digest,manifest_digest,manifest FROM pe_skill_package_versions')
-    return { schema: schema.rows[0]?.version, active: active.rows[0], packages: packages.rows,
-      mcpRecords: Number(mcpRecords), sshRecords: Number(ssh.records), sshQuarantined: Number(ssh.quarantined) }
-  } catch { throw new Error('Cannot inspect backup PostgreSQL state') }
-  finally { await client?.end().catch(() => {}) }
-}
 async function waitStableDatabase(url) {
   const until = Date.now() + 30_000
   let consecutive = 0
@@ -171,11 +110,8 @@ if (command === 'create') {
     }
     const stoppedAt = Date.now()
     const databaseUrl = (await readFile(join(privatePath, 'database-url'), 'utf8')).trim()
-    const status = await version(databaseUrl)
-    if (!Number.isInteger(status.schema) || status.schema < 18
-      || Object.values(status.active).some(count => count !== 0)) {
-      throw new Error('Backup requires schema 18+ with no active operations, Runner calls or MCP discovery/dispatch')
-    }
+    const status = await inspectBackupState(Client, databaseUrl)
+    requireIdleBackupState(status)
     const ssh = await exists(join(privatePath, 'ssh.json')) ? await json(join(privatePath, 'ssh.json')) : null
     requireNoKubernetesWriters({ sandbox, ssh, sshRequired: status.sshQuarantined > 0 }, run)
     if (status.sshRecords && !(await exists(join(privatePath, 'ssh-credential-key')))?.isFile()) {
@@ -202,7 +138,7 @@ if (command === 'create') {
     if (!['users.json', 'worker-token', 'connector-key', 'model-key', 'model.env']
       .every(name => included.includes(name))) throw new Error('Required private configuration missing')
     const remoteMcp = await captureBackupMcpConfiguration(process.env.PE_REMOTE_MCP_CONFIG_FILE, stage)
-    const files = await inventory(stage)
+    const files = await inventoryBackupTree(stage)
     const capturedAt = Date.now()
     await writeFile(join(stage, 'manifest.json'), `${JSON.stringify({ format: 2, sourceTrial: trialName,
       schema: status.schema, startedAt, stoppedAt, capturedAt, sourceSharedRoot: shared,
@@ -232,7 +168,7 @@ if (command === 'create') {
     || !Array.isArray(manifest.files) || !Array.isArray(manifest.configFiles)) {
     throw new Error('Unsupported backup or source/restore trial collision')
   }
-  const actual = (await inventory(bundlePath)).filter(entry => entry.path !== 'manifest.json')
+  const actual = (await inventoryBackupTree(bundlePath)).filter(entry => entry.path !== 'manifest.json')
   // Older format-1/2 inventories did not record modes; their byte/link checks remain unchanged.
   const expectedFiles = new Map(manifest.files.map(file => [file.path, file]))
   const comparable = actual.map(file => {
@@ -311,7 +247,7 @@ if (command === 'create') {
     await requireEmptyBackupDatabase(Client, targetUrl)
   }
   restoreBackupDatabase(join(bundlePath, 'database.dump'), targetUrl, pgEnv)
-  const restored = await version((await readFile(join(privatePath, 'database-url'), 'utf8')).trim())
+  const restored = await inspectBackupState(Client, (await readFile(join(privatePath, 'database-url'), 'utf8')).trim())
   if (restored.schema !== manifest.schema) throw new Error('Restored database schema differs from the source snapshot')
   if (restored.mcpRecords && !remoteMcpConfigFile) {
     throw new Error('Restored MCP history requires its operator configuration and credential key')
@@ -336,7 +272,7 @@ if (command === 'create') {
   } finally { await owners.end() }
   if (!keepStopped) run(process.execPath, [trialScript, 'up'])
   const restoredAt = Date.now(), readyAt = keepStopped ? null : restoredAt
-  const ready = await version((await readFile(join(privatePath, 'database-url'), 'utf8')).trim())
+  const ready = await inspectBackupState(Client, (await readFile(join(privatePath, 'database-url'), 'utf8')).trim())
   if (ready.schema < manifest.schema) throw new Error('Startup downgraded the restored schema')
   await writeFile(join(privatePath, 'restore-evidence.json'), `${JSON.stringify({ sourceTrial: manifest.sourceTrial,
     restoredTrial: trialName, startedAt, restoredAt, readyAt, rtoToHealthMs: keepStopped ? null : readyAt - startedAt,

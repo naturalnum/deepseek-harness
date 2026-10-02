@@ -19,7 +19,8 @@ const databaseObjectCatalogs = ['pg_class', 'pg_proc', 'pg_type', 'pg_collation'
 export async function backupDatabaseIdentity(Client, url) {
   let client
   try {
-    client = new Client({ connectionString: url, connectionTimeoutMillis: 10000 })
+    client = new Client({ connectionString: url, connectionTimeoutMillis: 10000,
+      statement_timeout: 5000, query_timeout: 6000, options: '-c default_transaction_read_only=on' })
     await client.connect()
     const { rows: [row] } = await client.query(`SELECT system_identifier::text AS cluster,
       (SELECT oid::text FROM pg_database WHERE datname=current_database()) AS database,
@@ -33,10 +34,13 @@ export async function backupDatabaseIdentity(Client, url) {
 export async function requireEmptyBackupDatabase(Client, url) {
   let client, occupied = false
   try {
-    client = new Client({ connectionString: url, connectionTimeoutMillis: 10000 })
+    client = new Client({ connectionString: url, connectionTimeoutMillis: 10000,
+      statement_timeout: 5000, query_timeout: 6000, options: '-c default_transaction_read_only=on' })
     await client.connect()
     const { rows: [row] } = await client.query(`WITH objects AS (
-      ${databaseObjectCatalogs.map(catalog => `SELECT oid FROM pg_catalog.${catalog}`).join(' UNION ALL ')}
+      ${databaseObjectCatalogs.map(catalog => catalog === 'pg_user_mapping'
+        ? 'SELECT umid AS oid FROM pg_catalog.pg_user_mappings'
+        : `SELECT oid FROM pg_catalog.${catalog}`).join(' UNION ALL ')}
       UNION ALL SELECT oid FROM pg_catalog.pg_namespace WHERE nspname<>'public'
     ), target AS (SELECT oid FROM pg_catalog.pg_database WHERE datname=pg_catalog.current_database())
     SELECT EXISTS(SELECT 1 FROM objects WHERE oid>=16384)
@@ -176,9 +180,13 @@ function pgInvocation(tool, url, env) {
 
 function pgRun(tool, url, args, env, stdio) {
   const invocation = pgInvocation(tool, url, env)
+  const timeout = Number(env.PE_BACKUP_PG_COMMAND_TIMEOUT_MS ?? 900000)
+  if (!Number.isSafeInteger(timeout) || timeout < 1000 || timeout > 3600000) {
+    throw new Error('Invalid backup PostgreSQL command timeout')
+  }
   const databaseArgs = tool === 'pg_restore' ? ['--dbname', invocation.env.PGDATABASE] : []
   const result = spawnSync(invocation.exe, [...invocation.args, ...databaseArgs, ...args], {
-    env: invocation.env, stdio, encoding: 'utf8', maxBuffer: 2 * 1024 * 1024,
+    env: invocation.env, stdio, encoding: 'utf8', maxBuffer: 2 * 1024 * 1024, timeout, killSignal: 'SIGTERM',
   })
   if (result.error || result.status !== 0) throw new Error(`Backup PostgreSQL ${tool} failed`)
   return result.stdout
