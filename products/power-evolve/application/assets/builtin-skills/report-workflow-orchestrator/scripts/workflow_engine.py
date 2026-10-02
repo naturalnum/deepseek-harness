@@ -196,57 +196,93 @@ def submit_project_intake(state: dict[str, Any], answers: dict[str, Any]) -> dic
     return s
 
 
-def _candidate_lists(content: Any) -> list[list[Any]]:
+def _architecture_requirements() -> dict[str, Any]:
+    return {
+        "chapter_mapping": "Return content.proposed_chapters or content.report_scope_confirmation.chapter_mapping as a non-empty list of chapter objects.",
+        "chapter_fields": {
+            "chapter_title": "non-empty chapter title",
+            "chapter_type": "foundation | technical-research | conclusion; include at least one technical-research chapter",
+            "chapter_id": "optional unique stable string",
+            "chapter_no": "optional unique positive integer",
+        },
+        "preserve_existing_outline_rules": True,
+        "state_write_policy": "Return a child response for apply; never edit workflow state or an already applied artifact directly.",
+    }
+
+
+def _structured_chapters(content: Any) -> list[dict[str, str]]:
+    """Read the same chapter mapping at admission, confirmation and brief collection.
+
+    Legacy technical-only mappings may omit chapter_type. Complete mappings use
+    explicit roles, so foundation and conclusion are never inferred from titles.
+    """
     if not isinstance(content, dict):
-        return []
-    keys = (
-        "proposed_chapters", "technical_chapters", "chapter_candidates",
-        "research_content_chapter_mapping", "research_contents", "chapter_mapping",
-    )
-    return [content[k] for k in keys if isinstance(content.get(k), list)]
+        raise ValueError("argument architecture chapter mapping requires object content")
+    keys = ("proposed_chapters", "technical_chapters", "chapter_candidates",
+            "research_content_chapter_mapping", "research_contents", "chapter_mapping")
+    locations = [("content.proposed_chapters", content["proposed_chapters"], "proposed_chapters")] if "proposed_chapters" in content else []
+    scope = content.get("report_scope_confirmation")
+    if isinstance(scope, dict) and "chapter_mapping" in scope:
+        locations.append(("content.report_scope_confirmation.chapter_mapping", scope["chapter_mapping"], "chapter_mapping"))
+    locations.extend((f"content.{key}", content[key], key) for key in keys[1:] if key in content)
+    if not locations:
+        raise ValueError("argument architecture needs content.proposed_chapters or content.report_scope_confirmation.chapter_mapping")
+    path, rows, field = locations[0]
+    if not isinstance(rows, list) or not rows:
+        raise ValueError(f"{path} must be a non-empty chapter object list")
+    chapters: list[dict[str, str]] = []
+    seen_keys: set[str] = set()
+    seen_numbers: set[int] = set()
+    roles: set[str] = set()
+    for index, row in enumerate(rows, 1):
+        row_path = f"{path}[{index - 1}]"
+        if not isinstance(row, dict):
+            raise ValueError(f"{row_path} must be a chapter object")
+        title = next((row[key].strip() for key in ("chapter_title", "proposed_title", "title", "name", "research_content")
+                      if isinstance(row.get(key), str) and row[key].strip()), "")
+        if not title:
+            raise ValueError(f"{row_path}.chapter_title must be non-empty")
+        role = row.get("chapter_type")
+        if role is None and field != "proposed_chapters" and path != "content.report_scope_confirmation.chapter_mapping":
+            role = "technical-research"
+        if not isinstance(role, str) or role not in {"foundation", "technical-research", "conclusion"}:
+            raise ValueError(f"{row_path}.chapter_type must identify foundation, technical-research or conclusion")
+        if role != "technical-research" and role in roles:
+            raise ValueError(f"{row_path} duplicates the {role} chapter")
+        roles.add(role)
+        number = row.get("chapter_no")
+        if number is not None:
+            if type(number) is not int or number < 1 or number in seen_numbers:
+                raise ValueError(f"{row_path}.chapter_no must be a unique positive integer")
+            seen_numbers.add(number)
+        key = row.get("chapter_id", row.get("id", row.get("research_content_id")))
+        if key is None:
+            key = role if role != "technical-research" else f"technical_{number or index}"
+        if not isinstance(key, str) or not key.strip() or key.strip() in seen_keys:
+            raise ValueError(f"{row_path}.chapter_id must be a unique non-empty string")
+        key = key.strip()
+        if key in {"foundation", "conclusion"} and key != role:
+            raise ValueError(f"{row_path}.chapter_id conflicts with its chapter_type")
+        seen_keys.add(key)
+        chapters.append({"chapter_key": key, "suggested_title": title, "chapter_type": role})
+    if "technical-research" not in roles:
+        raise ValueError(f"{path} must contain at least one technical-research chapter")
+    if any(row["chapter_type"] == "foundation" for row in chapters[1:]) \
+            or any(row["chapter_type"] == "conclusion" for row in chapters[:-1]):
+        raise ValueError(f"{path} must place the foundation chapter first and conclusion chapter last")
+    return chapters
 
 
 def _chapter_brief_targets(state: dict[str, Any]) -> list[dict[str, str]]:
     architecture = _latest(_artifact_slot(state, "argument_architecture")) or {}
     content = architecture.get("content")
-    targets: list[dict[str, str]] = [
-        {"chapter_key": "foundation", "suggested_title": "第一章（背景、研究现状和主要研究内容）"}
-    ]
-    seen = {"foundation"}
-    index = 1
-    for rows in _candidate_lists(content):
-        for row in rows:
-            if isinstance(row, str):
-                title = row.strip()
-                key = f"technical_{index}"
-            elif isinstance(row, dict):
-                title = str(
-                    row.get("proposed_title") or row.get("chapter_title") or row.get("title")
-                    or row.get("name") or row.get("research_content") or ""
-                ).strip()
-                key = str(row.get("chapter_id") or row.get("id") or row.get("research_content_id") or f"technical_{index}")
-            else:
-                continue
-            if not title or key in seen:
-                continue
-            targets.append({"chapter_key": key, "suggested_title": title})
-            seen.add(key)
-            index += 1
-        if len(targets) > 1:
-            break
-    if len(targets) == 1:
-        targets.append({
-            "chapter_key": "technical_chapters",
-            "suggested_title": "各核心技术章节（请按论证架构中的研究内容分章填写）",
-        })
-    targets.append({"chapter_key": "conclusion", "suggested_title": "总结与展望"})
+    chapters = _structured_chapters(content)
+    targets = [{"chapter_key": row["chapter_key"], "suggested_title": row["suggested_title"]} for row in chapters]
+    if not any(row["chapter_type"] == "foundation" for row in chapters):
+        targets.insert(0, {"chapter_key": "foundation", "suggested_title": "第一章（背景、研究现状和主要研究内容）"})
+    if not any(row["chapter_type"] == "conclusion" for row in chapters):
+        targets.append({"chapter_key": "conclusion", "suggested_title": "总结与展望"})
     return targets
-
-
-def _has_structured_chapter_candidates(state: dict[str, Any]) -> bool:
-    architecture = _latest(_artifact_slot(state, "argument_architecture")) or {}
-    content = architecture.get("content")
-    return any(bool(rows) for rows in _candidate_lists(content))
 
 
 def _chapter_briefs_action(state: dict[str, Any]) -> dict[str, Any]:
@@ -507,8 +543,22 @@ def next_action(state: dict[str, Any], registry: dict[str, Any]) -> dict[str, An
     if stage == "PROJECT_PROFILE_DRAFTED":
         return {"kind": "user_confirmation", "target": "project_profile"}
     if stage == "PROJECT_PROFILE_CONFIRMED":
-        return _request(registry, "generator", "build_argument_architecture", {"report_context": context, "project_profile": _latest(_artifact_slot(state, "project_profile"))})
+        return _request(registry, "generator", "build_argument_architecture", {
+            "report_context": context, "project_profile": _latest(_artifact_slot(state, "project_profile")),
+            "argument_architecture_requirements": _architecture_requirements(),
+        })
     if stage == "ARGUMENT_ARCHITECTURE_DRAFTED":
+        if state.get("content_generation_mode") == "source_grounded":
+            artifact = _latest(_artifact_slot(state, "argument_architecture")) or {}
+            try:
+                _structured_chapters(artifact.get("content"))
+            except ValueError as error:
+                return _request(registry, "generator", "build_argument_architecture", {
+                    "report_context": context, "project_profile": _latest(_artifact_slot(state, "project_profile")),
+                    "base_artifact": copy.deepcopy(artifact),
+                    "revision_instruction": f"Repair the structured chapter handoff: {error}. Preserve the original writing rules and scope; return a new artifact version for apply, then await explicit user confirmation.",
+                    "argument_architecture_requirements": _architecture_requirements(),
+                })
         return {"kind": "user_confirmation", "target": "argument_architecture"}
     if stage == "ARGUMENT_ARCHITECTURE_CONFIRMED":
         if state.get("content_generation_mode") == "source_grounded":
@@ -900,6 +950,8 @@ def apply_response(state: dict[str, Any], response: dict[str, Any], registry: di
     req = s.get("pending_action")
     if not req or req.get("orchestration", {}).get("request_id") != response.get("request_id"):
         raise ValueError("response request_id does not match pending_action")
+    if response.get("skill_name") != req.get("skill_name") or response.get("action") != req.get("action"):
+        raise ValueError("response skill_name/action does not match pending_action")
     if response.get("status") != "success":
         s["stage"] = "AWAITING_USER" if response.get("status") == "blocked" else "FAILED"
         s["last_error"] = response.get("error") or {"message": "child skill failed"}
@@ -1725,6 +1777,10 @@ def _apply_generator(s: dict[str, Any], action: str, artifact: dict[str, Any], r
     if action == registry["children"]["generator"]["actions"]["build_project_profile"]:
         _append_version(_artifact_slot(s, "project_profile"), artifact); s["stage"] = "PROJECT_PROFILE_DRAFTED"
     elif action == registry["children"]["generator"]["actions"]["build_argument_architecture"]:
+        if not isinstance(artifact, dict) or artifact.get("artifact_type") != "argument_architecture":
+            raise ValueError("argument architecture response requires an argument_architecture artifact")
+        if s.get("content_generation_mode") == "source_grounded":
+            _structured_chapters(artifact.get("content"))
         _append_version(_artifact_slot(s, "argument_architecture"), artifact); s["stage"] = "ARGUMENT_ARCHITECTURE_DRAFTED"
     elif action in {registry["children"]["generator"]["actions"]["generate_outline"], registry["children"]["generator"]["actions"]["revise_outline"]}:
         slot = _artifact_slot(s, "outline")
@@ -1910,8 +1966,7 @@ def confirm(state: dict[str, Any], target: str) -> dict[str, Any]:
     if target == "project_profile" and not _project_intake_complete(s):
         raise ValueError("project profile cannot be confirmed before all four fixed intake questions are answered")
     if target == "argument_architecture" and s.get("content_generation_mode") == "source_grounded":
-        if not _has_structured_chapter_candidates(s):
-            raise ValueError("source_grounded argument architecture must expose a non-empty proposed_chapters or equivalent structured chapter mapping before confirmation")
+        _structured_chapters((_latest(_artifact_slot(s, "argument_architecture")) or {}).get("content"))
     if target == "outline":
         slot = _artifact_slot(s, "outline")
         if not _has_pass_review(slot, _latest(slot)):
@@ -1931,7 +1986,10 @@ def confirm(state: dict[str, Any], target: str) -> dict[str, Any]:
             raise ValueError("word report cannot be confirmed before structural validation and full-page visual QA pass for the current version")
     s["confirmations"][target] = {"confirmed": True, "at": now()}
     if target == "project_profile": s["stage"] = "PROJECT_PROFILE_CONFIRMED"
-    elif target == "argument_architecture": s["stage"] = "ARGUMENT_ARCHITECTURE_CONFIRMED"
+    elif target == "argument_architecture":
+        slot = _artifact_slot(s, "argument_architecture")
+        slot["approved_version"] = _latest(slot)["version"]
+        s["stage"] = "ARGUMENT_ARCHITECTURE_CONFIRMED"
     elif target == "outline":
         slot = _artifact_slot(s, "outline"); slot["approved_version"] = _latest(slot)["version"]; s["stage"] = "OUTLINE_CONFIRMED"
     elif target == "reference_plan":
@@ -1973,6 +2031,8 @@ def confirm(state: dict[str, Any], target: str) -> dict[str, Any]:
 
 def prepare_pending_request(state: dict[str, Any], registry: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     s = copy.deepcopy(state)
+    if s.get("pending_action") is not None:
+        return s, copy.deepcopy(s["pending_action"])
     action = next_action(s, registry)
     if action.get("kind"):
         return s, action

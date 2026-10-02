@@ -131,6 +131,8 @@ error: null
 
 动作失败或输入不足时必须返回 `blocked` 或 `failed`，不得用普通正文伪装成功。
 
+外部编排的 `build_argument_architecture` 必须遵循请求中的 `argument_architecture_requirements`。`source_grounded` 模式在 `artifact.content.proposed_chapters` 或 `artifact.content.report_scope_confirmation.chapter_mapping` 返回非空章节对象数组；每行含非空 `chapter_title` 和 `chapter_type=foundation|technical-research|conclusion`，至少一个技术章，可选 `chapter_id` 为唯一稳定字符串，可选 `chapter_no` 为唯一正整数。首章置首、总结置尾；这是已有章节映射的交接表示，不新增正式目录或改变原生写作规则。修订请求提供 `base_artifact` 和 `revision_instruction` 时保留原范围与规则，使用新请求编号返回修订artifact，由编排器追加版本并等待显式确认；不得直接修改工作流状态或已应用的版本。
+
 ### 0A.5 强制审核交接
 
 在套件外部编排模式中，以下生成动作成功后必须设置审核交接：

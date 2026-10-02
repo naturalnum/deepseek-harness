@@ -1,7 +1,7 @@
 ---
 name: report-workflow-orchestrator
 description: 编排电网科技报告的项目档案、论证架构、目录、章节生成与审核、全文审核，以及最终 Word 排版、格式修复和逐页验收。所有子 Skill 名称和动作集中在配置区。
-version: 1.1.21
+version: 1.1.22
 ---
 
 # Report Workflow Orchestrator
@@ -211,6 +211,10 @@ questions: []
 不得创建 `build_project_profile` 请求。
 
 ## 3.2 `source_grounded` 目录前逐章内容说明
+
+`build_argument_architecture` 请求中的 `argument_architecture_requirements` 规定外部交接结构。`source_grounded` 响应必须在 `artifact.content.proposed_chapters` 或 `artifact.content.report_scope_confirmation.chapter_mapping` 提供非空章节对象数组。每行需有非空 `chapter_title` 和 `chapter_type=foundation|technical-research|conclusion`；至少含一个技术章，可选 `chapter_id` 必须唯一，可选 `chapter_no` 必须为唯一正整数。完整章节表中的首章与总结只收集一次；旧顶层技术章映射仍可由编排器补首章和总结，不得把叙述性研究内容当章节对象。
+
+`apply` 和 `confirm` 使用同一章节校验。非法响应拒绝时保留原状态及待处理请求，可更正响应后按原请求再次 `apply`。对于早期版本已经落盘的非法论证架构草稿，运行 `next` 会产生带 `base_artifact`、`revision_instruction` 和结构要求的新 `build_argument_architecture` 请求；重复 `next` 保留同一待处理请求。修订响应必须匹配新请求编号、Skill和动作，`apply`追加新版本并仍等待显式确认；旧请求不可重放。不得直接编辑 `state.json` 或已有artifact版本来通过确认。
 
 论证架构确认后，若模式为 `source_grounded`，编排器必须先返回：
 
