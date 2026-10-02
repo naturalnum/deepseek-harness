@@ -551,6 +551,7 @@ def _format_body(paragraph):
     pf.space_after = Pt(0)
     pf.keep_with_next = False
     pf.keep_together = False
+    _disable_grid_snap(paragraph)
     _set_first_line_chars(paragraph)
     _format_text_runs(paragraph, 12, bold=False)
 
@@ -561,8 +562,20 @@ def _format_reference(paragraph):
     pf.line_spacing = 1.5
     pf.space_before = Pt(0)
     pf.space_after = Pt(0)
+    _disable_grid_snap(paragraph)
     _set_first_line_chars(paragraph)
     _format_text_runs(paragraph, 12, bold=False)
+
+
+def _disable_grid_snap(paragraph):
+    # A legacy section grid rounds CJK fallback-font lines beyond the specified
+    # 1.5 spacing. Keep the template grid for other content and override this text.
+    properties = paragraph._p.get_or_add_pPr()
+    snap = properties.find(qn("w:snapToGrid"))
+    if snap is None:
+        snap = OxmlElement("w:snapToGrid")
+        properties.append(snap)
+    snap.set(qn("w:val"), "0")
 
 
 def _format_special_title(paragraph):

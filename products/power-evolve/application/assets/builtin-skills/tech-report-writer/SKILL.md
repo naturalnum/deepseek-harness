@@ -262,7 +262,7 @@ python3 <skill-dir>/scripts/main.py validate-abstract
 
 - 一级标题使用 15pt 黑体并包含 `page-break-before:always`，保证每章另起一页。
 - 二级标题使用 14pt 黑体，三级标题使用 12pt 黑体。
-- 正文使用 12pt 宋体、1.5 倍行距、首行缩进 2 字符；**独立公式后的第一个实际文字段落首行不缩进**，该例外仅作用于紧随公式的段落。
+- 正文使用 12pt 宋体、1.5 倍行距、首行缩进 2 字符；正文和参考文献须关闭模板的段落网格吸附，避免字体回退时行距被按旧网格扩大。**独立公式后的第一个实际文字段落首行不缩进**，该例外仅作用于紧随公式的段落。
 - 正文段内的标点、括号、百分号、温度/角度符号、`±`、`×`、`÷`、比较符号及常用希腊字母等普通文本符号，最终 Word 必须由代码统一字体槽和字号：与所在正文保持 12pt，中文/全角字符使用宋体字体槽，西文、数字及常用技术符号使用 Times New Roman 字体槽；不得让单个符号继承 Calibri、Cambria、微软雅黑或模板 theme 字体。OMML 公式、上下标和上标参考文献不套用这一普通文本规则。
 - Markdown/HTML 中的行内与显示公式必须在进入 Word 排版器时先转换为内部公式标记，再由确定性转换器写成原生 OMML；该规则同时覆盖正文段落和表格单元格。行内代码中的 `$...$` 不作为公式转换。未编号显示公式仍必须转为居中的原生 OMML，不得因为没有公式编号而保留 LaTeX 文本。
 - 只将前三级标题设为标题样式；`（1）`、`1）`、`①` 等按正文处理。
@@ -348,7 +348,7 @@ python3 <skill-dir>/scripts/repair_json.py
 最终告知用户：
 
 - 报告位于当前工作区的 `output/`。
-- 生成链必须保存可见的主目录、图条目和表条目。Windows 使用 Microsoft Word 自动更新；Linux 使用 LibreOffice UNO 的实际分页生成目录缓存，保留原 Word TOC/TC 字段、分节和样式。Linux 需要 `libreoffice`、Debian `python3-uno`（通过 `/usr/bin/python3` 运行）、`pdftotext` 和 `pdftoppm`；普通报告脚本仍使用隔离 Python 环境。分页失败或目录页码不收敛时生成失败。
+- 生成链必须保存可见的主目录、图条目和表条目。Windows 使用 Microsoft Word 自动更新；Linux 使用 LibreOffice UNO 的实际分页生成目录缓存，保留原 Word TOC/TC 字段、分节和样式。Linux 需要 `libreoffice`、`libreoffice-math`、Debian `python3-uno`（通过 `/usr/bin/python3` 运行）、`pdftotext` 和 `pdftoppm`；普通报告脚本仍使用隔离 Python 环境。含原生 OMML 时须确认 Math 组件可用，不能接受只有编号而公式不可见的输出。分页失败或目录页码不收敛时生成失败。
 - 视觉 QA 只验收现有目录缓存，不会偷偷修复空目录。必须检查主目录标题、所有正文标题和图表条目及其实际页码；空目录、缺条目和错误页码均失败，外部提供的视觉通过结果不得覆盖这些失败。
 - 审批区需要打印后手工填写。
 - 图表占位位置需要手动插入实际图表。

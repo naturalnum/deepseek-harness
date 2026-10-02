@@ -11,6 +11,8 @@ import subprocess
 import tempfile
 import time
 import uuid
+from xml.etree import ElementTree
+from zipfile import ZipFile
 
 import uno
 from com.sun.star.beans import PropertyValue
@@ -20,6 +22,26 @@ def property_value(name, value):
     prop = PropertyValue()
     prop.Name, prop.Value = name, value
     return prop
+
+
+def _contains_native_math(path):
+    with ZipFile(path) as archive:
+        root = ElementTree.fromstring(archive.read("word/document.xml"))
+    return next(root.iter("{http://schemas.openxmlformats.org/officeDocument/2006/math}oMath"), None) is not None
+
+
+def _require_math_renderer(desktop):
+    # Writer imports OMML as a Math document. Without the optional Math module,
+    # PDF export can silently retain the number while omitting the equation.
+    try:
+        formula = desktop.loadComponentFromURL("private:factory/smath", "_blank", 0, (
+            property_value("Hidden", True),
+        ))
+    except Exception as error:
+        raise RuntimeError("LibreOffice Math is required to render native Word formulas") from error
+    if formula is None:
+        raise RuntimeError("LibreOffice Math is required to render native Word formulas")
+    formula.close(True)
 
 
 def layout(path: Path, names: list[str], pdf: Path | None = None) -> dict:
@@ -52,6 +74,8 @@ def layout(path: Path, names: list[str], pdf: Path | None = None) -> dict:
                     time.sleep(0.1)
             desktop = context.ServiceManager.createInstanceWithContext(
                 "com.sun.star.frame.Desktop", context)
+            if _contains_native_math(path):
+                _require_math_renderer(desktop)
             document = desktop.loadComponentFromURL(path.as_uri(), "_blank", 0, (
                 property_value("Hidden", True), property_value("UpdateDocMode", 0),
                 property_value("ReadOnly", True),
