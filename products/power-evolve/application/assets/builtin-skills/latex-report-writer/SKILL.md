@@ -36,7 +36,7 @@ For Markdown with a Chinese title, Chinese/English abstract blocks and bilingual
 python scripts/markdown_to_latex.py report.md report.tex --title-en 'Supplied English Report Title'
 ```
 
-The Markdown must include `# 摘要`, `# Abstract`, `# 第一章 ...` and `# 参考文献`. Abstracts and keywords are preserved from the input. Missing or blank required English metadata fails explicitly.
+The Markdown must include `# 摘要`, `# Abstract`, numbered body chapters and `# 参考文献`. Body headings accept the confirmed report form `# 1 项目概述`, `## 1.1 研究范围`, `### 2.1.1 计算关系`, as well as the retained `# 第一章 ...` and `# 第1章 ...` chapter forms. Arabic heading numbers require whitespace before the title and must match their Markdown depth. The converter preserves chapter/section numbers, names, order and levels, including authored numbering gaps; each numbered child must match its parent. The class prints each number once. Unnumbered level-1 headings such as abstracts and references do not increment chapter counters, and numbers in body paragraphs remain text. Abstracts, keywords, equations, references and table data are preserved from the input. Missing or blank required English metadata fails explicitly.
 
 - Copy the class and required assets into the working project, or add the template directory to the project search path.
 - Put metadata in `\techreportsetup{...}` in the main `.tex` file.

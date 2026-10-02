@@ -2,6 +2,12 @@
   "originalCommit": "a03460fe66a3f77114ff3bb906476105e1d470b7",
   "originalPath": "services/cloud-server/assets/builtin-skills/latex-report-writer",
   "originalRelease": "1.0.0",
-  "productRelease": "1.0.1",
-  "maintenance": "PowerEvolve product fork: explicit English title and supplied bilingual metadata; see tests/test_compatibility.py. Original class, logo and specification retained."
+  "productRelease": "1.0.2",
+  "maintenance": "PowerEvolve product fork: explicit English title and supplied bilingual metadata; see tests/test_compatibility.py. Original class, logo and specification retained. Numbered reviewed Markdown compatibility is covered by tests/test_numbered_headings.py.",
+  "changes": [
+    {
+      "version": "1.0.2",
+      "summary": "Read confirmed Arabic-numbered Markdown chapters alongside retained Chinese chapter forms, preserve heading numbers and hierarchy without duplicate numbering, and retain supplied abstracts, equations, references and tables."
+    }
+  ]
 }

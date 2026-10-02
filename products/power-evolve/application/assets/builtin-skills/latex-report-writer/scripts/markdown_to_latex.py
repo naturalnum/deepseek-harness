@@ -18,6 +18,11 @@ from pathlib import Path
 
 INLINE_MATH = re.compile(r"(\\\(.*?\\\)|\$.*?\$)")
 HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*$")
+NUMBERED_HEADING = {
+    1: re.compile(r"^(?:第([0-9]+|[一二三四五六七八九十百]+)章\s*|([0-9]+)\s+)(\S.*)$"),
+    2: re.compile(r"^([0-9]+\.[0-9]+)\s+(\S.*)$"),
+    3: re.compile(r"^([0-9]+\.[0-9]+\.[0-9]+)\s+(\S.*)$"),
+}
 TABLE_CAPTION = re.compile(r"^表\s*[0-9]+[-－][0-9]+\s*(.*)$")
 EQUATION_TAG = re.compile(r"\s*\\tag\{[^{}]*\}")
 EQUATION_LABEL = re.compile(r"\s*\\label\{[^{}]*\}")
@@ -59,17 +64,37 @@ def escape_text(text: str) -> str:
     return "".join(rendered)
 
 
-def clean_heading(title: str, level: int) -> str:
-    """Remove manual Markdown numbering so the class can number headings."""
+def parse_numbered_heading(title: str, level: int) -> tuple[tuple[int, ...], str] | None:
+    """Read an explicit chapter/section number at its Markdown heading depth."""
 
     title = title.strip()
+    pattern = NUMBERED_HEADING.get(level)
+    match = pattern.fullmatch(title) if pattern else None
+    if match is None:
+        return None
     if level == 1:
-        title = re.sub(r"^第(?:[0-9]+|[一二三四五六七八九十百]+)章\s*", "", title)
-    elif level == 2:
-        title = re.sub(r"^[0-9]+\.[0-9]+\s*", "", title)
-    elif level == 3:
-        title = re.sub(r"^[0-9]+\.[0-9]+\.[0-9]+\s*", "", title)
-    return title
+        number = match.group(1) or match.group(2)
+        if number.isascii():
+            chapter = int(number)
+        else:
+            digits = dict(zip("一二三四五六七八九", range(1, 10)))
+            chapter, digit = 0, 0
+            for char in number:
+                if char in digits:
+                    digit = digits[char]
+                else:
+                    chapter += (digit or 1) * {"十": 10, "百": 100}[char]
+                    digit = 0
+            chapter += digit
+        return (chapter,), match.group(3)
+    return tuple(int(part) for part in match.group(1).split(".")), match.group(2)
+
+
+def clean_heading(title: str, level: int) -> str:
+    """Remove explicit Markdown numbering so the class prints it once."""
+
+    numbered = parse_numbered_heading(title, level)
+    return numbered[1] if numbered else title.strip()
 
 
 def parse_front_matter(lines: list[str]) -> tuple[str, str, str, str, str, int, int]:
@@ -84,11 +109,17 @@ def parse_front_matter(lines: list[str]) -> tuple[str, str, str, str, str, int, 
     )
     english_candidates = [i for i, line in enumerate(lines) if line.strip() == "# Abstract"]
     english_start = english_candidates[0] if english_candidates else None
-    body_start = next(
-        i for i, line in enumerate(lines)
-        if re.match(r"^#\s+第(?:[0-9]+|[一二三四五六七八九十百]+)章", line)
-    )
     refs_start = next(i for i, line in enumerate(lines) if line.strip() == "# 参考文献")
+    front_end = english_start if english_start is not None else abstract_start
+    body_start = next((
+        i for i, line in enumerate(lines)
+        if front_end < i < refs_start
+        and (heading := HEADING.match(line))
+        and len(heading.group(1)) == 1
+        and parse_numbered_heading(heading.group(2), 1) is not None
+    ), None)
+    if body_start is None:
+        raise ValueError("The report body requires a numbered level-1 chapter heading")
 
     cn_end = english_start if english_start is not None else body_start
     cn_block = [line.strip() for line in lines[abstract_start + 1 : cn_end] if line.strip()]
@@ -309,6 +340,7 @@ def render_body(body_lines: list[str]) -> str:
     paragraph_noindent = False
     pending_equation_explanation_noindent = False
     first_section = True
+    heading_numbers = [0, 0, 0]
     i = 0
 
     def flush_paragraph() -> None:
@@ -336,7 +368,8 @@ def render_body(body_lines: list[str]) -> str:
             flush_paragraph()
             pending_equation_explanation_noindent = False
             level = len(heading_match.group(1))
-            title = clean_heading(heading_match.group(2), level)
+            numbered = parse_numbered_heading(heading_match.group(2), level)
+            title = numbered[1] if numbered else heading_match.group(2).strip()
             previous_output = next((item for item in reversed(output) if item), "")
             previous_heading = re.match(
                 r"^\\(section|subsection|subsubsection|paragraph)\{",
@@ -348,10 +381,22 @@ def render_body(body_lines: list[str]) -> str:
                     output.append(r"\reportsectiontosubsectiongap")
                 elif transition == ("subsection", 3):
                     output.append(r"\reportsubsectiontosubsubsectiongap")
+            if level == 1 and not first_section:
+                output.append(r"\clearpage")
+            if level <= 3 and (numbered or level > 1):
+                command = ("section", "subsection", "subsubsection")[level - 1]
+                number = numbered[0] if numbered else tuple(
+                    heading_numbers[:level - 1] + [heading_numbers[level - 1] + 1]
+                )
+                if number[:-1] != tuple(heading_numbers[:level - 1]):
+                    raise ValueError(f"Heading number {'.'.join(map(str, number))} does not match its parent heading")
+                if number[-1] != heading_numbers[level - 1] + 1:
+                    output.append(r"\setcounter{" + command + "}{" + str(number[-1] - 1) + "}")
+                heading_numbers[level - 1] = number[-1]
+                heading_numbers[level:] = [0] * (3 - level)
             if level == 1:
-                if not first_section:
-                    output.append(r"\clearpage")
-                output.append(r"\section{" + escape_text(title) + "}")
+                command = r"\section{" if numbered else r"\section*{"
+                output.append(command + escape_text(title) + "}")
                 # The supplied source explicitly labels the two defect-dataset
                 # tables in Chapter 4 as 表4-2 and 表4-3; 表4-1 is not present
                 # in the Markdown, so preserve the source numbering gap.
