@@ -96,13 +96,42 @@ server.on('upgrade', (request, socket, head) => {
   const upstream = http.request(new URL(request.url, selected.origin), {
     method: 'GET', headers, agent: false,
   })
-  let connected = false
+  let connected = false, answered = false, rejection
+  const chunks = []
+  let bytes = 0
+  const deadline = setTimeout(() => rejection ? finishRejection() : fail(), 3000)
+  const end = payload => {
+    answered = true
+    clearTimeout(deadline)
+    rejection?.destroy()
+    upstream.destroy()
+    socket.end(payload, () => socket.destroy())
+  }
   const fail = () => {
-    if (connected) return
-    socket.end('HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n')
+    if (connected || answered) return
+    end('HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\nContent-Length: 0\r\n\r\n')
+  }
+  // Buffer only a small rejection body; hop headers and old framing cannot survive a closed connection.
+  const finishRejection = () => {
+    if (answered || !rejection) return
+    const omitted = new Set(['connection', 'proxy-connection', 'keep-alive', 'upgrade', 'te', 'trailer',
+      'transfer-encoding', 'content-length', 'proxy-authenticate', 'proxy-authorization',
+      ...(rejection.headers.connection ?? '').split(',').map(name => name.trim().toLowerCase())])
+    const fields = []
+    for (let index = 0; index < rejection.rawHeaders.length; index += 2) {
+      if (!omitted.has(rejection.rawHeaders[index].toLowerCase())) {
+        fields.push(`${rejection.rawHeaders[index]}: ${rejection.rawHeaders[index + 1]}`)
+      }
+    }
+    const status = rejection.statusCode ?? 502
+    const header = `HTTP/1.1 ${status} ${rejection.statusMessage ?? http.STATUS_CODES[status]}\r\n`
+      + [...fields, 'Connection: close', `Content-Length: ${bytes}`].join('\r\n') + '\r\n\r\n'
+    end(Buffer.concat([Buffer.from(header), ...chunks]))
   }
   upstream.on('upgrade', (response, backendSocket, backendHead) => {
+    if (answered || socket.destroyed) { backendSocket.destroy(); return }
     connected = true
+    clearTimeout(deadline)
     upgraded.add(socket); upgraded.add(backendSocket)
     const fields = response.rawHeaders.map((field, index) => index % 2 === 0
       ? `${field}: ${response.rawHeaders[index + 1]}` : null).filter(Boolean)
@@ -111,12 +140,30 @@ server.on('upgrade', (request, socket, head) => {
     if (backendHead.length) socket.write(backendHead)
     socket.on('close', () => { upgraded.delete(socket); backendSocket.destroy() })
     backendSocket.on('close', () => { upgraded.delete(backendSocket); socket.destroy() })
+    backendSocket.on('error', () => socket.destroy())
     socket.pipe(backendSocket)
     backendSocket.pipe(socket)
   })
-  upstream.on('response', response => { response.resume(); fail() })
+  upstream.on('response', response => {
+    if (answered || socket.destroyed) { response.destroy(); return }
+    rejection = response
+    response.on('data', chunk => {
+      const selected = chunk.subarray(0, 8192 - bytes)
+      chunks.push(selected); bytes += selected.length
+      if (bytes === 8192) finishRejection()
+    })
+    response.on('end', finishRejection)
+    response.on('aborted', finishRejection)
+    response.on('error', finishRejection)
+  })
   upstream.on('error', fail)
-  socket.on('close', () => upstream.destroy())
+  socket.on('error', () => socket.destroy())
+  socket.on('close', () => {
+    answered = true
+    clearTimeout(deadline)
+    rejection?.destroy()
+    upstream.destroy()
+  })
   upstream.end()
 })
 await new Promise((resolve, reject) => server.once('error', reject).listen(port, '127.0.0.1', resolve))

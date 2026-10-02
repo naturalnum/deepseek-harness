@@ -16,6 +16,8 @@ For the native Web adapter, the platform login page can POST a newly issued Agen
 
 Native WebSocket admission preserves actual 401 and 403 refusals. Platform connection failures, timeouts, unavailable verification, and invalid verification responses reject the upgrade with 503 without clearing the browser credential.
 
+The loopback [trial Host proxy](../scripts/trial-lb.mjs) preserves non-101 upgrade responses, including 401, 403 and 503, with end-to-end headers. It removes hop headers, forwards at most the first 8 KiB of the rejection body within a 3-second response deadline, recalculates Content-Length and closes both connections. Connection failures remain 502; the proxy never retries an upgrade.
+
 The native Session follow stream retains its last delivered event cursor across temporary Platform connection failures, read timeouts, and 502/503/504 responses. Snapshot and history reads retry at `host.pollMs`, under `scope.timeoutMs` and `scope.maxResponseBytes`. Recovery delivers the committed suffix without resubmitting input or replacing an already delivered snapshot. Cancellation stops waiting, retries, and delivery; any in-flight read retains its request bounds. Authorization denial, invalid responses, response-limit errors, and history gaps terminate the stream.
 
 ## Trusted platform
