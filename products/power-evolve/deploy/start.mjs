@@ -10,10 +10,12 @@ import { connectorRunnerFromEnvironment, connectorRunnerProfile, validateConnect
 const root = resolve(fileURLToPath(new URL('../../..', import.meta.url)))
 const self = fileURLToPath(import.meta.url)
 
-function origin(value, label, https = true) {
+function origin(value, label, localHttp) {
   const parsed = new URL(value)
   if (parsed.origin !== value || parsed.username || parsed.password
-    || (https && parsed.protocol !== 'https:')) throw new Error(`Invalid ${label}`)
+    || (localHttp ? parsed.protocol !== 'http:'
+      || !['127.0.0.1', 'localhost', '[::1]'].includes(parsed.hostname)
+      : parsed.protocol !== 'https:')) throw new Error(`Invalid ${label}`)
   return value
 }
 function endpoint(value, label, https = true) {
@@ -50,17 +52,41 @@ function row(source, id, replacements) {
   return `- id: ${id}\n  config:\n${config}\n`
 }
 
-/** Keep the bundle as the source of plugin selection and every unchanged config field. */
+/** Validate deployment public Origins before private files or Profiles are created.
+ * @param env Deployment environment; PE_LOCAL_HTTP='1' requires HTTP loopback Origins with one hostname and distinct ports.
+ * @returns Distinct Host and Platform Origins; an omitted mode requires HTTPS.
+ */
+export function deploymentPublicOrigins(env) {
+  if (env.PE_LOCAL_HTTP !== undefined && env.PE_LOCAL_HTTP !== '1') {
+    throw new Error('PE_LOCAL_HTTP must be 1 or omitted')
+  }
+  const localHttp = env.PE_LOCAL_HTTP === '1'
+  const hostOrigin = origin(required(env, 'PE_HOST_PUBLIC_ORIGIN'), 'Host public Origin', localHttp)
+  const platformOrigin = origin(required(env, 'PE_PLATFORM_PUBLIC_ORIGIN'), 'Platform public Origin', localHttp)
+  if (hostOrigin === platformOrigin) throw new Error('Host and Platform public Origins must differ')
+  if (localHttp) {
+    const host = new URL(hostOrigin), platform = new URL(platformOrigin)
+    if (host.hostname !== platform.hostname || (host.port || '80') === (platform.port || '80')) {
+      throw new Error('Local public Origins require the same loopback hostname and different ports')
+    }
+  }
+  return { hostOrigin, platformOrigin }
+}
+
+/** Keep the bundle as the source of plugin selection and every unchanged config field.
+ * @param role Host or Platform deployment role; neither inherits a local execution Profile.
+ * @param env Default HTTPS, or PE_LOCAL_HTTP='1' with canonical HTTP loopback Origins on one hostname and distinct ports.
+ * @param dshHome Private state directory for the generated existing DSH Profile.
+ * @returns Profile name and directory after origin and deployment configuration validation.
+ */
 export async function renderProfile(role, env, dshHome) {
   if (!['host', 'platform'].includes(role)) throw new Error('Choose host or platform')
+  const { hostOrigin, platformOrigin } = deploymentPublicOrigins(env)
   const remoteMcpPath = role === 'platform' ? env.PE_REMOTE_MCP_CONFIG_FILE || '' : ''
   const bootstrapPath = role === 'platform' ? env.PE_ACCOUNT_BOOTSTRAP_FILE || '' : ''
   const connectors = role === 'platform' ? connectorRunnerFromEnvironment(env) : null
   if (bootstrapPath && bootstrapPath !== accountBootstrapPath) throw new Error('Invalid account bootstrap deployment path')
   if (remoteMcpPath && remoteMcpPath !== remoteMcpConfigPath) throw new Error('Invalid remote MCP deployment configuration path')
-  const hostOrigin = origin(required(env, 'PE_HOST_PUBLIC_ORIGIN'), 'Host public Origin')
-  const platformOrigin = origin(required(env, 'PE_PLATFORM_PUBLIC_ORIGIN'), 'Platform public Origin')
-  if (hostOrigin === platformOrigin) throw new Error('Host and Platform public Origins must differ')
   const bundleName = role
   const bundle = await readFile(join(root, 'products/power-evolve', bundleName, 'cordis.patch.yml'), 'utf8')
   const web = row(bundle, 'web-server', { host: '0.0.0.0', port: role === 'host' ? 18880 : 18881 })
@@ -119,6 +145,7 @@ export async function validateRemoteMcpStartup(path,
 
 async function main() {
   const role = process.argv[2]
+  deploymentPublicOrigins(process.env)
   const dshHome = required(process.env, 'DSH_HOME')
   const privateDir = required(process.env, 'PE_PRIVATE_DIR')
   const names = role === 'host' ? ['worker-token']
