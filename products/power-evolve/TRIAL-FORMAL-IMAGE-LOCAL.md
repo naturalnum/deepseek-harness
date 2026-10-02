@@ -56,4 +56,4 @@ Bob 的原私钥修订完成一次真实 SSH 认证且清理完成；恢复后�
 
 证据在 `.artifacts/power-evolve/release-integration/formal-backup-restore/`：`restore-readback.json`、`restored-native-readback.json`、`restored-execution-readback.json`、`restart-before.json`、`restart-after.json`、`post-restart-browser.json` 和原生浏览器截图。端口转发日志为 `replica-host-*.log`／`replica-platform-*.log`，公共代理日志为 `frozen-host-proxy.log`／`frozen-platform-proxy.log`；应用日志通过固定 context 与应用 namespace 的 `kubectl logs` 查询，不公开原始私有内容。
 
-内置技能完整报告流程、当前 Office 定向验收、桌面最终适配与打包继续按[交付计划](DELIVERY-PLAN.md)推进；任意用户 STDIO MCP 服务尚未实现，当前只有固定 `whoami` 预设。多物理节点、生产 HTTPS／CNI、外部 PG、组织身份源和目标硬件容量保持各自未验收范围。
+Word／Excel／PowerPoint 已完成[原生 Office 定向验收](TRIAL-S8-NATIVE-OFFICE.md)。内置技能完整报告流程、失联执行的安全结案、桌面最终适配与打包继续按[交付计划](DELIVERY-PLAN.md)推进；任意用户 STDIO MCP 服务尚未实现，当前只有固定 `whoami` 预设。多物理节点、生产 HTTPS／CNI、外部 PG、组织身份源和目标硬件容量保持各自未验收范围。

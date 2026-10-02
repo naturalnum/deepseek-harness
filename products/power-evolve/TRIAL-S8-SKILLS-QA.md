@@ -29,6 +29,10 @@ The current catalog has nine packages. Both users' built-in instructions and own
 
 The older backup/restore trial separately demonstrated disabled Word persistence and revoked PDF read refusal for its then-current versions; see [that report](TRIAL-S8-BACKUP-RESTORE.md). This QA did not rerun those lifecycle cases on every upgraded version. Exact Word/LaTeX template fidelity and a complete sourced report workflow remain open.
 
+### Native Office follow-up on the formal restored image
+
+The 2026-10-03 [native Office acceptance](TRIAL-S8-NATIVE-OFFICE.md) subsequently completed Word, Excel and PowerPoint `1.0.1` slash-to-Office generation, saved OOXML readback, native downloads and visual inspection of all four rendered pages on the formal restored application image. Those results supersede the three native-slash pending statements above for the recorded small tasks. Broad Office feature coverage, exact template fidelity and complete report workflows remain unverified.
+
 ## Verified
 
 - Alice and Bob logged in through the trusted Platform page and separate native browser contexts. Each received nine enabled, ready package Skills. Native My/All cards, search, Word detail preview, Alice Word disable/enable, one Alice-only text Skill revoke, and persistence across a Host/Platform restart passed. Bob remained enabled during Alice's toggle. Cross-user `skillsRead` returned 404.
