@@ -77,6 +77,27 @@ def inline_markdown(text: str) -> str:
     return escaped
 
 
+def markdown_table_html(lines: list[str]) -> str:
+    """Keep pipe-table cells and alignment as native Word table input."""
+    def cells(line: str) -> list[str]:
+        return [cell.strip().replace(r"\|", "|") for cell in re.split(r"(?<!\\)\|", line.strip().strip("|"))]
+
+    rows = [cells(line) for line in lines]
+    if len(rows) < 2 or not all(re.fullmatch(r":?-{3,}:?", cell) for cell in rows[1]):
+        raise ValueError("invalid Markdown table delimiter")
+    if any(len(row) != len(rows[0]) for row in rows[1:]):
+        raise ValueError("Markdown table rows have inconsistent cell counts")
+    alignment = ["center" if cell.startswith(":") and cell.endswith(":") else
+                 "right" if cell.endswith(":") else "left" for cell in rows[1]]
+    rendered = ["<table style='border-collapse:collapse;width:100%'>"]
+    for index, row in enumerate([rows[0], *rows[2:]]):
+        tag = "th" if index == 0 else "td"
+        rendered.append("<tr>" + "".join(
+            f"<{tag} style='text-align:{align};font-family:宋体;font-size:10.5pt'>"
+            + inline_markdown(cell) + f"</{tag}>" for cell, align in zip(row, alignment)) + "</tr>")
+    return "\n".join([*rendered, "</table>"])
+
+
 def markdown_to_html(markdown: str, chapter_num: int, chapter_title: str) -> str:
     # Display math is normalized before the line-oriented Markdown parser. This keeps
     # multiline $$...$$ / \\[...\\] blocks from being flattened into prose.
@@ -88,6 +109,7 @@ def markdown_to_html(markdown: str, chapter_num: int, chapter_title: str) -> str
     code_fence: str | None = None
     code_lines: list[str] = []
     list_mode: str | None = None
+    table_lines: list[str] = []
 
     def flush_paragraph() -> None:
         if paragraph:
@@ -102,9 +124,15 @@ def markdown_to_html(markdown: str, chapter_num: int, chapter_title: str) -> str
             out.append(f"</{list_mode}>")
             list_mode = None
 
-    for raw in lines:
+    for index, raw in enumerate(lines):
         line = raw.rstrip()
         stripped = line.strip()
+        if table_lines:
+            if "|" in line and line.strip():
+                table_lines.append(line)
+                continue
+            out.append(markdown_table_html(table_lines))
+            table_lines.clear()
         fence_match = re.match(r"^(```+|~~~+)", stripped)
         if code_fence is not None:
             if stripped.startswith(code_fence):
@@ -116,6 +144,12 @@ def markdown_to_html(markdown: str, chapter_num: int, chapter_title: str) -> str
         if fence_match:
             flush_paragraph(); close_list()
             code_fence = fence_match.group(1)[:3]
+            continue
+        if "|" in line and index + 1 < len(lines) and re.fullmatch(
+            r"\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*", lines[index + 1]
+        ):
+            flush_paragraph(); close_list()
+            table_lines.append(line)
             continue
         if not line.strip():
             flush_paragraph(); close_list(); continue
@@ -158,6 +192,8 @@ def markdown_to_html(markdown: str, chapter_num: int, chapter_title: str) -> str
             out.append("<p style='font-family:宋体;font-size:12pt;line-height:1.5;text-indent:2em'>" + inline_markdown(line.lstrip()[1:].strip()) + "</p>")
             continue
         paragraph.append(line)
+    if table_lines:
+        out.append(markdown_table_html(table_lines))
     flush_paragraph(); close_list()
     if code_fence is not None and code_lines:
         out.append("<pre style='font-family:Consolas;font-size:10.5pt'>" + html.escape("\n".join(code_lines)) + "</pre>")
@@ -175,18 +211,6 @@ def title_from_content(content: Any, fallback: str) -> str:
     text = pick_text(content)
     m = re.search(r"^#\s+(?:\d+\s+)?(.+)$", text, flags=re.MULTILINE)
     return m.group(1).strip() if m else fallback
-
-
-def split_markdown_chapters(markdown: str) -> list[tuple[str, str]]:
-    matches = list(re.finditer(r"^#\s+(?:第?\d+章?\s*)?(.+?)\s*$", markdown, flags=re.MULTILINE))
-    if not matches:
-        return [("正文", markdown)] if markdown.strip() else []
-    result = []
-    for i, match in enumerate(matches):
-        start = match.start()
-        end = matches[i + 1].start() if i + 1 < len(matches) else len(markdown)
-        result.append((match.group(1).strip(), markdown[start:end].strip()))
-    return result
 
 
 def outline_rows(outline_artifact: Any, chapters: list[dict[str, Any]]) -> dict[str, Any]:
@@ -218,11 +242,13 @@ def abstract_data(abstract_artifact: Any) -> dict[str, Any]:
     if isinstance(kw_cn, list): kw_cn = "；".join(str(x) for x in kw_cn)
     if isinstance(kw_en, list): kw_en = "; ".join(str(x) for x in kw_en)
     if isinstance(cn, str) and not cn.lstrip().startswith("<"):
-        cn = "<p style='font-family:宋体;font-size:12pt;line-height:1.5;text-indent:2em'>" + inline_markdown(cn) + "</p>"
+        cn = "\n".join("<p style='font-family:宋体;font-size:12pt;line-height:1.5;text-indent:2em'>"
+                       + inline_markdown(part.strip()) + "</p>" for part in re.split(r"\n\s*\n", cn) if part.strip())
     elif isinstance(cn, str):
         cn = normalize_html_math(cn)
     if isinstance(en, str) and not en.lstrip().startswith("<"):
-        en = "<p style='font-family:Times New Roman;font-size:12pt;line-height:1.5;text-indent:2em'>" + inline_markdown(en) + "</p>"
+        en = "\n".join("<p style='font-family:Times New Roman;font-size:12pt;line-height:1.5;text-indent:2em'>"
+                       + inline_markdown(part.strip()) + "</p>" for part in re.split(r"\n\s*\n", en) if part.strip())
     elif isinstance(en, str):
         en = normalize_html_math(en)
     return {"abstract_cn": cn or "", "keywords_cn": kw_cn or "", "abstract_en": en or "", "keywords_en": kw_en or ""}
@@ -252,7 +278,100 @@ def references_data(reference_artifact: Any) -> dict[str, Any]:
     return {"references_html": "\n".join(paragraphs)}
 
 
+def final_report_data(source_report: Any) -> dict[str, Any]:
+    """Project the reviewed Markdown into Word fields without older snapshots."""
+    markdown = pick_text(source_report).lstrip("\ufeff").replace("\r\n", "\n")
+    markdown = re.sub(r"<!--.*?-->", "", markdown, flags=re.DOTALL)
+    if not markdown.strip():
+        raise ValueError("final source_report must contain readable Markdown")
+    sections: list[dict[str, Any]] = []
+    active: dict[str, Any] | None = None
+    report_title = ""
+    fence: str | None = None
+    chapter_count = 0
+    for line in markdown.splitlines():
+        stripped = line.strip()
+        fence_match = re.match(r"^(```+|~~~+)", stripped)
+        if fence_match:
+            marker = fence_match.group(1)[:3]
+            fence = None if fence == marker else marker if fence is None else fence
+        heading = None if fence is not None or fence_match else re.fullmatch(r"(#{1,2})\s+(.+?)\s*", line)
+        if heading:
+            level, title = len(heading.group(1)), heading.group(2).strip()
+            body = re.fullmatch(r"(?:第\s*(\d+)\s*章\s*|([1-9]\d*)[.、]?\s+)(.+)", title) if level == 1 else None
+            if title in {"摘要", "中文摘要", "内容摘要"} and chapter_count == 0:
+                kind = "abstract_cn"
+            elif title.lower() in {"abstract", "english abstract", "英文摘要"} and chapter_count == 0:
+                kind = "abstract_en"
+            elif title == "参考文献":
+                kind = "references"
+            elif body:
+                number = int(body.group(1) or body.group(2))
+                if number != chapter_count + 1 or any(section["kind"] in {"references", "appendix"} for section in sections):
+                    raise ValueError("final source_report body chapters must be consecutive before references and appendices")
+                chapter_count += 1
+                kind, title = "chapter", body.group(3).strip()
+            elif level == 1 and re.fullmatch(r"附录\s+[A-Z]\s+.+", title):
+                kind = "appendix"
+            elif level == 1 and not report_title and not sections:
+                report_title = title
+                continue
+            elif level == 1:
+                raise ValueError("final source_report has an unsupported top-level heading")
+            else:
+                kind = ""
+            if kind:
+                if kind in {"abstract_cn", "abstract_en", "references"} and any(section["kind"] == kind for section in sections):
+                    raise ValueError("final source_report has duplicate front matter or references")
+                active = {"kind": kind, "title": title, "lines": []}
+                sections.append(active)
+                continue
+        if active is not None:
+            active["lines"].append(line)
+        elif stripped and not stripped.startswith("<!--"):
+            raise ValueError("final source_report text is outside a recognized report section")
+    if fence is not None or chapter_count == 0:
+        raise ValueError("final source_report must contain complete numbered body chapters")
+    result: dict[str, Any] = {"chapters": [], "abstract": {}, "references": {"references_html": ""}, "appendices": []}
+    for section in sections:
+        text = "\n".join(section["lines"]).strip()
+        if not text:
+            raise ValueError("final source_report contains an empty report section")
+        kind = section["kind"]
+        if kind == "chapter":
+            number = len(result["chapters"]) + 1
+            result["chapters"].append({"num": number, "title": section["title"],
+                                       "content_html": markdown_to_html(f"# {number} {section['title']}\n\n{text}", number, section["title"])})
+        elif kind in {"abstract_cn", "abstract_en"}:
+            language = kind.removeprefix("abstract_")
+            keyword_pattern = r"^\s*\*{0,2}(?:关键词|Keywords)\s*[:：]\s*\*{0,2}\s*(.+?)\s*$"
+            keywords = [re.match(keyword_pattern, line, re.IGNORECASE) for line in section["lines"]]
+            found = [match for match in keywords if match]
+            if len(found) != 1:
+                raise ValueError("final source_report requires one keyword line for each abstract")
+            paragraphs = "\n".join(line for line, match in zip(section["lines"], keywords) if not match).strip()
+            if not paragraphs:
+                raise ValueError("final source_report abstract must not be empty")
+            result["abstract"][kind] = paragraphs
+            result["abstract"][f"keywords_{language}"] = found[0].group(1)
+        elif kind == "references":
+            result["references"] = {"references_html": "\n".join(
+                "<p style='font-family:宋体;font-size:12pt;line-height:1.5;text-indent:2em'>"
+                + inline_markdown(entry.strip()) + "</p>" for entry in re.split(r"\n\s*\n|\n(?=\[\d+\])", text) if entry.strip())}
+        elif kind == "appendix":
+            match = re.fullmatch(r"附录\s+([A-Z])\s+(.+)", section["title"])
+            result["appendices"].append({"id": match.group(1), "title": match.group(2),
+                                         "content_html": markdown_to_html(text, 0, match.group(2)).split("\n", 1)[1]})
+    if set(result["abstract"]) != {"abstract_cn", "abstract_en", "keywords_cn", "keywords_en"}:
+        raise ValueError("final source_report requires supplied bilingual abstracts and keywords")
+    if [item["id"] for item in result["appendices"]] != [chr(ord("A") + index) for index in range(len(result["appendices"]))]:
+        raise ValueError("final source_report appendix identifiers must be consecutive from A")
+    return result
+
+
 def chapter_data(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    if "source_report" in payload:
+        return final_report_data(payload["source_report"])["chapters"]
     approved = payload.get("approved_chapters") or []
     result: list[dict[str, Any]] = []
     for idx, artifact in enumerate(approved, 1):
@@ -265,11 +384,6 @@ def chapter_data(payload: dict[str, Any]) -> list[dict[str, Any]]:
         else:
             body = markdown_to_html(pick_text(content), idx, title)
         result.append({"num": idx, "title": title, "content_html": body})
-    if result:
-        return result
-    report_md = pick_text(payload.get("source_report"))
-    for idx, (title, md) in enumerate(split_markdown_chapters(report_md), 1):
-        result.append({"num": idx, "title": title, "content_html": markdown_to_html(md, idx, title)})
     return result
 
 
@@ -281,9 +395,8 @@ def create_word_report(request: dict[str, Any]) -> dict[str, Any]:
     payload = request.get("payload") or {}
     output_pref = payload.get("output_preferences") or {}
     workspace = Path(output_pref.get("workspace_dir") or os.getcwd()).resolve()
-    output_dir = Path(output_pref.get("output_dir") or workspace / "output" / "word")
-    if not output_dir.is_absolute(): output_dir = workspace / output_dir
-    output_dir.mkdir(parents=True, exist_ok=True)
+    output_root = Path(output_pref.get("output_dir") or workspace / "output" / "word")
+    if not output_root.is_absolute(): output_root = workspace / output_root
     metadata = payload.get("word_metadata") or {}
     required = {"report_no", "class_no", "secret_level", "project_source", "title_cn", "title_en", "project_name", "report_date"}
     missing = sorted(x for x in required if not str(metadata.get(x) or "").strip())
@@ -291,21 +404,29 @@ def create_word_report(request: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("missing required Word metadata: " + ", ".join(missing))
     cover_keys = ["report_no", "class_no", "secret_level", "project_source", "title_cn", "title_en", "project_name", "series_no", "cooperator", "report_date", "work_period", "leader", "staff", "writer"]
     cover = {key: metadata.get(key, [] if key == "cooperator" else "") for key in cover_keys}
-    chapters = chapter_data(payload)
+    final = final_report_data(payload["source_report"]) if "source_report" in payload else None
+    chapters = final["chapters"] if final is not None else chapter_data(payload)
     if not chapters:
         raise ValueError("no approved chapters or parseable Markdown content were provided")
-    outline = outline_rows(payload.get("outline"), chapters)
-    abstract = abstract_data(payload.get("abstract"))
-    references = references_data(payload.get("reference_plan"))
+    outline = outline_rows(None if final is not None else payload.get("outline"), chapters)
+    abstract = abstract_data(final["abstract"] if final is not None else payload.get("abstract"))
+    references = final["references"] if final is not None else references_data(payload.get("reference_plan"))
     missing_abstract = [key for key, value in abstract.items() if not str(value or "").strip()]
     if missing_abstract:
         raise ValueError("abstract artifact is missing required Word fields: " + ", ".join(missing_abstract))
 
+    # The generator reads every chapter JSON in its directory; isolate each output
+    # so an earlier edition cannot supply stale chapters, references or appendices.
+    output_dir = output_root / f"report-{uuid.uuid4().hex[:16]}"
+    output_dir.mkdir(parents=True, exist_ok=False)
+    output_dir = output_dir.resolve()
     save_json(output_dir / "cover_info.json", cover)
     save_json(output_dir / "outline.json", outline)
     save_json(output_dir / "abstract.json", abstract)
     if references.get("references_html"):
         save_json(output_dir / "references.json", references)
+    if final is not None and final["appendices"]:
+        save_json(output_dir / "appendices.json", {"appendices": final["appendices"]})
     for row in chapters:
         save_json(output_dir / f"chapter_{row['num']}.json", row)
 
@@ -315,6 +436,8 @@ def create_word_report(request: dict[str, Any]) -> dict[str, Any]:
     validations += [[py, str(SCRIPTS / "main.py"), "validate-chapter", str(row["num"])] for row in chapters]
     if references.get("references_html"):
         validations.append([py, str(SCRIPTS / "main.py"), "validate-references"])
+    if final is not None and final["appendices"]:
+        validations.append([py, str(SCRIPTS / "main.py"), "validate-appendices"])
     logs = []
     for cmd in validations:
         proc = run_command(cmd, env, workspace); logs.append({"cmd": cmd[-1], "stdout": proc.stdout, "stderr": proc.stderr})
