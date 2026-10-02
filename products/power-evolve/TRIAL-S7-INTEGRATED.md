@@ -6,7 +6,7 @@
 
 2026-09-30 在合并全部 S7d 产品代码后，仓库根目录 `pnpm run build` 通过；串行运行 `node --test --test-concurrency=1 products/power-evolve/application/tests/*.test.mjs` 为 **79/79 通过**。部署模板、Kubernetes ServiceAccount token 轮换和 Sandbox 挂载回归的组合运行 **11/11 通过**。真实 PostgreSQL 中断恢复与跨 Platform 准入组合运行 **3/3 通过**：PG 不可用时 Platform 进程存活、健康接口返回 503，恢复后返回 200；失败登录没有自动重放。
 
-独立复核还发现部署模板把上述 `/health` 当作存活探针，会在持续 PG 故障时反复重启 Platform。现已将 Platform 的 `/live` 用作存活探针，`/health` 保留给启动和就绪探针；真实 PG 断连测试确认失联时 `/live` 仍为 200、`/health` 为 503，恢复后重新就绪。修复后的针对性产品构建与部署／断连测试为 **3/3 通过**。尚待真实 Kubernetes 长时 PG 故障验证 Pod 的重启次数不增加。
+独立复核还发现部署模板把上述 `/health` 当作存活探针，会在持续 PG 故障时反复重启 Platform。现已将 Platform 的 `/live` 用作存活探针，`/health` 保留给启动和就绪探针；真实 PG 断连测试确认失联时 `/live` 仍为 200、`/health` 为 503，恢复后重新就绪。修复后的针对性产品构建与部署／断连测试为 **3/3 通过**。[当前正式镜像的真实 Kubernetes 长时连接拒绝演练](deploy/QA-RELEASE-COMPOSITION.md#sustained-postgresql-connection-refusal)已补齐原 Pod 无重启、恢复就绪和记录保留证据；其范围是本机静止状态的 Platform，不替代外部数据库或运行中用户任务的故障验收。
 
 在该集成分支上重新运行 `qa-s7a-platform-failover.mjs`：两台 Host 与两台 Platform 分别经本机负载均衡服务原生 Web；已持久接收的输入在 Platform A 中断后只出现一次，Platform B 在同一 Session 继续；受控写入在首次响应丢失后由 Platform B 对账，远端只写一次；Host B 接管历史，文件仍可读。本次通过的脱敏证据在 `.artifacts/power-evolve/s7a-28675498/s7a-evidence.json`。首次尝试在原生输入框可见性等待处超时，未到故障注入步骤；第二次通过。脚本现会在同类失败时保存页面截图和正文摘要以便定位，不能把首次失败算作通过。
 
