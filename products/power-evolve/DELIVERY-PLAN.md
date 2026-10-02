@@ -14,7 +14,7 @@
 
 本次路线复查纠正“单项功能先行、组合冻结与发布构建滞后”的节奏。正式镜像通过组合验收后才替换候选版。当前按上面的本机交付范围继续，不以新增页面或连接器种类填补验收，也不将本机结果标成物理节点验收。Connector 正式打包已加入生产锁校验及现有 CI 的部署测试入口；[构建记录](deploy/QA-RELEASE-BUILD.md#connector-production-lock-validation)区分命令替身回归与真实产物元数据验证。
 
-当前正式 ARM64 应用已使用明确的本机 HTTP 模式部署到已有集群，并通过原生浏览器双用户登录、`hi`、追问及历史恢复、文本上传编辑、独立工作区云 Git／Python 测试、批量 ZIP 下载和对话产物发布／预览／下载。`hi` 无执行沙盒，两用户执行 Pod 不同，越权访问拒绝，空闲回收后文件保留。构建与既有各版本的故障、注册表和架构检查分别见[构建记录](deploy/QA-RELEASE-BUILD.md)和[组合记录](deploy/QA-RELEASE-COMPOSITION.md#local-http-native-browser-acceptance)。当前继续接线并验收 API、MCP、SSH 与独立审批，再完成本机多副本、备份恢复和固定试用；新镜像尚未替换固定候选版。物理目标架构、生产私库及生产网络验收保留各自范围。
+当前正式 ARM64 应用已使用明确的本机 HTTP 模式部署到已有集群，并通过原生浏览器双用户登录、`hi`、追问及历史恢复、文本上传编辑、独立工作区云 Git／Python 测试、批量 ZIP 下载和对话产物发布／预览／下载。`hi` 无执行沙盒，两用户执行 Pod 不同，越权访问拒绝，空闲回收后文件保留。受控 API 审批、待审批状态的 Platform 重启恢复和公开 MCP 工具的两次独立审批也已通过。构建与各版本的故障、注册表和架构检查分别见[构建记录](deploy/QA-RELEASE-BUILD.md)和[组合记录](deploy/QA-RELEASE-COMPOSITION.md#local-http-native-browser-acceptance)。当前继续私有 MCP 凭据／编辑／撤销和 SSH 验收，再完成本机多副本、备份恢复和固定试用；入口状态码修复须先在新镜像复验，正式镜像尚未替换固定候选版。物理目标架构、生产私库及生产网络验收保留各自范围。
 
 ## 计数口径与现状
 
