@@ -2,9 +2,13 @@
   "originalCommit": "a03460fe66a3f77114ff3bb906476105e1d470b7",
   "originalPath": "services/cloud-server/assets/builtin-skills/tech-report-writer",
   "originalRelease": "1.1.31",
-  "productRelease": "1.1.35",
+  "productRelease": "1.1.36",
   "maintenance": "PowerEvolve product fork: semantic cover location, required-data errors, Linux UNO catalog caches and strict title/page visual QA; see tests/test_compatibility.py. Original Word template and specification retained.",
   "changes": [
+    {
+      "version": "1.1.36",
+      "summary": "Preserve reviewed Markdown subsection numbers, names and heading levels in Word and its catalog, without adding numbering to unnumbered headings or interpreting numeric prose as headings or lists."
+    },
     {
       "version": "1.1.35",
       "summary": "Honor paragraph line spacing without snapping to the legacy document grid, and require a working LibreOffice Math component before rendering native Word equations."

@@ -75,8 +75,6 @@ CATALOG_EXPLANATION_LEAD_RE = re.compile(
     r"(?P<verb>应表达|应展示|应给出|给出|展示|显示|表明|说明|反映|可见|"
     r"所示|用于表达|用于展示|用于说明|用于给出)"
 )
-LEVEL_2_RE = re.compile(r"^\d+\.\d+(?!\.)\s*\S")
-LEVEL_3_RE = re.compile(r"^\d+\.\d+\.\d+(?!\.)\s*\S")
 APPENDIX_TITLE_RE = re.compile(r"^附录\s+[A-Z]\s+\S")
 APPENDIX_LEVEL_1_RE = re.compile(r"^[A-Z]\d+\s+\S")
 APPENDIX_LEVEL_2_RE = re.compile(r"^[A-Z]\d+\.\d+(?!\.)\s*\S")
@@ -238,11 +236,10 @@ def _is_normal_body_text_paragraph(paragraph):
     style_name = paragraph.style.name if paragraph.style is not None else ""
     if style_name.lower().startswith("toc "):
         return False
-    if style_name in {"Heading 1", "Heading 2", "Heading 3", "003三级标题", "Caption"}:
+    if style_name in {"Heading 1", "Caption"} | HEADING_2_NAMES | HEADING_3_NAMES:
         return False
     if (
-        LEVEL_2_RE.match(text) or LEVEL_3_RE.match(text)
-        or APPENDIX_TITLE_RE.match(text) or APPENDIX_LEVEL_1_RE.match(text)
+        APPENDIX_TITLE_RE.match(text) or APPENDIX_LEVEL_1_RE.match(text)
         or APPENDIX_LEVEL_2_RE.match(text) or APPENDIX_LEVEL_3_RE.match(text)
         or CAPTION_RE.match(text) or NOTE_RE.match(text)
         or text == "参考文献"
@@ -1111,12 +1108,11 @@ def _configure_body(doc):
             continue
         if (
             paragraph.style.name in HEADING_3_NAMES
-            or LEVEL_3_RE.match(text)
             or APPENDIX_LEVEL_3_RE.match(text)
         ):
             _format_heading(paragraph, 3)
             continue
-        if LEVEL_2_RE.match(text) or APPENDIX_LEVEL_2_RE.match(text):
+        if paragraph.style.name in HEADING_2_NAMES or APPENDIX_LEVEL_2_RE.match(text):
             _format_heading(paragraph, 2)
             continue
         if paragraph.style.name == "Caption" or CAPTION_RE.match(text):

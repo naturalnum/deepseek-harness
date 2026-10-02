@@ -358,11 +358,10 @@ def _inline_symbol_run_format_errors(document, style_names):
     for paragraph, text in zip(paragraphs[body_start:], texts[body_start:]):
         if not text:
             continue
-        style_name = _paragraph_style_name(paragraph, style_names)
+        style_name = _paragraph_style_name(paragraph, style_names).lower()
         if (
-            style_name.lower().startswith("toc ")
-            or style_name in ("Heading 1", "Heading 2", "Heading 3", "003三级标题", "Caption")
-            or re.match(r"^\d+(?:\.\d+){0,2}\s*\S", text)
+            style_name.startswith("toc ")
+            or style_name in ("heading 1", "heading 2", "heading 3", "002二级标题", "003三级标题", "caption")
             or re.match(r"^附录\s+[A-Z]\s+\S", text)
             or re.match(r"^(?:图|表)\s*[A-Z]?\d+-\d+\s*\S", text)
             or re.match(r"^(?:注(?:\s*\d+)?[:：]|[a-z]\s+\S)", text)
@@ -1025,12 +1024,13 @@ def validate_report(path):
         )
         if body_start is not None:
             for paragraph, text in zip(paragraphs[body_start:], paragraph_texts[body_start:]):
+                style_name = _paragraph_style_name(paragraph, style_names).lower()
                 if text == "参考文献" or re.match(r"^附录\s+[A-Z]\s+\S", text):
                     if not _has_page_break_before(paragraph):
                         errors.append(f"{text} 应另起一页")
                     continue
 
-                if re.match(r"^\d+\s+\S", text):
+                if style_name == "heading 1":
                     if not _has_page_break_before(paragraph):
                         errors.append(f"一级标题“{text[:30]}”应另起一页")
                     if not _paragraph_format_matches(
@@ -1043,7 +1043,7 @@ def validate_report(path):
                         errors.append(f"一级标题“{text[:30]}”格式不符合表 B-1")
                     continue
 
-                if re.match(r"^\d+\.\d+(?!\.)\s*\S", text):
+                if style_name in ("heading 2", "002二级标题"):
                     if not _paragraph_format_matches(
                         paragraph,
                         east_asia="黑体",
@@ -1054,7 +1054,7 @@ def validate_report(path):
                         errors.append(f"二级标题“{text[:30]}”格式不符合表 B-1")
                     continue
 
-                if re.match(r"^\d+\.\d+\.\d+(?!\.)\s*\S", text):
+                if style_name in ("heading 3", "003三级标题"):
                     if not _paragraph_format_matches(
                         paragraph,
                         east_asia="黑体",

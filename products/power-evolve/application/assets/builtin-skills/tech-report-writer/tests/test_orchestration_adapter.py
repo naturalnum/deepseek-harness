@@ -16,6 +16,10 @@ sys.path.insert(0, str(SCRIPTS))
 from orchestration_adapter import chapter_data, final_report_data, abstract_data, create_word_report
 from docx import Document
 from engine.parser import parse_html_to_elements
+from format_existing_report import _configure_body
+from docx.oxml.ns import qn
+from docx.shared import Pt
+from report_validator import validate_report
 
 
 FINAL_MARKER = "REPORT-REVISION-20261003"
@@ -77,6 +81,69 @@ def payload(source=FINAL_REPORT):
 
 
 class FinalReportSource(unittest.TestCase):
+    def test_final_heading_numbers_names_and_levels_keep_reviewed_order(self):
+        source = FINAL_REPORT.replace(
+            "不得把本测试解释为生产性能。",
+            "不得把本测试解释为生产性能。\n\n### 1.1.1 测试边界\n\n只描述测试边界。\n\n"
+            "## 测试备注\n\n保留未编号标题。\n\n### 测试说明\n\n不补造编号。",
+        ).replace("表2-1 测试结果", "## 2.1 固定测试结果\n\n### 2.1.1 计算方法\n\n表2-1 测试结果")
+        final = final_report_data(payload(source)["source_report"])
+        document = Document()
+        for chapter in final["chapters"]:
+            _, errors, _ = parse_html_to_elements(document, chapter["content_html"], "CONTENT")
+            self.assertEqual(errors, [])
+        _configure_body(document)
+        expected = [("Heading 1", "1 项目概述"), ("Heading 2", "1.1 研究范围"),
+                    ("Heading 3", "1.1.1 测试边界"), ("Heading 2", "测试备注"),
+                    ("Heading 3", "测试说明"), ("Heading 1", "2 配电负荷异常识别"),
+                    ("Heading 2", "2.1 固定测试结果"), ("Heading 3", "2.1.1 计算方法"),
+                    ("Heading 1", "3 总结")]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "reviewed-headings.docx"
+            document.save(path)
+            readback = Document(path)
+            headings = [paragraph for paragraph in readback.paragraphs
+                        if paragraph.style.name.startswith("Heading ")]
+            self.assertEqual([(paragraph.style.name, paragraph.text) for paragraph in headings], expected)
+            for paragraph in headings:
+                self.assertFalse(paragraph._p.xpath("./w:pPr/w:numPr"), "the source already supplies numbers")
+                self.assertEqual(paragraph._p.pPr.find(qn("w:outlineLvl")).get(qn("w:val")),
+                                 str(int(paragraph.style.name[-1]) - 1))
+            errors = validate_report(str(path))["errors"]
+            self.assertFalse(any("级标题“" in error for error in errors), errors)
+            self.assertFalse(any("正文段内符号 run“" in error for error in errors), errors)
+            unnumbered = next(paragraph for paragraph in headings if paragraph.text == "测试备注")
+            for run in unnumbered.runs:
+                run.font.size = Pt(12)
+            readback.save(path)
+            errors = validate_report(str(path))["errors"]
+            self.assertIn("二级标题“测试备注”格式不符合表 B-1", errors)
+
+    def test_numeric_prose_is_not_a_list_or_heading(self):
+        prose = "1.1 这里是正文数据说明。"
+        source = FINAL_REPORT.replace("不得把本测试解释为生产性能。", prose + "\n\n1. 真实列表项")
+        final = final_report_data(payload(source)["source_report"])
+        document = Document()
+        for chapter in final["chapters"]:
+            _, errors, _ = parse_html_to_elements(document, chapter["content_html"], "CONTENT")
+            self.assertEqual(errors, [])
+        _configure_body(document)
+        paragraphs = [paragraph for paragraph in document.paragraphs if paragraph.text == prose]
+        self.assertEqual(len(paragraphs), 1, "keep the complete numeric prose")
+        paragraph = paragraphs[0]
+        self.assertEqual(paragraph.style.name, "Normal")
+        self.assertFalse(paragraph._p.xpath("./w:pPr/w:numPr"))
+        self.assertEqual(paragraph.runs[0].font.size.pt, 12)
+        self.assertFalse(paragraph.runs[0].font.bold)
+        self.assertEqual(paragraph._p.pPr.find(qn("w:snapToGrid")).get(qn("w:val")), "0")
+        list_item = next(paragraph for paragraph in document.paragraphs if paragraph.text == "真实列表项")
+        self.assertEqual(list_item.style.name, "List Number")
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "numeric-prose.docx"
+            document.save(path)
+            errors = validate_report(str(path))["errors"]
+            self.assertFalse(any(f"二级标题“{prose}" in error for error in errors), errors)
+
     def test_final_report_replaces_prior_confirmed_chapter_text(self):
         chapters = chapter_data(payload())
         text = "\n".join(row["content_html"] for row in chapters)
@@ -198,6 +265,7 @@ class FinalReportSource(unittest.TestCase):
 
     def test_broken_final_sources_cannot_select_old_chapters(self):
         for source in (None, "", "Unstructured report", FINAL_REPORT.replace("# 2 配电", "# 4 配电"),
+                       FINAL_REPORT.replace("# 1 项目概述", "# 1项目概述"),
                        FINAL_REPORT.replace("## ABSTRACT", "## OTHER"),
                        FINAL_REPORT.replace("| 识别数 | 3 |", "| 识别数 | 3 | 4 |")):
             with self.subTest(source_type=type(source).__name__):

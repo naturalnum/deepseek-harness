@@ -166,9 +166,10 @@ def markdown_to_html(markdown: str, chapter_num: int, chapter_title: str) -> str
         if m:
             flush_paragraph(); close_list()
             level = min(len(m.group(1)), 3)
-            title = re.sub(r"^\d+(?:\.\d+)*\s+", "", m.group(2)).strip()
+            title = m.group(2).strip()
             if level == 1:
                 first_h1_seen = True
+                title = re.sub(r"^\d+(?:\.\d+)*\s+", "", title).strip()
                 out.append(f"<h1 style='font-family:黑体;font-size:15pt;page-break-before:always'>{chapter_num} {inline_markdown(title)}</h1>")
             elif level == 2:
                 out.append(f"<h2 style='font-family:黑体;font-size:14pt'>{inline_markdown(title)}</h2>")
@@ -181,7 +182,7 @@ def markdown_to_html(markdown: str, chapter_num: int, chapter_title: str) -> str
             if list_mode != "ul": close_list(); out.append("<ul>"); list_mode = "ul"
             out.append("<li>" + inline_markdown(m.group(1)) + "</li>")
             continue
-        m = re.match(r"^\d+[.)、]\s*(.+)$", line)
+        m = re.match(r"^\d+(?:\.(?!\d)|[)、])\s*(.+)$", line)
         if m:
             flush_paragraph()
             if list_mode != "ol": close_list(); out.append("<ol>"); list_mode = "ol"

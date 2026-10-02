@@ -72,7 +72,7 @@ payload:
 执行要求：
 
 1. 只使用已经通过全文审核并经用户确认的版本；
-2. 提供 `source_report` 时，以该最终审核并确认的 Markdown 为唯一内容来源，提取连续编号的一级正文章标题、中英文摘要及关键词、参考文献和可选附录；前置报告总标题、摘要和参考文献不得成为正文章，Markdown 表格须保留为 Word 表格。最终来源为空、不可读或结构不完整时返回 `blocked`，不得回退到旧的 `approved_chapters`、`abstract` 或 `reference_plan`。只有未提供 `source_report` 的独立调用才兼容这些结构化输入；
+2. 提供 `source_report` 时，以该最终审核并确认的 Markdown 为唯一内容来源，提取连续编号的一级正文章标题、中英文摘要及关键词、参考文献和可选附录；保留二、三级标题的编号、名称、级别和顺序，未编号标题不补造编号。前置报告总标题、摘要和参考文献不得成为正文章，Markdown 表格须保留为 Word 表格。最终来源为空、不可读或结构不完整时返回 `blocked`，不得回退到旧的 `approved_chapters`、`abstract` 或 `reference_plan`。只有未提供 `source_report` 的独立调用才兼容这些结构化输入；
 3. 在 Markdown/HTML 写入 Word 前执行确定性公式归一化：`$...$`、`\(...\)` 转为行内 Word 原生 OMML，`$$...$$`、`\[...\]` 转为独立 OMML；显示公式中的 `\tag{章-序号}` 拆为公式对象和右侧 `（章-序号）` 编号。不得把 LaTeX 源码或内部公式标记作为普通文本写入 DOCX；转换失败时阻断生成，不得降级为可见 LaTeX；
 4. 不改写、删减或补充专业内容；
 5. 调用现有 `validate-cover`、`validate-outline`、`validate-abstract`、`validate-chapter` 和 `create-report`；
