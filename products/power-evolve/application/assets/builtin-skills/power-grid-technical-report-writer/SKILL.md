@@ -133,6 +133,8 @@ error: null
 
 外部编排的 `build_argument_architecture` 必须遵循请求中的 `argument_architecture_requirements`。`source_grounded` 模式在 `artifact.content.proposed_chapters` 或 `artifact.content.report_scope_confirmation.chapter_mapping` 返回非空章节对象数组；每行含非空 `chapter_title` 和 `chapter_type=foundation|technical-research|conclusion`，至少一个技术章，可选 `chapter_id` 为唯一稳定字符串，可选 `chapter_no` 为唯一正整数。首章置首、总结置尾；这是已有章节映射的交接表示，不新增正式目录或改变原生写作规则。修订请求提供 `base_artifact` 和 `revision_instruction` 时保留原范围与规则，使用新请求编号返回修订artifact，由编排器追加版本并等待显式确认；不得直接修改工作流状态或已应用的版本。
 
+`generate_outline`、`revise_outline` 的 `artifact.content` 使用原生结构化目录：`chapters` 按正式章序排列，每章登记数字字符串 `id`（如 `1`、`2`、`3`）、`title`、正整数 `target_words`、`minimum_words` 和 `section_outline`；总结章另登记固定 `maximum_words=800`。论证架构与内容说明的 `chapter_key` 用于关联已有内容，可作为目录行的额外字段保留，不替代正式章号 `id`；`chapter_type`、`task_role` 和标题/技术元数据继续遵循原生目录规则。章节计划、正文请求与确认目标使用该目录 `id`。向原生校验脚本传入 `artifact.content` 的目录JSON，保留数字编号、标题名称、层级、顺序和确认字数；不得只返回Markdown目录或只登记 `chapter_id` 而遗漏原生脚本读取的 `id`。
+
 ### 0A.5 强制审核交接
 
 在套件外部编排模式中，以下生成动作成功后必须设置审核交接：
@@ -163,7 +165,7 @@ handoff_rules:
 
 - 目录生成或修改后，必须实际调用 `report-reviewer.review_outline`；
 - 章节生成或修改后，先通过80%确定性字数门禁，再实际调用 `report-reviewer.review_chapter`；
-- 完整报告组装或修改后，先调用 `scripts/normalize_markdown.py`，再实际调用 `report-reviewer.review_report`；
+- 完整报告组装或修改后，先调用 `scripts/normalize_markdown.py`，再实际调用 `report-reviewer.review_report`；清洗保留ATX标题的层级标记、章/节编号和分隔空格，标题正文与普通正文继续执行原清洗规则；
 - 生成 Skill 的前置检查、脚本校验、写作约束检查和自检不能替代正式审核；
 - 只有当前 `artifact_id + version` 获得结构化 `pass` 后，编排器才可以请求用户确认；
 - 任何修改都必须产生新版本并重新审核，不得自行宣告审核通过。

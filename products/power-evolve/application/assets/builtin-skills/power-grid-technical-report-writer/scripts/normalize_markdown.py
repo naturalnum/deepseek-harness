@@ -4,6 +4,7 @@
 Operations outside fenced/inline code and LaTeX math:
 - Normalize long-dash variants to either ASCII '-' or Unicode em dash '—'.
 - Remove whitespace between a digit and an adjacent Han character in either order.
+- Preserve ATX heading markers, numbering and their separators.
 """
 from __future__ import annotations
 
@@ -12,9 +13,13 @@ import re
 from pathlib import Path
 
 FENCE_RE = re.compile(r"^\s*(```+|~~~+)")
+ATX_HEADING_PREFIX = (
+    r"^[ \t]{0,3}#{1,6}[ \t]+(?:(?:第[ \t]*(?:[0-9]+|[一二三四五六七八九十百]+)"
+    r"[ \t]*章|[0-9]+(?:\.[0-9]+)*[.、]?)[ \t]+)?"
+)
 PROTECTED_RE = re.compile(
-    r"(`+.*?`+|\$\$.*?\$\$|(?<!\\)\$(?!\$).*?(?<!\\)\$|\\\[.*?\\\]|\\\(.*?\\\))",
-    re.S,
+    r"(" + ATX_HEADING_PREFIX + r"|`+.*?`+|\$\$.*?\$\$|(?<!\\)\$(?!\$).*?(?<!\\)\$|\\\[.*?\\\]|\\\(.*?\\\))",
+    re.S | re.M,
 )
 LONG_DASH_RE = re.compile(r"[—–―﹘－]+")
 HAN = r"\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff"

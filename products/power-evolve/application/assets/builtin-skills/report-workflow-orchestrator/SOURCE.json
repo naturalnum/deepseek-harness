@@ -2,12 +2,16 @@
   "originalCommit": "a03460fe66a3f77114ff3bb906476105e1d470b7",
   "originalPath": "services/cloud-server/assets/builtin-skills/report-workflow-orchestrator",
   "originalRelease": "1.1.21",
-  "productRelease": "1.1.22",
-  "maintenance": "PowerEvolve product fork: consistent structured argument-architecture admission, confirmation and chapter briefs; see tests/test_argument_architecture.py. Original writing and review rules retained.",
+  "productRelease": "1.1.23",
+  "maintenance": "PowerEvolve product fork: structured argument-architecture admission and Markdown heading preservation; see tests/test_argument_architecture.py and tests/test_markdown_heading_normalization.py. Original writing and review rules retained.",
   "changes": [
     {
       "version": "1.1.22",
       "summary": "Accept the existing nested chapter mapping, reject invalid responses before consuming the pending request, avoid duplicate foundation/conclusion targets, and repair previously applied invalid drafts through a fresh child request and append-only version before explicit confirmation."
+    },
+    {
+      "version": "1.1.23",
+      "summary": "Preserve ATX heading markers, numbering and separators during deterministic Markdown cleaning so the existing heading validator and final Word source parser keep reading confirmed headings."
     }
   ]
 }
