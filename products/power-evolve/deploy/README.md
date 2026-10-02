@@ -74,6 +74,22 @@ The output must be a new `.json`, `.yaml` or `.yml` file. The node path must be 
 
 The optional final arguments select one or two Host and Platform replicas independently; both default to one. Two replicas on one node test process failure and durable recovery, not physical-node failover or cross-machine POSIX consistency. Keep the two port-forward processes running during browser use and stop them when the trial ends. HTTP is for the loopback development trial; production HTTPS and physical deployment acceptance remain separate.
 
+## Application backups
+
+The operator entry [backup.mjs](backup.mjs) stops the exact Host and Platform Deployments before copying PG, four POSIX data trees and fixed private projections. Copy [backup.example.json](backup.example.json) into a private `0600` file and replace its scope, digest, database identity and paths. `storageRoot` is the operator-visible mounted filesystem root; a Kubernetes node path alone is insufficient. Materialize `private.projectedRoot` as real `0700` directories and `0600` files at the product's fixed projection paths. Enable the SSH, MCP and Notes CA switches that match the deployment. Freeze deployment/configuration changes and external file writers during backup; keep deployment values separately for rebuilding resources.
+
+`postgres.urlFile` is a private URL file; database and role must match the Node/libpq destination. Optional `container` selects an existing PG tools container; `host`, `port` and `binDir` select its transport or local tools. `commandTimeoutMs` defaults to 900000 and accepts 1000–3600000. The role needs the identity/catalog reads used by preflight. Credentials do not enter tool arguments or error output. The formal entry requires built product verifiers and records format-3 bundles; the process-trial entry continues to own formats 1 and 2.
+
+```sh
+node products/power-evolve/deploy/backup.mjs create /private/path/source.json
+node products/power-evolve/deploy/backup.mjs resume /private/path/source.json
+node products/power-evolve/deploy/backup.mjs restore /private/path/target.json
+```
+
+Create saves stop intent and original UID/spec/replica counts, stops Host before Platform, and requires settled PG work and no execution writers. Pending approvals remain pending. Ambiguous requests are read back without automatic replay or writer resumption. Explicit `resume` restores source replicas; readiness is a separate gate. Inspect the private fence before retrying; remove a stale `.lock` only after verifying its recorded process has exited.
+
+Restore verifies bytes, separate roots/namespaces and an independent empty database before mutation. It preserves key bytes and historical Skill versions, prepares execution ownership, and keeps the target stopped. The target supplies its own database URL; source URLs, `model.env`, generated Profiles and running processes are not restored. A failed partial target stays stopped: inspect it and prepare a fresh empty target before retrying. Recreate Secrets/resources from reviewed target values, then perform deployment and two-user acceptance. The [local recovery record](QA-RELEASE-COMPOSITION.md#formal-image-stopped-backup-and-data-restore) distinguishes recovered bytes from application readiness.
+
 ## Account configuration
 
 `account-management.json` contains `maxUsers`, a `models` catalog (`id`, `label`, `maxTokens`) and `initialSettings` (`model`, `maxTokens`). Both Platform replicas load the same private file. The Host receives neither this file nor administrator credentials. Local trials provision this file without promoting a seed user.

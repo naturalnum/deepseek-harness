@@ -1,0 +1,25 @@
+{
+  "format": 1,
+  "scope": {
+    "context": "YOUR_CONTEXT",
+    "namespace": "pe-app",
+    "runnerNamespace": "pe-runners",
+    "connectorNamespace": "pe-connectors",
+    "appImage": "registry.example/power-evolve@sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "postgres": {
+    "urlFile": "/private/power-evolve/source-database-url",
+    "database": "power_evolve",
+    "role": "power_evolve",
+    "commandTimeoutMs": 900000
+  },
+  "storageRoot": "/mnt/power-evolve/source",
+  "private": {
+    "projectedRoot": "/private/power-evolve/source-projection",
+    "ssh": false,
+    "remoteMcp": false,
+    "notesCa": false
+  },
+  "bundle": "/private/power-evolve/backups/source-a",
+  "fenceFile": "/private/power-evolve/source-fence.json"
+}

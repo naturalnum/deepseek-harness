@@ -74,6 +74,22 @@ kubectl --context LOCAL_CONTEXT -n LOCAL_NAMESPACE port-forward --address=127.0.
 
 末尾两个可选参数分别选择一个或两个 Host、Platform 副本，默认都为一个。同一节点上的双副本验证进程故障和持久状态恢复，不代表物理节点故障转移或跨机器 POSIX 一致性。浏览器使用期间保持两个 port-forward 进程运行，结束试用时停止它们。HTTP 用于 loopback 开发试用；生产 HTTPS 和物理部署验收仍需分别完成。
 
+## 应用备份
+
+操作员入口 [backup.mjs](backup.mjs) 先停止确定身份的 Host 和 Platform Deployment，再复制 PG、四个 POSIX 数据树及固定私有投影。将 [backup.example.json](backup.example.json) 复制为私有 `0600` 文件，替换作用域、摘要、数据库身份和路径。`storageRoot` 是操作员可见的挂载文件系统根；只有 Kubernetes 节点路径还不够。将 `private.projectedRoot` 物化为真实的 `0700` 目录和 `0600` 文件，保持产品固定投影路径。启用与部署一致的 SSH、MCP 和 Notes CA 开关。备份期间冻结部署／配置变更及外部文件写入者；另行保存部署 values，以便重建资源。
+
+`postgres.urlFile` 是私有 URL 文件；数据库和角色须与 Node／libpq 实际连接一致。可选 `container` 选择已有 PG 工具容器；`host`、`port` 和 `binDir` 选择其传输或本机工具。`commandTimeoutMs` 默认 900000，接受 1000–3600000。角色需要预检使用的身份／目录读取权限。凭据不进入工具参数或错误输出。正式入口要求已构建的产品验证模块，记录格式 3 的 bundle；进程试用入口继续负责格式 1 和 2。
+
+```sh
+node products/power-evolve/deploy/backup.mjs create /private/path/source.json
+node products/power-evolve/deploy/backup.mjs resume /private/path/source.json
+node products/power-evolve/deploy/backup.mjs restore /private/path/target.json
+```
+
+Create 保存停写意图和原 UID／spec／副本数，先停止 Host 再停止 Platform，要求 PG 工作已结束且无执行写入者。待审批继续保持待审批。结果不明的请求通过读回对账，不自动重放或恢复写入者。显式 `resume` 恢复源副本数；就绪状态另行验收。重试前检查私有围栏；遗留 `.lock` 只有确认记录的进程已退出后才可删除。
+
+Restore 在修改前校验字节、独立根／命名空间及独立空库。它保留密钥字节和历史 Skill 版本，准备执行目录所有权，并保持目标停止。目标自行提供数据库 URL；来源 URL、`model.env`、生成的 Profile 和运行中进程不被恢复。失败的部分目标保持停止：检查现场，准备新的空目标后再试。从已审阅的目标 values 重建 Secret／资源，再进行部署及双用户验收。[本机恢复记录](QA-RELEASE-COMPOSITION.md#formal-image-stopped-backup-and-data-restore) 区分字节恢复与应用就绪。
+
 ## 账号配置
 
 `account-management.json` 包含 `maxUsers`、`models` 目录（`id`、`label`、`maxTokens`）及 `initialSettings`（`model`、`maxTokens`）。两个 Platform 副本读取相同的私有文件。Host 不获取此文件或管理员凭据。本机试用准备此文件，但不提升种子用户权限。
