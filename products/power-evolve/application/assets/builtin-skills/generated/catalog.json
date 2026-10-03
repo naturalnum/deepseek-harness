@@ -115,9 +115,9 @@
         "publisher": "PowerEvolve"
       },
       "release": {
-        "version": "1.0.4",
+        "version": "1.0.5",
         "state": "PUBLISHED",
-        "manifestDigest": "sha256:3ca63a20b99ec28323ed971589ab5ef882ddb3cfb2c6f41a6f066dc7c216f3bf",
+        "manifestDigest": "sha256:83a1d0c8b1e84ab379e10f95b54d0e985e94a48fd6fe0c392667b5a4c70f7ddb",
         "targets": [
           "cloud"
         ],
@@ -125,10 +125,10 @@
           "skill"
         ],
         "permissions": [],
-        "artifactDigest": "8ce56856393eaf4721be2b047f9341255570c88cb16fb8e533bcb9694d9fbaf3",
-        "artifactSize": 89140,
-        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.latex-report-writer/releases/1.0.4/artifact",
-        "artifactPath": "extensions/builtin.latex-report-writer/1.0.4.zip"
+        "artifactDigest": "400f0dc39cbe64ddbb20bd79468d80abeea8c39c2a849b97eec30a31b14377ff",
+        "artifactSize": 96131,
+        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.latex-report-writer/releases/1.0.5/artifact",
+        "artifactPath": "extensions/builtin.latex-report-writer/1.0.5.zip"
       }
     },
     {
