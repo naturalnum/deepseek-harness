@@ -7,7 +7,7 @@
   "changes": [
     {
       "version": "1.0.4",
-      "summary": "Separate labeled Markdown appendices from bibliography entries regardless of source placement, preserve source-link prose and URLs, emit the retained body/appendices/bibliography order and reject invalid or duplicate appendix labels."
+      "summary": "Separate labeled Markdown appendices from bibliography entries regardless of source placement, preserve source-link prose and URLs, emit the retained body/appendices/bibliography order and reject invalid or duplicate appendix labels. Preserve blank-line-separated bilingual abstract paragraphs, join continuous lines within each paragraph and escape prose before controlled TeX paragraph boundaries while retaining supplied word order and inline math."
     },
     {
       "version": "1.0.3",

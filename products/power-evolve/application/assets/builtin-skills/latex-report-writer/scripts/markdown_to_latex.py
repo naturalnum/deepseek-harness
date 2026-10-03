@@ -101,8 +101,39 @@ def clean_heading(title: str, level: int) -> str:
     return numbered[1] if numbered else title.strip()
 
 
+def parse_abstract_block(lines: list[str], keyword_label: str) -> tuple[str, str]:
+    """Return blank-line-separated prose paragraphs and the supplied keyword value."""
+
+    keyword_pattern = re.compile(r"^\*{0,2}" + re.escape(keyword_label) + r"\*{0,2}\s*(.*)$", re.IGNORECASE)
+    paragraphs: list[str] = []
+    paragraph: list[str] = []
+    keywords = ""
+    for raw in lines:
+        line = raw.strip()
+        keyword = keyword_pattern.match(line)
+        if not line or keyword:
+            if paragraph:
+                paragraphs.append(" ".join(paragraph))
+                paragraph.clear()
+            if keyword:
+                keywords = keyword.group(1).strip()
+        else:
+            paragraph.append(line)
+    if paragraph:
+        paragraphs.append(" ".join(paragraph))
+    return "\n\n".join(paragraphs), keywords
+
+
+def render_abstract(abstract: str) -> str:
+    """Escape each prose paragraph, preserving inline math and controlled paragraph ends."""
+
+    # The fixed paragraph primitive alias survives key-value argument parsing;
+    # source prose still passes through escape_text and cannot supply commands.
+    return "\\endgraf\n".join(escape_text(paragraph) for paragraph in abstract.split("\n\n"))
+
+
 def parse_front_matter(lines: list[str]) -> tuple[str, str, str, str, str, int, int]:
-    """Return title, CN abstract, CN keywords, EN abstract, EN keywords, body start, refs start."""
+    """Return title, bilingual abstracts/keywords and body/refs offsets; abstract strings retain blank-line paragraph boundaries."""
 
     if not lines or not lines[0].startswith("# "):
         raise ValueError("Markdown must start with a level-1 report title")
@@ -126,43 +157,26 @@ def parse_front_matter(lines: list[str]) -> tuple[str, str, str, str, str, int, 
         raise ValueError("The report body requires a numbered level-1 chapter heading")
 
     cn_end = english_start if english_start is not None else body_start
-    cn_block = [line.strip() for line in lines[abstract_start + 1 : cn_end] if line.strip()]
+    cn_block = lines[abstract_start + 1 : cn_end]
     en_block = (
-        [line.strip() for line in lines[english_start + 1 : body_start] if line.strip()]
+        lines[english_start + 1 : body_start]
         if english_start is not None
         else []
     )
-    if not cn_block:
+    if not any(line.strip() for line in cn_block):
         raise ValueError("The Chinese abstract block is required")
 
-    cn_keywords = ""
-    cn_paragraphs: list[str] = []
-    for line in cn_block:
-        keyword_match = re.match(r"^\*{0,2}关键词：\*{0,2}\s*(.*)$", line)
-        if keyword_match:
-            cn_keywords = keyword_match.group(1).strip()
-        else:
-            cn_paragraphs.append(line)
-
-    en_keywords = ""
-    en_paragraphs: list[str] = []
-    for line in en_block:
-        keyword_match = re.match(r"^\*{0,2}keywords:\*{0,2}\s*(.*)$", line, re.IGNORECASE)
-        if keyword_match:
-            en_keywords = keyword_match.group(1).strip()
-        else:
-            en_paragraphs.append(line)
-
-    if not cn_paragraphs or not cn_keywords:
+    abstract_cn, cn_keywords = parse_abstract_block(cn_block, "关键词：")
+    abstract_en, en_keywords = parse_abstract_block(en_block, "Keywords:")
+    if not abstract_cn or not cn_keywords:
         raise ValueError("The Chinese abstract and keywords are required")
-    if not en_paragraphs or not en_keywords:
+    if not abstract_en or not en_keywords:
         raise ValueError("The English abstract and keywords must be supplied explicitly")
-    abstract_cn = " ".join(cn_paragraphs)
     return (
         title,
         abstract_cn,
         cn_keywords,
-        " ".join(en_paragraphs),
+        abstract_en,
         en_keywords,
         body_start,
         refs_start,
@@ -727,9 +741,9 @@ def build_tex(source: Path, destination: Path, title_en: str) -> None:
     replacements = {
         "TITLE_CN": escape_text(title),
         "TITLE_EN": escape_text(title_en),
-        "ABSTRACT_CN": escape_text(abstract_cn),
+        "ABSTRACT_CN": render_abstract(abstract_cn),
         "KEYWORDS_CN": escape_text(keywords_cn),
-        "ABSTRACT_EN": escape_text(abstract_en),
+        "ABSTRACT_EN": render_abstract(abstract_en),
         "KEYWORDS_EN": escape_text(keywords_en),
         "GENERATED_REPORT_DATE": escape_text(generated_report_date),
     }

@@ -4,6 +4,7 @@
 
 - Separate labeled level-1 appendices from reference entries, including the generator's source-link appendix after the bibliography; emit body, appendices and bibliography in the retained template order.
 - Preserve appendix prose and URLs, support multiple uppercase appendix labels and retain numbering gaps, and reject invalid, duplicate or decreasing labels without changing ordinary reports or bilingual keyword parsing.
+- Preserve blank-line-separated Chinese and English abstract paragraphs, join continuous lines only within a paragraph, and escape each paragraph before inserting controlled TeX paragraph boundaries; retain single-paragraph inputs, supplied word order and inline math.
 
 ## 1.0.3
 
