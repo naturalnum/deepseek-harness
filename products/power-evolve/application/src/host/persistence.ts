@@ -10,6 +10,7 @@ import {
 } from '@deepseek-ai/dsh-session-persistence'
 import type RuntimeScope from './scope.ts'
 import { headerSchema, parseEvents } from '../session-records.ts'
+import { PlatformError } from '../contracts.ts'
 
 const snapshot = z.object({ header: headerSchema, events: z.array(z.json()), eventCount: z.number().int() })
 
@@ -62,6 +63,7 @@ class PlatformHandle implements SessionHandle {
     options?.signal?.throwIfAborted()
     await this.chain
   }
+  /** Release local ownership after draining, while retaining any append failure for the caller. */
   close(): Promise<void> {
     return this.closing ??= this.chain.finally(() => { this.closed = true; this.released() })
   }
@@ -82,7 +84,11 @@ export default class PlatformPersistence extends SessionPersistence {
         // The awaited session/flush barrier propagates this retained failure.
       })
     })
-    ctx.on('session/flush', session => this.writers.get(session.id)?.flush())
+    ctx.on('session/flush', session => {
+      const writer = this.writers.get(session.id)
+      if (!writer) throw new PlatformError(403, 'session_not_leased')
+      return writer.flush()
+    })
     ctx.effect(() => async () => {
       const results = await Promise.allSettled([...this.handles].map(handle => handle.close()))
       const errors = results.flatMap(result => result.status === 'rejected' ? [result.reason] : [])

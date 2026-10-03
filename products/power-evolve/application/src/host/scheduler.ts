@@ -7,7 +7,7 @@ import { foldConsumedWork } from '@deepseek-ai/dsh-agent'
 import { MessageId } from '@deepseek-ai/dsh-llm'
 import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
-import type { Grant } from '../contracts.ts'
+import { PlatformError, type Grant } from '../contracts.ts'
 import type { McpActionId } from '../mcp-action-contracts.ts'
 import { installConnectorTools } from './connectors.ts'
 import { installExecutionTools } from './executions.ts'
@@ -30,6 +30,32 @@ declare module '@deepseek-ai/dsh-llm' {
 
 const renewal = z.object({ cancelRequested: z.boolean() }).strict()
 
+/** Preserve one trusted Platform refusal through bounded cleanup wrappers, without using error messages. */
+function operationErrorCode(error: unknown): string {
+  const codes = new Set<string>()
+  const seen = new Set<Error>()
+  let remaining = 32
+  let complete = true
+  const visit = (value: unknown, depth: number): void => {
+    if (!(value instanceof Error) || seen.has(value)) return
+    if (depth > 8 || remaining-- <= 0) { complete = false; return }
+    seen.add(value)
+    if (value instanceof PlatformError) {
+      if (/^[a-z][a-z0-9_]{0,79}$/u.test(value.code)) codes.add(value.code)
+      else complete = false
+      return
+    }
+    if (value instanceof AggregateError) {
+      if (value.errors.length > remaining) { complete = false; return }
+      for (const cause of value.errors) visit(cause, depth + 1)
+    }
+    visit(value.cause, depth + 1)
+  }
+  visit(error, 0)
+  const [code] = codes
+  return complete && codes.size === 1 && code !== undefined ? code : 'runtime_error'
+}
+
 /** Limits apply to active Agents, while inactive history remains in PG. */
 export interface SchedulerConfig {
   platformOrigin: string
@@ -39,7 +65,7 @@ export interface SchedulerConfig {
   operationTimeoutMs: number
 }
 
-/** Dispatches only platform-issued grants and disposes each completed Agent. */
+/** Dispatches platform-issued grants and settles their original failure after Agent and writer disposal. */
 export class Scheduler {
   private readonly stop = new AbortController()
   private readonly active = new Map<string, Promise<void>>()
@@ -91,9 +117,19 @@ export class Scheduler {
     const lifetime = new AbortController()
     let handle: AgentHandle | undefined
     let failure: string | null = null
+    let raised: unknown
+    let hasRaised = false
+    let inputIndex = -1
+    let processingFinished = false
+    const retain = (error: unknown): void => {
+      if (hasRaised) return
+      hasRaised = true
+      raised = error
+      failure ??= operationErrorCode(error)
+    }
     let cancelRequested = false
     const timeout = setTimeout(() => {
-      failure = 'operation_timeout'
+      failure ??= 'operation_timeout'
       lifetime.abort()
       handle?.agent.cancel({ kind: 'disposed' })
     }, this.config.operationTimeoutMs)
@@ -109,7 +145,7 @@ export class Scheduler {
           }
         }
         catch (_renewalFailed) {
-          failure = 'lease_lost'
+          failure ??= 'lease_lost'
           lifetime.abort()
           handle?.agent.cancel({ kind: 'disposed' })
         }
@@ -160,37 +196,42 @@ export class Scheduler {
       }
       await this.ctx.sessions.flush(agent.session)
       const events = agent.session.snapshotEvents()
-      const index = events.findIndex(event => event.type === 'user/message' && event.data.id === MessageId(grant.requestId))
+      inputIndex = events.findIndex(event => event.type === 'user/message' && event.data.id === MessageId(grant.requestId))
       // Include the turn start preceding the consumed message when classifying its outcome.
-      let start = Math.max(0, index)
+      let start = Math.max(0, inputIndex)
       while (start > 0 && events[start]?.type !== 'turn/start') start--
       const outcome = foldConsumedWork(events.slice(start)).end?.data.reason.kind
       if (failure === null && outcome !== 'completed') failure = outcome === undefined ? 'not_completed' : `turn_${outcome}`
-      await handle.dispose()
-      this.handles.delete(handle)
+      processingFinished = true
+    } catch (error) {
+      retain(error)
+    }
+    // Native disposal awaits quiescence and closes the writer before reporting
+    // retained durability failures. Such a failure must not skip settlement.
+    if (handle) {
+      const disposing = handle
       handle = undefined
-      if (!(this.stop.signal.aborted && index < 0)) {
-        await runtime.call('/runtime/finish', grant.token, { outcome: failure === null ? 'completed' : 'failed', errorCode: failure })
+      try { await disposing.dispose() }
+      catch (error) { retain(error) }
+      finally { this.handles.delete(disposing) }
+    }
+    try {
+      if (!this.stop.signal.aborted || (processingFinished && inputIndex >= 0)) {
+        await runtime.call('/runtime/finish', grant.token, {
+          outcome: failure === null ? 'completed' : 'failed', errorCode: failure,
+        })
       }
     } catch (error) {
-      if (handle) {
-        try { await handle.dispose() }
-        finally { this.handles.delete(handle); handle = undefined }
-      }
-      if (!this.stop.signal.aborted) {
-        try { await runtime.call('/runtime/finish', grant.token, { outcome: 'failed', errorCode: failure ?? 'runtime_error' }) }
-        catch (_settlementUnavailable) { /* An expired grant is reconciled by the next claimant. */ }
-      }
-      throw error
+      // The Platform still rejects expired or replaced grants; never retry
+      // settlement with another grant or replace the first processing failure.
+      retain(error)
     } finally {
       clearTimeout(timeout)
       lifetime.abort()
-      await renew
-      try { if (handle) await handle.dispose() }
-      finally {
-        if (handle) this.handles.delete(handle)
-        runtime.grants.delete(grant.sessionId)
-      }
+      try { await renew }
+      catch (error) { retain(error) }
+      if (runtime.grants.get(grant.sessionId) === grant) runtime.grants.delete(grant.sessionId)
     }
+    if (hasRaised) throw raised
   }
 }
