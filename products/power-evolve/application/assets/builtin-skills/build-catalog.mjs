@@ -66,7 +66,7 @@ const definitions = [
     category: 'writing-office', publisher: 'PowerEvolve',
   },
   {
-    directory: 'tech-report-writer', extensionId: 'builtin.tech-report-writer', version: '1.1.38',
+    directory: 'tech-report-writer', extensionId: 'builtin.tech-report-writer', version: '1.1.39',
     name: '技术报告 Word 排版',
     summary: '生成、重排和校验中国电科院技术报告 Word 文件。',
     description: '包含 Word 模板、结构化数据校验、DOCX 生成、格式修复、目录域处理、PDF 转换与逐页视觉验收脚本。',
