@@ -81,6 +81,8 @@ payload:
 
 每次生成在 `output_preferences.output_dir` 下创建独立 `report-<生成编号>/`，保存本次 JSON 与 DOCX；用返回的 `artifact.content.docx_path` 和 `data_dir` 定位结果，保留旧版文件。
 
+用户提供的 Markdown 图片使用 `![图1-1 图题](figures/fig1-1.svg)`。PNG/JPEG 直接嵌入，静态 SVG 使用现有 LibreOffice Draw 与 `pdftoppm` 转为 PNG；文件型 `source_report` 的素材根为 Markdown 所在目录，且须位于当前用户工作区，内联 Markdown 的素材根为当前工作区。图片路径必须是素材根内的相对路径，不读取绝对路径、上级路径、符号链接或网络图片；SVG 不接受脚本、DTD、实体、外部 href/URL/CSS 引用。缺图、无效图、转换失败或嵌入失败返回 `blocked`，不得用正文链接或白框替代。图片字节在本次 JSON 中保存为快照，正文中紧随图片且与 alt 一致的图题只保留一份；若未提供该段落，则采用 alt 中的 `图X-X 图题`。
+
 ### `format_existing_word_report`
 
 输入当前 DOCX 路径和上一次校验问题，调用 `scripts/format_existing_report.py` 另存为新版本。不得覆盖上一版，不得修改专业内容。完成后返回新的 `word_report` 产物，并再次进入 `validate_word_report`。

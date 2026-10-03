@@ -380,6 +380,8 @@ def generate_report() -> dict:
         content_map=content_map,
         output_path=output_path,
     )
+    if any(warning.startswith("[图片]") for warning in result.get("warnings", [])):
+        return {"success": False, "output": None, "errors": ["提供的图片未能嵌入 Word，生成已阻断"]}
 
     if result.get("success") and result.get("output"):
         generated_path = os.path.abspath(str(result["output"]))

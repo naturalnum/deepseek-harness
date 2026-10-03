@@ -18,6 +18,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from local_images import local_image_uri, localize_html_images
+
 from markdown_math import (
     normalize_formula_number_line,
     normalize_html_math,
@@ -64,20 +66,52 @@ def pick_text(value: Any) -> str:
     return ""
 
 
-def inline_markdown(text: str) -> str:
+def source_image_root(source: Any) -> Path:
+    """File-backed Markdown resolves figures beside that file, inside the current workspace."""
+    workspace = Path.cwd().resolve()
+    content = unwrap(source)
+    candidate = None
+    if isinstance(content, dict) and not any(isinstance(content.get(key), str) for key in
+            ("markdown", "report_markdown", "text", "body", "report_text", "content_markdown")):
+        candidate = next((content[key] for key in ("markdown_path", "file_path", "path")
+                          if isinstance(content.get(key), str)), None)
+    elif isinstance(content, str) and "\n" not in content and Path(content).is_file():
+        candidate = content
+    if candidate is None:
+        return workspace
+    source_path = Path(candidate).resolve()
+    if not source_path.is_relative_to(workspace):
+        raise ValueError("image-bearing report Markdown must be inside the current workspace")
+    return source_path.parent
+
+
+def inline_markdown(text: str, image_root: Path | None = None) -> str:
     # Markdown formulas must become internal markers before HTML escaping; otherwise
     # $...$/\\(...\\) reaches Word as literal LaTeX source. Inline-code spans are
     # protected by the helper and therefore remain ordinary code text.
+    fragments = []
+    token = "TECHREPORTINLINE" + uuid.uuid4().hex
+    def protect(match):
+        if match.group(1) is not None:
+            fragment = "<code>" + html.escape(match.group(1), quote=False) + "</code>"
+        else:
+            uri = local_image_uri(match.group(3).strip(), image_root or Path.cwd().resolve())
+            fragment = "<img src='" + uri + "' alt='" + html.escape(match.group(2), quote=True) + "'/>"
+        fragments.append(fragment)
+        return token + str(len(fragments) - 1) + "END"
+    text = re.sub(r"`([^`]+)`|(?<!\\)!\[([^\]]*)\]\(([^)\n]+)\)", protect, text)
     text = replace_inline_math_preserving_code(text)
     escaped = html.escape(text, quote=False)
     escaped = re.sub(r"`([^`]+)`", r"<code>\1</code>", escaped)
     escaped = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", escaped)
     escaped = re.sub(r"(?<!\*)\*([^*]+)\*(?!\*)", r"<em>\1</em>", escaped)
     escaped = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"<a href='\2'>\1</a>", escaped)
+    for index, fragment in enumerate(fragments):
+        escaped = escaped.replace(token + str(index) + "END", fragment)
     return escaped
 
 
-def markdown_table_html(lines: list[str]) -> str:
+def markdown_table_html(lines: list[str], image_root: Path | None = None) -> str:
     """Keep pipe-table cells and alignment as native Word table input."""
     def cells(line: str) -> list[str]:
         return [cell.strip().replace(r"\|", "|") for cell in re.split(r"(?<!\\)\|", line.strip().strip("|"))]
@@ -94,11 +128,11 @@ def markdown_table_html(lines: list[str]) -> str:
         tag = "th" if index == 0 else "td"
         rendered.append("<tr>" + "".join(
             f"<{tag} style='text-align:{align};font-family:宋体;font-size:10.5pt'>"
-            + inline_markdown(cell) + f"</{tag}>" for cell, align in zip(row, alignment)) + "</tr>")
+            + inline_markdown(cell, image_root) + f"</{tag}>" for cell, align in zip(row, alignment)) + "</tr>")
     return "\n".join([*rendered, "</table>"])
 
 
-def markdown_to_html(markdown: str, chapter_num: int, chapter_title: str) -> str:
+def markdown_to_html(markdown: str, chapter_num: int, chapter_title: str, image_root: Path | None = None) -> str:
     # Display math is normalized before the line-oriented Markdown parser. This keeps
     # multiline $$...$$ / \\[...\\] blocks from being flattened into prose.
     markdown = normalize_markdown_display_math(markdown)
@@ -115,7 +149,7 @@ def markdown_to_html(markdown: str, chapter_num: int, chapter_title: str) -> str
         if paragraph:
             text = " ".join(x.strip() for x in paragraph if x.strip())
             if text:
-                out.append("<p style='font-family:宋体;font-size:12pt;line-height:1.5;text-indent:2em'>" + inline_markdown(text) + "</p>")
+                out.append("<p style='font-family:宋体;font-size:12pt;line-height:1.5;text-indent:2em'>" + inline_markdown(text, image_root) + "</p>")
             paragraph.clear()
 
     def close_list() -> None:
@@ -131,7 +165,7 @@ def markdown_to_html(markdown: str, chapter_num: int, chapter_title: str) -> str
             if "|" in line and line.strip():
                 table_lines.append(line)
                 continue
-            out.append(markdown_table_html(table_lines))
+            out.append(markdown_table_html(table_lines, image_root))
             table_lines.clear()
         fence_match = re.match(r"^(```+|~~~+)", stripped)
         if code_fence is not None:
@@ -153,6 +187,17 @@ def markdown_to_html(markdown: str, chapter_num: int, chapter_title: str) -> str
             continue
         if not line.strip():
             flush_paragraph(); close_list(); continue
+        image = re.fullmatch(r"!\[([^\]]*)\]\(([^)\n]+)\)", stripped)
+        if image:
+            flush_paragraph(); close_list()
+            out.append("<p style='text-align:center;text-indent:0'>" + inline_markdown(stripped, image_root) + "</p>")
+            caption = image.group(1).strip()
+            following = next((item.strip() for item in lines[index + 1:] if item.strip()), "")
+            if re.fullmatch(r"图\d+-\d+\s+.+", caption) and following != caption:
+                if re.match(r"图\d+-\d+\s+", following):
+                    raise ValueError("report image alt and following figure caption disagree")
+                out.append("<p>" + inline_markdown(caption, image_root) + "</p>")
+            continue
         if re.fullmatch(r"\[\[TECH_REPORT_MATH_B64:[A-Za-z0-9_=-]+\]\]", line.strip()):
             flush_paragraph(); close_list()
             out.append("<p style='font-family:宋体;font-size:10.5pt;line-height:1.0;text-align:center;text-indent:0'>" + html.escape(line.strip(), quote=False) + "</p>")
@@ -170,36 +215,36 @@ def markdown_to_html(markdown: str, chapter_num: int, chapter_title: str) -> str
             if level == 1:
                 first_h1_seen = True
                 title = re.sub(r"^\d+(?:\.\d+)*\s+", "", title).strip()
-                out.append(f"<h1 style='font-family:黑体;font-size:15pt;page-break-before:always'>{chapter_num} {inline_markdown(title)}</h1>")
+                out.append(f"<h1 style='font-family:黑体;font-size:15pt;page-break-before:always'>{chapter_num} {inline_markdown(title, image_root)}</h1>")
             elif level == 2:
-                out.append(f"<h2 style='font-family:黑体;font-size:14pt'>{inline_markdown(title)}</h2>")
+                out.append(f"<h2 style='font-family:黑体;font-size:14pt'>{inline_markdown(title, image_root)}</h2>")
             else:
-                out.append(f"<h3 style='font-family:黑体;font-size:12pt'>{inline_markdown(title)}</h3>")
+                out.append(f"<h3 style='font-family:黑体;font-size:12pt'>{inline_markdown(title, image_root)}</h3>")
             continue
         m = re.match(r"^[-*+]\s+(.+)$", line)
         if m:
             flush_paragraph()
             if list_mode != "ul": close_list(); out.append("<ul>"); list_mode = "ul"
-            out.append("<li>" + inline_markdown(m.group(1)) + "</li>")
+            out.append("<li>" + inline_markdown(m.group(1), image_root) + "</li>")
             continue
         m = re.match(r"^\d+(?:\.(?!\d)|[)、])\s*(.+)$", line)
         if m:
             flush_paragraph()
             if list_mode != "ol": close_list(); out.append("<ol>"); list_mode = "ol"
-            out.append("<li>" + inline_markdown(m.group(1)) + "</li>")
+            out.append("<li>" + inline_markdown(m.group(1), image_root) + "</li>")
             continue
         if line.lstrip().startswith(">"):
             flush_paragraph(); close_list()
-            out.append("<p style='font-family:宋体;font-size:12pt;line-height:1.5;text-indent:2em'>" + inline_markdown(line.lstrip()[1:].strip()) + "</p>")
+            out.append("<p style='font-family:宋体;font-size:12pt;line-height:1.5;text-indent:2em'>" + inline_markdown(line.lstrip()[1:].strip(), image_root) + "</p>")
             continue
         paragraph.append(line)
     if table_lines:
-        out.append(markdown_table_html(table_lines))
+        out.append(markdown_table_html(table_lines, image_root))
     flush_paragraph(); close_list()
     if code_fence is not None and code_lines:
         out.append("<pre style='font-family:Consolas;font-size:10.5pt'>" + html.escape("\n".join(code_lines)) + "</pre>")
     if not first_h1_seen:
-        out.insert(0, f"<h1 style='font-family:黑体;font-size:15pt;page-break-before:always'>{chapter_num} {inline_markdown(chapter_title)}</h1>")
+        out.insert(0, f"<h1 style='font-family:黑体;font-size:15pt;page-break-before:always'>{chapter_num} {inline_markdown(chapter_title, image_root)}</h1>")
     return "\n".join(out)
 
 
@@ -285,6 +330,7 @@ def final_report_data(source_report: Any) -> dict[str, Any]:
     markdown = re.sub(r"<!--.*?-->", "", markdown, flags=re.DOTALL)
     if not markdown.strip():
         raise ValueError("final source_report must contain readable Markdown")
+    image_root = source_image_root(source_report) if "![" in markdown else None
     sections: list[dict[str, Any]] = []
     active: dict[str, Any] | None = None
     report_title = ""
@@ -342,7 +388,7 @@ def final_report_data(source_report: Any) -> dict[str, Any]:
         if kind == "chapter":
             number = len(result["chapters"]) + 1
             result["chapters"].append({"num": number, "title": section["title"],
-                                       "content_html": markdown_to_html(f"# {number} {section['title']}\n\n{text}", number, section["title"])})
+                                       "content_html": markdown_to_html(f"# {number} {section['title']}\n\n{text}", number, section["title"], image_root)})
         elif kind in {"abstract_cn", "abstract_en"}:
             language = kind.removeprefix("abstract_")
             keyword_pattern = r"^\s*\*{0,2}(?:关键词|Keywords)\s*[:：]\s*\*{0,2}\s*(.+?)\s*$"
@@ -358,11 +404,11 @@ def final_report_data(source_report: Any) -> dict[str, Any]:
         elif kind == "references":
             result["references"] = {"references_html": "\n".join(
                 "<p style='font-family:宋体;font-size:12pt;line-height:1.5;text-indent:2em'>"
-                + inline_markdown(entry.strip()) + "</p>" for entry in re.split(r"\n\s*\n|\n(?=\[\d+\])", text) if entry.strip())}
+                + inline_markdown(entry.strip(), image_root) + "</p>" for entry in re.split(r"\n\s*\n|\n(?=\[\d+\])", text) if entry.strip())}
         elif kind == "appendix":
             match = re.fullmatch(r"附录\s+([A-Z])\s+(.+)", section["title"])
             result["appendices"].append({"id": match.group(1), "title": match.group(2),
-                                         "content_html": markdown_to_html(text, 0, match.group(2)).split("\n", 1)[1]})
+                                         "content_html": markdown_to_html(text, 0, match.group(2), image_root).split("\n", 1)[1]})
     if set(result["abstract"]) != {"abstract_cn", "abstract_en", "keywords_cn", "keywords_en"}:
         raise ValueError("final source_report requires supplied bilingual abstracts and keywords")
     if [item["id"] for item in result["appendices"]] != [chr(ord("A") + index) for index in range(len(result["appendices"]))]:
@@ -379,11 +425,11 @@ def chapter_data(payload: dict[str, Any]) -> list[dict[str, Any]]:
         content = unwrap(artifact)
         title = title_from_content(content, f"第{idx}章")
         if isinstance(content, dict) and isinstance(content.get("content_html"), str):
-            body = normalize_html_math(content["content_html"])
+            body = normalize_html_math(localize_html_images(content["content_html"], source_image_root(artifact)))
         elif isinstance(content, dict) and isinstance(content.get("html"), str):
-            body = normalize_html_math(content["html"])
+            body = normalize_html_math(localize_html_images(content["html"], source_image_root(artifact)))
         else:
-            body = markdown_to_html(pick_text(content), idx, title)
+            body = markdown_to_html(pick_text(content), idx, title, source_image_root(artifact))
         result.append({"num": idx, "title": title, "content_html": body})
     return result
 
