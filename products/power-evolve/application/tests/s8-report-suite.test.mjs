@@ -15,7 +15,7 @@ import { BuiltinSkillCatalog } from '../lib/platform/builtin-skills.js'
 const privateDir = process.env.PE_PRIVATE_DIR ?? join(homedir(), '.config/power-evolve/shared-host-slice2')
 const databaseUrl = process.env.PE_TEST_DATABASE_URL ?? (await readFile(join(privateDir, 'database-url'), 'utf8')).trim()
 const report = [
-  ['builtin.report-workflow-orchestrator', '1.1.24', 'report-workflow-orchestrator'],
+  ['builtin.report-workflow-orchestrator', '1.1.25', 'report-workflow-orchestrator'],
   ['builtin.power-grid-technical-report-writer', '1.1.34', 'power-grid-technical-report-writer'],
   ['builtin.report-reviewer', '1.1.0', 'report-reviewer'],
   ['builtin.tech-report-writer', '1.1.37', 'tech-report-writer'],

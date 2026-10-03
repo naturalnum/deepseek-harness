@@ -59,7 +59,7 @@ const definitions = [
   },
   {
     directory: 'report-workflow-orchestrator',
-    extensionId: 'builtin.report-workflow-orchestrator', version: '1.1.24',
+    extensionId: 'builtin.report-workflow-orchestrator', version: '1.1.25',
     name: '技术报告工作流',
     summary: '编排技术报告写作、审核、排版和逐页验收。',
     description: '通过文件化状态机连接电网报告生成、结构化审核、Word 排版、格式修复与视觉验收。',

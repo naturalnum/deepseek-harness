@@ -193,9 +193,9 @@
         "publisher": "PowerEvolve"
       },
       "release": {
-        "version": "1.1.24",
+        "version": "1.1.25",
         "state": "PUBLISHED",
-        "manifestDigest": "sha256:5196acbe454c06477b10a0aa73d727fe47dac7ef5c7fc336589b97b76ca64af5",
+        "manifestDigest": "sha256:317eef0e87b70caf46c49cf8b0687216bc8b1294632af23ace4f027fe1e4e72c",
         "targets": [
           "cloud"
         ],
@@ -203,10 +203,10 @@
           "skill"
         ],
         "permissions": [],
-        "artifactDigest": "ca449f220f76a6f662a584639eafab26955733461938332392800b8b8487493a",
-        "artifactSize": 106213,
-        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.report-workflow-orchestrator/releases/1.1.24/artifact",
-        "artifactPath": "extensions/builtin.report-workflow-orchestrator/1.1.24.zip"
+        "artifactDigest": "62c4d645fa222dce8b29471412f510231dce4c4f177c5d5a08c9a4ffdeda05a7",
+        "artifactSize": 143862,
+        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.report-workflow-orchestrator/releases/1.1.25/artifact",
+        "artifactPath": "extensions/builtin.report-workflow-orchestrator/1.1.25.zip"
       }
     },
     {
