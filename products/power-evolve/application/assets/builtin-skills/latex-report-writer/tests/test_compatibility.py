@@ -52,7 +52,7 @@ class LatexCompatibility(unittest.TestCase):
             source.write_text(MARKDOWN.replace("The supplied abstract must remain unchanged.", ""), encoding="utf-8")
             build_tex(source, tex, "Runtime Compatibility Report")
         source.write_text(MARKDOWN, encoding="utf-8")
-        subprocess.run(command + ["--title-en", "Runtime Compatibility & Report"], check=True)
+        subprocess.run(command + ["--title-en", "Runtime Compatibility & Report", "--font-profile", "portable"], check=True)
         generated = tex.read_text()
         self.assertIn("Runtime Compatibility \\& Report", generated)
         self.assertIn("中文摘要来自明确输入", generated)
@@ -62,6 +62,9 @@ class LatexCompatibility(unittest.TestCase):
             process = subprocess.run([sys.executable, str(SKILL / "scripts/build_latex_report.py"), str(tex)],
                                      stdout=output, stderr=subprocess.STDOUT)
         self.assertEqual(process.returncode, 0, log.read_text()[-4000:])
+        subprocess.run([sys.executable, str(SKILL / "scripts/validate_latex_report.py"),
+                        str(tex.with_suffix(".pdf")), "--log", str(tex.with_suffix(".log")),
+                        "--font-profile", "portable"], check=True, capture_output=True, text=True)
         pdf = tex.with_suffix(".pdf")
         self.assertGreater(pdf.stat().st_size, 0)
         text = subprocess.check_output(["pdftotext", str(pdf), "-"], text=True)

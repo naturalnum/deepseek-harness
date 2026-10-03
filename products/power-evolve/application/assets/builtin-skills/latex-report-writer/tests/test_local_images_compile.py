@@ -44,7 +44,7 @@ class LocalImagesCompilation(unittest.TestCase):
             if path.is_file():
                 shutil.copy2(path, output / path.name)
         conversion = subprocess.run([sys.executable, str(SKILL / "scripts/markdown_to_latex.py"), str(source), str(tex),
-                                     "--title-en", "Local Figure Component Report"], text=True, capture_output=True)
+                                     "--title-en", "Local Figure Component Report", "--font-profile", "portable"], text=True, capture_output=True)
         (output / "conversion.stdout").write_text(conversion.stdout + conversion.stderr)
         self.assertEqual(conversion.returncode, 0, conversion.stderr)
         generated = tex.read_text()
@@ -58,6 +58,9 @@ class LocalImagesCompilation(unittest.TestCase):
             build = subprocess.run([sys.executable, str(SKILL / "scripts/build_latex_report.py"), str(tex)],
                                    stdout=stream, stderr=subprocess.STDOUT)
         self.assertEqual(build.returncode, 0, (output / "build.stdout").read_text()[-4000:])
+        subprocess.run([sys.executable, str(SKILL / "scripts/validate_latex_report.py"),
+                        str(tex.with_suffix(".pdf")), "--log", str(tex.with_suffix(".log")),
+                        "--font-profile", "portable"], check=True, capture_output=True, text=True)
         self.assertIn("-no-shell-escape", (output / "build.stdout").read_text())
         text = subprocess.check_output(["pdftotext", "-layout", str(tex.with_suffix(".pdf")), "-"], text=True)
         (output / "report.txt").write_text(text)

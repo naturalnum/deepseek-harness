@@ -34,7 +34,7 @@ class NumberedHeadingsCompilation(unittest.TestCase):
                         shutil.copy2(path, output / path.name)
                 subprocess.run(
                     [sys.executable, str(SKILL / "scripts/markdown_to_latex.py"), str(source), str(tex),
-                     "--title-en", "Confirmed Technical Report"], check=True,
+                     "--title-en", "Confirmed Technical Report", "--font-profile", "portable"], check=True,
                 )
                 stdout = output / "build.stdout"
                 with stdout.open("w") as stream:
@@ -43,6 +43,9 @@ class NumberedHeadingsCompilation(unittest.TestCase):
                         stdout=stream, stderr=subprocess.STDOUT,
                     )
                 self.assertEqual(result.returncode, 0, stdout.read_text()[-4000:])
+                subprocess.run([sys.executable, str(SKILL / "scripts/validate_latex_report.py"),
+                                str(tex.with_suffix(".pdf")), "--log", str(tex.with_suffix(".log")),
+                                "--font-profile", "portable"], check=True, capture_output=True, text=True)
                 text = subprocess.check_output(["pdftotext", "-layout", str(tex.with_suffix(".pdf")), "-"], text=True)
                 (output / "report.txt").write_text(text, encoding="utf-8")
                 headings = ("项目概述", "研究范围", "研究方法", "模型与验证", "计算关系")
