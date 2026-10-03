@@ -45,7 +45,13 @@ export interface IConversation {
    * cannot import makes a session's input inert with its own reason.
    */
   readonly blocks: ComposerBlocks
-  /** Register a synchronous, per-Session hint captured with each prompt submission. */
+  /**
+   * Register a synchronous, per-Session hint captured with each prompt submission.
+   * @param key - Unique hint key: a letter followed by up to 79 letters, digits, dots or hyphens.
+   * @param resolve - Per-Session resolver; undefined omits the hint from that submission.
+   * @returns Disposer that removes this registration.
+   * @throws If the key is invalid or already registered.
+   */
   registerPromptHint(key: string, resolve: (sessionId: SessionId) => string | undefined): () => void
   /**
    * Send a prompt into the caller scope's session (queued turn).

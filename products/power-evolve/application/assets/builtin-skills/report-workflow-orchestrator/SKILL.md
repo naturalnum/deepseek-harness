@@ -1,7 +1,7 @@
 ---
 name: report-workflow-orchestrator
 description: 编排电网科技报告的项目档案、论证架构、目录、章节生成与审核、全文审核，以及最终 Word 排版、格式修复和逐页验收。所有子 Skill 名称和动作集中在配置区。
-version: 1.1.26
+version: 1.1.27
 ---
 
 # Report Workflow Orchestrator

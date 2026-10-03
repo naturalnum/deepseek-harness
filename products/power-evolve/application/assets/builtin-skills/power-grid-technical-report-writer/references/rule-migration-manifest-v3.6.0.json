@@ -1,7 +1,7 @@
 {
   "source_version": "v3.5.4",
   "target_version": "v3.6.0",
-  "policy": "Rule-block IDs preserve provenance from the v3.5.4 migration. Hashes track the current approved rule bodies. v1.1.16 retains the consolidated active baseline and requires both secondary and tertiary technical headings to independently expose concrete technical signatures; changed blocks are updated in place with approved_evolution while unchanged provenance blocks remain protected. v1.1.16 enforces a 40%-60% hard range for based-on headings and prioritizes technical signatures over title length.",
+  "policy": "Rule-block IDs identify the original fragments from the v3.5.4 migration. Hashes track the current approved rule bodies. v1.1.16 retains the consolidated active baseline and requires both secondary and tertiary technical headings to independently expose concrete technical signatures; changed blocks are updated in place with approved_evolution while unchanged migrated rule blocks remain protected. v1.1.16 enforces a 40%-60% hard range for based-on headings and prioritizes technical signatures over title length.",
   "blocks": [
     {
       "id": "global-00-intro",

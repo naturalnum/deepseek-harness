@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.27
+
+- Pair the chapter confirmation fixture README in English and Chinese with a consistency record.
+- Retain captured QA inputs, historical versions and workflow behavior; publish the added package documentation under a new release version.
+
 ## 1.1.26
 
 - Preserve the delimiter between figure/table numbers and titles, including image alt captions, in final report assembly and the public normalization CLI.

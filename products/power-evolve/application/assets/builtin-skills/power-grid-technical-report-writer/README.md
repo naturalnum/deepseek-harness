@@ -1,24 +1,26 @@
-# 电网科技报告生成 Skill v3.6.0
+# Power-grid technical report generation Skill v3.6.0
 
-当前套件在保留课题角色区分、每章默认三个且必要时可扩展至4—5个核心研究小点、技术章三级标题强制生成、核心二级标题电力语义、默认不单设验证二级节、内部技术要求隐性覆盖、公式类型取舍、小结证据、固定三段式摘要、项目档案固定确认项、目录前逐章内容概述、章节字数80%硬下限、标题长度控制、正文标题锁定和最终Markdown确定性清洗等规则基础上，调整了报告目录架构：国内外研究现状并入第一章；技术章从第2章起；原“概述+技术路线/架构”合并为一级章标题后的无标题章首导入正文；技术核心节改为X.1—X.3，小结默认X.4。
+English | [中文](README.zh.md)
+
+The suite retains topic roles, three core research points per chapter with expansion to four or five when necessary, mandatory tertiary headings in technical chapters, power-domain semantics in core secondary headings, no standalone validation section by default, implicit coverage of internal technical requirements, formula selection, evidence in chapter summaries, the fixed three-paragraph abstract, fixed project-profile confirmation items, chapter content briefs before outlining, the 80% chapter word-count minimum, title-length controls, body heading locks and deterministic final Markdown cleanup. The outline architecture incorporates domestic and international research into Chapter 1, starts technical chapters at Chapter 2, combines the former overview and technical route/architecture into untitled opening prose after the chapter heading, assigns X.1–X.3 to core technical sections and defaults the summary to X.4.
 
 
-## v1.1.31 图表说明与 Word 目录采集边界
+## v1.1.31 Figure/table explanations and Word contents collection
 
-- 内容生成阶段将图题/表题与说明段彻底分离：题注采用 `图X-X 图题` / `表X-X 表题`，说明段改写为“该图/该表/上述趋势/上述结果”等，不再以图号表号起句。
-- 最终 Word 子 Skill 只给真正题注写 F/T TC 域，并补齐内容摘要、ABSTRACT 的 C 类 TC 域；Word 可用时自动刷新三类目录并做可见性 QA。
+- Content generation separates figure/table captions from explanatory paragraphs: captions use `图X-X 图题` / `表X-X 表题`; explanations use expressions such as “该图/该表/上述趋势/上述结果” and no longer start with a figure or table number.
+- The final Word child Skill adds F/T TC fields only to actual captions and supplies C TC fields for the Chinese abstract and ABSTRACT; when Word is available, it refreshes all three contents lists and performs visibility QA.
 
-## v1.1.30 目录可选技术与摘要结果规则
+## v1.1.30 Optional outline technologies and abstract results
 
-- 目录确认时，对未锁定技术路线的核心研究点同步提供2—3个候选技术并只推荐1个；来源唯一锁定时只保留1个来源候选。候选方案不进入正式目录层级。
-- 中文摘要正式生成前先给出3—5个业务需求背景首句候选并选择1句入正文。
-- 摘要第三段优先覆盖任务书定量、定性考核事项的对应结果；非任务书指标默认不写，确有补充价值时最多1—2个。
+- When confirming the outline, provide two or three technology candidates for each core research point whose route is not locked, and recommend exactly one; when the source uniquely locks the route, retain only that source candidate. Candidates do not enter the formal outline hierarchy.
+- Before generating the formal Chinese abstract, provide three to five candidate opening sentences about the business need and select one for the body.
+- The third abstract paragraph prioritizes results corresponding to quantitative and qualitative assessment items in the task document; omit other metrics by default and include at most one or two when they add value.
 
-## v3.6.0渐进式阶段加载与主文件重组
+## v3.6.0 Progressive stage loading and main-file organization
 
-v3.6.0最初通过结构重组实现渐进式阶段加载；当前目录架构调整仅覆盖与新目录要求直接冲突的旧架构规则，其余既有写作、证据、公式、范围隔离和交互规则继续保留。迁移规则块保留原有ID，并由SHA-256清单保护当前已批准规则正文，防止后续结构调整时意外丢失。
+v3.6.0 introduced progressive stage loading through structural reorganization. The current outline architecture replaces only older architecture rules that directly conflict with the new outline requirements; existing writing, evidence, formula, scope isolation and interaction rules remain. Migrated rule blocks retain their original IDs, and a SHA-256 manifest protects currently approved rule bodies against accidental loss in later structural changes.
 
-新结构：
+Directory structure:
 
 ```text
 SKILL.md                         主调度器，只维护状态、阶段跳转和文件路由
@@ -33,7 +35,7 @@ schemas/ scripts/ templates/    确定性结构、校验和输出层
 examples/                       仅在需要示范或排错时读取
 ```
 
-`references/progressive-loading-map.md` 是唯一加载入口。不得再在任务开始时读取全部参考文件。规则迁移完整性检查：
+`references/progressive-loading-map.md` is the sole loading entry. Do not read every reference file at task start. Check rule migration integrity with:
 
 ```bash
 python scripts/validate_rule_restructure.py
@@ -43,31 +45,31 @@ python scripts/validate_rule_restructure.py
 
 
 
-## 报告范围映射与第一章研究现状
+## Report scope mapping and Chapter 1 research review
 
-目录生成前必须读取 `task_book_scope`：
+Read `task_book_scope` before generating the outline:
 
-- `total_report`：任务书中每一个课题对应且只对应一个技术章，技术章数量和顺序与课题一致；课题内多个研究内容小点默认归并到该章X.1—X.3，必要时最小扩展至X.1—X.N，并通过其三级标题展开。
-- `specific_topic`：保留原有规则，每个来源研究内容小点对应一个技术章。
-- `not_applicable`：没有课题层级时默认沿用研究内容小点映射。
+- `total_report`: each topic in the task document maps to exactly one technical chapter; chapter count and order match the topics. Multiple research points within a topic default to X.1–X.3 in that chapter, with minimal expansion to X.1–X.N when necessary and elaboration through tertiary headings.
+- `specific_topic`: retain the existing rule that each source research point maps to one technical chapter.
+- `not_applicable`: without a topic hierarchy, default to research-point mapping.
 
-第一章固定设置`1.2 国内外研究现状`，下设`1.2.1 国外研究现状`和`1.2.2 国内研究现状`。两节采用一致的研究主题和作者指代口径，以文献群方式组织代表性路线、进展、适用条件和不足，不再单设研究现状一级章，也不要求用三级标题机械复制技术章标题。`validate_outline.py`检查第一章固定结构和技术章映射。
+Chapter 1 contains the fixed `1.2 国内外研究现状`, with `1.2.1 国外研究现状` and `1.2.2 国内研究现状`. Both sections use consistent research themes and author naming, organizing representative routes, progress, applicable conditions and limitations by groups of literature. There is no separate primary research-review chapter, and tertiary headings need not mechanically repeat technical chapter titles. `validate_outline.py` checks the fixed Chapter 1 structure and technical chapter mapping.
 
-## v3.5.3技术章三级标题强制生成
+## v3.5.3 Mandatory tertiary headings in technical chapters
 
-技术章节目录不得停留在二级。每个技术章的X.1—X.N核心研究小点默认分别设置2—4个三级标题；必要时单节最多扩展到5个；编号从1开始连续。各组数量和命名可按真实技术关系不同，不要求机械对称。`validate_outline.py`会逐节检查三级标题数量与编号，任何一节缺失都会阻止目录提交。
+Technical chapter outlines must extend beyond secondary headings. Each core research point X.1–X.N defaults to two to four tertiary headings; a section may expand to five when necessary. Numbering starts at 1 and remains consecutive. Counts and names may differ with actual technical relationships; mechanical symmetry is not required. `validate_outline.py` checks each section's tertiary heading count and numbering, and a missing section prevents outline submission.
 
-## v3.5.2三级标题具体技术名（当前规则已提高到变体/机制粒度）
+## v3.5.2 Concrete technical names in tertiary headings (now requiring variants/mechanisms)
 
-三级标题默认每个核心二级节2—4个；仅当预期目标或窄技术点无法在现有标题中准确覆盖时才允许最多扩展到5个。每个三级技术标题都必须独立显化具体技术签名，不再允许只依赖上位二级标题。Span抽取、双塔匹配、实体识别、置信校准、样本重加权、参数更新等只说明任务动作，必须继续写明具体模型/算法变体、关键机制、约束或组合方式；“基于具体技术签名的……”可优先用于突出技术点，但不是固定模板。
+Each core secondary section defaults to two to four tertiary headings; expansion to five is allowed only when the existing headings cannot accurately cover an expected objective or narrow technical point. Each tertiary technical heading must independently expose a concrete technical signature rather than rely on its parent secondary heading. Span extraction, dual-tower matching, entity recognition, confidence calibration, sample reweighting and parameter updates describe task actions only; specify the model/algorithm variant, key mechanism, constraint or combination. “基于具体技术签名的……” may emphasize a technical point but is not a fixed template.
 
-当前不再把“基于图神经网络的……”“基于RAG的……”“基于Transformer的……”视为足够具体。应继续细化，例如“基于关系类型感知异构图注意力的电网故障关联识别方法”“基于混合检索重排序RAG的电网故障处置建议生成方法”。具体技术作为项目既有事实使用时必须具有来源依据；来源未明确但需要形成可落地目录时，可以提出 `model_suggested` 技术候选并等待用户确认。即使上位标题已经明确细粒度技术变体，三级技术标题仍不得退化成纯任务动作；可以沿用同一技术体系，但要显式写出当前步骤自己的具体变体或关键机制。标题仍以25个可见字符为原则，但优先级固定为“电力领域语义显化 + 技术签名显化 > 40%—60%‘基于……的……’句式比例 > 25字符原则”；长度压缩不能删除电力领域词、技术签名或破坏比例。
+“基于图神经网络的……”, “基于RAG的……” and “基于Transformer的……” are no longer sufficiently specific. Refine them, for example to “基于关系类型感知异构图注意力的电网故障关联识别方法” or “基于混合检索重排序RAG的电网故障处置建议生成方法”. A concrete technology presented as an existing project fact requires source evidence; when the source is unspecified but a practical outline is needed, propose `model_suggested` candidates and await user confirmation. Even when the parent heading names a fine-grained variant, tertiary technical headings must not become pure task actions; they may retain the same technology family but must identify the current step's own variant or key mechanism. Titles still target 25 visible characters, with the fixed priority “explicit power-domain semantics + explicit technical signature > 40%–60% ‘基于……的……’ phrasing > 25-character guideline”; shortening must not remove power-domain words or technical signatures, or violate the ratio.
 
-## v3.5.1三级标题保留修复
+## v3.5.1 Preservation of tertiary headings
 
-目录或章节计划一经确认，一级、二级、三级标题即形成标题锁定清单。生成技术章整章或X.1—X.N二级节时，必须使用Markdown标题按原编号、原名称、原层级和原顺序输出其下所有已确认三级标题。不得将三级标题改成自然段、列表、加粗短语或直接省略。
+Once the outline or chapter plan is confirmed, primary, secondary and tertiary headings form a locked list. When generating a complete technical chapter or secondary section X.1–X.N, use Markdown headings to reproduce all confirmed tertiary headings with their original numbers, names, levels and order. Do not convert them to paragraphs, lists or bold phrases, or omit them.
 
-正文展示前运行：
+Run before displaying the body:
 
 ```bash
 python scripts/validate_heading_coverage.py 当前章节.md --outline 已确认目录.json --chapter 2
@@ -75,35 +77,35 @@ python scripts/validate_heading_coverage.py 当前章节.md --outline 已确认�
 python scripts/validate_heading_coverage.py 当前小节.md --outline 已确认目录.json --section 2.1
 ```
 
-脚本会检查标题缺失、改名、层级改变和顺序改变，并报告三级标题保留数量。修改三级标题必须回到章节计划阶段重新确认。
+The script checks missing or renamed headings, level changes and order changes, and reports the retained tertiary heading count. Changing tertiary headings requires returning to chapter planning and reconfirming them.
 
-## v3.5新增流程
+## v3.5 Workflow additions
 
-项目档案草案固定确认四项：任务书及报告范围、生成依据模式、报告字数/模板/章节数量、实验数据。选择“基于已有内容生成”时，论证架构确认后先按章收集每章大概内容，再按原有固定规则生成目录。
+The project-profile draft confirms four fixed items: task document and report scope, generation basis, report word count/template/chapter count, and experimental data. In the existing-content mode, collect each chapter's approximate content after argument architecture confirmation, then generate the outline using the existing fixed rules.
 
-目录为每章确认计划字数，并自动计算80%最低验收字数。章节或分节生成后运行：
+The outline confirms a target word count per chapter and calculates the 80% minimum automatically. After generating a chapter or section, run:
 
 ```bash
 python scripts/validate_word_count.py 当前章节.md --target 5000 --min-ratio 0.8
 ```
 
-最终报告可按结构化目录逐章复核：
+Recheck the final report chapter by chapter against its structured outline:
 
 ```bash
 python scripts/validate_word_count.py 完整报告.md --outline 已确认目录.json --min-ratio 0.8
 ```
 
-最终Markdown完成全部模型校验后，最后运行确定性清洗：
+After all model checks of the final Markdown, run deterministic cleanup as the last step:
 
 ```bash
 python scripts/normalize_markdown.py 完整报告.md --in-place --dash-style hyphen
 ```
 
-该脚本会将长划线统一为`-`，并删除数字与汉字之间的空格；需要统一为中文长划线时使用`--dash-style em-dash`。
+The script normalizes long dashes to `-` and removes spaces between digits and Chinese characters; use `--dash-style em-dash` to normalize to a Chinese long dash instead.
 
-目录标题原则上不超过25个可见字符。技术研究章二、三级标题优先保留具体技术签名并满足40%—60%“基于……的……”比例，必要时可记录长度例外；“实验、评价指标、实验设置、数据集”等功能性标题可以保持简洁，但不能替代X.1—X.3核心技术标题。
+Outline titles should not exceed 25 visible characters. Secondary and tertiary technical-research headings prioritize concrete technical signatures and the 40%–60% “基于……的……” ratio, with recorded length exceptions when necessary. Functional headings such as experiment, assessment metrics, experimental setup and dataset may stay concise but cannot replace core technical headings X.1–X.3.
 
-## 固定报告结构
+## Fixed report structure
 
 ```text
 第1章 项目概述
@@ -128,51 +130,51 @@ python scripts/normalize_markdown.py 完整报告.md --in-place --dash-style hyp
 参考文献
 ```
 
-第一章不得命名为“引言”。`1.3.1 主要研究内容`必须与技术规划书、任务书或等效技术文件中的研究内容逐项对应并稍作展开。技术章不再设置“概述”“技术路线/技术架构”二级标题；章首无标题导入继续按既有篇幅规则规划，本章小结的完整规则统一见 `references/chapter-summary.md`。
+Chapter 1 must not be named “引言”. `1.3.1 主要研究内容` must correspond item by item to the technical plan, task document or equivalent technical source, with brief elaboration. Technical chapters no longer contain secondary overview or technical route/architecture headings. Untitled opening prose retains the existing length rules; `references/chapter-summary.md` owns the complete chapter-summary rules.
 
-## 固定三段式摘要
+## Fixed three-paragraph abstract
 
-摘要证据包从目录确认后持续维护，最终摘要恰好使用三个连续自然段：
+Maintain the abstract evidence package from outline confirmation onward. The final abstract contains exactly three consecutive paragraphs:
 
-1. 第一段写领域现状、现实需求、现有不足、技术原因和关键挑战；关键挑战数量原则上与主要研究点数量一致；
-2. 第二段将全部主要研究点合并为一个自然段，每个研究点仍完整表达“问题—技术—核心机制—能力”，并保留必要的承接、集成或反馈关系；
-3. 第三段优先写当前报告范围内任务书考核指标的对应结果：定量指标写实际结果，定性指标写形成的能力、功能、成果状态、适用性或工程效果；非任务书指标仅在确有补充价值时再选1—2个，然后写总体结论、研究前景、工程价值、适用条件和应用前景。
+1. The first covers domain status, practical needs, existing limitations, technical causes and key challenges; the challenge count should match the main research points.
+2. The second combines all main research points into one paragraph, with each retaining “problem—technology—core mechanism—capability” and the necessary sequencing, integration or feedback relationships.
+3. The third prioritizes results corresponding to assessment metrics in the current report's task scope: actual quantitative results and qualitative capabilities, functions, deliverable status, applicability or engineering effects. Include only one or two other metrics when they add value, followed by the overall conclusion, research prospects, engineering value, applicable conditions and application prospects.
 
-`schemas/abstract-evidence.schema.json`、`templates/abstract-evidence.json`、`examples/abstract-evidence-example.json` 和 `templates/abstract.md` 已同步调整。关键词规则保持默认五个。
+`schemas/abstract-evidence.schema.json`, `templates/abstract-evidence.json`, `examples/abstract-evidence-example.json` and `templates/abstract.md` have been updated together. The default remains five keywords.
 
-## 默认不单设验证二级节
+## No standalone secondary validation section by default
 
-有限测试条件、量化结果、错误分析和能力边界应放入X.1—X.N中与技术主张直接对应的位置，必要时使用具体三级标题。
+Place limited test conditions, quantitative results, error analysis and capability limits within the corresponding technical claims in X.1–X.N, using concrete tertiary headings when necessary.
 
-只有报告核心主题已判定为 `evaluation-related`，且同时满足下列任一条件时，才允许在最后一个核心研究点之后增加独立评估/验证二级节，并将本章小结顺延一位：
+A standalone secondary assessment/validation section may follow the last core research point, shifting the summary number by one, only when the report's core theme is `evaluation-related` and either condition holds:
 
-- 用户明确要求；
-- 当前章具有大量成体系数据，包括多组数据集、多类工况、多种基线、消融或参数敏感性分析以及多张结果表。
+- The user explicitly requests it.
+- The current chapter has extensive, systematic data: multiple datasets, conditions and baselines, ablation or parameter sensitivity analysis, and several result tables.
 
-`non-evaluation` 主题无论数据量或考核要求如何，二、三级目录均不得出现验证、评估、评价、测评、评测、验收、测试、试验、实验类章节词，`standalone_validation_mode` 必须为 `none`。`evaluation-related` 主题若启用独立节，结构化目录必须记录 `standalone_validation_mode=large-data|user-requested` 和例外原因；没有记录时仍视为违规。
+For `non-evaluation` themes, secondary and tertiary titles must not contain “验证、评估、评价、测评、评测、验收、测试、试验、实验”, regardless of data volume or assessment requirements; `standalone_validation_mode` must be `none`. When an `evaluation-related` theme uses a standalone section, the structured outline must record `standalone_validation_mode=large-data|user-requested` and an exception reason; without that record, the section violates the rules.
 
-## 报告范围映射与章内研究小点
+## Report scope mapping and chapter research points
 
-- 总报告中，每个课题对应一个一级技术章，技术章数量和顺序与课题总数及原始顺序一致；
-- 具体课题报告中，每个来源研究内容小点对应一个一级技术章，继续保持小点数量和原始顺序；
-- 总报告一级章名来自课题名称或一级研究内容，具体课题报告一级章名来自来源小点原文，均只进行必要名词化和语法整理；
-- 总报告中同一课题的多个研究内容小点统一进入该课题章，不再各自形成一级章；
-- 每个技术章内部默认拆解为X.1、X.2、X.3三个章内核心研究小点；只有预期目标、进度技术点或关键研究事项确实无法合理归并时，才允许最小扩展到4—5个；
-- 三个小点参考当前章范围内的研究内容、预期目标、进度计划和内部技术要求形成；
-- 多于三个的技术事项归入最相关小点，通过三级标题展开；
-- 不得使用其他课题内容补足第三个小点。
+- In a total report, each topic maps to one primary technical chapter; technical chapter count and order match the total topics and their original order.
+- In a specific-topic report, each source research point maps to one primary technical chapter, preserving point count and original order.
+- A total report's primary chapter titles derive from topic names or primary research content; a specific-topic report's primary chapter titles derive from the source point text. Apply only necessary nominalization and grammatical edits.
+- In a total report, multiple research points in one topic all enter that topic's chapter rather than become separate primary chapters.
+- Each technical chapter defaults to three core research points X.1, X.2 and X.3. Expand minimally to four or five only when expected objectives, scheduled technical points or key research matters cannot reasonably be combined.
+- Form the three points from research content, expected objectives, the schedule and internal technical requirements within the current chapter's scope.
+- Assign technical matters beyond three points to the most relevant point and elaborate through tertiary headings.
+- Do not use another topic's content to supply the third point.
 
-## 课题角色
+## Topic roles
 
-- 前序课题标记为 `technical-research`，按技术研究组织；
-- 最后一个课题固定标记为 `engineering-implementation`，通常承担系统研发、平台实现、集成部署、示范应用或工程验证；
-- 每章只能使用所属课题的研究内容、预期目标、进度技术、指标、数据和案例。
+- Earlier topics are marked `technical-research` and organized as technical research.
+- The last topic is always marked `engineering-implementation`, usually covering system development, platform implementation, integration/deployment, demonstration or engineering validation.
+- Each chapter may use only its own topic's research content, expected objectives, scheduled technologies, metrics, data and cases.
 
-技术研究课题的一级、二级和三级标题不得把“机制、建模、体系、定义”作为独立命题、中心名词或落脚点，也不得机械改名。工程实现课题标题落到系统、平台、架构、模块、接口、部署、集成或应用对象。
+Technical-research primary, secondary and tertiary titles must not use “机制、建模、体系、定义” as standalone propositions, central nouns or conclusions, or mechanically rename them. Engineering-implementation titles refer to systems, platforms, architectures, modules, interfaces, deployment, integration or application objects.
 
-## 核心二级标题的电力技术要求
+## Power-domain technical requirements for core secondary headings
 
-核心二级标题均必须完整说明：
+Every core secondary heading must state the complete relationship:
 
 ```text
 电力对象、业务场景或运行约束
@@ -180,13 +182,13 @@ python scripts/normalize_markdown.py 完整报告.md --in-place --dash-style hyp
 → 该技术在处理链中的作用
 ```
 
-禁止纯计算机标题。所有技术章X.1—X.N标题都必须逐项显式识别电力对象、业务场景或运行约束，并同时包含具有区分度的具体计算技术和技术作用；不再使用全局比例替代逐项标题检查。
+Pure computing titles are prohibited. Each X.1–X.N technical chapter title must independently name a power-domain object, business scenario or operating constraint, together with a distinctive computing technology and its role. A global ratio no longer replaces checks of individual titles.
 
-三级标题继续按真实技术复杂度命名，并且必须比二级标题更具体；每个X.1—X.N默认须有2—4个，必要时最多5个。一经目录确认，三级标题必须在正文中逐项保留，不能在生成过程中消失。
+Tertiary headings follow actual technical complexity and must be more specific than their secondary parents. Each X.1–X.N defaults to two to four, with at most five when necessary. After outline confirmation, the body must preserve every tertiary heading; none may disappear during generation.
 
-## 内部技术要求隐性覆盖
+## Implicit coverage of internal technical requirements
 
-内部映射可以保存任务书条目、考核事项、阈值和测试条件，但正式正文不得出现：
+Internal mappings may retain task-document entries, assessment items, thresholds and test conditions, but the formal body must not contain:
 
 ```text
 任务书
@@ -197,22 +199,22 @@ python scripts/normalize_markdown.py 完整报告.md --in-place --dash-style hyp
 内部事项编号
 ```
 
-应直接转写为报告自身的技术目标、设计约束、性能描述、适用工况、判定规则、量化结果和能力边界。例如内部要求“知识检索响应时间不超过10 s”，正文直接写“在典型调度知识查询负载下，知识检索响应时间目标设定为不超过10 s”。
+Express them as the report's own technical objectives, design constraints, performance descriptions, applicable conditions, decision rules, quantitative results and capability limits. For example, turn the internal requirement “知识检索响应时间不超过10 s” into “在典型调度知识查询负载下，知识检索响应时间目标设定为不超过10 s”.
 
-每项内部事项默认映射到X.1—X.N或其三级标题，并登记 `prose_realization`、`source_identity_hidden=true`、证据状态和确认位置。内部事项若要表述为项目已实现结果，必须有 REAL_PROJECT_EVIDENCE；真实结果缺失时使用设计目标、验证方案或明确占位。若该事项需要实验验证，仍可同时生成并展示明确标注的 REFERENCE_EXPERIMENT，不能把“无真实结果”解释为实验部分不得生成参考数据。
+Each internal item defaults to a mapping to X.1–X.N or a tertiary heading, recording `prose_realization`, `source_identity_hidden=true`, evidence status and confirmation location. Claiming an internal item as an achieved project result requires REAL_PROJECT_EVIDENCE; without real results, use design targets, validation plans or explicit placeholders. If the item needs experimental validation, REFERENCE_EXPERIMENT may still be generated and displayed with a clear label; a lack of real results does not prohibit reference experimental data.
 
-## 主要规则文件
+## Main rule files
 
-- `templates/chapter-content-brief-request.md`（`source_grounded`模式目录前逐章内容概述）
+- `templates/chapter-content-brief-request.md` (chapter content briefs before outlining in `source_grounded` mode)
 - `references/report-scope-chapter-mapping.md`
 - `references/outline-hard-rules.md`
 - `references/technical-title-naming.md`
 - `references/three-subpoint-and-indicator-coverage.md`
 - `references/research-content-traceability.md`
 - `references/chapter-generation-preflight.md`
-- `references/chapter-summary.md`（技术章“本章小结”唯一内容规则源）
+- `references/chapter-summary.md` (sole source for technical chapter summary content rules)
 
-## 校验
+## Validation
 
 ```bash
 python scripts/validate_outline.py examples/outline-heterogeneous-example.json  # 总报告示例
@@ -226,22 +228,22 @@ python scripts/validate_word_count.py 当前章节.md --target 5000 --min-ratio 
 python scripts/normalize_markdown.py 完整报告.md --in-place --dash-style hyphen
 ```
 
-目录校验会检查第一章固定二级/三级结构、总报告一个课题一个技术章或具体课题报告一个小点一个技术章、技术章从第2章起、每章核心二级标题、X.1—X.N编号、每节默认2—4个连续编号三级标题（必要时最多5个）、每个核心标题的电力对象/约束—具体计算技术—技术作用完整性、二级标题任务主语独立电力语义、报告主题属性与非评估目录禁词、预期目标/进度计划/考核要求关键技术词的 `heading_source_term_plan` 分散覆盖、技术/方法约40%/60%结尾分布、课题角色、三级标题具体性以及内部技术要求的正文隐性覆盖计划。正文标题覆盖校验会进一步确认已批准的二级、三级标题按原编号、原名称、原层级和原顺序出现在生成结果中。
+Outline validation checks the fixed Chapter 1 secondary/tertiary structure, one chapter per topic in a total report or per point in a specific-topic report, technical chapters starting at Chapter 2, core secondary headings, X.1–X.N numbering, two to four consecutively numbered tertiary headings per section (up to five when necessary), each core title's complete power-object/constraint—computing-technology—technical-role relationship, independent power-domain semantics in secondary title subjects, report theme and forbidden non-evaluation title terms, dispersed coverage of key technologies from expected objectives/schedules/assessment requirements through `heading_source_term_plan`, the roughly 40%/60% technology/method ending distribution, topic roles, tertiary specificity and the implicit coverage plan for internal technical requirements. Body heading validation also checks that approved secondary and tertiary headings appear with their original numbers, names, levels and order.
 
-## 公式选择优先级
+## Formula selection priorities
 
-既有 `must / should / exempt` 分级、核心公式有效性、符号解释和来源规则不变。在此基础上：
+Existing `must / should / exempt` classification, core formula validity, symbol explanations and source rules remain. In addition:
 
-- 能够用一句话准确说明的简单计数、比例、单位换算、集合归属和输入输出转写一般不单列公式；
-- 定理、电力物理关系、损失函数、目标函数、约束、更新、推断、评分和关键性能关系应在真实需要时充分表达；
-- “技术公式多写”不等于按数量配额凑公式，重复变形和后文不用的公式仍应删除。
+- Do not normally give standalone formulas for simple counts, ratios, unit conversions, set membership or input/output transformations that one sentence can explain.
+- Express theorems, power-domain physical relationships, loss/objective functions, constraints, updates, inference, scoring and key performance relationships fully when needed.
+- More technical formulas does not mean filling a quota; remove repetitive transformations and formulas that are not used later.
 
-## 小结与总结
+## Chapter summaries and final conclusions
 
-每章小结和最终总结都必须包含可追溯的定量表述、定性能力判断和明确的电力对象或业务意义。没有真实实测结果时，不得把模型生成数值写成已实现成果；可以使用已确认设计阈值、运行条件或 `【待补充数据：……】`，也可以在明确标注“参考实验/模拟结果”的前提下概括 REFERENCE_EXPERIMENT 的参考趋势，但该趋势不得升级为项目已验证性能。
+Every chapter summary and final conclusion must include traceable quantitative statements, qualitative capability judgments and a specific power-domain object or business meaning. Without actual measurements, do not present model-generated values as achieved results. Use confirmed design thresholds, operating conditions or `【待补充数据：……】`; trends from REFERENCE_EXPERIMENT may also be summarized when explicitly labeled as reference/simulated experiments, but must not become claims of verified project performance.
 
-## 国内外研究现状引用口径
+## Author naming in domestic and international research reviews
 
-第一章1.2默认统一使用“XXX等人”。也可在章节计划中改为“XXX团队”，但1.2.1国外研究现状与1.2.2国内研究现状必须保持一致。机构报告、标准组织和官方项目直接使用正式机构名称。
+Chapter 1 section 1.2 defaults to “XXX等人”. A chapter plan may choose “XXX团队” instead, but 1.2.1 and 1.2.2 must use consistent naming. Institutional reports, standards organizations and official projects use the institutions' formal names directly.
 
-当前活动规则一致性基线见 `references/current-rule-baseline.md`；`CHANGELOG.md` 仅记录历史，不参与运行时规则。
+See `references/current-rule-baseline.md` for the current active-rule consistency baseline; `CHANGELOG.md` records history only and does not participate in runtime rules.

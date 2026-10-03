@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate integrity of provenance-tracked migrated rule blocks after approved rule evolution."""
+"""Validate migrated rule blocks against their recorded IDs and hashes after approved rule evolution."""
 from __future__ import annotations
 
 import argparse

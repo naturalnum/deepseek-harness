@@ -1,5 +1,7 @@
 # Bundled Skill release assets
 
+English | [中文](README.zh.md)
+
 These nine Skill packages come from the PowerEvolve built-in catalog. PDF, the power-grid report writer, the report reviewer, and the workflow orchestrator retain their imported releases. Word, Excel, PowerPoint, LaTeX report writer, and Word technical report writer have product releases whose `SOURCE.json` records the imported source and local adaptations. Office instructions use direct file operations and the [Sandbox document toolchain](../../../sandbox/README.md); the report writers include explicit English metadata and Linux catalog refresh support.
 
 Regenerate the 19 distribution files with `node products/power-evolve/application/assets/builtin-skills/build-catalog.mjs`. The generator owns package versions; [the platform catalog loader](../../src/platform/builtin-skills.ts) pins the generated catalog digest. A changed package receives a new version. Installed historical bytes and accepted task receipts remain in persistent Skill storage when the distributed catalog advances.
