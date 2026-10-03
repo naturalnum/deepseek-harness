@@ -2,6 +2,10 @@
 
 English | [中文](README.zh.md)
 
-This standalone `dsh` bundle starts a local-only authorization page and a paired device worker. The current OS user grants project directories; absolute paths and the device token remain in its private local state. Commands run in disposable Docker containers with one granted directory mounted. The worker records a command before starting it and reconciles the exact container after interruption. Cloud file transfers require an explicit action on the device page.
+This standalone `dsh` bundle starts a local-only authorization page and a paired device worker. The current OS user grants project directories; absolute paths and the device token remain in its private local state. Commands run in disposable Docker containers with one granted directory mounted. Cloud file transfers require an explicit action on the device page.
+
+On macOS/Linux, an upstream native `flock` excludes another worker using the same private root. The journal stores the accepted request digest, creation owner, immutable image/container IDs and an observed stopped state before cleanup. A cold recovery never creates or starts a replacement command; missing identities and old journals require review and block new commands. Absence alone is not a stop observation. Terminal platform acknowledgements must identify the original execution before journal removal.
+
+The [bundle configuration](cordis.patch.yml) sets polling, contact-loss, platform/Docker request and picker timeouts, plus the Docker stop grace period. Shutdown closes admission, waits for local actions and the bounded command stop attempt, and releases the journal lock; an unconfirmed Docker writer remains recorded. This lock does not coordinate different private roots, overlapping directories, or other OS applications. Platform stop receipts, directory writer reservations, and descriptor-relative local file access remain required before the complete desktop recovery slice is delivered; see [desktop completion](../DESKTOP-COMPLETION.md). Device readiness is distinct from WebServer availability when a plugin fails to activate.
 
 Use the [slice 5 trial guide](../TRIAL-SLICE5.md) to pair a device and test cloud and desktop execution. The web server must bind loopback. This bundle does not include the cloud host's Agent loop or platform database credentials.

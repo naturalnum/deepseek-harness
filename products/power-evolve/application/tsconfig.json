@@ -24,6 +24,7 @@
     { "path": "../../../packages/skill/skill" },
     { "path": "../../../packages/skill/skill-filesystem" },
     { "path": "../../../packages/typert/protocol" },
-    { "path": "../../../packages/typert/registry" }
+    { "path": "../../../packages/typert/registry" },
+    { "path": "../../../native/system/packages/entry" }
   ]
 }

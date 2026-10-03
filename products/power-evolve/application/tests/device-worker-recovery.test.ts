@@ -12,6 +12,7 @@ import { DesktopWorker } from '../src/device/worker.ts'
 import { DockerCommandError, OwnedDeviceContainer, OWNED_DEVICE_CONTAINER_LABELS, ownedContainerOwner, ownedContainerReceipt,
   type DockerClient, type DockerCommandResult, type OwnedContainerObservation, type OwnedContainerReceipt } from '../src/device/owned-container.ts'
 
+const workerTestOptions = { timeout: 10000, skip: !['darwin', 'linux'].includes(process.platform) }
 const IMAGE = 'sha256:' + 'a'.repeat(64), CONTAINER = 'b'.repeat(64)
 const options = { pollMs: 10, contactGraceMs: 2000, commandPollMs: 10, platformRequestTimeoutMs: 300 }
 const containerOptions = { commandTimeoutMs: 100, stopTimeoutMs: 100, stopGraceSeconds: 1 }
@@ -170,7 +171,7 @@ async function fixture(t: TestContext) {
     holdDirectory() { directoryGate = gate(); directoryEntered = gate(); return { entered: directoryEntered.promise, release: directoryGate.release } } }
 }
 
-test('fresh public execution saves owner before create and receipt/start intent before start, with native lock exclusion', { timeout: 10000 }, async t => {
+test('fresh public execution saves owner before create and receipt/start intent before start, with native lock exclusion', workerTestOptions, async t => {
   const f = await fixture(t), job = f.job()
   f.docker.onCreate = async () => { const [row] = await journal(f.privateRoot); assert.equal(row?.id, job.executionId); assert.equal(row.stage, 'claimed'); assert(row.owner?.creationId); assert.equal(row.receipt, undefined) }
   f.docker.onStart = async () => { const [row] = await journal(f.privateRoot); assert.equal(row?.receipt?.containerId, CONTAINER); assert.equal(row.receipt.imageId, IMAGE); assert.equal(row.stage, 'started') }
@@ -184,7 +185,7 @@ test('fresh public execution saves owner before create and receipt/start intent 
   await f.worker.close(); const next = f.makeWorker(); await next.init(); await next.close()
 })
 
-test('lost create acknowledgement is adopted once; cold create-to-journal recovery never creates or starts', { timeout: 10000 }, async t => {
+test('lost create acknowledgement is adopted once; cold create-to-journal recovery never creates or starts', workerTestOptions, async t => {
   const fresh = await fixture(t); fresh.docker.lostCreate = true; fresh.advertise([fresh.job()]); fresh.worker.start()
   await until(async () => fresh.finishes.length === 1 && (await journal(fresh.privateRoot)).length === 0, 'lost acknowledgement completion')
   assert.equal(fresh.docker.count('create'), 1); assert.equal(fresh.docker.count('start'), 1)
@@ -197,7 +198,7 @@ test('lost create acknowledgement is adopted once; cold create-to-journal recove
   assert.equal(cold.docker.count('create'), 0); assert.equal(cold.docker.count('start'), 0); assert.equal(cold.docker.count('rm'), 1)
 })
 
-test('foreign same-name or missing exact identity retains journal and blocks new admission', { timeout: 10000 }, async t => {
+test('foreign same-name or missing exact identity retains journal and blocks new admission', workerTestOptions, async t => {
   for (const kind of ['foreign', 'missing']) {
     const f = await fixture(t), row = await f.seed('created', kind === 'missing')
     if (kind === 'foreign') { f.docker.seed(row); f.docker.labels[OWNED_DEVICE_CONTAINER_LABELS.creationId] = randomUUID() }
@@ -210,7 +211,7 @@ test('foreign same-name or missing exact identity retains journal and blocks new
   }
 })
 
-test('failed stop closes boundedly, releases flock, and the next worker recovers before admitting another job', { timeout: 10000 }, async t => {
+test('failed stop closes boundedly, releases flock, and the next worker recovers before admitting another job', workerTestOptions, async t => {
   const f = await fixture(t); f.docker.keepRunning = true; f.docker.failStop = true
   f.advertise([f.job()]); f.worker.start(); await until(() => f.docker.count('start') === 1, 'running container')
   const started = Date.now(); await f.worker.close(); assert(Date.now() - started < 1500)
@@ -227,7 +228,7 @@ test('failed stop closes boundedly, releases flock, and the next worker recovers
   await next.close(); const successor = f.makeWorker(); await successor.init(); await successor.close()
 })
 
-test('a saved stop observation cannot finish a container that is running again before a new exact stop', { timeout: 10000 }, async t => {
+test('a saved stop observation cannot finish a container that is running again before a new exact stop', workerTestOptions, async t => {
   const f = await fixture(t), row = await f.seed('finished', true, true)
   f.docker.seed(row, { ...stopped, Running: true, Status: 'running' }); f.docker.stopGate = gate()
   const next = f.makeWorker(); await next.init(); next.start()
@@ -239,7 +240,7 @@ test('a saved stop observation cannot finish a container that is running again b
   assert.equal(f.docker.count('start'), 0); assert.equal(f.docker.count('create'), 0)
 })
 
-test('wrong execution identity or nonterminal finish acknowledgement preserves journal and prohibits removal/admission', { timeout: 10000 }, async t => {
+test('wrong execution identity or nonterminal finish acknowledgement preserves journal and prohibits removal/admission', workerTestOptions, async t => {
   for (const ack of ['wrong-id', 'running'] as const) {
     const f = await fixture(t), row = await f.seed('finished', true, true)
     f.docker.seed(row, stopped); f.ack(ack); f.advertise([f.job()])
@@ -251,7 +252,7 @@ test('wrong execution identity or nonterminal finish acknowledgement preserves j
   }
 })
 
-test('close closes local admission and waits for an in-flight public authorize before releasing its flock', { timeout: 10000 }, async t => {
+test('close closes local admission and waits for an in-flight public authorize before releasing its flock', workerTestOptions, async t => {
   const f = await fixture(t), extra = join(f.base, 'extra-project'); await mkdir(extra, { mode: 0o700 })
   f.worker.start(); const held = f.holdDirectory(), authorizing = f.worker.authorize(extra)
   await held.entered

@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
-import { DEVICE_PROCESS_LOCK_FILENAME, DeviceProcessLock } from '../src/device/process-lock.ts'
+import { DEVICE_PROCESS_LOCK_FILENAME, DeviceProcessLock } from '../lib/device/process-lock.js'
 
 const supported = ['darwin', 'linux'].includes(process.platform)
 const options = { skip: !supported && 'Device flock supports macOS/Linux only', timeout: 20_000 }

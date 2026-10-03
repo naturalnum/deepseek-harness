@@ -1,5 +1,5 @@
 /** Local desktop executor profile with a loopback authorization interface. */
-import { execFile } from 'node:child_process'
+import { execFile, type ChildProcess } from 'node:child_process'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
 import { promisify } from 'node:util'
@@ -11,6 +11,7 @@ import { PlatformError } from '../contracts.ts'
 import { readJson, sendFailure, sendJson } from '../http.ts'
 import { serveUi } from '../ui.ts'
 import { DesktopWorker } from './worker.ts'
+import { OwnedDeviceContainer } from './owned-container.ts'
 
 const executeFile = promisify(execFile)
 export const name = 'power-evolve-device'
@@ -18,8 +19,16 @@ export const inject = ['webServer']
 export const Config = schema.object({
   platformUrl: schema.string().required(), privateDir: schema.string().required(),
   image: schema.string().required(), pollMs: schema.number().min(100).required(),
+  contactGraceMs: schema.number().step(1).min(100).max(60000).required(),
+  commandPollMs: schema.number().step(1).min(10).max(60000).required(),
+  platformRequestTimeoutMs: schema.number().step(1).min(100).max(60000).required(),
+  dockerCommandTimeoutMs: schema.number().step(1).min(100).max(60000).required(),
+  dockerStopTimeoutMs: schema.number().step(1).min(100).max(60000).required(),
+  dockerStopGraceSeconds: schema.number().step(1).min(0).max(30).required(),
+  directoryPickerTimeoutMs: schema.number().step(1).min(1000).max(120000).required(),
   readyFile: schema.string().required(),
 })
+/** Validated local Profile configuration; timing fields use milliseconds except the named stop grace. */
 export type Config = ReturnType<typeof Config>
 
 /** Mount a local-only UI; the current OS user approves paths before the device advertises them.
@@ -34,9 +43,26 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     && ['127.0.0.1', 'localhost', '::1'].includes(platform.hostname))) {
     throw new Error('Device platform must use HTTPS or local loopback')
   }
-  const worker = new DesktopWorker(config.platformUrl, config.privateDir, config.image, config.pollMs)
-  await worker.init(); worker.start()
+  if (config.dockerStopTimeoutMs <= config.dockerStopGraceSeconds * 1000) {
+    throw new Error('Device Docker stop timeout must exceed its grace period')
+  }
+  const worker = new DesktopWorker(config.platformUrl, config.privateDir, config.image, {
+    pollMs: config.pollMs, contactGraceMs: config.contactGraceMs,
+    commandPollMs: config.commandPollMs, platformRequestTimeoutMs: config.platformRequestTimeoutMs,
+  }, new OwnedDeviceContainer({ commandTimeoutMs: config.dockerCommandTimeoutMs,
+    stopTimeoutMs: config.dockerStopTimeoutMs, stopGraceSeconds: config.dockerStopGraceSeconds }))
   ctx.effect(() => () => worker.close())
+  await worker.init(); worker.start()
+  const pickerStop = new AbortController()
+  let picker: Promise<{ stdout: string; stderr: string }> | undefined
+  let pickerChild: ChildProcess | undefined
+  ctx.effect(() => async () => {
+    pickerStop.abort()
+    pickerChild?.kill('SIGKILL')
+    await picker?.catch((_pickerFailure: unknown) => {
+      // The request reports picker failure; teardown only awaits the owned child exit.
+    })
+  })
   const nonce = randomBytes(24).toString('base64url'), instanceId = randomUUID()
   ctx.effect(() => ctx.webServer.registerFallback(async (req, res) => {
     try {
@@ -74,9 +100,18 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         case '/api/choose': {
           z.object({}).strict().parse(input)
           if (process.platform !== 'darwin') throw new PlatformError(501, 'native_picker_unavailable')
-          const selected = await executeFile('/usr/bin/osascript',
-            ['-e', 'POSIX path of (choose folder with prompt "Choose a local project for PowerEvolve")'],
-            { timeout: 120_000, maxBuffer: 4096 })
+          if (!picker) {
+            const pending = executeFile('/usr/bin/osascript',
+              ['-e', 'POSIX path of (choose folder with prompt "Choose a local project for PowerEvolve")'],
+              { timeout: config.directoryPickerTimeoutMs, maxBuffer: 4096, signal: pickerStop.signal })
+            pickerChild = pending.child
+            const exited = new Promise<void>(resolve => pending.child.once('close', () => resolve()))
+            picker = pending.then(async value => { await exited; return value }, async (error: unknown) => {
+              await exited
+              throw error
+            }).finally(() => { picker = undefined; pickerChild = undefined })
+          }
+          const selected = await picker
           sendJson(res, await worker.authorize(selected.stdout.trim())); return
         }
         default: throw new PlatformError(404, 'not_found')

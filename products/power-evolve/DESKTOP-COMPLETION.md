@@ -25,11 +25,22 @@
 
 这些是产品适配代码，不是三个新的 DSH 插件。通用扩展点覆盖桌面入口、Preload／IPC、Profile 子进程和发行闭包；以最小修改补齐，保留官方默认启动方式并记录实际修改文件的升级影响。官方 DeepSeek 账户桥与产品身份、审批凭据分别保留其职责。
 
+```mermaid
+flowchart LR
+    A[官方 Electron 外壳] --> B[共享 Host 的原生 DSH 页面]
+    B --> C[可信平台]
+    A --> D[本机 Device Profile 与授权入口]
+    D -->|轮询任务和提交结果| C
+    D --> E[获授权目录中的 Docker 执行]
+```
+
 ## 退出与发行约束
 
 官方[退出检查](../../apps/desktop-host/src/quit-inspection.ts)只观察本机 Agent、jobs 和已加载提醒；[退出确认](../../apps/desktop/src/quit-confirmation.ts)在 backend 未 ready 时允许直接退出。产品检查以 Device 持久 journal 和不可变容器身份为依据，Device 崩溃或状态未知不能视为空闲。退出／更新先停止本地任务准入，再按所选退出策略核实既有任务和停止回执；关闭窗口不会取消云端任务，停止证明缺失时不能把任务标为完成或放行替代写入者。
 
 官方[包校验](../../apps/desktop/src/core-package-set.ts)、[runtime 准备](../../apps/desktop/scripts/prepare-dsh.ts)和[运行验收](../../apps/desktop/scripts/smoke-runtime.ts)绑定本地 Web Host 与同版本 DSH／desktop-host。产品发行另固定 Device 包闭包、产品版本与上游 runtime 版本，并验证离源码启动 Device 和连接共享 Host；官方 smoke 通过不替代产品安装包验收。
+
+Device 已接入上游原生 `flock`、不可变 Docker 身份、启动前持久记录及冷恢复准入控制，生命周期由 [Device Bundle](device/README.md)描述。这些实现尚不能替代平台持久停止回执、跨 Device／重叠目录写者协调、描述符文件访问和可信结案；Electron 的三个产品适配器及安装包仍未交付。
 
 ## 业务与开发顺序
 

@@ -1,14 +1,13 @@
 /** Local device connector: explicit folder grants and status-first Docker command recovery. */
-import { execFile } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
-import { chmod, link, lstat, mkdir, open, readFile, realpath, rename, rm } from 'node:fs/promises'
+import { link, lstat, open, readFile, realpath, rename, rm } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
-import { promisify } from 'node:util'
 import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
+import { DeviceProcessLock } from './process-lock.ts'
+import { OwnedDeviceContainer, ownedContainerOwner, ownedContainerReceipt } from './owned-container.ts'
 
-const executeFile = promisify(execFile)
 const directory = z.object({ id: z.uuid(), label: z.string(), path: z.string() }).strict()
 const deviceState = z.object({
   deviceId: z.uuid(), token: z.string().min(32), instanceId: z.uuid(), directories: z.array(directory),
@@ -16,34 +15,39 @@ const deviceState = z.object({
 type DeviceState = z.infer<typeof deviceState>
 const journalEntry = z.object({
   id: z.uuid(), container: z.string(), stage: z.enum(['claimed', 'created', 'started', 'finished']),
+  owner: ownedContainerOwner.optional(), receipt: ownedContainerReceipt.optional(),
+  imageId: ownedContainerReceipt.shape.imageId.optional(),
+  stopObservation: z.object({ receipt: ownedContainerReceipt, Running: z.literal(false),
+    ExitCode: z.number().int(), Status: z.enum(['created', 'exited', 'dead']),
+    StartedAt: z.string(), FinishedAt: z.string() }).strict().optional(),
   startedAt: z.number(), result: z.object({
     state: z.enum(['succeeded', 'failed', 'cancelled', 'uncertain']), exitCode: z.number().int().nullable(),
-    stdout: z.string(), stderr: z.string(), stdoutTruncated: z.boolean(), stderrTruncated: z.boolean(),
+    stdout: z.string().max(65_536), stderr: z.string().max(65_536), stdoutTruncated: z.boolean(), stderrTruncated: z.boolean(),
     timedOut: z.boolean(),
   }).strict().optional(),
-}).strict()
-type JournalEntry = z.infer<typeof journalEntry>
-interface Job { executionId: string; directoryId: string; command: string; cwd: string;
-  timeoutMs: number; state: 'queued' | 'running' | 'cancelling'; cancelRequested: boolean }
-
-async function docker(args: string[], timeout = 15_000): Promise<{ stdout: string; stderr: string }> {
-  return executeFile('docker', args, { timeout, maxBuffer: 512 * 1024,
-    env: { PATH: process.env.PATH, HOME: process.env.HOME, DOCKER_HOST: process.env.DOCKER_HOST } })
-}
-async function containerState(name: string): Promise<{ Running: boolean; ExitCode: number; Status: string } | null> {
-  try {
-    const response = await docker(['inspect', '--format', '{{json .State}}', name])
-    return z.object({ Running: z.boolean(), ExitCode: z.number().int(), Status: z.string() }).passthrough()
-      .parse(JSON.parse(response.stdout))
-  } catch (error) {
-    const stderr = (error as { stderr?: string }).stderr ?? ''
-    if (/no such (?:object|container)/i.test(stderr)) return null
-    throw error
+}).strict().superRefine((entry, ctx) => {
+  if (entry.owner && entry.owner.executionId !== entry.id
+    || entry.receipt && (entry.receipt.owner.executionId !== entry.id
+      || JSON.stringify(entry.receipt.owner) !== JSON.stringify(entry.owner)
+      || entry.receipt.imageId !== entry.imageId)
+    || entry.stopObservation && JSON.stringify(entry.stopObservation.receipt) !== JSON.stringify(entry.receipt)) {
+    ctx.addIssue({ code: 'custom', message: 'device_journal_identity_mismatch' })
   }
-}
-function limit(text: string): { text: string; truncated: boolean } {
-  const bytes = Buffer.from(text)
-  return { text: bytes.subarray(0, 65_536).toString('utf8'), truncated: bytes.length > 65_536 }
+})
+type JournalEntry = z.infer<typeof journalEntry>
+const claimedJob = z.object({ executionId: z.uuid(), directoryId: z.uuid(), command: z.string(),
+  cwd: z.string(), timeoutMs: z.number().int().positive(), digest: z.string().regex(/^[a-f0-9]{64}$/) }).strict()
+const jobRecord = claimedJob.extend({ state: z.enum(['queued', 'running', 'cancelling']), cancelRequested: z.boolean() })
+type Job = z.infer<typeof jobRecord>
+const executionReceipt = z.object({ executionId: z.uuid(),
+  state: z.enum(['succeeded', 'failed', 'cancelled', 'uncertain']) }).passthrough()
+
+/** Profile-selected polling and loss-of-contact deadlines for the local worker. */
+export interface DesktopWorkerOptions {
+  pollMs: number
+  contactGraceMs: number
+  commandPollMs: number
+  platformRequestTimeoutMs: number
 }
 function uncertain(): z.infer<typeof journalEntry>['result'] {
   return { state: 'uncertain', exitCode: null, stdout: '', stderr: '',
@@ -56,66 +60,117 @@ export class DesktopWorker {
   private readonly journalPath: string
   private state: DeviceState | null = null
   private readonly journal = new Map<string, JournalEntry>()
+  private processLock: DeviceProcessLock | null = null
+  private initialization: Promise<void> | null = null
+  private closing: Promise<void> | null = null
+  private readonly localActions = new Set<Promise<unknown>>()
+  private actionTail: Promise<void> = Promise.resolve()
   private readonly stop = new AbortController()
   private polling: Promise<void> | null = null
   private active: Promise<void> | null = null
-  private activeContainer: string | null = null
   private readonly jobs = new Map<string, Job>()
   private lastContact = Date.now()
   private notice = ''
 
   constructor(private readonly platformUrl: string, private readonly privateDir: string,
-    private readonly image: string, private readonly pollMs: number) {
+    private readonly image: string, private readonly options: DesktopWorkerOptions,
+    private readonly containers: OwnedDeviceContainer) {
     this.statePath = join(privateDir, 'device.json')
     this.journalPath = join(privateDir, 'journal.json')
   }
 
-  async init(): Promise<void> {
-    await mkdir(this.privateDir, { recursive: true, mode: 0o700 })
-    await chmod(this.privateDir, 0o700)
-    try { this.state = deviceState.parse(JSON.parse(await readFile(this.statePath, 'utf8'))) }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
-    try {
-      const entries = z.array(journalEntry).parse(JSON.parse(await readFile(this.journalPath, 'utf8')))
-      for (const entry of entries) this.journal.set(entry.id, entry)
-    } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
+  /** Acquire kernel ownership before loading the private credentials and journal.
+   * @returns Shared initialization completion; failure releases owned descriptors.
+   */
+  init(): Promise<void> {
+    if (this.stop.signal.aborted) return Promise.reject(new Error('device_closed'))
+    return this.initialization ??= (async () => {
+      const lock = await DeviceProcessLock.acquire(this.privateDir)
+      this.processLock = lock
+      try {
+        try { this.state = deviceState.parse(JSON.parse(await readFile(this.statePath, 'utf8'))) }
+        catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
+        try {
+          const entries = z.array(journalEntry).parse(JSON.parse(await readFile(this.journalPath, 'utf8')))
+          for (const entry of entries) this.journal.set(entry.id, entry)
+        } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
+        await lock.assertOwned()
+      } catch (error) {
+        this.processLock = null
+        await lock.release()
+        throw error
+      }
+    })()
+  }
+
+  private async assertOwned(): Promise<void> {
+    if (!this.processLock) throw new Error('device_not_initialized')
+    await this.processLock.assertOwned()
+  }
+
+  private localAction<T>(action: () => Promise<T>): Promise<T> {
+    if (this.stop.signal.aborted) return Promise.reject(new Error('device_closed'))
+    const pending = this.actionTail.then(async () => {
+      if (this.stop.signal.aborted) throw new Error('device_closed')
+      await this.assertOwned()
+      return action()
+    }).finally(() => this.localActions.delete(pending))
+    this.actionTail = pending.then(() => undefined, () => undefined)
+    this.localActions.add(pending)
+    return pending
   }
 
   private async save(path: string, value: unknown): Promise<void> {
+    await this.assertOwned()
     const temporary = `${path}.${randomUUID()}.tmp`
     const file = await open(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL, 0o600)
     try { await file.writeFile(JSON.stringify(value, null, 2) + '\n'); await file.sync() }
     finally { await file.close() }
+    await this.assertOwned()
     await rename(temporary, path)
     const parent = await open(dirname(path), constants.O_RDONLY)
     try { await parent.sync() } finally { await parent.close() }
   }
   private saveJournal(): Promise<void> { return this.save(this.journalPath, [...this.journal.values()]) }
+  /** Read local authorization status, including private paths for the loopback UI only.
+   * @returns Pairing, directory labels/paths, contact state and the last bounded diagnostic.
+   */
   status(): unknown { return { paired: !!this.state, deviceId: this.state?.deviceId ?? null,
     directories: this.state?.directories.map(({ id, label, path }) => ({ directoryId: id, label, path })) ?? [],
-    online: this.state !== null && Date.now() - this.lastContact < 5000, notice: this.notice } }
+    online: this.state !== null && Date.now() - this.lastContact < this.options.contactGraceMs, notice: this.notice } }
 
-  private async call<T>(path: string, input: unknown, token?: string): Promise<T> {
+  private async call<T>(path: string, input: unknown, parser: z.ZodType<T>, token?: string): Promise<T> {
     const response = await fetch(new URL(path, this.platformUrl), {
       method: 'POST', headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
-      body: JSON.stringify(input), signal: AbortSignal.timeout(10_000),
+      body: JSON.stringify(input), signal: AbortSignal.timeout(this.options.platformRequestTimeoutMs),
     })
-    const value = await response.json()
-    if (!response.ok) throw new Error(`platform_${response.status}_${String(value.error ?? 'unavailable')}`)
-    return value as T
+    if (!response.ok) throw new Error(`platform_${response.status}`)
+    return parser.parse(await response.json())
   }
 
-  async pair(code: string, name: string): Promise<unknown> {
+  /** Enroll this unpaired worker and persist its private credential under kernel ownership.
+   * @param code One-use owner-issued pairing code.
+   * @param name Device label shown to its owner.
+   * @returns Local authorization status, excluding the private token.
+   */
+  pair(code: string, name: string): Promise<unknown> { return this.localAction(() => this.pairLocal(code, name)) }
+  private async pairLocal(code: string, name: string): Promise<unknown> {
     if (this.state) throw new Error('device_already_paired')
     const instanceId = randomUUID()
-    const result = await this.call<{ deviceId: string; token: string }>('/devices/enroll', { code, name, instanceId })
+    const result = await this.call('/devices/enroll', { code, name, instanceId },
+      z.object({ deviceId: z.uuid(), token: z.string().min(32) }).strict())
     this.state = deviceState.parse({ ...result, instanceId, directories: [] })
     await this.save(this.statePath, this.state)
     this.lastContact = Date.now()
     return this.status()
   }
 
-  async authorize(path: string): Promise<unknown> {
+  /** Register a project selected by the local OS user; only its ID and label reach the platform.
+   * @param path Explicitly authorized absolute project directory.
+   * @returns Local grant identity, label and path.
+   */
+  authorize(path: string): Promise<unknown> { return this.localAction(() => this.authorizeLocal(path)) }
+  private async authorizeLocal(path: string): Promise<unknown> {
     if (!this.state) throw new Error('device_not_paired')
     if (!isAbsolute(path)) throw new Error('directory_must_be_absolute')
     const actual = await realpath(path)
@@ -126,7 +181,8 @@ export class DesktopWorker {
     const previous = this.state.directories.find(item => item.path === actual)
     if (previous) return { directoryId: previous.id, label: previous.label, path: previous.path }
     const label = basename(actual)
-    const result = await this.call<{ directoryId: string }>('/devices/agent/directory', { label }, this.state.token)
+    const result = await this.call('/devices/agent/directory', { label },
+      z.object({ directoryId: z.uuid() }).strict(), this.state.token)
     this.state.directories.push({ id: result.directoryId, label, path: actual })
     await this.save(this.statePath, this.state)
     return { directoryId: result.directoryId, label, path: actual }
@@ -151,13 +207,23 @@ export class DesktopWorker {
     return join(parent, segments.at(-1)!)
   }
 
-  async importFile(directoryId: string, cloudPath: string, localPath: string): Promise<unknown> {
+  /** Create one local file from an explicit cloud transfer while this worker has no journaled writer.
+   * @param directoryId Registered local directory identity.
+   * @param cloudPath Owned cloud workspace source.
+   * @param localPath Relative new destination; existing files are refused.
+   * @returns Transfer metadata after the bounded digest-checked write.
+   */
+  importFile(directoryId: string, cloudPath: string, localPath: string): Promise<unknown> {
+    return this.localAction(() => this.importLocal(directoryId, cloudPath, localPath))
+  }
+  private async importLocal(directoryId: string, cloudPath: string, localPath: string): Promise<unknown> {
     if (!this.state) throw new Error('device_not_paired')
+    if (this.journal.size > 0) throw new Error('device_directory_busy')
     const target = await this.localPath(directoryId, localPath)
     try { await lstat(target); throw new Error('local_file_exists') }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
-    const cloud = z.object({ data: z.string().max(2_800_000), revision: z.string().regex(/^[a-f0-9]{64}$/) }).passthrough()
-      .parse(await this.call('/devices/agent/files/read', { directoryId, path: cloudPath }, this.state.token))
+    const cloud = await this.call('/devices/agent/files/read', { directoryId, path: cloudPath },
+      z.object({ data: z.string().max(2_800_000), revision: z.string().regex(/^[a-f0-9]{64}$/) }).passthrough(), this.state.token)
     const bytes = Buffer.from(cloud.data, 'base64')
     if (bytes.length > 2 * 1024 * 1024 || createHash('sha256').update(bytes).digest('hex') !== cloud.revision) {
       throw new Error('cloud_file_digest_mismatch')
@@ -175,8 +241,19 @@ export class DesktopWorker {
     return { cloudPath, localPath, size: bytes.length, revision: cloud.revision }
   }
 
-  async exportFile(directoryId: string, localPath: string, cloudPath: string, requestId: string): Promise<unknown> {
+  /** Transfer a bounded local file explicitly while this worker has no journaled writer.
+   * @param directoryId Registered local directory identity.
+   * @param localPath Relative local source.
+   * @param cloudPath Owned cloud workspace destination.
+   * @param requestId Stable platform file request identity.
+   * @returns Platform file receipt.
+   */
+  exportFile(directoryId: string, localPath: string, cloudPath: string, requestId: string): Promise<unknown> {
+    return this.localAction(() => this.exportLocal(directoryId, localPath, cloudPath, requestId))
+  }
+  private async exportLocal(directoryId: string, localPath: string, cloudPath: string, requestId: string): Promise<unknown> {
     if (!this.state) throw new Error('device_not_paired')
+    if (this.journal.size > 0) throw new Error('device_directory_busy')
     const source = await this.localPath(directoryId, localPath)
     const file = await open(source, constants.O_RDONLY | constants.O_NOFOLLOW)
     let bytes: Buffer
@@ -187,162 +264,221 @@ export class DesktopWorker {
       if (bytes.length > 2 * 1024 * 1024) throw new Error('local_file_too_large')
     } finally { await file.close() }
     return this.call('/devices/agent/files/put',
-      { directoryId, requestId, path: cloudPath, data: bytes.toString('base64') }, this.state.token)
+      { directoryId, requestId, path: cloudPath, data: bytes.toString('base64') },
+      z.object({ path: z.string(), revision: z.string().regex(/^[a-f0-9]{64}$/) }).passthrough(), this.state.token)
   }
 
-  start(): void { this.polling = this.poll() }
-  async close(): Promise<void> {
-    this.stop.abort()
-    if (this.activeContainer) {
-      try { await docker(['stop', '--time', '2', this.activeContainer], 10_000) }
-      catch (_alreadyStopped) { /* The current command is reconciled by the active run. */ }
-    }
-    await this.polling
-    await this.active
+  /** Start one poller only after the private journal has kernel ownership. */
+  start(): void {
+    if (!this.processLock) throw new Error('device_not_initialized')
+    if (this.stop.signal.aborted) throw new Error('device_closed')
+    this.polling ??= this.poll()
+  }
+
+  /**
+   * Close admission and await local actions and the current bounded stop attempt. Unconfirmed
+   * Docker writers remain in the journal; closing this process does not certify their termination.
+   * @returns Quiescence of this worker and release of its kernel journal lock.
+   */
+  close(): Promise<void> {
+    return this.closing ??= (async () => {
+      this.stop.abort()
+      await this.initialization?.catch((_startupFailure: unknown) => {
+        // init() releases its descriptors before reporting a failed startup.
+      })
+      await Promise.allSettled([...this.localActions, this.polling, this.active])
+      const lock = this.processLock
+      this.processLock = null
+      await lock?.release()
+    })()
   }
 
   private async poll(): Promise<void> {
     while (!this.stop.signal.aborted) {
-      if (this.state) {
-        try {
+      try {
+        await this.assertOwned()
+        if (this.state) {
           if (!this.active) {
             for (const entry of this.journal.values()) {
-              if (entry.stage === 'finished' && entry.result) await this.report(this.state, entry)
+              await this.recover(this.state, entry)
+              if (this.stop.signal.aborted) break
             }
           }
-          const result = await this.call<{ jobs: Job[]; directories: string[] }>('/devices/agent/jobs',
-            { instanceId: this.state.instanceId }, this.state.token)
+          if (this.stop.signal.aborted) break
+          const result = await this.call('/devices/agent/jobs', { instanceId: this.state.instanceId },
+            z.object({ jobs: z.array(jobRecord).max(20), directories: z.array(z.uuid()) }).strict(), this.state.token)
           this.lastContact = Date.now()
           if (!this.active && this.journal.size === 0) this.notice = ''
           const allowed = new Set(result.directories)
-          if (this.state.directories.some(item => !allowed.has(item.id))) {
+          // Retain original directory metadata while its journal still requires reconciliation.
+          if (!this.active && this.journal.size === 0 && this.state.directories.some(item => !allowed.has(item.id))) {
             this.state.directories = this.state.directories.filter(item => allowed.has(item.id))
             await this.save(this.statePath, this.state)
           }
           this.jobs.clear()
           for (const job of result.jobs) this.jobs.set(job.executionId, job)
-          if (!this.active) {
+          if (!this.active && this.journal.size === 0 && this.localActions.size === 0 && !this.stop.signal.aborted) {
             const next = result.jobs[0]
             if (next) {
-              const running = this.run(next).catch(error => { this.notice = error instanceof Error ? error.message : 'device_error' })
-                .finally(() => { if (this.active === running) this.active = null })
+              const running = this.run(next).catch((error: unknown) => {
+                this.notice = error instanceof Error ? error.message : 'device_error'
+              }).finally(() => { if (this.active === running) this.active = null })
               this.active = running
             }
           }
-        } catch (error) { this.notice = error instanceof Error ? error.message : 'platform_unavailable' }
-      }
-      try { await delay(this.pollMs, undefined, { signal: this.stop.signal }) }
-      catch (_aborted) { /* close() owns the active command and awaits its exit. */ }
+        }
+      } catch (error) { this.notice = error instanceof Error ? error.message : 'platform_unavailable' }
+      try { await delay(this.options.pollMs, undefined, { signal: this.stop.signal }) }
+      catch (_aborted) { /* close() waits for the current bounded command operation. */ }
     }
+  }
+
+  private requestDigest(state: DeviceState, job: z.infer<typeof claimedJob>): string {
+    return createHash('sha256').update(JSON.stringify({ command: job.command, cwd: job.cwd,
+      timeoutMs: job.timeoutMs, deviceId: state.deviceId, directoryId: job.directoryId })).digest('hex')
+  }
+
+  private async observeStopped(entry: JournalEntry): Promise<boolean> {
+    if (!entry.receipt) return false
+    const observed = await this.containers.inspect(entry.receipt)
+    if (!observed || observed.Running) return false
+    const stopped = journalEntry.shape.stopObservation.unwrap().safeParse({ ...observed, receipt: entry.receipt })
+    if (!stopped.success) return false
+    entry.stopObservation = stopped.data
+    await this.saveJournal()
+    return true
+  }
+
+  private async recover(state: DeviceState, entry: JournalEntry): Promise<void> {
+    if (!entry.owner || !entry.imageId || entry.owner.deviceId !== state.deviceId
+      || entry.owner.enrollmentId !== state.instanceId) throw new Error('device_legacy_journal_requires_review')
+    if (!entry.receipt) {
+      const receipt = await this.containers.findCreated({ name: entry.container, imageId: entry.imageId, owner: entry.owner })
+      if (!receipt) throw new Error('device_container_identity_missing')
+      entry.receipt = receipt
+      await this.saveJournal()
+    }
+    if (!entry.stopObservation) {
+      const observed = await this.containers.inspect(entry.receipt)
+      if (!observed) throw new Error('device_stop_observation_missing')
+      if (observed.Running) {
+        try { await this.containers.stop(entry.receipt) }
+        catch (_stopUnconfirmed) { /* Only a subsequent exact-ID observation can record termination. */ }
+      }
+      if (!await this.observeStopped(entry)) throw new Error('device_stop_observation_missing')
+    }
+    // A cold recovery never starts an old created container or repeats its command.
+    entry.result ??= uncertain()
+    entry.stage = 'finished'
+    await this.saveJournal()
+    await this.report(state, entry)
   }
 
   private async run(job: Job): Promise<void> {
     const state = this.state
     if (!state) return
     const id = job.executionId, name = `pe-local-${id.replaceAll('-', '')}`
-    let entry = this.journal.get(id)
-    const fresh = !entry
-    if (!entry && job.state !== 'queued') {
-      await this.call('/devices/agent/finish', { instanceId: state.instanceId, executionId: id,
-        result: uncertain() }, state.token)
+    if (this.journal.has(id)) throw new Error('device_recovery_required')
+    if (job.state !== 'queued') {
+      this.journal.set(id, { id, container: name, stage: 'finished', startedAt: Date.now(), result: uncertain() })
+      await this.saveJournal()
+      this.notice = 'device_container_identity_missing'
       return
     }
-    if (!entry) {
-      await this.call('/devices/agent/claim', { instanceId: state.instanceId, executionId: id }, state.token)
-      entry = { id, container: name, stage: 'claimed', startedAt: Date.now() }
-      this.journal.set(id, entry); await this.saveJournal()
-    }
-    if (entry.stage === 'finished' && entry.result) { await this.report(state, entry); return }
-    const folder = state.directories.find(item => item.id === job.directoryId)
-    if (!folder) { entry.result = uncertain(); entry.stage = 'finished'; await this.saveJournal(); await this.report(state, entry); return }
-    let root: string
-    try {
-      root = await realpath(folder.path)
-      if (root !== folder.path || !(await lstat(root)).isDirectory()) throw new Error('directory_changed')
-      const requested = resolve(root, job.cwd)
-      if (requested !== root && !requested.startsWith(root + '/')) throw new Error('cwd_outside_directory')
-      const actual = await realpath(requested)
-      if (actual !== root && !actual.startsWith(root + '/')) throw new Error('cwd_outside_directory')
-    } catch (_invalidDirectory) {
-      entry.result = uncertain(); entry.stage = 'finished'; await this.saveJournal(); await this.report(state, entry); return
-    }
-    let container = await containerState(name)
-    if (!container && (!fresh || entry.stage !== 'claimed')) {
-      entry.result = uncertain(); entry.stage = 'finished'; await this.saveJournal(); await this.report(state, entry); return
-    }
-    if (!container) {
-      try {
-        await docker(['create', '--name', name, '--network', 'none', '--read-only',
-          '--tmpfs', '/tmp:rw,nosuid,size=64m', '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
-          '--pids-limit', '128', '--memory', '768m', '--cpus', '1', '--user', '1000:1000',
-          '--mount', `type=bind,source=${root},target=/workspace`,
-          '--workdir', `/workspace${job.cwd ? '/' + job.cwd : ''}`, '--entrypoint', '/bin/bash',
-          this.image, '-lc', job.command])
-        entry.stage = 'created'; await this.saveJournal()
-      } catch (error) {
-        container = await containerState(name)
-        if (container) { entry.stage = 'created'; await this.saveJournal() }
-        else {
-          const message = error instanceof Error ? error.message.slice(0, 1000) : 'docker_create_failed'
-          entry.result = { ...uncertain()!, state: 'failed', stderr: message }
-          entry.stage = 'finished'; await this.saveJournal(); await this.report(state, entry); return
-        }
+    const claimed = await this.call('/devices/agent/claim', { instanceId: state.instanceId, executionId: id }, claimedJob, state.token)
+    if (claimed.executionId !== id || claimed.directoryId !== job.directoryId || claimed.command !== job.command
+      || claimed.cwd !== job.cwd || claimed.timeoutMs !== job.timeoutMs || claimed.digest !== job.digest
+      || claimed.digest !== this.requestDigest(state, claimed)) throw new Error('device_dispatch_changed')
+    const owner = ownedContainerOwner.parse({ deviceId: state.deviceId, enrollmentId: state.instanceId,
+      executionId: id, creationId: randomUUID(), requestDigest: claimed.digest })
+    const entry: JournalEntry = { id, container: name, owner, stage: 'claimed', startedAt: Date.now() }
+    this.journal.set(id, entry)
+    await this.saveJournal()
+    const folder = state.directories.find(item => item.id === claimed.directoryId)
+    if (!folder) throw new Error('directory_not_authorized')
+    const root = await realpath(folder.path)
+    if (root !== folder.path || !(await lstat(root)).isDirectory()) throw new Error('directory_changed')
+    const requested = resolve(root, claimed.cwd)
+    if (requested !== root && !requested.startsWith(root + '/')) throw new Error('cwd_outside_directory')
+    const actual = await realpath(requested)
+    if (actual !== root && !actual.startsWith(root + '/')) throw new Error('cwd_outside_directory')
+    entry.imageId = await this.containers.resolveImage(this.image)
+    await this.saveJournal()
+    if (this.stop.signal.aborted) throw new Error('device_closed_before_create')
+    entry.receipt = await this.containers.create({ name, owner, imageId: entry.imageId,
+      options: ['--network', 'none', '--read-only', '--tmpfs', '/tmp:rw,nosuid,size=64m',
+        '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--pids-limit', '128',
+        '--memory', '768m', '--cpus', '1', '--user', '1000:1000',
+        '--mount', `type=bind,source=${root},target=/workspace`,
+        '--workdir', `/workspace${claimed.cwd ? '/' + claimed.cwd : ''}`, '--entrypoint', '/bin/bash'],
+      command: ['-lc', claimed.command] })
+    entry.stage = 'created'
+    await this.saveJournal()
+    const receipt = entry.receipt
+    // Persist the intent before start: a lost response or a crash cannot authorize a second start.
+    if (this.stop.signal.aborted || this.jobs.get(id)?.cancelRequested) {
+      entry.result = uncertain()
+    } else {
+      entry.stage = 'started'
+      entry.startedAt = Date.now()
+      await this.saveJournal()
+      try { await this.containers.start(receipt) }
+      catch (_startUnconfirmed) {
+        const observed = await this.containers.inspect(receipt)
+        if (!observed || observed.Status === 'created') entry.result = uncertain()
       }
     }
-    container ??= await containerState(name)
-    if (container?.Status === 'created') {
-      try { await docker(['start', name]); entry.stage = 'started'; entry.startedAt = Date.now(); await this.saveJournal() }
-      catch (_startUnknown) {
-        container = await containerState(name)
-        if (!container?.Running) { entry.result = uncertain(); entry.stage = 'finished'; await this.saveJournal(); await this.report(state, entry); return }
-      }
-    }
-    this.activeContainer = name
     let timedOut = false, cancelled = false, contactLost = false
-    while (true) {
-      container = await containerState(name)
-      if (!container) { entry.result = uncertain(); break }
-      if (!container.Running) break
+    while (!entry.result) {
+      const observed = await this.containers.inspect(receipt)
+      if (!observed) { entry.result = uncertain(); break }
+      if (!observed.Running) break
       const current = this.jobs.get(id)
-      timedOut ||= Date.now() - entry.startedAt > job.timeoutMs
-      cancelled ||= !!current?.cancelRequested || (!current && Date.now() - this.lastContact < 5000)
+      timedOut ||= Date.now() - entry.startedAt > claimed.timeoutMs
+      cancelled ||= !!current?.cancelRequested || (!current && Date.now() - this.lastContact < this.options.contactGraceMs)
         || this.stop.signal.aborted
-      contactLost ||= Date.now() - this.lastContact > 5000
+      contactLost ||= Date.now() - this.lastContact > this.options.contactGraceMs
       if (timedOut || cancelled || contactLost) {
-        try { await docker(['stop', '--time', '2', name], 10_000) }
-        catch (_alreadyExited) { /* Inspect below distinguishes an actual exit from a lost container. */ }
+        try { await this.containers.stop(receipt) }
+        catch (_stopUnconfirmed) { /* An acknowledgement cannot replace the next observation. */ }
+        if (!await this.observeStopped(entry)) { entry.result = uncertain(); break }
+        break
       }
-      await delay(250)
+      await delay(this.options.commandPollMs)
     }
-    this.activeContainer = null
+    const stopped = entry.stopObservation !== undefined || await this.observeStopped(entry)
     if (!entry.result) {
-      let output: { stdout: string; stderr: string }, capped = false
-      try { output = await docker(['logs', name], 10_000) }
-      catch (error) {
-        const failure = error as { code?: string; stdout?: string; stderr?: string }
-        if (failure.code !== 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER') throw error
-        output = { stdout: failure.stdout ?? '', stderr: failure.stderr ?? '' }
-        capped = true
+      if (!stopped) entry.result = uncertain()
+      else {
+        const output = await this.containers.logs(receipt)
+        entry.result = { state: contactLost ? 'uncertain' : cancelled ? 'cancelled'
+          : timedOut || entry.stopObservation!.ExitCode !== 0 ? 'failed' : 'succeeded',
+          exitCode: entry.stopObservation!.ExitCode, ...output, timedOut }
       }
-      const stdout = limit(output.stdout), stderr = limit(output.stderr)
-      entry.result = { state: contactLost ? 'uncertain' : cancelled ? 'cancelled'
-        : timedOut || container!.ExitCode !== 0 ? 'failed' : 'succeeded',
-      exitCode: container!.ExitCode, stdout: stdout.text, stderr: stderr.text,
-      stdoutTruncated: stdout.truncated || capped, stderrTruncated: stderr.truncated || capped, timedOut }
     }
-    entry.stage = 'finished'; await this.saveJournal()
-    await this.report(state, entry)
+    entry.stage = 'finished'
+    await this.saveJournal()
+    if (stopped) await this.report(state, entry)
+    else this.notice = 'device_stop_observation_missing'
   }
 
   private async report(state: DeviceState, entry: JournalEntry): Promise<void> {
-    if (!entry.result) return
-    await this.call('/devices/agent/finish', {
+    if (!entry.result || !entry.receipt || !entry.stopObservation) throw new Error('device_stop_observation_missing')
+    const observed = await this.containers.inspect(entry.receipt)
+    if (observed?.Running) {
+      delete entry.stopObservation
+      entry.result = uncertain()
+      await this.saveJournal()
+      throw new Error('device_container_running')
+    }
+    const accepted = await this.call('/devices/agent/finish', {
       instanceId: state.instanceId, executionId: entry.id, result: entry.result,
-    }, state.token)
+    }, executionReceipt, state.token)
+    if (accepted.executionId !== entry.id) throw new Error('device_result_identity_mismatch')
+    if (observed) await this.containers.remove(entry.receipt)
+    // Missing is acceptable only after an exact stop observation was saved before removal.
     this.journal.delete(entry.id)
     try { await this.saveJournal() }
     catch (error) { this.journal.set(entry.id, entry); throw error }
-    try { await docker(['rm', '--force', entry.container], 10_000) }
-    catch (_alreadyRemoved) { /* The durable result has already been accepted by the platform. */ }
   }
 }

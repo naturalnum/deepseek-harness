@@ -16,4 +16,11 @@
         privateDir: !!js process.env.PE_PRIVATE_DIR + '/device'
         image: pe-shared-host-slice4-runner:s4-2ffb04551212
         pollMs: 500
+        contactGraceMs: 5000
+        commandPollMs: 250
+        platformRequestTimeoutMs: 10000
+        dockerCommandTimeoutMs: 15000
+        dockerStopTimeoutMs: 10000
+        dockerStopGraceSeconds: 2
+        directoryPickerTimeoutMs: 120000
         readyFile: !!js dshHomePath('ready.json')

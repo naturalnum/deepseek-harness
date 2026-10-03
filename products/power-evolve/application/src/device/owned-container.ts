@@ -125,7 +125,7 @@ export interface OwnedContainerConfig {
   commandTimeoutMs: number
   /** Positive integer timeout for a stop CLI request. */
   stopTimeoutMs: number
-  /** Positive integer grace period passed to Docker stop. */
+  /** Nonnegative integer grace period passed to Docker stop. */
   stopGraceSeconds: number
 }
 
