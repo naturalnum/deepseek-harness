@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.4
+
+- Separate labeled level-1 appendices from reference entries, including the generator's source-link appendix after the bibliography; emit body, appendices and bibliography in the retained template order.
+- Preserve appendix prose and URLs, support multiple uppercase appendix labels and retain numbering gaps, and reject invalid, duplicate or decreasing labels without changing ordinary reports or bilingual keyword parsing.
+
 ## 1.0.3
 
 - Convert standalone local Markdown images into real graphics with the supplied figure number and title, and consume a matching following caption once.

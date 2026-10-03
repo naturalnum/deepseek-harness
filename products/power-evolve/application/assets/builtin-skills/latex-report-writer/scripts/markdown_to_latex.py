@@ -2,7 +2,7 @@
 """Convert the supplied report Markdown into a semantic techreport LaTeX file.
 
 The converter is intentionally conservative: it preserves prose, inline math,
-display math, tables, and references, while moving the abstract and front-matter
+display math, tables, appendices and references, while moving the abstract and front-matter
 fields into the bundled report class.  It does not invent missing project
 metadata or replace source placeholders.
 """
@@ -608,14 +608,77 @@ def render_references(lines: list[str]) -> str:
     return "\n".join(output) + "\n"
 
 
+def split_report_sections(
+    lines: list[str],
+) -> tuple[list[str], list[str], list[tuple[str, str, list[str]]]]:
+    """Separate body, references and labeled appendices at level-1 headings.
+
+    Appendices may precede or follow references. Their single uppercase labels
+    must be unique and increasing; authored gaps are retained at rendering.
+    """
+
+    body: list[str] = []
+    references: list[str] = []
+    appendices: list[tuple[str, str, list[str]]] = []
+    current = body
+    references_seen = False
+    for line in lines:
+        heading = HEADING.match(line)
+        if heading and len(heading.group(1)) == 1:
+            title = heading.group(2).strip()
+            if title == "参考文献":
+                if references_seen:
+                    raise ValueError("Duplicate references heading")
+                references_seen = True
+                current = references
+                continue
+            if title.startswith("附录"):
+                appendix = re.fullmatch(r"附录[ \t]*([A-Z])[ \t]+(\S.*)", title)
+                if appendix is None:
+                    raise ValueError("Invalid appendix heading; use a single uppercase label and title")
+                label, appendix_title = appendix.groups()
+                if appendices and label <= appendices[-1][0]:
+                    raise ValueError("Duplicate or out-of-order appendix label")
+                appendix_lines: list[str] = []
+                appendices.append((label, appendix_title, appendix_lines))
+                current = appendix_lines
+                continue
+            if current is not body:
+                raise ValueError("Only level-1 appendix or references headings may follow the report body")
+        current.append(line)
+    return body, references, appendices
+
+
+def render_appendices(
+    appendices: list[tuple[str, str, list[str]]], image_context: tuple[Path, Path],
+) -> str:
+    """Use the class appendix counters and retain each appendix's body content."""
+
+    if not appendices:
+        return ""
+    output = [r"\reportappendices"]
+    previous_number = 0
+    for label, title, lines in appendices:
+        number = ord(label) - ord("A") + 1
+        if number != previous_number + 1:
+            output.append(r"\setcounter{section}{" + str(number - 1) + "}")
+        output.append(r"\appendixsection{" + escape_text(title) + "}")
+        output.append(render_body(lines, image_context))
+        previous_number = number
+    return "\n".join(output) + "\n"
+
+
 def build_tex(source: Path, destination: Path, title_en: str) -> None:
     if not title_en.strip():
         raise ValueError("--title-en must contain the supplied English cover title")
     title_en = title_en.strip()
     lines = source.read_text(encoding="utf-8-sig").splitlines()
-    title, abstract_cn, keywords_cn, abstract_en, keywords_en, body_start, refs_start = parse_front_matter(lines)
-    body = render_body(lines[body_start:refs_start], (source.parent.resolve(), destination.parent.resolve()))
-    references = render_references(lines[refs_start + 1 :])
+    title, abstract_cn, keywords_cn, abstract_en, keywords_en, body_start, _ = parse_front_matter(lines)
+    body_lines, reference_lines, appendix_sections = split_report_sections(lines[body_start:])
+    image_context = (source.parent.resolve(), destination.parent.resolve())
+    body = render_body(body_lines, image_context)
+    appendices = render_appendices(appendix_sections, image_context)
+    references = render_references(reference_lines)
     today = dt.date.today()
     generated_report_date = f"{today.year}年{today.month}月{today.day}日"
 
@@ -673,7 +736,7 @@ def build_tex(source: Path, destination: Path, title_en: str) -> None:
     for key, value in replacements.items():
         preamble = preamble.replace(key, value)
 
-    tex = preamble + body + "\n" + references + "\n\\end{document}\n"
+    tex = preamble + body + "\n" + appendices + references + "\n\\end{document}\n"
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(tex, encoding="utf-8")
 
