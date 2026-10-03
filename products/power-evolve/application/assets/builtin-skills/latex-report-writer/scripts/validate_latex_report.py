@@ -20,7 +20,8 @@ def run(command: list[str]) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("pdf", type=Path)
-    parser.add_argument("--log", type=Path)
+    parser.add_argument("--log", type=Path, required=True, help="Final XeLaTeX pass log; required to detect missing glyphs and compile errors")
+    parser.add_argument("--font-profile", choices=("template", "portable"), default="template")
     parser.add_argument("--expected-pages", type=int)
     parser.add_argument("--allow-placeholder", action="append", default=[])
     args = parser.parse_args()
@@ -30,7 +31,6 @@ def main() -> int:
         parser.error(f"PDF not found: {pdf}")
 
     errors: list[str] = []
-    warnings: list[str] = []
     try:
         info = run(["pdfinfo", str(pdf)])
         fonts = run(["pdffonts", str(pdf)])
@@ -55,17 +55,27 @@ def main() -> int:
     font_lines = [line for line in fonts.splitlines() if line.strip() and not line.startswith("name ") and not line.startswith("-" )]
     if not font_lines:
         errors.append("pdffonts reported no fonts")
+    font_names: list[str] = []
     for line in font_lines:
-        columns = line.split()
-        if len(columns) >= 8 and (columns[-5].lower() != "yes" or columns[-4].lower() != "yes"):
+        row = re.fullmatch(r"(\S+)\s+.+?\s+(yes|no)\s+(yes|no)\s+(yes|no)\s+\d+\s+\d+\s*", line)
+        if not row:
+            errors.append(f"unrecognized pdffonts row: {line}")
+            continue
+        font_names.append(row.group(1))
+        if row.group(2) != "yes" or row.group(3) != "yes":
             errors.append(f"font is not embedded/subsetted: {line}")
-    lower_fonts = fonts.lower()
-    if not any(token in lower_fonts for token in ("songti", "simsun", "noto serif cjk", "fandol")):
-        warnings.append("no obvious Chinese body font name found in pdffonts output")
-    if not any(token in lower_fonts for token in ("heiti", "simhei", "noto sans", "fandol")):
-        warnings.append("no obvious Chinese heading font name found in pdffonts output")
-    if not any(token in lower_fonts for token in ("times", "tex gyre", "latin modern")):
-        warnings.append("no obvious Latin font name found in pdffonts output")
+    normalized_names = [re.sub(r"[^a-z0-9]", "", re.sub(r"^[A-Z]{6}\+", "", name).lower()) for name in font_names]
+    required_fonts = {
+        "template": {"Chinese body": ("songtisc", "simsun"), "Chinese heading": ("heitisc", "simhei"),
+                     "Latin": ("timesnewroman",)},
+        # Noto SC TTC faces share a CFF Name INDEX carrying the compact jp name.
+        "portable": {"Chinese body": ("notoserifcjksc", "notoserifcjkjp"),
+                     "Chinese heading": ("notosanscjksc", "notosanscjkjp"),
+                     "Latin": ("texgyretermes",)},
+    }
+    for role, aliases in required_fonts[args.font_profile].items():
+        if not any(alias in name for alias in aliases for name in normalized_names):
+            errors.append(f"required {args.font_profile} {role} font unavailable in PDF (expected {', '.join(aliases)})")
 
     placeholder_patterns = [r"\{\{[^{}]+\}\}", "待填写", "【此处插入"]
     for pattern in placeholder_patterns:
@@ -80,15 +90,29 @@ def main() -> int:
             errors.append(f"log not found: {log}")
         else:
             log_text = log.read_text(encoding="utf-8", errors="replace")
+            profiles = re.findall(r"^TR-FONT-PROFILE:\s*(\S+)\s*$", log_text, re.MULTILINE)
+            if profiles and profiles != [args.font_profile]:
+                errors.append(f"font profile mismatch: requested {args.font_profile}, log declares {profiles}")
+            if args.font_profile == "portable" and not profiles:
+                errors.append("portable font profile is not explicitly declared in the compile log")
+            declared_fonts = dict(re.findall(r"^TR-FONT-(BODY|HEADING|LATIN|CJK-INDEX):\s*(.+?)\s*$", log_text, re.MULTILINE))
+            if args.font_profile == "portable":
+                expected = {"BODY": "NotoSerifCJKsc-Regular", "HEADING": "NotoSansCJKsc-Regular",
+                            "LATIN": "TeXGyreTermes-Regular", "CJK-INDEX": "2"}
+                for role, value in expected.items():
+                    if declared_fonts.get(role) != value:
+                        errors.append(f"portable font selection mismatch: {role} must be {value}, found {declared_fonts.get(role, 'undeclared')}")
+            for role, value in declared_fonts.items():
+                print(f"Declared font {role}: {value}")
             for line in log_text.splitlines():
-                if re.search(r"^!|Overfull|Underfull|LaTeX Warning:|Package .* Warning:", line):
+                if re.search(r"^!|Overfull|Underfull|Missing character:|Fatal error|Emergency stop|LaTeX Warning:|(?:Package|Class) .* Warning:", line):
                     errors.append(f"compile log: {line.strip()}")
 
     print(f"PDF: {pdf}")
     print(f"Pages: {page_match.group(1) if page_match else 'unknown'}")
     print(f"Fonts checked: {len(font_lines)}")
-    for warning in warnings:
-        print(f"WARNING: {warning}")
+    print(f"Font profile: {args.font_profile}")
+    print("Actual PDF fonts: " + ", ".join(font_names))
     for error in errors:
         print(f"ERROR: {error}")
     if errors:

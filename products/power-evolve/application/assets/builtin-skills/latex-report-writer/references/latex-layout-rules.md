@@ -53,4 +53,6 @@ The current project variant intentionally places the Chinese abstract and keywor
 
 ## Validation expectations
 
-The latest PDF must show embedded/subsetted Songti/Heiti and Times New Roman fonts, A4 dimensions, stable page numbering, no layout warnings, and no unresolved test placeholders in a final report. Always render every page to PNG and inspect it before delivery.
+The portable profile selects SC face index 2 in the Runner's Noto TTC files under `/usr/share/fonts/opentype/noto/`. Those SC faces share a CFF table whose embedded name ends in `CJKjp`; `pdffonts` can therefore report `NotoSerifCJKjp` or `NotoSansCJKjp` even with an explicitly selected SC face. Validation checks the declared SC selection/index and the actual embedded Noto CJK family, retains the observed PDF names, and accepts these verified CFF aliases. Compact `TeXGyreTermes` PostScript names also identify the declared Latin family.
+
+The default template profile requires embedded/subsetted Songti SC or SimSun, Heiti SC or SimHei, and Times New Roman fonts. Explicit portable mode instead requires installed Noto Serif CJK SC, Noto Sans CJK SC and TeX Gyre Termes; it is a typography deviation from the retained template. Both profiles require A4 dimensions, stable page numbering, no missing glyphs or compile/layout warnings in the final log, and no unresolved test placeholders. The validator reports all actual PDF fonts and rejects fallback families for the selected profile. Always render every page to PNG and inspect it before delivery.

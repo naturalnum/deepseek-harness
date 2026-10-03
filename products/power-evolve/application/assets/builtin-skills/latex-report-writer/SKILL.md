@@ -89,7 +89,15 @@ The validator must check:
 - absence of unresolved `{{...}}`, `待填写`, and test placeholders in a final report;
 - presence of required cover, approval, abstract, contents, body, appendix, and reference text when applicable.
 
-`pdffonts` is authoritative for the fonts actually used in the PDF. On macOS the default class should produce Songti SC / Heiti SC and Times New Roman subsets; a fallback to SimSun, SimHei, Noto, or TeX Gyre Termes must be reported rather than silently accepted.
+`pdffonts` is authoritative for the fonts actually used in the PDF. The default `template` profile requires Songti SC or SimSun, Heiti SC or SimHei, and Times New Roman subsets. The class reports the selected fonts and any open-source fallback; a fallback does not pass template font validation. Supply the final compile log to the validator; missing glyphs, compile errors, layout warnings and unembedded or unsubsetted fonts fail validation.
+
+For a cloud output whose caller explicitly accepts different typography, select `--font-profile portable` in both conversion and validation. This emits `\documentclass[portablefonts]{techreport}` and uses installed Noto Serif CJK SC / Noto Sans CJK SC and TeX Gyre Termes, including their actual SC and Latin PostScript faces. It preserves the specified sizes and layout but does not certify the retained template's font appearance. Missing portable faces fail compilation; do not copy macOS/Windows fonts or select this mode silently. The validator prints the requested profile and every actual PDF font, including embedded figure and math fonts.
+
+```bash
+python scripts/markdown_to_latex.py source.md report.tex --title-en "Supplied English Title" --font-profile portable
+python scripts/build_latex_report.py report.tex
+python scripts/validate_latex_report.py report.pdf --log report.log --font-profile portable
+```
 
 ### 5. Render and inspect
 

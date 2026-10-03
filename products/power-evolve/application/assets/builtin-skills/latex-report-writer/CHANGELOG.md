@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.5
+
+- Add an explicitly selected portable font profile using installed open-source Noto CJK SC and TeX Gyre Termes faces; retain template mode as the default and report its unavailable template fonts and actual fallback.
+- Validate compact PostScript names and required profile families, report all PDF fonts, and require the final compile log; reject profile mismatches, missing glyphs, unembedded or unsubsetted fonts, malformed font rows and compile/layout warnings.
+
 ## 1.0.4
 
 - Separate labeled level-1 appendices from reference entries, including the generator's source-link appendix after the bibliography; emit body, appendices and bibliography in the retained template order.

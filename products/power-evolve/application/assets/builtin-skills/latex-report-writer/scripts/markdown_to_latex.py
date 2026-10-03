@@ -682,7 +682,9 @@ def render_appendices(
     return "\n".join(output) + "\n"
 
 
-def build_tex(source: Path, destination: Path, title_en: str) -> None:
+def build_tex(source: Path, destination: Path, title_en: str, font_profile: str = "template") -> None:
+    if font_profile not in ("template", "portable"):
+        raise ValueError("font profile must be template or portable")
     if not title_en.strip():
         raise ValueError("--title-en must contain the supplied English cover title")
     title_en = title_en.strip()
@@ -696,7 +698,7 @@ def build_tex(source: Path, destination: Path, title_en: str) -> None:
     today = dt.date.today()
     generated_report_date = f"{today.year}年{today.month}月{today.day}日"
 
-    preamble = r"""\documentclass{techreport}
+    preamble = r"""\documentclassFONT_OPTIONS{techreport}
 
 % Allow long mixed Chinese/math paragraphs to wrap without changing required body fonts.
 \setlength{\emergencystretch}{4em}
@@ -739,6 +741,7 @@ def build_tex(source: Path, destination: Path, title_en: str) -> None:
 
 """
     replacements = {
+        "FONT_OPTIONS": "[portablefonts]" if font_profile == "portable" else "",
         "TITLE_CN": escape_text(title),
         "TITLE_EN": escape_text(title_en),
         "ABSTRACT_CN": render_abstract(abstract_cn),
@@ -760,9 +763,11 @@ def main() -> int:
     parser.add_argument("source", type=Path)
     parser.add_argument("destination", type=Path)
     parser.add_argument("--title-en", required=True, help="Supplied English cover title; no automatic translation")
+    parser.add_argument("--font-profile", choices=("template", "portable"), default="template",
+                        help="Template fonts by default; portable explicitly selects installed open-source cloud fonts")
     args = parser.parse_args()
     try:
-        build_tex(args.source.resolve(), args.destination.resolve(), args.title_en)
+        build_tex(args.source.resolve(), args.destination.resolve(), args.title_en, args.font_profile)
     except ValueError as exc:
         parser.error(str(exc))
     print(f"Wrote {args.destination.resolve()}")

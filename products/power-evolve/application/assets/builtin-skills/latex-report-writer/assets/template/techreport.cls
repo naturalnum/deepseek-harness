@@ -1,6 +1,11 @@
 \NeedsTeXFormat{LaTeX2e}
 \ProvidesClass{techreport}[2026/08/04 Experimental Chinese Academy technical report class]
 
+\newif\ifTRportablefonts
+\DeclareOption{portablefonts}{\TRportablefontstrue}
+\DeclareOption*{\PassOptionsToClass{\CurrentOption}{ctexart}}
+\ProcessOptions\relax
+
 % The experimental renderer targets XeLaTeX so that the Chinese fonts used by
 % the Word template can be selected explicitly and consistently.
 \PassOptionsToClass{fontset=none}{ctexart}
@@ -56,23 +61,57 @@
 % -----------------------------------------------------------------------------
 % Font policy
 % -----------------------------------------------------------------------------
-% Prefer common macOS names in this environment, then the Windows names used
-% by the Word template and Noto CJK names. Users can override all three fonts with
-% \techreportfontsetup{...}{...}{...} in the document preamble.
+% Portable typography is an explicit alternative to the retained template.
+% The cloud Runner's TTC files require explicit collection index 2 for SC.
+\ifTRportablefonts
+  \def\TR@fontprofile{portable}
+  \def\TR@maincjk{NotoSerifCJKsc-Regular}
+  \def\TR@headingcjk{NotoSansCJKsc-Regular}
+  \def\TR@latin{TeXGyreTermes-Regular}
+  \newcommand{\TR@requireportablefont}[1]{%
+    \IfFontExistsTF{#1}{}{%
+      \ClassError{techreport}{Required portable font unavailable: #1}
+        {Install the declared open-source font; do not substitute a different font.}%
+    }%
+  }
+  \TR@requireportablefont{NotoSerifCJKsc-Regular}
+  \TR@requireportablefont{NotoSerifCJKsc-Bold}
+  \TR@requireportablefont{NotoSansCJKsc-Regular}
+  \TR@requireportablefont{NotoSansCJKsc-Bold}
+  \TR@requireportablefont{TeXGyreTermes-Regular}
+  \TR@requireportablefont{TeXGyreTermes-Bold}
+  \TR@requireportablefont{TeXGyreTermes-Italic}
+  \TR@requireportablefont{TeXGyreTermes-BoldItalic}
+\else
+\def\TR@fontprofile{template}
+% Retain template selection and report every open-source fallback explicitly.
 \IfFontExistsTF{Songti SC}{\def\TR@maincjk{Songti SC}}{%
   \IfFontExistsTF{SimSun}{\def\TR@maincjk{SimSun}}{%
+    \ClassWarningNoLine{techreport}{Template body font unavailable; using Noto Serif CJK SC}%
     \def\TR@maincjk{Noto Serif CJK SC}%
   }%
 }
 \IfFontExistsTF{Heiti SC}{\def\TR@headingcjk{Heiti SC}}{%
   \IfFontExistsTF{SimHei}{\def\TR@headingcjk{SimHei}}{%
+    \ClassWarningNoLine{techreport}{Template heading font unavailable; using Noto Sans CJK SC}%
     \def\TR@headingcjk{Noto Sans CJK SC}%
   }%
 }
 \IfFontExistsTF{Times New Roman}{\def\TR@latin{Times New Roman}}{%
+  \ClassWarningNoLine{techreport}{Template Latin font unavailable; using TeX Gyre Termes}%
   \def\TR@latin{TeX Gyre Termes}%
 }
+\fi
 
+\ifTRportablefonts
+\setmainfont[BoldFont=TeXGyreTermes-Bold,ItalicFont=TeXGyreTermes-Italic,BoldItalicFont=TeXGyreTermes-BoldItalic]{\TR@latin}
+\setsansfont[BoldFont=TeXGyreTermes-Bold,ItalicFont=TeXGyreTermes-Italic,BoldItalicFont=TeXGyreTermes-BoldItalic]{\TR@latin}
+\setCJKmainfont[Path=/usr/share/fonts/opentype/noto/,FontIndex=2,BoldFont=NotoSerifCJK-Bold.ttc,BoldFeatures={FontIndex=2}]{NotoSerifCJK-Regular.ttc}
+\setCJKsansfont[Path=/usr/share/fonts/opentype/noto/,FontIndex=2,BoldFont=NotoSansCJK-Bold.ttc,BoldFeatures={FontIndex=2}]{NotoSansCJK-Regular.ttc}
+\setCJKfamilyfont{TRsong}[Path=/usr/share/fonts/opentype/noto/,FontIndex=2,BoldFont=NotoSerifCJK-Bold.ttc,BoldFeatures={FontIndex=2}]{NotoSerifCJK-Regular.ttc}
+\setCJKfamilyfont{TRhei}[Path=/usr/share/fonts/opentype/noto/,FontIndex=2,BoldFont=NotoSansCJK-Bold.ttc,BoldFeatures={FontIndex=2}]{NotoSansCJK-Regular.ttc}
+\setCJKfamilyfont{TRtt}[Path=/usr/share/fonts/opentype/noto/,FontIndex=2,BoldFont=NotoSerifCJK-Bold.ttc,BoldFeatures={FontIndex=2}]{NotoSerifCJK-Regular.ttc}
+\else
 \setmainfont{\TR@latin}
 \setsansfont{\TR@latin}
 \setCJKmainfont{\TR@maincjk}
@@ -80,6 +119,7 @@
 \setCJKfamilyfont{TRsong}{\TR@maincjk}
 \setCJKfamilyfont{TRhei}{\TR@headingcjk}
 \setCJKfamilyfont{TRtt}{\TR@maincjk}
+\fi
 % Match the Word template: do not insert automatic glue between CJK text and
 % adjacent Latin letters or digits (e.g. 2026年8月 and 图1-1).
 \xeCJKsetup{CJKecglue={\hskip 0pt}}
@@ -88,6 +128,7 @@
 \def\heiti{\CJKfamily{TRhei}}
 \def\CJKttdefault{TRtt}
 \newcommand{\techreportfontsetup}[3]{%
+  \def\TR@maincjk{#1}\def\TR@headingcjk{#2}\def\TR@latin{#3}%
   \setmainfont{#3}%
   \setsansfont{#3}%
   \setCJKmainfont{#1}%
@@ -95,6 +136,13 @@
   \setCJKfamilyfont{TRsong}{#1}%
   \setCJKfamilyfont{TRhei}{#2}%
   \setCJKfamilyfont{TRtt}{#1}%
+}
+\AtBeginDocument{%
+  \typeout{TR-FONT-PROFILE: \TR@fontprofile}%
+  \typeout{TR-FONT-BODY: \TR@maincjk}%
+  \typeout{TR-FONT-HEADING: \TR@headingcjk}%
+  \typeout{TR-FONT-LATIN: \TR@latin}%
+  \ifTRportablefonts\typeout{TR-FONT-CJK-INDEX: 2}\fi
 }
 
 \newcommand{\TR@bodyfont}{\songti\fontsize{12pt}{18pt}\selectfont}
