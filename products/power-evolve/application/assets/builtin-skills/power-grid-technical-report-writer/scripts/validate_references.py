@@ -20,14 +20,14 @@ def valid_url(value: str) -> bool:
         return False
 
 
-GB_TYPE_RE = re.compile(r"\[(J|M|C|D|R|S|P|N|DB|CP|EB)(?:/(OL|DK|CD|MT))?\]")
+GB_TYPE_RE = re.compile(r"\[(J|M|C|D|R|S|P|N|DB|CP|EB|DS(?=\]|/OL\]))(?:/(OL|DK|CD|MT))?\]")
 ONLINE_DATE_RE = re.compile(r"\[\d{4}-\d{2}-\d{2}\]")
 REFERENCE_TYPE_MARKERS = {
     "journal_article": {"J"},
     "conference_paper": {"C"},
     "standard": {"S"},
     "official_document": {"R", "EB/OL"},
-    "dataset": {"DB", "DB/OL"},
+    "dataset": {"DB", "DB/OL", "DS", "DS/OL"},
     "book": {"M"},
     "thesis": {"D"},
     "report": {"R"},

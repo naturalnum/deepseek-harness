@@ -87,7 +87,7 @@ def _paragraph_text(paragraph):
     return "".join(element.text or "" for element in paragraph.iter(f"{W}t"))
 
 
-GBT7714_TYPE_RE = re.compile(r"\[(J|M|C|D|R|S|P|N|DB|CP|EB)(?:/(OL|DK|CD|MT))?\]")
+GBT7714_TYPE_RE = re.compile(r"\[(J|M|C|D|R|S|P|N|DB|CP|EB|DS(?=\]|/OL\]))(?:/(OL|DK|CD|MT))?\]")
 GBT7714_CITATION_DATE_RE = re.compile(r"\[\d{4}-\d{2}-\d{2}\]")
 FORMULA_NUMBER_RE = re.compile(r"^（[A-Z0-9]+-\d+）$")
 INLINE_SYMBOL_RE = re.compile(

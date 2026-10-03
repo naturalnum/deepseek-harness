@@ -203,7 +203,7 @@ def _validate_chapter_data(data: dict, expected_num: int = None) -> tuple:
     return True, ""
 
 
-GBT7714_TYPE_RE = re.compile(r"\[(J|M|C|D|R|S|P|N|DB|CP|EB)(?:/(OL|DK|CD|MT))?\]")
+GBT7714_TYPE_RE = re.compile(r"\[(J|M|C|D|R|S|P|N|DB|CP|EB|DS(?=\]|/OL\]))(?:/(OL|DK|CD|MT))?\]")
 GBT7714_CITATION_DATE_RE = re.compile(r"\[\d{4}-\d{2}-\d{2}\]")
 
 

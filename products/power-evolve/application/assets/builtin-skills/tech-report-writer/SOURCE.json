@@ -2,9 +2,13 @@
   "originalCommit": "a03460fe66a3f77114ff3bb906476105e1d470b7",
   "originalPath": "services/cloud-server/assets/builtin-skills/tech-report-writer",
   "originalRelease": "1.1.31",
-  "productRelease": "1.1.37",
+  "productRelease": "1.1.38",
   "maintenance": "PowerEvolve product fork: semantic cover location, required-data errors, Linux UNO catalog caches and strict title/page visual QA; see tests/test_compatibility.py. Original Word template and specification retained.",
   "changes": [
+    {
+      "version": "1.1.38",
+      "summary": "Accept dataset DS and DS/OL markers in reference JSON and final DOCX validation, retaining mandatory online citation dates and URLs, continuous final numbering and existing document types."
+    },
     {
       "version": "1.1.37",
       "summary": "Embed checked local PNG/JPEG and static SVG Markdown figures as Word media, resolve material paths within the current workspace, retain one figure caption, and block missing, invalid, remote or escaping images."

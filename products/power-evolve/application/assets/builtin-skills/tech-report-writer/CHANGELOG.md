@@ -1,5 +1,11 @@
 # Tech report writer changes
 
+## 1.1.38
+
+- 引用 JSON 和最终 DOCX 校验支持 GB/T 7714—2015 附录 B 的数据集 `[DS]` / `[DS/OL]` 标识；已有文献类型和载体规则保持。
+- `[DS/OL]` 仍须有真实 http(s) URL 与 `[YYYY-MM-DD]` 引用日期，DOI 不能替代 URL；最终 `[n]` 连续编号和半角结束句点保持。
+- 新增真实 QA UCI 数据集引文的 CLI 与 DOCX 引用段落读回回归，覆盖缺 URL、缺日期、错编号、未知标识和不支持的数据集载体拒绝。
+
 ## 1.1.37
 
 - Markdown 本地 PNG/JPEG 图片进入 DOCX 媒体；静态 SVG 由现有 LibreOffice Draw 和 Poppler 转换后嵌入。
