@@ -2,7 +2,7 @@
   "originalCommit": "a03460fe66a3f77114ff3bb906476105e1d470b7",
   "originalPath": "services/cloud-server/assets/builtin-skills/report-workflow-orchestrator",
   "originalRelease": "1.1.21",
-  "productRelease": "1.1.24",
+  "productRelease": "1.1.25",
   "maintenance": "PowerEvolve product fork: structured argument architecture, Markdown heading preservation, and explicit user revision requests; original writing and review rules retained.",
   "changes": [
     {
@@ -16,6 +16,10 @@
     {
       "version": "1.1.24",
       "summary": "Add version-bound, idempotent explicit user revision requests at unconfirmed approval points; preserve historical artifacts and formal reviews, route feedback separately to existing generator actions, require new output files and repeat current-version validation/review."
+    },
+    {
+      "version": "1.1.25",
+      "summary": "Allow one explicit user-authorized revision of the current unconfirmed chapter after a recorded, latest-review-bound chapter revision limit; preserve failure counters and history, keep other blocked/failed reasons rejected, and require all original gates and new-version formal review before confirmation."
     }
   ]
 }

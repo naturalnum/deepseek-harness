@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.25
+
+- Permit explicit user feedback to authorize one revision of the current unconfirmed chapter stopped by an exact deterministic-gate or formal-review revision-limit reason and its matching latest failed review.
+- Preserve failure counters, historical versions/reviews and file paths; failed revisions wait for fresh version-bound feedback, and passing revisions still require current-version formal review and user confirmation.
+- Retain workflow state 1.1.3 and all existing rejection rules for blocked/failed, stale, confirmed or pending work.
+
 ## 1.1.24
 
 - Add explicit user revision requests for current unconfirmed profile, architecture, outline, reference plan, chapter plan/body, abstract and report versions.

@@ -1,6 +1,6 @@
 # 用户退回修订
 
-本入口只接收用户对当前尚未确认版本的明确修改意见。调用应用负责取得真实用户指令；本地文件CLI不提供账号认证。模型发现问题时应向用户说明并等待指令，不能自行以用户名义退回或确认。用户反馈不代表 `report-reviewer` 审核结论。
+本入口只接收用户对当前尚未确认版本的明确修改意见，包括下述当前章节修订上限耗尽后的单次恢复。调用应用负责取得真实用户指令；本地文件CLI不提供账号认证。模型发现问题时应向用户说明并等待指令，不能自行以用户名义退回或确认。用户反馈不代表 `report-reviewer` 审核结论。
 
 ## 调用
 
@@ -32,6 +32,23 @@ Python接口为 `request_revision(state, target, artifact_id, version, feedback,
 | `word_report` | 不支持本入口 | 既有结构/视觉失败修复流程继续使用formatter |
 
 本入口不重开已确认目标，不回退其他产物或依赖，不取消自动质量修订轮次上限。用户退回计入独立反馈记录，不伪装成一次正式审核或清空已有自动修订计数。项目档案、架构、参考方案、计划和摘要沿各自已有确认规则，不新增它们原本没有的正式审核动作。
+
+## 章节修订上限耗尽后的单次恢复
+
+仅当阶段为 `AWAITING_USER`、`pending_action=null`、没有待执行用户退回，且 `last_error.chapter_id`、当前章节和 `chapter:ID` 一致时支持。最新正文尚未确认，基线产物编号和版本必须匹配，失败计数必须保留；末条审核必须对应该最新版本且决定为 `minor_revision|major_revision|revise`。允许的 `last_error.message` 与审核来源精确配对如下：
+
+| 上限理由 | 对应末条失败审核 |
+| --- | --- |
+| `chapter length gate revision limit reached` | `deterministic_chapter_length_gate` |
+| `heading bridge gate revision limit reached` | `deterministic_heading_bridge_gate` |
+| `chapter summary gate revision limit reached` | `deterministic_chapter_summary_gate` |
+| `chapter revision limit reached` | 绑定最新 `reviewed_artifact_id + reviewed_version` 的结构化正式章节审核，不接受确定性门记录替代 |
+
+例如当前 `chapter-2` 的版本3因小结门耗尽而等待用户，可明确提出新反馈后使用 `request-revision state.json chapter:2 --artifact-id chapter-2 --version 3 --request-id user-ch2-limit-1 --feedback-file user-feedback.json`。不编辑阶段、不清空计数、不提高全局上限。历史确定性门记录没有产物编号时，保留其既有按章节槽与版本绑定的语义。
+
+`next`只为这条反馈持久化一个 `revise_chapter` 子请求；重复反馈编号或重复 `next` 不额外授权。新正文和图使用版本4的新路径，`apply`重算字数、章首过渡、小结及既有附属门。任一门仍失败会保留新增失败计数，回到 `AWAITING_USER`；全部确定性门通过后必须对版本4执行真正的 `review_chapter`，正式审核再次要求修订也会继续等待新用户反馈。新反馈必须绑定新的最新失败版本；重放旧反馈不能产生另一轮。旧审核不能确认新版本，只有该版本正式审核通过后才可等待用户显式确认。
+
+错章节、错基线、缺失败审核/计数、`chapter review blocked`、缺字数目标或其他 `AWAITING_USER` 理由、`FAILED`、已确认目标和进行中的请求仍拒绝。子Skill返回 `failed|blocked` 保留原错误处理，不能借此入口泛化恢复；响应身份、版本或历史路径不合法则拒绝应用并保留原pending请求。用户反馈不替代任何业务质量或正式审核规则。
 
 ## 版本与证据
 

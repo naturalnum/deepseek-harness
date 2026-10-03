@@ -540,13 +540,62 @@ def _active_user_revision(state: dict[str, Any]) -> dict[str, Any] | None:
                  if item["status"] == "requested"), None)
 
 
+def _chapter_limit_revision_target(state: dict[str, Any]) -> str | None:
+    """Identify an unconfirmed chapter stopped by its recorded failed-review limit."""
+    if state.get("stage") != "AWAITING_USER":
+        return None
+    sources = {
+        "heading bridge gate revision limit reached": "deterministic_heading_bridge_gate",
+        "chapter length gate revision limit reached": "deterministic_chapter_length_gate",
+        "chapter summary gate revision limit reached": "deterministic_chapter_summary_gate",
+        "chapter revision limit reached": None,
+    }
+    error = state.get("last_error")
+    cid = state.get("current_chapter_id")
+    if not isinstance(error, dict) or error.get("message") not in sources:
+        return None
+    if not isinstance(cid, str) or not cid or error.get("chapter_id") != cid:
+        return None
+    chapter = state.get("chapters", {}).get(cid)
+    if not isinstance(chapter, dict) or not isinstance(chapter.get("content"), dict):
+        return None
+    slot = chapter["content"]
+    latest = _latest(slot)
+    review = _latest(slot, "reviews")
+    count = state.get("revision_counters", {}).get("chapters", {}).get(cid)
+    if (chapter.get("status") == "confirmed" or not isinstance(latest, dict)
+            or not isinstance(review, dict) or isinstance(count, bool)
+            or not isinstance(count, int) or count <= 0
+            or review.get("reviewed_version") != latest.get("version")
+            or review.get("decision") not in {"minor_revision", "major_revision", "revise"}):
+        return None
+    source = sources[error["message"]]
+    if source is not None:
+        if review.get("review_source") != source:
+            return None
+        # Historical deterministic gate reviews bind by version, without an ID.
+        if review.get("reviewed_artifact_id", latest.get("artifact_id")) != latest.get("artifact_id"):
+            return None
+    else:
+        if (str(review.get("review_source", "")).startswith("deterministic_")
+                or review.get("reviewed_artifact_id") != latest.get("artifact_id")):
+            return None
+        try:
+            _validate_structured_review(review)
+        except ValueError:
+            return None
+    return f"chapter:{cid}"
+
+
 def request_revision(state: dict[str, Any], target: str, artifact_id: str, version: int,
                      feedback: str, request_id: str) -> dict[str, Any]:
-    """Record explicit user feedback on the current unconfirmed artifact.
+    """Record explicit feedback on an unconfirmed artifact or exhausted chapter.
 
     The caller supplies a stable user request ID; replaying its exact arguments
     returns the unchanged state. This local Skill API does not authenticate a user:
-    the invoking application must obtain the feedback from the human user.
+    the invoking application must obtain the feedback from the human user. A
+    recorded chapter revision limit permits one new request, without resetting
+    counters or skipping the deterministic gates and current-version review.
     """
     for name, value in (("target", target), ("artifact_id", artifact_id),
                         ("feedback", feedback), ("request_id", request_id)):
@@ -565,7 +614,7 @@ def request_revision(state: dict[str, Any], target: str, artifact_id: str, versi
         raise ValueError("user Word revision is not supported; formatter validation failures use the existing repair flow")
     if state.get("pending_action") is not None or _active_user_revision(state):
         raise ValueError("cannot request revision while another action or user revision is pending")
-    if _confirmation_target(state) != target:
+    if _confirmation_target(state) != target and _chapter_limit_revision_target(state) != target:
         raise ValueError(f"cannot revise {target!r} while stage={state['stage']}; expected={_confirmation_target(state)!r}")
     slot = _revision_slot(state, target)
     latest = _latest(slot)
