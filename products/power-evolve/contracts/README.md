@@ -31,7 +31,7 @@ Import Cloud execution reconciliation requests and receipts from `@power-evolve/
 
 ## Implementation
 
-Only Zod and the upstream brand utility are runtime dependencies. TypeScript emits browser-compatible ESM and declarations together. The application re-exports these account definitions for its existing internal imports. The package has no process state, credential storage, authorization checks or independent lifecycle invariant.
+Only Zod and the upstream brand utility are runtime dependencies. TypeScript emits browser-compatible ESM and declarations together. The package build also bundles execution-reconciliation validation as standalone browser ESM in `lib/browser/execution-resolution.js`; the trusted approval page imports this exact build through the Platform allowlist. Consumers of this static module require the package build; it has no external runtime imports. The application re-exports these account definitions for its existing internal imports. The package has no process state, credential storage, authorization checks or independent lifecycle invariant.
 
 ## Limits
 

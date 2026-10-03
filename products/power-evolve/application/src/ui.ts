@@ -56,18 +56,22 @@ export async function serveNativeUi(path: string, response: ServerResponse, plat
  */
 export async function serveUi(path: string, application: 'login' | 'client' | 'device', response: ServerResponse,
   loginHostOrigin?: string): Promise<boolean> {
-  const assets: Record<string, [string, string]> = {
+  const assets: Record<string, [string, string, URL?]> = {
     '/': [`${application}.html`, 'text/html'],
     '/login': ['login.html', 'text/html'],
     '/approval': ['approval.html', 'text/html'],
     '/approval.js': ['approval.js', 'text/javascript'],
+    '/execution-resolution.js': ['execution-resolution.js', 'text/javascript'],
+    '/execution-resolution-contract.js': ['execution-resolution-contract.js', 'text/javascript',
+      new URL('../../contracts/lib/browser/execution-resolution.js', import.meta.url)],
     '/app.js': [`${application}.js`, 'text/javascript'],
     '/locale.js': ['locale.js', 'text/javascript'],
     '/workspace.js': ['workspace.js', 'text/javascript'],
     '/style.css': ['style.css', 'text/css'],
   }
   const asset = assets[path]
-  if (!asset || (['/login', '/approval', '/approval.js'].includes(path) && application !== 'login')) return false
+  if (!asset || (['/login', '/approval', '/approval.js', '/execution-resolution.js',
+    '/execution-resolution-contract.js'].includes(path) && application !== 'login')) return false
   const connectSource = application === 'login' && loginHostOrigin
     ? `'self' ${new URL(loginHostOrigin).origin}` : "'self'"
   response.writeHead(200, {
@@ -75,6 +79,6 @@ export async function serveUi(path: string, application: 'login' | 'client' | 'd
     'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer',
     'content-security-policy': `default-src 'self'; script-src 'self'; style-src 'self'; connect-src ${connectSource}; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`,
   })
-  response.end(await readFile(new URL(`../web/${asset[0]}`, import.meta.url)))
+  response.end(await readFile(asset[2] ?? new URL(`../web/${asset[0]}`, import.meta.url)))
   return true
 }

@@ -33,7 +33,7 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "build": "tsc -b tsconfig.json",
+    "build": "tsc -b tsconfig.json && tsdown",
     "typecheck": "tsc -p tsconfig.json --noEmit --pretty false"
   },
   "dependencies": {
