@@ -115,9 +115,9 @@
         "publisher": "PowerEvolve"
       },
       "release": {
-        "version": "1.0.2",
+        "version": "1.0.3",
         "state": "PUBLISHED",
-        "manifestDigest": "sha256:a1a1f94f244b5fa11bd93a3b64b79fdeddeb71fa7f7dd5e3fdec3575d79ed7ed",
+        "manifestDigest": "sha256:776afa6d130a0e1a5ffcbd6ec64ea5842b495af60b74bbd311929fb7a9b1483e",
         "targets": [
           "cloud"
         ],
@@ -125,10 +125,10 @@
           "skill"
         ],
         "permissions": [],
-        "artifactDigest": "4ede77f3fff66d1794b51eabb62f4ce108a2af254b6bbee4feb02bce99fe10f7",
-        "artifactSize": 65757,
-        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.latex-report-writer/releases/1.0.2/artifact",
-        "artifactPath": "extensions/builtin.latex-report-writer/1.0.2.zip"
+        "artifactDigest": "4edae77fc60c08f8e95f01abb4e4c639b5402b587b31080c44282060a9a0523a",
+        "artifactSize": 78594,
+        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.latex-report-writer/releases/1.0.3/artifact",
+        "artifactPath": "extensions/builtin.latex-report-writer/1.0.3.zip"
       }
     },
     {
@@ -193,9 +193,9 @@
         "publisher": "PowerEvolve"
       },
       "release": {
-        "version": "1.1.23",
+        "version": "1.1.24",
         "state": "PUBLISHED",
-        "manifestDigest": "sha256:9e3a1b89421ddfc081ed26a03735e1fc3551d7de367cb7bcc2911a63e564d97c",
+        "manifestDigest": "sha256:5196acbe454c06477b10a0aa73d727fe47dac7ef5c7fc336589b97b76ca64af5",
         "targets": [
           "cloud"
         ],
@@ -203,10 +203,10 @@
           "skill"
         ],
         "permissions": [],
-        "artifactDigest": "a2efe5dc1d2e683d1aaaa51b7c2af2c38d8f8964f7bf487cdc20957a8b1b9778",
-        "artifactSize": 79121,
-        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.report-workflow-orchestrator/releases/1.1.23/artifact",
-        "artifactPath": "extensions/builtin.report-workflow-orchestrator/1.1.23.zip"
+        "artifactDigest": "ca449f220f76a6f662a584639eafab26955733461938332392800b8b8487493a",
+        "artifactSize": 106213,
+        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.report-workflow-orchestrator/releases/1.1.24/artifact",
+        "artifactPath": "extensions/builtin.report-workflow-orchestrator/1.1.24.zip"
       }
     },
     {
@@ -219,9 +219,9 @@
         "publisher": "PowerEvolve"
       },
       "release": {
-        "version": "1.1.36",
+        "version": "1.1.37",
         "state": "PUBLISHED",
-        "manifestDigest": "sha256:1a08d84f36cca3f15d0de4195dfce1844e1a3be8d2c73149561e4e3952e453f1",
+        "manifestDigest": "sha256:0de812536ccba2ed2cbccc9b0dd03981444d9d45b950280401c879cee2421468",
         "targets": [
           "cloud"
         ],
@@ -229,10 +229,10 @@
           "skill"
         ],
         "permissions": [],
-        "artifactDigest": "cfe6ac8a02c05e4fb2b3cb3537353ab38c4d6e7b7a4460124df2fcd78ed6e9ee",
-        "artifactSize": 254179,
-        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.tech-report-writer/releases/1.1.36/artifact",
-        "artifactPath": "extensions/builtin.tech-report-writer/1.1.36.zip"
+        "artifactDigest": "b63338a4e7183fb275ea82eebe9b626bf00885f74806944b5716a605f6530d01",
+        "artifactSize": 262550,
+        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.tech-report-writer/releases/1.1.37/artifact",
+        "artifactPath": "extensions/builtin.tech-report-writer/1.1.37.zip"
       }
     }
   ]
