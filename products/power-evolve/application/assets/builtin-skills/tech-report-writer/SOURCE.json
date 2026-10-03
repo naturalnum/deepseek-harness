@@ -2,9 +2,13 @@
   "originalCommit": "a03460fe66a3f77114ff3bb906476105e1d470b7",
   "originalPath": "services/cloud-server/assets/builtin-skills/tech-report-writer",
   "originalRelease": "1.1.31",
-  "productRelease": "1.1.38",
+  "productRelease": "1.1.39",
   "maintenance": "PowerEvolve product fork: semantic cover location, required-data errors, Linux UNO catalog caches and strict title/page visual QA; see tests/test_compatibility.py. Original Word template and specification retained.",
   "changes": [
+    {
+      "version": "1.1.39",
+      "summary": "Keep fixed display-equation table grids, total width and cell widths consistent so native OMML uses the declared 146 mm equation column instead of the default one-third grid; retain all reviewed math content, equation numbers and following prose."
+    },
     {
       "version": "1.1.38",
       "summary": "Accept dataset DS and DS/OL markers in reference JSON and final DOCX validation, retaining mandatory online citation dates and URLs, continuous final numbering and existing document types."

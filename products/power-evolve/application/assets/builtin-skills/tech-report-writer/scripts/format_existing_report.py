@@ -1418,10 +1418,19 @@ def _replace_formula_markers(doc):
             table._tbl.tblPr.append(table_layout)
         table_layout.set(qn("w:type"), "fixed")
 
+        # Fixed-layout readers use tblGrid, not just each cell's tcW. Keep the
+        # equation column at its declared width rather than the default third.
+        column_widths = (0, 146, 14)
+        for column, width in zip(table.columns, column_widths):
+            column.width = Mm(width)
+        table_width = table._tbl.tblPr.find(qn("w:tblW"))
+        table_width.set(qn("w:type"), "dxa")
+        table_width.set(qn("w:w"), str(sum(int(Mm(width).twips) for width in column_widths)))
+
         row = table.rows[0]
         row_pr = row._tr.get_or_add_trPr()
         row_pr.append(OxmlElement("w:cantSplit"))
-        for cell, width in zip(row.cells, (0, 146, 14)):
+        for cell, width in zip(row.cells, column_widths):
             _set_cell_width(cell, width)
             _set_cell_margins_zero(cell)
             cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
