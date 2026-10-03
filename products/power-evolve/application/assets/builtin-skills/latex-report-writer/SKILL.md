@@ -122,7 +122,7 @@ Deliver only after the latest compile, structural validation, and PNG inspection
 - Level-1 headings start on a new page; heading sizes and spacing come from the class.
 - Calibrate heading before/after skips against visible glyph edges so body-adjacent headings appear equally spaced above and below. When heading levels are consecutive, apply a transition-specific correction so their calibrated skips do not accumulate.
 - The approval page uses explicit bold CJK/Latin font series, fixed labels, one `em` after each colon, dynamic alignment of the cooperation-unit line with the work-unit value, and a `3em` indent for `报告审核` and all following review/approval fields relative to the writing-unit line.
-- Chinese and English abstracts each occupy one page in the current project variant.
+- Chinese and English abstracts each start on a new page and may continue normally onto later pages; keep each keyword block with the preceding paragraph's final line.
 - Front matter uses lower-case Roman numerals; body, appendices, and references use Arabic numerals with the body restarting at 1.
 - Figure captions are below figures; table captions are above tables; figure, table, and equation numbering is chapter-aware.
 - Figure captions are centered below the figure with one em between number and title, 10.5pt Heiti, 15.75pt baseline, and zero paragraph spacing before and after. Figure numbering resets within each chapter and has only one subfigure level.
