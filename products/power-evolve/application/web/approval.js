@@ -1,5 +1,6 @@
 /** Dedicated platform-origin approval surface; its credential never enters the host origin. */
 import { t } from './locale.js'
+import { createExecutionResolutionApproval } from './execution-resolution.js'
 // This approval surface uses the same Chinese-only copy as locale.js.
 const mcpLabels = {
   title: 'MCP 工具调用审批', action: '调用远端 MCP 工具',
@@ -20,6 +21,9 @@ const mcpLabels = {
 }
 const get = id => document.getElementById(id)
 let token = sessionStorage.getItem('pe-approval-token')
+const executions = createExecutionResolutionApproval({ document, storage: sessionStorage,
+  fetch: (...args) => fetch(...args), credential: () => token,
+  unauthorized: () => { token = null; sessionStorage.removeItem('pe-approval-token'); showLogin() } })
 let refreshEpoch = 0, mcpReadEpoch = 0, mcpMutationEpoch = 0, mcpBusy = false, mcpOwner
 const mcpActions = new Map(), mcpAttempts = new Map()
 const MCP_ATTEMPTS_KEY = 'pe-mcp-approval-attempts'
@@ -48,6 +52,7 @@ function invalidateMcpReview() {
   for (const control of get('mcp-actions').querySelectorAll('button')) control.disabled = true
 }
 function showLogin() {
+  executions.reset(); sessionStorage.removeItem('pe-execution-resolution-attempts')
   invalidateMcpReview(); mcpOwner = undefined; mcpAttempts.clear(); sessionStorage.removeItem(MCP_ATTEMPTS_KEY)
   mcpMutationEpoch++; mcpBusy = false
   get('approval-login').hidden = false; get('approval-console').hidden = true
@@ -301,6 +306,7 @@ async function refresh() {
       await rpc('/approvals/permission', { capability: permission.capability, enabled: !permission.enabled }); await refresh()
     }, true)); area.append(row)
   }
+  await executions.refresh(user.userId ?? user.username).catch(error => { if (token) showError(error) })
 }
 get('approval-login').addEventListener('submit', event => {
   event.preventDefault(); get('login-button').disabled = true; get('error').textContent = ''
@@ -315,6 +321,7 @@ get('approval-login').addEventListener('submit', event => {
 })
 get('refresh').addEventListener('click', () => { void refresh().catch(showError) })
 get('logout').addEventListener('click', () => {
+  executions.reset()
   invalidateMcpReview()
   void rpc('/approvals/logout').catch(() => {}).finally(() => { token = null; sessionStorage.removeItem('pe-approval-token'); showLogin() })
 })

@@ -30,6 +30,9 @@ import { WORKSPACE_BINDING_ROUTES, storageDirectoriesRequest, storageDirectoryCr
   workspaceBindingRestoreRequest, workspaceBindingStatusRequest, workspaceBindingReceipt } from '@power-evolve/contracts/workspace-binding'
 import { artifactPublishRequest, executionFilesRequest, executionFilesView,
   EXECUTION_FILES_PLATFORM_PATH } from '@power-evolve/contracts/execution-files'
+import { EXECUTION_RESOLUTION_ROUTES, executionResolutionsListRequest, executionResolutionsList,
+  executionResolutionInspectRequest, executionResolutionInspection,
+  executionResolutionStatusRequest, executionResolutionStatus } from '@power-evolve/contracts/execution-resolution'
 
 const requests = { ...mcpManagementRequests, ...sshManagementRequests, me: z.object({}).strict(), logout: z.object({}).strict(), modelsList: z.object({}).strict(), settingsUpdate: settingsUpdateRequest,
   storageSpaces: z.object({}).strict(), storageDirectories: storageDirectoriesRequest,
@@ -69,10 +72,14 @@ const requests = { ...mcpManagementRequests, ...sshManagementRequests, me: z.obj
   artifactsPreview: z.object({ artifactId: z.uuid() }).strict(),
   executionsList: z.object({}).strict(), executionCancel: z.object({ executionId: z.uuid() }).strict(),
   executionFiles: executionFilesRequest,
+  executionResolutionsList: executionResolutionsListRequest,
+  executionResolutionInspect: executionResolutionInspectRequest,
+  executionResolutionStatus: executionResolutionStatusRequest,
   devicesList: z.object({}).strict(), devicesPair: z.object({}).strict(),
   devicesRevoke: z.object({ deviceId: z.uuid() }).strict(),
   directoriesRevoke: z.object({ directoryId: z.uuid() }).strict() }
-const endpoint = { ...mcpManagementEndpoints, ...sshManagementEndpoints, ...WORKSPACE_BINDING_ROUTES, me: '/identity/me', logout: '/identity/logout', modelsList: '/identity/models', settingsUpdate: '/identity/settings/update',
+const endpoint = { ...mcpManagementEndpoints, ...sshManagementEndpoints, ...WORKSPACE_BINDING_ROUTES,
+  ...EXECUTION_RESOLUTION_ROUTES, me: '/identity/me', logout: '/identity/logout', modelsList: '/identity/models', settingsUpdate: '/identity/settings/update',
   accountCapabilities: ACCOUNT_ROUTES.capabilities,
   create: '/sessions/create', list: '/sessions/list', prompt: '/sessions/prompt', page: '/sessions/page',
   filesList: '/files/session/list', filesRead: '/files/session/read', filesPut: '/files/session/put',
@@ -305,6 +312,15 @@ class ProductRemote extends TypertRemoteService {
   @Remote artifactsList(request: z.infer<typeof requests.artifactsList>) { return this.call('artifactsList', request) }
   @Remote artifactsPreview(request: z.infer<typeof requests.artifactsPreview>) { return this.call('artifactsPreview', request) }
   @Remote executionsList(request: z.infer<typeof requests.executionsList>) { return this.call('executionsList', request) }
+  @Remote async executionResolutionsList(request: z.infer<typeof executionResolutionsListRequest>) {
+    return executionResolutionsList.parse(await this.call('executionResolutionsList', request))
+  }
+  @Remote async executionResolutionInspect(request: z.infer<typeof executionResolutionInspectRequest>) {
+    return executionResolutionInspection.parse(await this.call('executionResolutionInspect', request))
+  }
+  @Remote async executionResolutionStatus(request: z.infer<typeof executionResolutionStatusRequest>) {
+    return executionResolutionStatus.parse(await this.call('executionResolutionStatus', request))
+  }
   @Remote executionCancel(request: z.infer<typeof requests.executionCancel>) { return this.call('executionCancel', request) }
   @Remote devicesList(request: z.infer<typeof requests.devicesList>) { return this.call('devicesList', request) }
   @Remote devicesPair(request: z.infer<typeof requests.devicesPair>) { return this.call('devicesPair', request) }

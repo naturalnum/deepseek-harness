@@ -5,9 +5,11 @@ import test from 'node:test'
 import { runInContext } from 'node:vm'
 import { JSDOM } from 'jsdom'
 import { t } from '../web/locale.js'
+import * as resolutionSchemas from '../../contracts/lib/execution-resolution.js'
 
 const html = readFileSync(new URL('../web/approval.html', import.meta.url), 'utf8')
 const source = readFileSync(new URL('../web/approval.js', import.meta.url), 'utf8')
+const resolutionSource = readFileSync(new URL('../web/execution-resolution.js', import.meta.url), 'utf8')
 const importStatement = "import { t } from './locale.js'"
 assert(source.includes(importStatement))
 const actionId = '00000000-0000-4000-8000-000000000001'
@@ -48,6 +50,8 @@ function page(context, options = {}) {
   let records = structuredClone(options.items ?? [action()])
   const server = { calls, get items() { return records }, set items(value) { records = structuredClone(value) } }
   window.approvalLabels = t
+  window.resolutionSchemas = resolutionSchemas
+  window.AbortController = AbortController; window.AbortSignal = AbortSignal
   window.sessionStorage.setItem('pe-approval-token', approvalToken)
   window.sessionStorage.setItem('pe-token', hostToken)
   if (options.attempts) window.sessionStorage.setItem('pe-mcp-approval-attempts', options.attempts)
@@ -63,6 +67,7 @@ function page(context, options = {}) {
       case '/approvals/permissions': return Response.json({ items: [] })
       case '/approvals/ssh-execute/list': return Response.json({ items: options.ssh ?? [] })
       case '/approvals/mcp/list': return Response.json({ items: records })
+      case '/approvals/executions/list': return Response.json({ available: true, items: [] })
       case '/approvals/mcp/decide': {
         const record = records.find(item => item.actionId === call.body.actionId)
         record.state = call.body.decision === 'reject' ? 'rejected' : 'approved'
@@ -83,7 +88,10 @@ function page(context, options = {}) {
     }
   }
   // Replace only the locale module import; execute the complete shipped script in its DOM realm.
-  runInContext(source.replace(importStatement, 'const t = globalThis.approvalLabels'), dom.getInternalVMContext())
+  runInContext(resolutionSource.replace(/import \{[\s\S]*?\} from '\.\/execution-resolution-contract\.js'/u,
+    'const { executionResolutionsList, executionResolutionInspection, executionResolutionReceipt, executionResolutionStatus, executionResolutionRequest, executionResolutionInspectRequest, executionResolutionStatusRequest } = globalThis.resolutionSchemas')
+    .replaceAll('export ', '') + '\n' + source.replace(importStatement, 'const t = globalThis.approvalLabels')
+    .replace("import { createExecutionResolutionApproval } from './execution-resolution.js'", ''), dom.getInternalVMContext())
   return { window, document: window.document, server, calls,
     async ready() { await until(() => window.document.querySelector('#mcp-actions article')) },
     buttons(kind = 'decide') { return [...window.document.querySelectorAll(`button[data-mcp-attempt^="${kind}:"]`)] },

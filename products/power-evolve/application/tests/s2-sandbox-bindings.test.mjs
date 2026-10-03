@@ -354,7 +354,7 @@ test('stale request, storage generation and captured writer fields reject before
   assert.equal(f.kube.mutations.length, count)
 })
 
-test('lease loss after native stop preserves the finalizer and facts; a new lease resumes that exact Pod', options, async t => {
+test('lease loss after native stop preserves the finalizer and rejects new proof writes; a new lease resumes that exact Pod', options, async t => {
   const f = await setup(t), ready = await f.manager.ensureReady(f.sessionId, f.userId, async () => {})
   const claim = await recovery(f, captured(ready))
   let valid = true, expire = true
@@ -369,7 +369,7 @@ test('lease loss after native stop preserves the finalizer and facts; a new leas
   }
   await assert.rejects(f.manager.stopForRecovery(claim, lease), /fixture_lease_lost/u)
   const slot = (await f.pool.query('SELECT state,stop_evidence FROM pe_mount_slots WHERE user_id=$1', [f.userId])).rows[0]
-  assert.equal(slot.state, 'stopping'); assert.equal(slot.stop_evidence.status, 'KUBELET_STOPPED')
+  assert.equal(slot.state, 'stopping'); assert.equal(slot.stop_evidence, null)
   assert.ok(f.kube.resource('pods', ready.name).metadata.finalizers.length > 0)
   valid = true
   assert.deepEqual(await f.manager.stopForRecovery(claim, lease), stopped(ready))
@@ -426,7 +426,7 @@ async function executionFixture(t, state, cancel = false) {
   const row = (await f.pool.query(`INSERT INTO pe_cloud_executions(id,user_id,session_id,operation_id,call_id,command,cwd,
     request_digest,state,cancel_requested,sandbox_name,pod_uid,runner_instance_id,lease_owner,lease_until)
     VALUES($1,$2,$3,$4,'owned-fixture',$5,'',$6,$7,$8,$9,$10,$11,$12,clock_timestamp()+interval '30 seconds') RETURNING *`,
-  [id, f.userId, f.sessionId, operationId, request.command, 'fixture', state, cancel, ready.name, ready.podUid,
+  [id, f.userId, f.sessionId, operationId, request.command, createHash('sha256').update(JSON.stringify({ command: request.command, cwd: request.cwd, timeoutMs: request.timeoutMs })).digest('hex'), state, cancel, ready.name, ready.podUid,
     ready.runnerInstanceId, service.workerId])).rows[0]
   const result = { id, instanceId: ready.runnerInstanceId, state: 'running',
     digest: createHash('sha256').update(JSON.stringify(request)).digest('hex'), exitCode: null,

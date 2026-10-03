@@ -57,6 +57,7 @@ import { SshAuthenticationCheck } from './ssh-check.ts'
 import { SshExecuteService } from './ssh-execute.ts'
 import { SshRunnerOrchestrator } from './ssh-runner.ts'
 import { ExecutionService } from './executions.ts'
+import { routeExecutionResolutionRead, routeExecutionResolutionApproval } from './execution-resolution-routes.ts'
 import { ExecutionFileFactsService } from './execution-file-facts.ts'
 import { artifactPublishRequest, executionFilesRequest,
   EXECUTION_FILES_PLATFORM_PATH } from '@power-evolve/contracts/execution-files'
@@ -580,6 +581,10 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       if (req.headers.origin !== undefined && req.headers.origin !== config.platformOrigin) throw new PlatformError(403, 'invalid_origin')
       const user = await identities.authenticate(token, 'approval')
       const input = await readJson(req, 4096)
+      if (path.startsWith('/approvals/executions/')) {
+        sendJson(res, await routeExecutionResolutionApproval(executions, path, user, input, token,
+          req.headers.origin, config.platformOrigin)); return
+      }
       if (path.startsWith('/approvals/mcp/')) {
         sendJson(res, await routeMcpApproval(remoteMcpActions, path, user, input, token)); return
       }
@@ -686,6 +691,10 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       return
     }
     const user = await identities.authenticate(token)
+    if (path.startsWith('/executions/resolutions/')) {
+      sendJson(res, await routeExecutionResolutionRead(executions, path, user,
+        await readJson(req, 4096))); return
+    }
     const input = await readJson(req, config.maxRequestBytes)
     if (path.startsWith('/mcp/connections/')) {
       sendJson(res, await routeMcpManagement(remoteMcp, path, user, input, config.platformOrigin)); return

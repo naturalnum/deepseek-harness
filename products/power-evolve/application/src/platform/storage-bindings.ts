@@ -15,6 +15,7 @@ import { storageSpacesView, storageDirectoryView, workspaceBindingsMissingView,
 import { storageBinding, recoveryStopTarget, recoveryStopProof, workspaceRecoveryClaim,
   type StorageBinding, type RecoveryStopTarget, type StopWorkspaceWriter } from './workspace-binding-types.ts'
 import { transaction } from './database.ts'
+import { assertCloudResolutionCleanup } from './cloud-execution-resolution-ownership.ts'
 import { requireActiveAccount, requireBrowserAccount, lockAccountAuthorities } from './account-authority.ts'
 import { accountUserId } from '../account-contracts.ts'
 import type { SafePosix, StoragePath } from './safe-posix.ts'
@@ -323,6 +324,7 @@ export class StorageBindingService implements StorageBindingApi {
   }
 
   private async captureStop(client: PoolClient, userId: string): Promise<RecoveryStopTarget> {
+    await assertCloudResolutionCleanup(client, userId)
     const active = await client.query(`SELECT id FROM pe_cloud_executions WHERE user_id=$1
       AND state IN ('queued','starting','running','cancelling','uncertain') LIMIT 1`, [userId])
     if (active.rowCount) throw new PlatformError(409, 'workspace_execution_active')
@@ -402,6 +404,7 @@ export class StorageBindingService implements StorageBindingApi {
   }
 
   private async lease(client: PoolClient, row: RequestRow, worker: StorageBindingWorker): Promise<boolean> {
+    await assertCloudResolutionCleanup(client, row.user_id)
     const current = await client.query(`SELECT r.request_id FROM pe_workspace_binding_requests r JOIN pe_workspaces w
       ON w.id=r.workspace_id WHERE r.user_id=$1 AND r.request_id=$2 AND r.lease_owner=$3 AND r.lease_epoch=$4
       AND r.lease_until>clock_timestamp() AND r.state='stopping' AND w.recovery_request_id=r.request_id

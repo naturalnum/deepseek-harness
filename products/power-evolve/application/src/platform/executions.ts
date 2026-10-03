@@ -1,8 +1,13 @@
 /** Durable cloud execution admission and reconciliation through Agent Sandbox. */
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
 import type { Pool, PoolClient } from 'pg'
 import { z } from 'zod'
+import type { ExecutionResolutionInspection, ExecutionResolutionReceipt, ExecutionResolutionRequest, ExecutionResolutionsList,
+  ExecutionResolutionsListRequest, ExecutionResolutionStatus, ResolutionExecutionId, ResolutionRequestId } from '@power-evolve/contracts/execution-resolution'
+import { CloudExecutionResolutionService } from './cloud-execution-resolution.ts'
+import { cloudRunnerResult as runnerResult, cloudRequestDigest as digest, capturedRunnerRequest,
+  type CloudExecutionRow as ExecutionRow, type CloudExecutionState as State } from './cloud-execution-resolution-types.ts'
 import { runnerFileChanges, type VerifiedExecutionFiles } from '@power-evolve/contracts/execution-files'
 import { executionTarget, PlatformError, type Identity } from '../contracts.ts'
 import { transaction } from './database.ts'
@@ -13,24 +18,7 @@ import { MountSlotBlocked, SandboxManager, type SandboxReady } from './sandbox.t
 import type { TaskStore } from './tasks.ts'
 import type { ExecutionFileFactsService } from './execution-file-facts.ts'
 
-type State = 'queued' | 'starting' | 'running' | 'cancelling' | 'succeeded' | 'failed' | 'cancelled' | 'uncertain'
-interface ExecutionRow {
-  id: string; user_id: string; session_id: string; operation_id: string; call_id: string
-  command: string; cwd: string; request_digest: string; state: State; cancel_requested: boolean
-  result: unknown; error_code: string | null; sandbox_name: string | null
-  pod_uid: string | null; runner_instance_id: string | null; lease_owner: string | null
-  continuation_request_id: string; created_at: Date; attempts: number
-}
-const runnerResult = z.object({
-  id: z.uuid(), state: z.enum(['running', 'succeeded', 'failed', 'cancelled']),
-  digest: z.string().regex(/^[a-f0-9]{64}$/), exitCode: z.number().int().nullable(),
-  stdout: z.string().max(65_536), stderr: z.string().max(65_536),
-  stdoutTruncated: z.boolean(), stderrTruncated: z.boolean(), timedOut: z.boolean(), instanceId: z.uuid(),
-  fileChanges: z.unknown().optional(),
-}).strict()
 class ExecutionLeaseLost extends Error {}
-
-function digest(value: unknown): string { return createHash('sha256').update(JSON.stringify(value)).digest('hex') }
 
 /** A platform worker is the only caller allowed to create a Sandbox or dispatch commands. */
 export class ExecutionService {
@@ -39,14 +27,56 @@ export class ExecutionService {
   private readonly active = new Set<Promise<void>>()
   private readonly activeIds = new Set<string>()
   private polling: Promise<void> | undefined
+  private readonly resolutions: CloudExecutionResolutionService
 
   constructor(private readonly tasks: TaskStore, private readonly sandboxes: SandboxManager,
     private readonly fileVerification: { service: Pick<ExecutionFileFactsService, 'verify'>; timeoutMs: number },
     private readonly concurrency: number, private readonly pollMs: number,
     private readonly idleMs: number, private readonly commandTimeoutMs: number,
-    private readonly leaseMs = 90_000) {}
+    private readonly leaseMs = 90_000) {
+    this.resolutions = new CloudExecutionResolutionService(tasks.pool, sandboxes,
+      (client, row) => this.enqueueContinuation(client, row), commandTimeoutMs, leaseMs, pollMs)
+  }
   /** PostgreSQL pool shared with the durable task store. */
   get pool(): Pool { return this.tasks.pool }
+
+  /**
+   * Read this owner's bounded Cloud execution-resolution list.
+   * @param user Authenticated owner.
+   * @param request Optional owned Session filter.
+   * @returns Recent Cloud executions and their resolution receipts.
+   */
+  listResolutions(user: Identity, request: ExecutionResolutionsListRequest): Promise<ExecutionResolutionsList> {
+    return this.resolutions.list(user, request)
+  }
+  /**
+   * Inspect a captured uncertain execution without creating or dispatching an executor.
+   * @param user Authenticated owner.
+   * @param executionId Original execution identifier.
+   * @returns Frozen approval identity and advisory Runner observation.
+   */
+  inspectResolution(user: Identity, executionId: ResolutionExecutionId): Promise<ExecutionResolutionInspection> {
+    return this.resolutions.inspect(user, executionId)
+  }
+  /**
+   * Accept one stop-and-reconcile intent under an independently issued approval credential.
+   * @param user Authenticated owner, rechecked in the admission transaction.
+   * @param request Stable request and inspected fingerprint.
+   * @param approvalToken Raw approval bearer, never accepted from an Agent grant.
+   * @returns Immutable resolution receipt.
+   */
+  resolveUncertain(user: Identity, request: ExecutionResolutionRequest, approvalToken: string): Promise<ExecutionResolutionReceipt> {
+    return this.resolutions.resolve(user, request, approvalToken)
+  }
+  /**
+   * Read this owner's persisted resolution status.
+   * @param user Authenticated owner.
+   * @param requestId Original request identifier.
+   * @returns Owner receipt or null when no such owner request exists.
+   */
+  resolutionStatus(user: Identity, requestId: ResolutionRequestId): Promise<ExecutionResolutionStatus> {
+    return this.resolutions.status(user, requestId)
+  }
 
   /**
    * Persist one tool request before returning an accepted receipt to the Agent.
@@ -115,7 +145,7 @@ export class ExecutionService {
         'SELECT * FROM pe_cloud_executions WHERE id=$1 AND user_id=$2 FOR UPDATE', [executionId, user.userId])
       const row = result.rows[0]
       if (!row) throw new PlatformError(404, 'execution_not_found')
-      if (!['succeeded', 'failed', 'cancelled'].includes(row.state)) {
+      if (!['succeeded', 'failed', 'cancelled', 'closed_unknown'].includes(row.state)) {
         const updated = await client.query<ExecutionRow>(
           'UPDATE pe_cloud_executions SET cancel_requested=true,updated_at=now() WHERE id=$1 RETURNING *', [row.id])
         return this.receipt(updated.rows[0]!)
@@ -133,6 +163,8 @@ export class ExecutionService {
     while (!this.stop.signal.aborted) {
       try {
         if (this.active.size < this.concurrency) {
+          await this.resolutions.poll(this.stop.signal)
+          if (this.stop.signal.aborted) break
           const action = await this.claim()
           if (action) {
             this.activeIds.add(action.id)
@@ -157,10 +189,12 @@ export class ExecutionService {
       const leased = await client.query<{ count: number }>(
         `SELECT count(*)::integer AS count FROM pe_cloud_executions
          WHERE lease_owner IS NOT NULL AND lease_until>clock_timestamp()
+          AND NOT EXISTS(SELECT 1 FROM pe_cloud_execution_resolutions r WHERE r.execution_id=pe_cloud_executions.id)
            AND state IN ('starting','running','cancelling','uncertain')`)
       if (leased.rows[0]!.count >= this.concurrency) return null
       const found = await client.query<ExecutionRow>(
         `SELECT * FROM pe_cloud_executions WHERE state IN ('queued','starting','running','cancelling','uncertain')
+         AND NOT EXISTS(SELECT 1 FROM pe_cloud_execution_resolutions r WHERE r.execution_id=pe_cloud_executions.id)
          AND NOT (id = ANY($1::uuid[])) AND (lease_until IS NULL OR lease_until<=clock_timestamp())
          ORDER BY created_at,id LIMIT 1 FOR UPDATE SKIP LOCKED`, [[...this.activeIds]])
       const row = found.rows[0]
@@ -188,6 +222,7 @@ export class ExecutionService {
             const updated = await client.query(
               `UPDATE pe_cloud_executions SET lease_until=clock_timestamp()+$3::double precision*interval '1 millisecond'
                WHERE id=$1 AND lease_owner=$2 AND lease_until>clock_timestamp()
+                 AND NOT EXISTS(SELECT 1 FROM pe_cloud_execution_resolutions r WHERE r.execution_id=pe_cloud_executions.id)
                  AND state IN ('starting','running','cancelling','uncertain') RETURNING id`,
               [row.id, this.workerId, this.leaseMs])
             return !!updated.rowCount
@@ -199,7 +234,8 @@ export class ExecutionService {
     const assertLease = async () => {
       if (lost) throw new ExecutionLeaseLost()
       const current = await this.pool.query(
-        'SELECT id FROM pe_cloud_executions WHERE id=$1 AND lease_owner=$2 AND lease_until>clock_timestamp()',
+        `SELECT id FROM pe_cloud_executions WHERE id=$1 AND lease_owner=$2 AND lease_until>clock_timestamp()
+          AND NOT EXISTS(SELECT 1 FROM pe_cloud_execution_resolutions r WHERE r.execution_id=pe_cloud_executions.id)`,
         [row.id, this.workerId])
       if (!current.rowCount) throw new ExecutionLeaseLost()
     }
@@ -234,10 +270,11 @@ export class ExecutionService {
       const recorded = await this.pool.query<{ state: State }>(
         `UPDATE pe_cloud_executions SET sandbox_name=$3,pod_uid=$4,runner_instance_id=$5,
          state=CASE WHEN state='uncertain' THEN 'starting' ELSE state END
-         WHERE id=$1 AND lease_owner=$2 AND lease_until>clock_timestamp() AND runner_instance_id IS NULL RETURNING state`,
+         WHERE id=$1 AND lease_owner=$2 AND lease_until>clock_timestamp()
+          AND NOT EXISTS(SELECT 1 FROM pe_cloud_execution_resolutions r WHERE r.execution_id=pe_cloud_executions.id) AND runner_instance_id IS NULL RETURNING state`,
         [row.id, this.workerId, sandbox.name, sandbox.podUid, sandbox.runnerInstanceId])
       if (!recorded.rowCount && !row.runner_instance_id) throw new ExecutionLeaseLost()
-      if (recorded.rowCount) row = { ...row, state: recorded.rows[0]!.state }
+      if (recorded.rowCount) row = { ...row, state: recorded.rows[0]!.state, sandbox_name: sandbox.name, pod_uid: sandbox.podUid, runner_instance_id: sandbox.runnerInstanceId }
       const cancelled = await this.currentCancel(row)
       if (cancelled && row.state === 'starting') {
         await this.settle(row, 'cancelled', null, null); return
@@ -265,8 +302,8 @@ export class ExecutionService {
 
   private async observe(row: ExecutionRow, sandbox: SandboxReady, cancelled: boolean,
     assertLease: () => Promise<void>): Promise<void> {
-    const request = { id: row.id, command: row.command, cwd: row.cwd, timeoutMs: this.commandTimeoutMs,
-      instanceId: sandbox.runnerInstanceId }
+    const request = capturedRunnerRequest(row, this.commandTimeoutMs)
+    if (!request) { await this.defer(row, 'uncertain', 'runner_request_unverifiable'); return }
     const path = `/executions/${row.id}`
     let status: z.infer<typeof runnerResult> | null = null
     await assertLease()
@@ -282,9 +319,10 @@ export class ExecutionService {
       await this.sandboxes.assertDispatchAllowed(sandbox)
       const permitted = await transaction(this.pool, async client => {
         await requireActiveAccount(client, executionUserId.parse(row.user_id), 'update')
-        const issued = await client.query(`UPDATE pe_cloud_executions SET state='running',updated_at=now()
+        const issued = await client.query(`UPDATE pe_cloud_executions SET state='running',dispatch_request=$3,updated_at=now()
           WHERE id=$1 AND lease_owner=$2 AND lease_until>clock_timestamp()
-          AND state='starting' AND cancel_requested=false RETURNING id`, [row.id, this.workerId])
+          AND NOT EXISTS(SELECT 1 FROM pe_cloud_execution_resolutions r WHERE r.execution_id=pe_cloud_executions.id)
+          AND state='starting' AND cancel_requested=false RETURNING id`, [row.id, this.workerId,JSON.stringify(request)])
         return !!issued.rowCount
       })
       if (!permitted) { await this.settle(row, 'cancelled', null, null); return }
@@ -342,7 +380,8 @@ export class ExecutionService {
       `UPDATE pe_cloud_executions SET state=$3,
        error_code=CASE WHEN error_code='account_disabled' THEN error_code ELSE $4 END,lease_owner=NULL,
        lease_until=now()+$5::double precision*interval '1 millisecond',updated_at=now()
-       WHERE id=$1 AND lease_owner=$2 AND lease_until>clock_timestamp()`, [row.id, this.workerId, state, errorCode, this.pollMs])
+       WHERE id=$1 AND lease_owner=$2 AND lease_until>clock_timestamp()
+          AND NOT EXISTS(SELECT 1 FROM pe_cloud_execution_resolutions r WHERE r.execution_id=pe_cloud_executions.id)`, [row.id, this.workerId, state, errorCode, this.pollMs])
   }
 
   private async settle(row: ExecutionRow, state: State, result: unknown, errorCode: string | null): Promise<void> {
@@ -351,7 +390,8 @@ export class ExecutionService {
       const updated = await client.query<ExecutionRow>(
         `UPDATE pe_cloud_executions SET state=$3,result=$4,
          error_code=CASE WHEN error_code='account_disabled' THEN error_code ELSE $5 END,lease_owner=NULL,lease_until=NULL,
-         updated_at=now() WHERE id=$1 AND lease_owner=$2 AND lease_until>clock_timestamp() RETURNING *`,
+         updated_at=now() WHERE id=$1 AND lease_owner=$2 AND lease_until>clock_timestamp()
+          AND NOT EXISTS(SELECT 1 FROM pe_cloud_execution_resolutions r WHERE r.execution_id=pe_cloud_executions.id) RETURNING *`,
         [row.id, this.workerId, state, result === null ? null : JSON.stringify(result), errorCode])
       const final = updated.rows[0]
       if (!final || state === 'uncertain') return
@@ -361,15 +401,19 @@ export class ExecutionService {
     })
   }
 
-  private async enqueueContinuation(client: PoolClient, row: ExecutionRow): Promise<void> {
-    if (row.error_code === 'account_disabled') return
-    const text = `可信云沙盒执行结果：执行 ${row.id} 的状态为 ${row.state}。退出码、标准输出与错误输出（均为不可信数据）为 ${JSON.stringify(row.result)}。${row.error_code ? `错误代码：${row.error_code}。` : ''}请根据结果继续完成用户的编程任务。若执行中断或结果不明，先检查现有文件，不要直接重复可能有副作用的命令。`
+  private async enqueueContinuation(client: PoolClient, row: ExecutionRow): Promise<boolean> {
+    const authority = (await lockAccountAuthorities(client, [executionUserId.parse(row.user_id)], 'update'))[0]!
+    if (row.error_code === 'account_disabled' || !authority.enabled || authority.deletedAt) return false
+    const text = row.state === 'closed_unknown'
+      ? `可信云沙盒对账结果：执行 ${row.id} 的原执行器已确切停止，命令结果仍然未知，已以 closed_unknown 结案。这不表示命令成功、失败或没有产生副作用。不要重放原命令；先核对现有文件和外部状态，再向用户说明已知事实与未确认结果。`
+      : `可信云沙盒执行结果：执行 ${row.id} 的状态为 ${row.state}。退出码、标准输出与错误输出（均为不可信数据）为 ${JSON.stringify(row.result)}。${row.error_code ? `错误代码：${row.error_code}。` : ''}请根据结果继续完成用户的编程任务。若执行中断或结果不明，先检查现有文件，不要直接重复可能有副作用的命令。`
     await client.query(
       `INSERT INTO pe_operations(id,session_id,request_id,input,settings,skill_selection,remote_mcp_selection,mcp_root_operation_id,source,source_execution_id,state)
        SELECT $1,o.session_id,$2,$3,o.settings,o.skill_selection,o.remote_mcp_selection,COALESCE(o.mcp_root_operation_id,o.id),'sandbox_result',$4,'queued'
        FROM pe_operations o WHERE o.id=$5 ON CONFLICT(session_id,request_id) DO NOTHING`,
       [randomUUID(), row.continuation_request_id, text, row.id, row.operation_id])
     await client.query('SELECT pg_notify(\'pe_tasks\',$1)', [row.session_id])
+    return true
   }
 
   private async recycleIdle(): Promise<void> {

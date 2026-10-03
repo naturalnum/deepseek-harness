@@ -23,6 +23,8 @@ export default defineConfig([
     clean: false,
     dts: false,
     deps: {
+      alwaysBundle: ['@power-evolve/contracts/execution-resolution', /^zod(?:\/|$)/u, '@deepseek-ai/dsh-brand'],
+      onlyBundle: ['zod'],
       neverBundle: ['react', 'react/jsx-runtime', '@deepseek-ai/cordis',
         '@deepseek-ai/dsh-client-ui-slots', '@deepseek-ai/dsh-client-ui-primitives'],
     },
@@ -30,7 +32,7 @@ export default defineConfig([
       entryFileNames: 'client.js',
       banner: `window.__ModuleLoader__.load({ id: ${JSON.stringify(id)}, factory: (require) => {`,
       footer: 'return module.exports; } });',
-      intro: 'var module = { exports: {} }; var exports = module.exports;',
+      intro: 'var module = { exports: {} }; var exports = module.exports; globalThis.__zod_globalConfig ??= {}; globalThis.__zod_globalConfig.jitless = true;',
     },
   },
 ])

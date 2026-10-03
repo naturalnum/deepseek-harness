@@ -15,6 +15,10 @@ const CSS = `
 .pe-execution-target-pairing{display:flex;flex-direction:column;gap:8px}
 .pe-execution-target-pairing input{width:100%;box-sizing:border-box;padding:8px;border:1px solid var(--dsw-alias-border-primary,#ccc);border-radius:6px;background:var(--dsw-alias-bg-base,#fff);color:var(--dsw-alias-label-primary);font:13px ui-monospace,SFMono-Regular,Menlo,monospace}
 .pe-execution-target-pairing span{color:var(--dsw-alias-label-secondary);font-size:12px}
+.pe-execution-resolutions article{padding:12px 0;border-bottom:1px solid var(--dsw-alias-border-primary,#ccc)}
+.pe-execution-resolutions pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:240px;overflow:auto}
+.pe-execution-resolutions code{overflow-wrap:anywhere}
+.pe-execution-resolutions a{display:block;margin-top:8px}
 `
 
 export function installExecutionTargetStyles(): () => void {

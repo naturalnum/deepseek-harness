@@ -3,13 +3,16 @@ import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { ExecutionTargetClient, targetKey, type ExecutionTarget, type Pairing, type TargetOption } from './execution-target-client.ts'
 import type { ExecutionTargetLocaleKey } from './locales.ts'
+import { ExecutionResolutions } from './ExecutionResolutions.tsx'
+import { ExecutionResolutionClient } from './execution-resolution-client.ts'
 
 export type ExecutionTargetPickerProps = PropsRuntime<'conversation.input.right'> & {
   readonly sessionId: string
   readonly client: ExecutionTargetClient
+  readonly resolutionClient: ExecutionResolutionClient
 } & PropsLocale<'powerEvolve.executionTarget'>
 
-export function ExecutionTargetPicker({ sessionId, client, useSession, t }: ExecutionTargetPickerProps) {
+export function ExecutionTargetPicker({ sessionId, client, resolutionClient, useSession, t }: ExecutionTargetPickerProps) {
   const removed = useSession(state => state.removed)
   const [options, setOptions] = useState<readonly TargetOption[]>([])
   const [selected, setSelected] = useState<ExecutionTarget>(() => client.current(sessionId))
@@ -102,6 +105,7 @@ export function ExecutionTargetPicker({ sessionId, client, useSession, t }: Exec
       <button type="button" className="pe-execution-target-pair" disabled={removed}
         onClick={beginPair}>{t('pair')}</button>
       {error ? <span role="alert" className="pe-execution-target-error">{t('unavailable')}</span> : null}
+      <ExecutionResolutions sessionId={sessionId} removed={removed} client={resolutionClient} t={t} />
       <Modal open={pairOpen} onClose={closePair} title={t('pairTitle')} description={t('pairHelp')}
         closeLabel={t('close')} footer={<Button onClick={closePair}>{t('close')}</Button>}>
         {pairBusy && <p role="status">{t('pairLoading')}</p>}

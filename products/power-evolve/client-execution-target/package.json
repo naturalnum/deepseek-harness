@@ -22,9 +22,10 @@
   "scripts": {
     "bundle": "tsdown",
     "typecheck": "tsc -b tsconfig.json --pretty false",
-    "test": "tsx --test tests/*.test.ts"
+    "test": "tsx --test tests/*.test.ts && vitest run --config vitest.config.ts"
   },
   "dependencies": {
+    "@power-evolve/contracts": "workspace:*",
     "@deepseek-ai/dsh-api-session-controller": "workspace:*",
     "@deepseek-ai/dsh-client-locale": "workspace:*",
     "@deepseek-ai/dsh-client-ui-conversation": "workspace:*",
