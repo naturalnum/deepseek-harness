@@ -15,6 +15,8 @@ import re
 import unicodedata
 from pathlib import Path
 
+from report_images import prepare_image
+
 
 INLINE_MATH = re.compile(r"(\\\(.*?\\\)|\$.*?\$)")
 HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*$")
@@ -24,6 +26,8 @@ NUMBERED_HEADING = {
     3: re.compile(r"^([0-9]+\.[0-9]+\.[0-9]+)\s+(\S.*)$"),
 }
 TABLE_CAPTION = re.compile(r"^表\s*[0-9]+[-－][0-9]+\s*(.*)$")
+FIGURE_CAPTION = re.compile(r"^图\s*([0-9]+)[-－]([0-9]+)\s*(\S.*)$")
+MARKDOWN_IMAGE = re.compile(r'^!\[([^\]]*)\]\((?:<([^<>]+)>|([^\s()]+))(?:\s+"[^"]*")?\)$')
 EQUATION_TAG = re.compile(r"\s*\\tag\{[^{}]*\}")
 EQUATION_LABEL = re.compile(r"\s*\\label\{[^{}]*\}")
 SENTENCE_END = re.compile(r"(?:[。！？.!?…]|\\text\{[。！？.!?…]+\})\s*$")
@@ -334,13 +338,16 @@ def parse_table_lines(table_lines: list[str]) -> tuple[list[list[str]], list[str
     return parsed_rows, alignments
 
 
-def render_body(body_lines: list[str]) -> str:
+def render_body(body_lines: list[str], image_context: tuple[Path, Path] | None = None) -> str:
+    """Render report content and use the source/project directories for local image assets."""
+
     output: list[str] = []
     paragraph: list[str] = []
     paragraph_noindent = False
     pending_equation_explanation_noindent = False
     first_section = True
     heading_numbers = [0, 0, 0]
+    figure_number = 0
     i = 0
 
     def flush_paragraph() -> None:
@@ -394,6 +401,8 @@ def render_body(body_lines: list[str]) -> str:
                     output.append(r"\setcounter{" + command + "}{" + str(number[-1] - 1) + "}")
                 heading_numbers[level - 1] = number[-1]
                 heading_numbers[level:] = [0] * (3 - level)
+                if level == 1:
+                    figure_number = 0
             if level == 1:
                 command = r"\section{" if numbered else r"\section*{"
                 output.append(command + escape_text(title) + "}")
@@ -511,15 +520,55 @@ def render_body(body_lines: list[str]) -> str:
             output.append("")
             continue
 
-        # The source uses explicit Chinese figure placeholders instead of
-        # Markdown image syntax. Let the class allocate chapter-aware figure
-        # numbers and place the caption below the placeholder box.
+        if stripped.startswith("!["):
+            image = MARKDOWN_IMAGE.fullmatch(stripped)
+            if image is None:
+                raise ValueError("Unsupported Markdown figure image syntax; use a standalone local image reference")
+            if image_context is None:
+                raise ValueError("Figure images require the source Markdown directory and LaTeX project directory")
+            alt = image.group(1).strip()
+            caption = FIGURE_CAPTION.fullmatch(alt)
+            next_nonblank = i + 1
+            while next_nonblank < len(body_lines) and not body_lines[next_nonblank].strip():
+                next_nonblank += 1
+            following = (FIGURE_CAPTION.fullmatch(body_lines[next_nonblank].strip())
+                         if next_nonblank < len(body_lines) else None)
+            if caption and following and caption.groups() != following.groups():
+                raise ValueError("Figure image alt caption disagrees with the following caption")
+            caption = following or caption
+            title = caption.group(3) if caption else alt
+            if not title:
+                raise ValueError("Figure image requires a supplied caption")
+            if caption and int(caption.group(1)) != heading_numbers[0]:
+                raise ValueError("Figure image caption number does not match the current chapter")
+            serial = int(caption.group(2)) if caption else figure_number + 1
+            if serial < 1:
+                raise ValueError("Figure image caption serial must be positive")
+            asset = prepare_image(*image_context, image.group(2) or image.group(3))
+            flush_paragraph()
+            pending_equation_explanation_noindent = False
+            if serial != figure_number + 1:
+                output.append(r"\setcounter{figure}{" + str(serial - 1) + "}")
+            output.extend([
+                r"\begin{figure}[htbp]",
+                r"\centering",
+                r"\includegraphics[width=\textwidth,height=0.65\textheight,keepaspectratio]{" + asset + "}",
+                r"\caption{" + escape_text(title) + "}",
+                r"\label{fig:" + str(heading_numbers[0]) + "-" + str(serial) + "}",
+                r"\end{figure}", "",
+            ])
+            figure_number = serial
+            i = next_nonblank + 1 if following else i + 1
+            continue
+
+        # Retain explicitly authored placeholder syntax for unfinished source figures.
         figure_match = re.match(r"^【图\s*[0-9]+[-－][0-9]+\s*占位：(.+?)】$", stripped)
         if figure_match:
             flush_paragraph()
             pending_equation_explanation_noindent = False
             description = figure_match.group(1).strip().rstrip("。")
             output.append(r"\reportfigureplaceholder{" + escape_text(description) + "}")
+            figure_number += 1
             output.append("")
             i += 1
             continue
@@ -565,7 +614,7 @@ def build_tex(source: Path, destination: Path, title_en: str) -> None:
     title_en = title_en.strip()
     lines = source.read_text(encoding="utf-8-sig").splitlines()
     title, abstract_cn, keywords_cn, abstract_en, keywords_en, body_start, refs_start = parse_front_matter(lines)
-    body = render_body(lines[body_start:refs_start])
+    body = render_body(lines[body_start:refs_start], (source.parent.resolve(), destination.parent.resolve()))
     references = render_references(lines[refs_start + 1 :])
     today = dt.date.today()
     generated_report_date = f"{today.year}年{today.month}月{today.day}日"

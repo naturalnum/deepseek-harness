@@ -24,7 +24,7 @@ def main() -> int:
     if args.passes < 1:
         parser.error("--passes must be at least 1")
 
-    command = [args.engine, "-interaction=nonstopmode", "-halt-on-error", tex.name]
+    command = [args.engine, "-no-shell-escape", "-interaction=nonstopmode", "-halt-on-error", tex.name]
     for pass_number in range(1, args.passes + 1):
         print(f"XeLaTeX pass {pass_number}/{args.passes}: {' '.join(command)}")
         result = subprocess.run(command, cwd=tex.parent, text=True)
