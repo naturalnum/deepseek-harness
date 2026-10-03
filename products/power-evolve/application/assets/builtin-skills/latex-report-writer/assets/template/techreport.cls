@@ -419,6 +419,8 @@
 % -----------------------------------------------------------------------------
 % Abstract and table of contents
 % -----------------------------------------------------------------------------
+% fontsize already supplies the required 1.5-line leading; keep it unscaled.
+\newcommand{\TR@abstractfont}{\setstretch{1}\fontsize{12pt}{18pt}\selectfont}
 \newcommand{\makeabstract}{%
   \clearpage
   \thispagestyle{trfront}
@@ -429,8 +431,9 @@
     {\heiti\fontsize{18pt}{27pt}\selectfont 内容摘要\par}
   \end{center}
   \vspace{3mm}
-  {\songti\fontsize{12pt}{18pt}\selectfont \hspace*{2em}\TR@abstractcn\par}
-  {\songti\fontsize{12pt}{18pt}\selectfont \hspace*{2em}关键词：\TR@keywordscn\par}
+  {\songti\TR@abstractfont \hspace*{2em}\TR@abstractcn\par}
+  \nobreak
+  {\songti\TR@abstractfont \interlinepenalty=10000 \hspace*{2em}关键词：\TR@keywordscn\par}
   \endgroup
 
   \clearpage
@@ -443,8 +446,9 @@
     {\rmfamily\fontsize{18pt}{27pt}\selectfont ABSTRACT\par}
   \end{center}
   \vspace{3mm}
-  {\rmfamily\fontsize{12pt}{18pt}\selectfont \hspace*{2em}\TR@abstracten\par}
-  {\rmfamily\fontsize{12pt}{18pt}\selectfont \hspace*{2em}KEYWORDS: \TR@keywordsen\par}
+  {\rmfamily\TR@abstractfont \hspace*{2em}\TR@abstracten\par}
+  \nobreak
+  {\rmfamily\TR@abstractfont \interlinepenalty=10000 \hspace*{2em}KEYWORDS: \TR@keywordsen\par}
   \endgroup
 }
 

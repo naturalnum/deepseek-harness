@@ -17,7 +17,7 @@ Use this skill as the LaTeX backend for formal Chinese technical reports. Keep r
 6. If the source does not provide a cover date, fill it with the report-generation date in `YYYY年M月D日` form. Do not infer a project completion date or a publication date from surrounding prose.
 7. Require a supplied English cover title and place it directly below the Chinese title. The converter requires `--title-en`; it does not translate titles or supply report-specific abstracts and keywords. If bilingual metadata is missing, request it before conversion.
 
-The current project variant intentionally places the Chinese and English abstracts on separate pages. This overrides the older source specification that places them together.
+The current project variant starts the Chinese and English abstracts on separate new pages; either abstract may continue onto later pages when its length requires it. This overrides the older source specification that places them together. Abstract body and keywords use 12pt type with an effective 18pt baseline; keep each keyword block with the preceding paragraph's final line without deleting content or shrinking type.
 
 ## Workflow
 

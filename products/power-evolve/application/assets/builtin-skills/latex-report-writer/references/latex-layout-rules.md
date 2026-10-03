@@ -49,7 +49,7 @@ This reference records decisions that are specific to the current XeLaTeX implem
 
 ## Abstracts
 
-The current project variant intentionally places the Chinese abstract and keywords on one front-matter page and the English abstract and keywords on the next front-matter page. This is a deliberate deviation from the older source specification that requested one shared abstract page.
+The current project variant starts the Chinese and English abstracts on separate new front-matter pages. Either may continue normally when its content exceeds a page. Abstract body and keywords use 12pt type with an effective 18pt baseline, without multiplying that baseline by another stretch factor. Each keyword block stays with the preceding paragraph's final line and does not split between pages; the complete abstract is not kept in an unbreakable box. This is a deliberate deviation from the older specification's shared abstract page.
 
 ## Validation expectations
 

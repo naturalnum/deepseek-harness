@@ -4,6 +4,7 @@
 
 - Add an explicitly selected portable font profile using installed open-source Noto CJK SC and TeX Gyre Termes faces; retain template mode as the default and report its unavailable template fonts and actual fallback.
 - Validate compact PostScript names and required profile families, report all PDF fonts, and require the final compile log; reject profile mismatches, missing glyphs, unembedded or unsubsetted fonts, malformed font rows and compile/layout warnings.
+- Correct abstract body and keyword leading to an effective 18pt at 12pt type, retain paragraphs and content, and attach the keyword block to the preceding final line while allowing normal abstract continuation pages.
 
 ## 1.0.4
 

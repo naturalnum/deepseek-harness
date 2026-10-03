@@ -7,7 +7,7 @@
   "changes": [
     {
       "version": "1.0.5",
-      "summary": "Add opt-in portable typography using installed Noto CJK SC and TeX Gyre Termes PostScript faces without copying proprietary fonts; retain default template selection with explicit fallback diagnostics. Validate actual compact PDF font names, required profile families, embedding/subsetting and the final compile log; reject missing glyphs, profile mismatches and compile/layout errors."
+      "summary": "Add opt-in portable typography using installed Noto CJK SC and TeX Gyre Termes faces without copying proprietary fonts; retain default template selection with explicit fallback diagnostics. Validate compact PDF names including the Noto SC collection's shared CFF aliases, required profile families, embedding/subsetting and the final compile log; reject missing glyphs, profile mismatches and compile/layout errors. Correct abstract body/keyword leading to an effective 18pt at 12pt type, retain source paragraphs and content, attach keywords to the preceding final line and allow normal continuation pages."
     },
     {
       "version": "1.0.4",
