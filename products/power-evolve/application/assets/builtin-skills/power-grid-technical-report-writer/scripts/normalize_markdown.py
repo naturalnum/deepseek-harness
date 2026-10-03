@@ -5,6 +5,7 @@ Operations outside fenced/inline code and LaTeX math:
 - Normalize long-dash variants to either ASCII '-' or Unicode em dash '—'.
 - Remove whitespace between a digit and an adjacent Han character in either order.
 - Preserve ATX heading markers, numbering and their separators.
+- Preserve figure/table caption numbering separators, including image alt captions.
 """
 from __future__ import annotations
 
@@ -17,8 +18,9 @@ ATX_HEADING_PREFIX = (
     r"^[ \t]{0,3}#{1,6}[ \t]+(?:(?:第[ \t]*(?:[0-9]+|[一二三四五六七八九十百]+)"
     r"[ \t]*章|[0-9]+(?:\.[0-9]+)*[.、]?)[ \t]+)?"
 )
+CAPTION_PREFIX = r"^[ \t]{0,3}(?:!\[)?(?:图|表)[ \t]*[A-Z0-9]+-[0-9]+[ \t]+(?=\S)"
 PROTECTED_RE = re.compile(
-    r"(" + ATX_HEADING_PREFIX + r"|`+.*?`+|\$\$.*?\$\$|(?<!\\)\$(?!\$).*?(?<!\\)\$|\\\[.*?\\\]|\\\(.*?\\\))",
+    r"(" + ATX_HEADING_PREFIX + r"|" + CAPTION_PREFIX + r"|`+.*?`+|\$\$.*?\$\$|(?<!\\)\$(?!\$).*?(?<!\\)\$|\\\[.*?\\\]|\\\(.*?\\\))",
     re.S | re.M,
 )
 LONG_DASH_RE = re.compile(r"[—–―﹘－]+")

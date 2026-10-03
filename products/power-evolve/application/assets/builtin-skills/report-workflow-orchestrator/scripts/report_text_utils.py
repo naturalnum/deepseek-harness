@@ -985,7 +985,7 @@ def normalize_markdown_text(
     dash_style: str = "hyphen",
     remove_digit_cjk_spaces: bool = True,
 ) -> tuple[str, dict[str, Any]]:
-    """Normalize prose outside fenced and inline code, preserving ATX heading prefixes.
+    """Normalize prose outside code, preserving heading and caption numbering prefixes.
 
     dash_style is configurable because both ASCII hyphen and Chinese em dash are
     valid house-style choices. The suite default is ``hyphen``.
@@ -1015,11 +1015,12 @@ def normalize_markdown_text(
             out.append(line)
             continue
 
-        # Keep heading markers, numbering and their separators for downstream parsers.
-        heading = ATX_HEADING_PREFIX.match(line)
-        if heading:
-            out.append(heading.group(0))
-            line = line[heading.end():]
+        prefix = ATX_HEADING_PREFIX.match(line) or re.match(
+            r"^[ \t]{0,3}(?:!\[)?(?:图|表)[ \t]*[A-Z0-9]+-[0-9]+[ \t]+(?=\S)", line
+        )
+        if prefix:
+            out.append(prefix.group(0))
+            line = line[prefix.end():]
 
         # Preserve inline code spans and normalize only prose fragments.
         parts = re.split(r"(`[^`\n]*`)", line)

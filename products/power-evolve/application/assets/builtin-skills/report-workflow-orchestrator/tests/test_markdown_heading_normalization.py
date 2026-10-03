@@ -16,6 +16,8 @@ ROOT = Path(__file__).resolve().parents[1]
 GENERATOR = ROOT.parent / "power-grid-technical-report-writer"
 sys.path.insert(0, str(ROOT.parent / "tech-report-writer" / "scripts"))
 from orchestration_adapter import final_report_data
+sys.path.insert(0, str(ROOT / "scripts"))
+from workflow_engine import _normalize_report_artifact
 
 NORMALIZERS = [ROOT / "scripts" / "normalize_markdown.py", GENERATOR / "scripts" / "normalize_markdown.py"]
 TITLES = ["项目概述", "电力负荷预测技术", "总结与展望"]
@@ -85,6 +87,31 @@ class MarkdownHeadingNormalizationTest(unittest.TestCase):
             with self.subTest(script=script.parent.parent.name), tempfile.TemporaryDirectory() as directory:
                 output = self.normalize(script, source, Path(directory))
                 self.assertEqual(output.read_text(encoding="utf-8"), expected)
+
+    def test_actual_qa_caption_prefixes_survive_both_cli_entrypoints(self):
+        source = ("![图2-1 配电负荷异常识别方法技术路线](figures/fig2-1-v5.svg)\n\n"
+                  "图2-1 配电负荷异常识别方法技术路线\n\n"
+                  "表2-1 修正标准分数与普通标准分数在12条验证记录上的计数与指标\n\n"
+                  "正文 20 字—说明，图 2-1 所示。\n")
+        expected = source.replace("正文 20 字—说明，图 2-1 所示。", "正文20字-说明，图2-1所示。")
+        for script in NORMALIZERS:
+            with self.subTest(script=script.parent.parent.name), tempfile.TemporaryDirectory() as directory:
+                output = self.normalize(script, source, Path(directory))
+                self.assertEqual(output.read_text(encoding="utf-8"), expected)
+
+    def test_assembly_preserves_captions_and_still_cleans_title_text(self):
+        source = "# 2 研究方法\n图2-1 记录中20 条—分组\n表2-1 记录中10 个值—分组\n正文 12 条。\n表2-1中的10 条记录。\n"
+        expected = "# 2 研究方法\n图2-1 记录中20条-分组\n表2-1 记录中10个值-分组\n正文12条。\n表2-1中的10条记录。\n"
+        registry = json.loads((ROOT / "skill-registry.json").read_text(encoding="utf-8"))
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "assembled-copy.md"
+            path.write_text(source, encoding="utf-8")
+            artifact = {"artifact_id": "caption-regression", "version": 1,
+                        "content": {"markdown_path": str(path)}}
+            normalized = _normalize_report_artifact(artifact, registry)
+            self.assertEqual(path.read_text(encoding="utf-8"), expected)
+            self.assertEqual(normalized["content"], artifact["content"])
+            self.assertTrue(normalized["quality_metrics"]["markdown_normalization"]["changed"])
 
 
 if __name__ == "__main__":

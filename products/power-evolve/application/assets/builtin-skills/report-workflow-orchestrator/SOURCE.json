@@ -2,9 +2,13 @@
   "originalCommit": "a03460fe66a3f77114ff3bb906476105e1d470b7",
   "originalPath": "services/cloud-server/assets/builtin-skills/report-workflow-orchestrator",
   "originalRelease": "1.1.21",
-  "productRelease": "1.1.25",
+  "productRelease": "1.1.26",
   "maintenance": "PowerEvolve product fork: structured argument architecture, Markdown heading preservation, and explicit user revision requests; original writing and review rules retained.",
   "changes": [
+    {
+      "version": "1.1.26",
+      "summary": "Preserve numbered figure/table caption separators and image alt prefixes in the actual final report assembly normalizer and its CLI, retaining existing heading protection and cleanup within titles and prose."
+    },
     {
       "version": "1.1.22",
       "summary": "Accept the existing nested chapter mapping, reject invalid responses before consuming the pending request, avoid duplicate foundation/conclusion targets, and repair previously applied invalid drafts through a fresh child request and append-only version before explicit confirmation."

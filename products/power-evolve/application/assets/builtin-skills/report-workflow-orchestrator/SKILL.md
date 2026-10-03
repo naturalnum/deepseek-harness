@@ -1,7 +1,7 @@
 ---
 name: report-workflow-orchestrator
 description: 编排电网科技报告的项目档案、论证架构、目录、章节生成与审核、全文审核，以及最终 Word 排版、格式修复和逐页验收。所有子 Skill 名称和动作集中在配置区。
-version: 1.1.25
+version: 1.1.26
 ---
 
 # Report Workflow Orchestrator
@@ -416,6 +416,7 @@ python scripts/normalize_markdown.py final-report.md --in-place --dash-style hyp
 - 删除数字与相邻汉字之间的横向空格，例如 `220 kV 电网` 中数字与汉字直接相邻的部分；
 - 围栏代码块和行内代码保持不变；
 - ATX标题的层级标记、章/节编号和编号后的分隔空格保持不变；标题正文继续执行原清洗规则，供标题覆盖校验与Word源文件解析读取；
+- 独立图/表题和图片alt题注的编号与正式题名之间保留分隔空格；题名内部继续执行原清洗规则，供Word题注和目录识别；
 - 该步骤只做字符级规范化，不调用大模型，不改写报告语义。
 
 如项目规范要求保留中文长划线，将 `markdown_dash_style` 改为 `em-dash`。

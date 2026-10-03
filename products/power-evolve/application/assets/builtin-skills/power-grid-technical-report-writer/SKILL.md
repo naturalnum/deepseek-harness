@@ -165,7 +165,7 @@ handoff_rules:
 
 - 目录生成或修改后，必须实际调用 `report-reviewer.review_outline`；
 - 章节生成或修改后，先通过80%确定性字数门禁，再实际调用 `report-reviewer.review_chapter`；
-- 完整报告组装或修改后，先调用 `scripts/normalize_markdown.py`，再实际调用 `report-reviewer.review_report`；清洗保留ATX标题的层级标记、章/节编号和分隔空格，标题正文与普通正文继续执行原清洗规则；
+- 完整报告组装或修改后，先调用 `scripts/normalize_markdown.py`，再实际调用 `report-reviewer.review_report`；清洗保留ATX标题的层级标记、章/节编号，以及独立图/表题和图片alt题注的编号分隔空格，题名内部与普通正文继续执行原清洗规则；
 - 生成 Skill 的前置检查、脚本校验、写作约束检查和自检不能替代正式审核；
 - 只有当前 `artifact_id + version` 获得结构化 `pass` 后，编排器才可以请求用户确认；
 - 任何修改都必须产生新版本并重新审核，不得自行宣告审核通过。

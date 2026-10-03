@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.26
+
+- Preserve the delimiter between figure/table numbers and titles, including image alt captions, in final report assembly and the public normalization CLI.
+- Retain heading numbering prefixes, code preservation and normal cleanup within titles and prose; do not change workflow control, confirmed content or Word caption classification.
+
 ## 1.1.25
 
 - Permit explicit user feedback to authorize one revision of the current unconfirmed chapter stopped by an exact deterministic-gate or formal-review revision-limit reason and its matching latest failed review.
