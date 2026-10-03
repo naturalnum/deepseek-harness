@@ -1331,6 +1331,40 @@ def _set_cell_width(cell, width_mm):
     tc_width.set(qn("w:type"), "dxa")
 
 
+def _set_formula_table_widths(table):
+    """同步编号显示公式的固定列网格、表格总宽度与单元格宽度。"""
+    table.autofit = False
+    column_widths = (0, 146, 14)
+    for column, width in zip(table.columns, column_widths):
+        column.width = Mm(width)
+    table_width = table._tbl.tblPr.find(qn("w:tblW"))
+    if table_width is None:
+        table_width = OxmlElement("w:tblW")
+        table._tbl.tblPr.append(table_width)
+    table_width.set(qn("w:type"), "dxa")
+    table_width.set(qn("w:w"), str(sum(int(Mm(width).twips) for width in column_widths)))
+    for cell, width in zip(table.rows[0].cells, column_widths):
+        _set_cell_width(cell, width)
+
+
+def _repair_existing_formula_tables(doc):
+    """校准单行三列编号 OMML 表格，保留含文字标签或其他对象的数据表。"""
+    changed = 0
+    for table in doc.tables:
+        if len(table.rows) != 1 or len(table.columns) != 3:
+            continue
+        left, equation, number = table.rows[0].cells
+        if _element_plain_text(left._tc) or _element_plain_text(equation._tc):
+            continue
+        if not _element_contains_math(equation._tc) or not FORMULA_NUMBER_RE.fullmatch(number.text.strip()):
+            continue
+        if any(_has_embedded_object(paragraph) for cell in (left, number) for paragraph in cell.paragraphs):
+            continue
+        _set_formula_table_widths(table)
+        changed += 1
+    return changed
+
+
 def _remove_table_borders(table):
     table_pr = table._tbl.tblPr
     borders = table_pr.find(qn("w:tblBorders"))
@@ -1410,28 +1444,15 @@ def _replace_formula_markers(doc):
 
         table = doc.add_table(rows=1, cols=3)
         table.alignment = WD_TABLE_ALIGNMENT.CENTER
-        table.autofit = False
         _remove_table_borders(table)
-        table_layout = table._tbl.tblPr.find(qn("w:tblLayout"))
-        if table_layout is None:
-            table_layout = OxmlElement("w:tblLayout")
-            table._tbl.tblPr.append(table_layout)
-        table_layout.set(qn("w:type"), "fixed")
-
         # Fixed-layout readers use tblGrid, not just each cell's tcW. Keep the
         # equation column at its declared width rather than the default third.
-        column_widths = (0, 146, 14)
-        for column, width in zip(table.columns, column_widths):
-            column.width = Mm(width)
-        table_width = table._tbl.tblPr.find(qn("w:tblW"))
-        table_width.set(qn("w:type"), "dxa")
-        table_width.set(qn("w:w"), str(sum(int(Mm(width).twips) for width in column_widths)))
+        _set_formula_table_widths(table)
 
         row = table.rows[0]
         row_pr = row._tr.get_or_add_trPr()
         row_pr.append(OxmlElement("w:cantSplit"))
-        for cell, width in zip(row.cells, column_widths):
-            _set_cell_width(cell, width)
+        for cell in row.cells:
             _set_cell_margins_zero(cell)
             cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
 
@@ -1484,6 +1505,7 @@ def format_report(input_path, output_path):
     _configure_body(doc)
     _replace_inline_formula_markers(doc)
     _replace_formula_markers(doc)
+    _repair_existing_formula_tables(doc)
     # 必须在行内/独立公式替换之后再统一段内符号，避免后插入 run 或模板
     # theme 字体让个别标点、单位、数学技术符号出现字号/字体跳变。
     _normalize_inline_symbol_formatting(doc)

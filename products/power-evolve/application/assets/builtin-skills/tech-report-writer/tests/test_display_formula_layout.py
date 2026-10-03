@@ -43,6 +43,17 @@ def formatted_document():
     return document
 
 
+def legacy_document():
+    """Restore the actual released grid mismatch on native, marker-free equations."""
+    document = formatted_document()
+    for formula, table in zip(FORMULAS, document.tables):
+        for column, width in zip(table._tbl.tblGrid, formula["originalGridTwips"]):
+            column.set(qn("w:w"), str(width))
+        table._tbl.tblPr.find(qn("w:tblW")).set(qn("w:type"), "auto")
+        table._tbl.tblPr.find(qn("w:tblW")).set(qn("w:w"), "0")
+    return document
+
+
 class DisplayFormulaLayout(unittest.TestCase):
     def readback(self):
         with tempfile.TemporaryDirectory(prefix="word-formula-") as directory:
@@ -82,6 +93,30 @@ class DisplayFormulaLayout(unittest.TestCase):
         self.assertIn("recall=TPTP+FN", texts[4])
         self.assertEqual([paragraph.text for paragraph in document.paragraphs],
                          ["式(" + formula["number"] + ")后正文保持。" for formula in FORMULAS])
+
+    def test_existing_marker_free_docx_layout_keeps_data_tables(self):
+        legacy = legacy_document()
+        data_table = legacy.add_table(rows=1, cols=3)
+        data_table.rows[0].cells[1].add_paragraph("保留普通指标表：")
+        data_table.rows[0].cells[1].paragraphs[0]._p.append(parse_xml(FORMULAS[0]["omml"]))
+        data_table.rows[0].cells[2].text = "（2-1）"
+        original_data_grid = [column.get(qn("w:w")) for column in data_table._tbl.tblGrid]
+        with tempfile.TemporaryDirectory(prefix="word-formula-existing-") as directory:
+            source, destination = Path(directory) / "legacy.docx", Path(directory) / "repaired.docx"
+            legacy.save(source)
+            before = source.read_bytes()
+            reopened = Document(source)
+            self.assertEqual(formatter._repair_existing_formula_tables(reopened), 5)
+            reopened.save(destination)
+            self.assertEqual(source.read_bytes(), before, "format repair must save a new document")
+            document = Document(destination)
+        for formula, table in zip(FORMULAS, document.tables[:5]):
+            with self.subTest(number=formula["number"]):
+                self.assertGreater(table.columns[1].width.mm, 140)
+                self.assertEqual("".join(node.text or "" for node in table._tbl.iter(qn("m:t"))), formula["mathText"])
+                self.assertEqual(table.rows[0].cells[2].text, "（" + formula["number"] + "）")
+        self.assertEqual([column.get(qn("w:w")) for column in document.tables[-1]._tbl.tblGrid], original_data_grid)
+        self.assertIn("保留普通指标表：", document.tables[-1].rows[0].cells[1].text)
 
 
 if __name__ == "__main__":
