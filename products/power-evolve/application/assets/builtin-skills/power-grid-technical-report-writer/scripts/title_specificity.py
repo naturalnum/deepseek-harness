@@ -47,6 +47,8 @@ KNOWN_CHINESE_VARIANTS = {
     "双仿射关系建模", "原型网络", "共形预测", "温度缩放",
     "解耦注意力预训练语言编码", "后交互语义重排序", "稀疏门控双专家混合",
     "蒙特卡洛随机失活贝叶斯不确定性", "多域物理联合仿真数字孪生",
+    # Named statistical estimators/transforms are concrete without added AI mechanisms.
+    "中位数", "中位数绝对偏差", "标准分数", "修正标准分数", "混淆矩阵",
 }
 
 LATIN_TECH_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9+_.-]*")

@@ -100,8 +100,8 @@
         },
         {
           "source": "references/technical-title-naming.md",
-          "blocks": 144,
-          "kept": 144
+          "blocks": 145,
+          "kept": 145
         },
         {
           "source": "references/three-subpoint-and-indicator-coverage.md",
@@ -124,9 +124,9 @@
           "kept": 19
         }
       ],
-      "unique_blocks": 578,
+      "unique_blocks": 579,
       "deduplicated_blocks": 6,
-      "characters": 67501
+      "characters": 68144
     },
     {
       "name": "21-literature",

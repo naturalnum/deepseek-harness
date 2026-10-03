@@ -68,7 +68,7 @@
 
 ## 3. 技术章从第2章起按报告范围映射
 
-目录生成前先登记 `parent_task_id`、`parent_task_order` 和 `task_role`。前序课题标记为 `technical-research`，最后一个课题固定标记为 `engineering-implementation`。
+目录生成前先登记来源中的 `parent_task_id`、`parent_task_order` 和 `task_role`。完整总报告按任务书全部课题的原始顺序，将前序课题标记为 `technical-research`、最后一个课题标记为 `engineering-implementation`；具体课题报告继承来源提供的父课题角色和原始顺序，不以当前可见课题的最大序号推断完整任务书的最后课题。父课题身份、顺序、角色和研究内容归属必须完整，不能通过省略或改写角色规避对应标题规则。
 
 总报告严格执行“一个课题 → 一个技术章”；具体课题报告严格执行“一个来源研究内容小点 → 一个技术章”。数量、顺序、技术边界和标题名词化规则保持不变。其他课题或其他报告范围的内容不得进入当前技术章。
 

@@ -1150,8 +1150,8 @@ def main() -> int:
                     "保留具体 technical_signature，将部分标题改为直接复合技术签名表达。"
                 )
 
-    # Parent-task role order.
-    if task_orders:
+    # Only a complete total report exposes the final parent task in the source order.
+    if total_report_mode and task_orders:
         max_order = max(task_orders.values())
         if sorted(set(task_orders.values())) != list(range(1, max_order + 1)):
             errors.append(f"课题顺序不连续：{sorted(set(task_orders.values()))}。")
