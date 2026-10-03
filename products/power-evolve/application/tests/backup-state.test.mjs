@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import test from 'node:test'
 import { inspectBackupState, inventoryBackupTree, requireIdleBackupState } from '../../scripts/backup-state.mjs'
 
-function database({ schema = 27, connector = [], desktop = [], active = {}, fail, closeFails = false } = {}) {
+function database({ schema = 28, connector = [], desktop = [], resolutions = [], active = {}, fail, closeFails = false } = {}) {
   let instance
   class Client {
     constructor(options) { this.options = options; this.queries = []; instance = this }
@@ -33,6 +33,12 @@ function database({ schema = 27, connector = [], desktop = [], active = {}, fail
       if (sql.includes('FROM pe_skill_package_versions')) return { rows: [{
         user_id: '00000000-0000-4000-8000-000000000001', archive_digest: 'archive',
         manifest_digest: 'manifest', manifest: { format: 1 } }] }
+      if (sql.includes('FROM pe_cloud_execution_resolutions ')) {
+        const predicate = sql.match(/WHERE state IN \(([^)]+)\)/u)
+        assert.ok(predicate)
+        const states = [...predicate[1].matchAll(/'([^']+)'/gu)].map(match => match[1])
+        return { rows: [{ n: active.cloudResolutions ?? resolutions.filter(state => states.includes(state)).length }] }
+      }
       for (const [table, key] of [['pe_mcp_checks', 'mcpChecks'], ['pe_mcp_actions', 'mcpActions'],
         ['pe_workspace_binding_requests', 'workspaceRecoveries'], ['pe_storage_directory_requests', 'storageDirectories']]) {
         if (sql.includes(`FROM ${table} `)) return { rows: [{ n: active[key] ?? 0 }] }
@@ -97,7 +103,7 @@ test('backup refuses dispatchable Connector and active desktop states from the r
 })
 
 test('backup retains historical schema gates, package metadata and existing active-work refusal', async () => {
-  for (const schema of [18, 21, 22, 23, 26, 27]) {
+  for (const schema of [18, 21, 22, 23, 26, 27, 28]) {
     const mock = database({ schema })
     const status = await inspectBackupState(mock.Client, privateUrl)
     assert.equal(status.schema, schema)
@@ -109,13 +115,23 @@ test('backup retains historical schema gates, package metadata and existing acti
     assert.equal(Object.hasOwn(status.active, 'mcpActions'), schema >= 23)
     assert.equal(Object.hasOwn(status.active, 'workspaceRecoveries'), schema >= 27)
     assert.equal(Object.hasOwn(status.active, 'storageDirectories'), schema >= 27)
+    assert.equal(Object.hasOwn(status.active, 'cloudResolutions'), schema >= 28)
     assert.doesNotThrow(() => requireIdleBackupState(status))
   }
   for (const key of ['operations', 'executions', 'stdio', 'ssh', 'sshactions',
-    'mcpChecks', 'mcpActions', 'workspaceRecoveries', 'storageDirectories']) {
+    'mcpChecks', 'mcpActions', 'workspaceRecoveries', 'storageDirectories', 'cloudResolutions']) {
     const mock = database({ active: { [key]: 1 } })
     const status = await inspectBackupState(mock.Client, privateUrl)
     assert.throws(() => requireIdleBackupState(status), /no active operations/u)
+  }
+})
+
+test('V28 backup excludes pending cleanup while retaining blocked and completed reconciliation records', async () => {
+  for (const state of ['accepted', 'stopping', 'completed', 'blocked']) {
+    const mock = database({ resolutions: [state] })
+    const status = await inspectBackupState(mock.Client, privateUrl)
+    if (['accepted', 'stopping'].includes(state)) assert.throws(() => requireIdleBackupState(status), /no active operations/u)
+    else assert.doesNotThrow(() => requireIdleBackupState(status))
   }
 })
 

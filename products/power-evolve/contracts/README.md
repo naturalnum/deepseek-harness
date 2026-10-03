@@ -8,7 +8,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This private library supplies account and file-download validation, response records, route names and branded identifiers. Both browser clients and the trusted Platform consume the same definitions. It imports no Platform services or Node APIs and registers no DSH plugin.
+This private library supplies account, file-download and execution-reconciliation validation, response records, route names and branded identifiers. Both browser clients and the trusted Platform consume the same definitions. It imports no Platform services or Node APIs and registers no DSH plugin.
 
 ## Table of Contents
 
@@ -26,6 +26,8 @@ Import download requests and the same-origin URL builder from `@power-evolve/con
 Import Runner observations, verified execution file records and conditional publication requests from `@power-evolve/contracts/execution-files`. The Platform rereads candidates through the authorized Workspace before persisting their size and SHA-256. Records identify versions observed after execution; they do not prove that a command was the only writer. Missing or incomplete scans remain explicit. Publication with an expected digest rejects changed source bytes.
 
 Import private storage selection and Workspace binding recovery records from `@power-evolve/contracts/workspace-binding`. A target identifies an owned storage space and a canonical relative directory, never a physical root. Recovery carries a stable request ID and expected binding generation; only a completed receipt advances it by one. Parsing supplies no storage ownership or stopped-writer evidence.
+
+Import Cloud execution reconciliation requests and receipts from `@power-evolve/contracts/execution-resolution`. A request identifies the original execution, a stable retry ID and a Platform-calculated writer fingerprint. It supplies no result, replacement command or stop evidence. Read-only Host routes and independent approval routes remain separate. A completed receipt requires a confirmed stopped writer; `closed_unknown` retains an unknown side-effect outcome.
 
 ## Implementation
 

@@ -74,6 +74,10 @@ export async function inspectBackupState(Client, url) {
       active.rows[0].storageDirectories = (await query(
         "SELECT count(*)::integer AS n FROM pe_storage_directory_requests WHERE state='accepted'")).rows[0].n
     }
+    if (schema.rows[0]?.version >= 28) {
+      active.rows[0].cloudResolutions = (await query(
+        "SELECT count(*)::integer AS n FROM pe_cloud_execution_resolutions WHERE state IN ('accepted','stopping')")).rows[0].n
+    }
     const packages = await query('SELECT user_id,archive_digest,manifest_digest,manifest FROM pe_skill_package_versions')
     return { schema: schema.rows[0]?.version, active: active.rows[0], packages: packages.rows,
       mcpRecords: Number(mcpRecords), sshRecords: Number(ssh.records), sshQuarantined: Number(ssh.quarantined) }
