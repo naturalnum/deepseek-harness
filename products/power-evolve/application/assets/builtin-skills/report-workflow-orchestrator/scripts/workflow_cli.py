@@ -12,6 +12,7 @@ from workflow_engine import (
     load_json,
     new_state,
     prepare_pending_request,
+    request_revision,
     save_json,
     submit_chapter_content_briefs,
     submit_project_intake,
@@ -56,6 +57,14 @@ def main() -> int:
     p = sub.add_parser("confirm")
     p.add_argument("state", type=Path)
     p.add_argument("target")
+
+    p = sub.add_parser("request-revision", help="Record explicit user feedback on the current unconfirmed version")
+    p.add_argument("state", type=Path)
+    p.add_argument("target")
+    p.add_argument("--artifact-id", required=True)
+    p.add_argument("--version", type=int, required=True)
+    p.add_argument("--request-id", required=True, help="Stable user request ID; distinct from the next child request ID")
+    p.add_argument("--feedback-file", type=Path, required=True, help='Read-only JSON object containing only {"feedback": "nonempty user feedback"}')
 
     p = sub.add_parser("status")
     p.add_argument("state", type=Path)
@@ -114,6 +123,18 @@ def main() -> int:
         updated = confirm(state, args.target)
         save_json(args.state, updated)
         print(json.dumps({"stage": updated["stage"], "confirmed": args.target}, ensure_ascii=False, indent=2))
+        return 0
+
+    if args.cmd == "request-revision":
+        feedback = load_json(args.feedback_file)
+        if not isinstance(feedback, dict) or set(feedback) != {"feedback"}:
+            raise ValueError('feedback file must contain only {"feedback": "nonempty user feedback"}')
+        updated = request_revision(state, args.target, args.artifact_id, args.version,
+                                   feedback["feedback"], args.request_id)
+        save_json(args.state, updated)
+        record = next(item for item in updated["user_revision_requests"] if item["request_id"] == args.request_id)
+        print(json.dumps({"stage": updated["stage"], "user_request_id": args.request_id,
+                          "target": args.target, "revision_status": record["status"]}, ensure_ascii=False, indent=2))
         return 0
 
     if args.cmd == "status":

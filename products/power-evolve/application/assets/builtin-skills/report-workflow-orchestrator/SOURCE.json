@@ -2,8 +2,8 @@
   "originalCommit": "a03460fe66a3f77114ff3bb906476105e1d470b7",
   "originalPath": "services/cloud-server/assets/builtin-skills/report-workflow-orchestrator",
   "originalRelease": "1.1.21",
-  "productRelease": "1.1.23",
-  "maintenance": "PowerEvolve product fork: structured argument-architecture admission and Markdown heading preservation; see tests/test_argument_architecture.py and tests/test_markdown_heading_normalization.py. Original writing and review rules retained.",
+  "productRelease": "1.1.24",
+  "maintenance": "PowerEvolve product fork: structured argument architecture, Markdown heading preservation, and explicit user revision requests; original writing and review rules retained.",
   "changes": [
     {
       "version": "1.1.22",
@@ -12,6 +12,10 @@
     {
       "version": "1.1.23",
       "summary": "Preserve ATX heading markers, numbering and separators during deterministic Markdown cleaning so the existing heading validator and final Word source parser keep reading confirmed headings."
+    },
+    {
+      "version": "1.1.24",
+      "summary": "Add version-bound, idempotent explicit user revision requests at unconfirmed approval points; preserve historical artifacts and formal reviews, route feedback separately to existing generator actions, require new output files and repeat current-version validation/review."
     }
   ]
 }

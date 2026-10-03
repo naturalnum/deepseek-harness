@@ -157,6 +157,70 @@
         }
       },
       "additionalProperties": true
+    },
+    "user_revision_requests": {
+      "type": "array",
+      "description": "Optional append-only user feedback records. Historical 1.1.3 states need no migration.",
+      "items": {
+        "type": "object",
+        "required": [
+          "request_id",
+          "target",
+          "artifact_id",
+          "base_version",
+          "feedback",
+          "feedback_source",
+          "status",
+          "requested_at",
+          "baseline_stage"
+        ],
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "target": {
+            "type": "string",
+            "minLength": 1
+          },
+          "artifact_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "base_version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "feedback": {
+            "type": "string",
+            "minLength": 1
+          },
+          "feedback_source": {
+            "const": "user"
+          },
+          "status": {
+            "enum": [
+              "requested",
+              "applied",
+              "failed"
+            ]
+          },
+          "requested_at": {
+            "type": "string"
+          },
+          "baseline_stage": {
+            "type": "string"
+          },
+          "revised_version": {
+            "type": "integer",
+            "minimum": 2
+          },
+          "child_request_id": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
     }
   },
   "additionalProperties": true

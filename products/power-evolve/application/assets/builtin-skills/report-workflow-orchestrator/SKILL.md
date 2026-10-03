@@ -1,7 +1,7 @@
 ---
 name: report-workflow-orchestrator
 description: 编排电网科技报告的项目档案、论证架构、目录、章节生成与审核、全文审核，以及最终 Word 排版、格式修复和逐页验收。所有子 Skill 名称和动作集中在配置区。
-version: 1.1.23
+version: 1.1.24
 ---
 
 # Report Workflow Orchestrator
@@ -262,6 +262,12 @@ preserve_existing_outline_rules: true
 - 结构校验和逐页视觉验收通过后的 Word 成品。
 
 审核通过不等于用户确认。用户确认后才能进入下一阶段。反过来，用户确认也不能替代审核：目录、章节和全文必须先取得当前版本的结构化 `pass` 结果。
+
+### 4.1 用户退回修订
+
+用户在待确认点明确要求修改时，使用 `scripts/workflow_cli.py request-revision` 或 `workflow_engine.request_revision`，固定当前目标、`artifact_id`、基线版本、用户请求编号和非空反馈。完整参数、支持矩阵、幂等规则与历史文件要求见 [用户退回修订](references/user-revision.md)。不得把模型自检当成用户反馈，不得自行确认；调用方负责取得真实用户指令。
+
+用户反馈单独记录在可选 `user_revision_requests`，不写入正式 `reviews`。随后运行 `next`，执行真实生成器修订动作，以新文件和新版本 `apply`。目录、章节、全文继续通过既有确定性门及绑定新版本的 `report-reviewer` 审核，等待用户显式确认；旧 `pass` 保留且不能确认新版本。已确认目标不可从此入口重开，Word 成品暂不支持用户退回；其结构或视觉校验失败仍沿现有 formatter 修复路径处理。
 
 ## 5. 自动审核循环
 

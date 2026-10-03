@@ -510,6 +510,172 @@ def _latest(slot: dict[str, Any], key: str = "versions") -> dict[str, Any] | Non
     return values[-1] if values else None
 
 
+def _confirmation_target(state: dict[str, Any]) -> str | None:
+    return {
+        "PROJECT_PROFILE_DRAFTED": "project_profile",
+        "ARGUMENT_ARCHITECTURE_DRAFTED": "argument_architecture",
+        "OUTLINE_REVIEW_PASSED": "outline",
+        "REFERENCE_PLAN_DRAFTED": "reference_plan",
+        "CHAPTER_PLAN_DRAFTED": f"chapter_plan:{state.get('current_chapter_id')}",
+        "CHAPTER_REVIEW_PASSED": f"chapter:{state.get('current_chapter_id')}",
+        "ABSTRACT_DRAFTED": "abstract",
+        "REPORT_REVIEW_PASSED": "report",
+        "WORD_REPORT_VALIDATED": "word_report",
+    }.get(state["stage"])
+
+
+def _revision_slot(state: dict[str, Any], target: str) -> dict[str, Any]:
+    if target.startswith(("chapter:", "chapter_plan:")):
+        kind, cid = target.split(":", 1)
+        slot = state.get("chapters", {}).get(cid, {}).get("content" if kind == "chapter" else "plan")
+    else:
+        slot = state.get("artifacts", {}).get(target)
+    if not isinstance(slot, dict) or not _latest(slot):
+        raise ValueError("revision target has no artifact version")
+    return slot
+
+
+def _active_user_revision(state: dict[str, Any]) -> dict[str, Any] | None:
+    return next((item for item in reversed(state.get("user_revision_requests", []))
+                 if item["status"] == "requested"), None)
+
+
+def request_revision(state: dict[str, Any], target: str, artifact_id: str, version: int,
+                     feedback: str, request_id: str) -> dict[str, Any]:
+    """Record explicit user feedback on the current unconfirmed artifact.
+
+    The caller supplies a stable user request ID; replaying its exact arguments
+    returns the unchanged state. This local Skill API does not authenticate a user:
+    the invoking application must obtain the feedback from the human user.
+    """
+    for name, value in (("target", target), ("artifact_id", artifact_id),
+                        ("feedback", feedback), ("request_id", request_id)):
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"revision {name} must be a nonempty string")
+    if isinstance(version, bool) or not isinstance(version, int) or version <= 0:
+        raise ValueError("revision version must be a positive integer")
+    values = {"target": target, "artifact_id": artifact_id, "base_version": version,
+              "feedback": feedback.strip(), "request_id": request_id}
+    for previous in state.get("user_revision_requests", []):
+        if previous["request_id"] == request_id:
+            if any(previous.get(key) != value for key, value in values.items()):
+                raise ValueError("user revision request_id conflicts with its recorded arguments")
+            return copy.deepcopy(state)
+    if target == "word_report":
+        raise ValueError("user Word revision is not supported; formatter validation failures use the existing repair flow")
+    if state.get("pending_action") is not None or _active_user_revision(state):
+        raise ValueError("cannot request revision while another action or user revision is pending")
+    if _confirmation_target(state) != target:
+        raise ValueError(f"cannot revise {target!r} while stage={state['stage']}; expected={_confirmation_target(state)!r}")
+    slot = _revision_slot(state, target)
+    latest = _latest(slot)
+    if slot.get("approved_version") is not None or state.get("confirmations", {}).get(target, {}).get("confirmed"):
+        raise ValueError("cannot revise a user-confirmed target")
+    if latest.get("artifact_id") != artifact_id or latest.get("version") != version:
+        raise ValueError("revision baseline artifact_id/version does not match the current version")
+    s = copy.deepcopy(state)
+    s.setdefault("user_revision_requests", []).append({
+        **values, "feedback_source": "user", "status": "requested",
+        "requested_at": now(), "baseline_stage": state["stage"],
+    })
+    _record(s, "user_revision_requested", target=target, artifact_id=artifact_id,
+            base_version=version, user_request_id=request_id)
+    return s
+
+
+def _artifact_output_paths(artifact: dict[str, Any]) -> list[str]:
+    content = artifact.get("content")
+    outputs = [content, *(content.get("figures") or [])] if isinstance(content, dict) else []
+    paths = [output[key] for output in outputs if isinstance(output, dict)
+             for key in ("file_path", "path", "markdown_path")
+             if isinstance(output.get(key), str) and output[key]]
+    texts = []
+    if isinstance(content, str):
+        texts = [content]
+    elif isinstance(content, dict):
+        texts = [content.get(key) for key in ("markdown", "text", "body", "report_text")]
+    for text in texts:
+        if isinstance(text, str):
+            paths.extend(match.strip("<>") for match in re.findall(r"!\[[^\]]*\]\(([^)\s]+)\)", text)
+                         if not re.match(r"[a-zA-Z][a-zA-Z0-9+.-]*:", match))
+    return paths
+
+
+def _user_revision_request(state: dict[str, Any], registry: dict[str, Any], revision: dict[str, Any]) -> dict[str, Any]:
+    target = revision["target"]
+    slot = _revision_slot(state, target)
+    base = _latest(slot)
+    if (base["artifact_id"], base["version"]) != (revision["artifact_id"], revision["base_version"]):
+        raise ValueError("pending user revision baseline changed")
+    if target.startswith("chapter:"):
+        request = _chapter_revision_request(state, registry)
+    elif target.startswith("chapter_plan:"):
+        request = _chapter_plan_request(state, registry)
+        request["action"] = registry["children"]["generator"]["actions"]["revise_chapter_plan"]
+    else:
+        alias = {"project_profile": "build_project_profile", "argument_architecture": "build_argument_architecture",
+                 "outline": "revise_outline", "reference_plan": "search_references",
+                 "abstract": "generate_abstract", "report": "revise_report"}[target]
+        payload = {"report_context": state["report_context"]}
+        if target == "project_profile":
+            payload.update({"project_intake": copy.deepcopy(state["project_intake"]["answers"]),
+                            "content_generation_mode": state["content_generation_mode"], "fixed_questions_completed": True})
+        elif target == "argument_architecture":
+            payload.update({"project_profile": _latest(_artifact_slot(state, "project_profile")),
+                            "argument_architecture_requirements": _architecture_requirements()})
+        elif target in {"outline", "reference_plan"}:
+            payload.update({"project_profile": _latest(_artifact_slot(state, "project_profile")),
+                            "argument_architecture": _latest(_artifact_slot(state, "argument_architecture")),
+                            "chapter_content_briefs": copy.deepcopy(state.get("chapter_content_briefs"))})
+            if target == "reference_plan":
+                payload["outline"] = _latest(_artifact_slot(state, "outline"))
+        elif target == "abstract":
+            payload = _abstract_payload(state, registry)
+        elif target == "report":
+            payload = _assembly_payload(state)
+        request = _request(registry, "generator", alias, payload)
+    payload = request["payload"]
+    payload.update({"base_artifact": copy.deepcopy(base), "user_feedback": copy.deepcopy(revision),
+                    "revision_instruction": "Apply the explicit user feedback below. It is not a formal review result. "
+                    "Preserve the confirmed scope, sources and original writing rules. Return a complete new version; "
+                    "use new body/figure file paths, never edit state or overwrite historical files. " + revision["feedback"],
+                    "revision_output_requirements": {"artifact_id": base["artifact_id"], "artifact_type": base["artifact_type"],
+                        "version": base["version"] + 1,
+                        "immutable_file_paths": [path for item in slot["versions"] for path in _artifact_output_paths(item)]}})
+    if target in {"outline", "report"}:
+        payload["review_result"] = copy.deepcopy(slot["reviews"][-1])
+    return request
+
+
+def _validate_user_revision_artifact(state: dict[str, Any], request: dict[str, Any], artifact: dict[str, Any]) -> dict[str, Any]:
+    feedback = request["payload"].get("user_feedback")
+    if not feedback:
+        return artifact
+    revision = _active_user_revision(state)
+    if not revision or revision["request_id"] != feedback["request_id"]:
+        raise ValueError("response has no matching pending user revision")
+    slot = _revision_slot(state, revision["target"])
+    base = _latest(slot)
+    if (base["artifact_id"], base["version"]) != (revision["artifact_id"], revision["base_version"]):
+        raise ValueError("pending user revision baseline changed")
+    if not isinstance(artifact, dict) or artifact.get("artifact_id") != base["artifact_id"] or artifact.get("artifact_type") != base["artifact_type"]:
+        raise ValueError("revision response artifact_id/type does not match its target")
+    if isinstance(artifact.get("version"), bool) or artifact.get("version") != base["version"] + 1:
+        raise ValueError("revision response must declare the next artifact version")
+    if revision["target"].startswith(("chapter:", "chapter_plan:")):
+        content = artifact.get("content")
+        cid = revision["target"].split(":", 1)[1]
+        if isinstance(content, dict) and "chapter_id" in content and str(content["chapter_id"]) != cid:
+            raise ValueError("revision response chapter_id does not match its target")
+    old_paths = {Path(path).resolve() for item in slot["versions"] for path in _artifact_output_paths(item)}
+    if any(Path(path).resolve() in old_paths for path in _artifact_output_paths(artifact)):
+        raise ValueError("revision response must use new body/figure file paths")
+    item = copy.deepcopy(artifact)
+    item.pop("quality_metrics", None)
+    item.pop("review_status", None)
+    return item
+
+
 def _record(state: dict[str, Any], event: str, **extra: Any) -> None:
     state["history"].append({"at": now(), "event": event, "stage": state["stage"], **extra})
 
@@ -528,6 +694,9 @@ def _request(registry: dict[str, Any], role: str, action_alias: str, payload: di
 
 def next_action(state: dict[str, Any], registry: dict[str, Any]) -> dict[str, Any]:
     """Return the next legal child-Skill request or a user action descriptor."""
+    revision = _active_user_revision(state)
+    if revision:
+        return _user_revision_request(state, registry, revision)
     stage = state["stage"]
     context = state["report_context"]
 
@@ -802,6 +971,10 @@ def _chapter_revision_request(state: dict[str, Any], registry: dict[str, Any]) -
     return _request(registry, "generator", "revise_chapter", {
         "report_context": state["report_context"], "chapter_id": cid,
         "base_artifact": _latest(chapter["content"]), "review_result": chapter["content"]["reviews"][-1],
+        "outline": _latest(_artifact_slot(state, "outline")),
+        "reference_plan": _latest(_artifact_slot(state, "reference_plan")),
+        "chapter_materials": chapter.get("materials"),
+        "experiment_reference_package": copy.deepcopy(chapter.get("experiment_reference_package")),
         "chapter_plan": _latest(chapter["plan"]),
         "length_requirement": _chapter_length_requirement(state, registry, cid),
         "heading_bridge_requirement": _chapter_heading_bridge_requirement(state, registry, cid),
@@ -956,6 +1129,10 @@ def apply_response(state: dict[str, Any], response: dict[str, Any], registry: di
         s["stage"] = "AWAITING_USER" if response.get("status") == "blocked" else "FAILED"
         s["last_error"] = response.get("error") or {"message": "child skill failed"}
         _record(s, "child_response_error", action=response.get("action"), status=response.get("status"))
+        revision = _active_user_revision(s)
+        if revision and req.get("payload", {}).get("user_feedback"):
+            revision["status"] = "failed"
+            revision["child_request_id"] = response["request_id"]
         s["pending_action"] = None
         return s
 
@@ -964,7 +1141,12 @@ def apply_response(state: dict[str, Any], response: dict[str, Any], registry: di
     reviewer_name = registry["children"]["reviewer"]["skill_name"]
     formatter_name = registry["children"]["formatter"]["skill_name"]
     if response.get("skill_name") == generator_name:
-        _apply_generator(s, action, response["artifact"], registry)
+        artifact = _validate_user_revision_artifact(s, req, response["artifact"])
+        _apply_generator(s, action, artifact, registry)
+        revision = _active_user_revision(s)
+        if revision and req.get("payload", {}).get("user_feedback"):
+            revision.update({"status": "applied", "revised_version": artifact["version"],
+                             "child_request_id": response["request_id"]})
     elif response.get("skill_name") == reviewer_name:
         _apply_reviewer(s, action, response["review_result"], registry)
     elif response.get("skill_name") == formatter_name:
@@ -1950,17 +2132,9 @@ def _has_pass_word_validation(slot: dict[str, Any], artifact: dict[str, Any] | N
 
 def confirm(state: dict[str, Any], target: str) -> dict[str, Any]:
     s = copy.deepcopy(state)
-    expected = {
-        "PROJECT_PROFILE_DRAFTED": "project_profile",
-        "ARGUMENT_ARCHITECTURE_DRAFTED": "argument_architecture",
-        "OUTLINE_REVIEW_PASSED": "outline",
-        "REFERENCE_PLAN_DRAFTED": "reference_plan",
-        "CHAPTER_PLAN_DRAFTED": f"chapter_plan:{s.get('current_chapter_id')}",
-        "CHAPTER_REVIEW_PASSED": f"chapter:{s.get('current_chapter_id')}",
-        "ABSTRACT_DRAFTED": "abstract",
-        "REPORT_REVIEW_PASSED": "report",
-        "WORD_REPORT_VALIDATED": "word_report"
-    }.get(s["stage"])
+    if s.get("pending_action") is not None or _active_user_revision(s):
+        raise ValueError("cannot confirm while an action or user revision is pending")
+    expected = _confirmation_target(s)
     if expected != target:
         raise ValueError(f"cannot confirm {target!r} while stage={s['stage']}; expected={expected!r}")
     if target == "project_profile" and not _project_intake_complete(s):
