@@ -73,15 +73,36 @@ export function deploymentPublicOrigins(env) {
   return { hostOrigin, platformOrigin }
 }
 
+/** Validate bounded log restoration budgets before credentials or Profiles are read.
+ * @param env Optional operator-owned PE_MAX_HISTORY_BYTES and PE_RUNTIME_MAX_RESPONSE_BYTES.
+ * @returns Persisted history and snapshot transport limits, with at least 4 MiB envelope headroom.
+ */
+export function deploymentHistoryBudget(env) {
+  const integer = (key, fallback, maximum) => {
+    if (env[key] === undefined) return fallback
+    if (typeof env[key] !== 'string' || !/^[1-9][0-9]*$/u.test(env[key])) throw new Error(`Invalid ${key}`)
+    const value = Number(env[key])
+    if (!Number.isSafeInteger(value) || value < 1024 || value > maximum) throw new Error(`Invalid ${key}`)
+    return value
+  }
+  const maxHistoryBytes = integer('PE_MAX_HISTORY_BYTES', 8 * 1024 ** 2, 64 * 1024 ** 2)
+  const maxResponseBytes = integer('PE_RUNTIME_MAX_RESPONSE_BYTES', 12 * 1024 ** 2, 96 * 1024 ** 2)
+  if (maxResponseBytes < maxHistoryBytes + 4 * 1024 ** 2) {
+    throw new Error('History snapshot transport requires at least 4 MiB envelope headroom')
+  }
+  return { maxHistoryBytes, maxResponseBytes }
+}
+
 /** Keep the bundle as the source of plugin selection and every unchanged config field.
  * @param role Host or Platform deployment role; neither inherits a local execution Profile.
- * @param env Default HTTPS, or PE_LOCAL_HTTP='1' with canonical HTTP loopback Origins on one hostname and distinct ports.
+ * @param env Default HTTPS, or PE_LOCAL_HTTP='1' with canonical HTTP loopback Origins; optional bounded history/snapshot budgets.
  * @param dshHome Private state directory for the generated existing DSH Profile.
  * @returns Profile name and directory after origin and deployment configuration validation.
  */
 export async function renderProfile(role, env, dshHome) {
   if (!['host', 'platform'].includes(role)) throw new Error('Choose host or platform')
   const { hostOrigin, platformOrigin } = deploymentPublicOrigins(env)
+  const { maxHistoryBytes, maxResponseBytes } = deploymentHistoryBudget(env)
   const remoteMcpPath = role === 'platform' ? env.PE_REMOTE_MCP_CONFIG_FILE || '' : ''
   const bootstrapPath = role === 'platform' ? env.PE_ACCOUNT_BOOTSTRAP_FILE || '' : ''
   const connectors = role === 'platform' ? connectorRunnerFromEnvironment(env) : null
@@ -92,7 +113,7 @@ export async function renderProfile(role, env, dshHome) {
   const web = row(bundle, 'web-server', { host: '0.0.0.0', port: role === 'host' ? 18880 : 18881 })
   const selected = role === 'host' ? [web,
     row(bundle, 'power-evolve-runtime', { platformUrl: endpoint(
-      required(env, 'PE_PLATFORM_INTERNAL_URL'), 'internal Platform URL', false) }),
+      required(env, 'PE_PLATFORM_INTERNAL_URL'), 'internal Platform URL', false), maxResponseBytes }),
     row(bundle, 'power-evolve-host', { origin: hostOrigin, platformOrigin }),
   ] : [web,
     row(bundle, 'power-evolve-platform', {
@@ -106,7 +127,7 @@ export async function renderProfile(role, env, dshHome) {
       remoteMcpConfigFile: remoteMcpPath,
       accountManagementFile: accountManagementPath, accountBootstrapFile: bootstrapPath,
       ...connectorRunnerProfile(connectors),
-      hostOrigin, platformOrigin,
+      hostOrigin, platformOrigin, maxHistoryBytes,
     }),
   ]
   const name = `power-evolve-${role}`
@@ -146,6 +167,7 @@ export async function validateRemoteMcpStartup(path,
 async function main() {
   const role = process.argv[2]
   deploymentPublicOrigins(process.env)
+  deploymentHistoryBudget(process.env)
   const dshHome = required(process.env, 'DSH_HOME')
   const privateDir = required(process.env, 'PE_PRIVATE_DIR')
   const names = role === 'host' ? ['worker-token']

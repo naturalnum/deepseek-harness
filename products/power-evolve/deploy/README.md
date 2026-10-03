@@ -8,6 +8,8 @@ The S7b `hostPath` and static kubeconfig trial remains available. Production con
 
 ## Build and configure
 
+Startup accepts operator-owned `PE_MAX_HISTORY_BYTES` and `PE_RUNTIME_MAX_RESPONSE_BYTES` on both roles. Defaults remain 8 MiB of persisted Session events and 12 MiB of snapshot transport. Set the same pair on every replica in a controlled rollout; the snapshot bound must exceed history by at least 4 MiB. Canonical decimal integers are required, with history capped at 64 MiB and transport at 96 MiB. For the long-report trial, 16 MiB history and 24 MiB transport are sufficient budget settings to test; they do not establish capacity or enlarge model context. Startup rejects invalid budgets before reading private material or writing a Profile. Raising a limit preserves existing history; reaching it rejects new appends and settles the operation as failed rather than replaying side effects.
+
 Use a clean committed revision. An archive excludes local credentials, ignored build outputs, and `.git` from the Docker context. Build the common Host/Platform image and the existing runner image separately, push both, and use their **registry digest** references in a private copy of `values.example.json`. The example digests and domains deliberately fail the `--ready` gate.
 
 ```sh

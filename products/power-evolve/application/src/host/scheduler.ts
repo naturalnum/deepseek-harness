@@ -16,6 +16,7 @@ import { installStdioMcpTool } from './stdio-mcp.ts'
 import { installSshExecuteTool } from './ssh-execute.ts'
 import { installSelectedSkills } from './skills.ts'
 import { installOfficeTool } from './office.ts'
+import { installDurableToolDispatch } from './durability.ts'
 
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
@@ -159,6 +160,7 @@ export class Scheduler {
       if (cancelRequested) handle.agent.cancel({ kind: 'user' }, { keepInbox: true })
       this.handles.add(handle)
       const { agent } = handle
+      installDurableToolDispatch(agent)
       installSelectedSkills(agent, grant, runtime)
       installRemoteMcpTools(agent, grant, runtime, this.config.platformOrigin)
       if (grant.source === 'user' || grant.source === 'sandbox_result' || grant.source === 'desktop_result') {

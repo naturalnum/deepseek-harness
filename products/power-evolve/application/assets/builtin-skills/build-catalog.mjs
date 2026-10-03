@@ -36,7 +36,7 @@ const definitions = [
     category: 'office', publisher: 'OpenAI',
   },
   {
-    directory: 'latex-report-writer', extensionId: 'builtin.latex-report-writer', version: '1.0.3',
+    directory: 'latex-report-writer', extensionId: 'builtin.latex-report-writer', version: '1.0.4',
     name: 'LaTeX 技术报告',
     summary: '使用 XeLaTeX 编写、校验并渲染中文电力技术报告。',
     description: '包含中国电力技术报告 LaTeX 类、版式规范、转换脚本、编译脚本和逐页渲染工具。',
