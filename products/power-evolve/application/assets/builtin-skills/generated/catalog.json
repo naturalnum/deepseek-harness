@@ -141,9 +141,9 @@
         "publisher": "PowerEvolve"
       },
       "release": {
-        "version": "1.1.34",
+        "version": "1.1.35",
         "state": "PUBLISHED",
-        "manifestDigest": "sha256:d27289f6c4314fbecb6a72199a6fd8a44f8d0696a6b45dcc19b6e563634e5cae",
+        "manifestDigest": "sha256:f80984caba02d135013ec2d8bd041b0c486bfe773dc20731cf16d60b2b1666e2",
         "targets": [
           "cloud"
         ],
@@ -151,10 +151,10 @@
           "skill"
         ],
         "permissions": [],
-        "artifactDigest": "f133322f551e27687a10aa7796d41a42bf9074930dd094e447b722c387c3fbef",
-        "artifactSize": 647325,
-        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.power-grid-technical-report-writer/releases/1.1.34/artifact",
-        "artifactPath": "extensions/builtin.power-grid-technical-report-writer/1.1.34.zip"
+        "artifactDigest": "a9d2f2b78386739134a0cbe4d553997f65b3300e0b12aa84349029215a584d63",
+        "artifactSize": 649710,
+        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.power-grid-technical-report-writer/releases/1.1.35/artifact",
+        "artifactPath": "extensions/builtin.power-grid-technical-report-writer/1.1.35.zip"
       }
     },
     {
@@ -219,9 +219,9 @@
         "publisher": "PowerEvolve"
       },
       "release": {
-        "version": "1.1.37",
+        "version": "1.1.38",
         "state": "PUBLISHED",
-        "manifestDigest": "sha256:0de812536ccba2ed2cbccc9b0dd03981444d9d45b950280401c879cee2421468",
+        "manifestDigest": "sha256:6a514a4151f53fc8edd1a23721d08a6a43ebdeb5345a9a37eab4b4cb1dba40fb",
         "targets": [
           "cloud"
         ],
@@ -229,10 +229,10 @@
           "skill"
         ],
         "permissions": [],
-        "artifactDigest": "b63338a4e7183fb275ea82eebe9b626bf00885f74806944b5716a605f6530d01",
-        "artifactSize": 262550,
-        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.tech-report-writer/releases/1.1.37/artifact",
-        "artifactPath": "extensions/builtin.tech-report-writer/1.1.37.zip"
+        "artifactDigest": "44ba934a4cf6f3c3906957bf92dde8adedaf12fa290950361f380e4b1f25b278",
+        "artifactSize": 264649,
+        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.tech-report-writer/releases/1.1.38/artifact",
+        "artifactPath": "extensions/builtin.tech-report-writer/1.1.38.zip"
       }
     }
   ]
