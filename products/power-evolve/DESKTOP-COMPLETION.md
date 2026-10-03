@@ -2,6 +2,8 @@
 
 本文固定[交付计划](DELIVERY-PLAN.md)的 Mac 桌面路径，是待实施方案。当前 [`baseline.json`](baseline.json) 所记录官方基线的 `apps/desktop` 与 `apps/desktop-host`，和产品仓中的对应目录树完全一致；复用以该固定源码为依据，不声称核验了远端最新版本。早期桌面实测见[原生桌面试用](TRIAL-NATIVE-DESKTOP.md)，不能替代当前正式 Profile 和安装包验收。
 
+2026-10-04 已取回 fork 的 `origin/master` 并只读比较桌面更新：新增登录 shell 环境、CLI 管理及相应发行逻辑；本计划涉及的 Profile 管理、Host 子进程、backend 控制器、退出检查和包集合准备实现未变。它们仍需下述产品适配；这次源码比较不升级当前固定基线，也不代表新上游桌面产物已通过产品测试。
+
 ## 复用范围
 
 | 官方组件 | 产品处理 |

@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-PowerEvolve lives separately from upstream DSH within the same repository. Start development with the [architecture decision](ARCHITECTURE.md) and [delivery plan](DELIVERY-PLAN.md). The [S7 current preview](TRIAL-S7-CURRENT-PREVIEW.md) records restored native Web trials and their limits; [S6 connectors](TRIAL-S6-FINAL-QA.md) remains an independent fixed trial. Earlier slice evidence is linked from the delivery plan. The [product parity audit](PARITY-AUDIT.md) tracks features still missing from the old cloud product; [S7 integration](TRIAL-S7-INTEGRATED.md) tracks release checks.
+PowerEvolve lives separately from upstream DSH within the same repository. Start development with the [architecture decision](ARCHITECTURE.md) and [delivery plan](DELIVERY-PLAN.md). The [current Cloud trial](TRIAL-CLOUD-EXECUTION-RESOLUTION.md) records native Web execution reconciliation and its limits; [S6 connectors](TRIAL-S6-FINAL-QA.md) remains an independent fixed trial. Earlier slice evidence is linked from the delivery plan. The [product parity audit](PARITY-AUDIT.md) tracks features still missing from the old cloud product; [S7 integration](TRIAL-S7-INTEGRATED.md) tracks release checks.
 
 ```mermaid
 flowchart LR
@@ -35,6 +35,6 @@ flowchart LR
 | `application/tests` | Regression tests using real PG and actual Profiles |
 | `scripts` | Local configuration and process management |
 
-All product packages are private. The root build includes the product Host and native Web bundle. `pnpm run test:power-evolve` runs product integration tests; `pnpm run test:power-evolve:web` checks the built native shell and static Host route. Product plugins use public services from the selected baseline without changing the Agent loop or native Session format. Login, conversation, cloud Workspaces, files, artifacts, account settings, personal text and executable Skills, and controlled connectors have native Web trial evidence. The delivery plan covers remaining cloud features and deployment checks; desktop additions are paused.
+All product packages are private. The root build includes the product Host and native Web bundle. `pnpm run test:power-evolve` runs product integration tests; `pnpm run test:power-evolve:web` checks the built native shell and static Host route. Product plugins use public services from the selected baseline without changing the Agent loop or native Session format. Login, conversation, cloud Workspaces, files, artifacts, account settings, personal text and executable Skills, and controlled connectors have native Web trial evidence. The delivery plan covers remaining cloud features and deployment checks; desktop implementation follows the [official desktop reuse plan](DESKTOP-COMPLETION.md).
 
 Recorded conversations live in the [PowerEvolve snapshot](../../../snapshots/power-evolve/conversation/snapshot.yml). Product tests use its user input and assistant response and compare the complete Session event by event. This Profile requires real PG and runs through the product test command; the four native `test:snapshot` Profile adapters do not own it.

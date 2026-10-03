@@ -21,7 +21,7 @@ Word 使用 `tech-report-writer` 1.1.39。LaTeX 使用 `latex-report-writer` 1.0
 
 ## 试用
 
-入口为 <http://127.0.0.1:19934/native/>，独立可信身份入口为 <http://127.0.0.1:19936/login>。当前运行两个 Host 和两个 Platform；只有一个物理 Mac、一个 PG 容器及一个 k3d 集群。测试账号为 `alice`、`bob`；既有密码保存在本机私有投影，不写入本记录。
+报告固定试用已停止，原镜像、schema 27、数据和私有配置保留；当前运行的是[Cloud 结案固定试用](TRIAL-CLOUD-EXECUTION-RESOLUTION.md)。恢复报告试用后使用 <http://127.0.0.1:19934/native/> 及独立可信入口 <http://127.0.0.1:19936/login>，以下步骤适用于该固定版本。测试账号为 `alice`、`bob`；既有密码保存在本机私有投影，不写入本记录。两套应用不能同时启动。
 
 1. 使用 Alice 登录原生入口，打开报告会话及工作区 `report-workflow-live-20261003`。
 2. 在原生文件面板展开 `output/word/report-56d7a95315d84799/`，下载 `配电负荷异常识别_QA_技术报告_科技报告_格式修复版.docx`。
