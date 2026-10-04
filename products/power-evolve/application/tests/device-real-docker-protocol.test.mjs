@@ -162,12 +162,13 @@ test('real Device Git executes once and persists exact Docker stop identity befo
   await assert.rejects(f.devices.finish(bob.token, f.lastFinish()), { code: 'execution_not_found' })
 })
 
-test('an actual Worker death after Docker create recovers the original immutable container without starting or replaying it', options, async t => {
+for (const gap of ['after-create', 'before-create']) test(`an actual Worker death ${gap} permanently seals the original creation without starting or replaying it`, options, async t => {
   let child, exited, f
   t.after(async () => {
     if (child && child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
     await exited
     if (f) {
+      await writeFile(join(f.project, 'release-next'), 'release\n')
       const entries = JSON.parse(await readFile(join(f.privateRoot, 'journal.json'), 'utf8'))
       for (const entry of entries) if (entry.owner && entry.imageId) {
         const receipt = entry.receipt ?? await f.containers.findCreated({ name: entry.container,
@@ -182,7 +183,7 @@ test('an actual Worker death after Docker create recovers the original immutable
     "printf 'MUST-NOT-RUN\\n' >> forbidden.txt", '.')
   const workerModule = new URL('../lib/device/worker.js', import.meta.url).href
   const dockerModule = new URL('../lib/device/owned-container.js', import.meta.url).href
-  const launch = { origin: f.origin, privateRoot: f.privateRoot, image,
+  const launch = { origin: f.origin, privateRoot: f.privateRoot, image, gap,
     options: { pollMs: 100, contactGraceMs: 5000, commandPollMs: 50, platformRequestTimeoutMs: 3000,
       coordinationRoot: join(f.privateRoot, '..', 'writers'), pythonExecutable: '/usr/bin/python3', fileOperationTimeoutMs: 3000 } }
   const script = join(f.privateRoot, 'create-gap-child.mjs')
@@ -192,6 +193,10 @@ const configuration = ${JSON.stringify(launch)}
 const docker = new ScrubbedDockerClient()
 const containers = new OwnedDeviceContainer({ commandTimeoutMs: 15000, stopTimeoutMs: 10000, stopGraceSeconds: 1 }, {
   run: async (args, timeoutMs) => {
+    if (args[0] === 'create' && configuration.gap === 'before-create') {
+      await new Promise((resolve, reject) => process.send({ type: 'creating', args }, error => error ? reject(error) : resolve()))
+      await new Promise(() => {})
+    }
     const result = await docker.run(args, timeoutMs)
     if (args[0] === 'create') {
       await new Promise((resolve, reject) => process.send({ type: 'created' }, error => error ? reject(error) : resolve()))
@@ -206,41 +211,74 @@ await worker.init(); worker.start()
   child = fork(script, [], { execPath: process.execPath, execArgv: [], stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
     env: Object.fromEntries(['PATH', 'HOME', 'DOCKER_HOST'].flatMap(key => process.env[key] ? [[key, process.env[key]]] : [])) })
   exited = new Promise(resolve => child.once('close', resolve))
-  let created = false, failure
+  let created = false, failure, lateArguments
   child.on('error', error => { failure = error })
-  child.on('message', message => { if (message?.type === 'created') created = true })
-  await until(() => { if (failure) throw failure; return created }, 'actual created container before receipt persistence')
+  child.on('message', message => {
+    if (message?.type === (gap === 'before-create' ? 'creating' : 'created')) {
+      created = true; lateArguments = message.args
+    }
+  })
+  await until(() => { if (failure) throw failure; return created }, 'original creation checkpoint before receipt persistence')
   const [intent] = JSON.parse(await readFile(join(f.privateRoot, 'journal.json'), 'utf8'))
   assert.equal(intent.stage, 'claimed'); assert.equal(intent.receipt, undefined)
   const receipt = await f.containers.findCreated({ name: intent.container, imageId: intent.imageId, owner: intent.owner })
-  assert(receipt); f.trackReceipt(receipt)
-  assert.equal((await f.containers.inspect(receipt)).Status, 'created')
+  if (gap === 'after-create') {
+    assert(receipt); f.trackReceipt(receipt)
+    assert.equal((await f.containers.inspect(receipt)).Status, 'created')
+  } else assert.equal(receipt, null)
   assert.equal((await f.row(accepted.executionId)).container_receipt, null)
   child.kill('SIGKILL'); await exited
   assert.equal(child.signalCode, 'SIGKILL')
   const recovering = await f.makeWorker(f.privateRoot)
   recovering.start()
-  await until(async () => (await f.row(accepted.executionId)).stop_observation !== null, 'original created container observed and persisted stopped')
+  await until(async () => (await f.row(accepted.executionId)).state === 'cancelled', 'original creation permanently sealed')
   const row = await f.row(accepted.executionId)
-  assert.equal(row.state, 'uncertain'); assert.equal(row.dispatch_process_id, intent.processId)
-  assert.equal(row.container_receipt.containerId, receipt.containerId)
-  assert.equal(row.stop_observation.receipt.containerId, receipt.containerId)
-  assert.equal(row.stop_observation.Status, 'created'); assert.equal(row.stop_observation.Running, false)
-  assert.equal(await f.continuations(row.id), 0)
+  assert.equal(row.dispatch_process_id, intent.processId)
+  for (const key of ['container_receipt', 'start_authorized_at', 'stop_request_id', 'stop_observation', 'result']) assert.equal(row[key], null)
+  const closed = (await f.pool.query('SELECT receipt FROM pe_device_claim_closures WHERE execution_id=$1', [row.id])).rows
+  assert.equal(closed.length, 1); assert.equal(closed[0].receipt.dispatchId, intent.dispatchId)
+  assert.equal(closed[0].receipt.startNeverAuthorized, true)
   assert.equal(f.dockerCalls.filter(verb => verb === 'create' || verb === 'start').length, 0)
   await assert.rejects(readFile(join(f.project, 'forbidden.txt')), { code: 'ENOENT' })
-  const token = await taskCredential(f.pool, f.alice, 'approval')
-  const inspected = await f.approval('/approvals/executions/inspect', { executionId: row.id, target: 'desktop' }, token)
-  assert.equal(inspected.status, 200); assert.equal(inspected.body.runnerObservation, 'stopped_unknown')
-  const closed = await f.approval('/approvals/executions/resolve', { requestId: randomUUID(), executionId: row.id,
-    target: 'desktop', fingerprint: inspected.body.fingerprint, note: 'Actual process died after create; original stopped identity verified.' }, token)
-  assert.equal(closed.status, 200); assert.equal(closed.body.finalState, 'closed_unknown')
   await until(async () => JSON.parse(await readFile(join(f.privateRoot, 'journal.json'), 'utf8')).length === 0,
-    'original created container exact cleanup')
-  assert.equal(await f.containers.inspect(receipt), null)
+    'original creation retirement')
+  if (receipt) assert.equal(await f.containers.inspect(receipt), null)
   assert.equal(await f.continuations(row.id), 1)
-  const next = await f.devices.propose(f.op.grant.token, 'fresh-after-actual-death', "git init -q && printf 'ONCE\\n' >> marker.txt", '.')
-  await until(async () => (await f.row(next.executionId)).state === 'succeeded', 'fresh Git after independent exact cleanup')
+  if (gap === 'before-create') {
+    const pendingPath = join(f.privateRoot, 'sealed-creations', `${row.id}.json`)
+    const pending = await readFile(pendingPath)
+    const record = JSON.parse(pending)
+    assert.equal(record.closure.executionId, row.id); assert.equal(record.owner.creationId, intent.dispatchId)
+    assert.equal(record.imageId, intent.imageId); assert.equal(record.removalConfirmed, false)
+    await recovering.close()
+    const reopened = await f.makeWorker(f.privateRoot); reopened.start()
+    assert.deepEqual(await readFile(pendingPath), pending)
+  }
+  const command = (gap === 'before-create' ? 'printf READY > ready-next; while [ ! -e release-next ]; do sleep 0.1; done; ' : '')
+    + "git init -q && printf 'ONCE\\n' >> marker.txt"
+  const next = await f.devices.propose(f.op.grant.token, 'fresh-after-actual-death', command, '.')
+  if (gap === 'before-create') {
+    await until(async () => {
+      try { return await readFile(join(f.project, 'ready-next'), 'utf8') === 'READY' }
+      catch (error) { if (error.code === 'ENOENT') return false; throw error }
+    }, 'fresh command actually running while old cleanup remains pending')
+    const slotPath = join(f.privateRoot, '..', 'writers', 'writer-slot.json')
+    const activeSlot = await readFile(slotPath)
+    assert.equal(JSON.parse(activeSlot).slot.owner.executionId, next.executionId)
+    assert.equal((await f.row(next.executionId)).state, 'running')
+    assert(Array.isArray(lateArguments) && lateArguments.every(value => typeof value === 'string') && lateArguments[0] === 'create')
+    // A real late container is injected from the original captured create arguments; this is not a surviving CLI claim.
+    const result = await new ScrubbedDockerClient().run(lateArguments, 15000)
+    const lateReceipt = { containerId: result.stdout.trim(), imageId: intent.imageId, owner: intent.owner }
+    assert.match(lateReceipt.containerId, /^[a-f0-9]{64}$/u); f.trackReceipt(lateReceipt)
+    await until(async () => await f.containers.inspect(lateReceipt) === null, 'exact late resource removed while fresh writer remains running')
+    assert.deepEqual(await readFile(slotPath), activeSlot)
+    assert.equal((await f.row(next.executionId)).state, 'running')
+    await assert.rejects(f.devices.register(f.device.token, { instanceId: f.device.instanceId, executionId: row.id,
+      processId: intent.processId, dispatchId: intent.dispatchId, receipt: lateReceipt }), { code: 'device_claim_closed' })
+    await writeFile(join(f.project, 'release-next'), 'release\n')
+  }
+  await until(async () => (await f.row(next.executionId)).state === 'succeeded', 'fresh Git after sealed original creation')
   await until(async () => JSON.parse(await readFile(join(f.privateRoot, 'journal.json'), 'utf8')).length === 0,
     'fresh Git exact container cleanup')
   assert.equal(await readFile(join(f.project, 'marker.txt'), 'utf8'), 'ONCE\n')
