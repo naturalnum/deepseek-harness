@@ -15,6 +15,14 @@
 
 runner 为子进程提供固定环境，不转发镜像的 `ENV` 值。需要 `OFFICECLI_SKIP_UPDATE=1` 的文档命令必须在该命令内显式设置。
 
+## 隔离 Office 预览
+
+`office-preview.mjs` 通过共享 Office 预览验证器处理一个解析任务。进程入口不接受参数：`/input/job.json` 只能选择固定的 `source.doc`、`source.docx`、`source.ppt` 或 `source.pptx`；`/output` 必须是空的私有物理目录。包装器核对源文件实际大小和 SHA256，创建私有快照，并要求已安装的 0.1.1 WASM SDK，只使用 `/usr/share/fonts` 且禁用字体元数据缓存。全部转换预算来自 job。部署必须不挂载工作区/Home 且不提供凭据；job 不能选择命令、路径或镜像。
+
+转换和 SDK dispose 成功后，固定的 `/usr/bin/pdfinfo` 在解析器隔离环境中有界输出；取消会终止其所属进程组并等待关闭。PDF 大小、文件头、页数和共享结果验证全部完成后，才独占发布 `result.pdf` 和最后的 `result.json` 标志。失败不会发布成功标志。同步提交前取消会阻止发布；已经提交成功的结果仍为成功。标志绑定 job、nonce、generation、源摘要、PDF 摘要与字节数、页数及缺失字体。消费者还须独立确认解析进程已停止且退出码为零，再核验 PDF 字节；仅凭标志不能证明进程停止。
+
+离线 `scripts/assemble-office-preview.mjs` helper 把已准备的物理 Linux 包闭包和已构建的共享验证模块拷贝到新目标。它复用仓库的 Office 包选择机制，要求 0.1.1 WASM，核对引擎文件声明的摘要，拒绝链接与非普通资源，并记录拷贝后的包身份与哈希。它不安装、下载、转换或构建镜像。现有 HTTP Runner 仍独立运行。`tests/` 中的所属测试使用真实临时文件和子进程关闭事件，SDK/Poppler 或微型包资源由替身提供；这些测试不证明生产隔离或原生浏览器验收。
+
 ## 执行文件候选
 
 执行终态响应可包含 `fileChanges`，其中有 `status`、`files` 和 `reasons`。每个文件包含相对 `/workspace` 的规范路径、零到 2 MiB 的 `sizeBytes`，以及扫描字节的小写 SHA256。候选来自命令执行前后有界扫描所证明的新增或内容改变的普通文件；打印路径、未改变文件、仅时间戳更新和删除不会产生候选。前扫描不完整时，只有枚举完成的目录之下才可证明文件新增；先前已观察到的大小改变或已知摘要改变仍可证明文件改变。Platform 另行授权和校验下载。

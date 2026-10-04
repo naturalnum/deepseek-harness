@@ -8,6 +8,9 @@
 /sandbox-document-toolchain/pinned-inputs:
   en: 9f4cd77176099eb0
   zh: 617e1660677b9a51
+/sandbox-document-toolchain/isolated-office-preview:
+  en: cb004d278a02d77c
+  zh: 101bc0bddb9108cb
 /sandbox-document-toolchain/execution-file-candidates:
   en: ae276357aa5fa082
   zh: 47dd8150a9f185b4
