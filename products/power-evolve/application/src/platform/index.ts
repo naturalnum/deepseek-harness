@@ -63,7 +63,8 @@ import { artifactPublishRequest, executionFilesRequest,
   EXECUTION_FILES_PLATFORM_PATH } from '@power-evolve/contracts/execution-files'
 import { LoginAdmission } from './login-admission.ts'
 import { DeviceService } from './devices.ts'
-import { deviceClaimRequest, deviceContainerRegistration, deviceFinishRequest, deviceClaimClosureRequest } from '@power-evolve/contracts/device-execution'
+import { deviceClaimRequest, deviceContainerRegistration, deviceFinishRequest, deviceClaimClosureRequest,
+  deviceMaterialRequest } from '@power-evolve/contracts/device-execution'
 import { KubernetesClient } from './kubernetes.ts'
 import { SandboxManager } from './sandbox.ts'
 import { proxyModel } from './model.ts'
@@ -404,7 +405,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const closeRecovery = async () => { recoveryStop.abort(); await recoveryPolling }
   mcpShutdown.add(closeRecovery)
   ctx.effect(() => closeRecovery)
-  const devices = new DeviceService(tasks, config.sandboxCommandTimeoutMs, files)
+  const devices = new DeviceService(tasks, config.sandboxCommandTimeoutMs, files, skills)
 
   const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const url = new URL(req.url ?? '/', config.platformOrigin)
@@ -578,6 +579,9 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         case '/devices/agent/registered': {
           const value = deviceContainerRegistration.parse(input)
           sendJson(res, await devices.registered(token, value)); return
+        }
+        case '/devices/agent/material': {
+          sendJson(res, await devices.material(token, deviceMaterialRequest.parse(input))); return
         }
         case '/devices/agent/finish': {
           const value = deviceFinishRequest.parse(input)

@@ -3,29 +3,47 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createServer } from 'node:http'
 import { fork } from 'node:child_process'
-import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { setTimeout as delay } from 'node:timers/promises'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
+import { Readable } from 'node:stream'
+import { unzipSync, zipSync } from 'fflate'
 import { DesktopWorker } from '../lib/device/worker.js'
 import { OwnedDeviceContainer, ScrubbedDockerClient } from '../lib/device/owned-container.js'
 import { DeviceService } from '../lib/platform/devices.js'
 import { FileService } from '../lib/platform/files.js'
 import { IdentityService } from '../lib/platform/identity.js'
+import { SkillService } from '../lib/platform/skills.js'
+import { encodeOfficeCommand } from '../lib/host/office.js'
 import { routeExecutionResolutionApproval } from '../lib/platform/execution-resolution-routes.js'
-import { deviceClaimRequest, deviceContainerRegistration, deviceFinishRequest, deviceClaimClosureRequest } from '@power-evolve/contracts/device-execution'
+import { deviceClaimRequest, deviceContainerRegistration, deviceFinishRequest, deviceClaimClosureRequest,
+  deviceMaterialRequest } from '@power-evolve/contracts/device-execution'
 import { deviceProtocolFixture } from './device-execution-protocol-fixture.mjs'
 import { taskCredential } from './task-credential-fixture.mjs'
 
 const image = process.env.PE_DEVICE_TEST_IMAGE
 const options = { timeout: 60000, skip: !image || !['darwin', 'linux'].includes(process.platform) }
+const hash = bytes => createHash('sha256').update(bytes).digest('hex')
+const materialBinary = Buffer.from([0, 255, 13, 10, 128, 1, 254])
 async function until(condition, label) {
   const deadline = Date.now() + 20000
   while (!await condition()) {
     if (Date.now() >= deadline) throw new Error(`Device integration deadline: ${label}`)
     await delay(50)
   }
+}
+
+async function cleanupRoot(root) {
+  const writable = async path => {
+    const stat = await lstat(path)
+    if (!stat.isDirectory() || stat.isSymbolicLink()) return
+    await chmod(path, 0o700)
+    for (const entry of await readdir(path, { withFileTypes: true })) if (entry.isDirectory()) await writable(join(path, entry.name))
+  }
+  await writable(root)
+  await rm(root, { recursive: true, force: true })
 }
 
 async function fixture(t, loseRegistrationAck = false, commandTimeoutMs = 1234, loseClaimAck = false, loseResolutionAck = false,
@@ -37,8 +55,9 @@ async function fixture(t, loseRegistrationAck = false, commandTimeoutMs = 1234, 
   const containers = new OwnedDeviceContainer({ commandTimeoutMs: 15000, stopTimeoutMs: 10000, stopGraceSeconds: 1 }, {
     run: async (args, timeoutMs) => { dockerCalls.push(args[0]); return docker.run(args, timeoutMs) },
   })
-  const receipts = new Map(), workers = []
+  const receipts = new Map(), mounts = new Map(), workers = []
   let server, origin, lost = false, lostClosure = false, lostClaimClosure = false, lastFinish, lostClaimExecutionId
+  let beforeMaterial
   let allowClaimClosureAck = !loseClaimClosureAck
   t.after(async () => {
     await Promise.all(workers.map(worker => worker.close()))
@@ -49,13 +68,15 @@ async function fixture(t, loseRegistrationAck = false, commandTimeoutMs = 1234, 
       if (state?.Running) await containers.stop(receipt)
       if (await containers.inspect(receipt)) await containers.remove(receipt)
     }
-    await rm(root, { recursive: true, force: true })
+    await cleanupRoot(root)
   })
   const platform = await deviceProtocolFixture(t)
   const files = new FileService(platform.pool, join(root, 'cloud'), undefined,
     { executable: '/usr/bin/python3', timeoutMs: 3000 })
   await files.init()
-  platform.devices = new DeviceService(platform.tasks, commandTimeoutMs, files)
+  const skills = new SkillService(platform.pool, join(root, 'cloud'), join(root, 'skill-private'))
+  await skills.init()
+  platform.devices = new DeviceService(platform.tasks, commandTimeoutMs, files, skills)
   const identities = new IdentityService(platform.pool, 3600000)
   async function route(req, res) {
     let text = ''
@@ -77,6 +98,9 @@ async function fixture(t, loseRegistrationAck = false, commandTimeoutMs = 1234, 
       case '/devices/agent/jobs': reply = await platform.devices.jobs(token, input.instanceId); break
       case '/devices/agent/files/read': reply = await platform.devices.readCloud(token, input.directoryId, input.path); break
       case '/devices/agent/files/put': reply = await platform.devices.putCloud(token, input.directoryId, input.requestId, input.path, input.data); break
+      case '/devices/agent/material':
+        await beforeMaterial?.()
+        reply = await platform.devices.material(token, deviceMaterialRequest.parse(input)); break
       case '/devices/agent/claim': {
         const value = deviceClaimRequest.parse(input)
         reply = await platform.devices.claim(token, value.instanceId, value.executionId, value.processId)
@@ -93,6 +117,7 @@ async function fixture(t, loseRegistrationAck = false, commandTimeoutMs = 1234, 
       case '/devices/agent/register': {
         const value = deviceContainerRegistration.parse(input)
         receipts.set(value.receipt.containerId, value.receipt)
+        mounts.set(value.receipt.containerId, JSON.parse((await docker.run(['inspect', '--format', '{{json .Mounts}}', value.receipt.containerId], 5000)).stdout))
         reply = await platform.devices.register(token, value)
         if (loseRegistrationAck && !lost) { lost = true; res.destroy(); return }
         break
@@ -135,11 +160,173 @@ async function fixture(t, loseRegistrationAck = false, commandTimeoutMs = 1234, 
     }, body: JSON.stringify(input), signal: AbortSignal.timeout(5000) })
     return { status: response.status, body: await response.json() }
   }
-  return { ...platform, worker, device, project, privateRoot, origin, containers, op, files, makeDevice, makeWorker,
+  return { ...platform, worker, device, project, privateRoot, origin, containers, op, files, skills, makeDevice, makeWorker,
+    root, mounts, beforeMaterial: hook => { beforeMaterial = hook },
     trackReceipt: receipt => { receipts.set(receipt.containerId, receipt) },
     approval, dockerCalls, lastFinish: () => lastFinish, lost: () => lost, lostClosure: () => lostClosure,
     lostClaimClosure: () => lostClaimClosure, releaseClaimClosureAck: () => { allowClaimClosureAck = true } }
 }
+
+async function uploadMaterial(f, user, version, marker) {
+  const entries = {
+    'device-material/SKILL.md': Buffer.from('---\nname: device-material\ndescription: Read the pinned local fixture\n---\nRun scripts/read.py with desktop_exec.\n'),
+    'device-material/skill-package.json': Buffer.from(JSON.stringify({ schemaVersion: 1, version })),
+    'device-material/scripts/read.py': Buffer.from(`from pathlib import Path\np = Path(__file__).parent\nassert p.joinpath('data.bin').read_bytes() == bytes([0, 255, 13, 10, 128, 1, 254])\nprint(${JSON.stringify(marker)})\n`),
+    'device-material/scripts/data.bin': materialBinary,
+  }
+  const archive = Buffer.from(zipSync(entries, { level: 9, mtime: '2020-01-01T00:00:00.000Z' }))
+  const ticket = await f.skills.issueUploadTicket(user, randomUUID(), archive.length, hash(archive), f.origin)
+  return (await f.skills.upload(ticket.ticket, Readable.from([archive]))).item
+}
+
+async function executeCommand(f, operation, worker, privateRoot, callId, command) {
+  await f.tasks.renew(operation.grant.token)
+  const receipt = await f.devices.propose(operation.grant.token, callId, command, '')
+  worker.start()
+  await until(async () => (await f.row(receipt.executionId)).stop_observation !== null, 'material command stop')
+  await until(async () => JSON.parse(await readFile(join(privateRoot, 'journal.json'), 'utf8')).length === 0, 'material command cleanup')
+  const row = await f.row(receipt.executionId)
+  assert.equal(row.state, 'succeeded', row.result?.stderr)
+  assert.equal(row.result.exitCode, 0)
+  assert.equal(await f.continuations(receipt.executionId), 1)
+  assert.equal(await f.containers.inspect(row.container_receipt), null)
+  return row
+}
+
+test('real Device executes pinned binary package bytes with a read-only mount and retains an isolated Home across restart', options, async t => {
+  const f = await fixture(t, false, 15000)
+  const first = await uploadMaterial(f, f.alice, '1.0.0', 'ALICE-PINNED-ONE')
+  const operation = await f.operation(f.alice, f.device)
+  const latest = await uploadMaterial(f, f.alice, '2.0.0', 'ALICE-LATEST-TWO')
+  const base = `/opt/power-evolve/skills/sha256/${first.packageDigest}/skill`
+  const command = `set -eu; test "$HOME" = /home/agent; python3 ${base}/scripts/read.py; printf 'alice-home\n' > "$HOME/remember.txt"; if printf bad > ${base}/scripts/data.bin; then exit 51; fi; test ! -e /opt/power-evolve/skills/sha256/${latest.packageDigest}; printf 'HOME=%s\n' "$HOME"`
+  const original = await executeCommand(f, operation, f.worker, f.privateRoot, 'pinned-first', command)
+  assert.match(original.result.stdout, /ALICE-PINNED-ONE/u)
+  assert.doesNotMatch(original.result.stdout, /ALICE-LATEST-TWO/u)
+  assert.match(original.result.stdout, /HOME=\/home\/agent/u)
+  assert.deepEqual(original.dispatch_request.materials.map(binding => binding.version), ['1.0.0'])
+  const mounted = f.mounts.get(original.container_receipt.containerId)
+  assert.deepEqual(mounted.map(mount => mount.Destination).sort(), ['/workspace', '/home/agent', base.slice(0, -'/skill'.length)].sort())
+  assert.equal(mounted.find(mount => mount.Destination === base.slice(0, -'/skill'.length)).RW, false)
+  assert.equal(mounted.find(mount => mount.Destination === '/home/agent').Source, join(f.privateRoot, 'execution-homes', f.device.instanceId))
+  assert.equal(await readFile(join(f.privateRoot, 'execution-homes', f.device.instanceId, 'remember.txt'), 'utf8'), 'alice-home\n')
+  await f.worker.close()
+  const restarted = await f.makeWorker(f.privateRoot)
+  const restored = await executeCommand(f, operation, restarted, f.privateRoot, 'pinned-after-restart',
+    `set -eu; test "$HOME" = /home/agent; test "$(cat "$HOME/remember.txt")" = alice-home; python3 ${base}/scripts/read.py`)
+  assert.match(restored.result.stdout, /ALICE-PINNED-ONE/u)
+  const secondPackage = await uploadMaterial(f, f.bob, '1.0.0', 'BOB-PRIVATE-ONE')
+  const bobProject = join(f.root, 'bob-project'); await mkdir(bobProject, { mode: 0o700 })
+  const bob = await f.makeDevice(f.bob, bobProject)
+  const bobOp = await f.operation(f.bob, bob.device)
+  const bobBase = `/opt/power-evolve/skills/sha256/${secondPackage.packageDigest}/skill`
+  const bobRow = await executeCommand(f, bobOp, bob.worker, bob.privateRoot, 'bob-private',
+    `set -eu; test ! -e "$HOME/remember.txt"; test ! -e ${base}; python3 ${bobBase}/scripts/read.py; printf 'bob-home\n' > "$HOME/remember.txt"`)
+  assert.match(bobRow.result.stdout, /BOB-PRIVATE-ONE/u)
+  assert.equal(await readFile(join(bob.privateRoot, 'execution-homes', bob.device.instanceId, 'remember.txt'), 'utf8'), 'bob-home\n')
+  assert.equal(await readFile(join(f.privateRoot, 'execution-homes', f.device.instanceId, 'remember.txt'), 'utf8'), 'alice-home\n')
+  assert.equal(bobRow.dispatch_request.materials[0].skillId, secondPackage.skillId)
+  const claim = original.container_receipt.owner
+  await assert.rejects(f.devices.material(bob.device.token, { instanceId: f.device.instanceId,
+    executionId: original.id, processId: original.dispatch_process_id, dispatchId: claim.creationId,
+    digest: claim.requestDigest, skillId: first.skillId }), { code: 'execution_not_found' })
+})
+
+test('cancelling a real Worker material request seals the original claim before Docker creation', options, async t => {
+  const f = await fixture(t, false, 15000)
+  await uploadMaterial(f, f.alice, '1.0.0', 'NEVER-RUN')
+  const operation = await f.operation(f.alice, f.device)
+  let entered = false, release
+  const gate = new Promise(resolve => { release = resolve })
+  t.after(() => release())
+  f.beforeMaterial(async () => { entered = true; await gate })
+  const receipt = await f.devices.propose(operation.grant.token, 'cancel-material', "printf 'MUST-NOT-RUN' > forbidden.txt", '')
+  f.worker.start()
+  await until(() => entered, 'material request arrival')
+  const closing = f.worker.close()
+  release()
+  await closing
+  const restarted = await f.makeWorker(f.privateRoot); restarted.start()
+  await until(async () => (await f.row(receipt.executionId)).error_code === 'device_claim_closed_without_start', 'claim permanently fenced')
+  await until(async () => JSON.parse(await readFile(join(f.privateRoot, 'journal.json'), 'utf8')).length === 0, 'cancelled material journal cleanup')
+  assert.equal(f.dockerCalls.filter(call => call === 'create').length, 0)
+  assert.equal(f.dockerCalls.filter(call => call === 'start').length, 0)
+  const row = await f.row(receipt.executionId)
+  assert.equal(row.container_receipt, null); assert.equal(row.start_authorized_at, null)
+  assert.equal(row.result, null); assert.equal(row.stop_observation, null)
+  await assert.rejects(readFile(join(f.project, 'forbidden.txt')), { code: 'ENOENT' })
+  assert.equal(await f.continuations(receipt.executionId), 1)
+})
+
+test('real Device Office creates three editable formats and renders their saved local bytes', options, async t => {
+  const f = await fixture(t, false, 15000)
+  const catalog = await f.skills.catalog(f.alice)
+  for (const id of ['builtin.word', 'builtin.excel', 'builtin.powerpoint']) {
+    const release = catalog.items.find(item => item.id === id)
+    assert.equal(release.version, '1.0.2')
+    await f.skills.installBuiltin(f.alice, randomUUID(), id, release.version)
+  }
+  const operation = await f.operation(f.alice, f.device)
+  const docx = '/workspace/device-word.docx', xlsx = '/workspace/device-excel.xlsx', pptx = '/workspace/device-slides.pptx'
+  const commands = [
+    'load_skill word',
+    `create ${docx}`,
+    `batch ${docx} --commands '${JSON.stringify([{ command: 'add', parent: '/body', type: 'p', props: { text: 'Device Office Word QA', size: '18pt', bold: 'true' } },
+      { command: 'add', parent: '/body', type: 'p', props: { text: 'Saved local editable document.' } }])}'`,
+    `validate ${docx}`,
+    `create ${xlsx}`,
+    `add ${xlsx} / --type sheet --prop name=QA`,
+    `batch ${xlsx} --commands '${JSON.stringify([{ command: 'set', path: '/QA/A1', props: { value: '18' } },
+      { command: 'set', path: '/QA/A2', props: { value: '24' } },
+      { command: 'set', path: '/QA/A3', props: { formula: 'SUM(A1:A2)' } }])}'`,
+    `validate ${xlsx}`,
+    `create ${pptx}`,
+    `batch ${pptx} --commands '${JSON.stringify([{ command: 'add', parent: '/', type: 'slide' },
+      { command: 'add', parent: '/slide[1]', type: 'shape', props: { text: 'Device Office PPT QA', x: '2cm', y: '2cm', width: '20cm', height: '3cm', size: '24pt' } }])}'`,
+    `validate ${pptx}`,
+  ]
+  const executions = []
+  for (const [index, command] of commands.entries()) {
+    const row = await executeCommand(f, operation, f.worker, f.privateRoot, `device-office-${index}`, encodeOfficeCommand(command))
+    executions.push(row.id)
+    assert.equal(row.dispatch_request.materials.length, 3)
+    assert(row.dispatch_request.materials.every(binding => binding.version === '1.0.2'))
+    if (index === 0) assert.match(row.result.stdout, /PowerEvolve Office runtime constraint/u)
+  }
+  const xml = async (name, path) => Buffer.from(unzipSync(await readFile(join(f.project, name)))[path]).toString('utf8')
+  assert.match(await xml('device-word.docx', 'word/document.xml'), /Device Office Word QA/u)
+  assert.match(await xml('device-excel.xlsx', 'xl/worksheets/sheet2.xml'), /<(?:\w+:)?f>SUM\(A1:A2\)<\/(?:\w+:)?f>/u)
+  assert.match(await xml('device-slides.pptx', 'ppt/slides/slide1.xml'), /Device Office PPT QA/u)
+  const render = 'set -eu; mkdir /workspace/previews; libreoffice -env:UserInstallation=file:///tmp/device-office-lo --headless --convert-to pdf --outdir /workspace/previews /workspace/device-word.docx /workspace/device-excel.xlsx /workspace/device-slides.pptx; for name in device-word device-excel device-slides; do test -s /workspace/previews/$name.pdf; pdfinfo /workspace/previews/$name.pdf; pdftotext -layout /workspace/previews/$name.pdf /workspace/previews/$name.txt; pdftoppm -f 1 -singlefile -png -r 72 /workspace/previews/$name.pdf /workspace/previews/$name; done'
+  const rendered = await executeCommand(f, operation, f.worker, f.privateRoot, 'device-office-render', render)
+  executions.push(rendered.id)
+  assert.match(await readFile(join(f.project, 'previews/device-word.txt'), 'utf8'), /Device Office Word QA/u)
+  assert.match(await readFile(join(f.project, 'previews/device-excel.txt'), 'utf8'), /42/u)
+  assert.match(await readFile(join(f.project, 'previews/device-slides.txt'), 'utf8'), /Device Office PPT QA/u)
+  const formats = ['device-word.docx', 'device-excel.xlsx', 'device-slides.pptx']
+  for (const path of formats) {
+    const local = await readFile(join(f.project, path))
+    const exported = await f.worker.exportFile(f.device.directoryId, path, `device-output/${path}`, randomUUID())
+    assert.equal(exported.revision, hash(local))
+    const cloud = await f.files.read(f.alice, `device-output/${path}`)
+    assert.deepEqual(Buffer.from(cloud.data, 'base64'), local)
+    await assert.rejects(f.files.read(f.bob, `device-output/${path}`), { code: 'file_not_found' })
+  }
+  if (process.env.PE_DEVICE_TEST_ARTIFACT_DIR) {
+    const target = process.env.PE_DEVICE_TEST_ARTIFACT_DIR
+    await mkdir(target, { recursive: true, mode: 0o700 })
+    const paths = [...formats, ...['device-word', 'device-excel', 'device-slides'].flatMap(name => ['pdf', 'png', 'txt'].map(extension => `previews/${name}.${extension}`))]
+    const artifacts = []
+    for (const path of paths) {
+      const bytes = await readFile(join(f.project, path))
+      await copyFile(join(f.project, path), join(target, path.replace('previews/', '')))
+      artifacts.push({ name: path, sha256: hash(bytes), size: bytes.length })
+    }
+    await writeFile(join(target, 'office-evidence.json'), JSON.stringify({ image, executions, artifacts,
+      services: ['real PG', 'real Docker', 'public Worker', 'real OfficeCLI', 'real LibreOffice', 'real POSIX'],
+      replacements: ['loopback fixture routing; no DSH Profile, browser, Agent, or model'], visualInspection: 'pending' }, null, 2) + '\n')
+  }
+})
 
 test('real Device Git executes once and persists exact Docker stop identity before cleanup', options, async t => {
   const f = await fixture(t)

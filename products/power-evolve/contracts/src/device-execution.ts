@@ -4,7 +4,7 @@ import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
 import { deviceMaterialBinding, deviceMaterialSelection } from './device-materials.ts'
 
 export { deviceMaterialBinding, deviceMaterialSelection, deviceSkillManifest, deviceSkillMaterial,
-  DEVICE_MATERIAL_MAX_BYTES, DEVICE_MATERIAL_MAX_FILES,
+  DEVICE_MATERIAL_MAX_BYTES, DEVICE_MATERIAL_MAX_FILES, DEVICE_MATERIAL_MAX_RESPONSE_BYTES,
   type DeviceMaterialBinding, type DeviceMaterialDigest, type DeviceMaterialSkillId,
   type DeviceSkillMaterial, type DeviceSkillManifest } from './device-materials.ts'
 

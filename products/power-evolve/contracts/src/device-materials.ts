@@ -11,6 +11,8 @@ const digest = z.string().regex(/^[a-f0-9]{64}$/u).transform(value => brandStrin
 export const DEVICE_MATERIAL_MAX_BYTES = 8 * 1024 * 1024
 /** The existing upload protocol's maximum regular files in one skill package. */
 export const DEVICE_MATERIAL_MAX_FILES = 256
+/** Maximum encoded Device response, including base64, escaped filenames and the original manifest. */
+export const DEVICE_MATERIAL_MAX_RESPONSE_BYTES = 20 * 1024 * 1024
 const path = z.string().min(7).max(4096).refine(value => value.startsWith('skill/')
   && !/[\\:\0]/u.test(value) && value.split('/').every(part => part !== '' && part !== '.' && part !== '..'))
 

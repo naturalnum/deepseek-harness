@@ -8,12 +8,14 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
 import { deviceClaim, deviceJob, deviceContainerRegistration, deviceContainerRegistered,
   deviceStopObservation, deviceExecutionResult, deviceFinishRequest, deviceFinishReceipt,
-  deviceClaimClosureRequest, deviceClaimClosureReceipt } from '@power-evolve/contracts/device-execution'
+  deviceClaimClosureRequest, deviceClaimClosureReceipt, deviceSkillMaterial, deviceMaterialRequest,
+  DEVICE_MATERIAL_MAX_RESPONSE_BYTES } from '@power-evolve/contracts/device-execution'
 import { DeviceProcessLock } from './process-lock.ts'
 import { OwnedDeviceContainer, ownedContainerOwner, ownedContainerReceipt } from './owned-container.ts'
 import { LocalDeviceFiles } from './local-files.ts'
 import { DeviceWriterCoordinator, deviceWriterOwner, type DeviceWriterLease, type DeviceWriterOwner } from './writer-coordinator.ts'
 import { SealedDeviceCreations, sealedCreation } from './sealed-creations.ts'
+import { DeviceMaterials } from './materials.ts'
 
 const directoryIdentity = z.object({ dev: z.string().regex(/^\d+$/u), ino: z.string().regex(/^\d+$/u) }).strict()
 const directory = z.object({ id: z.uuid(), label: z.string(), path: z.string(), identity: directoryIdentity.optional() }).strict()
@@ -98,6 +100,7 @@ export class DesktopWorker {
   private readonly coordination: DeviceWriterCoordinator
   private readonly files: LocalDeviceFiles
   private readonly sealed: SealedDeviceCreations
+  private readonly materials: DeviceMaterials
   private writer: { owner: DeviceWriterOwner; lease: DeviceWriterLease } | null = null
 
   constructor(private readonly platformUrl: string, private readonly privateDir: string,
@@ -108,6 +111,7 @@ export class DesktopWorker {
     this.coordination = new DeviceWriterCoordinator(options.coordinationRoot)
     this.files = new LocalDeviceFiles({ pythonExecutable: options.pythonExecutable, timeoutMs: options.fileOperationTimeoutMs })
     this.sealed = new SealedDeviceCreations(privateDir, () => this.assertOwned())
+    this.materials = new DeviceMaterials(privateDir, () => this.assertOwned())
   }
 
   /** Acquire kernel ownership before loading the private credentials and journal.
@@ -170,19 +174,29 @@ export class DesktopWorker {
     directories: this.state?.directories.map(({ id, label, path }) => ({ directoryId: id, label, path })) ?? [],
     online: this.state !== null && Date.now() - this.lastContact < this.options.contactGraceMs, notice: this.notice } }
 
-  private async call<T>(path: string, input: unknown, parser: z.ZodType<T>, token?: string): Promise<T> {
+  private async call<T>(path: string, input: unknown, parser: z.ZodType<T>, token?: string, signal?: AbortSignal): Promise<T> {
+    const timeout = AbortSignal.timeout(this.options.platformRequestTimeoutMs)
     const response = await fetch(new URL(path, this.platformUrl), {
       method: 'POST', headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
-      body: JSON.stringify(input), signal: AbortSignal.timeout(this.options.platformRequestTimeoutMs),
+      redirect: 'error', body: JSON.stringify(input), signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
     })
+    if (!response.body) throw new Error('device_platform_empty_response')
+    const chunks: Uint8Array[] = []
+    let size = 0
+    for await (const chunk of response.body) {
+      size += chunk.byteLength
+      if (size > DEVICE_MATERIAL_MAX_RESPONSE_BYTES) throw new Error('device_platform_response_limit')
+      chunks.push(chunk)
+    }
+    const text = Buffer.concat(chunks).toString('utf8')
     if (!response.ok) {
       let body: unknown
-      try { body = await response.json() }
+      try { body = JSON.parse(text) }
       catch (_invalidErrorBody) { throw new DevicePlatformError(response.status, undefined) }
       const parsed = z.object({ error: z.string().regex(/^[a-z][a-z0-9_]{0,127}$/u) }).strict().safeParse(body)
       throw new DevicePlatformError(response.status, parsed.success ? parsed.data.error : undefined)
     }
-    return parser.parse(await response.json())
+    return parser.parse(JSON.parse(text))
   }
 
   /** Enroll this unpaired worker and persist its private credential under kernel ownership.
@@ -381,9 +395,10 @@ export class DesktopWorker {
     this.active = running
   }
 
-  private requestDigest(state: DeviceState, job: Pick<z.infer<typeof deviceClaim>, 'command' | 'cwd' | 'timeoutMs' | 'directoryId'>): string {
+  private requestDigest(state: DeviceState, job: Pick<z.infer<typeof deviceClaim>, 'command' | 'cwd' | 'timeoutMs' | 'directoryId' | 'materials'>): string {
     return createHash('sha256').update(JSON.stringify({ command: job.command, cwd: job.cwd,
-      timeoutMs: job.timeoutMs, deviceId: state.deviceId, directoryId: job.directoryId })).digest('hex')
+      timeoutMs: job.timeoutMs, deviceId: state.deviceId, directoryId: job.directoryId,
+      ...(job.materials === undefined ? {} : { materials: job.materials }) })).digest('hex')
   }
 
   private writerOwner(state: DeviceState, entry: JournalEntry): DeviceWriterOwner {
@@ -614,6 +629,10 @@ export class DesktopWorker {
     await this.saveJournal()
     const folder = this.authorizedDirectory(claimed.directoryId), root = folder.path
     await this.inspectDirectory(folder, claimed.cwd)
+    const prepared = await this.materials.prepare(owner.enrollmentId, claimed.materials ?? [], binding => this.call(
+      '/devices/agent/material', deviceMaterialRequest.parse({ instanceId: state.instanceId, executionId: id,
+        processId: claimed.processId, dispatchId: claimed.dispatchId, digest: claimed.digest, skillId: binding.skillId }),
+      deviceSkillMaterial, state.token, this.stop.signal), this.stop.signal)
     entry.imageId = await this.containers.resolveImage(this.image)
     await this.saveJournal()
     if (this.stop.signal.aborted) throw new Error('device_closed_before_create')
@@ -623,6 +642,8 @@ export class DesktopWorker {
         '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--pids-limit', '128',
         '--memory', '768m', '--cpus', '1', '--user', '1000:1000',
         '--mount', `type=bind,source=${root},target=/workspace`,
+        '--mount', `type=bind,source=${prepared.home},target=/home/agent`, '--env', 'HOME=/home/agent',
+        ...prepared.mounts.flatMap(mount => ['--mount', `type=bind,source=${mount.source},target=${mount.target},readonly`]),
         '--workdir', `/workspace${claimed.cwd ? '/' + claimed.cwd : ''}`, '--entrypoint', '/bin/bash'],
       command: ['-lc', claimed.command] })
     entry.stage = 'created'
