@@ -77,6 +77,27 @@ test('starts the official CLI argv with a scrubbed explicit environment, inspect
   assert(owner.exitConfirmed)
 })
 
+test('restart getters contain only observations from the current child generation', async t => {
+  const { owner } = await fixture(t)
+  const previous = await owner.start()
+  await owner.inspect()
+  await owner.stop()
+  assert.equal(owner.lastSnapshot?.phase, 'quiescent')
+  assert.deepEqual(owner.lastDrain, { entries: [], cleanupPending: 0 })
+  const restart = owner.start()
+  assert.equal(owner.lastSnapshot, undefined)
+  assert.equal(owner.lastDrain, undefined)
+  assert.equal(owner.lastStopClean, false)
+  const current = await restart
+  assert.notEqual(current.launchId, previous.launchId)
+  assert.notEqual(current.instanceId, previous.instanceId)
+  assert.equal(owner.lastSnapshot, undefined)
+  assert.equal(owner.lastDrain, undefined)
+  await owner.stop()
+  gone(current.pid)
+  assert(owner.lastStopClean)
+})
+
 for (const [scenario, expected] of [
   ['wrong_pid', 'device_ready_identity'], ['wrong_launch', 'device_ready_identity'], ['wrong_url', 'device_ready_identity'],
   ['health_stale', 'device_health_identity'], ['health_redirect', 'device_health_failed'], ['health_huge', 'device_health_limit'],

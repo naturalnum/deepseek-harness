@@ -3,7 +3,8 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { deviceLifecycleReady, deviceLifecycleRequest, deviceLifecycleResponse,
   type DeviceLifecycleReady, type DeviceLifecycleSnapshot, type DeviceDrainReport,
-  type DeviceLifecycleRequest, type DeviceServiceInstanceId } from '@power-evolve/contracts/device-lifecycle'
+  type DeviceLifecycleRequest, type DeviceServiceInstanceId, type DeviceLaunchId,
+  type DeviceLifecycleRequestId } from '@power-evolve/contracts/device-lifecycle'
 
 /** Main-owned launch choices; no renderer input or ambient credential environment is accepted. */
 export interface DeviceProcessOptions {
@@ -40,13 +41,13 @@ interface Pending {
 }
 interface Launch {
   readonly child: ChildProcess
-  readonly launchId: string
+  readonly launchId: DeviceLaunchId
   readonly ready: Promise<DeviceLifecycleReady>
   readonly resolveReady: (value: DeviceLifecycleReady) => void
   readonly rejectReady: (error: DeviceProcessError) => void
   readonly close: Promise<Exit>
   readonly cancel: AbortController
-  readonly pending: Map<string, Pending>
+  readonly pending: Map<DeviceLifecycleRequestId, Pending>
   instance?: DeviceLifecycleReady
   cancelInstance?: DeviceServiceInstanceId
   verified: boolean
@@ -67,7 +68,7 @@ function timed<T>(promise: Promise<T>, ms: number, code: string): Promise<T> {
     promise.then(value => { clearTimeout(timer); resolve(value) }, error => { clearTimeout(timer); reject(error) })
   })
 }
-function environment(options: DeviceProcessOptions, launchId: string): NodeJS.ProcessEnv {
+function environment(options: DeviceProcessOptions, launchId: DeviceLaunchId): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {}
   for (const [key, value] of Object.entries(options.env)) {
     if (!/(KEY|SECRET|TOKEN|PASSWORD|PROVIDER|CREDENTIAL|DATABASE|GRANT|AUTH|NONCE)/i.test(key)
@@ -118,6 +119,8 @@ export class DeviceProcess {
       return Promise.reject(this.launch.failure ?? failure('device_not_ready'))
     }
     this.clean = false
+    this.snapshot = undefined
+    this.drain = undefined
     const launch = this.spawn()
     this.launch = launch
     const pending = (async () => {
@@ -173,7 +176,7 @@ export class DeviceProcess {
   }
 
   private spawn(): Launch {
-    const launchId = randomUUID()
+    const launchId = deviceLifecycleReady.shape.launchId.parse(randomUUID())
     const child = spawn(this.options.nodeExecutable, [this.options.cliEntrypoint, '--profile', this.options.profile], {
       cwd: this.options.workingDir, env: environment(this.options, launchId), stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     })
@@ -183,7 +186,7 @@ export class DeviceProcess {
     let resolveClose!: (value: Exit) => void
     const close = new Promise<Exit>(resolve => { resolveClose = resolve })
     const launch: Launch = { child, launchId, ready, resolveReady, rejectReady, close,
-      cancel: new AbortController(), pending: new Map(), verified: false, closed: false, stopping: false,
+      cancel: new AbortController(), pending: new Map<DeviceLifecycleRequestId, Pending>(), verified: false, closed: false, stopping: false,
       outputBytes: 0, notified: false, clean: false }
     const output = (bytes: Buffer): void => {
       launch.outputBytes += bytes.length
@@ -253,7 +256,7 @@ export class DeviceProcess {
     if (launch.closed || !launch.child.connected || launch.failure !== undefined) return Promise.reject(launch.failure ?? failure('device_ipc_closed'))
     const request = deviceLifecycleRequest.parse({ kind: 'power-evolve-device-lifecycle', version: 1,
       type: 'request', launchId: launch.launchId, instanceId: launch.instance?.instanceId ?? launch.cancelInstance ?? null,
-      requestId: randomUUID(), action })
+      requestId: deviceLifecycleRequest.shape.requestId.parse(randomUUID()), action })
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => { launch.pending.delete(request.requestId); reject(failure('device_request_timeout')) }, timeout)
       launch.pending.set(request.requestId, { action, instanceId: request.instanceId, resolve, reject, timer })
