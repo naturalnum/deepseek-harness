@@ -14,6 +14,8 @@ import { readJson, sendFailure, sendJson } from '../http.ts'
 import type { BrowserAgentAuth } from './browser-auth.ts'
 import { followNativeSession } from './native-session-follow.ts'
 import { workspaceCreateSelection } from '@power-evolve/contracts/workspace-binding'
+import { NativeOfficePreview, NativeOfficePreviewError,
+  type NativeOfficePreviewOptions, type NativeOfficePreviewContent } from './native-office-preview.ts'
 
 const address = z.object({ kind: z.literal('session'), sessionId }).strict()
 const window = z.object({ maxMessages: z.number().int().min(1).max(500).optional(),
@@ -76,6 +78,11 @@ function cloudWorkspaceTitle(path: string): string {
 type NativeCall = (path: string, token: string, input: unknown) => Promise<unknown>
 
 function failure(error: unknown): { code: string; message: string; details: object } {
+  if (error instanceof NativeOfficePreviewError) {
+    return error.code === 'cancelled'
+      ? { code: 'gateway/cancelled', message: 'The document preview was cancelled.', details: {} }
+      : { code: 'document-render/failed', message: 'Office conversion failed.', details: { reason: error.code } }
+  }
   if (error instanceof PlatformError) {
     if (error.code === 'native_remote_not_enabled' || error.code === 'native_stream_not_enabled') {
       return { code: 'gateway/invocation-unavailable', message: 'Remote endpoint is not enabled', details: {} }
@@ -113,6 +120,10 @@ async function waitForAbort(signal: AbortSignal): Promise<void> {
 async function sendNativeBytes(response: ServerResponse, rpcId: string, raw: unknown): Promise<void> {
   const { data, ...value } = binaryFileResult.parse(raw)
   const bytes = Buffer.from(data, 'base64')
+  await sendMultipart(response, rpcId, value, new Uint8Array(bytes))
+}
+
+async function sendMultipart(response: ServerResponse, rpcId: string, value: object, bytes: Uint8Array): Promise<void> {
   const parts = new FormData()
   parts.set('bytes-0', new Blob([new Uint8Array(bytes)]))
   parts.set('metadata', JSON.stringify({ type: 'server-response', rpcId,
@@ -120,6 +131,7 @@ async function sendNativeBytes(response: ServerResponse, rpcId: string, raw: unk
     attachments: [{ path: ['data'], codec: 'bytes', part: 'bytes-0' }] }))
   const encoded = new Response(parts)
   const body = Buffer.from(await encoded.arrayBuffer())
+  if (response.destroyed) return
   response.writeHead(200, { 'content-type': encoded.headers.get('content-type') ?? 'multipart/form-data',
     'content-length': String(body.length), 'cache-control': 'no-store' })
   response.end(body)
@@ -133,11 +145,15 @@ async function sendNativeBytes(response: ServerResponse, rpcId: string, raw: unk
  * @param pollMs - configured interval for live reads and temporary Session read failures.
  * @param maxRequestBytes - maximum native HTTP request body size.
  * @param maxStreams - maximum concurrent native logical streams.
+ * @param officeOptions - explicit Office preview budgets; omission leaves Office unavailable.
  */
 export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin: string,
-  pollMs: number, maxRequestBytes: number, maxStreams: number): void {
+  pollMs: number, maxRequestBytes: number, maxStreams: number, officeOptions?: NativeOfficePreviewOptions): void {
   const tokens = new WeakMap<PeerScope, string>()
   const call: NativeCall = (path, token, input) => ctx.powerEvolveRuntime.call(path, token, input)
+  const office = officeOptions === undefined ? undefined
+    : new NativeOfficePreview((path, token, input, signal) => ctx.powerEvolveRuntime.call(path, token, input, signal), officeOptions)
+  if (office !== undefined) ctx.effect(() => () => office.close())
   const tokenOf = (peer: PeerScope): string => {
     const token = tokens.get(peer)
     if (!token) throw new PlatformError(401, 'unauthorized_peer')
@@ -348,6 +364,9 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
     },
   }))
   ctx.effect(() => ctx.webServer.register({ kind: 'prefix', path: '/native/api', handler: async (req: IncomingMessage, res: ServerResponse) => {
+    const lifetime = new AbortController()
+    const disconnected = () => { if (!res.writableEnded) lifetime.abort() }
+    res.on('close', disconnected)
     try {
       const credential = await auth.authenticate(req)
       assertHostAuthority(req, origin)
@@ -362,12 +381,24 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
       const method = path.slice('/native/api/'.length)
       if (message.method !== method) throw new PlatformError(400, 'method_mismatch')
       try {
-        const value = await unary(method, message.payload.args, credential.token, message.rpcId)
+        let value: unknown
+        if (method === 'officeToPdf/generation' || method === 'officeToPdf/render') {
+          if (office === undefined) throw new PlatformError(404, 'native_remote_not_enabled')
+          if (method === 'officeToPdf/render') {
+            const rendered: NativeOfficePreviewContent = await office.render(credential.token, message.rpcId, message.payload.args, lifetime.signal)
+            const { data, ...metadata } = rendered
+            if (!lifetime.signal.aborted) await sendMultipart(res, message.rpcId, metadata, data)
+            return
+          }
+          value = await office.generation(credential.token, message.rpcId, message.payload.args, lifetime.signal)
+        } else value = await unary(method, message.payload.args, credential.token, message.rpcId)
+        if (lifetime.signal.aborted) return
         if (method === 'workspaceFiles/readBytes') await sendNativeBytes(res, message.rpcId, value)
         else sendJson(res, { type: 'server-response', rpcId: message.rpcId, result: { ok: true, value } })
       } catch (error) {
-        sendJson(res, { type: 'server-response', rpcId: message.rpcId, result: { ok: false, error: failure(error) } })
+        if (!lifetime.signal.aborted) sendJson(res, { type: 'server-response', rpcId: message.rpcId, result: { ok: false, error: failure(error) } })
       }
-    } catch (error) { sendFailure(res, error) }
+    } catch (error) { if (!lifetime.signal.aborted) sendFailure(res, error) }
+    finally { res.off('close', disconnected) }
   } }))
 }
