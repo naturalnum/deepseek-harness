@@ -15,7 +15,7 @@ const RECORD = 'Contents/Resources/power-evolve-assembly.json'
 const EXECUTABLE = 'Contents/MacOS/PowerEvolve'
 const CLI = '@deepseek-ai/dsh', DEVICE = '@power-evolve/device', APPLICATION = '@power-evolve/application'
 const DEVICE_FIELDS = ['profile', 'loopbackOrigin', 'startupTimeoutMs', 'requestTimeoutMs', 'quiesceTimeoutMs',
-  'exitTimeoutMs', 'maxOutputBytes', 'maxMessageBytes', 'maxHealthBytes']
+  'exitTimeoutMs', 'maxOutputBytes', 'maxMessageBytes', 'maxHealthBytes', 'commandSearchPath']
 const WORKER_FIELDS = ['image', 'pollMs', 'contactGraceMs', 'commandPollMs', 'platformRequestTimeoutMs',
   'dockerCommandTimeoutMs', 'dockerStopTimeoutMs', 'dockerStopGraceSeconds', 'directoryPickerTimeoutMs', 'fileOperationTimeoutMs']
 const forbidden = /^(?:\.git|\.env(?:\..*)?|model\.env|database(?:-local)?-url|\.credentials|\.private)$/iu
@@ -29,6 +29,11 @@ function inside(root, path) {
 function keys(value, expected) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)
     || Object.keys(value).length !== expected.length || expected.some(key => !Object.hasOwn(value, key))) fail('invalid_input')
+}
+function commandSearchPath(value) {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 32 || value.some(path => typeof path !== 'string'
+    || path.length === 0 || path.length > 4096 || !path.startsWith('/') || /[\\:\u0000-\u001f\u007f]/u.test(path)
+    || path.split('/').some(part => part === '.' || part === '..'))) fail('invalid_command_search_path')
 }
 function relativePath(path) {
   if (typeof path !== 'string' || !path || isAbsolute(path) || /[\\:\u0000-\u001f\u007f]/u.test(path)
@@ -209,6 +214,9 @@ export function verifyInstalledApp(output) {
   if (capture.sourceCommit !== record.inputs.closure.sourceCommit) fail('closure_changed')
   const description = validateDescription(resources)
   if (description.config.hostOrigin !== record.deployment.hostOrigin || description.config.platformOrigin !== record.deployment.platformOrigin) fail('description_changed')
+  commandSearchPath(record.device?.commandSearchPath)
+  const installedDescription = json(join(resources, 'power-evolve-desktop.json'))
+  if (JSON.stringify(installedDescription.device) !== JSON.stringify(record.device)) fail('description_changed')
   const plist = join(root, 'Contents/Info.plist')
   for (const [key, value] of Object.entries({ CFBundleExecutable: 'PowerEvolve', CFBundleIdentifier: record.product.bundleId, CFBundleName: 'PowerEvolve',
     CFBundleDisplayName: 'PowerEvolve', CFBundleShortVersionString: record.product.version, CFBundleVersion: record.product.buildVersion })) {
@@ -231,6 +239,8 @@ export function verifyInstalledApp(output) {
  * stage is cleaned on failure. Bundled interpreters are inspected for ARM64 Mach-O headers, never run.
  * The copied main executable is named PowerEvolve with unchanged bytes, and its Info.plist entry is updated.
  * The copied outer signature seal is removed, and nested Framework/helper bytes remain intact.
+ * Explicit external command search directories are bounded absolute POSIX paths recorded unchanged;
+ * their contents and executables are neither inspected nor copied, and no login shell is run.
  * Signing, notarization, native ABI, Docker availability and real installed startup are not established.
  * @param {object} options - Explicit prepared input directories, new absolute PowerEvolve.app output, product
  * identity, caller-declared desktopSourceCommit and nonsecret deployment/device/worker parameters.
@@ -243,6 +253,7 @@ export function assembleInstalledApp(options) {
     keys(options, ['electronApp', 'desktopPackage', 'closureDirectory', 'nodeDirectory', 'pythonRuntimeDirectory',
       'output', 'product', 'desktopSourceCommit', 'deployment', 'device', 'worker'])
     keys(options.product, ['bundleId', 'version', 'buildVersion']); keys(options.device, DEVICE_FIELDS); keys(options.worker, WORKER_FIELDS)
+    commandSearchPath(options.device.commandSearchPath)
     if (!/^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/u.test(options.product.bundleId)
       || !/^\d+\.\d+\.\d+$/u.test(options.product.version) || !/^\d+(?:\.\d+){0,2}$/u.test(options.product.buildVersion)
       || !/^[a-f0-9]{40}$/u.test(options.desktopSourceCommit)) fail('invalid_input')
@@ -310,7 +321,7 @@ export function assembleInstalledApp(options) {
     }
     const payload = inventory(stage)
     const record = { format: FORMAT, target: 'darwin-arm64', product: options.product,
-      deployment: parsed.config, signingPerformed: false, notarizationPerformed: false, removedInputPaths: removed,
+      deployment: parsed.config, device: options.device, signingPerformed: false, notarizationPerformed: false, removedInputPaths: removed,
       executableMapping: { sourcePath: sourceExecutable, installedPath: EXECUTABLE },
       inputs: { ...inputs, desktop: { ...inputs.desktop, declaredSourceCommit: options.desktopSourceCommit, version: desktopManifest.version },
         closure: { ...inputs.closure, sourceCommit: capture.sourceCommit }, python: { ...inputs.python, runtimeManifest: pythonManifest } },

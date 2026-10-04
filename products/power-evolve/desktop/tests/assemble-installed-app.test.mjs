@@ -94,7 +94,8 @@ function fixture(t) {
     output: join(base, 'PowerEvolve.app'), desktopSourceCommit: 'b'.repeat(40), product: { bundleId: 'com.powerevolve.desktop', version: '0.1.0', buildVersion: '1.0' },
     deployment: { hostOrigin: 'https://host.example/', platformOrigin: 'https://platform.example' },
     device: { profile: 'power-evolve-device', loopbackOrigin: 'http://127.0.0.1:21091', startupTimeoutMs: 30000,
-      requestTimeoutMs: 5000, quiesceTimeoutMs: 45000, exitTimeoutMs: 10000, maxOutputBytes: 262144, maxMessageBytes: 524288, maxHealthBytes: 4096 },
+      requestTimeoutMs: 5000, quiesceTimeoutMs: 45000, exitTimeoutMs: 10000, maxOutputBytes: 262144, maxMessageBytes: 524288, maxHealthBytes: 4096,
+      commandSearchPath: [join(base, 'external Docker/bin'), '/usr/bin'] },
     worker: { image: `sha256:${'c'.repeat(64)}`, pollMs: 500, contactGraceMs: 5000, commandPollMs: 250,
       platformRequestTimeoutMs: 10000, dockerCommandTimeoutMs: 15000, dockerStopTimeoutMs: 10000,
       dockerStopGraceSeconds: 2, directoryPickerTimeoutMs: 120000, fileOperationTimeoutMs: 10000 } }
@@ -257,4 +258,34 @@ test('verification checks the executable name, ARM64 header and original bytes b
   const altered = Buffer.from(originalExecutable); altered[31] = 1
   updateRecordedFile(executable, altered, 0o500)
   assert.throws(() => verifyInstalledApp(value.output), /installed_app_executable_changed/u)
+})
+
+test('preserves explicit command search directories without requiring or copying an external Docker executable', mac, t => {
+  const f = fixture(t), list = f.options.device.commandSearchPath
+  assert(!existsSync(list[0]))
+  const value = assembleInstalledApp(f.options), resources = join(value.output, 'Contents/Resources')
+  const descriptor = JSON.parse(readFileSync(join(resources, 'power-evolve-desktop.json'), 'utf8'))
+  assert.deepEqual(descriptor.device.commandSearchPath, list)
+  assert.deepEqual(value.device, f.options.device)
+  assert.deepEqual(verifyInstalledApp(value.output).device.commandSearchPath, list)
+  assert(!existsSync(list[0]))
+  assert(value.inventory.files.every(file => !file.path.includes('external Docker')))
+  const recordPath = join(resources, 'power-evolve-assembly.json'), record = JSON.parse(readFileSync(recordPath, 'utf8'))
+  record.device.commandSearchPath = ['/different/external/bin']
+  chmodSync(recordPath, 0o600); writeFileSync(recordPath, JSON.stringify(record) + '\n'); chmodSync(recordPath, 0o400)
+  assert.throws(() => verifyInstalledApp(value.output), /installed_app_description_changed/u)
+  record.device.commandSearchPath = list; record.device.profile = 'different-profile'
+  chmodSync(recordPath, 0o600); writeFileSync(recordPath, JSON.stringify(record) + '\n'); chmodSync(recordPath, 0o400)
+  assert.throws(() => verifyInstalledApp(value.output), /installed_app_description_changed/u)
+})
+
+test('rejects missing, empty, excessive or invalid command search paths before staging', mac, t => {
+  const f = fixture(t)
+  for (const list of [undefined, null, '/usr/bin', [], Array(33).fill('/usr/bin'), [''], ['relative/bin'], ['C:/Docker/bin'], ['/a:b'],
+    ['/a\n/b'], ['/a\u0000/b'], ['/a\u007f/b'], ['/a\\b'], ['/a/./b'], ['/a/../b'], [42], [`/${'a'.repeat(4096)}`]]) {
+    assert.throws(() => assembleInstalledApp({ ...f.options, device: { ...f.options.device, commandSearchPath: list } }), /installed_app_invalid_command_search_path/u)
+    assert(!existsSync(f.options.output)); noStage(f)
+  }
+  const device = { ...f.options.device }; delete device.commandSearchPath
+  assert.throws(() => assembleInstalledApp({ ...f.options, device }), /installed_app_invalid_input/u)
 })
