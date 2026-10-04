@@ -2,10 +2,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { randomUUID } from 'node:crypto'
-import { lstat, readFile, symlink, unlink, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, readFile, readdir, rm, symlink, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { OfficePreviewService } from '../lib/platform/office-previews.js'
-import { taskCredential, disableFixtureAccount } from './task-credential-fixture.mjs'
+import { taskCredential, clearTaskCredential, disableFixtureAccount } from './task-credential-fixture.mjs'
 import { previewFixture, successOutput, sha } from './office-preview-fixture.mjs'
 const options = { timeout: 30000 }
 const gate = t => {
@@ -260,4 +260,62 @@ test('delivery reauthorizes original source SHA/binding and rejects altered or l
   await unlink(output); await writeFile(output, pdf)
   await f.pool.query('UPDATE pe_users SET credential_version=credential_version+1 WHERE id=$1', [f.userId])
   await assert.rejects(f.service.content(f.token, f.ref(job)), { code: 'account_unauthorized' })
+})
+
+test('discarded derived output leaves the succeeded receipt unchanged and never replays its request', options, async t => {
+  const f = await previewFixture(t), job = await f.accept(); await f.service.tick()
+  await successOutput(f, job); await f.service.tick()
+  const before = await f.state(job.jobId), output = join(f.config.localRoot, job.jobId, 'output')
+  assert.equal(before.state, 'succeeded')
+  await rm(output, { recursive: true }); await mkdir(output, { mode: 0o700 })
+  assert.deepEqual(await readdir(output), [])
+  const mutations = structuredClone(f.kube.mutations)
+  const completed = await f.service.status(f.token, f.ref(job))
+  assert.equal(completed.state, 'succeeded')
+  await assert.rejects(f.service.content(f.token, f.ref(job)), { code: 'office_render_invalid-output' })
+  assert.deepEqual(await f.accept(), completed)
+  await f.service.tick()
+  assert.deepEqual(await f.state(job.jobId), before)
+  assert.deepEqual(f.kube.mutations, mutations)
+  assert.equal(f.kube.resources.size, 0)
+})
+
+test('a new request after cache loss reauthorizes current source and creates only its new parser', options, async t => {
+  const f = await previewFixture(t), original = await f.accept(); await f.service.tick()
+  await successOutput(f, original); await f.service.tick()
+  const before = await f.state(original.jobId)
+  await rm(join(f.config.localRoot, original.jobId, 'output'), { recursive: true })
+  await mkdir(join(f.config.localRoot, original.jobId, 'output'), { mode: 0o700 })
+  const request = { ...f.request, requestId: randomUUID() }
+  await f.pool.query('UPDATE pe_users SET credential_version=credential_version+1 WHERE id=$1', [f.userId])
+  await assert.rejects(f.service.prepare(f.token, request), { code: 'account_unauthorized' })
+  assert.equal((await f.pool.query('SELECT count(*)::int AS n FROM pe_office_preview_jobs')).rows[0].n, 1)
+  clearTaskCredential(f.pool, f.user)
+  const token = await taskCredential(f.pool, f.user), bytes = Buffer.from('current authorized Office source')
+  await writeFile(join(f.root, f.workspaceId, f.sourcePath), bytes)
+  const job = await f.service.prepare(token, request), admitted = await f.state(job.jobId)
+  assert.notEqual(job.jobId, original.jobId)
+  assert.notEqual(admitted.source_snapshot.nonce, before.source_snapshot.nonce)
+  assert.equal(admitted.source_snapshot.sourceSha256, sha(bytes))
+  assert.equal(admitted.source_snapshot.sourceBytes, bytes.length)
+  await f.service.tick()
+  const { pdf } = await successOutput(f, job); await f.service.tick()
+  assert.deepEqual(Buffer.from((await f.service.content(token, f.ref(job))).data, 'base64'), pdf)
+  assert.deepEqual(await f.state(original.jobId), before)
+  assert.deepEqual(f.kube.mutations.filter(call => call.method === 'POST')
+    .map(call => call.body.metadata.labels['powerevolve.dev/preview-job']), [original.jobId, job.jobId])
+})
+
+test('retained receipts at the quota still reject new conversions after derived cache loss', options, async t => {
+  const f = await previewFixture(t, { maxRetainedJobsPerUser: 1 }), job = await f.accept(); await f.service.tick()
+  await successOutput(f, job); await f.service.tick()
+  const before = await f.state(job.jobId), mutations = structuredClone(f.kube.mutations)
+  await rm(join(f.config.localRoot, job.jobId, 'output'), { recursive: true })
+  await mkdir(join(f.config.localRoot, job.jobId, 'output'), { mode: 0o700 })
+  assert.equal((await f.accept()).state, 'succeeded')
+  await assert.rejects(f.accept({ requestId: randomUUID() }), { code: 'office_render_busy', status: 429 })
+  await f.service.tick()
+  assert.equal((await f.pool.query('SELECT count(*)::int AS n FROM pe_office_preview_jobs')).rows[0].n, 1)
+  assert.deepEqual(await f.state(job.jobId), before)
+  assert.deepEqual(f.kube.mutations, mutations)
 })
