@@ -57,6 +57,7 @@ async function verifyEngine(root) {
  * Assemble a new offline runtime directory from an already prepared, symlink-free closure.
  * The caller supplies the built shared validation module; neither input may contain credentials.
  * Package paths retain their installed dependency resolution. Failure removes only the new owned destination.
+ * Copied file modes are preserved; generated resources are 0644 and resource directories are 0755 regardless of caller umask.
  * @param {{ closureRoot: string, destination: string, arch: 'arm64' | 'x64', validatorModule: string }} input - Deployment resources.
  * @returns {Promise<object>} Package identities and copied physical-file SHA256 inventory.
  */
@@ -99,11 +100,13 @@ export async function assembleOfficePreview(input) {
   }
   let owned = false
   try {
-    await mkdir(destination, { mode: 0o755 })
+    await mkdir(destination, { mode: 0o700 })
     owned = true
+    const resourceDirectories = new Set([destination])
     for (const file of records) {
       const path = join(destination, file.path)
       await mkdir(dirname(path), { recursive: true, mode: 0o755 })
+      for (let directory = dirname(path); directory !== destination; directory = dirname(directory)) resourceDirectories.add(directory)
       await copyFile(file.source, path)
       await chmod(path, file.mode)
       const bytes = await readFile(path)
@@ -111,10 +114,13 @@ export async function assembleOfficePreview(input) {
     }
     const project = '{"private":true,"type":"module"}\n'
     await writeFile(join(destination, 'package.json'), project, { flag: 'wx', mode: 0o644 })
+    await chmod(join(destination, 'package.json'), 0o644)
     const manifest = { protocolVersion: 1, sdkVersion, backend: 'wasm', target, packages,
       files: [...records.map(({ path, bytes, sha256, mode }) => ({ path, bytes, sha256, mode })),
         { path: 'package.json', bytes: Buffer.byteLength(project), sha256: sha256(project), mode: 0o644 }] }
     await writeFile(join(destination, 'office-preview-closure.json'), JSON.stringify(manifest, null, 2) + '\n', { flag: 'wx', mode: 0o644 })
+    await chmod(join(destination, 'office-preview-closure.json'), 0o644)
+    for (const directory of [...resourceDirectories].sort((left, right) => right.length - left.length)) await chmod(directory, 0o755)
     return manifest
   } catch (error) {
     if (owned) await rm(destination, { recursive: true, force: true })

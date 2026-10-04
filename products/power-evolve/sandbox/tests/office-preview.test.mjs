@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import test from 'node:test'
-import { officePreviewJobSchema, officePreviewResultSchema } from '../../contracts/src/office-preview.ts'
+import { officePreviewJobSchema, officePreviewResultSchema, officePreviewFailureSchema } from '../../contracts/src/office-preview.ts'
 import { inspectOfficePreviewPdf, runOfficePreview } from '../office-preview.mjs'
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex')
@@ -28,7 +28,7 @@ async function fixture(t, extension = 'docx') {
   await writeFile(join(inputRoot, 'job.json'), JSON.stringify(job), { mode: 0o600 })
   await writeFile(join(inputRoot, `source.${extension}`), source, { mode: 0o600 })
   const calls = []
-  const dependencies = { version: '0.1.1', jobSchema: officePreviewJobSchema, resultSchema: officePreviewResultSchema,
+  const dependencies = { version: '0.1.1', jobSchema: officePreviewJobSchema, resultSchema: officePreviewResultSchema, failureSchema: officePreviewFailureSchema,
     createConverter: async options => {
       calls.push({ kind: 'create', options })
       return { backend: 'wasm', render: async (request, signal) => {
@@ -48,7 +48,15 @@ async function fixture(t, extension = 'docx') {
     saveJob: () => writeFile(join(inputRoot, 'job.json'), JSON.stringify(job)),
     run: signal => runOfficePreview({ inputRoot, outputRoot, dependencies, signal }) }
 }
-async function noResult(f) { assert.deepEqual(await readdir(f.outputRoot), []) }
+async function noResult(f, expectedFailure) {
+  assert.deepEqual(await readdir(f.outputRoot), expectedFailure ? ['failure.json'] : [])
+  if (expectedFailure) {
+    const record = officePreviewFailureSchema.parse(JSON.parse(await readFile(join(f.outputRoot, 'failure.json'), 'utf8')))
+    assert.deepEqual(record, { protocolVersion: 1, jobId: f.job.jobId, nonce: f.job.nonce,
+      generation: f.job.generation, sourceSha256: f.job.sourceSha256, errorCode: expectedFailure })
+    assert.equal((await lstat(join(f.outputRoot, 'failure.json'))).mode & 0o777, 0o600)
+  }
+}
 const code = expected => error => error.code === expected && !error.message.includes('/var/')
 
 test('all fixed Office extensions publish bound bytes only after dispose and PDF child close', async t => {
@@ -95,7 +103,7 @@ test('wrong source digest/size, symlinks, directories and FIFO never reach the S
     if (kind === 'directory') await mkdir(path)
     if (kind === 'fifo') execFileSync('/usr/bin/mkfifo', [path])
     await f.saveJob(); await assert.rejects(f.run())
-    assert.deepEqual(f.calls, []); await noResult(f)
+    assert.deepEqual(f.calls, []); await noResult(f, ['digest', 'size'].includes(kind) ? 'source-changed' : kind === 'symlink' ? 'failed' : 'invalid-document')
   })
 })
 
@@ -129,7 +137,7 @@ test('deadline cancellation rejects even when the SDK traps abort and returns su
     await new Promise(done => signal.addEventListener('abort', done, { once: true }))
     return { backend: 'wasm', missingFonts: [] }
   }, dispose: async () => { disposed = true } })
-  await assert.rejects(f.run(), code('timeout')); assert.equal(disposed, true); await noResult(f)
+  await assert.rejects(f.run(), code('timeout')); assert.equal(disposed, true); await noResult(f, 'timeout')
 })
 
 test('wrong SDK/native backend and failed disposal cannot publish success', async t => {
@@ -143,7 +151,8 @@ test('wrong SDK/native backend and failed disposal cannot publish success', asyn
       if (kind === 'dispose') converter.dispose = async () => { throw new Error('private path and credentials') }
       return converter
     }
-    await assert.rejects(f.run(), code(kind === 'dispose' ? 'failed' : 'unavailable')); await noResult(f)
+    await assert.rejects(f.run(), code(kind === 'dispose' ? 'failed' : 'unavailable'));
+    await noResult(f, ['version', 'dispose'].includes(kind) ? undefined : 'unavailable')
   })
 })
 
@@ -163,7 +172,7 @@ test('invalid PDF bytes, output links/size, pages and font metadata reject', asy
       }
       return converter
     }
-    await assert.rejects(f.run()); await noResult(f)
+    await assert.rejects(f.run()); await noResult(f, kind === 'oversize' ? 'output-too-large' : ['symlink', 'fonts'].includes(kind) ? 'failed' : 'invalid-output')
   })
 })
 
@@ -210,4 +219,35 @@ test('production entry rejects all caller path/command arguments before loading 
     env: { PATH: '/usr/bin:/bin', HOME: '/nonexistent', LANG: 'C.UTF-8' }, stdio: ['ignore', 'pipe', 'pipe'],
   }), error => error.status === 1 && error.stdout.length === 0
     && error.stderr.toString() === '{"protocolVersion":1,"errorCode":"unavailable"}\n')
+})
+
+test('failure marker preserves all shared reasons without diagnostics and waits for disposal', async t => {
+  for (const errorCode of ['input-too-large', 'output-too-large', 'invalid-document', 'unsupported-format',
+    'invalid-output', 'timeout', 'unavailable', 'failed', 'busy', 'source-changed']) await t.test(errorCode, async t => {
+    const f = await fixture(t), disposing = deferred(), release = deferred()
+    f.dependencies.createConverter = async () => ({ backend: 'wasm', render: async () => {
+      throw Object.assign(new Error('private path /private/source; raw Office bytes; credential'), { code: errorCode })
+    }, dispose: async () => { disposing.resolve(); await release.promise } })
+    const running = f.run(); await disposing.promise
+    assert.equal((await readdir(f.outputRoot)).includes('failure.json'), false)
+    release.resolve(); await assert.rejects(running, code(errorCode)); await noResult(f, errorCode)
+    assert.equal((await readFile(join(f.outputRoot, 'failure.json'), 'utf8')).includes('private'), false)
+  })
+})
+
+test('caller cancellation during cleanup suppresses a failure marker', async t => {
+  const f = await fixture(t), disposing = deferred(), release = deferred(), controller = new AbortController()
+  f.dependencies.createConverter = async () => ({ backend: 'wasm', render: async () => { throw Object.assign(new Error('invalid'), { code: 'invalid-document' }) },
+    dispose: async () => { disposing.resolve(); await release.promise } })
+  const running = f.run(controller.signal); await disposing.promise; controller.abort(); release.resolve()
+  await assert.rejects(running, code('invalid-document')); await noResult(f)
+})
+
+test('failure validation cannot publish success or leave staged output', async t => {
+  const f = await fixture(t)
+  f.dependencies.createConverter = async () => ({ backend: 'wasm', render: async () => {
+    throw Object.assign(new Error('invalid'), { code: 'invalid-document' })
+  }, dispose: async () => {} })
+  f.dependencies.failureSchema = { parse: () => { throw new Error('private validation diagnostic') } }
+  await assert.rejects(f.run(), code('failed')); await noResult(f)
 })

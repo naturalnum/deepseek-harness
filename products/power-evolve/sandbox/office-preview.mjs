@@ -13,7 +13,7 @@ const PDFINFO_OUTPUT_BYTES = 16384
 const PDFINFO_KILL_GRACE_MS = 300
 const fontDirectories = Object.freeze(['/usr/share/fonts'])
 const errorCodes = new Set(['input-too-large', 'output-too-large', 'invalid-document', 'unsupported-format',
-  'invalid-output', 'timeout', 'unavailable', 'failed', 'source-changed', 'cancelled'])
+  'invalid-output', 'timeout', 'unavailable', 'failed', 'busy', 'source-changed', 'cancelled'])
 const digest = bytes => createHash('sha256').update(bytes).digest('hex')
 
 function failure(code) {
@@ -53,8 +53,12 @@ async function regularBytes(path, maximum, exceededCode) {
 
 async function privateWrite(path, bytes) {
   const handle = await open(path, 'wx', 0o600)
+  let issue
   try { await handle.writeFile(bytes); await handle.sync() }
-  finally { await handle.close() }
+  catch (error) { issue = error }
+  try { await handle.close() }
+  catch (error) { issue ??= error }
+  if (issue) { await rm(path); throw issue }
 }
 
 /**
@@ -123,10 +127,40 @@ export async function loadOfficePreviewDependencies() {
     const runtime = await sdk.discoverRuntime()
     if (sdk.ENGINE_VERSION !== SDK_VERSION || runtime.version !== SDK_VERSION || runtime.backend !== 'wasm'
       || typeof validators.officePreviewJobSchema?.parse !== 'function'
-      || typeof validators.officePreviewResultSchema?.parse !== 'function') throw failure('unavailable')
+      || typeof validators.officePreviewResultSchema?.parse !== 'function'
+      || typeof validators.officePreviewFailureSchema?.parse !== 'function') throw failure('unavailable')
     return { version: SDK_VERSION, createConverter: sdk.createConverter,
-      jobSchema: validators.officePreviewJobSchema, resultSchema: validators.officePreviewResultSchema }
+      jobSchema: validators.officePreviewJobSchema, resultSchema: validators.officePreviewResultSchema,
+      failureSchema: validators.officePreviewFailureSchema }
   } catch (_unavailableRuntime) { throw failure('unavailable') }
+}
+
+async function publishFailure(root, job, errorCode, dependencies, signal) {
+  if (signal?.aborted || errorCode === 'cancelled') return
+  if ((await readdir(root)).length !== 0) throw failure('failed')
+  const record = dependencies.failureSchema.parse({ protocolVersion: 1, jobId: job.jobId, nonce: job.nonce,
+    generation: job.generation, sourceSha256: job.sourceSha256, errorCode })
+  const path = join(root, `.office-failure-${job.nonce}`)
+  let staged = false, published = false
+  try {
+    await privateWrite(path, JSON.stringify(record) + '\n')
+    staged = true
+    if (signal?.aborted) return
+    const directory = openSync(root, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW)
+    try {
+      linkSync(path, join(root, 'failure.json'))
+      published = true
+      unlinkSync(path)
+      staged = false
+      fsyncSync(directory)
+    } catch (error) {
+      if (published) { unlinkSync(join(root, 'failure.json')); published = false }
+      fsyncSync(directory)
+      throw error
+    } finally { closeSync(directory) }
+  } finally {
+    if (staged) await rm(path)
+  }
 }
 
 /**
@@ -135,11 +169,12 @@ export async function loadOfficePreviewDependencies() {
  * The output directory must be an empty physical private directory without other writers.
  * Publication links result.pdf then result.json exclusively in one synchronous commit; successful marker is not Pod-stop evidence.
  * @param {{ inputRoot: string, outputRoot: string, dependencies: object, signal?: AbortSignal }} input - Trusted process resources.
- * @returns {Promise<object>} Shared validated result; failure leaves no new success marker and awaits disposal.
+ * @returns {Promise<object>} Shared result; after successful join/cleanup, validated jobs may publish failure.json and reject.
+ * Invalid jobs, failed cleanup and caller cancellation publish no failure marker. Neither marker proves Pod termination.
  */
 export async function runOfficePreview(input) {
   const { dependencies } = input
-  let scratch, converter, timer, stagedPdf, stagedMarker, publishedPdf = false, publishedMarker = false, committed = false
+  let validatedJob, taskFailure, scratch, converter, timer, stagedPdf, stagedMarker, publishedPdf = false, publishedMarker = false, committed = false
   const controller = new AbortController()
   const signal = input.signal ? AbortSignal.any([input.signal, controller.signal]) : controller.signal
   const outputRoot = resolve(input.outputRoot)
@@ -152,6 +187,7 @@ export async function runOfficePreview(input) {
       || (await readdir(outputRoot)).length !== 0) throw failure('unavailable')
     const rawJob = await regularBytes(join(input.inputRoot, 'job.json'), JOB_JSON_BYTES, 'invalid-document')
     const job = dependencies.jobSchema.parse(JSON.parse(rawJob.toString('utf8')))
+    validatedJob = job
     timer = setTimeout(() => controller.abort(failure('timeout')), job.limits.timeoutMs)
     const source = await regularBytes(join(input.inputRoot, `source.${job.extension}`), job.limits.inputBytes, 'input-too-large')
     checkCancellation(signal)
@@ -218,8 +254,8 @@ export async function runOfficePreview(input) {
     committed = true
     return result
   } catch (error) {
-    checkCancellation(signal)
-    throw checkedError(error)
+    taskFailure = signal.aborted ? failure(signal.reason?.code === 'timeout' ? 'timeout' : 'cancelled') : checkedError(error)
+    throw taskFailure
   } finally {
     clearTimeout(timer)
     const errors = []
@@ -237,6 +273,10 @@ export async function runOfficePreview(input) {
       catch (error) { errors.push(error) }
     }
     if (errors.length > 0) throw failure('failed')
+    if (taskFailure && validatedJob) {
+      try { await publishFailure(outputRoot, validatedJob, taskFailure.code, dependencies, input.signal) }
+      catch (_failurePublication) { throw failure('failed') }
+    }
   }
 }
 

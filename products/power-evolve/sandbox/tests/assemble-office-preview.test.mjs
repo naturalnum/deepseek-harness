@@ -1,7 +1,7 @@
 /** Tiny physical package fixtures exercise copying and hash rejection, not the real WASM engine. */
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -36,7 +36,7 @@ async function fixture(t) {
     engine: { kind: 'wasm', ...assets, programDirectory: '/instdir/program' }, files }
   await writeFile(join(wasm, 'prebuilds.json'), JSON.stringify(prebuilds))
   const validatorModule = join(root, 'shared-validator.mjs')
-  await writeFile(validatorModule, 'export const officePreviewJobSchema={parse(){throw Error("fixture only")}};export const officePreviewResultSchema=officePreviewJobSchema\n')
+  await writeFile(validatorModule, 'export const officePreviewJobSchema={parse(){throw Error("fixture only")}};export const officePreviewResultSchema=officePreviewJobSchema;export const officePreviewFailureSchema=officePreviewJobSchema\n')
   return { root, closureRoot, destination, kit, wasm, dependency, validatorModule, kitManifest, prebuilds,
     run: () => assembleOfficePreview({ closureRoot, destination, arch: 'arm64', validatorModule }) }
 }
@@ -55,6 +55,19 @@ test('offline assembly preserves Linux package resolution and every copied byte'
   assert.equal(await readFile(join(f.destination, 'node_modules/@deepseek-ai/libreoffice-kit/worker.js'), 'utf8'), 'physical worker fixture')
   await writeFile(join(f.kit, 'worker.js'), 'changed input after assembly')
   assert.equal(await readFile(join(f.destination, 'node_modules/@deepseek-ai/libreoffice-kit/worker.js'), 'utf8'), 'physical worker fixture')
+})
+
+test('private caller umask preserves copied modes and readable generated resources', async t => {
+  const f = await fixture(t), previous = process.umask(0o077)
+  let result
+  try { result = await f.run() }
+  finally { process.umask(previous) }
+  for (const file of result.files) assert.equal((await lstat(join(f.destination, file.path))).mode & 0o777, file.mode)
+  for (const path of ['', 'node_modules', 'node_modules/@deepseek-ai',
+    'node_modules/@deepseek-ai/libreoffice-kit-wasm/assets']) {
+    assert.equal((await lstat(join(f.destination, path))).mode & 0o777, 0o755)
+  }
+  assert.equal((await lstat(join(f.destination, 'office-preview-closure.json'))).mode & 0o777, 0o644)
 })
 
 test('missing WASM/dependency and wrong package or native engine cannot assemble', async t => {
@@ -120,6 +133,7 @@ test('copied process loader enforces actual package/runtime versions and shared 
       assert.equal(dependencies.version, '0.1.1')
       assert.equal(typeof dependencies.jobSchema.parse, 'function')
       assert.equal(typeof dependencies.resultSchema.parse, 'function')
+      assert.equal(typeof dependencies.failureSchema.parse, 'function')
     } else await assert.rejects(copied.loadOfficePreviewDependencies(), error => error.code === 'unavailable' && !error.message.includes(f.root))
   })
 })
