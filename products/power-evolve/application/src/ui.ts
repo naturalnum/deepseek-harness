@@ -1,12 +1,17 @@
 /** Static product UI served from an explicit allowlist with a same-origin CSP. */
 import { readFile } from 'node:fs/promises'
 import type { ServerResponse } from 'node:http'
+import { createRequire } from 'node:module'
 import { join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+
+const require = createRequire(import.meta.url)
+const cloudWeb = pathToFileURL(require.resolve('@power-evolve/cloud-web/package.json'))
+const contracts = pathToFileURL(require.resolve('@power-evolve/contracts/package.json'))
 
 const nativeDist = process.env.PE_NATIVE_WEB_DIST
   ? resolve(process.env.PE_NATIVE_WEB_DIST)
-  : fileURLToPath(new URL('../../cloud-web/dist/', import.meta.url))
+  : fileURLToPath(new URL('./dist/', cloudWeb))
 const nativeMime: Record<string, string> = {
   '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml',
   '.json': 'application/json', '.webmanifest': 'application/manifest+json',
@@ -63,7 +68,7 @@ export async function serveUi(path: string, application: 'login' | 'client' | 'd
     '/approval.js': ['approval.js', 'text/javascript'],
     '/execution-resolution.js': ['execution-resolution.js', 'text/javascript'],
     '/execution-resolution-contract.js': ['execution-resolution-contract.js', 'text/javascript',
-      new URL('../../contracts/lib/browser/execution-resolution.js', import.meta.url)],
+      new URL('./lib/browser/execution-resolution.js', contracts)],
     '/app.js': [`${application}.js`, 'text/javascript'],
     '/locale.js': ['locale.js', 'text/javascript'],
     '/workspace.js': ['workspace.js', 'text/javascript'],

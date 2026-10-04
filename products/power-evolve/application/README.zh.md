@@ -17,6 +17,8 @@
 
 原生 Web 的登录页可把仅保存在内存中的 Agent 凭据 POST 到宿主 `/auth/exchange`。平台原子地注销这枚凭据，并签发保留原过期时间的新凭据；宿主将新凭据写入只发往 `/native/api` 和 `/api/powerEvolve` 的 HttpOnly、SameSite=Strict Cookie。URL 和浏览器存储不包含凭据。适配器对每次产品 RPC、事件流和 WebSocket 升级调用 `powerEvolveBrowserAuth.authenticate(request)`；Cookie 请求必须来自配置的宿主 Origin，交换请求必须来自配置的平台 Origin。平台仍负责校验到期和注销。除本机回环地址外必须使用 HTTPS。原生传输层在 `/native/api` 提供受限的会话列表、创建、文本输入、取消、历史分页、投影、订阅、控制和获授权的工作区订阅基线，也提供归属会话的文件列表、状态、文本、字节预览和变更订阅。浏览器看到的路径以 `/workspace` 为根；平台按每个已鉴权会话绑定的 POSIX 工作区解析路径，并逐次核验归属。WebSocket 复用上游 Gateway 的流复用器，平台调用仍按用户授权。其余原生端点返回错误，宿主不开放上游操作员接口。
 
+原生静态资源通过声明的 `cloud-web` 包定位，审批页浏览器代码通过 `contracts` 包定位；这些包的物理目录不必与本包相邻。`PE_NATIVE_WEB_DIST` 可选择另一份原生构建目录，资源白名单仍然生效。
+
 原生 WebSocket 准入保留实际的 401 和 403 拒绝。Platform 连接失败、超时、身份验证不可用或验证响应无效时，以 503 拒绝升级，不清除浏览器凭据。
 
 回环[试用 Host 代理](../scripts/trial-lb.mjs)保留非 101 升级响应，包括 401、403 和 503，以及端到端响应头。它移除逐跳响应头，在 3 秒响应期限内最多转发拒绝正文的前 8 KiB，重新计算 Content-Length，并关闭两侧连接。连接失败仍返回 502；代理不会重试升级。
