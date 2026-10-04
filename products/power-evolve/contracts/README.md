@@ -23,6 +23,8 @@ Import account records from `@power-evolve/contracts/account`. Zod parsers rejec
 
 Import download requests and the same-origin URL builder from `@power-evolve/contracts/file-download`. The [download source](src/file-download.ts) defines canonical relative paths, metadata digests and protocol ceilings. Deployment limits and authorization remain with the Platform; see the [file slice](../S2-COMPLETION.md).
 
+Import Office preview requests, task views and isolated parser records from `@power-evolve/contracts/office-preview`. These records bind stable request keys, source digests and converter generations; they accept no user identity, physical root, command or image selection. Explicit parser budgets remain below fixed source/PDF protocol ceilings. A result marker is not Pod termination evidence; consumers must independently verify byte digests, current authorization and exact parser termination before releasing capacity.
+
 Import Runner observations, verified execution file records and conditional publication requests from `@power-evolve/contracts/execution-files`. The Platform rereads candidates through the authorized Workspace before persisting their size and SHA-256. Records identify versions observed after execution; they do not prove that a command was the only writer. Missing or incomplete scans remain explicit. Publication with an expected digest rejects changed source bytes.
 
 Import private storage selection and Workspace binding recovery records from `@power-evolve/contracts/workspace-binding`. A target identifies an owned storage space and a canonical relative directory, never a physical root. Recovery carries a stable request ID and expected binding generation; only a completed receipt advances it by one. Parsing supplies no storage ownership or stopped-writer evidence.
@@ -37,7 +39,7 @@ Device dispatch records accept optional immutable skill references in `materials
 
 ## Implementation
 
-Only Zod and the upstream brand utility are runtime dependencies. TypeScript emits browser-compatible ESM and declarations together. The package build also bundles execution-reconciliation validation as standalone browser ESM in `lib/browser/execution-resolution.js`; the trusted approval page imports this exact build through the Platform allowlist. Consumers of this static module require the package build; it has no external runtime imports. The application re-exports these account definitions for its existing internal imports. The package has no process state, credential storage, authorization checks or independent lifecycle invariant.
+Only Zod and the upstream brand utility are runtime dependencies. TypeScript emits browser-compatible ESM and declarations together. The package build also produces standalone ESM in `lib/browser/execution-resolution.js` and `lib/browser/office-preview.js`. The trusted approval page imports the first through the Platform allowlist; the isolated parser consumes the second as a fixed physical resource. Consumers require the package build; these modules have no external runtime imports. The application re-exports these account definitions for its existing internal imports. The package has no process state, credential storage, authorization checks or independent lifecycle invariant.
 
 ## Limits
 
