@@ -335,7 +335,7 @@ export class DeviceService {
     return r
   }
 
-  /** Permanently close an interrupted claiming generation that never received start permission.
+  /** Permanently close an interrupted claim or creation that never received start permission.
    * @param token Original Device credential; revocation permits only this exact existing claim's cleanup.
    * @param input Stable original intent verified by the trusted Worker under its private journal lock.
    * @returns Durable no-start receipt; no Docker stop, output, or replacement dispatch is invented.
@@ -556,6 +556,29 @@ export class DeviceService {
       [row.id, JSON.stringify(input.receipt), canStart])
       return deviceContainerRegistered.parse({ executionId: row.id, dispatchId: row.dispatch_id,
         receipt: input.receipt, canStart })
+    })
+  }
+
+  /** Query an original capture during recovery without registering or authorizing a start.
+   * @param token Original Device credential, including revoked credentials for its bound execution.
+   * @param input Original process, dispatch and exact immutable container identity.
+   * @returns Existing matching capture with canStart=false; absence or changed identity is refused.
+   */
+  async registered(token: string, input: DeviceContainerRegistration): Promise<z.infer<typeof deviceContainerRegistered>> {
+    return transaction(this.pool, async client => {
+      const device = await this.authenticated(client, token, true)
+      const selected = await client.query<Row>(
+        'SELECT * FROM pe_desktop_executions WHERE id=$1 AND device_id=$2 FOR UPDATE', [input.executionId, device.id])
+      const row = selected.rows[0]
+      if (!row) throw new PlatformError(404, 'execution_not_found')
+      await this.assertClaimOpen(client, row)
+      this.assertDispatch(row, device, input)
+      this.assertReceipt(row, input.receipt)
+      const captured = this.captured(row)
+      if (!captured) throw new PlatformError(409, 'device_container_not_registered')
+      if (!isDeepStrictEqual(captured, input.receipt)) throw new PlatformError(409, 'container_identity_changed')
+      return deviceContainerRegistered.parse({ executionId: row.id, dispatchId: row.dispatch_id,
+        receipt: captured, canStart: false })
     })
   }
 

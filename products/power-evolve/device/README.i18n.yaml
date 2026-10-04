@@ -3,5 +3,5 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write products/power-evolve/device/README.md
 /local-device-bundle:
-  en: bfdf1b5de9afec76
-  zh: 52b3acb93f17387c
+  en: 759448a3d29be74a
+  zh: c33b5a6f21fd2052

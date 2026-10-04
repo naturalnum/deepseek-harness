@@ -97,6 +97,7 @@ async function fixture(t, loseRegistrationAck = false, commandTimeoutMs = 1234, 
         if (loseRegistrationAck && !lost) { lost = true; res.destroy(); return }
         break
       }
+      case '/devices/agent/registered': reply = await platform.devices.registered(token, deviceContainerRegistration.parse(input)); break
       case '/devices/agent/finish': {
         lastFinish = deviceFinishRequest.parse(input)
         reply = await platform.devices.finish(token, lastFinish); break
@@ -106,7 +107,7 @@ async function fixture(t, loseRegistrationAck = false, commandTimeoutMs = 1234, 
     res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(reply))
   }
   server = createServer((req, res) => { void route(req, res).catch(error => {
-    if (!res.destroyed) res.writeHead(error.status ?? 500, { 'content-type': 'application/json' }).end(JSON.stringify({ code: error.code ?? 'fixture_failure' }))
+    if (!res.destroyed) res.writeHead(error.status ?? 500, { 'content-type': 'application/json' }).end(JSON.stringify({ error: error.code ?? 'fixture_failure' }))
   }) })
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
   origin = `http://127.0.0.1:${server.address().port}`

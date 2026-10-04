@@ -49,6 +49,40 @@ test('first container registration alone grants start, including an ACK-loss ret
     receipt: { ...registration.receipt, containerId: 'c'.repeat(64) } }), { code: 'container_identity_changed' })
 })
 
+test('recovery capture queries never register or grant a start and preserve every execution field', { timeout: 60000 }, async t => {
+  const f = await deviceProtocolFixture(t), d = await f.enroll(f.alice), foreign = await f.enroll(f.bob)
+  const { claim } = await f.claimed(f.alice, d), registration = registrationFor(d, claim)
+  const before = await f.row(claim.executionId)
+  await assert.rejects(f.devices.registered(d.token, registration), { code: 'device_container_not_registered' })
+  assert.deepEqual(await f.row(claim.executionId), before)
+  assert.equal((await f.devices.register(d.token, registration)).canStart, true)
+  const captured = await f.row(claim.executionId)
+  const rebuilt = new DeviceService(f.tasks, 9876, {})
+  const receipts = await Promise.all([f.devices.registered(d.token, registration), rebuilt.registered(d.token, registration)])
+  assert.deepEqual(receipts, [0, 1].map(() => ({ executionId: claim.executionId,
+    dispatchId: claim.dispatchId, receipt: registration.receipt, canStart: false })))
+  await assert.rejects(rebuilt.registered(foreign.token, registration), { code: 'execution_not_found' })
+  await assert.rejects(rebuilt.registered(d.token, { ...registration, processId: randomUUID() }), { code: 'device_process_changed' })
+  await assert.rejects(rebuilt.registered(d.token, { ...registration, receipt: { ...registration.receipt,
+    containerId: 'c'.repeat(64) } }), { code: 'container_identity_changed' })
+  assert.deepEqual(await f.row(claim.executionId), captured)
+  assert.equal(await f.continuations(claim.executionId), 0)
+  await f.devices.revoke(f.alice, d.deviceId)
+  const revoked = await f.row(claim.executionId)
+  assert.equal((await rebuilt.registered(d.token, registration)).canStart, false)
+  assert.deepEqual(await f.row(claim.executionId), revoked)
+})
+
+test('recovery capture queries refuse a permanently sealed creation without changing its fence or continuation', { timeout: 60000 }, async t => {
+  const f = await deviceProtocolFixture(t), d = await f.enroll(f.alice), { claim } = await f.claimed(f.alice, d)
+  await f.devices.closeUnstartedClaim(d.token, { instanceId: d.instanceId, executionId: claim.executionId,
+    processId: claim.processId, directoryId: claim.directoryId, digest: claim.digest, requestId: randomUUID() })
+  const sealed = await f.row(claim.executionId)
+  await assert.rejects(f.devices.registered(d.token, registrationFor(d, claim)), { code: 'device_claim_closed' })
+  assert.deepEqual(await f.row(claim.executionId), sealed)
+  assert.equal(await f.continuations(claim.executionId), 1)
+})
+
 test('foreign device, process, dispatch and immutable receipts cannot register or report stop', { timeout: 60000 }, async t => {
   const f = await deviceProtocolFixture(t), d = await f.enroll(f.alice), foreign = await f.enroll(f.bob)
   const { claim } = await f.claimed(f.alice, d), registration = registrationFor(d, claim)

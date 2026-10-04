@@ -237,6 +237,19 @@ export class DeviceWriterLease {
       if (slot.receipt !== null || slot.stop !== null) throw new DeviceWriterError('device_writer_claim_closure_unavailable')
     })
   }
+  /** Verify a creation intent before requesting its permanent no-start closure.
+   * @param receipt Original private-journal capture, absent before its durable save.
+   * @returns Completion only when the original slot has no stop facts and any capture matches.
+   */
+  verifyCreation(receipt?: OwnedContainerReceipt): Promise<void> {
+    return this.run(async () => {
+      const slot = await this.store.command(this.owner)
+      if (receipt && !matching(this.owner, receipt)) throw new DeviceWriterError('device_writer_identity_changed')
+      if (slot.stop !== null || slot.receipt !== null && !isDeepStrictEqual(slot.receipt, receipt)) {
+        throw new DeviceWriterError('device_writer_claim_closure_unavailable')
+      }
+    })
+  }
   /** Persist an immutable capture before start; a different container or owner cannot replace it.
    * @param receipt Exact owned Docker identity, without a local path or command.
    * @returns Durable capture; identical retries retain the original receipt.
@@ -335,6 +348,32 @@ export class DeviceWriterCoordinator {
       const state = await store.current()
       if (state.slot?.kind !== 'command' || !isDeepStrictEqual(state.slot.owner, owner)) return
       if (state.slot.receipt !== null || state.slot.stop !== null) {
+        throw new DeviceWriterError('device_writer_claim_closure_unavailable')
+      }
+      await store.save({ ...state, slot: null })
+    } finally { await store.lock.release() }
+  }
+  /** Retire a permanently sealed creation without recreating admission or clearing another writer.
+   * @param owner Original process and frozen request, retained under the private journal flock.
+   * @param closure Matching permanent no-start receipt, durably saved by the trusted Worker.
+   * @param cleanup Exact non-running facts, durably saved before confirmed removal; required for a captured slot.
+   * @returns Durable retirement; a missing original slot or different writer remains untouched.
+   */
+  async retireCreation(owner: DeviceWriterOwner, closure: DeviceClaimClosureReceipt,
+    cleanup?: { receipt: OwnedContainerReceipt; observation: DeviceStopObservation }): Promise<void> {
+    if (closure.deviceId !== owner.deviceId || closure.instanceId !== owner.enrollmentId
+      || closure.executionId !== owner.executionId || closure.processId !== owner.processId
+      || closure.directoryId !== owner.directoryId || closure.digest !== owner.requestDigest || closure.dispatchId === null
+      || cleanup && (!matching(owner, cleanup.receipt) || cleanup.receipt.owner.creationId !== closure.dispatchId
+        || !isDeepStrictEqual(cleanup.receipt, cleanup.observation.receipt))) {
+      throw new DeviceWriterError('device_writer_claim_closure_mismatch')
+    }
+    const store = await this.acquire(false)
+    try {
+      const state = await store.current()
+      if (state.slot?.kind !== 'command' || !isDeepStrictEqual(state.slot.owner, owner)) return
+      if (state.slot.stop !== null || state.slot.receipt !== null
+        && (cleanup === undefined || !isDeepStrictEqual(state.slot.receipt, cleanup.receipt))) {
         throw new DeviceWriterError('device_writer_claim_closure_unavailable')
       }
       await store.save({ ...state, slot: null })

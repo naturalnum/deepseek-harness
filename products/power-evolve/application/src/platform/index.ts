@@ -575,6 +575,10 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
           const value = deviceContainerRegistration.parse(input)
           sendJson(res, await devices.register(token, value)); return
         }
+        case '/devices/agent/registered': {
+          const value = deviceContainerRegistration.parse(input)
+          sendJson(res, await devices.registered(token, value)); return
+        }
         case '/devices/agent/finish': {
           const value = deviceFinishRequest.parse(input)
           sendJson(res, await devices.finish(token, value)); return

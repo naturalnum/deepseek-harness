@@ -228,7 +228,59 @@ test('retiring an old claim leaves an unrelated interrupted transfer untouched',
   const prior = await readFile(join(path, DEVICE_WRITER_SLOT_FILENAME))
   await new DeviceWriterCoordinator(path).retireClaim(original, input)
   assert.deepEqual(await readFile(join(path, DEVICE_WRITER_SLOT_FILENAME)), prior)
+  await new DeviceWriterCoordinator(path).retireCreation(original, claimClosure(original, randomUUID()))
+  assert.deepEqual(await readFile(join(path, DEVICE_WRITER_SLOT_FILENAME)), prior)
   assert.equal((await bytes(path)).slot?.kind, 'transfer')
+})
+
+test('creation verification preserves an exact capture and retirement requires its saved cleanup facts', options, async t => {
+  const path = await root(t), coordinator = new DeviceWriterCoordinator(path), original = owner(), container = receipt(original)
+  const lease = await coordinator.command(original)
+  t.after(() => lease.release())
+  await lease.verifyCreation()
+  await lease.capture(container)
+  await lease.verifyCreation(container)
+  await assert.rejects(lease.verifyCreation(), { code: 'device_writer_claim_closure_unavailable' })
+  await assert.rejects(lease.verifyCreation(receipt(owner())), { code: 'device_writer_identity_changed' })
+  const captured = await readFile(join(path, DEVICE_WRITER_SLOT_FILENAME))
+  await lease.release()
+  const closure = claimClosure(original, container.owner.creationId)
+  await assert.rejects(coordinator.retireCreation(original, closure), { code: 'device_writer_claim_closure_unavailable' })
+  await assert.rejects(coordinator.retireCreation(original, claimClosure(original, randomUUID()),
+    { receipt: container, observation: stop(container) }), { code: 'device_writer_claim_closure_mismatch' })
+  await assert.rejects(coordinator.retireCreation(original, closure,
+    { receipt: container, observation: stop(receipt(original)) }), { code: 'device_writer_claim_closure_mismatch' })
+  assert.deepEqual(await readFile(join(path, DEVICE_WRITER_SLOT_FILENAME)), captured)
+  await coordinator.retireCreation(original, closure, { receipt: container, observation: stop(container) })
+  assert.equal((await bytes(path)).slot, null)
+  await settleKnown(coordinator, owner())
+})
+
+test('a sealed uncaptured creation retires once and late cleanup cannot clear a newer writer', options, async t => {
+  const path = await root(t), coordinator = new DeviceWriterCoordinator(path), original = owner(), closed = claimClosure(original, randomUUID())
+  const lease = await coordinator.command(original); await lease.verifyCreation(); await lease.release()
+  await coordinator.retireCreation(original, closed)
+  const empty = await readFile(join(path, DEVICE_WRITER_SLOT_FILENAME))
+  await coordinator.retireCreation(original, closed)
+  assert.deepEqual(await readFile(join(path, DEVICE_WRITER_SLOT_FILENAME)), empty)
+  const next = owner(), active = await coordinator.command(next); await active.release()
+  const occupied = await readFile(join(path, DEVICE_WRITER_SLOT_FILENAME))
+  await coordinator.retireCreation(original, closed)
+  assert.deepEqual(await readFile(join(path, DEVICE_WRITER_SLOT_FILENAME)), occupied)
+  assert.equal((await bytes(path)).slot?.kind, 'command')
+  await settleKnown(coordinator, next)
+})
+
+test('a stopped creation cannot be retired as an unstarted intent even with a closure receipt', options, async t => {
+  const path = await root(t), coordinator = new DeviceWriterCoordinator(path), original = owner(), container = receipt(original)
+  const lease = await coordinator.command(original); await lease.capture(container)
+  await lease.recordStop(stop(container), stopId())
+  const stopped = await readFile(join(path, DEVICE_WRITER_SLOT_FILENAME))
+  await assert.rejects(lease.verifyCreation(container), { code: 'device_writer_claim_closure_unavailable' })
+  await lease.release()
+  await assert.rejects(coordinator.retireCreation(original, claimClosure(original, container.owner.creationId),
+    { receipt: container, observation: stop(container) }), { code: 'device_writer_claim_closure_unavailable' })
+  assert.deepEqual(await readFile(join(path, DEVICE_WRITER_SLOT_FILENAME)), stopped)
 })
 
 test('stale ACKs and changed stop facts fail; uncertain preserves the reservation until matching closure', options, async t => {
