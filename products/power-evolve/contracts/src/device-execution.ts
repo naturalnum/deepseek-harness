@@ -1,6 +1,12 @@
 /** Durable Device dispatch and exact-container stop records; parsing does not authorize execution. */
 import { z } from 'zod'
 import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
+import { deviceMaterialBinding, deviceMaterialSelection } from './device-materials.ts'
+
+export { deviceMaterialBinding, deviceMaterialSelection, deviceSkillManifest, deviceSkillMaterial,
+  DEVICE_MATERIAL_MAX_BYTES, DEVICE_MATERIAL_MAX_FILES,
+  type DeviceMaterialBinding, type DeviceMaterialDigest, type DeviceMaterialSkillId,
+  type DeviceSkillMaterial, type DeviceSkillManifest } from './device-materials.ts'
 
 /** Exact Docker container ID, never a name or shortened prefix. */
 export type DeviceContainerId = Branded<'power-evolve/DeviceContainerId'>
@@ -51,9 +57,11 @@ export type OwnedContainerReceipt = z.infer<typeof ownedContainerReceipt>
 export const deviceDispatchRequest = z.object({
   command: z.string().min(1).max(8192), cwd: z.string().max(4096), timeoutMs: z.number().int().positive(),
   deviceId, directoryId,
+  materials: deviceMaterialSelection.optional(),
 }).strict()
 const command = z.object({ executionId, directoryId, command: deviceDispatchRequest.shape.command,
-  cwd: deviceDispatchRequest.shape.cwd, timeoutMs: deviceDispatchRequest.shape.timeoutMs, digest }).strict()
+  cwd: deviceDispatchRequest.shape.cwd, timeoutMs: deviceDispatchRequest.shape.timeoutMs, digest,
+  materials: deviceMaterialSelection.optional() }).strict()
 /** Bounded polling record; cancellation and unknown outcomes grant no permission to start. */
 export const deviceJob = command.extend({
   state: z.enum(['queued', 'running', 'cancelling', 'uncertain']), cancelRequested: z.boolean(),
@@ -62,6 +70,12 @@ export const deviceJob = command.extend({
 export const deviceClaimRequest = z.object({ instanceId, executionId, processId }).strict()
 /** The original command and Platform-issued dispatch; retries retain exactly these identities. */
 export const deviceClaim = command.extend({ dispatchId, processId })
+/** Read one frozen package only through its original live dispatch; no storage path or user ID is accepted. */
+export const deviceMaterialRequest = deviceClaimRequest.extend({ dispatchId, digest,
+  skillId: deviceMaterialBinding.shape.skillId,
+})
+/** Validated original dispatch reference for one selected immutable package. */
+export type DeviceMaterialRequest = z.infer<typeof deviceMaterialRequest>
 /** Original claiming intent; no caller-supplied command, output or stop observation is accepted. */
 export const deviceClaimClosureRequest = deviceClaimRequest.extend({ directoryId, digest,
   requestId: z.uuid().transform(value => brandString<DeviceClaimClosureRequestId>(value)),
