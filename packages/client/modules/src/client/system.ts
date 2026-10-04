@@ -48,19 +48,38 @@ function chunkId(ownerId: string, fileName: string): string {
   return `${ownerId}/${fileName}`
 }
 
-/** Resolve a sibling chunk against the package's one-resource URL and current revision. */
+/** Resolve a validated chunk filename beside a graph-owned combo or HTTP entry, retaining its URL form and current revision. */
 function chunkUrl(row: BootModuleRow, fileName: string, rev: string): string {
   const url = atRevision(row.url, rev)
   const marker = '/??'
-  const resourceStart = url.indexOf(marker)
+  const queryStart = url.indexOf('?')
+  const resourceStart = url.slice(queryStart - 1, queryStart + 2) === marker ? queryStart - 1 : -1
   const revisionStart = url.indexOf('&rev=', resourceStart + marker.length)
   const resource = resourceStart < 0 || revisionStart < 0
     ? undefined
     : url.slice(resourceStart + marker.length, revisionStart)
-  if (resource !== `${row.id}/client.js`) {
-    throw new Error(`client-modules: cannot resolve chunk ${JSON.stringify(fileName)} from bundle URL ${url}`)
+  if (resource === `${row.id}/client.js`) {
+    return `${url.slice(0, resourceStart)}/${row.id}/${fileName}?${url.slice(revisionStart + 1)}`
   }
-  return `${url.slice(0, resourceStart)}/${row.id}/${fileName}?${url.slice(revisionStart + 1)}`
+  const failure = (): Error => new Error(
+    `client-modules: cannot resolve chunk ${JSON.stringify(fileName)} from bundle URL ${url}`,
+  )
+  // A malformed combo cannot supply an ordinary entry directory.
+  if (resourceStart >= 0 || /[\s\\]/u.test(row.url) || row.url.includes('#')) throw failure()
+  let entry: URL
+  try {
+    // The base permits URL validation without changing document-relative references.
+    entry = new URL(row.url, 'https://client-modules.invalid/')
+  } catch (error) {
+    throw new Error(failure().message, { cause: error })
+  }
+  const revisions = entry.searchParams.getAll('rev')
+  const path = url.slice(0, queryStart)
+  if (!['http:', 'https:'].includes(entry.protocol) || entry.username !== '' || entry.password !== ''
+    || (/^[A-Za-z][A-Za-z0-9+.-]*:/u.test(row.url) && !/^https?:\/\/[^/]/iu.test(row.url))
+    || !entry.pathname.endsWith('/client.js') || (path !== 'client.js' && !path.endsWith('/client.js'))
+    || revisions.length !== 1 || revisions[0] === '' || rev === '') throw failure()
+  return `${path.slice(0, -'client.js'.length)}${fileName}${url.slice(queryStart)}`
 }
 
 /**

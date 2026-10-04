@@ -76,6 +76,8 @@ function bench(
     pending?: ClientBundleRegistration[]
     defaultTransport?: boolean
     chunks?: Record<string, Factory | null>
+    /** Exact script responses for carriers that serve ordinary package URLs. */
+    scripts?: Record<string, ClientBundleRegistration[]>
     /** Remaining transport rejections per URL (the `<script>` error event). */
     transportFailures?: Record<string, number>
     /** URLs whose script loads but registers only the listed ids (a runtime throw after those registrations). */
@@ -95,6 +97,11 @@ function bench(
     if ((transportFailures[url] ?? 0) > 0) {
       transportFailures[url] = (transportFailures[url] as number) - 1
       throw new Error(`client-modules: bundle script ${url} failed to load`)
+    }
+    const script = opts.scripts?.[url]
+    if (script !== undefined) {
+      for (const registration of script) win.__ModuleLoader__?.load(registration)
+      return
     }
     const sibling = /^plugins\/(.+)\/(client\.[A-Za-z0-9][A-Za-z0-9._-]*\.js)\?rev=[^&]+$/.exec(url)
     if (sibling !== null) {
@@ -130,6 +137,12 @@ function bench(
     ...(applicationEntries.length === 0 ? [] : [{
       phase: 'application' as const, url: APPLICATION_URL, rev: 'application', entries: applicationEntries,
     }]),
+    ...[...new Set(entries.map(entry => entry.initialUrl))]
+      .filter(url => url !== BOOTSTRAP_URL && url !== APPLICATION_URL)
+      .map(url => ({
+        phase: 'application' as const, url, rev: 'application',
+        entries: entries.filter(entry => entry.initialUrl === url).map(entry => entry.id),
+      })),
   ]
   const loader = target.create({
     boot: {
@@ -282,6 +295,48 @@ describe('lazy CJS arrival', () => {
       comboReference(['a'], 'rebuilt'),
       chunkReference('a', 'client.terminal.js', 'rebuilt'),
     ])
+  })
+
+  it.each([
+    ['./plugins/@scope/preview/client.js?rev=old', './plugins/@scope/preview/client.pdf.js?rev=release%2F1'],
+    ['plugins/preview/client.js?mode=read&rev=old', 'plugins/preview/client.pdf.js?mode=read&rev=release%2F1'],
+    ['plugins/preview/client.js?asset=/??@scope/preview/client.js&rev=old',
+      'plugins/preview/client.pdf.js?asset=/??@scope/preview/client.js&rev=release%2F1'],
+    ['/mounted/plugins/preview/client.js?rev=old', '/mounted/plugins/preview/client.pdf.js?rev=release%2F1'],
+    ['https://plugins.example.test/mounted/preview/client.js?rev=old&mode=read',
+      'https://plugins.example.test/mounted/preview/client.pdf.js?rev=release%2F1&mode=read'],
+    ['http://127.0.0.1:1234/preview/client.js?rev=old', 'http://127.0.0.1:1234/preview/client.pdf.js?rev=release%2F1'],
+    ['//plugins.example.test/preview/client.js?rev=old', '//plugins.example.test/preview/client.pdf.js?rev=release%2F1'],
+    ['client.js?rev=old', 'client.pdf.js?rev=release%2F1'],
+  ])('loads a sibling chunk from ordinary graph URL %s', async (url, chunk) => {
+    const id = '@scope/preview'
+    const b = bench([row(id, { url, initialUrl: url, rev: 'release/1' })], {}, {
+      scripts: {
+        [url]: [{ id, factory: req => ({ load: () => req.async('./client.pdf.js') }) }],
+        [chunk]: [{ id, chunk: 'client.pdf.js', factory: () => ({ marker: 'pdf' }) }],
+      },
+    })
+    const entry = await b.loader.import(id, '', {}) as { load: () => Promise<unknown> }
+    expect(b.fetched).toEqual([url])
+    const first = await entry.load()
+    expect(first).toEqual({ marker: 'pdf' })
+    expect(await entry.load()).toBe(first)
+    expect(b.fetched).toEqual([url, chunk])
+  })
+
+  it('loads ordinary sibling URLs with the replacement revision for a stale entry closure', async () => {
+    const url = './plugins/preview/client.js?rev=old&mode=read'
+    const chunk = './plugins/preview/client.excel.js?rev=rebuilt%2F2&mode=read'
+    const b = bench([row('a', { url, initialUrl: url })], {}, {
+      scripts: {
+        [url]: [{ id: 'a', factory: req => ({ load: () => req.async('./client.excel.js') }) }],
+        [chunk]: [{ id: 'a', chunk: 'client.excel.js', factory: () => ({ marker: 'excel' }) }],
+      },
+    })
+    const stale = await b.loader.import('a', '', {}) as { load: () => Promise<unknown> }
+    b.loader.invalidate('a', 'rebuilt/2')
+    await expect(stale.load()).resolves.toEqual({ marker: 'excel' })
+    expect(b.fetched).toEqual([url, chunk])
   })
 
   it('answers a bare asynchronous request through the ordinary module import path', async () => {
@@ -594,12 +649,23 @@ describe('failure modes', () => {
       .toThrow('duplicate factory registration for "a/client.terminal.js"')
   })
 
-  it('rejects malformed relative chunk requests', async () => {
+  it.each(['./terminal.js', './client.pdf.js/../client.excel.js', './client.pdf.js?rev=foreign',
+    './client.pdf.js#fragment', './client.%2e%2e.js', './client.foo/bar.js', './client.foo\\bar.js'])
+  ('rejects malformed relative chunk request %s without transport', async (specifier) => {
     const b = bench([row('a')], {
-      a: req => ({ load: () => req.async('./terminal.js') }),
+      a: req => ({ load: () => req.async(specifier) }),
     })
     const entry = await b.loader.import('a', '', {}) as { load: () => Promise<unknown> }
-    await expect(entry.load()).rejects.toThrow('invalid relative chunk request "./terminal.js"')
+    await expect(entry.load()).rejects.toThrow('invalid relative chunk request')
+    expect(b.fetched).toEqual([APPLICATION_URL])
+  })
+
+  it.each(['../client.pdf.js', '/client.pdf.js', 'https://foreign.example.test/client.pdf.js'])
+  ('rejects a script URL or parent path as an asynchronous module request %s', async (specifier) => {
+    const b = bench([row('a')], { a: req => ({ load: () => req.async(specifier) }) })
+    const entry = await b.loader.import('a', '', {}) as { load: () => Promise<unknown> }
+    await expect(entry.load()).rejects.toThrow('cannot resolve')
+    expect(b.fetched).toEqual([APPLICATION_URL])
   })
 
   it('rejects a chunk request from a manually registered owner outside the boot graph', async () => {
@@ -612,12 +678,19 @@ describe('failure modes', () => {
     await expect(entry.load()).rejects.toThrow('chunk owner "orphan" is not a boot graph entry')
   })
 
-  it('rejects a graph row whose one-resource URL cannot address sibling chunks', async () => {
-    const b = bench([row('a', { url: 'plugins/a/client.js?rev=0' })], {
+  it.each(['plugins/a/entry.js?rev=0', 'plugins/a/client.js?rev=', 'plugins/a/client.js?rev=0&rev=1',
+    'plugins/a/client.js?rev=0#fragment', 'file:///plugins/a/client.js?rev=0',
+    'javascript:client.js?rev=0', 'https://user:password@plugins.example.test/a/client.js?rev=0',
+    'https:/plugins.example.test/a/client.js?rev=0', 'https:///plugins.example.test/a/client.js?rev=0',
+    'https://[invalid/a/client.js?rev=0', 'plugins\\a/client.js?rev=0', 'plugins/a/ client.js?rev=0',
+    'plugins/??b/client.js&rev=0'])
+  ('rejects a graph URL that cannot address a package sibling %s', async (url) => {
+    const b = bench([row('a', { url })], {
       a: req => ({ load: () => req.async('./client.terminal.js') }),
     })
     const entry = await b.loader.import('a', '', {}) as { load: () => Promise<unknown> }
     await expect(entry.load()).rejects.toThrow('cannot resolve chunk "client.terminal.js"')
+    expect(b.fetched).toEqual([APPLICATION_URL])
   })
 
   it('rejects a chunk script that does not register its generated id', async () => {

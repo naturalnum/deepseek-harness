@@ -37,6 +37,8 @@ kind: "package-reference"
 
 application combo 脚本只携带每个插件的 `client.js` 入口，并在启动时仅注册一次这些 factory；模块主体仍保持惰性，只在首次 import 或物化时运行。经 tsdown 拆分的源码 `import()` 会编译为 `require.async("./client.<name>.js")`；只有执行该表达式时，对应的带版本同级脚本才会到达。共享 combo URL 的 row 共用一个进行中的脚本任务。`<script>` 加载失败的 combo 会再请求一次；加载成功但没有注册某条 row 的 combo 绝不会重新执行，因为批量脚本按顺序注册各个包，重放会在第一个重复注册处停止。两种情况下，每条仍缺失的 row 随后加载自己的单资源 combo URL，因此一个失败的 batch 对每条缺失 row 最多花费三次请求，且不影响它已经注册的 row。模块系统按 row 记录最后一次 import 失败（传输、注册、依赖级联或 factory 执行）；Web 启动审计按条目报告该文本。HMR（热模块替换）会让一条发生变化的 row 改用带 revision 的单资源 combo URL。`<id>/client` 与裸 id 解析到同一组导出，因为插件 bundle 就是其包的客户端半侧。
 
+可信启动图也可以用普通 `client.js?rev=<revision>` URL 指向入口。加载器在该入口的目录内解析编译器生成的 `./client.<name>.js` 请求，保留绝对 HTTP(S)、协议相对、根相对或文档相对形式及其他查询参数，并使用所属包的当前 revision。普通入口必须带且仅带一个非空 `rev` 参数，含凭据、fragment、格式错误或非 HTTP 协议的 URL 会被拒绝。chunk 请求不能选择其他目录、查询参数、fragment 或任意脚本 URL；裸异步请求仍只通过模块表解析。
+
 ### 插件动态组合
 
 已打开的 Web 页面通过 HMR 传输跟随 Host 的完整模块图。启用普通插件会添加其 Loader 条目；停用会移除条目，并在其异步 effect 完成清理后回收未使用的模块与样式。再次启用会加载一个带样式的实例。其他 Loader 贡献方的条目及活动条目仍需使用的共享模块会保留。「设置 → 插件 → 插件列表」显示当前页面的同步失败，并提供不改变 Host 启用状态的重试。
