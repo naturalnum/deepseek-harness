@@ -31,6 +31,8 @@ kind: "package-library"
 
 从 `@power-evolve/contracts/device-execution` 导入 Device 派发、容器登记与停止报告。登记标识持久 Device；每次领取绑定独立进程代次和平台分配的派发 ID。精确容器登记后，启动许可只发放一次。停止报告携带原派发、稳定重试 ID 和非运行状态观察；命令副作用结果不明与写者已停止仍是不同事实。这些记录不认证本机 OS 或 Docker 守护进程。
 
+从 `@power-evolve/contracts/device-lifecycle` 导入私有父进程／Device 生命周期记录。请求关联一个所属启动代次、预期服务实例和稳定请求 ID。就绪要求 Profile 成功启动，且父进程核对实际子进程 PID 与固定 loopback URL。静默快照描述本机异步工作已停止；剩余条目分别携带已持久化的精确容器停止观察、永久禁止启动回执或未确认事实。这些 IPC 记录不携带本机路径、nonce、凭据或命令，不授予资源操作权限，也不是浏览器 API。
+
 Device 派发记录接受可选的 `materials` 不可变技能引用。缺省时保留原 JSON 表示和请求摘要；提供时绑定已受理技能、版本、归档、manifest 和指令。包读取标识原执行、登记、进程与派发，不接受用户 ID、存储路径或下载 URL。单个响应保留原 manifest，最多包含 256 个普通文件，展开总量不超过 8 MiB；JSON 响应的传输上限为 20 MiB。执行前消费者必须校验每个解码文件的字节摘要；解析不提供权限。旧 Worker 不支持这些引用，不能消费此类派发。
 
 ## 实现 {#implementation}

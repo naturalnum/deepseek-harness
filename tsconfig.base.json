@@ -31,6 +31,7 @@
       "@deepseek-ai/dsh-desktop/assembly": ["./apps/desktop/src/assembly.ts"],
       "@deepseek-ai/dsh-desktop/preload-assembly": ["./apps/desktop/src/preload-assembly.ts"],
       "@power-evolve/contracts/device-execution": ["./products/power-evolve/contracts/src/device-execution.ts"],
+      "@power-evolve/contracts/device-lifecycle": ["./products/power-evolve/contracts/src/device-lifecycle.ts"],
       "@power-evolve/contracts/account": ["./products/power-evolve/contracts/src/account.ts"],
       "@power-evolve/contracts/execution-resolution": ["./products/power-evolve/contracts/src/execution-resolution.ts"],
       "@power-evolve/contracts/file-download": ["./products/power-evolve/contracts/src/file-download.ts"],

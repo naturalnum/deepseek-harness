@@ -31,6 +31,10 @@
       "default": "./lib/account.js"
     },
     "./package.json": "./package.json",
+    "./device-lifecycle": {
+      "types": "./lib/device-lifecycle.d.ts",
+      "default": "./lib/device-lifecycle.js"
+    },
     "./device-execution": {
       "types": "./lib/device-execution.d.ts",
       "default": "./lib/device-execution.js"
