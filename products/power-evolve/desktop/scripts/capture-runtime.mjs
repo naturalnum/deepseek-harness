@@ -16,6 +16,8 @@ const ALLOWED_ROOTS = new Set([...ROOTS, '@power-evolve/host', '@power-evolve/pl
 const PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/u
 const LIMITS = { packages: 2048, files: 200_000, bytes: 4 * 1024 ** 3 }
 const METADATA_LIMIT = 32 * 1024 ** 2
+const NATIVE_ENTRY = 'node-addon-require-builtin'
+const NATIVE_LOADER = 'node-addon-native-custom-loader'
 
 function fail(code, details) {
   const error = new Error(`trial_runtime_${code}`)
@@ -105,6 +107,7 @@ function payloadFiles(root, value, workspaceMember) {
   const files = new Set(['package.json'])
   const missingDeclaredFiles = []
   const missingEntries = []
+  const nativeAssets = []
   const add = (path) => {
     const rel = portable(relative(root, path))
     if (rel === '') { for (const entry of readdirSync(root).sort()) add(join(root, entry)); return }
@@ -168,6 +171,29 @@ function payloadFiles(root, value, workspaceMember) {
   if (value.name === '@power-evolve/application') {
     required.add('src/device/local-files.py'); required.add('src/platform/safe-posix.py')
   }
+  const nativePlatform = value.name === `${NATIVE_ENTRY}-${process.platform}-${process.arch}${process.platform === 'linux' ? '-gnu' : ''}`
+    || value.name === `@deepseek-ai/node-addon-system-${process.platform}-${process.arch}`
+  if (nativePlatform) {
+    if (!existsSync(join(root, 'prebuilds.json'))) fail('invalid_native_metadata')
+    const metadata = json(join(root, 'prebuilds.json'), 1024 ** 2)
+    if (metadata.platform === `${process.platform}-${process.arch}` || metadata.platform === `${process.platform}-${process.arch}-gnu`) {
+      if (!Array.isArray(metadata.binaries) || metadata.binaries.length > 16) fail('invalid_native_metadata')
+      required.add('prebuilds.json')
+      for (const binary of metadata.binaries) {
+        const path = safeRelative(binary.path)
+        if (!path.endsWith('.node')) continue
+        if (!existsSync(join(root, path))) fail('native_payload_missing', { package: value.name, path })
+        nativeAssets.push({ path, metadata: 'prebuilds.json' }); required.add(path)
+      }
+    } else fail('invalid_native_metadata')
+  }
+  // The reviewed require-builtin loader has exactly these two local fallback locations for this Node/OS/CPU.
+  if (value.name === NATIVE_ENTRY) {
+    for (const path of [`build/nodeabi/node-v${process.versions.modules}-${process.platform}-${process.arch}/require_builtin.node`,
+      `build/napi/napi-v9-${process.platform}-${process.arch}/require_builtin.node`]) {
+      if (existsSync(join(root, path))) { nativeAssets.push({ path, metadata: 'native-loader-local-fallback' }); required.add(path) }
+    }
+  }
   for (const path of required) {
     if (!existsSync(join(root, path))) {
       if (workspaceMember) fail('missing_entry', { package: value.name, path })
@@ -175,7 +201,7 @@ function payloadFiles(root, value, workspaceMember) {
     }
     add(join(root, path))
   }
-  return { missingDeclaredFiles, missingEntries, files: [...files].sort().map(path => {
+  return { missingDeclaredFiles, missingEntries, nativeAssets, files: [...files].sort().map(path => {
     const stat = lstatSync(join(root, path))
     if (!stat.isFile()) fail('payload_not_regular')
     return { path, bytes: stat.size, executable: (stat.mode & 0o111) !== 0 }
@@ -230,6 +256,24 @@ export function inspectTrialRuntime(options) {
       if (manifest(target).name !== name) fail('dependency_identity')
       node.dependencies.push({ name, target: visit(target), resolution, declarations })
     }
+    if (value.name === NATIVE_ENTRY) {
+      const loaderEdge = node.dependencies.find(edge => edge.name === NATIVE_LOADER)
+      const loader = [...nodes.values()].find(candidate => candidate.id === loaderEdge?.target)
+      if (loader === undefined || loader.version !== '0.1.6' || value.version !== '0.1.6') fail('native_loader_version')
+      const platformName = `${NATIVE_ENTRY}-${process.platform}-${process.arch}${process.platform === 'linux' ? '-gnu' : ''}`
+      const platformRoot = nodeLookup(loader.source, platformName)
+      if (platformRoot === undefined) {
+        if (node.nativeAssets.length === 0) fail('native_loader_dependency_missing', { package: loader.name, target: platformName })
+      } else {
+        const platformManifest = manifest(platformRoot)
+        if (platformManifest.name !== platformName || platformManifest.version !== value.optionalDependencies?.[platformName]) fail('native_loader_identity')
+        const target = visit(platformRoot)
+        const previous = loader.dependencies.find(edge => edge.name === platformName)
+        if (previous !== undefined && previous.target !== target) fail('native_loader_identity')
+        if (previous === undefined) loader.dependencies.push({ name: platformName, target, resolution: 'native-loader-node-lookup',
+          declarations: [{ section: 'runtime-loader', range: platformManifest.version }], requester: node.id })
+      }
+    }
     return node.id
   }
   const entries = roots.map(name => {
@@ -256,7 +300,8 @@ export function inspectTrialRuntime(options) {
     bytes: total.bytes + node.files.reduce((sum, file) => sum + file.bytes, 0) }), { files: 0, bytes: 0 })
   if (totals.files > LIMITS.files || totals.bytes > LIMITS.bytes) fail('payload_limit')
   sourceGuard(sourceRoot, sourceCommit)
-  return { format: FORMAT, sourceRoot: source, sourceCommit, roots: entries, packages, missing, skipped, multiVersions, cycles, totals }
+  return { format: FORMAT, sourceRoot: source, sourceCommit, roots: entries, packages, missing, skipped, multiVersions, cycles, totals,
+    nativeTarget: { platform: process.platform, arch: process.arch, node: process.versions.node, modules: process.versions.modules, napi: process.versions.napi } }
 }
 
 function fileDigest(path) {
@@ -411,12 +456,53 @@ export function verifyTrialRuntime(output) {
   return record
 }
 
+/**
+ * Load the captured require-builtin native binding with one explicit Node binary; never launch a Profile or use an ambient native cache.
+ * @param output - Independently verified capture directory.
+ * @param nodeExecutable - Absolute fixed Node executable selected by the trial operator.
+ * @returns Actual Node ABI, loaded binding metadata, binary digest and resolved captured package identity; native load failures reject.
+ */
+export function smokeTrialRuntimeNative(output, nodeExecutable) {
+  const record = verifyTrialRuntime(output)
+  if (!isAbsolute(nodeExecutable)) fail('invalid_node')
+  const executable = realpathSync(nodeExecutable), nodeBytes = fileDigest(executable)
+  const runtime = realpathSync(join(output, 'runtime'))
+  const entry = record.packages.find(node => node.name === NATIVE_ENTRY)
+  if (entry === undefined) fail('native_entry_missing')
+  const program = `
+    import {createRequire} from 'node:module';
+    import {realpathSync,readFileSync} from 'node:fs';
+    import {join} from 'node:path';
+    import {createHash} from 'node:crypto';
+    const root=process.argv[1], entry=process.argv[2];
+    const req=createRequire(join(root,'objects',entry,'package.json'));
+    const info=req('node-addon-require-builtin').getBindingInfo();
+    const path=realpathSync(info.bindingPath);
+    console.log(JSON.stringify({node:process.versions.node,modules:process.versions.modules,napi:process.versions.napi,
+      platform:process.platform,arch:process.arch,backend:info.backend,abi:info.abi,source:info.bindingSource,
+      path,sha256:createHash('sha256').update(readFileSync(path)).digest('hex')}));`
+  let result
+  try {
+    result = JSON.parse(execFileSync(executable, ['--input-type=module', '-e', program, runtime, entry.id], {
+      env: { NARB_DISABLE_NATIVE_CACHE: '1', PATH: dirname(executable) }, encoding: 'utf8', maxBuffer: 64 * 1024,
+      timeout: 10_000, stdio: ['ignore', 'pipe', 'pipe'],
+    }))
+  } catch (error) {
+    fail('native_smoke_failed', { status: error.status ?? null, signal: error.signal ?? null })
+  }
+  if (JSON.stringify(nodeBytes) !== JSON.stringify(fileDigest(executable))) fail('node_changed')
+  if (!inside(runtime, result.path) || result.platform !== record.nativeTarget?.platform || result.arch !== record.nativeTarget?.arch) fail('native_smoke_source')
+  const captured = record.inventory.files.find(file => file.path === portable(relative(runtime, result.path)))
+  if (captured?.sha256 !== result.sha256) fail('native_smoke_source')
+  return { ...result, nodeExecutableSha256: nodeBytes.sha256 }
+}
+
 function main() {
   const { values, positionals } = parseArgs({ allowPositionals: true, options: {
-    help: { type: 'boolean' }, source: { type: 'string' }, commit: { type: 'string' }, out: { type: 'string' }, roots: { type: 'string', multiple: true },
+    help: { type: 'boolean' }, source: { type: 'string' }, commit: { type: 'string' }, out: { type: 'string' }, roots: { type: 'string', multiple: true }, node: { type: 'string' },
   } })
   if (values.help) {
-    console.log('capture-runtime.mjs inspect|capture --source <absolute-clean-checkout> --commit <full-sha> [--roots <package> ...] [--out <new-absolute-directory>]\ncapture-runtime.mjs verify --out <capture-directory>')
+    console.log('capture-runtime.mjs inspect|capture --source <absolute-clean-checkout> --commit <full-sha> [--roots <package> ...] [--out <new-absolute-directory>]\ncapture-runtime.mjs verify --out <capture-directory>\ncapture-runtime.mjs native-smoke --out <capture-directory> --node <fixed-absolute-node>')
     return
   }
   if (positionals.length !== 1) fail('invalid_arguments')
@@ -428,7 +514,8 @@ function main() {
   } else if (positionals[0] === 'verify') {
     const record = verifyTrialRuntime(values.out)
     console.log(JSON.stringify({ verified: true, sourceCommit: record.sourceCommit, packages: record.packages.length, ...record.totals }))
-  } else fail('invalid_arguments')
+  } else if (positionals[0] === 'native-smoke') console.log(JSON.stringify(smokeTrialRuntimeNative(values.out, values.node)))
+  else fail('invalid_arguments')
 }
 
 if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {

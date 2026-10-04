@@ -1,12 +1,12 @@
 /** Synthetic package graphs exercise capture and Node resolution; no DSH Profile, Electron, installer or service is launched. */
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync, chmodSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync, chmodSync, copyFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
-import { captureTrialRuntime, inspectTrialRuntime, verifyTrialRuntime } from '../scripts/capture-runtime.mjs'
+import { captureTrialRuntime, inspectTrialRuntime, verifyTrialRuntime, smokeTrialRuntimeNative } from '../scripts/capture-runtime.mjs'
 
 const CLI = '@deepseek-ai/dsh', DEVICE = '@power-evolve/device'
 const env = Object.fromEntries(Object.entries(process.env).filter(([name]) => !/KEY|SECRET|TOKEN|PASSWORD|^GIT_|^NODE_/iu.test(name)))
@@ -212,3 +212,56 @@ test('independent inventory detects in-place bytes changes and CLI help has no c
   const help = execFileSync(process.execPath, [operator, '--help'], { env, encoding: 'utf8', timeout: 5000 })
   assert.match(help, /inspect\|capture/u)
 })
+
+test('metadata-declared native binary missing from a declared payload refuses capture before inventory success', t => {
+  const f = fixture(t)
+  const name = `@deepseek-ai/node-addon-system-${process.platform}-${process.arch}`
+  const native = f.packageAt(`node_modules/.pnpm/native/node_modules/${name}`, name, '1.0.0', {}, 'export const value = "native"\n')
+  writeFileSync(join(native, 'prebuilds.json'), JSON.stringify({ platform: `${process.platform}-${process.arch}`,
+    binaries: [{ backend: 'napi', abi: 'napi-v9', path: 'prebuilt/missing.node' }] }))
+  const m = JSON.parse(readFileSync(join(f.cli, 'package.json'), 'utf8')); m.dependencies = { [name]: '^1' }
+  writeFileSync(join(f.cli, 'package.json'), JSON.stringify(m)); f.link(f.cli, name, native)
+  assert.throws(() => captureTrialRuntime({ sourceRoot: f.sourceRoot, sourceCommit: f.commit(), output: f.output }), /trial_runtime_native_payload_missing/u)
+  assert.equal(existsSync(f.output), false)
+})
+
+test('existing real native loader bytes load through a captured explicit hoisting edge with the fixed Node',
+  { skip: !process.env.PE_RUNTIME_NATIVE_SOURCE || !process.env.PE_RUNTIME_NATIVE_NODE }, t => {
+    const f = fixture(t), nativeSource = process.env.PE_RUNTIME_NATIVE_SOURCE
+    const entryName = 'node-addon-require-builtin', loaderName = 'node-addon-native-custom-loader'
+    const platformName = `${entryName}-${process.platform}-${process.arch}`
+    function existing(name, paths) {
+      const source = join(nativeSource, `node_modules/.pnpm/${name}@0.1.6/node_modules`, name)
+      const target = join(f.sourceRoot, `node_modules/.pnpm/${name}@0.1.6/node_modules`, name)
+      for (const path of ['package.json', ...paths]) {
+        mkdirSync(dirname(join(target, path)), { recursive: true }); copyFileSync(join(source, path), join(target, path))
+      }
+      return target
+    }
+    const entry = existing(entryName, ['lib/index.js'])
+    const loader = existing(loaderName, ['lib/index.js'])
+    const binary = `prebuilt/${process.platform}-${process.arch}-napi-v9.node`
+    const platform = existing(platformName, ['index.js', 'prebuilds.json', binary])
+    f.link(entry, loaderName, loader); f.link(entry, platformName, platform); f.link(platform, loaderName, loader)
+    // This hoisted source alias is deliberately absent from the loader's package.json dependencies.
+    f.link(join(f.sourceRoot, 'node_modules/.pnpm'), platformName, platform)
+    f.link(f.cli, entryName, entry)
+    const m = JSON.parse(readFileSync(join(f.cli, 'package.json'), 'utf8')); m.dependencies = { [entryName]: '0.1.6' }
+    writeFileSync(join(f.cli, 'package.json'), JSON.stringify(m))
+    const sourceCommit = f.commit()
+    const captured = captureTrialRuntime({ sourceRoot: f.sourceRoot, sourceCommit, output: f.output })
+    const loaderNode = captured.packages.find(node => node.name === loaderName)
+    assert.equal(loaderNode.dependencies[0].resolution, 'native-loader-node-lookup')
+    assert.equal(loaderNode.dependencies[0].declarations[0].range, '0.1.6')
+    const result = smokeTrialRuntimeNative(f.output, process.env.PE_RUNTIME_NATIVE_NODE)
+    assert.equal(result.node, '22.22.1'); assert.equal(result.backend, 'napi'); assert.equal(result.abi, 'napi-v9')
+    assert.equal(result.source, 'optional-package')
+    assert.ok(result.path.startsWith(realpathSync(join(f.output, 'runtime')) + '/objects/'))
+    // Remove only the frozen dynamic alias: inventory must refuse it, and an actual import cannot borrow the original hoist/cache.
+    const alias = join(f.output, 'runtime/objects', loaderNode.id, 'node_modules', platformName)
+    rmSync(alias)
+    assert.throws(() => smokeTrialRuntimeNative(f.output, process.env.PE_RUNTIME_NATIVE_NODE), /trial_runtime_inventory_changed/u)
+    const program = `const {createRequire}=await import('node:module'); const r=createRequire(${JSON.stringify(join(f.output, 'runtime/objects', captured.packages.find(node => node.name === entryName).id, 'package.json'))}); r('node-addon-require-builtin').getBindingInfo()`
+    assert.throws(() => execFileSync(process.env.PE_RUNTIME_NATIVE_NODE, ['--input-type=module', '-e', program],
+      { env: { NARB_DISABLE_NATIVE_CACHE: '1' }, stdio: ['ignore', 'pipe', 'pipe'], timeout: 5000 }), { status: 1 })
+  })
