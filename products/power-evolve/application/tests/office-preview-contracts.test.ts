@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
-import { officePreviewPrepareRequest, officePreviewCancelRequest, officePreviewJobSchema, officePreviewResultSchema,
+import { officePreviewPrepareRequest, officePreviewCancelRequest, officePreviewJobSchema, officePreviewResultSchema, officePreviewFailureSchema,
   officePreviewContentView, officePreviewJobView, OFFICE_PREVIEW_MAX_OUTPUT_BYTES,
 } from '@power-evolve/contracts/office-preview'
 
@@ -74,6 +74,10 @@ test('result markers remain WASM facts and terminal states classify failure with
   assert.equal(officePreviewResultSchema.parse(result).pages, 1)
   assert.equal(officePreviewResultSchema.safeParse({ ...result, backend: 'native' }).success, false)
   assert.equal(officePreviewResultSchema.safeParse({ ...result, podStopped: true }).success, false)
+  const failure = { protocolVersion: 1, ...identity, sourceSha256: digest, errorCode: 'invalid-document' }
+  assert.equal(officePreviewFailureSchema.parse(failure).errorCode, 'invalid-document')
+  assert.equal(officePreviewFailureSchema.safeParse({ ...failure, stderr: 'private text' }).success, false)
+  assert.equal(officePreviewFailureSchema.safeParse({ ...failure, errorCode: 'cancelled' }).success, false)
   const view = { jobId: identity.jobId, generation: digest, state: 'blocked', errorCode: 'unavailable' }
   assert.equal(officePreviewJobView.parse(view).state, 'blocked')
   assert.equal(officePreviewJobView.safeParse({ ...view, state: 'succeeded' }).success, false)

@@ -107,6 +107,11 @@ export const officePreviewResultSchema = z.object({
   pdfSha256: digest, pdfBytes: z.number().int().positive().max(OFFICE_PREVIEW_MAX_OUTPUT_BYTES),
   pages: z.number().int().positive().max(1000), missingFonts, backend: z.literal('wasm'),
 }).strict()
+/** Optional failed-task marker written after cleanup; it supplies no Pod stop proof or diagnostic text. */
+export const officePreviewFailureSchema = z.object({
+  protocolVersion: z.literal(1), jobId, nonce, generation, sourceSha256: digest,
+  errorCode: officePreviewErrorCode,
+}).strict()
 
 /** Validated durable admission request. */
 export type OfficePreviewPrepareRequest = z.infer<typeof officePreviewPrepareRequest>
@@ -122,3 +127,5 @@ export type OfficePreviewContentView = z.infer<typeof officePreviewContentView>
 export type OfficePreviewJob = z.infer<typeof officePreviewJobSchema>
 /** Frozen isolated parser result, awaiting independent byte and stop verification. */
 export type OfficePreviewResult = z.infer<typeof officePreviewResultSchema>
+/** Validated failure classification, bound to the original task and independent termination facts. */
+export type OfficePreviewFailure = z.infer<typeof officePreviewFailureSchema>
