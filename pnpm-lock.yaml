@@ -14363,6 +14363,27 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
 
+  products/power-evolve/desktop:
+    devDependencies:
+      '@deepseek-ai/dsh-desktop':
+        specifier: workspace:*
+        version: link:../../../apps/desktop
+      '@types/node':
+        specifier: ^22.20.0
+        version: 22.20.0
+      electron:
+        specifier: ^44.0.0
+        version: 44.0.0
+      tsdown:
+        specifier: ^0.22.2
+        version: 0.22.2(oxc-resolver@11.20.0)(publint@0.3.21)(tsx@4.22.4)(typescript@6.0.3)
+      tsx:
+        specifier: ^4.22.4
+        version: 4.22.4
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
   products/power-evolve/device:
     dependencies:
       '@deepseek-ai/cordis-plugin-logger-console':

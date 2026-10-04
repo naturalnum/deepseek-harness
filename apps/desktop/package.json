@@ -76,5 +76,15 @@
     "@deepseek-ai/dsh-client-ui-theme": "workspace:*",
     "@deepseek-ai/dsh-client-shortcuts": "workspace:*",
     "@deepseek-ai/dsh-atomic-write": "workspace:*"
+  },
+  "exports": {
+    "./assembly": {
+      "types": "./lib/types/assembly.d.ts",
+      "default": "./lib/types/assembly.js"
+    },
+    "./preload-assembly": {
+      "types": "./lib/types/preload-assembly.d.ts",
+      "default": "./lib/types/preload-assembly.js"
+    }
   }
 }

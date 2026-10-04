@@ -1,0 +1,27 @@
+{
+  "name": "@power-evolve/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "PowerEvolve Electron carrier for the shared native DSH application",
+  "main": "lib/main.js",
+  "files": [
+    "lib",
+    "README.md",
+    "README.zh.md"
+  ],
+  "scripts": {
+    "build": "tsc -b && tsdown",
+    "typecheck": "tsc -b --pretty false",
+    "test": "node --import tsx/esm --test tests/*.test.ts tests/*.test.mjs",
+    "start": "node scripts/start.mjs"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-desktop": "workspace:*",
+    "@types/node": "^22.20.0",
+    "electron": "^44.0.0",
+    "tsdown": "^0.22.2",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3"
+  }
+}

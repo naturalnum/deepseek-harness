@@ -470,6 +470,7 @@
     { "path": "./apps/cli" },
     { "path": "./apps/desktop-host" },
     { "path": "./apps/desktop/tsconfig.host.json" },
-    { "path": "./products/power-evolve/application" }
+    { "path": "./products/power-evolve/application" },
+    { "path": "./products/power-evolve/desktop" }
   ]
 }
