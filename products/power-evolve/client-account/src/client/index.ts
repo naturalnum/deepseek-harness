@@ -26,14 +26,17 @@ export const inject = ['slots', 'locale', 'connection']
 export function apply(ctx: Context): void {
   const client = new AccountHttpClient(undefined, () => session.confirmExpired())
   const session = new AccountSession({ client, connection: ctx.get('connection') as ConnectionHandle,
-    navigate: url => { window.location.replace(url) } })
+    navigate: url => { window.location.replace(url) }, resetDocument: () => { window.location.reload() } })
   ctx.effect(() => session.start(), 'PowerEvolve account identity lifetime')
   ctx.effect(() => {
+    const visible = () => { if (document.visibilityState === 'visible') session.check() }
     window.addEventListener('online', session.check)
     window.addEventListener('focus', session.check)
+    document.addEventListener('visibilitychange', visible)
     return () => {
       window.removeEventListener('online', session.check)
       window.removeEventListener('focus', session.check)
+      document.removeEventListener('visibilitychange', visible)
     }
   }, 'PowerEvolve account identity browser wake')
   const loadNavigation = (signal: AbortSignal) => client.navigation(signal)

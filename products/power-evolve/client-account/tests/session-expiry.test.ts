@@ -6,6 +6,7 @@ import { AccountSession, type AccountSessionOptions } from '../src/client/sessio
 
 const account: CurrentAccount = { userId: '54f0f232-a068-4223-96e8-d0cff78d0f1c', username: 'alice',
   settings: { model: 'one', maxTokens: 512, revision: 1 } }
+const bob: CurrentAccount = { ...account, userId: 'c432cd3b-435c-42d5-ad50-e45c43fc7414', username: 'bob' }
 const login = 'https://platform.test/login'
 const settle = async () => { for (let i = 0; i < 8; i++) await Promise.resolve() }
 function deferred<T>() {
@@ -14,18 +15,100 @@ function deferred<T>() {
   const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no })
   return { promise, resolve, reject }
 }
-function fixture(client: AccountSessionOptions['client'], navigate = (_url: string) => {}, initial: ConnectionState | undefined = 'connected') {
+function fixture(client: AccountSessionOptions['client'], navigate = (_url: string) => {},
+  initial: ConnectionState | undefined = 'connected', resetDocument = () => {}) {
   const listeners = new Set<() => void>()
   let state: ConnectionState | undefined = initial
   let stops = 0
+  let resets = 0
   const connection: AccountSessionOptions['connection'] = {
     state: { getSnapshot: () => state, subscribe: listener => { listeners.add(listener); return () => { listeners.delete(listener) } } },
     stop: () => { stops++; state = undefined; for (const listener of [...listeners]) listener() },
   }
-  const session = new AccountSession({ client, connection, navigate })
+  const session = new AccountSession({ client, connection, navigate, resetDocument: () => { resets++; resetDocument() } })
   const change = (next: ConnectionState) => { state = next; for (const listener of [...listeners]) listener() }
-  return { session, change, stops: () => stops, listeners: () => listeners.size }
+  return { session, change, stops: () => stops, resets: () => resets, listeners: () => listeners.size }
 }
+
+test('a successful account change stops before one document reset without waiting for login configuration', async () => {
+  const url = deferred<string>()
+  let current = account
+  let reads = 0
+  const destinations: string[] = []
+  const f = fixture({ loginUrl: async () => url.promise, me: async () => { reads++; return current } },
+    value => destinations.push(value), 'connected', () => { assert.equal(f.stops(), 1) })
+  const dispose = f.session.start()
+  try {
+    await settle(); current = bob; f.session.check(); await settle()
+    assert.equal(f.stops(), 1)
+    assert.equal(f.resets(), 1)
+    assert.equal(f.session.view.getSnapshot(), undefined)
+    f.session.check(); f.session.confirmExpired(); await f.session.returnToLogin()
+    f.change('connecting'); await settle()
+    assert.equal(f.stops(), 2)
+    assert.equal(reads, 2)
+    assert.equal(f.resets(), 1)
+    url.resolve(login); await settle()
+    assert.deepEqual(destinations, [])
+  } finally { dispose(); url.resolve(login) }
+})
+
+test('a successful account change resets even when the login-address request failed', async () => {
+  let current = account
+  const f = fixture({ loginUrl: async () => { throw new Error('config unavailable') }, me: async () => current })
+  const dispose = f.session.start()
+  try {
+    await settle(); current = bob; f.session.check(); await settle()
+    assert.equal(f.stops(), 1)
+    assert.equal(f.resets(), 1)
+    assert.equal(f.session.view.getSnapshot(), undefined)
+  } finally { dispose() }
+})
+
+test('settings and display-name changes for the same account retain the current document', async () => {
+  let current = account
+  const f = fixture({ loginUrl: async () => login, me: async () => current })
+  const dispose = f.session.start()
+  try {
+    await settle()
+    current = { ...account, username: 'alice-renamed', settings: { model: 'two', maxTokens: 1024, revision: 2 } }
+    f.session.check(); await settle()
+    assert.equal(f.stops(), 0)
+    assert.equal(f.resets(), 0)
+    assert.equal(f.session.view.getSnapshot(), undefined)
+  } finally { dispose() }
+})
+
+test('a changed identity settling after disposal cannot stop or reset a document', async () => {
+  const read = deferred<CurrentAccount>()
+  let first = true
+  const f = fixture({ loginUrl: async () => login, me: async () => {
+    if (first) { first = false; return account }
+    return read.promise
+  } })
+  const dispose = f.session.start()
+  await settle(); f.session.check(); dispose(); read.resolve(bob); await settle()
+  assert.equal(f.stops(), 0)
+  assert.equal(f.resets(), 0)
+  assert.equal(f.listeners(), 0)
+})
+
+test('a successful changed identity cannot replace the confirmed-expiry path after its read was cancelled', async () => {
+  const read = deferred<CurrentAccount>()
+  let first = true
+  const destinations: string[] = []
+  const f = fixture({ loginUrl: async () => login, me: async () => {
+    if (first) { first = false; return account }
+    return read.promise
+  } }, value => destinations.push(value))
+  const dispose = f.session.start()
+  try {
+    await settle(); f.session.check(); f.session.confirmExpired(); read.resolve(bob); await settle()
+    assert.equal(f.stops(), 1)
+    assert.equal(f.resets(), 0)
+    assert.deepEqual(destinations, [login])
+  } finally { dispose(); read.resolve(bob) }
+})
 
 test('confirmed identity 401 stops before one configured navigation despite repeated refusals', async () => {
   const order: string[] = []

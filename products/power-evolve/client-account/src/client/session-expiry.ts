@@ -1,7 +1,7 @@
 /** Native identity checks are independent of resource-level Remote failures. */
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
-import { AccountHttpError, type AccountHttpClient } from './account-api.ts'
+import { AccountHttpError, type AccountHttpClient, type CurrentAccount } from './account-api.ts'
 
 /** Confirmed expiry and the current attempt to open configured trusted sign-in. */
 export interface AccountExpiryView {
@@ -14,6 +14,8 @@ export interface AccountSessionOptions {
   readonly connection: Pick<ConnectionHandle, 'state' | 'stop'>
   readonly client: Pick<AccountHttpClient, 'me' | 'loginUrl'>
   readonly navigate: (url: string) => void
+  /** Replace the current native document to discard the previous account's retained views. */
+  readonly resetDocument: () => void
 }
 
 /** Owns cancellable identity/navigation reads and stops revoked native login connections. */
@@ -23,6 +25,8 @@ export class AccountSession {
   private destination: Promise<string | undefined> | undefined
   private loginUrl: string | undefined
   private expired = false
+  private userId: CurrentAccount['userId'] | undefined
+  private resetRequested = false
   private redirecting = false
   private snapshot: AccountExpiryView | undefined
   private readonly listeners = new Set<() => void>()
@@ -49,22 +53,33 @@ export class AccountSession {
     }
   }
 
-  /** Keep a revoked page stopped when its Connection owner activates after the identity refusal. */
+  /** Keep a retired page stopped when its Connection owner activates after expiry or an account change. */
   private connectionChanged = (): void => {
     if (this.lifetime.signal.aborted) return
-    if (this.expired) {
+    if (this.expired || this.resetRequested) {
       if (this.options.connection.state.getSnapshot() !== undefined) this.options.connection.stop()
       return
     }
     this.check()
   }
 
-  /** Check only the personal identity endpoint; network and resource refusals retain the native session. */
+  /** Bind the first confirmed account to this document; a later account change stops its Connection and resets it. */
   check = (): void => {
-    if (this.expired || this.lifetime.signal.aborted || this.probe) return
+    if (this.expired || this.resetRequested || this.lifetime.signal.aborted || this.probe) return
     const controller = new AbortController()
     this.probe = controller
-    void this.options.client.me(controller.signal).catch((error: unknown) => {
+    void this.options.client.me(controller.signal).then(user => {
+      if (controller.signal.aborted || this.lifetime.signal.aborted || this.expired || this.resetRequested) return
+      if (this.userId === undefined) {
+        this.userId = user.userId
+        return
+      }
+      if (this.userId === user.userId) return
+      this.resetRequested = true
+      controller.abort()
+      this.options.connection.stop()
+      this.options.resetDocument()
+    }).catch((error: unknown) => {
       if (!controller.signal.aborted && !this.lifetime.signal.aborted
         && error instanceof AccountHttpError && error.status === 401) this.confirmExpired()
     }).finally(() => { if (this.probe === controller) this.probe = undefined })
@@ -72,7 +87,7 @@ export class AccountSession {
 
   /** Handle a 401 confirmed by the independent personal identity request. */
   confirmExpired = (): void => {
-    if (this.expired || this.lifetime.signal.aborted) return
+    if (this.expired || this.resetRequested || this.lifetime.signal.aborted) return
     this.expired = true
     this.probe?.abort()
     this.options.connection.stop()
@@ -99,7 +114,7 @@ export class AccountSession {
     if (this.loginUrl) return Promise.resolve(this.loginUrl)
     if (this.destination) return this.destination
     const pending = this.options.client.loginUrl(this.lifetime.signal).then(url => {
-      if (this.lifetime.signal.aborted) return undefined
+      if (this.lifetime.signal.aborted || this.resetRequested) return undefined
       this.loginUrl = url
       return url
     }, () => undefined).finally(() => { if (this.destination === pending) this.destination = undefined })
