@@ -13,6 +13,7 @@ import { DeviceProcessLock } from './process-lock.ts'
 import { OwnedDeviceContainer, ownedContainerOwner, ownedContainerReceipt } from './owned-container.ts'
 import { LocalDeviceFiles } from './local-files.ts'
 import { DeviceWriterCoordinator, deviceWriterOwner, type DeviceWriterLease, type DeviceWriterOwner } from './writer-coordinator.ts'
+import { SealedDeviceCreations, sealedCreation } from './sealed-creations.ts'
 
 const directoryIdentity = z.object({ dev: z.string().regex(/^\d+$/u), ino: z.string().regex(/^\d+$/u) }).strict()
 const directory = z.object({ id: z.uuid(), label: z.string(), path: z.string(), identity: directoryIdentity.optional() }).strict()
@@ -44,11 +45,14 @@ const journalEntry = z.object({
     || entry.queuedJob && (entry.queuedJob.executionId !== entry.id || entry.queuedJob.state !== 'queued')
     || (entry.stage === 'waiting' || entry.stage === 'claiming') && (!entry.queuedJob || !entry.processId || entry.claimed || entry.dispatchId
       || entry.owner || entry.imageId || entry.receipt || entry.stopObservation || entry.stopRequestId || entry.result)
-    || (entry.claimClosureRequestId || entry.claimClosureReceipt) && entry.stage !== 'claiming'
+    || entry.claimClosureRequestId && entry.stage === 'waiting'
+    || entry.claimClosureReceipt && (!['claiming', 'claimed', 'created'].includes(entry.stage)
+      || entry.result || entry.stopObservation || entry.stopRequestId)
     || entry.claimClosureReceipt && (entry.claimClosureReceipt.requestId !== entry.claimClosureRequestId
       || entry.claimClosureReceipt.executionId !== entry.id || entry.claimClosureReceipt.processId !== entry.processId
-      || entry.claimClosureReceipt.directoryId !== entry.queuedJob?.directoryId
-      || entry.claimClosureReceipt.digest !== entry.queuedJob?.digest)) {
+      || entry.claimClosureReceipt.directoryId !== (entry.claimed ?? entry.queuedJob)?.directoryId
+      || entry.claimClosureReceipt.digest !== (entry.claimed ?? entry.queuedJob)?.digest
+      || entry.claimed && entry.claimClosureReceipt.dispatchId !== entry.claimed.dispatchId)) {
     ctx.addIssue({ code: 'custom', message: 'device_journal_identity_mismatch' })
   }
 })
@@ -68,6 +72,9 @@ export interface DesktopWorkerOptions {
 function uncertain(): z.infer<typeof journalEntry>['result'] {
   return { state: 'uncertain', exitCode: null, stdout: '', stderr: '',
     stdoutTruncated: false, stderrTruncated: false, timedOut: false }
+}
+class DevicePlatformError extends Error {
+  constructor(readonly status: number, readonly code: string | undefined) { super(`platform_${status}`) }
 }
 
 /** A single local device process holds its credential and folder paths outside the cloud. */
@@ -90,6 +97,7 @@ export class DesktopWorker {
   private notice = ''
   private readonly coordination: DeviceWriterCoordinator
   private readonly files: LocalDeviceFiles
+  private readonly sealed: SealedDeviceCreations
   private writer: { owner: DeviceWriterOwner; lease: DeviceWriterLease } | null = null
 
   constructor(private readonly platformUrl: string, private readonly privateDir: string,
@@ -99,6 +107,7 @@ export class DesktopWorker {
     this.journalPath = join(privateDir, 'journal.json')
     this.coordination = new DeviceWriterCoordinator(options.coordinationRoot)
     this.files = new LocalDeviceFiles({ pythonExecutable: options.pythonExecutable, timeoutMs: options.fileOperationTimeoutMs })
+    this.sealed = new SealedDeviceCreations(privateDir, () => this.assertOwned())
   }
 
   /** Acquire kernel ownership before loading the private credentials and journal.
@@ -166,7 +175,13 @@ export class DesktopWorker {
       method: 'POST', headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
       body: JSON.stringify(input), signal: AbortSignal.timeout(this.options.platformRequestTimeoutMs),
     })
-    if (!response.ok) throw new Error(`platform_${response.status}`)
+    if (!response.ok) {
+      let body: unknown
+      try { body = await response.json() }
+      catch (_invalidErrorBody) { throw new DevicePlatformError(response.status, undefined) }
+      const parsed = z.object({ error: z.string().regex(/^[a-z][a-z0-9_]{0,127}$/u) }).strict().safeParse(body)
+      throw new DevicePlatformError(response.status, parsed.success ? parsed.data.error : undefined)
+    }
     return parser.parse(await response.json())
   }
 
@@ -307,7 +322,7 @@ export class DesktopWorker {
       this.writer = null
       const lock = this.processLock
       this.processLock = null
-      const released = await Promise.allSettled([writer?.lease.release(), lock?.release()])
+      const released = await Promise.allSettled([this.sealed.close(), writer?.lease.release(), lock?.release()])
       const failures = released.flatMap(result => result.status === 'rejected' ? [result.reason] : [])
       if (failures.length) throw new AggregateError(failures, 'device_lock_release_failed')
     })()
@@ -318,6 +333,8 @@ export class DesktopWorker {
       try {
         await this.assertOwned()
         if (this.state) {
+          await this.sealed.reconcileOne({ deviceId: ownedContainerOwner.shape.deviceId.parse(this.state.deviceId),
+            enrollmentId: ownedContainerOwner.shape.enrollmentId.parse(this.state.instanceId) }, this.containers, id => this.journal.has(id))
           if (!this.active) {
             for (const entry of this.journal.values()) {
               if (entry.stage === 'waiting') {
@@ -451,19 +468,59 @@ export class DesktopWorker {
     return entry.claimed
   }
 
-  private async register(state: DeviceState, entry: JournalEntry): Promise<boolean> {
+  private async register(state: DeviceState, entry: JournalEntry, existing = false): Promise<boolean> {
     const claimed = this.originalClaim(state, entry)
     if (!entry.receipt) throw new Error('device_container_identity_missing')
     const input = deviceContainerRegistration.parse({ instanceId: state.instanceId, executionId: entry.id,
       processId: claimed.processId, dispatchId: claimed.dispatchId, receipt: entry.receipt })
-    const accepted = await this.call('/devices/agent/register', input, deviceContainerRegistered, state.token)
+    const accepted = await this.call(existing ? '/devices/agent/registered' : '/devices/agent/register', input, deviceContainerRegistered, state.token)
     if (accepted.executionId !== entry.id || accepted.dispatchId !== claimed.dispatchId
       || JSON.stringify(accepted.receipt) !== JSON.stringify(entry.receipt)) throw new Error('device_registration_identity_mismatch')
+    if (existing && accepted.canStart) throw new Error('device_recovery_start_permission')
     return accepted.canStart
+  }
+
+  private async sealCreation(state: DeviceState, entry: JournalEntry): Promise<void> {
+    const claimed = this.originalClaim(state, entry), owner = this.writerOwner(state, entry)
+    if (!['claimed', 'created'].includes(entry.stage) || entry.result || entry.stopObservation || entry.stopRequestId) {
+      throw new Error('device_creation_requires_review')
+    }
+    if (!entry.claimClosureReceipt) {
+      if (this.stop.signal.aborted) throw new Error('device_closed_before_claim_closure')
+      await (await this.takeWriter(state, entry)).verifyCreation(entry.receipt)
+      entry.claimClosureRequestId ??= deviceClaimClosureRequest.shape.requestId.parse(randomUUID())
+    }
+    await this.saveJournal()
+    if (this.stop.signal.aborted) throw new Error('device_closed_before_claim_closure')
+    const input = deviceClaimClosureRequest.parse({ instanceId: state.instanceId, executionId: entry.id,
+      processId: claimed.processId, directoryId: claimed.directoryId, digest: claimed.digest, requestId: entry.claimClosureRequestId })
+    const closure = entry.claimClosureReceipt ?? await this.call('/devices/agent/claim/close', input, deviceClaimClosureReceipt, state.token)
+    if (closure.deviceId !== owner.deviceId || closure.instanceId !== input.instanceId || closure.executionId !== entry.id
+      || closure.processId !== claimed.processId || closure.directoryId !== claimed.directoryId || closure.digest !== claimed.digest
+      || closure.requestId !== input.requestId || closure.dispatchId !== claimed.dispatchId) throw new Error('device_claim_closure_identity_mismatch')
+    entry.claimClosureReceipt = closure
+    await this.saveJournal()
+    await this.sealed.preserve(sealedCreation.parse({ closure, name: entry.container, owner: entry.owner,
+      imageId: entry.imageId ?? null, ...(entry.receipt ? { receipt: entry.receipt } : {}), removalConfirmed: false }))
+    const progress = await this.sealed.cleanup(closure.executionId, { deviceId: closure.deviceId, enrollmentId: closure.instanceId }, this.containers)
+    if (progress.receipt && (!progress.removalConfirmed || !progress.observation)) throw new Error('device_creation_cleanup_unconfirmed')
+    if (this.stop.signal.aborted) throw new Error('device_closed_before_claim_closure')
+    if (this.writer) { await this.writer.lease.release(); this.writer = null }
+    await this.coordination.retireCreation(owner, closure, progress.receipt && progress.observation
+      ? { receipt: progress.receipt, observation: progress.observation } : undefined)
+    this.journal.delete(entry.id)
+    try { await this.saveJournal() }
+    catch (error) { this.journal.set(entry.id, entry); throw error }
   }
 
   private async recover(state: DeviceState, entry: JournalEntry): Promise<void> {
     this.originalClaim(state, entry)
+    if (['claimed', 'created'].includes(entry.stage) && !entry.result && !entry.stopObservation && !entry.stopRequestId) {
+      try { await this.sealCreation(state, entry); return }
+      catch (error) {
+        if (!(error instanceof DevicePlatformError) || error.status !== 409 || error.code !== 'device_claim_start_unconfirmed') throw error
+      }
+    }
     const writer = await this.takeWriter(state, entry)
     if (!entry.owner || !entry.imageId) throw new Error('device_container_identity_missing')
     if (!entry.receipt) {
@@ -474,7 +531,7 @@ export class DesktopWorker {
     }
     await writer.capture(entry.receipt)
     let registrationFailure: unknown
-    try { await this.register(state, entry) }
+    try { await this.register(state, entry, true) }
     catch (error: unknown) { registrationFailure = error }
     // A failed remote registration cannot prevent this Device from stopping its exact old writer.
     const observed = await this.containers.inspect(entry.receipt)

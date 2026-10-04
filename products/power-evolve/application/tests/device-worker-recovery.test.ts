@@ -16,6 +16,7 @@ import { DesktopWorker } from '../src/device/worker.ts'
 import { DeviceWriterCoordinator, deviceWriterOwner, DEVICE_WRITER_SLOT_FILENAME } from '../src/device/writer-coordinator.ts'
 import { DockerCommandError, OwnedDeviceContainer, OWNED_DEVICE_CONTAINER_LABELS, ownedContainerOwner, ownedContainerReceipt,
   type DockerClient, type DockerCommandResult, type OwnedContainerObservation, type OwnedContainerReceipt } from '../src/device/owned-container.ts'
+import { sealedCreation } from '../src/device/sealed-creations.ts'
 
 const workerTestOptions = { timeout: 10000, skip: !['darwin', 'linux'].includes(process.platform) }
 const IMAGE = 'sha256:' + 'a'.repeat(64), CONTAINER = 'b'.repeat(64)
@@ -40,6 +41,10 @@ async function until(condition: () => boolean | Promise<boolean>, label: string)
   while (!await condition()) { if (Date.now() >= deadline) throw new Error('Timed out: ' + label); await delay(10) }
 }
 async function journal(root: string) { return journalView.parse(JSON.parse(await readFile(join(root, 'journal.json'), 'utf8'))) }
+async function absent(path: string): Promise<boolean> {
+  try { await stat(path); return false }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return true; throw error }
+}
 async function bounded<T>(promise: Promise<T>): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
   const deadline = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('child fixture deadline')), 3000) })
@@ -74,9 +79,11 @@ class DockerReplacement implements DockerClient {
   lostCreate = false
   keepRunning = false
   failStop = false
+  lostRemove = false
   stopGate: ReturnType<typeof gate> | undefined
   onCreate: (() => Promise<void>) | undefined
   onStart: (() => Promise<void>) | undefined
+  onRemove: (() => Promise<void>) | undefined
   count(command: string): number { return this.calls.filter(args => args[0] === command).length }
   seed(entry: JournalRow, state = created): void {
     assert(entry.owner)
@@ -113,7 +120,11 @@ class DockerReplacement implements DockerClient {
         this.state = { ...stopped }; return { stdout: CONTAINER, stderr: '' }
       }
       case 'logs': assert.equal(args[1], CONTAINER); return { stdout: 'fixture-answer\n', stderr: '' }
-      case 'rm': assert.deepEqual(args, ['rm', CONTAINER]); assert.equal(this.state.Running, false); this.present = false; return { stdout: CONTAINER, stderr: '' }
+      case 'rm': {
+        assert.deepEqual(args, ['rm', CONTAINER]); assert.equal(this.state.Running, false); await this.onRemove?.(); this.present = false
+        if (this.lostRemove) { this.lostRemove = false; throw new DockerCommandError('docker_command_failed') }
+        return { stdout: CONTAINER, stderr: '' }
+      }
       default: throw new Error('Unexpected replacement Docker operation')
     }
   }
@@ -137,8 +148,10 @@ async function fixture(t: TestContext, shared?: { coordinationRoot: string; dire
   let jobs: Job[] = [], finishAck: 'valid' | 'wrong-id' | 'running' | 'wrong-dispatch' | 'wrong-request' | 'no-stop' | 'lost' = 'valid'
   let registerAck: 'valid' | 'lost' | 'wrong-dispatch' | 'wrong-receipt' | 'no-start' = 'valid'
   let claimAck: 'valid' | 'lost' = 'valid'
+  let registeredAck: 'valid' | 'lost' | 'permit' | 'refused' = 'valid'
+  let closureFailure: { status: number; body: string } | undefined
   let closureAck: 'valid' | 'lost' | 'wrong-device' | 'wrong-instance' | 'wrong-id' | 'wrong-process'
-    | 'wrong-directory' | 'wrong-digest' | 'wrong-request' | 'not-sealed' = 'valid'
+    | 'wrong-directory' | 'wrong-digest' | 'wrong-request' | 'wrong-dispatch' | 'not-sealed' = 'valid'
   let onClosure: (() => Promise<void>) | undefined
   let closureGate: ReturnType<typeof gate> | undefined, closureEntered: ReturnType<typeof gate> | undefined
   let claimGate: ReturnType<typeof gate> | undefined, claimEntered: ReturnType<typeof gate> | undefined
@@ -193,6 +206,8 @@ async function fixture(t: TestContext, shared?: { coordinationRoot: string; dire
       }
       case '/devices/agent/claim/close': {
         const input = deviceClaimClosureRequest.parse(body)
+        if (closureFailure) { res.writeHead(closureFailure.status, { 'content-type': 'application/json' }).end(closureFailure.body); return }
+        if (registrations.has(input.executionId)) { res.writeHead(409, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'device_claim_start_unconfirmed' })); return }
         const original = claims.get(input.executionId), prior = closedClaims.get(input.requestId)
         if (original) {
           assert.equal(original.processId, input.processId); assert.equal(original.directoryId, input.directoryId)
@@ -213,6 +228,7 @@ async function fixture(t: TestContext, shared?: { coordinationRoot: string; dire
           ...(closureAck === 'wrong-directory' ? { directoryId: randomUUID() } : {}),
           ...(closureAck === 'wrong-digest' ? { digest: 'e'.repeat(64) } : {}),
           ...(closureAck === 'wrong-request' ? { requestId: randomUUID() } : {}),
+          ...(closureAck === 'wrong-dispatch' ? { dispatchId: randomUUID() } : {}),
           ...(closureAck === 'not-sealed' ? { startNeverAuthorized: false } : {}) }; break
       }
       case '/devices/agent/register': {
@@ -227,6 +243,15 @@ async function fixture(t: TestContext, shared?: { coordinationRoot: string; dire
           dispatchId: registerAck === 'wrong-dispatch' ? randomUUID() : input.dispatchId,
           receipt: registerAck === 'wrong-receipt' ? { ...input.receipt, containerId: 'd'.repeat(64) } : input.receipt,
           canStart: !prior && registerAck !== 'no-start' }; break
+      }
+      case '/devices/agent/registered': {
+        const input = deviceContainerRegistration.parse(body), prior = registrations.get(input.executionId)
+        if (!prior || registeredAck === 'refused') { res.writeHead(409, { 'content-type': 'application/json' }).end(JSON.stringify({ error: 'device_container_unregistered' })); return }
+        assert.equal(prior, JSON.stringify(input))
+        if (registeredAck === 'lost') { res.destroy(); return }
+        reply = { executionId: input.executionId, dispatchId: registerAck === 'wrong-dispatch' ? randomUUID() : input.dispatchId,
+          receipt: registerAck === 'wrong-receipt' ? { ...input.receipt, containerId: 'd'.repeat(64) } : input.receipt,
+          canStart: registeredAck === 'permit' }; break
       }
       case '/devices/agent/finish': {
         const input = deviceFinishRequest.parse(body), original = claims.get(input.executionId); assert(original)
@@ -248,7 +273,7 @@ async function fixture(t: TestContext, shared?: { coordinationRoot: string; dire
     }
     res.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify(reply))
   }
-  const server = createServer((req, res) => { void route(req, res).catch(() => { res.writeHead(500).end('{}') }) })
+  const server = createServer((req, res) => { void route(req, res).catch(() => { res.writeHead(500).end(JSON.stringify({ error: 'fixture_failure' })) }) })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
   const address = server.address(); assert(address && typeof address === 'object')
   const url = 'http://127.0.0.1:' + address.port
@@ -265,7 +290,8 @@ async function fixture(t: TestContext, shared?: { coordinationRoot: string; dire
   })
   const worker = makeWorker(); await worker.init()
   await worker.pair('synthetic-pairing-code-000000', 'Synthetic test device'); await worker.authorize(directory)
-  async function seed(stage: 'claimed' | 'created' | 'finished', withReceipt: boolean, withStopped = false): Promise<JournalRow> {
+  async function seed(stage: 'claimed' | 'created' | 'finished', withReceipt: boolean, withStopped = false,
+    seedOptions: { registered?: boolean; captured?: boolean } = {}): Promise<JournalRow> {
     await worker.close()
     const device = z.object({ instanceId: z.uuid() }).parse(JSON.parse(await readFile(join(privateRoot, 'device.json'), 'utf8')))
     const source = job(), id = source.executionId
@@ -280,6 +306,13 @@ async function fixture(t: TestContext, shared?: { coordinationRoot: string; dire
       ...(withReceipt ? { receipt } : {}), ...(withStopped ? { stopObservation: { receipt, ...stopped } } : {}),
       ...(withStopped ? { stopRequestId: randomUUID() } : {}),
       ...(stage === 'finished' ? { result: resultUnknown } : {}) }
+    if (seedOptions.registered ?? withReceipt) registrations.set(id, JSON.stringify({ instanceId: device.instanceId,
+      executionId: id, processId: claimed.processId, dispatchId: claimed.dispatchId, receipt }))
+    const lease = await new DeviceWriterCoordinator(workerOptions.coordinationRoot).command(deviceWriterOwner.parse({ kind: 'command',
+      deviceId, enrollmentId: device.instanceId, executionId: id, processId: claimed.processId,
+      directoryId: claimed.directoryId, requestDigest: claimed.digest }))
+    if (seedOptions.captured) await lease.capture(receipt)
+    await lease.release()
     await writeFile(join(privateRoot, 'journal.json'), JSON.stringify([row]), { mode: 0o600 })
     return row
   }
@@ -371,6 +404,8 @@ process.send({ event: 'ready' });
     },
     advertise(value: Job[]) { jobs = value }, ack(value: typeof finishAck) { finishAck = value },
     registrationAck(value: typeof registerAck) { registerAck = value },
+    registeredAck(value: typeof registeredAck) { registeredAck = value },
+    closureFailure(value: typeof closureFailure) { closureFailure = value },
     claimAck(value: typeof claimAck) { claimAck = value },
     closureAck(value: typeof closureAck) { closureAck = value },
     observeClaim(action: () => Promise<void>) { onClaim = action },
@@ -405,8 +440,9 @@ test('lost create acknowledgement is adopted once; cold create-to-journal recove
   await fresh.worker.close()
   const cold = await fixture(t), row = await cold.seed('claimed', false)
   cold.docker.seed(row); const recovering = cold.makeWorker(); await recovering.init(); recovering.start()
-  await cold.resolveUnknown()
-  assert.equal(z.object({ state: z.string() }).parse(cold.finishes[0]!.result).state, 'uncertain')
+  await until(async () => (await journal(cold.privateRoot)).length === 0, 'unregistered creation sealed and removed')
+  assert.equal(cold.closures.length, 1); assert.equal(cold.finishes.length, 0)
+  assert.equal(cold.requests.filter(item => ['/devices/agent/register', '/devices/agent/registered'].includes(item.path)).length, 0)
   assert.equal(cold.docker.count('create'), 0); assert.equal(cold.docker.count('start'), 0); assert.equal(cold.docker.count('rm'), 1)
 })
 
@@ -486,7 +522,8 @@ test('lost registration acknowledgement and duplicate registration never authori
     assert.equal(f.docker.count('create'), 1); assert.equal(f.docker.count('start'), 0); assert.equal(f.docker.count('rm'), 1)
     assert.equal(z.object({ state: z.string() }).parse(f.finishes[0]!.result).state, 'uncertain')
     const registrations = f.requests.filter(item => item.path === '/devices/agent/register')
-    assert(registrations.length >= (ack === 'lost' ? 2 : 1))
+    assert.equal(registrations.length, 1)
+    if (ack === 'lost') assert(f.requests.some(item => item.path === '/devices/agent/registered'))
     for (const registration of registrations) assert.deepEqual(registration.body, registrations[0]!.body)
     assert.equal(f.requests.filter(item => item.path === '/devices/agent/claim').length, 1)
   }
@@ -550,7 +587,7 @@ test('a real replacement process recovers a lost finish acknowledgement with the
   child.start()
   await until(async () => (await journal(f.privateRoot)).length === 0, 'cross-process finish recovery')
   await child.close()
-  const registrations = f.requests.filter(item => item.path === '/devices/agent/register')
+  const registrations = f.requests.filter(item => ['/devices/agent/register', '/devices/agent/registered'].includes(item.path))
   assert(registrations.length >= 2)
   for (const registration of registrations) {
     assert.equal(registration.body.processId, row.processId); assert.equal(registration.body.dispatchId, row.dispatchId)
@@ -729,13 +766,139 @@ test('slot retirement followed by failed journal removal recovers from a durable
   assert.equal(f.closures.length, 1); assert.equal(f.docker.calls.length, 0)
 })
 
-test('a cold claimed entry remains blocked without expanding closure to Docker creation intents', workerTestOptions, async t => {
+test('a missing creation is sealed without pretending it stopped and retains a late-cleanup tombstone', workerTestOptions, async t => {
   const f = await fixture(t), original = await f.seed('claimed', false)
   const child = await f.makeChild(); child.start()
-  await until(async () => await child.notice() === 'device_container_identity_missing', 'claimed recovery retains evidence')
+  await until(async () => (await journal(f.privateRoot)).length === 0, 'missing creation sealed')
   await child.close()
-  assert.deepEqual((await journal(f.privateRoot))[0], original)
-  assert.equal(f.closures.length, 0); assert.equal(f.docker.count('create'), 0); assert.equal(f.docker.count('start'), 0)
+  const record = sealedCreation.parse(JSON.parse(await readFile(join(f.privateRoot, 'sealed-creations', original.id + '.json'), 'utf8')))
+  assert.equal(record.closure.dispatchId, original.dispatchId); assert.equal(record.receipt, undefined)
+  assert.equal(record.observation, undefined); assert.equal(record.removalConfirmed, false)
+  assert.equal(f.closures.length, 1); assert.equal(f.docker.count('create'), 0); assert.equal(f.docker.count('start'), 0)
+})
+
+test('cold creation closure survives lost ACK and post-retirement journal failure without recreating a reservation', workerTestOptions, async t => {
+  for (const failure of ['lost-ack', 'journal-removal'] as const) await t.test(failure, async t => {
+    const f = await fixture(t), original = await f.seed('claimed', false)
+    const cold = f.makeWorker(); await cold.init()
+    if (failure === 'lost-ack') f.closureAck('lost')
+    else failJournalWhile(cold, async () => (await journal(f.privateRoot)).some(row => !!row.claimClosureReceipt)
+      && await writerSlot(f.coordinationRoot) === null)
+    cold.start()
+    await until(() => f.closures.length > 0 && notice(cold) !== '', 'creation closure recovery checkpoint')
+    await cold.close()
+    const [saved] = await journal(f.privateRoot); assert(saved?.claimClosureRequestId)
+    assert.equal(saved.dispatchId, original.dispatchId); assert.equal(saved.processId, original.processId)
+    if (failure === 'journal-removal') {
+      assert(saved.claimClosureReceipt); assert.equal(await writerSlot(f.coordinationRoot), null)
+      const newer = deviceWriterOwner.parse({ kind: 'command', deviceId: randomUUID(), enrollmentId: randomUUID(),
+        executionId: randomUUID(), processId: randomUUID(), directoryId: randomUUID(), requestDigest: 'd'.repeat(64) })
+      const lease = await new DeviceWriterCoordinator(f.coordinationRoot).command(newer); await lease.release()
+    }
+    const slotBefore = await readFile(join(f.coordinationRoot, DEVICE_WRITER_SLOT_FILENAME))
+    f.closureAck('valid')
+    const child = await f.makeChild(); child.start()
+    await until(async () => (await journal(f.privateRoot)).length === 0, 'same creation receipt-only recovery')
+    await child.close()
+    const calls = f.requests.filter(item => item.path === '/devices/agent/claim/close')
+    for (const call of calls) assert.deepEqual(call.body, calls[0]!.body)
+    assert.equal(new Set(f.closures.map(receipt => receipt.requestId)).size, 1)
+    if (failure === 'journal-removal') assert.deepEqual(await readFile(join(f.coordinationRoot, DEVICE_WRITER_SLOT_FILENAME)), slotBefore)
+    else assert.equal(await writerSlot(f.coordinationRoot), null)
+    assert.equal(f.docker.count('create'), 0); assert.equal(f.docker.count('start'), 0); assert.equal(f.finishes.length, 0)
+    const record = sealedCreation.parse(JSON.parse(await readFile(join(f.privateRoot, 'sealed-creations', original.id + '.json'), 'utf8')))
+    assert.equal(record.closure.requestId, saved.claimClosureRequestId)
+  })
+})
+
+test('claimed without a synced image closes before any Docker operation and admits new work', workerTestOptions, async t => {
+  const f = await fixture(t), original = await f.seed('claimed', false)
+  const { imageId, ...withoutImage } = original; void imageId
+  await writeFile(join(f.privateRoot, 'journal.json'), JSON.stringify([withoutImage]), { mode: 0o600 })
+  const next = f.makeWorker(); await next.init(); next.start()
+  await until(async () => (await journal(f.privateRoot)).length === 0, 'pre-create claim sealed')
+  assert.equal(f.docker.calls.length, 0); assert.equal(f.finishes.length, 0)
+  await until(() => absent(join(f.privateRoot, 'sealed-creations', original.id + '.json')), 'pre-create tombstone retired')
+  assert.equal(f.closures[0]?.dispatchId, original.dispatchId); assert.equal((await writerSlot(f.coordinationRoot)), null)
+  f.advertise([f.job()])
+  await until(() => f.finishes.length === 1, 'new command after pre-create closure')
+  assert.equal(f.docker.count('create'), 1); assert.equal(f.docker.count('start'), 1)
+})
+
+test('late owned creation cleanup proceeds during a new active claim without changing its writer slot', workerTestOptions, async t => {
+  const f = await fixture(t), original = await f.seed('claimed', false)
+  const next = f.makeWorker(); await next.init(); next.start()
+  await until(async () => (await journal(f.privateRoot)).length === 0, 'missing create sealed')
+  const held = f.holdClaim(), newer = f.job(); f.advertise([newer]); await held.entered
+  const [pending] = await journal(f.privateRoot); assert.equal(pending?.stage, 'claiming'); assert.equal(pending.id, newer.executionId)
+  const before = await readFile(join(f.coordinationRoot, DEVICE_WRITER_SLOT_FILENAME))
+  f.docker.seed(original)
+  await until(() => f.docker.count('rm') === 1, 'late unstarted creation removed')
+  assert.deepEqual(await readFile(join(f.coordinationRoot, DEVICE_WRITER_SLOT_FILENAME)), before)
+  assert.equal((await writerSlot(f.coordinationRoot))?.owner.executionId, newer.executionId)
+  assert.equal(f.docker.count('create'), 0); assert.equal(f.docker.count('start'), 0); assert.equal(f.docker.count('stop'), 0)
+  assert.equal(f.requests.filter(item => ['/devices/agent/register', '/devices/agent/registered', '/devices/agent/finish'].includes(item.path)).length, 0)
+  const closing = next.close(); held.release(); await closing
+})
+
+test('local captured creation with no Platform registration is removed durably before retiring its slot, including lost rm ACK', workerTestOptions, async t => {
+  const f = await fixture(t), original = await f.seed('created', true, false, { registered: false, captured: true })
+  f.docker.seed(original); f.docker.lostRemove = true
+  f.docker.onRemove = async () => {
+    const record = sealedCreation.parse(JSON.parse(await readFile(join(f.privateRoot, 'sealed-creations', original.id + '.json'), 'utf8')))
+    assert(record.observation); assert.equal(record.removalConfirmed, false)
+    assert.equal((await writerSlot(f.coordinationRoot))?.receipt?.containerId, CONTAINER)
+  }
+  const next = f.makeWorker(); await next.init(); next.start()
+  await until(async () => (await journal(f.privateRoot)).length === 0, 'captured unregistered creation sealed')
+  await until(() => absent(join(f.privateRoot, 'sealed-creations', original.id + '.json')), 'completed cleanup tombstone retired')
+  assert.equal(await writerSlot(f.coordinationRoot), null)
+  assert.equal(f.finishes.length, 0); assert.equal(f.docker.count('rm'), 1); assert.equal(f.docker.count('start'), 0)
+})
+
+test('only the exact Platform no-start refusal permits a read-only registered query', workerTestOptions, async t => {
+  for (const failure of [{ status: 409, body: '{"error":"device_claim_identity_changed"}' },
+    { status: 503, body: '{"error":"device_claim_start_unconfirmed"}' },
+    { status: 409, body: '{"code":"device_claim_start_unconfirmed"}' }, { status: 409, body: 'invalid JSON' }]) await t.test(failure.body, async t => {
+    const f = await fixture(t), original = await f.seed('created', true)
+    f.docker.seed(original); f.closureFailure(failure)
+    const next = f.makeWorker(); await next.init(); next.start()
+    await until(() => notice(next) === `platform_${failure.status}`, 'closure refusal retained')
+    assert.equal(f.requests.filter(item => ['/devices/agent/register', '/devices/agent/registered', '/devices/agent/finish'].includes(item.path)).length, 0)
+    assert.equal(f.docker.count('rm'), 0); assert.equal((await journal(f.privateRoot)).length, 1)
+  })
+})
+
+test('failed or impermissible registered replies cannot grant cold start or suppress exact local stop', workerTestOptions, async t => {
+  for (const ack of ['refused', 'lost', 'permit'] as const) await t.test(ack, async t => {
+    const f = await fixture(t), original = await f.seed('created', true)
+    f.docker.seed(original, { ...stopped, Running: true, Status: 'running' }); f.registeredAck(ack)
+    const next = f.makeWorker(); await next.init(); next.start()
+    await until(async () => f.docker.count('stop') === 1 && !!(await journal(f.privateRoot))[0]?.stopObservation, 'query refusal exact stop')
+    assert.equal(f.finishes.length, 0); assert.equal(f.docker.count('rm'), 0); assert.equal(f.docker.count('start'), 0)
+    assert.equal(f.requests.filter(item => item.path === '/devices/agent/register').length, 0)
+    if (ack === 'permit') await until(() => notice(next) === 'device_recovery_start_permission', 'invalid query permission refused')
+    await next.close()
+  })
+})
+
+test('a failed sealed-creation sync retains the original journal and captured slot before any removal', workerTestOptions, async t => {
+  const f = await fixture(t), original = await f.seed('created', true, false, { registered: false, captured: true })
+  f.docker.seed(original)
+  const next = f.makeWorker(); await next.init()
+  const store: unknown = Reflect.get(next, 'sealed'); assert(store && typeof store === 'object')
+  const preserve: unknown = Reflect.get(store, 'preserve'); assert.equal(typeof preserve, 'function')
+  let fail = true
+  Object.defineProperty(store, 'preserve', { value: async function (input: unknown) {
+    if (fail) throw new Error('fixture_sealed_sync_failed')
+    return (preserve as (this: object, input: unknown) => Promise<unknown>).call(store, input)
+  } })
+  next.start(); await until(() => notice(next) === 'fixture_sealed_sync_failed', 'sealed sync failure')
+  assert((await journal(f.privateRoot))[0]?.claimClosureReceipt)
+  assert.equal((await writerSlot(f.coordinationRoot))?.receipt?.containerId, CONTAINER); assert.equal(f.docker.count('rm'), 0)
+  fail = false
+  await until(async () => (await journal(f.privateRoot)).length === 0, 'sealed sync retry retirement')
+  assert.equal(f.closures.length, 1); assert.equal(f.docker.count('rm'), 1)
 })
 
 test('close during a successful claim acknowledgement preserves its intent and suppresses creation', workerTestOptions, async t => {
