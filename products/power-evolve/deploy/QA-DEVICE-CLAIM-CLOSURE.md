@@ -1,6 +1,6 @@
 # Device 冷领取封存验收
 
-2026-10-04，完成 [Device Bundle](../device/README.md) 严格冷 `claiming` 的永久封存。此次使用已运行的 PG 和 Docker，未启动 Electron、真实模型或共享 Host，未部署或迁移 Cloud 固定试用。结果属于 Device 协议验收，桌面装配继续按[官方桌面复用约定](../DESKTOP-COMPLETION.md)推进。
+2026-10-04，集成代码固定为 `42dc491f28da59fea7c1d5c23c1f3c2c98c81cc3`，完成 [Device Bundle](../device/README.md) 严格冷 `claiming` 的永久封存。此次使用已运行的 PG 和 Docker，未启动 Electron、真实模型或共享 Host，未部署或迁移 Cloud 固定试用。结果属于 Device 协议验收，桌面装配继续按[官方桌面复用约定](../DESKTOP-COMPLETION.md)推进。
 
 ## 已核验的处理
 
@@ -20,6 +20,8 @@ Worker 持有私有 journal 与原共享写入锁，以稳定请求 ID 提交原
 新增真实场景故意丢弃原领取 ACK，停止原 Worker 后，从同一私有目录启动新 Worker；平台封存已提交后再次丢弃 ACK，再停止和替换 Worker。最终旧任务保持原进程／派发，容器、启动、停止与结果字段仍为空，只有一条封存及续接；实际 Docker CLI 没有执行旧任务的 create/start，禁止标记文件不存在。随后新 Git 任务创建并启动一次、文件只写一次、journal 清空，旧命令仍未重放。这里是同一 Node 内的 Worker 对象替换与真实 PG／Docker；真实 OS 子进程重启由上述源码恢复测试覆盖，二者不能合并声称为 Electron 重启验收。
 
 固定使用已有 ARM64 镜像 `pe-release-cloud-runner:7e2c0067e1-arm64`，镜像 ID 为 `sha256:c2fbc8c0b85a00accfd4204ed011a5c970901bf5a0adec6c8c9243cfeae732c0`。Application／contracts 类型构建通过；三组平台并发使用真实 PG 锁等待确认竞争请求已进入锁等待。平台封存输入完整保存，唯一续接的模型可见文本由真实 PG 精确断言；原始执行内容及停止事实均保留各自含义。
+
+集成源码测试严格类型、导出 JSDoc、受影响 lint 和正常提交 hooks 通过。数据库初始化已有 JSDoc 缺少 pool 参数，补齐后定向检查通过。最终四份产品文档的实际链接、段落与末尾换行，以及 Device 双语配对和暂存记录均通过；桌面审计期间的根级 20 项 doc-quick 也通过。真实 cold 场景在补强精确迟到 claim 错误码后再次定向通过。没有新增常驻容器、集群或镜像。
 
 ## 复验入口
 
