@@ -77,6 +77,8 @@ Device 的 [Python 文件辅助脚本](application/src/device/local-files.ts)由
 
 Device 已接入上游原生 `flock`、不可变 Docker 身份、启动前持久记录、跨 Device 写入槽及描述符相对文件访问，生命周期由 [Device Bundle](device/README.md)描述。平台已固定原请求和进程派发、发放一次启动许可、保存精确容器登记及撤销后的受限停止回执，并限制同 Device／目录授权的跨会话并发。已有完整停止记录的未知执行可经独立审批结案，保留原事实并至多续接一次；严格冷 `claiming` 可经平台永久封存原领取，缺少停止事实的 `claimed`／`created` 仍受阻。真实 PG／Docker 范围见[派发与停止记录验收](deploy/QA-DEVICE-DISPATCH-STOP.md)、[未知结果结案验收](deploy/QA-DEVICE-UNKNOWN-CLOSURE.md)、[写入与文件验收](deploy/QA-DEVICE-WRITER-FILES.md)及[冷领取封存验收](deploy/QA-DEVICE-CLAIM-CLOSURE.md)。Electron 的三个产品适配器及安装包仍未交付。
 
+[创建回执前的真实进程崩溃验收](deploy/QA-DEVICE-CREATE-RECOVERY.md)覆盖实际 Worker 子进程在 Docker create 后遭 SIGKILL；替代 Worker 找回原容器、保存未运行事实、经独立审批结案后完成新 Git 任务，原命令没有启动或重放。该结果属于 Device 协议验收，不替代 Electron 生命周期，也不证明一次 missing 查询可解除原写入占用。
+
 ## 业务与开发顺序
 
 Cloud 不确定执行结案与 Device 严格冷 `claiming` 封存已有协议验收，继续补齐缺少停止事实的 `claimed`／`created` 冷恢复。随后将 operation 固定的技能版本、只读包挂载、Office 和进程连接器接入获授权本机目标。远程 HTTP API 继续由可信平台保管凭据和执行；不能通过放开 Host 本地 shell 补齐桌面功能。
