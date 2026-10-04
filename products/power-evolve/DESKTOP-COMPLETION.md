@@ -1,6 +1,6 @@
 # 原生 DSH 桌面复用实施约定
 
-本文固定[交付计划](DELIVERY-PLAN.md)的 Mac 桌面路径，是待实施方案。当前 [`baseline.json`](baseline.json) 所记录官方基线的 `apps/desktop` 与 `apps/desktop-host`，和产品仓中的对应目录树完全一致；复用以该固定源码为依据，不声称核验了远端最新版本。早期桌面实测见[原生桌面试用](TRIAL-NATIVE-DESKTOP.md)，不能替代当前正式 Profile 和安装包验收。
+本文固定[交付计划](DELIVERY-PLAN.md)的 Mac 桌面路径。复用以 [`baseline.json`](baseline.json) 记录的官方固定源码为依据；产品已补齐窗口与快捷键的无启动副作用装配接口，不声称核验了远端最新版本。早期桌面实测见[原生桌面试用](TRIAL-NATIVE-DESKTOP.md)，不能替代当前正式 Profile 和安装包验收。
 
 2026-10-04 已取回 fork 的 `origin/master` 并只读比较桌面更新：新增登录 shell 环境、CLI 管理及相应发行逻辑；本计划涉及的 Profile 管理、Host 子进程、backend 控制器、退出检查和包集合准备实现未变。它们仍需下述产品适配；这次源码比较不升级当前固定基线，也不代表新上游桌面产物已通过产品测试。
 
@@ -27,11 +27,11 @@
 
 ## 官方代码的装配接口
 
-产品入口放在 `products/power-evolve/desktop/`。官方主入口有应用启动副作用，窗口工厂目前是私有函数；产品不能通过导入该入口复用窗口，也不能只替换 URL 后沿用官方本地 Host。以下扩展保留官方默认行为，产品仅显式选择配置与实现。
+产品入口放在 `products/power-evolve/desktop/`。官方主入口有应用启动副作用；产品通过无启动副作用的 [assembly](../../apps/desktop/src/assembly.ts) 和 [preload assembly](../../apps/desktop/src/preload-assembly.ts) 复用组件，另选共享 Host 与认证配置。以下扩展保留官方默认行为，产品仅显式选择配置与实现。
 
 | 接入点 | 复用方式与产品职责 |
 | --- | --- |
-| [窗口工厂](../../apps/desktop/src/main.ts) | 提取无启动副作用的窗口模块，注入 Preload、Electron Session、语言及导航许可；复用尺寸、Mac traffic lights、vibrancy、全屏和上下文菜单 |
+| [窗口工厂](../../apps/desktop/src/window.ts) | 注入 Preload、Electron Session、语言及导航许可；复用尺寸、Mac traffic lights、vibrancy、全屏和上下文菜单 |
 | [快捷键](../../apps/desktop/src/keyboard.ts)与应用菜单 | 页面许可增加显式参数；保留所属窗口、主 frame、原生按键和用户配置。产品菜单复用原生 File／Edit／Window 与退出动作 |
 | [麦克风](../../apps/desktop/src/microphone-permissions.ts) | 注入精确 Host 页面许可，保留 audio-only、所属主窗口与 Mac 系统授权；平台登录页不获录音许可 |
 | [主题](../../apps/desktop/src/preload-theme.ts)与[平台／全屏标记](../../apps/desktop/src/preload-platform.ts) | 直接复用；产品 Cloud Preload 同时装配原生页面所需的快捷键接口，避免只有平台标记而缺少 bridge |
@@ -75,15 +75,15 @@ Device 文件和写入协议稳定后，按下面三个纵切面集成 Electron�
 
 Device 的 [Python 文件辅助脚本](application/src/device/local-files.ts)由外部 Python 执行，必须位于物理资源目录。[官方 ASAR 规则](../../apps/desktop/scripts/electron-builder-config.mjs)未解包该脚本；产品包闭包须显式保留脚本并选择解包或资源复制及物理路径解析。`pythonExecutable` 指向已验证的安装包 Python，不能依赖开发机 PATH；Office 的资源解析不覆盖这个辅助脚本。
 
-Device 已接入上游原生 `flock`、不可变 Docker 身份、启动前持久记录、跨 Device 写入槽及描述符相对文件访问，生命周期由 [Device Bundle](device/README.md)描述。平台已固定原请求和进程派发、发放一次启动许可、保存精确容器登记及撤销后的受限停止回执，并限制同 Device／目录授权的跨会话并发。已有完整停止记录的未知执行可经独立审批结案；尚未发放启动权限的冷领取及创建可永久封存，另行持久清理迟到容器。真实 PG／Docker 范围见[派发与停止记录验收](deploy/QA-DEVICE-DISPATCH-STOP.md)、[未知结果结案验收](deploy/QA-DEVICE-UNKNOWN-CLOSURE.md)、[写入与文件验收](deploy/QA-DEVICE-WRITER-FILES.md)及[冷领取封存验收](deploy/QA-DEVICE-CLAIM-CLOSURE.md)。Electron 的三个产品适配器及安装包仍未交付。
+Device 已接入上游原生 `flock`、不可变 Docker 身份、启动前持久记录、跨 Device 写入槽及描述符相对文件访问，生命周期由 [Device Bundle](device/README.md)描述。平台已固定原请求和进程派发、发放一次启动许可、保存精确容器登记及撤销后的受限停止回执，并限制同 Device／目录授权的跨会话并发。已有完整停止记录的未知执行可经独立审批结案；尚未发放启动权限的冷领取及创建可永久封存，另行持久清理迟到容器。真实 PG／Docker 范围见[派发与停止记录验收](deploy/QA-DEVICE-DISPATCH-STOP.md)、[未知结果结案验收](deploy/QA-DEVICE-UNKNOWN-CLOSURE.md)、[写入与文件验收](deploy/QA-DEVICE-WRITER-FILES.md)及[冷领取封存验收](deploy/QA-DEVICE-CLAIM-CLOSURE.md)。Cloud carrier 已通过[双用户原生 Electron 对话验收](TRIAL-DESKTOP-CLOUD-CARRIER.md)；Device process、Local Device bridge 及安装包仍待交付。
 
 [创建回执前的真实进程崩溃验收](deploy/QA-DEVICE-CREATE-RECOVERY.md)覆盖实际 Worker 在 Docker create 前后遭 SIGKILL。替代 Worker 永久封存原执行，不登记原容器或发放首次启动许可；迟到容器清理期间新的真实 Git 任务可以继续，写入槽保持原新任务身份。该结果属于 Device 协议验收，不替代 Electron 生命周期；放行依据是平台永久禁止原启动与持久清理记录，不能由一次 missing 查询代替。
 
 ## 业务与开发顺序
 
-Cloud 不确定执行结案与 Device 启动前永久封存已有协议验收。Device 已接入 operation 固定的技能版本、只读包挂载、独立持久 Home 与 Office 工具；[材料与 Office 协议验收](deploy/QA-DEVICE-MATERIALS-OFFICE.md)限定真实执行及未覆盖范围。[当前原生 Profile 组合验收](TRIAL-DEVICE-MATERIALS-NATIVE.md)已通过双用户真实模型、技能说明无容器、Office 三成果、Git／Home 重启、显式文件往返、去重及离线取消恢复。Electron 三个产品适配器、本机进程连接器和原生 Office 预览继续按本约定推进。远程 HTTP API 继续由可信平台保管凭据和执行；不能通过放开 Host 本地 shell 补齐桌面功能。
+Cloud 不确定执行结案与 Device 启动前永久封存已有协议验收。Device 已接入 operation 固定的技能版本、只读包挂载、独立持久 Home 与 Office 工具；[材料与 Office 协议验收](deploy/QA-DEVICE-MATERIALS-OFFICE.md)限定真实执行及未覆盖范围。[当前原生 Profile 组合验收](TRIAL-DEVICE-MATERIALS-NATIVE.md)已通过双用户真实模型、技能说明无容器、Office 三成果、Git／Home 重启、显式文件往返、去重及离线取消恢复。Electron 所属 Device、Local Device bridge、本机进程连接器和原生 Office 预览继续按本约定推进。远程 HTTP API 继续由可信平台保管凭据和执行；不能通过放开 Host 本地 shell 补齐桌面功能。
 
-Root 固定共享 DTO、schema、Profile、Electron 扩展点及发行闭包；设备实现者负责 Device/目录/包交付；Host 实现者负责模型工具目标；客户端实现者复用原执行位置与扩展中心。接口与文件归属固定后并行实现，真实端到端验收和版本冻结串行完成。桌面承载器在业务协议稳定前仅做只读审计，不提前合入下一切片。
+Root 固定共享 DTO、schema、Profile、Electron 扩展点及发行闭包；设备实现者负责 Device/目录/包交付；Host 实现者负责模型工具目标；客户端实现者复用原执行位置与扩展中心。接口与文件归属固定后并行实现，真实端到端验收和版本冻结串行完成。Cloud carrier 先完成实际对话与权限验收，再集成本机执行和安装包；下一切片的只读审计不替代当前切片验收。
 
 ## 完成出口
 

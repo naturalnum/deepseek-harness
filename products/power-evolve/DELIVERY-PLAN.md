@@ -77,7 +77,7 @@ S7c 的[停写备份与恢复](TRIAL-S7C-BACKUP.md)已从 V18 恢复到 V19；[�
 
 每行内可以分别准备服务端适配、旧客户端迁移和验收脚本。接口、错误码和文件所有权先由集成者固定；共享的 Profile、schema、锁文件只由一个所有者修改。目录资产和只读兼容性检查可提前并行，未集成的准备成果不计作该行交付。
 
-第 1 行的[固定 S8 试用](TRIAL-S8-NATIVE.md)保留了真实 DeepSeek、PG 和 k3s 九包接入证据，以及长输出／NUL 修复的真实执行复验。逐包历史范围见[验收矩阵](TRIAL-S8-SKILLS-QA.md)，完整报告的新结果以[报告验收记录](TRIAL-S8-REPORT-WORKFLOW.md)为准；这些记录不代表所有技能业务功能都已验收。[Cloud 人工结案固定试用](TRIAL-CLOUD-EXECUTION-RESOLUTION.md)已验证原生入口、停止证明前后 Platform 重启、受理回执丢失及原会话唯一续接；替身回归和未覆盖场景保留各自范围。Device 技能材料、持久 Home 与 Office 已通过[当前原生 Profile 双用户组合验收](TRIAL-DEVICE-MATERIALS-NATIVE.md)。继续补齐 Device／SSH 结案的剩余客户端流程、通用 STDIO、Desktop 报告、原生 Office 预览、桌面连接器选择，以及 Electron 装配和安装包。原 c3 与 S8 试用保持独立。
+第 1 行的[固定 S8 试用](TRIAL-S8-NATIVE.md)保留了真实 DeepSeek、PG 和 k3s 九包接入证据，以及长输出／NUL 修复的真实执行复验。逐包历史范围见[验收矩阵](TRIAL-S8-SKILLS-QA.md)，完整报告的新结果以[报告验收记录](TRIAL-S8-REPORT-WORKFLOW.md)为准；这些记录不代表所有技能业务功能都已验收。[Cloud 人工结案固定试用](TRIAL-CLOUD-EXECUTION-RESOLUTION.md)已验证原生入口、停止证明前后 Platform 重启、受理回执丢失及原会话唯一续接；替身回归和未覆盖场景保留各自范围。Device 技能材料、持久 Home 与 Office 已通过[当前原生 Profile 双用户组合验收](TRIAL-DEVICE-MATERIALS-NATIVE.md)。继续补齐 Device／SSH 结案的剩余客户端流程、通用 STDIO、Desktop 报告、原生 Office 预览、桌面连接器选择，以及 Electron 所属 Device 和安装包。[Cloud carrier 固定试用](TRIAL-DESKTOP-CLOUD-CARRIER.md)已通过双用户原生 Electron 对话、刷新／重启、历史越权拒绝及无执行环境验收；下一步集成本机 Device 生命周期和授权窗口。原 c3 与 S8 试用保持独立。
 
 连接器行的范围、授权与恢复要求、接口职责及并行文件所有权见 [S6 连接器补齐实施约定](S6-CONNECTOR-COMPLETION.md)。其中远程 MCP 与 SSH 分别经过原生客户端端到端验收，不能以固定 `whoami` 或 `qa:ping` 的结果替代。个人 MCP 恢复旧版 Streamable HTTP 范围；进程型 MCP 当前只有固定 `whoami` 预设，尚不支持用户配置任意 STDIO 服务，部署接线不改变这一限制。
 
