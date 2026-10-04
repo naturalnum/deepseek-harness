@@ -29,7 +29,7 @@ HTTP 仅接受数字 loopback 地址。远程 Origin 要求 HTTPS。拒绝凭据
 
 [进程适配器](src/device-process.ts)核验所属子进程 PID、每次启动身份、就绪及有界健康响应。私有[生命周期消息](../contracts/src/device-lifecycle.ts)在终止前关闭准入并排空所属操作。退出等待实际子进程退出及本机窗口清理。排空不完整时保留原记录并报告不确定；仅进程退出不能证明执行已停止。退出不会取消 Cloud 任务。
 
-[安装资源读取器](src/installed-config.ts)校验主进程选择的资源目录下固定 `power-evolve-desktop.json`。Node、CLI、Python、文件辅助脚本及 Device Bundle 必须解析到该目录内部，ASAR 条目被拒绝。Worker 时序明确配置，Runner 使用本机已有的不可变镜像 ID。读取器从既有私有产品 userData 目录派生不含版本号的 Device 状态路径。主入口接线及 Profile 准备仍待完成；这个读取器本身不启用安装模式启动。
+安装启动读取主进程选择的资源目录下固定 `power-evolve-desktop.json`，不接受运行时覆盖。[资源读取器](src/installed-config.ts)要求 Node、CLI、Python、文件辅助脚本和 Device Bundle 位于该物理目录内；ASAR 条目被拒绝。Worker 时序明确配置，Runner 使用本机已有的不可变镜像 ID。Cloud 启动不创建 Device Profile 或子进程。首次打开本机授权入口时，在稳定私有 userData 路径中[准备产品 Profile](src/installed-profile.ts)，保留 Device 身份、journal 与写入锁。后端控制器管理准备、并发打开及派生进程前的取消。拒绝 Home 全局 overlay，以及 CLI 选定的 Device Bundle 与描述符不一致的配置。
 
 ## 浏览器与原生权限
 
@@ -41,10 +41,10 @@ HTTP 仅接受数字 loopback 地址。远程 Origin 要求 HTTPS。拒绝凭据
 
 ## 实现与验证
 
-[主装配](src/main.ts)使用上游无启动副作用的[装配接口](../../../apps/desktop/src/assembly.ts)和 [Preload 装配](../../../apps/desktop/src/preload-assembly.ts)。主 ESM 模块注册就绪工作，不在顶层等待 `app.whenReady()`。仅 Cloud 启动不创建本机 Profile；明确的开发 Device 配置启用独立本机进程。[打包](tsdown.config.ts)拒绝 Electron 与 Node 之外的 bare import；沙盒 CommonJS Preload 使用更小的运行时导入清单。
+[主装配](src/main.ts)使用上游无启动副作用的[装配接口](../../../apps/desktop/src/assembly.ts)和 [Preload 装配](../../../apps/desktop/src/preload-assembly.ts)。主 ESM 模块注册就绪工作，不在顶层等待 `app.whenReady()`。开发运行时文件或固定安装资源仅在明确打开本机授权入口后启用独立本机进程。[打包](tsdown.config.ts)拒绝 Electron 与 Node 之外的 bare import；沙盒 CommonJS Preload 使用更小的运行时导入清单。
 
 `pnpm run test:power-evolve:desktop` 执行源码配置和参数检查。真实 Electron 许可测试使用构建后的适配器并明确要求 `PE_DESKTOP_ELECTRON`；缺少运行时会报告 skip。其 loopback HTML 服务验证原生 IPC 和导航，不替代实际原生 DSH、PG 或模型验收。剩余 Device 与安装包工作见[桌面补齐约定](../DESKTOP-COMPLETION.md)。
 
 ## 已知限制
 
-[冻结所属 Device 试用](../TRIAL-DESKTOP-OWNED-DEVICE.md)具有两个用户、Git 读回、重启及运行中退出的实际原生 DSH、Profile、模型、PG 和 Docker 证据。其独立运行时位于源码树外，仍使用开发配置。原生 OS 目录选择、安装配置／Profile 准备、`.app` 装配、签名／更新及原生侧栏浏览器分别保留交付步骤。源码启动和上游包 smoke 不能证明 PowerEvolve 安装包已交付。用户控制的外部打开能力尚未接入，外部文档链接保持阻止。
+[冻结所属 Device 试用](../TRIAL-DESKTOP-OWNED-DEVICE.md)具有两个用户、Git 读回、重启及运行中退出的实际原生 DSH、Profile、模型、PG 和 Docker 证据。其独立运行时位于源码树外，仍使用开发配置。原生 OS 目录选择、实际安装 `.app` 组合、签名／更新及原生侧栏浏览器分别保留交付步骤。源码启动和上游包 smoke 不能证明 PowerEvolve 安装包已交付。用户控制的外部打开能力尚未接入，外部文档链接保持阻止。

@@ -1,6 +1,7 @@
 /** Electron carrier for the shared DSH Host, with a separate persistent product browser session. */
-import { readFileSync, mkdirSync } from 'node:fs'
-import { isAbsolute, join } from 'node:path'
+import { readFileSync, mkdirSync, lstatSync, realpathSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { app, BrowserWindow, Menu, session, ipcMain, dialog } from 'electron'
 import { createDesktopWindow, installDesktopShortcuts, installMicrophonePermissions,
@@ -15,26 +16,35 @@ import { DeviceProcess } from './device-process.ts'
 import { LocalDeviceWindow } from './local-device-window.ts'
 import { DEVICE_DESKTOP_IPC } from './device-ipc.ts'
 import { deviceEn, deviceZh } from './device-locale.ts'
+import { readInstalledDesktopConfig } from './installed-config.ts'
+import { prepareInstalledDeviceProfile } from './installed-profile.ts'
 
 const values = cloudDesktopArguments(process.argv, app.getAppPath(), app.isPackaged)
-if (values.config === undefined || !isAbsolute(values.config)) throw new Error('PowerEvolve desktop: --config must name an absolute local file')
-if (values['data-dir'] !== undefined && (app.isPackaged || !isAbsolute(values['data-dir']))) {
+if (app.isPackaged && Object.keys(values).length !== 0) {
+  throw new Error('PowerEvolve desktop: installed startup does not accept runtime overrides')
+}
+if (!app.isPackaged && (values.config === undefined || !isAbsolute(values.config))) {
+  throw new Error('PowerEvolve desktop: --config must name an absolute local file')
+}
+if (values['data-dir'] !== undefined && !isAbsolute(values['data-dir'])) {
   throw new Error('PowerEvolve desktop: --data-dir is an absolute development-only directory')
 }
-const config = parseCloudDesktopConfig(JSON.parse(readFileSync(values.config, 'utf8')))
-if (values['device-config'] !== undefined && (app.isPackaged || !isAbsolute(values['device-config']))) {
+if (values['device-config'] !== undefined && !isAbsolute(values['device-config'])) {
   throw new Error('PowerEvolve desktop: --device-config is an absolute development-only file')
-}
-const deviceConfig = values['device-config'] === undefined ? undefined
-  : parseDesktopDeviceConfig(JSON.parse(readFileSync(values['device-config'], 'utf8')))
-if (deviceConfig !== undefined && [config.hostOrigin, config.platformOrigin].includes(deviceConfig.loopbackOrigin)) {
-  throw new Error('PowerEvolve desktop: Device must have a separate local origin')
 }
 app.setName('PowerEvolve')
 const userData = values['data-dir'] ?? join(app.getPath('appData'), 'PowerEvolve')
 mkdirSync(userData, { recursive: true, mode: 0o700 })
 app.setPath('userData', userData)
 app.setAppLogsPath()
+const installed = app.isPackaged
+  ? readInstalledDesktopConfig({ resourcesPath: process.resourcesPath, productUserDataPath: userData }) : undefined
+const config = installed?.config ?? parseCloudDesktopConfig(JSON.parse(readFileSync(values.config!, 'utf8')))
+const deviceConfig = installed?.deviceConfig ?? (values['device-config'] === undefined ? undefined
+  : parseDesktopDeviceConfig(JSON.parse(readFileSync(values['device-config'], 'utf8'))))
+if (deviceConfig !== undefined && [config.hostOrigin, config.platformOrigin].includes(deviceConfig.loopbackOrigin)) {
+  throw new Error('PowerEvolve desktop: Device must have a separate local origin')
+}
 if (!app.requestSingleInstanceLock()) app.exit(0)
 else {
   void app.whenReady().then(async () => {
@@ -47,6 +57,7 @@ else {
     const deviceBackend = deviceConfig === undefined ? undefined : new DesktopBackendController(
       onFailure => { ownedDevice = new DeviceProcess({ ...deviceConfig, env: {
         ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !/KEY|SECRET|TOKEN|PASSWORD|^NODE_OPTIONS$/iu.test(key))),
+        ...(installed === undefined ? {} : { PYTHONDONTWRITEBYTECODE: '1', NARB_DISABLE_NATIVE_CACHE: '1' }),
         ...(deviceConfig.nodeExecutable === process.execPath ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
       } }, onFailure)
         const child = ownedDevice
@@ -61,9 +72,25 @@ else {
     )
     const localDevice = deviceConfig === undefined ? undefined : new LocalDeviceWindow({ origin: deviceConfig.loopbackOrigin,
       getDevice: () => deviceBackend?.host?.process, messages: () => locale().messages })
+    async function prepareLocalProfile(): Promise<void> {
+      if (installed === undefined) return
+      // Installed Device Profiles admit only the product composition, including after upgrades.
+      try {
+        lstatSync(join(installed.state.homeDir, 'cordis.patch.yml'))
+        throw new Error('PowerEvolve desktop: installed Home overlay requires explicit migration')
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      }
+      const selected = createRequire(installed.resources.cliEntrypoint).resolve('@power-evolve/device/package.json')
+      if (realpathSync(dirname(selected)) !== installed.resources.deviceBundle) {
+        throw new Error('PowerEvolve desktop: installed Device bundle differs from CLI selection')
+      }
+      await prepareInstalledDeviceProfile(installed, installed.worker, installed.resources.deviceBundle)
+    }
     async function openLocalAuthorization(): Promise<void> {
       if (quitPending || quitting || deviceBackend === undefined || localDevice === undefined) throw new Error('PowerEvolve desktop: local device unavailable')
-      await deviceBackend.start(async () => {})
+      await deviceBackend.start(prepareLocalProfile)
+      if (quitPending || quitting) throw new Error('PowerEvolve desktop: local device unavailable')
       await localDevice.open()
     }
     if (localDevice !== undefined) ipcMain.handle(DEVICE_DESKTOP_IPC.open, async (event, ...args: unknown[]) => {
