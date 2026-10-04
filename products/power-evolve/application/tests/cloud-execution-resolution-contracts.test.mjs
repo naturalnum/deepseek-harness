@@ -20,12 +20,28 @@ test('stop-and-reconcile selects original identities and excludes browser assert
   for (const field of ['userId', 'podUid', 'runnerInstanceId', 'stopEvidence', 'result', 'command']) {
     assert.equal(executionResolutionRequest.safeParse({ ...request, [field]: 'untrusted' }).success, false)
   }
-  for (const invalid of [{ ...request, target: 'desktop' }, { ...request, fingerprint: 'stopped' },
+  for (const invalid of [{ ...request, target: 'local-shell' }, { ...request, fingerprint: 'stopped' },
     { ...request, note: '\0' }, { ...request, note: 'x'.repeat(501) }]) {
     assert.equal(executionResolutionRequest.safeParse(invalid).success, false)
   }
   const { requestId: omitted, ...withoutId } = request
   assert.equal(executionResolutionRequest.safeParse(withoutId).success, false)
+})
+
+test('Desktop closure selects its provider and cannot treat an unavailable observation as stopped', () => {
+  assert.deepEqual(executionResolutionRequest.parse({ ...request, target: 'desktop' }), { ...request, target: 'desktop' })
+  const inspection = { item: { ...item, target: 'desktop' }, fingerprint: request.fingerprint,
+    canStop: true, blockedReason: null, runnerObservation: 'stopped_unknown' }
+  assert.deepEqual(executionResolutionInspection.parse(inspection), inspection)
+  for (const runnerObservation of ['not_observed', 'running', 'unavailable', 'identity_changed']) {
+    assert.equal(executionResolutionInspection.safeParse({ ...inspection, runnerObservation }).success, false)
+  }
+  const desktopReceipt = { ...receipt, target: 'desktop' }
+  const completed = { ...inspection.item, executionState: 'closed_unknown', resolution: desktopReceipt }
+  assert.equal(executionResolutionsList.safeParse({ available: true, items: [completed] }).success, true)
+  assert.equal(executionResolutionsList.safeParse({ available: true,
+    items: [{ ...completed, resolution: receipt }] }).success, false)
+  assert.equal(executionResolutionInspection.safeParse({ ...inspection, item }).success, false)
 })
 
 test('completion preserves unknown outcomes and requires an independently confirmed stopped writer', () => {

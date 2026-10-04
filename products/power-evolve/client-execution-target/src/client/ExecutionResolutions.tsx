@@ -11,14 +11,15 @@ type Props = PropsLocale<'powerEvolve.executionTarget'> & {
   readonly client: ExecutionResolutionClient
 }
 
-/** @param props - original Session and validated read-only transport.
+/** Open the existing read-only reconciliation view for one original Session.
+ * @param props - original Session and validated read-only transport.
  * @returns the existing-area entry and bounded lifetime modal.
  */
 export function ExecutionResolutions({ sessionId, removed, client, t }: Props) {
   const [open, setOpen] = useState(false), [revision, setRevision] = useState(0)
   const [items, setItems] = useState<readonly ExecutionResolutionItem[]>([])
   const [inspection, setInspection] = useState<ExecutionResolutionInspection | null>(null)
-  const [selected, setSelected] = useState<string | null>(null)
+  const [selected, setSelected] = useState<Pick<ExecutionResolutionItem, 'executionId' | 'target'> | null>(null)
   const [link, setLink] = useState<string | null>(null), [error, setError] = useState(false)
   const [loading, setLoading] = useState(false), [pollEnded, setPollEnded] = useState(false)
 
@@ -56,7 +57,7 @@ export function ExecutionResolutions({ sessionId, removed, client, t }: Props) {
     if (!open || removed || selected === null) { setInspection(null); return }
     const controller = new AbortController()
     setInspection(null)
-    void client.inspect(selected, controller.signal).then(result => {
+    void client.inspect(selected.executionId, controller.signal, selected.target).then(result => {
       if (result.item.sessionId !== sessionId) throw new Error('Mismatched execution Session')
       if (!controller.signal.aborted) setInspection(result)
     }).catch(reason => {
@@ -87,8 +88,9 @@ export function ExecutionResolutions({ sessionId, removed, client, t }: Props) {
         {error && <p role="alert">{t('resolutionUnavailable')}</p>}
         {pollEnded && <p role="status">{t('resolutionPollEnded')}</p>}
         {!loading && !error && items.length === 0 && <p>{t('resolutionEmpty')}</p>}
-        {items.map(item => <article key={item.executionId} data-execution-id={item.executionId}>
+        {items.map(item => <article key={`${item.target}:${item.executionId}`} data-execution-id={item.executionId} data-execution-target={item.target}>
           <strong>{finalLabel(item.executionState)}</strong>
+          <p>{t('target')}: {item.target === 'cloud' ? t('cloud') : t('resolutionDesktop')}</p>
           <p>{t('resolutionExecution')}: <code>{item.executionId}</code></p>
           <p>{t('resolutionDirectory')}: <code>{item.cwd}</code></p>
           <pre>{item.command}</pre>
@@ -99,13 +101,13 @@ export function ExecutionResolutions({ sessionId, removed, client, t }: Props) {
             {item.resolution.errorCode && <p>{t('resolutionReason')}: <code>{item.resolution.errorCode}</code></p>}
           </>}
           {item.errorCode && <p>{t('resolutionReason')}: <code>{item.errorCode}</code></p>}
-          <Button onClick={() => setSelected(item.executionId)}>{t('resolutionInspect')}</Button>
-          {inspection?.item.executionId === item.executionId && <>
+          <Button onClick={() => setSelected({ executionId: item.executionId, target: item.target })}>{t('resolutionInspect')}</Button>
+          {inspection?.item.executionId === item.executionId && inspection.item.target === item.target && <>
             <p>{t('resolutionObservation')}: <code>{inspection.runnerObservation}</code></p>
             {!inspection.canStop && <p>{t('resolutionReason')}: <code>{inspection.blockedReason}</code></p>}
           </>}
-          {link && <a href={`${link}#execution=${encodeURIComponent(item.executionId)}`} target="_blank" rel="noopener noreferrer">
-            {t('resolutionTrustedEntry')}
+          {link && <a href={`${link}#execution=${encodeURIComponent(item.executionId)}&target=${item.target}`} target="_blank" rel="noopener noreferrer">
+            {item.target === 'desktop' ? t('resolutionDeviceClose') : t('resolutionTrustedEntry')}
           </a>}
         </article>)}
       </div>

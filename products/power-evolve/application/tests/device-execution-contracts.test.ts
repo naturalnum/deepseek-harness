@@ -38,6 +38,7 @@ test('a stop report requires non-running original identity and preserves unknown
   assert.equal(deviceFinishRequest.safeParse({ ...finish, observation: { ...finish.observation, Running: true } }).success, false)
   assert.equal(deviceFinishRequest.safeParse({ ...finish, observation: { ...finish.observation, Status: 'running' } }).success, false)
   assert.equal(deviceFinishRequest.safeParse({ ...finish, observation: null }).success, false)
+  assert.equal(deviceFinishRequest.safeParse({ ...finish, result: { ...finish.result, state: 'closed_unknown' } }).success, false)
 })
 
 test('cleanup acknowledgements require a persisted stop and terminal state', () => {
@@ -45,6 +46,7 @@ test('cleanup acknowledgements require a persisted stop and terminal state', () 
   const ack = { executionId: finish.executionId, dispatchId: finish.dispatchId, requestId: finish.requestId,
     stopConfirmed: true, state: 'uncertain' }
   assert.equal(deviceFinishReceipt.safeParse(ack).success, true)
+  assert.equal(deviceFinishReceipt.safeParse({ ...ack, state: 'closed_unknown' }).success, true)
   assert.equal(deviceFinishReceipt.safeParse({ ...ack, state: 'running' }).success, false)
   assert.equal(deviceFinishReceipt.safeParse({ ...ack, stopConfirmed: false }).success, false)
   assert.equal(deviceFinishReceipt.safeParse({ ...ack, requestId: undefined }).success, false)

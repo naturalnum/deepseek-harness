@@ -68,7 +68,8 @@ export class ExecutionResolutionClient {
     return boundedJson(response, lifetime)
   }
 
-  /** @param sessionId - original Session filter, absent only for an owner-wide view.
+  /** Read the owner's executions without merging identities across providers.
+   * @param sessionId - original Session filter, absent only for an owner-wide view.
    * @param signal - visible view's request lifetime.
    * @returns a bounded validated list matching the requested Session.
    */
@@ -76,35 +77,44 @@ export class ExecutionResolutionClient {
     const request = executionResolutionsListRequest.parse(sessionId === undefined ? {} : { sessionId })
     const result = executionResolutionsList.parse(await this.post('executionResolutionsList', request, signal))
     if (request.sessionId !== undefined && result.items.some(item => item.sessionId !== request.sessionId)
-      || new Set(result.items.map(item => item.executionId)).size !== result.items.length) {
+      || new Set(result.items.map(item => `${item.target}:${item.executionId}`)).size !== result.items.length) {
       throw new Error('Mismatched execution resolution list')
     }
     return result
   }
 
-  /** @param executionId - exact original execution selected in the view.
+  /** Inspect only the selected provider's original execution.
+   * @param executionId - exact original execution selected in the view.
    * @param signal - visible view's lifetime.
+   * @param target - explicit provider; omission preserves the original Cloud API.
    * @returns current identity and read-only blocking reason for that execution.
    */
-  async inspect(executionId: string, signal: AbortSignal): Promise<ExecutionResolutionInspection> {
-    const request = executionResolutionInspectRequest.parse({ executionId })
+  async inspect(executionId: string, signal: AbortSignal, target?: ExecutionResolutionInspection['item']['target']): Promise<ExecutionResolutionInspection> {
+    const request = executionResolutionInspectRequest.parse({ executionId, ...(target === undefined ? {} : { target }) })
     const result = executionResolutionInspection.parse(await this.post('executionResolutionInspect', request, signal))
-    if (result.item.executionId !== request.executionId) throw new Error('Mismatched execution inspection')
+    if (result.item.executionId !== request.executionId || result.item.target !== (request.target ?? 'cloud')) {
+      throw new Error('Mismatched execution inspection')
+    }
     return result
   }
 
-  /** @param requestId - existing receipt identity; this method never submits an intent.
+  /** Query a provider-scoped receipt without submitting or replaying an intent.
+   * @param requestId - existing receipt identity; this method never submits an intent.
    * @param signal - visible view's lifetime.
+   * @param target - explicit provider; omission preserves the original Cloud API.
    * @returns a matching receipt, or an explicitly missing request.
    */
-  async status(requestId: string, signal: AbortSignal): Promise<ExecutionResolutionStatus> {
-    const request = executionResolutionStatusRequest.parse({ requestId })
+  async status(requestId: string, signal: AbortSignal, target?: ExecutionResolutionInspection['item']['target']): Promise<ExecutionResolutionStatus> {
+    const request = executionResolutionStatusRequest.parse({ requestId, ...(target === undefined ? {} : { target }) })
     const result = executionResolutionStatus.parse(await this.post('executionResolutionStatus', request, signal))
-    if (result.receipt !== null && result.receipt.requestId !== request.requestId) throw new Error('Mismatched execution receipt')
+    if (result.receipt !== null && (result.receipt.requestId !== request.requestId || result.receipt.target !== (request.target ?? 'cloud'))) {
+      throw new Error('Mismatched execution receipt')
+    }
     return result
   }
 
-  /** @param signal - visible view's lifetime.
+  /** Read the independently authenticated approval-page address from Host configuration.
+   * @param signal - visible view's lifetime.
    * @param hostOrigin - native client origin.
    * @returns the independent approval URL supplied by Host deployment configuration.
    */

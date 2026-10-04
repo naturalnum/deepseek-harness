@@ -76,3 +76,38 @@ test('the independent configured approval page is linked without receiving a Hos
   })
   assert.equal(await client.approvalUrl(signal(), 'https://host.test'), 'https://platform.test/approval')
 })
+
+test('provider identity permits the same execution ID in distinct stores and remains explicit in Device reads', async () => {
+  const device = { ...item, target: 'desktop' }, deviceReceipt = { ...receipt, target: 'desktop' }
+  const calls: { path: string; body: object }[] = []
+  const client = new ExecutionResolutionClient(async (input, init) => {
+    calls.push({ path: String(input), body: JSON.parse(String(init?.body)) })
+    return Response.json(String(input).endsWith('List') ? { available: true, items: [item, device] }
+      : String(input).endsWith('Inspect') ? { ...inspection, item: device, runnerObservation: 'stopped_unknown' } : { receipt: deviceReceipt })
+  })
+  assert.equal((await client.list(sessionId, signal())).items.length, 2)
+  assert.equal((await client.inspect(executionId, signal(), 'desktop')).item.target, 'desktop')
+  assert.equal((await client.status(requestId, signal(), 'desktop')).receipt?.target, 'desktop')
+  assert.deepEqual(calls.slice(1).map(call => call.body), [
+    { request: { executionId, target: 'desktop' } }, { request: { requestId, target: 'desktop' } },
+  ])
+  for (const items of [[device, device], [{ ...device, target: 'ssh' }]]) {
+    await assert.rejects(new ExecutionResolutionClient(async () => Response.json({ available: true, items })).list(sessionId, signal()))
+  }
+})
+
+test('same IDs cannot substitute a different provider in inspection or status, including legacy Cloud reads', async () => {
+  for (const target of ['cloud', 'desktop', undefined] as const) {
+    const wrongTarget = target === 'desktop' ? 'cloud' : 'desktop'
+    let calls = 0
+    const client = new ExecutionResolutionClient(async input => {
+      calls++
+      return Response.json(String(input).endsWith('Inspect') ? { ...inspection, item: { ...item, target: wrongTarget },
+        runnerObservation: wrongTarget === 'desktop' ? 'stopped_unknown' : 'not_observed' }
+        : { receipt: { ...receipt, target: wrongTarget } })
+    })
+    await assert.rejects(client.inspect(executionId, signal(), target), /Mismatched/)
+    await assert.rejects(client.status(requestId, signal(), target), /Mismatched/)
+    assert.equal(calls, 2)
+  }
+})

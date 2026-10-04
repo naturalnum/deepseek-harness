@@ -584,7 +584,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       const input = await readJson(req, 4096)
       if (path.startsWith('/approvals/executions/')) {
         sendJson(res, await routeExecutionResolutionApproval(executions, path, user, input, token,
-          req.headers.origin, config.platformOrigin)); return
+          req.headers.origin, config.platformOrigin, devices)); return
       }
       if (path.startsWith('/approvals/mcp/')) {
         sendJson(res, await routeMcpApproval(remoteMcpActions, path, user, input, token)); return
@@ -694,7 +694,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     const user = await identities.authenticate(token)
     if (path.startsWith('/executions/resolutions/')) {
       sendJson(res, await routeExecutionResolutionRead(executions, path, user,
-        await readJson(req, 4096))); return
+        await readJson(req, 4096), devices)); return
     }
     const input = await readJson(req, config.maxRequestBytes)
     if (path.startsWith('/mcp/connections/')) {

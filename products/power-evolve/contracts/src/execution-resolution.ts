@@ -1,8 +1,8 @@
-/** Browser-safe requests for trusted Cloud execution reconciliation; parsing grants no authority. */
+/** Browser-safe requests for trusted execution reconciliation; parsing grants no authority. */
 import { z } from 'zod'
 import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
 
-/** Original Cloud execution identity; never a replacement command or process identity. */
+/** Original execution identity; never a replacement command or process identity. */
 export type ResolutionExecutionId = Branded<'PowerEvolveResolutionExecutionId'>
 /** Owner-scoped identity of one durable reconciliation intent. */
 export type ResolutionRequestId = Branded<'PowerEvolveResolutionRequestId'>
@@ -19,24 +19,28 @@ export const executionIdentityFingerprint = z.string().regex(/^[a-f0-9]{64}$/u)
 /** Terminal facts retain unknown side effects even after the writer is confirmed stopped. */
 export const resolvedExecutionState = z.enum(['succeeded', 'failed', 'cancelled', 'closed_unknown'])
 const code = z.string().min(1).max(100)
+/** Explicit provider selection; an identifier never falls back to a different execution store. */
+export const resolutionTarget = z.enum(['cloud', 'desktop'])
 
 /** Only a separately authenticated approval request may submit this intent. */
 export const executionResolutionRequest = z.object({
-  requestId: resolutionRequestId, executionId: resolutionExecutionId, target: z.literal('cloud'),
+  requestId: resolutionRequestId, executionId: resolutionExecutionId, target: resolutionTarget,
   fingerprint: executionIdentityFingerprint,
   note: z.string().trim().max(500).refine(value => !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(value)),
 }).strict()
 /** Read progress using the same identity after refresh, replica failure or a lost response. */
-export const executionResolutionStatusRequest = z.object({ requestId: resolutionRequestId }).strict()
+export const executionResolutionStatusRequest = z.object({ requestId: resolutionRequestId,
+  target: resolutionTarget.optional() }).strict()
 /** Inspection addresses an existing execution; it does not request cleanup. */
-export const executionResolutionInspectRequest = z.object({ executionId: resolutionExecutionId }).strict()
+export const executionResolutionInspectRequest = z.object({ executionId: resolutionExecutionId,
+  target: resolutionTarget.optional() }).strict()
 /** The authenticated owner can restrict the bounded list to one original Session. */
 export const executionResolutionsListRequest = z.object({ sessionId: resolutionSessionId.optional() }).strict()
 
 /** Completion requires a stopped writer; a known result and a stopped writer are distinct facts. */
 export const executionResolutionReceipt = z.object({
   requestId: resolutionRequestId, executionId: resolutionExecutionId, sessionId: resolutionSessionId,
-  target: z.literal('cloud'), state: z.enum(['accepted', 'stopping', 'completed', 'blocked']),
+  target: resolutionTarget, state: z.enum(['accepted', 'stopping', 'completed', 'blocked']),
   finalState: resolvedExecutionState.nullable(), stopConfirmed: z.boolean(), continuationQueued: z.boolean(),
   errorCode: code.nullable(),
 }).strict().refine(value => value.state === 'completed'
@@ -45,7 +49,7 @@ export const executionResolutionReceipt = z.object({
     && (value.state === 'blocked' ? value.errorCode !== null : value.errorCode === null))
 /** Read-only execution metadata; command text is displayed as untrusted data. */
 export const executionResolutionItem = z.object({
-  executionId: resolutionExecutionId, sessionId: resolutionSessionId, target: z.literal('cloud'),
+  executionId: resolutionExecutionId, sessionId: resolutionSessionId, target: resolutionTarget,
   executionState: z.enum(['queued', 'starting', 'running', 'cancelling', 'uncertain',
     'succeeded', 'failed', 'cancelled', 'closed_unknown']),
   command: z.string().min(1).max(8192), cwd: z.string().min(1).max(4096),
@@ -53,6 +57,7 @@ export const executionResolutionItem = z.object({
   resolution: executionResolutionReceipt.nullable(),
 }).strict().refine(value => value.resolution === null
   || value.resolution.executionId === value.executionId && value.resolution.sessionId === value.sessionId
+    && value.resolution.target === value.target
     && (value.resolution.state === 'completed'
       ? value.executionState === value.resolution.finalState : value.executionState === 'uncertain'))
 /** Unknown executions and existing reconciliation receipts remain owner-scoped and bounded. */
@@ -64,11 +69,13 @@ export const executionResolutionInspection = z.object({
   item: executionResolutionItem, fingerprint: executionIdentityFingerprint.nullable(),
   canStop: z.boolean(), blockedReason: code.nullable(),
   runnerObservation: z.enum(['not_observed', 'unavailable', 'identity_changed',
-    'running', 'succeeded', 'failed', 'cancelled']),
+    'running', 'succeeded', 'failed', 'cancelled', 'stopped_unknown']),
 }).strict().refine(value => value.canStop
   ? value.item.executionState === 'uncertain' && value.item.resolution === null
     && value.fingerprint !== null && value.blockedReason === null
   : value.blockedReason !== null)
+  .refine(value => value.runnerObservation !== 'stopped_unknown' || value.item.target === 'desktop')
+  .refine(value => value.item.target !== 'desktop' || !value.canStop || value.runnerObservation === 'stopped_unknown')
 /** Missing requests stay distinguishable from accepted reconciliation work. */
 export const executionResolutionStatus = z.object({ receipt: executionResolutionReceipt.nullable() }).strict()
 

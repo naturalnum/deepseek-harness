@@ -1,3 +1,4 @@
+/** Chinese copy for native execution selection and read-only reconciliation. */
 export const zh = {
   target: '执行位置',
   cloud: '云端执行',
@@ -14,7 +15,9 @@ export const zh = {
   pairExpires: '有效期至 {time}',
   close: '关闭',
   resolutions: '执行对账',
-  resolutionHelp: '这里仅查看原执行与结案状态。停止旧执行者并对账须在独立可信审批页确认。',
+  resolutionHelp: '这里仅查看原执行与结案状态。云端停止与对账、本地设备已停止事实的结果未知结案，须在独立可信审批页确认。',
+  resolutionDesktop: '本地设备',
+  resolutionDeviceClose: '核对已停止事实并以结果未知结案',
   resolutionRefresh: '刷新执行状态',
   resolutionLoading: '正在读取执行状态…',
   resolutionUnavailable: '无法核对执行状态，请刷新；不能据此认定已结案。',
@@ -43,6 +46,7 @@ export const zh = {
   resolutionBlocked: '结案受阻',
 } as const
 
+/** English counterpart with exactly the same native client keys. */
 export const en: Record<keyof typeof zh, string> = {
   target: 'Execution location',
   cloud: 'Cloud',
@@ -59,7 +63,9 @@ export const en: Record<keyof typeof zh, string> = {
   pairExpires: 'Valid until {time}',
   close: 'Close',
   resolutions: 'Execution reconciliation',
-  resolutionHelp: 'Read the original execution and resolution here. Confirm stopping and reconciliation on the independent trusted approval page.',
+  resolutionHelp: 'Read the original execution and resolution here. Confirm Cloud stopping and reconciliation, or Device closure with a verified stop and unknown outcome, on the independent trusted approval page.',
+  resolutionDesktop: 'Local device',
+  resolutionDeviceClose: 'Verify the stopped executor and close with an unknown outcome',
   resolutionRefresh: 'Refresh execution status',
   resolutionLoading: 'Reading execution status…',
   resolutionUnavailable: 'Cannot verify execution status. Refresh; this does not confirm resolution.',
@@ -88,4 +94,5 @@ export const en: Record<keyof typeof zh, string> = {
   resolutionBlocked: 'Resolution blocked',
 }
 
+/** Locale keys registered by the native execution-location plugin. */
 export type ExecutionTargetLocaleKey = keyof typeof zh

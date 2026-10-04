@@ -27,7 +27,7 @@ kind: "package-library"
 
 从 `@power-evolve/contracts/workspace-binding` 导入私有存储选择与工作区绑定恢复记录。目标只标识本人存储空间及规范相对目录，不包含物理根路径。恢复携带稳定请求 ID 和预期绑定代次；只有完成回执将代次增加一。解析不提供存储归属或旧写入者已停止的证明。
 
-从 `@power-evolve/contracts/execution-resolution` 导入云端执行对账请求与回执。请求标识原执行、稳定重试 ID 和平台计算的写入者指纹，不提供结果、替代命令或停止证明。Host 只读路由与独立审批路由保持分离。完成回执必须确认旧写入者已停止；`closed_unknown` 保留副作用结果不明的事实。
+从 `@power-evolve/contracts/execution-resolution` 导入云端与 Device 执行对账请求和回执。请求选择执行提供者，标识原执行、稳定重试 ID 和平台计算的写入者指纹。未指定目标的检查及状态请求保留原云端路由；明确的目标不会回退到另一存储。请求不提供结果、替代命令或停止证明。Host 只读路由与独立审批路由保持分离。完成回执必须确认旧写入者已停止；`closed_unknown` 保留副作用结果不明的事实。Device 结案要求平台已有完整且相互匹配的停止记录。
 
 从 `@power-evolve/contracts/device-execution` 导入 Device 派发、容器登记与停止报告。登记标识持久 Device；每次领取绑定独立进程代次和平台分配的派发 ID。精确容器登记后，启动许可只发放一次。停止报告携带原派发、稳定重试 ID 和非运行状态观察；命令副作用结果不明与写者已停止仍是不同事实。这些记录不认证本机 OS 或 Docker 守护进程。
 

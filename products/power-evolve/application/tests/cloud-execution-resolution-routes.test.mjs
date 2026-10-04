@@ -45,3 +45,55 @@ test('an unavailable executor is explicit and never acknowledges confirmation', 
   await assert.rejects(routeExecutionResolutionApproval(null, approval.resolve, user,
     input, 'approval-fixture', origin, origin), { code: 'sandbox_unavailable' })
 })
+
+test('explicit Desktop reads and approvals never fall back to Cloud for the same identity', async () => {
+  const cloud = provider(), desktop = provider(), request = { ...input, target: 'desktop' }
+  await routeExecutionResolutionRead(cloud, read.executionResolutionInspect, user,
+    { executionId: input.executionId, target: 'desktop' }, desktop)
+  await routeExecutionResolutionRead(cloud, read.executionResolutionStatus, user,
+    { requestId: input.requestId, target: 'desktop' }, desktop)
+  await routeExecutionResolutionApproval(cloud, approval.resolve, user, request,
+    'approval-fixture', origin, origin, desktop)
+  assert.deepEqual(cloud.calls, [])
+  assert.deepEqual(desktop.calls, [
+    { method: 'inspect', args: [user, input.executionId] },
+    { method: 'status', args: [user, input.requestId] },
+    { method: 'resolve', args: [user, request, 'approval-fixture'] },
+  ])
+  for (const [path, body] of [[read.executionResolutionInspect, { executionId: input.executionId, target: 'desktop' }],
+    [read.executionResolutionStatus, { requestId: input.requestId, target: 'desktop' }]]) {
+    await assert.rejects(routeExecutionResolutionRead(cloud, path, user, body), { code: 'device_unavailable' })
+  }
+  await assert.rejects(routeExecutionResolutionApproval(cloud, approval.resolve, user, request,
+    'approval-fixture', origin, origin), { code: 'device_unavailable' })
+  assert.deepEqual(cloud.calls, [])
+})
+
+test('owner-wide lists merge both providers in bounded acceptance order while preserving targets', async () => {
+  const cloud = provider(), desktop = provider()
+  const item = (index, target) => ({ executionId: randomUUID(), sessionId: randomUUID(), target,
+    executionState: 'uncertain', command: `printf ${index}`, cwd: '.', errorCode: null, resolution: null,
+    createdAt: new Date(Date.UTC(2026, 9, 4, 0, 0, index)).toISOString() })
+  const cloudItems = Array.from({ length: 100 }, (_, index) => item(index, 'cloud'))
+  const desktopItems = Array.from({ length: 100 }, (_, index) => item(index + 100, 'desktop'))
+  cloud.listResolutions = async () => ({ available: true, items: cloudItems })
+  desktop.listResolutions = async () => ({ available: true, items: desktopItems })
+  const result = await routeExecutionResolutionRead(cloud, read.executionResolutionsList, user, {}, desktop)
+  assert.equal(result.items.length, 100)
+  assert.deepEqual(result.items, [...desktopItems].reverse())
+  assert.equal(result.available, true)
+  const deviceOnly = await routeExecutionResolutionRead(null, read.executionResolutionsList, user, {}, desktop)
+  assert.equal(deviceOnly.available, true)
+  assert.equal(deviceOnly.items.length, 100)
+})
+
+test('Desktop confirmation retains exact Origin and refuses browser-supplied stop proof', async () => {
+  const cloud = provider(), desktop = provider(), request = { ...input, target: 'desktop' }
+  await assert.rejects(routeExecutionResolutionApproval(cloud, approval.resolve, user, request,
+    'approval-fixture', undefined, origin, desktop), { code: 'invalid_origin' })
+  await assert.rejects(routeExecutionResolutionApproval(cloud, approval.resolve, user,
+    { ...request, stopConfirmed: true }, 'approval-fixture', origin, origin, desktop))
+  await assert.rejects(routeExecutionResolutionRead(cloud, read.executionResolutionInspect, user,
+    { executionId: input.executionId, target: 'other' }, desktop))
+  assert.deepEqual(cloud.calls, []); assert.deepEqual(desktop.calls, [])
+})

@@ -135,6 +135,7 @@ export class CloudExecutionResolutionService {
    */
   async resolve(user: Identity, request: ExecutionResolutionRequest, approvalToken: string): Promise<ExecutionResolutionReceipt> {
     const input = executionResolutionRequest.parse(request), requestDigest = cloudRequestDigest(input)
+    if (input.target !== 'cloud') throw new PlatformError(400,'wrong_execution_target')
     return transaction(this.pool, async client => {
       const actor = await requireBrowserAccount(client,approvalToken,{ audience: 'approval', lock: 'update' })
       if (actor.userId !== user.userId) throw new PlatformError(401,'unauthorized')

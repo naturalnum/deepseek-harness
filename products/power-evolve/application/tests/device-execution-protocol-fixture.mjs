@@ -47,7 +47,7 @@ export const finishFor = (device, claim, output = deviceResult, receipt = receip
   result: output,
 })
 
-/** Create an isolated V29 database and arrange automatic teardown of only that database.
+/** Create an isolated current-schema database and arrange automatic teardown of only that database.
  * @param t Node test context owning the database teardown.
  * @returns Actual Device/Task services and bounded fixture methods; it never starts Docker.
  */

@@ -6,9 +6,9 @@
 
 ## 执行对账
 
-既有选择器打开当前 Session 的 Cloud 执行及结案回执只读视图。原命令按文本显示，并链接独立认证的平台审批页。Host 仅开放 list、inspect 和 status RPC；客户端不持有审批凭据，不能确认清理。
+既有选择器打开当前 Session 的 Cloud 与 Device 执行及结案回执只读视图。执行目标和原命令按文本显示，并链接独立认证的平台审批页。Host 仅开放 list、inspect 和 status RPC；客户端不持有审批凭据，不能确认清理。
 
-请求与响应使用[共享校验](../contracts/src/execution-resolution.ts)。关闭或切换会话会取消读取并拒绝晚到响应。已完成的 `closed_unknown` 回执表示写者已停止，但命令副作用仍不明。它不表示成功，也不授权重放命令。此 Cloud 视图不提供 Device 和 SSH 对账。
+请求与响应使用[共享校验](../contracts/src/execution-resolution.ts)。检查、可信链接和已保存的重试请求保留执行目标；不同提供者的相同执行编号不能共用尝试记录或回执。关闭或切换会话会取消读取并拒绝晚到响应。Device 结案要求已有核验后的停止事实，并保留结果未知；客户端不能提供停止证据。已完成的 `closed_unknown` 回执表示写者已停止，但命令副作用仍不明。它不表示成功，也不授权重放命令。此视图不提供 SSH 对账。
 
 ## 模型体验
 

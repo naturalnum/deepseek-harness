@@ -87,7 +87,7 @@ export const deviceFinishRequest = deviceClaimRequest.extend({ dispatchId,
 /** A stop ACK permits local cleanup only for this exact persisted dispatch and receipt. */
 export const deviceFinishReceipt = z.object({ executionId, dispatchId,
   requestId: deviceFinishRequest.shape.requestId, stopConfirmed: z.literal(true),
-  state: z.enum(['succeeded', 'failed', 'cancelled', 'uncertain']),
+  state: z.enum(['succeeded', 'failed', 'cancelled', 'uncertain', 'closed_unknown']),
 }).passthrough()
 /** Validated original Device dispatch. */
 export type DeviceClaim = z.infer<typeof deviceClaim>

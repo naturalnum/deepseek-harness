@@ -7,12 +7,15 @@ import {
 
 // This existing trial approval page uses Chinese copy, as does locale.js; it has no language switch.
 export const executionLabels = {
-  title: '云端不确定执行对账',
-  help: '核对原命令后，只能确认停止旧执行者并对账。这里使用独立审批凭据，不接收停止证明或替代命令。',
+  title: '不确定执行对账',
+  help: '核对原命令与执行目标。云端确认停止旧执行者并对账；本地设备须核对已停止事实，再以结果未知结案。这里使用独立审批凭据，不接收停止证明或替代命令。',
+  target: '执行目标', cloud: '云端', desktop: '本地设备',
   empty: '没有不确定执行或已有结案回执', unavailable: '无法核对执行状态，不能据此认定已结案。',
   inspect: '检查原执行', command: '原命令', directory: '原工作目录', execution: '原执行编号',
   session: '原会话', fingerprint: '实时身份指纹', note: '备注（最多 500 字）', reason: '原因代码',
   confirm: '我已核对以下确切命令，确认停止旧执行者并对账', resolve: '停止旧执行者并对账',
+  deviceConfirm: '我已核对以下确切命令及已停止事实，确认以结果未知结案', deviceResolve: '核对已停止事实并以结果未知结案',
+  deviceAccepted: '已受理已停止执行的结果未知结案意图', deviceStopping: '正在核对已停止事实并以结果未知结案',
   uncertain: '副作用结果不明，不能直接重放原命令。', accepted: '已受理停止与对账意图',
   stopping: '正在停止旧执行者并对账', completed: '对账已结案', blocked: '结案受阻',
   succeeded: '已核验原执行成功', failed: '已核验原执行失败', cancelled: '已核验原执行取消',
@@ -26,6 +29,8 @@ export const executionLabels = {
 }
 
 const ATTEMPTS_KEY = 'pe-execution-resolution-attempts'
+const identityKey = value => `${value.target}:${value.executionId}`
+const mayResolve = entry => entry.canStop && (entry.item.target !== 'desktop' || entry.runnerObservation === 'stopped_unknown')
 
 /** Mount into the existing trusted approval console; storage contains no credentials.
  * @param options - DOM, independent credential accessor, auth-expiry callback and testable clock.
@@ -73,8 +78,8 @@ export function createExecutionResolutionApproval({ document, storage, fetch, cr
       try {
         if (typeof item?.bytes !== 'string' || item.bytes.length > 1500) continue
         const request = executionResolutionRequest.parse(JSON.parse(item.bytes))
-        if (JSON.stringify(request) !== item.bytes || attempts.has(request.executionId)) continue
-        attempts.set(request.executionId, { request, bytes: item.bytes })
+        if (JSON.stringify(request) !== item.bytes || attempts.has(identityKey(request))) continue
+        attempts.set(identityKey(request), { request, bytes: item.bytes })
       } catch (_error) { /* A malformed retry record is never submitted. */ }
     }
   }
@@ -94,11 +99,12 @@ export function createExecutionResolutionApproval({ document, storage, fetch, cr
   function matchedReceipt(value, request, sessionId) {
     const receipt = executionResolutionReceipt.parse(value)
     if (receipt.requestId !== request.requestId || receipt.executionId !== request.executionId
+      || receipt.target !== request.target
       || sessionId !== undefined && receipt.sessionId !== sessionId) throw new Error(executionLabels.unavailable)
     return receipt
   }
   function rememberReceipt(receipt) {
-    const prior = receipts.get(receipt.executionId)
+    const key = identityKey(receipt), prior = receipts.get(key)
     if (prior) {
       if (prior.requestId !== receipt.requestId || prior.sessionId !== receipt.sessionId) throw new Error(executionLabels.unavailable)
       const rank = { accepted: 0, stopping: 1, completed: 2, blocked: 2 }
@@ -107,11 +113,13 @@ export function createExecutionResolutionApproval({ document, storage, fetch, cr
         throw new Error(executionLabels.unavailable)
       }
     }
-    receipts.set(receipt.executionId, receipt)
+    receipts.set(key, receipt)
   }
   const receiptText = receipt => {
     const result = document.createElement('div')
-    result.append(field(executionLabels.request, receipt.requestId), text('strong', executionLabels[receipt.state]))
+    const label = receipt.target === 'desktop' && receipt.state === 'accepted' ? executionLabels.deviceAccepted
+      : receipt.target === 'desktop' && receipt.state === 'stopping' ? executionLabels.deviceStopping : executionLabels[receipt.state]
+    result.append(field(executionLabels.request, receipt.requestId), text('strong', label))
     if (receipt.state === 'completed') {
       result.append(text('p', executionLabels[receipt.finalState]))
       if (receipt.finalState === 'closed_unknown') result.append(text('p', executionLabels.unknown))
@@ -121,7 +129,7 @@ export function createExecutionResolutionApproval({ document, storage, fetch, cr
   }
   async function queryAttempt(attempt, sessionId) {
     const result = executionResolutionStatus.parse(await post('/approvals/executions/status',
-      executionResolutionStatusRequest.parse({ requestId: attempt.request.requestId })))
+      executionResolutionStatusRequest.parse({ requestId: attempt.request.requestId, target: attempt.request.target })))
     if (result.receipt === null) return null
     const receipt = matchedReceipt(result.receipt, attempt.request, sessionId)
     rememberReceipt(receipt)
@@ -133,41 +141,44 @@ export function createExecutionResolutionApproval({ document, storage, fetch, cr
     for (const item of items) {
       const card = document.createElement('article'); card.className = 'approval-card'
       card.dataset.executionId = item.executionId
+      card.dataset.executionTarget = item.target
       card.append(text('strong', item.executionState === 'uncertain' ? executionLabels.uncertain
         : executionLabels[item.executionState] ?? item.executionState),
       field(executionLabels.execution, item.executionId), field(executionLabels.session, item.sessionId),
+      field(executionLabels.target, executionLabels[item.target]),
       field(executionLabels.directory, item.cwd), text('pre', item.command))
-      const receipt = receipts.get(item.executionId) ?? item.resolution
+      const key = identityKey(item), receipt = receipts.get(key) ?? item.resolution
       if (receipt) card.append(receiptText(receipt))
-      else if (attempts.has(item.executionId)) card.append(text('p', executionLabels.pending))
+      else if (attempts.has(key)) card.append(text('p', executionLabels.pending))
       if (item.executionState === 'closed_unknown' && receipt?.finalState !== 'closed_unknown') card.append(text('p', executionLabels.unknown))
       if (item.errorCode !== null) card.append(field(executionLabels.reason, item.errorCode))
-      card.append(button(executionLabels.inspect, () => inspect(item.executionId)))
+      card.append(button(executionLabels.inspect, () => inspect(item.executionId, item.target)))
       list.append(card)
     }
     updateControls()
   }
   function renderReview(entry) {
     review.replaceChildren()
-    const item = entry.item, attempt = attempts.get(item.executionId), receipt = receipts.get(item.executionId) ?? item.resolution
+    const item = entry.item, key = identityKey(item), attempt = attempts.get(key), receipt = receipts.get(key) ?? item.resolution
     review.append(field(executionLabels.execution, item.executionId), field(executionLabels.session, item.sessionId),
+      field(executionLabels.target, executionLabels[item.target]),
       field(executionLabels.directory, item.cwd), text('p', executionLabels.command), text('pre', item.command),
       field(executionLabels.observation, entry.runnerObservation))
     if (entry.fingerprint !== null) review.append(field(executionLabels.fingerprint, entry.fingerprint))
     if (attempt) review.append(field(executionLabels.frozenNote, attempt.request.note))
     if (receipt) { review.append(receiptText(receipt)); return }
-    if (!entry.canStop) review.append(field(executionLabels.reason, entry.blockedReason))
+    if (!mayResolve(entry)) review.append(field(executionLabels.reason, entry.blockedReason ?? 'device_stop_observation_missing'))
     if (attempt) {
       review.append(field(executionLabels.request, attempt.request.requestId),
         text('p', executionLabels.missing))
-      if (entry.canStop) review.append(button(executionLabels.retry, () => submit(entry, attempt)))
+      if (mayResolve(entry)) review.append(button(executionLabels.retry, () => submit(entry, attempt)))
       return
     }
-    if (!entry.canStop) return
+    if (!mayResolve(entry)) return
     const note = document.createElement('textarea'); note.maxLength = 500; note.setAttribute('aria-label', executionLabels.note)
     const label = document.createElement('label'), checked = document.createElement('input'); checked.type = 'checkbox'
-    label.append(checked, text('span', executionLabels.confirm))
-    const control = button(executionLabels.resolve, async () => {
+    label.append(checked, text('span', item.target === 'desktop' ? executionLabels.deviceConfirm : executionLabels.confirm))
+    const control = button(item.target === 'desktop' ? executionLabels.deviceResolve : executionLabels.resolve, async () => {
       if (!checked.checked) return
       await submit(entry, undefined, note.value)
     })
@@ -176,23 +187,23 @@ export function createExecutionResolutionApproval({ document, storage, fetch, cr
     review.append(text('p', executionLabels.note), note, label, text('pre', item.command), control)
     updateControls()
   }
-  async function inspect(executionId) {
+  async function inspect(executionId, target) {
     if (busy || !credential()) return
     const generation = epoch, read = ++reviewEpoch
     selected = undefined; review.replaceChildren()
     const result = executionResolutionInspection.parse(await post('/approvals/executions/inspect',
-      executionResolutionInspectRequest.parse({ executionId })))
+      executionResolutionInspectRequest.parse({ executionId, target })))
     if (generation !== epoch || read !== reviewEpoch) return
-    if (result.item.executionId !== executionId) throw new Error(executionLabels.unavailable)
+    if (result.item.executionId !== executionId || result.item.target !== target) throw new Error(executionLabels.unavailable)
     selected = result
-    const attempt = attempts.get(executionId)
+    const attempt = attempts.get(identityKey(result.item))
     if (attempt) await queryAttempt(attempt, result.item.sessionId)
     if (generation === epoch && read === reviewEpoch) renderReview(result)
   }
   async function submit(entry, retry, note = '') {
     if (busy || !credential() || selected !== entry) return
-    const generation = epoch, executionId = entry.item.executionId
-    if (!retry && attempts.has(executionId)) return
+    const generation = epoch, executionId = entry.item.executionId, target = entry.item.target, key = identityKey(entry.item)
+    if (!mayResolve(entry) || !retry && attempts.has(key) || retry && identityKey(retry.request) !== key) return
     busy = true; updateControls(); statusMessage('')
     let attempt = retry, sent = false
     try {
@@ -201,22 +212,23 @@ export function createExecutionResolutionApproval({ document, storage, fetch, cr
         const receipt = await queryAttempt(attempt, entry.item.sessionId)
         if (receipt) { if (generation === epoch) renderReview(entry); return }
       }
-      const latest = executionResolutionInspection.parse(await post('/approvals/executions/inspect', { executionId }))
+      const latest = executionResolutionInspection.parse(await post('/approvals/executions/inspect',
+        executionResolutionInspectRequest.parse({ executionId, target })))
       if (generation !== epoch || selected !== entry) return
-      if (latest.item.executionId !== executionId || latest.item.sessionId !== entry.item.sessionId) {
+      if (latest.item.executionId !== executionId || latest.item.target !== target || latest.item.sessionId !== entry.item.sessionId) {
         selected = undefined; review.replaceChildren(); throw new Error(executionLabels.unavailable)
       }
-      if (!latest.canStop || latest.fingerprint !== (attempt?.request.fingerprint ?? entry.fingerprint)
+      if (!mayResolve(latest) || latest.fingerprint !== (attempt?.request.fingerprint ?? entry.fingerprint)
         || latest.item.command !== entry.item.command || latest.item.cwd !== entry.item.cwd) {
         selected = latest; renderReview(latest); throw new Error(executionLabels.changed)
       }
       if (!attempt) {
         if (attempts.size >= 100) throw new Error(executionLabels.unavailable)
-        const request = executionResolutionRequest.parse({ requestId: uuid(), executionId, target: 'cloud',
+        const request = executionResolutionRequest.parse({ requestId: uuid(), executionId, target,
           fingerprint: latest.fingerprint, note })
         attempt = { request, bytes: JSON.stringify(request) }
-        attempts.set(executionId, attempt)
-        try { save() } catch (error) { attempts.delete(executionId); throw error }
+        attempts.set(key, attempt)
+        try { save() } catch (error) { attempts.delete(key); throw error }
       }
       renderReview(entry); updateControls(); sent = true
       const value = await post('/approvals/executions/resolve', undefined, attempt.bytes)
@@ -244,19 +256,26 @@ export function createExecutionResolutionApproval({ document, storage, fetch, cr
     if (manual) { stopTimer(); pollCount = 0; reviewEpoch++; selected = undefined; review.replaceChildren(); statusMessage('') }
     const result = executionResolutionsList.parse(await post('/approvals/executions/list', {}))
     if (generation !== epoch || read !== readEpoch) return
-    if (!result.available || new Set(result.items.map(item => item.executionId)).size !== result.items.length) throw new Error(executionLabels.unavailable)
+    if (!result.available || new Set(result.items.map(identityKey)).size !== result.items.length) throw new Error(executionLabels.unavailable)
     for (const item of result.items) {
       if (item.resolution) rememberReceipt(item.resolution)
-      else if (attempts.has(item.executionId)) await queryAttempt(attempts.get(item.executionId), item.sessionId)
+      else if (attempts.has(identityKey(item))) await queryAttempt(attempts.get(identityKey(item)), item.sessionId)
       if (generation !== epoch || read !== readEpoch) return
     }
     renderList(result.items)
-    const requested = /^#execution=([a-f0-9-]{36})$/iu.exec(document.defaultView.location.hash)?.[1]
-    if (manual && requested && result.items.some(item => item.executionId === requested)) await inspect(requested)
+    const hash = document.defaultView.location.hash
+    const params = new URLSearchParams(hash.slice(1))
+    if (manual && params.has('execution')) {
+      if ([...params.keys()].some(key => key !== 'execution' && key !== 'target')
+        || params.getAll('execution').length !== 1 || params.getAll('target').length > 1) throw new Error(executionLabels.unavailable)
+      // Existing Cloud links omit target; an explicit unknown provider never falls back.
+      const requested = executionResolutionInspectRequest.parse({ executionId: params.get('execution'), target: params.get('target') ?? 'cloud' })
+      if (result.items.some(item => identityKey(item) === identityKey(requested))) await inspect(requested.executionId, requested.target)
+    }
     if (generation !== epoch || read !== readEpoch) return
     stopTimer()
     if (result.items.some(item => {
-      const receipt = receipts.get(item.executionId) ?? item.resolution
+      const receipt = receipts.get(identityKey(item)) ?? item.resolution
       return receipt?.state === 'accepted' || receipt?.state === 'stopping'
     })) {
       if (++pollCount >= 15) statusMessage(executionLabels.pollEnded)
@@ -264,7 +283,7 @@ export function createExecutionResolutionApproval({ document, storage, fetch, cr
         if (generation === epoch) statusMessage(executionLabels.unavailable)
       }) }, 2000)
     }
-    if (selected && (attempts.has(selected.item.executionId) || receipts.has(selected.item.executionId))) renderReview(selected)
+    if (selected && (attempts.has(identityKey(selected.item)) || receipts.has(identityKey(selected.item)))) renderReview(selected)
   }
   function reset() {
     epoch++; readEpoch++; reviewEpoch++; controller.abort(); controller = new AbortController(); stopTimer()

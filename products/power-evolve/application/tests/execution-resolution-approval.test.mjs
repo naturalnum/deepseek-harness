@@ -21,6 +21,9 @@ const item = { executionId, sessionId, target: 'cloud', executionState: 'uncerta
 const inspection = { item, fingerprint: 'a'.repeat(64), canStop: true, blockedReason: null, runnerObservation: 'not_observed' }
 const receipt = { executionId, sessionId, requestId, target: 'cloud', state: 'accepted', finalState: null,
   stopConfirmed: false, continuationQueued: false, errorCode: null }
+const deviceItem = { ...item, target: 'desktop', command: 'printf original-device-command', cwd: 'project' }
+const deviceInspection = { ...inspection, item: deviceItem, runnerObservation: 'stopped_unknown' }
+const deviceReceipt = { ...receipt, target: 'desktop' }
 async function until(check) {
   for (let i = 0; i < 100; i++) { if (check()) return; await new Promise(resolve => setImmediate(resolve)) }
   assert.fail('Trusted DOM did not reach expected state')
@@ -29,14 +32,14 @@ function page(context, override = () => undefined, saved) {
   const dom = new JSDOM(html, { url: 'https://platform.test/approval', runScripts: 'outside-only' })
   context.after(() => dom.window.close())
   const { window } = dom, calls = [], timers = new Map()
-  let currentToken = token, records = [structuredClone(item)], result = null, timerId = 0
+  let currentToken = token, records = [structuredClone(item)], result = null, timerId = 0, uuidCount = 0
   const state = { get items() { return records }, set items(value) { records = value },
     get receipt() { return result }, set receipt(value) { result = value } }
   window.sharedSchemas = schemas
   window.AbortController = AbortController; window.AbortSignal = AbortSignal
   if (saved) window.sessionStorage.setItem('pe-execution-resolution-attempts', saved)
   window.fixtureOptions = { document: window.document, storage: window.sessionStorage,
-    uuid: () => requestId, credential: () => currentToken,
+    uuid: () => uuidCount++ === 0 ? requestId : otherId, credential: () => currentToken,
     unauthorized: () => { currentToken = null },
     delay: callback => { timers.set(++timerId, callback); return timerId }, cancelDelay: id => timers.delete(id),
     fetch: async (path, init) => {
@@ -45,12 +48,17 @@ function page(context, override = () => undefined, saved) {
       const overridden = await override(call, state)
       if (overridden !== undefined) return overridden
       if (path.endsWith('/list')) return Response.json({ available: true, items: records })
-      if (path.endsWith('/inspect')) return Response.json({ ...inspection, item: records[0],
-        canStop: records[0].resolution === null, blockedReason: records[0].resolution ? 'already_requested' : null })
+      if (path.endsWith('/inspect')) {
+        const record = records.find(record => record.executionId === call.body.executionId && record.target === (call.body.target ?? 'cloud'))
+        if (!record) return new Response('', { status: 404 })
+        return Response.json({ ...inspection, item: record, runnerObservation: record.target === 'desktop' ? 'stopped_unknown' : 'not_observed',
+          canStop: record.resolution === null, blockedReason: record.resolution ? 'already_requested' : null })
+      }
       if (path.endsWith('/status')) return Response.json({ receipt: result })
       if (path.endsWith('/resolve')) {
-        result = { ...receipt, requestId: call.body.requestId }
-        records = [{ ...records[0], resolution: result }]
+        result = { ...receipt, requestId: call.body.requestId, target: call.body.target }
+        records = records.map(record => record.executionId === call.body.executionId && record.target === call.body.target
+          ? { ...record, resolution: result } : record)
         return Response.json(result)
       }
       throw new Error(`Unexpected route ${path}`)
@@ -64,16 +72,18 @@ function page(context, override = () => undefined, saved) {
   return { window, document: window.document, calls, state, component, timers,
     button(label) { return [...window.document.querySelectorAll('#execution-resolutions button')].find(b => b.textContent === label) },
     mutations() { return calls.filter(call => call.path.endsWith('/resolve')) },
-    async inspect() {
-      await component.refresh(owner); this.button('检查原执行').click()
+    async inspect(target = 'cloud') {
+      await component.refresh(owner)
+      window.document.querySelector(`article[data-execution-target="${target}"] button`).click()
       await until(() => window.document.querySelector('#execution-resolutions textarea'))
     },
-    async confirm(note = '') {
+    async confirm(note = '', target = 'cloud') {
       const input = window.document.querySelector('#execution-resolutions textarea'); input.value = note
       const check = window.document.querySelector('#execution-resolutions input'); check.checked = true
       check.dispatchEvent(new window.Event('change'))
-      this.button('停止旧执行者并对账').click()
-      await until(() => this.mutations().length === 1)
+      const count = this.mutations().length
+      this.button(target === 'desktop' ? '核对已停止事实并以结果未知结案' : '停止旧执行者并对账').click()
+      await until(() => this.mutations().length === count + 1)
     },
     async tick() { const callbacks = [...timers.values()]; timers.clear(); for (const callback of callbacks) callback(); await new Promise(resolve => setImmediate(resolve)) },
   }
@@ -98,13 +108,14 @@ test('the original command is inert text and one checked confirmation sends only
 })
 
 test('live changed fingerprint or command and a canStop=false reason cannot submit', async context => {
-  for (const change of ['fingerprint', 'command', 'blocked']) {
+  for (const change of ['fingerprint', 'command', 'cwd', 'blocked']) {
     await context.test(change, async child => {
       let reads = 0
       const view = page(child, call => {
         if (!call.path.endsWith('/inspect') || ++reads === 1) return
         return Response.json(change === 'fingerprint' ? { ...inspection, fingerprint: 'b'.repeat(64) }
           : change === 'command' ? { ...inspection, item: { ...item, command: 'other command' } }
+            : change === 'cwd' ? { ...inspection, item: { ...item, cwd: '/other-directory' } }
             : { ...inspection, canStop: false, blockedReason: 'pod_uid_missing' })
       })
       await view.inspect()
@@ -261,4 +272,120 @@ test('an older inspection cannot replace a later selected original execution', a
   finish(Response.json(inspection)); await new Promise(resolve => setImmediate(resolve))
   assert(review.textContent.includes(secondItem.command)); assert(!review.textContent.includes(item.command))
   assert.equal(view.mutations().length, 0)
+})
+
+test('Cloud and Device sharing an execution ID keep distinct inspected targets, retry bytes and receipts', async context => {
+  const view = page(context); view.state.items = [item, deviceItem]
+  await view.inspect(); await view.confirm('cloud note')
+  await until(() => view.state.items[0].resolution !== null)
+  await view.inspect('desktop')
+  assert(view.document.querySelector('#execution-resolutions').textContent.includes('执行目标: 本地设备'))
+  assert.equal(view.button('停止旧执行者并对账'), undefined)
+  await view.confirm('device note', 'desktop')
+  await until(() => view.state.items[1].resolution !== null)
+  assert.deepEqual(view.mutations().map(call => call.body.target), ['cloud', 'desktop'])
+  assert.deepEqual(view.mutations().map(call => call.body.note), ['cloud note', 'device note'])
+  const saved = JSON.parse(view.window.sessionStorage.getItem('pe-execution-resolution-attempts'))
+  assert.deepEqual(saved.items.map(entry => JSON.parse(entry.bytes).target), ['cloud', 'desktop'])
+  assert(view.calls.filter(call => call.path.endsWith('/inspect')).every(call => ['cloud', 'desktop'].includes(call.body.target)))
+  assert.equal(view.state.items[0].resolution.target, 'cloud'); assert.equal(view.state.items[1].resolution.target, 'desktop')
+})
+
+test('Device lost acceptance response queries its target without resubmitting and restores the target after reload', async context => {
+  const view = page(context, (call, state) => {
+    if (call.path.endsWith('/resolve')) {
+      state.receipt = deviceReceipt; state.items = [{ ...deviceItem, resolution: deviceReceipt }]
+      throw new Error('device acceptance response lost')
+    }
+  })
+  view.state.items = [deviceItem]; await view.inspect('desktop'); await view.confirm('frozen device note', 'desktop')
+  await until(() => view.calls.some(call => call.path.endsWith('/status')))
+  await view.component.refresh(owner)
+  assert.equal(view.mutations().length, 1)
+  assert.equal(view.mutations()[0].body.target, 'desktop')
+  assert(view.calls.filter(call => call.path.endsWith('/status')).every(call => call.body.target === 'desktop'))
+  assert.equal(view.button('核对已停止事实并以结果未知结案'), undefined)
+  const saved = view.window.sessionStorage.getItem('pe-execution-resolution-attempts')
+  const reload = page(context, call => call.path.endsWith('/status') ? Response.json({ receipt: deviceReceipt }) : undefined, saved)
+  reload.state.items = [deviceItem]; await reload.component.refresh(owner)
+  assert.equal(reload.mutations().length, 0)
+  assert(reload.calls.some(call => call.path.endsWith('/status') && call.body.target === 'desktop'))
+  assert.equal(JSON.parse(saved).items[0].bytes, view.mutations()[0].bytes)
+})
+
+test('Device receipts from another target with the same IDs never authorize completion or a retry dispatch', async context => {
+  const view = page(context, call => call.path.endsWith('/resolve') || call.path.endsWith('/status')
+    ? Response.json(call.path.endsWith('/resolve') ? receipt : { receipt }) : undefined)
+  view.state.items = [deviceItem]; await view.inspect('desktop'); await view.confirm('frozen', 'desktop')
+  await until(() => view.button('核对状态后重试相同请求'))
+  assert.equal(view.mutations().length, 1)
+  assert(!view.document.querySelector('#execution-resolutions').textContent.includes('对账已结案'))
+  const first = view.mutations()[0].bytes
+  view.button('核对状态后重试相同请求').click()
+  // A wrong-provider status is not a missing receipt and cannot authorize a second dispatch.
+  await until(() => view.document.querySelector('#execution-resolutions').textContent.includes('无法核对执行状态'))
+  assert.equal(view.mutations().length, 1); assert.equal(JSON.parse(first).target, 'desktop')
+  assert(view.calls.filter(call => call.path.endsWith('/status')).every(call => call.body.target === 'desktop'))
+})
+
+test('Device missing receipt permits an explicit status-first byte-identical retry', async context => {
+  let sends = 0
+  const view = page(context, call => {
+    if (call.path.endsWith('/resolve') && ++sends === 1) throw new Error('device receipt not yet known')
+  })
+  view.state.items = [deviceItem]; await view.inspect('desktop'); await view.confirm('immutable device note', 'desktop')
+  await until(() => view.button('核对状态后重试相同请求'))
+  assert.equal(view.mutations().length, 1)
+  const first = view.mutations()[0].bytes; view.button('核对状态后重试相同请求').click()
+  await until(() => view.mutations().length === 2)
+  assert.equal(view.mutations()[1].bytes, first); assert.equal(JSON.parse(first).target, 'desktop')
+  const second = view.calls.lastIndexOf(view.mutations()[1])
+  assert.deepEqual(view.calls.slice(second - 2, second).map(call => [call.path, call.body.target]), [
+    ['/approvals/executions/status', 'desktop'], ['/approvals/executions/inspect', 'desktop'],
+  ])
+})
+
+test('Device with no trusted stopped observation cannot submit or inject client stop proof', async context => {
+  for (const mode of ['blocked', 'running', 'recheck', 'target-changed']) {
+    await context.test(mode, async child => {
+      let reads = 0
+      const view = page(child, call => {
+        if (!call.path.endsWith('/inspect')) return
+        reads++
+        if ((mode === 'recheck' || mode === 'target-changed') && reads === 1) return Response.json(deviceInspection)
+        if (mode === 'target-changed') return Response.json(inspection)
+        return Response.json(mode === 'blocked' ? { ...deviceInspection, canStop: false, blockedReason: 'device_stop_observation_missing' }
+          : mode === 'recheck' ? { ...deviceInspection, canStop: false, blockedReason: 'device_stop_observation_missing', runnerObservation: 'unavailable' }
+            : { ...deviceInspection, runnerObservation: 'running' })
+      })
+      view.state.items = [deviceItem]; await view.component.refresh(owner); view.button('检查原执行').click()
+      if (mode === 'recheck' || mode === 'target-changed') {
+        await until(() => view.document.querySelector('#execution-resolutions textarea'))
+        const check = view.document.querySelector('#execution-resolutions input'); check.checked = true
+        check.dispatchEvent(new view.window.Event('change')); view.button('核对已停止事实并以结果未知结案').click()
+        await until(() => view.document.querySelector('#execution-resolutions').textContent.includes(mode === 'recheck' ? '本次没有提交' : '无法核对执行状态'))
+      } else await until(() => view.document.querySelector('#execution-resolutions').textContent.includes(mode === 'blocked' ? 'device_stop_observation_missing' : '无法核对执行状态'))
+      assert.equal(view.mutations().length, 0); assert.equal(view.document.querySelector('#execution-resolutions input'), null)
+    })
+  }
+  const forged = JSON.stringify({ owner, items: [{ bytes: JSON.stringify({ requestId, executionId, target: 'desktop',
+    fingerprint: 'a'.repeat(64), note: '', stopProof: { Running: false } }) }] })
+  const view = page(context, () => undefined, forged); view.state.items = [deviceItem]
+  await view.inspect('desktop'); assert.equal(view.mutations().length, 0)
+  await view.confirm('', 'desktop'); assert.equal('stopProof' in view.mutations()[0].body, false)
+})
+
+test('trusted hashes retain explicit target, accept old Cloud hashes, and reject unknown providers without fallback', async context => {
+  for (const target of ['cloud', 'desktop', 'legacy', 'ssh']) {
+    await context.test(target, async child => {
+      const view = page(child); view.state.items = [item, deviceItem]
+      view.window.location.hash = `#execution=${executionId}${target === 'legacy' ? '' : '&target=' + target}`
+      if (target === 'ssh') await assert.rejects(view.component.refresh(owner))
+      else await view.component.refresh(owner)
+      const calls = view.calls.filter(call => call.path.endsWith('/inspect'))
+      assert.equal(calls.length, target === 'ssh' ? 0 : 1)
+      if (calls.length) assert.equal(calls[0].body.target, target === 'legacy' ? 'cloud' : target)
+      assert.equal(view.mutations().length, 0)
+    })
+  }
 })
