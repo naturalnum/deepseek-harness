@@ -1043,6 +1043,29 @@ async function quiesceWorker(worker: DesktopWorker): Promise<DeviceDrainReport> 
   return deviceDrainReport.parse(await (method as (this: DesktopWorker) => Promise<DeviceDrainReport>).call(worker))
 }
 
+test('parent lifecycle idle poller is not pending work but close still awaits its completion', workerTestOptions, async t => {
+  const f = await fixture(t), entered = gate(), held = gate()
+  const reconcile = SealedDeviceCreations.prototype.reconcileOne
+  t.mock.method(SealedDeviceCreations.prototype, 'reconcileOne', async function(this: SealedDeviceCreations,
+    ...args: Parameters<typeof reconcile>) {
+    entered.release(); await held.promise
+    return reconcile.apply(this, args)
+  })
+  f.worker.start(); await entered.promise
+  try {
+    assert.deepEqual(f.worker.inspectLifecycle(), { admissionOpen: true, pendingActions: 0, journalEntries: 0 })
+    let closed = false
+    const closing = f.worker.close().then(() => { closed = true })
+    await delay(30)
+    assert.equal(closed, false)
+    const competing = f.makeWorker()
+    await assert.rejects(competing.init(), { code: 'device_process_already_owned' })
+    held.release(); await closing
+    assert.deepEqual(f.worker.inspectLifecycle(), { admissionOpen: false, pendingActions: 0, journalEntries: 0 })
+    assert.equal(f.docker.calls.length, 0)
+  } finally { held.release() }
+})
+
 test('parent lifecycle quiescence retains durable stop facts after finish ACK loss', workerTestOptions, async t => {
   const f = await fixture(t), job = f.job()
   f.docker.keepRunning = true; f.ack('lost'); f.advertise([job]); f.worker.start()

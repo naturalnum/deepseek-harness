@@ -324,12 +324,12 @@ export class DesktopWorker {
     this.polling ??= this.poll()
   }
 
-  /** Inspect this process's local work without paths, credentials or inferred stop facts.
+  /** Inspect local actions and active command work; the idle poll loop is not pending work.
    * @returns Admission and pending work; durable facts are supplied only by quiesce.
    */
   inspectLifecycle(): Pick<DeviceLifecycleSnapshot, 'admissionOpen' | 'pendingActions' | 'journalEntries'> {
     return { admissionOpen: !this.stop.signal.aborted,
-      pendingActions: this.localActions.size + Number(this.polling !== null) + Number(this.active !== null),
+      pendingActions: this.localActions.size + Number(this.active !== null),
       journalEntries: this.journal.size }
   }
 
