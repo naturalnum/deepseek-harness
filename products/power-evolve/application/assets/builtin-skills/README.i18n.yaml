@@ -3,5 +3,5 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write products/power-evolve/application/assets/builtin-skills/README.md
 /bundled-skill-release-assets:
-  en: 390f1930cb72908f
-  zh: ce569f53a8626c72
+  en: 91b5b14f956b1fb9
+  zh: 949104420252f33b

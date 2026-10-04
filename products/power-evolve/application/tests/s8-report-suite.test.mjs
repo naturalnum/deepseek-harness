@@ -92,7 +92,7 @@ test('report suite copies four exact versions once per user and never repairs a 
     })
     assert.equal((await skills.runtimeResourceBase(alice.userId, aliceSelection, first.skillId)).suiteAvailable, true)
     catalogRead.mock.restore()
-    const word = selected(await skills.installBuiltin(alice, randomUUID(), 'builtin.word', '1.0.1'))
+    const word = selected(await skills.installBuiltin(alice, randomUUID(), 'builtin.word', '1.0.2'))
     assert.deepEqual(await skills.runtimeResourceBase(alice.userId, [word], word.skillId), {
       runtimePath: `/opt/power-evolve/skills/sha256/${word.packageDigest}/skill`, suiteAvailable: false })
     const note = selected(await skills.install(alice, randomUUID(), 'short-note', 'Short note', 'Read me.'))

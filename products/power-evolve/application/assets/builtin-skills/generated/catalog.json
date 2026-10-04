@@ -6,25 +6,26 @@
         "id": "builtin.word",
         "name": "Word 文档",
         "summary": "创建、读取和修改 Word 文档。",
-        "description": "使用沙盒预装的 OfficeCLI 统一入口处理 .docx 文件，详细指南由程序按需返回。",
+        "description": "使用获授权执行镜像预装的 OfficeCLI 统一入口处理 .docx 文件，详细指南由程序按需返回。",
         "category": "office",
         "publisher": "PowerEvolve"
       },
       "release": {
-        "version": "1.0.1",
+        "version": "1.0.2",
         "state": "PUBLISHED",
-        "manifestDigest": "sha256:6c33e6d2df7fe25665b8914cd8dba1b111302df06c945b2af1c97e741ff926b9",
+        "manifestDigest": "sha256:bebc7673bfbe007dfdf507171e82e702a45076248262e677ebe98d5c201e62c1",
         "targets": [
-          "cloud"
+          "cloud",
+          "desktop"
         ],
         "componentKinds": [
           "skill"
         ],
         "permissions": [],
-        "artifactDigest": "6fde86b6fd7811cda52c84d75b53dde8219e439351e60f3521cbe577b0615b85",
-        "artifactSize": 1857,
-        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.word/releases/1.0.1/artifact",
-        "artifactPath": "extensions/builtin.word/1.0.1.zip"
+        "artifactDigest": "700334050064c5a815af5184bbc6e849988abff93f49f74268056e32ba02e430",
+        "artifactSize": 2020,
+        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.word/releases/1.0.2/artifact",
+        "artifactPath": "extensions/builtin.word/1.0.2.zip"
       }
     },
     {
@@ -32,25 +33,26 @@
         "id": "builtin.excel",
         "name": "Excel 表格",
         "summary": "创建、读取和修改 Excel 工作簿。",
-        "description": "使用沙盒预装的 OfficeCLI 统一入口处理 .xlsx 文件，详细指南由程序按需返回。",
+        "description": "使用获授权执行镜像预装的 OfficeCLI 统一入口处理 .xlsx 文件，详细指南由程序按需返回。",
         "category": "office",
         "publisher": "PowerEvolve"
       },
       "release": {
-        "version": "1.0.1",
+        "version": "1.0.2",
         "state": "PUBLISHED",
-        "manifestDigest": "sha256:37fe701b1fdaeea3a32ef3dfd98c4b02e4ee8f19665047ae4bf98b72bd6e0a5f",
+        "manifestDigest": "sha256:6b507e0527e8576327f9642f4eb8db117d8aa3098808050fd9c0403d0899094b",
         "targets": [
-          "cloud"
+          "cloud",
+          "desktop"
         ],
         "componentKinds": [
           "skill"
         ],
         "permissions": [],
-        "artifactDigest": "3225070298e9338a0dd84f2a583699104e19527dbf370113c85d969e7b6ad184",
-        "artifactSize": 1871,
-        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.excel/releases/1.0.1/artifact",
-        "artifactPath": "extensions/builtin.excel/1.0.1.zip"
+        "artifactDigest": "414bca06c7948927a0df8c9d732988eb52bd43c08852f6799afb8ee7eed759da",
+        "artifactSize": 2031,
+        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.excel/releases/1.0.2/artifact",
+        "artifactPath": "extensions/builtin.excel/1.0.2.zip"
       }
     },
     {
@@ -58,25 +60,26 @@
         "id": "builtin.powerpoint",
         "name": "PowerPoint 演示文稿",
         "summary": "创建、读取和修改 PowerPoint 演示文稿。",
-        "description": "使用沙盒预装的 OfficeCLI 统一入口处理 .pptx 文件，详细指南由程序按需返回。",
+        "description": "使用获授权执行镜像预装的 OfficeCLI 统一入口处理 .pptx 文件，详细指南由程序按需返回。",
         "category": "office",
         "publisher": "PowerEvolve"
       },
       "release": {
-        "version": "1.0.1",
+        "version": "1.0.2",
         "state": "PUBLISHED",
-        "manifestDigest": "sha256:5d94d9e5cf22ece654853bd39a97805f516283ba2d0a80640e01d058750d3c5e",
+        "manifestDigest": "sha256:7d1b5dfdb10068f9d2c4d6d3b15fd030bdec333e7245557ee48cf8d7f66c0879",
         "targets": [
-          "cloud"
+          "cloud",
+          "desktop"
         ],
         "componentKinds": [
           "skill"
         ],
         "permissions": [],
-        "artifactDigest": "3fd2211b7941a89400ff6b337714d98d081408c442460a90d4f59a94d4c1863f",
-        "artifactSize": 1881,
-        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.powerpoint/releases/1.0.1/artifact",
-        "artifactPath": "extensions/builtin.powerpoint/1.0.1.zip"
+        "artifactDigest": "66dbb4ef41e55a9478e54c4b198761ee97c7c4326cda350d5ba1905dcbedf654",
+        "artifactSize": 2040,
+        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.powerpoint/releases/1.0.2/artifact",
+        "artifactPath": "extensions/builtin.powerpoint/1.0.2.zip"
       }
     },
     {

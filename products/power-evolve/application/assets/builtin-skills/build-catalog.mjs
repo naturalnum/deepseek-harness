@@ -12,21 +12,24 @@ const root = dirname(fileURLToPath(import.meta.url))
 const outputRoot = join(root, 'generated')
 const definitions = [
   {
-    directory: 'word', extensionId: 'builtin.word', version: '1.0.1', name: 'Word 文档',
+    directory: 'word', extensionId: 'builtin.word', version: '1.0.2', name: 'Word 文档',
     summary: '创建、读取和修改 Word 文档。',
-    description: '使用沙盒预装的 OfficeCLI 统一入口处理 .docx 文件，详细指南由程序按需返回。',
+    description: '使用获授权执行镜像预装的 OfficeCLI 统一入口处理 .docx 文件，详细指南由程序按需返回。',
+    targets: ['cloud', 'desktop'],
     category: 'office', publisher: 'PowerEvolve',
   },
   {
-    directory: 'excel', extensionId: 'builtin.excel', version: '1.0.1', name: 'Excel 表格',
+    directory: 'excel', extensionId: 'builtin.excel', version: '1.0.2', name: 'Excel 表格',
     summary: '创建、读取和修改 Excel 工作簿。',
-    description: '使用沙盒预装的 OfficeCLI 统一入口处理 .xlsx 文件，详细指南由程序按需返回。',
+    description: '使用获授权执行镜像预装的 OfficeCLI 统一入口处理 .xlsx 文件，详细指南由程序按需返回。',
+    targets: ['cloud', 'desktop'],
     category: 'office', publisher: 'PowerEvolve',
   },
   {
-    directory: 'powerpoint', extensionId: 'builtin.powerpoint', version: '1.0.1', name: 'PowerPoint 演示文稿',
+    directory: 'powerpoint', extensionId: 'builtin.powerpoint', version: '1.0.2', name: 'PowerPoint 演示文稿',
     summary: '创建、读取和修改 PowerPoint 演示文稿。',
-    description: '使用沙盒预装的 OfficeCLI 统一入口处理 .pptx 文件，详细指南由程序按需返回。',
+    description: '使用获授权执行镜像预装的 OfficeCLI 统一入口处理 .pptx 文件，详细指南由程序按需返回。',
+    targets: ['cloud', 'desktop'],
     category: 'office', publisher: 'PowerEvolve',
   },
   {
@@ -78,6 +81,7 @@ await rm(outputRoot, { recursive: true, force: true })
 const items = []
 for (const definition of definitions) {
   const { version } = definition
+  const targets = definition.targets ?? ['cloud']
   const entries = await sourceEntries(join(root, definition.directory))
   const artifact = Buffer.from(zipSync(entries, { level: 9, mtime: '2020-01-01T00:00:00.000Z' }))
   const artifactDigest = sha256(artifact)
@@ -87,7 +91,7 @@ for (const definition of definitions) {
     schemaVersion: 1,
     extensionId: definition.extensionId,
     version,
-    targets: ['cloud'],
+    targets,
     componentKinds: ['skill'],
     artifact: { sha256: artifactDigest, size: artifact.length },
   })}\n`)
@@ -95,7 +99,7 @@ for (const definition of definitions) {
     version,
     state: 'PUBLISHED',
     manifestDigest: `sha256:${sha256(manifest)}`,
-    targets: ['cloud'],
+    targets,
     componentKinds: ['skill'],
     permissions: [],
     artifactDigest,

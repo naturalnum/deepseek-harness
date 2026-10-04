@@ -1,6 +1,6 @@
 ---
 name: word-documents
-description: Create, inspect, and modify Microsoft Word .docx files with the preinstalled Office tool.
+description: Create, inspect, and modify Microsoft Word .docx files with the Office tool preinstalled in the authorized execution image.
 ---
 
 # Word documents
@@ -16,7 +16,7 @@ Each `office` call uses direct file mode. Name the actual file in every command;
 
 ## Render and inspect the saved file
 
-Use `cloud_exec` for LibreOffice and Poppler. The Sandbox supplies Writer, Calc, Impress, and PDF rendering tools; OfficeCLI’s optional PDF/screenshot exporters are not required. Render a copy to a fresh directory, preserving the original editable file. In the following shell example, replace the input path with the actual file:
+Use the current execution target’s command tool for LibreOffice and Poppler: `cloud_exec` for cloud work or `desktop_exec` for the selected, locally authorized Device. Keep rendering in the same target as the editable file; cloud and local project files are separate. The authorized execution image supplies Writer, Calc, Impress, and PDF rendering tools; OfficeCLI’s optional PDF/screenshot exporters are not required. Render a copy to a fresh directory, preserving the original editable file. In the following shell example, replace the input path with the actual file:
 
 ```bash
 set -euo pipefail

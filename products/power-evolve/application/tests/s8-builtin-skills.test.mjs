@@ -6,6 +6,7 @@ import { constants } from 'node:fs'
 import { cp, mkdtemp, mkdir, open, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { BuiltinSkillCatalog, BuiltinSkillCatalogUnavailable,
   builtinSkillAssetRoot } from '../lib/platform/builtin-skills.js'
 import { extractSkillPackage } from '../lib/platform/skill-package-extraction.js'
@@ -16,6 +17,7 @@ const digest = bytes => createHash('sha256').update(bytes).digest('hex')
 test('all nine committed releases pass the current ZIP and native metadata validators', async t => {
   const catalog = new BuiltinSkillCatalog()
   const releases = await catalog.list()
+  const committed = JSON.parse(await readFile(join(builtinSkillAssetRoot(), 'catalog.json'), 'utf8'))
   assert.equal(releases.length, 9)
   assert.equal(new Set(releases.map(item => item.id)).size, 9)
   const root = await mkdtemp(join(tmpdir(), 'pe-s8-builtin-'))
@@ -38,6 +40,47 @@ test('all nine committed releases pass the current ZIP and native metadata valid
     assert(files.some(file => file.path === 'skill/SKILL.md'))
     assert(files.length <= 256)
     assert(files.reduce((size, file) => size + file.size, 0) <= 8 * 1024 * 1024)
+    const office = ['builtin.word', 'builtin.excel', 'builtin.powerpoint'].includes(release.id)
+    const targets = office ? ['cloud', 'desktop'] : ['cloud']
+    const distributed = committed.items.find(item => item.extension.id === release.id).release
+    assert.deepEqual(distributed.targets, targets)
+    const manifest = JSON.parse(await readFile(join(builtinSkillAssetRoot(),
+      `extensions/${release.id}/${release.version}.manifest.json`), 'utf8'))
+    assert.deepEqual(manifest.targets, targets)
+    if (office) {
+      assert.equal(release.version, '1.0.2')
+      const instructions = await readFile(join(extracted, 'skill/SKILL.md'), 'utf8')
+      assert.match(instructions, /authorized execution image/u)
+      assert.match(instructions, /`cloud_exec` for cloud work or `desktop_exec` for the selected, locally authorized Device/u)
+      assert.match(instructions, /Keep rendering in the same target as the editable file/u)
+      assert.match(instructions, /Use the `office` tool/u)
+      assert.equal(JSON.parse(await readFile(join(extracted, 'skill/SOURCE.json'), 'utf8')).productVersion, '1.0.2')
+    }
+  }
+})
+
+test('the actual loader rejects unsupported targets and release/manifest mismatch with a valid fixture pin', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'pe-s8-targets-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const loader = await readFile(new URL('../lib/platform/builtin-skills.js', import.meta.url), 'utf8')
+  const pin = /const CATALOG_SHA256 = '[a-f0-9]{64}';/u
+  assert.match(loader, pin)
+  for (const [index, targets] of [['cloud'], ['desktop'], ['desktop', 'cloud'], ['cloud', 'desktop', 'desktop']].entries()) {
+    const assets = join(root, String(index))
+    await cp(builtinSkillAssetRoot(), assets, { recursive: true })
+    const catalogFile = join(assets, 'catalog.json')
+    const catalog = JSON.parse(await readFile(catalogFile, 'utf8'))
+    catalog.items.find(item => item.extension.id === 'builtin.word').release.targets = targets
+    const bytes = Buffer.from(JSON.stringify(catalog) + '\n')
+    await writeFile(catalogFile, bytes)
+    // Preserve the real parser and reader; only the trusted asset pin and zod resolution change.
+    const module = loader.replace(pin, `const CATALOG_SHA256 = '${digest(bytes)}';`)
+      .replace("from 'zod'", `from ${JSON.stringify(import.meta.resolve('zod'))}`)
+    const path = join(root, `loader-${index}.mjs`)
+    await writeFile(path, module)
+    const { BuiltinSkillCatalog: FixtureCatalog, BuiltinSkillCatalogUnavailable: FixtureUnavailable }
+      = await import(pathToFileURL(path).href)
+    await assert.rejects(new FixtureCatalog(assets).list(), FixtureUnavailable)
   }
 })
 
@@ -61,19 +104,19 @@ test('catalog, manifest, archive and directory tampering fail closed', async t =
     return target
   }
   const damagedZip = await clone('zip')
-  const zip = join(damagedZip, 'extensions/builtin.word/1.0.1.zip')
+  const zip = join(damagedZip, 'extensions/builtin.word/1.0.2.zip')
   const zipBytes = await readFile(zip)
   zipBytes[0] ^= 1
   await writeFile(zip, zipBytes)
   const lazyCatalog = new BuiltinSkillCatalog(damagedZip)
   assert.equal((await lazyCatalog.list()).length, 9)
-  await assert.rejects(lazyCatalog.get('builtin.word', '1.0.1'), BuiltinSkillCatalogUnavailable)
+  await assert.rejects(lazyCatalog.get('builtin.word', '1.0.2'), BuiltinSkillCatalogUnavailable)
   assert((await lazyCatalog.get('builtin.pdf', '1.0.0'))?.archive.length)
 
   const damagedManifest = await clone('manifest')
-  const manifest = join(damagedManifest, 'extensions/builtin.word/1.0.1.manifest.json')
+  const manifest = join(damagedManifest, 'extensions/builtin.word/1.0.2.manifest.json')
   await writeFile(manifest, '{}')
-  await assert.rejects(new BuiltinSkillCatalog(damagedManifest).get('builtin.word', '1.0.1'),
+  await assert.rejects(new BuiltinSkillCatalog(damagedManifest).get('builtin.word', '1.0.2'),
     BuiltinSkillCatalogUnavailable)
 
   const damagedCatalog = await clone('catalog')

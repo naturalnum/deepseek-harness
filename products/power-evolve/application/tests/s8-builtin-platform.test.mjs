@@ -70,22 +70,22 @@ test('built-in catalog and installs isolate users, bind requests, and preserve d
     assert.deepEqual((await skills.catalog(bob)).items, initial.items)
 
     const requestId = randomUUID()
-    const word = await skills.installBuiltin(alice, requestId, 'builtin.word', '1.0.1')
+    const word = await skills.installBuiltin(alice, requestId, 'builtin.word', '1.0.2')
     assert.equal(word.kind, 'package')
-    assert.equal(word.version, '1.0.1')
+    assert.equal(word.version, '1.0.2')
     assert.equal((await skills.catalog(alice)).items.find(item => item.id === 'builtin.word').installedSkillId,
       word.skillId)
     assert.equal((await skills.catalog(bob)).items.find(item => item.id === 'builtin.word').installedSkillId,
       null)
-    assert.deepEqual(await skills.installBuiltin(alice, requestId, 'builtin.word', '1.0.1'), word)
+    assert.deepEqual(await skills.installBuiltin(alice, requestId, 'builtin.word', '1.0.2'), word)
     await assert.rejects(skills.installBuiltin(alice, requestId, 'builtin.pdf', '1.0.0'),
       { status: 409, code: 'request_id_conflict' })
     await assert.rejects(skills.installBuiltin(alice, requestId, 'builtin.word', '9.0.0'),
       { status: 409, code: 'request_id_conflict' })
-    await assert.rejects(skills.installBuiltin(bob, requestId, 'builtin.word', '1.0.1'),
+    await assert.rejects(skills.installBuiltin(bob, requestId, 'builtin.word', '1.0.2'),
       { status: 409, code: 'request_id_conflict' })
     const aliasRequestId = randomUUID()
-    const alias = await skills.installBuiltin(alice, aliasRequestId, 'builtin.word', '1.0.1')
+    const alias = await skills.installBuiltin(alice, aliasRequestId, 'builtin.word', '1.0.2')
     assert.equal(alias.skillId, word.skillId)
     const wordRelease = initial.items.find(item => item.id === 'builtin.word')
     await assert.rejects(skills.issueUploadTicket(alice, aliasRequestId, wordRelease.archiveSize,
@@ -93,7 +93,7 @@ test('built-in catalog and installs isolate users, bind requests, and preserve d
     { status: 409, code: 'request_id_conflict' })
     assert.equal((await pool.query('SELECT count(*)::integer AS n FROM pe_skill_package_versions WHERE user_id=$1',
       [alice.userId])).rows[0].n, 1)
-    const bobWord = await skills.installBuiltin(bob, randomUUID(), 'builtin.word', '1.0.1')
+    const bobWord = await skills.installBuiltin(bob, randomUUID(), 'builtin.word', '1.0.2')
     assert.notEqual(bobWord.skillId, word.skillId)
     await assert.rejects(skills.readSelected(bob.userId, { ...word, skillId: word.skillId }, word.skillId),
       { status: 404, code: 'skill_not_found' })
@@ -183,8 +183,8 @@ test('built-in catalog and installs isolate users, bind requests, and preserve d
 
     const racedRequestId = randomUUID()
     const raced = await Promise.allSettled([
-      skills.installBuiltin(bob, racedRequestId, 'builtin.excel', '1.0.1'),
-      skills.installBuiltin(charlie, racedRequestId, 'builtin.excel', '1.0.1'),
+      skills.installBuiltin(bob, racedRequestId, 'builtin.excel', '1.0.2'),
+      skills.installBuiltin(charlie, racedRequestId, 'builtin.excel', '1.0.2'),
     ])
     assert.equal(raced.filter(result => result.status === 'fulfilled').length, 1)
     assert.equal(raced.filter(result => result.status === 'rejected').length, 1)

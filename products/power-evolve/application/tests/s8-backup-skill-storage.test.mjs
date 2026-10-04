@@ -159,7 +159,7 @@ test('custom no-Sandbox storage restores old, disabled, revoked and report-suite
     ]) reports.push(selection(await skills.installBuiltin(user, randomUUID(), id, version)))
     const suite = await skills.runtimeResourceBase(user.userId, reports, reports[0].skillId)
     assert.equal(suite.suiteAvailable, true)
-    const word = selection(await skills.installBuiltin(user, randomUUID(), 'builtin.word', '1.0.1'))
+    const word = selection(await skills.installBuiltin(user, randomUUID(), 'builtin.word', '1.0.2'))
     await skills.toggle(user, word.skillId, false)
     const revoked = selection(await skills.installBuiltin(user, randomUUID(), 'builtin.pdf', '1.0.0'))
     await skills.revoke(user, revoked.skillId)

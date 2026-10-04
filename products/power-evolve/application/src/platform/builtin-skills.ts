@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { z } from 'zod'
 
-const CATALOG_SHA256 = '190bb49358a2a7fd588aa17baa377797fc0943fb0c28dd5562277af89431ebb8'
+const CATALOG_SHA256 = 'fa105cf50b3c6a666c4eda14715937564b08b3b69251db72ef6eb177bd7f5d2c'
 const SHA256 = /^[a-f0-9]{64}$/u
 const ID = /^builtin\.[a-z0-9]+(?:[._-][a-z0-9]+)*$/u
 const VERSION = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/u
@@ -16,16 +16,17 @@ const MAX_ARCHIVE_BYTES = 1024 * 1024
 const extension = z.object({ id: z.string().regex(ID), name: z.string().min(1).max(200),
   summary: z.string().min(1).max(500), description: z.string().min(1).max(10_000),
   category: z.string().min(1).max(100), publisher: z.string().min(1).max(200) }).strict()
+const targets = z.union([z.tuple([z.literal('cloud')]), z.tuple([z.literal('cloud'), z.literal('desktop')])])
 const release = z.object({ version: z.string().regex(VERSION), state: z.literal('PUBLISHED'),
   manifestDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/u),
-  targets: z.tuple([z.literal('cloud')]), componentKinds: z.tuple([z.literal('skill')]),
+  targets, componentKinds: z.tuple([z.literal('skill')]),
   permissions: z.tuple([]), artifactDigest: z.string().regex(SHA256),
   artifactSize: z.number().int().min(1).max(MAX_ARCHIVE_BYTES),
   artifactDownloadUrl: z.string(), artifactPath: z.string() }).strict()
 const catalog = z.object({ schemaVersion: z.literal(1),
   items: z.array(z.object({ extension, release }).strict()).length(9) }).strict()
 const manifest = z.object({ schemaVersion: z.literal(1), extensionId: z.string().regex(ID),
-  version: z.string().regex(VERSION), targets: z.tuple([z.literal('cloud')]),
+  version: z.string().regex(VERSION), targets,
   componentKinds: z.tuple([z.literal('skill')]), artifact: z.object({ sha256: z.string().regex(SHA256),
     size: z.number().int().min(1).max(MAX_ARCHIVE_BYTES) }).strict() }).strict()
 
@@ -72,7 +73,10 @@ async function file(path: string, maximum: number): Promise<Buffer> {
   } finally { await handle.close() }
 }
 
-/** Fixed asset root relative to the built Platform module. */
+/**
+ * Fixed asset root relative to the built Platform module.
+ * @returns The committed built-in Skill asset directory.
+ */
 export function builtinSkillAssetRoot(): string {
   return fileURLToPath(new URL('../../assets/builtin-skills/generated/', import.meta.url))
 }
@@ -106,6 +110,8 @@ export class BuiltinSkillCatalog {
         if (`sha256:${sha256(manifestBytes)}` !== version.manifestDigest) unavailable()
         const details = manifest.parse(JSON.parse(manifestBytes.toString('utf8')))
         if (details.extensionId !== id || details.version !== version.version
+          || details.targets.length !== version.targets.length
+          || details.targets.some((target, index) => target !== version.targets[index])
           || details.artifact.sha256 !== version.artifactDigest
           || details.artifact.size !== version.artifactSize) unavailable()
         items.push(Object.freeze({ id, name: identity.name, summary: identity.summary,
@@ -121,12 +127,20 @@ export class BuiltinSkillCatalog {
     return this.loadMetadata()
   }
 
-  /** List pinned releases without exposing paths or archive bytes. */
+  /**
+   * List pinned releases without exposing paths or archive bytes.
+   * @returns Verified release metadata.
+   */
   async list(): Promise<readonly BuiltinSkillRelease[]> {
     return this.load()
   }
 
-  /** Return one verified ZIP by catalog identity, or null for an unknown ID/version. */
+  /**
+   * Return one verified ZIP by catalog identity, or null for an unknown ID/version.
+   * @param id - The built-in Skill catalog identity.
+   * @param version - The exact published version.
+   * @returns Verified release metadata and ZIP bytes, or null for an unknown release.
+   */
   async get(id: string, version: string): Promise<{ readonly release: BuiltinSkillRelease; readonly archive: Buffer } | null> {
     if (!ID.test(id) || !VERSION.test(version)) return null
     const release = (await this.load()).find(item => item.id === id && item.version === version)
