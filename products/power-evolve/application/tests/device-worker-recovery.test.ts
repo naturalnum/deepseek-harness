@@ -17,6 +17,7 @@ import { DeviceWriterCoordinator, deviceWriterOwner, DEVICE_WRITER_SLOT_FILENAME
 import { DockerCommandError, OwnedDeviceContainer, OWNED_DEVICE_CONTAINER_LABELS, ownedContainerOwner, ownedContainerReceipt,
   type DockerClient, type DockerCommandResult, type OwnedContainerObservation, type OwnedContainerReceipt } from '../src/device/owned-container.ts'
 import { SealedDeviceCreations, sealedCreation } from '../src/device/sealed-creations.ts'
+import { deviceDrainReport, type DeviceDrainReport } from '@power-evolve/contracts/device-lifecycle'
 
 const workerTestOptions = { timeout: 10000, skip: !['darwin', 'linux'].includes(process.platform) }
 const IMAGE = 'sha256:' + 'a'.repeat(64), CONTAINER = 'b'.repeat(64)
@@ -1033,5 +1034,40 @@ test('a replacement physical directory cannot use the old grant and explicit sel
   assert.notEqual(renewed.directoryId, originalId)
   await f.worker.importFile(renewed.directoryId, 'cloud.txt', 'received.txt')
   assert.equal(await readFile(join(f.directory, 'new.txt'), 'utf8'), 'replacement bytes')
+  assert.equal(f.docker.calls.length, 0)
+})
+
+async function quiesceWorker(worker: DesktopWorker): Promise<DeviceDrainReport> {
+  const method: unknown = Reflect.get(worker, 'quiesce')
+  assert.equal(typeof method, 'function', 'the owned Device exposes quiescence separately from process exit')
+  return deviceDrainReport.parse(await (method as (this: DesktopWorker) => Promise<DeviceDrainReport>).call(worker))
+}
+
+test('parent lifecycle quiescence retains durable stop facts after finish ACK loss', workerTestOptions, async t => {
+  const f = await fixture(t), job = f.job()
+  f.docker.keepRunning = true; f.ack('lost'); f.advertise([job]); f.worker.start()
+  await until(() => f.docker.count('start') === 1, 'owned command started')
+  const report = await quiesceWorker(f.worker)
+  assert.equal(report.entries.length, 1)
+  assert.equal(report.entries[0]!.state, 'stopConfirmed')
+  assert.equal(report.entries[0]!.executionId, job.executionId)
+  assert.equal(f.docker.count('stop'), 1)
+  assert.equal(f.docker.count('rm'), 0)
+  assert.equal((await journal(f.privateRoot)).length, 1)
+  assert(await writerSlot(f.coordinationRoot))
+  await assert.rejects(f.worker.authorize(f.directory), /device_closed/u)
+})
+
+test('parent lifecycle collector never confirms an in-memory-only stop observation', workerTestOptions, async t => {
+  const f = await fixture(t), row = await f.seed('created', true)
+  const next = f.makeWorker(); await next.init()
+  const bytes = await readFile(join(f.privateRoot, 'journal.json'), 'utf8')
+  const entries: unknown = Reflect.get(next, 'journal')
+  assert(entries instanceof Map)
+  const memory = entries.get(row.id) as JournalRow
+  memory.stopObservation = { receipt: row.receipt!, ...stopped }
+  const report = await quiesceWorker(next)
+  assert.deepEqual(report.entries, [{ executionId: row.id, state: 'unconfirmed' }])
+  assert.equal(await readFile(join(f.privateRoot, 'journal.json'), 'utf8'), bytes)
   assert.equal(f.docker.calls.length, 0)
 })

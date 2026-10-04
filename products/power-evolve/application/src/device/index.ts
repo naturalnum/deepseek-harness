@@ -6,6 +6,7 @@ import { isAbsolute, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
+import type {} from '@deepseek-ai/dsh-cmdline'
 import schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
 import { PlatformError } from '../contracts.ts'
@@ -13,6 +14,7 @@ import { readJson, sendFailure, sendJson } from '../http.ts'
 import { serveUi } from '../ui.ts'
 import { DesktopWorker } from './worker.ts'
 import { OwnedDeviceContainer } from './owned-container.ts'
+import { DeviceParentLifecycle } from './lifecycle.ts'
 
 const executeFile = promisify(execFile)
 export const name = 'power-evolve-device'
@@ -60,23 +62,59 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   }, new OwnedDeviceContainer({ commandTimeoutMs: config.dockerCommandTimeoutMs,
     stopTimeoutMs: config.dockerStopTimeoutMs, stopGraceSeconds: config.dockerStopGraceSeconds }))
   ctx.effect(() => () => worker.close())
-  await worker.init(); worker.start()
   const pickerStop = new AbortController()
   let picker: Promise<{ stdout: string; stderr: string }> | undefined
   let pickerChild: ChildProcess | undefined
-  ctx.effect(() => async () => {
+  let pickerClosing: Promise<void> | undefined
+  const closePicker = (): Promise<void> => pickerClosing ??= (async () => {
     pickerStop.abort()
     pickerChild?.kill('SIGKILL')
     await picker?.catch((_pickerFailure: unknown) => {
       // The request reports picker failure; teardown only awaits the owned child exit.
     })
-  })
+  })()
+  ctx.effect(() => closePicker)
   const nonce = randomBytes(24).toString('base64url'), instanceId = randomUUID()
+  let parent: DeviceParentLifecycle | undefined
+  const launchId = process.env.PE_DEVICE_LAUNCH_ID
+  if (launchId !== undefined) {
+    const ready = ctx.get('appReady'), exit = ctx.get('appExit')
+    if (process.send === undefined || ready === undefined || exit === undefined) throw new Error('device_parent_channel_required')
+    ctx.effect(() => {
+      const owned = new DeviceParentLifecycle({ launchId, instanceId, url: origin, worker, closePicker, exit,
+        failure: code => { console.error(code) },
+        channel: {
+          pid: process.pid, get connected() { return process.connected === true },
+          send: (value, done) => {
+            if (process.send === undefined) { done(new Error('device_parent_ipc_failed')); return }
+            process.send(value, done)
+          },
+          onMessage: listener => { process.on('message', listener); return () => { process.off('message', listener) } },
+          onDisconnect: listener => { process.on('disconnect', listener); return () => { process.off('disconnect', listener) } },
+        },
+      })
+      parent = owned
+      return () => owned.dispose()
+    })
+    ctx.effect(() => ready.onReady(() => { parent?.ready() }))
+    if (!parent?.admissionOpen) return
+  }
+  try { await worker.init() }
+  catch (error) {
+    if (parent !== undefined) throw new Error('device_parent_start_failed')
+    throw error
+  }
+  if (parent === undefined || parent.admissionOpen) worker.start()
+  const assertAdmission = (path: string): void => {
+    if (path !== '/api/status' && parent !== undefined && !parent.admissionOpen) {
+      throw new PlatformError(409, 'device_draining')
+    }
+  }
   ctx.effect(() => ctx.webServer.registerFallback(async (req, res) => {
     try {
       const path = new URL(req.url ?? '/', origin).pathname
       if (req.method === 'GET' && path === '/health') {
-        sendJson(res, { ready: true, service: 'device', instanceId }); return
+        sendJson(res, { ready: parent === undefined || parent.snapshot().phase === 'ready', service: 'device', instanceId }); return
       }
       if (req.method === 'GET' && path === '/config') { sendJson(res, { nonce, status: worker.status() }); return }
       if (req.method === 'GET' && await serveUi(path, 'device', res)) return
@@ -84,7 +122,9 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       if (req.headers.origin !== origin || req.headers['x-pe-device-nonce'] !== nonce) {
         throw new PlatformError(403, 'invalid_local_request')
       }
+      assertAdmission(path)
       const input = await readJson(req, 4096)
+      assertAdmission(path)
       switch (path) {
         case '/api/status': z.object({}).strict().parse(input); sendJson(res, worker.status()); return
         case '/api/pair': {
@@ -126,5 +166,5 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       }
     } catch (error) { sendFailure(res, error) }
   }))
-  await writeFile(config.readyFile, JSON.stringify({ pid: process.pid, url: origin, instanceId }), { mode: 0o600 })
+  if (parent === undefined) await writeFile(config.readyFile, JSON.stringify({ pid: process.pid, url: origin, instanceId }), { mode: 0o600 })
 }

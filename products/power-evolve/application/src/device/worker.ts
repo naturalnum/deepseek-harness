@@ -16,6 +16,8 @@ import { LocalDeviceFiles } from './local-files.ts'
 import { DeviceWriterCoordinator, deviceWriterOwner, type DeviceWriterLease, type DeviceWriterOwner } from './writer-coordinator.ts'
 import { SealedDeviceCreations, sealedCreation } from './sealed-creations.ts'
 import { DeviceMaterials } from './materials.ts'
+import { collectDeviceDrainReport } from './lifecycle.ts'
+import type { DeviceDrainReport, DeviceDrainEntry, DeviceLifecycleSnapshot } from '@power-evolve/contracts/device-lifecycle'
 
 const directoryIdentity = z.object({ dev: z.string().regex(/^\d+$/u), ino: z.string().regex(/^\d+$/u) }).strict()
 const directory = z.object({ id: z.uuid(), label: z.string(), path: z.string(), identity: directoryIdentity.optional() }).strict()
@@ -89,6 +91,9 @@ export class DesktopWorker {
   private processLock: DeviceProcessLock | null = null
   private initialization: Promise<void> | null = null
   private closing: Promise<void> | null = null
+  private quiescing: Promise<DeviceDrainReport> | null = null
+  private collectDrain = false
+  private drainReport: DeviceDrainReport | null = null
   private readonly localActions = new Set<Promise<unknown>>()
   private actionTail: Promise<void> = Promise.resolve()
   private readonly stop = new AbortController()
@@ -319,6 +324,39 @@ export class DesktopWorker {
     this.polling ??= this.poll()
   }
 
+  /** Inspect this process's local work without paths, credentials or inferred stop facts.
+   * @returns Admission and pending work; durable facts are supplied only by quiesce.
+   */
+  inspectLifecycle(): Pick<DeviceLifecycleSnapshot, 'admissionOpen' | 'pendingActions' | 'journalEntries'> {
+    return { admissionOpen: !this.stop.signal.aborted,
+      pendingActions: this.localActions.size + Number(this.polling !== null) + Number(this.active !== null),
+      journalEntries: this.journal.size }
+  }
+
+  /** Close owned-process admission and collect original durable facts before releasing the journal lock.
+   * @returns One shared drain report; collection failure never becomes an empty report.
+   */
+  quiesce(): Promise<DeviceDrainReport> {
+    this.collectDrain = true
+    return this.quiescing ??= this.close().then(() => {
+      if (!this.drainReport) throw new Error('device_drain_read_failed')
+      return this.drainReport
+    })
+  }
+
+  private async collectDrainReport(): Promise<DeviceDrainReport> {
+    return collectDeviceDrainReport(this.privateDir, value => z.array(journalEntry).max(1024).parse(value).map((entry): DeviceDrainEntry => {
+      if (entry.owner && (!this.state || entry.owner.deviceId !== this.state.deviceId || entry.owner.enrollmentId !== this.state.instanceId)
+        || entry.claimClosureReceipt && (!this.state || entry.claimClosureReceipt.deviceId !== this.state.deviceId
+          || entry.claimClosureReceipt.instanceId !== this.state.instanceId)) throw new Error('device_drain_identity_mismatch')
+      if (entry.stopObservation) return { executionId: entry.stopObservation.receipt.owner.executionId,
+        state: 'stopConfirmed', observation: entry.stopObservation }
+      if (entry.claimClosureReceipt) return { executionId: entry.claimClosureReceipt.executionId,
+        state: 'notStarted', receipt: entry.claimClosureReceipt }
+      return { executionId: deviceClaim.shape.executionId.parse(entry.id), state: 'unconfirmed' }
+    }), () => this.assertOwned())
+  }
+
   /**
    * Close admission and await local actions and the current bounded stop attempt. Unconfirmed
    * Docker writers remain in the journal; closing this process does not certify their termination.
@@ -332,12 +370,18 @@ export class DesktopWorker {
         // init() releases its descriptors before reporting a failed startup.
       })
       await Promise.allSettled([...this.localActions, this.polling, this.active])
+      this.polling = null
+      const failures: unknown[] = []
+      if (this.collectDrain) {
+        try { this.drainReport = await this.collectDrainReport() }
+        catch (error) { failures.push(error) }
+      }
       const writer = this.writer
       this.writer = null
       const lock = this.processLock
       this.processLock = null
       const released = await Promise.allSettled([this.sealed.close(), writer?.lease.release(), lock?.release()])
-      const failures = released.flatMap(result => result.status === 'rejected' ? [result.reason] : [])
+      failures.push(...released.flatMap(result => result.status === 'rejected' ? [result.reason] : []))
       if (failures.length) throw new AggregateError(failures, 'device_lock_release_failed')
     })()
   }
