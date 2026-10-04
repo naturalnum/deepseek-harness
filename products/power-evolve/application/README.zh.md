@@ -28,6 +28,8 @@
 <a id="trusted-platform"></a>
 ## 可信平台
 
+Office 预览记录使用[相邻任务迁移](src/platform/office-preview-schema.ts)。受理前收到的取消请求保留为永久取消回执，不能转为可运行任务。租约过期或停止尚未确认时，解析器预留仍占用原槽位。这些记录不改变原生会话日志或已有执行事实。
+
 账号删除拒绝尚未完成的目录或绑定操作，以及保留的业务回执。平台通过描述符相对访问检查所有自有存储根，仅允许持久默认绑定对应的空目录及其祖先。仅打开存储选择器不妨碍删除；链接、特殊文件以及未绑定个人存储中的文件均会阻止删除。
 
 `accountManagementFile` 启用可信账号接口，并定义模型目录、初始设置和账号数量上限。产品 Platform Bundle 要求此私有配置；自定义 Profile 未配置时，账号管理返回 `account_unavailable`。可选的 `accountBootstrapFile` 在数据库锁内显式选择或创建首个管理员；不会隐式将现有身份提升为管理员。账号登录共用 Platform 登录限流，每个账号 POST 都要求准确的 Platform Origin。[账号客户端](../client-account/README.zh.md)拥有管理界面及其浏览器构建检查。

@@ -26,6 +26,8 @@ The native Session follow stream retains its last delivered event cursor across 
 
 ## Trusted platform
 
+Office preview records use the [adjacent task migration](src/platform/office-preview-schema.ts). A cancellation received before admission remains a permanent cancelled receipt; it cannot become a runnable task. Parser reservations retain their slot across lease expiry and unconfirmed termination. These records do not change native Session logs or prior execution facts.
+
 `accountManagementFile` enables the trusted account routes and defines the model catalog, initial settings, and account limit. The bundled Platform requires this private configuration; custom profiles that omit it return `account_unavailable` for account management. `accountBootstrapFile` is optional and explicitly selects or creates the first administrator under a database lock; existing identities never become administrators implicitly. Account login shares the Platform login limits, and every account POST requires the exact Platform Origin. The [account client](../client-account/README.md) owns the management UI and its browser-safe build checks.
 
 Account deletion rejects unfinished directory or binding operations and retained business receipts. It inspects every owned storage root through descriptor-relative access, allowing only empty directories belonging to the persisted default binding and its ancestors. Opening the storage selector alone does not prevent deletion; links, special entries and files in unbound personal storage do.
