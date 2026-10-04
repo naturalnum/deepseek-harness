@@ -98,17 +98,32 @@ test('built assets resolve nonadjacent physical cloud-web and contracts aliases'
     assert.deepEqual(index.body, Buffer.from(nativeHtml))
     assert.equal(index.headers.get('content-type'), 'text/html; charset=utf-8')
     commonHeaders(index)
-    assert.equal(index.headers.get('content-security-policy'), `default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' ${platformOrigin}; img-src 'self' data: blob:; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`)
+    assert.equal(index.headers.get('content-security-policy'), `default-src 'self'; script-src 'self' 'unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; connect-src 'self' ${platformOrigin}; img-src 'self' data: blob:; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`)
     const asset = await get('/native/assets/native.js')
     assert.equal(asset.status, 200)
     assert.deepEqual(asset.body, Buffer.from(nativeJs))
     assert.equal(asset.headers.get('content-type'), 'text/javascript; charset=utf-8')
+    assert.equal(asset.headers.get('content-security-policy'), index.headers.get('content-security-policy'))
     const redirect = await get('/native')
     assert.equal(redirect.status, 308)
     assert.equal(redirect.headers.get('location'), '/native/')
   })
+  await context.test('only native assets grant same-origin and blob workers', async () => {
+    const native = await get('/native/')
+    const policy = native.headers.get('content-security-policy')
+    const worker = policy.split(';').map(directive => directive.trim()).find(directive => directive.startsWith('worker-src '))
+    assert.equal(worker, "worker-src 'self' blob:")
+    // The Platform connection origin is not a worker source, nor is an external origin.
+    assert(!worker.includes(platformOrigin))
+    assert(!worker.includes('https:'))
+    assert(!worker.includes('*'))
+    const approval = await get('/approval')
+    assert.equal(approval.status, 200)
+    assert.equal(approval.headers.get('content-security-policy'), `default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' ${hostOrigin}; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`)
+  })
   await context.test('missing and physically present unlisted assets return 404', async () => {
-    for (const path of ['/native/missing.js', '/native/unlisted.js', '/native/asset-list.json', '/not-an-asset']) {
+    for (const path of ['/native/missing.js', '/native/unlisted.js', '/native/asset-list.json', '/not-an-asset',
+      '/native/assets/..%2funlisted.js', '/native/%2fetc%2fpasswd', '/native/https://example.test/worker.js']) {
       const result = await get(path)
       assert.equal(result.status, 404, path)
       assert.equal(result.body.length, 0)

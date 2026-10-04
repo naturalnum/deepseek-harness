@@ -18,9 +18,10 @@ const nativeMime: Record<string, string> = {
   '.woff': 'font/woff', '.woff2': 'font/woff2', '.png': 'image/png',
 }
 
-/** Serve the built upstream DSH shell from an isolated route while the native client transport is integrated.
+/** Serve the built upstream DSH shell and allowlisted assets with its PDF and spreadsheet worker CSP.
  * @param path - URL pathname without query parameters.
  * @param response - HTTP response owned by the Host.
+ * @param platformOrigin - Exact public Platform origin allowed for native browser connections.
  * @returns whether the native-shell route matched.
  */
 export async function serveNativeUi(path: string, response: ServerResponse, platformOrigin?: string): Promise<boolean> {
@@ -46,7 +47,7 @@ export async function serveNativeUi(path: string, response: ServerResponse, plat
   response.writeHead(200, {
     'content-type': `${nativeMime[extension] ?? 'application/octet-stream'}; charset=utf-8`,
     'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer',
-    'content-security-policy': `default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self'${platform ? ` ${platform.origin}` : ''}; img-src 'self' data: blob:; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`,
+    'content-security-policy': `default-src 'self'; script-src 'self' 'unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; connect-src 'self'${platform ? ` ${platform.origin}` : ''}; img-src 'self' data: blob:; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`,
   })
   response.end(body)
   return true
