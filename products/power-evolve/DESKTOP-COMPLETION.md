@@ -81,7 +81,7 @@ Device 已接入上游原生 `flock`、不可变 Docker 身份、启动前持久
 
 ## 业务与开发顺序
 
-Cloud 不确定执行结案与 Device 启动前永久封存已有协议验收。Device 已接入 operation 固定的技能版本、只读包挂载、独立持久 Home 与 Office 工具；[材料与 Office 协议验收](deploy/QA-DEVICE-MATERIALS-OFFICE.md)限定真实执行及未覆盖范围。接下来补齐正式原生会话的组合验收、本机进程连接器和 Electron 三个产品适配器。远程 HTTP API 继续由可信平台保管凭据和执行；不能通过放开 Host 本地 shell 补齐桌面功能。
+Cloud 不确定执行结案与 Device 启动前永久封存已有协议验收。Device 已接入 operation 固定的技能版本、只读包挂载、独立持久 Home 与 Office 工具；[材料与 Office 协议验收](deploy/QA-DEVICE-MATERIALS-OFFICE.md)限定真实执行及未覆盖范围。[当前原生 Profile 组合验收](TRIAL-DEVICE-MATERIALS-NATIVE.md)已通过双用户真实模型、技能说明无容器、Office 三成果、Git／Home 重启、显式文件往返、去重及离线取消恢复。Electron 三个产品适配器、本机进程连接器和原生 Office 预览继续按本约定推进。远程 HTTP API 继续由可信平台保管凭据和执行；不能通过放开 Host 本地 shell 补齐桌面功能。
 
 Root 固定共享 DTO、schema、Profile、Electron 扩展点及发行闭包；设备实现者负责 Device/目录/包交付；Host 实现者负责模型工具目标；客户端实现者复用原执行位置与扩展中心。接口与文件归属固定后并行实现，真实端到端验收和版本冻结串行完成。桌面承载器在业务协议稳定前仅做只读审计，不提前合入下一切片。
 

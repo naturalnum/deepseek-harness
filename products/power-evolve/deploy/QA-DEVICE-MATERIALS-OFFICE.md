@@ -27,6 +27,6 @@
 
 ## 未覆盖项
 
-正式客户端、真实模型与 DSH Profile 的材料／Office 组合验收仍待完成；本次不替代既有[云端 Office 验收](../TRIAL-S8-NATIVE-OFFICE.md)。Electron 适配器、安装包、本机进程连接器和 Desktop 报告套件仍按[桌面补齐约定](../DESKTOP-COMPLETION.md)推进。
+本次协议测试不覆盖正式客户端、真实模型或 DSH Profile；后续[原生 Profile 组合验收](../TRIAL-DEVICE-MATERIALS-NATIVE.md)记录真实客户端和模型结果。本次也不替代既有[云端 Office 验收](../TRIAL-S8-NATIVE-OFFICE.md)。Electron 适配器、安装包、本机进程连接器和 Desktop 报告套件仍按[桌面补齐约定](../DESKTOP-COMPLETION.md)推进。
 
 当前 Home 权限为宿主用户 `0700`，镜像执行 UID 为 `1000`。本次实际验证 Mac／OrbStack 的挂载映射；普通 Linux 若宿主 UID 不同，需要部署身份适配。旧 Worker 不消费新增材料派发，发布须对齐 Platform、Host 与 Device 版本；尚无混合版本能力协商。原有固定云端试用镜像、数据库和端口未改变。
