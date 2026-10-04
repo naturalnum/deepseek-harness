@@ -80,7 +80,12 @@ export class TaskStore {
     })
   }
 
-  /** Return only the authenticated user's bounded Session catalog. */
+  /** Return only the authenticated user's Session metadata and first-input titles.
+   * @param user Owner authenticated by the route.
+   * @param offset Validated number of catalog rows to skip.
+   * @param limit Validated maximum number of rows to return.
+   * @returns Owned Session rows with the requested pagination values; no execution grant is issued.
+   */
   async list(user: Identity, offset: number, limit: number): Promise<unknown> {
     const result = await this.pool.query(
       `SELECT id AS "sessionId", workspace_id AS "workspaceId", created_at AS "createdAt", event_count AS "eventCount",
@@ -350,7 +355,12 @@ export class TaskStore {
     })
   }
 
-  /** Settle an Operation only after the caller has flushed and disposed its Agent. */
+  /** Settle an Operation only after the caller has flushed and disposed its Agent.
+   * The current grant must remain authorized; settlement ends its attempt and releases the Session lease atomically.
+   * @param token Current execution grant for the Operation being settled.
+   * @param outcome Terminal state observed by the Host.
+   * @param errorCode Host failure code, or null; an aborted cancellation is recorded as turn_user.
+   */
   async finish(token: string, outcome: 'completed' | 'failed', errorCode: string | null): Promise<void> {
     await transaction(this.pool, async client => {
       const row = await this.authorized(client, token)
@@ -369,7 +379,12 @@ export class TaskStore {
     })
   }
 
-  /** Require ownership without disclosing whether another user's Session exists. */
+  /** Require ownership without disclosing whether another user's Session exists.
+   * @param client Caller database connection; this lookup does not acquire a Session lease or row lock.
+   * @param user Authenticated owner whose Session is requested.
+   * @param session Requested native Session identity.
+   * @returns Owned Session metadata, or rejects with session_not_found for absent or foreign Sessions.
+   */
   async owned(client: Pick<PoolClient, 'query'>, user: Identity, session: SessionId): Promise<SessionRow> {
     const result = await client.query<SessionRow>('SELECT * FROM pe_sessions WHERE id=$1 AND user_id=$2', [session, user.userId])
     const row = result.rows[0]

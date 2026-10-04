@@ -182,6 +182,9 @@ export class SkillService {
     this.builtinCatalog = new BuiltinSkillCatalog()
   }
 
+  /** Prepare the configured private content and staging directories before accepting skill operations.
+   * Rejects filesystem entries that are not real directories; package storage remains unavailable when unconfigured.
+   */
   async init(): Promise<void> {
     await realDirectory(this.textRoot, 0o700)
     if (this.packageRoot !== null) {
@@ -227,13 +230,20 @@ export class SkillService {
     try { return await file.readFile({ encoding: 'utf8' }) } finally { await file.close() }
   }
 
+  /** List this owner's current skill metadata without reading instruction or package bytes.
+   * @param user Owner authenticated by the route.
+   * @returns Name-ordered metadata, including disabled and revoked skills.
+   */
   async list(user: Identity): Promise<{ items: Record<string, unknown>[] }> {
     const result = await this.pool.query<SkillRow>(
       `SELECT ${skillColumns} FROM ${skillJoin} WHERE s.user_id=$1 ORDER BY s.name,s.id`, [user.userId])
     return { items: result.rows.map(publicItem) }
   }
 
-  /** Public fixed-catalog metadata plus this user's current matching package version. */
+  /** Public fixed-catalog metadata plus this user's current matching package version.
+   * @param user Authenticated owner whose installed versions are compared with the catalog.
+   * @returns Published releases with a matching installed skill identity, or null when no version matches.
+   */
   async catalog(user: Identity): Promise<{ items: (BuiltinSkillRelease & { installedSkillId: string | null })[] }> {
     const releases = await this.builtinCatalog.list()
     const installed = await this.pool.query<{ skill_id: string; archive_digest: string; version: string }>(
@@ -245,6 +255,11 @@ export class SkillService {
       installedSkillId: byVersion.get(`${release.archiveDigest}:${release.version}`) ?? null })) }
   }
 
+  /** Read an owned skill's current instructions, including disabled or revoked metadata.
+   * @param user Owner authenticated by the route.
+   * @param id Owned skill identity; absent or foreign skills are reported as skill_not_found.
+   * @returns Current public metadata and digest-verified instructions; unavailable content rejects the read.
+   */
   async read(user: Identity, id: string): Promise<Record<string, unknown>> {
     const result = await this.pool.query<SkillRow>(
       `SELECT ${skillColumns} FROM ${skillJoin} WHERE s.id=$1 AND s.user_id=$2`, [id, user.userId])
@@ -256,6 +271,15 @@ export class SkillService {
     return { ...publicItem(skill), instructions }
   }
 
+  /** Persist a private text skill for an active account; identical identity and content retries reuse its record.
+   * Instruction bytes are synchronized before metadata commits. Conflicting identities, names, or capacity reject installation.
+   * @param user Authenticated owner, rechecked inside the transaction.
+   * @param id Stable installation identity, also used as the new skill identity.
+   * @param name Validated owner-local skill name.
+   * @param description Validated catalog description to persist with the instructions.
+   * @param instructions Exact validated text whose digest fixes retry identity.
+   * @returns Metadata for the newly installed or identical previously installed text skill.
+   */
   async install(user: Identity, id: string, name: string, description: string, instructions: string): Promise<Record<string, unknown>> {
     const digest = hash(instructions)
     return transaction(this.pool, async client => {
@@ -289,6 +313,12 @@ export class SkillService {
     })
   }
 
+  /** Change selection eligibility for an active owner's skill without rewriting accepted Operation selections.
+   * @param user Authenticated owner, rechecked inside the transaction.
+   * @param id Owned skill identity; absent or foreign skills are reported as skill_not_found.
+   * @param enabled Requested eligibility for future acceptance; revoked skills cannot be enabled.
+   * @returns Current metadata, with a new revision only when eligibility changes.
+   */
   async toggle(user: Identity, id: string, enabled: boolean): Promise<Record<string, unknown>> {
     return transaction(this.pool, async client => {
       await requireActiveAccount(client, user.userId, 'update')
@@ -304,6 +334,11 @@ export class SkillService {
     })
   }
 
+  /** Permanently revoke an active owner's skill while retaining its historical bytes and accepted selections.
+   * @param user Authenticated owner, rechecked inside the transaction.
+   * @param id Owned skill identity; absent or foreign skills are reported as skill_not_found.
+   * @returns Disabled, revoked metadata; repeated revocation preserves the existing revision and timestamp.
+   */
   async revoke(user: Identity, id: string): Promise<Record<string, unknown>> {
     return transaction(this.pool, async client => {
       await requireActiveAccount(client, user.userId, 'update')
@@ -317,7 +352,15 @@ export class SkillService {
     })
   }
 
-  /** Issue a browser-only bearer ticket without accepting archive bytes into the Host. */
+  /** Issue a browser-only bearer ticket without accepting archive bytes into the Host.
+   * An identical pending request rotates its ticket; changed bytes or ownership reject the request.
+   * @param user Authenticated owner, rechecked inside the transaction.
+   * @param requestId Stable upload identity, retained as the immutable package version identity.
+   * @param sizeBytes Validated exact archive byte count to enforce during upload.
+   * @param sha256 Validated archive digest to enforce during upload and retries.
+   * @param platformOrigin Trusted Platform origin used to construct the direct upload URL.
+   * @returns Ready metadata for an installed version, or a pending ticket, upload URL, and expiry.
+   */
   async issueUploadTicket(user: Identity, requestId: string, sizeBytes: number, sha256: string,
     platformOrigin: string): Promise<Record<string, unknown>> {
     if (this.packageRoot === null) throw new PlatformError(503, 'skill_package_unavailable')
@@ -402,7 +445,14 @@ export class SkillService {
     return { unpacked, files, metadata, version, manifest, manifestDigest, instructionDigest }
   }
 
-  /** Install only a pinned, verified built-in archive through the package publisher. */
+  /** Install only a pinned, verified built-in archive through the package publisher.
+   * The active owner's request is bound to the catalog identity and version; matching retries reuse its installation record.
+   * @param user Authenticated owner, rechecked inside the publication transaction.
+   * @param requestId Stable installation identity; conflicting reuse is rejected.
+   * @param catalogId Published built-in skill identity, never a caller-supplied archive path.
+   * @param version Exact published release to install; no latest-version fallback is used.
+   * @returns Metadata for the exact installed version; unavailable releases or conflicting private skills reject installation.
+   */
   async installBuiltin(user: Identity, requestId: string, catalogId: string,
     version: string): Promise<Record<string, unknown>> {
     if (this.packageRoot === null) throw new PlatformError(503, 'skill_package_unavailable')
@@ -500,7 +550,11 @@ export class SkillService {
     } finally { await removeStage(stage) }
   }
 
-  /** Presets are applied lazily and never revive an existing package or revoked skill. */
+  /** Presets are applied lazily and never revive an existing package or revoked skill.
+   * Prior installation history and conflicting private skills are retained; unknown catalog identities reject the request.
+   * @param user Authenticated owner whose missing presets may be installed through installBuiltin.
+   * @param catalogIds Trusted preset identities, resolved against the current published catalog.
+   */
   async ensurePreinstalled(user: Identity, catalogIds: readonly string[]): Promise<void> {
     if (catalogIds.length === 0) return
     const releases = await this.builtinCatalog.list()
@@ -524,7 +578,12 @@ export class SkillService {
     }
   }
 
-  /** Consume one bounded ZIP and commit its immutable version after private extraction. */
+  /** Consume one bounded ZIP and commit its immutable version after private extraction.
+   * The ticket, exact archive bytes, and active account are rechecked before publication; expired or consumed tickets reject upload.
+   * @param ticket Browser upload bearer issued for the owner's fixed byte count and archive digest.
+   * @param body Direct Platform request stream containing the ZIP bytes, never a Host instruction payload.
+   * @returns Installed version metadata and whether this transaction inserted a new version.
+   */
   async upload(ticket: string, body: IncomingMessage): Promise<{ item: Record<string, unknown>; created: boolean }> {
     if (this.packageRoot === null) throw new PlatformError(503, 'skill_package_unavailable')
     const ticketDigest = hash(ticket)
@@ -751,14 +810,26 @@ export class SkillService {
     return material
   }
 
-  /** Load one accepted skill body for a runner, checking current ownership and revocation. */
+  /** Load one accepted skill body for a runner, checking current ownership and revocation.
+   * Later upgrades or disabling do not replace the accepted version; missing, revoked, or damaged content rejects the read.
+   * @param userId Original Operation owner, supplied by Platform authorization.
+   * @param selection Immutable skill metadata frozen at Operation acceptance.
+   * @param skillId Requested identity, which must equal the accepted selection identity.
+   * @returns Digest-verified instruction snapshot for that accepted version.
+   */
   async readSelected(userId: string, selection: Selection, skillId: string): Promise<unknown> {
     if (selection.skillId !== skillId) throw new PlatformError(404, 'skill_not_found')
     await this.activeSelectedSkill(userId, selection)
     return (await this.snapshot(userId, [selection]))[0]
   }
 
-  /** Read one verified UTF-8 resource, or list manifest names, from an accepted version. */
+  /** Read one verified UTF-8 resource, or list manifest names, from an accepted version.
+   * Current ownership and revocation apply; unsafe paths, unavailable bytes, oversized resources, or non-text files reject the read.
+   * @param userId Original Operation owner, supplied by Platform authorization.
+   * @param selected Immutable skill version frozen at Operation acceptance.
+   * @param path Validated relative resource path, omitted to list manifest files without returning their bodies.
+   * @returns Verified bounded text with its digest, or file names, sizes, and digests for the accepted version.
+   */
   async readSelectedResource(userId: string, selected: Selection, path?: string): Promise<SkillResource> {
     const relative = path === undefined ? undefined : resourcePath(path)
     await this.activeSelectedSkill(userId, selected)
@@ -813,7 +884,14 @@ export class SkillService {
     return { kind: 'text', path: relative, text, sha256: item.sha256 }
   }
 
-  /** Resolve one accepted package path; build the pinned four-Skill report layout on demand. */
+  /** Resolve one accepted package path; build the pinned four-Skill report layout on demand.
+   * Report siblings require all four accepted built-in installation records; missing members use the ordinary package path.
+   * Published bytes must match their manifests; damaged packages or suites reject resolution rather than being repaired.
+   * @param userId Original Operation owner, supplied by Platform authorization.
+   * @param selection Immutable accepted versions used to authorize every report sibling.
+   * @param skillId Requested selected skill, checked for current ownership and revocation.
+   * @returns A null runtimePath for text skills, an ordinary package path, or a published report path with suiteAvailable true.
+   */
   async runtimeResourceBase(userId: string, selection: readonly Selection[], skillId: string):
     Promise<{ runtimePath: string | null; suiteAvailable: boolean }> {
     const selected = selection.find(item => item.skillId === skillId)
@@ -855,7 +933,12 @@ export class SkillService {
     })
   }
 
-  /** Resolve exactly the accepted version; later upgrades and revocation do not rewrite an Operation. */
+  /** Resolve exactly the accepted version; later upgrades and revocation do not rewrite an Operation.
+   * This content lookup does not check current revocation or selection eligibility; callers needing live authorization use readSelected.
+   * @param userId Original owner of the accepted content, supplied by the caller's authorization.
+   * @param selection Immutable accepted text or package versions in the required output order.
+   * @returns Digest-verified instruction snapshots in selection order; missing or damaged content rejects the lookup.
+   */
   async snapshot(userId: string, selection: z.infer<typeof skillSelection>[]): Promise<unknown[]> {
     return Promise.all(selection.map(async selected => {
       if (selected.kind === 'text') return { name: selected.name, description: selected.description,
