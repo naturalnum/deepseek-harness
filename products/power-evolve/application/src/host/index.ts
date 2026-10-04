@@ -350,6 +350,11 @@ export const Config = schema.object({
   renewMs: schema.number().min(100).required(), operationTimeoutMs: schema.number().min(1000).required(),
   maxRequestBytes: schema.number().min(1024).required(), maxStreams: schema.number().step(1).min(1).required(),
   fileDownloadTimeoutMs: schema.number().step(1).min(1).default(60_000),
+  officePreviewEnabled: schema.boolean().default(false),
+  officePreviewPollMs: schema.number().step(1).min(1).max(2_147_483_647).default(500),
+  officePreviewRenderDeadlineMs: schema.number().step(1).min(1000).max(2_147_483_647).default(240_000),
+  officePreviewCancelTimeoutMs: schema.number().step(1).min(1).max(2_147_483_647).default(10_000),
+  officePreviewMaxActiveRenders: schema.number().step(1).min(1).default(4),
   readyFile: schema.string().required(),
 })
 export type Config = ReturnType<typeof Config>
@@ -362,7 +367,10 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const instanceId = randomUUID()
   const browserAuth = new BrowserAgentAuth(config.origin, config.platformOrigin, ctx.powerEvolveRuntime)
   ctx.provide('powerEvolveBrowserAuth', browserAuth)
-  installNativeRemote(ctx, browserAuth, config.origin, config.pollMs, config.maxRequestBytes, config.maxStreams)
+  installNativeRemote(ctx, browserAuth, config.origin, config.pollMs, config.maxRequestBytes, config.maxStreams,
+    config.officePreviewEnabled ? { pollMs: config.officePreviewPollMs,
+      renderDeadlineMs: config.officePreviewRenderDeadlineMs, cancelTimeoutMs: config.officePreviewCancelTimeoutMs,
+      maxActiveRenders: config.officePreviewMaxActiveRenders } : undefined)
   const tokens = new WeakMap<PeerScope, string>()
   ctx.plugin(ProductRemote, { tokens, pollMs: config.pollMs, platformOrigin: config.platformOrigin })
   const invocations: InvocationDescriptor[] = Object.entries(requests).map(([method, request]) => ({

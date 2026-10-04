@@ -29,6 +29,10 @@ import { NativeWorkspaceRead } from './native-workspace-read.ts'
 import { NativeFileRead, nativeFileRequest, nativeFileTextRequest, nativeFileBytesRequest } from './native-files.ts'
 import { FileService } from './files.ts'
 import { FileDownloadService } from './file-downloads.ts'
+import { loadOfficePreviewConfig } from './office-preview-config.ts'
+import { OfficePreviewService } from './office-previews.ts'
+import { OFFICE_PREVIEW_ROUTES, officePreviewPrepareRequest, officePreviewRefRequest,
+  officePreviewCancelRequest } from '@power-evolve/contracts/office-preview'
 import { WORKSPACE_BINDING_ROUTES, storageDirectoriesRequest, storageDirectoryCreateRequest,
   workspaceBindingRestoreRequest, workspaceBindingStatusRequest } from '@power-evolve/contracts/workspace-binding'
 import { FILE_DOWNLOAD_MAX_FILES, FILE_DOWNLOAD_MAX_SOURCE_BYTES, FILE_DOWNLOAD_PLATFORM_PATH,
@@ -90,6 +94,7 @@ export const Config = schema.object({
   modelUrl: schema.string().required(), hostOrigin: schema.string().required(), platformOrigin: schema.string().required(),
   mcpUrl: schema.string().default(''), mcpTokenFile: schema.string().default(''),
   remoteMcpConfigFile: schema.string().default(''),
+  officePreviewConfigFile: schema.string().default(''), officePreviewKubeconfigFile: schema.string().default(''),
   mcpTimeoutMs: schema.number().min(1000).default(5000),
   sshCredentialKeyFile: schema.string().default(''), sshDestinationAllowlist: schema.string().default(''),
   sshMaxConnections: schema.number().step(1).min(1).max(8).default(8),
@@ -148,6 +153,11 @@ const seedUsers = z.array(z.object({
 export async function apply(ctx: Context, config: Config): Promise<void> {
   const instanceId = randomUUID()
   const remoteMcpConfig = await loadMcpPlatformConfig(config.remoteMcpConfigFile)
+  const officePreviewConfig = await loadOfficePreviewConfig(config.officePreviewConfigFile, config.officePreviewKubeconfigFile,
+    [config.workspaceRoot, config.artifactRoot,
+      ...(config.sandboxLocalRoot ? [join(resolve(config.sandboxLocalRoot), 'homes')] : []),
+      ...(config.skillLibraryRoot || config.sandboxLocalRoot
+        ? [join(resolve(config.skillLibraryRoot || config.sandboxLocalRoot), 'skill-packages')] : [])])
   if (config.accountBootstrapFile && !config.accountManagementFile) throw new Error('Account bootstrap requires management configuration')
   const [accountManagement, accountBootstrap] = await Promise.all([
     config.accountManagementFile ? loadAccountManagementConfig(config.accountManagementFile) : Promise.resolve(null),
@@ -176,7 +186,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   pool.on('error', databaseUnavailable)
   healthPool.on('error', databaseUnavailable)
   const mcpShutdown = new Set<() => Promise<void>>()
-  // Cordis disposers run concurrently; terminal MCP writes must settle before this pool enters ending.
+  // Cordis disposers run concurrently; trusted worker writes must settle before this pool enters ending.
   ctx.effect(() => async () => {
     await Promise.allSettled([...mcpShutdown].map(stop => stop()))
     await pool.end()
@@ -201,6 +211,30 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     transferTimeoutMs: config.fileDownloadTransferTimeoutMs,
   })
   await files.init()
+  const officePreviews = officePreviewConfig ? new OfficePreviewService(pool, files,
+    await KubernetesClient.fromFile(config.officePreviewKubeconfigFile), officePreviewConfig) : null
+  if (officePreviews && officePreviewConfig) {
+    const stop = new AbortController()
+    const polling = (async () => {
+      let unavailable = false
+      while (!stop.signal.aborted) {
+        try {
+          await officePreviews.tick()
+          if (unavailable) ctx.logger.info('Office preview reconciliation resumed')
+          unavailable = false
+        } catch (_unavailable) {
+          if (!stop.signal.aborted && !unavailable) ctx.logger.warn('Office preview reconciliation unavailable')
+          unavailable = true
+        }
+        if (stop.signal.aborted) return
+        try { await delay(officePreviewConfig.pollMs, undefined, { signal: stop.signal }) }
+        catch (error) { if (stop.signal.aborted) return; throw error }
+      }
+    })()
+    const close = async () => { stop.abort(); await Promise.allSettled([officePreviews.stop(), polling]) }
+    mcpShutdown.add(close)
+    ctx.effect(() => close)
+  }
   const artifactRelative = relative(resolve(config.workspaceRoot), resolve(config.artifactRoot))
   if (!artifactRelative || !artifactRelative.startsWith('..')) {
     throw new Error('Artifact root cannot be inside the writable workspace root')
@@ -422,13 +456,13 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         databaseReady = true
         sendJson(res, { ready: true, service: 'platform', schema: versions.rows[0]!.version, executionEnabled,
           mcpAvailable: !!config.mcpUrl, remoteMcpAvailable: remoteMcp !== null,
-          stdioMcpAvailable: stdioMcp.available, sshAvailable, instanceId })
+          stdioMcpAvailable: stdioMcp.available, sshAvailable, officePreviewAvailable: officePreviews !== null, instanceId })
       } catch (error) {
         databaseUnavailable(error)
         sendJson(res, { ready: false, service: 'platform', schema: null, database: 'unavailable',
           executionEnabled, mcpAvailable: !!config.mcpUrl, remoteMcpAvailable: remoteMcp !== null,
           stdioMcpAvailable: stdioMcp.available,
-          sshAvailable, instanceId }, 503)
+          sshAvailable, officePreviewAvailable: officePreviews !== null, instanceId }, 503)
       }
       return
     }
@@ -544,6 +578,23 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       sendJson(res, await devices.enroll(input.code, input.name, input.instanceId)); return
     }
     const token = bearer(req)
+    if (path.startsWith('/office-preview/')) {
+      if (!officePreviews) throw new PlatformError(503, 'office_render_unavailable')
+      const input = await readJson(req, 4096)
+      switch (path) {
+        case OFFICE_PREVIEW_ROUTES.generation:
+          z.object({}).strict().parse(input); sendJson(res, await officePreviews.generation(token)); return
+        case OFFICE_PREVIEW_ROUTES.prepare:
+          sendJson(res, await officePreviews.prepare(token, officePreviewPrepareRequest.parse(input))); return
+        case OFFICE_PREVIEW_ROUTES.status:
+          sendJson(res, await officePreviews.status(token, officePreviewRefRequest.parse(input))); return
+        case OFFICE_PREVIEW_ROUTES.content:
+          sendJson(res, await officePreviews.content(token, officePreviewRefRequest.parse(input))); return
+        case OFFICE_PREVIEW_ROUTES.cancel:
+          sendJson(res, await officePreviews.cancel(token, officePreviewCancelRequest.parse(input))); return
+        default: throw new PlatformError(404, 'not_found')
+      }
+    }
     if (path.startsWith('/devices/agent/')) {
       const input = await readJson(req, config.maxRequestBytes)
       switch (path) {

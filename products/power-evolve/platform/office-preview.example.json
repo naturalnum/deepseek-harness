@@ -1,0 +1,31 @@
+{
+  "namespace": "pe-runners",
+  "image": "registry.example/office-preview@sha256:0000000000000000000000000000000000000000000000000000000000000000",
+  "volumeClaimName": "pe-runner-data",
+  "volumeSubPath": "office-previews",
+  "localRoot": "/data/office-previews",
+  "fontPolicyDigest": "0000000000000000000000000000000000000000000000000000000000000000",
+  "limits": {
+    "inputBytes": 2097152,
+    "outputBytes": 8388608,
+    "timeoutMs": 120000,
+    "archiveEntries": 10000,
+    "uncompressedBytes": 134217728,
+    "fontLoadedBytes": 268435456,
+    "pages": 1000,
+    "fontFiles": 10000,
+    "fontFileBytes": 134217728,
+    "fontResolutionEntries": 100000,
+    "imageResolution": 300
+  },
+  "maxConcurrentParsers": 1,
+  "maxRetainedJobsPerUser": 1000,
+  "leaseMs": 60000,
+  "jobDeadlineMs": 180000,
+  "pollMs": 500,
+  "kubernetesTimeoutMs": 10000,
+  "terminationGraceSeconds": 10,
+  "cpuMilliCores": 1000,
+  "memoryMiB": 3072,
+  "temporaryMiB": 512
+}

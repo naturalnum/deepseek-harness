@@ -19,6 +19,8 @@
 
 原生静态资源通过声明的 `cloud-web` 包定位，审批页浏览器代码通过 `contracts` 包定位；这些包的物理目录不必与本包相邻。`PE_NATIVE_WEB_DIST` 可选择另一份原生构建目录，资源白名单仍然生效。原生 CSP 允许 PDF 和电子表格预览使用同源及 blob Worker；登录、审批和本地 Device 资源保留各自独立的策略。
 
+原生 Word／PowerPoint 预览使用 Platform 持久的 prepare/status/content/cancel 请求。Host 对轮询设限，在原生 multipart 返回前核验源文件版本、转换器 generation 和完整 PDF 字节。浏览器断开请求取消，不构成解析器已经停止的证据。`officePreviewEnabled` 启用此适配；`officePreviewPollMs`、`officePreviewRenderDeadlineMs`、`officePreviewCancelTimeoutMs` 和 `officePreviewMaxActiveRenders` 配置每个 Host 的限额。
+
 原生 WebSocket 准入保留实际的 401 和 403 拒绝。Platform 连接失败、超时、身份验证不可用或验证响应无效时，以 503 拒绝升级，不清除浏览器凭据。
 
 回环[试用 Host 代理](../scripts/trial-lb.mjs)保留非 101 升级响应，包括 401、403 和 503，以及端到端响应头。它移除逐跳响应头，在 3 秒响应期限内最多转发拒绝正文的前 8 KiB，重新计算 Content-Length，并关闭两侧连接。连接失败仍返回 502；代理不会重试升级。
@@ -29,6 +31,8 @@
 ## 可信平台
 
 Office 预览记录使用[相邻任务迁移](src/platform/office-preview-schema.ts)。受理前收到的取消请求保留为永久取消回执，不能转为可运行任务。租约过期或停止尚未确认时，解析器预留仍占用原槽位。账户停用请求取消但不释放这些槽位；账户删除与备份受理拒绝尚未结束的解析任务。这些记录不改变原生会话日志或已有执行事实。
+
+`officePreviewConfigFile` 与 `officePreviewKubeconfigFile` 一同配置才启用隔离解析器；省略时禁用转换。后者接受绝对凭据文件名或 `in-cluster`。[完整 JSON 示例](../platform/office-preview.example.json) 提供全部位置、保留和资源预算。私有预览根须对应配置的 PVC 子路径，且不能与工作区、产物、Home 或技能根重叠。Platform 为 UID 1000 准备物理输入／输出目录；解析器 Pod 只挂载这些任务目录及有界临时存储。部署须禁止解析器入站与出站。固定镜像提供字体和入口；浏览器请求不能提供命令、镜像标签或挂载路径。保留任务配额包括取消回执，未实现自动清理历史。
 
 账号删除拒绝尚未完成的目录或绑定操作，以及保留的业务回执。平台通过描述符相对访问检查所有自有存储根，仅允许持久默认绑定对应的空目录及其祖先。仅打开存储选择器不妨碍删除；链接、特殊文件以及未绑定个人存储中的文件均会阻止删除。
 

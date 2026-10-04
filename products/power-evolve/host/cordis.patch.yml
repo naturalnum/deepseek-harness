@@ -55,6 +55,11 @@
     - id: power-evolve-host
       name: '@power-evolve/application/host'
       config:
+        officePreviewEnabled: !!js process.env.PE_OFFICE_PREVIEW_ENABLED === '1'
+        officePreviewPollMs: 500
+        officePreviewRenderDeadlineMs: 240000
+        officePreviewCancelTimeoutMs: 10000
+        officePreviewMaxActiveRenders: 4
         origin: http://127.0.0.1:18880
         platformOrigin: http://127.0.0.1:18881
         deviceOrigin: http://127.0.0.1:18891

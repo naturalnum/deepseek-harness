@@ -63,6 +63,8 @@
         mcpTokenFile: ''
         mcpTimeoutMs: 5000
         remoteMcpConfigFile: ''
+        officePreviewConfigFile: !!js process.env.PE_OFFICE_PREVIEW_CONFIG_FILE || ''
+        officePreviewKubeconfigFile: !!js process.env.PE_OFFICE_PREVIEW_KUBECONFIG_FILE || ''
         sshCredentialKeyFile: ''
         sshDestinationAllowlist: ''
         sshMaxConnections: 8
