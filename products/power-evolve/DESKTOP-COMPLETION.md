@@ -25,6 +25,23 @@
 
 这些是产品适配代码，不是三个新的 DSH 插件。Cordis 插件复用现有 Device Bundle、云端 Host 与客户端能力；Electron 的入口、Preload／IPC 和打包选择需要另外提供最小装配接口。官方默认启动方式保留，产品模式显式选择入口、Profile、私有根和发布配置，并记录实际修改文件的升级影响。官方 DeepSeek 账户桥与产品身份、审批凭据分别保留其职责。
 
+## 官方代码的装配接口
+
+产品入口放在 `products/power-evolve/desktop/`。官方主入口有应用启动副作用，窗口工厂目前是私有函数；产品不能通过导入该入口复用窗口，也不能只替换 URL 后沿用官方本地 Host。以下扩展保留官方默认行为，产品仅显式选择配置与实现。
+
+| 接入点 | 复用方式与产品职责 |
+| --- | --- |
+| [窗口工厂](../../apps/desktop/src/main.ts) | 提取无启动副作用的窗口模块，注入 Preload、Electron Session、语言及导航许可；复用尺寸、Mac traffic lights、vibrancy、全屏和上下文菜单 |
+| [快捷键](../../apps/desktop/src/keyboard.ts)与应用菜单 | 页面许可增加显式参数；保留所属窗口、主 frame、原生按键和用户配置。产品菜单复用原生 File／Edit／Window 与退出动作 |
+| [麦克风](../../apps/desktop/src/microphone-permissions.ts) | 注入精确 Host 页面许可，保留 audio-only、所属主窗口与 Mac 系统授权；平台登录页不获录音许可 |
+| [主题](../../apps/desktop/src/preload-theme.ts)与[平台／全屏标记](../../apps/desktop/src/preload-platform.ts) | 直接复用；产品 Cloud Preload 同时装配原生页面所需的快捷键接口，避免只有平台标记而缺少 bridge |
+| [后端控制器](../../apps/desktop/src/backend-controller.ts) | Device 适配器实现 `start/stop`；另选产品 Profile 与 readiness，不修改控制器来启动共享平台或本机云 Agent |
+| [包闭包准备](../../apps/desktop/scripts/prepare-package-set.ts) | 保留收集和校验机制；产品固定独立入口、Device 依赖、私有配置及物理辅助资源，正式更新另选产品发布源 |
+
+Cloud 主窗口和固定平台登录页面使用同一个 Electron Session，IPC 许可仍只属于 Host 主 frame。账号页面返回 Host 根地址时，承载器将该固定目标规范到 `/native/`；`hostOrigin` 始终保留准确 Origin，不把路径加入 Origin 配置。原生侧栏浏览器和更新能力按实际客户端消费接口装配，不能仅填充空 bridge 或让 Cloud 页面调用未安装的 IPC。
+
+当前产品客户端只要求 `dshDesktop` 的 `protocolVersion`、完整 `keyboard` 与 `shortcuts`，主题通过原生 DOM 属性同步；产品以明确的部分接口声明，不强转为官方完整 `DshDesktopProductApi`。首个桌面切片不装配未接入的 `browser/updates`，关闭 `webviewTag`。以后接入原生侧栏浏览器时复用[所属 guest 管理](../../apps/desktop/src/browser-guests.ts)，增加 Host、平台和 Device 地址拒绝，以及登录身份更换后的分区清退；renderer 提供的 workspace 字符串不能成为共享 Cloud 用户身份。
+
 ```mermaid
 flowchart LR
     A[官方 Electron 外壳] --> B[共享 Host 的原生 DSH 页面]
