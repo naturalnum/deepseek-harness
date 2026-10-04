@@ -5,7 +5,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { Pool } from 'pg'
+import { Pool, Client } from 'pg'
 import * as predecessors from '../lib/platform/schema.js'
 import { schemaV27 } from '../lib/platform/storage-binding-schema.js'
 import { schemaV28 } from '../lib/platform/execution-resolution-schema.js'
@@ -13,6 +13,10 @@ import { schemaV29 } from '../lib/platform/device-execution-schema.js'
 import { schemaV30 } from '../lib/platform/device-resolution-schema.js'
 import { schemaV31 } from '../lib/platform/device-claim-closure-schema.js'
 import { initializeDatabase, transaction } from '../lib/platform/database.js'
+import { revokeAccountExecutions } from '../lib/platform/account-execution-revocation.js'
+import { lockAccountAuthorities } from '../lib/platform/account-authority.js'
+import { identity } from '../lib/contracts.js'
+import { inspectBackupState, requireIdleBackupState } from '../../scripts/backup-state.mjs'
 
 test('Office migration retains prior Session bytes, durable early cancellation and unreleased parser slots',
   { timeout: 30_000 }, async t => {
@@ -96,6 +100,34 @@ test('Office migration retains prior Session bytes, durable early cancellation a
         await pool.query(`UPDATE pe_office_preview_jobs SET state='creating',creation_intent='{}',parser_slot=1 WHERE id=$1`, [second])
         assert.deepEqual((await pool.query('SELECT parser_slot FROM pe_office_preview_jobs WHERE parser_slot IS NOT NULL ORDER BY parser_slot'))
           .rows.map(row => row.parser_slot), [0, 1])
+      })
+
+      await t.test('account disablement cancels admission while preserving occupied slots and other owners', async () => {
+        const owner = identity.parse({ userId: alice, username: 'alice' })
+        const beforeBob = (await pool.query('SELECT * FROM pe_office_preview_jobs WHERE user_id=$1', [bob])).rows
+        const beforeSlots = (await pool.query(`SELECT id,parser_slot,creation_intent,lease_owner,lease_epoch,lease_until
+          FROM pe_office_preview_jobs WHERE parser_slot IS NOT NULL ORDER BY id`)).rows
+        const revoke = () => transaction(pool, async client => {
+          await lockAccountAuthorities(client, [owner.userId], 'update')
+          await client.query('UPDATE pe_users SET enabled=false WHERE id=$1', [owner.userId])
+          return revokeAccountExecutions(client, owner.userId)
+        })
+        assert.equal((await revoke()).executions, 3)
+        assert.equal((await revoke()).executions, 0)
+        assert.deepEqual((await pool.query('SELECT * FROM pe_office_preview_jobs WHERE user_id=$1', [bob])).rows, beforeBob)
+        assert.deepEqual((await pool.query(`SELECT id,parser_slot,creation_intent,lease_owner,lease_epoch,lease_until
+          FROM pe_office_preview_jobs WHERE parser_slot IS NOT NULL ORDER BY id`)).rows, beforeSlots)
+        assert.equal((await pool.query(`SELECT count(*)::int AS n FROM pe_office_preview_jobs
+          WHERE user_id=$1 AND NOT cancel_requested`, [alice])).rows[0].n, 0)
+        assert.equal((await pool.query(`SELECT count(*)::int AS n FROM pe_office_preview_jobs
+          WHERE user_id=$1 AND request_digest IS NOT NULL AND creation_intent IS NULL AND state='cancelled'`, [alice])).rows[0].n, 1)
+      })
+
+      await t.test('backup admission refuses durable parser reservations after cancellation and expired leases', async () => {
+        const state = await inspectBackupState(Client, url.href)
+        assert.equal(state.schema, 32)
+        assert.equal(state.active.officePreviews, 2)
+        assert.throws(() => requireIdleBackupState(state), /no active operations/u)
       })
     } finally {
       await pool?.end()

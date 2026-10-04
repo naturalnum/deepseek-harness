@@ -73,6 +73,11 @@ export async function revokeAccountExecutions(client: PoolClient, userId: UserId
   const stdio = await client.query(`UPDATE pe_stdio_mcp_calls SET error_code='account_disabled',updated_at=now()
     WHERE user_id=$1 AND state IN ('accepted','preparing','ready','dispatch-intent','running','uncertain')
     AND error_code IS DISTINCT FROM 'account_disabled'`, [userId])
+  const previews = await client.query(`UPDATE pe_office_preview_jobs SET cancel_requested=true,
+    state=CASE WHEN creation_intent IS NULL THEN 'cancelled' WHEN state='blocked' THEN state ELSE 'stopping' END,
+    error_code=CASE WHEN creation_intent IS NOT NULL AND state='blocked' THEN error_code ELSE NULL END,
+    completed_at=CASE WHEN creation_intent IS NULL THEN now() ELSE NULL END,updated_at=now()
+    WHERE user_id=$1 AND state IN ('queued','creating','running','stopping','blocked') AND NOT cancel_requested`, [userId])
   await client.query('DELETE FROM pe_device_pairings WHERE user_id=$1', [userId])
   // Idle writers can begin cleanup immediately; active executions first observe/cancel their Runner.
   await client.query(`UPDATE pe_mount_slots m SET state='stopping',updated_at=now()
@@ -84,5 +89,6 @@ export async function revokeAccountExecutions(client: PoolClient, userId: UserId
   await client.query("SELECT pg_notify('pe_executions',$1)", [userId])
   return { sessions: sessions.rowCount ?? 0, operations: operations.rowCount ?? 0, attempts: attempts.rowCount ?? 0,
     approvals: (connector.rowCount ?? 0) + (mcp.rowCount ?? 0) + (ssh.rowCount ?? 0),
-    executions: (checks.rowCount ?? 0) + (cloud.rowCount ?? 0) + (desktop.rowCount ?? 0) + (sshCalls.rowCount ?? 0) + (stdio.rowCount ?? 0) }
+    executions: (checks.rowCount ?? 0) + (cloud.rowCount ?? 0) + (desktop.rowCount ?? 0) + (sshCalls.rowCount ?? 0)
+      + (stdio.rowCount ?? 0) + (previews.rowCount ?? 0) }
 }

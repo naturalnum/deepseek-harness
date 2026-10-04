@@ -9,7 +9,7 @@ import { setTimeout as pause } from 'node:timers/promises'
 import test from 'node:test'
 import { promisify } from 'node:util'
 import { Pool } from 'pg'
-import { accountCreateRequest, accountTargetMutationRequest } from '../lib/account-contracts.js'
+import { accountCreateRequest, accountTargetMutationRequest, accountChangePasswordRequest } from '../lib/account-contracts.js'
 import { bootstrapAccount } from '../lib/platform/account-bootstrap.js'
 import { requireActiveAccount } from '../lib/platform/account-authority.js'
 import { accountBootstrapConfig, accountManagementConfig } from '../lib/platform/account-config.js'
@@ -55,7 +55,12 @@ async function fixture(t) {
     const value = await accounts.create(administrator.token, accountCreateRequest.parse({ requestId: randomUUID(),
       username, displayName: 'Storage owner', role: 'USER', settings: management.initialSettings,
       models: [{ id: 'fixture', maxTokens: 128 }] }))
-    return { userId: value.receipt.account.userId, username, revision: value.receipt.account.revision }
+    const login = await accounts.login(username, value.temporaryPassword)
+    const ownerPassword = 'storage-owner-fixture-password'
+    const changed = await accounts.changePassword(login.token, accountChangePasswordRequest.parse({
+      requestId: randomUUID(), currentPassword: value.temporaryPassword, newPassword: ownerPassword }))
+    const credential = await identities.login(username, ownerPassword)
+    return { userId: value.receipt.account.userId, username, revision: changed.receipt.account.revision, token: credential.token }
   }
   const remove = user => accounts.remove(administrator.token, accountTargetMutationRequest.parse({
     requestId: randomUUID(), userId: user.userId, expectedRevision: user.revision }))
@@ -200,10 +205,16 @@ test('account deletion permits empty selector metadata and empty default storage
 
 test('storage intent, recovery and completed business receipts retain account lifecycle semantics', pgTest, async t => {
   const f = await fixture(t)
+  await t.test('an early Office cancellation retains its receipt even without a Session or file', async () => {
+    const user = await f.owner()
+    await f.pool.query(`INSERT INTO pe_office_preview_jobs(id,user_id,request_id,generation,state,cancel_requested,completed_at)
+      VALUES($1,$2,$3,$4,'cancelled',true,now())`, [randomUUID(), user.userId, randomUUID(), 'a'.repeat(64)])
+    await rejectsDeletion(f, user)
+  })
   await t.test('a completed recovery receipt prevents deletion when storage remains empty', async () => {
     const user = await f.owner(), binding = await boundDefault(f, user)
     await f.files.bindings.restore(user, { requestId: randomUUID(), workspaceId: binding.workspaceId,
-      spaceId: binding.spaceId, rootRelativePath: '', expectedGeneration: 1 })
+      spaceId: binding.spaceId, rootRelativePath: '', expectedGeneration: 1 }, user.token)
     await f.files.bindings.poll(async claim => claim.stopTarget, new AbortController().signal,
       { ownerId: randomUUID(), leaseMs: 3000 })
     assert.equal((await f.pool.query('SELECT state FROM pe_workspace_binding_requests WHERE user_id=$1', [user.userId])).rows[0].state, 'completed')
@@ -219,7 +230,7 @@ test('storage intent, recovery and completed business receipts retain account li
     await t.test(`${state} recovery blocks deletion even with no Pod`, async () => {
       const user = await f.owner(), binding = await boundDefault(f, user)
       const receipt = await f.files.bindings.restore(user, { requestId: randomUUID(), workspaceId: binding.workspaceId,
-        spaceId: binding.spaceId, rootRelativePath: '', expectedGeneration: 1 })
+        spaceId: binding.spaceId, rootRelativePath: '', expectedGeneration: 1 }, user.token)
       if (state !== 'accepted') await f.pool.query(`UPDATE pe_workspace_binding_requests SET state=$3,error_code=$4
         WHERE user_id=$1 AND request_id=$2`, [user.userId, receipt.requestId, state,
         state === 'blocked' ? 'workspace_stop_unconfirmed' : null])
@@ -235,7 +246,7 @@ test('storage intent, recovery and completed business receipts retain account li
   await t.test('a retained completed mkdir receipt prevents deletion after its empty directory disappears', async () => {
     const user = await f.owner(), storage = await space(f, user)
     await mkdir(storage.path)
-    await f.files.bindings.createDirectory(user, { requestId: randomUUID(), spaceId: storage.spaceId, parentPath: '', name: 'completed' })
+    await f.files.bindings.createDirectory(user, { requestId: randomUUID(), spaceId: storage.spaceId, parentPath: '', name: 'completed' }, user.token)
     await rm(join(storage.path, 'completed'), { recursive: true })
     await rejectsDeletion(f, user)
   })

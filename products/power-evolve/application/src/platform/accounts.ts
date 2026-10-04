@@ -356,6 +356,8 @@ export class AccountService {
       OR EXISTS(SELECT 1 FROM pe_ssh_execute_actions WHERE user_id=$1 AND state IN ('pending','approved','dispatching','uncertain'))
       OR EXISTS(SELECT 1 FROM pe_mcp_actions WHERE user_id=$1 AND state IN ('pending','approved','preparing','dispatch-intent','uncertain'))
       OR EXISTS(SELECT 1 FROM pe_mcp_checks WHERE user_id=$1 AND state IN ('queued','running'))
+      OR EXISTS(SELECT 1 FROM pe_office_preview_jobs WHERE user_id=$1
+        AND (state IN ('queued','creating','running','stopping','blocked') OR parser_slot IS NOT NULL))
       OR EXISTS(SELECT 1 FROM pe_storage_directory_requests WHERE user_id=$1 AND state='accepted')
       OR EXISTS(SELECT 1 FROM pe_workspace_binding_requests WHERE user_id=$1 AND state IN ('accepted','stopping','blocked'))
       OR EXISTS(SELECT 1 FROM pe_workspaces WHERE user_id=$1 AND binding_state IN ('recovering','blocked'))
@@ -365,7 +367,7 @@ export class AccountService {
     const tables = ['pe_sessions', 'pe_file_mutations', 'pe_artifacts', 'pe_user_skills', 'pe_skill_package_versions',
       'pe_devices', 'pe_device_directories', 'pe_mcp_connections', 'pe_ssh_connections', 'pe_stdio_mcp_connections',
       'pe_mcp_remote_connections', 'pe_mcp_drafts', 'pe_mcp_checks', 'pe_connector_actions',
-      'pe_storage_directory_requests', 'pe_workspace_binding_requests']
+      'pe_storage_directory_requests', 'pe_workspace_binding_requests', 'pe_office_preview_jobs']
     const content = (await client.query<{ content: boolean }>(`SELECT ${tables.map(table => `EXISTS(SELECT 1 FROM ${table} WHERE user_id=$1)`).join(' OR ')}
       OR EXISTS(SELECT 1 FROM pe_workspaces WHERE user_id=$1 AND (NOT is_default OR create_request_id IS NOT NULL)) AS content`, [userId])).rows[0]!
     if (content.content) throw new PlatformError(409, ACCOUNT_ERROR_CODES.notEmpty)

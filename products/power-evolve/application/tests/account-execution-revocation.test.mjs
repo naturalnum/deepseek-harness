@@ -134,8 +134,9 @@ test('cloud revocation preserves actual output, suppresses continuation and neve
   const sandbox = { name: 'synthetic-sandbox', podUid: randomUUID(), runnerInstanceId: randomUUID(), token: 'fixture',
     sessionId:task.sessionId,userId:f.alice.userId,generation:'1',binding:{workspaceId:workspace,spaceId:workspace,
       rootKey:workspace,rootRelativePath:'',generation:1} }
-  const sandboxes = { posts: 0, async assertCurrent() {}, async assertDispatchAllowed() {}, async runner(_name, _token, method) {
+  const sandboxes = { posts: 0, gets: 0, async assertCurrent() {}, async assertDispatchAllowed() {}, async runner(_name, _token, method) {
     if (method === 'POST') this.posts++
+    if (method === 'GET') this.gets++
     throw new KubernetesError(404, 'Synthetic missing execution')
   } }
   const executions = new ExecutionService(f.tasks, sandboxes,
@@ -157,11 +158,13 @@ test('cloud revocation preserves actual output, suppresses continuation and neve
   const newGrant = await f.tasks.claim(randomUUID())
   const unknown = await executions.propose(newGrant.token, 'uncertain-call', 'synthetic-unknown-command', '/workspace')
   const unknownRow = await executions.claim()
-  await f.pool.query("UPDATE pe_cloud_executions SET state='uncertain' WHERE id=$1", [unknown.executionId])
-  await executions.observe({ ...unknownRow, state: 'uncertain' }, sandbox, false, async () => {})
+  await f.pool.query("UPDATE pe_cloud_executions SET state='uncertain',runner_instance_id=$2 WHERE id=$1",
+    [unknown.executionId, sandbox.runnerInstanceId])
+  await executions.observe({ ...unknownRow, state: 'uncertain', runner_instance_id: sandbox.runnerInstanceId }, sandbox, false, async () => {})
   const reconciled = (await f.pool.query('SELECT state,error_code FROM pe_cloud_executions WHERE id=$1', [unknown.executionId])).rows[0]
   assert.deepEqual(reconciled, { state: 'uncertain', error_code: 'runner_execution_missing' })
   assert.equal(sandboxes.posts, 0)
+  assert.equal(sandboxes.gets, 1)
 })
 
 test('password rotation rejects stale browser admission while the accepted execution grant remains usable', async t => {
