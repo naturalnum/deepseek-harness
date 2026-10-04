@@ -59,7 +59,8 @@ for (const [button, operation] of [['import-file', 'import'], ['export-file', 'e
     const requestId = crypto.randomUUID()
     get('transfer-result').textContent = ''
     const result = await call(operation, { directoryId, cloudPath, localPath, ...(operation === 'export' ? { requestId } : {}) })
-    get('transfer-result').textContent = `${t.deviceTransferDone}: ${result.path ?? result.cloudPath} (${result.size} bytes)`
+    const destination = operation === 'import' ? result.localPath : result.path
+    get('transfer-result').textContent = `${t.deviceTransferDone}: ${destination} (${result.size} bytes)`
   }))
 }
 const config = await (await fetch('/config')).json(); nonce = config.nonce; render(config.status)
