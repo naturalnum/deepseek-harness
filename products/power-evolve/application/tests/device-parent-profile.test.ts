@@ -70,7 +70,7 @@ test('source Device enables parent IPC only with explicit launch and publishes r
   f.commit()
   await until(() => f.packets.length === 1)
   const ready = deviceLifecycleReady.parse(f.packets[0])
-  assert.equal(ready.pid, process.pid); assert.equal(ready.url, f.url)
+  assert.equal(ready.pid, process.pid); assert.equal(ready.url, f.url + '/')
   const health = await (await fetch(f.url + '/health')).json()
   assert.equal(health.ready, true); assert.equal(health.instanceId, ready.instanceId)
   const local = await (await fetch(f.url + '/config')).json()

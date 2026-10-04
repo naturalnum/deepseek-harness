@@ -81,7 +81,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     const ready = ctx.get('appReady'), exit = ctx.get('appExit')
     if (process.send === undefined || ready === undefined || exit === undefined) throw new Error('device_parent_channel_required')
     ctx.effect(() => {
-      const owned = new DeviceParentLifecycle({ launchId, instanceId, url: origin, worker, closePicker, exit,
+      const owned = new DeviceParentLifecycle({ launchId, instanceId, url: origin + '/', worker, closePicker, exit,
         failure: code => { console.error(code) },
         channel: {
           pid: process.pid, get connected() { return process.connected === true },
