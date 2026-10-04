@@ -75,7 +75,7 @@ function readDescriptor(root: string): unknown {
     if (!info.isFile() || info.size > maxDescriptorBytes) throw invalid()
     const bytes = readFileSync(fd)
     if (bytes.length > maxDescriptorBytes) throw invalid()
-    return JSON.parse(bytes.toString('utf8')) as unknown
+    return JSON.parse(bytes.toString('utf8'))
   } finally { closeSync(fd) }
 }
 function privateRoot(path: string, resources: string): string {
