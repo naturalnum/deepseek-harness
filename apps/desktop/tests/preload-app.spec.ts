@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { installMandatoryUpdateOverlay } from '../src/preload-mandatory-overlay.ts'
 import { syncWindowsAppearance } from '../src/preload-windows.ts'
 import { DESKTOP_IPC, type DshDesktopProductApi } from '../src/ipc.ts'
+import type { ShortcutRevision } from '@deepseek-ai/dsh-client-shortcuts/protocol'
 
 const electron = vi.hoisted(() => ({
   contextBridge: { exposeInMainWorld: vi.fn() },
@@ -18,6 +19,22 @@ vi.mock('../src/preload-mandatory-overlay.ts', () => ({ installMandatoryUpdateOv
 
 beforeEach(() => { vi.stubGlobal('process', { ...process, isMainFrame: true }) })
 afterEach(() => { document.body.replaceChildren(); vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.clearAllMocks(); vi.resetModules() })
+
+it('creates the shared shortcut bridge without import effects or unrelated preload capabilities', async () => {
+  const { createDesktopShortcutBridge } = await import('../src/preload-shortcuts.ts')
+  const api = createDesktopShortcutBridge()
+  expect(Object.keys(api).sort()).toEqual(['keyboard', 'protocolVersion', 'shortcuts'])
+  expect(electron.contextBridge.exposeInMainWorld).not.toHaveBeenCalled()
+  expect(electron.ipcRenderer.invoke).not.toHaveBeenCalled()
+  expect(electron.ipcRenderer.on).not.toHaveBeenCalled()
+  expect(electron.ipcRenderer.send).not.toHaveBeenCalled()
+  await api.shortcuts.get([])
+  await api.shortcuts.recording(true)
+  await api.keyboard.closeWindow('current' as ShortcutRevision)
+  expect(electron.ipcRenderer.invoke.mock.calls).toEqual([
+    [DESKTOP_IPC.shortcutsGet, []], [DESKTOP_IPC.shortcutsRecording, true], [DESKTOP_IPC.shortcutsCloseWindow, 'current'],
+  ])
+})
 
 it('reads only native login API-key presence through the onboarding bridge', async () => {
   vi.stubGlobal('location', new URL('dsh-app://app/'))

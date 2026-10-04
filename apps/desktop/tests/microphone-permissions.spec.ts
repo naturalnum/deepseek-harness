@@ -6,12 +6,12 @@ import { installMicrophonePermissions } from '../src/microphone-permissions.ts'
 const access = vi.hoisted(() => ({ getMediaAccessStatus: vi.fn(() => 'granted'), askForMediaAccess: vi.fn(async () => true) }))
 vi.mock('electron', () => ({ systemPreferences: access }))
 afterEach(() => { vi.unstubAllGlobals(); vi.resetAllMocks() })
-function fixture(platform: NodeJS.Platform = 'darwin') {
+function fixture(platform: NodeJS.Platform = 'darwin', applicationFrame?: (url: string) => boolean) {
   vi.stubGlobal('process', { ...process, platform })
   const setPermissionCheckHandler = vi.fn<Session['setPermissionCheckHandler']>()
   const setPermissionRequestHandler = vi.fn<Session['setPermissionRequestHandler']>()
   const primary = {} as WebContents
-  installMicrophonePermissions({ setPermissionCheckHandler, setPermissionRequestHandler }, () => primary)
+  installMicrophonePermissions({ setPermissionCheckHandler, setPermissionRequestHandler }, () => primary, applicationFrame)
   return { primary, check: setPermissionCheckHandler.mock.calls[0]![0]!, request: setPermissionRequestHandler.mock.calls[0]![0]! }
 }
 it('allows only audio checks from the owned primary application frame', () => {
@@ -21,9 +21,37 @@ it('allows only audio checks from the owned primary application frame', () => {
   expect(f.check({} as WebContents, 'media', 'dsh-app://app', details)).toBe(false)
   expect(f.check(f.primary, 'media', 'https://example.com', details)).toBe(false)
   expect(f.check(f.primary, 'media', 'invalid', details)).toBe(false)
+  for (const url of ['dsh-app://user@app/', 'dsh-app://user:password@app/', 'dsh-app://app:1234/']) {
+    expect(f.check(f.primary, 'media', url, details)).toBe(false)
+  }
   expect(f.check(f.primary, 'media', 'dsh-app://app', { ...details, isMainFrame: false })).toBe(false)
   expect(f.check(f.primary, 'media', 'dsh-app://app', { ...details, mediaType: 'video' })).toBe(false)
   expect(f.check(f.primary, 'clipboard-sanitized-write', 'dsh-app://app', details)).toBe(true)
+})
+
+it('allows a remote audio document without granting other origins, windows or frames', async () => {
+  const origin = 'http://127.0.0.1:19904'
+  const f = fixture('darwin', url => new URL(url).origin === origin), done = vi.fn()
+  const details = { isMainFrame: true, requestingUrl: `${origin}/native/`, mediaTypes: ['audio'] }
+  expect(f.check(f.primary, 'media', origin, { isMainFrame: true, mediaType: 'audio' })).toBe(true)
+  f.request(f.primary, 'media', done, details)
+  await vi.waitFor(() => { expect(done).toHaveBeenLastCalledWith(true) })
+  access.askForMediaAccess.mockClear()
+  for (const url of ['http://127.0.0.1:19906/login', 'http://127.0.0.1:19905/native/',
+    'http://127.0.0.1.example/native/', 'https://example.com/', 'dsh-app://app/']) {
+    expect(f.check(f.primary, 'media', url, { isMainFrame: true, mediaType: 'audio' })).toBe(false)
+    f.request(f.primary, 'media', done, { ...details, requestingUrl: url })
+    expect(done).toHaveBeenLastCalledWith(false)
+  }
+  for (const [contents, request] of [[{} as WebContents, details],
+    [f.primary, { ...details, isMainFrame: false }],
+    [f.primary, { ...details, mediaTypes: ['audio', 'video'] as ('audio' | 'video')[] }]] as const) {
+    f.request(contents, 'media', done, request)
+    expect(done).toHaveBeenLastCalledWith(false)
+  }
+  expect(access.askForMediaAccess).not.toHaveBeenCalled()
+  access.getMediaAccessStatus.mockReturnValueOnce('denied')
+  expect(f.check(f.primary, 'media', origin, { isMainFrame: true, mediaType: 'audio' })).toBe(false)
 })
 it.each(['not-determined', 'granted', 'denied', 'restricted', 'unknown'] as const)(
   'reports existing macOS microphone authorization for %s', (status) => {

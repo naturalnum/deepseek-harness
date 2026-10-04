@@ -56,6 +56,7 @@ const installFixture = installDesktopShortcuts as (
   getWindow: () => WindowFixture | undefined, userData: string,
   platform: Parameters<typeof installDesktopShortcuts>[2], updateMenu: () => void,
   overlayInput: (window: WindowFixture) => { readonly revision: number; readonly blocked: boolean },
+  applicationFrame?: (url: string) => boolean,
 ) => KeyboardFixture
 type GuestsFixture = {
   acquire(owner: ContentsFixture, workspace: unknown): DesktopBrowserReservation
@@ -77,7 +78,7 @@ function browserGuest(reservation: DesktopBrowserReservation) {
   return { frame, guest }
 }
 
-async function fixture(platform: 'macos' | 'windows' | 'linux' = 'macos') {
+async function fixture(platform: 'macos' | 'windows' | 'linux' = 'macos', applicationFrame?: (url: string) => boolean) {
   const root = await mkdtemp(join(tmpdir(), 'dsh-keyboard-'))
   onTestFinished(async () => { await rm(root, { recursive: true, force: true }) })
   const frame: FrameFixture = { url: 'dsh-app://app/', name: '', parent: null }
@@ -89,7 +90,8 @@ async function fixture(platform: 'macos' | 'windows' | 'linux' = 'macos') {
   let current: WindowFixture | undefined = window
   const updateMenu = vi.fn()
   const updateOverlays = new DesktopUpdateOverlays()
-  const keyboard = installFixture(() => current, root, platform, updateMenu, window => updateOverlays.input(window as BrowserWindow))
+  const keyboard = installFixture(() => current, root, platform, updateMenu,
+    window => updateOverlays.input(window as BrowserWindow), applicationFrame)
   keyboard.attach(current)
   onTestFinished(() => { keyboard.dispose() })
   const handlers = new Map<string, (event: InvokeFixture, ...args: unknown[]) => unknown>(
@@ -255,7 +257,8 @@ it('rejects other windows, subframes, remote/shell pages, and malformed edits', 
   for (const event of [{ ...f.event, sender: {} }, { ...f.event, senderFrame: null }, { ...f.event, senderFrame: {} }]) {
     await expect(get(event, f.definitions)).rejects.toThrow('rejected sender')
   }
-  for (const url of ['dsh-app://shell/', 'https://example.com/', 'http://localhost/']) {
+  for (const url of ['dsh-app://shell/', 'https://example.com/', 'http://localhost/',
+    'dsh-app://user@app/', 'dsh-app://user:password@app/', 'dsh-app://app:1234/']) {
     f.frame.url = url
     await expect(get(f.event, f.definitions)).rejects.toThrow('unowned renderer')
   }
@@ -823,4 +826,66 @@ it('delivers Windows Edit actions to the focused browser guest without invoking 
   dispose()
   f.keyboard.sendEditingKey('C', ['control'])
   expect(f.contents.sendInputEvent).toHaveBeenCalledTimes(2)
+})
+
+it('keeps remote keyboard IPC and outbound input bound to the allowed owned main document', async () => {
+  const origin = 'http://127.0.0.1:19904'
+  const f = await fixture('macos', url => new URL(url).origin === origin)
+  f.frame.url = `${origin}/native/`
+  const get = f.handlers.get(DESKTOP_IPC.shortcutsGet)!
+  const definitions: readonly ShortcutDefinition[] = [...f.definitions, {
+    id: 'page.close' as ShortcutCommandId, defaults: desktopDefaults({ code: 'KeyW', modifiers: ['primary'] }),
+  }]
+  const ready = await f.call<ShortcutConfigSnapshot>(DESKTOP_IPC.shortcutsGet, definitions)
+  expect(f.contents.send).toHaveBeenCalledWith(DESKTOP_IPC.shortcutsChanged, ready)
+  f.contents.send.mockClear()
+  f.contents.emit('before-input-event', { preventDefault: vi.fn() }, {
+    type: 'keyDown', code: 'KeyB', key: 'b', isAutoRepeat: false, isComposing: false,
+    modifiers: ['meta'], control: false, alt: false, shift: false, meta: true,
+  })
+  expect(f.contents.send).toHaveBeenCalledWith(DESKTOP_IPC.shortcutsInput, expect.objectContaining({ kind: 'keyboard' }))
+  const close = f.keyboard.fileMenu({ fileMenu: 'File', closePage: 'Close page' }).submenu
+  expect(Array.isArray(close)).toBe(true)
+  const closeItem = Array.isArray(close) ? close[0] : undefined
+  const click = typeof closeItem === 'object' ? closeItem?.click : undefined
+  expect(click).toBeTypeOf('function')
+  click?.({} as Electron.MenuItem, {} as BrowserWindow, {} as Electron.KeyboardEvent)
+  expect(f.contents.send).toHaveBeenLastCalledWith(DESKTOP_IPC.shortcutsInput,
+    { kind: 'menu', commandId: 'page.close', revision: ready.revision })
+  f.keyboard.sendEditingKey('C', ['control'])
+  expect(f.contents.sendInputEvent).toHaveBeenCalledTimes(2)
+
+  for (const event of [{ ...f.event, sender: {} }, { ...f.event, senderFrame: null },
+    { ...f.event, senderFrame: { url: f.frame.url, parent: f.frame } }]) {
+    await expect(get(event, definitions)).rejects.toThrow('rejected sender')
+  }
+  for (const url of ['http://127.0.0.1:19906/login', 'http://127.0.0.1:19905/native/',
+    'http://127.0.0.1.example/native/', 'https://example.com/', 'dsh-app://app/']) {
+    f.frame.url = url
+    for (const [channel, args] of [
+      [DESKTOP_IPC.shortcutsGet, [definitions]],
+      [DESKTOP_IPC.shortcutsEdit, [{ type: 'reset-all' }, ready.revision]],
+      [DESKTOP_IPC.shortcutsRecording, [true]],
+      [DESKTOP_IPC.shortcutsCloseWindow, [ready.revision]],
+    ] as const) await expect(Promise.resolve().then(() => f.handlers.get(channel)!(f.event, ...args))).rejects.toThrow('unowned renderer')
+    f.contents.send.mockClear()
+    f.contents.sendInputEvent.mockClear()
+    click?.({} as Electron.MenuItem, {} as BrowserWindow, {} as Electron.KeyboardEvent)
+    f.keyboard.sendEditingKey('C', ['control'])
+    f.contents.emit('before-input-event', { preventDefault: vi.fn() }, {
+      type: 'keyDown', code: 'KeyB', key: 'b', isAutoRepeat: false, isComposing: false,
+      modifiers: ['meta'], control: false, alt: false, shift: false, meta: true,
+    })
+    expect(f.contents.send).not.toHaveBeenCalled()
+    expect(f.contents.sendInputEvent).not.toHaveBeenCalled()
+    expect(f.window.close).not.toHaveBeenCalled()
+  }
+  f.frame.url = `${origin}/native/`
+  expect(await f.call(DESKTOP_IPC.shortcutsGet, definitions)).toMatchObject({ status: 'ready', document: ready.document })
+  f.contents.send.mockClear()
+  const lateRead = f.call(DESKTOP_IPC.shortcutsGet, definitions)
+  f.frame.url = 'http://127.0.0.1:19906/login'
+  f.contents.send.mockClear()
+  await lateRead
+  expect(f.contents.send).not.toHaveBeenCalled()
 })

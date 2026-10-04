@@ -34,6 +34,10 @@ Windows 在整个运行期间常驻托盘图标。悬停提示为产品名，单
 
 ## 关键技术决策
 
+[窗口工厂](src/window.ts)创建原生窗口外观，不启动应用。调用者选择 preload、浏览器 Session、公开 preload 参数、本地化文案及可选的文档导航及外部链接规则。默认保留官方导航、系统浏览器外部链接和主窗口 webview。调用者负责重定向、frame 导航、显式 URL 加载及关闭。
+
+[快捷键 preload 工厂](src/preload-shortcuts.ts)仅返回承载标记、键盘及快捷键偏好；导入时不暴露全局变量或发送 IPC。快捷键和麦克风安装函数接受应用文档许可函数，默认允许没有 URL 凭据或端口的 `dsh-app://app`。快捷键 handler 和发出事件仍要求所属主文档；麦克风访问仍要求所属主 frame、仅音频及系统授权。
+
 设计师原稿位于 `resources/icon.png` 和 `resources/icon.svg`；平台适配保留鲸鱼与渐变，分别位于 `resources/icon-windows.*` 和 `resources/icon-macos.*`。将各平台 SVG 导出为透明的 1024×1024 PNG。electron-builder 为 Windows 应用、安装程序和卸载程序生成多尺寸 ICO（[Windows 图标要求](https://learn.microsoft.com/en-us/windows/apps/design/iconography/app-icon-construction)）。安装页面在两种主题下使用匹配的图案；卸载程序的欢迎和完成页共用 `installer/assets/uninstaller-sidebar.png`，准备阶段将其转换为 164×314 BMP。
 
 快捷键覆盖保存在 `app.getPath('userData')/keybindings.json`，与 `DSH_HOME` 分离。主进程校验并串行保存修改后才发布已接受键位。读取失败保留上次接受的键位并阻止编辑，包括全部恢复；不可读和未来版本的文件保持不变。开发时可通过 `DSH_DESKTOP_USER_DATA_DIR` 隔离这些偏好，启动器会输出解析后的路径。格式和冲突语义见[快捷键服务](../../packages/client/shortcuts/README.zh.md)。

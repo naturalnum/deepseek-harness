@@ -4,7 +4,15 @@ import { bindingKey, effectiveShortcuts, presentBinding, parseShortcutDefinition
 import type { NormalizedBinding, ShortcutConfigSnapshot, ShortcutDefinition, ShortcutPlatform, ShortcutRevision } from '@deepseek-ai/dsh-client-shortcuts/protocol'
 import type { DesktopBrowserLeaseId } from '@deepseek-ai/dsh-client-ui-sidebar-browser/types'
 import { desktopKeybindings } from './keybindings.ts'
-import { DESKTOP_IPC, assertDesktopSender } from './ipc.ts'
+import { DESKTOP_IPC, SCHEME } from './ipc.ts'
+
+function desktopApplicationFrame(url: string): boolean {
+  try {
+    const parsed = new URL(url)
+    return parsed.protocol === `${SCHEME}:` && parsed.hostname === 'app'
+      && parsed.username === '' && parsed.password === '' && parsed.port === ''
+  } catch (_error) { return false /* Invalid document URLs have no native keyboard access. */ }
+}
 
 /**
  * Install application-owned configuration handlers and attach each product window's input lifecycle.
@@ -13,11 +21,13 @@ import { DESKTOP_IPC, assertDesktopSender } from './ipc.ts'
  * @param platform - local device platform.
  * @param updateMenu - rebuild the application menu when the close accelerator or availability changes.
  * @param overlayInput - Current shell-owned input blocking state for the product window.
+ * @param applicationFrame - Allowed application document URL; defaults to the official dsh-app document.
  * @returns menu construction, editor key delivery, window attachment, and teardown operations.
  */
 export function installDesktopShortcuts(
   getWindow: () => BrowserWindow | undefined, userData: string, platform: ShortcutPlatform, updateMenu: () => void,
   overlayInput: (window: BrowserWindow) => { readonly revision: number; readonly blocked: boolean },
+  applicationFrame: (url: string) => boolean = desktopApplicationFrame,
 ): {
   fileMenu(labels: { fileMenu: string; closePage: string }): MenuItemConstructorOptions
   /**
@@ -50,6 +60,7 @@ export function installDesktopShortcuts(
   const sendMenuClose = (): void => {
     const window = getWindow()
     if (window === undefined || window.isDestroyed() || !window.isFocused() || !window.isEnabled()
+      || !applicationFrame(window.webContents.mainFrame.url)
       || revision === undefined || recording || overlayInput(window).blocked) return
     window.webContents.send(DESKTOP_IPC.shortcutsInput, { kind: 'menu', commandId: 'page.close', revision })
   }
@@ -65,7 +76,7 @@ export function installDesktopShortcuts(
     closeBinding = close?.issue === null && close.conflicts.length === 0 ? close.binding : null
     if (wasEnabled !== (revision !== undefined) || previousAccelerator !== closeAccelerator()) updateMenu()
     const window = getWindow()
-    if (window !== undefined && !window.isDestroyed() && window.webContents.mainFrame.url.startsWith('dsh-app://app/')) {
+    if (window !== undefined && !window.isDestroyed() && applicationFrame(window.webContents.mainFrame.url)) {
       window.webContents.send(DESKTOP_IPC.shortcutsChanged, snapshot)
     }
   }
@@ -74,7 +85,7 @@ export function installDesktopShortcuts(
     const window = getWindow()
     if (window === undefined || window.isDestroyed() || event.sender !== window.webContents
       || event.senderFrame !== window.webContents.mainFrame) throw new Error('desktop shortcuts: rejected sender')
-    assertDesktopSender(event, ['app'])
+    if (!applicationFrame(window.webContents.mainFrame.url)) throw new Error('desktop shortcuts: rejected IPC from an unowned renderer')
     return window
   }
   ipcMain.handle(DESKTOP_IPC.shortcutsGet, async (event, input: unknown) => {
@@ -126,6 +137,7 @@ export function installDesktopShortcuts(
       if (event.isMainFrame && !event.isSameDocument) clear()
     }
     const beforeInput = (event: Electron.Event, input: Input): void => {
+      if (window !== getWindow() || !applicationFrame(window.webContents.mainFrame.url)) { resetInput(); return }
       const overlay = overlayInput(window)
       if (overlay.revision !== overlayRevision) { resetInput(); overlayRevision = overlay.revision }
       if (overlay.blocked) { event.preventDefault(); return }
@@ -224,7 +236,8 @@ export function installDesktopShortcuts(
   return {
     sendEditingKey(keyCode, modifiers) {
       const window = getWindow()
-      if (window === undefined || window.isDestroyed() || overlayInput(window).blocked) return
+      if (window === undefined || window.isDestroyed() || !applicationFrame(window.webContents.mainFrame.url)
+        || overlayInput(window).blocked) return
       const contents = [...guestInputs].find(([guest, owner]) => owner.window === window && !guest.isDestroyed() && guest.isFocused())?.[0]
         ?? window.webContents
       contents.focus()
