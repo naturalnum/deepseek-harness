@@ -12,11 +12,21 @@ const resourcePath = z.string().min(1).max(4096).refine(value => !isAbsolute(val
   && physicalPath(value)
   && !/[\\:\u0000-\u001f\u007f]/u.test(value)
   && value.split('/').every(part => part !== '' && part !== '.' && part !== '..'))
+const workerMilliseconds = z.number().int().min(100).max(60000)
+const workerParameters = z.object({
+  image: z.string().regex(/^sha256:[a-f0-9]{64}$/u),
+  pollMs: workerMilliseconds, contactGraceMs: workerMilliseconds,
+  commandPollMs: z.number().int().min(10).max(60000), platformRequestTimeoutMs: workerMilliseconds,
+  dockerCommandTimeoutMs: workerMilliseconds, dockerStopTimeoutMs: workerMilliseconds,
+  dockerStopGraceSeconds: z.number().int().min(0).max(30),
+  directoryPickerTimeoutMs: z.number().int().min(1000).max(120000), fileOperationTimeoutMs: workerMilliseconds,
+}).strict().refine(value => value.dockerStopTimeoutMs > value.dockerStopGraceSeconds * 1000)
 const descriptor = z.object({
   kind: z.literal('power-evolve-desktop'), version: z.literal(1),
   deployment: z.unknown(),
   runtime: z.object({ nodeExecutable: resourcePath, cliEntrypoint: resourcePath,
-    pythonExecutable: resourcePath, fileHelper: resourcePath }).strict(),
+    pythonExecutable: resourcePath, fileHelper: resourcePath, deviceBundle: resourcePath }).strict(),
+  worker: workerParameters,
   device: z.object({
     profile: z.string(), loopbackOrigin: z.string(),
     startupTimeoutMs: z.number(), requestTimeoutMs: z.number(), quiesceTimeoutMs: z.number(), exitTimeoutMs: z.number(),
@@ -28,12 +38,14 @@ const descriptor = z.object({
 export interface InstalledDesktopConfig {
   readonly config: CloudDesktopConfig
   readonly deviceConfig: ReturnType<typeof parseDesktopDeviceConfig>
+  readonly worker: z.infer<typeof workerParameters>
   readonly resources: {
     readonly root: string
     readonly nodeExecutable: string
     readonly cliEntrypoint: string
     readonly pythonExecutable: string
     readonly fileHelper: string
+    readonly deviceBundle: string
   }
   readonly state: {
     readonly productUserDataPath: string
@@ -55,7 +67,7 @@ function directory(path: string): string {
   if (!physicalPath(resolved) || !statSync(resolved).isDirectory()) throw invalid()
   return resolved
 }
-function file(root: string, path: string, executable = false): string {
+function resource(root: string, path: string): string {
   const parts = resourcePath.parse(path).split('/')
   // A contained relative alias is allowed; an intermediate alias cannot leave the resource root.
   for (let index = 1; index <= parts.length; index++) {
@@ -63,8 +75,19 @@ function file(root: string, path: string, executable = false): string {
     if (!physicalPath(resolved) || !contains(root, resolved)) throw invalid()
   }
   const resolved = realpathSync(join(root, ...parts))
-  if (!physicalPath(resolved) || !statSync(resolved).isFile()) throw invalid()
+  if (!physicalPath(resolved)) throw invalid()
+  return resolved
+}
+function file(root: string, path: string, executable = false): string {
+  const resolved = resource(root, path)
+  if (!statSync(resolved).isFile()) throw invalid()
   accessSync(resolved, constants.R_OK | (executable ? constants.X_OK : 0))
+  return resolved
+}
+function resourceDirectory(root: string, path: string): string {
+  const resolved = resource(root, path)
+  if (!statSync(resolved).isDirectory()) throw invalid()
+  accessSync(resolved, constants.R_OK | constants.X_OK)
   return resolved
 }
 function readDescriptor(root: string): unknown {
@@ -105,7 +128,9 @@ function stateDirectory(root: string, ...parts: string[]): string {
  * Read the fixed installed description under Electron's main-selected resources directory.
  * Internal resource aliases must resolve to ordinary physical files inside that directory; ASAR
  * entries are refused, while physical .asar.unpacked resources are allowed. Node and Python must
- * be executable. The existing origin and lifecycle-budget parsers remain authoritative.
+ * be executable. The Device bundle directory remains inside resources. Worker timing is explicit
+ * and the Runner image is an already-local immutable Docker image ID. The existing origin and
+ * lifecycle-budget parsers remain authoritative.
  * User state derives only from the existing owner-only product directory and never from environment
  * variables, descriptor fields or launch arguments. Missing state directories are returned without
  * creation; the later bootstrap creates the fixed working directory and official Device Profile.
@@ -121,6 +146,7 @@ export function readInstalledDesktopConfig(options: { resourcesPath: string; pro
       root, nodeExecutable: file(root, data.runtime.nodeExecutable, true),
       cliEntrypoint: file(root, data.runtime.cliEntrypoint),
       pythonExecutable: file(root, data.runtime.pythonExecutable, true), fileHelper: file(root, data.runtime.fileHelper),
+      deviceBundle: resourceDirectory(root, data.runtime.deviceBundle),
     }
     const productUserDataPath = privateRoot(options.productUserDataPath, root)
     const state = {
@@ -132,7 +158,7 @@ export function readInstalledDesktopConfig(options: { resourcesPath: string; pro
     const deviceConfig = parseDesktopDeviceConfig({ ...data.device, nodeExecutable: resources.nodeExecutable,
       cliEntrypoint: resources.cliEntrypoint, homeDir: state.homeDir, workingDir: state.workingDir })
     if ([config.hostOrigin, config.platformOrigin].includes(deviceConfig.loopbackOrigin)) throw invalid()
-    return { config, deviceConfig, resources, state }
+    return { config, deviceConfig, worker: data.worker, resources, state }
   } catch (_invalidConfiguration) {
     // Parser and filesystem errors can contain private paths or untrusted descriptor values.
     throw invalid()

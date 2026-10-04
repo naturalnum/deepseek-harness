@@ -12,7 +12,10 @@ function description() {
     kind: 'power-evolve-desktop', version: 1,
     deployment: { hostOrigin: 'https://host.example/', platformOrigin: 'https://platform.example' },
     runtime: { nodeExecutable: 'node/bin/node', cliEntrypoint: 'cli/lib/bin.js',
-      pythonExecutable: 'python/bin/python3', fileHelper: 'application/.src/device/local-files.py' },
+      pythonExecutable: 'python/bin/python3', fileHelper: 'application/.src/device/local-files.py', deviceBundle: 'device-bundle' },
+    worker: { image: 'sha256:' + 'a'.repeat(64), pollMs: 500, contactGraceMs: 5000, commandPollMs: 250,
+      platformRequestTimeoutMs: 10000, dockerCommandTimeoutMs: 15000, dockerStopTimeoutMs: 10000,
+      dockerStopGraceSeconds: 2, directoryPickerTimeoutMs: 120000, fileOperationTimeoutMs: 10000 },
     device: { profile: 'power-evolve-device', loopbackOrigin: 'http://127.0.0.1:20891/',
       startupTimeoutMs: 30000, requestTimeoutMs: 3000, quiesceTimeoutMs: 60000, exitTimeoutMs: 10000,
       maxOutputBytes: 65536, maxMessageBytes: 262144, maxHealthBytes: 4096 },
@@ -26,6 +29,7 @@ function fixture(t: TestContext) {
   const data = description()
   for (const [name, path] of Object.entries(data.runtime)) {
     const absolute = join(resourcesPath, path)
+    if (name === 'deviceBundle') { mkdirSync(absolute); continue }
     mkdirSync(join(absolute, '..'), { recursive: true })
     writeFileSync(absolute, 'component fixture; not an interpreter\n', { mode: name.endsWith('Executable') ? 0o700 : 0o600 })
   }
@@ -46,6 +50,8 @@ test('reads a fixed description, normalizes origins and derives stable state wit
   assert.equal(value.resources.pythonExecutable, realpathSync(join(f.resourcesPath, f.data.runtime.pythonExecutable)))
   assert.equal(value.resources.cliEntrypoint, realpathSync(join(f.resourcesPath, f.data.runtime.cliEntrypoint)))
   assert.equal(value.resources.fileHelper, realpathSync(join(f.resourcesPath, f.data.runtime.fileHelper)))
+  assert.equal(value.resources.deviceBundle, realpathSync(join(f.resourcesPath, f.data.runtime.deviceBundle)))
+  assert.deepEqual(value.worker, f.data.worker)
   const user = realpathSync(f.productUserDataPath)
   assert.deepEqual(value.state, { productUserDataPath: user, homeDir: join(user, 'device/home'),
     workingDir: join(user, 'device/work'), privateDir: join(user, 'device/private'), coordinationRoot: join(user, 'device-writers') })
@@ -140,7 +146,7 @@ test('rejects missing and nonregular physical resources and nonexecutable interp
   const f = fixture(t)
   mkdirSync(join(f.resourcesPath, 'directory'))
   for (const key of Object.keys(f.data.runtime)) {
-    for (const value of ['missing', 'directory']) {
+    for (const value of ['missing', key === 'deviceBundle' ? f.data.runtime.cliEntrypoint : 'directory']) {
       f.write({ ...f.data, runtime: { ...f.data.runtime, [key]: value } }); rejects(f)
     }
   }
@@ -183,13 +189,28 @@ test('refuses ASAR entry paths and aliases but permits physical unpacked resourc
   }
   for (const key of Object.keys(f.data.runtime)) {
     for (const directory of ['runtime.asar', 'CAPITAL.ASAR']) {
-      f.write({ ...f.data, runtime: { ...f.data.runtime, [key]: `${directory}/node` } }); rejects(f)
+      f.write({ ...f.data, runtime: { ...f.data.runtime, [key]: key === 'deviceBundle' ? directory : `${directory}/node` } }); rejects(f)
     }
   }
   symlinkSync('runtime.asar/node', join(f.resourcesPath, 'asar-alias'))
   f.write({ ...f.data, runtime: { ...f.data.runtime, nodeExecutable: 'asar-alias' } }); rejects(f)
   f.write({ ...f.data, runtime: { ...f.data.runtime, nodeExecutable: 'runtime.asar.unpacked/node' } })
   assert.equal(readInstalledDesktopConfig(f).resources.nodeExecutable, realpathSync(join(f.resourcesPath, 'runtime.asar.unpacked/node')))
+})
+
+test('requires explicit worker limits and an immutable already-local Runner image', t => {
+  const f = fixture(t)
+  const { worker: _worker, ...withoutWorker } = f.data
+  f.write(withoutWorker); rejects(f)
+  for (const worker of [{ ...f.data.worker, image: 'runner:latest' }, { ...f.data.worker, env: {} },
+    { ...f.data.worker, platformUrl: 'https://other.example' }, { ...f.data.worker, privateDir: '/other' },
+    { ...f.data.worker, dockerStopGraceSeconds: 10 }, { ...f.data.worker, directoryPickerTimeoutMs: 120001 }]) {
+    f.write({ ...f.data, worker }); rejects(f)
+  }
+  for (const key of ['pollMs', 'contactGraceMs', 'commandPollMs', 'platformRequestTimeoutMs',
+    'dockerCommandTimeoutMs', 'dockerStopTimeoutMs', 'fileOperationTimeoutMs']) {
+    for (const value of [0, 1.5, 60001]) { f.write({ ...f.data, worker: { ...f.data.worker, [key]: value } }); rejects(f) }
+  }
 })
 
 test('bounds the fixed descriptor and rejects missing, malformed, directory and escaping descriptions', t => {

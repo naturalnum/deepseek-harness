@@ -29,7 +29,7 @@ The local menu or native execution picker starts the owned Device child and open
 
 The [process adapter](src/device-process.ts) validates the owned child PID, per-launch identity, readiness and bounded health response. Private [lifecycle messages](../contracts/src/device-lifecycle.ts) close admission and drain owned actions before termination. Quit waits for actual child exit and local window cleanup. An incomplete drain retains the original records and reports uncertainty; process exit alone does not establish a stopped execution. Quitting does not cancel Cloud tasks.
 
-The [installed resource reader](src/installed-config.ts) validates a fixed `power-evolve-desktop.json` below main-selected resources. Node, CLI, Python and the file helper must resolve to physical files within that directory; ASAR entries are refused. It derives version-independent Device state from the existing private product userData directory. Main integration and Profile preparation remain pending; this reader alone enables no installed startup.
+The [installed resource reader](src/installed-config.ts) validates a fixed `power-evolve-desktop.json` below main-selected resources. Node, CLI, Python, the file helper and Device bundle must resolve within that directory; ASAR entries are refused. Worker timing is explicit and the Runner uses an already-local immutable image ID. The reader derives version-independent Device state from the existing private product userData directory. Main integration and Profile preparation remain pending; this reader alone enables no installed startup.
 
 ## Browser and native permissions
 
