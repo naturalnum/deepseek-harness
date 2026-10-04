@@ -63,6 +63,7 @@ import { artifactPublishRequest, executionFilesRequest,
   EXECUTION_FILES_PLATFORM_PATH } from '@power-evolve/contracts/execution-files'
 import { LoginAdmission } from './login-admission.ts'
 import { DeviceService } from './devices.ts'
+import { deviceClaimRequest, deviceContainerRegistration, deviceFinishRequest } from '@power-evolve/contracts/device-execution'
 import { KubernetesClient } from './kubernetes.ts'
 import { SandboxManager } from './sandbox.ts'
 import { proxyModel } from './model.ts'
@@ -563,16 +564,16 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
           sendJson(res, await devices.jobs(token, value.instanceId)); return
         }
         case '/devices/agent/claim': {
-          const value = z.object({ instanceId: z.uuid(), executionId: z.uuid() }).strict().parse(input)
-          sendJson(res, await devices.claim(token, value.instanceId, value.executionId)); return
+          const value = deviceClaimRequest.parse(input)
+          sendJson(res, await devices.claim(token, value.instanceId, value.executionId, value.processId)); return
+        }
+        case '/devices/agent/register': {
+          const value = deviceContainerRegistration.parse(input)
+          sendJson(res, await devices.register(token, value)); return
         }
         case '/devices/agent/finish': {
-          const value = z.object({ instanceId: z.uuid(), executionId: z.uuid(), result: z.object({
-            state: z.enum(['succeeded', 'failed', 'cancelled', 'uncertain']), exitCode: z.number().int().nullable(),
-            stdout: z.string().max(65_536), stderr: z.string().max(65_536),
-            stdoutTruncated: z.boolean(), stderrTruncated: z.boolean(), timedOut: z.boolean(),
-          }).strict() }).strict().parse(input)
-          sendJson(res, await devices.finish(token, value.instanceId, value.executionId, value.result)); return
+          const value = deviceFinishRequest.parse(input)
+          sendJson(res, await devices.finish(token, value)); return
         }
         default: throw new PlatformError(404, 'not_found')
       }

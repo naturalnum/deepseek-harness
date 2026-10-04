@@ -1,40 +1,19 @@
 /** Docker ownership checks for a durable device journal; observations alone are not writer-stop receipts. */
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
 import { z } from 'zod'
 
-/** Exact Docker container ID, never a name or shortened prefix. */
-export type DeviceContainerId = Branded<'power-evolve/DeviceContainerId'>
-/** Local immutable Docker image ID, rather than a mutable tag. */
-export type DeviceContainerImageId = Branded<'power-evolve/DeviceContainerImageId'>
-/** Device identity frozen at creation. */
-export type ContainerDeviceId = Branded<'power-evolve/ContainerDeviceId'>
-/** Enrollment generation frozen at creation. */
-export type ContainerEnrollmentId = Branded<'power-evolve/ContainerEnrollmentId'>
-/** Durable desktop execution identity. */
-export type ContainerExecutionId = Branded<'power-evolve/ContainerExecutionId'>
-/** Unique creation intent persisted by the worker before Docker create. */
-export type ContainerCreationId = Branded<'power-evolve/ContainerCreationId'>
-/** Digest of the accepted execution request. */
-export type ContainerRequestDigest = Branded<'power-evolve/ContainerRequestDigest'>
+import { ownedContainerOwner, ownedContainerReceipt, type OwnedContainerOwner,
+  type OwnedContainerReceipt, type DeviceContainerId, type DeviceContainerImageId } from '@power-evolve/contracts/device-execution'
+/** Shared durable owner and container validators used by both Device and Platform. */
+export { ownedContainerOwner, ownedContainerReceipt }
+/** Shared immutable identity types retained for existing Docker adapter consumers. */
+export type { DeviceContainerId, DeviceContainerImageId, ContainerDeviceId, ContainerEnrollmentId,
+  ContainerExecutionId, ContainerCreationId, ContainerRequestDigest, OwnedContainerOwner,
+  OwnedContainerReceipt } from '@power-evolve/contracts/device-execution'
 
-const containerId = z.string().regex(/^[a-f0-9]{64}$/u).transform(value => brandString<DeviceContainerId>(value))
-const imageId = z.string().regex(/^sha256:[a-f0-9]{64}$/u).transform(value => brandString<DeviceContainerImageId>(value))
-/** Parse frozen owner fields at the persisted journal boundary. */
-export const ownedContainerOwner = z.object({
-  deviceId: z.uuid().transform(value => brandString<ContainerDeviceId>(value)),
-  enrollmentId: z.uuid().transform(value => brandString<ContainerEnrollmentId>(value)),
-  executionId: z.uuid().transform(value => brandString<ContainerExecutionId>(value)),
-  creationId: z.uuid().transform(value => brandString<ContainerCreationId>(value)),
-  requestDigest: z.string().regex(/^[a-f0-9]{64}$/u).transform(value => brandString<ContainerRequestDigest>(value)),
-}).strict()
-/** Owner shared by the journal, creation labels, and every later identity check. */
-export type OwnedContainerOwner = z.infer<typeof ownedContainerOwner>
-/** Validate a captured immutable identity before recovering any existing journal entry. */
-export const ownedContainerReceipt = z.object({ containerId, imageId, owner: ownedContainerOwner }).strict()
-/** Capture that the worker must durably save before the first start request. */
-export type OwnedContainerReceipt = z.infer<typeof ownedContainerReceipt>
+const containerId = ownedContainerReceipt.shape.containerId
+const imageId = ownedContainerReceipt.shape.imageId
 
 /** Stable labels owned exclusively by this module. */
 export const OWNED_DEVICE_CONTAINER_LABELS = {

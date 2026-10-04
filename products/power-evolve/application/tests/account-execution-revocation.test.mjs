@@ -12,6 +12,7 @@ import * as migrations from '../lib/platform/schema.js'
 import { McpConnectionService } from '../lib/platform/mcp-connections.js'
 import { seedV21Session, seedV22Mcp } from './legacy-mcp-backup-fixture.mjs'
 import { DeviceService } from '../lib/platform/devices.js'
+import { registrationFor, finishFor } from './device-execution-protocol-fixture.mjs'
 import { identity } from '../lib/contracts.js'
 import { initializeDatabase, transaction } from '../lib/platform/database.js'
 import { revokeAccountExecutions } from '../lib/platform/account-execution-revocation.js'
@@ -193,17 +194,19 @@ test('Desktop cancellation remains visible to its enrolled worker and late outpu
   await f.operation(f.alice, { kind: 'desktop', deviceId: device.deviceId, directoryId: directory.directoryId })
   const grant = await f.tasks.claim(randomUUID())
   const receipt = await devices.propose(grant.token, 'desktop-call', 'synthetic-command', '.')
-  await devices.claim(device.token, instance, receipt.executionId)
+  const processId = randomUUID(), enrolled = { ...device, instanceId: instance }
+  const claimed = await devices.claim(device.token, instance, receipt.executionId, processId)
+  await devices.register(device.token, registrationFor(enrolled, claimed))
   await f.revoke(f.alice)
   const pending = await devices.jobs(device.token, instance)
   assert.equal(pending.jobs[0].cancelRequested, true)
   assert.equal(pending.jobs[0].state, 'cancelling')
-  await assert.rejects(devices.claim(device.token, instance, receipt.executionId), { status: 401 })
+  await assert.rejects(devices.claim(device.token, instance, receipt.executionId, processId), { status: 401 })
   await f.enable(f.alice)
-  await assert.rejects(devices.claim(device.token, instance, receipt.executionId), { code: 'desktop_execution_unavailable' })
+  await assert.rejects(devices.claim(device.token, instance, receipt.executionId, processId), { code: 'desktop_execution_unavailable' })
   const result = { state: 'succeeded', exitCode: 0, stdout: 'observed desktop output', stderr: '',
     stdoutTruncated: false, stderrTruncated: false, timedOut: false }
-  const finished = await devices.finish(device.token, instance, receipt.executionId, result)
+  const finished = await devices.finish(device.token, finishFor(enrolled, claimed, result))
   assert.equal(finished.state, 'uncertain'); assert.deepEqual(finished.result, result)
   assert.equal(finished.errorCode, 'account_disabled')
   assert.equal((await f.pool.query("SELECT count(*)::integer AS n FROM pe_operations WHERE source='desktop_result'")).rows[0].n, 0)

@@ -9,6 +9,7 @@ import { createRequire } from 'node:module'
 import { DeviceFixtureService as DeviceService } from './task-credential-fixture.mjs'
 import { FileService } from '../lib/platform/files.js'
 import { initializeDatabase } from '../lib/platform/database.js'
+import { registrationFor, finishFor } from './device-execution-protocol-fixture.mjs'
 
 const require = createRequire(new URL('../package.json', import.meta.url))
 const { Pool } = require('pg')
@@ -77,17 +78,20 @@ test('desktop device ownership, file transfer and durable result', { timeout: 60
   await assert.rejects(devices.propose('alice-grant', 'call-2', 'echo parallel', ''), /execution_busy/)
   await assert.rejects(devices.cancel(bob, accepted.executionId), /execution_not_found/)
   assert.equal((await devices.jobs(bobDevice.token, (await pool.query('SELECT instance_id FROM pe_devices WHERE id=$1', [bobDevice.deviceId])).rows[0].instance_id)).jobs.length, 0)
-  await assert.rejects(devices.claim(enrollment.token, randomUUID(), accepted.executionId), /device_instance_changed/)
-  await devices.claim(enrollment.token, instanceId, accepted.executionId)
-  await devices.claim(enrollment.token, instanceId, accepted.executionId)
+  await assert.rejects(devices.claim(enrollment.token, randomUUID(), accepted.executionId, randomUUID()), /device_instance_changed/)
+  const enrolled = { ...enrollment, instanceId }, processId = randomUUID()
+  const claimed = await devices.claim(enrollment.token, instanceId, accepted.executionId, processId)
+  await devices.claim(enrollment.token, instanceId, accepted.executionId, processId)
+  await devices.register(enrollment.token, registrationFor(enrolled, claimed))
   const result = { state: 'succeeded', exitCode: 0, stdout: 'local\u0000表😀\n', stderr: 'literal \\u0000',
     stdoutTruncated: false, stderrTruncated: false, timedOut: false }
-  const completed = await devices.finish(enrollment.token, instanceId, accepted.executionId, result)
+  const stopReport = finishFor(enrolled, claimed, result)
+  const completed = await devices.finish(enrollment.token, stopReport)
   assert.equal(completed.state, 'succeeded')
   assert.deepEqual(completed.result, result)
-  assert.equal((await devices.finish(enrollment.token, instanceId, accepted.executionId, result)).state, 'succeeded')
-  await assert.rejects(devices.finish(enrollment.token, instanceId, accepted.executionId,
-    { ...result, stdout: 'different' }), /result_conflict/)
+  assert.equal((await devices.finish(enrollment.token, stopReport)).state, 'succeeded')
+  await assert.rejects(devices.finish(enrollment.token,
+    { ...stopReport, result: { ...result, stdout: 'different' } }), /stop_record_conflict/)
   assert.equal((await pool.query("SELECT count(*) FROM pe_operations WHERE source='desktop_result'")).rows[0].count, '1')
   assert.deepEqual((await pool.query('SELECT result FROM pe_desktop_executions WHERE id=$1', [accepted.executionId])).rows[0].result, result)
   const continuation = (await pool.query("SELECT input FROM pe_operations WHERE source='desktop_result'")).rows[0].input
@@ -105,9 +109,10 @@ test('desktop device ownership, file transfer and durable result', { timeout: 60
     [operationId, JSON.stringify({ kind: 'desktop', deviceId: enrollment.deviceId,
       directoryId: replacementDirectory.directoryId })])
   const interrupted = await devices.propose('alice-grant', 'call-interrupted', 'echo maybe', '')
-  await devices.claim(enrollment.token, instanceId, interrupted.executionId)
+  const interruptedClaim = await devices.claim(enrollment.token, instanceId, interrupted.executionId, randomUUID())
+  await devices.register(enrollment.token, registrationFor(enrolled, interruptedClaim))
   await devices.revokeDirectory(alice, replacementDirectory.directoryId)
-  assert.equal((await devices.finish(enrollment.token, instanceId, interrupted.executionId, result)).state, 'uncertain')
+  assert.equal((await devices.finish(enrollment.token, finishFor(enrolled, interruptedClaim, result))).state, 'uncertain')
   await devices.revoke(alice, enrollment.deviceId)
   await assert.rejects(devices.jobs(enrollment.token, instanceId), /device_unauthorized/)
 })

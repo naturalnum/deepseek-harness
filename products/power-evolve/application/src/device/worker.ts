@@ -5,6 +5,8 @@ import { link, lstat, open, readFile, realpath, rename, rm } from 'node:fs/promi
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
+import { deviceClaim, deviceJob, deviceContainerRegistration, deviceContainerRegistered,
+  deviceStopObservation, deviceExecutionResult, deviceFinishRequest, deviceFinishReceipt } from '@power-evolve/contracts/device-execution'
 import { DeviceProcessLock } from './process-lock.ts'
 import { OwnedDeviceContainer, ownedContainerOwner, ownedContainerReceipt } from './owned-container.ts'
 
@@ -14,33 +16,31 @@ const deviceState = z.object({
 }).strict()
 type DeviceState = z.infer<typeof deviceState>
 const journalEntry = z.object({
-  id: z.uuid(), container: z.string(), stage: z.enum(['claimed', 'created', 'started', 'finished']),
+  id: z.uuid(), container: z.string(), stage: z.enum(['claiming', 'claimed', 'created', 'started', 'finished']),
   owner: ownedContainerOwner.optional(), receipt: ownedContainerReceipt.optional(),
+  queuedJob: deviceJob.optional(),
+  claimed: deviceClaim.optional(), processId: deviceClaim.shape.processId.optional(),
+  dispatchId: deviceClaim.shape.dispatchId.optional(), stopRequestId: deviceFinishRequest.shape.requestId.optional(),
   imageId: ownedContainerReceipt.shape.imageId.optional(),
-  stopObservation: z.object({ receipt: ownedContainerReceipt, Running: z.literal(false),
-    ExitCode: z.number().int(), Status: z.enum(['created', 'exited', 'dead']),
-    StartedAt: z.string(), FinishedAt: z.string() }).strict().optional(),
-  startedAt: z.number(), result: z.object({
-    state: z.enum(['succeeded', 'failed', 'cancelled', 'uncertain']), exitCode: z.number().int().nullable(),
-    stdout: z.string().max(65_536), stderr: z.string().max(65_536), stdoutTruncated: z.boolean(), stderrTruncated: z.boolean(),
-    timedOut: z.boolean(),
-  }).strict().optional(),
+  stopObservation: deviceStopObservation.optional(),
+  startedAt: z.number(), result: deviceExecutionResult.optional(),
 }).strict().superRefine((entry, ctx) => {
   if (entry.owner && entry.owner.executionId !== entry.id
     || entry.receipt && (entry.receipt.owner.executionId !== entry.id
       || JSON.stringify(entry.receipt.owner) !== JSON.stringify(entry.owner)
       || entry.receipt.imageId !== entry.imageId)
-    || entry.stopObservation && JSON.stringify(entry.stopObservation.receipt) !== JSON.stringify(entry.receipt)) {
+    || entry.stopObservation && JSON.stringify(entry.stopObservation.receipt) !== JSON.stringify(entry.receipt)
+    || entry.claimed && (entry.claimed.executionId !== entry.id || entry.claimed.processId !== entry.processId
+      || entry.claimed.dispatchId !== entry.dispatchId || entry.claimed.digest !== entry.owner?.requestDigest)
+    || entry.dispatchId && entry.owner?.creationId !== entry.dispatchId
+    || entry.queuedJob && (entry.queuedJob.executionId !== entry.id || entry.queuedJob.state !== 'queued')
+    || entry.stage === 'claiming' && (!entry.queuedJob || !entry.processId || entry.claimed || entry.dispatchId
+      || entry.owner || entry.imageId || entry.receipt || entry.stopObservation || entry.stopRequestId || entry.result)) {
     ctx.addIssue({ code: 'custom', message: 'device_journal_identity_mismatch' })
   }
 })
 type JournalEntry = z.infer<typeof journalEntry>
-const claimedJob = z.object({ executionId: z.uuid(), directoryId: z.uuid(), command: z.string(),
-  cwd: z.string(), timeoutMs: z.number().int().positive(), digest: z.string().regex(/^[a-f0-9]{64}$/) }).strict()
-const jobRecord = claimedJob.extend({ state: z.enum(['queued', 'running', 'cancelling']), cancelRequested: z.boolean() })
-type Job = z.infer<typeof jobRecord>
-const executionReceipt = z.object({ executionId: z.uuid(),
-  state: z.enum(['succeeded', 'failed', 'cancelled', 'uncertain']) }).passthrough()
+type Job = z.infer<typeof deviceJob>
 
 /** Profile-selected polling and loss-of-contact deadlines for the local worker. */
 export interface DesktopWorkerOptions {
@@ -60,6 +60,7 @@ export class DesktopWorker {
   private readonly journalPath: string
   private state: DeviceState | null = null
   private readonly journal = new Map<string, JournalEntry>()
+  private readonly processId = deviceClaim.shape.processId.parse(randomUUID())
   private processLock: DeviceProcessLock | null = null
   private initialization: Promise<void> | null = null
   private closing: Promise<void> | null = null
@@ -300,13 +301,18 @@ export class DesktopWorker {
         if (this.state) {
           if (!this.active) {
             for (const entry of this.journal.values()) {
+              if (entry.stage === 'claiming') {
+                if (entry.processId !== this.processId) throw new Error('device_claiming_requires_review')
+                this.activate(this.resumeClaim(this.state, entry))
+                break
+              }
               await this.recover(this.state, entry)
               if (this.stop.signal.aborted) break
             }
           }
           if (this.stop.signal.aborted) break
           const result = await this.call('/devices/agent/jobs', { instanceId: this.state.instanceId },
-            z.object({ jobs: z.array(jobRecord).max(20), directories: z.array(z.uuid()) }).strict(), this.state.token)
+            z.object({ jobs: z.array(deviceJob).max(20), directories: z.array(z.uuid()) }).strict(), this.state.token)
           this.lastContact = Date.now()
           if (!this.active && this.journal.size === 0) this.notice = ''
           const allowed = new Set(result.directories)
@@ -319,12 +325,7 @@ export class DesktopWorker {
           for (const job of result.jobs) this.jobs.set(job.executionId, job)
           if (!this.active && this.journal.size === 0 && this.localActions.size === 0 && !this.stop.signal.aborted) {
             const next = result.jobs[0]
-            if (next) {
-              const running = this.run(next).catch((error: unknown) => {
-                this.notice = error instanceof Error ? error.message : 'device_error'
-              }).finally(() => { if (this.active === running) this.active = null })
-              this.active = running
-            }
+            if (next) this.activate(this.run(next))
           }
         }
       } catch (error) { this.notice = error instanceof Error ? error.message : 'platform_unavailable' }
@@ -333,7 +334,14 @@ export class DesktopWorker {
     }
   }
 
-  private requestDigest(state: DeviceState, job: z.infer<typeof claimedJob>): string {
+  private activate(operation: Promise<void>): void {
+    const running = operation.catch((error: unknown) => {
+      this.notice = error instanceof Error ? error.message : 'device_error'
+    }).finally(() => { if (this.active === running) this.active = null })
+    this.active = running
+  }
+
+  private requestDigest(state: DeviceState, job: Pick<z.infer<typeof deviceClaim>, 'command' | 'cwd' | 'timeoutMs' | 'directoryId'>): string {
     return createHash('sha256').update(JSON.stringify({ command: job.command, cwd: job.cwd,
       timeoutMs: job.timeoutMs, deviceId: state.deviceId, directoryId: job.directoryId })).digest('hex')
   }
@@ -342,35 +350,63 @@ export class DesktopWorker {
     if (!entry.receipt) return false
     const observed = await this.containers.inspect(entry.receipt)
     if (!observed || observed.Running) return false
-    const stopped = journalEntry.shape.stopObservation.unwrap().safeParse({ ...observed, receipt: entry.receipt })
+    const stopped = deviceStopObservation.safeParse({ ...observed, receipt: entry.receipt })
     if (!stopped.success) return false
     entry.stopObservation = stopped.data
     await this.saveJournal()
     return true
   }
 
+  private originalClaim(state: DeviceState, entry: JournalEntry): z.infer<typeof deviceClaim> {
+    if (!entry.owner || !entry.claimed || !entry.processId || !entry.dispatchId
+      || entry.owner.deviceId !== state.deviceId || entry.owner.enrollmentId !== state.instanceId) {
+      throw new Error('device_legacy_journal_requires_review')
+    }
+    if (entry.claimed.executionId !== entry.id || entry.claimed.processId !== entry.processId
+      || entry.claimed.dispatchId !== entry.dispatchId || entry.owner.creationId !== entry.dispatchId
+      || entry.claimed.digest !== entry.owner.requestDigest
+      || entry.claimed.digest !== this.requestDigest(state, entry.claimed)) throw new Error('device_dispatch_changed')
+    return entry.claimed
+  }
+
+  private async register(state: DeviceState, entry: JournalEntry): Promise<boolean> {
+    const claimed = this.originalClaim(state, entry)
+    if (!entry.receipt) throw new Error('device_container_identity_missing')
+    const input = deviceContainerRegistration.parse({ instanceId: state.instanceId, executionId: entry.id,
+      processId: claimed.processId, dispatchId: claimed.dispatchId, receipt: entry.receipt })
+    const accepted = await this.call('/devices/agent/register', input, deviceContainerRegistered, state.token)
+    if (accepted.executionId !== entry.id || accepted.dispatchId !== claimed.dispatchId
+      || JSON.stringify(accepted.receipt) !== JSON.stringify(entry.receipt)) throw new Error('device_registration_identity_mismatch')
+    return accepted.canStart
+  }
+
   private async recover(state: DeviceState, entry: JournalEntry): Promise<void> {
-    if (!entry.owner || !entry.imageId || entry.owner.deviceId !== state.deviceId
-      || entry.owner.enrollmentId !== state.instanceId) throw new Error('device_legacy_journal_requires_review')
+    this.originalClaim(state, entry)
+    if (!entry.owner || !entry.imageId) throw new Error('device_container_identity_missing')
     if (!entry.receipt) {
       const receipt = await this.containers.findCreated({ name: entry.container, imageId: entry.imageId, owner: entry.owner })
       if (!receipt) throw new Error('device_container_identity_missing')
       entry.receipt = receipt
       await this.saveJournal()
     }
-    if (!entry.stopObservation) {
-      const observed = await this.containers.inspect(entry.receipt)
-      if (!observed) throw new Error('device_stop_observation_missing')
-      if (observed.Running) {
-        try { await this.containers.stop(entry.receipt) }
-        catch (_stopUnconfirmed) { /* Only a subsequent exact-ID observation can record termination. */ }
-      }
-      if (!await this.observeStopped(entry)) throw new Error('device_stop_observation_missing')
+    let registrationFailure: unknown
+    try { await this.register(state, entry) }
+    catch (error: unknown) { registrationFailure = error }
+    // A failed remote registration cannot prevent this Device from stopping its exact old writer.
+    const observed = await this.containers.inspect(entry.receipt)
+    if (observed?.Running) {
+      delete entry.stopObservation
+      entry.result = uncertain()
+      await this.saveJournal()
+      try { await this.containers.stop(entry.receipt) }
+      catch (_stopUnconfirmed) { /* Only a subsequent exact-ID observation can record termination. */ }
     }
+    if (!entry.stopObservation && !await this.observeStopped(entry)) throw new Error('device_stop_observation_missing')
     // A cold recovery never starts an old created container or repeats its command.
     entry.result ??= uncertain()
     entry.stage = 'finished'
     await this.saveJournal()
+    if (registrationFailure !== undefined) throw registrationFailure
     await this.report(state, entry)
   }
 
@@ -385,14 +421,30 @@ export class DesktopWorker {
       this.notice = 'device_container_identity_missing'
       return
     }
-    const claimed = await this.call('/devices/agent/claim', { instanceId: state.instanceId, executionId: id }, claimedJob, state.token)
+    const entry: JournalEntry = { id, container: name, queuedJob: job, processId: this.processId,
+      stage: 'claiming', startedAt: Date.now() }
+    this.journal.set(id, entry)
+    // Commit the frozen request before a remote claim can commit without its HTTP acknowledgement.
+    await this.saveJournal()
+    await this.resumeClaim(state, entry)
+  }
+
+  private async resumeClaim(state: DeviceState, entry: JournalEntry): Promise<void> {
+    const job = entry.queuedJob, id = entry.id, name = entry.container
+    if (entry.stage !== 'claiming' || entry.processId !== this.processId || !job) throw new Error('device_claiming_requires_review')
+    if (job.digest !== this.requestDigest(state, job)) throw new Error('device_dispatch_changed')
+    if (this.stop.signal.aborted) throw new Error('device_closed_before_claim')
+    const claimed = await this.call('/devices/agent/claim', { instanceId: state.instanceId, executionId: id,
+      processId: entry.processId }, deviceClaim, state.token)
     if (claimed.executionId !== id || claimed.directoryId !== job.directoryId || claimed.command !== job.command
       || claimed.cwd !== job.cwd || claimed.timeoutMs !== job.timeoutMs || claimed.digest !== job.digest
-      || claimed.digest !== this.requestDigest(state, claimed)) throw new Error('device_dispatch_changed')
+      || claimed.processId !== this.processId || claimed.digest !== this.requestDigest(state, claimed)) throw new Error('device_dispatch_changed')
     const owner = ownedContainerOwner.parse({ deviceId: state.deviceId, enrollmentId: state.instanceId,
-      executionId: id, creationId: randomUUID(), requestDigest: claimed.digest })
-    const entry: JournalEntry = { id, container: name, owner, stage: 'claimed', startedAt: Date.now() }
-    this.journal.set(id, entry)
+      executionId: id, creationId: claimed.dispatchId, requestDigest: claimed.digest })
+    entry.owner = owner
+    entry.claimed = claimed
+    entry.dispatchId = claimed.dispatchId
+    entry.stage = 'claimed'
     await this.saveJournal()
     const folder = state.directories.find(item => item.id === claimed.directoryId)
     if (!folder) throw new Error('directory_not_authorized')
@@ -415,14 +467,18 @@ export class DesktopWorker {
     entry.stage = 'created'
     await this.saveJournal()
     const receipt = entry.receipt
+    const canStart = await this.register(state, entry)
     // Persist the intent before start: a lost response or a crash cannot authorize a second start.
-    if (this.stop.signal.aborted || this.jobs.get(id)?.cancelRequested) {
+    if (!canStart || this.stop.signal.aborted || this.jobs.get(id)?.cancelRequested) {
       entry.result = uncertain()
     } else {
       entry.stage = 'started'
       entry.startedAt = Date.now()
       await this.saveJournal()
-      try { await this.containers.start(receipt) }
+      try {
+        if (this.stop.signal.aborted || this.jobs.get(id)?.cancelRequested) entry.result = uncertain()
+        else await this.containers.start(receipt)
+      }
       catch (_startUnconfirmed) {
         const observed = await this.containers.inspect(receipt)
         if (!observed || observed.Status === 'created') entry.result = uncertain()
@@ -463,6 +519,7 @@ export class DesktopWorker {
   }
 
   private async report(state: DeviceState, entry: JournalEntry): Promise<void> {
+    const claimed = this.originalClaim(state, entry)
     if (!entry.result || !entry.receipt || !entry.stopObservation) throw new Error('device_stop_observation_missing')
     const observed = await this.containers.inspect(entry.receipt)
     if (observed?.Running) {
@@ -471,10 +528,16 @@ export class DesktopWorker {
       await this.saveJournal()
       throw new Error('device_container_running')
     }
-    const accepted = await this.call('/devices/agent/finish', {
-      instanceId: state.instanceId, executionId: entry.id, result: entry.result,
-    }, executionReceipt, state.token)
-    if (accepted.executionId !== entry.id) throw new Error('device_result_identity_mismatch')
+    if (!entry.stopRequestId) {
+      entry.stopRequestId = deviceFinishRequest.shape.requestId.parse(randomUUID())
+      await this.saveJournal()
+    }
+    const input = deviceFinishRequest.parse({ instanceId: state.instanceId, executionId: entry.id,
+      processId: claimed.processId, dispatchId: claimed.dispatchId, requestId: entry.stopRequestId,
+      observation: entry.stopObservation, result: entry.result })
+    const accepted = await this.call('/devices/agent/finish', input, deviceFinishReceipt, state.token)
+    if (accepted.executionId !== entry.id || accepted.dispatchId !== claimed.dispatchId
+      || accepted.requestId !== entry.stopRequestId) throw new Error('device_result_identity_mismatch')
     if (observed) await this.containers.remove(entry.receipt)
     // Missing is acceptable only after an exact stop observation was saved before removal.
     this.journal.delete(entry.id)

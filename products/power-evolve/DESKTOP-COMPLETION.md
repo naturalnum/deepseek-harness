@@ -40,11 +40,11 @@ flowchart LR
 
 官方[包校验](../../apps/desktop/src/core-package-set.ts)、[runtime 准备](../../apps/desktop/scripts/prepare-dsh.ts)和[运行验收](../../apps/desktop/scripts/smoke-runtime.ts)绑定本地 Web Host 与同版本 DSH／desktop-host。产品发行另固定 Device 包闭包、产品版本与上游 runtime 版本，并验证离源码启动 Device 和连接共享 Host；官方 smoke 通过不替代产品安装包验收。
 
-Device 已接入上游原生 `flock`、不可变 Docker 身份、启动前持久记录及冷恢复准入控制，生命周期由 [Device Bundle](device/README.md)描述。这些实现尚不能替代平台持久停止回执、跨 Device／重叠目录写者协调、描述符文件访问和可信结案；Electron 的三个产品适配器及安装包仍未交付。
+Device 已接入上游原生 `flock`、不可变 Docker 身份、启动前持久记录及冷恢复准入控制，生命周期由 [Device Bundle](device/README.md)描述。平台已固定原请求和进程派发、发放一次启动许可、保存精确容器登记及撤销后的受限停止回执，并限制同 Device／目录授权的跨会话并发。跨 Device／重叠目录写者协调、描述符文件访问和可信未知结果结案仍待完成；Electron 的三个产品适配器及安装包仍未交付。
 
 ## 业务与开发顺序
 
-先完成[Cloud 不确定执行结案](EXECUTION-RESOLUTION-COMPLETION.md)，再补 Device 的不可变容器身份、撤销后受限停止回执、目录描述符访问及同目录写入协调。随后将 operation 固定的技能版本、只读包挂载、Office 和进程连接器接入获授权本机目标。远程 HTTP API 继续由可信平台保管凭据和执行；不能通过放开 Host 本地 shell 补齐桌面功能。
+先完成[Cloud 不确定执行结案](EXECUTION-RESOLUTION-COMPLETION.md)，再完成 Device 的目录描述符访问、跨 Device／重叠目录写入协调及可信未知结果结案。随后将 operation 固定的技能版本、只读包挂载、Office 和进程连接器接入获授权本机目标。远程 HTTP API 继续由可信平台保管凭据和执行；不能通过放开 Host 本地 shell 补齐桌面功能。
 
 Root 固定共享 DTO、schema、Profile、Electron 扩展点及发行闭包；设备实现者负责 Device/目录/包交付；Host 实现者负责模型工具目标；客户端实现者复用原执行位置与扩展中心。接口与文件归属固定后并行实现，真实端到端验收和版本冻结串行完成。桌面承载器在业务协议稳定前仅做只读审计，不提前合入下一切片。
 

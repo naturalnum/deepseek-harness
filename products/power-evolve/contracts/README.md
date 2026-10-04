@@ -29,6 +29,8 @@ Import private storage selection and Workspace binding recovery records from `@p
 
 Import Cloud execution reconciliation requests and receipts from `@power-evolve/contracts/execution-resolution`. A request identifies the original execution, a stable retry ID and a Platform-calculated writer fingerprint. It supplies no result, replacement command or stop evidence. Read-only Host routes and independent approval routes remain separate. A completed receipt requires a confirmed stopped writer; `closed_unknown` retains an unknown side-effect outcome.
 
+Import Device dispatch, container registration and stop reports from `@power-evolve/contracts/device-execution`. Enrollment identifies a persistent Device; each claim binds a separate process generation and Platform-issued dispatch. Start permission is issued once after exact container registration. Stop reports carry the original dispatch, a stable retry ID and a non-running observation; unknown command effects remain distinct from stopped writers. These records do not attest the local OS or Docker daemon.
+
 ## Implementation
 
 Only Zod and the upstream brand utility are runtime dependencies. TypeScript emits browser-compatible ESM and declarations together. The package build also bundles execution-reconciliation validation as standalone browser ESM in `lib/browser/execution-resolution.js`; the trusted approval page imports this exact build through the Platform allowlist. Consumers of this static module require the package build; it has no external runtime imports. The application re-exports these account definitions for its existing internal imports. The package has no process state, credential storage, authorization checks or independent lifecycle invariant.

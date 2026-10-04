@@ -30,7 +30,11 @@
       "types": "./lib/account.d.ts",
       "default": "./lib/account.js"
     },
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./device-execution": {
+      "types": "./lib/device-execution.d.ts",
+      "default": "./lib/device-execution.js"
+    }
   },
   "scripts": {
     "build": "tsc -b tsconfig.json && tsdown",
