@@ -33,4 +33,4 @@
 
 ## 尚未完成
 
-正式安装模式的可信配置入口、稳定 Profile 准备、ARM64 `.app` 装配及签名／公证／更新继续按[桌面约定](DESKTOP-COMPLETION.md)交付。原生侧栏浏览器、Office 预览、Desktop 报告和通用本机进程连接器尚未完成。已有 Office／持久 Home 证据属于[上一组合试用](TRIAL-DEVICE-MATERIALS-NATIVE.md)，本轮没有重新验证 Home 写入。生产 HTTPS 和独立物理多节点不在本机验收范围。
+正式安装入口、稳定 Profile 准备和 ARM64 `.app` 装配已有独立[安装应用试用](TRIAL-DESKTOP-INSTALLED.md)；本快照仍保留其开发模式。签名／公证／更新继续按[桌面约定](DESKTOP-COMPLETION.md)交付。原生侧栏浏览器、Office 预览、Desktop 报告和通用本机进程连接器尚未完成。已有 Office／持久 Home 证据属于[上一组合试用](TRIAL-DEVICE-MATERIALS-NATIVE.md)，本轮没有重新验证 Home 写入。生产 HTTPS 和独立物理多节点不在本机验收范围。
