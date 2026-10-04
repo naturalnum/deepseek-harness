@@ -19,11 +19,11 @@
 
 ## 三个产品适配器
 
-1. **Cloud carrier**：窗口承载固定共享 Host Origin。本轮保留用户授权的 loopback HTTP，生产保留 HTTPS 校验。直接使用产品浏览器认证、cookie、Origin 和 WS 规则；官方 `dsh-app` 本地代理期望不同的启动 cookie，不能原样代替产品登录。导航和原生 IPC 只接受准确 Origin、所属窗口及主 frame。
+1. **Cloud carrier**：窗口直接加载固定共享 Host 的原生页面，客户端静态资源与 RPC 同源，版本随共享 Host 发布。本轮保留用户授权的 loopback HTTP，生产保留 HTTPS 校验。直接使用产品浏览器认证、cookie、Origin 和 WS 规则；官方 `dsh-app` 本地代理期望不同的启动 cookie，不能原样代替产品登录。产品 Preload 只暴露必要窗口能力和打开本地授权入口的动作；导航和原生 IPC 只接受准确 Origin、所属窗口及主 frame。
 2. **Device process**：通过 DSH Profile 启动独立 Device，持久保存其 private state、journal 和固定 Runner 版本。产品明确指定 Profile 目录、可信 bundles、安装解析锚点和 Device readiness；官方启动代码固定选择本地 Web bundles 与 desktop-host，不能仅替换服务 URL。Electron 关闭仅处置所拥有的本机执行，不把云任务当作本地子进程。复用原生启动失败、退出等待和重启检查；不在 Mac 启动共享平台或另一套云 Agent。
 3. **Local Device bridge**：打开所属 Device 的本地配对及目录授权入口，复用现有 `/api/choose`。本机绝对路径、nonce 和设备凭据留在本机；Cloud renderer 只消费设备／目录 ID 和标签。拖入本机文件时使用明确授权传输或本地目标，不转换为云端可读取的绝对 `@path`。
 
-这些是产品适配代码，不是三个新的 DSH 插件。通用扩展点覆盖桌面入口、Preload／IPC、Profile 子进程和发行闭包；以最小修改补齐，保留官方默认启动方式并记录实际修改文件的升级影响。官方 DeepSeek 账户桥与产品身份、审批凭据分别保留其职责。
+这些是产品适配代码，不是三个新的 DSH 插件。Cordis 插件复用现有 Device Bundle、云端 Host 与客户端能力；Electron 的入口、Preload／IPC 和打包选择需要另外提供最小装配接口。官方默认启动方式保留，产品模式显式选择入口、Profile、私有根和发布配置，并记录实际修改文件的升级影响。官方 DeepSeek 账户桥与产品身份、审批凭据分别保留其职责。
 
 ```mermaid
 flowchart LR
@@ -34,11 +34,25 @@ flowchart LR
     D --> E[获授权目录中的 Docker 执行]
 ```
 
+本地授权入口使用单独的所属窗口和 Preload；配对、路径与 nonce 留在该窗口及 Device 进程。Cloud renderer 不接收原生选择器返回的路径，也不获得通用本机文件读写或命令 IPC。官方 Preload 的 `__DSH_HOST_PATHS__` 将本机拖拽转成绝对路径引用，产品 Cloud 模式不装配它；上传通过明确传输进入用户云工作区，本地引用通过已授权目录 ID 和相对路径定位。
+
+## 可试用的实施顺序
+
+Device 文件和写入协议稳定后，按下面三个纵切面集成 Electron；每一步沿用正式原生页面，完成验收再进入下一步。
+
+| 步骤 | 复用和适配 | 本步验收 |
+| --- | --- | --- |
+| 桌面登录与对话 | 原生窗口、菜单、主题；装配 Cloud carrier 与产品 Origin／cookie／WS | 两账号独立登录、`hi`、刷新、退出再打开；没有本地 Agent 或执行容器 |
+| 本地执行 | 后端控制器与子进程生命周期；装配 Device Profile、本地授权窗口和目录选择 | 配对、选择／取消目录、本地 Git、撤销、崩溃恢复和退出；外部页面与 iframe 调用桥被拒绝 |
+| 安装包 | 目标检查、包闭包校验及 runtime 准备；显式加入产品 Device、辅助资源和原生依赖 | Mac ARM64 包在源码树外启动、连接共享 Host、本地执行、退出与再打开；记录签名和依赖要求 |
+
 ## 退出与发行约束
 
-官方[退出检查](../../apps/desktop-host/src/quit-inspection.ts)只观察本机 Agent、jobs 和已加载提醒；[退出确认](../../apps/desktop/src/quit-confirmation.ts)在 backend 未 ready 时允许直接退出。产品检查以 Device 持久 journal 和不可变容器身份为依据，Device 崩溃或状态未知不能视为空闲。退出／更新先停止本地任务准入，再按所选退出策略核实既有任务和停止回执；关闭窗口不会取消云端任务，停止证明缺失时不能把任务标为完成或放行替代写入者。
+官方[退出检查](../../apps/desktop-host/src/quit-inspection.ts)只观察本机 Agent、jobs 和已加载提醒；[退出确认](../../apps/desktop/src/quit-confirmation.ts)在 backend 未 ready 时允许直接退出。产品检查以 Device 持久 journal 和不可变容器身份为依据，Device 崩溃或状态未知不能视为空闲。退出／更新先停止本地任务准入，再按所选退出策略核实既有任务和停止回执；子进程等待期限按 Device 停止、观察及上报的配置选择，超时后保留未确认记录，进程退出 ACK 不代替容器停止证明。关闭窗口不会取消云端任务，停止证明缺失时不能把任务标为完成或放行替代写入者。
 
 官方[包校验](../../apps/desktop/src/core-package-set.ts)、[runtime 准备](../../apps/desktop/scripts/prepare-dsh.ts)和[运行验收](../../apps/desktop/scripts/smoke-runtime.ts)绑定本地 Web Host 与同版本 DSH／desktop-host。产品发行另固定 Device 包闭包、产品版本与上游 runtime 版本，并验证离源码启动 Device 和连接共享 Host；官方 smoke 通过不替代产品安装包验收。
+
+产品应用 ID、Electron userData、DSH Home、Device 私有根与更新源独立选择，避免与官方 DSH 安装共享身份或数据。复用[自动更新机制](../../apps/desktop/scripts/desktop-auto-update-environment.mjs)时指定 PowerEvolve 发布渠道和签名校验；当前官方生产更新地址及账户策略不能直接作为产品发布配置。Device 启动确认同时绑定当前所属子进程和新的实例标识，旧 readiness 文件或 HTTP 端口可达不能证明当前 Worker 已 ready。
 
 Device 已接入上游原生 `flock`、不可变 Docker 身份、启动前持久记录及冷恢复准入控制，生命周期由 [Device Bundle](device/README.md)描述。平台已固定原请求和进程派发、发放一次启动许可、保存精确容器登记及撤销后的受限停止回执，并限制同 Device／目录授权的跨会话并发。已有完整停止记录的未知执行可经独立审批结案，保留原事实并至多续接一次；缺少停止事实的冷领取意图仍受阻。真实 PG／Docker 协议范围见[派发与停止记录验收](deploy/QA-DEVICE-DISPATCH-STOP.md)及[未知结果结案验收](deploy/QA-DEVICE-UNKNOWN-CLOSURE.md)。跨 Device／重叠目录写者协调及描述符文件访问仍待完成；Electron 的三个产品适配器及安装包仍未交付。
 
