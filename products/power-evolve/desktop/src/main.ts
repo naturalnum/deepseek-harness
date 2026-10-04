@@ -141,7 +141,7 @@ else {
       if (quitPending) return
       quitPending = true
       void (async () => {
-        const host = deviceBackend.host?.process
+        const host = ownedDevice
         if (host !== undefined) {
           const snapshot = await host.inspect().catch(() => null)
           if (snapshot === null || snapshot.pendingActions > 0 || snapshot.journalEntries > 0) {
@@ -154,7 +154,8 @@ else {
         const results = await Promise.allSettled([deviceBackend.close(), localDevice.close()])
         if (ownedDevice !== undefined && !ownedDevice.exitConfirmed) throw new Error('local_device_exit_unconfirmed')
         if (results[1].status === 'rejected') throw new Error('local_authorization_close_failed')
-        if (results[0].status === 'rejected' || ownedDevice !== undefined && !ownedDevice.lastStopClean) {
+        if (results[0].status === 'rejected' || ownedDevice !== undefined && (!ownedDevice.lastStopClean
+          || (ownedDevice.lastDrain?.entries.length ?? 0) > 0 || (ownedDevice.lastDrain?.cleanupPending ?? 0) > 0)) {
           await dialog.showMessageBox({ type: 'warning', title: deviceMessages().quitTitle,
             message: deviceMessages().quitUnknown, buttons: [deviceMessages().acknowledge] })
         }
