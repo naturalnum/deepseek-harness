@@ -1,11 +1,18 @@
-/** OfficeCLI is proposed through the cloud execution seam as one guarded command. */
+/** Built Host face: OfficeCLI uses the selected target's execution seam as one guarded command. */
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import test from 'node:test'
+import { Context } from '@deepseek-ai/cordis'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
+import { Session, SessionId } from '@deepseek-ai/dsh-session'
+import { createScope } from '@deepseek-ai/dsh-scope'
+import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
+import ToolRuntime from '@deepseek-ai/dsh-tools'
 import {
   encodeOfficeCommand, installOfficeTool, OfficeCommandError, parseOfficeCommand,
 } from '../lib/host/office.js'
+import { installExecutionTools } from '../lib/host/executions.js'
 
 function agentTools() {
   const registered = []
@@ -68,43 +75,86 @@ test('parser confines OfficeCLI argv and quotes shell characters as literals', (
   assert.throws(() => parseOfficeCommand('import book.xlsx /Sheet1 --file'), OfficeCommandError)
 })
 
-test('only an execution-enabled cloud grant installs one office tool', () => {
+test('Desktop grants install office independently of the Cloud execution flag', () => {
   const runtime = { async call() { throw Error('unexpected proposal') } }
   for (const grant of [
     { target: { kind: 'cloud' }, executionEnabled: false, token: 'token' },
-    { target: { kind: 'desktop' }, executionEnabled: true, token: 'token' },
   ]) {
     const { agent, registered } = agentTools()
     installOfficeTool(agent, grant, runtime)
     assert.equal(registered.length, 0)
   }
-  const { agent, registered } = agentTools()
-  installOfficeTool(agent, { target: { kind: 'cloud' }, executionEnabled: true, token: 'token' }, runtime)
-  assert.deepEqual(registered.map(tool => tool.name), ['office'])
-  assert.deepEqual(registered[0].parameters.required, ['command'])
-  assert.deepEqual(Object.keys(registered[0].parameters.properties), ['command'])
-  assert.match(registered[0].description, /resident state does not survive calls/u)
-  assert.match(registered[0].description, /receipt means the command was accepted, not completed/u)
+  for (const grant of [
+    { target: { kind: 'cloud' }, executionEnabled: true, token: 'token' },
+    { target: { kind: 'desktop' }, executionEnabled: false, token: 'token' },
+    { target: { kind: 'desktop' }, executionEnabled: true, token: 'token' },
+  ]) {
+    const { agent, registered } = agentTools()
+    installOfficeTool(agent, grant, runtime)
+    assert.deepEqual(registered.map(tool => tool.name), ['office'])
+    assert.deepEqual(registered[0].parameters.required, ['command'])
+    assert.deepEqual(Object.keys(registered[0].parameters.properties), ['command'])
+    assert.match(registered[0].description, /resident state does not survive calls/u)
+    assert.match(registered[0].description, /receipt means the command was accepted, not completed/u)
+  }
 })
 
-test('office forwards native call ID and returns only the durable acceptance receipt', async () => {
-  const executionId = randomUUID()
-  const receipt = { executionId, state: 'queued', command: 'recorded command', cwd: '', exitCode: 0 }
-  const calls = []
-  const runtime = { async call(path, token, body) {
-    calls.push({ path, token, body })
-    return receipt
-  } }
-  const { agent, registered } = agentTools()
-  installOfficeTool(agent, { target: { kind: 'cloud' }, executionEnabled: true, token: 'grant-token' }, runtime)
-  const value = await registered[0].execute({ command: 'create "中文 report.docx"' }, { callId: 'native-42' })
-  assert.deepEqual(calls, [{ path: '/runtime/executions/propose', token: 'grant-token', body: {
-    callId: 'native-42', command: encodeOfficeCommand('create "中文 report.docx"'), cwd: '',
-  } }])
-  assert.deepEqual(value, { executionId, state: 'queued', command: 'recorded command', cwd: '' })
-  assert.deepEqual(registered[0].output.render({}, value),
-    [{ type: 'text', text: JSON.stringify(value) }])
-  assert.equal('exitCode' in value, false)
+test('native Office and execution tools forward call IDs to the selected target and return acceptance only', async t => {
+  const root = new Context()
+  await root.plugin(SystemPrompt)
+  await root.plugin(ToolRuntime)
+  let ctx
+  await root.inject(['tools', 'systemPrompt'], ready => { ctx = ready })
+  for (const kind of ['cloud', 'desktop']) await t.test(kind, async () => {
+    const executionId = randomUUID()
+    const receipt = { executionId, state: 'queued', command: 'recorded command', cwd: '', exitCode: 0 }
+    const calls = []
+    const runtime = { async call(path, token, body) {
+      calls.push({ path, token, body })
+      return receipt
+    } }
+    const id = SessionId(randomUUID())
+    const agent = { id, session: Session.create(id), ctx: undefined }
+    const scope = createScope(ctx, agent)
+    agent.ctx = scope.ctx
+    const grant = { target: { kind }, executionEnabled: kind === 'cloud', token: 'grant-token' }
+    installOfficeTool(agent, grant, runtime)
+    installExecutionTools(agent, grant, runtime)
+    const signal = new AbortController().signal
+    const result = await ctx.tools.execute({ agent, signal, name: 'office',
+      arguments: { command: 'create "中文 report.docx"' }, callId: ToolCallId('native-42') })
+    assert.equal(result.isError, false)
+    const value = JSON.parse(result.content[0].text)
+    const path = kind === 'desktop' ? '/runtime/desktop-executions/propose' : '/runtime/executions/propose'
+    assert.deepEqual(calls, [{ path, token: 'grant-token', body: {
+      callId: 'native-42', command: encodeOfficeCommand('create "中文 report.docx"'), cwd: '',
+    } }])
+    assert.deepEqual(value, { executionId, state: 'queued', command: 'recorded command', cwd: '' })
+    assert.deepEqual(result.content, [{ type: 'text', text: JSON.stringify(value) }])
+    assert.equal('exitCode' in value, false)
+    const execution = await ctx.tools.execute({ agent, signal, name: `${kind}_exec`,
+      arguments: { command: 'printf accepted', cwd: 'reports' }, callId: ToolCallId('native-exec-43') })
+    assert.equal(execution.isError, false)
+    assert.deepEqual(calls[1], { path, token: 'grant-token', body: {
+      callId: 'native-exec-43', command: 'printf accepted', cwd: 'reports',
+    } })
+    assert.deepEqual(JSON.parse(execution.content[0].text), value)
+    const refused = await ctx.tools.execute({ agent, signal, name: 'office',
+      arguments: { command: 'open report.docx' }, callId: ToolCallId('native-refused-44') })
+    assert.equal(refused.isError, true)
+    assert.match(JSON.stringify(refused.content), /OfficeCLI open is unavailable/u)
+    assert.equal(calls.length, 2)
+    const assembly = await ctx.systemPrompt.assemble({ scope: agent })
+    assert.match(assembly.sections.find(section => section.name === 'power-evolve:execution-continuation').text,
+      /Never claim a test passed from an acceptance receipt/u)
+    const description = assembly.tools.find(tool => tool.name === `${kind}_exec`).description
+    if (kind === 'desktop') {
+      assert.match(description, /\/home\/agent/u)
+      assert.match(description, /read-only.*\/opt\/power-evolve\/skills\/sha256/u)
+      assert.doesNotMatch(description, /only that directory mounted/u)
+    }
+    await scope.dispose()
+  })
 })
 
 test('oversized encoded commands and parser errors are rejected before proposal', async () => {

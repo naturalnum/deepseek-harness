@@ -28,9 +28,11 @@ export function selectedSkillAliases(selection: readonly Selection[]): ReadonlyM
   return aliases
 }
 
-function resourceBase(item: Selection, runtimePath = `/opt/power-evolve/skills/sha256/${item.packageDigest}/skill`): SkillResourceBase {
+function resourceBase(item: Selection, target: Grant['target']['kind'], runtimePath = `/opt/power-evolve/skills/sha256/${item.packageDigest}/skill`): SkillResourceBase {
   return item.kind === 'package'
-    ? { kind: 'opaque', description: `Read referenced text or list files with skill_resource; this does not start a Sandbox. To execute code, use the authorized cloud Sandbox path ${runtimePath}. This is not a Host filesystem path.` }
+    ? { kind: 'opaque', description: target === 'desktop'
+      ? `Read referenced text or list files with skill_resource; this does not start a Sandbox. The selected package is mounted read-only at ${runtimePath} in the authorized Desktop container. To execute its code, use desktop_exec and write outputs in /workspace or persistent Home /home/agent. This is not a Host filesystem path.`
+      : `Read referenced text or list files with skill_resource; this does not start a Sandbox. To execute code, use the authorized cloud Sandbox path ${runtimePath}. This is not a Host filesystem path.` }
     : { kind: 'opaque', description: 'Read SKILL.md with skill_resource. This text skill has no executable package files.' }
 }
 
@@ -45,6 +47,7 @@ export function installSelectedSkills(agent: Agent, grant: Grant, runtime: Runti
   const aliases = selectedSkillAliases(selection)
   const selected = new Map(selection.map(item => [item.skillId, item] as const))
   const token = grant.token
+  const target = grant.target.kind
   if (selection.length) agent.ctx.effect(() => agent.ctx.tools.register(defineTool({
     name: 'skill_resource',
     description: 'Read a selected skill reference or script as text, or list its packaged files. Does not execute code or start a Sandbox. Paths are relative to the skill package; omit path to list files.',
@@ -85,7 +88,7 @@ export function installSelectedSkills(agent: Agent, grant: Grant, runtime: Runti
           description: alias === item.name ? item.description : `${item.name}: ${item.description}`,
           invocation: { modelInvocable: true, userInvocable: true },
           source: 'power-evolve', provider: providerName, rank: 250,
-          resourceBase: resourceBase(item), locator: item.skillId,
+          resourceBase: resourceBase(item, target), locator: item.skillId,
         } satisfies SkillCandidate
       })
     },
@@ -105,15 +108,15 @@ export function installSelectedSkills(agent: Agent, grant: Grant, runtime: Runti
         || createHash('sha256').update(body.instructions).digest('hex') !== item.digest) {
         throw new Error('Selected Skill snapshot differs from the accepted operation')
       }
-      let resources = resourceBase(item)
+      let resources = resourceBase(item, target)
       if (body.runtimePath !== undefined && body.runtimePath !== null) {
         const original = `/opt/power-evolve/skills/sha256/${item.packageDigest}/skill`
         const suite = /^\/opt\/power-evolve\/skills\/report-suites\/[a-f0-9]{64}\/(report-workflow-orchestrator|power-grid-technical-report-writer|report-reviewer|tech-report-writer)$/u.exec(body.runtimePath)
         if (item.kind !== 'package' || (body.runtimePath !== original
-          && (!body.suiteAvailable || suite?.[1] !== item.name))) {
+          && (target !== 'cloud' || !body.suiteAvailable || suite?.[1] !== item.name))) {
           throw new Error('Selected Skill runtime path differs from its package')
         }
-        resources = resourceBase(item, body.runtimePath)
+        resources = resourceBase(item, target, body.runtimePath)
       }
       return { ...candidate, content: body.instructions, resourceBase: resources }
     },

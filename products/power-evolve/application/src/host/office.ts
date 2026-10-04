@@ -1,4 +1,4 @@
-/** Guarded OfficeCLI command proposal for an authorized cloud Sandbox. */
+/** Guarded OfficeCLI command proposal for the operation's authorized execution target. */
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { z } from 'zod'
@@ -40,14 +40,17 @@ const FILE_OPTIONS = new Set(['--file', '--input', '-o', '--out', '--output'])
 const SIDE_EFFECT_OPTIONS = new Set(['--browser', '--stdin'])
 const RENDER_MODES = new Set(['html', 'pdf', 'screenshot', 'svg'])
 
-/** Register only for cloud grants with execution enabled. */
+/** Desktop authorization is target-scoped; executionEnabled gates only the Cloud provider. */
 export function installOfficeTool(agent: Agent, grant: Grant, runtime: RuntimeScope): void {
-  if (grant.target.kind !== 'cloud' || !grant.executionEnabled) return
+  if (grant.target.kind === 'cloud' && !grant.executionEnabled) return
+  const desktop = grant.target.kind === 'desktop'
   agent.ctx.effect(() => agent.ctx.tools.register(defineTool({
     name: OFFICE_TOOL_NAME,
     description: [
       'Create, read, modify, and validate .docx, .xlsx, and .pptx files in /workspace with OfficeCLI.',
-      'Each call is an independent Sandbox execution: resident state does not survive calls and `open` is unavailable.',
+      desktop
+        ? 'Each call is an independent execution in the authorized Desktop container: resident state does not survive calls and `open` is unavailable.'
+        : 'Each call is an independent Sandbox execution: resident state does not survive calls and `open` is unavailable.',
       'Name the target file in each file command. Use direct create, add, set, remove, or batch commands that persist before returning.',
       'Use direct get, query, view, and validate commands to read or verify saved files.',
       'Use `load_skill` for the guide catalog, `load_skill word`, `load_skill excel`, or `load_skill pptx` for a guide,',
@@ -67,7 +70,7 @@ export function installOfficeTool(agent: Agent, grant: Grant, runtime: RuntimeSc
     } }, render: (_args, value) => [{ type: 'text', text: JSON.stringify(value) }] },
     async execute(args, exec) {
       const command = encodeOfficeCommand(args.command)
-      const result = receipt.parse(await runtime.call('/runtime/executions/propose', grant.token, {
+      const result = receipt.parse(await runtime.call(desktop ? '/runtime/desktop-executions/propose' : '/runtime/executions/propose', grant.token, {
         callId: String(exec.callId), command, cwd: '',
       }))
       return { executionId: result.executionId, state: result.state, command: result.command, cwd: result.cwd }
