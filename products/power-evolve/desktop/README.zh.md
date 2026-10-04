@@ -29,6 +29,8 @@ HTTP 仅接受数字 loopback 地址。远程 Origin 要求 HTTPS。拒绝凭据
 
 [进程适配器](src/device-process.ts)核验所属子进程 PID、每次启动身份、就绪及有界健康响应。私有[生命周期消息](../contracts/src/device-lifecycle.ts)在终止前关闭准入并排空所属操作。退出等待实际子进程退出及本机窗口清理。排空不完整时保留原记录并报告不确定；仅进程退出不能证明执行已停止。退出不会取消 Cloud 任务。
 
+[安装资源读取器](src/installed-config.ts)校验主进程选择的资源目录下固定 `power-evolve-desktop.json`。Node、CLI、Python 和文件辅助脚本必须解析到该目录内的物理文件，ASAR 条目被拒绝。它从既有私有产品 userData 目录派生不含版本号的 Device 状态路径。主入口接线及 Profile 准备仍待完成；这个读取器本身不启用安装模式启动。
+
 ## 浏览器与原生权限
 
 同一部署中的 Host 与 Platform 共用一个持久 Electron Session。分区由两个 Origin 派生，不同 loopback 端口的部署不共享 cookie。产品 userData 默认使用独立 `PowerEvolve` 应用目录；仅开发可用的 `--data-dir` 不能覆盖安装包存储。
