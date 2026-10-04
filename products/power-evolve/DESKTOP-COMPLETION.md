@@ -54,11 +54,11 @@ Device 文件和写入协议稳定后，按下面三个纵切面集成 Electron�
 
 产品应用 ID、Electron userData、DSH Home、Device 私有根与更新源独立选择，避免与官方 DSH 安装共享身份或数据。复用[自动更新机制](../../apps/desktop/scripts/desktop-auto-update-environment.mjs)时指定 PowerEvolve 发布渠道和签名校验；当前官方生产更新地址及账户策略不能直接作为产品发布配置。Device 启动确认同时绑定当前所属子进程和新的实例标识，旧 readiness 文件或 HTTP 端口可达不能证明当前 Worker 已 ready。
 
-Device 已接入上游原生 `flock`、不可变 Docker 身份、启动前持久记录及冷恢复准入控制，生命周期由 [Device Bundle](device/README.md)描述。平台已固定原请求和进程派发、发放一次启动许可、保存精确容器登记及撤销后的受限停止回执，并限制同 Device／目录授权的跨会话并发。已有完整停止记录的未知执行可经独立审批结案，保留原事实并至多续接一次；缺少停止事实的冷领取意图仍受阻。真实 PG／Docker 协议范围见[派发与停止记录验收](deploy/QA-DEVICE-DISPATCH-STOP.md)及[未知结果结案验收](deploy/QA-DEVICE-UNKNOWN-CLOSURE.md)。跨 Device／重叠目录写者协调及描述符文件访问仍待完成；Electron 的三个产品适配器及安装包仍未交付。
+Device 已接入上游原生 `flock`、不可变 Docker 身份、启动前持久记录、跨 Device 写入槽及描述符相对文件访问，生命周期由 [Device Bundle](device/README.md)描述。平台已固定原请求和进程派发、发放一次启动许可、保存精确容器登记及撤销后的受限停止回执，并限制同 Device／目录授权的跨会话并发。已有完整停止记录的未知执行可经独立审批结案，保留原事实并至多续接一次；缺少停止事实的冷领取意图仍受阻。真实 PG／Docker 范围见[派发与停止记录验收](deploy/QA-DEVICE-DISPATCH-STOP.md)、[未知结果结案验收](deploy/QA-DEVICE-UNKNOWN-CLOSURE.md)及[写入与文件验收](deploy/QA-DEVICE-WRITER-FILES.md)。Electron 的三个产品适配器及安装包仍未交付。
 
 ## 业务与开发顺序
 
-先完成[Cloud 不确定执行结案](EXECUTION-RESOLUTION-COMPLETION.md)，再完成 Device 的目录描述符访问、跨 Device／重叠目录写入协调及缺少停止事实的冷领取核验。随后将 operation 固定的技能版本、只读包挂载、Office 和进程连接器接入获授权本机目标。远程 HTTP API 继续由可信平台保管凭据和执行；不能通过放开 Host 本地 shell 补齐桌面功能。
+先完成[Cloud 不确定执行结案](EXECUTION-RESOLUTION-COMPLETION.md)和 Device 前置协议，再完成缺少停止事实的冷领取核验。随后将 operation 固定的技能版本、只读包挂载、Office 和进程连接器接入获授权本机目标。远程 HTTP API 继续由可信平台保管凭据和执行；不能通过放开 Host 本地 shell 补齐桌面功能。
 
 Root 固定共享 DTO、schema、Profile、Electron 扩展点及发行闭包；设备实现者负责 Device/目录/包交付；Host 实现者负责模型工具目标；客户端实现者复用原执行位置与扩展中心。接口与文件归属固定后并行实现，真实端到端验收和版本冻结串行完成。桌面承载器在业务协议稳定前仅做只读审计，不提前合入下一切片。
 

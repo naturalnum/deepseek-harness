@@ -1,7 +1,8 @@
 /** Local device connector: explicit folder grants and status-first Docker command recovery. */
 import { createHash, randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
-import { link, lstat, open, readFile, realpath, rename, rm } from 'node:fs/promises'
+import { open, readFile, realpath, rename } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
@@ -9,14 +10,18 @@ import { deviceClaim, deviceJob, deviceContainerRegistration, deviceContainerReg
   deviceStopObservation, deviceExecutionResult, deviceFinishRequest, deviceFinishReceipt } from '@power-evolve/contracts/device-execution'
 import { DeviceProcessLock } from './process-lock.ts'
 import { OwnedDeviceContainer, ownedContainerOwner, ownedContainerReceipt } from './owned-container.ts'
+import { LocalDeviceFiles } from './local-files.ts'
+import { DeviceWriterCoordinator, deviceWriterOwner, type DeviceWriterLease, type DeviceWriterOwner } from './writer-coordinator.ts'
 
-const directory = z.object({ id: z.uuid(), label: z.string(), path: z.string() }).strict()
+const directoryIdentity = z.object({ dev: z.string().regex(/^\d+$/u), ino: z.string().regex(/^\d+$/u) }).strict()
+const directory = z.object({ id: z.uuid(), label: z.string(), path: z.string(), identity: directoryIdentity.optional() }).strict()
+type AuthorizedDirectory = z.infer<typeof directory> & { identity: z.infer<typeof directoryIdentity> }
 const deviceState = z.object({
   deviceId: z.uuid(), token: z.string().min(32), instanceId: z.uuid(), directories: z.array(directory),
 }).strict()
 type DeviceState = z.infer<typeof deviceState>
 const journalEntry = z.object({
-  id: z.uuid(), container: z.string(), stage: z.enum(['claiming', 'claimed', 'created', 'started', 'finished']),
+  id: z.uuid(), container: z.string(), stage: z.enum(['waiting', 'claiming', 'claimed', 'created', 'started', 'finished']),
   owner: ownedContainerOwner.optional(), receipt: ownedContainerReceipt.optional(),
   queuedJob: deviceJob.optional(),
   claimed: deviceClaim.optional(), processId: deviceClaim.shape.processId.optional(),
@@ -34,7 +39,7 @@ const journalEntry = z.object({
       || entry.claimed.dispatchId !== entry.dispatchId || entry.claimed.digest !== entry.owner?.requestDigest)
     || entry.dispatchId && entry.owner?.creationId !== entry.dispatchId
     || entry.queuedJob && (entry.queuedJob.executionId !== entry.id || entry.queuedJob.state !== 'queued')
-    || entry.stage === 'claiming' && (!entry.queuedJob || !entry.processId || entry.claimed || entry.dispatchId
+    || (entry.stage === 'waiting' || entry.stage === 'claiming') && (!entry.queuedJob || !entry.processId || entry.claimed || entry.dispatchId
       || entry.owner || entry.imageId || entry.receipt || entry.stopObservation || entry.stopRequestId || entry.result)) {
     ctx.addIssue({ code: 'custom', message: 'device_journal_identity_mismatch' })
   }
@@ -48,6 +53,9 @@ export interface DesktopWorkerOptions {
   contactGraceMs: number
   commandPollMs: number
   platformRequestTimeoutMs: number
+  coordinationRoot: string
+  pythonExecutable: string
+  fileOperationTimeoutMs: number
 }
 function uncertain(): z.infer<typeof journalEntry>['result'] {
   return { state: 'uncertain', exitCode: null, stdout: '', stderr: '',
@@ -72,12 +80,17 @@ export class DesktopWorker {
   private readonly jobs = new Map<string, Job>()
   private lastContact = Date.now()
   private notice = ''
+  private readonly coordination: DeviceWriterCoordinator
+  private readonly files: LocalDeviceFiles
+  private writer: { owner: DeviceWriterOwner; lease: DeviceWriterLease } | null = null
 
   constructor(private readonly platformUrl: string, private readonly privateDir: string,
     private readonly image: string, private readonly options: DesktopWorkerOptions,
     private readonly containers: OwnedDeviceContainer) {
     this.statePath = join(privateDir, 'device.json')
     this.journalPath = join(privateDir, 'journal.json')
+    this.coordination = new DeviceWriterCoordinator(options.coordinationRoot)
+    this.files = new LocalDeviceFiles({ pythonExecutable: options.pythonExecutable, timeoutMs: options.fileOperationTimeoutMs })
   }
 
   /** Acquire kernel ownership before loading the private credentials and journal.
@@ -175,37 +188,43 @@ export class DesktopWorker {
     if (!this.state) throw new Error('device_not_paired')
     if (!isAbsolute(path)) throw new Error('directory_must_be_absolute')
     const actual = await realpath(path)
-    const stat = await lstat(actual)
-    if (!stat.isDirectory() || actual === '/' || actual === process.env.HOME || /[:,]/.test(actual)) {
+    const privateRoot = await realpath(this.privateDir), sharedRoot = resolve(this.options.coordinationRoot)
+    const overlaps = (protectedRoot: string): boolean => actual === protectedRoot
+      || actual.startsWith(protectedRoot + '/') || protectedRoot.startsWith(actual + '/')
+    if (actual === '/' || actual === await realpath(homedir()) || /[:,]/.test(actual)
+      || overlaps(privateRoot) || overlaps(sharedRoot)) {
       throw new Error('directory_not_allowed')
     }
+    const identity = await this.files.inspect(actual)
     const previous = this.state.directories.find(item => item.path === actual)
-    if (previous) return { directoryId: previous.id, label: previous.label, path: previous.path }
+    if (previous && (!previous.identity || this.sameDirectory(previous.identity, identity))) {
+      // Upgrading a legacy grant requires this explicit local authorization action.
+      previous.identity = identity
+      await this.save(this.statePath, this.state)
+      return { directoryId: previous.id, label: previous.label, path: previous.path }
+    }
     const label = basename(actual)
     const result = await this.call('/devices/agent/directory', { label },
       z.object({ directoryId: z.uuid() }).strict(), this.state.token)
-    this.state.directories.push({ id: result.directoryId, label, path: actual })
+    this.state.directories.push({ id: result.directoryId, label, path: actual, identity })
     await this.save(this.statePath, this.state)
     return { directoryId: result.directoryId, label, path: actual }
   }
 
-  private async localPath(directoryId: string, relative: string): Promise<string> {
+  private authorizedDirectory(directoryId: string): AuthorizedDirectory {
     const folder = this.state?.directories.find(item => item.id === directoryId)
     if (!folder) throw new Error('directory_not_authorized')
-    if (!relative || relative.length > 512 || relative.includes('\\') || relative.includes('\0')) throw new Error('invalid_local_path')
-    const segments = relative.split('/')
-    if (segments.length > 16 || segments.some(part => !part || part === '.' || part === '..' || part.length > 100)) {
-      throw new Error('invalid_local_path')
-    }
-    const root = await realpath(folder.path)
-    if (root !== folder.path || !(await lstat(root)).isDirectory()) throw new Error('directory_changed')
-    let parent = root
-    for (const segment of segments.slice(0, -1)) {
-      parent = join(parent, segment)
-      const stat = await lstat(parent)
-      if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('invalid_local_path')
-    }
-    return join(parent, segments.at(-1)!)
+    if (!folder.identity) throw new Error('directory_requires_local_reauthorization')
+    return { ...folder, identity: folder.identity }
+  }
+
+  private sameDirectory(left: z.infer<typeof directoryIdentity>, right: z.infer<typeof directoryIdentity>): boolean {
+    return left.dev === right.dev && left.ino === right.ino
+  }
+
+  private async inspectDirectory(folder: AuthorizedDirectory, relative = '.'): Promise<void> {
+    const current = await this.files.inspect(folder.path, relative || '.')
+    if (!this.sameDirectory(folder.identity, current)) throw new Error('directory_changed')
   }
 
   /** Create one local file from an explicit cloud transfer while this worker has no journaled writer.
@@ -220,26 +239,18 @@ export class DesktopWorker {
   private async importLocal(directoryId: string, cloudPath: string, localPath: string): Promise<unknown> {
     if (!this.state) throw new Error('device_not_paired')
     if (this.journal.size > 0) throw new Error('device_directory_busy')
-    const target = await this.localPath(directoryId, localPath)
-    try { await lstat(target); throw new Error('local_file_exists') }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
-    const cloud = await this.call('/devices/agent/files/read', { directoryId, path: cloudPath },
-      z.object({ data: z.string().max(2_800_000), revision: z.string().regex(/^[a-f0-9]{64}$/) }).passthrough(), this.state.token)
-    const bytes = Buffer.from(cloud.data, 'base64')
-    if (bytes.length > 2 * 1024 * 1024 || createHash('sha256').update(bytes).digest('hex') !== cloud.revision) {
-      throw new Error('cloud_file_digest_mismatch')
-    }
-    const temporary = join(dirname(target), `.pe-transfer-${randomUUID()}.tmp`)
-    const file = await open(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW, 0o600)
-    try {
-      try { await file.writeFile(bytes); await file.sync() }
-      finally { await file.close() }
-      if (await this.localPath(directoryId, localPath) !== target) throw new Error('directory_changed')
-      await link(temporary, target)
-      const parent = await open(dirname(target), constants.O_RDONLY)
-      try { await parent.sync() } finally { await parent.close() }
-    } finally { await rm(temporary, { force: true }) }
-    return { cloudPath, localPath, size: bytes.length, revision: cloud.revision }
+    const state = this.state, folder = this.authorizedDirectory(directoryId)
+    return this.coordination.transfer(async fd => {
+      await this.inspectDirectory(folder)
+      const cloud = await this.call('/devices/agent/files/read', { directoryId, path: cloudPath },
+        z.object({ data: z.string().max(2_800_000), revision: z.string().regex(/^[a-f0-9]{64}$/) }).passthrough(), state.token)
+      const bytes = Buffer.from(cloud.data, 'base64')
+      if (bytes.length > 2 * 1024 * 1024 || createHash('sha256').update(bytes).digest('hex') !== cloud.revision) {
+        throw new Error('cloud_file_digest_mismatch')
+      }
+      await this.files.create(folder.path, folder.identity, localPath, cloud.data, fd)
+      return { cloudPath, localPath, size: bytes.length, revision: cloud.revision }
+    })
   }
 
   /** Transfer a bounded local file explicitly while this worker has no journaled writer.
@@ -255,18 +266,13 @@ export class DesktopWorker {
   private async exportLocal(directoryId: string, localPath: string, cloudPath: string, requestId: string): Promise<unknown> {
     if (!this.state) throw new Error('device_not_paired')
     if (this.journal.size > 0) throw new Error('device_directory_busy')
-    const source = await this.localPath(directoryId, localPath)
-    const file = await open(source, constants.O_RDONLY | constants.O_NOFOLLOW)
-    let bytes: Buffer
-    try {
-      const stat = await file.stat()
-      if (!stat.isFile() || stat.size > 2 * 1024 * 1024) throw new Error('local_file_unavailable')
-      bytes = await file.readFile()
-      if (bytes.length > 2 * 1024 * 1024) throw new Error('local_file_too_large')
-    } finally { await file.close() }
-    return this.call('/devices/agent/files/put',
-      { directoryId, requestId, path: cloudPath, data: bytes.toString('base64') },
-      z.object({ path: z.string(), revision: z.string().regex(/^[a-f0-9]{64}$/) }).passthrough(), this.state.token)
+    const state = this.state, folder = this.authorizedDirectory(directoryId)
+    return this.coordination.transfer(async fd => {
+      const file = await this.files.read(folder.path, folder.identity, localPath, fd)
+      return this.call('/devices/agent/files/put',
+        { directoryId, requestId, path: cloudPath, data: file.base64 },
+        z.object({ path: z.string(), revision: z.string().regex(/^[a-f0-9]{64}$/) }).passthrough(), state.token)
+    })
   }
 
   /** Start one poller only after the private journal has kernel ownership. */
@@ -284,13 +290,18 @@ export class DesktopWorker {
   close(): Promise<void> {
     return this.closing ??= (async () => {
       this.stop.abort()
+      await this.files.close()
       await this.initialization?.catch((_startupFailure: unknown) => {
         // init() releases its descriptors before reporting a failed startup.
       })
       await Promise.allSettled([...this.localActions, this.polling, this.active])
+      const writer = this.writer
+      this.writer = null
       const lock = this.processLock
       this.processLock = null
-      await lock?.release()
+      const released = await Promise.allSettled([writer?.lease.release(), lock?.release()])
+      const failures = released.flatMap(result => result.status === 'rejected' ? [result.reason] : [])
+      if (failures.length) throw new AggregateError(failures, 'device_lock_release_failed')
     })()
   }
 
@@ -301,6 +312,10 @@ export class DesktopWorker {
         if (this.state) {
           if (!this.active) {
             for (const entry of this.journal.values()) {
+              if (entry.stage === 'waiting') {
+                this.activate(this.resumeWaiting(this.state, entry))
+                break
+              }
               if (entry.stage === 'claiming') {
                 if (entry.processId !== this.processId) throw new Error('device_claiming_requires_review')
                 this.activate(this.resumeClaim(this.state, entry))
@@ -346,6 +361,23 @@ export class DesktopWorker {
       timeoutMs: job.timeoutMs, deviceId: state.deviceId, directoryId: job.directoryId })).digest('hex')
   }
 
+  private async takeWriter(state: DeviceState, entry: JournalEntry): Promise<DeviceWriterLease> {
+    const request = entry.claimed ?? entry.queuedJob
+    if (!request || !entry.processId || request.digest !== this.requestDigest(state, request)) {
+      throw new Error('device_writer_identity_missing')
+    }
+    const owner = deviceWriterOwner.parse({ kind: 'command', deviceId: state.deviceId,
+      enrollmentId: state.instanceId, executionId: entry.id, processId: entry.processId,
+      directoryId: request.directoryId, requestDigest: request.digest })
+    if (this.writer) {
+      if (JSON.stringify(this.writer.owner) !== JSON.stringify(owner)) throw new Error('device_writer_busy')
+      return this.writer.lease
+    }
+    const lease = await this.coordination.command(owner)
+    this.writer = { owner, lease }
+    return lease
+  }
+
   private async observeStopped(entry: JournalEntry): Promise<boolean> {
     if (!entry.receipt) return false
     const observed = await this.containers.inspect(entry.receipt)
@@ -382,6 +414,7 @@ export class DesktopWorker {
 
   private async recover(state: DeviceState, entry: JournalEntry): Promise<void> {
     this.originalClaim(state, entry)
+    const writer = await this.takeWriter(state, entry)
     if (!entry.owner || !entry.imageId) throw new Error('device_container_identity_missing')
     if (!entry.receipt) {
       const receipt = await this.containers.findCreated({ name: entry.container, imageId: entry.imageId, owner: entry.owner })
@@ -389,6 +422,7 @@ export class DesktopWorker {
       entry.receipt = receipt
       await this.saveJournal()
     }
+    await writer.capture(entry.receipt)
     let registrationFailure: unknown
     try { await this.register(state, entry) }
     catch (error: unknown) { registrationFailure = error }
@@ -422,10 +456,30 @@ export class DesktopWorker {
       return
     }
     const entry: JournalEntry = { id, container: name, queuedJob: job, processId: this.processId,
-      stage: 'claiming', startedAt: Date.now() }
+      stage: 'waiting', startedAt: Date.now() }
     this.journal.set(id, entry)
-    // Commit the frozen request before a remote claim can commit without its HTTP acknowledgement.
+    // Waiting records precede global admission; they have never submitted a Platform claim.
     await this.saveJournal()
+    await this.resumeWaiting(state, entry)
+  }
+
+  private async resumeWaiting(state: DeviceState, entry: JournalEntry): Promise<void> {
+    if (entry.stage !== 'waiting' || !entry.processId || !entry.queuedJob) throw new Error('device_waiting_identity_missing')
+    if (entry.processId !== this.processId) {
+      // A durable waiting intent cannot have reached claim; first retire its exact old admission.
+      const previous = await this.takeWriter(state, entry)
+      await previous.abandonWaiting()
+      await previous.release()
+      this.writer = null
+      entry.processId = this.processId
+      await this.saveJournal()
+    }
+    const folder = this.authorizedDirectory(entry.queuedJob.directoryId)
+    await this.inspectDirectory(folder, entry.queuedJob.cwd)
+    if (this.stop.signal.aborted) throw new Error('device_closed_before_claim')
+    await this.takeWriter(state, entry)
+    if (this.stop.signal.aborted) throw new Error('device_closed_before_claim')
+    entry.stage = 'claiming'
     await this.resumeClaim(state, entry)
   }
 
@@ -434,6 +488,10 @@ export class DesktopWorker {
     if (entry.stage !== 'claiming' || entry.processId !== this.processId || !job) throw new Error('device_claiming_requires_review')
     if (job.digest !== this.requestDigest(state, job)) throw new Error('device_dispatch_changed')
     if (this.stop.signal.aborted) throw new Error('device_closed_before_claim')
+    const writer = await this.takeWriter(state, entry)
+    if (this.stop.signal.aborted) throw new Error('device_closed_before_claim')
+    // Every outbound attempt follows a synced claiming generation, including recovery after a failed save.
+    await this.saveJournal()
     const claimed = await this.call('/devices/agent/claim', { instanceId: state.instanceId, executionId: id,
       processId: entry.processId }, deviceClaim, state.token)
     if (claimed.executionId !== id || claimed.directoryId !== job.directoryId || claimed.command !== job.command
@@ -446,17 +504,12 @@ export class DesktopWorker {
     entry.dispatchId = claimed.dispatchId
     entry.stage = 'claimed'
     await this.saveJournal()
-    const folder = state.directories.find(item => item.id === claimed.directoryId)
-    if (!folder) throw new Error('directory_not_authorized')
-    const root = await realpath(folder.path)
-    if (root !== folder.path || !(await lstat(root)).isDirectory()) throw new Error('directory_changed')
-    const requested = resolve(root, claimed.cwd)
-    if (requested !== root && !requested.startsWith(root + '/')) throw new Error('cwd_outside_directory')
-    const actual = await realpath(requested)
-    if (actual !== root && !actual.startsWith(root + '/')) throw new Error('cwd_outside_directory')
+    const folder = this.authorizedDirectory(claimed.directoryId), root = folder.path
+    await this.inspectDirectory(folder, claimed.cwd)
     entry.imageId = await this.containers.resolveImage(this.image)
     await this.saveJournal()
     if (this.stop.signal.aborted) throw new Error('device_closed_before_create')
+    await this.inspectDirectory(folder, claimed.cwd)
     entry.receipt = await this.containers.create({ name, owner, imageId: entry.imageId,
       options: ['--network', 'none', '--read-only', '--tmpfs', '/tmp:rw,nosuid,size=64m',
         '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--pids-limit', '128',
@@ -466,6 +519,7 @@ export class DesktopWorker {
       command: ['-lc', claimed.command] })
     entry.stage = 'created'
     await this.saveJournal()
+    await writer.capture(entry.receipt)
     const receipt = entry.receipt
     const canStart = await this.register(state, entry)
     // Persist the intent before start: a lost response or a crash cannot authorize a second start.
@@ -477,7 +531,10 @@ export class DesktopWorker {
       await this.saveJournal()
       try {
         if (this.stop.signal.aborted || this.jobs.get(id)?.cancelRequested) entry.result = uncertain()
-        else await this.containers.start(receipt)
+        else {
+          await this.inspectDirectory(folder, claimed.cwd)
+          await this.containers.start(receipt)
+        }
       }
       catch (_startUnconfirmed) {
         const observed = await this.containers.inspect(receipt)
@@ -532,6 +589,8 @@ export class DesktopWorker {
       entry.stopRequestId = deviceFinishRequest.shape.requestId.parse(randomUUID())
       await this.saveJournal()
     }
+    const writer = await this.takeWriter(state, entry)
+    await writer.recordStop(entry.stopObservation, entry.stopRequestId)
     const input = deviceFinishRequest.parse({ instanceId: state.instanceId, executionId: entry.id,
       processId: claimed.processId, dispatchId: claimed.dispatchId, requestId: entry.stopRequestId,
       observation: entry.stopObservation, result: entry.result })
@@ -539,6 +598,12 @@ export class DesktopWorker {
     if (accepted.executionId !== entry.id || accepted.dispatchId !== claimed.dispatchId
       || accepted.requestId !== entry.stopRequestId) throw new Error('device_result_identity_mismatch')
     if (observed) await this.containers.remove(entry.receipt)
+    if (!await writer.settle(accepted)) {
+      this.notice = 'device_unknown_result_requires_approval'
+      return
+    }
+    await writer.release()
+    this.writer = null
     // Missing is acceptable only after an exact stop observation was saved before removal.
     this.journal.delete(entry.id)
     try { await this.saveJournal() }

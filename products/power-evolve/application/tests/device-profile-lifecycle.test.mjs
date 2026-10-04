@@ -37,7 +37,8 @@ async function fixture(t) {
         dsh: { profile: { bundles: ['@power-evolve/device'] } } }))
       await writeFile(join(profile, 'cordis.patch.yml'), yaml.dump([
         { id: 'web-server', config: { host: '127.0.0.1', port: 0 } },
-        { id: 'power-evolve-device', config: { ...deviceConfig, privateDir, readyFile } },
+        { id: 'power-evolve-device', config: { ...deviceConfig, privateDir, readyFile,
+          coordinationRoot: join(root, 'writers'), pythonExecutable: '/usr/bin/python3' } },
       ]))
       const processChild = spawn(process.execPath, [join(repository, 'apps/cli/lib/bin.js'), '--profile', 'device-lifecycle'], {
         cwd: repository,

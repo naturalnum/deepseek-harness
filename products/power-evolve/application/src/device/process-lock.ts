@@ -141,6 +141,16 @@ export class DeviceProcessLock {
   }
 
   /**
+   * Descriptor for a trusted child to inherit through its explicit stdio mapping. The child keeps
+   * the same open-file flock after this process closes its descriptor; call assertOwned before spawn.
+   * @returns Held kernel-lock descriptor; released locks cannot supply it.
+   */
+  get fd(): number {
+    if (this.releasePromise) throw new DeviceProcessLockError('device_process_lock_released')
+    return this.handle.fd
+  }
+
+  /**
    * Close both retained descriptors, await completion, and keep the stable lock file. Concurrent and
    * repeated calls join the same completion, including a close failure; no PID or expiry is involved.
    * @returns Completion of descriptor closure, which releases the kernel lock.

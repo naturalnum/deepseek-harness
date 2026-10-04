@@ -6,6 +6,7 @@
   "files": [
     "lib",
     "src/platform/safe-posix.py",
+    "src/device/local-files.py",
     "assets/builtin-skills/generated",
     "web",
     "README.md",

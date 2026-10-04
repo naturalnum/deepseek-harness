@@ -4,7 +4,7 @@ import { fork } from 'node:child_process'
 import test, { type TestContext } from 'node:test'
 import { createHash, randomUUID } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
-import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -103,16 +103,19 @@ class DockerReplacement implements DockerClient {
 }
 
 type Job = z.infer<typeof deviceJob>
-async function fixture(t: TestContext) {
+async function fixture(t: TestContext, shared?: { coordinationRoot: string; directory: string }) {
   const base = await mkdtemp(join(await realpath(tmpdir()), 'pe-worker-recovery-'))
-  const privateRoot = join(base, 'private'), directory = join(base, 'project')
-  await mkdir(directory, { mode: 0o700 })
+  const privateRoot = join(base, 'private'), directory = shared?.directory ?? join(base, 'project')
+  const workerOptions = { ...options, coordinationRoot: shared?.coordinationRoot ?? join(base, 'writers'),
+    pythonExecutable: '/usr/bin/python3', fileOperationTimeoutMs: 1000 }
+  await mkdir(directory, { mode: 0o700, recursive: true })
   const deviceId = randomUUID(), directoryId = randomUUID(), docker = new DockerReplacement()
   const requests: { path: string; body: Record<string, unknown> }[] = [], finishes: Record<string, unknown>[] = []
   const allowed = [directoryId], workers: DesktopWorker[] = []
   const closeChildren: (() => Promise<void>)[] = []
   const claims = new Map<string, z.infer<typeof deviceClaim>>()
   const registrations = new Map<string, string>(), finished = new Map<string, string>()
+  const resolvedUnknown = new Set<string>()
   let jobs: Job[] = [], finishAck: 'valid' | 'wrong-id' | 'running' | 'wrong-dispatch' | 'wrong-request' | 'no-stop' | 'lost' = 'valid'
   let registerAck: 'valid' | 'lost' | 'wrong-dispatch' | 'wrong-receipt' | 'no-start' = 'valid'
   let claimAck: 'valid' | 'lost' = 'valid'
@@ -120,6 +123,9 @@ async function fixture(t: TestContext) {
   let onClaim: (() => Promise<void>) | undefined
   let directoryGate: ReturnType<typeof gate> | undefined
   let directoryEntered: ReturnType<typeof gate> | undefined
+  let directoryIssued = false
+  let transferGate: ReturnType<typeof gate> | undefined
+  const cloudBytes = Buffer.from('explicit cloud transfer\n')
   async function route(req: IncomingMessage, res: ServerResponse) {
     const buffers: Buffer[] = []; let length = 0
     for await (const chunk of req) { const bytes = Buffer.from(chunk); length += bytes.length; assert(length <= 65536); buffers.push(bytes) }
@@ -136,11 +142,20 @@ async function fixture(t: TestContext) {
       case '/devices/enroll': reply = { deviceId, token: 'synthetic-device-test-token-00000000000000' }; break
       case '/devices/agent/directory': {
         directoryEntered?.release(); await directoryGate?.promise
-        const id = allowed.length === 1 && workers.length === 1 && !directoryGate ? directoryId : randomUUID()
+        const id = directoryIssued ? randomUUID() : directoryId
+        directoryIssued = true
         if (!allowed.includes(id)) allowed.push(id)
         reply = { directoryId: id }; break
       }
       case '/devices/agent/jobs': reply = { jobs, directories: [...allowed] }; break
+      case '/devices/agent/files/read': {
+        await transferGate?.promise
+        reply = { data: cloudBytes.toString('base64'), revision: createHash('sha256').update(cloudBytes).digest('hex') }; break
+      }
+      case '/devices/agent/files/put': {
+        const input = z.object({ path: z.string(), data: z.string() }).passthrough().parse(body)
+        reply = { path: input.path, revision: createHash('sha256').update(Buffer.from(input.data, 'base64')).digest('hex') }; break
+      }
       case '/devices/agent/claim': {
         const input = deviceClaimRequest.parse(body)
         const job = jobs.find(item => item.executionId === body.executionId); assert(job)
@@ -180,7 +195,8 @@ async function fixture(t: TestContext) {
           dispatchId: finishAck === 'wrong-dispatch' ? randomUUID() : body.dispatchId,
           requestId: finishAck === 'wrong-request' ? randomUUID() : body.requestId,
           stopConfirmed: finishAck !== 'no-stop',
-          state: finishAck === 'running' ? 'running' : z.object({ state: z.string() }).parse(body.result).state }; break
+          state: finishAck === 'running' ? 'running' : resolvedUnknown.has(input.executionId) ? 'closed_unknown'
+            : z.object({ state: z.string() }).parse(body.result).state }; break
       }
       default: res.writeHead(404).end(); return
     }
@@ -191,11 +207,11 @@ async function fixture(t: TestContext) {
   const address = server.address(); assert(address && typeof address === 'object')
   const url = 'http://127.0.0.1:' + address.port
   const makeWorker = () => {
-    const worker = new DesktopWorker(url, privateRoot, 'synthetic-fixture:tag', options, new OwnedDeviceContainer(containerOptions, docker))
+    const worker = new DesktopWorker(url, privateRoot, 'synthetic-fixture:tag', workerOptions, new OwnedDeviceContainer(containerOptions, docker))
     workers.push(worker); return worker
   }
   t.after(async () => {
-    directoryGate?.release(); claimGate?.release(); docker.stopGate?.release()
+    directoryGate?.release(); claimGate?.release(); docker.stopGate?.release(); transferGate?.release()
     await Promise.all(closeChildren.map(close => close()))
     await Promise.all(workers.map(worker => worker.close()))
     server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve()))
@@ -252,7 +268,7 @@ process.on('message', async message => {
 });
 process.send({ event: 'ready' });
 `, { mode: 0o600, flag: 'wx' })
-    const child = fork(path, [url, privateRoot, JSON.stringify(options), JSON.stringify(containerOptions)],
+    const child = fork(path, [url, privateRoot, JSON.stringify(workerOptions), JSON.stringify(containerOptions)],
       { cwd: fileURLToPath(new URL('../../../../', import.meta.url)), execArgv: [], env: {}, stdio: ['ignore', 'pipe', 'pipe', 'ipc'] })
     let stderr = '', stdout = ''
     child.stderr?.on('data', bytes => { stderr = (stderr + String(bytes)).slice(0, 4096) })
@@ -279,14 +295,23 @@ process.send({ event: 'ready' });
       child.send('close'); assert.deepEqual(await bounded(closed), { code: 0, signal: null }); assert.equal(stdout, ''); assert.equal(stderr, '')
     } }
   }
-  return { base, privateRoot, directory, docker, worker, makeWorker, seed, job, requests, finishes,
+  return { base, privateRoot, directory, coordinationRoot: workerOptions.coordinationRoot,
+    docker, worker, makeWorker, seed, job, requests, finishes,
     makeChild,
+    async resolveUnknown() {
+      await until(() => finishes.length > 0, 'reported unknown outcome')
+      const rows = await journal(privateRoot); assert.equal(rows.length, 1)
+      assert.equal(rows[0]!.result?.state, 'uncertain'); assert(rows[0]!.stopObservation)
+      resolvedUnknown.add(rows[0]!.id)
+      await until(async () => (await journal(privateRoot)).length === 0, 'cleanup after synthetic trusted closure')
+    },
     advertise(value: Job[]) { jobs = value }, ack(value: typeof finishAck) { finishAck = value },
     registrationAck(value: typeof registerAck) { registerAck = value },
     claimAck(value: typeof claimAck) { claimAck = value },
     observeClaim(action: () => Promise<void>) { onClaim = action },
     holdClaim() { claimGate = gate(); claimEntered = gate(); return { entered: claimEntered.promise, release: claimGate.release } },
-    holdDirectory() { directoryGate = gate(); directoryEntered = gate(); return { entered: directoryEntered.promise, release: directoryGate.release } } }
+    holdDirectory() { directoryGate = gate(); directoryEntered = gate(); return { entered: directoryEntered.promise, release: directoryGate.release } },
+    holdTransfer() { transferGate = gate(); return { release: transferGate.release } } }
 }
 
 test('fresh public execution saves owner before create and receipt/start intent before start, with native lock exclusion', workerTestOptions, async t => {
@@ -313,7 +338,7 @@ test('lost create acknowledgement is adopted once; cold create-to-journal recove
   await fresh.worker.close()
   const cold = await fixture(t), row = await cold.seed('claimed', false)
   cold.docker.seed(row); const recovering = cold.makeWorker(); await recovering.init(); recovering.start()
-  await until(async () => cold.finishes.length === 1 && (await journal(cold.privateRoot)).length === 0, 'cold gap cleanup')
+  await cold.resolveUnknown()
   assert.equal(z.object({ state: z.string() }).parse(cold.finishes[0]!.result).state, 'uncertain')
   assert.equal(cold.docker.count('create'), 0); assert.equal(cold.docker.count('start'), 0); assert.equal(cold.docker.count('rm'), 1)
 })
@@ -342,7 +367,7 @@ test('failed stop closes boundedly, releases flock, and the next worker recovers
   assert.equal(f.requests.filter(item => item.path === '/devices/agent/claim').length, 1)
   assert.equal(f.docker.count('create'), 1); assert.equal(f.docker.count('start'), 1)
   f.advertise([]); f.docker.failStop = false
-  await until(async () => f.finishes.length === 1 && (await journal(f.privateRoot)).length === 0, 'recovered stop and cleanup')
+  await f.resolveUnknown()
   rows = await journal(f.privateRoot); assert.equal(rows.length, 0)
   assert.equal(z.object({ state: z.string() }).parse(f.finishes[0]!.result).state, 'uncertain')
   await next.close(); const successor = f.makeWorker(); await successor.init(); await successor.close()
@@ -355,7 +380,7 @@ test('a saved stop observation cannot finish a container that is running again b
   await until(() => f.docker.count('stop') === 1, 'restarted container stop request')
   assert.equal(f.finishes.length, 0); assert.equal((await journal(f.privateRoot))[0]!.stopObservation, undefined)
   f.docker.stopGate.release()
-  await until(async () => f.finishes.length === 1 && (await journal(f.privateRoot)).length === 0, 'new stop observation completion')
+  await f.resolveUnknown()
   assert.equal(z.object({ state: z.string() }).parse(f.finishes[0]!.result).state, 'uncertain')
   assert.equal(f.docker.count('start'), 0); assert.equal(f.docker.count('create'), 0)
 })
@@ -390,7 +415,7 @@ test('close closes local admission and waits for an in-flight public authorize b
 test('lost registration acknowledgement and duplicate registration never authorize start', workerTestOptions, async t => {
   for (const ack of ['lost', 'no-start'] as const) {
     const f = await fixture(t); f.registrationAck(ack); f.advertise([f.job()]); f.worker.start()
-    await until(async () => f.finishes.length === 1 && (await journal(f.privateRoot)).length === 0, 'unstarted registration recovery')
+    await f.resolveUnknown()
     assert.equal(f.docker.count('create'), 1); assert.equal(f.docker.count('start'), 0); assert.equal(f.docker.count('rm'), 1)
     assert.equal(z.object({ state: z.string() }).parse(f.finishes[0]!.result).state, 'uncertain')
     const registrations = f.requests.filter(item => item.path === '/devices/agent/register')
@@ -409,7 +434,7 @@ test('mismatched registration dispatch or exact receipt retains evidence and pre
     assert.equal(f.docker.count('start'), 0); assert.equal(f.docker.count('rm'), 0); assert.equal(f.finishes.length, 0)
     assert.equal(f.requests.filter(item => item.path === '/devices/agent/claim').length, 1)
     f.registrationAck('valid')
-    await until(async () => f.finishes.length === 1 && (await journal(f.privateRoot)).length === 0, 'valid duplicate registration recovery')
+    await f.resolveUnknown()
     assert.equal(f.docker.count('start'), 0); assert.equal(f.docker.count('create'), 1)
     assert.equal(z.object({ state: z.string() }).parse(f.finishes[0]!.result).state, 'uncertain')
   }
@@ -525,4 +550,99 @@ test('close during a successful claim acknowledgement preserves its intent and s
   assert.equal(row.stage, 'claimed'); assert.deepEqual(row.queuedJob, job)
   assert.equal(f.docker.count('create'), 0); assert.equal(f.docker.count('start'), 0)
   assert.equal(f.requests.filter(item => item.path === '/devices/agent/register').length, 0)
+})
+
+test('a different Device cannot claim an overlapping directory before the prior writer is stopped and settled', workerTestOptions, async t => {
+  const first = await fixture(t)
+  first.docker.keepRunning = true
+  first.advertise([first.job()]); first.worker.start()
+  await until(() => first.docker.state.Running, 'first writer running')
+  const second = await fixture(t, { coordinationRoot: first.coordinationRoot, directory: join(first.directory, 'nested') })
+  second.advertise([second.job()]); second.worker.start()
+  await until(() => notice(second.worker) === 'device_process_already_owned', 'shared writer exclusion')
+  assert.equal(second.requests.filter(item => item.path === '/devices/agent/claim').length, 0)
+  assert.equal(second.docker.count('create'), 0)
+  await second.worker.close()
+  const restarted = second.makeWorker(); await restarted.init(); restarted.start()
+  await first.worker.close()
+  await until(async () => (await journal(first.privateRoot)).length === 0, 'first stopped and settled')
+  await until(async () => second.finishes.length === 1 && (await journal(second.privateRoot)).length === 0, 'waiting Device restored')
+  assert.equal(second.requests.filter(item => item.path === '/devices/agent/claim').length, 1)
+  assert.equal(second.docker.count('create'), 1); assert.equal(second.docker.count('start'), 1)
+})
+
+test('a stopped unknown command retains shared admission across restart until trusted closure', workerTestOptions, async t => {
+  const first = await fixture(t)
+  first.registrationAck('no-start'); first.advertise([first.job()]); first.worker.start()
+  await until(() => first.finishes.length > 0 && notice(first.worker) === 'device_unknown_result_requires_approval', 'unknown stopped writer')
+  assert.equal(first.docker.count('rm'), 1)
+  const second = await fixture(t, { coordinationRoot: first.coordinationRoot, directory: first.directory })
+  second.advertise([second.job()]); second.worker.start()
+  await until(() => notice(second.worker) === 'device_process_already_owned', 'live unknown reservation')
+  await first.worker.close()
+  await until(() => notice(second.worker) === 'device_writer_busy', 'durable unknown reservation')
+  assert.equal(second.requests.filter(item => item.path === '/devices/agent/claim').length, 0)
+  const recovering = first.makeWorker(); await recovering.init(); recovering.start()
+  await first.resolveUnknown()
+  await until(async () => second.finishes.length === 1 && (await journal(second.privateRoot)).length === 0, 'admission after closure')
+  assert.equal(first.docker.count('create'), 1); assert.equal(first.docker.count('start'), 0)
+  const reports = first.finishes
+  for (const report of reports) assert.deepEqual(report, reports[0])
+  assert.equal(second.docker.count('start'), 1)
+})
+
+test('local transfer holds shared admission across Devices and refuses a repeated create without overwriting', workerTestOptions, async t => {
+  const first = await fixture(t)
+  const second = await fixture(t, { coordinationRoot: first.coordinationRoot, directory: first.directory })
+  const status = z.object({ directories: z.array(z.object({ directoryId: z.uuid() })) }).parse(first.worker.status())
+  const directoryId = status.directories[0]!.directoryId
+  const held = first.holdTransfer()
+  const incoming = first.worker.importFile(directoryId, 'cloud.txt', 'received.txt')
+  await until(() => first.requests.some(item => item.path === '/devices/agent/files/read'), 'admitted transfer')
+  const secondId = z.object({ directories: z.array(z.object({ directoryId: z.uuid() })) }).parse(second.worker.status()).directories[0]!.directoryId
+  await assert.rejects(second.worker.exportFile(secondId, 'received.txt', 'exported.txt', randomUUID()), { code: 'device_process_already_owned' })
+  assert.equal(second.requests.filter(item => item.path === '/devices/agent/files/put').length, 0)
+  held.release(); await incoming
+  assert.equal(await readFile(join(first.directory, 'received.txt'), 'utf8'), 'explicit cloud transfer\n')
+  await assert.rejects(first.worker.importFile(directoryId, 'cloud.txt', 'received.txt'), { code: 'file_exists' })
+  await second.worker.exportFile(secondId, 'received.txt', 'exported.txt', randomUUID())
+  assert.equal(await readFile(join(first.directory, 'received.txt'), 'utf8'), 'explicit cloud transfer\n')
+  assert.equal(first.docker.calls.length + second.docker.calls.length, 0)
+})
+
+test('legacy directory access requires explicit local reauthorization and excludes protected runtime directories', workerTestOptions, async t => {
+  const f = await fixture(t)
+  const statePath = join(f.privateRoot, 'device.json')
+  await f.worker.close()
+  const state = z.object({ directories: z.array(z.object({ id: z.uuid() }).passthrough()) }).passthrough().parse(JSON.parse(await readFile(statePath, 'utf8')))
+  const directoryId = state.directories[0]!.id
+  delete state.directories[0]!.identity
+  await writeFile(statePath, JSON.stringify(state), { mode: 0o600 })
+  const next = f.makeWorker(); await next.init()
+  await assert.rejects(next.importFile(directoryId, 'cloud.txt', 'legacy.txt'), /directory_requires_local_reauthorization/u)
+  const allowed = z.object({ directoryId: z.uuid() }).parse(await next.authorize(f.directory))
+  assert.equal(allowed.directoryId, directoryId)
+  await next.importFile(directoryId, 'cloud.txt', 'legacy.txt')
+  for (const selected of [f.privateRoot, f.coordinationRoot, f.base]) {
+    await assert.rejects(next.authorize(selected), /directory_not_allowed/u)
+  }
+  assert.equal(await readFile(join(f.directory, 'legacy.txt'), 'utf8'), 'explicit cloud transfer\n')
+  assert.equal(f.docker.calls.length, 0)
+})
+
+test('a replacement physical directory cannot use the old grant and explicit selection issues a new grant', workerTestOptions, async t => {
+  const f = await fixture(t)
+  const status = z.object({ directories: z.array(z.object({ directoryId: z.uuid() })) }).parse(f.worker.status())
+  const originalId = status.directories[0]!.directoryId
+  await rename(f.directory, join(f.base, 'original-project'))
+  await mkdir(f.directory, { mode: 0o700 })
+  await writeFile(join(f.directory, 'new.txt'), 'replacement bytes')
+  await assert.rejects(f.worker.exportFile(originalId, 'new.txt', 'exported.txt', randomUUID()), { code: 'directory_identity_changed' })
+  await assert.rejects(f.worker.importFile(originalId, 'cloud.txt', 'received.txt'), /directory_changed/u)
+  assert.equal(f.requests.filter(item => item.path === '/devices/agent/files/put' || item.path === '/devices/agent/files/read').length, 0)
+  const renewed = z.object({ directoryId: z.uuid() }).parse(await f.worker.authorize(f.directory))
+  assert.notEqual(renewed.directoryId, originalId)
+  await f.worker.importFile(renewed.directoryId, 'cloud.txt', 'received.txt')
+  assert.equal(await readFile(join(f.directory, 'new.txt'), 'utf8'), 'replacement bytes')
+  assert.equal(f.docker.calls.length, 0)
 })

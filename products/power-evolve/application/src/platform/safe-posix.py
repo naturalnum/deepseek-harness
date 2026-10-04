@@ -329,18 +329,24 @@ def execute(request):
         os.close(workspace)
 
 
-try:
-    payload = sys.stdin.buffer.read(4 * 1024 * 1024 + 1)
-    if len(payload) > 4 * 1024 * 1024:
-        raise Refusal('invalid_file_data')
-    result = execute(json.loads(payload))
-    sys.stdout.write(json.dumps({'ok': True, 'value': result}, separators=(',', ':')))
-except Refusal as error:
-    sys.stdout.write(json.dumps({'ok': False, 'code': error.code}, separators=(',', ':')))
-except FileNotFoundError:
-    sys.stdout.write('{"ok":false,"code":"file_not_found"}')
-except OSError as error:
-    code = 'invalid_path' if error.errno in (errno.ELOOP, errno.ENOTDIR) else 'workspace_unavailable'
-    sys.stdout.write(json.dumps({'ok': False, 'code': code}, separators=(',', ':')))
-except (ValueError, KeyError, TypeError, UnicodeError):
-    sys.stdout.write('{"ok":false,"code":"workspace_unavailable"}')
+def main():
+    """Read one bounded Cloud request; imports perform no stdin or filesystem work."""
+    try:
+        payload = sys.stdin.buffer.read(4 * 1024 * 1024 + 1)
+        if len(payload) > 4 * 1024 * 1024:
+            raise Refusal('invalid_file_data')
+        result = execute(json.loads(payload))
+        sys.stdout.write(json.dumps({'ok': True, 'value': result}, separators=(',', ':')))
+    except Refusal as error:
+        sys.stdout.write(json.dumps({'ok': False, 'code': error.code}, separators=(',', ':')))
+    except FileNotFoundError:
+        sys.stdout.write('{"ok":false,"code":"file_not_found"}')
+    except OSError as error:
+        code = 'invalid_path' if error.errno in (errno.ELOOP, errno.ENOTDIR) else 'workspace_unavailable'
+        sys.stdout.write(json.dumps({'ok': False, 'code': code}, separators=(',', ':')))
+    except (ValueError, KeyError, TypeError, UnicodeError):
+        sys.stdout.write('{"ok":false,"code":"workspace_unavailable"}')
+
+
+if __name__ == '__main__':
+    main()

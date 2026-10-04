@@ -2,6 +2,7 @@
 import { execFile, type ChildProcess } from 'node:child_process'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
+import { isAbsolute, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
@@ -18,6 +19,8 @@ export const name = 'power-evolve-device'
 export const inject = ['webServer']
 export const Config = schema.object({
   platformUrl: schema.string().required(), privateDir: schema.string().required(),
+  coordinationRoot: schema.string().required(), pythonExecutable: schema.string().required(),
+  fileOperationTimeoutMs: schema.number().step(1).min(100).max(60000).required(),
   image: schema.string().required(), pollMs: schema.number().min(100).required(),
   contactGraceMs: schema.number().step(1).min(100).max(60000).required(),
   commandPollMs: schema.number().step(1).min(10).max(60000).required(),
@@ -46,9 +49,14 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   if (config.dockerStopTimeoutMs <= config.dockerStopGraceSeconds * 1000) {
     throw new Error('Device Docker stop timeout must exceed its grace period')
   }
+  if (!isAbsolute(config.coordinationRoot) || resolve(config.coordinationRoot) === resolve(config.privateDir)) {
+    throw new Error('Device coordination requires a separate absolute root shared by local Profiles')
+  }
   const worker = new DesktopWorker(config.platformUrl, config.privateDir, config.image, {
     pollMs: config.pollMs, contactGraceMs: config.contactGraceMs,
     commandPollMs: config.commandPollMs, platformRequestTimeoutMs: config.platformRequestTimeoutMs,
+    coordinationRoot: config.coordinationRoot, pythonExecutable: config.pythonExecutable,
+    fileOperationTimeoutMs: config.fileOperationTimeoutMs,
   }, new OwnedDeviceContainer({ commandTimeoutMs: config.dockerCommandTimeoutMs,
     stopTimeoutMs: config.dockerStopTimeoutMs, stopGraceSeconds: config.dockerStopGraceSeconds }))
   ctx.effect(() => () => worker.close())
