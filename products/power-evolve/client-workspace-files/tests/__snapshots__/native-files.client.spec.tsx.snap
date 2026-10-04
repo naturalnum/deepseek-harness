@@ -565,3 +565,17 @@ exports[`records zh native Files selection, preparation, cancellation, failure a
   },
 }
 `;
+
+exports[`uploads with a delayed Workspace catalog and handles Platform 200 1`] = `
+{
+  "draft": "附件文件 "new-session.pdf" 已上传到 "/workspace/uploads/<request-id>/new-session.pdf"。",
+  "error": null,
+}
+`;
+
+exports[`uploads with a delayed Workspace catalog and handles Platform 403 1`] = `
+{
+  "draft": "",
+  "error": "File upload failed. Try again.",
+}
+`;

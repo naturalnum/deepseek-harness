@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-/** Boot native Files and the product through the production browser Loader; only Host facts and tab records are fixtures. */
+/** Boot native Files and the product through the production browser Loader; Host facts, composer state, HTTP replies and tab records are fixtures. */
+import { File as NodeFile } from 'node:buffer'
 import { useSyncExternalStore } from 'react'
 import { act, cleanup, fireEvent, within } from '@testing-library/react'
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest'
@@ -16,6 +17,7 @@ import { ClientRoster, TestClient, remoteDefaultResponses, webApp } from '@deeps
 import { RemoteMock, ok, openStream } from '@deepseek-ai/dsh-remote-mock'
 import * as uiSession from '@deepseek-ai/dsh-client-ui-session/client'
 import * as nativeFiles from '@deepseek-ai/dsh-client-ui-sidebar-files/client'
+import type { InputActions, InputState } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import { fileDownloadPrepareRequest, fileDownloadUrl } from '@power-evolve/contracts/file-download'
 import * as product from '../src/client/index.ts'
 import { en, zh } from '../src/client/locales.ts'
@@ -29,13 +31,20 @@ const OWNER = '@power-evolve/test-files-owner'
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
-async function boot(language: 'en' | 'zh' = 'en') {
+async function boot(language: 'en' | 'zh' = 'en', composer = false) {
   const owner = createSnapshotStore({ sessionId: ALICE, tabId: 'files-1', visible: true })
   const records = new Map<string, AbortController>()
   const refs = new Map<SessionId, SessionReference>()
   const opened = vi.fn()
+  const input = createSnapshotStore<InputState>({ draft: '', attachmentIds: [], draftRev: 0,
+    phase: 'plain', occurrences: [], queue: [] })
+  const setDraft = vi.fn((draft: string) => { input.update(state => { state.draft = draft; state.draftRev++ }) })
+  const unused = () => { throw new Error('Composer fixture action is unused') }
+  const inputActions: InputActions = { setDraft, captureInsertion: unused, insertText: unused,
+    addAttachments: unused, removeAttachment: unused, pruneAttachments: unused, submit: unused }
   let locale: LocaleRuntime
   let sessions: TestSessions
+  let workspaces: TestWorkspaces
   const mock = RemoteMock.create().load(remoteDefaultResponses)
     .stream('workspaceFiles/changes', openStream([{ kind: 'ready' }]))
     .unary('workspaceFiles/list', (args) => {
@@ -58,7 +67,12 @@ async function boot(language: 'en' | 'zh' = 'en') {
       for (const id of [ALICE, BOB]) refs.set(id, sessions.retain(id))
       ctx.effect(() => () => { for (const ref of refs.values()) ref.release() })
       ctx.provide('sessions', sessions)
-      ctx.provide('workspaces', new TestWorkspaces(stabilize))
+      workspaces = new TestWorkspaces(stabilize)
+      ctx.provide('workspaces', workspaces)
+      if (composer) ctx.inject(['uiSession'], (scope) => scope.uiSession.provide({
+        hooks: ['input'], props: ['inputActions'],
+        resolve: () => ({ hooks: { input }, props: { inputActions } }),
+      }))
       ctx.provide('sidebarRightTabs', new SidebarRightTabRegistry(ctx))
       ctx.provide('sidebarRight', { commandTarget: () => undefined, openTabFromTarget: () => {} } as never)
       locale = new LocaleRuntime(ctx)
@@ -71,7 +85,7 @@ async function boot(language: 'en' | 'zh' = 'en') {
         'sidebar.right.pane.tab.title': { kind: 'keyed', scope: 'session' },
         'conversation.input.left': { kind: 'list', scope: 'session' },
         'sidebar.right.tab.document.actions': { kind: 'list', scope: 'session' },
-      } } as never, (props: PropsRenderSlots<'sidebar.right.pane.tab'> & { SessionProvider: React.ComponentType<{ session: SessionReference; children: React.ReactNode }> }) => {
+      } } as never, (props: PropsRenderSlots<'sidebar.right.pane.tab' | 'conversation.input.left'> & { SessionProvider: React.ComponentType<{ session: SessionReference; children: React.ReactNode }> }) => {
         const current = useSyncExternalStore(owner.subscribe, owner.getSnapshot)
         const key = `${current.sessionId}:${current.tabId}`
         let record = records.get(key)
@@ -80,6 +94,7 @@ async function boot(language: 'en' | 'zh' = 'en') {
           actions: { bindCommands: () => () => {}, openResource: opened }, visible: true }
         const useTabInfo = () => ({ tab })
         return <props.SessionProvider session={refs.get(current.sessionId)!}>
+          {composer && props.renderSlot('conversation.input.left', {})}
           {current.visible && props.renderSlot('sidebar.right.pane.tab', {},
             { entryKey: FILES, hookContext: useTabInfo as never })}
         </props.SessionProvider>
@@ -107,11 +122,50 @@ async function boot(language: 'en' | 'zh' = 'en') {
     mock.assertNoUnmatched()
   })
   return { client, container, query, mock, records, owner, locale: locale!, sessions: sessions!, opened,
+    workspaces: workspaces!, input, setDraft,
     move: async (next: Partial<ReturnType<typeof owner.getSnapshot>>) => {
       await act(async () => { owner.update(state => { Object.assign(state, next) }) })
     },
     checkbox: (path: string) => container.querySelector<HTMLInputElement>(`[data-workspace-download-select="${path}"]`)!,
   }
+}
+
+for (const status of [200, 403]) {
+  it(`uploads with a delayed Workspace catalog and handles Platform ${status}`, async () => {
+    const request = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(String(init.body)) as { request: { sessionId: string; path: string; data: string } }
+      return status === 200 ? Response.json({ path: body.request.path }) : new Response(null, { status })
+    })
+    vi.stubGlobal('fetch', request)
+    const b = await boot('en', true)
+    expect(b.workspaces.list.getSnapshot().items).toEqual([])
+    await vi.waitFor(() => { expect(b.query.getByRole('button', { name: en.attach }).hasAttribute('disabled')).toBe(false) })
+    const file = new NodeFile([Uint8Array.of(37, 80, 68, 70)], 'new-session.pdf', { type: 'application/pdf' })
+    fireEvent.change(b.container.querySelector<HTMLInputElement>('[data-workspace-file-control] input')!,
+      { target: { files: [file] } })
+    await vi.waitFor(() => { expect(request).toHaveBeenCalledTimes(1) })
+    const [url, init] = request.mock.calls[0]!
+    const body = JSON.parse(String(init.body)) as { request: { sessionId: string; path: string; data: string } }
+    expect(url).toBe('/api/powerEvolve/filesPut')
+    expect(init.credentials).toBe('same-origin')
+    expect(body.request.sessionId).toBe(ALICE)
+    expect(body.request.path).toMatch(/^uploads\/[0-9a-f-]{36}\/new-session\.pdf$/)
+    expect(body.request.data).toBe('JVBERg==')
+    if (status === 200) {
+      await vi.waitFor(() => { expect(b.setDraft).toHaveBeenCalledTimes(1) })
+      expect(b.input.getSnapshot().draft).toContain(`/workspace/${body.request.path}`)
+      expect(b.query.queryByRole('alert')).toBeNull()
+    } else {
+      expect(await b.query.findByRole('alert')).toHaveProperty('textContent', en.failed)
+      expect(b.setDraft).not.toHaveBeenCalled()
+      expect(b.input.getSnapshot().draft).toBe('')
+    }
+    expect({
+      draft: b.input.getSnapshot().draft.replace(`/workspace/${body.request.path}`,
+        '/workspace/uploads/<request-id>/new-session.pdf'),
+      error: b.query.queryByRole('alert')?.textContent ?? null,
+    }).toMatchSnapshot()
+  }, 30_000)
 }
 
 function metadata(request: unknown) {

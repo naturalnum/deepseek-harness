@@ -1,7 +1,6 @@
 /** PowerEvolve file controls in the native DSH composer, preview and Files tree. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { Session } from '@deepseek-ai/dsh-api-session-controller/client'
-import type {} from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
@@ -28,8 +27,13 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 const namespace = 'powerEvolve.workspaceFiles'
 type SessionId = Session['sessionId']
 
-export const inject = ['slots', 'locale', 'workspaces']
+/** Native slot and locale services required by the file adapter. */
+export const inject = ['slots', 'locale']
 
+/**
+ * Register native file actions authorized by the product HTTP API.
+ * @param ctx - Client plugin context owning all registrations.
+ */
 export function apply(ctx: Context): void {
   const client = new WorkspaceFileHttpClient()
   const downloads = new WorkspaceFileDownloadClient()
@@ -46,13 +50,7 @@ export function apply(ctx: Context): void {
     locale: namespace,
     inject: (sessionId: SessionId): WorkspaceFileActions => ({
       capabilities: () => client.capabilities(),
-      upload: async (file, signal) => {
-        const workspace = ctx.workspaces.list.getSnapshot().items.find(
-          item => item.sessionIds.includes(sessionId),
-        )
-        if (workspace === undefined) throw new Error('Current Session has no active Workspace')
-        return client.upload(sessionId, file, signal)
-      },
+      upload: (file, signal) => client.upload(sessionId, file, signal),
     }),
   }, WorkspaceFileButton)), 'PowerEvolve composer file upload')
   ctx.effect(() => ctx.slots.inject('sidebar.right.tab.document.actions', () => ctx.slots.register({

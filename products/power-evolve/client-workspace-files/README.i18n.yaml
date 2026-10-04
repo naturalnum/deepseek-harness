@@ -3,5 +3,5 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write products/power-evolve/client-workspace-files/README.md
 /native-workspace-files:
-  en: 0978888a0613499b
-  zh: a6918d7b168b9182
+  en: 8f75cd76158bd1f0
+  zh: 44a502bb6532a60f
