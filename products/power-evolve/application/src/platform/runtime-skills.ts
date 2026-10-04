@@ -12,11 +12,15 @@ import { PlatformError, skillSnapshot } from '../contracts.ts'
  */
 export async function readRuntimeSkill(tasks: TaskStore, skills: SkillService, token: string,
   skillId: string): Promise<unknown> {
-  const { userId, selection } = await tasks.selectedSkills(token)
+  const { userId, target, selection } = await tasks.selectedSkills(token)
   const selected = selection.find(item => item.skillId === skillId)
   if (!selected) throw new PlatformError(404, 'skill_not_found')
   const result = skillSnapshot.parse(await skills.readSelected(userId, selected, skillId))
-  const resources = await skills.runtimeResourceBase(userId, selection, skillId)
+  const resources = target.kind === 'desktop'
+    ? { runtimePath: selected.kind === 'package'
+      ? `/opt/power-evolve/skills/sha256/${(await skills.deviceBindings(userId, [selected]))[0]!.packageDigest}/skill` : null,
+    suiteAvailable: false }
+    : await skills.runtimeResourceBase(userId, selection, skillId)
   await tasks.selectedSkills(token)
   return { ...result, ...resources }
 }

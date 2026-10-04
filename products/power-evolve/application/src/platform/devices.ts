@@ -6,15 +6,17 @@ import { z } from 'zod'
 import { deviceClaim, deviceContainerRegistered, deviceDispatchRequest, deviceFinishRequest, deviceFinishReceipt,
   deviceClaimClosureRequest, deviceClaimClosureReceipt,
   deviceJob, ownedContainerReceipt, deviceStopObservation, deviceExecutionResult,
+  type DeviceMaterialRequest, type DeviceMaterialBinding, type DeviceSkillMaterial,
   type DeviceClaim, type DeviceClaimClosureRequest, type DeviceClaimClosureReceipt, type DeviceContainerRegistration, type DeviceFinishRequest,
   type OwnedContainerReceipt } from '@power-evolve/contracts/device-execution'
-import { executionTarget, identity, PlatformError, type Identity } from '../contracts.ts'
+import { executionTarget, identity, skillSelection, PlatformError, type Identity } from '../contracts.ts'
 import { transaction } from './database.ts'
 import { lockAccountAuthorities, requireActiveAccount, requireBrowserAccount } from './account-authority.ts'
 import { userId as executionUserId } from '../contracts.ts'
 import { digest } from './identity.ts'
 import type { FileService } from './files.ts'
 import type { TaskStore } from './tasks.ts'
+import type { SkillService } from './skills.ts'
 import type { ExecutionResolutionInspection, ExecutionResolutionReceipt, ExecutionResolutionRequest, ExecutionResolutionsList,
   ExecutionResolutionsListRequest, ExecutionResolutionStatus, ResolutionExecutionId, ResolutionRequestId } from '@power-evolve/contracts/execution-resolution'
 import { DeviceExecutionResolutionService, assertClosedDeviceResolution } from './device-execution-resolution.ts'
@@ -38,7 +40,7 @@ const hash = (value: unknown): string => createHash('sha256').update(JSON.string
 export class DeviceService {
   private readonly resolutions: DeviceExecutionResolutionService
   constructor(private readonly tasks: TaskStore, private readonly commandTimeoutMs: number,
-    private readonly files: FileService) {
+    private readonly files: FileService, private readonly skills?: SkillService) {
     this.resolutions = new DeviceExecutionResolutionService(tasks.pool, (client, row) => this.continue(client, row))
   }
   private get pool(): Pool { return this.tasks.pool }
@@ -254,11 +256,21 @@ export class DeviceService {
       if (prior.rows[0]) {
         const frozen = this.dispatch(prior.rows[0])
         if (prior.rows[0].request_digest !== hash({ command, cwd, timeoutMs: frozen.timeoutMs,
-          deviceId: target.deviceId, directoryId: target.directoryId })) throw new PlatformError(409, 'request_id_conflict')
+          deviceId: target.deviceId, directoryId: target.directoryId,
+          ...(frozen.materials ? { materials: frozen.materials } : {}) })) throw new PlatformError(409, 'request_id_conflict')
         return this.receipt(prior.rows[0])
       }
+      const operation = await client.query<{ skill_selection: unknown }>(`SELECT o.skill_selection
+        FROM pe_operations o JOIN pe_sessions s ON s.id=o.session_id
+        WHERE o.id=$1 AND o.session_id=$2 AND s.user_id=$3`, [grant.operation_id, grant.id, grant.user_id])
+      if (!operation.rows[0]) throw new PlatformError(409, 'device_operation_unavailable')
+      const selected = z.array(skillSelection).max(256).safeParse(operation.rows[0].skill_selection)
+      if (!selected.success) throw new PlatformError(409, 'device_operation_unavailable')
+      const selection = selected.data
+      if (selection.some(selected => selected.kind === 'package') && !this.skills) throw new PlatformError(503, 'device_material_service_unavailable')
+      const materials = this.skills ? await this.skills.deviceBindings(grant.user_id, selection, client) : []
       const request = deviceDispatchRequest.parse({ command, cwd, timeoutMs: this.commandTimeoutMs,
-        deviceId: target.deviceId, directoryId: target.directoryId })
+        deviceId: target.deviceId, directoryId: target.directoryId, ...(materials.length ? { materials } : {}) })
       const available = await client.query<{ instance_id: string }>(
         `SELECT d.instance_id FROM pe_devices d JOIN pe_device_directories dir ON dir.device_id=d.id
          WHERE d.id=$1 AND dir.id=$2 AND d.user_id=$3 AND dir.user_id=$3
@@ -447,7 +459,8 @@ export class DeviceService {
           const frozen = this.dispatch(row)
           return deviceJob.parse({ executionId: row.id, directoryId: frozen.directoryId,
             command: frozen.command, cwd: frozen.cwd, timeoutMs: frozen.timeoutMs,
-            state: row.state, cancelRequested: row.cancel_requested, digest: row.request_digest })
+            state: row.state, cancelRequested: row.cancel_requested, digest: row.request_digest,
+            ...(frozen.materials ? { materials: frozen.materials } : {}) })
         }) }
     })
   }
@@ -489,8 +502,60 @@ export class DeviceService {
       if (bound.data.dispatch_process_id !== processId) throw new PlatformError(409, 'device_process_changed')
       return deviceClaim.parse({ executionId: row.id, directoryId: frozen.directoryId,
         command: frozen.command, cwd: frozen.cwd, timeoutMs: frozen.timeoutMs, digest: row.request_digest,
-        dispatchId: bound.data.dispatch_id, processId: bound.data.dispatch_process_id })
+        dispatchId: bound.data.dispatch_id, processId: bound.data.dispatch_process_id,
+        ...(frozen.materials ? { materials: frozen.materials } : {}) })
     })
+  }
+
+  private async materialAdmission(client: PoolClient, token: string, input: DeviceMaterialRequest):
+    Promise<{ userId: string; selected: z.infer<typeof skillSelection>; binding: DeviceMaterialBinding }> {
+    const device = await this.authenticated(client, token)
+    await requireActiveAccount(client, executionUserId.parse(device.user_id), 'update')
+    const row = (await client.query<Row & { directory_revoked_at: Date | null }>(`SELECT e.*,dir.revoked_at AS directory_revoked_at
+      FROM pe_desktop_executions e JOIN pe_device_directories dir ON dir.id=e.directory_id
+      WHERE e.id=$1 AND e.device_id=$2 AND e.user_id=$3 AND dir.device_id=$2 AND dir.user_id=$3 FOR UPDATE OF e`,
+    [input.executionId, device.id, device.user_id])).rows[0]
+    if (!row) throw new PlatformError(404, 'execution_not_found')
+    await this.assertClaimOpen(client, row)
+    this.assertDispatch(row, device, input)
+    if (row.request_digest !== input.digest) throw new PlatformError(409, 'device_material_binding_changed')
+    if (row.state !== 'running' || row.cancel_requested || row.directory_revoked_at !== null
+      || row.container_receipt !== null || row.start_authorized_at !== null || row.stop_observation !== null || row.result !== null) {
+      throw new PlatformError(409, 'device_material_unavailable')
+    }
+    const frozen = this.dispatch(row)
+    if (!frozen.materials) throw new PlatformError(409, 'device_materials_unavailable')
+    const binding = frozen.materials.find(item => item.skillId === input.skillId)
+    if (!binding) throw new PlatformError(404, 'device_material_not_found')
+    const operation = (await client.query<{ skill_selection: unknown; execution_target: unknown }>(`SELECT o.skill_selection,o.execution_target
+      FROM pe_operations o JOIN pe_sessions s ON s.id=o.session_id
+      WHERE o.id=$1 AND o.session_id=$2 AND s.user_id=$3`, [row.operation_id, row.session_id, device.user_id])).rows[0]
+    if (!operation) throw new PlatformError(409, 'device_operation_unavailable')
+    const target = executionTarget.safeParse(operation.execution_target)
+    if (!target.success || target.data.kind !== 'desktop' || target.data.deviceId !== row.device_id || target.data.directoryId !== row.directory_id) {
+      throw new PlatformError(409, 'device_operation_unavailable')
+    }
+    const selection = z.array(skillSelection).max(256).safeParse(operation.skill_selection)
+    if (!selection.success) throw new PlatformError(409, 'device_operation_unavailable')
+    const selected = selection.data.find(item => item.skillId === input.skillId)
+    if (!selected || selected.kind !== 'package') throw new PlatformError(409, 'device_material_binding_changed')
+    if (!this.skills) throw new PlatformError(503, 'device_material_service_unavailable')
+    const [expected] = await this.skills.deviceBindings(device.user_id, [selected], client)
+    if (!isDeepStrictEqual(expected, binding)) throw new PlatformError(409, 'device_material_binding_changed')
+    return { userId: device.user_id, selected, binding }
+  }
+
+  /** Read one original package before container registration, fenced again after filesystem access.
+   * @param token Credential of the originally enrolled Device.
+   * @param input Original process/dispatch/digest and one frozen skill identity.
+   * @returns Verified manifest and binary files only while all original authorization remains live.
+   */
+  async material(token: string, input: DeviceMaterialRequest): Promise<DeviceSkillMaterial> {
+    const before = await transaction(this.pool, client => this.materialAdmission(client, token, input))
+    const material = await this.skills!.readDeviceMaterial(before.userId, before.selected, before.binding)
+    const after = await transaction(this.pool, client => this.materialAdmission(client, token, input))
+    if (!isDeepStrictEqual(before, after)) throw new PlatformError(409, 'device_material_binding_changed')
+    return material
   }
 
   private assertDispatch(row: Row, device: Device,

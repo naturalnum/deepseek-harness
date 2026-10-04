@@ -1,11 +1,14 @@
 /** Per-user skill catalog; executable package bytes stay outside the shared Host. */
 import { createHash, randomBytes } from 'node:crypto'
 import { constants } from 'node:fs'
+import { isDeepStrictEqual } from 'node:util'
 import { chmod, lstat, mkdir, mkdtemp, open, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import type { IncomingMessage } from 'node:http'
 import type { Pool, PoolClient } from 'pg'
 import { z } from 'zod'
+import { deviceMaterialBinding, deviceMaterialSelection, deviceSkillManifest, deviceSkillMaterial,
+  type DeviceMaterialBinding, type DeviceSkillMaterial } from '@power-evolve/contracts/device-execution'
 import { PlatformError, type Identity, type skillSelection } from '../contracts.ts'
 import { transaction } from './database.ts'
 import { requireActiveAccount } from './account-authority.ts'
@@ -661,6 +664,91 @@ export class SkillService {
       || version.description !== selected.description || hash(version.manifest) !== selected.manifestDigest)
       throw new PlatformError(503, 'skill_package_unavailable')
     return version
+  }
+
+  private async devicePackage(userId: string, selected: Selection, database: Pool | PoolClient):
+    Promise<{ version: PackageVersionRow; binding: DeviceMaterialBinding; files: ExtractedSkillFile[] }> {
+    if (selected.kind !== 'package') throw new PlatformError(404, 'device_material_not_found')
+    await this.activeSelectedSkill(userId, selected, database)
+    const version = await this.selectedPackageVersion(userId, selected, database)
+    if (Buffer.byteLength(version.manifest) > MANIFEST_MAX_BYTES) throw new PlatformError(503, 'skill_package_unavailable')
+    let raw: unknown
+    try { raw = JSON.parse(version.manifest) }
+    catch (_invalidManifest) { throw new PlatformError(503, 'skill_package_unavailable') }
+    const manifest = deviceSkillManifest.safeParse(raw)
+    const binding = deviceMaterialBinding.safeParse({ skillId: selected.skillId, version: selected.version,
+      packageDigest: selected.packageDigest, manifestDigest: selected.manifestDigest, instructionDigest: selected.digest })
+    if (!manifest.success || !binding.success
+      || manifest.data.artifactSha256 !== binding.data.packageDigest
+      || manifest.data.files.find(file => file.path === 'skill/SKILL.md')!.sha256 !== binding.data.instructionDigest) {
+      throw new PlatformError(503, 'skill_package_unavailable')
+    }
+    return { version, binding: binding.data, files: manifest.data.files }
+  }
+
+  /** Bind only private packages from the accepted immutable Operation selection.
+   * @param userId Original Operation owner.
+   * @param selection Accepted text/package versions; text requires no Device material.
+   * @param database Existing transaction when validating dispatch admission.
+   * @returns Verified package identities, preserving accepted order and versions.
+   */
+  async deviceBindings(userId: string, selection: readonly Selection[], database: Pool | PoolClient = this.pool): Promise<DeviceMaterialBinding[]> {
+    const bindings: DeviceMaterialBinding[] = []
+    for (const selected of selection) if (selected.kind === 'package') {
+      bindings.push((await this.devicePackage(userId, selected, database)).binding)
+    }
+    if (!bindings.length) return bindings
+    const parsed = deviceMaterialSelection.safeParse(bindings)
+    if (!parsed.success) throw new PlatformError(503, 'skill_package_unavailable')
+    return parsed.data
+  }
+
+  /** Return the original manifest and every verified regular file without rebuilding an archive.
+   * @param userId Original accepted owner, never chosen by the Device caller.
+   * @param selected Exact accepted private package version.
+   * @param binding Frozen dispatch identity to compare with that version.
+   * @param database Metadata connection; Device routes perform filesystem reads outside their transactions.
+   * @returns Bounded binary-preserving material after whole-tree and current revocation checks.
+   */
+  async readDeviceMaterial(userId: string, selected: Selection, binding: DeviceMaterialBinding,
+    database: Pool | PoolClient = this.pool): Promise<DeviceSkillMaterial> {
+    const original = await this.devicePackage(userId, selected, database)
+    if (!isDeepStrictEqual(original.binding, binding)) throw new PlatformError(409, 'device_material_binding_changed')
+    let material: DeviceSkillMaterial
+    try {
+      const root = join(await this.packageUserRoot(userId), 'sha256', original.version.archive_digest)
+      await verifyPublishedSkillPackage(root, original.version.manifest, original.files)
+      const files: DeviceSkillMaterial['files'] = []
+      for (const expected of original.files) {
+        let parent = root
+        for (const part of expected.path.split('/').slice(0, -1)) {
+          parent = join(parent, part)
+          const stat = await lstat(parent)
+          if (!stat.isDirectory() || stat.isSymbolicLink()) throw new PlatformError(503, 'skill_package_unavailable')
+        }
+        const file = await open(join(root, expected.path), constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
+        try {
+          const stat = await file.stat()
+          if (!stat.isFile() || stat.nlink !== 1 || stat.size !== expected.size) throw new PlatformError(503, 'skill_package_unavailable')
+          const bytes = Buffer.alloc(expected.size + 1)
+          let length = 0
+          while (length < bytes.length) {
+            const read = await file.read(bytes, length, bytes.length - length, length)
+            if (read.bytesRead === 0) break
+            length += read.bytesRead
+          }
+          if (length !== expected.size || hash(bytes.subarray(0, length)) !== expected.sha256) throw new PlatformError(503, 'skill_package_unavailable')
+          files.push({ path: expected.path, data: bytes.subarray(0, length).toString('base64') })
+        } finally { await file.close() }
+      }
+      await verifyPublishedSkillPackage(root, original.version.manifest, original.files)
+      const parsed = deviceSkillMaterial.safeParse({ binding, manifest: original.version.manifest, files })
+      if (!parsed.success) throw new PlatformError(503, 'skill_package_unavailable')
+      material = parsed.data
+    } catch (error) { if (error instanceof PlatformError) throw error; throw new PlatformError(503, 'skill_package_unavailable') }
+    const current = await this.devicePackage(userId, selected, database)
+    if (!isDeepStrictEqual(current.binding, binding)) throw new PlatformError(409, 'device_material_binding_changed')
+    return material
   }
 
   /** Load one accepted skill body for a runner, checking current ownership and revocation. */

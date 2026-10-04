@@ -142,7 +142,7 @@ export class TaskStore {
           v.version,v.archive_digest AS "packageDigest",v.manifest_digest AS "manifestDigest"
          FROM pe_user_skills s LEFT JOIN pe_skill_package_versions v ON v.id=s.package_version_id
          WHERE s.user_id=$1 AND s.enabled=true AND s.revoked_at IS NULL
-           AND ($2='cloud' OR s.kind='text') ORDER BY s.name,s.id`, [user.userId, target.kind],
+           ORDER BY s.name,s.id`, [user.userId],
       )
       const selection = z.array(skillSelection).max(256).parse(selected.rows)
       const mcpRows = this.limits.mcpEnabled && target.kind === 'cloud'
@@ -337,14 +337,16 @@ export class TaskStore {
 
   /** Read the operation's accepted skill metadata under its current lease.
    * @param token - current operation grant, never a user-supplied identity.
-   * @returns owner and immutable skill selection for a bounded instruction read.
+   * @returns owner, validated execution target and immutable skill selection for a bounded instruction read.
    */
-  async selectedSkills(token: string): Promise<{ userId: string; selection: z.infer<typeof skillSelection>[] }> {
+  async selectedSkills(token: string): Promise<{ userId: string; target: ExecutionTarget; selection: z.infer<typeof skillSelection>[] }> {
     return transaction(this.pool, async client => {
       const row = await this.authorized(client, token)
       const operation = await client.query<{ skill_selection: unknown }>(
-        'SELECT skill_selection FROM pe_operations WHERE id=$1', [row.operation_id])
-      return { userId: row.user_id, selection: z.array(skillSelection).max(256).parse(operation.rows[0]!.skill_selection) }
+        'SELECT skill_selection FROM pe_operations WHERE id=$1 AND session_id=$2', [row.operation_id, row.id])
+      if (!operation.rows[0]) throw new PlatformError(409, 'lease_lost')
+      return { userId: row.user_id, target: executionTarget.parse(row.execution_target),
+        selection: z.array(skillSelection).max(256).parse(operation.rows[0].skill_selection) }
     })
   }
 
