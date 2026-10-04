@@ -23,6 +23,8 @@ runner 为子进程提供固定环境，不转发镜像的 `ENV` 值。需要 `O
 
 离线 `scripts/assemble-office-preview.mjs` helper 把已准备的物理 Linux 包闭包和已构建的共享验证模块拷贝到新目标。它复用仓库的 Office 包选择机制，要求 0.1.1 WASM，核对引擎文件声明的摘要，拒绝链接与非普通资源，并记录拷贝后的包身份与哈希。它保留拷贝文件权限，并显式把生成文件设为 0644、资源目录设为 0755。它不安装、下载、转换或构建镜像。现有 HTTP Runner 仍独立运行。`tests/` 中的所属测试使用真实临时文件和子进程关闭事件，SDK/Poppler 或微型包资源由替身提供；这些测试不证明生产隔离或原生浏览器验收。
 
+`Dockerfile.office-preview` 使用上述固定 Node 基础镜像和签名 Debian snapshot，定义独立解析器镜像，只安装 Poppler、fontconfig 及指定的 Liberation/Noto CJK/文泉驿/TeX Gyre 字体。构建上下文只含 `runtime/`，即完整离线装配结果：包装器、共享验证器、物理 SDK/WASM 依赖和 `office-preview-closure.json`；不含凭据或用户数据。拷贝文件必须可由 UID/GID 1000 读取。配方以该用户核验 Node 版本、全部清单字节和权限、物理资源及 SDK 预加载，然后使用固定单任务入口。它将 `HOME` 和 `TMPDIR` 设为 `/tmp`，不提供服务，也不下载 npm 资源。部署提供只读输入及根文件系统、空私有输出和有界 `/tmp`。静态及输入测试使用微型 SDK 替身执行验真；实际镜像构建、字体清单和 generation 绑定须另作构建验收。
+
 ## 执行文件候选
 
 执行终态响应可包含 `fileChanges`，其中有 `status`、`files` 和 `reasons`。每个文件包含相对 `/workspace` 的规范路径、零到 2 MiB 的 `sizeBytes`，以及扫描字节的小写 SHA256。候选来自命令执行前后有界扫描所证明的新增或内容改变的普通文件；打印路径、未改变文件、仅时间戳更新和删除不会产生候选。前扫描不完整时，只有枚举完成的目录之下才可证明文件新增；先前已观察到的大小改变或已知摘要改变仍可证明文件改变。Platform 另行授权和校验下载。
