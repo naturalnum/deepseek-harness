@@ -1,10 +1,14 @@
+/** Requires prepared client bundles, built Host ui.js and cloud-web dist; VM checks register factories without opening a document. */
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
-import { after, test } from 'node:test'
+import { runInNewContext } from 'node:vm'
+import { test } from 'node:test'
 import { serveNativeUi } from '../../application/lib/ui.js'
+import { buildNativeWeb } from '../scripts/build.mjs'
 
 const dist = fileURLToPath(new URL('../dist/', import.meta.url))
 
@@ -39,9 +43,12 @@ test('native DSH shell uses the upstream page and a closed, external boot graph'
     assert(row.url.startsWith('./plugins/'))
     assert(assets.includes(row.url.slice(2).split('?')[0]))
   }
+  const preview = 'plugins/@deepseek-ai/dsh-client-ui-sidebar-documentpreview'
+  for (const name of ['client.pdf.js', 'client.excel.js']) assert(assets.includes(`${preview}/${name}`), name)
+  for (const name of ['client.js.map', 'index.js', 'types/client/index.js']) assert(!assets.includes(`${preview}/${name}`), name)
 })
 
-test('Host serves native static files separately from the existing trial root', async () => {
+test('Host serves native static files and chunk registrations through the exact allowlist', async t => {
   const server = createServer((req, res) => {
     const path = new URL(req.url ?? '/', 'http://localhost').pathname
     void serveNativeUi(path, res, 'http://127.0.0.1:18881').then(matched => {
@@ -50,7 +57,7 @@ test('Host serves native static files separately from the existing trial root', 
   })
   server.listen(0, '127.0.0.1')
   await new Promise(resolve => server.once('listening', resolve))
-  after(() => server.close())
+  t.after(() => server.close())
   const address = server.address()
   assert(address && typeof address !== 'string')
   const base = `http://127.0.0.1:${address.port}`
@@ -66,6 +73,96 @@ test('Host serves native static files separately from the existing trial root', 
   const asset = await fetch(`${base}/native/favicon.svg`)
   assert.equal(asset.status, 200)
   assert.match(asset.headers.get('content-type') ?? '', /image\/svg\+xml/u)
+  const preview = 'plugins/@deepseek-ai/dsh-client-ui-sidebar-documentpreview'
+  const assets = JSON.parse(await readFile(join(dist, 'asset-list.json'), 'utf8'))
+  const bootSources = await Promise.all(assets.filter(name => name.startsWith('boot/inline.')).map(name => readFile(join(dist, name), 'utf8')))
+  const graph = JSON.parse(/globalThis\["__DSH_BOOT__"\] = (\{.*\})/u.exec(bootSources.find(source => source.includes('globalThis["__DSH_BOOT__"]')))[1])
+  const row = graph.entries.find(entry => entry.id === '@deepseek-ai/dsh-client-ui-sidebar-documentpreview')
+  for (const name of ['client.pdf.js', 'client.excel.js']) {
+    const response = await fetch(`${base}/native/${preview}/${name}?rev=${row.rev}`)
+    assert.equal(response.status, 200)
+    assert.match(response.headers.get('content-type') ?? '', /text\/javascript/u)
+    const source = await response.text(), registrations = []
+    runInNewContext(source, { window: { __ModuleLoader__: { load: registration => registrations.push(registration) } } }, { timeout: 1000 })
+    assert.equal(registrations.length, 1)
+    assert.equal(registrations[0].id, row.id); assert.equal(registrations[0].chunk, name)
+    assert.equal(typeof registrations[0].factory, 'function')
+  }
+  await writeFile(join(dist, 'unlisted.txt'), 'unlisted fixture bytes')
+  t.after(() => rm(join(dist, 'unlisted.txt'), { force: true }))
+  for (const path of ['unlisted.txt', `${preview}/client.js.map`, `${preview}/index.js`, `${preview}/types/client/index.js`,
+    `${preview}/client.not-built.js`, 'plugins/%2e%2e%2fpackage.json']) assert.equal((await fetch(`${base}/native/${path}`)).status, 404, path)
   assert.equal((await fetch(`${base}/native/missing.js`)).status, 404)
   assert.equal((await fetch(`${base}/`)).status, 404)
+})
+
+async function fixture(t) {
+  const root = await mkdtemp(join(tmpdir(), 'pe-native-client-assets-'))
+  t.after(() => rm(root, { recursive: true, force: true }))
+  const frontendDirectory = join(root, 'frontend'), outputDirectory = join(root, 'output'), clientDirectory = join(root, 'client')
+  await Promise.all([frontendDirectory, clientDirectory].map(directory => mkdir(directory)))
+  await writeFile(join(frontendDirectory, 'index.html'), '<html><head><title>DSH</title></head><body><div id="root"></div></body></html>')
+  const bootstrap = join(root, 'bootstrap'); await mkdir(bootstrap)
+  await writeFile(join(bootstrap, 'client.js'), 'window.__ModuleLoader__.load({id:"@deepseek-ai/dsh-client-modules",factory:()=>({})});')
+  const clients = [
+    { id: '@deepseek-ai/dsh-client-modules', clientPath: join(bootstrap, 'client.js'), inject: [], external: [], immediately: true },
+    { id: '@power-evolve/client-fixture', clientPath: join(clientDirectory, 'client.js'), inject: [], external: [], immediately: false },
+  ]
+  const main = 'window.__ModuleLoader__.load({id:"@power-evolve/client-fixture",factory:require=>({pdf:()=>require.async("./client.pdf.js")})});'
+  const pdf = 'window.__ModuleLoader__.load({id:"@power-evolve/client-fixture",chunk:"client.pdf.js",factory:require=>({value:"pdf marker",shared:()=>require.async("./client.shared.js")})});'
+  await writeFile(join(clientDirectory, 'client.js'), main)
+  await writeFile(join(clientDirectory, 'client.pdf.js'), pdf)
+  await writeFile(join(clientDirectory, 'client.shared.js'), 'window.__ModuleLoader__.load({id:"@power-evolve/client-fixture",chunk:"client.shared.js",factory:()=>({value:"shared marker"})});')
+  return { root, frontendDirectory, outputDirectory, clientDirectory, clients, main, pdf }
+}
+
+test('copies native sibling chunks without publishing maps, Node entries or other package files', async t => {
+  const f = await fixture(t)
+  for (const name of ['client.js.map', 'index.js', 'private.txt', 'client..js']) await writeFile(join(f.clientDirectory, name), 'unpublished fixture')
+  const { graph, files } = await buildNativeWeb(f)
+  const row = graph.entries.find(entry => entry.id === '@power-evolve/client-fixture')
+  assert.match(row.url, /^\.\/plugins\/@power-evolve\/client-fixture\/client\.js\?rev=[a-f0-9]{16}$/u)
+  assert.deepEqual(files.filter(name => name.startsWith('plugins/@power-evolve/client-fixture/')),
+    ['client.js', 'client.pdf.js', 'client.shared.js'].map(name => `plugins/@power-evolve/client-fixture/${name}`))
+  assert.equal(await readFile(join(f.outputDirectory, 'plugins/@power-evolve/client-fixture/client.pdf.js'), 'utf8'), f.pdf)
+  const application = await readFile(join(f.outputDirectory, graph.batches.find(batch => batch.phase === 'application').url.slice(2)), 'utf8')
+  assert(application.includes(f.main)); assert(!application.includes('pdf marker')); assert(!application.includes('shared marker'))
+})
+
+test('chunk-only changes update owner, application and graph revisions while retaining entry bytes', async t => {
+  const f = await fixture(t), first = await buildNativeWeb(f), repeated = await buildNativeWeb(f)
+  assert.deepEqual(repeated.graph, first.graph)
+  await writeFile(join(f.clientDirectory, 'client.pdf.js'), f.pdf.replace('pdf marker', 'changed pdf marker'))
+  const changed = await buildNativeWeb(f)
+  const row = result => result.graph.entries.find(entry => entry.id === '@power-evolve/client-fixture')
+  const batch = result => result.graph.batches.find(entry => entry.phase === 'application')
+  assert.notEqual(row(changed).rev, row(first).rev); assert.notEqual(changed.graph.rev, first.graph.rev)
+  assert.notEqual(batch(changed).rev, batch(first).rev); assert.notEqual(batch(changed).url, batch(first).url)
+  assert.equal(await readFile(join(f.clientDirectory, 'client.js'), 'utf8'), f.main)
+  assert.equal(await readFile(join(f.outputDirectory, batch(changed).url.slice(2)), 'utf8'), `${f.main}\n;\n`)
+})
+
+test('missing or invalid entry and transitive chunk references fail before replacing output', async t => {
+  const f = await fixture(t); await mkdir(f.outputDirectory); await writeFile(join(f.outputDirectory, 'keep'), 'previous output')
+  for (const [name, source] of [['client.js', 'require.async("./client.missing.js")'], ['client.pdf.js', 'require.async("./client.missing.js")'],
+    ['client.pdf.js', 'require.async("./../outside.js")']]) {
+    const path = join(f.clientDirectory, name), original = await readFile(path)
+    await writeFile(path, source)
+    await assert.rejects(buildNativeWeb(f), /requires missing client asset/u)
+    assert.equal(await readFile(join(f.outputDirectory, 'keep'), 'utf8'), 'previous output')
+    await writeFile(path, original)
+  }
+  await rm(join(f.clientDirectory, 'client.js'))
+  await assert.rejects(buildNativeWeb(f), /ENOENT/u)
+  assert.equal(await readFile(join(f.outputDirectory, 'keep'), 'utf8'), 'previous output')
+})
+
+test('client assets must be physical files and package ids cannot escape the plugin directory', async t => {
+  const f = await fixture(t), chunk = join(f.clientDirectory, 'client.pdf.js'), outside = join(f.root, 'outside.js')
+  await writeFile(outside, f.pdf); await rm(chunk); await symlink(outside, chunk)
+  await assert.rejects(buildNativeWeb(f), /is not a physical client asset/u)
+  await rm(chunk); await mkdir(chunk)
+  await assert.rejects(buildNativeWeb(f), /is not a physical client asset/u)
+  await rm(chunk, { recursive: true }); await writeFile(chunk, f.pdf)
+  await assert.rejects(buildNativeWeb({ ...f, clients: [f.clients[0], { ...f.clients[1], id: '../../outside' }] }), /invalid native client package id/u)
 })

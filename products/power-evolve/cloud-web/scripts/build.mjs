@@ -1,8 +1,9 @@
+/** Assemble the prepared native Web shell and revisioned client scripts for the Host's exact static allowlist. */
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
-import { cp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { cp, lstat, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
-import { dirname, join, relative } from 'node:path'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { bootInjections, orderByModuleGraph } from '@deepseek-ai/dsh-client-modules'
 import { renderIndexInjections } from '@deepseek-ai/dsh-host-webserver'
@@ -32,6 +33,7 @@ const roots = [
   '@power-evolve/client-execution-target',
 ]
 const hash = value => createHash('sha256').update(value).digest('hex').slice(0, 16)
+const clientChunk = /^client\.[A-Za-z0-9][A-Za-z0-9._-]*\.js$/u
 const packageJson = id => {
   let path
   try { path = upstreamRequire.resolve(`${id}/package.json`) }
@@ -74,14 +76,40 @@ async function collect() {
   return [...records.values()]
 }
 
-async function writeAsset(name, bytes) {
-  const path = join(dist, name)
+async function clientAssets(record) {
+  if (!/^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*$/u.test(record.id)) {
+    throw new Error(`invalid native client package id ${JSON.stringify(record.id)}`)
+  }
+  if (basename(record.clientPath) !== 'client.js' || !(await lstat(record.clientPath)).isFile()) {
+    throw new Error(`${record.id} has no physical client.js entry`)
+  }
+  const assets = []
+  const directory = dirname(record.clientPath)
+  for (const name of (await readdir(directory)).filter(name => name === 'client.js' || clientChunk.test(name)).sort()) {
+    const path = join(directory, name)
+    if (!(await lstat(path)).isFile()) throw new Error(`${record.id}/${name} is not a physical client asset`)
+    assets.push({ name, bytes: await readFile(path) })
+  }
+  const names = new Set(assets.map(asset => asset.name))
+  for (const asset of assets) {
+    // The native preset emits literal require.async("./client.<name>.js") requests.
+    for (const [, , request] of asset.bytes.toString('utf8').matchAll(/\brequire\.async\(\s*(["'])(\.\/[^"'\r\n]+)\1\s*\)/gu)) {
+      const name = request.slice(2)
+      if (!clientChunk.test(name) || !names.has(name)) throw new Error(`${record.id}/${asset.name} requires missing client asset ${request}`)
+    }
+  }
+  const rev = hash(JSON.stringify(assets.map(asset => [asset.name, createHash('sha256').update(asset.bytes).digest('hex')])))
+  return { ...record, assets, rev }
+}
+
+async function writeAsset(outputDirectory, name, bytes) {
+  const path = join(outputDirectory, name)
   await mkdir(dirname(path), { recursive: true })
   await writeFile(path, bytes)
   return `./${name}`
 }
 
-async function writeBoot(index, graph) {
+async function writeBoot(index, graph, outputDirectory) {
   const rendered = renderIndexInjections(index, bootInjections(graph))
   // Native DSH renders three inline boot scripts. Move each verbatim to a
   // content-addressed file so the product Host can retain script-src 'self'.
@@ -89,7 +117,7 @@ async function writeBoot(index, graph) {
   if (scripts.length !== 3) throw new Error(`expected three native DSH boot scripts, found ${scripts.length}`)
   let html = rendered
   for (const [, source] of scripts) {
-    const url = await writeAsset(`boot/inline.${hash(source)}.js`, source)
+    const url = await writeAsset(outputDirectory, `boot/inline.${hash(source)}.js`, source)
     html = html.replace(`<script>${source}</script>`, `<script src="${url}"></script>`)
   }
   if (/<script(?:\s[^>]*)?>/u.test(html) && /<script>/u.test(html)) throw new Error('inline script remained in native Web shell')
@@ -99,26 +127,34 @@ async function writeBoot(index, graph) {
     .replace(/<title>[^<]*<\/title>/u, '<title>PowerEvolve</title>')
 }
 
-async function listFiles(directory) {
+async function listFiles(directory, outputDirectory) {
   const names = []
   for (const entry of await readdir(directory, { withFileTypes: true })) {
-    if (entry.isDirectory()) names.push(...await listFiles(join(directory, entry.name)))
-    else if (entry.isFile()) names.push(relative(dist, join(directory, entry.name)).replaceAll('\\', '/'))
+    if (entry.isDirectory()) names.push(...await listFiles(join(directory, entry.name), outputDirectory))
+    else if (entry.isFile()) names.push(relative(outputDirectory, join(directory, entry.name)).replaceAll('\\', '/'))
   }
   return names
 }
 
-async function main() {
-  const frontend = dirname(require.resolve('@deepseek-ai/dsh-web-frontend/package.json'))
-  await rm(dist, { recursive: true, force: true })
-  await cp(join(frontend, 'dist'), dist, { recursive: true })
-  await rm(join(dist, 'preview'), { recursive: true, force: true })
-  await rm(join(dist, 'preview.html'), { force: true })
+/**
+ * Assemble prepared native frontend and client factories into a closed static asset directory.
+ * Only physical client.js and same-directory client.<name>.js assets are copied; missing literal
+ * chunk references fail before replacing output. Owner, application and graph revisions include
+ * all copied client asset bytes. Dynamic chunks remain outside the eager application batch.
+ * @param options - Prepared frontend directory, output directory owned by the caller, and resolved native client records.
+ * @returns Native boot graph and exact static-file allowlist; no application or server is started.
+ */
+export async function buildNativeWeb({ frontendDirectory, outputDirectory, clients }) {
+  const snapshots = await Promise.all(clients.map(clientAssets))
+  await rm(outputDirectory, { recursive: true, force: true })
+  await cp(frontendDirectory, outputDirectory, { recursive: true })
+  await rm(join(outputDirectory, 'preview'), { recursive: true, force: true })
+  await rm(join(outputDirectory, 'preview.html'), { force: true })
 
-  const rows = orderByModuleGraph(await Promise.all((await collect()).map(async record => {
-    const bytes = await readFile(record.clientPath)
-    const rev = hash(bytes)
-    const url = await writeAsset(`plugins/${record.id}/client.js`, bytes)
+  const rows = orderByModuleGraph(await Promise.all(snapshots.map(async record => {
+    const { rev } = record
+    for (const asset of record.assets) await writeAsset(outputDirectory, `plugins/${record.id}/${asset.name}`, asset.bytes)
+    const url = `./plugins/${record.id}/client.js`
     return { id: record.id, url: `${url}?rev=${rev}`, rev,
       ...(record.inject.length ? { inject: record.inject } : {}),
       ...(record.external.length ? { external: record.external } : {}),
@@ -128,19 +164,25 @@ async function main() {
   if (!bootstrap) throw new Error('native DSH module bootstrap is missing')
   const application = rows.filter(row => row !== bootstrap)
   const applicationBytes = Buffer.concat(await Promise.all(application.map(async row =>
-    Buffer.concat([await readFile(join(dist, row.url.split('?')[0].slice(2))), Buffer.from('\n;\n')]))))
-  const applicationRev = hash(applicationBytes)
-  const applicationUrl = await writeAsset(`boot/application.${applicationRev}.js`, applicationBytes)
+    Buffer.concat([await readFile(join(outputDirectory, row.url.split('?')[0].slice(2))), Buffer.from('\n;\n')]))))
+  const applicationRev = hash(Buffer.concat([Buffer.from(JSON.stringify(application.map(row => [row.id, row.rev]))), applicationBytes]))
+  const applicationUrl = await writeAsset(outputDirectory, `boot/application.${applicationRev}.js`, applicationBytes)
   const graph = { entries: rows, batches: [
     { phase: 'bootstrap', url: bootstrap.url, rev: bootstrap.rev, entries: [bootstrap.id] },
     { phase: 'application', url: applicationUrl, rev: applicationRev, entries: application.map(row => row.id) },
   ] }
   graph.rev = hash(JSON.stringify(graph))
-  const index = await readFile(join(dist, 'index.html'), 'utf8')
-  await writeFile(join(dist, 'index.html'), await writeBoot(index, graph))
-  const files = (await listFiles(dist)).filter(name => name !== 'asset-list.json').sort()
-  await writeFile(join(dist, 'asset-list.json'), `${JSON.stringify(files)}\n`)
-  console.log(`PowerEvolve native Web shell: ${rows.length} client modules, ${files.length} static files`)
+  const index = await readFile(join(outputDirectory, 'index.html'), 'utf8')
+  await writeFile(join(outputDirectory, 'index.html'), await writeBoot(index, graph, outputDirectory))
+  const files = (await listFiles(outputDirectory, outputDirectory)).filter(name => name !== 'asset-list.json').sort()
+  await writeFile(join(outputDirectory, 'asset-list.json'), `${JSON.stringify(files)}\n`)
+  return { graph, files }
 }
 
-await main()
+async function main() {
+  const frontend = dirname(require.resolve('@deepseek-ai/dsh-web-frontend/package.json'))
+  const { graph, files } = await buildNativeWeb({ frontendDirectory: join(frontend, 'dist'), outputDirectory: dist, clients: await collect() })
+  console.log(`PowerEvolve native Web shell: ${graph.entries.length} client modules, ${files.length} static files`)
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main()

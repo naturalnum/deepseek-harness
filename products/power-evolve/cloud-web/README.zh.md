@@ -7,3 +7,5 @@
 运行 `pnpm run build:power-evolve:web` 前，需要先构建上游 Web 页面与客户端模块。产品 Host 在 `/native/` 提供产物，原有试用页面仍在 `/`。可信平台负责登录，并为原生 Session 传输签发限定范围的浏览器凭据。当前云端试用步骤见 [TRIAL-S4-NATIVE](../TRIAL-S4-NATIVE.md)。
 
 构建产物中的 `asset-list.json` 是 Host 静态资源的精确许可清单。启动脚本写入独立文件。原生 DSH 模块加载器使用 `new Function`，因此这个路由的内容安全策略需要允许 `unsafe-eval`；原试用页面仍使用更严格的策略。
+
+每个原生插件提供物理文件 `client.js` 及同目录的 `client.<name>.js` 分块。入口 URL 保持为 `./plugins/<package>/client.js?rev=<revision>`；动态分块使用相同目录及所属包的版本摘要。包、应用批次和启动图的版本摘要覆盖所有复制的脚本，仅分块内容变化也会更新摘要。启动时的应用批次只包含入口脚本。缺少入口或其引用的同目录分块时，构建会在替换输出前失败。插件源码映射、Node 入口及其他包文件不进入许可清单。
