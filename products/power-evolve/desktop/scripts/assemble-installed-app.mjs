@@ -2,7 +2,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { accessSync, chmodSync, closeSync, constants, copyFileSync, fstatSync, fsyncSync, lstatSync, mkdirSync,
-  mkdtempSync, openSync, readFileSync, readlinkSync, readSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
+  mkdtempSync, openSync, readFileSync, readlinkSync, readSync, readdirSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -12,6 +12,7 @@ import { readInstalledDesktopConfig } from '../src/installed-config.ts'
 
 const FORMAT = 'power-evolve-installed-assembly-v1'
 const RECORD = 'Contents/Resources/power-evolve-assembly.json'
+const EXECUTABLE = 'Contents/MacOS/PowerEvolve'
 const CLI = '@deepseek-ai/dsh', DEVICE = '@power-evolve/device', APPLICATION = '@power-evolve/application'
 const DEVICE_FIELDS = ['profile', 'loopbackOrigin', 'startupTimeoutMs', 'requestTimeoutMs', 'quiesceTimeoutMs',
   'exitTimeoutMs', 'maxOutputBytes', 'maxMessageBytes', 'maxHealthBytes']
@@ -209,10 +210,17 @@ export function verifyInstalledApp(output) {
   const description = validateDescription(resources)
   if (description.config.hostOrigin !== record.deployment.hostOrigin || description.config.platformOrigin !== record.deployment.platformOrigin) fail('description_changed')
   const plist = join(root, 'Contents/Info.plist')
-  for (const [key, value] of Object.entries({ CFBundleIdentifier: record.product.bundleId, CFBundleName: 'PowerEvolve',
+  for (const [key, value] of Object.entries({ CFBundleExecutable: 'PowerEvolve', CFBundleIdentifier: record.product.bundleId, CFBundleName: 'PowerEvolve',
     CFBundleDisplayName: 'PowerEvolve', CFBundleShortVersionString: record.product.version, CFBundleVersion: record.product.buildVersion })) {
     if (plutil(plist, ['-extract', key, 'raw', '-o', '-']) !== value) fail('identity_changed')
   }
+  if (record.executableMapping?.installedPath !== EXECUTABLE) fail('invalid_record')
+  const sourcePath = relativePath(record.executableMapping.sourcePath), executablePath = join(root, EXECUTABLE)
+  if (!sourcePath.startsWith('Contents/MacOS/') || physical(root, EXECUTABLE) !== executablePath
+    || !lstatSync(executablePath).isFile() || sourcePath !== EXECUTABLE && present(join(root, sourcePath))) fail('invalid_executable')
+  arm64(executablePath)
+  const original = record.inputs.electron.inventory.files.find(file => file.path === sourcePath), executable = digest(executablePath)
+  if (!original || executable.sha256 !== original.sha256 || executable.bytes !== original.bytes || executable.mode !== original.mode) fail('executable_changed')
   return { ...record, assemblyRecordSha256: digest(join(root, RECORD)).sha256 }
 }
 
@@ -221,7 +229,8 @@ export function verifyInstalledApp(output) {
  * Inputs remain unchanged. Internal relative aliases are preserved; escape, special files and sensitive
  * filenames fail closed. A unique sibling stage is published with macOS exclusive rename; only that
  * stage is cleaned on failure. Bundled interpreters are inspected for ARM64 Mach-O headers, never run.
- * Main metadata is changed, the copied outer signature seal is removed, and nested bytes remain intact.
+ * The copied main executable is named PowerEvolve with unchanged bytes, and its Info.plist entry is updated.
+ * The copied outer signature seal is removed, and nested Framework/helper bytes remain intact.
  * Signing, notarization, native ABI, Docker availability and real installed startup are not established.
  * @param {object} options - Explicit prepared input directories, new absolute PowerEvolve.app output, product
  * identity, caller-declared desktopSourceCommit and nonsecret deployment/device/worker parameters.
@@ -257,7 +266,11 @@ export function assembleInstalledApp(options) {
     if (plist !== join(roots.electron, 'Contents/Info.plist') || !lstatSync(plist).isFile()) fail('invalid_electron_layout')
     const executable = plutil(plist, ['-extract', 'CFBundleExecutable', 'raw', '-o', '-'])
     if (options.product.bundleId === plutil(plist, ['-extract', 'CFBundleIdentifier', 'raw', '-o', '-'])) fail('invalid_identity')
-    arm64(physical(roots.electron, `Contents/MacOS/${relativePath(executable)}`))
+    const sourceExecutable = `Contents/MacOS/${relativePath(executable)}`
+    if (physical(roots.electron, sourceExecutable) !== join(roots.electron, sourceExecutable)
+      || !lstatSync(join(roots.electron, sourceExecutable)).isFile()) fail('invalid_electron_layout')
+    if (sourceExecutable !== EXECUTABLE && present(join(roots.electron, EXECUTABLE))) fail('occupied_executable')
+    arm64(join(roots.electron, sourceExecutable))
     arm64(physical(roots.node, 'bin/node')); arm64(physical(roots.python, 'dependencies/python/bin/python3'))
     for (const name of ['app', 'app.asar', 'closure', 'node', 'python', 'power-evolve-desktop.json', 'power-evolve-assembly.json']) {
       if (present(join(roots.electron, 'Contents/Resources', name))) fail('occupied_resources')
@@ -275,9 +288,10 @@ export function assembleInstalledApp(options) {
     for (const path of ['Contents/_CodeSignature', 'Contents/Resources/default_app.asar']) {
       if (present(join(stage, path))) { removeOwned(join(stage, path)); removed.push(path) }
     }
+    if (sourceExecutable !== EXECUTABLE) renameSync(join(stage, sourceExecutable), join(stage, EXECUTABLE))
     const targetPlist = join(stage, 'Contents/Info.plist'), plistMode = lstatSync(targetPlist).mode & 0o777
     chmodSync(targetPlist, 0o600)
-    for (const [key, value] of Object.entries({ CFBundleIdentifier: options.product.bundleId, CFBundleName: 'PowerEvolve',
+    for (const [key, value] of Object.entries({ CFBundleExecutable: 'PowerEvolve', CFBundleIdentifier: options.product.bundleId, CFBundleName: 'PowerEvolve',
       CFBundleDisplayName: 'PowerEvolve', CFBundleShortVersionString: options.product.version, CFBundleVersion: options.product.buildVersion })) {
       plutil(targetPlist, ['-replace', key, '-string', value])
     }
@@ -297,6 +311,7 @@ export function assembleInstalledApp(options) {
     const payload = inventory(stage)
     const record = { format: FORMAT, target: 'darwin-arm64', product: options.product,
       deployment: parsed.config, signingPerformed: false, notarizationPerformed: false, removedInputPaths: removed,
+      executableMapping: { sourcePath: sourceExecutable, installedPath: EXECUTABLE },
       inputs: { ...inputs, desktop: { ...inputs.desktop, declaredSourceCommit: options.desktopSourceCommit, version: desktopManifest.version },
         closure: { ...inputs.closure, sourceCommit: capture.sourceCommit }, python: { ...inputs.python, runtimeManifest: pythonManifest } },
       operatorSha256: hash(readFileSync(fileURLToPath(import.meta.url))), inventory: payload, inventorySha256: treeHash(payload) }

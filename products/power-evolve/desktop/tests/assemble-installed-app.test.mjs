@@ -1,5 +1,6 @@
 /** Small physical fixtures test offline assembly only; their Mach-O headers are not runnable Electron or ABI evidence. */
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { execFileSync, spawn } from 'node:child_process'
 import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
@@ -103,12 +104,19 @@ function noStage(f) { assert(!readdirSync(f.base).some(name => name.startsWith('
 
 test('copies read-only resources, preserves framework aliases and binds helpers through the actual Device dependency', mac, t => {
   const f = fixture(t), before = readFileSync(join(f.options.electronApp, 'Contents/Info.plist'))
+  const executable = readFileSync(join(f.options.electronApp, 'Contents/MacOS/Electron'))
   for (const root of [f.options.electronApp, f.options.desktopPackage, f.options.closureDirectory, f.options.nodeDirectory, f.options.pythonRuntimeDirectory]) freeze(root)
   const value = assembleInstalledApp(f.options), resources = join(value.output, 'Contents/Resources')
   assert.equal(value.inputs.closure.sourceCommit, f.sourceCommit)
   assert.equal(value.inputs.desktop.declaredSourceCommit, f.options.desktopSourceCommit)
   assert.notEqual(value.inputs.closure.sourceCommit, value.inputs.desktop.declaredSourceCommit)
   assert.equal(value.signingPerformed, false); assert.equal(value.notarizationPerformed, false)
+  assert.deepEqual(value.executableMapping, { sourcePath: 'Contents/MacOS/Electron', installedPath: 'Contents/MacOS/PowerEvolve' })
+  assert(!existsSync(join(value.output, 'Contents/MacOS/Electron')))
+  assert.deepEqual(readFileSync(join(value.output, 'Contents/MacOS/PowerEvolve')), executable)
+  assert(lstatSync(join(value.output, 'Contents/MacOS/PowerEvolve')).isFile())
+  assert.equal(lstatSync(join(value.output, 'Contents/MacOS/PowerEvolve')).mode & 0o777, 0o500)
+  assert.equal(execFileSync('/usr/bin/plutil', ['-extract', 'CFBundleExecutable', 'raw', '-o', '-', join(value.output, 'Contents/Info.plist')], { encoding: 'utf8' }).trim(), 'PowerEvolve')
   const description = JSON.parse(readFileSync(join(resources, 'power-evolve-desktop.json'), 'utf8'))
   assert.equal(readFileSync(join(resources, description.runtime.fileHelper), 'utf8'), '# Device-bound helper\n')
   assert.match(description.runtime.cliEntrypoint, /\/lib\/selected-entry\.mjs$/u)
@@ -121,6 +129,7 @@ test('copies read-only resources, preserves framework aliases and binds helpers 
   assert(existsSync(join(resources, 'app/lib/chunks/shared.js')))
   assert.notEqual(statSync(join(resources, 'node/bin/node')).ino, statSync(join(f.options.nodeDirectory, 'bin/node')).ino)
   assert.deepEqual(readFileSync(join(f.options.electronApp, 'Contents/Info.plist')), before)
+  assert.deepEqual(readFileSync(join(f.options.electronApp, 'Contents/MacOS/Electron')), executable)
   assert.equal(lstatSync(join(f.options.electronApp, 'Contents/Info.plist')).mode & 0o777, 0o400)
   assert.equal(verifyInstalledApp(value.output).inventorySha256, value.inventorySha256); noStage(f)
 })
@@ -211,4 +220,41 @@ test('independent verification rejects changed installed bytes', mac, t => {
   const f = fixture(t), value = assembleInstalledApp(f.options), main = join(value.output, 'Contents/Resources/app/lib/main.js')
   chmodSync(main, 0o600); writeFileSync(main, '// altered installed bytes\n')
   assert.throws(() => verifyInstalledApp(value.output), /installed_app_inventory_changed/u)
+})
+
+test('rejects an occupied product executable or an aliased original without changing the input', mac, t => {
+  const f = fixture(t), original = join(f.options.electronApp, 'Contents/MacOS/Electron'), product = join(f.options.electronApp, 'Contents/MacOS/PowerEvolve')
+  f.put(product, 'retained executable name')
+  assert.throws(() => assembleInstalledApp(f.options), /installed_app_occupied_executable/u)
+  assert.equal(readFileSync(product, 'utf8'), 'retained executable name')
+  rmSync(product)
+  f.put(join(f.options.electronApp, 'Contents/MacOS/Original'), readFileSync(original), 0o500)
+  rmSync(original); symlinkSync('Original', original)
+  assert.throws(() => assembleInstalledApp(f.options), /installed_app_invalid_electron_layout/u)
+  assert.equal(readlinkSync(original), 'Original')
+  assert(!existsSync(f.options.output)); noStage(f)
+})
+
+test('verification checks the executable name, ARM64 header and original bytes beyond the inventory', mac, t => {
+  const f = fixture(t), value = assembleInstalledApp(f.options), plist = join(value.output, 'Contents/Info.plist')
+  const executable = join(value.output, 'Contents/MacOS/PowerEvolve'), originalPlist = readFileSync(plist), originalExecutable = readFileSync(executable)
+  function updateRecordedFile(path, bytes, mode) {
+    chmodSync(path, 0o600); writeFileSync(path, bytes); chmodSync(path, mode)
+    const recordPath = join(value.output, 'Contents/Resources/power-evolve-assembly.json'), record = JSON.parse(readFileSync(recordPath, 'utf8'))
+    const entry = record.inventory.files.find(file => file.path === relative(value.output, path))
+    entry.bytes = bytes.length; entry.sha256 = createHash('sha256').update(bytes).digest('hex'); entry.mode = mode
+    record.inventorySha256 = createHash('sha256').update(JSON.stringify(record.inventory)).digest('hex')
+    chmodSync(recordPath, 0o600); writeFileSync(recordPath, JSON.stringify(record) + '\n'); chmodSync(recordPath, 0o400)
+  }
+  chmodSync(plist, 0o600)
+  execFileSync('/usr/bin/plutil', ['-replace', 'CFBundleExecutable', '-string', 'Electron', plist])
+  updateRecordedFile(plist, readFileSync(plist), 0o400)
+  assert.throws(() => verifyInstalledApp(value.output), /installed_app_identity_changed/u)
+  updateRecordedFile(plist, originalPlist, 0o400)
+  const x64 = Buffer.from(originalExecutable); x64.writeUInt32LE(0x01000007, 4)
+  updateRecordedFile(executable, x64, 0o500)
+  assert.throws(() => verifyInstalledApp(value.output), /installed_app_not_arm64/u)
+  const altered = Buffer.from(originalExecutable); altered[31] = 1
+  updateRecordedFile(executable, altered, 0o500)
+  assert.throws(() => verifyInstalledApp(value.output), /installed_app_executable_changed/u)
 })
