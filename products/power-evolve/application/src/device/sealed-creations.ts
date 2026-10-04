@@ -78,25 +78,38 @@ export class SealedDeviceCreations {
     } catch (error) { if (error instanceof SealedCreationError) throw error; throw invalid() }
   }
   private path(id: SealedCreation['closure']['executionId']): string { return join(this.root, `${id}.json`) }
-  private async read(id: SealedCreation['closure']['executionId']): Promise<SealedCreation | null> {
+  private async readBytes(file: FileHandle): Promise<Buffer> {
+    const bytes = Buffer.alloc(65537)
+    let length = 0
+    while (length < bytes.length) {
+      const { bytesRead } = await file.read(bytes, length, bytes.length - length, length)
+      if (bytesRead === 0) break
+      length += bytesRead
+    }
+    if (length > 65536) throw invalid()
+    return bytes.subarray(0, length)
+  }
+  private async read(id: SealedCreation['closure']['executionId'], durable = false): Promise<SealedCreation | null> {
     await this.owned()
     let file: FileHandle
     try { file = await open(this.path(id), constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK) }
     catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw invalid() }
     try {
       const stat = await file.stat({ bigint: true }); ownerOnly(stat, false)
-      const bytes = Buffer.alloc(65537)
-      let length = 0
-      while (length < bytes.length) {
-        const { bytesRead } = await file.read(bytes, length, bytes.length - length, length)
-        if (bytesRead === 0) break
-        length += bytesRead
-      }
-      if (length > 65536) throw invalid()
-      const parsed = sealedCreation.safeParse(JSON.parse(bytes.subarray(0, length).toString('utf8')))
+      const bytes = await this.readBytes(file)
+      const parsed = sealedCreation.safeParse(JSON.parse(bytes.toString('utf8')))
       if (!parsed.success || parsed.data.closure.executionId !== id) throw invalid()
       const current = await lstat(this.path(id), { bigint: true }); ownerOnly(current, false)
       if (!same(current, stat)) throw invalid()
+      if (durable) {
+        // A visible rename may have outlived a failed directory sync in this process.
+        await file.sync()
+        await this.handle!.sync()
+        const reread = await this.readBytes(file)
+        const [held, linked] = await Promise.all([file.stat({ bigint: true }), lstat(this.path(id), { bigint: true })])
+        ownerOnly(held, false); ownerOnly(linked, false)
+        if (!same(stat, held) || !same(stat, linked) || !bytes.equals(reread)) throw invalid()
+      }
       await this.owned()
       return parsed.data
     } catch (error) { if (error instanceof SealedCreationError) throw error; throw invalid() }
@@ -107,7 +120,7 @@ export class SealedDeviceCreations {
    * @returns Existing progressed record or the newly synced record.
    */
   async preserve(input: SealedCreation): Promise<SealedCreation> {
-    const prior = await this.read(input.closure.executionId)
+    const prior = await this.read(input.closure.executionId, true)
     if (prior) {
       compatible({ ...prior, receipt: undefined, observation: undefined, removalConfirmed: false }, input)
       if (input.receipt && prior.receipt && !isDeepStrictEqual(input.receipt, prior.receipt)) {
@@ -139,7 +152,7 @@ export class SealedDeviceCreations {
    * @returns Synced progress; a missing name remains pending without blocking writer admission.
    */
   async cleanup(id: SealedCreation['closure']['executionId'], identity: Identity, containers: OwnedDeviceContainer): Promise<SealedCreation> {
-    let record = await this.read(id)
+    let record = await this.read(id, true)
     if (!record) throw invalid()
     requireIdentity(record, identity)
     if (record.removalConfirmed || record.imageId === null) return record

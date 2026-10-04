@@ -16,7 +16,7 @@ import { DesktopWorker } from '../src/device/worker.ts'
 import { DeviceWriterCoordinator, deviceWriterOwner, DEVICE_WRITER_SLOT_FILENAME } from '../src/device/writer-coordinator.ts'
 import { DockerCommandError, OwnedDeviceContainer, OWNED_DEVICE_CONTAINER_LABELS, ownedContainerOwner, ownedContainerReceipt,
   type DockerClient, type DockerCommandResult, type OwnedContainerObservation, type OwnedContainerReceipt } from '../src/device/owned-container.ts'
-import { sealedCreation } from '../src/device/sealed-creations.ts'
+import { SealedDeviceCreations, sealedCreation } from '../src/device/sealed-creations.ts'
 
 const workerTestOptions = { timeout: 10000, skip: !['darwin', 'linux'].includes(process.platform) }
 const IMAGE = 'sha256:' + 'a'.repeat(64), CONTAINER = 'b'.repeat(64)
@@ -899,6 +899,35 @@ test('a failed sealed-creation sync retains the original journal and captured sl
   fail = false
   await until(async () => (await journal(f.privateRoot)).length === 0, 'sealed sync retry retirement')
   assert.equal(f.closures.length, 1); assert.equal(f.docker.count('rm'), 1)
+})
+
+test('rename success followed by repeated directory sync failure cannot retire the original creation', workerTestOptions, async t => {
+  const f = await fixture(t), original = await f.seed('claimed', false)
+  const next = f.makeWorker(); await next.init()
+  const store: unknown = Reflect.get(next, 'sealed'); assert(store instanceof SealedDeviceCreations)
+  const owned: unknown = Reflect.get(store, 'owned'); assert.equal(typeof owned, 'function')
+  await (owned as (this: SealedDeviceCreations) => Promise<void>).call(store)
+  const handle: unknown = Reflect.get(store, 'handle'); assert(handle && typeof handle === 'object')
+  const sync: unknown = Reflect.get(handle, 'sync'); assert.equal(typeof sync, 'function')
+  let fail = true, attempts = 0
+  Object.defineProperty(handle, 'sync', { value: async () => {
+    attempts++
+    if (fail) throw new Error('fixture_directory_sync_failed')
+    await (sync as (this: object) => Promise<void>).call(handle)
+  } })
+  const slotBefore = await readFile(join(f.coordinationRoot, DEVICE_WRITER_SLOT_FILENAME))
+  next.start()
+  await until(async () => attempts >= 2 || (await journal(f.privateRoot)).length === 0, 'same-process directory sync retry')
+  const [saved] = await journal(f.privateRoot); assert(saved?.claimClosureReceipt)
+  assert.equal(saved.id, original.id); assert(attempts >= 2)
+  const path = join(f.privateRoot, 'sealed-creations', original.id + '.json')
+  assert.equal(sealedCreation.parse(JSON.parse(await readFile(path, 'utf8'))).closure.executionId, original.id)
+  assert.deepEqual(await readFile(join(f.coordinationRoot, DEVICE_WRITER_SLOT_FILENAME)), slotBefore)
+  assert.equal(f.docker.calls.length, 0); assert.equal(f.closures.length, 1)
+  fail = false
+  await until(async () => (await journal(f.privateRoot)).length === 0, 'successful sync permits retirement')
+  assert.equal(await writerSlot(f.coordinationRoot), null); assert.equal(f.closures.length, 1)
+  assert.equal(sealedCreation.parse(JSON.parse(await readFile(path, 'utf8'))).removalConfirmed, false)
 })
 
 test('close during a successful claim acknowledgement preserves its intent and suppresses creation', workerTestOptions, async t => {

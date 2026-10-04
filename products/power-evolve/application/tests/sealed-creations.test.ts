@@ -122,6 +122,28 @@ test('completed cleanup facts survive a pending journal and are removed only aft
   })
 })
 
+test('reused completed and no-image cleanup facts require successful file and directory synchronization', options, async t => {
+  for (const mode of ['removed', 'no-image'] as const) await t.test(mode, async t => {
+    const f = await fixture(t)
+    await f.store.preserve(mode === 'no-image' ? { ...f.source, imageId: null } : f.source)
+    if (mode === 'removed') { f.docker.present = true; await f.store.cleanup(f.source.closure.executionId, f.identity, f.containers) }
+    const saved = sealedCreation.parse(JSON.parse(await readFile(f.path, 'utf8'))), before = f.docker.calls.length
+    const handle: unknown = Reflect.get(f.store, 'handle'); assert(handle && typeof handle === 'object')
+    const sync: unknown = Reflect.get(handle, 'sync'); assert.equal(typeof sync, 'function')
+    let fail = true
+    Object.defineProperty(handle, 'sync', { value: async () => {
+      if (fail) throw new Error('fixture_directory_sync_failed')
+      await (sync as (this: object) => Promise<void>).call(handle)
+    } })
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await assert.rejects(f.store.cleanup(f.source.closure.executionId, f.identity, f.containers), { code: 'sealed_creation_invalid' })
+    }
+    assert.equal(f.docker.calls.length, before); assert.deepEqual(JSON.parse(await readFile(f.path, 'utf8')), saved)
+    fail = false
+    assert.deepEqual(await f.store.cleanup(f.source.closure.executionId, f.identity, f.containers), saved)
+  })
+})
+
 test('lost removal ACK uses only a previously synced exact stop observation; initial absence never becomes stop', options, async t => {
   const f = await fixture(t)
   const receipt = ownedContainerReceipt.parse({ containerId: ID, imageId: IMAGE, owner: f.source.owner })
