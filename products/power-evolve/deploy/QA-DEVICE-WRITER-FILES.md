@@ -1,6 +1,6 @@
 # Device 写入协调与文件访问验收
 
-2026-10-04，在当前产品分支完成 [Device Bundle](../device/README.md) 的共享写入槽与描述符文件访问集成。此次没有启动 Electron、真实模型或共享 Host，也没有替换 Cloud 固定试用；结果属于 Device 协议验收，不代表完整桌面产品交付。
+2026-10-04，集成代码固定为 `2591bc98c6`，完成 [Device Bundle](../device/README.md) 的共享写入槽与描述符文件访问。此次没有启动 Electron、真实模型或共享 Host，也没有替换 Cloud 固定试用；结果属于 Device 协议验收，不代表完整桌面产品交付。
 
 ## 实际验证
 
