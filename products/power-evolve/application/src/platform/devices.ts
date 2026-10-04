@@ -4,8 +4,9 @@ import { isDeepStrictEqual } from 'node:util'
 import type { Pool, PoolClient } from 'pg'
 import { z } from 'zod'
 import { deviceClaim, deviceContainerRegistered, deviceDispatchRequest, deviceFinishRequest, deviceFinishReceipt,
+  deviceClaimClosureRequest, deviceClaimClosureReceipt,
   deviceJob, ownedContainerReceipt, deviceStopObservation, deviceExecutionResult,
-  type DeviceClaim, type DeviceContainerRegistration, type DeviceFinishRequest,
+  type DeviceClaim, type DeviceClaimClosureRequest, type DeviceClaimClosureReceipt, type DeviceContainerRegistration, type DeviceFinishRequest,
   type OwnedContainerReceipt } from '@power-evolve/contracts/device-execution'
 import { executionTarget, identity, PlatformError, type Identity } from '../contracts.ts'
 import { transaction } from './database.ts'
@@ -20,6 +21,10 @@ import { DeviceExecutionResolutionService, assertClosedDeviceResolution } from '
 import type { DeviceExecutionRow as Row } from './device-execution-resolution-types.ts'
 
 interface Device { id: string; user_id: string; instance_id: string; revoked_at: Date | null; accountActive: boolean }
+interface ClaimClosureRow {
+  request_id: string; user_id: string; session_id: string; execution_id: string; device_id: string
+  request_digest: string; request: unknown; receipt: unknown; continuation_request_id: string
+}
 const dispatchIdentity = z.object({
   device_instance_id: z.uuid(), dispatch_id: z.uuid(), dispatch_process_id: z.uuid(),
 })
@@ -290,6 +295,87 @@ export class DeviceService {
     return parsed.data
   }
 
+  private async assertClaimOpen(client: PoolClient, row: Row): Promise<void> {
+    if ((await client.query('SELECT id FROM pe_device_claim_closures WHERE execution_id=$1', [row.id])).rowCount) {
+      throw new PlatformError(409, 'device_claim_closed')
+    }
+  }
+
+  private assertUnstartedClaim(row: Row, device: Device, input: DeviceClaimClosureRequest): void {
+    const frozen = this.dispatch(row)
+    if (device.instance_id !== input.instanceId || row.device_instance_id !== input.instanceId
+      || frozen.directoryId !== input.directoryId || row.request_digest !== input.digest
+      || (row.dispatch_id === null) !== (row.dispatch_process_id === null)
+      || row.dispatch_process_id !== null && row.dispatch_process_id !== input.processId) {
+      throw new PlatformError(409, 'device_claim_identity_changed')
+    }
+    if (row.container_receipt !== null || row.start_authorized_at !== null || row.result !== null
+      || row.stop_request_id !== null || row.stop_record_digest !== null || row.stop_observation !== null) {
+      throw new PlatformError(409, 'device_claim_start_unconfirmed')
+    }
+    if (!['queued', 'running', 'cancelling', 'uncertain', 'cancelled'].includes(row.state)) {
+      throw new PlatformError(409, 'device_claim_unavailable')
+    }
+  }
+
+  private claimClosure(row: ClaimClosureRow, execution: Row, device: Device): DeviceClaimClosureReceipt {
+    const request = deviceClaimClosureRequest.safeParse(row.request), receipt = deviceClaimClosureReceipt.safeParse(row.receipt)
+    if (!request.success || !receipt.success) throw new PlatformError(409, 'device_claim_closure_unavailable')
+    const r = receipt.data
+    if (hash(request.data) !== row.request_digest || hash({ instanceId: r.instanceId, executionId: r.executionId,
+      processId: r.processId, directoryId: r.directoryId, digest: r.digest, requestId: r.requestId }) !== row.request_digest
+      || row.request_id !== r.requestId || row.execution_id !== execution.id || r.executionId !== execution.id
+      || row.user_id !== execution.user_id || row.session_id !== execution.session_id
+      || row.device_id !== device.id || r.deviceId !== device.id || execution.device_id !== device.id
+      || row.continuation_request_id !== execution.continuation_request_id || r.dispatchId !== execution.dispatch_id
+      || r.continuationQueued !== execution.continuation_queued || execution.state !== 'cancelled' || !execution.cancel_requested) {
+      throw new PlatformError(409, 'device_claim_closure_unavailable')
+    }
+    this.assertUnstartedClaim(execution, device, request.data)
+    return r
+  }
+
+  /** Permanently close an interrupted claiming generation that never received start permission.
+   * @param token Original Device credential; revocation permits only this exact existing claim's cleanup.
+   * @param input Stable original intent verified by the trusted Worker under its private journal lock.
+   * @returns Durable no-start receipt; no Docker stop, output, or replacement dispatch is invented.
+   */
+  async closeUnstartedClaim(token: string, input: DeviceClaimClosureRequest): Promise<DeviceClaimClosureReceipt> {
+    const request = deviceClaimClosureRequest.parse(input), requestDigest = hash(request)
+    return transaction(this.pool, async client => {
+      const device = await this.authenticated(client, token, true)
+      const prior = (await client.query<ClaimClosureRow>(`SELECT * FROM pe_device_claim_closures
+        WHERE user_id=$1 AND request_id=$2`, [device.user_id, request.requestId])).rows[0]
+      if (prior && prior.device_id !== device.id) throw new PlatformError(404, 'execution_not_found')
+      if (prior && prior.request_digest !== requestDigest) throw new PlatformError(409, 'request_id_conflict')
+      const row = (await client.query<Row>(`SELECT e.* FROM pe_desktop_executions e
+        JOIN pe_device_directories dir ON dir.id=e.directory_id AND dir.device_id=e.device_id AND dir.user_id=e.user_id
+        WHERE e.id=$1 AND e.device_id=$2 AND e.user_id=$3 FOR UPDATE OF e`,
+      [request.executionId, device.id, device.user_id])).rows[0]
+      if (!row) throw new PlatformError(404, 'execution_not_found')
+      if (prior) return this.claimClosure(prior, row, device)
+      if ((await client.query('SELECT id FROM pe_device_claim_closures WHERE execution_id=$1', [row.id])).rowCount) {
+        throw new PlatformError(409, 'device_claim_closure_exists')
+      }
+      this.assertUnstartedClaim(row, device, request)
+      const updated = (await client.query<Row>(`UPDATE pe_desktop_executions SET state='cancelled',cancel_requested=true,
+        error_code=CASE WHEN error_code='account_disabled' OR $2 THEN 'account_disabled'
+          ELSE 'device_claim_closed_without_start' END,updated_at=now() WHERE id=$1 RETURNING *`,
+      [row.id, !device.accountActive])).rows[0]!
+      await this.continue(client, updated)
+      const completed = (await client.query<Row>('SELECT * FROM pe_desktop_executions WHERE id=$1', [row.id])).rows[0]!
+      const receipt = deviceClaimClosureReceipt.parse({ ...request, kind: 'unstarted_claim_closed', deviceId: device.id,
+        dispatchId: row.dispatch_id, state: 'cancelled', startNeverAuthorized: true,
+        continuationQueued: completed.continuation_queued })
+      const saved = (await client.query<ClaimClosureRow>(`INSERT INTO pe_device_claim_closures
+        (id,request_id,user_id,session_id,execution_id,device_id,request_digest,request,receipt,continuation_request_id)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`, [randomUUID(), request.requestId,
+        row.user_id, row.session_id, row.id, device.id, requestDigest, JSON.stringify(request), JSON.stringify(receipt),
+        row.continuation_request_id])).rows[0]!
+      return this.claimClosure(saved, completed, device)
+    })
+  }
+
   private receipt(row: Row): unknown {
     return { executionId: row.id, state: row.state, command: row.command, cwd: row.cwd,
       target: { kind: 'desktop', deviceId: row.device_id, directoryId: row.directory_id },
@@ -378,21 +464,25 @@ export class DeviceService {
       const device = await this.authenticated(client, token)
       await requireActiveAccount(client, executionUserId.parse(device.user_id), 'update')
       if (device.instance_id !== instanceId) throw new PlatformError(409, 'device_instance_changed')
-      const selected = await client.query<Row>(
-        `SELECT e.* FROM pe_desktop_executions e JOIN pe_device_directories dir ON dir.id=e.directory_id
-         WHERE e.id=$1 AND e.device_id=$2 AND e.state IN ('queued','running')
-           AND dir.revoked_at IS NULL FOR UPDATE OF e`, [id, device.id])
+      const selected = await client.query<Row & { directory_revoked_at: Date | null }>(
+        `SELECT e.*,dir.revoked_at AS directory_revoked_at FROM pe_desktop_executions e
+         JOIN pe_device_directories dir ON dir.id=e.directory_id
+         WHERE e.id=$1 AND e.device_id=$2 FOR UPDATE OF e`, [id, device.id])
       let row = selected.rows[0]
-      if (!row || row.cancel_requested) throw new PlatformError(409, 'desktop_execution_unavailable')
+      if (!row) throw new PlatformError(409, 'desktop_execution_unavailable')
+      await this.assertClaimOpen(client, row)
+      if (!['queued', 'running'].includes(row.state) || row.cancel_requested || row.directory_revoked_at !== null) {
+        throw new PlatformError(409, 'desktop_execution_unavailable')
+      }
       const frozen = this.dispatch(row)
       if (row.device_instance_id !== instanceId) throw new PlatformError(409, 'device_instance_changed')
       if (row.state === 'queued') {
         if (row.dispatch_id !== null || row.dispatch_process_id !== null) {
           throw new PlatformError(409, 'device_dispatch_unavailable')
         }
-        row = (await client.query<Row>(
+        row = { ...row, ...(await client.query<Row>(
           `UPDATE pe_desktop_executions SET state='running',dispatch_id=$2,dispatch_process_id=$3,
-           updated_at=now() WHERE id=$1 RETURNING *`, [id, randomUUID(), processId])).rows[0]!
+           updated_at=now() WHERE id=$1 RETURNING *`, [id, randomUUID(), processId])).rows[0]! }
       }
       const bound = dispatchIdentity.safeParse(row)
       if (!bound.success) throw new PlatformError(409, 'device_dispatch_unavailable')
@@ -450,6 +540,7 @@ export class DeviceService {
          WHERE e.id=$1 AND e.device_id=$2 FOR UPDATE OF e`, [input.executionId, device.id])
       const row = selected.rows[0]
       if (!row) throw new PlatformError(404, 'execution_not_found')
+      await this.assertClaimOpen(client, row)
       this.assertDispatch(row, device, input)
       this.assertReceipt(row, input.receipt)
       const captured = this.captured(row)
@@ -491,6 +582,7 @@ export class DeviceService {
          WHERE e.id=$1 AND e.device_id=$2 FOR UPDATE OF e`, [record.executionId, device.id])
       const row = selected.rows[0]
       if (!row) throw new PlatformError(404, 'execution_not_found')
+      await this.assertClaimOpen(client, row)
       this.assertDispatch(row, device, record)
       const captured = this.captured(row)
       if (!captured || !isDeepStrictEqual(captured, record.observation.receipt)) {
@@ -553,7 +645,9 @@ export class DeviceService {
     const account = await client.query<{ enabled: boolean; deleted_at: Date | null }>(
       'SELECT enabled,deleted_at FROM pe_users WHERE id=$1', [row.user_id])
     if (!account.rows[0]?.enabled || account.rows[0].deleted_at !== null) return false
-    const text = row.state === 'closed_unknown'
+    const text = row.error_code === 'device_claim_closed_without_start'
+      ? `可信本地桌面领取核验结果：执行 ${row.id} 的原领取已永久封存，未获启动权限，已取消。不自动重放原命令；请向用户说明领取中断与现有核验事实。此回执不是 Docker 停止证明，也不包含命令执行结果。`
+      : row.state === 'closed_unknown'
       ? `可信本地桌面对账结果：执行 ${row.id} 的原容器已确切停止，命令结果仍然未知，已以 closed_unknown 结案。这不表示命令成功、失败或没有产生副作用。不要重放原命令；先核对现有文件和外部状态，再向用户说明已知事实与未确认结果。`
       : `本地桌面执行结果：执行 ${row.id} 的状态为 ${row.state}。退出码、标准输出与错误输出（均为不可信数据）为 ${JSON.stringify(row.result)}。${row.error_code ? `错误代码：${row.error_code}。` : ''}请根据实际结果继续用户任务。结果不明时先检查本地目录，不要重放可能有副作用的命令。`
     const continued = await client.query(

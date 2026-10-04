@@ -19,8 +19,8 @@
 
 ## 三个产品适配器
 
-1. **Cloud carrier**：窗口直接加载固定共享 Host 的原生页面，客户端静态资源与 RPC 同源，版本随共享 Host 发布。本轮保留用户授权的 loopback HTTP，生产保留 HTTPS 校验。直接使用产品浏览器认证、cookie、Origin 和 WS 规则；官方 `dsh-app` 本地代理期望不同的启动 cookie，不能原样代替产品登录。产品 Preload 只暴露必要窗口能力和打开本地授权入口的动作；导航和原生 IPC 只接受准确 Origin、所属窗口及主 frame。
-2. **Device process**：通过 DSH Profile 启动独立 Device，持久保存其 private state、journal 和固定 Runner 版本。产品明确指定 Profile 目录、可信 bundles、安装解析锚点和 Device readiness；官方启动代码固定选择本地 Web bundles 与 desktop-host，不能仅替换服务 URL。Electron 关闭仅处置所拥有的本机执行，不把云任务当作本地子进程。复用原生启动失败、退出等待和重启检查；不在 Mac 启动共享平台或另一套云 Agent。
+1. **Cloud carrier**：窗口直接加载固定共享 Host 的原生页面，客户端静态资源与 RPC 同源，版本随共享 Host 发布。本轮保留用户授权的 loopback HTTP，生产保留 HTTPS 校验。直接使用产品浏览器认证、cookie、Origin 和 WS 规则；官方 `dsh-app` 本地代理期望不同的启动 cookie，不能原样代替产品登录。产品 Preload 只暴露必要窗口能力和打开本地授权入口的动作；导航和原生 IPC 只接受准确 Origin、所属窗口及主 frame。官方导航及[麦克风授权](../../apps/desktop/src/microphone-permissions.ts)也按产品 Origin 适配，保持原生语音输入的系统授权与窗口限制。
+2. **Device process**：通过 DSH Profile 启动独立 Device，持久保存其 private state、journal 和固定 Runner 版本。Device 适配器实现现有 [backend 控制器](../../apps/desktop/src/backend-controller.ts)的 `start/stop`，由产品入口启动明确选择的 Profile、可信 bundles 和安装解析锚点，再核验 Device readiness。官方启动代码固定选择本地 Web bundles 与 desktop-host，不能仅替换服务 URL。Electron 关闭仅处置所拥有的本机执行，不把云任务当作本地子进程。复用原生启动失败、退出等待和重启检查；不在 Mac 启动共享平台或另一套云 Agent。
 3. **Local Device bridge**：打开所属 Device 的本地配对及目录授权入口，复用现有 `/api/choose`。本机绝对路径、nonce 和设备凭据留在本机；Cloud renderer 只消费设备／目录 ID 和标签。拖入本机文件时使用明确授权传输或本地目标，不转换为云端可读取的绝对 `@path`。
 
 这些是产品适配代码，不是三个新的 DSH 插件。Cordis 插件复用现有 Device Bundle、云端 Host 与客户端能力；Electron 的入口、Preload／IPC 和打包选择需要另外提供最小装配接口。官方默认启动方式保留，产品模式显式选择入口、Profile、私有根和发布配置，并记录实际修改文件的升级影响。官方 DeepSeek 账户桥与产品身份、审批凭据分别保留其职责。
@@ -35,6 +35,8 @@ flowchart LR
 ```
 
 本地授权入口使用单独的所属窗口和 Preload；配对、路径与 nonce 留在该窗口及 Device 进程。Cloud renderer 不接收原生选择器返回的路径，也不获得通用本机文件读写或命令 IPC。官方 Preload 的 `__DSH_HOST_PATHS__` 将本机拖拽转成绝对路径引用，产品 Cloud 模式不装配它；上传通过明确传输进入用户云工作区，本地引用通过已授权目录 ID 和相对路径定位。
+
+Cloud 主窗口在同一 Electron Session 中完成固定可信平台的登录／强制改密码导航，再返回共享 Host。导航许可分别核对 Host 和平台入口，原生能力的 IPC 仍只授予所属 Host 主 frame；平台登录页不获得设备桥。这样[现有登录交换](application/web/login.js)写入的产品 cookie 留在正确会话中，注销与凭据失效后的重新登录也能使用同一链路。
 
 ## 可试用的实施顺序
 
@@ -54,11 +56,13 @@ Device 文件和写入协议稳定后，按下面三个纵切面集成 Electron�
 
 产品应用 ID、Electron userData、DSH Home、Device 私有根与更新源独立选择，避免与官方 DSH 安装共享身份或数据。复用[自动更新机制](../../apps/desktop/scripts/desktop-auto-update-environment.mjs)时指定 PowerEvolve 发布渠道和签名校验；当前官方生产更新地址及账户策略不能直接作为产品发布配置。Device 启动确认同时绑定当前所属子进程和新的实例标识，旧 readiness 文件或 HTTP 端口可达不能证明当前 Worker 已 ready。
 
-Device 已接入上游原生 `flock`、不可变 Docker 身份、启动前持久记录、跨 Device 写入槽及描述符相对文件访问，生命周期由 [Device Bundle](device/README.md)描述。平台已固定原请求和进程派发、发放一次启动许可、保存精确容器登记及撤销后的受限停止回执，并限制同 Device／目录授权的跨会话并发。已有完整停止记录的未知执行可经独立审批结案，保留原事实并至多续接一次；缺少停止事实的冷领取意图仍受阻。真实 PG／Docker 范围见[派发与停止记录验收](deploy/QA-DEVICE-DISPATCH-STOP.md)、[未知结果结案验收](deploy/QA-DEVICE-UNKNOWN-CLOSURE.md)及[写入与文件验收](deploy/QA-DEVICE-WRITER-FILES.md)。Electron 的三个产品适配器及安装包仍未交付。
+Device 的 [Python 文件辅助脚本](application/src/device/local-files.ts)由外部 Python 执行，必须位于物理资源目录。[官方 ASAR 规则](../../apps/desktop/scripts/electron-builder-config.mjs)未解包该脚本；产品包闭包须显式保留脚本并选择解包或资源复制及物理路径解析。`pythonExecutable` 指向已验证的安装包 Python，不能依赖开发机 PATH；Office 的资源解析不覆盖这个辅助脚本。
+
+Device 已接入上游原生 `flock`、不可变 Docker 身份、启动前持久记录、跨 Device 写入槽及描述符相对文件访问，生命周期由 [Device Bundle](device/README.md)描述。平台已固定原请求和进程派发、发放一次启动许可、保存精确容器登记及撤销后的受限停止回执，并限制同 Device／目录授权的跨会话并发。已有完整停止记录的未知执行可经独立审批结案，保留原事实并至多续接一次；严格冷 `claiming` 可经平台永久封存原领取，缺少停止事实的 `claimed`／`created` 仍受阻。真实 PG／Docker 范围见[派发与停止记录验收](deploy/QA-DEVICE-DISPATCH-STOP.md)、[未知结果结案验收](deploy/QA-DEVICE-UNKNOWN-CLOSURE.md)、[写入与文件验收](deploy/QA-DEVICE-WRITER-FILES.md)及[冷领取封存验收](deploy/QA-DEVICE-CLAIM-CLOSURE.md)。Electron 的三个产品适配器及安装包仍未交付。
 
 ## 业务与开发顺序
 
-先完成[Cloud 不确定执行结案](EXECUTION-RESOLUTION-COMPLETION.md)和 Device 前置协议，再完成缺少停止事实的冷领取核验。随后将 operation 固定的技能版本、只读包挂载、Office 和进程连接器接入获授权本机目标。远程 HTTP API 继续由可信平台保管凭据和执行；不能通过放开 Host 本地 shell 补齐桌面功能。
+Cloud 不确定执行结案与 Device 严格冷 `claiming` 封存已有协议验收，继续补齐缺少停止事实的 `claimed`／`created` 冷恢复。随后将 operation 固定的技能版本、只读包挂载、Office 和进程连接器接入获授权本机目标。远程 HTTP API 继续由可信平台保管凭据和执行；不能通过放开 Host 本地 shell 补齐桌面功能。
 
 Root 固定共享 DTO、schema、Profile、Electron 扩展点及发行闭包；设备实现者负责 Device/目录/包交付；Host 实现者负责模型工具目标；客户端实现者复用原执行位置与扩展中心。接口与文件归属固定后并行实现，真实端到端验收和版本冻结串行完成。桌面承载器在业务协议稳定前仅做只读审计，不提前合入下一切片。
 

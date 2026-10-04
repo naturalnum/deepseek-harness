@@ -10,8 +10,10 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
-import { deviceJob, deviceClaim, deviceClaimRequest, deviceContainerRegistration, deviceFinishRequest } from '@power-evolve/contracts/device-execution'
+import { deviceJob, deviceClaim, deviceClaimRequest, deviceContainerRegistration, deviceFinishRequest,
+  deviceClaimClosureRequest, deviceClaimClosureReceipt, type DeviceClaimClosureReceipt } from '@power-evolve/contracts/device-execution'
 import { DesktopWorker } from '../src/device/worker.ts'
+import { DeviceWriterCoordinator, deviceWriterOwner, DEVICE_WRITER_SLOT_FILENAME } from '../src/device/writer-coordinator.ts'
 import { DockerCommandError, OwnedDeviceContainer, OWNED_DEVICE_CONTAINER_LABELS, ownedContainerOwner, ownedContainerReceipt,
   type DockerClient, type DockerCommandResult, type OwnedContainerObservation, type OwnedContainerReceipt } from '../src/device/owned-container.ts'
 
@@ -28,6 +30,7 @@ const journalView = z.array(z.object({ id: z.uuid(), container: z.string(), stag
   owner: ownedContainerOwner.optional(), imageId: z.string().optional(), receipt: ownedContainerReceipt.optional(),
   queuedJob: deviceJob.optional(),
   claimed: deviceClaim.optional(), processId: z.uuid().optional(), dispatchId: z.uuid().optional(), stopRequestId: z.uuid().optional(),
+  claimClosureRequestId: deviceClaimClosureRequest.shape.requestId.optional(), claimClosureReceipt: deviceClaimClosureReceipt.optional(),
   stopObservation: z.object({ Running: z.literal(false), receipt: ownedContainerReceipt }).passthrough().optional(),
   result: z.object({ state: z.string() }).passthrough().optional() }).passthrough())
 type JournalRow = z.infer<typeof journalView>[number]
@@ -43,6 +46,20 @@ async function bounded<T>(promise: Promise<T>): Promise<T> {
   try { return await Promise.race([promise, deadline]) } finally { clearTimeout(timer) }
 }
 function notice(worker: DesktopWorker): string { return z.object({ notice: z.string() }).parse(worker.status()).notice }
+function failJournalWhile(worker: DesktopWorker, refused: () => Promise<boolean>): void {
+  // Instance-local fixture injection preserves all successful real FS saves; no production hook exists.
+  const method: unknown = Reflect.get(worker, 'saveJournal')
+  assert.equal(typeof method, 'function')
+  const original = method as (this: DesktopWorker) => Promise<void>
+  Object.defineProperty(worker, 'saveJournal', { value: async () => {
+    if (await refused()) throw new Error('fixture_journal_write_failed')
+    await original.call(worker)
+  } })
+}
+async function writerSlot(root: string) {
+  return z.object({ slot: z.object({ owner: deviceWriterOwner, receipt: ownedContainerReceipt.nullable(), stop: z.unknown() })
+    .nullable() }).parse(JSON.parse(await readFile(join(root, DEVICE_WRITER_SLOT_FILENAME), 'utf8'))).slot
+}
 function ownerLabels(receipt: OwnedContainerReceipt): Record<string, string> {
   return { [OWNED_DEVICE_CONTAINER_LABELS.schema]: '1', [OWNED_DEVICE_CONTAINER_LABELS.imageId]: receipt.imageId,
     ...Object.fromEntries(Object.entries(receipt.owner).map(([key, value]) => [OWNED_DEVICE_CONTAINER_LABELS[key as keyof typeof receipt.owner], value])) }
@@ -115,10 +132,15 @@ async function fixture(t: TestContext, shared?: { coordinationRoot: string; dire
   const closeChildren: (() => Promise<void>)[] = []
   const claims = new Map<string, z.infer<typeof deviceClaim>>()
   const registrations = new Map<string, string>(), finished = new Map<string, string>()
+  const closedClaims = new Map<string, DeviceClaimClosureReceipt>(), closures: DeviceClaimClosureReceipt[] = []
   const resolvedUnknown = new Set<string>()
   let jobs: Job[] = [], finishAck: 'valid' | 'wrong-id' | 'running' | 'wrong-dispatch' | 'wrong-request' | 'no-stop' | 'lost' = 'valid'
   let registerAck: 'valid' | 'lost' | 'wrong-dispatch' | 'wrong-receipt' | 'no-start' = 'valid'
   let claimAck: 'valid' | 'lost' = 'valid'
+  let closureAck: 'valid' | 'lost' | 'wrong-device' | 'wrong-instance' | 'wrong-id' | 'wrong-process'
+    | 'wrong-directory' | 'wrong-digest' | 'wrong-request' | 'not-sealed' = 'valid'
+  let onClosure: (() => Promise<void>) | undefined
+  let closureGate: ReturnType<typeof gate> | undefined, closureEntered: ReturnType<typeof gate> | undefined
   let claimGate: ReturnType<typeof gate> | undefined, claimEntered: ReturnType<typeof gate> | undefined
   let onClaim: (() => Promise<void>) | undefined
   let directoryGate: ReturnType<typeof gate> | undefined
@@ -169,6 +191,30 @@ async function fixture(t: TestContext, shared?: { coordinationRoot: string; dire
         if (claimAck === 'lost') { claimAck = 'valid'; res.destroy(); return }
         reply = original; break
       }
+      case '/devices/agent/claim/close': {
+        const input = deviceClaimClosureRequest.parse(body)
+        const original = claims.get(input.executionId), prior = closedClaims.get(input.requestId)
+        if (original) {
+          assert.equal(original.processId, input.processId); assert.equal(original.directoryId, input.directoryId)
+          assert.equal(original.digest, input.digest)
+        }
+        const accepted = prior ?? deviceClaimClosureReceipt.parse({ ...input, deviceId, dispatchId: original?.dispatchId ?? null,
+          kind: 'unstarted_claim_closed', state: 'cancelled', startNeverAuthorized: true, continuationQueued: true })
+        if (prior) for (const key of Object.keys(input) as (keyof typeof input)[]) assert.equal(prior[key], input[key])
+        closedClaims.set(input.requestId, accepted); closures.push(accepted)
+        jobs = jobs.filter(job => job.executionId !== input.executionId)
+        await onClosure?.(); closureEntered?.release(); await closureGate?.promise
+        if (closureAck === 'lost') { res.destroy(); return }
+        reply = { ...accepted,
+          ...(closureAck === 'wrong-device' ? { deviceId: randomUUID() } : {}),
+          ...(closureAck === 'wrong-instance' ? { instanceId: randomUUID() } : {}),
+          ...(closureAck === 'wrong-id' ? { executionId: randomUUID() } : {}),
+          ...(closureAck === 'wrong-process' ? { processId: randomUUID() } : {}),
+          ...(closureAck === 'wrong-directory' ? { directoryId: randomUUID() } : {}),
+          ...(closureAck === 'wrong-digest' ? { digest: 'e'.repeat(64) } : {}),
+          ...(closureAck === 'wrong-request' ? { requestId: randomUUID() } : {}),
+          ...(closureAck === 'not-sealed' ? { startNeverAuthorized: false } : {}) }; break
+      }
       case '/devices/agent/register': {
         const input = deviceContainerRegistration.parse(body), original = claims.get(input.executionId); assert(original)
         assert.equal(input.processId, original.processId); assert.equal(input.dispatchId, original.dispatchId)
@@ -211,7 +257,7 @@ async function fixture(t: TestContext, shared?: { coordinationRoot: string; dire
     workers.push(worker); return worker
   }
   t.after(async () => {
-    directoryGate?.release(); claimGate?.release(); docker.stopGate?.release(); transferGate?.release()
+    directoryGate?.release(); claimGate?.release(); closureGate?.release(); docker.stopGate?.release(); transferGate?.release()
     await Promise.all(closeChildren.map(close => close()))
     await Promise.all(workers.map(worker => worker.close()))
     server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve()))
@@ -241,6 +287,24 @@ async function fixture(t: TestContext, shared?: { coordinationRoot: string; dire
     const command = 'printf synthetic-device-test', cwd = '', timeoutMs = 2000
     return deviceJob.parse({ executionId: randomUUID(), directoryId, command, cwd, timeoutMs, state: 'queued', cancelRequested: false,
       digest: createHash('sha256').update(JSON.stringify({ command, cwd, timeoutMs, deviceId, directoryId })).digest('hex') })
+  }
+  async function seedClaiming(committed = false): Promise<JournalRow> {
+    await worker.close()
+    const device = z.object({ instanceId: z.uuid() }).parse(JSON.parse(await readFile(join(privateRoot, 'device.json'), 'utf8')))
+    const queuedJob = job(), processId = randomUUID()
+    const row = { id: queuedJob.executionId, container: 'pe-local-' + queuedJob.executionId.replaceAll('-', ''),
+      stage: 'claiming', processId, queuedJob, startedAt: Date.now() }
+    const lease = await new DeviceWriterCoordinator(workerOptions.coordinationRoot).command(deviceWriterOwner.parse({ kind: 'command',
+      deviceId, enrollmentId: device.instanceId, executionId: row.id, processId,
+      directoryId: queuedJob.directoryId, requestDigest: queuedJob.digest }))
+    await lease.release()
+    await writeFile(join(privateRoot, 'journal.json'), JSON.stringify([row]), { mode: 0o600 })
+    if (committed) {
+      const { state, cancelRequested, ...command } = queuedJob; void state; void cancelRequested
+      claims.set(row.id, deviceClaim.parse({ ...command, processId, dispatchId: randomUUID() }))
+    }
+    jobs = [{ ...queuedJob, state: committed ? 'running' : 'queued' }]
+    return row
   }
   async function makeChild() {
     // Plain Node protocol fixture consumes this checkout's compiled Worker, without Cordis or a paths loader.
@@ -296,7 +360,7 @@ process.send({ event: 'ready' });
     } }
   }
   return { base, privateRoot, directory, coordinationRoot: workerOptions.coordinationRoot,
-    docker, worker, makeWorker, seed, job, requests, finishes,
+    docker, worker, makeWorker, seed, seedClaiming, job, requests, finishes, closures,
     makeChild,
     async resolveUnknown() {
       await until(() => finishes.length > 0, 'reported unknown outcome')
@@ -308,8 +372,11 @@ process.send({ event: 'ready' });
     advertise(value: Job[]) { jobs = value }, ack(value: typeof finishAck) { finishAck = value },
     registrationAck(value: typeof registerAck) { registerAck = value },
     claimAck(value: typeof claimAck) { claimAck = value },
+    closureAck(value: typeof closureAck) { closureAck = value },
     observeClaim(action: () => Promise<void>) { onClaim = action },
+    observeClosure(action: () => Promise<void>) { onClosure = action },
     holdClaim() { claimGate = gate(); claimEntered = gate(); return { entered: claimEntered.promise, release: claimGate.release } },
+    holdClosure() { closureGate = gate(); closureEntered = gate(); return { entered: closureEntered.promise, release: closureGate.release } },
     holdDirectory() { directoryGate = gate(); directoryEntered = gate(); return { entered: directoryEntered.promise, release: directoryGate.release } },
     holdTransfer() { transferGate = gate(); return { release: transferGate.release } } }
 }
@@ -523,22 +590,152 @@ test('claim commit with lost HTTP acknowledgement retries the durable intent in 
   assert.equal(z.object({ state: z.string() }).parse(f.finishes[0]!.result).state, 'succeeded')
 })
 
-test('a cold process retains a lost-claim intent without reclaiming, creating, or inventing a dispatch generation', workerTestOptions, async t => {
+test('a cold OS process closes a committed lost-claim intent without reclaiming, creating, or inventing stop facts', workerTestOptions, async t => {
   const f = await fixture(t), job = f.job(), held = f.holdClaim()
   f.claimAck('lost'); f.advertise([job]); f.worker.start()
   await held.entered
   const [intent] = await journal(f.privateRoot); assert(intent?.processId); assert.equal(intent.stage, 'claiming')
   const closing = f.worker.close(); held.release(); await closing
   const claims = f.requests.filter(item => item.path === '/devices/agent/claim'); assert.equal(claims.length, 1)
+  f.observeClosure(async () => {
+    const [row] = await journal(f.privateRoot)
+    assert(row); assert.equal(row.processId, intent.processId); assert(row.claimClosureRequestId)
+    assert.deepEqual(row.queuedJob, intent.queuedJob)
+    await assert.rejects(new DeviceWriterCoordinator(f.coordinationRoot).transfer(async () => {}), { code: 'device_process_already_owned' })
+  })
   const child = await f.makeChild(); child.start()
-  // Observe the real cold worker refusing its predecessor's generation through its public status path.
-  await until(async () => await child.notice() === 'device_claiming_requires_review', 'cold intent review notice')
+  await until(async () => (await journal(f.privateRoot)).length === 0, 'cold committed claim retired')
   await child.close()
-  assert.deepEqual((await journal(f.privateRoot))[0], intent)
   assert.deepEqual(intent.queuedJob, job); assert.equal(intent.dispatchId, undefined); assert.equal(intent.owner, undefined)
+  assert.equal(f.closures.length, 1); assert(f.closures[0]!.dispatchId)
+  assert.equal(f.closures[0]!.processId, intent.processId); assert.equal(f.closures[0]!.digest, job.digest)
+  assert.equal(await writerSlot(f.coordinationRoot), null)
   assert.equal(f.requests.filter(item => item.path === '/devices/agent/claim').length, 1)
   for (const path of ['/devices/agent/register', '/devices/agent/finish']) assert.equal(f.requests.filter(item => item.path === path).length, 0)
   assert.equal(f.docker.calls.length, 0)
+})
+
+test('a cold unsubmitted claim closes with nullable dispatch and preserves its original process and inputs', workerTestOptions, async t => {
+  const f = await fixture(t), intent = await f.seedClaiming()
+  const cold = f.makeWorker(); await cold.init(); cold.start()
+  await until(async () => (await journal(f.privateRoot)).length === 0, 'unsubmitted claim closure')
+  await cold.close()
+  assert.equal(f.closures.length, 1); assert.equal(f.closures[0]!.dispatchId, null)
+  assert.equal(f.closures[0]!.processId, intent.processId); assert.equal(f.closures[0]!.digest, intent.queuedJob!.digest)
+  assert.equal(f.requests.filter(item => item.path === '/devices/agent/claim').length, 0)
+  assert.equal(f.finishes.length, 0); assert.equal(f.docker.calls.length, 0)
+  assert.equal(await writerSlot(f.coordinationRoot), null)
+})
+
+test('lost closure ACK across another OS process reuses its synced ID and exact inputs without a new claim', workerTestOptions, async t => {
+  const f = await fixture(t), intent = await f.seedClaiming(true)
+  f.closureAck('lost')
+  const cold = f.makeWorker(); await cold.init(); cold.start()
+  await until(() => f.closures.length > 0 && notice(cold) !== '', 'lost closure acknowledgement')
+  await cold.close()
+  const [saved] = await journal(f.privateRoot); assert(saved?.claimClosureRequestId); assert.equal(saved.claimClosureReceipt, undefined)
+  assert.equal(saved.processId, intent.processId); assert.deepEqual(saved.queuedJob, intent.queuedJob)
+  assert.equal((await writerSlot(f.coordinationRoot))?.owner.processId, intent.processId)
+  f.closureAck('valid')
+  const child = await f.makeChild(); child.start()
+  await until(async () => (await journal(f.privateRoot)).length === 0, 'retry sealed claim')
+  await child.close()
+  const calls = f.requests.filter(item => item.path === '/devices/agent/claim/close')
+  assert(calls.length >= 2)
+  for (const call of calls) assert.deepEqual(call.body, calls[0]!.body)
+  assert.equal(calls[0]!.body.requestId, saved.claimClosureRequestId)
+  assert.equal(new Set(f.closures.map(receipt => receipt.requestId)).size, 1)
+  assert.equal(f.requests.filter(item => item.path === '/devices/agent/claim').length, 0)
+  assert.equal(f.docker.calls.length, 0); assert.equal(f.finishes.length, 0)
+})
+
+test('wrong closure identities or absent no-start authority preserve both journal and global intent', workerTestOptions, async t => {
+  for (const ack of ['wrong-device', 'wrong-instance', 'wrong-id', 'wrong-process', 'wrong-directory',
+    'wrong-digest', 'wrong-request', 'not-sealed'] as const) await t.test(ack, async t => {
+    const f = await fixture(t), intent = await f.seedClaiming(true)
+    f.closureAck(ack)
+    const cold = f.makeWorker(); await cold.init(); cold.start()
+    await until(() => f.closures.length > 0 && notice(cold) !== '', 'closure refusal')
+    await cold.close()
+    const [saved] = await journal(f.privateRoot)
+    assert(saved); assert.equal(saved.processId, intent.processId); assert(saved.claimClosureRequestId)
+    assert.equal(saved.claimClosureReceipt, undefined)
+    const slot = await writerSlot(f.coordinationRoot); assert(slot); assert.equal(slot.owner.processId, intent.processId)
+    assert.equal(slot.receipt, null); assert.equal(slot.stop, null)
+    assert.equal(f.docker.calls.length, 0); assert.equal(f.finishes.length, 0)
+  })
+})
+
+test('failed closure receipt persistence cannot be bypassed by the in-memory receipt on a later poll', workerTestOptions, async t => {
+  const f = await fixture(t), intent = await f.seedClaiming(true)
+  const cold = f.makeWorker(); await cold.init()
+  let fail = true
+  failJournalWhile(cold, async () => fail && f.closures.length > 0)
+  cold.start()
+  await until(() => notice(cold) === 'fixture_journal_write_failed', 'closure receipt save failure')
+  const [saved] = await journal(f.privateRoot); assert(saved?.claimClosureRequestId); assert.equal(saved.claimClosureReceipt, undefined)
+  assert.equal((await writerSlot(f.coordinationRoot))?.owner.processId, intent.processId)
+  await assert.rejects(new DeviceWriterCoordinator(f.coordinationRoot).transfer(async () => {}), { code: 'device_process_already_owned' })
+  // Resume the same process: its cached ACK must still be synced before retirement.
+  fail = false
+  await until(async () => (await journal(f.privateRoot)).length === 0, 'receipt synced before clearing')
+  await cold.close()
+  assert.equal(f.closures.length, 1); assert.equal(await writerSlot(f.coordinationRoot), null)
+  assert.equal(f.docker.calls.length, 0)
+})
+
+test('a synced closure receipt survives interruption before slot retirement and a new process does not query or reclaim again', workerTestOptions, async t => {
+  const f = await fixture(t), intent = await f.seedClaiming(true)
+  const cold = f.makeWorker(); await cold.init()
+  // Stop exactly before the real retirement operation; successful journal saves still use actual FS.
+  const coordinator: unknown = Reflect.get(cold, 'coordination')
+  assert(coordinator instanceof DeviceWriterCoordinator)
+  Object.defineProperty(coordinator, 'retireClaim', { value: async () => { throw new Error('fixture_before_retirement') } })
+  cold.start()
+  await until(() => notice(cold) === 'fixture_before_retirement', 'durable receipt before retirement')
+  await cold.close()
+  const [saved] = await journal(f.privateRoot); assert(saved?.claimClosureReceipt)
+  assert.equal((await writerSlot(f.coordinationRoot))?.owner.processId, intent.processId)
+  const child = await f.makeChild(); child.start()
+  await until(async () => (await journal(f.privateRoot)).length === 0, 'receipt-only retirement in next process')
+  await child.close()
+  assert.equal(f.closures.length, 1); assert.equal(await writerSlot(f.coordinationRoot), null)
+  assert.equal(f.requests.filter(item => item.path === '/devices/agent/claim').length, 0)
+  assert.equal(f.docker.calls.length, 0); assert.equal(f.finishes.length, 0)
+})
+
+test('slot retirement followed by failed journal removal recovers from a durable receipt without rebuilding or clearing a new writer', workerTestOptions, async t => {
+  const f = await fixture(t), intent = await f.seedClaiming(true)
+  const cold = f.makeWorker(); await cold.init()
+  failJournalWhile(cold, async () => {
+    const rows = await journal(f.privateRoot)
+    return rows.some(row => row.claimClosureReceipt !== undefined) && await writerSlot(f.coordinationRoot) === null
+  })
+  cold.start()
+  await until(() => notice(cold) === 'fixture_journal_write_failed', 'journal removal failure after slot retirement')
+  await cold.close()
+  const [saved] = await journal(f.privateRoot); assert(saved?.claimClosureReceipt)
+  assert.equal(saved.processId, intent.processId); assert.equal(await writerSlot(f.coordinationRoot), null)
+  const coordinator = new DeviceWriterCoordinator(f.coordinationRoot), newer = deviceWriterOwner.parse({ kind: 'command',
+    deviceId: randomUUID(), enrollmentId: randomUUID(), executionId: randomUUID(), processId: randomUUID(),
+    directoryId: randomUUID(), requestDigest: 'c'.repeat(64) })
+  const lease = await coordinator.command(newer); await lease.release()
+  const before = await readFile(join(f.coordinationRoot, DEVICE_WRITER_SLOT_FILENAME))
+  const child = await f.makeChild(); child.start()
+  await until(async () => (await journal(f.privateRoot)).length === 0, 'retired receipt-only recovery')
+  await child.close()
+  assert.deepEqual(await readFile(join(f.coordinationRoot, DEVICE_WRITER_SLOT_FILENAME)), before)
+  assert.equal((await writerSlot(f.coordinationRoot))?.owner.executionId, newer.executionId)
+  assert.equal(f.closures.length, 1); assert.equal(f.docker.calls.length, 0)
+})
+
+test('a cold claimed entry remains blocked without expanding closure to Docker creation intents', workerTestOptions, async t => {
+  const f = await fixture(t), original = await f.seed('claimed', false)
+  const child = await f.makeChild(); child.start()
+  await until(async () => await child.notice() === 'device_container_identity_missing', 'claimed recovery retains evidence')
+  await child.close()
+  assert.deepEqual((await journal(f.privateRoot))[0], original)
+  assert.equal(f.closures.length, 0); assert.equal(f.docker.count('create'), 0); assert.equal(f.docker.count('start'), 0)
 })
 
 test('close during a successful claim acknowledgement preserves its intent and suppresses creation', workerTestOptions, async t => {

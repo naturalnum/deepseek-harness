@@ -7,7 +7,8 @@ import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
 import { deviceClaim, deviceJob, deviceContainerRegistration, deviceContainerRegistered,
-  deviceStopObservation, deviceExecutionResult, deviceFinishRequest, deviceFinishReceipt } from '@power-evolve/contracts/device-execution'
+  deviceStopObservation, deviceExecutionResult, deviceFinishRequest, deviceFinishReceipt,
+  deviceClaimClosureRequest, deviceClaimClosureReceipt } from '@power-evolve/contracts/device-execution'
 import { DeviceProcessLock } from './process-lock.ts'
 import { OwnedDeviceContainer, ownedContainerOwner, ownedContainerReceipt } from './owned-container.ts'
 import { LocalDeviceFiles } from './local-files.ts'
@@ -26,6 +27,8 @@ const journalEntry = z.object({
   queuedJob: deviceJob.optional(),
   claimed: deviceClaim.optional(), processId: deviceClaim.shape.processId.optional(),
   dispatchId: deviceClaim.shape.dispatchId.optional(), stopRequestId: deviceFinishRequest.shape.requestId.optional(),
+  claimClosureRequestId: deviceClaimClosureRequest.shape.requestId.optional(),
+  claimClosureReceipt: deviceClaimClosureReceipt.optional(),
   imageId: ownedContainerReceipt.shape.imageId.optional(),
   stopObservation: deviceStopObservation.optional(),
   startedAt: z.number(), result: deviceExecutionResult.optional(),
@@ -40,7 +43,12 @@ const journalEntry = z.object({
     || entry.dispatchId && entry.owner?.creationId !== entry.dispatchId
     || entry.queuedJob && (entry.queuedJob.executionId !== entry.id || entry.queuedJob.state !== 'queued')
     || (entry.stage === 'waiting' || entry.stage === 'claiming') && (!entry.queuedJob || !entry.processId || entry.claimed || entry.dispatchId
-      || entry.owner || entry.imageId || entry.receipt || entry.stopObservation || entry.stopRequestId || entry.result)) {
+      || entry.owner || entry.imageId || entry.receipt || entry.stopObservation || entry.stopRequestId || entry.result)
+    || (entry.claimClosureRequestId || entry.claimClosureReceipt) && entry.stage !== 'claiming'
+    || entry.claimClosureReceipt && (entry.claimClosureReceipt.requestId !== entry.claimClosureRequestId
+      || entry.claimClosureReceipt.executionId !== entry.id || entry.claimClosureReceipt.processId !== entry.processId
+      || entry.claimClosureReceipt.directoryId !== entry.queuedJob?.directoryId
+      || entry.claimClosureReceipt.digest !== entry.queuedJob?.digest)) {
     ctx.addIssue({ code: 'custom', message: 'device_journal_identity_mismatch' })
   }
 })
@@ -317,8 +325,8 @@ export class DesktopWorker {
                 break
               }
               if (entry.stage === 'claiming') {
-                if (entry.processId !== this.processId) throw new Error('device_claiming_requires_review')
-                this.activate(this.resumeClaim(this.state, entry))
+                this.activate(entry.processId !== this.processId
+                  ? this.closeColdClaim(this.state, entry) : this.resumeClaim(this.state, entry))
                 break
               }
               await this.recover(this.state, entry)
@@ -361,14 +369,18 @@ export class DesktopWorker {
       timeoutMs: job.timeoutMs, deviceId: state.deviceId, directoryId: job.directoryId })).digest('hex')
   }
 
-  private async takeWriter(state: DeviceState, entry: JournalEntry): Promise<DeviceWriterLease> {
+  private writerOwner(state: DeviceState, entry: JournalEntry): DeviceWriterOwner {
     const request = entry.claimed ?? entry.queuedJob
     if (!request || !entry.processId || request.digest !== this.requestDigest(state, request)) {
       throw new Error('device_writer_identity_missing')
     }
-    const owner = deviceWriterOwner.parse({ kind: 'command', deviceId: state.deviceId,
+    return deviceWriterOwner.parse({ kind: 'command', deviceId: state.deviceId,
       enrollmentId: state.instanceId, executionId: entry.id, processId: entry.processId,
       directoryId: request.directoryId, requestDigest: request.digest })
+  }
+
+  private async takeWriter(state: DeviceState, entry: JournalEntry): Promise<DeviceWriterLease> {
+    const owner = this.writerOwner(state, entry)
     if (this.writer) {
       if (JSON.stringify(this.writer.owner) !== JSON.stringify(owner)) throw new Error('device_writer_busy')
       return this.writer.lease
@@ -376,6 +388,44 @@ export class DesktopWorker {
     const lease = await this.coordination.command(owner)
     this.writer = { owner, lease }
     return lease
+  }
+
+  private async closeColdClaim(state: DeviceState, entry: JournalEntry): Promise<void> {
+    if (entry.stage !== 'claiming' || !entry.processId || entry.processId === this.processId || !entry.queuedJob
+      || entry.owner || entry.imageId || entry.claimed || entry.dispatchId || entry.receipt
+      || entry.stopObservation || entry.stopRequestId || entry.result) throw new Error('device_claiming_requires_review')
+    const owner = this.writerOwner(state, entry)
+    if (this.stop.signal.aborted) throw new Error('device_closed_before_claim_closure')
+    entry.claimClosureRequestId ??= deviceClaimClosureRequest.shape.requestId.parse(randomUUID())
+    if (!entry.claimClosureReceipt) {
+      const writer = await this.takeWriter(state, entry)
+      await writer.verifyUncapturedClaim()
+      if (this.stop.signal.aborted) throw new Error('device_closed_before_claim_closure')
+    }
+    // Sync the stable identity before every first/retried request, including an earlier failed save.
+    await this.saveJournal()
+    const input = deviceClaimClosureRequest.parse({ instanceId: state.instanceId, executionId: entry.id,
+      processId: entry.processId, directoryId: entry.queuedJob.directoryId, digest: entry.queuedJob.digest,
+      requestId: entry.claimClosureRequestId })
+    const accepted = entry.claimClosureReceipt ?? await this.call('/devices/agent/claim/close', input, deviceClaimClosureReceipt, state.token)
+    if (accepted.deviceId !== owner.deviceId || accepted.instanceId !== input.instanceId
+      || accepted.executionId !== input.executionId || accepted.processId !== input.processId
+      || accepted.directoryId !== input.directoryId || accepted.digest !== input.digest || accepted.requestId !== input.requestId) {
+      throw new Error('device_claim_closure_identity_mismatch')
+    }
+    entry.claimClosureReceipt = accepted
+    // A response held only in memory cannot release durable admission, even on the next poll.
+    await this.saveJournal()
+    if (this.stop.signal.aborted) throw new Error('device_closed_before_claim_closure')
+    if (this.writer) {
+      if (JSON.stringify(this.writer.owner) !== JSON.stringify(owner)) throw new Error('device_writer_busy')
+      await this.writer.lease.release()
+      this.writer = null
+    }
+    await this.coordination.retireClaim(owner, accepted)
+    this.journal.delete(entry.id)
+    try { await this.saveJournal() }
+    catch (error) { this.journal.set(entry.id, entry); throw error }
   }
 
   private async observeStopped(entry: JournalEntry): Promise<boolean> {
@@ -485,7 +535,8 @@ export class DesktopWorker {
 
   private async resumeClaim(state: DeviceState, entry: JournalEntry): Promise<void> {
     const job = entry.queuedJob, id = entry.id, name = entry.container
-    if (entry.stage !== 'claiming' || entry.processId !== this.processId || !job) throw new Error('device_claiming_requires_review')
+    if (entry.stage !== 'claiming' || entry.processId !== this.processId || !job
+      || entry.claimClosureRequestId || entry.claimClosureReceipt) throw new Error('device_claiming_requires_review')
     if (job.digest !== this.requestDigest(state, job)) throw new Error('device_dispatch_changed')
     if (this.stop.signal.aborted) throw new Error('device_closed_before_claim')
     const writer = await this.takeWriter(state, entry)

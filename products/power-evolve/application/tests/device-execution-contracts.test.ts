@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { randomUUID } from 'node:crypto'
 import { deviceClaimRequest, deviceContainerRegistered, deviceContainerRegistration,
-  deviceFinishReceipt, deviceFinishRequest } from '@power-evolve/contracts/device-execution'
+  deviceFinishReceipt, deviceFinishRequest, deviceClaimClosureRequest, deviceClaimClosureReceipt } from '@power-evolve/contracts/device-execution'
 
 function fixture() {
   const executionId = randomUUID(), instanceId = randomUUID(), dispatchId = randomUUID(), processId = randomUUID()
@@ -52,4 +52,23 @@ test('cleanup acknowledgements require a persisted stop and terminal state', () 
   assert.equal(deviceFinishReceipt.safeParse({ ...ack, requestId: undefined }).success, false)
   assert.equal(deviceContainerRegistered.safeParse({ executionId: registration.executionId,
     dispatchId: registration.dispatchId, receipt: registration.receipt, canStart: false }).success, true)
+})
+
+test('an interrupted claim closes with original identities and a permanent no-start fact, never a fabricated stop', () => {
+  const { registration } = fixture()
+  const request = { instanceId: registration.instanceId, executionId: registration.executionId,
+    processId: registration.processId, directoryId: randomUUID(), digest: registration.receipt.owner.requestDigest,
+    requestId: randomUUID() }
+  assert.equal(deviceClaimClosureRequest.safeParse(request).success, true)
+  const receipt = { ...request, kind: 'unstarted_claim_closed', deviceId: registration.receipt.owner.deviceId,
+    dispatchId: registration.dispatchId, state: 'cancelled', startNeverAuthorized: true, continuationQueued: false }
+  assert.equal(deviceClaimClosureReceipt.safeParse(receipt).success, true)
+  assert.equal(deviceClaimClosureReceipt.safeParse({ ...receipt, dispatchId: null }).success, true)
+  for (const extra of [{ command: 'echo unwanted' }, { localPath: '/private/project' }, { observation: { Running: false } }]) {
+    assert.equal(deviceClaimClosureRequest.safeParse({ ...request, ...extra }).success, false)
+    assert.equal(deviceClaimClosureReceipt.safeParse({ ...receipt, ...extra }).success, false)
+  }
+  assert.equal(deviceClaimClosureReceipt.safeParse({ ...receipt, startNeverAuthorized: false }).success, false)
+  assert.equal(deviceClaimClosureReceipt.safeParse({ ...receipt, stopConfirmed: true }).success, false)
+  assert.equal(deviceClaimClosureReceipt.safeParse({ ...receipt, state: 'succeeded' }).success, false)
 })

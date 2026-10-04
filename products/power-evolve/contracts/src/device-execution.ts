@@ -22,6 +22,8 @@ export type DeviceProcessId = Branded<'power-evolve/DeviceProcessId'>
 export type DeviceStopRequestId = Branded<'power-evolve/DeviceStopRequestId'>
 /** Cloud-visible directory grant; it contains no local path. */
 export type DeviceDirectoryId = Branded<'power-evolve/DeviceDirectoryId'>
+/** Stable identity for fencing one interrupted claim before any start authorization. */
+export type DeviceClaimClosureRequestId = Branded<'power-evolve/DeviceClaimClosureRequestId'>
 
 const deviceId = z.uuid().transform(value => brandString<ContainerDeviceId>(value))
 const instanceId = z.uuid().transform(value => brandString<ContainerEnrollmentId>(value))
@@ -60,6 +62,19 @@ export const deviceJob = command.extend({
 export const deviceClaimRequest = z.object({ instanceId, executionId, processId }).strict()
 /** The original command and Platform-issued dispatch; retries retain exactly these identities. */
 export const deviceClaim = command.extend({ dispatchId, processId })
+/** Original claiming intent; no caller-supplied command, output or stop observation is accepted. */
+export const deviceClaimClosureRequest = deviceClaimRequest.extend({ directoryId, digest,
+  requestId: z.uuid().transform(value => brandString<DeviceClaimClosureRequestId>(value)),
+})
+/** Platform's permanent start fence, distinct from an observed Docker stop or a known command result. */
+export const deviceClaimClosureReceipt = deviceClaimClosureRequest.extend({
+  kind: z.literal('unstarted_claim_closed'), deviceId, dispatchId: dispatchId.nullable(),
+  state: z.literal('cancelled'), startNeverAuthorized: z.literal(true), continuationQueued: z.boolean(),
+})
+/** Validated original interrupted claim and stable closure request. */
+export type DeviceClaimClosureRequest = z.infer<typeof deviceClaimClosureRequest>
+/** Validated permanent no-start fence; it authorizes no execution or invented stop facts. */
+export type DeviceClaimClosureReceipt = z.infer<typeof deviceClaimClosureReceipt>
 /** Registering an exact container requires its original claimed process and dispatch. */
 export const deviceContainerRegistration = deviceClaimRequest.extend({ dispatchId, receipt: ownedContainerReceipt })
   .refine(value => value.receipt.owner.executionId === value.executionId

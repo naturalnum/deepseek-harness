@@ -63,7 +63,7 @@ import { artifactPublishRequest, executionFilesRequest,
   EXECUTION_FILES_PLATFORM_PATH } from '@power-evolve/contracts/execution-files'
 import { LoginAdmission } from './login-admission.ts'
 import { DeviceService } from './devices.ts'
-import { deviceClaimRequest, deviceContainerRegistration, deviceFinishRequest } from '@power-evolve/contracts/device-execution'
+import { deviceClaimRequest, deviceContainerRegistration, deviceFinishRequest, deviceClaimClosureRequest } from '@power-evolve/contracts/device-execution'
 import { KubernetesClient } from './kubernetes.ts'
 import { SandboxManager } from './sandbox.ts'
 import { proxyModel } from './model.ts'
@@ -566,6 +566,10 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         case '/devices/agent/claim': {
           const value = deviceClaimRequest.parse(input)
           sendJson(res, await devices.claim(token, value.instanceId, value.executionId, value.processId)); return
+        }
+        case '/devices/agent/claim/close': {
+          const value = deviceClaimClosureRequest.parse(input)
+          sendJson(res, await devices.closeUnstartedClaim(token, value)); return
         }
         case '/devices/agent/register': {
           const value = deviceContainerRegistration.parse(input)

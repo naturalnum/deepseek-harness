@@ -3,6 +3,7 @@ import { Pool, type PoolClient } from 'pg'
 import { schemaV27 } from './storage-binding-schema.ts'
 import { schemaV29 } from './device-execution-schema.ts'
 import { schemaV30 } from './device-resolution-schema.ts'
+import { schemaV31 } from './device-claim-closure-schema.ts'
 import { schemaV28 } from './execution-resolution-schema.ts'
 import { CURRENT_SCHEMA_VERSION, schema, schemaV2, schemaV3, schemaV4, schemaV5, schemaV6, schemaV7, schemaV8, schemaV9, schemaV10, schemaV11, schemaV12, schemaV13, schemaV14, schemaV15, schemaV16, schemaV17, schemaV18, schemaV19, schemaV20, schemaV21, schemaV22, schemaV23, schemaV24, schemaV25, schemaV26 } from './schema.ts'
 
@@ -37,7 +38,9 @@ export async function transaction<T>(pool: Pool, operation: (client: PoolClient)
   }
 }
 
-/** Initialize the product schema once under a database lock; refuse newer schemas. */
+/** Initialize the product schema once under a database lock; refuse newer schemas.
+ * @param pool Platform pool whose exclusive transaction applies adjacent migrations.
+ */
 export async function initializeDatabase(pool: Pool): Promise<void> {
   await transaction(pool, async client => {
     await client.query('SELECT pg_advisory_xact_lock(72819531)')
@@ -76,5 +79,6 @@ export async function initializeDatabase(pool: Pool): Promise<void> {
     if (initialVersion < 28) await client.query(schemaV28)
     if (initialVersion < 29) await client.query(schemaV29)
     if (initialVersion < 30) await client.query(schemaV30)
+    if (initialVersion < 31) await client.query(schemaV31)
   })
 }

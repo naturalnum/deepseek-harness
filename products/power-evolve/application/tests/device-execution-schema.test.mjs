@@ -10,9 +10,10 @@ import * as predecessors from '../lib/platform/schema.js'
 import { schemaV27 } from '../lib/platform/storage-binding-schema.js'
 import { schemaV28 } from '../lib/platform/execution-resolution-schema.js'
 import { schemaV29 } from '../lib/platform/device-execution-schema.js'
+import { schemaV30 } from '../lib/platform/device-resolution-schema.js'
 import { initializeDatabase, transaction } from '../lib/platform/database.js'
 
-test('V29 and its closure successor retain legacy facts without fabricating Device capture or closure', { timeout: 30000 }, async () => {
+test('V29 through V31 retain legacy facts without fabricating Device capture or closure', { timeout: 30000 }, async () => {
   const config = process.env.PE_PRIVATE_DIR ?? join(homedir(), '.config/power-evolve/shared-host-cloud-candidate')
   const databaseUrl = process.env.PE_TEST_DATABASE_URL ?? (await readFile(join(config, 'database-url'), 'utf8')).trim()
   const name = `pe_device_v29_${randomBytes(10).toString('hex')}`
@@ -55,12 +56,19 @@ test('V29 and its closure successor retain legacy facts without fabricating Devi
     assert.deepEqual(after, { ...before, dispatch_request: null, dispatch_id: null, dispatch_process_id: null,
       container_receipt: null, start_authorized_at: null, stop_request_id: null, stop_record_digest: null,
       stop_observation: null, continuation_queued: true })
+    await transaction(pool, client => client.query(schemaV30))
+    assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 30)
+    assert.deepEqual((await pool.query('SELECT * FROM pe_desktop_executions WHERE id=$1', [execution])).rows[0], after)
     await initializeDatabase(pool)
     assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, predecessors.CURRENT_SCHEMA_VERSION)
     assert.deepEqual((await pool.query('SELECT * FROM pe_desktop_executions WHERE id=$1', [execution])).rows[0], after)
     assert.equal((await pool.query('SELECT count(*)::integer AS n FROM pe_device_execution_resolutions')).rows[0].n, 0)
     assert.equal((await pool.query(`SELECT data_type FROM information_schema.columns
       WHERE table_name='pe_device_execution_resolutions' AND column_name='snapshot'`)).rows[0].data_type, 'json')
+    assert.equal((await pool.query('SELECT count(*)::integer AS n FROM pe_device_claim_closures')).rows[0].n, 0)
+    const closureColumns = await pool.query(`SELECT column_name,data_type FROM information_schema.columns
+      WHERE table_name='pe_device_claim_closures' AND column_name IN ('request','receipt') ORDER BY column_name`)
+    assert.deepEqual(closureColumns.rows, [{ column_name: 'receipt', data_type: 'json' }, { column_name: 'request', data_type: 'json' }])
     await assert.rejects(pool.query('UPDATE pe_desktop_executions SET dispatch_id=$2 WHERE id=$1',
       [execution, randomUUID()]), { code: '23514' })
     await assert.rejects(pool.query('UPDATE pe_desktop_executions SET container_receipt=$2 WHERE id=$1',

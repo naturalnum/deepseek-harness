@@ -7,7 +7,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test, { type TestContext } from 'node:test'
 import { z } from 'zod'
-import { deviceFinishReceipt, deviceFinishRequest, deviceStopObservation, ownedContainerReceipt } from '@power-evolve/contracts/device-execution'
+import { deviceFinishReceipt, deviceFinishRequest, deviceStopObservation, ownedContainerReceipt,
+  deviceClaimClosureReceipt } from '@power-evolve/contracts/device-execution'
 import { DEVICE_PROCESS_LOCK_FILENAME, DeviceProcessLock } from '../src/device/process-lock.ts'
 import { DEVICE_WRITER_SLOT_FILENAME, DeviceWriterCoordinator, deviceWriterOwner, type DeviceWriterOwner } from '../src/device/writer-coordinator.ts'
 
@@ -29,6 +30,12 @@ const stopId = () => deviceFinishRequest.shape.requestId.parse(randomUUID())
 function ack(container: ReturnType<typeof receipt>, id: ReturnType<typeof stopId>, state = 'succeeded') {
   return deviceFinishReceipt.parse({ executionId: container.owner.executionId, dispatchId: container.owner.creationId,
     requestId: id, stopConfirmed: true, state })
+}
+function claimClosure(input: DeviceWriterOwner, dispatchId: string | null = null) {
+  return deviceClaimClosureReceipt.parse({ kind: 'unstarted_claim_closed', deviceId: input.deviceId,
+    instanceId: input.enrollmentId, executionId: input.executionId, processId: input.processId,
+    directoryId: input.directoryId, digest: input.requestDigest, requestId: randomUUID(), dispatchId,
+    state: 'cancelled', startNeverAuthorized: true, continuationQueued: true })
 }
 async function root(t: TestContext): Promise<string> {
   const path = await mkdtemp(join(await realpath(tmpdir()), 'pe-writer-coordinator-'))
@@ -163,6 +170,65 @@ test('waiting abandonment refuses captured and stopped commands without altering
   assert.deepEqual(await bytes(path), stopped)
   await lease.release()
   await assert.rejects(coordinator.command(owner()), { code: 'device_writer_busy' })
+})
+
+test('unstarted claim retirement clears only its uncaptured owner and retries do not recreate its reservation', options, async t => {
+  const path = await root(t), coordinator = new DeviceWriterCoordinator(path), original = owner(), closed = claimClosure(original)
+  const lease = await coordinator.command(original)
+  await lease.verifyUncapturedClaim()
+  await assert.rejects(coordinator.retireClaim(original, closed), { code: 'device_process_already_owned' })
+  await lease.release()
+  await coordinator.retireClaim(original, closed)
+  assert.equal((await bytes(path)).slot, null)
+  const empty = await readFile(join(path, DEVICE_WRITER_SLOT_FILENAME))
+  await coordinator.retireClaim(original, closed)
+  assert.deepEqual(await readFile(join(path, DEVICE_WRITER_SLOT_FILENAME)), empty)
+  const next = owner(), other = await coordinator.command(next)
+  await assert.rejects(coordinator.retireClaim(original, closed), { code: 'device_process_already_owned' })
+  await other.release()
+  const occupied = await readFile(join(path, DEVICE_WRITER_SLOT_FILENAME))
+  await coordinator.retireClaim(original, closed)
+  assert.deepEqual(await readFile(join(path, DEVICE_WRITER_SLOT_FILENAME)), occupied)
+  assert.equal((await bytes(path)).slot?.kind, 'command')
+  await settleKnown(coordinator, next)
+})
+
+test('claim retirement refuses mismatched receipt identities and captured or stopped original slots', options, async t => {
+  const path = await root(t), coordinator = new DeviceWriterCoordinator(path), original = owner(), closed = claimClosure(original, randomUUID())
+  const lease = await coordinator.command(original); await lease.release()
+  const prior = await readFile(join(path, DEVICE_WRITER_SLOT_FILENAME))
+  for (const key of ['deviceId', 'instanceId', 'executionId', 'processId', 'directoryId', 'digest'] as const) {
+    const changed = deviceClaimClosureReceipt.parse({ ...closed, [key]: key === 'digest' ? 'd'.repeat(64) : randomUUID() })
+    await assert.rejects(coordinator.retireClaim(original, changed), { code: 'device_writer_claim_closure_mismatch' })
+    assert.deepEqual(await readFile(join(path, DEVICE_WRITER_SLOT_FILENAME)), prior)
+  }
+  const captured = await coordinator.command(original), container = receipt(original)
+  await captured.capture(container)
+  await assert.rejects(captured.verifyUncapturedClaim(), { code: 'device_writer_claim_closure_unavailable' })
+  await captured.release()
+  const saved = await readFile(join(path, DEVICE_WRITER_SLOT_FILENAME))
+  await assert.rejects(coordinator.retireClaim(original, closed), { code: 'device_writer_claim_closure_unavailable' })
+  assert.deepEqual(await readFile(join(path, DEVICE_WRITER_SLOT_FILENAME)), saved)
+  const stopped = await coordinator.command(original)
+  await stopped.recordStop(stop(container), stopId()); await stopped.release()
+  const finished = await readFile(join(path, DEVICE_WRITER_SLOT_FILENAME))
+  await assert.rejects(coordinator.retireClaim(original, closed), { code: 'device_writer_claim_closure_unavailable' })
+  assert.deepEqual(await readFile(join(path, DEVICE_WRITER_SLOT_FILENAME)), finished)
+})
+
+test('retiring an old claim leaves an unrelated interrupted transfer untouched', options, async t => {
+  const path = await root(t), original = owner(), input = claimClosure(original)
+  const url = new URL('../src/device/writer-coordinator.ts', import.meta.url).href
+  const holder = await child(t, path, `import {DeviceWriterCoordinator} from ${JSON.stringify(url)};
+    await new DeviceWriterCoordinator(${JSON.stringify(path)}).transfer(async()=>{
+      process.send({event:'transfer'});await new Promise(()=>{});
+    });`)
+  assert.deepEqual(await holder.ready, { event: 'transfer' })
+  holder.process.kill('SIGKILL'); await bounded(holder.closed)
+  const prior = await readFile(join(path, DEVICE_WRITER_SLOT_FILENAME))
+  await new DeviceWriterCoordinator(path).retireClaim(original, input)
+  assert.deepEqual(await readFile(join(path, DEVICE_WRITER_SLOT_FILENAME)), prior)
+  assert.equal((await bytes(path)).slot?.kind, 'transfer')
 })
 
 test('stale ACKs and changed stop facts fail; uncertain preserves the reservation until matching closure', options, async t => {

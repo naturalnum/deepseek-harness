@@ -7,7 +7,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { z } from 'zod'
 import { deviceClaimRequest, deviceDispatchRequest, deviceFinishReceipt, deviceFinishRequest,
   deviceStopObservation, ownedContainerOwner, ownedContainerReceipt,
-  type DeviceStopRequestId, type OwnedContainerReceipt } from '@power-evolve/contracts/device-execution'
+  type DeviceClaimClosureReceipt, type DeviceStopRequestId, type OwnedContainerReceipt } from '@power-evolve/contracts/device-execution'
 import { DeviceProcessLock, DeviceProcessLockError } from './process-lock.ts'
 
 /** Frozen command identity saved before Platform claim or Docker creation, without paths or output. */
@@ -28,7 +28,7 @@ export const DEVICE_WRITER_SLOT_FILENAME = 'writer-slot.json'
 export class DeviceWriterError extends Error {
   constructor(readonly code: 'device_writer_busy' | 'device_writer_identity_changed' | 'device_writer_stop_unconfirmed'
     | 'device_writer_settlement_mismatch' | 'device_writer_slot_invalid' | 'device_writer_lease_released'
-    | 'device_writer_waiting_unavailable') {
+    | 'device_writer_waiting_unavailable' | 'device_writer_claim_closure_mismatch' | 'device_writer_claim_closure_unavailable') {
     super(code)
   }
 }
@@ -228,6 +228,15 @@ export class DeviceWriterLease {
       await this.store.save({ ...await this.store.current(), slot: null })
     })
   }
+  /** Verify an original uncaptured intent while keeping kernel ownership for its Platform closure.
+   * @returns Completion after checking this exact owner has neither container nor stop facts.
+   */
+  verifyUncapturedClaim(): Promise<void> {
+    return this.run(async () => {
+      const slot = await this.store.command(this.owner)
+      if (slot.receipt !== null || slot.stop !== null) throw new DeviceWriterError('device_writer_claim_closure_unavailable')
+    })
+  }
   /** Persist an immutable capture before start; a different container or owner cannot replace it.
    * @param receipt Exact owned Docker identity, without a local path or command.
    * @returns Durable capture; identical retries retain the original receipt.
@@ -288,9 +297,9 @@ export class DeviceWriterLease {
 /** One coordination root for all cooperating Profiles of an OS user; a missing initialized slot blocks admission. */
 export class DeviceWriterCoordinator {
   constructor(private readonly root: string) {}
-  private async acquire(): Promise<WriterSlotStore> {
+  private async acquire(recoverTransfer = true): Promise<WriterSlotStore> {
     const lock = await DeviceProcessLock.acquire(this.root), store = new WriterSlotStore(resolve(this.root), lock)
-    try { await store.load(); await store.interrupted(); return store }
+    try { await store.load(); if (recoverTransfer) await store.interrupted(); return store }
     catch (error) { await lock.release(); throw error }
   }
   /** Save command intent before claim/create; only an identical owner may recover a persistent slot.
@@ -307,6 +316,29 @@ export class DeviceWriterCoordinator {
       if (state.slot === null) await store.save({ ...state, slot: { kind: 'command', owner, receipt: null, stop: null } })
       return new DeviceWriterLease(store, owner)
     } catch (error) { await store.lock.release(); throw error }
+  }
+  /** Retire only an uncaptured original claim after the Worker durably saves its Platform closure.
+   * A missing original slot or a different writer is already retired and stays untouched. This method
+   * never creates a reservation, infers a Docker stop, or clears an unrelated interrupted transfer.
+   * @param owner Original process and frozen request, retained under the private journal flock.
+   * @param receipt Matching permanent no-start receipt, persisted by the trusted Worker before calling.
+   * @returns Durable retirement under the global flock; retries preserve another writer's slot.
+   */
+  async retireClaim(owner: DeviceWriterOwner, receipt: DeviceClaimClosureReceipt): Promise<void> {
+    if (receipt.deviceId !== owner.deviceId || receipt.instanceId !== owner.enrollmentId
+      || receipt.executionId !== owner.executionId || receipt.processId !== owner.processId
+      || receipt.directoryId !== owner.directoryId || receipt.digest !== owner.requestDigest) {
+      throw new DeviceWriterError('device_writer_claim_closure_mismatch')
+    }
+    const store = await this.acquire(false)
+    try {
+      const state = await store.current()
+      if (state.slot?.kind !== 'command' || !isDeepStrictEqual(state.slot.owner, owner)) return
+      if (state.slot.receipt !== null || state.slot.stop !== null) {
+        throw new DeviceWriterError('device_writer_claim_closure_unavailable')
+      }
+      await store.save({ ...state, slot: null })
+    } finally { await store.lock.release() }
   }
   /** Hold the global flock through a trusted helper's complete local action, with an inheritable descriptor.
    * @param action Trusted helper action; inherit lockFd explicitly and await the helper's exit.

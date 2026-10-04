@@ -8,12 +8,12 @@ import { tmpdir } from 'node:os'
 import { setTimeout as delay } from 'node:timers/promises'
 import { randomUUID } from 'node:crypto'
 import { DesktopWorker } from '../lib/device/worker.js'
-import { OwnedDeviceContainer } from '../lib/device/owned-container.js'
+import { OwnedDeviceContainer, ScrubbedDockerClient } from '../lib/device/owned-container.js'
 import { DeviceService } from '../lib/platform/devices.js'
 import { FileService } from '../lib/platform/files.js'
 import { IdentityService } from '../lib/platform/identity.js'
 import { routeExecutionResolutionApproval } from '../lib/platform/execution-resolution-routes.js'
-import { deviceClaimRequest, deviceContainerRegistration, deviceFinishRequest } from '@power-evolve/contracts/device-execution'
+import { deviceClaimRequest, deviceContainerRegistration, deviceFinishRequest, deviceClaimClosureRequest } from '@power-evolve/contracts/device-execution'
 import { deviceProtocolFixture } from './device-execution-protocol-fixture.mjs'
 import { taskCredential } from './task-credential-fixture.mjs'
 
@@ -27,13 +27,18 @@ async function until(condition, label) {
   }
 }
 
-async function fixture(t, loseRegistrationAck = false, commandTimeoutMs = 1234, loseClaimAck = false, loseResolutionAck = false) {
+async function fixture(t, loseRegistrationAck = false, commandTimeoutMs = 1234, loseClaimAck = false, loseResolutionAck = false,
+  keepClaimAckLost = false, loseClaimClosureAck = false) {
   const root = await mkdtemp(join(await realpath(tmpdir()), 'pe-device-real-'))
   const project = join(root, 'project'), privateRoot = join(root, 'private')
   await mkdir(project, { mode: 0o777 }); await chmod(project, 0o777)
-  const containers = new OwnedDeviceContainer({ commandTimeoutMs: 15000, stopTimeoutMs: 10000, stopGraceSeconds: 1 })
+  const docker = new ScrubbedDockerClient(), dockerCalls = []
+  const containers = new OwnedDeviceContainer({ commandTimeoutMs: 15000, stopTimeoutMs: 10000, stopGraceSeconds: 1 }, {
+    run: async (args, timeoutMs) => { dockerCalls.push(args[0]); return docker.run(args, timeoutMs) },
+  })
   const receipts = new Map(), workers = []
-  let server, origin, lost = false, lostClosure = false, lastFinish
+  let server, origin, lost = false, lostClosure = false, lostClaimClosure = false, lastFinish, lostClaimExecutionId
+  let allowClaimClosureAck = !loseClaimClosureAck
   t.after(async () => {
     await Promise.all(workers.map(worker => worker.close()))
     server?.closeAllConnections()
@@ -74,7 +79,14 @@ async function fixture(t, loseRegistrationAck = false, commandTimeoutMs = 1234, 
       case '/devices/agent/claim': {
         const value = deviceClaimRequest.parse(input)
         reply = await platform.devices.claim(token, value.instanceId, value.executionId, value.processId)
-        if (loseClaimAck && !lost) { lost = true; res.destroy(); return }
+        if (loseClaimAck && (!lost || keepClaimAckLost && value.executionId === lostClaimExecutionId)) {
+          lost = true; lostClaimExecutionId = value.executionId; res.destroy(); return
+        }
+        break
+      }
+      case '/devices/agent/claim/close': {
+        reply = await platform.devices.closeUnstartedClaim(token, deviceClaimClosureRequest.parse(input))
+        if (!allowClaimClosureAck) { lostClaimClosure = true; res.destroy(); return }
         break
       }
       case '/devices/agent/register': {
@@ -97,11 +109,15 @@ async function fixture(t, loseRegistrationAck = false, commandTimeoutMs = 1234, 
   }) })
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
   origin = `http://127.0.0.1:${server.address().port}`
-  const makeDevice = async (user, directory, privateDirectory = join(root, randomUUID())) => {
+  const makeWorker = async privateDirectory => {
     const worker = new DesktopWorker(origin, privateDirectory, image,
       { pollMs: 100, contactGraceMs: 5000, commandPollMs: 50, platformRequestTimeoutMs: 3000,
         coordinationRoot: join(root, 'writers'), pythonExecutable: '/usr/bin/python3', fileOperationTimeoutMs: 3000 }, containers)
     workers.push(worker); await worker.init()
+    return worker
+  }
+  const makeDevice = async (user, directory, privateDirectory = join(root, randomUUID())) => {
+    const worker = await makeWorker(privateDirectory)
     const pair = await platform.devices.pair(user, await taskCredential(platform.pool, user))
     await worker.pair(pair.code, 'Real Docker test Device')
     const grant = await worker.authorize(directory)
@@ -117,8 +133,9 @@ async function fixture(t, loseRegistrationAck = false, commandTimeoutMs = 1234, 
     }, body: JSON.stringify(input), signal: AbortSignal.timeout(5000) })
     return { status: response.status, body: await response.json() }
   }
-  return { ...platform, worker, device, project, privateRoot, containers, op, files, makeDevice,
-    approval, lastFinish: () => lastFinish, lost: () => lost, lostClosure: () => lostClosure }
+  return { ...platform, worker, device, project, privateRoot, containers, op, files, makeDevice, makeWorker,
+    approval, dockerCalls, lastFinish: () => lastFinish, lost: () => lost, lostClosure: () => lostClosure,
+    lostClaimClosure: () => lostClaimClosure, releaseClaimClosureAck: () => { allowClaimClosureAck = true } }
 }
 
 test('real Device Git executes once and persists exact Docker stop identity before cleanup', options, async t => {
@@ -140,6 +157,59 @@ test('real Device Git executes once and persists exact Docker stop identity befo
   assert.equal(await f.continuations(accepted.executionId), 1)
   const bob = await f.enroll(f.bob)
   await assert.rejects(f.devices.finish(bob.token, f.lastFinish()), { code: 'execution_not_found' })
+})
+
+test('cold claim and closure ACK loss permanently retire the old dispatch before fresh real Docker work', options, async t => {
+  const f = await fixture(t, false, 1234, true, false, true, true)
+  const accepted = await f.devices.propose(f.op.grant.token, 'cold-claim-must-not-run',
+    "printf 'MUST-NOT-RUN\\n' >> forbidden.txt", '.')
+  f.worker.start()
+  await until(async () => f.lost() && (await f.row(accepted.executionId)).dispatch_process_id !== null,
+    'committed claim with lost acknowledgement')
+  await f.worker.close()
+  const journal = JSON.parse(await readFile(join(f.privateRoot, 'journal.json'), 'utf8'))
+  assert.equal(journal.length, 1); assert.equal(journal[0].stage, 'claiming')
+  const original = await f.row(accepted.executionId)
+  assert.equal(journal[0].processId, original.dispatch_process_id)
+  const replacement = await f.makeWorker(f.privateRoot)
+  replacement.start()
+  await until(async () => f.lostClaimClosure(), 'committed closure with lost acknowledgement')
+  await replacement.close()
+  const afterLoss = JSON.parse(await readFile(join(f.privateRoot, 'journal.json'), 'utf8'))
+  assert.equal(afterLoss.length, 1); assert.equal(afterLoss[0].stage, 'claiming')
+  f.releaseClaimClosureAck()
+  const retried = await f.makeWorker(f.privateRoot)
+  retried.start()
+  await until(async () => JSON.parse(await readFile(join(f.privateRoot, 'journal.json'), 'utf8')).length === 0,
+    'retried closure receipt and writer retirement')
+  const row = await f.row(accepted.executionId)
+  assert.equal(row.state, 'cancelled'); assert.equal(row.dispatch_process_id, original.dispatch_process_id)
+  for (const key of ['container_receipt', 'start_authorized_at', 'stop_request_id', 'stop_observation', 'result']) {
+    assert.equal(row[key], null, key)
+  }
+  const closures = await f.pool.query('SELECT * FROM pe_device_claim_closures WHERE execution_id=$1', [row.id])
+  assert.equal(closures.rowCount, 1)
+  assert.equal(closures.rows[0].receipt.kind, 'unstarted_claim_closed')
+  assert.equal(closures.rows[0].receipt.startNeverAuthorized, true)
+  assert.equal(closures.rows[0].receipt.processId, original.dispatch_process_id)
+  assert.equal(closures.rows[0].receipt.dispatchId, original.dispatch_id)
+  assert.equal(closures.rows[0].request.digest, journal[0].queuedJob.digest)
+  assert.equal(await f.continuations(row.id), 1)
+  assert.equal(JSON.parse(await readFile(join(f.privateRoot, '..', 'writers', 'writer-slot.json'), 'utf8')).slot, null)
+  assert.equal(f.dockerCalls.filter(verb => verb === 'create' || verb === 'start').length, 0)
+  await assert.rejects(readFile(join(f.project, 'forbidden.txt')), { code: 'ENOENT' })
+  await assert.rejects(f.devices.claim(f.device.token, f.device.instanceId, row.id, original.dispatch_process_id),
+    { code: 'device_claim_closed' })
+  const next = await f.devices.propose(f.op.grant.token, 'fresh-after-cold-closure',
+    "git init -q && printf 'ONCE\\n' >> marker.txt", '.')
+  await until(async () => (await f.row(next.executionId)).state === 'succeeded', 'fresh command after permanent closure')
+  await until(async () => JSON.parse(await readFile(join(f.privateRoot, 'journal.json'), 'utf8')).length === 0,
+    'fresh command journal settlement')
+  assert.equal(await readFile(join(f.project, 'marker.txt'), 'utf8'), 'ONCE\n')
+  assert.equal(f.dockerCalls.filter(verb => verb === 'create').length, 1)
+  assert.equal(f.dockerCalls.filter(verb => verb === 'start').length, 1)
+  assert.equal(await f.continuations(row.id), 1)
+  await assert.rejects(readFile(join(f.project, 'forbidden.txt')), { code: 'ENOENT' })
 })
 
 test('lost real registration ACK never starts the command and persists unknown separately from stopped', options, async t => {
