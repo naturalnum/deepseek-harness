@@ -45,4 +45,4 @@ HTTP 仅接受数字 loopback 地址。远程 Origin 要求 HTTPS。拒绝凭据
 
 ## 已知限制
 
-[冻结 Cloud 载体试用](../TRIAL-DESKTOP-CLOUD-CARRIER.md)具有实际原生 DSH 和模型证据。Device 进程所有权及本机授权已有源码实现，组合原生验收仍待完成。签名安装／更新、原生侧栏浏览器及安装包运行时闭包分别保留验收步骤。源码启动和上游包 smoke 不能证明 PowerEvolve 安装包已交付。用户控制的外部打开能力尚未接入，外部文档链接保持阻止。
+[冻结所属 Device 试用](../TRIAL-DESKTOP-OWNED-DEVICE.md)具有两个用户、Git 读回、重启及运行中退出的实际原生 DSH、Profile、模型、PG 和 Docker 证据。其独立运行时位于源码树外，仍使用开发配置。原生 OS 目录选择、安装配置／Profile 准备、`.app` 装配、签名／更新及原生侧栏浏览器分别保留交付步骤。源码启动和上游包 smoke 不能证明 PowerEvolve 安装包已交付。用户控制的外部打开能力尚未接入，外部文档链接保持阻止。
