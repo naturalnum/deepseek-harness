@@ -5,6 +5,7 @@ import { ExecutionTargetClient, targetKey, type ExecutionTarget, type Pairing, t
 import type { ExecutionTargetLocaleKey } from './locales.ts'
 import { ExecutionResolutions } from './ExecutionResolutions.tsx'
 import { ExecutionResolutionClient } from './execution-resolution-client.ts'
+import { localDeviceAuthorization } from './local-device-bridge.ts'
 
 export type ExecutionTargetPickerProps = PropsRuntime<'conversation.input.right'> & {
   readonly sessionId: string
@@ -23,6 +24,8 @@ export function ExecutionTargetPicker({ sessionId, client, resolutionClient, use
   const [pairBusy, setPairBusy] = useState(false)
   const [pairError, setPairError] = useState(false)
   const [pairing, setPairing] = useState<Pairing | null>(null)
+  const [localOpenFailed, setLocalOpenFailed] = useState(false)
+  const openLocal = localDeviceAuthorization()
   const pairRequest = useRef<AbortController | null>(null)
   useEffect(() => () => pairRequest.current?.abort(), [])
 
@@ -51,6 +54,7 @@ export function ExecutionTargetPicker({ sessionId, client, resolutionClient, use
     setPairing(null)
     setPairBusy(false)
     setPairError(false)
+    setLocalOpenFailed(false)
     setRevision(value => value + 1)
   }
   const beginPair = () => {
@@ -115,6 +119,11 @@ export function ExecutionTargetPicker({ sessionId, client, resolutionClient, use
           <input id="pe-device-pair-code" readOnly data-modal-autofocus value={pairing.code}
             onFocus={event => event.currentTarget.select()} />
           <span>{t('pairExpires').replace('{time}', new Date(pairing.expiresAt).toLocaleTimeString())}</span>
+          {openLocal !== undefined && <Button onClick={() => {
+            setLocalOpenFailed(false)
+            void openLocal().catch(() => { setLocalOpenFailed(true) })
+          }}>{t('openLocalAuthorization')}</Button>}
+          {localOpenFailed && <p role="alert">{t('openLocalFailed')}</p>}
         </div>}
       </Modal>
     </div>

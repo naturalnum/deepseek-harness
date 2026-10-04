@@ -2,5 +2,5 @@
   "extends": "../../../tsconfig.base.json",
   "compilerOptions": { "rootDir": "src", "outDir": "lib/types", "lib": ["ES2024", "DOM"] },
   "include": ["src"],
-  "references": [{ "path": "../../../apps/desktop/tsconfig.host.json" }]
+  "references": [{ "path": "../../../apps/desktop/tsconfig.host.json" }, { "path": "../contracts" }]
 }

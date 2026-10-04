@@ -47,7 +47,12 @@ get('pair-form').addEventListener('submit', event => {
   event.preventDefault()
   void action(() => call('pair', { code: get('pair-code').value.trim(), name: get('device-name').value.trim() }))
 })
-get('choose-folder').addEventListener('click', () => void action(() => call('choose', {})))
+get('choose-folder').addEventListener('click', () => void action(async () => {
+  if (window.powerEvolveDevicePicker !== undefined) {
+    const path = await window.powerEvolveDevicePicker.choose()
+    if (path !== null) await call('authorize', { path })
+  } else await call('choose', {})
+}))
 get('folder-form').addEventListener('submit', event => {
   event.preventDefault()
   void action(() => call('authorize', { path: get('folder-path').value.trim() }))

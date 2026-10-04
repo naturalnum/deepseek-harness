@@ -18,10 +18,12 @@
   },
   "devDependencies": {
     "@deepseek-ai/dsh-desktop": "workspace:*",
+    "@power-evolve/contracts": "workspace:*",
     "@types/node": "^22.20.0",
     "electron": "^44.0.0",
     "tsdown": "^0.22.2",
     "tsx": "^4.22.4",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "zod": "^4.4.3"
   }
 }

@@ -9,10 +9,10 @@ export default defineConfig([
     deps: { neverBundle: ['electron'] },
     plugins: [packagedImportsPlugin({ packages: new Set(['electron']), nodeBuiltins: true })],
   },
-  {
-    entry: { 'preload-cloud': 'lib/types/preload-cloud.js' }, outDir: 'lib', format: 'cjs',
-    platform: 'node', target: 'es2024', clean: false, dts: false, fixedExtension: false, codeSplitting: false,
+  ...['preload-cloud', 'preload-device'].map(name => ({
+    entry: { [name]: `lib/types/${name}.js` }, outDir: 'lib', format: 'cjs' as const,
+    platform: 'node' as const, target: 'es2024', clean: false, dts: false, fixedExtension: false,
     deps: { neverBundle: ['electron'] },
     plugins: [packagedImportsPlugin({ packages: new Set(['electron', 'events', 'timers', 'url']), nodeBuiltins: false })],
-  },
+  })),
 ])

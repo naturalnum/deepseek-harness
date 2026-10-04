@@ -4,6 +4,8 @@ English | [中文](README.zh.md)
 
 This browser plugin extends the native DSH composer with per-submission Cloud or authorized Device selection. Device and directory metadata comes from owner-scoped Host reads. The trusted Platform authorizes the selected target when it durably accepts the prompt; selection alone does not start an execution environment.
 
+An Electron carrier with the optional local Device opener adds an action inside the existing pairing dialog. It opens local authorization without passing a pairing code, path or credential to the native bridge. Ordinary browsers retain the existing pairing flow.
+
 ## Execution reconciliation
 
 The existing picker opens a read-only view of the current Session's Cloud and Device executions and resolution receipts. It displays the execution target and original commands as text and links the independently authenticated Platform approval page. The Host exposes only list, inspect and status RPCs; the client holds no approval bearer and cannot confirm cleanup.

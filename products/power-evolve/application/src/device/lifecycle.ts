@@ -152,7 +152,9 @@ export class DeviceParentLifecycle {
     this.phase = 'ready'
     void this.send(this.readyPacket).catch(() => { this.options.failure('device_parent_ipc_failed'); this.channelLost() })
   }
-  /** @returns Private process state; quiescence does not assert that every container stopped. */
+  /** Inspect private process state without inferring container termination.
+   * @returns Local work counts and the last completed durable drain.
+   */
   snapshot(): DeviceLifecycleSnapshot {
     const work = this.options.worker.inspectLifecycle()
     return { ...work, phase: this.phase, admissionOpen: this.admissionOpen && work.admissionOpen, drain: this.drain }

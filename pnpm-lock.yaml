@@ -13840,6 +13840,9 @@ importers:
       '@deepseek-ai/dsh-brand':
         specifier: workspace:*
         version: link:../../../packages/util/brand
+      '@deepseek-ai/dsh-cmdline':
+        specifier: workspace:*
+        version: link:../../../packages/boot/cmdline
       '@deepseek-ai/dsh-host-webserver':
         specifier: workspace:*
         version: link:../../../packages/host/webserver
@@ -14368,6 +14371,9 @@ importers:
       '@deepseek-ai/dsh-desktop':
         specifier: workspace:*
         version: link:../../../apps/desktop
+      '@power-evolve/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@types/node':
         specifier: ^22.20.0
         version: 22.20.0
@@ -14383,6 +14389,9 @@ importers:
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
 
   products/power-evolve/device:
     dependencies:

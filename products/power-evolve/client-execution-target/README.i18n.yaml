@@ -3,8 +3,8 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write products/power-evolve/client-execution-target/README.md
 /powerevolve-execution-client:
-  en: 77dfc732ca8dc8ce
-  zh: fb5777dc931f4636
+  en: 780d0486dea79840
+  zh: a996cd1888782b09
 /powerevolve-execution-client/execution-reconciliation:
   en: baacc114933ec4c4
   zh: 07791e7b36c41f9b

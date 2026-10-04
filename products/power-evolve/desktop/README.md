@@ -21,6 +21,14 @@ The deployment file contains exactly these two origins:
 
 HTTP is accepted only for numeric loopback. Remote origins require HTTPS. Credentials, paths, query parameters, fragments, extra fields and identical origins are rejected. Main-process configuration is independent of renderer input.
 
+## Local Device development
+
+Unpackaged startup can add `--device-config /absolute/device.json`. This separate main-process file selects an already prepared official `dsh --profile` runtime: absolute `nodeExecutable`, `cliEntrypoint`, `homeDir`, `workingDir`, a `profile` name and a distinct numeric HTTP `loopbackOrigin`. It explicitly supplies `startupTimeoutMs`, `requestTimeoutMs`, `quiesceTimeoutMs`, `exitTimeoutMs`, `maxOutputBytes`, `maxMessageBytes` and `maxHealthBytes`. The [parser](src/device-config.ts) refuses environment fields, remote endpoints and unbounded budgets. Packaged startup rejects this development override.
+
+The local menu or native execution picker starts the owned Device child and opens its existing local authorization page in a separate, nonpersistent browser Session. Cloud receives only an opener with no arguments or local return values. The local page receives a directory chooser; its handler checks the current owned window, frame, exact Device URL and child generation before and after the native dialog. A restarted child gets a new local document. Pairing and directory authorization remain explicit local actions; credentials, nonce and paths do not pass through the Cloud bridge.
+
+The [process adapter](src/device-process.ts) validates the owned child PID, per-launch identity, readiness and bounded health response. Private [lifecycle messages](../contracts/src/device-lifecycle.ts) close admission and drain owned actions before termination. Quit waits for actual child exit and local window cleanup. An incomplete drain retains the original records and reports uncertainty; process exit alone does not establish a stopped execution. Quitting does not cancel Cloud tasks.
+
 ## Browser and native permissions
 
 Host and Platform share one persistent Electron Session within a deployment. Its partition derives from both origins, so deployments on different loopback ports do not share cookies. Product userData defaults to the separate `PowerEvolve` application directory; development-only `--data-dir` cannot override packaged storage.
@@ -31,10 +39,10 @@ Main navigation permits the configured native Host and Platform login, account a
 
 ## Implementation and checks
 
-[Main assembly](src/main.ts) consumes upstream side-effect-free [assembly](../../../apps/desktop/src/assembly.ts) and [preload assembly](../../../apps/desktop/src/preload-assembly.ts). The main ESM module registers readiness work without awaiting `app.whenReady()` at top level. It launches no local Agent or Device Profile. [Bundling](tsdown.config.ts) rejects bare imports outside Electron and Node; the sandboxed CommonJS preload has a smaller runtime import allowlist.
+[Main assembly](src/main.ts) consumes upstream side-effect-free [assembly](../../../apps/desktop/src/assembly.ts) and [preload assembly](../../../apps/desktop/src/preload-assembly.ts). The main ESM module registers readiness work without awaiting `app.whenReady()` at top level. Cloud-only startup launches no local Profile; explicit development Device configuration enables the separate local process. [Bundling](tsdown.config.ts) rejects bare imports outside Electron and Node; the sandboxed CommonJS preloads have a smaller runtime import allowlist.
 
 `pnpm run test:power-evolve:desktop` runs source configuration and argument checks. The real Electron policy test uses the built adapters and explicitly requires `PE_DESKTOP_ELECTRON`; absent runtime is reported as skipped. Its loopback HTML services validate native IPC and navigation, and do not replace actual native DSH, PG or model acceptance. See [the desktop completion agreement](../DESKTOP-COMPLETION.md) for the remaining Device and packaging work.
 
 ## Known limitations
 
-This is a Cloud-carrier source slice. Device process ownership, the local authorization bridge, signed installation/update delivery, native sidebar browser integration and packaged runtime closure remain separate acceptance steps. Source startup and upstream package smoke do not demonstrate an installable PowerEvolve application. External documentation links remain blocked until a user-controlled external-open capability is implemented.
+The [frozen Cloud-carrier trial](../TRIAL-DESKTOP-CLOUD-CARRIER.md) has actual native DSH and model evidence. Device process ownership and local authorization have source implementations; their combined native acceptance remains pending. Signed installation/update delivery, native sidebar browser integration and packaged runtime closure remain separate steps. Source startup and upstream package smoke do not demonstrate an installable PowerEvolve application. External documentation links remain blocked until a user-controlled external-open capability is implemented.

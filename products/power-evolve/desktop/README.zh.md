@@ -21,6 +21,14 @@
 
 HTTP 仅接受数字 loopback 地址。远程 Origin 要求 HTTPS。拒绝凭据、路径、查询参数、fragment、额外字段和相同 Origin。主进程配置独立于 renderer 输入。
 
+## 本机 Device 开发
+
+未打包启动可以增加 `--device-config /absolute/device.json`。这个独立主进程文件选择已经准备的官方 `dsh --profile` 运行时：绝对 `nodeExecutable`、`cliEntrypoint`、`homeDir`、`workingDir`、`profile` 名称及不同的数字 HTTP `loopbackOrigin`。文件明确提供 `startupTimeoutMs`、`requestTimeoutMs`、`quiesceTimeoutMs`、`exitTimeoutMs`、`maxOutputBytes`、`maxMessageBytes` 和 `maxHealthBytes`。[解析器](src/device-config.ts)拒绝环境字段、远程端点和无界预算。安装包启动拒绝这个开发覆盖项。
+
+本机菜单或原生执行位置选择器启动所属 Device 子进程，并在独立、非持久浏览器 Session 中打开已有本机授权页。Cloud 只获得无参数且不返回本机值的打开操作。本机页面获得目录选择器；其处理器在原生对话框前后检查当前所属窗口、frame、准确 Device URL 和子进程代次。子进程重启后加载新的本机文档。配对和目录授权仍是明确的本机操作；凭据、nonce 和路径不经过 Cloud 桥。
+
+[进程适配器](src/device-process.ts)核验所属子进程 PID、每次启动身份、就绪及有界健康响应。私有[生命周期消息](../contracts/src/device-lifecycle.ts)在终止前关闭准入并排空所属操作。退出等待实际子进程退出及本机窗口清理。排空不完整时保留原记录并报告不确定；仅进程退出不能证明执行已停止。退出不会取消 Cloud 任务。
+
 ## 浏览器与原生权限
 
 同一部署中的 Host 与 Platform 共用一个持久 Electron Session。分区由两个 Origin 派生，不同 loopback 端口的部署不共享 cookie。产品 userData 默认使用独立 `PowerEvolve` 应用目录；仅开发可用的 `--data-dir` 不能覆盖安装包存储。
@@ -31,10 +39,10 @@ HTTP 仅接受数字 loopback 地址。远程 Origin 要求 HTTPS。拒绝凭据
 
 ## 实现与验证
 
-[主装配](src/main.ts)使用上游无启动副作用的[装配接口](../../../apps/desktop/src/assembly.ts)和 [Preload 装配](../../../apps/desktop/src/preload-assembly.ts)。主 ESM 模块注册就绪工作，不在顶层等待 `app.whenReady()`。它不启动本机 Agent 或 Device Profile。[打包](tsdown.config.ts)拒绝 Electron 与 Node 之外的 bare import；沙盒 CommonJS Preload 使用更小的运行时导入清单。
+[主装配](src/main.ts)使用上游无启动副作用的[装配接口](../../../apps/desktop/src/assembly.ts)和 [Preload 装配](../../../apps/desktop/src/preload-assembly.ts)。主 ESM 模块注册就绪工作，不在顶层等待 `app.whenReady()`。仅 Cloud 启动不创建本机 Profile；明确的开发 Device 配置启用独立本机进程。[打包](tsdown.config.ts)拒绝 Electron 与 Node 之外的 bare import；沙盒 CommonJS Preload 使用更小的运行时导入清单。
 
 `pnpm run test:power-evolve:desktop` 执行源码配置和参数检查。真实 Electron 许可测试使用构建后的适配器并明确要求 `PE_DESKTOP_ELECTRON`；缺少运行时会报告 skip。其 loopback HTML 服务验证原生 IPC 和导航，不替代实际原生 DSH、PG 或模型验收。剩余 Device 与安装包工作见[桌面补齐约定](../DESKTOP-COMPLETION.md)。
 
 ## 已知限制
 
-这是 Cloud 载体源码切片。Device 进程所有权、本机授权桥、签名安装／更新、原生侧栏浏览器与安装包运行时闭包分别保留验收步骤。源码启动和上游包 smoke 不能证明 PowerEvolve 安装包已交付。用户控制的外部打开能力尚未接入，外部文档链接保持阻止。
+[冻结 Cloud 载体试用](../TRIAL-DESKTOP-CLOUD-CARRIER.md)具有实际原生 DSH 和模型证据。Device 进程所有权及本机授权已有源码实现，组合原生验收仍待完成。签名安装／更新、原生侧栏浏览器及安装包运行时闭包分别保留验收步骤。源码启动和上游包 smoke 不能证明 PowerEvolve 安装包已交付。用户控制的外部打开能力尚未接入，外部文档链接保持阻止。

@@ -6,6 +6,8 @@ The desktop application is an Electron shell around the complete dsh Web applica
 
 Private applications can import the side-effect-free `@deepseek-ai/dsh-desktop/assembly` and `@deepseek-ai/dsh-desktop/preload-assembly` modules to assemble their own backend and document permissions. These exports do not launch the official application, configure authentication or package another runtime; the consuming application owns those choices.
 
+The assembly exports `chooseDesktopDirectory` for an owned local window. The caller authorizes its document; concurrent choices share one native dialog and a destroyed window discards a late path. The official directory IPC retains its own `dsh-app` document checks.
+
 The first application-menu command, **About DeepSeek Harness**, opens Electron's native About panel with the application icon, product name, and installed release version. The menu follows the Desktop shell locale. On macOS, Hide, Hide Others, Show All, and Quit use localized labels; Hide and Quit include the DeepSeek Harness product name. These commands retain their native actions and shortcuts. macOS reads the icon from its application bundle, so an unpackaged development launch displays Electron's icon; Windows receives the packaged PNG.
 
 Desktop’s local native directory flow opens an Electron folder dialog attached to the application window, restoring, showing, and focusing that window first. Concurrent requests share one dialog; cancellation returns no path and failures remain retryable. Ordinary Web uses the Host chooser. Browse mode lists Host directories. On Linux without zenity or kdialog, automatic selection uses browse instead of the Electron dialog.
