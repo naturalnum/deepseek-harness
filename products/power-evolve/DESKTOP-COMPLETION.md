@@ -40,7 +40,7 @@ flowchart LR
 
 官方[包校验](../../apps/desktop/src/core-package-set.ts)、[runtime 准备](../../apps/desktop/scripts/prepare-dsh.ts)和[运行验收](../../apps/desktop/scripts/smoke-runtime.ts)绑定本地 Web Host 与同版本 DSH／desktop-host。产品发行另固定 Device 包闭包、产品版本与上游 runtime 版本，并验证离源码启动 Device 和连接共享 Host；官方 smoke 通过不替代产品安装包验收。
 
-Device 已接入上游原生 `flock`、不可变 Docker 身份、启动前持久记录及冷恢复准入控制，生命周期由 [Device Bundle](device/README.md)描述。平台已固定原请求和进程派发、发放一次启动许可、保存精确容器登记及撤销后的受限停止回执，并限制同 Device／目录授权的跨会话并发。跨 Device／重叠目录写者协调、描述符文件访问和可信未知结果结案仍待完成；Electron 的三个产品适配器及安装包仍未交付。
+Device 已接入上游原生 `flock`、不可变 Docker 身份、启动前持久记录及冷恢复准入控制，生命周期由 [Device Bundle](device/README.md)描述。平台已固定原请求和进程派发、发放一次启动许可、保存精确容器登记及撤销后的受限停止回执，并限制同 Device／目录授权的跨会话并发。本轮范围及真实 PG／Docker 证据见[派发与停止记录验收](deploy/QA-DEVICE-DISPATCH-STOP.md)。跨 Device／重叠目录写者协调、描述符文件访问和可信未知结果结案仍待完成；Electron 的三个产品适配器及安装包仍未交付。
 
 ## 业务与开发顺序
 
