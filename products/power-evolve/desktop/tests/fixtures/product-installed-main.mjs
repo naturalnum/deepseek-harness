@@ -1,5 +1,6 @@
 /** Loads unmodified production main after replacing only Electron installation facts and local services. */
 import assert from 'node:assert/strict'
+import childProcess from 'node:child_process'
 import { writeSync } from 'node:fs'
 import promises from 'node:fs/promises'
 import { lstat, mkdir, readFile, readdir, realpath, writeFile } from 'node:fs/promises'
@@ -21,6 +22,16 @@ app.setPath('appData', join(root, 'app-data'))
 process.argv = [process.execPath, ...(scenario.startsWith('override-') ? ['--' + scenario.slice('override-'.length), join(root, 'unused')] : [])]
 const servers = [], cases = [], dialogs = [], data = join(root, 'app-data/PowerEvolve')
 let failure, finishing = false, normalQuit = false
+const inheritedEnvironment = { PATH: process.env.PATH, HOME: process.env.HOME, DOCKER_HOST: process.env.DOCKER_HOST }
+const launches = []
+for (const method of ['spawn', 'execFile']) {
+  const original = childProcess[method]
+  childProcess[method] = (executable, ...args) => {
+    launches.push({ method, installedNode: executable === join(root, 'resources/node/bin/node') })
+    return original(executable, ...args)
+  }
+}
+syncBuiltinESMExports()
 let prepareEntered = false, releasePreparation
 if (scenario === 'prepare-quit') {
   const original = promises.mkdir
@@ -79,6 +90,7 @@ async function finalize() {
       await until(() => pids.every(pid => !alive(pid)), 'owned_cli_remained_alive', 1000)
       assert.deepEqual(rows.filter(row => row.event === 'request').map(row => row.action), ['inspect', 'quiesce', 'inspect', 'terminate'])
       assert.equal(dialogs.length, 0, 'clean_quit_warned')
+      assert.deepEqual(launches, [{ method: 'spawn', installedNode: true }], 'unexpected_shell_or_process_launch')
       cases.push({ name: 'normal-quit-awaits-owned-node-close', passed: true })
     }
     if (scenario === 'prepare-quit' && failure === undefined) {
@@ -89,6 +101,9 @@ async function finalize() {
       assert.equal(await realpath(join(profile, 'node_modules/@power-evolve/device')), join(root, 'resources', runtime.deviceBundle))
       cases.push({ name: 'quit-awaits-real-profile-preparation-without-spawning', passed: true })
     }
+    if (scenario !== 'installed') assert.deepEqual(launches, [], 'non_device_case_spawned_process')
+    assert.deepEqual({ PATH: process.env.PATH, HOME: process.env.HOME, DOCKER_HOST: process.env.DOCKER_HOST }, inheritedEnvironment,
+      'parent_environment_changed')
     for (const pid of pids) if (alive(pid)) {
       process.kill(pid, 'SIGKILL'); await until(() => !alive(pid), 'fixture_child_cleanup_failed', 2000)
     }
@@ -102,6 +117,7 @@ async function finalize() {
     substitutes: { installationFacts: 'isPackaged/resourcesPath/appData/packaged-argv', descriptor: 'physical-static-template',
       node: 'copied-actual-node-executable', cli: 'owned-os-child-lifecycle-protocol', html: 'independent-loopback',
       preparation: scenario === 'prepare-quit' ? 'promise-gated-real-mkdir-for-lifecycle-only' : 'unchanged-production-filesystem-preparation',
+      processObservation: 'delegating-node-child-process-spawn-and-execFile-observers',
       dialog: 'answers-only', deviceBundle: 'static-manifest-not-loaded', pythonAndHelper: 'existence-only-never-executed',
       mainAndPreloads: 'unchanged-production-artifacts', actualApp: false, abi: false, profileRuntime: false, worker: false, docker: false, pg: false },
     ...(failure === undefined ? {} : { failure: { code: failure } }) }
@@ -120,6 +136,7 @@ async function run() {
   const descriptor = { kind: 'power-evolve-desktop', version: 1, deployment: { hostOrigin, platformOrigin },
     runtime: { ...runtime, ...(scenario === 'cli-anchor' ? { deviceBundle: 'runtime/descriptor-device' } : {}) }, worker,
     device: { profile: 'power-evolve-device', loopbackOrigin: `http://127.0.0.1:${port}`,
+      commandSearchPath: [join(root, 'external command tools'), '/usr/bin', '/bin'],
       startupTimeoutMs: 5000, requestTimeoutMs: 500, quiesceTimeoutMs: 1500, exitTimeoutMs: 1000,
       maxOutputBytes: 16384, maxMessageBytes: 16384, maxHealthBytes: 4096 } }
   const descriptorPath = join(root, 'resources/power-evolve-desktop.json')
@@ -148,6 +165,7 @@ async function run() {
     'production_preload_missing')
   assert.equal(app.getPath('userData'), data, 'installed_state_root_changed')
   assert.equal((await records()).length, 0, 'cloud_start_spawned_child')
+  assert.deepEqual(launches, [], 'cloud_start_launched_shell_or_process')
   assert(await absent(join(data, 'device/home/profiles')), 'cloud_start_created_profile')
   if (scenario === 'installed') assert(await absent(join(data, 'device')), 'cloud_start_created_device_state')
   cases.push({ name: 'fixed-resource-cloud-start-without-profile-or-child', passed: true })
@@ -180,7 +198,10 @@ async function run() {
       pythonExecutable: join(root, 'resources', runtime.pythonExecutable), ...worker, readyFile: join(data, 'device/private/ready.json'),
     } }])
     const spawn = (await records()).find(row => row.event === 'spawn')
-    for (const field of ['executableMatches', 'homeMatches', 'cwdMatches', 'profileMatches']) assert.equal(spawn[field], true, 'installed_cli_launch_changed')
+    for (const field of ['executableMatches', 'homeMatches', 'cwdMatches', 'profileMatches', 'pathMatches', 'homeEnvironmentMatches', 'dockerHostMatches']) {
+      assert.equal(spawn[field], true, 'installed_cli_launch_changed')
+    }
+    cases.push({ name: 'explicit-child-path-preserves-home-daemon-and-parent-environment-without-shell', passed: true })
     assert.equal(await readFile(descriptorPath, 'utf8'), descriptorBytes, 'installed_descriptor_changed')
     cases.push({ name: 'fixed-worker-and-resource-profile-prepared-before-real-node-launch', passed: true })
   } else {

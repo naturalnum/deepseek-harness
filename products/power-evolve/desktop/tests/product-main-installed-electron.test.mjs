@@ -63,7 +63,7 @@ async function run(root, compiled, scenario) {
   await writeFile(join(application, 'package.json'), JSON.stringify({ type: 'module', main: 'fixture.mjs' }), { mode: 0o600 })
   const runtime = await resources(root)
   const child = spawn(electron, [application], { cwd: application, detached: process.platform !== 'win32',
-    env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: join(root, 'home'), TMPDIR: join(root, 'tmp'),
+    env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: join(root, 'home'), TMPDIR: join(root, 'tmp'), DOCKER_HOST: 'unix://fixture-only.sock',
       XDG_CACHE_HOME: join(root, 'cache'), XDG_CONFIG_HOME: join(root, 'config'), LANG: 'en_US.UTF-8',
       PE_INSTALLED_GATE_ROOT: root, PE_INSTALLED_GATE_SCENARIO: scenario, PE_INSTALLED_GATE_COMPILED: compiled,
       PE_INSTALLED_GATE_RUNTIME: JSON.stringify(runtime),

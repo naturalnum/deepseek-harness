@@ -1,6 +1,6 @@
 /** Main-owned installed resources and stable private state; no Profile or process is created here. */
 import { accessSync, closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, realpathSync, statSync, type Stats } from 'node:fs'
-import { isAbsolute, join, relative, sep } from 'node:path'
+import { isAbsolute, join, posix, relative, sep } from 'node:path'
 import { z } from 'zod'
 import { parseCloudDesktopConfig, type CloudDesktopConfig } from './config.ts'
 import { parseDesktopDeviceConfig } from './device-config.ts'
@@ -12,6 +12,9 @@ const resourcePath = z.string().min(1).max(4096).refine(value => !isAbsolute(val
   && physicalPath(value)
   && !/[\\:\u0000-\u001f\u007f]/u.test(value)
   && value.split('/').every(part => part !== '' && part !== '.' && part !== '..'))
+const commandSearchDirectory = z.string().min(1).max(4096).refine(value => posix.isAbsolute(value)
+  && !/[\\:\u0000-\u001f\u007f]/u.test(value)
+  && !value.split('/').some(part => part === '.' || part === '..'))
 const workerMilliseconds = z.number().int().min(100).max(60000)
 const workerParameters = z.object({
   image: z.string().regex(/^sha256:[a-f0-9]{64}$/u),
@@ -29,6 +32,7 @@ const descriptor = z.object({
   worker: workerParameters,
   device: z.object({
     profile: z.string(), loopbackOrigin: z.string(),
+    commandSearchPath: z.array(commandSearchDirectory).min(1).max(32),
     startupTimeoutMs: z.number(), requestTimeoutMs: z.number(), quiesceTimeoutMs: z.number(), exitTimeoutMs: z.number(),
     maxOutputBytes: z.number(), maxMessageBytes: z.number(), maxHealthBytes: z.number(),
   }).strict(),
@@ -38,6 +42,8 @@ const descriptor = z.object({
 export interface InstalledDesktopConfig {
   readonly config: CloudDesktopConfig
   readonly deviceConfig: ReturnType<typeof parseDesktopDeviceConfig>
+  /** Ordered external POSIX directories for the installed Device child's PATH; not package resources. */
+  readonly commandSearchPath: readonly string[]
   readonly worker: z.infer<typeof workerParameters>
   readonly resources: {
     readonly root: string
@@ -130,12 +136,16 @@ function stateDirectory(root: string, ...parts: string[]): string {
  * entries are refused, while physical .asar.unpacked resources are allowed. Node and Python must
  * be executable. The Device bundle directory remains inside resources. Worker timing is explicit
  * and the Runner image is an already-local immutable Docker image ID. The existing origin and
- * lifecycle-budget parsers remain authoritative.
+ * lifecycle-budget parsers remain authoritative. The required command search list contains
+ * 1–32 absolute POSIX directory names, each at most 4096 characters without colon, backslash,
+ * C0/DEL controls or dot/traversal segments; order and trailing slashes are preserved.
+ * It selects only the installed Device child's PATH; reading it does not probe directories or
+ * executables, run a shell, or change the parent's environment.
  * User state derives only from the existing owner-only product directory and never from environment
  * variables, descriptor fields or launch arguments. Missing state directories are returned without
  * creation; the later bootstrap creates the fixed working directory and official Device Profile.
  * @param options - Electron resourcesPath and main's already created, current-user-owned 0700 productUserDataPath.
- * @returns Normalized Cloud and Device configuration, physical resources, and version-independent state paths.
+ * @returns Cloud and Device configuration, a separate command search list, physical resources, and fixed state paths.
  */
 export function readInstalledDesktopConfig(options: { resourcesPath: string; productUserDataPath: string }): InstalledDesktopConfig {
   try {
@@ -155,10 +165,11 @@ export function readInstalledDesktopConfig(options: { resourcesPath: string; pro
       privateDir: stateDirectory(productUserDataPath, 'device', 'private'),
       coordinationRoot: stateDirectory(productUserDataPath, 'device-writers'),
     }
-    const deviceConfig = parseDesktopDeviceConfig({ ...data.device, nodeExecutable: resources.nodeExecutable,
+    const { commandSearchPath, ...device } = data.device
+    const deviceConfig = parseDesktopDeviceConfig({ ...device, nodeExecutable: resources.nodeExecutable,
       cliEntrypoint: resources.cliEntrypoint, homeDir: state.homeDir, workingDir: state.workingDir })
     if ([config.hostOrigin, config.platformOrigin].includes(deviceConfig.loopbackOrigin)) throw invalid()
-    return { config, deviceConfig, worker: data.worker, resources, state }
+    return { config, deviceConfig, commandSearchPath, worker: data.worker, resources, state }
   } catch (_invalidConfiguration) {
     // Parser and filesystem errors can contain private paths or untrusted descriptor values.
     throw invalid()

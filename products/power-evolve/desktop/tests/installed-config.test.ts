@@ -16,7 +16,7 @@ function description() {
     worker: { image: 'sha256:' + 'a'.repeat(64), pollMs: 500, contactGraceMs: 5000, commandPollMs: 250,
       platformRequestTimeoutMs: 10000, dockerCommandTimeoutMs: 15000, dockerStopTimeoutMs: 10000,
       dockerStopGraceSeconds: 2, directoryPickerTimeoutMs: 120000, fileOperationTimeoutMs: 10000 },
-    device: { profile: 'power-evolve-device', loopbackOrigin: 'http://127.0.0.1:20891/',
+    device: { profile: 'power-evolve-device', loopbackOrigin: 'http://127.0.0.1:20891/', commandSearchPath: ['/usr/local/bin', '/usr/bin', '/bin'],
       startupTimeoutMs: 30000, requestTimeoutMs: 3000, quiesceTimeoutMs: 60000, exitTimeoutMs: 10000,
       maxOutputBytes: 65536, maxMessageBytes: 262144, maxHealthBytes: 4096 },
   }
@@ -55,10 +55,38 @@ test('reads a fixed description, normalizes origins and derives stable state wit
   const user = realpathSync(f.productUserDataPath)
   assert.deepEqual(value.state, { productUserDataPath: user, homeDir: join(user, 'device/home'),
     workingDir: join(user, 'device/work'), privateDir: join(user, 'device/private'), coordinationRoot: join(user, 'device-writers') })
-  assert.deepEqual(value.deviceConfig, { ...f.data.device, loopbackOrigin: 'http://127.0.0.1:20891',
+  const { commandSearchPath, ...device } = f.data.device
+  assert.deepEqual(value.commandSearchPath, commandSearchPath)
+  assert.deepEqual(value.deviceConfig, { ...device, loopbackOrigin: 'http://127.0.0.1:20891',
     nodeExecutable: value.resources.nodeExecutable, cliEntrypoint: value.resources.cliEntrypoint,
     homeDir: value.state.homeDir, workingDir: value.state.workingDir })
   assert.deepEqual(readdirSync(f.productUserDataPath), [])
+})
+
+test('reads external command search directories separately without probing them or changing the parent environment', t => {
+  const f = fixture(t), inherited = { PATH: process.env.PATH, HOME: process.env.HOME, DOCKER_HOST: process.env.DOCKER_HOST }
+  const commandSearchPath = [join(f.base, 'missing external tools'), '/Library/Application Support/Docker/bin', '/usr/bin']
+  assert(!existsSync(commandSearchPath[0]!))
+  f.write({ ...f.data, device: { ...f.data.device, commandSearchPath } })
+  const value = readInstalledDesktopConfig(f)
+  assert.deepEqual(value.commandSearchPath, commandSearchPath)
+  assert(!('commandSearchPath' in value.deviceConfig)); assert(!('commandSearchPath' in value.resources))
+  assert.deepEqual({ PATH: process.env.PATH, HOME: process.env.HOME, DOCKER_HOST: process.env.DOCKER_HOST }, inherited)
+  assert.deepEqual(readdirSync(f.productUserDataPath), [])
+  const bounded = ['/', '/usr/bin/', '/' + 'x'.repeat(4095), ...Array<string>(29).fill('/bin')]
+  f.write({ ...f.data, device: { ...f.data.device, commandSearchPath: bounded } })
+  assert.deepEqual(readInstalledDesktopConfig(f).commandSearchPath, bounded)
+})
+
+test('requires a bounded nonempty command search list of absolute POSIX directory names', t => {
+  const f = fixture(t), { commandSearchPath: _omitted, ...withoutSearchPath } = f.data.device
+  f.write({ ...f.data, device: withoutSearchPath }); rejects(f)
+  for (const commandSearchPath of [null, '/usr/bin', [], [1], Array(33).fill('/usr/bin'),
+    ['/' + 'x'.repeat(4096)], [''], ['bin'], ['./bin'], ['../bin'], ['C:\\Docker\\bin'],
+    ['/usr/local/bin:/usr/bin'], ['/tmp/tools\\bin'], ['/tmp/./bin'], ['/tmp/../bin'],
+    ['/tmp/tools\n'], ['/tmp/tools\u0000'], ['/tmp/tools\u007f']]) {
+    f.write({ ...f.data, device: { ...f.data.device, commandSearchPath } }); rejects(f)
+  }
 })
 
 test('keeps existing Home and journal bytes and does not inherit alternative environment roots', t => {

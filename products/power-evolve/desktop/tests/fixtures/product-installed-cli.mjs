@@ -11,6 +11,9 @@ if (root === undefined || launchId === undefined || !Number.isInteger(port)
 const note = value => appendFileSync(join(root, 'cli.jsonl'), JSON.stringify(value) + '\n', { mode: 0o600 })
 note({ event: 'spawn', pid: process.pid, instanceId,
   executableMatches: process.execPath === join(root, 'resources/node/bin/node'),
+  pathMatches: process.env.PATH === [join(root, 'external command tools'), '/usr/bin', '/bin'].join(':'),
+  homeEnvironmentMatches: process.env.HOME === join(root, 'home'),
+  dockerHostMatches: process.env.DOCKER_HOST === 'unix://fixture-only.sock',
   homeMatches: process.env.DSH_HOME === join(root, 'app-data/PowerEvolve/device/home'),
   cwdMatches: process.cwd() === join(root, 'app-data/PowerEvolve/device/work'), profileMatches: true })
 const base = { kind: 'power-evolve-device-lifecycle', version: 1, launchId }

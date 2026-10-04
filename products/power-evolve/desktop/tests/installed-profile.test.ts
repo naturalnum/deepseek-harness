@@ -41,6 +41,7 @@ async function fixture(t: TestContext) {
       coordinationRoot: join(productUserDataPath, 'device-writers') }
     const input = {
       config: { hostOrigin: 'https://host.example', platformOrigin: 'https://platform.example' },
+      commandSearchPath: ['/usr/bin', '/bin'],
       deviceConfig: { nodeExecutable: join(resourcesPath, runtime.nodeExecutable), cliEntrypoint: join(resourcesPath, runtime.cliEntrypoint),
         homeDir: state.homeDir, workingDir: state.workingDir, profile: 'power-evolve-device', loopbackOrigin: 'http://127.0.0.1:20891',
         startupTimeoutMs: 30000, requestTimeoutMs: 3000, quiesceTimeoutMs: 60000, exitTimeoutMs: 10000,

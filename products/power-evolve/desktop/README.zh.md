@@ -31,6 +31,8 @@ HTTP 仅接受数字 loopback 地址。远程 Origin 要求 HTTPS。拒绝凭据
 
 安装启动读取主进程选择的资源目录下固定 `power-evolve-desktop.json`，不接受运行时覆盖。[资源读取器](src/installed-config.ts)要求 Node、CLI、Python、文件辅助脚本和 Device Bundle 位于该物理目录内；ASAR 条目被拒绝。Worker 时序明确配置，Runner 使用本机已有的不可变镜像 ID。Cloud 启动不创建 Device Profile 或子进程。首次打开本机授权入口时，在稳定私有 userData 路径中[准备产品 Profile](src/installed-profile.ts)，保留 Device 身份、journal 与写入锁。后端控制器管理准备、并发打开及派生进程前的取消。拒绝 Home 全局 overlay，以及 CLI 选定的 Device Bundle 与描述符不一致的配置。
 
+安装描述符必填 `device.commandSearchPath`：按顺序列出 1–32 个外部绝对 POSIX 目录名，每项 1–4096 字符。拒绝冒号、反斜杠、C0/DEL 控制字符及 `.` 或 `..` 路径段；允许根 `/` 和末尾斜杠。这些目录选择安装版 Device 子进程的准确 `PATH`，独立于包内 `runtime` 资源。读取配置不探测 Docker 或目录是否可用，也不运行登录 shell。父进程环境、`HOME`、`DOCKER_HOST`、固定解释器与 CLI 保持不变，子进程凭据过滤仍然生效。开发模式使用继承的环境。
+
 ## 浏览器与原生权限
 
 同一部署中的 Host 与 Platform 共用一个持久 Electron Session。分区由两个 Origin 派生，不同 loopback 端口的部署不共享 cookie。产品 userData 默认使用独立 `PowerEvolve` 应用目录；仅开发可用的 `--data-dir` 不能覆盖安装包存储。

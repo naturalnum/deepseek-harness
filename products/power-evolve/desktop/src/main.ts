@@ -57,7 +57,8 @@ else {
     const deviceBackend = deviceConfig === undefined ? undefined : new DesktopBackendController(
       onFailure => { ownedDevice = new DeviceProcess({ ...deviceConfig, env: {
         ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !/KEY|SECRET|TOKEN|PASSWORD|^NODE_OPTIONS$/iu.test(key))),
-        ...(installed === undefined ? {} : { PYTHONDONTWRITEBYTECODE: '1', NARB_DISABLE_NATIVE_CACHE: '1' }),
+        ...(installed === undefined ? {} : { PATH: installed.commandSearchPath.join(':'),
+          PYTHONDONTWRITEBYTECODE: '1', NARB_DISABLE_NATIVE_CACHE: '1' }),
         ...(deviceConfig.nodeExecutable === process.execPath ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
       } }, onFailure)
         const child = ownedDevice
