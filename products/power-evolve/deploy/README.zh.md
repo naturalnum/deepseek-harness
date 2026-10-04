@@ -131,11 +131,21 @@ SSH 目标非空时，在现有 Platform Secret 中提供 `ssh-credential-key`�
 
 启用进程连接器后，`foundation` 除命名空间、ServiceAccount、RoleBinding 和策略外，还包含监听器 Deployment 与 Service；`workloads` 只包含应用 Deployment/Service 和公开 Ingress。应用基础资源、准备私有材料后，须等监听器 Ready，再执行 `--ready` 并启动应用。就绪检查核对监听器当前 generation、固定镜像、Service 身份、真正以 Platform 身份访问的 Service proxy `/health`，以及命名空间权限的允许与拒绝。材料缺失或非法、旧 generation 的监听器或控制路径不可达都会拒绝通过。它不能证明真实调用 Pod 的 CNI 拒绝或 SSH 目标连通；主 agent 串行物理验收仍须核对这些流量、仓库拉取、审批、原 Session 单次续接与资源回收。
 
+## 可选的 Office 预览
+
+省略 `officePreview` 或设为 `null`，保持预览关闭。启用时，将[解析器配置示例](../platform/office-preview.example.json)中的显式预算复制到 `officePreview` values 对象，省略 `namespace`、`volumeClaimName`、`volumeSubPath` 和 `localRoot`，增加 `configMapName` 及 `imageAccess: "public"` 或 `"preloaded"`。提供不可变解析器镜像和实际 `fontPolicyDigest`；所有 limits、资源预算、槽位／留存数量及对账计时参数均须提供。示例从一个解析器槽位、1 CPU 和 3 GiB 起步，实际工作负载容量须单独验证。
+
+基础资源包含指定的 ConfigMap。只有 Platform 将其 JSON 投影到 `/run/power-evolve/private/office-preview.json` 并使用集群内 Kubernetes 访问；Host 仅获得功能开关。启动入口在写入 Profile 前校验 JSON。解析器沿用既有运行器命名空间和 PVC，仅挂载 `office-previews` 下每个任务准确的输入／输出子路径，Platform 在 `/data/office-previews` 准备文件。既有运行器 Role 仅在 Pod get/patch 上增加 create/delete。解析器 Pod 无 API token、凭据、Workspace/Home 挂载或网络例外；既有命名空间默认拒绝仍生效。
+
+`imageAccess` 是操作员声明，不进入转换器 generation。公开镜像不要求仓库认证。预导入镜像沿用 `IfNotPresent` 策略；`--ready` 要求每个 Ready、未 cordon 且无 NoSchedule/NoExecute 污点的节点在 `status.images.names` 中包含准确的不可变镜像引用。此观察不运行解析器，也不验证跨节点存储。解析器不支持私有仓库拉取；应用独立的 `imagePullSecretName` 继续用于其既有使用者。不得依赖 default ServiceAccount 的仓库凭据完成解析器准入。
+
+预检只读取指定的 Office ConfigMap，与 values 比较字节，并调用已构建的 Application loader。在应用镜像以外执行部署测试或预检前，须先构建 Application。`local-http.mjs` 继承相同可选设置，仍受单机 HTTP 限制。实际解析器启动、输入／输出 ACL、渲染、取消及准确 Pod 终止，继续由部署操作员执行集群验收。
+
 ## 物理验收条件
 
 发布前，在配有生产 CNI、ingress 控制器、PostgreSQL 和 NFS 导出的**两台物理机器**上执行：
 
-1. 确认 Host Pod 没有数据库环境变量、Platform Secret、PVC 或 Kubernetes API 令牌；确认 Host 和运行器 ServiceAccount 无权访问 Secret 和 Pod。确认云端 Platform Role 仅限其可写运行器命名空间：只有 Sandbox 允许 `list`，供备份核实没有残留实例。拒绝列出其他命名空间的 Sandbox、列出或创建 Pod、列出 Secret、`watch` 以及集群范围的 PV/RBAC 动词权限。
+1. 确认 Host Pod 没有数据库环境变量、Platform Secret、PVC 或 Kubernetes API 令牌；确认 Host 和运行器 ServiceAccount 无权访问 Secret 和 Pod。确认云端 Platform Role 仅限其可写运行器命名空间：只有 Sandbox 允许 `list`，供备份核实没有残留实例。仅启用 Office 预览时允许创建／删除 Pod。拒绝列出其他命名空间的 Sandbox、列出 Pod、列出 Secret、`watch` 以及集群范围的 PV/RBAC 动词权限。
 2. 在节点 A 创建 Sandbox，写入 Workspace/Home/Git 数据和一个 Skill 包，记录其 Pod UID，再停止它并核对 kubelet 停止证据。在节点 B 启动替代实例，核对字节和权限完全一致，且不会重放结果不确定的命令。检查第二个用户无法挂载或读取第一个用户的子路径。
 3. 测试 Host 和 Platform 副本故障与重新加入、身份验证登录和审批、原生 Web 流式传输，以及经由两个公开 TLS Origin 的长响应。检查浏览器 Origin/CSP 行为、Ingress 不会重试失败的 POST，以及针对外部 PostgreSQL 的会话恢复。
 4. 从每个 Pod 验证所需 DNS、PostgreSQL、模型、连接器、Kubernetes API 和运行器代理流量；验证禁止访问的目标与 CNI 策略执行情况，包括运行器实际观察到的 API server 源 IP。

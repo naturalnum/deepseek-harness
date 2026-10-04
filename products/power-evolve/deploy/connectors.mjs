@@ -4,6 +4,7 @@ import { isIP } from 'node:net'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { isDeepStrictEqual } from 'node:util'
+import { officePreviewValues } from './office-preview.mjs'
 
 const require = createRequire(new URL('../application/package.json', import.meta.url))
 const yaml = require('js-yaml')
@@ -190,6 +191,7 @@ export function validateConnectorBundle(values, items) {
  */
 export async function checkConnectorCluster(selected, values, io) {
   if (selected === null) return {}
+  const officePreview = officePreviewValues(values.officePreview, values)
   const ns = selected.namespace, subject = values.namespace + ':power-evolve-platform'
   const expected = connectorRunnerManifests(values, selected)
   for (const kind of ['Role', 'RoleBinding', 'ServiceAccount', 'NetworkPolicy']) {
@@ -214,7 +216,8 @@ export async function checkConnectorCluster(selected, values, io) {
       ['list', 'watch'].map(verb => [ns, subject, verb, resource])),
     [ns, subject, 'create', 'deployments.apps'], [ns, subject, 'create', 'rolebindings.rbac.authorization.k8s.io'],
     [ns, subject, 'get', 'pods/exec'], [ns, subject, 'create', 'pods/exec'],
-    ...[values.namespace, values.runnerNamespace, 'kube-system'].map(namespace => [namespace, subject, 'create', 'pods']),
+    ...[values.namespace, ...(officePreview === null ? [values.runnerNamespace] : []), 'kube-system']
+      .map(namespace => [namespace, subject, 'create', 'pods']),
     ...[values.namespace + ':power-evolve-host', ns + ':default', values.runnerNamespace + ':power-evolve-runner']
       .flatMap(account => ['pods', 'secrets', 'services/proxy'].map(resource => [ns, account, 'get', resource])),
   ]) assert.equal(await io.can(namespace, account, verb, resource), false,

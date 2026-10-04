@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { remoteMcpConfigPath, remoteMcpMountedMetadata } from './remote-mcp.mjs'
 import { accountManagementPath, accountBootstrapPath, validateAccountStartup } from './accounts.mjs'
 import { connectorRunnerFromEnvironment, connectorRunnerProfile, validateConnectorStartup } from './connectors.mjs'
+import { officePreviewProfile, validateOfficePreviewStartup } from './office-preview.mjs'
 
 const root = resolve(fileURLToPath(new URL('../../..', import.meta.url)))
 const self = fileURLToPath(import.meta.url)
@@ -97,15 +98,18 @@ export function deploymentHistoryBudget(env) {
  * @param role Host or Platform deployment role; neither inherits a local execution Profile.
  * @param env Default HTTPS, or PE_LOCAL_HTTP='1' with canonical HTTP loopback Origins; optional bounded history/snapshot budgets.
  * @param dshHome Private state directory for the generated existing DSH Profile.
+ * @param readText Trusted reader for the fixed Office parser JSON projection; defaults to the filesystem.
  * @returns Profile name and directory after origin and deployment configuration validation.
  */
-export async function renderProfile(role, env, dshHome) {
+export async function renderProfile(role, env, dshHome, readText) {
   if (!['host', 'platform'].includes(role)) throw new Error('Choose host or platform')
   const { hostOrigin, platformOrigin } = deploymentPublicOrigins(env)
   const { maxHistoryBytes, maxResponseBytes } = deploymentHistoryBudget(env)
   const remoteMcpPath = role === 'platform' ? env.PE_REMOTE_MCP_CONFIG_FILE || '' : ''
   const bootstrapPath = role === 'platform' ? env.PE_ACCOUNT_BOOTSTRAP_FILE || '' : ''
   const connectors = role === 'platform' ? connectorRunnerFromEnvironment(env) : null
+  const officePreview = officePreviewProfile(role, env)
+  if (role === 'platform') await validateOfficePreviewStartup(env, readText)
   if (bootstrapPath && bootstrapPath !== accountBootstrapPath) throw new Error('Invalid account bootstrap deployment path')
   if (remoteMcpPath && remoteMcpPath !== remoteMcpConfigPath) throw new Error('Invalid remote MCP deployment configuration path')
   const bundleName = role
@@ -114,7 +118,7 @@ export async function renderProfile(role, env, dshHome) {
   const selected = role === 'host' ? [web,
     row(bundle, 'power-evolve-runtime', { platformUrl: endpoint(
       required(env, 'PE_PLATFORM_INTERNAL_URL'), 'internal Platform URL', false), maxResponseBytes }),
-    row(bundle, 'power-evolve-host', { origin: hostOrigin, platformOrigin }),
+    row(bundle, 'power-evolve-host', { origin: hostOrigin, platformOrigin, ...officePreview }),
   ] : [web,
     row(bundle, 'power-evolve-platform', {
       workspaceRoot: '/data/workspaces', artifactRoot: '/data/artifacts',
@@ -127,6 +131,7 @@ export async function renderProfile(role, env, dshHome) {
       remoteMcpConfigFile: remoteMcpPath,
       accountManagementFile: accountManagementPath, accountBootstrapFile: bootstrapPath,
       ...connectorRunnerProfile(connectors),
+      ...officePreview,
       hostOrigin, platformOrigin, maxHistoryBytes,
     }),
   ]
@@ -184,6 +189,8 @@ async function main() {
   const childEnv = { ...process.env }
   if (role === 'host') delete childEnv.PE_REMOTE_MCP_CONFIG_FILE
   if (role === 'host') delete childEnv.PE_ACCOUNT_BOOTSTRAP_FILE
+  if (role === 'host') delete childEnv.PE_OFFICE_PREVIEW_CONFIG_FILE
+  if (role === 'host') delete childEnv.PE_OFFICE_PREVIEW_KUBECONFIG_FILE
   if (role === 'host') for (const key of Object.keys(childEnv)) {
     if (key.startsWith('PE_CONNECTOR_RUNNER_') || key === 'PE_CONNECTOR_IMAGE_PULL_SECRET_NAME'
       || key === 'PE_SSH_DESTINATIONS' || key === 'PE_APPLICATION_NAMESPACE') delete childEnv[key]

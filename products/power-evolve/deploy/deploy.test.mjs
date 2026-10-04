@@ -10,6 +10,7 @@ import { renderProfile, validateRemoteMcpStartup } from './start.mjs'
 import { buildManifests, render, validateValues } from './render.mjs'
 import { checkCluster, validateBundle, readyValues, validateRemoteMcpMaterials } from './preflight.mjs'
 import { remoteMcpCaPath, remoteMcpConfigPath, remoteMcpKeyPath, remoteMcpValues } from './remote-mcp.mjs'
+import { officePreviewValues, officePreviewPodVerbs } from './office-preview.mjs'
 
 const require = createRequire(new URL('../application/package.json', import.meta.url))
 const yaml = require('js-yaml')
@@ -203,6 +204,7 @@ test('cluster readiness accepts normal RBAC denials and rejects missing, excessi
   ])
   let invalidReply
   let listenerHealthy = true
+  let nodes = [1, 2].map(() => ({ status: { conditions: [{ type: 'Ready', status: 'True' }] } }))
   const proxyReads = []
   const subprocess = require('node:child_process')
   t.mock.method(subprocess, 'spawnSync', (program, args) => {
@@ -226,7 +228,7 @@ test('cluster readiness accepts normal RBAC denials and rejects missing, excessi
     }
     const index = args.indexOf('get'), kind = args[index + 1], name = args[index + 2]
     let object = {}
-    if (kind === 'nodes') object = { items: [1, 2].map(() => ({ status: { conditions: [{ type: 'Ready', status: 'True' }] } })) }
+    if (kind === 'nodes') object = { items: nodes }
     else if (configured.connectorRunner && namespace === configured.connectorRunner.namespace
       && ['deployment', 'service', 'serviceaccount', 'role', 'rolebinding', 'networkpolicy'].includes(kind)) {
       object = structuredClone(buildManifests(configured).find(item => item.kind.toLowerCase() === kind
@@ -242,6 +244,8 @@ test('cluster readiness accepts normal RBAC denials and rejects missing, excessi
         if (!object.spec.egress.length) delete object.spec.egress
       }
     } else if (kind === 'deployment') object = { status: { availableReplicas: 1 } }
+    else if (kind === 'configmap') object = buildManifests(configured).find(item => item.kind === 'ConfigMap'
+      && item.metadata.name === name && item.metadata.namespace === namespace)
     else if (kind === 'secret') object = name === configured.secrets.platform ? platformSecret
       : name === configured.tlsSecretName ? tlsSecret : { data: { 'worker-token': encode('private-fixture') } }
     else if (kind === 'pvc') object = { status: { phase: 'Bound' }, spec: {
@@ -288,6 +292,9 @@ test('cluster readiness accepts normal RBAC denials and rejects missing, excessi
   assert.equal(proxyReads.length, 1)
   assert(proxyReads[0].includes('--as=system:serviceaccount:' + subject))
   assert(proxyReads[0].includes('/api/v1/namespaces/pe-fixture-connectors/services/http:power-evolve-forbidden-listener:8080/proxy/health'))
+  permissions.add(key(runner, 'create', 'pods'))
+  await assert.rejects(checkCluster(configured, 'fixture'), /unexpected connector create pods/u)
+  permissions.delete(key(runner, 'create', 'pods'))
   listenerHealthy = false
   await assert.rejects(checkCluster(configured, 'fixture'), /control health failed/u)
   listenerHealthy = true
@@ -295,6 +302,32 @@ test('cluster readiness accepts normal RBAC denials and rejects missing, excessi
   delete platformSecret.data['ssh-credential-key']
   await assert.rejects(checkCluster(configured, 'fixture'), /Invalid Connector Runner deployment materials/u)
   platformSecret.data['ssh-credential-key'] = credential
+  const office = JSON.parse(await readFile(new URL('../platform/office-preview.example.json', import.meta.url), 'utf8'))
+  for (const field of ['namespace', 'volumeClaimName', 'volumeSubPath', 'localRoot']) delete office[field]
+  configured.officePreview = { ...office, configMapName: 'pe-office-preview', imageAccess: 'preloaded',
+    image: 'registry.internal/preview@sha256:' + 'abcdef0123456789'.repeat(4),
+    fontPolicyDigest: '0123456789abcdef'.repeat(4) }
+  nodes = [1, 2].map(() => ({ status: { conditions: [{ type: 'Ready', status: 'True' }],
+    images: [{ names: [configured.officePreview.image] }] } }))
+  for (const verb of officePreviewPodVerbs(officePreviewValues(configured.officePreview, configured))) {
+    permissions.add(key(runner, verb, 'pods'))
+  }
+  const officeReport = await checkCluster(configured, 'fixture')
+  assert.equal(officeReport.officePreviewReady, true)
+  assert.equal(officeReport.officePreviewPreloadedImageVerified, true)
+  assert.equal(officeReport.officePreviewPreloadedNodes, 2)
+  for (const namespace of [app, 'kube-system']) {
+    permissions.add(key(namespace, 'create', 'pods'))
+    await assert.rejects(checkCluster(configured, 'fixture'), /unexpected connector create pods/u)
+    permissions.delete(key(namespace, 'create', 'pods'))
+  }
+  permissions.delete(key(runner, 'delete', 'pods'))
+  await assert.rejects(checkCluster(configured, 'fixture'), /Platform lacks Office preview delete pods/u)
+  permissions.add(key(runner, 'delete', 'pods'))
+  nodes[1].status.images = []
+  await assert.rejects(checkCluster(configured, 'fixture'), /exact immutable Office preview image reference/u)
+  nodes = nodes.slice(0, 1)
+  await assert.rejects(checkCluster(configured, 'fixture'), /At least two Ready nodes/u)
 })
 
 test('optional MCP deployment projects only private Platform files and pairs each IP with its own origin port', () => {

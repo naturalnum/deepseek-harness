@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url'
 import { remoteMcpConfigPath, remoteMcpEgress, remoteMcpSources, remoteMcpValues } from './remote-mcp.mjs'
 import { accountBootstrapEnabled, accountBootstrapPath } from './accounts.mjs'
 import { connectorRunnerValues, connectorRunnerEnvironment, connectorRunnerManifests } from './connectors.mjs'
+import { officePreviewValues, officePreviewManifests, officePreviewSources,
+  officePreviewEnvironment, officePreviewPodVerbs } from './office-preview.mjs'
 
 const require = createRequire(new URL('../application/package.json', import.meta.url))
 const yaml = require('js-yaml')
@@ -90,6 +92,7 @@ export function validateValues(input) {
   remoteMcpValues(value.remoteMcp, secrets.shared)
   accountBootstrapEnabled(value.accounts)
   connectorRunnerValues(value.connectorRunner, value)
+  officePreviewValues(value.officePreview, value)
   return value
 }
 
@@ -124,6 +127,7 @@ function secretVolume(values, role) {
       ...(accountBootstrapEnabled(values.accounts) ? ['account-bootstrap.json'] : [])]
       .map(key => ({ key, path: key })) } })
   if (role === 'platform') sources.push(...remoteMcpSources(remoteMcpValues(values.remoteMcp, values.secrets.shared)))
+  sources.push(...officePreviewSources(officePreviewValues(values.officePreview, values), role))
   return { name: 'private', projected: { defaultMode: 0o440, sources } }
 }
 function deployment(values, role) {
@@ -194,6 +198,7 @@ export function buildManifests(input) {
   const values = validateValues(input)
   const remoteMcp = remoteMcpValues(values.remoteMcp, values.secrets.shared)
   const connectors = connectorRunnerValues(values.connectorRunner, values)
+  const officePreview = officePreviewValues(values.officePreview, values)
   const app = values.namespace, runner = values.runnerNamespace, storage = values.storage
   const hostLabels = { 'app.kubernetes.io/name': 'power-evolve-host' }
   const platformLabels = { 'app.kubernetes.io/name': 'power-evolve-platform' }
@@ -205,6 +210,7 @@ export function buildManifests(input) {
   const [runnerPv, runnerPvc] = staticVolume(storage.runnerPv, storage.runnerClaim, runner, storage)
   const hostConfig = { PE_HOST_PUBLIC_ORIGIN: values.hostPublicOrigin,
     PE_PLATFORM_PUBLIC_ORIGIN: values.platformPublicOrigin,
+    ...officePreviewEnvironment(officePreview, 'host'),
     PE_PLATFORM_INTERNAL_URL: `http://power-evolve-platform.${app}.svc.cluster.local:18881`,
     PE_PRIVATE_DIR: '/run/power-evolve/private', DSH_HOME: '/var/lib/dsh',
     PE_NATIVE_WEB_DIST: '/opt/power-evolve/products/power-evolve/cloud-web/dist' }
@@ -213,6 +219,7 @@ export function buildManifests(input) {
     PE_MODEL_URL: values.modelUrl, PE_CONNECTOR_URL: values.connectorUrl,
     PE_SANDBOX_NAMESPACE: runner, PE_SANDBOX_IMAGE: values.sandboxImage,
     PE_SANDBOX_VOLUME_CLAIM: storage.runnerClaim,
+    ...officePreviewEnvironment(officePreview, 'platform'),
     ...connectorRunnerEnvironment(connectors),
     ...(connectors === null ? {} : { PE_APPLICATION_NAMESPACE: app }),
     ...(remoteMcp === null ? {} : { PE_REMOTE_MCP_CONFIG_FILE: remoteMcpConfigPath }),
@@ -223,7 +230,7 @@ export function buildManifests(input) {
   const role = { apiVersion: 'rbac.authorization.k8s.io/v1', kind: 'Role',
     metadata: metadata('power-evolve-platform-runner', runner), rules: [
       { apiGroups: ['agents.x-k8s.io'], resources: ['sandboxes'], verbs: ['get', 'list', 'create', 'delete'] },
-      { apiGroups: [''], resources: ['pods'], verbs: ['get', 'patch'] },
+      { apiGroups: [''], resources: ['pods'], verbs: officePreviewPodVerbs(officePreview) },
       { apiGroups: [''], resources: ['services', 'secrets'], verbs: ['get', 'create', 'delete'] },
       { apiGroups: [''], resources: ['services/proxy'], verbs: ['get', 'create'] },
     ] }
@@ -253,6 +260,7 @@ export function buildManifests(input) {
     role, binding,
     configMap('power-evolve-host-config', hostConfig),
     configMap('power-evolve-platform-config', platformConfig),
+    ...officePreviewManifests(values, officePreview),
     deployment(values, 'host'), deployment(values, 'platform'),
     service(values, 'host'), service(values, 'platform'), ingress,
     networkPolicy('default-deny', app, {}, [], []),

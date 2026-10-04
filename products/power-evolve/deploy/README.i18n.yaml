@@ -23,6 +23,9 @@
 /powerevolve-s7d-deployment-candidate/optional-process-connectors:
   en: 419f5ac551689ad2
   zh: 9a23f4288383b1f1
+/powerevolve-s7d-deployment-candidate/optional-office-previews:
+  en: 74ae8dbfd908175d
+  zh: 90a775e3fbb1f131
 /powerevolve-s7d-deployment-candidate/physical-acceptance-gates:
-  en: 472a51d9d93d299e
-  zh: 3bb1dd73bd275998
+  en: 3bc6ceca3e0f24ff
+  zh: 4384d4139e889754

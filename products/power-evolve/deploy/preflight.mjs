@@ -12,6 +12,8 @@ import { remoteMcpCaPath, remoteMcpConfigPath, remoteMcpKeyPath,
 import { accountBootstrapEnabled, accountBootstrapPath, accountManagementPath, validateAccountStartup } from './accounts.mjs'
 import { connectorRunnerValues, validateConnectorBundle, validateConnectorMaterials,
   checkConnectorCluster, connectorListenerName } from './connectors.mjs'
+import { officePreviewConfigPath, officePreviewValues, officePreviewManifests,
+  officePreviewEnvironment, officePreviewPodVerbs, validateOfficePreviewStartup } from './office-preview.mjs'
 
 const require = createRequire(new URL('../application/package.json', import.meta.url))
 const yaml = require('js-yaml')
@@ -38,6 +40,7 @@ export function validateBundle(values, items) {
   const app = values.namespace, runner = values.runnerNamespace
   const expected = buildManifests(values)
   const connectors = connectorRunnerValues(values.connectorRunner, values)
+  const officePreview = officePreviewValues(values.officePreview, values)
   const namespaces = [app, runner, ...(connectors ? [connectors.namespace] : [])]
   const host = resource(items, 'Deployment', 'power-evolve-host', app)
   const platform = resource(items, 'Deployment', 'power-evolve-platform', app)
@@ -127,8 +130,15 @@ export function validateBundle(values, items) {
   assert(isDeepStrictEqual(ownedPolicies(items), ownedPolicies(expected)), 'Deployment NetworkPolicy permissions differ')
   assert.equal(items.some(item => item.kind === 'Secret' && namespaces.includes(item.metadata?.namespace)), false,
     'Deployment Secrets must remain externally provisioned')
-  assert.equal(items.filter(item => item.kind === 'ConfigMap' && item.metadata?.namespace === app).length, 2,
+  assert.equal(items.filter(item => item.kind === 'ConfigMap' && item.metadata?.namespace === app).length,
+    officePreview === null ? 2 : 3,
     'Unexpected application ConfigMap')
+  if (officePreview !== null) {
+    const actual = resource(items, 'ConfigMap', officePreview.configMapName, app)
+    const [wanted] = officePreviewManifests(values, officePreview)
+    assert(isDeepStrictEqual(actual.data, wanted.data) && actual.binaryData === undefined,
+      'Office preview configuration differs')
+  }
   validateConnectorBundle(values, items)
   const roles = list => list.filter(item => ['Role', 'RoleBinding'].includes(item.kind))
   assert(isDeepStrictEqual(roles(items), roles(expected)), 'Deployment RBAC scope differs')
@@ -188,6 +198,52 @@ export function readyValues(values) {
     || connectors.proxySourceCidrs.some(isDocumentationAddress))) {
     throw new Error('Replace example Connector Runner image or addresses')
   }
+  const officePreview = officePreviewValues(values.officePreview, values)
+  if (officePreview && (exampleAddress.test(officePreview.config.image.split('/')[0])
+    || /^([0-9a-f])\1{63}$/u.test(officePreview.config.image.split('@sha256:')[1])
+    || /^([0-9a-f])\1{63}$/u.test(officePreview.config.fontPolicyDigest))) {
+    throw new Error('Replace example Office preview image or font policy digest')
+  }
+}
+
+/** Validate the declared Office ConfigMap with the real built loader and exact renderer settings.
+ * @param values Deployment values selecting the optional parser settings.
+ * @param getObject Read-only lookup restricted to the application namespace by its caller.
+ * @returns Configuration readiness without JSON bytes; disabled mode performs no lookup.
+ */
+export async function validateOfficePreviewMaterials(values, getObject) {
+  const selected = officePreviewValues(values.officePreview, values)
+  if (selected === null) return { officePreviewReady: false }
+  try {
+    const map = await getObject('configmap', selected.configMapName)
+    const [wanted] = officePreviewManifests(values, selected)
+    assert(isDeepStrictEqual(map.data, wanted.data) && map.binaryData === undefined,
+      'Office preview configuration differs')
+    await validateOfficePreviewStartup({ ...officePreviewEnvironment(selected, 'platform'),
+      PE_SANDBOX_NAMESPACE: values.runnerNamespace, PE_SANDBOX_VOLUME_CLAIM: values.storage.runnerClaim }, async filename => {
+      if (filename !== officePreviewConfigPath) throw new Error('Unprojected file')
+      return map.data['office-preview.json']
+    })
+    return { officePreviewReady: true }
+  } catch { throw new Error('Invalid Office preview deployment materials') }
+}
+
+/** Inspect node image inventories for an explicitly preloaded parser; no registry or scheduling probe is run.
+ * @param selected Validated Office deployment settings; public images do not require a preload observation.
+ * @param nodes Kubernetes Node objects from the existing read-only nodes query.
+ * @returns Preload observations for every Ready, uncordoned node without blocking taints, or no data when disabled.
+ */
+export function checkOfficePreviewNodes(selected, nodes) {
+  if (selected === null) return {}
+  if (selected.imageAccess === 'public') return { officePreviewImageAccess: 'public', officePreviewPreloadedImageVerified: false }
+  const candidates = nodes.filter(node => node.spec?.unschedulable !== true
+    && !node.spec?.taints?.some(taint => ['NoSchedule', 'NoExecute'].includes(taint.effect))
+    && node.status?.conditions?.some(condition => condition.type === 'Ready' && condition.status === 'True'))
+  assert(candidates.length > 0, 'Office preview requires a Ready schedulable node')
+  assert(candidates.every(node => node.status.images?.some(item => item.names?.includes(selected.config.image))),
+    'Every Ready schedulable node must contain the exact immutable Office preview image reference')
+  return { officePreviewImageAccess: 'preloaded', officePreviewPreloadedImageVerified: true,
+    officePreviewPreloadedNodes: candidates.length }
 }
 
 /** Validate only the existing Platform control key and the optional SSH encryption key. */
@@ -262,6 +318,8 @@ export async function checkCluster(values, context) {
   const nodes = JSON.parse(kubectl(context, ['get', 'nodes', '-o', 'json'])).items
   assert(nodes.filter(node => node.status.conditions?.some(condition => condition.type === 'Ready'
     && condition.status === 'True')).length >= 2, 'At least two Ready nodes are required')
+  const officePreview = officePreviewValues(values.officePreview, values)
+  const officePreviewNodes = checkOfficePreviewNodes(officePreview, nodes)
   get(context, null, 'crd', 'sandboxes.agents.x-k8s.io')
   get(context, null, 'runtimeclass', 'gvisor')
   const controller = get(context, 'agent-sandbox-system', 'deployment', 'agent-sandbox-controller')
@@ -279,6 +337,7 @@ export async function checkCluster(values, context) {
   for (const key of ['model-key', 'connector-key', 'runner-key', 'users.json']) secretBytes(platform, key)
   const accounts = await validateAccountMaterials(values, platform)
   const remoteMcp = await validateRemoteMcpMaterials(values, (kind, name) => get(context, app, kind, name))
+  const officePreviewMaterials = await validateOfficePreviewMaterials(values, (kind, name) => get(context, app, kind, name))
   const connectors = connectorRunnerValues(values.connectorRunner, values)
   const connectorMaterials = await validateConnectorSecret(values, platform)
   const connectorCluster = await checkConnectorCluster(connectors, values, {
@@ -320,11 +379,14 @@ export async function checkCluster(values, context) {
     ['delete', 'sandboxes.agents.x-k8s.io'], ['patch', 'pods'], ['get', 'services/proxy']]) {
     assert(can(context, runner, platformSubject, verb, resourceName), `Platform lacks ${verb} ${resourceName}`)
   }
+  if (officePreview !== null) for (const verb of officePreviewPodVerbs(officePreview)) {
+    assert(can(context, runner, platformSubject, verb, 'pods'), `Platform lacks Office preview ${verb} pods`)
+  }
   for (const [namespace, subject, verb, resourceName] of [
     [runner, platformSubject, 'list', 'secrets'],
     [runner, platformSubject, 'watch', 'sandboxes.agents.x-k8s.io'],
     [runner, platformSubject, 'list', 'pods'],
-    [runner, platformSubject, 'create', 'pods'],
+    ...(officePreview === null ? ['create', 'delete'].map(verb => [runner, platformSubject, verb, 'pods']) : []),
     [app, platformSubject, 'list', 'sandboxes.agents.x-k8s.io'],
     [app, platformSubject, 'get', 'secrets'],
     [runner, `${app}:power-evolve-host`, 'get', 'secrets'],
@@ -334,6 +396,7 @@ export async function checkCluster(values, context) {
   ]) assert.equal(can(context, namespace, subject, verb, resourceName), false,
     `${subject} has unexpected ${verb} ${resourceName} in ${namespace}`)
   return { ...remoteMcp, ...accounts, ...connectorMaterials, ...connectorCluster,
+    ...officePreviewMaterials, ...officePreviewNodes,
     readyNodes: nodes.length, controllerReady: true, secretsPresent: true,
     tlsCoversPublicOrigins: true, sharedPvcBound: true, namespaceRbacChecked: true,
     crossMachineStorageVerified: false, ingressStreamingVerified: false,
