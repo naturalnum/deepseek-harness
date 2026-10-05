@@ -220,6 +220,34 @@ test('DELETE generation advances the durable identity; stale kubelet generation 
   for (const method of ['POST', 'DELETE', 'PATCH']) assert.equal(f.kube.mutations.filter(call => call.method === method).length, 1)
 })
 
+test('creation cancellation captures the first worker identity during DELETE and releases only after current-generation stop proof', options, async t => {
+  const f = await previewFixture(t), job = await f.accept()
+  f.kube.deferWorkerStart = true; f.kube.supplyProof = false
+  await f.service.tick()
+  const original = (await f.state(job.jobId)).pod_identity
+  assert.equal(original.generation, 1)
+  for (const field of ['nodeName', 'containerId', 'imageId']) assert.equal(original[field], null)
+  f.kube.onCall = async method => { if (method === 'DELETE') { f.kube.start(); f.kube.terminate(137) } }
+  await f.service.cancel(f.token, f.ref(job)); await f.service.tick()
+  const waiting = await f.state(job.jobId)
+  assert.equal(waiting.state, 'stopping'); assert.equal(waiting.parser_slot, 0); assert.equal(waiting.stop_evidence, null)
+  assert.equal(waiting.pod_identity.generation, 2); assert.equal(waiting.pod_identity.uid, original.uid)
+  assert.equal(waiting.pod_identity.nodeName, 'qa-node')
+  for (const field of ['containerId', 'imageId']) assert.notEqual(waiting.pod_identity[field], null)
+  assert.equal(f.kube.pod.status.conditions[0].observedGeneration, 1)
+  assert.equal(f.kube.mutations.filter(call => call.method === 'PATCH').length, 0)
+  f.kube.onCall = async method => { if (method === 'PATCH') {
+    const row = await f.state(job.jobId)
+    assert.deepEqual(row.pod_identity, waiting.pod_identity)
+    assert.deepEqual(row.stop_evidence.identity, waiting.pod_identity); assert.equal(row.parser_slot, 0)
+  } }
+  f.kube.terminate(137); await f.service.tick()
+  const cancelled = await f.state(job.jobId)
+  assert.equal(cancelled.state, 'cancelled'); assert.equal(cancelled.parser_slot, null)
+  assert.equal(cancelled.stop_evidence.status, 'KUBELET_STOPPED'); assert.equal(f.kube.pod, null)
+  for (const method of ['POST', 'DELETE', 'PATCH']) assert.equal(f.kube.mutations.filter(call => call.method === method).length, 1)
+})
+
 test('a failed stop-proof transaction cannot remove the finalizer or free the parser slot', options, async t => {
   const f = await previewFixture(t), job = await f.accept(); await f.service.tick()
   await f.service.cancel(f.token, f.ref(job))

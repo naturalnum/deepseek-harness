@@ -72,7 +72,7 @@ export const officePreviewPodIntent = z.object({
   && value.template.metadata.annotations['powerevolve.dev/preview-generation'] === value.job.generation)
 /** Validated original Pod creation intent. */
 export type OfficePreviewPodIntent = z.infer<typeof officePreviewPodIntent>
-/** Captured one-shot Pod identity: creation generation 1 or first-deletion generation 2; native identities only advance from null within a generation. */
+/** Captured one-shot Pod identity: creation generation 1 or first-deletion generation 2; native identities only advance from null to their first value. */
 export const officePreviewPodIdentity = z.object({
   name, uid: z.uuid(), generation: z.number().int().positive(), nodeName: z.string().min(1).max(253).nullable(),
   containerId: containerId.nullable(), imageId: z.string().min(1).max(1024).nullable(),
@@ -192,7 +192,7 @@ export class OfficePreviewPods {
 
   /**
    * Observe only the intended one-shot parser; spec updates and resize are unsupported.
-   * Creation generation 1 may advance once to deleting generation 2 with unchanged native identities.
+   * Creation generation 1 may advance once to deleting generation 2; captured native identities never change, while null may acquire its first value.
    * @param intent Original persisted creation request.
    * @param captured Previously captured native identity, if any.
    * @returns Verified original Pod facts, or null for 404; missing never means stopped.
@@ -232,8 +232,7 @@ export class OfficePreviewPods {
     const deleting = !!pod.metadata.deletionTimestamp
     if (identity.generation !== 1 && !(deleting && identity.generation === 2)) throw refusal()
     if (captured && (identity.name !== captured.name || identity.uid !== captured.uid
-      || identity.generation !== captured.generation && !(captured.generation === 1 && identity.generation === 2 && deleting
-        && identity.nodeName === captured.nodeName && identity.containerId === captured.containerId && identity.imageId === captured.imageId)
+      || identity.generation !== captured.generation && !(captured.generation === 1 && identity.generation === 2 && deleting)
       || captured.nodeName !== null && identity.nodeName !== captured.nodeName
       || captured.containerId !== null && identity.containerId !== captured.containerId
       || captured.imageId !== null && identity.imageId !== captured.imageId)) throw refusal()

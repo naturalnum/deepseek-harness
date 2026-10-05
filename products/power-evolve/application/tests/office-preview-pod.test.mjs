@@ -155,3 +155,26 @@ test('initial observation accepts only creation generation1 or deleting generati
     else await assert.rejects(f.pods.observe(f.intent), { code: 'office_render_unavailable' })
   }
 })
+
+test('first native worker identity may appear with DELETE generation2 but a stale condition never confirms stop', async () => {
+  const f = fixture(); f.set(f.source)
+  const original = await f.pods.observe(f.intent)
+  assert.equal(original.identity.containerId, null); assert.equal(original.identity.nodeName, null); assert.equal(original.identity.imageId, null)
+  schedule(f.source)
+  f.source.metadata.generation = 2; f.source.metadata.deletionTimestamp = '2026-10-05T00:01:00Z'
+  const worker = f.source.status.containerStatuses[0]
+  worker.ready = false; worker.state = { terminated: { containerID: worker.containerID, exitCode: 137,
+    startedAt: '2026-10-05T00:00:00Z', finishedAt: '2026-10-05T00:00:30Z' } }
+  f.source.status.phase = 'Failed'
+  f.source.status.conditions = [{ type: 'PodReadyToStartContainers', status: 'False', observedGeneration: 1 }]
+  f.set(f.source)
+  const pending = await f.pods.observe(f.intent, original.identity)
+  assert.equal(pending.identity.generation, 2); assert.equal(pending.identity.uid, original.identity.uid)
+  assert.equal(pending.identity.containerId, worker.containerID); assert.equal(pending.identity.imageId, worker.imageID)
+  assert.equal(pending.identity.nodeName, 'qa-node'); assert.equal(pending.stopProof, null)
+  f.source.status.conditions[0].observedGeneration = 2; f.set(f.source)
+  const stopped = await f.pods.observe(f.intent, pending.identity)
+  assert.equal(stopped.stopProof.status, 'KUBELET_STOPPED')
+  await f.pods.release(f.intent, stopped, stopped.stopProof)
+  assert.equal(f.calls.filter(call => call.method === 'PATCH').length, 1)
+})

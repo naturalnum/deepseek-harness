@@ -27,6 +27,7 @@ export class PreviewKubernetes {
   supplyProof = true
   losePost = false
   losePatch = false
+  deferWorkerStart = false
   resourcePath(namespace, resource, name) { return `/${namespace}/${resource}${name ? `/${name}` : ''}` }
   async call(method, path, body) {
     await this.onCall(method, path, body)
@@ -42,10 +43,7 @@ export class PreviewKubernetes {
       pod = structuredClone(body)
       this.resources.set(pod.metadata.name, pod)
       Object.assign(pod.metadata, { uid: randomUUID(), resourceVersion: '1', generation: 1 })
-      pod.spec.nodeName = 'qa-node'
-      pod.status = { phase: 'Running', containerStatuses: [{ name: 'parser', ready: true, restartCount: 0,
-        containerID: `containerd://${'b'.repeat(64)}`, imageID: `sha256:${'a'.repeat(64)}`,
-        state: { running: { startedAt: '2026-10-05T00:00:00Z' } } }] }
+      if (!this.deferWorkerStart) this.start(pod.metadata.name)
       if (this.losePost) { this.losePost = false; throw new Error('fixture lost POST acknowledgment') }
       return structuredClone(pod)
     }
@@ -66,6 +64,13 @@ export class PreviewKubernetes {
       return null
     }
     throw new Error('Unexpected preview fixture operation')
+  }
+  start(name = this.pod.metadata.name) {
+    const pod = this.resources.get(name)
+    pod.spec.nodeName = 'qa-node'
+    pod.status = { phase: 'Running', containerStatuses: [{ name: 'parser', ready: true, restartCount: 0,
+      containerID: `containerd://${'b'.repeat(64)}`, imageID: `sha256:${'a'.repeat(64)}`,
+      state: { running: { startedAt: '2026-10-05T00:00:00Z' } } }] }
   }
   terminate(exitCode = 0, name = this.pod.metadata.name) {
     const pod = this.resources.get(name), worker = pod.status.containerStatuses[0]
