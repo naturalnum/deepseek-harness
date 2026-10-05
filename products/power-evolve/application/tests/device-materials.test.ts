@@ -7,8 +7,9 @@ import { chmod, copyFile, lstat, mkdir, mkdtemp, open, readFile, realpath, readd
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test, { type TestContext } from 'node:test'
-import { deviceMaterialBinding, ownedContainerOwner, type DeviceMaterialBinding,
-  type DeviceSkillMaterial, DEVICE_MATERIAL_MAX_BYTES } from '@power-evolve/contracts/device-execution'
+import { deviceMaterialBinding, deviceReportSuite, ownedContainerOwner, type DeviceMaterialBinding,
+  type DeviceSkillMaterial, type DeviceReportSuite, DEVICE_REPORT_SUITE_ROLES, DEVICE_MATERIAL_MAX_BYTES } from '@power-evolve/contracts/device-execution'
+import { createDeviceReportSuite } from '../src/device-report-suite.ts'
 import { DeviceMaterials } from '../src/device/materials.ts'
 import { DeviceProcessLock } from '../src/device/process-lock.ts'
 
@@ -56,6 +57,89 @@ async function fixture(t: TestContext) {
 
 const cache = (root: string, instance: string, material: DeviceSkillMaterial) =>
   join(root, 'materials', instance, 'sha256', material.binding.packageDigest)
+
+function reportMaterials() {
+  const materials = [bundle('1.0.0'), bundle('1.0.1'), bundle('1.0.2'), bundle('1.0.3')]
+  const members: DeviceReportSuite['members'] = [
+    { role: DEVICE_REPORT_SUITE_ROLES[0], skillId: materials[0]!.binding.skillId },
+    { role: DEVICE_REPORT_SUITE_ROLES[1], skillId: materials[1]!.binding.skillId },
+    { role: DEVICE_REPORT_SUITE_ROLES[2], skillId: materials[2]!.binding.skillId },
+    { role: DEVICE_REPORT_SUITE_ROLES[3], skillId: materials[3]!.binding.skillId },
+  ]
+  const bindings = materials.map(material => material.binding)
+  return { materials, bindings, suite: createDeviceReportSuite(members, bindings) }
+}
+
+test('report siblings reuse exact physical cache trees while preserving ordinary mounts and reauthorization after restart', options, async t => {
+  const f = await fixture(t), instance = enrollment(), report = reportMaterials(), extra = bundle('2.0.0')
+  const selected = [extra, ...report.materials.toReversed()], bindings = selected.map(material => material.binding)
+  const loaded: string[] = []
+  const load = async (binding: DeviceMaterialBinding) => {
+    loaded.push(binding.skillId)
+    return selected.find(material => material.binding.skillId === binding.skillId)!
+  }
+  const first = await f.helper.prepare(instance, bindings, load, signal(), report.suite)
+  assert.deepEqual(loaded, bindings.map(binding => binding.skillId))
+  assert.deepEqual(first.mounts.slice(0, selected.length), selected.map(material => ({
+    source: cache(f.root, instance, material), target: `/opt/power-evolve/skills/sha256/${material.binding.packageDigest}`,
+  })))
+  assert.deepEqual(first.mounts.slice(selected.length), report.materials.map((material, index) => ({
+    source: join(cache(f.root, instance, material), 'skill'),
+    target: `/opt/power-evolve/skills/report-suites/${report.suite.digest}/${DEVICE_REPORT_SUITE_ROLES[index]}`,
+  })))
+  const inodes: bigint[] = []
+  for (const [index, mount] of first.mounts.slice(selected.length).entries()) {
+    const stat = await lstat(mount.source, { bigint: true })
+    assert(stat.isDirectory()); assert(!stat.isSymbolicLink()); assert.equal(stat.mode & 0o7777n, 0o555n)
+    inodes.push(stat.ino)
+    assert.deepEqual(await readFile(join(mount.source, 'SKILL.md')),
+      Buffer.from(report.materials[index]!.files[0]!.data, 'base64'))
+  }
+  assert.deepEqual((await readdir(f.root)).sort(), ['device-process.lock', 'execution-homes', 'materials'])
+  await writeFile(join(first.home, 'report-kept'), 'persistent report Home')
+  await f.restart(); loaded.length = 0
+  const again = await f.helper.prepare(instance, bindings, load, signal(), report.suite)
+  assert.deepEqual(again, first); assert.deepEqual(loaded, bindings.map(binding => binding.skillId))
+  for (const [index, mount] of again.mounts.slice(selected.length).entries()) {
+    assert.equal((await lstat(mount.source, { bigint: true })).ino, inodes[index])
+  }
+  assert.equal(await readFile(join(again.home, 'report-kept'), 'utf8'), 'persistent report Home')
+  await assert.rejects(f.helper.prepare(instance, bindings, async () => { throw new Error('revoked on cache hit') },
+    signal(), report.suite), { code: 'device_material_unavailable' })
+})
+
+test('report descriptions reject changed full bindings and absent members before material reads or filesystem publication', options, async t => {
+  const f = await fixture(t), instance = enrollment(), report = reportMaterials()
+  let calls = 0
+  const load = async () => { calls++; return report.materials[0]! }
+  const changed = deviceMaterialBinding.parse({ ...report.bindings[0], version: '9.0.0' })
+  for (const [bindings, suite] of [
+    [report.bindings, { ...report.suite, digest: deviceReportSuite.shape.digest.parse(hash('changed suite')) }],
+    [report.bindings.slice(1), report.suite],
+    [[changed, ...report.bindings.slice(1)], report.suite],
+    [[], report.suite],
+  ] as const) {
+    await assert.rejects(f.helper.prepare(instance, bindings, load, signal(), suite), { code: 'device_material_invalid' })
+  }
+  assert.equal(calls, 0); assert.deepEqual(await readdir(f.root), ['device-process.lock'])
+})
+
+test('report cache cancellation and a damaged member refuse the entire prepared layout', options, async t => {
+  const f = await fixture(t), instance = enrollment(), report = reportMaterials()
+  const load = async (binding: DeviceMaterialBinding) => report.materials.find(material => material.binding.skillId === binding.skillId)!
+  const ordinary = await f.helper.prepare(instance, report.bindings, load, signal())
+  assert.equal(ordinary.mounts.length, 4)
+  const abort = new AbortController(), loaded: string[] = []
+  await assert.rejects(f.helper.prepare(instance, report.bindings, async binding => {
+    loaded.push(binding.skillId)
+    if (binding.skillId === report.bindings[3]!.skillId) abort.abort()
+    return load(binding)
+  }, abort.signal, report.suite), { code: 'device_material_cancelled' })
+  assert.deepEqual(loaded, report.bindings.map(binding => binding.skillId))
+  const damaged = join(ordinary.mounts[3]!.source, 'skill/resources/binary.dat')
+  await chmod(damaged, 0o600); await writeFile(damaged, Buffer.from([1, 255, 128, 10])); await chmod(damaged, 0o444)
+  await assert.rejects(f.helper.prepare(instance, report.bindings, load, signal(), report.suite), { code: 'device_material_cache_invalid' })
+})
 
 test('binary material publishes exact selected read-only files and an owner-only persistent Home', options, async t => {
   const f = await fixture(t), instance = enrollment(), material = bundle()

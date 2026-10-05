@@ -16,6 +16,7 @@ import { LocalDeviceFiles } from './local-files.ts'
 import { DeviceWriterCoordinator, deviceWriterOwner, type DeviceWriterLease, type DeviceWriterOwner } from './writer-coordinator.ts'
 import { SealedDeviceCreations, sealedCreation } from './sealed-creations.ts'
 import { DeviceMaterials } from './materials.ts'
+import { validateDeviceReportSuite } from '../device-report-suite.ts'
 import { collectDeviceDrainReport } from './lifecycle.ts'
 import type { DeviceDrainReport, DeviceDrainEntry, DeviceLifecycleSnapshot } from '@power-evolve/contracts/device-lifecycle'
 
@@ -439,10 +440,15 @@ export class DesktopWorker {
     this.active = running
   }
 
-  private requestDigest(state: DeviceState, job: Pick<z.infer<typeof deviceClaim>, 'command' | 'cwd' | 'timeoutMs' | 'directoryId' | 'materials'>): string {
+  private requestDigest(state: DeviceState, job: Pick<z.infer<typeof deviceClaim>, 'command' | 'cwd' | 'timeoutMs' | 'directoryId' | 'materials' | 'reportSuite'>): string {
+    if (job.reportSuite !== undefined) {
+      try { validateDeviceReportSuite(job.reportSuite, job.materials ?? []) }
+      catch (_invalidSuite) { throw new Error('device_dispatch_changed') }
+    }
     return createHash('sha256').update(JSON.stringify({ command: job.command, cwd: job.cwd,
       timeoutMs: job.timeoutMs, deviceId: state.deviceId, directoryId: job.directoryId,
-      ...(job.materials === undefined ? {} : { materials: job.materials }) })).digest('hex')
+      ...(job.materials === undefined ? {} : { materials: job.materials }),
+      ...(job.reportSuite === undefined ? {} : { reportSuite: job.reportSuite }) })).digest('hex')
   }
 
   private writerOwner(state: DeviceState, entry: JournalEntry): DeviceWriterOwner {
@@ -523,7 +529,9 @@ export class DesktopWorker {
     if (entry.claimed.executionId !== entry.id || entry.claimed.processId !== entry.processId
       || entry.claimed.dispatchId !== entry.dispatchId || entry.owner.creationId !== entry.dispatchId
       || entry.claimed.digest !== entry.owner.requestDigest
-      || entry.claimed.digest !== this.requestDigest(state, entry.claimed)) throw new Error('device_dispatch_changed')
+      || entry.claimed.digest !== this.requestDigest(state, entry.claimed)
+      || entry.queuedJob && (entry.queuedJob.digest !== entry.claimed.digest
+        || entry.queuedJob.digest !== this.requestDigest(state, entry.queuedJob))) throw new Error('device_dispatch_changed')
     return entry.claimed
   }
 
@@ -676,7 +684,7 @@ export class DesktopWorker {
     const prepared = await this.materials.prepare(owner.enrollmentId, claimed.materials ?? [], binding => this.call(
       '/devices/agent/material', deviceMaterialRequest.parse({ instanceId: state.instanceId, executionId: id,
         processId: claimed.processId, dispatchId: claimed.dispatchId, digest: claimed.digest, skillId: binding.skillId }),
-      deviceSkillMaterial, state.token, this.stop.signal), this.stop.signal)
+      deviceSkillMaterial, state.token, this.stop.signal), this.stop.signal, claimed.reportSuite)
     entry.imageId = await this.containers.resolveImage(this.image)
     await this.saveJournal()
     if (this.stop.signal.aborted) throw new Error('device_closed_before_create')

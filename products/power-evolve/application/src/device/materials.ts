@@ -6,7 +6,8 @@ import { dirname, isAbsolute, join, parse, relative, resolve } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import { deviceMaterialSelection, deviceSkillManifest, deviceSkillMaterial,
   ownedContainerOwner, type DeviceMaterialBinding, type DeviceSkillMaterial, type DeviceSkillManifest,
-  type OwnedContainerOwner } from '@power-evolve/contracts/device-execution'
+  type DeviceReportSuite, type OwnedContainerOwner } from '@power-evolve/contracts/device-execution'
+import { validateDeviceReportSuite } from '../device-report-suite.ts'
 
 type Code = 'device_material_invalid' | 'device_material_cache_invalid' | 'device_material_path_changed'
   | 'device_material_home_invalid' | 'device_material_cancelled' | 'device_material_io'
@@ -316,10 +317,11 @@ export class DeviceMaterials {
    * @param bindings Immutable packages selected by this accepted dispatch.
    * @param load Fetch the original binding's bounded bytes through current Platform authorization.
    * @param signal Abort admission and unpublished staging work.
-   * @returns Local persistent Home and individual selected package mount sources and targets.
+   * @param reportSuite Optional original report roles bound to this dispatch's complete package references.
+   * @returns Local persistent Home, individual package mounts and optional same-level report directories.
    */
   async prepare(instanceId: OwnedContainerOwner['enrollmentId'], bindings: readonly DeviceMaterialBinding[],
-    load: (binding: DeviceMaterialBinding) => Promise<DeviceSkillMaterial>, signal: AbortSignal):
+    load: (binding: DeviceMaterialBinding) => Promise<DeviceSkillMaterial>, signal: AbortSignal, reportSuite?: DeviceReportSuite):
     Promise<{ home: string; mounts: readonly { source: string; target: string }[] }> {
     try {
       await this.checkpoint(signal)
@@ -331,9 +333,15 @@ export class DeviceMaterials {
         if (!parsed.success) reject('device_material_invalid')
         selected.push(...parsed.data.map(binding => Object.freeze(binding)))
       }
+      let suite: DeviceReportSuite | undefined
+      if (reportSuite !== undefined) {
+        try { suite = validateDeviceReportSuite(reportSuite, selected) }
+        catch (_invalidSuite) { reject('device_material_invalid') }
+      }
       await this.parents(signal)
       const home = await this.home(enrollment.data, signal)
       const mounts: { source: string; target: string }[] = []
+      const sources = new Map<DeviceMaterialBinding['skillId'], string>()
       if (selected.length) {
         let parent = this.root
         for (const part of ['materials', enrollment.data, 'sha256']) {
@@ -346,7 +354,12 @@ export class DeviceMaterials {
           await this.checkpoint(signal)
           const source = await this.package(parent, binding, material, signal)
           mounts.push({ source, target: `/opt/power-evolve/skills/sha256/${binding.packageDigest}` })
+          sources.set(binding.skillId, source)
         }
+      }
+      if (suite) for (const member of suite.members) {
+        mounts.push({ source: join(sources.get(member.skillId)!, 'skill'),
+          target: `/opt/power-evolve/skills/report-suites/${suite.digest}/${member.role}` })
       }
       await this.parents(signal)
       await this.home(enrollment.data, signal)

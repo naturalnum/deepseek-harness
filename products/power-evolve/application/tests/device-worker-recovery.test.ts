@@ -4,14 +4,16 @@ import { fork } from 'node:child_process'
 import test, { type TestContext } from 'node:test'
 import { createHash, randomUUID } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
-import { mkdir, mkdtemp, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, realpath, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
 import { deviceJob, deviceClaim, deviceClaimRequest, deviceContainerRegistration, deviceFinishRequest,
-  deviceClaimClosureRequest, deviceClaimClosureReceipt, type DeviceClaimClosureReceipt } from '@power-evolve/contracts/device-execution'
+  deviceClaimClosureRequest, deviceClaimClosureReceipt, deviceMaterialBinding, deviceMaterialRequest, deviceReportSuite,
+  DEVICE_REPORT_SUITE_ROLES, type DeviceSkillMaterial, type DeviceReportSuite, type DeviceClaimClosureReceipt } from '@power-evolve/contracts/device-execution'
+import { createDeviceReportSuite } from '../src/device-report-suite.ts'
 import { DesktopWorker } from '../src/device/worker.ts'
 import { DeviceWriterCoordinator, deviceWriterOwner, DEVICE_WRITER_SLOT_FILENAME } from '../src/device/writer-coordinator.ts'
 import { DockerCommandError, OwnedDeviceContainer, OWNED_DEVICE_CONTAINER_LABELS, ownedContainerOwner, ownedContainerReceipt,
@@ -132,6 +134,27 @@ class DockerReplacement implements DockerClient {
 }
 
 type Job = z.infer<typeof deviceJob>
+function reportMaterials() {
+  const hash = (data: Uint8Array | string) => createHash('sha256').update(data).digest('hex')
+  const materials: DeviceSkillMaterial[] = DEVICE_REPORT_SUITE_ROLES.map((role, index) => {
+    const instructions = Buffer.from(`---\nname: ${role}\ndescription: Synthetic report role ${index}\n---\nUse only fixture bytes.\n`)
+    const packageDigest = hash(`synthetic report archive ${role}`)
+    const manifest = JSON.stringify({ schemaVersion: 1, artifactSha256: packageDigest,
+      files: [{ path: 'skill/SKILL.md', size: instructions.length, sha256: hash(instructions) }] })
+    return { binding: deviceMaterialBinding.parse({ skillId: randomUUID(), version: '1.0.0', packageDigest,
+      manifestDigest: hash(manifest), instructionDigest: hash(instructions) }), manifest,
+    files: [{ path: 'skill/SKILL.md', data: instructions.toString('base64') }] }
+  })
+  const members: DeviceReportSuite['members'] = [
+    { role: DEVICE_REPORT_SUITE_ROLES[0], skillId: materials[0]!.binding.skillId },
+    { role: DEVICE_REPORT_SUITE_ROLES[1], skillId: materials[1]!.binding.skillId },
+    { role: DEVICE_REPORT_SUITE_ROLES[2], skillId: materials[2]!.binding.skillId },
+    { role: DEVICE_REPORT_SUITE_ROLES[3], skillId: materials[3]!.binding.skillId },
+  ]
+  const bindings = materials.map(material => material.binding)
+  return { materials, bindings, suite: createDeviceReportSuite(members, bindings) }
+}
+
 async function fixture(t: TestContext, shared?: { coordinationRoot: string; directory: string }) {
   const base = await mkdtemp(join(await realpath(tmpdir()), 'pe-worker-recovery-'))
   const privateRoot = join(base, 'private'), directory = shared?.directory ?? join(base, 'project')
@@ -143,6 +166,8 @@ async function fixture(t: TestContext, shared?: { coordinationRoot: string; dire
   const allowed = [directoryId], workers: DesktopWorker[] = []
   const closeChildren: (() => Promise<void>)[] = []
   const claims = new Map<string, z.infer<typeof deviceClaim>>()
+  const materials = new Map<string, DeviceSkillMaterial>()
+  let claimReply: ((claim: z.infer<typeof deviceClaim>) => z.infer<typeof deviceClaim>) | undefined
   const registrations = new Map<string, string>(), finished = new Map<string, string>()
   const closedClaims = new Map<string, DeviceClaimClosureReceipt>(), closures: DeviceClaimClosureReceipt[] = []
   const resolvedUnknown = new Set<string>()
@@ -203,7 +228,15 @@ async function fixture(t: TestContext, shared?: { coordinationRoot: string; dire
         jobs = jobs.map(item => item.executionId === input.executionId ? { ...item, state: 'running' } : item)
         await onClaim?.(); claimEntered?.release(); await claimGate?.promise
         if (claimAck === 'lost') { claimAck = 'valid'; res.destroy(); return }
-        reply = original; break
+        reply = claimReply?.(original) ?? original; break
+      }
+      case '/devices/agent/material': {
+        const input = deviceMaterialRequest.parse(body), original = claims.get(input.executionId); assert(original)
+        assert.equal(input.processId, original.processId); assert.equal(input.dispatchId, original.dispatchId)
+        assert.equal(input.digest, original.digest)
+        const material = materials.get(input.skillId); assert(material)
+        assert.deepEqual(original.materials?.find(binding => binding.skillId === input.skillId), material.binding)
+        reply = material; break
       }
       case '/devices/agent/claim/close': {
         const input = deviceClaimClosureRequest.parse(body)
@@ -287,15 +320,19 @@ async function fixture(t: TestContext, shared?: { coordinationRoot: string; dire
     await Promise.all(closeChildren.map(close => close()))
     await Promise.all(workers.map(worker => worker.close()))
     server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve()))
-    await rm(base, { recursive: true, force: true })
+    const writable = async (path: string): Promise<void> => {
+      await chmod(path, 0o700)
+      for (const entry of await readdir(path, { withFileTypes: true })) if (entry.isDirectory()) await writable(join(path, entry.name))
+    }
+    await writable(base); await rm(base, { recursive: true, force: true })
   })
   const worker = makeWorker(); await worker.init()
   await worker.pair('synthetic-pairing-code-000000', 'Synthetic test device'); await worker.authorize(directory)
   async function seed(stage: 'claimed' | 'created' | 'finished', withReceipt: boolean, withStopped = false,
-    seedOptions: { registered?: boolean; captured?: boolean } = {}): Promise<JournalRow> {
+    seedOptions: { registered?: boolean; captured?: boolean; job?: Job } = {}): Promise<JournalRow> {
     await worker.close()
     const device = z.object({ instanceId: z.uuid() }).parse(JSON.parse(await readFile(join(privateRoot, 'device.json'), 'utf8')))
-    const source = job(), id = source.executionId
+    const source = seedOptions.job ?? job(), id = source.executionId
     const { state, cancelRequested, ...command } = source; void state; void cancelRequested
     const claimed = deviceClaim.parse({ ...command, processId: randomUUID(), dispatchId: randomUUID() })
     claims.set(id, claimed)
@@ -317,15 +354,18 @@ async function fixture(t: TestContext, shared?: { coordinationRoot: string; dire
     await writeFile(join(privateRoot, 'journal.json'), JSON.stringify([row]), { mode: 0o600 })
     return row
   }
-  function job(): Job {
+  function job(selected: Pick<Job, 'materials' | 'reportSuite'> = {}): Job {
     const command = 'printf synthetic-device-test', cwd = '', timeoutMs = 2000
     return deviceJob.parse({ executionId: randomUUID(), directoryId, command, cwd, timeoutMs, state: 'queued', cancelRequested: false,
-      digest: createHash('sha256').update(JSON.stringify({ command, cwd, timeoutMs, deviceId, directoryId })).digest('hex') })
+      ...selected,
+      digest: createHash('sha256').update(JSON.stringify({ command, cwd, timeoutMs, deviceId, directoryId,
+        ...(selected.materials === undefined ? {} : { materials: selected.materials }),
+        ...(selected.reportSuite === undefined ? {} : { reportSuite: selected.reportSuite }) })).digest('hex') })
   }
-  async function seedClaiming(committed = false): Promise<JournalRow> {
+  async function seedClaiming(committed = false, queuedJob = job()): Promise<JournalRow> {
     await worker.close()
     const device = z.object({ instanceId: z.uuid() }).parse(JSON.parse(await readFile(join(privateRoot, 'device.json'), 'utf8')))
-    const queuedJob = job(), processId = randomUUID()
+    const processId = randomUUID()
     const row = { id: queuedJob.executionId, container: 'pe-local-' + queuedJob.executionId.replaceAll('-', ''),
       stage: 'claiming', processId, queuedJob, startedAt: Date.now() }
     const lease = await new DeviceWriterCoordinator(workerOptions.coordinationRoot).command(deviceWriterOwner.parse({ kind: 'command',
@@ -408,6 +448,8 @@ process.send({ event: 'ready' });
     registeredAck(value: typeof registeredAck) { registeredAck = value },
     closureFailure(value: typeof closureFailure) { closureFailure = value },
     claimAck(value: typeof claimAck) { claimAck = value },
+    claimReply(value: typeof claimReply) { claimReply = value },
+    useMaterials(value: readonly DeviceSkillMaterial[]) { for (const material of value) materials.set(material.binding.skillId, material) },
     closureAck(value: typeof closureAck) { closureAck = value },
     observeClaim(action: () => Promise<void>) { onClaim = action },
     observeClosure(action: () => Promise<void>) { onClosure = action },
@@ -416,6 +458,102 @@ process.send({ event: 'ready' });
     holdDirectory() { directoryGate = gate(); directoryEntered = gate(); return { entered: directoryEntered.promise, release: directoryGate.release } },
     holdTransfer() { transferGate = gate(); return { release: transferGate.release } } }
 }
+
+test('report execution freezes its layout in the journal and mounts exact cached siblings read-only before one start', workerTestOptions, async t => {
+  const f = await fixture(t), report = reportMaterials()
+  const job = f.job({ materials: report.bindings.toReversed(), reportSuite: report.suite })
+  f.useMaterials(report.materials)
+  f.docker.onCreate = async () => {
+    const [row] = await journal(f.privateRoot); assert(row)
+    assert.deepEqual(row.queuedJob?.reportSuite, report.suite); assert.deepEqual(row.claimed?.reportSuite, report.suite)
+    assert.equal(row.owner?.requestDigest, job.digest); assert.equal(row.claimed?.digest, job.digest)
+    const create = f.docker.calls.find(args => args[0] === 'create'); assert(create)
+    const mounts = create.flatMap((arg, index) => arg === '--mount' ? [create[index + 1]!] : [])
+    assert.equal(mounts.length, 10)
+    for (const [index, member] of report.suite.members.entries()) {
+      const root = join(f.privateRoot, 'materials', row.owner!.enrollmentId, 'sha256', report.bindings[index]!.packageDigest)
+      assert(mounts.includes(`type=bind,source=${root},target=/opt/power-evolve/skills/sha256/${report.bindings[index]!.packageDigest},readonly`))
+      assert(mounts.includes(`type=bind,source=${join(root, 'skill')},target=/opt/power-evolve/skills/report-suites/${report.suite.digest}/${member.role},readonly`))
+      assert.equal(await readFile(join(root, 'skill', 'SKILL.md'), 'utf8'), Buffer.from(report.materials[index]!.files[0]!.data, 'base64').toString())
+    }
+  }
+  f.advertise([job]); f.worker.start()
+  await until(async () => f.finishes.length === 1 && (await journal(f.privateRoot)).length === 0, 'report execution stopped and settled')
+  assert.equal(f.docker.count('create'), 1); assert.equal(f.docker.count('start'), 1); assert.equal(f.docker.count('rm'), 1)
+  assert.deepEqual(f.requests.filter(request => request.path === '/devices/agent/material').map(request => request.body.skillId),
+    job.materials!.map(binding => binding.skillId))
+  assert.equal(await writerSlot(f.coordinationRoot), null)
+})
+
+test('a changed report digest or package version is rejected before claim and retains its original waiting journal', workerTestOptions, async t => {
+  for (const mutation of ['suite', 'binding'] as const) await t.test(mutation, async t => {
+    const f = await fixture(t), report = reportMaterials()
+    const suite = mutation === 'suite' ? { ...report.suite, digest: deviceReportSuite.shape.digest.parse('c'.repeat(64)) } : report.suite
+    const materials = mutation === 'binding' ? [deviceMaterialBinding.parse({ ...report.bindings[0], version: '2.0.0' }), ...report.bindings.slice(1)] : report.bindings
+    const job = f.job({ materials, reportSuite: suite })
+    f.advertise([job]); f.worker.start()
+    await until(() => notice(f.worker) === 'device_dispatch_changed', 'changed report refused')
+    const [row] = await journal(f.privateRoot); assert.equal(row?.stage, 'waiting'); assert.deepEqual(row.queuedJob, job)
+    assert.equal(f.requests.filter(request => request.path === '/devices/agent/claim').length, 0)
+    assert.equal(f.docker.calls.length, 0)
+  })
+})
+
+test('claim report drift cannot use the original Job digest to create or start a container', workerTestOptions, async t => {
+  const f = await fixture(t), report = reportMaterials(), job = f.job({ materials: report.bindings, reportSuite: report.suite })
+  f.claimReply(claim => deviceClaim.parse({ ...claim,
+    reportSuite: { ...report.suite, digest: 'c'.repeat(64) } }))
+  f.advertise([job]); f.worker.start()
+  await until(() => notice(f.worker) === 'device_dispatch_changed', 'changed claim report refused')
+  const [row] = await journal(f.privateRoot); assert.equal(row?.stage, 'claiming'); assert.deepEqual(row.queuedJob, job)
+  assert.equal(row.claimed, undefined); assert.equal(f.docker.calls.length, 0)
+  assert.equal(f.requests.filter(request => request.path === '/devices/agent/material').length, 0)
+})
+
+test('cold report claims and creations retain the full original digest and close without replaying or loading materials', workerTestOptions, async t => {
+  for (const stage of ['claiming', 'created'] as const) await t.test(stage, async t => {
+    const f = await fixture(t), report = reportMaterials(), job = f.job({ materials: report.bindings, reportSuite: report.suite })
+    const row = stage === 'claiming' ? await f.seedClaiming(true, job) : await f.seed('created', false, false, { job })
+    if (stage === 'created') f.docker.seed(row)
+    const next = f.makeWorker(); await next.init(); next.start()
+    await until(async () => (await journal(f.privateRoot)).length === 0, 'cold report no-start closure')
+    assert.equal(f.closures[0]?.digest, job.digest)
+    assert.equal(f.docker.count('create'), 0); assert.equal(f.docker.count('start'), 0)
+    assert.equal(f.requests.filter(request => ['/devices/agent/claim', '/devices/agent/material'].includes(request.path)).length, 0)
+    assert.equal(await writerSlot(f.coordinationRoot), null)
+  })
+})
+
+test('cold journals reject changed report bindings or original queued inputs before any recovery side effects', workerTestOptions, async t => {
+  for (const mutation of ['suite', 'queued'] as const) await t.test(mutation, async t => {
+    const f = await fixture(t), report = reportMaterials(), job = f.job({ materials: report.bindings, reportSuite: report.suite })
+    const row = await f.seed('created', false, false, { job }); assert(row.claimed)
+    const changed = mutation === 'suite' ? { ...row, claimed: { ...row.claimed,
+      reportSuite: { ...report.suite, digest: 'c'.repeat(64) } } }
+      : { ...row, queuedJob: { ...job, command: 'changed queued command' } }
+    const bytes = JSON.stringify([changed])
+    await writeFile(join(f.privateRoot, 'journal.json'), bytes, { mode: 0o600 })
+    const slot = await readFile(join(f.coordinationRoot, DEVICE_WRITER_SLOT_FILENAME))
+    const next = f.makeWorker(); await next.init(); next.start()
+    await until(() => notice(next) === 'device_dispatch_changed', 'changed durable report refused')
+    assert.equal(await readFile(join(f.privateRoot, 'journal.json'), 'utf8'), bytes)
+    assert.deepEqual(await readFile(join(f.coordinationRoot, DEVICE_WRITER_SLOT_FILENAME)), slot)
+    assert.equal(f.docker.calls.length, 0); assert.equal(f.closures.length, 0)
+  })
+})
+
+test('old claims with or without material metadata preserve their original digest during cold recovery', workerTestOptions, async t => {
+  for (const withMaterials of [false, true]) await t.test(String(withMaterials), async t => {
+    const f = await fixture(t), report = reportMaterials(), job = f.job(withMaterials ? { materials: report.bindings } : {})
+    assert.equal(Object.hasOwn(job, 'reportSuite'), false)
+    const row = await f.seedClaiming(true, job)
+    const next = f.makeWorker(); await next.init(); next.start()
+    await until(async () => (await journal(f.privateRoot)).length === 0, 'old original claim closed')
+    assert.equal(Object.hasOwn(row.queuedJob!, 'reportSuite'), false)
+    assert.equal(f.closures[0]?.digest, job.digest); assert.equal(f.docker.calls.length, 0)
+    assert.equal(f.requests.filter(request => request.path === '/devices/agent/material').length, 0)
+  })
+})
 
 test('fresh public execution saves owner before create and receipt/start intent before start, with native lock exclusion', workerTestOptions, async t => {
   const f = await fixture(t), job = f.job()
