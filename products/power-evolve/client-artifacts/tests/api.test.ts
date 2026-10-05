@@ -51,6 +51,19 @@ test('catalog, bounded preview, and authenticated download use scoped routes', a
   assert.throws(() => artifactDownloadUrl('../other'))
 })
 
+test('catalog and publication reject noncanonical immutable document metadata', async () => {
+  for (const changes of [{ artifactId: artifactId.toUpperCase() }, ...['../report.pdf', 'a/b.pdf', 'a\\b.pdf',
+    '.', '..', '', 'report\0.pdf', 'report\n.pdf', 'x'.repeat(256)].map(filename => ({ filename }))]) {
+    const client = new ArtifactHttpClient(async input => Response.json(String(input).endsWith('artifactsList')
+      ? { items: [{ ...artifact, ...changes }], nextCursor: null } : { ...artifact, ...changes }))
+    await assert.rejects(client.list({ sessionId }))
+    await assert.rejects(client.publish(sessionId, '/workspace/out/report.txt', requestId))
+  }
+  const literal = { ...artifact, filename: '报告 #1%20?.pdf' }
+  const client = new ArtifactHttpClient(async () => Response.json({ items: [literal], nextCursor: null }))
+  assert.equal((await client.list({ sessionId })).items[0]?.filename, literal.filename)
+})
+
 test('execution queries use shared DTOs and accept exactly the selected identities', async () => {
   let body: unknown
   const client = new ArtifactHttpClient(async (input, init) => {

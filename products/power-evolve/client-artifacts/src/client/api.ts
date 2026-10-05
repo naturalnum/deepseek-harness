@@ -1,6 +1,7 @@
 /** Authenticated artifact operations and bounded Platform execution file facts. */
 import { artifactPublishRequest, executionFilesRequest, executionFilesView } from '@power-evolve/contracts/execution-files'
 import type { ExecutionFilesView } from '@power-evolve/contracts/execution-files'
+import { artifactDocumentLocation } from '@power-evolve/contracts/artifact-document'
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const SHA256 = /^[0-9a-f]{64}$/i
 
@@ -57,6 +58,7 @@ function parseArtifact(value: unknown): Artifact {
     || typeof value.mime !== 'string' || typeof value.sizeBytes !== 'number' || !Number.isSafeInteger(value.sizeBytes)
     || value.sizeBytes < 0 || typeof value.sha256 !== 'string' || !SHA256.test(value.sha256)
     || typeof value.createdAt !== 'string') throw new Error('Invalid artifact response')
+  artifactDocumentLocation.parse({ artifactId: value.artifactId, filename: value.filename })
   return { artifactId: value.artifactId, workspaceId: value.workspaceId, sessionId: value.sessionId,
     sourcePath: value.sourcePath, filename: value.filename, mime: value.mime, sizeBytes: value.sizeBytes,
     sha256: value.sha256, createdAt: value.createdAt }

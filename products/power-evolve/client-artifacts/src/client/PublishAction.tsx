@@ -9,6 +9,7 @@ type Props = PropsRuntime<'sidebar.right.tab.document.actions'>
 
 /** One explicit publish gesture for the file selected in the native preview. */
 export function PublishAction(props: Props) {
+  if (props.absolutePath === '/artifacts' || props.absolutePath.startsWith('/artifacts/')) return null
   return <PublishActionForFile key={`${props.sessionId}:${props.absolutePath}`} {...props} />
 }
 

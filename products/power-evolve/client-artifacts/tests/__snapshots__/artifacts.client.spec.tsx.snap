@@ -1,0 +1,69 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`keeps bounded text and authenticated download in the catalog (en) 1`] = `
+{
+  "buttons": [
+    "Refresh",
+    "Preview",
+  ],
+  "preview": "hello",
+  "scopes": "This sessionThis Workspace",
+  "title": "Artifacts",
+}
+`;
+
+exports[`keeps bounded text and authenticated download in the catalog (zh) 1`] = `
+{
+  "buttons": [
+    "刷新",
+    "预览",
+  ],
+  "preview": "hello",
+  "scopes": "当前会话当前工作区",
+  "title": "产物",
+}
+`;
+
+exports[`opens report.pdf through the native resource API without catalog preview or download 1`] = `
+{
+  "address": "dsh-resource://file/session/598f346b-178c-4ef3-80ef-3a68f4cb4888//artifacts/a0197a8a-105d-42c6-b815-6e5155f10b5e/report.pdf",
+  "file": {
+    "path": "/artifacts/a0197a8a-105d-42c6-b815-6e5155f10b5e/report.pdf",
+    "sessionId": "598f346b-178c-4ef3-80ef-3a68f4cb4888",
+  },
+  "kind": "text",
+}
+`;
+
+exports[`opens sheet.XLSX through the native resource API without catalog preview or download 1`] = `
+{
+  "address": "dsh-resource://file/session/598f346b-178c-4ef3-80ef-3a68f4cb4888//artifacts/a0197a8a-105d-42c6-b815-6e5155f10b5e/sheet.XLSX",
+  "file": {
+    "path": "/artifacts/a0197a8a-105d-42c6-b815-6e5155f10b5e/sheet.XLSX",
+    "sessionId": "598f346b-178c-4ef3-80ef-3a68f4cb4888",
+  },
+  "kind": "text",
+}
+`;
+
+exports[`opens slides.pptx through the native resource API without catalog preview or download 1`] = `
+{
+  "address": "dsh-resource://file/session/598f346b-178c-4ef3-80ef-3a68f4cb4888//artifacts/a0197a8a-105d-42c6-b815-6e5155f10b5e/slides.pptx",
+  "file": {
+    "path": "/artifacts/a0197a8a-105d-42c6-b815-6e5155f10b5e/slides.pptx",
+    "sessionId": "598f346b-178c-4ef3-80ef-3a68f4cb4888",
+  },
+  "kind": "text",
+}
+`;
+
+exports[`opens 报告 #1%20?.docx through the native resource API without catalog preview or download 1`] = `
+{
+  "address": "dsh-resource://file/session/598f346b-178c-4ef3-80ef-3a68f4cb4888//artifacts/a0197a8a-105d-42c6-b815-6e5155f10b5e/%E6%8A%A5%E5%91%8A%20%231%2520%3F.docx",
+  "file": {
+    "path": "/artifacts/a0197a8a-105d-42c6-b815-6e5155f10b5e/报告 #1%20?.docx",
+    "sessionId": "598f346b-178c-4ef3-80ef-3a68f4cb4888",
+  },
+  "kind": "text",
+}
+`;

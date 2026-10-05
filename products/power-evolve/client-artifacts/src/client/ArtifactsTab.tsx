@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import { sessionFileAddress } from '@deepseek-ai/dsh-util-workspace-path'
+import { artifactDocumentPathFor } from '@power-evolve/contracts/artifact-document'
 import { artifactDownloadUrl, type Artifact, type ArtifactHttpClient, type ArtifactPreview } from './api.ts'
 
 type Props = PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<'powerEvolve.artifacts'>
@@ -57,15 +59,20 @@ export function ArtifactsTab({ useTabInfo, sessionId, workspaceId, client, chang
     changed.addEventListener('published', refresh)
     return () => changed.removeEventListener('published', refresh)
   }, [changed, load])
-  const showPreview = async (artifactId: string) => {
+  const showPreview = async (item: Artifact) => {
+    if (tab.signal.aborted) return
     previewRequest.current?.abort()
+    if (/\.(?:pdf|xlsx|docx|pptx)$/iu.test(item.filename)) {
+      tab.actions.openResource(sessionFileAddress(item.sessionId, artifactDocumentPathFor(item.artifactId, item.filename)))
+      return
+    }
     const controller = new AbortController()
     previewRequest.current = controller
-    setSelected(artifactId)
+    setSelected(item.artifactId)
     setPreview(null)
     setPreviewError(false)
     try {
-      const value = await client.preview(artifactId, controller.signal)
+      const value = await client.preview(item.artifactId, controller.signal)
       if (!controller.signal.aborted) setPreview(value)
     } catch {
       if (!controller.signal.aborted) setPreviewError(true)
@@ -88,7 +95,7 @@ export function ArtifactsTab({ useTabInfo, sessionId, workspaceId, client, chang
         <div className="pe-artifacts-filename">{item.filename}</div>
         <small>{t('sizeBytes', { size: item.sizeBytes.toLocaleString() })} · {new Date(item.createdAt).toLocaleString()}</small>
         <div className="pe-artifacts-actions">
-          <button type="button" onClick={() => { void showPreview(item.artifactId) }}>{t('preview')}</button>
+          <button type="button" onClick={() => { void showPreview(item) }}>{t('preview')}</button>
           <a href={artifactDownloadUrl(item.artifactId)} download={item.filename}>{t('download')}</a>
         </div>
         {selected === item.artifactId && (previewError
