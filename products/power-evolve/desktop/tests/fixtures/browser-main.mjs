@@ -269,8 +269,9 @@ async function run() {
 
     await check('product-endpoints-and-aliases-denied', async () => {
       const value = await open(first)
-      const urls = [hostOrigin, platformOrigin, deviceOrigin].flatMap(origin =>
-        [origin, ...['localhost', '127.0.0.2', '127.1', '0.0.0.0', '[::1]', '[::ffff:127.0.0.1]'].map(alias => {
+      const products = [hostOrigin, platformOrigin, deviceOrigin]
+      const urls = products.flatMap(origin =>
+        [origin, ...['localhost', 'localhost.', '127.0.0.2', '127.1', '0.0.0.0', '[::1]', '[::ffff:127.0.0.1]'].map(alias => {
           const url = new URL(origin); url.hostname = alias; return url.origin
         })].map(origin => origin + '/blocked'))
       for (const url of urls) {
@@ -278,10 +279,33 @@ async function run() {
         await assert.rejects(value.guest.loadURL(url))
         await value.guest.loadURL(externalOrigin + '/guest')
       }
-      for (const origin of [hostOrigin, deviceOrigin]) {
-        const url = origin.replace('http:', 'ws:') + '/blocked'
+      for (const origin of products) for (const hostname of [new URL(origin).hostname, 'localhost.']) {
+        const target = new URL(origin); target.hostname = hostname; target.protocol = 'ws:'
+        const url = target.origin + '/blocked'
         assert.equal(await value.guest.executeJavaScript(`new Promise(resolve => { const socket = new WebSocket(${JSON.stringify(url)});
           socket.onopen = () => { socket.close(); resolve(false); }; socket.onerror = () => resolve(true); })`), true)
+      }
+      for (const origin of products) {
+        const target = new URL(origin); target.hostname = 'localhost.'
+        const url = target.origin + '/blocked'
+        // Observe cancellation without replacing the product's onBeforeRequest policy.
+        const failed = new Promise(resolve => {
+          value.guest.session.webRequest.onErrorOccurred(details => {
+            if (details.url === url && details.resourceType === 'subFrame') resolve(details)
+          })
+        })
+        try {
+          await value.guest.executeJavaScript(`{
+            const frame = document.createElement('iframe'); frame.id = 'gate-protected-frame';
+            frame.src = ${JSON.stringify(url)}; document.body.append(frame); true;
+          }`)
+          const observed = await bounded(failed, 'guest-protected-frame')
+          assert.equal(observed.webContentsId, value.guest.id)
+          assert.equal(observed.error, 'net::ERR_BLOCKED_BY_CLIENT')
+        } finally {
+          value.guest.session.webRequest.onErrorOccurred(null)
+          await value.guest.executeJavaScript(`document.getElementById('gate-protected-frame').remove(); true`)
+        }
       }
       assert.equal(protectedRequests, 0)
       await release(value)
