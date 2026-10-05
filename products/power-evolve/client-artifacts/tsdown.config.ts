@@ -10,7 +10,7 @@ export default defineConfig([
     name: `${id}/client`, entry: { client: 'src/client/index.ts' }, outDir: 'lib', format: 'cjs',
     platform: 'browser', target: 'es2022', clean: false, dts: false,
     deps: {
-      alwaysBundle: [protocol, /^zod(?:\/|$)/u, '@deepseek-ai/dsh-brand'],
+      alwaysBundle: [protocol, /^zod(?:\/|$)/u, '@deepseek-ai/dsh-brand', '@deepseek-ai/dsh-util-workspace-path'],
       onlyBundle: ['zod'],
       neverBundle: ['react', 'react/jsx-runtime', '@deepseek-ai/cordis',
         '@deepseek-ai/dsh-client-store', '@deepseek-ai/dsh-client-ui-slots', '@deepseek-ai/dsh-client-ui-primitives'],
