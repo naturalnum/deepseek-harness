@@ -119,7 +119,7 @@ validation_result:
   revision_instruction: ""
 ```
 
-没有逐页视觉检查记录时，不得返回 `pass`。
+视觉检查绑定当前 Word `artifact_id + version`。`page_count` 以实际渲染结果为准，必须为正整数；`inspected_pages` 只能包含整数页码且恰好覆盖 `1..page_count`，不允许缺页、重复、越界或布尔值。渲染退出 0 不代表视觉验收通过；没有逐页视觉检查记录时，不得返回 `pass`。
 
 ### 外部响应
 

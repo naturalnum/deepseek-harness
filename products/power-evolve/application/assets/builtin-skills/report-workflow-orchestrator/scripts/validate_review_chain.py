@@ -51,9 +51,13 @@ def has_word_pass(slot: dict[str, Any], artifact: dict[str, Any] | None) -> bool
             continue
         structural = result.get("structural_validation") or {}
         visual = result.get("visual_qa") or {}
-        page_count = int(visual.get("page_count") or 0)
-        inspected = set(visual.get("inspected_pages") or [])
-        if structural.get("passed") is True and visual.get("status") == "passed" and page_count > 0 and len(inspected) >= page_count:
+        page_count = visual.get("page_count")
+        inspected = visual.get("inspected_pages")
+        if (structural.get("passed") is True and visual.get("status") == "passed"
+                and type(page_count) is int and page_count > 0
+                and isinstance(inspected, list) and len(inspected) == page_count
+                and all(type(page) is int and 1 <= page <= page_count for page in inspected)
+                and len(set(inspected)) == page_count):
             return True
     return False
 

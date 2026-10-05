@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import re
+import tempfile
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -128,8 +130,36 @@ def load_json(path: Path) -> dict[str, Any]:
 
 
 def save_json(path: Path, value: dict[str, Any]) -> None:
+    """Atomically replace JSON and confirm file and directory synchronization.
+
+    A directory-sync error leaves the replacement visible but its persistence
+    unconfirmed. Read the file before deciding whether to repeat an action.
+    """
+    serialized = json.dumps(value, ensure_ascii=False, indent=2)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+    directory_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
+                                         prefix=f".{path.name}.", suffix=".tmp", delete=False) as file:
+            temporary = Path(file.name)
+            file.write(serialized)
+            file.flush()
+            os.fsync(file.fileno())
+        os.replace(temporary, path)
+        temporary = None
+        try:
+            os.fsync(directory_fd)
+        except OSError as error:
+            raise RuntimeError("JSON file may already be updated, but commit is not confirmed: "
+                               "directory synchronization failed; reread the state before "
+                               "continuing and do not automatically replay the stage action") from error
+    finally:
+        try:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+        finally:
+            os.close(directory_fd)
 
 
 def _project_intake_complete(state: dict[str, Any]) -> bool:
@@ -428,10 +458,13 @@ def _validate_word_result(result: dict[str, Any], require_visual_qa: bool = True
         if require_visual_qa:
             if visual.get("status") != "passed":
                 raise ValueError("word validation cannot pass without passed visual QA")
-            page_count = int(visual.get("page_count") or 0)
-            inspected = visual.get("inspected_pages") or []
-            if page_count <= 0 or len(set(inspected)) < page_count:
-                raise ValueError("word validation pass requires every rendered page to be inspected")
+            page_count = visual.get("page_count")
+            inspected = visual.get("inspected_pages")
+            if (type(page_count) is not int or page_count <= 0
+                    or not isinstance(inspected, list) or len(inspected) != page_count
+                    or not all(type(page) is int and 1 <= page <= page_count for page in inspected)
+                    or len(set(inspected)) != page_count):
+                raise ValueError("word validation pass requires inspected pages to cover exactly 1..page_count")
 
 
 def _validate_structured_review(review: dict[str, Any]) -> None:

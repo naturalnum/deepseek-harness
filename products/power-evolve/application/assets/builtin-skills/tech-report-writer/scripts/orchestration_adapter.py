@@ -563,7 +563,7 @@ def validate_word(request: dict[str, Any]) -> dict[str, Any]:
     visual_status = supplied_visual.get("status") or ("rendered_pending_inspection" if render.get("success") else "blocked")
     visual_issues = list(supplied_visual.get("issues", []))
     catalog_qa = render.get("catalog_qa") or {}
-    if not render.get("success") or catalog_qa.get("checked") is not True:
+    if render_proc.returncode != 0 or render.get("success") is not True or catalog_qa.get("checked") is not True:
         visual_issues.append("渲染或目录实证检查失败：" + str(render.get("error", "目录未通过检查")))
         visual_status = "failed"
     if catalog_qa.get("checked") and catalog_qa.get("ok") is False:
@@ -589,7 +589,7 @@ def validate_word(request: dict[str, Any]) -> dict[str, Any]:
             visual_status = "failed"
     visual = {
         "status": visual_status,
-        "page_count": int(render.get("page_count") or supplied_visual.get("page_count") or 0),
+        "page_count": render.get("page_count", 0),
         "inspected_pages": supplied_visual.get("inspected_pages", []),
         "render_dir": render.get("render_dir", str(render_dir)),
         "pdf_path": render.get("pdf_path"),
@@ -597,7 +597,16 @@ def validate_word(request: dict[str, Any]) -> dict[str, Any]:
         "issues": visual_issues,
         "catalog_qa": catalog_qa,
     }
-    passed = bool(structural.get("valid")) and visual["status"] == "passed" and visual["page_count"] > 0 and len(set(visual["inspected_pages"])) >= visual["page_count"]
+    page_count = visual["page_count"]
+    inspected = visual["inspected_pages"]
+    all_pages_inspected = (type(page_count) is int and page_count > 0
+                           and isinstance(inspected, list) and len(inspected) == page_count
+                           and all(type(page) is int and 1 <= page <= page_count for page in inspected)
+                           and len(set(inspected)) == page_count)
+    if visual["status"] == "passed" and not all_pages_inspected:
+        visual["status"] = "failed"
+        visual["issues"].append("逐页视觉检查记录必须恰好覆盖 1..page_count，不能缺页、重复或越界。")
+    passed = bool(structural.get("valid")) and visual["status"] == "passed" and all_pages_inspected
     decision = "pass" if passed else ("revise" if structural.get("errors") or visual.get("issues") else "blocked")
     return {
         "request_id": request["orchestration"]["request_id"], "skill_name": "tech-report-writer",

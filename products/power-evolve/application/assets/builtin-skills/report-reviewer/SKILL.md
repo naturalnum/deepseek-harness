@@ -1,7 +1,7 @@
 ---
 name: report-reviewer
 description: 审核报告目录、单章和全文，检查任务完成度、内容完整性、逻辑结构、证据引用、章节协同、术语一致性和中文长文表达，输出结构化审核结论。本 Skill 不直接重写正文。
-version: 1.1.0
+version: 1.1.1
 ---
 
 # Report Reviewer

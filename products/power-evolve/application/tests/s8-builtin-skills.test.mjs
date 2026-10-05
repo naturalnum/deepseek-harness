@@ -41,12 +41,22 @@ test('all nine committed releases pass the current ZIP and native metadata valid
     assert(files.length <= 256)
     assert(files.reduce((size, file) => size + file.size, 0) <= 8 * 1024 * 1024)
     const office = ['builtin.word', 'builtin.excel', 'builtin.powerpoint'].includes(release.id)
-    const targets = office ? ['cloud', 'desktop'] : ['cloud']
+    const report = ['builtin.report-workflow-orchestrator', 'builtin.power-grid-technical-report-writer',
+      'builtin.report-reviewer', 'builtin.tech-report-writer'].includes(release.id)
+    const targets = office || report ? ['cloud', 'desktop'] : ['cloud']
     const distributed = committed.items.find(item => item.extension.id === release.id).release
     assert.deepEqual(distributed.targets, targets)
     const manifest = JSON.parse(await readFile(join(builtinSkillAssetRoot(),
       `extensions/${release.id}/${release.version}.manifest.json`), 'utf8'))
     assert.deepEqual(manifest.targets, targets)
+    if (report) {
+      if (['builtin.report-workflow-orchestrator', 'builtin.report-reviewer'].includes(release.id)) {
+        const instructions = await readFile(join(extracted, 'skill/SKILL.md'), 'utf8')
+        assert.match(instructions, new RegExp(`^version: ${release.version.replaceAll('.', '\\.')}\\r?$`, 'mu'))
+      } else {
+        assert.equal(JSON.parse(await readFile(join(extracted, 'skill/SOURCE.json'), 'utf8')).productRelease, release.version)
+      }
+    }
     if (office) {
       assert.equal(release.version, '1.0.2')
       const instructions = await readFile(join(extracted, 'skill/SKILL.md'), 'utf8')

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.28
+
+- Save workflow JSON through a same-directory private temporary file, file synchronization, atomic replacement and directory synchronization; report an unconfirmed commit after a directory-sync failure without restoring old state or replaying actions.
+- Require integer inspection records to cover exactly every rendered page of the current Word version; reject missing, repeated, out-of-range and boolean page numbers.
+- Publish the report workflow for both Cloud and Desktop execution targets.
+
 ## 1.1.27
 
 - Pair the chapter confirmation fixture README in English and Chinese with a consistency record.
