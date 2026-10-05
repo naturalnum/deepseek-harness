@@ -154,7 +154,7 @@ test('custom no-Sandbox storage restores old, disabled, revoked and report-suite
     const reports = []
     for (const [id, version] of [
       ['builtin.report-workflow-orchestrator', '1.1.28'],
-      ['builtin.power-grid-technical-report-writer', '1.1.38'],
+      ['builtin.power-grid-technical-report-writer', '1.1.39'],
       ['builtin.report-reviewer', '1.1.1'], ['builtin.tech-report-writer', '1.1.40'],
     ]) reports.push(selection(await skills.installBuiltin(user, randomUUID(), id, version)))
     const suite = await skills.runtimeResourceBase(user.userId, reports, reports[0].skillId)

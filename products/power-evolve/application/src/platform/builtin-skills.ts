@@ -6,7 +6,7 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { z } from 'zod'
 
-const CATALOG_SHA256 = 'a0352b5a065fd0ec8b55da8d6c38fdd0b37b0401008e1418130d878783fddd8b'
+const CATALOG_SHA256 = 'd7c76d6b076339efe63c743e6671e0fafbea0b07131230513735d7d3bbcd507b'
 const SHA256 = /^[a-f0-9]{64}$/u
 const ID = /^builtin\.[a-z0-9]+(?:[._-][a-z0-9]+)*$/u
 const VERSION = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/u
