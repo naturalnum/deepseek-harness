@@ -383,6 +383,18 @@
 
 最终组装前，所有真实文献条目必须完成核验；无法核验且符合回退条件的内容只能以 unresolved source 登记，并在正文中使用 `【待补充来源】`，不得混入正式参考文献表。
 
+## 10. 本地项目文件证据
+
+任务书、方法说明、项目数据或复现日志可作为明确标注的本地项目证据，不得包装成外部论文，也不得为它们编造 HTTP 核验链接。条目使用 `source_kind: local_file`，`reference_type` 限 `report`、`official_document` 或 `dataset`，并保留非空稳定 `id`、题名、支持的判断和 `gbt7714_entry`。使用实际材料责任者与题名；著录缺口不得编造。本地报告使用 `[R]`，本地数据使用 `[DS]` 或 `[DB]`，不使用 `/OL` 标识。
+
+`local_file_evidence` 只含 `relative_path`、64 位小写十六进制 `sha256`、非负整数 `byte_size`；`doi_or_identifier` 固定为 `sha256:<该文件摘要>`。相对路径以 `/` 分隔，禁止绝对路径、空段、`.`、`..`、文件 URI 和符号链接。不得声明 `official_url` 或 `legal_download_url`；`verification_sources` 省略或为空数组。`verification_status: verified` 必须以实际字节核验为前提，不是模型自行声明即可生效。
+
+运行 `scripts/validate_references.py <登记文件> --source-root <已授权绝对目录>`。根目录由已授权执行器明确提供，不来自登记 JSON、当前目录或模型声明；CLI 参数本身不授予权限。校验器不跟随目录或文件链接，先拒绝非普通文件，再核对字节数、SHA256、文件及目录绑定，读取失败或读取中变化均拒绝。匹配结果只证明这些本地字节存在且一致，不证明材料内容正确、统计已复现或外部学术真实性；相关判断仍须真实复现、正式审核和用户确认。
+
+新编排请求固定 `reference_evidence_contract: 2`，响应的 `reference_plan.content` 直接包含 `internet_access`、`items` 和原组织方案字段。证据只放在 `items` 条目内，不嵌套第二份引用登记；产物记录代际，apply 与 confirm 均重查实际文件。旧 `local-file:` 标识也属于本地语义，不能转入旧外部分支。修订保持 `id` 稳定，最终 `[n]` 仍按正文首次引用顺序生成。
+
+外部来源继续遵守原 DOI/稳定标识、HTTP 核验来源、在线著录日期和类型标识要求。校验器拒绝 `.invalid`、`.test`、示例域等占位 HTTP 来源，但只检查 URL 格式和明确占位符；外部可访问性、元数据及真实性仍由真实联网核验提供，不能把格式通过写成联网核验通过。
+
 <!-- SOURCE_END: references/citation-and-evidence.md -->
 
 <!-- SOURCE_BEGIN: references/abstract-and-introduction.md -->

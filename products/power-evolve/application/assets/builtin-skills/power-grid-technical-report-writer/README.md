@@ -5,6 +5,18 @@ English | [中文](README.zh.md)
 The suite retains topic roles, three core research points per chapter with expansion to four or five when necessary, mandatory tertiary headings in technical chapters, power-domain semantics in core secondary headings, no standalone validation section by default, implicit coverage of internal technical requirements, formula selection, evidence in chapter summaries, the fixed three-paragraph abstract, fixed project-profile confirmation items, chapter content briefs before outlining, the 80% chapter word-count minimum, title-length controls, body heading locks and deterministic final Markdown cleanup. The outline architecture incorporates domestic and international research into Chapter 1, starts technical chapters at Chapter 2, combines the former overview and technical route/architecture into untitled opening prose after the chapter heading, assigns X.1–X.3 to core technical sections and defaults the summary to X.4.
 
 
+## v1.1.40 Local project reference evidence
+
+Reference registries accept explicit `source_kind: local_file` entries with a relative path, SHA256 and byte count. The validator reads regular files beneath an explicit caller-provided `--source-root`; it rejects links, escaping paths and changes during reading. The caller must already have authorization for that root. Matching bytes establish local file evidence, not external publication or academic authenticity.
+
+New orchestrated reference requests bind `reference_evidence_contract: 2`. Their `reference_plan.content` uses top-level `internet_access` and `items`; apply and user confirmation both recheck local files. Existing external reference fields remain required, and placeholder HTTP hosts cannot serve as verification sources. URL format checks do not replace actual online verification.
+
+```sh
+python scripts/validate_references.py reference-registry.json --source-root /authorized/workspace
+```
+
+Keep stable item IDs across revisions and assign final citation numbers by first use. See [citation and evidence rules](references/citation-and-evidence.md) for local report/dataset markers and the distinction between source bytes and report claims.
+
 ## v1.1.31 Figure/table explanations and Word contents collection
 
 - Content generation separates figure/table captions from explanatory paragraphs: captions use `图X-X 图题` / `表X-X 表题`; explanations use expressions such as “该图/该表/上述趋势/上述结果” and no longer start with a figure or table number.

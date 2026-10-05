@@ -41,6 +41,7 @@ def main() -> int:
     p.add_argument("state", type=Path)
     p.add_argument("response", type=Path)
     p.add_argument("--registry", type=Path, default=Path(__file__).resolve().parents[1] / "skill-registry.json")
+    p.add_argument("--source-root", type=Path, help="Explicit caller-provided authorized root for local reference bytes")
 
     p = sub.add_parser("submit-intake")
     p.add_argument("state", type=Path)
@@ -57,6 +58,7 @@ def main() -> int:
     p = sub.add_parser("confirm")
     p.add_argument("state", type=Path)
     p.add_argument("target")
+    p.add_argument("--source-root", type=Path, help="Recheck local reference bytes beneath this caller-provided root")
 
     p = sub.add_parser("request-revision", help="Record explicit user feedback on the current unconfirmed version")
     p.add_argument("state", type=Path)
@@ -92,7 +94,7 @@ def main() -> int:
     if args.cmd == "apply":
         registry = load_json(args.registry)
         response = load_json(args.response)
-        updated = apply_response(state, response, registry)
+        updated = apply_response(state, response, registry, source_root=args.source_root)
         save_json(args.state, updated)
         print(json.dumps({"stage": updated["stage"], "last_error": updated.get("last_error")}, ensure_ascii=False, indent=2))
         return 0
@@ -120,7 +122,7 @@ def main() -> int:
         return 0
 
     if args.cmd == "confirm":
-        updated = confirm(state, args.target)
+        updated = confirm(state, args.target, source_root=args.source_root)
         save_json(args.state, updated)
         print(json.dumps({"stage": updated["stage"], "confirmed": args.target}, ensure_ascii=False, indent=2))
         return 0

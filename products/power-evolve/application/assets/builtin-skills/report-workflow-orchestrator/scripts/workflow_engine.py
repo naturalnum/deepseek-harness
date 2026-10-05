@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from reference_evidence import REFERENCE_EVIDENCE_CONTRACT, validate_reference_artifact
 from report_text_utils import (
     abstract_quality_metrics,
     chapter_length_metrics,
@@ -765,6 +766,8 @@ def _record(state: dict[str, Any], event: str, **extra: Any) -> None:
 def _request(registry: dict[str, Any], role: str, action_alias: str, payload: dict[str, Any]) -> dict[str, Any]:
     child = registry["children"][role]
     action = child["actions"][action_alias]
+    if role == "generator" and action_alias == "search_references":
+        payload = {**payload, "reference_evidence_contract": REFERENCE_EVIDENCE_CONTRACT}
     request_id = f"req_{uuid.uuid4().hex[:16]}"
     return {
         "orchestration": {"enabled": True, "request_id": request_id, "caller_skill": "report-workflow-orchestrator"},
@@ -876,12 +879,15 @@ def next_action(state: dict[str, Any], registry: dict[str, Any]) -> dict[str, An
         return _request(registry, "reviewer", "review_report", {
             "report_context": context,
             "report": report,
+            "reference_plan": copy.deepcopy(_latest(_artifact_slot(state, "reference_plan"))),
             "abstract_quality_metrics": copy.deepcopy((abstract or {}).get("quality_metrics", {}).get("abstract_quality")),
             "structured_review_required": True,
         })
     if stage == "REPORT_REVISION_REQUIRED":
         slot = _artifact_slot(state, "report")
-        return _request(registry, "generator", "revise_report", {"report_context": context, "base_artifact": _latest(slot), "review_result": slot["reviews"][-1]})
+        return _request(registry, "generator", "revise_report", {
+            "report_context": context, "base_artifact": _latest(slot), "review_result": slot["reviews"][-1],
+            "reference_plan": copy.deepcopy(_latest(_artifact_slot(state, "reference_plan")))})
     if stage == "REPORT_REVIEW_PASSED":
         return {"kind": "user_confirmation", "target": "report"}
     if stage == "REPORT_CONFIRMED":
@@ -918,6 +924,7 @@ def _start_or_continue_chapters(state: dict[str, Any], registry: dict[str, Any])
         return _request(registry, "generator", "prepare_chapter_materials", {
             "report_context": state["report_context"], "chapter_id": cid,
             "outline": _latest(_artifact_slot(state, "outline")),
+            "reference_plan": copy.deepcopy(_latest(_artifact_slot(state, "reference_plan"))),
             "approved_previous_chapters": _approved_chapter_summaries(state)
         })
     return _chapter_plan_request(state, registry)
@@ -930,6 +937,7 @@ def _chapter_plan_request(state: dict[str, Any], registry: dict[str, Any]) -> di
     return _request(registry, "generator", "generate_chapter_plan", {
         "report_context": state["report_context"], "chapter_id": cid,
         "outline": _latest(_artifact_slot(state, "outline")), "chapter_materials": chapter.get("materials"),
+        "reference_plan": copy.deepcopy(_latest(_artifact_slot(state, "reference_plan"))),
         "approved_previous_chapters": _approved_chapter_summaries(state),
         "experiment_reference_policy": {
             "allowed": True,
@@ -1022,6 +1030,7 @@ def _chapter_generation_request(state: dict[str, Any], registry: dict[str, Any])
     return _request(registry, "generator", "generate_chapter", {
         "report_context": state["report_context"], "chapter_id": cid,
         "outline": _latest(_artifact_slot(state, "outline")), "chapter_plan": _latest(chapter["plan"]),
+        "reference_plan": copy.deepcopy(_latest(_artifact_slot(state, "reference_plan"))),
         "chapter_materials": chapter.get("materials"),
         "experiment_reference_package": copy.deepcopy(chapter.get("experiment_reference_package")),
         "approved_previous_chapters": _approved_chapter_summaries(state),
@@ -1038,6 +1047,7 @@ def _chapter_review_request(state: dict[str, Any], registry: dict[str, Any]) -> 
         "report_context": state["report_context"], "chapter_id": cid,
         "outline": _latest(_artifact_slot(state, "outline")), "chapter_plan": _latest(chapter["plan"]),
         "chapter": current,
+        "reference_plan": copy.deepcopy(_latest(_artifact_slot(state, "reference_plan"))),
         "experiment_reference_package": copy.deepcopy(chapter.get("experiment_reference_package")),
         "approved_previous_chapters": _approved_chapter_summaries(state),
         "length_requirement": _chapter_length_requirement(state, registry, cid),
@@ -1199,7 +1209,8 @@ def _word_revision_payload(state: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def apply_response(state: dict[str, Any], response: dict[str, Any], registry: dict[str, Any]) -> dict[str, Any]:
+def apply_response(state: dict[str, Any], response: dict[str, Any], registry: dict[str, Any],
+                   *, source_root: Path | None = None) -> dict[str, Any]:
     """Apply a child-Skill response and return a new state."""
     s = copy.deepcopy(state)
     req = s.get("pending_action")
@@ -1224,6 +1235,10 @@ def apply_response(state: dict[str, Any], response: dict[str, Any], registry: di
     formatter_name = registry["children"]["formatter"]["skill_name"]
     if response.get("skill_name") == generator_name:
         artifact = _validate_user_revision_artifact(s, req, response["artifact"])
+        if action == registry["children"]["generator"]["actions"]["search_references"]:
+            artifact = validate_reference_artifact(
+                artifact, source_root=source_root,
+                required_contract=req.get("payload", {}).get("reference_evidence_contract"))
         _apply_generator(s, action, artifact, registry)
         revision = _active_user_revision(s)
         if revision and req.get("payload", {}).get("user_feedback"):
@@ -2212,7 +2227,7 @@ def _has_pass_word_validation(slot: dict[str, Any], artifact: dict[str, Any] | N
     return False
 
 
-def confirm(state: dict[str, Any], target: str) -> dict[str, Any]:
+def confirm(state: dict[str, Any], target: str, *, source_root: Path | None = None) -> dict[str, Any]:
     s = copy.deepcopy(state)
     if s.get("pending_action") is not None or _active_user_revision(s):
         raise ValueError("cannot confirm while an action or user revision is pending")
@@ -2223,6 +2238,8 @@ def confirm(state: dict[str, Any], target: str) -> dict[str, Any]:
         raise ValueError("project profile cannot be confirmed before all four fixed intake questions are answered")
     if target == "argument_architecture" and s.get("content_generation_mode") == "source_grounded":
         _structured_chapters((_latest(_artifact_slot(s, "argument_architecture")) or {}).get("content"))
+    if target == "reference_plan":
+        validate_reference_artifact(_latest(_artifact_slot(s, "reference_plan")), source_root=source_root)
     if target == "outline":
         slot = _artifact_slot(s, "outline")
         if not _has_pass_review(slot, _latest(slot)):

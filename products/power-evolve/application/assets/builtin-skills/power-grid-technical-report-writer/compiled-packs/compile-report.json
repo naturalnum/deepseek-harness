@@ -139,8 +139,8 @@
         },
         {
           "source": "references/citation-and-evidence.md",
-          "blocks": 58,
-          "kept": 58
+          "blocks": 64,
+          "kept": 64
         },
         {
           "source": "references/abstract-and-introduction.md",
@@ -148,9 +148,9 @@
           "kept": 86
         }
       ],
-      "unique_blocks": 192,
+      "unique_blocks": 198,
       "deduplicated_blocks": 1,
-      "characters": 21777
+      "characters": 22986
     },
     {
       "name": "30-chapter-planning-core",
@@ -357,13 +357,13 @@
       "sources": [
         {
           "source": "references/citation-and-evidence.md",
-          "blocks": 58,
-          "kept": 58
+          "blocks": 64,
+          "kept": 64
         }
       ],
-      "unique_blocks": 58,
+      "unique_blocks": 64,
       "deduplicated_blocks": 0,
-      "characters": 4533
+      "characters": 5742
     },
     {
       "name": "addon-figure-table",

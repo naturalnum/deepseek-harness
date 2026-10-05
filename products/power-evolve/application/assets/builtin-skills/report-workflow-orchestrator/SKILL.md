@@ -1,7 +1,7 @@
 ---
 name: report-workflow-orchestrator
 description: 编排电网科技报告的项目档案、论证架构、目录、章节生成与审核、全文审核，以及最终 Word 排版、格式修复和逐页验收。所有子 Skill 名称和动作集中在配置区。
-version: 1.1.28
+version: 1.1.29
 ---
 
 # Report Workflow Orchestrator
@@ -270,6 +270,10 @@ preserve_existing_outline_rules: true
 当前未确认章节因字数、章首过渡、小结或正式章节审核的修订上限耗尽而进入 `AWAITING_USER` 时，也可凭明确的新用户反馈使用同一入口。必须匹配当前章节、最新版本与对应失败审核；每条反馈只允许一个新修订子请求，保留失败计数和历史。新版本仍失败则继续等待另一条新用户反馈，不自动重试；其他阻塞理由和 `FAILED` 不支持此恢复。
 
 用户反馈单独记录在可选 `user_revision_requests`，不写入正式 `reviews`。随后运行 `next`，执行真实生成器修订动作，以新文件和新版本 `apply`。目录、章节、全文继续通过既有确定性门及绑定新版本的 `report-reviewer` 审核，等待用户显式确认；旧 `pass` 保留且不能确认新版本。已确认目标不可从此入口重开，Word 成品暂不支持用户退回；其结构或视觉校验失败仍沿现有 formatter 修复路径处理。
+
+### 4.2 参考计划文件证据核验
+
+新的 `search_references` 请求固定 `payload.reference_evidence_contract: 2`。响应的 `reference_plan.content` 直接使用生成器的 `internet_access/items`，apply 通过后在产物顶层记录代际；模型省略字段不能降级为旧接口。显式本地来源必须在调用方已授权的 `--source-root` 下核对实际普通文件，apply 和用户 confirm 各核验一次；根目录不能来自模型产物或当前目录，失败不保存状态或清除 pending。匹配只证明本地字节，正式审核与用户确认仍独立执行。接口、旧非本地分支及最终 Markdown 边界见 [参考计划证据接口](references/reference-evidence.md)。
 
 ## 5. 自动审核循环
 

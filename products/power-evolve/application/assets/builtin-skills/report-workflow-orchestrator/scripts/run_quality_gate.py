@@ -25,6 +25,7 @@ def main() -> int:
     ap.add_argument("--minimum-chapter-ratio", type=float, default=0.8)
     ap.add_argument("--coverage", type=Path)
     ap.add_argument("--references", type=Path)
+    ap.add_argument("--source-root", type=Path, help="Explicit caller-provided authorized root for local reference bytes")
     ap.add_argument("--mode", choices=["chapter", "final"], default="final")
     ap.add_argument("--require-formula-chapters", default="")
     ap.add_argument("--max-title-chars", type=int, default=25, help="Compatibility display only; v3.6.0 validate_outline.py enforces 25 internally")
@@ -45,7 +46,10 @@ def main() -> int:
         coverage_mode = "final" if args.mode == "final" else "outline"
         codes.append(run([py, str(GEN_SCRIPTS / "validate_research_coverage.py"), str(args.coverage), "--mode", coverage_mode]))
     if args.references:
-        codes.append(run([py, str(GEN_SCRIPTS / "validate_references.py"), str(args.references)]))
+        cmd = [py, str(GEN_SCRIPTS / "validate_references.py"), str(args.references)]
+        if args.source_root is not None:
+            cmd.extend(["--source-root", str(args.source_root)])
+        codes.append(run(cmd))
     if args.chapter:
         codes.append(run([
             py,

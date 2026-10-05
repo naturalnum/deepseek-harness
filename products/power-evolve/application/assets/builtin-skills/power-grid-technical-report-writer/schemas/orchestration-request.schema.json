@@ -223,6 +223,30 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "action": {
+            "const": "search_references"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "type": "object",
+            "required": [
+              "reference_evidence_contract"
+            ],
+            "properties": {
+              "reference_evidence_contract": {
+                "const": 2
+              }
+            }
+          }
+        }
+      }
     }
   ]
 }

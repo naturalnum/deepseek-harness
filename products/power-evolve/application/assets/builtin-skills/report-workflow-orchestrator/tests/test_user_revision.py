@@ -256,6 +256,11 @@ class UserRevision(unittest.TestCase):
                 self.assertEqual(request["payload"]["user_feedback"]["feedback_source"], "user")
                 new = copy.deepcopy(base)
                 new["version"] = 2
+                if target == "reference_plan":
+                    # New search requests bind contract 2; do not replay the old
+                    # four-field native shape as a newly generated reference plan.
+                    fixture = ROOT.parent / "power-grid-technical-report-writer/tests/fixtures/dataset-reference-registry.json"
+                    new["content"] = json.loads(fixture.read_text())
                 self.apply(request, artifact=new)
                 s = self.read()
                 slot = s["chapters"]["1"]["plan"] if target == "chapter_plan:1" else s["artifacts"][target]

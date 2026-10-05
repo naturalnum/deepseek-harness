@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.29
+
+- Bind new search_references requests to reference_evidence_contract=2 and top-level internet_access/items; persist the checked contract on the accepted artifact.
+- Check explicitly scoped local file bytes during both apply and confirm, rejecting unsafe paths, links, nonregular files and changed hashes without saving failed state.
+- Retain the captured legacy external-only reference shape without inventing missing verification metadata; reject local fields in that branch and placeholder HTTP in citation/verification text.
+- Forward the same reference plan to chapter materials/plans/writing and formal chapter/report review; keep final reviewed Markdown authoritative for Word.
+
 ## 1.1.28
 
 - Save workflow JSON through a same-directory private temporary file, file synchronization, atomic replacement and directory synchronization; report an unconfirmed commit after a directory-sync failure without restoring old state or replaying actions.

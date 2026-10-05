@@ -2,9 +2,13 @@
   "originalCommit": "a03460fe66a3f77114ff3bb906476105e1d470b7",
   "originalPath": "services/cloud-server/assets/builtin-skills/report-workflow-orchestrator",
   "originalRelease": "1.1.21",
-  "productRelease": "1.1.28",
+  "productRelease": "1.1.29",
   "maintenance": "PowerEvolve product fork: structured argument architecture, Markdown heading preservation, and explicit user revision requests; original writing and review rules retained.",
   "changes": [
+    {
+      "version": "1.1.29",
+      "summary": "Bind new reference requests to contract 2 and top-level internet_access/items; check local source bytes with an explicit caller-provided root during apply and confirm, preserve captured legacy external-only plans, reject placeholder HTTP, and forward the same reference plan to chapter and formal review consumers."
+    },
     {
       "version": "1.1.28",
       "summary": "Publish Cloud and Desktop targets; synchronize workflow JSON through an atomic same-directory replacement and report uncertain post-replacement commits; require exact integer page coverage for current-version Word acceptance."
