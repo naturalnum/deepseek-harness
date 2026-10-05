@@ -30,6 +30,8 @@
 <a id="trusted-platform"></a>
 ## 可信平台
 
+`desktopBrowserScope` 将捕获的 Agent 凭据从 Host `/api/powerEvolve/desktopBrowserScope` 转发到 Platform `/desktop/browser/scope`。严格请求仅接受 `sessionId`；响应仅包含 `userId`、`sessionId` 和 `workspaceId`。单个 PostgreSQL 事务在读取自有 Session 与 Workspace 前后锁定并核验当前账号和凭据权限。其他凭据 audience、已撤销或过期凭据以及非活跃账号均被拒绝；未知和他人 Session 均返回 `session_not_found`。该读取不创建默认 Workspace，也不访问文件系统路径。结果只反映当前归属，不提供持续的浏览器授权。
+
 Office 预览记录使用[相邻任务迁移](src/platform/office-preview-schema.ts)。受理前收到的取消请求保留为永久取消回执，不能转为可运行任务。租约过期或停止尚未确认时，解析器预留仍占用原槽位。账户停用请求取消但不释放这些槽位；账户删除与备份受理拒绝尚未结束的解析任务。这些记录不改变原生会话日志或已有执行事实。
 
 Office 停止对账仅支持冻结的一次性 `Never` 解析器：创建代数 1 及首次删除代数 2。已终止的解析器在删除后可能仍保留代数 1 的原生状态与 `PodReadyToStartContainers=False` 条件。此 Office 专用停止观察要求完整且未替换的原生身份、无容器级重启配置或此前容器状态、已知且无矛盾的条件，以及终止时间严格早于当前 `deletionTimestamp` 减去实际宽限期；缺少实际宽限期时使用冻结预算。实际宽限期须为预算内的非负整数。该截止点不代表首次 DELETE 请求时间。持久证明保留真实 Pod 代数 2；缺少事实时继续保留预留槽位。通用 Cloud 与 SSH 停止检查仍要求当前代数的条件。

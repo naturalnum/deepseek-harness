@@ -33,12 +33,15 @@ import { artifactPublishRequest, executionFilesRequest, executionFilesView,
 import { EXECUTION_RESOLUTION_ROUTES, executionResolutionsListRequest, executionResolutionsList,
   executionResolutionInspectRequest, executionResolutionInspection,
   executionResolutionStatusRequest, executionResolutionStatus } from '@power-evolve/contracts/execution-resolution'
+import { DESKTOP_BROWSER_SCOPE_PLATFORM_PATH, desktopBrowserScopeRequest,
+  desktopBrowserScopeView } from '@power-evolve/contracts/desktop-browser-scope'
 
 const requests = { ...mcpManagementRequests, ...sshManagementRequests, me: z.object({}).strict(), logout: z.object({}).strict(), modelsList: z.object({}).strict(), settingsUpdate: settingsUpdateRequest,
   storageSpaces: z.object({}).strict(), storageDirectories: storageDirectoriesRequest,
   storageDirectoryCreate: storageDirectoryCreateRequest, workspaceBindingsMissing: z.object({}).strict(),
   workspaceBindingRestore: workspaceBindingRestoreRequest, workspaceBindingStatus: workspaceBindingStatusRequest,
   accountCapabilities: accountEmptyRequest,
+  desktopBrowserScope: desktopBrowserScopeRequest,
   create: createRequest, list: listRequest, prompt: promptRequest, page: pageRequest, follow: pageRequest,
   filesList: sessionFilesListRequest, filesRead: sessionFileReadRequest, filesPut: sessionFilePutRequest,
   filesDownloadPrepare: fileDownloadPrepareRequest,
@@ -81,6 +84,7 @@ const requests = { ...mcpManagementRequests, ...sshManagementRequests, me: z.obj
 const endpoint = { ...mcpManagementEndpoints, ...sshManagementEndpoints, ...WORKSPACE_BINDING_ROUTES,
   ...EXECUTION_RESOLUTION_ROUTES, me: '/identity/me', logout: '/identity/logout', modelsList: '/identity/models', settingsUpdate: '/identity/settings/update',
   accountCapabilities: ACCOUNT_ROUTES.capabilities,
+  desktopBrowserScope: DESKTOP_BROWSER_SCOPE_PLATFORM_PATH,
   create: '/sessions/create', list: '/sessions/list', prompt: '/sessions/prompt', page: '/sessions/page',
   filesList: '/files/session/list', filesRead: '/files/session/read', filesPut: '/files/session/put',
   filesDownloadPrepare: '/files/download/prepare',
@@ -120,6 +124,14 @@ class ProductRemote extends TypertRemoteService {
     return this.ctx.powerEvolveRuntime.call(endpoint[method], this.token(), request)
   }
   @Remote me(request: z.infer<typeof requests.me>) { return this.call('me', request) }
+  @Remote async desktopBrowserScope(request: z.infer<typeof desktopBrowserScopeRequest>) {
+    const input = desktopBrowserScopeRequest.parse(request)
+    const result = desktopBrowserScopeView.safeParse(await this.call('desktopBrowserScope', input))
+    if (!result.success || result.data.sessionId !== input.sessionId) {
+      throw new PlatformError(502, 'desktop_browser_scope_unavailable')
+    }
+    return result.data
+  }
   @Remote async storageSpaces(request: z.infer<typeof requests.storageSpaces>) {
     return storageSpacesView.parse(await this.call('storageSpaces', request))
   }
@@ -357,6 +369,7 @@ export const Config = schema.object({
   officePreviewMaxActiveRenders: schema.number().step(1).min(1).default(4),
   readyFile: schema.string().required(),
 })
+/** Validated Host origin, dispatch and carrier configuration. */
 export type Config = ReturnType<typeof Config>
 
 /** Mount only product RPC methods; native global settings and execution endpoints stay unexposed.

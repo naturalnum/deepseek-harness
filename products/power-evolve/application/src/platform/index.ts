@@ -26,6 +26,8 @@ import { TaskStore } from './tasks.ts'
 import { EventStore } from './events.ts'
 import { NativeSessionRead, nativeFollowRequest, nativePageRequest } from './native-session-read.ts'
 import { NativeWorkspaceRead } from './native-workspace-read.ts'
+import { DesktopBrowserScopeService } from './desktop-browser-scope.ts'
+import { DESKTOP_BROWSER_SCOPE_PLATFORM_PATH } from '@power-evolve/contracts/desktop-browser-scope'
 import { NativeFileRead, nativeFileRequest, nativeFileTextRequest, nativeFileBytesRequest } from './native-files.ts'
 import { FileService } from './files.ts'
 import { FileDownloadService } from './file-downloads.ts'
@@ -390,6 +392,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const events = new EventStore(tasks, config)
   const nativeSessions = new NativeSessionRead(pool)
   const nativeWorkspaces = new NativeWorkspaceRead(pool, files, nativeSessions, config.maxWorkspacesPerUser)
+  const desktopBrowserScope = new DesktopBrowserScopeService(pool)
   const nativeFiles = new NativeFileRead(pool, files, artifacts)
   const connectors = new ConnectorService(tasks, config.connectorUrl, connectorKey.trim(), config.connectorTimeoutMs, config.connectorPollMs)
   const plugins = new PluginService(pool)
@@ -777,6 +780,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       return result.rows[0].workspace_id
     }
     switch (path) {
+      case DESKTOP_BROWSER_SCOPE_PLATFORM_PATH:
+        sendJson(res, await desktopBrowserScope.read(token, input)); return
       case '/files/download/prepare': {
         const request = fileDownloadPrepareRequest.parse(input)
         const abort = new AbortController()
