@@ -6,6 +6,8 @@ This plugin adds explicit publication from the viewed Session’s Workspace and 
 
 PDF, XLSX, DOCX and PPTX catalog previews open the native document sidebar using the artifact’s original Session and exact `/artifacts/<UUID>/<filename>` address. Text and image previews remain in the catalog. Immutable artifact documents offer no publication action.
 
+After `pnpm run build:power-evolve:web`, `pnpm run test:power-evolve:web:built` checks the published client factory without an external module entry for the bundled path helpers.
+
 Native `cloud_exec` receipts associate execution identities with their invoking turn. The `conversation.chat.turnTail` contribution displays file paths, sizes and SHA-256 versions returned by the Platform’s `executionFiles` API; tool receipts, stdout and Assistant prose supply no file facts. Partial or unavailable results state their limitations. A durable `power-evolve-execution` message source is associated with its native turn after input admission and supplies verified files to that turn’s closing inline mentions, including when the original receipt is outside the loaded history window. When that receipt is loaded, the client also checks its call ID against the reply; the Platform verifies Session and call ownership for every query.
 
 Inline code resolves only an exact verified path or a unique verified basename within the viewed Session and closing. Repeated paths retain their execution versions on the original rows; inline mentions use the newest version available at their closing. Ordinary file previews remain available through the native file UI.

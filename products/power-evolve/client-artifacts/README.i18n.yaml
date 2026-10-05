@@ -3,5 +3,5 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write products/power-evolve/client-artifacts/README.md
 /powerevolve-artifacts-client:
-  en: 4d36cd4f8b00578b
-  zh: 1e5527db19044986
+  en: 2c601fce0fd841af
+  zh: 286da3093f2cb4c0

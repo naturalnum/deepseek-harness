@@ -20,7 +20,7 @@
       "platform": "web"
     }
   },
-  "scripts": { "bundle": "tsdown", "typecheck": "tsc -b tsconfig.json --pretty false", "test": "tsx --test tests/*.test.ts && vitest run --config vitest.config.ts" },
+  "scripts": { "bundle": "tsdown", "typecheck": "tsc -b tsconfig.json --pretty false", "test": "tsx --test tests/*.test.ts && vitest run --config vitest.config.ts", "test:built": "node --test tests/*.built.test.mjs" },
   "dependencies": {
     "@deepseek-ai/cordis": "workspace:~",
     "@power-evolve/contracts": "workspace:*",

@@ -6,6 +6,8 @@
 
 目录中的 PDF、XLSX、DOCX 和 PPTX 预览使用产物原始会话及精确的 `/artifacts/<UUID>/<filename>` 地址，打开原生文档侧栏。文本和图片仍在目录中预览。不可变产物文档不提供发布操作。
 
+执行 `pnpm run build:power-evolve:web` 后，`pnpm run test:power-evolve:web:built` 检查已发布客户端工厂，确保已打包的路径工具不依赖外部模块条目。
+
 原生 `cloud_exec` receipt 将执行标识关联到发起执行的轮次。`conversation.chat.turnTail` 扩展显示平台 `executionFiles` API 返回的文件路径、大小和 SHA-256 版本；工具 receipt、stdout 和 Assistant 正文均不提供文件事实。部分完成或不可用的结果会说明限制。持久化的 `power-evolve-execution` 消息来源在输入受理后归属于其原生轮次，并为该轮结束时的内联引用提供已核验文件，即使原始 receipt 已移出加载的历史窗口。当 receipt 仍在窗口中时，客户端还会核对其调用标识与响应是否一致；平台会为每次查询核验会话和调用归属。
 
 内联代码仅解析正在查看的会话及 closing 范围内的已核验精确路径或唯一文件名。同一路径的不同执行版本保留在各自原始文件行中；内联引用使用其 closing 时可用的最新版本。普通文件预览仍可通过原生文件界面使用。
