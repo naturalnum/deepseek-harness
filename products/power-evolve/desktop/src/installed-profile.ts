@@ -99,6 +99,30 @@ async function reservedLink(path: string): Promise<void> {
   // This one projection is replaced without following its previous target during an upgrade.
   if (info !== undefined && (!info.isSymbolicLink() || !owned(info))) throw invalid()
 }
+async function retainedPlatform(path: string, platformOrigin: string, privateDir: string): Promise<void> {
+  if (await optionalStat(path) === undefined) {
+    for (const name of ['device.json', 'journal.json']) {
+      if (await optionalStat(join(privateDir, name)) !== undefined) throw invalid()
+    }
+    return
+  }
+  const descriptor = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
+  try {
+    const info = await descriptor.stat()
+    if (!info.isFile() || !owned(info) || (info.mode & 0o777) !== 0o600 || info.size > manifestByteLimit) throw invalid()
+    const bytes = await descriptor.readFile()
+    if (bytes.length > manifestByteLimit) throw invalid()
+    const rows: unknown = JSON.parse(bytes.toString('utf8'))
+    if (!Array.isArray(rows)) throw invalid()
+    const devices = rows.filter((row: unknown) => row !== null && typeof row === 'object'
+      && 'id' in row && row.id === 'power-evolve-device')
+    if (devices.length !== 1) throw invalid()
+    const device: unknown = devices[0]
+    if (device === null || typeof device !== 'object' || !('config' in device)
+      || device.config === null || typeof device.config !== 'object'
+      || !('platformUrl' in device.config) || device.config.platformUrl !== platformOrigin) throw invalid()
+  } finally { await descriptor.close() }
+}
 async function replaceFile(path: string, bytes: string): Promise<void> {
   const temporary = join(dirname(path), `.device-profile-${randomUUID()}`)
   const descriptor = await open(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600)
@@ -136,7 +160,11 @@ async function replaceLink(path: string, target: string): Promise<void> {
  * operation does not establish that an old writer stopped and never removes journals, locks or
  * other Home files. Its three reserved files are individually fsynced and atomically replaced;
  * callers must await completion before launching the official dsh Profile. Reopening completes
- * an interrupted preparation without installing dependencies or executing resource code.
+ * an interrupted preparation without installing dependencies or executing resource code. The
+ * retained product patch must bind the same Platform origin before any replacement or child launch;
+ * another deployment uses a new installed namespace. This check does not detect database replacement
+ * behind an unchanged origin. Installed namespaces retain one OS-user writer coordinator; preparing
+ * it never clears an unresolved slot or establishes that a writer stopped.
  * @param config - Main-parsed installed resources, origins and fixed owner-only state paths.
  * @param worker - Main-parsed image and explicit execution budgets; no origins or local paths.
  * @param bundleDirectory - Main-selected Device package inside the fixed physical resources root.
@@ -150,14 +178,21 @@ export async function prepareInstalledDeviceProfile(
   try {
     const bundle = await resourceBundle(config.resources.root, bundleDirectory)
     const root = config.state.productUserDataPath
-    for (const path of [config.state.homeDir, config.state.workingDir, config.state.privateDir, config.state.coordinationRoot]) {
+    for (const path of [config.state.homeDir, config.state.workingDir, config.state.privateDir]) {
       await ensureDirectories(root, path)
     }
+    const coordinatorParent = dirname(config.state.coordinationRoot)
+    if (await optionalStat(coordinatorParent) === undefined) {
+      await mkdir(coordinatorParent, { mode: 0o700 })
+      await syncDirectory(dirname(coordinatorParent))
+    }
+    await ensureDirectories(coordinatorParent, config.state.coordinationRoot)
     const profileDir = join(config.state.homeDir, 'profiles', config.deviceConfig.profile)
     const scope = join(profileDir, 'node_modules', '@power-evolve')
     await ensureDirectories(root, scope)
     const files = ['package.json', 'cordis.yml', 'cordis.patch.yml']
     for (const file of files) await reservedFile(join(profileDir, file))
+    await retainedPlatform(join(profileDir, 'cordis.patch.yml'), config.config.platformOrigin, config.state.privateDir)
     const projection = join(scope, 'device')
     await reservedLink(projection)
     const readyFile = join(config.state.privateDir, 'ready.json')

@@ -1,7 +1,7 @@
 /** Physical temporary resources exercise installed parsing; no interpreter, Profile or app is launched. */
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { test, type TestContext } from 'node:test'
@@ -22,7 +22,7 @@ function description() {
   }
 }
 function fixture(t: TestContext) {
-  const base = mkdtempSync(join(tmpdir(), 'power-evolve-installed-config-'))
+  const base = realpathSync(mkdtempSync(join(tmpdir(), 'power-evolve-installed-config-')))
   t.after(() => { rmSync(base, { recursive: true, force: true }) })
   const resourcesPath = join(base, 'resources'), productUserDataPath = join(base, 'PowerEvolve')
   mkdirSync(resourcesPath); mkdirSync(productUserDataPath, { mode: 0o700 })
@@ -36,9 +36,9 @@ function fixture(t: TestContext) {
   const descriptorPath = join(resourcesPath, 'power-evolve-desktop.json')
   function write(value: unknown): void { writeFileSync(descriptorPath, JSON.stringify(value), { mode: 0o600 }) }
   write(data)
-  return { base, resourcesPath, productUserDataPath, data, descriptorPath, write }
+  return { base, appDataPath: base, resourcesPath, productUserDataPath, data, descriptorPath, write }
 }
-function rejects(options: { resourcesPath: string; productUserDataPath: string }): void {
+function rejects(options: { resourcesPath: string; appDataPath: string }): void {
   assert.throws(() => readInstalledDesktopConfig(options), { message: 'PowerEvolve desktop: invalid installed configuration' })
 }
 
@@ -251,17 +251,79 @@ test('bounds the fixed descriptor and rejects missing, malformed, directory and 
   rmSync(f.descriptorPath); symlinkSync(outside, f.descriptorPath); rejects(f)
 })
 
-test('requires an existing private owned state root outside the installation', t => {
+test('derives state below existing appData and refuses nonprivate roots and installation overlap', t => {
   const f = fixture(t)
   for (const resourcesPath of ['relative', join(f.base, 'missing'), f.descriptorPath]) rejects({ ...f, resourcesPath })
-  for (const productUserDataPath of ['relative', join(f.base, 'missing'), f.descriptorPath, f.resourcesPath]) {
-    rejects({ ...f, productUserDataPath })
+  for (const appDataPath of ['relative', join(f.base, 'missing'), f.descriptorPath, f.resourcesPath]) {
+    rejects({ ...f, appDataPath })
   }
   chmodSync(f.productUserDataPath, 0o755); rejects(f); chmodSync(f.productUserDataPath, 0o700)
-  const alias = join(f.base, 'state-alias'); symlinkSync(f.productUserDataPath, alias)
-  rejects({ ...f, productUserDataPath: alias })
+  const retained = join(f.base, 'retained'); renameSync(f.productUserDataPath, retained)
+  symlinkSync(retained, f.productUserDataPath); rejects(f)
   const inside = join(f.resourcesPath, 'state'); mkdirSync(inside, { mode: 0o700 })
-  rejects({ ...f, productUserDataPath: inside })
+  rejects({ ...f, appDataPath: inside })
+})
+
+test('returns missing legacy state without creating a root or touching resources', t => {
+  const f = fixture(t)
+  rmSync(f.productUserDataPath, { recursive: true })
+  const before = readdirSync(f.resourcesPath)
+  const value = readInstalledDesktopConfig(f)
+  assert.equal(value.state.productUserDataPath, f.productUserDataPath)
+  assert(!existsSync(f.productUserDataPath))
+  assert.deepEqual(readdirSync(f.resourcesPath), before)
+})
+
+test('keeps namespaced state independent and stable across deployment and resource changes', t => {
+  const f = fixture(t), legacy = readInstalledDesktopConfig(f)
+  mkdirSync(legacy.state.privateDir, { recursive: true })
+  writeFileSync(join(legacy.state.privateDir, 'device.json'), 'retained legacy identity')
+  const namespaced = { ...f.data, version: 2, stateNamespace: 'office-qa-1' }
+  f.write(namespaced)
+  const first = readInstalledDesktopConfig(f)
+  assert.equal(first.state.productUserDataPath, join(f.base, 'PowerEvolve-office-qa-1'))
+  assert.equal(first.state.coordinationRoot, legacy.state.coordinationRoot)
+  assert(!existsSync(first.state.productUserDataPath))
+  assert.equal(readFileSync(join(legacy.state.privateDir, 'device.json'), 'utf8'), 'retained legacy identity')
+  mkdirSync(first.state.productUserDataPath, { mode: 0o700 }); mkdirSync(first.state.privateDir, { recursive: true })
+  writeFileSync(join(first.state.privateDir, 'device.json'), 'retained namespaced identity')
+  f.write({ ...namespaced, deployment: { hostOrigin: 'https://new-host.example', platformOrigin: 'https://new-platform.example' } })
+  assert.deepEqual(readInstalledDesktopConfig(f).state, first.state)
+  f.write({ ...namespaced, stateNamespace: 'other-qa-2' })
+  const second = readInstalledDesktopConfig(f)
+  assert.notEqual(second.state.productUserDataPath, first.state.productUserDataPath)
+  assert(!existsSync(second.state.productUserDataPath))
+  assert.equal(second.state.coordinationRoot, legacy.state.coordinationRoot)
+  assert.equal(readFileSync(join(first.state.privateDir, 'device.json'), 'utf8'), 'retained namespaced identity')
+  f.write(namespaced); assert.deepEqual(readInstalledDesktopConfig(f).state, first.state)
+})
+
+test('requires a bounded literal namespace only in the version 2 installed descriptor', t => {
+  const f = fixture(t)
+  for (const stateNamespace of [null, 3, '', '../other', '/other', '.', '..', '-start', 'end-',
+    'Mixed', 'a_b', 'a.b', 'a/b', 'a\\b', 'a:b', 'a\n', 'a\u0000', 'a\u007f', 'x'.repeat(64)]) {
+    f.write({ ...f.data, version: 2, stateNamespace }); rejects(f)
+  }
+  f.write({ ...f.data, version: 1, stateNamespace: 'legacy' }); rejects(f)
+  f.write({ ...f.data, version: 3, stateNamespace: 'future' }); rejects(f)
+  for (const stateNamespace of ['a', '0', 'a--0', 'x'.repeat(63)]) {
+    f.write({ ...f.data, version: 2, stateNamespace })
+    assert.equal(readInstalledDesktopConfig(f).state.productUserDataPath, join(f.base, `PowerEvolve-${stateNamespace}`))
+  }
+})
+
+test('refuses existing aliases and nonprivate namespaced roots without modifying their identities', t => {
+  const f = fixture(t), path = join(f.base, 'PowerEvolve-office-qa-1')
+  f.write({ ...f.data, version: 2, stateNamespace: 'office-qa-1' })
+  symlinkSync(f.productUserDataPath, path); rejects(f); rmSync(path)
+  mkdirSync(path, { mode: 0o755 }); rejects(f)
+  chmodSync(path, 0o700)
+  const value = readInstalledDesktopConfig(f)
+  mkdirSync(value.state.privateDir, { recursive: true })
+  writeFileSync(join(value.state.privateDir, 'journal'), 'retained namespaced journal')
+  const alias = value.state.coordinationRoot
+  symlinkSync(f.productUserDataPath, alias); rejects(f)
+  assert.equal(readFileSync(join(value.state.privateDir, 'journal'), 'utf8'), 'retained namespaced journal')
 })
 
 test('rejects aliases and files at existing state paths without modifying them', t => {

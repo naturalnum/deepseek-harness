@@ -33,12 +33,17 @@ if (values['device-config'] !== undefined && !isAbsolute(values['device-config']
   throw new Error('PowerEvolve desktop: --device-config is an absolute development-only file')
 }
 app.setName('PowerEvolve')
-const userData = values['data-dir'] ?? join(app.getPath('appData'), 'PowerEvolve')
+const installed = app.isPackaged
+  ? readInstalledDesktopConfig({ resourcesPath: process.resourcesPath, appDataPath: app.getPath('appData') }) : undefined
+const userData = installed?.state.productUserDataPath ?? values['data-dir'] ?? join(app.getPath('appData'), 'PowerEvolve')
 mkdirSync(userData, { recursive: true, mode: 0o700 })
+if (installed !== undefined) {
+  const state = lstatSync(userData)
+  if (!state.isDirectory() || state.uid !== process.getuid?.() || (state.mode & 0o777) !== 0o700
+    || realpathSync(userData) !== userData) throw new Error('PowerEvolve desktop: invalid installed state directory')
+}
 app.setPath('userData', userData)
 app.setAppLogsPath()
-const installed = app.isPackaged
-  ? readInstalledDesktopConfig({ resourcesPath: process.resourcesPath, productUserDataPath: userData }) : undefined
 const config = installed?.config ?? parseCloudDesktopConfig(JSON.parse(readFileSync(values.config!, 'utf8')))
 const deviceConfig = installed?.deviceConfig ?? (values['device-config'] === undefined ? undefined
   : parseDesktopDeviceConfig(JSON.parse(readFileSync(values['device-config'], 'utf8'))))

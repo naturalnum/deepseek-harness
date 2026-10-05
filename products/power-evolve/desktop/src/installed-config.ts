@@ -24,7 +24,7 @@ const workerParameters = z.object({
   dockerStopGraceSeconds: z.number().int().min(0).max(30),
   directoryPickerTimeoutMs: z.number().int().min(1000).max(120000), fileOperationTimeoutMs: workerMilliseconds,
 }).strict().refine(value => value.dockerStopTimeoutMs > value.dockerStopGraceSeconds * 1000)
-const descriptor = z.object({
+const descriptorV1 = z.object({
   kind: z.literal('power-evolve-desktop'), version: z.literal(1),
   deployment: z.unknown(),
   runtime: z.object({ nodeExecutable: resourcePath, cliEntrypoint: resourcePath,
@@ -37,6 +37,10 @@ const descriptor = z.object({
     maxOutputBytes: z.number(), maxMessageBytes: z.number(), maxHealthBytes: z.number(),
   }).strict(),
 }).strict()
+const descriptorV2 = descriptorV1.omit({ version: true }).extend({
+  version: z.literal(2), stateNamespace: z.string().regex(/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u),
+}).strict()
+const descriptor = z.discriminatedUnion('version', [descriptorV1, descriptorV2])
 
 /** Validated physical installation resources and fixed user paths for the later Profile bootstrap. */
 export interface InstalledDesktopConfig {
@@ -58,6 +62,7 @@ export interface InstalledDesktopConfig {
     readonly homeDir: string
     readonly workingDir: string
     readonly privateDir: string
+    /** One OS-user writer root retained across installed namespaces, including version 1. */
     readonly coordinationRoot: string
   }
 }
@@ -108,8 +113,13 @@ function readDescriptor(root: string): unknown {
   } finally { closeSync(fd) }
 }
 function privateRoot(path: string, resources: string): string {
-  if (!isAbsolute(path)) throw invalid()
-  const info = lstatSync(path)
+  if (contains(resources, path) || contains(path, resources)) throw invalid()
+  let info: Stats
+  try { info = lstatSync(path) }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return path
+    throw error
+  }
   if (!info.isDirectory() || (info.mode & 0o777) !== 0o700
     || process.getuid === undefined || info.uid !== process.getuid()) throw invalid()
   const root = directory(path)
@@ -141,13 +151,19 @@ function stateDirectory(root: string, ...parts: string[]): string {
  * C0/DEL controls or dot/traversal segments; order and trailing slashes are preserved.
  * It selects only the installed Device child's PATH; reading it does not probe directories or
  * executables, run a shell, or change the parent's environment.
- * User state derives only from the existing owner-only product directory and never from environment
- * variables, descriptor fields or launch arguments. Missing state directories are returned without
- * creation; the later bootstrap creates the fixed working directory and official Device Profile.
- * @param options - Electron resourcesPath and main's already created, current-user-owned 0700 productUserDataPath.
+ * Version 1 retains appData/PowerEvolve. Version 2 selects appData/PowerEvolve-<stateNamespace>,
+ * where the trusted descriptor supplies a 1–63 character lowercase alphanumeric/hyphen name
+ * starting and ending with an alphanumeric character. The namespace remains fixed across upgrades;
+ * changing it creates a separate installation identity without copying Device credentials or journals.
+ * Environment variables and launch arguments cannot select installed state. Existing product roots
+ * must be current-user-owned 0700 directories without aliases. All namespaces retain the version 1
+ * appData/PowerEvolve/device-writers coordinator so unknown writers also block another installation.
+ * Missing roots and state directories
+ * are returned without creation; main creates the product root before Electron Session setup.
+ * @param options - Electron's resourcesPath and appDataPath; the latter must be an existing physical directory.
  * @returns Cloud and Device configuration, a separate command search list, physical resources, and fixed state paths.
  */
-export function readInstalledDesktopConfig(options: { resourcesPath: string; productUserDataPath: string }): InstalledDesktopConfig {
+export function readInstalledDesktopConfig(options: { resourcesPath: string; appDataPath: string }): InstalledDesktopConfig {
   try {
     const root = directory(options.resourcesPath)
     const data = descriptor.parse(readDescriptor(root))
@@ -158,12 +174,15 @@ export function readInstalledDesktopConfig(options: { resourcesPath: string; pro
       pythonExecutable: file(root, data.runtime.pythonExecutable, true), fileHelper: file(root, data.runtime.fileHelper),
       deviceBundle: resourceDirectory(root, data.runtime.deviceBundle),
     }
-    const productUserDataPath = privateRoot(options.productUserDataPath, root)
+    const appDataPath = directory(options.appDataPath)
+    const productUserDataPath = privateRoot(join(appDataPath,
+      data.version === 1 ? 'PowerEvolve' : `PowerEvolve-${data.stateNamespace}`), root)
+    const coordinatorParent = privateRoot(join(appDataPath, 'PowerEvolve'), root)
     const state = {
       productUserDataPath, homeDir: stateDirectory(productUserDataPath, 'device', 'home'),
       workingDir: stateDirectory(productUserDataPath, 'device', 'work'),
       privateDir: stateDirectory(productUserDataPath, 'device', 'private'),
-      coordinationRoot: stateDirectory(productUserDataPath, 'device-writers'),
+      coordinationRoot: stateDirectory(coordinatorParent, 'device-writers'),
     }
     const { commandSearchPath, ...device } = data.device
     const deviceConfig = parseDesktopDeviceConfig({ ...device, nodeExecutable: resources.nodeExecutable,

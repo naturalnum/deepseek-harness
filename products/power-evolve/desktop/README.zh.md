@@ -31,11 +31,15 @@ HTTP 仅接受数字 loopback 地址。远程 Origin 要求 HTTPS。拒绝凭据
 
 安装启动读取主进程选择的资源目录下固定 `power-evolve-desktop.json`，不接受运行时覆盖。[资源读取器](src/installed-config.ts)要求 Node、CLI、Python、文件辅助脚本和 Device Bundle 位于该物理目录内；ASAR 条目被拒绝。Worker 时序明确配置，Runner 使用本机已有的不可变镜像 ID。Cloud 启动不创建 Device Profile 或子进程。首次打开本机授权入口时，在稳定私有 userData 路径中[准备产品 Profile](src/installed-profile.ts)，保留 Device 身份、journal 与写入锁。后端控制器管理准备、并发打开及派生进程前的取消。拒绝 Home 全局 overlay，以及 CLI 选定的 Device Bundle 与描述符不一致的配置。
 
+描述符版本 1 保留 `appData/PowerEvolve`。版本 2 必填 `stateNamespace`：1–63 个小写字母、数字或连字符，始末必须为字母或数字，选择 `appData/PowerEvolve-<stateNamespace>`。可信安装程序在升级时固定该名称；不同部署或替换数据库时使用新命名空间并重新配对。主进程在创建 Electron Session 前验证所选根为当前用户所有、权限 0700 的物理目录。浏览器状态、Device Home、身份与 journal 分开保存；所有安装命名空间保留既有 `appData/PowerEvolve/device-writers` 协调根，其他安装不能绕过未解决的本机写入者。读取配置不创建状态。
+
+Profile 准备拒绝更改已有可信平台 Origin，也拒绝在 Device 身份或 journal 已存在时重建缺失的产品补丁；这些字节保留原位。此检查不能识别同一 Origin 背后的数据库替换；部署者必须保持命名空间与同一数据库身份绑定。命名空间不能防御以同一 OS 用户运行的其他进程。
+
 安装描述符必填 `device.commandSearchPath`：按顺序列出 1–32 个外部绝对 POSIX 目录名，每项 1–4096 字符。拒绝冒号、反斜杠、C0/DEL 控制字符及 `.` 或 `..` 路径段；允许根 `/` 和末尾斜杠。这些目录选择安装版 Device 子进程的准确 `PATH`，独立于包内 `runtime` 资源。读取配置不探测 Docker 或目录是否可用，也不运行登录 shell。父进程环境、`HOME`、`DOCKER_HOST`、固定解释器与 CLI 保持不变，子进程凭据过滤仍然生效。开发模式使用继承的环境。
 
 ## 浏览器与原生权限
 
-同一部署中的 Host 与 Platform 共用一个持久 Electron Session。分区由两个 Origin 派生，不同 loopback 端口的部署不共享 cookie。产品 userData 默认使用独立 `PowerEvolve` 应用目录；仅开发可用的 `--data-dir` 不能覆盖安装包存储。
+同一部署中的 Host 与 Platform 共用一个持久 Electron Session。分区由两个 Origin 派生，不同 loopback 端口的部署不共享 cookie。开发模式默认使用 `appData/PowerEvolve`；其 `--data-dir` 不能覆盖安装包存储。
 
 仅当前所属 Host 主 frame 的 `/native/` 文档获得键盘、快捷键、语言和主题同步。每次原生请求都检查当前窗口、主 frame 和准确 Host URL。Platform 和预览 frame 不获得产品原生桥。音频请求还要求当前所属 Host 文档、主 frame 的纯音频请求及 macOS 麦克风授权；其他权限拒绝。
 

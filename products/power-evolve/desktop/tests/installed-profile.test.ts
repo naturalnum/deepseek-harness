@@ -8,6 +8,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { test, type TestContext } from 'node:test'
 import type { InstalledDesktopConfig } from '../src/installed-config.ts'
 import { prepareInstalledDeviceProfile, type DeviceWorkerParameters } from '../src/installed-profile.ts'
+import { DeviceWriterCoordinator, deviceWriterOwner, DEVICE_WRITER_SLOT_FILENAME } from '../../application/src/device/writer-coordinator.ts'
+import { randomUUID } from 'node:crypto'
 
 const worker: DeviceWorkerParameters = {
   image: 'qa-runner@sha256:' + 'a'.repeat(64), pollMs: 500, contactGraceMs: 5000,
@@ -86,6 +88,67 @@ test('prepares only the Device bundle, empty root and complete fixed product upd
     assert.equal((await lstat(join(result.profileDir, file))).mode & 0o777, 0o600)
   }
   await absent(result.readyFile)
+})
+
+test('separate installed identities retain one writer slot and block a different or unknown writer', async t => {
+  const f = await fixture(t)
+  await f.prepare()
+  const root = join(f.base, 'PowerEvolve-office-qa-1')
+  await mkdir(root, { mode: 0o700 })
+  const namespaced: InstalledDesktopConfig = { ...f.config,
+    state: { ...f.config.state, productUserDataPath: root, homeDir: join(root, 'device/home'),
+      workingDir: join(root, 'device/work'), privateDir: join(root, 'device/private') },
+    deviceConfig: { ...f.config.deviceConfig, homeDir: join(root, 'device/home'), workingDir: join(root, 'device/work') },
+  }
+  const original = deviceWriterOwner.parse({ kind: 'command', deviceId: randomUUID(), enrollmentId: randomUUID(),
+    executionId: randomUUID(), processId: randomUUID(), directoryId: randomUUID(), requestDigest: 'a'.repeat(64) })
+  const first = new DeviceWriterCoordinator(f.config.state.coordinationRoot), second = new DeviceWriterCoordinator(namespaced.state.coordinationRoot)
+  const lease = await first.command(original)
+  t.after(() => lease.release())
+  const slotPath = join(f.config.state.coordinationRoot, DEVICE_WRITER_SLOT_FILENAME)
+  const before = { info: await lstat(slotPath, { bigint: true }), bytes: await readFile(slotPath) }
+  await prepareInstalledDeviceProfile(namespaced, worker, f.bundle)
+  const patch = JSON.parse(await readFile(join(namespaced.state.homeDir, 'profiles/power-evolve-device/cordis.patch.yml'), 'utf8'))
+  assert.equal(patch[1].config.coordinationRoot, f.config.state.coordinationRoot)
+  assert.equal(patch[1].config.privateDir, namespaced.state.privateDir)
+  await assert.rejects(second.command({ ...original, executionId: deviceWriterOwner.shape.executionId.parse(randomUUID()) }),
+    { code: 'device_process_already_owned' })
+  await lease.release()
+  await assert.rejects(second.transfer(async () => {}), { code: 'device_writer_busy' })
+  await assert.rejects(second.command({ ...original, executionId: deviceWriterOwner.shape.executionId.parse(randomUUID()) }),
+    { code: 'device_writer_busy' })
+  assert.deepEqual(await readFile(slotPath), before.bytes)
+  const after = await lstat(slotPath, { bigint: true })
+  assert.equal(after.ino, before.info.ino); assert.equal(after.dev, before.info.dev)
+})
+
+test('refuses changing the retained Platform origin before replacing Profile or Device identity bytes', async t => {
+  const f = await fixture(t), result = await f.prepare()
+  const patchPath = join(result.profileDir, 'cordis.patch.yml')
+  const privatePath = join(f.config.state.privateDir, 'device.json')
+  await writeFile(privatePath, 'retained device identity', { mode: 0o600 })
+  const before = { patch: await readFile(patchPath), identity: await readFile(privatePath), info: await lstat(patchPath, { bigint: true }) }
+  const another: InstalledDesktopConfig = { ...f.config, config: { ...f.config.config, platformOrigin: 'https://another-platform.example' } }
+  await assert.rejects(prepareInstalledDeviceProfile(another, worker, f.bundle), error)
+  assert.deepEqual(await readFile(patchPath), before.patch)
+  assert.deepEqual(await readFile(privatePath), before.identity)
+  const after = await lstat(patchPath, { bigint: true })
+  assert.equal(after.ino, before.info.ino); assert.equal(after.dev, before.info.dev)
+})
+
+test('does not treat a missing Profile patch with retained Device identity or journal as a fresh installation', async t => {
+  const f = await fixture(t), result = await f.prepare()
+  await rm(join(result.profileDir, 'cordis.patch.yml'))
+  for (const name of ['device.json', 'journal.json']) {
+    const path = join(f.config.state.privateDir, name)
+    await writeFile(path, 'retained private bytes', { mode: 0o600 })
+    await assert.rejects(f.prepare(), error)
+    assert.equal(await readFile(path, 'utf8'), 'retained private bytes')
+    await absent(join(result.profileDir, 'cordis.patch.yml'))
+    await rm(path)
+  }
+  await f.prepare()
+  assert((await readFile(join(result.profileDir, 'cordis.patch.yml'), 'utf8')).includes('https://platform.example'))
 })
 
 test('formal loader resolves the projection and replaces ambient bundle config without duplicate plugins', async t => {
