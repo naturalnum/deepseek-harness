@@ -13,7 +13,28 @@ app.setPath('userData', join(root, 'user-data'))
 app.setName('PowerEvolve Browser Gate')
 app.disableHardwareAcceleration()
 app.commandLine.appendSwitch('use-mock-keychain')
+// Keep the fixture alive after its last Window closes until bounded cleanup and result reporting finish.
+app.on('window-all-closed', () => {})
 
+let stage = 'imports'
+function progress(value) { stage = value; writeSync(1, 'PE_BROWSER_ELECTRON_PROGRESS ' + value + '\n') }
+const uncaughtFailures = []
+let rejectFatal
+const fatal = new Promise((_resolve, reject) => { rejectFatal = reject })
+void fatal.catch(() => { /* Bounded fixture waits report the captured main callback failure. */ })
+process.on('uncaughtException', error => {
+  uncaughtFailures.push({ stage, code: error instanceof Error ? error.name : 'unknown',
+    destroyedObject: error instanceof Error && error.message === 'Object has been destroyed' })
+  rejectFatal(error)
+})
+function bounded(promise, value, timeout = 5000, watchFatal = true) {
+  progress(value)
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { const error = new Error('Fixture operation timed out'); error.code = 'fixture_timeout'; reject(error) }, timeout)
+    Promise.race(watchFatal ? [promise, fatal] : [promise]).then(value => { clearTimeout(timer); resolve(value) }, error => { clearTimeout(timer); reject(error) })
+  })
+}
+progress('imports')
 const { bindCloudSidebarBrowser, installCloudBrowserIpc } = await import(pathToFileURL(join(root, 'compiled/browser.js')).href)
 const { parseCloudDesktopConfig } = await import(pathToFileURL(join(root, 'compiled/config.js')).href)
 const { installCloudNavigation, loadCloudDocument } = await import(pathToFileURL(join(root, 'compiled/window-policy.js')).href)
@@ -45,7 +66,7 @@ function eventOnce(contents, name) {
 
 async function check(name, action) {
   activeCase = name
-  await action()
+  await bounded(action(), name, 15000)
   cases.push({ name, passed: true })
 }
 
@@ -124,29 +145,30 @@ async function rejected(frame, args) {
 /** Create the same inert lease bootstrap used by the native sidebar presentation. */
 async function attach(reservation) {
   const id = `gate-view-${++views}`, attached = eventOnce(primary.webContents, 'did-attach-webview')
-  await primary.webContents.executeJavaScript(`new Promise(resolve => {
+  const ready = primary.webContents.executeJavaScript(`new Promise(resolve => {
     const view = document.createElement('webview'); view.id = ${JSON.stringify(id)};
     view.setAttribute('partition', ${JSON.stringify(reservation.partition)});
     view.setAttribute('src', ${JSON.stringify('about:blank#' + reservation.lease)});
     view.style.cssText = 'width:160px;height:120px';
     view.addEventListener('dom-ready', () => resolve(true), {once:true}); document.body.append(view);
   })`)
-  const [, guest] = await attached
+  const [, [, guest]] = await bounded(Promise.all([ready, attached]), 'guest-bootstrap')
   guests.add(guest)
   guest.once('destroyed', () => guests.delete(guest))
-  await guest.loadURL(externalOrigin + '/guest')
+  await bounded(guest.loadURL(externalOrigin + '/guest'), 'guest-external-load')
   if (!inspectors.has(reservation.partition)) {
     const inspection = windowFor(session.fromPartition(reservation.partition), false)
-    await inspection.loadURL(externalOrigin + '/inspect')
+    await bounded(inspection.loadURL(externalOrigin + '/inspect'), 'storage-observer-load')
     inspectors.set(reservation.partition, inspection)
   }
-  return { reservation, guest }
+  return { reservation, guest, id }
 }
 
 async function open(sessionId, workspace) { return attach(await acquire(sessionId, workspace)) }
 async function release(value) {
   await primary.webContents.executeJavaScript(`probe.release(${JSON.stringify(value.reservation.lease)})`)
   assert.equal(value.guest.isDestroyed(), true)
+  await primary.webContents.executeJavaScript(`document.getElementById(${JSON.stringify(value.id)})?.remove(); true`)
 }
 async function save(guest, value) {
   await guest.executeJavaScript(`localStorage.setItem('gate-state', ${JSON.stringify(value)});
@@ -179,8 +201,9 @@ async function pending() {
 
 async function run() {
   let failure
+  const cleanupFailures = []
   try {
-    await app.whenReady()
+    await bounded(app.whenReady(), 'electron-ready')
     hostOrigin = await serve('host'); platformOrigin = await serve('platform')
     deviceOrigin = await serve('device'); externalOrigin = await serve('external')
     config = parseCloudDesktopConfig({ hostOrigin, platformOrigin,
@@ -191,9 +214,9 @@ async function run() {
     controller = bindCloudSidebarBrowser(primary, browser, config, () => () => {}, deviceOrigin)
     installCloudNavigation(primary, config, true)
     disposeIpc = installCloudBrowserIpc(() => primary === undefined ? undefined : { window: primary, browser: controller }, config)
-    await loadCloudDocument(primary, config, hostOrigin + '/native/')
+    await bounded(loadCloudDocument(primary, config, hostOrigin + '/native/'), 'host-document-load')
     foreign = windowFor(session.fromPartition('pe-browser-gate-foreign-' + randomUUID()))
-    await foreign.loadURL(hostOrigin + '/native/')
+    await bounded(foreign.loadURL(hostOrigin + '/native/'), 'foreign-document-load')
     await setIdentity('bob', session.defaultSession)
     await setIdentity('alice')
     let firstGuest, secondGuest
@@ -329,25 +352,40 @@ async function run() {
     })
 
     await check('window-close-retirement', async () => {
-      const value = await open(first); await save(value.guest, 'before-window-close')
+      const value = await open(first)
+      await bounded(save(value.guest, 'before-window-close'), 'window-close-save')
+      progress('window-close-start')
       primary.destroy()
-      await controller.dispose()
+      progress('window-close-returned')
+      await bounded(controller.dispose(), 'window-close-dispose')
       assert.equal(value.guest.isDestroyed(), true)
       await cleared(value.reservation.partition)
       assert.equal(protectedRequests, 0)
       assert.equal(guestReceivedAgent, false)
     })
   } catch (error) {
-    failure = { name: activeCase, code: error instanceof Error ? error.name : 'unknown' }
+    failure = { name: activeCase, stage, code: error instanceof Error ? error.code ?? error.name : 'unknown' }
   } finally {
     mode = 'normal'; flushHeld()
     disposeIpc?.()
-    await controller?.dispose()
+    if (failure !== undefined) for (const window of windows) if (!window.isDestroyed()) window.destroy()
+    const cleanup = async (name, action) => {
+      try { await bounded(Promise.resolve().then(action), name, 5000, false) }
+      catch (_cleanupFailed) { cleanupFailures.push(name) }
+    }
+    await cleanup('cleanup-controller', () => controller?.dispose())
     for (const guest of guests) if (!guest.isDestroyed()) guest.close({ waitForBeforeUnload: false })
     for (const window of windows) if (!window.isDestroyed()) window.destroy()
-    for (const selected of [browser, session.defaultSession]) if (selected !== undefined) await selected.clearStorageData()
-    for (const server of servers) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }
+    if (app.isReady()) for (const selected of [browser, session.defaultSession]) if (selected !== undefined) {
+      await cleanup('cleanup-storage', () => selected.clearStorageData())
+    }
+    for (const server of servers) {
+      server.closeAllConnections()
+      await cleanup('cleanup-server', () => new Promise(resolve => server.close(resolve)))
+    }
   }
+  if (cleanupFailures.length > 0) failure = { ...failure, name: failure?.name ?? 'cleanup', code: failure?.code ?? 'fixture_cleanup_failed', cleanupFailures }
+  if (uncaughtFailures.length > 0) failure = { ...failure, name: failure?.name ?? 'main-callback', code: failure?.code ?? 'uncaught_main_callback', uncaughtFailures }
   writeSync(1, 'PE_BROWSER_ELECTRON_RESULT ' + JSON.stringify({ complete: failure === undefined, electron: process.versions.electron,
     cases, ...(failure === undefined ? {} : { failure }), cleanup: { windows: windows.size, guests: guests.size,
       servers: servers.filter(server => server.listening).length } }) + '\n')

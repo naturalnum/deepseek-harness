@@ -41,7 +41,7 @@ async function run(root) {
   if (process.platform === 'win32' && process.env.SystemRoot !== undefined) env.SystemRoot = process.env.SystemRoot
   const child = spawn(electron, [fixture, `--pe-browser-gate-root=${root}`], { cwd: dirname(fixture), env,
     stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' })
-  let output = '', bytes = 0, timedOut = false, overflow = false
+  let output = '', bytes = 0, timedOut = false, overflow = false, progress = 'startup', buffered = ''
   const terminate = () => {
     try {
       if (process.platform === 'win32') child.kill('SIGKILL')
@@ -53,6 +53,13 @@ async function run(root) {
     bytes += chunk.length
     if (bytes > 128 * 1024) { overflow = true; terminate(); return }
     output += chunk.toString('utf8')
+    buffered += chunk.toString('utf8')
+    const lines = buffered.split('\n')
+    buffered = lines.pop()
+    for (const line of lines) if (/^PE_BROWSER_ELECTRON_PROGRESS [a-z-]+$/.test(line)) {
+      progress = line.slice('PE_BROWSER_ELECTRON_PROGRESS '.length)
+      console.log(line)
+    }
   })
   child.stderr.on('data', chunk => { bytes += chunk.length; if (bytes > 128 * 1024) { overflow = true; terminate() } })
   let outcome
@@ -62,16 +69,16 @@ async function run(root) {
       child.once('close', (code, signal) => { resolveExit({ code, signal }) })
     })
   } finally { clearTimeout(timer) }
+  assert.equal(timedOut, false, `Browser gate exceeded its deadline at ${progress}`)
+  assert.equal(overflow, false, 'Browser gate exceeded its output budget')
   let processGroupGone = true
   if (process.platform !== 'win32') {
     try { process.kill(-child.pid, 0); processGroupGone = false }
     catch (error) { if (error.code !== 'ESRCH') throw error }
     if (!processGroupGone) terminate()
   }
-  assert.equal(timedOut, false, 'Browser gate exceeded its deadline')
-  assert.equal(overflow, false, 'Browser gate exceeded its output budget')
   const lines = output.split('\n').filter(line => line.startsWith('PE_BROWSER_ELECTRON_RESULT '))
-  assert.equal(lines.length, 1, 'Electron must return one bounded browser result')
+  assert.equal(lines.length, 1, `Electron must return one bounded browser result (last stage: ${progress})`)
   const result = JSON.parse(lines[0].slice('PE_BROWSER_ELECTRON_RESULT '.length))
   assert.equal(outcome.code, 0, JSON.stringify(result.failure ?? outcome))
   assert.equal(outcome.signal, null)
