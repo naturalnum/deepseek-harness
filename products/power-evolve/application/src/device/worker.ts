@@ -12,7 +12,7 @@ import { deviceClaim, deviceJob, deviceContainerRegistration, deviceContainerReg
   DEVICE_MATERIAL_MAX_RESPONSE_BYTES } from '@power-evolve/contracts/device-execution'
 import { DeviceProcessLock } from './process-lock.ts'
 import { OwnedDeviceContainer, ownedContainerOwner, ownedContainerReceipt } from './owned-container.ts'
-import { LocalDeviceFiles } from './local-files.ts'
+import { LocalDeviceFiles, LocalDeviceFilesError } from './local-files.ts'
 import { DeviceWriterCoordinator, deviceWriterOwner, type DeviceWriterLease, type DeviceWriterOwner } from './writer-coordinator.ts'
 import { SealedDeviceCreations, sealedCreation } from './sealed-creations.ts'
 import { DeviceMaterials } from './materials.ts'
@@ -101,6 +101,7 @@ export class DesktopWorker {
   private polling: Promise<void> | null = null
   private active: Promise<void> | null = null
   private readonly jobs = new Map<string, Job>()
+  private jobsComplete = false
   private lastContact = Date.now()
   private notice = ''
   private readonly coordination: DeviceWriterCoordinator
@@ -401,8 +402,8 @@ export class DesktopWorker {
                 break
               }
               if (entry.stage === 'claiming') {
-                this.activate(entry.processId !== this.processId
-                  ? this.closeColdClaim(this.state, entry) : this.resumeClaim(this.state, entry))
+                this.activate(entry.processId !== this.processId || entry.claimClosureRequestId || this.cancelledBeforeClaim(entry)
+                  ? this.closeUnstartedClaim(this.state, entry) : this.resumeClaim(this.state, entry))
                 break
               }
               await this.recover(this.state, entry)
@@ -422,6 +423,7 @@ export class DesktopWorker {
           }
           this.jobs.clear()
           for (const job of result.jobs) this.jobs.set(job.executionId, job)
+          this.jobsComplete = result.jobs.length < 20
           if (!this.active && this.journal.size === 0 && this.localActions.size === 0 && !this.stop.signal.aborted) {
             const next = result.jobs[0]
             if (next) this.activate(this.run(next))
@@ -472,18 +474,25 @@ export class DesktopWorker {
     return lease
   }
 
-  private async closeColdClaim(state: DeviceState, entry: JournalEntry): Promise<void> {
-    if (entry.stage !== 'claiming' || !entry.processId || entry.processId === this.processId || !entry.queuedJob
+  private cancelledBeforeClaim(entry: JournalEntry): boolean {
+    return !!entry.queuedJob?.cancelRequested || Date.now() - this.lastContact < this.options.contactGraceMs
+      && (!!this.jobs.get(entry.id)?.cancelRequested || this.jobsComplete && !this.jobs.has(entry.id))
+  }
+
+  private async closeUnstartedClaim(state: DeviceState, entry: JournalEntry): Promise<void> {
+    if (!['waiting', 'claiming'].includes(entry.stage) || !entry.processId || !entry.queuedJob
+      || entry.stage === 'claiming' && entry.processId === this.processId && !entry.claimClosureRequestId && !this.cancelledBeforeClaim(entry)
       || entry.owner || entry.imageId || entry.claimed || entry.dispatchId || entry.receipt
       || entry.stopObservation || entry.stopRequestId || entry.result) throw new Error('device_claiming_requires_review')
     const owner = this.writerOwner(state, entry)
     if (this.stop.signal.aborted) throw new Error('device_closed_before_claim_closure')
-    entry.claimClosureRequestId ??= deviceClaimClosureRequest.shape.requestId.parse(randomUUID())
     if (!entry.claimClosureReceipt) {
       const writer = await this.takeWriter(state, entry)
       await writer.verifyUncapturedClaim()
       if (this.stop.signal.aborted) throw new Error('device_closed_before_claim_closure')
     }
+    entry.claimClosureRequestId ??= deviceClaimClosureRequest.shape.requestId.parse(randomUUID())
+    entry.stage = 'claiming'
     // Sync the stable identity before every first/retried request, including an earlier failed save.
     await this.saveJournal()
     const input = deviceClaimClosureRequest.parse({ instanceId: state.instanceId, executionId: entry.id,
@@ -639,6 +648,20 @@ export class DesktopWorker {
 
   private async resumeWaiting(state: DeviceState, entry: JournalEntry): Promise<void> {
     if (entry.stage !== 'waiting' || !entry.processId || !entry.queuedJob) throw new Error('device_waiting_identity_missing')
+    if (entry.queuedJob.digest !== this.requestDigest(state, entry.queuedJob)) throw new Error('device_dispatch_changed')
+    if (this.cancelledBeforeClaim(entry)) return this.closeUnstartedClaim(state, entry)
+    try {
+      const folder = this.authorizedDirectory(entry.queuedJob.directoryId)
+      await this.inspectDirectory(folder, entry.queuedJob.cwd)
+    } catch (error) {
+      const refused = error instanceof LocalDeviceFilesError
+        ? ['invalid_path', 'file_not_found', 'directory_identity_changed'].includes(error.code)
+        : error instanceof Error && ['directory_not_authorized', 'directory_requires_local_reauthorization', 'directory_changed'].includes(error.message)
+      if (!refused) throw error
+      return this.closeUnstartedClaim(state, entry)
+    }
+    if (this.stop.signal.aborted) throw new Error('device_closed_before_claim')
+    if (this.cancelledBeforeClaim(entry)) return this.closeUnstartedClaim(state, entry)
     if (entry.processId !== this.processId) {
       // A durable waiting intent cannot have reached claim; first retire its exact old admission.
       const previous = await this.takeWriter(state, entry)
@@ -648,11 +671,10 @@ export class DesktopWorker {
       entry.processId = this.processId
       await this.saveJournal()
     }
-    const folder = this.authorizedDirectory(entry.queuedJob.directoryId)
-    await this.inspectDirectory(folder, entry.queuedJob.cwd)
     if (this.stop.signal.aborted) throw new Error('device_closed_before_claim')
     await this.takeWriter(state, entry)
     if (this.stop.signal.aborted) throw new Error('device_closed_before_claim')
+    if (this.cancelledBeforeClaim(entry)) return this.closeUnstartedClaim(state, entry)
     entry.stage = 'claiming'
     await this.resumeClaim(state, entry)
   }
@@ -663,6 +685,7 @@ export class DesktopWorker {
       || entry.claimClosureRequestId || entry.claimClosureReceipt) throw new Error('device_claiming_requires_review')
     if (job.digest !== this.requestDigest(state, job)) throw new Error('device_dispatch_changed')
     if (this.stop.signal.aborted) throw new Error('device_closed_before_claim')
+    if (this.cancelledBeforeClaim(entry)) return this.closeUnstartedClaim(state, entry)
     const writer = await this.takeWriter(state, entry)
     if (this.stop.signal.aborted) throw new Error('device_closed_before_claim')
     // Every outbound attempt follows a synced claiming generation, including recovery after a failed save.

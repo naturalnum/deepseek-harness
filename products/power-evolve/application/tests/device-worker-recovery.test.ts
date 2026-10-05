@@ -15,6 +15,7 @@ import { deviceJob, deviceClaim, deviceClaimRequest, deviceContainerRegistration
   DEVICE_REPORT_SUITE_ROLES, type DeviceSkillMaterial, type DeviceReportSuite, type DeviceClaimClosureReceipt } from '@power-evolve/contracts/device-execution'
 import { createDeviceReportSuite } from '../src/device-report-suite.ts'
 import { DesktopWorker } from '../src/device/worker.ts'
+import { LocalDeviceFilesError } from '../src/device/local-files.ts'
 import { DeviceWriterCoordinator, deviceWriterOwner, DEVICE_WRITER_SLOT_FILENAME } from '../src/device/writer-coordinator.ts'
 import { DockerCommandError, OwnedDeviceContainer, OWNED_DEVICE_CONTAINER_LABELS, ownedContainerOwner, ownedContainerReceipt,
   type DockerClient, type DockerCommandResult, type OwnedContainerObservation, type OwnedContainerReceipt } from '../src/device/owned-container.ts'
@@ -185,6 +186,7 @@ async function fixture(t: TestContext, shared?: { coordinationRoot: string; dire
   let directoryGate: ReturnType<typeof gate> | undefined
   let directoryEntered: ReturnType<typeof gate> | undefined
   let directoryIssued = false
+  let jobsFailure = false
   let transferGate: ReturnType<typeof gate> | undefined
   const cloudBytes = Buffer.from('explicit cloud transfer\n')
   async function route(req: IncomingMessage, res: ServerResponse) {
@@ -208,7 +210,9 @@ async function fixture(t: TestContext, shared?: { coordinationRoot: string; dire
         if (!allowed.includes(id)) allowed.push(id)
         reply = { directoryId: id }; break
       }
-      case '/devices/agent/jobs': reply = { jobs, directories: [...allowed] }; break
+      case '/devices/agent/jobs':
+        if (jobsFailure) { res.writeHead(503).end(); return }
+        reply = { jobs, directories: [...allowed] }; break
       case '/devices/agent/files/read': {
         await transferGate?.promise
         reply = { data: cloudBytes.toString('base64'), revision: createHash('sha256').update(cloudBytes).digest('hex') }; break
@@ -354,32 +358,40 @@ async function fixture(t: TestContext, shared?: { coordinationRoot: string; dire
     await writeFile(join(privateRoot, 'journal.json'), JSON.stringify([row]), { mode: 0o600 })
     return row
   }
-  function job(selected: Pick<Job, 'materials' | 'reportSuite'> = {}): Job {
-    const command = 'printf synthetic-device-test', cwd = '', timeoutMs = 2000
+  function job(selected: Partial<Pick<Job, 'cwd' | 'cancelRequested' | 'materials' | 'reportSuite'>> = {}): Job {
+    const command = 'printf synthetic-device-test', cwd = selected.cwd ?? '', timeoutMs = 2000
     return deviceJob.parse({ executionId: randomUUID(), directoryId, command, cwd, timeoutMs, state: 'queued', cancelRequested: false,
       ...selected,
       digest: createHash('sha256').update(JSON.stringify({ command, cwd, timeoutMs, deviceId, directoryId,
         ...(selected.materials === undefined ? {} : { materials: selected.materials }),
         ...(selected.reportSuite === undefined ? {} : { reportSuite: selected.reportSuite }) })).digest('hex') })
   }
-  async function seedClaiming(committed = false, queuedJob = job()): Promise<JournalRow> {
+  async function seedIntent(stage: 'waiting' | 'claiming', queuedJob: Job, admitted: boolean): Promise<JournalRow> {
     await worker.close()
     const device = z.object({ instanceId: z.uuid() }).parse(JSON.parse(await readFile(join(privateRoot, 'device.json'), 'utf8')))
     const processId = randomUUID()
     const row = { id: queuedJob.executionId, container: 'pe-local-' + queuedJob.executionId.replaceAll('-', ''),
-      stage: 'claiming', processId, queuedJob, startedAt: Date.now() }
-    const lease = await new DeviceWriterCoordinator(workerOptions.coordinationRoot).command(deviceWriterOwner.parse({ kind: 'command',
-      deviceId, enrollmentId: device.instanceId, executionId: row.id, processId,
-      directoryId: queuedJob.directoryId, requestDigest: queuedJob.digest }))
-    await lease.release()
+      stage, processId, queuedJob, startedAt: Date.now() }
+    if (admitted) {
+      const lease = await new DeviceWriterCoordinator(workerOptions.coordinationRoot).command(deviceWriterOwner.parse({ kind: 'command',
+        deviceId, enrollmentId: device.instanceId, executionId: row.id, processId,
+        directoryId: queuedJob.directoryId, requestDigest: queuedJob.digest }))
+      await lease.release()
+    }
     await writeFile(join(privateRoot, 'journal.json'), JSON.stringify([row]), { mode: 0o600 })
+    jobs = [queuedJob]
+    return row
+  }
+  async function seedClaiming(committed = false, queuedJob = job()): Promise<JournalRow> {
+    const row = await seedIntent('claiming', queuedJob, true)
     if (committed) {
       const { state, cancelRequested, ...command } = queuedJob; void state; void cancelRequested
-      claims.set(row.id, deviceClaim.parse({ ...command, processId, dispatchId: randomUUID() }))
+      claims.set(row.id, deviceClaim.parse({ ...command, processId: row.processId, dispatchId: randomUUID() }))
     }
     jobs = [{ ...queuedJob, state: committed ? 'running' : 'queued' }]
     return row
   }
+  const seedWaiting = (queuedJob = job(), admitted = false) => seedIntent('waiting', queuedJob, admitted)
   async function makeChild() {
     // Plain Node protocol fixture consumes this checkout's compiled Worker, without Cordis or a paths loader.
     const path = join(base, 'worker-recovery-' + randomUUID() + '.fixture.mjs')
@@ -434,7 +446,7 @@ process.send({ event: 'ready' });
     } }
   }
   return { base, privateRoot, directory, coordinationRoot: workerOptions.coordinationRoot,
-    docker, worker, makeWorker, seed, seedClaiming, job, requests, finishes, closures,
+    docker, worker, makeWorker, seed, seedClaiming, seedWaiting, job, requests, finishes, closures,
     makeChild,
     async resolveUnknown() {
       await until(() => finishes.length > 0, 'reported unknown outcome')
@@ -444,6 +456,7 @@ process.send({ event: 'ready' });
       await until(async () => (await journal(privateRoot)).length === 0, 'cleanup after synthetic trusted closure')
     },
     advertise(value: Job[]) { jobs = value }, ack(value: typeof finishAck) { finishAck = value },
+    jobsFailure(value: boolean) { jobsFailure = value },
     registrationAck(value: typeof registerAck) { registerAck = value },
     registeredAck(value: typeof registeredAck) { registeredAck = value },
     closureFailure(value: typeof closureFailure) { closureFailure = value },
@@ -553,6 +566,172 @@ test('old claims with or without material metadata preserve their original diges
     assert.equal(f.closures[0]?.digest, job.digest); assert.equal(f.docker.calls.length, 0)
     assert.equal(f.requests.filter(request => request.path === '/devices/agent/material').length, 0)
   })
+})
+
+test('an invalid absolute cwd closes in the same process with a durable stable request after lost replies', workerTestOptions, async t => {
+  const f = await fixture(t), job = f.job({ cwd: '/workspace' })
+  f.closureAck('lost')
+  f.observeClosure(async () => {
+    const [row] = await journal(f.privateRoot)
+    assert.equal(row?.stage, 'claiming'); assert(row.claimClosureRequestId)
+    assert.deepEqual(row.queuedJob, job)
+    assert.equal((await writerSlot(f.coordinationRoot))?.owner.processId, row.processId)
+    assert.equal(row.claimClosureReceipt, undefined)
+  })
+  f.advertise([job]); f.worker.start()
+  await until(() => f.closures.length >= 2, 'same-process closure retried')
+  f.closureAck('valid')
+  await until(async () => (await journal(f.privateRoot)).length === 0, 'invalid cwd retired')
+  await f.worker.close()
+  const calls = f.requests.filter(item => item.path === '/devices/agent/claim/close')
+  assert(calls.length >= 3)
+  for (const call of calls) assert.deepEqual(call.body, calls[0]!.body)
+  assert.equal(new Set(f.closures.map(receipt => receipt.requestId)).size, 1)
+  assert.equal(f.closures[0]!.digest, job.digest); assert.equal(f.closures[0]!.dispatchId, null)
+  assert.equal(f.requests.filter(item => item.path === '/devices/agent/claim').length, 0)
+  assert.equal(await writerSlot(f.coordinationRoot), null); assert.equal(f.finishes.length, 0); assert.equal(f.docker.calls.length, 0)
+})
+
+test('cold waiting directory refusals close the original uncaptured identity without rebinding or starting', workerTestOptions, async t => {
+  for (const refusal of ['absolute-cwd', 'missing-cwd', 'changed-root', 'missing-grant', 'legacy-grant'] as const) await t.test(refusal, async t => {
+    const f = await fixture(t), job = f.job({ cwd: refusal === 'absolute-cwd' ? '/workspace' : refusal === 'missing-cwd' ? 'missing' : '' })
+    const original = await f.seedWaiting(job, refusal === 'changed-root')
+    if (refusal === 'changed-root') {
+      await rename(f.directory, join(f.base, 'original-project')); await mkdir(f.directory, { mode: 0o700 })
+    }
+    if (refusal === 'missing-grant' || refusal === 'legacy-grant') {
+      const path = join(f.privateRoot, 'device.json')
+      const state = z.object({ directories: z.array(z.object({ id: z.uuid() }).passthrough()) }).passthrough()
+        .parse(JSON.parse(await readFile(path, 'utf8')))
+      if (refusal === 'missing-grant') state.directories = []
+      else delete state.directories[0]!.identity
+      await writeFile(path, JSON.stringify(state), { mode: 0o600 })
+    }
+    const child = await f.makeChild(); child.start()
+    await until(async () => (await journal(f.privateRoot)).length === 0, 'cold waiting refusal retired')
+    await child.close()
+    assert.equal(f.closures.length, 1); assert.equal(f.closures[0]!.processId, original.processId)
+    assert.equal(f.closures[0]!.digest, job.digest); assert.equal(f.closures[0]!.directoryId, job.directoryId)
+    const state = z.object({ instanceId: z.uuid() }).passthrough().parse(JSON.parse(await readFile(join(f.privateRoot, 'device.json'), 'utf8')))
+    assert.equal(f.closures[0]!.instanceId, state.instanceId)
+    assert.equal(f.closures[0]!.dispatchId, null); assert.equal(await writerSlot(f.coordinationRoot), null)
+    assert.equal(f.requests.filter(item => item.path === '/devices/agent/claim').length, 0)
+    assert.equal(f.finishes.length, 0); assert.equal(f.docker.calls.length, 0)
+  })
+})
+
+test('waiting closure intent and receipt must sync before outbound closure and writer retirement', workerTestOptions, async t => {
+  for (const checkpoint of ['intent', 'receipt'] as const) await t.test(checkpoint, async t => {
+    const f = await fixture(t), job = f.job({ cwd: '/workspace' })
+    let fail = true
+    failJournalWhile(f.worker, async () => fail && (checkpoint === 'intent'
+      ? !await absent(join(f.coordinationRoot, DEVICE_WRITER_SLOT_FILENAME)) && await writerSlot(f.coordinationRoot) !== null
+      : f.closures.length > 0))
+    f.advertise([job]); f.worker.start()
+    await until(() => notice(f.worker) === 'fixture_journal_write_failed', 'waiting closure sync refused')
+    const [saved] = await journal(f.privateRoot); assert(saved?.processId)
+    assert.equal(saved.stage, checkpoint === 'intent' ? 'waiting' : 'claiming')
+    assert.equal(saved.claimClosureReceipt, undefined)
+    assert.equal(f.closures.length, checkpoint === 'intent' ? 0 : 1)
+    assert.equal((await writerSlot(f.coordinationRoot))?.owner.processId, saved.processId)
+    await assert.rejects(new DeviceWriterCoordinator(f.coordinationRoot).transfer(async () => {}), { code: 'device_process_already_owned' })
+    fail = false
+    await until(async () => (await journal(f.privateRoot)).length === 0, 'waiting closure synced and retired')
+    await f.worker.close()
+    assert.equal(f.closures.length, 1); assert.equal(f.closures[0]!.processId, saved.processId)
+    assert.equal(f.requests.filter(item => item.path === '/devices/agent/claim').length, 0)
+    assert.equal(await writerSlot(f.coordinationRoot), null); assert.equal(f.docker.calls.length, 0)
+  })
+})
+
+test('interrupted waiting closure resumes its original stable request in another OS process', workerTestOptions, async t => {
+  const f = await fixture(t), job = f.job({ cwd: '/workspace' }), held = f.holdClosure()
+  f.advertise([job]); f.worker.start(); await held.entered
+  const [intent] = await journal(f.privateRoot); assert(intent?.claimClosureRequestId)
+  const closing = f.worker.close(); held.release(); await closing
+  const [saved] = await journal(f.privateRoot); assert(saved?.claimClosureReceipt)
+  assert.equal(saved.processId, intent.processId); assert.equal(saved.claimClosureRequestId, intent.claimClosureRequestId)
+  assert.equal((await writerSlot(f.coordinationRoot))?.owner.processId, intent.processId)
+  const child = await f.makeChild(); child.start()
+  await until(async () => (await journal(f.privateRoot)).length === 0, 'interrupted waiting closure retired')
+  await child.close()
+  assert.equal(f.closures.length, 1); assert.equal(await writerSlot(f.coordinationRoot), null)
+  assert.equal(f.requests.filter(item => item.path === '/devices/agent/claim').length, 0); assert.equal(f.docker.calls.length, 0)
+})
+
+test('waiting closure refuses a busy or captured original writer and never alters another reservation', workerTestOptions, async t => {
+  for (const blocked of ['busy', 'captured', 'changed-digest'] as const) await t.test(blocked, async t => {
+    const f = await fixture(t), job = f.job({ cwd: '/workspace', cancelRequested: true })
+    const original = await f.seedWaiting(job, blocked === 'captured')
+    const coordinator = new DeviceWriterCoordinator(f.coordinationRoot)
+    if (blocked === 'busy') {
+      const lease = await coordinator.command(deviceWriterOwner.parse({ kind: 'command', deviceId: randomUUID(),
+        enrollmentId: randomUUID(), executionId: randomUUID(), processId: randomUUID(), directoryId: randomUUID(), requestDigest: 'c'.repeat(64) }))
+      await lease.release()
+    } else if (blocked === 'captured') {
+      const slot = await writerSlot(f.coordinationRoot); assert(slot); assert(slot.owner.kind === 'command')
+      const lease = await coordinator.command(slot.owner)
+      await lease.capture(ownedContainerReceipt.parse({ containerId: CONTAINER, imageId: IMAGE, owner: {
+        deviceId: slot.owner.deviceId, enrollmentId: slot.owner.enrollmentId, executionId: original.id,
+        creationId: randomUUID(), requestDigest: slot.owner.requestDigest } }))
+      await lease.release()
+    } else {
+      assert(original.queuedJob)
+      original.queuedJob.digest = deviceJob.shape.digest.parse('c'.repeat(64))
+      await writeFile(join(f.privateRoot, 'journal.json'), JSON.stringify([original]), { mode: 0o600 })
+    }
+    const before = blocked === 'changed-digest' ? null : await readFile(join(f.coordinationRoot, DEVICE_WRITER_SLOT_FILENAME))
+    const cold = f.makeWorker(); await cold.init(); cold.start()
+    await until(() => notice(cold) !== '', 'waiting writer refusal')
+    await cold.close()
+    const [saved] = await journal(f.privateRoot); assert.equal(saved?.stage, 'waiting')
+    assert.equal(saved?.processId, original.processId); assert.equal(saved?.claimClosureRequestId, undefined)
+    if (before) assert.deepEqual(await readFile(join(f.coordinationRoot, DEVICE_WRITER_SLOT_FILENAME)), before)
+    assert.equal(f.closures.length, 0); assert.equal(f.requests.filter(item => item.path === '/devices/agent/claim').length, 0)
+    assert.equal(f.docker.calls.length, 0)
+  })
+})
+
+test('waiting cancellation requires a completed fresh untruncated jobs read and preserves the original identity', workerTestOptions, async t => {
+  for (const cancellation of ['flag', 'absent'] as const) await t.test(cancellation, async t => {
+    const f = await fixture(t), job = f.job(), original = await f.seedWaiting(job)
+    f.jobsFailure(true)
+    const cold = f.makeWorker(); await cold.init()
+    // Only the preflight helper is replaced; jobs completion, journal, locks and closure use the public Worker path.
+    Object.defineProperty(cold, 'inspectDirectory', { value: async () => { throw new LocalDeviceFilesError('local_files_timeout') } })
+    cold.start()
+    await until(() => f.requests.filter(item => item.path === '/devices/agent/jobs').length >= 2, 'initial unread empty jobs')
+    assert.equal(f.closures.length, 0); assert.equal((await journal(f.privateRoot))[0]?.stage, 'waiting')
+    f.jobsFailure(false); f.advertise(Array.from({ length: 20 }, () => f.job()))
+    await until(() => f.requests.filter(item => item.path === '/devices/agent/jobs').length >= 5, 'full snapshot observed')
+    assert.equal(f.closures.length, 0)
+    f.advertise(cancellation === 'flag' ? [{ ...job, cancelRequested: true }] : [])
+    await until(async () => (await journal(f.privateRoot)).length === 0, 'waiting cancellation sealed')
+    await cold.close()
+    assert.equal(f.closures.length, 1); assert.equal(f.closures[0]!.processId, original.processId)
+    assert.equal(f.closures[0]!.digest, job.digest); assert.equal(f.closures[0]!.dispatchId, null)
+    assert.equal(f.requests.filter(item => item.path === '/devices/agent/claim').length, 0); assert.equal(f.docker.calls.length, 0)
+  })
+})
+
+test('an expired successful jobs snapshot cannot cancel a waiting record after a bounded preflight timeout', workerTestOptions, async t => {
+  const f = await fixture(t), original = await f.seedWaiting(), held = gate()
+  f.advertise([])
+  const cold = f.makeWorker(); await cold.init()
+  let preflights = 0
+  Object.defineProperty(cold, 'inspectDirectory', { value: async () => {
+    preflights++; await held.promise; throw new LocalDeviceFilesError('local_files_timeout')
+  } })
+  cold.start()
+  await until(() => Reflect.get(cold, 'jobsComplete') === true, 'completed empty snapshot')
+  f.jobsFailure(true)
+  await delay(options.contactGraceMs + 50)
+  held.release()
+  await until(() => preflights >= 2, 'stale snapshot recovery remained waiting')
+  await cold.close()
+  assert.equal((await journal(f.privateRoot))[0]?.processId, original.processId)
+  assert.equal((await journal(f.privateRoot))[0]?.stage, 'waiting')
+  assert.equal(f.closures.length, 0); assert.equal(f.docker.calls.length, 0)
 })
 
 test('fresh public execution saves owner before create and receipt/start intent before start, with native lock exclusion', workerTestOptions, async t => {
