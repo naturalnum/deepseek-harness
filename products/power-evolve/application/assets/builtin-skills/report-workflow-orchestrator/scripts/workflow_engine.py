@@ -1130,7 +1130,7 @@ def _abstract_payload(state: dict[str, Any], registry: dict[str, Any]) -> dict[s
                 f"Use non-task-book supplementary metrics only when they materially improve the result summary; "
                 f"use at most {int(workflow.get('abstract_supplementary_metric_max', 2))}. If no task book exists, select at most 1-2 strongest verified result metrics."
             ),
-            "english_rule": "Generate abstract_en and keywords_en in the same action; faithfully mirror the finalized Chinese abstract without adding facts, including the selected business-need opening and assessment results.",
+            "english_rule": "Generate abstract_en and keywords_en in the same action; use exactly three natural paragraphs separated by blank lines to mirror the Chinese structure. Faithfully mirror the finalized Chinese abstract without adding facts, including the selected business-need opening and assessment results.",
         },
     }
 
@@ -1998,7 +1998,7 @@ def _abstract_quality_gate(s: dict[str, Any], item: dict[str, Any], registry: di
                 "type": "abstract_constraint_violation",
                 "location": {"section": "摘要"},
                 "problem": message,
-                "revision_requirement": "仅调整摘要篇幅、三段结构、业务需求首句候选/选中首句、挑战与技术点顺序、任务书考核结果覆盖、补充指标数量或双语字段；不得借修订新增正文不存在的技术、数值和结论。",
+                "revision_requirement": "仅调整摘要篇幅、中英文各三段结构（英文段间留空行）、业务需求首句候选/选中首句、挑战与技术点顺序、任务书考核结果覆盖、补充指标数量或双语字段；不得借修订新增正文不存在的技术、数值和结论。",
             }
             for idx, message in enumerate(metrics.get("errors", []), 1)
         ],
@@ -2006,7 +2006,7 @@ def _abstract_quality_gate(s: dict[str, Any], item: dict[str, Any], registry: di
         "revision_instruction": (
             "保持摘要证据和事实边界不变，重新生成同一个摘要产物：中文摘要总有效字数700—800字，"
             "第一段200—250字，第二段300—350字，第三段补足总篇幅；第一段排序挑战、第二段按对应顺序排序技术点；"
-            "同次输出3—5个业务需求背景首句候选并选1句作为中文摘要第一句；第三段优先写任务书考核结果，定量与定性指标都要结果化表达，非任务书补充指标最多1—2个；同次输出英文摘要和英文关键词。"
+            "同次输出3—5个业务需求背景首句候选并选1句作为中文摘要第一句；第三段优先写任务书考核结果，定量与定性指标都要结果化表达，非任务书补充指标最多1—2个；同次输出三自然段英文摘要（段间留空行）和英文关键词。"
         ),
         "abstract_metrics": metrics,
     }

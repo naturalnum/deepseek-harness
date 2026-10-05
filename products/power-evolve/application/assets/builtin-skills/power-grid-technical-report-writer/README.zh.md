@@ -154,6 +154,8 @@ python scripts/normalize_markdown.py 完整报告.md --in-place --dash-style hyp
 2. 第二段将全部主要研究点合并为一个自然段，每个研究点仍完整表达“问题—技术—核心机制—能力”，并保留必要的承接、集成或反馈关系；
 3. 第三段优先写当前报告范围内任务书考核指标的对应结果：定量指标写实际结果，定性指标写形成的能力、功能、成果状态、适用性或工程效果；非任务书指标仅在确有补充价值时再选1—2个，然后写总体结论、研究前景、工程价值、适用条件和应用前景。
 
+启用双语校验时，`validate_abstract.py` 除要求中文三段外，还要求英文摘要恰好三个由空行分隔的自然段；不设置英文字数门槛，翻译忠实度与事实对应仍由语义审核负责。中文三行兼容表示和显式非双语校验入口保留。
+
 `schemas/abstract-evidence.schema.json`、`templates/abstract-evidence.json`、`examples/abstract-evidence-example.json` 和 `templates/abstract.md` 已同步调整。关键词规则保持默认五个。
 
 ## 默认不单设验证二级节

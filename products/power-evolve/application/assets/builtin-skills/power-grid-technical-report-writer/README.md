@@ -154,6 +154,8 @@ Maintain the abstract evidence package from outline confirmation onward. The fin
 2. The second combines all main research points into one paragraph, with each retaining “problem—technology—core mechanism—capability” and the necessary sequencing, integration or feedback relationships.
 3. The third prioritizes results corresponding to assessment metrics in the current report's task scope: actual quantitative results and qualitative capabilities, functions, deliverable status, applicability or engineering effects. Include only one or two other metrics when they add value, followed by the overall conclusion, research prospects, engineering value, applicable conditions and application prospects.
 
+With bilingual validation enabled, `validate_abstract.py` requires three English paragraphs separated by blank lines as well as three Chinese paragraphs. It sets no English word-count limit; faithful translation and matching facts remain semantic-review responsibilities. The Chinese three-line compatibility layout and explicit non-bilingual validation remain available.
+
 `schemas/abstract-evidence.schema.json`, `templates/abstract-evidence.json`, `examples/abstract-evidence-example.json` and `templates/abstract.md` have been updated together. The default remains five keywords.
 
 ## No standalone secondary validation section by default

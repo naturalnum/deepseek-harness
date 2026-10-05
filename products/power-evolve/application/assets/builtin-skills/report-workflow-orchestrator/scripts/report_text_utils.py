@@ -1068,18 +1068,19 @@ ABSTRACT_ORDERING_SEQUENCES = (
 )
 
 
-def split_abstract_paragraphs(text: str) -> list[str]:
+def split_abstract_paragraphs(text: str, *, allow_three_line_layout: bool = True) -> list[str]:
     """Split a generated abstract body into natural paragraphs.
 
     Blank-line separated paragraphs are preferred. If the generator emitted exactly
-    three non-empty lines without blank lines, those lines are accepted as the three
-    paragraphs. Headings and keyword lines are not expected in ``abstract_cn``.
+    three non-empty lines without blank lines, the Chinese compatibility layout
+    accepts those lines as three paragraphs. English validation disables that
+    layout and requires blank-line separators, as the Word adapter does.
     """
     normalized = str(text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
     if not normalized:
         return []
     paragraphs = [p.strip() for p in re.split(r"\n\s*\n+", normalized) if p.strip()]
-    if len(paragraphs) == 1:
+    if allow_three_line_layout and len(paragraphs) == 1:
         lines = [line.strip() for line in normalized.split("\n") if line.strip()]
         if len(lines) == 3:
             paragraphs = lines
@@ -1131,6 +1132,8 @@ def abstract_quality_metrics(
     - task-book assessment result coverage with explicit quantitative/qualitative kind;
     - at most two non-task-book supplementary result metrics.
 
+    Bilingual validation requires three English paragraphs separated by blank lines,
+    without an English word-count limit. It does not verify translation fidelity.
     The function intentionally does not infer whether every task-book item is present; that
     semantic completeness remains grounded in ``abstract_evidence``/Reviewer. It does ensure
     that every supplied qualitative or mixed item has a real result statement rather than an
@@ -1148,6 +1151,7 @@ def abstract_quality_metrics(
     kw_cn = str(content.get("keywords_cn") or "").strip()
     kw_en = str(content.get("keywords_en") or "").strip()
     paragraphs = split_abstract_paragraphs(cn)
+    english_paragraphs = split_abstract_paragraphs(en, allow_three_line_layout=False)
     counts = [effective_word_count(p) for p in paragraphs]
     total = effective_word_count(cn)
     p1 = counts[0] if len(counts) > 0 else 0
@@ -1178,6 +1182,8 @@ def abstract_quality_metrics(
     if require_bilingual:
         if not en:
             errors.append("generate_abstract 必须同时生成英文摘要 abstract_en")
+        elif len(english_paragraphs) != 3:
+            errors.append(f"英文摘要必须恰好为3个自然段，段间留空行，当前为{len(english_paragraphs)}段")
         if not kw_en:
             errors.append("generate_abstract 必须同时生成英文关键词 keywords_en")
     if not kw_cn:
@@ -1269,6 +1275,9 @@ def abstract_quality_metrics(
         "supplementary_metric_count": len(supplementary or []) if isinstance(supplementary, list) else 0,
         "supplementary_metric_max": max_supplementary_metrics,
         "english_abstract_present": bool(en),
+        "english_paragraph_count": len(english_paragraphs),
+        "english_paragraph_structure_required": require_bilingual,
+        "english_paragraph_structure_passed": len(english_paragraphs) == 3,
         "english_keywords_present": bool(kw_en),
         "chinese_keywords_present": bool(kw_cn),
         "errors": errors,
