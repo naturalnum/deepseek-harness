@@ -211,6 +211,19 @@ def _materialize(root):
                     paragraph.remove(run)
 
 
+def _order_layout_math_delimiter_properties(root):
+    """Keep delimiter values while ordering properties for sequential Math importers."""
+    math = "{http://schemas.openxmlformats.org/officeDocument/2006/math}"
+    rank = {math + "begChr": 0, math + "sepChr": 1, math + "endChr": 2}
+    for properties in root.iter(math + "dPr"):
+        children = list(properties)
+        positions = [index for index, child in enumerate(children) if child.tag in rank]
+        ordered = sorted((children[index] for index in positions), key=lambda child: rank[child.tag])
+        for index, child in zip(positions, ordered):
+            children[index] = child
+        properties[:] = children
+
+
 def paginate(path, pdf=None):
     files, root = _load(path)
     entries = _entries(files, root)
@@ -220,6 +233,8 @@ def paginate(path, pdf=None):
         directory = Path(directory)
         copy_path = directory / "layout.docx"
         _materialize(root)
+        # Only the disposable layout copy uses this order; the source keeps its native OMML.
+        _order_layout_math_delimiter_properties(root)
         _save(copy_path, files, root)
         request = directory / "request.json"
         request.write_text(json.dumps({"docx": str(copy_path), "bookmarks": [

@@ -20,6 +20,10 @@ Catalog marking, paragraph formatting and validation share the same caption rule
 
 Chinese and English abstract text and keywords use 12 pt fonts and 1.5 line spacing with paragraph grid snapping disabled. Body text and references also disable grid snapping. The section grid remains available to other content; these paragraph overrides prevent inherited grid rounding from enlarging the declared spacing.
 
+## Native formula rendering
+
+The source DOCX retains its native OMML formulas. Before LibreOffice pagination and PDF export, the temporary layout copy orders delimiter character properties as beginning, separator and ending for sequential Math importers. Delimiter values, explicit empty endings, formula content and other properties remain unchanged.
+
 ## Command failures
 
 Failed validation, creation or formatting commands return `blocked` without a Word artifact. The `error` object records the command phase, `returncode`, actual `data_dir`, and the last 4096 UTF-8 bytes of each captured `stdout` and `stderr`, with total byte counts and truncation flags. A DOCX saved before failure remains an incomplete output until generation and validation pass.
@@ -31,3 +35,5 @@ Failed validation, creation or formatting commands return `blocked` without a Wo
 [Caption regressions](tests/test_captions.py) exercise synthetic DOCX marking, formatting and structural validation, including missing caption TC fields and TC fields incorrectly attached to body prose.
 
 [Spacing regressions](tests/test_format_layout.py) check synthetic DOCX readback for both abstract languages and keywords, retaining text, fonts, declared spacing and section grid. Actual rendered leading requires page-by-page visual inspection.
+
+[Delimiter regressions](tests/test_layout_math_delimiters.py) check absolute-value bars, open cases, nested delimiters and pagination-copy isolation using synthetic OMML. They substitute the UNO subprocess; actual Math import and PDF symbols require inspection in the Word rendering workflow.
