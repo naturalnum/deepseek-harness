@@ -4,12 +4,13 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
 import {
   OFFICE_PREVIEW_ROUTES, OFFICE_PREVIEW_MAX_INPUT_BYTES,
-  officePreviewGenerationView, officePreviewPrepareRequest, officePreviewJobView,
+  officePreviewGenerationView, officePreviewPrepareRequest, officePreviewSourcePrepareRequest, officePreviewJobView,
   officePreviewContentView, officePreviewErrorCode,
   type OfficePreviewErrorCode, type OfficePreviewContentView,
   type OfficePreviewGeneration, type OfficePreviewJobId, type OfficePreviewRequestId,
 } from '@power-evolve/contracts/office-preview'
 import { fileDownloadPath } from '@power-evolve/contracts/file-download'
+import { parseArtifactDocumentPath } from '@power-evolve/contracts/artifact-document'
 import { PlatformError } from '../contracts.ts'
 
 /** Explicit Host admission, polling and cancellation budgets. */
@@ -93,11 +94,18 @@ export class NativeOfficePreview {
   async render(token: string, rpcId: string, args: unknown, signal: AbortSignal): Promise<NativeOfficePreviewContent> {
     const requestId = rpcIdSchema.parse(rpcId)
     const input = argsSchema.parse(args)
-    const relative = fileDownloadPath.parse(input.path.startsWith('/workspace/')
-      ? input.path.slice('/workspace/'.length) : input.path)
+    let path: string
+    if (input.path.startsWith('/artifacts/')) {
+      parseArtifactDocumentPath(input.path)
+      path = input.path
+    } else {
+      const relative = fileDownloadPath.parse(input.path.startsWith('/workspace/')
+        ? input.path.slice('/workspace/'.length) : input.path)
+      path = `/workspace/${relative}`
+    }
     if (this.activeRenders >= this.options.maxActiveRenders) throw new NativeOfficePreviewError('busy')
     this.activeRenders++
-    const task = this.renderFile(token, requestId, { ...input, path: relative }, signal)
+    const task = this.renderFile(token, requestId, { ...input, path }, signal)
     this.tasks.add(task)
     try { return await task } finally { this.activeRenders--; this.tasks.delete(task) }
   }
@@ -127,13 +135,16 @@ export class NativeOfficePreview {
     let delivered = false
     try {
       generation = await this.readGeneration(token, upstream)
-      const sourceRequest = { sessionId: input.workspaceFileScopeId, path: `/workspace/${input.path}` }
+      const sourceRequest = { sessionId: input.workspaceFileScopeId, path: input.path }
       const source = parsed(sourceSchema, await this.call('/native/files/stat', token, sourceRequest, upstream))
       if (source.absolutePath !== sourceRequest.path) throw new NativeOfficePreviewError('source-changed')
       if (source.bytes > OFFICE_PREVIEW_MAX_INPUT_BYTES) throw new NativeOfficePreviewError('input-too-large')
       upstream.throwIfAborted()
-      const request = officePreviewPrepareRequest.parse({ requestId, sessionId: input.workspaceFileScopeId,
-        path: input.path, priority: input.priority, generation })
+      const selection = input.path.startsWith('/artifacts/')
+        ? { source: { kind: 'artifact', ...parseArtifactDocumentPath(input.path), sha256: source.version } }
+        : { path: fileDownloadPath.parse(input.path.slice('/workspace/'.length)) }
+      const request = officePreviewSourcePrepareRequest.parse({ requestId, sessionId: input.workspaceFileScopeId,
+        ...selection, priority: input.priority, generation })
       // Admission may commit before its HTTP reply is observed.
       prepared = true
       let job = parsed(officePreviewJobView, await this.call(OFFICE_PREVIEW_ROUTES.prepare, token, request, upstream))

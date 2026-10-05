@@ -8,6 +8,7 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
 import { z } from 'zod'
 import { OFFICE_PREVIEW_ROUTES as routes, OFFICE_PREVIEW_MAX_OUTPUT_BYTES } from '@power-evolve/contracts/office-preview'
+import { artifactDocumentPathFor } from '@power-evolve/contracts/artifact-document'
 import { createWebConnectionRpc } from '../../../../packages/client/connection/src/client/rpc.ts'
 import { NativeOfficePreview, NativeOfficePreviewError, type NativeOfficePreviewCall,
   type NativeOfficePreviewOptions } from '../src/host/native-office-preview.ts'
@@ -85,6 +86,25 @@ test('prepare and polling keep the original request, job and generation identiti
   assert.deepEqual(p.calls.filter(call => call.path === routes.status).map(call => call.input),
     [{ jobId, generation }, { jobId, generation }])
   assert.equal(p.calls.some(call => call.path === routes.cancel), false)
+})
+
+test('artifact rendering fixes the canonical publication and stat digest without a Workspace source request', async () => {
+  const artifactId = randomUUID(), filename = '报告.docx'
+  const path = artifactDocumentPathFor(artifactId, filename)
+  const artifactSource = { ...source, absolutePath: path }
+  const p = platform(async route => route === '/native/files/stat' ? artifactSource
+    : route === routes.content ? { ...content(), absolutePath: path } : undefined)
+  const rpcId = randomUUID()
+  const rendered = await new NativeOfficePreview(p.call, options).render('fixture-token', rpcId,
+    { ...args, path }, new AbortController().signal)
+  assert.equal(rendered.absolutePath, path)
+  assert.deepEqual(rendered.data, new Uint8Array(pdf))
+  assert.deepEqual(p.calls.find(call => call.path === '/native/files/stat')?.input,
+    { sessionId: args.workspaceFileScopeId, path })
+  assert.deepEqual(p.calls.find(call => call.path === routes.prepare)?.input,
+    { requestId: rpcId, sessionId: args.workspaceFileScopeId,
+      source: { kind: 'artifact', artifactId, filename, sha256: version }, priority: 'foreground', generation })
+  assert.equal(p.calls.some(call => JSON.stringify(call.input).includes('/workspace/')), false)
 })
 
 test('lost prepare ACK cancels by the original key with an independent signal and never retries admission', async () => {
