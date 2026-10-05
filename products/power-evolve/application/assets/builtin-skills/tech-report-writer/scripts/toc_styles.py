@@ -15,22 +15,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Pt
 
-
-# A real caption must contain an explicit separator between the number and the
-# title.  This deliberately excludes explanatory prose such as
-# ``图1-1应表达……`` / ``表2-1给出……`` which used to be mistaken for catalog
-# entries by the permissive ``\s*`` pattern.
-FIGURE_CAPTION_RE = re.compile(
-    r"^图\s*(?P<number>[A-Z0-9]+-\d+)[ \t\u3000]+(?P<title>\S.*)$"
-)
-TABLE_CAPTION_RE = re.compile(
-    r"^表\s*(?P<number>[A-Z0-9]+-\d+)[ \t\u3000]+(?P<title>\S.*)$"
-)
-
-_EXPLANATION_TITLE_PREFIX_RE = re.compile(
-    r"^(?:应表达|应展示|应给出|给出|展示|显示|表明|说明|反映|可见|"
-    r"所示|用于表达|用于展示|用于说明|用于给出)"
-)
+from caption_rules import is_caption
 
 
 def configure_toc_styles(doc) -> None:
@@ -326,70 +311,21 @@ def _append_hidden_tc(paragraph, text: str, identifier: str) -> None:
     paragraph._p.append(_field_run("end", hidden=True))
 
 
-def _paragraph_has_embedded_figure(paragraph) -> bool:
-    return any(
-        paragraph._p.find(f".//{qn(tag)}") is not None
-        for tag in ("w:drawing", "w:pict", "w:object")
+def is_figure_table_caption(paragraph, kind: str, *, include_continued=False) -> bool:
+    """Read a python-docx paragraph using the shared OOXML caption rules."""
+    def adjacent_blocks():
+        node = paragraph._p
+        while True:
+            node = node.getprevious() if kind == "figure" else node.getnext()
+            if node is None:
+                return
+            yield node
+
+    style_name = getattr(paragraph.style, "name", "") or ""
+    return is_caption(
+        paragraph._p, kind, style_name, adjacent_blocks(),
+        include_continued=include_continued,
     )
-
-
-def _previous_paragraph_has_figure(paragraph) -> bool:
-    node = paragraph._p.getprevious()
-    while node is not None:
-        if node.tag == qn("w:tbl"):
-            return False
-        if node.tag == qn("w:p"):
-            if any(
-                node.find(f".//{qn(tag)}") is not None
-                for tag in ("w:drawing", "w:pict", "w:object")
-            ):
-                return True
-            visible = "".join(t.text or "" for t in node.iter(qn("w:t"))).strip()
-            if visible:
-                return False
-        node = node.getprevious()
-    return False
-
-
-def _next_block_is_table(paragraph) -> bool:
-    node = paragraph._p.getnext()
-    while node is not None:
-        if node.tag == qn("w:tbl"):
-            return True
-        if node.tag == qn("w:p"):
-            visible = "".join(t.text or "" for t in node.iter(qn("w:t"))).strip()
-            if visible:
-                return False
-        node = node.getnext()
-    return False
-
-
-def _is_true_caption(paragraph, kind: str) -> bool:
-    text = re.sub(r"\s+", " ", paragraph.text.strip())
-    match = (FIGURE_CAPTION_RE if kind == "figure" else TABLE_CAPTION_RE).match(text)
-    if match is None:
-        return False
-    # Continued-table labels are layout continuations, not new catalog items.
-    if kind == "table" and re.match(r"^[（(]续[)）]", match.group("title")):
-        return False
-    if _EXPLANATION_TITLE_PREFIX_RE.match(match.group("title").lstrip("：: ")):
-        return False
-
-    style_name = (getattr(paragraph.style, "name", "") or "").lower()
-    if style_name == "caption":
-        return True
-    # Generated captions are centered. Existing reports are also accepted when
-    # the expected adjacent object proves the paragraph is a real caption.
-    try:
-        from docx.enum.text import WD_ALIGN_PARAGRAPH
-
-        if paragraph.alignment == WD_ALIGN_PARAGRAPH.CENTER:
-            return True
-    except Exception:
-        pass
-    if kind == "figure":
-        return _previous_paragraph_has_figure(paragraph)
-    return _next_block_is_table(paragraph)
 
 
 def ensure_abstract_catalog_marks(doc) -> dict[str, bool]:
@@ -414,11 +350,11 @@ def mark_figure_table_captions(doc) -> dict[str, int]:
     counts = {"figures": 0, "tables": 0}
     for paragraph in doc.paragraphs:
         text = re.sub(r"\s+", " ", paragraph.text.strip())
-        if _is_true_caption(paragraph, "figure"):
+        if is_figure_table_caption(paragraph, "figure"):
             _remove_tc_identifier(paragraph, "T")
             _append_hidden_tc(paragraph, text, "F")
             counts["figures"] += 1
-        elif _is_true_caption(paragraph, "table"):
+        elif is_figure_table_caption(paragraph, "table"):
             _remove_tc_identifier(paragraph, "F")
             _append_hidden_tc(paragraph, text, "T")
             counts["tables"] += 1

@@ -26,6 +26,7 @@ from config import (
 )
 from cover_layout import calculate_cover_metadata_indents_twips
 from catalog_cache import _ranges
+from caption_rules import EXPLANATION_LEAD_RE, is_caption
 
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 R_NS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
@@ -584,12 +585,9 @@ def validate_report(path):
         paragraph_texts = [_paragraph_text(paragraph).strip() for paragraph in paragraphs]
         if "图目录" in paragraph_texts or "表目录" in paragraph_texts:
             errors.append("主目录后的图/表条目不得设置独立的“图目录”或“表目录”可见标题")
-        figure_caption_re = re.compile(r"^图\s*[A-Z0-9]+-\d+[ \t\u3000]+\S+")
-        table_caption_re = re.compile(r"^表\s*[A-Z0-9]+-\d+[ \t\u3000]+\S+")
-        explanatory_lead_re = re.compile(
-            r"^(?:图|表)\s*[A-Z0-9]+-\d+\s*[：:]?\s*(?:应表达|应展示|应给出|给出|展示|"
-            r"显示|表明|说明|反映|可见|所示|用于表达|用于展示|用于说明|用于给出)"
-        )
+        body = document.find(f"{W}body")
+        body_blocks = list(body) if body is not None else []
+        body_indices = {id(node): index for index, node in enumerate(body_blocks)}
         for paragraph in paragraphs:
             if id(paragraph) in toc_cache_paragraph_ids:
                 continue
@@ -597,11 +595,15 @@ def validate_report(path):
             instruction = _field_instructions(paragraph)
             has_fig_tc = bool(re.search(r"\bTC\b.*\\f\s+F(?:\s|$)", instruction))
             has_table_tc = bool(re.search(r"\bTC\b.*\\f\s+T(?:\s|$)", instruction))
-            is_figure_caption = bool(figure_caption_re.match(text)) and not explanatory_lead_re.match(text)
-            is_table_caption = (
-                bool(table_caption_re.match(text))
-                and not explanatory_lead_re.match(text)
-                and not re.match(r"^表\s*[A-Z0-9]+-\d+[ \t\u3000]+[（(]续[)）]", text)
+            index = body_indices[id(paragraph)]
+            style_name = _paragraph_style_name(paragraph, style_names)
+            is_figure_caption = is_caption(
+                paragraph, "figure", style_name,
+                (body_blocks[i] for i in range(index - 1, -1, -1)),
+            )
+            is_table_caption = is_caption(
+                paragraph, "table", style_name,
+                (body_blocks[i] for i in range(index + 1, len(body_blocks))),
             )
             if is_figure_caption and not has_fig_tc:
                 errors.append(f"图题“{text[:30]}”缺少图目录 TC 域")
@@ -611,7 +613,7 @@ def validate_report(path):
                 errors.append(f"非图题段落不得写入图目录 TC 域：“{text[:30]}”")
             if has_table_tc and not is_table_caption:
                 errors.append(f"非表题段落不得写入表目录 TC 域：“{text[:30]}”")
-            if explanatory_lead_re.match(text):
+            if EXPLANATION_LEAD_RE.match(text):
                 errors.append(
                     f"图表说明段不得以图号/表号起句，应改写为“该图/该表/上述趋势”等：“{text[:30]}”"
                 )

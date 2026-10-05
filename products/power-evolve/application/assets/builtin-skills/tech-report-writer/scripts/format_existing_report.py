@@ -38,6 +38,7 @@ from toc_styles import (
     configure_toc_styles,
     ensure_abstract_catalog_marks,
     ensure_figure_table_catalogs,
+    is_figure_table_caption,
     mark_figure_table_captions,
 )
 from normalize_report_template import (
@@ -67,9 +68,6 @@ BODY_STYLE_NAMES = {
 }
 HEADING_2_NAMES = {"Heading 2", "002二级标题"}
 HEADING_3_NAMES = {"Heading 3", "003三级标题"}
-CAPTION_RE = re.compile(
-    r"^(?:图|表)\s*[A-Z0-9]+-\d+[ \t\u3000]+\S"
-)
 CATALOG_EXPLANATION_LEAD_RE = re.compile(
     r"^(?P<kind>图|表)\s*[A-Z0-9]+-\d+\s*[：:]?\s*"
     r"(?P<verb>应表达|应展示|应给出|给出|展示|显示|表明|说明|反映|可见|"
@@ -241,7 +239,8 @@ def _is_normal_body_text_paragraph(paragraph):
     if (
         APPENDIX_TITLE_RE.match(text) or APPENDIX_LEVEL_1_RE.match(text)
         or APPENDIX_LEVEL_2_RE.match(text) or APPENDIX_LEVEL_3_RE.match(text)
-        or CAPTION_RE.match(text) or NOTE_RE.match(text)
+        or any(is_figure_table_caption(paragraph, kind, include_continued=True)
+               for kind in ("figure", "table")) or NOTE_RE.match(text)
         or text == "参考文献"
     ):
         return False
@@ -1115,7 +1114,10 @@ def _configure_body(doc):
         if paragraph.style.name in HEADING_2_NAMES or APPENDIX_LEVEL_2_RE.match(text):
             _format_heading(paragraph, 2)
             continue
-        if paragraph.style.name == "Caption" or CAPTION_RE.match(text):
+        if paragraph.style.name == "Caption" or any(
+            is_figure_table_caption(paragraph, kind, include_continued=True)
+            for kind in ("figure", "table")
+        ):
             _format_caption(paragraph)
             continue
         if NOTE_RE.match(text):
