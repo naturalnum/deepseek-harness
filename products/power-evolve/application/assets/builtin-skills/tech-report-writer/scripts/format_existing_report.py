@@ -989,6 +989,7 @@ def _configure_front_matter(doc):
             paragraph.paragraph_format.line_spacing = 1.5
             paragraph.paragraph_format.space_before = Pt(0)
             paragraph.paragraph_format.space_after = Pt(0)
+            _disable_grid_snap(paragraph)
             _set_first_line_chars(paragraph)
             _format_text_runs(
                 paragraph,

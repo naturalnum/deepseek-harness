@@ -16,6 +16,10 @@ Reference-source explanations belong in a consecutive appendix, for example `# é
 
 Catalog marking, paragraph formatting and validation share the same caption rule: a numbered title requires Caption style, direct centering or the adjacent figure/table. Ordinary body references retain their text and body formatting. True captions must have the matching catalog TC field; TC fields on ordinary body paragraphs are rejected. Continued-table labels retain caption formatting without a second catalog entry.
 
+## Paragraph spacing
+
+Chinese and English abstract text and keywords use 12 pt fonts and 1.5 line spacing with paragraph grid snapping disabled. Body text and references also disable grid snapping. The section grid remains available to other content; these paragraph overrides prevent inherited grid rounding from enlarging the declared spacing.
+
 ## Command failures
 
 Failed validation, creation or formatting commands return `blocked` without a Word artifact. The `error` object records the command phase, `returncode`, actual `data_dir`, and the last 4096 UTF-8 bytes of each captured `stdout` and `stderr`, with total byte counts and truncation flags. A DOCX saved before failure remains an incomplete output until generation and validation pass.
@@ -25,3 +29,5 @@ Failed validation, creation or formatting commands return `blocked` without a Wo
 [Adapter regressions](tests/test_orchestration_adapter.py) cover deterministic preparation, strict rejection and Word paragraph/table readback. They do not establish LibreOffice pagination or page-by-page visual acceptance; those checks remain part of the actual Word workflow.
 
 [Caption regressions](tests/test_captions.py) exercise synthetic DOCX marking, formatting and structural validation, including missing caption TC fields and TC fields incorrectly attached to body prose.
+
+[Spacing regressions](tests/test_format_layout.py) check synthetic DOCX readback for both abstract languages and keywords, retaining text, fonts, declared spacing and section grid. Actual rendered leading requires page-by-page visual inspection.
