@@ -144,9 +144,9 @@
         "publisher": "PowerEvolve"
       },
       "release": {
-        "version": "1.1.38",
+        "version": "1.1.39",
         "state": "PUBLISHED",
-        "manifestDigest": "sha256:24ef2e18f9c4e41b1d797ccd5c0d87bedc8177120b3765da5a1bc6eea45eafdf",
+        "manifestDigest": "sha256:a8a6ff93698542662ab211e2011bbc3ee109e90ddf25a90f5c933457f7495a07",
         "targets": [
           "cloud",
           "desktop"
@@ -155,10 +155,10 @@
           "skill"
         ],
         "permissions": [],
-        "artifactDigest": "7d173a19c33998c85a4556e7dc10e4a67304ad93b121035986f33e3aa2034b70",
-        "artifactSize": 661954,
-        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.power-grid-technical-report-writer/releases/1.1.38/artifact",
-        "artifactPath": "extensions/builtin.power-grid-technical-report-writer/1.1.38.zip"
+        "artifactDigest": "7c6372f8d8f71099bdefa2f275f4e69ce7e8acf0a3894146fb5d4de114c5b1da",
+        "artifactSize": 664555,
+        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.power-grid-technical-report-writer/releases/1.1.39/artifact",
+        "artifactPath": "extensions/builtin.power-grid-technical-report-writer/1.1.39.zip"
       }
     },
     {

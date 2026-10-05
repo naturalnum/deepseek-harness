@@ -53,6 +53,37 @@ KNOWN_CHINESE_VARIANTS = {
 
 LATIN_TECH_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9+_.-]*")
 
+# A residual predicate names its transform, strict comparison, literal and unit.
+# Role words following that complete predicate do not replace its mathematical anchor.
+_CN_NONZERO = r"[一二两三四五六七八九]"
+_CN_TENS = r"(?:[一二三四五六七八九]?十[一二三四五六七八九]?|[一二两三四五六七八九])"
+_CN_HUNDREDS = rf"{_CN_NONZERO}百(?:{_CN_TENS}|零{_CN_NONZERO})?"
+_CN_THOUSANDS = rf"{_CN_NONZERO}千(?:{_CN_HUNDREDS}|零{_CN_TENS})?"
+_CN_SMALL_INTEGER = rf"(?:{_CN_THOUSANDS}|{_CN_HUNDREDS}|{_CN_TENS})"
+_CN_INTEGER = (
+    rf"(?:{_CN_SMALL_INTEGER}亿(?:{_CN_SMALL_INTEGER}万)?(?:零?{_CN_SMALL_INTEGER})?"
+    rf"|{_CN_SMALL_INTEGER}万(?:零?{_CN_SMALL_INTEGER})?|{_CN_SMALL_INTEGER}|[零〇])"
+)
+_EXPLICIT_NUMBER = (
+    rf"(?:(?:0|[1-9][0-9]*)(?:\.[0-9]+)?|{_CN_INTEGER}(?:点[零〇一二三四五六七八九]+)?)"
+)
+_PREDICATE_UNIT = (
+    r"(?:兆瓦时|千瓦时|瓦时|兆瓦|千瓦|瓦|千伏|毫伏|伏|千安|毫安|安"
+    r"|兆欧|千欧|欧姆|赫兹|毫秒|微秒|秒|摄氏度|百分比|百分点)"
+)
+_CONCRETE_RESIDUAL_PREDICATE = re.compile(
+    rf"绝对(?:残差|差值)严格(?:大于|小于){_EXPLICIT_NUMBER}{_PREDICATE_UNIT}"
+    r"(?:分类判定|分类|异常判定|异常识别|异常检测|判定|识别|检测)?(?:方法|技术|算法)?"
+)
+_RESIDUAL_COMPARISON_START = re.compile(r"绝对(?:残差|差值)严格(?:大于|小于)")
+
+
+def _has_concrete_mathematical_predicate(technology: str) -> bool:
+    """Recognize a complete nonnegative residual predicate, retaining signs and units."""
+    raw = re.sub(r"\s+", "", str(technology or ""))
+    return _CONCRETE_RESIDUAL_PREDICATE.fullmatch(raw) is not None
+
+
 def raw_english_technology_tokens(text: str) -> list[str]:
     """Return Latin technology/name tokens that should not be exposed in formal L2/L3 headings.
 
@@ -205,9 +236,8 @@ def operation_level_technology(technology: str, *, role: str = "", power_element
         return None
     named = _named_variant_hits(t)
     mechanisms = _mechanism_hits(t)
-    # A named variant plus at least one mechanism is strong; a named variant alone is acceptable
-    # when the operation is merely the role portion (e.g. GroundingDINO候选生成).
-    if named:
+    # A concrete technique or predicate stays specific when an operation names its role.
+    if named or _has_concrete_mathematical_predicate(technology):
         return None
     if len(mechanisms) >= 2:
         return None
@@ -226,6 +256,9 @@ def technical_signature_issue(technology: str, *, role: str = "", power_element:
     """Return a human-readable reason when a technical signature is too weak."""
     if not str(technology or "").strip():
         return "empty"
+    raw = re.sub(r"\s+", "", str(technology or ""))
+    if _RESIDUAL_COMPARISON_START.match(raw) and not _has_concrete_mathematical_predicate(technology):
+        return "incomplete_mathematical_predicate"
     family = family_level_technology(technology, role=role, power_element=power_element)
     if family:
         return f"family:{family}"
@@ -236,9 +269,8 @@ def technical_signature_issue(technology: str, *, role: str = "", power_element:
     t = norm(technology)
     named = _named_variant_hits(t)
     mechanisms = _mechanism_hits(t)
-    # If it contains neither a named variant nor at least two discriminative mechanisms,
-    # treat it as too weak. This is deliberately a conservative lower-bound check.
-    if not named and len(mechanisms) < 2:
+    # A named technique, complete predicate or two mechanisms must distinguish the route.
+    if not named and len(mechanisms) < 2 and not _has_concrete_mathematical_predicate(technology):
         return "no_discriminative_anchor"
     return None
 

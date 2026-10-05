@@ -47,7 +47,7 @@ const definitions = [
   },
   {
     directory: 'power-grid-technical-report-writer',
-    extensionId: 'builtin.power-grid-technical-report-writer', version: '1.1.38',
+    extensionId: 'builtin.power-grid-technical-report-writer', version: '1.1.39',
     name: '电网技术报告写作',
     summary: '渐进式编写电网科技项目结题技术报告。',
     description: '提供项目档案、论证架构、目录、分章正文、摘要证据包和全文组装规则及确定性校验脚本。',
