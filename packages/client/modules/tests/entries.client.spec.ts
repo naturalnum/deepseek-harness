@@ -187,6 +187,41 @@ describe('client manifest entries', () => {
     expect([...b.ctx.loader.entries()].map(entry => entry.options.name)).toEqual(['consumer'])
   })
 
+  it('retains ordinary manifest exports when the initial activation roster is empty', async () => {
+    const effects = { mounted: 0, disposed: 0, hits: 0 }
+    const factory = vi.fn(visible('ordinary', effects))
+    const b = await bench(graph(row('ordinary')), { ordinary: factory }, false)
+    const exports = await b.modules.import('ordinary')
+    await b.modules.entries.start(b.ctx.loader, { ...b.modules.manifest, plugins: [] })
+    await b.modules.entries.retry()
+    expect(await b.modules.import('ordinary')).toBe(exports)
+    expect(factory).toHaveBeenCalledOnce()
+    expect(document.querySelectorAll('style[data-plugin=ordinary]')).toHaveLength(1)
+  })
+
+  it('retains an ineligible dependency for an unmanaged Loader entry until that owner leaves', async () => {
+    const effects = { mounted: 0, disposed: 0, hits: 0 }
+    const ordinary = vi.fn(() => ({ apply() {} }))
+    const browser = vi.fn(visible('browser', effects))
+    const b = await bench(graph(row('ordinary'), row('browser')), { ordinary, browser })
+    const exports = await b.modules.import('browser')
+    b.target.load({ id: 'local', factory: require => ({ apply() {}, dependency: require('browser/client') }) })
+    const localId = await b.ctx.loader.create({ name: 'local' })
+    const required = graph(row('ordinary'), row('browser', 'r0', { requiresCarrier: 'desktop-browser' }))
+    await b.modules.entries.sync(required)
+    expect(effects).toEqual({ mounted: 1, disposed: 1, hits: 0 })
+    expect(await b.modules.import('browser')).toBe(exports)
+    expect(browser).toHaveBeenCalledOnce()
+    expect(document.querySelectorAll('style[data-plugin=browser]')).toHaveLength(1)
+    expect(b.ctx.loader.resolve(localId).fiber?.state).toBe(2)
+    b.ctx.loader.remove(localId)
+    await b.modules.entries.retry()
+    expect(b.modules.loadCache.has('browser')).toBe(false)
+    expect(document.querySelectorAll('style[data-plugin=browser]')).toHaveLength(0)
+    expect(ordinary).toHaveBeenCalledOnce()
+    expect([...b.ctx.loader.entries()].map(entry => entry.options.name)).toEqual(['ordinary'])
+  })
+
   it('adds, drains removal and re-enables one instance with styles; unrelated entries survive', async () => {
     const effects = { mounted: 0, disposed: 0, hits: 0 }
     const cleanup = deferred()

@@ -456,10 +456,12 @@ export class ClientModuleSystem implements ClientModuleLoader {
     this.manifest = manifest
   }
 
-  /** Retain live Loader modules and their transitive requests before evicting unreferenced graph records. */
+  /** Retain ordinary manifest modules and live Loader dependencies before evicting ineligible or removed records. */
   private prune(roots: Iterable<string>): void {
     const retained = new Set<string>(this.bootstrapIds)
     const desired = new Set(this.manifest.modules.map(row => row.id))
+    const eligible = new Set(this.entries.eligiblePlugins(this.manifest).map(row => row.id))
+    const ineligible = new Set(this.manifest.plugins.filter(row => !eligible.has(row.id)).map(row => row.id))
     const visit = (specifier: string): void => {
       const id = stripClientSuffix(specifier)
       if (retained.has(id)) return
@@ -470,6 +472,8 @@ export class ClientModuleSystem implements ClientModuleLoader {
       }
     }
     for (const id of roots) visit(id)
+    // Ordinary manifest rows retain the module table's existing cache lifetime.
+    for (const row of this.manifest.modules) if (!ineligible.has(row.id)) visit(row.id)
     for (const id of this.graphRows.keys()) {
       if (retained.has(id)) continue
       if (desired.has(id)) {

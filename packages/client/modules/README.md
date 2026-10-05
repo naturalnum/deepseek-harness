@@ -45,6 +45,8 @@ An open Web page follows the Host's complete module graph through the HMR transp
 
 Trusted boot producers may set a row's optional `requiresCarrier: 'desktop-browser'`. Client Entries activates that row only when the document initially exposes `dshDesktop` protocol 1 with Browser `acquire`, `release`, and `onOpenRequested` methods. Omitted requirements preserve activation on every carrier, including the ordinary Web iframe Browser. Unknown requirements fail manifest parsing. Boot progress, immediate prefetch, graph synchronization, retry, and HMR use the same eligible roster; changing the requirement cancels obsolete activation and drains removed effects. The requirement leaves the module table and dependency resolution intact and grants no IPC or browsing authorization. Carrier availability is fixed for the document; a new document reads its preload again.
 
+Ordinary manifest rows retain their materialized exports and styles until ordinary graph or revision invalidation. Reconciliation removes an ineligible row's materialized exports and styles only when no live Loader entry or retained manifest dependency references it; unmanaged Loader entries keep the same dependency ownership.
+
 ### Sharing modules
 
 The shell seeds a frozen module table (`PLATFORM_MODULES`: React, Cordis, and static UI libraries); every dynamic bundle resolves its externals against exactly that baseline. `dsh.client.external` adds only exact non-baseline requests, each answered by the dynamic package row it names or an exact static-table key. Type-only imports are erased and create no request. Composition rejects malformed requests, missing suppliers, self-requests, and synchronous request cycles.
