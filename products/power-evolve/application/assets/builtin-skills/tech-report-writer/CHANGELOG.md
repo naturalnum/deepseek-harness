@@ -1,5 +1,9 @@
 # Tech report writer changes
 
+## 1.1.41
+
+- Accept one nonempty pre-body Markdown contents section and metadata-matched bilingual front titles without changing the final reviewed source; preserve source explanations in consecutive appendices and reject unknown top-level headings.
+
 ## 1.1.40
 
 - 逐页验收使用实际渲染页数，页码记录须以整数恰好覆盖 `1..N`；拒绝缺页、重复、越界和布尔值，渲染退出 0 不自动通过。

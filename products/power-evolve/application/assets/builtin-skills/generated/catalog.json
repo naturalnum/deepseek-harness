@@ -144,9 +144,9 @@
         "publisher": "PowerEvolve"
       },
       "release": {
-        "version": "1.1.40",
+        "version": "1.1.41",
         "state": "PUBLISHED",
-        "manifestDigest": "sha256:ff99161e509548f8d166807146e2af67c3af1de0e6a68e80f7f71e4478009a47",
+        "manifestDigest": "sha256:21f4887214fdef70113680e6c830fd85032678d85e64c997d177a7f79c188262",
         "targets": [
           "cloud",
           "desktop"
@@ -155,10 +155,10 @@
           "skill"
         ],
         "permissions": [],
-        "artifactDigest": "df12a6b22fbc64cfa40bf26b457c57c5719a84927b3edd866653631a5480996a",
-        "artifactSize": 676097,
-        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.power-grid-technical-report-writer/releases/1.1.40/artifact",
-        "artifactPath": "extensions/builtin.power-grid-technical-report-writer/1.1.40.zip"
+        "artifactDigest": "bdb0670ccd3614e036c394a49a3caeaa950373b18811b79ba4c060758e7bf9a8",
+        "artifactSize": 680753,
+        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.power-grid-technical-report-writer/releases/1.1.41/artifact",
+        "artifactPath": "extensions/builtin.power-grid-technical-report-writer/1.1.41.zip"
       }
     },
     {
@@ -198,9 +198,9 @@
         "publisher": "PowerEvolve"
       },
       "release": {
-        "version": "1.1.29",
+        "version": "1.1.30",
         "state": "PUBLISHED",
-        "manifestDigest": "sha256:5af58bbfbd3280734f854fb89176e0c6f998f7f1a40746df6e7ad3966b0e7ca1",
+        "manifestDigest": "sha256:4c7c9d55dd5b26946f9073b572ab81c249e29a98d656956cb58f263eaa7b925b",
         "targets": [
           "cloud",
           "desktop"
@@ -209,10 +209,10 @@
           "skill"
         ],
         "permissions": [],
-        "artifactDigest": "f80b63aeb2d13f66fbe469ecb0603e1b3e327f35a1b021fab1fbccbea36f11af",
-        "artifactSize": 162085,
-        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.report-workflow-orchestrator/releases/1.1.29/artifact",
-        "artifactPath": "extensions/builtin.report-workflow-orchestrator/1.1.29.zip"
+        "artifactDigest": "0a1a57c5e07684d6716ff9fcbc06c7a20a471d7fa9468300f2e2de92d30d7214",
+        "artifactSize": 164570,
+        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.report-workflow-orchestrator/releases/1.1.30/artifact",
+        "artifactPath": "extensions/builtin.report-workflow-orchestrator/1.1.30.zip"
       }
     },
     {
@@ -225,9 +225,9 @@
         "publisher": "PowerEvolve"
       },
       "release": {
-        "version": "1.1.40",
+        "version": "1.1.41",
         "state": "PUBLISHED",
-        "manifestDigest": "sha256:ede8dd543c14bbc6ec68a3f13904cb87675297db24f39e24662c62aef1476964",
+        "manifestDigest": "sha256:b035bfb3fe60d34b39d136e0a8f2dbcc8004ef1e7fa64943720053f086a25a2c",
         "targets": [
           "cloud",
           "desktop"
@@ -236,10 +236,10 @@
           "skill"
         ],
         "permissions": [],
-        "artifactDigest": "0d024e95cb328fbc0727d7c60b3b998d699b47cc1c59dd140bc8ee51e4b580f8",
-        "artifactSize": 272267,
-        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.tech-report-writer/releases/1.1.40/artifact",
-        "artifactPath": "extensions/builtin.tech-report-writer/1.1.40.zip"
+        "artifactDigest": "eb9a5d8f3b1b28e9e258720f354049cf0dac5ecf5fca76baf4593248df82a918",
+        "artifactSize": 276336,
+        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.tech-report-writer/releases/1.1.41/artifact",
+        "artifactPath": "extensions/builtin.tech-report-writer/1.1.41.zip"
       }
     }
   ]

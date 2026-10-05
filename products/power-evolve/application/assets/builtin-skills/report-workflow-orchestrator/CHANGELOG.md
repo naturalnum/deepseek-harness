@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.30
+
+- Reject modern bilingual abstract drafts with fewer or more than three English paragraphs during actual apply; retain rejected versions and require repaired new-version validation before confirmation. Preserve historical confirmation behavior.
+
 ## 1.1.29
 
 - Bind new search_references requests to reference_evidence_contract=2 and top-level internet_access/items; persist the checked contract on the accepted artifact.

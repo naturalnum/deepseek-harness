@@ -47,7 +47,7 @@ const definitions = [
   },
   {
     directory: 'power-grid-technical-report-writer',
-    extensionId: 'builtin.power-grid-technical-report-writer', version: '1.1.40',
+    extensionId: 'builtin.power-grid-technical-report-writer', version: '1.1.41',
     name: '电网技术报告写作',
     summary: '渐进式编写电网科技项目结题技术报告。',
     description: '提供项目档案、论证架构、目录、分章正文、摘要证据包和全文组装规则及确定性校验脚本。',
@@ -64,7 +64,7 @@ const definitions = [
   },
   {
     directory: 'report-workflow-orchestrator',
-    extensionId: 'builtin.report-workflow-orchestrator', version: '1.1.29',
+    extensionId: 'builtin.report-workflow-orchestrator', version: '1.1.30',
     name: '技术报告工作流',
     summary: '编排技术报告写作、审核、排版和逐页验收。',
     description: '通过文件化状态机连接电网报告生成、结构化审核、Word 排版、格式修复与视觉验收。',
@@ -72,7 +72,7 @@ const definitions = [
     category: 'writing-office', publisher: 'PowerEvolve',
   },
   {
-    directory: 'tech-report-writer', extensionId: 'builtin.tech-report-writer', version: '1.1.40',
+    directory: 'tech-report-writer', extensionId: 'builtin.tech-report-writer', version: '1.1.41',
     name: '技术报告 Word 排版',
     summary: '生成、重排和校验中国电科院技术报告 Word 文件。',
     description: '包含 Word 模板、结构化数据校验、DOCX 生成、格式修复、目录域处理、PDF 转换与逐页视觉验收脚本。',
