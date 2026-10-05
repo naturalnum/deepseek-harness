@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { access, chmod, copyFile, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
+import { access, chmod, copyFile, lstat, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -57,11 +57,11 @@ async function resources(root) {
 }
 
 /** Await the owned Electron group; bounded output does not expose Chromium or child stderr. */
-async function run(root, compiled, scenario) {
-  const application = join(root, 'app'); await mkdir(application, { mode: 0o700 })
+async function run(root, compiled, scenario, existingRuntime) {
+  const application = join(root, 'app'); await mkdir(application, { recursive: true, mode: 0o700 })
   await copyFile(new URL('./fixtures/product-installed-main.mjs', import.meta.url), join(application, 'fixture.mjs'))
   await writeFile(join(application, 'package.json'), JSON.stringify({ type: 'module', main: 'fixture.mjs' }), { mode: 0o600 })
-  const runtime = await resources(root)
+  const runtime = existingRuntime ?? await resources(root)
   const child = spawn(electron, [application], { cwd: application, detached: process.platform !== 'win32',
     env: { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: join(root, 'home'), TMPDIR: join(root, 'tmp'), DOCKER_HOST: 'unix://fixture-only.sock',
       XDG_CACHE_HOME: join(root, 'cache'), XDG_CONFIG_HOME: join(root, 'config'), LANG: 'en_US.UTF-8',
@@ -101,34 +101,98 @@ async function run(root, compiled, scenario) {
   return { ...JSON.parse(lines[0].slice(prefix.length)), exit, processGroupGone }
 }
 
-test('production installed Electron main selects fixed resources and owns local startup and quit',
-  { skip: electron === undefined, timeout: 150000 }, async t => {
+/** Read only synthetic fixture files, including their stable filesystem identities. */
+async function retainedFiles(paths) {
+  return Promise.all(paths.map(async path => {
+    const info = await lstat(path, { bigint: true })
+    assert(info.isFile() && !info.isSymbolicLink())
+    return { dev: String(info.dev), ino: String(info.ino), mode: String(info.mode), sha256: hash(await readFile(path)) }
+  }))
+}
+
+/** Seed only synthetic bytes; the owned CLI does not parse credentials or journals. */
+async function seedPrivateState(root, namespace) {
+  const paths = [], privateDir = join(root, 'app-data', namespace, 'device/private')
+  await mkdir(privateDir, { recursive: true, mode: 0o700 })
+  for (const name of ['device.json', 'journal.json']) {
+    const path = join(privateDir, name)
+    await writeFile(path, JSON.stringify({ syntheticInstallation: namespace, file: name }) + '\n', { flag: 'wx', mode: 0o600 })
+    paths.push(path)
+  }
+  return paths
+}
+
+/** Retain version 1 private bytes and its OS-user writer record while new installations prepare. */
+async function seedInstallationState(root) {
+  const paths = await seedPrivateState(root, 'PowerEvolve')
+  const shared = join(root, 'app-data/PowerEvolve/device-writers')
+  await mkdir(shared, { mode: 0o700 })
+  const writer = join(shared, 'writer-slot.json')
+  await writeFile(writer, '{"syntheticUnknownWriter":"retained-across-installations"}\n', { flag: 'wx', mode: 0o600 })
+  paths.push(writer)
+  return paths
+}
+
+test('production installed Electron main selects trusted state and owns local startup and quit',
+  { skip: electron === undefined, timeout: 240000 }, async t => {
     await access(electron)
     if (evidence !== undefined) { assert(isAbsolute(evidence)); await mkdir(evidence, { recursive: true, mode: 0o700 }) }
     const root = await realpath(await mkdtemp(join(tmpdir(), 'pe-product-main-installed-')))
     const results = [], frozen = await snapshot(root)
+    let completedLaunches = 0, namespaceComplete = false
+    const check = async (directory, scenario, runtime) => {
+      const result = { ...await run(directory, frozen.compiled, scenario, runtime), compiled: frozen.hashes }
+      results.push(result)
+      assert.equal(result.complete, true, JSON.stringify(result.failure))
+      assert.equal(result.processGroupGone, true, 'Owned Electron group remained')
+      assert.deepEqual(result.cleanup, { windows: 0, servers: 0, ownedChildren: 0 })
+      assert.deepEqual(result.exit, { code: 0, signal: null }); assert.match(result.electron, /^44\./u)
+      if (evidence !== undefined) await writeFile(join(evidence, scenario + '.json'), JSON.stringify(result, null, 2) + '\n', { mode: 0o600 })
+      completedLaunches++
+      return result
+    }
+    const directoryFor = async name => {
+      const directory = join(root, name); await mkdir(directory, { mode: 0o700 })
+      for (const part of ['home', 'tmp', 'cache', 'config', 'app-data']) await mkdir(join(directory, part), { mode: 0o700 })
+      return directory
+    }
     try {
-      for (const scenario of ['installed', 'prepare-quit', 'home-overlay', 'cli-anchor', 'override-config', 'override-data-dir', 'override-device-config']) {
-        await t.test(scenario, async () => {
-          const directory = join(root, scenario); await mkdir(directory, { mode: 0o700 })
-          for (const name of ['home', 'tmp', 'cache', 'config', 'app-data']) await mkdir(join(directory, name), { mode: 0o700 })
-          const result = { ...await run(directory, frozen.compiled, scenario), compiled: frozen.hashes }
-          results.push(result)
-          assert.equal(result.complete, true, JSON.stringify(result.failure))
-          assert.equal(result.processGroupGone, true, 'Owned Electron group remained')
-          assert.deepEqual(result.cleanup, { windows: 0, servers: 0, ownedChildren: 0 })
-          assert.deepEqual(result.exit, { code: 0, signal: null }); assert.match(result.electron, /^44\./u)
-          if (evidence !== undefined) await writeFile(join(evidence, scenario + '.json'), JSON.stringify(result, null, 2) + '\n', { mode: 0o600 })
-        })
+      for (const scenario of ['installed', 'prepare-quit', 'home-overlay', 'cli-anchor', 'override-config', 'override-data-dir',
+        'override-device-config', 'invalid-namespace', 'missing-namespace', 'future-version', 'override-v2-data-dir']) {
+        await t.test(scenario, async () => { await check(await directoryFor(scenario), scenario) })
       }
+      await t.test('v2 namespace identity persists across quit/reopen and remains separate from another installation', async () => {
+        const directory = await directoryFor('namespaces'), runtime = await resources(directory)
+        const paths = await seedInstallationState(directory)
+        let before = await retainedFiles(paths)
+        const selections = []
+        for (const scenario of ['namespace-initial', 'namespace-reopen', 'namespace-other', 'namespace-return']) {
+          const result = await check(directory, scenario, runtime)
+          assert.deepEqual(await retainedFiles(paths), before, 'Installation-private or shared writer bytes/inodes changed')
+          selections.push(result.stateSelection)
+          if (scenario === 'namespace-initial' || scenario === 'namespace-other') {
+            paths.push(...await seedPrivateState(directory, scenario === 'namespace-initial' ? 'PowerEvolve-alpha' : 'PowerEvolve-beta'))
+            before = await retainedFiles(paths)
+          }
+        }
+        assert.equal(selections[0].userData, selections[1].userData)
+        assert.equal(selections[0].userData, selections[3].userData)
+        assert.notEqual(selections[0].userData, selections[2].userData)
+        for (const field of ['home', 'privateDir', 'journal']) {
+          assert.equal(selections[0][field], selections[1][field])
+          assert.notEqual(selections[0][field], selections[2][field])
+        }
+        for (const selected of selections) assert.equal(selected.coordinationRoot, join(directory, 'app-data/PowerEvolve/device-writers'))
+        namespaceComplete = true
+      })
     } finally {
       await rm(root, { recursive: true, force: true })
       if (evidence !== undefined) await writeFile(join(evidence, 'proof.json'), JSON.stringify({
-        complete: results.length === 7 && results.every(result => result.complete && result.processGroupGone),
+        complete: completedLaunches === 15 && namespaceComplete && results.every(result => result.complete && result.processGroupGone),
         command: 'PE_DESKTOP_ELECTRON=<Electron44> PE_DESKTOP_GATE_PACKAGE=<built-desktop> PE_DESKTOP_INSTALLED_EVIDENCE=<private-evidence> node --test products/power-evolve/desktop/tests/product-main-installed-electron.test.mjs',
         compiled: frozen.hashes, fixtures: frozen.fixtures, testSha256: hash(await readFile(fileURLToPath(import.meta.url))),
         node: frozen.node, results, temporaryDirectoryRemoved: true,
-        scope: 'Real Electron and production bundled main/preloads with installation facts, loopback HTML and owned CLI protocol fixtures. No actual .app, ABI, DSH/Worker, Python/helper execution, model, PostgreSQL or Docker acceptance.',
+        scope: 'Real Electron, Chromium localStorage, filesystem and production bundled main/preloads with installation facts, loopback HTML and owned CLI protocol fixtures. Synthetic device/journal/writer bytes are retained but not interpreted by a Worker. No actual .app, ABI, DSH/Worker recovery, pairing, OS chooser, Python/helper execution, model, PostgreSQL or Docker acceptance.',
       }, null, 2) + '\n', { mode: 0o600 })
     }
   })

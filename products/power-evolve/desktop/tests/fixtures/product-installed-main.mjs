@@ -1,7 +1,7 @@
 /** Loads unmodified production main after replacing only Electron installation facts and local services. */
 import assert from 'node:assert/strict'
 import childProcess from 'node:child_process'
-import { writeSync } from 'node:fs'
+import fs, { writeSync } from 'node:fs'
 import promises from 'node:fs/promises'
 import { lstat, mkdir, readFile, readdir, realpath, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
@@ -19,15 +19,33 @@ app.disableHardwareAcceleration(); app.commandLine.appendSwitch('use-mock-keycha
 Object.defineProperty(app, 'isPackaged', { value: true })
 Object.defineProperty(process, 'resourcesPath', { value: join(root, 'resources') })
 app.setPath('appData', join(root, 'app-data'))
-process.argv = [process.execPath, ...(scenario.startsWith('override-') ? ['--' + scenario.slice('override-'.length), join(root, 'unused')] : [])]
-const servers = [], cases = [], dialogs = [], data = join(root, 'app-data/PowerEvolve')
-let failure, finishing = false, normalQuit = false
+const namespaceCase = scenario.startsWith('namespace-')
+const v2 = namespaceCase || ['invalid-namespace', 'missing-namespace', 'override-v2-data-dir'].includes(scenario)
+const namespace = scenario === 'namespace-other' ? 'beta' : 'alpha'
+const startsDevice = scenario === 'installed' || namespaceCase
+const reopened = ['namespace-reopen', 'namespace-return'].includes(scenario)
+process.argv = [process.execPath, ...(scenario.startsWith('override-')
+  ? ['--' + (scenario === 'override-v2-data-dir' ? 'data-dir' : scenario.slice('override-'.length)), join(root, 'unused')] : [])]
+// Ambient state hints are deliberately unrelated to the trusted installation descriptor.
+process.env.PE_PRIVATE_DIR = join(root, 'ignored-ambient-private')
+const servers = [], cases = [], dialogs = [], data = join(root, 'app-data', v2 ? 'PowerEvolve-' + namespace : 'PowerEvolve')
+const coordinationRoot = join(root, 'app-data/PowerEvolve/device-writers')
+let failure, finishing = false, normalQuit = false, recordOffset = 0, stateSelection, browserState
+const privateOpens = []
+for (const [owner, method] of [[fs, 'readFileSync'], [fs, 'openSync'], [promises, 'readFile'], [promises, 'open']]) {
+  const original = owner[method]
+  owner[method] = (path, ...args) => {
+    if (typeof path === 'string' && path.startsWith(join(root, 'app-data') + '/') && path.includes('/device/private/')) privateOpens.push(path)
+    return original(path, ...args)
+  }
+}
 const inheritedEnvironment = { PATH: process.env.PATH, HOME: process.env.HOME, DOCKER_HOST: process.env.DOCKER_HOST }
-const launches = []
+const launches = [], launchState = []
 for (const method of ['spawn', 'execFile']) {
   const original = childProcess[method]
   childProcess[method] = (executable, ...args) => {
     launches.push({ method, installedNode: executable === join(root, 'resources/node/bin/node') })
+    launchState.push({ home: args[1]?.env?.DSH_HOME, cwd: args[1]?.cwd })
     return original(executable, ...args)
   }
 }
@@ -51,21 +69,22 @@ async function absent(path) {
   try { await lstat(path); return false }
   catch (error) { if (error.code === 'ENOENT') return true; throw error }
 }
-async function records() {
+async function allRecords() {
   try { return (await readFile(join(root, 'cli.jsonl'), 'utf8')).trim().split('\n').map(line => JSON.parse(line)) }
   catch (error) { if (error.code === 'ENOENT') return []; throw error }
 }
+async function records() { return (await allRecords()).slice(recordOffset) }
 function alive(pid) {
   try { process.kill(pid, 0); return true }
   catch (error) { if (error.code === 'ESRCH') return false; throw error }
 }
-async function serve() {
+async function serve(port = 0) {
   const server = createServer((_request, response) => {
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
     response.end('<!doctype html><title>Installed main fixture</title><h1>Cloud fixture</h1>')
   })
   servers.push(server)
-  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve) })
+  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve) })
   return `http://127.0.0.1:${server.address().port}`
 }
 async function devicePort() {
@@ -84,7 +103,7 @@ async function finalize() {
   finishing = true
   try {
     const rows = await records(), pids = rows.filter(row => row.event === 'spawn').map(row => row.pid)
-    if (scenario === 'installed' && failure === undefined) {
+    if (startsDevice && failure === undefined) {
       assert(normalQuit, 'normal_quit_not_requested'); assert.equal(pids.length, 1, 'unexpected_child_count')
       assert.equal(rows.at(-1)?.event, 'terminate-exit', 'owned_cli_not_terminated')
       await until(() => pids.every(pid => !alive(pid)), 'owned_cli_remained_alive', 1000)
@@ -101,7 +120,11 @@ async function finalize() {
       assert.equal(await realpath(join(profile, 'node_modules/@power-evolve/device')), join(root, 'resources', runtime.deviceBundle))
       cases.push({ name: 'quit-awaits-real-profile-preparation-without-spawning', passed: true })
     }
-    if (scenario !== 'installed') assert.deepEqual(launches, [], 'non_device_case_spawned_process')
+    if (!startsDevice) assert.deepEqual(launches, [], 'non_device_case_spawned_process')
+    if (namespaceCase && failure === undefined) {
+      assert.deepEqual(privateOpens, [], 'carrier_opened_installation_private_file')
+      cases.push({ name: 'carrier-does-not-open-another-installation-journal', passed: true })
+    }
     assert.deepEqual({ PATH: process.env.PATH, HOME: process.env.HOME, DOCKER_HOST: process.env.DOCKER_HOST }, inheritedEnvironment,
       'parent_environment_changed')
     for (const pid of pids) if (alive(pid)) {
@@ -112,6 +135,8 @@ async function finalize() {
   for (const server of servers) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }
   const rows = await records()
   const result = { scenario, complete: failure === undefined, electron: process.versions.electron, cases,
+    ...(stateSelection === undefined ? {} : { stateSelection }),
+    ...(browserState === undefined ? {} : { browserState }),
     cleanup: { windows: BrowserWindow.getAllWindows().length, servers: servers.filter(server => server.listening).length,
       ownedChildren: rows.filter(row => row.event === 'spawn' && alive(row.pid)).length },
     substitutes: { installationFacts: 'isPackaged/resourcesPath/appData/packaged-argv', descriptor: 'physical-static-template',
@@ -119,21 +144,36 @@ async function finalize() {
       preparation: scenario === 'prepare-quit' ? 'promise-gated-real-mkdir-for-lifecycle-only' : 'unchanged-production-filesystem-preparation',
       processObservation: 'delegating-node-child-process-spawn-and-execFile-observers',
       dialog: 'answers-only', deviceBundle: 'static-manifest-not-loaded', pythonAndHelper: 'existence-only-never-executed',
+      privateState: 'synthetic-retained-bytes-not-interpreted-by-cli-fixture',
+      browserState: 'real-Chromium-localStorage-at-one-fixed-fixture-origin',
       mainAndPreloads: 'unchanged-production-artifacts', actualApp: false, abi: false, profileRuntime: false, worker: false, docker: false, pg: false },
     ...(failure === undefined ? {} : { failure: { code: failure } }) }
   writeSync(1, 'PE_PRODUCT_INSTALLED_RESULT ' + JSON.stringify(result) + '\n')
-  app.exit(failure === undefined ? 0 : 1)
+  if (failure === undefined) { app.removeListener('will-quit', onWillQuit); app.quit() }
+  else app.exit(1)
 }
 // Product main owns before-quit. The observer closes fixture services only after will-quit.
-app.on('will-quit', event => { event.preventDefault(); void finalize() })
+const onWillQuit = event => { event.preventDefault(); void finalize() }
+app.on('will-quit', onWillQuit)
 
 async function run() {
-  const hostOrigin = await serve(), platformOrigin = await serve(), port = await devicePort()
+  recordOffset = (await allRecords()).length
+  let priorOrigins
+  if (namespaceCase) {
+    try { priorOrigins = JSON.parse(await readFile(join(root, 'origins.json'), 'utf8')) }
+    catch (error) { if (error.code !== 'ENOENT') throw error }
+  }
+  const hostOrigin = await serve(priorOrigins === undefined ? 0 : Number(new URL(priorOrigins.hostOrigin).port))
+  const platformOrigin = await serve(priorOrigins === undefined ? 0 : Number(new URL(priorOrigins.platformOrigin).port))
+  if (namespaceCase && priorOrigins === undefined) await writeFile(join(root, 'origins.json'), JSON.stringify({ hostOrigin, platformOrigin }),
+    { flag: 'wx', mode: 0o600 })
+  const port = await devicePort()
   process.env.PE_INSTALLED_GATE_PORT = String(port)
   const worker = { image: 'sha256:' + 'a'.repeat(64), pollMs: 500, contactGraceMs: 5000, commandPollMs: 250,
     platformRequestTimeoutMs: 10000, dockerCommandTimeoutMs: 15000, dockerStopTimeoutMs: 10000,
     dockerStopGraceSeconds: 2, directoryPickerTimeoutMs: 120000, fileOperationTimeoutMs: 10000 }
-  const descriptor = { kind: 'power-evolve-desktop', version: 1, deployment: { hostOrigin, platformOrigin },
+  const descriptor = { kind: 'power-evolve-desktop', version: scenario === 'future-version' ? 3 : v2 ? 2 : 1,
+    ...(v2 && scenario !== 'missing-namespace' ? { stateNamespace: scenario === 'invalid-namespace' ? '../escape' : namespace } : {}), deployment: { hostOrigin, platformOrigin },
     runtime: { ...runtime, ...(scenario === 'cli-anchor' ? { deviceBundle: 'runtime/descriptor-device' } : {}) }, worker,
     device: { profile: 'power-evolve-device', loopbackOrigin: `http://127.0.0.1:${port}`,
       commandSearchPath: [join(root, 'external command tools'), '/usr/bin', '/bin'],
@@ -155,6 +195,16 @@ async function run() {
     assert.equal((await records()).length, 0, 'override_spawned_child'); assert(await absent(data), 'override_created_user_data')
     cases.push({ name: scenario + '-rejected-before-startup', passed: true }); await finalize(); return
   }
+  if (['invalid-namespace', 'missing-namespace', 'future-version'].includes(scenario)) {
+    await assert.rejects(import(pathToFileURL(join(compiled, 'main.js')).href),
+      { message: 'PowerEvolve desktop: invalid installed configuration' })
+    assert.equal(BrowserWindow.getAllWindows().length, 0, 'invalid_descriptor_created_window')
+    assert.equal((await records()).length, 0, 'invalid_descriptor_spawned_child')
+    for (const path of ['PowerEvolve', 'PowerEvolve-alpha', 'PowerEvolve-beta']) {
+      assert(await absent(join(root, 'app-data', path)), 'invalid_descriptor_created_state')
+    }
+    cases.push({ name: scenario + '-rejected-before-state-creation', passed: true }); await finalize(); return
+  }
   await import(pathToFileURL(join(compiled, 'main.js')).href)
   let primary
   await until(() => {
@@ -166,9 +216,9 @@ async function run() {
   assert.equal(app.getPath('userData'), data, 'installed_state_root_changed')
   assert.equal((await records()).length, 0, 'cloud_start_spawned_child')
   assert.deepEqual(launches, [], 'cloud_start_launched_shell_or_process')
-  assert(await absent(join(data, 'device/home/profiles')), 'cloud_start_created_profile')
+  if (!reopened) assert(await absent(join(data, 'device/home/profiles')), 'cloud_start_created_profile')
   if (scenario === 'installed') assert(await absent(join(data, 'device')), 'cloud_start_created_device_state')
-  cases.push({ name: 'fixed-resource-cloud-start-without-profile-or-child', passed: true })
+  cases.push({ name: reopened ? 'fixed-resource-cloud-reopen-without-child' : 'fixed-resource-cloud-start-without-profile-or-child', passed: true })
   if (scenario === 'prepare-quit') {
     await primary.webContents.executeJavaScript('void powerEvolveDesktopDevice.openAuthorization().catch(() => {}); true')
     await until(() => prepareEntered, 'profile_preparation_gate_not_reached')
@@ -181,7 +231,18 @@ async function run() {
     cases.push({ name: 'quit-held-while-profile-mkdir-is-pending', passed: true })
     releasePreparation(); return
   }
-  if (scenario === 'installed') {
+  if (namespaceCase) {
+    const existing = await primary.webContents.executeJavaScript("localStorage.getItem('pe-installed-namespace-fixture')")
+    browserState = { userData: app.getPath('userData'), sessionData: app.getPath('sessionData'),
+      storagePath: primary.webContents.session.storagePath, persistedValue: existing }
+    assert.equal(existing, reopened ? namespace : null, 'browser_storage_crossed_namespace_or_lost_identity')
+    await primary.webContents.executeJavaScript("localStorage.setItem('pe-installed-namespace-fixture', " + JSON.stringify(namespace) + ")")
+    primary.webContents.session.flushStorageData()
+    stateSelection = { userData: app.getPath('userData'), home: join(data, 'device/home'), privateDir: join(data, 'device/private'),
+      journal: join(data, 'device/private/journal.json'), coordinationRoot }
+    cases.push({ name: reopened ? 'same-namespace-browser-identity-survives-reopen' : 'new-namespace-has-independent-browser-identity', passed: true })
+  }
+  if (startsDevice) {
     await primary.webContents.executeJavaScript('Promise.all([powerEvolveDesktopDevice.openAuthorization(), powerEvolveDesktopDevice.openAuthorization()])')
     const profile = join(data, 'device/home/profiles/power-evolve-device')
     assert.deepEqual(await readdir(join(data, 'device/home/profiles')), ['power-evolve-device'], 'duplicate_profile')
@@ -194,13 +255,14 @@ async function run() {
     assert.equal(await realpath(join(profile, 'node_modules/@power-evolve/device')), join(root, 'resources', runtime.deviceBundle))
     const patch = JSON.parse(await readFile(join(profile, 'cordis.patch.yml'), 'utf8'))
     assert.deepEqual(patch, [{ id: 'web-server', config: { host: '127.0.0.1', port } }, { id: 'power-evolve-device', config: {
-      platformUrl: platformOrigin, privateDir: join(data, 'device/private'), coordinationRoot: join(data, 'device-writers'),
+      platformUrl: platformOrigin, privateDir: join(data, 'device/private'), coordinationRoot,
       pythonExecutable: join(root, 'resources', runtime.pythonExecutable), ...worker, readyFile: join(data, 'device/private/ready.json'),
     } }])
     const spawn = (await records()).find(row => row.event === 'spawn')
-    for (const field of ['executableMatches', 'homeMatches', 'cwdMatches', 'profileMatches', 'pathMatches', 'homeEnvironmentMatches', 'dockerHostMatches']) {
+    for (const field of ['executableMatches', ...(!namespaceCase ? ['homeMatches', 'cwdMatches'] : []), 'profileMatches', 'pathMatches', 'homeEnvironmentMatches', 'dockerHostMatches']) {
       assert.equal(spawn[field], true, 'installed_cli_launch_changed')
     }
+    assert.deepEqual(launchState, [{ home: join(data, 'device/home'), cwd: join(data, 'device/work') }], 'child_state_selection_changed')
     cases.push({ name: 'explicit-child-path-preserves-home-daemon-and-parent-environment-without-shell', passed: true })
     assert.equal(await readFile(descriptorPath, 'utf8'), descriptorBytes, 'installed_descriptor_changed')
     cases.push({ name: 'fixed-worker-and-resource-profile-prepared-before-real-node-launch', passed: true })
