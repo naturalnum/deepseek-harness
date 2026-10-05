@@ -8,7 +8,8 @@ import type { IncomingMessage } from 'node:http'
 import type { Pool, PoolClient } from 'pg'
 import { z } from 'zod'
 import { deviceMaterialBinding, deviceMaterialSelection, deviceSkillManifest, deviceSkillMaterial,
-  type DeviceMaterialBinding, type DeviceSkillMaterial } from '@power-evolve/contracts/device-execution'
+  type DeviceMaterialBinding, type DeviceReportSuite, type DeviceSkillMaterial } from '@power-evolve/contracts/device-execution'
+import { createDeviceReportSuite } from '../device-report-suite.ts'
 import { PlatformError, type Identity, type skillSelection } from '../contracts.ts'
 import { transaction } from './database.ts'
 import { requireActiveAccount } from './account-authority.ts'
@@ -760,6 +761,68 @@ export class SkillService {
     const parsed = deviceMaterialSelection.safeParse(bindings)
     if (!parsed.success) throw new PlatformError(503, 'skill_package_unavailable')
     return parsed.data
+  }
+
+  /** Resolve Desktop materials and report roles from accepted versions and their built-in receipts.
+   * Names alone never identify a report role; incomplete role selections retain ordinary package mounts.
+   * @param userId Original Operation owner.
+   * @param selection Immutable accepted text/package versions.
+   * @param database Existing transaction when validating dispatch admission.
+   * @returns Original package bindings and, when complete, their canonical report description.
+   */
+  async deviceExecutionMaterials(userId: string, selection: readonly Selection[], database: Pool | PoolClient = this.pool):
+    Promise<{ materials: DeviceMaterialBinding[]; reportSuite?: DeviceReportSuite }> {
+    const materials = await this.deviceBindings(userId, selection, database)
+    const roles = new Map<string, DeviceMaterialBinding>()
+    for (const selected of selection) if (selected.kind === 'package') {
+      const version = await this.selectedPackageVersion(userId, selected, database)
+      const receipts = await database.query<{ catalog_id: string; version: string; archive_digest: string }>(
+        `SELECT DISTINCT catalog_id,version,archive_digest FROM pe_builtin_skill_install_requests
+         WHERE user_id=$1 AND package_version_id=$2 AND catalog_id=ANY($3::text[])`,
+        [userId, version.id, REPORT_SKILLS.map(role => role.id)])
+      for (const receipt of receipts.rows) {
+        const role = REPORT_SKILLS.find(item => item.id === receipt.catalog_id)!
+        if (receipt.version !== version.version || receipt.archive_digest !== version.archive_digest
+          || version.name !== role.folder || roles.has(role.folder)) throw new PlatformError(503, 'skill_package_unavailable')
+        roles.set(role.folder, materials.find(item => item.skillId === selected.skillId)!)
+      }
+    }
+    const [orchestrator, writer, reviewer, formatter] = REPORT_SKILLS.map(role => roles.get(role.folder))
+    if (!orchestrator || !writer || !reviewer || !formatter) return { materials }
+    const members: DeviceReportSuite['members'] = [
+      { role: REPORT_SKILLS[0].folder, skillId: orchestrator.skillId },
+      { role: REPORT_SKILLS[1].folder, skillId: writer.skillId },
+      { role: REPORT_SKILLS[2].folder, skillId: reviewer.skillId },
+      { role: REPORT_SKILLS[3].folder, skillId: formatter.skillId },
+    ]
+    return { materials, reportSuite: createDeviceReportSuite(members, materials) }
+  }
+
+  /** Resolve a Desktop mount hint without publishing a Cloud report suite or starting an executor.
+   * @param userId Original Operation owner.
+   * @param selection Accepted versions shared with Device dispatch resolution.
+   * @param skillId Requested selected skill, subject to current revocation and byte verification.
+   * @returns Ordinary package path or a verified report sibling path; text has no runtime path.
+   */
+  async deviceRuntimeResourceBase(userId: string, selection: readonly Selection[], skillId: string):
+    Promise<{ runtimePath: string | null; suiteAvailable: boolean }> {
+    const selected = selection.find(item => item.skillId === skillId)
+    if (!selected) throw new PlatformError(404, 'skill_not_found')
+    await this.activeSelectedSkill(userId, selected)
+    if (selected.kind === 'text') return { runtimePath: null, suiteAvailable: false }
+    const resolved = await this.deviceExecutionMaterials(userId, selection)
+    const member = resolved.reportSuite?.members.find(item => item.skillId === skillId)
+    const verified = member ? resolved.reportSuite!.members.map(item => selection.find(skill => skill.skillId === item.skillId)!) : [selected]
+    for (const item of verified) {
+      const version = await this.selectedPackageVersion(userId, item)
+      await verifyPublishedSkillPackage(join(await this.packageUserRoot(userId), 'sha256', version.archive_digest),
+        version.manifest, manifestFiles(version.manifest, version.archive_digest))
+    }
+    const current = await this.deviceExecutionMaterials(userId, selection)
+    if (!isDeepStrictEqual(current, resolved)) throw new PlatformError(503, 'skill_package_unavailable')
+    return member
+      ? { runtimePath: `/opt/power-evolve/skills/report-suites/${resolved.reportSuite!.digest}/${member.role}`, suiteAvailable: true }
+      : { runtimePath: `/opt/power-evolve/skills/sha256/${selected.packageDigest}/skill`, suiteAvailable: false }
   }
 
   /** Return the original manifest and every verified regular file without rebuilding an archive.

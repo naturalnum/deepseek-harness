@@ -102,7 +102,7 @@ test('package path is only a cloud resource hint and retained package is read th
   await owner.scope.dispose()
 })
 
-test('Desktop package resources describe the selected read-only container mount without a Cloud suite', async () => {
+test('Desktop package resources accept only trusted ordinary or exact report sibling mount hints', async () => {
   const ctx = await testContext()
   const item = selection('report-reviewer', 'Review report', { kind: 'package', version: '1.1.0',
     packageDigest: 'a'.repeat(64), manifestDigest: 'b'.repeat(64) })
@@ -126,7 +126,14 @@ test('Desktop package resources describe the selected read-only container mount 
   assert.equal(loaded.resourceBase.description, listed[0].resourceBase.description)
   assert.doesNotMatch(renderSkillContent(loaded), /cloud Sandbox|report-suites/u)
   runtimePath = `/opt/power-evolve/skills/report-suites/${'c'.repeat(64)}/report-reviewer`
-  for (suiteAvailable of [false, true]) {
+  await assert.rejects(ctx.skills.get(item.name, owner.view), /runtime path/u)
+  suiteAvailable = true
+  const report = await ctx.skills.get(item.name, owner.view)
+  assert.match(renderSkillContent(report), /report-suites\/c{64}\/report-reviewer/u)
+  assert.match(renderSkillContent(report), /desktop_exec/u)
+  assert.doesNotMatch(renderSkillContent(report), /cloud Sandbox/u)
+  for (runtimePath of ['/tmp/host-file', `/opt/power-evolve/skills/report-suites/${'c'.repeat(64)}/tech-report-writer`,
+    `/opt/power-evolve/skills/report-suites/${'c'.repeat(64)}/../report-reviewer`]) {
     await assert.rejects(ctx.skills.get(item.name, owner.view), /runtime path/u)
   }
   await owner.scope.dispose()
@@ -175,11 +182,13 @@ test('mismatched snapshots and revoked or expired grants fail closed', async () 
   assert.equal(await ctx.skills.get('private-skill', owner.view), undefined)
 })
 
-test('native skill events retain target-specific package guidance for on-demand model input', async t => {
+test('native skill events retain target-specific package and Desktop report guidance for on-demand model input', async t => {
   const inputs = {}
-  for (const kind of ['cloud', 'desktop']) await t.test(kind, async () => {
+  for (const scenario of ['cloud', 'desktop', 'desktop-report']) await t.test(scenario, async () => {
+    const kind = scenario === 'cloud' ? 'cloud' : 'desktop'
+    const report = scenario === 'desktop-report'
     const ctx = await testContext()
-    const item = selection('word', 'Read this only on demand', { kind: 'package', version: '1.0.0',
+    const item = selection(report ? 'report-reviewer' : 'word', 'Read this only on demand', { kind: 'package', version: '1.0.0',
       packageDigest: 'a'.repeat(64), manifestDigest: 'b'.repeat(64) })
     const calls = []
     const runtime = { async call(path, token, body) {
@@ -187,7 +196,8 @@ test('native skill events retain target-specific package guidance for on-demand 
       if (path === '/runtime/skills/resource') return { kind: 'text', path: 'SKILL.md',
         text: 'Read this only on demand', sha256: item.digest }
       return { ...snapshot(item, 'Read this only on demand'),
-        runtimePath: `/opt/power-evolve/skills/sha256/${item.packageDigest}/skill`, suiteAvailable: false }
+        runtimePath: report ? `/opt/power-evolve/skills/report-suites/${'c'.repeat(64)}/report-reviewer`
+          : `/opt/power-evolve/skills/sha256/${item.packageDigest}/skill`, suiteAvailable: report }
     } }
     const id = SessionId(randomUUID())
     const agent = { id, session: Session.create(id), ctx: undefined }
@@ -196,7 +206,7 @@ test('native skill events retain target-specific package guidance for on-demand 
     installSelectedSkills(agent, { token: 'native-token', selection: [item], skills: [], target: { kind } }, runtime)
     assert.equal(ctx.tools.schemas().some(tool => tool.name === 'skill'), true)
     assert.equal(ctx.tools.get('skill', agent)?.name, 'skill')
-    assert.deepEqual((await ctx.skills.list({ scope: agent })).map(skill => skill.name), ['word'])
+    assert.deepEqual((await ctx.skills.list({ scope: agent })).map(skill => skill.name), [item.name])
     const signal = new AbortController().signal
     const decision = await agentEvents(ctx, agent).waterfall('agent/pre-step',
       { messages: [], turn: 1, step: 1, signal }, () => Promise.resolve({ kind: 'enter', messages: [] }))
@@ -204,17 +214,17 @@ test('native skill events retain target-specific package guidance for on-demand 
     for (const message of decision.messages) agent.session.append('user/message', message, { surfaceOp: 'append' })
     const catalog = agent.session.snapshotEvents().find(event => event.type === 'user/message'
       && event.data.source.kind === 'skill-catalog')
-    assert.deepEqual(catalog.data.source.entries, [{ name: 'word', description: item.description }])
+    assert.deepEqual(catalog.data.source.entries, [{ name: item.name, description: item.description }])
     assert.doesNotMatch(JSON.stringify(catalog), /Read this only on demand/)
     assert.equal(calls.length, 0)
     const loaded = await ctx.tools.execute({ signal, callId: ToolCallId('skill-call-1'),
-      name: 'skill', arguments: { name: 'word' }, agent })
+      name: 'skill', arguments: { name: item.name }, agent })
     assert.equal(loaded.isError, false)
-    assert.match(loaded.content[0].text, /<skill_content name="word">/)
+    assert.match(loaded.content[0].text, new RegExp(`<skill_content name="${item.name}">`))
     assert.match(loaded.content[0].text, /Read this only on demand/)
     assert.deepEqual(calls, [{ path: '/runtime/skills/read', token: 'native-token',
       body: { skillId: item.skillId } }])
-    const direct = createUserMessage({ content: [{ type: 'text', text: '/word Explain the skill.' }],
+    const direct = createUserMessage({ content: [{ type: 'text', text: `/${item.name} Explain the skill.` }],
       source: { kind: 'user' } })
     const invoked = await agentEvents(ctx, agent).waterfall('agent/pre-step',
       { messages: [direct], turn: 2, step: 1, signal },
@@ -223,23 +233,26 @@ test('native skill events retain target-specific package guidance for on-demand 
     for (const message of invoked.messages) agent.session.append('user/message', message, { surfaceOp: 'append' })
     const invocation = agent.session.snapshotEvents().find(event => event.type === 'user/message'
       && event.data.source.kind === 'skill-invocation')
-    assert.deepEqual(invocation.data.source, { kind: 'skill-invocation', name: 'word', form: 'instructions' })
+    assert.deepEqual(invocation.data.source, { kind: 'skill-invocation', name: item.name, form: 'instructions' })
     assert.match(invocation.data.content[0].text, /Read this only on demand/)
     assert.match(invocation.data.content[0].text, /does not start a Sandbox/u)
-    assert.match(invocation.data.content[0].text, /\/opt\/power-evolve\/skills\/sha256\/a{64}\/skill/u)
+    assert.match(invocation.data.content[0].text, report
+      ? /\/opt\/power-evolve\/skills\/report-suites\/c{64}\/report-reviewer/u
+      : /\/opt\/power-evolve\/skills\/sha256\/a{64}\/skill/u)
     if (kind === 'desktop') {
       assert.match(invocation.data.content[0].text, /desktop_exec/u)
       assert.match(invocation.data.content[0].text, /read-only/u)
-      assert.doesNotMatch(invocation.data.content[0].text, /cloud Sandbox|report-suites/u)
+      assert.doesNotMatch(invocation.data.content[0].text, /cloud Sandbox/u)
+      if (!report) assert.doesNotMatch(invocation.data.content[0].text, /report-suites/u)
     } else assert.match(invocation.data.content[0].text, /authorized cloud Sandbox path/u)
-    inputs[kind] = {
+    inputs[scenario] = {
       catalog: { source: catalog.data.source, content: catalog.data.content },
       invocation: { source: invocation.data.source, content: invocation.data.content },
       toolResult: loaded.content,
     }
     assert.equal(calls.length, 2)
     const resource = await ctx.tools.execute({ signal, callId: ToolCallId('resource-call-1'),
-      name: 'skill_resource', arguments: { name: 'word', path: 'SKILL.md' }, agent })
+      name: 'skill_resource', arguments: { name: item.name, path: 'SKILL.md' }, agent })
     assert.equal(resource.isError, false)
     assert.equal(JSON.parse(resource.content[0].text).text, 'Read this only on demand')
     assert.deepEqual(calls.at(-1), { path: '/runtime/skills/resource', token: 'native-token',

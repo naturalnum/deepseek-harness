@@ -76,5 +76,44 @@
         "text": "<skill_content name=\"word\">\n<skill_resources>\nResources for this skill: Read referenced text or list files with skill_resource; this does not start a Sandbox. The selected package is mounted read-only at /opt/power-evolve/skills/sha256/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/skill in the authorized Desktop container. To execute its code, use desktop_exec and write outputs in /workspace or persistent Home /home/agent. This is not a Host filesystem path.\nLoad referenced resources only as needed.\n</skill_resources>\n\n<skill_instructions>\nRead this only on demand\n</skill_instructions>\n</skill_content>"
       }
     ]
+  },
+  "desktop-report": {
+    "catalog": {
+      "source": {
+        "kind": "skill-catalog",
+        "form": "catalog",
+        "entries": [
+          {
+            "name": "report-reviewer",
+            "description": "Description for report-reviewer"
+          }
+        ]
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "<system-reminder>\nA skill is a reusable set of task-specific instructions. The following skills are available in this session:\n\n<available_skills>\n- `report-reviewer`: Description for report-reviewer\n</available_skills>\n\nIf the user names a skill, or the task clearly matches a skill's description, call the `skill` tool with the exact skill name before taking task actions. Load all applicable skills, then follow their full instructions. This catalog contains summaries only; do not infer or follow a skill's instructions until it has been loaded.\nA user may also invoke a skill directly; its <skill_content> block then appears in this conversation. Follow it, and do not call the `skill` tool again for that skill.\n</system-reminder>"
+        }
+      ]
+    },
+    "invocation": {
+      "source": {
+        "kind": "skill-invocation",
+        "name": "report-reviewer",
+        "form": "instructions"
+      },
+      "content": [
+        {
+          "type": "text",
+          "text": "<skill_content name=\"report-reviewer\">\n<skill_resources>\nResources for this skill: Read referenced text or list files with skill_resource; this does not start a Sandbox. The selected package is mounted read-only at /opt/power-evolve/skills/report-suites/cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/report-reviewer in the authorized Desktop container. To execute its code, use desktop_exec and write outputs in /workspace or persistent Home /home/agent. This is not a Host filesystem path.\nLoad referenced resources only as needed.\n</skill_resources>\n\n<skill_instructions>\nRead this only on demand\n</skill_instructions>\n</skill_content>"
+        }
+      ]
+    },
+    "toolResult": [
+      {
+        "type": "text",
+        "text": "<skill_content name=\"report-reviewer\">\n<skill_resources>\nResources for this skill: Read referenced text or list files with skill_resource; this does not start a Sandbox. The selected package is mounted read-only at /opt/power-evolve/skills/report-suites/cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/report-reviewer in the authorized Desktop container. To execute its code, use desktop_exec and write outputs in /workspace or persistent Home /home/agent. This is not a Host filesystem path.\nLoad referenced resources only as needed.\n</skill_resources>\n\n<skill_instructions>\nRead this only on demand\n</skill_instructions>\n</skill_content>"
+      }
+    ]
   }
 }

@@ -17,9 +17,7 @@ export async function readRuntimeSkill(tasks: TaskStore, skills: SkillService, t
   if (!selected) throw new PlatformError(404, 'skill_not_found')
   const result = skillSnapshot.parse(await skills.readSelected(userId, selected, skillId))
   const resources = target.kind === 'desktop'
-    ? { runtimePath: selected.kind === 'package'
-      ? `/opt/power-evolve/skills/sha256/${(await skills.deviceBindings(userId, [selected]))[0]!.packageDigest}/skill` : null,
-    suiteAvailable: false }
+    ? await skills.deviceRuntimeResourceBase(userId, selection, skillId)
     : await skills.runtimeResourceBase(userId, selection, skillId)
   await tasks.selectedSkills(token)
   return { ...result, ...resources }

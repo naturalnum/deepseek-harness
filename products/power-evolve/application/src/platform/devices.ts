@@ -14,6 +14,7 @@ import { transaction } from './database.ts'
 import { lockAccountAuthorities, requireActiveAccount, requireBrowserAccount } from './account-authority.ts'
 import { userId as executionUserId } from '../contracts.ts'
 import { digest } from './identity.ts'
+import { validateDeviceReportSuite } from '../device-report-suite.ts'
 import type { FileService } from './files.ts'
 import type { TaskStore } from './tasks.ts'
 import type { SkillService } from './skills.ts'
@@ -257,7 +258,8 @@ export class DeviceService {
         const frozen = this.dispatch(prior.rows[0])
         if (prior.rows[0].request_digest !== hash({ command, cwd, timeoutMs: frozen.timeoutMs,
           deviceId: target.deviceId, directoryId: target.directoryId,
-          ...(frozen.materials ? { materials: frozen.materials } : {}) })) throw new PlatformError(409, 'request_id_conflict')
+          ...(frozen.materials ? { materials: frozen.materials } : {}),
+          ...(frozen.reportSuite ? { reportSuite: frozen.reportSuite } : {}) })) throw new PlatformError(409, 'request_id_conflict')
         return this.receipt(prior.rows[0])
       }
       const operation = await client.query<{ skill_selection: unknown }>(`SELECT o.skill_selection
@@ -268,9 +270,11 @@ export class DeviceService {
       if (!selected.success) throw new PlatformError(409, 'device_operation_unavailable')
       const selection = selected.data
       if (selection.some(selected => selected.kind === 'package') && !this.skills) throw new PlatformError(503, 'device_material_service_unavailable')
-      const materials = this.skills ? await this.skills.deviceBindings(grant.user_id, selection, client) : []
+      const { materials, reportSuite }: Awaited<ReturnType<SkillService['deviceExecutionMaterials']>> = this.skills
+        ? await this.skills.deviceExecutionMaterials(grant.user_id, selection, client) : { materials: [] }
       const request = deviceDispatchRequest.parse({ command, cwd, timeoutMs: this.commandTimeoutMs,
-        deviceId: target.deviceId, directoryId: target.directoryId, ...(materials.length ? { materials } : {}) })
+        deviceId: target.deviceId, directoryId: target.directoryId, ...(materials.length ? { materials } : {}),
+        ...(reportSuite ? { reportSuite } : {}) })
       const available = await client.query<{ instance_id: string }>(
         `SELECT d.instance_id FROM pe_devices d JOIN pe_device_directories dir ON dir.device_id=d.id
          WHERE d.id=$1 AND dir.id=$2 AND d.user_id=$3 AND dir.user_id=$3
@@ -304,6 +308,10 @@ export class DeviceService {
       || parsed.data.command !== row.command || parsed.data.cwd !== row.cwd
       || parsed.data.deviceId !== row.device_id || parsed.data.directoryId !== row.directory_id
       || hash(parsed.data) !== row.request_digest) throw new PlatformError(409, 'device_dispatch_unavailable')
+    if (parsed.data.reportSuite) {
+      try { validateDeviceReportSuite(parsed.data.reportSuite, parsed.data.materials!) }
+      catch (_invalidSuite) { throw new PlatformError(409, 'device_dispatch_unavailable') }
+    }
     return parsed.data
   }
 
@@ -460,7 +468,8 @@ export class DeviceService {
           return deviceJob.parse({ executionId: row.id, directoryId: frozen.directoryId,
             command: frozen.command, cwd: frozen.cwd, timeoutMs: frozen.timeoutMs,
             state: row.state, cancelRequested: row.cancel_requested, digest: row.request_digest,
-            ...(frozen.materials ? { materials: frozen.materials } : {}) })
+            ...(frozen.materials ? { materials: frozen.materials } : {}),
+            ...(frozen.reportSuite ? { reportSuite: frozen.reportSuite } : {}) })
         }) }
     })
   }
@@ -503,7 +512,8 @@ export class DeviceService {
       return deviceClaim.parse({ executionId: row.id, directoryId: frozen.directoryId,
         command: frozen.command, cwd: frozen.cwd, timeoutMs: frozen.timeoutMs, digest: row.request_digest,
         dispatchId: bound.data.dispatch_id, processId: bound.data.dispatch_process_id,
-        ...(frozen.materials ? { materials: frozen.materials } : {}) })
+        ...(frozen.materials ? { materials: frozen.materials } : {}),
+        ...(frozen.reportSuite ? { reportSuite: frozen.reportSuite } : {}) })
     })
   }
 

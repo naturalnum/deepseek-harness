@@ -11,7 +11,10 @@ type Selection = Grant['selection'][number]
 const providerName = 'power-evolve-selected-skills'
 const aliasPrefix = 'pe-user-skill-'
 
-/** Preserve unique native names, while assigning stable, collision-free names to legacy skills. */
+/** Preserve unique native names, while assigning stable, collision-free names to legacy skills.
+ * @param selection Accepted skill metadata whose private identities remain stable.
+ * @returns Native aliases keyed by the original selected skill identities.
+ */
 export function selectedSkillAliases(selection: readonly Selection[]): ReadonlyMap<string, string> {
   const names = new Map<string, number>()
   for (const item of selection) names.set(item.name, (names.get(item.name) ?? 0) + 1)
@@ -36,7 +39,11 @@ function resourceBase(item: Selection, target: Grant['target']['kind'], runtimeP
     : { kind: 'opaque', description: 'Read SKILL.md with skill_resource. This text skill has no executable package files.' }
 }
 
-/** Register one grant's immutable catalog in this Agent's native skill layer. */
+/** Register one grant's immutable catalog in this Agent's native skill layer.
+ * @param agent Current Agent whose effect scope owns the registrations.
+ * @param grant Platform-issued immutable skill selection and execution target.
+ * @param runtime Bounded Platform transport for authorized skill content and resources.
+ */
 export function installSelectedSkills(agent: Agent, grant: Grant, runtime: RuntimeScope): void {
   const selection = grant.selection.map(item => ({ ...item }))
   for (const item of selection) {
@@ -113,7 +120,7 @@ export function installSelectedSkills(agent: Agent, grant: Grant, runtime: Runti
         const original = `/opt/power-evolve/skills/sha256/${item.packageDigest}/skill`
         const suite = /^\/opt\/power-evolve\/skills\/report-suites\/[a-f0-9]{64}\/(report-workflow-orchestrator|power-grid-technical-report-writer|report-reviewer|tech-report-writer)$/u.exec(body.runtimePath)
         if (item.kind !== 'package' || (body.runtimePath !== original
-          && (target !== 'cloud' || !body.suiteAvailable || suite?.[1] !== item.name))) {
+          && (!body.suiteAvailable || suite?.[1] !== item.name))) {
           throw new Error('Selected Skill runtime path differs from its package')
         }
         resources = resourceBase(item, target, body.runtimePath)
