@@ -31,7 +31,7 @@ import { FileService } from './files.ts'
 import { FileDownloadService } from './file-downloads.ts'
 import { loadOfficePreviewConfig } from './office-preview-config.ts'
 import { OfficePreviewService } from './office-previews.ts'
-import { OFFICE_PREVIEW_ROUTES, officePreviewPrepareRequest, officePreviewRefRequest,
+import { OFFICE_PREVIEW_ROUTES, officePreviewSourcePrepareRequest, officePreviewRefRequest,
   officePreviewCancelRequest } from '@power-evolve/contracts/office-preview'
 import { WORKSPACE_BINDING_ROUTES, storageDirectoriesRequest, storageDirectoryCreateRequest,
   workspaceBindingRestoreRequest, workspaceBindingStatusRequest } from '@power-evolve/contracts/workspace-binding'
@@ -211,8 +211,14 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     transferTimeoutMs: config.fileDownloadTransferTimeoutMs,
   })
   await files.init()
+  const artifactRelative = relative(resolve(config.workspaceRoot), resolve(config.artifactRoot))
+  if (!artifactRelative || !artifactRelative.startsWith('..')) {
+    throw new Error('Artifact root cannot be inside the writable workspace root')
+  }
+  const artifacts = new ArtifactService(pool, files, config.artifactRoot)
+  await artifacts.init()
   const officePreviews = officePreviewConfig ? new OfficePreviewService(pool, files,
-    await KubernetesClient.fromFile(config.officePreviewKubeconfigFile), officePreviewConfig) : null
+    await KubernetesClient.fromFile(config.officePreviewKubeconfigFile), officePreviewConfig, artifacts) : null
   if (officePreviews && officePreviewConfig) {
     const stop = new AbortController()
     const polling = (async () => {
@@ -235,12 +241,6 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     mcpShutdown.add(close)
     ctx.effect(() => close)
   }
-  const artifactRelative = relative(resolve(config.workspaceRoot), resolve(config.artifactRoot))
-  if (!artifactRelative || !artifactRelative.startsWith('..')) {
-    throw new Error('Artifact root cannot be inside the writable workspace root')
-  }
-  const artifacts = new ArtifactService(pool, files, config.artifactRoot)
-  await artifacts.init()
   const executionFiles = new ExecutionFileFactsService(pool, files)
   const skillLibraryRoot = config.skillLibraryRoot || config.sandboxLocalRoot
   if (executionEnabled && resolve(skillLibraryRoot) !== resolve(config.sandboxLocalRoot)) {
@@ -390,7 +390,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const events = new EventStore(tasks, config)
   const nativeSessions = new NativeSessionRead(pool)
   const nativeWorkspaces = new NativeWorkspaceRead(pool, files, nativeSessions, config.maxWorkspacesPerUser)
-  const nativeFiles = new NativeFileRead(pool, files)
+  const nativeFiles = new NativeFileRead(pool, files, artifacts)
   const connectors = new ConnectorService(tasks, config.connectorUrl, connectorKey.trim(), config.connectorTimeoutMs, config.connectorPollMs)
   const plugins = new PluginService(pool)
   await plugins.seedUsers(users.map(user => user.username))
@@ -585,7 +585,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         case OFFICE_PREVIEW_ROUTES.generation:
           z.object({}).strict().parse(input); sendJson(res, await officePreviews.generation(token)); return
         case OFFICE_PREVIEW_ROUTES.prepare:
-          sendJson(res, await officePreviews.prepare(token, officePreviewPrepareRequest.parse(input))); return
+          sendJson(res, await officePreviews.prepare(token, officePreviewSourcePrepareRequest.parse(input))); return
         case OFFICE_PREVIEW_ROUTES.status:
           sendJson(res, await officePreviews.status(token, officePreviewRefRequest.parse(input))); return
         case OFFICE_PREVIEW_ROUTES.content:
