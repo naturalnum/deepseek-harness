@@ -1,5 +1,9 @@
 # Tech report writer changes
 
+## 1.1.42
+
+- Keep failed Word command phase, exit status, output directory and bounded actual logs; incomplete DOCX files remain blocked without an artifact.
+
 ## 1.1.41
 
 - Accept one nonempty pre-body Markdown contents section and metadata-matched bilingual front titles without changing the final reviewed source; preserve source explanations in consecutive appendices and reject unknown top-level headings.

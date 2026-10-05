@@ -225,9 +225,9 @@
         "publisher": "PowerEvolve"
       },
       "release": {
-        "version": "1.1.41",
+        "version": "1.1.42",
         "state": "PUBLISHED",
-        "manifestDigest": "sha256:b035bfb3fe60d34b39d136e0a8f2dbcc8004ef1e7fa64943720053f086a25a2c",
+        "manifestDigest": "sha256:1db1e3f39d7a9d4628dc9d54a926d296aaf8a196f82ce33a46f2a9d2b12c9e56",
         "targets": [
           "cloud",
           "desktop"
@@ -236,10 +236,10 @@
           "skill"
         ],
         "permissions": [],
-        "artifactDigest": "eb9a5d8f3b1b28e9e258720f354049cf0dac5ecf5fca76baf4593248df82a918",
-        "artifactSize": 276336,
-        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.tech-report-writer/releases/1.1.41/artifact",
-        "artifactPath": "extensions/builtin.tech-report-writer/1.1.41.zip"
+        "artifactDigest": "854cae77832aeed0510f2f06482558ced0efba85da62e837516322922c1510ca",
+        "artifactSize": 279076,
+        "artifactDownloadUrl": "/api/v1/catalog/extensions/builtin.tech-report-writer/releases/1.1.42/artifact",
+        "artifactPath": "extensions/builtin.tech-report-writer/1.1.42.zip"
       }
     }
   ]
