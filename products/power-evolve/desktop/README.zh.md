@@ -10,16 +10,22 @@
 
 通过 `pnpm run build:power-evolve:desktop` 构建。准备工作区锁文件选择的准确 Electron 版本，将 `PE_DESKTOP_ELECTRON` 指向其可执行文件。执行 `pnpm --filter @power-evolve/desktop run start --config /absolute/deployment.json`；开发可增加 `--data-dir /absolute/private-browser-root` 以隔离试用身份。通过原生应用菜单退出。使用同一部署和数据目录重新启动；浏览器会话过期时重新登录。
 
-部署文件仅包含下面两个 Origin：
+部署文件必填下面两个 Origin。原生侧栏浏览器还要求明确时序：
 
 ```json
 {
   "hostOrigin": "http://127.0.0.1:20880",
-  "platformOrigin": "http://127.0.0.1:20881"
+  "platformOrigin": "http://127.0.0.1:20881",
+  "sidebarBrowser": {
+    "scopeRequestTimeoutMs": 5000,
+    "scopeRecheckIntervalMs": 15000
+  }
 }
 ```
 
 HTTP 仅接受数字 loopback 地址。远程 Origin 要求 HTTPS。拒绝凭据、路径、查询参数、fragment、额外字段和相同 Origin。主进程配置独立于 renderer 输入。
+
+省略 `sidebarBrowser` 时禁用该原生能力；既有双 Origin 部署仍然有效。两个时序字段均为必填正安全整数，最大 2,147,483,647 毫秒。部署者选择单次授权请求期限和活动浏览器复检周期完成后的调度延迟。一个周期顺序核验不同的活动 Session；请求耗时也计入两次观察之间的间隔。
 
 ## 本机 Device 开发
 
@@ -43,7 +49,13 @@ Profile 准备拒绝更改已有可信平台 Origin，也拒绝在 Device 身份
 
 仅当前所属 Host 主 frame 的 `/native/` 文档获得键盘、快捷键、语言和主题同步。每次原生请求都检查当前窗口、主 frame 和准确 Host URL。Platform 和预览 frame 不获得产品原生桥。音频请求还要求当前所属 Host 文档、主 frame 的纯音频请求及 macOS 麦克风授权；其他权限拒绝。
 
-主窗口导航仅允许配置的原生 Host 及 Platform 登录、账户和审批页。返回 Host 根地址时规范到 `/native/`。可信 Platform 链接请求新窗口时改为所属窗口内导航；拒绝其他 popup、外部目标和 webview。重定向和应用显式加载使用同一固定部署许可。阻止重定向时不会自动打开系统浏览器。
+主窗口导航仅允许配置的原生 Host 及 Platform 登录、账户和审批页。返回 Host 根地址时规范到 `/native/`。可信 Platform 链接请求新窗口时改为所属窗口内导航；拒绝其他 popup 和主窗口外部目标。重定向和应用显式加载使用同一固定部署许可。阻止重定向时不会自动打开系统浏览器。
+
+启用的侧栏浏览器复用官方 DSH 标签页界面和 guest 管理器。只有主进程签发的 lease 才能挂接 webview。每次 acquire 都通过登录 Session 的 Chromium 网络栈查询固定 Host；严格成员记录确定当前用户、Session 和 Workspace。renderer 不能选择归属用户或存储分区，其显示路径不参与授权。同一所属文档代次内，仅同一用户和 Workspace 的 guest Session 共享存储。普通标签页 release 关闭 guest 并保留该 Workspace 的浏览器状态。
+
+Agent cookie 变化、主文档导航、renderer 退出和窗口关闭同步阻止旧预留并中止待定观察。退休操作等待实际 guest 退出、连接关闭及存储、缓存和认证状态清理。清理失败时关闭新准入，直到重试成功。活动 guest 定期重新核验成员关系；撤权、过期或授权不可用均使其退休，不清除产品登录 cookie。不保证两次观察之间即时响应服务端撤权。原生预留是当前观察，不是持久 Platform grant。
+
+侧栏 guest 不获得产品凭据、preload、Node、设备访问、下载或新原生窗口。网络与导航策略拒绝配置的 Host、Platform 和 Device HTTP/WebSocket 端点，包括 loopback 别名。它不解析 DNS，也不替代 OS 网络沙盒。浏览器状态限于当前进程，在文档退休及应用退出时清理。Web 页面没有原生浏览器能力，不激活这条产品启动记录。
 
 ## 实现与验证
 
@@ -53,4 +65,4 @@ Profile 准备拒绝更改已有可信平台 Origin，也拒绝在 Device 身份
 
 ## 已知限制
 
-[冻结所属 Device 试用](../TRIAL-DESKTOP-OWNED-DEVICE.md)具有两个用户、Git 读回、重启及运行中退出的实际原生 DSH、Profile、模型、PG 和 Docker 证据。其独立运行时位于源码树外，仍使用开发配置。[安装应用试用](../TRIAL-DESKTOP-INSTALLED.md)已验证实际安装模式、LaunchServices、默认私有数据、Git／Python、重开和账号隔离。[安装应用 Office 试用](../TRIAL-DESKTOP-OFFICE.md)已验证四格式产物预览、本机 Git／Python、显式导出、不可变产物读回和独立安装状态。原生 OS 目录选择、签名／更新及原生侧栏浏览器分别保留交付步骤。用户控制的外部打开能力尚未接入，外部文档链接保持阻止。
+[冻结所属 Device 试用](../TRIAL-DESKTOP-OWNED-DEVICE.md)具有两个用户、Git 读回、重启及运行中退出的实际原生 DSH、Profile、模型、PG 和 Docker 证据。其独立运行时位于源码树外，仍使用开发配置。[安装应用试用](../TRIAL-DESKTOP-INSTALLED.md)已验证实际安装模式、LaunchServices、默认私有数据、Git／Python、重开和账号隔离。[安装应用 Office 试用](../TRIAL-DESKTOP-OFFICE.md)已验证四格式产物预览、本机 Git／Python、显式导出、不可变产物读回和独立安装状态。这些试用保留各自捕获的浏览器设置。原生 OS 目录选择与签名／更新交付仍为独立步骤。用户控制的外部打开能力尚未接入，外部文档链接保持阻止。

@@ -9,6 +9,7 @@
   },
   "files": [
     "apps/desktop/tests/keyboard.spec.ts",
+    "apps/desktop/tests/browser-guests.spec.ts",
     "apps/desktop/src/keyboard.ts",
     "apps/desktop/src/keybindings.ts",
     "apps/desktop/src/browser-guests.ts",

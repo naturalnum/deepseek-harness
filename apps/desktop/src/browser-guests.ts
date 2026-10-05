@@ -354,7 +354,7 @@ export class DesktopBrowserGuests {
   }
 
   private throwFailures(results: PromiseSettledResult<void>[]): void {
-    const failures = results.filter(result => result.status === 'rejected').map(result => result.reason as unknown)
+    const failures = results.filter(result => result.status === 'rejected').map((result): unknown => result.reason)
     if (failures.length > 0) throw new AggregateError(failures, 'desktop browser: guest cleanup failed')
   }
 

@@ -8,4 +8,6 @@ This private package copies the DSH Web shell and assembles native client module
 
 The build emits `asset-list.json`, which the Host uses as the exact static asset allowlist. Boot scripts are emitted as files. The native DSH module loader uses `new Function`, so this route's Content Security Policy allows `unsafe-eval`; the existing trial page keeps its stricter policy.
 
+The native sidebar Browser row requires the fixed `desktop-browser` carrier. It activates only in a desktop document with the complete native browser bridge; ordinary Web documents do not register its tabs or shortcuts. The factory remains in the module table for dependency resolution. Guest authorization and storage isolation belong to the [desktop main process](../desktop/README.md).
+
 Each native plugin contributes its physical `client.js` and same-directory `client.<name>.js` chunks. The entry URL remains `./plugins/<package>/client.js?rev=<revision>`; dynamic chunks use the same directory and owner revision. Package, application-batch and boot-graph revisions cover every copied script, including chunk-only changes. The eager application batch contains entries only. Missing entries or referenced sibling chunks fail the build before replacing its output. Plugin source maps, Node entries and other package files are excluded from the allowlist.

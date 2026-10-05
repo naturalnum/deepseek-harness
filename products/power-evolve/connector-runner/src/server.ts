@@ -64,7 +64,7 @@ async function body(request: IncomingMessage): Promise<unknown> {
     if (length > MAX_CALL_BODY_BYTES) throw new CallValidationError('request_too_large')
     chunks.push(chunk)
   }
-  try { return JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown }
+  try { return JSON.parse(Buffer.concat(chunks).toString('utf8')) }
   catch (_invalidJson) { throw new CallValidationError('invalid_json') }
 }
 

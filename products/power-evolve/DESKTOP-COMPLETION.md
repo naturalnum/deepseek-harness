@@ -40,7 +40,7 @@
 
 Cloud 主窗口和固定平台登录页面使用同一个 Electron Session，IPC 许可仍只属于 Host 主 frame。账号页面返回 Host 根地址时，承载器将该固定目标规范到 `/native/`；`hostOrigin` 始终保留准确 Origin，不把路径加入 Origin 配置。原生侧栏浏览器和更新能力按实际客户端消费接口装配，不能仅填充空 bridge 或让 Cloud 页面调用未安装的 IPC。
 
-当前产品客户端只要求 `dshDesktop` 的 `protocolVersion`、完整 `keyboard` 与 `shortcuts`，主题通过原生 DOM 属性同步；产品以明确的部分接口声明，不强转为官方完整 `DshDesktopProductApi`。首个桌面切片不装配未接入的 `browser/updates`，关闭 `webviewTag`。以后接入原生侧栏浏览器时复用[所属 guest 管理](../../apps/desktop/src/browser-guests.ts)，增加 Host、平台和 Device 地址拒绝，以及登录身份更换后的分区清退；renderer 提供的 workspace 字符串不能成为共享 Cloud 用户身份。
+产品客户端以明确的部分 `dshDesktop` 接口接入原生 keyboard、shortcuts 和按配置启用的 browser，主题通过原生 DOM 属性同步；不强转为官方完整 `DshDesktopProductApi`，未接入的 updates 保持关闭。侧栏浏览器复用[所属 guest 管理](../../apps/desktop/src/browser-guests.ts)，由可信平台确认用户、会话和工作区，main 选择存储分区并处理身份失效与清退；renderer 提供的 workspace 字符串不用于授权。部署配置、网络限制与清理语义见[桌面承载器](desktop/README.zh.md)；原固定试用保留各自配置，安装版浏览器验收单独记录。
 
 ```mermaid
 flowchart LR

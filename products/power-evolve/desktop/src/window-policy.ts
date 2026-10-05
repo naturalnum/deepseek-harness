@@ -28,11 +28,12 @@ export async function loadCloudDocument(window: BrowserWindow, config: CloudDesk
 }
 
 /**
- * Guard renderer navigations and HTTP redirects; popup and webview creation remain disabled.
+ * Guard renderer navigations and HTTP redirects; popup creation remains disabled.
  * @param window - Owned Cloud main window.
  * @param config - Fixed deployment origins.
+ * @param ownedBrowserEnabled - Main installed a separate lease-enforcing guest controller.
  */
-export function installCloudNavigation(window: BrowserWindow, config: CloudDesktopConfig): void {
+export function installCloudNavigation(window: BrowserWindow, config: CloudDesktopConfig, ownedBrowserEnabled = false): void {
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (allowsCloudHost(config, window.webContents.mainFrame.url) && allowsCloudNavigation(config, url)
       && new URL(url).origin === config.platformOrigin) {
@@ -40,7 +41,7 @@ export function installCloudNavigation(window: BrowserWindow, config: CloudDeskt
     }
     return { action: 'deny' }
   })
-  window.webContents.on('will-attach-webview', event => { event.preventDefault() })
+  if (!ownedBrowserEnabled) window.webContents.on('will-attach-webview', event => { event.preventDefault() })
   const guard = (event: Electron.Event<Electron.WebContentsWillFrameNavigateEventParams | Electron.WebContentsWillRedirectEventParams>): void => {
     if (event.isMainFrame) {
       if (!allowsCloudNavigation(config, event.url)) { event.preventDefault(); return }

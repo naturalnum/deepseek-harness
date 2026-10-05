@@ -264,7 +264,7 @@ test('refuses symlink, directory, FIFO and public reserved files without changin
     await rm(path); await symlink(outside, path); await assert.rejects(f.prepare(), error); await rm(path)
     await mkdir(path); await assert.rejects(f.prepare(), error); await rm(path, { recursive: true })
     execFileSync('/usr/bin/mkfifo', [path]); await assert.rejects(f.prepare(), error); await rm(path)
-    await writeFile(path, original, { mode: 0o644 }); await assert.rejects(f.prepare(), error)
+    await writeFile(path, original, { mode: 0o644 }); await chmod(path, 0o644); await assert.rejects(f.prepare(), error)
     assert.deepEqual(await readFile(path), original); await chmod(path, 0o600)
   }
   assert.equal(await readFile(outside, 'utf8'), 'unchanged external bytes')

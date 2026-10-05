@@ -316,7 +316,7 @@ test('refuses existing aliases and nonprivate namespaced roots without modifying
   const f = fixture(t), path = join(f.base, 'PowerEvolve-office-qa-1')
   f.write({ ...f.data, version: 2, stateNamespace: 'office-qa-1' })
   symlinkSync(f.productUserDataPath, path); rejects(f); rmSync(path)
-  mkdirSync(path, { mode: 0o755 }); rejects(f)
+  mkdirSync(path, { mode: 0o755 }); chmodSync(path, 0o755); rejects(f)
   chmodSync(path, 0o700)
   const value = readInstalledDesktopConfig(f)
   mkdirSync(value.state.privateDir, { recursive: true })

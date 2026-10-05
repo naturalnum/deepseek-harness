@@ -15,13 +15,13 @@ export const DESKTOP_BROWSER_SCOPE_PLATFORM_PATH = '/desktop/browser/scope'
 
 /** Only a Session may be requested; the caller cannot choose the owner or storage account. */
 export const desktopBrowserScopeRequest = z.object({
-  sessionId: z.uuid().transform(value => brandString<DesktopBrowserSessionId>(value)),
+  sessionId: z.uuid().transform(value => brandString<DesktopBrowserSessionId>(value.toLowerCase())),
 }).strict()
 
 /** One current authorization observation, without credentials, paths or a lasting browser grant. */
 export const desktopBrowserScopeView = desktopBrowserScopeRequest.extend({
-  userId: accountUserId,
-  workspaceId: z.uuid().transform(value => brandString<DesktopBrowserWorkspaceId>(value)),
+  userId: accountUserId.transform(value => brandString<typeof value>(value.toLowerCase())),
+  workspaceId: z.uuid().transform(value => brandString<DesktopBrowserWorkspaceId>(value.toLowerCase())),
 }).strict()
 
 /** Validated request sent by the owned main process through the Host. */

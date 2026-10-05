@@ -22,6 +22,7 @@ const roots = [
   '@deepseek-ai/dsh-client-ui-tool',
   '@deepseek-ai/dsh-client-ui-trajectory',
   '@deepseek-ai/dsh-client-ui-sidebar-right',
+  '@deepseek-ai/dsh-client-ui-sidebar-browser',
   '@deepseek-ai/dsh-client-ui-sidebar-files',
   '@deepseek-ai/dsh-client-ui-sidebar-documentpreview',
   '@power-evolve/client-brand',
@@ -71,7 +72,8 @@ async function collect() {
       pending.push(dependency)
     }
     records.set(id, { id, clientPath: join(dirname(path), clientPath), inject, external,
-      immediately: client.immediately === true })
+      immediately: client.immediately === true,
+      ...(id === '@deepseek-ai/dsh-client-ui-sidebar-browser' ? { requiresCarrier: 'desktop-browser' } : {}) })
   }
   return [...records.values()]
 }
@@ -141,6 +143,7 @@ async function listFiles(directory, outputDirectory) {
  * Only physical client.js and same-directory client.<name>.js assets are copied; missing literal
  * chunk references fail before replacing output. Owner, application and graph revisions include
  * all copied client asset bytes. Dynamic chunks remain outside the eager application batch.
+ * Carrier requirements are explicit graph metadata; inactive factories grant no browser capability.
  * @param options - Prepared frontend directory, output directory owned by the caller, and resolved native client records.
  * @returns Native boot graph and exact static-file allowlist; no application or server is started.
  */
@@ -158,6 +161,7 @@ export async function buildNativeWeb({ frontendDirectory, outputDirectory, clien
     return { id: record.id, url: `${url}?rev=${rev}`, rev,
       ...(record.inject.length ? { inject: record.inject } : {}),
       ...(record.external.length ? { external: record.external } : {}),
+      ...(record.requiresCarrier === undefined ? {} : { requiresCarrier: record.requiresCarrier }),
       ...(record.immediately ? { immediately: true } : {}) }
   })))
   const bootstrap = rows.find(row => row.id === '@deepseek-ai/dsh-client-modules')
@@ -165,7 +169,8 @@ export async function buildNativeWeb({ frontendDirectory, outputDirectory, clien
   const application = rows.filter(row => row !== bootstrap)
   const applicationBytes = Buffer.concat(await Promise.all(application.map(async row =>
     Buffer.concat([await readFile(join(outputDirectory, row.url.split('?')[0].slice(2))), Buffer.from('\n;\n')]))))
-  const applicationRev = hash(Buffer.concat([Buffer.from(JSON.stringify(application.map(row => [row.id, row.rev]))), applicationBytes]))
+  const applicationRev = hash(Buffer.concat([Buffer.from(JSON.stringify(application.map(row => row.requiresCarrier === undefined
+    ? [row.id, row.rev] : [row.id, row.rev, row.requiresCarrier]))), applicationBytes]))
   const applicationUrl = await writeAsset(outputDirectory, `boot/application.${applicationRev}.js`, applicationBytes)
   const graph = { entries: rows, batches: [
     { phase: 'bootstrap', url: bootstrap.url, rev: bootstrap.rev, entries: [bootstrap.id] },

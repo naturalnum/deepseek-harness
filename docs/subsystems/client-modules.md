@@ -35,6 +35,8 @@ interface WebBootEntry {
   immediately?: boolean
   /** Non-baseline module specifiers this row requests; omitted when it requests none. */
   external?: string[]
+  /** Activate only when the document has the named carrier; omission preserves ordinary Web activation. */
+  requiresCarrier?: 'desktop-browser'
 }
 ```
 

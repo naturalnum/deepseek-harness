@@ -22,6 +22,15 @@ test('shares storage only within the same deployment', () => {
   assert.notEqual(cloudDesktopPartition({ ...config, hostOrigin: 'http://127.0.0.1:20882' }), partition)
   assert.notEqual(cloudDesktopPartition({ ...config, platformOrigin: 'http://127.0.0.1:20883' }), partition)
 })
+test('native sidebar browser requires explicit bounded timing and rejects incomplete or extra settings', () => {
+  const sidebarBrowser = { scopeRequestTimeoutMs: 5000, scopeRecheckIntervalMs: 15000 }
+  assert.deepEqual(parseCloudDesktopConfig({ ...config, sidebarBrowser }), { ...config, sidebarBrowser })
+  for (const invalid of [null, {}, [], { ...sidebarBrowser, token: 'invalid' },
+    ...[0, -1, 1.5, NaN, Infinity, 2_147_483_648, '5000'].map(scopeRequestTimeoutMs => ({ ...sidebarBrowser, scopeRequestTimeoutMs })),
+    { scopeRequestTimeoutMs: 5000 }, { ...sidebarBrowser, scopeRecheckIntervalMs: 0 }]) {
+    assert.throws(() => parseCloudDesktopConfig({ ...config, sidebarBrowser: invalid }))
+  }
+})
 test('allows only fixed native and trusted login navigation', () => {
   for (const value of [`${config.hostOrigin}/native/`, `${config.platformOrigin}/login`, `${config.platformOrigin}/account#password`]) {
     assert(allowsCloudNavigation(config, value))

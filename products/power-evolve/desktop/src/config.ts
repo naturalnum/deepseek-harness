@@ -1,9 +1,30 @@
 /** Trusted local deployment choices for the Cloud carrier, without provider or device credentials. */
 
+/** Explicit timing budgets for the opt-in native sidebar browser. */
+export interface SidebarBrowserConfig {
+  readonly scopeRequestTimeoutMs: number
+  readonly scopeRecheckIntervalMs: number
+}
+
 /** Fixed shared Host and trusted Platform origins, independent of renderer input. */
 export interface CloudDesktopConfig {
   readonly hostOrigin: string
   readonly platformOrigin: string
+  readonly sidebarBrowser?: SidebarBrowserConfig
+}
+
+function sidebarBrowser(value: unknown): SidebarBrowserConfig {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)
+    || Object.keys(value).length !== 2 || !('scopeRequestTimeoutMs' in value) || !('scopeRecheckIntervalMs' in value)) {
+    throw new Error('PowerEvolve desktop: invalid browser configuration')
+  }
+  const { scopeRequestTimeoutMs, scopeRecheckIntervalMs } = value
+  for (const budget of [scopeRequestTimeoutMs, scopeRecheckIntervalMs]) {
+    if (typeof budget !== 'number' || !Number.isSafeInteger(budget) || budget < 1 || budget > 2_147_483_647) {
+      throw new Error('PowerEvolve desktop: invalid browser timing budget')
+    }
+  }
+  return { scopeRequestTimeoutMs: Number(scopeRequestTimeoutMs), scopeRecheckIntervalMs: Number(scopeRecheckIntervalMs) }
 }
 
 function origin(value: unknown): string {
@@ -20,16 +41,17 @@ function origin(value: unknown): string {
 /**
  * Validate an on-disk deployment document before creating windows.
  * @param value - Parsed local configuration; unknown fields are rejected.
- * @returns Two distinct normalized origins; no fallback deployment is selected.
+ * @returns Distinct normalized origins and an optional explicit browser policy.
  */
 export function parseCloudDesktopConfig(value: unknown): CloudDesktopConfig {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error('PowerEvolve desktop: invalid configuration')
   const keys = Object.keys(value)
-  if (keys.length !== 2 || !keys.includes('hostOrigin') || !keys.includes('platformOrigin')
+  if (keys.length < 2 || keys.length > 3 || keys.some(key => !['hostOrigin', 'platformOrigin', 'sidebarBrowser'].includes(key))
+    || !keys.includes('hostOrigin') || !keys.includes('platformOrigin')
     || !('hostOrigin' in value) || !('platformOrigin' in value)) throw new Error('PowerEvolve desktop: invalid configuration fields')
   const hostOrigin = origin(value.hostOrigin), platformOrigin = origin(value.platformOrigin)
   if (hostOrigin === platformOrigin) throw new Error('PowerEvolve desktop: Host and Platform origins must be distinct')
-  return { hostOrigin, platformOrigin }
+  return { hostOrigin, platformOrigin, ...('sidebarBrowser' in value ? { sidebarBrowser: sidebarBrowser(value.sidebarBrowser) } : {}) }
 }
 
 function parsed(value: string): URL | undefined {

@@ -10,16 +10,22 @@ Open the shared PowerEvolve native DSH application in the official Electron wind
 
 Build with `pnpm run build:power-evolve:desktop`. Prepare the exact Electron version selected by this workspace's lockfile and set `PE_DESKTOP_ELECTRON` to its executable. Run `pnpm --filter @power-evolve/desktop run start --config /absolute/deployment.json`; development can add `--data-dir /absolute/private-browser-root` for an isolated trial identity. Quit through the native application menu. Restart with the same deployment and data directory, then log in if the browser session has expired.
 
-The deployment file contains exactly these two origins:
+The deployment file requires these two origins. Native sidebar browsing additionally requires explicit timing:
 
 ```json
 {
   "hostOrigin": "http://127.0.0.1:20880",
-  "platformOrigin": "http://127.0.0.1:20881"
+  "platformOrigin": "http://127.0.0.1:20881",
+  "sidebarBrowser": {
+    "scopeRequestTimeoutMs": 5000,
+    "scopeRecheckIntervalMs": 15000
+  }
 }
 ```
 
 HTTP is accepted only for numeric loopback. Remote origins require HTTPS. Credentials, paths, query parameters, fragments, extra fields and identical origins are rejected. Main-process configuration is independent of renderer input.
+
+Omitting `sidebarBrowser` disables its native capability; existing two-origin deployments remain valid. Both timing fields are required positive safe integers no greater than 2,147,483,647 milliseconds. Deployment operators choose each authorization request deadline and the delay between completed active-browser recheck cycles. A cycle checks distinct active Sessions sequentially; request time adds to the interval between observations.
 
 ## Local Device development
 
@@ -43,7 +49,13 @@ Host and Platform share one persistent Electron Session within a deployment. Its
 
 Only the owned Host main frame at `/native/` receives keyboard, shortcuts, locale and theme synchronization. Every native request checks the current window, main frame and exact Host URL. Platform and preview frames receive no product native bridge. Audio requests also require the owned current Host document, an audio-only main-frame request and macOS microphone authorization; other permissions are denied.
 
-Main navigation permits the configured native Host and Platform login, account and approval pages. Host-root returns normalize to `/native/`. Trusted Platform links requesting a new window navigate the owned window; other popups, external destinations and webviews are refused. Redirects and explicit application loads use the same fixed deployment policy. No system-browser action runs automatically for a blocked redirect.
+Main navigation permits the configured native Host and Platform login, account and approval pages. Host-root returns normalize to `/native/`. Trusted Platform links requesting a new window navigate the owned window; other popups and external main-window destinations are refused. Redirects and explicit application loads use the same fixed deployment policy. No system-browser action runs automatically for a blocked redirect.
+
+The configured sidebar browser reuses the official DSH tab UI and guest controller. Only a main-issued lease can attach a webview. Every acquire queries the fixed Host through the login Session's Chromium network stack; strict membership records identify the current user, Session and Workspace. The renderer cannot select an owner or storage partition, and its display path is not used for authorization. Guest Sessions share storage only for the same user and Workspace within one owned document generation. Ordinary tab release closes its guest and preserves that Workspace's browser state.
+
+Agent cookie changes, main-document navigation, renderer exit and window close synchronously fence old reservations and abort pending observations. Retirement waits for actual guest exit, connection closure and storage/cache/auth cleanup. Failed cleanup blocks new admission until retry succeeds. Active guests periodically recheck membership; revocation, expiry or unavailable authorization retires them without clearing the product login cookie. Immediate service-side revocation between observations is not guaranteed. Native reservations are current observations, not lasting Platform grants.
+
+Sidebar guests receive no product credentials, preload, Node, device access, downloads or new native windows. Their network and navigation policy rejects configured Host, Platform and Device HTTP/WebSocket endpoints, including loopback aliases. It does not resolve DNS or replace an OS network sandbox. Browser state is process-local; it is cleared on document retirement and application quit. The Web page has no native browser capability and does not activate this product boot row.
 
 ## Implementation and checks
 
@@ -53,4 +65,4 @@ Main navigation permits the configured native Host and Platform login, account a
 
 ## Known limitations
 
-The [frozen owned-Device trial](../TRIAL-DESKTOP-OWNED-DEVICE.md) has actual native DSH, Profile, model, PG and Docker evidence for two users, Git readback, restart and running quit. Its independent runtime is outside the source tree; it still uses development configuration. The [installed app trial](../TRIAL-DESKTOP-INSTALLED.md) verifies actual packaged startup, LaunchServices, default private storage, Git/Python, restart and account isolation. The [installed Office trial](../TRIAL-DESKTOP-OFFICE.md) verifies four-format artifact preview, local Git/Python, explicit export, immutable artifact readback and independent installed state. Native OS directory selection, signing/update delivery and native sidebar browser integration remain separate steps. External documentation links remain blocked until a user-controlled external-open capability is implemented.
+The [frozen owned-Device trial](../TRIAL-DESKTOP-OWNED-DEVICE.md) has actual native DSH, Profile, model, PG and Docker evidence for two users, Git readback, restart and running quit. Its independent runtime is outside the source tree; it still uses development configuration. The [installed app trial](../TRIAL-DESKTOP-INSTALLED.md) verifies actual packaged startup, LaunchServices, default private storage, Git/Python, restart and account isolation. The [installed Office trial](../TRIAL-DESKTOP-OFFICE.md) verifies four-format artifact preview, local Git/Python, explicit export, immutable artifact readback and independent installed state. These trials retain their captured browser settings. Native OS directory selection and signing/update delivery remain separate steps. External documentation links remain blocked until a user-controlled external-open capability is implemented.

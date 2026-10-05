@@ -113,7 +113,7 @@ async function sidebarSnapshot(page: Page) {
       coversViewport: expanded && rect.x === 0 && rect.y === 0
         && Math.round(rect.width) === window.innerWidth && Math.round(rect.height) === window.innerHeight,
       resizeHandleWidth: handle === null ? 0 : Math.round(handle.getBoundingClientRect().width),
-      expandedDirectories: [...panel.querySelectorAll('[data-files-entry="directory"] > button[aria-expanded="true"]')]
+      expandedDirectories: [...panel.querySelectorAll('[data-files-entry="directory"] button[aria-expanded="true"]')]
         .map(button => button.textContent?.trim()),
     }
   })
@@ -369,7 +369,7 @@ describe.skipIf(MODE === 'record')('web e2e: details panel follows the current S
     expect(await panel.getAttribute('data-sidebar-right-panel')).toBe('push')
     await column.locator('[data-sidebar-right-guide-entry="files"]').click()
     await column.locator('[data-files-state="tree"]').waitFor({ timeout: 15_000 })
-    const workspaceDirectory = column.locator('[data-files-entry="directory"] > button').filter({ hasText: /^workspace$/ })
+    const workspaceDirectory = column.locator('[data-files-entry="directory"] button').filter({ hasText: /^workspace$/ })
     await workspaceDirectory.waitFor({ timeout: 15_000 })
     await workspaceDirectory.click()
     await expect.poll(() => workspaceDirectory.getAttribute('aria-expanded')).toBe('true')

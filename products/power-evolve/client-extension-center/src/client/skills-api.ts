@@ -228,7 +228,7 @@ export class SkillHttpClient implements SkillPort {
       body: file, ...(signal === undefined ? {} : { signal }),
     })
     if (!response.ok) throw await failure(response)
-    const item = parseSkill(await response.json() as unknown)
+    const item = parseSkill(await response.json())
     if (item.kind !== 'package' || item.packageDigest !== digest) throw new Error('Skill upload response mismatch')
     return item
   }

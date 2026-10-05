@@ -32,6 +32,7 @@ test('native DSH shell uses the upstream page and a closed, external boot graph'
   for (const id of ['@deepseek-ai/dsh-client-modules', '@deepseek-ai/dsh-client-ui-chat',
     '@deepseek-ai/dsh-client-ui-conversation', '@deepseek-ai/dsh-client-ui-renderer',
     '@deepseek-ai/dsh-client-ui-settings-general',
+    '@deepseek-ai/dsh-client-ui-sidebar-browser',
     '@power-evolve/client-brand', '@power-evolve/client-account', '@power-evolve/client-extension-center',
     '@power-evolve/client-execution-target',
     '@power-evolve/client-cloud-workspaces', '@power-evolve/client-artifacts']) assert(ids.has(id), id)
@@ -39,6 +40,8 @@ test('native DSH shell uses the upstream page and a closed, external boot graph'
     assert(!ids.has(id), `${id} is deferred`)
   }
   assert(!ids.has('@deepseek-ai/dsh-client-ui-brand-official'), 'product brand owns the native slots')
+  assert.equal(graph.entries.find(row => row.id === '@deepseek-ai/dsh-client-ui-sidebar-browser').requiresCarrier, 'desktop-browser')
+  assert.equal(graph.entries.find(row => row.id === '@deepseek-ai/dsh-client-ui-sidebar-files').requiresCarrier, undefined)
   for (const row of graph.entries) {
     assert(row.url.startsWith('./plugins/'))
     assert(assets.includes(row.url.slice(2).split('?')[0]))
@@ -140,6 +143,17 @@ test('chunk-only changes update owner, application and graph revisions while ret
   assert.notEqual(batch(changed).rev, batch(first).rev); assert.notEqual(batch(changed).url, batch(first).url)
   assert.equal(await readFile(join(f.clientDirectory, 'client.js'), 'utf8'), f.main)
   assert.equal(await readFile(join(f.outputDirectory, batch(changed).url.slice(2)), 'utf8'), `${f.main}\n;\n`)
+})
+
+test('carrier-only changes update application and graph revisions without changing module assets', async t => {
+  const f = await fixture(t), first = await buildNativeWeb(f)
+  f.clients[1].requiresCarrier = 'desktop-browser'
+  const next = await buildNativeWeb(f)
+  const row = result => result.graph.entries.find(entry => entry.id === '@power-evolve/client-fixture')
+  assert.equal(row(next).requiresCarrier, 'desktop-browser')
+  assert.equal(row(first).rev, row(next).rev)
+  assert.notEqual(first.graph.rev, next.graph.rev)
+  assert.notEqual(first.graph.batches[1].rev, next.graph.batches[1].rev)
 })
 
 test('missing or invalid entry and transitive chunk references fail before replacing output', async t => {

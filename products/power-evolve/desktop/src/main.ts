@@ -18,6 +18,7 @@ import { DEVICE_DESKTOP_IPC } from './device-ipc.ts'
 import { deviceEn, deviceZh } from './device-locale.ts'
 import { readInstalledDesktopConfig } from './installed-config.ts'
 import { prepareInstalledDeviceProfile } from './installed-profile.ts'
+import { bindCloudSidebarBrowser, installCloudBrowserIpc, type CloudSidebarBrowser } from './browser.ts'
 
 const values = cloudDesktopArguments(process.argv, app.getAppPath(), app.isPackaged)
 if (app.isPackaged && Object.keys(values).length !== 0) {
@@ -54,6 +55,8 @@ if (!app.requestSingleInstanceLock()) app.exit(0)
 else {
   void app.whenReady().then(async () => {
     let primary: BrowserWindow | undefined
+    let primaryBrowser: CloudSidebarBrowser | undefined
+    const browserLifetimes = new Set<CloudSidebarBrowser>()
     let language: string | undefined
     const locale = (): ReturnType<typeof resolveDesktopLocale> => resolveDesktopLocale(language ?? app.getLocale())
     const deviceMessages = (): typeof deviceEn => /^(zh|cn)/iu.test(language ?? app.getLocale()) ? deviceZh : deviceEn
@@ -106,6 +109,15 @@ else {
       catch (_deviceUnavailable) { throw new Error('PowerEvolve desktop: local device unavailable') }
     })
     const browser = session.fromPartition(cloudDesktopPartition(config))
+    const disposeBrowserIpc = config.sidebarBrowser === undefined ? undefined : installCloudBrowserIpc(() =>
+      primary === undefined || primaryBrowser === undefined ? undefined : { window: primary, browser: primaryBrowser }, config)
+    async function drainBrowsers(): Promise<void> {
+      const results = await Promise.allSettled([...browserLifetimes].map(async lifetime => {
+        await lifetime.dispose()
+        browserLifetimes.delete(lifetime)
+      }))
+      if (results.some(result => result.status === 'rejected')) throw new Error('browser_cleanup_incomplete')
+    }
     const shortcuts = installDesktopShortcuts(() => primary, userData,
       process.platform === 'darwin' ? 'macos' : process.platform === 'win32' ? 'windows' : 'linux',
       updateMenu, () => ({ revision: 0, blocked: false }), value => allowsCloudHost(config, value))
@@ -147,16 +159,29 @@ else {
     })
     async function open(): Promise<void> {
       if (primary !== undefined && !primary.isDestroyed()) { primary.show(); primary.focus(); return }
+      if (quitPending || quitting) return
+      await drainBrowsers()
+      if (primary !== undefined || quitPending || quitting) return
       const window = createDesktopWindow({ preload: fileURLToPath(new URL('./preload-cloud.cjs', import.meta.url)),
-        primary: true, webviewTag: false, session: browser, messages: () => locale().messages,
+        primary: true, webviewTag: config.sidebarBrowser !== undefined, session: browser, messages: () => locale().messages,
         additionalArguments: [`--power-evolve-host-origin=${config.hostOrigin}`,
-          ...(deviceConfig === undefined ? [] : ['--power-evolve-device-enabled'])],
+          ...(deviceConfig === undefined ? [] : ['--power-evolve-device-enabled']),
+          ...(config.sidebarBrowser === undefined ? [] : ['--power-evolve-browser-enabled'])],
         allowsNavigation: destination => allowsCloudNavigation(config, destination.href), openExternal: () => {},
       })
       primary = window
-      installCloudNavigation(window, config)
+      const sidebar = config.sidebarBrowser === undefined ? undefined : bindCloudSidebarBrowser(window, browser, config,
+        (guest, lease) => shortcuts.attachGuest(window, guest, lease), deviceConfig?.loopbackOrigin)
+      primaryBrowser = sidebar
+      if (sidebar !== undefined) browserLifetimes.add(sidebar)
+      installCloudNavigation(window, config, sidebar !== undefined)
       shortcuts.attach(window)
-      window.on('closed', () => { if (primary === window) primary = undefined })
+      window.on('closed', () => {
+        if (primary === window) { primary = undefined; primaryBrowser = undefined }
+        if (sidebar !== undefined) void sidebar.dispose().then(() => { browserLifetimes.delete(sidebar) }).catch(() => {
+          console.error('PowerEvolve desktop: browser close cleanup incomplete')
+        })
+      })
       window.once('ready-to-show', () => { if (!window.isDestroyed() && primary === window) window.show() })
       try { await loadCloudDocument(window, config, `${config.hostOrigin}/native/`) }
       catch (_hostUnavailable) {
@@ -169,7 +194,7 @@ else {
     app.on('activate', reopen)
     app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
     app.on('before-quit', event => {
-      if (quitting || deviceBackend === undefined || localDevice === undefined) return
+      if (quitting || deviceBackend === undefined && localDevice === undefined && browserLifetimes.size === 0) return
       event.preventDefault()
       if (quitPending) return
       quitPending = true
@@ -184,7 +209,7 @@ else {
             if (answer.response !== 1) { quitPending = false; return }
           }
         }
-        const results = await Promise.allSettled([deviceBackend.close(), localDevice.close()])
+        const results = await Promise.allSettled([deviceBackend?.close(), localDevice?.close()])
         if (ownedDevice !== undefined && !ownedDevice.exitConfirmed) throw new Error('local_device_exit_unconfirmed')
         if (results[1].status === 'rejected') throw new Error('local_authorization_close_failed')
         if (results[0].status === 'rejected' || ownedDevice !== undefined && (!ownedDevice.lastStopClean
@@ -192,6 +217,7 @@ else {
           await dialog.showMessageBox({ type: 'warning', title: deviceMessages().quitTitle,
             message: deviceMessages().quitUnknown, buttons: [deviceMessages().acknowledge] })
         }
+        await drainBrowsers()
         quitting = true
         app.quit()
       })().catch(() => {
@@ -202,6 +228,7 @@ else {
     })
     app.on('will-quit', () => {
       shortcuts.dispose(); disposePreferences()
+      disposeBrowserIpc?.()
       if (localDevice !== undefined) ipcMain.removeHandler(DEVICE_DESKTOP_IPC.open)
     })
     updateMenu()
