@@ -739,6 +739,23 @@ describe('failure modes', () => {
 })
 
 describe('boot manifest wire', () => {
+  it('preserves the carrier requirement only on the plugin roster', () => {
+    const manifest = parseBootManifest({
+      rev: 'graph',
+      entries: [{ id: 'browser', url: '/browser', rev: '1', requiresCarrier: 'desktop-browser' }],
+      batches: [{ phase: 'application', url: '/batch', rev: 'batch', entries: ['browser'] }],
+    })
+    expect(manifest.plugins).toEqual([{ id: 'browser', inject: [], immediately: false, requiresCarrier: 'desktop-browser' }])
+    expect(manifest.modules[0]).not.toHaveProperty('requiresCarrier')
+  })
+
+  it.each([null, false, '', 'desktop', 'web', ['desktop-browser'], {}])('rejects an unknown carrier requirement (%j)', (requiresCarrier) => {
+    expect(() => parseBootManifest({
+      rev: 'graph', entries: [{ id: 'browser', url: '/browser', rev: '1', requiresCarrier }],
+      batches: [{ phase: 'application', url: '/batch', rev: 'batch', entries: ['browser'] }],
+    })).toThrow('boot manifest entry "browser" requiresCarrier must be "desktop-browser"')
+  })
+
   it('normalizes absent shared-module fields and carries the declared ones', () => {
     const manifest = parseBootManifest({
       rev: 'graph',

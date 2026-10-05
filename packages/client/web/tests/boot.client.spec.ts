@@ -19,6 +19,7 @@ const moduleFace = modulesClient as Record<string, unknown>
 
 afterEach(() => {
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
   delete win.__DSH_BOOT__
   delete win.__ModuleLoader__
   delete transportGlobal.__DSH_TRANSPORT__
@@ -137,6 +138,41 @@ describe('bootstrap failure rendering', () => {
 })
 
 describe('plugin activation', () => {
+  it('skips a carrier-required immediate row while booting the ordinary renderer', async () => {
+    vi.stubGlobal('dshDesktop', undefined)
+    const container = document.createElement('div')
+    document.body.append(container)
+    const target = installFacade()
+    const browser = vi.fn(() => ({ apply() {} }))
+    win.__DSH_BOOT__ = {
+      rev: 'graph',
+      entries: [
+        { id: 'browser', url: '/browser.js', rev: '1', immediately: true, requiresCarrier: 'desktop-browser' },
+        { id: 'renderer', url: '/renderer.js', rev: '1' },
+      ],
+      batches: [
+        { phase: 'application', url: '/browser-batch', rev: '1', entries: ['browser'] },
+        { phase: 'application', url: '/renderer-batch', rev: '1', entries: ['renderer'] },
+      ],
+    }
+    const loaded: string[] = []
+    const entry = new AppWebEntry(container, { loadBundle: async (url) => {
+      loaded.push(url)
+      if (url === '/browser-batch') target.load({ id: 'browser', factory: browser })
+      else target.load({ id: 'renderer', factory: () => ({ apply(ctx: Context) {
+        ctx.reflect.provide('uiRenderer', { mount: () => () => {} })
+      } }) })
+    } })
+    try {
+      await entry.run()
+      expect(loaded).toEqual(['/renderer-batch'])
+      expect(browser).not.toHaveBeenCalled()
+      expect(container.textContent).not.toContain('Failed to load plugins')
+      expect(container.querySelector<HTMLElement>('[data-dsh-boot-spinner]')?.style.getPropertyValue('--dsh-boot-arc'))
+        .toBe('288deg')
+    } finally { await entry.dispose() }
+  })
+
   it('prefetches a parser-loaded immediate row through the injected bundle transport', async () => {
     const container = document.createElement('div')
     document.body.append(container)

@@ -9,7 +9,7 @@ kind: "package-library"
 
 ## 概述
 
-`dsh-client-web` 启动 web GUI：它先从 Host 提供的启动图加载客户端模块系统，再在应用挂载前激活每一个客户端插件，因此只有当所有插件都就绪时完整 UI 才会出现。无框架启动页会逐 entry 报告状态，因此失败的 bundle 或插件保持可见，而不是白屏。它还定义共享模块表（`PLATFORM_MODULES`），每个动态 bundle 都依据它解析 external。模型永远看不到本包。
+`dsh-client-web` 启动 web GUI：它先从 Host 提供的启动图加载客户端模块系统，再在应用挂载前激活每一个符合载体条件的客户端插件，因此只有当所有符合条件的插件都就绪时完整 UI 才会出现。无框架启动页会逐 entry 报告状态，因此失败的 bundle 或插件保持可见，而不是白屏。它还定义共享模块表（`PLATFORM_MODULES`），每个动态 bundle 都依据它解析 external。模型永远看不到本包。
 
 ## 目录
 
@@ -33,7 +33,7 @@ kind: "package-library"
 
 ### 启动过程是怎样的
 
-启动分两个阶段：模块阶段接纳 parser 已加载的 bootstrap 批次，从 Host 提供的启动图构建模块系统，并通过只执行一次的共享 application 批次 URL 预取 `immediately` 层级。插件阶段随后激活每个图 entry 并等待全部就绪，之后才把带标记的启动 DOM 交给 UI 渲染器，由它 hydrate 并切换到完整 UI。
+启动分两个阶段：模块阶段接纳 parser 已加载的 bootstrap 批次，从 Host 提供的启动图构建模块系统，并通过只执行一次的共享 application 批次 URL 预取符合载体条件的 `immediately` 层级。插件阶段随后激活每个符合载体条件的图 entry 并等待全部就绪，之后才把带标记的启动 DOM 交给 UI 渲染器，由它 hydrate 并切换到完整 UI。
 
 ### 启动页
 
@@ -61,11 +61,11 @@ kind: "package-library"
 
 ### 设计理念
 
-内核恰好拥有三样东西：模块系统、Cordis Loader 与启动页。Graph、批次 preload 与 loader facade 归 Host 所有，因此 `AppWebEntry` 永不感知 bootstrap 包 id，也不解析协议格式（wire format）。动态 UI 渲染器只在每个客户端 entry 激活后收到挂载点。
+内核恰好拥有三样东西：模块系统、Cordis Loader 与启动页。Graph、批次 preload 与 loader facade 归 Host 所有，因此 `AppWebEntry` 永不感知 bootstrap 包 id，也不解析协议格式（wire format）。动态 UI 渲染器只在每个符合载体条件的客户端 entry 激活后收到挂载点。
 
 ### 两阶段启动
 
-`run()` 调用 Host 安装的 `window.__ModuleLoader__.create({ boot, staticModules, ...seams })`；facade 接纳 parser 已加载的 bootstrap 批次后返回构造好的模块系统与已解析 manifest（元数据清单）。模块阶段通过一个共享的 application 批次 URL 预取 `immediately` 层级。插件阶段挂载 Loader、把 `loader.internal` 赋为 `modules`、统一创建全部图 entry、等待完全停稳，然后审计激活：任何导入失败、因缺失服务而 pending，或落入其他非 active 状态的 entry，都会抛出一个聚合错误，点名每个失败 entry。
+`run()` 调用 Host 安装的 `window.__ModuleLoader__.create({ boot, staticModules, ...seams })`；facade 接纳 parser 已加载的 bootstrap 批次后返回构造好的模块系统与已解析 manifest（元数据清单）。模块阶段通过一个共享的 application 批次 URL 预取符合载体条件的 `immediately` 层级。插件阶段挂载 Loader、把 `loader.internal` 赋为 `modules`、统一创建全部符合载体条件的图 entry、等待完全停稳，然后审计激活：任何导入失败、因缺失服务而 pending，或落入其他非 active 状态的 entry，都会抛出一个聚合错误，点名每个失败 entry。
 
 ### 启动页机制
 
@@ -79,7 +79,7 @@ kind: "package-library"
 |---|---|
 | [`src/index.ts`](src/index.ts) | 库入口：`AppWebEntry`、`getStaticModules`、平台表 |
 | [`src/boot.ts`](src/boot.ts) | `AppWebEntry`：模块阶段、启动页、immediately 层级预取、安装窗口拖拽矩形 watcher，随后调用 `bootClient` + `mountClient` |
-| [`src/boot-client.ts`](src/boot-client.ts) | `bootClient` / `assertEntriesActive`：挂载 Loader、每个 manifest 行一个 entry、激活审计 |
+| [`src/boot-client.ts`](src/boot-client.ts) | `bootClient` / `assertEntriesActive`：挂载 Loader、每个符合载体条件的 manifest 行一个 entry、激活审计 |
 | [`src/mount.ts`](src/mount.ts) | `mountClient`：经 `uiRenderer` 依赖 fiber 完成渲染器交接 |
 | [`src/boot-page.ts`](src/boot-page.ts) | 无框架启动页：spinner、逐 entry 状态、失败渲染 |
 | [`src/platform.ts`](src/platform.ts) | `PLATFORM_MODULES` / `PRELOADED_CLIENT_EXTERNALS`：隐式 external 基座 |

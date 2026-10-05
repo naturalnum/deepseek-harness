@@ -1,6 +1,6 @@
 /**
  * Production client composition without the page: mount the Loader over a
- * module system, create every manifest row, wait for quiescence, and audit
+ * module system, create every eligible manifest row, wait for quiescence, and audit
  * activation. `AppWebEntry` and the whole-client test carrier both call it.
  * @module @deepseek-ai/dsh-client-web/src/boot-client
  */
@@ -18,7 +18,7 @@ export interface ClientBootOptions {
   readonly ctx: Context
   /** Module system installed as `loader.internal`. */
   readonly modules: ClientModuleLoader
-  /** Parsed manifest whose `plugins` rows become Loader entries (entry name = row id). */
+  /** Parsed manifest whose eligible `plugins` rows become Loader entries (entry name = row id). */
   readonly manifest: BootManifest
   /** Per-entry state reporting (the boot page); omitted when no one renders progress. */
   readonly onEntryState?: (name: string, state: EntryStateLabel) => void
@@ -26,12 +26,12 @@ export interface ClientBootOptions {
 
 /**
  * Compose the client: `ctx.plugin(Loader)`, `loader.internal = modules`, one
- * `loader.create({ name })` per manifest row, `loader.await()`, then
+ * `loader.create({ name })` per eligible manifest row, `loader.await()`, then
  * {@link assertEntriesActive}. A row whose module cannot be imported is marked
  * failed; the Loader logs its import error, the module system records it, and
  * the audit rejects startup with that error text per entry.
  * @param options - context, module system, manifest, optional progress sink.
- * @returns resolves after every entry is active; rejects with the audit report otherwise.
+ * @returns resolves after every eligible entry is active; rejects with the audit report otherwise.
  */
 export async function bootClient(options: ClientBootOptions): Promise<void> {
   const { ctx, manifest, onEntryState } = options
@@ -45,7 +45,7 @@ export async function bootClient(options: ClientBootOptions): Promise<void> {
     onEntryState?.(entry.options.name, STATE_LABELS[entry.fiber.state])
   })
 
-  const rows = manifest.plugins.map(row => row.id)
+  const rows = options.modules.entries.eligiblePlugins(manifest).map(row => row.id)
   for (const name of rows) onEntryState?.(name, 'loading')
   await options.modules.entries.start(loader, manifest)
   for (const entry of loader.entries()) {

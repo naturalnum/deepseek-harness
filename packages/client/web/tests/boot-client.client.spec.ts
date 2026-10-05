@@ -4,11 +4,12 @@ import {
   createClientModuleSystem, parseBootManifest,
   type ClientBundleRegistration, type ClientModuleLoader, type ClientModuleLoaderTarget, type WebBootEntry, type WebBootGraph,
 } from '@deepseek-ai/dsh-client-modules/client'
-import { describe, expect, it, onTestFinished, vi } from 'vitest'
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { assertEntriesActive, bootClient, type EntryStateLabel } from '../src/boot-client.ts'
 import { FIBER_STATE } from '../src/loader-status.ts'
 
 const BOOTSTRAP_ID = '@deepseek-ai/dsh-client-modules'
+afterEach(() => { vi.unstubAllGlobals() })
 
 function graphOf(ids: readonly string[]): WebBootGraph {
   const entries: WebBootEntry[] = ids.map(id => ({ id, url: `/${id}.js`, rev: '1' }))
@@ -47,6 +48,22 @@ function stateSink(): { states: Map<string, EntryStateLabel[]>; onEntryState: (n
 }
 
 describe('bootClient', () => {
+  it('audits and reports progress only for eligible entries', async () => {
+    const graph = graphOf(['ordinary', 'browser'])
+    graph.entries[1]!.requiresCarrier = 'desktop-browser'
+    const ordinary = vi.fn()
+    const browser = vi.fn()
+    const { modules, loaded } = modulesOf(graph, { ordinary: { apply: ordinary }, browser: { apply: browser } })
+    const ctx = new Context()
+    onTestFinished(() => ctx.fiber.dispose())
+    const sink = stateSink()
+    await bootClient({ ctx, modules, manifest: modules.manifest, onEntryState: sink.onEntryState })
+    expect(ordinary).toHaveBeenCalledOnce()
+    expect(browser).not.toHaveBeenCalled()
+    expect([...sink.states.keys()]).toEqual(['ordinary'])
+    expect(loaded).toEqual([])
+  })
+
   it('activates every seeded row without touching the bundle transport', async () => {
     const graph = graphOf(['provider', 'consumer'])
     const { modules, loaded } = modulesOf(graph, {

@@ -70,6 +70,8 @@ Web 记录 toolbar 提交和 typed tab 打开。导航状态机把每个受控 r
 
 Desktop 主进程批准 guest 租约，并执行挂载、导航和权限策略。preload 只暴露限定范围的 Browser 操作。共享声明通过标准 `/types` 出口配合 `import type` 引入；Host 与 Client 使用独立 tsconfig 编译。Desktop Browser tab 声明 `keepMounted`，Sidebar 因而在切 tab、切 Session、收起与浮动期间保留其 DOM。
 
+原生页面 factory 调用 `DesktopBrowserBridge.acquire(workspace, sessionId)`，传入所属 controller 的 Session。默认 Desktop 主进程使用解析后的工作区键；经过认证的载体可以根据该 Session 解析存储归属。renderer 传入的工作区键与 Session 都是请求，不代表授权。无 Session 范围的直接调用仍可省略第二个参数，preload 此时保留原来只有一个参数的 IPC 调用。应用可通过 `@deepseek-ai/dsh-desktop/preload-assembly` 的 `createDesktopBrowserBridge` 装配该桥接，并负责文档权限与主进程授权。
+
 页面刷新快捷键调用工具栏使用的同一重载操作。其 Tooltip 和 ARIA 组合随有效绑定更新。Desktop 通过所属窗口路由已批准 guest 中的有效快捷键；获焦 webview 必须仍持有该 guest 的租约。Web 保留浏览器专用组合。
 
 </details>
@@ -107,7 +109,7 @@ Desktop 主进程批准 guest 租约，并执行挂载、导航和权限策略�
 - 出于安全原因，浏览器会隐藏很多 iframe 失败：DNS、TLS、mixed-content、CSP 与 `X-Frame-Options` 失败可能触发 `load`，也可能不提供可操作 event，而不是触发 `error`。加载失败 notice 只能作为 best-effort 提示。
 - 只要 tab 仍在 Sidebar 布局中，保存的标题和 URL 就会跨刷新与插件卸载保留。关闭 tab 会删除其检查点。重启恢复不恢复页面内存、未保存的表单或 Chromium history 栈。
 - 本地文件会被拒绝，并继续由 Document Preview 负责。
-- Desktop 按规范化的工作区 CWD 共享进程内存储分区；没有解析到 Workspace 的 Session 单独隔离。Cookie 与 Web storage 不跨应用重启保留。guest 权限、下载与原生 popup 均被拒绝；通过检查的 HTTP(S) popup 请求会打开 Sidebar tab。Host 地址过滤不是通用私网或 DNS-rebinding 防火墙。
+- 默认 Desktop 载体按规范化的工作区 CWD 共享进程内存储分区；没有解析到 Workspace 的 Session 单独隔离。自定义载体负责经过认证的存储分组。Cookie 与 Web storage 不跨应用重启保留。guest 权限、下载与原生 popup 均被拒绝；通过检查的 HTTP(S) popup 请求会打开 Sidebar tab。Host 地址过滤不是通用私网或 DNS-rebinding 防火墙。
 
 <a id="dev-note"></a>
 ### 开发备注

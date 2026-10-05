@@ -43,6 +43,8 @@ application combo 脚本只携带每个插件的 `client.js` 入口，并在启�
 
 已打开的 Web 页面通过 HMR 传输跟随 Host 的完整模块图。启用普通插件会添加其 Loader 条目；停用会移除条目，并在其异步 effect 完成清理后回收未使用的模块与样式。再次启用会加载一个带样式的实例。其他 Loader 贡献方的条目及活动条目仍需使用的共享模块会保留。「设置 → 插件 → 插件列表」显示当前页面的同步失败，并提供不改变 Host 启用状态的重试。
 
+可信启动图生产方可在行上设置可选的 `requiresCarrier: 'desktop-browser'`。仅当文档初始化时暴露了协议版本为 1 的 `dshDesktop`，且 Browser 具有 `acquire`、`release` 与 `onOpenRequested` 方法时，Client Entries 才激活该行。省略要求时，各载体上的激活行为保持，包括普通 Web 的 iframe Browser。未知要求会导致启动 manifest 解析失败。启动进度、立即预取、图同步、重试与 HMR 使用同一份符合条件的条目列表；修改要求会取消过时的激活，并等待移除条目的 effect 完成清理。该要求不改变模块表和依赖解析，也不授予 IPC 或浏览权限。载体可用性在同一文档内固定；新文档会重新读取 preload。
+
 ### 共享模块
 
 外壳初始化一张冻结的模块表（`PLATFORM_MODULES`：React、Cordis 与静态 UI 库）；每个动态 bundle 都精确针对该基座解析其 external。`dsh.client.external` 只添加基座之外的精确请求；系统会将每个请求解析到其指定的动态包 row 或完全匹配的静态表键。纯类型 import 会被擦除，不产生请求。组合阶段会拒绝畸形请求、缺失提供方、自请求与同步请求环。

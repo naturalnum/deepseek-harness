@@ -3,7 +3,7 @@ import type { FiberState } from '@deepseek-ai/cordis'
 import type { Entry, Loader } from '@deepseek-ai/cordis-plugin-loader'
 import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import { parseBootManifest } from './manifest.ts'
-import type { BootManifest, ClientModuleLoader } from './manifest.ts'
+import type { BootManifest, BootPluginRow, ClientModuleLoader } from './manifest.ts'
 import { removeOwnedStyles, tearDownEntryFiber } from './entry-lifecycle.ts'
 
 /** Page-local failures do not change the Host's bundle enablement. */
@@ -27,7 +27,22 @@ const FAILED = 3 as FiberState.FAILED
 
 /** Revisions and requests identify desired code; URLs only select its immutable delivery resource. */
 function entryTargets(manifest: BootManifest): string {
-  return JSON.stringify(manifest.modules.map(row => [row.id, row.rev, row.inject, row.external]))
+  return JSON.stringify([
+    manifest.modules.map(row => [row.id, row.rev, row.inject, row.external]),
+    manifest.plugins.map(row => [row.id, row.requiresCarrier]),
+  ])
+}
+
+/** Preload installs the document's carrier before the module system is constructed. */
+function desktopBrowserAvailable(): boolean {
+  const carrier = (globalThis as typeof globalThis & { dshDesktop?: unknown }).dshDesktop
+  if (typeof carrier !== 'object' || carrier === null || !('protocolVersion' in carrier)
+    || carrier.protocolVersion !== 1 || !('browser' in carrier)) return false
+  const browser = carrier.browser
+  return typeof browser === 'object' && browser !== null
+    && 'acquire' in browser && typeof browser.acquire === 'function'
+    && 'release' in browser && typeof browser.release === 'function'
+    && 'onOpenRequested' in browser && typeof browser.onOpenRequested === 'function'
 }
 
 /** Manages only entries created from the Host manifest; other Loader contributors retain ownership. */
@@ -45,6 +60,7 @@ export class ClientEntries {
   private readonly listeners = new Set<() => void>()
   private readonly managed = new Map<string, Entry>()
   private readonly revisions = new Map<string, string>()
+  private readonly desktopBrowser = desktopBrowserAvailable()
   private loader: Loader | undefined
   private queue: Promise<void> = Promise.resolve()
   private desired: BootManifest
@@ -58,6 +74,16 @@ export class ClientEntries {
    */
   constructor(private readonly modules: ClientModuleLoader, private readonly index: ModuleIndex) {
     this.desired = modules.manifest
+  }
+
+  /**
+   * Select entries this document can activate; module-table dependencies remain available independently.
+   * Carrier availability is captured at construction and changes only in a new document.
+   * @param manifest - Parsed graph whose plugin roster is being scheduled.
+   * @returns eligible plugin rows in their original order.
+   */
+  eligiblePlugins(manifest: BootManifest): BootPluginRow[] {
+    return manifest.plugins.filter(row => row.requiresCarrier === undefined || this.desktopBrowser)
   }
 
   /**
@@ -76,7 +102,14 @@ export class ClientEntries {
       return this.queue
     }, 'client-modules: entry reconciliation')
     return this.enqueue(async () => {
-      await Promise.all(this.desired.plugins.map(async ({ id }) => {
+      const generation = this.generation
+      await Promise.all(this.eligiblePlugins(this.desired).map(async ({ id }) => {
+        try {
+          await this.modules.import(id, '', {})
+        } catch (_importError) {
+          // Loader entry creation owns the initial import diagnostic and retains the failed entry for retry.
+        }
+        if (!this.current(generation)) return
         await this.create(loader, id)
       }))
       await loader.await()
@@ -121,6 +154,10 @@ export class ClientEntries {
     return this.enqueue(async () => {
       const desired = this.desired.modules.find(row => row.id === id)
       if (this.stopped || desired === undefined) return
+      if (!this.eligiblePlugins(this.desired).some(row => row.id === id)) {
+        await this.reconcile(this.generation)
+        return
+      }
       const entry = this.managed.get(id)
       if (entry === undefined) {
         this.modules.invalidate(id, desired.rev)
@@ -197,7 +234,7 @@ export class ClientEntries {
     this.publish({ syncing: true, failures: [] })
     const failures: { id: string; message: string }[] = []
     this.index.update(manifest, this.managed.keys())
-    const wanted = new Set(manifest.plugins.map(row => row.id))
+    const wanted = new Set(this.eligiblePlugins(manifest).map(row => row.id))
     for (const [id, entry] of this.managed) {
       if (wanted.has(id)) continue
       const fiber = entry.fiber
@@ -208,6 +245,7 @@ export class ClientEntries {
       while (fiber?.inertia !== undefined) await fiber.inertia
     }
     for (const row of manifest.modules) {
+      if (!wanted.has(row.id)) continue
       if (!this.current(generation)) break
       try {
         const entry = this.managed.get(row.id)

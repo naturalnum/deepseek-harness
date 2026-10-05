@@ -459,6 +459,7 @@ export class ClientModuleSystem implements ClientModuleLoader {
   /** Retain live Loader modules and their transitive requests before evicting unreferenced graph records. */
   private prune(roots: Iterable<string>): void {
     const retained = new Set<string>(this.bootstrapIds)
+    const desired = new Set(this.manifest.modules.map(row => row.id))
     const visit = (specifier: string): void => {
       const id = stripClientSuffix(specifier)
       if (retained.has(id)) return
@@ -468,11 +469,12 @@ export class ClientModuleSystem implements ClientModuleLoader {
         visit(request)
       }
     }
-    for (const row of this.manifest.modules) visit(row.id)
     for (const id of roots) visit(id)
     for (const id of this.graphRows.keys()) {
       if (retained.has(id)) continue
-      this.graphRows.delete(id)
+      if (desired.has(id)) {
+        if (!this.loadCache.has(id)) continue
+      } else this.graphRows.delete(id)
       this.invalidate(id)
       removeOwnedStyles(id)
     }

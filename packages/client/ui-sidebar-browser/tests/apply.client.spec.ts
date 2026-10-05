@@ -4,6 +4,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ShortcutRegistry } from '@deepseek-ai/dsh-client-shortcuts/src/client/registry.ts'
 import type { ShortcutCommand, ShortcutPlatform } from '@deepseek-ai/dsh-client-shortcuts/client'
 import { Context } from '@deepseek-ai/cordis'
+import Loader from '@deepseek-ai/cordis-plugin-loader'
+import { createClientModuleSystem } from '@deepseek-ai/dsh-client-modules/client'
+import type { ClientModuleLoader, ClientModuleLoaderTarget, WebBootGraph } from '@deepseek-ai/dsh-client-modules/client'
+import type { WorkspaceSnapshot, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { SidebarRightTabRegistry } from '@deepseek-ai/dsh-client-ui-sidebar-right/src/client/tab-registry.ts'
 import { BrowserBody } from '../src/client/view/BrowserBody.tsx'
@@ -32,7 +36,7 @@ interface Recorded {
   component: unknown
 }
 
-async function boot(platform: ShortcutPlatform = 'macos', runtime: 'desktop' | 'web' = 'desktop') {
+async function boot(platform: ShortcutPlatform = 'macos', runtime: 'desktop' | 'web' = 'desktop', graph?: WebBootGraph) {
   const ctx = new Context()
   contexts.push(ctx)
   const tabs = new SidebarRightTabRegistry(ctx)
@@ -61,15 +65,97 @@ async function boot(platform: ShortcutPlatform = 'macos', runtime: 'desktop' | '
   ctx.provide('sidebarRight', sidebar as never)
   ctx.provide('shortcuts', { register: (command: ShortcutCommand) => registry.register(command) } as never)
   ctx.provide('sidebarRightTabs', tabs as never)
-  ctx.provide('workspaces', { list: createSnapshotStore({ phase: 'ready', items: [] }) } as never)
+  const workspaces = createSnapshotStore<WorkspaceSnapshot>({ phase: 'ready', items: [], state: 'idle',
+    error: null, archivedSessionIds: [], pinnedSessionIds: [] })
+  ctx.provide('workspaces', { list: workspaces } as never)
   ctx.provide('slots', slots as never)
   ctx.provide('locale', locale as never)
-  const fiber = ctx.plugin({ inject: [...inject], apply })
+  let modules: ClientModuleLoader | undefined
+  let fiber = ctx.fiber
+  if (graph === undefined) fiber = ctx.plugin({ inject: [...inject], apply })
+  else {
+    const target: ClientModuleLoaderTarget = {
+      mode: 'queue', pendingQueue: [], load() {},
+      create: options => createClientModuleSystem(target, { id: 'bootstrap', exports: {} }, options),
+    }
+    modules = target.create({ boot: graph, staticModules: {}, loadBundle: async () => {
+      target.load({ id: 'browser', factory: () => ({ inject: [...inject], apply }) })
+    } })
+    await ctx.plugin(Loader)
+    ctx.loader.internal = modules as never
+    await modules.entries.start(ctx.loader, modules.manifest)
+  }
   await fiber.await()
-  return { tabs, registered, dictionaries, fiber, openTabs, registry, sidebar, target }
+  return { tabs, registered, dictionaries, fiber, openTabs, registry, sidebar, target, modules, workspaces }
 }
 
+const browserGraph = (required: boolean, rev = 'r0'): WebBootGraph => ({
+  rev: `${required}-${rev}`,
+  entries: [{ id: 'browser', url: `/plugins/??browser/client.js&rev=${rev}`, rev,
+    ...(required ? { requiresCarrier: 'desktop-browser' } : {}) }],
+  batches: [{ phase: 'application', url: `/browser-batch-${rev}`, rev, entries: ['browser'] }],
+})
+
 describe('ui-sidebar-browser apply', () => {
+  it.each([false, true])('registers real Browser contributions only when its required carrier is complete (%s)', async (complete) => {
+    vi.stubGlobal('dshDesktop', { protocolVersion: 1, browser: complete
+      ? { acquire() {}, release() {}, onOpenRequested() {} }
+      : { acquire() {}, release() {} } })
+    const h = await boot('macos', 'desktop', browserGraph(true))
+    const expectContributions = (present: boolean): void => {
+      expect(h.tabs.get(BROWSER_KIND) !== undefined).toBe(present)
+      expect(h.registry.catalog.getSnapshot().map(command => command.id)).toEqual(present ? ['browser.new'] : [])
+      expect(h.registered.map(entry => entry.name).sort()).toEqual(present
+        ? ['sidebar.right.pane.tab', 'sidebar.right.pane.tab.title'] : [])
+    }
+    expectContributions(complete)
+    await h.modules!.entries.retry()
+    await h.modules!.entries.reload('browser', 'r1')
+    await h.modules!.entries.sync(browserGraph(true, 'r1'))
+    expectContributions(complete)
+    if (!complete) {
+      vi.stubGlobal('dshDesktop', undefined)
+      await h.modules!.entries.sync(browserGraph(false, 'r1'))
+      expectContributions(true)
+      await h.modules!.entries.sync(browserGraph(true, 'r1'))
+      expectContributions(false)
+    }
+    await h.fiber.dispose()
+    expectContributions(false)
+  })
+
+  it('forwards each controller Session to native acquire without sharing the Session closure', async () => {
+    const acquire = vi.fn(async () => ({ lease: 'test-lease' as DesktopBrowserLeaseId, partition: 'test-partition' }))
+    vi.stubGlobal('dshDesktop', { protocolVersion: 1, browser: {
+      acquire, release: vi.fn(async () => {}), onOpenRequested: vi.fn(() => () => {}),
+    } })
+    const h = await boot()
+    h.workspaces.set({ ...h.workspaces.getSnapshot(), items: ['first', 'second'].map(sessionId => ({
+      workspaceId: sessionId as WorkspaceView['workspaceId'], path: '/workspace', title: sessionId,
+      sessionIds: [sessionId as WorkspaceView['sessionIds'][number]], createdAt: '', updatedAt: '',
+    })) })
+    const injectFace = h.registered.find(entry => entry.name === 'sidebar.right.pane.tab')!.inject as
+      (sessionId: string, actions: Parameters<BrowserInjected['rebind']>[0]) => BrowserInjected
+    const hosts = ['first', 'second'].map((sessionId) => {
+      const host = document.createElement('div')
+      host.id = `browser-session-${sessionId}`
+      document.body.append(host)
+      const store = createBrowserStore().create(host.id)
+      const controller = injectFace(sessionId, store.actions)
+      controller.mount({ tabId: `tab-${sessionId}` as TabId, signal: new AbortController().signal,
+        viewportId: host.id, applicationOrigin: 'https://dsh.example', initial: undefined,
+        initialUrl: 'https://example.test/', openTab: vi.fn() })
+      return host
+    })
+    try {
+      await vi.waitFor(() => { expect(acquire).toHaveBeenCalledTimes(2) })
+      expect(acquire.mock.calls).toEqual([['cwd:/workspace', 'first'], ['cwd:/workspace', 'second']])
+    } finally {
+      await h.fiber.dispose()
+      hosts.forEach(host => host.remove())
+    }
+  })
+
   it.each([0, 1])('binds and rebinds session controllers under desktop protocol %s', async (protocolVersion) => {
     const acquire = vi.fn(async () => ({ lease: 'test-lease' as DesktopBrowserLeaseId, partition: 'test-partition' }))
     const bridge: DesktopBrowserBridge = {
@@ -96,7 +182,7 @@ describe('ui-sidebar-browser apply', () => {
         initial: undefined, initialUrl: 'https://example.test/', openTab: vi.fn() })
       expect(replacementStore.getSnapshot().byTab[tabId]).toBeDefined()
       expect(firstStore.getSnapshot().byTab[tabId]).toBeUndefined()
-      if (protocolVersion === 1) await vi.waitFor(() => { expect(acquire).toHaveBeenCalledWith('session:session') })
+      if (protocolVersion === 1) await vi.waitFor(() => { expect(acquire).toHaveBeenCalledWith('session:session', 'session') })
       else expect(host.querySelector('iframe')).not.toBeNull()
       h.openTabs.set([{ sessionId: 'other', tabId }, { sessionId: 'session', tabId: 'other-tab' as TabId }])
       signal.abort()

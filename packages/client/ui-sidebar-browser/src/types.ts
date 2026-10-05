@@ -18,8 +18,13 @@ export interface DesktopBrowserOpenRequest {
 
 /** Origin-scoped operations; no Electron objects or arbitrary IPC cross this interface. */
 export interface DesktopBrowserBridge {
-  /** @param workspace - resolved storage account. @returns one approved guest reservation. */
-  acquire(workspace: string): Promise<DesktopBrowserReservation>
+  /**
+   * The carrier owns authorization and storage grouping; it may resolve the Session instead of using the workspace key.
+   * @param workspace - resolved storage account used by the default Desktop carrier.
+   * @param sessionId - source Session when the caller is Session-scoped; omitted by direct unscoped callers.
+   * @returns one approved guest reservation.
+   */
+  acquire(workspace: string, sessionId?: string): Promise<DesktopBrowserReservation>
   /** @param lease - the caller's reservation. @returns after its guest has been destroyed. */
   release(lease: DesktopBrowserLeaseId): Promise<void>
   /** @param lease - originating guest. @param listener - approved URL consumer. @returns unsubscribe callback. */

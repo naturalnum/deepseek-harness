@@ -70,6 +70,8 @@ Each tab's `BrowserController` owns address validation, commands and explicit re
 
 Desktop's main process approves guest leases and enforces attachment, navigation and permission policy. Preload exposes only scoped Browser operations. Shared declarations use the standard `/types` export with `import type`; the Host and Client compile through separate tsconfig files. Desktop Browser tabs declare `keepMounted`, so Sidebar preserves their DOM across tab changes, Session switches, collapse and floating.
 
+The native page factory calls `DesktopBrowserBridge.acquire(workspace, sessionId)` with the owning controller's Session. The default Desktop main uses the resolved workspace key; an authenticated carrier may instead resolve storage ownership from that Session. The renderer's workspace key and Session are requests, not authorization. Direct unscoped calls may still omit the second argument, and the preload forwards the original one-argument IPC call in that case. Applications compose this bridge through `createDesktopBrowserBridge` from `@deepseek-ai/dsh-desktop/preload-assembly` and own its document permissions and main-process authorization.
+
 The page refresh shortcut calls the same reload operation as the toolbar. Its tooltip and ARIA key combination follow the effective binding. Desktop routes accepted shortcuts from an approved guest through its owning window; the focused webview must still carry that guest’s lease. Web leaves browser-reserved combinations unchanged.
 
 </details>
@@ -107,7 +109,7 @@ The isolation policy deliberately gives up some browser compatibility:
 - Browsers conceal many iframe failures for security: DNS, TLS, mixed-content, CSP, and `X-Frame-Options` failures may emit `load` or no actionable event instead of `error`. The load-failure notice is best-effort.
 - Saved title and URL survive reloads and plugin unload while the tab remains in Sidebar's layout. Closing the tab removes its checkpoint. Restart restoration does not recover page memory, unsaved forms or Chromium's history stack.
 - Local files are rejected and remain owned by Document Preview.
-- Desktop shares process-local storage partitions by canonical workspace CWD; Sessions without a resolved Workspace are isolated separately. Cookies and Web storage do not survive application restart. Guest permissions, downloads and native popups are denied; approved HTTP(S) popup requests open Sidebar tabs. Host-address filtering is not a general private-network or DNS-rebinding firewall.
+- The default Desktop carrier shares process-local storage partitions by canonical workspace CWD; Sessions without a resolved Workspace are isolated separately. Custom carriers own their authenticated storage grouping. Cookies and Web storage do not survive application restart. Guest permissions, downloads and native popups are denied; approved HTTP(S) popup requests open Sidebar tabs. Host-address filtering is not a general private-network or DNS-rebinding firewall.
 
 <a id="dev-note"></a>
 ### Dev Note

@@ -79,7 +79,7 @@ export class AppWebEntry {
       const prefetching = this.prefetchImmediateTier()
       const ctx = new Context()
       this.ctx = ctx
-      this.page.setTotal(this.manifest.plugins.length)
+      this.page.setTotal(this.modules.entries.eligiblePlugins(this.manifest).length)
       await prefetching
       await bootClient({
         ctx,
@@ -114,7 +114,7 @@ export class AppWebEntry {
 
   /** Prefetch stage-one bundles and their dynamic requests before concurrent plugin imports. */
   private async prefetchImmediateTier(): Promise<void> {
-    await Promise.all(this.manifest.plugins
+    await Promise.all(this.modules.entries.eligiblePlugins(this.manifest)
       .filter(row => row.immediately)
       .map(row => this.modules.prefetch(row.id).catch((_prefetchError: unknown) => {
         // Prefetch only starts transport early; the Loader import retries and reports this bundle failure.

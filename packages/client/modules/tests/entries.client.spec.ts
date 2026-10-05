@@ -13,6 +13,7 @@ afterEach(async () => {
   }
   document.head.querySelectorAll('style').forEach((el) => { el.remove() })
   document.body.replaceChildren()
+  vi.unstubAllGlobals()
   vi.restoreAllMocks()
 })
 
@@ -81,6 +82,111 @@ function visible(id: string, effects: { mounted: number; disposed: number; hits:
 }
 
 describe('client manifest entries', () => {
+  it.each([
+    undefined, null, 'desktop', {}, { protocolVersion: 0, browser: {} },
+    { protocolVersion: 1 }, { protocolVersion: 1, browser: null },
+    { protocolVersion: 1, browser: {} },
+    { protocolVersion: 1, browser: { acquire: true, release() {}, onOpenRequested() {} } },
+    { protocolVersion: 1, browser: { acquire() {}, onOpenRequested() {} } },
+    { protocolVersion: 1, browser: { acquire() {}, release() {} } },
+    { protocolVersion: 1, browser: { acquire() {}, release: true, onOpenRequested() {} } },
+    { protocolVersion: 1, browser: { acquire() {}, release() {}, onOpenRequested: true } },
+  ])('leaves carrier-required rows unmaterialized during boot, retry and HMR (%j)', async (carrier) => {
+    vi.stubGlobal('dshDesktop', carrier)
+    const ordinary = vi.fn(() => ({ apply() {} }))
+    const browser = vi.fn(() => ({ apply() {} }))
+    const b = await bench(graph(row('ordinary'), row('browser', 'r0', { requiresCarrier: 'desktop-browser' })),
+      { ordinary, browser })
+    expect(ordinary).toHaveBeenCalledOnce()
+    expect(browser).not.toHaveBeenCalled()
+    expect([...b.ctx.loader.entries()].map(entry => entry.options.name)).toEqual(['ordinary'])
+    vi.stubGlobal('dshDesktop', { protocolVersion: 1, browser: { acquire() {}, release() {}, onOpenRequested() {} } })
+    await b.modules.entries.retry()
+    await b.modules.entries.reload('browser', 'r1')
+    await b.modules.entries.sync(graph(row('ordinary'), row('browser', 'r1', { requiresCarrier: 'desktop-browser' })))
+    expect(browser).not.toHaveBeenCalled()
+    expect(b.modules.entries.state.getSnapshot().failures).toEqual([])
+    expect(b.modules.manifest.modules.map(row => row.id)).toEqual(['ordinary', 'browser'])
+  })
+
+  it('activates a required row once under the complete protocol and captures carrier availability for the document', async () => {
+    vi.stubGlobal('dshDesktop', { protocolVersion: 1, browser: { acquire() {}, release() {}, onOpenRequested() {} } })
+    const factory = vi.fn(() => ({ apply() {} }))
+    const b = await bench(graph(row('browser', 'r0', { requiresCarrier: 'desktop-browser' })), { browser: factory })
+    vi.stubGlobal('dshDesktop', undefined)
+    await b.modules.entries.retry()
+    await b.modules.entries.sync(graph(row('browser', 'r0', { requiresCarrier: 'desktop-browser' })))
+    expect(factory).toHaveBeenCalledOnce()
+    expect([...b.ctx.loader.entries()]).toHaveLength(1)
+  })
+
+  it('cancels initial activation when materialization changes the carrier requirement', async () => {
+    const effects = { mounted: 0, disposed: 0, hits: 0 }
+    let latest: Promise<void> | undefined
+    const b = await bench(graph(row('browser')), { browser: () => {
+      queueMicrotask(() => {
+        latest = b.modules.entries.sync(graph(row('browser', 'r0', { requiresCarrier: 'desktop-browser' })))
+      })
+      return visible('browser', effects)()
+    } }, false)
+    await b.modules.entries.start(b.ctx.loader, b.modules.manifest)
+    await latest
+    expect(effects.mounted).toBe(0)
+    expect([...b.ctx.loader.entries()]).toHaveLength(0)
+    expect(document.querySelectorAll('style[data-plugin=browser]')).toHaveLength(0)
+  })
+
+  it('drains a changed carrier requirement and permits an ordinary row to activate again', async () => {
+    const effects = { mounted: 0, disposed: 0, hits: 0 }
+    const cleanup = deferred()
+    const b = await bench(graph(row('browser')), { browser: visible('browser', effects, () => cleanup.promise) })
+    const disabling = b.modules.entries.sync(graph(row('browser', 'r0', { requiresCarrier: 'desktop-browser' })))
+    await vi.waitFor(() => { expect(document.querySelector('[data-live=browser]')).toBeNull() })
+    const enabling = b.modules.entries.sync(graph(row('browser')))
+    expect(effects.mounted).toBe(1)
+    cleanup.resolve()
+    await Promise.all([disabling, enabling])
+    expect(effects).toEqual({ mounted: 2, disposed: 1, hits: 0 })
+  })
+
+  it.each(['graph', 'rebuilt'])('cancels an obsolete %s mount when only the carrier requirement changes', async (source) => {
+    const effects = { mounted: 0, disposed: 0, hits: 0 }
+    const b = await bench(graph(), { browser: visible('browser', effects) })
+    if (source === 'rebuilt') await b.modules.entries.sync(graph(row('browser')))
+    const started = deferred()
+    const arrival = deferred()
+    b.arrival(async () => { started.resolve(); await arrival.promise })
+    const old = source === 'graph'
+      ? b.modules.entries.sync(graph(row('browser')))
+      : b.modules.entries.reload('browser', 'r1')
+    await started.promise
+    const latest = b.modules.entries.sync(graph(row('browser', source === 'graph' ? 'r0' : 'r1', {
+      requiresCarrier: 'desktop-browser',
+    })))
+    arrival.resolve()
+    await Promise.all([old, latest])
+    expect(effects.mounted).toBe(source === 'graph' ? 0 : 1)
+    expect([...b.ctx.loader.entries()]).toHaveLength(0)
+    expect(b.modules.loadCache.has('browser')).toBe(false)
+  })
+
+  it('resolves a required module as a dependency without activating its plugin', async () => {
+    const materialized = vi.fn()
+    const activate = vi.fn()
+    const b = await bench(graph(
+      row('consumer', 'r0', { external: ['browser/client'] }), row('browser', 'r0', { requiresCarrier: 'desktop-browser' }),
+    ), {
+      browser: () => { materialized(); return { apply: activate, value: 42 } },
+      consumer: require => ({ apply() {}, dependency: require('browser/client') }),
+    })
+    expect(await b.modules.import('consumer')).toHaveProperty('dependency.value', 42)
+    expect(materialized).toHaveBeenCalledOnce()
+    expect(activate).not.toHaveBeenCalled()
+    await b.modules.entries.retry()
+    expect(materialized).toHaveBeenCalledOnce()
+    expect([...b.ctx.loader.entries()].map(entry => entry.options.name)).toEqual(['consumer'])
+  })
+
   it('adds, drains removal and re-enables one instance with styles; unrelated entries survive', async () => {
     const effects = { mounted: 0, disposed: 0, hits: 0 }
     const cleanup = deferred()

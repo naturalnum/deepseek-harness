@@ -65,6 +65,8 @@ export interface WebBootEntry {
   immediately?: boolean
   /** Non-baseline module specifiers this row requests; omitted when it requests none. */
   external?: string[]
+  /** Activate only when the document has the named carrier; omission preserves ordinary Web activation. */
+  requiresCarrier?: 'desktop-browser'
 }
 
 /** Initial scheduling phase for one revisioned combo script. */
@@ -120,6 +122,8 @@ export interface BootPluginRow {
   inject: string[]
   /** Stage-one prefetch tier (false when the wire omits it). */
   immediately: boolean
+  /** Required document carrier; absent rows remain eligible on every carrier. */
+  requiresCarrier?: 'desktop-browser'
 }
 
 /** The parsed boot manifest: one wire, two consumer views. */
@@ -248,6 +252,9 @@ export function parseBootManifest(wire: unknown): BootManifest {
     if (row.immediately !== undefined && typeof row.immediately !== 'boolean') {
       throw new Error(`client-modules: boot manifest entry ${where} immediately must be a boolean`)
     }
+    if (row.requiresCarrier !== undefined && row.requiresCarrier !== 'desktop-browser') {
+      throw new Error(`client-modules: boot manifest entry ${where} requiresCarrier must be "desktop-browser"`)
+    }
     moduleFields.push({
       id: row.id,
       url: row.url,
@@ -259,6 +266,7 @@ export function parseBootManifest(wire: unknown): BootManifest {
       id: row.id,
       inject: inject === undefined ? [] : [...inject],
       immediately: row.immediately === true,
+      ...(row.requiresCarrier === undefined ? {} : { requiresCarrier: row.requiresCarrier }),
     })
   }
 
