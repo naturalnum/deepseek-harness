@@ -8,7 +8,7 @@ import { PlatformError, type Identity } from '../contracts.ts'
 import type { FileService } from './files.ts'
 import type { ArtifactService } from './artifacts.ts'
 import { transaction } from './database.ts'
-import { requireActiveAccount } from './account-authority.ts'
+import { requireBrowserAccount } from './account-authority.ts'
 
 const id = z.uuid()
 const path = z.string().min(1).max(1024)
@@ -76,11 +76,13 @@ export class NativeFileRead {
     return result.rows[0].workspace_id
   }
 
-  private async artifact(user: Identity, sessionId: string, path: string): Promise<{
+  private async artifact(user: Identity, sessionId: string, path: string, token?: string): Promise<{
     absolutePath: string; version: string; bytes: Buffer
   }> {
+    if (token === undefined) throw new PlatformError(401, 'account_unauthorized')
     return transaction(this.pool, async client => {
-      await requireActiveAccount(client, user.userId, 'update')
+      const current = await requireBrowserAccount(client, token, { lock: 'update' })
+      if (current.userId !== user.userId) throw new PlatformError(401, 'account_unauthorized')
       const workspaceId = await this.owned(user, sessionId, client)
       let selected
       try { selected = parseArtifactDocumentPath(path) }
@@ -88,7 +90,8 @@ export class NativeFileRead {
       const { record, bytes } = await this.artifacts.bytes(user, selected.artifactId, client)
       if (record.artifactId !== selected.artifactId || record.filename !== selected.filename
         || record.sessionId !== sessionId || record.workspaceId !== workspaceId) throw new PlatformError(404, 'artifact_not_found')
-      await requireActiveAccount(client, user.userId, 'update')
+      const delivery = await requireBrowserAccount(client, token, { lock: 'update' })
+      if (delivery.userId !== user.userId) throw new PlatformError(401, 'account_unauthorized')
       return { absolutePath: artifactDocumentPathFor(record.artifactId, record.filename), version: record.sha256, bytes }
     })
   }
@@ -96,9 +99,10 @@ export class NativeFileRead {
   /** List only the owned Session's mutable Workspace; immutable artifact addresses never denote directories.
    * @param user Authenticated owner.
    * @param request Owned Session and virtual Workspace directory.
+   * @param _token Optional current browser token; directory listing remains limited to Workspace addresses.
    * @returns Bounded native directory entries; Artifact paths reject without Workspace fallback.
    */
-  async list(user: Identity, request: z.infer<typeof nativeFileRequest>): Promise<unknown> {
+  async list(user: Identity, request: z.infer<typeof nativeFileRequest>, _token?: string): Promise<unknown> {
     if (artifactTarget(request.path)) throw new PlatformError(400, 'invalid_path')
     const workspaceId = await this.owned(user, request.sessionId)
     const target = virtual(request.path)
@@ -111,11 +115,12 @@ export class NativeFileRead {
   /** Read verified source size and SHA from an owned Workspace file or exact immutable Artifact address.
    * @param user Authenticated owner.
    * @param request Original owned Session and literal virtual file address.
+   * @param token Current Agent credential, required and rechecked transactionally for Artifact reads.
    * @returns Native source metadata; mismatched Artifact filename or originating Session rejects.
    */
-  async stat(user: Identity, request: z.infer<typeof nativeFileRequest>): Promise<unknown> {
+  async stat(user: Identity, request: z.infer<typeof nativeFileRequest>, token?: string): Promise<unknown> {
     if (artifactTarget(request.path)) {
-      const value = await this.artifact(user, request.sessionId, request.path)
+      const value = await this.artifact(user, request.sessionId, request.path, token)
       return { absolutePath: value.absolutePath, version: value.version, bytes: value.bytes.length }
     }
     const workspaceId = await this.owned(user, request.sessionId)
@@ -128,11 +133,12 @@ export class NativeFileRead {
   /** Read bounded UTF-8 lines from the authorized file's actual bytes.
    * @param user Authenticated owner.
    * @param request Original Session, virtual file address and line range.
+   * @param token Current Agent credential, required and rechecked transactionally for Artifact reads.
    * @returns Native text lines and source metadata; binary bytes or foreign Artifact scope reject.
    */
-  async read(user: Identity, request: z.infer<typeof nativeFileTextRequest>): Promise<unknown> {
+  async read(user: Identity, request: z.infer<typeof nativeFileTextRequest>, token?: string): Promise<unknown> {
     if (artifactTarget(request.path)) {
-      const value = await this.artifact(user, request.sessionId, request.path)
+      const value = await this.artifact(user, request.sessionId, request.path, token)
       return { absolutePath: value.absolutePath, version: value.version, bytes: value.bytes.length,
         ...textLines(value.bytes, request.range.offset ?? 1, request.range.limit ?? 5000) }
     }
@@ -148,12 +154,13 @@ export class NativeFileRead {
   /** Return a bounded byte range from an owned Workspace file or exact immutable Artifact snapshot.
    * @param user Authenticated owner.
    * @param request Original Session, virtual address and byte range; Artifact reads prohibit baseFile resolution.
+   * @param token Current Agent credential, required and rechecked transactionally for Artifact reads.
    * @returns Native source SHA and bytes; aliases and relative Artifact resources never select a Workspace file.
    */
-  async readBytes(user: Identity, request: z.infer<typeof nativeFileBytesRequest>): Promise<unknown> {
+  async readBytes(user: Identity, request: z.infer<typeof nativeFileBytesRequest>, token?: string): Promise<unknown> {
     if (artifactTarget(request.path) || request.options.baseFile !== undefined && artifactTarget(request.options.baseFile)) {
       if (request.options.baseFile !== undefined) throw new PlatformError(400, 'invalid_path')
-      const value = await this.artifact(user, request.sessionId, request.path)
+      const value = await this.artifact(user, request.sessionId, request.path, token)
       const offset = request.options.range?.offset ?? 0, length = request.options.range?.length ?? maxFileBytes
       if (offset + length > Number.MAX_SAFE_INTEGER) throw new PlatformError(400, 'invalid_range')
       const data = value.bytes.subarray(offset, offset + length)
@@ -176,11 +183,12 @@ export class NativeFileRead {
   /** Observe the actual authorized source version without treating Artifact corruption as file absence.
    * @param user Authenticated owner.
    * @param request Original owned Session and exact virtual file or Workspace directory address.
+   * @param token Current Agent credential, required and rechecked transactionally for Artifact reads.
    * @returns Native source version, or absence only for a missing mutable Workspace path.
    */
-  async observe(user: Identity, request: z.infer<typeof nativeFileRequest>): Promise<unknown> {
+  async observe(user: Identity, request: z.infer<typeof nativeFileRequest>, token?: string): Promise<unknown> {
     if (artifactTarget(request.path)) {
-      const value = await this.artifact(user, request.sessionId, request.path)
+      const value = await this.artifact(user, request.sessionId, request.path, token)
       return { absolutePath: value.absolutePath, version: value.version }
     }
     const workspaceId = await this.owned(user, request.sessionId)
