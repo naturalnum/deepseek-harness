@@ -15,7 +15,7 @@
 
 宿主的所有服务端 Platform 请求，包括凭据交换、原生会话与事件、模型调用和鉴权产物下载，都通过配置的内网 `scope.platformUrl`；产物下载不跟随重定向。浏览器跳转、上传票据、CSP、Origin 校验和审批链接使用独立的公开 `host.platformOrigin`；浏览器输入不能选择内网目标。
 
-原生 Web 的登录页可把仅保存在内存中的 Agent 凭据 POST 到宿主 `/auth/exchange`。平台原子地注销这枚凭据，并签发保留原过期时间的新凭据；宿主将新凭据写入只发往 `/native/api` 和 `/api/powerEvolve` 的 HttpOnly、SameSite=Strict Cookie。URL 和浏览器存储不包含凭据。适配器对每次产品 RPC、事件流和 WebSocket 升级调用 `powerEvolveBrowserAuth.authenticate(request)`；Cookie 请求必须来自配置的宿主 Origin，交换请求必须来自配置的平台 Origin。平台仍负责校验到期和注销。除本机回环地址外必须使用 HTTPS。原生传输层在 `/native/api` 提供受限的会话列表、创建、文本输入、取消、历史分页、投影、订阅、控制和获授权的工作区订阅基线，也提供归属会话的文件列表、状态、文本、字节预览和变更订阅。浏览器看到的路径以 `/workspace` 为根；平台按每个已鉴权会话绑定的 POSIX 工作区解析路径，并逐次核验归属。WebSocket 复用上游 Gateway 的流复用器，平台调用仍按用户授权。其余原生端点返回错误，宿主不开放上游操作员接口。
+原生 Web 的登录页可把仅保存在内存中的 Agent 凭据 POST 到宿主 `/auth/exchange`。平台原子地注销这枚凭据，并签发保留原过期时间的新凭据；宿主将新凭据写入只发往 `/native/api` 和 `/api/powerEvolve` 的 HttpOnly、SameSite=Strict Cookie。URL 和浏览器存储不包含凭据。适配器对每次产品 RPC、事件流和 WebSocket 升级调用 `powerEvolveBrowserAuth.authenticate(request)`；Cookie 请求必须来自配置的宿主 Origin，交换请求必须来自配置的平台 Origin。平台仍负责校验到期和注销。除本机回环地址外必须使用 HTTPS。原生传输层在 `/native/api` 提供受限的会话列表、创建、文本输入、取消、历史分页、投影、订阅、控制和获授权的工作区订阅基线，也提供归属会话的文件列表、状态、文本、字节预览和变更订阅。浏览器看到的可变工作区路径以 `/workspace` 为根；平台按每个已鉴权会话绑定的 POSIX 工作区解析路径，并逐次核验归属。WebSocket 复用上游 Gateway 的流复用器，平台调用仍按用户授权。其余原生端点返回错误，宿主不开放上游操作员接口。
 
 原生静态资源通过声明的 `cloud-web` 包定位，审批页浏览器代码通过 `contracts` 包定位；这些包的物理目录不必与本包相邻。`PE_NATIVE_WEB_DIST` 可选择另一份原生构建目录，资源白名单仍然生效。原生 CSP 允许 PDF 和电子表格预览使用同源及 blob Worker；登录、审批和本地 Device 资源保留各自独立的策略。
 
@@ -49,6 +49,8 @@ Platform 在 `/account` 和 `/account/` 提供账号包的可信页面，`/accou
 登录和审批登录在所有 Platform 副本间共用两级 PostgreSQL 限额：按准确提交的账号名 SHA-256 摘要划分的小窗口，以及独立的高容量全局过载窗口。每个请求在解析正文前计入全局窗口；合法账号名还会在验证口令前计入该账号窗口。试用 Platform 负载均衡器从回环地址连接后端，并透传调用方自带的 `X-Forwarded-For`，因此限流不把 socket 对端或这个请求头当作用户身份。默认 60 秒窗口每账号允许 20 次，最多跟踪 100,000 个账号名，全局允许 100,000 次请求；应按预期登录流量和认证处理能力设置全局阈值。达到全局阈值后，该窗口过期前的全部登录请求都会被拒绝。Schema 19 在 PG 单行保存准入配置；登录限额或 `sandboxConcurrency` 不一致的副本拒绝启动。变更限额时，先停止全部 Platform 副本，更新 `pe_platform_admission_policy` 中的值以匹配新配置，再以相同配置启动。
 
 发布产物时，平台把当前用户会话中不超过 2 MiB 的授权文件复制到沙盒不可见的私有目录，并在 PG 提交不可变元数据。稳定请求 ID 用于去重。列表、有界预览和校验后的字节下载逐次核验归属；之后修改工作区文件或回收沙盒不改变已发布产物。宿主允许同源安全 GET 使用限定路径的 Cookie 下载，向平台验证凭据并转发有界响应，不保存平台密钥。
+
+原生 Artifact 状态、文本、字节和变更观察使用字面地址 `/artifacts/<小写 UUID>/<准确文件名>`，要求发布时的原归属会话及工作区。它们拒绝目录列表、路径别名和相对 `baseFile` 解析，在同一 PG 事务中于读取前后核验当前 Agent 凭据。PDF/XLSX 预览直接消费这些不可变字节。Word／PowerPoint 准备请求以 `source: { kind: 'artifact', artifactId, filename, sha256 }` 代替工作区路径，冻结校验后的 Artifact 元数据与字节，并在同一规范地址交付 PDF。修改或删除原工作区文件、变更存储绑定都不影响 Artifact 预览；会话工作区变化、外来归属、文件名不符或快照损坏均拒绝。用户范围内的请求键固定来源，原解析器取消、租约及停止证明规则仍适用。Schema 33 只提升读取版本，不改写工作区预览旧行；V32 与 V33 Platform 读取者不得混跑。
 
 工作区批量下载先调用 `filesDownloadPrepare`，再从同源内容入口 GET。平台重新核验会话归属及准备时的文件摘要，然后流式输出单个文件或 ZIP，宿主只转发有界数据块。源文件变化会拒绝准备或中断尚未完成的响应。取消传递到文件助手，实际读取结束后才归还传输槽。进一步输出前重新核验凭据，阻塞的 socket 受总时限约束；已经发出的字节不能撤回。此流程不创建沙盒，宿主不保存文件字节。[文件补齐切片](../S2-COMPLETION.md) 定义客户端协议及验收范围。
 

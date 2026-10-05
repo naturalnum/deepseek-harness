@@ -11,10 +11,11 @@ import { initializeDatabase } from '../lib/platform/database.js'
 import { FileService } from '../lib/platform/files.js'
 import { NativeWorkspaceRead } from '../lib/platform/native-workspace-read.js'
 import { NativeFileRead } from '../lib/platform/native-files.js'
+import { ArtifactService } from '../lib/platform/artifacts.js'
 import { NativeSessionRead } from '../lib/platform/native-session-read.js'
 import { TaskFixtureStore as TaskStore } from './task-credential-fixture.mjs'
 import { identity, requestId, workspaceId } from '../lib/contracts.js'
-import { schema, schemaV2, schemaV3, schemaV4, schemaV5, schemaV6, schemaV7, schemaV8 } from '../lib/platform/schema.js'
+import { CURRENT_SCHEMA_VERSION, schema, schemaV2, schemaV3, schemaV4, schemaV5, schemaV6, schemaV7, schemaV8 } from '../lib/platform/schema.js'
 
 const privateDir = process.env.PE_PRIVATE_DIR ?? join(homedir(), '.config/power-evolve/shared-host-slice2')
 const databaseUrl = (await readFile(join(privateDir, 'database-url'), 'utf8')).trim()
@@ -64,7 +65,9 @@ test('S2 Workspaces bind Sessions immutably and scope native files to their owne
     await files.init()
     const tasks = new TaskStore(pool, { maxEventBytes: 524288, leaseMs: 3000, maxPendingPerUser: 8, maxActivePerUser: 1 })
     const workspaces = new NativeWorkspaceRead(pool, files, new NativeSessionRead(pool), 3)
-    const nativeFiles = new NativeFileRead(pool, files)
+    const artifacts = new ArtifactService(pool, files, join(root, 'artifacts'))
+    await artifacts.init()
+    const nativeFiles = new NativeFileRead(pool, files, artifacts)
     const aliceDefault = (await workspaces.list(alice)).items[0]
     const bobDefault = (await workspaces.list(bob)).items[0]
     assert.equal(aliceDefault.isDefault, true)
@@ -128,7 +131,7 @@ test('V8 migration retains default Workspace bytes and blocks a legacy live Pod'
     await writeFile(join(directory, 'history.txt'), 'old Git and file bytes')
 
     await initializeDatabase(pool)
-    assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 25)
+    assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, CURRENT_SCHEMA_VERSION)
     assert.equal((await pool.query('SELECT workspace_id FROM pe_sessions WHERE id=$1', [legacySession])).rows[0].workspace_id,
       legacyWorkspace)
     assert.equal((await pool.query('SELECT id FROM pe_workspaces WHERE user_id=$1 AND is_default', [alice.userId])).rows[0].id,

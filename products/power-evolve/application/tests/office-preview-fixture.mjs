@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { createSandboxFixture } from './sandbox-binding-fixture.mjs'
 import { taskCredential } from './task-credential-fixture.mjs'
 import { FileService } from '../lib/platform/files.js'
+import { ArtifactService } from '../lib/platform/artifacts.js'
 import { OfficePreviewService } from '../lib/platform/office-previews.js'
 import { KubernetesError } from '../lib/platform/kubernetes.js'
 
@@ -82,29 +83,32 @@ export class PreviewKubernetes {
   }
 }
 
-export async function previewFixture(t, overrides = {}) {
+export async function previewFixture(t, overrides = {}, poolMax = 4) {
   let service
   // Stop any admitted tick before the disposable database or source files are removed.
   t.after(() => service?.stop())
-  const f = await createSandboxFixture(t, {}, 4)
+  const f = await createSandboxFixture(t, {}, poolMax)
+  f.pool.options.connectionTimeoutMillis = 1000
   const userId = await f.createUser(), session = await f.createSession(userId)
   const user = { userId, username: `test-${userId}` }
   const root = join(f.localRoot, 'workspaces')
   await mkdir(join(root, session.workspaceId), { recursive: true, mode: 0o700 })
   const files = new FileService(f.pool, root)
   await files.init()
+  const artifacts = new ArtifactService(f.pool, files, join(f.localRoot, 'artifacts'))
+  await artifacts.init()
   const sourcePath = 'document.docx', source = Buffer.from('synthetic Office source\0😀')
   await writeFile(join(root, session.workspaceId, sourcePath), source, { mode: 0o600 })
   const kube = new PreviewKubernetes()
   const config = { ...podConfig, localRoot: join(f.localRoot, 'previews'), fontPolicyDigest: 'f'.repeat(64), limits,
     maxConcurrentParsers: 1, maxRetainedJobsPerUser: 32, leaseMs: 10000, jobDeadlineMs: 180000, ...overrides }
-  service = new OfficePreviewService(f.pool, files, kube, config)
+  service = new OfficePreviewService(f.pool, files, kube, config, artifacts)
   const token = await taskCredential(f.pool, user), generation = (await service.generation(token)).generation
   const request = { requestId: randomUUID(), sessionId: session.sessionId, path: sourcePath, priority: 'foreground', generation }
   const accept = async (change = {}) => service.prepare(token, { ...request, ...change })
   const state = async id => (await f.pool.query('SELECT * FROM pe_office_preview_jobs WHERE id=$1', [id])).rows[0]
   const ref = job => ({ jobId: job.jobId, generation: job.generation })
-  return { ...f, ...session, user, userId, files, root, source, sourcePath, service, token, generation, request, config, kube, accept, state, ref }
+  return { ...f, ...session, user, userId, files, artifacts, root, source, sourcePath, service, token, generation, request, config, kube, accept, state, ref }
 }
 
 export async function successOutput(f, job, pdf = Buffer.from('%PDF-1.4\n% deterministic byte fixture\n%%EOF\n')) {

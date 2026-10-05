@@ -15,7 +15,7 @@ import { identity, requestId } from '../lib/contracts.js'
 const privateDir = process.env.PE_PRIVATE_DIR ?? join(homedir(), '.config/power-evolve/shared-host-slice2')
 const databaseUrl = (await readFile(join(privateDir, 'database-url'), 'utf8')).trim()
 
-async function isolated(run) {
+async function isolated(run, poolMax = 8) {
   const name = `pe_artifacts_${randomBytes(10).toString('hex')}`
   const root = await mkdtemp(join(tmpdir(), 'pe-s2-artifacts-'))
   const admin = new Pool({ connectionString: databaseUrl, max: 2 })
@@ -24,7 +24,7 @@ async function isolated(run) {
     await admin.query(`CREATE DATABASE "${name}"`)
     const url = new URL(databaseUrl)
     url.pathname = `/${name}`
-    pool = new Pool({ connectionString: url.href, max: 8 })
+    pool = new Pool({ connectionString: url.href, max: poolMax, connectionTimeoutMillis: 1000 })
     await initializeDatabase(pool)
     await run(pool, root)
   } finally {
@@ -94,4 +94,23 @@ test('published bytes survive source edits and enforce user, Session, and reques
     assert.equal(preview.truncated, true)
     assert.equal(preview.text, 'A'.repeat(128 * 1024 - 1))
   })
+})
+
+test('artifact metadata reads reuse an owned transaction with a single-connection pool', { timeout: 30000 }, async () => {
+  await isolated(async (pool, root) => {
+    const alice = await user(pool, 'alice'), bob = await user(pool, 'bob')
+    const files = new FileService(pool, join(root, 'workspaces')); await files.init()
+    const artifacts = new ArtifactService(pool, files, join(root, 'artifacts')); await artifacts.init()
+    const tasks = new TaskStore(pool, { maxEventBytes: 524288, leaseMs: 3000, maxPendingPerUser: 8, maxActivePerUser: 1 })
+    const session = (await tasks.create(alice, requestId.parse(randomUUID()))).sessionId
+    await files.put(alice, randomUUID(), 'frozen.txt', null, Buffer.from('single connection').toString('base64'))
+    const published = await artifacts.publish(alice, randomUUID(), session, 'frozen.txt')
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      assert.equal((await artifacts.bytes(alice, published.artifactId, client)).bytes.toString(), 'single connection')
+      await assert.rejects(artifacts.bytes(bob, published.artifactId, client), { code: 'artifact_not_found' })
+      await client.query('ROLLBACK')
+    } finally { client.release() }
+  }, 1)
 })
