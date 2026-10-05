@@ -40,7 +40,7 @@
 
 Cloud 主窗口和固定平台登录页面使用同一个 Electron Session，IPC 许可仍只属于 Host 主 frame。账号页面返回 Host 根地址时，承载器将该固定目标规范到 `/native/`；`hostOrigin` 始终保留准确 Origin，不把路径加入 Origin 配置。原生侧栏浏览器和更新能力按实际客户端消费接口装配，不能仅填充空 bridge 或让 Cloud 页面调用未安装的 IPC。
 
-产品客户端以明确的部分 `dshDesktop` 接口接入原生 keyboard、shortcuts 和按配置启用的 browser，主题通过原生 DOM 属性同步；不强转为官方完整 `DshDesktopProductApi`，未接入的 updates 保持关闭。侧栏浏览器复用[所属 guest 管理](../../apps/desktop/src/browser-guests.ts)，由可信平台确认用户、会话和工作区，main 选择存储分区并处理身份失效与清退；renderer 提供的 workspace 字符串不用于授权。部署配置、网络限制与清理语义见[桌面承载器](desktop/README.zh.md)；原固定试用保留各自配置，安装版浏览器验收单独记录。
+产品客户端以明确的部分 `dshDesktop` 接口接入原生 keyboard、shortcuts 和按配置启用的 browser，主题通过原生 DOM 属性同步；不强转为官方完整 `DshDesktopProductApi`，未接入的 updates 保持关闭。侧栏浏览器复用[所属 guest 管理](../../apps/desktop/src/browser-guests.ts)，由可信平台确认用户、会话和工作区，main 选择存储分区并处理身份失效与清退；renderer 提供的 workspace 字符串不用于授权。部署配置、网络限制与清理语义见[桌面承载器](desktop/README.zh.md)；原固定试用保留各自配置；[安装版浏览器试用](TRIAL-DESKTOP-BROWSER.md)记录双用户状态隔离、普通对话无执行环境和活跃 guest 正常退出。
 
 ```mermaid
 flowchart LR
@@ -81,7 +81,7 @@ Device 已接入上游原生 `flock`、不可变 Docker 身份、启动前持久
 
 ## 业务与开发顺序
 
-Cloud 不确定执行结案与 Device 启动前永久封存已有协议验收。Device 已接入 operation 固定的技能版本、只读包挂载、独立持久 Home 与 Office 工具；[材料与 Office 协议验收](deploy/QA-DEVICE-MATERIALS-OFFICE.md)限定真实执行及未覆盖范围。[当前原生 Profile 组合验收](TRIAL-DEVICE-MATERIALS-NATIVE.md)已通过双用户真实模型、技能说明无容器、Office 三成果、Git／Home 重启、显式文件往返、去重及离线取消恢复。Electron 所属 Device、Local Device bridge、安装包及云端 Office 预览已有各自固定试用；接下来完成原生侧栏浏览器、本机进程连接器、Desktop 报告与安装发行。远程 HTTP API 继续由可信平台保管凭据和执行；不能通过放开 Host 本地 shell 补齐桌面功能。
+Cloud 不确定执行结案与 Device 启动前永久封存已有协议验收。Device 已接入 operation 固定的技能版本、只读包挂载、独立持久 Home 与 Office 工具；[材料与 Office 协议验收](deploy/QA-DEVICE-MATERIALS-OFFICE.md)限定真实执行及未覆盖范围。[当前原生 Profile 组合验收](TRIAL-DEVICE-MATERIALS-NATIVE.md)已通过双用户真实模型、技能说明无容器、Office 三成果、Git／Home 重启、显式文件往返、去重及离线取消恢复。Electron 所属 Device、Local Device bridge、安装包及云端 Office 预览已有各自固定试用；原生侧栏浏览器已有上述固定安装版实际验收；接下来完成本机进程连接器、Desktop 报告与安装发行。远程 HTTP API 继续由可信平台保管凭据和执行；不能通过放开 Host 本地 shell 补齐桌面功能。
 
 Root 固定共享 DTO、schema、Profile、Electron 扩展点及发行闭包；设备实现者负责 Device/目录/包交付；Host 实现者负责模型工具目标；客户端实现者复用原执行位置与扩展中心。接口与文件归属固定后并行实现，真实端到端验收和版本冻结串行完成。Cloud carrier 先完成实际对话与权限验收，再集成本机执行和安装包；下一切片的只读审计不替代当前切片验收。
 
