@@ -35,4 +35,4 @@ Linux Platform 镜像为 `pe-office-app-o3:5d27d2f039-r1`，实际摘要 `sha256
 
 ## 剩余范围
 
-本片复用 O2 的解析隔离能力，未重新执行网络探针，也未验收复杂 Office 排版、旧 DOC／PPT、V33 完整备份恢复、正式发行镜像、多物理节点或 HTTPS。接下来按[开发计划](DELIVERY-PLAN.md)完成 Mac 安装应用组合；OS 目录真人选择、签名／公证／更新、Desktop 报告与通用本机进程连接器继续保留各自交付范围。
+本片复用 O2 的解析隔离能力，未重新执行网络探针，也未验收复杂 Office 排版、旧 DOC／PPT、V33 完整备份恢复、正式发行镜像、多物理节点或 HTTPS。后续[Mac 安装应用组合](TRIAL-DESKTOP-OFFICE.md)具有实际 App 证据；OS 目录真人选择、签名／公证／更新、Desktop 报告与通用本机进程连接器继续保留各自交付范围。

@@ -2,6 +2,8 @@
 
 本版是源码目录外的实际 `PowerEvolve.app`，使用原生 DSH 页面、包内 Electron／Node／CLI／Device／Python和独立应用数据目录。共享 Host、可信 Platform、PG 与 Docker 保持外部资源；云端登录、历史和 `hi` 不启动 Device，首次打开本机授权时才准备并启动正式 Device Profile。本版未做产品签名或公证。
 
+当前组合试用见[Mac 安装版与云端 Office](TRIAL-DESKTOP-OFFICE.md)。本页保留 R3 的固定范围；其空闲后台已停止，数据和启动器保留，可按下文重开。
+
 ## 固定版本与验收范围
 
 应用位于 `/Users/jingchao/.local/share/power-evolve/trials/desktop-installed-20261005-r3/PowerEvolve.app`，产品 ID 为 `com.powerevolve.desktop`，版本为 `0.1.0`／`20261005.3`。桌面实现固定源码 `b958cc6e9728fc04729d3b9b0d00bcf82da0e456`；CLI／Device 及后端的独立包闭包固定源码 `471bba29508cc253b701caf08f3ebdf163f013a5`，沿用[所属 Device 快照](TRIAL-DESKTOP-OWNED-DEVICE.md)。Electron 为 44.0.0、Node 为 22.22.1、Python 为 3.12.14；这些运行文件均在应用内，不依赖源码运行器。
@@ -35,4 +37,4 @@ R1／R2 失败候选、已完成的独立 Device 快照和正式云端 V28 均�
 
 ## 尚未验收或完成
 
-本轮本机目录通过实际授权页面输入；Mac 锁屏期间尚未完成原生 OS 目录对话框的真人选择／取消。运行中退出的真实停止证据仍归[所属 Device 试用](TRIAL-DESKTOP-OWNED-DEVICE.md)，本轮安装版没有重做该场景。产品签名、公证、更新发行、[原生四格式及产物预览](TRIAL-NATIVE-PREVIEW-O3.md)已有独立浏览器试用，安装应用的预览组合、原生侧栏浏览器、Desktop 报告和通用本机进程连接器继续按[桌面约定](DESKTOP-COMPLETION.md)推进；本版没有重新验证 Office 或持久 Home 写入。生产 HTTPS 和独立物理多节点保留各自验收范围。
+本轮本机目录通过实际授权页面输入；Mac 锁屏期间尚未完成原生 OS 目录对话框的真人选择／取消。运行中退出的真实停止证据仍归[所属 Device 试用](TRIAL-DESKTOP-OWNED-DEVICE.md)，本轮安装版没有重做该场景。[原生四格式及产物预览](TRIAL-NATIVE-PREVIEW-O3.md)具有独立浏览器试用，后续[安装应用组合](TRIAL-DESKTOP-OFFICE.md)具有实际 App 证据；本页 R3 没有重新验证 Office 或持久 Home 写入。产品签名、公证、更新发行、原生侧栏浏览器、Desktop 报告和通用本机进程连接器继续按[桌面约定](DESKTOP-COMPLETION.md)推进。生产 HTTPS 和独立物理多节点保留各自验收范围。

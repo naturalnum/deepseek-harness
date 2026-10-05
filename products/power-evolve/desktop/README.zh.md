@@ -53,4 +53,4 @@ Profile 准备拒绝更改已有可信平台 Origin，也拒绝在 Device 身份
 
 ## 已知限制
 
-[冻结所属 Device 试用](../TRIAL-DESKTOP-OWNED-DEVICE.md)具有两个用户、Git 读回、重启及运行中退出的实际原生 DSH、Profile、模型、PG 和 Docker 证据。其独立运行时位于源码树外，仍使用开发配置。[安装应用试用](../TRIAL-DESKTOP-INSTALLED.md)已验证实际安装模式、LaunchServices、默认私有数据、Git／Python、重开和账号隔离。原生 OS 目录选择、签名／更新及原生侧栏浏览器分别保留交付步骤。用户控制的外部打开能力尚未接入，外部文档链接保持阻止。
+[冻结所属 Device 试用](../TRIAL-DESKTOP-OWNED-DEVICE.md)具有两个用户、Git 读回、重启及运行中退出的实际原生 DSH、Profile、模型、PG 和 Docker 证据。其独立运行时位于源码树外，仍使用开发配置。[安装应用试用](../TRIAL-DESKTOP-INSTALLED.md)已验证实际安装模式、LaunchServices、默认私有数据、Git／Python、重开和账号隔离。[安装应用 Office 试用](../TRIAL-DESKTOP-OFFICE.md)已验证四格式产物预览、本机 Git／Python、显式导出、不可变产物读回和独立安装状态。原生 OS 目录选择、签名／更新及原生侧栏浏览器分别保留交付步骤。用户控制的外部打开能力尚未接入，外部文档链接保持阻止。
