@@ -1,5 +1,9 @@
 # Tech report writer changes
 
+## 1.1.44
+
+- Keep bilingual abstract and keyword paragraphs at their declared 1.5-line spacing by disabling legacy grid snapping; preserve text, fonts and page sections.
+
 ## 1.1.43
 
 - Share OOXML caption recognition across catalog marking, paragraph formatting and validation; preserve ordinary body references and continued-table formatting while requiring TC fields on actual captions.
