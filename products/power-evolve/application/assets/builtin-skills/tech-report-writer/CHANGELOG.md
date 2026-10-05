@@ -1,5 +1,9 @@
 # Tech report writer changes
 
+## 1.1.43
+
+- Share OOXML caption recognition across catalog marking, paragraph formatting and validation; preserve ordinary body references and continued-table formatting while requiring TC fields on actual captions.
+
 ## 1.1.42
 
 - Keep failed Word command phase, exit status, output directory and bounded actual logs; incomplete DOCX files remain blocked without an artifact.
