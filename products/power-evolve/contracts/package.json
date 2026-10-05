@@ -10,6 +10,10 @@
     "README.zh.md"
   ],
   "exports": {
+    "./artifact-document": {
+      "types": "./lib/artifact-document.d.ts",
+      "default": "./lib/artifact-document.js"
+    },
     "./office-preview": {
       "types": "./lib/office-preview.d.ts",
       "default": "./lib/office-preview.js"

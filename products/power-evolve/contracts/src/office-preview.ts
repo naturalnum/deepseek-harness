@@ -2,6 +2,7 @@
 import { z } from 'zod'
 import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
 import { FILE_DOWNLOAD_MAX_FILE_BYTES, fileDownloadPath } from './file-download.ts'
+import { artifactDocumentPath, officeArtifactSource } from './artifact-document.ts'
 
 /** Existing authorized source-byte protocol ceiling. */
 export const OFFICE_PREVIEW_MAX_INPUT_BYTES = FILE_DOWNLOAD_MAX_FILE_BYTES
@@ -46,6 +47,15 @@ export const officePreviewPrepareRequest = z.object({
   requestId, sessionId, path: fileDownloadPath,
   priority: z.enum(['foreground', 'background']), generation,
 }).strict()
+/** Artifact admission fixes its publication identity, exact filename and expected immutable digest. */
+export const officePreviewArtifactPrepareRequest = z.object({
+  requestId, sessionId, source: officeArtifactSource,
+  priority: z.enum(['foreground', 'background']), generation,
+}).strict()
+/** Workspace requests retain their original JSON and digest; artifact requests cannot contain a Workspace path. */
+export const officePreviewSourcePrepareRequest = z.union([
+  officePreviewPrepareRequest, officePreviewArtifactPrepareRequest,
+])
 /** Status, content and cancellation select an owned persistent task, never a file root or Pod. */
 export const officePreviewRefRequest = z.object({ jobId, generation }).strict()
 /** Cancel by returned task id or by the original stable key when admission's reply was lost. */
@@ -73,8 +83,8 @@ const base64 = z.string().max(Math.ceil(OFFICE_PREVIEW_MAX_OUTPUT_BYTES / 3) * 4
   })
 /** Bounded private content response; the Host verifies PDF bytes/SHA before native multipart delivery. */
 export const officePreviewContentView = z.object({
-  absolutePath: z.string().min(1).max(1024).refine(value => value.startsWith('/workspace/')
-    && fileDownloadPath.safeParse(value.slice('/workspace/'.length)).success),
+  absolutePath: z.union([z.string().min(1).max(1024).refine(value => value.startsWith('/workspace/')
+    && fileDownloadPath.safeParse(value.slice('/workspace/'.length)).success), artifactDocumentPath]),
   version: digest, bytes: z.number().int().positive().max(OFFICE_PREVIEW_MAX_OUTPUT_BYTES),
   offset: z.literal(0), eof: z.literal(true), data: base64,
   missingFonts, generation, pdfSha256: digest,
@@ -115,6 +125,8 @@ export const officePreviewFailureSchema = z.object({
 
 /** Validated durable admission request. */
 export type OfficePreviewPrepareRequest = z.infer<typeof officePreviewPrepareRequest>
+/** Workspace or artifact admission; Workspace JSON remains compatible with earlier records. */
+export type OfficePreviewSourcePrepareRequest = z.infer<typeof officePreviewSourcePrepareRequest>
 /** Validated owned task selector. */
 export type OfficePreviewRefRequest = z.infer<typeof officePreviewRefRequest>
 /** Validated cancellation target; an early request-key cancellation must remain durable. */

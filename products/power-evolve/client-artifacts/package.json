@@ -24,6 +24,7 @@
   "dependencies": {
     "@deepseek-ai/cordis": "workspace:~",
     "@power-evolve/contracts": "workspace:*",
+    "@deepseek-ai/dsh-util-workspace-path": "workspace:*",
     "@deepseek-ai/dsh-api-session-controller": "workspace:*",
     "@deepseek-ai/dsh-client-store": "workspace:*",
     "@deepseek-ai/dsh-client-ui-chat": "workspace:*",

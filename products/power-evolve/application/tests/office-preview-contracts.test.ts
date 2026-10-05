@@ -2,9 +2,10 @@
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
-import { officePreviewPrepareRequest, officePreviewCancelRequest, officePreviewJobSchema, officePreviewResultSchema, officePreviewFailureSchema,
+import { officePreviewPrepareRequest, officePreviewSourcePrepareRequest, officePreviewCancelRequest, officePreviewJobSchema, officePreviewResultSchema, officePreviewFailureSchema,
   officePreviewContentView, officePreviewJobView, OFFICE_PREVIEW_MAX_OUTPUT_BYTES,
 } from '@power-evolve/contracts/office-preview'
+import { artifactDocumentPathFor, parseArtifactDocumentPath } from '@power-evolve/contracts/artifact-document'
 
 const digest = 'a'.repeat(64)
 const identity = { jobId: randomUUID(), nonce: randomUUID(), generation: digest }
@@ -29,6 +30,23 @@ test('admission preserves native RPC keys and rejects authority fields or escapi
     assert.equal(officePreviewPrepareRequest.safeParse({ ...input, ...extra }).success, false)
   }
   assert.equal(officePreviewPrepareRequest.safeParse({ ...input, requestId: 'id\nnext' }).success, false)
+})
+
+test('artifact admission fixes one literal publication and rejects mixed sources and path aliases', () => {
+  const artifactId = randomUUID()
+  const source = { kind: 'artifact', artifactId, filename: '报告.docx', sha256: digest }
+  const request = { requestId: 'native:artifact', sessionId: randomUUID(), source, priority: 'foreground', generation: digest }
+  assert.deepEqual(officePreviewSourcePrepareRequest.parse(request), request)
+  assert.equal(officePreviewSourcePrepareRequest.safeParse({ ...request, path: 'report.docx' }).success, false)
+  assert.equal(officePreviewSourcePrepareRequest.safeParse({ ...request, source: { ...source, sourcePath: 'report.docx' } }).success, false)
+  assert.equal(officePreviewSourcePrepareRequest.safeParse({ ...request, source: { ...source, sha256: 'bad' } }).success, false)
+  const path = artifactDocumentPathFor(artifactId, source.filename)
+  assert.deepEqual(parseArtifactDocumentPath(path), { artifactId, filename: source.filename })
+  assert.equal(officePreviewContentView.safeParse({ ...content(Buffer.from('f')), absolutePath: path }).success, true)
+  for (const alias of [`/artifacts/${artifactId}/../${source.filename}`, `/artifacts/${artifactId}//${source.filename}`,
+    `/artifacts/${artifactId}/.`, `/artifacts/${artifactId.toUpperCase()}/${source.filename}`, `/artifacts/${artifactId}/x\\y.docx`]) {
+    assert.throws(() => parseArtifactDocumentPath(alias))
+  }
 })
 
 test('parser task freezes every budget and rejects oversized source or user execution selection', () => {

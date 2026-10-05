@@ -4,6 +4,7 @@
   "include": ["src"],
   "references": [
     { "path": "../contracts" },
+    { "path": "../../../packages/util/workspace-path" },
     { "path": "../../../packages/api/session-controller/tsconfig.client.json" },
     { "path": "../../../packages/client/store" },
     { "path": "../../../packages/client/ui-chat/tsconfig.client.json" },

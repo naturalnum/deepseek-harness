@@ -1,4 +1,4 @@
-/** Artifact-plane V31→V32 checks against a disposable real PG database; no parser or stop proof is simulated. */
+/** Adjacent Office schema checks against a disposable real PG database; no parser or stop proof is simulated. */
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { randomBytes, randomUUID } from 'node:crypto'
@@ -51,7 +51,7 @@ test('Office migration retains prior Session bytes, durable early cancellation a
       await t.test('adjacent initialization preserves legacy facts and is repeatable', async () => {
         assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 31)
         await initializeDatabase(pool); await initializeDatabase(pool)
-        assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 32)
+        assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, predecessors.CURRENT_SCHEMA_VERSION)
         assert.deepEqual((await pool.query('SELECT * FROM pe_sessions WHERE id=$1', [session])).rows[0], original)
         assert.deepEqual((await pool.query('SELECT * FROM pe_events WHERE session_id=$1', [session])).rows, events)
         assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_office_preview_jobs')).rows[0].n, 0)
@@ -125,7 +125,7 @@ test('Office migration retains prior Session bytes, durable early cancellation a
 
       await t.test('backup admission refuses durable parser reservations after cancellation and expired leases', async () => {
         const state = await inspectBackupState(Client, url.href)
-        assert.equal(state.schema, 32)
+        assert.equal(state.schema, predecessors.CURRENT_SCHEMA_VERSION)
         assert.equal(state.active.officePreviews, 2)
         assert.throws(() => requireIdleBackupState(state), /no active operations/u)
       })
