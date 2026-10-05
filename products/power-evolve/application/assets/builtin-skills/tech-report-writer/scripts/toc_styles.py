@@ -15,7 +15,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Pt
 
-from caption_rules import is_caption
+from caption_rules import FIGURE_CAPTION_RE, TABLE_CAPTION_RE, is_caption
 
 
 def configure_toc_styles(doc) -> None:
@@ -328,6 +328,11 @@ def is_figure_table_caption(paragraph, kind: str, *, include_continued=False) ->
     )
 
 
+def _is_true_caption(paragraph, kind: str) -> bool:
+    """Preserve the existing catalog entry point using the shared caption rules."""
+    return is_figure_table_caption(paragraph, kind)
+
+
 def ensure_abstract_catalog_marks(doc) -> dict[str, bool]:
     """Ensure 内容摘要 / ABSTRACT each expose one hidden main-TOC TC mark."""
     status = {"内容摘要": False, "ABSTRACT": False}
@@ -350,11 +355,11 @@ def mark_figure_table_captions(doc) -> dict[str, int]:
     counts = {"figures": 0, "tables": 0}
     for paragraph in doc.paragraphs:
         text = re.sub(r"\s+", " ", paragraph.text.strip())
-        if is_figure_table_caption(paragraph, "figure"):
+        if _is_true_caption(paragraph, "figure"):
             _remove_tc_identifier(paragraph, "T")
             _append_hidden_tc(paragraph, text, "F")
             counts["figures"] += 1
-        elif is_figure_table_caption(paragraph, "table"):
+        elif _is_true_caption(paragraph, "table"):
             _remove_tc_identifier(paragraph, "F")
             _append_hidden_tc(paragraph, text, "T")
             counts["tables"] += 1
