@@ -52,6 +52,8 @@ export class PreviewKubernetes {
     if (!pod) throw new KubernetesError(404, 'fixture missing')
     assert.equal(body.metadata?.uid ?? body.preconditions?.uid, pod.metadata.uid)
     if (method === 'DELETE') {
+      // The first graceful deletion advances the native generation, as the real apiserver does.
+      if (!pod.metadata.deletionTimestamp) pod.metadata.generation += 1
       pod.metadata.deletionTimestamp = '2026-10-05T00:01:00Z'
       if (this.supplyProof) this.terminate(pod.status.containerStatuses[0].state.terminated?.exitCode ?? 137, name)
       return null
@@ -70,7 +72,7 @@ export class PreviewKubernetes {
     Object.assign(worker, { ready: false, state: { terminated: { containerID: worker.containerID, exitCode,
       startedAt: '2026-10-05T00:00:00Z', finishedAt: '2026-10-05T00:00:30Z' } } })
     pod.status.phase = exitCode === 0 ? 'Succeeded' : 'Failed'
-    pod.status.conditions = [{ type: 'PodReadyToStartContainers', status: 'False', observedGeneration: 1 }]
+    pod.status.conditions = [{ type: 'PodReadyToStartContainers', status: 'False', observedGeneration: pod.metadata.generation }]
   }
 }
 

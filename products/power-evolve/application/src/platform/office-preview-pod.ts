@@ -72,7 +72,7 @@ export const officePreviewPodIntent = z.object({
   && value.template.metadata.annotations['powerevolve.dev/preview-generation'] === value.job.generation)
 /** Validated original Pod creation intent. */
 export type OfficePreviewPodIntent = z.infer<typeof officePreviewPodIntent>
-/** Captured native Pod identity; node and container identities can only advance from null. */
+/** Captured one-shot Pod identity: creation generation 1 or first-deletion generation 2; native identities only advance from null within a generation. */
 export const officePreviewPodIdentity = z.object({
   name, uid: z.uuid(), generation: z.number().int().positive(), nodeName: z.string().min(1).max(253).nullable(),
   containerId: containerId.nullable(), imageId: z.string().min(1).max(1024).nullable(),
@@ -191,7 +191,8 @@ export class OfficePreviewPods {
   }
 
   /**
-   * Observe only the intended parser and reject identity, mount, environment or safety-policy changes.
+   * Observe only the intended one-shot parser; spec updates and resize are unsupported.
+   * Creation generation 1 may advance once to deleting generation 2 with unchanged native identities.
    * @param intent Original persisted creation request.
    * @param captured Previously captured native identity, if any.
    * @returns Verified original Pod facts, or null for 404; missing never means stopped.
@@ -228,7 +229,11 @@ export class OfficePreviewPods {
     const identity = officePreviewPodIdentity.parse({ name: pod.metadata.name, uid: pod.metadata.uid,
       generation: pod.metadata.generation, nodeName: spec.nodeName || null,
       containerId: record(worker) && worker.containerID || null, imageId: record(worker) && worker.imageID || null })
-    if (captured && (identity.name !== captured.name || identity.uid !== captured.uid || identity.generation !== captured.generation
+    const deleting = !!pod.metadata.deletionTimestamp
+    if (identity.generation !== 1 && !(deleting && identity.generation === 2)) throw refusal()
+    if (captured && (identity.name !== captured.name || identity.uid !== captured.uid
+      || identity.generation !== captured.generation && !(captured.generation === 1 && identity.generation === 2 && deleting
+        && identity.nodeName === captured.nodeName && identity.containerId === captured.containerId && identity.imageId === captured.imageId)
       || captured.nodeName !== null && identity.nodeName !== captured.nodeName
       || captured.containerId !== null && identity.containerId !== captured.containerId
       || captured.imageId !== null && identity.imageId !== captured.imageId)) throw refusal()
@@ -239,7 +244,7 @@ export class OfficePreviewPods {
     if (terminated && (!exit?.success || terminated.containerID !== identity.containerId
       || !state || Object.keys(state).length !== 1 || record(worker) && worker.ready !== false)) throw refusal()
     const status = kubernetesPodStopStatus(raw), retained = pod.metadata.finalizers?.includes(FINALIZER) ?? false
-    return { identity, deleting: !!pod.metadata.deletionTimestamp, retained, resourceVersion: pod.metadata.resourceVersion,
+    return { identity, deleting, retained, resourceVersion: pod.metadata.resourceVersion,
       finalizers: pod.metadata.finalizers ?? [], workerExit: exit?.success ? exit.data : null,
       stopProof: status ? officePreviewStopProof.parse({ status, jobId: intent.job.jobId, nonce: intent.job.nonce,
         generation: intent.job.generation, identity, observedAt: new Date().toISOString() }) : null }
