@@ -61,7 +61,7 @@ export interface UiWorkspace {
   /**
    * Start a New Session flow and navigate to its Session; a creation the Host
    * refuses is shown through the Workspace notice and leaves the selection as it was.
-   * @param workspaceId - explicit target; absent inherits the current or most recent Workspace.
+   * @param workspaceId - explicit target; absent inherits the pending, current or most recent Workspace.
    */
   startSession(workspaceId?: WorkspaceId): void
   /**
@@ -135,6 +135,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
   )
   private mainReference: SessionReference | undefined
   private pendingNewSession: PendingNewSession | undefined
+  private pendingWorkspace: { readonly workspaceId: WorkspaceId } | undefined
 
   /**
    * @param ctx - Client root Context.
@@ -215,17 +216,29 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     navigation: AbortSignal,
     beforeOpen?: (sessionId: SessionId) => void,
   ): Promise<void> {
-    let sessionId: SessionId
-    try {
-      sessionId = await this.connectWorkspace(workspaceId)
-    } catch (error: unknown) {
-      // Reported here, not in connectWorkspace: startup restoration calls that
-      // directly and stays console-only.
-      if (!navigation.aborted) this.notify({ kind: 'createFailed', message: creationFailureMessage(error) })
-      throw error
-    }
     if (navigation.aborted) return
-    this.replaceMain(sessionId, navigation, 'reveal', beforeOpen)
+    const pending = { workspaceId }
+    this.pendingWorkspace = pending
+    const clear = (): void => {
+      if (this.pendingWorkspace === pending) this.pendingWorkspace = undefined
+    }
+    navigation.addEventListener('abort', clear, { once: true })
+    try {
+      let sessionId: SessionId
+      try {
+        sessionId = await this.connectWorkspace(workspaceId)
+      } catch (error: unknown) {
+        // Reported here, not in connectWorkspace: startup restoration calls that
+        // directly and stays console-only.
+        if (!navigation.aborted) this.notify({ kind: 'createFailed', message: creationFailureMessage(error) })
+        throw error
+      }
+      if (navigation.aborted) return
+      this.replaceMain(sessionId, navigation, 'reveal', beforeOpen)
+    } finally {
+      navigation.removeEventListener('abort', clear)
+      clear()
+    }
   }
 
   async forkSession(sessionId: SessionId): Promise<void> {
@@ -243,7 +256,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     const recent = workspace.phase === 'ready' && sessions.phase === 'ready'
       ? recentWorkspace(workspace.items, sessions.byId)
       : undefined
-    const target = workspaceId ?? currentWorkspaceId ?? recent
+    const target = workspaceId ?? this.pendingWorkspace?.workspaceId ?? currentWorkspaceId ?? recent
     if (target === undefined) {
       this.clearMain()
       return
