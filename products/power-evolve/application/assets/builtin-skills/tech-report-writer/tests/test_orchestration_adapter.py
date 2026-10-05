@@ -20,6 +20,8 @@ from format_existing_report import _configure_body
 from docx.oxml.ns import qn
 from docx.shared import Pt
 from report_validator import validate_report
+from main import _validate_references_data
+from report_generator import _build_appendices_html, _build_references_html
 
 
 FINAL_MARKER = "REPORT-REVISION-20261003"
@@ -81,6 +83,85 @@ def payload(source=FINAL_REPORT):
 
 
 class FinalReportSource(unittest.TestCase):
+    def test_explicit_front_contents_does_not_enter_abstracts_or_body(self):
+        baseline = final_report_data(payload()["source_report"])
+        contents = "\n\nTOC-ONLY-MARKER\n\n- 1 项目概述\n  - 1.1 研究范围\n- 2 配电负荷异常识别\n- 3 总结\n\n"
+        for heading in ("# 目录", "## 目录"):
+            for position in ("## 中文摘要", "## ABSTRACT", "# 1 项目概述"):
+                with self.subTest(heading=heading, position=position):
+                    source = FINAL_REPORT.replace(position, heading + contents + position)
+                    result = final_report_data(payload(source)["source_report"])
+                    self.assertEqual(result, baseline)
+                    self.assertNotIn("TOC-ONLY-MARKER", json.dumps(result, ensure_ascii=False))
+
+    def test_contents_must_be_unique_nonempty_and_before_body(self):
+        for source in (
+            FINAL_REPORT.replace("# 1 项目概述", "# 目录\n\n# 1 项目概述"),
+            FINAL_REPORT.replace("# 1 项目概述", "# 目录\n\n- 1 项目概述\n\n## 目录\n\n- 2 研究\n\n# 1 项目概述"),
+            *(FINAL_REPORT.replace("# 2 配电", heading + "\n\n- 2 研究\n\n# 2 配电")
+              for heading in ("# 目录", "## 目录")),
+            FINAL_REPORT + "\n## 目录\n\n- 1 项目概述\n",
+        ):
+            with self.subTest(source=source):
+                with self.assertRaises(ValueError):
+                    chapter_data(payload(source))
+
+    def test_bilingual_titles_require_matching_current_word_metadata(self):
+        data = payload()
+        source = FINAL_REPORT.replace("## 中文摘要", "# " + data["word_metadata"]["title_en"] + "\n\n## 中文摘要")
+        baseline = final_report_data(data["source_report"])
+        data["source_report"]["content"]["markdown"] = source
+        self.assertEqual(final_report_data(data["source_report"], data["word_metadata"]), baseline)
+        self.assertEqual(chapter_data(data), baseline["chapters"])
+        for metadata in (None, {}, {**data["word_metadata"], "title_cn": "其他中文题名"},
+                         {**data["word_metadata"], "title_en": "Other English Title"}):
+            with self.subTest(metadata=metadata):
+                with self.assertRaises(ValueError):
+                    final_report_data(data["source_report"], metadata)
+
+    def test_unknown_extra_titles_and_late_english_title_remain_rejected(self):
+        metadata = payload()["word_metadata"]
+        for source in (
+            FINAL_REPORT.replace("## 中文摘要", "# 未支持的前置节\n\n## 中文摘要"),
+            FINAL_REPORT.replace("## 中文摘要", "# " + metadata["title_en"] + "\n\n# 第三个题名\n\n## 中文摘要"),
+            FINAL_REPORT.replace("## ABSTRACT", "# " + metadata["title_en"] + "\n\n## ABSTRACT"),
+            FINAL_REPORT.replace("# 参考文献", "# 未支持的后置节\n\n# 参考文献"),
+        ):
+            with self.subTest(source=source):
+                with self.assertRaises(ValueError):
+                    final_report_data(payload(source)["source_report"], metadata)
+
+    def test_contents_heading_in_fenced_program_remains_program_text(self):
+        source = FINAL_REPORT.replace(FINAL_MARKER, "```python\n# 目录\nprint('not a contents section')\n```\n\n" + FINAL_MARKER)
+        result = final_report_data(payload(source)["source_report"])
+        self.assertIn("# 目录", result["chapters"][0]["content_html"])
+
+    def test_source_explanation_is_preserved_as_appendix_not_reference_entry(self):
+        note = "本报告引用本地未出版 QA 材料，不涉及外部 URL 或出版来源。"
+        source = FINAL_REPORT + "\n# 附录 A 复现程序\n\n```python\n# 目录\nprint('preserved')\n```\n\n# 附录 B 参考文献来源与获取链接\n\n" + note + "\n"
+        result = final_report_data(payload(source)["source_report"])
+        self.assertEqual([row["id"] for row in result["appendices"]], ["A", "B"])
+        self.assertEqual([row["title"] for row in result["chapters"]], ["项目概述", "配电负荷异常识别", "总结"])
+        self.assertIn(note, result["appendices"][1]["content_html"])
+        self.assertNotIn(note, result["references"]["references_html"])
+        self.assertTrue(_validate_references_data(result["references"])[0])
+        document = Document()
+        back_matter = _build_appendices_html({"appendices": result["appendices"]}) + _build_references_html(result["references"])
+        _, errors, _ = parse_html_to_elements(document, back_matter, "CONTENT")
+        self.assertEqual(errors, [])
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "source-appendix.docx"
+            document.save(path)
+            readback = Document(path)
+            text = [paragraph.text for paragraph in readback.paragraphs]
+            self.assertEqual(text.count(note), 1)
+            self.assertIn("附录 B 参考文献来源与获取链接", text)
+            self.assertTrue(text.index(note) < text.index("参考文献"))
+            errors = validate_report(str(path))["errors"]
+            self.assertFalse(any("参考文献" in error for error in errors), errors)
+        with self.assertRaisesRegex(ValueError, "unsupported top-level heading"):
+            final_report_data(payload(FINAL_REPORT + "\n# 参考文献来源与获取链接\n\n" + note)["source_report"])
+
     def test_final_heading_numbers_names_and_levels_keep_reviewed_order(self):
         source = FINAL_REPORT.replace(
             "不得把本测试解释为生产性能。",
@@ -230,6 +311,9 @@ class FinalReportSource(unittest.TestCase):
             stale_appendices = output / "appendices.json"
             stale_appendices.write_text(OLD_MARKER)
             data = payload()
+            source = FINAL_REPORT.replace("## 中文摘要", "# " + data["word_metadata"]["title_en"] + "\n\n## 中文摘要")
+            source = source.replace("# 1 项目概述", "## 目录\n\nTOC-ONLY-MARKER\n\n- 1 项目概述\n- 2 配电负荷异常识别\n- 3 总结\n\n# 1 项目概述")
+            data["source_report"]["content"]["markdown"] = source
             data["output_preferences"] = {"workspace_dir": str(root), "output_dir": str(output)}
             request = {"skill_name": "tech-report-writer", "action": "create_word_report", "payload": data,
                        "orchestration": {"enabled": True, "request_id": "source-qa",
@@ -252,6 +336,8 @@ class FinalReportSource(unittest.TestCase):
             self.assertIn("最终确认", text)
             self.assertIn("reviewed report", text)
             self.assertIn("测试文献作者", text)
+            self.assertNotIn("TOC-ONLY-MARKER", text)
+            self.assertNotIn(data["word_metadata"]["title_en"], text)
             self.assertEqual(len(document.tables), 1)
 
             del data["source_report"]

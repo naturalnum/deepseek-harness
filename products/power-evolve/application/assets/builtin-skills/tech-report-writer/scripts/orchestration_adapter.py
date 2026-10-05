@@ -324,8 +324,12 @@ def references_data(reference_artifact: Any) -> dict[str, Any]:
     return {"references_html": "\n".join(paragraphs)}
 
 
-def final_report_data(source_report: Any) -> dict[str, Any]:
-    """Project the reviewed Markdown into Word fields without older snapshots."""
+def final_report_data(source_report: Any, word_metadata: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Project reviewed Markdown; bilingual titles must match this edition's metadata.
+
+    One explicit pre-body contents section is omitted from Word fields because
+    the Word template generates its paginated contents from the reviewed headings.
+    """
     markdown = pick_text(source_report).lstrip("\ufeff").replace("\r\n", "\n")
     markdown = re.sub(r"<!--.*?-->", "", markdown, flags=re.DOTALL)
     if not markdown.strip():
@@ -334,6 +338,7 @@ def final_report_data(source_report: Any) -> dict[str, Any]:
     sections: list[dict[str, Any]] = []
     active: dict[str, Any] | None = None
     report_title = ""
+    english_title_seen = False
     fence: str | None = None
     chapter_count = 0
     for line in markdown.splitlines():
@@ -350,6 +355,10 @@ def final_report_data(source_report: Any) -> dict[str, Any]:
                 kind = "abstract_cn"
             elif title.lower() in {"abstract", "english abstract", "英文摘要"} and chapter_count == 0:
                 kind = "abstract_en"
+            elif title == "目录":
+                if chapter_count or any(section["kind"] in {"references", "appendix"} for section in sections):
+                    raise ValueError("final source_report contents must precede body chapters and back matter")
+                kind = "contents"
             elif title == "参考文献":
                 kind = "references"
             elif body:
@@ -363,12 +372,18 @@ def final_report_data(source_report: Any) -> dict[str, Any]:
             elif level == 1 and not report_title and not sections:
                 report_title = title
                 continue
+            elif level == 1 and report_title and not sections and not english_title_seen and word_metadata:
+                if (report_title != str(word_metadata.get("title_cn") or "").strip()
+                        or title != str(word_metadata.get("title_en") or "").strip()):
+                    raise ValueError("final source_report bilingual titles must match this edition's Word metadata")
+                english_title_seen = True
+                continue
             elif level == 1:
                 raise ValueError("final source_report has an unsupported top-level heading")
             else:
                 kind = ""
             if kind:
-                if kind in {"abstract_cn", "abstract_en", "references"} and any(section["kind"] == kind for section in sections):
+                if kind in {"abstract_cn", "abstract_en", "contents", "references"} and any(section["kind"] == kind for section in sections):
                     raise ValueError("final source_report has duplicate front matter or references")
                 active = {"kind": kind, "title": title, "lines": []}
                 sections.append(active)
@@ -385,6 +400,8 @@ def final_report_data(source_report: Any) -> dict[str, Any]:
         if not text:
             raise ValueError("final source_report contains an empty report section")
         kind = section["kind"]
+        if kind == "contents":
+            continue
         if kind == "chapter":
             number = len(result["chapters"]) + 1
             result["chapters"].append({"num": number, "title": section["title"],
@@ -418,7 +435,7 @@ def final_report_data(source_report: Any) -> dict[str, Any]:
 
 def chapter_data(payload: dict[str, Any]) -> list[dict[str, Any]]:
     if "source_report" in payload:
-        return final_report_data(payload["source_report"])["chapters"]
+        return final_report_data(payload["source_report"], payload.get("word_metadata"))["chapters"]
     approved = payload.get("approved_chapters") or []
     result: list[dict[str, Any]] = []
     for idx, artifact in enumerate(approved, 1):
@@ -451,7 +468,7 @@ def create_word_report(request: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("missing required Word metadata: " + ", ".join(missing))
     cover_keys = ["report_no", "class_no", "secret_level", "project_source", "title_cn", "title_en", "project_name", "series_no", "cooperator", "report_date", "work_period", "leader", "staff", "writer"]
     cover = {key: metadata.get(key, [] if key == "cooperator" else "") for key in cover_keys}
-    final = final_report_data(payload["source_report"]) if "source_report" in payload else None
+    final = final_report_data(payload["source_report"], metadata) if "source_report" in payload else None
     chapters = final["chapters"] if final is not None else chapter_data(payload)
     if not chapters:
         raise ValueError("no approved chapters or parseable Markdown content were provided")

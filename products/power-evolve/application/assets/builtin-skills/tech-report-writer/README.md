@@ -1,0 +1,17 @@
+# Technical report Word preparation
+
+English | [中文](README.zh.md)
+
+This Skill converts reviewed reports to Word and checks their layout. [SKILL.md](SKILL.md) owns the complete generation and visual inspection workflow.
+
+## Reviewed Markdown input
+
+When `source_report` is supplied, the reviewed Markdown is the only source of abstracts, chapters, references and appendices; unreadable or incomplete input cannot select older artifacts. A leading Chinese and English title pair must match this edition's `word_metadata.title_cn` and `title_en`. Both titles precede the report sections; other extra top-level headings remain unsupported.
+
+The Markdown may contain one nonempty `# 目录` or `## 目录` section before the body and back matter. Its entries do not become abstract text or an extra Word chapter. The Word template generates the paginated contents from the reviewed headings.
+
+Reference-source explanations belong in a consecutive appendix, for example `# 附录 B 参考文献来源与获取链接` after Appendix A. Their text remains separate from the bibliography's continuously numbered `[n]` entries.
+
+## Verification
+
+[Adapter regressions](tests/test_orchestration_adapter.py) cover deterministic preparation, strict rejection and Word paragraph/table readback. They do not establish LibreOffice pagination or page-by-page visual acceptance; those checks remain part of the actual Word workflow.
