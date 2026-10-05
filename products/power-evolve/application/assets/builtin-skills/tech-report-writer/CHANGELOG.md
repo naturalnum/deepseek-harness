@@ -1,5 +1,9 @@
 # Tech report writer changes
 
+## 1.1.45
+
+- Preserve native absolute-value bars and open cases during LibreOffice PDF rendering by ordering delimiter character properties only in the disposable layout copy; retain original DOCX bytes and OMML.
+
 ## 1.1.44
 
 - Keep bilingual abstract and keyword paragraphs at their declared 1.5-line spacing by disabling legacy grid snapping; preserve text, fonts and page sections.
