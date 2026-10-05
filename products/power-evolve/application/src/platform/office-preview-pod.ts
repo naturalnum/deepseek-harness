@@ -79,7 +79,7 @@ export const officePreviewPodIdentity = z.object({
 }).strict()
 /** Validated native identity retained across Platform recovery. */
 export type OfficePreviewPodIdentity = z.infer<typeof officePreviewPodIdentity>
-/** Native stop facts stored before finalizer removal; Office KUBELET_STOPPED also accepts the exact Never parser's creation-generation termination before deletion. */
+/** Native stop facts stored before finalizer removal; Office KUBELET_STOPPED also accepts the exact Never parser's creation-generation termination before the effective deletion cutoff. */
 export const officePreviewStopProof = z.object({
   status: z.enum(['UNSCHEDULED_DELETING', 'KUBELET_STOPPED']),
   jobId: officePreviewJobSchema.shape.jobId, nonce: officePreviewJobSchema.shape.nonce,
@@ -151,6 +151,7 @@ function knownReason(value: unknown): boolean {
 function terminatedBeforeDeletion(pod: z.infer<typeof resource>, identity: OfficePreviewPodIdentity,
   worker: unknown, exit: OfficePreviewWorkerExit | null, graceSeconds: number): boolean {
   const status = pod.status, deletion = pod.metadata.deletionTimestamp
+  const effectiveGraceSeconds = pod.metadata.deletionGracePeriodSeconds ?? graceSeconds
   if (identity.generation !== 2 || !deletion || !exit || !identity.nodeName || !identity.containerId || !identity.imageId
     || !identity.nodeName.split('.').every(label => label.length <= 63 && /^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$/u.test(label))
     || status?.observedGeneration !== 1 || status.phase !== (exit.exitCode === 0 ? 'Succeeded' : 'Failed')
@@ -160,7 +161,7 @@ function terminatedBeforeDeletion(pod: z.infer<typeof resource>, identity: Offic
     || worker.state.terminated.containerID !== identity.containerId
     || !knownReason(status.reason) || !knownReason(worker.reason) || !knownReason(worker.state.terminated.reason)
     || !absent(status.initContainerStatuses) || !absent(status.ephemeralContainerStatuses)
-    || Date.parse(exit.startedAt) <= 0 || Date.parse(exit.finishedAt) >= Date.parse(deletion) - graceSeconds * 1000) return false
+    || Date.parse(exit.startedAt) <= 0 || Date.parse(exit.finishedAt) >= Date.parse(deletion) - effectiveGraceSeconds * 1000) return false
   const parsed = terminalConditions.safeParse(status.conditions)
   if (!parsed.success) return false
   const seen = new Set<string>()
@@ -230,7 +231,8 @@ export class OfficePreviewPods {
   /**
    * Observe only the intended one-shot parser; spec updates and resize are unsupported.
    * Creation generation 1 may advance once to deleting generation 2; captured native identities never change, while null may acquire its first value.
-   * An exact terminal Never parser may retain native status generation 1 when it ended before deletionTimestamp minus frozen grace; the proof keeps real Pod generation 2.
+   * An exact terminal Never parser may retain native status generation 1 when it ended before the current deletionTimestamp minus actual grace, or frozen grace if absent.
+   * Actual grace cannot exceed the frozen budget; the proof keeps real Pod generation 2 and does not establish the first DELETE request time.
    * @param intent Original persisted creation request.
    * @param captured Previously captured native identity, if any.
    * @returns Verified original Pod facts, or null for 404; missing never means stopped.

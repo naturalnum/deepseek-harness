@@ -13,7 +13,7 @@ const job = () => ({ protocolVersion: 1, jobId: randomUUID(), nonce: randomUUID(
   sourceSha256: 'd'.repeat(64), sourceBytes: 100, extension: 'docx', limits: { inputBytes: 2097152, outputBytes: 8388608,
     timeoutMs: 120000, archiveEntries: 10000, uncompressedBytes: 134217728, fontLoadedBytes: 268435456,
     pages: 1000, fontFiles: 10000, fontFileBytes: 134217728, fontResolutionEntries: 100000, imageResolution: 200 } })
-function fixture() {
+function fixture(configOverrides = {}) {
   let raw = null
   const calls = [], kube = { resourcePath: (namespace, resource, name) => `/${namespace}/${resource}${name ? `/${name}` : ''}`,
     async call(method, path, body) {
@@ -21,7 +21,7 @@ function fixture() {
       if (method === 'GET') { if (!raw) throw new KubernetesError(404, 'fixture missing'); return structuredClone(raw) }
       return null
     } }
-  const pods = new OfficePreviewPods(kube, config), intent = pods.intent(job(), randomUUID())
+  const pods = new OfficePreviewPods(kube, { ...config, ...configOverrides }), intent = pods.intent(job(), randomUUID())
   const source = structuredClone(intent.template)
   Object.assign(source.metadata, { uid: randomUUID(), resourceVersion: '1', generation: 1 })
   return { pods, intent, source, calls, set: value => { raw = value } }
@@ -227,6 +227,28 @@ test('termination after the conservative deletion cutoff still requires the curr
   f.source.status.conditions[0].observedGeneration = 2; f.set(f.source)
   const stopped = await f.pods.observe(f.intent, pending.identity)
   assert.equal(stopped.stopProof.status, 'KUBELET_STOPPED'); assert.equal(stopped.identity.generation, 2)
+})
+
+test('the effective native deletion cutoff uses actual grace, with frozen fallback and a strict timestamp boundary', async () => {
+  for (const [actualGrace, secondsBefore, accepted] of [
+    [0, 1, true], [0, 4, true], [0, 9, true], [10, 9, false], [undefined, 9, false],
+    [10, 10, false], [0, 0, false],
+  ]) {
+    const f = fixture({ terminationGraceSeconds: 10 }); terminalBeforeDelete(f.source)
+    f.source.metadata.deletionTimestamp = '2026-10-05T02:17:04Z'
+    if (actualGrace !== undefined) f.source.metadata.deletionGracePeriodSeconds = actualGrace
+    f.source.status.containerStatuses[0].state.terminated.finishedAt =
+      new Date(Date.parse(f.source.metadata.deletionTimestamp) - secondsBefore * 1000).toISOString()
+    f.set(f.source)
+    const observed = await f.pods.observe(f.intent)
+    assert.equal(observed.stopProof?.status ?? null, accepted ? 'KUBELET_STOPPED' : null,
+      `actualGrace=${String(actualGrace)}, secondsBefore=${secondsBefore}`)
+    assert.equal(observed.identity.generation, 2)
+    assert.equal(f.source.status.observedGeneration, 1)
+  }
+  const f = fixture({ terminationGraceSeconds: 10 }); terminalBeforeDelete(f.source)
+  f.source.metadata.deletionGracePeriodSeconds = 11; f.set(f.source)
+  await assert.rejects(f.pods.observe(f.intent), { code: 'office_render_unavailable' })
 })
 
 test('container-level restart configuration cannot override the frozen Never parser or yield terminal proof', async () => {
