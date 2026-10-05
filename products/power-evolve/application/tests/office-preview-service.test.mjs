@@ -196,24 +196,21 @@ test('native stop proof commits before finalizer removal; lost finalizer ACK rec
   assert.deepEqual(Buffer.from((await f.service.content(f.token, f.ref(job))).data, 'base64'), pdf)
 })
 
-test('DELETE generation advances the durable identity; stale kubelet generation retains the slot until proof2 commits', options, async t => {
+test('a terminal parser retains native generation1 status across DELETE while proof2 commits before finalizer and slot release', options, async t => {
   const f = await previewFixture(t), job = await f.accept(); await f.service.tick()
   const original = (await f.state(job.jobId)).pod_identity
   assert.equal(original.generation, 1)
   await successOutput(f, job)
   f.kube.supplyProof = false
-  await f.service.tick()
-  const waiting = await f.state(job.jobId)
-  assert.equal(waiting.pod_identity.generation, 2); assert.equal(waiting.pod_identity.uid, original.uid)
-  assert.equal(waiting.state, 'stopping'); assert.equal(waiting.parser_slot, 0); assert.equal(waiting.stop_evidence, null)
-  assert.equal(f.kube.pod.status.conditions[0].observedGeneration, 1)
-  assert.equal(f.kube.mutations.filter(call => call.method === 'PATCH').length, 0)
   f.kube.onCall = async method => { if (method === 'PATCH') {
     const row = await f.state(job.jobId)
     assert.equal(row.stop_evidence.status, 'KUBELET_STOPPED'); assert.equal(row.pod_identity.generation, 2)
+    assert.equal(row.pod_identity.uid, original.uid)
     assert.deepEqual(row.stop_evidence.identity, row.pod_identity); assert.equal(row.parser_slot, 0)
+    assert.equal(f.kube.pod.status.observedGeneration, 1)
+    assert.equal(f.kube.pod.status.conditions[0].observedGeneration, 1)
   } }
-  f.kube.terminate(0); await f.service.tick()
+  await f.service.tick()
   const completed = await f.state(job.jobId)
   assert.equal(completed.state, 'succeeded'); assert.equal(completed.parser_slot, null)
   assert.equal(completed.stop_evidence.identity.generation, 2); assert.equal(f.kube.pod, null)
@@ -227,7 +224,10 @@ test('creation cancellation captures the first worker identity during DELETE and
   const original = (await f.state(job.jobId)).pod_identity
   assert.equal(original.generation, 1)
   for (const field of ['nodeName', 'containerId', 'imageId']) assert.equal(original[field], null)
-  f.kube.onCall = async method => { if (method === 'DELETE') { f.kube.start(); f.kube.terminate(137) } }
+  f.kube.onCall = async method => { if (method === 'DELETE') {
+    f.kube.start(); f.kube.terminate(137)
+    f.kube.pod.status.containerStatuses[0].state.terminated.finishedAt = '2026-10-05T00:01:30Z'
+  } }
   await f.service.cancel(f.token, f.ref(job)); await f.service.tick()
   const waiting = await f.state(job.jobId)
   assert.equal(waiting.state, 'stopping'); assert.equal(waiting.parser_slot, 0); assert.equal(waiting.stop_evidence, null)

@@ -2,8 +2,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { randomUUID } from 'node:crypto'
-import { OfficePreviewPods } from '../lib/platform/office-preview-pod.js'
+import { OfficePreviewPods, officePreviewStopProof } from '../lib/platform/office-preview-pod.js'
 import { KubernetesError } from '../lib/platform/kubernetes.js'
+import { kubernetesPodStopStatus } from '../lib/platform/pod-stop-status.js'
 
 const config = { namespace: 'office-test', image: `test.invalid/parser@sha256:${'a'.repeat(64)}`,
   volumeClaimName: 'private-output', volumeSubPath: 'office-previews', kubernetesTimeoutMs: 1000,
@@ -31,6 +32,19 @@ function schedule(source) {
   source.status = { phase: 'Running', containerStatuses: [{ name: 'parser', ready: true, restartCount: 0,
     containerID: `containerd://${'b'.repeat(64)}`, imageID: `sha256:${'a'.repeat(64)}`,
     state: { running: { startedAt: '2026-10-05T00:00:00Z' } } }] }
+}
+
+function terminalBeforeDelete(source, exitCode = 0) {
+  schedule(source)
+  source.metadata.generation = 2; source.metadata.deletionTimestamp = '2026-10-05T00:01:00Z'
+  const worker = source.status.containerStatuses[0]
+  Object.assign(worker, { ready: false, started: false, lastState: {}, state: { terminated: {
+    containerID: worker.containerID, exitCode, reason: exitCode === 0 ? 'Completed' : 'Error',
+    startedAt: '2026-10-05T00:00:00Z', finishedAt: '2026-10-05T00:00:30Z' } } })
+  Object.assign(source.status, { phase: exitCode === 0 ? 'Succeeded' : 'Failed', observedGeneration: 1,
+    conditions: [{ type: 'PodReadyToStartContainers', status: 'False', observedGeneration: 1 },
+      { type: 'ContainersReady', status: 'False', observedGeneration: 1 },
+      { type: 'Ready', status: 'False', observedGeneration: 1 }] })
 }
 
 test('fixed template mounts only exact source/output and bounded tmp, with no SA credentials or PVC-wide permission changes', () => {
@@ -97,22 +111,16 @@ test('404 is not proof; an unscheduled retained deletion produces proof before e
   assert.deepEqual(patch.body.metadata.finalizers, ['example.invalid/foreign'])
 })
 
-test('graceful DELETE advances captured generation once; only the current-generation stop proof releases the finalizer', async () => {
+test('a parser terminated before DELETE retains native generation1 facts while its persisted identity records generation2', async () => {
   const f = fixture(); schedule(f.source); f.set(f.source)
   const original = await f.pods.observe(f.intent)
-  f.source.metadata.generation = 2; f.source.metadata.deletionTimestamp = '2026-10-05T00:01:00Z'
-  const worker = f.source.status.containerStatuses[0]
-  worker.ready = false; worker.state = { terminated: { containerID: worker.containerID, exitCode: 0,
-    startedAt: '2026-10-05T00:00:00Z', finishedAt: '2026-10-05T00:00:30Z' } }
-  f.source.status.phase = 'Succeeded'
-  f.source.status.conditions = [{ type: 'PodReadyToStartContainers', status: 'False', observedGeneration: 1 }]
+  terminalBeforeDelete(f.source)
   f.set(f.source)
-  const pending = await f.pods.observe(f.intent, original.identity)
-  assert.equal(pending.identity.generation, 2); assert.equal(pending.stopProof, null)
-  assert.equal(f.calls.some(call => call.method === 'PATCH'), false)
-  f.source.status.conditions[0].observedGeneration = 2; f.set(f.source)
-  const stopped = await f.pods.observe(f.intent, pending.identity)
+  assert.equal(kubernetesPodStopStatus(f.source), null)
+  const stopped = await f.pods.observe(f.intent, original.identity)
   assert.equal(stopped.stopProof.status, 'KUBELET_STOPPED'); assert.equal(stopped.stopProof.identity.generation, 2)
+  assert.deepEqual(officePreviewStopProof.parse(stopped.stopProof), stopped.stopProof)
+  assert.equal(f.source.status.observedGeneration, 1); assert.equal(f.source.status.conditions[0].observedGeneration, 1)
   await assert.rejects(f.pods.release(f.intent, stopped, { ...stopped.stopProof, identity: original.identity }),
     { code: 'office_render_unavailable' })
   await f.pods.release(f.intent, stopped, stopped.stopProof)
@@ -156,25 +164,75 @@ test('initial observation accepts only creation generation1 or deleting generati
   }
 })
 
-test('first native worker identity may appear with DELETE generation2 but a stale condition never confirms stop', async () => {
+test('first native identity may appear in deleting generation2 with verifiable generation1 terminal facts', async () => {
   const f = fixture(); f.set(f.source)
   const original = await f.pods.observe(f.intent)
   assert.equal(original.identity.containerId, null); assert.equal(original.identity.nodeName, null); assert.equal(original.identity.imageId, null)
-  schedule(f.source)
-  f.source.metadata.generation = 2; f.source.metadata.deletionTimestamp = '2026-10-05T00:01:00Z'
+  terminalBeforeDelete(f.source, 137)
   const worker = f.source.status.containerStatuses[0]
-  worker.ready = false; worker.state = { terminated: { containerID: worker.containerID, exitCode: 137,
-    startedAt: '2026-10-05T00:00:00Z', finishedAt: '2026-10-05T00:00:30Z' } }
-  f.source.status.phase = 'Failed'
-  f.source.status.conditions = [{ type: 'PodReadyToStartContainers', status: 'False', observedGeneration: 1 }]
   f.set(f.source)
-  const pending = await f.pods.observe(f.intent, original.identity)
-  assert.equal(pending.identity.generation, 2); assert.equal(pending.identity.uid, original.identity.uid)
-  assert.equal(pending.identity.containerId, worker.containerID); assert.equal(pending.identity.imageId, worker.imageID)
-  assert.equal(pending.identity.nodeName, 'qa-node'); assert.equal(pending.stopProof, null)
-  f.source.status.conditions[0].observedGeneration = 2; f.set(f.source)
-  const stopped = await f.pods.observe(f.intent, pending.identity)
+  const stopped = await f.pods.observe(f.intent, original.identity)
+  assert.equal(stopped.identity.generation, 2); assert.equal(stopped.identity.uid, original.identity.uid)
+  assert.equal(stopped.identity.containerId, worker.containerID); assert.equal(stopped.identity.imageId, worker.imageID)
+  assert.equal(stopped.identity.nodeName, 'qa-node')
   assert.equal(stopped.stopProof.status, 'KUBELET_STOPPED')
   await f.pods.release(f.intent, stopped, stopped.stopProof)
   assert.equal(f.calls.filter(call => call.method === 'PATCH').length, 1)
+})
+
+test('creation-generation terminal facts refuse uncertain, contradictory, incomplete or delete-time termination', async () => {
+  const changes = [
+    p => { p.metadata.deletionGracePeriodSeconds = -1 },
+    p => { p.metadata.deletionGracePeriodSeconds = 1.5 },
+    p => { p.metadata.deletionGracePeriodSeconds = 3 },
+    p => { p.status.containerStatuses[0].state.terminated.finishedAt = p.metadata.deletionTimestamp },
+    p => { p.status.containerStatuses[0].state.terminated.finishedAt = '2026-10-05T00:01:30Z' },
+    p => { p.status.containerStatuses[0].state.terminated.finishedAt = '2026-10-05T00:00:59Z' },
+    p => { p.status.containerStatuses[0].state = { running: { startedAt: '2026-10-05T00:00:00Z' } } },
+    p => { delete p.status.observedGeneration },
+    p => { p.status.observedGeneration = 2 },
+    p => { delete p.status.conditions[0].observedGeneration },
+    p => { p.status.conditions[0].status = 'Unknown' },
+    p => { p.status.conditions.push({ type: 'UnknownCondition', status: 'False' }) },
+    p => { p.status.conditions[1].status = 'True' },
+    p => { p.status.conditions.push({ ...p.status.conditions[0] }) },
+    p => { p.status.conditions[0].reason = 'NodeLost' },
+    p => { p.status.reason = 'NodeLost' },
+    p => { p.status.containerStatuses[0].reason = 'ContainerStatusUnknown' },
+    p => { p.status.containerStatuses[0].state.terminated.reason = 'ContainerStatusUnknown' },
+    p => { p.status.containerStatuses[0].started = true },
+    p => { delete p.status.containerStatuses[0].started },
+    p => { p.status.containerStatuses[0].lastState = { terminated: { exitCode: 0 } } },
+    p => { p.status.containerStatuses[0].restartCount = 1 },
+    p => { delete p.spec.nodeName },
+    p => { delete p.status.containerStatuses[0].containerID },
+    p => { delete p.status.containerStatuses[0].imageID },
+    p => { p.status.phase = 'Failed' },
+    p => { p.status.initContainerStatuses = [{ name: 'other' }] },
+    p => { p.spec.nodeName = 'invalid/node' },
+  ]
+  for (const change of changes) {
+    const f = fixture(); terminalBeforeDelete(f.source); change(f.source); f.set(f.source)
+    await f.pods.observe(f.intent).then(observed => assert.equal(observed.stopProof, null),
+      error => assert.equal(error.code, 'office_render_unavailable'))
+    assert.equal(f.calls.every(call => call.method === 'GET'), true)
+  }
+})
+
+test('termination after the conservative deletion cutoff still requires the current native condition generation', async () => {
+  const f = fixture(); terminalBeforeDelete(f.source)
+  f.source.status.containerStatuses[0].state.terminated.finishedAt = '2026-10-05T00:01:30Z'; f.set(f.source)
+  const pending = await f.pods.observe(f.intent)
+  assert.equal(pending.stopProof, null)
+  f.source.status.conditions[0].observedGeneration = 2; f.set(f.source)
+  const stopped = await f.pods.observe(f.intent, pending.identity)
+  assert.equal(stopped.stopProof.status, 'KUBELET_STOPPED'); assert.equal(stopped.identity.generation, 2)
+})
+
+test('container-level restart configuration cannot override the frozen Never parser or yield terminal proof', async () => {
+  for (const [field, value] of [['restartPolicy', 'Always'], ['restartPolicyRules', [{ action: 'Restart', exitCodes: { operator: 'In', values: [0] } }]]]) {
+    const f = fixture(); terminalBeforeDelete(f.source); f.source.spec.containers[0][field] = value; f.set(f.source)
+    await assert.rejects(f.pods.observe(f.intent), { code: 'office_render_unavailable' })
+    assert.equal(f.calls.every(call => call.method === 'GET'), true)
+  }
 })

@@ -79,7 +79,7 @@ export const officePreviewPodIdentity = z.object({
 }).strict()
 /** Validated native identity retained across Platform recovery. */
 export type OfficePreviewPodIdentity = z.infer<typeof officePreviewPodIdentity>
-/** Native stop facts are stored before the retaining finalizer can be removed. */
+/** Native stop facts stored before finalizer removal; Office KUBELET_STOPPED also accepts the exact Never parser's creation-generation termination before deletion. */
 export const officePreviewStopProof = z.object({
   status: z.enum(['UNSCHEDULED_DELETING', 'KUBELET_STOPPED']),
   jobId: officePreviewJobSchema.shape.jobId, nonce: officePreviewJobSchema.shape.nonce,
@@ -94,7 +94,7 @@ const resource = z.object({
   metadata: z.object({ name, namespace: name, uid: z.uuid(), resourceVersion: z.string().min(1).max(128),
     generation: z.number().int().positive(), labels: z.record(z.string(), z.string()),
     annotations: z.record(z.string(), z.string()), finalizers: z.array(z.string()).max(32).optional(),
-    deletionTimestamp: timestamp.optional() }).loose(),
+    deletionTimestamp: timestamp.optional(), deletionGracePeriodSeconds: z.number().int().nonnegative().optional() }).loose(),
   spec: z.record(z.string(), z.unknown()), status: z.record(z.string(), z.unknown()).optional(),
 }).loose()
 /** Exact native worker termination record; unknown and missing states do not pass this parser. */
@@ -136,6 +136,43 @@ function subset(expected: unknown, actual: unknown): boolean {
 function absent(value: unknown): boolean { return value === undefined || Array.isArray(value) && value.length === 0 }
 function subsetExactSecurity(expected: object, actual: unknown): boolean {
   return record(actual) && canonical(expected) === canonical(actual)
+}
+
+const terminalConditions = z.array(z.object({
+  type: z.enum(['PodReadyToStartContainers', 'Initialized', 'Ready', 'ContainersReady', 'PodScheduled', 'DisruptionTarget']),
+  status: z.enum(['True', 'False']), observedGeneration: z.number().int().positive().optional(),
+  reason: z.string().optional(),
+}).loose()).max(64)
+function knownReason(value: unknown): boolean {
+  return value === undefined || typeof value === 'string' && value !== 'NodeLost' && value !== 'ContainerStatusUnknown'
+}
+
+// A completed Never parser need not publish status again after the apiserver's first DELETE generation change.
+function terminatedBeforeDeletion(pod: z.infer<typeof resource>, identity: OfficePreviewPodIdentity,
+  worker: unknown, exit: OfficePreviewWorkerExit | null, graceSeconds: number): boolean {
+  const status = pod.status, deletion = pod.metadata.deletionTimestamp
+  if (identity.generation !== 2 || !deletion || !exit || !identity.nodeName || !identity.containerId || !identity.imageId
+    || !identity.nodeName.split('.').every(label => label.length <= 63 && /^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$/u.test(label))
+    || status?.observedGeneration !== 1 || status.phase !== (exit.exitCode === 0 ? 'Succeeded' : 'Failed')
+    || !record(worker) || worker.restartCount !== 0 || worker.ready !== false || worker.started !== false
+    || worker.lastState !== undefined && (!record(worker.lastState) || Object.keys(worker.lastState).length !== 0)
+    || !record(worker.state) || Object.keys(worker.state).length !== 1 || !record(worker.state.terminated)
+    || worker.state.terminated.containerID !== identity.containerId
+    || !knownReason(status.reason) || !knownReason(worker.reason) || !knownReason(worker.state.terminated.reason)
+    || !absent(status.initContainerStatuses) || !absent(status.ephemeralContainerStatuses)
+    || Date.parse(exit.startedAt) <= 0 || Date.parse(exit.finishedAt) >= Date.parse(deletion) - graceSeconds * 1000) return false
+  const parsed = terminalConditions.safeParse(status.conditions)
+  if (!parsed.success) return false
+  const seen = new Set<string>()
+  for (const condition of parsed.data) {
+    if (seen.has(condition.type) || !knownReason(condition.reason)
+      || condition.observedGeneration !== undefined && condition.observedGeneration !== 1
+      || ['PodReadyToStartContainers', 'Ready', 'ContainersReady'].includes(condition.type) && condition.status !== 'False'
+      || ['PodScheduled', 'Initialized'].includes(condition.type) && condition.status !== 'True') return false
+    seen.add(condition.type)
+  }
+  return seen.has('PodReadyToStartContainers')
+    && parsed.data.find(condition => condition.type === 'PodReadyToStartContainers')?.observedGeneration === 1
 }
 
 /** One-shot Pod adapter; callers fence every infrastructure operation with their current PG lease. */
@@ -193,6 +230,7 @@ export class OfficePreviewPods {
   /**
    * Observe only the intended one-shot parser; spec updates and resize are unsupported.
    * Creation generation 1 may advance once to deleting generation 2; captured native identities never change, while null may acquire its first value.
+   * An exact terminal Never parser may retain native status generation 1 when it ended before deletionTimestamp minus frozen grace; the proof keeps real Pod generation 2.
    * @param intent Original persisted creation request.
    * @param captured Previously captured native identity, if any.
    * @returns Verified original Pod facts, or null for 404; missing never means stopped.
@@ -216,6 +254,7 @@ export class OfficePreviewPods {
       || !subset(expected.spec, normalized) || !absent(spec.initContainers) || !absent(spec.ephemeralContainers)
       || !Array.isArray(containers) || containers.length !== 1 || !record(containers[0])
       || !absent(containers[0].command) || !absent(containers[0].args) || !absent(containers[0].envFrom)
+      || containers[0].restartPolicy !== undefined || containers[0].restartPolicyRules !== undefined
       || containers[0].lifecycle !== undefined || containers[0].workingDir !== undefined
       || containers[0].volumeDevices !== undefined || spec.hostAliases !== undefined
       || !subsetExactSecurity(expected.spec.securityContext, spec.securityContext)
@@ -231,6 +270,8 @@ export class OfficePreviewPods {
       containerId: record(worker) && worker.containerID || null, imageId: record(worker) && worker.imageID || null })
     const deleting = !!pod.metadata.deletionTimestamp
     if (identity.generation !== 1 && !(deleting && identity.generation === 2)) throw refusal()
+    if (pod.metadata.deletionGracePeriodSeconds !== undefined
+      && pod.metadata.deletionGracePeriodSeconds > expected.spec.terminationGracePeriodSeconds) throw refusal()
     if (captured && (identity.name !== captured.name || identity.uid !== captured.uid
       || identity.generation !== captured.generation && !(captured.generation === 1 && identity.generation === 2 && deleting)
       || captured.nodeName !== null && identity.nodeName !== captured.nodeName
@@ -242,9 +283,12 @@ export class OfficePreviewPods {
       imageId: worker.imageID, exitCode: terminated.exitCode, startedAt: terminated.startedAt, finishedAt: terminated.finishedAt }) : null
     if (terminated && (!exit?.success || terminated.containerID !== identity.containerId
       || !state || Object.keys(state).length !== 1 || record(worker) && worker.ready !== false)) throw refusal()
-    const status = kubernetesPodStopStatus(raw), retained = pod.metadata.finalizers?.includes(FINALIZER) ?? false
+    const workerExit = exit?.success ? exit.data : null
+    const status = kubernetesPodStopStatus(raw) ?? (terminatedBeforeDeletion(pod, identity, worker, workerExit,
+      intent.template.spec.terminationGracePeriodSeconds) ? 'KUBELET_STOPPED' : null)
+    const retained = pod.metadata.finalizers?.includes(FINALIZER) ?? false
     return { identity, deleting, retained, resourceVersion: pod.metadata.resourceVersion,
-      finalizers: pod.metadata.finalizers ?? [], workerExit: exit?.success ? exit.data : null,
+      finalizers: pod.metadata.finalizers ?? [], workerExit,
       stopProof: status ? officePreviewStopProof.parse({ status, jobId: intent.job.jobId, nonce: intent.job.nonce,
         generation: intent.job.generation, identity, observedAt: new Date().toISOString() }) : null }
   }

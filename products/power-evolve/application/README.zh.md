@@ -32,6 +32,8 @@
 
 Office 预览记录使用[相邻任务迁移](src/platform/office-preview-schema.ts)。受理前收到的取消请求保留为永久取消回执，不能转为可运行任务。租约过期或停止尚未确认时，解析器预留仍占用原槽位。账户停用请求取消但不释放这些槽位；账户删除与备份受理拒绝尚未结束的解析任务。这些记录不改变原生会话日志或已有执行事实。
 
+Office 停止对账仅支持冻结的一次性 `Never` 解析器：创建代数 1 及首次删除代数 2。已终止的解析器在删除后可能仍保留代数 1 的原生状态与 `PodReadyToStartContainers=False` 条件。此 Office 专用停止观察要求完整且未替换的原生身份、无重启配置或此前容器状态、已知且无矛盾的条件，以及终止时间严格早于 `deletionTimestamp` 减去冻结的终止宽限预算。持久证明保留真实 Pod 代数 2；缺少事实时继续保留预留槽位。通用 Cloud 与 SSH 停止检查仍要求当前代数的条件。
+
 Deployment 备份不包含派生的 Office PDF；终态回执保留为历史，不保证 PDF 仍可交付，重新转换须使用新请求 ID，不重放旧请求。恢复的回执若已占满 `maxRetainedJobsPerUser`，操作员须显式提高并验证该保留配置，才能受理新的转换。
 
 `officePreviewConfigFile` 与 `officePreviewKubeconfigFile` 一同配置才启用隔离解析器；省略时禁用转换。后者接受绝对凭据文件名或 `in-cluster`。[完整 JSON 示例](../platform/office-preview.example.json) 提供全部位置、保留和资源预算。私有预览根须对应配置的 PVC 子路径，且不能与工作区、产物、Home 或技能根重叠。Platform 为 UID 1000 准备物理输入／输出目录；解析器 Pod 只挂载这些任务目录及有界临时存储。部署须禁止解析器入站与出站。固定镜像提供字体和入口；浏览器请求不能提供命令、镜像标签或挂载路径。保留任务配额包括取消回执，未实现自动清理历史。

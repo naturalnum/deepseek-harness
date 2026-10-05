@@ -74,9 +74,10 @@ export class PreviewKubernetes {
   }
   terminate(exitCode = 0, name = this.pod.metadata.name) {
     const pod = this.resources.get(name), worker = pod.status.containerStatuses[0]
-    Object.assign(worker, { ready: false, state: { terminated: { containerID: worker.containerID, exitCode,
+    Object.assign(worker, { ready: false, started: false, lastState: {}, state: { terminated: { containerID: worker.containerID, exitCode,
       startedAt: '2026-10-05T00:00:00Z', finishedAt: '2026-10-05T00:00:30Z' } } })
     pod.status.phase = exitCode === 0 ? 'Succeeded' : 'Failed'
+    pod.status.observedGeneration = pod.metadata.generation
     pod.status.conditions = [{ type: 'PodReadyToStartContainers', status: 'False', observedGeneration: pod.metadata.generation }]
   }
 }
