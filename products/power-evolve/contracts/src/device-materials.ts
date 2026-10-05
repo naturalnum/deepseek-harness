@@ -28,6 +28,22 @@ export const deviceMaterialSelection = z.array(deviceMaterialBinding).min(1).max
     ctx.addIssue({ code: 'custom', message: 'device_material_selection_duplicate' })
   }
 })
+/** Fixed sibling folders used by the built-in report workflow; order participates in its digest. */
+export const DEVICE_REPORT_SUITE_ROLES = ['report-workflow-orchestrator', 'power-grid-technical-report-writer',
+  'report-reviewer', 'tech-report-writer'] as const
+const reportMember = <Role extends string>(role: Role) => z.object({ role: z.literal(role),
+  skillId: deviceMaterialBinding.shape.skillId }).strict()
+/** Optional report siblings selected by the Platform; the digest must also be checked against materials. */
+export const deviceReportSuite = z.object({ schemaVersion: z.literal(1), digest,
+  members: z.tuple([reportMember(DEVICE_REPORT_SUITE_ROLES[0]), reportMember(DEVICE_REPORT_SUITE_ROLES[1]),
+    reportMember(DEVICE_REPORT_SUITE_ROLES[2]), reportMember(DEVICE_REPORT_SUITE_ROLES[3])]),
+}).strict().superRefine((suite, ctx) => {
+  if (new Set(suite.members.map(member => member.skillId)).size !== suite.members.length) {
+    ctx.addIssue({ code: 'custom', message: 'device_report_suite_duplicate' })
+  }
+})
+/** Parsed report sibling description; parsing alone establishes neither its digest nor installation authority. */
+export type DeviceReportSuite = z.infer<typeof deviceReportSuite>
 /** The original published manifest; it describes normalized regular files rather than a new ZIP. */
 export const deviceSkillManifest = z.object({ schemaVersion: z.literal(1), artifactSha256: digest,
   files: z.array(z.object({ path, size: z.number().int().min(0).max(DEVICE_MATERIAL_MAX_BYTES), sha256: digest }).strict())

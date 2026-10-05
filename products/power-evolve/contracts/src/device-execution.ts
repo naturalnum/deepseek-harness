@@ -1,9 +1,11 @@
 /** Durable Device dispatch and exact-container stop records; parsing does not authorize execution. */
 import { z } from 'zod'
 import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
-import { deviceMaterialBinding, deviceMaterialSelection } from './device-materials.ts'
+import { deviceMaterialBinding, deviceMaterialSelection, deviceReportSuite,
+  type DeviceMaterialBinding, type DeviceReportSuite } from './device-materials.ts'
 
 export { deviceMaterialBinding, deviceMaterialSelection, deviceSkillManifest, deviceSkillMaterial,
+  deviceReportSuite, DEVICE_REPORT_SUITE_ROLES, type DeviceReportSuite,
   DEVICE_MATERIAL_MAX_BYTES, DEVICE_MATERIAL_MAX_FILES, DEVICE_MATERIAL_MAX_RESPONSE_BYTES,
   type DeviceMaterialBinding, type DeviceMaterialDigest, type DeviceMaterialSkillId,
   type DeviceSkillMaterial, type DeviceSkillManifest } from './device-materials.ts'
@@ -58,18 +60,26 @@ export const deviceDispatchRequest = z.object({
   command: z.string().min(1).max(8192), cwd: z.string().max(4096), timeoutMs: z.number().int().positive(),
   deviceId, directoryId,
   materials: deviceMaterialSelection.optional(),
-}).strict()
+  reportSuite: deviceReportSuite.optional(),
+}).strict().superRefine(checkReportMaterials)
 const command = z.object({ executionId, directoryId, command: deviceDispatchRequest.shape.command,
   cwd: deviceDispatchRequest.shape.cwd, timeoutMs: deviceDispatchRequest.shape.timeoutMs, digest,
-  materials: deviceMaterialSelection.optional() }).strict()
+  materials: deviceMaterialSelection.optional(), reportSuite: deviceReportSuite.optional() }).strict()
 /** Bounded polling record; cancellation and unknown outcomes grant no permission to start. */
 export const deviceJob = command.extend({
   state: z.enum(['queued', 'running', 'cancelling', 'uncertain']), cancelRequested: z.boolean(),
-})
+}).superRefine(checkReportMaterials)
 /** A claim binds one process to one durable dispatch. */
 export const deviceClaimRequest = z.object({ instanceId, executionId, processId }).strict()
 /** The original command and Platform-issued dispatch; retries retain exactly these identities. */
-export const deviceClaim = command.extend({ dispatchId, processId })
+export const deviceClaim = command.extend({ dispatchId, processId }).superRefine(checkReportMaterials)
+
+function checkReportMaterials(value: { materials?: DeviceMaterialBinding[] | undefined; reportSuite?: DeviceReportSuite | undefined }, ctx: z.RefinementCtx): void {
+  if (value.reportSuite && value.reportSuite.members.some(member =>
+    !value.materials?.some(binding => binding.skillId === member.skillId))) {
+    ctx.addIssue({ code: 'custom', message: 'device_report_suite_materials_missing' })
+  }
+}
 /** Read one frozen package only through its original live dispatch; no storage path or user ID is accepted. */
 export const deviceMaterialRequest = deviceClaimRequest.extend({ dispatchId, digest,
   skillId: deviceMaterialBinding.shape.skillId,
