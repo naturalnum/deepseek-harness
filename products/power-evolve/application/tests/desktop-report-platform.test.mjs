@@ -17,10 +17,10 @@ const options = { timeout: 60000 }
 const hash = value => createHash('sha256').update(typeof value === 'string' || Buffer.isBuffer(value)
   ? value : JSON.stringify(value)).digest('hex')
 const report = [
-  ['builtin.report-workflow-orchestrator', '1.1.27', 'report-workflow-orchestrator'],
-  ['builtin.power-grid-technical-report-writer', '1.1.37', 'power-grid-technical-report-writer'],
-  ['builtin.report-reviewer', '1.1.0', 'report-reviewer'],
-  ['builtin.tech-report-writer', '1.1.39', 'tech-report-writer'],
+  ['builtin.report-workflow-orchestrator', '1.1.28', 'report-workflow-orchestrator'],
+  ['builtin.power-grid-technical-report-writer', '1.1.38', 'power-grid-technical-report-writer'],
+  ['builtin.report-reviewer', '1.1.1', 'report-reviewer'],
+  ['builtin.tech-report-writer', '1.1.40', 'tech-report-writer'],
 ]
 
 async function cleanup(path) {
