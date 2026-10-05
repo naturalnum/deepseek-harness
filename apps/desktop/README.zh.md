@@ -90,6 +90,10 @@ Electron 拥有 `$DSH_HOME/profiles/desktop`。其 `dependencies` 包含 pnpm �
 
 只有主应用窗口启用 `<webview>`。guest 挂载必须匹配主进程签发的租约和分区；guest 保持 sandbox、context isolation 和 Web security，不启用 Node integration 或 guest preload。Browser IPC 监听只为应用文档创建。[Sidebar Browser](../../packages/client/ui-sidebar-browser/README.zh.md) 说明存储分组和 guest 限制；Host 鉴权仍独立于 URL 过滤而必需。
 
+assembly 导出 `DesktopBrowserGuests`、可选的 `DesktopBrowserGuestPolicy` 及浏览器预约和租约类型。`rejectsUrl` 在固定的 Host、协议及 URL 凭据限制上追加端点拒绝规则；Session 拦截将规则应用于 HTTP、WebSocket、frame 和资源请求。`bind` 返回异步窗口清理函数；owner 销毁时会自动调用它。清理函数阻止挂载，并等待原生 guest 销毁后再移除创建监听。普通租约释放仅关闭对应 guest，保留工作区共享的 Cookie 和存储。
+
+可信主进程调用方可以等待 `retireWorkspace(key)`，永久封禁该 key、关闭其所有窗口的 guest 和 Session 连接，并清除存储、HTTP 缓存、HTTP 鉴权及共享字典。清退在 `dom-ready` 前跟踪 guest，并等待已接受的挂载和已经开始关闭的 guest。并发调用共享清理；关闭或清理失败时保留封禁的工作区，供显式重试。已清退 key 不能再获取分区。切换账号身份的应用须生成新的命名空间，完成清退后才能授予新租约；helper 不验证账号，也不删除 Electron Session 对象。
+
 `dsh-app://shell/` 无需联系 Host 即可提供打包的更新文档、脚本和样式。静态请求保留 GET/HEAD、路径范围和 MIME 处理；每个更新文档继续使用隔离 preload 和所属窗口的 IPC 校验。
 
 产品 UI 保留 Web 操作，包括通过共享认证 HTTP 路由执行的“打开方式…”。Desktop 使用 Web 的自动目录选择机制，并以共享 Web 模板的 bundle 列表初始化新 profile。

@@ -26,16 +26,21 @@ const overlays = await vi.hoisted(async () => {
     isDestroyed() { return this.destroyed }
     destroy() { this.destroyed = true; this.emit('closed') }
   }
-  return { Window }
+  return { Window, app: Object.assign(new EventEmitter(), { isPackaged: true }), sessions: new Map<string, object>() }
 })
-vi.mock('electron', () => ({ ipcMain: ipc, BrowserWindow: overlays.Window, app: { isPackaged: true }, session: { fromPartition: () => ({
-  setPermissionRequestHandler: vi.fn(), setPermissionCheckHandler: vi.fn(), setDevicePermissionHandler: vi.fn(),
-  setDisplayMediaRequestHandler: vi.fn(), on: vi.fn(), webRequest: { onBeforeRequest: vi.fn() },
-}) } }))
+vi.mock('electron', () => ({ ipcMain: ipc, BrowserWindow: overlays.Window, app: overlays.app, webContents: { getAllWebContents: () => [] }, session: { fromPartition: (partition: string) => {
+  if (overlays.sessions.has(partition)) return overlays.sessions.get(partition)
+  const browserSession = {
+    setPermissionRequestHandler: vi.fn(), setPermissionCheckHandler: vi.fn(), setDevicePermissionHandler: vi.fn(),
+    setDisplayMediaRequestHandler: vi.fn(), on: vi.fn(), webRequest: { onBeforeRequest: vi.fn() },
+  }
+  overlays.sessions.set(partition, browserSession)
+  return browserSession
+} } }))
 const { installDesktopShortcuts } = await import('../src/keyboard.ts')
 const { DesktopBrowserGuests } = await import('../src/browser-guests.ts')
 const { DesktopUpdateOverlays } = await import('../src/update-overlay.ts')
-afterEach(() => { vi.clearAllMocks() })
+afterEach(() => { overlays.app.removeAllListeners(); overlays.sessions.clear(); vi.clearAllMocks() })
 
 type FrameFixture = { url: WebFrameMain['url']; name: WebFrameMain['name']; parent: FrameFixture | null }
 type ContentsFixture = EventEmitter & Pick<WebContents,
@@ -68,10 +73,11 @@ function desktopDefaults(binding: ShortcutBinding): ShortcutDefinition['defaults
   return { 'desktop:macos': binding, 'desktop:windows': binding, 'desktop:linux': binding }
 }
 
-function browserGuest(reservation: DesktopBrowserReservation) {
+function browserGuest(reservation: DesktopBrowserReservation, owner: ContentsFixture) {
   const frame: FrameFixture = { url: `about:blank#${reservation.lease}`, name: '', parent: null }
   const guest = Object.assign(new EventEmitter(), { mainFrame: frame, focusedFrame: frame,
-    getURL: () => frame.url, isDestroyed: () => false, isFocused: vi.fn(() => true),
+    getURL: () => frame.url, session: overlays.sessions.get(reservation.partition), hostWebContents: owner,
+    isDestroyed: () => false, isFocused: vi.fn(() => true),
     setWindowOpenHandler: vi.fn(), setIgnoreMenuShortcuts: vi.fn(), send: vi.fn(), close: vi.fn(),
     focus: vi.fn(), sendInputEvent: vi.fn() })
   onTestFinished(() => { guest.emit('destroyed') })
@@ -203,7 +209,7 @@ it.each([false, true])('blocks approved browser guest input across update overla
   const guests = new DesktopBrowserGuests(() => undefined) as GuestsFixture
   guests.bind(f.window, (guest, name) => f.keyboard.attachGuest(f.window, guest, name))
   const reservation = guests.acquire(f.contents, 'session:test')
-  const { frame, guest } = browserGuest(reservation)
+  const { frame, guest } = browserGuest(reservation, f.contents)
   const attach = () => {
     const event = { preventDefault: vi.fn() }
     f.contents.emit('will-attach-webview', event, {}, { src: frame.url, partition: reservation.partition })
@@ -718,7 +724,7 @@ it.each(['macos', 'windows', 'linux'] as const)('routes approved %s browser gues
   const attach = vi.fn((guest: ContentsFixture, name: DesktopBrowserLeaseId) => f.keyboard.attachGuest(f.window, guest, name))
   guests.bind(f.window, attach)
   const reservation = guests.acquire(f.contents, 'session:test')
-  const { frame, guest } = browserGuest(reservation)
+  const { frame, guest } = browserGuest(reservation, f.contents)
   const rejected = { preventDefault: vi.fn() }
   f.contents.emit('will-attach-webview', rejected, {}, { src: 'about:blank#unknown', partition: reservation.partition })
   expect(rejected.preventDefault).toHaveBeenCalledOnce()
