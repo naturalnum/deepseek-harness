@@ -18,11 +18,13 @@ export function installExecutionTools(agent: Agent, grant: Grant, runtime: Runti
   agent.ctx.effect(() => agent.ctx.tools.register(defineTool({
     name: desktop ? 'desktop_exec' : 'cloud_exec',
     description: desktop
-      ? 'Run one Bash command on the user-selected desktop device. Its locally authorized project directory is mounted at /workspace in the local container, with persistent Home at /home/agent and selected read-only skill packages at /opt/power-evolve/skills/sha256/<packageDigest>/skill; read each selected skill for its exact package path. A queued receipt is not a result: end this turn and wait for the trusted platform to resume the Session automatically. Do not poll or issue another command until its result arrives. Cloud files are separate.'
+      ? 'Run one Bash command on the user-selected desktop device. Its locally authorized project directory is mounted at /workspace in the local container. cwd is relative to that project root: use "." for /workspace or "reports" for /workspace/reports; never pass an absolute path or dot components within a path. Persistent Home is at /home/agent and selected read-only skill packages are at /opt/power-evolve/skills/sha256/<packageDigest>/skill; read each selected skill for its exact package path. A queued receipt is not a result: end this turn and wait for the trusted platform to resume the Session automatically. Do not poll or issue another command until its result arrives. Cloud files are separate.'
       : 'Run one Bash command in this conversation\'s authorized cloud Sandbox and persistent workspace. A queued receipt is not a result: end this turn and wait for the trusted platform to resume the Session automatically. Do not poll or issue another command until its result arrives. Use this for Git, coding, dependency installation, and tests. Avoid background processes.',
     parameters: {
       command: { type: 'string', required: true, description: 'Bash command, at most 8192 characters.' },
-      cwd: { type: 'string', description: 'Relative directory inside the persistent workspace; default is its root.' },
+      cwd: { type: 'string', description: desktop
+        ? 'Project-root-relative directory; "." means /workspace and the default is its root. Use slash-separated names such as "reports". Absolute paths, empty components and "." or ".." components within a path are refused.'
+        : 'Relative directory inside the persistent workspace; default is its root.' },
     },
     output: { schema: { type: 'object', additionalProperties: false, properties: {
       executionId: { type: 'string', required: true }, state: { type: 'string', required: true },

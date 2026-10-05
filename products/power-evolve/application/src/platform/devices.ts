@@ -37,6 +37,15 @@ const stopIdentity = z.object({
 })
 const hash = (value: unknown): string => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 
+function assertNewCwd(cwd: string): void {
+  if (cwd === '' || cwd === '.') return
+  const parts = cwd.split('/')
+  if (cwd.normalize('NFC') !== cwd || /[\\\u0000-\u001f\u007f\ud800-\udfff]/u.test(cwd)
+    || parts.length > 16 || parts.some(part => !part || part === '.' || part === '..' || part.length > 100)) {
+    throw new PlatformError(400, 'invalid_cwd')
+  }
+}
+
 /** Credentials and local paths never pass through the shared Agent host. */
 export class DeviceService {
   private readonly resolutions: DeviceExecutionResolutionService
@@ -241,10 +250,11 @@ export class DeviceService {
   }
 
   /** Freeze accepted command inputs and enrollment before acknowledging one Device execution.
+   * New commands require a canonical relative cwd; original receipt retries retain their frozen paths.
    * @param token Current Session execution grant.
    * @param callId Original model tool call identity.
    * @param command Command selected by the authorized operation.
-   * @param cwd Relative directory within the selected local grant.
+   * @param cwd Canonical relative directory within the local grant; empty or `.` selects its root.
    * @returns Original receipt on an identical retry, including after a timeout configuration change.
    */
   async propose(token: string, callId: string, command: string, cwd: string): Promise<unknown> {
@@ -262,6 +272,7 @@ export class DeviceService {
           ...(frozen.reportSuite ? { reportSuite: frozen.reportSuite } : {}) })) throw new PlatformError(409, 'request_id_conflict')
         return this.receipt(prior.rows[0])
       }
+      assertNewCwd(cwd)
       const operation = await client.query<{ skill_selection: unknown }>(`SELECT o.skill_selection
         FROM pe_operations o JOIN pe_sessions s ON s.id=o.session_id
         WHERE o.id=$1 AND o.session_id=$2 AND s.user_id=$3`, [grant.operation_id, grant.id, grant.user_id])
