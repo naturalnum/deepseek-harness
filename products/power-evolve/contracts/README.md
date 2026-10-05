@@ -21,6 +21,8 @@ This private library supplies account, file-download and execution-reconciliatio
 
 Import account records from `@power-evolve/contracts/account`. Zod parsers reject invalid wire values; their inferred types describe validated values. The [account source](src/account.ts) owns the fields and routes. Consumers declare a workspace dependency and a TypeScript project reference to this package.
 
+Import current browser membership from `@power-evolve/contracts/desktop-browser-scope`. A request selects only a native Session; the response identifies its currently authenticated owner and immutable Workspace. It carries no credential, path or lasting grant. The trusted Platform must verify the Agent credential and membership together; the main process must reject an observation after its document or account changes and retire the old guests before another account can acquire a partition.
+
 Import download requests and the same-origin URL builder from `@power-evolve/contracts/file-download`. The [download source](src/file-download.ts) defines canonical relative paths, metadata digests and protocol ceilings. Deployment limits and authorization remain with the Platform; see the [file slice](../S2-COMPLETION.md).
 
 Import Office preview requests, task views and isolated parser records from `@power-evolve/contracts/office-preview`. These records bind stable request keys, source digests and converter generations; they accept no user identity, physical root, command or image selection. Explicit parser budgets remain below fixed source/PDF protocol ceilings. A result marker is not Pod termination evidence; consumers must independently verify byte digests, current authorization and exact parser termination before releasing capacity.

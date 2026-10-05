@@ -10,6 +10,10 @@
     "README.zh.md"
   ],
   "exports": {
+    "./desktop-browser-scope": {
+      "types": "./lib/desktop-browser-scope.d.ts",
+      "default": "./lib/desktop-browser-scope.js"
+    },
     "./artifact-document": {
       "types": "./lib/artifact-document.d.ts",
       "default": "./lib/artifact-document.js"

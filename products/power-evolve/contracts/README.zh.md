@@ -21,6 +21,8 @@ kind: "package-library"
 
 从 `@power-evolve/contracts/account` 导入账号记录。Zod 解析器拒绝无效协议值，其推导类型描述已校验的值。[账号源码](src/account.ts) 定义字段与路由。消费者声明对此包的工作区依赖和 TypeScript 项目引用。
 
+从 `@power-evolve/contracts/desktop-browser-scope` 导入当前浏览器归属。请求仅选择原生会话；响应标识其当前认证用户和不可变工作区。不携带凭据、路径或长期授权。可信平台须共同核验 Agent 凭据和归属；主进程须拒绝文档或账号变更后的观察，并在其他账号取得分区前清退旧 guest。
+
 从 `@power-evolve/contracts/file-download` 导入下载请求及同源 URL 构造函数。[下载源码](src/file-download.ts) 定义规范相对路径、元数据摘要和协议上限。部署限额与授权仍由平台负责，见[文件切片](../S2-COMPLETION.md)。
 
 从 `@power-evolve/contracts/office-preview` 导入 Office 预览请求、任务视图与隔离解析器记录。这些记录绑定稳定请求键、源摘要与转换器代次，不接受用户身份、物理根、命令或镜像选择。明确的解析器预算受固定源文件／PDF 协议上限约束。结果标记不是 Pod 终止证明；释放容量前，消费者须独立核对字节摘要、当前授权和精确解析器终止事实。
