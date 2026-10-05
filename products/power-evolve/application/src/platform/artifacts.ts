@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { constants } from 'node:fs'
 import { lstat, mkdir, open, rename, rm } from 'node:fs/promises'
 import { basename, isAbsolute, join, resolve } from 'node:path'
-import type { Pool } from 'pg'
+import type { Pool, PoolClient } from 'pg'
 import { PlatformError, type Identity } from '../contracts.ts'
 import { transaction } from './database.ts'
 import { requireActiveAccount } from './account-authority.ts'
@@ -52,7 +52,7 @@ export class ArtifactService {
 
   private async userDirectory(userId: string): Promise<string> {
     const path = join(this.root, userId)
-    await mkdir(path, { mode: 0o700 }).catch(error => {
+    await mkdir(path, { mode: 0o700 }).catch((error: unknown) => {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
     })
     const stat = await lstat(path)
@@ -60,8 +60,8 @@ export class ArtifactService {
     return path
   }
 
-  private async owned(user: Identity, artifactId: string): Promise<ArtifactRow> {
-    const result = await this.pool.query<ArtifactRow>(
+  private async owned(user: Identity, artifactId: string, database: Pool | PoolClient = this.pool): Promise<ArtifactRow> {
+    const result = await database.query<ArtifactRow>(
       'SELECT * FROM pe_artifacts WHERE id=$1 AND user_id=$2', [artifactId, user.userId],
     )
     if (!result.rows[0]) throw new PlatformError(404, 'artifact_not_found')
@@ -124,7 +124,9 @@ export class ArtifactService {
         [requestId, user.userId, workspaceId, sessionId, requestId, sourcePath,
           basename(sourcePath), source.mime, bytes.length, source.revision, expectedRevision ?? null],
       )
-      return publicRecord(result.rows[0]!)
+      const published = result.rows[0]
+      if (!published) throw new PlatformError(503, 'artifact_unavailable')
+      return publicRecord(published)
     })
   }
 
@@ -168,17 +170,20 @@ export class ArtifactService {
         cursor?.created_at ?? null, cursor?.id ?? null, filters.limit + 1],
     )
     const page = result.rows.slice(0, filters.limit)
-    return { items: page.map(publicRecord), nextCursor: result.rows.length > filters.limit ? page.at(-1)!.id : null }
+    const last = page.at(-1)
+    if (result.rows.length > filters.limit && !last) throw new PlatformError(503, 'artifact_unavailable')
+    return { items: page.map(publicRecord), nextCursor: result.rows.length > filters.limit && last ? last.id : null }
   }
 
   /**
    * Verify immutable bytes against PG metadata before returning a preview or download.
    * @param user Authenticated owner.
    * @param artifactId Identity of an owned published snapshot.
+   * @param client Optional caller transaction holding its account and Session authorization locks; all metadata reads reuse it.
    * @returns Metadata and bytes matching the stored size and SHA256; missing or changed snapshots fail.
    */
-  async bytes(user: Identity, artifactId: string): Promise<{ record: ReturnType<typeof publicRecord>; bytes: Buffer }> {
-    const row = await this.owned(user, artifactId)
+  async bytes(user: Identity, artifactId: string, client?: PoolClient): Promise<{ record: ReturnType<typeof publicRecord>; bytes: Buffer }> {
+    const row = await this.owned(user, artifactId, client)
     const path = join(await this.userDirectory(user.userId), `${row.id}.bin`)
     let file
     try { file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW) }

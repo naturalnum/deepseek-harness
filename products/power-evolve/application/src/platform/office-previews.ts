@@ -6,15 +6,18 @@ import { isAbsolute, join, resolve } from 'node:path'
 import type { Pool, PoolClient } from 'pg'
 import { z } from 'zod'
 import { accountUserId } from '@power-evolve/contracts/account'
-import { officePreviewPrepareRequest, officePreviewRefRequest, officePreviewCancelRequest,
+import { officePreviewPrepareRequest, officePreviewSourcePrepareRequest, officePreviewRefRequest, officePreviewCancelRequest,
   officePreviewGenerationView, officePreviewJobView, officePreviewContentView, officePreviewJobSchema,
   officePreviewResultSchema, officePreviewFailureSchema, officePreviewErrorCode, officePreviewLimits,
-  type OfficePreviewPrepareRequest, type OfficePreviewRefRequest, type OfficePreviewCancelRequest,
+  OFFICE_PREVIEW_MAX_INPUT_BYTES,
+  type OfficePreviewSourcePrepareRequest, type OfficePreviewRefRequest, type OfficePreviewCancelRequest,
   type OfficePreviewJobView, type OfficePreviewContentView, type OfficePreviewErrorCode } from '@power-evolve/contracts/office-preview'
 import { PlatformError, type Identity } from '../contracts.ts'
 import { transaction as databaseTransaction } from './database.ts'
 import { lockAccountAuthorities, requireBrowserAccount } from './account-authority.ts'
 import type { FileService } from './files.ts'
+import type { ArtifactService } from './artifacts.ts'
+import { officeArtifactSource, artifactDocumentPathFor } from '@power-evolve/contracts/artifact-document'
 import type { KubernetesClient } from './kubernetes.ts'
 import { storageBinding } from './workspace-binding-types.ts'
 import { OfficePreviewPods, OfficePreviewPodBlocked, officePreviewPodIntent, officePreviewPodIdentity, officePreviewStopProof,
@@ -36,12 +39,15 @@ const notSubmittedProof = z.object({ status: z.literal('NOT_SUBMITTED'), jobId: 
   nonce: officePreviewJobSchema.shape.nonce, generation: officePreviewJobSchema.shape.generation,
   intentDigest: digest, observedAt: z.iso.datetime() }).strict()
 const stopProof = z.union([officePreviewStopProof, notSubmittedProof])
+const artifactBinding = officeArtifactSource.extend({ workspaceId: z.uuid(),
+  sizeBytes: z.number().int().nonnegative().max(OFFICE_PREVIEW_MAX_INPUT_BYTES) }).strict()
 const rowSchema = z.object({
   id: officePreviewJobSchema.shape.jobId, user_id: accountUserId,
   request_id: officePreviewPrepareRequest.shape.requestId, generation: officePreviewJobSchema.shape.generation,
-  request_digest: digest.nullable(), request: officePreviewPrepareRequest.nullable(),
+  request_digest: digest.nullable(), request: officePreviewSourcePrepareRequest.nullable(),
   session_id: officePreviewPrepareRequest.shape.sessionId.nullable(), workspace_id: z.uuid().nullable(),
-  binding_snapshot: storageBinding.nullable(), source_snapshot: officePreviewJobSchema.nullable(), converter_snapshot: converter.nullable(),
+  binding_snapshot: z.union([storageBinding, artifactBinding]).nullable(),
+  source_snapshot: officePreviewJobSchema.nullable(), converter_snapshot: converter.nullable(),
   state: officePreviewJobView.shape.state, cancel_requested: z.boolean(), error_code: officePreviewErrorCode.nullable(),
   deadline_at: z.date().nullable(), lease_owner: z.uuid().nullable(), lease_epoch: z.number().int().nonnegative(),
   lease_until: z.date().nullable(), attempts: z.number().int().nonnegative(), parser_slot: z.number().int().nonnegative().nullable(),
@@ -102,6 +108,13 @@ function validatedRow(value: unknown): Row {
     || request.generation !== row.generation || row.binding_snapshot.workspaceId !== row.workspace_id
     || source.jobId !== row.id || source.generation !== row.generation || hash(conversion) !== row.generation
     || !equal(source.limits, conversion.limits)) throw error('unavailable')
+  if ('source' in request) {
+    const binding = row.binding_snapshot
+    if (!('kind' in binding) || binding.artifactId !== request.source.artifactId
+      || binding.filename !== request.source.filename || binding.sha256 !== request.source.sha256
+      || binding.sha256 !== source.sourceSha256 || binding.sizeBytes !== source.sourceBytes
+      || source.extension !== request.source.filename.slice(request.source.filename.lastIndexOf('.') + 1).toLowerCase()) throw error('unavailable')
+  } else if ('kind' in row.binding_snapshot) throw error('unavailable')
   const intent = row.creation_intent
   if (intent && (intent.userId !== row.user_id || !equal(intent.job, source)
     || intent.template.spec.containers[0].image !== conversion.pod.image)) throw error('unavailable')
@@ -132,7 +145,8 @@ export class OfficePreviewService {
   private rootReady: Promise<void> | null = null
 
   constructor(private readonly pool: Pool, private readonly files: PreviewFiles,
-    kube: Pick<KubernetesClient, 'call' | 'resourcePath'>, config: OfficePreviewConfig) {
+    kube: Pick<KubernetesClient, 'call' | 'resourcePath'>, config: OfficePreviewConfig,
+    private readonly artifacts: Pick<ArtifactService, 'bytes'>) {
     if (!isAbsolute(config.localRoot)) throw new Error('Office preview root must be absolute')
     this.config = Object.freeze({ ...config, limits: Object.freeze({ ...config.limits }) })
     this.root = resolve(config.localRoot)
@@ -159,11 +173,11 @@ export class OfficePreviewService {
   /**
    * Accept one immutable source snapshot, or return the owner's original admission or early cancellation.
    * @param token Current Agent browser credential, rechecked inside acceptance.
-   * @param input Stable native RPC key, owned Session path, priority and fixed generation.
+   * @param input Stable native RPC key, original owned Session, Workspace path or exact immutable Artifact, priority and fixed generation.
    * @returns Durable job view; key conflicts, quota, changed authority or unsafe source reads reject.
    */
-  async prepare(token: string, input: OfficePreviewPrepareRequest): Promise<OfficePreviewJobView> {
-    const request = officePreviewPrepareRequest.parse(input)
+  async prepare(token: string, input: OfficePreviewSourcePrepareRequest): Promise<OfficePreviewJobView> {
+    const request = officePreviewSourcePrepareRequest.parse(input)
     return transaction(this.pool, async client => {
       const user = await requireBrowserAccount(client, token, { lock: 'update' })
       const prior = await this.byKey(client, user.userId, request.requestId)
@@ -177,14 +191,21 @@ export class OfficePreviewService {
       const session = (await client.query<{ workspace_id: string }>(
         'SELECT workspace_id FROM pe_sessions WHERE id=$1 AND user_id=$2', [request.sessionId, user.userId])).rows[0]
       if (!session) throw new PlatformError(404, 'session_not_found')
-      const binding = await this.files.bindingForId(user.userId, session.workspace_id, client)
-      const source = await this.files.readInWorkspace(user, session.workspace_id, request.path, client)
-      const bytes = Buffer.from(source.data, 'base64'), extension = request.path.slice(request.path.lastIndexOf('.') + 1).toLowerCase()
+      let binding: z.infer<typeof rowSchema>['binding_snapshot'], bytes: Buffer, sourceSha256: string, filename: string
+      if ('source' in request) {
+        const source = await this.artifactSource(client, user, request, session.workspace_id)
+        binding = source.binding; bytes = source.bytes; sourceSha256 = source.binding.sha256; filename = source.binding.filename
+      } else {
+        binding = await this.files.bindingForId(user.userId, session.workspace_id, client)
+        const source = await this.files.readInWorkspace(user, session.workspace_id, request.path, client)
+        bytes = Buffer.from(source.data, 'base64'); sourceSha256 = source.revision; filename = request.path
+        if (bytes.length !== source.size || sha(bytes) !== source.revision) throw error('source-changed', 409)
+      }
+      const extension = filename.slice(filename.lastIndexOf('.') + 1).toLowerCase()
       if (!['doc', 'docx', 'ppt', 'pptx'].includes(extension)) throw error('unsupported-format', 400)
       if (bytes.length > this.config.limits.inputBytes) throw error('input-too-large', 413)
-      if (bytes.length !== source.size || sha(bytes) !== source.revision) throw error('source-changed', 409)
       const job = officePreviewJobSchema.parse({ protocolVersion: 1, jobId: randomUUID(), nonce: randomUUID(),
-        generation: this.providerGeneration, sourceSha256: source.revision, sourceBytes: bytes.length, extension, limits: this.conversion.limits })
+        generation: this.providerGeneration, sourceSha256, sourceBytes: bytes.length, extension, limits: this.conversion.limits })
       await this.writeInput(job, bytes)
       const inserted = await client.query(`INSERT INTO pe_office_preview_jobs(id,user_id,request_id,generation,
         request_digest,request,session_id,workspace_id,binding_snapshot,source_snapshot,converter_snapshot,state,deadline_at)
@@ -252,7 +273,8 @@ export class OfficePreviewService {
   }
 
   /**
-   * Deliver a verified PDF only while the original source bytes, owner, Session, binding and configuration remain current.
+   * Deliver a verified PDF only while its source identity, owner, original Session and configuration remain current.
+   * Artifact snapshots ignore mutable Workspace files and storage bindings; Workspace sources retain their frozen binding checks.
    * @param token Current Agent browser credential, rechecked after filesystem reads.
    * @param input Original completed job and converter generation.
    * @returns Complete bounded PDF bytes and both source/PDF hashes; stale or revoked access rejects.
@@ -269,7 +291,9 @@ export class OfficePreviewService {
       const bytes = await this.pdf(row)
       await this.currentSource(client, user, row)
       await requireBrowserAccount(client, token, { lock: 'update' })
-      return officePreviewContentView.parse({ absolutePath: `/workspace/${row.request.path}`, version: row.source_snapshot.sourceSha256,
+      const absolutePath = 'source' in row.request
+        ? artifactDocumentPathFor(row.request.source.artifactId, row.request.source.filename) : `/workspace/${row.request.path}`
+      return officePreviewContentView.parse({ absolutePath, version: row.source_snapshot.sourceSha256,
         bytes: bytes.length, offset: 0, eof: true, data: bytes.toString('base64'), generation: row.generation,
         missingFonts: row.result.missingFonts, pdfSha256: row.result.pdfSha256 })
     })
@@ -407,12 +431,31 @@ export class OfficePreviewService {
     if (!row.request || !row.source_snapshot || !row.binding_snapshot || !row.workspace_id) throw error('unavailable')
     const session = await client.query<{ workspace_id: string }>('SELECT workspace_id FROM pe_sessions WHERE id=$1 AND user_id=$2', [row.session_id, row.user_id])
     if (session.rows[0]?.workspace_id !== row.workspace_id) throw new PlatformError(404, 'session_not_found')
+    if ('source' in row.request) {
+      const source = await this.artifactSource(client, user, row.request, row.workspace_id)
+      if (!equal(source.binding, row.binding_snapshot) || source.bytes.length !== row.source_snapshot.sourceBytes
+        || sha(source.bytes) !== row.source_snapshot.sourceSha256) throw error('source-changed', 409)
+      return
+    }
     const binding = await this.files.bindingForId(row.user_id, row.workspace_id, client)
     if (!equal(binding, row.binding_snapshot)) throw error('source-changed', 409)
     const value = await this.files.readInWorkspace(user, row.workspace_id, row.request.path, client)
     const bytes = Buffer.from(value.data, 'base64')
     if (bytes.length !== row.source_snapshot.sourceBytes || sha(bytes) !== row.source_snapshot.sourceSha256
       || value.revision !== row.source_snapshot.sourceSha256) throw error('source-changed', 409)
+  }
+
+  private async artifactSource(client: PoolClient, user: Identity,
+    request: Extract<OfficePreviewSourcePrepareRequest, { source: object }>, workspaceId: string): Promise<{
+      binding: z.infer<typeof artifactBinding>; bytes: Buffer
+    }> {
+    const { record, bytes } = await this.artifacts.bytes(user, request.source.artifactId, client)
+    if (record.artifactId !== request.source.artifactId || record.filename !== request.source.filename
+      || record.sessionId !== request.sessionId || record.workspaceId !== workspaceId) throw new PlatformError(404, 'artifact_not_found')
+    if (record.sha256 !== request.source.sha256 || record.sizeBytes !== bytes.length || sha(bytes) !== record.sha256) throw error('source-changed', 409)
+    const binding = artifactBinding.parse({ kind: 'artifact', workspaceId, artifactId: record.artifactId,
+      filename: record.filename, sha256: record.sha256, sizeBytes: record.sizeBytes })
+    return { binding, bytes }
   }
 
   private async ensureRoot(): Promise<void> {
