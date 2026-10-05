@@ -29,6 +29,7 @@ from markdown_math import (
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
 SCRIPTS = SKILL_DIR / "scripts"
+COMMAND_LOG_BYTES = 4096
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -504,9 +505,16 @@ def create_word_report(request: dict[str, Any]) -> dict[str, Any]:
         validations.append([py, str(SCRIPTS / "main.py"), "validate-appendices"])
     logs = []
     for cmd in validations:
-        proc = run_command(cmd, env, workspace); logs.append({"cmd": cmd[-1], "stdout": proc.stdout, "stderr": proc.stderr})
+        try:
+            proc = run_command(cmd, env, workspace)
+        except subprocess.CalledProcessError as exc:
+            return command_failure_response(request, exc, phase=" ".join(cmd[2:]), data_dir=output_dir)
+        logs.append({"cmd": cmd[-1], "stdout": proc.stdout, "stderr": proc.stderr})
     before = set(output_dir.glob("*.docx"))
-    proc = run_command([py, str(SCRIPTS / "main.py"), "create-report"], env, workspace)
+    try:
+        proc = run_command([py, str(SCRIPTS / "main.py"), "create-report"], env, workspace)
+    except subprocess.CalledProcessError as exc:
+        return command_failure_response(request, exc, phase="create-report", data_dir=output_dir)
     after = set(output_dir.glob("*.docx"))
     candidates = sorted(after - before, key=lambda x: x.stat().st_mtime)
     if not candidates:
@@ -547,7 +555,11 @@ def format_existing(request: dict[str, Any]) -> dict[str, Any]:
     index = 2
     while dst.exists():
         dst = src.with_name(f"{src.stem}_格式修复版_v{index}{src.suffix}"); index += 1
-    proc = subprocess.run([sys.executable, str(SCRIPTS / "format_existing_report.py"), str(src), str(dst)], text=True, capture_output=True, check=True)
+    try:
+        proc = run_command([sys.executable, str(SCRIPTS / "format_existing_report.py"), str(src), str(dst)],
+                           os.environ.copy(), Path.cwd())
+    except subprocess.CalledProcessError as exc:
+        return command_failure_response(request, exc, phase="format-existing-report", data_dir=src.parent)
     source_id = artifact.get("artifact_id") if isinstance(artifact, dict) else None
     return {
         "request_id": request["orchestration"]["request_id"], "skill_name": "tech-report-writer",
@@ -642,6 +654,22 @@ def validate_word(request: dict[str, Any]) -> dict[str, Any]:
 
 def blocked_response(request: dict[str, Any], message: str) -> dict[str, Any]:
     return {"request_id": request.get("orchestration", {}).get("request_id"), "skill_name": "tech-report-writer", "action": request.get("action"), "status": "blocked", "error": {"message": message}}
+
+
+def command_failure_response(request: dict[str, Any], exc: subprocess.CalledProcessError,
+                             *, phase: str, data_dir: Path) -> dict[str, Any]:
+    """Keep failed command diagnostics without issuing an artifact for partial output."""
+    result = blocked_response(request, f"{phase} failed with exit status {exc.returncode}")
+    result["error"].update({"phase": phase, "returncode": exc.returncode, "data_dir": str(data_dir)})
+    for key, value in (("stdout", exc.stdout), ("stderr", exc.stderr)):
+        text = value.decode("utf-8", errors="replace") if isinstance(value, bytes) else value or ""
+        encoded = text.encode("utf-8")
+        result["error"].update({
+            key: encoded[-COMMAND_LOG_BYTES:].decode("utf-8", errors="ignore"),
+            f"{key}_bytes": len(encoded),
+            f"{key}_truncated": len(encoded) > COMMAND_LOG_BYTES,
+        })
+    return result
 
 
 def main() -> int:

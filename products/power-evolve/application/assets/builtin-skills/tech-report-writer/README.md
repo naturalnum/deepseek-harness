@@ -12,6 +12,10 @@ The Markdown may contain one nonempty `# 目录` or `## 目录` section before t
 
 Reference-source explanations belong in a consecutive appendix, for example `# 附录 B 参考文献来源与获取链接` after Appendix A. Their text remains separate from the bibliography's continuously numbered `[n]` entries.
 
+## Command failures
+
+Failed validation, creation or formatting commands return `blocked` without a Word artifact. The `error` object records the command phase, `returncode`, actual `data_dir`, and the last 4096 UTF-8 bytes of each captured `stdout` and `stderr`, with total byte counts and truncation flags. A DOCX saved before failure remains an incomplete output until generation and validation pass.
+
 ## Verification
 
 [Adapter regressions](tests/test_orchestration_adapter.py) cover deterministic preparation, strict rejection and Word paragraph/table readback. They do not establish LibreOffice pagination or page-by-page visual acceptance; those checks remain part of the actual Word workflow.

@@ -2,6 +2,8 @@
 
 Run with the report Python dependencies: python3 tests/test_orchestration_adapter.py
 """
+import contextlib
+import io
 import json
 import os
 from pathlib import Path
@@ -9,11 +11,11 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
-from orchestration_adapter import chapter_data, final_report_data, abstract_data, create_word_report
+from orchestration_adapter import chapter_data, final_report_data, abstract_data, create_word_report, main as adapter_main
 from docx import Document
 from engine.parser import parse_html_to_elements
 from format_existing_report import _configure_body
@@ -376,6 +378,140 @@ class FinalReportSource(unittest.TestCase):
             self.assertEqual(response["status"], "blocked")
             self.assertIn("final source_report", response["error"]["message"])
             self.assertEqual(list(root.rglob("*.docx")), [])
+
+
+class CommandFailures(unittest.TestCase):
+    def request(self, root):
+        data = payload()
+        data["source_report"]["content"]["markdown"] = FINAL_REPORT.replace(
+            "## 中文摘要", "# " + data["word_metadata"]["title_en"] + "\n\n## 中文摘要")
+        data["output_preferences"] = {"workspace_dir": str(root), "output_dir": str(root / "word")}
+        return {"skill_name": "tech-report-writer", "action": "create_word_report", "payload": data,
+                "orchestration": {"enabled": True, "request_id": "diagnostic-qa",
+                                  "caller_skill": "report-workflow-orchestrator"}}
+
+    def invoke(self, root, request, command):
+        request_path, response_path = root / "request.json", root / "response.json"
+        request_path.write_text(json.dumps(request), encoding="utf-8")
+        visible = io.StringIO()
+        with patch("orchestration_adapter.run_command", side_effect=command), \
+                patch("sys.argv", ["orchestration_adapter.py", str(request_path), str(response_path)]), \
+                contextlib.redirect_stdout(visible):
+            code = adapter_main()
+        response = json.loads(response_path.read_text(encoding="utf-8"))
+        self.assertEqual(json.loads(visible.getvalue()), response)
+        self.assertEqual(code, 1)
+        self.assertEqual(response["request_id"], "diagnostic-qa")
+        self.assertEqual(response["status"], "blocked")
+        self.assertNotIn("artifact", response)
+        self.assertNotIn("validation_result", response)
+        return response, visible.getvalue()
+
+    @staticmethod
+    def run_child(cmd, env, cwd):
+        return subprocess.run(cmd, env={**env, "PYTHONDONTWRITEBYTECODE": "1"}, cwd=cwd,
+                              capture_output=True, text=True, check=True, timeout=20)
+
+    def test_created_partial_docx_remains_blocked_with_bounded_actual_logs(self):
+        stdout = "输出🙂" * 1700 + "\nCREATE-END\n"
+        stderr = "TRACE-START\n" + "原因🙂" * 1700 + (
+            "\nRuntimeError: 目录刷新失败: UNO pagination failed: "
+            "LibreOffice Math is required to render native Word formulas\n")
+        # The actual child saves a DOCX and exits nonzero; it substitutes for UNO,
+        # while the adapter and preflight CLI retain their real execution paths.
+        script = ("import os, sys\nfrom pathlib import Path\nfrom docx import Document\n"
+                  "doc = Document(); doc.add_paragraph('PARTIAL-DOCX')\n"
+                  "doc.save(Path(os.environ['TECH_REPORT_OUTPUT_DIR']) / 'partial.docx')\n"
+                  f"sys.stdout.write({stdout!r}); sys.stderr.write({stderr!r}); sys.exit(1)\n")
+        commands = []
+
+        def command(cmd, env, cwd):
+            commands.append(cmd[2:])
+            return self.run_child([sys.executable, "-c", script] if cmd[2] == "create-report" else cmd, env, cwd)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            response, visible = self.invoke(root, self.request(root), command)
+            error = response["error"]
+            self.assertEqual(error["phase"], "create-report")
+            self.assertEqual(error["returncode"], 1)
+            data_dir = Path(error["data_dir"])
+            self.assertEqual(data_dir.parent, (root / "word").resolve())
+            self.assertEqual(Document(data_dir / "partial.docx").paragraphs[0].text, "PARTIAL-DOCX")
+            self.assertEqual(commands[-1], ["create-report"])
+            self.assertTrue(any(cmd == ["validate-chapter", "2"] for cmd in commands))
+            for key, actual in (("stdout", stdout), ("stderr", stderr)):
+                self.assertLessEqual(len(error[key].encode("utf-8")), 4096)
+                self.assertEqual(error[f"{key}_bytes"], len(actual.encode("utf-8")))
+                self.assertTrue(error[f"{key}_truncated"])
+                self.assertTrue(actual.endswith(error[key]))
+            self.assertTrue(error["stdout"].endswith("CREATE-END\n"))
+            self.assertIn("LibreOffice Math is required", error["stderr"])
+            self.assertNotIn("TRACE-START", error["stderr"])
+            self.assertLess(len(visible.encode("utf-8")), 11000)
+
+    def test_preflight_failure_keeps_specific_phase_and_never_creates_docx(self):
+        commands = []
+
+        def command(cmd, env, cwd):
+            commands.append(cmd[2:])
+            failed = cmd[2:] == ["validate-chapter", "2"]
+            actual = [sys.executable, "-c", "import sys; sys.stderr.write('chapter rejected\\n'); sys.exit(3)"] if failed else cmd
+            return self.run_child(actual, env, cwd)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            response, _ = self.invoke(root, self.request(root), command)
+            error = response["error"]
+            self.assertEqual(error["phase"], "validate-chapter 2")
+            self.assertEqual(error["returncode"], 3)
+            self.assertEqual(error["stdout"], "")
+            self.assertEqual(error["stdout_bytes"], 0)
+            self.assertEqual(error["stderr"], "chapter rejected\n")
+            self.assertFalse(error["stdout_truncated"])
+            self.assertFalse(error["stderr_truncated"])
+            self.assertTrue((Path(error["data_dir"]) / "chapter_2.json").is_file())
+            self.assertEqual(commands[-1], ["validate-chapter", "2"])
+            self.assertNotIn(["create-report"], commands)
+            self.assertEqual(list(root.rglob("*.docx")), [])
+
+    def test_format_failure_retains_diagnostics_and_original_docx(self):
+        def command(cmd, env, cwd):
+            self.assertEqual(Path(cmd[1]).name, "format_existing_report.py")
+            script = ("import sys\nfrom docx import Document\n"
+                      "doc = Document(); doc.add_paragraph('PARTIAL-FORMAT'); doc.save(sys.argv[1])\n"
+                      "sys.stdout.write('format started\\n'); sys.stderr.write('format rejected\\n'); sys.exit(5)\n")
+            return self.run_child([sys.executable, "-c", script, cmd[-1]], env, cwd)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            src = root / "original.docx"
+            document = Document(); document.add_paragraph("ORIGINAL"); document.save(src)
+            original = src.read_bytes()
+            request = self.request(root)
+            request["action"] = "format_existing_word_report"
+            request["payload"] = {"word_report": {"artifact_id": "word-qa", "version": 1,
+                                                   "content": {"docx_path": str(src)}}}
+            response, _ = self.invoke(root, request, command)
+            error = response["error"]
+            self.assertEqual(error["phase"], "format-existing-report")
+            self.assertEqual(error["returncode"], 5)
+            self.assertEqual(error["data_dir"], str(root.resolve()))
+            self.assertEqual(error["stdout"], "format started\n")
+            self.assertEqual(error["stderr"], "format rejected\n")
+            self.assertEqual(src.read_bytes(), original)
+            self.assertEqual(Document(root / "original_格式修复版.docx").paragraphs[0].text, "PARTIAL-FORMAT")
+
+    def test_non_subprocess_error_preserves_original_message(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            request = self.request(root)
+            del request["payload"]["word_metadata"]["title_cn"]
+            command = Mock(side_effect=AssertionError("must not run a child"))
+            response, _ = self.invoke(root, request, command)
+            self.assertEqual(response["error"], {"message": "missing required Word metadata: title_cn"})
+            command.assert_not_called()
+            self.assertFalse((root / "word").exists())
 
 
 if __name__ == "__main__":
