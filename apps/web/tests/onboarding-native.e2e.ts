@@ -28,7 +28,10 @@ describe.skipIf(MODE === 'record').each([false, true])('web e2e: native credenti
     })
     browser = await chromium.launch()
     page = await browser.newPage({ viewport: { width: 1440, height: 960 }, locale: ZH_BROWSER_LOCALE })
-    if (desktop) await page.addInitScript(() => { Object.defineProperty(globalThis, 'dshDesktop', { value: { protocolVersion: 1 } }) })
+    if (desktop) await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'platform', { value: 'MacIntel' })
+      Object.defineProperty(globalThis, 'dshDesktop', { value: { protocolVersion: 1 } })
+    })
     tripwire = watchConsole(page)
   })
 
@@ -64,7 +67,7 @@ describe.skipIf(MODE === 'record').each([false, true])('web e2e: native credenti
         await accountMenu.click()
         const menu = page.getByRole('menu')
         await menu.waitFor()
-        expect(await menu.getByRole('menuitem').allTextContents()).toEqual(['设置', '联系我们', '登录'])
+        expect(await menu.getByRole('menuitem').allTextContents()).toEqual(['设置⌘,', '联系我们', '登录'])
         const menuBox = (await menu.boundingBox())!
         expect(Math.abs(menuBox.width - 124)).toBeLessThan(1)
         expect(Math.abs(menuBox.height - 128)).toBeLessThan(1)
@@ -77,8 +80,16 @@ describe.skipIf(MODE === 'record').each([false, true])('web e2e: native credenti
           expect(Math.abs(glyph.width - 16)).toBeLessThan(1)
           expect(Math.abs(glyph.height - 16)).toBeLessThan(1)
         }
+        const settingsItem = menu.getByRole('menuitem', { name: '设置', exact: true })
+        const settingsShortcut = {
+          keys: await settingsItem.locator('kbd').allTextContents(),
+          aria: await settingsItem.getAttribute('aria-keyshortcuts'),
+        }
+        expect(settingsShortcut).toEqual({ keys: ['⌘', ','], aria: 'Meta+,' })
+        // Menu keycaps are aria-hidden; retain them alongside their accessible shortcut metadata.
         const menuAria = await captureStableAria(page, '[role="menu"]', scaffold.workspaceCwd)
-        await compareOrRefreshGolden(SIGNED_OUT_MENU_EXPECTED, menuAria, MODE)
+        const menuSnapshot = `${menuAria}\n\nSettings shortcut: ${JSON.stringify(settingsShortcut)}`
+        await compareOrRefreshGolden(SIGNED_OUT_MENU_EXPECTED, menuSnapshot, MODE)
         await page.keyboard.press('Escape')
         await menu.waitFor({ state: 'detached' })
       } else {
