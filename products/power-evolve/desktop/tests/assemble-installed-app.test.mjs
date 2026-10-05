@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 import { captureTrialRuntime, verifyTrialRuntime } from '../scripts/capture-runtime.mjs'
 import { assembleInstalledApp, verifyInstalledApp } from '../scripts/assemble-installed-app.mjs'
+import { readInstalledDesktopConfig } from '../src/installed-config.ts'
 
 const mac = { skip: process.platform !== 'darwin' }
 const operator = fileURLToPath(new URL('../scripts/assemble-installed-app.mjs', import.meta.url))
@@ -119,6 +120,9 @@ test('copies read-only resources, preserves framework aliases and binds helpers 
   assert.equal(lstatSync(join(value.output, 'Contents/MacOS/PowerEvolve')).mode & 0o777, 0o500)
   assert.equal(execFileSync('/usr/bin/plutil', ['-extract', 'CFBundleExecutable', 'raw', '-o', '-', join(value.output, 'Contents/Info.plist')], { encoding: 'utf8' }).trim(), 'PowerEvolve')
   const description = JSON.parse(readFileSync(join(resources, 'power-evolve-desktop.json'), 'utf8'))
+  assert.equal(description.version, 1)
+  assert(!Object.hasOwn(description, 'stateNamespace'))
+  assert(!Object.hasOwn(value, 'descriptorVersion')); assert(!Object.hasOwn(value, 'stateNamespace'))
   assert.equal(readFileSync(join(resources, description.runtime.fileHelper), 'utf8'), '# Device-bound helper\n')
   assert.match(description.runtime.cliEntrypoint, /\/lib\/selected-entry\.mjs$/u)
   assert.equal(description.runtime.nodeExecutable, 'node/bin/node')
@@ -133,6 +137,86 @@ test('copies read-only resources, preserves framework aliases and binds helpers 
   assert.deepEqual(readFileSync(join(f.options.electronApp, 'Contents/MacOS/Electron')), executable)
   assert.equal(lstatSync(join(f.options.electronApp, 'Contents/Info.plist')).mode & 0o777, 0o400)
   assert.equal(verifyInstalledApp(value.output).inventorySha256, value.inventorySha256); noStage(f)
+})
+
+test('v2 selects distinct namespaced state without creating it, and keeps that selection across upgrades', mac, t => {
+  const f = fixture(t), appDataPath = join(f.base, 'app-data')
+  mkdirSync(appDataPath, { mode: 0o700 })
+  function assemble(namespace, parent, buildVersion) {
+    mkdirSync(join(f.base, parent), { mode: 0o700 })
+    const value = assembleInstalledApp({ ...f.options, stateNamespace: namespace, output: join(f.base, parent, 'PowerEvolve.app'),
+      product: { ...f.options.product, buildVersion } })
+    assert.equal(value.descriptorVersion, 2); assert.equal(value.stateNamespace, namespace)
+    const resourcesPath = join(value.output, 'Contents/Resources')
+    const descriptor = JSON.parse(readFileSync(join(resourcesPath, 'power-evolve-desktop.json'), 'utf8'))
+    assert.equal(descriptor.version, 2); assert.equal(descriptor.stateNamespace, namespace)
+    const installed = readInstalledDesktopConfig({ resourcesPath, appDataPath })
+    assert.equal(installed.state.productUserDataPath, join(realpathSync(appDataPath), `PowerEvolve-${namespace}`))
+    assert(!existsSync(installed.state.productUserDataPath))
+    assert.equal(verifyInstalledApp(value.output).stateNamespace, namespace)
+    return installed.state
+  }
+  const namespace = `o3-${'a'.repeat(60)}`
+  const original = assemble(namespace, 'first', '1.0')
+  assert.deepEqual(assemble(namespace, 'upgrade', '2.0'), original)
+  const other = assemble('b', 'independent', '1.0')
+  assert.notEqual(other.privateDir, original.privateDir)
+  assert.equal(other.coordinationRoot, original.coordinationRoot)
+  assert.deepEqual(readdirSync(appDataPath), [])
+  const legacy = assembleInstalledApp(f.options)
+  const legacyState = readInstalledDesktopConfig({ resourcesPath: join(legacy.output, 'Contents/Resources'), appDataPath }).state
+  assert.equal(legacyState.productUserDataPath, join(realpathSync(appDataPath), 'PowerEvolve'))
+  assert.equal(legacyState.coordinationRoot, original.coordinationRoot)
+  assert.deepEqual(readdirSync(appDataPath), [])
+  noStage(f)
+})
+
+test('explicit invalid namespaces and additional state paths fail before any stage is created', mac, t => {
+  const f = fixture(t)
+  for (const stateNamespace of [undefined, null, '', 'UPPER', 'a_b', '-a', 'a-', 'a/b', '../a', '.', '..', 'a\n', 'a\0',
+    'a'.repeat(64), 'a'.repeat(63) + '\n', [], {}, 1]) {
+    assert.throws(() => assembleInstalledApp({ ...f.options, stateNamespace }), /installed_app_invalid_input/u)
+    noStage(f); assert(!existsSync(f.options.output))
+  }
+  assert.throws(() => assembleInstalledApp({ ...f.options, stateNamespace: 'o3', statePath: f.base }), /installed_app_invalid_input/u)
+  assert.throws(() => assembleInstalledApp({ ...f.options, device: { ...f.options.device, stateNamespace: 'o3' } }), /installed_app_invalid_input/u)
+  noStage(f)
+})
+
+test('verification binds namespace and descriptor version even when record or descriptor hashes are rewritten', mac, t => {
+  const f = fixture(t), value = assembleInstalledApp({ ...f.options, stateNamespace: 'o3-preview' })
+  const recordPath = join(value.output, 'Contents/Resources/power-evolve-assembly.json')
+  const descriptorPath = join(value.output, 'Contents/Resources/power-evolve-desktop.json')
+  const record = JSON.parse(readFileSync(recordPath, 'utf8'))
+  function saveRecord(changed) { chmodSync(recordPath, 0o600); writeFileSync(recordPath, JSON.stringify(changed)); chmodSync(recordPath, 0o400) }
+  for (const change of [current => { current.stateNamespace = 'other' }, current => { current.descriptorVersion = 1 },
+    current => { delete current.stateNamespace }, current => { delete current.descriptorVersion },
+    current => { delete current.stateNamespace; delete current.descriptorVersion }, current => { current.stateNamespace = '../escape' }]) {
+    const changed = structuredClone(record); change(changed); saveRecord(changed)
+    assert.throws(() => verifyInstalledApp(value.output), /installed_app_(?:description_changed|invalid_record)/u)
+  }
+  saveRecord(record)
+  const descriptor = JSON.parse(readFileSync(descriptorPath, 'utf8'))
+  descriptor.stateNamespace = 'other'
+  const bytes = Buffer.from(JSON.stringify(descriptor))
+  chmodSync(descriptorPath, 0o600); writeFileSync(descriptorPath, bytes); chmodSync(descriptorPath, 0o400)
+  const changed = structuredClone(record), file = changed.inventory.files.find(row => row.path === 'Contents/Resources/power-evolve-desktop.json')
+  file.sha256 = createHash('sha256').update(bytes).digest('hex'); file.bytes = bytes.length
+  changed.inventorySha256 = createHash('sha256').update(JSON.stringify(changed.inventory)).digest('hex')
+  saveRecord(changed)
+  assert.throws(() => verifyInstalledApp(value.output), /installed_app_description_changed/u)
+  const parent = join(f.base, 'legacy'); mkdirSync(parent)
+  const legacy = assembleInstalledApp({ ...f.options, output: join(parent, 'PowerEvolve.app') })
+  const legacyRecordPath = join(legacy.output, 'Contents/Resources/power-evolve-assembly.json')
+  const legacyRecord = JSON.parse(readFileSync(legacyRecordPath, 'utf8'))
+  assert.equal(verifyInstalledApp(legacy.output).inventorySha256, legacyRecord.inventorySha256)
+  chmodSync(legacyRecordPath, 0o600); writeFileSync(legacyRecordPath, JSON.stringify({ ...legacyRecord, descriptorVersion: 1 })); chmodSync(legacyRecordPath, 0o400)
+  assert.equal(verifyInstalledApp(legacy.output).descriptorVersion, 1)
+  for (const fields of [{ stateNamespace: 'o3-preview' }, { descriptorVersion: 2 }, { descriptorVersion: null }]) {
+    chmodSync(legacyRecordPath, 0o600); writeFileSync(legacyRecordPath, JSON.stringify({ ...legacyRecord, ...fields })); chmodSync(legacyRecordPath, 0o400)
+    assert.throws(() => verifyInstalledApp(legacy.output), /installed_app_description_changed/u)
+  }
+  noStage(f)
 })
 
 test('copied inventories and closure verify after source inputs are removed', mac, t => {

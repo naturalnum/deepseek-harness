@@ -185,8 +185,21 @@ function closureResources(root, record) {
 }
 function validateDescription(resourcesPath) {
   const state = mkdtempSync(join(tmpdir(), 'pe-installed-validation-'))
-  try { chmodSync(state, 0o700); return readInstalledDesktopConfig({ resourcesPath, productUserDataPath: state }) }
+  try { chmodSync(state, 0o700); return readInstalledDesktopConfig({ resourcesPath, appDataPath: state }) }
   finally { rmSync(state, { recursive: true }) }
+}
+function stateNamespace(value, code = 'invalid_input') {
+  if (typeof value !== 'string' || !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u.test(value)) fail(code)
+  return value
+}
+function verifyStateSelection(description, record) {
+  if (description.version === 1) {
+    if (Object.hasOwn(record, 'stateNamespace')
+      || Object.hasOwn(record, 'descriptorVersion') && record.descriptorVersion !== 1) fail('description_changed')
+  } else if (description.version === 2) {
+    stateNamespace(record.stateNamespace, 'invalid_record')
+    if (record.descriptorVersion !== 2 || record.stateNamespace !== description.stateNamespace) fail('description_changed')
+  } else fail('description_changed')
 }
 function publish(stage, output) {
   // macOS SDK sys/stdio.h defines RENAME_EXCL=0x00000004. No overwrite fallback is allowed.
@@ -201,6 +214,8 @@ function publish(stage, output) {
 
 /**
  * Independently verify a completed app inventory, captured closure, installed description and product identity.
+ * Legacy v1 records retain their fixed product state; v2 records must match the trusted description's
+ * version and bounded namespace. Assembly records cannot select another state root.
  * This source operator requires tsx/esm, plutil and macOS; it runs no app, Profile or bundled interpreter.
  * @param {string} output - Absolute assembled PowerEvolve.app path.
  * @returns {object} Recorded hashes after local verification, without signature or ABI claims.
@@ -216,6 +231,7 @@ export function verifyInstalledApp(output) {
   if (description.config.hostOrigin !== record.deployment.hostOrigin || description.config.platformOrigin !== record.deployment.platformOrigin) fail('description_changed')
   commandSearchPath(record.device?.commandSearchPath)
   const installedDescription = json(join(resources, 'power-evolve-desktop.json'))
+  verifyStateSelection(installedDescription, record)
   if (JSON.stringify(installedDescription.device) !== JSON.stringify(record.device)) fail('description_changed')
   const plist = join(root, 'Contents/Info.plist')
   for (const [key, value] of Object.entries({ CFBundleExecutable: 'PowerEvolve', CFBundleIdentifier: record.product.bundleId, CFBundleName: 'PowerEvolve',
@@ -241,17 +257,21 @@ export function verifyInstalledApp(output) {
  * The copied outer signature seal is removed, and nested Framework/helper bytes remain intact.
  * Explicit external command search directories are bounded absolute POSIX paths recorded unchanged;
  * their contents and executables are neither inspected nor copied, and no login shell is run.
+ * An omitted stateNamespace emits the original v1 description and record. An explicit namespace emits
+ * v2 and fixes the matching state selection in its record; no caller-supplied filesystem path is accepted.
  * Signing, notarization, native ABI, Docker availability and real installed startup are not established.
  * @param {object} options - Explicit prepared input directories, new absolute PowerEvolve.app output, product
- * identity, caller-declared desktopSourceCommit and nonsecret deployment/device/worker parameters.
+ * identity, caller-declared desktopSourceCommit, optional stateNamespace and nonsecret deployment/device/worker parameters.
  * @returns {object} Independent input and output inventories; closure commit and desktop commit remain distinct.
  */
 export function assembleInstalledApp(options) {
   let stage, owned
   try {
     if (process.platform !== 'darwin') fail('unsupported_platform')
+    const namespaced = options != null && Object.hasOwn(options, 'stateNamespace')
     keys(options, ['electronApp', 'desktopPackage', 'closureDirectory', 'nodeDirectory', 'pythonRuntimeDirectory',
-      'output', 'product', 'desktopSourceCommit', 'deployment', 'device', 'worker'])
+      'output', 'product', 'desktopSourceCommit', 'deployment', 'device', 'worker', ...(namespaced ? ['stateNamespace'] : [])])
+    const namespace = namespaced ? stateNamespace(options.stateNamespace) : undefined
     keys(options.product, ['bundleId', 'version', 'buildVersion']); keys(options.device, DEVICE_FIELDS); keys(options.worker, WORKER_FIELDS)
     commandSearchPath(options.device.commandSearchPath)
     if (!/^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/u.test(options.product.bundleId)
@@ -307,7 +327,8 @@ export function assembleInstalledApp(options) {
       plutil(targetPlist, ['-replace', key, '-string', value])
     }
     chmodSync(targetPlist, plistMode); syncFile(targetPlist)
-    const description = { kind: 'power-evolve-desktop', version: 1, deployment: options.deployment, device: options.device, worker: options.worker,
+    const description = { kind: 'power-evolve-desktop', version: namespaced ? 2 : 1,
+      ...(namespaced ? { stateNamespace: namespace } : {}), deployment: options.deployment, device: options.device, worker: options.worker,
       runtime: { nodeExecutable: 'node/bin/node', pythonExecutable: 'python/dependencies/python/bin/python3',
         cliEntrypoint: `closure/${locations.cliEntrypoint}`, deviceBundle: `closure/${locations.deviceBundle}`, fileHelper: `closure/${locations.fileHelper}` } }
     writeFileSync(join(resources, 'power-evolve-desktop.json'), JSON.stringify(description, null, 2) + '\n', { flag: 'wx', mode: 0o400 })
@@ -321,6 +342,7 @@ export function assembleInstalledApp(options) {
     }
     const payload = inventory(stage)
     const record = { format: FORMAT, target: 'darwin-arm64', product: options.product,
+      ...(namespaced ? { descriptorVersion: 2, stateNamespace: namespace } : {}),
       deployment: parsed.config, device: options.device, signingPerformed: false, notarizationPerformed: false, removedInputPaths: removed,
       executableMapping: { sourcePath: sourceExecutable, installedPath: EXECUTABLE },
       inputs: { ...inputs, desktop: { ...inputs.desktop, declaredSourceCommit: options.desktopSourceCommit, version: desktopManifest.version },
