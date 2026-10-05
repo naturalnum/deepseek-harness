@@ -991,11 +991,11 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         const value = z.object({ sessionId, cursor: z.number().int().min(-1) }).strict().parse(input)
         sendJson(res, { events: await nativeSessions.after(user, value.sessionId, value.cursor) }); return
       }
-      case '/native/files/list': sendJson(res, await nativeFiles.list(user, nativeFileRequest.parse(input))); return
-      case '/native/files/stat': sendJson(res, await nativeFiles.stat(user, nativeFileRequest.parse(input))); return
-      case '/native/files/read': sendJson(res, await nativeFiles.read(user, nativeFileTextRequest.parse(input))); return
-      case '/native/files/readBytes': sendJson(res, await nativeFiles.readBytes(user, nativeFileBytesRequest.parse(input))); return
-      case '/native/files/observe': sendJson(res, await nativeFiles.observe(user, nativeFileRequest.parse(input))); return
+      case '/native/files/list': sendJson(res, await nativeFiles.list(user, nativeFileRequest.parse(input), token)); return
+      case '/native/files/stat': sendJson(res, await nativeFiles.stat(user, nativeFileRequest.parse(input), token)); return
+      case '/native/files/read': sendJson(res, await nativeFiles.read(user, nativeFileTextRequest.parse(input), token)); return
+      case '/native/files/readBytes': sendJson(res, await nativeFiles.readBytes(user, nativeFileBytesRequest.parse(input), token)); return
+      case '/native/files/observe': sendJson(res, await nativeFiles.observe(user, nativeFileRequest.parse(input), token)); return
       case '/files/session/list': {
         const value = sessionFilesListRequest.parse(input)
         sendJson(res, await files.list(user, value.directory, await fileWorkspace(value.sessionId))); return
