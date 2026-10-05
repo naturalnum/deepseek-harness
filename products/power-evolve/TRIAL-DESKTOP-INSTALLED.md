@@ -35,4 +35,4 @@ R1／R2 失败候选、已完成的独立 Device 快照和正式云端 V28 均�
 
 ## 尚未验收或完成
 
-本轮本机目录通过实际授权页面输入；Mac 锁屏期间尚未完成原生 OS 目录对话框的真人选择／取消。运行中退出的真实停止证据仍归[所属 Device 试用](TRIAL-DESKTOP-OWNED-DEVICE.md)，本轮安装版没有重做该场景。产品签名、公证、更新发行、原生侧栏浏览器、Office 预览、Desktop 报告和通用本机进程连接器继续按[桌面约定](DESKTOP-COMPLETION.md)推进；本版没有重新验证 Office 或持久 Home 写入。生产 HTTPS 和独立物理多节点保留各自验收范围。
+本轮本机目录通过实际授权页面输入；Mac 锁屏期间尚未完成原生 OS 目录对话框的真人选择／取消。运行中退出的真实停止证据仍归[所属 Device 试用](TRIAL-DESKTOP-OWNED-DEVICE.md)，本轮安装版没有重做该场景。产品签名、公证、更新发行、[原生四格式及产物预览](TRIAL-NATIVE-PREVIEW-O3.md)已有独立浏览器试用，安装应用的预览组合、原生侧栏浏览器、Desktop 报告和通用本机进程连接器继续按[桌面约定](DESKTOP-COMPLETION.md)推进；本版没有重新验证 Office 或持久 Home 写入。生产 HTTPS 和独立物理多节点保留各自验收范围。
