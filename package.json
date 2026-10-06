@@ -208,7 +208,8 @@
     "dev:web": "tsx scripts/dev-web.ts --poll",
     "postinstall": "node scripts/install-lefthook.mjs",
     "test:power-evolve:deploy": "node --test products/power-evolve/deploy/*.test.mjs products/power-evolve/connector-runner/deploy/*.test.mjs",
-    "test:power-evolve": "pnpm run build:power-evolve && pnpm run test:power-evolve:deploy && node --test products/power-evolve/application/tests/*.test.mjs && node --import tsx/esm --test products/power-evolve/application/tests/*.test.ts && pnpm run test:power-evolve:desktop",
+    "test:power-evolve": "pnpm run build:power-evolve && pnpm run test:power-evolve:deploy && node --test products/power-evolve/application/tests/*.test.mjs && node --import tsx/esm --test products/power-evolve/application/tests/*.test.ts && pnpm run test:power-evolve:office-preview && pnpm run test:power-evolve:desktop",
+    "test:power-evolve:office-preview": "node --import tsx/esm --test --test-concurrency=1 products/power-evolve/sandbox/tests/office-preview-docx.test.mjs products/power-evolve/sandbox/tests/office-preview.test.mjs products/power-evolve/sandbox/tests/assemble-office-preview.test.mjs products/power-evolve/sandbox/tests/office-preview-image.test.mjs",
     "power-evolve:trial": "node products/power-evolve/scripts/trial.mjs",
     "build:power-evolve:desktop": "pnpm --filter @power-evolve/desktop run build",
     "test:power-evolve:desktop": "node --import tsx/esm --test products/power-evolve/desktop/tests/*.test.ts products/power-evolve/desktop/tests/*.test.mjs"
@@ -227,6 +228,7 @@
     "@deepseek-ai/dsh-mcp-client": "workspace:*",
     "@deepseek-ai/dsh-tool-session-query": "workspace:*",
     "@deepseek-ai/dsh-web-fetch-http": "workspace:*",
+    "@deepseek-ai/libreoffice-kit": "^0.1.1",
     "@stylistic/eslint-plugin": "^5.10.0",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.2",

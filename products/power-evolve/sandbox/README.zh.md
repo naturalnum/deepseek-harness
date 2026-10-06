@@ -25,6 +25,8 @@ runner 为子进程提供固定环境，不转发镜像的 `ENV` 值。需要 `O
 
 离线 `scripts/assemble-office-preview.mjs` helper 把已准备的物理 Linux 包闭包和已构建的共享验证模块拷贝到新目标。它复用仓库的 Office 包选择机制，要求 0.1.1 WASM，核对引擎文件声明的摘要，拒绝链接与非普通资源，并记录拷贝后的包身份与哈希。它保留拷贝文件权限，并显式把生成文件设为 0644、资源目录设为 0755。它不安装、下载、转换或构建镜像。现有 HTTP Runner 仍独立运行。`tests/` 中的所属测试使用真实临时文件和子进程关闭事件，SDK/Poppler 或微型包资源由替身提供；这些测试不证明生产隔离或原生浏览器验收。
 
+`pnpm run test:power-evolve:office-preview` 运行解析器源码和装配检查，并纳入产品测试命令。仓库根声明 kit 为开发依赖，为夹具提供真实 ZIP/XML 库；不需要临时模块链接。
+
 `Dockerfile.office-preview` 使用上述固定 Node 基础镜像和签名 Debian snapshot，定义独立解析器镜像，只安装 Poppler、fontconfig 及指定的 Liberation/Noto CJK/文泉驿/TeX Gyre 字体。构建上下文只含 `runtime/`，即完整离线装配结果：包装器、共享验证器、物理 SDK/WASM 依赖和 `office-preview-closure.json`；不含凭据或用户数据。拷贝文件必须可由 UID/GID 1000 读取。配方以该用户核验 Node 版本、全部清单字节和权限、物理资源及 SDK 预加载，然后使用固定单任务入口。它将 `HOME` 和 `TMPDIR` 设为 `/tmp`，不提供服务，也不下载 npm 资源。部署提供只读输入及根文件系统、空私有输出和有界 `/tmp`。静态及输入测试使用微型 SDK 替身执行验真；实际镜像构建、字体清单和 generation 绑定须另作构建验收。
 
 ## 执行文件候选

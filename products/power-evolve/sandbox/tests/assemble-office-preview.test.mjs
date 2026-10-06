@@ -66,7 +66,8 @@ test('assembled DOCX render-copy module resolves actual codecs through nested ki
   const nested = join(f.kit, 'node_modules')
   await mkdir(nested)
   for (const name of ['fflate', 'saxes', 'xmlchars']) {
-    const resolved = kitRequire.resolve(name)
+    const owner = name === 'xmlchars' ? createRequire(kitRequire.resolve('saxes')) : kitRequire
+    const resolved = owner.resolve(name)
     const root = name === 'fflate' ? dirname(dirname(resolved)) : dirname(resolved)
     await cp(root, join(nested, name), { recursive: true })
   }
