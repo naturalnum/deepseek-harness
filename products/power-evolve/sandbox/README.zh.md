@@ -19,6 +19,8 @@ runner 为子进程提供固定环境，不转发镜像的 `ENV` 值。需要 `O
 
 `office-preview.mjs` 通过共享 Office 预览验证器处理一个解析任务。进程入口不接受参数：`/input/job.json` 只能选择固定的 `source.doc`、`source.docx`、`source.ppt` 或 `source.pptx`；`/output` 必须是空的私有物理目录。包装器核对源文件实际大小和 SHA256，创建私有快照，并要求已安装的 0.1.1 WASM SDK，只使用 `/usr/share/fonts` 且禁用字体元数据缓存。全部转换预算来自 job。部署必须不挂载工作区/Home 且不提供凭据；job 不能选择命令、路径或镜像。
 
+对 DOCX，私有渲染副本将已有 OMML 界符字符属性按 `begChr`、`sepChr`、`endChr` 排列，供 LibreOffice 导入。原始源字节和任务源摘要保持不变；属性值、空右界符及其它包部件内容均保留。UTF-8 和 UTF-16 编码保持不变；无 BOM 的 UTF-16 XML 声明通过字节序前缀识别。ZIP/XML 库从 kit 的物理依赖解析。元数据和实际解压均受 job 的成员数量和解压字节上限约束；加密、ZIP64、重复／越界成员及含 DTD 的 Word XML 部件被拒绝。重打包遵守 `inputBytes`、取消和原有期限；副本超限在创建转换器前以 `input-too-large` 失败。此兼容步骤不核验任意公式语义或视觉版式。
+
 转换和 SDK dispose 成功后，固定的 `/usr/bin/pdfinfo` 在解析器隔离环境中有界输出；取消会终止其所属进程组并等待关闭。PDF 大小、文件头、页数和共享结果验证全部完成后，才独占发布 `result.pdf` 和最后的 `result.json` 标志。失败不会发布成功标志。已验证任务仅在 dispose 和 scratch 清理成功后，才可独占发布 `failure.json`；其中只含协议版本、job、nonce、generation、源摘要和一个共享错误码。无效任务、预加载失败、调用者取消或清理失败均不发布失败标志。同步提交前取消会阻止发布；已经提交成功的结果仍为成功。成功标志绑定 job、nonce、generation、源摘要、PDF 摘要与字节数、页数及缺失字体。消费者还须独立确认解析进程已停止且退出码为零，再核验 PDF 字节；两种标志均不能证明进程停止。
 
 离线 `scripts/assemble-office-preview.mjs` helper 把已准备的物理 Linux 包闭包和已构建的共享验证模块拷贝到新目标。它复用仓库的 Office 包选择机制，要求 0.1.1 WASM，核对引擎文件声明的摘要，拒绝链接与非普通资源，并记录拷贝后的包身份与哈希。它保留拷贝文件权限，并显式把生成文件设为 0644、资源目录设为 0755。它不安装、下载、转换或构建镜像。现有 HTTP Runner 仍独立运行。`tests/` 中的所属测试使用真实临时文件和子进程关闭事件，SDK/Poppler 或微型包资源由替身提供；这些测试不证明生产隔离或原生浏览器验收。

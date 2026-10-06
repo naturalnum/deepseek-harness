@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
+import { createRequire } from 'node:module'
 import { execFileSync } from 'node:child_process'
 import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -12,6 +13,10 @@ import { officePreviewJobSchema, officePreviewResultSchema, officePreviewFailure
 import { inspectOfficePreviewPdf, runOfficePreview } from '../office-preview.mjs'
 
 const sha = bytes => createHash('sha256').update(bytes).digest('hex')
+const kitRequire = createRequire(createRequire(import.meta.url).resolve('@deepseek-ai/libreoffice-kit/package.json'))
+const { zipSync, unzipSync } = kitRequire('fflate')
+const mathNamespace = 'http://schemas.openxmlformats.org/officeDocument/2006/math'
+const docx = properties => Buffer.from(zipSync({ 'word/document.xml': Buffer.from(`<w:document xmlns:w="urn:word" xmlns:m="${mathNamespace}"><w:body><m:d><m:dPr>${properties}</m:dPr><m:e/></m:d></w:body></w:document>`) }))
 const pdf = Buffer.from('%PDF-1.7\nsynthetic parser fixture\n%%EOF\n')
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done }); return { promise, resolve } }
 async function fixture(t, extension = 'docx') {
@@ -19,7 +24,8 @@ async function fixture(t, extension = 'docx') {
   t.after(() => rm(root, { recursive: true, force: true }))
   const inputRoot = join(root, 'input'), outputRoot = join(root, 'output')
   await mkdir(inputRoot, { mode: 0o700 }); await mkdir(outputRoot, { mode: 0o700 })
-  const source = Buffer.from('Synthetic Office input; not an actual engine conversion')
+  const source = extension === 'docx' ? docx('<m:grow m:val="1"/>')
+    : Buffer.from('Synthetic Office input; not an actual engine conversion')
   const job = { protocolVersion: 1, jobId: randomUUID(), nonce: randomUUID(), generation: 'a'.repeat(64),
     sourceSha256: sha(source), sourceBytes: source.length, extension,
     limits: { inputBytes: 2097152, outputBytes: 8388608, timeoutMs: 1000, archiveEntries: 1000,
@@ -76,6 +82,31 @@ test('all fixed Office extensions publish bound bytes only after dispose and PDF
       maxArchiveEntries: 1000, maxUncompressedBytes: 33554432, maxLoadedFontBytes: 134217728,
       maxFontFiles: 1000, maxFontFileBytes: 134217728, maxFontResolutionEntries: 4096,
       maxImageResolution: 144, fontDirectories: ['/usr/share/fonts'], fontMetadataCacheDirectory: false })
+  })
+})
+
+test('DOCX converter receives only the normalized private copy while the receipt binds original bytes', async t => {
+  const f = await fixture(t), original = docx('<m:begChr m:val="|"/><m:endChr m:val="|"/><m:sepChr m:val=""/>')
+  await writeFile(join(f.inputRoot, 'source.docx'), original)
+  f.job.sourceSha256 = sha(original); f.job.sourceBytes = original.length; await f.saveJob()
+  const result = await f.run(), rendered = f.calls.find(call => call.kind === 'render').source
+  assert.notDeepEqual(rendered, original)
+  assert.match(Buffer.from(unzipSync(rendered)['word/document.xml']).toString(), /<m:begChr m:val="\|"\/><m:sepChr m:val=""\/><m:endChr m:val="\|"\/>/u)
+  assert.deepEqual(await readFile(join(f.inputRoot, 'source.docx')), original)
+  assert.equal(result.sourceSha256, sha(original)); assert.equal(f.job.sourceBytes, original.length)
+  assert.equal((await lstat(f.calls.find(call => call.kind === 'render').request.inputPath).catch(() => null)), null)
+})
+
+test('invalid DOCX and render-copy overflow never create a converter and publish only bound failure', async t => {
+  for (const kind of ['xml', 'overflow']) await t.test(kind, async t => {
+    const f = await fixture(t), original = kind === 'xml' ? Buffer.from(zipSync({ 'word/document.xml': Buffer.from('<broken>') }))
+      : docx('<m:begChr m:val="{"/><m:endChr m:val=""/><m:sepChr m:val=""/>')
+    await writeFile(join(f.inputRoot, 'source.docx'), original)
+    f.job.sourceSha256 = sha(original); f.job.sourceBytes = original.length
+    if (kind === 'overflow') f.job.limits.inputBytes = original.length
+    await f.saveJob(); await assert.rejects(f.run(), code(kind === 'overflow' ? 'input-too-large' : 'invalid-document'))
+    assert.deepEqual(f.calls, []); await noResult(f, kind === 'overflow' ? 'input-too-large' : 'invalid-document')
+    assert.deepEqual(await readFile(join(f.inputRoot, 'source.docx')), original)
   })
 })
 

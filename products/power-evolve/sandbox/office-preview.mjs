@@ -188,6 +188,7 @@ export async function runOfficePreview(input) {
     const rawJob = await regularBytes(join(input.inputRoot, 'job.json'), JOB_JSON_BYTES, 'invalid-document')
     const job = dependencies.jobSchema.parse(JSON.parse(rawJob.toString('utf8')))
     validatedJob = job
+    const deadlineAt = Date.now() + job.limits.timeoutMs
     timer = setTimeout(() => controller.abort(failure('timeout')), job.limits.timeoutMs)
     const source = await regularBytes(join(input.inputRoot, `source.${job.extension}`), job.limits.inputBytes, 'input-too-large')
     checkCancellation(signal)
@@ -197,7 +198,10 @@ export async function runOfficePreview(input) {
     await chmod(scratch, 0o700)
     const sourcePath = join(scratch, `source.${job.extension}`)
     const pdfPath = join(scratch, 'result.pdf')
-    await privateWrite(sourcePath, source)
+    const renderSource = job.extension === 'docx'
+      ? (await import('./office-preview-docx.mjs')).prepareOfficePreviewDocx(source, job.limits, signal, deadlineAt)
+      : source
+    await privateWrite(sourcePath, renderSource)
     checkCancellation(signal)
     converter = await dependencies.createConverter({ timeoutMs: job.limits.timeoutMs,
       maxInputBytes: job.limits.inputBytes, maxOutputBytes: job.limits.outputBytes,

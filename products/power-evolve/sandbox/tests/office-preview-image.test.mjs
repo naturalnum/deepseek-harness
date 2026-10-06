@@ -20,6 +20,7 @@ async function fixture(t) {
   const files = new Map([
     ['package.json', '{"private":true,"type":"module"}\n'],
     ['office-preview.mjs', await readFile(new URL('../office-preview.mjs', import.meta.url))],
+    ['office-preview-docx.mjs', await readFile(new URL('../office-preview-docx.mjs', import.meta.url))],
     ['office-preview-contract.mjs', 'export const officePreviewJobSchema={parse(){throw Error("fixture only")}};export const officePreviewResultSchema=officePreviewJobSchema;export const officePreviewFailureSchema=officePreviewJobSchema;\n'],
     ['node_modules/@deepseek-ai/libreoffice-kit/package.json', JSON.stringify({ name: '@deepseek-ai/libreoffice-kit', version: '0.1.1', type: 'module',
       exports: { '.': './index.js', './package.json': './package.json' } })],
@@ -83,10 +84,11 @@ test('Dockerfile verification reads exact prepared bytes and loads the SDK witho
 })
 
 test('Dockerfile verification rejects incomplete, modified, alias and incompatible inputs', async t => {
-  for (const kind of ['missing', 'bytes', 'extra', 'alias', 'mode', 'directory-mode', 'duplicate', 'traversal',
+  for (const kind of ['missing', 'docx-helper', 'bytes', 'extra', 'alias', 'mode', 'directory-mode', 'duplicate', 'traversal',
     'target', 'version', 'validator']) await t.test(kind, async t => {
     const f = await fixture(t), asset = join(f.root, 'node_modules/@deepseek-ai/libreoffice-kit-wasm/assets/engine.wasm')
     if (kind === 'missing') await rm(asset)
+    if (kind === 'docx-helper') await rm(join(f.root, 'office-preview-docx.mjs'))
     if (kind === 'bytes') await writeFile(asset, 'changed physical asset')
     if (kind === 'extra') await writeFile(join(f.root, 'unexpected-file'), 'extra')
     if (kind === 'alias') { await rm(asset); await symlink(join(f.root, 'package.json'), asset) }

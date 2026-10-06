@@ -9,6 +9,7 @@ const kitName = '@deepseek-ai/libreoffice-kit'
 const wasmName = `${kitName}-wasm`
 const sdkVersion = '0.1.1'
 const wrapperPath = fileURLToPath(new URL('../office-preview.mjs', import.meta.url))
+const docxCopyPath = fileURLToPath(new URL('../office-preview-docx.mjs', import.meta.url))
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex')
 
 function inside(root, path) {
@@ -91,7 +92,8 @@ export async function assembleOfficePreview(input) {
     }
   }
   const sources = [...selected].sort().map(file => ({ source: file, path: relative(root, file).split(sep).join('/') }))
-  sources.push({ source: wrapperPath, path: 'office-preview.mjs' }, { source: validator, path: 'office-preview-contract.mjs' })
+  sources.push({ source: wrapperPath, path: 'office-preview.mjs' }, { source: docxCopyPath, path: 'office-preview-docx.mjs' },
+    { source: validator, path: 'office-preview-contract.mjs' })
   const records = []
   for (const file of sources) {
     const status = await lstat(file.source)

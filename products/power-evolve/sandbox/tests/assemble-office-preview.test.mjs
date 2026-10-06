@@ -1,9 +1,10 @@
 /** Tiny physical package fixtures exercise copying and hash rejection, not the real WASM engine. */
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises'
+import { cp, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import test from 'node:test'
 import { assembleOfficePreview } from '../scripts/assemble-office-preview.mjs'
@@ -52,9 +53,34 @@ test('offline assembly preserves Linux package resolution and every copied byte'
     assert.equal(bytes.length, file.bytes); assert.equal(sha(bytes), file.sha256)
   }
   assert.equal(await readFile(join(f.destination, 'office-preview-contract.mjs'), 'utf8'), await readFile(f.validatorModule, 'utf8'))
+  assert.equal(await readFile(join(f.destination, 'office-preview-docx.mjs'), 'utf8'),
+    await readFile(new URL('../office-preview-docx.mjs', import.meta.url), 'utf8'))
   assert.equal(await readFile(join(f.destination, 'node_modules/@deepseek-ai/libreoffice-kit/worker.js'), 'utf8'), 'physical worker fixture')
   await writeFile(join(f.kit, 'worker.js'), 'changed input after assembly')
   assert.equal(await readFile(join(f.destination, 'node_modules/@deepseek-ai/libreoffice-kit/worker.js'), 'utf8'), 'physical worker fixture')
+})
+
+test('assembled DOCX render-copy module resolves actual codecs through nested kit dependencies', async t => {
+  const f = await fixture(t)
+  const kitRequire = createRequire(createRequire(import.meta.url).resolve('@deepseek-ai/libreoffice-kit/package.json'))
+  const nested = join(f.kit, 'node_modules')
+  await mkdir(nested)
+  for (const name of ['fflate', 'saxes', 'xmlchars']) {
+    const resolved = kitRequire.resolve(name)
+    const root = name === 'fflate' ? dirname(dirname(resolved)) : dirname(resolved)
+    await cp(root, join(nested, name), { recursive: true })
+  }
+  f.kitManifest.dependencies = { fflate: '0.8.2', saxes: '6.0.0' }
+  await writeFile(join(f.kit, 'package.json'), JSON.stringify(f.kitManifest))
+  await f.run()
+  assert.equal((await readdir(join(f.destination, 'node_modules'))).includes('fflate'), false)
+  const copied = await import(pathToFileURL(join(f.destination, 'office-preview-docx.mjs')))
+  const { zipSync, unzipSync } = kitRequire('fflate')
+  const source = Buffer.from(zipSync({ 'word/document.xml': Buffer.from('<m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"><m:d><m:dPr><m:begChr m:val="{"/><m:endChr m:val=""/><m:sepChr m:val=""/></m:dPr><m:e/></m:d></m:oMath>') }))
+  const before = Buffer.from(source)
+  const copy = copied.prepareOfficePreviewDocx(source, { inputBytes: 2097152, archiveEntries: 100, uncompressedBytes: 33554432, timeoutMs: 1000 }, new AbortController().signal)
+  assert.deepEqual(source, before)
+  assert.match(Buffer.from(unzipSync(copy)['word/document.xml']).toString(), /<m:begChr m:val="\{"\/><m:sepChr m:val=""\/><m:endChr m:val=""\/>/u)
 })
 
 test('private caller umask preserves copied modes and readable generated resources', async t => {
