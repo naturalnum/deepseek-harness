@@ -73,12 +73,13 @@ export class KubernetesClient {
    * @param body Optional JSON request payload.
    * @param timeoutMs Socket inactivity deadline in milliseconds.
    * @param runnerToken Optional token for the separate Runner authorization boundary.
-   * @param maxResponseBytes Resource responses use 256 KiB; Runner adapters explicitly select 1 MiB.
+   * @param maxResponseBytes Positive whole-response byte ceiling; resource reads default to 256 KiB and Runner callers select their protocol budget.
    * @returns Parsed JSON whose resource or Runner shape must be validated by the consumer.
    */
   async call<T>(method: 'GET' | 'POST' | 'DELETE' | 'PATCH', path: string, body?: unknown,
     timeoutMs = 10_000, runnerToken?: string,
-    maxResponseBytes: 262_144 | typeof RUNNER_RESPONSE_MAX_BYTES = 262_144): Promise<T> {
+    maxResponseBytes: number = 262_144): Promise<T> {
+    if (!Number.isSafeInteger(maxResponseBytes) || maxResponseBytes <= 0) throw new TypeError('Kubernetes response budget invalid')
     const token = this.tokenFile ? (await readFile(this.tokenFile, 'utf8')).trim() : this.token
     if (!token && !this.cert) throw new Error('Kubernetes service account token is unavailable')
     const payload = body === undefined ? undefined : JSON.stringify(body)

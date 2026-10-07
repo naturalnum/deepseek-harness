@@ -871,10 +871,11 @@ export class SandboxManager {
    * @param podUid - Previously dispatched Pod identity.
    * @param runnerInstanceId - Previously dispatched Runner identity.
    * @param client - Optional original STDIO authorization transaction; its account lock and all PG checks are reused.
+   * @param mode - Dispatch requires live authority; observation retains exact original writer checks after revocation.
    * @returns Matching writer with its private token and frozen binding; the client path checks live dispatch authority and never provisions or quarantines.
    */
   async observeReady(sessionId: string, userId: string, podUid: string, runnerInstanceId: string,
-    client?: PoolClient): Promise<SandboxReady> {
+    client?: PoolClient, mode: 'dispatch' | 'observe' = 'dispatch'): Promise<SandboxReady> {
     const selected = await (client ?? this.pool).query<MountSlot>('SELECT * FROM pe_mount_slots WHERE user_id=$1', [userId])
     const slot = selected.rows[0]
     if (!slot || slot.state !== 'ready' || slot.session_id !== sessionId
@@ -885,7 +886,8 @@ export class SandboxManager {
     const sandbox = { name: this.name(userId), podUid, runnerInstanceId,
       token: this.token(this.name(userId), sessionId, slot.generation), restartCount: 0,
       generation: slot.generation, sessionId, userId, binding }
-    if (client) await this.assertStdioCaptureAllowed(client, sandbox)
+    if (client) await this.assertStdioCaptureAllowed(client, sandbox, mode)
+    else if (mode === 'observe') throw new TypeError('stdio_v2_observation_client_required')
     else await this.assertCurrent(sandbox)
     return sandbox
   }
@@ -910,8 +912,19 @@ export class SandboxManager {
       || !this.sameBinding(slot.binding_snapshot, sandbox.binding)) throw new MountSlotBlocked('mount_slot_changed', false)
   }
 
-  private async assertStdioCaptureAllowed(client: PoolClient, sandbox: SandboxReady): Promise<void> {
-    await this.assertDispatchBinding(client, sandbox)
+  private async assertStdioCaptureAllowed(client: PoolClient, sandbox: SandboxReady,
+    mode: 'dispatch' | 'observe' = 'dispatch'): Promise<void> {
+    if (mode === 'dispatch') await this.assertDispatchBinding(client, sandbox)
+    else {
+      const workspace = await this.lockWorkspace(client, sandbox.userId, sandbox.binding.workspaceId)
+      if (workspace.binding_state !== 'ready') throw new MountSlotBlocked('mount_workspace_recovering', false)
+      const slot = (await client.query<MountSlot>('SELECT * FROM pe_mount_slots WHERE user_id=$1 FOR UPDATE', [sandbox.userId])).rows[0]
+      const binding = await this.storedBinding(sandbox.userId, sandbox.binding.workspaceId, client)
+      if (!slot || slot.state !== 'ready' || slot.session_id !== sandbox.sessionId
+        || slot.generation !== sandbox.generation || slot.pod_uid !== sandbox.podUid
+        || slot.runner_instance_id !== sandbox.runnerInstanceId || !binding || !this.sameBinding(binding, sandbox.binding)
+        || !this.sameBinding(slot.binding_snapshot, sandbox.binding)) throw new MountSlotBlocked('mount_slot_changed', false)
+    }
     if (!await this.matchesInstanceUsing(sandbox.sessionId, sandbox.userId,
       sandbox.podUid, sandbox.runnerInstanceId, client)) throw new MountSlotBlocked('mount_instance_changed', false)
   }
@@ -922,11 +935,14 @@ export class SandboxManager {
    * @param pin Trusted single-platform deployment mapping fixed before task admission.
    * @param limits Trusted original SDK budgets for the complete Pod spec JSON.
    * @param client Optional caller transaction with the original owner's account lock; every PG check uses it without borrowing a connection.
+   * @param mode Dispatch requires active authority; observation verifies the original live writer without granting another start.
    * @returns Exact private mount/container/image observations and the complete original Pod spec.
    * @throws Rejects non-PVC, unavailable, incomplete or changed observations. With a caller client, failure preserves the writer and performs no quarantine; the caller persists quarantine separately after rollback. Without a client, existing admission/quarantine behavior remains.
    */
   async captureStdioV2(sandbox: SandboxReady, scope: Extract<StdioScopeV2, { kind: 'cloud' }>,
-    pin: Extract<StdioDeploymentV2, { kind: 'cloud' }>, limits: StdioLimitsV2, client?: PoolClient): Promise<StdioCloudCaptureV2> {
+    pin: Extract<StdioDeploymentV2, { kind: 'cloud' }>, limits: StdioLimitsV2, client?: PoolClient,
+    mode: 'dispatch' | 'observe' = 'dispatch'): Promise<StdioCloudCaptureV2> {
+    if (!client && mode === 'observe') throw new TypeError('stdio_v2_observation_client_required')
     const invalid = () => new MountSlotBlocked('mount_stdio_capture_invalid', false)
     const unavailable = () => new MountSlotBlocked('mount_stdio_capture_unavailable', false)
     const record = (value: unknown): value is Record<string, unknown> =>
@@ -988,7 +1004,7 @@ export class SandboxManager {
       try { return await Promise.all([this.get('sandboxes', writer.name), this.get('pods', writer.name)]) }
       catch (_resourceReadFailed) { throw unavailable() }
     }
-    const assertAllowed = () => client ? this.assertStdioCaptureAllowed(client, writer) : this.assertDispatchAllowed(writer)
+    const assertAllowed = () => client ? this.assertStdioCaptureAllowed(client, writer, mode) : this.assertDispatchAllowed(writer)
     await assertAllowed()
     const first = await resources(), observed = observe(first[0], first[1])
     let node: unknown
@@ -1080,6 +1096,25 @@ export class SandboxManager {
   runner<T>(name: string, token: string, method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
     return this.kube.call<T>(method, this.kube.proxyPath(this.config.namespace, name, path), body,
       10_000, token, RUNNER_RESPONSE_MAX_BYTES)
+  }
+
+  /** Call the original private Runner without retry, with explicit whole-response and request-time budgets.
+   * @param name Authorized existing service resource name.
+   * @param token Platform-only Runner token, never included in an observation or grant.
+   * @param method Original start, cancellation or observation method.
+   * @param path Fixed Runner endpoint selected by the trusted caller.
+   * @param body Complete original JSON request or undefined for GET.
+   * @param options Validated deployment-selected timeout and response-byte ceilings.
+   * @returns Complete decoded reply; failed or lost responses reject without replay.
+   */
+  runnerBounded<T>(name: string, token: string, method: 'GET' | 'POST', path: string, body: unknown,
+    options: { timeoutMs: number; maxResponseBytes: number }): Promise<T> {
+    if (!Number.isSafeInteger(options.timeoutMs) || options.timeoutMs <= 0
+      || !Number.isSafeInteger(options.maxResponseBytes) || options.maxResponseBytes <= 0) {
+      throw new TypeError('stdio_v2_transport_budget_invalid')
+    }
+    return this.kube.call<T>(method, this.kube.proxyPath(this.config.namespace, name, path), body,
+      options.timeoutMs, token, options.maxResponseBytes)
   }
 
   /**
