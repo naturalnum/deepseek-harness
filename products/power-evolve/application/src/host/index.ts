@@ -35,8 +35,13 @@ import { EXECUTION_RESOLUTION_ROUTES, executionResolutionsListRequest, execution
   executionResolutionStatusRequest, executionResolutionStatus } from '@power-evolve/contracts/execution-resolution'
 import { DESKTOP_BROWSER_SCOPE_PLATFORM_PATH, desktopBrowserScopeRequest,
   desktopBrowserScopeView } from '@power-evolve/contracts/desktop-browser-scope'
+import type { StdioActionListRequestV2, StdioCreateRequestV2, StdioDeleteRequestV2,
+  StdioListRequestV2, StdioToggleRequestV2, StdioUpdateRequestV2 } from '@power-evolve/contracts/stdio-management'
+import { stdioActionRequestV2, stdioCheckRequestV2, stdioReceiptRequestV2 } from '@power-evolve/contracts/stdio-mcp'
+import { StdioManagementRpcV2, stdioManagementRequestsV2, stdioManagementEndpointsV2 } from '../stdio-v2-management-rpc.ts'
 
-const requests = { ...mcpManagementRequests, ...sshManagementRequests, me: z.object({}).strict(), logout: z.object({}).strict(), modelsList: z.object({}).strict(), settingsUpdate: settingsUpdateRequest,
+const requests = { ...mcpManagementRequests, ...sshManagementRequests, ...stdioManagementRequestsV2,
+  me: z.object({}).strict(), logout: z.object({}).strict(), modelsList: z.object({}).strict(), settingsUpdate: settingsUpdateRequest,
   storageSpaces: z.object({}).strict(), storageDirectories: storageDirectoriesRequest,
   storageDirectoryCreate: storageDirectoryCreateRequest, workspaceBindingsMissing: z.object({}).strict(),
   workspaceBindingRestore: workspaceBindingRestoreRequest, workspaceBindingStatus: workspaceBindingStatusRequest,
@@ -81,7 +86,7 @@ const requests = { ...mcpManagementRequests, ...sshManagementRequests, me: z.obj
   devicesList: z.object({}).strict(), devicesPair: z.object({}).strict(),
   devicesRevoke: z.object({ deviceId: z.uuid() }).strict(),
   directoriesRevoke: z.object({ directoryId: z.uuid() }).strict() }
-const endpoint = { ...mcpManagementEndpoints, ...sshManagementEndpoints, ...WORKSPACE_BINDING_ROUTES,
+const endpoint = { ...mcpManagementEndpoints, ...sshManagementEndpoints, ...stdioManagementEndpointsV2, ...WORKSPACE_BINDING_ROUTES,
   ...EXECUTION_RESOLUTION_ROUTES, me: '/identity/me', logout: '/identity/logout', modelsList: '/identity/models', settingsUpdate: '/identity/settings/update',
   accountCapabilities: ACCOUNT_ROUTES.capabilities,
   desktopBrowserScope: DESKTOP_BROWSER_SCOPE_PLATFORM_PATH,
@@ -112,8 +117,12 @@ type Method = keyof typeof requests
 declare module '@deepseek-ai/cordis' { interface Context { powerEvolve: ProductRemote; powerEvolveBrowserAuth: BrowserAgentAuth } }
 
 class ProductRemote extends TypertRemoteService {
+  private readonly stdio: StdioManagementRpcV2
   constructor(ctx: Context, private readonly options: { tokens: WeakMap<PeerScope, string>; pollMs: number;
-    platformOrigin: string }) { super(ctx, 'powerEvolve') }
+    platformOrigin: string }) {
+    super(ctx, 'powerEvolve')
+    this.stdio = new StdioManagementRpcV2(ctx.powerEvolveRuntime)
+  }
   private token(): string {
     const peer = this.ctx.invocation?.peer
     const token = peer && this.options.tokens.get(peer)
@@ -249,6 +258,17 @@ class ProductRemote extends TypertRemoteService {
   @Remote stdioMcpToggle(request: z.infer<typeof requests.stdioMcpToggle>) { return this.call('stdioMcpToggle', request) }
   @Remote stdioMcpCalls(request: z.infer<typeof requests.stdioMcpCalls>) { return this.call('stdioMcpCalls', request) }
   @Remote stdioMcpStatus(request: z.infer<typeof requests.stdioMcpStatus>) { return this.call('stdioMcpStatus', request) }
+  @Remote stdioV2Config(request: Record<string, never>) { return this.stdio.config(this.token(), request) }
+  @Remote stdioV2ConnectionsList(request: StdioListRequestV2) { return this.stdio.list(this.token(), request) }
+  @Remote stdioV2ConnectionsCreate(request: StdioCreateRequestV2) { return this.stdio.create(this.token(), request) }
+  @Remote stdioV2ConnectionsUpdate(request: StdioUpdateRequestV2) { return this.stdio.update(this.token(), request) }
+  @Remote stdioV2ConnectionsToggle(request: StdioToggleRequestV2) { return this.stdio.toggle(this.token(), request) }
+  @Remote stdioV2ConnectionsDelete(request: StdioDeleteRequestV2) { return this.stdio.remove(this.token(), request) }
+  @Remote stdioV2ConnectionsReceipt(request: z.infer<typeof stdioReceiptRequestV2>) { return this.stdio.receipt(this.token(), request) }
+  @Remote stdioV2ConnectionsCheck(request: z.infer<typeof stdioCheckRequestV2>) { return this.stdio.check(this.token(), request) }
+  @Remote stdioV2ActionsList(request: StdioActionListRequestV2) { return this.stdio.actions(this.token(), request) }
+  @Remote stdioV2ActionsDetail(request: z.infer<typeof stdioActionRequestV2>) { return this.stdio.detail(this.token(), request) }
+  @Remote stdioV2ActionsCancel(request: z.infer<typeof stdioActionRequestV2>) { return this.stdio.cancel(this.token(), request) }
   @Remote sshList(request: z.infer<typeof requests.sshList>) { return this.call('sshList', request) }
   @Remote async sshConnectionsList(request: z.infer<typeof requests.sshConnectionsList>) {
     return z.object({ available: z.boolean(), items: z.array(sshConnectionValue) }).strict()
