@@ -2,6 +2,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { AgentHandle } from '@deepseek-ai/dsh-agent'
 import type { SessionRequestId } from '@deepseek-ai/dsh-api-session-controller/types'
+import type { StdioTaskV2 } from '@power-evolve/contracts/stdio-mcp'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { foldConsumedWork } from '@deepseek-ai/dsh-agent'
 import { MessageId } from '@deepseek-ai/dsh-llm'
@@ -13,6 +14,7 @@ import { installConnectorTools } from './connectors.ts'
 import { installExecutionTools } from './executions.ts'
 import { installPersonalMcpTool, installRemoteMcpTools } from './mcp.ts'
 import { installStdioMcpTool } from './stdio-mcp.ts'
+import { installStdioOperationToolsV2 } from './stdio-v2.ts'
 import { installSshExecuteTool } from './ssh-execute.ts'
 import { installSelectedSkills } from './skills.ts'
 import { installOfficeTool } from './office.ts'
@@ -26,6 +28,8 @@ declare module '@deepseek-ai/dsh-llm' {
     'power-evolve-stdio-mcp': { readonly kind: 'power-evolve-stdio-mcp'; readonly callId: string }
     'power-evolve-ssh-execute': { readonly kind: 'power-evolve-ssh-execute'; readonly actionId: string }
     'power-evolve-remote-mcp': { readonly kind: 'power-evolve-remote-mcp'; readonly actionId: McpActionId }
+    'power-evolve-stdio-v2-result': { readonly kind: 'power-evolve-stdio-v2-result'; readonly actionId: StdioTaskV2['actionId']; readonly phase: 'call' }
+    'power-evolve-stdio-v2-no-start': { readonly kind: 'power-evolve-stdio-v2-no-start'; readonly actionId: StdioTaskV2['actionId']; readonly phase: 'call' }
   }
 }
 
@@ -163,6 +167,7 @@ export class Scheduler {
       installDurableToolDispatch(agent)
       installSelectedSkills(agent, grant, runtime)
       installRemoteMcpTools(agent, grant, runtime, this.config.platformOrigin)
+      installStdioOperationToolsV2(agent, grant, grant.stdioV2Connections, runtime, this.config.platformOrigin)
       if (grant.source === 'user' || grant.source === 'sandbox_result' || grant.source === 'desktop_result') {
         installConnectorTools(agent, grant, runtime, this.config.platformOrigin)
         installExecutionTools(agent, grant, runtime)
@@ -192,6 +197,8 @@ export class Scheduler {
                 : grant.source === 'stdio_mcp_result' ? { kind: 'power-evolve-stdio-mcp', callId: grant.sourceStdioMcpCallId! }
                   : grant.source === 'ssh_execute_result' ? { kind: 'power-evolve-ssh-execute', actionId: grant.sourceSshExecuteActionId! }
                     : grant.source === 'remote_mcp_result' ? { kind: 'power-evolve-remote-mcp', actionId: grant.sourceMcpActionId! }
+                      : grant.source === 'stdio_v2_result' ? { kind: 'power-evolve-stdio-v2-result', actionId: grant.sourceStdioV2ActionId!, phase: grant.sourceStdioV2Phase! }
+                        : grant.source === 'stdio_v2_no_start' ? { kind: 'power-evolve-stdio-v2-no-start', actionId: grant.sourceStdioV2NoStartActionId!, phase: grant.sourceStdioV2Phase! }
               : { kind: 'user', rpcId: brandString<SessionRequestId>(grant.requestId) },
           content: [{ type: 'text', text: grant.text }] })
         await agent.whenIdle()
