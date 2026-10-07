@@ -38,6 +38,10 @@ export class StdioDevicePreparationV2 {
       throw new Error('stdio_v2_device_original_mismatch')
     }
     const observed = await this.containers.captureContainer(request)
+    // The adapter verifies unique destinations; Docker can return that same mount set in a different order.
+    // Retain every mount field and the original observation, sorting only this digest input by code unit.
+    const inspection = { ...observed.inspection, Mounts: [...observed.inspection.Mounts].sort((left, right) =>
+      left.Destination < right.Destination ? -1 : left.Destination > right.Destination ? 1 : 0) }
     const capture = desktopCapture.parse({ kind: 'desktop', receipt: request.receipt, processId: process,
       directoryId: scopeBinding.directoryId, workspaceMount: request.workspaceMount, homeMount: request.homeMount,
       actualContainerId: observed.inspection.Id })
@@ -47,6 +51,6 @@ export class StdioDevicePreparationV2 {
       expectedDeploymentPin: original.expectedDeploymentPin, actualExecutorImage: observed.image, capture,
       // Hash the full returned inspection, including Config/HostConfig/Path/Args, and actual image.
       // The caller separately checks the creation command and security policy; this digest grants no start.
-      specDigest: stdioSha256V2('spec', { inspection: observed.inspection, image: observed.image }, budget) })
+      specDigest: stdioSha256V2('spec', { inspection, image: observed.image }, budget) })
   }
 }

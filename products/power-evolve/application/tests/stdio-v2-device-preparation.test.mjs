@@ -44,9 +44,9 @@ function fixture(phase = 'discover') {
   const inspection = { Id: receipt.containerId, Image: receipt.imageId, Labels: labels,
     State: { Running: false, ExitCode: 0, Status: 'created', StartedAt: '0001-01-01T00:00:00Z', FinishedAt: '0001-01-01T00:00:00Z',
       Pid: 0, Paused: false, OOMKilled: false, Error: '', extension: { all: 'unchanged' } },
-    Mounts: [{ Type: 'bind', Source: request.workspaceMount.source, Destination: '/workspace', RW: true, Mode: '', Propagation: 'rprivate' },
-      { Type: 'bind', Source: request.homeMount.source, Destination: '/home/agent', RW: true, Mode: '', Propagation: 'rprivate' },
-      { Type: 'tmpfs', Source: '', Destination: '/tmp', RW: true, Mode: '', Propagation: '' }], RestartCount: 0,
+    Mounts: [{ Type: 'bind', Source: request.homeMount.source, Destination: '/home/agent', RW: true, Mode: '', Propagation: 'rprivate' },
+      { Type: 'tmpfs', Source: '', Destination: '/tmp', RW: true, Mode: '', Propagation: '' },
+      { Type: 'bind', Source: request.workspaceMount.source, Destination: '/workspace', RW: true, Mode: '', Propagation: 'rprivate' }], RestartCount: 0,
     Config: { Labels: labels, Cmd: ['runner.mjs'], Entrypoint: ['node'], Env: ['LANG=C.UTF-8'], User: '1000:1000',
       WorkingDir: '/workspace', Tty: false, OpenStdin: true, extension: { full: 'preserved' } },
     HostConfig: { Binds: [`${request.workspaceMount.source}:/workspace`, `${request.homeMount.source}:/home/agent`],
@@ -62,9 +62,9 @@ function fixture(phase = 'discover') {
     if (failure) throw failure
     return { stdout: JSON.stringify(args[0] === 'image' ? imageOutput : inspection), stderr: '', outputTruncated: truncated }
   } }
-  const service = new StdioDevicePreparationV2(new OwnedDeviceContainer(config, docker)), ref = { kind: 'desktop', executionId }
+  const containers = new OwnedDeviceContainer(config, docker), service = new StdioDevicePreparationV2(containers), ref = { kind: 'desktop', executionId }
   const capture = () => service.capture(task, ref, request, processId)
-  return { task, ref, request, processId, service, capture, calls, inspection, image,
+  return { task, ref, request, processId, containers, service, capture, calls, inspection, image,
     changeImage(value) { imageOutput = { ...imageOutput, ...value } }, fail(error) { failure = error }, truncate() { truncated = true } }
 }
 
@@ -193,6 +193,41 @@ test('spec digest covers full Config/HostConfig/Path/Args and State/Mounts/Label
     // Compare the same original observation before/after a nonprojected field changes.
     const observed = clone(f.inspection); mutate({ inspection: observed })
     assert.notEqual(sha('spec', { inspection: observed, image: f.image }), original.specDigest)
+  }
+})
+
+test('alternating Docker mount order keeps Prepared stable without changing raw observations or other arrays', async () => {
+  for (const withTmpfs of [false, true]) {
+    const f = fixture('call'), observations = [], originalTask = JSON.stringify(f.task)
+    if (!withTmpfs) f.inspection.Mounts = f.inspection.Mounts.filter(mount => mount.Type !== 'tmpfs')
+    const service = new StdioDevicePreparationV2({ async captureContainer(request) {
+      const observed = await f.containers.captureContainer(request)
+      observations.push({ observed, bytes: JSON.stringify(observed) })
+      Object.freeze(observed.inspection.Mounts)
+      return observed
+    } })
+    const capture = () => service.capture(f.task, f.ref, f.request, f.processId), first = await capture()
+    f.inspection.Mounts.reverse()
+    assert.deepEqual(await capture(), first)
+    f.inspection.Mounts.reverse()
+    assert.deepEqual(await capture(), first)
+    assert.notEqual(observations[0].bytes, observations[1].bytes)
+    for (const { observed, bytes } of observations) assert.equal(JSON.stringify(observed), bytes)
+    assert.equal(JSON.stringify(f.task), originalTask); assert.equal(f.calls.length, 6)
+  }
+})
+
+test('mount set ordering retains Source/RW and every raw metadata field; scope changes still fail the actual adapter', async () => {
+  for (const mutate of [f => { f.inspection.Mounts[0].Source += '-foreign' }, f => { f.inspection.Mounts[0].RW = false },
+    f => { f.inspection.Mounts[0].Propagation = 'private' }, f => { f.inspection.Mounts[0].extension = { raw: [3, 1] } }]) {
+    const f = fixture(), first = await f.capture()
+    mutate(f)
+    // Isolate the assembler's full digest input; its real adapter separately rejects changed bind permissions/sources.
+    const assembler = new StdioDevicePreparationV2({ async captureContainer() { return { inspection: f.inspection, image: f.image } } })
+    assert.notEqual((await assembler.capture(f.task, f.ref, f.request, f.processId)).specDigest, first.specDigest)
+    if (f.inspection.Mounts[0].Source !== f.request.homeMount.source || !f.inspection.Mounts[0].RW) {
+      await assert.rejects(f.capture, { code: 'container_mount_mismatch' })
+    } else assert.notEqual((await f.capture()).specDigest, first.specDigest)
   }
 })
 
