@@ -104,7 +104,7 @@ Device 的 `OwnedDeviceContainer.captureImage` 检查可信 Docker config ID、O
 
 向 `SandboxManager.captureStdioV2` 传入授权事务的 client，可让所有 PG 检查复用该连接，避免另一个连接等待已有的账户锁。此路径 capture 失败后保留原 writer；编排器必须在事务回滚后持久化 quarantine。不传 client 时保留原 capture 与 quarantine 行为。明确的 `observe` 模式要求原 client，可在账户撤销后核验未变更的活跃写者，不授予新的启动权限。
 
-`StdioActionLeaseServiceV2` 通过数据库时钟与原账户到执行记录的锁序约束内部 worker。`StdioCloudRunTransportV2` 在有界私有 HTTP 前后比较完整原 Prepared，首次 true 回复在等待前消费；原重试只发 GET，GET 404 不确立没有副作用或写者已停止。必填 `maxTrackedActions` 限制活跃追踪记录；过期后无需定时器即可回收，容量压力下仍允许查询／取消，并保守阻止新启动，直到未追踪许可过期。`StdioResultServiceV2` 在相邻 schema 35 中保留完整观察，以 PG `json` 保存转义 NUL、页、初始化元数据、原始目录与结果。清理不明或缺少独立 UID 停止证明时保留写者。终态私有证明允许原子保存结果／停止事实及唯一的当前发现目录；撤销或变更配置仍保存实际结果，但不发布新目录。启用任意 STDIO 前仍须完成通用 worker 编排、call 受理、Device journal、部署与原生发现／调用验收。
+`StdioActionLeaseServiceV2` 通过数据库时钟与原账户到执行记录的锁序约束内部 worker。`StdioCloudRunTransportV2` 在有界私有 HTTP 前后比较完整原 Prepared，首次 true 回复在等待前消费；原重试只发 GET，GET 404 不确立没有副作用或写者已停止。必填 `maxTrackedActions` 限制活跃追踪记录；过期后无需定时器即可回收，容量压力下仍允许查询／取消，并保守阻止新启动，直到未追踪许可过期。`StdioResultServiceV2` 在相邻 schema 35 中保留完整观察，以 PG `json` 保存转义 NUL、页、初始化元数据、原始目录与结果。清理不明或缺少独立 UID 停止证明时保留写者。终态私有证明允许原子保存结果／停止事实及唯一的当前发现目录；撤销或变更配置仍保存实际结果，但不发布新目录。启用任意 STDIO 前仍须完成正式派发前结案、call 受理、Device journal、部署与原生发现／调用验收。
 
 `StdioCloudPreparationV2` 在该事务内重查原任务、执行记录、Session、挂载槽位和实例。它通过同一 client 调用 `SandboxManager.observeReady` 获取私有 Runner token，并对完整 Pod spec 计算摘要。`StdioDevicePreparationV2` 将原任务和回执绑定到只读容器观测及调用方已认证的进程。其 spec 摘要保留完整 inspection 和实际镜像；仅将目标路径唯一的 Mounts 集合按目标路径排序，因为 Docker 可能以不同顺序返回该集合。其他数组保留顺序。两种适配都限制完整 Prepared JSON，不授予启动或停止权限。私有 Device worker 须在调用适配器前确认 journal／进程身份、目录权限及容器创建策略。
 
