@@ -1,14 +1,22 @@
-/** Backup state extraction uses local files and a controlled Client, without a database or trial. */
+/** Backup extraction uses a controlled PG Client and real SQLite Office predicates; no PostgreSQL or trial. */
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import test from 'node:test'
+import { DatabaseSync } from 'node:sqlite'
 import { inspectBackupState, inventoryBackupTree, requireIdleBackupState } from '../../scripts/backup-state.mjs'
 
-function database({ schema = 28, connector = [], desktop = [], resolutions = [], active = {}, fail, closeFails = false } = {}) {
+function database({ schema = 28, connector = [], desktop = [], resolutions = [], office = [], active = {}, fail, closeFails = false } = {}) {
   let instance
+  const sqlite = new DatabaseSync(':memory:')
+  sqlite.exec(`CREATE TABLE pe_office_preview_jobs (id text, state text, parser_slot integer,
+    source_snapshot text, converter_snapshot text, result text, worker_observation text, stop_evidence text)`)
+  const insert = sqlite.prepare('INSERT INTO pe_office_preview_jobs VALUES(?,?,?,?,?,?,?,?)')
+  for (const [index, row] of office.entries()) insert.run(row.id ?? `fixture-${index}`, row.state, row.parser_slot ?? null,
+    ...['source_snapshot', 'converter_snapshot', 'result', 'worker_observation', 'stop_evidence'].map(key => row[key] === undefined || row[key] === null ? null : JSON.stringify(row[key])))
+  sqlite.exec('PRAGMA query_only=ON')
   class Client {
     constructor(options) { this.options = options; this.queries = []; instance = this }
     async connect() { if (fail === 'connect') throw new Error(this.options.connectionString) }
@@ -16,6 +24,13 @@ function database({ schema = 28, connector = [], desktop = [], resolutions = [],
       this.queries.push(request)
       if (fail === 'query') throw new Error(`private query detail: ${this.options.connectionString}`)
       const sql = request.text
+      if (sql.includes('FROM pe_office_preview_jobs')) {
+        // Only PostgreSQL's scalar count cast is translated; SQLite executes the production WHERE clause.
+        const rows = sqlite.prepare(sql.replaceAll('::integer', '')).all()
+        return { rows: rows.map(row => Object.fromEntries(Object.entries(row).map(([key, value]) =>
+          [key, key.endsWith('_snapshot') || ['result', 'worker_observation', 'stop_evidence'].includes(key)
+            ? value === null ? null : JSON.parse(value) : value]))) }
+      }
       if (sql === 'SELECT version FROM pe_schema') return { rows: [{ version: schema }] }
       if (sql.includes(' AS operations')) {
         // Evaluate the two added state filters against fixture rows rather than supplying their counts.
@@ -48,6 +63,7 @@ function database({ schema = 28, connector = [], desktop = [], resolutions = [],
     }
     async end() {
       this.ended = true
+      sqlite.close()
       if (closeFails) throw new Error(this.options.connectionString)
     }
   }
@@ -79,6 +95,28 @@ test('file inventory keeps sorted bytes, modes and literal symlinks; failures om
     assert.equal(error.cause, undefined)
     return true
   })
+})
+
+test('V32/V33 Office census and occupied parser slots use actual SQLite query evaluation', async () => {
+  const schemaText = await readFile(new URL('../src/platform/office-preview-schema.ts', import.meta.url), 'utf8')
+  const declared = schemaText.match(/state text NOT NULL CHECK \(state IN \(([^)]+)\)\)/u)
+  assert.ok(declared)
+  const states = [...declared[1].matchAll(/'([^']+)'/gu)].map(match => match[1])
+  for (const schema of [31, 32, 33]) {
+    for (const state of states) {
+      const mock = database({ schema, office: [{ state }] })
+      const status = await inspectBackupState(mock.Client, privateUrl)
+      assert.equal(Object.hasOwn(status.active, 'officePreviews'), schema >= 32)
+      assert.equal(status.officeJobs.length, schema >= 32 ? 1 : 0)
+      if (schema >= 32 && ['queued', 'creating', 'running', 'stopping', 'blocked'].includes(state)) {
+        assert.throws(() => requireIdleBackupState(status), /no active operations/u)
+      } else assert.doesNotThrow(() => requireIdleBackupState(status))
+    }
+  }
+  // This stranded terminal slot is deliberately not a valid V32 CHECK combination; it must still fail closed.
+  const mock = database({ schema: 33, office: [{ state: 'succeeded', parser_slot: 0 }] })
+  const status = await inspectBackupState(mock.Client, privateUrl)
+  assert.throws(() => requireIdleBackupState(status), /no active operations/u)
 })
 
 test('backup refuses dispatchable Connector and active desktop states from the real schema', async () => {

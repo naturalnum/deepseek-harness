@@ -12,8 +12,8 @@
   en: b65327981f4abc31
   zh: bf82310ebc6a922c
 /powerevolve-s7d-deployment-candidate/application-backups:
-  en: 8a7205fdc532bf25
-  zh: 2a914b05abd24106
+  en: c866551f2d76f461
+  zh: 1b5bdba9c1351c81
 /powerevolve-s7d-deployment-candidate/account-configuration:
   en: a2f748b333fc900e
   zh: 294e75db0ac5a77d
@@ -29,3 +29,6 @@
 /powerevolve-s7d-deployment-candidate/physical-acceptance-gates:
   en: 3bc6ceca3e0f24ff
   zh: 4384d4139e889754
+/powerevolve-s7d-deployment-candidate/process-trial-backups:
+  en: c698594acf08e306
+  zh: 0b4c8e5031fa56f7

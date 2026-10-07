@@ -15,6 +15,8 @@ import { requireSeparateBackupPaths, verifyBackupPgTools, requireEmptyBackupData
   dumpBackupDatabase, restoreBackupDatabase } from '../scripts/backup-support.mjs'
 import { copyPosixTree, requireSkillPackageVersions, prepareRestoredSkillMounts,
   prepareRestoredExecutionMounts } from '../scripts/backup-posix.mjs'
+import { validateOfficeBackupSelection, readOfficeBackupSelection, officeBackupCensus, validateOfficeBackupCensus, captureOfficeBackup,
+  prepareRestoredOfficeBackup, writeRestoredOfficeBackup, verifyRestoredOfficeBackup } from '../scripts/backup-office.mjs'
 
 const { Client } = createRequire(new URL('../application/package.json', import.meta.url))('pg')
 const dataNames = ['workspaces', 'homes', 'skill-packages', 'artifacts']
@@ -38,7 +40,7 @@ function exact(value, keys) {
 
 /** Validate explicit physical roots, private URL file and expected database/role before any mutation. */
 export function validateDeploymentBackupConfig(config) {
-  if (!exact(config, ['format', 'scope', 'postgres', 'storageRoot', 'private', 'bundle', 'fenceFile'])
+  if (!exact(config, ['format', 'scope', 'postgres', 'storageRoot', 'private', 'bundle', 'fenceFile', 'officePreview'])
     || config.format !== 1 || !absolute(config.storageRoot) || !absolute(config.bundle) || !absolute(config.fenceFile)
     || !exact(config.postgres, ['urlFile', 'database', 'role', 'container', 'host', 'port', 'binDir', 'commandTimeoutMs'])
     || !absolute(config.postgres.urlFile) || typeof config.postgres.database !== 'string' || !config.postgres.database
@@ -47,6 +49,7 @@ export function validateDeploymentBackupConfig(config) {
     || !['ssh', 'remoteMcp', 'notesCa'].every(key => typeof config.private[key] === 'boolean')) {
     throw new Error('Invalid Deployment backup configuration')
   }
+  validateOfficeBackupSelection(config.officePreview)
   for (const key of ['container', 'host', 'port', 'binDir']) {
     if (config.postgres[key] !== undefined && (typeof config.postgres[key] !== 'string' || !config.postgres[key]
       || /[\u0000-\u001f\u007f]/u.test(config.postgres[key]))) throw new Error('Invalid backup PostgreSQL tools')
@@ -155,6 +158,10 @@ export async function createDeploymentBackup(config, io = deploymentBackupIO(con
   const { url, identity } = await database(config)
   const before = await inspectBackupState(Client, url)
   requireIdleBackupState(before)
+  const office = await readOfficeBackupSelection(config.officePreview, dataNames.map(name => join(config.storageRoot, name)))
+  if (office && office.settings.namespace !== config.scope.runnerNamespace) throw new Error('Office cache backup namespace differs from runner scope')
+  if (!office && officeBackupCensus(before).byteRecords) throw new Error('Recorded Office jobs require explicit cache backup configuration')
+  if (office) await requireSeparateBackupPaths([office.selection.cacheRoot], [config.bundle, config.fenceFile, config.postgres.urlFile, config.private.projectedRoot])
   if (before.sshRecords && !config.private.ssh || before.mcpRecords && !config.private.remoteMcp) {
     throw new Error('Backup must retain configured SSH/MCP credential material')
   }
@@ -173,13 +180,16 @@ export async function createDeploymentBackup(config, io = deploymentBackupIO(con
     dumpBackupDatabase(join(stage, 'database.dump'), url, pgEnv(config))
     await mkdir(join(stage, 'data'), { mode: 0o700 })
     for (const name of dataNames) await copyPosixTree(join(config.storageRoot, name), join(stage, 'data', name))
+    const officeCache = await captureOfficeBackup(office, stage, state)
     await requireDeploymentBackupStopped(fence, io)
-    requireIdleBackupState(await inspectBackupState(Client, url))
+    const after = await inspectBackupState(Client, url)
+    requireIdleBackupState(after)
+    if (!isDeepStrictEqual(officeBackupCensus(after), officeBackupCensus(state))) throw new Error('Office census changed during backup')
     const files = await inventoryBackupTree(stage)
-    await writeFile(join(stage, 'manifest.json'), JSON.stringify({ format: 3, kind: 'power-evolve-deployment-backup',
+    await writeFile(join(stage, 'manifest.json'), JSON.stringify({ format: 4, kind: 'power-evolve-deployment-backup',
       capturedAt: Date.now(), schema: state.schema, sourceDatabase: identity, sourceRole: config.postgres.role,
       sourceScope: config.scope, sourceStorageRoot: config.storageRoot, sourcePrivateRoot: config.private.projectedRoot,
-      sourceFence: fence, privateMaterial, packages: state.packages, files }, null, 2) + '\n', { mode: 0o600, flag: 'wx' })
+      sourceFence: fence, privateMaterial, packages: state.packages, officeCache, officeCensus: officeBackupCensus(state), files }, null, 2) + '\n', { mode: 0o600, flag: 'wx' })
     await rename(stage, config.bundle)
     return { bundle: config.bundle, schema: state.schema, files: files.length, keptStopped: true }
   } catch (error) { await rm(stage, { recursive: true, force: true }); throw error }
@@ -189,7 +199,7 @@ export async function createDeploymentBackup(config, io = deploymentBackupIO(con
 export async function restoreDeploymentBackup(config, io = deploymentBackupIO(config)) {
   validateDeploymentBackupConfig(config)
   const manifest = await readJson(join(config.bundle, 'manifest.json'))
-  if (manifest.format !== 3 || manifest.kind !== 'power-evolve-deployment-backup'
+  if (![3, 4].includes(manifest.format) || manifest.kind !== 'power-evolve-deployment-backup'
     || !Number.isInteger(manifest.schema) || manifest.schema < 18 || !Array.isArray(manifest.files) || !Array.isArray(manifest.packages)
     || !absolute(manifest.sourceStorageRoot) || !absolute(manifest.sourcePrivateRoot)
     || !/^[a-f0-9]{64}$/u.test(manifest.sourceDatabase?.cluster ?? '')
@@ -198,8 +208,21 @@ export async function restoreDeploymentBackup(config, io = deploymentBackupIO(co
   const files = (await inventoryBackupTree(config.bundle)).filter(file => file.path !== 'manifest.json')
   if (!isDeepStrictEqual(files, manifest.files)) throw new Error('Deployment backup integrity mismatch')
   await requireSeparateBackupPaths([config.storageRoot, config.private.projectedRoot],
-    [manifest.sourceStorageRoot, manifest.sourcePrivateRoot, config.bundle, config.postgres.urlFile, config.fenceFile])
+    [manifest.sourceStorageRoot, manifest.sourcePrivateRoot, config.bundle, config.postgres.urlFile, config.fenceFile,
+      ...(manifest.officeCache ? [manifest.officeCache.sourceCacheRoot] : [])])
   await requireSeparateBackupPaths([config.storageRoot], [config.private.projectedRoot])
+  if (manifest.format === 3 && (Object.hasOwn(manifest, 'officeCache') || Object.hasOwn(manifest, 'officeCensus'))) {
+    throw new Error('Legacy Deployment backup cannot contain new Office mappings')
+  }
+  if (manifest.format === 4 && (!Object.hasOwn(manifest, 'officeCache') || !Object.hasOwn(manifest, 'officeCensus'))) {
+    throw new Error('Deployment backup omits Office census or mapping')
+  }
+  if (manifest.format === 4) validateOfficeBackupCensus(manifest.officeCensus, manifest.officeCache)
+  const office = await readOfficeBackupSelection(config.officePreview, dataNames.map(name => join(config.storageRoot, name)))
+  if (office && office.settings.namespace !== config.scope.runnerNamespace) throw new Error('Office cache restore namespace differs from runner scope')
+  const officePrepared = await prepareRestoredOfficeBackup(manifest.officeCache, config.bundle, office,
+    [...dataNames.map(name => join(config.storageRoot, name)), config.private.projectedRoot,
+      config.postgres.urlFile, config.fenceFile, manifest.sourceStorageRoot, manifest.sourcePrivateRoot])
   if (await exists(config.storageRoot)) throw new Error('Restore storage root must be new')
   const prepared = await prepareRestoredDeploymentPrivate(manifest.privateMaterial, config.bundle, config.private.projectedRoot)
   if (!isDeepStrictEqual(manifest.privateMaterial.features,
@@ -222,10 +245,16 @@ export async function restoreDeploymentBackup(config, io = deploymentBackupIO(co
   await mkdir(config.storageRoot, { mode: 0o700 })
   for (const name of dataNames) await copyPosixTree(join(config.bundle, 'data', name), join(config.storageRoot, name))
   await writeRestoredDeploymentPrivate(prepared)
+  const officeRestored = await writeRestoredOfficeBackup(officePrepared)
   restoreBackupDatabase(join(config.bundle, 'database.dump'), url, pgEnv(config))
   const state = await inspectBackupState(Client, url)
   if (state.schema !== manifest.schema) throw new Error('Restored database schema differs from bundle')
   requireIdleBackupState(state)
+  if (manifest.format === 4 && !isDeepStrictEqual(officeBackupCensus(state), manifest.officeCensus)) {
+    throw new Error('Restored Office census differs; target remains stopped and partial')
+  }
+  await verifyRestoredOfficeBackup(manifest.officeCache, officeRestored, state)
+  await io.requireEmptyTargetNamespaces()
   await requireSkillPackageVersions(join(config.storageRoot, 'skill-packages'), state.packages)
   const client = new Client({ connectionString: url, connectionTimeoutMillis: 10000,
     statement_timeout: 5000, query_timeout: 6000, options: '-c default_transaction_read_only=on' })
@@ -242,7 +271,7 @@ export async function restoreDeploymentBackup(config, io = deploymentBackupIO(co
   await chmod(config.storageRoot, 0o755)
   const evidence = { sourceCapturedAt: manifest.capturedAt, schema: state.schema, restoredAt: Date.now(),
     sourceDatabase: manifest.sourceDatabase, targetDatabase: identity, targetScope: config.scope,
-    skillMountPermissionsRepaired, executionEntriesPrepared, keptStopped: true, readinessChecked: false }
+    skillMountPermissionsRepaired, executionEntriesPrepared, officeRestored, officeCensus: officeBackupCensus(state), keptStopped: true, readinessChecked: false }
   await writeFile(join(config.private.projectedRoot, 'restore-evidence.json'), JSON.stringify(evidence, null, 2) + '\n',
     { mode: 0o600, flag: 'wx' })
   return evidence

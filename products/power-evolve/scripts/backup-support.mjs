@@ -105,9 +105,9 @@ export async function runningBackupTargets(directory) {
 }
 
 /** Require independent cluster evidence after writers stop; a cleanup flag alone is insufficient. */
-export function requireNoKubernetesWriters({ sandbox, ssh, sshRequired = false }, run) {
+export function requireNoKubernetesWriters({ sandbox, ssh, office, sshRequired = false }, run) {
   if (sshRequired && !ssh) throw new Error('Quarantined SSH calls require SSH Connector Runner configuration for backup')
-  if (!sandbox && !ssh) return
+  if (!sandbox && !ssh && !office) return
   const list = (configuration, resource) => {
     if (typeof configuration.namespace !== 'string' || configuration.namespace.length > 63
       || !/^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$/u.test(configuration.namespace)
@@ -119,7 +119,7 @@ export function requireNoKubernetesWriters({ sandbox, ssh, sshRequired = false }
     if (!context || /[\u0000-\u001f\u007f]/u.test(context)) {
       throw new Error('Cannot verify Kubernetes writer current-context')
     }
-    const result = JSON.parse(run('kubectl', ['--kubeconfig', configuration.kubeconfigFile,
+    const result = JSON.parse(run('kubectl', [...(configuration === office ? ['--request-timeout=15s'] : []), '--kubeconfig', configuration.kubeconfigFile,
       '--context', context, '-n', configuration.namespace, 'get', resource, '-o', 'json']))
     if (!Array.isArray(result.items)) throw new Error('Cannot verify Kubernetes writer absence')
     return result.items
@@ -137,6 +137,10 @@ export function requireNoKubernetesWriters({ sandbox, ssh, sshRequired = false }
     if (pods.some(pod => /^pe-(cr|mcp)-/u.test(pod.metadata.name))) {
       throw new Error('Connector Runner Pods remain active during backup')
     }
+  }
+  if (office) {
+    if (!isAbsolute(office.kubeconfigFile ?? '')) throw new Error('Invalid Office preview kubeconfig')
+    if (list(office, 'pods').length) throw new Error('Office preview Pods remain during backup')
   }
 }
 

@@ -66,7 +66,7 @@ export function trialDataPath(layout, name) {
 }
 
 /**
- * Validate the source layout of legacy format 1 and explicit-layout format 2 backup manifests.
+ * Validate legacy and explicit storage layouts, including a separately placed Office cache.
  * @param {object} manifest - Parsed backup manifest.
  * @returns {string[]} Source roots that restore destinations must not overlap.
  */
@@ -74,10 +74,18 @@ export function backupSourceRoots(manifest) {
   if (!manifest || typeof manifest.sourceSharedRoot !== 'string' || !isAbsolute(manifest.sourceSharedRoot)
     || resolve(manifest.sourceSharedRoot) !== manifest.sourceSharedRoot) throw new Error('Unknown backup storage layout')
   if (manifest.format === 1 && !Object.hasOwn(manifest, 'storage')) return [manifest.sourceSharedRoot]
-  if (manifest.format !== 2) throw new Error('Unknown backup storage layout')
+  if (![2, 3].includes(manifest.format)) throw new Error('Unknown backup storage layout')
   const layout = storageLayout(manifest.storage)
   if (layout.sharedRoot !== manifest.sourceSharedRoot) throw new Error('Inconsistent backup storage layout')
-  return [layout.sharedRoot, layout.workspaceRoot, layout.artifactRoot, layout.skillLibraryRoot]
+  const roots = [layout.sharedRoot, layout.workspaceRoot, layout.artifactRoot, layout.skillLibraryRoot]
+  if (manifest.format === 3 && manifest.officeCache) {
+    const root = manifest.officeCache.sourceCacheRoot
+    if (typeof root !== 'string' || !isAbsolute(root) || resolve(root) !== root || root === '/') {
+      throw new Error('Invalid Office backup source root')
+    }
+    roots.push(root)
+  }
+  return roots
 }
 
 function requireUuid(value) {

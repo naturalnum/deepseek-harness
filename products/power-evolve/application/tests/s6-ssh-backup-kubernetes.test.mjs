@@ -7,6 +7,27 @@ import { join } from 'node:path'
 import test from 'node:test'
 import { requireNoKubernetesWriters } from '../../scripts/backup-support.mjs'
 
+test('Office backup requires explicit current-context and absence even for finished or deleting parser Pods', () => {
+  const office = { namespace: 'pe-office-backup-test', kubeconfigFile: '/synthetic/office-kubeconfig' }
+  let items = [], recorded = []
+  const run = (exe, args) => {
+    assert.equal(exe, 'kubectl'); recorded.push(args)
+    if (args[2] === 'config') return 'office-current'
+    assert.deepEqual(args, ['--request-timeout=15s', '--kubeconfig', office.kubeconfigFile, '--context', 'office-current', '-n', office.namespace, 'get', 'pods', '-o', 'json'])
+    return JSON.stringify({ items })
+  }
+  assert.doesNotThrow(() => requireNoKubernetesWriters({ office }, run))
+  assert.deepEqual(recorded[0], ['--kubeconfig', office.kubeconfigFile, 'config', 'current-context'])
+  for (const status of ['Running', 'Succeeded', 'Failed']) {
+    items = [{ metadata: { name: 'pe-op-fixture', deletionTimestamp: '2026-10-01T00:00:00Z' }, status: { phase: status } }]
+    assert.throws(() => requireNoKubernetesWriters({ office }, run), /Office preview Pods remain/u)
+  }
+  recorded = []
+  assert.throws(() => requireNoKubernetesWriters({ office: { ...office, kubeconfigFile: 'relative' } }, run), /Invalid Office preview/u)
+  assert.deepEqual(recorded, [])
+  assert.throws(() => requireNoKubernetesWriters({ office }, () => '{}'), /Cannot verify Kubernetes writer absence/u)
+})
+
 test('SSH-only backup checks its configured cluster and rejects live or terminating Runner Pods',
   { skip: process.platform === 'win32' && 'Trial backup requires POSIX executables' }, async t => {
     const directory = await mkdtemp(join(tmpdir(), 'pe-backup-kube-'))

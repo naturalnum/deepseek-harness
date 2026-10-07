@@ -80,7 +80,7 @@ kubectl --context LOCAL_CONTEXT -n LOCAL_NAMESPACE port-forward --address=127.0.
 
 操作员入口 [backup.mjs](backup.mjs) 先停止确定身份的 Host 和 Platform Deployment，再复制 PG、四个 POSIX 数据树及固定私有投影。将 [backup.example.json](backup.example.json) 复制为私有 `0600` 文件，替换作用域、摘要、数据库身份和路径。`storageRoot` 是操作员可见的挂载文件系统根；只有 Kubernetes 节点路径还不够。将 `private.projectedRoot` 物化为真实的 `0700` 目录和 `0600` 文件，保持产品固定投影路径。启用与部署一致的 SSH、MCP 和 Notes CA 开关。备份期间冻结部署／配置变更及外部文件写入者；另行保存部署 values，以便重建资源。
 
-`postgres.urlFile` 是私有 URL 文件；数据库和角色须与 Node／libpq 实际连接一致。可选 `container` 选择已有 PG 工具容器；`host`、`port` 和 `binDir` 选择其传输或本机工具。`commandTimeoutMs` 默认 900000，接受 1000–3600000。角色需要预检使用的身份／目录读取权限。凭据不进入工具参数或错误输出。正式入口要求已构建的产品验证模块，记录格式 3 的 bundle；进程试用入口继续负责格式 1 和 2。
+`postgres.urlFile` 是私有 URL 文件；数据库和角色须与 Node／libpq 实际连接一致。可选 `container` 选择已有 PG 工具容器；`host`、`port` 和 `binDir` 选择其传输或本机工具。`commandTimeoutMs` 默认 900000，接受 1000–3600000。角色需要预检使用的身份／目录读取权限。凭据不进入工具参数或错误输出。正式入口要求已构建的产品验证模块，写入格式 4 的 bundle，并读取格式 3 和 4；进程试用入口写入格式 3，读取格式 1–3。
 
 ```sh
 node products/power-evolve/deploy/backup.mjs create /private/path/source.json
@@ -89,6 +89,12 @@ node products/power-evolve/deploy/backup.mjs restore /private/path/target.json
 ```
 
 Create 保存停写意图和原 UID／spec／副本数，先停止 Host 再停止 Platform，要求 PG 工作已结束且无执行写入者。待审批继续保持待审批。结果不明的请求通过读回对账，不自动重放或恢复写入者。显式 `resume` 恢复源副本数；就绪状态另行验收。重试前检查私有围栏；遗留 `.lock` 只有确认记录的进程已退出后才可删除。
+
+配置 Office 预览时，将 `officePreview` 设为 `{ "configFile": "/private/path/office-preview.json", "cacheRoot": "/mnt/power-evolve/office-previews" }`；否则省略或使用 `null`。两个路径必须显式、真实，且与受保护数据、私有投影及 bundle 分离。来源配置须匹配其 `localRoot` 和运行器命名空间。Bundle 保留原私有配置、完整缓存清单、原输入／结果／PDF 字节及 Office 任务记录摘要。Create 拒绝活跃任务、占用的解析器 slot 和任何遗留解析器 Pod，包括已完成或正在删除的 Pod；任务终态本身不能证明已停机。
+
+目标自行提供与原始根、bundle 及新数据／私有投影分离的私有 Office 配置，以及尚不存在的真实缓存根。Restore 在复制前和 PG 恢复后检查目标解析器 Pod 不存在。只有 `namespace`、`volumeClaimName`、`volumeSubPath` 和 `localRoot` 可以与来源配置不同；目标命名空间须匹配运行器作用域。Restore 复制原缓存字节，在报告成功前根据实际恢复的数据库核验其 PG 绑定。配置位置变化会改变 provider generation：旧结果字节仍被保留，但当前预览 API 可能拒绝历史 generation。重新转换是新请求，不能证明历史输出已恢复。
+
+旧 bundle 没有 Office 任务记录摘要。`pg_restore` 后，若已受理的 Office 记录需要未收录的缓存字节，Restore 会在报告成功或启动前拒绝。目标保持停止和部分恢复状态；先检查现场，再用新目标操作，不可盲目重放恢复。仅取消占位或 Office 引入前的记录不需要缓存字节。
 
 Restore 在修改前校验字节、独立根／命名空间及独立空库。它保留密钥字节和历史 Skill 版本，准备执行目录所有权，并保持目标停止。目标自行提供数据库 URL；来源 URL、`model.env`、生成的 Profile 和运行中进程不被恢复。失败的部分目标保持停止：检查现场，准备新的空目标后再试。从已审阅的目标 values 重建 Secret／资源，再进行部署及双用户验收。[本机恢复记录](QA-RELEASE-COMPOSITION.md#formal-image-stopped-backup-and-data-restore) 区分字节恢复与应用就绪。
 
@@ -152,3 +158,7 @@ SSH 目标非空时，在现有 Platform Secret 中提供 `ssh-credential-key`�
 5. 确认 NFS 权限、容量、备份与恢复、卷隔离、gVisor 与 PVC `subPath` 的兼容性、每个节点的镜像拉取，以及真实节点故障下的滚动更新与回滚行为。
 
 本地 k3d 双节点 S7b 演练共用一台物理主机，不能满足这些条件。此模板不部署公共模型网关、受控连接器 API 或桌面 Device 服务；须提供已配置的模型与连接器 HTTPS endpoint。可选进程连接器使用上文所述的独立命名空间。不得仅凭渲染后的 YAML 或本地演练结果将此候选配置提升为生产部署。
+
+## 进程试用备份
+
+进程入口 [backup-trial.mjs](../scripts/backup-trial.mjs) 使用 `create|restore`，显式提供 `PE_BACKUP_BUNDLE`、`PE_TRIAL_NAME` 和 `PE_PRIVATE_DIR`。启用 Office 时同时提供绝对路径 `PE_BACKUP_OFFICE_CONFIG_FILE` 和 `PE_BACKUP_OFFICE_CACHE_ROOT`，并提供 `PE_BACKUP_OFFICE_KUBECONFIG_FILE`，从该文件的当前 context 获取独立 Pod 不存在证据。恢复使用目标配置和位置，约束与应用备份一致。Office 恢复须设置 `PE_BACKUP_KEEP_STOPPED=1`；进程启动入口不会传递 Office 配置。另行重建已审阅的部署配置并验收就绪状态。Create 也设置此标志，使来源在复制期间及之后保持停止。

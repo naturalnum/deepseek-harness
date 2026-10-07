@@ -29,7 +29,7 @@ export async function inventoryBackupTree(directory) {
 /** Inspect schema 18+ work and package metadata through one read-only PostgreSQL connection.
  * @param Client PostgreSQL Client constructor supplied by the caller.
  * @param url Private PostgreSQL connection URL, excluded from all diagnostics.
- * @returns The trial's schema, active counts, package rows and MCP/SSH history counts.
+ * @returns Schema, active counts, package rows, Office census and MCP/SSH history counts.
  */
 export async function inspectBackupState(Client, url) {
   let client
@@ -78,12 +78,15 @@ export async function inspectBackupState(Client, url) {
       active.rows[0].cloudResolutions = (await query(
         "SELECT count(*)::integer AS n FROM pe_cloud_execution_resolutions WHERE state IN ('accepted','stopping')")).rows[0].n
     }
+    let officeJobs = []
     if (schema.rows[0]?.version >= 32) {
       active.rows[0].officePreviews = (await query(`SELECT count(*)::integer AS n FROM pe_office_preview_jobs
         WHERE state IN ('queued','creating','running','stopping','blocked') OR parser_slot IS NOT NULL`)).rows[0].n
+      officeJobs = (await query(`SELECT id,state,source_snapshot,converter_snapshot,result,worker_observation,stop_evidence
+        FROM pe_office_preview_jobs ORDER BY id`)).rows
     }
     const packages = await query('SELECT user_id,archive_digest,manifest_digest,manifest FROM pe_skill_package_versions')
-    return { schema: schema.rows[0]?.version, active: active.rows[0], packages: packages.rows,
+    return { schema: schema.rows[0]?.version, active: active.rows[0], packages: packages.rows, officeJobs,
       mcpRecords: Number(mcpRecords), sshRecords: Number(ssh.records), sshQuarantined: Number(ssh.quarantined) }
   } catch (_stateError) { throw new Error('Cannot inspect backup PostgreSQL state') }
   finally {
@@ -101,6 +104,6 @@ export function requireIdleBackupState(state) {
     || Object.values(state.active).some(count => count !== 0)) {
     const connector = state.active.connectorActions > 0
       ? '; connector work must settle or reconcile before backup' : ''
-    throw new Error(`Backup requires schema 18+ with no active operations, Runner calls, connector/desktop work or MCP discovery/dispatch${connector}`)
+    throw new Error(`Backup requires schema 18+ with no active operations, Runner calls, connector/desktop work, MCP discovery/dispatch or Office parser work${connector}`)
   }
 }

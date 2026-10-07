@@ -20,6 +20,7 @@
     "remoteMcp": false,
     "notesCa": false
   },
+  "officePreview": null,
   "bundle": "/private/power-evolve/backups/source-a",
   "fenceFile": "/private/power-evolve/source-fence.json"
 }

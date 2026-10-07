@@ -11,6 +11,8 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { backupSourceRoots, copyPosixTree, prepareRestoredExecutionMounts, prepareRestoredSkillMounts,
   requireSkillPackageVersions, resolveTrialStorage, trialDataPath } from './backup-posix.mjs'
 import { inspectBackupState, inventoryBackupTree, requireIdleBackupState } from './backup-state.mjs'
+import { validateOfficeBackupSelection, readOfficeBackupSelection, officeBackupCensus, validateOfficeBackupCensus, captureOfficeBackup,
+  prepareRestoredOfficeBackup, writeRestoredOfficeBackup, verifyRestoredOfficeBackup } from './backup-office.mjs'
 import { backupDatabaseIdentity, requireEmptyBackupDatabase, requireSeparateBackupPaths,
   runningBackupTargets, requireNoKubernetesWriters, verifyBackupPgTools, dumpBackupDatabase, restoreBackupDatabase,
   captureBackupMcpConfiguration, prepareRestoredMcpConfiguration, writeRestoredMcpConfiguration } from './backup-support.mjs'
@@ -43,6 +45,13 @@ const trialOutput = join(root, '.artifacts/power-evolve', trialName === 'slice1'
 const secretNames = ['users.json', 'worker-token', 'connector-key', 'model-key', 'model.env',
   'runner-key', 'ssh-credential-key', 'account-management.json', 'account-bootstrap.json']
 const dataNames = ['workspaces', 'homes', 'skill-packages', 'artifacts']
+const officeSelection = process.env.PE_BACKUP_OFFICE_CONFIG_FILE || process.env.PE_BACKUP_OFFICE_CACHE_ROOT
+  ? validateOfficeBackupSelection({ configFile: process.env.PE_BACKUP_OFFICE_CONFIG_FILE,
+    cacheRoot: process.env.PE_BACKUP_OFFICE_CACHE_ROOT }) : null
+const officeKubeconfig = process.env.PE_BACKUP_OFFICE_KUBECONFIG_FILE
+if (officeSelection && (!isAbsolute(officeKubeconfig ?? '') || resolve(officeKubeconfig) !== officeKubeconfig)) {
+  throw new Error('Office backup requires explicit absolute PE_BACKUP_OFFICE_KUBECONFIG_FILE')
+}
 const trialScript = join(root, 'products/power-evolve/scripts/trial.mjs')
 const prepareScript = join(root, 'products/power-evolve/scripts/prepare-trial.mjs')
 const composeFiles = ['-f', 'products/power-evolve/compose.yaml',
@@ -92,6 +101,8 @@ async function waitStableDatabase(url) {
 if (command === 'create') {
   if (await exists(bundlePath)) throw new Error('Backup destination already exists')
   const { sandbox, shared, storage } = await roots(true)
+  const office = await readOfficeBackupSelection(officeSelection, dataNames.map(name => trialDataPath(storage, name)))
+  if (office) await requireSeparateBackupPaths([office.selection.cacheRoot], [bundlePath, privatePath])
   await requireSeparateBackupPaths([bundlePath], [privatePath, ...dataNames.map(name => trialDataPath(storage, name))])
   if (!(await exists(trialDataPath(storage, 'skill-packages')))?.isDirectory()) {
     throw new Error('Prepared Skill package storage is missing')
@@ -113,7 +124,8 @@ if (command === 'create') {
     const status = await inspectBackupState(Client, databaseUrl)
     requireIdleBackupState(status)
     const ssh = await exists(join(privatePath, 'ssh.json')) ? await json(join(privatePath, 'ssh.json')) : null
-    requireNoKubernetesWriters({ sandbox, ssh, sshRequired: status.sshQuarantined > 0 }, run)
+    const officeScope = office ? { namespace: office.settings.namespace, kubeconfigFile: officeKubeconfig } : null
+    requireNoKubernetesWriters({ sandbox, ssh, office: officeScope, sshRequired: status.sshQuarantined > 0 }, run)
     if (status.sshRecords && !(await exists(join(privatePath, 'ssh-credential-key')))?.isFile()) {
       throw new Error('Existing SSH history requires its credential key for backup')
     }
@@ -138,12 +150,19 @@ if (command === 'create') {
     if (!['users.json', 'worker-token', 'connector-key', 'model-key', 'model.env']
       .every(name => included.includes(name))) throw new Error('Required private configuration missing')
     const remoteMcp = await captureBackupMcpConfiguration(process.env.PE_REMOTE_MCP_CONFIG_FILE, stage)
+    const officeCache = await captureOfficeBackup(office, stage, status)
+    requireNoKubernetesWriters({ sandbox, ssh, office: officeScope, sshRequired: status.sshQuarantined > 0 }, run)
+    const after = await inspectBackupState(Client, databaseUrl)
+    requireIdleBackupState(after)
+    if (JSON.stringify(officeBackupCensus(after)) !== JSON.stringify(officeBackupCensus(status))) {
+      throw new Error('Office census changed during backup')
+    }
     const files = await inventoryBackupTree(stage)
     const capturedAt = Date.now()
-    await writeFile(join(stage, 'manifest.json'), `${JSON.stringify({ format: 2, sourceTrial: trialName,
+    await writeFile(join(stage, 'manifest.json'), `${JSON.stringify({ format: 3, sourceTrial: trialName,
       schema: status.schema, startedAt, stoppedAt, capturedAt, sourceSharedRoot: shared,
       sourcePrivateRoot: privatePath, sourceDatabase, ...(remoteMcp ? { remoteMcp } : {}),
-      storage, configFiles: included, files }, null, 2)}\n`, { mode: 0o600, flag: 'wx' })
+      storage, configFiles: included, officeCache, officeCensus: officeBackupCensus(status), files }, null, 2)}\n`, { mode: 0o600, flag: 'wx' })
     await rename(stage, bundlePath)
     console.log(`Backup ready; writer freeze ${capturedAt - stoppedAt} ms; bundle ${bundlePath}`)
   } catch (error) {
@@ -179,10 +198,26 @@ if (command === 'create') {
     throw new Error('Backup integrity check failed before restore')
   }
   const { shared, sandbox, storage } = await roots()
+  if (manifest.format < 3 && (Object.hasOwn(manifest, 'officeCache') || Object.hasOwn(manifest, 'officeCensus'))) {
+    throw new Error('Legacy trial backup cannot contain new Office mappings')
+  }
+  if (manifest.format === 3 && (!Object.hasOwn(manifest, 'officeCache') || !Object.hasOwn(manifest, 'officeCensus'))) {
+    throw new Error('Trial backup omits Office census or mapping')
+  }
+  if (manifest.format === 3) validateOfficeBackupCensus(manifest.officeCensus, manifest.officeCache)
+  if ((manifest.officeCache || officeSelection) && !keepStopped) {
+    throw new Error('Office restore requires PE_BACKUP_KEEP_STOPPED=1; enable reviewed deployment settings separately')
+  }
+  const office = await readOfficeBackupSelection(officeSelection, dataNames.map(name => trialDataPath(storage, name)))
+  const officePrepared = await prepareRestoredOfficeBackup(manifest.officeCache, bundlePath, office,
+    [privatePath, ...dataNames.map(name => trialDataPath(storage, name)), ...sourceRoots,
+      ...(manifest.sourcePrivateRoot ? [manifest.sourcePrivateRoot] : [])])
   const targetRoots = [privatePath, shared, ...dataNames.map(name => trialDataPath(storage, name))]
   await requireSeparateBackupPaths(targetRoots,
     [...sourceRoots, bundlePath, ...(manifest.sourcePrivateRoot ? [manifest.sourcePrivateRoot] : [])])
   if ((await runningBackupTargets(join(trialOutput, 'trial'))).length) throw new Error('Restore target has live trial writers')
+  const officeScope = office ? { namespace: office.settings.namespace, kubeconfigFile: officeKubeconfig } : null
+  requireNoKubernetesWriters({ office: officeScope }, run)
   for (const name of dataNames) {
     const target = trialDataPath(storage, name)
     const current = await exists(target)
@@ -236,6 +271,7 @@ if (command === 'create') {
       { mode: 0o600, flag: 'wx' })
   }
   const remoteMcpConfigFile = await writeRestoredMcpConfiguration(mcpPrepared)
+  const officeRestored = await writeRestoredOfficeBackup(officePrepared)
   if (remoteMcpConfigFile) process.env.PE_REMOTE_MCP_CONFIG_FILE = remoteMcpConfigFile
   if (databaseMode === 'compose') {
     run(process.execPath, [prepareScript])
@@ -249,6 +285,12 @@ if (command === 'create') {
   restoreBackupDatabase(join(bundlePath, 'database.dump'), targetUrl, pgEnv)
   const restored = await inspectBackupState(Client, (await readFile(join(privatePath, 'database-url'), 'utf8')).trim())
   if (restored.schema !== manifest.schema) throw new Error('Restored database schema differs from the source snapshot')
+  requireIdleBackupState(restored)
+  if (manifest.format === 3 && JSON.stringify(officeBackupCensus(restored)) !== JSON.stringify(manifest.officeCensus)) {
+    throw new Error('Restored Office census differs; target remains stopped and partial')
+  }
+  await verifyRestoredOfficeBackup(manifest.officeCache, officeRestored, restored)
+  requireNoKubernetesWriters({ office: officeScope }, run)
   if (restored.mcpRecords && !remoteMcpConfigFile) {
     throw new Error('Restored MCP history requires its operator configuration and credential key')
   }
@@ -278,7 +320,8 @@ if (command === 'create') {
     restoredTrial: trialName, startedAt, restoredAt, readyAt, rtoToHealthMs: keepStopped ? null : readyAt - startedAt,
     keptStopped: keepStopped, ...(remoteMcpConfigFile ? { remoteMcpConfigFile } : {}),
     sourceCapturedAt: manifest.capturedAt, schemaBeforeStartup: restored.schema,
-    schemaAfterStartup: ready.schema, skillMountPermissionsRepaired, executionEntriesPrepared }, null, 2)}\n`,
+    schemaAfterStartup: ready.schema, skillMountPermissionsRepaired, executionEntriesPrepared,
+    officeRestored, officeCensus: officeBackupCensus(restored) }, null, 2)}\n`,
   { mode: 0o600, flag: 'wx' })
   console.log(`Restored trial ${trialName}: schema ${restored.schema} -> ${ready.schema}; ${keepStopped
     ? 'kept stopped; health not checked' : `health RTO ${readyAt - startedAt} ms`}`)

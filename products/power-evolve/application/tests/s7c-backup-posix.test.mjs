@@ -47,13 +47,20 @@ test('Sandbox storage and legacy backup data map to the same shared mount', asyn
   assert.deepEqual(backupSourceRoots({ format: 1, sourceSharedRoot: shared }), [shared])
   assert.deepEqual(backupSourceRoots({ format: 2, sourceSharedRoot: shared, storage: layout }),
     [shared, sandbox.workspaceRoot, join(privateDir, 'artifacts'), shared])
+  const office = join(root, 'office-cache')
+  assert.deepEqual(backupSourceRoots({ format: 3, sourceSharedRoot: shared, storage: layout,
+    officeCache: { sourceCacheRoot: office } }), [shared, sandbox.workspaceRoot, join(privateDir, 'artifacts'), shared, office])
+  assert.deepEqual(backupSourceRoots({ format: 3, sourceSharedRoot: shared, storage: layout, officeCache: null }),
+    [shared, sandbox.workspaceRoot, join(privateDir, 'artifacts'), shared])
   for (const manifest of [
     { format: 3, sourceSharedRoot: shared },
     { format: 1, sourceSharedRoot: shared, storage: layout },
     { format: 2, sourceSharedRoot: shared, storage: { ...layout, format: 2 } },
     { format: 2, sourceSharedRoot: shared, storage: { ...layout, extra: true } },
     { format: 2, sourceSharedRoot: join(root, 'other'), storage: layout },
-  ]) assert.throws(() => backupSourceRoots(manifest), /backup storage|trial storage/)
+    ...['relative', '/', `${root}/cache/..`].map(sourceCacheRoot =>
+      ({ format: 3, sourceSharedRoot: shared, storage: layout, officeCache: { sourceCacheRoot } })),
+  ]) assert.throws(() => backupSourceRoots(manifest), /backup storage|trial storage|Office backup source root/)
 })
 
 test('backup and restore preserve relative symlink text, file modes and bytes', async t => {

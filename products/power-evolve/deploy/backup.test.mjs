@@ -41,10 +41,26 @@ test('deployment configuration rejects inline secrets, implicit roots and ambigu
     value => { value.private.remoteMcp = 'true' }, value => { value.scope.runnerNamespace = value.scope.namespace },
     value => { value.scope.appImage = 'registry/app:latest' }, value => { value.scope.context = 'context\nother' },
     value => { value.postgres.commandTimeoutMs = 0 }, value => { value.postgres.commandTimeoutMs = '1000' },
+    value => { value.officePreview = { configFile: '/synthetic/config.json', cacheRoot: 'relative' } },
   ]) {
     const bad = structuredClone(good); edit(bad)
     assert.throws(() => validateDeploymentBackupConfig(bad), /Invalid/)
   }
+})
+
+test('new Deployment format requires a complete Office census before restore mutation; legacy cannot hide new mappings', async t => {
+  for (const edit of [
+    manifest => { manifest.format = 4 },
+    manifest => { manifest.format = 4; manifest.officeCache = null; manifest.officeCensus = { records: 1, byteRecords: 1, sha256: 'a'.repeat(64) } },
+    manifest => { manifest.officeCache = null; manifest.officeCensus = { records: 0, byteRecords: 0, sha256: 'a'.repeat(64) } },
+  ]) await t.test('invalid Office metadata', async t => {
+    const root = await temporary(t), values = config(root), manifest = await bundle(values, root)
+    edit(manifest)
+    await writeFile(join(values.bundle, 'manifest.json'), JSON.stringify(manifest), { mode: 0o600 })
+    await assert.rejects(restoreDeploymentBackup(values, noInfrastructure), /Office|Invalid Office/u)
+    await assert.rejects(readFile(values.postgres.urlFile), { code: 'ENOENT' })
+    await assert.rejects(readFile(join(values.private.projectedRoot, 'worker-token')), { code: 'ENOENT' })
+  })
 })
 
 test('altered dump bytes fail before any target directory, credential read or Kubernetes access', async t => {
