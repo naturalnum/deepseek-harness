@@ -9,10 +9,12 @@ import { stdioActionRequestV2, stdioApprovalBindingV2, stdioApprovalRequestV2, s
   type StdioPreparedV2, type StdioTaskV2 } from '@power-evolve/contracts/stdio-mcp'
 import { stdioApprovalFingerprintV2, stdioCatalogFingerprintV2, stdioSha256V2,
   type StdioDigestDomainV2 } from '@power-evolve/connector-runner/stdio-v2-digest'
+import { stdioActionLeaseV2, type StdioActionLeaseV2 } from '@power-evolve/contracts/stdio-runtime'
 import { accountUserId } from '../account-contracts.ts'
 import { PlatformError, type UserId } from '../contracts.ts'
 import { assertActiveAccount, lockAccountAuthorities, requireBrowserAccount } from './account-authority.ts'
 import { transaction } from './database.ts'
+import { assertStdioActionLeaseV2 } from './stdio-v2-leases.ts'
 
 /** Trusted deployment configuration; capture observes resources and rechecks their original live grants. */
 export interface StdioAuthorizationOptionsV2 {
@@ -100,6 +102,15 @@ export class StdioAuthorizationServiceV2 {
   private deny(code: string): never { throw new PlatformError(409, code) }
   private async clock(client: PoolClient) {
     return z.date().parse((await client.query('SELECT clock_timestamp() AS now')).rows[0]?.now)
+  }
+  private async guard(client: PoolClient, lease?: StdioActionLeaseV2): Promise<void> {
+    if (lease) await assertStdioActionLeaseV2(client, lease)
+  }
+  private async write(client: PoolClient, lease: StdioActionLeaseV2 | undefined, sql: string, values: readonly unknown[]): Promise<void> {
+    await this.guard(client, lease)
+    const changed = await client.query(sql, [...values])
+    if (changed.rowCount !== 1) this.deny('stdio_v2_record_invalid')
+    await this.guard(client, lease)
   }
   private async hint(client: PoolClient, actionId: StdioActionIdV2) {
     const row = (await client.query('SELECT user_id,session_id,connection_id FROM pe_stdio_v2_actions WHERE id=$1', [actionId])).rows[0]
@@ -216,15 +227,29 @@ export class StdioAuthorizationServiceV2 {
    * @returns Private original preparation after transaction commit; this method never starts or stops resources.
    */
   async prepare(actionId: StdioActionIdV2): Promise<StdioPreparationViewV2> {
+    return this.prepareOriginal(actionId)
+  }
+
+  /** Freeze observations only while the original Cloud worker generation remains live.
+   * @param lease Original claimed action, worker and epoch, rechecked before and after capture and every write.
+   * @returns The immutable first preparation; lease loss rolls back and never replaces a captured writer.
+   */
+  async prepareLeased(lease: StdioActionLeaseV2): Promise<StdioPreparationViewV2> {
+    const selected = stdioActionLeaseV2.parse(lease)
+    return this.prepareOriginal(selected.actionId, selected)
+  }
+  private async prepareOriginal(actionId: StdioActionIdV2, lease?: StdioActionLeaseV2): Promise<StdioPreparationViewV2> {
     const id = stdioActionRequestV2.parse({ actionId }).actionId
     return transaction(this.pool, async client => {
       const hint = await this.hint(client, id)
       const account = (await lockAccountAuthorities(client, [hint.user_id], 'update'))[0]!
       assertActiveAccount(account)
       const original = await this.locked(client, id, account.userId)
+      await this.guard(client, lease)
       await this.live(client, original)
       const existing = await this.preparation(client, original)
       const fresh = this.validatePrepared(original, await this.options.capture(client, original.task, original.executionRef))
+      await this.guard(client, lease)
       if (existing) {
         if (!this.same(existing.prepared, fresh)) this.deny('stdio_v2_capture_changed')
         return existing
@@ -235,13 +260,13 @@ export class StdioAuthorizationServiceV2 {
         preparedDigest: this.sha('prepared', fresh), approvalEpoch: 1,
         expiresAt: new Date(now.getTime() + this.options.approvalLifetimeMs).toISOString() })
       const fingerprint = stdioApprovalFingerprintV2(this.key, binding, this.budget())
-      await client.query(`INSERT INTO pe_stdio_v2_preparations
+      await this.write(client, lease, `INSERT INTO pe_stdio_v2_preparations
         (action_id,user_id,session_id,phase,execution_target,execution_id,task_digest,prepared,prepared_digest,
          approval_binding,fingerprint,approval_epoch,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,1,$12)`,
       [id, account.userId, original.action.session_id, original.action.phase, original.executionRef.kind,
         original.executionRef.executionId, binding.taskDigest, JSON.stringify(fresh), binding.preparedDigest,
         JSON.stringify(binding), fingerprint, binding.expiresAt])
-      await client.query("UPDATE pe_stdio_v2_actions SET state='pending',updated_at=clock_timestamp() WHERE id=$1", [id])
+      await this.write(client, lease, "UPDATE pe_stdio_v2_actions SET state='pending',updated_at=clock_timestamp() WHERE id=$1", [id])
       return { prepared: fresh, taskDigest: binding.taskDigest, preparedDigest: binding.preparedDigest,
         fingerprint, approvalEpoch: 1, expiresAt: binding.expiresAt }
     })
@@ -307,12 +332,29 @@ export class StdioAuthorizationServiceV2 {
    */
   async authorize(actionId: StdioActionIdV2, requestId: z.infer<typeof stdioReceiptRequestV2>['requestId'],
     owner: z.infer<typeof stdioExecutorOwnerV2>): Promise<z.infer<typeof stdioStartAuthorizationV2>> {
+    return this.authorizeOriginal(actionId, requestId, owner)
+  }
+
+  /** Authorize only the live original worker; a takeover can query an existing permit but cannot replay its true grant.
+   * @param lease Current original action worker and epoch, fenced around capture and every durable start-intent write.
+   * @param requestId Original authorization receipt identity; replacement IDs never reissue start authority.
+   * @param owner Authenticated original executor identity, compared against its immutable private capture.
+   * @returns Sole true authorization after commit, or the original false receipt on every existing-permit readback.
+   */
+  async authorizeLeased(lease: StdioActionLeaseV2, requestId: z.infer<typeof stdioReceiptRequestV2>['requestId'],
+    owner: z.infer<typeof stdioExecutorOwnerV2>): Promise<z.infer<typeof stdioStartAuthorizationV2>> {
+    const selected = stdioActionLeaseV2.parse(lease)
+    return this.authorizeOriginal(selected.actionId, requestId, owner, selected)
+  }
+  private async authorizeOriginal(actionId: StdioActionIdV2, requestId: z.infer<typeof stdioReceiptRequestV2>['requestId'],
+    owner: z.infer<typeof stdioExecutorOwnerV2>, lease?: StdioActionLeaseV2): Promise<z.infer<typeof stdioStartAuthorizationV2>> {
     const id = stdioActionRequestV2.parse({ actionId }).actionId
     const request = stdioReceiptRequestV2.parse({ requestId }), caller = stdioExecutorOwnerV2.parse(owner)
     return transaction(this.pool, async client => {
       const hint = await this.hint(client, id)
       const account = (await lockAccountAuthorities(client, [hint.user_id], 'update'))[0]!
       const original = await this.locked(client, id, account.userId), prepared = await this.preparation(client, original)
+      await this.guard(client, lease)
       if (!prepared) this.deny('stdio_v2_not_prepared')
       if (!this.same(caller, this.owner(prepared.prepared))) throw new PlatformError(403, 'stdio_v2_executor_owner_changed')
       const decision = await this.decision(client, original, prepared)
@@ -328,6 +370,7 @@ export class StdioAuthorizationServiceV2 {
           || p.issuedAt !== row.issued_at.toISOString() || !this.same(p.executionRef, original.executionRef)
           || !this.same(row.executor_owner, caller) || !this.same(p.executorOwner, caller)) this.deny('stdio_v2_permit_changed')
         await this.checkDispatch(client, original, prepared, p)
+        await this.guard(client, lease)
         return stdioStartAuthorizationV2.parse({ grantOnce: false, permit: p })
       }
       assertActiveAccount(account)
@@ -337,6 +380,7 @@ export class StdioAuthorizationServiceV2 {
         this.deny('stdio_v2_not_approved_or_expired')
       }
       const fresh = this.validatePrepared(original, await this.options.capture(client, original.task, original.executionRef))
+      await this.guard(client, lease)
       if (!this.same(fresh, prepared.prepared)) this.deny('stdio_v2_capture_changed')
       const issued = await this.clock(client)
       if (issued.getTime() >= Date.parse(prepared.expiresAt)) this.deny('stdio_v2_approval_expired_or_closed')
@@ -346,14 +390,14 @@ export class StdioAuthorizationServiceV2 {
         executorOwner: caller, approvalFingerprint: prepared.fingerprint, issuedAt: issued.toISOString() })
       const dispatch = stdioDispatchV2(this.limits).parse({ formatVersion: 2, task: original.task, taskDigest: prepared.taskDigest,
         executionRef: original.executionRef, preparedDigest: prepared.preparedDigest, permit })
-      await client.query(`INSERT INTO pe_stdio_v2_start_permits
+      await this.write(client, lease, `INSERT INTO pe_stdio_v2_start_permits
         (action_id,permit_id,authorization_request_id,execution_id,task_digest,prepared_digest,fingerprint,
          decision,executor_owner,permit,issued_at,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,'once',$8,$9,$10,$11)`,
       [id, permit.permitId, request.requestId, original.executionRef.executionId, prepared.taskDigest, prepared.preparedDigest,
         prepared.fingerprint, JSON.stringify(caller), JSON.stringify(permit), permit.issuedAt, permit.expiresAt])
-      await client.query('INSERT INTO pe_stdio_v2_dispatches(action_id,dispatch,dispatch_digest) VALUES($1,$2,$3)',
+      await this.write(client, lease, 'INSERT INTO pe_stdio_v2_dispatches(action_id,dispatch,dispatch_digest) VALUES($1,$2,$3)',
         [id, JSON.stringify(dispatch), this.sha('dispatch', dispatch)])
-      await client.query("UPDATE pe_stdio_v2_actions SET state='dispatch-intent',updated_at=clock_timestamp() WHERE id=$1", [id])
+      await this.write(client, lease, "UPDATE pe_stdio_v2_actions SET state='dispatch-intent',updated_at=clock_timestamp() WHERE id=$1", [id])
       return stdioStartAuthorizationV2.parse({ grantOnce: true, permit })
     })
   }
