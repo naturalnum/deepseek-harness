@@ -4,8 +4,8 @@ import { createHash, randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { DatabaseSync } from 'node:sqlite'
 import test from 'node:test'
-import { DeviceService } from '../src/platform/devices.ts'
-import { captureDeviceResolutionSnapshot } from '../src/platform/device-execution-resolution-types.ts'
+import { DeviceService } from '../lib/platform/devices.js'
+import { captureDeviceResolutionSnapshot } from '../lib/platform/device-execution-resolution-types.js'
 
 const hash = value => createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex')
 const jsonFields = new Set(['settings', 'skill_selection', 'execution_target', 'remote_mcp_selection',
