@@ -105,7 +105,7 @@ export class KubernetesClient {
           if (size > maxResponseBytes) {
             const error = new Error('Kubernetes response exceeds limit')
             reject(error)
-            request.destroy(error)
+            request.destroy()
             return
           }
           chunks.push(chunk)
@@ -121,7 +121,7 @@ export class KubernetesClient {
       request.once('timeout', () => {
         const error = new Error('Kubernetes request timed out')
         reject(error)
-        request.destroy(error)
+        request.destroy()
       })
       request.once('error', reject)
       if (payload !== undefined) request.write(payload)

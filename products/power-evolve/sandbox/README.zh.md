@@ -75,4 +75,4 @@ docker run --rm --user 1000:1000 --read-only \
 
 降权 helper 核验 cwd 后，SDK 以 UID/GID1000 及仅 HOME、PATH、LANG 的环境启动字面程序。通用执行与原命令执行共用一个写入运行锁。独立 Linux helper 确认全部 UID1000 写入进程停止后，runtime 才发布完成状态；清理失败产生 `unknown` 并保留运行锁。完整响应超限会发布失败及效果事实，不截断成功结果。关闭时先停止受理，再等待执行和独立清理；清理未确认则非零退出，持久写者释放仍须容器外 Pod 停止证据。
 
-需显式启用的 `application/tests/stdio-v2-runtime-docker.test.mjs` 从 `PE_STDIO_RUNTIME_BASE_IMAGE` 构建私有增量镜像，以无网络、只读根及 root 所有的 Linux 令牌卷运行，并准确删除测试标记资源。测试使用真实 Docker、HTTP、SDK 服务及 UID 清理；平台许可和注册表／Kubernetes 镜像观察明确为替身。产品 worker、结果持久化及原生双用户验收仍需后续集成。
+需显式启用的 `application/tests/stdio-v2-runtime-docker.test.mjs` 从 `PE_STDIO_RUNTIME_BASE_IMAGE` 构建私有增量镜像，以无网络、只读根及 root 所有的 Linux 令牌卷运行，并准确删除测试标记资源。测试使用真实 Docker、HTTP、SDK 服务及 UID 清理。另设 `PE_STDIO_RUNTIME_PG_PRIVATE_DIR` 可为两个顺序执行的用户验证真实隔离 PG 身份、审批、一次授权、worker 租约与结果／目录持久化。Pod／PVC／注册表观察仍明确为替身；共用 QA 容器不验证用户文件系统隔离。生产 worker 编排与原生双用户验收仍须另行集成。

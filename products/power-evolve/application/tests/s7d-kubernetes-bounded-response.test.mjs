@@ -54,7 +54,7 @@ test('Runner service proxy preserves maximum output with bounded TLS responses',
         runnerToken: request.headers['x-power-evolve-runner-token'] })
       if (request.headers.authorization !== `Bearer ${bearer}`) { response.writeHead(401).end(); return }
       if (request.url === '/truncated' || request.url === '/timeout' || request.url === '/resource-oversize'
-        || request.url?.endsWith('/proxy/oversize')
+        || request.url?.endsWith('/proxy/oversize') || request.url?.endsWith('/proxy/explicit-budget-oversize')
         || sshOversize && request.url?.endsWith(`/proxy/calls/${callId}`)) {
         closedConnections.push(new Promise(resolve => request.socket.once('close', resolve)))
       }
@@ -74,6 +74,8 @@ test('Runner service proxy preserves maximum output with bounded TLS responses',
       else if (request.url === '/resource-oversize') send(paddedJson(resourceLimit + 1))
       else if (request.url?.endsWith('/proxy/oversize')) send(paddedJson(runnerLimit + 1))
       else if (request.url?.endsWith('/proxy/budget-limit')) send(paddedJson(runnerLimit))
+      else if (request.url?.endsWith('/proxy/explicit-budget-limit')) send(paddedJson(511))
+      else if (request.url?.endsWith('/proxy/explicit-budget-oversize')) send(paddedJson(512))
       else if (request.url?.endsWith(`/proxy/executions/${executionId}`)) send(cloud)
       else if (request.url?.endsWith(`/pods/${sshName}`)) send({ metadata: { name: sshName, uid: podUid,
         labels: { 'app.kubernetes.io/name': 'power-evolve-connector-runner',
@@ -115,6 +117,16 @@ test('Runner service proxy preserves maximum output with bounded TLS responses',
       await assert.rejects(client.call('GET', '/resource-oversize', undefined, 10_000, 'sandbox-token'),
         /Kubernetes response exceeds limit/)
       await Promise.all(closedConnections)
+    })
+    await t.test('explicit STDIO response budget applies to the complete actual TLS reply', async () => {
+      const accepted = await sandbox.runnerBounded('sandbox', 'sandbox-token', 'GET', '/explicit-budget-limit', undefined,
+        { timeoutMs: 1000, maxResponseBytes: 511 })
+      assert.equal(Buffer.byteLength(JSON.stringify(accepted)), 511)
+      await assert.rejects(sandbox.runnerBounded('sandbox', 'sandbox-token', 'GET', '/explicit-budget-oversize', undefined,
+        { timeoutMs: 1000, maxResponseBytes: 511 }), /Kubernetes response exceeds limit/u)
+      await Promise.all(closedConnections)
+      await assert.rejects(client.call('GET', '/health', undefined, 1000, undefined, Number.NaN), /response budget invalid/u)
+      assert.deepEqual(await client.call('GET', '/health'), { ready: true })
     })
     await t.test('SSH aggregate protocol output uses the runner budget during recovery', async () => {
       const runner = new SshRunnerOrchestrator(client, { namespace, image: 'fixture', runtimeClassName: 'gvisor',

@@ -25,7 +25,11 @@ const facts = z.object({ programStartAttempted: z.boolean(), toolsCallAttempted:
  * @param maxReplyBytes Complete enclosing runtime-view byte budget.
  * @returns Strict outcome parser; no terminal writer authority is inferred.
  */
-export function stdioOutcomeV2(limits: StdioLimitsV2, maxReplyBytes: number) {
+export function stdioOutcomeV2(limits: StdioLimitsV2, maxReplyBytes: number): ReturnType<typeof outcomeSchema> {
+  return outcomeSchema(limits, maxReplyBytes)
+}
+
+function outcomeSchema(limits: StdioLimitsV2, maxReplyBytes: number) {
   const budget = stdioLimitsV2.parse(limits)
   if (!Number.isSafeInteger(maxReplyBytes) || maxReplyBytes <= 0) throw new TypeError('stdio_v2_reply_budget_invalid')
   const complete = { maxDepth: budget.maxJsonDepth, maxNodes: budget.maxJsonNodes, maxBytes: maxReplyBytes }
@@ -51,7 +55,11 @@ export type StdioOutcomeV2 = z.infer<ReturnType<typeof stdioOutcomeV2>>
  * @param maxReplyBytes Trusted deployment's whole runtime-response budget.
  * @returns Complete view validator; writerStopConfirmed still requires independent authenticated capture.
  */
-export function stdioRuntimeViewV2(limits: StdioLimitsV2, maxReplyBytes: number) {
+export function stdioRuntimeViewV2(limits: StdioLimitsV2, maxReplyBytes: number): ReturnType<typeof runtimeViewSchema> {
+  return runtimeViewSchema(limits, maxReplyBytes)
+}
+
+function runtimeViewSchema(limits: StdioLimitsV2, maxReplyBytes: number) {
   const budget = stdioLimitsV2.parse(limits)
   if (!Number.isSafeInteger(maxReplyBytes) || maxReplyBytes <= 0) throw new TypeError('stdio_v2_reply_budget_invalid')
   const value = z.object({ formatVersion: z.literal(2), instanceId: stdioExecutorOwnerV2.options[0].shape.runnerInstanceId,

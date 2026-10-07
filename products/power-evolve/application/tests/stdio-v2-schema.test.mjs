@@ -13,6 +13,7 @@ import { schemaV30 } from '../lib/platform/device-resolution-schema.js'
 import { schemaV31 } from '../lib/platform/device-claim-closure-schema.js'
 import { schemaV32 } from '../lib/platform/office-preview-schema.js'
 import { schemaV33 } from '../lib/platform/office-artifact-schema.js'
+import { schemaV34 } from '../lib/platform/stdio-v2-schema.js'
 import { initializeDatabase, transaction } from '../lib/platform/database.js'
 
 const digest = 'a'.repeat(64), fingerprint = 'b'.repeat(64)
@@ -92,7 +93,7 @@ async function prepare(pool, row) {
   [row.id,row.actor.user,row.actor.session,row.phase,row.target,row.execution,digest,JSON.stringify(raw),fingerprint])
 }
 
-test('V34 preserves legacy facts and binds generic execution, approval and continuation records', {timeout:30000}, async t => {
+test('V34 and adjacent V35 preserve original tasks and bind generic execution, approval and continuation records', {timeout:30000}, async t => {
   assert.equal(previous.CURRENT_SCHEMA_VERSION,35)
   const databaseUrl=process.env.PE_TEST_DATABASE_URL ?? (await readFile(join(process.env.PE_PRIVATE_DIR,'database-url'),'utf8')).trim()
   const name=`pe_stdio_v34_${randomBytes(10).toString('hex')}`
@@ -113,9 +114,21 @@ test('V34 preserves legacy facts and binds generic execution, approval and conti
         ...(desktop?[alice.device,alice.directory]:[])])
       before.push({target,id,row:(await pool.query(`SELECT * FROM ${table(target)} WHERE id=$1`,[id])).rows[0]})
     }
-    await t.test('adjacent and repeated migration leave complete legacy rows and raw bytes unchanged',async()=>{
+    await pool.query(schemaV34)
+    const originalActor=await account(pool,'v34-original')
+    const originalTask=action(originalActor,await connection(pool,originalActor))
+    await insertPair(pool,originalTask);await prepare(pool,originalTask)
+    const originalTables=['pe_stdio_v2_actions','pe_stdio_v2_preparations','pe_cloud_executions']
+    const originalRows=await Promise.all(originalTables.map(async tableName=>
+      (await pool.query(`SELECT row_to_json(saved)::text AS literal FROM ${tableName} saved ORDER BY ${tableName==='pe_stdio_v2_preparations'?'action_id':'id'}`)).rows))
+    await t.test('V34 to V35 and repeated startup leave complete originals and legacy rows unchanged',async()=>{
       await initializeDatabase(pool);await initializeDatabase(pool)
       assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version,35)
+      for(let index=0;index<originalTables.length;index++) {
+        const tableName=originalTables[index]
+        assert.deepEqual((await pool.query(`SELECT row_to_json(saved)::text AS literal FROM ${tableName} saved ORDER BY ${tableName==='pe_stdio_v2_preparations'?'action_id':'id'}`)).rows,originalRows[index])
+      }
+      assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_stdio_v2_observations')).rows[0].n,0)
       for (const {target,id,row} of before) {
         const after=(await pool.query(`SELECT * FROM ${table(target)} WHERE id=$1`,[id])).rows[0]
         assert.deepEqual(stripAdded(after),row)

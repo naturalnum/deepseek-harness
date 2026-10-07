@@ -876,6 +876,7 @@ export class SandboxManager {
    */
   async observeReady(sessionId: string, userId: string, podUid: string, runnerInstanceId: string,
     client?: PoolClient, mode: 'dispatch' | 'observe' = 'dispatch'): Promise<SandboxReady> {
+    if (!client && mode === 'observe') throw new TypeError('stdio_v2_observation_client_required')
     const selected = await (client ?? this.pool).query<MountSlot>('SELECT * FROM pe_mount_slots WHERE user_id=$1', [userId])
     const slot = selected.rows[0]
     if (!slot || slot.state !== 'ready' || slot.session_id !== sessionId
@@ -887,7 +888,6 @@ export class SandboxManager {
       token: this.token(this.name(userId), sessionId, slot.generation), restartCount: 0,
       generation: slot.generation, sessionId, userId, binding }
     if (client) await this.assertStdioCaptureAllowed(client, sandbox, mode)
-    else if (mode === 'observe') throw new TypeError('stdio_v2_observation_client_required')
     else await this.assertCurrent(sandbox)
     return sandbox
   }

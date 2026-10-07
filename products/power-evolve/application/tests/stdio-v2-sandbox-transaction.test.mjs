@@ -149,6 +149,43 @@ test('caller-client observeReady derives the private token inside Manager and us
   assertNoPoolOrWrites(f); assert.equal(captured.capture.runnerInstanceId, f.ready.runnerInstanceId)
 })
 
+test('private original observation survives account revocation while fresh dispatch still requires authority', options, async () => {
+  const f = fixture(); f.account.enabled = false
+  await assert.rejects(f.capture(), error => error.code === 'account_disabled')
+  f.sql.length = 0
+  const ready = await f.manager.observeReady(f.ready.sessionId, f.ready.userId, f.ready.podUid, f.ready.runnerInstanceId, f.client, 'observe')
+  const captured = await f.manager.captureStdioV2(ready, f.scope, f.pin, f.limits, f.client, 'observe')
+  assert.equal(captured.capture.runnerInstanceId, f.ready.runnerInstanceId)
+  assert.equal(captured.capture.podUid, f.ready.podUid)
+  assertNoPoolOrWrites(f)
+  assert.equal(f.sql.some(call => call.text.includes('FROM pe_users')), false)
+  f.slot.runner_instance_id = randomUUID()
+  await assert.rejects(f.manager.observeReady(f.ready.sessionId, f.ready.userId, f.ready.podUid, f.ready.runnerInstanceId, f.client, 'observe'),
+    refused('mount_slot_changed'))
+})
+
+test('observe mode needs the original caller client and never falls through to fresh dispatch', options, async () => {
+  const f = fixture()
+  await assert.rejects(f.manager.captureStdioV2(f.ready, f.scope, f.pin, f.limits, undefined, 'observe'), /observation_client_required/u)
+  await assert.rejects(f.manager.observeReady(f.ready.sessionId, f.ready.userId, f.ready.podUid, f.ready.runnerInstanceId, undefined, 'observe'),
+    /observation_client_required/u)
+  assert.deepEqual(f.poolCalls, [])
+  assert.equal(f.kubeCalls.length, 0)
+})
+
+test('private STDIO transport forwards explicit complete-response and request-time budgets without retry', options, async () => {
+  const f = fixture(), calls = []
+  f.kube.call = async (...args) => { calls.push(args); return { raw: 'one' } }
+  assert.deepEqual(await f.manager.runnerBounded(f.ready.name, f.ready.token, 'GET', '/stdio/v2/executions/id', undefined,
+    { timeoutMs: 777, maxResponseBytes: 321 }), { raw: 'one' })
+  assert.equal(calls.length, 1)
+  assert.deepEqual(calls[0].slice(2), [undefined, 777, f.ready.token, 321])
+  for (const budget of [{ timeoutMs: 0, maxResponseBytes: 321 }, { timeoutMs: 777, maxResponseBytes: 0 }]) {
+    assert.throws(() => f.manager.runnerBounded(f.ready.name, f.ready.token, 'GET', '/', undefined, budget), /budget_invalid/u)
+  }
+  assert.equal(calls.length, 1)
+})
+
 test('caller-client observeReady authority failure preserves the writer and never opens quarantine transactions', options, async () => {
   const f = fixture(); f.account.enabled = false
   const before = clone({ slot: f.slot, instance: f.instance })

@@ -12,6 +12,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import { stdioDispatchV2, stdioTaskSchemasV2 } from '@power-evolve/contracts/stdio-mcp'
 import { stdioCatalogFingerprintV2, stdioSha256V2 } from '@power-evolve/connector-runner/stdio-v2-digest'
 import { catalog } from '../../connector-runner/tests/stdio-v2-fixture.mjs'
+import { exercisePgRuntime } from './stdio-v2-pg-runtime-fixture.mjs'
 
 const execute = promisify(execFile), base = process.env.PE_STDIO_RUNTIME_BASE_IMAGE
 const sandbox = fileURLToPath(new URL('../../sandbox/', import.meta.url))
@@ -35,7 +36,7 @@ async function eventually(check) {
 
 test('actual private Runner executes frozen SDK calls once as UID1000 and confirms full writer cleanup', {
   timeout: 180000, skip: !base && 'Set PE_STDIO_RUNTIME_BASE_IMAGE to an already-local operator-selected image',
-}, async () => {
+}, async t => {
   const suffix = randomUUID(), label = `power-evolve.stdio-runtime-qa=${suffix}`
   const baseAlias = `pe-stdio-runtime-base:${suffix}`, imageAlias = `pe-stdio-runtime-qa:${suffix}`
   const name = `pe-stdio-runtime-${suffix}`, secretVolume = `pe-stdio-runtime-secret-${suffix}`
@@ -173,6 +174,13 @@ test('actual private Runner executes frozen SDK calls once as UID1000 and confir
     assert.equal((await post(packet())).status, 409, 'A fresh generic writer cannot overlap the legacy writer')
     const legacyDone = await eventually(async () => { const v = await (await fetch(`${url}/executions/${legacy.id}`, { headers })).json(); return v.state !== 'running' && v })
     assert.equal(legacyDone.state, 'succeeded')
+    if (process.env.PE_STDIO_RUNTIME_PG_PRIVATE_DIR) {
+      await t.test('real isolated PG grants and results bind two sequential owners to the actual SDK Runner', async () => {
+        await exercisePgRuntime({ privateDir: process.env.PE_STDIO_RUNTIME_PG_PRIVATE_DIR, root, imageId: actualImageId,
+        architecture: image.Architecture, instanceId: health.instanceId, containerId, name, token, limits, fetch, trace, catalog,
+          inspect: async () => JSON.parse(await docker(['inspect', '--format', '{{json .}}', containerId])) })
+      })
+    }
     const cancel = packet('call', 'call-lost'); assert.equal((await post(cancel)).status, 202)
     assert.equal((await fetch(`${url}/stdio/v2/executions/${cancel.dispatch.executionRef.executionId}/cancel`, { method: 'POST', headers })).status, 200)
     const cancelled = await terminal(cancel.dispatch.executionRef.executionId)

@@ -13,6 +13,8 @@ import { StdioConnectionServiceV2 } from '../lib/platform/stdio-v2-connections.j
 import { StdioAdmissionServiceV2 } from '../lib/platform/stdio-v2-admission.js'
 import { StdioAuthorizationServiceV2 } from '../lib/platform/stdio-v2-authorization.js'
 import { StdioCloudPreparationV2 } from '../lib/platform/stdio-v2-cloud-capture.js'
+import { StdioActionLeaseServiceV2 } from '../lib/platform/stdio-v2-leases.js'
+import { StdioResultServiceV2 } from '../lib/platform/stdio-v2-results.js'
 import { SandboxManager } from '../lib/platform/sandbox.js'
 import { stdioPreparedV2 } from '@power-evolve/contracts/stdio-mcp'
 import { stdioCatalogFingerprintV2, stdioSha256V2 } from '@power-evolve/connector-runner/stdio-v2-digest'
@@ -99,6 +101,112 @@ test('generic management, atomic discovery and independent once authorization on
       await authorization.decide(alice.approval, decision)
       return { ...fixture, preparation, decision, owner: { kind: 'cloud', runnerInstanceId: preparation.prepared.capture.runnerInstanceId } }
     }
+    const leases = new StdioActionLeaseServiceV2(pool, { leaseMs: 30000 })
+    const results = new StdioResultServiceV2(pool, { limits, maxReplyBytes: 131072 })
+    const raw = JSON.parse('{"10":"十","2":"二","_meta":{"literal":"a\\u0000b"},"__proto__":{"literal":true}}')
+    async function dispatched() {
+      const f = await approved()
+      const grant = await authorization.authorize(f.receipt.actionId, randomUUID(), f.owner)
+      assert.equal(grant.grantOnce, true)
+      const archive = (await pool.query('SELECT dispatch,dispatch_digest FROM pe_stdio_v2_dispatches WHERE action_id=$1', [f.receipt.actionId])).rows[0]
+      const prepared = f.preparation.prepared
+      await pool.query('UPDATE pe_cloud_executions SET sandbox_name=$2,pod_uid=$3,runner_instance_id=$4 WHERE id=$1',
+        [f.receipt.executionRef.executionId, prepared.capture.podName, prepared.capture.podUid, prepared.capture.runnerInstanceId])
+      const lease = await leases.claim(f.receipt.actionId, randomUUID())
+      const outcome = { state: 'completed', phase: 'discover', catalog: [{ name: 'raw-tool', inputSchema: { type: 'object', ...raw }, ...raw }],
+        pages: [{ tools: [], ...raw }], initializeResult: { protocolVersion: '2025-03-26', ...raw },
+        facts: { programStartAttempted: true, toolsCallAttempted: false, effectMayHaveOccurred: true, childPid: 3,
+          childExitObserved: true, childCloseObserved: true, exitCode: 0, signal: null, cleanupConfirmed: true,
+          protocolBytes: 100, protocolMessages: 4, stderrBytes: 0, stderr: '' } }
+      const view = { formatVersion: 2, instanceId: prepared.capture.runnerInstanceId, actionId: f.receipt.actionId,
+        executionRef: f.receipt.executionRef, taskDigest: archive.dispatch.taskDigest, dispatchDigest: archive.dispatch_digest,
+        state: 'completed', writerStopConfirmed: true, outcome }
+      const stopEvidence = { formatVersion: 2, kind: 'cloud_uid_quiet', actionId: view.actionId, executionRef: view.executionRef,
+        taskDigest: view.taskDigest, dispatchDigest: view.dispatchDigest, preparedDigest: f.preparation.preparedDigest,
+        fullScopeDigest: prepared.fullScopeDigest, podUid: prepared.capture.podUid, runnerInstanceId: view.instanceId,
+        mountGeneration: prepared.capture.mountGeneration, observedAt: new Date().toISOString() }
+      return { ...f, grant, archive, lease, view, stopEvidence }
+    }
+
+    await t.test('real PG worker leases retain one owner, increment after expiry and fence old writers', async () => {
+      const f = await dispatched(), owner = f.lease.workerId
+      const same = await Promise.all(Array.from({ length: 6 }, () => leases.claim(f.receipt.actionId, owner)))
+      assert.ok(same.every(value => value.leaseEpoch === f.lease.leaseEpoch))
+      assert.equal(await leases.claim(f.receipt.actionId, randomUUID()), null)
+      assert.deepEqual(await leases.renew(f.lease), f.lease)
+      await pool.query("UPDATE pe_stdio_v2_actions SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1", [f.receipt.actionId])
+      const replacement = await leases.claim(f.receipt.actionId, randomUUID())
+      assert.equal(replacement.leaseEpoch, f.lease.leaseEpoch + 1)
+      await assert.rejects(leases.renew(f.lease), expectCode('stdio_v2_lease_lost'))
+      await assert.rejects(results.record(f.lease, { view: f.view, stopEvidence: f.stopEvidence }), expectCode('stdio_v2_lease_lost'))
+      assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_stdio_v2_observations WHERE action_id=$1', [f.receipt.actionId])).rows[0].n, 0)
+      const running = { ...f.view, state: 'running', writerStopConfirmed: false }; delete running.outcome
+      assert.equal((await results.record(replacement, { view: running, stopEvidence: null })).state, 'running')
+      assert.equal((await pool.query('SELECT state FROM pe_cloud_executions WHERE id=$1', [f.receipt.executionRef.executionId])).rows[0].state, 'running')
+    })
+
+    await t.test('terminal direct-child facts alone retain the writer; full private proof atomically publishes one raw catalog', async () => {
+      const f = await dispatched(), held = await results.record(f.lease, { view: f.view, stopEvidence: null })
+      assert.equal(held.finalized, false); assert.equal(held.state, 'stopping')
+      assert.equal((await pool.query('SELECT state FROM pe_cloud_executions WHERE id=$1', [f.receipt.executionRef.executionId])).rows[0].state, 'cancelling')
+      assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_stdio_v2_results WHERE action_id=$1', [f.receipt.actionId])).rows[0].n, 0)
+      await assert.rejects(admission.check(alice.agent, { ...f.request, requestId: randomUUID() }), expectCode('execution_busy'))
+      await assert.rejects(pool.query("UPDATE pe_stdio_v2_observations SET observation='{}' WHERE action_id=$1", [f.receipt.actionId]), { code: '23514' })
+      await assert.rejects(pool.query('DELETE FROM pe_stdio_v2_observations WHERE action_id=$1', [f.receipt.actionId]), { code: '23514' })
+      const final = await results.record(f.lease, { view: f.view, stopEvidence: f.stopEvidence })
+      assert.equal(final.finalized, true); assert.equal(final.state, 'succeeded'); assert.ok(final.catalogId)
+      const repeated = await Promise.all(Array.from({ length: 6 }, () => results.record(f.lease,
+        { view: f.view, stopEvidence: { ...f.stopEvidence, observedAt: '2030-01-01T00:00:00Z' } })))
+      assert.ok(repeated.every(value => value.catalogId === final.catalogId))
+      const row = (await pool.query('SELECT result,observation,stop_evidence FROM pe_stdio_v2_results WHERE action_id=$1', [f.receipt.actionId])).rows[0]
+      assert.deepEqual(row.result, f.view.outcome); assert.deepEqual(row.observation, f.view); assert.deepEqual(row.stop_evidence, f.stopEvidence)
+      assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_stdio_v2_catalogs WHERE action_id=$1', [f.receipt.actionId])).rows[0].n, 1)
+      assert.equal((await connections.toggle(alice.agent, { requestId: randomUUID(), connectionId: f.connection.connectionId, expectedRevision: 1, enabled: true })).enabled, true)
+      await assert.rejects(results.record(f.lease, { view: { ...f.view, outcome: { ...f.view.outcome, catalog: [] } }, stopEvidence: f.stopEvidence }),
+        expectCode('stdio_v2_result_conflict'))
+    })
+
+    await t.test('unknown cleanup and a forged original stop ID never release a writer', async () => {
+      const f = await dispatched()
+      await assert.rejects(results.record(f.lease, { view: f.view, stopEvidence: { ...f.stopEvidence, podUid: randomUUID() } }),
+        expectCode('stdio_v2_stop_evidence_changed'))
+      const unknown = { ...f.view, state: 'unknown', writerStopConfirmed: false }
+      const saved = await results.record(f.lease, { view: unknown, stopEvidence: f.stopEvidence })
+      assert.equal(saved.finalized, false); assert.equal(saved.state, 'blocked')
+      assert.equal((await pool.query('SELECT state FROM pe_cloud_executions WHERE id=$1', [f.receipt.executionRef.executionId])).rows[0].state, 'uncertain')
+      assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_stdio_v2_results WHERE action_id=$1', [f.receipt.actionId])).rows[0].n, 0)
+    })
+
+    await t.test('configuration changes and disabled accounts still retain real terminal results without publishing a new catalog', async () => {
+      const revised = await dispatched()
+      await connections.update(alice.agent, { requestId: randomUUID(), connectionId: revised.connection.connectionId,
+        expectedRevision: 1, configuration: { ...configuration, name: 'changed while running' } })
+      const stale = await results.record(revised.lease, { view: revised.view, stopEvidence: revised.stopEvidence })
+      assert.equal(stale.finalized, true); assert.equal(stale.catalogId, null)
+      const disabled = await dispatched()
+      try {
+        await pool.query('UPDATE pe_users SET enabled=false WHERE id=$1', [alice.userId])
+        const saved = await results.record(disabled.lease, { view: disabled.view, stopEvidence: disabled.stopEvidence })
+        assert.equal(saved.finalized, true); assert.equal(saved.catalogId, null)
+        assert.deepEqual((await pool.query('SELECT result FROM pe_stdio_v2_results WHERE action_id=$1', [disabled.receipt.actionId])).rows[0].result, disabled.view.outcome)
+      } finally { await pool.query('UPDATE pe_users SET enabled=true WHERE id=$1', [alice.userId]) }
+    })
+
+    await t.test('final result COMMIT reply loss is recovered by reading the immutable original rather than executing again', async () => {
+      const f = await dispatched(); let loseReply = true
+      const losingPool = { async connect() { const client = await pool.connect()
+        return { on: client.on.bind(client), removeListener: client.removeListener.bind(client), release: client.release.bind(client),
+          async query(sql, values) { const response = await client.query(sql, values)
+            if (sql === 'COMMIT' && loseReply) { loseReply = false; throw new Error('synthetic_result_commit_reply_lost') }
+            return response } }
+      } }
+      const lossy = new StdioResultServiceV2(losingPool, { limits, maxReplyBytes: 131072 })
+      await assert.rejects(lossy.record(f.lease, { view: f.view, stopEvidence: f.stopEvidence }), /synthetic_result_commit_reply_lost/u)
+      const saved = await results.record(f.lease, { view: f.view, stopEvidence: f.stopEvidence })
+      assert.equal(saved.finalized, true)
+      assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_stdio_v2_results WHERE action_id=$1', [f.receipt.actionId])).rows[0].n, 1)
+      assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_stdio_v2_catalogs WHERE action_id=$1', [f.receipt.actionId])).rows[0].n, 1)
+    })
 
     await t.test('same-owner concurrent creation is accepted once and foreign receipt/configuration are denied', async () => {
       const request = { requestId: randomUUID(), configuration }
