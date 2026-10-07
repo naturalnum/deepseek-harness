@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { stdioActionRequestV2, stdioDigestV2, stdioExecutionRefV2, stdioInvocationV2, stdioJsonV2,
   stdioLimitsV2, stdioTaskSchemasV2, type StdioLimitsV2, type StdioTaskV2 } from '@power-evolve/contracts/stdio-mcp'
 import { stdioCloudStopEvidenceV2, stdioRuntimeViewV2, type StdioOutcomeV2 } from '@power-evolve/contracts/stdio-runtime'
+import type { StdioActionSummaryV2, StdioActionDetailV2, StdioActionListV2 } from '@power-evolve/contracts/stdio-management'
 import { stdioSha256V2, type StdioDigestDomainV2 } from '@power-evolve/connector-runner/stdio-v2-digest'
 import { accountUserId } from '../account-contracts.ts'
 import { PlatformError, type UserId } from '../contracts.ts'
@@ -36,34 +37,8 @@ export interface StdioActionOptionsV2 {
   readonly maxReplyBytes: number
   readonly maxPageSize: number
 }
-/** Logical persisted status, not a new observation of the executor or its processes. */
-export interface StdioActionSummaryV2 {
-  readonly formatVersion: 2
-  readonly actionId: StdioTaskV2['actionId']
-  readonly executionRef: z.infer<typeof stdioExecutionRefV2.options[0]>
-  readonly sessionId: StdioTaskV2['sessionId']
-  readonly connectionId: StdioTaskV2['connectionId']
-  readonly configRevision: number
-  readonly phase: 'discover' | 'call'
-  readonly taskDigest: StdioTaskV2['configDigest']
-  readonly state: z.infer<typeof state>
-  readonly executionState: z.infer<typeof executionRow>['state']
-  readonly cancelRequested: boolean
-  readonly createdAt: string
-  readonly updatedAt: string
-}
-/** Complete original logical task and formal result, excluding private capture, permits and resource paths. */
-export interface StdioActionDetailV2 extends StdioActionSummaryV2 {
-  readonly task: StdioTaskV2
-  readonly outcome: StdioOutcomeV2 | null
-  readonly noStart: { readonly kind: 'unstarted_closed'; readonly startNeverAuthorized: true;
-    readonly resourceDisposition: 'unallocated' | 'ready_retained' | 'creation_stopped' } | null
-}
-/** Bounded persisted action page; approval pages are candidates for the separate Authorization.inspect operation. */
-export interface StdioActionListV2 {
-  readonly items: readonly StdioActionSummaryV2[]
-  readonly nextOffset: number | null
-}
+/** Compatibility type exports; public validators and their inferred fields are owned by the browser-safe management module. */
+export type { StdioActionSummaryV2, StdioActionDetailV2, StdioActionListV2 } from '@power-evolve/contracts/stdio-management'
 type Original = { action: z.infer<typeof actionRow>; execution: z.infer<typeof executionRow>; task: StdioTaskV2 }
 
 /** Fixed browser audiences and original durable identities guard every query and cancellation transaction. */
