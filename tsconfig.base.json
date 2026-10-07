@@ -32,6 +32,8 @@
       "@power-evolve/contracts/stdio-management": ["./products/power-evolve/contracts/src/stdio-management.ts"],
       "@power-evolve/contracts/stdio-mcp-json": ["./products/power-evolve/contracts/src/stdio-mcp-json.ts"],
       "@power-evolve/connector-runner/stdio-v2": ["./products/power-evolve/connector-runner/src/stdio-v2.ts"],
+      "@power-evolve/connector-runner/stdio-v2-dispatch": ["./products/power-evolve/connector-runner/src/stdio-v2-dispatch.ts"],
+      "@power-evolve/connector-runner/stdio-v2-runtime": ["./products/power-evolve/connector-runner/src/stdio-v2-runtime.ts"],
       "@power-evolve/connector-runner/stdio-v2-digest": ["./products/power-evolve/connector-runner/src/stdio-v2-digest.ts"],
       "@deepseek-ai/dsh-desktop/assembly": ["./apps/desktop/src/assembly.ts"],
       "@deepseek-ai/dsh-desktop/preload-assembly": ["./apps/desktop/src/preload-assembly.ts"],

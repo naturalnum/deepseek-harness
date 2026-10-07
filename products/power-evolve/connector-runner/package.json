@@ -4,6 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./stdio-v2-dispatch": { "types": "./lib/stdio-v2-dispatch.d.ts", "default": "./lib/stdio-v2-dispatch.js" },
+    "./stdio-v2-runtime": { "types": "./lib/stdio-v2-runtime.d.ts", "default": "./lib/stdio-v2-runtime.js" },
     "./stdio-v2": { "types": "./lib/stdio-v2.d.ts", "default": "./lib/stdio-v2.js" },
     "./stdio-v2-digest": { "types": "./lib/stdio-v2-digest.d.ts", "default": "./lib/stdio-v2-digest.js" },
     "./protocol": { "types": "./lib/protocol.d.ts", "default": "./lib/protocol.js" },

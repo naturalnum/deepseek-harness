@@ -8,11 +8,19 @@ import { FileScanner, scanLimits, unavailableChanges } from './file-scan.mjs'
 const maximumOutput = 65_536
 
 /** Compose the existing HTTP Runner with an unprivileged scanner; filesystem inputs remain child-owned. */
-export function createRunner({ token, workspace = '/workspace', limits = scanLimits() },
-  { scanner = new FileScanner(workspace, limits), signalGroup = (pid, signal) => process.kill(-pid, signal) } = {}) {
+export function createRunner({ token, workspace = '/workspace', limits = scanLimits(), stdio },
+  { scanner = new FileScanner(workspace, limits), signalGroup = (pid, signal) => process.kill(-pid, signal), createStdioRuntime } = {}) {
   const executions = new Map()
   const instanceId = randomUUID()
   let active = null, admission = null, shuttingDown = false
+  if (stdio !== undefined && (typeof createStdioRuntime !== 'function'
+    || !stdio || Object.keys(stdio).sort().join(',') !== 'limits,maxReplyBytes')) throw new Error('stdio_v2_configuration_invalid')
+  const stdioRuntime = stdio === undefined ? undefined : createStdioRuntime({ ...stdio,
+    environment: { workspaceRoot: workspace, env: { HOME: '/home/agent', PATH: '/usr/local/bin:/usr/bin:/bin', LANG: 'C.UTF-8' },
+      identity: { kind: 'unix', uid: 1000, gid: 1000 } }, executorOwner: { kind: 'cloud', runnerInstanceId: instanceId },
+    authorizeCwd: async (cwd, signal) => (await scanner.cwd(cwd === '.' ? '' : cwd, signal)).valid,
+    cleanup: () => scanner.cleanup(),
+  })
 
   function reply(response, status, value) {
     response.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' })
@@ -24,11 +32,11 @@ export function createRunner({ token, workspace = '/workspace', limits = scanLim
     const expectedBytes = Buffer.from(token), suppliedBytes = Buffer.from(supplied)
     return suppliedBytes.length === expectedBytes.length && timingSafeEqual(suppliedBytes, expectedBytes)
   }
-  async function body(request) {
+  async function body(request, maximum = 16_384) {
     const chunks = []; let bytes = 0
     for await (const chunk of request) {
       bytes += chunk.length
-      if (bytes > 16_384) throw new Error('request_too_large')
+      if (bytes > maximum) throw new Error('request_too_large')
       chunks.push(chunk)
     }
     return JSON.parse(Buffer.concat(chunks).toString('utf8'))
@@ -154,6 +162,39 @@ export function createRunner({ token, workspace = '/workspace', limits = scanLim
       if (request.method === 'GET' && path === '/health') {
         reply(response, 200, { ready: !shuttingDown, instanceId }); return
       }
+      const stdioMatch = /^\/stdio\/v2\/executions\/([a-f0-9-]{36})(\/cancel)?$/.exec(path)
+      if (path === '/stdio/v2/executions' || stdioMatch) {
+        if (!stdioRuntime) { reply(response, 404, { error: 'stdio_v2_disabled', instanceId }); return }
+        if (request.method === 'GET' && stdioMatch && !stdioMatch[2]) {
+          const value = stdioRuntime.get(stdioMatch[1])
+          reply(response, value ? 200 : 404, value ?? { error: 'execution_not_found', instanceId }); return
+        }
+        if (request.method === 'POST' && stdioMatch?.[2]) {
+          const value = stdioRuntime.cancel(stdioMatch[1])
+          reply(response, value ? 200 : 404, value ?? { error: 'execution_not_found', instanceId }); return
+        }
+        if (request.method === 'POST' && path === '/stdio/v2/executions') {
+          const value = await body(request, stdio.limits.maxInputBytes)
+          const id = value?.dispatch?.executionRef?.executionId
+          const retained = typeof id === 'string' && stdioRuntime.get(id) !== undefined
+          if (!retained && shuttingDown) { reply(response, 503, { error: 'runner_unavailable', instanceId }); return }
+          // UID cleanup covers the entire namespace, so both protocols share the same writer gate.
+          if (!retained && (active || admission)) { reply(response, 409, { error: 'execution_busy', instanceId }); return }
+          try {
+            const result = await stdioRuntime.start(value)
+            reply(response, result.state === 'running' ? 202 : 200, result)
+          } catch (error) {
+            const code = typeof error.code === 'string' && /^stdio_v2_[a-z0-9_]+$/u.test(error.code)
+              ? error.code : 'stdio_v2_start_invalid'
+            const status = code === 'stdio_v2_runtime_closed' ? 503
+              : ['stdio_v2_runtime_busy', 'stdio_v2_dispatch_conflict', 'stdio_v2_executor_owner_mismatch'].includes(code) ? 409
+                : ['stdio_v2_start_denied', 'stdio_v2_start_expired'].includes(code) ? 403 : 400
+            reply(response, status, { error: code, instanceId })
+          }
+          return
+        }
+        reply(response, 404, { error: 'not_found', instanceId }); return
+      }
       const match = /^\/executions\/([a-f0-9-]{36})(\/cancel)?$/.exec(path)
       if (request.method === 'GET' && match && !match[2]) {
         const entry = executions.get(match[1])
@@ -181,7 +222,7 @@ export function createRunner({ token, workspace = '/workspace', limits = scanLim
           prior.digest === digest ? view(prior) : { error: 'execution_conflict' }); return }
         if (value.instanceId !== instanceId) { reply(response, 409, { error: 'runner_instance_changed' }); return }
         if (shuttingDown) { reply(response, 503, { error: 'runner_unavailable' }); return }
-        if (active || admission) { reply(response, 409, { error: 'execution_busy' }); return }
+        if (active || admission || stdioRuntime?.busy()) { reply(response, 409, { error: 'execution_busy' }); return }
         const check = { abort: new AbortController() }
         admission = check
         try {
@@ -193,7 +234,8 @@ export function createRunner({ token, workspace = '/workspace', limits = scanLim
         } finally { if (admission === check) admission = null }
       }
       reply(response, 404, { error: 'not_found' })
-    } catch (error) { reply(response, 500, { error: error.message === 'request_too_large' ? 'request_too_large' : 'execution_error' }) }
+    } catch (error) { reply(response, error.message === 'request_too_large' ? 413 : 500,
+      { error: error.message === 'request_too_large' ? 'request_too_large' : 'execution_error' }) }
   })
 
   async function shutdown() {
@@ -202,15 +244,23 @@ export function createRunner({ token, workspace = '/workspace', limits = scanLim
     checking?.abort.abort()
     for (const entry of executions.values()) stop(entry, 'shutdown')
     const closed = new Promise(resolve => server.close(resolve))
+    const stopping = stdioRuntime?.close()
     await Promise.allSettled([checking?.finished, ...[...executions.values()].map(entry => entry.finished)])
+    const stdioStopped = stopping === undefined ? true : await stopping
     server.closeAllConnections()
     await closed
+    return { writerStopConfirmed: stdioStopped && active === null && admission === null }
   }
   return { server, shutdown }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const runner = createRunner({ token: readFileSync('/run/power-evolve/runner-token', 'utf8').trim() })
+  const stdioPath = process.env.PE_RUNNER_STDIO_V2_CONFIG_FILE
+  const stdio = stdioPath === undefined ? undefined : JSON.parse(readFileSync(stdioPath, 'utf8'))
+  // This is a private library in the existing image, never a second application launcher.
+  const runtime = stdio === undefined ? undefined : await import('./lib/stdio-v2-runtime.mjs')
+  const runner = createRunner({ token: readFileSync('/run/power-evolve/runner-token', 'utf8').trim(), stdio },
+    runtime === undefined ? {} : { createStdioRuntime: options => new runtime.StdioCloudRuntimeV2(options) })
   runner.server.listen(8080, '0.0.0.0')
-  process.once('SIGTERM', () => { void runner.shutdown().then(() => process.exit(0)) })
+  process.once('SIGTERM', () => { void runner.shutdown().then(result => process.exit(result.writerStopConfirmed ? 0 : 1)) })
 }

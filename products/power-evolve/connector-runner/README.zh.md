@@ -27,11 +27,13 @@ SSH 失败保留 `state:'failed'` 和 `errorCode`，并包含 `effectMayHaveOccu
 
 ## 共享 STDIO SDK 调用器
 
-`@power-evolve/connector-runner/stdio-v2` 导出 `runStdioV2(input, options, signal)`，供隔离的 Cloud 和 Device 执行器复用。它尚未接入此 Runner 的 HTTP API 或产品 Profile。共享 Host 不得执行它。执行器负责审批、不可变 Runner/程序 pin、目录授权、prepare/permit、持久请求身份、结果判定及容器/UID 清理。
+`@power-evolve/connector-runner/stdio-v2` 导出 `runStdioV2(input, options, signal)`，供隔离的 Cloud／Device 执行器使用。这个固定连接器 Runner 不开放此功能；独立的 [Sandbox Runner](../sandbox/README.zh.md)可加载其可信云执行库。共享 Host 不得执行它。执行器负责审批、不可变 runner／程序 pin、目录授权、prepare／permit、持久请求身份、结果分类和容器／UID 清理。
 
 独立的 Node 专用 `@power-evolve/connector-runner/stdio-v2-digest` 叶模块不启动进程。它使用共享浏览器安全编码器，以不同的 management／configuration／task／catalog／prepared／scope／spec／dispatch／result 域散列完整原始 JSON。完整有序目录指纹包含所有 schema、metadata 和扩展字段。审批 HMAC 使用平台已有的 32 字节密钥及独立域；执行器不接收该密钥。编码预算包含完整域 envelope。浏览器安全的 contracts 包不导入此叶模块或 SDK 调用器。原 legacy 请求摘要不变。
 
 输入选择 `discover` 或 `call`，指定字面程序、参数数组及绝对 cwd。调用还提供冻结的完整原始目录、原始工具名和 JSON 参数。选项传入全部输入/消息/协议/JSON/分页/工具/目录/结果/stderr/运行/请求/清理预算、严格的 `HOME`/`PATH`/`LANG` 环境，以及验证完整原始目录并计算共享冻结摘要的同步回调。调用器不另造规范化摘要实现。macOS 中 Node 可能自行加入 `__CF_USER_TEXT_ENCODING` 编码提示；调用器不合并父环境。HOME 和 PATH 必须指向执行器批准的隔离位置。
+
+选项还必须明确进程身份：`current` 保留已隔离调用者的 UID/GID；`unix` 将校验后的数值 UID/GID 传给实际 spawn。云 runtime 要求 Unix 1000/1000。`stdio-v2-dispatch` 叶模块核验完整原始启动包，并将冻结的调用交给 SDK；`stdio-v2-runtime` 叶模块预留唯一写者、限制完整响应，并等待独立提供的 UID 清理。这两个库不认证 HTTP 调用者，也不持久保存平台状态。
 
 公开 SDK2 Client 使用显式 `legacy` 协商模式执行一次 `initialize`（支持的 2025 年协议握手，与产品固定 `whoami` 路由无关）。公开 Transport 适配器以 `shell:false` 启动一个子进程，复用 SDK 公开的分帧及消息 schema helper，严格检查 UTF-8 JSONRPC 行并累计收发协议原始字节。不支持的协议直接失败，不启动兄弟进程、不重复 initialize、不重连、不重试。调用器通过 SDK 公开请求读取全部工具分页，核对完整目录后恰好发出一次 `tools/call`。原始 schema、annotations、metadata、content、structured content、`isError`、扩展字段及转义 NUL 保持 JSON。`readOnlyHint` 不授予批准；`isError:true` 仍是完成的 RPC，由外层判定工具结果。
 

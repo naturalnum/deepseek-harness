@@ -54,6 +54,7 @@ The parent caps helper output and permits 500 ms beyond the scan deadline before
 ## Build and smoke test
 
 ```sh
+pnpm run build:power-evolve:sandbox
 docker build --pull=false --progress=plain -t pe-s8-skills-runner:qa \
   -f products/power-evolve/sandbox/Dockerfile products/power-evolve/sandbox
 docker run --rm --user 1000:1000 --read-only \
@@ -65,3 +66,13 @@ docker run --rm --user 1000:1000 --read-only \
 ```
 
 The script performs OfficeCLI file operations and validation; imports the pinned Python packages; creates, extracts, and renders Chinese PDF text; compiles a Chinese CTeX document; and creates/reads DOCX, PPTX, and XLSX files. For each Office format it exports a PDF in a separate directory, checks nonempty bytes and expected text, and renders a PNG with Poppler. The DOCX export must also retain a native OMML equation's text. LibreOffice can return zero without exporting a file, so exit status alone does not establish rendering success. The script also checks Pandoc, writable mounts, and the absence of the excluded executables. This smoke test covers the toolchain; complete built-in Skill workflows and the platform's document command bridge require separate acceptance.
+
+## Authorized STDIO runtime
+
+The existing PID1 Runner loads the bundled STDIO library only when the operator supplies `PE_RUNNER_STDIO_V2_CONFIG_FILE`. That JSON file contains exactly `limits` (all SDK v2 budget fields) and `maxReplyBytes` (the complete runtime response limit). Invalid configuration prevents startup; an absent file setting leaves the v2 routes disabled. The image retains its original command line and private root-readable control token. The bundle creates no separate application launcher.
+
+Authenticated `POST /stdio/v2/executions` accepts the complete original `{dispatch,authorization}` packet. A fresh action requires the original true receipt, exact current Runner owner, matching whole permit/task/catalog digests and an unexpired approval. GET on `/stdio/v2/executions/{executionId}` queries retained facts; POST on its `/cancel` suffix aborts the invocation. Reposting the same complete dispatch only queries, including false or expired receipts; another dispatch under that identity conflicts. These checks do not replace Platform authorization or private resource capture.
+
+The SDK starts the literal program as UID/GID1000 with only HOME, PATH and LANG after dropped-privilege cwd verification. Generic and legacy executions share one writer gate. The runtime publishes completion only after the separate Linux helper confirms all UID1000 writers stopped; failed cleanup produces `unknown` and retains the gate. A whole-response budget failure publishes failed effect facts instead of truncated success. Shutdown closes admission and awaits execution plus independent cleanup; unconfirmed cleanup exits unsuccessfully, and external Pod-stop evidence remains necessary for durable writer release.
+
+The opt-in `application/tests/stdio-v2-runtime-docker.test.mjs` builds a private overlay from `PE_STDIO_RUNTIME_BASE_IMAGE`, runs network-none with read-only root and a root-owned Linux token volume, and removes its exact labelled resources. It uses real Docker, HTTP, SDK peers and UID cleanup; Platform grants and registry/Kubernetes image observations are declared substitutes. Product worker, result persistence and native two-user acceptance remain separate integration work.

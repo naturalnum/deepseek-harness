@@ -273,6 +273,8 @@ export const stdioExecutorOwnerV2 = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('desktop'), enrollmentId: ownedContainerReceipt.shape.owner.shape.enrollmentId,
     processId: opaque<Branded<'power-evolve/DeviceProcessId'>>(), dispatchId: ownedContainerReceipt.shape.owner.shape.creationId }).strict(),
 ])
+/** Exact original Runner instance or enrolled Device process; parsing does not authenticate it. */
+export type StdioExecutorOwnerV2 = z.infer<typeof stdioExecutorOwnerV2>
 /** Durable once-only authorization receipt; querying it never recreates permission to start. */
 export const stdioStartPermitV2 = stdioApprovalBindingV2.extend({
   permitId: opaque<Branded<'PowerEvolveStdioPermitIdV2'>>(), authorizationRequestId: requestId,

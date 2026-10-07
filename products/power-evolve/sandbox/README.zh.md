@@ -54,6 +54,7 @@ root Runner 读取挂载的 Runner token；cwd 校验、命令启动和扫描仅
 ## 构建与烟测
 
 ```sh
+pnpm run build:power-evolve:sandbox
 docker build --pull=false --progress=plain -t pe-s8-skills-runner:qa \
   -f products/power-evolve/sandbox/Dockerfile products/power-evolve/sandbox
 docker run --rm --user 1000:1000 --read-only \
@@ -65,3 +66,13 @@ docker run --rm --user 1000:1000 --read-only \
 ```
 
 脚本实际创建和校验 OfficeCLI 文件、导入锁定的 Python 包、生成和提取中文 PDF 并渲染页面、编译中文 CTeX 文档，还会创建并读取 DOCX、PPTX、XLSX 文件。每种 Office 格式均在独立目录导出 PDF，检查非空字节和预期文本，再用 Poppler 渲染 PNG。DOCX 导出还必须保留原生 OMML 公式中的文本。LibreOffice 可能未生成文件却返回零，因此仅凭退出码不能确认渲染成功。脚本另检查 Pandoc、可写挂载和排除的软件。此烟测覆盖工具链；内置技能完整工作流及 Platform 文档命令桥须另行验收。
+
+## 获授权的 STDIO 执行
+
+现有 PID1 Runner 仅在部署者设置 `PE_RUNNER_STDIO_V2_CONFIG_FILE` 时加载打包的 STDIO 库。该 JSON 文件严格包含 `limits`（全部 SDK v2 预算字段）和 `maxReplyBytes`（完整运行响应上限）。配置无效则启动失败；不设置文件字段则 v2 路由关闭。镜像保留原命令行和仅 root 可读的私有控制令牌。打包库不创建独立应用启动入口。
+
+获认证的 `POST /stdio/v2/executions` 接收完整原始 `{dispatch,authorization}`。首次执行要求原始 true 回执、准确的当前 Runner 身份、完整 permit／task／catalog 摘要一致及未过期审批。GET `/stdio/v2/executions/{executionId}` 查询保留事实；向其 `/cancel` 后缀 POST 会取消调用。同一完整 dispatch 重复提交仅查询，包括 false 或过期回执；同一身份的另一 dispatch 冲突。这些检查不替代平台授权及私有资源捕获。
+
+降权 helper 核验 cwd 后，SDK 以 UID/GID1000 及仅 HOME、PATH、LANG 的环境启动字面程序。通用执行与原命令执行共用一个写入运行锁。独立 Linux helper 确认全部 UID1000 写入进程停止后，runtime 才发布完成状态；清理失败产生 `unknown` 并保留运行锁。完整响应超限会发布失败及效果事实，不截断成功结果。关闭时先停止受理，再等待执行和独立清理；清理未确认则非零退出，持久写者释放仍须容器外 Pod 停止证据。
+
+需显式启用的 `application/tests/stdio-v2-runtime-docker.test.mjs` 从 `PE_STDIO_RUNTIME_BASE_IMAGE` 构建私有增量镜像，以无网络、只读根及 root 所有的 Linux 令牌卷运行，并准确删除测试标记资源。测试使用真实 Docker、HTTP、SDK 服务及 UID 清理；平台许可和注册表／Kubernetes 镜像观察明确为替身。产品 worker、结果持久化及原生双用户验收仍需后续集成。

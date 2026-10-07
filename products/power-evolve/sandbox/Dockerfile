@@ -75,6 +75,7 @@ ENV HOME=/home/agent \
   PYTHONUNBUFFERED=1
 
 COPY --chmod=0444 runner.mjs file-scan.mjs file-scan.py /opt/power-evolve/
+COPY --chmod=0444 lib/stdio-v2-runtime.mjs /opt/power-evolve/lib/stdio-v2-runtime.mjs
 # UNO uses Debian's system Python; the isolated report Python environment stays unchanged.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends python3-uno \
