@@ -136,6 +136,27 @@ test('caller-client capture reuses its transaction for all authority/binding/slo
   assert.equal(result.actualExecutorImage.runtimeImageId, f.pin.runtimeImageIds[0])
 })
 
+test('caller-client observeReady derives the private token inside Manager and uses only the original transaction', options, async () => {
+  const f = fixture(), before = clone({ slot: f.slot, instance: f.instance })
+  const ready = await f.manager.observeReady(f.ready.sessionId, f.ready.userId, f.ready.podUid, f.ready.runnerInstanceId, f.client)
+  assertNoPoolOrWrites(f)
+  assert.deepEqual({ slot: f.slot, instance: f.instance }, before)
+  assert.equal(ready.token, f.manager.token(ready.name, ready.sessionId, ready.generation))
+  assert.notEqual(ready.token, f.ready.token)
+  assert.deepEqual({ ...ready, token: '' }, { ...f.ready, token: '' })
+  assert.equal(f.kubeCalls.filter(call => call.path.endsWith('/proxy/health')).length, 1)
+  const captured = await f.manager.captureStdioV2(ready, f.scope, f.pin, f.limits, f.client)
+  assertNoPoolOrWrites(f); assert.equal(captured.capture.runnerInstanceId, f.ready.runnerInstanceId)
+})
+
+test('caller-client observeReady authority failure preserves the writer and never opens quarantine transactions', options, async () => {
+  const f = fixture(); f.account.enabled = false
+  const before = clone({ slot: f.slot, instance: f.instance })
+  await assert.rejects(f.manager.observeReady(f.ready.sessionId, f.ready.userId, f.ready.podUid, f.ready.runnerInstanceId, f.client),
+    error => error.code === 'account_disabled')
+  assertNoPoolOrWrites(f); assert.deepEqual({ slot: f.slot, instance: f.instance }, before)
+})
+
 test('caller authority/Workspace/slot/instance failures reject without nested quarantine or writer mutation', options, async t => {
   for (const [name, change, expected] of [
     ['disabled owner', f => { f.account.enabled = false }, error => error.code === 'account_disabled'],

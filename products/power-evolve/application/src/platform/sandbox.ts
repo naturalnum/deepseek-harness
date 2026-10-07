@@ -870,10 +870,12 @@ export class SandboxManager {
    * @param userId - Owner of the captured mount slot.
    * @param podUid - Previously dispatched Pod identity.
    * @param runnerInstanceId - Previously dispatched Runner identity.
-   * @returns Matching writer including its frozen binding; recovery fences do not prevent observation.
+   * @param client - Optional original STDIO authorization transaction; its account lock and all PG checks are reused.
+   * @returns Matching writer with its private token and frozen binding; the client path checks live dispatch authority and never provisions or quarantines.
    */
-  async observeReady(sessionId: string, userId: string, podUid: string, runnerInstanceId: string): Promise<SandboxReady> {
-    const selected = await this.pool.query<MountSlot>('SELECT * FROM pe_mount_slots WHERE user_id=$1', [userId])
+  async observeReady(sessionId: string, userId: string, podUid: string, runnerInstanceId: string,
+    client?: PoolClient): Promise<SandboxReady> {
+    const selected = await (client ?? this.pool).query<MountSlot>('SELECT * FROM pe_mount_slots WHERE user_id=$1', [userId])
     const slot = selected.rows[0]
     if (!slot || slot.state !== 'ready' || slot.session_id !== sessionId
       || slot.pod_uid !== podUid || slot.runner_instance_id !== runnerInstanceId) {
@@ -883,7 +885,8 @@ export class SandboxManager {
     const sandbox = { name: this.name(userId), podUid, runnerInstanceId,
       token: this.token(this.name(userId), sessionId, slot.generation), restartCount: 0,
       generation: slot.generation, sessionId, userId, binding }
-    await this.assertCurrent(sandbox)
+    if (client) await this.assertStdioCaptureAllowed(client, sandbox)
+    else await this.assertCurrent(sandbox)
     return sandbox
   }
 

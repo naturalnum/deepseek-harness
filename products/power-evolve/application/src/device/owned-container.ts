@@ -135,9 +135,11 @@ const inspectionFormat = '{"Id":{{json .Id}},"Image":{{json .Image}},"Labels":{{
 const imageCaptureObservation = z.object({ Id: imageId, Os: z.string(), Architecture: z.string() })
 const imageCaptureFormat = '{"Id":{{json .Id}},"Os":{{json .Os}},"Architecture":{{json .Architecture}}}'
 const mountObservation = z.object({ Type: z.string(), Source: z.string().optional(), Destination: z.string(), RW: z.boolean() }).passthrough()
+const rawObject = z.custom<Record<string, unknown>>(value => value !== null && typeof value === 'object' && !Array.isArray(value))
 const captureInspection = inspection.extend({ State: observation.passthrough(), Mounts: z.array(mountObservation),
-  RestartCount: z.number().int().nonnegative().safe() })
-const captureInspectionFormat = '{"Id":{{json .Id}},"Image":{{json .Image}},"Labels":{{json .Config.Labels}},"State":{{json .State}},"Mounts":{{json .Mounts}},"RestartCount":{{json .RestartCount}}}'
+  RestartCount: z.number().int().nonnegative().safe(), Config: rawObject, HostConfig: rawObject,
+  Path: z.string().min(1), Args: z.array(z.string()) })
+const captureInspectionFormat = '{"Id":{{json .Id}},"Image":{{json .Image}},"Labels":{{json .Config.Labels}},"State":{{json .State}},"Mounts":{{json .Mounts}},"RestartCount":{{json .RestartCount}},"Config":{{json .Config}},"HostConfig":{{json .HostConfig}},"Path":{{json .Path}},"Args":{{json .Args}}}'
 function requireCanonicalSource(source: string): void {
   if (!posix.isAbsolute(source) || posix.normalize(source) !== source || posix.resolve(source) !== source
     || /[\u0000-\u001f\u007f-\u009f]/u.test(source)) {
@@ -204,7 +206,7 @@ export class OwnedDeviceContainer {
   }
   /** Observe an exact owned, never-started container and its authorized Workspace/Home binds without granting path access or mutating Docker.
    * @param request Original trusted receipt, image pin and canonical absolute physical bind expectations.
-   * @returns Fresh private observations; the caller must recapture before dispatch and separately authorize start.
+   * @returns Fresh private identity, complete execution configuration and mount observations; the caller must recapture before dispatch, check its creation policy and separately authorize start.
    */
   async captureContainer(request: OwnedContainerCaptureRequest): Promise<OwnedContainerCapture> {
     requireCanonicalSource(request.workspaceMount.source)

@@ -24,12 +24,18 @@ const state = { Running: false, ExitCode: 0, Status: 'created', StartedAt: '0001
 const mounts = [{ Type: 'bind', Source: request.workspaceMount.source, Destination: '/workspace', RW: true, Mode: '', Propagation: 'rprivate' },
   { Type: 'bind', Source: request.homeMount.source, Destination: '/home/agent', RW: true, Mode: '', Propagation: 'rprivate' }]
 const tmpfs = { Type: 'tmpfs', Source: '', Destination: '/tmp', RW: true, Mode: '', Propagation: '' }
+const executionConfig = { User: '1000:1000', Env: ['HOME=/home/agent'], Entrypoint: ['/usr/bin/node'],
+  Cmd: ['/opt/power-evolve/stdio-driver.mjs'], WorkingDir: '/workspace', original: JSON.parse('{"__proto__":{"raw":true},"value":"escaped\\u0000value"}') }
+const hostConfig = { ReadonlyRootfs: true, NetworkMode: 'none', SecurityOpt: ['no-new-privileges'],
+  PidsLimit: 128, CapDrop: ['ALL'], extra: { field: ['retained', null] } }
+const executionPath = '/usr/bin/node', executionArgs = ['/opt/power-evolve/stdio-driver.mjs']
 function output(value: object): DockerCommandResult { return { stdout: JSON.stringify(value), stderr: '' } }
 function image(overrides: object = {}): DockerCommandResult {
   return output({ Id: receipt.imageId, Os: 'linux', Architecture: 'arm64', ...overrides })
 }
 function container(overrides: object = {}): DockerCommandResult {
-  return output({ Id: receipt.containerId, Image: receipt.imageId, Labels: labels, State: state, Mounts: mounts, RestartCount: 0, ...overrides })
+  return output({ Id: receipt.containerId, Image: receipt.imageId, Labels: labels, State: state, Mounts: mounts, RestartCount: 0,
+    Config: executionConfig, HostConfig: hostConfig, Path: executionPath, Args: executionArgs, ...overrides })
 }
 class DockerReplacement implements DockerClient {
   readonly calls: { args: readonly string[]; timeoutMs: number }[] = []
@@ -79,16 +85,26 @@ test('unavailable, truncated and malformed image observations reject without raw
   }
 })
 
-test('capture preserves full selected State, Mounts and labels for a created container with two authorized binds', async () => {
+test('capture preserves complete execution configuration, State, Mounts and labels for a created container with two authorized binds', async () => {
   for (const actualMounts of [mounts, [...mounts, tmpfs]]) {
     const docker = new DockerReplacement([image(), container({ Mounts: actualMounts })])
     const captured = await new OwnedDeviceContainer(config, docker).captureContainer(request)
     assert.deepEqual(captured.image, { kind: 'desktop', configImageId: receipt.imageId, platform: pin.platform })
     assert.deepEqual(captured.inspection, { Id: receipt.containerId, Image: receipt.imageId, Labels: labels,
-      State: state, Mounts: actualMounts, RestartCount: 0 })
+      State: state, Mounts: actualMounts, RestartCount: 0, Config: executionConfig, HostConfig: hostConfig,
+      Path: executionPath, Args: executionArgs })
     assert.equal(docker.calls.length, 2)
     assert.deepEqual(docker.calls[1]!.args, ['container', 'inspect', '--format',
-      '{"Id":{{json .Id}},"Image":{{json .Image}},"Labels":{{json .Config.Labels}},"State":{{json .State}},"Mounts":{{json .Mounts}},"RestartCount":{{json .RestartCount}}}', receipt.containerId])
+      '{"Id":{{json .Id}},"Image":{{json .Image}},"Labels":{{json .Config.Labels}},"State":{{json .State}},"Mounts":{{json .Mounts}},"RestartCount":{{json .RestartCount}},"Config":{{json .Config}},"HostConfig":{{json .HostConfig}},"Path":{{json .Path}},"Args":{{json .Args}}}', receipt.containerId])
+    assertReadOnly(docker)
+  }
+})
+
+test('missing or incomplete execution configuration rejects instead of approving a partial inspection', async () => {
+  for (const change of [{ Config: undefined }, { Config: null }, { Config: [] }, { HostConfig: undefined },
+    { HostConfig: null }, { Path: undefined }, { Path: '' }, { Args: undefined }, { Args: 'not argv' }]) {
+    const docker = new DockerReplacement([image(), container(change)])
+    await assert.rejects(new OwnedDeviceContainer(config, docker).captureContainer(request), { code: 'container_inspection_unavailable' })
     assertReadOnly(docker)
   }
 })
