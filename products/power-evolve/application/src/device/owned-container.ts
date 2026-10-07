@@ -1,10 +1,13 @@
 /** Docker ownership checks for a durable device journal; observations alone are not writer-stop receipts. */
 import { execFile } from 'node:child_process'
+import { posix } from 'node:path'
 import { promisify } from 'node:util'
 import { z } from 'zod'
 
 import { ownedContainerOwner, ownedContainerReceipt, type OwnedContainerOwner,
   type OwnedContainerReceipt, type DeviceContainerId, type DeviceContainerImageId } from '@power-evolve/contracts/device-execution'
+import { stdioCaptureV2, stdioDeviceDeploymentV2, stdioExecutorImageV2,
+  type StdioDeploymentV2, type StdioExecutorImageV2 } from '@power-evolve/contracts/stdio-mcp'
 /** Shared durable owner and container validators used by both Device and Platform. */
 export { ownedContainerOwner, ownedContainerReceipt }
 /** Shared immutable identity types retained for existing Docker adapter consumers. */
@@ -52,7 +55,8 @@ export class DockerCommandError extends Error {
 /** Identity failures do not authorize adoption, mutation, or an inferred stopped state. */
 export class OwnedContainerError extends Error {
   constructor(readonly code: 'image_unavailable' | 'container_inspection_unavailable' | 'container_identity_mismatch'
-    | 'container_missing' | 'container_not_created' | 'container_running' | 'create_unconfirmed' | 'owned_options_conflict') { super(code) }
+    | 'container_missing' | 'container_not_created' | 'container_running' | 'create_unconfirmed' | 'owned_options_conflict'
+    | 'image_identity_mismatch' | 'container_mount_mismatch' | 'container_restarted') { super(code) }
 }
 
 const executeFile = promisify(execFile)
@@ -107,12 +111,52 @@ export interface OwnedContainerConfig {
   /** Nonnegative integer grace period passed to Docker stop. */
   stopGraceSeconds: number
 }
+type DesktopDeployment = Extract<StdioDeploymentV2, { kind: 'desktop' }>
+type DesktopImage = Extract<StdioExecutorImageV2, { kind: 'desktop' }>
+type DesktopCapture = Extract<z.infer<typeof stdioCaptureV2>, { kind: 'desktop' }>
+/** Trusted original receipt, deployment pin and authorized physical bind sources; caller owns realpath/grant checks. */
+export interface OwnedContainerCaptureRequest {
+  receipt: OwnedContainerReceipt
+  pin: DesktopDeployment
+  workspaceMount: DesktopCapture['workspaceMount']
+  homeMount: DesktopCapture['homeMount']
+}
+/** Fresh exact-ID image and container observations; raw State/Mounts remain private executor data. */
+export interface OwnedContainerCapture {
+  image: DesktopImage
+  inspection: z.infer<typeof captureInspection>
+}
 
 const observation = z.object({ Running: z.boolean(), ExitCode: z.number().int(), Status: z.string().max(64),
   StartedAt: z.string().max(128), FinishedAt: z.string().max(128) })
 const inspection = z.object({ Id: containerId, Image: imageId, Labels: z.record(z.string(), z.string()).nullable(), State: observation })
 type Inspection = z.infer<typeof inspection>
 const inspectionFormat = '{"Id":{{json .Id}},"Image":{{json .Image}},"Labels":{{json .Config.Labels}},"State":{{json .State}}}'
+const imageCaptureObservation = z.object({ Id: imageId, Os: z.string(), Architecture: z.string() })
+const imageCaptureFormat = '{"Id":{{json .Id}},"Os":{{json .Os}},"Architecture":{{json .Architecture}}}'
+const mountObservation = z.object({ Type: z.string(), Source: z.string().optional(), Destination: z.string(), RW: z.boolean() }).passthrough()
+const captureInspection = inspection.extend({ State: observation.passthrough(), Mounts: z.array(mountObservation),
+  RestartCount: z.number().int().nonnegative().safe() })
+const captureInspectionFormat = '{"Id":{{json .Id}},"Image":{{json .Image}},"Labels":{{json .Config.Labels}},"State":{{json .State}},"Mounts":{{json .Mounts}},"RestartCount":{{json .RestartCount}}}'
+function requireCanonicalSource(source: string): void {
+  if (!posix.isAbsolute(source) || posix.normalize(source) !== source || posix.resolve(source) !== source
+    || /[\u0000-\u001f\u007f-\u009f]/u.test(source)) {
+    throw new OwnedContainerError('container_mount_mismatch')
+  }
+}
+function verifyMounts(value: z.infer<typeof captureInspection>, request: OwnedContainerCaptureRequest): void {
+  const expected = [request.workspaceMount, request.homeMount]
+  const destinations = new Set<string>()
+  for (const mount of value.Mounts) {
+    if (!posix.isAbsolute(mount.Destination) || posix.normalize(mount.Destination) !== mount.Destination
+      || destinations.has(mount.Destination)) throw new OwnedContainerError('container_mount_mismatch')
+    destinations.add(mount.Destination)
+    const binding = expected.find(item => item.destination === mount.Destination)
+    if (binding ? mount.Type !== 'bind' || mount.Source !== binding.source || mount.RW !== !binding.readOnly
+      : mount.Type !== 'tmpfs' || mount.Destination !== '/tmp') throw new OwnedContainerError('container_mount_mismatch')
+  }
+  if (expected.some(item => !destinations.has(item.destination))) throw new OwnedContainerError('container_mount_mismatch')
+}
 function labels(owner: OwnedContainerOwner, image: DeviceContainerImageId): Record<string, string> {
   return { [OWNED_DEVICE_CONTAINER_LABELS.schema]: '1', [OWNED_DEVICE_CONTAINER_LABELS.imageId]: image,
     ...Object.fromEntries(Object.entries(owner).map(([key, value]) => [OWNED_DEVICE_CONTAINER_LABELS[key as keyof OwnedContainerOwner], value])) }
@@ -140,6 +184,48 @@ function capped(value: string): { text: string; truncated: boolean } {
 /** Create/capture one frozen identity; all later operations verify and address only that exact ID. */
 export class OwnedDeviceContainer {
   constructor(private readonly config: OwnedContainerConfig, private readonly docker: DockerClient = new ScrubbedDockerClient()) {}
+  /** Observe the original immutable local image without resolving tags, pulling, or starting a container.
+   * @param pin Original validated deployment descriptor, including expected OS and architecture.
+   * @returns Fresh actual image identity only when its exact config ID and platform match the pin.
+   */
+  async captureImage(pin: DesktopDeployment): Promise<DesktopImage> {
+    const expected = stdioDeviceDeploymentV2.parse(pin)
+    let actual: z.infer<typeof imageCaptureObservation>
+    try {
+      const result = await this.docker.run(['image', 'inspect', '--format', imageCaptureFormat, expected.configImageId], this.config.commandTimeoutMs)
+      if (result.outputTruncated) throw new OwnedContainerError('image_unavailable')
+      actual = imageCaptureObservation.parse(JSON.parse(result.stdout))
+    } catch (error) { void error; throw new OwnedContainerError('image_unavailable') }
+    if (actual.Id !== expected.configImageId || actual.Os !== expected.platform.os || actual.Architecture !== expected.platform.architecture) {
+      throw new OwnedContainerError('image_identity_mismatch')
+    }
+    return stdioExecutorImageV2.options[1].parse({ kind: 'desktop', configImageId: actual.Id,
+      platform: { os: actual.Os, architecture: actual.Architecture } })
+  }
+  /** Observe an exact owned, never-started container and its authorized Workspace/Home binds without granting path access or mutating Docker.
+   * @param request Original trusted receipt, image pin and canonical absolute physical bind expectations.
+   * @returns Fresh private observations; the caller must recapture before dispatch and separately authorize start.
+   */
+  async captureContainer(request: OwnedContainerCaptureRequest): Promise<OwnedContainerCapture> {
+    requireCanonicalSource(request.workspaceMount.source)
+    requireCanonicalSource(request.homeMount.source)
+    if (request.receipt.imageId !== request.pin.configImageId) throw new OwnedContainerError('container_identity_mismatch')
+    const image = await this.captureImage(request.pin)
+    let value: z.infer<typeof captureInspection>
+    try {
+      const result = await this.docker.run(['container', 'inspect', '--format', captureInspectionFormat, request.receipt.containerId], this.config.commandTimeoutMs)
+      if (result.outputTruncated) throw new OwnedContainerError('container_inspection_unavailable')
+      value = captureInspection.parse(JSON.parse(result.stdout))
+    } catch (error) {
+      if (error instanceof DockerCommandError && error.code === 'docker_not_found') throw new OwnedContainerError('container_missing')
+      throw new OwnedContainerError('container_inspection_unavailable')
+    }
+    verify(value, request.receipt, request.receipt.containerId)
+    if (value.State.Running || value.State.Status !== 'created') throw new OwnedContainerError('container_not_created')
+    if (value.RestartCount !== 0) throw new OwnedContainerError('container_restarted')
+    verifyMounts(value, request)
+    return { image, inspection: value }
+  }
   /** Resolve an already-local image reference without pulling or starting anything.
    * @param reference Configured image tag, digest or local ID.
    * @returns Immutable local sha256 Docker image ID.
