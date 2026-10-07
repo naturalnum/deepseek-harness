@@ -43,7 +43,9 @@ Device 派发记录接受可选的 `materials` 不可变技能引用。缺省时
 
 可选的 `reportSuite` 描述同一不可变 `materials` 选择中的四个固定同级角色。派发、任务和领取记录拒绝缺失的成员引用；消费者还须按每个角色及完整包绑定核验摘要。描述不授予安装或执行权限。省略该字段保留旧 JSON 和请求摘要；不支持此字段的 Worker 不能消费报告派发。
 
-浏览器安全的 [STDIO v2 JSON 源码](src/stdio-mcp-json.ts) 提供 `stdioCanonicalJsonV2(value, limits)` 和 `StdioV2JsonLimits`；此叶模块尚未加入包导出。深度、值节点数和 UTF-8 字节预算均必须传入正安全整数。根深度为零；共享非循环引用按每次出现计数。编码器按 code-unit 字典序输出对象键（包括数字键），保持数组顺序和原始字符串，不做规范化；保留转义 NUL 与字面 `__proto__`/`constructor` 数据。它拒绝非 JSON 值、循环、非普通对象、accessor、symbol、不可枚举对象字段及稀疏／扩展数组，不调用 getter 或 `toJSON`。数据／配置无效抛出 TypeError；预算超限抛出 RangeError，不返回部分 JSON。本模块只序列化，摘要、域选择与授权由消费者负责。
+从 `@power-evolve/contracts/stdio-mcp-json` 导入浏览器安全的 [STDIO v2 JSON 编码器](src/stdio-mcp-json.ts)。深度、值节点数和 UTF-8 字节预算均必须传入正安全整数。根深度为零；共享非循环引用按每次出现计数。编码器按 code-unit 字典序输出对象键（包括数字键），保持数组顺序和原始字符串，不做规范化；保留转义 NUL 与字面 `__proto__`/`constructor` 数据。它拒绝非 JSON 值、循环、非普通对象、accessor、symbol、不可枚举对象字段及稀疏／扩展数组，不调用 getter 或 `toJSON`。数据／配置无效抛出 TypeError；预算超限抛出 RangeError，不返回部分 JSON。摘要、域选择与授权由消费者负责。
+
+从 `@power-evolve/contracts/stdio-mcp` 导入通用 STDIO 请求及固定任务。发现请求明确选择会话和目标，没有 Agent operation；调用保留受理时完整的原始目录、描述符和参数。任务、选择及派发解析器必须传入部署选定的 SDK／JSON 预算；完整原始字段须保存为 PG `json`，不能用 `jsonb`。Prepared 保留精确执行器镜像种类、原资源身份与可写 Workspace／Home 观察。调用前目录镜像必须匹配可信部署 pin；解析后的首个 epoch 许可绑定一个动作、执行、进程／实例、task／Prepared 摘要与有效期。解析不发放或消费首次启动回复，不认证执行器，也不确立后代已停止。平台须持久执行这些决定。这些导出记录不启用产品 Profile 中的通用 STDIO 执行。
 
 ## 实现 {#implementation}
 

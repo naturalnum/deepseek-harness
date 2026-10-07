@@ -27,7 +27,9 @@ SSH 失败保留 `state:'failed'` 和 `errorCode`，并包含 `effectMayHaveOccu
 
 ## 共享 STDIO SDK 调用器
 
-`src/stdio-v2.ts` 提供内部 `runStdioV2(input, options, signal)`，供后续隔离的 Cloud 和 Device 执行器复用。它尚未接入此 Runner 的 HTTP API 或包导出。共享 Host 不得执行它。执行器负责审批、不可变 Runner/程序 pin、目录授权、prepare/permit、持久请求身份、结果判定及容器/UID 清理。
+`@power-evolve/connector-runner/stdio-v2` 导出 `runStdioV2(input, options, signal)`，供隔离的 Cloud 和 Device 执行器复用。它尚未接入此 Runner 的 HTTP API 或产品 Profile。共享 Host 不得执行它。执行器负责审批、不可变 Runner/程序 pin、目录授权、prepare/permit、持久请求身份、结果判定及容器/UID 清理。
+
+独立的 Node 专用 `@power-evolve/connector-runner/stdio-v2-digest` 叶模块不启动进程。它使用共享浏览器安全编码器，以不同的 management／configuration／task／catalog／prepared／scope／spec／dispatch／result 域散列完整原始 JSON。完整有序目录指纹包含所有 schema、metadata 和扩展字段。审批 HMAC 使用平台已有的 32 字节密钥及独立域；执行器不接收该密钥。编码预算包含完整域 envelope。浏览器安全的 contracts 包不导入此叶模块或 SDK 调用器。原 legacy 请求摘要不变。
 
 输入选择 `discover` 或 `call`，指定字面程序、参数数组及绝对 cwd。调用还提供冻结的完整原始目录、原始工具名和 JSON 参数。选项传入全部输入/消息/协议/JSON/分页/工具/目录/结果/stderr/运行/请求/清理预算、严格的 `HOME`/`PATH`/`LANG` 环境，以及验证完整原始目录并计算共享冻结摘要的同步回调。调用器不另造规范化摘要实现。macOS 中 Node 可能自行加入 `__CF_USER_TEXT_ENCODING` 编码提示；调用器不合并父环境。HOME 和 PATH 必须指向执行器批准的隔离位置。
 

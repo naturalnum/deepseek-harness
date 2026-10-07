@@ -14355,6 +14355,9 @@ importers:
       '@modelcontextprotocol/server':
         specifier: 2.0.0
         version: 2.0.0
+      '@power-evolve/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       ssh2:
         specifier: 1.17.0
         version: 1.17.0

@@ -4,6 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./stdio-v2": { "types": "./lib/stdio-v2.d.ts", "default": "./lib/stdio-v2.js" },
+    "./stdio-v2-digest": { "types": "./lib/stdio-v2-digest.d.ts", "default": "./lib/stdio-v2-digest.js" },
     "./protocol": { "types": "./lib/protocol.d.ts", "default": "./lib/protocol.js" },
     "./package.json": "./package.json"
   },
@@ -14,6 +16,7 @@
     "test": "tsx --test tests/*.test.ts"
   },
   "dependencies": {
+    "@power-evolve/contracts": "workspace:*",
     "@modelcontextprotocol/client": "2.0.0",
     "@modelcontextprotocol/server": "2.0.0",
     "zod": "^4.4.3",

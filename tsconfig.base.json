@@ -28,6 +28,10 @@
     // not declaration path aliases, keep each package/vendor source compiled
     // under its own tsconfig boundary.
     "paths": {
+      "@power-evolve/contracts/stdio-mcp": ["./products/power-evolve/contracts/src/stdio-mcp.ts"],
+      "@power-evolve/contracts/stdio-mcp-json": ["./products/power-evolve/contracts/src/stdio-mcp-json.ts"],
+      "@power-evolve/connector-runner/stdio-v2": ["./products/power-evolve/connector-runner/src/stdio-v2.ts"],
+      "@power-evolve/connector-runner/stdio-v2-digest": ["./products/power-evolve/connector-runner/src/stdio-v2-digest.ts"],
       "@deepseek-ai/dsh-desktop/assembly": ["./apps/desktop/src/assembly.ts"],
       "@deepseek-ai/dsh-desktop/preload-assembly": ["./apps/desktop/src/preload-assembly.ts"],
       "@power-evolve/contracts/device-execution": ["./products/power-evolve/contracts/src/device-execution.ts"],
