@@ -56,12 +56,14 @@ export async function revokeAccountExecutions(client: PoolClient, userId: UserId
   await client.query(`UPDATE pe_ssh_execute_actions SET error_code='account_disabled',updated_at=now()
     WHERE user_id=$1 AND state='approved'`, [userId])
 
+  // Generic preparation and approval retain their active writer until its own cleanup closes.
   const cloud = await client.query(`UPDATE pe_cloud_executions SET cancel_requested=true,
-    state=CASE WHEN state='queued' THEN 'cancelled' ELSE state END,error_code='account_disabled',updated_at=now()
+    state=CASE WHEN execution_kind='legacy_command' AND state='queued' THEN 'cancelled' ELSE state END,error_code='account_disabled',updated_at=now()
     WHERE user_id=$1 AND state IN ('queued','starting','running','cancelling','uncertain')
     AND (cancel_requested=false OR error_code IS DISTINCT FROM 'account_disabled')`, [userId])
   const desktop = await client.query(`UPDATE pe_desktop_executions SET cancel_requested=true,
-    state=CASE WHEN state='queued' THEN 'cancelled' WHEN state='running' THEN 'cancelling' ELSE state END,
+    state=CASE WHEN execution_kind='legacy_command' AND state='queued' THEN 'cancelled'
+      WHEN execution_kind='legacy_command' AND state='running' THEN 'cancelling' ELSE state END,
     error_code='account_disabled',updated_at=now()
     WHERE user_id=$1 AND state IN ('queued','running','cancelling','uncertain')
     AND (cancel_requested=false OR error_code IS DISTINCT FROM 'account_disabled')`, [userId])
@@ -82,7 +84,7 @@ export async function revokeAccountExecutions(client: PoolClient, userId: UserId
   // Idle writers can begin cleanup immediately; active executions first observe/cancel their Runner.
   await client.query(`UPDATE pe_mount_slots m SET state='stopping',updated_at=now()
     WHERE m.user_id=$1 AND m.state='ready' AND NOT EXISTS(SELECT 1 FROM pe_cloud_executions e
-      WHERE e.session_id=m.session_id AND e.state IN ('starting','running','cancelling','uncertain'))`, [userId])
+      WHERE e.session_id=m.session_id AND e.state IN ('queued','starting','running','cancelling','uncertain'))`, [userId])
   await client.query(`UPDATE pe_sandbox_instances i SET state='deleting',updated_at=now()
     FROM pe_mount_slots m WHERE m.user_id=$1 AND m.session_id=i.session_id AND m.state='stopping'
     AND i.state='ready'`, [userId])

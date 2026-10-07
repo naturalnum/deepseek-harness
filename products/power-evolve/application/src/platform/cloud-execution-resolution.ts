@@ -57,7 +57,7 @@ export class CloudExecutionResolutionService {
     private readonly leaseMs: number, private readonly pollMs: number) {}
 
   private async owned(client: PoolClient, owner: string, id: string): Promise<CloudExecutionRow> {
-    const row = (await client.query<CloudExecutionRow>('SELECT * FROM pe_cloud_executions WHERE id=$1 AND user_id=$2 FOR UPDATE', [id, owner])).rows[0]
+    const row = (await client.query<CloudExecutionRow>("SELECT * FROM pe_cloud_executions WHERE execution_kind='legacy_command' AND id=$1 AND user_id=$2 FOR UPDATE", [id, owner])).rows[0]
     if (!row) throw new PlatformError(404, 'execution_not_found')
     return row
   }
@@ -77,7 +77,7 @@ export class CloudExecutionResolutionService {
       if (input.sessionId && !(await client.query('SELECT id FROM pe_sessions WHERE id=$1 AND user_id=$2', [input.sessionId,user.userId])).rowCount) {
         throw new PlatformError(404, 'session_not_found')
       }
-      const rows = await client.query<CloudExecutionRow>(`SELECT * FROM pe_cloud_executions WHERE user_id=$1
+      const rows = await client.query<CloudExecutionRow>(`SELECT * FROM pe_cloud_executions WHERE execution_kind='legacy_command' AND user_id=$1
         AND ($2::uuid IS NULL OR session_id=$2) ORDER BY created_at DESC,id DESC LIMIT 100`, [user.userId,input.sessionId ?? null])
       const resolutions = await client.query<ResolutionRow>('SELECT * FROM pe_cloud_execution_resolutions WHERE user_id=$1 AND execution_id=ANY($2::uuid[])',
         [user.userId,rows.rows.map(row => row.id)])
@@ -158,7 +158,7 @@ export class CloudExecutionResolutionService {
       [randomUUID(),input.requestId,row.user_id,row.session_id,row.id,requestDigest,input.fingerprint,writer.workspaceId,writer.generation,
         writer.name,writer.podUid,writer.runnerInstanceId,JSON.stringify(writer.binding),row.request_digest,
         dispatched ? cloudRequestDigest(dispatched) : null,input.note,row.continuation_request_id])
-      await client.query('UPDATE pe_cloud_executions SET lease_owner=NULL,lease_until=NULL,updated_at=now() WHERE id=$1', [row.id])
+      await client.query("UPDATE pe_cloud_executions SET lease_owner=NULL,lease_until=NULL,updated_at=now() WHERE execution_kind='legacy_command' AND id=$1", [row.id])
       await client.query("SELECT pg_notify('pe_executions',$1)", [row.session_id])
       return receipt(inserted.rows[0]!)
     })
@@ -180,7 +180,7 @@ export class CloudExecutionResolutionService {
     signal.throwIfAborted()
     const live = await client.query(`SELECT r.id FROM pe_cloud_execution_resolutions r JOIN pe_cloud_executions e ON e.id=r.execution_id
       WHERE r.id=$1 AND r.lease_owner=$2 AND r.lease_epoch=$3 AND r.lease_until>clock_timestamp()
-      AND r.state='stopping' AND e.state='uncertain' AND e.user_id=r.user_id AND e.session_id=r.session_id
+      AND r.state='stopping' AND e.execution_kind='legacy_command' AND e.state='uncertain' AND e.user_id=r.user_id AND e.session_id=r.session_id
       AND e.request_digest=r.execution_request_digest AND e.sandbox_name=r.sandbox_name AND e.pod_uid=r.pod_uid
       AND e.runner_instance_id=r.runner_instance_id AND e.continuation_request_id=r.continuation_request_id FOR UPDATE OF r,e`,
     [row.id,this.ownerId,row.lease_epoch])
@@ -193,14 +193,16 @@ export class CloudExecutionResolutionService {
    */
   async poll(signal: AbortSignal): Promise<boolean> {
     if (signal.aborted) return false
-    const hint = (await this.pool.query<ResolutionRow>(`SELECT * FROM pe_cloud_execution_resolutions
-      WHERE state IN ('accepted','stopping') AND (lease_until IS NULL OR lease_until<=clock_timestamp()) ORDER BY updated_at,id LIMIT 1`)).rows[0]
+    const hint = (await this.pool.query<ResolutionRow>(`SELECT r.* FROM pe_cloud_execution_resolutions r
+      JOIN pe_cloud_executions e ON e.id=r.execution_id AND e.execution_kind='legacy_command'
+      WHERE r.state IN ('accepted','stopping') AND (r.lease_until IS NULL OR r.lease_until<=clock_timestamp()) ORDER BY r.updated_at,r.id LIMIT 1`)).rows[0]
     if (!hint) return false
     const row = await transaction(this.pool,async client => {
       await lockAccountAuthorities(client,[userId.parse(hint.user_id)],'update')
       const claimed = await client.query<ResolutionRow>(`UPDATE pe_cloud_execution_resolutions SET state='stopping',lease_owner=$2,
         lease_epoch=lease_epoch+1,lease_until=clock_timestamp()+$3::double precision*interval '1 millisecond',attempts=attempts+1,updated_at=now()
-        WHERE id=$1 AND state IN ('accepted','stopping') AND (lease_until IS NULL OR lease_until<=clock_timestamp()) RETURNING *`,
+        WHERE id=$1 AND state IN ('accepted','stopping') AND (lease_until IS NULL OR lease_until<=clock_timestamp())
+        AND EXISTS(SELECT 1 FROM pe_cloud_executions e WHERE e.id=execution_id AND e.execution_kind='legacy_command') RETURNING *`,
       [hint.id,this.ownerId,this.leaseMs])
       return claimed.rows[0] ?? null
     })
@@ -244,7 +246,7 @@ export class CloudExecutionResolutionService {
           verifiedFiles: { status: 'unavailable', files: [], reasons: ['execution_unavailable'] } } : null
         const updated = await client.query<CloudExecutionRow>(`UPDATE pe_cloud_executions SET state=$2,result=$3,
           error_code=CASE WHEN error_code='account_disabled' THEN error_code ELSE NULL END,lease_owner=NULL,lease_until=NULL,updated_at=now()
-          WHERE id=$1 AND state='uncertain' RETURNING *`, [row.execution_id,finalState,value === null ? null : JSON.stringify(value)])
+          WHERE execution_kind='legacy_command' AND id=$1 AND state='uncertain' RETURNING *`, [row.execution_id,finalState,value === null ? null : JSON.stringify(value)])
         if (!updated.rows[0]) throw new ResolutionLeaseLost()
         const continuation = await this.enqueue(client,updated.rows[0])
         await client.query(`UPDATE pe_cloud_execution_resolutions SET state='completed',stop_evidence=$2,final_execution_state=$3,

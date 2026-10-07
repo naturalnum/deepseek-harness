@@ -4,8 +4,9 @@ import { z } from 'zod'
 
 /** Persisted Cloud states, including a stopped executor with no verifiable command outcome. */
 export type CloudExecutionState = 'queued' | 'starting' | 'running' | 'cancelling' | 'succeeded' | 'failed' | 'cancelled' | 'uncertain' | 'closed_unknown'
-/** Platform-owned execution fields read from PostgreSQL; opaque results remain JSON, not JSONB. */
+/** Legacy command fields selected by explicit kind from PostgreSQL; opaque results remain JSON, not JSONB. */
 export interface CloudExecutionRow {
+  execution_kind: 'legacy_command'
   id: string; user_id: string; session_id: string; operation_id: string; call_id: string
   command: string; cwd: string; request_digest: string; state: CloudExecutionState; cancel_requested: boolean
   result: unknown; error_code: string | null; sandbox_name: string | null; dispatch_request: unknown
@@ -30,13 +31,13 @@ export const cloudRunnerResult = z.object({
  */
 export function cloudRequestDigest(value: unknown): string { return createHash('sha256').update(JSON.stringify(value)).digest('hex') }
 /**
- * Use a persisted dispatch request; legacy reconstruction is allowed only by the original admission digest.
+ * Use an explicitly selected legacy command's persisted dispatch request; reconstruction requires its original admission digest.
  * @param row Durable execution and captured Runner identity.
  * @param legacyTimeoutMs Current timeout, used only if its reconstructed admission digest matches.
  * @returns Verifiable exact request, or null without guessing a historical timeout.
  */
 export function capturedRunnerRequest(row: CloudExecutionRow, legacyTimeoutMs: number): z.infer<typeof cloudRunnerRequest> | null {
-  if (!row.runner_instance_id) return null
+  if (row.execution_kind !== 'legacy_command' || !row.runner_instance_id) return null
   const raw = row.dispatch_request ?? { id: row.id, command: row.command, cwd: row.cwd,
     timeoutMs: legacyTimeoutMs, instanceId: row.runner_instance_id }
   const parsed = cloudRunnerRequest.safeParse(raw)

@@ -11,7 +11,7 @@ import { requireActiveAccount } from './account-authority.ts'
 import { transaction } from './database.ts'
 import type { FileService } from './files.ts'
 
-interface ExecutionRow { id: string; call_id: string; state: string; result: unknown }
+interface ExecutionRow { execution_kind: 'legacy_command'; id: string; call_id: string; state: string; result: unknown }
 const persistedResult = z.object({ verifiedFiles: verifiedExecutionFiles.optional() }).passthrough()
 const pendingStates = new Set(['queued', 'starting', 'running', 'cancelling'])
 
@@ -72,8 +72,8 @@ export class ExecutionFileFactsService {
         JOIN pe_workspaces w ON w.id=s.workspace_id AND w.user_id=$2 WHERE s.id=$1 AND s.user_id=$2`,
       [parsed.data.sessionId, user.userId])
       if (!session.rows[0]) throw new PlatformError(404, 'session_not_found')
-      const executions = await client.query<ExecutionRow>(`SELECT id,call_id,state,result FROM pe_cloud_executions
-        WHERE user_id=$1 AND session_id=$2 AND id=ANY($3::uuid[])`,
+      const executions = await client.query<ExecutionRow>(`SELECT execution_kind,id,call_id,state,result FROM pe_cloud_executions
+        WHERE execution_kind='legacy_command' AND user_id=$1 AND session_id=$2 AND id=ANY($3::uuid[])`,
       [user.userId, parsed.data.sessionId, parsed.data.executionIds])
       if (executions.rows.length !== parsed.data.executionIds.length) throw new PlatformError(404, 'execution_not_found')
       const rows = new Map(executions.rows.map(row => [row.id.toLowerCase(), row]))

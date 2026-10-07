@@ -1477,7 +1477,7 @@ export class SandboxManager {
       const active = await client.query(
         `SELECT id FROM pe_cloud_executions WHERE session_id=$1
          AND state IN ('queued','starting','running','cancelling','uncertain')
-         AND NOT (state='uncertain' AND cancel_requested AND error_code='account_disabled') LIMIT 1`, [slot.session_id])
+         AND NOT (execution_kind='legacy_command' AND state='uncertain' AND cancel_requested AND error_code='account_disabled') LIMIT 1`, [slot.session_id])
       if (active.rowCount) return null
       if (slot.state === 'ready') {
         const old = await client.query(
