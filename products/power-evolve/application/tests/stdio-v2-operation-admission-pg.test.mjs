@@ -1,0 +1,265 @@
+/** Actual PG/POSIX selection and recovery; terminal discovery facts are seeded, with no Runner or model invocation. */
+import assert from 'node:assert/strict'
+import test from 'node:test'
+import {randomBytes,randomUUID} from 'node:crypto'
+import {mkdtemp,readFile,rm} from 'node:fs/promises'
+import {join} from 'node:path'
+import {tmpdir} from 'node:os'
+import {Pool} from 'pg'
+import {initializeDatabase,transaction} from '../lib/platform/database.js'
+import {lockAccountAuthorities} from '../lib/platform/account-authority.js'
+import {FileService} from '../lib/platform/files.js'
+import {StdioOperationAdmissionV2} from '../lib/platform/stdio-v2-operation-admission.js'
+import {StdioCallContinuationV2} from '../lib/platform/stdio-v2-continuations.js'
+import {stdioDispatchV2,stdioPreparedV2,stdioTaskSchemasV2} from '@power-evolve/contracts/stdio-mcp'
+import {stdioCatalogFingerprintV2,stdioSha256V2} from '@power-evolve/connector-runner/stdio-v2-digest'
+
+const limits={runtimeMs:2000,requestMs:1000,stdinGraceMs:100,terminateGraceMs:100,killGraceMs:100,
+  maxInputBytes:262144,maxMessageBytes:16384,maxProtocolBytes:262144,maxProtocolMessages:100,
+  maxJsonDepth:40,maxJsonNodes:10000,maxPages:4,maxTools:10,maxCatalogBytes:32768,maxToolBytes:16384,
+  maxResultBytes:16384,maxStderrBytes:4096}
+const admission={maxConnections:10,maxTools:20,maxSnapshotBytes:524288,maxDescriptionBytes:8192}
+const budget={maxDepth:40,maxNodes:10000,maxBytes:262144},sha=(domain,value)=>stdioSha256V2(domain,value,budget)
+const pin={kind:'cloud',deploymentId:randomUUID(),protocolVersion:2,platform:{os:'linux',architecture:'arm64'},
+  imageReference:`synthetic.invalid/runner@sha256:${'a'.repeat(64)}`,configImageId:`sha256:${'b'.repeat(64)}`,
+  runtimeImageIds:[`containerd://sha256:${'a'.repeat(64)}`]}
+const image={kind:'cloud',platform:pin.platform,imageReference:pin.imageReference,runtimeImageId:pin.runtimeImageIds[0]}
+const facts={programStartAttempted:true,toolsCallAttempted:false,effectMayHaveOccurred:true,childPid:12345,
+  childExitObserved:true,childCloseObserved:true,exitCode:0,signal:null,cleanupConfirmed:true,
+  protocolBytes:200,protocolMessages:4,stderrBytes:0,stderr:''}
+const rawCatalog=JSON.parse('[{"name":"echo","inputSchema":{"type":"object","properties":{"text":{"type":"string"}},"required":["text"],"additionalProperties":false},"description":"literal\\u0000表😀","_meta":{"__proto__":{"retained":true}},"__proto__":{"extension":true}}]')
+
+test('Cloud selections and call continuations retain original facts and resume only once in real PG',
+  {timeout:60000},async t=>{
+    const databaseUrl=process.env.PE_TEST_DATABASE_URL??(await readFile(join(process.env.PE_PRIVATE_DIR,'database-url'),'utf8')).trim()
+    const database=`pe_stdio_operation_${randomBytes(10).toString('hex')}`,root=await mkdtemp(join(tmpdir(),'pe-stdio-operation-'))
+    const admin=new Pool({connectionString:databaseUrl,max:1});let pool,created=false
+    try {
+      await admin.query(`CREATE DATABASE "${database}"`);created=true
+      const url=new URL(databaseUrl);url.pathname=`/${database}`
+      pool=new Pool({connectionString:url.href,max:4,statement_timeout:10000});await initializeDatabase(pool)
+      const files=new FileService(pool,join(root,'workspaces'));await files.init()
+      const options={limits,admission,maxReplyBytes:524288,cloudDeployment:pin}
+      const selector=new StdioOperationAdmissionV2(files,options)
+      let serial=0
+      async function actor(label){
+        const userId=randomUUID();await pool.query('INSERT INTO pe_users(id,username,password_hash,settings) VALUES($1,$2,$3,$4)',[userId,`${label}-${++serial}`,'seed-only',{}])
+        const workspaceId=await files.defaultWorkspaceId(userId),sessionId=randomUUID()
+        await pool.query('INSERT INTO pe_sessions(id,user_id,workspace_id,create_request_id,header) VALUES($1,$2,$3,$4,$5)',[sessionId,userId,workspaceId,randomUUID(),{}])
+        return {userId,workspaceId,sessionId}
+      }
+      async function discovered(owner,label,{fullScopeDigest}={}){
+        const connectionId=randomUUID(),actionId=randomUUID(),executionId=randomUUID(),requestId=randomUUID(),catalogId=randomUUID()
+        const binding=await files.bindingForId(owner.userId,owner.workspaceId)
+        const configuration={name:label,invocation:{program:'node',argv:['synthetic.mjs'],cwd:'.'}},configDigest=sha('configuration',configuration)
+        const scope={kind:'cloud',userId:owner.userId,workspaceId:owner.workspaceId,bindingGeneration:binding.generation,
+          target:{spaceId:binding.spaceId,rootRelativePath:binding.rootRelativePath},home:{kind:'user',userId:owner.userId}}
+        const task=stdioTaskSchemasV2(limits).task.parse({formatVersion:2,phase:'discover',actionId,userId:owner.userId,
+          sessionId:owner.sessionId,connectionId,configRevision:1,configDigest,scopeBinding:scope,expectedDeploymentPin:pin,
+          invocation:configuration.invocation,limits,origin:{kind:'stdio_discovery',requestId}})
+        const taskDigest=sha('task',task),executionRef={kind:'cloud',executionId}
+        const capture={kind:'cloud',podUid:randomUUID(),podName:'synthetic',namespace:'synthetic',nodeName:'synthetic',
+          runnerInstanceId:randomUUID(),containerId:'containerd://synthetic',restartCount:0,mountGeneration:'1',
+          workspaceMount:{claimName:'synthetic',subPath:'synthetic-workspace',mountPath:'/workspace',readOnly:false},
+          homeMount:{claimName:'synthetic',subPath:'synthetic-home',mountPath:'/home/agent',readOnly:false}}
+        const prepared=stdioPreparedV2.parse({formatVersion:2,actionId,executionRef,taskDigest,scopeBinding:scope,
+          fullScopeDigest:fullScopeDigest??sha('scope',{scopeBinding:scope,workspaceMount:capture.workspaceMount,homeMount:capture.homeMount}),
+          expectedDeploymentPin:pin,actualExecutorImage:image,capture,specDigest:sha('spec',{synthetic:true})})
+        const outcome={state:'completed',phase:'discover',catalog:rawCatalog,pages:[{tools:rawCatalog}],initializeResult:{protocolVersion:'synthetic'},facts}
+        const preparedDigest=sha('prepared',prepared),expiresAt='2030-01-01T00:00:00.000Z'
+        await transaction(pool,async client=>{
+          await client.query('INSERT INTO pe_stdio_v2_connections(id,user_id,revision,enabled) VALUES($1,$2,1,true)',[connectionId,owner.userId])
+          await client.query('INSERT INTO pe_stdio_v2_configurations(connection_id,user_id,revision,configuration,config_digest) VALUES($1,$2,1,$3,$4)',[connectionId,owner.userId,JSON.stringify(configuration),configDigest])
+          await client.query(`INSERT INTO pe_stdio_v2_management_requests(user_id,request_id,purpose,request,request_digest,receipt) VALUES($1,$2,'check','{}',$3,'{}')`,[owner.userId,requestId,sha('management',{})])
+          await client.query(`INSERT INTO pe_stdio_v2_actions(id,user_id,session_id,connection_id,config_revision,config_digest,phase,execution_target,
+            execution_id,request_id,task,task_digest,state) VALUES($1,$2,$3,$4,1,$5,'discover','cloud',$6,$7,$8,$9,'succeeded')`,
+          [actionId,owner.userId,owner.sessionId,connectionId,configDigest,executionId,requestId,JSON.stringify(task),taskDigest])
+          await client.query(`INSERT INTO pe_cloud_executions(id,user_id,session_id,request_digest,state,execution_kind,origin_kind,task_version,
+            stdio_phase,stdio_task,stdio_action_id,continuation_request_id)
+            VALUES($1,$2,$3,$4,'succeeded','stdio_v2','stdio_discovery',2,'discover',$5,$6,NULL)`,
+          [executionId,owner.userId,owner.sessionId,taskDigest,JSON.stringify(task),actionId])
+          await client.query(`INSERT INTO pe_stdio_v2_preparations(action_id,user_id,session_id,phase,execution_target,execution_id,task_digest,
+            prepared,prepared_digest,approval_binding,fingerprint,approval_epoch,expires_at)
+            VALUES($1,$2,$3,'discover','cloud',$4,$5,$6,$7,$8,$9,1,$10)`,[actionId,owner.userId,owner.sessionId,executionId,taskDigest,
+            JSON.stringify(prepared),preparedDigest,JSON.stringify({actionId,taskDigest,preparedDigest,approvalEpoch:1,expiresAt}),'c'.repeat(64),expiresAt])
+          await client.query('INSERT INTO pe_stdio_v2_results(action_id,result,result_digest,observation,stop_evidence) VALUES($1,$2,$3,$4,$4)',[actionId,JSON.stringify(outcome),sha('result',outcome),JSON.stringify({synthetic:true})])
+          await client.query(`INSERT INTO pe_stdio_v2_catalogs(id,user_id,connection_id,config_revision,config_digest,action_id,session_id,phase,
+            raw_catalog,image_expectation,catalog_digest) VALUES($1,$2,$3,1,$4,$5,$6,'discover',$7,$8,$9)`,
+          [catalogId,owner.userId,connectionId,configDigest,actionId,owner.sessionId,JSON.stringify(rawCatalog),JSON.stringify(image),stdioCatalogFingerprintV2(rawCatalog,limits)])
+          await client.query('UPDATE pe_stdio_v2_connections SET current_catalog_id=$2 WHERE id=$1',[connectionId,catalogId])
+        })
+        return {connectionId,catalogId,task,prepared,configuration,owner}
+      }
+      const alice=await actor('alice'),bob=await actor('bob')
+      const a=await discovered(alice,'Alice original'),b=await discovered(bob,'Bob original')
+      const select=(service,owner,target={kind:'cloud'},reserved=[])=>transaction(pool,client=>service.select(client,owner.userId,owner.sessionId,target,reserved))
+      let original
+      await t.test('two owners get only their own complete catalogs without allocating a writer',async()=>{
+        original=await select(selector,alice);const other=await select(selector,bob)
+        assert.deepEqual(original.map(x=>x.connectionId),[a.connectionId]);assert.deepEqual(other.map(x=>x.connectionId),[b.connectionId])
+        assert.deepEqual(original[0].rawCatalog,rawCatalog);assert.equal(Object.hasOwn(original[0].rawCatalog[0],'__proto__'),true)
+        assert.equal(original[0].configuration.name,'Alice original');assert.equal(original[0].tools[0].model.name.length,63)
+        assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_sandbox_instances')).rows[0].n,0)
+        assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_mount_slots')).rows[0].n,0)
+        await assert.rejects(select(selector,{...alice,sessionId:bob.sessionId}),{code:'session_not_found'})
+      })
+      await t.test('another reviewed pin, desktop placement and changed binding generation select no generic tool',async()=>{
+        const changed=new StdioOperationAdmissionV2(files,{...options,cloudDeployment:{...pin,deploymentId:randomUUID()}})
+        assert.deepEqual(await select(changed,alice),[])
+        assert.deepEqual(await select(selector,alice,{kind:'desktop',deviceId:randomUUID(),directoryId:randomUUID()}),[])
+        await pool.query('UPDATE pe_workspaces SET binding_generation=binding_generation+1 WHERE id=$1',[alice.workspaceId])
+        assert.deepEqual(await select(selector,alice),[])
+        await pool.query('UPDATE pe_workspaces SET binding_generation=binding_generation-1 WHERE id=$1',[alice.workspaceId])
+      })
+      await t.test('restoration ignores current disablement and catalog pointers, while a new admission excludes them',async()=>{
+        await pool.query('UPDATE pe_stdio_v2_connections SET enabled=false,current_catalog_id=NULL WHERE id=$1',[a.connectionId])
+        assert.deepEqual(selector.restore(original,[]),original);assert.deepEqual(await select(selector,alice),[])
+        await pool.query('UPDATE pe_stdio_v2_connections SET enabled=true,current_catalog_id=$2 WHERE id=$1',[a.connectionId,a.catalogId])
+      })
+      await t.test('changing the frozen model map, tool name or original configuration is refused',async()=>{
+        for(const alter of [x=>{x[0].tools[0].model.description='changed'},x=>{x[0].tools[0].model.name='changed'},x=>{x[0].configuration.name='changed'}]){
+          const changed=structuredClone(original);alter(changed);assert.throws(()=>selector.restore(changed,[]),error=>error.status===409)
+        }
+        await assert.rejects(select(selector,alice,{kind:'cloud'},[original[0].tools[0].model.name]),{code:'stdio_v2_tool_name_conflict'})
+      })
+      await t.test('broken producer identity fails instead of silently dropping an enabled catalog',async()=>{
+        await pool.query("UPDATE pe_stdio_v2_actions SET state='failed' WHERE id=$1",[a.task.actionId])
+        await assert.rejects(select(selector,alice),{code:'stdio_v2_record_invalid'})
+        await pool.query("UPDATE pe_stdio_v2_actions SET state='succeeded' WHERE id=$1",[a.task.actionId])
+        assert.deepEqual(await select(selector,alice),original)
+      })
+      await t.test('a self-consistent Prepared hash with a wrong complete scope digest is rejected',async()=>{
+        const bad=await actor('bad-scope')
+        await discovered(bad,'Synthetic invalid scope',{fullScopeDigest:'f'.repeat(64)})
+        await assert.rejects(select(selector,bad),{code:'stdio_v2_record_invalid'})
+      })
+      const continuation=new StdioCallContinuationV2({limits,admission,maxReplyBytes:524288})
+      async function call(owner,{noStart=false,isError=false}={}) {
+        const groups=await select(selector,owner),group=groups[0],operationId=randomUUID(),actionId=randomUUID(),executionId=randomUUID()
+        const continuationRequest=randomUUID(),workerId=randomUUID(),requestId=randomUUID()
+        const task=stdioTaskSchemasV2(limits).task.parse({formatVersion:2,phase:'call',actionId,userId:owner.userId,sessionId:owner.sessionId,
+          connectionId:group.connectionId,configRevision:group.configRevision,configDigest:group.configDigest,
+          scopeBinding:group.scopeBinding,expectedDeploymentPin:group.expectedDeploymentPin,invocation:group.configuration.invocation,limits,
+          origin:{kind:'operation',operationId,rootOperationId:operationId,callKey:'original-call'},selection:{catalogId:group.catalogId,
+            catalogDigest:group.catalogDigest,rawCatalog:group.rawCatalog,catalogImageExpectation:group.catalogImageExpectation,
+            rawName:'echo',rawDescriptor:group.rawCatalog[0],arguments:{text:'original\0arguments'}}})
+        const taskDigest=sha('task',task),executionRef={kind:'cloud',executionId},lease={actionId,workerId,leaseEpoch:1}
+        const capture={...a.prepared.capture,podUid:randomUUID(),runnerInstanceId:randomUUID()}
+        const prepared=stdioPreparedV2.parse({...a.prepared,actionId,executionRef,taskDigest,scopeBinding:group.scopeBinding,
+          fullScopeDigest:sha('scope',{scopeBinding:group.scopeBinding,workspaceMount:capture.workspaceMount,homeMount:capture.homeMount}),capture})
+        const preparedDigest=sha('prepared',prepared),expiresAt=new Date(Date.now()+60000).toISOString(),fingerprint='d'.repeat(64)
+        const binding={actionId,taskDigest,preparedDigest,approvalEpoch:1,expiresAt}
+        const permit={...binding,permitId:randomUUID(),authorizationRequestId:randomUUID(),executionRef,
+          executorOwner:{kind:'cloud',runnerInstanceId:capture.runnerInstanceId},approvalFingerprint:fingerprint,issuedAt:new Date().toISOString()}
+        const dispatch=stdioDispatchV2(limits).parse({formatVersion:2,task,taskDigest,executionRef,preparedDigest,permit})
+        const dispatchDigest=sha('dispatch',dispatch)
+        const outcome={state:'completed',phase:'call',catalog:group.rawCatalog,pages:[{tools:group.rawCatalog}],initializeResult:{protocolVersion:'synthetic'},
+          facts:{...facts,toolsCallAttempted:true},result:{content:[{type:'text',text:'retained\0result'}],isError,
+            _meta:JSON.parse('{"__proto__":{"retained":true}}')}}
+        await transaction(pool,async client=>{
+          await client.query(`INSERT INTO pe_operations(id,session_id,request_id,input,settings,stdio_v2_selection,state)
+            VALUES($1,$2,$3,'seed original call',$4,$5,'completed')`,[operationId,owner.sessionId,requestId,
+            {model:'seed-only',maxTokens:64,revision:1},JSON.stringify(groups)])
+          await client.query(`INSERT INTO pe_mcp_action_chains(root_operation_id,user_id,session_id,calls,max_calls,expires_at)
+            VALUES($1,$2,$3,1,5,$4)`,[operationId,owner.userId,owner.sessionId,expiresAt])
+          await client.query(`INSERT INTO pe_stdio_v2_actions(id,user_id,session_id,connection_id,config_revision,config_digest,phase,
+            execution_target,execution_id,operation_id,root_operation_id,call_id,task,task_digest,state,cancel_requested,
+            continuation_request_id,lease_owner,lease_epoch,lease_until)
+            VALUES($1,$2,$3,$4,1,$5,'call','cloud',$6,$7,$7,'original-call',$8,$9,$10,$11,$12,$13,1,$14)`,
+          [actionId,owner.userId,owner.sessionId,group.connectionId,group.configDigest,executionId,operationId,JSON.stringify(task),taskDigest,
+            noStart?'cancelled':'succeeded',noStart,continuationRequest,workerId,expiresAt])
+          await client.query(`INSERT INTO pe_cloud_executions(id,user_id,session_id,operation_id,call_id,command,cwd,request_digest,state,
+            execution_kind,origin_kind,task_version,stdio_phase,stdio_task,stdio_action_id,continuation_request_id,
+            cancel_requested,sandbox_name,pod_uid,runner_instance_id)
+            VALUES($1,$2,$3,$4,'original-call',NULL,NULL,$5,$6,'stdio_v2','operation',2,'call',$7,$8,$9,$10,$11,$12,$13)`,
+          [executionId,owner.userId,owner.sessionId,operationId,taskDigest,noStart?'cancelled':'succeeded',JSON.stringify(task),actionId,
+            continuationRequest,noStart,noStart?null:capture.podName,noStart?null:capture.podUid,noStart?null:capture.runnerInstanceId])
+          if(noStart) {
+            const receipt={formatVersion:2,kind:'unstarted_closed',actionId,executionRef,taskDigest,preparedDigest:null,
+              userId:owner.userId,sessionId:owner.sessionId,phase:'call',state:'cancelled',startNeverAuthorized:true,resource:{kind:'unallocated'}}
+            await client.query(`INSERT INTO pe_stdio_v2_no_start_closures(action_id,user_id,session_id,phase,execution_target,execution_id,
+              task_digest,worker_id,lease_epoch,receipt,receipt_digest) VALUES($1,$2,$3,'call','cloud',$4,$5,$6,1,$7,$8)`,
+            [actionId,owner.userId,owner.sessionId,executionId,taskDigest,workerId,JSON.stringify(receipt),sha('no_start',receipt)])
+          } else {
+            await client.query(`INSERT INTO pe_stdio_v2_preparations(action_id,user_id,session_id,phase,execution_target,execution_id,
+              task_digest,prepared,prepared_digest,approval_binding,fingerprint,approval_epoch,expires_at)
+              VALUES($1,$2,$3,'call','cloud',$4,$5,$6,$7,$8,$9,1,$10)`,[actionId,owner.userId,owner.sessionId,executionId,taskDigest,
+              JSON.stringify(prepared),preparedDigest,JSON.stringify(binding),fingerprint,expiresAt])
+            await client.query(`INSERT INTO pe_stdio_v2_decisions(action_id,user_id,fingerprint,decision) VALUES($1,$2,$3,'once')`,[actionId,owner.userId,fingerprint])
+            await client.query(`INSERT INTO pe_stdio_v2_start_permits(action_id,permit_id,authorization_request_id,execution_id,task_digest,
+              prepared_digest,fingerprint,decision,executor_owner,permit,issued_at,expires_at) VALUES($1,$2,$3,$4,$5,$6,$7,'once',$8,$9,$10,$11)`,
+            [actionId,permit.permitId,permit.authorizationRequestId,executionId,taskDigest,preparedDigest,fingerprint,
+              JSON.stringify(permit.executorOwner),JSON.stringify(permit),permit.issuedAt,expiresAt])
+            await client.query('INSERT INTO pe_stdio_v2_dispatches(action_id,dispatch,dispatch_digest) VALUES($1,$2,$3)',[actionId,JSON.stringify(dispatch),dispatchDigest])
+            const view={formatVersion:2,instanceId:capture.runnerInstanceId,actionId,executionRef,taskDigest,dispatchDigest,
+              state:'completed',writerStopConfirmed:true,outcome}
+            const proof={formatVersion:2,kind:'cloud_uid_quiet',actionId,executionRef,taskDigest,dispatchDigest,preparedDigest,
+              fullScopeDigest:prepared.fullScopeDigest,podUid:capture.podUid,runnerInstanceId:capture.runnerInstanceId,mountGeneration:capture.mountGeneration,
+              observedAt:new Date().toISOString()}
+            await client.query('INSERT INTO pe_stdio_v2_results(action_id,result,result_digest,observation,stop_evidence) VALUES($1,$2,$3,$4,$5)',
+              [actionId,JSON.stringify(outcome),sha('result',outcome),JSON.stringify(view),JSON.stringify(proof)])
+          }
+        })
+        return {lease,operationId,continuationRequest,owner,outcome,connectionId:group.connectionId,executionId}
+      }
+      const deliver=f=>transaction(pool,async client=>{
+        // Production result/no-start writers hold these original locks before invoking the leaf.
+        await lockAccountAuthorities(client,[f.owner.userId],'update')
+        await client.query('SELECT id FROM pe_sessions WHERE id=$1 FOR UPDATE',[f.owner.sessionId])
+        await client.query('SELECT id FROM pe_stdio_v2_connections WHERE id=$1 FOR UPDATE',[f.connectionId])
+        await client.query('SELECT id FROM pe_stdio_v2_actions WHERE id=$1 FOR UPDATE',[f.lease.actionId])
+        await client.query('SELECT id FROM pe_cloud_executions WHERE id=$1 FOR UPDATE',[f.executionId])
+        return continuation.enqueueLeased(client,f.lease)
+      })
+      const continued=async f=>(await pool.query('SELECT * FROM pe_operations WHERE session_id=$1 AND request_id=$2',
+        [f.owner.sessionId,f.continuationRequest])).rows
+      await t.test('two replicas deliver each owner result once; a cancelled root retains the already queued original',async()=>{
+        for(const owner of [alice,bob]) {
+          const f=await call(owner),replies=await Promise.all([deliver(f),deliver(f)])
+          assert.deepEqual(replies.map(x=>x.disposition).sort(),['original','queued']);assert.equal(replies[0].operationId,replies[1].operationId)
+          const rows=await continued(f);assert.equal(rows.length,1);const saved=rows[0],body=JSON.parse(saved.input)
+          assert.equal(saved.source,'stdio_v2_result');assert.equal(saved.source_stdio_v2_no_start_action_id,null)
+          assert.deepEqual(body.outcome,f.outcome);assert.equal(body.chainStopped,false)
+          assert.equal(saved.stdio_v2_selection[0].scopeBinding.userId,owner.userId)
+          await pool.query('UPDATE pe_operations SET mcp_chain_cancelled_at=clock_timestamp() WHERE id=$1',[f.operationId])
+          assert.equal((await deliver(f)).disposition,'original');assert.equal((await continued(f))[0].input,saved.input)
+        }
+      })
+      await t.test('SDK isError stays completed and is preserved while its original automatic chain stops',async()=>{
+        const f=await call(alice,{isError:true});assert.equal((await deliver(f)).disposition,'queued')
+        const saved=(await continued(f))[0],body=JSON.parse(saved.input)
+        assert.equal(body.state,'completed');assert.equal(body.outcome.result.isError,true);assert.deepEqual(body.outcome,f.outcome)
+        assert.equal(body.chainStopped,true);assert.equal(body.errorCode,'stdio_v2_tool_error')
+        const chain=(await pool.query('SELECT * FROM pe_mcp_action_chains WHERE root_operation_id=$1',[f.operationId])).rows[0]
+        assert(chain.stopped_at);assert.equal(chain.error_code,'stdio_v2_tool_error')
+      })
+      await t.test('formal no-start closure queues its independent source and creates no actual Runner result',async()=>{
+        const f=await call(bob,{noStart:true});assert.equal((await deliver(f)).disposition,'queued');assert.equal((await deliver(f)).disposition,'original')
+        const saved=(await continued(f))[0],body=JSON.parse(saved.input)
+        assert.equal(saved.source,'stdio_v2_no_start');assert.equal(saved.source_stdio_v2_no_start_action_id,f.lease.actionId)
+        assert.equal(saved.source_stdio_v2_action_id,null);assert.equal(body.startNeverAuthorized,true)
+        assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_stdio_v2_results WHERE action_id=$1',[f.lease.actionId])).rows[0].n,0)
+      })
+      await t.test('root cancellation suppresses fresh continuation and an expired lease cannot mutate records',async()=>{
+        const cancelled=await call(alice)
+        await pool.query('UPDATE pe_operations SET mcp_chain_cancelled_at=clock_timestamp() WHERE id=$1',[cancelled.operationId])
+        assert.equal((await deliver(cancelled)).disposition,'suppressed');assert.deepEqual(await continued(cancelled),[])
+        const expired=await call(bob)
+        await pool.query("UPDATE pe_stdio_v2_actions SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1",[expired.lease.actionId])
+        await assert.rejects(deliver(expired),{code:'stdio_v2_lease_lost'});assert.deepEqual(await continued(expired),[])
+      })
+      await t.test('a failed continuation insertion rolls back its chain stop and queued marker before a safe retry',async()=>{
+        const f=await call(alice,{isError:true})
+        await pool.query(`CREATE FUNCTION reject_stdio_continuation() RETURNS trigger LANGUAGE plpgsql AS $$
+          BEGIN IF NEW.source='stdio_v2_result' THEN RAISE EXCEPTION 'synthetic insertion failure'; END IF; RETURN NEW; END $$;
+          CREATE TRIGGER reject_stdio_continuation BEFORE INSERT ON pe_operations FOR EACH ROW EXECUTE FUNCTION reject_stdio_continuation();`)
+        await assert.rejects(deliver(f),/synthetic insertion failure/u);assert.deepEqual(await continued(f),[])
+        assert.equal((await pool.query('SELECT stopped_at FROM pe_mcp_action_chains WHERE root_operation_id=$1',[f.operationId])).rows[0].stopped_at,null)
+        assert.equal((await pool.query('SELECT continuation_queued FROM pe_stdio_v2_actions WHERE id=$1',[f.lease.actionId])).rows[0].continuation_queued,false)
+        await pool.query('DROP TRIGGER reject_stdio_continuation ON pe_operations')
+        assert.equal((await deliver(f)).disposition,'queued');assert.equal((await deliver(f)).disposition,'original')
+      })
+    } finally {
+      await pool?.end();try{if(created)await admin.query(`DROP DATABASE "${database}"`)}finally{await admin.end();await rm(root,{recursive:true,force:true})}
+    }
+  })

@@ -106,6 +106,8 @@ Device 的 `OwnedDeviceContainer.captureImage` 检查可信 Docker config ID、O
 
 相邻 schema 37 为 call 的 no-start 续接提供独立的结案来源。实际 Runner 续接仍要求原结果；no-start 来源不能代替该结果。两种来源都绑定原调用、会话及唯一续接请求。此迁移不启用 call 结案或派发。API、Cloud、Device、固定 STDIO、SSH 和远程 MCP 续接复制全部原工具选择、设置、执行目标与根请求身份，不在续接时刷新目录。
 
+`StdioOperationAdmissionV2` 根据当前工作区绑定、原始发现任务、完整 Prepared scope 和已审查执行镜像，固定仅属于用户的 Cloud 工具目录。恢复操作时校验完整模型工具映射；后续目录或配置变更不能改写该映射。描述元数据和参数 JSON 保留自身的 `__proto__` 字段。当前校验器会跳过 `properties` 或 `dependencies` 中该名称的约束，因此此类 schema 不受支持。`StdioCallContinuationV2` 在原动作租约及调用方持有的授权锁内排入唯一续接，实际结果与 no-start 使用独立来源。插入失败会回滚调用链停止状态和续接标记。这些内部服务仍须接入 TaskStore、结果及 no-start 处理后才能启用 Profile。
+
 向 `SandboxManager.captureStdioV2` 传入授权事务的 client，可让所有 PG 检查复用该连接，避免另一个连接等待已有的账户锁。此路径 capture 失败后保留原 writer；编排器必须在事务回滚后持久化 quarantine。不传 client 时保留原 capture 与 quarantine 行为。明确的 `observe` 模式要求原 client，可在账户撤销后核验未变更的活跃写者，不授予新的启动权限。
 
 `StdioActionLeaseServiceV2` 通过数据库时钟与原账户到执行记录的锁序约束内部 worker。`StdioCloudRunTransportV2` 在有界私有 HTTP 前后比较完整原 Prepared，首次 true 回复在等待前消费；原重试只发 GET，GET 404 不确立没有副作用或写者已停止。必填 `maxTrackedActions` 限制活跃追踪记录；过期后无需定时器即可回收，容量压力下仍允许查询／取消，并保守阻止新启动，直到未追踪许可过期。`StdioResultServiceV2` 在相邻 schema 35 中保留完整观察，以 PG `json` 保存转义 NUL、页、初始化元数据、原始目录与结果。清理不明或缺少独立 UID 停止证明时保留写者。终态私有证明允许原子保存结果／停止事实及唯一的当前发现目录；撤销或变更配置仍保存实际结果，但不发布新目录。启用任意 STDIO 前仍须完成 call 受理和唯一续接、call 的 no-start 结案、Device journal、部署与原生发现／调用验收。
