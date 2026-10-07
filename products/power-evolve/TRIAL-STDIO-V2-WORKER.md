@@ -26,3 +26,7 @@ Root 日志位于 `.artifacts/stdio-v2-worker/`：`pg-final.log` SHA 为 `9e012d
 组合夹具顺序使用同一真实 Docker Runner；环境准备、Pod／PVC、Node 和 OCI manifest 是明确替身。它不证明跨用户物理文件系统隔离、真实 k3s 调度、原生客户端或通用 call。正式 no-start 结案尚未实现，派发前取消保留 blocked 和原占用，不伪造停止事实。
 
 同一纵切面继续补齐 no-start 结案、call 原子受理与唯一续接、Device journal、真实部署 pin／Node 权限和原生管理／审批入口。两用户从原生客户端完成 discovery／call、取消及故障恢复并固定独立试用后，才启用通用 STDIO Profile；这些内部验证不作为产品纵切面完成声明。
+
+## 后续结案验证
+
+2026-10-08 的 discovery 正式 no-start 结案及资源围栏另见[固定验证记录](TRIAL-STDIO-V2-NO-START.md)。本记录以上事实仍绑定原 schema 35 候选；通用 call、Device、真实部署与原生客户端验收继续未完成。

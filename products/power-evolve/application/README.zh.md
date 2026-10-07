@@ -96,17 +96,17 @@ SSH Runner 只有明确报告 `effectMayHaveOccurred` 为 false 时，失败才�
 
 STDIO v2 的 `SandboxManager.captureStdioV2` 在现有准入围栏下观察原 PVC writer。它核验工作区与 Home 挂载、准确的 runner 容器和镜像，以及所调度 Node 的 OS 和架构，并在调用方可信 JSON 预算内返回完整 Pod spec。Platform 凭据需要对该单一 Node 的 GET 权限；事实缺失或变化会拒绝 capture。Capture 不创建 Kubernetes 资源或用户程序，也不授予启动许可。调用方必须在派发前比较后续 capture；旧 hostPath 执行保持原行为。
 
-内部 STDIO v2 Cloud worker 以数据库时钟认领动作，按用户上次认领时间轮转，将每个动作租约镜像到原 Cloud 执行。`maxActive` 限制跨副本有效 Cloud worker 租约数，包含历史执行；它不限制运行中的 Pod 或用户程序数。`maxCandidates`、`pollMs`、`renewMs` 和 `leaseMs` 限定扫描、轮询及续期。环境准备在授权事务外进行；创建期间取消仍保留准确的 ready 写者身份。准备审批和首次派发受当前动作 epoch 围栏约束。私有 Pod 观察持有有界捕获锁；Runner 执行 HTTP 在该事务提交并释放后进行。已提交意图只查询或取消原 Runner。停服等待创建、授权、HTTP 和续期收敛。派发前取消仍保持 blocked，待正式 no-start 结案；通用 call 受理、续接和 Profile 启用仍需单独完成。
+内部 STDIO v2 Cloud worker 以数据库时钟认领动作，按用户上次认领时间轮转，将每个动作租约镜像到原 Cloud 执行。`maxActive` 限制跨副本有效 Cloud worker 租约数，包含历史执行；它不限制运行中的 Pod 或用户程序数。`maxCandidates`、`pollMs`、`renewMs` 和 `leaseMs` 限定扫描、轮询及续期。环境准备在授权事务外进行；创建期间取消仍保留准确的 ready 写者身份。准备审批和首次派发受当前动作 epoch 围栏约束。私有 Pod 观察持有有界捕获锁；Runner 执行 HTTP 在该事务提交并释放后进行。已提交意图只查询或取消原 Runner。停服等待创建、授权、HTTP 和续期收敛。未签发启动授权的 discovery 取消使用独立持久回执结案：保留 ready 写者，或在释放创建预留前核验原创建的匹配停止证据。结案回复不明时只读回原回执。通用 call 受理、续接和 Profile 启用仍需单独完成。
 
 Device 的 `OwnedDeviceContainer.captureImage` 检查可信 Docker config ID、OS 和架构。`captureContainer` 观察准确的原 owned container，要求从未启动且重启次数为零，核验两处可写工作区／Home bind，仅允许另外一处可选的 `/tmp` tmpfs。它保留完整 Config、HostConfig、Path、Args、State 和挂载观测。调用方提供已授权的物理源，并完成 realpath 与 Directory grant 检查。这些只执行 inspect 的方法返回私有观测，用于 Prepared 和派发比较。当前 Profile 提供固定进程 MCP 预设；通用 STDIO 路由、原生客户端接入和执行器派发仍未启用。
 
 通用 STDIO 管理、发现受理和审批持久化位于 `stdio-v2-connections.ts`、`stdio-v2-admission.ts` 和 `stdio-v2-authorization.ts`。这些服务在 PG 事务内重查当前浏览器凭据的用途，保留逐项配置与用户请求回执，一起提交唯一发现任务与执行记录，并保存独立的首次审批决定和唯一启动许可。只有新许可提交后返回 `grantOnce:true`；重复请求或回复丢失后只返回 false 的原回执。拒绝和过期后的原执行仍活跃时继续占用容量。授权服务要求私有实时 capture 适配器和独立认证的执行器路由；这些服务本身不启用执行 Profile。
 
-`SandboxManager.ensureReady` 可接收原动作围栏，复用资源事务的 client。它在锁定所属用户后、申请挂载、保留创建 UID 或记录 Ready 前检查该围栏。创建 POST 和 Pod finalizer 写入在有界 Kubernetes 请求期间持有同序用户与原动作锁。过期或已结案动作不能晚到后分配新写者。请求失败后保留原占用以便对账。相邻 schema 36 单独保存不可变 no-start 回执；已有结案不能再签发启动许可或写入实际 Runner 结果。V34 与 V35 记录保留原字节。
+`SandboxManager.ensureReady` 可接收原动作围栏，复用资源事务的 client。资源写入在锁定所属用户后、Workspace／槽位锁前检查围栏，并在提交前再次检查；这覆盖挂载申请、创建 UID 保留、Ready 捕获和前一会话的环境交接。有界创建和清理请求持有这些同序锁；过期或已结案动作不能晚到后分配或释放写者。请求失败保留原预留以便对账。相邻 schema 36 单独保存不可变 no-start 回执，禁止已结案动作再签发启动许可或写入实际 Runner 结果；V34 与 V35 记录保留原字节。no-start 回执证明未签发启动授权，不能证明保留的环境已经停止。call 结案需要专门的续接支持，在具备该支持前明确拒绝。
 
 向 `SandboxManager.captureStdioV2` 传入授权事务的 client，可让所有 PG 检查复用该连接，避免另一个连接等待已有的账户锁。此路径 capture 失败后保留原 writer；编排器必须在事务回滚后持久化 quarantine。不传 client 时保留原 capture 与 quarantine 行为。明确的 `observe` 模式要求原 client，可在账户撤销后核验未变更的活跃写者，不授予新的启动权限。
 
-`StdioActionLeaseServiceV2` 通过数据库时钟与原账户到执行记录的锁序约束内部 worker。`StdioCloudRunTransportV2` 在有界私有 HTTP 前后比较完整原 Prepared，首次 true 回复在等待前消费；原重试只发 GET，GET 404 不确立没有副作用或写者已停止。必填 `maxTrackedActions` 限制活跃追踪记录；过期后无需定时器即可回收，容量压力下仍允许查询／取消，并保守阻止新启动，直到未追踪许可过期。`StdioResultServiceV2` 在相邻 schema 35 中保留完整观察，以 PG `json` 保存转义 NUL、页、初始化元数据、原始目录与结果。清理不明或缺少独立 UID 停止证明时保留写者。终态私有证明允许原子保存结果／停止事实及唯一的当前发现目录；撤销或变更配置仍保存实际结果，但不发布新目录。启用任意 STDIO 前仍须完成正式派发前结案、call 受理、Device journal、部署与原生发现／调用验收。
+`StdioActionLeaseServiceV2` 通过数据库时钟与原账户到执行记录的锁序约束内部 worker。`StdioCloudRunTransportV2` 在有界私有 HTTP 前后比较完整原 Prepared，首次 true 回复在等待前消费；原重试只发 GET，GET 404 不确立没有副作用或写者已停止。必填 `maxTrackedActions` 限制活跃追踪记录；过期后无需定时器即可回收，容量压力下仍允许查询／取消，并保守阻止新启动，直到未追踪许可过期。`StdioResultServiceV2` 在相邻 schema 35 中保留完整观察，以 PG `json` 保存转义 NUL、页、初始化元数据、原始目录与结果。清理不明或缺少独立 UID 停止证明时保留写者。终态私有证明允许原子保存结果／停止事实及唯一的当前发现目录；撤销或变更配置仍保存实际结果，但不发布新目录。启用任意 STDIO 前仍须完成 call 受理和唯一续接、call 的 no-start 结案、Device journal、部署与原生发现／调用验收。
 
 `StdioCloudPreparationV2` 在该事务内重查原任务、执行记录、Session、挂载槽位和实例。它通过同一 client 调用 `SandboxManager.observeReady` 获取私有 Runner token，并对完整 Pod spec 计算摘要。`StdioDevicePreparationV2` 将原任务和回执绑定到只读容器观测及调用方已认证的进程。其 spec 摘要保留完整 inspection 和实际镜像；仅将目标路径唯一的 Mounts 集合按目标路径排序，因为 Docker 可能以不同顺序返回该集合。其他数组保留顺序。两种适配都限制完整 Prepared JSON，不授予启动或停止权限。私有 Device worker 须在调用适配器前确认 journal／进程身份、目录权限及容器创建策略。
 
