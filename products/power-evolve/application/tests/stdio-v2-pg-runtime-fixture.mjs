@@ -11,10 +11,11 @@ import { StdioConnectionServiceV2 } from '../lib/platform/stdio-v2-connections.j
 import { StdioAdmissionServiceV2 } from '../lib/platform/stdio-v2-admission.js'
 import { StdioAuthorizationServiceV2 } from '../lib/platform/stdio-v2-authorization.js'
 import { StdioCloudPreparationV2 } from '../lib/platform/stdio-v2-cloud-capture.js'
-import { StdioActionLeaseServiceV2 } from '../lib/platform/stdio-v2-leases.js'
 import { StdioCloudRunTransportV2 } from '../lib/platform/stdio-v2-cloud-runtime.js'
 import { StdioResultServiceV2 } from '../lib/platform/stdio-v2-results.js'
-import { lockAccountAuthorities } from '../lib/platform/account-authority.js'
+import { StdioCloudWorkerStoreV2 } from '../lib/platform/stdio-v2-worker-store.js'
+import { StdioCloudWorkerV2 } from '../lib/platform/stdio-v2-cloud-worker.js'
+import { KubernetesError } from '../lib/platform/kubernetes.js'
 
 /** Exercise an actual SDK discovery for two PG owners without claiming real Kubernetes mount or manifest capture.
  * @param fixture Root-owned private Docker control and operator-selected PG configuration.
@@ -36,7 +37,8 @@ export async function exercisePgRuntime(fixture) {
       imageReference: `qa.invalid/runner@${imageId}`, configImageId: imageId, runtimeImageIds: [`qa.invalid/runner@${imageId}`] }
     const connections = new StdioConnectionServiceV2(pool, limits, management)
     const admission = new StdioAdmissionServiceV2(pool, files, { limits, management, maxPendingPerUser: 10, deployments: { cloud: pin, desktop: [] } })
-    const leases = new StdioActionLeaseServiceV2(pool, { leaseMs: 30000 }), results = new StdioResultServiceV2(pool, { limits, maxReplyBytes: 131072 })
+    const store = new StdioCloudWorkerStoreV2(pool, { limits, leaseMs: 30000, maxActive: 4, maxCandidates: 10 })
+    const results = new StdioResultServiceV2(pool, { limits, maxReplyBytes: 131072 })
     const completed = []
     for (const username of ['pg-runtime-alice', 'pg-runtime-bob']) {
       const userId = randomUUID(), password = randomBytes(24).toString('base64url'), sessionId = randomUUID(), podUid = randomUUID()
@@ -61,73 +63,93 @@ export async function exercisePgRuntime(fixture) {
         VALUES($1,$2,$3,'ready',$4,$5,$6)`, [sessionId, userId, `${name}-${username}`, podUid, instanceId, binding])
       // The actual same Docker Runner is used sequentially; these rows do not claim tenant filesystem isolation.
       await pool.query('UPDATE pe_sandbox_instances SET name=$2 WHERE session_id=$1', [sessionId, name])
-      await pool.query('UPDATE pe_cloud_executions SET sandbox_name=$2,pod_uid=$3,runner_instance_id=$4 WHERE id=$1',
-        [receipt.executionRef.executionId, name, podUid, instanceId])
       const headers = { 'content-type': 'application/json', 'x-power-evolve-runner-token': token }
       const current = async () => {
         const actual = await inspect(), health = await (await fetch('http://127.0.0.1:8080/health', { headers })).json()
         assert.equal(actual.Id, containerId); assert.equal(actual.Image, imageId); assert.equal(actual.State.Running, true)
         assert.equal(health.instanceId, instanceId); assert.equal(health.ready, true)
       }
+      let creations = 0, posts = 0, repliesLost = 0, dropReply = username === 'pg-runtime-bob'
+      const ready = { name, podUid, runnerInstanceId: instanceId, token, restartCount: 0, generation: '1', sessionId, userId, binding }
       const manager = {
+        async ensureReady(session, owner, assertLease) {
+          assert.deepEqual([session, owner], [sessionId, userId]); await assertLease(); await current(); creations++
+          // Provisioning is substituted by the same real Docker Runner and trusted fixture slot.
+          return ready
+        },
+        async cancelCreation() { throw new Error('Normal discovery must not use creation cancellation') },
         async observeReady(session, owner, pod, runner, client, mode) {
           assert.deepEqual([session, owner, pod, runner], [sessionId, userId, podUid, instanceId])
           assert.ok(client); await current()
           if (mode === 'dispatch') assert.equal((await client.query('SELECT enabled FROM pe_users WHERE id=$1', [userId])).rows[0].enabled, true)
-          return { name, podUid, runnerInstanceId: instanceId, token, restartCount: 0, generation: '1', sessionId, userId, binding }
+          return ready
         },
         async captureStdioV2() { await current(); return { capture: captured,
           actualExecutorImage: { kind: 'cloud', platform: pin.platform, imageReference: pin.imageReference, runtimeImageId: pin.runtimeImageIds[0] },
           spec: { syntheticPod: true, actualContainerId: containerId, actualConfigImageId: imageId } } },
         async runnerBounded(_name, credential, method, path, body) {
           assert.equal(credential, token)
+          // These real NOWAIT locks would fail if the execution HTTP retained its capture transaction.
+          await transaction(pool, async client => {
+            for (const [table, id] of [['pe_users', userId], ['pe_sessions', sessionId],
+              ['pe_stdio_v2_connections', connection.connectionId], ['pe_stdio_v2_actions', receipt.actionId],
+              ['pe_cloud_executions', receipt.executionRef.executionId]]) {
+              assert.equal((await client.query(`SELECT id FROM ${table} WHERE id=$1 FOR UPDATE NOWAIT`, [id])).rowCount, 1)
+            }
+          })
+          if (method === 'POST' && path === '/stdio/v2/executions') posts++
           const response = await fetch(`http://127.0.0.1:8080${path}`, { method, headers,
             ...(body === undefined ? {} : { body: JSON.stringify(body) }) })
-          assert.ok(response.ok); return response.json()
+          if (!response.ok) throw new KubernetesError(response.status, 'controlled_runtime_response')
+          const received = await response.json()
+          if (dropReply && method === 'POST' && path === '/stdio/v2/executions') {
+            dropReply = false; repliesLost++; throw new KubernetesError(502, 'controlled_runtime_reply_lost')
+          }
+          return received
         },
       }
       const adapter = new StdioCloudPreparationV2(manager), approvalKey = randomBytes(32)
       const auth = new StdioAuthorizationServiceV2(pool, { limits, approvalKey, approvalLifetimeMs: 60000,
         capture: (client, task, ref) => adapter.capture(client, task, ref) })
-      const prepared = await auth.prepare(receipt.actionId)
-      await auth.decide(approval.token, { actionId: receipt.actionId, fingerprint: prepared.fingerprint, decision: 'once' })
-      const grant = await auth.authorize(receipt.actionId, randomUUID(), { kind: 'cloud', runnerInstanceId: instanceId })
-      assert.equal(grant.grantOnce, true)
-      const dispatch = (await pool.query('SELECT dispatch FROM pe_stdio_v2_dispatches WHERE action_id=$1', [receipt.actionId])).rows[0].dispatch
-      const lease = await leases.claim(receipt.actionId, randomUUID())
-      const locked = operation => transaction(pool, async client => {
-        await lockAccountAuthorities(client, [userId], 'update')
-        await client.query('SELECT id FROM pe_sessions WHERE id=$1 FOR UPDATE', [sessionId])
-        await client.query('SELECT id FROM pe_stdio_v2_connections WHERE id=$1 FOR UPDATE', [connection.connectionId])
-        await client.query('SELECT id FROM pe_stdio_v2_actions WHERE id=$1 FOR UPDATE', [receipt.actionId])
-        await client.query('SELECT id FROM pe_cloud_executions WHERE id=$1 FOR UPDATE', [receipt.executionRef.executionId])
-        return operation(client)
-      })
+      const workerOptions = { workerId: randomUUID(), pollMs: 20, renewMs: 10000, leaseMs: 30000 }
       const transportOptions = { limits, maxReplyBytes: 131072, requestTimeoutMs: 3000, maxTrackedActions: 10 }
-      const transport = new StdioCloudRunTransportV2(manager, transportOptions)
-      const started = await locked(client => transport.start(client, dispatch, grant, prepared.prepared))
-      await results.record(lease, started)
-      let observed = started, deadline = Date.now() + 10000
-      while (observed.view.state === 'running' && Date.now() < deadline) {
-        observed = await locked(client => transport.observe(client, dispatch, prepared.prepared))
+      const makeWorker = (options = workerOptions) => new StdioCloudWorkerV2(store, auth, manager,
+        new StdioCloudRunTransportV2(manager, transportOptions), results, options)
+      const firstLease = await store.claimNext(workerOptions.workerId)
+      assert.equal(firstLease.actionId, receipt.actionId)
+      assert.equal(await makeWorker().step(firstLease, new AbortController().signal), 'pending')
+      assert.equal(creations, 1); assert.equal(posts, 0)
+      assert.equal((await fetch(`http://127.0.0.1:8080/stdio/v2/executions/${receipt.actionId}`, { headers })).status, 404)
+      const prepared = await auth.inspect(approval.token, receipt.actionId)
+      await auth.decide(approval.token, { actionId: receipt.actionId, fingerprint: prepared.fingerprint, decision: 'once' })
+      const nextLease = await store.claimNext(workerOptions.workerId)
+      assert.equal(nextLease.actionId, receipt.actionId); assert(nextLease.leaseEpoch > firstLease.leaseEpoch)
+      let category = await makeWorker().step(nextLease, new AbortController().signal)
+      if (username === 'pg-runtime-bob') assert.equal(category, 'deferred')
+      const deadline = Date.now() + 10000
+      const coldOptions = { ...workerOptions, workerId: randomUUID() }
+      const cold = makeWorker(coldOptions)
+      while (category !== 'finalized' && Date.now() < deadline) {
+        const recoveredLease = await store.claimNext(coldOptions.workerId)
+        assert.equal(recoveredLease.actionId, receipt.actionId)
+        category = await cold.step(recoveredLease, new AbortController().signal)
       }
-      assert.equal(observed.view.state, 'completed'); assert.ok(observed.stopEvidence)
-      assert.deepEqual(observed.view.outcome.catalog, catalog)
-      const final = await results.record(lease, observed)
-      assert.equal(final.finalized, true); assert.ok(final.catalogId)
-      const cold = new StdioAuthorizationServiceV2(pool, { limits, approvalKey, approvalLifetimeMs: 60000,
-        capture: async () => { throw new Error('Cold receipt cannot provision or recapture') } })
-      const query = await cold.authorize(receipt.actionId, randomUUID(), { kind: 'cloud', runnerInstanceId: instanceId })
-      assert.equal(query.grantOnce, false)
-      const coldTransport = new StdioCloudRunTransportV2(manager, transportOptions)
-      const original = await locked(client => coldTransport.start(client, dispatch, query, prepared.prepared))
-      assert.deepEqual(await results.record(lease, original), final)
+      assert.equal(category, 'finalized'); assert.equal(creations, 1); assert.equal(posts, 1)
+      assert.equal(repliesLost, username === 'pg-runtime-bob' ? 1 : 0)
+      const archived = (await pool.query('SELECT result,observation,stop_evidence FROM pe_stdio_v2_results WHERE action_id=$1', [receipt.actionId])).rows[0]
+      assert.equal(archived.observation.state, 'completed'); assert.ok(archived.stop_evidence)
+      assert.deepEqual(archived.result.catalog, catalog)
+      const final = (await pool.query('SELECT id FROM pe_stdio_v2_catalogs WHERE action_id=$1', [receipt.actionId])).rows
+      assert.equal(final.length, 1)
+      assert.equal((await pool.query('SELECT count(*)::integer AS n FROM pe_stdio_v2_start_permits WHERE action_id=$1', [receipt.actionId])).rows[0].n, 1)
+      assert.equal(await store.claimNext(coldOptions.workerId), null)
       const events = await trace(traceId), spawns = events.filter(item => item.event === 'spawn')
       assert.equal(spawns.length, 1); assert.equal(spawns[0].uid, 1000); assert.equal(spawns[0].tokenReadable, false)
       const saved = (await pool.query('SELECT result,observation,stop_evidence FROM pe_stdio_v2_results WHERE action_id=$1', [receipt.actionId])).rows[0]
-      assert.deepEqual(saved.result, observed.view.outcome); assert.deepEqual(saved.observation, observed.view)
-      assert.deepEqual(saved.stop_evidence, observed.stopEvidence)
-      completed.push({ actionId: receipt.actionId, catalogId: final.catalogId, executionId: receipt.executionRef.executionId })
+      assert.deepEqual(saved.result, archived.result); assert.deepEqual(saved.observation, archived.observation)
+      assert.deepEqual(saved.stop_evidence, archived.stop_evidence)
+      completed.push({ actionId: receipt.actionId, catalogId: final[0].id, executionId: receipt.executionRef.executionId,
+        creates: creations, startPosts: posts, lostReplies: repliesLost })
       // Preserve observations/catalogs, but retire the synthetic instance name before the next owner uses this same QA Runner.
       await pool.query("UPDATE pe_sandbox_instances SET name=$2,state='deleted' WHERE session_id=$1", [sessionId, `${name}-${username}`])
     }

@@ -135,6 +135,7 @@ test('generic management, atomic discovery and independent once authorization on
       assert.equal(await leases.claim(f.receipt.actionId, randomUUID()), null)
       assert.deepEqual(await leases.renew(f.lease), f.lease)
       await pool.query("UPDATE pe_stdio_v2_actions SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1", [f.receipt.actionId])
+      await pool.query("UPDATE pe_cloud_executions SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1", [f.receipt.executionRef.executionId])
       const replacement = await leases.claim(f.receipt.actionId, randomUUID())
       assert.equal(replacement.leaseEpoch, f.lease.leaseEpoch + 1)
       await assert.rejects(leases.renew(f.lease), expectCode('stdio_v2_lease_lost'))

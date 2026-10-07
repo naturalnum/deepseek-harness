@@ -96,6 +96,8 @@ SSH Runner 只有明确报告 `effectMayHaveOccurred` 为 false 时，失败才�
 
 STDIO v2 的 `SandboxManager.captureStdioV2` 在现有准入围栏下观察原 PVC writer。它核验工作区与 Home 挂载、准确的 runner 容器和镜像，以及所调度 Node 的 OS 和架构，并在调用方可信 JSON 预算内返回完整 Pod spec。Platform 凭据需要对该单一 Node 的 GET 权限；事实缺失或变化会拒绝 capture。Capture 不创建 Kubernetes 资源或用户程序，也不授予启动许可。调用方必须在派发前比较后续 capture；旧 hostPath 执行保持原行为。
 
+内部 STDIO v2 Cloud worker 以数据库时钟认领动作，按用户上次认领时间轮转，将每个动作租约镜像到原 Cloud 执行。`maxActive` 限制跨副本有效 Cloud worker 租约数，包含历史执行；它不限制运行中的 Pod 或用户程序数。`maxCandidates`、`pollMs`、`renewMs` 和 `leaseMs` 限定扫描、轮询及续期。环境准备在授权事务外进行；创建期间取消仍保留准确的 ready 写者身份。准备审批和首次派发受当前动作 epoch 围栏约束。私有 Pod 观察持有有界捕获锁；Runner 执行 HTTP 在该事务提交并释放后进行。已提交意图只查询或取消原 Runner。停服等待创建、授权、HTTP 和续期收敛。派发前取消仍保持 blocked，待正式 no-start 结案；通用 call 受理、续接和 Profile 启用仍需单独完成。
+
 Device 的 `OwnedDeviceContainer.captureImage` 检查可信 Docker config ID、OS 和架构。`captureContainer` 观察准确的原 owned container，要求从未启动且重启次数为零，核验两处可写工作区／Home bind，仅允许另外一处可选的 `/tmp` tmpfs。它保留完整 Config、HostConfig、Path、Args、State 和挂载观测。调用方提供已授权的物理源，并完成 realpath 与 Directory grant 检查。这些只执行 inspect 的方法返回私有观测，用于 Prepared 和派发比较。当前 Profile 提供固定进程 MCP 预设；通用 STDIO 路由、原生客户端接入和执行器派发仍未启用。
 
 通用 STDIO 管理、发现受理和审批持久化位于 `stdio-v2-connections.ts`、`stdio-v2-admission.ts` 和 `stdio-v2-authorization.ts`。这些服务在 PG 事务内重查当前浏览器凭据的用途，保留逐项配置与用户请求回执，一起提交唯一发现任务与执行记录，并保存独立的首次审批决定和唯一启动许可。只有新许可提交后返回 `grantOnce:true`；重复请求或回复丢失后只返回 false 的原回执。拒绝和过期后的原执行仍活跃时继续占用容量。授权服务要求私有实时 capture 适配器和独立认证的执行器路由；这些服务本身不启用执行 Profile。
