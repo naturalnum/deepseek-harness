@@ -5,6 +5,7 @@ import test from 'node:test'
 import { runInContext } from 'node:vm'
 import { JSDOM } from 'jsdom'
 import { t } from '../web/locale.js'
+import { createStdioV2Approval } from '../web/stdio-v2-approval.js'
 import * as resolutionSchemas from '../../contracts/lib/execution-resolution.js'
 
 const html = readFileSync(new URL('../web/approval.html', import.meta.url), 'utf8')
@@ -50,6 +51,7 @@ function page(context, options = {}) {
   let records = structuredClone(options.items ?? [action()])
   const server = { calls, get items() { return records }, set items(value) { records = structuredClone(value) } }
   window.approvalLabels = t
+  window.createStdioV2Approval = createStdioV2Approval
   window.resolutionSchemas = resolutionSchemas
   window.AbortController = AbortController; window.AbortSignal = AbortSignal
   window.sessionStorage.setItem('pe-approval-token', approvalToken)
@@ -68,6 +70,7 @@ function page(context, options = {}) {
       case '/approvals/ssh-execute/list': return Response.json({ items: options.ssh ?? [] })
       case '/approvals/mcp/list': return Response.json({ items: records })
       case '/approvals/executions/list': return Response.json({ available: true, items: [] })
+      case '/approvals/stdio-v2/list': return new Response('', { status: 503 })
       case '/approvals/mcp/decide': {
         const record = records.find(item => item.actionId === call.body.actionId)
         record.state = call.body.decision === 'reject' ? 'rejected' : 'approved'
@@ -91,7 +94,8 @@ function page(context, options = {}) {
   runInContext(resolutionSource.replace(/import \{[\s\S]*?\} from '\.\/execution-resolution-contract\.js'/u,
     'const { executionResolutionsList, executionResolutionInspection, executionResolutionReceipt, executionResolutionStatus, executionResolutionRequest, executionResolutionInspectRequest, executionResolutionStatusRequest } = globalThis.resolutionSchemas')
     .replaceAll('export ', '') + '\n' + source.replace(importStatement, 'const t = globalThis.approvalLabels')
-    .replace("import { createExecutionResolutionApproval } from './execution-resolution.js'", ''), dom.getInternalVMContext())
+    .replace("import { createExecutionResolutionApproval } from './execution-resolution.js'", '')
+    .replace("import { createStdioV2Approval } from './stdio-v2-approval.js'", ''), dom.getInternalVMContext())
   return { window, document: window.document, server, calls,
     async ready() { await until(() => window.document.querySelector('#mcp-actions article')) },
     buttons(kind = 'decide') { return [...window.document.querySelectorAll(`button[data-mcp-attempt^="${kind}:"]`)] },
