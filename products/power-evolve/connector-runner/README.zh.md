@@ -23,3 +23,16 @@ Runner 要求连续三次 TCP 禁止目标探测被拒绝才进入就绪；后�
 SSH 失败保留 `state:'failed'` 和 `errorCode`，并包含 `effectMayHaveOccurred`。Runner 尝试 `exec` 前为 `false`，包括认证与指纹失败；调用 `exec` 时变为 `true`。此后的断开、超时、取消和输出超限始终保留 `true`；未分类的执行异常也保守返回 `true`。命令通道关闭时，若未观察到退出码或非空退出信号，则以 `ssh_exit_missing` 失败。GET 与重复 POST 返回相同的已记录效果位。对于执行调用，效果位为 `true` 或旧 Runner 缺少该字段时，平台必须将命令结果视为不确定。STDIO 响应保持现有结构。
 
 整个 HTTP JSON 正文上限为 256 KiB（`MAX_CALL_BODY_BYTES`），包括 JSON 转义；超过上限时在占用调用 ID 前返回 413。各 UTF-8 字段上限保持不变：命令 16 KiB、密码 4096 字节、私钥 7168 字节、私钥口令 1024 字节。SSH 标准输出与错误输出合计上限为 128 KiB，超时上限为 60 秒。STDIO MCP 文本上限为 8 KiB，超时上限为 30 秒。Runner 不提供文件传输、PTY、端口转发、本地 Shell 或任意进程型 MCP 命令；这些能力需分别审查和开发。
+
+
+## 共享 STDIO SDK 调用器
+
+`src/stdio-v2.ts` 提供内部 `runStdioV2(input, options, signal)`，供后续隔离的 Cloud 和 Device 执行器复用。它尚未接入此 Runner 的 HTTP API 或包导出。共享 Host 不得执行它。执行器负责审批、不可变 Runner/程序 pin、目录授权、prepare/permit、持久请求身份、结果判定及容器/UID 清理。
+
+输入选择 `discover` 或 `call`，指定字面程序、参数数组及绝对 cwd。调用还提供冻结的完整原始目录、原始工具名和 JSON 参数。选项传入全部输入/消息/协议/JSON/分页/工具/目录/结果/stderr/运行/请求/清理预算、严格的 `HOME`/`PATH`/`LANG` 环境，以及验证完整原始目录并计算共享冻结摘要的同步回调。调用器不另造规范化摘要实现。macOS 中 Node 可能自行加入 `__CF_USER_TEXT_ENCODING` 编码提示；调用器不合并父环境。HOME 和 PATH 必须指向执行器批准的隔离位置。
+
+公开 SDK2 Client 使用显式 `legacy` 协商模式执行一次 `initialize`（支持的 2025 年协议握手，与产品固定 `whoami` 路由无关）。公开 Transport 适配器以 `shell:false` 启动一个子进程，复用 SDK 公开的分帧及消息 schema helper，严格检查 UTF-8 JSONRPC 行并累计收发协议原始字节。不支持的协议直接失败，不启动兄弟进程、不重复 initialize、不重连、不重试。调用器通过 SDK 公开请求读取全部工具分页，核对完整目录后恰好发出一次 `tools/call`。原始 schema、annotations、metadata、content、structured content、`isError`、扩展字段及转义 NUL 保持 JSON。`readOnlyHint` 不授予批准；`isError:true` 仍是完成的 RPC，由外层判定工具结果。
+
+程序启动本身可能产生效果。回复丢失、取消、目录改变或预算失败均保留保守的效果/调用事实，不发布截断的成功目录或结果。清理独立等待配置的 stdin、TERM 和 KILL 截止时间，记录真实直接子进程的 `exit` 和 `close` 事件。未观察到 close 时以 `cleanupConfirmed:false` 失败；SDK close 本身不能证明退出。即使确认直接子进程关闭，也不能证明后代、容器、writer 或其目录租约已经退休。外层 stop 协议必须提供这些证据，不得重放结果不明的调用。
+
+在仓库根目录运行定向源码测试：`node --import tsx/esm --test products/power-evolve/connector-runner/tests/stdio-v2.test.ts`。测试使用真实 SDK2 Client 与测试独占的合成 Node 服务，覆盖分页、字面特殊参数、完整 JSON、目录变化、回复丢失、预算、abort、KILL 及后代持有管道。测试摘要回调替代后续共享目录验证器。这些测试仅验证调用器行为，不证明审批、Cloud/Device 接线或已部署产品流程通过。

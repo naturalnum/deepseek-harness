@@ -11,3 +11,6 @@
 /isolated-connector-runner/wire-api:
   en: 9a08ce29edb3cf4d
   zh: 430d6eea3949c239
+/isolated-connector-runner/shared-stdio-sdk-provider:
+  en: 1772e9044d9b2676
+  zh: b426d344509428b7
