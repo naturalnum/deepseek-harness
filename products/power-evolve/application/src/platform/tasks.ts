@@ -186,7 +186,7 @@ export class TaskStore {
     })
   }
 
-  /** Request cancellation of the current turn, or settle its unclaimed input.
+  /** Cancel the current turn or its pending generic call; a later unclaimed user input stays independent.
    * @param user Owner authenticated by the route.
    * @param session Owned native Session to cancel.
    * @param credentialToken Original Agent bearer rechecked inside the cancellation transaction.
@@ -200,11 +200,22 @@ export class TaskStore {
       const owned = await client.query('SELECT id FROM pe_sessions WHERE id=$1 AND user_id=$2 FOR UPDATE',
         [session, user.userId])
       if (!owned.rowCount) throw new PlatformError(404, 'session_not_found')
-      const result = await client.query<{ id: string; state: 'queued' | 'running' }>(
-        `SELECT id,state FROM pe_operations WHERE session_id=$1 AND state IN ('queued','running')
-         ORDER BY CASE state WHEN 'running' THEN 0 ELSE 1 END,created_at,id LIMIT 1 FOR UPDATE`, [session],
-      )
-      const operation = result.rows[0]
+      type CancellableOperation = { id: string; state: 'queued' | 'running' | 'completed' | 'failed' }
+      const running = await client.query<CancellableOperation>(
+        `SELECT id,state FROM pe_operations WHERE session_id=$1 AND state='running'
+         ORDER BY created_at,id LIMIT 1 FOR UPDATE`, [session])
+      const call = !running.rowCount ? await client.query<CancellableOperation>(
+        `SELECT r.id,r.state FROM pe_stdio_v2_actions a JOIN pe_operations r ON r.id=a.root_operation_id
+         WHERE a.session_id=$1 AND a.user_id=$2 AND a.phase='call' AND r.session_id=$1
+           AND (EXISTS(SELECT 1 FROM pe_cloud_executions e WHERE e.stdio_action_id=a.id AND e.user_id=$2
+             AND e.state IN ('queued','starting','running','cancelling','uncertain'))
+             OR EXISTS(SELECT 1 FROM pe_desktop_executions e WHERE e.stdio_action_id=a.id AND e.user_id=$2
+               AND e.state IN ('queued','running','cancelling','uncertain')))
+         ORDER BY a.created_at,a.id LIMIT 1 FOR UPDATE OF r`, [session, user.userId]) : { rows: [] }
+      const queued = !running.rowCount && !call.rows.length ? await client.query<CancellableOperation>(
+        `SELECT id,state FROM pe_operations WHERE session_id=$1 AND state='queued'
+         ORDER BY created_at,id LIMIT 1 FOR UPDATE`, [session]) : { rows: [] }
+      const operation = running.rows[0] ?? call.rows[0] ?? queued.rows[0]
       if (!operation) return { accepted: true }
       // Native turn completion may clear error_code; a stopped MCP chain remains stopped.
       await client.query(`UPDATE pe_operations SET mcp_chain_cancelled_at=COALESCE(mcp_chain_cancelled_at,clock_timestamp())
@@ -212,11 +223,21 @@ export class TaskStore {
       await client.query(`UPDATE pe_mcp_action_chains SET stopped_at=COALESCE(stopped_at,clock_timestamp()),
         error_code=COALESCE(error_code,'mcp_operation_cancelled') WHERE root_operation_id=
         (SELECT COALESCE(mcp_root_operation_id,id) FROM pe_operations WHERE id=$1)`, [operation.id])
+      await client.query(`UPDATE pe_stdio_v2_actions SET cancel_requested=true,updated_at=clock_timestamp()
+        WHERE user_id=$2 AND session_id=$3 AND phase='call' AND root_operation_id=
+          (SELECT COALESCE(mcp_root_operation_id,id) FROM pe_operations WHERE id=$1) AND NOT cancel_requested`,
+      [operation.id, user.userId, session])
+      for (const table of ['pe_cloud_executions', 'pe_desktop_executions']) {
+        await client.query(`UPDATE ${table} e SET cancel_requested=true,updated_at=clock_timestamp()
+          FROM pe_stdio_v2_actions a WHERE a.id=e.stdio_action_id AND a.user_id=$2 AND a.session_id=$3
+          AND a.phase='call' AND a.root_operation_id=(SELECT COALESCE(mcp_root_operation_id,id) FROM pe_operations WHERE id=$1)
+          AND e.execution_kind='stdio_v2' AND NOT e.cancel_requested`, [operation.id, user.userId, session])
+      }
       if (operation.state === 'queued') {
         await client.query(
           `UPDATE pe_operations SET state='failed',error_code='turn_user',completed_at=now() WHERE id=$1`, [operation.id],
         )
-      } else {
+      } else if (operation.state === 'running') {
         await client.query(
           `UPDATE pe_operations SET error_code='cancel_requested' WHERE id=$1 AND error_code IS DISTINCT FROM 'cancel_requested'`,
           [operation.id],

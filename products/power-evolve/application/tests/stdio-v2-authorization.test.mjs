@@ -24,7 +24,7 @@ const rawCatalog = [{ name: 'read_note', inputSchema: { type: 'object', properti
 const jsonColumns = new Set(['task', 'stdio_task', 'configuration', 'prepared', 'approval_binding', 'executor_owner',
   'permit', 'dispatch', 'raw_catalog', 'image_expectation', 'result'])
 const booleans = new Set(['enabled', 'passwordChangeRequired', 'cancel_requested'])
-const dates = new Set(['deletedAt', 'deleted_at', 'expires_at', 'issued_at', 'now'])
+const dates = new Set(['deletedAt', 'deleted_at', 'expires_at', 'issued_at', 'mcp_chain_cancelled_at', 'stopped_at', 'now'])
 const mutableTables = ['pe_stdio_v2_actions', 'pe_stdio_v2_preparations', 'pe_stdio_v2_decisions',
   'pe_stdio_v2_start_permits', 'pe_stdio_v2_dispatches', 'pe_cloud_executions', 'pe_desktop_executions']
 
@@ -38,6 +38,8 @@ function fixture(t, { kind = 'cloud', phase = 'discover' } = {}) {
     account_revision INTEGER,credential_version INTEGER,password_change_required INTEGER,deleted_at TEXT);
     CREATE TABLE pe_credentials(digest TEXT PRIMARY KEY,user_id TEXT,audience TEXT,credential_version INTEGER,expires_at TEXT);
     CREATE TABLE pe_sessions(id TEXT PRIMARY KEY,user_id TEXT,workspace_id TEXT);
+    CREATE TABLE pe_operations(id TEXT PRIMARY KEY,session_id TEXT,mcp_root_operation_id TEXT,source TEXT,error_code TEXT,mcp_chain_cancelled_at TEXT);
+    CREATE TABLE pe_mcp_action_chains(root_operation_id TEXT PRIMARY KEY,user_id TEXT,session_id TEXT,calls INTEGER,max_calls INTEGER,stopped_at TEXT,expires_at TEXT);
     CREATE TABLE pe_stdio_v2_connections(id TEXT PRIMARY KEY,user_id TEXT,revision INTEGER,enabled INTEGER,current_catalog_id TEXT,deleted_at TEXT);
     CREATE TABLE pe_stdio_v2_configurations(connection_id TEXT,user_id TEXT,revision INTEGER,configuration TEXT,config_digest TEXT,
       PRIMARY KEY(connection_id,revision));
@@ -65,7 +67,7 @@ function fixture(t, { kind = 'cloud', phase = 'discover' } = {}) {
     queries.push(sql)
     if (failDispatch && sql.startsWith('INSERT INTO pe_stdio_v2_dispatches')) throw new Error('synthetic_dispatch_failure')
     const translated = sql.replace(/=ANY\((\$\d+)::uuid\[\]\)/gu, ' IN (SELECT value FROM json_each($1))')
-      .replace(/ FOR (?:NO KEY UPDATE|UPDATE|SHARE)/gu, '')
+      .replace(/ FOR (?:NO KEY UPDATE|UPDATE|SHARE)(?: OF [\w,]+)?/gu, '')
     const bindings = Object.fromEntries(values.map((value, index) => [String(index + 1), value instanceof Date ? value.toISOString()
       : typeof value === 'boolean' ? Number(value) : Array.isArray(value) ? JSON.stringify(value) : value]))
     const before = db.prepare('SELECT total_changes() AS n').get().n
@@ -136,6 +138,10 @@ function fixture(t, { kind = 'cloud', phase = 'discover' } = {}) {
     ...(kind === 'desktop' ? { device_id: deviceId, directory_id: directoryId, device_instance_id: enrollmentId } : {}) })
   const discoveryId = uuid()
   if (phase === 'call') {
+    insert('pe_operations', { id: task.origin.rootOperationId, session_id: sessionId, source: 'user' })
+    insert('pe_operations', { id: task.origin.operationId, session_id: sessionId, mcp_root_operation_id: task.origin.rootOperationId })
+    insert('pe_mcp_action_chains', { root_operation_id: task.origin.rootOperationId, user_id: userId, session_id: sessionId,
+      calls: 1, max_calls: 4, expires_at: new Date(now + 60000).toISOString() })
     // A successful catalog's immutable producer/result is admitted before this call action.
     insert('pe_stdio_v2_actions', { id: discoveryId, state: 'succeeded', execution_id: uuid() })
     const result = { tools: clone(rawCatalog) }

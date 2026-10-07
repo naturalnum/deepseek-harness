@@ -15,6 +15,7 @@ import { PlatformError, type UserId } from '../contracts.ts'
 import { assertActiveAccount, lockAccountAuthorities, requireBrowserAccount } from './account-authority.ts'
 import { transaction } from './database.ts'
 import { assertStdioActionLeaseV2 } from './stdio-v2-leases.ts'
+import { readStdioCallRootAuthorityV2 } from './stdio-v2-call-authority.ts'
 
 /** Trusted deployment configuration; capture observes resources and rechecks their original live grants. */
 export interface StdioAuthorizationOptionsV2 {
@@ -164,6 +165,7 @@ export class StdioAuthorizationServiceV2 {
     if (action.cancel_requested || execution.cancel_requested || !['queued', 'preparing', 'pending', 'approved'].includes(action.state)
       || !['queued', 'starting'].includes(execution.state)) this.deny('stdio_v2_action_not_startable')
     if (task.phase === 'call') {
+      if (!(await readStdioCallRootAuthorityV2(client, task))?.active) this.deny('mcp_chain_stopped')
       if (!connection.enabled || connection.current_catalog_id !== task.selection.catalogId) this.deny('stdio_v2_catalog_stale')
       const row = (await client.query(`SELECT c.*,a.state AS action_state,r.result,r.result_digest FROM pe_stdio_v2_catalogs c
         JOIN pe_stdio_v2_actions a ON a.id=c.action_id JOIN pe_stdio_v2_results r ON r.action_id=c.action_id
@@ -256,9 +258,11 @@ export class StdioAuthorizationServiceV2 {
       }
       if (!['queued', 'preparing'].includes(original.action.state)) this.deny('stdio_v2_preparation_missing')
       const now = await this.clock(client)
+      const root = await readStdioCallRootAuthorityV2(client, original.task)
+      if (root && !root.active) this.deny('mcp_chain_stopped')
       const binding = stdioApprovalBindingV2.parse({ actionId: id, taskDigest: original.action.task_digest,
         preparedDigest: this.sha('prepared', fresh), approvalEpoch: 1,
-        expiresAt: new Date(now.getTime() + this.options.approvalLifetimeMs).toISOString() })
+        expiresAt: new Date(Math.min(now.getTime() + this.options.approvalLifetimeMs, root?.expiresAt.getTime() ?? Infinity)).toISOString() })
       const fingerprint = stdioApprovalFingerprintV2(this.key, binding, this.budget())
       await this.write(client, lease, `INSERT INTO pe_stdio_v2_preparations
         (action_id,user_id,session_id,phase,execution_target,execution_id,task_digest,prepared,prepared_digest,
@@ -382,6 +386,8 @@ export class StdioAuthorizationServiceV2 {
       const fresh = this.validatePrepared(original, await this.options.capture(client, original.task, original.executionRef))
       await this.guard(client, lease)
       if (!this.same(fresh, prepared.prepared)) this.deny('stdio_v2_capture_changed')
+      const root = await readStdioCallRootAuthorityV2(client, original.task)
+      if (root && !root.active) this.deny('mcp_chain_stopped')
       const issued = await this.clock(client)
       if (issued.getTime() >= Date.parse(prepared.expiresAt)) this.deny('stdio_v2_approval_expired_or_closed')
       const permit = stdioStartPermitV2.parse({ actionId: id, taskDigest: prepared.taskDigest,

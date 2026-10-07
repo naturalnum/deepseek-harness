@@ -10,6 +10,12 @@ import {initializeDatabase,transaction} from '../lib/platform/database.js'
 import {lockAccountAuthorities} from '../lib/platform/account-authority.js'
 import {FileService} from '../lib/platform/files.js'
 import {StdioOperationAdmissionV2} from '../lib/platform/stdio-v2-operation-admission.js'
+import {taskCredential,disableFixtureAccount,enableFixtureAccount} from './task-credential-fixture.mjs'
+import {StdioAuthorizationServiceV2} from '../lib/platform/stdio-v2-authorization.js'
+import {readStdioCallRootAuthorityV2} from '../lib/platform/stdio-v2-call-authority.js'
+import {StdioCallAdmissionV2} from '../lib/platform/stdio-v2-call-admission.js'
+import {TaskStore} from '../lib/platform/tasks.js'
+import {digest} from '../lib/platform/identity.js'
 import {StdioCallContinuationV2} from '../lib/platform/stdio-v2-continuations.js'
 import {stdioDispatchV2,stdioPreparedV2,stdioTaskSchemasV2} from '@power-evolve/contracts/stdio-mcp'
 import {stdioCatalogFingerprintV2,stdioSha256V2} from '@power-evolve/connector-runner/stdio-v2-digest'
@@ -258,6 +264,201 @@ test('Cloud selections and call continuations retain original facts and resume o
         assert.equal((await pool.query('SELECT continuation_queued FROM pe_stdio_v2_actions WHERE id=$1',[f.lease.actionId])).rows[0].continuation_queued,false)
         await pool.query('DROP TRIGGER reject_stdio_continuation ON pe_operations')
         assert.equal((await deliver(f)).disposition,'queued');assert.equal((await deliver(f)).disposition,'original')
+      })
+      const tasks=new TaskStore(pool,{maxEventBytes:1048576,leaseMs:60000,maxPendingPerUser:20,maxActivePerUser:2})
+      const callOptions={limits,cloudDeployment:pin,maxPendingPerUser:20,maxCallsPerChain:4,chainLifetimeMs:60000,reservedNames:[]}
+      const caller=(changes={},fileApi=files)=>new StdioCallAdmissionV2(tasks,selector,fileApi,{...callOptions,...changes})
+      async function running(owner,groups){
+        const sessionId=randomUUID(),operationId=randomUUID(),token=randomBytes(32).toString('hex')
+        await pool.query(`INSERT INTO pe_sessions(id,user_id,workspace_id,create_request_id,header,grant_digest,lease_epoch,lease_until)
+          VALUES($1,$2,$3,$4,'{}',$5,1,clock_timestamp()+interval '1 minute')`,
+        [sessionId,owner.userId,owner.workspaceId,randomUUID(),digest(token)])
+        await pool.query(`INSERT INTO pe_operations(id,session_id,request_id,input,settings,stdio_v2_selection,state)
+          VALUES($1,$2,$3,'synthetic root','{}',$4,'running')`,[operationId,sessionId,randomUUID(),JSON.stringify(groups)])
+        return {...owner,sessionId,operationId,token,groups}
+      }
+      const proposed=f=>({callKey:'native-call-1',toolName:f.groups[0].tools[0].model.name,arguments:{text:'literal\0表😀'}})
+      const callCount=async f=>(await pool.query('SELECT count(*)::int AS n FROM pe_stdio_v2_actions WHERE operation_id=$1',[f.operationId])).rows[0].n
+      await t.test('production call admission deduplicates two replicas and isolates both owners without starting a sandbox',async()=>{
+        for(const [owner,groups] of [[alice,original],[bob,await select(selector,bob)]]){
+          const f=await running(owner,groups),request=proposed(f)
+          const replies=await Promise.all([caller().propose(f.token,request),caller().propose(f.token,request)])
+          assert.deepEqual(replies[0],replies[1]);assert.equal(await callCount(f),1)
+          const action=(await pool.query('SELECT * FROM pe_stdio_v2_actions WHERE id=$1',[replies[0].actionId])).rows[0]
+          assert.equal(action.user_id,owner.userId);assert.equal(action.task.origin.rootOperationId,f.operationId)
+          assert.deepEqual(action.task.selection.arguments,request.arguments);assert.deepEqual(action.task.selection.rawCatalog,rawCatalog)
+          assert.equal(action.state,'queued');assert.equal(action.lease_owner,null)
+          const execution=(await pool.query('SELECT * FROM pe_cloud_executions WHERE id=$1',[replies[0].executionRef.executionId])).rows[0]
+          assert.equal(execution.stdio_action_id,action.id);assert.equal(execution.request_digest,action.task_digest)
+          assert.equal(execution.stdio_task.selection.arguments.text,request.arguments.text);assert.equal(execution.pod_uid,null)
+          assert.equal((await pool.query('SELECT calls FROM pe_mcp_action_chains WHERE root_operation_id=$1',[f.operationId])).rows[0].calls,1)
+        }
+        assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_sandbox_instances')).rows[0].n,0)
+        assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_mount_slots')).rows[0].n,0)
+      })
+      await t.test('an accepted retry retains its receipt after revocation while new calls are refused',async()=>{
+        const f=await running(alice,original),request=proposed(f),accepted=await caller().propose(f.token,request)
+        await pool.query('UPDATE pe_stdio_v2_connections SET enabled=false WHERE id=$1',[a.connectionId])
+        assert.deepEqual(await caller().propose(f.token,request),accepted)
+        await assert.rejects(caller().propose(f.token,{...request,callKey:'new-call'}),{code:'stdio_v2_connection_revoked'})
+        await assert.rejects(caller().propose(f.token,{...request,arguments:{text:'changed'}}),{code:'stdio_v2_request_conflict'})
+        assert.equal(await callCount(f),1)
+        await pool.query('UPDATE pe_stdio_v2_connections SET enabled=true WHERE id=$1',[a.connectionId])
+      })
+      await t.test('unknown names, invalid full arguments and another owners selection fail before consuming a call',async()=>{
+        const f=await running(alice,original),request=proposed(f)
+        await assert.rejects(caller().propose(f.token,{...request,toolName:'not-admitted'}),{code:'stdio_v2_tool_not_in_operation'})
+        await assert.rejects(caller().propose(f.token,{...request,arguments:{text:42}}),{code:'stdio_v2_arguments_invalid'})
+        assert.equal(await callCount(f),0)
+        const wrong=await running(alice,await select(selector,bob))
+        await assert.rejects(caller().propose(wrong.token,proposed(wrong)),{code:'stdio_v2_origin_changed'})
+        assert.equal(await callCount(wrong),0)
+      })
+      await t.test('existing shared root budgets and expiry are retained instead of reset by a new STDIO call',async()=>{
+        for(const expired of [false,true]){
+          const f=await running(alice,original)
+          await pool.query(`INSERT INTO pe_mcp_action_chains(root_operation_id,user_id,session_id,calls,max_calls,expires_at)
+            VALUES($1,$2,$3,$4,2,clock_timestamp()+$5::int*interval '1 second')`,
+          [f.operationId,f.userId,f.sessionId,expired?0:2,expired?-1:30])
+          await assert.rejects(caller().propose(f.token,proposed(f)),{code:expired?'mcp_chain_stopped':'mcp_chain_call_limit'})
+          assert.equal(await callCount(f),0)
+          assert.equal((await pool.query('SELECT max_calls FROM pe_mcp_action_chains WHERE root_operation_id=$1',[f.operationId])).rows[0].max_calls,2)
+        }
+      })
+      await t.test('a root cancel marker and changed workspace generation prevent new execution admission',async()=>{
+        const cancelled=await running(alice,original)
+        await pool.query('UPDATE pe_operations SET mcp_chain_cancelled_at=clock_timestamp() WHERE id=$1',[cancelled.operationId])
+        await assert.rejects(caller().propose(cancelled.token,proposed(cancelled)),{code:'mcp_chain_stopped'})
+        const stale=await running(alice,original)
+        await pool.query('UPDATE pe_workspaces SET binding_generation=binding_generation+1 WHERE id=$1',[alice.workspaceId])
+        await assert.rejects(caller().propose(stale.token,proposed(stale)),{code:'stdio_v2_scope_changed'})
+        await pool.query('UPDATE pe_workspaces SET binding_generation=binding_generation-1 WHERE id=$1',[alice.workspaceId])
+        assert.equal(await callCount(cancelled),0);assert.equal(await callCount(stale),0)
+      })
+      await t.test('expired grants during admission cannot commit action, execution or budget consumption',async()=>{
+        const f=await running(alice,original)
+        const slow={bindingForId:async(...args)=>{
+          const result=await files.bindingForId(...args)
+          await args[2].query("UPDATE pe_sessions SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1",[f.sessionId])
+          return result
+        }}
+        await assert.rejects(caller({},slow).propose(f.token,proposed(f)),{code:'lease_lost'})
+        assert.equal(await callCount(f),0)
+        assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_mcp_action_chains WHERE root_operation_id=$1',[f.operationId])).rows[0].n,0)
+      })
+      await t.test('execution insert failure rolls back the whole accepted call and a retry consumes exactly one budget unit',async()=>{
+        const f=await running(alice,original)
+        await pool.query(`CREATE FUNCTION reject_stdio_call_execution() RETURNS trigger LANGUAGE plpgsql AS $$
+          BEGIN IF NEW.stdio_phase='call' THEN RAISE EXCEPTION 'synthetic call insertion failure'; END IF; RETURN NEW; END $$;
+          CREATE TRIGGER reject_stdio_call_execution BEFORE INSERT ON pe_cloud_executions FOR EACH ROW EXECUTE FUNCTION reject_stdio_call_execution();`)
+        await assert.rejects(caller().propose(f.token,proposed(f)),/synthetic call insertion failure/u)
+        assert.equal(await callCount(f),0)
+        assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_mcp_action_chains WHERE root_operation_id=$1',[f.operationId])).rows[0].n,0)
+        await pool.query('DROP TRIGGER reject_stdio_call_execution ON pe_cloud_executions')
+        const accepted=await caller().propose(f.token,proposed(f));assert.equal(accepted.state,'queued');assert.equal(await callCount(f),1)
+      })
+      await t.test('a continuation spends the original root budget and retains its original expiry',async()=>{
+        const f=await running(alice,original),nextId=randomUUID()
+        await pool.query(`INSERT INTO pe_mcp_action_chains(root_operation_id,user_id,session_id,calls,max_calls,expires_at)
+          VALUES($1,$2,$3,1,2,clock_timestamp()+interval '30 seconds')`,[f.operationId,f.userId,f.sessionId])
+        const before=(await pool.query('SELECT expires_at FROM pe_mcp_action_chains WHERE root_operation_id=$1',[f.operationId])).rows[0].expires_at
+        await pool.query("UPDATE pe_operations SET state='completed' WHERE id=$1",[f.operationId])
+        await pool.query(`INSERT INTO pe_operations(id,session_id,request_id,input,settings,stdio_v2_selection,mcp_root_operation_id,state)
+          VALUES($1,$2,$3,'synthetic continuation','{}',$4,$5,'running')`,[nextId,f.sessionId,randomUUID(),JSON.stringify(original),f.operationId])
+        const accepted=await caller().propose(f.token,proposed(f))
+        const action=(await pool.query('SELECT root_operation_id,operation_id FROM pe_stdio_v2_actions WHERE id=$1',[accepted.actionId])).rows[0]
+        assert.equal(action.root_operation_id,f.operationId);assert.equal(action.operation_id,nextId)
+        const after=(await pool.query('SELECT calls,expires_at FROM pe_mcp_action_chains WHERE root_operation_id=$1',[f.operationId])).rows[0]
+        assert.equal(after.calls,2);assert.equal(after.expires_at.toISOString(),before.toISOString())
+        await assert.rejects(caller().propose(f.token,{...proposed(f),callKey:'next-call'}),{code:'mcp_chain_call_limit'})
+      })
+      function authorization(){
+        return new StdioAuthorizationServiceV2(pool,{limits,approvalKey:new Uint8Array(32).fill(7),approvalLifetimeMs:120000,
+          capture:async(_client,task,executionRef)=>{
+            const capture={...a.prepared.capture,podUid:randomUUID(),runnerInstanceId:randomUUID()}
+            return stdioPreparedV2.parse({...a.prepared,actionId:task.actionId,executionRef,taskDigest:sha('task',task),
+              scopeBinding:task.scopeBinding,expectedDeploymentPin:task.expectedDeploymentPin,capture,
+              fullScopeDigest:sha('scope',{scopeBinding:task.scopeBinding,workspaceMount:capture.workspaceMount,homeMount:capture.homeMount})})
+          }})
+      }
+      await t.test('production approval expiry is capped by the admitted root and a completed Agent root remains eligible',async()=>{
+        const f=await running(alice,original),accepted=await caller().propose(f.token,proposed(f))
+        const task=(await pool.query('SELECT task FROM pe_stdio_v2_actions WHERE id=$1',[accepted.actionId])).rows[0].task
+        await pool.query("UPDATE pe_operations SET state='completed' WHERE id=$1",[f.operationId])
+        const live=await transaction(pool,async client=>{
+          await lockAccountAuthorities(client,[f.userId],'update')
+          await client.query('SELECT id FROM pe_sessions WHERE id=$1 FOR UPDATE',[f.sessionId])
+          return readStdioCallRootAuthorityV2(client,task)
+        })
+        assert.equal(live.active,true)
+        const prepared=await authorization().prepare(accepted.actionId)
+        assert.equal(prepared.expiresAt,live.expiresAt.toISOString())
+        assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_stdio_v2_start_permits WHERE action_id=$1',[accepted.actionId])).rows[0].n,0)
+      })
+      await t.test('root cancellation or chain expiry after admission rejects prepare without creating authority',async()=>{
+        for(const expired of [false,true]){
+          const f=await running(alice,original),accepted=await caller().propose(f.token,proposed(f))
+          if(expired)await pool.query("UPDATE pe_mcp_action_chains SET expires_at=clock_timestamp()-interval '1 second' WHERE root_operation_id=$1",[f.operationId])
+          else await pool.query('UPDATE pe_operations SET mcp_chain_cancelled_at=clock_timestamp() WHERE id=$1',[f.operationId])
+          await assert.rejects(authorization().prepare(accepted.actionId),{code:'mcp_chain_stopped'})
+          assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_stdio_v2_preparations WHERE action_id=$1',[accepted.actionId])).rows[0].n,0)
+        }
+      })
+      await t.test('cancelled roots deny first start even after a fixture once decision',async()=>{
+        const f=await running(alice,original),accepted=await caller().propose(f.token,proposed(f)),auth=authorization()
+        const prepared=await auth.prepare(accepted.actionId)
+        await pool.query("INSERT INTO pe_stdio_v2_decisions(action_id,user_id,fingerprint,decision) VALUES($1,$2,$3,'once')",[accepted.actionId,f.userId,prepared.fingerprint])
+        await pool.query("UPDATE pe_stdio_v2_actions SET state='approved' WHERE id=$1",[accepted.actionId])
+        await pool.query('UPDATE pe_operations SET mcp_chain_cancelled_at=clock_timestamp() WHERE id=$1',[f.operationId])
+        await assert.rejects(auth.authorize(accepted.actionId,randomUUID(),{kind:'cloud',runnerInstanceId:prepared.prepared.capture.runnerInstanceId}),{code:'mcp_chain_stopped'})
+        assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_stdio_v2_start_permits WHERE action_id=$1',[accepted.actionId])).rows[0].n,0)
+      })
+      await t.test('production Session cancellation stops a background call after its turn completes and preserves the later user input',async()=>{
+        const f=await running(alice,original),accepted=await caller().propose(f.token,proposed(f)),queuedId=randomUUID()
+        const before=(await pool.query('SELECT * FROM pe_cloud_executions WHERE id=$1',[accepted.executionRef.executionId])).rows[0]
+        await pool.query("UPDATE pe_operations SET state='completed' WHERE id=$1",[f.operationId])
+        await pool.query(`INSERT INTO pe_operations(id,session_id,request_id,input,settings,state)
+          VALUES($1,$2,$3,'later independent input','{}','queued')`,[queuedId,f.sessionId,randomUUID()])
+        const user={userId:f.userId,username:'synthetic'},browserToken=await taskCredential(pool,user)
+        const replies=await Promise.all([tasks.cancel(user,f.sessionId,browserToken),tasks.cancel(user,f.sessionId,browserToken)])
+        assert.deepEqual(replies,[{accepted:true},{accepted:true}])
+        const root=(await pool.query('SELECT state,mcp_chain_cancelled_at FROM pe_operations WHERE id=$1',[f.operationId])).rows[0]
+        assert.equal(root.state,'completed');assert(root.mcp_chain_cancelled_at)
+        const later=(await pool.query('SELECT state,error_code FROM pe_operations WHERE id=$1',[queuedId])).rows[0]
+        assert.deepEqual(later,{state:'queued',error_code:null})
+        const action=(await pool.query('SELECT cancel_requested FROM pe_stdio_v2_actions WHERE id=$1',[accepted.actionId])).rows[0]
+        assert.equal(action.cancel_requested,true)
+        const after=(await pool.query('SELECT * FROM pe_cloud_executions WHERE id=$1',[accepted.executionRef.executionId])).rows[0]
+        assert.equal(after.cancel_requested,true);assert.equal(after.state,before.state)
+        for(const key of ['id','stdio_action_id','pod_uid','runner_instance_id','lease_owner','lease_until','stdio_task'])assert.deepEqual(after[key],before[key])
+      })
+      await t.test('account reenable cannot revive a completed original root with an admitted background call',async()=>{
+        const owner=await actor('revocation-root'),discovery=await discovered(owner,'revocation original'),groups=await select(selector,owner)
+        const f=await running(owner,groups),accepted=await caller().propose(f.token,proposed(f)),user={userId:owner.userId,username:'synthetic'}
+        await pool.query("UPDATE pe_operations SET state='completed' WHERE id=$1",[f.operationId])
+        await disableFixtureAccount(pool,user);await enableFixtureAccount(pool,user)
+        const root=(await pool.query('SELECT state,mcp_chain_cancelled_at FROM pe_operations WHERE id=$1',[f.operationId])).rows[0]
+        assert.equal(root.state,'completed');assert(root.mcp_chain_cancelled_at)
+        const task=(await pool.query('SELECT task FROM pe_stdio_v2_actions WHERE id=$1',[accepted.actionId])).rows[0].task
+        const authority=await transaction(pool,async client=>{
+          await lockAccountAuthorities(client,[owner.userId],'update')
+          await client.query('SELECT id FROM pe_sessions WHERE id=$1 FOR UPDATE',[f.sessionId])
+          return readStdioCallRootAuthorityV2(client,task)
+        })
+        assert.equal(authority.active,false)
+        assert.equal((await pool.query('SELECT cancel_requested FROM pe_cloud_executions WHERE id=$1',[accepted.executionRef.executionId])).rows[0].cancel_requested,true)
+        assert.equal((await pool.query('SELECT enabled FROM pe_stdio_v2_connections WHERE id=$1',[discovery.connectionId])).rows[0].enabled,true)
+      })
+      await t.test('a child operation cannot become a new root that resets the original call budget',async()=>{
+        const f=await running(alice,original),childId=randomUUID(),nextId=randomUUID()
+        await pool.query("UPDATE pe_operations SET state='completed' WHERE id=$1",[f.operationId])
+        await pool.query(`INSERT INTO pe_operations(id,session_id,request_id,input,settings,stdio_v2_selection,mcp_root_operation_id,state)
+          VALUES($1,$2,$3,'synthetic child','{}',$4,$5,'completed')`,[childId,f.sessionId,randomUUID(),JSON.stringify(original),f.operationId])
+        await pool.query(`INSERT INTO pe_operations(id,session_id,request_id,input,settings,stdio_v2_selection,mcp_root_operation_id,state)
+          VALUES($1,$2,$3,'synthetic invalid nested root','{}',$4,$5,'running')`,[nextId,f.sessionId,randomUUID(),JSON.stringify(original),childId])
+        await assert.rejects(caller().propose(f.token,proposed(f)),{code:'stdio_v2_origin_changed'})
+        assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_stdio_v2_actions WHERE operation_id=$1',[nextId])).rows[0].n,0)
+        assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_mcp_action_chains WHERE root_operation_id=$1',[childId])).rows[0].n,0)
       })
     } finally {
       await pool?.end();try{if(created)await admin.query(`DROP DATABASE "${database}"`)}finally{await admin.end();await rm(root,{recursive:true,force:true})}

@@ -27,6 +27,8 @@ export async function revokeAccountExecutions(client: PoolClient, userId: UserId
     AND (grant_digest IS NOT NULL OR lease_until IS NOT NULL)`, [userId])
   await client.query(`SELECT o.id FROM pe_operations o JOIN pe_sessions s ON s.id=o.session_id
     WHERE s.user_id=$1 ORDER BY o.id FOR UPDATE OF o`, [userId])
+  await client.query(`UPDATE pe_operations r SET mcp_chain_cancelled_at=COALESCE(r.mcp_chain_cancelled_at,clock_timestamp())
+    FROM pe_mcp_action_chains c WHERE c.root_operation_id=r.id AND c.user_id=$1`, [userId])
   const operations = await client.query(`UPDATE pe_operations o SET state='failed',error_code='account_disabled',
     completed_at=now(),mcp_chain_cancelled_at=COALESCE(mcp_chain_cancelled_at,clock_timestamp())
     FROM pe_sessions s WHERE s.id=o.session_id AND s.user_id=$1 AND o.state IN ('queued','running')`, [userId])
