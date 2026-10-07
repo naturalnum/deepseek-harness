@@ -67,6 +67,7 @@ export async function serveUi(path: string, application: 'login' | 'client' | 'd
     '/login': ['login.html', 'text/html'],
     '/approval': ['approval.html', 'text/html'],
     '/approval.js': ['approval.js', 'text/javascript'],
+    '/stdio-v2-approval.js': ['stdio-v2-approval.js', 'text/javascript'],
     '/execution-resolution.js': ['execution-resolution.js', 'text/javascript'],
     '/execution-resolution-contract.js': ['execution-resolution-contract.js', 'text/javascript',
       new URL('./lib/browser/execution-resolution.js', contracts)],
@@ -76,7 +77,7 @@ export async function serveUi(path: string, application: 'login' | 'client' | 'd
     '/style.css': ['style.css', 'text/css'],
   }
   const asset = assets[path]
-  if (!asset || (['/login', '/approval', '/approval.js', '/execution-resolution.js',
+  if (!asset || (['/login', '/approval', '/approval.js', '/stdio-v2-approval.js', '/execution-resolution.js',
     '/execution-resolution-contract.js'].includes(path) && application !== 'login')) return false
   const connectSource = application === 'login' && loginHostOrigin
     ? `'self' ${new URL(loginHostOrigin).origin}` : "'self'"
