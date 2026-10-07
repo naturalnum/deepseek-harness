@@ -28,7 +28,7 @@ const rawCatalog = [{ name: 'read_note', inputSchema: { type: 'object', properti
 const jsonColumns = new Set(['task', 'stdio_task', 'configuration', 'prepared', 'approval_binding', 'executor_owner',
   'permit', 'dispatch', 'raw_catalog', 'image_expectation', 'result', 'binding_snapshot', 'stop_evidence', 'receipt'])
 const booleans = new Set(['enabled', 'passwordChangeRequired', 'cancel_requested'])
-const dates = new Set(['deletedAt', 'deleted_at', 'expires_at', 'issued_at', 'lease_until', 'now', 'closed_at'])
+const dates = new Set(['deletedAt', 'deleted_at', 'expires_at', 'issued_at', 'lease_until', 'now', 'closed_at', 'mcp_chain_cancelled_at', 'stopped_at'])
 const mutableTables = ['pe_stdio_v2_actions', 'pe_stdio_v2_preparations', 'pe_stdio_v2_decisions',
   'pe_stdio_v2_start_permits', 'pe_stdio_v2_dispatches', 'pe_cloud_executions', 'pe_desktop_executions',
   'pe_stdio_v2_no_start_closures', 'pe_mount_slots', 'pe_sandbox_instances']
@@ -44,6 +44,8 @@ function fixture(t, { kind = 'cloud', phase = 'discover' } = {}) {
     account_revision INTEGER,credential_version INTEGER,password_change_required INTEGER,deleted_at TEXT,last_claim_at TEXT);
     CREATE TABLE pe_credentials(digest TEXT PRIMARY KEY,user_id TEXT,audience TEXT,credential_version INTEGER,expires_at TEXT);
     CREATE TABLE pe_sessions(id TEXT PRIMARY KEY,user_id TEXT,workspace_id TEXT);
+    CREATE TABLE pe_operations(id TEXT PRIMARY KEY,session_id TEXT,source TEXT,mcp_root_operation_id TEXT,error_code TEXT,mcp_chain_cancelled_at TEXT);
+    CREATE TABLE pe_mcp_action_chains(root_operation_id TEXT PRIMARY KEY,user_id TEXT,session_id TEXT,calls INTEGER,max_calls INTEGER,stopped_at TEXT,expires_at TEXT);
     CREATE TABLE pe_stdio_v2_connections(id TEXT PRIMARY KEY,user_id TEXT,revision INTEGER,enabled INTEGER,current_catalog_id TEXT,deleted_at TEXT);
     CREATE TABLE pe_stdio_v2_configurations(connection_id TEXT,user_id TEXT,revision INTEGER,configuration TEXT,config_digest TEXT,
       PRIMARY KEY(connection_id,revision));
@@ -77,7 +79,7 @@ function fixture(t, { kind = 'cloud', phase = 'discover' } = {}) {
     if (failAt && sql.startsWith(failAt)) { failAt = null; throw new Error('synthetic_write_failure') }
     if (failDispatch && sql.startsWith('INSERT INTO pe_stdio_v2_dispatches')) throw new Error('synthetic_dispatch_failure')
     const translated = sql.replace(/=ANY\((\$\d+)::(?:uuid|text)\[\]\)/gu, ' IN (SELECT value FROM json_each($1))')
-      .replace(/ FOR (?:NO KEY UPDATE|UPDATE|SHARE)/gu, '')
+      .replace(/ FOR (?:NO KEY UPDATE|UPDATE|SHARE)(?: OF o,r,c)?/gu, '')
       .replace(/::integer/gu, '')
       .replace(/clock_timestamp\(\)\+\$(\d+)::double precision\*interval '1 millisecond'/gu, (_all, n) => `lease_after($${n})`)
     const bindings = Object.fromEntries(values.map((value, index) => [String(index + 1), value instanceof Date ? value.toISOString()
@@ -152,6 +154,12 @@ function fixture(t, { kind = 'cloud', phase = 'discover' } = {}) {
     ...(kind === 'desktop' ? { device_id: deviceId, directory_id: directoryId, device_instance_id: enrollmentId } : {}) })
   const discoveryId = uuid()
   if (phase === 'call') {
+    insert('pe_operations', { id: task.origin.rootOperationId, session_id: sessionId, source: 'user', mcp_root_operation_id: null,
+      error_code: null, mcp_chain_cancelled_at: null })
+    insert('pe_operations', { id: task.origin.operationId, session_id: sessionId, source: 'mcp_result', mcp_root_operation_id: task.origin.rootOperationId,
+      error_code: null, mcp_chain_cancelled_at: null })
+    insert('pe_mcp_action_chains', { root_operation_id: task.origin.rootOperationId, user_id: userId, session_id: sessionId,
+      calls: 2, max_calls: 3, stopped_at: null, expires_at: new Date(now + 60000).toISOString() })
     // A successful catalog's immutable producer/result is admitted before this call action.
     insert('pe_stdio_v2_actions', { id: discoveryId, state: 'succeeded', execution_id: uuid() })
     const result = { tools: clone(rawCatalog) }
@@ -336,6 +344,52 @@ test('pending independent approval releases its worker lease without hot claims 
   f.advance(4999); assert.equal(await f.store.claimNext(uuid()), null)
   f.advance(1); const expired = await f.store.claimNext(uuid())
   assert(expired); assert.equal((await f.store.snapshot(expired)).cancelRequested, true)
+})
+
+test('pending calls are claimed immediately on original root cancellation, chain stop or expiry before approval expires', async t => {
+  for (const [reason, mutate] of [
+    ['root-cancelled', f => f.change('pe_operations', 'mcp_chain_cancelled_at', '2026-10-07T00:00:00.000Z', 'id', f.task.origin.rootOperationId)],
+    ['chain-stopped', f => f.change('pe_mcp_action_chains', 'stopped_at', '2026-10-07T00:00:00.000Z', 'root_operation_id', f.task.origin.rootOperationId)],
+    ['chain-expired', f => f.change('pe_mcp_action_chains', 'expires_at', '2026-10-07T00:00:00.000Z', 'root_operation_id', f.task.origin.rootOperationId)],
+    ['operation-cancelled', f => f.change('pe_operations', 'error_code', 'cancel_requested', 'id', f.task.origin.operationId)],
+  ]) await t.test(reason, async () => {
+    const f = fixture(t, { phase: 'call' }), held = await attached(f)
+    await f.service.prepareLeased(held); await f.store.release(held)
+    assert.equal(await f.store.claimNext(uuid()), null)
+    mutate(f)
+    const originalChain = f.db.prepare('SELECT * FROM pe_mcp_action_chains').get()
+    const lease = await f.store.claimNext(uuid()); assert(lease)
+    const snapshot = await f.store.snapshot(lease)
+    assert.equal(snapshot.cancelRequested, true); assert.equal(snapshot.prepared.expiresAt, '2026-10-07T00:00:05.000Z')
+    await f.rejectsWithoutWrites(() => f.store.beginPreparation(lease), /not_startable/u)
+    for (const mode of ['acquire', 'mutation']) await f.rejectsWithoutWrites(() => provisioning(f, lease, mode), /not_startable/u)
+    assert.deepEqual(f.db.prepare('SELECT * FROM pe_mcp_action_chains').get(), originalChain, 'the child never renews its original root budget')
+  })
+})
+
+test('root cancellation after committed dispatch preserves exact original writer observation and rejects fresh dispatch capture', async t => {
+  const f = fixture(t, { phase: 'call' }), lease = await attached(f)
+  await permitted(f, lease)
+  const before = await f.store.snapshot(lease)
+  f.change('pe_operations', 'mcp_chain_cancelled_at', '2026-10-07T00:00:00.000Z', 'id', f.task.origin.rootOperationId)
+  const cancelled = await f.store.snapshot(lease)
+  assert.equal(cancelled.cancelRequested, true); assert.deepEqual(cancelled.dispatch, before.dispatch); assert.deepEqual(cancelled.writer, before.writer)
+  await f.rejectsWithoutWrites(() => f.store.capture(lease, 'dispatch', async () => { assert.fail('new dispatch observation ran') }), /not_startable/u)
+  assert.deepEqual(await f.store.capture(lease, 'observe', async () => f.ready), f.ready)
+  assert.deepEqual((await f.store.snapshot(lease)).writer, before.writer)
+})
+
+test('only the actual user root with no parent authorizes a call; missing, foreign and child-as-root records refuse without writes', async t => {
+  for (const mutate of [
+    f => f.db.prepare('DELETE FROM pe_operations WHERE id=?').run(f.task.origin.rootOperationId),
+    f => f.change('pe_operations', 'source', 'mcp_result', 'id', f.task.origin.rootOperationId),
+    f => f.change('pe_operations', 'mcp_root_operation_id', uuid(), 'id', f.task.origin.rootOperationId),
+    f => f.change('pe_mcp_action_chains', 'user_id', uuid(), 'root_operation_id', f.task.origin.rootOperationId),
+  ]) {
+    const f = fixture(t, { phase: 'call' }), lease = await attached(f); mutate(f)
+    await f.rejectsWithoutWrites(() => f.store.snapshot(lease), /origin_changed/u)
+    await f.rejectsWithoutWrites(() => f.store.beginPreparation(lease), /origin_changed/u)
+  }
 })
 
 test('cancelled, rejected, expired and revoked configuration work remains claimable and defers with dual cancellation flags without retiring resources', async t => {

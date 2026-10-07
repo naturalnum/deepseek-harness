@@ -13,6 +13,7 @@ import { transaction } from './database.ts'
 import type { SandboxReady } from './sandbox.ts'
 import type { StdioPreparationViewV2 } from './stdio-v2-authorization.ts'
 import type { StdioCallContinuationV2 } from './stdio-v2-continuations.ts'
+import { readStdioCallRootAuthorityV2 } from './stdio-v2-call-authority.ts'
 import { assertStdioActionLeaseV2 } from './stdio-v2-leases.ts'
 import { storageBinding } from './workspace-binding-types.ts'
 import { parseStdioNoStartReceiptV2, stdioCreationStopEvidenceV2,
@@ -152,10 +153,12 @@ export class StdioCloudWorkerStoreV2 {
       dispatch = saved.dispatch
     } else if (['dispatch-intent', 'running'].includes(action.state)) this.deny('stdio_v2_dispatch_missing')
     const now = z.date().parse((await client.query('SELECT clock_timestamp() AS now')).rows[0]?.now)
+    const root = await readStdioCallRootAuthorityV2(client, task)
     const cancelRequested = action.cancel_requested || execution.cancel_requested || !account.enabled || !!account.deletedAt
       || !!connection.deleted_at || connection.revision !== action.config_revision || ['rejected', 'expired'].includes(action.state)
       || !dispatch && prepared !== null && Date.parse(prepared.expiresAt) <= now.getTime()
       || task.phase === 'call' && (!connection.enabled || connection.current_catalog_id !== task.selection.catalogId)
+      || root !== null && !root.active
     return { account, action, execution, task, executionRef, connection, prepared, dispatch, writer, cancelRequested }
   }
   private async current(client: PoolClient, lease: StdioActionLeaseV2) {
@@ -316,6 +319,11 @@ export class StdioCloudWorkerStoreV2 {
           OR EXISTS(SELECT 1 FROM pe_cloud_executions e WHERE e.id=a.execution_id AND e.cancel_requested)
           OR EXISTS(SELECT 1 FROM pe_stdio_v2_connections c WHERE c.id=a.connection_id
             AND (c.deleted_at IS NOT NULL OR c.revision<>a.config_revision))
+          OR a.phase='call' AND EXISTS(SELECT 1 FROM pe_operations o
+            JOIN pe_operations r ON r.id=COALESCE(o.mcp_root_operation_id,o.id)
+            JOIN pe_mcp_action_chains chain ON chain.root_operation_id=r.id WHERE o.id=a.operation_id
+              AND (r.mcp_chain_cancelled_at IS NOT NULL OR o.error_code IN ('cancel_requested','turn_user','account_disabled')
+                OR chain.stopped_at IS NOT NULL OR chain.expires_at<=clock_timestamp()))
           OR EXISTS(SELECT 1 FROM pe_stdio_v2_preparations p WHERE p.action_id=a.id AND p.expires_at<=clock_timestamp()))
         ORDER BY u.last_claim_at NULLS FIRST,a.created_at,a.id LIMIT $3`,
       [workStates, activeExecutions, this.options.maxCandidates])
@@ -367,7 +375,7 @@ export class StdioCloudWorkerStoreV2 {
       return selected
     })
   }
-  /** Read the complete original task, capture and dispatch; stale grants are cancellation work rather than replacement tasks.
+  /** Read the complete original task, capture and dispatch; stale grants or inactive original root chains request cancellation without replacing the writer.
    * @param lease Current original worker generation.
    * @returns Original immutable fields and logical cancellation status; no resource or start permission is created.
    */

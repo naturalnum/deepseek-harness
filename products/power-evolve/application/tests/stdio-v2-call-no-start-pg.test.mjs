@@ -6,13 +6,14 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Pool } from 'pg'
-import { stdioTaskSchemasV2 } from '@power-evolve/contracts/stdio-mcp'
+import { stdioPreparedV2, stdioTaskSchemasV2 } from '@power-evolve/contracts/stdio-mcp'
 import { stdioCatalogFingerprintV2, stdioSha256V2 } from '@power-evolve/connector-runner/stdio-v2-digest'
 import { initializeDatabase, transaction } from '../lib/platform/database.js'
 import { FileService } from '../lib/platform/files.js'
 import { StdioActionLeaseServiceV2 } from '../lib/platform/stdio-v2-leases.js'
 import { StdioCloudWorkerStoreV2 } from '../lib/platform/stdio-v2-worker-store.js'
 import { StdioCloudWorkerV2 } from '../lib/platform/stdio-v2-cloud-worker.js'
+import { StdioAuthorizationServiceV2 } from '../lib/platform/stdio-v2-authorization.js'
 import { StdioCallContinuationV2 } from '../lib/platform/stdio-v2-continuations.js'
 import { compileStdioOperationToolsV2 } from '../lib/stdio-v2-model-tools.js'
 
@@ -44,11 +45,11 @@ test('production call no-start closure and its unique continuation commit or rol
       await initializeDatabase(pool)
       const files = new FileService(pool, join(root, 'workspaces')); await files.init()
       const leaf = new StdioCallContinuationV2({ limits, admission, maxReplyBytes: 524288 })
-      const options = { limits, leaseMs: 30000, maxActive: 8, maxCandidates: 16 }
+      const options = { limits, leaseMs: 30000, maxActive: 16, maxCandidates: 32 }
       const store = new StdioCloudWorkerStoreV2(pool, { ...options, continuation: leaf })
       const leases = new StdioActionLeaseServiceV2(pool, { leaseMs: options.leaseMs })
 
-      async function fresh(phase = 'call') {
+      async function fresh(phase = 'call', { defer = true } = {}) {
         const userId = randomUUID(), sessionId = randomUUID(), connectionId = randomUUID(), catalogId = randomUUID()
         await pool.query('INSERT INTO pe_users(id,username,password_hash,settings) VALUES($1,$2,$3,$4)',
           [userId, `call-no-start-${++serial}`, 'synthetic-no-login', {}])
@@ -115,8 +116,37 @@ test('production call no-start closure and its unique continuation commit or rol
             taskDigest, phase === 'call' ? 'operation' : 'stdio_discovery', phase, JSON.stringify(task), actionId, continuationId])
         })
         const lease = await leases.claim(actionId, randomUUID()); assert(lease)
-        await store.defer(lease, 'stdio_v2_cancel_requested')
-        return { userId, sessionId, operationId, actionId, executionId, continuationId, task, groups, lease }
+        if (defer) await store.defer(lease, 'stdio_v2_cancel_requested')
+        return { userId, sessionId, workspaceId, binding, connectionId, operationId, actionId, executionId, continuationId, task, groups, lease }
+      }
+      async function pending(f) {
+        await store.beginPreparation(f.lease)
+        const writer = { name: `synthetic-${randomUUID()}`, podUid: randomUUID(), runnerInstanceId: randomUUID(), token: 'synthetic',
+          restartCount: 0, generation: '1', userId: f.userId, sessionId: f.sessionId, binding: f.binding }
+        await pool.query(`INSERT INTO pe_mount_slots(user_id,session_id,workspace_id,generation,state,pod_uid,runner_instance_id,binding_snapshot)
+          VALUES($1,$2,$3,1,'ready',$4,$5,$6)`, [f.userId, f.sessionId, f.workspaceId, writer.podUid, writer.runnerInstanceId, f.binding])
+        await pool.query(`INSERT INTO pe_sandbox_instances(session_id,user_id,name,state,pod_uid,runner_instance_id,binding_snapshot)
+          VALUES($1,$2,$3,'ready',$4,$5,$6)`, [f.sessionId, f.userId, writer.name, writer.podUid, writer.runnerInstanceId, f.binding])
+        await store.attach(f.lease, writer)
+        const capture = { kind: 'cloud', podUid: writer.podUid, podName: writer.name, namespace: 'synthetic', nodeName: 'synthetic',
+          runnerInstanceId: writer.runnerInstanceId, containerId: 'containerd://synthetic', restartCount: 0, mountGeneration: '1',
+          workspaceMount: { claimName: 'synthetic', subPath: `workspaces/${f.binding.rootKey}`, mountPath: '/workspace', readOnly: false },
+          homeMount: { claimName: 'synthetic', subPath: `homes/${f.userId}`, mountPath: '/home/agent', readOnly: false } }
+        const authorization = new StdioAuthorizationServiceV2(pool, { limits, approvalKey: randomBytes(32), approvalLifetimeMs: 60000,
+          async capture(_client, task, executionRef) {
+            return stdioPreparedV2.parse({ formatVersion: 2, actionId: task.actionId, executionRef, taskDigest: sha('task', task),
+              scopeBinding: task.scopeBinding, expectedDeploymentPin: pin, actualExecutorImage: image, capture,
+              fullScopeDigest: sha('scope', { scopeBinding: task.scopeBinding, workspaceMount: capture.workspaceMount, homeMount: capture.homeMount }),
+              specDigest: sha('spec', { syntheticPod: true }) })
+          } })
+        const prepared = await authorization.prepareLeased(f.lease)
+        return { writer, authorization, prepared }
+      }
+      const workerWithoutExecutor = (selectedStore, lease) => {
+        const forbidden = async () => { throw new Error('Executor work is forbidden in this test') }
+        return new StdioCloudWorkerV2(selectedStore, { prepareLeased: forbidden, authorizeLeased: forbidden },
+          { ensureReady: forbidden, cancelCreation: forbidden }, { startDetached: forbidden, observeDetached: forbidden, cancelDetached: forbidden },
+          { record: forbidden }, { workerId: lease.workerId, pollMs: 10, renewMs: 5000, leaseMs: 30000 })
       }
       const continued = async f => (await pool.query('SELECT * FROM pe_operations WHERE session_id=$1 AND request_id=$2', [f.sessionId, f.continuationId])).rows
       async function counts(f) {
@@ -133,6 +163,46 @@ test('production call no-start closure and its unique continuation commit or rol
           (await pool.query(`SELECT row_to_json(saved)::text AS literal FROM ${table} saved WHERE ${key}=$1 ORDER BY 1`, [id])).rows))
         return rows
       }
+
+      for (const reason of ['root-cancelled', 'chain-expired', 'chain-stopped']) await t.test(`${reason} closes the original unallocated call without a writer or actual result`, async () => {
+        const f = await fresh('call', { defer: false }); await store.release(f.lease)
+        if (reason === 'root-cancelled') await pool.query('UPDATE pe_operations SET mcp_chain_cancelled_at=clock_timestamp() WHERE id=$1', [f.operationId])
+        else await pool.query(`UPDATE pe_mcp_action_chains SET ${reason === 'chain-expired' ? "expires_at=clock_timestamp()-interval '1 second'" : 'stopped_at=clock_timestamp()'} WHERE root_operation_id=$1`, [f.operationId])
+        const before = (await pool.query('SELECT calls,max_calls,expires_at FROM pe_mcp_action_chains WHERE root_operation_id=$1', [f.operationId])).rows[0]
+        const lease = await store.claimNext(randomUUID()); assert.equal(lease.actionId, f.actionId)
+        assert.equal((await store.snapshot(lease)).cancelRequested, true)
+        await assert.rejects(store.beginPreparation(lease), code('stdio_v2_action_not_startable'))
+        for (const mode of ['acquire', 'mutation']) await assert.rejects(transaction(pool, client =>
+          store.assertProvisioning(client, lease, f.sessionId, f.userId, mode)), code('stdio_v2_action_not_startable'))
+        const worker = workerWithoutExecutor(store, lease)
+        assert.equal(await worker.step(lease, new AbortController().signal), 'finalized'); await worker.stop()
+        assert.equal((await store.readNoStart(f.actionId)).resource.kind, 'unallocated')
+        assert.deepEqual(await counts(f), { ...none, closures: 1 })
+        const reports = await continued(f)
+        assert.equal(reports.length, reason === 'root-cancelled' ? 0 : 1)
+        if (reports.length) assert.equal(JSON.parse(reports[0].input).chainStopped, true)
+        assert.deepEqual((await pool.query('SELECT calls,max_calls,expires_at FROM pe_mcp_action_chains WHERE root_operation_id=$1', [f.operationId])).rows[0], before)
+        assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_sandbox_instances WHERE user_id=$1', [f.userId])).rows[0].n, 0)
+        assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_mount_slots WHERE user_id=$1', [f.userId])).rows[0].n, 0)
+      })
+      await t.test('pending call root markers and chain stop are claimed before original unexpired approval; original ready fixture is retained', async () => {
+        for (const reason of ['root-cancelled', 'chain-stopped', 'chain-expired']) {
+          const f = await fresh('call', { defer: false }), prepared = await pending(f)
+          await store.release(f.lease); assert.equal(await store.claimNext(randomUUID()), null)
+          if (reason === 'root-cancelled') await pool.query('UPDATE pe_operations SET mcp_chain_cancelled_at=clock_timestamp() WHERE id=$1', [f.operationId])
+          else await pool.query(`UPDATE pe_mcp_action_chains SET ${reason === 'chain-expired' ? "expires_at=clock_timestamp()-interval '1 second'" : 'stopped_at=clock_timestamp()'} WHERE root_operation_id=$1`, [f.operationId])
+          const lease = await store.claimNext(randomUUID()); assert.equal(lease.actionId, f.actionId)
+          const selected = await store.snapshot(lease)
+          assert.equal(selected.cancelRequested, true); assert.equal(selected.prepared.expiresAt, prepared.prepared.expiresAt)
+          assert(Date.parse(selected.prepared.expiresAt) > Date.now())
+          const worker = workerWithoutExecutor(store, lease)
+          assert.equal(await worker.step(lease, new AbortController().signal), 'finalized'); await worker.stop()
+          const receipt = await store.readNoStart(f.actionId)
+          assert.equal(receipt.resource.kind, 'ready_retained'); assert.equal(receipt.resource.podUid, prepared.writer.podUid)
+          assert.equal((await pool.query('SELECT state FROM pe_mount_slots WHERE user_id=$1', [f.userId])).rows[0].state, 'ready')
+          assert.deepEqual(await counts(f), { ...none, closures: 1 })
+        }
+      })
 
       await t.test('concurrent call closure and duplicate invoke the real leaf and retain one original source without a Runner result', async () => {
         const f = await fresh(); let invoked = 0
@@ -217,6 +287,29 @@ test('production call no-start closure and its unique continuation commit or rol
         assert.deepEqual(await counts(f), { ...none, closures: 1 })
         assert.equal((await pool.query('SELECT lease_owner FROM pe_stdio_v2_actions WHERE id=$1', [f.actionId])).rows[0].lease_owner, null)
         assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_mount_slots WHERE user_id=$1', [f.userId])).rows[0].n, 0)
+      })
+      await t.test('a committed dispatch stays bound to the original writer after root cancellation; only observe capture remains allowed', async () => {
+        const f = await fresh('call', { defer: false }), selected = await pending(f)
+        // The decision and Pod observations are explicit substitutes; permission persistence is real PG, with no Runner start.
+        await pool.query("INSERT INTO pe_stdio_v2_decisions(action_id,user_id,fingerprint,decision) VALUES($1,$2,$3,'once')",
+          [f.actionId, f.userId, selected.prepared.fingerprint])
+        await pool.query("UPDATE pe_stdio_v2_actions SET state='approved' WHERE id=$1", [f.actionId])
+        const granted = await selected.authorization.authorizeLeased(f.lease, randomUUID(),
+          { kind: 'cloud', runnerInstanceId: selected.writer.runnerInstanceId })
+        assert.equal(granted.grantOnce, true)
+        const before = await store.snapshot(f.lease); assert(before.dispatch)
+        await pool.query('UPDATE pe_operations SET mcp_chain_cancelled_at=clock_timestamp() WHERE id=$1', [f.operationId])
+        const cancelled = await store.snapshot(f.lease)
+        assert.equal(cancelled.cancelRequested, true); assert.deepEqual(cancelled.dispatch, before.dispatch); assert.deepEqual(cancelled.writer, before.writer)
+        await assert.rejects(store.capture(f.lease, 'dispatch', async () => { assert.fail('fresh dispatch callback ran') }), code('stdio_v2_action_not_startable'))
+        let observed = 0
+        assert.deepEqual(await store.capture(f.lease, 'observe', async () => { observed++; return selected.writer }), selected.writer)
+        assert.equal(observed, 1)
+        await assert.rejects(store.closeUnstarted(f.lease), code('stdio_v2_start_already_authorized'))
+        assert.deepEqual(await counts(f), { ...none, permits: 1, dispatches: 1 })
+        assert.deepEqual((await store.snapshot(f.lease)).writer, before.writer)
+        assert.equal((await pool.query('SELECT state FROM pe_mount_slots WHERE user_id=$1', [f.userId])).rows[0].state, 'ready')
+        await store.release(f.lease)
       })
     } finally {
       await pool?.end()
