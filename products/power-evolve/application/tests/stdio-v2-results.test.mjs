@@ -23,7 +23,7 @@ const jsonFields = new Set(['task', 'stdio_task', 'configuration', 'prepared', '
 const boolFields = new Set(['enabled', 'passwordChangeRequired', 'cancel_requested'])
 const dateFields = new Set(['deletedAt', 'deleted_at', 'lease_until', 'expires_at', 'issued_at', 'now'])
 
-function fixture(t, phase = 'discover') {
+function fixture(t, phase = 'discover', continuationService) {
   const db = new DatabaseSync(':memory:'); t.after(() => db.close())
   let now = Date.parse('2026-10-07T12:00:00.000Z'), tail = Promise.resolve(), expireAtWrite = null, failAtWrite = null, loseCommit = false
   const queries = [], mutations = [], encode = value => value instanceof Date ? value.toISOString()
@@ -138,7 +138,8 @@ function fixture(t, phase = 'discover') {
     state: 'completed', writerStopConfirmed: true, outcome }
   const stopEvidence = { formatVersion: 2, kind: 'cloud_uid_quiet', actionId, executionRef, taskDigest, dispatchDigest, preparedDigest,
     fullScopeDigest: prepared.fullScopeDigest, podUid, runnerInstanceId, mountGeneration: capture.mountGeneration, observedAt: new Date(now).toISOString() }
-  const lease = stdioActionLeaseV2.parse({ actionId, workerId, leaseEpoch: 3 }), service = new StdioResultServiceV2(pool, { limits, maxReplyBytes })
+  const lease = stdioActionLeaseV2.parse({ actionId, workerId, leaseEpoch: 3 }), service = new StdioResultServiceV2(pool,
+    { limits, maxReplyBytes, ...(continuationService ? { continuation: continuationService } : {}) })
   const get = table => db.prepare(`SELECT * FROM ${table}`).all().map(row => Object.fromEntries(Object.entries(row).map(([key, value]) => [key,
     value !== null && jsonFields.has(key) ? JSON.parse(value) : value])))
   const change = (table, key, value) => db.prepare(`UPDATE ${table} SET ${key}=?`).run(encode(value))
@@ -206,11 +207,35 @@ test('disabled/deleted account, changed or deleted configuration and requested c
   }
 })
 
-test('call preserves complete isError outcome without catalog or continuation; failed/cancelled outcomes retain their own facts', async t => {
-  const call = fixture(t, 'call'); call.view.outcome.result.isError = true
+test('call passes the original client and live action lease after result and terminal writes, including duplicate final results', async t => {
+  let calls = 0
+  const call = fixture(t, 'call', { async enqueueLeased(client, lease) {
+    calls++; assert.deepEqual(lease, call.lease)
+    assert.equal((await client.query('SELECT state FROM pe_stdio_v2_actions')).rows[0].state, 'succeeded')
+    assert.equal((await client.query('SELECT state,lease_owner FROM pe_cloud_executions')).rows[0].state, 'succeeded')
+    assert.equal((await client.query('SELECT lease_owner FROM pe_cloud_executions')).rows[0].lease_owner, null)
+    assert.equal((await client.query('SELECT result FROM pe_stdio_v2_results')).rows[0].result.result.isError, true)
+    return { disposition: calls === 1 ? 'queued' : 'original', operationId: uuid() }
+  } }); call.view.outcome.result.isError = true
   assert.equal((await call.record()).state, 'succeeded')
   assert.deepEqual(call.get('pe_stdio_v2_results')[0].result, call.view.outcome)
-  assert.equal(call.get('pe_stdio_v2_catalogs').length, 0); assert(!call.queries.some(sql => sql.includes('pe_operations')))
+  assert.equal(call.get('pe_stdio_v2_catalogs').length, 0)
+  await call.record(); assert.equal(calls, 2); assert.equal(call.connections, 2)
+})
+
+test('call without continuation cannot commit a final result, while unknown observations retain the writer', async t => {
+  const call = fixture(t, 'call')
+  await assert.rejects(call.record(), { code: 'stdio_v2_continuation_unavailable' })
+  assert.equal(call.get('pe_stdio_v2_results').length, 0); assert.equal(call.get('pe_stdio_v2_observations').length, 0)
+  assert.equal(call.get('pe_stdio_v2_actions')[0].state, 'dispatch-intent')
+  assert.equal(call.get('pe_cloud_executions')[0].lease_owner, call.lease.workerId)
+  const view = clone(call.view); view.state = 'unknown'; view.writerStopConfirmed = false
+  view.outcome = { state: 'failed', errorCode: 'stdio_v2_cleanup_unconfirmed', facts: clone(view.outcome.facts) }
+  assert.equal((await call.record({ view, stopEvidence: call.stopEvidence })).finalized, false)
+  assert.equal(call.get('pe_stdio_v2_results').length, 0)
+})
+
+test('failed and cancelled discovery outcomes retain their own facts without continuation', async t => {
   for (const state of ['failed', 'cancelled']) {
     const f = fixture(t); f.view.state = state
     f.view.outcome = { state: 'failed', errorCode: 'aborted', facts: { ...f.view.outcome.facts, signal: 'SIGTERM', exitCode: null } }

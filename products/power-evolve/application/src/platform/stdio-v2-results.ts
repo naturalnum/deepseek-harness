@@ -12,6 +12,7 @@ import { accountUserId } from '../account-contracts.ts'
 import { PlatformError } from '../contracts.ts'
 import { lockAccountAuthorities } from './account-authority.ts'
 import { transaction } from './database.ts'
+import type { StdioCallContinuationV2 } from './stdio-v2-continuations.ts'
 
 const uuid = z.uuid(), digest = stdioDigestV2
 const epoch = z.union([z.number().int().nonnegative().safe(), z.string().regex(/^(0|[1-9][0-9]*)$/u)
@@ -45,10 +46,13 @@ export class StdioResultServiceV2 {
   private readonly limits: StdioLimitsV2
   private readonly view: ReturnType<typeof stdioRuntimeViewV2>
   private readonly task: ReturnType<typeof stdioTaskSchemasV2>['task']
-  constructor(private readonly pool: Pool, options: { limits: StdioLimitsV2; maxReplyBytes: number }) {
+  private readonly continuation: Pick<StdioCallContinuationV2, 'enqueueLeased'> | undefined
+  constructor(private readonly pool: Pool, options: { limits: StdioLimitsV2; maxReplyBytes: number;
+    continuation?: Pick<StdioCallContinuationV2, 'enqueueLeased'> }) {
     this.limits = stdioLimitsV2.parse(options.limits)
     this.view = stdioRuntimeViewV2(this.limits, options.maxReplyBytes)
     this.task = stdioTaskSchemasV2(this.limits).task
+    this.continuation = options.continuation
   }
   private budget() {
     return { maxDepth: this.limits.maxJsonDepth, maxNodes: this.limits.maxJsonNodes, maxBytes: this.limits.maxInputBytes }
@@ -78,7 +82,7 @@ export class StdioResultServiceV2 {
    * @param lease Internal worker and epoch, verified against the database clock at each mutation.
    * @param observation Private authenticated original Runner view and optional full-UID quiet proof; never a browser assertion.
    * @returns Current action state, whether a final result exists, and the once-minted discovery catalog identity if any.
-   * @throws Changed original task/capture/permit/dispatch, invalid proof, exceeded budgets or lost lease rejects atomically.
+   * @throws Changed originals, invalid proof, exceeded budgets, lost lease or missing/failed call continuation rejects atomically; discovery needs no continuation.
    */
   async record(lease: StdioActionLeaseV2, observation: StdioCloudObservationV2): Promise<{
     actionId: StdioActionLeaseV2['actionId']; state: string; finalized: boolean; catalogId: string | null
@@ -184,6 +188,10 @@ export class StdioResultServiceV2 {
             || !this.same(savedCatalog.image_expectation, prepared.actualExecutorImage)) this.deny('stdio_v2_result_conflict')
         }
         await this.live(client, lease, action)
+        if (task.phase === 'call') {
+          if (!this.continuation) this.deny('stdio_v2_continuation_unavailable')
+          await this.continuation.enqueueLeased(client, lease)
+        }
         return { actionId: lease.actionId, state: action.state, finalized: true, catalogId: catalog ? z.uuid().parse(catalog.id) : null }
       }
       await this.live(client, lease, action)
@@ -225,6 +233,10 @@ export class StdioResultServiceV2 {
       [executionState, final, execution.id, action.user_id])
       await this.write(client, lease, `UPDATE pe_stdio_v2_actions SET state=$4,updated_at=clock_timestamp()
         WHERE id=$1 AND ${leaseGuard}`, [state])
+      if (final && task.phase === 'call') {
+        if (!this.continuation) this.deny('stdio_v2_continuation_unavailable')
+        await this.continuation.enqueueLeased(client, lease)
+      }
       return { actionId: lease.actionId, state, finalized: final, catalogId }
     })
   }
