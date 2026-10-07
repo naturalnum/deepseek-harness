@@ -8,8 +8,9 @@ import { PlatformError, userId, sessionId, operationId } from '../contracts.ts'
 
 /** Persisted Desktop states; only independent approval may close an unknown outcome. */
 export type DeviceExecutionState = 'queued' | 'running' | 'cancelling' | 'succeeded' | 'failed' | 'cancelled' | 'uncertain' | 'closed_unknown'
-/** Original Device execution fields; command output remains lossless JSON. */
+/** Legacy Device execution fields; generic STDIO rows use separate consumers and command output remains lossless JSON. */
 export interface DeviceExecutionRow {
+  execution_kind: 'legacy_command'
   id: string; user_id: string; session_id: string; operation_id: string; device_id: string; directory_id: string
   call_id: string; command: string; cwd: string; request_digest: string; state: DeviceExecutionState
   cancel_requested: boolean; device_instance_id: string | null; result: unknown; error_code: string | null
@@ -64,6 +65,7 @@ export function validateDeviceResolutionSnapshot(input: unknown): DeviceResoluti
  * @returns Snapshot binding every source identity and its unchanged stop record.
  */
 export function captureDeviceResolutionSnapshot(row: DeviceExecutionRow): DeviceResolutionSnapshot {
+  if (row.execution_kind !== 'legacy_command') throw new PlatformError(409, 'device_resolution_identity_changed')
   if (row.stop_observation === null || row.stop_request_id === null || row.stop_record_digest === null) {
     throw new PlatformError(409, 'device_stop_unconfirmed')
   }

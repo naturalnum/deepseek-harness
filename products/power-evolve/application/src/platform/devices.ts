@@ -218,12 +218,15 @@ export class DeviceService {
       await client.query('UPDATE pe_device_directories SET revoked_at=now() WHERE device_id=$1 AND revoked_at IS NULL', [deviceId])
       const queued = await client.query<Row>(
         `UPDATE pe_desktop_executions SET state='cancelled',cancel_requested=true,updated_at=now()
-         WHERE device_id=$1 AND state='queued' RETURNING *`, [deviceId])
+         WHERE device_id=$1 AND execution_kind='legacy_command' AND state='queued' RETURNING *`, [deviceId])
       for (const row of queued.rows) await this.continue(client, row)
       await client.query(
         `UPDATE pe_desktop_executions SET cancel_requested=true,state='uncertain',
          error_code=CASE WHEN error_code='account_disabled' THEN error_code WHEN stop_observation IS NULL THEN 'device_revoked_stop_unconfirmed' ELSE 'desktop_result_uncertain' END,updated_at=now()
-         WHERE device_id=$1 AND state IN ('running','cancelling','uncertain')`, [deviceId])
+         WHERE device_id=$1 AND execution_kind='legacy_command' AND state IN ('running','cancelling','uncertain')`, [deviceId])
+      await client.query(`UPDATE pe_desktop_executions SET cancel_requested=true,
+        error_code=CASE WHEN error_code='account_disabled' THEN error_code ELSE 'device_revoked_stop_unconfirmed' END,updated_at=now()
+        WHERE device_id=$1 AND execution_kind='stdio_v2' AND state IN ('queued','running','cancelling','uncertain')`, [deviceId])
     })
   }
 
@@ -240,12 +243,15 @@ export class DeviceService {
       if (!updated.rowCount) throw new PlatformError(404, 'directory_not_found')
       const queued = await client.query<Row>(
         `UPDATE pe_desktop_executions SET state='cancelled',cancel_requested=true,updated_at=now()
-         WHERE directory_id=$1 AND state='queued' RETURNING *`, [directoryId])
+         WHERE directory_id=$1 AND execution_kind='legacy_command' AND state='queued' RETURNING *`, [directoryId])
       for (const row of queued.rows) await this.continue(client, row)
       await client.query(
         `UPDATE pe_desktop_executions SET cancel_requested=true,state='uncertain',
          error_code=CASE WHEN error_code='account_disabled' THEN error_code WHEN stop_observation IS NULL THEN 'directory_revoked_stop_unconfirmed' ELSE 'desktop_result_uncertain' END,updated_at=now()
-         WHERE directory_id=$1 AND state IN ('running','cancelling','uncertain')`, [directoryId])
+         WHERE directory_id=$1 AND execution_kind='legacy_command' AND state IN ('running','cancelling','uncertain')`, [directoryId])
+      await client.query(`UPDATE pe_desktop_executions SET cancel_requested=true,
+        error_code=CASE WHEN error_code='account_disabled' THEN error_code ELSE 'directory_revoked_stop_unconfirmed' END,updated_at=now()
+        WHERE directory_id=$1 AND execution_kind='stdio_v2' AND state IN ('queued','running','cancelling','uncertain')`, [directoryId])
     })
   }
 
@@ -263,7 +269,7 @@ export class DeviceService {
       const target = executionTarget.parse(grant.execution_target)
       if (target.kind !== 'desktop') throw new PlatformError(403, 'wrong_execution_target')
       const prior = await client.query<Row>(
-        'SELECT * FROM pe_desktop_executions WHERE operation_id=$1 AND call_id=$2', [grant.operation_id, callId])
+        "SELECT * FROM pe_desktop_executions WHERE operation_id=$1 AND call_id=$2 AND execution_kind='legacy_command'", [grant.operation_id, callId])
       if (prior.rows[0]) {
         const frozen = this.dispatch(prior.rows[0])
         if (prior.rows[0].request_digest !== hash({ command, cwd, timeoutMs: frozen.timeoutMs,
@@ -292,6 +298,7 @@ export class DeviceService {
            AND d.revoked_at IS NULL AND dir.revoked_at IS NULL`,
         [target.deviceId, target.directoryId, grant.user_id])
       if (!available.rowCount) throw new PlatformError(403, 'desktop_target_unavailable')
+      // Both execution kinds retain these reservations until their own stop and cleanup closure.
       const busy = await client.query(
         `SELECT id FROM pe_desktop_executions WHERE session_id=$1
          AND state IN ('queued','running','cancelling','uncertain')
@@ -305,8 +312,8 @@ export class DeviceService {
       if (directoryBusy.rowCount) throw new PlatformError(409, 'desktop_directory_busy')
       const inserted = await client.query<Row>(
         `INSERT INTO pe_desktop_executions(id,user_id,session_id,operation_id,device_id,directory_id,
-         call_id,command,cwd,request_digest,state,dispatch_request,device_instance_id)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'queued',$11,$12) RETURNING *`,
+         call_id,command,cwd,request_digest,state,dispatch_request,device_instance_id,execution_kind,origin_kind)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'queued',$11,$12,'legacy_command','operation') RETURNING *`,
         [randomUUID(), grant.user_id, grant.id, grant.operation_id, target.deviceId, target.directoryId,
           callId, command, cwd, hash(request), JSON.stringify(request), available.rows[0]!.instance_id])
       return this.receipt(inserted.rows[0]!)
@@ -315,7 +322,7 @@ export class DeviceService {
 
   private dispatch(row: Row): z.infer<typeof deviceDispatchRequest> {
     const parsed = deviceDispatchRequest.safeParse(row.dispatch_request)
-    if (!parsed.success || !z.uuid().safeParse(row.device_instance_id).success
+    if (row.execution_kind !== 'legacy_command' || !parsed.success || !z.uuid().safeParse(row.device_instance_id).success
       || parsed.data.command !== row.command || parsed.data.cwd !== row.cwd
       || parsed.data.deviceId !== row.device_id || parsed.data.directoryId !== row.directory_id
       || hash(parsed.data) !== row.request_digest) throw new PlatformError(409, 'device_dispatch_unavailable')
@@ -327,6 +334,7 @@ export class DeviceService {
   }
 
   private async assertClaimOpen(client: PoolClient, row: Row): Promise<void> {
+    if (row.execution_kind !== 'legacy_command') throw new PlatformError(409, 'desktop_execution_unavailable')
     if ((await client.query('SELECT id FROM pe_device_claim_closures WHERE execution_id=$1', [row.id])).rowCount) {
       throw new PlatformError(409, 'device_claim_closed')
     }
@@ -381,7 +389,7 @@ export class DeviceService {
       if (prior && prior.request_digest !== requestDigest) throw new PlatformError(409, 'request_id_conflict')
       const row = (await client.query<Row>(`SELECT e.* FROM pe_desktop_executions e
         JOIN pe_device_directories dir ON dir.id=e.directory_id AND dir.device_id=e.device_id AND dir.user_id=e.user_id
-        WHERE e.id=$1 AND e.device_id=$2 AND e.user_id=$3 FOR UPDATE OF e`,
+        WHERE e.id=$1 AND e.device_id=$2 AND e.user_id=$3 AND e.execution_kind='legacy_command' FOR UPDATE OF e`,
       [request.executionId, device.id, device.user_id])).rows[0]
       if (!row) throw new PlatformError(404, 'execution_not_found')
       if (prior) return this.claimClosure(prior, row, device)
@@ -391,10 +399,10 @@ export class DeviceService {
       this.assertUnstartedClaim(row, device, request)
       const updated = (await client.query<Row>(`UPDATE pe_desktop_executions SET state='cancelled',cancel_requested=true,
         error_code=CASE WHEN error_code='account_disabled' OR $2 THEN 'account_disabled'
-          ELSE 'device_claim_closed_without_start' END,updated_at=now() WHERE id=$1 RETURNING *`,
+          ELSE 'device_claim_closed_without_start' END,updated_at=now() WHERE id=$1 AND execution_kind='legacy_command' RETURNING *`,
       [row.id, !device.accountActive])).rows[0]!
       await this.continue(client, updated)
-      const completed = (await client.query<Row>('SELECT * FROM pe_desktop_executions WHERE id=$1', [row.id])).rows[0]!
+      const completed = (await client.query<Row>("SELECT * FROM pe_desktop_executions WHERE id=$1 AND execution_kind='legacy_command'", [row.id])).rows[0]!
       const receipt = deviceClaimClosureReceipt.parse({ ...request, kind: 'unstarted_claim_closed', deviceId: device.id,
         dispatchId: row.dispatch_id, state: 'cancelled', startNeverAuthorized: true,
         continuationQueued: completed.continuation_queued })
@@ -408,6 +416,7 @@ export class DeviceService {
   }
 
   private receipt(row: Row): unknown {
+    if (row.execution_kind !== 'legacy_command') throw new PlatformError(409, 'desktop_execution_unavailable')
     return { executionId: row.id, state: row.state, command: row.command, cwd: row.cwd,
       target: { kind: 'desktop', deviceId: row.device_id, directoryId: row.directory_id },
       result: row.result, errorCode: row.error_code }
@@ -422,7 +431,7 @@ export class DeviceService {
       `SELECT e.*,d.name AS device_name,dir.label AS directory_label
        FROM pe_desktop_executions e JOIN pe_devices d ON d.id=e.device_id
        JOIN pe_device_directories dir ON dir.id=e.directory_id
-       WHERE e.user_id=$1 ORDER BY e.created_at DESC,e.id DESC LIMIT 100`, [user.userId])
+       WHERE e.user_id=$1 AND e.execution_kind='legacy_command' ORDER BY e.created_at DESC,e.id DESC LIMIT 100`, [user.userId])
     return { items: result.rows.map(row => ({ ...this.receipt(row) as object,
       targetLabel: `${row.device_name} / ${row.directory_label}`, createdAt: row.created_at.toISOString() })) }
   }
@@ -436,20 +445,20 @@ export class DeviceService {
     return transaction(this.pool, async client => {
       await lockAccountAuthorities(client, [executionUserId.parse(user.userId)], 'update')
       const result = await client.query<Row>(
-        'SELECT * FROM pe_desktop_executions WHERE id=$1 AND user_id=$2 FOR UPDATE', [id, user.userId])
+        "SELECT * FROM pe_desktop_executions WHERE id=$1 AND user_id=$2 AND execution_kind='legacy_command' FOR UPDATE", [id, user.userId])
       const row = result.rows[0]
       if (!row) throw new PlatformError(404, 'execution_not_found')
       if (row.state === 'queued') {
         const updated = await client.query<Row>(
           `UPDATE pe_desktop_executions SET state='cancelled',cancel_requested=true,updated_at=now()
-           WHERE id=$1 RETURNING *`, [id])
+           WHERE id=$1 AND execution_kind='legacy_command' RETURNING *`, [id])
         await this.continue(client, updated.rows[0]!)
         return this.receipt(updated.rows[0]!)
       }
       if (row.state === 'running' || row.state === 'cancelling') {
         const updated = await client.query<Row>(
           `UPDATE pe_desktop_executions SET state='cancelling',cancel_requested=true,updated_at=now()
-           WHERE id=$1 RETURNING *`, [id])
+           WHERE id=$1 AND execution_kind='legacy_command' RETURNING *`, [id])
         return this.receipt(updated.rows[0]!)
       }
       return this.receipt(row)
@@ -466,7 +475,7 @@ export class DeviceService {
       const device = await this.authenticated(client, token)
       if (device.instance_id !== instanceId) throw new PlatformError(409, 'device_instance_changed')
       const jobs = await client.query<Row>(
-        `SELECT * FROM pe_desktop_executions WHERE device_id=$1
+        `SELECT * FROM pe_desktop_executions WHERE device_id=$1 AND execution_kind='legacy_command'
          AND state IN ('queued','running','cancelling','uncertain')
          AND stop_observation IS NULL
          AND dispatch_request IS NOT NULL AND device_instance_id IS NOT NULL
@@ -500,7 +509,7 @@ export class DeviceService {
       const selected = await client.query<Row & { directory_revoked_at: Date | null }>(
         `SELECT e.*,dir.revoked_at AS directory_revoked_at FROM pe_desktop_executions e
          JOIN pe_device_directories dir ON dir.id=e.directory_id
-         WHERE e.id=$1 AND e.device_id=$2 FOR UPDATE OF e`, [id, device.id])
+         WHERE e.id=$1 AND e.device_id=$2 AND e.execution_kind='legacy_command' FOR UPDATE OF e`, [id, device.id])
       let row = selected.rows[0]
       if (!row) throw new PlatformError(409, 'desktop_execution_unavailable')
       await this.assertClaimOpen(client, row)
@@ -515,7 +524,7 @@ export class DeviceService {
         }
         row = { ...row, ...(await client.query<Row>(
           `UPDATE pe_desktop_executions SET state='running',dispatch_id=$2,dispatch_process_id=$3,
-           updated_at=now() WHERE id=$1 RETURNING *`, [id, randomUUID(), processId])).rows[0]! }
+           updated_at=now() WHERE id=$1 AND execution_kind='legacy_command' RETURNING *`, [id, randomUUID(), processId])).rows[0]! }
       }
       const bound = dispatchIdentity.safeParse(row)
       if (!bound.success) throw new PlatformError(409, 'device_dispatch_unavailable')
@@ -534,7 +543,8 @@ export class DeviceService {
     await requireActiveAccount(client, executionUserId.parse(device.user_id), 'update')
     const row = (await client.query<Row & { directory_revoked_at: Date | null }>(`SELECT e.*,dir.revoked_at AS directory_revoked_at
       FROM pe_desktop_executions e JOIN pe_device_directories dir ON dir.id=e.directory_id
-      WHERE e.id=$1 AND e.device_id=$2 AND e.user_id=$3 AND dir.device_id=$2 AND dir.user_id=$3 FOR UPDATE OF e`,
+      WHERE e.id=$1 AND e.device_id=$2 AND e.user_id=$3 AND dir.device_id=$2 AND dir.user_id=$3
+        AND e.execution_kind='legacy_command' FOR UPDATE OF e`,
     [input.executionId, device.id, device.user_id])).rows[0]
     if (!row) throw new PlatformError(404, 'execution_not_found')
     await this.assertClaimOpen(client, row)
@@ -623,7 +633,7 @@ export class DeviceService {
       const selected = await client.query<Row & { directory_revoked_at: Date | null }>(
         `SELECT e.*,dir.revoked_at AS directory_revoked_at FROM pe_desktop_executions e
          JOIN pe_device_directories dir ON dir.id=e.directory_id
-         WHERE e.id=$1 AND e.device_id=$2 FOR UPDATE OF e`, [input.executionId, device.id])
+         WHERE e.id=$1 AND e.device_id=$2 AND e.execution_kind='legacy_command' FOR UPDATE OF e`, [input.executionId, device.id])
       const row = selected.rows[0]
       if (!row) throw new PlatformError(404, 'execution_not_found')
       await this.assertClaimOpen(client, row)
@@ -638,7 +648,8 @@ export class DeviceService {
       const canStart = row.state === 'running' && !row.cancel_requested && device.accountActive
         && device.revoked_at === null && row.directory_revoked_at === null
       await client.query(`UPDATE pe_desktop_executions SET container_receipt=$2,
-        start_authorized_at=CASE WHEN $3 THEN clock_timestamp() ELSE NULL END,updated_at=now() WHERE id=$1`,
+        start_authorized_at=CASE WHEN $3 THEN clock_timestamp() ELSE NULL END,updated_at=now()
+        WHERE id=$1 AND execution_kind='legacy_command'`,
       [row.id, JSON.stringify(input.receipt), canStart])
       return deviceContainerRegistered.parse({ executionId: row.id, dispatchId: row.dispatch_id,
         receipt: input.receipt, canStart })
@@ -654,7 +665,7 @@ export class DeviceService {
     return transaction(this.pool, async client => {
       const device = await this.authenticated(client, token, true)
       const selected = await client.query<Row>(
-        'SELECT * FROM pe_desktop_executions WHERE id=$1 AND device_id=$2 FOR UPDATE', [input.executionId, device.id])
+        "SELECT * FROM pe_desktop_executions WHERE id=$1 AND device_id=$2 AND execution_kind='legacy_command' FOR UPDATE", [input.executionId, device.id])
       const row = selected.rows[0]
       if (!row) throw new PlatformError(404, 'execution_not_found')
       await this.assertClaimOpen(client, row)
@@ -688,7 +699,7 @@ export class DeviceService {
       const selected = await client.query<Row & { directory_revoked_at: Date | null }>(
         `SELECT e.*,dir.revoked_at AS directory_revoked_at FROM pe_desktop_executions e
          JOIN pe_device_directories dir ON dir.id=e.directory_id
-         WHERE e.id=$1 AND e.device_id=$2 FOR UPDATE OF e`, [record.executionId, device.id])
+         WHERE e.id=$1 AND e.device_id=$2 AND e.execution_kind='legacy_command' FOR UPDATE OF e`, [record.executionId, device.id])
       const row = selected.rows[0]
       if (!row) throw new PlatformError(404, 'execution_not_found')
       await this.assertClaimOpen(client, row)
@@ -721,7 +732,7 @@ export class DeviceService {
       if (!['running', 'cancelling', 'uncertain'].includes(row.state)) {
         throw new PlatformError(409, 'execution_not_running')
       }
-      const reused = await client.query('SELECT id FROM pe_desktop_executions WHERE stop_request_id=$1', [record.requestId])
+      const reused = await client.query("SELECT id FROM pe_desktop_executions WHERE stop_request_id=$1 AND execution_kind='legacy_command'", [record.requestId])
       if (reused.rowCount) throw new PlatformError(409, 'stop_record_conflict')
       const cancelled = row.cancel_requested || device.revoked_at !== null || !device.accountActive
         || row.directory_revoked_at !== null
@@ -729,7 +740,7 @@ export class DeviceService {
       const updated = await client.query<Row>(
         `UPDATE pe_desktop_executions SET state=$2,result=$3,stop_request_id=$4,stop_record_digest=$5,
          stop_observation=$6,error_code=CASE WHEN error_code='account_disabled' OR $7 THEN 'account_disabled'
-         ELSE $8 END,updated_at=now() WHERE id=$1 RETURNING *`,
+         ELSE $8 END,updated_at=now() WHERE id=$1 AND execution_kind='legacy_command' RETURNING *`,
         [row.id, finalState, JSON.stringify(record.result), record.requestId, recordDigest,
           JSON.stringify(record.observation), !device.accountActive,
           finalState === 'uncertain' ? 'desktop_result_uncertain' : null])
@@ -750,6 +761,7 @@ export class DeviceService {
   }
 
   private async continue(client: PoolClient, row: Row): Promise<boolean> {
+    if (row.execution_kind !== 'legacy_command') throw new PlatformError(409, 'desktop_execution_unavailable')
     if (row.state === 'uncertain' || row.error_code === 'account_disabled') return false
     const account = await client.query<{ enabled: boolean; deleted_at: Date | null }>(
       'SELECT enabled,deleted_at FROM pe_users WHERE id=$1', [row.user_id])
@@ -763,15 +775,18 @@ export class DeviceService {
       `INSERT INTO pe_operations(id,session_id,request_id,input,settings,skill_selection,execution_target,
        remote_mcp_selection,mcp_root_operation_id,source,source_desktop_execution_id,state)
        SELECT $1,o.session_id,$2,$3,o.settings,o.skill_selection,o.execution_target,o.remote_mcp_selection,COALESCE(o.mcp_root_operation_id,o.id),'desktop_result',$4,'queued'
-       FROM pe_operations o WHERE o.id=$5 ON CONFLICT(session_id,request_id) DO NOTHING`,
+       FROM pe_operations o JOIN pe_desktop_executions e ON e.id=$4 AND e.operation_id=o.id AND e.session_id=o.session_id
+       WHERE o.id=$5 AND e.execution_kind='legacy_command' ON CONFLICT(session_id,request_id) DO NOTHING`,
       [randomUUID(), row.continuation_request_id, text, row.id, row.operation_id])
     if (!continued.rowCount) {
-      const existing = await client.query(`SELECT id FROM pe_operations WHERE session_id=$1 AND request_id=$2
-        AND source_desktop_execution_id=$3 AND source='desktop_result'`,
+      const existing = await client.query(`SELECT o.id FROM pe_operations o JOIN pe_desktop_executions e
+        ON e.id=o.source_desktop_execution_id AND e.session_id=o.session_id
+        WHERE o.session_id=$1 AND o.request_id=$2 AND o.source_desktop_execution_id=$3 AND o.source='desktop_result'
+          AND e.execution_kind='legacy_command'`,
       [row.session_id, row.continuation_request_id, row.id])
       if (!existing.rowCount) throw new PlatformError(409, 'continuation_conflict')
     }
-    await client.query('UPDATE pe_desktop_executions SET continuation_queued=true WHERE id=$1', [row.id])
+    await client.query("UPDATE pe_desktop_executions SET continuation_queued=true WHERE id=$1 AND execution_kind='legacy_command'", [row.id])
     await client.query('SELECT pg_notify(\'pe_tasks\',$1)', [row.session_id])
     return true
   }

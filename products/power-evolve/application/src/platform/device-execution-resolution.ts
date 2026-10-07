@@ -44,8 +44,11 @@ function item(row: DeviceExecutionRow, resolution: ResolutionRow | null) {
  * @returns Resolves only when the completed closure retained exactly these original stop facts.
  */
 export async function assertClosedDeviceResolution(client: PoolClient, row: DeviceExecutionRow): Promise<void> {
-  const resolution = (await client.query<ResolutionRow>(`SELECT * FROM pe_device_execution_resolutions
-    WHERE execution_id=$1 AND user_id=$2 AND session_id=$3`, [row.id, row.user_id, row.session_id])).rows[0]
+  if (row.execution_kind !== 'legacy_command') throw new PlatformError(409, 'device_resolution_identity_changed')
+  const resolution = (await client.query<ResolutionRow>(`SELECT r.* FROM pe_device_execution_resolutions r
+    JOIN pe_desktop_executions e ON e.id=r.execution_id
+    WHERE r.execution_id=$1 AND r.user_id=$2 AND r.session_id=$3 AND e.execution_kind='legacy_command'`,
+  [row.id, row.user_id, row.session_id])).rows[0]
   if (!resolution) throw new PlatformError(409, 'device_resolution_record_unavailable')
   receipt(resolution)
   if (deviceResolutionDigest(captureDeviceResolutionSnapshot(row)) !== resolution.fingerprint) {
@@ -59,7 +62,7 @@ export class DeviceExecutionResolutionService {
 
   private async owned(client: PoolClient, owner: string, id: string): Promise<DeviceExecutionRow & { current_instance_id: string }> {
     const hint = (await client.query<{ device_id: string }>(
-      'SELECT device_id FROM pe_desktop_executions WHERE id=$1 AND user_id=$2', [id, owner])).rows[0]
+      "SELECT device_id FROM pe_desktop_executions WHERE id=$1 AND user_id=$2 AND execution_kind='legacy_command'", [id, owner])).rows[0]
     if (!hint) throw new PlatformError(404, 'execution_not_found')
     const device = await client.query('SELECT id FROM pe_devices WHERE id=$1 AND user_id=$2 FOR UPDATE', [hint.device_id, owner])
     if (!device.rowCount) throw new PlatformError(404, 'execution_not_found')
@@ -69,12 +72,14 @@ export class DeviceExecutionResolutionService {
        JOIN pe_device_directories dir ON dir.id=e.directory_id AND dir.user_id=e.user_id AND dir.device_id=d.id
        JOIN pe_sessions s ON s.id=e.session_id AND s.user_id=e.user_id
        JOIN pe_operations o ON o.id=e.operation_id AND o.session_id=e.session_id
-       WHERE e.id=$1 AND e.user_id=$2 AND e.device_id=$3 FOR UPDATE OF e`, [id, owner, hint.device_id])).rows[0]
+       WHERE e.id=$1 AND e.user_id=$2 AND e.device_id=$3 AND e.execution_kind='legacy_command' FOR UPDATE OF e`, [id, owner, hint.device_id])).rows[0]
     if (!row) throw new PlatformError(404, 'execution_not_found')
     return row
   }
   private async resolution(client: PoolClient, id: string): Promise<ResolutionRow | null> {
-    return (await client.query<ResolutionRow>('SELECT * FROM pe_device_execution_resolutions WHERE execution_id=$1', [id])).rows[0] ?? null
+    return (await client.query<ResolutionRow>(`SELECT r.* FROM pe_device_execution_resolutions r
+      JOIN pe_desktop_executions e ON e.id=r.execution_id
+      WHERE r.execution_id=$1 AND e.execution_kind='legacy_command'`, [id])).rows[0] ?? null
   }
   private capture(row: DeviceExecutionRow & { current_instance_id: string }) {
     const snapshot = captureDeviceResolutionSnapshot(row)
@@ -93,10 +98,11 @@ export class DeviceExecutionResolutionService {
       await requireActiveAccount(client, user.userId)
       if (input.sessionId && !(await client.query('SELECT id FROM pe_sessions WHERE id=$1 AND user_id=$2',
         [input.sessionId, user.userId])).rowCount) throw new PlatformError(404, 'session_not_found')
-      const rows = await client.query<DeviceExecutionRow>(`SELECT * FROM pe_desktop_executions WHERE user_id=$1
+      const rows = await client.query<DeviceExecutionRow>(`SELECT * FROM pe_desktop_executions WHERE user_id=$1 AND execution_kind='legacy_command'
         AND ($2::uuid IS NULL OR session_id=$2) ORDER BY created_at DESC,id DESC LIMIT 100`, [user.userId, input.sessionId ?? null])
-      const resolutions = await client.query<ResolutionRow>(`SELECT * FROM pe_device_execution_resolutions
-        WHERE user_id=$1 AND execution_id=ANY($2::uuid[])`, [user.userId, rows.rows.map(row => row.id)])
+      const resolutions = await client.query<ResolutionRow>(`SELECT r.* FROM pe_device_execution_resolutions r
+        JOIN pe_desktop_executions e ON e.id=r.execution_id
+        WHERE r.user_id=$1 AND r.execution_id=ANY($2::uuid[]) AND e.execution_kind='legacy_command'`, [user.userId, rows.rows.map(row => row.id)])
       return executionResolutionsList.parse({ available: true,
         items: rows.rows.map(row => item(row, resolutions.rows.find(r => r.execution_id === row.id) ?? null)) })
     })
@@ -136,8 +142,9 @@ export class DeviceExecutionResolutionService {
     return transaction(this.pool, async client => {
       const actor = await requireBrowserAccount(client, approvalToken, { audience: 'approval', lock: 'update' })
       if (actor.userId !== user.userId) throw new PlatformError(401, 'unauthorized')
-      const prior = (await client.query<ResolutionRow>(`SELECT * FROM pe_device_execution_resolutions
-        WHERE user_id=$1 AND request_id=$2`, [user.userId, input.requestId])).rows[0]
+      const prior = (await client.query<ResolutionRow>(`SELECT r.* FROM pe_device_execution_resolutions r
+        JOIN pe_desktop_executions e ON e.id=r.execution_id
+        WHERE r.user_id=$1 AND r.request_id=$2 AND e.execution_kind='legacy_command'`, [user.userId, input.requestId])).rows[0]
       if (prior) {
         if (prior.request_digest !== requestDigest) throw new PlatformError(409, 'request_id_conflict')
         return receipt(prior)
@@ -149,7 +156,7 @@ export class DeviceExecutionResolutionService {
       if (fingerprint !== input.fingerprint) throw new PlatformError(409, 'execution_identity_changed')
       const updated = (await client.query<DeviceExecutionRow>(`UPDATE pe_desktop_executions SET state='closed_unknown',
         error_code=CASE WHEN error_code='account_disabled' THEN error_code ELSE NULL END,updated_at=now()
-        WHERE id=$1 AND state='uncertain' RETURNING *`, [row.id])).rows[0]
+        WHERE id=$1 AND execution_kind='legacy_command' AND state='uncertain' RETURNING *`, [row.id])).rows[0]
       if (!updated) throw new PlatformError(409, 'execution_identity_changed')
       const continued = await this.enqueue(client, updated)
       const result = await client.query<ResolutionRow>(`INSERT INTO pe_device_execution_resolutions
@@ -169,8 +176,9 @@ export class DeviceExecutionResolutionService {
   async status(user: Identity, requestId: ResolutionRequestId): Promise<ExecutionResolutionStatus> {
     return transaction(this.pool, async client => {
       await requireActiveAccount(client, user.userId)
-      const row = (await client.query<ResolutionRow>(`SELECT * FROM pe_device_execution_resolutions
-        WHERE user_id=$1 AND request_id=$2`, [user.userId, requestId])).rows[0]
+      const row = (await client.query<ResolutionRow>(`SELECT r.* FROM pe_device_execution_resolutions r
+        JOIN pe_desktop_executions e ON e.id=r.execution_id
+        WHERE r.user_id=$1 AND r.request_id=$2 AND e.execution_kind='legacy_command'`, [user.userId, requestId])).rows[0]
       return executionResolutionStatus.parse({ receipt: row ? receipt(row) : null })
     })
   }
