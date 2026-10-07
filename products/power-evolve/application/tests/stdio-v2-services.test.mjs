@@ -12,6 +12,8 @@ import { FileService } from '../lib/platform/files.js'
 import { StdioConnectionServiceV2 } from '../lib/platform/stdio-v2-connections.js'
 import { StdioAdmissionServiceV2 } from '../lib/platform/stdio-v2-admission.js'
 import { StdioAuthorizationServiceV2 } from '../lib/platform/stdio-v2-authorization.js'
+import { StdioCloudPreparationV2 } from '../lib/platform/stdio-v2-cloud-capture.js'
+import { SandboxManager } from '../lib/platform/sandbox.js'
 import { stdioPreparedV2 } from '@power-evolve/contracts/stdio-mcp'
 import { stdioCatalogFingerprintV2, stdioSha256V2 } from '@power-evolve/connector-runner/stdio-v2-digest'
 
@@ -282,6 +284,87 @@ test('generic management, atomic discovery and independent once authorization on
         await assert.rejects(authorization.authorize(pending.receipt.actionId, randomUUID(), pending.owner), expectCode('account_disabled'))
         assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_stdio_v2_start_permits WHERE action_id=$1', [pending.receipt.actionId])).rows[0].n, 0)
       } finally { await pool.query('UPDATE pe_users SET enabled=true WHERE id=$1', [alice.userId]) }
+    })
+    await t.test('real PG authorization captures through Manager in its original transaction and quarantines only after rollback', { timeout: 10000 }, async () => {
+      // PG, account/Session locks and POSIX bindings are real. Pod, Node and health observations are explicit substitutes.
+      const actor = await account('capture-owner'), f = await discover(actor)
+      const task = (await pool.query('SELECT task FROM pe_stdio_v2_actions WHERE id=$1', [f.receipt.actionId])).rows[0].task
+      const binding = await files.bindingForId(actor.userId, actor.workspaceId)
+      const podUid = randomUUID(), runnerInstanceId = randomUUID(), parentUid = randomUUID(), generation = '1'
+      const namespace = 'synthetic-capture', claimName = 'synthetic-posix', resources = new Map(), reads = []
+      const kube = {
+        resourcePath: (ns, kind, name) => `/api/v1/namespaces/${ns}/${kind}/${name}`,
+        proxyPath: (ns, name, path) => `/api/v1/namespaces/${ns}/services/${name}/proxy${path}`,
+        async call(method, path) {
+          reads.push({ method, path }); assert.equal(method, 'GET')
+          if (path.endsWith('/proxy/health')) return { ready: true, instanceId: runnerInstanceId }
+          assert(resources.has(path), 'Unexpected substituted Kubernetes observation')
+          return structuredClone(resources.get(path))
+        },
+      }
+      const manager = new SandboxManager(kube, files, pool, randomBytes(32).toString('hex'), {
+        namespace, image: cloud.imageReference, localRoot: root, nodeRoot: '', volumeClaimName: claimName, readyTimeoutMs: 1000,
+        fileScan: { maxEntries: 100, maxHashBytes: 1024, timeoutMs: 1000, maxSnapshotBytes: 1024, maxFiles: 10 },
+      })
+      const name = manager.name(actor.userId), labels = { 'app.kubernetes.io/name': 'power-evolve-sandbox',
+        'app.kubernetes.io/instance': name, 'powerevolve.dev/session': task.sessionId,
+        'powerevolve.dev/user': task.userId, 'powerevolve.dev/generation': generation }
+      const spec = { nodeName: 'synthetic-node', automountServiceAccountToken: false, runtimeClassName: 'gvisor', serviceAccountName: 'power-evolve-runner',
+        containers: [{ name: 'runner', image: cloud.imageReference, volumeMounts: [
+          { name: 'workspace', mountPath: '/workspace', subPath: `workspaces/${binding.rootKey}` },
+          { name: 'home', mountPath: '/home/agent', subPath: `homes/${task.userId}` },
+          { name: 'skill-packages', mountPath: '/opt/power-evolve/skills', subPath: `skill-packages/${task.userId}`, readOnly: true },
+          { name: 'token', mountPath: '/run/power-evolve', readOnly: true }, { name: 'scratch', mountPath: '/tmp' },
+        ] }], volumes: [
+          ...['workspace', 'home', 'skill-packages'].map(name => ({ name, persistentVolumeClaim: { claimName } })),
+          { name: 'token', secret: { secretName: name, defaultMode: 256, items: [{ key: 'token', path: 'runner-token', mode: 256 }] } },
+          { name: 'scratch', emptyDir: {} },
+        ], extension: JSON.parse('{"__proto__":{"retained":true},"raw":"escaped\\u0000value"}') }
+      const parent = { metadata: { name, namespace, uid: parentUid, labels }, spec: { podTemplate: { spec: structuredClone(spec) } } }
+      const pod = { metadata: { name, namespace, uid: podUid, labels,
+        finalizers: ['powerevolve.dev/retain-stop-observation'], ownerReferences: [{ uid: parentUid }] }, spec,
+        status: { phase: 'Running', containerStatuses: [{ name: 'runner', ready: true, restartCount: 0,
+          imageID: cloud.runtimeImageIds[0], containerID: `containerd://${'d'.repeat(64)}`, state: { running: {} } }] } }
+      resources.set(kube.resourcePath(namespace, 'sandboxes', name), parent)
+      resources.set(kube.resourcePath(namespace, 'pods', name), pod)
+      resources.set('/api/v1/nodes/synthetic-node', { metadata: { name: 'synthetic-node' },
+        status: { nodeInfo: { operatingSystem: platform.os, architecture: platform.architecture } } })
+      await transaction(pool, async client => {
+        await client.query(`INSERT INTO pe_mount_slots(user_id,session_id,workspace_id,generation,state,pod_uid,runner_instance_id,binding_snapshot)
+          VALUES($1,$2,$3,$4,'ready',$5,$6,$7)`, [actor.userId, task.sessionId, actor.workspaceId, generation, podUid, runnerInstanceId, binding])
+        await client.query(`INSERT INTO pe_sandbox_instances(session_id,user_id,name,state,pod_uid,runner_instance_id,binding_snapshot)
+          VALUES($1,$2,$3,'ready',$4,$5,$6)`, [task.sessionId, actor.userId, name, podUid, runnerInstanceId, binding])
+        await client.query('UPDATE pe_cloud_executions SET sandbox_name=$2,pod_uid=$3,runner_instance_id=$4 WHERE id=$1',
+          [f.receipt.executionRef.executionId, name, podUid, runnerInstanceId])
+      })
+      const adapter = new StdioCloudPreparationV2(manager), captureBackends = []
+      const auth = new StdioAuthorizationServiceV2(pool, { limits, approvalKey, approvalLifetimeMs: 60000,
+        async capture(client, original, ref) {
+          captureBackends.push((await client.query('SELECT pg_backend_pid() AS pid')).rows[0].pid)
+          await client.query("SET LOCAL lock_timeout='1500ms'")
+          return adapter.capture(client, original, ref)
+        },
+      })
+      const preparations = await Promise.all([auth.prepare(f.receipt.actionId), auth.prepare(f.receipt.actionId)])
+      assert.deepEqual(preparations[0], preparations[1]); assert.equal(new Set(captureBackends).size, 2)
+      const p = preparations[0]
+      assert.equal(p.prepared.specDigest, sha('spec', spec)); assert.equal(p.prepared.taskDigest, sha('task', task))
+      assert.equal(p.prepared.capture.podUid, podUid); assert.equal(p.prepared.capture.runnerInstanceId, runnerInstanceId)
+      assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_stdio_v2_preparations WHERE action_id=$1', [f.receipt.actionId])).rows[0].n, 1)
+      await auth.decide(actor.approval, { actionId: f.receipt.actionId, fingerprint: p.fingerprint, decision: 'once' })
+      const before = (await pool.query('SELECT * FROM pe_mount_slots WHERE user_id=$1', [actor.userId])).rows[0]
+      pod.spec.containers[0].volumeMounts[0].subPath = 'workspaces/foreign'
+      await assert.rejects(auth.authorize(f.receipt.actionId, randomUUID(), { kind: 'cloud', runnerInstanceId }), expectCode('mount_instance_changed'))
+      assert.deepEqual((await pool.query('SELECT * FROM pe_mount_slots WHERE user_id=$1', [actor.userId])).rows[0], before)
+      assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_stdio_v2_start_permits WHERE action_id=$1', [f.receipt.actionId])).rows[0].n, 0)
+      // The authorization failure has already rolled back; this separate transaction cannot wait on its own account lock.
+      await manager.quarantine(task.sessionId, task.userId)
+      const slot = (await pool.query('SELECT * FROM pe_mount_slots WHERE user_id=$1', [actor.userId])).rows[0]
+      assert.equal(slot.state, 'unknown'); assert.equal(slot.session_id, task.sessionId); assert.equal(slot.pod_uid, podUid)
+      assert.equal((await pool.query('SELECT state FROM pe_sandbox_instances WHERE session_id=$1', [task.sessionId])).rows[0].state, 'unknown')
+      assert.equal((await pool.query('SELECT state FROM pe_cloud_executions WHERE id=$1', [f.receipt.executionRef.executionId])).rows[0].state, 'queued')
+      assert.equal(reads.filter(read => read.path.startsWith('/api/v1/nodes/')).length, 2)
+      assert(reads.every(read => read.method === 'GET'))
     })
     assert.ok(captureCalls > 0)
   } finally {
