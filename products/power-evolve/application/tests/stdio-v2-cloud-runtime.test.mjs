@@ -1,5 +1,6 @@
 /** Private transport substitutes only: no PostgreSQL, Kubernetes, Runner process or user program is contacted. */
 import assert from 'node:assert/strict'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { randomUUID } from 'node:crypto'
 import test from 'node:test'
 import { StdioCloudRunTransportV2 } from '../lib/platform/stdio-v2-cloud-runtime.js'
@@ -123,6 +124,43 @@ function anotherOriginal(f, expiresInMs = 60000) {
 function replyFor(f, original) {
   return { ...clone(f.view), actionId: original.dispatch.task.actionId, executionRef: clone(original.dispatch.executionRef),
     taskDigest: original.dispatch.taskDigest, dispatchDigest: sha('dispatch', original.dispatch) }
+}
+
+function detachedFixture() {
+  const f = fixture(), context = new AsyncLocalStorage(), events = []
+  let transaction = 0, invocation = 0
+  const capture = async (mode, operation) => {
+    const current = context.getStore(); assert(current, 'Capture must belong to an original detached invocation')
+    const id = ++transaction; current.inTransaction = true; events.push({ invocation: current.id, event: 'begin', mode, id })
+    try {
+      if (f.beforeTransaction) await f.beforeTransaction(mode, id)
+      const writer = await operation(f.client)
+      if (f.beforeCommit) await f.beforeCommit(mode, id)
+      events.push({ invocation: current.id, event: 'commit', mode, id })
+      return writer
+    } finally {
+      current.inTransaction = false; events.push({ invocation: current.id, event: 'release', mode, id })
+    }
+  }
+  for (const name of ['observeReady', 'captureStdioV2']) {
+    const original = f.manager[name]
+    f.manager[name] = (...args) => {
+      assert.equal(context.getStore()?.inTransaction, true, 'Complete private capture runs inside its short transaction')
+      return original(...args)
+    }
+  }
+  const originalHttp = f.manager.runnerBounded
+  f.manager.runnerBounded = (...args) => {
+    const current = context.getStore(); assert(current)
+    assert.equal(current.inTransaction, false, 'Runner execution HTTP must follow transaction commit and release')
+    events.push({ invocation: current.id, event: 'http', method: args[2] })
+    return originalHttp(...args)
+  }
+  const invoke = operation => context.run({ id: ++invocation, inTransaction: false }, operation)
+  const start = () => invoke(() => f.transport.startDetached(f.dispatch, f.authorization, f.prepared, capture))
+  const observe = () => invoke(() => f.transport.observeDetached(f.dispatch, f.prepared, capture))
+  const cancel = () => invoke(() => f.transport.cancelDetached(f.dispatch, f.prepared, capture))
+  return Object.assign(f, { capture, invoke, start, observe, cancel, events })
 }
 
 test('first true start uses explicit bounded POST between dispatch/observe captures and preserves complete outcome/quiet evidence', async () => {
@@ -415,4 +453,72 @@ test('a reserved start still waiting for capture cannot POST after another call 
   now -= 60000; release.resolve()
   assert.equal(await original, null); assert.deepEqual(f.calls.map(call => call.method), ['GET', 'GET'])
   assert(f.calls.every(call => call.body === undefined))
+})
+
+test('detached start/query/cancel bracket every Runner HTTP with committed/released capture transactions and retain full stop evidence', async () => {
+  const f = detachedFixture(), result = await f.start()
+  assert.deepEqual(f.events.map(event => event.event), ['begin', 'commit', 'release', 'http', 'begin', 'commit', 'release'])
+  assert.deepEqual(f.events.filter(event => event.event === 'begin').map(event => event.mode), ['dispatch', 'observe'])
+  assert.deepEqual(result.view, f.view); assert.equal(result.stopEvidence.preparedDigest, f.dispatch.preparedDigest)
+  assert.equal(result.stopEvidence.fullScopeDigest, f.prepared.fullScopeDigest)
+  await f.observe(); await f.cancel(); await f.start()
+  assert.deepEqual(f.calls.map(call => call.method), ['POST', 'GET', 'POST', 'GET'])
+  assert(f.events.filter(event => event.event === 'begin' && event.invocation > 1).every(event => event.mode === 'observe'))
+  assert.equal(f.events.filter(event => event.event === 'commit').length, 8)
+  assert.equal(f.events.filter(event => event.event === 'release').length, 8)
+})
+
+test('detached before-capture or commit failure preserves reservation; retry observes without another start POST', async t => {
+  for (const position of ['beforeTransaction', 'beforeCommit']) await t.test(position, async () => {
+    const f = detachedFixture(), failure = new Error('synthetic capture transaction failed')
+    f[position] = (_mode, id) => { if (id === 1) throw failure }
+    await assert.rejects(f.start(), error => error === failure); assert.equal(f.calls.length, 0)
+    assert.equal(f.events.at(-1).event, 'release')
+    delete f[position]
+    assert.equal((await f.start()).view.state, 'completed'); assert.deepEqual(f.calls.map(call => call.method), ['GET'])
+  })
+})
+
+test('detached after-capture lease/commit failure never returns cached quiet proof or re-POSTs the accepted action', async () => {
+  const f = detachedFixture(), failure = new Error('synthetic original lease changed after HTTP')
+  f.beforeCommit = (_mode, id) => { if (id === 2) throw failure }
+  await assert.rejects(f.start(), error => error === failure)
+  assert.deepEqual(f.calls.map(call => call.method), ['POST']); assert.equal(f.events.at(-1).event, 'release')
+  delete f.beforeCommit
+  const observed = await f.start(); assert.equal(observed.stopEvidence.runnerInstanceId, f.prepared.capture.runnerInstanceId)
+  assert.deepEqual(f.calls.map(call => call.method), ['POST', 'GET'])
+})
+
+test('detached lost POST response still closes both capture transactions; retry is only GET and preserves original effect facts', async () => {
+  const f = detachedFixture()
+  f.manager.httpHook = method => { if (method === 'POST') throw new Error('synthetic lost reply'); return clone(f.view) }
+  await assert.rejects(f.start(), unavailable)
+  assert.deepEqual(f.events.map(event => event.event), ['begin', 'commit', 'release', 'http', 'begin', 'commit', 'release'])
+  assert.equal((await f.start()).view.outcome.facts.effectMayHaveOccurred, true)
+  assert.deepEqual(f.calls.map(call => call.method), ['POST', 'GET'])
+})
+
+test('detached concurrent duplicate reserves before capture and runs each HTTP outside its own transaction', async () => {
+  const f = detachedFixture(), entered = deferred(), release = deferred()
+  f.beforeTransaction = async (_mode, id) => { if (id === 1) { entered.resolve(); await release.promise } }
+  f.manager.httpHook = method => { if (method === 'GET') throw new KubernetesError(404, 'synthetic no result yet'); return clone(f.view) }
+  const original = f.start(); await entered.promise
+  assert.equal(await f.start(), null); assert.deepEqual(f.calls.map(call => call.method), ['GET'])
+  release.resolve(); assert.equal((await original).stopEvidence.executionRef.executionId, f.ref.executionId)
+  assert.deepEqual(f.calls.map(call => call.method), ['GET', 'POST'])
+})
+
+test('legacy caller-client and detached methods share exactly the same reservation and full-capture checks', async () => {
+  const f = fixture(); await f.start()
+  let inTransaction = false
+  const capture = async (_mode, operation) => {
+    inTransaction = true
+    try { return await operation(f.client) } finally { inTransaction = false }
+  }
+  f.manager.httpHook = () => { assert.equal(inTransaction, false); return clone(f.view) }
+  await f.transport.startDetached(f.dispatch, f.authorization, f.prepared, capture)
+  assert.deepEqual(f.calls.map(call => call.method), ['POST', 'GET'])
+  f.observed.spec.raw.extension = 'actual complete spec drift'
+  await assert.rejects(f.transport.observeDetached(f.dispatch, f.prepared, capture), changed)
+  assert.equal(f.calls.length, 2)
 })

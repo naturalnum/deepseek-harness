@@ -13,6 +13,13 @@ import { storageBinding } from './workspace-binding-types.ts'
 
 /** Original once reply; a persisted false receipt is observation authority only. */
 export type StdioCloudAuthorizationV2 = z.infer<typeof stdioStartAuthorizationV2>
+/** Trusted worker's short capture transaction; bounded private Kubernetes observation still holds its PG locks.
+ * @param mode Dispatch checks live authority; observation retains the exact original writer after revocation.
+ * @param operation Run the complete original capture using the transaction's locked PoolClient.
+ * @returns Original writer only after lease/identity checks, transaction commit and client release; no start authority is created.
+ */
+export type StdioCloudCaptureTransactionV2 = (mode: 'dispatch' | 'observe',
+  operation: (client: PoolClient) => Promise<SandboxReady>) => Promise<SandboxReady>
 /** Explicit SDK/transport bounds and the maximum number of live original permit reservations. */
 export interface StdioCloudRunOptionsV2 { limits: StdioLimitsV2; maxReplyBytes: number; requestTimeoutMs: number; maxTrackedActions: number }
 interface Original { dispatch: StdioDispatchV2; authorization: StdioCloudAuthorizationV2; prepared: StdioPreparedV2;
@@ -35,25 +42,37 @@ export class StdioCloudRunTransportV2 {
       || options.maxTrackedActions <= 0) throw new TypeError('stdio_v2_cloud_transport_options_invalid')
   }
 
-  /** Consume only the first in-process true reply; expired/repeated replies query and capacity blocks new starts.
+  /** Retain the existing caller-client API; production workers use startDetached to release PG before Runner HTTP.
    * @param client Original caller transaction holding owner and accepted resource locks.
    * @param dispatch Complete immutable dispatch whose permit is already committed by the Platform.
    * @param authorization Original true response or a persisted false query receipt with the same complete permit.
    * @param prepared Original stored private image/spec/mount/Runner snapshot, never a browser observation.
    * @returns Bounded original Runner observation; no response/404 is not a stop certificate.
    */
-  async start(client: PoolClient, dispatch: StdioDispatchV2, authorization: StdioCloudAuthorizationV2,
+  start(client: PoolClient, dispatch: StdioDispatchV2, authorization: StdioCloudAuthorizationV2,
     prepared: StdioPreparedV2): Promise<StdioCloudObservationV2 | null> {
+    return this.startDetached(dispatch, authorization, prepared, (_mode, operation) => operation(client))
+  }
+
+  /** Consume the original true reply once with Runner execution HTTP outside both completed capture transactions.
+   * @param dispatch Complete immutable dispatch whose permit is already committed by the Platform.
+   * @param authorization Original true reply or the same permit's persisted false observation receipt.
+   * @param prepared Original stored private image/spec/mount/Runner snapshot, never browser-supplied facts.
+   * @param capture Trusted worker callback locking the original account/Session/connection/action/execution and current lease, then committing and releasing.
+   * @returns Bounded original observation; expiry/retry query only, and missing or failed replies never confirm stopped.
+   */
+  async startDetached(dispatch: StdioDispatchV2, authorization: StdioCloudAuthorizationV2, prepared: StdioPreparedV2,
+    capture: StdioCloudCaptureTransactionV2): Promise<StdioCloudObservationV2 | null> {
     const original = this.original(dispatch, prepared, authorization), now = this.now(), first = this.bind(original, now)
     if (first && original.authorization.grantOnce) {
       if (original.prepared.capture.kind !== 'cloud') throw this.changed()
       try { validateStdioStartV2({ dispatch: original.dispatch, authorization: original.authorization }, this.options.limits,
         { kind: 'cloud', runnerInstanceId: original.prepared.capture.runnerInstanceId }, now) }
       catch (_startRejected) { throw new PlatformError(409, 'stdio_v2_cloud_start_denied') }
-      return this.request(client, original, 'POST', '/stdio/v2/executions', 'dispatch',
+      return this.request(capture, original, 'POST', '/stdio/v2/executions', 'dispatch',
         { dispatch: original.dispatch, authorization: original.authorization })
     }
-    return this.request(client, original, 'GET', this.path(original), 'observe')
+    return this.request(capture, original, 'GET', this.path(original), 'observe')
   }
 
   /** Query the exact original execution without provisioning, replaying or treating 404 as quiet.
@@ -62,9 +81,20 @@ export class StdioCloudRunTransportV2 {
    * @param prepared Original immutable private preparation.
    * @returns Same Runner facts, or null only for an exact GET 404 after both captures still match.
    */
-  async observe(client: PoolClient, dispatch: StdioDispatchV2, prepared: StdioPreparedV2): Promise<StdioCloudObservationV2 | null> {
+  observe(client: PoolClient, dispatch: StdioDispatchV2, prepared: StdioPreparedV2): Promise<StdioCloudObservationV2 | null> {
+    return this.observeDetached(dispatch, prepared, (_mode, operation) => operation(client))
+  }
+
+  /** Query the original Runner between independent short capture transactions; never provision or replay it.
+   * @param dispatch Original full dispatch and consumed permit.
+   * @param prepared Original private preparation used by both fresh captures.
+   * @param capture Trusted worker's original owner/current lease transaction, complete and released before Runner HTTP.
+   * @returns Exact Runner facts, or null for GET404 only after both captures still match; no cached stop proof is returned.
+   */
+  async observeDetached(dispatch: StdioDispatchV2, prepared: StdioPreparedV2,
+    capture: StdioCloudCaptureTransactionV2): Promise<StdioCloudObservationV2 | null> {
     const original = this.original(dispatch, prepared); this.bind(original, this.now())
-    return this.request(client, original, 'GET', this.path(original), 'observe')
+    return this.request(capture, original, 'GET', this.path(original), 'observe')
   }
 
   /** Ask only the same original Runner to cancel; its response still needs complete UID stop evidence.
@@ -73,9 +103,20 @@ export class StdioCloudRunTransportV2 {
    * @param prepared Original captured writer.
    * @returns Bounded cancel observation; transport/POST absence rejects without declaring stopped.
    */
-  async cancel(client: PoolClient, dispatch: StdioDispatchV2, prepared: StdioPreparedV2): Promise<StdioCloudObservationV2 | null> {
+  cancel(client: PoolClient, dispatch: StdioDispatchV2, prepared: StdioPreparedV2): Promise<StdioCloudObservationV2 | null> {
+    return this.cancelDetached(dispatch, prepared, (_mode, operation) => operation(client))
+  }
+
+  /** Cancel only the original Runner outside PG; the after transaction must still authenticate its UID quiet facts.
+   * @param dispatch Original dispatch identity, never a replacement action.
+   * @param prepared Original captured writer retained throughout cancellation and observation.
+   * @param capture Trusted worker's original owner/current lease transaction, with observe authority after revocation.
+   * @returns Bounded original cancel observation; capture/lease or HTTP failure retains the writer without a stop certificate.
+   */
+  async cancelDetached(dispatch: StdioDispatchV2, prepared: StdioPreparedV2,
+    capture: StdioCloudCaptureTransactionV2): Promise<StdioCloudObservationV2 | null> {
     const original = this.original(dispatch, prepared); this.bind(original, this.now())
-    return this.request(client, original, 'POST', `${this.path(original)}/cancel`, 'observe')
+    return this.request(capture, original, 'POST', `${this.path(original)}/cancel`, 'observe')
   }
 
   private budget() {
@@ -157,9 +198,9 @@ export class StdioCloudRunTransportV2 {
     return writer
   }
 
-  private async request(client: PoolClient, original: Original, method: 'GET' | 'POST', path: string,
+  private async request(capture: StdioCloudCaptureTransactionV2, original: Original, method: 'GET' | 'POST', path: string,
     mode: 'dispatch' | 'observe', body?: unknown): Promise<StdioCloudObservationV2 | null> {
-    const writer = await this.capture(client, original, mode)
+    const writer = await capture(mode, client => this.capture(client, original, mode))
     // Capture may outlast the permit; an unsent start becomes only a query, including after clock rollback.
     if (mode === 'dispatch' && Date.parse(original.dispatch.permit.expiresAt) <= this.now()) {
       method = 'GET'; path = this.path(original); body = undefined
@@ -170,7 +211,7 @@ export class StdioCloudRunTransportV2 {
         { timeoutMs: this.options.requestTimeoutMs, maxResponseBytes: this.options.maxReplyBytes })
     } catch (error) { if (method === 'GET' && error instanceof KubernetesError && error.status === 404) missing = true; else failed = true }
     // Even a lost response or missing query is observed against the same original writer, never a new one.
-    await this.capture(client, original, 'observe')
+    await capture('observe', client => this.capture(client, original, 'observe'))
     if (failed) throw new PlatformError(409, 'stdio_v2_cloud_runner_unavailable')
     if (missing) return null
     let view: StdioCloudObservationV2['view']
