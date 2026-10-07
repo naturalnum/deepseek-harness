@@ -26,7 +26,7 @@ function fixture(state = 'queued') {
   let noStart = null, creationStopped = false
   const closure = () => ({ formatVersion: 2, kind: 'unstarted_closed', actionId,
     executionRef: original.executionRef, taskDigest, userId: original.task.userId, sessionId: original.task.sessionId,
-    phase: 'discover', state: 'cancelled', startNeverAuthorized: true, preparedDigest: original.prepared?.preparedDigest ?? null,
+    phase: original.task.phase, state: 'cancelled', startNeverAuthorized: true, preparedDigest: original.prepared?.preparedDigest ?? null,
     resource: original.writer ? { kind: 'ready_retained', ...original.writer, mountGeneration: '1', bindingSnapshot }
       : creationStopped ? { kind: 'creation_stopped', name: writer.name, mountGeneration: '1', bindingSnapshot,
         stopEvidence: { status: 'KUBELET_STOPPED', podUid: writer.podUid, sandboxUid: randomUUID(), generation: '1',
@@ -52,7 +52,7 @@ function fixture(state = 'queued') {
     },
     async closeUnstarted(receivedLease) {
       events.push('close-unstarted'); assert.deepEqual(receivedLease, lease)
-      if (original.task.phase !== 'discover') throw new PlatformError(409, 'stdio_v2_no_start_call_unavailable')
+      if (original.task.phase === 'call' && !failures.callContinuation) throw new PlatformError(409, 'stdio_v2_no_start_call_unavailable')
       if (failures.closureProof) throw new PlatformError(409, 'stdio_v2_no_start_resources_unavailable')
       noStart = closure(); original.state = 'cancelled'
       if (failures.closureReply) throw new Error('unknown COMMIT acknowledgement')
@@ -348,18 +348,20 @@ test('an absent closure readback remains deferred and never repeats the uncertai
 })
 
 test('a closure receipt must match every original identity and prepared writer', async t => {
-  for (const [field, change] of [
+  for (const phase of ['discover', 'call']) for (const [field, change] of [
     ['action', receipt => { receipt.actionId = randomUUID() }],
     ['execution', receipt => { receipt.executionRef.executionId = randomUUID() }],
     ['task', receipt => { receipt.taskDigest = 'c'.repeat(64) }],
     ['user', receipt => { receipt.userId = randomUUID() }],
     ['session', receipt => { receipt.sessionId = randomUUID() }],
+    ['phase', receipt => { receipt.phase = phase === 'call' ? 'discover' : 'call' }],
     ['prepared', receipt => { receipt.preparedDigest = 'c'.repeat(64) }],
     ['writer-name', receipt => { receipt.resource.name = 'replacement' }],
     ['writer-pod', receipt => { receipt.resource.podUid = randomUUID() }],
     ['writer-runner', receipt => { receipt.resource.runnerInstanceId = randomUUID() }],
-  ]) await t.test(field, async () => {
+  ]) await t.test(`${phase}:${field}`, async () => {
     const f = fixture('pending'); f.original.cancelRequested = true
+    f.original.task.phase = phase
     f.store.closeUnstarted = async () => { f.events.push('close-unstarted'); throw new Error('unknown COMMIT acknowledgement') }
     f.store.readNoStart = async () => { f.events.push('read-no-start'); const receipt = f.closure(); change(receipt); return receipt }
     assert.equal(await f.create().step(f.lease, new AbortController().signal), 'deferred')
@@ -386,10 +388,22 @@ test('renewal loss during closure suppresses readback after its unknown acknowle
   for (const forbidden of ['read-no-start', 'cancel-creation', 'record', 'release']) assert(!f.events.includes(forbidden))
 })
 
-test('call no-start cancellation remains deferred until its distinct continuation protocol exists', async () => {
+test('call no-start cancellation remains deferred when the store has no continuation service', async () => {
   const f = fixture(); f.original.cancelRequested = true; f.original.task.phase = 'call'
   assert.equal(await f.create().step(f.lease, new AbortController().signal), 'deferred')
   for (const forbidden of ['read-no-start', 'cancel-creation', 'authorize', 'start', 'cancel', 'record']) assert(!f.events.includes(forbidden))
+})
+
+test('a configured call closure finalizes without executor work, including an immutable lost-acknowledgement readback', async t => {
+  for (const lostReply of [false, true]) await t.test(`lost-reply:${lostReply}`, async () => {
+    const f = fixture(); f.original.cancelRequested = true; f.original.task.phase = 'call'
+    f.failures.callContinuation = true; f.failures.closureReply = lostReply
+    assert.equal(await f.create().step(f.lease, new AbortController().signal), 'finalized')
+    assert.equal(f.events.filter(event => event === 'close-unstarted').length, 1)
+    assert.equal(f.events.filter(event => event === 'read-no-start').length, Number(lostReply))
+    for (const forbidden of ['ensure', 'cancel-creation', 'prepare', 'authorize', 'start', 'cancel', 'record']) assert(!f.events.includes(forbidden))
+    assert.equal(f.original.state, 'cancelled'); assert.equal(f.original.writer, null)
+  })
 })
 
 test('concurrent stop waits for the original no-start closure and never authorizes a writer', async () => {

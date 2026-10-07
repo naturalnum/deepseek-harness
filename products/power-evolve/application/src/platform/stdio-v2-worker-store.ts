@@ -12,6 +12,7 @@ import { lockAccountAuthorities } from './account-authority.ts'
 import { transaction } from './database.ts'
 import type { SandboxReady } from './sandbox.ts'
 import type { StdioPreparationViewV2 } from './stdio-v2-authorization.ts'
+import type { StdioCallContinuationV2 } from './stdio-v2-continuations.ts'
 import { assertStdioActionLeaseV2 } from './stdio-v2-leases.ts'
 import { storageBinding } from './workspace-binding-types.ts'
 import { parseStdioNoStartReceiptV2, stdioCreationStopEvidenceV2,
@@ -54,12 +55,15 @@ export class StdioCloudWorkerStoreV2 {
   private readonly limits: StdioLimitsV2
   private readonly schemas: ReturnType<typeof stdioTaskSchemasV2>
   private readonly options: { leaseMs: number; maxActive: number; maxCandidates: number }
-  constructor(private readonly pool: Pool, options: { limits: StdioLimitsV2; leaseMs: number; maxActive: number; maxCandidates: number }) {
+  private readonly continuation: Pick<StdioCallContinuationV2, 'enqueueLeased'> | undefined
+  constructor(private readonly pool: Pool, options: { limits: StdioLimitsV2; leaseMs: number; maxActive: number; maxCandidates: number;
+    continuation?: Pick<StdioCallContinuationV2, 'enqueueLeased'> }) {
     this.limits = stdioLimitsV2.parse(options.limits)
     for (const value of [options.leaseMs, options.maxActive, options.maxCandidates]) {
       if (!Number.isSafeInteger(value) || value <= 0 || value > 2_147_483_647) throw new TypeError('stdio_v2_worker_options_invalid')
     }
     this.options = { leaseMs: options.leaseMs, maxActive: options.maxActive, maxCandidates: options.maxCandidates }
+    this.continuation = options.continuation
     this.schemas = stdioTaskSchemasV2(this.limits)
   }
   private budget() { return { maxDepth: this.limits.maxJsonDepth, maxNodes: this.limits.maxJsonNodes, maxBytes: this.limits.maxInputBytes } }
@@ -205,7 +209,7 @@ export class StdioCloudWorkerStoreV2 {
   private async storedClosure(client: PoolClient, o: Awaited<ReturnType<StdioCloudWorkerStoreV2['read']>>): Promise<StdioNoStartReceiptV2 | null> {
     const raw = (await client.query('SELECT * FROM pe_stdio_v2_no_start_closures WHERE action_id=$1', [o.task.actionId])).rows[0]
     if (!raw) return null
-    const row = z.object({ action_id: uuid, user_id: accountUserId, session_id: uuid, phase: z.literal('discover'),
+    const row = z.object({ action_id: uuid, user_id: accountUserId, session_id: uuid, phase: z.enum(['discover', 'call']),
       execution_target: z.literal('cloud'), execution_id: uuid, task_digest: digest, prepared_digest: digest.nullable(),
       worker_id: stdioWorkerIdV2, lease_epoch: z.coerce.number().int().positive().safe(), receipt: z.unknown(),
       receipt_digest: digest, closed_at: z.date() }).parse(raw)
@@ -394,7 +398,15 @@ export class StdioCloudWorkerStoreV2 {
     if (selectedMode !== 'record') this.startable(o)
     await assertStdioActionLeaseV2(client, selected)
   }
-  /** Close only a cancelled discover that never received start permission; resource cleanup is a separate operation.
+  private async continueNoStart(client: PoolClient, lease: StdioActionLeaseV2, phase: StdioTaskV2['phase']): Promise<void> {
+    if (phase !== 'call') return
+    if (!this.continuation) this.deny('stdio_v2_no_start_call_unavailable')
+    await assertStdioActionLeaseV2(client, lease)
+    await this.continuation.enqueueLeased(client, lease)
+    await assertStdioActionLeaseV2(client, lease)
+  }
+  /** Close a cancelled task that never received start permission; call continuation shares this transaction and original action lease.
+   * Calls require a configured continuation; its failure rolls back the receipt and both terminal writes.
    * @param lease Current original generation; replay still requires its live action lease and never reclaims a slot.
    * @returns The first immutable no-start receipt after both original records become cancelled; no SDK result is minted.
    */
@@ -402,9 +414,12 @@ export class StdioCloudWorkerStoreV2 {
     const selected = stdioActionLeaseV2.parse(lease)
     return transaction(this.pool, async client => {
       const o = await this.current(client, selected)
+      if (o.task.phase === 'call' && !this.continuation) this.deny('stdio_v2_no_start_call_unavailable')
       const prior = await this.storedClosure(client, o)
-      if (prior) return prior
-      if (o.task.phase !== 'discover') this.deny('stdio_v2_no_start_call_unavailable')
+      if (prior) {
+        await this.continueNoStart(client, selected, o.task.phase)
+        return prior
+      }
       if (o.dispatch) this.deny('stdio_v2_start_already_authorized')
       await this.noStartResult(client, selected.actionId)
       if (!o.cancelRequested || !workStates.includes(o.action.state) || !activeExecutions.includes(o.execution.state)) {
@@ -421,12 +436,13 @@ export class StdioCloudWorkerStoreV2 {
       }
       await this.write(client, selected, `INSERT INTO pe_stdio_v2_no_start_closures(action_id,user_id,session_id,phase,execution_target,
         execution_id,task_digest,prepared_digest,worker_id,lease_epoch,receipt,receipt_digest)
-        SELECT $1,$4,$5,'discover','cloud',$6,$7,$8,$2,$3,$9,$10 WHERE ${guard} RETURNING action_id`,
-      [o.task.userId, o.task.sessionId, o.execution.id, o.action.task_digest, receipt.preparedDigest, JSON.stringify(receipt), this.sha('no_start', receipt)])
+        SELECT $1,$4,$5,$11,'cloud',$6,$7,$8,$2,$3,$9,$10 WHERE ${guard} RETURNING action_id`,
+      [o.task.userId, o.task.sessionId, o.execution.id, o.action.task_digest, receipt.preparedDigest, JSON.stringify(receipt), this.sha('no_start', receipt), o.task.phase])
       await this.write(client, selected, `UPDATE pe_stdio_v2_actions SET state='cancelled',cancel_requested=true,
         updated_at=clock_timestamp() WHERE id=$1 AND ${guard}`, [])
       await this.write(client, selected, `UPDATE pe_cloud_executions SET state='cancelled',cancel_requested=true,updated_at=clock_timestamp()
         WHERE id=$4 AND execution_kind='stdio_v2' AND stdio_action_id=$1 AND ${guard}`, [o.execution.id])
+      await this.continueNoStart(client, selected, o.task.phase)
       return receipt
     })
   }

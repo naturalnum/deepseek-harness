@@ -226,7 +226,7 @@ export class StdioCloudWorkerV2 {
 
   private noStartMatches(lease: StdioActionLeaseV2, original: Awaited<ReturnType<StdioCloudWorkerStoreV2['snapshot']>>,
     receipt: StdioNoStartReceiptV2): void {
-    if (original.task.phase !== 'discover' || receipt.actionId !== lease.actionId
+    if (receipt.actionId !== lease.actionId
       || receipt.actionId !== original.task.actionId || receipt.executionRef.kind !== original.executionRef.kind
       || receipt.executionRef.executionId !== original.executionRef.executionId || receipt.taskDigest !== original.taskDigest
       || receipt.userId !== original.task.userId || receipt.sessionId !== original.task.sessionId
