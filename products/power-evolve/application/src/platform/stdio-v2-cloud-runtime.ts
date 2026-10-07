@@ -13,25 +13,29 @@ import { storageBinding } from './workspace-binding-types.ts'
 
 /** Original once reply; a persisted false receipt is observation authority only. */
 export type StdioCloudAuthorizationV2 = z.infer<typeof stdioStartAuthorizationV2>
-/** Explicit original SDK budgets and independent complete-response/transport bounds. */
-export interface StdioCloudRunOptionsV2 { limits: StdioLimitsV2; maxReplyBytes: number; requestTimeoutMs: number }
+/** Explicit SDK/transport bounds and the maximum number of live original permit reservations. */
+export interface StdioCloudRunOptionsV2 { limits: StdioLimitsV2; maxReplyBytes: number; requestTimeoutMs: number; maxTrackedActions: number }
 interface Original { dispatch: StdioDispatchV2; authorization: StdioCloudAuthorizationV2; prepared: StdioPreparedV2;
   dispatchDigest: StdioDispatchV2['taskDigest'] }
+interface Tracked { dispatchDigest: string; executionId: string; expiresAt: number }
 
 /** Calls only the original already captured Runner; every HTTP operation is bracketed by fresh exact capture. */
 export class StdioCloudRunTransportV2 {
   private readonly options: StdioCloudRunOptionsV2
-  private readonly actions = new Map<string, string>()
+  private readonly actions = new Map<string, Tracked>()
   private readonly executions = new Map<string, string>()
+  private observedNow = 0
+  private startsBlockedUntil = 0
   constructor(private readonly manager: Pick<SandboxManager, 'observeReady' | 'captureStdioV2' | 'runnerBounded'>,
     options: StdioCloudRunOptionsV2) {
     this.options = { ...options, limits: stdioLimitsV2.parse(options.limits) }
     if (!Number.isSafeInteger(options.maxReplyBytes) || options.maxReplyBytes <= 0
       || !Number.isSafeInteger(options.requestTimeoutMs) || options.requestTimeoutMs <= 0
-      || options.requestTimeoutMs > 2_147_483_647) throw new TypeError('stdio_v2_cloud_transport_options_invalid')
+      || options.requestTimeoutMs > 2_147_483_647 || !Number.isSafeInteger(options.maxTrackedActions)
+      || options.maxTrackedActions <= 0) throw new TypeError('stdio_v2_cloud_transport_options_invalid')
   }
 
-  /** Consume only the first in-process true reply; every original retry uses GET without rebuilding start authority.
+  /** Consume only the first in-process true reply; expired/repeated replies query and capacity blocks new starts.
    * @param client Original caller transaction holding owner and accepted resource locks.
    * @param dispatch Complete immutable dispatch whose permit is already committed by the Platform.
    * @param authorization Original true response or a persisted false query receipt with the same complete permit.
@@ -40,11 +44,11 @@ export class StdioCloudRunTransportV2 {
    */
   async start(client: PoolClient, dispatch: StdioDispatchV2, authorization: StdioCloudAuthorizationV2,
     prepared: StdioPreparedV2): Promise<StdioCloudObservationV2 | null> {
-    const original = this.original(dispatch, prepared, authorization), first = this.bind(original)
+    const original = this.original(dispatch, prepared, authorization), now = this.now(), first = this.bind(original, now)
     if (first && original.authorization.grantOnce) {
       if (original.prepared.capture.kind !== 'cloud') throw this.changed()
       try { validateStdioStartV2({ dispatch: original.dispatch, authorization: original.authorization }, this.options.limits,
-        { kind: 'cloud', runnerInstanceId: original.prepared.capture.runnerInstanceId }, Date.now()) }
+        { kind: 'cloud', runnerInstanceId: original.prepared.capture.runnerInstanceId }, now) }
       catch (_startRejected) { throw new PlatformError(409, 'stdio_v2_cloud_start_denied') }
       return this.request(client, original, 'POST', '/stdio/v2/executions', 'dispatch',
         { dispatch: original.dispatch, authorization: original.authorization })
@@ -59,7 +63,7 @@ export class StdioCloudRunTransportV2 {
    * @returns Same Runner facts, or null only for an exact GET 404 after both captures still match.
    */
   async observe(client: PoolClient, dispatch: StdioDispatchV2, prepared: StdioPreparedV2): Promise<StdioCloudObservationV2 | null> {
-    const original = this.original(dispatch, prepared); this.bind(original)
+    const original = this.original(dispatch, prepared); this.bind(original, this.now())
     return this.request(client, original, 'GET', this.path(original), 'observe')
   }
 
@@ -70,7 +74,7 @@ export class StdioCloudRunTransportV2 {
    * @returns Bounded cancel observation; transport/POST absence rejects without declaring stopped.
    */
   async cancel(client: PoolClient, dispatch: StdioDispatchV2, prepared: StdioPreparedV2): Promise<StdioCloudObservationV2 | null> {
-    const original = this.original(dispatch, prepared); this.bind(original)
+    const original = this.original(dispatch, prepared); this.bind(original, this.now())
     return this.request(client, original, 'POST', `${this.path(original)}/cancel`, 'observe')
   }
 
@@ -102,12 +106,33 @@ export class StdioCloudRunTransportV2 {
     } catch (_invalidOriginal) { throw this.changed() }
   }
 
-  private bind(original: Original): boolean {
+  private now(): number {
+    // Once expiry retired a reservation, a wall-clock rollback cannot restore its start authority.
+    const now = Date.now()
+    if (!Number.isSafeInteger(now) || now < 0) throw new TypeError('stdio_v2_cloud_clock_invalid')
+    this.observedNow = Math.max(this.observedNow, now)
+    return this.observedNow
+  }
+
+  private bind(original: Original, now: number): boolean {
+    for (const [action, tracked] of this.actions) if (tracked.expiresAt <= now) {
+      this.actions.delete(action); this.executions.delete(tracked.executionId)
+    }
+    if (this.startsBlockedUntil <= now) this.startsBlockedUntil = 0
     const action = original.dispatch.task.actionId, execution = original.dispatch.executionRef.executionId
     const previous = this.actions.get(action), owner = this.executions.get(execution)
-    if (previous !== undefined && previous !== original.dispatchDigest || owner !== undefined && owner !== action) throw this.changed()
+    if (previous !== undefined && previous.dispatchDigest !== original.dispatchDigest || owner !== undefined && owner !== action) throw this.changed()
     if (previous !== undefined) return false
-    this.actions.set(action, original.dispatchDigest); this.executions.set(execution, action)
+    const expiresAt = Date.parse(original.dispatch.permit.expiresAt)
+    if (expiresAt <= now) return false
+    if (this.actions.size >= this.options.maxTrackedActions || original.authorization.grantOnce && this.startsBlockedUntil > now) {
+      // Unknown queries/cancels remain available; their untracked true reply is fenced until its whole permit expires.
+      this.startsBlockedUntil = Math.max(this.startsBlockedUntil, expiresAt)
+      if (original.authorization.grantOnce) throw new PlatformError(409, 'stdio_v2_cloud_tracking_full')
+      return false
+    }
+    this.actions.set(action, { dispatchDigest: original.dispatchDigest, executionId: execution, expiresAt })
+    this.executions.set(execution, action)
     return true
   }
 
@@ -135,6 +160,10 @@ export class StdioCloudRunTransportV2 {
   private async request(client: PoolClient, original: Original, method: 'GET' | 'POST', path: string,
     mode: 'dispatch' | 'observe', body?: unknown): Promise<StdioCloudObservationV2 | null> {
     const writer = await this.capture(client, original, mode)
+    // Capture may outlast the permit; an unsent start becomes only a query, including after clock rollback.
+    if (mode === 'dispatch' && Date.parse(original.dispatch.permit.expiresAt) <= this.now()) {
+      method = 'GET'; path = this.path(original); body = undefined
+    }
     let value: unknown, failed = false, missing = false
     try {
       value = await this.manager.runnerBounded(writer.name, writer.token, method, path, body,

@@ -14,13 +14,14 @@ const limits = { runtimeMs: 10000, requestMs: 2000, stdinGraceMs: 0, terminateGr
   maxInputBytes: 65536, maxMessageBytes: 8192, maxProtocolBytes: 131072, maxProtocolMessages: 100,
   maxJsonDepth: 32, maxJsonNodes: 5000, maxPages: 10, maxTools: 20, maxCatalogBytes: 16384,
   maxToolBytes: 8192, maxResultBytes: 8192, maxStderrBytes: 1024 }
-const options = { limits, maxReplyBytes: 32768, requestTimeoutMs: 3000 }
+const options = { limits, maxReplyBytes: 32768, requestTimeoutMs: 3000, maxTrackedActions: 2 }
 const budget = { maxDepth: limits.maxJsonDepth, maxNodes: limits.maxJsonNodes, maxBytes: limits.maxInputBytes }
 const sha = (domain, value) => stdioSha256V2(domain, value, budget)
 const refused = code => error => error.status === 409 && error.code === code
 const changed = refused('stdio_v2_cloud_original_changed')
 const unavailable = refused('stdio_v2_cloud_runner_unavailable')
 const invalidReply = refused('stdio_v2_cloud_runner_reply_invalid')
+const trackingFull = refused('stdio_v2_cloud_tracking_full')
 const deferred = () => {
   let resolve
   const promise = new Promise(done => { resolve = done })
@@ -107,6 +108,23 @@ function fixture(phase = 'call', selectedOptions = options) {
   return { transport, start, manager, client, task, ref, dispatch, authorization, prepared, privateReady, observed, view, calls, captures, observations }
 }
 
+function anotherOriginal(f, expiresInMs = 60000) {
+  const task = clone(f.task), executionRef = { kind: 'cloud', executionId: randomUUID() }
+  task.actionId = randomUUID(); task.connectionId = randomUUID()
+  const prepared = { ...clone(f.prepared), actionId: task.actionId, executionRef, taskDigest: sha('task', task) }
+  const permit = { ...clone(f.dispatch.permit), actionId: task.actionId, executionRef,
+    taskDigest: prepared.taskDigest, preparedDigest: sha('prepared', prepared), permitId: randomUUID(), authorizationRequestId: randomUUID(),
+    issuedAt: new Date(Date.now() - 1000).toISOString(), expiresAt: new Date(Date.now() + expiresInMs).toISOString() }
+  const dispatch = stdioDispatchV2(limits).parse({ formatVersion: 2, task, taskDigest: prepared.taskDigest,
+    executionRef, preparedDigest: permit.preparedDigest, permit })
+  return { dispatch, authorization: { grantOnce: true, permit: clone(permit) }, prepared }
+}
+
+function replyFor(f, original) {
+  return { ...clone(f.view), actionId: original.dispatch.task.actionId, executionRef: clone(original.dispatch.executionRef),
+    taskDigest: original.dispatch.taskDigest, dispatchDigest: sha('dispatch', original.dispatch) }
+}
+
 test('first true start uses explicit bounded POST between dispatch/observe captures and preserves complete outcome/quiet evidence', async () => {
   const f = fixture(), result = await f.start()
   assert.deepEqual(f.observations, ['dispatch', 'observe']); assert.deepEqual(f.captures, ['dispatch', 'observe'])
@@ -159,10 +177,10 @@ test('early capture/start validation failures cannot retry a true start; cold fa
   const f = fixture(); f.manager.observeFailure = new Error('synthetic unavailable')
   await assert.rejects(f.start()); delete f.manager.observeFailure
   assert.equal((await f.start()).view.state, 'completed'); assert.deepEqual(f.calls.map(call => call.method), ['GET'])
-  const expired = fixture(); expired.dispatch.permit.issuedAt = '2020-01-01T00:00:00.000Z'; expired.dispatch.permit.expiresAt = '2020-01-02T00:00:00.000Z'
-  expired.authorization.permit = clone(expired.dispatch.permit); expired.view.dispatchDigest = sha('dispatch', expired.dispatch)
-  await assert.rejects(expired.start(), refused('stdio_v2_cloud_start_denied')); assert.equal(expired.observations.length, 0)
-  await expired.start(); assert.deepEqual(expired.calls.map(call => call.method), ['GET'])
+  const premature = fixture(); premature.dispatch.permit.issuedAt = new Date(Date.now() + 10000).toISOString()
+  premature.authorization.permit = clone(premature.dispatch.permit); premature.view.dispatchDigest = sha('dispatch', premature.dispatch)
+  await assert.rejects(premature.start(), refused('stdio_v2_cloud_start_denied')); assert.equal(premature.observations.length, 0)
+  await premature.start(); assert.deepEqual(premature.calls.map(call => call.method), ['GET'])
   const cold = fixture(); await cold.transport.start(cold.client, cold.dispatch, { grantOnce: false, permit: cold.dispatch.permit }, cold.prepared)
   assert.deepEqual(cold.calls.map(call => call.method), ['GET'])
 })
@@ -314,7 +332,87 @@ test('revocation during HTTP still performs observe capture and retains exact or
 test('options require explicit safe transport limits rather than fixed runner defaults', () => {
   const manager = fixture().manager
   for (const bad of [{ ...options, maxReplyBytes: 0 }, { ...options, maxReplyBytes: NaN },
-    { ...options, requestTimeoutMs: 0 }, { ...options, requestTimeoutMs: 2_147_483_648 }]) {
+    { ...options, requestTimeoutMs: 0 }, { ...options, requestTimeoutMs: 2_147_483_648 },
+    { ...options, maxTrackedActions: undefined }, { ...options, maxTrackedActions: 0 }, { ...options, maxTrackedActions: 1.5 },
+    { ...options, maxTrackedActions: Number.MAX_SAFE_INTEGER + 1 }]) {
     assert.throws(() => new StdioCloudRunTransportV2(manager, bad), /stdio_v2_cloud_transport_options_invalid/u)
   }
+})
+
+test('capacity rejects untracked true without HTTP but tracked query/cancel and full-budget unknown cleanup remain available', async t => {
+  let now = Date.parse('2026-10-08T00:00:00.000Z'); t.mock.method(Date, 'now', () => now)
+  const f = fixture('call', { ...options, maxTrackedActions: 1 }); await f.start()
+  const unknown = anotherOriginal(f, 90000), third = anotherOriginal(f, 100000)
+  const before = f.calls.length
+  await assert.rejects(f.transport.start(f.client, unknown.dispatch, unknown.authorization, unknown.prepared), trackingFull)
+  assert.equal(f.calls.length, before)
+  f.manager.httpHook = (_method, path) => path.includes(unknown.dispatch.executionRef.executionId) ? replyFor(f, unknown) : clone(f.view)
+  await f.transport.cancel(f.client, unknown.dispatch, unknown.prepared)
+  await f.transport.observe(f.client, unknown.dispatch, unknown.prepared)
+  await f.transport.start(f.client, unknown.dispatch, { ...unknown.authorization, grantOnce: false }, unknown.prepared)
+  assert.deepEqual(f.calls.slice(before).map(call => call.method), ['POST', 'GET', 'GET'])
+  await assert.rejects(f.transport.start(f.client, unknown.dispatch, unknown.authorization, unknown.prepared), trackingFull)
+  await f.start(); await f.transport.cancel(f.client, f.dispatch, f.prepared)
+  assert.deepEqual(f.calls.slice(-2).map(call => call.method), ['GET', 'POST'])
+  now += 61000
+  await assert.rejects(f.transport.start(f.client, third.dispatch, third.authorization, third.prepared), trackingFull)
+  assert.equal(f.transport.actions.size, 0); assert.equal(f.transport.executions.size, 0)
+  now += 40000
+  f.manager.httpHook = (_method, path) => path.includes(unknown.dispatch.executionRef.executionId) ? replyFor(f, unknown) : replyFor(f, third)
+  await f.transport.start(f.client, unknown.dispatch, unknown.authorization, unknown.prepared)
+  assert.equal(f.calls.at(-1).method, 'GET')
+  const fresh = anotherOriginal(f); f.manager.httpHook = () => replyFor(f, fresh)
+  await f.transport.start(f.client, fresh.dispatch, fresh.authorization, fresh.prepared)
+  assert.equal(f.calls.at(-1).method, 'POST'); assert.equal(f.transport.actions.size, 1); assert.equal(f.transport.executions.size, 1)
+})
+
+test('a full-budget unknown false/cancel fences its stale true even after the tracked permit expires; clock rollback never revives old starts', async t => {
+  let now = Date.parse('2026-10-08T01:00:00.000Z'); t.mock.method(Date, 'now', () => now)
+  const f = fixture('call', { ...options, maxTrackedActions: 1 }); await f.start()
+  const unknown = anotherOriginal(f, 90000)
+  f.manager.httpHook = () => replyFor(f, unknown)
+  await f.transport.start(f.client, unknown.dispatch, { ...unknown.authorization, grantOnce: false }, unknown.prepared)
+  assert.equal(f.calls.at(-1).method, 'GET'); assert.equal(f.transport.actions.size, 1)
+  now += 61000
+  await assert.rejects(f.transport.start(f.client, unknown.dispatch, unknown.authorization, unknown.prepared), trackingFull)
+  assert.equal(f.transport.actions.size, 0)
+  now += 30000
+  await f.transport.start(f.client, unknown.dispatch, unknown.authorization, unknown.prepared)
+  assert.equal(f.calls.at(-1).method, 'GET'); assert.equal(f.transport.actions.size, 0)
+  now -= 90000
+  await f.transport.start(f.client, unknown.dispatch, unknown.authorization, unknown.prepared)
+  assert.equal(f.calls.at(-1).method, 'GET'); assert.equal(f.transport.actions.size, 0)
+  assert.equal(f.calls.filter(call => call.method === 'POST' && call.path === '/stdio/v2/executions').length, 1)
+})
+
+test('expired historical queries do not grow either index and expiry frees a slot without replaying a lost original POST', async t => {
+  let now = Date.parse('2026-10-08T02:00:00.000Z'); t.mock.method(Date, 'now', () => now)
+  const f = fixture('call', { ...options, maxTrackedActions: 1 })
+  f.manager.httpHook = method => { if (method === 'POST') throw new Error('synthetic lost original reply'); return clone(f.view) }
+  await assert.rejects(f.start(), unavailable)
+  for (let n = 0; n < 20; n++) {
+    const historical = anotherOriginal(f, -100)
+    f.manager.httpHook = () => replyFor(f, historical)
+    await f.transport.start(f.client, historical.dispatch, historical.authorization, historical.prepared)
+    assert.equal(f.calls.at(-1).method, 'GET'); assert.equal(f.transport.actions.size, 1); assert.equal(f.transport.executions.size, 1)
+  }
+  f.manager.httpHook = () => clone(f.view); await f.start(); assert.equal(f.calls.at(-1).method, 'GET')
+  now += 60001
+  await f.start(); assert.equal(f.calls.at(-1).method, 'GET'); assert.equal(f.transport.actions.size, 0); assert.equal(f.transport.executions.size, 0)
+  const fresh = anotherOriginal(f); f.manager.httpHook = () => replyFor(f, fresh)
+  await f.transport.start(f.client, fresh.dispatch, fresh.authorization, fresh.prepared)
+  assert.equal(f.calls.at(-1).method, 'POST'); assert.equal(f.transport.actions.size, 1); assert.equal(f.transport.executions.size, 1)
+})
+
+test('a reserved start still waiting for capture cannot POST after another call observes its expiry and the wall clock rolls back', async t => {
+  let now = Date.parse('2026-10-08T03:00:00.000Z'); t.mock.method(Date, 'now', () => now)
+  const f = fixture(), entered = deferred(), release = deferred()
+  f.manager.observeHook = async (_mode, count) => { if (count === 1) { entered.resolve(); await release.promise } }
+  f.manager.httpHook = () => { throw new KubernetesError(404, 'synthetic absent') }
+  const original = f.start(); await entered.promise
+  now += 60001
+  assert.equal(await f.start(), null); assert.equal(f.transport.actions.size, 0)
+  now -= 60000; release.resolve()
+  assert.equal(await original, null); assert.deepEqual(f.calls.map(call => call.method), ['GET', 'GET'])
+  assert(f.calls.every(call => call.body === undefined))
 })
