@@ -1,4 +1,4 @@
-/** Account deletion against real isolated V27 PostgreSQL and descriptor-relative POSIX storage. */
+/** Account deletion against real isolated PostgreSQL and descriptor-relative POSIX storage. */
 import assert from 'node:assert/strict'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { execFile } from 'node:child_process'
@@ -14,7 +14,7 @@ import { bootstrapAccount } from '../lib/platform/account-bootstrap.js'
 import { requireActiveAccount } from '../lib/platform/account-authority.js'
 import { accountBootstrapConfig, accountManagementConfig } from '../lib/platform/account-config.js'
 import { AccountService } from '../lib/platform/accounts.js'
-import { initializeDatabase } from '../lib/platform/database.js'
+import { initializeDatabase, transaction } from '../lib/platform/database.js'
 import { FileService } from '../lib/platform/files.js'
 import { IdentityService } from '../lib/platform/identity.js'
 import { SafePosix } from '../lib/platform/safe-posix.js'
@@ -162,6 +162,28 @@ test('account deletion inspects every owned storage root independently of Worksp
     await symlink(f.root, binding.path)
     await rejectsDeletion(f, user)
   })
+})
+
+test('generic STDIO configuration and management receipts block account deletion before any Session exists', pgTest, async t => {
+  const f = await fixture(t), digest = 'a'.repeat(64)
+  for (const kind of ['configuration', 'receipt']) {
+    const user = await f.owner()
+    assert.equal((await f.pool.query('SELECT count(*)::integer AS n FROM pe_sessions WHERE user_id=$1',
+      [user.userId])).rows[0].n, 0)
+    if (kind === 'configuration') {
+      const id = randomUUID()
+      await transaction(f.pool, async client => {
+        await client.query('INSERT INTO pe_stdio_v2_connections(id,user_id,revision) VALUES($1,$2,1)', [id,user.userId])
+        await client.query(`INSERT INTO pe_stdio_v2_configurations(connection_id,user_id,revision,configuration,config_digest)
+          VALUES($1,$2,1,'{"invocation":{"program":"node","argv":["fixture.mjs"],"cwd":"."}}',$3)`,
+        [id,user.userId,digest])
+      })
+    } else {
+      await f.pool.query(`INSERT INTO pe_stdio_v2_management_requests(user_id,request_id,purpose,request,request_digest,receipt)
+        VALUES($1,$2,'delete','{}',$3,'{}')`, [user.userId,randomUUID(),digest])
+    }
+    await rejectsDeletion(f, user)
+  }
 })
 
 test('account deletion permits empty selector metadata and empty default storage scaffolding', pgTest, async t => {
