@@ -3,7 +3,8 @@ import { z } from 'zod'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { stdioCatalogV2, stdioCheckRequestV2, stdioDeploymentV2, stdioDigestV2, stdioExecutorImageV2,
   stdioImageMatchesDeploymentV2, stdioInvocationV2, stdioJsonV2, stdioLimitsV2, stdioObjectV2,
-  stdioScopeV2, type StdioCatalogIdV2, type StdioLimitsV2 } from '@power-evolve/contracts/stdio-mcp'
+  stdioScopeV2, type StdioCatalogIdV2, type StdioLimitsV2, type StdioObjectV2,
+  type StdioToolV2 } from '@power-evolve/contracts/stdio-mcp'
 import { stdioCanonicalJsonV2 } from '@power-evolve/contracts/stdio-mcp-json'
 
 /** Admission budgets for the complete selection and each model-visible description. */
@@ -14,8 +15,13 @@ export const stdioOperationAdmissionLimitsV2 = z.object({
 /** Validated trusted admission limits, separate from each connection's frozen SDK limits. */
 export type StdioOperationAdmissionLimitsV2 = z.infer<typeof stdioOperationAdmissionLimitsV2>
 
-const object = z.record(z.string(), z.json())
-const rawTool = z.object({ name: z.string().min(1), inputSchema: object }).catchall(z.json())
+// These structural carriers return original JSON; the owner factory validates the whole value first.
+const object = z.custom<StdioObjectV2>(value => value !== null && typeof value === 'object' && !Array.isArray(value))
+const rawTool = z.custom<StdioToolV2>(value => {
+  const parsed = object.safeParse(value)
+  return parsed.success && Object.hasOwn(parsed.data, 'name') && typeof parsed.data.name === 'string'
+    && parsed.data.name.length > 0 && Object.hasOwn(parsed.data, 'inputSchema') && object.safeParse(parsed.data.inputSchema).success
+})
 const model = z.object({ name: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/u),
   description: z.string(), parameters: object }).strict()
 const tool = z.object({ rawName: z.string().min(1), model, modelDigest: stdioDigestV2 }).strict()

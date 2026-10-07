@@ -197,3 +197,25 @@ test('schema depth, reference expansion and value work limits reject before expe
     assert.equal(weighted({ value: 'small' }), true)
   }
 })
+
+test('unsupported named __proto__ constraints refuse explicitly; ordinary annotation and data keys stay supported', () => {
+  for (const unsupported of [
+    JSON.parse('{"type":"object","properties":{"__proto__":{"type":"integer","minimum":2}}}'),
+    JSON.parse('{"type":"object","properties":{"nested":{"type":"object","properties":{"__proto__":{"enum":["exact"]}}}}}'),
+  ]) assert.throws(() => compileMcpJsonSchema(unsupported, true), { code: 'mcp_schema_unsupported' })
+  const schema = JSON.parse('{"type":"object","default":{"__proto__":{"annotation":true}},"properties":{"nested":{"type":"object","additionalProperties":{"enum":["exact"]}}},"required":["nested"],"additionalProperties":{"type":"integer","minimum":2}}')
+  const before = structuredClone(schema), validate = compileMcpJsonSchema(schema, true)
+  const valid = JSON.parse('{"__proto__":2,"nested":{"__proto__":"exact"}}')
+  assert.equal(validate(valid), true)
+  for (const invalid of [JSON.parse('{"__proto__":1,"nested":{"__proto__":"exact"}}'),
+    JSON.parse('{"__proto__":2,"nested":{"__proto__":"other"}}'),
+    JSON.parse('{"__proto__":2}')]) assert.equal(validate(invalid), false)
+  assert.deepEqual(schema, before)
+  schema.additionalProperties.minimum = 3
+  assert.equal(compileMcpJsonSchema(schema, true)(valid), false)
+  assert.equal(validate(valid), true, 'Previously compiled constraints are detached from later input mutation')
+  assert(Object.hasOwn(valid, '__proto__'))
+  assert.equal(Object.prototype.minimum, undefined)
+  const invalidJson = structuredClone(before); invalidJson.default.__proto__.annotation = undefined
+  assert.throws(() => compileMcpJsonSchema(invalidJson, true), { code: 'mcp_schema_unsupported' })
+})

@@ -3,8 +3,8 @@ import Ajv, { type Options } from 'ajv'
 import { Ajv2019 } from 'ajv/dist/2019.js'
 import { Ajv2020 } from 'ajv/dist/2020.js'
 import { z } from 'zod'
+import { stdioCanonicalJsonV2 } from '@power-evolve/contracts/stdio-mcp-json'
 
-const schemaObject = z.record(z.string(), z.json())
 const jsonValue = z.json()
 const options: Options = {
   strict: true, strictTypes: false, strictTuples: false, strictRequired: false,
@@ -25,6 +25,14 @@ const MAX_EXPANDED_NODES = 256
 const MAX_VALIDATION_UNITS = 2_000_000
 type Json = z.infer<typeof jsonValue>
 type Schema = boolean | Record<string, Json>
+const schemaObject = z.custom<Record<string, Json>>(value => {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
+  try {
+    // units() already bounds all original schema strings/nodes; encoding validates without projecting keys.
+    stdioCanonicalJsonV2(value, { maxDepth: MAX_DEPTH, maxNodes: MAX_SCHEMA_UNITS, maxBytes: Number.MAX_SAFE_INTEGER })
+    return true
+  } catch (_invalidSchemaJson) { return false }
+})
 
 /** Count JSON nodes and string units iteratively, stopping before deeply nested values reach a parser. */
 function units(value: unknown, limit: number): number {
@@ -103,6 +111,8 @@ function complexity(root: Record<string, Json>, compiler: Ajv): number {
     for (const [keyword, child] of Object.entries(schema)) {
       if (schemaMaps.has(keyword) || keyword === 'dependencies') {
         if (typeof child !== 'object' || child === null || Array.isArray(child)) throw new McpJsonSchemaError()
+        // Ajv omits this named property from compiled constraints; refuse that schema explicitly.
+        if (keyword === 'properties' && Object.hasOwn(child, '__proto__')) throw new McpJsonSchemaError()
         for (const entry of Object.values(child)) {
           if (keyword !== 'dependencies' || !Array.isArray(entry)) nested.push(visit(entry))
         }
@@ -170,6 +180,7 @@ function complexity(root: Record<string, Json>, compiler: Ajv): number {
  * Missing dialect means 2020-12; declared 2019-09 and draft-07 retain their keyword semantics.
  * Constraints retain their meaning. Regex/format, uniqueItems:true, dynamic/recursive references,
  * nested dialect/ID changes, external references, async and custom vocabularies reject explicitly.
+ * Named properties.__proto__ constraints reject because Ajv omits them; other JSON keys remain data.
  * Static document references must be acyclic. Schemas/values have depth at most 32; schemas
  * have at most 65,536 JSON/string units and 256 expanded schema nodes. The work estimate
  * includes literal comparisons, required/dependency lists and property names. That weight
@@ -182,7 +193,7 @@ function complexity(root: Record<string, Json>, compiler: Ajv): number {
 export function compileMcpJsonSchema(schema: unknown, objectRoot = false): McpJsonSchemaValidator {
   try {
     units(schema, MAX_SCHEMA_UNITS)
-    const detached = schemaObject.parse(schema)
+    const detached = structuredClone(schemaObject.parse(schema))
     if (objectRoot && detached.type !== 'object') throw new McpJsonSchemaError()
     const compiler = engine(detached)
     // Ajv resolves standard $anchor references but its strict keyword registry omits the annotation.

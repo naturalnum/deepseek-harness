@@ -201,3 +201,39 @@ test('compiled DTO map is strict, ordered and linked to complete original parame
   assert.equal(validators.selection.safeParse([group, clone(group)]).success, false)
   assert.equal(validators.selection.safeParse([]).success, true, 'Desktop or an empty Cloud selection remains representable')
 })
+
+test('Grant fields and owner selection preserve own __proto__ keys while unsupported named constraints reject', () => {
+  const raw = JSON.parse('{"name":"prototype_data","__proto__":{"extension":true},"_meta":{"__proto__":{"retained":"raw\\u0000"}},"inputSchema":{"type":"object","properties":{"__proto__":{"type":"integer","minimum":2},"nested":{"type":"object","properties":{"__proto__":{"enum":["exact"]}},"required":["__proto__"],"additionalProperties":false}},"required":["__proto__","nested"],"additionalProperties":false}}')
+  const original = clone(raw), input = connection([raw])
+  const model = { name: 'stdio__fixture', description: 'Synthetic stored declaration', parameters: clone(raw.inputSchema) }
+  const group = { ...input, tools: [{ rawName: raw.name, model,
+    modelDigest: digest('spec', { purpose: 'stdio_v2_model', model }) }] }
+  const structural = z.object(stdioOperationConnectionFieldsV2).strict().parse(group)
+  const [bounded] = stdioOperationSchemasV2(limits, admission).selection.parse([group])
+  for (const restored of [group, structural, bounded]) {
+    assert.deepEqual(restored.rawCatalog[0], original)
+    assert(Object.hasOwn(restored.rawCatalog[0], '__proto__'))
+    assert(Object.hasOwn(restored.rawCatalog[0]._meta, '__proto__'))
+    assert.deepEqual(restored.tools[0].model.parameters, original.inputSchema)
+    assert(Object.hasOwn(restored.tools[0].model.parameters.properties, '__proto__'))
+    assert(Object.hasOwn(restored.tools[0].model.parameters.properties.nested.properties, '__proto__'))
+    refused('stdio_v2_schema_unsupported', () => assertStdioToolArgumentsV2(restored.rawCatalog[0],
+      JSON.parse('{"__proto__":2,"nested":{"__proto__":"exact"}}'), limits))
+  }
+  refused('stdio_v2_schema_unsupported', () => compile([input]))
+  const supported = clone(raw)
+  supported.inputSchema = JSON.parse('{"type":"object","default":{"__proto__":{"annotation":true}},"additionalProperties":{"type":"integer","minimum":2}}')
+  const [compiled] = compile([connection([supported])])
+  assert.deepEqual(compiled.rawCatalog[0], supported)
+  const argumentsValue = JSON.parse('{"__proto__":2}')
+  assertStdioToolArgumentsV2(compiled.rawCatalog[0], argumentsValue, limits)
+  assert.deepEqual(argumentsValue, JSON.parse('{"__proto__":2}'))
+  refused('stdio_v2_arguments_invalid', () => assertStdioToolArgumentsV2(compiled.rawCatalog[0],
+    JSON.parse('{"__proto__":1}'), limits))
+  const viaFields = z.object(stdioOperationConnectionFieldsV2).strict().parse(compiled)
+  assert.deepEqual(viaFields, compiled)
+  assert(Object.hasOwn(viaFields.rawCatalog[0], '__proto__'))
+  assert(Object.hasOwn(viaFields.tools[0].model.parameters.default, '__proto__'))
+  assert.deepEqual(raw, original)
+  assert.equal(Object.prototype.extension, undefined)
+})
