@@ -8,11 +8,13 @@ import type { StdioAuthorizationServiceV2 } from './stdio-v2-authorization.ts'
 import type { StdioCloudRunTransportV2 } from './stdio-v2-cloud-runtime.ts'
 import type { StdioCloudWorkerStoreV2 } from './stdio-v2-worker-store.ts'
 import type { StdioResultServiceV2 } from './stdio-v2-results.ts'
+import type { StdioNoStartReceiptV2 } from './stdio-v2-no-start.ts'
 import type { SandboxManager } from './sandbox.ts'
 
 /** Short authority transactions and original, lease-fenced worker records. */
 export type StdioCloudWorkerStoreApiV2 = Pick<StdioCloudWorkerStoreV2,
-  'claimNext' | 'renew' | 'snapshot' | 'beginPreparation' | 'attach' | 'defer' | 'release' | 'capture'>
+  'claimNext' | 'renew' | 'snapshot' | 'beginPreparation' | 'attach' | 'defer' | 'release' | 'capture'
+  | 'assertProvisioning' | 'closeUnstarted' | 'readNoStart'>
 
 /** Explicit polling and renewal inputs; the supervisor supplies a fresh process generation. */
 export interface StdioCloudWorkerOptionsV2 {
@@ -145,13 +147,17 @@ export class StdioCloudWorkerV2 {
       let original = await assertLive()
       if (signal.aborted) return 'stopped'
       if (!original.dispatch && original.cancelRequested) {
-        await this.cancelUnstarted(lease, assertLive)
-        return 'deferred'
+        return await this.cancelUnstarted(lease, assertLive, () => lost)
       }
       if (!original.dispatch) {
         if (!original.prepared) await this.store.beginPreparation(lease)
         if (!original.writer) {
-          const writer = await this.sandboxes.ensureReady(original.task.sessionId, original.task.userId, assertCreation)
+          const { sessionId, userId } = original.task
+          const writer = await this.sandboxes.ensureReady(sessionId, userId, assertCreation, async (client, mode) => {
+            if (lost) throw new WorkInterrupted('lease-lost')
+            await this.store.assertProvisioning(client, lease, sessionId, userId, mode)
+            if (lost) throw new WorkInterrupted('lease-lost')
+          })
           if (lost) throw new WorkInterrupted('lease-lost')
           // Retain a known physical identity even if the supervisor stopped while creation completed.
           await this.store.attach(lease, writer)
@@ -159,8 +165,7 @@ export class StdioCloudWorkerV2 {
         }
         if (signal.aborted) return 'stopped'
         if (original.cancelRequested) {
-          await this.cancelUnstarted(lease, assertLive)
-          return 'deferred'
+          return await this.cancelUnstarted(lease, assertLive, () => lost)
         }
         if (!original.prepared) {
           await this.authorization.prepareLeased(lease)
@@ -168,8 +173,7 @@ export class StdioCloudWorkerV2 {
         }
         if (signal.aborted) return 'stopped'
         if (original.cancelRequested) {
-          await this.cancelUnstarted(lease, assertLive)
-          return 'deferred'
+          return await this.cancelUnstarted(lease, assertLive, () => lost)
         }
         if (original.state !== 'approved') return 'pending'
         if (!original.prepared || original.prepared.prepared.capture.kind !== 'cloud') throw new Error('stdio_v2_preparation_missing')
@@ -199,14 +203,14 @@ export class StdioCloudWorkerV2 {
       const receipt = await this.results.record(lease, observation)
       outcome = receipt.finalized ? 'finalized' : 'observed'
     } catch (error) {
-      if (leaseLost(error) || lost) outcome = 'lease-lost'
+      if (leaseLost(error) || lost) { lost = true; outcome = 'lease-lost' }
       else if (error instanceof WorkInterrupted && error.kind === 'stopped') outcome = 'stopped'
       else {
         try {
-          if (error instanceof WorkInterrupted && error.kind === 'cancelled') await this.cancelUnstarted(lease, assertLive)
+          if (error instanceof WorkInterrupted && error.kind === 'cancelled') outcome = await this.cancelUnstarted(lease, assertLive, () => lost)
           else await this.store.defer(lease, 'stdio_v2_worker_unavailable')
         } catch (deferError) {
-          if (leaseLost(deferError)) outcome = 'lease-lost'
+          if (leaseLost(deferError)) { lost = true; outcome = 'lease-lost' }
           // An unknown DB acknowledgement leaves the existing reservation; no terminal facts are invented.
         }
       }
@@ -220,12 +224,56 @@ export class StdioCloudWorkerV2 {
     return outcome
   }
 
-  private async cancelUnstarted(lease: StdioActionLeaseV2, assertLive: () => ReturnType<StdioCloudWorkerStoreV2['snapshot']>): Promise<void> {
+  private noStartMatches(lease: StdioActionLeaseV2, original: Awaited<ReturnType<StdioCloudWorkerStoreV2['snapshot']>>,
+    receipt: StdioNoStartReceiptV2): void {
+    if (original.task.phase !== 'discover' || receipt.actionId !== lease.actionId
+      || receipt.actionId !== original.task.actionId || receipt.executionRef.kind !== original.executionRef.kind
+      || receipt.executionRef.executionId !== original.executionRef.executionId || receipt.taskDigest !== original.taskDigest
+      || receipt.userId !== original.task.userId || receipt.sessionId !== original.task.sessionId
+      || receipt.phase !== original.task.phase || receipt.preparedDigest !== (original.prepared?.preparedDigest ?? null)
+      || original.writer && (receipt.resource.kind !== 'ready_retained'
+        || receipt.resource.name !== original.writer.name || receipt.resource.podUid !== original.writer.podUid
+        || receipt.resource.runnerInstanceId !== original.writer.runnerInstanceId)) {
+      throw new PlatformError(409, 'stdio_v2_no_start_receipt_changed')
+    }
+  }
+
+  private async closeUnstarted(lease: StdioActionLeaseV2,
+    original: Awaited<ReturnType<StdioCloudWorkerStoreV2['snapshot']>>, isLost: () => boolean): Promise<void> {
+    if (isLost()) throw new WorkInterrupted('lease-lost')
+    let receipt: StdioNoStartReceiptV2
+    try { receipt = await this.store.closeUnstarted(lease) }
+    catch (error) {
+      if (leaseLost(error) || isLost()) throw new WorkInterrupted('lease-lost')
+      if (error instanceof PlatformError) throw error
+      // A missing COMMIT acknowledgement permits only a read of this original closure.
+      const recorded = await this.store.readNoStart(lease.actionId)
+      if (isLost()) throw new WorkInterrupted('lease-lost')
+      if (!recorded) throw error
+      receipt = recorded
+    }
+    if (isLost()) throw new WorkInterrupted('lease-lost')
+    this.noStartMatches(lease, original, receipt)
+  }
+
+  private async cancelUnstarted(lease: StdioActionLeaseV2,
+    assertLive: () => ReturnType<StdioCloudWorkerStoreV2['snapshot']>, isLost: () => boolean): Promise<'finalized' | 'deferred'> {
     await this.store.defer(lease, 'stdio_v2_cancel_requested')
     const original = await assertLive()
-    if (!original.dispatch && !original.writer) {
-      await this.sandboxes.cancelCreation(original.executionRef.executionId, original.task.sessionId, original.task.userId,
-        lease.workerId, async () => { await assertLive() })
+    try {
+      await this.closeUnstarted(lease, original, isLost)
+      return 'finalized'
+    } catch (error) {
+      if (!(error instanceof PlatformError && error.status === 409
+        && error.code === 'stdio_v2_no_start_resources_unavailable')) throw error
     }
+    const current = await assertLive()
+    // Ready writers retain their mounts; only an uncaptured original creation can be cleaned up here.
+    if (current.dispatch || current.writer) return 'deferred'
+    await this.sandboxes.cancelCreation(current.executionRef.executionId, current.task.sessionId, current.task.userId,
+      lease.workerId, async () => { await assertLive() })
+    const stopped = await assertLive()
+    await this.closeUnstarted(lease, stopped, isLost)
+    return 'finalized'
   }
 }
