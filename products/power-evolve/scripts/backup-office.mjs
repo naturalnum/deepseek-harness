@@ -70,7 +70,7 @@ async function cacheInventory(root, missing = false) {
 }
 
 /** Validate a caller's explicit source or target configuration file and physical cache root.
- * @param selection Null for a disabled feature, otherwise exact configFile/cacheRoot absolute paths.
+ * @param selection Null for a disabled feature, otherwise exact operator-visible configFile/cacheRoot absolute paths.
  * @returns The selection, or null; no files or credentials are read.
  */
 export function validateOfficeBackupSelection(selection) {
@@ -82,7 +82,7 @@ export function validateOfficeBackupSelection(selection) {
 /** Read explicit private settings through the Application startup parser; no Kubernetes client is created.
  * @param selection Validated configFile/cacheRoot selection.
  * @param protectedRoots All Workspace, Home, artifact and Skill roots that must not overlap the cache.
- * @returns Original configuration bytes and validated settings.
+ * @returns Original configuration bytes and validated settings; localRoot is the container view, not the physical cache path.
  */
 export async function readOfficeBackupSelection(selection, protectedRoots) {
   selection = validateOfficeBackupSelection(selection)
@@ -92,7 +92,7 @@ export async function readOfficeBackupSelection(selection, protectedRoots) {
     const value = await bytes(selection.configFile, maximumConfigBytes, true)
     const { loadOfficePreviewConfig } = await import('../application/lib/platform/office-preview-config.js')
     const settings = await loadOfficePreviewConfig(selection.configFile, 'in-cluster', protectedRoots, async () => value.toString('utf8'))
-    check(settings.localRoot === selection.cacheRoot)
+    check(absolute(settings.localRoot))
     await physical(selection.cacheRoot, true, true)
     return { selection, settings, bytes: value }
   } catch (_configurationError) { throw new Error('Cannot inspect Office backup configuration') }
@@ -151,8 +151,8 @@ async function verifyRecords(root, state) {
   }
 }
 function descriptor(value) {
-  check(exact(value, ['format', 'sourceConfigFile', 'sourceCacheRoot', 'configFile', 'configSha256', 'cacheDirectory', 'cacheFiles', 'census'])
-    && value.format === 1 && absolute(value.sourceConfigFile) && absolute(value.sourceCacheRoot)
+  check(exact(value, ['format', 'sourceConfigFile', 'sourceLocalRoot', 'sourceCacheRoot', 'configFile', 'configSha256', 'cacheDirectory', 'cacheFiles', 'census'])
+    && value.format === 1 && absolute(value.sourceConfigFile) && absolute(value.sourceLocalRoot) && absolute(value.sourceCacheRoot)
     && value.configFile === configFile && value.cacheDirectory === cacheDirectory
     && sha256(value.configSha256) && Array.isArray(value.cacheFiles)
     && exact(value.census, ['records', 'byteRecords', 'sha256']) && sha256(value.census.sha256)
@@ -185,7 +185,8 @@ export async function captureOfficeBackup(prepared, bundle, state) {
     check((await bytes(prepared.selection.configFile, maximumConfigBytes, true)).equals(prepared.bytes))
     await mkdir(join(bundle, 'config'), { recursive: true, mode: 0o700 })
     await writeFile(join(bundle, configFile), prepared.bytes, { mode: 0o600, flag: 'wx' })
-    return { format: 1, sourceConfigFile: prepared.selection.configFile, sourceCacheRoot: prepared.selection.cacheRoot,
+    return { format: 1, sourceConfigFile: prepared.selection.configFile,
+      sourceLocalRoot: prepared.settings.localRoot, sourceCacheRoot: prepared.selection.cacheRoot,
       configFile, configSha256: digest(prepared.bytes), cacheDirectory, cacheFiles: copied, census }
   } catch (_captureError) { throw new Error('Office cache backup failed') }
 }
@@ -210,7 +211,7 @@ export async function prepareRestoredOfficeBackup(material, bundle, prepared, pr
     const sourceBytes = await bytes(join(bundle, material.configFile), maximumConfigBytes, true)
     check(digest(sourceBytes) === material.configSha256)
     const source = JSON.parse(sourceBytes), target = JSON.parse(prepared.bytes)
-    check(source.localRoot === material.sourceCacheRoot)
+    check(source.localRoot === material.sourceLocalRoot)
     const { loadOfficePreviewConfig } = await import('../application/lib/platform/office-preview-config.js')
     await loadOfficePreviewConfig(material.sourceConfigFile, 'in-cluster', [], async () => sourceBytes.toString('utf8'))
     const placement = new Set(['namespace', 'volumeClaimName', 'volumeSubPath', 'localRoot'])
@@ -234,8 +235,10 @@ export async function writeRestoredOfficeBackup(preparation) {
     await mkdir(dirname(root), { recursive: true, mode: 0o700 })
     await copyPosixTree(join(bundle, material.cacheDirectory), root)
     check(isDeepStrictEqual(await cacheInventory(root), material.cacheFiles))
-    return { cacheRoot: root, configFile: prepared.selection.configFile, configSha256: digest(prepared.bytes),
-      originalConfigSha256: material.configSha256, cacheInventorySha256: digest(canonical(material.cacheFiles)) }
+    return { localRoot: prepared.settings.localRoot, cacheRoot: root,
+      configFile: prepared.selection.configFile, configSha256: digest(prepared.bytes),
+      originalLocalRoot: material.sourceLocalRoot, originalConfigSha256: material.configSha256,
+      cacheInventorySha256: digest(canonical(material.cacheFiles)) }
   } catch (_restoreError) { throw new Error('Office cache restore failed; target remains stopped and partial') }
 }
 
@@ -254,7 +257,9 @@ export async function verifyRestoredOfficeBackup(material, restored, state) {
   try {
     material = descriptor(material); check(isDeepStrictEqual(census, material.census))
     check(restored && absolute(restored.cacheRoot) && absolute(restored.configFile)
-      && digest(await bytes(restored.configFile, maximumConfigBytes, true)) === restored.configSha256)
+      && absolute(restored.localRoot) && restored.originalLocalRoot === material.sourceLocalRoot)
+    const configBytes = await bytes(restored.configFile, maximumConfigBytes, true)
+    check(digest(configBytes) === restored.configSha256 && JSON.parse(configBytes).localRoot === restored.localRoot)
     const root = restored.cacheRoot
     check(isDeepStrictEqual(await cacheInventory(root), material.cacheFiles))
     await verifyRecords(root, state)

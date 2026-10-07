@@ -90,7 +90,7 @@ node products/power-evolve/deploy/backup.mjs restore /private/path/target.json
 
 Create 保存停写意图和原 UID／spec／副本数，先停止 Host 再停止 Platform，要求 PG 工作已结束且无执行写入者。待审批继续保持待审批。结果不明的请求通过读回对账，不自动重放或恢复写入者。显式 `resume` 恢复源副本数；就绪状态另行验收。重试前检查私有围栏；遗留 `.lock` 只有确认记录的进程已退出后才可删除。
 
-配置 Office 预览时，将 `officePreview` 设为 `{ "configFile": "/private/path/office-preview.json", "cacheRoot": "/mnt/power-evolve/office-previews" }`；否则省略或使用 `null`。两个路径必须显式、真实，且与受保护数据、私有投影及 bundle 分离。来源配置须匹配其 `localRoot` 和运行器命名空间。Bundle 保留原私有配置、完整缓存清单、原输入／结果／PDF 字节及 Office 任务记录摘要。Create 拒绝活跃任务、占用的解析器 slot 和任何遗留解析器 Pod，包括已完成或正在删除的 Pod；任务终态本身不能证明已停机。
+配置 Office 预览时，将 `officePreview` 设为 `{ "configFile": "/private/path/office-preview.json", "cacheRoot": "/mnt/power-evolve/office-previews" }`；否则省略或使用 `null`。两个路径必须显式、真实，且与受保护数据、私有投影及 bundle 分离。配置须匹配运行器命名空间。其中 `localRoot` 是容器视图，`cacheRoot` 与 `storageRoot` 一样，是显式选择的操作员可见物理树，两者可以不同。Bundle 分别记录两个路径，不改写配置字节，不从任务推测挂载。操作员核验挂载映射；备份根据所有已记录的输入／结果／PDF 字节及完整清单核验所选物理树。Bundle 保留原私有配置、完整缓存清单、原输入／结果／PDF 字节及 Office 任务记录摘要。Create 拒绝活跃任务、占用的解析器 slot 和任何遗留解析器 Pod，包括已完成或正在删除的 Pod；任务终态本身不能证明已停机。
 
 目标自行提供与原始根、bundle 及新数据／私有投影分离的私有 Office 配置，以及尚不存在的真实缓存根。Restore 在复制前和 PG 恢复后检查目标解析器 Pod 不存在。只有 `namespace`、`volumeClaimName`、`volumeSubPath` 和 `localRoot` 可以与来源配置不同；目标命名空间须匹配运行器作用域。Restore 复制原缓存字节，在报告成功前根据实际恢复的数据库核验其 PG 绑定。配置位置变化会改变 provider generation：旧结果字节仍被保留，但当前预览 API 可能拒绝历史 generation。重新转换是新请求，不能证明历史输出已恢复。
 

@@ -161,3 +161,45 @@ test('target configuration changes before copying or after PG restoration cannot
   await assert.rejects(verifyRestoredOfficeBackup(material, restored, f.state), /configuration.*stopped and partial/u)
   assert.deepEqual(await readFile(join(restored.cacheRoot, f.id, 'output', 'result.pdf')), f.pdf)
 })
+
+
+test('explicit physical Office mappings preserve container configuration bytes and cannot select another cache', async t => {
+  const f = await fixture(t), logicalRoot = '/data/office-previews'
+  const sourceConfig = Buffer.from(JSON.stringify({ ...f.sourceSettings, localRoot: logicalRoot }, null, 2) + '\n')
+  const targetConfig = Buffer.from(JSON.stringify({ ...f.targetSettings, localRoot: logicalRoot }, null, 2) + '\n')
+  for (const localRoot of ['/', 'relative', '/data/\ninvalid']) {
+    await writeFile(f.source.configFile, JSON.stringify({ ...f.sourceSettings, localRoot }))
+    await assert.rejects(readOfficeBackupSelection(f.source, []), /Cannot inspect Office backup configuration/u)
+  }
+  await writeFile(f.source.configFile, sourceConfig)
+  await writeFile(f.target.configFile, targetConfig)
+  const preparedSource = await readOfficeBackupSelection(f.source, [])
+  assert.equal(preparedSource.settings.localRoot, logicalRoot)
+  assert.notEqual(preparedSource.settings.localRoot, preparedSource.selection.cacheRoot)
+  const wrongPhysical = join(f.root, 'wrong-physical-cache')
+  await mkdir(wrongPhysical, { mode: 0o700 })
+  await assert.rejects(captureOfficeBackup(await readOfficeBackupSelection({ ...f.source, cacheRoot: wrongPhysical }, []),
+    f.bundle, f.state), /Office cache backup failed/u)
+  const material = await captureOfficeBackup(preparedSource, f.bundle, f.state)
+  assert.equal(material.sourceLocalRoot, logicalRoot)
+  assert.equal(material.sourceCacheRoot, f.source.cacheRoot)
+  assert.deepEqual(await readFile(join(f.bundle, material.configFile)), sourceConfig)
+  const target = await readOfficeBackupSelection(f.target, [])
+  for (const sourceLocalRoot of [undefined, 'relative', '/wrong-container-view']) {
+    const changed = { ...material, sourceLocalRoot }
+    if (sourceLocalRoot === undefined) delete changed.sourceLocalRoot
+    await assert.rejects(prepareRestoredOfficeBackup(changed, f.bundle, target, []), /restore preparation failed/u)
+    await absent(join(f.target.cacheRoot, f.id, 'output', 'result.pdf'))
+  }
+  const restored = await writeRestoredOfficeBackup(await prepareRestoredOfficeBackup(material, f.bundle, target, []))
+  assert.equal(restored.localRoot, logicalRoot)
+  assert.equal(restored.originalLocalRoot, logicalRoot)
+  assert.equal(restored.cacheRoot, f.target.cacheRoot)
+  await verifyRestoredOfficeBackup(material, restored, f.state)
+  assert.deepEqual(await readFile(join(restored.cacheRoot, f.id, 'output', 'result.pdf')), f.pdf)
+  assert.deepEqual(await readFile(f.source.configFile), sourceConfig)
+  assert.deepEqual(await readFile(f.target.configFile), targetConfig)
+  for (const changed of [{ ...restored, localRoot: '/wrong-container-view' }, { ...restored, originalLocalRoot: '/wrong-source-view' }]) {
+    await assert.rejects(verifyRestoredOfficeBackup(material, changed, f.state), /configuration.*stopped and partial/u)
+  }
+})
