@@ -331,7 +331,7 @@ export class StdioCloudWorkerStoreV2 {
       return observed
     })
   }
-  /** Persist uncertainty without releasing or replacing a writer; cancellation flags are mirrored for creation cleanup.
+  /** Retain the original writer after failure; an unissued approval remains pending or approved, while cancellation mirrors both flags.
    * @param lease Current original worker generation.
    * @param code Bounded diagnostic code; stdio_v2_cancel_requested requests cancellation of both original records.
    */
@@ -341,11 +341,16 @@ export class StdioCloudWorkerStoreV2 {
       const o = await this.current(client, selected)
       if (!workStates.includes(o.action.state) || !activeExecutions.includes(o.execution.state)) this.deny('stdio_v2_action_not_startable')
       const cancel = reason === 'stdio_v2_cancel_requested'
-      await this.write(client, selected, `UPDATE pe_stdio_v2_actions SET state='blocked',error_code=$4,
-        cancel_requested=cancel_requested OR $5,updated_at=clock_timestamp() WHERE id=$1 AND ${guard}`, [reason, cancel])
-      await this.write(client, selected, `UPDATE pe_cloud_executions SET state='uncertain',error_code=$4,
+      // An unissued start may retry the same immutable approval after a temporary capture failure.
+      const retryApproval = !cancel && !o.cancelRequested && !o.dispatch && o.prepared !== null
+        && ['pending', 'approved'].includes(o.action.state) && ['queued', 'starting'].includes(o.execution.state)
+      await this.write(client, selected, `UPDATE pe_stdio_v2_actions SET state=$6,error_code=$4,
+        cancel_requested=cancel_requested OR $5,updated_at=clock_timestamp() WHERE id=$1 AND ${guard}`,
+      [reason, cancel, retryApproval ? o.action.state : 'blocked'])
+      await this.write(client, selected, `UPDATE pe_cloud_executions SET state=$7,error_code=$4,
         cancel_requested=cancel_requested OR $5,updated_at=clock_timestamp() WHERE id=$6
-        AND execution_kind='stdio_v2' AND stdio_action_id=$1 AND ${guard}`, [reason, cancel, o.execution.id])
+        AND execution_kind='stdio_v2' AND stdio_action_id=$1 AND ${guard}`,
+      [reason, cancel, o.execution.id, retryApproval ? o.execution.state : 'uncertain'])
     })
   }
   /** End only this original worker lease; resource reservations and immutable start records remain intact.

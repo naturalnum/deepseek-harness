@@ -27,7 +27,10 @@ function fixture(state = 'queued') {
     async snapshot() { events.push('snapshot'); if (failures.snapshot) throw new PlatformError(409, 'stdio_v2_lease_lost'); return structuredClone(original) },
     async beginPreparation() { events.push('begin'); original.state = 'preparing' },
     async attach(_lease, ready) { events.push('attach'); original.writer = ready },
-    async defer(_lease, code) { events.push(['defer', code]); original.state = 'blocked' },
+    async defer(_lease, code) {
+      events.push(['defer', code])
+      if (code === 'stdio_v2_cancel_requested' || original.dispatch || !original.prepared || original.state !== 'approved') original.state = 'blocked'
+    },
     async release() { events.push('release') },
     async capture(_lease, mode, operation) { events.push(['capture', mode]); return operation({}) },
   }
@@ -37,7 +40,8 @@ function fixture(state = 'queued') {
       original.prepared = prepared; original.state = 'pending'; return prepared
     },
     async authorizeLeased() {
-      events.push('authorize'); original.dispatch = { executionRef: original.executionRef }; original.state = 'dispatch-intent'
+      events.push('authorize'); if (failures.beforeAuthorization) throw new Error('unavailable before permit')
+      original.dispatch = { executionRef: original.executionRef }; original.state = 'dispatch-intent'
       if (failures.authorization) throw new Error('lost commit acknowledgement')
       return { grantOnce: !failures.falseGrant, permit: {} }
     },
@@ -115,6 +119,16 @@ test('lost authorization COMMIT reply recovers through original query without an
   assert.equal(await f.create().step(f.lease, new AbortController().signal), 'finalized')
   assert.equal(f.events.filter(event => event === 'authorize').length, 1)
   assert.equal(f.events.filter(event => event === 'observe').length, 1)
+})
+
+test('capture failure before a start permit retains the exact approval for a later first grant', async () => {
+  const f = fixture('approved'); f.failures.beforeAuthorization = true
+  assert.equal(await f.create().step(f.lease, new AbortController().signal), 'deferred')
+  assert.equal(f.original.state, 'approved'); assert.equal(f.original.dispatch, null)
+  f.failures.beforeAuthorization = false
+  assert.equal(await f.create().step(f.lease, new AbortController().signal), 'finalized')
+  assert.equal(f.events.filter(event => event === 'start').length, 1)
+  assert.equal(f.events.filter(event => event === 'ensure').length, 0)
 })
 
 test('lost first POST reply never repeats start, even after worker replacement', async () => {

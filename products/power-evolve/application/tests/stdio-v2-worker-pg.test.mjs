@@ -114,10 +114,11 @@ test('Cloud STDIO workers use real PG capacity, owner rotation and fenced origin
         VALUES($1,$2,$3,'ready',$4,$5,$6)`, [first.sessionId, alice.userId, writer.name, writer.podUid, writer.runnerInstanceId, binding])
       await store.attach(firstLease, writer); await store.attach(firstLease, writer)
       await assert.rejects(store.attach(firstLease, { ...writer, podUid: randomUUID() }))
-      let captures = 0
+      let captures = 0, failCapture = false
       const auth = new StdioAuthorizationServiceV2(pool, { limits, approvalKey: randomBytes(32), approvalLifetimeMs: 60000,
         async capture(_client, task, executionRef) {
           captures++
+          if (failCapture) throw new Error('synthetic_capture_unavailable')
           const actual = ready.get(task.actionId), capture = { kind: 'cloud', podUid: actual.podUid, podName: actual.name,
             namespace: 'synthetic', nodeName: 'synthetic-node', runnerInstanceId: actual.runnerInstanceId,
             containerId: 'containerd://synthetic', restartCount: 0, mountGeneration: actual.generation,
@@ -134,14 +135,22 @@ test('Cloud STDIO workers use real PG capacity, owner rotation and fenced origin
         { actionId: firstLease.actionId, fingerprint: preparation.fingerprint, decision: 'once' }))
       await auth.decide(alice.approval, { actionId: firstLease.actionId, fingerprint: preparation.fingerprint, decision: 'once' })
       const owner = { kind: 'cloud', runnerInstanceId: writer.runnerInstanceId }
+      failCapture = true
+      await assert.rejects(auth.authorizeLeased(firstLease, randomUUID(), owner), /synthetic_capture_unavailable/u)
+      await store.defer(firstLease, 'stdio_v2_worker_unavailable')
+      const retry = await store.snapshot(firstLease)
+      assert.equal(retry.state, 'approved'); assert.equal(retry.dispatch, null)
+      assert.deepEqual(retry.prepared, preparation)
+      assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_stdio_v2_start_permits WHERE action_id=$1', [firstLease.actionId])).rows[0].n, 0)
+      failCapture = false
       const grants = await Promise.all(Array.from({ length: 6 }, () => auth.authorizeLeased(firstLease, randomUUID(), owner)))
       assert.equal(grants.filter(grant => grant.grantOnce).length, 1)
       assert(grants.every(grant => grant.permit.permitId === grants[0].permit.permitId))
-      assert.equal(captures, 2)
+      assert.equal(captures, 3)
       assert((await store.snapshot(firstLease)).dispatch)
       await store.release(firstLease)
       await assert.rejects(auth.authorizeLeased(firstLease, randomUUID(), owner), code('stdio_v2_lease_lost'))
-      assert.equal(captures, 2)
+      assert.equal(captures, 3)
     })
 
     await t.test('a rejected original remains claimable for cancellation and never obtains another start', async () => {
