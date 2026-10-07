@@ -1,7 +1,7 @@
 /** Real SDK2 and owned synthetic Node peers; no application, Docker, PG or model entry runs. */
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import test, { type TestContext } from 'node:test'
 import { fileURLToPath } from 'node:url'
@@ -20,12 +20,13 @@ interface Trace { event: string; pid?: number; method?: string; argv?: string[];
   env?: Record<string, string>; params?: { name?: string; arguments?: Record<string, unknown> } }
 
 function peer(t: TestContext, mode = 'normal', overrides: Partial<StdioV2Limits> = {}, argv: string[] = []) {
+  mkdirSync(qaRoot, { recursive: true })
   const root = mkdtempSync(join(qaRoot, 'peer-'))
   const record = join(root, 'trace.jsonl')
   const input: StdioV2Input = { phase: 'discover', program: process.execPath,
     argv: [fixture, mode, record, ...argv], cwd: root }
   const options: StdioV2Options = { env: { HOME: root, PATH: dirname(process.execPath), LANG: 'C.UTF-8' },
-    limits: { ...limits, ...overrides }, fingerprintCatalog: fingerprint }
+    identity: { kind: 'current' }, limits: { ...limits, ...overrides }, fingerprintCatalog: fingerprint }
   const trace = (): Trace[] => existsSync(record) ? readFileSync(record, 'utf8').trim().split('\n').map(line => JSON.parse(line)) : []
   t.after(async () => {
     for (const item of trace()) if (item.event === 'pipe-holder' && item.pid) {
@@ -262,4 +263,37 @@ test('caller mutation after startup cannot change the original literal invocatio
   assert.equal(p.trace()[0]?.env?.LANG, 'C.UTF-8')
   assert.deepEqual(p.trace().find(item => item.method === 'tools/call')?.params,
     { name: 'sum', arguments: { left: 3, right: 5 } })
+})
+
+test('explicit Unix identity passes both configured IDs and snapshots them before SDK startup',
+  { skip: process.platform === 'win32' }, async t => {
+    const p = peer(t), identityFile = join(p.root, 'identity.json')
+    assert(process.getuid && process.getgid)
+    const uid = process.getuid(), gid = process.getgid()
+    const script = `import { writeFileSync } from 'node:fs';
+      writeFileSync(${JSON.stringify(identityFile)}, JSON.stringify({ uid: process.getuid(), gid: process.getgid() }));
+      process.argv = [process.execPath, ${JSON.stringify(fixture)}, 'normal', ${JSON.stringify(join(p.root, 'trace.jsonl'))}];
+      await import(${JSON.stringify(new URL('./stdio-v2-fixture.mjs', import.meta.url).href)});`
+    p.input.argv = ['--input-type=module', '-e', script]
+    p.options.identity = { kind: 'unix', uid, gid }
+    const running = runStdioV2(p.input, p.options, new AbortController().signal)
+    p.options.identity.uid = 4_294_967_295; p.options.identity.gid = -1
+    const result = await running
+    if (result.state !== 'completed') assert.fail(result.errorCode)
+    assert.deepEqual(JSON.parse(readFileSync(identityFile, 'utf8')), { uid, gid })
+    assert.equal(result.facts.cleanupConfirmed, true)
+  })
+
+test('missing, extended or invalid Unix identities are rejected before any program start', async t => {
+  for (const identity of [undefined, null, { kind: 'current', uid: 0 }, { kind: 'other' },
+    { kind: 'unix', uid: 1 }, { kind: 'unix', uid: -1, gid: 1 }, { kind: 'unix', uid: 1, gid: -1 },
+    { kind: 'unix', uid: 1.5, gid: 1 }, { kind: 'unix', uid: 1, gid: Number.NaN },
+    { kind: 'unix', uid: 4_294_967_295, gid: 1 }, { kind: 'unix', uid: 1, gid: Number.MAX_SAFE_INTEGER },
+    { kind: 'unix', uid: '1', gid: 1 }, { kind: 'unix', uid: 1, gid: 1, extra: true }]) {
+    const p = peer(t); Reflect.set(p.options, 'identity', identity)
+    const result = await runStdioV2(p.input, p.options, new AbortController().signal)
+    if (result.state !== 'failed') assert.fail('expected identity refusal')
+    assert.equal(result.errorCode, 'identity_invalid'); assert.equal(result.facts.programStartAttempted, false)
+    assert.equal(result.facts.effectMayHaveOccurred, false); assert.equal(p.trace().length, 0)
+  }
 })

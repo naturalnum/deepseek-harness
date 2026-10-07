@@ -25,9 +25,12 @@ export interface StdioV2Limits {
   maxJsonDepth: number; maxJsonNodes: number; maxPages: number; maxTools: number
   maxCatalogBytes: number; maxToolBytes: number; maxResultBytes: number; maxStderrBytes: number
 }
+/** Explicit executor identity; Unix IDs come from trusted executor configuration, never the task. */
+export type StdioV2Identity = { kind: 'current' } | { kind: 'unix'; uid: number; gid: number }
 /** Executor-owned environment and Root's validator/fingerprint; no parent environment is inherited. */
 export interface StdioV2Options {
   env: { HOME: string; PATH: string; LANG: string }
+  identity: StdioV2Identity
   limits: StdioV2Limits
   /** Validate the entire raw directory and compute the shared frozen catalog digest without mutation.
    * @param tools Complete original descriptors, including schemas and extension fields.
@@ -102,6 +105,13 @@ function validate(input: StdioV2Input, options: StdioV2Options): void {
     if (!Number.isSafeInteger(value) || value < (name === 'stdinGraceMs' || name === 'terminateGraceMs' ? 0 : 1)
       || name.endsWith('Ms') && value > 2_147_483_647) throw new Failure('configuration_invalid')
   }
+  const identity = options.identity
+  if (!identity || (identity.kind === 'current' ? Object.keys(identity).join(',') !== 'kind'
+    : identity.kind !== 'unix' || process.platform === 'win32'
+      || Object.keys(identity).sort().join(',') !== 'gid,kind,uid'
+      || [identity.uid, identity.gid].some(value => !Number.isSafeInteger(value) || value < 0 || value > 4_294_967_294))) {
+    throw new Failure('identity_invalid')
+  }
   if (Object.keys(options.env).sort().join(',') !== 'HOME,LANG,PATH'
     || Object.values(options.env).some(value => !value || value.includes('\u0000'))
     || input.phase !== 'discover' && input.phase !== 'call'
@@ -154,6 +164,7 @@ class ChildTransport implements Transport {
     // This public Transport adapter owns raw-byte budgets and direct-child termination only.
     const child = spawn(this.input.program, [...this.input.argv], {
       cwd: this.input.cwd, env: { ...this.options.env }, shell: false, stdio: 'pipe', detached: false,
+      ...(this.options.identity.kind === 'unix' ? { uid: this.options.identity.uid, gid: this.options.identity.gid } : {}),
     })
     this.child = child
     child.once('exit', (code, signal) => {
@@ -297,7 +308,7 @@ class ChildTransport implements Transport {
 
 /** Start one literal program, initialize once, read every tool page and optionally issue one tools/call.
  * @param input Original invocation and, for calls, the frozen full raw directory and arguments.
- * @param options Trusted environment, every deployment budget and Root's complete catalog validator/digest.
+ * @param options Trusted environment and identity, every deployment budget and the complete catalog validator/digest.
  * @param signal Caller cancellation; cleanup still waits its independent configured deadlines.
  * @returns Complete raw JSON or a redacted failure with direct-child cleanup facts; never writer-release authority.
  */
@@ -318,7 +329,7 @@ export async function runStdioV2(input: StdioV2Input, options: StdioV2Options, s
     validate(input, options)
     // Snapshot the approved values for this invocation before yielding to child startup or RPC.
     input = structuredClone(input)
-    options = { ...options, env: { ...options.env }, limits: { ...options.limits } }
+    options = { ...options, env: { ...options.env }, identity: { ...options.identity }, limits: { ...options.limits } }
     transport = new ChildTransport(input, options, fail)
     if (signal.aborted) throw new Failure('aborted')
     const deadline = performance.now() + options.limits.runtimeMs
