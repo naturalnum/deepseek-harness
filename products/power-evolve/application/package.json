@@ -49,6 +49,7 @@
     "@modelcontextprotocol/node": "2.0.0",
     "@modelcontextprotocol/server": "2.0.0",
     "@power-evolve/cloud-web": "workspace:*",
+    "@power-evolve/connector-runner": "workspace:*",
     "@power-evolve/contracts": "workspace:*",
     "ajv": "^8.20.0",
     "fflate": "^0.8.2",

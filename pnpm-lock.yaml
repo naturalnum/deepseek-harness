@@ -13912,6 +13912,9 @@ importers:
       '@power-evolve/cloud-web':
         specifier: workspace:*
         version: link:../cloud-web
+      '@power-evolve/connector-runner':
+        specifier: workspace:*
+        version: link:../connector-runner
       '@power-evolve/contracts':
         specifier: workspace:*
         version: link:../contracts

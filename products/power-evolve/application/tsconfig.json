@@ -4,6 +4,7 @@
   "include": ["src"],
   "references": [
     { "path": "../contracts" },
+    { "path": "../connector-runner" },
     { "path": "../../../vendor/cordis" },
     { "path": "../../../vendor/schemastery" },
     { "path": "../../../packages/core/agent" },

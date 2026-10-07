@@ -52,6 +52,10 @@
     "./device-execution": {
       "types": "./lib/device-execution.d.ts",
       "default": "./lib/device-execution.js"
+    },
+    "./stdio-management": {
+      "types": "./lib/stdio-management.d.ts",
+      "default": "./lib/stdio-management.js"
     }
   },
   "scripts": {
