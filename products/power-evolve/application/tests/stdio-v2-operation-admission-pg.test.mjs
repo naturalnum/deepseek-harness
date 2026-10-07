@@ -460,6 +460,59 @@ test('Cloud selections and call continuations retain original facts and resume o
         assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_stdio_v2_actions WHERE operation_id=$1',[nextId])).rows[0].n,0)
         assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_mcp_action_chains WHERE root_operation_id=$1',[childId])).rows[0].n,0)
       })
+      // Earlier cases intentionally retained queued synthetic follow-ups; settle them before exercising the global worker claim.
+      await pool.query("UPDATE pe_operations SET state='failed' WHERE state='queued'")
+      const selectedTasks=new TaskStore(pool,{maxEventBytes:1048576,leaseMs:60000,maxPendingPerUser:20,maxActivePerUser:2,
+        stdioV2Admission:{selection:selector,reservedNames:[]}})
+      await t.test('production TaskStore accepts and claims two owner-scoped frozen selections through the Grant parser',async()=>{
+        for(const label of ['grant-alice','grant-bob']){
+          const owner=await actor(label);await discovered(owner,label)
+          await pool.query('UPDATE pe_users SET settings=$2 WHERE id=$1',[owner.userId,{model:'fixture-model',maxTokens:64,revision:1}])
+          await pool.query("INSERT INTO pe_user_models(user_id,model_id,label,max_tokens) VALUES($1,'fixture-model','Fixture',64)",[owner.userId])
+          const user={userId:owner.userId,username:label},browserToken=await taskCredential(pool,user),requestId=randomUUID()
+          const accepted=await selectedTasks.accept(user,owner.sessionId,requestId,'hi',browserToken)
+          const saved=(await pool.query('SELECT stdio_v2_selection FROM pe_operations WHERE id=$1',[accepted.operationId])).rows[0].stdio_v2_selection
+          const granted=await selectedTasks.claim(randomUUID())
+          assert.equal(granted.operationId,accepted.operationId);assert.equal(granted.userId,owner.userId)
+          assert.deepEqual(granted.stdioV2Connections,saved)
+          assert.equal(Object.hasOwn(granted.stdioV2Connections[0].rawCatalog[0],'__proto__'),true)
+          assert.deepEqual(granted.stdioV2Connections[0].rawCatalog,rawCatalog)
+          assert.equal(granted.sourceStdioV2ActionId,null);assert.equal(granted.sourceStdioV2NoStartActionId,null)
+          await selectedTasks.finish(granted.token,'completed',null)
+          assert.equal((await selectedTasks.accept(user,owner.sessionId,requestId,'hi',browserToken)).operationId,accepted.operationId)
+        }
+        assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_sandbox_instances')).rows[0].n,0)
+      })
+      await t.test('actual result and formal no-start follow-ups carry distinct source identities and original selections in claims',async()=>{
+        for(const noStart of [false,true]){
+          const owner=await actor(`grant-follow-${noStart}`);await discovered(owner,'follow original')
+          const f=await call(owner,{noStart});assert.equal((await deliver(f)).disposition,'queued')
+          const granted=await selectedTasks.claim(randomUUID())
+          assert.equal(granted.sessionId,owner.sessionId);assert.equal(granted.source,noStart?'stdio_v2_no_start':'stdio_v2_result')
+          assert.equal(granted.sourceStdioV2Phase,'call')
+          assert.equal(granted.sourceStdioV2ActionId,noStart?null:f.lease.actionId)
+          assert.equal(granted.sourceStdioV2NoStartActionId,noStart?f.lease.actionId:null)
+          assert.deepEqual(granted.stdioV2Connections,await select(selector,owner))
+          await selectedTasks.finish(granted.token,'completed',null)
+        }
+      })
+      await t.test('unconfigured selection services and corrupt owner selections cannot issue a Grant or retain an attempt',async()=>{
+        const owner=await actor('grant-closed'),discovery=await discovered(owner,'grant closed')
+        const groups=await select(selector,owner),f=await running(owner,groups)
+        await pool.query("UPDATE pe_operations SET state='queued' WHERE id=$1",[f.operationId])
+        await pool.query('UPDATE pe_sessions SET lease_until=NULL,grant_digest=NULL WHERE id=$1',[f.sessionId])
+        await assert.rejects(tasks.claim(randomUUID()),{code:'stdio_v2_admission_unavailable'})
+        assert.equal((await pool.query('SELECT state,attempts FROM pe_operations WHERE id=$1',[f.operationId])).rows[0].attempts,0)
+        assert.equal((await pool.query('SELECT lease_until FROM pe_sessions WHERE id=$1',[f.sessionId])).rows[0].lease_until,null)
+        await pool.query("UPDATE pe_operations SET state='failed' WHERE id=$1",[f.operationId])
+        const corrupt=await running(owner,original)
+        await pool.query("UPDATE pe_operations SET state='queued' WHERE id=$1",[corrupt.operationId])
+        await pool.query('UPDATE pe_sessions SET lease_until=NULL,grant_digest=NULL WHERE id=$1',[corrupt.sessionId])
+        await assert.rejects(selectedTasks.claim(randomUUID()),{code:'stdio_v2_origin_changed'})
+        assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_attempts WHERE operation_id=$1',[corrupt.operationId])).rows[0].n,0)
+        assert.equal((await pool.query('SELECT lease_until FROM pe_sessions WHERE id=$1',[corrupt.sessionId])).rows[0].lease_until,null)
+        assert.equal((await pool.query('SELECT enabled FROM pe_stdio_v2_connections WHERE id=$1',[discovery.connectionId])).rows[0].enabled,true)
+      })
     } finally {
       await pool?.end();try{if(created)await admin.query(`DROP DATABASE "${database}"`)}finally{await admin.end();await rm(root,{recursive:true,force:true})}
     }

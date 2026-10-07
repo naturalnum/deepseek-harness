@@ -12,6 +12,7 @@ import { continuationInput } from '../continuation-input.ts'
 import { mcpOperationTools } from '../mcp-operation-contracts.ts'
 import { selectMcpOperationTools, type McpOperationAdmissionLimits } from './mcp-admission.ts'
 import { requireActiveAccount, requireBrowserAccount } from './account-authority.ts'
+import type { StdioOperationAdmissionV2 } from './stdio-v2-operation-admission.ts'
 
 interface SessionRow {
   id: string
@@ -31,6 +32,7 @@ export interface TaskLimits {
   readonly executionEnabled?: boolean
   readonly mcpEnabled?: boolean
   readonly remoteMcpAdmission?: McpOperationAdmissionLimits
+  readonly stdioV2Admission?: { readonly selection: Pick<StdioOperationAdmissionV2, 'select' | 'restore'>; readonly reservedNames: readonly string[] }
   readonly stdioMcpEnabled?: boolean
   readonly sshEnabled?: boolean
 }
@@ -173,13 +175,15 @@ export class TaskStore {
            WHERE c.user_id=$1 AND c.enabled=true AND c.deleted_at IS NULL ORDER BY c.created_at,c.id`, [user.userId])
         : { rows: [] }
       const ssh = z.array(sshSelection).max(8).parse(sshRows.rows)
+      const stdioV2 = this.limits.stdioV2Admission ? await this.limits.stdioV2Admission.selection.select(client, user.userId, session, target,
+        [...this.limits.stdioV2Admission.reservedNames, ...remoteMcp.map(tool => tool.model.name)]) : []
       const id = randomUUID()
       await client.query(
         `INSERT INTO pe_operations(id,session_id,request_id,input,settings,skill_selection,mcp_selection,
-          stdio_mcp_selection,ssh_selection,execution_target,remote_mcp_selection,state)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'queued')`,
+          stdio_mcp_selection,ssh_selection,execution_target,remote_mcp_selection,stdio_v2_selection,state)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'queued')`,
         [id, session, requestId, text, config, JSON.stringify(selection), JSON.stringify(mcp),
-          JSON.stringify(stdio), JSON.stringify(ssh), JSON.stringify(target), JSON.stringify(remoteMcp)],
+          JSON.stringify(stdio), JSON.stringify(ssh), JSON.stringify(target), JSON.stringify(remoteMcp), JSON.stringify(stdioV2)],
       )
       await client.query('SELECT pg_notify(\'pe_tasks\',$1)', [session])
       return { accepted: true, operationId: id, state: 'queued' }
@@ -254,19 +258,19 @@ export class TaskStore {
   async claim(workerId: string): Promise<Grant | null> {
     return transaction(this.pool, async client => {
       const candidate = await client.query<{
-        id: string; session_id: string; user_id: string; request_id: string; input: string; settings: unknown;
+        id: string; session_id: string; user_id: string; workspace_id: string; request_id: string; input: string; settings: unknown;
         skill_selection: unknown; mcp_selection: unknown; stdio_mcp_selection: unknown; ssh_selection: unknown;
-        remote_mcp_selection: unknown;
+        remote_mcp_selection: unknown; stdio_v2_selection: unknown;
         execution_target: unknown;
-        source: 'user' | 'platform_action' | 'sandbox_result' | 'desktop_result' | 'stdio_mcp_result'
-          | 'ssh_execute_result' | 'remote_mcp_result';
+        source: Grant['source'];
         source_action_id: string | null; source_execution_id: string | null; source_desktop_execution_id: string | null;
         source_stdio_mcp_call_id: string | null;
         source_ssh_execute_action_id: string | null; source_mcp_action_id: string | null;
+        source_stdio_v2_action_id: string | null; source_stdio_v2_no_start_action_id: string | null; source_stdio_v2_phase: string | null;
       }>(
-        `SELECT o.id,o.session_id,s.user_id,o.request_id,o.input,o.settings,o.skill_selection,o.mcp_selection,o.remote_mcp_selection,
+        `SELECT o.id,o.session_id,s.user_id,s.workspace_id,o.request_id,o.input,o.settings,o.skill_selection,o.mcp_selection,o.remote_mcp_selection,o.stdio_v2_selection,
          o.stdio_mcp_selection,o.ssh_selection,o.source,o.source_action_id,o.source_execution_id,
-         o.source_desktop_execution_id,o.source_stdio_mcp_call_id,o.source_ssh_execute_action_id,o.source_mcp_action_id,o.execution_target
+         o.source_desktop_execution_id,o.source_stdio_mcp_call_id,o.source_ssh_execute_action_id,o.source_mcp_action_id,o.source_stdio_v2_action_id,o.source_stdio_v2_no_start_action_id,o.source_stdio_v2_phase,o.execution_target
          FROM pe_operations o JOIN pe_sessions s ON s.id=o.session_id JOIN pe_users u ON u.id=s.user_id
          WHERE u.enabled=true AND u.deleted_at IS NULL AND o.state IN ('queued','running')
          AND (s.lease_until IS NULL OR s.lease_until<=now())
@@ -300,12 +304,22 @@ export class TaskStore {
       const epoch = updated.rows[0]!.lease_epoch
       await client.query('UPDATE pe_operations SET state=\'running\',attempts=attempts+1 WHERE id=$1', [row.id])
       await client.query('INSERT INTO pe_attempts(operation_id,epoch,worker_id) VALUES($1,$2,$3)', [row.id, epoch, workerId])
+      const remoteMcpTools = mcpOperationTools.parse(row.remote_mcp_selection)
+      const stdioV2Connections = this.limits.stdioV2Admission ? this.limits.stdioV2Admission.selection.restore(row.stdio_v2_selection,
+        [...this.limits.stdioV2Admission.reservedNames, ...remoteMcpTools.map(tool => tool.model.name)]) : []
+      if (!this.limits.stdioV2Admission && !z.array(z.never()).safeParse(row.stdio_v2_selection).success) {
+        throw new PlatformError(409, 'stdio_v2_admission_unavailable')
+      }
+      if (stdioV2Connections.some(group => group.scopeBinding.kind !== 'cloud' || group.scopeBinding.userId !== row.user_id
+        || group.scopeBinding.workspaceId !== row.workspace_id || executionTarget.parse(row.execution_target).kind !== 'cloud')) {
+        throw new PlatformError(409, 'stdio_v2_origin_changed')
+      }
       return grant.parse({
         operationId: row.id, sessionId: row.session_id, userId: row.user_id, requestId: row.request_id,
         text: row.source === 'user' ? row.input : continuationInput(row.input, this.limits.maxEventBytes),
         settings: settings.parse(row.settings), selection: z.array(skillSelection).max(256).parse(row.skill_selection),
         mcpConnections: z.array(mcpSelection).max(1).parse(row.mcp_selection),
-        remoteMcpTools: mcpOperationTools.parse(row.remote_mcp_selection),
+        remoteMcpTools, stdioV2Connections,
         stdioMcpConnections: z.array(stdioMcpSelection).max(1).parse(row.stdio_mcp_selection),
         sshConnections: z.array(sshSelection).max(8).parse(row.ssh_selection),
         source: row.source, sourceActionId: row.source_action_id,
@@ -313,6 +327,8 @@ export class TaskStore {
         sourceStdioMcpCallId: row.source_stdio_mcp_call_id,
         sourceSshExecuteActionId: row.source_ssh_execute_action_id,
         sourceMcpActionId: row.source_mcp_action_id,
+        sourceStdioV2ActionId: row.source_stdio_v2_action_id, sourceStdioV2NoStartActionId: row.source_stdio_v2_no_start_action_id,
+        sourceStdioV2Phase: row.source_stdio_v2_phase,
         target: executionTarget.parse(row.execution_target), executionEnabled: this.limits.executionEnabled ?? false,
         token, epoch,
       })

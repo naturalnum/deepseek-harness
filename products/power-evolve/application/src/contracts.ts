@@ -5,6 +5,8 @@ import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
 import { MAX_INPUT_JSON_BYTES } from './continuation-input.ts'
 import { mcpOperationTools } from './mcp-operation-contracts.ts'
 import { mcpActionId } from './mcp-action-contracts.ts'
+import { stdioOperationConnectionFieldsV2 } from './stdio-v2-operation-contracts.ts'
+import { stdioActionRequestV2 } from '@power-evolve/contracts/stdio-mcp'
 import { workspaceCreateSelection } from '@power-evolve/contracts/workspace-binding'
 
 import type { UserId } from '@power-evolve/contracts/account'
@@ -144,19 +146,23 @@ export const grant = z.object({
   epoch: z.number().int().positive(),
   settings,
   source: z.enum(['user', 'platform_action', 'sandbox_result', 'desktop_result', 'stdio_mcp_result',
-    'ssh_execute_result', 'remote_mcp_result']).default('user'),
+    'ssh_execute_result', 'remote_mcp_result', 'stdio_v2_result', 'stdio_v2_no_start']).default('user'),
   sourceActionId: z.uuid().nullable().default(null),
   sourceExecutionId: z.uuid().nullable().default(null),
   sourceDesktopExecutionId: z.uuid().nullable().default(null),
   sourceStdioMcpCallId: z.uuid().nullable().default(null),
   sourceSshExecuteActionId: z.uuid().nullable().default(null),
   sourceMcpActionId: mcpActionId.nullable().default(null),
+  sourceStdioV2ActionId: stdioActionRequestV2.shape.actionId.nullable().default(null),
+  sourceStdioV2NoStartActionId: stdioActionRequestV2.shape.actionId.nullable().default(null),
+  sourceStdioV2Phase: z.literal('call').nullable().default(null),
   target: executionTarget.default({ kind: 'cloud' }),
   executionEnabled: z.boolean().default(false),
   skills: z.array(skillSnapshot).max(256).default([]),
   selection: z.array(skillSelection).max(256).default([]),
   mcpConnections: z.array(mcpSelection).max(1).default([]),
   remoteMcpTools: mcpOperationTools.default([]),
+  stdioV2Connections: z.array(z.object(stdioOperationConnectionFieldsV2).strict()).default([]),
   stdioMcpConnections: z.array(stdioMcpSelection).max(1).default([]),
   sshConnections: z.array(sshSelection).max(8).default([]),
 }).strict().refine(value => value.source !== 'user' || value.text.length <= 16_384,

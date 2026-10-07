@@ -106,7 +106,7 @@ Device 的 `OwnedDeviceContainer.captureImage` 检查可信 Docker config ID、O
 
 相邻 schema 37 为 call 的 no-start 续接提供独立的结案来源。实际 Runner 续接仍要求原结果；no-start 来源不能代替该结果。两种来源都绑定原调用、会话及唯一续接请求。此迁移不启用 call 结案或派发。API、Cloud、Device、固定 STDIO、SSH 和远程 MCP 续接复制全部原工具选择、设置、执行目标与根请求身份，不在续接时刷新目录。
 
-`StdioOperationAdmissionV2` 根据当前工作区绑定、原始发现任务、完整 Prepared scope 和已审查执行镜像，固定仅属于用户的 Cloud 工具目录。恢复操作时校验完整模型工具映射；后续目录或配置变更不能改写该映射。描述元数据和参数 JSON 保留自身的 `__proto__` 字段。当前校验器会跳过 `properties` 或 `dependencies` 中该名称的约束，因此此类 schema 不受支持。`StdioCallContinuationV2` 在原动作租约及调用方持有的授权锁内排入唯一续接，实际结果与 no-start 使用独立来源。插入失败会回滚调用链停止状态和续接标记。这些内部服务仍须接入 TaskStore、结果及 no-start 处理后才能启用 Profile。
+`StdioOperationAdmissionV2` 根据当前工作区绑定、原始发现任务、完整 Prepared scope 和已审查执行镜像，固定仅属于用户的 Cloud 工具目录。恢复操作时校验完整模型工具映射；后续目录或配置变更不能改写该映射。描述元数据和参数 JSON 保留自身的 `__proto__` 字段。当前校验器会跳过 `properties` 或 `dependencies` 中该名称的约束，因此此类 schema 不受支持。`StdioCallContinuationV2` 在原动作租约及调用方持有的授权锁内排入唯一续接，实际结果与 no-start 使用独立来源。插入失败会回滚调用链停止状态和续接标记。TaskStore 在受理时保存这些选择，并在认领时恢复为操作 Grant；准入配置缺失，或用户、工作区、执行目标不一致，会拒绝认领。启用 Profile 前仍须完成部署组合、每个 Agent 的工具安装及私有路由接线。
 
 `StdioCallAdmissionV2` 只从当前 grant 保存的工具选择解析公共名称，原子保存调用及执行后才返回回执。相同请求先复用原回执，再判断后续撤销或容量变化。新调用重新核验连接、目录、逻辑存储和已审查镜像，消耗与远程 MCP 共用的原 User 根请求预算；子操作不能成为新的预算根。审批有效期不超过该根请求，首次启动在 capture 后重新检查取消状态与数据库时钟期限。会话取消能够停止 Agent 对话结束后的后台调用，同时保留后来独立提交的输入。账号禁用会永久取消已有调用链的已完成根请求；重新启用账号不能恢复其旧任务。观察和清理继续保留原写者及租约。
 
