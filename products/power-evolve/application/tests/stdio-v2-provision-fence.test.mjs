@@ -76,3 +76,38 @@ test('late creation UID persistence is refused on the same resource client befor
   assert.equal(outer, 1); assert(f.events.includes('ROLLBACK'))
   assert(f.events.every(value => !value.startsWith('UPDATE'))); assert.deepEqual(f.requests, [])
 })
+
+test('expiry after an existing-slot mismatch prevents its quarantine transaction from committing', async () => {
+  const f = fixture(), original = f.client.query; let checks = 0
+  f.manager.readyBinding = async () => ({})
+  f.client.query = async text => {
+    if (text.startsWith('INSERT INTO pe_mount_slots')) { f.events.push(text); return { rows: [], rowCount: 0 } }
+    if (text.startsWith('SELECT * FROM pe_mount_slots')) {
+      f.events.push(text); return { rows: [{ ...f.slot, state: 'ready', pod_uid: null, runner_instance_id: null }], rowCount: 1 }
+    }
+    if (text.startsWith('UPDATE pe_mount_slots')) { f.events.push(text); return { rows: [], rowCount: 1 } }
+    return original(text)
+  }
+  await assert.rejects(f.manager.acquire(f.sessionId, f.userId, f.workspaceId, async () => {
+    if (++checks === 2) throw new Error('lease expired while reading slot')
+  }), /lease expired while reading slot/u)
+  assert.equal(checks, 2); assert(f.events.includes('ROLLBACK')); assert(!f.events.includes('COMMIT'))
+})
+
+test('a closed provisioning action cannot delete the previously selected idle writer during handoff', async () => {
+  const f = fixture()
+  await assert.rejects(f.manager.handoffMutation({ ...f.slot, state: 'stopping' }, async () => {
+    throw new Error('original action closed')
+  }, undefined, () => f.manager.kube.call('DELETE', '/sandboxes/original')), /original action closed/u)
+  assert.deepEqual(f.requests, []); assert(f.events.includes('ROLLBACK'))
+})
+
+test('a fenced ready reuse mismatch retains its writer for reconciliation without an unfenced quarantine', async () => {
+  const f = fixture()
+  f.manager.acquire = async () => ({ kind: 'ready', slot: { ...f.slot, pod_uid: randomUUID(), runner_instance_id: randomUUID() }, binding: {} })
+  f.manager.matchesInstance = async () => false
+  f.manager.quarantine = async () => { throw new Error('Unfenced quarantine prohibited') }
+  await assert.rejects(f.manager.ensureReady(f.sessionId, f.userId, async () => {}, async () => {}),
+    error => error.code === 'mount_instance_changed')
+  assert.deepEqual(f.requests, [])
+})
