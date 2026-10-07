@@ -3,7 +3,7 @@ import type { Pool, PoolClient } from 'pg'
 import { z } from 'zod'
 import { stdioApprovalBindingV2, stdioDigestV2, stdioDispatchV2, stdioExecutionRefV2, stdioInvocationV2, stdioJsonV2,
   stdioLimitsV2, stdioPreparedV2, stdioStartPermitV2, stdioTaskSchemasV2,
-  type StdioDispatchV2, type StdioExecutionRefV2, type StdioLimitsV2, type StdioTaskV2 } from '@power-evolve/contracts/stdio-mcp'
+  type StdioDigestV2, type StdioDispatchV2, type StdioExecutionRefV2, type StdioLimitsV2, type StdioTaskV2 } from '@power-evolve/contracts/stdio-mcp'
 import { stdioActionLeaseV2, stdioWorkerIdV2, type StdioActionLeaseV2, type StdioWorkerIdV2 } from '@power-evolve/contracts/stdio-runtime'
 import { stdioCatalogFingerprintV2, stdioSha256V2, type StdioDigestDomainV2 } from '@power-evolve/connector-runner/stdio-v2-digest'
 import { accountUserId } from '../account-contracts.ts'
@@ -14,6 +14,8 @@ import type { SandboxReady } from './sandbox.ts'
 import type { StdioPreparationViewV2 } from './stdio-v2-authorization.ts'
 import { assertStdioActionLeaseV2 } from './stdio-v2-leases.ts'
 import { storageBinding } from './workspace-binding-types.ts'
+import { parseStdioNoStartReceiptV2, stdioCreationStopEvidenceV2,
+  type StdioNoStartReceiptV2, type StdioNoStartResourceV2 } from './stdio-v2-no-start.ts'
 
 const uuid = z.uuid(), digest = stdioDigestV2, text = z.string().min(1).refine(value => !value.includes('\0'))
 const actionRow = z.object({ id: uuid, user_id: accountUserId, session_id: uuid, connection_id: uuid,
@@ -38,6 +40,7 @@ const guard = `EXISTS(SELECT 1 FROM pe_stdio_v2_actions a WHERE a.id=$1 AND a.le
 /** Original task and writer for one internal Cloud worker; this view grants no executor start. */
 export interface StdioCloudWorkerSnapshotV2 {
   readonly task: StdioTaskV2
+  readonly taskDigest: StdioDigestV2
   readonly executionRef: Extract<StdioExecutionRefV2, { kind: 'cloud' }>
   readonly state: string
   readonly cancelRequested: boolean
@@ -194,6 +197,99 @@ export class StdioCloudWorkerStoreV2 {
       || original.writer && (original.writer.name !== ready.name || original.writer.podUid !== ready.podUid
         || original.writer.runnerInstanceId !== ready.runnerInstanceId)) this.deny('stdio_v2_writer_changed')
   }
+  private async noStartResult(client: PoolClient, id: StdioActionLeaseV2['actionId']): Promise<void> {
+    if ((await client.query('SELECT action_id FROM pe_stdio_v2_results WHERE action_id=$1', [id])).rowCount) {
+      this.deny('stdio_v2_start_already_authorized')
+    }
+  }
+  private async storedClosure(client: PoolClient, o: Awaited<ReturnType<StdioCloudWorkerStoreV2['read']>>): Promise<StdioNoStartReceiptV2 | null> {
+    const raw = (await client.query('SELECT * FROM pe_stdio_v2_no_start_closures WHERE action_id=$1', [o.task.actionId])).rows[0]
+    if (!raw) return null
+    const row = z.object({ action_id: uuid, user_id: accountUserId, session_id: uuid, phase: z.literal('discover'),
+      execution_target: z.literal('cloud'), execution_id: uuid, task_digest: digest, prepared_digest: digest.nullable(),
+      worker_id: stdioWorkerIdV2, lease_epoch: z.coerce.number().int().positive().safe(), receipt: z.unknown(),
+      receipt_digest: digest, closed_at: z.date() }).parse(raw)
+    const receipt = parseStdioNoStartReceiptV2(row.receipt, this.limits)
+    if (row.action_id !== o.task.actionId || row.user_id !== o.task.userId || row.session_id !== o.task.sessionId
+      || row.execution_id !== o.execution.id || row.phase !== o.task.phase || row.task_digest !== o.action.task_digest
+      || row.prepared_digest !== (o.prepared?.preparedDigest ?? null) || receipt.actionId !== row.action_id
+      || receipt.userId !== row.user_id || receipt.sessionId !== row.session_id || receipt.phase !== row.phase
+      || !this.same(receipt.executionRef, o.executionRef) || receipt.taskDigest !== row.task_digest
+      || receipt.preparedDigest !== row.prepared_digest || this.sha('no_start', receipt) !== row.receipt_digest
+      || o.dispatch || o.action.state !== 'cancelled' || o.execution.state !== 'cancelled'
+      || !o.action.cancel_requested || !o.execution.cancel_requested) this.deny('stdio_v2_no_start_receipt_changed')
+    const resource = receipt.resource
+    if (resource.kind !== 'unallocated' && !this.scopeBinding(o, resource.bindingSnapshot)
+      || resource.kind === 'creation_stopped' && (resource.stopEvidence.sessionId !== o.task.sessionId
+        || resource.stopEvidence.generation !== resource.mountGeneration
+        || !this.same(resource.stopEvidence.bindingSnapshot, resource.bindingSnapshot))) this.deny('stdio_v2_no_start_receipt_changed')
+    if (resource.kind === 'ready_retained') {
+      if (!o.writer || resource.name !== o.writer.name || resource.podUid !== o.writer.podUid
+        || resource.runnerInstanceId !== o.writer.runnerInstanceId || o.prepared !== null
+          && o.prepared.prepared.capture.kind === 'cloud' && o.prepared.prepared.capture.mountGeneration !== resource.mountGeneration) {
+        this.deny('stdio_v2_no_start_receipt_changed')
+      }
+    } else if (o.writer !== null || o.prepared !== null) this.deny('stdio_v2_no_start_receipt_changed')
+    await this.noStartResult(client, o.task.actionId)
+    return receipt
+  }
+  private scopeBinding(o: Awaited<ReturnType<StdioCloudWorkerStoreV2['read']>>, binding: z.infer<typeof storageBinding>): boolean {
+    const scope = o.task.scopeBinding
+    return scope.kind === 'cloud' && binding.workspaceId === scope.workspaceId && binding.generation === scope.bindingGeneration
+      && binding.spaceId === scope.target.spaceId && binding.rootRelativePath === scope.target.rootRelativePath
+  }
+  private async noStartResource(client: PoolClient, o: Awaited<ReturnType<StdioCloudWorkerStoreV2['read']>>): Promise<StdioNoStartResourceV2> {
+    const scope = o.task.scopeBinding
+    if (scope.kind !== 'cloud') this.deny('stdio_v2_no_start_resources_unavailable')
+    if (!(await client.query('SELECT id FROM pe_workspaces WHERE id=$1 AND user_id=$2 FOR UPDATE',
+      [scope.workspaceId, o.task.userId])).rowCount) this.deny('stdio_v2_no_start_resources_unavailable')
+    const rawSlot = (await client.query('SELECT * FROM pe_mount_slots WHERE user_id=$1 FOR UPDATE', [o.task.userId])).rows[0]
+    const rawInstance = (await client.query('SELECT * FROM pe_sandbox_instances WHERE session_id=$1 AND user_id=$2 FOR UPDATE',
+      [o.task.sessionId, o.task.userId])).rows[0]
+    const slotSchema = z.object({ user_id: accountUserId, session_id: uuid.nullable(), workspace_id: uuid.nullable(),
+      generation: z.coerce.string().regex(/^(0|[1-9][0-9]*)$/u), state: z.enum(['free', 'reserved', 'ready', 'stopping', 'unknown']),
+      pod_uid: uuid.nullable(), runner_instance_id: uuid.nullable(), binding_snapshot: z.unknown(),
+      stop_pod_uid: uuid.nullable(), stop_evidence: z.unknown() })
+    const instanceSchema = z.object({ session_id: uuid, user_id: accountUserId, name: text, state: text,
+      pod_uid: uuid.nullable(), runner_instance_id: uuid.nullable(), binding_snapshot: z.unknown(),
+      stop_pod_uid: uuid.nullable(), stop_evidence: z.unknown() })
+    const slot = rawSlot ? slotSchema.safeParse(rawSlot) : null, instance = rawInstance ? instanceSchema.safeParse(rawInstance) : null
+    if (slot && !slot.success || instance && !instance.success) this.deny('stdio_v2_no_start_resources_unavailable')
+    const s = slot?.data, i = instance?.data
+    if (s && s.user_id !== o.task.userId || i && (i.user_id !== o.task.userId || i.session_id !== o.task.sessionId)) {
+      this.deny('stdio_v2_no_start_resources_unavailable')
+    }
+    if (!i && (!s || s.session_id !== o.task.sessionId) && !o.writer && !o.prepared) return { kind: 'unallocated' }
+    if (!s || !i) this.deny('stdio_v2_no_start_resources_unavailable')
+    const binding = storageBinding.safeParse(s.binding_snapshot), priorBinding = storageBinding.safeParse(i.binding_snapshot)
+    if (!binding.success || !priorBinding.success || !this.scopeBinding(o, binding.data)
+      || !this.same(binding.data, priorBinding.data)) this.deny('stdio_v2_no_start_resources_unavailable')
+    if (s.state === 'ready' && i.state === 'ready' && s.session_id === o.task.sessionId && s.workspace_id === scope.workspaceId
+      && s.pod_uid && s.runner_instance_id && i.pod_uid === s.pod_uid && i.runner_instance_id === s.runner_instance_id) {
+      const current = (await client.query(`SELECT b.workspace_id,b.space_id,s.root_key,b.root_relative_path,w.binding_generation
+        FROM pe_workspaces w JOIN pe_workspace_bindings b ON b.workspace_id=w.id AND b.user_id=w.user_id
+        JOIN pe_storage_spaces s ON s.id=b.space_id AND s.user_id=b.user_id WHERE w.id=$1 AND w.user_id=$2`,
+      [scope.workspaceId, o.task.userId])).rows[0]
+      const saved = storageBinding.safeParse(current && { workspaceId: current.workspace_id, spaceId: current.space_id,
+        rootKey: current.root_key, rootRelativePath: current.root_relative_path, generation: Number(current.binding_generation) })
+      if (!saved.success || !this.same(saved.data, binding.data)
+        || o.writer && (o.writer.name !== i.name || o.writer.podUid !== s.pod_uid || o.writer.runnerInstanceId !== s.runner_instance_id)
+        || o.prepared && o.prepared.prepared.capture.kind === 'cloud' && o.prepared.prepared.capture.mountGeneration !== s.generation) {
+        this.deny('stdio_v2_no_start_resources_unavailable')
+      }
+      return { kind: 'ready_retained', name: i.name, podUid: s.pod_uid, runnerInstanceId: s.runner_instance_id,
+        mountGeneration: s.generation, bindingSnapshot: binding.data }
+    }
+    const first = stdioCreationStopEvidenceV2.safeParse(s.stop_evidence), second = stdioCreationStopEvidenceV2.safeParse(i.stop_evidence)
+    if (s.state !== 'free' || s.session_id !== null || s.workspace_id !== null || s.pod_uid !== null || s.runner_instance_id !== null
+      || i.state !== 'deleted' || i.pod_uid !== null || i.runner_instance_id !== null || o.writer || o.prepared
+      || !first.success || !second.success || !this.same(first.data, second.data)
+      || first.data.sessionId !== o.task.sessionId || first.data.generation !== s.generation
+      || first.data.podUid !== s.stop_pod_uid || first.data.podUid !== i.stop_pod_uid
+      || !this.same(first.data.bindingSnapshot, binding.data)) this.deny('stdio_v2_no_start_resources_unavailable')
+    return { kind: 'creation_stopped', name: i.name, mountGeneration: s.generation,
+      bindingSnapshot: binding.data, stopEvidence: first.data }
+  }
 
   /** Claim bounded fair candidates within the shared live Cloud worker lease capacity; this does not limit Pod or program count.
    * @param workerId Authenticated internal worker generation; a UUID alone provides no authentication.
@@ -275,9 +371,72 @@ export class StdioCloudWorkerStoreV2 {
     const selected = stdioActionLeaseV2.parse(lease)
     return transaction(this.pool, async client => {
       const o = await this.current(client, selected)
-      return structuredClone({ task: o.task, executionRef: o.executionRef, state: o.action.state,
+      return structuredClone({ task: o.task, taskDigest: o.action.task_digest, executionRef: o.executionRef, state: o.action.state,
         cancelRequested: o.cancelRequested, prepared: o.prepared, dispatch: o.dispatch, writer: o.writer })
     })
+  }
+  /** Fence one Manager provisioning transaction using its supplied client and the full original action locks.
+   * @param client Manager client already holding the owner lock, before locking the Workspace or mount slot; no pool access is used.
+   * @param lease Current action and mirrored execution generation, rechecked against the database clock.
+   * @param sessionId Exact original Session; an identifier alone grants no provisioning authority.
+   * @param userId Exact original owner; cancellation may retain creation identity only in record mode.
+   * @param mode Acquire and mutation require current grants; record retains known identity for active cancellation cleanup.
+   */
+  async assertProvisioning(client: PoolClient, lease: StdioActionLeaseV2, sessionId: string, userId: string,
+    mode: 'acquire' | 'record' | 'mutation'): Promise<void> {
+    const selected = stdioActionLeaseV2.parse(lease), selectedMode = z.enum(['acquire', 'record', 'mutation']).parse(mode)
+    const o = await this.current(client, selected)
+    if (o.task.userId !== userId || o.task.sessionId !== sessionId) this.deny('stdio_v2_original_changed')
+    if (o.dispatch) this.deny('stdio_v2_start_already_authorized')
+    if ((await client.query('SELECT action_id FROM pe_stdio_v2_no_start_closures WHERE action_id=$1', [selected.actionId])).rowCount
+      || !workStates.includes(o.action.state) || !activeExecutions.includes(o.execution.state)) this.deny('stdio_v2_action_not_startable')
+    await this.noStartResult(client, selected.actionId)
+    if (selectedMode !== 'record') this.startable(o)
+    await assertStdioActionLeaseV2(client, selected)
+  }
+  /** Close only a cancelled discover that never received start permission; resource cleanup is a separate operation.
+   * @param lease Current original generation; replay still requires its live action lease and never reclaims a slot.
+   * @returns The first immutable no-start receipt after both original records become cancelled; no SDK result is minted.
+   */
+  async closeUnstarted(lease: StdioActionLeaseV2): Promise<StdioNoStartReceiptV2> {
+    const selected = stdioActionLeaseV2.parse(lease)
+    return transaction(this.pool, async client => {
+      const o = await this.current(client, selected)
+      const prior = await this.storedClosure(client, o)
+      if (prior) return prior
+      if (o.task.phase !== 'discover') this.deny('stdio_v2_no_start_call_unavailable')
+      if (o.dispatch) this.deny('stdio_v2_start_already_authorized')
+      await this.noStartResult(client, selected.actionId)
+      if (!o.cancelRequested || !workStates.includes(o.action.state) || !activeExecutions.includes(o.execution.state)) {
+        this.deny('stdio_v2_action_not_startable')
+      }
+      const resource = await this.noStartResource(client, o)
+      const receipt = parseStdioNoStartReceiptV2({ formatVersion: 2, kind: 'unstarted_closed', actionId: o.task.actionId,
+        executionRef: o.executionRef, taskDigest: o.action.task_digest, preparedDigest: o.prepared?.preparedDigest ?? null,
+        userId: o.task.userId, sessionId: o.task.sessionId, phase: o.task.phase, state: 'cancelled', startNeverAuthorized: true, resource }, this.limits)
+      if (resource.kind === 'ready_retained' && !o.writer) {
+        await this.write(client, selected, `UPDATE pe_cloud_executions SET sandbox_name=$4,pod_uid=$5,runner_instance_id=$6,updated_at=clock_timestamp()
+          WHERE id=$7 AND execution_kind='stdio_v2' AND stdio_action_id=$1 AND sandbox_name IS NULL AND pod_uid IS NULL
+            AND runner_instance_id IS NULL AND ${guard}`, [resource.name, resource.podUid, resource.runnerInstanceId, o.execution.id])
+      }
+      await this.write(client, selected, `INSERT INTO pe_stdio_v2_no_start_closures(action_id,user_id,session_id,phase,execution_target,
+        execution_id,task_digest,prepared_digest,worker_id,lease_epoch,receipt,receipt_digest)
+        SELECT $1,$4,$5,'discover','cloud',$6,$7,$8,$2,$3,$9,$10 WHERE ${guard} RETURNING action_id`,
+      [o.task.userId, o.task.sessionId, o.execution.id, o.action.task_digest, receipt.preparedDigest, JSON.stringify(receipt), this.sha('no_start', receipt)])
+      await this.write(client, selected, `UPDATE pe_stdio_v2_actions SET state='cancelled',cancel_requested=true,
+        updated_at=clock_timestamp() WHERE id=$1 AND ${guard}`, [])
+      await this.write(client, selected, `UPDATE pe_cloud_executions SET state='cancelled',cancel_requested=true,updated_at=clock_timestamp()
+        WHERE id=$4 AND execution_kind='stdio_v2' AND stdio_action_id=$1 AND ${guard}`, [o.execution.id])
+      return receipt
+    })
+  }
+  /** Read the first internal no-start receipt after commit, including a lost reply; this never creates a new lease or start grant.
+   * @param actionId Original internal action identity; all original owner, task, configuration and cancelled records are revalidated.
+   * @returns Original immutable receipt or null before closure; historical live mount changes do not rebuild the receipt.
+   */
+  async readNoStart(actionId: StdioActionLeaseV2['actionId']): Promise<StdioNoStartReceiptV2 | null> {
+    const id = stdioActionLeaseV2.shape.actionId.parse(actionId)
+    return transaction(this.pool, async client => this.storedClosure(client, await this.read(client, id)))
   }
   /** Persist or recover preparation intent without replacing an original writer; existing captures, permits and cancellation do not restart preparation.
    * @param lease Current original worker generation.

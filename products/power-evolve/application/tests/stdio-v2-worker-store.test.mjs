@@ -7,6 +7,7 @@ import test from 'node:test'
 import { StdioCloudWorkerStoreV2 } from '../lib/platform/stdio-v2-worker-store.js'
 import { StdioActionLeaseServiceV2 } from '../lib/platform/stdio-v2-leases.js'
 import { StdioAuthorizationServiceV2 } from '../lib/platform/stdio-v2-authorization.js'
+import { parseStdioNoStartReceiptV2 } from '../lib/platform/stdio-v2-no-start.js'
 import { stdioActionLeaseV2 } from '@power-evolve/contracts/stdio-runtime'
 import { stdioPreparedV2, stdioTaskSchemasV2 } from '@power-evolve/contracts/stdio-mcp'
 import { stdioApprovalFingerprintV2, stdioCatalogFingerprintV2, stdioSha256V2 } from '@power-evolve/connector-runner/stdio-v2-digest'
@@ -25,11 +26,12 @@ const rawCatalog = [{ name: 'read_note', inputSchema: { type: 'object', properti
 { name: 'write_note', inputSchema: { type: 'object', properties: { text: { type: 'string' } } },
   annotations: { destructiveHint: true }, extension: { order: [3, 1] } }]
 const jsonColumns = new Set(['task', 'stdio_task', 'configuration', 'prepared', 'approval_binding', 'executor_owner',
-  'permit', 'dispatch', 'raw_catalog', 'image_expectation', 'result', 'binding_snapshot'])
+  'permit', 'dispatch', 'raw_catalog', 'image_expectation', 'result', 'binding_snapshot', 'stop_evidence', 'receipt'])
 const booleans = new Set(['enabled', 'passwordChangeRequired', 'cancel_requested'])
-const dates = new Set(['deletedAt', 'deleted_at', 'expires_at', 'issued_at', 'lease_until', 'now'])
+const dates = new Set(['deletedAt', 'deleted_at', 'expires_at', 'issued_at', 'lease_until', 'now', 'closed_at'])
 const mutableTables = ['pe_stdio_v2_actions', 'pe_stdio_v2_preparations', 'pe_stdio_v2_decisions',
-  'pe_stdio_v2_start_permits', 'pe_stdio_v2_dispatches', 'pe_cloud_executions', 'pe_desktop_executions']
+  'pe_stdio_v2_start_permits', 'pe_stdio_v2_dispatches', 'pe_cloud_executions', 'pe_desktop_executions',
+  'pe_stdio_v2_no_start_closures', 'pe_mount_slots', 'pe_sandbox_instances']
 
 function fixture(t, { kind = 'cloud', phase = 'discover' } = {}) {
   const db = new DatabaseSync(':memory:'); t.after(() => db.close())
@@ -59,7 +61,10 @@ function fixture(t, { kind = 'cloud', phase = 'discover' } = {}) {
     CREATE TABLE pe_stdio_v2_dispatches(action_id TEXT PRIMARY KEY,dispatch TEXT,dispatch_digest TEXT);
     CREATE TABLE pe_stdio_v2_results(action_id TEXT PRIMARY KEY,result TEXT,result_digest TEXT);
     CREATE TABLE pe_stdio_v2_catalogs(id TEXT PRIMARY KEY,user_id TEXT,connection_id TEXT,config_revision INTEGER,
-      config_digest TEXT,action_id TEXT,raw_catalog TEXT,image_expectation TEXT,catalog_digest TEXT);`)
+      config_digest TEXT,action_id TEXT,raw_catalog TEXT,image_expectation TEXT,catalog_digest TEXT);
+    CREATE TABLE pe_stdio_v2_no_start_closures(action_id TEXT PRIMARY KEY,user_id TEXT,session_id TEXT,phase TEXT,
+      execution_target TEXT,execution_id TEXT UNIQUE,task_digest TEXT,prepared_digest TEXT,worker_id TEXT,
+      lease_epoch INTEGER,receipt TEXT,receipt_digest TEXT,closed_at TEXT DEFAULT (clock_timestamp()));`)
   for (const table of ['pe_cloud_executions', 'pe_desktop_executions']) db.exec(`CREATE TABLE ${table}(id TEXT PRIMARY KEY,
     user_id TEXT,session_id TEXT,execution_kind TEXT,execution_target TEXT,origin_kind TEXT,task_version INTEGER,
     stdio_phase TEXT,stdio_action_id TEXT,stdio_task TEXT,request_digest TEXT,operation_id TEXT,call_id TEXT,command TEXT,cwd TEXT,
@@ -179,11 +184,17 @@ function fixture(t, { kind = 'cloud', phase = 'discover' } = {}) {
   const workerId = uuid()
   const binding = { workspaceId, spaceId: scopeBinding.target?.spaceId ?? uuid(), rootRelativePath: scopeBinding.target?.rootRelativePath ?? 'synthetic', rootKey: uuid(), generation: 1 }
   const ready = { name: capture.podName ?? 'synthetic-pod', podUid: capture.podUid ?? uuid(), runnerInstanceId, token: 'synthetic-private-token', restartCount: 0, generation: '1', sessionId, userId, binding }
-  db.exec(`CREATE TABLE pe_mount_slots(user_id TEXT PRIMARY KEY,session_id TEXT,workspace_id TEXT,generation INTEGER,state TEXT,pod_uid TEXT,runner_instance_id TEXT,binding_snapshot TEXT);
-    CREATE TABLE pe_sandbox_instances(session_id TEXT PRIMARY KEY,user_id TEXT,name TEXT,state TEXT,pod_uid TEXT,runner_instance_id TEXT,binding_snapshot TEXT);
+  db.exec(`CREATE TABLE pe_mount_slots(user_id TEXT PRIMARY KEY,session_id TEXT,workspace_id TEXT,generation INTEGER,state TEXT,pod_uid TEXT,runner_instance_id TEXT,binding_snapshot TEXT,stop_pod_uid TEXT,stop_evidence TEXT);
+    CREATE TABLE pe_sandbox_instances(session_id TEXT PRIMARY KEY,user_id TEXT,name TEXT,state TEXT,pod_uid TEXT,runner_instance_id TEXT,binding_snapshot TEXT,stop_pod_uid TEXT,stop_evidence TEXT);
+    CREATE TABLE pe_workspaces(id TEXT PRIMARY KEY,user_id TEXT,binding_generation INTEGER);
+    CREATE TABLE pe_workspace_bindings(workspace_id TEXT PRIMARY KEY,user_id TEXT,space_id TEXT,root_relative_path TEXT);
+    CREATE TABLE pe_storage_spaces(id TEXT PRIMARY KEY,user_id TEXT,root_key TEXT);
     CREATE TABLE pe_cloud_execution_resolutions(execution_id TEXT);`)
   insert('pe_mount_slots', { user_id: userId, session_id: sessionId, workspace_id: workspaceId, generation: 1, state: 'ready', pod_uid: ready.podUid, runner_instance_id: runnerInstanceId, binding_snapshot: binding })
   insert('pe_sandbox_instances', { session_id: sessionId, user_id: userId, name: ready.name, state: 'ready', pod_uid: ready.podUid, runner_instance_id: runnerInstanceId, binding_snapshot: binding })
+  insert('pe_workspaces', { id: workspaceId, user_id: userId, binding_generation: binding.generation })
+  insert('pe_workspace_bindings', { workspace_id: workspaceId, user_id: userId, space_id: binding.spaceId, root_relative_path: binding.rootRelativePath })
+  insert('pe_storage_spaces', { id: binding.spaceId, user_id: userId, root_key: binding.rootKey })
   change('pe_stdio_v2_actions', 'created_at', new Date(now).toISOString()); change('pe_stdio_v2_actions', 'updated_at', new Date(now).toISOString())
   const snapshot = () => JSON.stringify(mutableTables.map(name => [name, db.prepare(`SELECT * FROM ${name} ORDER BY rowid`).all()]))
   async function rejectsWithoutWrites(operation, pattern) {
@@ -250,7 +261,8 @@ test('invalid trusted worker budgets reject before obtaining a pool client', () 
 test('same original lease mirrors execution; preparation, attach, approval and private capture preserve full task and release before returned HTTP use', async t => {
   const f = fixture(t, { phase: 'call' }), lease = await attached(f)
   const initial = await f.store.snapshot(lease)
-  assert.deepEqual(initial.task, f.task); assert.equal(initial.state, 'preparing'); assert.equal(initial.cancelRequested, false)
+  assert.deepEqual(initial.task, f.task); assert.equal(initial.taskDigest, f.taskDigest)
+  assert.equal(initial.state, 'preparing'); assert.equal(initial.cancelRequested, false)
   assert.deepEqual(initial.writer, { name: f.ready.name, podUid: f.ready.podUid, runnerInstanceId: f.ready.runnerInstanceId })
   assert.equal(JSON.stringify(initial).includes(f.ready.token), false); assert.equal(initial.prepared, null); assert.equal(initial.dispatch, null)
   const first = await permitted(f, lease), after = await f.store.snapshot(lease)
@@ -484,4 +496,189 @@ test('explicit lease service mirrors original Cloud expiry and retains rejected 
   assert.deepEqual(a, e)
   f.advance(5000); await f.rejectsWithoutWrites(() => f.leases.renew(first), /lease_lost/u)
   const second = await f.leases.claim(f.actionId, uuid()); assert.equal(second.leaseEpoch, first.leaseEpoch + 1)
+})
+
+async function provisioning(f, lease, mode, { sessionId = f.sessionId, userId = f.userId } = {}) {
+  const client = await f.pool.connect(), connect = f.pool.connect
+  f.pool.connect = () => assert.fail('supplied-client provision reconnected the pool')
+  f.pool.query = () => assert.fail('supplied-client provision queried the pool')
+  try {
+    await client.query('BEGIN')
+    await f.store.assertProvisioning(client, lease, sessionId, userId, mode)
+    await client.query('COMMIT')
+  } catch (error) {
+    await client.query('ROLLBACK'); throw error
+  } finally { f.pool.connect = connect; client.release() }
+}
+function unallocate(f) {
+  f.db.prepare('DELETE FROM pe_sandbox_instances WHERE session_id=?').run(f.sessionId)
+  f.db.prepare('DELETE FROM pe_mount_slots WHERE user_id=?').run(f.userId)
+}
+function stoppedCreation(f) {
+  const proof = { status: 'KUBELET_STOPPED', podUid: f.ready.podUid, sandboxUid: uuid(), generation: '1',
+    sessionId: f.sessionId, runnerInstanceId: null, bindingSnapshot: f.binding, observedAt: '2026-10-07T00:00:00.000Z' }
+  f.change('pe_mount_slots', 'state', 'free', 'user_id', f.userId)
+  for (const key of ['session_id', 'workspace_id', 'pod_uid', 'runner_instance_id']) f.change('pe_mount_slots', key, null, 'user_id', f.userId)
+  f.change('pe_sandbox_instances', 'state', 'deleted', 'session_id', f.sessionId)
+  for (const key of ['pod_uid', 'runner_instance_id']) f.change('pe_sandbox_instances', key, null, 'session_id', f.sessionId)
+  for (const [table, key, id] of [['pe_mount_slots', 'user_id', f.userId], ['pe_sandbox_instances', 'session_id', f.sessionId]]) {
+    f.change(table, 'stop_pod_uid', proof.podUid, key, id); f.change(table, 'stop_evidence', proof, key, id)
+  }
+  return proof
+}
+function assertNoRuntimeResult(f) {
+  for (const table of ['pe_stdio_v2_results', 'pe_stdio_v2_start_permits', 'pe_stdio_v2_dispatches', 'pe_stdio_v2_catalogs']) {
+    assert.equal(f.db.prepare(`SELECT count(*) AS n FROM ${table}`).get().n, 0)
+  }
+}
+
+test('provision fences reuse only the supplied client, reject stale original grants, and retain cancelled creation identity in record mode', async t => {
+  const f = fixture(t), lease = await f.store.claimNext(f.workerId)
+  await f.store.beginPreparation(lease)
+  for (const mode of ['acquire', 'mutation', 'record']) await provisioning(f, lease, mode)
+  const original = f.snapshot()
+  for (const fields of [{ sessionId: uuid() }, { userId: uuid() }]) {
+    await f.rejectsWithoutWrites(() => provisioning(f, lease, 'record', fields), /original_changed/u)
+  }
+  await f.rejectsWithoutWrites(() => provisioning(f, { ...lease, leaseEpoch: lease.leaseEpoch + 1 }, 'record'), /lease_lost/u)
+  assert.equal(f.snapshot(), original)
+  f.change('pe_cloud_executions', 'lease_owner', uuid(), 'id', f.executionId)
+  await f.rejectsWithoutWrites(() => provisioning(f, lease, 'record'), /lease_lost/u)
+  f.change('pe_cloud_executions', 'lease_owner', lease.workerId, 'id', f.executionId)
+  f.change('pe_users', 'enabled', false, 'id', f.userId)
+  for (const mode of ['acquire', 'mutation']) await f.rejectsWithoutWrites(() => provisioning(f, lease, mode), /not_startable/u)
+  await provisioning(f, lease, 'record')
+  for (const state of ['rejected', 'expired']) {
+    f.change('pe_stdio_v2_actions', 'state', state); await provisioning(f, lease, 'record')
+  }
+  f.change('pe_stdio_v2_actions', 'state', 'cancelled')
+  await f.rejectsWithoutWrites(() => provisioning(f, lease, 'record'), /not_startable/u)
+})
+
+test('queued cancelled discovery closes without allocated original resources, preserves foreign slots, and creates only a no-start receipt', async t => {
+  for (const foreign of [false, true]) {
+    const f = fixture(t), lease = await f.store.claimNext(f.workerId)
+    if (foreign) {
+      f.db.prepare('DELETE FROM pe_sandbox_instances WHERE session_id=?').run(f.sessionId)
+      f.change('pe_mount_slots', 'session_id', uuid(), 'user_id', f.userId)
+    } else unallocate(f)
+    f.change('pe_stdio_v2_actions', 'cancel_requested', true)
+    const beforeSlot = f.db.prepare('SELECT * FROM pe_mount_slots').all(), originalTask = clone(f.task)
+    assert.equal(await f.store.readNoStart(f.actionId), null)
+    const receipt = await f.store.closeUnstarted(lease)
+    assert.equal(receipt.kind, 'unstarted_closed'); assert.equal(receipt.state, 'cancelled'); assert.equal(receipt.startNeverAuthorized, true)
+    assert.equal(receipt.taskDigest, f.taskDigest); assert.deepEqual(receipt.executionRef, f.executionRef)
+    assert.deepEqual(receipt.resource, { kind: 'unallocated' }); assert.equal(receipt.preparedDigest, null)
+    assert.deepEqual(f.db.prepare('SELECT * FROM pe_mount_slots').all(), beforeSlot)
+    for (const table of ['pe_stdio_v2_actions', 'pe_cloud_executions']) {
+      const row = f.db.prepare(`SELECT state,cancel_requested FROM ${table} WHERE id=?`).get(table === 'pe_cloud_executions' ? f.executionId : f.actionId)
+      assert.deepEqual({ ...row }, { state: 'cancelled', cancel_requested: 1 })
+    }
+    assert.deepEqual(JSON.parse(f.db.prepare('SELECT task FROM pe_stdio_v2_actions WHERE id=?').get(f.actionId).task), originalTask)
+    assertNoRuntimeResult(f)
+    assert.deepEqual(await f.store.closeUnstarted(lease), receipt)
+    await f.rejectsWithoutWrites(() => provisioning(f, lease, 'record'), /not_startable/u)
+    await f.store.release(lease)
+    assert.deepEqual(await f.store.readNoStart(f.actionId), receipt)
+    await f.rejectsWithoutWrites(() => f.store.closeUnstarted(lease), /lease_lost/u)
+  }
+})
+
+test('cancelled discovery may retain an exact ready resource and first capture its DB identity without changing the slot or prior approval', async t => {
+  for (const withPrepared of [false, true]) {
+    const f = fixture(t), lease = withPrepared ? await attached(f) : await f.store.claimNext(f.workerId)
+    const prepared = withPrepared ? await f.service.prepareLeased(lease) : null
+    f.change('pe_users', 'enabled', false, 'id', f.userId)
+    const slot = f.db.prepare('SELECT * FROM pe_mount_slots').get(), instance = f.db.prepare('SELECT * FROM pe_sandbox_instances').get()
+    const receipt = await f.store.closeUnstarted(lease)
+    assert.deepEqual(receipt.resource, { kind: 'ready_retained', name: f.ready.name, podUid: f.ready.podUid,
+      runnerInstanceId: f.ready.runnerInstanceId, mountGeneration: '1', bindingSnapshot: f.binding })
+    assert.equal(receipt.preparedDigest, prepared?.preparedDigest ?? null)
+    assert.deepEqual(f.db.prepare('SELECT * FROM pe_mount_slots').get(), slot)
+    assert.deepEqual(f.db.prepare('SELECT * FROM pe_sandbox_instances').get(), instance)
+    assert.deepEqual((await f.store.snapshot(lease)).writer, { name: f.ready.name, podUid: f.ready.podUid, runnerInstanceId: f.ready.runnerInstanceId })
+    assert.equal(JSON.stringify(receipt).includes('synthetic-private-token'), false)
+    assertNoRuntimeResult(f)
+    await f.rejectsWithoutWrites(() => f.store.beginPreparation(lease), /not_startable/u)
+    await f.rejectsWithoutWrites(() => f.service.prepareLeased(lease), /disabled|not_startable/u)
+    // Later slot recycling cannot change the first immutable historical receipt.
+    f.change('pe_mount_slots', 'generation', 9, 'user_id', f.userId)
+    f.change('pe_mount_slots', 'session_id', uuid(), 'user_id', f.userId)
+    f.db.prepare('DELETE FROM pe_sandbox_instances WHERE session_id=?').run(f.sessionId)
+    f.db.prepare('DELETE FROM pe_workspace_bindings').run()
+    assert.deepEqual(await f.store.closeUnstarted(lease), receipt)
+    assert.deepEqual(await f.store.readNoStart(f.actionId), receipt)
+  }
+})
+
+test('creation closure requires existing free/deleted dual proof, preserving full original UID and binding rather than using missing resources', async t => {
+  const f = fixture(t), lease = await f.store.claimNext(f.workerId)
+  await f.store.beginPreparation(lease); await f.store.defer(lease, 'stdio_v2_cancel_requested')
+  const proof = stoppedCreation(f), resources = JSON.stringify([f.db.prepare('SELECT * FROM pe_mount_slots').all(), f.db.prepare('SELECT * FROM pe_sandbox_instances').all()])
+  const receipt = await f.store.closeUnstarted(lease)
+  assert.deepEqual(receipt.resource, { kind: 'creation_stopped', name: f.ready.name, mountGeneration: '1', bindingSnapshot: f.binding, stopEvidence: proof })
+  assert.equal(JSON.stringify([f.db.prepare('SELECT * FROM pe_mount_slots').all(), f.db.prepare('SELECT * FROM pe_sandbox_instances').all()]), resources)
+  assertNoRuntimeResult(f)
+  assert.deepEqual(await f.store.readNoStart(f.actionId), receipt)
+  for (const mutation of [g => g.change('pe_mount_slots', 'state', 'reserved', 'user_id', g.userId),
+    g => g.change('pe_sandbox_instances', 'state', 'deleting', 'session_id', g.sessionId),
+    g => g.change('pe_sandbox_instances', 'stop_evidence', null, 'session_id', g.sessionId),
+    g => g.change('pe_sandbox_instances', 'stop_pod_uid', uuid(), 'session_id', g.sessionId),
+    g => g.change('pe_mount_slots', 'generation', 2, 'user_id', g.userId),
+    g => g.change('pe_sandbox_instances', 'stop_evidence', { ...stoppedCreation(g), sandboxUid: uuid() }, 'session_id', g.sessionId),
+    g => g.change('pe_sandbox_instances', 'stop_evidence', { ...stoppedCreation(g), status: 'UNKNOWN' }, 'session_id', g.sessionId)]) {
+    const g = fixture(t), held = await g.store.claimNext(g.workerId)
+    await g.store.defer(held, 'stdio_v2_cancel_requested'); stoppedCreation(g); mutation(g)
+    await g.rejectsWithoutWrites(() => g.store.closeUnstarted(held), /no_start_resources_unavailable/u)
+  }
+})
+
+test('unknown creation, foreign binding, mismatched original ready writer, calls and existing permits cannot become no-start results', async t => {
+  for (const mutation of [f => f.change('pe_mount_slots', 'state', 'unknown', 'user_id', f.userId),
+    f => f.change('pe_mount_slots', 'pod_uid', uuid(), 'user_id', f.userId),
+    f => f.change('pe_sandbox_instances', 'binding_snapshot', { ...f.binding, rootKey: uuid() }, 'session_id', f.sessionId),
+    f => f.change('pe_workspace_bindings', 'space_id', uuid(), 'workspace_id', f.binding.workspaceId),
+    f => f.change('pe_workspaces', 'binding_generation', 2, 'id', f.binding.workspaceId)]) {
+    const f = fixture(t), lease = await attached(f); await f.store.defer(lease, 'stdio_v2_cancel_requested'); mutation(f)
+    await f.rejectsWithoutWrites(() => f.store.closeUnstarted(lease), /no_start_resources_unavailable/u)
+  }
+  const call = fixture(t, { phase: 'call' }), held = await call.store.claimNext(call.workerId)
+  await call.store.defer(held, 'stdio_v2_cancel_requested')
+  await call.rejectsWithoutWrites(() => call.store.closeUnstarted(held), /no_start_call_unavailable/u)
+  const p = fixture(t), permittedLease = await attached(p); await permitted(p, permittedLease)
+  await p.store.defer(permittedLease, 'stdio_v2_cancel_requested')
+  await p.rejectsWithoutWrites(() => p.store.closeUnstarted(permittedLease), /start_already_authorized/u)
+  await p.rejectsWithoutWrites(() => provisioning(p, permittedLease, 'record'), /start_already_authorized/u)
+})
+
+test('no-start writes are clock fenced and atomic; lost commit reply uses immutable readback without replaying preparation', async t => {
+  for (const trigger of ['INSERT INTO pe_stdio_v2_no_start_closures', 'UPDATE pe_stdio_v2_actions SET state=\'cancelled\'',
+    'UPDATE pe_cloud_executions SET state=\'cancelled\'']) {
+    const f = fixture(t), lease = await f.store.claimNext(f.workerId); unallocate(f)
+    f.change('pe_stdio_v2_actions', 'cancel_requested', true); f.expireAt(trigger)
+    await f.rejectsWithoutWrites(() => f.store.closeUnstarted(lease), /lease_lost/u)
+    assert.equal(f.db.prepare('SELECT count(*) AS n FROM pe_stdio_v2_no_start_closures').get().n, 0)
+  }
+  const f = fixture(t), lease = await f.store.claimNext(f.workerId); unallocate(f)
+  f.change('pe_stdio_v2_actions', 'cancel_requested', true); f.loseCommitReply()
+  await assert.rejects(() => f.store.closeUnstarted(lease), /commit_reply_lost/u)
+  f.advance(5001)
+  const receipt = await f.store.readNoStart(f.actionId)
+  assert.equal(receipt.state, 'cancelled'); assert.equal(f.captures.length, 0)
+  assert.equal(f.db.prepare('SELECT count(*) AS n FROM pe_stdio_v2_no_start_closures').get().n, 1)
+  const row = f.db.prepare('SELECT receipt_digest FROM pe_stdio_v2_no_start_closures').get()
+  assert.equal(row.receipt_digest, sha('no_start', receipt))
+  await f.rejectsWithoutWrites(() => f.store.closeUnstarted(lease), /lease_lost/u)
+  assert.throws(() => parseStdioNoStartReceiptV2(receipt, { ...limits, maxInputBytes: 256 }),
+    error => error.name === 'ZodError' && error.issues.some(issue => issue.code === 'custom' && issue.path.length === 0))
+  for (const mutation of [g => g.change('pe_stdio_v2_no_start_closures', 'task_digest', '0'.repeat(64), 'action_id'),
+    g => g.change('pe_stdio_v2_no_start_closures', 'user_id', uuid(), 'action_id'),
+    g => g.change('pe_stdio_v2_no_start_closures', 'receipt_digest', '0'.repeat(64), 'action_id'),
+    g => g.change('pe_cloud_executions', 'cancel_requested', false, 'id', g.executionId),
+    g => g.change('pe_stdio_v2_actions', 'state', 'blocked'),
+    g => g.insert('pe_stdio_v2_results', { action_id: g.actionId, result: {}, result_digest: sha('result', {}) })]) {
+    const g = fixture(t), held = await g.store.claimNext(g.workerId); unallocate(g)
+    g.change('pe_stdio_v2_actions', 'cancel_requested', true); await g.store.closeUnstarted(held); mutation(g)
+    await g.rejectsWithoutWrites(() => g.store.readNoStart(g.actionId), /receipt_changed|start_already_authorized/u)
+  }
 })
