@@ -893,16 +893,24 @@ export class SandboxManager {
    */
   async assertDispatchAllowed(sandbox: SandboxReady): Promise<void> {
     await this.assertCurrent(sandbox)
-    await transaction(this.pool, async client => {
-      await requireActiveAccount(client, executionUserId.parse(sandbox.userId), 'update')
-      const binding = await this.readyBinding(client, sandbox.userId, sandbox.binding.workspaceId)
-      const selected = await client.query<MountSlot>('SELECT * FROM pe_mount_slots WHERE user_id=$1 FOR UPDATE', [sandbox.userId])
-      const slot = selected.rows[0]
-      if (!slot || slot.state !== 'ready' || slot.session_id !== sandbox.sessionId
-        || slot.generation !== sandbox.generation || slot.pod_uid !== sandbox.podUid
-        || slot.runner_instance_id !== sandbox.runnerInstanceId || !this.sameBinding(binding, sandbox.binding)
-        || !this.sameBinding(slot.binding_snapshot, sandbox.binding)) throw new MountSlotBlocked('mount_slot_changed', false)
-    })
+    await transaction(this.pool, client => this.assertDispatchBinding(client, sandbox))
+  }
+
+  private async assertDispatchBinding(client: PoolClient, sandbox: SandboxReady): Promise<void> {
+    await requireActiveAccount(client, executionUserId.parse(sandbox.userId), 'update')
+    const binding = await this.readyBinding(client, sandbox.userId, sandbox.binding.workspaceId)
+    const selected = await client.query<MountSlot>('SELECT * FROM pe_mount_slots WHERE user_id=$1 FOR UPDATE', [sandbox.userId])
+    const slot = selected.rows[0]
+    if (!slot || slot.state !== 'ready' || slot.session_id !== sandbox.sessionId
+      || slot.generation !== sandbox.generation || slot.pod_uid !== sandbox.podUid
+      || slot.runner_instance_id !== sandbox.runnerInstanceId || !this.sameBinding(binding, sandbox.binding)
+      || !this.sameBinding(slot.binding_snapshot, sandbox.binding)) throw new MountSlotBlocked('mount_slot_changed', false)
+  }
+
+  private async assertStdioCaptureAllowed(client: PoolClient, sandbox: SandboxReady): Promise<void> {
+    await this.assertDispatchBinding(client, sandbox)
+    if (!await this.matchesInstanceUsing(sandbox.sessionId, sandbox.userId,
+      sandbox.podUid, sandbox.runnerInstanceId, client)) throw new MountSlotBlocked('mount_instance_changed', false)
   }
 
   /** Capture the original ready PVC writer without creating resources or spawning a user program.
@@ -910,11 +918,12 @@ export class SandboxManager {
    * @param scope Original logical Workspace and user Home from the accepted STDIO task.
    * @param pin Trusted single-platform deployment mapping fixed before task admission.
    * @param limits Trusted original SDK budgets for the complete Pod spec JSON.
+   * @param client Optional caller transaction with the original owner's account lock; every PG check uses it without borrowing a connection.
    * @returns Exact private mount/container/image observations and the complete original Pod spec.
-   * @throws Rejects non-PVC, unavailable, incomplete or changed observations; existing admission refusals remain unchanged.
+   * @throws Rejects non-PVC, unavailable, incomplete or changed observations. With a caller client, failure preserves the writer and performs no quarantine; the caller persists quarantine separately after rollback. Without a client, existing admission/quarantine behavior remains.
    */
   async captureStdioV2(sandbox: SandboxReady, scope: Extract<StdioScopeV2, { kind: 'cloud' }>,
-    pin: Extract<StdioDeploymentV2, { kind: 'cloud' }>, limits: StdioLimitsV2): Promise<StdioCloudCaptureV2> {
+    pin: Extract<StdioDeploymentV2, { kind: 'cloud' }>, limits: StdioLimitsV2, client?: PoolClient): Promise<StdioCloudCaptureV2> {
     const invalid = () => new MountSlotBlocked('mount_stdio_capture_invalid', false)
     const unavailable = () => new MountSlotBlocked('mount_stdio_capture_unavailable', false)
     const record = (value: unknown): value is Record<string, unknown> =>
@@ -976,8 +985,8 @@ export class SandboxManager {
       try { return await Promise.all([this.get('sandboxes', writer.name), this.get('pods', writer.name)]) }
       catch (_resourceReadFailed) { throw unavailable() }
     }
-    // Keep existing account/recovery fences, including their safe PG quarantine on identity loss.
-    await this.assertDispatchAllowed(writer)
+    const assertAllowed = () => client ? this.assertStdioCaptureAllowed(client, writer) : this.assertDispatchAllowed(writer)
+    await assertAllowed()
     const first = await resources(), observed = observe(first[0], first[1])
     let node: unknown
     try { node = await this.kube.call<unknown>('GET', `/api/v1/nodes/${encodeURIComponent(observed.capture.nodeName)}`) }
@@ -991,7 +1000,7 @@ export class SandboxManager {
         imageReference: deployment.imageReference, runtimeImageId: observed.imageId })
       if (!stdioImageMatchesDeploymentV2(deployment, actualExecutorImage)) throw invalid()
     } catch (_invalidImage) { throw invalid() }
-    await this.assertDispatchAllowed(writer)
+    await assertAllowed()
     const last = await resources(), final = observe(last[0], last[1])
     if (observed.imageId !== final.imageId || JSON.stringify(observed.capture) !== JSON.stringify(final.capture)
       || stdioCanonicalJsonV2(observed.spec, jsonBudget) !== stdioCanonicalJsonV2(final.spec, jsonBudget)) throw invalid()
@@ -1007,15 +1016,21 @@ export class SandboxManager {
    * @returns Whether the slot, resources, mounts and live Runner match; provider errors reject.
    */
   async matchesInstance(sessionId: string, userId: string, podUid: string, runnerInstanceId: string): Promise<boolean> {
-    const selected = await this.pool.query<MountSlot>('SELECT * FROM pe_mount_slots WHERE user_id=$1', [userId])
+    return this.matchesInstanceUsing(sessionId, userId, podUid, runnerInstanceId)
+  }
+
+  private async matchesInstanceUsing(sessionId: string, userId: string, podUid: string, runnerInstanceId: string,
+    client?: PoolClient): Promise<boolean> {
+    const reader = client ?? this.pool
+    const selected = await reader.query<MountSlot>('SELECT * FROM pe_mount_slots WHERE user_id=$1', [userId])
     const slot = selected.rows[0]
     if (!slot || slot.state !== 'ready' || slot.session_id !== sessionId || slot.pod_uid !== podUid
       || slot.runner_instance_id !== runnerInstanceId) return false
     const parsed = storageBinding.safeParse(slot.binding_snapshot)
     if (!parsed.success || parsed.data.workspaceId !== slot.workspace_id) return false
-    const binding = await this.storedBinding(userId, slot.workspace_id!)
+    const binding = await this.storedBinding(userId, slot.workspace_id!, client)
     if (!binding || !this.sameBinding(binding, parsed.data)) return false
-    const instance = await this.pool.query<{ state: string; pod_uid: string | null; runner_instance_id: string | null;
+    const instance = await reader.query<{ state: string; pod_uid: string | null; runner_instance_id: string | null;
       binding_snapshot: unknown }>(
       'SELECT state,pod_uid,runner_instance_id,binding_snapshot FROM pe_sandbox_instances WHERE session_id=$1 AND user_id=$2',
       [sessionId, userId])
