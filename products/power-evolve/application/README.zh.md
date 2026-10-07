@@ -94,6 +94,8 @@ SSH Runner 只有明确报告 `effectMayHaveOccurred` 为 false 时，失败才�
 
 首次向 Runner POST 前，执行 worker 必须在当前租约下持久记录就绪 Pod 和 Runner 身份。创建结果不明且尚未记录这些身份时，只有原获授权 Sandbox 就绪后才能恢复为 `starting`；首次派发前仍先查询状态。已记录身份的结果不明命令若在 Runner 上缺失，继续保持结果不明，不再派发。取消、账号权限和挂载授权仍约束派发。
 
+STDIO v2 的 `SandboxManager.captureStdioV2` 在现有准入围栏下观察原 PVC writer。它核验工作区与 Home 挂载、准确的 runner 容器和镜像，以及所调度 Node 的 OS 和架构，并在调用方可信 JSON 预算内返回完整 Pod spec。Platform 凭据需要对该单一 Node 的 GET 权限；事实缺失或变化会拒绝 capture。Capture 不创建 Kubernetes 资源或用户程序，也不授予启动许可。调用方必须在派发前比较后续 capture；旧 hostPath 执行保持原行为。
+
 `sandboxConcurrency` 限制所有 Platform 副本合计的活跃执行 worker。认领 worker 时，在共享事务锁下统计 PG 有效租约；崩溃 worker 的租约过期后释放容量，由接替者核对执行状态。已进入 `running` 并延期观察的命令会释放 worker 租约，因此此限额不同于存活 Pod 数量；用户挂载槽位另行约束 Pod 替换。
 
 新建 Sandbox Pod 从 Platform Profile 接收文件扫描预算：`sandboxScanMaxEntries`（默认 4,096，上限 65,536）、`sandboxScanMaxHashBytes`（32 MiB，200 MiB）、`sandboxScanTimeoutMs`（5,000，30,000）、`sandboxScanMaxSnapshotBytes`（1 MiB，4 MiB）和 `sandboxScanMaxFiles`（100，100）。这些值均为正整数，快照字节数下限为 1 KiB。命令执行前、执行后的扫描分别使用独立预算，配置变更适用于新建 Pod。Platform 字节核验另用 `sandboxFileVerifyTimeoutMs`（默认 15,000，范围 100–60,000）。扫描受限或失败不能视为完整且为空的结果；元数据核验失败也不会丢弃已认证的命令终态。

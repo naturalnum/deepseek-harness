@@ -13,6 +13,10 @@ import { KubernetesClient, KubernetesError, RUNNER_RESPONSE_MAX_BYTES } from './
 import { kubernetesPodStopStatus } from './pod-stop-status.ts'
 import { storageBinding, workspaceRecoveryClaim, type StorageBinding, type WorkspaceRecoveryClaim,
   type RecoveryStopProof, type AssertWorkspaceRecoveryLease } from './workspace-binding-types.ts'
+import { stdioScopeV2, stdioDeploymentV2, stdioLimitsV2, stdioObjectV2, stdioCaptureV2,
+  stdioExecutorImageV2, stdioImageMatchesDeploymentV2, type StdioScopeV2, type StdioDeploymentV2,
+  type StdioLimitsV2, type StdioObjectV2, type StdioExecutorImageV2, type StdioPreparedV2 } from '@power-evolve/contracts/stdio-mcp'
+import { stdioCanonicalJsonV2 } from '@power-evolve/contracts/stdio-mcp-json'
 
 const STOP_FINALIZER = 'powerevolve.dev/retain-stop-observation'
 type SlotState = 'free' | 'reserved' | 'ready' | 'stopping' | 'unknown'
@@ -32,13 +36,19 @@ interface CreatingStop { cancellation: CreationCancellation; slot: MountSlot; po
 type SandboxFiles = Pick<FileService, 'workspaceForId'> & {
   bindingForId(userId: string, workspaceId: string, client?: PoolClient): Promise<StorageBinding>
 }
-interface Metadata { name: string; uid?: string; resourceVersion?: string; labels?: Record<string, string>; deletionTimestamp?: string;
+interface Metadata { name: string; namespace?: string; uid?: string; resourceVersion?: string; labels?: Record<string, string>; deletionTimestamp?: string;
   finalizers?: string[]; ownerReferences?: Array<{ uid?: string }> }
 interface Resource { metadata: Metadata; spec?: Record<string, unknown>; status?: Record<string, unknown>; data?: Record<string, string> }
 interface Pod extends Resource { status?: { phase?: string; containerStatuses?: Array<{ ready?: boolean; restartCount?: number }> } }
 /** Ready writer identity and platform-only token, valid while its mount slot remains current. */
 export interface SandboxReady { name: string; podUid: string; runnerInstanceId: string; token: string; restartCount: number;
   generation: string; sessionId: string; userId: string; binding: StorageBinding }
+/** Private STDIO observations; callers hash the complete original spec and independently authorize start. */
+export interface StdioCloudCaptureV2 {
+  actualExecutorImage: Extract<StdioExecutorImageV2, { kind: 'cloud' }>
+  capture: Extract<StdioPreparedV2['capture'], { kind: 'cloud' }>
+  spec: StdioObjectV2
+}
 /** Frozen writer captured under the owner, Workspace and mount locks for Cloud resolution. */
 export interface CloudResolutionTarget {
   userId: string; sessionId: string; workspaceId: string; generation: string
@@ -893,6 +903,99 @@ export class SandboxManager {
         || slot.runner_instance_id !== sandbox.runnerInstanceId || !this.sameBinding(binding, sandbox.binding)
         || !this.sameBinding(slot.binding_snapshot, sandbox.binding)) throw new MountSlotBlocked('mount_slot_changed', false)
     })
+  }
+
+  /** Capture the original ready PVC writer without creating resources or spawning a user program.
+   * @param sandbox Previously captured owner, Session, Pod, Runner and mount generation.
+   * @param scope Original logical Workspace and user Home from the accepted STDIO task.
+   * @param pin Trusted single-platform deployment mapping fixed before task admission.
+   * @param limits Trusted original SDK budgets for the complete Pod spec JSON.
+   * @returns Exact private mount/container/image observations and the complete original Pod spec.
+   * @throws Rejects non-PVC, unavailable, incomplete or changed observations; existing admission refusals remain unchanged.
+   */
+  async captureStdioV2(sandbox: SandboxReady, scope: Extract<StdioScopeV2, { kind: 'cloud' }>,
+    pin: Extract<StdioDeploymentV2, { kind: 'cloud' }>, limits: StdioLimitsV2): Promise<StdioCloudCaptureV2> {
+    const invalid = () => new MountSlotBlocked('mount_stdio_capture_invalid', false)
+    const unavailable = () => new MountSlotBlocked('mount_stdio_capture_unavailable', false)
+    const record = (value: unknown): value is Record<string, unknown> =>
+      value !== null && typeof value === 'object' && !Array.isArray(value)
+    let writer: SandboxReady, selected: typeof scope, deployment: typeof pin, budget: StdioLimitsV2
+    try {
+      writer = structuredClone(sandbox)
+      const parsedScope = stdioScopeV2.parse(scope), parsedPin = stdioDeploymentV2.parse(pin)
+      budget = stdioLimitsV2.parse(limits)
+      if (parsedScope.kind !== 'cloud' || parsedPin.kind !== 'cloud') throw invalid()
+      selected = parsedScope; deployment = parsedPin
+      const binding = storageBinding.parse(writer.binding)
+      if (writer.name !== this.name(writer.userId) || selected.userId !== writer.userId
+        || selected.workspaceId !== binding.workspaceId || selected.bindingGeneration !== binding.generation
+        || selected.target.spaceId !== binding.spaceId || selected.target.rootRelativePath !== binding.rootRelativePath
+        || selected.home.userId !== writer.userId) throw invalid()
+    } catch (_invalidInput) { throw invalid() }
+    if (!this.config.volumeClaimName) throw new MountSlotBlocked('mount_stdio_pvc_required', false)
+    const jsonBudget = { maxDepth: budget.maxJsonDepth, maxNodes: budget.maxJsonNodes, maxBytes: budget.maxInputBytes }
+    const labels = this.labels(writer.sessionId, writer.userId, writer.name, writer.generation)
+    const observe = (parent: Resource | null, pod: Pod | null) => {
+      if (!parent || !pod) throw unavailable()
+      try {
+        if (parent.metadata.name !== writer.name || parent.metadata.namespace !== this.config.namespace
+          || !parent.metadata.uid || parent.metadata.deletionTimestamp || !this.owned(parent, labels)
+          || pod.metadata.name !== writer.name || pod.metadata.namespace !== this.config.namespace
+          || pod.metadata.uid !== writer.podUid || pod.metadata.deletionTimestamp || !this.owned(pod, labels)
+          || !pod.metadata.finalizers?.includes(STOP_FINALIZER)
+          || !pod.metadata.ownerReferences?.some(ref => ref.uid === parent.metadata.uid)
+          || !this.hasSkillPackageIdentity(parent, pod, writer.userId, writer.binding)) throw invalid()
+        const spec = stdioObjectV2(jsonBudget).parse(pod.spec)
+        const template = parent.spec?.podTemplate
+        const containers = spec.containers, statuses: unknown = pod.status?.containerStatuses
+        const templateSpec = record(template) && record(template.spec) ? template.spec : null
+        const templateContainers = templateSpec?.containers
+        if (!Array.isArray(containers) || containers.length !== 1 || !record(containers[0])
+          || containers[0].name !== 'runner' || containers[0].image !== deployment.imageReference
+          || !Array.isArray(templateContainers) || templateContainers.length !== 1 || !record(templateContainers[0])
+          || templateContainers[0].name !== 'runner' || templateContainers[0].image !== deployment.imageReference
+          || !Array.isArray(statuses) || statuses.length !== 1 || !record(statuses[0])
+          || statuses[0].name !== 'runner' || statuses[0].ready !== true || pod.status?.phase !== 'Running'
+          || !record(statuses[0].state) || !record(statuses[0].state.running)
+          || Object.keys(statuses[0].state).length !== 1) throw invalid()
+        const capture = stdioCaptureV2.options[0].parse({ kind: 'cloud', podUid: pod.metadata.uid,
+          podName: writer.name, namespace: this.config.namespace, nodeName: spec.nodeName,
+          runnerInstanceId: writer.runnerInstanceId, containerId: statuses[0].containerID,
+          restartCount: statuses[0].restartCount, mountGeneration: writer.generation,
+          workspaceMount: { claimName: this.config.volumeClaimName,
+            subPath: `workspaces/${writer.binding.rootKey}${writer.binding.rootRelativePath ? '/' + writer.binding.rootRelativePath : ''}`,
+            mountPath: '/workspace', readOnly: false },
+          homeMount: { claimName: this.config.volumeClaimName, subPath: `homes/${writer.userId}`,
+            mountPath: '/home/agent', readOnly: false } })
+        const imageId = statuses[0].imageID
+        if (typeof imageId !== 'string' || !imageId || imageId.includes('\0')) throw invalid()
+        return { capture, imageId, spec }
+      } catch (_invalidObservation) { throw invalid() }
+    }
+    const resources = async () => {
+      try { return await Promise.all([this.get('sandboxes', writer.name), this.get('pods', writer.name)]) }
+      catch (_resourceReadFailed) { throw unavailable() }
+    }
+    // Keep existing account/recovery fences, including their safe PG quarantine on identity loss.
+    await this.assertDispatchAllowed(writer)
+    const first = await resources(), observed = observe(first[0], first[1])
+    let node: unknown
+    try { node = await this.kube.call<unknown>('GET', `/api/v1/nodes/${encodeURIComponent(observed.capture.nodeName)}`) }
+    catch (_nodeReadFailed) { throw unavailable() }
+    if (!record(node) || !record(node.metadata) || node.metadata.name !== observed.capture.nodeName
+      || node.metadata.deletionTimestamp || !record(node.status) || !record(node.status.nodeInfo)) throw invalid()
+    let actualExecutorImage: StdioCloudCaptureV2['actualExecutorImage']
+    try {
+      actualExecutorImage = stdioExecutorImageV2.options[0].parse({ kind: 'cloud',
+        platform: { os: node.status.nodeInfo.operatingSystem, architecture: node.status.nodeInfo.architecture },
+        imageReference: deployment.imageReference, runtimeImageId: observed.imageId })
+      if (!stdioImageMatchesDeploymentV2(deployment, actualExecutorImage)) throw invalid()
+    } catch (_invalidImage) { throw invalid() }
+    await this.assertDispatchAllowed(writer)
+    const last = await resources(), final = observe(last[0], last[1])
+    if (observed.imageId !== final.imageId || JSON.stringify(observed.capture) !== JSON.stringify(final.capture)
+      || stdioCanonicalJsonV2(observed.spec, jsonBudget) !== stdioCanonicalJsonV2(final.spec, jsonBudget)) throw invalid()
+    return { actualExecutorImage, capture: final.capture, spec: structuredClone(final.spec) }
   }
 
   /**
