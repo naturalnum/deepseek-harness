@@ -61,7 +61,9 @@ test('V29 through V31 retain legacy facts without fabricating Device capture or 
     assert.deepEqual((await pool.query('SELECT * FROM pe_desktop_executions WHERE id=$1', [execution])).rows[0], after)
     await initializeDatabase(pool)
     assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, predecessors.CURRENT_SCHEMA_VERSION)
-    assert.deepEqual((await pool.query('SELECT * FROM pe_desktop_executions WHERE id=$1', [execution])).rows[0], after)
+    assert.deepEqual((await pool.query('SELECT * FROM pe_desktop_executions WHERE id=$1', [execution])).rows[0],
+      { ...after, execution_kind: 'legacy_command', execution_target: 'desktop', origin_kind: 'operation',
+        task_version: null, stdio_phase: null, stdio_task: null, stdio_action_id: null })
     assert.equal((await pool.query('SELECT count(*)::integer AS n FROM pe_device_execution_resolutions')).rows[0].n, 0)
     assert.equal((await pool.query(`SELECT data_type FROM information_schema.columns
       WHERE table_name='pe_device_execution_resolutions' AND column_name='snapshot'`)).rows[0].data_type, 'json')

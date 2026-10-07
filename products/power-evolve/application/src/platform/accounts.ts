@@ -366,6 +366,7 @@ export class AccountService {
     if (execution.active) throw new PlatformError(409, ACCOUNT_ERROR_CODES.executionActive)
     const tables = ['pe_sessions', 'pe_file_mutations', 'pe_artifacts', 'pe_user_skills', 'pe_skill_package_versions',
       'pe_devices', 'pe_device_directories', 'pe_mcp_connections', 'pe_ssh_connections', 'pe_stdio_mcp_connections',
+      'pe_stdio_v2_connections', 'pe_stdio_v2_management_requests',
       'pe_mcp_remote_connections', 'pe_mcp_drafts', 'pe_mcp_checks', 'pe_connector_actions',
       'pe_storage_directory_requests', 'pe_workspace_binding_requests', 'pe_office_preview_jobs']
     const content = (await client.query<{ content: boolean }>(`SELECT ${tables.map(table => `EXISTS(SELECT 1 FROM ${table} WHERE user_id=$1)`).join(' OR ')}

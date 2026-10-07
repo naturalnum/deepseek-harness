@@ -1,5 +1,5 @@
 /**
- * V32→V33 compatibility against a disposable real PG database and built application modules.
+ * V32→current compatibility against a disposable real PG database and built application modules.
  * Office records and stop facts are synthetic; no parser, kubelet or live V32 poller runs.
  * The startup fence requires old processes to be stopped before a V33 deployment.
  */
@@ -145,9 +145,9 @@ async function retainedFacts(pool) {
   return { rows, stored, sha256: sha(JSON.stringify(stored)) }
 }
 
-test('V33 retains V32 Office admission and stop records while fencing old startup and future versions',
+test('current schema retains V32 Office admission and stop records while fencing old startup and future versions',
   { timeout: 30_000 }, async t => {
-    assert.equal(CURRENT_SCHEMA_VERSION, 33, 'This adjacent compatibility fixture must be reviewed for the next reader version')
+    assert.equal(CURRENT_SCHEMA_VERSION, 34, 'Review retained Office facts for each adjacent reader version')
     const privateDir = process.env.PE_PRIVATE_DIR ?? join(homedir(), '.config/power-evolve/shared-host-desktop-owned-20261004')
     const databaseUrl = process.env.PE_TEST_DATABASE_URL ?? (await readFile(join(privateDir, 'database-url'), 'utf8')).trim()
     const databaseName = `pe_office_v33_${randomBytes(10).toString('hex')}`
@@ -185,22 +185,22 @@ test('V33 retains V32 Office admission and stop records while fencing old startu
 
       await t.test('adjacent migration preserves complete rows, exact stored JSON bytes, hashes and stop reservations', async () => {
         await initializeDatabase(pool)
-        assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 33)
+        assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, CURRENT_SCHEMA_VERSION)
         assert.deepEqual(await retainedFacts(pool), before)
       })
-      await t.test('repeated V33 initialization leaves all retained facts unchanged', async () => {
+      await t.test('repeated current initialization leaves all retained facts unchanged', async () => {
         await initializeDatabase(pool)
         assert.deepEqual(await retainedFacts(pool), before)
       })
-      await t.test('archived CURRENT32 startup rejects V33 and rolls back without touching old tasks', async () => {
+      await t.test('archived CURRENT32 startup rejects the current version without touching old tasks', async () => {
         await assert.rejects(initializeV32Database(pool), /Unsupported PowerEvolve schema version/u)
-        assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 33)
+        assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, CURRENT_SCHEMA_VERSION)
         assert.deepEqual(await retainedFacts(pool), before)
       })
-      await t.test('current startup rejects a future V34 without rewriting version or retained rows', async () => {
-        await pool.query('UPDATE pe_schema SET version=34 WHERE version=33')
+      await t.test('current startup rejects a future version without rewriting version or retained rows', async () => {
+        await pool.query('UPDATE pe_schema SET version=$1 WHERE version=$2', [CURRENT_SCHEMA_VERSION+1,CURRENT_SCHEMA_VERSION])
         await assert.rejects(initializeDatabase(pool), /Unsupported PowerEvolve schema version/u)
-        assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, 34)
+        assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version, CURRENT_SCHEMA_VERSION+1)
         assert.deepEqual(await retainedFacts(pool), before)
       })
     } finally {
