@@ -56,6 +56,12 @@ import { McpCheckWorker } from './mcp-check-worker.ts'
 import { McpActionWorker } from './mcp-action-worker.ts'
 import { StdioMcpService } from './stdio-mcp.ts'
 import { StdioRunnerOrchestrator } from './stdio-runner.ts'
+import { loadStdioPlatformConfigV2 } from './stdio-v2-platform-config.ts'
+import { StdioOperationAdmissionV2 } from './stdio-v2-operation-admission.ts'
+import { createStdioCloudServicesV2, STDIO_PRODUCT_RESERVED_NAMES_V2 } from './stdio-v2-services.ts'
+import { stdioWorkerIdV2 } from '@power-evolve/contracts/stdio-runtime'
+import { stdioActionRequestV2, stdioApprovalRequestV2, stdioCheckRequestV2,
+  stdioReceiptRequestV2 } from '@power-evolve/contracts/stdio-mcp'
 import { SshConnectionService } from './ssh.ts'
 import { sshManagementRequests } from '../ssh-management-contracts.ts'
 import { SshCallStore } from './ssh-calls.ts'
@@ -96,6 +102,7 @@ export const Config = schema.object({
   modelUrl: schema.string().required(), hostOrigin: schema.string().required(), platformOrigin: schema.string().required(),
   mcpUrl: schema.string().default(''), mcpTokenFile: schema.string().default(''),
   remoteMcpConfigFile: schema.string().default(''),
+  stdioV2ConfigFile: schema.string().default(''),
   officePreviewConfigFile: schema.string().default(''), officePreviewKubeconfigFile: schema.string().default(''),
   mcpTimeoutMs: schema.number().min(1000).default(5000),
   sshCredentialKeyFile: schema.string().default(''), sshDestinationAllowlist: schema.string().default(''),
@@ -155,6 +162,12 @@ const seedUsers = z.array(z.object({
 export async function apply(ctx: Context, config: Config): Promise<void> {
   const instanceId = randomUUID()
   const remoteMcpConfig = await loadMcpPlatformConfig(config.remoteMcpConfigFile)
+  const stdioV2Config = await loadStdioPlatformConfigV2(config.stdioV2ConfigFile)
+  if (stdioV2Config && (!config.sandboxKubeconfigFile || !config.sandboxVolumeClaimName
+    || config.sandboxNodeRoot || config.sandboxImage !== stdioV2Config.settings.cloudDeployment.imageReference
+    || config.maxRequestBytes < stdioV2Config.settings.limits.maxInputBytes)) {
+    throw new Error('STDIO v2 requires its reviewed Sandbox image, PVC and complete request budget')
+  }
   const officePreviewConfig = await loadOfficePreviewConfig(config.officePreviewConfigFile, config.officePreviewKubeconfigFile,
     [config.workspaceRoot, config.artifactRoot,
       ...(config.sandboxLocalRoot ? [join(resolve(config.sandboxLocalRoot), 'homes')] : []),
@@ -263,7 +276,11 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     management: accountManagement, revokeExecutions: revokeAccountExecutions,
   }) : null
   const accountSettings = new AccountSettingsService(pool)
+  const stdioV2Selection = stdioV2Config ? new StdioOperationAdmissionV2(files, stdioV2Config.settings) : null
   const tasks = new TaskStore(pool, { ...config, executionEnabled, mcpEnabled: !!config.mcpUrl,
+    ...(stdioV2Selection ? { stdioV2Admission: {
+      selection: stdioV2Selection, reservedNames: STDIO_PRODUCT_RESERVED_NAMES_V2,
+    } } : {}),
     ...(remoteMcpConfig ? { remoteMcpAdmission: remoteMcpConfig.settings.admission } : {}),
     stdioMcpEnabled: !!config.sshRunnerKubeconfigFile,
     sshEnabled: !!config.sshRunnerKubeconfigFile && !!config.sshCredentialKeyFile })
@@ -406,6 +423,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       namespace: config.sandboxNamespace, image: config.sandboxImage,
       localRoot: config.sandboxLocalRoot, nodeRoot: config.sandboxNodeRoot,
       ...(config.sandboxVolumeClaimName ? { volumeClaimName: config.sandboxVolumeClaimName } : {}),
+      ...(stdioV2Config ? { stdioV2: { limits: stdioV2Config.settings.limits,
+        maxReplyBytes: stdioV2Config.settings.maxReplyBytes } } : {}),
       readyTimeoutMs: config.sandboxReadyTimeoutMs,
       fileScan: {
         maxEntries: config.sandboxScanMaxEntries, maxHashBytes: config.sandboxScanMaxHashBytes,
@@ -413,6 +432,22 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         maxFiles: config.sandboxScanMaxFiles,
       },
     }) : null
+  const stdioV2 = sandboxManager && stdioV2Config && stdioV2Selection
+    ? createStdioCloudServicesV2(pool, tasks, stdioV2Selection, files, sandboxManager,
+      stdioV2Config, stdioWorkerIdV2.parse(instanceId)) : null
+  let stdioWorkerReady = true
+  if (stdioV2) {
+    const stop = new AbortController()
+    const polling = stdioV2.worker.run(stop.signal).catch(_workerStopped => {
+      if (!stop.signal.aborted) {
+        stdioWorkerReady = false
+        ctx.logger.error('STDIO v2 worker stopped unexpectedly')
+      }
+    })
+    const close = async () => { stop.abort(); await stdioV2.worker.stop(); await polling }
+    mcpShutdown.add(close)
+    ctx.effect(() => close)
+  }
   const executions = sandboxManager ? new ExecutionService(tasks, sandboxManager,
     { service: executionFiles, timeoutMs: config.sandboxFileVerifyTimeoutMs },
     config.sandboxConcurrency, config.sandboxPollMs, config.sandboxIdleMs, config.sandboxCommandTimeoutMs) : null
@@ -457,14 +492,16 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         if (versions.rows.length !== 1) throw new Error('PowerEvolve schema version is unavailable')
         if (!databaseReady) ctx.logger.info('Platform PostgreSQL connection recovered')
         databaseReady = true
-        sendJson(res, { ready: true, service: 'platform', schema: versions.rows[0]!.version, executionEnabled,
+        sendJson(res, { ready: stdioWorkerReady, service: 'platform', schema: versions.rows[0]!.version, executionEnabled,
           mcpAvailable: !!config.mcpUrl, remoteMcpAvailable: remoteMcp !== null,
-          stdioMcpAvailable: stdioMcp.available, sshAvailable, officePreviewAvailable: officePreviews !== null, instanceId })
+          stdioMcpAvailable: stdioMcp.available, stdioV2Available: stdioV2 !== null && stdioWorkerReady,
+          sshAvailable, officePreviewAvailable: officePreviews !== null, instanceId }, stdioWorkerReady ? 200 : 503)
       } catch (error) {
         databaseUnavailable(error)
         sendJson(res, { ready: false, service: 'platform', schema: null, database: 'unavailable',
           executionEnabled, mcpAvailable: !!config.mcpUrl, remoteMcpAvailable: remoteMcp !== null,
           stdioMcpAvailable: stdioMcp.available,
+          stdioV2Available: false,
           sshAvailable, officePreviewAvailable: officePreviews !== null, instanceId }, 503)
       }
       return
@@ -549,6 +586,9 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       await proxyModel(tasks, {
         url: config.modelUrl, apiKey: modelKey.trim(), timeoutMs: config.modelTimeoutMs,
         maxRequestBytes: config.maxRequestBytes, maxResponseBytes: config.maxModelResponseBytes,
+        ...(stdioV2Selection ? { stdioV2Admission: {
+          selection: stdioV2Selection, reservedNames: STDIO_PRODUCT_RESERVED_NAMES_V2,
+        } } : {}),
       }, req, res)
       return
     }
@@ -655,6 +695,15 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       if (path.startsWith('/approvals/mcp/')) {
         sendJson(res, await routeMcpApproval(remoteMcpActions, path, user, input, token)); return
       }
+      if (path.startsWith('/approvals/stdio-v2/')) {
+        if (!stdioV2) throw new PlatformError(503, 'stdio_v2_unavailable')
+        switch (path) {
+          case '/approvals/stdio-v2/list': sendJson(res, await stdioV2.actions.approvalList(token, listRequest.parse(input))); return
+          case '/approvals/stdio-v2/inspect': sendJson(res, await stdioV2.authorization.inspect(token, stdioActionRequestV2.parse(input).actionId)); return
+          case '/approvals/stdio-v2/decide': sendJson(res, await stdioV2.authorization.decide(token, stdioApprovalRequestV2.parse(input))); return
+          default: throw new PlatformError(404, 'not_found')
+        }
+      }
       switch (path) {
         case '/approvals/me': z.object({}).strict().parse(input); sendJson(res, user); return
         case '/approvals/list': z.object({}).strict().parse(input); sendJson(res, await connectors.list(user)); return
@@ -693,9 +742,35 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       const claimed = await tasks.claim(input.workerId)
       sendJson(res, claimed); return
     }
+    if (path.startsWith('/stdio-v2/')) {
+      if (!stdioV2 || !stdioV2Config) throw new PlatformError(503, 'stdio_v2_unavailable')
+      const input = await readJson(req, stdioV2Config.settings.limits.maxInputBytes)
+      const { requests, connections, discovery } = stdioV2
+      switch (path) {
+        case '/stdio-v2/actions/list': {
+          const value = listRequest.extend({ sessionId: sessionId.optional() }).parse(input)
+          sendJson(res, await stdioV2.actions.list(token, { offset: value.offset, limit: value.limit,
+            ...(value.sessionId === undefined ? {} : { sessionId: value.sessionId }) })); return
+        }
+        case '/stdio-v2/actions/detail': sendJson(res, await stdioV2.actions.detail(token, stdioActionRequestV2.parse(input))); return
+        case '/stdio-v2/actions/cancel': sendJson(res, await stdioV2.actions.cancel(token, stdioActionRequestV2.parse(input))); return
+        case '/stdio-v2/connections/list': sendJson(res, await connections.list(token, requests.listRequest.parse(input))); return
+        case '/stdio-v2/connections/create': sendJson(res, await connections.create(token, requests.create.parse(input))); return
+        case '/stdio-v2/connections/update': sendJson(res, await connections.update(token, requests.update.parse(input))); return
+        case '/stdio-v2/connections/toggle': sendJson(res, await connections.toggle(token, requests.toggle.parse(input))); return
+        case '/stdio-v2/connections/delete': sendJson(res, await connections.remove(token, requests.remove.parse(input))); return
+        case '/stdio-v2/connections/receipt': sendJson(res, await connections.receipt(token, stdioReceiptRequestV2.parse(input))); return
+        case '/stdio-v2/connections/check': sendJson(res, await discovery.check(token, stdioCheckRequestV2.parse(input))); return
+        default: throw new PlatformError(404, 'not_found')
+      }
+    }
     if (path.startsWith('/runtime/')) {
       const input = await readJson(req, config.maxRequestBytes)
       switch (path) {
+        case '/runtime/stdio-v2/calls/propose': {
+          if (!stdioV2) throw new PlatformError(503, 'stdio_v2_unavailable')
+          sendJson(res, await stdioV2.calls.propose(token, input)); return
+        }
         case '/runtime/snapshot': z.object({}).strict().parse(input); sendJson(res, await events.runtimeSnapshot(token)); return
         case '/runtime/append': sendJson(res, await events.append(token, z.object({ events: z.array(z.json()).max(256) }).strict().parse(input).events)); return
         case '/runtime/skills/resource': {

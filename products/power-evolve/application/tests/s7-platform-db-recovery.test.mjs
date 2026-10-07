@@ -85,6 +85,8 @@ test('Platform stays alive, becomes unready, and resumes only new requests after
         readyFile, modelUrl: 'http://127.0.0.1:9/model', connectorUrl: 'http://127.0.0.1:9',
         sandboxKubeconfigFile: '', sandboxKeyFile: '', sandboxNamespace: '', sandboxImage: '',
         sandboxLocalRoot: '', sandboxNodeRoot: '', databaseTimeoutMs: 2000,
+        sandboxVolumeClaimName: '', accountManagementFile: '', accountBootstrapFile: '',
+        officePreviewConfigFile: '', officePreviewKubeconfigFile: '', stdioV2ConfigFile: '',
         skillLibraryRoot: '', preinstalledSkills: [],
       },
     }))
@@ -102,7 +104,9 @@ test('Platform stays alive, becomes unready, and resumes only new requests after
       }
       try { return JSON.parse(await readFile(readyFile, 'utf8')) }
       catch (error) { if (error.code === 'ENOENT' || error instanceof SyntaxError) return false; throw error }
-    }, 'Platform ready')
+    }, 'Platform ready').catch(async error => {
+      throw new Error(`${error.message}\n${(await readFile(logPath, 'utf8')).slice(-32000)}`, { cause: error })
+    })
     const health = () => fetch(`${ready.url}/health`, { signal: AbortSignal.timeout(1500) })
     const live = () => fetch(`${ready.url}/live`, { signal: AbortSignal.timeout(1500) })
     assert.equal((await health()).status, 200)
@@ -145,11 +149,22 @@ test('Platform stays alive, becomes unready, and resumes only new requests after
     const login = await fetch(`${ready.url}/identity/login`, { method: 'POST',
       headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'alice', password }) })
     assert.equal(login.status, 200)
+    const authenticated = await login.json()
+    assert.equal(typeof authenticated.token, 'string')
+    const disabledStdio = await fetch(`${ready.url}/stdio-v2/connections/list`, { method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${authenticated.token}` },
+      body: '{}', signal: AbortSignal.timeout(3000) })
+    assert.equal(disabledStdio.status, 503)
+    assert.equal((await disabledStdio.json()).error, 'stdio_v2_unavailable')
     const check = new Pool({ connectionString: url.href, max: 1 })
     try {
       assert.equal((await check.query('SELECT count(*)::integer AS count FROM pe_credentials')).rows[0].count, 1)
       const version = (await check.query('SELECT version FROM pe_schema')).rows[0].version
       assert.equal((await (await health()).json()).schema, version)
+      assert.equal((await (await health()).json()).stdioV2Available, false)
+      for (const table of ['pe_stdio_v2_actions', 'pe_cloud_executions', 'pe_sandbox_instances']) {
+        assert.equal((await check.query(`SELECT count(*)::integer AS count FROM ${table}`)).rows[0].count, 0)
+      }
     } finally { await check.end() }
     assert.match(await readFile(logPath, 'utf8'), /Platform PostgreSQL connection recovered/)
   })

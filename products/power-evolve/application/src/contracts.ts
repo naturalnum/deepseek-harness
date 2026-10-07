@@ -138,6 +138,7 @@ export const sshCheckView = z.object({ callId: z.uuid(),
 export const loginRequest = z.object({
   username: z.string().min(1).max(80), password: z.string().min(1).max(256),
 }).strict()
+/** Leased Host response; the Platform validates each owner's complete frozen tool selection before issuing it. */
 export const grant = z.object({
   operationId, sessionId, userId, requestId,
   text: z.string().max(MAX_INPUT_JSON_BYTES)
@@ -167,6 +168,7 @@ export const grant = z.object({
   sshConnections: z.array(sshSelection).max(8).default([]),
 }).strict().refine(value => value.source !== 'user' || value.text.length <= 16_384,
   { path: ['text'], message: 'User input exceeds 16384 characters' })
+/** One operation's settings, frozen tools, trusted input source, and current lease token. */
 export type Grant = z.infer<typeof grant>
 
 /** HTTP refusal safe to return without exposing database or upstream diagnostics. */
