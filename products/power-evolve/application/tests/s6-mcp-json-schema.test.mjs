@@ -202,6 +202,8 @@ test('unsupported named __proto__ constraints refuse explicitly; ordinary annota
   for (const unsupported of [
     JSON.parse('{"type":"object","properties":{"__proto__":{"type":"integer","minimum":2}}}'),
     JSON.parse('{"type":"object","properties":{"nested":{"type":"object","properties":{"__proto__":{"enum":["exact"]}}}}}'),
+    JSON.parse('{"type":"object","$schema":"http://json-schema.org/draft-07/schema#","dependencies":{"__proto__":["acknowledgement"]}}'),
+    JSON.parse('{"type":"object","$schema":"http://json-schema.org/draft-07/schema#","dependencies":{"__proto__":{"required":["acknowledgement"]}}}'),
   ]) assert.throws(() => compileMcpJsonSchema(unsupported, true), { code: 'mcp_schema_unsupported' })
   const schema = JSON.parse('{"type":"object","default":{"__proto__":{"annotation":true}},"properties":{"nested":{"type":"object","additionalProperties":{"enum":["exact"]}}},"required":["nested"],"additionalProperties":{"type":"integer","minimum":2}}')
   const before = structuredClone(schema), validate = compileMcpJsonSchema(schema, true)

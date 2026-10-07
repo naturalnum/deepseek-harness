@@ -221,6 +221,10 @@ test('Grant fields and owner selection preserve own __proto__ keys while unsuppo
       JSON.parse('{"__proto__":2,"nested":{"__proto__":"exact"}}'), limits))
   }
   refused('stdio_v2_schema_unsupported', () => compile([input]))
+  for (const dependency of ['["acknowledgement"]', '{"required":["acknowledgement"]}']) {
+    const descriptor = { ...clone(raw), inputSchema: JSON.parse(`{"type":"object","$schema":"http://json-schema.org/draft-07/schema#","dependencies":{"__proto__":${dependency}}}`) }
+    refused('stdio_v2_schema_unsupported', () => compile([connection([descriptor])]))
+  }
   const supported = clone(raw)
   supported.inputSchema = JSON.parse('{"type":"object","default":{"__proto__":{"annotation":true}},"additionalProperties":{"type":"integer","minimum":2}}')
   const [compiled] = compile([connection([supported])])

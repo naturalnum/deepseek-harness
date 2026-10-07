@@ -111,8 +111,10 @@ function complexity(root: Record<string, Json>, compiler: Ajv): number {
     for (const [keyword, child] of Object.entries(schema)) {
       if (schemaMaps.has(keyword) || keyword === 'dependencies') {
         if (typeof child !== 'object' || child === null || Array.isArray(child)) throw new McpJsonSchemaError()
-        // Ajv omits this named property from compiled constraints; refuse that schema explicitly.
-        if (keyword === 'properties' && Object.hasOwn(child, '__proto__')) throw new McpJsonSchemaError()
+        // Ajv omits this key in these named-property maps; refuse the unsupported constraints explicitly.
+        if ((keyword === 'properties' || keyword === 'dependencies') && Object.hasOwn(child, '__proto__')) {
+          throw new McpJsonSchemaError()
+        }
         for (const entry of Object.values(child)) {
           if (keyword !== 'dependencies' || !Array.isArray(entry)) nested.push(visit(entry))
         }
@@ -180,7 +182,7 @@ function complexity(root: Record<string, Json>, compiler: Ajv): number {
  * Missing dialect means 2020-12; declared 2019-09 and draft-07 retain their keyword semantics.
  * Constraints retain their meaning. Regex/format, uniqueItems:true, dynamic/recursive references,
  * nested dialect/ID changes, external references, async and custom vocabularies reject explicitly.
- * Named properties.__proto__ constraints reject because Ajv omits them; other JSON keys remain data.
+ * Named properties/dependencies.__proto__ constraints reject because Ajv omits them; other JSON keys remain data.
  * Static document references must be acyclic. Schemas/values have depth at most 32; schemas
  * have at most 65,536 JSON/string units and 256 expanded schema nodes. The work estimate
  * includes literal comparisons, required/dependency lists and property names. That weight
