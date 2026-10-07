@@ -10,6 +10,7 @@
     "README.zh.md"
   ],
   "exports": {
+    "./stdio-runtime": { "types": "./lib/stdio-runtime.d.ts", "default": "./lib/stdio-runtime.js" },
     "./stdio-mcp": { "types": "./lib/stdio-mcp.d.ts", "default": "./lib/stdio-mcp.js" },
     "./stdio-mcp-json": { "types": "./lib/stdio-mcp-json.d.ts", "default": "./lib/stdio-mcp-json.js" },
     "./desktop-browser-scope": {

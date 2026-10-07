@@ -93,7 +93,7 @@ async function prepare(pool, row) {
 }
 
 test('V34 preserves legacy facts and binds generic execution, approval and continuation records', {timeout:30000}, async t => {
-  assert.equal(previous.CURRENT_SCHEMA_VERSION,34)
+  assert.equal(previous.CURRENT_SCHEMA_VERSION,35)
   const databaseUrl=process.env.PE_TEST_DATABASE_URL ?? (await readFile(join(process.env.PE_PRIVATE_DIR,'database-url'),'utf8')).trim()
   const name=`pe_stdio_v34_${randomBytes(10).toString('hex')}`
   const admin=new Pool({connectionString:databaseUrl,max:1,idleTimeoutMillis:0})
@@ -115,7 +115,7 @@ test('V34 preserves legacy facts and binds generic execution, approval and conti
     }
     await t.test('adjacent and repeated migration leave complete legacy rows and raw bytes unchanged',async()=>{
       await initializeDatabase(pool);await initializeDatabase(pool)
-      assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version,34)
+      assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version,35)
       for (const {target,id,row} of before) {
         const after=(await pool.query(`SELECT * FROM ${table(target)} WHERE id=$1`,[id])).rows[0]
         assert.deepEqual(stripAdded(after),row)
@@ -213,9 +213,9 @@ test('V34 preserves legacy facts and binds generic execution, approval and conti
       await pool.query("UPDATE pe_operations SET state='completed' WHERE id=$1",[operation])
     })
     await t.test('current startup refuses a future schema without changing accepted tasks',async()=>{
-      await pool.query('UPDATE pe_schema SET version=35 WHERE version=34')
+      await pool.query('UPDATE pe_schema SET version=36 WHERE version=35')
       await assert.rejects(initializeDatabase(pool),/Unsupported PowerEvolve schema version/u)
-      assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version,35)
+      assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version,36)
       assert.equal((await pool.query('SELECT task::text AS raw FROM pe_stdio_v2_actions WHERE id=$1',[call.id])).rows[0].raw,JSON.stringify(call.task))
     })
   } finally {

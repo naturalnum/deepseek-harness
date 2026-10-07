@@ -28,6 +28,7 @@
     // not declaration path aliases, keep each package/vendor source compiled
     // under its own tsconfig boundary.
     "paths": {
+      "@power-evolve/contracts/stdio-runtime": ["./products/power-evolve/contracts/src/stdio-runtime.ts"],
       "@power-evolve/contracts/stdio-mcp": ["./products/power-evolve/contracts/src/stdio-mcp.ts"],
       "@power-evolve/contracts/stdio-management": ["./products/power-evolve/contracts/src/stdio-management.ts"],
       "@power-evolve/contracts/stdio-mcp-json": ["./products/power-evolve/contracts/src/stdio-mcp-json.ts"],

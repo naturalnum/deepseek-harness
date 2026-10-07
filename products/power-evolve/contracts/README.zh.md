@@ -49,6 +49,8 @@ Device 派发记录接受可选的 `materials` 不可变技能引用。缺省时
 
 通过 `@power-evolve/contracts/stdio-management` 导入有界 STDIO 连接管理记录。创建和版本更新保留逐项程序参数；启用要求当前版本已有成功目录。回执保留按用户划分的请求标识，发现回执标识唯一的原始动作和执行记录。这些记录不授予启动程序的权限。
 
+通过 `@power-evolve/contracts/stdio-runtime` 导入云执行观察与原始 worker 租约。完整 view 在明确的 JSON 与响应字节预算内保留 SDK 页、初始化元数据、原始目录与结果扩展。直接子进程清理事实与私有完整 UID 停止记录分别保存。解析租约或停止记录不会认证 worker 或观察者；平台保存结果或发布目录前须检查原私有执行器、当前数据库租约与不可变派发记录。
+
 ## 实现 {#implementation}
 
 运行时仅依赖 Zod 和上游品牌类型工具。TypeScript 一并生成兼容浏览器的 ESM 和声明文件。包构建还生成 `lib/browser/execution-resolution.js` 与 `lib/browser/office-preview.js` 中的独立 ESM。可信审批页通过平台白名单导入前者；隔离解析器将后者作为固定物理资源消费。消费者须先构建包，这些模块没有外部运行时导入。应用为现有内部导入重新导出这些账号定义。此包没有进程状态、凭据存储、授权检查或独立的生命周期不变量。

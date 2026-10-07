@@ -49,6 +49,8 @@ Import generic STDIO requests and frozen tasks from `@power-evolve/contracts/std
 
 Import bounded STDIO connection management from `@power-evolve/contracts/stdio-management`. Creation and revision updates retain literal program arguments; enabling requires the current successful catalog. Receipts retain owner-scoped request identity, and discovery receipts identify one original action and execution. These records grant no program start permission.
 
+Import cloud runtime observations and original worker leases from `@power-evolve/contracts/stdio-runtime`. Complete views preserve SDK pages, initialization metadata, raw catalogs and result extensions under explicit JSON and response-byte budgets. Direct-child cleanup facts and private full-UID retirement records remain distinct. Parsing a lease or stop record authenticates neither its worker nor its observer; the Platform must check the original private executor, current database lease and immutable dispatch before saving a result or publishing a catalog.
+
 ## Implementation
 
 Only Zod and the upstream brand utility are runtime dependencies. TypeScript emits browser-compatible ESM and declarations together. The package build also produces standalone ESM in `lib/browser/execution-resolution.js` and `lib/browser/office-preview.js`. The trusted approval page imports the first through the Platform allowlist; the isolated parser consumes the second as a fixed physical resource. Consumers require the package build; these modules have no external runtime imports. The application re-exports these account definitions for its existing internal imports. The package has no process state, credential storage, authorization checks or independent lifecycle invariant.

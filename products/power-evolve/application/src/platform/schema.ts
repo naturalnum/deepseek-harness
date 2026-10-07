@@ -5,7 +5,7 @@ import { sshSchemaV24 } from './ssh-schema.ts'
 import { accountSchemaV25 } from './account-schema.ts'
 
 /** Latest supported product database version; older binaries reject newer state. */
-export const CURRENT_SCHEMA_VERSION = 34
+export const CURRENT_SCHEMA_VERSION = 35
 
 /** Bootstrap tables before applying the adjacent versioned migrations. */
 export const schema = `

@@ -4,9 +4,9 @@ import { stdioCanonicalJsonV2, type StdioV2JsonLimits } from '@power-evolve/cont
 import { stdioCatalogV2, stdioDigestV2, type StdioDigestV2, type StdioLimitsV2 } from '@power-evolve/contracts/stdio-mcp'
 
 /** Distinct original data domains; later observations never alter a task digest. */
-export type StdioDigestDomainV2 = 'management' | 'configuration' | 'task' | 'catalog' | 'prepared' | 'scope' | 'spec' | 'dispatch' | 'result'
+export type StdioDigestDomainV2 = 'management' | 'configuration' | 'task' | 'catalog' | 'prepared' | 'scope' | 'spec' | 'dispatch' | 'result' | 'observation'
 const domains: ReadonlySet<StdioDigestDomainV2> = new Set(['management', 'configuration', 'task', 'catalog',
-  'prepared', 'scope', 'spec', 'dispatch', 'result'])
+  'prepared', 'scope', 'spec', 'dispatch', 'result', 'observation'])
 
 function encoded(domain: StdioDigestDomainV2 | 'approval', value: unknown, limits: StdioV2JsonLimits): string {
   return stdioCanonicalJsonV2({ domain: `power-evolve-stdio-${domain}-v2`, value }, limits)
