@@ -2,19 +2,31 @@
 import { isDeepStrictEqual } from 'node:util'
 import { resolveAdapterOptions } from '@deepseek-ai/dsh-llm-deepseek'
 import { z } from 'zod'
+import { stdioCanonicalJsonV2 } from '@power-evolve/contracts/stdio-mcp-json'
 import type { McpCatalogTool, McpConnection, McpDiscoveredTool } from './mcp-contracts.ts'
 import { compileMcpJsonSchema, type McpJsonSchemaValidator } from './mcp-json-schema.ts'
+
+/** Original finite Messages JSON with raw keys preserved; owners apply request or descriptor byte budgets first. */
+export const modelMessageJson = z.custom<z.infer<ReturnType<typeof z.json>>>(value => {
+  try {
+    stdioCanonicalJsonV2(value, { maxDepth: Number.MAX_SAFE_INTEGER, maxNodes: Number.MAX_SAFE_INTEGER,
+      maxBytes: Number.MAX_SAFE_INTEGER })
+    return true
+  } catch (_invalidMessageJson) { return false }
+})
+const modelSchemaObject = z.custom<Record<string, z.infer<typeof modelMessageJson>>>(value =>
+  value !== null && typeof value === 'object' && !Array.isArray(value) && modelMessageJson.safeParse(value).success)
 
 /** Native model declaration persisted with an accepted Operation, before any approval decision. */
 export const mcpModelTool = z.object({
   name: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/u), description: z.string(),
-  parameters: z.record(z.string(), z.json()),
+  parameters: modelSchemaObject,
 }).strict()
 
 /** DeepSeek Messages tool declaration; whole-request byte limits apply before parsing. */
 export const modelMessageTool = z.object({
   name: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/u), description: z.string(),
-  input_schema: z.record(z.string(), z.json()), defer_loading: z.literal(true).optional(),
+  input_schema: modelSchemaObject, defer_loading: z.literal(true).optional(),
 }).strict()
 
 /** Trusted persisted definition, independent of mutable connection metadata. */
@@ -65,7 +77,7 @@ export function compileMcpModelTool(tool: Pick<McpCatalogTool, 'publicName' | 'r
   if (Buffer.byteLength(description) > limits.maxDescriptionBytes) {
     throw new McpToolAdmissionError('mcp_description_size_limit')
   }
-  return mcpModelTool.parse({ name: tool.publicName, description, parameters: tool.raw.inputSchema })
+  return mcpModelTool.parse({ name: tool.publicName, description, parameters: structuredClone(tool.raw.inputSchema) })
 }
 
 /**

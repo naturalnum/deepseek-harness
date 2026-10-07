@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { createMcpToolDefinition } from '@deepseek-ai/dsh-mcp-client'
 import { assertMcpToolArguments, assertModelToolChanges, assertModelToolDeclarations, compileMcpModelTool,
-  modelMessageTool } from '../lib/mcp-model-tools.js'
+  mcpModelTool, modelMessageJson, modelMessageTool } from '../lib/mcp-model-tools.js'
 
 const limits = { maxToolBytes: 65_536, maxDescriptionBytes: 8192 }
 const raw = { name: 'sum', description: 'Add two numbers.\0Retain this text.', inputSchema: {
@@ -142,4 +142,25 @@ test('actual arguments are independently validated against original requirements
   for (const args of [{ left: 2 }, { left: '2', right: 3 }, { left: 2, right: 3, token: 'private' }, null]) {
     assert.throws(() => assertMcpToolArguments(raw, args), { code: 'mcp_arguments_invalid' })
   }
+})
+
+test('model JSON preserves own prototype-named annotations and defaults without weakening exact declaration checks', () => {
+  const schema = JSON.parse('{"type":"object","properties":{"text":{"type":"string","default":{"__proto__":{"literal":"原始\\u0000😀"}}}},"default":{"__proto__":{"annotation":{"__proto__":true}}}}')
+  const definition = compileMcpModelTool({ ...tool, raw: { ...raw, inputSchema: schema } }, limits)
+  assert.deepEqual(definition.parameters, schema)
+  assert.notEqual(definition.parameters, schema)
+  assert.deepEqual(mcpModelTool.parse(definition).parameters, schema)
+  const declared = messagesTool(definition)
+  assert.deepEqual(declared.input_schema, schema)
+  assertModelToolDeclarations([declared], [definition])
+  const changed = structuredClone(declared)
+  delete changed.input_schema.default.__proto__
+  assert.throws(() => assertModelToolDeclarations([changed], [definition]), { code: 'model_tool_not_authorized' })
+  const literal = JSON.parse('{"__proto__":{"__proto__":"完整\\u0000😀"}}')
+  assert.deepEqual(modelMessageJson.parse(literal), literal)
+  literal.__proto__.invalid = Infinity
+  assert.equal(modelMessageJson.safeParse(literal).success, false)
+  const cycle = JSON.parse('{"__proto__":{}}'); cycle.__proto__.cycle = cycle
+  assert.equal(modelMessageJson.safeParse(cycle).success, false)
+  assert.equal(modelMessageTool.safeParse({ ...declared, input_schema: [] }).success, false)
 })

@@ -2,20 +2,23 @@
 import { once } from 'node:events'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { z } from 'zod'
+import { stdioJsonV2 } from '@power-evolve/contracts/stdio-mcp'
 import { attributionHeaders } from '@deepseek-ai/dsh-llm'
 import { bearer, readJson } from '../http.ts'
-import { PlatformError, settings } from '../contracts.ts'
+import { executionTarget, PlatformError, settings } from '../contracts.ts'
 import { transaction } from './database.ts'
 import type { TaskStore } from './tasks.ts'
 import { requireModelGrant } from './account-settings.ts'
-import { assertModelToolChanges, assertModelToolDeclarations, McpToolAdmissionError, modelMessageTool } from '../mcp-model-tools.ts'
+import { assertModelToolChanges, assertModelToolDeclarations, McpToolAdmissionError, modelMessageJson,
+  modelMessageTool } from '../mcp-model-tools.ts'
 import { mcpOperationTools } from '../mcp-operation-contracts.ts'
+import type { StdioOperationAdmissionV2 } from './stdio-v2-operation-admission.ts'
 
 const messageRequest = z.object({
   model: z.string().min(1).max(100), max_tokens: z.number().int().positive(), stream: z.literal(true),
-  messages: z.array(z.object({ role: z.enum(['user', 'assistant', 'system']), content: z.union([z.string(), z.array(z.json())]) }).strict()).min(1),
-  system: z.union([z.string(), z.array(z.json())]).optional(),
-  thinking: z.json().optional(), output_config: z.json().optional(),
+  messages: z.array(z.object({ role: z.enum(['user', 'assistant', 'system']), content: z.union([z.string(), z.array(modelMessageJson)]) }).strict()).min(1),
+  system: z.union([z.string(), z.array(modelMessageJson)]).optional(),
+  thinking: modelMessageJson.optional(), output_config: modelMessageJson.optional(),
   temperature: z.number().optional(), stop_sequences: z.array(z.string()).optional(),
   tools: z.array(modelMessageTool).optional(),
 }).strict()
@@ -27,6 +30,8 @@ export interface ModelProxyConfig {
   readonly timeoutMs: number
   readonly maxRequestBytes: number
   readonly maxResponseBytes: number
+  /** Revalidate only the operation's original STDIO selection; current connections never replace its catalog or model map. */
+  readonly stdioV2Admission?: { readonly selection: Pick<StdioOperationAdmissionV2, 'restore'>; readonly reservedNames: readonly string[] }
 }
 
 /**
@@ -40,15 +45,32 @@ export interface ModelProxyConfig {
 export async function proxyModel(
   tasks: TaskStore, config: ModelProxyConfig, request: IncomingMessage, response: ServerResponse,
 ): Promise<void> {
-  const body = messageRequest.parse(await readJson(request, config.maxRequestBytes))
+  // Every JSON value and nesting level consumes at least one input byte; these bounds add no separate history ceiling.
+  const input = stdioJsonV2({ maxBytes: config.maxRequestBytes, maxDepth: config.maxRequestBytes,
+    maxNodes: config.maxRequestBytes }).parse(await readJson(request, config.maxRequestBytes))
+  const body = messageRequest.parse(input)
   const beta = await transaction(tasks.pool, async client => {
     const authorized = await tasks.authorized(client, bearer(request))
     const selected = settings.parse(authorized.settings)
     if (body.model !== selected.model || body.max_tokens > selected.maxTokens) throw new PlatformError(403, 'model_not_authorized')
     await requireModelGrant(client, authorized.user_id, selected.model, selected.maxTokens)
-    const record = await client.query<{ remote_mcp_selection: unknown }>(
-      'SELECT remote_mcp_selection FROM pe_operations WHERE id=$1', [authorized.operation_id])
-    const admitted = mcpOperationTools.parse(record.rows[0]!.remote_mcp_selection).map(tool => tool.model)
+    const record = await client.query<{ remote_mcp_selection: unknown; stdio_v2_selection: unknown; workspace_id: string }>(
+      `SELECT o.remote_mcp_selection,o.stdio_v2_selection,s.workspace_id FROM pe_operations o
+       JOIN pe_sessions s ON s.id=o.session_id WHERE o.id=$1 AND s.id=$2 AND s.user_id=$3`,
+      [authorized.operation_id, authorized.id, authorized.user_id])
+    const original = record.rows[0]
+    if (!original) throw new PlatformError(409, 'lease_lost')
+    const remote = mcpOperationTools.parse(original.remote_mcp_selection).map(tool => tool.model)
+    const stdio = config.stdioV2Admission ? config.stdioV2Admission.selection.restore(original.stdio_v2_selection,
+      [...config.stdioV2Admission.reservedNames, ...remote.map(tool => tool.name)]) : []
+    if (!config.stdioV2Admission && !z.array(z.never()).safeParse(original.stdio_v2_selection).success) {
+      throw new PlatformError(409, 'stdio_v2_admission_unavailable')
+    }
+    if (stdio.some(group => group.scopeBinding.kind !== 'cloud' || group.scopeBinding.userId !== authorized.user_id
+      || group.scopeBinding.workspaceId !== original.workspace_id || executionTarget.parse(authorized.execution_target).kind !== 'cloud')) {
+      throw new PlatformError(409, 'stdio_v2_origin_changed')
+    }
+    const admitted = [...remote, ...stdio.flatMap(group => group.tools.map(tool => tool.model))]
     try {
       assertModelToolDeclarations(body.tools ?? [], admitted)
       return assertModelToolChanges(body.model, body.tools ?? [], body.messages, body.system)
