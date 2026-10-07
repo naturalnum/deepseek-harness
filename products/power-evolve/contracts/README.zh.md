@@ -43,6 +43,8 @@ Device 派发记录接受可选的 `materials` 不可变技能引用。缺省时
 
 可选的 `reportSuite` 描述同一不可变 `materials` 选择中的四个固定同级角色。派发、任务和领取记录拒绝缺失的成员引用；消费者还须按每个角色及完整包绑定核验摘要。描述不授予安装或执行权限。省略该字段保留旧 JSON 和请求摘要；不支持此字段的 Worker 不能消费报告派发。
 
+浏览器安全的 [STDIO v2 JSON 源码](src/stdio-mcp-json.ts) 提供 `stdioCanonicalJsonV2(value, limits)` 和 `StdioV2JsonLimits`；此叶模块尚未加入包导出。深度、值节点数和 UTF-8 字节预算均必须传入正安全整数。根深度为零；共享非循环引用按每次出现计数。编码器按 code-unit 字典序输出对象键（包括数字键），保持数组顺序和原始字符串，不做规范化；保留转义 NUL 与字面 `__proto__`/`constructor` 数据。它拒绝非 JSON 值、循环、非普通对象、accessor、symbol、不可枚举对象字段及稀疏／扩展数组，不调用 getter 或 `toJSON`。数据／配置无效抛出 TypeError；预算超限抛出 RangeError，不返回部分 JSON。本模块只序列化，摘要、域选择与授权由消费者负责。
+
 ## 实现 {#implementation}
 
 运行时仅依赖 Zod 和上游品牌类型工具。TypeScript 一并生成兼容浏览器的 ESM 和声明文件。包构建还生成 `lib/browser/execution-resolution.js` 与 `lib/browser/office-preview.js` 中的独立 ESM。可信审批页通过平台白名单导入前者；隔离解析器将后者作为固定物理资源消费。消费者须先构建包，这些模块没有外部运行时导入。应用为现有内部导入重新导出这些账号定义。此包没有进程状态、凭据存储、授权检查或独立的生命周期不变量。
