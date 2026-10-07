@@ -16,6 +16,7 @@ test('SHA uses literal lexical JSON bytes including numeric keys and the fixed p
   const expected = '{"domain":"power-evolve-stdio-task-v2","value":{"10":"ten","2":"two","z":"a\\u0000b"}}'
   assert.equal(stdioSha256V2('task', value, budgets), createHash('sha256').update(expected).digest('hex'))
   assert.notEqual(stdioSha256V2('task', value, budgets), stdioSha256V2('prepared', value, budgets))
+  assert.notEqual(stdioSha256V2('no_start', value, budgets), stdioSha256V2('result', value, budgets))
   assert.throws(() => stdioSha256V2('task', value, { ...budgets, maxBytes: 10 }), { name: 'RangeError' })
 })
 

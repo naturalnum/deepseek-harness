@@ -93,8 +93,8 @@ async function prepare(pool, row) {
   [row.id,row.actor.user,row.actor.session,row.phase,row.target,row.execution,digest,JSON.stringify(raw),fingerprint])
 }
 
-test('V34 and adjacent V35 preserve original tasks and bind generic execution, approval and continuation records', {timeout:30000}, async t => {
-  assert.equal(previous.CURRENT_SCHEMA_VERSION,35)
+test('V34 and adjacent V35/V36 preserve original tasks and bind generic execution, approval and continuation records', {timeout:30000}, async t => {
+  assert.equal(previous.CURRENT_SCHEMA_VERSION,36)
   const databaseUrl=process.env.PE_TEST_DATABASE_URL ?? (await readFile(join(process.env.PE_PRIVATE_DIR,'database-url'),'utf8')).trim()
   const name=`pe_stdio_v34_${randomBytes(10).toString('hex')}`
   const admin=new Pool({connectionString:databaseUrl,max:1,idleTimeoutMillis:0})
@@ -121,14 +121,15 @@ test('V34 and adjacent V35 preserve original tasks and bind generic execution, a
     const originalTables=['pe_stdio_v2_actions','pe_stdio_v2_preparations','pe_cloud_executions']
     const originalRows=await Promise.all(originalTables.map(async tableName=>
       (await pool.query(`SELECT row_to_json(saved)::text AS literal FROM ${tableName} saved ORDER BY ${tableName==='pe_stdio_v2_preparations'?'action_id':'id'}`)).rows))
-    await t.test('V34 to V35 and repeated startup leave complete originals and legacy rows unchanged',async()=>{
+    await t.test('V34 to V36 and repeated startup leave complete originals and legacy rows unchanged',async()=>{
       await initializeDatabase(pool);await initializeDatabase(pool)
-      assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version,35)
+      assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version,36)
       for(let index=0;index<originalTables.length;index++) {
         const tableName=originalTables[index]
         assert.deepEqual((await pool.query(`SELECT row_to_json(saved)::text AS literal FROM ${tableName} saved ORDER BY ${tableName==='pe_stdio_v2_preparations'?'action_id':'id'}`)).rows,originalRows[index])
       }
       assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_stdio_v2_observations')).rows[0].n,0)
+      assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_stdio_v2_no_start_closures')).rows[0].n,0)
       for (const {target,id,row} of before) {
         const after=(await pool.query(`SELECT * FROM ${table(target)} WHERE id=$1`,[id])).rows[0]
         assert.deepEqual(stripAdded(after),row)
@@ -226,9 +227,9 @@ test('V34 and adjacent V35 preserve original tasks and bind generic execution, a
       await pool.query("UPDATE pe_operations SET state='completed' WHERE id=$1",[operation])
     })
     await t.test('current startup refuses a future schema without changing accepted tasks',async()=>{
-      await pool.query('UPDATE pe_schema SET version=36 WHERE version=35')
+      await pool.query('UPDATE pe_schema SET version=$1 WHERE version=$2', [previous.CURRENT_SCHEMA_VERSION+1, previous.CURRENT_SCHEMA_VERSION])
       await assert.rejects(initializeDatabase(pool),/Unsupported PowerEvolve schema version/u)
-      assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version,36)
+      assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version,previous.CURRENT_SCHEMA_VERSION+1)
       assert.equal((await pool.query('SELECT task::text AS raw FROM pe_stdio_v2_actions WHERE id=$1',[call.id])).rows[0].raw,JSON.stringify(call.task))
     })
   } finally {

@@ -8,6 +8,7 @@ import { schemaV32 } from './office-preview-schema.ts'
 import { schemaV33 } from './office-artifact-schema.ts'
 import { schemaV34 } from './stdio-v2-schema.ts'
 import { schemaV35 } from './stdio-v2-observation-schema.ts'
+import { schemaV36 } from './stdio-v2-no-start-schema.ts'
 import { schemaV28 } from './execution-resolution-schema.ts'
 import { CURRENT_SCHEMA_VERSION, schema, schemaV2, schemaV3, schemaV4, schemaV5, schemaV6, schemaV7, schemaV8, schemaV9, schemaV10, schemaV11, schemaV12, schemaV13, schemaV14, schemaV15, schemaV16, schemaV17, schemaV18, schemaV19, schemaV20, schemaV21, schemaV22, schemaV23, schemaV24, schemaV25, schemaV26 } from './schema.ts'
 
@@ -88,5 +89,6 @@ export async function initializeDatabase(pool: Pool): Promise<void> {
     if (initialVersion < 33) await client.query(schemaV33)
     if (initialVersion < 34) await client.query(schemaV34)
     if (initialVersion < 35) await client.query(schemaV35)
+    if (initialVersion < 36) await client.query(schemaV36)
   })
 }

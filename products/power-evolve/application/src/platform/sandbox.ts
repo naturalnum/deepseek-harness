@@ -43,6 +43,12 @@ interface Pod extends Resource { status?: { phase?: string; containerStatuses?: 
 /** Ready writer identity and platform-only token, valid while its mount slot remains current. */
 export interface SandboxReady { name: string; podUid: string; runnerInstanceId: string; token: string; restartCount: number;
   generation: string; sessionId: string; userId: string; binding: StorageBinding }
+/** Validate original provisioning authority on the supplied client after the owner lock and before Workspace locks.
+ * @param client Manager's resource transaction; the callback must reuse it without borrowing another client.
+ * @param mode Acquisition and Kubernetes writes require current startable work; record may retain a cancelling creation's identity.
+ * @returns Resolves only while the original resource authority and database-clock lease remain current.
+ */
+export type SandboxProvisionFence = (client: PoolClient, mode: 'acquire' | 'record' | 'mutation') => Promise<void>
 /** Private STDIO observations; callers hash the complete original spec and independently authorize start. */
 export interface StdioCloudCaptureV2 {
   actualExecutorImage: Extract<StdioExecutorImageV2, { kind: 'cloud' }>
@@ -175,7 +181,8 @@ export class SandboxManager {
   }
   private async ensure(resource: 'sandboxes' | 'services' | 'secrets', name: string,
     body: Record<string, unknown>, labels: Record<string, string>, token: string,
-    assertCurrent: () => Promise<void>, observeOnly = false): Promise<void> {
+    assertCurrent: () => Promise<void>, observeOnly = false,
+    mutate: (operation: () => Promise<void>) => Promise<void> = operation => operation()): Promise<void> {
     const matches = (expected: unknown, actual: unknown): boolean => {
       if (typeof expected !== 'object' || expected === null) return expected === actual
       if (Array.isArray(expected)) return Array.isArray(actual) && expected.length === actual.length
@@ -197,12 +204,14 @@ export class SandboxManager {
     }
     if (observeOnly) throw new MountSlotBlocked(`mount_${resource}_creation_missing`, false)
     await assertCurrent()
-    try { await this.kube.call('POST', this.kube.resourcePath(this.config.namespace, resource), body) }
-    catch (error) {
-      if (!(error instanceof KubernetesError && error.status === 409)) throw error
-      const after = await this.get(resource, name)
-      if (!sameResource(after) || after?.metadata.deletionTimestamp) throw error
-    }
+    await mutate(async () => {
+      try { await this.kube.call('POST', this.kube.resourcePath(this.config.namespace, resource), body) }
+      catch (error) {
+        if (!(error instanceof KubernetesError && error.status === 409)) throw error
+        const after = await this.get(resource, name)
+        if (!sameResource(after) || after?.metadata.deletionTimestamp) throw error
+      }
+    })
   }
 
   private async home(userId: string): Promise<{ local: string; node: string }> {
@@ -307,9 +316,10 @@ export class SandboxManager {
     return result.rows[0].workspace_id
   }
 
-  private async acquire(sessionId: string, userId: string, workspaceId: string): Promise<Acquired> {
+  private async acquire(sessionId: string, userId: string, workspaceId: string, fence?: SandboxProvisionFence): Promise<Acquired> {
     return transaction(this.pool, async client => {
       await this.lockUser(client, userId)
+      await fence?.(client, 'acquire')
       const binding = await this.readyBinding(client, userId, workspaceId)
       await client.query("INSERT INTO pe_mount_slots(user_id,state) VALUES($1,'free') ON CONFLICT(user_id) DO NOTHING", [userId])
       const selected = await client.query<MountSlot>('SELECT * FROM pe_mount_slots WHERE user_id=$1 FOR UPDATE', [userId])
@@ -336,6 +346,7 @@ export class SandboxManager {
            WHERE pe_sandbox_instances.state='deleted' RETURNING session_id`,
           [sessionId, userId, this.name(userId), JSON.stringify(binding)])
         if (!created.rowCount) throw new MountSlotBlocked('mount_instance_unreconciled', false)
+        await fence?.(client, 'acquire')
         return { kind: 'reserved', slot: updated.rows[0]!, binding }
       }
       if (slot.state === 'reserved') {
@@ -415,14 +426,31 @@ export class SandboxManager {
     return row.pod_uid
   }
 
-  private async retainCreatingPod(slot: MountSlot, uid: string, assertLease: () => Promise<void>): Promise<string> {
+  private async retainCreatingPod(slot: MountSlot, uid: string, assertLease: () => Promise<void>,
+    fence?: SandboxProvisionFence): Promise<string> {
     await assertLease()
     return transaction(this.pool, async client => {
+      await this.lockUser(client, slot.user_id)
+      await fence?.(client, 'record')
       await this.reserved(slot, client, null)
       const instance = await client.query(`UPDATE pe_sandbox_instances SET pod_uid=$2,updated_at=now()
         WHERE session_id=$1 AND state='creating' AND pod_uid IS NULL RETURNING session_id`, [slot.session_id, uid])
       if (!instance.rowCount) throw new MountSlotBlocked('mount_reservation_changed', false)
+      await fence?.(client, 'record')
       return uid
+    })
+  }
+
+  private async provisionMutation(slot: MountSlot, podUid: string | null, fence: SandboxProvisionFence | undefined,
+    operation: () => Promise<void>): Promise<void> {
+    if (!fence) return operation()
+    await transaction(this.pool, async client => {
+      await this.lockUser(client, slot.user_id)
+      await fence(client, 'mutation')
+      await this.reserved(slot, client, podUid)
+      await operation()
+      await fence(client, 'mutation')
+      await this.reserved(slot, client, podUid)
     })
   }
 
@@ -643,14 +671,15 @@ export class SandboxManager {
    * @param sessionId - Session requesting its owned workspace.
    * @param userId - Owner whose shared Home limits the active writer.
    * @param assertLease - Rejects when the calling execution worker loses its lease.
+   * @param fence - Optional original-action guard on each resource transaction's client; bounded creation HTTP holds its owner locks.
    * @returns Current ready writer; rejects if reservation, identity, readiness, or stop evidence is unavailable.
    */
-  async ensureReady(sessionId: string, userId: string, assertLease: () => Promise<void>): Promise<SandboxReady> {
+  async ensureReady(sessionId: string, userId: string, assertLease: () => Promise<void>, fence?: SandboxProvisionFence): Promise<SandboxReady> {
     const workspaceId = await this.workspaceId(sessionId, userId)
     for (let handoffs = 0; handoffs < 3; handoffs++) {
       await assertLease()
       await this.files.workspaceForId(userId, workspaceId)
-      const selected = await this.acquire(sessionId, userId, workspaceId)
+      const selected = await this.acquire(sessionId, userId, workspaceId, fence)
       if (selected.kind === 'blocked') throw new MountSlotBlocked(selected.code, selected.retryable)
       if (selected.kind === 'stop') {
         const checkLocked = async (client: PoolClient) => {
@@ -680,30 +709,32 @@ export class SandboxManager {
           generation: slot.generation, sessionId, userId, binding: selected.binding }
       }
       return this.createReserved(slot, selected.binding, assertLease, selected.kind === 'observing',
-        selected.kind === 'observing' ? selected.podUid : null)
+        selected.kind === 'observing' ? selected.podUid : null, fence)
     }
     throw new MountSlotBlocked('mount_handoff_incomplete', false)
   }
 
   private async createReserved(slot: MountSlot, binding: StorageBinding,
-    assertLease: () => Promise<void>, observeOnly = false, podUid: string | null = null): Promise<SandboxReady> {
+    assertLease: () => Promise<void>, observeOnly = false, podUid: string | null = null,
+    fence?: SandboxProvisionFence): Promise<SandboxReady> {
     const workspaceId = binding.workspaceId
     const sessionId = slot.session_id!, userId = slot.user_id, generation = slot.generation
     const name = this.name(userId), labels = this.labels(sessionId, userId, name, generation)
     const namespace = this.config.namespace, token = this.token(name, sessionId, generation)
     const check = () => this.assertReserved(slot, assertLease, podUid)
+    const mutate = (operation: () => Promise<void>) => this.provisionMutation(slot, podUid, fence, operation)
     await check()
     await this.ensure('secrets', name, {
       apiVersion: 'v1', kind: 'Secret', metadata: { name, namespace, labels }, type: 'Opaque',
       stringData: { token },
-    }, labels, token, check, observeOnly)
+    }, labels, token, check, observeOnly, mutate)
     await check()
     await this.ensure('services', name, {
       apiVersion: 'v1', kind: 'Service', metadata: { name, namespace, labels },
       spec: { type: 'ClusterIP', selector: { 'app.kubernetes.io/instance': name,
         'powerevolve.dev/session': sessionId, 'powerevolve.dev/generation': generation },
         ports: [{ name: 'http', port: 8080, targetPort: 8080 }] },
-    }, labels, token, check, observeOnly)
+    }, labels, token, check, observeOnly, mutate)
     await check()
     const claim = this.config.volumeClaimName
     const volumeMounts = [
@@ -756,7 +787,7 @@ export class SandboxManager {
           { name: 'scratch', emptyDir: { sizeLimit: '256Mi' } },
         ],
       } } },
-    }, labels, token, check, observeOnly)
+    }, labels, token, check, observeOnly, mutate)
     const deadline = Date.now() + this.config.readyTimeoutMs
     while (Date.now() < deadline) {
       await check()
@@ -778,15 +809,18 @@ export class SandboxManager {
         if (!this.hasSkillPackageIdentity(sandbox, current, userId, binding)) {
           throw new MountSlotBlocked('mount_skill_package_identity_changed', false)
         }
-        if (!podUid) podUid = await this.retainCreatingPod(slot, current.metadata.uid, assertLease)
+        if (!podUid) podUid = await this.retainCreatingPod(slot, current.metadata.uid, assertLease, fence)
         const finalizers = current.metadata.finalizers ?? []
         if (!finalizers.includes(STOP_FINALIZER)) {
           if (!current.metadata.resourceVersion || finalizers.length > 16) {
             throw new MountSlotBlocked('mount_pod_finalizer_unavailable', false)
           }
           await check()
-          await this.kube.call('PATCH', this.kube.resourcePath(namespace, 'pods', name), {
-            metadata: { resourceVersion: current.metadata.resourceVersion, finalizers: [...finalizers, STOP_FINALIZER] },
+          await mutate(async () => {
+            await this.kube.call('PATCH', this.kube.resourcePath(namespace, 'pods', name), {
+              metadata: { uid: current.metadata.uid, resourceVersion: current.metadata.resourceVersion,
+                finalizers: [...finalizers, STOP_FINALIZER] },
+            })
           })
         }
       }
@@ -807,6 +841,7 @@ export class SandboxManager {
             await check()
             const recorded = await transaction(this.pool, async client => {
               await this.lockUser(client, userId)
+              await fence?.(client, 'record')
               const currentBinding = await this.readyBinding(client, userId, workspaceId)
               const currentSlot = await client.query<MountSlot>('SELECT * FROM pe_mount_slots WHERE user_id=$1 FOR UPDATE', [userId])
               const value = currentSlot.rows[0]
@@ -824,6 +859,7 @@ export class SandboxManager {
                 `UPDATE pe_mount_slots SET state='ready',pod_uid=$2,runner_instance_id=$3,updated_at=now()
                  WHERE user_id=$1 AND generation=$4 AND state='reserved'`,
                 [userId, retained.metadata.uid, health.instanceId, generation])
+              await fence?.(client, 'record')
               return true
             })
             if (!recorded) throw new MountSlotBlocked('mount_reservation_changed', false)

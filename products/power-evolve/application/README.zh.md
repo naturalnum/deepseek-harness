@@ -102,6 +102,8 @@ Device 的 `OwnedDeviceContainer.captureImage` 检查可信 Docker config ID、O
 
 通用 STDIO 管理、发现受理和审批持久化位于 `stdio-v2-connections.ts`、`stdio-v2-admission.ts` 和 `stdio-v2-authorization.ts`。这些服务在 PG 事务内重查当前浏览器凭据的用途，保留逐项配置与用户请求回执，一起提交唯一发现任务与执行记录，并保存独立的首次审批决定和唯一启动许可。只有新许可提交后返回 `grantOnce:true`；重复请求或回复丢失后只返回 false 的原回执。拒绝和过期后的原执行仍活跃时继续占用容量。授权服务要求私有实时 capture 适配器和独立认证的执行器路由；这些服务本身不启用执行 Profile。
 
+`SandboxManager.ensureReady` 可接收原动作围栏，复用资源事务的 client。它在锁定所属用户后、申请挂载、保留创建 UID 或记录 Ready 前检查该围栏。创建 POST 和 Pod finalizer 写入在有界 Kubernetes 请求期间持有同序用户与原动作锁。过期或已结案动作不能晚到后分配新写者。请求失败后保留原占用以便对账。相邻 schema 36 单独保存不可变 no-start 回执；已有结案不能再签发启动许可或写入实际 Runner 结果。V34 与 V35 记录保留原字节。
+
 向 `SandboxManager.captureStdioV2` 传入授权事务的 client，可让所有 PG 检查复用该连接，避免另一个连接等待已有的账户锁。此路径 capture 失败后保留原 writer；编排器必须在事务回滚后持久化 quarantine。不传 client 时保留原 capture 与 quarantine 行为。明确的 `observe` 模式要求原 client，可在账户撤销后核验未变更的活跃写者，不授予新的启动权限。
 
 `StdioActionLeaseServiceV2` 通过数据库时钟与原账户到执行记录的锁序约束内部 worker。`StdioCloudRunTransportV2` 在有界私有 HTTP 前后比较完整原 Prepared，首次 true 回复在等待前消费；原重试只发 GET，GET 404 不确立没有副作用或写者已停止。必填 `maxTrackedActions` 限制活跃追踪记录；过期后无需定时器即可回收，容量压力下仍允许查询／取消，并保守阻止新启动，直到未追踪许可过期。`StdioResultServiceV2` 在相邻 schema 35 中保留完整观察，以 PG `json` 保存转义 NUL、页、初始化元数据、原始目录与结果。清理不明或缺少独立 UID 停止证明时保留写者。终态私有证明允许原子保存结果／停止事实及唯一的当前发现目录；撤销或变更配置仍保存实际结果，但不发布新目录。启用任意 STDIO 前仍须完成正式派发前结案、call 受理、Device journal、部署与原生发现／调用验收。
