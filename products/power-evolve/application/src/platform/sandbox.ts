@@ -3,6 +3,8 @@ import { createHmac } from 'node:crypto'
 import { chown, lstat, mkdir } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
+import { isDeepStrictEqual } from 'node:util'
+import { z } from 'zod'
 import type { Pool, PoolClient } from 'pg'
 import type { FileService } from './files.ts'
 import { transaction } from './database.ts'
@@ -19,6 +21,7 @@ import { stdioScopeV2, stdioDeploymentV2, stdioLimitsV2, stdioObjectV2, stdioCap
 import { stdioCanonicalJsonV2 } from '@power-evolve/contracts/stdio-mcp-json'
 
 const STOP_FINALIZER = 'powerevolve.dev/retain-stop-observation'
+const stdioConfig = z.object({ limits: stdioLimitsV2, maxReplyBytes: z.number().int().positive().safe() }).strict()
 type SlotState = 'free' | 'reserved' | 'ready' | 'stopping' | 'unknown'
 interface MountSlot {
   user_id: string; session_id: string | null; workspace_id: string | null; generation: string
@@ -38,7 +41,7 @@ type SandboxFiles = Pick<FileService, 'workspaceForId'> & {
 }
 interface Metadata { name: string; namespace?: string; uid?: string; resourceVersion?: string; labels?: Record<string, string>; deletionTimestamp?: string;
   finalizers?: string[]; ownerReferences?: Array<{ uid?: string }> }
-interface Resource { metadata: Metadata; spec?: Record<string, unknown>; status?: Record<string, unknown>; data?: Record<string, string> }
+interface Resource { metadata: Metadata; spec?: Record<string, unknown>; status?: Record<string, unknown>; data?: Record<string, string>; type?: string }
 interface Pod extends Resource { status?: { phase?: string; containerStatuses?: Array<{ ready?: boolean; restartCount?: number }> } }
 /** Ready writer identity and platform-only token, valid while its mount slot remains current. */
 export interface SandboxReady { name: string; podUid: string; runnerInstanceId: string; token: string; restartCount: number;
@@ -68,6 +71,8 @@ export interface SandboxConfig {
   readonly nodeRoot: string
   readonly volumeClaimName?: string
   readonly readyTimeoutMs: number
+  /** Optional complete Runner budgets; only this projection enters the root-readable control Secret. PVC storage is required. */
+  readonly stdioV2?: { readonly limits: StdioLimitsV2; readonly maxReplyBytes: number }
   /** Independent limits for each scan before and after a command. */
   readonly fileScan: {
     readonly maxEntries: number
@@ -90,6 +95,9 @@ type Acquired = { kind: 'reserved' | 'ready'; slot: MountSlot; binding: StorageB
 
 /** The platform owns Kubernetes credentials; neither Host nor browser receives a Pod or mount path. */
 export class SandboxManager {
+  private readonly stdioV2Config: SandboxConfig['stdioV2']
+  private readonly stdioV2Json: string | undefined
+
   constructor(private readonly kube: KubernetesClient, private readonly files: SandboxFiles, private readonly pool: Pool,
     private readonly key: string, private readonly config: SandboxConfig) {
     if (Boolean(config.volumeClaimName) === Boolean(config.nodeRoot)) {
@@ -98,6 +106,9 @@ export class SandboxManager {
     if (config.volumeClaimName && !/^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$/u.test(config.volumeClaimName)) {
       throw new Error('Invalid Sandbox PVC claim name')
     }
+    this.stdioV2Config = config.stdioV2 === undefined ? undefined : stdioConfig.parse(config.stdioV2)
+    if (this.stdioV2Config && !config.volumeClaimName) throw new TypeError('mount_stdio_pvc_required')
+    this.stdioV2Json = this.stdioV2Config === undefined ? undefined : JSON.stringify(this.stdioV2Config)
   }
 
   /**
@@ -108,6 +119,48 @@ export class SandboxManager {
   name(userId: string): string { return `pe-sb-${userId.replaceAll('-', '')}` }
   private token(name: string, sessionId: string, generation: string): string {
     return createHmac('sha256', this.key).update(`${name}:${sessionId}:${generation}`).digest('hex')
+  }
+  private tokenData(token: string): Record<string, string> {
+    return { token, ...(this.stdioV2Json === undefined ? {} : { 'stdio-v2-config': this.stdioV2Json }) }
+  }
+  private tokenItems(stdio = this.stdioV2Json !== undefined): Array<{ key: string; path: string; mode: number }> {
+    return [{ key: 'token', path: 'runner-token', mode: 0o400 }, ...(!stdio ? []
+      : [{ key: 'stdio-v2-config', path: 'stdio-v2-config.json', mode: 0o400 }])]
+  }
+  private runnerEnvironment(): Array<{ name: string; value: string }> {
+    return [
+      { name: 'PE_RUNNER_SCAN_MAX_ENTRIES', value: String(this.config.fileScan.maxEntries) },
+      { name: 'PE_RUNNER_SCAN_MAX_HASH_BYTES', value: String(this.config.fileScan.maxHashBytes) },
+      { name: 'PE_RUNNER_SCAN_TIMEOUT_MS', value: String(this.config.fileScan.timeoutMs) },
+      { name: 'PE_RUNNER_SCAN_MAX_SNAPSHOT_BYTES', value: String(this.config.fileScan.maxSnapshotBytes) },
+      { name: 'PE_RUNNER_SCAN_MAX_FILES', value: String(this.config.fileScan.maxFiles) },
+      ...(this.stdioV2Json === undefined ? [] : [{ name: 'PE_RUNNER_STDIO_V2_CONFIG_FILE', value: '/run/power-evolve/stdio-v2-config.json' }]),
+    ]
+  }
+  private hasStdioLayout(spec: unknown): boolean {
+    if (!spec || typeof spec !== 'object' || !('volumes' in spec) || !Array.isArray(spec.volumes)) return false
+    return spec.volumes.some((volume: unknown) => volume !== null && typeof volume === 'object'
+      && 'name' in volume && volume.name === 'token' && 'secret' in volume
+      && volume.secret !== null && typeof volume.secret === 'object' && 'items' in volume.secret
+      && isDeepStrictEqual(volume.secret.items, this.tokenItems(true)))
+  }
+  private hasTokenSecretIdentity(value: Resource | null, token: string, labels: Record<string, string>,
+    mode: 'dispatch' | 'observe' = 'dispatch', originalStdio = this.stdioV2Json !== undefined): boolean {
+    if (!value || value.metadata.name !== labels['app.kubernetes.io/instance'] || value.metadata.deletionTimestamp
+      || !this.owned(value, labels)) return false
+    if (mode === 'observe') {
+      if (value.metadata.namespace !== this.config.namespace || value.type !== 'Opaque'
+        || value.data?.token !== Buffer.from(token).toString('base64')) return false
+      if (!originalStdio) return Object.keys(value.data).length === 1
+      if (Object.keys(value.data).length !== 2 || typeof value.data['stdio-v2-config'] !== 'string') return false
+      try {
+        const bytes = Buffer.from(value.data['stdio-v2-config'], 'base64')
+        return bytes.toString('base64') === value.data['stdio-v2-config'] && stdioConfig.safeParse(JSON.parse(bytes.toString('utf8'))).success
+      } catch (_invalidOriginalConfig) { return false }
+    }
+    if (this.stdioV2Json === undefined) return value.data?.token === Buffer.from(token).toString('base64')
+    const expected = Object.fromEntries(Object.entries(this.tokenData(token)).map(([key, text]) => [key, Buffer.from(text).toString('base64')]))
+    return value.metadata.namespace === this.config.namespace && value.type === 'Opaque' && isDeepStrictEqual(value.data, expected)
   }
   private labels(sessionId: string, userId: string, name: string, generation: string): Record<string, string> {
     return { 'app.kubernetes.io/name': 'power-evolve-sandbox', 'app.kubernetes.io/instance': name,
@@ -193,7 +246,7 @@ export class SandboxManager {
     const sameResource = (value: Resource | null): boolean => value !== null && value.metadata.name === name
       && Object.entries(labels).every(([key, expected]) => value.metadata.labels?.[key] === expected)
       && (resource === 'secrets'
-        ? value.data?.token === Buffer.from(token).toString('base64')
+        ? this.hasTokenSecretIdentity(value, token, labels)
         : matches(body.spec, value.spec))
     const existing = await this.get(resource, name)
     if (existing) {
@@ -244,7 +297,8 @@ export class SandboxManager {
     }
   }
 
-  private hasDataMounts(spec: unknown, userId: string, binding: StorageBinding): boolean {
+  private hasDataMounts(spec: unknown, userId: string, binding: StorageBinding,
+    mode: 'dispatch' | 'observe' = 'dispatch'): boolean {
     const record = (value: unknown): value is Record<string, unknown> => value !== null
       && typeof value === 'object' && !Array.isArray(value)
     if (!record(spec) || !Array.isArray(spec.volumes) || !Array.isArray(spec.containers)
@@ -270,12 +324,29 @@ export class SandboxManager {
       || !Object.keys(token).every(key => ['name', 'secret'].includes(key))
       || !Object.keys(scratch).every(key => ['name', 'emptyDir'].includes(key))
       || token.secret.secretName !== this.name(userId) || token.secret.defaultMode !== 0o400
-      || !Array.isArray(token.secret.items) || token.secret.items.length !== 1
-      || !record(token.secret.items[0]) || token.secret.items[0].key !== 'token'
-      || token.secret.items[0].path !== 'runner-token' || token.secret.items[0].mode !== 0o400
+      || !isDeepStrictEqual(token.secret.items, this.tokenItems(mode === 'observe' ? this.hasStdioLayout(spec) : undefined))
       || !record(scratch.emptyDir) || tokenMount.mountPath !== '/run/power-evolve'
       || tokenMount.readOnly !== true || scratchMount.mountPath !== '/tmp' || scratchMount.readOnly === true
       || 'subPath' in tokenMount || 'subPathExpr' in tokenMount || 'subPath' in scratchMount || 'subPathExpr' in scratchMount) return false
+    const stdio = mode === 'observe' ? this.hasStdioLayout(spec) : this.stdioV2Json !== undefined
+    if (stdio) {
+      if (!record(spec.securityContext) || spec.securityContext.fsGroup !== undefined
+        || !record(runner.securityContext) || runner.securityContext.runAsUser !== 0 || runner.securityContext.runAsGroup !== 0
+        || !Object.keys(token.secret).every(key => ['secretName', 'defaultMode', 'items'].includes(key))
+        || !Object.keys(tokenMount).every(key => ['name', 'mountPath', 'readOnly', 'mountPropagation'].includes(key))
+        || tokenMount.mountPropagation !== undefined && tokenMount.mountPropagation !== 'None'
+        || !Array.isArray(runner.env) || runner.env.length !== 6 || runner.envFrom !== undefined) return false
+      if (mode === 'dispatch') {
+        if (!isDeepStrictEqual(runner.env, this.runnerEnvironment())) return false
+      } else {
+        const names = [...this.runnerEnvironment().slice(0, 5).map(entry => entry.name), 'PE_RUNNER_STDIO_V2_CONFIG_FILE']
+        if (!runner.env.every((entry, index) => record(entry) && Object.keys(entry).length === 2
+          && entry.name === names[index] && typeof entry.value === 'string'
+          && (index === 5 ? entry.value === '/run/power-evolve/stdio-v2-config.json' : /^[1-9][0-9]*$/u.test(entry.value)))) return false
+      }
+    } else if (Array.isArray(runner.env) && runner.env.some(entry => record(entry) && entry.name === 'PE_RUNNER_STDIO_V2_CONFIG_FILE')) {
+      return false
+    }
     const suffix = binding.rootRelativePath ? `/${binding.rootRelativePath}` : ''
     const expected = [
       { name: 'workspace', mountPath: '/workspace', source: `workspaces/${binding.rootKey}`,
@@ -301,11 +372,12 @@ export class SandboxManager {
     })
   }
 
-  private hasSkillPackageIdentity(sandbox: Resource, pod: Pod, userId: string, binding: StorageBinding): boolean {
+  private hasSkillPackageIdentity(sandbox: Resource, pod: Pod, userId: string, binding: StorageBinding,
+    mode: 'dispatch' | 'observe' = 'dispatch'): boolean {
     const template = sandbox.spec?.podTemplate
     return typeof template === 'object' && template !== null && !Array.isArray(template)
-      && this.hasDataMounts((template as Record<string, unknown>).spec, userId, binding)
-      && this.hasDataMounts(pod.spec, userId, binding)
+      && this.hasDataMounts((template as Record<string, unknown>).spec, userId, binding, mode)
+      && this.hasDataMounts(pod.spec, userId, binding, mode)
   }
 
   private async workspaceId(sessionId: string, userId: string, client?: PoolClient): Promise<string> {
@@ -578,7 +650,7 @@ export class SandboxManager {
         && (value.metadata.finalizers ?? []).every(finalizer => finalizer === 'foregroundDeletion')
     const podMatches = (value: Resource): boolean => value.metadata.uid === target.podUid && this.owned(value, labels)
       && value.metadata.ownerReferences?.some(ref => ref.uid === sandboxUid) === true
-      && this.hasDataMounts(value.spec, userId, this.snapshot(target.slot))
+      && this.hasDataMounts(value.spec, userId, this.snapshot(target.slot), 'observe')
     if (!parentMatches(sandbox) || firstPod && !podMatches(firstPod)) {
       throw new MountSlotBlocked('mount_stop_pod_identity_changed', false)
     }
@@ -703,8 +775,8 @@ export class SandboxManager {
       }
       const slot = selected.slot
       if (selected.kind === 'ready') {
-        if (!slot.pod_uid || !slot.runner_instance_id || !await this.matchesInstance(
-          sessionId, userId, slot.pod_uid, slot.runner_instance_id)) {
+        if (!slot.pod_uid || !slot.runner_instance_id || !await this.matchesInstanceUsing(
+          sessionId, userId, slot.pod_uid, slot.runner_instance_id, undefined, 'dispatch')) {
           if (!fence) await this.quarantine(sessionId, userId)
           throw new MountSlotBlocked('mount_instance_changed', false)
         }
@@ -730,7 +802,7 @@ export class SandboxManager {
     await check()
     await this.ensure('secrets', name, {
       apiVersion: 'v1', kind: 'Secret', metadata: { name, namespace, labels }, type: 'Opaque',
-      stringData: { token },
+      stringData: this.tokenData(token),
     }, labels, token, check, observeOnly, mutate)
     await check()
     await this.ensure('services', name, {
@@ -769,13 +841,7 @@ export class SandboxManager {
         terminationGracePeriodSeconds: 8,
         securityContext: { seccompProfile: { type: 'RuntimeDefault' } },
         containers: [{ name: 'runner', image: this.config.image, imagePullPolicy: claim ? 'IfNotPresent' : 'Never',
-          env: [
-            { name: 'PE_RUNNER_SCAN_MAX_ENTRIES', value: String(this.config.fileScan.maxEntries) },
-            { name: 'PE_RUNNER_SCAN_MAX_HASH_BYTES', value: String(this.config.fileScan.maxHashBytes) },
-            { name: 'PE_RUNNER_SCAN_TIMEOUT_MS', value: String(this.config.fileScan.timeoutMs) },
-            { name: 'PE_RUNNER_SCAN_MAX_SNAPSHOT_BYTES', value: String(this.config.fileScan.maxSnapshotBytes) },
-            { name: 'PE_RUNNER_SCAN_MAX_FILES', value: String(this.config.fileScan.maxFiles) },
-          ],
+          env: this.runnerEnvironment(),
           ports: [{ name: 'http', containerPort: 8080 }],
           readinessProbe: { tcpSocket: { port: 8080 }, periodSeconds: 2, timeoutSeconds: 2 },
           resources: { requests: { cpu: '100m', memory: '128Mi' }, limits: { cpu: '1', memory: '768Mi' } },
@@ -787,7 +853,7 @@ export class SandboxManager {
         volumes: [
           ...dataVolumes,
           { name: 'token', secret: { secretName: name, defaultMode: 0o400,
-            items: [{ key: 'token', path: 'runner-token', mode: 0o400 }] } },
+            items: this.tokenItems() } },
           { name: 'scratch', emptyDir: { sizeLimit: '256Mi' } },
         ],
       } } },
@@ -834,6 +900,9 @@ export class SandboxManager {
         if (!sandbox || !this.hasSkillPackageIdentity(sandbox, current, userId, binding)) {
           throw new MountSlotBlocked('mount_skill_package_identity_changed', false)
         }
+        if (this.stdioV2Json !== undefined && !this.hasTokenSecretIdentity(await this.get('secrets', name), token, labels)) {
+          throw new MountSlotBlocked('mount_secrets_identity_changed', false)
+        }
         try {
           const health = await this.runner<{ ready: boolean; instanceId: string }>(name, token, 'GET', '/health')
           if (health.ready && /^[a-f0-9-]{36}$/.test(health.instanceId)) {
@@ -841,6 +910,9 @@ export class SandboxManager {
             if (!retained || retained.metadata.uid !== current.metadata.uid || retained.metadata.deletionTimestamp
               || !retained.metadata.finalizers?.includes(STOP_FINALIZER) || !this.owned(retained, labels)) {
               throw new MountSlotBlocked('mount_pod_identity_changed', false)
+            }
+            if (this.stdioV2Json !== undefined && !this.hasTokenSecretIdentity(await this.get('secrets', name), token, labels)) {
+              throw new MountSlotBlocked('mount_secrets_identity_changed', false)
             }
             await check()
             const recorded = await transaction(this.pool, async client => {
@@ -912,7 +984,7 @@ export class SandboxManager {
    * @param runnerInstanceId - Previously dispatched Runner identity.
    * @param client - Optional original STDIO authorization transaction; its account lock and all PG checks are reused.
    * @param mode - Dispatch requires live authority; observation retains exact original writer checks after revocation.
-   * @returns Matching writer with its private token and frozen binding; the client path checks live dispatch authority and never provisions or quarantines.
+   * @returns Matching writer with its private token and frozen binding; dispatch checks current deployment authority, while observation permits only querying or stopping the original writer. It never provisions or quarantines on the client path.
    */
   async observeReady(sessionId: string, userId: string, podUid: string, runnerInstanceId: string,
     client?: PoolClient, mode: 'dispatch' | 'observe' = 'dispatch'): Promise<SandboxReady> {
@@ -938,6 +1010,8 @@ export class SandboxManager {
    */
   async assertDispatchAllowed(sandbox: SandboxReady): Promise<void> {
     await this.assertCurrent(sandbox)
+    if (!await this.matchesInstanceUsing(sandbox.sessionId, sandbox.userId, sandbox.podUid, sandbox.runnerInstanceId,
+      undefined, 'dispatch')) throw new MountSlotBlocked('mount_stdio_configuration_changed', false)
     await transaction(this.pool, client => this.assertDispatchBinding(client, sandbox))
   }
 
@@ -966,7 +1040,7 @@ export class SandboxManager {
         || !this.sameBinding(slot.binding_snapshot, sandbox.binding)) throw new MountSlotBlocked('mount_slot_changed', false)
     }
     if (!await this.matchesInstanceUsing(sandbox.sessionId, sandbox.userId,
-      sandbox.podUid, sandbox.runnerInstanceId, client)) throw new MountSlotBlocked('mount_instance_changed', false)
+      sandbox.podUid, sandbox.runnerInstanceId, client, mode)) throw new MountSlotBlocked('mount_instance_changed', false)
   }
 
   /** Capture the original ready PVC writer without creating resources or spawning a user program.
@@ -975,7 +1049,7 @@ export class SandboxManager {
    * @param pin Trusted single-platform deployment mapping fixed before task admission.
    * @param limits Trusted original SDK budgets for the complete Pod spec JSON.
    * @param client Optional caller transaction with the original owner's account lock; every PG check uses it without borrowing a connection.
-   * @param mode Dispatch requires active authority; observation verifies the original live writer without granting another start.
+   * @param mode Dispatch requires active authority and the complete current deployment configuration; observation permits only querying or stopping the original writer under its two known control-file layouts, without granting another start.
    * @returns Exact private mount/container/image observations and the complete original Pod spec.
    * @throws Rejects non-PVC, unavailable, incomplete or changed observations. With a caller client, failure preserves the writer and performs no quarantine; the caller persists quarantine separately after rollback. Without a client, existing admission/quarantine behavior remains.
    */
@@ -992,6 +1066,10 @@ export class SandboxManager {
       writer = structuredClone(sandbox)
       const parsedScope = stdioScopeV2.parse(scope), parsedPin = stdioDeploymentV2.parse(pin)
       budget = stdioLimitsV2.parse(limits)
+      if (mode === 'dispatch' && this.stdioV2Config) {
+        const jsonBudget = { maxDepth: budget.maxJsonDepth, maxNodes: budget.maxJsonNodes, maxBytes: budget.maxInputBytes }
+        if (stdioCanonicalJsonV2(budget, jsonBudget) !== stdioCanonicalJsonV2(this.stdioV2Config.limits, jsonBudget)) throw invalid()
+      }
       if (parsedScope.kind !== 'cloud' || parsedPin.kind !== 'cloud') throw invalid()
       selected = parsedScope; deployment = parsedPin
       const binding = storageBinding.parse(writer.binding)
@@ -1003,7 +1081,7 @@ export class SandboxManager {
     if (!this.config.volumeClaimName) throw new MountSlotBlocked('mount_stdio_pvc_required', false)
     const jsonBudget = { maxDepth: budget.maxJsonDepth, maxNodes: budget.maxJsonNodes, maxBytes: budget.maxInputBytes }
     const labels = this.labels(writer.sessionId, writer.userId, writer.name, writer.generation)
-    const observe = (parent: Resource | null, pod: Pod | null) => {
+    const observe = (parent: Resource | null, pod: Pod | null, secret?: Resource | null) => {
       if (!parent || !pod) throw unavailable()
       try {
         if (parent.metadata.name !== writer.name || parent.metadata.namespace !== this.config.namespace
@@ -1012,7 +1090,9 @@ export class SandboxManager {
           || pod.metadata.uid !== writer.podUid || pod.metadata.deletionTimestamp || !this.owned(pod, labels)
           || !pod.metadata.finalizers?.includes(STOP_FINALIZER)
           || !pod.metadata.ownerReferences?.some(ref => ref.uid === parent.metadata.uid)
-          || !this.hasSkillPackageIdentity(parent, pod, writer.userId, writer.binding)) throw invalid()
+          || !this.hasSkillPackageIdentity(parent, pod, writer.userId, writer.binding, mode)
+          || (this.stdioV2Json !== undefined || this.hasStdioLayout(pod.spec)) && !this.hasTokenSecretIdentity(secret ?? null,
+            this.token(writer.name, writer.sessionId, writer.generation), labels, mode, this.hasStdioLayout(pod.spec))) throw invalid()
         const spec = stdioObjectV2(jsonBudget).parse(pod.spec)
         const template = parent.spec?.podTemplate
         const containers = spec.containers, statuses: unknown = pod.status?.containerStatuses
@@ -1041,12 +1121,16 @@ export class SandboxManager {
       } catch (_invalidObservation) { throw invalid() }
     }
     const resources = async () => {
-      try { return await Promise.all([this.get('sandboxes', writer.name), this.get('pods', writer.name)]) }
+      try {
+        const [parent, pod] = await Promise.all([this.get('sandboxes', writer.name), this.get('pods', writer.name)])
+        const secret = this.stdioV2Json !== undefined || this.hasStdioLayout(pod?.spec) ? await this.get('secrets', writer.name) : null
+        return [parent, pod, secret] as const
+      }
       catch (_resourceReadFailed) { throw unavailable() }
     }
     const assertAllowed = () => client ? this.assertStdioCaptureAllowed(client, writer, mode) : this.assertDispatchAllowed(writer)
     await assertAllowed()
-    const first = await resources(), observed = observe(first[0], first[1])
+    const first = await resources(), observed = observe(first[0] ?? null, first[1] ?? null, first[2])
     let node: unknown
     try { node = await this.kube.call<unknown>('GET', `/api/v1/nodes/${encodeURIComponent(observed.capture.nodeName)}`) }
     catch (_nodeReadFailed) { throw unavailable() }
@@ -1060,26 +1144,26 @@ export class SandboxManager {
       if (!stdioImageMatchesDeploymentV2(deployment, actualExecutorImage)) throw invalid()
     } catch (_invalidImage) { throw invalid() }
     await assertAllowed()
-    const last = await resources(), final = observe(last[0], last[1])
+    const last = await resources(), final = observe(last[0] ?? null, last[1] ?? null, last[2])
     if (observed.imageId !== final.imageId || JSON.stringify(observed.capture) !== JSON.stringify(final.capture)
       || stdioCanonicalJsonV2(observed.spec, jsonBudget) !== stdioCanonicalJsonV2(final.spec, jsonBudget)) throw invalid()
     return { actualExecutorImage, capture: final.capture, spec: structuredClone(final.spec) }
   }
 
   /**
-   * Check a previously admitted writer without creating any Kubernetes resource.
+   * Check a previously admitted writer for observation or cleanup without creating any Kubernetes resource or authorizing start.
    * @param sessionId - Session recorded as the writer.
    * @param userId - Owner of its mount slot.
    * @param podUid - Expected Kubernetes Pod identity.
    * @param runnerInstanceId - Expected live Runner process identity.
-   * @returns Whether the slot, resources, mounts and live Runner match; provider errors reject.
+   * @returns Whether the slot, resources, known control-file layout, mounts and live Runner match; current deployment-budget changes do not block observation of the original writer. Provider errors reject.
    */
   async matchesInstance(sessionId: string, userId: string, podUid: string, runnerInstanceId: string): Promise<boolean> {
-    return this.matchesInstanceUsing(sessionId, userId, podUid, runnerInstanceId)
+    return this.matchesInstanceUsing(sessionId, userId, podUid, runnerInstanceId, undefined, 'observe')
   }
 
   private async matchesInstanceUsing(sessionId: string, userId: string, podUid: string, runnerInstanceId: string,
-    client?: PoolClient): Promise<boolean> {
+    client?: PoolClient, mode: 'dispatch' | 'observe' = 'dispatch'): Promise<boolean> {
     const reader = client ?? this.pool
     const selected = await reader.query<MountSlot>('SELECT * FROM pe_mount_slots WHERE user_id=$1', [userId])
     const slot = selected.rows[0]
@@ -1098,11 +1182,14 @@ export class SandboxManager {
       || !this.sameBinding(current.binding_snapshot, binding)) return false
     const name = this.name(userId), labels = this.labels(sessionId, userId, name, slot.generation)
     const [sandbox, pod] = await Promise.all([this.get('sandboxes', name), this.get('pods', name)])
+    const secret = this.stdioV2Json !== undefined || this.hasStdioLayout(pod?.spec) ? await this.get('secrets', name) : null
     if (!sandbox || sandbox.metadata.deletionTimestamp || !this.owned(sandbox, labels)
       || !pod || pod.metadata.deletionTimestamp || !this.owned(pod, labels)
       || pod.metadata.uid !== podUid || !pod.metadata.ownerReferences?.some(ref => ref.uid === sandbox.metadata.uid)
       || !pod.metadata.finalizers?.includes(STOP_FINALIZER)
-      || !this.hasSkillPackageIdentity(sandbox, pod, userId, binding)) return false
+      || !this.hasSkillPackageIdentity(sandbox, pod, userId, binding, mode)
+      || (this.stdioV2Json !== undefined || this.hasStdioLayout(pod.spec)) && !this.hasTokenSecretIdentity(secret,
+        this.token(name, sessionId, slot.generation), labels, mode, this.hasStdioLayout(pod.spec))) return false
     const health = await this.runner<{ ready: boolean; instanceId: string }>(name,
       this.token(name, sessionId, slot.generation), 'GET', '/health')
     return health.ready && health.instanceId === runnerInstanceId
@@ -1205,7 +1292,7 @@ export class SandboxManager {
     if (!pod || !sandbox) throw new MountSlotBlocked('mount_resolution_runner_unavailable', true)
     if (!this.owned(sandbox, labels) || !this.owned(pod, labels) || pod.metadata.uid !== target.podUid
       || !pod.metadata.ownerReferences?.some(ref => ref.uid === sandbox.metadata.uid)
-      || !this.hasSkillPackageIdentity(sandbox, pod, target.userId, target.binding)) {
+      || !this.hasSkillPackageIdentity(sandbox, pod, target.userId, target.binding, 'observe')) {
       throw new MountSlotBlocked('mount_resolution_identity_changed', false)
     }
     const token = this.token(target.name, target.sessionId, target.generation)
