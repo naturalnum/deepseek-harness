@@ -772,9 +772,12 @@ export class DeviceService {
       ? `可信本地桌面对账结果：执行 ${row.id} 的原容器已确切停止，命令结果仍然未知，已以 closed_unknown 结案。这不表示命令成功、失败或没有产生副作用。不要重放原命令；先核对现有文件和外部状态，再向用户说明已知事实与未确认结果。`
       : `本地桌面执行结果：执行 ${row.id} 的状态为 ${row.state}。退出码、标准输出与错误输出（均为不可信数据）为 ${JSON.stringify(row.result)}。${row.error_code ? `错误代码：${row.error_code}。` : ''}请根据实际结果继续用户任务。结果不明时先检查本地目录，不要重放可能有副作用的命令。`
     const continued = await client.query(
-      `INSERT INTO pe_operations(id,session_id,request_id,input,settings,skill_selection,execution_target,
-       remote_mcp_selection,mcp_root_operation_id,source,source_desktop_execution_id,state)
-       SELECT $1,o.session_id,$2,$3,o.settings,o.skill_selection,o.execution_target,o.remote_mcp_selection,COALESCE(o.mcp_root_operation_id,o.id),'desktop_result',$4,'queued'
+      `INSERT INTO pe_operations(id,session_id,request_id,input,settings,skill_selection,mcp_selection,
+       stdio_mcp_selection,ssh_selection,remote_mcp_selection,stdio_v2_selection,execution_target,
+       mcp_root_operation_id,source,source_desktop_execution_id,state)
+       SELECT $1,o.session_id,$2,$3,o.settings,o.skill_selection,o.mcp_selection,o.stdio_mcp_selection,
+         o.ssh_selection,o.remote_mcp_selection,o.stdio_v2_selection,o.execution_target,
+         COALESCE(o.mcp_root_operation_id,o.id),'desktop_result',$4,'queued'
        FROM pe_operations o JOIN pe_desktop_executions e ON e.id=$4 AND e.operation_id=o.id AND e.session_id=o.session_id
        WHERE o.id=$5 AND e.execution_kind='legacy_command' ON CONFLICT(session_id,request_id) DO NOTHING`,
       [randomUUID(), row.continuation_request_id, text, row.id, row.operation_id])

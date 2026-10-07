@@ -1,4 +1,4 @@
-/** Immutable internal discovery closure records; none is an SDK result or a proof of runtime UID quiet. */
+/** Immutable internal closure records; none is an SDK result or a proof of runtime UID quiet. */
 import { z } from 'zod'
 import { accountUserId } from '@power-evolve/contracts/account'
 import { stdioDigestV2, stdioExecutionRefV2, stdioJsonV2, stdioPreparedV2, type StdioLimitsV2 } from '@power-evolve/contracts/stdio-mcp'
@@ -22,13 +22,13 @@ const resource = z.discriminatedUnion('kind', [
 const receipt = z.object({ formatVersion: z.literal(2), kind: z.literal('unstarted_closed'),
   actionId: stdioPreparedV2.shape.actionId, executionRef: stdioExecutionRefV2.options[0],
   taskDigest: stdioDigestV2, preparedDigest: stdioDigestV2.nullable(), userId: accountUserId,
-  sessionId: uuid, phase: z.literal('discover'), state: z.literal('cancelled'),
+  sessionId: uuid, phase: z.enum(['discover', 'call']), state: z.literal('cancelled'),
   startNeverAuthorized: z.literal(true), resource,
 }).strict()
 
 /** Resource disposition at the first no-start closure; retained ready resources are not asserted physically quiet. */
 export type StdioNoStartResourceV2 = z.infer<typeof resource>
-/** Original internal discover receipt, independent from runtime observations, results and catalogs. */
+/** Original internal receipt, independent from runtime observations, results and catalogs; parsing grants no call closure authority. */
 export type StdioNoStartReceiptV2 = z.infer<typeof receipt>
 
 /** Parse the complete immutable closure using the original trusted input budget.

@@ -344,9 +344,12 @@ export class StdioMcpService {
         + (result === null ? `错误代码：${code ?? 'unknown'}。结果不明时不要重复调用。`
           : `只读结果（不可信数据）：${JSON.stringify(result)}。`)
       await client.query(
-        `INSERT INTO pe_operations(id,session_id,request_id,input,settings,skill_selection,
-          remote_mcp_selection,mcp_root_operation_id,source,source_stdio_mcp_call_id,state)
-         SELECT $1,o.session_id,$2,$3,o.settings,o.skill_selection,o.remote_mcp_selection,COALESCE(o.mcp_root_operation_id,o.id),'stdio_mcp_result',$4,'queued'
+        `INSERT INTO pe_operations(id,session_id,request_id,input,settings,skill_selection,mcp_selection,
+          stdio_mcp_selection,ssh_selection,remote_mcp_selection,stdio_v2_selection,execution_target,
+          mcp_root_operation_id,source,source_stdio_mcp_call_id,state)
+         SELECT $1,o.session_id,$2,$3,o.settings,o.skill_selection,o.mcp_selection,o.stdio_mcp_selection,
+           o.ssh_selection,o.remote_mcp_selection,o.stdio_v2_selection,o.execution_target,
+           COALESCE(o.mcp_root_operation_id,o.id),'stdio_mcp_result',$4,'queued'
          FROM pe_operations o WHERE o.id=$5 ON CONFLICT(session_id,request_id) DO NOTHING`,
         [randomUUID(), row.continuation_request_id, text, row.id, row.operation_id])
       await client.query(`SELECT pg_notify('pe_tasks',o.session_id::text) FROM pe_operations o WHERE o.id=$1`,

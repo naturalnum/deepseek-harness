@@ -93,8 +93,8 @@ async function prepare(pool, row) {
   [row.id,row.actor.user,row.actor.session,row.phase,row.target,row.execution,digest,JSON.stringify(raw),fingerprint])
 }
 
-test('V34 and adjacent V35/V36 preserve original tasks and bind generic execution, approval and continuation records', {timeout:30000}, async t => {
-  assert.equal(previous.CURRENT_SCHEMA_VERSION,36)
+test('V34 and adjacent V35–V37 preserve original tasks and bind generic execution, approval and continuation records', {timeout:30000}, async t => {
+  assert.equal(previous.CURRENT_SCHEMA_VERSION,37)
   const databaseUrl=process.env.PE_TEST_DATABASE_URL ?? (await readFile(join(process.env.PE_PRIVATE_DIR,'database-url'),'utf8')).trim()
   const name=`pe_stdio_v34_${randomBytes(10).toString('hex')}`
   const admin=new Pool({connectionString:databaseUrl,max:1,idleTimeoutMillis:0})
@@ -121,9 +121,9 @@ test('V34 and adjacent V35/V36 preserve original tasks and bind generic executio
     const originalTables=['pe_stdio_v2_actions','pe_stdio_v2_preparations','pe_cloud_executions']
     const originalRows=await Promise.all(originalTables.map(async tableName=>
       (await pool.query(`SELECT row_to_json(saved)::text AS literal FROM ${tableName} saved ORDER BY ${tableName==='pe_stdio_v2_preparations'?'action_id':'id'}`)).rows))
-    await t.test('V34 to V36 and repeated startup leave complete originals and legacy rows unchanged',async()=>{
+    await t.test('V34 to current schema and repeated startup leave complete originals and legacy rows unchanged',async()=>{
       await initializeDatabase(pool);await initializeDatabase(pool)
-      assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version,36)
+      assert.equal((await pool.query('SELECT version FROM pe_schema')).rows[0].version,previous.CURRENT_SCHEMA_VERSION)
       for(let index=0;index<originalTables.length;index++) {
         const tableName=originalTables[index]
         assert.deepEqual((await pool.query(`SELECT row_to_json(saved)::text AS literal FROM ${tableName} saved ORDER BY ${tableName==='pe_stdio_v2_preparations'?'action_id':'id'}`)).rows,originalRows[index])
@@ -224,6 +224,42 @@ test('V34 and adjacent V35/V36 preserve original tasks and bind generic executio
       await pool.query(continuationSql,[operation,bob.session,call.continuation,call.id])
       await assert.rejects(pool.query(continuationSql,[randomUUID(),bob.session,call.continuation,call.id]),{code:'23505'})
       await assert.rejects(pool.query('UPDATE pe_operations SET request_id=$2 WHERE id=$1',[operation,randomUUID()]),{code:'23514'})
+      await pool.query("UPDATE pe_operations SET state='completed' WHERE id=$1",[operation])
+    })
+    await t.test('no-start call source requires the original closure and cannot impersonate a Runner result',async()=>{
+      const closureActor=await account(pool,'v37-no-start'), closureConnection=await connection(pool,closureActor)
+      const noStart=action(closureActor,closureConnection,'call'), operation=randomUUID()
+      await insertPair(pool,noStart)
+      const sql=`INSERT INTO pe_operations(id,session_id,request_id,input,settings,state,source,
+        source_stdio_v2_no_start_action_id,source_stdio_v2_phase,mcp_root_operation_id)
+        VALUES($1,$2,$3,'no-start continuation','{}','queued','stdio_v2_no_start',$4,'call',$5)`
+      const args=[operation,closureActor.session,noStart.continuation,noStart.id,closureActor.operation]
+      await assert.rejects(pool.query(sql,args),{code:'23503'})
+      const close=r=>pool.query(`INSERT INTO pe_stdio_v2_no_start_closures
+        (action_id,user_id,session_id,phase,execution_target,execution_id,task_digest,worker_id,lease_epoch,receipt,receipt_digest)
+        VALUES($1,$2,$3,$4,'cloud',$5,$6,$7,1,$8,$6)`,
+      [r.id,r.actor.user,r.actor.session,r.phase,r.execution,digest,randomUUID(),JSON.stringify(raw)])
+      await close(noStart)
+      await assert.rejects(pool.query(continuationSql,[randomUUID(),closureActor.session,noStart.continuation,noStart.id]),{code:'23503'})
+      await assert.rejects(pool.query(sql,[randomUUID(),bob.session,noStart.continuation,noStart.id,bob.operation]),{code:'23503'})
+      await assert.rejects(pool.query(sql,[randomUUID(),closureActor.session,randomUUID(),noStart.id,closureActor.operation]),{code:'23503'})
+      await pool.query("UPDATE pe_cloud_executions SET state='cancelled' WHERE id=$1",[noStart.execution])
+      const noStartDiscovery=action(closureActor,closureConnection)
+      await insertPair(pool,noStartDiscovery); await close(noStartDiscovery)
+      await assert.rejects(pool.query(sql,[randomUUID(),closureActor.session,randomUUID(),noStartDiscovery.id,closureActor.operation]),{code:'23503'})
+      await assert.rejects(pool.query(sql.replace("'call',$5","NULL,$5"),args),{code:'23514'})
+      await pool.query(sql,args)
+      await assert.rejects(pool.query(sql,[randomUUID(),...args.slice(1)]),{code:'23505'})
+      const original=(await pool.query('SELECT * FROM pe_operations WHERE id=$1',[operation])).rows[0]
+      assert.equal(original.source,'stdio_v2_no_start'); assert.equal(original.source_stdio_v2_action_id,null)
+      assert.equal(original.source_stdio_v2_no_start_action_id,noStart.id)
+      assert.equal((await pool.query('SELECT count(*)::int AS n FROM pe_stdio_v2_results WHERE action_id=$1',[noStart.id])).rows[0].n,0)
+      for(const [column,value] of [['request_id',randomUUID()],['source_stdio_v2_no_start_action_id',call.id],
+        ['mcp_root_operation_id',bob.operation],['source','stdio_v2_result']]) {
+        await assert.rejects(pool.query(`UPDATE pe_operations SET ${column}=$2 WHERE id=$1`,[operation,value]),{code:'23514'})
+      }
+      await assert.rejects(pool.query('UPDATE pe_operations SET source_stdio_v2_no_start_action_id=$2 WHERE id=$1',
+        [closureActor.operation,noStart.id]),{code:'23514'})
       await pool.query("UPDATE pe_operations SET state='completed' WHERE id=$1",[operation])
     })
     await t.test('current startup refuses a future schema without changing accepted tasks',async()=>{
