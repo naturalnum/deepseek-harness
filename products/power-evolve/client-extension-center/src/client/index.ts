@@ -18,6 +18,7 @@ import { FixedMcpHttpClient } from './mcp-api.ts'
 import { PersonalMcpConnectionHttpClient } from './personal-mcp-api.ts'
 import { personalMcpSessionSource } from './personal-mcp-session-view.ts'
 import { StdioMcpHttpClient } from './stdio-mcp-api.ts'
+import { StdioV2HttpClient } from './stdio-v2-api.ts'
 import { PersonalSshHttpClient } from './ssh-api.ts'
 import { en, NS, zh, type ExtensionCenterLocaleKey } from './locales.ts'
 import { installExtensionCenterStyles } from './styles.ts'
@@ -38,6 +39,7 @@ export function apply(ctx: Context): void {
   const personalMcp = new PersonalMcpConnectionHttpClient()
   const mcpSessions = personalMcpSessionSource(ctx.sessions)
   const stdio = new StdioMcpHttpClient()
+  const stdioV2 = new StdioV2HttpClient()
   const ssh = new PersonalSshHttpClient()
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'PowerEvolve extension center labels')
   ctx.effect(() => installExtensionCenterStyles(), 'PowerEvolve extension center styles')
@@ -52,7 +54,7 @@ export function apply(ctx: Context): void {
     locale: NS, label: () => t('skillsNav'),
   }, SkillsPanelIcon))
   ctx.slots.inject('main', () => ctx.slots.register({
-    name: 'main', key: PLUGINS_PANEL_ID, locale: NS, inject: () => ({ plugins, mcp, personalMcp, mcpSessions, stdio, ssh, approvalUrl }),
+    name: 'main', key: PLUGINS_PANEL_ID, locale: NS, inject: () => ({ plugins, mcp, personalMcp, mcpSessions, stdio, stdioV2, ssh, approvalUrl }),
   }, PluginsPage))
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
     name: 'sidebar.panellist', id: PLUGINS_PANEL_ID, order: 21,

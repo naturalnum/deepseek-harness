@@ -41,7 +41,8 @@ function summary(view) {
     createdAt: '2026-10-08T00:00:00Z', updatedAt: '2026-10-08T00:00:00Z' }
 }
 async function until(check) {
-  for (let i = 0; i < 100; i++) { if (check()) return; await new Promise(resolve => setImmediate(resolve)) }
+  const deadline = performance.now() + 5000
+  while (performance.now() < deadline) { if (check()) return; await new Promise(resolve => setImmediate(resolve)) }
   assert.fail('Approval fixture did not reach expected state')
 }
 const deferred = () => { let resolve; const promise = new Promise(done => { resolve = done }); return { promise, resolve } }
@@ -288,7 +289,7 @@ test('actual loopback endpoints receive the independent bearer and frozen decisi
   await view.inspect(); view.choose(); await until(() => view.area.textContent.includes(labels.submitted))
   view.button(labels.next).click(); await until(() => view.area.textContent.includes(id(40)))
   view.button(labels.inspect).click(); await until(() => view.area.querySelector('input'))
-  view.choose('reject'); await until(() => receipts.length === 2)
+  view.choose('reject'); await until(() => receipts.length === 2 && view.area.textContent.includes(labels.submitted))
   assert.deepEqual(receipts, [{ actionId, fingerprint: '2'.repeat(64), decision: 'once' },
     { actionId: id(40), fingerprint: '2'.repeat(64), decision: 'reject' }])
   assert.equal(inspections.length, 4)

@@ -3,6 +3,7 @@
   "compilerOptions": { "rootDir": "src", "outDir": "lib/types", "tsBuildInfoFile": "lib/tsconfig.client.tsbuildinfo" },
   "include": ["src"],
   "references": [
+    { "path": "../contracts" },
     { "path": "../../../vendor/cordis" },
     { "path": "../../../packages/api/session-controller/tsconfig.client.json" },
     { "path": "../../../packages/client/locale/tsconfig.client.json" },

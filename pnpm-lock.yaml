@@ -14233,6 +14233,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-workspace':
         specifier: workspace:*
         version: link:../../../packages/client/ui-workspace
+      '@power-evolve/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       react:
         specifier: ^18.2.0
         version: 18.3.1

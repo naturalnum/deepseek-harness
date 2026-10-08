@@ -98,7 +98,7 @@ STDIO v2 的 `SandboxManager.captureStdioV2` 在现有准入围栏下观察原 P
 
 内部 STDIO v2 Cloud worker 以数据库时钟认领动作，按用户上次认领时间轮转，将每个动作租约镜像到原 Cloud 执行。`maxActive` 限制跨副本有效 Cloud worker 租约数，包含历史执行；它不限制运行中的 Pod 或用户程序数。`maxCandidates`、`pollMs`、`renewMs` 和 `leaseMs` 限定扫描、轮询及续期。环境准备在授权事务外进行；创建期间取消仍保留准确的 ready 写者身份。准备审批和首次派发受当前动作 epoch 围栏约束。私有 Pod 观察持有有界捕获锁；Runner 执行 HTTP 在该事务提交并释放后进行。已提交意图只查询或取消原 Runner。停服等待创建、授权、HTTP 和续期收敛。未签发启动授权的 discovery 取消使用独立持久回执结案：保留 ready 写者，或在释放创建预留前核验原创建的匹配停止证据。结案回复不明时只读回原回执。call 结果与 no-start 结案共用同一个注入的续接生产者；缺少组合时拒绝并回滚结案。产品 Profile 启用仍要求原生发现／调用验收。
 
-Platform 可通过 `stdioV2ConfigFile` 组合这些 Cloud 服务；空路径关闭该功能。私有运维文件提供明确预算、一个已审查 Cloud 镜像及独立审批密钥。启用组合要求 PVC、准确的已审查镜像，以及足够的 HTTP 输入容量。Runner Secret 仅将已校验运行预算投影到 root 可读文件。新派发核验当前配置；配置变更后的观察与取消保留原写者。用户管理路由与独立审批路由共用原授权服务。停服在关闭 PG 前等待 STDIO worker 收敛。交付 Profile 在原生发现／调用验收前保持关闭。
+Platform 可通过 `stdioV2ConfigFile` 组合这些 Cloud 服务；空路径关闭该功能。私有运维文件提供明确预算、一个已审查 Cloud 镜像及独立审批密钥。启用组合要求 PVC、准确的已审查镜像，以及足够的 HTTP 输入容量。Runner Secret 仅将已校验运行预算投影到 root 可读文件。新派发核验当前配置；配置变更后的观察与取消保留原写者。用户管理路由与独立审批路由共用原授权服务。原生 Host RPC 沿用原浏览器凭据，提供云端连接管理与动作查询。独立 Platform 审批页重新核对冻结任务，再提交一次本次批准／拒绝；响应丢失后只允许查询原决定。停服在关闭 PG 前等待 STDIO worker 收敛。交付 Profile 在原生发现／调用验收前保持关闭。
 
 Device 的 `OwnedDeviceContainer.captureImage` 检查可信 Docker config ID、OS 和架构。`captureContainer` 观察准确的原 owned container，要求从未启动且重启次数为零，核验两处可写工作区／Home bind，仅允许另外一处可选的 `/tmp` tmpfs。它保留完整 Config、HostConfig、Path、Args、State 和挂载观测。调用方提供已授权的物理源，并完成 realpath 与 Directory grant 检查。这些只执行 inspect 的方法返回私有观测，用于 Prepared 和派发比较。当前 Profile 提供固定进程 MCP 预设；通用 STDIO 路由、原生客户端接入和执行器派发仍未启用。
 

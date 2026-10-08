@@ -1,6 +1,18 @@
 export const NS = 'powerEvolve.extensionCenter'
 
 export const zh = {
+  stdioV2Title: '通用进程型 MCP', stdioV2Description: '保存程序与参数，在明确选择的云会话中检查并独立审批。',
+  stdioV2Notice: '配置只保存字面程序与参数。检查和调用需独立审批；旧 whoami 连接不会转换为通用连接。',
+  stdioV2Session: '已有会话', stdioV2SelectSession: '请选择已有会话', stdioV2Cloud: '检查目标：云端',
+  stdioV2Uncertain: '原请求结果尚不确定。请查询原回执；不会自动重发或换请求编号。',
+  stdioV2ReadReceipt: '查询原回执', stdioV2ReceiptNotice: '这是受理或配置回执，不是工具执行结果。请刷新读取正式状态。',
+  stdioV2Connections: '通用连接', stdioV2New: '新建通用连接', stdioV2Edit: '编辑配置',
+  stdioV2Check: '检查此会话', stdioV2Delete: '删除连接', stdioV2Save: '保存配置',
+  stdioV2Program: '程序', stdioV2Argv: '参数 JSON 数组', stdioV2Cwd: '项目相对工作目录',
+  stdioV2Literal: '参数必须是 JSON 字符串数组，保留空项与顺序；不拼接 shell。目录“.”表示项目根目录。',
+  stdioV2Invalid: '配置无效。请核对名称、程序、参数数组和相对目录。',
+  stdioV2NextConnections: '下一页连接', stdioV2NextActions: '下一页操作', stdioV2Details: '完整任务与结果',
+  stdioV2Cancel: '请求取消', stdioV2CancelNotice: '取消受理不表示进程或写入者已停止；完整结果仍以正式状态为准。',
   personalMcpPluginTitle: '远程 MCP',
   personalMcpUnavailable: '远程 MCP 管理服务当前不可用。',
   mcpCheckExpired: '检查已过期',
@@ -248,6 +260,18 @@ export const zh = {
 export type ExtensionCenterLocaleKey = keyof typeof zh
 
 export const en = {
+  stdioV2Title: 'Generic process MCP', stdioV2Description: 'Save a program and arguments, then check and independently approve in an explicit cloud Session.',
+  stdioV2Notice: 'Configuration saves a literal program and arguments. Checks and calls require independent approval; old whoami connections are not converted.',
+  stdioV2Session: 'Existing Session', stdioV2SelectSession: 'Select an existing Session', stdioV2Cloud: 'Check target: Cloud',
+  stdioV2Uncertain: 'The original request result is uncertain. Query its receipt; no request is automatically resent or given a new ID.',
+  stdioV2ReadReceipt: 'Query original receipt', stdioV2ReceiptNotice: 'This is an acceptance or configuration receipt, not a tool result. Refresh to read the formal state.',
+  stdioV2Connections: 'Generic connections', stdioV2New: 'New generic connection', stdioV2Edit: 'Edit configuration',
+  stdioV2Check: 'Check this Session', stdioV2Delete: 'Delete connection', stdioV2Save: 'Save configuration',
+  stdioV2Program: 'Program', stdioV2Argv: 'Arguments JSON array', stdioV2Cwd: 'Project-relative working directory',
+  stdioV2Literal: 'Arguments must be a JSON string array; empty entries and order are preserved, without shell assembly. “.” is the project root.',
+  stdioV2Invalid: 'Invalid configuration. Check the name, program, arguments array and relative directory.',
+  stdioV2NextConnections: 'Next connections page', stdioV2NextActions: 'Next actions page', stdioV2Details: 'Complete task and result',
+  stdioV2Cancel: 'Request cancellation', stdioV2CancelNotice: 'Cancellation acceptance does not mean the process or writer has stopped; read its formal state and complete result.',
   personalMcpPluginTitle: 'Remote MCP',
   personalMcpUnavailable: 'Remote MCP management is currently unavailable.',
   mcpCheckExpired: 'Check expired',

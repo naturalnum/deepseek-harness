@@ -3,6 +3,7 @@ import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { SkillToggle } from './SkillToggle.tsx'
 import { StdioMcpHttpError, type StdioMcpCall, type StdioMcpConnection,
   type StdioMcpList, type StdioMcpPort } from './stdio-mcp-api.ts'
+import { StdioV2Panel, type StdioV2PanelProps } from './StdioV2Panel.tsx'
 
 type Translate = TranslateNS<'powerEvolve.extensionCenter'>
 type Toggle = { connectionId: string; requestId: string; baseRevision: number; enabled: boolean }
@@ -19,11 +20,20 @@ function stateLabel(state: string, t: Translate): string {
 }
 
 /** Manage one fixed process MCP connection on the existing native Plugins page. */
-export function StdioMcpPage({ data, port, onChange, t }: {
-  readonly data: StdioMcpList
+export function StdioMcpPage({ data, port, onChange, t, generic }: {
+  readonly data?: StdioMcpList | undefined
   readonly port: StdioMcpPort
   readonly onChange: (items: readonly StdioMcpConnection[]) => void
   readonly t: Translate
+  readonly generic?: Omit<StdioV2PanelProps, 't'> | undefined
+}): ReactNode {
+  return generic ? <StdioV2Panel {...generic} t={t} />
+    : data ? <LegacyStdioMcpPage data={data} port={port} onChange={onChange} t={t} /> : null
+}
+
+function LegacyStdioMcpPage({ data, port, onChange, t }: {
+  readonly data: StdioMcpList; readonly port: StdioMcpPort
+  readonly onChange: (items: readonly StdioMcpConnection[]) => void; readonly t: Translate
 }): ReactNode {
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
