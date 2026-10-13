@@ -1,13 +1,14 @@
 /** Native Host model and tools over owned HTTP, actual PG and controlled external stream timing. */
 import { randomUUID } from 'node:crypto'
-import { writeFile } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { createServer } from 'node:http'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry, { type AgentHandle, type AssistantStreamFrame } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import LlmRuntime, { ToolCallId, createUserMessage, expandAssistantStream, type StreamChunk } from '@deepseek-ai/dsh-llm'
-import SessionStore, { Session } from '@deepseek-ai/dsh-session'
+import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import ToolRuntime from '@deepseek-ai/dsh-tools'
@@ -17,7 +18,7 @@ import { encodeOfficeCommand, installOfficeTool, parseOfficeCommand } from '../s
 import RuntimeScope from '../src/host/scope.ts'
 import { TaskStore } from '../src/platform/tasks.ts'
 import { cloudFixture } from './cloud-fixture.ts'
-import { once } from 'node:events'
+import { getEventListeners, once } from 'node:events'
 import { setImmediate, setTimeout as delay } from 'node:timers/promises'
 import { DeepSeekAdapter } from '@deepseek-ai/dsh-llm-deepseek'
 import { sse, start, end } from '../../../../packages/llm/llm-deepseek/tests/helpers.ts'
@@ -383,3 +384,147 @@ test('sub-watermark EOF waits for the original tail receipt before native final 
     expect(n.frames.filter(frame => frame.type === 'end')).toHaveLength(1)
     expect(n.modelCalls()).toBe(1); expect(n.firstFailure()).toBeUndefined()
   }))
+
+type ScopeTransport = 'call' | 'upload' | 'reconcile'
+interface ScopeHttpCase {
+  readonly scope: RuntimeScope
+  readonly stop: AbortController
+  readonly responseBodyStarted: Promise<boolean>
+  readonly requests: { url: string; authorization: string | undefined; type: string | undefined; bytes: Buffer }[]
+  readonly token: string
+  mode: 'complete' | 'body' | 'headers'
+  invoke(kind: ScopeTransport, stop?: AbortController): Promise<unknown>
+}
+
+async function scopeHttp(run: (fixture: ScopeHttpCase) => Promise<void>, timeoutMs = 5000): Promise<void> {
+  const root = await mkdtemp(join(tmpdir(), 'pe-host-scope-http-')), context = new Context()
+  const stop = new AbortController(), owners = new Set([stop]), pending: Promise<unknown>[] = []
+  const responseBodyStarted = Promise.withResolvers<boolean>(), token = randomUUID()
+  const requests: ScopeHttpCase['requests'] = []
+  let fixture: ScopeHttpCase | undefined
+  const server = createServer((request, response) => {
+    const chunks: Buffer[] = []
+    request.on('data', (chunk: Buffer) => { chunks.push(chunk) })
+    request.on('end', () => {
+      requests.push({ url: request.url ?? '', authorization: request.headers.authorization,
+        type: request.headers['content-type'], bytes: Buffer.concat(chunks) })
+      response.writeHead(200, { 'content-type': 'application/json' })
+      if (fixture?.mode === 'headers') return
+      if (fixture?.mode === 'body') { response.write('{'); return }
+      response.end(JSON.stringify({ version: 1, items: [], more: false }))
+    })
+  })
+  let restoreResponseBody: (() => void) | undefined
+  try {
+    server.listen(0, '127.0.0.1'); await once(server, 'listening')
+    const address = server.address()
+    if (!address || typeof address === 'string') throw new Error('Expected owned Scope HTTP listener')
+    const origin = `http://127.0.0.1:${address.port}`, workerFile = join(root, 'worker-token')
+    await writeFile(workerFile, token, { mode: 0o600 })
+    await context.plugin(RuntimeScope, { platformUrl: origin, workerTokenFile: workerFile,
+      timeoutMs, maxResponseBytes: 65536 })
+    let scope: RuntimeScope | undefined
+    await context.inject(['powerEvolveRuntime'], (ctx) => { scope = ctx.powerEvolveRuntime })
+    if (!scope) throw new Error('Actual RuntimeScope did not activate')
+    const runtime = scope
+    const descriptor = Object.getOwnPropertyDescriptor(Response.prototype, 'body')
+    if (!descriptor?.get) throw new Error('Native fetch Response body getter is unavailable')
+    // Delegate the public getter unchanged; the barrier places cancellation after fetch returned headers.
+    const responseObserver = vi.spyOn(Response.prototype, 'body', 'get').mockImplementation(function(this: Response) {
+      const body: unknown = descriptor.get?.call(this)
+      if (body !== null && !(body instanceof ReadableStream)) throw new Error('Native response body is unavailable')
+      if (this.url.startsWith(origin + '/')) responseBodyStarted.resolve(true)
+      return body
+    })
+    restoreResponseBody = () => { responseObserver.mockRestore() }
+    fixture = { scope: runtime, stop, responseBodyStarted: responseBodyStarted.promise, requests, token, mode: 'complete',
+      invoke(kind, owner = stop) {
+        owners.add(owner)
+        const body = new ReadableStream<Uint8Array>({ start(controller) {
+          controller.enqueue(Uint8Array.from([0, 1, 2, 255])); controller.close()
+        } })
+        const result = kind === 'call' ? runtime.call('/runtime/request', token, { original: 'input' }, owner.signal)
+          : kind === 'upload' ? runtime.uploadFile(token, SessionId(randomUUID()), 'original.bin', body, owner.signal)
+            : runtime.reconcileNativeIntents(owner.signal)
+        pending.push(result.then(value => ({ value }), (error: unknown) => ({ error })))
+        return result
+      } }
+    await run(fixture)
+  } finally {
+    for (const owner of owners) owner.abort()
+    await Promise.all(pending)
+    restoreResponseBody?.()
+    await context.fiber.dispose()
+    if (server.listening) await new Promise<void>((resolve, reject) => {
+      server.close((error) => { if (error) reject(error); else resolve() }); server.closeAllConnections()
+    })
+    await rm(root, { recursive: true, force: true })
+  }
+}
+
+function node22Dependants(signal: AbortSignal): number {
+  const probe = new AbortController(), linked = AbortSignal.any([probe.signal])
+  const key = Object.getOwnPropertySymbols(probe.signal).find(symbol => symbol.description === 'kDependantSignals')
+  probe.abort()
+  if (key === undefined || !linked.aborted) throw new Error('Node dependent-signal diagnostic is unavailable')
+  const value: unknown = Reflect.get(signal, key)
+  if (value === undefined) return 0
+  if (typeof value !== 'object' || value === null || !('size' in value) || typeof value.size !== 'number') {
+    throw new Error('Node22 dependent-signal diagnostic changed')
+  }
+  return value.size
+}
+
+for (const kind of ['call', 'upload', 'reconcile'] as const) {
+  test(`HostScope HTTP ${kind} releases long-lived caller dependencies after successive requests`, () =>
+    scopeHttp(async (f) => {
+      const before = node22Dependants(f.stop.signal)
+      for (let index = 0; index < 32; index++) {
+        const result = await f.invoke(kind)
+        if (kind !== 'reconcile') expect(result).toEqual({ version: 1, items: [], more: false })
+        expect(getEventListeners(f.stop.signal, 'abort')).toHaveLength(0)
+      }
+      expect(f.requests).toHaveLength(32)
+      for (const request of f.requests) {
+        expect(request.authorization).toBe(`Bearer ${f.token}`)
+        expect(request.type).toBe(kind === 'upload' ? 'application/octet-stream' : 'application/json')
+        if (kind === 'upload') {
+          expect(new URL(request.url, 'http://fixture').searchParams.get('name')).toBe('original.bin')
+          expect(request.bytes).toEqual(Buffer.from([0, 1, 2, 255]))
+        } else expect(JSON.parse(request.bytes.toString())).toMatchObject(kind === 'call'
+          ? { original: 'input' } : { version: 1, workerId: f.scope.workerId })
+      }
+      expect(node22Dependants(f.stop.signal) - before).toBe(0)
+    }))
+
+  test(`HostScope HTTP ${kind} refuses an already-cancelled caller without sending a request`, () => scopeHttp(async (f) => {
+    const reason = new Error('owned caller cancelled'); f.stop.abort(reason)
+    await expect(f.invoke(kind)).rejects.toBe(reason)
+    expect(f.requests).toHaveLength(0)
+    await f.invoke(kind, new AbortController())
+    expect(f.requests).toHaveLength(1)
+  }))
+
+  test(`HostScope HTTP ${kind} keeps caller cancellation through a held response body`, () => scopeHttp(async (f) => {
+    f.mode = 'body'
+    const result = f.invoke(kind)
+    await f.responseBodyStarted
+    const reason = new Error('owned body cancelled'); f.stop.abort(reason)
+    await expect(result).rejects.toBe(reason)
+    expect(getEventListeners(f.stop.signal, 'abort')).toHaveLength(0)
+  }))
+
+  test(`HostScope HTTP ${kind} keeps the configured deadline through a held response body`, () => scopeHttp(async (f) => {
+    f.mode = 'body'
+    const result = f.invoke(kind)
+    await f.responseBodyStarted
+    await expect(result).rejects.toMatchObject({ name: 'TimeoutError', message: 'The operation was aborted due to timeout' })
+    expect(getEventListeners(f.stop.signal, 'abort')).toHaveLength(0)
+  }, 1000))
+
+  test(`HostScope HTTP ${kind} retains the native TimeoutError before response headers`, () => scopeHttp(async (f) => {
+    f.mode = 'headers'
+    await expect(f.invoke(kind)).rejects.toMatchObject({ name: 'TimeoutError', message: 'The operation was aborted due to timeout' })
+    expect(getEventListeners(f.stop.signal, 'abort')).toHaveLength(0)
+  }, 1000))
+}

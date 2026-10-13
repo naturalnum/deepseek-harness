@@ -1,6 +1,7 @@
 /** Host access to platform APIs and operation-local execution grants. */
 import { readFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
+import { addAbortListener } from 'node:events'
 import { Context, Service } from '@deepseek-ai/cordis'
 import schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
@@ -12,6 +13,21 @@ import type { InputCommandReceipt, NativeInputQueueCommand } from '../native-inp
 import { NativeRetainedIntentClient } from './native-retained-intent-client.ts'
 import type { NativeRetainedIntentId, NativeRetainedMutation, NativeRetainedReceipt } from '../native-retained-intent-contracts.ts'
 import { ACCOUNT_ERROR_CODES } from '../account-contracts.ts'
+
+/** A request owns its caller listener and deadline through complete response consumption. */
+function requestLifetime(timeoutMs: number, parent?: AbortSignal) {
+  parent?.throwIfAborted()
+  if (!Number.isInteger(timeoutMs) || timeoutMs < 0 || timeoutMs > 4_294_967_295) {
+    throw new RangeError('timeoutMs must be an integer from 0 through 4294967295')
+  }
+  const controller = new AbortController()
+  const listener = parent === undefined ? undefined : addAbortListener(parent, () => { controller.abort(parent.reason) })
+  const timer = setTimeout(() => {
+    controller.abort(new DOMException('The operation was aborted due to timeout', 'TimeoutError'))
+  }, timeoutMs)
+  timer.unref()
+  return { signal: controller.signal, [Symbol.dispose]() { clearTimeout(timer); listener?.[Symbol.dispose]() } }
+}
 
 declare module '@deepseek-ai/cordis' {
   interface Context { powerEvolveRuntime: RuntimeScope }
@@ -99,8 +115,8 @@ export default class RuntimeScope extends Service {
    * @param signal Scheduler lifetime; the whole maintenance pass also has a configured deadline.
    */
   async reconcileNativeIntents(signal?: AbortSignal): Promise<void> {
-    const deadline = AbortSignal.timeout(this.config.timeoutMs)
-    const lifetime = signal ? AbortSignal.any([signal, deadline]) : deadline
+    using deadline = requestLifetime(this.config.timeoutMs, signal)
+    const lifetime = deadline.signal
     let remaining = this.config.nativeIntentReconcileLimit
     for (const [id, item] of this.retainedAcknowledgements) {
       if (!item.ready) continue
@@ -249,15 +265,15 @@ export default class RuntimeScope extends Service {
    * @param token - user or operation bearer credential.
    * @param input - JSON request fields.
    * @param signal - Optional caller lifetime; the configured request timeout still applies.
-   * @returns bounded decoded JSON, validated by its consumer.
+   * @returns Bounded decoded JSON after its request listener and deadline are released.
    */
   async call(path: string, token: string, input: unknown, signal?: AbortSignal): Promise<unknown> {
-    const timeout = AbortSignal.timeout(this.config.timeoutMs)
+    using lifetime = requestLifetime(this.config.timeoutMs, signal)
     const response = await fetch(new URL(path, this.config.platformUrl), {
-      method: 'POST', redirect: 'error', signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+      method: 'POST', redirect: 'error', signal: lifetime.signal,
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify(input),
     })
-    return this.responseValue(response)
+    return await this.responseValue(response)
   }
 
   /** Forward an authorized native file stream without retaining complete upload bytes in the Host.
@@ -266,19 +282,20 @@ export default class RuntimeScope extends Service {
    * @param name Optional display name, never a storage path.
    * @param body Bounded original file chunks.
    * @param signal Transport lifetime; the configured Platform timeout also applies.
-   * @returns Durable upload receipt validated by the native carrier.
+   * @returns Durable upload receipt after complete response consumption releases transport resources.
    */
   async uploadFile(token: string, id: SessionId, name: string | undefined,
     body: ReadableStream<Uint8Array>, signal: AbortSignal): Promise<unknown> {
     const url = new URL('/native/attachments/upload', this.config.platformUrl)
     url.searchParams.set('sessionId', id)
     if (name !== undefined) url.searchParams.set('name', name)
+    using lifetime = requestLifetime(this.config.timeoutMs, signal)
     const init: RequestInit & { duplex: 'half' } = {
       method: 'POST', redirect: 'error', duplex: 'half', body,
-      signal: AbortSignal.any([signal, AbortSignal.timeout(this.config.timeoutMs)]),
+      signal: lifetime.signal,
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/octet-stream' },
     }
-    return this.responseValue(await fetch(url, init))
+    return await this.responseValue(await fetch(url, init))
   }
 
   private async responseValue(response: Response): Promise<unknown> {

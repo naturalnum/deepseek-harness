@@ -36,6 +36,8 @@ The Host root redirects to `/native/`. Login, independent approvals and account 
 <details>
 <summary>Persistence, authorization and native behavior</summary>
 
+Host RPC, streamed uploads and each complete native-intent reconciliation pass own a disposable request deadline. Caller cancellation and the configured timeout cover response bodies; completion releases the caller listener and timer.
+
 Accepted operations freeze their model, Skills and connector selections. Account locks, current credentials, Session leases and epochs fence writes. Native event appends commit their model, inbox and title projection checkpoints at the same PG watermark. Checkpoint encoding 2 stores validated JSON text inside jsonb to retain NUL and lone surrogates; retained encoding 1 remains readable and advances on append. Future encodings, malformed text and unequal watermarks reject. Turn classification reads validated event chunks without PostgreSQL JSON extraction; the original event JSON stays unchanged. Cold title and model mutations refuse while a writer holds the Session lease.
 
 The cloud-native database advances through adjacent migrations to schema 6. Existing generations retain their assets and records. Separate temporary assistant-presentation tables store JSON text; canonical Session events remain the recovery source. The fixed legacy importer produces schema 2, which normal Platform startup upgrades through the retained adjacent generations to schema 6. Event and projection writes can share the caller's authorized PG transaction with presentation changes; that caller owns the final lease fence and commit.

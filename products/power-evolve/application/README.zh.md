@@ -36,6 +36,8 @@ Host 根路径跳转至 `/native/`。登录、独立审批和账号管理由 Pla
 <details>
 <summary>持久化、授权与原生行为</summary>
 
+Host RPC、流式上传和每轮完整的 native-intent reconciliation 均持有可释放的请求 deadline。调用方取消和配置超时覆盖响应 body；完成后释放调用方监听和计时器。
+
 受理操作固定模型、Skills 和连接器选择。账号锁、当前凭据、Session 租约与 epoch 约束写入。原生事件追加在同一 PG 水位提交模型、输入队列和标题投影检查点。检查点编码 2 将已验证 JSON 文本存入 jsonb，以保留 NUL 和未配对代理项；旧编码 1 仍可读取，并在追加时升级。未来编码、损坏文本和不一致水位会被拒绝。转次判断按块读取已验证事件，避免 PostgreSQL JSON 提取，原始事件 JSON 保持不变。当前写者持有 Session 租约时，冷会话的标题和模型修改会被拒绝。
 
 cloud-native 数据库通过相邻迁移推进至 schema 6，保留既有代际的资产和记录。独立的临时助手呈现表存储 JSON 文本；原生 Session 事件仍是恢复来源。固定旧版导入器生成 schema 2，由正常 Platform 启动经保留的相邻代际升级至 schema 6。事件与投影写入可与呈现状态变更共用调用者已授权的 PG 事务；调用者负责最终租约核验和提交。
