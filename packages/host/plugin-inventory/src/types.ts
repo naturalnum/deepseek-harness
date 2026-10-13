@@ -66,6 +66,8 @@ export interface AgentPresetPluginGroup {
 export interface PluginInventorySnapshot {
   /** Whether this Host exposes persistent current-profile management. */
   readonly managementAvailable?: boolean
+  /** Whether this peer may change shared Profile configuration; omission preserves operator-local behavior. */
+  readonly managementWritable?: boolean
   readonly entries: readonly PluginInventoryEntry[]
   /**
    * Per-preset compositions, present only when an agent-preset roster is

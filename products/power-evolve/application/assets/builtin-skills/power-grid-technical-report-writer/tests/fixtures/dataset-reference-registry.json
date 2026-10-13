@@ -1,0 +1,16 @@
+{
+  "internet_access": "available",
+  "items": [
+    {
+      "id": "R4",
+      "title": "ElectricityLoadDiagrams20112014",
+      "reference_type": "dataset",
+      "verification_status": "verified",
+      "supports": ["public dataset source metadata"],
+      "doi_or_identifier": "10.24432/C58C86",
+      "official_url": "https://archive.ics.uci.edu/dataset/321/electricityloaddiagrams20112014",
+      "verification_sources": ["https://archive.ics.uci.edu/dataset/321/electricityloaddiagrams20112014"],
+      "gbt7714_entry": "TRINDADE A. ElectricityLoadDiagrams20112014[DS/OL]. UCI Machine Learning Repository, 2015[2026-10-03]. https://archive.ics.uci.edu/dataset/321/electricityloaddiagrams20112014. DOI:10.24432/C58C86."
+    }
+  ]
+}

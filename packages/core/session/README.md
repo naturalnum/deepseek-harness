@@ -37,6 +37,10 @@ ctx.sessions.get(sessionId)      // the live session
 ctx.sessions.list()              // every live session, in creation order
 ```
 
+### Plan against an exact detached prefix
+
+`Session.forPlanning()` validates and snapshots borrowed header/events without adding a lifecycle marker. Its cursor therefore equals the supplied prefix length, including inherited history. Use it for disposable canonical command planning; normal create/restore continues to own lifecycle edges. A planning Session does not publish itself or confer persistence authority.
+
 ### Append and derive
 
 `session.append(type, data, opts?)` commits one typed event — it snapshots and freezes the payload, validates it as lossless JSON, and notifies observers. `session.deriveMessages()` projects the log into the `Message[]` the model sees, incrementally and cached:
@@ -72,6 +76,10 @@ The logical `SessionHeader.isSeeded` field reports whether fork history exists w
 ### Flush durable state
 
 `ctx.sessions.flush(session)` dispatches the awaited durability checkpoint: every persistence listener flushes and the call settles after all of them. A producer that needs an immediate durability barrier awaits it instead of assuming the write-behind drained.
+
+### Synchronize committed mirrors
+
+`guardAppends()` contributes an operation-owned synchronous acceptance check. `synchronizeCommitted()` validates a complete exact suffix on a detached copy before updating the same Session, preserving canonical seq/time and avoiding duplicate session/event publication. The caller proves the external commit, synchronizes its persistence cursor and publishes committed carrier updates; next projection reads fold the imported suffix. A cursor mismatch or invalid later event leaves the original prefix unchanged. These APIs reserve ordering and synchronize facts; they confer no execution or persistence authority.
 
 -----
 

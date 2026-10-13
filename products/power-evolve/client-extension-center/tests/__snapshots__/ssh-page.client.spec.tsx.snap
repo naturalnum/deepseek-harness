@@ -1,0 +1,53 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`en: changing password authentication to an encrypted key makes the old success historical > new revision awaiting admission 1`] = `
+{
+  "checkDisabled": true,
+  "current": "Check pending",
+  "history": [
+    "SSH authentication succeeded",
+  ],
+  "state": "pending",
+}
+`;
+
+exports[`en: changing password authentication to an encrypted key makes the old success historical 1`] = `
+{
+  "current": "The current configuration has not been checked",
+  "history": [
+    "SSH authentication succeeded",
+  ],
+  "messages": [
+    "Historical check result; it does not apply to the current configuration",
+    "Previous check: SSH authentication succeeded",
+    "This checks SSH authentication only. No remote command runs.",
+  ],
+  "revision": "State revision 2",
+}
+`;
+
+exports[`zh: changing password authentication to an encrypted key makes the old success historical > new revision awaiting admission 1`] = `
+{
+  "checkDisabled": true,
+  "current": "检查等待中",
+  "history": [
+    "SSH 登录验证成功",
+  ],
+  "state": "pending",
+}
+`;
+
+exports[`zh: changing password authentication to an encrypted key makes the old success historical 1`] = `
+{
+  "current": "当前配置尚未检查",
+  "history": [
+    "SSH 登录验证成功",
+  ],
+  "messages": [
+    "历史检查结果，不适用于当前配置",
+    "旧检查结果：SSH 登录验证成功",
+    "本次只验证 SSH 登录，不执行远程命令。",
+  ],
+  "revision": "状态修订 2",
+}
+`;

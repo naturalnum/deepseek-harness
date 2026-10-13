@@ -1,0 +1,53 @@
+{
+  "originalCommit": "a03460fe66a3f77114ff3bb906476105e1d470b7",
+  "originalPath": "services/cloud-server/assets/builtin-skills/power-grid-technical-report-writer",
+  "originalRelease": "1.1.31",
+  "productRelease": "1.1.42",
+  "maintenance": "PowerEvolve product fork: external handoffs, Markdown heading preservation, named statistical signatures, concrete residual predicates and report-scope-aware parent roles. Other writing and review rules retained.",
+  "changes": [
+    {
+      "version": "1.1.42",
+      "summary": "Publish a cloud-only successor for the official DSH migration; preserve installed predecessor bytes and remove Device execution guidance from active instructions."
+    },
+    {
+      "version": "1.1.41",
+      "summary": "Require three blank-line-separated English abstract paragraphs in bilingual validation, preserve explicit Chinese-only and Chinese three-line compatibility, and keep translation fidelity in semantic review."
+    },
+    {
+      "version": "1.1.40",
+      "summary": "Add explicitly scoped local file evidence with relative paths, SHA256 and byte-size checks; reject symlinks, nonregular files, path escapes, read-time changes and placeholder HTTP. Preserve external citation requirements and distinguish byte verification from academic truth; define top-level reference items for contract 2 workflow requests."
+    },
+    {
+      "version": "1.1.39",
+      "summary": "Recognize a complete absolute residual/difference predicate with a strict comparison, explicit nonnegative Arabic or Chinese number and Chinese unit. Generic names, incomplete predicates and operation labels remain insufficient; source, structure, ratio and Chinese-heading checks remain mandatory."
+    },
+    {
+      "version": "1.1.38",
+      "summary": "Publish Cloud and Desktop targets while retaining the original writing, source, quality validation and explicit user confirmation rules."
+    },
+    {
+      "version": "1.1.37",
+      "summary": "Add the paired English/Chinese README and name migrated rule fragment IDs and recorded hashes in integrity-check descriptions; retain rule blocks, hashes and validation behavior."
+    },
+    {
+      "version": "1.1.36",
+      "summary": "Preserve numbered figure/table caption separators and image alt caption prefixes in standalone and public Markdown normalization; retain heading numbering prefixes and normal cleanup within titles and prose."
+    },
+    {
+      "version": "1.1.35",
+      "summary": "Accept dataset markers DS and DS/OL for dataset references, preserve legacy DB markers and reference-type binding, and retain mandatory online citation dates, URLs and verified-source checks."
+    },
+    {
+      "version": "1.1.32",
+      "summary": "Describe structured chapter roles and the fresh-request revision contract for the external orchestrator without changing native report writing rules."
+    },
+    {
+      "version": "1.1.33",
+      "summary": "Protect ATX heading numbering and separators while retaining prose cleanup, and clarify native numeric outline IDs versus source-grounded chapter keys."
+    },
+    {
+      "version": "1.1.34",
+      "summary": "Recognize concrete named statistical estimators/transforms without invented AI mechanisms; infer the final engineering parent task only from a complete total report, retaining explicit parent identity, role and source ownership for local reports."
+    }
+  ]
+}

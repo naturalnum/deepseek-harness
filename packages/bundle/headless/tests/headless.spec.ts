@@ -144,6 +144,11 @@ async function bench(script: Script, options: BenchOptions = {}): Promise<{
     const inbox = createInboxStub()
     let idle = Promise.resolve()
     const agent: Agent = {
+      canMaintainInbox: true,
+      onBeforeTurn: () => () => {},
+      onAfterClaim: () => () => {},
+      captureInboxActivity: () => { throw new Error('This Agent double has no maintenance capture') },
+      wakePending: () => {},
       id: session.id,
       options: createOptions.agentOptions ?? {},
       session,

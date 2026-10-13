@@ -1,4 +1,4 @@
-/** Reject maintained references to repository commits and the disallowed organization URL. */
+/** Reject maintained guidance's commit references and prohibited organization URLs; retain declared product verification pins. */
 
 import { execFileSync } from 'node:child_process'
 import { lstatSync, readFileSync, readlinkSync } from 'node:fs'
@@ -29,12 +29,23 @@ function isMaintained(file: string): boolean {
   return !excludedPrefixes.some(prefix => file.startsWith(prefix))
 }
 
+// Product verification records pin tested generations; ordinary product guidance and code still use release tags.
+function permitsProductVerificationCommit(file: string): boolean {
+  return file.startsWith('products/power-evolve/reference/')
+    || /^products\/power-evolve\/(?:TRIAL[^/]*|EMPLOYEE[^/]*|PARITY-AUDIT)\.md$/u.test(file)
+    || /^products\/power-evolve\/deploy\/QA-[^/]*\.md$/u.test(file)
+    || file === 'products/power-evolve/deploy/baseline.json'
+    || file === 'products/power-evolve/scripts/cloud-corpus.json'
+    || file === '.github/power-evolve-built/schema37-producer/runtime-inputs.lock.json'
+    || file === 'products/power-evolve/application/tests/employee4-legacy-migration-v2-cloud-resolution.spec.ts'
+}
+
 /**
  * Inspect a maintained source file against known commit identifiers.
  * @param file - Repository-relative path used in diagnostics and exclusions.
  * @param source - File text or a symlink's stored target.
  * @param commits - Lowercase, unambiguous full or abbreviated commit identifiers.
- * @returns One finding per line and reference kind; digests and other Git object types are accepted.
+ * @returns One finding per line and reference kind; declared verification pins, digests and other Git object types are accepted.
  */
 export function findRepositoryReferences(
   file: string,
@@ -47,7 +58,8 @@ export function findRepositoryReferences(
     if (organizationUrl.test(canonicalReferenceText(line).replace(kitRepositoryUrl, ''))) {
       references.push({ file, line: index + 1, kind: 'organization-url' })
     }
-    if ([...line.matchAll(commitCandidate)].some(match => commits.has(match[0].toLowerCase()))) {
+    if (!permitsProductVerificationCommit(file)
+      && [...line.matchAll(commitCandidate)].some(match => commits.has(match[0].toLowerCase()))) {
       references.push({ file, line: index + 1, kind: 'commit-hash' })
     }
   }
@@ -93,7 +105,7 @@ function repositoryCommits(repoRoot: string, sources: Iterable<string>): Set<str
 /**
  * Scan tracked and nonignored new files using only the local Git object database.
  * @param repoRoot - Working tree whose files and Git objects are inspected.
- * @returns Prohibited references outside vendor and frozen Agent Notes; absent shallow-history objects cannot match.
+ * @returns Prohibited references outside exclusions; declared product pins remain and absent Git objects cannot match.
  */
 export function scanRepositoryReferences(repoRoot: string): RepositoryReference[] {
   const sources = readMaintainedFiles(repoRoot)
@@ -105,7 +117,7 @@ const invokedPath = process.argv[1]
 if (invokedPath !== undefined && import.meta.url === pathToFileURL(resolve(invokedPath)).href) {
   const references = scanRepositoryReferences(root)
   if (references.length === 0) {
-    console.log('verify-repository-references: maintained files contain no repository commit identifiers or disallowed organization URLs.')
+    console.log('verify-repository-references: maintained guidance uses release references; declared verification pins are retained and prohibited organization URLs are absent.')
   } else {
     console.error('verify-repository-references: use release tags or maintained repository links:')
     for (const { file, line, kind } of references) console.error(`  ${file}:${String(line)} ${kind}`)

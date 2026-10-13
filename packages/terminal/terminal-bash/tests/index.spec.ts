@@ -55,6 +55,11 @@ function agent(ctx: Context, cwd?: string): Agent {
     version: SESSION_FORMAT_VERSION, id, createdAt: 0, isSeeded: false, ...cwd === undefined ? {} : { cwd },
   })
   return {
+    canMaintainInbox: true,
+    onBeforeTurn: () => () => {},
+    onAfterClaim: () => () => {},
+    captureInboxActivity: () => { throw new Error('This Agent double has no maintenance capture') },
+    wakePending: () => {},
     id, options: {}, session, inbox: unsupportedInbox(),
     status: 'idle',
     ctx,
@@ -657,6 +662,11 @@ describe('terminal-bash plugin shape', () => {
     const session = ctx.sessions.create(SessionId('mode-owner'))
     const ownerFiber = await ctx.plugin(() => {})
     const owner: Agent = {
+      canMaintainInbox: true,
+      onBeforeTurn: () => () => {},
+      onAfterClaim: () => () => {},
+      captureInboxActivity: () => { throw new Error('This Agent double has no maintenance capture') },
+      wakePending: () => {},
       id: session.id, options: {}, session, inbox: unsupportedInbox(),
       status: 'idle',
       ctx: ownerFiber.ctx,
@@ -707,6 +717,11 @@ describe('terminal-bash plugin shape', () => {
     const session = ctx.sessions.create(SessionId('pending-mode-owner'))
     const ownerFiber = await ctx.plugin(() => {})
     const owner: Agent = {
+      canMaintainInbox: true,
+      onBeforeTurn: () => () => {},
+      onAfterClaim: () => () => {},
+      captureInboxActivity: () => { throw new Error('This Agent double has no maintenance capture') },
+      wakePending: () => {},
       id: session.id, options: {}, session, inbox: unsupportedInbox(),
       status: 'idle',
       ctx: ownerFiber.ctx,

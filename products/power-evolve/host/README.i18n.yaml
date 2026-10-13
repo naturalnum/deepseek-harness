@@ -1,0 +1,34 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write products/power-evolve/host/README.md
+/:
+  en: d3864b5aad28c6e5
+  zh: 0b36dbf79ab60fcd
+/power-evolve-host:
+  en: 207f1848cb45bf6a
+  zh: df8838f0c9b8565c
+/power-evolve-host/summary:
+  en: 57ef5f55183e2cb6
+  zh: 8636e686eae51166
+/power-evolve-host/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: d3513fd636ffdf7c
+/power-evolve-host/use-this-package:
+  en: 64c5cd1531dab847
+  zh: e82b92f375a822a2
+/power-evolve-host/understand-the-implementation:
+  en: 28b061f4e48d6328
+  zh: 532d6ba2fbafb24a
+/power-evolve-host/further-exploration:
+  en: 44de0b7e435ba739
+  zh: c85e71d97e337527
+/power-evolve-host/model-experience:
+  en: ea34381af7103c9b
+  zh: 05b3fed275baf7c8
+/power-evolve-host/known-limitations-and-deferred-work:
+  en: 95739cd90084524a
+  zh: 77a369d86bd2a806
+/power-evolve-host/known-limitations-and-deferred-work/dev-note:
+  en: 87c9a86426823672
+  zh: 8cde6c22642a2df3

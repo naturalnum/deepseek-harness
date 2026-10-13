@@ -1,0 +1,17 @@
+{
+  "extends": "../../../../tsconfig.power-evolve.test-client.json",
+  "references": [
+    {
+      "path": "../../client-account"
+    },
+    {
+      "path": "../../client-extension-center"
+    },
+    {
+      "path": "../../../../packages/client/modules"
+    },
+    {
+      "path": "../../../../vendor/loader"
+    }
+  ]
+}

@@ -39,6 +39,11 @@ async function agent(ctx: Context, cwd: string | undefined): Promise<Agent> {
     ...cwd === undefined ? {} : { cwd },
   })
   const value: Agent = {
+    canMaintainInbox: true,
+    onBeforeTurn: () => () => {},
+    onAfterClaim: () => () => {},
+    captureInboxActivity: () => { throw new Error('This Agent double has no maintenance capture') },
+    wakePending: () => {},
     id,
     options: {},
     session,

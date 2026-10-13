@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for guide.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/upgrade-guide/v0.2.1-alpha.1/native-input-agent-methods/guide.md
+/:
+  en: 2146c1d7856798b9
+  zh: c471323721f2fbb9
+/custom-agents-settle-complete-native-input-claims:
+  en: d4beab6aa1191eb3
+  zh: 8d0c07dc4413174d
+/custom-agents-settle-complete-native-input-claims/change:
+  en: e23e5c24eb959629
+  zh: 8870b29b431b50cf
+/custom-agents-settle-complete-native-input-claims/migration:
+  en: 39121c67dd4b60c3
+  zh: 8d46229a97ecad8c

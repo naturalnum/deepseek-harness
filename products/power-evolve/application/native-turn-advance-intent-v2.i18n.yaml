@@ -1,0 +1,22 @@
+# Bilingual-pair consistency record for native-turn-advance-intent-v2.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write products/power-evolve/application/native-turn-advance-intent-v2.md
+/native-turn-advance-intent-v2:
+  en: c5d006de4f676d80
+  zh: 275ab17f1b674e0e
+/native-turn-advance-intent-v2/summary:
+  en: b44ac83561b9acd6
+  zh: 88b6d385420b7b30
+/native-turn-advance-intent-v2/table-of-contents:
+  en: dc2cc95d8b2ba90d
+  zh: 10ffd4fc1bea17e4
+/native-turn-advance-intent-v2/use-and-recovery:
+  en: a1391bcdaf51fa6f
+  zh: 92c565f8023651ce
+/native-turn-advance-intent-v2/authority-and-limits:
+  en: 21f3e0720d883067
+  zh: d0319942100f0cbf
+/native-turn-advance-intent-v2/dev-note:
+  en: b75c8458928b72b9
+  zh: 003ba4e17b4b5269

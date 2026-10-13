@@ -1,0 +1,459 @@
+{
+  "task_book_scope": "specific_topic",
+  "report_theme_type": "non-evaluation",
+  "target_words": 5000,
+  "references_required": true,
+  "chapters": [
+    {
+      "id": "1",
+      "title": "项目概述",
+      "target_words": 1500,
+      "minimum_words": 1200,
+      "chapter_type": "foundation",
+      "section_outline": [
+        {
+          "number": "1.1",
+          "title": "项目背景与研究意义",
+          "level": 2
+        },
+        {
+          "number": "1.1.1",
+          "title": "项目研究背景",
+          "level": 3
+        },
+        {
+          "number": "1.1.2",
+          "title": "项目研究意义",
+          "level": 3
+        },
+        {
+          "number": "1.2",
+          "title": "国内外研究现状",
+          "level": 2
+        },
+        {
+          "number": "1.2.1",
+          "title": "国外研究现状",
+          "level": 3
+        },
+        {
+          "number": "1.2.2",
+          "title": "国内研究现状",
+          "level": 3
+        },
+        {
+          "number": "1.3",
+          "title": "主要研究内容及思路",
+          "level": 2
+        },
+        {
+          "number": "1.3.1",
+          "title": "主要研究内容",
+          "level": 3
+        },
+        {
+          "number": "1.3.2",
+          "title": "研究思路",
+          "level": 3
+        }
+      ]
+    },
+    {
+      "id": "2",
+      "title": "配电负荷异常识别方法",
+      "target_words": 2750,
+      "minimum_words": 2200,
+      "chapter_type": "technical-research",
+      "task_role": "technical-research",
+      "parent_task_id": "T1",
+      "parent_task_order": 1,
+      "source_research_subpoint_title": "配电负荷异常识别",
+      "source_research_normalized_title": "配电负荷异常识别方法",
+      "title_normalization_basis": "保留来源对象与异常识别职责，以方法名词化，不新增计算路线",
+      "source_research_point_ids": [
+        "RC1"
+      ],
+      "source_research_order": 1,
+      "core_section_count": 3,
+      "primary_technical_subject": "配电负荷稳健中心与尺度估计",
+      "primary_subject_source_text": "校准集稳健中心与尺度估计（中位数与中位数绝对偏差）",
+      "primary_subject_section_number": "2.1",
+      "primary_subject_target_share": 0.3,
+      "standalone_validation_mode": "none",
+      "expected_goal_item_ids": [
+        "G1"
+      ],
+      "schedule_technology_item_ids": [
+        "S1",
+        "S2",
+        "S3"
+      ],
+      "assessment_requirement_item_ids": [
+        "A1"
+      ],
+      "heading_source_term_plan": [
+        {
+          "source_type": "expected-output",
+          "source_item_id": "G1",
+          "term": "稳健尺度",
+          "granularity": "broad",
+          "target_heading_number": "2.1"
+        },
+        {
+          "source_type": "schedule-plan",
+          "source_item_id": "S1",
+          "term": "中位数绝对偏差",
+          "granularity": "narrow",
+          "target_heading_number": "2.1.1"
+        },
+        {
+          "source_type": "schedule-plan",
+          "source_item_id": "S2",
+          "term": "修正标准分数",
+          "granularity": "narrow",
+          "target_heading_number": "2.2.1"
+        },
+        {
+          "source_type": "schedule-plan",
+          "source_item_id": "S3",
+          "term": "误报",
+          "granularity": "broad",
+          "target_heading_number": "2.3"
+        },
+        {
+          "source_type": "assessment-requirement",
+          "source_item_id": "A1",
+          "term": "召回率",
+          "granularity": "narrow",
+          "target_heading_number": "2.3.1"
+        }
+      ],
+      "assessment_coverage_plan": [
+        {
+          "assessment_item_id": "A1",
+          "planned_section": "2.3.1",
+          "content_form": "评价指标结果段",
+          "prose_realization": "以混淆矩阵给出精确率、召回率、F1 与误报数的实际取值",
+          "evidence_status": "SYNTHETIC_QA_COMPUTATION",
+          "source_identity_hidden": true,
+          "evidence_section": "2.3.1"
+        }
+      ],
+      "section_outline": [
+        {
+          "number": "2.1",
+          "title": "基于中位数绝对偏差的配电负荷稳健尺度技术",
+          "level": 2,
+          "heading_kind": "innovation",
+          "technical_object": "配电负荷",
+          "technical_method": "中位数绝对偏差",
+          "technical_role": "为配电负荷记录提供抗极端值的稳健尺度",
+          "specificity_basis": "具体计算技术与技术作用显化：中位数绝对偏差",
+          "power_element": "负荷",
+          "technical_signature": "中位数绝对偏差",
+          "specific_computing_technology": "中位数绝对偏差",
+          "technology_specificity_basis": "由来源方法页锁定的稳健统计路线，非技术族或动作标签",
+          "technology_origin": "source_confirmed",
+          "derivation_basis": "由任务书研究内容拆解",
+          "shared_chapter_question": "如何用事先固定阈值的稳健统计流程在单变量配电负荷记录中标记疑似异常并给出可核对的评价指标",
+          "chain_order": 1,
+          "chain_role": "为配电负荷记录提供抗极端值的稳健尺度",
+          "depends_on_previous": false,
+          "research_subpoint_index": 1,
+          "source_item_ids": [
+            "RC1"
+          ],
+          "schedule_item_ids": [
+            "S1"
+          ],
+          "primary_subject_section": true,
+          "parent_task_id": "T1",
+          "primary_technical_subject": "配电负荷稳健中心与尺度估计",
+          "primary_subject_coverage_role": "overall",
+          "output_to_next": "稳定的配电负荷稳健尺度估计值，作为后续修正分数的分母",
+          "research_point_id": "RC1"
+        },
+        {
+          "number": "2.1.1",
+          "title": "配电负荷中位数绝对偏差尺度估计方法",
+          "level": 3,
+          "heading_kind": "technical",
+          "technical_object": "配电负荷",
+          "technical_method": "中位数绝对偏差",
+          "technical_role": "估计抗极端值的稳健尺度",
+          "specificity_basis": "路线机制显化：中位数绝对偏差",
+          "power_element": "负荷",
+          "technical_signature": "中位数绝对偏差",
+          "named_technology": "median-absolute-deviation",
+          "named_technology_basis": "来源方法页定义的中位数绝对偏差",
+          "parent_task_id": "T1"
+        },
+        {
+          "number": "2.1.2",
+          "title": "基于中位数的配电负荷中心位置估计技术",
+          "level": 3,
+          "heading_kind": "technical",
+          "technical_object": "配电负荷",
+          "technical_method": "中位数",
+          "technical_role": "估计抗极端值的稳健中心",
+          "specificity_basis": "路线机制显化：中位数",
+          "power_element": "负荷",
+          "technical_signature": "中位数",
+          "named_technology": "median",
+          "named_technology_basis": "来源方法页定义的中位数",
+          "parent_task_id": "T1"
+        },
+        {
+          "number": "2.1.3",
+          "title": "中位数绝对偏差配电负荷校准数据隔离方法",
+          "level": 3,
+          "heading_kind": "technical",
+          "technical_object": "配电负荷",
+          "technical_method": "中位数绝对偏差",
+          "technical_role": "避免尺度泄漏",
+          "specificity_basis": "路线机制显化：分离隔离",
+          "power_element": "负荷",
+          "technical_signature": "中位数绝对偏差",
+          "named_technology": "holdout-split",
+          "named_technology_basis": "任务书要求校准集仅用于估计中心与尺度",
+          "parent_task_id": "T1"
+        },
+        {
+          "number": "2.2",
+          "title": "基于修正标准分数的配电负荷异常标记技术",
+          "level": 2,
+          "heading_kind": "innovation",
+          "technical_object": "配电负荷",
+          "technical_method": "修正标准分数",
+          "technical_role": "对配电负荷记录计算修正分数并标记疑似异常",
+          "specificity_basis": "具体计算技术与技术作用显化：修正分数",
+          "power_element": "负荷",
+          "technical_signature": "修正标准分数",
+          "specific_computing_technology": "修正标准分数",
+          "technology_specificity_basis": "由来源方法页锁定的稳健统计路线，非技术族或动作标签",
+          "technology_origin": "source_confirmed",
+          "derivation_basis": "由任务书研究内容拆解",
+          "shared_chapter_question": "如何用事先固定阈值的稳健统计流程在单变量配电负荷记录中标记疑似异常并给出可核对的评价指标",
+          "chain_order": 2,
+          "chain_role": "对配电负荷记录计算修正分数并标记疑似异常",
+          "depends_on_previous": true,
+          "research_subpoint_index": 2,
+          "source_item_ids": [
+            "RC1"
+          ],
+          "schedule_item_ids": [
+            "S2"
+          ],
+          "primary_subject_section": false,
+          "parent_task_id": "T1",
+          "handoff_from_previous": "配电负荷稳健尺度估计值",
+          "output_to_next": "配电负荷疑似异常标记清单",
+          "research_point_id": "RC1"
+        },
+        {
+          "number": "2.2.1",
+          "title": "基于修正标准分数的配电负荷固定阈值方法",
+          "level": 3,
+          "heading_kind": "technical",
+          "technical_object": "配电负荷",
+          "technical_method": "修正标准分数",
+          "technical_role": "按严格大于3.5标记疑似异常",
+          "specificity_basis": "路线机制显化：修正分数严格阈值",
+          "power_element": "负荷",
+          "technical_signature": "修正标准分数",
+          "named_technology": "modified-z-3.5",
+          "named_technology_basis": "来源方法页给出的修正分数阈值3.5",
+          "parent_task_id": "T1"
+        },
+        {
+          "number": "2.2.2",
+          "title": "修正标准分数配电负荷比例因子归一化方法",
+          "level": 3,
+          "heading_kind": "technical",
+          "technical_object": "配电负荷",
+          "technical_method": "修正标准分数",
+          "technical_role": "以0.6745比例因子统一量纲",
+          "specificity_basis": "路线机制显化：比例因子归一化",
+          "power_element": "负荷",
+          "technical_signature": "修正标准分数",
+          "named_technology": "scale-factor-0.6745",
+          "named_technology_basis": "来源方法页给出的0.6745比例因子",
+          "parent_task_id": "T1"
+        },
+        {
+          "number": "2.2.3",
+          "title": "中位数绝对偏差配电负荷零尺度拒绝方法",
+          "level": 3,
+          "heading_kind": "technical",
+          "technical_object": "配电负荷",
+          "technical_method": "中位数绝对偏差",
+          "technical_role": "MAD为零时拒绝计算不自行替换尺度",
+          "specificity_basis": "路线机制显化：零尺度拒绝",
+          "power_element": "负荷",
+          "technical_signature": "中位数绝对偏差",
+          "named_technology": "zero-scale-guard",
+          "named_technology_basis": "任务书要求MAD为零时明确拒绝计算",
+          "parent_task_id": "T1"
+        },
+        {
+          "number": "2.3",
+          "title": "混淆矩阵配电负荷误报计数方法",
+          "level": 2,
+          "heading_kind": "innovation",
+          "technical_object": "配电负荷",
+          "technical_method": "混淆矩阵",
+          "technical_role": "以混淆矩阵给出可核对的评价指标",
+          "specificity_basis": "具体计算技术与技术作用显化：混淆矩阵",
+          "power_element": "负荷",
+          "technical_signature": "混淆矩阵",
+          "specific_computing_technology": "混淆矩阵",
+          "technology_specificity_basis": "由来源方法页锁定的稳健统计路线，非技术族或动作标签",
+          "technology_origin": "source_confirmed",
+          "derivation_basis": "由任务书研究内容拆解",
+          "shared_chapter_question": "如何用事先固定阈值的稳健统计流程在单变量配电负荷记录中标记疑似异常并给出可核对的评价指标",
+          "chain_order": 3,
+          "chain_role": "以混淆矩阵给出可核对的评价指标",
+          "depends_on_previous": true,
+          "research_subpoint_index": 3,
+          "source_item_ids": [
+            "RC1"
+          ],
+          "schedule_item_ids": [
+            "S3"
+          ],
+          "primary_subject_section": false,
+          "parent_task_id": "T1",
+          "handoff_from_previous": "配电负荷疑似异常标记清单",
+          "research_point_id": "RC1"
+        },
+        {
+          "number": "2.3.1",
+          "title": "基于混淆矩阵的配电负荷召回率计算技术",
+          "level": 3,
+          "heading_kind": "technical",
+          "technical_object": "配电负荷",
+          "technical_method": "混淆矩阵",
+          "technical_role": "给出精确率、召回率、F1与误报数",
+          "specificity_basis": "路线机制显化：混淆矩阵指标",
+          "power_element": "负荷",
+          "technical_signature": "混淆矩阵",
+          "named_technology": "confusion-matrix",
+          "named_technology_basis": "任务书要求计算精确率、召回率、F1与误报数",
+          "parent_task_id": "T1"
+        },
+        {
+          "number": "2.3.2",
+          "title": "普通标准分数配电负荷对照标记方法",
+          "level": 3,
+          "heading_kind": "technical",
+          "technical_object": "配电负荷",
+          "technical_method": "普通标准分数",
+          "technical_role": "以均值和标准差普通分数作对照",
+          "specificity_basis": "路线机制显化：普通分数对照",
+          "power_element": "负荷",
+          "technical_signature": "普通标准分数",
+          "named_technology": "ordinary-z-baseline",
+          "named_technology_basis": "任务书要求以普通Z分数作对照",
+          "parent_task_id": "T1"
+        },
+        {
+          "number": "2.4",
+          "title": "本章小结",
+          "level": 2,
+          "heading_kind": "functional"
+        }
+      ],
+      "technology_option_sets": [
+        {
+          "section_number": "2.1",
+          "problem_or_role": "为配电负荷记录提供抗极端值的稳健尺度",
+          "source_locked": true,
+          "source_basis": "QA任务书与qa-report-analyze.py固定此计算路线",
+          "candidates": [
+            {
+              "candidate_id": "source-2.1",
+              "technology_name": "Median absolute deviation",
+              "technical_signature_cn": "中位数绝对偏差",
+              "key_mechanisms": [
+                "校准样本中位数",
+                "绝对偏差的中位数",
+                "与留出数据分离"
+              ],
+              "fit_reason": "与既有配电负荷校准、标记及读回链一致，不引入其他方法",
+              "origin": "source_confirmed",
+              "scope_risk": "仅限28条合成QA记录",
+              "recommended": true
+            }
+          ],
+          "recommended_candidate_id": "source-2.1",
+          "selected_candidate_id": "source-2.1",
+          "selection_status": "source_locked"
+        },
+        {
+          "section_number": "2.2",
+          "problem_or_role": "对配电负荷记录计算修正分数并标记疑似异常",
+          "source_locked": true,
+          "source_basis": "QA任务书与qa-report-analyze.py固定此计算路线",
+          "candidates": [
+            {
+              "candidate_id": "source-2.2",
+              "technology_name": "Modified Z-score",
+              "technical_signature_cn": "修正标准分数",
+              "key_mechanisms": [
+                "0.6745固定比例因子",
+                "校准中位数和中位数绝对偏差",
+                "绝对值严格大于3.5"
+              ],
+              "fit_reason": "与既有配电负荷校准、标记及读回链一致，不引入其他方法",
+              "origin": "source_confirmed",
+              "scope_risk": "仅限28条合成QA记录",
+              "recommended": true
+            }
+          ],
+          "recommended_candidate_id": "source-2.2",
+          "selected_candidate_id": "source-2.2",
+          "selection_status": "source_locked"
+        },
+        {
+          "section_number": "2.3",
+          "problem_or_role": "以混淆矩阵给出可核对的评价指标",
+          "source_locked": true,
+          "source_basis": "QA任务书与qa-report-analyze.py固定此计算路线",
+          "candidates": [
+            {
+              "candidate_id": "source-2.3",
+              "technology_name": "Confusion matrix",
+              "technical_signature_cn": "混淆矩阵",
+              "key_mechanisms": [
+                "疑似标记与独立标签交叉计数",
+                "由四格计数计算误报与召回率"
+              ],
+              "fit_reason": "与既有配电负荷校准、标记及读回链一致，不引入其他方法",
+              "origin": "source_confirmed",
+              "scope_risk": "仅限28条合成QA记录",
+              "recommended": true
+            }
+          ],
+          "recommended_candidate_id": "source-2.3",
+          "selected_candidate_id": "source-2.3",
+          "selection_status": "source_locked"
+        }
+      ]
+    },
+    {
+      "id": "3",
+      "title": "总结",
+      "target_words": 750,
+      "minimum_words": 700,
+      "maximum_words": 800,
+      "chapter_type": "conclusion",
+      "section_outline": [
+        {
+          "number": "3",
+          "title": "总结",
+          "level": 1
+        }
+      ]
+    }
+  ]
+}

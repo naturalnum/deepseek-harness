@@ -29,6 +29,11 @@ async function liveAgent(ctx: Context, session: Session, initial: AgentStatus): 
   const cancels: CancelCall[] = []
   let status = initial
   const agent: LiveAgent = {
+    get canMaintainInbox() { return status === 'idle' },
+    onBeforeTurn: () => () => {},
+    onAfterClaim: () => () => {},
+    captureInboxActivity: () => { throw new Error('This Agent double has no maintenance capture') },
+    wakePending: () => {},
     id: session.id,
     options: {},
     session,

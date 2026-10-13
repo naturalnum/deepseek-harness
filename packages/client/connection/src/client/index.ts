@@ -146,6 +146,8 @@ export interface ConnectionHandle {
   readonly rpc: ClientConnectionRpc
   /** Reset retry progression and replace the current attempt immediately. */
   reconnect(): void
+  /** Stop the active connection generation after an application confirms identity revocation. */
+  stop(): void
   /**
    * Register the sole source defining Host generations. The source reports
    * ready only after its incremental listeners are attached.
@@ -263,6 +265,9 @@ export function installConnection(ctx: Context, options: ConnectionInstallOption
     rpc,
     reconnect() {
       owner?.controller.reconnect()
+    },
+    stop() {
+      if (owner !== undefined) releaseOwner(owner)
     },
     registerGenerationSource(source) {
       if (generationSource !== undefined) {

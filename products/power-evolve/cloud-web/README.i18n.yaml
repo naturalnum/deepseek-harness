@@ -1,0 +1,46 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write products/power-evolve/cloud-web/README.md
+/:
+  en: cac8a6981f918a85
+  zh: 56e74563e1cb8d65
+/powerevolve-cloud-web:
+  en: 036270f9363536f3
+  zh: 8f1cf17e46638c26
+/powerevolve-cloud-web/summary:
+  en: d97bbc18b8eafb14
+  zh: 156ea21dac3abead
+/powerevolve-cloud-web/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 91957bb5fa1bd8c5
+/powerevolve-cloud-web/use-this-package:
+  en: 39b892e84cde4f2d
+  zh: 8a2ef37323057910
+/powerevolve-cloud-web/understand-the-implementation:
+  en: fed2061d75af00cc
+  zh: a10c9800b8523772
+/powerevolve-cloud-web/further-exploration:
+  en: f84b3957aa0b70c7
+  zh: cbf055f3adc66f34
+/powerevolve-cloud-web/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/powerevolve-cloud-web/model-experience/web-assets:
+  en: 1d257e2da5608396
+  zh: ac960bb22de0d22d
+/powerevolve-cloud-web/model-experience/web-assets/what-the-model-sees:
+  en: 8f210b376c1dc9b0
+  zh: b46341664bf4a2c1
+/powerevolve-cloud-web/model-experience/web-assets/token-effect:
+  en: 5f58c82e1075ca30
+  zh: 2fc9a43a8648a208
+/powerevolve-cloud-web/model-experience/web-assets/kv-cache-effect:
+  en: 20aa72f1fa5a984a
+  zh: 83aa3bc3ee518575
+/powerevolve-cloud-web/known-limitations-and-deferred-work:
+  en: b03c9c0415557aae
+  zh: 8baefceb20a7f6db
+/powerevolve-cloud-web/known-limitations-and-deferred-work/dev-note:
+  en: f4bb7d51d5a7d6d9
+  zh: 2099edb42490fd21

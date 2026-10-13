@@ -30,6 +30,26 @@ async function mount(): Promise<ConnectionHandle> {
 }
 
 describe('Connection generation facts', () => {
+  it('withdraws the generation when an application confirms identity expiry', async () => {
+    const connection = await mount()
+    let closed = false
+    connection.registerGenerationSource((signal, ready) => {
+      ready({ home: '/workspace' })
+      return new Promise<void>(resolve => signal.addEventListener('abort', () => {
+        closed = true
+        resolve()
+      }, { once: true }))
+    })
+    connection.start({})
+    await vi.waitFor(() => expect(connection.generation.getSnapshot()).toBeDefined())
+    connection.stop()
+    connection.stop()
+    connection.reconnect()
+    expect(connection.generation.getSnapshot()).toBeUndefined()
+    expect(connection.state.getSnapshot()).toBeUndefined()
+    expect(closed).toBe(true)
+  })
+
   it('publishes ready-frame Host facts and retracts them when the loop stops', async () => {
     const connection = await mount()
     const source: ConnectionGenerationSource = (signal, ready) => {

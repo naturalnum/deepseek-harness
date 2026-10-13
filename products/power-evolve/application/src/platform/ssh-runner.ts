@@ -1,0 +1,474 @@
+/** Platform-only, one-call Kubernetes placement for the isolated SSH Connector Runner. */
+import { createHmac } from 'node:crypto'
+import { isIP } from 'node:net'
+import { setTimeout as delay } from 'node:timers/promises'
+import { KubernetesError, RUNNER_RESPONSE_MAX_BYTES, type KubernetesClient } from './kubernetes.ts'
+import type { SshCredential } from './ssh-credentials.ts'
+
+type Kube = Pick<KubernetesClient, 'call' | 'resourcePath' | 'proxyPath'>
+type Method = 'GET' | 'POST'
+type Role = 'canary' | 'call'
+interface Metadata { name: string; uid?: string; labels?: Record<string, string>; deletionTimestamp?: string }
+interface Resource { metadata: Metadata; spec?: unknown; data?: Record<string, string> }
+interface Pod extends Resource { status?: { phase?: string; containerStatuses?: Array<{ ready?: boolean; restartCount?: number }> } }
+interface Health { ready: boolean; instanceId: string }
+/** Platform-pinned SSH endpoint and host-key fingerprint used by policy and Runner identity checks. */
+export interface SshRunnerDestination {
+  /** A platform-pinned IP literal. DNS resolution cannot change the policy target. */
+  readonly ip: string
+  readonly port: number
+  readonly username: string
+  readonly hostKeySha256: string
+}
+/** Dedicated Runner placement, control authentication and independent forbidden-listener verification. */
+export interface SshRunnerConfig {
+  /** Dedicated, preprovisioned namespace; never the writable Sandbox namespace. */
+  readonly namespace: string
+  readonly image: string
+  /** Expected registry credential reference in this namespace; credential bytes are never mounted. */
+  readonly imagePullSecretName?: string
+  readonly runtimeClassName: string
+  readonly controlKey: string
+  readonly readyTimeoutMs: number
+  /** Exact source CIDRs for API server service-proxy traffic and/or Platform callback. */
+  readonly platformIngressCidrs: readonly string[]
+  /** Live, platform-operated listener that must be forbidden from Runner Pods. */
+  readonly forbiddenProbe: { readonly ip: string; readonly port: number }
+  /** Independent control-path check of the forbidden listener. Fail closed if it is not live. */
+  readonly proveForbiddenListener: () => Promise<boolean>
+  readonly imagePullPolicy?: 'Always' | 'IfNotPresent' | 'Never'
+}
+/** Exact prepared call, Pod UID, Runner instance and destination to persist before dispatch. */
+export interface SshRunnerHandle {
+  readonly callId: string
+  readonly podUid: string
+  readonly instanceId: string
+  readonly destination: SshRunnerDestination
+}
+/** Secret-bearing Platform-to-Runner request using a password or private key with optional passphrase.
+ * Execution carries the complete frozen, approved command; authentication sends no remote command.
+ */
+export type SshRunnerRequest =
+  | { readonly kind: 'ssh.authenticate'; readonly credential: SshCredential; readonly timeoutMs: number; readonly maxOutputBytes: number }
+  | { readonly kind: 'ssh.execute'; readonly credential: SshCredential; readonly command: string; readonly timeoutMs: number; readonly maxOutputBytes: number }
+/** Correlated Runner report; failed execution may already have caused a remote effect.
+ * An absent failure-phase flag leaves that effect uncertain.
+ */
+export interface SshRunnerStatus {
+  readonly callId: string
+  readonly instanceId: string
+  readonly digest: string
+  readonly state: 'running' | 'succeeded' | 'failed'
+  readonly result?: unknown
+  readonly errorCode?: string
+  /** Failure phase reported by newer Runners; absence does not establish that exec was never sent. */
+  readonly effectMayHaveOccurred?: boolean
+}
+/** Matched Runner status, verified absence before first dispatch, or an unverified outcome.
+ * An uncertain observation never grants permission to repeat a dispatch POST.
+ */
+export type SshRunnerObservation = { readonly state: 'absent' }
+  | { readonly state: 'known'; readonly status: SshRunnerStatus }
+  | { readonly state: 'uncertain'; readonly reason: string }
+
+/** Named Runner configuration, destination, readiness or resource refusal for Platform coordinators. */
+export class SshRunnerBlocked extends Error {
+  /** Stable refusal code retained by Platform coordinators. */
+  readonly code: string
+  constructor(code: string) { super(code); this.code = code }
+}
+
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
+const fingerprint = /^SHA256:[A-Za-z0-9+/]{43}$/u
+const label = 'powerevolve.dev/connector-call'
+const nameOf = (callId: string) => `pe-cr-${callId.replaceAll('-', '')}`
+const address = (ip: string) => isIP(ip) === 4 ? `${ip}/32` : `${ip}/128`
+const keyOf = (ip: string, port: number) => isIP(ip) === 4 ? `${ip}:${port}` : `[${ip}]:${port}`
+const exactCidr = (cidr: string) => {
+  const [ip, bits, rest] = cidr.split('/')
+  return ip !== undefined && rest === undefined && (isIP(ip) === 4 && bits === '32' || isIP(ip) === 6 && bits === '128')
+}
+
+/** Build the shared Secret, Service and restricted Pod without choosing network policy or control-token domains.
+ * @param config - existing Runner placement, image and runtime configuration.
+ * @param name - caller-selected resource name for the original call or canary.
+ * @param labels - caller-selected identity labels, including any canary role.
+ * @param token - original per-call control token to mount read-only.
+ * @param env - caller-specific destination and forbidden-listener environment.
+ * @returns resource bodies to create in Secret, Service, then Pod order.
+ */
+export function buildRestrictedRunnerResources(config: SshRunnerConfig, name: string,
+  labels: Record<string, string>, token: string, env: ReadonlyArray<{ name: string; value: string }>):
+{ secret: Record<string, unknown>; service: Record<string, unknown>; pod: Record<string, unknown> } {
+  const metadata = { name, namespace: config.namespace, labels }
+  return {
+    secret: { apiVersion: 'v1', kind: 'Secret', metadata, type: 'Opaque', stringData: { token } },
+    service: { apiVersion: 'v1', kind: 'Service', metadata,
+      spec: { type: 'ClusterIP', selector: labels, ports: [{ name: 'http', port: 8080, targetPort: 8080 }] } },
+    pod: { apiVersion: 'v1', kind: 'Pod', metadata,
+      spec: { automountServiceAccountToken: false,
+        ...(config.imagePullSecretName ? { imagePullSecrets: [{ name: config.imagePullSecretName }] } : {}),
+        runtimeClassName: config.runtimeClassName, restartPolicy: 'Never',
+        terminationGracePeriodSeconds: 5, activeDeadlineSeconds: 180, enableServiceLinks: false,
+        securityContext: { runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001,
+          fsGroup: 10001, seccompProfile: { type: 'RuntimeDefault' } },
+        containers: [{ name: 'runner', image: config.image,
+          imagePullPolicy: config.imagePullPolicy ?? 'IfNotPresent',
+          ports: [{ name: 'http', containerPort: 8080 }], env,
+          readinessProbe: { tcpSocket: { port: 8080 }, periodSeconds: 1, timeoutSeconds: 1 },
+          resources: { requests: { cpu: '50m', memory: '96Mi' }, limits: { cpu: '500m', memory: '384Mi' } },
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true,
+            runAsNonRoot: true, runAsUser: 10001, runAsGroup: 10001, capabilities: { drop: ['ALL'] } },
+          volumeMounts: [{ name: 'token', mountPath: '/run/power-evolve', readOnly: true },
+            { name: 'scratch', mountPath: '/tmp' }] }],
+        volumes: [{ name: 'token', secret: { secretName: name, defaultMode: 0o440,
+          items: [{ key: 'token', path: 'runner-token', mode: 0o440 }] } },
+        { name: 'scratch', emptyDir: { medium: 'Memory', sizeLimit: '16Mi' } }] } },
+  }
+}
+
+type RunnerObservation<T> = { readonly state: 'absent' }
+  | { readonly state: 'known'; readonly status: T }
+  | { readonly state: 'uncertain'; readonly reason: string }
+
+/** Correlate a Runner status with the original persisted call and optional expected digest.
+ * @param status - status read from the original Runner.
+ * @param handle - persisted call and Runner instance identities.
+ * @param expectedDigest - caller-normalized expected request digest, if one was supplied.
+ * @returns the matching status or uncertainty when any required identity differs.
+ */
+export function observeRunnerStatus<T extends Pick<SshRunnerStatus, 'callId' | 'instanceId' | 'digest'>>(
+  status: T, handle: Pick<SshRunnerHandle, 'callId' | 'instanceId'>, expectedDigest?: string): RunnerObservation<T> {
+  return status.callId === handle.callId && status.instanceId === handle.instanceId
+    && (expectedDigest === undefined || status.digest === expectedDigest)
+    ? { state: 'known', status } : { state: 'uncertain', reason: 'runner_status_identity_changed' }
+}
+
+/** Preserve absence before dispatch and uncertainty after a committed dispatch or unavailable status read.
+ * @param error - original Runner status-read failure.
+ * @param dispatched - whether dispatch intent was already committed.
+ * @returns verified pre-dispatch absence only for HTTP 404; all other failures remain uncertain.
+ */
+export function observeRunnerStatusError(error: unknown, dispatched: boolean): RunnerObservation<never> {
+  if (error instanceof KubernetesError && error.status === 404) return dispatched
+    ? { state: 'uncertain', reason: 'dispatched_call_missing' } : { state: 'absent' }
+  return { state: 'uncertain', reason: 'runner_status_unavailable' }
+}
+
+function canonical(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonical)
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value)
+    .sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, item]) => [key, canonical(item)]))
+  return value
+}
+function digest(value: object, token: string): string {
+  return createHmac('sha256', token).update(JSON.stringify(canonical(value))).digest('hex')
+}
+function validSecret(value: string, maxBytes: number): boolean {
+  return value.length > 0 && !value.includes('\0') && Buffer.byteLength(value) <= maxBytes
+    && Buffer.from(value, 'utf8').toString('utf8') === value
+}
+function validRunnerCredential(credential: SshCredential): boolean {
+  switch (credential.kind) {
+    case 'password': return validSecret(credential.password, 4096)
+    case 'private_key': return validSecret(credential.privateKey, 7168)
+      && (credential.passphrase === undefined || validSecret(credential.passphrase, 1024))
+    default: return false
+  }
+}
+function equal(expected: unknown, actual: unknown): boolean {
+  if (expected && typeof expected === 'object') {
+    if (!actual || typeof actual !== 'object') return false
+    if (Array.isArray(expected)) return Array.isArray(actual) && expected.length === actual.length
+      && expected.every((item, index) => equal(item, actual[index]))
+    return Object.entries(expected).every(([key, item]) => equal(item, (actual as Record<string, unknown>)[key]))
+  }
+  return expected === actual
+}
+
+/** Provision isolated Runner resources and correlate observations with their persisted identities.
+ * The caller persists the handle and commits a fresh dispatch permit before invoking dispatchFirst once.
+ */
+export class SshRunnerOrchestrator {
+  constructor(private readonly kube: Kube, private readonly config: SshRunnerConfig) {
+    if (!config.namespace || !config.image || !config.runtimeClassName || config.controlKey.length < 32
+      || !Number.isSafeInteger(config.readyTimeoutMs) || config.readyTimeoutMs < 1000
+      || !config.platformIngressCidrs.length || config.platformIngressCidrs.some(cidr => !exactCidr(cidr))
+      || !isIP(config.forbiddenProbe.ip) || !Number.isSafeInteger(config.forbiddenProbe.port)
+      || config.forbiddenProbe.port < 1 || config.forbiddenProbe.port > 65_535) {
+      throw new SshRunnerBlocked('connector_runner_configuration_invalid')
+    }
+  }
+
+  private validate(callId: string, target: SshRunnerDestination): void {
+    if (!uuid.test(callId) || !isIP(target.ip) || !Number.isSafeInteger(target.port)
+      || target.port < 1 || target.port > 65_535 || !target.username
+      || Buffer.byteLength(target.username) > 256 || /[\x00-\x1f\x7f]/u.test(target.username)
+      || !fingerprint.test(target.hostKeySha256)
+      || target.ip === this.config.forbiddenProbe.ip && target.port === this.config.forbiddenProbe.port) {
+      throw new SshRunnerBlocked('connector_runner_destination_invalid')
+    }
+  }
+
+  private token(callId: string, role: Role): string {
+    return createHmac('sha256', this.config.controlKey).update(`ssh-runner-v1:${callId}:${role}`).digest('hex')
+  }
+  private async probeLive(): Promise<boolean> {
+    try { return await this.config.proveForbiddenListener() }
+    catch (_error) { return false }
+  }
+  private labels(callId: string, role?: Role): Record<string, string> {
+    return { 'app.kubernetes.io/name': 'power-evolve-connector-runner', [label]: callId,
+      ...(role ? { 'powerevolve.dev/connector-role': role } : {}) }
+  }
+  private path(kind: string, name?: string): string {
+    const root = kind === 'networkpolicies' ? `/apis/networking.k8s.io/v1/namespaces/${encodeURIComponent(this.config.namespace)}/networkpolicies`
+      : this.kube.resourcePath(this.config.namespace, kind as 'pods' | 'services' | 'secrets')
+    return name ? `${root}/${encodeURIComponent(name)}` : root
+  }
+  private async get<T extends Resource>(kind: string, name: string): Promise<T | null> {
+    try { return await this.kube.call<T>('GET', this.path(kind, name)) }
+    catch (error) { if (error instanceof KubernetesError && error.status === 404) return null; throw error }
+  }
+  private async ensure(kind: string, name: string, body: Record<string, unknown>, token?: string): Promise<void> {
+    const matches = (resource: Resource | null) => resource?.metadata.name === name && !resource.metadata.deletionTimestamp
+      && equal((body.metadata as Metadata).labels, resource.metadata.labels)
+      && (kind === 'secrets' ? token !== undefined && resource.data?.token === Buffer.from(token).toString('base64')
+        : equal(body.spec, resource.spec))
+    const existing = await this.get(kind, name)
+    if (existing) { if (!matches(existing)) throw new SshRunnerBlocked('connector_runner_resource_changed'); return }
+    try { await this.kube.call('POST', this.path(kind), body) }
+    catch (error) {
+      if (!(error instanceof KubernetesError && error.status === 409) || !matches(await this.get(kind, name))) throw error
+    }
+  }
+  private async runner<T>(name: string, token: string, method: Method, path: string, body?: unknown): Promise<T> {
+    return this.kube.call<T>(method, this.kube.proxyPath(this.config.namespace, name, path), body,
+      10_000, token, RUNNER_RESPONSE_MAX_BYTES)
+  }
+  private policy(callId: string, target: SshRunnerDestination): Record<string, unknown> {
+    const name = nameOf(callId)
+    return { apiVersion: 'networking.k8s.io/v1', kind: 'NetworkPolicy',
+      metadata: { name, namespace: this.config.namespace, labels: this.labels(callId) },
+      spec: { podSelector: { matchLabels: this.labels(callId) }, policyTypes: ['Ingress', 'Egress'],
+        ingress: [{ from: this.config.platformIngressCidrs.map(cidr => ({ ipBlock: { cidr } })),
+          ports: [{ protocol: 'TCP', port: 8080 }] }],
+        egress: [{ to: [{ ipBlock: { cidr: address(target.ip) } }],
+          ports: [{ protocol: 'TCP', port: target.port }] }] } }
+  }
+  private async createPod(callId: string, role: Role, target: SshRunnerDestination): Promise<string> {
+    const name = role === 'canary' ? `${nameOf(callId)}-check` : nameOf(callId)
+    const token = this.token(callId, role), labels = this.labels(callId, role)
+    const resources = buildRestrictedRunnerResources(this.config, name, labels, token,
+      [{ name: 'CONNECTOR_RUNNER_ALLOWED_DESTINATIONS', value: keyOf(target.ip, target.port) },
+        { name: 'CONNECTOR_RUNNER_FORBIDDEN_PROBE', value: keyOf(this.config.forbiddenProbe.ip, this.config.forbiddenProbe.port) },
+        // Denied TCP is reported as ECONNREFUSED only after an independent live-listener check.
+        { name: 'CONNECTOR_RUNNER_REFUSED_PROVES_DENIAL', value: '1' }])
+    await this.ensure('secrets', name, resources.secret, token)
+    await this.ensure('services', name, resources.service)
+    await this.ensure('pods', name, resources.pod)
+    return name
+  }
+
+  private async ready(callId: string, role: Role, name: string): Promise<{ uid: string; instanceId: string }> {
+    const until = Date.now() + this.config.readyTimeoutMs
+    while (Date.now() < until) {
+      const pod = await this.get<Pod>('pods', name)
+      if (!pod || pod.metadata.deletionTimestamp || !equal(this.labels(callId, role), pod.metadata.labels)) {
+        throw new SshRunnerBlocked('connector_runner_pod_identity_changed')
+      }
+      if (pod.metadata.uid && pod.status?.phase === 'Running' && pod.status.containerStatuses?.[0]?.ready
+        && (pod.status.containerStatuses[0].restartCount ?? 0) === 0) {
+        try {
+          const health = await this.runner<Health>(name, this.token(callId, role), 'GET', '/health')
+          if (health.ready && uuid.test(health.instanceId)) {
+            if (!await this.probeLive()) throw new SshRunnerBlocked('connector_runner_probe_unavailable')
+            const current = await this.get<Pod>('pods', name)
+            if (current?.metadata.uid !== pod.metadata.uid || current.metadata.deletionTimestamp
+              || (current.status?.containerStatuses?.[0]?.restartCount ?? 0) !== 0) {
+              throw new SshRunnerBlocked('connector_runner_pod_identity_changed')
+            }
+            return { uid: pod.metadata.uid, instanceId: health.instanceId }
+          }
+        } catch (error) { if (error instanceof SshRunnerBlocked) throw error }
+      }
+      await delay(200)
+    }
+    throw new SshRunnerBlocked('connector_runner_not_ready')
+  }
+
+  private async deleteOne(kind: string, name: string): Promise<void> {
+    try { await this.kube.call('DELETE', this.path(kind, name)) }
+    catch (error) { if (!(error instanceof KubernetesError && error.status === 404)) throw error }
+  }
+  private async clearCanary(callId: string): Promise<void> {
+    const name = `${nameOf(callId)}-check`
+    await this.deleteOne('pods', name)
+    await this.deleteOne('services', name)
+    await this.deleteOne('secrets', name)
+  }
+
+  /** Create policy before Pods and verify the live forbidden listener and pinned SSH host key without credentials.
+   * Canary deletion is requested before creating the call Runner; partially prepared resources require caller cleanup.
+   * @param callId - durable UUID used for the isolated call's resources.
+   * @param target - pinned IP, port, username and independently verified host-key fingerprint.
+   * @returns the ready call Pod UID, Runner instance and destination for durable persistence.
+   * @throws SshRunnerBlocked for an invalid destination, changed resources, failed probes or readiness failure.
+   */
+  async prepare(callId: string, target: SshRunnerDestination): Promise<SshRunnerHandle> {
+    this.validate(callId, target)
+    if (!await this.probeLive()) throw new SshRunnerBlocked('connector_runner_probe_unavailable')
+    await this.ensure('networkpolicies', nameOf(callId), this.policy(callId, target))
+    try {
+      const canaryName = await this.createPod(callId, 'canary', target)
+      const canary = await this.ready(callId, 'canary', canaryName)
+      const unsigned = { callId, instanceId: canary.instanceId, kind: 'ssh.inspect',
+        destination: { host: target.ip, port: target.port, username: target.username },
+        timeoutMs: 5000, maxOutputBytes: 1024 }
+      const expectedDigest = digest(unsigned, this.token(callId, 'canary'))
+      const status = await this.runner<SshRunnerStatus>(canaryName, this.token(callId, 'canary'), 'POST', '/calls',
+        { ...unsigned, digest: expectedDigest })
+      if (status.callId !== callId || status.instanceId !== canary.instanceId || status.digest !== expectedDigest) {
+        throw new SshRunnerBlocked('connector_runner_canary_identity_changed')
+      }
+      let result = status
+      const until = Date.now() + this.config.readyTimeoutMs
+      while (result.state === 'running' && Date.now() < until) {
+        await delay(200)
+        result = await this.runner<SshRunnerStatus>(canaryName, this.token(callId, 'canary'), 'GET', `/calls/${callId}`)
+      }
+      if (result.callId !== callId || result.instanceId !== canary.instanceId || result.digest !== expectedDigest
+        || result.state !== 'succeeded' || result.result === null || typeof result.result !== 'object'
+        || (result.result as Record<string, unknown>).hostKeySha256 !== target.hostKeySha256) {
+        throw new SshRunnerBlocked('connector_runner_canary_failed')
+      }
+    } finally { await this.clearCanary(callId) }
+    const name = await this.createPod(callId, 'call', target)
+    const ready = await this.ready(callId, 'call', name)
+    return { callId, destination: target, podUid: ready.uid, instanceId: ready.instanceId }
+  }
+
+  private async identity(handle: SshRunnerHandle): Promise<'same' | 'changed'> {
+    const pod = await this.get<Pod>('pods', nameOf(handle.callId))
+    if (!pod || pod.metadata.uid !== handle.podUid || pod.metadata.deletionTimestamp
+      || !equal(this.labels(handle.callId, 'call'), pod.metadata.labels)
+      || (pod.status?.containerStatuses?.[0]?.restartCount ?? 0) !== 0) return 'changed'
+    try {
+      const health = await this.runner<Health>(nameOf(handle.callId), this.token(handle.callId, 'call'), 'GET', '/health')
+      return health.ready && health.instanceId === handle.instanceId ? 'same' : 'changed'
+    } catch (_error) { return 'changed' }
+  }
+
+  /** Validate request limits and compute a keyed digest to persist with the dispatch permit.
+   * The per-call control key protects password, private-key and optional passphrase bytes from offline verification.
+   * @param handle - persisted call, Runner instance and pinned destination.
+   * @param request - exact credential, command when executing, and timeout/output limits to send.
+   * @returns the canonical request's HMAC-SHA-256 hex digest under the call Runner's control token.
+   * @throws SshRunnerBlocked for an invalid destination, credential bytes, command or execution limits.
+   */
+  digestFor(handle: SshRunnerHandle, request: SshRunnerRequest): string {
+    this.validate(handle.callId, handle.destination)
+    const credential = request.credential
+    const validCredential = validRunnerCredential(credential)
+    if (!validCredential
+      || !Number.isSafeInteger(request.timeoutMs) || request.timeoutMs < 1 || request.timeoutMs > 60_000
+      || !Number.isSafeInteger(request.maxOutputBytes) || request.maxOutputBytes < 1
+      || request.maxOutputBytes > 131_072 || request.kind === 'ssh.execute'
+      && !validSecret(request.command, 16_384)) {
+      throw new SshRunnerBlocked('connector_runner_request_invalid')
+    }
+    return digest(this.unsigned(handle, request), this.token(handle.callId, 'call'))
+  }
+
+  private unsigned(handle: SshRunnerHandle, request: SshRunnerRequest) {
+    return { callId: handle.callId, instanceId: handle.instanceId, kind: request.kind,
+      destination: { host: handle.destination.ip, port: handle.destination.port,
+        username: handle.destination.username, hostKeySha256: handle.destination.hostKeySha256 },
+      timeoutMs: request.timeoutMs, maxOutputBytes: request.maxOutputBytes,
+      credential: request.credential, ...(request.kind === 'ssh.execute' ? { command: request.command } : {}) }
+  }
+
+  /** Recover by reading the original Runner; a missing in-memory call after committed dispatch is uncertain.
+   * @param handle - exact persisted Pod, Runner instance and destination to observe.
+   * @param dispatched - whether the caller already committed dispatch intent.
+   * @param expectedDigest - persisted keyed request digest; required when dispatched is true.
+   * @returns matching status, absence before dispatch, or uncertainty for missing calls or unverified identities.
+   */
+  async reconcile(handle: SshRunnerHandle, dispatched: boolean, expectedDigest?: string): Promise<SshRunnerObservation> {
+    this.validate(handle.callId, handle.destination)
+    if (dispatched && !/^[0-9a-f]{64}$/u.test(expectedDigest ?? '')) {
+      return { state: 'uncertain', reason: 'dispatch_digest_missing' }
+    }
+    try { if (await this.identity(handle) !== 'same') return { state: 'uncertain', reason: 'runner_identity_changed' } }
+    catch (_error) { return { state: 'uncertain', reason: 'runner_identity_unavailable' } }
+    try {
+      const status = await this.runner<SshRunnerStatus>(nameOf(handle.callId), this.token(handle.callId, 'call'),
+        'GET', `/calls/${handle.callId}`)
+      return observeRunnerStatus(status, handle, expectedDigest)
+    } catch (error) {
+      return observeRunnerStatusError(error, dispatched)
+    }
+  }
+
+  /** Invoke once with a newly committed dispatch permit; existing Runner status is returned before any POST.
+   * A transport-uncertain POST must be recovered through reconcile, never another dispatchFirst invocation.
+   * @param handle - persisted Pod, Runner instance and pinned destination authorized by the fresh permit.
+   * @param request - immutable authentication or approved execution request bound to that permit's digest.
+   * @returns matching Runner status, or uncertainty when identity, probe availability or the POST outcome is unverified.
+   * @throws SshRunnerBlocked when the destination or bounded request is invalid.
+   */
+  async dispatchFirst(handle: SshRunnerHandle, request: SshRunnerRequest): Promise<SshRunnerObservation> {
+    this.validate(handle.callId, handle.destination)
+    const unsigned = this.unsigned(handle, request)
+    const token = this.token(handle.callId, 'call')
+    const expectedDigest = this.digestFor(handle, request)
+    const before = await this.reconcile(handle, false, expectedDigest)
+    if (before.state !== 'absent') return before
+    if (!await this.probeLive()) {
+      return { state: 'uncertain', reason: 'forbidden_probe_unavailable' }
+    }
+    try { if (await this.identity(handle) !== 'same') return { state: 'uncertain', reason: 'runner_identity_changed' } }
+    catch (_error) { return { state: 'uncertain', reason: 'runner_identity_unavailable' } }
+    try {
+      const status = await this.runner<SshRunnerStatus>(nameOf(handle.callId), token, 'POST', '/calls',
+        { ...unsigned, digest: expectedDigest })
+      return status.callId === handle.callId && status.instanceId === handle.instanceId
+        && status.digest === expectedDigest
+        ? { state: 'known', status } : { state: 'uncertain', reason: 'runner_status_identity_changed' }
+    } catch (_error) { return { state: 'uncertain', reason: 'dispatch_outcome_unknown' } }
+  }
+
+  /** Read the original Runner outcome, then request deletion of its Pod.
+   * A previously observed terminal result is retained; deletion alone leaves remote effects uncertain.
+   * This method does not wait for Pod disappearance; cleanup confirms removal.
+   * @param handle - exact persisted Runner identity whose Pod is to be deleted.
+   * @param expectedDigest - persisted keyed request digest used to correlate the prior status.
+   * @returns a known terminal status observed before deletion, or an uncertain cancellation outcome.
+   */
+  async cancel(handle: SshRunnerHandle, expectedDigest: string): Promise<SshRunnerObservation> {
+    const prior = await this.reconcile(handle, true, expectedDigest)
+    await this.deleteOne('pods', nameOf(handle.callId))
+    return prior.state === 'known' && prior.status.state !== 'running' ? prior
+      : { state: 'uncertain', reason: 'cancel_effect_unknown' }
+  }
+
+  /** Delete call and canary resources after durable terminal status or explicit uncertain-state quarantine.
+   * Wait for call Pod disappearance before removing its Service, control Secret and NetworkPolicy.
+   * @param callId - durable UUID naming only this call's isolated resources.
+   * @throws SshRunnerBlocked for an invalid call identity or unconfirmed Pod deletion before the readiness timeout.
+   */
+  async cleanup(callId: string): Promise<void> {
+    if (!uuid.test(callId)) throw new SshRunnerBlocked('connector_runner_call_id_invalid')
+    await this.clearCanary(callId)
+    const name = nameOf(callId)
+    await this.deleteOne('pods', name)
+    const until = Date.now() + this.config.readyTimeoutMs
+    while (await this.get('pods', name)) {
+      if (Date.now() >= until) throw new SshRunnerBlocked('connector_runner_deletion_unconfirmed')
+      await delay(200)
+    }
+    await this.deleteOne('services', name)
+    await this.deleteOne('secrets', name)
+    await this.deleteOne('networkpolicies', name)
+  }
+}

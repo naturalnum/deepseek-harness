@@ -81,6 +81,11 @@ async function agent(ctx: Context, cwd: string): Promise<Agent> {
     version: SESSION_FORMAT_VERSION, id, createdAt: 0, cwd, isSeeded: false,
   })
   const value: Agent = {
+    canMaintainInbox: true,
+    onBeforeTurn: () => () => {},
+    onAfterClaim: () => () => {},
+    captureInboxActivity: () => { throw new Error('This Agent double has no maintenance capture') },
+    wakePending: () => {},
     id,
     options: {},
     session,

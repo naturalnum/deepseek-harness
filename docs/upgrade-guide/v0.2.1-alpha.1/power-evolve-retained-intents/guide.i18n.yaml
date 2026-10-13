@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for guide.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/upgrade-guide/v0.2.1-alpha.1/power-evolve-retained-intents/guide.md
+/:
+  en: ec75f238fb206269
+  zh: f6ba21f1c3a79e35
+/powerevolve-retained-intent-configuration:
+  en: b02ef38eb38d8afd
+  zh: 7cc2d212cc7c4465
+/powerevolve-retained-intent-configuration/change:
+  en: aee7384f022edaec
+  zh: 051dedbcebd38e38
+/powerevolve-retained-intent-configuration/migration:
+  en: d45c87fb5a572fc5
+  zh: 9fc938162541f7fb

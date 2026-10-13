@@ -3,14 +3,14 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/subsystems/core.md
 /core:
-  en: f6ae07d8902e8edf
-  zh: c92fef531c6da331
+  en: 939f6e9b6aa1acbe
+  zh: 309bb7a751580384
 /core/the-spine-package-by-package:
   en: c90cb23528ddb6c8
   zh: 62724b7255b586b6
 /core/creation-and-ownership:
-  en: ab09a38b4e1f0883
-  zh: 81e2d14c4036ab6c
+  en: e6843e5ff6d083e9
+  zh: aa3318d926278e57
 /core/the-agent-handle:
   en: c21787347d8e2b14
   zh: 25bc9cb60ee1520a

@@ -9,7 +9,9 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Clients can call `pluginInventory/list` to display the host’s current plugins in load order, including each entry’s identifier, module specifier, effective enablement, live phase, and available display text. Deployments with an agent-preset roster also report each preset’s metadata, health, and flattened plugin composition; without a roster, preset data is absent. Each response is a point-in-time, read-only snapshot for display and diagnostics: it cannot mutate plugins and provides no history or change subscription.
+Call `pluginInventory/list` to display current Host plugins in load order: each entry's identifier, module specifier, effective enablement, live phase, and available display text. With an agent-preset roster, deployments also report each preset's metadata, health, and flattened plugin composition; otherwise, preset data is absent. Responses are point-in-time, read-only snapshots for display and diagnostics, with no mutation, history, or change subscription.
+
+A carrier may add `managementWritable: false` for peers who can read but cannot change the managed Profile. Omission retains local operator behavior; the inventory grants no write authority.
 
 ## Table of Contents
 

@@ -7,7 +7,7 @@
 import type { MessageId } from '@deepseek-ai/dsh-llm'
 import type { ProjectionDefinition } from '@deepseek-ai/dsh-session-projection'
 import type SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
-import type { Session, SessionEventMap, UserMessage } from '@deepseek-ai/dsh-session'
+import type { Session, SessionEvent, SessionEventMap, UserMessage } from '@deepseek-ai/dsh-session'
 import type {
   AgentEventDispatch,
   Inbox as InboxContract,
@@ -75,7 +75,8 @@ export class ReactLoopInbox implements InboxContract {
   constructor(
     private readonly projections: SessionProjectionRegistry,
     private readonly session: Session,
-    private readonly dispatch: AgentEventDispatch,
+    private readonly dispatch?: Pick<AgentEventDispatch, 'emit'>,
+    private readonly appended?: (event: Extract<SessionEvent, { type: 'agent/inbox/spliced' }>) => void,
   ) {}
 
   /** Prompts awaiting individual turns. */
@@ -107,10 +108,35 @@ export class ReactLoopInbox implements InboxContract {
    * @returns next-step input followed by the queued turn, when requested.
    */
   claim(target: InboxTarget, turn: number): UserMessage[] {
-    const claimed = this.mutate('next-step', 0, this.nextStep.length, [], false)
-    if (target === 'next-turn') claimed.push(...this.mutate('next-turn', 0, 1, [], false))
-    for (const message of claimed) this.dispatch.emit('agent/inbox/claimed', { message, turn })
-    return claimed
+    const batch = this.claimBatch(target)
+    this.publishClaimed(batch.messages, turn)
+    return batch.messages
+  }
+
+  /**
+   * Claim the complete boundary without publishing live claimed notifications.
+   * @param target - whether to include the next-turn head after all next-step input.
+   * @returns canonical append results and messages in native claim order.
+   */
+  claimBatch(target: InboxTarget): {
+    messages: UserMessage[]
+    events: Extract<SessionEvent, { type: 'agent/inbox/spliced' }>[]
+  } {
+    const first = this.mutate('next-step', 0, this.nextStep.length, [], false)
+    const second = target === 'next-turn' ? this.mutate('next-turn', 0, 1, [], false) : undefined
+    return {
+      messages: [...first.removed, ...second === undefined ? [] : second.removed],
+      events: [...first.events, ...second === undefined ? [] : second.events],
+    }
+  }
+
+  /**
+   * Publish a settled native claim after its durable barrier succeeds.
+   * @param messages - complete claimed input in native order.
+   * @param turn - owner turn.
+   */
+  publishClaimed(messages: readonly UserMessage[], turn: number): void {
+    for (const message of messages) this.dispatch?.emit('agent/inbox/claimed', { message, turn })
   }
 
   /**
@@ -170,7 +196,7 @@ export class ReactLoopInbox implements InboxContract {
     deleteCount: number,
     inserted: UserMessage[],
   ): UserMessage[] {
-    return this.mutate(target, start, deleteCount, inserted, true)
+    return this.mutate(target, start, deleteCount, inserted, true).removed
   }
 
   /** Locate one pending identity across both owned lists. */
@@ -201,7 +227,7 @@ export class ReactLoopInbox implements InboxContract {
     deleteCount: number,
     inserted: UserMessage[],
     discardRemoved: boolean,
-  ): UserMessage[] {
+  ): { removed: UserMessage[]; events: Extract<SessionEvent, { type: 'agent/inbox/spliced' }>[] } {
     const state = this.current()
     const inbox = state[target]
     const truncatedStart = Math.trunc(start)
@@ -214,7 +240,7 @@ export class ReactLoopInbox implements InboxContract {
       Math.max(Number.isNaN(truncatedDeleteCount) ? 0 : truncatedDeleteCount, 0),
       inbox.length - actualStart,
     )
-    if (actualDeleteCount === 0 && inserted.length === 0) return []
+    if (actualDeleteCount === 0 && inserted.length === 0) return { removed: [], events: [] }
     const candidate = inbox.toSpliced(actualStart, actualDeleteCount, ...inserted)
     const ids = new Set<string>()
     for (const message of target === 'next-turn'
@@ -233,12 +259,13 @@ export class ReactLoopInbox implements InboxContract {
     }
     const removed = inbox.slice(actualStart, actualStart + actualDeleteCount)
     const event = this.session.append('agent/inbox/spliced', splice)
+    this.appended?.(event)
     if (discardRemoved) {
-      for (const message of removed) this.dispatch.emit('agent/inbox/discarded', { message })
+      for (const message of removed) this.dispatch?.emit('agent/inbox/discarded', { message })
     }
     for (const message of event.data.inserted) {
-      this.dispatch.emit('agent/inbox/inserted', { message })
+      this.dispatch?.emit('agent/inbox/inserted', { message })
     }
-    return removed
+    return { removed, events: [event] }
   }
 }

@@ -1,0 +1,14 @@
+{
+  "abstract_cn": "配电负荷异常规则的可复核说明，需要把输入字段、判定边界和统计口径连成清晰的解释链。第一，样本字段与单位需要统一，避免把功率偏差误写成能量变化，也避免因字段含义不清而改变规则适用对象。第二，严格阈值的等号边界和偏高偏低两类变化需要明确区分，使分类结果能够回到逐条样本进行核对。第三，人工标签与预测结果需要按照一致口径形成计数，并在没有正类或没有预测正例时明确指标的无定义状态。这些需求共同指向材料可追溯、计算可复现和结论范围明确的规则说明。\n\n本报告围绕给定的残差规则组织输入、分类与统计过程，不引入训练模型或额外判据。第一，读取样本标识、期望功率、实际功率与人工标签，核验标识唯一、功率数值有限以及标签为二值；以实际功率与期望功率之差的绝对值形成残差，再按严格大于阈值的条件得到预测标签。第二，在同一条样本内对齐预测标签与人工标签，分别累计真阳性、假阳性、假阴性与真阴性，检查四类计数互斥且覆盖全部有效输入；以逐条结果保留由原始字段到计数的解释关系。第三，依据计数计算查准率、查全率与综合指标，并区分合法样本构成造成的无定义指标和非法输入造成的程序拒绝；原始输入、标准输出与退出码分别保留，使规则、计数和结果能够独立核对。这三个环节形成连续的数据处理链，并明确步骤顺序，便于在固定材料和固定阈值下重复检查。\n\n合成样本的统计说明了给定规则如何从输入得到计数与指标，边界材料分别用于检查等号、负向越界和无定义指标。结果仅用于检验规则实现与说明的一致性，不代表真实电网的识别性能，也不支持阈值优化或工程推广结论。输入校验使非法字段以非零退出明确呈现，合法边界则保留空值而不伪造确定指标。总体上，这一过程形成材料、步骤和结果之间的可核对关系，为后续独立复现提供基础。今后需要在授权的新材料中继续核验规则的适用条件，并依据真实证据补充结论，保持样本范围、判据和结果解释之间的一致性。",
+  "abstract_en": "A reproducible explanation of a distribution-load anomaly rule needs consistent input fields, explicit classification boundaries, and a common statistical interpretation. The synthetic materials separate power from energy, distinguish equality from strict exceedance, and preserve the meaning of undefined metrics.\n\nThe report reads and validates the four input fields, computes absolute residuals, and applies the given strict threshold. It aligns each prediction with its synthetic label, counts the four mutually exclusive confusion cases, and computes precision, recall, and F1. Valid metric boundaries are distinguished from malformed inputs, and input files, outputs, and exit records are retained separately.\n\nThe synthetic results check consistency between the given rule and its implementation rather than real-grid recognition performance. Undefined results remain null instead of being replaced with invented numeric values. Future verification requires authorized new materials and conclusions supported by actual evidence within their stated scope.",
+  "keywords_cn": "配电负荷；绝对残差；严格阈值；混淆矩阵；合成材料",
+  "keywords_en": "distribution load; absolute residual; strict threshold; confusion matrix; synthetic materials",
+  "opening_sentence_candidates_cn": [
+    "配电负荷异常规则的可复核说明，需要把输入字段、判定边界和统计口径连成清晰的解释链。",
+    "配电负荷样本的统计解释需要明确字段单位与结论适用范围。",
+    "合成配电负荷材料需要可追溯的来源与可核对的结果说明。"
+  ],
+  "selected_opening_sentence_cn": "配电负荷异常规则的可复核说明，需要把输入字段、判定边界和统计口径连成清晰的解释链。",
+  "assessment_result_coverage": [],
+  "supplementary_metrics_used": []
+}

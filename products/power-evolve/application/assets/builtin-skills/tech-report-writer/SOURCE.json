@@ -1,0 +1,65 @@
+{
+  "originalCommit": "a03460fe66a3f77114ff3bb906476105e1d470b7",
+  "originalPath": "services/cloud-server/assets/builtin-skills/tech-report-writer",
+  "originalRelease": "1.1.31",
+  "productRelease": "1.1.46",
+  "maintenance": "PowerEvolve product fork: semantic cover location, required-data errors, Linux UNO catalog caches and strict title/page visual QA; see tests/test_compatibility.py. Original Word template and specification retained.",
+  "changes": [
+    {
+      "version": "1.1.46",
+      "summary": "Publish a cloud-only successor for the official DSH migration; preserve installed predecessor bytes and remove Device execution guidance from active instructions."
+    },
+    {
+      "version": "1.1.45",
+      "summary": "Retain native absolute-value and open-case delimiter meanings when LibreOffice sequentially imports the temporary pagination copy; keep source DOCX and original OMML unchanged."
+    },
+    {
+      "version": "1.1.44",
+      "summary": "Disable paragraph grid snapping for bilingual abstract text and keywords while retaining declared 1.5-line spacing, fonts, contents and section layout."
+    },
+    {
+      "version": "1.1.43",
+      "summary": "Use shared OOXML caption recognition for catalog marking, paragraph formatting and validation; retain ordinary body references and continued-table formatting, and require catalog fields on actual captions."
+    },
+    {
+      "version": "1.1.42",
+      "summary": "Retain bounded phase, exit status, output directory and actual stdout/stderr for failed Word validation, creation and formatting; keep partial output blocked without an artifact."
+    },
+    {
+      "version": "1.1.41",
+      "summary": "Accept one nonempty pre-body Markdown contents section and metadata-matched bilingual front titles without changing the final reviewed source; preserve source explanations in consecutive appendices and reject unknown top-level headings."
+    },
+    {
+      "version": "1.1.40",
+      "summary": "Publish Cloud and Desktop targets; require exact integer page inspection coverage from the actual renderer count, reject nonzero render exits and retain current Word artifact/version binding."
+    },
+    {
+      "version": "1.1.39",
+      "summary": "Keep fixed display-equation table grids, total width and cell widths consistent so native OMML uses the declared 146 mm equation column instead of the default one-third grid; retain all reviewed math content, equation numbers and following prose. Apply the same width calibration when formatting existing marker-free numbered OMML tables, preserving ordinary data tables and saving a separate repaired document."
+    },
+    {
+      "version": "1.1.38",
+      "summary": "Accept dataset DS and DS/OL markers in reference JSON and final DOCX validation, retaining mandatory online citation dates and URLs, continuous final numbering and existing document types."
+    },
+    {
+      "version": "1.1.37",
+      "summary": "Embed checked local PNG/JPEG and static SVG Markdown figures as Word media, resolve material paths within the current workspace, retain one figure caption, and block missing, invalid, remote or escaping images."
+    },
+    {
+      "version": "1.1.36",
+      "summary": "Preserve reviewed Markdown subsection numbers, names and heading levels in Word and its catalog, without adding numbering to unnumbered headings or interpreting numeric prose as headings or lists."
+    },
+    {
+      "version": "1.1.35",
+      "summary": "Honor paragraph line spacing without snapping to the legacy document grid, and require a working LibreOffice Math component before rendering native Word equations."
+    },
+    {
+      "version": "1.1.34",
+      "summary": "Use the final reviewed report as the Word content source, preserve bilingual abstracts, references and Markdown tables, and reject unreadable final sources instead of using earlier chapter snapshots."
+    },
+    {
+      "version": "1.1.33",
+      "summary": "Clarify the existing Microsoft Word COM refresh path for compatibility with report-workflow-orchestrator 1.1.21 rule consistency checks."
+    }
+  ]
+}

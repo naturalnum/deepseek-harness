@@ -80,6 +80,11 @@ async function setup(config: toolAskUser.Config = { mode: 'timed', timeout: -1 }
 function stubAgent(id: string, delegationDepth = 0): Agent {
   const agentId = SessionId(id)
   const agent: Agent = {
+    canMaintainInbox: true,
+    onBeforeTurn: () => () => {},
+    onAfterClaim: () => () => {},
+    captureInboxActivity: () => { throw new Error('This Agent double has no maintenance capture') },
+    wakePending: () => {},
     id: agentId,
     options: {},
     session: Session.create(agentId, [], {

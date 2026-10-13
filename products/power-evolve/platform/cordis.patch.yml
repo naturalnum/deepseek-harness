@@ -1,0 +1,100 @@
+- insert:
+    - id: logger-console
+      name: '@deepseek-ai/cordis-plugin-logger-console'
+      config:
+        colors: false
+        maxLength: 1200
+    - id: web-server
+      name: '@deepseek-ai/dsh-host-webserver'
+      config:
+        host: 127.0.0.1
+        port: 18881
+    - id: power-evolve-platform
+      name: '@power-evolve/application/platform'
+      config:
+        databaseUrlFile: !!js process.env.PE_PRIVATE_DIR + '/database-url'
+        nativeIntentKeyFile: !!js process.env.PE_NATIVE_INTENT_KEY_FILE || process.env.PE_PRIVATE_DIR + '/native-intent-key'
+        nativeIntentMaxRequestBytes: 8388608
+        nativeIntentMaxPendingPerSession: 64
+        nativeIntentMaxRecordsPerSession: 65536
+        nativeIntentMaxRetainedBytesPerSession: 268435456
+        workspaceRoot: !!js process.env.PE_WORKSPACE_ROOT || process.env.PE_PRIVATE_DIR + '/workspaces'
+        attachmentRoot: !!js process.env.PE_PRIVATE_DIR + '/attachments'
+        fileDownloadMaxFiles: 1
+        fileDownloadMaxTotalBytes: 33554432
+        fileDownloadMaxConcurrentTransfers: 4
+        fileDownloadMaxUserConcurrentTransfers: 2
+        fileDownloadTransferTimeoutMs: 60000
+        sandboxKubeconfigFile: !!js process.env.PE_KUBECONFIG_FILE || ''
+        sandboxKeyFile: !!js process.env.PE_PRIVATE_DIR + '/runner-key'
+        sandboxNamespace: !!js process.env.PE_SANDBOX_NAMESPACE || ''
+        sandboxImage: !!js process.env.PE_SANDBOX_IMAGE || ''
+        sandboxLocalRoot: !!js process.env.PE_SANDBOX_LOCAL_ROOT || ''
+        sandboxNodeRoot: !!js process.env.PE_SANDBOX_NODE_ROOT || ''
+        sandboxVolumeClaimName: !!js process.env.PE_SANDBOX_VOLUME_CLAIM || ''
+        skillLibraryRoot: !!js process.env.PE_SKILL_LIBRARY_ROOT || process.env.PE_SANDBOX_LOCAL_ROOT || process.env.PE_PRIVATE_DIR + '/skill-library'
+        maxSkillsPerUser: 64
+        preinstalledSkills:
+          - builtin.pdf
+        enabledBuiltinSkills:
+          - builtin.pdf
+        sandboxReadyTimeoutMs: 60000
+        sandboxConcurrency: 4
+        sandboxPollMs: 500
+        sandboxIdleMs: 300000
+        sandboxCommandTimeoutMs: 60000
+        sandboxMaxExecutions: 4096
+        workerTokenFile: !!js process.env.PE_PRIVATE_DIR + '/worker-token'
+        nativeInputOwnerRoutingFile: !!js process.env.PE_NATIVE_INPUT_OWNER_ROUTING_FILE || ''
+        modelKeyFile: !!js process.env.PE_PRIVATE_DIR + '/model-key'
+        connectorKeyFile: !!js process.env.PE_PRIVATE_DIR + '/connector-key'
+        seedUsersFile: !!js process.env.PE_PRIVATE_DIR + '/users.json'
+        accountManagementFile: !!js process.env.PE_PRIVATE_DIR + '/account-management.json'
+        accountBootstrapFile: !!js process.env.PE_ACCOUNT_BOOTSTRAP_FILE || ''
+        modelUrl: https://api.deepseek.com/anthropic/v1/messages
+        mcpUrl: ''
+        mcpTokenFile: ''
+        mcpTimeoutMs: 5000
+        remoteMcpConfigFile: ''
+        officePreviewConfigFile: !!js process.env.PE_OFFICE_PREVIEW_CONFIG_FILE || ''
+        officePreviewKubeconfigFile: !!js process.env.PE_OFFICE_PREVIEW_KUBECONFIG_FILE || ''
+        sshCredentialKeyFile: ''
+        sshDestinationAllowlist: ''
+        sshMaxConnections: 8
+        sshMaxPendingTickets: 8
+        sshTicketLifetimeMs: 300000
+        sshMaxCompletedMismatches: 3
+        sshRunnerKubeconfigFile: ''
+        sshRunnerNamespace: ''
+        sshRunnerImage: ''
+        sshRunnerImagePullSecretName: ''
+        sshRunnerRuntimeClass: gvisor
+        sshRunnerIngressCidrs: ''
+        sshRunnerReadyTimeoutMs: 30000
+        sshRunnerLeaseMs: 90000
+        connectorUrl: http://127.0.0.1:18884
+        connectorTimeoutMs: 5000
+        connectorPollMs: 500
+        hostOrigin: http://127.0.0.1:18880
+        platformOrigin: http://127.0.0.1:18881
+        leaseMs: 30000
+        tokenLifetimeMs: 43200000
+        maxPendingPerUser: 8
+        maxActivePerUser: 1
+        nativeSearchDeadlineMs: 5000
+        nativeSearchMaxSessions: 256
+        nativeSearchMaxEvents: 100000
+        nativeSearchMaxBytes: 67108864
+        maxHistoryBytes: 8388608
+        maxHistoryEvents: 20000
+        maxEventBytes: 524288
+        maxRequestBytes: 50331648
+        modelTimeoutMs: 120000
+        maxModelResponseBytes: 4194304
+        readyFile: !!js dshHomePath('ready.json')
+        databasePoolSize: 10
+        databaseTimeoutMs: 10000
+        loginWindowMs: 60000
+        loginAttemptsPerWindow: 20
+        loginTrackedAccounts: 100000
+        loginGlobalAttemptsPerWindow: 100000

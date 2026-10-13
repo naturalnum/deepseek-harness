@@ -20,6 +20,9 @@
 /deepseek-ai-dsh-session/use-this-package/create-and-inspect-sessions:
   en: f80dab583fa3939d
   zh: 5a9a79ebcef86119
+/deepseek-ai-dsh-session/use-this-package/plan-against-an-exact-detached-prefix:
+  en: 13bdf0da72c1e266
+  zh: 9bb3eac319e56648
 /deepseek-ai-dsh-session/use-this-package/append-and-derive:
   en: aa5f1951ecf3ac0c
   zh: 62a599ace8f2bf15
@@ -30,8 +33,11 @@
   en: 1c40d17a786059d3
   zh: 81320ce118977c65
 /deepseek-ai-dsh-session/use-this-package/flush-durable-state:
-  en: 70a7673145c851ad
-  zh: 0dd1667d9518993d
+  en: c00e83411fbd861f
+  zh: b4117b31a7a48112
+/deepseek-ai-dsh-session/use-this-package/synchronize-committed-mirrors:
+  en: b492ebe54dfd1e12
+  zh: 8163737d977050ae
 /deepseek-ai-dsh-session/understand-the-implementation:
   en: ce7e776e9d516bdb
   zh: 59d2751743db7795

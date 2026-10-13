@@ -32,6 +32,11 @@ async function agent(ctx: Context): Promise<Agent> {
   const session = ctx.sessions.create(id)
   let status: AgentStatus = 'idle'
   const value: Agent = {
+    get canMaintainInbox() { return status === 'idle' },
+    onBeforeTurn: () => () => {},
+    onAfterClaim: () => () => {},
+    captureInboxActivity: () => { throw new Error('This Agent double has no maintenance capture') },
+    wakePending: () => {},
     id,
     options: {},
     session,

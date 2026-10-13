@@ -37,6 +37,10 @@ ctx.sessions.get(sessionId)      // the live session
 ctx.sessions.list()              // every live session, in creation order
 ```
 
+### 在准确 detached prefix 上规划
+
+`Session.forPlanning()` 校验并快照借用的 header/events，不追加生命周期 marker，因此 cursor 等于传入 prefix 的长度，包含继承历史。该入口用于一次性 canonical 命令规划；普通 create/restore 继续拥有生命周期边界。planning Session 不自行发布，也不授予持久化权限。
+
 ### 追加与派生
 
 `session.append(type, data, opts?)` 提交一个类型化事件——它先快照并冻结载荷、校验其为无损 JSON，再通知观察者。`session.deriveMessages()` 把日志投影为模型看到的 `Message[]`，采用增量且有缓存的方式：
@@ -72,6 +76,10 @@ session.deriveMessages()         // the derived model history
 ### 刷新持久状态
 
 `ctx.sessions.flush(session)` 分发需等待完成的持久性检查点：每个持久化监听器都会刷新，调用在所有监听器结算后完成。需要立即持久性屏障的生产方应等待它，而不是假定延后写入已经排空。
+
+### 同步已提交 mirror
+
+`guardAppends()` 提供由操作拥有的同步 acceptance 检查。`synchronizeCommitted()` 在 detached 副本上校验完整、准确的 suffix 后，更新同一个 Session，保留 canonical seq/time，并避免重复发布 session/event。调用方证明外部 commit，同步持久化 cursor 并发布 committed carrier 更新；后续 projection 读取折叠导入的 suffix。cursor 不匹配或后续事件非法时，原 prefix 保持原样。这些 API 预留顺序并同步事实，不授予执行或持久化权限。
 
 -----
 

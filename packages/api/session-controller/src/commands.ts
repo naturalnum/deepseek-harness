@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { Agent, ModelSelection as AgentModelSelection } from '@deepseek-ai/dsh-agent'
+import { updatePendingInput } from '@deepseek-ai/dsh-agent'
 import { AttachmentError } from '@deepseek-ai/dsh-attachment'
 import type {
   AttachmentAdmissionPart, FileAttachmentRef, ImageAttachmentRef,
@@ -12,7 +13,7 @@ import type {
 import type { FileUploadReceiptId } from '@deepseek-ai/dsh-client-file-upload/types'
 import type {} from '@deepseek-ai/dsh-client-file-upload'
 import {
-  ReasoningEffortId, assistantStreamChunks, createUserMessage, freezeMessage,
+  ReasoningEffortId, assistantStreamChunks, createUserMessage,
 } from '@deepseek-ai/dsh-llm'
 import type { MessageSource } from '@deepseek-ai/dsh-llm'
 import { buildForkSeed } from '@deepseek-ai/dsh-session/fork'
@@ -402,7 +403,7 @@ export class SessionCommandController {
         {},
       )
     }
-    const ref = referencedImage(source.events, String(request.attachmentId))
+    const ref = referencedSessionImage(source.events, request.attachmentId)
     if (ref === undefined) {
       throw new RemoteError(
         'session/attachment-invalid',
@@ -479,13 +480,13 @@ export class SessionCommandController {
     }
     switch (request.action.kind) {
       case 'edit':
-        agent.inbox.replace(request.itemId, freezeMessage<UserMessage>({
-          ...message,
-          content: [...request.action.content],
-        }))
+        updatePendingInput(agent.inbox, {
+          kind: 'edit', messageId: request.itemId, content: request.action.content,
+        }, (input) => { agent.steer(input) })
         break
       case 'remove': {
-        agent.inbox.remove(request.itemId)
+        updatePendingInput(agent.inbox, { kind: 'remove', messageId: request.itemId },
+          (input) => { agent.steer(input) })
         const source = message.source
         if (source.kind === 'user' && 'rpcId' in source) {
           this.ctx.fileUploads.retirePrompt(agent, source.rpcId)
@@ -493,8 +494,9 @@ export class SessionCommandController {
         break
       }
       case 'steer':
-        agent.inbox.remove(request.itemId)
-        agent.steer(message)
+        updatePendingInput(agent.inbox, {
+          kind: 'retarget', messageId: request.itemId, target: 'next-step', wakeup: true,
+        }, (input) => { agent.steer(input) })
         break
       /* v8 ignore next 2 -- closed-union exhaustiveness guard */
       default:
@@ -679,12 +681,21 @@ function imageInEvent(
   return undefined
 }
 
-function referencedImage(
+/** Locate the first original image reference in declared built-in event fields and completed assistant blocks.
+ * Callers authenticate the addressed Session, supply its validated canonical event order, and verify stored bytes.
+ * Unknown event payloads remain opaque; repeated byte identities retain the first occurrence's display metadata.
+ * @param events Validated canonical Session events in their original order.
+ * @param attachmentId Original opaque image identity requested by the caller.
+ * @param matches Optional additional metadata check when selecting a specific inherited occurrence.
+ * @returns The first matching original metadata, or undefined when declared fields contain no matching reference.
+ */
+export function referencedSessionImage(
   events: readonly SessionEvent[],
-  attachmentId: string,
+  attachmentId: ImageAttachmentRef['attachmentId'],
+  matches?: (reference: ImageAttachmentRef) => boolean,
 ): ImageAttachmentRef | undefined {
   for (const event of events) {
-    const found = imageInEvent(event, ref => String(ref.attachmentId) === attachmentId)
+    const found = imageInEvent(event, ref => String(ref.attachmentId) === String(attachmentId) && (matches?.(ref) ?? true))
     if (found !== undefined) return found
   }
   return undefined

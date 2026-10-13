@@ -89,6 +89,8 @@ Request versions live below `<DSH_HOME>/cache/attachments/request-images/`, reso
 
 Generic-file bytes have one canonical object at `<DSH_HOME>/attachments/v1/file-objects/<digest-prefix>/<digest>`. Each reference path at `<DSH_HOME>/attachments/v1/files/<digest-prefix>/<digest>/<name>` is a read-only hard link, so different names for equal bytes do not duplicate disk content. `readFileStream` reads the reference path in bounded chunks and verifies the complete digest and recorded byte count before a consumer can finish successfully. A missing, changed, or truncated object fails its consumer instead of producing a complete export with different bytes.
 
+The package root also exports `saveFileStreamVerbatim`, `readFileStreamVerbatim`, `storedFilePath` and `fileLeafName` for compositions that provide an explicit storage home. These helpers preserve the same file format and durability contract. The caller owns authorization, byte and count admission limits, cancellation, root isolation and retention. A stored path is not an authorization token. Consume a read stream completely before claiming that its bytes were verified; objects saved before a later caller transaction fails remain unreferenced until the caller's retention policy removes them.
+
 ### Source map
 
 | File | Role |

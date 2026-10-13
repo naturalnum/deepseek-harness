@@ -1,0 +1,30 @@
+{
+  "name": "@power-evolve/platform",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./package.json": "./package.json",
+    "./cordis.patch.yml": "./cordis.patch.yml"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis-plugin-logger-console": "workspace:~",
+    "@deepseek-ai/dsh-anonymous-user-id": "workspace:*",
+    "@deepseek-ai/dsh-attachment": "workspace:*",
+    "@deepseek-ai/dsh-host-webserver": "workspace:*",
+    "@deepseek-ai/dsh-llm-deepseek": "workspace:*",
+    "@deepseek-ai/dsh-session": "workspace:*",
+    "@deepseek-ai/dsh-session-format": "workspace:*",
+    "@deepseek-ai/dsh-session-persistence": "workspace:*",
+    "@deepseek-ai/dsh-session-query-sqlite": "workspace:*",
+    "@power-evolve/application": "workspace:*",
+    "@power-evolve/connector-runner": "workspace:~",
+    "@power-evolve/contracts": "workspace:~",
+    "zod": "4.4.3"
+  }
+}

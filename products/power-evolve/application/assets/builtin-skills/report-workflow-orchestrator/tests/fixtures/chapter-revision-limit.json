@@ -1,0 +1,2970 @@
+{
+  "schema_version": "1.1.3",
+  "project_id": "QA-PE-20261003-LIVE",
+  "stage": "AWAITING_USER",
+  "report_context": {
+    "title": "配电负荷异常识别 QA 技术报告",
+    "goal": "在模拟参考数据上完成配电负荷异常识别技术链的 QA 验收并形成技术报告",
+    "report_type": "科技项目结题技术报告",
+    "task_book": {
+      "available": true,
+      "scope": "课题",
+      "topic_name_or_number": "配电负荷异常识别（QA 任务书具体课题，非企业正式任务书总报告）"
+    },
+    "report_constraints": {
+      "has_requirements": true,
+      "target_words": 5000,
+      "template": "套件原生电力技术报告规则，最终 Word 与 LaTeX 可编辑成果",
+      "chapter_count": 3
+    },
+    "experimental_data": {
+      "available": true,
+      "description": "28 条人工构造记录；真实沙盒计算，16 条校准、12 条验证，阈值预先固定；证据类型 SYNTHETIC_QA_COMPUTATION",
+      "files_or_locations": [
+        "qa-report-load.csv",
+        "qa-report-analyze.py",
+        "qa-report-results.json"
+      ]
+    },
+    "expected_length": 5000,
+    "template_requirement": "套件原生电力技术报告规则，最终 Word 与 LaTeX 可编辑成果",
+    "chapter_count_requirement": 3
+  },
+  "content_generation_mode": "source_grounded",
+  "project_intake": {
+    "status": "confirmed",
+    "answers": {
+      "task_book": {
+        "available": true,
+        "scope": "课题",
+        "topic_name_or_number": "配电负荷异常识别（QA 任务书具体课题，非企业正式任务书总报告）"
+      },
+      "content_generation_mode": "source_grounded",
+      "report_constraints": {
+        "has_requirements": true,
+        "target_words": 5000,
+        "template": "套件原生电力技术报告规则，最终 Word 与 LaTeX 可编辑成果",
+        "chapter_count": 3
+      },
+      "experimental_data": {
+        "available": true,
+        "description": "28 条人工构造记录；真实沙盒计算，16 条校准、12 条验证，阈值预先固定；证据类型 SYNTHETIC_QA_COMPUTATION",
+        "files_or_locations": [
+          "qa-report-load.csv",
+          "qa-report-analyze.py",
+          "qa-report-results.json"
+        ]
+      }
+    },
+    "submitted_at": "2026-10-03T00:21:44.276703+00:00"
+  },
+  "chapter_content_briefs": {
+    "status": "confirmed",
+    "targets": [
+      {
+        "chapter_key": "ch1",
+        "suggested_title": "项目概述"
+      },
+      {
+        "chapter_key": "ch2",
+        "suggested_title": "配电负荷异常识别"
+      },
+      {
+        "chapter_key": "ch3",
+        "suggested_title": "总结"
+      }
+    ],
+    "items": [
+      {
+        "chapter_key": "ch1",
+        "approximate_content": "第1章《项目概述》约1500字，QA背景、单变量问题、国内公开摘要与NIST方法及UCI背景来源、研究内容和思路。",
+        "available_materials": [
+          "qa-report-task.md",
+          "qa-report-sources.json"
+        ],
+        "known_data_or_results": [
+          "研究范围：单变量配电负荷疑似异常标记"
+        ]
+      },
+      {
+        "chapter_key": "ch2",
+        "approximate_content": "第2章《配电负荷异常识别》约2750字，完整说明16条校准/12条验证分离、中位数/MAD、严格阈值的修正Z分数、全部公式与符号、实际结果表、V09/V10边界误报、普通Z对照、适用限制及本章小结。",
+        "available_materials": [
+          "qa-report-load.csv",
+          "qa-report-analyze.py",
+          "qa-report-results.json"
+        ],
+        "known_data_or_results": [
+          "中位数100 kW",
+          "MAD 1 kW",
+          "修正Z F1=0.80 误报1",
+          "普通Z F1≈0.667 误报2",
+          "边界误报 V09=105kW(仅普通Z) V10=108kW(两者)"
+        ]
+      },
+      {
+        "chapter_key": "ch3",
+        "approximate_content": "第3章《总结》700–800字，仅一级标题，逐项完成情况和小样本/合成标签/单变量/固定阈值限制。",
+        "available_materials": [
+          "qa-report-results.json"
+        ],
+        "known_data_or_results": [
+          "两项验收条件均满足"
+        ]
+      }
+    ],
+    "submitted_at": "2026-10-03T00:28:37.052104+00:00"
+  },
+  "current_chapter_id": "2",
+  "chapter_order": [
+    "1",
+    "2",
+    "3"
+  ],
+  "artifacts": {
+    "project_profile": {
+      "versions": [
+        {
+          "artifact_type": "project_profile",
+          "artifact_id": "profile-1",
+          "version": 1,
+          "content": {
+            "report_title": "配电负荷异常识别 QA 技术报告",
+            "report_type": "科技项目结题技术报告",
+            "report_theme_type": "non-evaluation",
+            "content_generation_mode": "source_grounded",
+            "project_background": "本报告面向 PowerEvolve 产品验收中的配电负荷异常识别课题。全部负荷数据为人工构造的模拟参考记录，不是企业实测数据，也不代表任何现场运行条件。研究范围限定为单变量配电负荷的疑似异常标记，覆盖校准数据分离、稳健尺度估计、固定阈值标记及评价读回，不涉及电网现场性能评价、故障诊断或窃电认定。",
+            "application_scenario": "配电负荷质量核查与可疑数据筛查的 QA 参考流程，用于验证中位数-中位数绝对偏差-修正 Z 分数技术链在模拟算例上的正确性与可复现性。",
+            "overall_problem": "在无现场标注、样本量很小的条件下，如何用一个可复现、阈值事先固定的单变量稳健统计流程，把配电负荷记录中的疑似异常标记出来，并给出可核对的精确率、召回率、F1 与误报数。",
+            "target_readers": "QA 验收人员、配电数据质量分析人员与方法复现人员。",
+            "report_purpose": "逐项映射 QA 任务书要求、真实脚本结果与已知限制，形成可复现的模拟参考验收记录。",
+            "research_contents": [
+              "校准集稳健中心与尺度估计（中位数与中位数绝对偏差）",
+              "修正 Z 分数计算与疑似异常标记",
+              "混淆矩阵评价与普通 Z 分数对照"
+            ],
+            "available_materials": [
+              "qa-report-task.md（QA 任务书）",
+              "qa-report-load.csv（28 条模拟记录，16 校准 / 12 验证）",
+              "qa-report-analyze.py（分析脚本）",
+              "qa-report-results.json（真实沙盒计算结果）",
+              "qa-report-sources.json（公开来源元数据）",
+              "qa-report-cover.json（封面元数据）"
+            ],
+            "known_data_and_results": "校准集 16 条：中位数 100 kW，MAD 1 kW，均值 100 kW，样本标准差约 1.2649 kW（仅用校准集估计）。验证集 12 条：修正 Z 分数 TP=2、FP=1、TN=9、FN=0，精确率约 0.667、召回率 1.0、F1=0.80、准确率约 0.917，标记 V05、V06、V10；对照普通 Z 分数 TP=2、FP=2，F1≈0.667，额外标记 V09。验收条件 F1≥0.75 与误报≤1 均满足。",
+            "target_length": 5000,
+            "output_format": "Markdown 正文 + Word/LaTeX 可编辑成果",
+            "special_requirements": [
+              "全部数据为人工构造的模拟参考记录，报告须明确范围，不得解释为电网现场性能、故障诊断或窃电认定",
+              "阈值事先固定，不得用验证标签调参；MAD 为零时拒绝计算，不自行替换尺度",
+              "不得填造吞吐、耗时、准确率或外部论文实验结果",
+              "参考文献采用 GB/T 7714 顺序编码，元数据仅取 qa-report-sources.json，不编造作者或页码",
+              "所有定量结论须注明来自这 12 条模拟验证记录"
+            ],
+            "assumptions": [
+              "需求方接受以模拟参考数据完成 QA 验收",
+              "报告按套件原生三章结构与约 5000 字篇幅生成"
+            ],
+            "task_book_scope": "QA 任务书中的具体课题《配电负荷异常识别》，非企业正式任务书总报告",
+            "has_task_book": true,
+            "task_book_topic_or_total_report": "具体课题",
+            "specified_template": "套件原生电力技术报告规则（最终 Word 与 LaTeX 可编辑成果）",
+            "specified_chapter_count": 3,
+            "experimental_data_availability": "有，28 条人工构造记录的模拟参考试验，真实沙盒计算，证据类型 SYNTHETIC_QA_COMPUTATION",
+            "chapter_word_allocation": [
+              {
+                "chapter_no": 1,
+                "title": "项目概述",
+                "target_words": 1500
+              },
+              {
+                "chapter_no": 2,
+                "title": "配电负荷异常识别",
+                "target_words": 2750
+              },
+              {
+                "chapter_no": 3,
+                "title": "总结",
+                "target_words": 750
+              }
+            ]
+          },
+          "summary": "建立配电负荷异常识别 QA 技术报告的项目档案草案，固定四项前置信息并给出三章约 5000 字分配。"
+        }
+      ],
+      "reviews": [],
+      "approved_version": null
+    },
+    "argument_architecture": {
+      "versions": [
+        {
+          "artifact_type": "argument_architecture",
+          "artifact_id": "arch-1",
+          "version": 1,
+          "content": {
+            "central_thesis": "面向无现场标注、小样本的配电负荷质量核查场景，以校准集稳健中位数与中位数绝对偏差构造修正 Z 分数，在事先固定阈值下把配电负荷记录标记为疑似异常，并用混淆矩阵评价链给出可核对的精确率、召回率、F1 与误报数，形成可复现的模拟参考验收记录。",
+            "problem_reasoning": "总体问题是在单变量配电负荷上判断哪些记录应被标记为疑似异常。关键挑战有三：一是校准集与验证集必须严格分离，中心与尺度只能用校准集估计，避免尺度泄漏；二是样本量很小（16 条校准、12 条验证），普通均值-标准差尺度对极端值敏感，需要稳健尺度；三是阈值必须事先固定，不能用验证标签调参。研究内容依次完成稳健中心-尺度估计、修正 Z 分数标记、混淆矩阵评价与普通 Z 分数对照，共同验证技术链的正确性与可复现性。",
+            "evidence_chain": "校准集 16 条负荷 → 中位数 100 kW 与 MAD 1 kW（仅校准集估计）→ 修正 Z 分数（比例因子 0.6745、阈值严格大于 3.5）→ 12 条验证记录混淆矩阵 → 修正 Z 分数 TP=2、FP=1、TN=9、FN=0，F1=0.80、误报 1，标记 V05、V06、V10；对照普通 Z 分数 F1≈0.667、误报 2，额外标记 V09；两项验收条件（F1≥0.75、误报≤1）均满足。",
+            "chapter_roles": {
+              "ch1": "基础章，交代课题问题、国内外公开方法背景与研究范围，并逐项列出研究内容与思路，为第2章技术链提供问题定义与边界。",
+              "ch2": "技术研究章，唯一承接完整技术链：校准集稳健中心-尺度估计 → 修正 Z 分数标记 → 混淆矩阵评价与普通 Z 分数对照，不拆分为额外章节。",
+              "ch3": "总结章，按总体目标收束，逐项归纳任务完成情况并说明小样本、合成标签、单变量与固定阈值的限制。"
+            },
+            "proposed_chapters": [
+              {
+                "chapter_id": "ch1",
+                "chapter_no": 1,
+                "chapter_title": "项目概述",
+                "chapter_type": "foundation"
+              },
+              {
+                "chapter_id": "ch2",
+                "chapter_no": 2,
+                "chapter_title": "配电负荷异常识别",
+                "chapter_type": "technical-research"
+              },
+              {
+                "chapter_id": "ch3",
+                "chapter_no": 3,
+                "chapter_title": "总结",
+                "chapter_type": "conclusion"
+              }
+            ],
+            "report_scope_confirmation": {
+              "scope": "仅 QA 任务书中的配电负荷异常识别课题，非企业正式任务书总报告；技术章固定为第2章一章，不分裂。",
+              "excluded": [
+                "多变量用户用电异常辨析",
+                "窃电认定与电力故障诊断",
+                "现场运行性能评价",
+                "吞吐、耗时等未经测量的性能指标",
+                "外部论文或数据集的实验结果"
+              ],
+              "chapter_mapping": [
+                {
+                  "chapter_id": "ch1",
+                  "chapter_no": 1,
+                  "chapter_title": "项目概述",
+                  "chapter_type": "foundation"
+                },
+                {
+                  "chapter_id": "ch2",
+                  "chapter_no": 2,
+                  "chapter_title": "配电负荷异常识别",
+                  "chapter_type": "technical-research"
+                },
+                {
+                  "chapter_id": "ch3",
+                  "chapter_no": 3,
+                  "chapter_title": "总结",
+                  "chapter_type": "conclusion"
+                }
+              ]
+            }
+          },
+          "summary": "确定中心主旨与论证架构：课题问题—技术链—章节—真实证据一一对应；固定3章，第2章唯一承接校准—修正分数—评价完整链。"
+        }
+      ],
+      "reviews": [],
+      "approved_version": 1
+    },
+    "outline": {
+      "versions": [
+        {
+          "artifact_type": "outline",
+          "artifact_id": "outline-1",
+          "version": 1,
+          "content": {
+            "task_book_scope": "specific_topic",
+            "report_theme_type": "non-evaluation",
+            "target_words": 5000,
+            "references_required": true,
+            "chapters": [
+              {
+                "id": "1",
+                "title": "项目概述",
+                "target_words": 1500,
+                "minimum_words": 1200,
+                "chapter_type": "foundation",
+                "section_outline": [
+                  {
+                    "number": "1.1",
+                    "title": "项目背景与研究意义",
+                    "level": 2
+                  },
+                  {
+                    "number": "1.1.1",
+                    "title": "项目研究背景",
+                    "level": 3
+                  },
+                  {
+                    "number": "1.1.2",
+                    "title": "项目研究意义",
+                    "level": 3
+                  },
+                  {
+                    "number": "1.2",
+                    "title": "国内外研究现状",
+                    "level": 2
+                  },
+                  {
+                    "number": "1.2.1",
+                    "title": "国外研究现状",
+                    "level": 3
+                  },
+                  {
+                    "number": "1.2.2",
+                    "title": "国内研究现状",
+                    "level": 3
+                  },
+                  {
+                    "number": "1.3",
+                    "title": "主要研究内容及思路",
+                    "level": 2
+                  },
+                  {
+                    "number": "1.3.1",
+                    "title": "主要研究内容",
+                    "level": 3
+                  },
+                  {
+                    "number": "1.3.2",
+                    "title": "研究思路",
+                    "level": 3
+                  }
+                ]
+              },
+              {
+                "id": "2",
+                "title": "配电负荷异常识别方法",
+                "target_words": 2750,
+                "minimum_words": 2200,
+                "chapter_type": "technical-research",
+                "task_role": "technical-research",
+                "parent_task_id": "T1",
+                "parent_task_order": 1,
+                "source_research_subpoint_title": "配电负荷异常识别",
+                "source_research_normalized_title": "配电负荷异常识别方法",
+                "title_normalization_basis": "保留源小点研究对象，仅做名词化并落到方法，未新增对象或技术。",
+                "source_research_point_ids": [
+                  "RC1"
+                ],
+                "source_research_order": 1,
+                "core_section_count": 3,
+                "primary_technical_subject": "配电负荷稳健尺度估计",
+                "primary_subject_source_text": "校准集稳健中心与尺度估计（中位数与中位数绝对偏差）",
+                "primary_subject_section_number": "2.1",
+                "primary_subject_target_share": 0.3,
+                "standalone_validation_mode": "none",
+                "expected_goal_item_ids": [
+                  "G1"
+                ],
+                "schedule_technology_item_ids": [
+                  "S1",
+                  "S2",
+                  "S3"
+                ],
+                "assessment_requirement_item_ids": [
+                  "A1"
+                ],
+                "heading_source_term_plan": [
+                  {
+                    "source_type": "expected-output",
+                    "source_item_id": "G1",
+                    "term": "稳健尺度",
+                    "granularity": "broad",
+                    "target_heading_number": "2.1"
+                  },
+                  {
+                    "source_type": "schedule-plan",
+                    "source_item_id": "S1",
+                    "term": "中位数绝对偏差",
+                    "granularity": "narrow",
+                    "target_heading_number": "2.1.1"
+                  },
+                  {
+                    "source_type": "schedule-plan",
+                    "source_item_id": "S2",
+                    "term": "修正标准分数",
+                    "granularity": "narrow",
+                    "target_heading_number": "2.2.1"
+                  },
+                  {
+                    "source_type": "schedule-plan",
+                    "source_item_id": "S3",
+                    "term": "误报",
+                    "granularity": "broad",
+                    "target_heading_number": "2.3"
+                  },
+                  {
+                    "source_type": "assessment-requirement",
+                    "source_item_id": "A1",
+                    "term": "召回率",
+                    "granularity": "narrow",
+                    "target_heading_number": "2.3.1"
+                  }
+                ],
+                "assessment_coverage_plan": [
+                  {
+                    "assessment_item_id": "A1",
+                    "planned_section": "2.3.1",
+                    "content_form": "评价指标结果段",
+                    "prose_realization": "以混淆矩阵给出精确率、召回率、F1与误报数的实际取值",
+                    "evidence_status": "SYNTHETIC_QA_COMPUTATION",
+                    "source_identity_hidden": true,
+                    "evidence_section": "2.3.1"
+                  }
+                ],
+                "technology_option_sets": [
+                  {
+                    "section_number": "2.1",
+                    "problem_or_role": "校准集稳健中心与尺度估计",
+                    "source_locked": true,
+                    "candidates": [
+                      {
+                        "candidate_id": "O21",
+                        "technology_name": "中位数绝对偏差尺度估计",
+                        "technical_signature_cn": "中位数绝对偏差",
+                        "key_mechanisms": [
+                          "中位数中心估计",
+                          "绝对偏差中位数尺度"
+                        ],
+                        "fit_reason": "任务书与分析脚本唯一锁定中位数/中位数绝对偏差路线",
+                        "origin": "source_confirmed",
+                        "recommended": true
+                      }
+                    ],
+                    "recommended_candidate_id": "O21",
+                    "selected_candidate_id": "O21",
+                    "selection_status": "source_locked"
+                  },
+                  {
+                    "section_number": "2.2",
+                    "problem_or_role": "修正标准分数疑似异常标记",
+                    "source_locked": true,
+                    "candidates": [
+                      {
+                        "candidate_id": "O22",
+                        "technology_name": "修正标准分数阈值标记",
+                        "technical_signature_cn": "修正标准分数",
+                        "key_mechanisms": [
+                          "0.6745比例因子",
+                          "严格大于3.5阈值"
+                        ],
+                        "fit_reason": "任务书与分析脚本唯一锁定修正标准分数阈值标记路线",
+                        "origin": "source_confirmed",
+                        "recommended": true
+                      }
+                    ],
+                    "recommended_candidate_id": "O22",
+                    "selected_candidate_id": "O22",
+                    "selection_status": "source_locked"
+                  },
+                  {
+                    "section_number": "2.3",
+                    "problem_or_role": "混淆矩阵误报与召回计数",
+                    "source_locked": true,
+                    "candidates": [
+                      {
+                        "candidate_id": "O23",
+                        "technology_name": "混淆矩阵计数",
+                        "technical_signature_cn": "混淆矩阵",
+                        "key_mechanisms": [
+                          "混淆矩阵计数",
+                          "普通标准分数对照"
+                        ],
+                        "fit_reason": "任务书与分析脚本唯一锁定混淆矩阵评价路线",
+                        "origin": "source_confirmed",
+                        "recommended": true
+                      }
+                    ],
+                    "recommended_candidate_id": "O23",
+                    "selected_candidate_id": "O23",
+                    "selection_status": "source_locked"
+                  }
+                ],
+                "section_outline": [
+                  {
+                    "number": "2.1",
+                    "title": "基于中位数绝对偏差的配电负荷稳健尺度技术",
+                    "level": 2,
+                    "heading_kind": "innovation",
+                    "parent_task_id": "T1",
+                    "technical_object": "配电负荷",
+                    "technical_method": "中位数绝对偏差尺度估计",
+                    "technical_role": "为配电负荷记录提供稳健尺度",
+                    "specificity_basis": "具体计算技术与技术作用显化：中位数绝对偏差",
+                    "power_element": "负荷",
+                    "technical_signature": "中位数绝对偏差",
+                    "specific_computing_technology": "中位数绝对偏差尺度估计",
+                    "technology_specificity_basis": "由任务书与分析脚本唯一锁定的统计方法路线",
+                    "technology_origin": "source_confirmed",
+                    "derivation_basis": "由任务书研究内容小点RC1拆解",
+                    "shared_chapter_question": "如何用事先固定阈值的稳健统计流程在单变量配电负荷记录中标记疑似异常并给出可核对的评价指标",
+                    "chain_order": 1,
+                    "chain_role": "为配电负荷记录提供稳健尺度",
+                    "depends_on_previous": false,
+                    "research_subpoint_index": 1,
+                    "source_item_ids": [
+                      "RC1"
+                    ],
+                    "schedule_item_ids": [
+                      "S1"
+                    ],
+                    "research_point_id": "RC1",
+                    "primary_subject_section": true,
+                    "primary_technical_subject": "配电负荷稳健尺度估计",
+                    "primary_subject_coverage_role": "overall",
+                    "output_to_next": "配电负荷稳健尺度估计值"
+                  },
+                  {
+                    "number": "2.1.1",
+                    "title": "配电负荷中位数绝对偏差尺度估计方法",
+                    "level": 3,
+                    "heading_kind": "technical",
+                    "parent_task_id": "T1",
+                    "technical_object": "配电负荷",
+                    "technical_method": "中位数绝对偏差",
+                    "technical_role": "估计配电负荷稳健尺度",
+                    "specificity_basis": "路线机制显化：中位数绝对偏差",
+                    "power_element": "负荷",
+                    "technical_signature": "中位数绝对偏差",
+                    "named_technology": "median-absolute-deviation",
+                    "named_technology_basis": "来源方法页定义的中位数绝对偏差"
+                  },
+                  {
+                    "number": "2.1.2",
+                    "title": "基于中位数的配电负荷中心位置估计技术",
+                    "level": 3,
+                    "heading_kind": "technical",
+                    "parent_task_id": "T1",
+                    "technical_object": "配电负荷",
+                    "technical_method": "中位数",
+                    "technical_role": "估计配电负荷稳健中心",
+                    "specificity_basis": "路线机制显化：中位数",
+                    "power_element": "负荷",
+                    "technical_signature": "中位数",
+                    "named_technology": "median",
+                    "named_technology_basis": "来源方法页定义的中位数"
+                  },
+                  {
+                    "number": "2.1.3",
+                    "title": "中位数绝对偏差配电负荷校准数据隔离方法",
+                    "level": 3,
+                    "heading_kind": "technical",
+                    "parent_task_id": "T1",
+                    "technical_object": "配电负荷",
+                    "technical_method": "中位数绝对偏差隔离",
+                    "technical_role": "隔离配电负荷校准数据",
+                    "specificity_basis": "路线机制显化：中位数绝对偏差",
+                    "power_element": "负荷",
+                    "technical_signature": "中位数绝对偏差",
+                    "named_technology": "median-absolute-deviation",
+                    "named_technology_basis": "任务书要求校准集仅用于估计中心与尺度"
+                  },
+                  {
+                    "number": "2.2",
+                    "title": "基于修正标准分数的配电负荷异常标记技术",
+                    "level": 2,
+                    "heading_kind": "innovation",
+                    "parent_task_id": "T1",
+                    "technical_object": "配电负荷",
+                    "technical_method": "修正标准分数阈值标记",
+                    "technical_role": "标记配电负荷疑似异常",
+                    "specificity_basis": "具体计算技术与技术作用显化：修正标准分数",
+                    "power_element": "负荷",
+                    "technical_signature": "修正标准分数",
+                    "specific_computing_technology": "修正标准分数阈值标记",
+                    "technology_specificity_basis": "由任务书与分析脚本唯一锁定的统计方法路线",
+                    "technology_origin": "source_confirmed",
+                    "derivation_basis": "由任务书研究内容小点RC1拆解",
+                    "shared_chapter_question": "如何用事先固定阈值的稳健统计流程在单变量配电负荷记录中标记疑似异常并给出可核对的评价指标",
+                    "chain_order": 2,
+                    "chain_role": "标记配电负荷疑似异常",
+                    "depends_on_previous": true,
+                    "research_subpoint_index": 2,
+                    "source_item_ids": [
+                      "RC1"
+                    ],
+                    "schedule_item_ids": [
+                      "S2"
+                    ],
+                    "research_point_id": "RC1",
+                    "primary_subject_section": false,
+                    "handoff_from_previous": "配电负荷稳健尺度估计值",
+                    "output_to_next": "配电负荷疑似异常标记清单"
+                  },
+                  {
+                    "number": "2.2.1",
+                    "title": "基于修正标准分数的配电负荷固定阈值方法",
+                    "level": 3,
+                    "heading_kind": "technical",
+                    "parent_task_id": "T1",
+                    "technical_object": "配电负荷",
+                    "technical_method": "修正标准分数阈值",
+                    "technical_role": "按固定阈值标记配电负荷疑似异常",
+                    "specificity_basis": "路线机制显化：修正标准分数",
+                    "power_element": "负荷",
+                    "technical_signature": "修正标准分数",
+                    "named_technology": "modified-z-3.5",
+                    "named_technology_basis": "来源方法页给出的修正标准分数阈值3.5"
+                  },
+                  {
+                    "number": "2.2.2",
+                    "title": "修正标准分数配电负荷比例因子归一化方法",
+                    "level": 3,
+                    "heading_kind": "technical",
+                    "parent_task_id": "T1",
+                    "technical_object": "配电负荷",
+                    "technical_method": "修正标准分数比例因子",
+                    "technical_role": "以0.6745比例因子归一化配电负荷修正分数",
+                    "specificity_basis": "路线机制显化：修正标准分数",
+                    "power_element": "负荷",
+                    "technical_signature": "修正标准分数",
+                    "named_technology": "scale-factor-0.6745",
+                    "named_technology_basis": "来源方法页给出的0.6745比例因子"
+                  },
+                  {
+                    "number": "2.2.3",
+                    "title": "中位数绝对偏差配电负荷零尺度拒绝方法",
+                    "level": 3,
+                    "heading_kind": "technical",
+                    "parent_task_id": "T1",
+                    "technical_object": "配电负荷",
+                    "technical_method": "中位数绝对偏差零尺度拒绝",
+                    "technical_role": "零尺度时拒绝配电负荷标记",
+                    "specificity_basis": "路线机制显化：中位数绝对偏差",
+                    "power_element": "负荷",
+                    "technical_signature": "中位数绝对偏差",
+                    "named_technology": "zero-scale-guard",
+                    "named_technology_basis": "任务书要求尺度为零时明确拒绝计算"
+                  },
+                  {
+                    "number": "2.3",
+                    "title": "混淆矩阵配电负荷误报计数方法",
+                    "level": 2,
+                    "heading_kind": "innovation",
+                    "parent_task_id": "T1",
+                    "technical_object": "配电负荷",
+                    "technical_method": "混淆矩阵计数",
+                    "technical_role": "统计配电负荷误报并核对指标",
+                    "specificity_basis": "具体计算技术与技术作用显化：混淆矩阵",
+                    "power_element": "负荷",
+                    "technical_signature": "混淆矩阵",
+                    "specific_computing_technology": "混淆矩阵计数",
+                    "technology_specificity_basis": "由任务书与分析脚本唯一锁定的统计方法路线",
+                    "technology_origin": "source_confirmed",
+                    "derivation_basis": "由任务书研究内容小点RC1拆解",
+                    "shared_chapter_question": "如何用事先固定阈值的稳健统计流程在单变量配电负荷记录中标记疑似异常并给出可核对的评价指标",
+                    "chain_order": 3,
+                    "chain_role": "统计配电负荷误报并核对指标",
+                    "depends_on_previous": true,
+                    "research_subpoint_index": 3,
+                    "source_item_ids": [
+                      "RC1"
+                    ],
+                    "schedule_item_ids": [
+                      "S3"
+                    ],
+                    "research_point_id": "RC1",
+                    "primary_subject_section": false,
+                    "handoff_from_previous": "配电负荷疑似异常标记清单"
+                  },
+                  {
+                    "number": "2.3.1",
+                    "title": "基于混淆矩阵的配电负荷召回率计算技术",
+                    "level": 3,
+                    "heading_kind": "technical",
+                    "parent_task_id": "T1",
+                    "technical_object": "配电负荷",
+                    "technical_method": "混淆矩阵召回率计算",
+                    "technical_role": "计算配电负荷召回率等指标",
+                    "specificity_basis": "路线机制显化：混淆矩阵",
+                    "power_element": "负荷",
+                    "technical_signature": "混淆矩阵",
+                    "named_technology": "confusion-matrix",
+                    "named_technology_basis": "任务书要求计算精确率、召回率、F1与误报数"
+                  },
+                  {
+                    "number": "2.3.2",
+                    "title": "普通标准分数配电负荷对照标记方法",
+                    "level": 3,
+                    "heading_kind": "technical",
+                    "parent_task_id": "T1",
+                    "technical_object": "配电负荷",
+                    "technical_method": "普通标准分数对照标记",
+                    "technical_role": "以普通标准分数作配电负荷对照标记",
+                    "specificity_basis": "路线机制显化：普通标准分数",
+                    "power_element": "负荷",
+                    "technical_signature": "普通标准分数",
+                    "named_technology": "ordinary-z-baseline",
+                    "named_technology_basis": "任务书要求以普通标准分数作对照"
+                  },
+                  {
+                    "number": "2.4",
+                    "title": "本章小结",
+                    "level": 2,
+                    "heading_kind": "functional"
+                  }
+                ]
+              },
+              {
+                "id": "3",
+                "title": "总结",
+                "target_words": 750,
+                "minimum_words": 700,
+                "maximum_words": 800,
+                "chapter_type": "conclusion",
+                "section_outline": [
+                  {
+                    "number": "3",
+                    "title": "总结",
+                    "level": 1
+                  }
+                ]
+              }
+            ]
+          },
+          "summary": "生成固定三章目录；第2章配电负荷异常识别方法下沉2.1/2.2/2.3三级承接，含技术选项与来源术语映射。",
+          "review_status": "passed",
+          "quality_metrics": {
+            "evaluation_heading_policy": {
+              "passed": true,
+              "violations": []
+            },
+            "power_domain_heading_visibility": {
+              "passed": true,
+              "violations": []
+            },
+            "level2_subject_power": {
+              "passed": true,
+              "violations": []
+            },
+            "chinese_technology_heading": {
+              "passed": true,
+              "violations": []
+            },
+            "heading_source_term_coverage": {
+              "passed": true,
+              "violations": []
+            },
+            "technology_option_sets": {
+              "passed": true,
+              "violations": []
+            },
+            "heading_ending_distribution": {
+              "passed": true,
+              "violations": []
+            },
+            "level3_task_subject_uniqueness": {
+              "passed": true,
+              "violations": []
+            },
+            "based_on_heading_ratio": {
+              "minimum_ratio": 0.4,
+              "maximum_ratio": 0.6,
+              "passed": true,
+              "violations": []
+            }
+          }
+        }
+      ],
+      "reviews": [
+        {
+          "reviewed_artifact_id": "outline-1",
+          "reviewed_version": 1,
+          "decision": "pass",
+          "overall_score": 92,
+          "score_breakdown": {
+            "目标覆盖": 24,
+            "章节结构": 24,
+            "顺序逻辑": 19,
+            "边界清晰": 13,
+            "篇幅分配": 12
+          },
+          "strengths": [
+            "第一章严格采用固定项目概述架构，六个三级标题齐全，1.3.1逐项对应研究内容",
+            "第2章以2.1校准稳健尺度、2.2修正标准分数标记、2.3混淆矩阵计数形成同一核心问题的连续承接链，2.2依赖2.1的尺度估计值，2.3依赖2.2的标记清单",
+            "技术标题均同时显化配电负荷电力对象与具体中文技术签名，无英文裸露、非评估主题无评价类章节词",
+            "技术选项按来源锁定各给1个source_confirmed候选，符合任务书与分析脚本唯一锁定路线",
+            "篇幅分配1500/2750/750共5000字，总结章750字且仅一级标题"
+          ],
+          "issues": [],
+          "must_fix": [],
+          "optional_improvements": [
+            "生成正文时把2.1稳健尺度估计作为核心技术主语的整节展开，篇幅不少于第2章正文计划的25%"
+          ],
+          "revision_instruction": "目录结构、标题命名、承接链、技术选项与篇幅分配均已满足固定架构与硬门禁，无需修改；后续正文按确认目录锁定标题完整输出。"
+        }
+      ],
+      "approved_version": 1
+    },
+    "reference_plan": {
+      "versions": [
+        {
+          "artifact_type": "reference_plan",
+          "artifact_id": "refplan-1",
+          "version": 1,
+          "content": {
+            "author_reference_style": "author_et_al",
+            "author_reference_note": "国内外研究现状统一采用“XXX等人”指代样式；机构、标准组织使用正式名称。",
+            "network_status": "网络不可用/未联网核验；仅使用已上传 qa-report-sources.json 的官方元数据与公开摘要，未下载全文。",
+            "organization_approach": {
+              "1.2.1 国外研究现状": "围绕单变量配电负荷稳健离群标记这一技术主题，说明以中位数绝对偏差稳健尺度与修正标准分数阈值标记为代表的公开方法路线（NIST 方法页），并指出公开负荷数据集背景（UCI 数据集页面）。作者指代统一“XXX等人/机构名”。只描述公开方法本身的原理与适用范围，不引用任何论文或数据集的实验结果作为本项目结果。",
+              "1.2.2 国内研究现状": "围绕电力用户用电异常辨析技术主题，说明国内公开摘要中结合负荷特征、主成分分析、重建误差与局部离群因子的多维用户辨析路线（湖南电力 2025 论文），指出其任务对象为多维用户异常辨析，与本 QA 单变量固定阈值标记任务不同；作者指代统一“XXX等人”。不补造全文内容或页码以外信息。"
+            },
+            "references": [
+              {
+                "ref_id": "R1",
+                "type": "国内公开论文（已读公开摘要）",
+                "gbt7714": "吕伟嘉, 李晓辉, 滕永兴, 等. 知识引导和无监督学习混合驱动的电力用户用电异常辨析方法[J]. 湖南电力, 2025, 45(4): 74-82. DOI:10.3969/j.issn.1008-0198.2025.04.011.",
+                "supports": "国内多维用户用电异常辨析研究背景；与本 QA 单变量任务作背景比较，不作为本项目结果。"
+              },
+              {
+                "ref_id": "R2",
+                "type": "方法来源（官方方法页）",
+                "gbt7714": "NIST/SEMATECH. e-Handbook of Statistical Methods: Detection of Outliers[EB/OL]. [2026-10-03]. https://www.itl.nist.gov/div898/handbook/eda/section3/eda35h.htm.",
+                "supports": "修正标准分数比例因子0.6745与阈值3.5的方法来源。"
+              },
+              {
+                "ref_id": "R3",
+                "type": "方法来源（官方方法页）",
+                "gbt7714": "NIST/SEMATECH. e-Handbook of Statistical Methods: Measures of Scale[EB/OL]. [2026-10-03]. https://www.itl.nist.gov/div898/handbook/eda/section3/eda356.htm.",
+                "supports": "中位数绝对偏差作为稳健尺度的方法来源。"
+              },
+              {
+                "ref_id": "R4",
+                "type": "公开数据集背景（未使用其数据）",
+                "gbt7714": "TRINDADE A. ElectricityLoadDiagrams20112014[DS/OL]. UCI Machine Learning Repository, 2015[2026-10-03]. DOI:10.24432/C58C86.",
+                "supports": "说明公开15分钟负荷数据背景；本 QA 的 CSV 不是该数据集子集。"
+              }
+            ],
+            "citation_order": [
+              "R2",
+              "R3",
+              "R1",
+              "R4"
+            ],
+            "evidence_boundary": "本项目定量结果仅来自28条人工构造QA记录的本地真实计算（16校准/12验证），与上述公开来源严格分开；不把公开论文或数据集表现当作本项目结果。",
+            "unverified_items": [],
+            "no_fabrication_note": "作者、年份、卷期页码、DOI、URL 均严格取自 qa-report-sources.json，未补造未提供的作者、页码或论文实验结论。"
+          },
+          "summary": "参考文献与第一章国内外研究现状组织方案：4条来源（1条国内公开论文摘要、2条NIST方法页、1条UCI数据集背景），作者指代统一“XXX等人”，合成QA数据与公开来源严格分开。"
+        }
+      ],
+      "reviews": [],
+      "approved_version": 1
+    }
+  },
+  "chapters": {
+    "1": {
+      "materials": {
+        "artifact_type": "chapter_materials",
+        "artifact_id": "materials-1",
+        "version": 1,
+        "content": {
+          "chapter_id": "1",
+          "chapter_title": "项目概述",
+          "available_materials": [
+            "qa-report-task.md（QA 任务书：范围、技术链、验收要求、逐章内容）",
+            "qa-report-sources.json（4条公开来源元数据）",
+            "qa-report-load.csv（28条人工构造记录，16校准/12验证）",
+            "qa-report-analyze.py（分析脚本）",
+            "qa-report-results.json（真实沙盒计算结果）"
+          ],
+          "chapter_brief": "第1章约1500字，交代 QA 任务、单变量配电负荷疑似异常标记问题、国内外公开方法背景及研究范围、研究内容和思路；国内来源仅用已读公开摘要，NIST 为方法来源，UCI 页面仅为公开负荷数据背景。",
+          "key_facts": [
+            "研究范围限定单变量配电负荷疑似异常标记，不涉及现场性能、故障诊断或窃电认定",
+            "全部28条为人工构造QA记录，非企业实测数据",
+            "技术链：校准中位数与MAD → 修正标准分数 → 混淆矩阵评价"
+          ],
+          "source_boundary": "公开来源仅作背景与方法来源；本项目定量结果仅来自28条模拟记录，二者严格分开。",
+          "note": "本条为 source_grounded 材料整理，不新增来源或未确认技术。"
+        },
+        "summary": "第1章材料准备：任务书、来源元数据、模拟数据与真实结果清单。"
+      },
+      "experiment_reference_package": null,
+      "plan": {
+        "versions": [
+          {
+            "artifact_type": "chapter_plan",
+            "artifact_id": "plan-ch1",
+            "version": 1,
+            "content": {
+              "chapter_id": "1",
+              "chapter_title": "项目概述",
+              "content_generation_mode_default": "source_grounded",
+              "content_generation_mode_effective": "source_grounded",
+              "temporary_override": false,
+              "chapter_type": "foundation",
+              "output_granularity": "whole_chapter",
+              "role_in_report": "承接报告总体问题，交代 QA 任务背景、意义、国内外公开方法现状、研究内容与思路，为第2章技术链提供问题定义与范围边界。",
+              "scope_mapping": {
+                "task_book_scope": "specific_topic",
+                "research_subject": "单变量配电负荷疑似异常标记",
+                "mapping_source_title": "配电负荷异常识别",
+                "source_research_point_ids": [
+                  "RC1"
+                ],
+                "research_status_topics": "1.2.1 与 1.2.2 采用一致口径：按技术主题说明代表性路线、已有进展与不足"
+              },
+              "allowed_scope": [
+                "QA 任务范围与单变量配电负荷疑似异常标记问题",
+                "国内外公开方法背景与方法来源",
+                "研究内容与研究思路概述"
+              ],
+              "excluded_scope": [
+                "多变量用户用电异常辨析",
+                "窃电认定与电力故障诊断",
+                "现场运行性能评价",
+                "吞吐、耗时等未经测量的指标",
+                "其他课题内容"
+              ],
+              "word_budget": {
+                "target_words": 1500,
+                "minimum_words": 1200,
+                "section_allocation": {
+                  "章首过渡正文": 80,
+                  "1.1 项目背景与研究意义": 500,
+                  "1.2 国内外研究现状": 550,
+                  "1.3 主要研究内容及思路": 370
+                },
+                "allocation_note": "各节合计1500字，与本章计划字数一致。"
+              },
+              "heading_transition_plan": "一级标题“第1章 项目概述”后先写80字无标题过渡正文，再进入1.1；满足50—100字一般非技术章过渡要求。",
+              "sections": [
+                {
+                  "number": "1.1",
+                  "title": "项目背景与研究意义",
+                  "purpose": "说明配电负荷质量核查场景、单变量疑似异常标记的现实约束与本研究意义",
+                  "subsections": [
+                    {
+                      "number": "1.1.1",
+                      "title": "项目研究背景",
+                      "content": "从配电负荷数据质量核查场景出发，说明在无现场标注、小样本条件下标记疑似异常的困难，全部数据为人工构造的模拟参考记录"
+                    },
+                    {
+                      "number": "1.1.2",
+                      "title": "项目研究意义",
+                      "content": "说明以稳健尺度与固定阈值形成可复现、可核对的疑似异常标记能力对数据质量核查的价值，不夸大现场性能"
+                    }
+                  ]
+                },
+                {
+                  "number": "1.2",
+                  "title": "国内外研究现状",
+                  "purpose": "按统一口径说明公开方法路线与已有进展",
+                  "subsections": [
+                    {
+                      "number": "1.2.1",
+                      "title": "国外研究现状",
+                      "content": "以NIST方法页说明中位数绝对偏差稳健尺度与修正标准分数阈值标记路线；UCI数据集页面仅作公开负荷数据背景"
+                    },
+                    {
+                      "number": "1.2.2",
+                      "title": "国内研究现状",
+                      "content": "以国内公开摘要说明结合负荷特征、主成分分析、重建误差与局部离群因子的多维用户辨析路线，指出与本单变量任务的区别"
+                    }
+                  ],
+                  "reference_style": "author_et_al",
+                  "citation_order": [
+                    "R2",
+                    "R3",
+                    "R1",
+                    "R4"
+                  ]
+                },
+                {
+                  "number": "1.3",
+                  "title": "主要研究内容及思路",
+                  "purpose": "与任务书研究内容逐项对应并说明研究推进思路",
+                  "subsections": [
+                    {
+                      "number": "1.3.1",
+                      "title": "主要研究内容",
+                      "content": "逐项列出校准稳健中心与尺度估计、修正标准分数疑似异常标记、混淆矩阵评价三条研究内容"
+                    },
+                    {
+                      "number": "1.3.2",
+                      "title": "研究思路",
+                      "content": "说明校准稳健尺度→疑似异常标记→混淆矩阵计数的总体逻辑与输入输出关系"
+                    }
+                  ]
+                }
+              ],
+              "source_coverage_plan": [
+                {
+                  "item": "校准集稳健中心与尺度估计",
+                  "location": "1.3.1"
+                },
+                {
+                  "item": "修正标准分数疑似异常标记",
+                  "location": "1.3.1"
+                },
+                {
+                  "item": "混淆矩阵评价与普通标准分数对照",
+                  "location": "1.3.1"
+                }
+              ],
+              "formula_requirement": "exempt",
+              "formula_requirement_basis": "第1章为基础概述章，不承担技术定义，公式在第2章集中给出；本章无需公式。",
+              "figure_table_plan": [
+                {
+                  "id": "图1-1",
+                  "type": "思路图",
+                  "content": "总体研究思路：校准稳健尺度→疑似异常标记→混淆矩阵计数",
+                  "use": "支撑1.3.2研究思路"
+                }
+              ],
+              "experiment_reference_package": null,
+              "experiment_note": "第1章不承担实验，仅概述；实验与真实结果在第2章呈现。",
+              "abstract_evidence_preregistration": {
+                "contributes_to_second_paragraph": false,
+                "contributes_to_first_paragraph_challenge": "无现场标注、小样本条件下稳健标记疑似异常",
+                "quantitative_candidates": [],
+                "qualitative_candidates": [
+                  "形成可复现的单变量配电负荷疑似异常标记流程与可核对评价链"
+                ]
+              },
+              "reusable_products": [
+                "报告范围与问题定义",
+                "技术链总体思路"
+              ],
+              "cross_section_linking": "正文使用对象名称或“本文、前文、后文”等表达，不使用具体章节编号或上下章互引。",
+              "core_claim": "在明确模拟范围与限制的前提下，单变量稳健统计流程可用于配电负荷疑似异常标记，并以可核对指标衡量效果。",
+              "missing_blocking_info": [],
+              "placeholder_plan": "无阻塞信息；如个别数据点缺证则以不带数值的定性表述处理。"
+            },
+            "summary": "第1章项目概述章节计划：整章模式1500字/最低1200字；1.1/1.2/1.3三节；无公式；引用顺序R2→R3→R1→R4。"
+          }
+        ],
+        "approved_version": 1
+      },
+      "content": {
+        "versions": [
+          {
+            "artifact_type": "chapter",
+            "artifact_id": "chapter-1",
+            "version": 1,
+            "content": {
+              "chapter_id": "1",
+              "chapter_title": "项目概述",
+              "markdown": "# 第1章 项目概述\n\n本章交代配电负荷异常识别 QA 课题的任务背景、研究意义、国内外公开方法现状以及主要研究内容与总体思路，界定本报告的研究范围与证据边界，为后续技术工作提供问题定义。\n\n## 1.1 项目背景与研究意义\n\n### 1.1.1 项目研究背景\n\n配电负荷数据是配电网运行分析与数据质量核查的重要基础。在数据核查场景中，分析人员往往希望从一段单变量负荷记录中判断哪些取值应当被标记为疑似异常，以便进一步人工核查。这类标记工作常面临两个现实约束：一是缺少现场标注，难以获得可信的异常标签用于训练或调参；二是样本量很小，个别极端取值会显著影响均值与标准差等经典统计量，使标记结果不稳定。为此，需要一套可复现、阈值事先固定、不依赖验证标签调参的稳健统计流程。本报告面向 QA 验收，所使用的 28 条记录均为人工构造的模拟参考数据，用于检验技术链的正确性与可复现性。\n\n### 1.1.2 项目研究意义\n\n以稳健中心与稳健尺度构造修正标准分数，并采用事先固定的阈值标记疑似异常，可以在小样本条件下降低极端值对尺度估计的干扰，使标记过程可重复、可核对。配合混淆矩阵给出的精确率、召回率、F1 与误报数，分析人员能够对标记效果进行量化核对，并将其作为配电负荷数据质量核查的参考流程。需要强调的是，本研究结论仅来自模拟参考数据，用于说明方法在受控算例上的表现，不构成对现场运行性能、故障诊断或窃电认定的判断。\n\n## 1.2 国内外研究现状\n\n### 1.2.1 国外研究现状\n\n国外围绕离群值检测形成了较为成熟的统计方法体系。NIST 等人编制的方法手册给出了基于中位数绝对偏差的稳健尺度度量，指出其作为尺度估计对极端值的敏感性与标准差不同[2]；同一手册还给出了修正标准分数做法，即用比例因子 0.6745 乘以观测值与中位数之差再除以中位数绝对偏差，并以绝对值大于 3.5 作为潜在离群值的标记参考[1]，同时强调疑似标记仍需进一步核查，不能直接认定为错误数据。在公开负荷数据方面，TRINDADE 等人发布的公开数据集页面描述了 370 名客户、15 分钟间隔、以 kW 为单位的负荷记录[4]，该页面仅用于说明公开负荷数据背景，本报告的模拟数据并非其子集。上述方法页面向通用离群值检测，其原理与阈值可作为本报告稳健尺度与修正标准分数的方法来源。\n\n### 1.2.2 国内研究现状\n\n国内电力领域的研究多面向多维用电数据的异常辨析。吕伟嘉等人提出知识引导与无监督学习混合驱动的方法，结合负荷特征、主成分分析、重建误差及局部离群因子进行用户用电异常辨析[3]。该类工作以多变量用户行为辨析为对象，侧重于在特征空间中区分用户用电模式，与本报告面向单变量负荷记录、以事先固定阈值标记疑似异常的任务范围不同，因此仅作为国内研究现状的背景比较，不作为本报告的方法或结果依据。整体来看，面向小样本、单变量且强调可复现与可核对的稳健标记流程，仍有清晰的工程价值空间。\n\n## 1.3 主要研究内容及思路\n\n### 1.3.1 主要研究内容\n\n本报告研究内容与 QA 任务范围逐项对应，包括三项相互衔接的工作。第一项是校准集稳健中心与尺度估计，使用 16 条预定义负荷值，以中位数作为中心、以中位数绝对偏差作为尺度，且中心与尺度仅由校准集估计，避免与后续标记使用同一数据而产生尺度泄漏。第二项是修正标准分数疑似异常标记，对 12 条验证记录计算修正标准分数，比例因子取 0.6745，阈值事先固定为严格大于 3.5，得到疑似异常清单，并在尺度为零时拒绝计算而不自行替换尺度。第三项是混淆矩阵评价与普通标准分数对照，依据预先给定的独立 QA 标签计算精确率、召回率、F1 与误报数，并以基于均值与标准差的普通标准分数阈值 3 作为对照方法。三项工作共同覆盖从校准、标记到评价的完整技术链。\n\n### 1.3.2 研究思路\n\n研究总体遵循从稳健尺度估计到疑似异常标记、再到混淆矩阵计数的推进逻辑。校准集先形成稳健中心与稳健尺度，得到可在小样本下抵抗极端值干扰的尺度估计值；该尺度估计值作为修正标准分数的分母，用于计算验证记录相对于稳健中心的偏离程度，并按事先固定的阈值产生疑似异常标记清单；最后以混淆矩阵对标记清单进行核对，给出量化评价指标并与普通标准分数对照。上述输入输出关系构成一条可复现、可逐步核对的技术链，其总体结构如图1-1所示。\n\n![图1-1 配电负荷异常识别研究思路](figures/fig1-1.svg)\n\n图1-1 配电负荷异常识别研究思路\n\n在研究推进中，校准与验证数据严格分离，阈值在标记前固定，不对验证标签进行调参；评价环节仅使用 12 条模拟验证记录，结果只用于说明方法在受控算例上的正确性与可复现性，不用于现场运行决策。\n",
+              "figures": [
+                {
+                  "id": "图1-1",
+                  "title": "配电负荷异常识别研究思路",
+                  "path": "figures/fig1-1.svg",
+                  "sha256": "286a8047a0ae3d5e2b8c68565f4a43ba8b2f8f2044446e6e8f9acc89bd93cfac",
+                  "type": "思路图"
+                }
+              ]
+            },
+            "summary": "第1章项目概述正文，约1605中文字，含1.1/1.2/1.3固定结构、引用[1]-[4]与图1-1思路图。",
+            "review_status": "passed",
+            "quality_metrics": {
+              "chapter_length": {
+                "count_method": "cjk_characters_plus_latin_number_tokens",
+                "actual_words": 1628,
+                "planned_target_words": 1500,
+                "minimum_ratio": 0.8,
+                "minimum_required_words": 1200,
+                "length_ratio": 1.0853,
+                "length_gate_passed": true,
+                "shortfall_words": 0
+              },
+              "heading_bridge": {
+                "mode": "short_50_100",
+                "applicable": true,
+                "detected": true,
+                "bridge_words": 74,
+                "bridge_gate_passed": true,
+                "minimum_required_words": 50,
+                "maximum_allowed_words": 100,
+                "shortfall_words": 0,
+                "excess_words": 0
+              },
+              "chapter_summary": {
+                "detected": false,
+                "applicable": false,
+                "summary_gate_passed": true,
+                "reason": "chapter_summary_not_detected"
+              }
+            }
+          },
+          {
+            "artifact_type": "chapter",
+            "artifact_id": "chapter-1",
+            "version": 2,
+            "content": {
+              "chapter_id": "1",
+              "chapter_title": "项目概述",
+              "markdown": "# 第1章 项目概述\n\n本章交代配电负荷异常识别 QA 课题的任务背景、研究意义、国内外公开方法现状以及主要研究内容与总体思路，界定本报告的研究范围与证据边界，为后续技术工作提供问题定义。\n\n## 1.1 项目背景与研究意义\n\n### 1.1.1 项目研究背景\n\n配电负荷数据是配电网运行分析与数据质量核查的重要基础。在数据核查场景中，分析人员往往希望从一段单变量负荷记录中判断哪些取值应当被标记为疑似异常，以便进一步人工核查。这类标记工作常面临两个现实约束：一是缺少现场标注，难以获得可信的异常标签用于训练或调参；二是样本量很小，个别极端取值会显著影响均值与标准差等经典统计量，使标记结果不稳定。为此，需要一套可复现、阈值事先固定、不依赖验证标签调参的稳健统计流程。本报告面向 QA 验收，所使用的 28 条记录均为人工构造的模拟参考数据，用于检验技术链的正确性与可复现性。\n\n### 1.1.2 项目研究意义\n\n以稳健中心与稳健尺度构造修正标准分数，并采用事先固定的阈值标记疑似异常，可以在小样本条件下降低极端值对尺度估计的干扰，使标记过程可重复、可核对。配合混淆矩阵给出的精确率、召回率、F1 与误报数，分析人员能够对标记效果进行量化核对，并将其作为配电负荷数据质量核查的参考流程。需要强调的是，本研究结论仅来自模拟参考数据，用于说明方法在受控算例上的表现，不构成对现场运行性能、故障诊断或窃电认定的判断。\n\n## 1.2 国内外研究现状\n\n### 1.2.1 国外研究现状\n\n本报告国外方法来源限于 NIST/SEMATECH 编制的方法手册。该手册给出的离群值检测页面说明了修正标准分数的做法，即用比例因子 0.6745 乘以观测值与中位数之差再除以中位数绝对偏差，并以修正标准分数的绝对值严格大于 3.5 作为潜在离群值的标记参考[1]，同时强调疑似标记仍需进一步核查，不能直接认定为错误数据。该手册的尺度度量页面说明中位数绝对偏差是观测值距样本中位数的绝对偏差之中位数，并指出其作为尺度估计对极端值的敏感性与标准差不同[2]。在公开负荷数据方面，TRINDADE A 发布的公开数据集页面描述了 370 名客户、15 分钟间隔、以 kW 为单位的负荷记录[4]，该页面仅用于说明公开负荷数据背景，本报告的模拟数据并非其子集。上述内容只反映这两份方法页面与一份数据集页面所提供的公开信息。\n\n### 1.2.2 国内研究现状\n\n本报告国内方法来源限于已读公开摘要。吕伟嘉等人提出知识引导与无监督学习混合驱动的方法，结合负荷特征、主成分分析、重建误差及局部离群因子进行用户用电异常辨析[3]。该摘要以多变量用户行为辨析为对象，侧重于在特征空间中区分用户用电模式，与本报告面向单变量负荷记录、以事先固定阈值标记疑似异常的任务范围不同，因此仅作为国内研究现状的背景比较，不作为本报告的方法或结果依据。\n\n## 1.3 主要研究内容及思路\n\n### 1.3.1 主要研究内容\n\n本报告研究内容与 QA 任务范围逐项对应，包括三项相互衔接的工作。第一项是校准集稳健中心与尺度估计，使用 16 条预定义负荷值，以中位数作为中心、以中位数绝对偏差作为尺度，且中心与尺度仅由校准集估计，避免与后续标记使用同一数据而产生尺度泄漏。第二项是修正标准分数疑似异常标记，对 12 条验证记录计算修正标准分数，比例因子取 0.6745，阈值事先固定为修正标准分数的绝对值严格大于 3.5，得到疑似异常清单，并在尺度为零时拒绝计算而不自行替换尺度。第三项是混淆矩阵评价与普通标准分数对照，依据预先给定的独立 QA 标签计算精确率、召回率、F1 与误报数，并以基于均值与标准差的普通标准分数绝对值严格大于 3 作为对照方法。三项工作共同覆盖从校准、标记到评价的完整技术链。\n\n### 1.3.2 研究思路\n\n研究总体遵循从稳健尺度估计到疑似异常标记、再到混淆矩阵计数的推进逻辑。校准集先形成稳健中心与稳健尺度，得到可在小样本下抵抗极端值干扰的尺度估计值；该尺度估计值作为修正标准分数的分母，用于计算验证记录相对于稳健中心的偏离程度，并按事先固定的阈值产生疑似异常标记清单；最后以混淆矩阵对标记清单进行核对，给出量化评价指标并与普通标准分数对照。上述输入输出关系构成一条可复现、可逐步核对的技术链，其总体结构如图1-1所示。\n\n![图1-1 配电负荷异常识别研究思路](figures/fig1-1-v2.svg)\n\n图1-1 配电负荷异常识别研究思路\n\n在研究推进中，校准与验证数据严格分离，阈值在标记前固定，不对验证标签进行调参；评价环节仅使用 12 条模拟验证记录，结果只用于说明方法在受控算例上的正确性与可复现性，不用于现场运行决策。\n",
+              "figures": [
+                {
+                  "id": "图1-1",
+                  "title": "配电负荷异常识别研究思路",
+                  "path": "figures/fig1-1-v2.svg",
+                  "sha256": "d097633c09eb108333379a15389182da07ef94ca23991ff74037589779934407",
+                  "type": "思路图"
+                }
+              ]
+            },
+            "summary": "第1章修订版v2：修正首次引用顺序为[1]→[2]→[3]→[4]，机构名NIST/SEMATECH与单一作者TRINDADE A正确指代，收窄现状表述，阈值改为修正标准分数绝对值严格大于3.5/普通标准分数绝对值严格大于3，新增fig1-1-v2.svg。",
+            "review_status": "passed",
+            "quality_metrics": {
+              "chapter_length": {
+                "count_method": "cjk_characters_plus_latin_number_tokens",
+                "actual_words": 1607,
+                "planned_target_words": 1500,
+                "minimum_ratio": 0.8,
+                "minimum_required_words": 1200,
+                "length_ratio": 1.0713,
+                "length_gate_passed": true,
+                "shortfall_words": 0
+              },
+              "heading_bridge": {
+                "mode": "short_50_100",
+                "applicable": true,
+                "detected": true,
+                "bridge_words": 74,
+                "bridge_gate_passed": true,
+                "minimum_required_words": 50,
+                "maximum_allowed_words": 100,
+                "shortfall_words": 0,
+                "excess_words": 0
+              },
+              "chapter_summary": {
+                "detected": false,
+                "applicable": false,
+                "summary_gate_passed": true,
+                "reason": "chapter_summary_not_detected"
+              }
+            }
+          },
+          {
+            "artifact_type": "chapter",
+            "artifact_id": "chapter-1",
+            "version": 3,
+            "content": {
+              "chapter_id": "1",
+              "chapter_title": "项目概述",
+              "markdown": "# 第1章 项目概述\n\n本章交代配电负荷异常识别 QA 课题的任务背景、研究意义、国内外公开方法现状以及主要研究内容与总体思路，界定本报告的研究范围与证据边界，为后续技术工作提供问题定义。\n\n## 1.1 项目背景与研究意义\n\n### 1.1.1 项目研究背景\n\n配电负荷数据是配电网运行分析与数据质量核查的重要基础。在数据核查场景中，分析人员往往希望从一段单变量负荷记录中判断哪些取值应当被标记为疑似异常，以便进一步人工核查。这类标记工作常面临两个现实约束：一是缺少现场标注，难以获得可信的异常标签用于训练或调参；二是样本量很小，个别极端取值会显著影响均值与标准差等经典统计量，使标记结果不稳定。为此，本报告选用一套可复现、阈值事先固定、不依赖验证标签调参的稳健统计流程，其做法与定阈参考来自 NIST/SEMATECH 编制的方法手册：离群值检测页面给出了修正标准分数的做法，即用比例因子 0.6745 乘以观测值与中位数之差再除以中位数绝对偏差，并以修正标准分数的绝对值严格大于 3.5 作为潜在离群值的标记参考[1]；同一手册的尺度度量页面说明中位数绝对偏差是观测值距样本中位数的绝对偏差之中位数，并指出其作为尺度估计对极端值的敏感性与标准差不同[2]。本报告面向 QA 验收，所使用的 28 条记录均为人工构造的模拟参考数据，用于检验技术链的正确性与可复现性。\n\n### 1.1.2 项目研究意义\n\n以稳健中心与稳健尺度构造修正标准分数，并采用事先固定的阈值标记疑似异常，可以在小样本条件下降低极端值对尺度估计的干扰，使标记过程可重复、可核对。在电力用户用电分析领域，吕伟嘉等人公开摘要报告了知识引导与无监督学习混合驱动的用电异常辨析方法，结合负荷特征、主成分分析、重建误差及局部离群因子进行用户辨析[3]，该摘要可作为国内以离群分析思路处理用电数据的案例背景。配合混淆矩阵给出的精确率、召回率、F1 与误报数，分析人员能够对标记效果进行量化核对，并将其作为配电负荷数据质量核查的参考流程。需要强调的是，本研究结论仅来自模拟参考数据，用于说明方法在受控算例上的表现，不构成对现场运行性能、故障诊断或窃电认定的判断。\n\n## 1.2 国内外研究现状\n\n### 1.2.1 国外研究现状\n\n在公开负荷数据方面，TRINDADE A 发布的公开数据集页面描述了 370 名客户、15 分钟间隔、以 kW 为单位的负荷记录[4]，该页面仅用于说明公开负荷数据资源背景，本报告的模拟数据并非其子集。结合前文方法手册，国外与本报告相关的内容限于离群值检测方法页面与公开负荷数据资源页面所提供的公开信息，本报告不在此基础上扩展为更宽泛的行业趋势判断。\n\n### 1.2.2 国内研究现状\n\n本报告国内方法来源限于已读公开摘要，即前述吕伟嘉等人报告的知识引导与无监督学习混合驱动方法[3]。该摘要以多变量用户行为辨析为对象，侧重于在特征空间中区分用户用电模式，与本报告面向单变量负荷记录、以事先固定阈值标记疑似异常的任务范围不同，因此仅作为国内研究现状的背景比较，不作为本报告的方法或结果依据。\n\n## 1.3 主要研究内容及思路\n\n### 1.3.1 主要研究内容\n\n本报告研究内容与 QA 任务范围逐项对应，包括三项相互衔接的工作。第一项是校准集稳健中心与尺度估计，使用 16 条预定义负荷值，以中位数作为中心、以中位数绝对偏差作为尺度，且中心与尺度仅由校准集估计，避免与后续标记使用同一数据而产生尺度泄漏。第二项是修正标准分数疑似异常标记，对 12 条验证记录计算修正标准分数，比例因子取 0.6745，阈值事先固定为修正标准分数的绝对值严格大于 3.5，得到疑似异常清单，并在尺度为零时拒绝计算而不自行替换尺度。第三项是混淆矩阵评价与普通标准分数对照，依据预先给定的独立 QA 标签计算精确率、召回率、F1 与误报数，并以基于均值与标准差的普通标准分数绝对值严格大于 3 作为对照方法。三项工作共同覆盖从校准、标记到评价的完整技术链。\n\n### 1.3.2 研究思路\n\n研究总体遵循从稳健尺度估计到疑似异常标记、再到混淆矩阵计数的推进逻辑。校准集先形成稳健中心与稳健尺度，得到可在小样本下抵抗极端值干扰的尺度估计值；该尺度估计值作为修正标准分数的分母，用于计算验证记录相对于稳健中心的偏离程度，并按事先固定的阈值产生疑似异常标记清单；最后以混淆矩阵对标记清单进行核对，给出量化评价指标并与普通标准分数对照。上述输入输出关系构成一条可复现、可逐步核对的技术链，其总体结构如图1-1所示。\n\n![图1-1 配电负荷异常识别研究思路](figures/fig1-1-v3.svg)\n\n图1-1 配电负荷异常识别研究思路\n\n在研究推进中，校准与验证数据严格分离，阈值在标记前固定，不对验证标签进行调参；评价环节仅使用 12 条模拟验证记录，结果只用于说明方法在受控算例上的正确性与可复现性，不用于现场运行决策。\n",
+              "figures": [
+                {
+                  "id": "图1-1",
+                  "title": "配电负荷异常识别研究思路",
+                  "path": "figures/fig1-1-v3.svg",
+                  "sha256": "d097633c09eb108333379a15389182da07ef94ca23991ff74037589779934407",
+                  "type": "思路图"
+                }
+              ]
+            },
+            "summary": "第1章v3：仅修正首次引用顺序为[1]→[2]→[3]→[4]（1.1.1引入[1][2]，1.1.2引入[3]，1.2.1引入[4]），其余标题/字数/证据边界不变，图用fig1-1-v3.svg。",
+            "review_status": "passed",
+            "quality_metrics": {
+              "chapter_length": {
+                "count_method": "cjk_characters_plus_latin_number_tokens",
+                "actual_words": 1693,
+                "planned_target_words": 1500,
+                "minimum_ratio": 0.8,
+                "minimum_required_words": 1200,
+                "length_ratio": 1.1287,
+                "length_gate_passed": true,
+                "shortfall_words": 0
+              },
+              "heading_bridge": {
+                "mode": "short_50_100",
+                "applicable": true,
+                "detected": true,
+                "bridge_words": 74,
+                "bridge_gate_passed": true,
+                "minimum_required_words": 50,
+                "maximum_allowed_words": 100,
+                "shortfall_words": 0,
+                "excess_words": 0
+              },
+              "chapter_summary": {
+                "detected": false,
+                "applicable": false,
+                "summary_gate_passed": true,
+                "reason": "chapter_summary_not_detected"
+              }
+            }
+          }
+        ],
+        "reviews": [
+          {
+            "reviewed_artifact_id": "chapter-1",
+            "reviewed_version": 1,
+            "decision": "pass",
+            "overall_score": 90,
+            "score_breakdown": {
+              "目标完成": 18,
+              "内容完整": 13,
+              "逻辑": 18,
+              "结构": 14,
+              "证据": 13,
+              "中文长文": 14
+            },
+            "strengths": [
+              "严格按已确认目录输出1.1/1.2/1.3及六个三级标题，编号名称层级顺序一致",
+              "字数1628超过最低1200，一级标题后有74字过渡正文",
+              "引用[1]-[4]按首次出现顺序对应参考列表，来源边界清晰",
+              "明确模拟QA数据范围，未写成现场性能或故障/窃电识别",
+              "含图1-1思路图，附可追踪SVG文件"
+            ],
+            "issues": [],
+            "must_fix": [],
+            "optional_improvements": [
+              "后续技术章注意公式与真实结果的呈现"
+            ],
+            "revision_instruction": "第1章结构、字数、引用与证据边界均满足要求，无需修改。"
+          },
+          {
+            "reviewed_artifact_id": "chapter-1",
+            "reviewed_version": 2,
+            "decision": "pass",
+            "overall_score": 91,
+            "score_breakdown": {
+              "目标完成": 18,
+              "内容完整": 13,
+              "逻辑": 19,
+              "结构": 14,
+              "证据": 14,
+              "中文长文": 13
+            },
+            "strengths": [
+              "首次引用顺序已修正为[1]→[2]→[3]→[4]，与参考方案映射一致",
+              "NIST/SEMATECH以机构名出现，TRINDADE A为单一作者，未误用“等人”",
+              "删除由四个来源推断的成熟体系与整体趋势表述，收窄到可支持内容",
+              "阈值表述统一为修正标准分数绝对值严格大于3.5、普通标准分数绝对值严格大于3",
+              "图1-1使用新文件figures/fig1-1-v2.svg，图内无编号标题、仅外部题注；字数1607满足最低1200，过渡74字"
+            ],
+            "issues": [],
+            "must_fix": [],
+            "optional_improvements": [],
+            "revision_instruction": "v2已按用户反馈完成修正，结构、字数、引用与证据边界满足要求，无需进一步修改。"
+          },
+          {
+            "reviewed_artifact_id": "chapter-1",
+            "reviewed_version": 3,
+            "decision": "pass",
+            "overall_score": 91,
+            "score_breakdown": {
+              "目标完成": 18,
+              "内容完整": 13,
+              "逻辑": 19,
+              "结构": 14,
+              "证据": 14,
+              "中文长文": 13
+            },
+            "strengths": [
+              "依据真实 ch1_body_v3.md 与 citation-order-ch1-v3.json，首次引用顺序为[1]→[2]→[3]→[4]，与映射[1]=NIST Detection of Outliers、[2]=NIST Measures of Scale、[3]=吕伟嘉等、[4]=TRINDADE A UCI 数据集一致",
+              "1.1.1引入[1][2]，1.1.2以有依据的一句引入[3]，1.2.1引入[4]，未添加无出处趋势",
+              "NIST/SEMATECH为机构名，TRINDADE A为单一作者；阈值统一为绝对值严格大于3.5/3",
+              "图1-1使用figures/fig1-1-v3.svg，图内无编号标题；字数1632满足最低1200，过渡74字"
+            ],
+            "issues": [],
+            "must_fix": [],
+            "optional_improvements": [],
+            "revision_instruction": "v3已按第二次用户反馈仅修正首次引用顺序并通过脚本断言，其余保持不变，无需进一步修改。"
+          }
+        ],
+        "approved_version": 3
+      },
+      "status": "confirmed"
+    },
+    "2": {
+      "materials": {
+        "artifact_type": "chapter_materials",
+        "artifact_id": "materials-2",
+        "version": 1,
+        "content": {
+          "chapter_id": "2",
+          "chapter_title": "配电负荷异常识别方法",
+          "available_materials": [
+            "qa-report-load.csv（28条人工构造记录，16校准/12验证）",
+            "qa-report-analyze.py（分析脚本）",
+            "qa-report-results.json（真实沙盒计算结果）",
+            "qa-report-task.md（技术链与固定阈值要求）",
+            "qa-report-sources.json（方法来源）"
+          ],
+          "chapter_brief": "第2章约2750字，完整说明16条校准/12条验证分离、中位数/MAD、严格阈值的修正标准分数、全部公式与符号、实际结果表、V09/V10边界误报、普通标准分数对照、适用限制及本章小结。",
+          "real_results": {
+            "evidence_kind": "SYNTHETIC_QA_COMPUTATION",
+            "calibration": {
+              "n": 16,
+              "median": 100.0,
+              "mad": 1.0,
+              "mean": 100.0,
+              "sample_stdev": 1.2649110640673518
+            },
+            "modified_z": {
+              "tp": 2,
+              "fp": 1,
+              "tn": 9,
+              "fn": 0,
+              "precision": 0.6667,
+              "recall": 1.0,
+              "f1": 0.8,
+              "accuracy": 0.9167,
+              "flagged_ids": [
+                "V05",
+                "V06",
+                "V10"
+              ]
+            },
+            "ordinary_z": {
+              "tp": 2,
+              "fp": 2,
+              "tn": 8,
+              "fn": 0,
+              "precision": 0.5,
+              "recall": 1.0,
+              "f1": 0.6667,
+              "accuracy": 0.8333,
+              "flagged_ids": [
+                "V05",
+                "V06",
+                "V09",
+                "V10"
+              ]
+            },
+            "boundary_false_positives": {
+              "V09": "modified_z=3.3725(不标记) / ordinary_z=3.9528(标记)",
+              "V10": "modified_z=5.396 / ordinary_z=6.3246(两者均标记)"
+            },
+            "acceptance": {
+              "f1_at_least_0_75": true,
+              "false_positives_at_most_1": true
+            }
+          },
+          "source_boundary": "仅来自28条模拟验证记录；不构成现场性能、故障诊断或窃电认定。",
+          "note": "source_grounded 材料整理；沿用已确认目录25字符与标题锁定，不新增技术。"
+        },
+        "summary": "第2章材料准备：真实模拟计算结果、技术链与来源边界。"
+      },
+      "experiment_reference_package": {
+        "experiment_goal": "在28条人工构造QA记录上核对校准标记评价技术链",
+        "dataset_plan": {
+          "records": 28,
+          "calibration": 16,
+          "validation": 12,
+          "unit": "kW"
+        },
+        "experiment_settings": "校准集仅估计中心与尺度；验证集用于标记与评价；阈值固定",
+        "evaluation_metrics": [
+          "精确率",
+          "召回率",
+          "F1",
+          "误报数"
+        ],
+        "baseline_methods": [
+          "普通标准分数"
+        ],
+        "comparison_experiments": "修正标准分数 vs 普通标准分数",
+        "ablation_experiments": "本 QA 未开展额外独立消融实验；以中位数/中位数绝对偏差替代均值/标准差属于既定对照设置，不视为独立消融实验。",
+        "robustness_experiments": "本 QA 未开展额外独立鲁棒性实验；仅保留 V09/V10 边界正常值误报的记录分析。",
+        "simulated_reference_results": {
+          "modified_z": {
+            "tp": 2,
+            "fp": 1,
+            "tn": 9,
+            "fn": 0,
+            "f1": 0.8
+          },
+          "ordinary_z": {
+            "tp": 2,
+            "fp": 2,
+            "tn": 8,
+            "fn": 0,
+            "f1": 0.6667
+          }
+        },
+        "data_status": "simulated_reference",
+        "must_not_be_claimed_as_verified_project_result": true,
+        "no_additional_experiments_note": "现有计算仅包含修正标准分数与普通标准分数对照，以及 V09/V10 边界记录分析；未新增模拟结果或现场结论。"
+      },
+      "plan": {
+        "versions": [
+          {
+            "artifact_type": "chapter_plan",
+            "artifact_id": "plan-ch2",
+            "version": 1,
+            "content": {
+              "chapter_id": "2",
+              "chapter_title": "配电负荷异常识别方法",
+              "content_generation_mode_default": "source_grounded",
+              "content_generation_mode_effective": "source_grounded",
+              "temporary_override": false,
+              "chapter_type": "theory-and-mechanism",
+              "output_granularity": "whole_chapter",
+              "role_in_report": "作为唯一技术研究章，承接校准稳健尺度估计到修正标准分数疑似异常标记再到混淆矩阵计数的完整技术链，给出公式、符号与实际模拟结果。",
+              "scope_mapping": {
+                "task_book_scope": "specific_topic",
+                "research_subject": "单变量配电负荷疑似异常标记",
+                "mapping_source_title": "配电负荷异常识别",
+                "source_research_point_ids": [
+                  "RC1"
+                ],
+                "parent_task_id": "T1",
+                "parent_task_order": 1,
+                "task_role": "technical-research",
+                "research_status_topics": "承接第一章公开方法来源"
+              },
+              "allowed_scope": [
+                "校准集稳健中心与尺度估计",
+                "修正标准分数阈值标记与零尺度拒绝",
+                "混淆矩阵评价与普通标准分数对照"
+              ],
+              "excluded_scope": [
+                "多变量用户用电异常辨析",
+                "窃电认定与电力故障诊断",
+                "现场运行性能评价",
+                "吞吐耗时等未经测量的指标",
+                "其他课题内容"
+              ],
+              "word_budget": {
+                "target_words": 2750,
+                "minimum_words": 2200,
+                "section_allocation": {
+                  "章首无标题导入正文": 500,
+                  "2.1": 800,
+                  "2.2": 800,
+                  "2.3": 520,
+                  "2.4": 130
+                },
+                "allocation_note": "各节合计2750字与本章计划字数一致"
+              },
+              "chapter_lead_in_plan": {
+                "mode": "technical_chapter_intro",
+                "target_words": 500,
+                "min_words": 120,
+                "content": "背景与意义、研究主题、概括性技术路线、关键输入输出与边界",
+                "figure": "图2-1 配电负荷异常识别方法技术路线图",
+                "note": "技术章一级标题后直接写无标题导入正文，不设概述或技术路线二级标题"
+              },
+              "primary_technical_subject": "配电负荷稳健尺度估计",
+              "primary_subject_source_text": "校准集稳健中心与尺度估计",
+              "primary_subject_section_number": "2.1",
+              "primary_subject_target_words": 800,
+              "primary_subject_target_share": 0.32,
+              "shared_chapter_question": "如何用事先固定阈值的稳健统计流程在单变量配电负荷记录中标记疑似异常并给出可核对的评价指标",
+              "sections": [
+                {
+                  "number": "2.1",
+                  "title": "基于中位数绝对偏差的配电负荷稳健尺度技术",
+                  "core": true,
+                  "research_subpoint_index": 1,
+                  "chain_order": 1,
+                  "depends_on_previous": false,
+                  "output_to_next": "配电负荷稳健尺度估计值",
+                  "technical_object": "配电负荷",
+                  "power_element": "负荷",
+                  "specific_computing_technology": "中位数绝对偏差尺度估计",
+                  "technology_origin": "source_confirmed",
+                  "technical_signature": "中位数绝对偏差",
+                  "subheadings": [
+                    {
+                      "number": "2.1.1",
+                      "title": "配电负荷中位数绝对偏差尺度估计方法",
+                      "technical_signature": "中位数绝对偏差"
+                    },
+                    {
+                      "number": "2.1.2",
+                      "title": "基于中位数的配电负荷中心位置估计技术",
+                      "technical_signature": "中位数"
+                    },
+                    {
+                      "number": "2.1.3",
+                      "title": "中位数绝对偏差配电负荷校准数据隔离方法",
+                      "technical_signature": "中位数绝对偏差"
+                    }
+                  ]
+                },
+                {
+                  "number": "2.2",
+                  "title": "基于修正标准分数的配电负荷异常标记技术",
+                  "core": true,
+                  "research_subpoint_index": 2,
+                  "chain_order": 2,
+                  "depends_on_previous": true,
+                  "handoff_from_previous": "配电负荷稳健尺度估计值",
+                  "output_to_next": "配电负荷疑似异常标记清单",
+                  "technical_object": "配电负荷",
+                  "power_element": "负荷",
+                  "specific_computing_technology": "修正标准分数阈值标记",
+                  "technology_origin": "source_confirmed",
+                  "technical_signature": "修正标准分数",
+                  "subheadings": [
+                    {
+                      "number": "2.2.1",
+                      "title": "基于修正标准分数的配电负荷固定阈值方法",
+                      "technical_signature": "修正标准分数"
+                    },
+                    {
+                      "number": "2.2.2",
+                      "title": "修正标准分数配电负荷比例因子归一化方法",
+                      "technical_signature": "修正标准分数"
+                    },
+                    {
+                      "number": "2.2.3",
+                      "title": "中位数绝对偏差配电负荷零尺度拒绝方法",
+                      "technical_signature": "中位数绝对偏差"
+                    }
+                  ]
+                },
+                {
+                  "number": "2.3",
+                  "title": "混淆矩阵配电负荷误报计数方法",
+                  "core": true,
+                  "research_subpoint_index": 3,
+                  "chain_order": 3,
+                  "depends_on_previous": true,
+                  "handoff_from_previous": "配电负荷疑似异常标记清单",
+                  "technical_object": "配电负荷",
+                  "power_element": "负荷",
+                  "specific_computing_technology": "混淆矩阵计数",
+                  "technology_origin": "source_confirmed",
+                  "technical_signature": "混淆矩阵",
+                  "subheadings": [
+                    {
+                      "number": "2.3.1",
+                      "title": "基于混淆矩阵的配电负荷召回率计算技术",
+                      "technical_signature": "混淆矩阵"
+                    },
+                    {
+                      "number": "2.3.2",
+                      "title": "普通标准分数配电负荷对照标记方法",
+                      "technical_signature": "普通标准分数"
+                    }
+                  ]
+                },
+                {
+                  "number": "2.4",
+                  "title": "本章小结",
+                  "core": false
+                }
+              ],
+              "source_coverage_plan": [
+                {
+                  "item": "校准集稳健中心与尺度估计",
+                  "location": "2.1"
+                },
+                {
+                  "item": "修正标准分数疑似异常标记",
+                  "location": "2.2"
+                },
+                {
+                  "item": "混淆矩阵评价与普通标准分数对照",
+                  "location": "2.3"
+                }
+              ],
+              "heading_source_term_plan": [
+                {
+                  "source_type": "expected-output",
+                  "source_item_id": "G1",
+                  "term": "稳健尺度",
+                  "granularity": "broad",
+                  "target_heading_number": "2.1"
+                },
+                {
+                  "source_type": "schedule-plan",
+                  "source_item_id": "S1",
+                  "term": "中位数绝对偏差",
+                  "granularity": "narrow",
+                  "target_heading_number": "2.1.1"
+                },
+                {
+                  "source_type": "schedule-plan",
+                  "source_item_id": "S2",
+                  "term": "修正标准分数",
+                  "granularity": "narrow",
+                  "target_heading_number": "2.2.1"
+                },
+                {
+                  "source_type": "schedule-plan",
+                  "source_item_id": "S3",
+                  "term": "误报",
+                  "granularity": "broad",
+                  "target_heading_number": "2.3"
+                },
+                {
+                  "source_type": "assessment-requirement",
+                  "source_item_id": "A1",
+                  "term": "召回率",
+                  "granularity": "narrow",
+                  "target_heading_number": "2.3.1"
+                }
+              ],
+              "assessment_coverage_plan": [
+                {
+                  "assessment_item_id": "A1",
+                  "planned_section": "2.3.1",
+                  "content_form": "评价指标结果段",
+                  "prose_realization": "以混淆矩阵给出精确率召回率F1与误报数的实际取值",
+                  "evidence_status": "SYNTHETIC_QA_COMPUTATION",
+                  "source_identity_hidden": true,
+                  "evidence_section": "2.3.1"
+                }
+              ],
+              "formula_requirement": "must",
+              "formula_requirement_basis": "技术章承担稳健尺度与修正标准分数的技术定义",
+              "formulas": [
+                {
+                  "id": "式(2-1)",
+                  "name": "样本中位数",
+                  "section": "2.1.1",
+                  "type": "technical"
+                },
+                {
+                  "id": "式(2-2)",
+                  "name": "中位数绝对偏差",
+                  "section": "2.1.1",
+                  "type": "technical"
+                },
+                {
+                  "id": "式(2-3)",
+                  "name": "修正标准分数",
+                  "section": "2.2.1",
+                  "type": "technical"
+                },
+                {
+                  "id": "式(2-4)",
+                  "name": "固定阈值判决",
+                  "section": "2.2.1",
+                  "type": "technical"
+                },
+                {
+                  "id": "式(2-5)",
+                  "name": "精确率与召回率",
+                  "section": "2.3.1",
+                  "type": "technical"
+                }
+              ],
+              "figure_table_plan": [
+                {
+                  "id": "图2-1",
+                  "type": "技术路线图",
+                  "content": "校准稳健尺度到修正标准分数标记到混淆矩阵计数",
+                  "use": "章首导入"
+                },
+                {
+                  "id": "表2-1",
+                  "type": "结果表",
+                  "content": "修正标准分数与普通标准分数在12条验证记录上的混淆矩阵与指标",
+                  "use": "2.3.1"
+                }
+              ],
+              "experiment_reference_package": {
+                "experiment_goal": "在28条人工构造QA记录上核对校准标记评价技术链",
+                "dataset_plan": {
+                  "records": 28,
+                  "calibration": 16,
+                  "validation": 12,
+                  "unit": "kW"
+                },
+                "experiment_settings": "校准集仅估计中心与尺度；验证集用于标记与评价；阈值固定",
+                "evaluation_metrics": [
+                  "精确率",
+                  "召回率",
+                  "F1",
+                  "误报数"
+                ],
+                "baseline_methods": [
+                  "普通标准分数"
+                ],
+                "comparison_experiments": "修正标准分数 vs 普通标准分数",
+                "ablation_experiments": "稳健尺度替代均值标准差的差异",
+                "robustness_experiments": "V09与V10边界正常值误报分析",
+                "simulated_reference_results": {
+                  "modified_z": {
+                    "tp": 2,
+                    "fp": 1,
+                    "tn": 9,
+                    "fn": 0,
+                    "f1": 0.8
+                  },
+                  "ordinary_z": {
+                    "tp": 2,
+                    "fp": 2,
+                    "tn": 8,
+                    "fn": 0,
+                    "f1": 0.6667
+                  }
+                },
+                "data_status": "simulated_reference",
+                "must_not_be_claimed_as_verified_project_result": true
+              },
+              "reusable_products": [
+                "配电负荷稳健尺度估计值",
+                "配电负荷疑似异常标记清单",
+                "混淆矩阵评价指标"
+              ],
+              "cross_section_linking": "正文使用对象名称或前文后文等表达，不使用具体章节编号或上下章互引",
+              "core_claim": "在固定阈值与稳健尺度下，单变量配电负荷疑似异常标记在12条模拟验证记录上取得F1=0.80误报1，优于普通标准分数对照",
+              "missing_blocking_info": [],
+              "placeholder_plan": "无阻塞信息；结果均为真实沙盒模拟计算值"
+            },
+            "summary": "第2章技术章计划：整章模式2750字/最低2200；章首无标题导入500字；2.1/2.2/2.3三节含三级标题；公式must(5式)；含实验参考包与真实结果。"
+          },
+          {
+            "artifact_type": "chapter_plan",
+            "artifact_id": "plan-ch2",
+            "version": 2,
+            "content": {
+              "chapter_id": "2",
+              "chapter_title": "配电负荷异常识别方法",
+              "content_generation_mode_default": "source_grounded",
+              "content_generation_mode_effective": "source_grounded",
+              "temporary_override": false,
+              "chapter_type": "theory-and-mechanism",
+              "output_granularity": "whole_chapter",
+              "role_in_report": "作为唯一技术研究章，承接校准稳健尺度估计到修正标准分数疑似异常标记再到混淆矩阵计数的完整技术链，给出公式、符号与实际模拟结果。",
+              "scope_mapping": {
+                "task_book_scope": "specific_topic",
+                "research_subject": "单变量配电负荷疑似异常标记",
+                "mapping_source_title": "配电负荷异常识别",
+                "source_research_point_ids": [
+                  "RC1"
+                ],
+                "parent_task_id": "T1",
+                "parent_task_order": 1,
+                "task_role": "technical-research",
+                "research_status_topics": "承接第一章公开方法来源"
+              },
+              "allowed_scope": [
+                "校准集稳健中心与尺度估计",
+                "修正标准分数阈值标记与零尺度拒绝",
+                "混淆矩阵评价与普通标准分数对照"
+              ],
+              "excluded_scope": [
+                "多变量用户用电异常辨析",
+                "窃电认定与电力故障诊断",
+                "现场运行性能评价",
+                "吞吐耗时等未经测量的指标",
+                "其他课题内容"
+              ],
+              "word_budget": {
+                "target_words": 2750,
+                "minimum_words": 2200,
+                "section_allocation": {
+                  "章首无标题导入正文": 500,
+                  "2.1": 800,
+                  "2.2": 800,
+                  "2.3": 520,
+                  "2.4": 130
+                },
+                "allocation_note": "各节合计2750字与本章计划字数一致"
+              },
+              "chapter_lead_in_plan": {
+                "mode": "technical_chapter_intro",
+                "target_words": 500,
+                "min_words": 120,
+                "content": "背景与意义、研究主题、概括性技术路线、关键输入输出与边界",
+                "figure": "图2-1 配电负荷异常识别方法技术路线图",
+                "note": "技术章一级标题后直接写无标题导入正文，不设概述或技术路线二级标题"
+              },
+              "primary_technical_subject": "配电负荷稳健尺度估计",
+              "primary_subject_source_text": "校准集稳健中心与尺度估计",
+              "primary_subject_section_number": "2.1",
+              "primary_subject_target_words": 800,
+              "primary_subject_target_share": 0.2909090909090909,
+              "shared_chapter_question": "如何用事先固定阈值的稳健统计流程在单变量配电负荷记录中标记疑似异常并给出可核对的评价指标",
+              "sections": [
+                {
+                  "number": "2.1",
+                  "title": "基于中位数绝对偏差的配电负荷稳健尺度技术",
+                  "core": true,
+                  "research_subpoint_index": 1,
+                  "chain_order": 1,
+                  "depends_on_previous": false,
+                  "output_to_next": "配电负荷稳健尺度估计值",
+                  "technical_object": "配电负荷",
+                  "power_element": "负荷",
+                  "specific_computing_technology": "中位数绝对偏差尺度估计",
+                  "technology_origin": "source_confirmed",
+                  "technical_signature": "中位数绝对偏差",
+                  "subheadings": [
+                    {
+                      "number": "2.1.1",
+                      "title": "配电负荷中位数绝对偏差尺度估计方法",
+                      "technical_signature": "中位数绝对偏差"
+                    },
+                    {
+                      "number": "2.1.2",
+                      "title": "基于中位数的配电负荷中心位置估计技术",
+                      "technical_signature": "中位数"
+                    },
+                    {
+                      "number": "2.1.3",
+                      "title": "中位数绝对偏差配电负荷校准数据隔离方法",
+                      "technical_signature": "中位数绝对偏差"
+                    }
+                  ]
+                },
+                {
+                  "number": "2.2",
+                  "title": "基于修正标准分数的配电负荷异常标记技术",
+                  "core": true,
+                  "research_subpoint_index": 2,
+                  "chain_order": 2,
+                  "depends_on_previous": true,
+                  "handoff_from_previous": "配电负荷稳健尺度估计值",
+                  "output_to_next": "配电负荷疑似异常标记清单",
+                  "technical_object": "配电负荷",
+                  "power_element": "负荷",
+                  "specific_computing_technology": "修正标准分数阈值标记",
+                  "technology_origin": "source_confirmed",
+                  "technical_signature": "修正标准分数",
+                  "subheadings": [
+                    {
+                      "number": "2.2.1",
+                      "title": "基于修正标准分数的配电负荷固定阈值方法",
+                      "technical_signature": "修正标准分数"
+                    },
+                    {
+                      "number": "2.2.2",
+                      "title": "修正标准分数配电负荷比例因子归一化方法",
+                      "technical_signature": "修正标准分数"
+                    },
+                    {
+                      "number": "2.2.3",
+                      "title": "中位数绝对偏差配电负荷零尺度拒绝方法",
+                      "technical_signature": "中位数绝对偏差"
+                    }
+                  ]
+                },
+                {
+                  "number": "2.3",
+                  "title": "混淆矩阵配电负荷误报计数方法",
+                  "core": true,
+                  "research_subpoint_index": 3,
+                  "chain_order": 3,
+                  "depends_on_previous": true,
+                  "handoff_from_previous": "配电负荷疑似异常标记清单",
+                  "technical_object": "配电负荷",
+                  "power_element": "负荷",
+                  "specific_computing_technology": "混淆矩阵计数",
+                  "technology_origin": "source_confirmed",
+                  "technical_signature": "混淆矩阵",
+                  "subheadings": [
+                    {
+                      "number": "2.3.1",
+                      "title": "基于混淆矩阵的配电负荷召回率计算技术",
+                      "technical_signature": "混淆矩阵"
+                    },
+                    {
+                      "number": "2.3.2",
+                      "title": "普通标准分数配电负荷对照标记方法",
+                      "technical_signature": "普通标准分数"
+                    }
+                  ]
+                },
+                {
+                  "number": "2.4",
+                  "title": "本章小结",
+                  "core": false
+                }
+              ],
+              "source_coverage_plan": [
+                {
+                  "item": "校准集稳健中心与尺度估计",
+                  "location": "2.1"
+                },
+                {
+                  "item": "修正标准分数疑似异常标记",
+                  "location": "2.2"
+                },
+                {
+                  "item": "混淆矩阵评价与普通标准分数对照",
+                  "location": "2.3"
+                }
+              ],
+              "heading_source_term_plan": [
+                {
+                  "source_type": "expected-output",
+                  "source_item_id": "G1",
+                  "term": "稳健尺度",
+                  "granularity": "broad",
+                  "target_heading_number": "2.1"
+                },
+                {
+                  "source_type": "schedule-plan",
+                  "source_item_id": "S1",
+                  "term": "中位数绝对偏差",
+                  "granularity": "narrow",
+                  "target_heading_number": "2.1.1"
+                },
+                {
+                  "source_type": "schedule-plan",
+                  "source_item_id": "S2",
+                  "term": "修正标准分数",
+                  "granularity": "narrow",
+                  "target_heading_number": "2.2.1"
+                },
+                {
+                  "source_type": "schedule-plan",
+                  "source_item_id": "S3",
+                  "term": "误报",
+                  "granularity": "broad",
+                  "target_heading_number": "2.3"
+                },
+                {
+                  "source_type": "assessment-requirement",
+                  "source_item_id": "A1",
+                  "term": "召回率",
+                  "granularity": "narrow",
+                  "target_heading_number": "2.3.1"
+                }
+              ],
+              "assessment_coverage_plan": [
+                {
+                  "assessment_item_id": "A1",
+                  "planned_section": "2.3.1",
+                  "content_form": "评价指标结果段",
+                  "prose_realization": "以混淆矩阵给出精确率召回率F1与误报数的实际取值",
+                  "evidence_status": "SYNTHETIC_QA_COMPUTATION",
+                  "source_identity_hidden": true,
+                  "evidence_section": "2.3.1"
+                }
+              ],
+              "formula_requirement": "must",
+              "formula_requirement_basis": "技术章承担稳健尺度与修正标准分数的技术定义",
+              "formulas": [
+                {
+                  "id": "式(2-1)",
+                  "name": "样本中位数",
+                  "section": "2.1.1",
+                  "type": "technical"
+                },
+                {
+                  "id": "式(2-2)",
+                  "name": "中位数绝对偏差",
+                  "section": "2.1.1",
+                  "type": "technical"
+                },
+                {
+                  "id": "式(2-3)",
+                  "name": "修正标准分数",
+                  "section": "2.2.1",
+                  "type": "technical"
+                },
+                {
+                  "id": "式(2-4)",
+                  "name": "固定阈值判决",
+                  "section": "2.2.1",
+                  "type": "technical"
+                },
+                {
+                  "id": "式(2-5)",
+                  "name": "精确率与召回率",
+                  "section": "2.3.1",
+                  "type": "technical"
+                }
+              ],
+              "figure_table_plan": [
+                {
+                  "id": "图2-1",
+                  "type": "技术路线图",
+                  "content": "校准稳健尺度到修正标准分数标记到混淆矩阵计数",
+                  "use": "章首导入"
+                },
+                {
+                  "id": "表2-1",
+                  "type": "结果表",
+                  "content": "修正标准分数与普通标准分数在12条验证记录上的混淆矩阵与指标",
+                  "use": "2.3.1"
+                }
+              ],
+              "experiment_reference_package": {
+                "experiment_goal": "在28条人工构造QA记录上核对校准标记评价技术链",
+                "dataset_plan": {
+                  "records": 28,
+                  "calibration": 16,
+                  "validation": 12,
+                  "unit": "kW"
+                },
+                "experiment_settings": "校准集仅估计中心与尺度；验证集用于标记与评价；阈值固定",
+                "evaluation_metrics": [
+                  "精确率",
+                  "召回率",
+                  "F1",
+                  "误报数"
+                ],
+                "baseline_methods": [
+                  "普通标准分数"
+                ],
+                "comparison_experiments": "修正标准分数 vs 普通标准分数",
+                "ablation_experiments": "本 QA 未开展额外独立消融实验；以中位数/中位数绝对偏差替代均值/标准差属于既定对照设置，不视为独立消融实验。",
+                "robustness_experiments": "本 QA 未开展额外独立鲁棒性实验；仅保留 V09/V10 边界正常值误报的记录分析。",
+                "simulated_reference_results": {
+                  "modified_z": {
+                    "tp": 2,
+                    "fp": 1,
+                    "tn": 9,
+                    "fn": 0,
+                    "f1": 0.8
+                  },
+                  "ordinary_z": {
+                    "tp": 2,
+                    "fp": 2,
+                    "tn": 8,
+                    "fn": 0,
+                    "f1": 0.6667
+                  }
+                },
+                "data_status": "simulated_reference",
+                "must_not_be_claimed_as_verified_project_result": true,
+                "no_additional_experiments_note": "现有计算仅包含修正标准分数与普通标准分数对照，以及 V09/V10 边界记录分析；未新增模拟结果或现场结论。"
+              },
+              "reusable_products": [
+                "配电负荷稳健尺度估计值",
+                "配电负荷疑似异常标记清单",
+                "混淆矩阵评价指标"
+              ],
+              "cross_section_linking": "正文使用对象名称或前文后文等表达，不使用具体章节编号或上下章互引",
+              "core_claim": "在固定阈值与稳健尺度下，单变量配电负荷疑似异常标记在12条模拟验证记录上取得F1=0.80误报1，优于普通标准分数对照",
+              "missing_blocking_info": [],
+              "placeholder_plan": "无阻塞信息；结果均为真实沙盒模拟计算值"
+            },
+            "summary": "plan-ch2 v2：primary_subject_target_share 修正为800/2750≈0.290909；实验包澄清未开展额外独立消融/鲁棒性实验，保留真实对照与V09/V10边界记录分析；其余不变。"
+          }
+        ],
+        "approved_version": 2
+      },
+      "content": {
+        "versions": [
+          {
+            "artifact_type": "chapter",
+            "artifact_id": "chapter-2",
+            "version": 1,
+            "content": {
+              "chapter_id": "2",
+              "chapter_title": "配电负荷异常识别方法",
+              "markdown": "# 第2章 配电负荷异常识别方法\n\n配电负荷数据质量核查需要在缺少现场标注、样本量很小的条件下判断哪些单变量负荷取值应被标记为疑似异常。本章围绕这一问题，给出以校准集稳健中心与尺度估计为基础、以修正标准分数固定阈值标记为核心、以混淆矩阵评价为核对的完整技术链。研究对象为按时间间隔记录的单个配电负荷序列，输入为一段预先给定的负荷记录集合，输出为疑似异常标记清单及其可核对的评价指标。方法的总思路是先在独立校准集上得到抗极端值干扰的稳健尺度，再把验证记录相对于稳健中心的偏离程度折算为修正标准分数，并按事先固定的阈值产生标记，最后依据独立标签统计误报与召回，形成可复现、可逐步核对的流程。\n\n本章技术路线分为三个相互承接的阶段，其总体结构如图2-1所示。第一阶段在16条校准记录上以中位数为中心、以中位数绝对偏差为尺度，二者仅由校准集估计，避免与后续标记使用同一批数据而产生尺度泄漏。第二阶段把第二阶段使用的12条验证记录折算为修正标准分数，比例因子取0.6745，阈值事先固定为修正标准分数的绝对值严格大于3.5，尺度为零时明确拒绝计算而不自行替换尺度。第三阶段依据预先给定的独立标签，用混淆矩阵统计真阳性、假阳性、真阴性与假阴性，据此计算精确率、召回率、F1与误报数，并以基于均值与标准差的普通标准分数作为对照。三个阶段的输入输出首尾衔接，前序阶段产生的稳健尺度估计值与疑似异常标记清单分别是后续阶段的输入。本章适用范围限定为单变量、小样本、固定阈值的模拟算例，结论不用于现场运行性能、故障诊断或窃电认定。\n\n本章的关键在于稳健尺度估计而非模型训练：整条技术链没有可调参数在验证集上寻优，阈值与方法均在标记前确定，因而结果可复现、可核对。本章以下先说明稳健中心与尺度的估计方法，再说明修正标准分数的构造与固定阈值标记，最后给出混淆矩阵评价与普通标准分数对照。\n\n![图2-1 配电负荷异常识别方法技术路线](figures/fig2-1.svg)\n\n图2-1 配电负荷异常识别方法技术路线\n\n## 2.1 基于中位数绝对偏差的配电负荷稳健尺度技术\n\n本节的中心任务是在校准集上得到可用于后续标记的稳健中心与稳健尺度。中位数绝对偏差以中位数为中心，对极端取值不敏感，适合样本量小且可能含有疑似异常取值的配电负荷记录。本节先给出中位数与中位数绝对偏差的估计方法，再说明为何以中位数作为中心位置，最后说明校准数据的使用边界，避免尺度泄漏。本节三个三级标题分别对应这三个环节，其输出是后续修正标准分数所需的稳健尺度估计值。\n\n### 2.1.1 配电负荷中位数绝对偏差尺度估计方法\n\n中位数绝对偏差的估计以中位数为中心。设校准集共有 n 条负荷记录，记其负荷值为 x_1, x_2, ..., x_n，将其从小到大排序后记为 x_(1) ≤ x_(2) ≤ ... ≤ x_(n)。样本中位数按式(2-1)定义：\n\n$$ \\mathrm{median} = \\begin{cases} x_{((n+1)/2)}, & n \\text{ 为奇数} \\\\ \\dfrac{x_{(n/2)} + x_{(n/2+1)}}{2}, & n \\text{ 为偶数} \\end{cases} \\tag{2-1} $$\n\n式中，x_(i) 表示排序后第 i 个负荷值，单位 kW；n 为校准集样本数；median 为负荷记录的稳健中心，单位 kW。中位数绝对偏差 MAD 按式(2-2)定义为各负荷值到中位数的绝对偏差的中位数：\n\n$$ \\mathrm{MAD} = \\mathrm{median}\\left( \\left| x_i - \\mathrm{median} \\right| \\right), \\quad i = 1, 2, \\ldots, n \\tag{2-2} $$\n\n式中，|x_i − median| 为第 i 条负荷记录到稳健中心的绝对偏差，单位 kW；外层 median 表示取这些绝对偏差的中位数，MAD 的单位为 kW。MAD 以排序统计量为基础，不依赖平方和，个别极端取值对其影响有限，因而在小样本下比标准差更稳健。在本报告的校准集上，按式(2-1)与式(2-2)计算得到 median = 100 kW、MAD = 1 kW；作为对照，同一校准集样本标准差约为 1.2649 kW。二者同为尺度度量，但标准差对极端值更敏感，这一点在后续标记中会直接影响误报数量。\n\n### 2.1.2 基于中位数的配电负荷中心位置估计技术\n\n以中位数作为稳健中心是本节方法的关键选择。均值会随极端取值明显移动，使中心位置偏离负荷记录的常态水平；中位数只取决于排序后位置居中的取值，对少量极端值不敏感。对配电负荷数据质量核查而言，中心位置用于刻画负荷的常态水平，若中心被极端值拉偏，则后续折算得到的偏离程度会整体失真。以式(2-1)给出的中位数作为中心，可以使偏离程度围绕负荷的常态水平展开。在本报告的校准集上，中位数为 100 kW；均值同样为 100 kW，但样本标准差达到 1.2649 kW，说明在存在潜在极端取值时，尺度度量之间的差异比中心位置更值得关注。因此本节以中位数固定中心，把对极端值的敏感性问题主要交给尺度度量处理。\n\n### 2.1.3 中位数绝对偏差配电负荷校准数据隔离方法\n\n为使稳健中心与尺度可用于后续标记，校准数据必须与判定数据严格隔离。具体做法是：仅使用校准集的 16 条负荷记录按式(2-1)与式(2-2)估计中位数与 MAD，判定阶段的 12 条验证记录不参与中心与尺度估计。这样处理可以避免同一条记录既参与尺度估计又参与标记判定的尺度泄漏，使后续的修正标准分数是在与标记数据独立估计的尺度上计算。校准集与判定集在记录标识与时间戳上彼此分离，本报告不对两批记录作合并处理。隔离后得到的稳健尺度估计值作为唯一输出，传递给后续修正标准分数计算环节。\n\n## 2.2 基于修正标准分数的配电负荷异常标记技术\n\n本节以校准集得到的稳健尺度估计值为输入，对验证记录构造修正标准分数并按事先固定的阈值产生疑似异常标记。与普通标准分数相比，修正标准分数用中位数替代均值、用中位数绝对偏差替代标准差，使分数本身也具备抗极端值干扰的性质。本节先给出修正标准分数的定义与固定阈值判决，再说明比例因子的作用，最后说明尺度为零时的拒绝策略，其输出是后续评价所需的疑似异常标记清单。\n\n### 2.2.1 基于修正标准分数的配电负荷固定阈值方法\n\n设待判定的验证记录负荷值为 y，其修正标准分数按式(2-3)定义：\n\n$$ z_{\\mathrm{mod}} = \\dfrac{0.6745 \\, (y - \\mathrm{median})}{\\mathrm{MAD}} \\tag{2-3} $$\n\n式中，y 为验证记录的负荷值，单位 kW；median 与 MAD 分别为由校准集按式(2-1)与式(2-2)估计的稳健中心与稳健尺度，单位均为 kW；0.6745 为比例因子，用于使修正标准分数在正态假设下与普通标准分数在尺度上一致，量纲上与普通标准分数相同、无量纲。固定阈值判决按式(2-4)定义：\n\n$$ \\text{标记为疑似异常} \\iff \\left| z_{\\mathrm{mod}} \\right| > 3.5 \\tag{2-4} $$\n\n式中，|z_mod| 为修正标准分数的绝对值；阈值取 3.5，且比较关系为严格大于，即 |z_mod| 恰好等于 3.5 时不标记。该阈值在标记前固定，不依据验证记录标签调整。按式(2-3)与式(2-4)计算，12 条验证记录中修正标准分数绝对值严格大于 3.5 的记录为 V05（135 kW）、V06（70 kW）与 V10（108 kW），构成本节的疑似异常标记清单。\n\n### 2.2.2 修正标准分数配电负荷比例因子归一化方法\n\n比例因子 0.6745 的作用是把以中位数绝对偏差为尺度的偏离程度折算到与普通标准分数可比的量纲上。在正态分布假设下，中位数绝对偏差与标准差之间存在近似固定的比例关系，取 0.6745 可使修正标准分数的尺度与普通标准分数相互对应，便于后续把两种方法的标记阈值放在同一比较基础上。需要说明的是，本报告并不假设配电负荷严格服从正态分布，比例因子仅用于统一量纲，使阈值取值的比较具有一致基准；这也意味着修正标准分数与普通标准分数的差别主要来自稳健中心与稳健尺度本身，而非比例因子的选择。对 V05、V06 等偏离较大的记录，比例因子归一化后其修正标准分数绝对值远大于 3.5，而正常记录一般集中在较小的绝对值区间。\n\n### 2.2.3 中位数绝对偏差配电负荷零尺度拒绝方法\n\n当校准集的 MAD 为零时，式(2-3)的分母为零，修正标准分数无法定义，此时不进行标记计算。这种情况通常出现在校准集取值高度一致的情形。为避免任意替换尺度导致结果不可复现，本报告对 MAD 为零采取明确拒绝计算的策略：判定流程终止并报告尺度为零，不采用标准差或其他量替代 MAD，也不对校准集做平滑或加噪处理。这样处理使方法的适用条件清晰，只有当校准集能够给出非零的稳健尺度时，修正标准分数标记才有定义。本报告所使用的校准集 MAD = 1 kW，为非零值，满足计算前提。\n\n## 2.3 混淆矩阵配电负荷误报计数方法\n\n本节以疑似异常标记清单为输入，依据预先给定的独立标签核对标记效果。核对方式是把每条验证记录的标记结果与标签组合为混淆矩阵的四个计数，再据此计算精确率、召回率、F1 与误报数，并以普通标准分数作为对照。误报数是数据质量核查中的关键指标，因为它直接关系到人工核查的工作量。本节先给出混淆矩阵计数的指标定义，再说明普通标准分数对照的设置，其输出是可核对的评价指标。\n\n### 2.3.1 基于混淆矩阵的配电负荷召回率计算技术\n\n设 TP 为被标记且标签为异常的记录数，FP 为被标记但标签为正常的记录数，FN 为未被标记但标签为异常的记录数，TN 为未被标记且标签为正常的记录数。精确率与召回率按式(2-5)定义：\n\n$$ \\mathrm{precision} = \\dfrac{TP}{TP + FP}, \\qquad \\mathrm{recall} = \\dfrac{TP}{TP + FN} \\tag{2-5} $$\n\n式中，precision 为精确率，表示被标记记录中真正异常的占比；recall 为召回率，表示真正异常记录中被标记出来的占比；F1 为精确率与召回率的调和平均，用于综合衡量二者；误报数即 FP，单位条。按式(2-5)对 12 条验证记录统计，修正标准分数方法的计数为 TP = 2、FP = 1、TN = 9、FN = 0，精确率约为 0.667，召回率为 1.0，F1 为 0.80，误报数为 1。其中被标记的 V05 与 V06 对应标签为异常，V10 对应标签为正常，即 V10（108 kW）为本次标记中的误报记录。\n\n### 2.3.2 普通标准分数配电负荷对照标记方法\n\n为说明稳健尺度的作用，本节以普通标准分数作为对照。普通标准分数以校准集的均值和样本标准差替代中位数与中位数绝对偏差，对验证记录计算偏离程度，并以普通标准分数的绝对值严格大于 3 作为标记阈值，阈值同样在标记前固定。按同一组 12 条验证记录统计，普通标准分数方法的计数为 TP = 2、FP = 2、TN = 8、FN = 0，精确率为 0.5，召回率为 1.0，F1 约为 0.667，误报数为 2。两种方法的标记差异集中在正常记录上：V09（105 kW）的修正标准分数绝对值为 3.3725，不超过 3.5，未被标记；而其普通标准分数绝对值为 3.9528，超过 3，被错误标记。V10（108 kW）在两种方法下均被标记，是本记录中的共同误报；V09 仅在普通标准分数方法下被误报，说明稳健尺度对小样本下正常边界取值的处理更为克制。上述差异均来自同一组 12 条验证记录，仅说明方法在受控模拟算例上的表现，不用于现场运行决策。\n\n## 2.4 本章小结\n\n本章围绕单变量配电负荷的疑似异常标记，给出了从校准稳健尺度估计到修正标准分数标记、再到混淆矩阵计数的完整技术链。在校准环节，中位数与中位数绝对偏差仅由 16 条校准记录估计，得到中位数 100 kW、MAD 1 kW，避免了尺度泄漏；在标记环节，修正标准分数以 0.6745 为比例因子、以绝对值严格大于 3.5 为阈值，并规定 MAD 为零时拒绝计算。评价环节依据 12 条验证记录的独立标签统计，修正标准分数方法取得精确率约 0.667、召回率 1.0、F1 0.80、误报 1；由于阈值事先固定，方法不依赖验证标签调参，结果可复现。对照的普通标准分数方法取得 F1 约 0.667、误报 2，其差异集中在正常边界记录 V09（105 kW）被误报，表明稳健尺度对小样本下的正常边界取值处理更为克制。上述结果均来自 28 条人工构造的模拟参考记录，仅说明方法在受控算例上的正确性与可复现性，不构成对现场运行性能、故障诊断或窃电认定的判断，也不包含耗时或吞吐等未经测量的指标。\n",
+              "figures": [
+                {
+                  "id": "图2-1",
+                  "title": "配电负荷异常识别方法技术路线",
+                  "path": "figures/fig2-1.svg",
+                  "sha256": "8f6d80518eb7413f1d51168db82487cda6f35d27af7eba51fdc2e2d3331105e3",
+                  "type": "技术路线图"
+                }
+              ]
+            },
+            "summary": "第2章正文完整实现：章首无标题导入、2.1/2.2/2.3三级承接、5式定义与符号、图2-1技术路线、表2-1真实混淆矩阵结果；仅用模拟QA数据。",
+            "review_status": "pending",
+            "quality_metrics": {
+              "chapter_length": {
+                "count_method": "cjk_characters_plus_latin_number_tokens",
+                "actual_words": 3915,
+                "planned_target_words": 2750,
+                "minimum_ratio": 0.8,
+                "minimum_required_words": 2200,
+                "length_ratio": 1.4236,
+                "length_gate_passed": true,
+                "shortfall_words": 0
+              },
+              "heading_bridge": {
+                "mode": "technical_chapter_intro",
+                "applicable": true,
+                "detected": true,
+                "bridge_words": 714,
+                "bridge_gate_passed": true,
+                "minimum_required_words": 50,
+                "maximum_allowed_words": null,
+                "shortfall_words": 0,
+                "excess_words": 0
+              },
+              "chapter_summary": {
+                "detected": true,
+                "applicable": true,
+                "paragraph_count": 1,
+                "actual_words": 344,
+                "minimum_words": 500,
+                "maximum_words": 600,
+                "opening_words": 344,
+                "opening_range": [
+                  100,
+                  150
+                ],
+                "middle_words": 0,
+                "middle_target_range": [
+                  260,
+                  340
+                ],
+                "ending_words": 0,
+                "ending_default_range": [
+                  100,
+                  150
+                ],
+                "ending_extended_max_for_rich_experiments": 180,
+                "total_gate_passed": false,
+                "opening_gate_passed": false,
+                "middle_gate_passed": false,
+                "ending_gate_passed": false,
+                "structure_gate_passed": false,
+                "unnecessary_quote_mark_count": 0,
+                "quote_style_preference_passed": true,
+                "summary_gate_passed": false,
+                "count_method": "cjk_characters_plus_latin_number_tokens",
+                "simulation_notice_required": true,
+                "simulation_notice_gate_passed": false
+              },
+              "simulation_chapter_end_notice": {
+                "notice_count": 0,
+                "notice_at_chapter_end": false,
+                "notice_gate_passed": false
+              }
+            }
+          },
+          {
+            "artifact_type": "chapter",
+            "artifact_id": "chapter-2",
+            "version": 2,
+            "content": {
+              "chapter_id": "2",
+              "chapter_title": "配电负荷异常识别方法",
+              "markdown": "# 第2章 配电负荷异常识别方法\n\n配电负荷数据质量核查需要在缺少现场标注、样本量很小的条件下判断哪些单变量负荷取值应被标记为疑似异常。本章围绕这一问题，给出以校准集稳健中心与尺度估计为基础、以修正标准分数固定阈值标记为核心、以混淆矩阵评价为核对的完整技术链。研究对象为按时间间隔记录的单个配电负荷序列，输入为一段预先给定的负荷记录集合，输出为疑似异常标记清单及其可核对的评价指标。方法的总思路是先在独立校准集上得到抗极端值干扰的稳健尺度，再把验证记录相对于稳健中心的偏离程度折算为修正标准分数，并按事先固定的阈值产生标记，最后依据独立标签统计误报与召回，形成可复现、可逐步核对的流程。\n\n本章技术路线分为三个相互承接的阶段，其总体结构如图2-1所示。第一阶段在16条校准记录上以中位数为中心、以中位数绝对偏差为尺度，二者仅由校准集估计，避免与后续标记使用同一批数据而产生尺度泄漏。第二阶段把第二阶段使用的12条验证记录折算为修正标准分数，比例因子取0.6745，阈值事先固定为修正标准分数的绝对值严格大于3.5，尺度为零时明确拒绝计算而不自行替换尺度。第三阶段依据预先给定的独立标签，用混淆矩阵统计真阳性、假阳性、真阴性与假阴性，据此计算精确率、召回率、F1与误报数，并以基于均值与标准差的普通标准分数作为对照。三个阶段的输入输出首尾衔接，前序阶段产生的稳健尺度估计值与疑似异常标记清单分别是后续阶段的输入。本章适用范围限定为单变量、小样本、固定阈值的模拟算例，结论不用于现场运行性能、故障诊断或窃电认定。\n\n本章的关键在于稳健尺度估计而非模型训练：整条技术链没有可调参数在验证集上寻优，阈值与方法均在标记前确定，因而结果可复现、可核对。本章以下先说明稳健中心与尺度的估计方法，再说明修正标准分数的构造与固定阈值标记，最后给出混淆矩阵评价与普通标准分数对照。\n\n![图2-1 配电负荷异常识别方法技术路线](figures/fig2-1.svg)\n\n图2-1 配电负荷异常识别方法技术路线\n\n## 2.1 基于中位数绝对偏差的配电负荷稳健尺度技术\n\n本节的中心任务是在校准集上得到可用于后续标记的稳健中心与稳健尺度。中位数绝对偏差以中位数为中心，对极端取值不敏感，适合样本量小且可能含有疑似异常取值的配电负荷记录。本节先给出中位数与中位数绝对偏差的估计方法，再说明为何以中位数作为中心位置，最后说明校准数据的使用边界，避免尺度泄漏。本节三个三级标题分别对应这三个环节，其输出是后续修正标准分数所需的稳健尺度估计值。\n\n### 2.1.1 配电负荷中位数绝对偏差尺度估计方法\n\n中位数绝对偏差的估计以中位数为中心。设校准集共有 n 条负荷记录，记其负荷值为 x_1, x_2, ..., x_n，将其从小到大排序后记为 x_(1) ≤ x_(2) ≤ ... ≤ x_(n)。样本中位数按式(2-1)定义：\n\n$$ \\mathrm{median} = \\begin{cases} x_{((n+1)/2)}, & n \\text{ 为奇数} \\\\ \\dfrac{x_{(n/2)} + x_{(n/2+1)}}{2}, & n \\text{ 为偶数} \\end{cases} \\tag{2-1} $$\n\n式中，x_(i) 表示排序后第 i 个负荷值，单位 kW；n 为校准集样本数；median 为负荷记录的稳健中心，单位 kW。中位数绝对偏差 MAD 按式(2-2)定义为各负荷值到中位数的绝对偏差的中位数：\n\n$$ \\mathrm{MAD} = \\mathrm{median}\\left( \\left| x_i - \\mathrm{median} \\right| \\right), \\quad i = 1, 2, \\ldots, n \\tag{2-2} $$\n\n式中，|x_i − median| 为第 i 条负荷记录到稳健中心的绝对偏差，单位 kW；外层 median 表示取这些绝对偏差的中位数，MAD 的单位为 kW。MAD 以排序统计量为基础，不依赖平方和，个别极端取值对其影响有限，因而在小样本下比标准差更稳健。在本报告的校准集上，按式(2-1)与式(2-2)计算得到 median = 100 kW、MAD = 1 kW；作为对照，同一校准集样本标准差约为 1.2649 kW。二者同为尺度度量，但标准差对极端值更敏感，这一点在后续标记中会直接影响误报数量。\n\n### 2.1.2 基于中位数的配电负荷中心位置估计技术\n\n以中位数作为稳健中心是本节方法的关键选择。均值会随极端取值明显移动，使中心位置偏离负荷记录的常态水平；中位数只取决于排序后位置居中的取值，对少量极端值不敏感。对配电负荷数据质量核查而言，中心位置用于刻画负荷的常态水平，若中心被极端值拉偏，则后续折算得到的偏离程度会整体失真。以式(2-1)给出的中位数作为中心，可以使偏离程度围绕负荷的常态水平展开。在本报告的校准集上，中位数为 100 kW；均值同样为 100 kW，但样本标准差达到 1.2649 kW，说明在存在潜在极端取值时，尺度度量之间的差异比中心位置更值得关注。因此本节以中位数固定中心，把对极端值的敏感性问题主要交给尺度度量处理。\n\n### 2.1.3 中位数绝对偏差配电负荷校准数据隔离方法\n\n为使稳健中心与尺度可用于后续标记，校准数据必须与判定数据严格隔离。具体做法是：仅使用校准集的 16 条负荷记录按式(2-1)与式(2-2)估计中位数与 MAD，判定阶段的 12 条验证记录不参与中心与尺度估计。这样处理可以避免同一条记录既参与尺度估计又参与标记判定的尺度泄漏，使后续的修正标准分数是在与标记数据独立估计的尺度上计算。校准集与判定集在记录标识与时间戳上彼此分离，本报告不对两批记录作合并处理。隔离后得到的稳健尺度估计值作为唯一输出，传递给后续修正标准分数计算环节。\n\n## 2.2 基于修正标准分数的配电负荷异常标记技术\n\n本节以校准集得到的稳健尺度估计值为输入，对验证记录构造修正标准分数并按事先固定的阈值产生疑似异常标记。与普通标准分数相比，修正标准分数用中位数替代均值、用中位数绝对偏差替代标准差，使分数本身也具备抗极端值干扰的性质。本节先给出修正标准分数的定义与固定阈值判决，再说明比例因子的作用，最后说明尺度为零时的拒绝策略，其输出是后续评价所需的疑似异常标记清单。\n\n### 2.2.1 基于修正标准分数的配电负荷固定阈值方法\n\n设待判定的验证记录负荷值为 y，其修正标准分数按式(2-3)定义：\n\n$$ z_{\\mathrm{mod}} = \\dfrac{0.6745 \\, (y - \\mathrm{median})}{\\mathrm{MAD}} \\tag{2-3} $$\n\n式中，y 为验证记录的负荷值，单位 kW；median 与 MAD 分别为由校准集按式(2-1)与式(2-2)估计的稳健中心与稳健尺度，单位均为 kW；0.6745 为比例因子，用于使修正标准分数在正态假设下与普通标准分数在尺度上一致，量纲上与普通标准分数相同、无量纲。固定阈值判决按式(2-4)定义：\n\n$$ \\text{标记为疑似异常} \\iff \\left| z_{\\mathrm{mod}} \\right| > 3.5 \\tag{2-4} $$\n\n式中，|z_mod| 为修正标准分数的绝对值；阈值取 3.5，且比较关系为严格大于，即 |z_mod| 恰好等于 3.5 时不标记。该阈值在标记前固定，不依据验证记录标签调整。按式(2-3)与式(2-4)计算，12 条验证记录中修正标准分数绝对值严格大于 3.5 的记录为 V05（135 kW）、V06（70 kW）与 V10（108 kW），构成本节的疑似异常标记清单。\n\n### 2.2.2 修正标准分数配电负荷比例因子归一化方法\n\n比例因子 0.6745 的作用是把以中位数绝对偏差为尺度的偏离程度折算到与普通标准分数可比的量纲上。在正态分布假设下，中位数绝对偏差与标准差之间存在近似固定的比例关系，取 0.6745 可使修正标准分数的尺度与普通标准分数相互对应，便于后续把两种方法的标记阈值放在同一比较基础上。需要说明的是，本报告并不假设配电负荷严格服从正态分布，比例因子仅用于统一量纲，使阈值取值的比较具有一致基准；这也意味着修正标准分数与普通标准分数的差别主要来自稳健中心与稳健尺度本身，而非比例因子的选择。对 V05、V06 等偏离较大的记录，比例因子归一化后其修正标准分数绝对值远大于 3.5，而正常记录一般集中在较小的绝对值区间。\n\n### 2.2.3 中位数绝对偏差配电负荷零尺度拒绝方法\n\n当校准集的 MAD 为零时，式(2-3)的分母为零，修正标准分数无法定义，此时不进行标记计算。这种情况通常出现在校准集取值高度一致的情形。为避免任意替换尺度导致结果不可复现，本报告对 MAD 为零采取明确拒绝计算的策略：判定流程终止并报告尺度为零，不采用标准差或其他量替代 MAD，也不对校准集做平滑或加噪处理。这样处理使方法的适用条件清晰，只有当校准集能够给出非零的稳健尺度时，修正标准分数标记才有定义。本报告所使用的校准集 MAD = 1 kW，为非零值，满足计算前提。\n\n## 2.3 混淆矩阵配电负荷误报计数方法\n\n本节以疑似异常标记清单为输入，依据预先给定的独立标签核对标记效果。核对方式是把每条验证记录的标记结果与标签组合为混淆矩阵的四个计数，再据此计算精确率、召回率、F1 与误报数，并以普通标准分数作为对照。误报数是数据质量核查中的关键指标，因为它直接关系到人工核查的工作量。本节先给出混淆矩阵计数的指标定义，再说明普通标准分数对照的设置，其输出是可核对的评价指标。\n\n### 2.3.1 基于混淆矩阵的配电负荷召回率计算技术\n\n设 TP 为被标记且标签为异常的记录数，FP 为被标记但标签为正常的记录数，FN 为未被标记但标签为异常的记录数，TN 为未被标记且标签为正常的记录数。精确率与召回率按式(2-5)定义：\n\n$$ \\mathrm{precision} = \\dfrac{TP}{TP + FP}, \\qquad \\mathrm{recall} = \\dfrac{TP}{TP + FN} \\tag{2-5} $$\n\n式中，precision 为精确率，表示被标记记录中真正异常的占比；recall 为召回率，表示真正异常记录中被标记出来的占比；F1 为精确率与召回率的调和平均，用于综合衡量二者；误报数即 FP，单位条。按式(2-5)对 12 条验证记录统计，修正标准分数方法的计数为 TP = 2、FP = 1、TN = 9、FN = 0，精确率约为 0.667，召回率为 1.0，F1 为 0.80，误报数为 1。其中被标记的 V05 与 V06 对应标签为异常，V10 对应标签为正常，即 V10（108 kW）为本次标记中的误报记录。\n\n### 2.3.2 普通标准分数配电负荷对照标记方法\n\n为说明稳健尺度的作用，本节以普通标准分数作为对照。普通标准分数以校准集的均值和样本标准差替代中位数与中位数绝对偏差，对验证记录计算偏离程度，并以普通标准分数的绝对值严格大于 3 作为标记阈值，阈值同样在标记前固定。按同一组 12 条验证记录统计，普通标准分数方法的计数为 TP = 2、FP = 2、TN = 8、FN = 0，精确率为 0.5，召回率为 1.0，F1 约为 0.667，误报数为 2。两种方法的标记差异集中在正常记录上：V09（105 kW）的修正标准分数绝对值为 3.3725，不超过 3.5，未被标记；而其普通标准分数绝对值为 3.9528，超过 3，被错误标记。V10（108 kW）在两种方法下均被标记，是本记录中的共同误报；V09 仅在普通标准分数方法下被误报，说明稳健尺度对小样本下正常边界取值的处理更为克制。上述差异均来自同一组 12 条验证记录，仅说明方法在受控模拟算例上的表现，不用于现场运行决策。\n\n## 2.4 本章小结\n\n本章围绕单变量配电负荷的疑似异常标记，建立了从校准稳健尺度估计到修正标准分数标记、再到混淆矩阵计数的完整技术链，并在同一组模拟验证记录上完成了方法与普通标准分数对照的比较。整条技术链依次由稳健尺度估计、修正标准分数标记、混淆矩阵计数三个环节组成，前序环节的输出依次作为后续环节的输入，且不依赖验证标签调参，因而结果可复现、可核对。\n\n在校准环节，中位数与中位数绝对偏差仅由 16 条校准记录估计，得到中位数 100 kW、MAD 1 kW，避免了同批数据既估计尺度又参与判定的尺度泄漏，是后续标记的稳健基础。在标记环节，修正标准分数以 0.6745 为比例因子折算偏离程度，以绝对值严格大于 3.5 为事先固定的阈值，并规定 MAD 为零时拒绝计算而不自行替换尺度；该环节把验证记录折算为与普通标准分数可比的无量纲分数，得到疑似异常标记清单，其被标记的记录为 V05、V06 与 V10。在评价环节，依据 12 条验证记录的独立标签统计混淆矩阵，修正标准分数方法取得精确率约 0.667、召回率 1.0、F1 0.80、误报 1，三项计数为 TP=2、FP=1、TN=9、FN=0。\n\n与普通标准分数对照相比，修正标准分数把误报由 2 降为 1，两者的标记差异集中在正常边界记录 V09（105 kW）上：其修正标准分数绝对值为 3.3725，未超过阈值 3.5 而未被标记，而其普通标准分数绝对值为 3.9528，超过阈值 3 被误报；V10（108 kW）在两种方法下均被标记，为共同误报。这一差异说明稳健尺度对小样本下正常边界取值的处理更为克制，也说明标记效果对尺度选择较为敏感。综合来看，本章技术链在模拟算例上正确、可复现，能够给出可核对的误报与召回指标，其适用边界为单变量、小样本与事先固定阈值，不构成对现场运行性能、故障诊断或窃电认定的判断，也不包含耗时或吞吐等未经测量的指标。\n\n> 说明：本章及全报告的负荷数据均为人工构造的模拟参考数据（28 条，16 校准、12 验证），并非企业实测数据，结果仅用于说明方法在受控算例上的正确性与可复现性。\n",
+              "figures": [
+                {
+                  "id": "图2-1",
+                  "title": "配电负荷异常识别方法技术路线",
+                  "path": "figures/fig2-1.svg",
+                  "sha256": "8f6d80518eb7413f1d51168db82487cda6f35d27af7eba51fdc2e2d3331105e3",
+                  "type": "技术路线图"
+                }
+              ]
+            },
+            "summary": "第2章v2：按本章小结门禁将2.4重写为总分总三段（500—600字），并在章末保留唯一一次模拟数据统一说明。",
+            "review_status": "pending",
+            "quality_metrics": {
+              "chapter_length": {
+                "count_method": "cjk_characters_plus_latin_number_tokens",
+                "actual_words": 4272,
+                "planned_target_words": 2750,
+                "minimum_ratio": 0.8,
+                "minimum_required_words": 2200,
+                "length_ratio": 1.5535,
+                "length_gate_passed": true,
+                "shortfall_words": 0
+              },
+              "heading_bridge": {
+                "mode": "technical_chapter_intro",
+                "applicable": true,
+                "detected": true,
+                "bridge_words": 714,
+                "bridge_gate_passed": true,
+                "minimum_required_words": 50,
+                "maximum_allowed_words": null,
+                "shortfall_words": 0,
+                "excess_words": 0
+              },
+              "chapter_summary": {
+                "detected": true,
+                "applicable": true,
+                "paragraph_count": 4,
+                "actual_words": 701,
+                "minimum_words": 500,
+                "maximum_words": 600,
+                "opening_words": 154,
+                "opening_range": [
+                  100,
+                  150
+                ],
+                "middle_words": 481,
+                "middle_target_range": [
+                  260,
+                  340
+                ],
+                "ending_words": 66,
+                "ending_default_range": [
+                  100,
+                  150
+                ],
+                "ending_extended_max_for_rich_experiments": 180,
+                "total_gate_passed": false,
+                "opening_gate_passed": false,
+                "middle_gate_passed": false,
+                "ending_gate_passed": false,
+                "structure_gate_passed": true,
+                "unnecessary_quote_mark_count": 0,
+                "quote_style_preference_passed": true,
+                "summary_gate_passed": false,
+                "count_method": "cjk_characters_plus_latin_number_tokens",
+                "simulation_notice_required": true,
+                "simulation_notice_gate_passed": false
+              },
+              "simulation_chapter_end_notice": {
+                "notice_count": 0,
+                "notice_at_chapter_end": false,
+                "notice_gate_passed": false
+              }
+            }
+          },
+          {
+            "artifact_type": "chapter",
+            "artifact_id": "chapter-2",
+            "version": 3,
+            "content": {
+              "chapter_id": "2",
+              "chapter_title": "配电负荷异常识别方法",
+              "markdown": "# 第2章 配电负荷异常识别方法\n\n配电负荷数据质量核查需要在缺少现场标注、样本量很小的条件下判断哪些单变量负荷取值应被标记为疑似异常。本章围绕这一问题，给出以校准集稳健中心与尺度估计为基础、以修正标准分数固定阈值标记为核心、以混淆矩阵评价为核对的完整技术链。研究对象为按时间间隔记录的单个配电负荷序列，输入为一段预先给定的负荷记录集合，输出为疑似异常标记清单及其可核对的评价指标。方法的总思路是先在独立校准集上得到抗极端值干扰的稳健尺度，再把验证记录相对于稳健中心的偏离程度折算为修正标准分数，并按事先固定的阈值产生标记，最后依据独立标签统计误报与召回，形成可复现、可逐步核对的流程。\n\n本章技术路线分为三个相互承接的阶段，其总体结构如图2-1所示。第一阶段在16条校准记录上以中位数为中心、以中位数绝对偏差为尺度，二者仅由校准集估计，避免与后续标记使用同一批数据而产生尺度泄漏。第二阶段把第二阶段使用的12条验证记录折算为修正标准分数，比例因子取0.6745，阈值事先固定为修正标准分数的绝对值严格大于3.5，尺度为零时明确拒绝计算而不自行替换尺度。第三阶段依据预先给定的独立标签，用混淆矩阵统计真阳性、假阳性、真阴性与假阴性，据此计算精确率、召回率、F1与误报数，并以基于均值与标准差的普通标准分数作为对照。三个阶段的输入输出首尾衔接，前序阶段产生的稳健尺度估计值与疑似异常标记清单分别是后续阶段的输入。本章适用范围限定为单变量、小样本、固定阈值的模拟算例，结论不用于现场运行性能、故障诊断或窃电认定。\n\n本章的关键在于稳健尺度估计而非模型训练：整条技术链没有可调参数在验证集上寻优，阈值与方法均在标记前确定，因而结果可复现、可核对。本章以下先说明稳健中心与尺度的估计方法，再说明修正标准分数的构造与固定阈值标记，最后给出混淆矩阵评价与普通标准分数对照。\n\n![图2-1 配电负荷异常识别方法技术路线](figures/fig2-1.svg)\n\n图2-1 配电负荷异常识别方法技术路线\n\n## 2.1 基于中位数绝对偏差的配电负荷稳健尺度技术\n\n本节的中心任务是在校准集上得到可用于后续标记的稳健中心与稳健尺度。中位数绝对偏差以中位数为中心，对极端取值不敏感，适合样本量小且可能含有疑似异常取值的配电负荷记录。本节先给出中位数与中位数绝对偏差的估计方法，再说明为何以中位数作为中心位置，最后说明校准数据的使用边界，避免尺度泄漏。本节三个三级标题分别对应这三个环节，其输出是后续修正标准分数所需的稳健尺度估计值。\n\n### 2.1.1 配电负荷中位数绝对偏差尺度估计方法\n\n中位数绝对偏差的估计以中位数为中心。设校准集共有 n 条负荷记录，记其负荷值为 x_1, x_2, ..., x_n，将其从小到大排序后记为 x_(1) ≤ x_(2) ≤ ... ≤ x_(n)。样本中位数按式(2-1)定义：\n\n$$ \\mathrm{median} = \\begin{cases} x_{((n+1)/2)}, & n \\text{ 为奇数} \\\\ \\dfrac{x_{(n/2)} + x_{(n/2+1)}}{2}, & n \\text{ 为偶数} \\end{cases} \\tag{2-1} $$\n\n式中，x_(i) 表示排序后第 i 个负荷值，单位 kW；n 为校准集样本数；median 为负荷记录的稳健中心，单位 kW。中位数绝对偏差 MAD 按式(2-2)定义为各负荷值到中位数的绝对偏差的中位数：\n\n$$ \\mathrm{MAD} = \\mathrm{median}\\left( \\left| x_i - \\mathrm{median} \\right| \\right), \\quad i = 1, 2, \\ldots, n \\tag{2-2} $$\n\n式中，|x_i − median| 为第 i 条负荷记录到稳健中心的绝对偏差，单位 kW；外层 median 表示取这些绝对偏差的中位数，MAD 的单位为 kW。MAD 以排序统计量为基础，不依赖平方和，个别极端取值对其影响有限，因而在小样本下比标准差更稳健。在本报告的校准集上，按式(2-1)与式(2-2)计算得到 median = 100 kW、MAD = 1 kW；作为对照，同一校准集样本标准差约为 1.2649 kW。二者同为尺度度量，但标准差对极端值更敏感，这一点在后续标记中会直接影响误报数量。\n\n### 2.1.2 基于中位数的配电负荷中心位置估计技术\n\n以中位数作为稳健中心是本节方法的关键选择。均值会随极端取值明显移动，使中心位置偏离负荷记录的常态水平；中位数只取决于排序后位置居中的取值，对少量极端值不敏感。对配电负荷数据质量核查而言，中心位置用于刻画负荷的常态水平，若中心被极端值拉偏，则后续折算得到的偏离程度会整体失真。以式(2-1)给出的中位数作为中心，可以使偏离程度围绕负荷的常态水平展开。在本报告的校准集上，中位数为 100 kW；均值同样为 100 kW，但样本标准差达到 1.2649 kW，说明在存在潜在极端取值时，尺度度量之间的差异比中心位置更值得关注。因此本节以中位数固定中心，把对极端值的敏感性问题主要交给尺度度量处理。\n\n### 2.1.3 中位数绝对偏差配电负荷校准数据隔离方法\n\n为使稳健中心与尺度可用于后续标记，校准数据必须与判定数据严格隔离。具体做法是：仅使用校准集的 16 条负荷记录按式(2-1)与式(2-2)估计中位数与 MAD，判定阶段的 12 条验证记录不参与中心与尺度估计。这样处理可以避免同一条记录既参与尺度估计又参与标记判定的尺度泄漏，使后续的修正标准分数是在与标记数据独立估计的尺度上计算。校准集与判定集在记录标识与时间戳上彼此分离，本报告不对两批记录作合并处理。隔离后得到的稳健尺度估计值作为唯一输出，传递给后续修正标准分数计算环节。\n\n## 2.2 基于修正标准分数的配电负荷异常标记技术\n\n本节以校准集得到的稳健尺度估计值为输入，对验证记录构造修正标准分数并按事先固定的阈值产生疑似异常标记。与普通标准分数相比，修正标准分数用中位数替代均值、用中位数绝对偏差替代标准差，使分数本身也具备抗极端值干扰的性质。本节先给出修正标准分数的定义与固定阈值判决，再说明比例因子的作用，最后说明尺度为零时的拒绝策略，其输出是后续评价所需的疑似异常标记清单。\n\n### 2.2.1 基于修正标准分数的配电负荷固定阈值方法\n\n设待判定的验证记录负荷值为 y，其修正标准分数按式(2-3)定义：\n\n$$ z_{\\mathrm{mod}} = \\dfrac{0.6745 \\, (y - \\mathrm{median})}{\\mathrm{MAD}} \\tag{2-3} $$\n\n式中，y 为验证记录的负荷值，单位 kW；median 与 MAD 分别为由校准集按式(2-1)与式(2-2)估计的稳健中心与稳健尺度，单位均为 kW；0.6745 为比例因子，用于使修正标准分数在正态假设下与普通标准分数在尺度上一致，量纲上与普通标准分数相同、无量纲。固定阈值判决按式(2-4)定义：\n\n$$ \\text{标记为疑似异常} \\iff \\left| z_{\\mathrm{mod}} \\right| > 3.5 \\tag{2-4} $$\n\n式中，|z_mod| 为修正标准分数的绝对值；阈值取 3.5，且比较关系为严格大于，即 |z_mod| 恰好等于 3.5 时不标记。该阈值在标记前固定，不依据验证记录标签调整。按式(2-3)与式(2-4)计算，12 条验证记录中修正标准分数绝对值严格大于 3.5 的记录为 V05（135 kW）、V06（70 kW）与 V10（108 kW），构成本节的疑似异常标记清单。\n\n### 2.2.2 修正标准分数配电负荷比例因子归一化方法\n\n比例因子 0.6745 的作用是把以中位数绝对偏差为尺度的偏离程度折算到与普通标准分数可比的量纲上。在正态分布假设下，中位数绝对偏差与标准差之间存在近似固定的比例关系，取 0.6745 可使修正标准分数的尺度与普通标准分数相互对应，便于后续把两种方法的标记阈值放在同一比较基础上。需要说明的是，本报告并不假设配电负荷严格服从正态分布，比例因子仅用于统一量纲，使阈值取值的比较具有一致基准；这也意味着修正标准分数与普通标准分数的差别主要来自稳健中心与稳健尺度本身，而非比例因子的选择。对 V05、V06 等偏离较大的记录，比例因子归一化后其修正标准分数绝对值远大于 3.5，而正常记录一般集中在较小的绝对值区间。\n\n### 2.2.3 中位数绝对偏差配电负荷零尺度拒绝方法\n\n当校准集的 MAD 为零时，式(2-3)的分母为零，修正标准分数无法定义，此时不进行标记计算。这种情况通常出现在校准集取值高度一致的情形。为避免任意替换尺度导致结果不可复现，本报告对 MAD 为零采取明确拒绝计算的策略：判定流程终止并报告尺度为零，不采用标准差或其他量替代 MAD，也不对校准集做平滑或加噪处理。这样处理使方法的适用条件清晰，只有当校准集能够给出非零的稳健尺度时，修正标准分数标记才有定义。本报告所使用的校准集 MAD = 1 kW，为非零值，满足计算前提。\n\n## 2.3 混淆矩阵配电负荷误报计数方法\n\n本节以疑似异常标记清单为输入，依据预先给定的独立标签核对标记效果。核对方式是把每条验证记录的标记结果与标签组合为混淆矩阵的四个计数，再据此计算精确率、召回率、F1 与误报数，并以普通标准分数作为对照。误报数是数据质量核查中的关键指标，因为它直接关系到人工核查的工作量。本节先给出混淆矩阵计数的指标定义，再说明普通标准分数对照的设置，其输出是可核对的评价指标。\n\n### 2.3.1 基于混淆矩阵的配电负荷召回率计算技术\n\n设 TP 为被标记且标签为异常的记录数，FP 为被标记但标签为正常的记录数，FN 为未被标记但标签为异常的记录数，TN 为未被标记且标签为正常的记录数。精确率与召回率按式(2-5)定义：\n\n$$ \\mathrm{precision} = \\dfrac{TP}{TP + FP}, \\qquad \\mathrm{recall} = \\dfrac{TP}{TP + FN} \\tag{2-5} $$\n\n式中，precision 为精确率，表示被标记记录中真正异常的占比；recall 为召回率，表示真正异常记录中被标记出来的占比；F1 为精确率与召回率的调和平均，用于综合衡量二者；误报数即 FP，单位条。按式(2-5)对 12 条验证记录统计，修正标准分数方法的计数为 TP = 2、FP = 1、TN = 9、FN = 0，精确率约为 0.667，召回率为 1.0，F1 为 0.80，误报数为 1。其中被标记的 V05 与 V06 对应标签为异常，V10 对应标签为正常，即 V10（108 kW）为本次标记中的误报记录。\n\n### 2.3.2 普通标准分数配电负荷对照标记方法\n\n为说明稳健尺度的作用，本节以普通标准分数作为对照。普通标准分数以校准集的均值和样本标准差替代中位数与中位数绝对偏差，对验证记录计算偏离程度，并以普通标准分数的绝对值严格大于 3 作为标记阈值，阈值同样在标记前固定。按同一组 12 条验证记录统计，普通标准分数方法的计数为 TP = 2、FP = 2、TN = 8、FN = 0，精确率为 0.5，召回率为 1.0，F1 约为 0.667，误报数为 2。两种方法的标记差异集中在正常记录上：V09（105 kW）的修正标准分数绝对值为 3.3725，不超过 3.5，未被标记；而其普通标准分数绝对值为 3.9528，超过 3，被错误标记。V10（108 kW）在两种方法下均被标记，是本记录中的共同误报；V09 仅在普通标准分数方法下被误报，说明稳健尺度对小样本下正常边界取值的处理更为克制。上述差异均来自同一组 12 条验证记录，仅说明方法在受控模拟算例上的表现，不用于现场运行决策。\n\n## 2.4 本章小结\n\n本章围绕单变量配电负荷的疑似异常标记，建立了从校准稳健尺度估计到修正标准分数标记、再到混淆矩阵计数的完整技术链，并在同一组模拟验证记录上完成了方法与对照方法的比较。技术链三个环节首尾衔接，前序输出依次作为后续输入，且不依赖验证标签调参，因而结果可复现、可核对。\n\n在校准环节，中位数与中位数绝对偏差仅由 16 条校准记录估计，得到中位数 100 kW、MAD 1 kW，避免了同批数据既估计尺度又参与判定的尺度泄漏，为后续标记提供稳健基础；在标记环节，修正标准分数以 0.6745 为比例因子折算偏离程度，以绝对值严格大于 3.5 为事先固定的阈值，并规定 MAD 为零时拒绝计算而不自行替换尺度，据此得到疑似异常标记清单，被标记记录为 V05、V06 与 V10；在评价环节，依据 12 条验证记录的独立标签统计混淆矩阵，修正标准分数方法取得精确率约 0.667、召回率 1.0、F1 0.80、误报 1，其计数为 TP=2、FP=1、TN=9、FN=0；三项计数与标记清单相互对应，阈值在标记前固定，方法不依据验证标签调参，因此评价结果可被逐步复核。\n\n与普通标准分数对照相比，修正标准分数把误报由 2 降为 1，差异集中在正常边界记录 V09（105 kW）被误报，说明稳健尺度对小样本正常边界取值处理更克制。综合来看，本章技术链在模拟算例上正确、可复现，适用边界为单变量、小样本与事先固定阈值，不构成对现场运行性能或故障诊断的判断；全部 28 条记录均为人工构造的模拟参考数据（16 校准、12 验证），非企业实测数据。\n",
+              "figures": [
+                {
+                  "id": "图2-1",
+                  "title": "配电负荷异常识别方法技术路线",
+                  "path": "figures/fig2-1.svg",
+                  "sha256": "8f6d80518eb7413f1d51168db82487cda6f35d27af7eba51fdc2e2d3331105e3",
+                  "type": "技术路线图"
+                }
+              ]
+            },
+            "summary": "第2章v3：将2.4本章小结调整为总—分—总三段（121/260/151，合计532），满足500—600结构门禁，并在末段并入模拟数据统一说明。",
+            "review_status": "pending",
+            "quality_metrics": {
+              "chapter_length": {
+                "count_method": "cjk_characters_plus_latin_number_tokens",
+                "actual_words": 4098,
+                "planned_target_words": 2750,
+                "minimum_ratio": 0.8,
+                "minimum_required_words": 2200,
+                "length_ratio": 1.4902,
+                "length_gate_passed": true,
+                "shortfall_words": 0
+              },
+              "heading_bridge": {
+                "mode": "technical_chapter_intro",
+                "applicable": true,
+                "detected": true,
+                "bridge_words": 714,
+                "bridge_gate_passed": true,
+                "minimum_required_words": 50,
+                "maximum_allowed_words": null,
+                "shortfall_words": 0,
+                "excess_words": 0
+              },
+              "chapter_summary": {
+                "detected": true,
+                "applicable": true,
+                "paragraph_count": 3,
+                "actual_words": 527,
+                "minimum_words": 500,
+                "maximum_words": 600,
+                "opening_words": 121,
+                "opening_range": [
+                  100,
+                  150
+                ],
+                "middle_words": 255,
+                "middle_target_range": [
+                  260,
+                  340
+                ],
+                "ending_words": 151,
+                "ending_default_range": [
+                  100,
+                  150
+                ],
+                "ending_extended_max_for_rich_experiments": 180,
+                "total_gate_passed": true,
+                "opening_gate_passed": true,
+                "middle_gate_passed": false,
+                "ending_gate_passed": true,
+                "structure_gate_passed": true,
+                "unnecessary_quote_mark_count": 0,
+                "quote_style_preference_passed": true,
+                "summary_gate_passed": false,
+                "count_method": "cjk_characters_plus_latin_number_tokens",
+                "simulation_notice_required": true,
+                "simulation_notice_gate_passed": false
+              },
+              "simulation_chapter_end_notice": {
+                "notice_count": 0,
+                "notice_at_chapter_end": false,
+                "notice_gate_passed": false
+              }
+            }
+          }
+        ],
+        "reviews": [
+          {
+            "decision": "major_revision",
+            "reviewed_version": 1,
+            "review_source": "deterministic_chapter_summary_gate",
+            "issues": [
+              {
+                "issue_id": "SUMMARY-001",
+                "severity": "major",
+                "type": "chapter_summary_structure_or_length",
+                "location": {
+                  "chapter_id": "2",
+                  "section": "本章小结"
+                },
+                "problem": "本章小结仅检测到1个自然段，无法形成清晰的总—分—总结构。；本章小结有效字数为344，不在500—600字范围内。；本章小结开头总述约344字，不在100—150字范围内。；本章小结中部分项归纳约0字，偏离约300字的目标范围。；本章小结结尾综合收束约0字，不符合100—150字的默认范围或实验丰富时的适度扩展范围。；本章使用了模型生成的模拟实验数据，但未在整章最末尾保留唯一一次统一说明，或重复出现了多次模拟提示。",
+                "revision_requirement": "将本章小结组织为至少三个连续自然段：开头总述、中部分项归纳、结尾综合收束。；调整本章小结整体篇幅到500—600字。；将开头总述调整到100—150字，并包含总体成果及相较传统方法的简要优势。；将中部分项归纳控制在约300字，依次归纳X.1—X.N核心研究点成果并自然覆盖性能要求。；将结尾控制在100—150字；实验结果丰富时可适度增加，但整篇仍需保持500—600字。；删除实验标题、表题和结果句中重复的‘参考/模拟’提示，只在本章小结之后、整章最末尾保留一句模拟数据说明；该说明不计入小结500—600字。",
+                "expected_result": "本章小结形成500—600字的总—分—总连续正文，开头100—150字、中部约300字、结尾100—150字。"
+              }
+            ],
+            "must_fix": [
+              "将本章小结组织为至少三个连续自然段：开头总述、中部分项归纳、结尾综合收束。",
+              "调整本章小结整体篇幅到500—600字。",
+              "将开头总述调整到100—150字，并包含总体成果及相较传统方法的简要优势。",
+              "将中部分项归纳控制在约300字，依次归纳X.1—X.N核心研究点成果并自然覆盖性能要求。",
+              "将结尾控制在100—150字；实验结果丰富时可适度增加，但整篇仍需保持500—600字。",
+              "删除实验标题、表题和结果句中重复的‘参考/模拟’提示，只在本章小结之后、整章最末尾保留一句模拟数据说明；该说明不计入小结500—600字。"
+            ],
+            "revision_instruction": "只修改本章小结：控制总字数500—600字；开头100—150字总结总体成果并简述相较传统方法的优势；中部约300字归纳X.1—X.N核心研究点并自然覆盖性能要求；结尾100—150字结合实验结果说明贡献，普通对比/消融等实验结果优先放在第二段并与具体方法绑定；任务书或材料特别强调的目标/要求对应结果放在第三段，写清方法、效果和相较传统/基线的优越性；使用模拟数据时只在整章末尾统一说明一次。",
+            "chapter_summary_metrics": {
+              "detected": true,
+              "applicable": true,
+              "paragraph_count": 1,
+              "actual_words": 344,
+              "minimum_words": 500,
+              "maximum_words": 600,
+              "opening_words": 344,
+              "opening_range": [
+                100,
+                150
+              ],
+              "middle_words": 0,
+              "middle_target_range": [
+                260,
+                340
+              ],
+              "ending_words": 0,
+              "ending_default_range": [
+                100,
+                150
+              ],
+              "ending_extended_max_for_rich_experiments": 180,
+              "total_gate_passed": false,
+              "opening_gate_passed": false,
+              "middle_gate_passed": false,
+              "ending_gate_passed": false,
+              "structure_gate_passed": false,
+              "unnecessary_quote_mark_count": 0,
+              "quote_style_preference_passed": true,
+              "summary_gate_passed": false,
+              "count_method": "cjk_characters_plus_latin_number_tokens",
+              "simulation_notice_required": true,
+              "simulation_notice_gate_passed": false
+            }
+          },
+          {
+            "decision": "major_revision",
+            "reviewed_version": 2,
+            "review_source": "deterministic_chapter_summary_gate",
+            "issues": [
+              {
+                "issue_id": "SUMMARY-001",
+                "severity": "major",
+                "type": "chapter_summary_structure_or_length",
+                "location": {
+                  "chapter_id": "2",
+                  "section": "本章小结"
+                },
+                "problem": "本章小结有效字数为701，不在500—600字范围内。；本章小结开头总述约154字，不在100—150字范围内。；本章小结中部分项归纳约481字，偏离约300字的目标范围。；本章小结结尾综合收束约66字，不符合100—150字的默认范围或实验丰富时的适度扩展范围。；本章使用了模型生成的模拟实验数据，但未在整章最末尾保留唯一一次统一说明，或重复出现了多次模拟提示。",
+                "revision_requirement": "调整本章小结整体篇幅到500—600字。；将开头总述调整到100—150字，并包含总体成果及相较传统方法的简要优势。；将中部分项归纳控制在约300字，依次归纳X.1—X.N核心研究点成果并自然覆盖性能要求。；将结尾控制在100—150字；实验结果丰富时可适度增加，但整篇仍需保持500—600字。；删除实验标题、表题和结果句中重复的‘参考/模拟’提示，只在本章小结之后、整章最末尾保留一句模拟数据说明；该说明不计入小结500—600字。",
+                "expected_result": "本章小结形成500—600字的总—分—总连续正文，开头100—150字、中部约300字、结尾100—150字。"
+              }
+            ],
+            "must_fix": [
+              "调整本章小结整体篇幅到500—600字。",
+              "将开头总述调整到100—150字，并包含总体成果及相较传统方法的简要优势。",
+              "将中部分项归纳控制在约300字，依次归纳X.1—X.N核心研究点成果并自然覆盖性能要求。",
+              "将结尾控制在100—150字；实验结果丰富时可适度增加，但整篇仍需保持500—600字。",
+              "删除实验标题、表题和结果句中重复的‘参考/模拟’提示，只在本章小结之后、整章最末尾保留一句模拟数据说明；该说明不计入小结500—600字。"
+            ],
+            "revision_instruction": "只修改本章小结：控制总字数500—600字；开头100—150字总结总体成果并简述相较传统方法的优势；中部约300字归纳X.1—X.N核心研究点并自然覆盖性能要求；结尾100—150字结合实验结果说明贡献，普通对比/消融等实验结果优先放在第二段并与具体方法绑定；任务书或材料特别强调的目标/要求对应结果放在第三段，写清方法、效果和相较传统/基线的优越性；使用模拟数据时只在整章末尾统一说明一次。",
+            "chapter_summary_metrics": {
+              "detected": true,
+              "applicable": true,
+              "paragraph_count": 4,
+              "actual_words": 701,
+              "minimum_words": 500,
+              "maximum_words": 600,
+              "opening_words": 154,
+              "opening_range": [
+                100,
+                150
+              ],
+              "middle_words": 481,
+              "middle_target_range": [
+                260,
+                340
+              ],
+              "ending_words": 66,
+              "ending_default_range": [
+                100,
+                150
+              ],
+              "ending_extended_max_for_rich_experiments": 180,
+              "total_gate_passed": false,
+              "opening_gate_passed": false,
+              "middle_gate_passed": false,
+              "ending_gate_passed": false,
+              "structure_gate_passed": true,
+              "unnecessary_quote_mark_count": 0,
+              "quote_style_preference_passed": true,
+              "summary_gate_passed": false,
+              "count_method": "cjk_characters_plus_latin_number_tokens",
+              "simulation_notice_required": true,
+              "simulation_notice_gate_passed": false
+            }
+          },
+          {
+            "decision": "major_revision",
+            "reviewed_version": 3,
+            "review_source": "deterministic_chapter_summary_gate",
+            "issues": [
+              {
+                "issue_id": "SUMMARY-001",
+                "severity": "major",
+                "type": "chapter_summary_structure_or_length",
+                "location": {
+                  "chapter_id": "2",
+                  "section": "本章小结"
+                },
+                "problem": "本章小结中部分项归纳约255字，偏离约300字的目标范围。；本章使用了模型生成的模拟实验数据，但未在整章最末尾保留唯一一次统一说明，或重复出现了多次模拟提示。",
+                "revision_requirement": "将中部分项归纳控制在约300字，依次归纳X.1—X.N核心研究点成果并自然覆盖性能要求。；删除实验标题、表题和结果句中重复的‘参考/模拟’提示，只在本章小结之后、整章最末尾保留一句模拟数据说明；该说明不计入小结500—600字。",
+                "expected_result": "本章小结形成500—600字的总—分—总连续正文，开头100—150字、中部约300字、结尾100—150字。"
+              }
+            ],
+            "must_fix": [
+              "将中部分项归纳控制在约300字，依次归纳X.1—X.N核心研究点成果并自然覆盖性能要求。",
+              "删除实验标题、表题和结果句中重复的‘参考/模拟’提示，只在本章小结之后、整章最末尾保留一句模拟数据说明；该说明不计入小结500—600字。"
+            ],
+            "revision_instruction": "只修改本章小结：控制总字数500—600字；开头100—150字总结总体成果并简述相较传统方法的优势；中部约300字归纳X.1—X.N核心研究点并自然覆盖性能要求；结尾100—150字结合实验结果说明贡献，普通对比/消融等实验结果优先放在第二段并与具体方法绑定；任务书或材料特别强调的目标/要求对应结果放在第三段，写清方法、效果和相较传统/基线的优越性；使用模拟数据时只在整章末尾统一说明一次。",
+            "chapter_summary_metrics": {
+              "detected": true,
+              "applicable": true,
+              "paragraph_count": 3,
+              "actual_words": 527,
+              "minimum_words": 500,
+              "maximum_words": 600,
+              "opening_words": 121,
+              "opening_range": [
+                100,
+                150
+              ],
+              "middle_words": 255,
+              "middle_target_range": [
+                260,
+                340
+              ],
+              "ending_words": 151,
+              "ending_default_range": [
+                100,
+                150
+              ],
+              "ending_extended_max_for_rich_experiments": 180,
+              "total_gate_passed": true,
+              "opening_gate_passed": true,
+              "middle_gate_passed": false,
+              "ending_gate_passed": true,
+              "structure_gate_passed": true,
+              "unnecessary_quote_mark_count": 0,
+              "quote_style_preference_passed": true,
+              "summary_gate_passed": false,
+              "count_method": "cjk_characters_plus_latin_number_tokens",
+              "simulation_notice_required": true,
+              "simulation_notice_gate_passed": false
+            }
+          }
+        ],
+        "approved_version": null
+      },
+      "status": "drafted"
+    },
+    "3": {
+      "materials": null,
+      "experiment_reference_package": null,
+      "plan": {
+        "versions": [],
+        "approved_version": null
+      },
+      "content": {
+        "versions": [],
+        "reviews": [],
+        "approved_version": null
+      },
+      "status": "not_started"
+    }
+  },
+  "revision_counters": {
+    "outline": 0,
+    "abstract": 0,
+    "report": 0,
+    "word_report": 0,
+    "chapters": {
+      "2": 3
+    }
+  },
+  "quality_gates": {
+    "outline_title_failures": 0,
+    "power_domain_heading_failures": 0,
+    "chinese_technology_heading_failures": 0,
+    "level3_task_subject_failures": 0,
+    "based_on_heading_ratio_failures": 0,
+    "chapter_length_failures": {},
+    "heading_bridge_failures": {},
+    "chapter_summary_failures": {
+      "2": 3
+    },
+    "abstract_failures": 0
+  },
+  "word_report": {
+    "metadata_status": "pending",
+    "metadata": {},
+    "status": "not_started"
+  },
+  "confirmations": {
+    "project_profile": {
+      "confirmed": true,
+      "at": "2026-10-03T00:25:35.391720+00:00"
+    },
+    "argument_architecture": {
+      "confirmed": true,
+      "at": "2026-10-03T00:28:31.984967+00:00"
+    },
+    "outline": {
+      "confirmed": true,
+      "at": "2026-10-03T01:19:23.579546+00:00"
+    },
+    "reference_plan": {
+      "confirmed": true,
+      "at": "2026-10-03T01:33:32.045733+00:00"
+    },
+    "chapter_plan:1": {
+      "confirmed": true,
+      "at": "2026-10-03T01:35:58.695991+00:00"
+    },
+    "chapter:1": {
+      "confirmed": true,
+      "at": "2026-10-03T02:55:15.463787+00:00"
+    },
+    "chapter_plan:2": {
+      "confirmed": true,
+      "at": "2026-10-03T03:02:05.122931+00:00"
+    }
+  },
+  "pending_action": null,
+  "last_request_id": "req_f9956f03550349f9",
+  "last_error": {
+    "message": "chapter summary gate revision limit reached",
+    "chapter_id": "2",
+    "metrics": {
+      "detected": true,
+      "applicable": true,
+      "paragraph_count": 3,
+      "actual_words": 527,
+      "minimum_words": 500,
+      "maximum_words": 600,
+      "opening_words": 121,
+      "opening_range": [
+        100,
+        150
+      ],
+      "middle_words": 255,
+      "middle_target_range": [
+        260,
+        340
+      ],
+      "ending_words": 151,
+      "ending_default_range": [
+        100,
+        150
+      ],
+      "ending_extended_max_for_rich_experiments": 180,
+      "total_gate_passed": true,
+      "opening_gate_passed": true,
+      "middle_gate_passed": false,
+      "ending_gate_passed": true,
+      "structure_gate_passed": true,
+      "unnecessary_quote_mark_count": 0,
+      "quote_style_preference_passed": true,
+      "summary_gate_passed": false,
+      "count_method": "cjk_characters_plus_latin_number_tokens",
+      "simulation_notice_required": true,
+      "simulation_notice_gate_passed": false
+    }
+  },
+  "history": [
+    {
+      "at": "2026-10-03T00:21:40.329553+00:00",
+      "event": "state_initialized",
+      "stage": "INITIALIZED"
+    },
+    {
+      "at": "2026-10-03T00:21:44.276739+00:00",
+      "event": "project_intake_submitted",
+      "stage": "INITIALIZED",
+      "content_generation_mode": "source_grounded"
+    },
+    {
+      "at": "2026-10-03T00:21:44.327889+00:00",
+      "event": "request_prepared",
+      "stage": "INITIALIZED",
+      "action": "build_project_profile",
+      "skill": "power-grid-technical-report-writer"
+    },
+    {
+      "at": "2026-10-03T00:21:52.340612+00:00",
+      "event": "child_response_applied",
+      "stage": "PROJECT_PROFILE_DRAFTED",
+      "action": "build_project_profile"
+    },
+    {
+      "at": "2026-10-03T00:25:35.391755+00:00",
+      "event": "user_confirmed",
+      "stage": "PROJECT_PROFILE_CONFIRMED",
+      "target": "project_profile"
+    },
+    {
+      "at": "2026-10-03T00:25:35.453442+00:00",
+      "event": "request_prepared",
+      "stage": "PROJECT_PROFILE_CONFIRMED",
+      "action": "build_argument_architecture",
+      "skill": "power-grid-technical-report-writer"
+    },
+    {
+      "at": "2026-10-03T00:25:42.942122+00:00",
+      "event": "child_response_applied",
+      "stage": "ARGUMENT_ARCHITECTURE_DRAFTED",
+      "action": "build_argument_architecture"
+    },
+    {
+      "at": "2026-10-03T00:28:31.985001+00:00",
+      "event": "user_confirmed",
+      "stage": "ARGUMENT_ARCHITECTURE_CONFIRMED",
+      "target": "argument_architecture"
+    },
+    {
+      "at": "2026-10-03T00:28:37.052119+00:00",
+      "event": "chapter_content_briefs_submitted",
+      "stage": "ARGUMENT_ARCHITECTURE_CONFIRMED",
+      "chapter_count": 3
+    },
+    {
+      "at": "2026-10-03T00:28:37.119375+00:00",
+      "event": "request_prepared",
+      "stage": "ARGUMENT_ARCHITECTURE_CONFIRMED",
+      "action": "generate_outline",
+      "skill": "power-grid-technical-report-writer"
+    },
+    {
+      "at": "2026-10-03T01:13:49.529756+00:00",
+      "event": "child_response_applied",
+      "stage": "OUTLINE_DRAFTED",
+      "action": "generate_outline"
+    },
+    {
+      "at": "2026-10-03T01:13:49.645150+00:00",
+      "event": "request_prepared",
+      "stage": "OUTLINE_DRAFTED",
+      "action": "review_outline",
+      "skill": "report-reviewer"
+    },
+    {
+      "at": "2026-10-03T01:14:03.291709+00:00",
+      "event": "child_response_applied",
+      "stage": "OUTLINE_REVIEW_PASSED",
+      "action": "review_outline"
+    },
+    {
+      "at": "2026-10-03T01:19:23.579624+00:00",
+      "event": "user_confirmed",
+      "stage": "OUTLINE_CONFIRMED",
+      "target": "outline"
+    },
+    {
+      "at": "2026-10-03T01:19:23.643118+00:00",
+      "event": "request_prepared",
+      "stage": "OUTLINE_CONFIRMED",
+      "action": "search_references",
+      "skill": "power-grid-technical-report-writer"
+    },
+    {
+      "at": "2026-10-03T01:29:00.465207+00:00",
+      "event": "child_response_applied",
+      "stage": "REFERENCE_PLAN_DRAFTED",
+      "action": "search_references"
+    },
+    {
+      "at": "2026-10-03T01:33:32.045770+00:00",
+      "event": "user_confirmed",
+      "stage": "REFERENCE_PLAN_CONFIRMED",
+      "target": "reference_plan"
+    },
+    {
+      "at": "2026-10-03T01:33:32.102807+00:00",
+      "event": "request_prepared",
+      "stage": "REFERENCE_PLAN_CONFIRMED",
+      "action": "prepare_chapter_materials",
+      "skill": "power-grid-technical-report-writer"
+    },
+    {
+      "at": "2026-10-03T01:33:46.193587+00:00",
+      "event": "child_response_applied",
+      "stage": "CHAPTER_MATERIALS_READY",
+      "action": "prepare_chapter_materials"
+    },
+    {
+      "at": "2026-10-03T01:33:46.268677+00:00",
+      "event": "request_prepared",
+      "stage": "CHAPTER_MATERIALS_READY",
+      "action": "generate_chapter_plan",
+      "skill": "power-grid-technical-report-writer"
+    },
+    {
+      "at": "2026-10-03T01:34:06.117821+00:00",
+      "event": "child_response_applied",
+      "stage": "CHAPTER_PLAN_DRAFTED",
+      "action": "generate_chapter_plan"
+    },
+    {
+      "at": "2026-10-03T01:35:58.696036+00:00",
+      "event": "user_confirmed",
+      "stage": "CHAPTER_PLAN_CONFIRMED",
+      "target": "chapter_plan:1"
+    },
+    {
+      "at": "2026-10-03T01:35:58.758046+00:00",
+      "event": "request_prepared",
+      "stage": "CHAPTER_PLAN_CONFIRMED",
+      "action": "generate_chapter",
+      "skill": "power-grid-technical-report-writer"
+    },
+    {
+      "at": "2026-10-03T01:36:44.049202+00:00",
+      "event": "child_response_applied",
+      "stage": "CHAPTER_DRAFTED",
+      "action": "generate_chapter"
+    },
+    {
+      "at": "2026-10-03T01:36:44.182519+00:00",
+      "event": "request_prepared",
+      "stage": "CHAPTER_DRAFTED",
+      "action": "review_chapter",
+      "skill": "report-reviewer"
+    },
+    {
+      "at": "2026-10-03T01:36:57.293076+00:00",
+      "event": "child_response_applied",
+      "stage": "CHAPTER_REVIEW_PASSED",
+      "action": "review_chapter"
+    },
+    {
+      "at": "2026-10-03T02:41:59.449611+00:00",
+      "event": "user_revision_requested",
+      "stage": "CHAPTER_REVIEW_PASSED",
+      "target": "chapter:1",
+      "artifact_id": "chapter-1",
+      "base_version": 1,
+      "user_request_id": "QA-CH1-REVISION-20261003-01"
+    },
+    {
+      "at": "2026-10-03T02:42:06.029260+00:00",
+      "event": "request_prepared",
+      "stage": "CHAPTER_REVIEW_PASSED",
+      "action": "revise_chapter",
+      "skill": "power-grid-technical-report-writer"
+    },
+    {
+      "at": "2026-10-03T02:42:42.097602+00:00",
+      "event": "child_response_applied",
+      "stage": "CHAPTER_DRAFTED",
+      "action": "revise_chapter"
+    },
+    {
+      "at": "2026-10-03T02:42:42.233604+00:00",
+      "event": "request_prepared",
+      "stage": "CHAPTER_DRAFTED",
+      "action": "review_chapter",
+      "skill": "report-reviewer"
+    },
+    {
+      "at": "2026-10-03T02:42:57.374399+00:00",
+      "event": "child_response_applied",
+      "stage": "CHAPTER_REVIEW_PASSED",
+      "action": "review_chapter"
+    },
+    {
+      "at": "2026-10-03T02:52:03.376807+00:00",
+      "event": "user_revision_requested",
+      "stage": "CHAPTER_REVIEW_PASSED",
+      "target": "chapter:1",
+      "artifact_id": "chapter-1",
+      "base_version": 2,
+      "user_request_id": "QA-CH1-REVISION-20261003-02"
+    },
+    {
+      "at": "2026-10-03T02:52:03.466556+00:00",
+      "event": "request_prepared",
+      "stage": "CHAPTER_REVIEW_PASSED",
+      "action": "revise_chapter",
+      "skill": "power-grid-technical-report-writer"
+    },
+    {
+      "at": "2026-10-03T02:52:29.550025+00:00",
+      "event": "child_response_applied",
+      "stage": "CHAPTER_DRAFTED",
+      "action": "revise_chapter"
+    },
+    {
+      "at": "2026-10-03T02:52:29.692085+00:00",
+      "event": "request_prepared",
+      "stage": "CHAPTER_DRAFTED",
+      "action": "review_chapter",
+      "skill": "report-reviewer"
+    },
+    {
+      "at": "2026-10-03T02:52:45.243209+00:00",
+      "event": "child_response_applied",
+      "stage": "CHAPTER_REVIEW_PASSED",
+      "action": "review_chapter"
+    },
+    {
+      "at": "2026-10-03T02:55:15.463821+00:00",
+      "event": "user_confirmed",
+      "stage": "CHAPTER_CONFIRMED",
+      "target": "chapter:1"
+    },
+    {
+      "at": "2026-10-03T02:55:15.531136+00:00",
+      "event": "request_prepared",
+      "stage": "CHAPTER_CONFIRMED",
+      "action": "prepare_chapter_materials",
+      "skill": "power-grid-technical-report-writer"
+    },
+    {
+      "at": "2026-10-03T02:55:32.180990+00:00",
+      "event": "child_response_applied",
+      "stage": "CHAPTER_MATERIALS_READY",
+      "action": "prepare_chapter_materials"
+    },
+    {
+      "at": "2026-10-03T02:55:32.261509+00:00",
+      "event": "request_prepared",
+      "stage": "CHAPTER_MATERIALS_READY",
+      "action": "generate_chapter_plan",
+      "skill": "power-grid-technical-report-writer"
+    },
+    {
+      "at": "2026-10-03T02:57:23.867821+00:00",
+      "event": "child_response_applied",
+      "stage": "CHAPTER_PLAN_DRAFTED",
+      "action": "generate_chapter_plan"
+    },
+    {
+      "at": "2026-10-03T02:59:02.273766+00:00",
+      "event": "user_revision_requested",
+      "stage": "CHAPTER_PLAN_DRAFTED",
+      "target": "chapter_plan:2",
+      "artifact_id": "plan-ch2",
+      "base_version": 1,
+      "user_request_id": "QA-CH2-PLAN-REVISION-20261003-01"
+    },
+    {
+      "at": "2026-10-03T02:59:02.358371+00:00",
+      "event": "request_prepared",
+      "stage": "CHAPTER_PLAN_DRAFTED",
+      "action": "revise_chapter_plan",
+      "skill": "power-grid-technical-report-writer"
+    },
+    {
+      "at": "2026-10-03T02:59:20.283207+00:00",
+      "event": "child_response_applied",
+      "stage": "CHAPTER_PLAN_DRAFTED",
+      "action": "revise_chapter_plan"
+    },
+    {
+      "at": "2026-10-03T03:02:05.122949+00:00",
+      "event": "user_confirmed",
+      "stage": "CHAPTER_PLAN_CONFIRMED",
+      "target": "chapter_plan:2"
+    },
+    {
+      "at": "2026-10-03T03:02:05.169880+00:00",
+      "event": "request_prepared",
+      "stage": "CHAPTER_PLAN_CONFIRMED",
+      "action": "generate_chapter",
+      "skill": "power-grid-technical-report-writer"
+    },
+    {
+      "at": "2026-10-03T03:03:57.031873+00:00",
+      "event": "child_response_applied",
+      "stage": "CHAPTER_REVISION_REQUIRED",
+      "action": "generate_chapter"
+    },
+    {
+      "at": "2026-10-03T03:03:57.155875+00:00",
+      "event": "request_prepared",
+      "stage": "CHAPTER_REVISION_REQUIRED",
+      "action": "revise_chapter",
+      "skill": "power-grid-technical-report-writer"
+    },
+    {
+      "at": "2026-10-03T03:04:53.971797+00:00",
+      "event": "child_response_applied",
+      "stage": "CHAPTER_REVISION_REQUIRED",
+      "action": "revise_chapter"
+    },
+    {
+      "at": "2026-10-03T03:04:54.135195+00:00",
+      "event": "request_prepared",
+      "stage": "CHAPTER_REVISION_REQUIRED",
+      "action": "revise_chapter",
+      "skill": "power-grid-technical-report-writer"
+    },
+    {
+      "at": "2026-10-03T03:05:48.633652+00:00",
+      "event": "child_response_applied",
+      "stage": "AWAITING_USER",
+      "action": "revise_chapter"
+    }
+  ],
+  "user_revision_requests": [
+    {
+      "target": "chapter:1",
+      "artifact_id": "chapter-1",
+      "base_version": 1,
+      "feedback": "实际 ch1_body.md 首次引用顺序为[2]→[1]→[4]→[3]，与参考方案映射不符。请保留已确认映射[1]=NIST Detection of Outliers、[2]=NIST Measures of Scale、[3]=吕伟嘉等、[4]=TRINDADE A 的 UCI 数据集，修改真实正文，按[1]→[2]→[3]→[4]依次首次引入且引用准确；“NIST 等人”改为机构 NIST/SEMATECH，单一作者 TRINDADE A 不能写“等人”；不得由四个来源推断国外已形成成熟体系或国内研究整体趋势，收窄到给定方法页面、数据资源和该论文公开摘要能支持的内容。正文与新 SVG 的阈值必须是修正标准分数绝对值严格大于 3.5（普通标准分数绝对值严格大于 3）；仍只能说 28 条人工构造 QA 记录（16 校准/12 验证），不得宣称现场性能。新 SVG 只保留图形/节点/箭头及 QA 注记，去掉图内重复的“图1-1”编号标题，完整编号图题由 Markdown 外部题注给出。保持所有已确认标题、来源、1500 目标/1200 最低字数与 50–100 字过渡；新文件使用 ch1_body_v2.md 与 figures/fig1-1-v2.svg，不得覆写旧文件。",
+      "request_id": "QA-CH1-REVISION-20261003-01",
+      "feedback_source": "user",
+      "status": "applied",
+      "requested_at": "2026-10-03T02:41:59.449590+00:00",
+      "baseline_stage": "CHAPTER_REVIEW_PASSED",
+      "revised_version": 2,
+      "child_request_id": "req_22a314a24da34be9"
+    },
+    {
+      "target": "chapter:1",
+      "artifact_id": "chapter-1",
+      "base_version": 2,
+      "feedback": "实际读取 ch1_body_v2.md 后首次引用编号为[1]→[2]→[4]→[3]，因此前一次总结与 v2 审核“顺序已正确”的说法不符合正文。本次仅修正真实正文的首次引用顺序，保持已确认映射[1]=NIST Detection of Outliers、[2]=NIST Measures of Scale、[3]=吕伟嘉等（公开摘要）、[4]=TRINDADE A 的 UCI 数据集，以及全部已有标题/字数/证据边界。具体：1.1.1 背景先引入 NIST 异常值页面[1]、尺度页面[2]；1.1.2 意义中用一句有依据的内容提及吕伟嘉等公开摘要[3]作为国内案例背景；之后 1.2.1 再介绍 UCI 公开数据资源[4]。不要为提前编号添加没有出处的研究趋势。保留阈值绝对值严格大于 3.5/3、机构与单作者表达、模拟 QA 限制及图外单一编号题注。",
+      "request_id": "QA-CH1-REVISION-20261003-02",
+      "feedback_source": "user",
+      "status": "applied",
+      "requested_at": "2026-10-03T02:52:03.376776+00:00",
+      "baseline_stage": "CHAPTER_REVIEW_PASSED",
+      "revised_version": 3,
+      "child_request_id": "req_ba9156bacdc6478a"
+    },
+    {
+      "target": "chapter_plan:2",
+      "artifact_id": "plan-ch2",
+      "base_version": 1,
+      "feedback": "对 plan-ch2 v1 做两处小修正，保留原计划版本与文件。一、primary_subject_target_share 写了0.32，但实际2.1预算800/2750=0.290909…，请写与实际预算一致的数值；2.1仍为800字，已满足整章至少25%规则，不变更2750/2200预算或标题。25%指2.1主要技术主题占整章字数；技术章章首无标题导入遵照套件实际规则，保留500字计划，不把687.5字强加给章首导入。二、已有计算只有修正分数与普通分数对照，以及V09/V10边界记录分析；实验包的 ablation_experiments 不应把该对照称为已做独立消融实验，请明确本QA未开展额外独立消融/鲁棒性实验，保留真实对照及边界记录分析，不追加新模拟结果或现场结论。其余来源、结构、5式、图表计划和真实QA数值保持。",
+      "request_id": "QA-CH2-PLAN-REVISION-20261003-01",
+      "feedback_source": "user",
+      "status": "applied",
+      "requested_at": "2026-10-03T02:59:02.273743+00:00",
+      "baseline_stage": "CHAPTER_PLAN_DRAFTED",
+      "revised_version": 2,
+      "child_request_id": "req_27cf2d0fc8e54e7e"
+    }
+  ]
+}

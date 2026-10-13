@@ -68,6 +68,11 @@ function agentForCwd(cwd: string): Agent {
     version: SESSION_FORMAT_VERSION, id, createdAt: 0, cwd, isSeeded: false,
   })
   return {
+    canMaintainInbox: true,
+    onBeforeTurn: () => () => {},
+    onAfterClaim: () => () => {},
+    captureInboxActivity: () => { throw new Error('This Agent double has no maintenance capture') },
+    wakePending: () => {},
     ctx: new Context(),
     id,
     options: {},
@@ -86,6 +91,11 @@ function agentForCwd(cwd: string): Agent {
 
 function sessionAgent(session: Session, id = 'tool-skill-agent'): Agent {
   const agent: Agent = {
+    canMaintainInbox: false,
+    onBeforeTurn: () => () => {},
+    onAfterClaim: () => () => {},
+    captureInboxActivity: () => { throw new Error('This Agent double has no maintenance capture') },
+    wakePending: () => {},
     id: SessionId(id),
     options: {},
     session,

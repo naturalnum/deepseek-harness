@@ -1,0 +1,147 @@
+diff --git a/dist/index.mjs b/dist/index.mjs
+index ebe37dd027ab90208d32131aa5e114ce9c9124b0..f2d52ea518e631c0ccb29c60ec17723c500e88e2 100644
+--- a/dist/index.mjs
++++ b/dist/index.mjs
+@@ -1,7 +1,7 @@
+ import { walk as e } from "estree-walker";
+ import { dirname as t, resolve as n } from "node:path";
+ import { fileURLToPath as r } from "node:url";
+-import { LEAST_UPPER_BOUND as i, TraceMap as a, allGeneratedPositionsFor as o, originalPositionFor as s, sourceContentFor as c } from "@jridgewell/trace-mapping";
++import { LEAST_UPPER_BOUND as i, TraceMap as a, allGeneratedPositionsFor as o, originalPositionFor as s, sourceContentFor as c, decodedMappings as D } from "@jridgewell/trace-mapping";
+ import { readFileSync as l } from "node:fs";
+ import { readFile as u } from "node:fs/promises";
+ import d from "js-tokens";
+@@ -267,7 +267,7 @@ var Locator = class {
+ 	}
+ 	getLoc(e) {
+ 		let t = this.offsetToNeedle(e.start), n = getPosition(t, this.#t);
+-		if (n === null) return null;
++		if (n === null || isUnmappedCommentPrefix(t, n, this.#t)) return null;
+ 		let r = this.offsetToNeedle(e.end);
+ 		--r.column;
+ 		let a = getPosition(r, this.#t);
+@@ -309,6 +309,26 @@ var Locator = class {
+ 		return a[0] = a[0].slice(e.start.column), a[a.length - 1] = a[a.length - 1].slice(0, e.end.column), a.join("\n");
+ 	}
+ };
++// Unmapped compiler prefixes must not acquire a source slot from a comment via LUB fallback.
++function isUnmappedCommentPrefix(needle, position, map) {
++  if (s(map, needle).source !== null) return false;
++  const first = D(map)[needle.line - 1]?.find(segment => segment.length > 1);
++  if (!first || needle.column >= first[0]) return false;
++  const source = c(map, position.filename) ?? tryReadFileSync(position.filename);
++  if (source == null) return false;
++  const lines = source.split("\n");
++  let sourceOffset = position.column;
++  for (let line = 0; line < position.line - 1; line++) sourceOffset += lines[line].length + 1;
++  let offset = 0;
++  for (const token of d(source)) {
++    const end = offset + token.value.length;
++    if (offset <= sourceOffset && sourceOffset < end)
++      return token.type === "SingleLineComment" || token.type === "MultiLineComment";
++    if (offset > sourceOffset) break;
++    offset = end;
++  }
++  return false;
++}
+ function getPosition(e, t) {
+ 	let n = s(t, e);
+ 	return n.source ?? (n = s(t, {
+@@ -442,11 +462,48 @@ function getCount(e, t) {
+ 	return 0;
+ }
+ //#endregion
++// Retain the owning initializer context for direct StaticBlock execution.
++function createStaticInitializerContexts(ast, coverage, wrapperLength) {
++  const contexts = new WeakMap();
++  const boundaries = new Set(["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression", "ClassDeclaration", "ClassExpression"]);
++  const children = node => Object.values(node).flatMap(value => Array.isArray(value) ? value : [value])
++    .filter(value => value && typeof value === "object" && typeof value.type === "string");
++  function markStaticExecution(node, ranges) {
++    // A nested function executes in its own function context, not while its declaration is evaluated.
++    if (boundaries.has(node.type)) return;
++    contexts.set(node, ranges);
++    for (const child of children(node)) markStaticExecution(child, ranges);
++  }
++  function visit(node) {
++    if (!node || typeof node.type !== "string") return;
++    if (node.type === "ClassDeclaration" || node.type === "ClassExpression") {
++      const start = node.body.start + wrapperLength, end = node.body.end + wrapperLength;
++      const owners = coverage.functions.filter(fn => fn.ranges[0]?.startOffset === start && fn.ranges[0]?.endOffset === end);
++      const statics = owners.filter(fn => fn.functionName === "<static_initializer>");
++      const instances = owners.filter(fn => fn.functionName === "<instance_members_initializer>");
++      // Only the reproduced collision with an unambiguous exact AST ClassBody match is handled.
++      // Static fields have additional evaluation scopes; leave these classes entirely on the original path.
++      const unsupportedStaticField = node.body.body.some(member => member.static &&
++        ["PropertyDefinition", "ClassProperty", "ClassPrivateProperty"].includes(member.type));
++      if (!unsupportedStaticField && statics.length === 1 && instances.length === 1) {
++        const ranges = normalize({ ...coverage, functions: [statics[0]] });
++        for (const member of node.body.body) {
++          if (member.type === "StaticBlock") markStaticExecution(member, ranges);
++        }
++      }
++    }
++    for (const child of children(node)) visit(child);
++  }
++  visit(ast);
++  return contexts;
++}
+ //#region src/coverage-mapper.ts
+ var y = class CoverageMapper {
+ 	locator;
+ 	coverageMapData;
+ 	ranges;
++	contextualRanges;
++	rangesForNode(node) { return this.contextualRanges?.get(node) ?? this.ranges; }
+ 	wrapperLength;
+ 	directory;
+ 	onIgnoreNode;
+@@ -465,9 +522,11 @@ var y = class CoverageMapper {
+ 		if (n === null) return;
+ 		let r = this.locator.getLoc(t.decl);
+ 		if (r === null) return;
++		// A function-valued Property counts calls to its value, not evaluation of its static wrapper.
++		const functionNode = e.type === "Property" && e.value?.type === "FunctionExpression" && this.contextualRanges?.has(e) ? e.value : e;
+ 		let i = getCount({
+-			startOffset: e.start + this.wrapperLength,
+-			endOffset: e.end + this.wrapperLength
++			startOffset: functionNode.start + this.wrapperLength,
++			endOffset: functionNode.end + this.wrapperLength
+ 		}, this.ranges);
+ 		if (this.ignoreSourceCode) {
+ 			let t = this.locator.getLoc(e) || n, r = this.locator.getSourceLines(t, this.#e(t));
+@@ -498,7 +557,7 @@ var y = class CoverageMapper {
+ 		let r = getCount({
+ 			startOffset: (t || e).start + this.wrapperLength,
+ 			endOffset: (t || e).end + this.wrapperLength
+-		}, this.ranges);
++		}, this.rangesForNode(t || e));
+ 		if (this.ignoreSourceCode) {
+ 			let e = t && this.locator.getLoc(t) || n, r = this.locator.getSourceLines(e, this.#e(e));
+ 			if (r != null && this.ignoreSourceCode(r, "statement", {
+@@ -539,7 +598,7 @@ var y = class CoverageMapper {
+ 				let e = getCount({
+ 					startOffset: t.start + this.wrapperLength,
+ 					endOffset: t.end + this.wrapperLength
+-				}, this.ranges), n = a.at(-1) || 0;
++				}, this.rangesForNode(t)), n = a.at(-1) || 0;
+ 				a.push(e - n);
+ 				continue;
+ 			}
+@@ -549,7 +608,7 @@ var y = class CoverageMapper {
+ 			a.push(getCount({
+ 				startOffset: e.start + r + this.wrapperLength,
+ 				endOffset: e.end - r + this.wrapperLength
+-			}, this.ranges));
++			}, this.rangesForNode(t)));
+ 		}
+ 		if (e === "if" && i.length > 0 && (i[0] = r), i.length !== 0) {
+ 			if (this.ignoreSourceCode) {
+@@ -595,6 +654,7 @@ async function convert(e) {
+ 	let t = getIgnoreHints(e.code);
+ 	if (t.length === 1 && t[0].type === "file") return {};
+ 	let n = getWalker(), r = await y.create(e, n.onIgnore), i = await e.ast;
++	r.contextualRanges = createStaticInitializerContexts(i, e.coverage, e.wrapperLength || 0);
+ 	return n.walk(i, t, e.ignoreClassMethods, {
+ 		onFunctionDeclaration(e) {
+ 			r.onFunction(e, {

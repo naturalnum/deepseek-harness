@@ -1,0 +1,58 @@
+# Employee4 review proposal only; not applied to running source.
+# Baseline source SHA256:
+# start.mjs f35eb6a0efee2bdb2f34c5cd242f0ca63c4fe95e2ded10ecaef46d541ef51e19
+# lifecycle.mjs e76c8e9e45d1014561bf82a9a1aeac0c461a0b44b3ec60de5e22f5d5c882cfc1
+# backup.mjs 1c7b94323fed3684ee4d1f1b41347cc550e40c065f4bbdc7615b66648b10f4b2
+# backup-tree.mjs bca7023dff6a0c50cb50ebc6a419a8ec648608bd0cecf55be528bffd3d53f384
+# backup-postgres.mjs 595489ec01fa8dbd9a2609ca642783886e6ae76d27d17fdb76d6ead0de29aa9e
+# Validation evidence: employee4-quality-stage3/proposal-validation.json.
+# Shares three identical catch callbacks, retaining Promise/microtask timing and every forward guard.
+# URL.port is always a string; removing nullish fallback retains empty-string libpq default.
+--- a/products/power-evolve/deploy/lifecycle.mjs
++++ b/products/power-evolve/deploy/lifecycle.mjs
+@@ -101,6 +101,7 @@
+     child.once('close', (code, signal) => { exited = true; resolve({ code, signal }) })
+   })
+   let identity = null, initialized = false, signalTask = Promise.resolve()
++  const recordSignalFailure = error => { signalFailure = error }
+   const forward = async () => {
+     if (exited || !requestedSignal || !identity) return
+     const current = await processIdentity(child.pid)
+@@ -111,7 +112,7 @@
+   const shutdown = async signal => {
+     if (exited || requestedSignal) return
+     requestedSignal = signal
+-    if (initialized) signalTask = forward().catch(error => { signalFailure = error })
++    if (initialized) signalTask = forward().catch(recordSignalFailure)
+   }
+   const terminate = () => { void shutdown('SIGTERM') }, interrupt = () => { void shutdown('SIGINT') }
+   process.on('SIGTERM', terminate); process.on('SIGINT', interrupt)
+@@ -121,7 +122,7 @@
+     await lock.save({ phase: 'running', child: identity })
+     await durableJson(lifecycleFile, lock.record)
+     initialized = true
+-    if (requestedSignal) signalTask = forward().catch(error => { signalFailure = error })
++    if (requestedSignal) signalTask = forward().catch(recordSignalFailure)
+     const exit = await done
+     await signalTask
+     const evidence = { ...lock.record, phase: 'stopped', exit, requestedSignal, stoppedAt: Date.now() }
+@@ -136,7 +137,7 @@
+     if (!exited) {
+       requestedSignal ??= 'SIGTERM'
+       initialized = true
+-      signalTask = forward().catch(failure => { signalFailure = failure })
++      signalTask = forward().catch(recordSignalFailure)
+       await signalTask
+       await done
+     }
+--- a/products/power-evolve/deploy/backup-postgres.mjs
++++ b/products/power-evolve/deploy/backup-postgres.mjs
+@@ -42,7 +42,7 @@
+   if (!database || /[=\p{Cc}]/u.test(database)) throw new Error('Invalid literal database name')
+   const env = { PATH: process.env.PATH, HOME: process.env.HOME, PGDATABASE: database,
+     PGUSER: decodeURIComponent(parsed.username), PGPASSWORD: decodeURIComponent(parsed.password),
+-    PGHOST: config.tools?.host ?? parsed.hostname, PGPORT: config.tools?.port ?? parsed.port ?? '5432',
++    PGHOST: config.tools?.host ?? parsed.hostname, PGPORT: config.tools?.port ?? parsed.port,
+     PGCONNECT_TIMEOUT: '10', PGOPTIONS: '-c timezone=UTC -c extra_float_digits=3' }
+   if (config.tools?.container) return { command: 'docker', args: ['exec', '-i',
+     ...Object.keys(env).filter(key => key.startsWith('PG')).flatMap(key => ['--env', key]), config.tools.container, tool], env }

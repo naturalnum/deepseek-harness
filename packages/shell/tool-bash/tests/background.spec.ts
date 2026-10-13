@@ -351,6 +351,11 @@ describe('foreground commands as jobs', () => {
     const ctx = await setup()
     const ownerId = SessionId('promote-owner')
     const owner: Agent = {
+      canMaintainInbox: true,
+      onBeforeTurn: () => () => {},
+      onAfterClaim: () => () => {},
+      captureInboxActivity: () => { throw new Error('This Agent double has no maintenance capture') },
+      wakePending: () => {},
       id: ownerId,
       options: {},
       session: Session.create(ownerId, undefined, {
@@ -466,6 +471,11 @@ describe('owned background output', () => {
     const ctx = await setup()
     const ownerId = SessionId('background-owner')
     const owner: Agent = {
+      canMaintainInbox: true,
+      onBeforeTurn: () => () => {},
+      onAfterClaim: () => () => {},
+      captureInboxActivity: () => { throw new Error('This Agent double has no maintenance capture') },
+      wakePending: () => {},
       id: ownerId,
       options: {},
       session: Session.create(ownerId, undefined, {

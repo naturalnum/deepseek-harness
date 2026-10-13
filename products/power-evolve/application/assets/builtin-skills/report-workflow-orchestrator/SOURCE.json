@@ -1,0 +1,53 @@
+{
+  "originalCommit": "a03460fe66a3f77114ff3bb906476105e1d470b7",
+  "originalPath": "services/cloud-server/assets/builtin-skills/report-workflow-orchestrator",
+  "originalRelease": "1.1.21",
+  "productRelease": "1.1.32",
+  "maintenance": "PowerEvolve product fork: structured argument architecture, Markdown heading preservation, and explicit user revision requests; original writing and review rules retained.",
+  "changes": [
+    {
+      "version": "1.1.32",
+      "summary": "Align active Skill metadata with the cloud-only catalog release; preserve all predecessor distribution bytes."
+    },
+    {
+      "version": "1.1.31",
+      "summary": "Publish a cloud-only successor for the official DSH migration; preserve installed predecessor bytes and remove Device execution guidance from active instructions."
+    },
+    {
+      "version": "1.1.30",
+      "summary": "Reject modern bilingual abstract drafts with fewer or more than three English paragraphs during actual apply; retain rejected versions and require repaired new-version validation before confirmation. Preserve historical confirmation behavior."
+    },
+    {
+      "version": "1.1.29",
+      "summary": "Bind new reference requests to contract 2 and top-level internet_access/items; check local source bytes with an explicit caller-provided root during apply and confirm, preserve captured legacy external-only plans, reject placeholder HTTP, and forward the same reference plan to chapter and formal review consumers."
+    },
+    {
+      "version": "1.1.28",
+      "summary": "Publish Cloud and Desktop targets; synchronize workflow JSON through an atomic same-directory replacement and report uncertain post-replacement commits; require exact integer page coverage for current-version Word acceptance."
+    },
+    {
+      "version": "1.1.27",
+      "summary": "Add the paired English/Chinese chapter confirmation fixture README and consistency record; retain captured inputs, historical versions and workflow behavior."
+    },
+    {
+      "version": "1.1.26",
+      "summary": "Preserve numbered figure/table caption separators and image alt prefixes in the actual final report assembly normalizer and its CLI, retaining existing heading protection and cleanup within titles and prose."
+    },
+    {
+      "version": "1.1.22",
+      "summary": "Accept the existing nested chapter mapping, reject invalid responses before consuming the pending request, avoid duplicate foundation/conclusion targets, and repair previously applied invalid drafts through a fresh child request and append-only version before explicit confirmation."
+    },
+    {
+      "version": "1.1.23",
+      "summary": "Preserve ATX heading markers, numbering and separators during deterministic Markdown cleaning so the existing heading validator and final Word source parser keep reading confirmed headings."
+    },
+    {
+      "version": "1.1.24",
+      "summary": "Add version-bound, idempotent explicit user revision requests at unconfirmed approval points; preserve historical artifacts and formal reviews, route feedback separately to existing generator actions, require new output files and repeat current-version validation/review."
+    },
+    {
+      "version": "1.1.25",
+      "summary": "Allow one explicit user-authorized revision of the current unconfirmed chapter after a recorded, latest-review-bound chapter revision limit; preserve failure counters and history, keep other blocked/failed reasons rejected, and require all original gates and new-version formal review before confirmation."
+    }
+  ]
+}

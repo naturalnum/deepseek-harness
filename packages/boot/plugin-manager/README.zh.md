@@ -13,6 +13,8 @@ kind: "package-reference"
 
 管理当前 profile 的插件，无需手动编辑配置。启停单个插件条目、选择已安装的组合包，以及安装或删除外部组合包。在 YAML 中启用 HMR 时，配置变化立即生效；未启用 HMR 时，运行中的组合保留到重启。改动影响使用该 profile 的全部会话。
 
+经过鉴权的适配层可为当前用户不可修改的 Profile 控件返回 `permission-required`。用户授权由适配层负责；PluginManager 仍验证 patch 归属、受保护模块与包操作。
+
 ## 目录
 
 - [使用本包](#use-this-package)

@@ -1,0 +1,29 @@
+{
+  "name": "@power-evolve/cloud-web",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "files": [
+    "dist",
+    "README.md",
+    "README.zh.md"
+  ],
+  "description": "PowerEvolve static bundle of the native DSH Web shell",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "node --check scripts/build.mjs",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "@power-evolve/client-account": "workspace:*",
+    "@power-evolve/client-extension-center": "workspace:*",
+    "@deepseek-ai/dsh-client-modules": "workspace:*",
+    "@deepseek-ai/dsh-client-web": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-sidebar-browser": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-directory-picker-browse": "workspace:*",
+    "@deepseek-ai/dsh-host-webserver": "workspace:*",
+    "@deepseek-ai/dsh-web-app": "workspace:*",
+    "@deepseek-ai/dsh-web-frontend": "workspace:*",
+    "js-yaml": "^4.2.0"
+  }
+}

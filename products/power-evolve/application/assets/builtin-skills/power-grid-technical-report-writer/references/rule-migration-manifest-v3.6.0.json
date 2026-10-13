@@ -1,0 +1,289 @@
+{
+  "source_version": "v3.5.4",
+  "target_version": "v3.6.0",
+  "policy": "Rule-block IDs identify the original fragments from the v3.5.4 migration. Hashes track the current approved rule bodies. v1.1.16 retains the consolidated active baseline and requires both secondary and tertiary technical headings to independently expose concrete technical signatures; changed blocks are updated in place with approved_evolution while unchanged migrated rule blocks remain protected. v1.1.16 enforces a 40%-60% hard range for based-on headings and prioritizes technical signatures over title length.",
+  "blocks": [
+    {
+      "id": "global-00-intro",
+      "target_file": "stages/00-interaction-control.md",
+      "sha256": "230f993e6f8c3a04c0e33c2c6c7159f3811e45de6392a935e7d8e48d1477c643",
+      "characters": 71,
+      "lines": 3
+    },
+    {
+      "id": "global-01",
+      "target_file": "stages/00-interaction-control.md",
+      "sha256": "a7585d8296a912a0c10d24cabbf30d272c105db0381cd95ffe43a59054694471",
+      "characters": 565,
+      "lines": 29
+    },
+    {
+      "id": "global-02",
+      "target_file": "stages/00-interaction-control.md",
+      "sha256": "651c4ddb0f458db3995dfebf015882a648f94cf882f03e0d4e5a40f98b8cc02c",
+      "characters": 469,
+      "lines": 22
+    },
+    {
+      "id": "global-03",
+      "target_file": "stages/00-interaction-control.md",
+      "sha256": "10e512736d889ea88c642c4677cd4febabdd4cda6068830f4f338e2b08df2129",
+      "characters": 273,
+      "lines": 12
+    },
+    {
+      "id": "global-04",
+      "target_file": "stages/00-interaction-control.md",
+      "sha256": "26b06e9d807e31f9f17af665191c03ee43158ffb64e61e566d4240fa27b3041c",
+      "characters": 398,
+      "lines": 13
+    },
+    {
+      "id": "global-05",
+      "target_file": "stages/00-interaction-control.md",
+      "sha256": "330656e06beb43e95cf1f32b28680c74adf99031c8667910015fdb2720230be2",
+      "characters": 190,
+      "lines": 12
+    },
+    {
+      "id": "state-3",
+      "target_file": "stages/00-interaction-control.md",
+      "sha256": "3bad767b90fc38220c3b8483b707b8f35733dd2b99677079def9837882f62229",
+      "characters": 1799,
+      "lines": 93
+    },
+    {
+      "id": "state-9",
+      "target_file": "stages/00-interaction-control.md",
+      "sha256": "eb2201713fbccc3df4785f4c0efd71fb73cfc94eae565ae9a828708fad9b3c56",
+      "characters": 1202,
+      "lines": 53
+    },
+    {
+      "id": "recovery-11",
+      "target_file": "stages/00-interaction-control.md",
+      "sha256": "fb7d8597a77b0b355e6c35912f5efe629748059aa99992d61197586132df7838",
+      "characters": 296,
+      "lines": 30
+    },
+    {
+      "id": "prohibited-12",
+      "target_file": "stages/00-interaction-control.md",
+      "sha256": "ef15be6129ed2f5e7b1502af6c3e7be374205b6f2e2c537a64eca799d9182f0e",
+      "characters": 1077,
+      "lines": 30,
+      "approved_evolution": "v1.1.10 whole-skill rule conflict consolidation"
+    },
+    {
+      "id": "final-rule-14",
+      "target_file": "stages/00-interaction-control.md",
+      "sha256": "18773ccf65166a0d58d8bba1dc30880233258ebd1e137af3ec0cbdaaeb776f26",
+      "characters": 660,
+      "lines": 17
+    },
+    {
+      "id": "scope-1",
+      "target_file": "stages/10-project-and-argument.md",
+      "sha256": "39226009ea6fc449ecc4c30212ba7888f8a2ef357465c5c6fc0f830718c430d6",
+      "characters": 216,
+      "lines": 15
+    },
+    {
+      "id": "scope-2",
+      "target_file": "stages/10-project-and-argument.md",
+      "sha256": "43cc909dea1fe61e3257d67817493d081b3d46875c3791b7ff79a6aedbc90559",
+      "characters": 1871,
+      "lines": 37,
+      "approved_evolution": "v1.1.16 based-on heading 40%-60% hard gate and title-priority unification"
+    },
+    {
+      "id": "principles-4",
+      "target_file": "stages/10-project-and-argument.md",
+      "sha256": "7a6c88c5a0c4019f5eb95cd2c27c1fe59df71c36a784937b3f3190f27d43e20f",
+      "characters": 945,
+      "lines": 61,
+      "approved_evolution": "v1.1.10 whole-skill rule conflict consolidation"
+    },
+    {
+      "id": "project-13",
+      "target_file": "stages/10-project-and-argument.md",
+      "sha256": "d8feac58ea33d37a0aad35b5a853a084f594809b2142ecf5f909fd171e504946",
+      "characters": 798,
+      "lines": 31,
+      "approved_evolution": "v1.1.7 experiment evidence semantic layering"
+    },
+    {
+      "id": "stage-A",
+      "target_file": "stages/10-project-and-argument.md",
+      "sha256": "bc82f156c8c68a570a1835b3a1a63c61639566e62e0d8494b3e5ac20e154ad42",
+      "characters": 1271,
+      "lines": 64,
+      "approved_evolution": "v1.1.7 experiment evidence semantic layering"
+    },
+    {
+      "id": "stage-B",
+      "target_file": "stages/10-project-and-argument.md",
+      "sha256": "75e3ac9fa4d0d55f267a9ee3f19954a983d81fa9ffbc5ab859eb2cd401fbe209",
+      "characters": 758,
+      "lines": 34,
+      "approved_evolution": "v1.1.10 whole-skill rule conflict consolidation"
+    },
+    {
+      "id": "stage-B2",
+      "target_file": "stages/10-project-and-argument.md",
+      "sha256": "cd4a1b49b2b79f0d5a042a95b9b92eb0b9b69235fee6df1052540586a81d2bd0",
+      "characters": 419,
+      "lines": 21
+    },
+    {
+      "id": "first-10",
+      "target_file": "stages/10-project-and-argument.md",
+      "sha256": "a72944bbc225ca8c99edce12c08c9c3a0c7caaa6b1d0e624a7799222e3ac60a2",
+      "characters": 243,
+      "lines": 21
+    },
+    {
+      "id": "outline-07",
+      "target_file": "stages/20-outline-and-literature.md",
+      "sha256": "91f82a30072956e7a94bb751bb8050d6ec855a84da4bea194a7e3b78df977414",
+      "characters": 1645,
+      "lines": 22,
+      "approved_evolution": "v1.1.20 chapter-summary rule centralization without semantic deletion"
+    },
+    {
+      "id": "outline-08",
+      "target_file": "stages/20-outline-and-literature.md",
+      "sha256": "b0a47e9da0ccb17b6ebf291885dc55f3fd9533d16a77c6e07c95b67463bb2774",
+      "characters": 1218,
+      "lines": 34,
+      "approved_evolution": "v1.1.20 chapter-summary rule centralization without semantic deletion"
+    },
+    {
+      "id": "outline-14",
+      "target_file": "stages/20-outline-and-literature.md",
+      "sha256": "53753ab5fca234d162583e03931933d505820e8345df728cfe5accb892c5ac83",
+      "characters": 770,
+      "lines": 17
+    },
+    {
+      "id": "stage-C",
+      "target_file": "stages/20-outline-and-literature.md",
+      "sha256": "8ade1360dd913063e7dacfb4eaa775a006acc57eee7cd10082ed193eddff2f3e",
+      "characters": 1274,
+      "lines": 49,
+      "approved_evolution": "v1.1.20 chapter-summary rule centralization without semantic deletion"
+    },
+    {
+      "id": "stage-C2",
+      "target_file": "stages/20-outline-and-literature.md",
+      "sha256": "eb269596ca3db54a70a280b0c4556fb2e1a1f1797cd5ab9004378ad0d574a865",
+      "characters": 888,
+      "lines": 35
+    },
+    {
+      "id": "stage-D0",
+      "target_file": "stages/30-chapter-planning.md",
+      "sha256": "7dad550b4769844b514c5c4683e80ab15802d8a53215fdfbe25ca70208131cc0",
+      "characters": 464,
+      "lines": 18
+    },
+    {
+      "id": "stage-D",
+      "target_file": "stages/30-chapter-planning.md",
+      "sha256": "5b70b6e82ce8ad2dfe75d271d37c609d14879bdd19362bd2de4f6b1595d4850f",
+      "characters": 3155,
+      "lines": 61,
+      "approved_evolution": "v1.1.20 chapter-summary rule centralization without semantic deletion"
+    },
+    {
+      "id": "chapter-types-7",
+      "target_file": "stages/30-chapter-planning.md",
+      "sha256": "bcd020f9eae2e7485ad0a0732960304962142cef90d2d315be0a4150a6d6f551",
+      "characters": 452,
+      "lines": 15
+    },
+    {
+      "id": "writing-06",
+      "target_file": "stages/40-chapter-writing.md",
+      "sha256": "f00000d48b7996dabb832e1631a8a5dcef048975ec68030a25fd1bd950b36e79",
+      "characters": 1818,
+      "lines": 20,
+      "approved_evolution": "v1.1.18 Chinese route-semantic technology names in formal L2/L3 headings"
+    },
+    {
+      "id": "writing-11",
+      "target_file": "stages/40-chapter-writing.md",
+      "sha256": "e7ecfbd51956e4ee8172d93ef81b8f7e6c083094448751941146834e42842d95",
+      "characters": 1465,
+      "lines": 30
+    },
+    {
+      "id": "writing-12",
+      "target_file": "stages/40-chapter-writing.md",
+      "sha256": "345375ed236ca3984dd85724553e74bddcba9e77f0752e437e9411add1f8d64e",
+      "characters": 643,
+      "lines": 17
+    },
+    {
+      "id": "stage-E",
+      "target_file": "stages/40-chapter-writing.md",
+      "sha256": "44a2fd950fe37e641e24bffe83317e0e59eb87f8322192b080a2d9c339a42fb9",
+      "characters": 3373,
+      "lines": 84,
+      "approved_evolution": "v1.1.23 chapter-summary consolidation and reduced defensive summary wording"
+    },
+    {
+      "id": "stage-F",
+      "target_file": "stages/40-chapter-writing.md",
+      "sha256": "df873a17013a94d0541c6c81d942203546fcbb1d425ae5f15533c18bd371a34d",
+      "characters": 787,
+      "lines": 19
+    },
+    {
+      "id": "constraints-8",
+      "target_file": "stages/40-chapter-writing.md",
+      "sha256": "0b69d14b2edaf92836dc438a1039a980bea52fe21d96de037bf78009808f8ce8",
+      "characters": 3640,
+      "lines": 70,
+      "approved_evolution": "v1.1.23 chapter-summary consolidation and reduced defensive summary wording"
+    },
+    {
+      "id": "final-09",
+      "target_file": "stages/50-abstract-and-finalization.md",
+      "sha256": "e15bfce319ef42121ff3d4850089114b723f90beaf25793af89e1e7afdd02772",
+      "characters": 1176,
+      "lines": 29
+    },
+    {
+      "id": "final-10",
+      "target_file": "stages/50-abstract-and-finalization.md",
+      "sha256": "78d5b16e8b70f009965cd3fb51ca9361b96b8fc0b86b7165e950a63f44204be5",
+      "characters": 1466,
+      "lines": 28
+    },
+    {
+      "id": "stage-G",
+      "target_file": "stages/50-abstract-and-finalization.md",
+      "sha256": "448ebcf6e2626d981f08fd3843dc415401094b23a4dec05d8c041d379c28ea7e",
+      "characters": 1984,
+      "lines": 54,
+      "approved_evolution": "v1.1.13 technology-title granularity refinement"
+    },
+    {
+      "id": "stage-H",
+      "target_file": "stages/50-abstract-and-finalization.md",
+      "sha256": "229a9c17f14d01154fba9be9bf24a5f14cb9b0a9c6cf797d7222704bf8b84b26",
+      "characters": 1391,
+      "lines": 34
+    },
+    {
+      "id": "examples-13",
+      "target_file": "examples/response-structures.md",
+      "sha256": "c16d0a5dfcf5f8e28615efb80f520751c4a3ed87a54674c8f55b98d3134796bc",
+      "characters": 83,
+      "lines": 6
+    }
+  ],
+  "architecture_revision": "first-chapter-integrated-research-status-and-unheaded-technical-lead",
+  "approved_rule_evolution_version": "1.1.16"
+}

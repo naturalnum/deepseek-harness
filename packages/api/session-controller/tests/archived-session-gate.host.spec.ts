@@ -26,6 +26,11 @@ async function harness(): Promise<Harness> {
 /** A registered idle Agent double: the gate reads only its Session header. */
 async function liveAgent(ctx: Context, session: Session): Promise<Agent> {
   const agent: Agent = {
+    canMaintainInbox: true,
+    onBeforeTurn: () => () => {},
+    onAfterClaim: () => () => {},
+    captureInboxActivity: () => { throw new Error('This Agent double has no maintenance capture') },
+    wakePending: () => {},
     id: session.id,
     options: {},
     session,

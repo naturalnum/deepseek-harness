@@ -456,6 +456,11 @@ describe('dsh-tool-workflow', () => {
       const engine = ctx.workflowEngine as StubEngine
       const session = Session.create(SessionId('caller'))
       const parent: Agent = {
+        canMaintainInbox: true,
+        onBeforeTurn: () => () => {},
+        onAfterClaim: () => () => {},
+        captureInboxActivity: () => { throw new Error('This Agent double has no maintenance capture') },
+        wakePending: () => {},
         id: session.id, options: {}, session, inbox: unsupportedInbox(), status: 'idle', ctx,
         send: () => {}, followup: () => {}, steer: () => {}, inject: () => {}, cancel: () => {},
         runMaintenance: task => task(new AbortController().signal), whenIdle: () => Promise.resolve(),
@@ -667,6 +672,11 @@ describe('dsh-tool-workflow', () => {
       await ctx.plugin(toolWorkflow, {})
       const session = Session.create(SessionId('caller'))
       const parent: Agent = {
+        canMaintainInbox: true,
+        onBeforeTurn: () => () => {},
+        onAfterClaim: () => () => {},
+        captureInboxActivity: () => { throw new Error('This Agent double has no maintenance capture') },
+        wakePending: () => {},
         id: session.id, options: {}, session, inbox: unsupportedInbox(), status: 'idle', ctx,
         send: () => {}, followup: () => {}, steer: () => {}, inject: () => {}, cancel: () => {},
         runMaintenance: task => task(new AbortController().signal), whenIdle: () => Promise.resolve(),

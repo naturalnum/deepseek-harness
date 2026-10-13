@@ -21,6 +21,7 @@ const FIXTURE: Record<string, string> = {
       allowImportingTsExtensions: true,
       noEmit: true,
       skipLibCheck: true,
+      strictNullChecks: true,
       types: [],
     },
     include: ['vendor/**/*.ts', 'packages/**/*.ts'],
@@ -33,7 +34,7 @@ const FIXTURE: Record<string, string> = {
     '',
   ].join('\n'),
   'packages/core/agent/src/dispatch.ts':
-    'export interface AgentEventDispatch { emit(...args: unknown[]): void }\n',
+    'export interface AgentEventDispatch { emit(...args: unknown[]): void; serial(...args: unknown[]): void }\n',
   // fireLocal: every same-file reference is a direct callee, so the locality
   // proof holds and only this file is indexed. fireAliased: the exported
   // const is a value-position reference, so the proof fails and the global
@@ -61,6 +62,19 @@ const FIXTURE: Record<string, string> = {
   'packages/fix/pkgc/src/helper.ts':
     "function scriptFire(args: [string]): void { void gEvents.dispatch('emit', args) }\n",
   'packages/fix/pkgc/src/caller.ts': "scriptFire(['pkgc/script-event'])\n",
+  'packages/fix/pkgd/src/index.ts': [
+    "import type { AgentEventDispatch } from '../../../core/agent/src/dispatch.ts'",
+    'declare const optionalDispatch: AgentEventDispatch | undefined',
+    "optionalDispatch?.emit('pkgd/optional-event', {})",
+    "declare const limitedDispatch: Pick<AgentEventDispatch, 'emit'> | undefined",
+    "limitedDispatch?.emit('pkgd/limited-event', {})",
+    'declare const lookalike: { emit(...args: unknown[]): void } | undefined',
+    "lookalike?.emit('pkgd/lookalike-event', {})",
+    // The fixture intentionally represents an untyped external object, whose method name is insufficient evidence.
+    'declare const untyped: any',
+    "untyped?.emit('pkgd/untyped-event', {})",
+    '',
+  ].join('\n'),
 }
 
 const root = mkdtempSync(join(tmpdir(), 'gen-doc-graphs-'))
@@ -94,5 +108,12 @@ describe('event relation call-site indexing', () => {
     // pkgc alone: the script helper is the first demand, so a wrongly passing
     // proof would index helper.ts only and lose the caller.ts call site.
     expect(dispatchersOf(['pkgc'], 'pkgc/script-event')).toEqual(['pkgc'])
+  })
+
+  it('records optional typed dispatch while refusing optional untyped lookalikes', () => {
+    expect(dispatchersOf(['pkgd'], 'pkgd/optional-event')).toEqual(['pkgd'])
+    expect(dispatchersOf(['pkgd'], 'pkgd/limited-event')).toEqual(['pkgd'])
+    expect(dispatchersOf(['pkgd'], 'pkgd/lookalike-event')).toEqual([])
+    expect(dispatchersOf(['pkgd'], 'pkgd/untyped-event')).toEqual([])
   })
 })

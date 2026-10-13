@@ -20,6 +20,11 @@ async function fakeAgent(ctx: Context, rawId: string): Promise<Agent> {
   const id = SessionId(rawId)
   const session = Session.create(id)
   const agent: Agent = {
+    canMaintainInbox: true,
+    onBeforeTurn: () => () => {},
+    onAfterClaim: () => () => {},
+    captureInboxActivity: () => { throw new Error('This Agent double has no maintenance capture') },
+    wakePending: () => {},
     id, options: {}, session, inbox: unsupportedInbox(),
     status: 'idle',
     ctx: scope.ctx,

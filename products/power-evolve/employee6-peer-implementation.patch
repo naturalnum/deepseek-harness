@@ -1,0 +1,1203 @@
+diff --git a/products/power-evolve/application/src/account-contracts.ts b/products/power-evolve/application/src/account-contracts.ts
+--- a/products/power-evolve/application/src/account-contracts.ts
++++ b/products/power-evolve/application/src/account-contracts.ts
+@@ -1,2 +1,34 @@
+-/** Account protocol shared with the trusted client without importing Platform services. */
+-export * from '@power-evolve/contracts/account'
++/** Account validation shared with the trusted client without importing Platform services. */
++export {
++  ACCOUNT_ERROR_CODES,
++  ACCOUNT_MAX_MODELS_PER_USER,
++  ACCOUNT_MAX_PAGE_ITEMS,
++  ACCOUNT_PAGE_PATH,
++  ACCOUNT_PASSWORD_MAX_BYTES,
++  ACCOUNT_PASSWORD_MIN_BYTES,
++  ACCOUNT_ROUTES,
++  accountAudience,
++  accountBearerToken,
++  accountCapabilitiesValue,
++  accountChangePasswordRequest,
++  accountCreateRequest,
++  accountEmptyRequest,
++  accountListRequest,
++  accountListValue,
++  accountLoginRequest,
++  accountLoginValue,
++  accountMeValue,
++  accountModelCatalogValue,
++  accountMutationReceipt,
++  accountNewPassword,
++  accountNewUsername,
++  accountReceiptRequest,
++  accountReceiptValue,
++  accountRole,
++  accountSecretMutationValue,
++  accountTargetMutationRequest,
++  accountUpdateRequest,
++  accountUserId,
++  accountValue,
++} from '@power-evolve/contracts/account'
++export type * from '@power-evolve/contracts/account'
+diff --git a/products/power-evolve/application/package.json b/products/power-evolve/application/package.json
+--- a/products/power-evolve/application/package.json
++++ b/products/power-evolve/application/package.json
+@@ -11,6 +11,8 @@
+     "README.zh.md",
+     "assets/cloud-schema-v1.sql",
+     "assets/cloud-schema-v1.manifest.json",
++    "assets/cloud-schema-v2.sql",
++    "assets/cloud-schema-v2.manifest.json",
+     "web"
+   ],
+   "exports": {
+@@ -59,8 +61,7 @@
+     "@deepseek-ai/dsh-session-title": "workspace:*",
+     "@deepseek-ai/dsh-attachment": "workspace:*",
+     "@deepseek-ai/dsh-attachment-local": "workspace:*",
+-    "@power-evolve/connector-runner": "workspace:~",
+-    "@power-evolve/contracts": "workspace:~"
++    "@power-evolve/connector-runner": "workspace:~"
+   },
+   "devDependencies": {
+     "@deepseek-ai/cordis": "workspace:~",
+@@ -73,12 +74,14 @@
+     "@deepseek-ai/dsh-plugin-manager": "workspace:*",
+     "@deepseek-ai/dsh-scope": "workspace:*",
+     "@deepseek-ai/dsh-session": "workspace:*",
+-    "@deepseek-ai/dsh-typert-registry": "workspace:*"
++    "@deepseek-ai/dsh-typert-registry": "workspace:*",
++    "@power-evolve/contracts": "workspace:~"
+   },
+   "peerDependencies": {
+     "@deepseek-ai/cordis": "workspace:~",
+     "@deepseek-ai/dsh-scope": "workspace:*",
+-    "@deepseek-ai/dsh-session": "workspace:*"
++    "@deepseek-ai/dsh-session": "workspace:*",
++    "@power-evolve/contracts": "workspace:~"
+   },
+   "scripts": {
+     "build": "tsc -b tsconfig.json && tsdown",
+diff --git a/products/power-evolve/host/package.json b/products/power-evolve/host/package.json
+--- a/products/power-evolve/host/package.json
++++ b/products/power-evolve/host/package.json
+@@ -29,6 +29,9 @@
+     "@deepseek-ai/cordis-plugin-timer": "workspace:~",
+     "@deepseek-ai/cordis-plugin-logger-console": "workspace:~",
+     "@deepseek-ai/dsh-plugin-manager": "workspace:*",
+-    "@deepseek-ai/dsh-session-title": "workspace:*"
++    "@deepseek-ai/dsh-session-title": "workspace:*",
++    "@power-evolve/contracts": "workspace:~",
++    "@power-evolve/connector-runner": "workspace:~",
++    "zod": "4.4.3"
+   }
+ }
+diff --git a/products/power-evolve/platform/package.json b/products/power-evolve/platform/package.json
+--- a/products/power-evolve/platform/package.json
++++ b/products/power-evolve/platform/package.json
+@@ -15,6 +15,9 @@
+   "dependencies": {
+     "@power-evolve/application": "workspace:*",
+     "@deepseek-ai/dsh-host-webserver": "workspace:*",
+-    "@deepseek-ai/cordis-plugin-logger-console": "workspace:~"
++    "@deepseek-ai/cordis-plugin-logger-console": "workspace:~",
++    "@power-evolve/contracts": "workspace:~",
++    "@power-evolve/connector-runner": "workspace:~",
++    "zod": "4.4.3"
+   }
+ }
+diff --git a/products/power-evolve/connector-runner/package.json b/products/power-evolve/connector-runner/package.json
+--- a/products/power-evolve/connector-runner/package.json
++++ b/products/power-evolve/connector-runner/package.json
+@@ -38,7 +38,6 @@
+     "test": "tsx --test tests/*.test.ts"
+   },
+   "dependencies": {
+-    "@power-evolve/contracts": "workspace:*",
+     "@modelcontextprotocol/client": "2.0.0",
+     "@modelcontextprotocol/server": "2.0.0",
+     "zod": "^4.4.3",
+@@ -47,6 +46,10 @@
+   "devDependencies": {
+     "@types/ssh2": "1.15.6",
+     "tsx": "^4.22.4",
+-    "typescript": "^6.0.3"
++    "typescript": "^6.0.3",
++    "@power-evolve/contracts": "workspace:~"
++  },
++  "peerDependencies": {
++    "@power-evolve/contracts": "workspace:~"
+   }
+ }
+diff --git a/products/power-evolve/application/README.md b/products/power-evolve/application/README.md
+--- a/products/power-evolve/application/README.md
++++ b/products/power-evolve/application/README.md
+@@ -48,6 +48,8 @@
+ 
+ Native file uploads stream through Host to Platform and commit a durable, receiving-Session receipt. Prompt acceptance binds the original ordered text and receipts in its transaction. Original bytes remain in private storage outside writable Workspace, Home and Skill mounts. The maintained attachment backend verifies their digest and length. Forks retain access only to file references in their exact inherited event prefix and keep the original storage identity. `cloud_file_read` reads bounded UTF-8 lines without a Sandbox; `cloud_file_copy` creates an idempotent Workspace copy for authorized Office or execution tools. The deployment refuses overlapping original-file and writable roots before database initialization. Intake measures the owner’s physical immutable objects, published names and crash staging under the account lock; failed receipt commits still consume the configured byte and file budgets. Database disconnection interrupts stalled intake, and the HTTP carrier closes unfinished input. File reads recheck the grant after original-byte verification; copy admission rechecks it after Workspace writer lock waits.
+ 
++The [account bridge](src/account-contracts.ts) exposes explicit runtime validators and retains type exports. Application declares Contracts as a matching peer and development dependency; the [Host](../host/README.md) and [Platform](../platform/README.md) installations supply its production provider. Each Node isolate must resolve every protocol subpath and Zod ESM entry to the selected provider before serving traffic. The cloud-only [peer policy](../scripts/cloud-peer-policy.mjs) preserves official SAFE classifications. Browser bundles have their own validation instances.
++
+ </details>
+ 
+ -----
+diff --git a/products/power-evolve/application/README.zh.md b/products/power-evolve/application/README.zh.md
+--- a/products/power-evolve/application/README.zh.md
++++ b/products/power-evolve/application/README.zh.md
+@@ -48,6 +48,8 @@
+ 
+ 原生文件上传经 Host 流式送至 Platform，提交归属接收会话的持久回执。输入受理在事务中绑定原始顺序的文本与回执。原始字节保存于可写 Workspace、Home 和 Skill 挂载之外的私有存储，沿用的附件后端核验摘要和长度。分支只继承准确事件前缀中出现的文件引用，并保留原存储身份。`cloud_file_read` 不启动沙盒即可读取有界 UTF-8 行；`cloud_file_copy` 幂等创建工作区副本，供获授权的 Office 或执行工具使用。部署在初始化数据库之前拒绝原文件与可写根目录重叠。 上传在账号锁下计量本人的不可变物理对象、已发布文件名和崩溃暂存内容；回执提交失败后仍消耗配置的字节和文件预算。数据库断连会中断停滞的输入等待，HTTP 通道关闭未完成的输入。文件读取在核验原始字节后重新检查授权，复制受理在工作区写锁等待后重新检查授权。
+ 
++[账号桥接](src/account-contracts.ts)显式导出运行时校验器并保留类型导出。Application 将 Contracts 声明为匹配的 peer 与开发依赖；[Host](../host/README.zh.md) 和 [Platform](../platform/README.zh.md) 安装提供生产 provider。每个 Node isolate 在接收请求前都必须将全部协议子路径与 Zod ESM 入口解析至选定 provider。仅用于云端的 [peer 策略](../scripts/cloud-peer-policy.mjs)保留官方 SAFE 分类。浏览器 bundle 拥有各自的校验实例。
++
+ </details>
+ 
+ -----
+diff --git a/products/power-evolve/application/README.i18n.yaml b/products/power-evolve/application/README.i18n.yaml
+--- a/products/power-evolve/application/README.i18n.yaml
++++ b/products/power-evolve/application/README.i18n.yaml
+@@ -18,8 +18,8 @@
+   en: 25be83bed4e34ce9
+   zh: b716c5958dfa1bf7
+ /power-evolve-application/understand-the-implementation:
+-  en: 2fec7a85836d5457
+-  zh: 827ee00ef64c6e12
++  en: f89f41b70e359a26
++  zh: 8c0c1b23fbb19d6a
+ /power-evolve-application/further-exploration:
+   en: 9fa816e1734c942e
+   zh: 5a7eeb65b4491739
+diff --git a/products/power-evolve/host/README.md b/products/power-evolve/host/README.md
+--- a/products/power-evolve/host/README.md
++++ b/products/power-evolve/host/README.md
+@@ -40,6 +40,8 @@
+ 
+ A later Profile patch replaces an entry's complete configuration; it does not merge individual fields. The runtime adapter makes bounded Platform requests, while persistence and model adapters keep durable state and credentialed requests at Platform. An unavailable Platform prevents those operations; a Host process alone does not establish cloud execution readiness.
+ 
++The production manifest explicitly provides Contracts, Connector Runner and pinned Zod for the application peer graph. A linked development Profile must record each consumer root in the formal resolver; a packaged installation must retain one physical ESM provider for every protocol import. Peer declarations alone do not establish that installation. Provider directory or version changes require a new process.
++
+ </details>
+ 
+ -----
+diff --git a/products/power-evolve/host/README.zh.md b/products/power-evolve/host/README.zh.md
+--- a/products/power-evolve/host/README.zh.md
++++ b/products/power-evolve/host/README.zh.md
+@@ -40,6 +40,8 @@
+ 
+ 后续 Profile 补丁替换条目的完整配置，不合并单个字段。运行时适配器发起有界 Platform 请求，持久化和模型适配器将持久状态与带凭据的请求保留在 Platform。Platform 不可用会阻止这些操作；单独运行 Host 进程不能证明云执行已就绪。
+ 
++生产清单为应用的 peer 依赖图显式提供 Contracts、Connector Runner 和固定版本 Zod。使用链接包的开发 Profile 必须在正式 resolver 中记录每个消费者根；打包安装必须为全部协议导入保留同一个物理 ESM provider。只有 peer 声明不能证明安装满足这些要求。Provider 目录或版本变化需要新进程。
++
+ </details>
+ 
+ -----
+diff --git a/products/power-evolve/host/README.i18n.yaml b/products/power-evolve/host/README.i18n.yaml
+--- a/products/power-evolve/host/README.i18n.yaml
++++ b/products/power-evolve/host/README.i18n.yaml
+@@ -18,8 +18,8 @@
+   en: 64c5cd1531dab847
+   zh: e82b92f375a822a2
+ /power-evolve-host/understand-the-implementation:
+-  en: ba7d8c5e667af3f4
+-  zh: 017951785b345f9c
++  en: 98ad91a98fbb82b3
++  zh: 63b3d301d281b519
+ /power-evolve-host/further-exploration:
+   en: 44de0b7e435ba739
+   zh: c85e71d97e337527
+diff --git a/products/power-evolve/platform/README.md b/products/power-evolve/platform/README.md
+--- a/products/power-evolve/platform/README.md
++++ b/products/power-evolve/platform/README.md
+@@ -42,6 +42,8 @@
+ 
+ Database and provider credentials remain at Platform. Host adapters receive bounded APIs and current operation grants. Connector, Sandbox and Office services retain their own execution identities; the trusted application owns admission and reconciliation. The bundle itself stores no durable operation state.
+ 
++The production manifest explicitly provides Contracts, Connector Runner and pinned Zod for the application peer graph. Installation admission requires all protocol consumers, including transitive helpers, to share the selected Node ESM modules. Linked Profiles must record each consumer root; independent workers require their own complete production closure. Provider changes require a new process. Browser validation instances are separate.
++
+ </details>
+ 
+ -----
+diff --git a/products/power-evolve/platform/README.zh.md b/products/power-evolve/platform/README.zh.md
+--- a/products/power-evolve/platform/README.zh.md
++++ b/products/power-evolve/platform/README.zh.md
+@@ -42,6 +42,8 @@
+ 
+ 数据库和提供方凭据保留在 Platform。Host 适配器接收有界 API 与当前操作授权。连接器、Sandbox 和 Office 服务保留各自的执行身份；可信应用拥有受理与对账。Bundle 本身不保存持久操作状态。
+ 
++生产清单为应用的 peer 依赖图显式提供 Contracts、Connector Runner 和固定版本 Zod。安装受理要求全部协议消费者（包括传递 helper）共享选定的 Node ESM 模块。链接 Profile 必须记录每个消费者根；独立 worker 需要自己的完整生产依赖闭包。Provider 变化需要新进程。浏览器校验实例彼此独立。
++
+ </details>
+ 
+ -----
+diff --git a/products/power-evolve/platform/README.i18n.yaml b/products/power-evolve/platform/README.i18n.yaml
+--- a/products/power-evolve/platform/README.i18n.yaml
++++ b/products/power-evolve/platform/README.i18n.yaml
+@@ -18,8 +18,8 @@
+   en: a8600e4175f11837
+   zh: 7b791c6a49ab94e2
+ /power-evolve-platform/understand-the-implementation:
+-  en: c88af243664b4a4e
+-  zh: e8d36b06df041495
++  en: 3a5e0f9e629d488a
++  zh: a37dc7ee370266a2
+ /power-evolve-platform/further-exploration:
+   en: 05f2169f10cd1d47
+   zh: ee53b1f86223ec16
+diff --git a/products/power-evolve/connector-runner/README.md b/products/power-evolve/connector-runner/README.md
+--- a/products/power-evolve/connector-runner/README.md
++++ b/products/power-evolve/connector-runner/README.md
+@@ -1,42 +1,87 @@
++---
++description: "Validate frozen STDIO start packets and execute bounded MCP calls inside an isolated cloud worker."
++kind: package-library
++---
+ # Isolated Connector Runner
+ 
+ English | [中文](README.zh.md)
+ 
+-This short-lived process runs one platform-authorized SSH or fixed read-only STDIO MCP call in a dedicated Kubernetes Pod. It has no workspace, Home, skill, database, Kubernetes credential, or generic command HTTP route. The platform keeps durable state and decides which exact command may run; this Runner keeps only bounded in-memory results. After a restart, a changed `instanceId` means an absent call has an uncertain outcome, never permission to replay it.
++## Summary
+ 
+-## Build and deployment
++Callers can validate frozen STDIO start packets, fingerprint complete catalogs and execute one bounded MCP discovery or call inside an isolated cloud worker. The worker owner supplies approval, current writer authorization, exact execution identity and cleanup evidence. Platform retains credentials and durable operation state. This library does not permit the shared Host to start user programs or turn an uncertain outcome into a retry.
+ 
+-Run `pnpm --filter @power-evolve/connector-runner build`, then `pnpm --filter @power-evolve/connector-runner deploy --legacy --prod --ignore-scripts /private/runner-image-context`. Build the image with `docker build -f products/power-evolve/connector-runner/Dockerfile /private/runner-image-context`. The Dockerfile copies only the deployed package and starts as UID/GID 10001. The Pod must use gVisor, `runAsNonRoot`, a read-only root filesystem, dropped capabilities, no ServiceAccount mount, no user volumes, and a private memory-backed scratch volume if needed. Mount a one-Pod control token file readable by GID 10001; the token value never belongs in an environment variable or Pod description.
++## Table of Contents
+ 
+-Configuration uses `CONNECTOR_RUNNER_TOKEN_FILE` (default `/run/power-evolve/runner-token`), `CONNECTOR_RUNNER_PORT` (default `8080`), `CONNECTOR_RUNNER_ALLOWED_DESTINATIONS` (exact comma-separated `host:port` values), and `CONNECTOR_RUNNER_FORBIDDEN_PROBE` (one exact forbidden `host:port`). Empty allowlist denies every SSH destination. Missing forbidden probe keeps `/health` unready. No user can set these deployment fields. The SSH Pod policy permits its approved target and platform ingress; the STDIO Pod policy permits platform ingress and no egress.
++- [Use this package](#use-this-package)
++- [Understand the implementation](#understand-the-implementation)
++- [Further Exploration](#further-exploration)
++- [Model Experience](#model-experience)
++- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
++- [Dev Note](#dev-note)
+ 
+-The Runner requires three consecutive denied TCP probes before readiness and withdraws readiness when a later probe connects or is inconclusive. It treats `ECONNREFUSED` as inconclusive by default. Set `CONNECTOR_RUNNER_REFUSED_PROVES_DENIAL=1` only when the platform has independently connected to that fixed probe listener from a control Pod and continues to establish its health. A refusal from an arbitrary closed port does not show egress isolation. If the cluster cannot establish this proof, do not dispatch credentials. The platform must additionally test an allowed connection and a forbidden connection in the deployed namespace.
++-----
+ 
+-## Wire API
++<a id="use-this-package"></a>
++## Use this package
+ 
+-Every request carries `x-power-evolve-runner-token`. `GET /health` returns `{ready,instanceId}` (503 until ready). `GET /calls/{callId}` returns the in-memory state or 404, including `instanceId`; it never returns credentials. SSH `POST /calls` accepts exactly `{callId,instanceId,digest,kind,destination,timeoutMs,maxOutputBytes,...}`. The `kind` is `ssh.inspect`, `ssh.authenticate`, or `ssh.execute`. `destination` contains `host`, `port`, and `username`; authenticated calls also require `hostKeySha256`. Authenticate and execute include a `credential` (`{kind:'password',password}` or `{kind:'private_key',privateKey,passphrase?}`); execute additionally includes `command`. Inspect refuses credentials and never authenticates. A wrong host fingerprint refuses authentication before any command.
++The [package exports](package.json) separate the SDK provider, dispatch validation, runtime ownership and digest helpers. The [Sandbox Runner](../sandbox/README.md) loads the cloud library inside its private image. It supplies the configured token, isolated filesystem and process identity; the shared Host must not execute the SDK provider. The library registers no Profile plugin or mount configuration.
+ 
+-The fixed STDIO request is exactly `{kind:'mcp.stdio.whoami',callId,instanceId,digest,accountId,timeoutMs,maxOutputBytes}`. The Runner starts its image-owned MCP server under the Pod's gVisor isolation, uses the SDK STDIO transport, and returns only bounded text from its read-only `whoami` tool. No request can supply an executable, arguments, environment, filesystem path, URL, credential, or other tool name. Each call starts a fresh process; the shared DSH Host never starts it.
++Contracts is a matching `workspace:~` peer and development dependency. Host and Platform explicitly provide Contracts, this library and pinned Zod in their production manifests. A standalone worker installation must provide the same complete closure itself, with peer auto-install disabled and observed ESM paths and identities checked. A successful workspace source test does not certify a production image.
+ 
+-The platform computes `digest` with the exported `requestDigest(unsignedCall, podToken)` helper. It is HMAC-SHA256 over recursively key-sorted JSON without the `digest` field, including credential bytes. The token keys the digest so the status response does not expose an offline password verifier. A repeated ID and digest returns the existing state; the same ID with another digest is a conflict. By default, the Runner accepts only one distinct call ID for its lifetime. The platform queries GET before POST, compares both Pod UID and `instanceId` on recovery, and never automatically retries an uncertain SSH write. One Pod serves one approved call, with a fresh token and a short lifetime.
++`runStdioV2` accepts a literal program, argument array, absolute cwd, complete frozen catalog and JSON arguments. Options supply every budget, an exact `HOME`/`PATH`/`LANG` environment and the synchronous catalog validation/fingerprint callback. No ambient environment is merged; Node on macOS may add its own encoding hint. `current` retains an already isolated UID/GID; `unix` supplies the validated identity to spawn. The cloud runtime requires Unix 1000/1000.
+ 
+-SSH failures retain `state:'failed'` and `errorCode` and include `effectMayHaveOccurred`. It is `false` before the Runner attempts `exec`, including authentication and fingerprint failures, and becomes `true` when `exec` is invoked. Disconnects, timeouts, cancellation, and output limits after that point retain `true`; an unclassified execute exception is also conservatively `true`. Closing a command channel without an observed exit code or nonempty exit signal fails with `ssh_exit_missing`. GET and repeated POST return the same recorded flag. For execute calls, the platform must treat a `true` flag or a missing flag from an older Runner as an uncertain command outcome. STDIO responses retain their existing shape.
++The executor owns approval, immutable program/image pins, directory authorization, prepare/permit and durable request identity. The dispatch and runtime leaves validate original packets, reserve one writer and bound the complete response; they authenticate no HTTP caller and store no Platform state. Starting a program may itself have effects.
+ 
+-The entire HTTP JSON body is capped at 256 KiB (`MAX_CALL_BODY_BYTES`), including JSON escaping; larger bodies return 413 before reserving a call ID. Individual UTF-8 field limits remain unchanged: command 16 KiB, password 4096 bytes, private key 7168 bytes, and passphrase 1024 bytes. SSH combined stdout and stderr are capped at 128 KiB and its deadline at 60 seconds. STDIO MCP text is capped at 8 KiB and its deadline at 30 seconds. The Runner has no file transfer, PTY, port forwarding, local shell, or arbitrary process MCP command. These capabilities need separate review and implementation.
++-----
+ 
++<a id="understand-the-implementation"></a>
++## Understand the implementation
+ 
+-## Shared STDIO SDK provider
++<details>
++<summary>Protocol validation and execution ownership</summary>
+ 
+-`@power-evolve/connector-runner/stdio-v2` exports `runStdioV2(input, options, signal)` for isolated Cloud and Device executors. This fixed connector Runner does not expose it; the separate [Sandbox Runner](../sandbox/README.md) can load its trusted cloud runtime library. The shared Host must not execute it. The executor owns approval, immutable runner/program pins, directory authorization, prepare/permit, durable request identity, result interpretation and container/UID cleanup.
++The [SDK provider](src/stdio-v2.ts) uses the public SDK2 Client and explicit `legacy` negotiation for one initialize handshake. Its Transport starts one child with `shell:false`, reuses public framing and message validators, checks strict UTF-8 JSONRPC and measures raw protocol bytes. Unsupported versions refuse without a second process, reconnect or retry. Discovery reads all pages; a call compares the entire frozen catalog before exactly one `tools/call`.
+ 
+-The separate Node-only `@power-evolve/connector-runner/stdio-v2-digest` leaf starts no process. It hashes complete original JSON with distinct management/configuration/task/catalog/prepared/scope/spec/dispatch/result domains using the shared browser-safe codec. Ordered full-catalog fingerprints include every schema, metadata and extension field. Approval HMAC uses the existing Platform-owned 32-byte key and its own domain; executors never receive that key. Encoding budgets include the complete domain envelope. The browser-safe contracts package imports neither this leaf nor the SDK provider. Existing legacy request digests remain unchanged.
++Raw schemas, metadata, annotations, content, structured content, `isError`, extensions and escaped NUL remain JSON. `readOnlyHint` grants no approval; `isError:true` is a completed RPC whose tool outcome belongs to the outer owner. The [digest leaf](src/stdio-v2-digest.ts) hashes complete original JSON in distinct operation domains through the shared codec and starts no process. The approval HMAC retains the Platform-owned 32-byte key; executors never receive it.
+ 
+-The input selects `discover` or `call` with a literal program, argument array and absolute cwd. A call also supplies the frozen entire raw catalog, raw tool name and JSON arguments. Options supply every input/message/protocol/JSON/page/tool/catalog/result/stderr/runtime/request/cleanup budget, the exact `HOME`/`PATH`/`LANG` environment, and a synchronous callback that validates the whole raw catalog and computes the shared frozen digest. The provider contains no second canonical digest implementation. Node on macOS may add its own `__CF_USER_TEXT_ENCODING` hint; no ambient environment is merged. HOME and PATH must point to the executor's approved isolated locations.
++Lost replies, cancellation, directory changes and budget failures retain conservative effect and call facts; they never publish a truncated successful result. Cleanup waits independently for configured stdin, TERM and KILL deadlines and records actual child `exit` and `close` events. Missing close retains `cleanupConfirmed:false`. SDK close or direct-child exit does not retire descendants, a container, the writer or its directory lease; the outer stop protocol must confirm them.
+ 
+-Options also require an explicit process identity: `current` retains the already isolated caller's UID/GID; `unix` supplies validated numeric UID/GID to actual spawn. The cloud runtime requires Unix 1000/1000. The `stdio-v2-dispatch` leaf validates complete original start packets and maps frozen invocations to the SDK; the `stdio-v2-runtime` leaf reserves a single writer, bounds the whole response and waits for independently supplied UID cleanup. Neither leaf authenticates HTTP callers or persists Platform state.
++The existing [HTTP helpers](src/server.ts) retain one-call bounded SSH and fixed read-only `whoami` behavior. A changed `instanceId` preserves uncertainty; an execute failure after `exec` begins retains `effectMayHaveOccurred:true`, including missing exit evidence. Request bodies are capped at 256 KiB, SSH output at 128 KiB/60 seconds and fixed STDIO text at 8 KiB/30 seconds. Their [egress readiness](src/egress.ts) needs three denied probes; a refused arbitrary port is inconclusive without an independently healthy control listener. These helpers are separate from the generic STDIO library and do not establish deployment isolation.
+ 
+-The public SDK2 Client performs one `initialize` handshake using its explicit `legacy` negotiation mode (the supported 2025-era handshake, unrelated to the product's fixed `whoami` route). A public Transport adapter starts one child with `shell:false`, uses the SDK's public framing and message schema helpers, checks strict UTF-8 JSONRPC lines and counts raw incoming/outgoing protocol bytes. Unsupported protocol versions fail without a sibling process, a second initialize, reconnect or retry. The provider reads every tool page with public SDK requests and compares the entire catalog before exactly one `tools/call`. Raw schemas, annotations, metadata, content, structured content, `isError`, extensions and escaped NUL remain JSON. `readOnlyHint` never grants approval, and an `isError:true` result is a completed RPC for the outer owner to classify.
++</details>
+ 
+-Program startup itself may have effects. Lost replies, cancellation, directory changes and budget failures retain conservative effect/call facts, never a truncated successful directory or result. Cleanup waits independently for configured stdin, TERM and KILL deadlines and records actual direct-child `exit` and `close` events. An unobserved close fails with `cleanupConfirmed:false`; SDK close alone proves no exit. Even a confirmed direct-child close cannot prove descendants, a container, a writer or its directory lease are retired. The outer stop protocol must supply that evidence and must not replay an uncertain call.
++-----
+ 
+-Run the focused source tests with `node --import tsx/esm --test products/power-evolve/connector-runner/tests/stdio-v2.test.ts` from the repository root. They use the real SDK2 Client and owned synthetic Node peers, including pagination, literal special arguments, full JSON preservation, changed catalogs, lost replies, budgets, abort, KILL and a descendant-held pipe. Their fingerprint callback substitutes for the future shared catalog validator. These tests establish provider behavior; they do not verify approval, Cloud/Device integration or a deployed product workflow.
++<a id="further-exploration"></a>
++## Further Exploration
++
++- [Wire validation](../contracts/README.md) — shared protocol values and consumer obligations.
++- [Sandbox Runner](../sandbox/README.md) — image, writer ownership and cleanup.
++- [Trusted application](../application/README.md) — approval and durable state.
++
++-----
++
++<a id="model-experience"></a>
++## Model Experience
++
++Indirectly, through the authorized executor and Platform adapters that interpret bounded MCP results. The library adds no model prompt, tool or native Session event; those consumers own presentation and logging.
++
++<a id="known-limitations-and-deferred-work"></a>
++## Known Limitations and Deferred Work
++
++Callers must satisfy the execution and installation requirements:
++
++- Approval, container/UID cleanup, durable recovery and current writer authorization belong to the executor and Platform.
++- Unknown effects must be reconciled; direct-child cleanup cannot authorize replay.
++- Contracts/Zod peers and source fixtures do not certify a packed worker dependency graph or browser singleton.
++- File transfer, PTY, port forwarding and Host-local execution require separately authorized capabilities.
++
++<a id="dev-note"></a>
++### Dev Note
++
++<details>
++<summary>Maintainer context</summary>
++
++Run source behavior tests through the cloud-only entry; source imports and freshly built production artifacts have separate acceptance paths. Current package, worker and installation evidence belongs in migration records.
++
++</details>
+diff --git a/products/power-evolve/connector-runner/README.zh.md b/products/power-evolve/connector-runner/README.zh.md
+--- a/products/power-evolve/connector-runner/README.zh.md
++++ b/products/power-evolve/connector-runner/README.zh.md
+@@ -1,42 +1,87 @@
++---
++description: "在隔离云端 worker 中校验固定 STDIO 启动包并执行有界 MCP 调用。"
++kind: package-library
++---
+ # 隔离的连接器 Runner
+ 
+ [English](README.md) | 中文
+ 
+-这个短时进程在独立 Kubernetes Pod 中执行一次经平台授权的 SSH 或固定只读 STDIO MCP 调用。它不挂载工作区、Home、技能，不持有数据库或 Kubernetes 凭据，也没有通用命令 HTTP 入口。平台保存持久状态并决定允许执行的准确命令；Runner 只在内存中保存有界结果。重启后 `instanceId` 改变，缺失调用的结果应标记为不确定，不能据此重放。
++## 摘要
+ 
+-## 构建与部署
++调用者可以在隔离云端 worker 中校验固定 STDIO 启动包、计算完整目录指纹，并执行一次有界 MCP 发现或调用。Worker 拥有者提供审批、当前写者授权、准确执行身份和清理证据。Platform 保留凭据与持久操作状态。本库不允许共享 Host 启动用户程序，也不能把不确定结果转化为重试。
+ 
+-先运行 `pnpm --filter @power-evolve/connector-runner build`，再运行 `pnpm --filter @power-evolve/connector-runner deploy --legacy --prod --ignore-scripts /private/runner-image-context`。使用 `docker build -f products/power-evolve/connector-runner/Dockerfile /private/runner-image-context` 构建镜像。Dockerfile 只复制部署包，以 UID/GID 10001 启动。Pod 必须使用 gVisor、`runAsNonRoot`、只读根文件系统、去除 capabilities、不挂载 ServiceAccount 和用户卷；如需临时目录，应使用私有内存卷。每个 Pod 单独挂载 GID 10001 可读取的控制令牌文件；令牌值不得出现在环境变量或 Pod 描述中。
++## 目录
+ 
+-配置项为 `CONNECTOR_RUNNER_TOKEN_FILE`（默认 `/run/power-evolve/runner-token`）、`CONNECTOR_RUNNER_PORT`（默认 `8080`）、`CONNECTOR_RUNNER_ALLOWED_DESTINATIONS`（以逗号分隔的准确 `host:port`）、`CONNECTOR_RUNNER_FORBIDDEN_PROBE`（一个禁止访问的 `host:port`）。空白名单拒绝全部 SSH 目标；未设置禁止目标探针时 `/health` 保持未就绪。用户不得设置这些部署参数。SSH Pod 网络策略只允许访问获批准的目标及平台入口；STDIO Pod 只允许平台入口，禁止所有出口。
++- [使用本包](#use-this-package)
++- [理解实现](#understand-the-implementation)
++- [进一步阅读](#further-exploration)
++- [模型体验](#model-experience)
++- [已知限制与待完成工作](#known-limitations-and-deferred-work)
++- [开发备注](#dev-note)
+ 
+-Runner 要求连续三次 TCP 禁止目标探测被拒绝才进入就绪；后续探测若连通或结果不明确，就撤回就绪状态。默认将 `ECONNREFUSED` 视为证据不足。只有平台已经从对照 Pod 独立连通这个固定探针服务，并持续确认其健康，才能设置 `CONNECTOR_RUNNER_REFUSED_PROVES_DENIAL=1`。任意关闭端口返回的拒绝不能证明出口隔离。集群不能提供这种证据时，平台不得派发凭据。平台还需要在部署命名空间实测允许目标和禁止目标的连通性。
++-----
+ 
+-## 传输接口
++<a id="use-this-package"></a>
++## 使用本包
+ 
+-每个请求携带 `x-power-evolve-runner-token`。`GET /health` 返回 `{ready,instanceId}`，就绪前为 503。`GET /calls/{callId}` 返回内存中的状态或 404，附带 `instanceId`，不返回凭据。SSH 的 `POST /calls` 严格接收 `{callId,instanceId,digest,kind,destination,timeoutMs,maxOutputBytes,...}`；`kind` 为 `ssh.inspect`、`ssh.authenticate` 或 `ssh.execute`。`destination` 包含 `host`、`port`、`username`；带凭据的调用还必须包含 `hostKeySha256`。认证和执行调用包含 `credential`（`{kind:'password',password}` 或 `{kind:'private_key',privateKey,passphrase?}`）；执行调用额外包含 `command`。检查主机密钥的调用拒绝凭据且不进行认证。服务器指纹不匹配时，不执行命令。
++[包导出](package.json)区分 SDK 调用器、派发校验、运行归属和摘要函数。[Sandbox Runner](../sandbox/README.zh.md)在私有镜像内装载云端库，提供配置的令牌、隔离文件系统和进程身份；共享 Host 不得执行 SDK 调用器。本库不注册 Profile 插件或挂载配置。
+ 
+-固定 STDIO 请求严格接收 `{kind:'mcp.stdio.whoami',callId,instanceId,digest,accountId,timeoutMs,maxOutputBytes}`。Runner 在 Pod 的 gVisor 隔离中启动镜像内置 MCP 服务，通过 SDK 的 STDIO 传输调用只读 `whoami`，仅返回有界文本。请求不能指定可执行文件、参数、环境、文件路径、URL、凭据或其他工具名。每次调用启动新进程；共享 DSH 宿主不启动该进程。
++Contracts 是匹配的 `workspace:~` peer 与开发依赖。Host 和 Platform 在生产清单中显式提供 Contracts、本库和固定版本 Zod。独立 worker 安装必须自行提供同样完整的闭包，关闭 peer 自动安装，并核验实测 ESM 路径和身份。工作区源码测试成功不能认证生产镜像。
+ 
+-平台使用导出的 `requestDigest(unsignedCall, podToken)` 计算 `digest`。算法对不含 `digest` 的调用正文递归按键排序，再用 Pod 令牌计算 HMAC-SHA256；凭据正文也参与计算。返回的摘要不会成为离线猜测密码的公开校验值。同一 ID 和摘要返回已有状态；同一 ID 的不同摘要返回冲突。Runner 默认在生命周期中只接受一个不同的调用 ID。平台在 POST 前查询 GET；恢复时比较 Pod UID 和 `instanceId`，不自动重试结果不明的 SSH 写操作。每个 Pod 只执行一次批准调用，使用新令牌并设置短寿命。
++`runStdioV2` 接收字面程序、参数数组、绝对 cwd、完整固定目录与 JSON 参数。选项提供全部预算、准确的 `HOME`/`PATH`/`LANG` 环境，以及同步目录校验／指纹回调。不合并父环境；macOS 中 Node 可能添加自己的编码提示。`current` 保留已隔离的 UID/GID；`unix` 将校验后的身份传给 spawn。云端 runtime 要求 Unix 1000/1000。
+ 
+-SSH 失败保留 `state:'failed'` 和 `errorCode`，并包含 `effectMayHaveOccurred`。Runner 尝试 `exec` 前为 `false`，包括认证与指纹失败；调用 `exec` 时变为 `true`。此后的断开、超时、取消和输出超限始终保留 `true`；未分类的执行异常也保守返回 `true`。命令通道关闭时，若未观察到退出码或非空退出信号，则以 `ssh_exit_missing` 失败。GET 与重复 POST 返回相同的已记录效果位。对于执行调用，效果位为 `true` 或旧 Runner 缺少该字段时，平台必须将命令结果视为不确定。STDIO 响应保持现有结构。
++执行器负责审批、不可变程序／镜像 pin、目录授权、prepare／permit 与持久请求身份。派发和运行叶模块校验原始包、预留唯一写者并限制完整响应；它们不认证 HTTP 调用者或保存 Platform 状态。启动程序本身可能产生效果。
+ 
+-整个 HTTP JSON 正文上限为 256 KiB（`MAX_CALL_BODY_BYTES`），包括 JSON 转义；超过上限时在占用调用 ID 前返回 413。各 UTF-8 字段上限保持不变：命令 16 KiB、密码 4096 字节、私钥 7168 字节、私钥口令 1024 字节。SSH 标准输出与错误输出合计上限为 128 KiB，超时上限为 60 秒。STDIO MCP 文本上限为 8 KiB，超时上限为 30 秒。Runner 不提供文件传输、PTY、端口转发、本地 Shell 或任意进程型 MCP 命令；这些能力需分别审查和开发。
++-----
+ 
++<a id="understand-the-implementation"></a>
++## 理解实现
+ 
+-## 共享 STDIO SDK 调用器
++<details>
++<summary>协议校验与执行归属</summary>
+ 
+-`@power-evolve/connector-runner/stdio-v2` 导出 `runStdioV2(input, options, signal)`，供隔离的 Cloud／Device 执行器使用。这个固定连接器 Runner 不开放此功能；独立的 [Sandbox Runner](../sandbox/README.zh.md)可加载其可信云执行库。共享 Host 不得执行它。执行器负责审批、不可变 runner／程序 pin、目录授权、prepare／permit、持久请求身份、结果分类和容器／UID 清理。
++[SDK 调用器](src/stdio-v2.ts)使用公开 SDK2 Client 和显式 `legacy` 协商，仅执行一次 initialize 握手。Transport 以 `shell:false` 启动一个子进程，复用公开分帧及消息校验器，严格检查 UTF-8 JSONRPC 并计量原始协议字节。不支持的版本会被拒绝，不启动第二个进程、不重连或重试。发现读取全部分页；调用在恰好一次 `tools/call` 前比较完整固定目录。
+ 
+-独立的 Node 专用 `@power-evolve/connector-runner/stdio-v2-digest` 叶模块不启动进程。它使用共享浏览器安全编码器，以不同的 management／configuration／task／catalog／prepared／scope／spec／dispatch／result 域散列完整原始 JSON。完整有序目录指纹包含所有 schema、metadata 和扩展字段。审批 HMAC 使用平台已有的 32 字节密钥及独立域；执行器不接收该密钥。编码预算包含完整域 envelope。浏览器安全的 contracts 包不导入此叶模块或 SDK 调用器。原 legacy 请求摘要不变。
++原始 schema、metadata、annotations、content、structured content、`isError`、扩展字段和转义 NUL 保持 JSON。`readOnlyHint` 不授予批准；`isError:true` 是已完成 RPC，其工具结果由外层拥有者判定。[摘要叶模块](src/stdio-v2-digest.ts)通过共享编解码器在不同操作域散列完整原始 JSON，不启动进程。审批 HMAC 保留 Platform 持有的 32 字节密钥；执行器不接收它。
+ 
+-输入选择 `discover` 或 `call`，指定字面程序、参数数组及绝对 cwd。调用还提供冻结的完整原始目录、原始工具名和 JSON 参数。选项传入全部输入/消息/协议/JSON/分页/工具/目录/结果/stderr/运行/请求/清理预算、严格的 `HOME`/`PATH`/`LANG` 环境，以及验证完整原始目录并计算共享冻结摘要的同步回调。调用器不另造规范化摘要实现。macOS 中 Node 可能自行加入 `__CF_USER_TEXT_ENCODING` 编码提示；调用器不合并父环境。HOME 和 PATH 必须指向执行器批准的隔离位置。
++回复丢失、取消、目录变化或预算失败保留保守的效果及调用事实，不发布截断的成功结果。清理分别等待配置的 stdin、TERM 和 KILL 截止时间，记录真实子进程 `exit` 与 `close` 事件。缺少 close 时保留 `cleanupConfirmed:false`。SDK close 或直接子进程退出不能终止后代、容器、写者或目录租约；外层停止协议必须确认它们。
+ 
+-选项还必须明确进程身份：`current` 保留已隔离调用者的 UID/GID；`unix` 将校验后的数值 UID/GID 传给实际 spawn。云 runtime 要求 Unix 1000/1000。`stdio-v2-dispatch` 叶模块核验完整原始启动包，并将冻结的调用交给 SDK；`stdio-v2-runtime` 叶模块预留唯一写者、限制完整响应，并等待独立提供的 UID 清理。这两个库不认证 HTTP 调用者，也不持久保存平台状态。
++现有 [HTTP 函数](src/server.ts)保留单次有界 SSH 与固定只读 `whoami` 行为。`instanceId` 变化保留不确定状态；执行在 `exec` 开始后失败时保留 `effectMayHaveOccurred:true`，包括退出证据缺失。请求正文上限为 256 KiB，SSH 输出上限为 128 KiB／60 秒，固定 STDIO 文本上限为 8 KiB／30 秒。[出口就绪检查](src/egress.ts)需要三次被拒探针；没有独立健康的对照监听器时，任意端口拒绝连接都不能作为充分证据。这些函数独立于通用 STDIO 库，不能证明部署隔离。
+ 
+-公开 SDK2 Client 使用显式 `legacy` 协商模式执行一次 `initialize`（支持的 2025 年协议握手，与产品固定 `whoami` 路由无关）。公开 Transport 适配器以 `shell:false` 启动一个子进程，复用 SDK 公开的分帧及消息 schema helper，严格检查 UTF-8 JSONRPC 行并累计收发协议原始字节。不支持的协议直接失败，不启动兄弟进程、不重复 initialize、不重连、不重试。调用器通过 SDK 公开请求读取全部工具分页，核对完整目录后恰好发出一次 `tools/call`。原始 schema、annotations、metadata、content、structured content、`isError`、扩展字段及转义 NUL 保持 JSON。`readOnlyHint` 不授予批准；`isError:true` 仍是完成的 RPC，由外层判定工具结果。
++</details>
+ 
+-程序启动本身可能产生效果。回复丢失、取消、目录改变或预算失败均保留保守的效果/调用事实，不发布截断的成功目录或结果。清理独立等待配置的 stdin、TERM 和 KILL 截止时间，记录真实直接子进程的 `exit` 和 `close` 事件。未观察到 close 时以 `cleanupConfirmed:false` 失败；SDK close 本身不能证明退出。即使确认直接子进程关闭，也不能证明后代、容器、writer 或其目录租约已经退休。外层 stop 协议必须提供这些证据，不得重放结果不明的调用。
++-----
+ 
+-在仓库根目录运行定向源码测试：`node --import tsx/esm --test products/power-evolve/connector-runner/tests/stdio-v2.test.ts`。测试使用真实 SDK2 Client 与测试独占的合成 Node 服务，覆盖分页、字面特殊参数、完整 JSON、目录变化、回复丢失、预算、abort、KILL 及后代持有管道。测试摘要回调替代后续共享目录验证器。这些测试仅验证调用器行为，不证明审批、Cloud/Device 接线或已部署产品流程通过。
++<a id="further-exploration"></a>
++## 进一步阅读
++
++- [传输校验](../contracts/README.zh.md) — 共享协议值与消费者义务。
++- [Sandbox Runner](../sandbox/README.zh.md) — 镜像、写者归属与清理。
++- [可信应用](../application/README.zh.md) — 审批与持久状态。
++
++-----
++
++<a id="model-experience"></a>
++## 模型体验
++
++通过解释有界 MCP 结果的获授权执行器与 Platform 适配器间接影响模型。本库不添加模型提示、工具或原生 Session 事件；消费者负责展示与记录。
++
++<a id="known-limitations-and-deferred-work"></a>
++## 已知限制与待完成工作
++
++调用者必须满足执行与安装要求：
++
++- 审批、容器／UID 清理、持久恢复和当前写者授权由执行器与 Platform 负责。
++- 未知效果必须对账；直接子进程清理不能授权重放。
++- Contracts／Zod peer 与源码 fixture 不能认证打包 worker 的依赖图或浏览器单例。
++- 文件传输、PTY、端口转发与 Host 本机执行需要另行授权的能力。
++
++<a id="dev-note"></a>
++### 开发备注
++
++<details>
++<summary>维护者上下文</summary>
++
++通过云端专用入口运行源码行为测试；源码导入与新构建生产产物分别验收。当前包、worker 和安装证据保存在迁移记录中。
++
++</details>
+diff --git a/products/power-evolve/connector-runner/README.i18n.yaml b/products/power-evolve/connector-runner/README.i18n.yaml
+--- a/products/power-evolve/connector-runner/README.i18n.yaml
++++ b/products/power-evolve/connector-runner/README.i18n.yaml
+@@ -2,15 +2,33 @@
+ # section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+ # After editing either side, bring the other along and re-record with:
+ #   pnpm run verify-translation-pairing --write products/power-evolve/connector-runner/README.md
++/:
++  en: c369359407357ebd
++  zh: b2d2fc7c1dc967f4
+ /isolated-connector-runner:
+-  en: bfa6d2f59007c48f
+-  zh: 5bee65748f3b1361
+-/isolated-connector-runner/build-and-deployment:
+-  en: b80d5a4e35e20cac
+-  zh: 1c9c6ecf4243db51
+-/isolated-connector-runner/wire-api:
+-  en: 9a08ce29edb3cf4d
+-  zh: 430d6eea3949c239
+-/isolated-connector-runner/shared-stdio-sdk-provider:
+-  en: 696bddb09e6997d8
+-  zh: ac6c5460c213693c
++  en: 99d5f15d17fba89b
++  zh: 90960ca86baa702b
++/isolated-connector-runner/summary:
++  en: 6865f68b8cb9765d
++  zh: 6f8a4b919f9ac590
++/isolated-connector-runner/table-of-contents:
++  en: d152484eb41ac6b4
++  zh: d3513fd636ffdf7c
++/isolated-connector-runner/use-this-package:
++  en: f6d445dd3ae75fdb
++  zh: 3b423095c1f787da
++/isolated-connector-runner/understand-the-implementation:
++  en: c72cbd69235ec5d7
++  zh: 9e6c9da31e39e36d
++/isolated-connector-runner/further-exploration:
++  en: ae6faa8cba65a552
++  zh: 57fc32c8af72c366
++/isolated-connector-runner/model-experience:
++  en: 7492bd95b68b7f76
++  zh: bf86130f40bcb58f
++/isolated-connector-runner/known-limitations-and-deferred-work:
++  en: 415ab294a65ca68f
++  zh: 6e958e530046ed71
++/isolated-connector-runner/known-limitations-and-deferred-work/dev-note:
++  en: 70aa477a2ad67308
++  zh: 4f6de4a27976f4e2
+diff --git a/products/power-evolve/contracts/README.md b/products/power-evolve/contracts/README.md
+--- a/products/power-evolve/contracts/README.md
++++ b/products/power-evolve/contracts/README.md
+@@ -58,6 +58,8 @@
+ 
+ The [build configuration](tsdown.config.ts) emits ESM and also declares standalone browser modules for execution resolution and Office preview. Trusted approval and isolated parser consumers require those prepared artifacts. Source-level validation does not establish that a deployed bundle or image contains the current records.
+ 
++Node Application and Connector consumers declare matching Contracts peers; their installation root supplies the production provider. Admission compares every ESM subpath, schema reference and Zod entry, including nested helpers. The source manifest keeps Zod as a production dependency, so a private nested Zod copy must be rejected separately. Factories still create distinct schemas and can retain caller-owned mutable budgets. Standalone browser bundles have separate instances; Node peer routing does not unify them.
++
+ </details>
+ 
+ -----
+diff --git a/products/power-evolve/contracts/README.zh.md b/products/power-evolve/contracts/README.zh.md
+--- a/products/power-evolve/contracts/README.zh.md
++++ b/products/power-evolve/contracts/README.zh.md
+@@ -58,6 +58,8 @@
+ 
+ [构建配置](tsdown.config.ts)输出 ESM，并声明用于执行对账与 Office 预览的独立浏览器模块。可信审批和隔离解析器消费者需要准备好的产物。源码校验不能证明部署的 bundle 或镜像包含当前记录。
+ 
++Node Application 与 Connector 消费者声明匹配的 Contracts peer；安装根提供生产 provider。受理比较全部 ESM 子路径、schema 引用和 Zod 入口，包括嵌套 helper。源码清单保留 Zod 生产依赖，因此必须另外拒绝私有嵌套 Zod 副本。工厂仍创建不同的 schema，并可能持有调用者可变预算。独立浏览器 bundle 拥有各自的实例；Node peer 路由不会统一这些实例。
++
+ </details>
+ 
+ -----
+diff --git a/products/power-evolve/contracts/README.i18n.yaml b/products/power-evolve/contracts/README.i18n.yaml
+--- a/products/power-evolve/contracts/README.i18n.yaml
++++ b/products/power-evolve/contracts/README.i18n.yaml
+@@ -18,8 +18,8 @@
+   en: 76caf1d2602cf210
+   zh: 6e794157b35ed603
+ /powerevolve-wire-validation/understand-the-implementation:
+-  en: 44f451ec01931f26
+-  zh: afcedc700abdd29c
++  en: 2d111e242eca3747
++  zh: 6ef2bfe6fdce5199
+ /powerevolve-wire-validation/further-exploration:
+   en: 6de2e2e776f3c5da
+   zh: d295c36c0bb66ed2
+diff --git a/products/power-evolve/scripts/cloud-peer-policy.mjs b/products/power-evolve/scripts/cloud-peer-policy.mjs
+new file mode 100644
+--- /dev/null
++++ b/products/power-evolve/scripts/cloud-peer-policy.mjs
+@@ -0,0 +1,258 @@
++/** Named cloud Host peers and source-independent protocol installation admission. */
++import { isDeepStrictEqual } from 'node:util'
++
++/** Concrete runtime exports used by managed cloud Hosts; browser bundles have separate instances. */
++export const CLOUD_PEER_REQUIRED_HOST_EXPORTS = Object.freeze({
++  '@power-evolve/contracts/account': Object.freeze([
++    'ACCOUNT_ERROR_CODES',
++    'ACCOUNT_MAX_MODELS_PER_USER',
++    'ACCOUNT_MAX_PAGE_ITEMS',
++    'ACCOUNT_PAGE_PATH',
++    'ACCOUNT_PASSWORD_MAX_BYTES',
++    'ACCOUNT_PASSWORD_MIN_BYTES',
++    'ACCOUNT_ROUTES',
++    'accountAudience',
++    'accountBearerToken',
++    'accountCapabilitiesValue',
++    'accountChangePasswordRequest',
++    'accountCreateRequest',
++    'accountEmptyRequest',
++    'accountListRequest',
++    'accountListValue',
++    'accountLoginRequest',
++    'accountLoginValue',
++    'accountMeValue',
++    'accountModelCatalogValue',
++    'accountMutationReceipt',
++    'accountNewPassword',
++    'accountNewUsername',
++    'accountReceiptRequest',
++    'accountReceiptValue',
++    'accountRole',
++    'accountSecretMutationValue',
++    'accountTargetMutationRequest',
++    'accountUpdateRequest',
++    'accountUserId',
++    'accountValue',
++  ]),
++  '@power-evolve/contracts/execution-resolution': Object.freeze([
++    'EXECUTION_RESOLUTION_APPROVAL_ROUTES',
++    'EXECUTION_RESOLUTION_ROUTES',
++    'executionResolutionInspectRequest',
++    'executionResolutionInspection',
++    'executionResolutionReceipt',
++    'executionResolutionRequest',
++    'executionResolutionStatus',
++    'executionResolutionStatusRequest',
++    'executionResolutionsList',
++    'executionResolutionsListRequest',
++  ]),
++  '@power-evolve/contracts/file-download': Object.freeze([
++    'FILE_DOWNLOAD_CONTENT_PATH',
++    'FILE_DOWNLOAD_MAX_FILES',
++    'FILE_DOWNLOAD_MAX_FILE_BYTES',
++    'FILE_DOWNLOAD_MAX_SOURCE_BYTES',
++    'FILE_DOWNLOAD_MAX_URL_BYTES',
++    'FILE_DOWNLOAD_PLATFORM_PATH',
++    'fileDownloadContentRequest',
++    'fileDownloadPath',
++    'fileDownloadPrepareRequest',
++    'fileDownloadUrl',
++    'fileDownloadView',
++  ]),
++  '@power-evolve/contracts/office-preview': Object.freeze([
++    'OFFICE_PREVIEW_MAX_INPUT_BYTES',
++    'OFFICE_PREVIEW_ROUTES',
++    'officePreviewCancelRequest',
++    'officePreviewContentView',
++    'officePreviewErrorCode',
++    'officePreviewFailureSchema',
++    'officePreviewGenerationView',
++    'officePreviewJobSchema',
++    'officePreviewJobView',
++    'officePreviewLimits',
++    'officePreviewPrepareRequest',
++    'officePreviewRefRequest',
++    'officePreviewResultSchema',
++    'officePreviewSourcePrepareRequest',
++  ]),
++  '@power-evolve/contracts/stdio-management': Object.freeze([
++    'stdioActionSchemasV2',
++    'stdioManagementLimitsV2',
++    'stdioManagementSchemasV2',
++    'stdioPublicConfigV2',
++  ]),
++  '@power-evolve/contracts/stdio-mcp': Object.freeze([
++    'stdioActionRequestV2',
++    'stdioApprovalBindingV2',
++    'stdioApprovalRequestV2',
++    'stdioCaptureV2',
++    'stdioCatalogV2',
++    'stdioCheckRequestV2',
++    'stdioCloudDeploymentV2',
++    'stdioDeploymentV2',
++    'stdioDigestV2',
++    'stdioDispatchV2',
++    'stdioExecutionRefV2',
++    'stdioExecutorImageV2',
++    'stdioExecutorOwnerV2',
++    'stdioImageMatchesDeploymentV2',
++    'stdioInvocationV2',
++    'stdioJsonV2',
++    'stdioLimitsV2',
++    'stdioObjectV2',
++    'stdioPreparedV2',
++    'stdioReceiptRequestV2',
++    'stdioScopeV2',
++    'stdioStartAuthorizationV2',
++    'stdioStartPermitV2',
++    'stdioTaskSchemasV2',
++  ]),
++  '@power-evolve/contracts/stdio-mcp-json': Object.freeze([
++    'stdioCanonicalJsonV2',
++  ]),
++  '@power-evolve/contracts/stdio-runtime': Object.freeze([
++    'stdioActionLeaseV2',
++    'stdioCloudStopEvidenceV2',
++    'stdioOutcomeV2',
++    'stdioRuntimeViewV2',
++    'stdioWorkerIdV2',
++  ]),
++  '@power-evolve/contracts/storage': Object.freeze([
++    'bindingGeneration',
++    'bindingWorkspaceId',
++    'storageRelativePath',
++    'workspaceStorageTarget',
++  ]),
++})
++
++/** Add named product peers while retaining the official policy's other fields and entries.
++ * @param officialPolicy Unmodified repository dependency policy.
++ * @returns Independent cloud policy with the original SAFE and duplicate-safe references.
++ */
++export function createCloudPeerPolicy(officialPolicy) {
++  return { ...officialPolicy, peerRequiredHostExports: {
++    ...officialPolicy.peerRequiredHostExports, ...CLOUD_PEER_REQUIRED_HOST_EXPORTS,
++  } }
++}
++
++/** Validate cloud additions against actual product managed Host uses.
++ * @param policy Candidate cloud policy.
++ * @param officialPolicy Unmodified repository policy.
++ * @param managedHostExportUses Actual flat export uses from product managed Host facts.
++ * @param workspaceNames Actual official and product provider names.
++ * @returns Rejecting diagnostics; the combined official collector must also run.
++ */
++export function cloudPeerPolicyErrors(policy, officialPolicy, managedHostExportUses, workspaceNames) {
++  const failures = []
++  for (const field of new Set([...Object.keys(officialPolicy), ...Object.keys(policy)])) {
++    if (field !== 'peerRequiredHostExports' && !isDeepStrictEqual(policy[field], officialPolicy[field])) {
++      failures.push('Cloud peer policy must preserve official ' + field)
++    }
++  }
++  for (const [specifier, names] of Object.entries(officialPolicy.peerRequiredHostExports)) {
++    if (!isDeepStrictEqual(policy.peerRequiredHostExports?.[specifier], names)) {
++      failures.push('Cloud peer policy must preserve official peer entries for ' + specifier)
++    }
++  }
++  for (const [specifier, names] of Object.entries(policy.peerRequiredHostExports ?? {})) {
++    if (Object.hasOwn(officialPolicy.peerRequiredHostExports, specifier)) continue
++    const provider = specifier.split('/').slice(0, 2).join('/')
++    if (!specifier.startsWith('@power-evolve/') || !workspaceNames.has(provider)) {
++      failures.push('Cloud peer policy names unknown private provider ' + specifier)
++    }
++    if (!Array.isArray(names) || names.length === 0) {
++      failures.push('Cloud peer policy lists no named exports for ' + specifier)
++      continue
++    }
++    const seen = new Set()
++    for (const name of names) {
++      if (typeof name !== 'string' || !/^(?:[A-Za-z_$][\w$]*|default)$/u.test(name)) {
++        failures.push('Cloud peer policy cannot classify unbounded ' + specifier + '#' + name)
++        continue
++      }
++      if (seen.has(name)) failures.push('Cloud peer policy repeats ' + specifier + '#' + name)
++      seen.add(name)
++      if (!managedHostExportUses.some(use => use.specifier === specifier && use.exportName === name
++        && use.sourcePath.startsWith('products/power-evolve/'))) {
++        failures.push('Cloud peer policy lists unused product Host export ' + specifier + '#' + name)
++      }
++      if (officialPolicy.safeHostDependencyExports[specifier]?.includes(name)) {
++        failures.push('Cloud peer policy overlaps official SAFE export ' + specifier + '#' + name)
++      }
++    }
++  }
++  return failures
++}
++
++/** Require explicit production providers and matching consumer declarations.
++ * @param manifests Package-name map from the actual product manifests.
++ * @returns Rejecting declaration diagnostics; runtime path admission remains mandatory.
++ */
++export function cloudProtocolManifestErrors(manifests) {
++  const failures = []
++  for (const name of ['@power-evolve/application', '@power-evolve/connector-runner']) {
++    const manifest = manifests[name]
++    if (manifest?.peerDependencies?.['@power-evolve/contracts'] !== 'workspace:~'
++      || manifest?.devDependencies?.['@power-evolve/contracts'] !== 'workspace:~'
++      || Object.hasOwn(manifest?.dependencies ?? {}, '@power-evolve/contracts')) {
++      failures.push(name + ': Contracts requires matching peer + dev workspace:~ declarations')
++    }
++    if (manifest?.dependencies?.zod !== '^4.4.3') failures.push(name + ': Zod must remain a production dependency')
++  }
++  for (const name of ['@power-evolve/host', '@power-evolve/platform']) {
++    for (const provider of ['@power-evolve/contracts', '@power-evolve/connector-runner']) {
++      if (manifests[name]?.dependencies?.[provider] !== 'workspace:~') {
++        failures.push(name + ': missing explicit production provider ' + provider)
++      }
++    }
++    if (manifests[name]?.dependencies?.zod !== '4.4.3') failures.push(name + ': missing pinned production Zod provider')
++  }
++  return failures
++}
++
++/** Admit a complete observed Node ESM protocol graph in one fresh isolate.
++ * @param input Actual provider entries, consumer peers, linked roots, expected uses and loaded ESM observations.
++ * @returns Rejecting diagnostics for missing routes, differing versions, paths or runtime identities.
++ */
++export function cloudProtocolResolutionErrors(input) {
++  const failures = []
++  const providerFor = specifier => input.providers[specifier.startsWith('@power-evolve/contracts/')
++    ? '@power-evolve/contracts' : specifier]
++  for (const name of ['@power-evolve/contracts', 'zod']) {
++    const provider = input.providers[name]
++    if (!provider?.mapped || !provider.declarer || !provider.packageDir || !provider.version) {
++      failures.push('Missing formal runtime provider ' + name)
++    }
++  }
++  for (const consumer of input.consumers) {
++    if (!consumer.needsContractsPeer) continue
++    if (consumer.peer !== 'workspace:~' || consumer.dev !== 'workspace:~' || consumer.dependency) {
++      failures.push('Missing matching Contracts peer for ' + consumer.name)
++    }
++    if (!input.linkedRoots.includes(consumer.root)) failures.push('Missing linkedRoot for ' + consumer.name)
++  }
++  if (input.expectedUses.length === 0) failures.push('Empty protocol import corpus')
++  for (const expected of input.expectedUses) {
++    const rows = input.observations.filter(row => row.sourcePath === expected.sourcePath
++      && row.specifier === expected.specifier)
++    if (rows.length !== 1) failures.push('Missing or duplicate ESM observation ' + expected.sourcePath + '#' + expected.specifier)
++  }
++  for (const row of input.observations) {
++    const provider = providerFor(row.specifier)
++    if (!provider) { failures.push('Unknown protocol provider ' + row.specifier); continue }
++    const target = provider.modules?.[row.specifier]
++    if (row.version !== provider.version) failures.push('Protocol version conflict at ' + row.sourcePath + '#' + row.specifier)
++    if (row.packageDir !== provider.packageDir || row.url !== provider.urls?.[row.specifier]) {
++      failures.push('Private protocol copy or differing ESM entry at ' + row.sourcePath + '#' + row.specifier)
++    }
++    if (!target || !row.module || !isDeepStrictEqual(Object.keys(row.module).sort(), Object.keys(target).sort())) {
++      failures.push('Missing or differing runtime exports at ' + row.sourcePath + '#' + row.specifier)
++      continue
++    }
++    for (const [name, value] of Object.entries(target)) {
++      if (row.module[name] !== value) failures.push('Protocol runtime identity differs at ' + row.sourcePath + '#' + name)
++    }
++  }
++  return failures
++}
+diff --git a/products/power-evolve/application/tests/employee6-peer-policy.test.mjs b/products/power-evolve/application/tests/employee6-peer-policy.test.mjs
+new file mode 100644
+--- /dev/null
++++ b/products/power-evolve/application/tests/employee6-peer-policy.test.mjs
+@@ -0,0 +1,107 @@
++/** Cloud-only peer classifications retain official rejecting semantics and provider declarations. */
++import assert from 'node:assert/strict'
++import { readFileSync } from 'node:fs'
++import { resolve } from 'node:path'
++import { test } from 'node:test'
++import { PACKAGE_DEPENDENCY_POLICY } from '../../../../scripts/package-dependency-policy.ts'
++import { collectRuntimeSourceExportUses, collectHostDependencyExportPolicyViolations,
++  readPackageDependencyState } from '../../../../scripts/verify-package-dependencies.ts'
++import { inventory } from '../../scripts/cloud-policy.mjs'
++import { CLOUD_PEER_REQUIRED_HOST_EXPORTS, createCloudPeerPolicy, cloudPeerPolicyErrors,
++  cloudProtocolManifestErrors } from '../../scripts/cloud-peer-policy.mjs'
++
++const root = resolve(import.meta.dirname, '../../../..')
++const corpus = inventory(root)
++const manifests = Object.fromEntries(corpus.manifests.map(file => {
++  const manifest = JSON.parse(readFileSync(resolve(root, file), 'utf8'))
++  return [manifest.name, manifest]
++}))
++const official = readPackageDependencyState(root, PACKAGE_DEPENDENCY_POLICY)
++const names = new Set([...official.workspaceNames, ...Object.keys(manifests)])
++const app = '@power-evolve/application'
++const actualUses = corpus.runtime.filter(file => file.startsWith('products/power-evolve/application/src/'))
++  .flatMap(file => collectRuntimeSourceExportUses(file, readFileSync(resolve(root, file), 'utf8'))
++    .map(use => ({ ...use, sourcePath: file,
++      packageName: use.specifier.startsWith('@') ? use.specifier.split('/').slice(0, 2).join('/') : use.specifier.split('/')[0] })))
++const facts = [...official.facts, { manifest: manifests[app], hostRuntimeExportUses: actualUses }]
++const policy = createCloudPeerPolicy(PACKAGE_DEPENDENCY_POLICY)
++const errors = candidate => cloudPeerPolicyErrors(candidate, PACKAGE_DEPENDENCY_POLICY, actualUses, names)
++const classifications = candidate => collectHostDependencyExportPolicyViolations(facts, names, candidate)
++const contracts = uses => uses.filter(use => use.specifier.startsWith('@power-evolve/contracts/'))
++const keys = table => Object.entries(table).flatMap(([specifier, entries]) => entries.map(name => specifier + '#' + name)).sort()
++
++// This assertion uses the real scanner, rather than a copied expected count or historical proposal table.
++test('the named cloud table equals every actual managed Host Contracts export use', () => {
++  const observed = [...new Set(contracts(actualUses).map(use => use.specifier + '#' + use.exportName))].sort()
++  assert(observed.length > 0)
++  assert.deepEqual(keys(CLOUD_PEER_REQUIRED_HOST_EXPORTS), observed)
++  assert.deepEqual(errors(policy), [])
++  assert.equal(classifications(policy).filter(error => error.includes('@power-evolve/contracts/')).length, 0)
++  assert(classifications(PACKAGE_DEPENDENCY_POLICY).some(error => error.includes('@power-evolve/contracts/')))
++  for (const file of ['stdio-v2-cloud-worker.ts', 'stdio-v2-cloud-capture.ts', 'stdio-v2-cloud-runtime.ts', 'stdio-v2-worker-store.ts']) {
++    assert(contracts(actualUses).some(use => use.sourcePath.endsWith('/' + file)), 'Missing new worker source ' + file)
++  }
++})
++
++test('the cloud overlay preserves every original policy field and official peer entry', () => {
++  for (const field of Object.keys(PACKAGE_DEPENDENCY_POLICY)) {
++    if (field !== 'peerRequiredHostExports') assert.equal(policy[field], PACKAGE_DEPENDENCY_POLICY[field])
++  }
++  for (const [specifier, entries] of Object.entries(PACKAGE_DEPENDENCY_POLICY.peerRequiredHostExports)) {
++    assert.equal(policy.peerRequiredHostExports[specifier], entries)
++  }
++  const changedSafe = { ...policy, safeHostDependencyExports: { ...policy.safeHostDependencyExports,
++    '@power-evolve/contracts/account': ['accountUserId'] } }
++  assert(errors(changedSafe).some(error => error.includes('preserve official safeHostDependencyExports')))
++  assert(errors({ ...policy, duplicateSafePackages: [...policy.duplicateSafePackages, '@power-evolve/contracts'] })
++    .some(error => error.includes('preserve official duplicateSafePackages')))
++  const changedPeer = structuredClone(policy)
++  delete changedPeer.peerRequiredHostExports['@deepseek-ai/dsh-session']
++  assert(errors(changedPeer).some(error => error.includes('preserve official peer entries')))
++})
++
++test('unused, unknown, duplicate and unbounded cloud additions reject', () => {
++  const candidate = structuredClone(policy)
++  candidate.peerRequiredHostExports['@power-evolve/contracts/account'].push('notAnActualExport', '*', '<side-effect>', 'accountUserId')
++  candidate.peerRequiredHostExports['@power-evolve/missing/wire'] = ['value']
++  const rejected = errors(candidate)
++  for (const marker of ['unused product Host export', 'unknown private provider', 'repeats', 'unbounded']) {
++    assert(rejected.some(error => error.includes(marker)), marker)
++  }
++  assert(classifications(candidate).some(error => error.includes('lists unused')))
++  assert(classifications(candidate).some(error => error.includes('cannot classify unbounded')))
++  const missingProvider = new Set(names)
++  missingProvider.delete('@power-evolve/contracts')
++  assert(cloudPeerPolicyErrors(policy, PACKAGE_DEPENDENCY_POLICY, actualUses, missingProvider)
++    .some(error => error.includes('unknown private provider')))
++  assert(cloudPeerPolicyErrors(policy, PACKAGE_DEPENDENCY_POLICY,
++    actualUses.map(use => ({ ...use, sourcePath: 'private-fixture/not-product.ts' })), names)
++    .some(error => error.includes('unused product Host export')))
++})
++
++test('namespace and side-effect runtime source imports remain unclassified', () => {
++  for (const text of ["export * from '@power-evolve/contracts/account'", "import '@power-evolve/contracts/account'"]) {
++    const unbounded = collectRuntimeSourceExportUses('negative.ts', text).map(use => ({ ...use,
++      packageName: '@power-evolve/contracts', sourcePath: 'products/power-evolve/application/src/negative.ts' }))
++    assert.equal(unbounded.length, 1)
++    const rejected = collectHostDependencyExportPolicyViolations([...facts,
++      { manifest: manifests[app], hostRuntimeExportUses: unbounded }], names, policy)
++    assert(rejected.some(error => error.includes('negative.ts') && error.includes('is not classified')))
++  }
++})
++
++test('missing matching peer declarations or root production providers reject independently', () => {
++  assert.deepEqual(cloudProtocolManifestErrors(manifests), [])
++  for (const [owner, section, name] of [
++    ['@power-evolve/application', 'peerDependencies', '@power-evolve/contracts'],
++    ['@power-evolve/application', 'devDependencies', '@power-evolve/contracts'],
++    ['@power-evolve/connector-runner', 'peerDependencies', '@power-evolve/contracts'],
++    ['@power-evolve/host', 'dependencies', '@power-evolve/contracts'],
++    ['@power-evolve/platform', 'dependencies', '@power-evolve/connector-runner'],
++    ['@power-evolve/host', 'dependencies', 'zod'],
++  ]) {
++    const missing = structuredClone(manifests)
++    delete missing[owner][section][name]
++    assert(cloudProtocolManifestErrors(missing).length > 0, owner + '#' + name)
++  }
++})
+diff --git a/products/power-evolve/application/tests/employee6-peer-resolver.test.mjs b/products/power-evolve/application/tests/employee6-peer-resolver.test.mjs
+new file mode 100644
+--- /dev/null
++++ b/products/power-evolve/application/tests/employee6-peer-resolver.test.mjs
+@@ -0,0 +1,230 @@
++/** Fresh official resolver processes over actual protocol source and product consumer manifests. */
++import assert from 'node:assert/strict'
++import { spawnSync } from 'node:child_process'
++import { createRequire } from 'node:module'
++import { cpSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
++import { tmpdir } from 'node:os'
++import { dirname, join, relative, resolve } from 'node:path'
++import { fileURLToPath, pathToFileURL } from 'node:url'
++import { test } from 'node:test'
++import ts from 'typescript'
++import { collectRuntimeSourceExportUses } from '../../../../scripts/verify-package-dependencies.ts'
++import { inventory } from '../../scripts/cloud-policy.mjs'
++import { cloudProtocolManifestErrors, cloudProtocolResolutionErrors } from '../../scripts/cloud-peer-policy.mjs'
++
++const root = resolve(import.meta.dirname, '../../../..')
++const require = createRequire(import.meta.url)
++const scenario = process.argv[2]
++const scenarios = ['shared', 'shared-platform', 'missing-provider', 'missing-peer', 'missing-linked-root', 'nested-private-helper',
++  'nested-peer-helper', 'private-zod', 'version-conflict']
++const manifest = owner => JSON.parse(readFileSync(resolve(root, 'products/power-evolve', owner, 'package.json'), 'utf8'))
++const put = (file, value) => {
++  mkdirSync(dirname(file), { recursive: true })
++  writeFileSync(file, typeof value === 'string' ? value : JSON.stringify(value, null, 2) + '\n')
++}
++const link = (target, file) => {
++  mkdirSync(dirname(file), { recursive: true })
++  symlinkSync(target, file, 'dir')
++}
++const transpile = (source, file) => ts.transpileModule(source, { fileName: file, compilerOptions: {
++  target: ts.ScriptTarget.ES2024, module: ts.ModuleKind.ESNext, rewriteRelativeImportExtensions: true,
++} }).outputText
++
++async function runScenario(folder) {
++  const { installRuntimeInterception } = await import(pathToFileURL(resolve(root,
++    'packages/boot/app-boot/src/profile-resolution/resolver.ts')).href)
++  const snapshots = new Map()
++  const source = file => {
++    const value = readFileSync(resolve(root, file), 'utf8')
++    snapshots.set(file, value)
++    return value
++  }
++  const positive = ['shared', 'shared-platform', 'nested-peer-helper'].includes(scenario)
++  for (const owner of ['contracts', 'application', 'connector-runner', 'host', 'platform']) {
++    source('products/power-evolve/' + owner + '/package.json')
++  }
++  const protocol = manifest('contracts')
++  const leaves = Object.keys(protocol.exports).filter(key => key !== './package.json')
++  const specifiers = leaves.map(leaf => protocol.name + leaf.slice(1))
++  const zodManifest = realpathSync(require.resolve('zod/package.json'))
++  const zodSource = dirname(zodManifest)
++  const sharedZod = join(folder, 'shared-zod')
++  const privateZod = join(folder, 'private-zod')
++  cpSync(zodSource, sharedZod, { recursive: true })
++  cpSync(zodSource, privateZod, { recursive: true })
++  for (const dir of [sharedZod, privateZod]) {
++    const entry = join(dir, 'index.js')
++    put(entry, readFileSync(entry, 'utf8') + '\nexport const __employee6ESMUrl = import.meta.url;\n')
++  }
++  const zodVersion = JSON.parse(readFileSync(zodManifest, 'utf8')).version
++  assert.equal(zodVersion, '4.4.3', 'Refresh the pinned provider deliberately if the installed Zod changes')
++  const brand = join(folder, 'brand')
++  put(join(brand, 'package.json'), { name: '@deepseek-ai/dsh-brand', type: 'module', exports: './index.js' })
++  put(join(brand, 'index.js'), transpile(source('packages/util/brand/src/index.ts'), 'index.ts'))
++  const makeProtocol = label => {
++    const dir = join(folder, label)
++    put(join(dir, 'package.json'), protocol)
++    for (const leaf of leaves) {
++      const file = 'products/power-evolve/contracts/src/' + leaf.slice(2) + '.ts'
++      const target = protocol.exports[leaf].default
++      put(resolve(dir, target), transpile(source(file), file)
++        + '\nexport const __employee6ESMUrl = import.meta.url;\n')
++    }
++    link(scenario === 'private-zod' && label === 'provider' ? privateZod : sharedZod, join(dir, 'node_modules/zod'))
++    link(brand, join(dir, 'node_modules/@deepseek-ai/dsh-brand'))
++    return dir
++  }
++  const provider = makeProtocol('provider'), privateProtocol = makeProtocol('private-protocol')
++  const roots = new Map(), consumers = []
++  for (const owner of ['application', 'connector-runner']) {
++    const dir = join(folder, owner), current = manifest(owner)
++    if (scenario === 'missing-peer' && owner === 'connector-runner') {
++      delete current.peerDependencies['@power-evolve/contracts']
++      current.dependencies['@power-evolve/contracts'] = 'workspace:~'
++    }
++    put(join(dir, 'package.json'), current)
++    link(privateProtocol, join(dir, 'node_modules/@power-evolve/contracts'))
++    link(sharedZod, join(dir, 'node_modules/zod'))
++    roots.set(owner, dir)
++    consumers.push({ name: current.name, root: dir, needsContractsPeer: true,
++      peer: current.peerDependencies?.['@power-evolve/contracts'], dev: current.devDependencies?.['@power-evolve/contracts'],
++      dependency: current.dependencies?.['@power-evolve/contracts'] })
++  }
++  const anchor = join(folder, 'installation/package.json')
++  put(anchor, manifest(scenario === 'shared-platform' ? 'platform' : 'host'))
++  link(provider, join(dirname(anchor), 'node_modules/@power-evolve/contracts'))
++  link(sharedZod, join(dirname(anchor), 'node_modules/zod'))
++  const entries = [
++    ...(scenario === 'missing-provider' ? [] : [{ name: '@power-evolve/contracts', packageDir: provider,
++      version: scenario === 'version-conflict' ? '0.3.0' : protocol.version, declarer: anchor, scope: 'profile' }]),
++    { name: 'zod', packageDir: sharedZod, version: zodVersion, declarer: anchor, scope: 'profile' },
++  ]
++  const linkedRoots = [...roots].filter(([owner]) => scenario !== 'missing-linked-root' || owner !== 'connector-runner')
++    .map(([owner, realPath]) => ({ name: owner, realPath }))
++  linkedRoots.push({ name: 'contracts-provider', realPath: provider })
++  const resolution = { profilesDir: join(folder, 'profiles'), profileDir: join(folder, 'profiles/owned'),
++    localPackageNames: [], entries, linkedRoots }
++  const interception = installRuntimeInterception(resolution)
++  try {
++    const providers = {
++      '@power-evolve/contracts': { packageDir: provider, version: entries.find(e => e.name === protocol.name)?.version,
++        declarer: anchor, mapped: entries.some(e => e.name === protocol.name), urls: {}, modules: {} },
++      zod: { packageDir: sharedZod, version: zodVersion, declarer: anchor, mapped: true, urls: {}, modules: {} },
++    }
++    const runtimeModule = loaded => Object.fromEntries(Object.entries(loaded).filter(([name]) => name !== '__employee6ESMUrl'))
++    for (const leaf of leaves) {
++      const specifier = protocol.name + leaf.slice(1), url = pathToFileURL(resolve(provider, protocol.exports[leaf].default)).href
++      providers[protocol.name].urls[specifier] = url
++      providers[protocol.name].modules[specifier] = runtimeModule(await import(url))
++    }
++    const sharedZodUrl = pathToFileURL(join(sharedZod, 'index.js')).href
++    providers.zod.urls.zod = sharedZodUrl
++    providers.zod.modules.zod = runtimeModule(await import(sharedZodUrl))
++    const expectedUses = [], observations = []
++    const observe = async (sourcePath, consumerRoot, specifiersToImport, file) => {
++      const imports = [...new Set(specifiersToImport)]
++      put(file, imports.map((s, i) => 'import * as m' + i + ' from ' + JSON.stringify(s) + ';').join('\n')
++        + '\nexport const rows = [' + imports.map((s, i) => '{specifier:' + JSON.stringify(s)
++          + ',module:m' + i + ',url:m' + i + '.__employee6ESMUrl}').join(',') + '];\n')
++      const loaded = await import(pathToFileURL(file).href)
++      for (const row of loaded.rows) {
++        const selected = realpathSync(interception.packageDir(row.specifier, pathToFileURL(file).href))
++        const selectedManifest = JSON.parse(readFileSync(join(selected, 'package.json'), 'utf8'))
++        observations.push({ ...row, module: runtimeModule(row.module), sourcePath, root: consumerRoot,
++          packageDir: selected, version: selectedManifest.version })
++        expectedUses.push({ sourcePath, specifier: row.specifier })
++      }
++    }
++    for (const owner of roots.keys()) {
++      const prefix = 'products/power-evolve/' + owner + '/src/'
++      for (const file of inventory(root).runtime.filter(file => file.startsWith(prefix))) {
++        const uses = collectRuntimeSourceExportUses(file, source(file))
++        const actual = uses.filter(use => use.specifier.startsWith('@power-evolve/contracts/')).map(use => use.specifier)
++        if (actual.length === 0) continue
++        // Retain the actual package/ancestor lookup positions while isolating unrelated service initialization.
++        if (uses.some(use => use.specifier === 'zod')) actual.push('zod')
++        await observe(file, roots.get(owner), actual, join(roots.get(owner), relative(prefix, file) + '.probe.mjs'))
++      }
++      await observe(owner + ':all-node-protocol-exports', roots.get(owner), [...specifiers, 'zod'],
++        join(roots.get(owner), 'all-exports.probe.mjs'))
++    }
++    await observe('contracts:zod-production-edge', provider, ['zod'], join(provider, 'lib/zod.probe.mjs'))
++    const bridgeFile = 'products/power-evolve/application/src/account-contracts.ts'
++    const bridge = join(roots.get('application'), 'account-contracts.js')
++    put(bridge, transpile(source(bridgeFile), bridgeFile))
++    const bridgeModule = await import(pathToFileURL(bridge).href)
++    const account = providers[protocol.name].modules[protocol.name + '/account']
++    assert(Object.keys(bridgeModule).length > 0)
++    if (positive) for (const [name, value] of Object.entries(bridgeModule)) assert.equal(value, account[name])
++    if (scenario.startsWith('nested-')) {
++      const helper = join(roots.get('application'), 'node_modules/helper')
++      const helperManifest = { name: 'helper', type: 'module',
++        ...(scenario === 'nested-peer-helper' ? { peerDependencies: { [protocol.name]: 'workspace:~' },
++          devDependencies: { [protocol.name]: 'workspace:~' } } : { dependencies: { [protocol.name]: 'workspace:~' } }) }
++      put(join(helper, 'package.json'), helperManifest)
++      link(privateProtocol, join(helper, 'node_modules/@power-evolve/contracts'))
++      consumers.push({ name: 'helper', root: roots.get('application'), needsContractsPeer: true,
++        peer: helperManifest.peerDependencies?.[protocol.name], dev: helperManifest.devDependencies?.[protocol.name],
++        dependency: helperManifest.dependencies?.[protocol.name] })
++      await observe('nested-helper:actual-ancestor', roots.get('application'), [protocol.name + '/stdio-mcp'], join(helper, 'entry.mjs'))
++    }
++    const errors = cloudProtocolResolutionErrors({ providers, consumers, observations, expectedUses,
++      linkedRoots: linkedRoots.map(entry => entry.realPath) })
++    if (positive) assert.deepEqual(errors, [])
++    else assert(errors.length > 0, 'Invalid installation must be rejected')
++    const markers = { 'missing-provider': 'Missing formal runtime provider', 'missing-peer': 'Missing matching Contracts peer',
++      'missing-linked-root': 'Missing linkedRoot', 'nested-private-helper': 'Private protocol copy',
++      'private-zod': 'Private protocol copy', 'version-conflict': 'Protocol version conflict' }
++    if (markers[scenario]) assert(errors.some(error => error.includes(markers[scenario])), errors.join('\n'))
++    assert.throws(() => interception.replace({ ...resolution, entries: entries.map(entry => entry.name === 'zod'
++      ? { ...entry, version: '4.4.4' } : entry) }), /process restart/u)
++    const modules = Object.values(providers[protocol.name].modules)
++    const runtimeExports = modules.flatMap(module => Object.values(module))
++    const schemaCount = runtimeExports.filter(value => value && typeof value === 'object' && '_zod' in value).length
++    assert(schemaCount > 0)
++    const factory = providers[protocol.name].modules[protocol.name + '/stdio-mcp'].stdioJsonV2
++    const budget = { maxDepth: 100, maxNodes: 100, maxBytes: 100 }
++    const first = factory(budget), second = factory(budget)
++    assert.notEqual(first, second)
++    assert.equal(first.safeParse({ a: 'b' }).success, true)
++    budget.maxBytes = 1
++    assert.equal(first.safeParse({ a: 'b' }).success, false)
++    const changed = [...snapshots].filter(([file, text]) => readFileSync(resolve(root, file), 'utf8') !== text).map(([file]) => file)
++    assert.deepEqual(changed, [], 'Input changes invalidate this process observation')
++    return { scenario, admission: positive ? 'admitted' : 'rejected', errorCount: errors.length, errors: errors.slice(0, 8), observedEdges: observations.length,
++      actualSources: snapshots.size, nodeProtocolEntries: leaves.length, runtimeExports: runtimeExports.length, schemaCount,
++      bridgeExports: Object.keys(bridgeModule).length, node: process.version,
++      scope: 'Fresh official resolver with privately emitted actual Contracts; actual consumer import lookup positions, no service launch' }
++  } finally { interception.dispose() }
++}
++
++if (scenario) {
++  assert(scenarios.includes(scenario))
++  process.stdout.write(JSON.stringify(await runScenario(process.env.EMPLOYEE6_PEER_FIXTURE)) + '\n')
++} else {
++  test('actual product manifests provide matching Contracts peers and explicit installation providers', () => {
++    const names = ['application', 'connector-runner', 'host', 'platform']
++    assert.deepEqual(cloudProtocolManifestErrors(Object.fromEntries(names.map(owner => {
++      const current = manifest(owner)
++      return [current.name, current]
++    }))), [])
++  })
++  for (const name of scenarios) test('official resolver ' + name + ' protocol admission', () => {
++    const folder = realpathSync(mkdtempSync(join(tmpdir(), 'employee6-peer-')))
++    try {
++      const config = join(folder, 'tsconfig.json')
++      put(config, { compilerOptions: { target: 'es2024', module: 'esnext', moduleResolution: 'bundler', paths: {} } })
++      const child = spawnSync(process.execPath, ['--import', require.resolve('tsx/esm'), fileURLToPath(import.meta.url), name], {
++        cwd: root, encoding: 'utf8', shell: false, timeout: 30000, maxBuffer: 16 * 1024 * 1024,
++        env: { ...process.env, TSX_TSCONFIG_PATH: config, EMPLOYEE6_PEER_FIXTURE: folder },
++      })
++      assert.equal(child.error, undefined, String(child.error))
++      assert.equal(child.signal, null, child.stderr)
++      assert.equal(child.status, 0, child.stdout + child.stderr)
++      const report = JSON.parse(child.stdout.trim())
++      assert.equal(report.scenario, name)
++      assert(report.observedEdges > 0)
++      process.stdout.write('# protocol ' + JSON.stringify(report) + '\n')
++    } finally { rmSync(folder, { recursive: true, force: true }) }
++  })
++}
+diff --git a/products/power-evolve/application/tests/employee6-peer-pack.test.mjs b/products/power-evolve/application/tests/employee6-peer-pack.test.mjs
+new file mode 100644
+--- /dev/null
++++ b/products/power-evolve/application/tests/employee6-peer-pack.test.mjs
+@@ -0,0 +1,38 @@
++/** Actual package inclusion of the current cloud schema, independent of prepared lib outputs. */
++import assert from 'node:assert/strict'
++import { spawnSync } from 'node:child_process'
++import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
++import { createRequire } from 'node:module'
++import { tmpdir } from 'node:os'
++import { dirname, join, resolve } from 'node:path'
++import { test } from 'node:test'
++
++const root = resolve(import.meta.dirname, '../../../..')
++const app = resolve(root, 'products/power-evolve/application')
++const require = createRequire(import.meta.url)
++
++test('real application pack includes both Schema v2 assets and keeps Contracts as a peer', () => {
++  const folder = mkdtempSync(join(tmpdir(), 'employee6-peer-pack-'))
++  try {
++    const before = readFileSync(join(app, 'package.json'), 'utf8')
++    const manifest = JSON.parse(before)
++    for (const hook of ['prepack', 'prepare', 'postpack']) assert.equal(manifest.scripts[hook], undefined)
++    const managerPath = require.resolve('pnpm')
++    const manager = JSON.parse(readFileSync(managerPath, 'utf8'))
++    const result = spawnSync(process.execPath, [resolve(dirname(managerPath), manager.bin.pnpm), '--dir', app,
++      'pack', '--pack-destination', folder, '--json'], {
++      cwd: root, encoding: 'utf8', shell: false, timeout: 30000, maxBuffer: 16 * 1024 * 1024,
++    })
++    assert.equal(result.error, undefined, String(result.error))
++    assert.equal(result.signal, null, result.stderr)
++    assert.equal(result.status, 0, result.stdout + result.stderr)
++    const report = JSON.parse(result.stdout)
++    for (const asset of ['assets/cloud-schema-v2.sql', 'assets/cloud-schema-v2.manifest.json']) {
++      assert(report.files.some(file => file.path === asset), 'Missing shipped asset ' + asset)
++    }
++    assert.equal(manifest.peerDependencies['@power-evolve/contracts'], 'workspace:~')
++    assert.equal(manifest.devDependencies['@power-evolve/contracts'], 'workspace:~')
++    assert.equal(manifest.dependencies['@power-evolve/contracts'], undefined)
++    assert.equal(readFileSync(join(app, 'package.json'), 'utf8'), before)
++  } finally { rmSync(folder, { recursive: true, force: true }) }
++})

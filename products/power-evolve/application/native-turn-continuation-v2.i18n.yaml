@@ -1,0 +1,7 @@
+# Bilingual-pair consistency record for native-turn-continuation-v2.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write products/power-evolve/application/native-turn-continuation-v2.md
+/native-turn-continuation-v2:
+  en: 24feb823e4d14a9a
+  zh: 41f00abd6751a8db

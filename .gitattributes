@@ -8,6 +8,12 @@
 
 *.pdf binary
 
+# Unified-diff context keeps source indentation and the space on empty lines.
+# Preserve these applied dependency and retained proposal bytes exactly.
+patches/ast-v8-to-istanbul@1.0.5.patch whitespace=-blank-at-eol,-space-before-tab
+products/power-evolve/employee6-export-policy-proposals.patch whitespace=-blank-at-eol,-space-before-tab
+products/power-evolve/employee6-peer-implementation.patch whitespace=-blank-at-eol,-space-before-tab
+
 # The persistence catalog is the readable projection of these generated schemas.
 docs/persistence-schema.json linguist-generated=true
 docs/persistence-changes/*.schema.json linguist-generated=true

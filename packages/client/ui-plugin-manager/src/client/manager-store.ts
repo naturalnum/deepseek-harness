@@ -281,6 +281,8 @@ export interface ConfirmState {
 export interface PluginManagerState {
   /** `unavailable` when the Host runs without a managed profile; `error` keeps the last packages. */
   readonly status: 'idle' | 'loading' | 'ready' | 'error' | 'unavailable'
+  /** Explicit peer permission for shared Profile writes; omitted for existing operator carriers. */
+  readonly managementWritable?: boolean
   /**
    * Manual refresh feedback: `refreshing` until reads settle and the 400 ms minimum elapses;
    * `failed` after a failed refresh without cached inventory; otherwise `idle`, including
@@ -801,6 +803,7 @@ export class PluginManagerController {
         this.hasCachedInventory = true
         this.patch({
           status: 'ready',
+          managementWritable: inventory.value.managementWritable !== false,
           refreshStatus: this.getSnapshot().refreshStatus === 'refreshing' ? 'refreshing' : 'idle',
           packages: sortPackages(bundles.value.map(bundle => packageView(bundle, plugins.value))),
         })

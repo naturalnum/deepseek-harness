@@ -1,0 +1,25 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write products/power-evolve/deploy/office-runtime/README.md
+/office-parser-runtime:
+  en: 4da1daf0a99c02e9
+  zh: eb41546fa054969a
+/office-parser-runtime/summary:
+  en: 1e3429a5a33cfeb8
+  zh: 83f99767b5591f77
+/office-parser-runtime/table-of-contents:
+  en: 021a9c9720eb08fe
+  zh: 308e30405184dc1a
+/office-parser-runtime/node-handler:
+  en: 5ba1af096cdfdd06
+  zh: 20ae81275de6034a
+/office-parser-runtime/cluster-dependencies:
+  en: ce0afca65e3629fd
+  zh: 8fd115251216082a
+/office-parser-runtime/private-configuration:
+  en: 7e4f7dc72a1920e1
+  zh: 423a25bbd195d687
+/office-parser-runtime/verification:
+  en: b254b7d17c517be4
+  zh: 9ec651d23995b010

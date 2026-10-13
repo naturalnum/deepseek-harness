@@ -1,0 +1,11 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "products/power-evolve/client-account"
+    },
+    {
+      "path": "products/power-evolve/client-extension-center"
+    }
+  ]
+}

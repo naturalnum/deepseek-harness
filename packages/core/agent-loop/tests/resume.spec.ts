@@ -1,5 +1,5 @@
 import { ToolCallId, createMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
-import { afterEach, describe, expect, it, vi, type MockInstance } from 'vitest'
+import { afterEach, describe, expect, it, onTestFinished, vi, type MockInstance } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { appendFile, mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -75,6 +75,48 @@ async function readStoredEvents(ctx: Context, sessionId: SessionId): Promise<rea
     await handle.close()
   }
 }
+
+it.each([true, false])('resume creator policy controls owner-first teardown of persisted native pending B (keepInbox=%s)',
+  async (keepInbox) => {
+    const { ctx } = await persistentHarness(new MockAdapter([]))
+    onTestFinished(() => ctx.fiber.dispose())
+    const id = SessionId(`resume-owner-pending-${keepInbox}`)
+    const seed = await ctx.agents.create({ sessionId: id, disposeOptions: { keepInbox: true } })
+    const b = createUserMessage({ content: [{ type: 'text', text: 'B pending' }], source: { kind: 'user' } })
+    seed.agent.inbox.append('next-turn', b)
+    await seed.dispose()
+    const seedPrefix = await readStoredEvents(ctx, id)
+    const entered = Promise.withResolvers<undefined>()
+    let resumed!: Awaited<ReturnType<typeof ctx.agents.resume>>
+    const owner = await ctx.plugin(Object.assign(async (inner: Context) => {
+      resumed = await inner.agents.resume({ resumeSessionId: id, disposeOptions: { keepInbox }, setup(_agentCtx, agent) {
+        agent.onBeforeTurn((_turn, signal) => {
+          entered.resolve(undefined)
+          return new Promise<void>((resolve) => {
+            if (signal.aborted) { resolve(); return }
+            signal.addEventListener('abort', () => { resolve() }, { once: true })
+          })
+        })
+      } })
+    }, { inject: ['agents'] }))
+    try {
+      const before = await readStoredEvents(ctx, id)
+      expect(before.slice(0, seedPrefix.length)).toEqual(seedPrefix)
+      expect(before.at(-1)?.type).toBe('session/end-seed')
+      resumed.agent.wakePending()
+      await entered.promise
+      expect(resumed.agent.inbox.nextTurn).toEqual([b])
+      await owner.dispose()
+      await resumed.dispose({ keepInbox: !keepInbox })
+      expect(resumed.agent.inbox.nextTurn).toEqual(keepInbox ? [b] : [])
+      const after = await readStoredEvents(ctx, id)
+      if (keepInbox) expect(after).toEqual(before)
+      else expect(after.slice(before.length)).toMatchObject([{ type: 'agent/inbox/spliced', data: { outcome: 'canceled' } }])
+    } finally {
+      await owner.dispose()
+      await ctx.fiber.dispose()
+    }
+  })
 
 async function persistSession(sessionId: SessionId): Promise<string> {
   const { ctx, root } = await persistentHarness(new MockAdapter([]))

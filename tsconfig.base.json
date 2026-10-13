@@ -28,6 +28,28 @@
     // not declaration path aliases, keep each package/vendor source compiled
     // under its own tsconfig boundary.
     "paths": {
+      "@power-evolve/application/browser-auth": ["./products/power-evolve/application/src/host/browser-auth.ts"],
+      "@power-evolve/application/host": ["./products/power-evolve/application/src/host/index.ts"],
+      "@power-evolve/application/model": ["./products/power-evolve/application/src/host/model.ts"],
+      "@power-evolve/application/persistence": ["./products/power-evolve/application/src/host/persistence.ts"],
+      "@power-evolve/application/platform": ["./products/power-evolve/application/src/platform/index.ts"],
+      "@power-evolve/application/legacy-migration-v2-maintenance": ["./products/power-evolve/application/src/platform/legacy-migration-v2-maintenance.ts"],
+      "@power-evolve/application/scope": ["./products/power-evolve/application/src/host/scope.ts"],
+      "@power-evolve/connector-runner/protocol": ["./products/power-evolve/connector-runner/src/protocol.ts"],
+      "@power-evolve/connector-runner/stdio-v2": ["./products/power-evolve/connector-runner/src/stdio-v2.ts"],
+      "@power-evolve/connector-runner/stdio-v2-digest": ["./products/power-evolve/connector-runner/src/stdio-v2-digest.ts"],
+      "@power-evolve/connector-runner/stdio-v2-dispatch": ["./products/power-evolve/connector-runner/src/stdio-v2-dispatch.ts"],
+      "@power-evolve/connector-runner/stdio-v2-runtime": ["./products/power-evolve/connector-runner/src/stdio-v2-runtime.ts"],
+      "@power-evolve/contracts/account": ["./products/power-evolve/contracts/src/account.ts"],
+      "@power-evolve/contracts/execution-resolution": ["./products/power-evolve/contracts/src/execution-resolution.ts"],
+      "@power-evolve/contracts/file-download": ["./products/power-evolve/contracts/src/file-download.ts"],
+      "@power-evolve/contracts/office-preview": ["./products/power-evolve/contracts/src/office-preview.ts"],
+      "@power-evolve/contracts/stdio-management": ["./products/power-evolve/contracts/src/stdio-management.ts"],
+      "@power-evolve/contracts/stdio-mcp": ["./products/power-evolve/contracts/src/stdio-mcp.ts"],
+      "@power-evolve/contracts/stdio-mcp-json": ["./products/power-evolve/contracts/src/stdio-mcp-json.ts"],
+      "@power-evolve/contracts/stdio-runtime": ["./products/power-evolve/contracts/src/stdio-runtime.ts"],
+      "@power-evolve/contracts/storage": ["./products/power-evolve/contracts/src/storage.ts"],
+
       "@deepseek-ai/dsh-client-product-analytics": ["./packages/client/product-analytics/src/index.ts"],
       "@deepseek-ai/dsh-client-product-analytics/types": ["./packages/client/product-analytics/src/events.ts"],
       "@deepseek-ai/dsh-client-product-analytics/client": ["./packages/client/product-analytics/src/client/index.ts"],

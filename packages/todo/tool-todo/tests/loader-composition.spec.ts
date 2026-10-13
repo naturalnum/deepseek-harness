@@ -34,6 +34,11 @@ async function agent(ctx: Context): Promise<Agent> {
   const id = SessionId('todo-loader-agent')
   const session = Session.create(id)
   const value: Agent = {
+    canMaintainInbox: true,
+    onBeforeTurn: () => () => {},
+    onAfterClaim: () => () => {},
+    captureInboxActivity: () => { throw new Error('This Agent double has no maintenance capture') },
+    wakePending: () => {},
     id, options: {}, session, inbox: unsupportedInbox(),
     status: 'idle', ctx: scope.ctx,
     followup: () => {}, steer: () => {}, inject: () => {}, send: () => {}, cancel() {},

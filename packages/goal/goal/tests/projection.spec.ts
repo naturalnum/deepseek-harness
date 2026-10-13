@@ -39,6 +39,11 @@ interface Bench {
 async function liveAgent(ctx: Context, session: Session): Promise<Agent> {
   const status: AgentStatus = 'idle'
   const agent: Agent = {
+    get canMaintainInbox() { return status === 'idle' },
+    onBeforeTurn: () => () => {},
+    onAfterClaim: () => () => {},
+    captureInboxActivity: () => { throw new Error('This Agent double has no maintenance capture') },
+    wakePending: () => {},
     id: session.id,
     options: {},
     session,

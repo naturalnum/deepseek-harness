@@ -1178,8 +1178,8 @@ export class EventRelationCollector {
             }
           }
         } else if (ts.isPropertyAccessExpression(node.expression) && EVENT_API_METHODS.has(node.expression.name.text)) {
-          const receiverKind = this.receiverKind(node.expression.expression)
           const method = node.expression.name.text
+          const receiverKind = this.receiverKind(node.expression.expression, node.expression.questionDotToken !== undefined, method)
           if (receiverKind === 'events-service' && method === 'dispatch') {
             const argumentList = node.arguments[1]
             if (argumentList) {
@@ -1219,12 +1219,19 @@ export class EventRelationCollector {
   }
 
   /** Classify a receiver using assignability to the repository's actual event API types. */
-  private receiverKind(receiver: ts.Expression): EventReceiverKind | undefined {
-    const type = this.project.checker.getTypeAtLocation(receiver)
+  private receiverKind(receiver: ts.Expression, optional: boolean, method: string): EventReceiverKind | undefined {
+    const declared = this.project.checker.getTypeAtLocation(receiver)
+    // Optional dispatch executes only when its receiver exists; other union alternatives remain significant.
+    const type = optional ? this.project.checker.getNonNullableType(declared) : declared
     if (type.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown | ts.TypeFlags.Never)) return undefined
     if (this.project.checker.isTypeAssignableTo(type, this.eventsServiceType)) return 'events-service'
     if (this.project.checker.isTypeAssignableTo(type, this.contextType)) return 'context'
     if (this.project.checker.isTypeAssignableTo(type, this.agentDispatchType)) return 'agent-dispatch'
+    const declarations = type.getProperty(method)?.declarations ?? []
+    // Pick<AgentEventDispatch, 'emit'> retains the original method declaration without exposing the full dispatcher.
+    if (declarations.length > 0 && declarations.every(declaration => ts.isMethodSignature(declaration)
+      && ts.isInterfaceDeclaration(declaration.parent) && declaration.parent.name.text === 'AgentEventDispatch'
+      && this.project.relativePath(declaration.getSourceFile()) === 'packages/core/agent/src/dispatch.ts')) return 'agent-dispatch'
     return undefined
   }
 

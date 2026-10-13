@@ -1,0 +1,194 @@
+{
+  "initialized": true,
+  "abstract_structure": {
+    "paragraph_count": 3,
+    "paragraph_1_focus": "domain_status_need_challenges",
+    "paragraph_2_focus": "merged_research_points",
+    "paragraph_3_focus": "task_book_assessment_results_and_research_application_prospects"
+  },
+  "use_default_three_research_point_grouping": true,
+  "domain_context": "数字化电网运行中，多源调度知识、智能决策模型与人工经验需要形成可追溯的协同闭环。",
+  "practical_need": "提升复杂运行工况下知识调用、策略生成和人机协同决策的准确性、实时性与可解释性。",
+  "existing_limitations": [
+    "多源调度知识表示不统一",
+    "智能决策模型缺少专业规则约束",
+    "人机反馈难以稳定转化为模型优化信号"
+  ],
+  "key_challenges": [
+    {
+      "id": "C1",
+      "description": "异构知识统一表示与可靠校核",
+      "technical_cause": "知识来源、粒度和语义关系不一致，难以直接形成可计算规则。",
+      "research_point_ids": [
+        "R1"
+      ]
+    },
+    {
+      "id": "C2",
+      "description": "规则约束下的自主决策生成",
+      "technical_cause": "通用生成模型缺少电网专业规则、安全边界和机理校核约束。",
+      "research_point_ids": [
+        "R2"
+      ]
+    },
+    {
+      "id": "C3",
+      "description": "人机反馈驱动的持续趋优",
+      "technical_cause": "人工经验反馈缺少稳定的结构化表达与在线更新通道。",
+      "research_point_ids": [
+        "R3"
+      ]
+    }
+  ],
+  "research_points": [
+    {
+      "id": "R1",
+      "challenge_ids": [
+        "C1"
+      ],
+      "problem": "异构知识统一表示与可靠校核",
+      "technology": "电子规则库构建技术",
+      "core_mechanism": "通过统一知识表示、语义对齐和一致性校核形成可计算规则知识",
+      "capability": "支持调度知识的结构化管理与可追溯检索",
+      "supporting_chapters": [
+        "第3章"
+      ],
+      "verified_results": [],
+      "applicable_conditions": [],
+      "evidence_status": "partially-verified"
+    },
+    {
+      "id": "R2",
+      "challenge_ids": [
+        "C2"
+      ],
+      "problem": "规则约束下的自主决策生成",
+      "technology": "自主决策智能体构建技术",
+      "core_mechanism": "通过专业知识约束、策略生成与机理校核形成候选决策",
+      "capability": "支持复杂工况下的智能辅助决策",
+      "supporting_chapters": [
+        "第4章"
+      ],
+      "verified_results": [],
+      "applicable_conditions": [],
+      "evidence_status": "partially-verified"
+    },
+    {
+      "id": "R3",
+      "challenge_ids": [
+        "C3"
+      ],
+      "problem": "人机反馈驱动的持续趋优",
+      "technology": "人机协同动态趋优技术",
+      "core_mechanism": "通过人工反馈、价值对齐和在线优化更新决策模型",
+      "capability": "支持模型能力的持续改进与风险控制",
+      "supporting_chapters": [
+        "第5章"
+      ],
+      "verified_results": [],
+      "applicable_conditions": [],
+      "evidence_status": "partially-verified"
+    }
+  ],
+  "representative_quantitative_results": [
+    {
+      "claim": "规则检索响应性能",
+      "value_or_finding": "演示测试中平均响应时间由2.4 s降至1.6 s",
+      "comparison_object": "优化前版本",
+      "test_condition": "演示调度知识查询集与相同计算资源条件",
+      "source_location": "示例报告第3章表3-4",
+      "research_point_ids": [
+        "R1"
+      ]
+    },
+    {
+      "claim": "候选决策有效率",
+      "value_or_finding": "演示测试中有效率由82.0%提升至91.5%",
+      "comparison_object": "无规则约束基线",
+      "test_condition": "演示复杂运行工况集",
+      "source_location": "示例报告第4章表4-5",
+      "research_point_ids": [
+        "R2"
+      ]
+    }
+  ],
+  "overall_conclusion": "三项研究形成了知识、模型与人员协作相互支撑的智能决策技术链。",
+  "research_prospects": [
+    "进一步研究跨区域调度规则迁移与小样本工况适配",
+    "完善长期在线反馈条件下的稳定性与安全性分析"
+  ],
+  "application_value": "可用于调度辅助决策、异常处置和运行策略校核。",
+  "application_prospects": [
+    "在完成业务规程标准化接入后扩展至多级调度场景",
+    "结合实际运行闭环逐步形成可审计的智能辅助决策应用"
+  ],
+  "application_conditions": [
+    "数据对象和业务规程完成标准化接入",
+    "运行场景位于已验证范围内"
+  ],
+  "keyword_plan": {
+    "use_default_five_keyword_rule": true,
+    "domain_keywords": [
+      "电力系统",
+      "数字化电网"
+    ],
+    "research_point_keywords": [
+      "电子规则库",
+      "自主决策智能体",
+      "人机协同趋优"
+    ]
+  },
+  "last_updated_after_chapter": "第5章",
+  "pending_evidence": [],
+  "notes": [
+    "示例中的量化数值仅用于展示字段填写方式，不代表真实项目结果。"
+  ],
+  "business_need_opening_candidates": [
+    "随着电网运行场景复杂度提升，调度业务对多源知识快速调用、专业约束下策略生成和人机协同闭环提出了更高要求。",
+    "复杂电网工况下，调度知识分散、决策规则难以统一调用以及人工反馈利用不足，制约了智能辅助决策的稳定应用。",
+    "面向数字化电网调度业务，知识、模型与人员之间缺少可追溯协同机制，已成为提升复杂工况决策效率与可靠性的现实需求。"
+  ],
+  "selected_business_need_opening": "随着电网运行场景复杂度提升，调度业务对多源知识快速调用、专业约束下策略生成和人机协同闭环提出了更高要求。",
+  "task_book_assessment_results": [
+    {
+      "assessment_item_id": "AR-RESP-01",
+      "assessment_name": "规则检索响应性能",
+      "assessment_kind": "quantitative",
+      "result_statement": "演示测试条件下规则检索平均响应时间由2.4 s降至1.6 s。",
+      "evidence_status": "partially-verified",
+      "source_location": "示例报告第3章表3-4",
+      "research_point_ids": [
+        "R1"
+      ],
+      "value_or_finding": "平均响应时间1.6 s",
+      "comparison_object": "较优化前版本降低0.8 s",
+      "test_condition": "演示调度知识查询集与相同计算资源条件"
+    },
+    {
+      "assessment_item_id": "AR-CAP-02",
+      "assessment_name": "复杂工况智能辅助决策能力",
+      "assessment_kind": "qualitative",
+      "result_statement": "已形成专业规则约束下的候选决策生成与机理校核能力，可在已覆盖复杂运行工况中提供可追溯的辅助决策结果。",
+      "evidence_status": "partially-verified",
+      "source_location": "示例报告第4章",
+      "research_point_ids": [
+        "R2"
+      ],
+      "value_or_finding": "形成规则约束决策生成与机理校核能力",
+      "comparison_object": "支持候选策略的专业约束与可追溯输出",
+      "test_condition": "示例复杂运行工况集"
+    }
+  ],
+  "supplementary_result_metrics": [
+    {
+      "claim": "候选决策有效率",
+      "value_or_finding": "演示测试中有效率由82.0%提升至91.5%",
+      "comparison_object": "无规则约束基线",
+      "test_condition": "演示复杂运行工况集",
+      "source_location": "示例报告第4章表4-5",
+      "research_point_ids": [
+        "R2"
+      ]
+    }
+  ]
+}

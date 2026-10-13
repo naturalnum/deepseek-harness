@@ -1,0 +1,151 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "incremental": false,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "rewriteRelativeImportExtensions": false
+  },
+  "include": [
+    "products/power-evolve/scripts/cloud-coverage.d.mts",
+    "products/power-evolve/application/tests/**/*.ts",
+    "products/power-evolve/contracts/tests/**/*.ts",
+    "products/power-evolve/connector-runner/tests/**/*.ts",
+    "products/power-evolve/deploy/**/*.spec.ts",
+    "products/power-evolve/application/src/**/*.ts",
+    "products/power-evolve/contracts/src/**/*.ts",
+    "products/power-evolve/connector-runner/src/**/*.ts"
+  ],
+  "references": [
+    {
+      "path": "vendor/loader"
+    },
+    {
+      "path": "vendor/cordis"
+    },
+    {
+      "path": "vendor/schemastery"
+    },
+    {
+      "path": "packages/core/agent"
+    },
+    {
+      "path": "packages/api/gateway/tsconfig.host.json"
+    },
+    {
+      "path": "packages/api/session-controller/tsconfig.host.json"
+    },
+    {
+      "path": "packages/util/brand"
+    },
+    {
+      "path": "packages/boot/cmdline"
+    },
+    {
+      "path": "packages/host/webserver"
+    },
+    {
+      "path": "packages/llm/llm"
+    },
+    {
+      "path": "packages/llm/llm-deepseek"
+    },
+    {
+      "path": "packages/mcp/mcp-client"
+    },
+    {
+      "path": "packages/identity/anonymous-user-id"
+    },
+    {
+      "path": "packages/core/scope"
+    },
+    {
+      "path": "packages/core/session"
+    },
+    {
+      "path": "packages/session/session-persistence"
+    },
+    {
+      "path": "packages/session/session-projection"
+    },
+    {
+      "path": "packages/core/system-prompt"
+    },
+    {
+      "path": "packages/core/tools"
+    },
+    {
+      "path": "packages/skill/skill"
+    },
+    {
+      "path": "packages/skill/skill-filesystem"
+    },
+    {
+      "path": "packages/typert/protocol"
+    },
+    {
+      "path": "packages/typert/registry"
+    },
+    {
+      "path": "native/system/packages/entry"
+    },
+    {
+      "path": "packages/client/ui-settings/tsconfig.host.json"
+    },
+    {
+      "path": "packages/client/ui-settings-general/tsconfig.host.json"
+    },
+    {
+      "path": "packages/host/plugin-inventory"
+    },
+    {
+      "path": "packages/core/agent-loop"
+    },
+    {
+      "path": "packages/session/session-title"
+    },
+    {
+      "path": "packages/boot/plugin-manager"
+    },
+    {
+      "path": "packages/attachment/attachment"
+    },
+    {
+      "path": "packages/attachment/attachment-local"
+    },
+    {
+      "path": "packages/client/file-upload/tsconfig.host.json"
+    },
+    {
+      "path": "packages/session-query/session-query"
+    },
+    {
+      "path": "packages/session-query/session-query-sqlite"
+    },
+    {
+      "path": "packages/session/session-format-catalog"
+    },
+    {
+      "path": "packages/session/session-format"
+    },
+    {
+      "path": "packages/session/session-format-v0-to-v1"
+    },
+    {
+      "path": "packages/session/session-format-v1-to-v2"
+    },
+    {
+      "path": "packages/session/session-format-v2-to-v3"
+    },
+    {
+      "path": "packages/session/session-format-v3-to-v4"
+    }
+  ],
+  "exclude": [
+    "products/power-evolve/application/tests/**/*.client.spec.ts",
+    "products/power-evolve/application/tests/**/*.client.spec.tsx"
+  ]
+}

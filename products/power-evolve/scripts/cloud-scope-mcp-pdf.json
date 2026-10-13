@@ -1,0 +1,5262 @@
+{
+  "schemaVersion": 1,
+  "name": "mcp-pdf",
+  "status": "current",
+  "approvalOwner": "Root",
+  "scope": "Current remote MCP and cloud STDIO plus PDF; durable core, native sessions, authorization, backup and legacy records remain shared.",
+  "fullCorpus": "products/power-evolve/scripts/cloud-corpus.json",
+  "policy": {
+    "coverage": {
+      "perFile": true,
+      "lines": 100,
+      "statements": 100,
+      "functions": 100,
+      "branches": 100
+    },
+    "mixedFiles": "Retain the whole file. No line-level ignores, name-based excludes or reduced thresholds.",
+    "discovery": "Every discovered path requires one explicit record for its kind. Reject missing, duplicate, stale paths or missing owners/reasons before activating this proposal.",
+    "historicalData": "Retain all current source, historical tests, catalog releases and accepted records. The existing full entry remains available.",
+    "activation": "Root approved exactly four pure client SSH runtime files and three historical tests. Other authored files remain enabled or shared."
+  },
+  "currentClientEntry": "products/power-evolve/client-extension-center/src/client/index.ts",
+  "currentClientRuntimeClosure": [
+    "products/power-evolve/client-extension-center/src/client/ConnectorConfiguration.tsx",
+    "products/power-evolve/client-extension-center/src/client/McpPresentation.tsx",
+    "products/power-evolve/client-extension-center/src/client/PersonalMcpCheck.tsx",
+    "products/power-evolve/client-extension-center/src/client/PersonalMcpPage.tsx",
+    "products/power-evolve/client-extension-center/src/client/SkillDetailDialog.tsx",
+    "products/power-evolve/client-extension-center/src/client/SkillImportPanel.tsx",
+    "products/power-evolve/client-extension-center/src/client/SkillInstallPanel.tsx",
+    "products/power-evolve/client-extension-center/src/client/SkillMarkdown.tsx",
+    "products/power-evolve/client-extension-center/src/client/SkillToggle.tsx",
+    "products/power-evolve/client-extension-center/src/client/SkillsPage.tsx",
+    "products/power-evolve/client-extension-center/src/client/SkillsPanelIcon.tsx",
+    "products/power-evolve/client-extension-center/src/client/StdioV2Panel.tsx",
+    "products/power-evolve/client-extension-center/src/client/approval-api.ts",
+    "products/power-evolve/client-extension-center/src/client/connection-modal-layout.ts",
+    "products/power-evolve/client-extension-center/src/client/index.ts",
+    "products/power-evolve/client-extension-center/src/client/locales.ts",
+    "products/power-evolve/client-extension-center/src/client/personal-mcp-api.ts",
+    "products/power-evolve/client-extension-center/src/client/personal-mcp-check-view.ts",
+    "products/power-evolve/client-extension-center/src/client/personal-mcp-check-watch.ts",
+    "products/power-evolve/client-extension-center/src/client/personal-mcp-client.ts",
+    "products/power-evolve/client-extension-center/src/client/personal-mcp-session-view.ts",
+    "products/power-evolve/client-extension-center/src/client/personal-mcp-view.ts",
+    "products/power-evolve/client-extension-center/src/client/skill-import.ts",
+    "products/power-evolve/client-extension-center/src/client/skill-try.ts",
+    "products/power-evolve/client-extension-center/src/client/skills-api.ts",
+    "products/power-evolve/client-extension-center/src/client/stdio-v2-api.ts",
+    "products/power-evolve/client-extension-center/src/client/stdio-v2-state.ts",
+    "products/power-evolve/client-extension-center/src/client/styles.ts",
+    "products/power-evolve/client-extension-center/src/client/use-personal-mcp.ts",
+    "products/power-evolve/contracts/src/account.ts",
+    "products/power-evolve/contracts/src/file-download.ts",
+    "products/power-evolve/contracts/src/stdio-management.ts",
+    "products/power-evolve/contracts/src/stdio-mcp-json.ts",
+    "products/power-evolve/contracts/src/stdio-mcp.ts",
+    "products/power-evolve/contracts/src/stdio-runtime.ts",
+    "products/power-evolve/contracts/src/storage.ts"
+  ],
+  "reasons": {
+    "mcp-current": "Current remote MCP or cloud STDIO composition and its behavior tests; keep the complete file under all four per-file 100% metrics.",
+    "ssh-client-retained": "Not reachable from the current native client entry after SSH construction, injection, list loading and rendering were removed; retain source and historical tests in the full corpus.",
+    "client-shared": "Current native Skills/PDF UI, account session source, locale, styling or common transport; retain complete mixed files under all four per-file 100% metrics.",
+    "core-shared": "Retained in current Host/Platform/Runner and durable data or execution support until Root admits an explicit dependency removal; filename or disabled availability alone grants no exclusion.",
+    "legacy-shared": "Released legacy records, data conversion, reconciliation and tombstones remain owned and validated even when new feature exposure is deferred.",
+    "office-shared": "Authored Office support remains in both current and full corpora pending explicit profile and dependency verification; no Office filename exclusion is admitted.",
+    "assets-shared": "Native execution, sandbox and packaged support assets remain enumerated and validated; no threshold or discovery rule changes.",
+    "gate-shared": "Tooling, manifests and documentation remain enumerated by the current and full entries; the named selection is shared by CLI, Vitest, coverage, native collection and CI without changing quality thresholds.",
+    "legacy-mcp-current-shared": "Current shared legacy MCP catalog, draft, history and concurrency migration required by the core/MCP scope; retain the complete file in both current and full corpora."
+  },
+  "counts": {
+    "runtime": {
+      "enabled": 14,
+      "shared": 298,
+      "deferred": 4
+    },
+    "sourceTests": {
+      "enabled": 12,
+      "shared": 142,
+      "deferred": 3
+    },
+    "builtTests": {
+      "enabled": 0,
+      "shared": 10,
+      "deferred": 0
+    },
+    "nativeAssets": {
+      "enabled": 0,
+      "shared": 10,
+      "deferred": 0
+    },
+    "tooling": {
+      "enabled": 0,
+      "shared": 29,
+      "deferred": 0
+    },
+    "docMetadata": {
+      "enabled": 0,
+      "shared": 13,
+      "deferred": 0
+    },
+    "docs": {
+      "enabled": 0,
+      "shared": 148,
+      "deferred": 0
+    },
+    "manifests": {
+      "enabled": 0,
+      "shared": 8,
+      "deferred": 0
+    }
+  },
+  "pendingOfficeDeferrals": [
+    {
+      "path": ".github/power-evolve-office/reproduce-office-closure.mjs",
+      "owner": "Root",
+      "currentStatus": "shared",
+      "condition": "Confirm current PDF flow does not use it and current named profiles disable Office preview; confirm existing data cleanup/retirement paths before deferral."
+    },
+    {
+      "path": "products/power-evolve/application/src/host/native-office-preview.ts",
+      "owner": "Root",
+      "currentStatus": "shared",
+      "condition": "Confirm current PDF flow does not use it and current named profiles disable Office preview; confirm existing data cleanup/retirement paths before deferral."
+    },
+    {
+      "path": "products/power-evolve/application/src/host/office.ts",
+      "owner": "Root",
+      "currentStatus": "shared",
+      "condition": "Confirm current PDF flow does not use it and current named profiles disable Office preview; confirm existing data cleanup/retirement paths before deferral."
+    },
+    {
+      "path": "products/power-evolve/application/src/platform/office-preview-config.ts",
+      "owner": "Root",
+      "currentStatus": "shared",
+      "condition": "Confirm current PDF flow does not use it and current named profiles disable Office preview; confirm existing data cleanup/retirement paths before deferral."
+    },
+    {
+      "path": "products/power-evolve/application/src/platform/office-preview-pod.ts",
+      "owner": "Root",
+      "currentStatus": "shared",
+      "condition": "Confirm current PDF flow does not use it and current named profiles disable Office preview; confirm existing data cleanup/retirement paths before deferral."
+    },
+    {
+      "path": "products/power-evolve/application/src/platform/office-previews.ts",
+      "owner": "Root",
+      "currentStatus": "shared",
+      "condition": "Confirm current PDF flow does not use it and current named profiles disable Office preview; confirm existing data cleanup/retirement paths before deferral."
+    },
+    {
+      "path": "products/power-evolve/contracts/src/office-preview.ts",
+      "owner": "Root",
+      "currentStatus": "shared",
+      "condition": "Confirm current PDF flow does not use it and current named profiles disable Office preview; confirm existing data cleanup/retirement paths before deferral."
+    },
+    {
+      "path": "products/power-evolve/sandbox/office-preview-docx.mjs",
+      "owner": "Root",
+      "currentStatus": "shared",
+      "condition": "Confirm current PDF flow does not use it and current named profiles disable Office preview; confirm existing data cleanup/retirement paths before deferral."
+    },
+    {
+      "path": "products/power-evolve/sandbox/office-preview.mjs",
+      "owner": "Root",
+      "currentStatus": "shared",
+      "condition": "Confirm current PDF flow does not use it and current named profiles disable Office preview; confirm existing data cleanup/retirement paths before deferral."
+    },
+    {
+      "path": "products/power-evolve/sandbox/scripts/assemble-office-preview.mjs",
+      "owner": "Root",
+      "currentStatus": "shared",
+      "condition": "Confirm current PDF flow does not use it and current named profiles disable Office preview; confirm existing data cleanup/retirement paths before deferral."
+    }
+  ],
+  "builtinAvailability": {
+    "owner": "Root",
+    "enabled": [
+      "builtin.pdf"
+    ],
+    "deferred": [
+      "builtin.word",
+      "builtin.excel",
+      "builtin.powerpoint",
+      "builtin.latex-report-writer",
+      "builtin.power-grid-technical-report-writer",
+      "builtin.report-reviewer",
+      "builtin.report-workflow-orchestrator",
+      "builtin.tech-report-writer"
+    ],
+    "retainedAssetRoot": "products/power-evolve/application/assets/builtin-skills/generated-cloud-v2",
+    "catalogIntegrity": "All nine package manifests and pinned catalog bytes remain verified before exposing the configured subset. Existing installed records remain their own records."
+  },
+  "coverageGapAssignmentProposal": [
+    {
+      "proposedOwner": "employee3",
+      "status": "Assigned by Root",
+      "paths": [
+        "products/power-evolve/client-extension-center/src/client/PersonalMcpCheck.tsx",
+        "products/power-evolve/client-extension-center/src/client/PersonalMcpPage.tsx",
+        "products/power-evolve/client-extension-center/src/client/personal-mcp-api.ts",
+        "products/power-evolve/client-extension-center/src/client/personal-mcp-check-view.ts",
+        "products/power-evolve/client-extension-center/src/client/personal-mcp-check-watch.ts",
+        "products/power-evolve/client-extension-center/src/client/personal-mcp-session-view.ts",
+        "products/power-evolve/client-extension-center/src/client/personal-mcp-view.ts",
+        "products/power-evolve/client-extension-center/src/client/use-personal-mcp.ts"
+      ]
+    },
+    {
+      "proposedOwner": "employee7",
+      "status": "Assigned by Root",
+      "paths": [
+        "products/power-evolve/client-extension-center/src/client/SkillDetailDialog.tsx",
+        "products/power-evolve/client-extension-center/src/client/SkillImportPanel.tsx",
+        "products/power-evolve/client-extension-center/src/client/SkillInstallPanel.tsx",
+        "products/power-evolve/client-extension-center/src/client/SkillMarkdown.tsx",
+        "products/power-evolve/client-extension-center/src/client/SkillsPage.tsx"
+      ]
+    },
+    {
+      "proposedOwner": "employee6",
+      "status": "Assigned by Root",
+      "paths": [
+        "products/power-evolve/client-extension-center/src/client/StdioV2Panel.tsx",
+        "products/power-evolve/client-extension-center/src/client/stdio-v2-state.ts"
+      ]
+    }
+  ],
+  "entries": [
+    {
+      "kind": "builtTests",
+      "path": "products/power-evolve/application/tests/employee5-legacy-migration-v2-maintenance.built.test.mjs",
+      "status": "shared",
+      "owner": "employee5",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "builtTests",
+      "path": "products/power-evolve/application/tests/native-browser-archive.built.test.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "builtTests",
+      "path": "products/power-evolve/application/tests/native-browser-image.built.test.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "builtTests",
+      "path": "products/power-evolve/application/tests/native-browser-queue.built.test.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "builtTests",
+      "path": "products/power-evolve/application/tests/native-browser-replicas.built.test.mjs",
+      "status": "shared",
+      "owner": "employee2",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "builtTests",
+      "path": "products/power-evolve/application/tests/native-image-profile.built.test.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "builtTests",
+      "path": "products/power-evolve/application/tests/stdio-v2-host-scheduler.built.test.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "builtTests",
+      "path": "products/power-evolve/client-account/tests/client-factory.built.test.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "builtTests",
+      "path": "products/power-evolve/client-extension-center/tests/client-factory.built.test.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "client-shared"
+    },
+    {
+      "kind": "builtTests",
+      "path": "products/power-evolve/cloud-web/tests/native-assets.built.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "docMetadata",
+      "path": "products/power-evolve/application/README.i18n.yaml",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docMetadata",
+      "path": "products/power-evolve/application/native-turn-advance-intent-v2.i18n.yaml",
+      "status": "shared",
+      "owner": "employee7",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "docMetadata",
+      "path": "products/power-evolve/application/native-turn-continuation-v2.i18n.yaml",
+      "status": "shared",
+      "owner": "employee7",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "docMetadata",
+      "path": "products/power-evolve/client-account/README.i18n.yaml",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docMetadata",
+      "path": "products/power-evolve/client-extension-center/README.i18n.yaml",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docMetadata",
+      "path": "products/power-evolve/cloud-web/README.i18n.yaml",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docMetadata",
+      "path": "products/power-evolve/connector-runner/README.i18n.yaml",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docMetadata",
+      "path": "products/power-evolve/contracts/README.i18n.yaml",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docMetadata",
+      "path": "products/power-evolve/deploy/README.i18n.yaml",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docMetadata",
+      "path": "products/power-evolve/deploy/office-runtime/README.i18n.yaml",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docMetadata",
+      "path": "products/power-evolve/host/README.i18n.yaml",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docMetadata",
+      "path": "products/power-evolve/platform/README.i18n.yaml",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docMetadata",
+      "path": "products/power-evolve/sandbox/README.i18n.yaml",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/AGENTS.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/CLOUD-ENGINEERING-REVIEW.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/CLOUD-MIGRATION-PLAN.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/EMPLOYEE1-CONTRACTS-CONSUMER-HANDOFF.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/EMPLOYEE1-HANDOFF.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/EMPLOYEE1-HOST-TYPED-LINT-HANDOFF.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/EMPLOYEE1-SCHEMA3-EVENT-TRANSACTION-REVIEW.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/EMPLOYEE1-STDIO-CONTRACTS-CONSUMER-HANDOFF.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/EMPLOYEE2-HANDOFF.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/EMPLOYEE3-HANDOFF.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/EMPLOYEE5-HANDOFF.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/EMPLOYEE6-EXPORT-AUDIT.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/EMPLOYEE6-HANDOFF.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/EMPLOYEE6-NATIVE-QUEUE-ARCHITECTURE.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/EMPLOYEE6-NATIVE-SEARCH-CURRENT.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/EMPLOYEE6-NATIVE-SEARCH-REVIEW.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/EMPLOYEE6-OFFICE-REVIEW.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/EMPLOYEE6-PEER-HANDOFF.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/EMPLOYEE6-PUBLIC-TURN-HOOKS.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/EMPLOYEE7-ASSISTANT-STREAM-PROPOSAL.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/EMPLOYEE7-CLIENT-LINT-DIAGNOSIS.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/EMPLOYEE7-HANDOFF.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/EMPLOYEE7-HOST-GENERATION-HANDOFF.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/EMPLOYEE7-HOST-GENERATION-PROPOSAL.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/EMPLOYEE7-NATIVE-PARITY-AUDIT.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/EMPLOYEE7-NATIVE-WRITER-HANDOFF.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/LEGACY-IMPORT-DESIGN.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/TRIAL-CLOUD-MIGRATION-ACCEPTANCE.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/TRIAL-CLOUD-MIGRATION-BASELINE.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/TRIAL-CLOUD-MIGRATION-M0.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/TRIAL-CLOUD-MIGRATION-STATUS.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/TRIAL-DSH-UPSTREAM-PATCHES.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/TRIAL-M2-CLOUD-SKILLS.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/TRIAL-M2-NATIVE-COMMANDS.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/TRIAL-M2-NATIVE-UPLOADS.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/TRIAL-M2-PARALLEL-INTEGRATION.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/TRIAL-M3-CLOUD-RUNTIME.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/TRIAL-M3-NATIVE-ASSISTANT.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/TRIAL-M3-NATIVE-CANCEL.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/TRIAL-M3-NATIVE-SEARCH.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/TRIAL-M3-NATIVE-WRITER.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/TRIAL-M3-OFFICE-ISOLATION.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/TRIAL-M3-REPLICAS.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/TRIAL-OCTOP-RESEARCH.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/application/README.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/application/README.zh.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/application/native-turn-advance-intent-v2.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/application/native-turn-advance-intent-v2.zh.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/application/native-turn-continuation-v2.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/application/native-turn-continuation-v2.zh.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/client-account/README.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/client-account/README.zh.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/client-extension-center/README.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/client-extension-center/README.zh.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/cloud-web/README.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/cloud-web/README.zh.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/connector-runner/README.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/connector-runner/README.zh.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/contracts/README.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/contracts/README.zh.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/deploy/CLOUD-OPERATIONS.zh.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/deploy/EMPLOYEE4-HANDOFF.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/deploy/QA-IMAGE-EVIDENCE.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/deploy/QA-IMAGE-PLAN.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/deploy/README.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/deploy/README.zh.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/deploy/office-runtime/README.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/deploy/office-runtime/README.zh.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/host/README.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/host/README.zh.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/platform/README.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/platform/README.zh.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/ARCHITECTURE.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/DELIVERY-PLAN.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/DESKTOP-COMPLETION.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/DESKTOP-REPORT-COMPLETION.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/EXECUTION-RESOLUTION-COMPLETION.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/PARITY-AUDIT.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/S2-COMPLETION.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/S2-INTERFACES.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/S2-SAFE-POSIX.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/S2-STORAGE-BINDINGS.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/S3-ACCOUNT-COMPLETION.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/S3-INTERFACES.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/S4-INTERFACES.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/S5-INTERFACES.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/S6-CONNECTOR-COMPLETION.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/S6-INTERFACES.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-CLOUD-CANDIDATE.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-CLOUD-COMBINED-QA.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-CLOUD-EXECUTION-RESOLUTION.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-DESKTOP-BROWSER.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-DESKTOP-CLOUD-CARRIER.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-DESKTOP-INSTALLED.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-DESKTOP-OFFICE.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-DESKTOP-OWNED-DEVICE.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-DESKTOP-REPORT.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-DEVICE-MATERIALS-NATIVE.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-FORMAL-IMAGE-LOCAL.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-NATIVE-DESKTOP.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-NATIVE-EXEC.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-NATIVE-PREVIEW-O1.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-NATIVE-PREVIEW-O2.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-NATIVE-PREVIEW-O3.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-NATIVE.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-OFFICE-BACKUP-V33.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-S1-NATIVE.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-S2-BATCH-DOWNLOAD-QA.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-S2-NATIVE.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-S2-PRODUCED-FILES-QA.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-S2-STORAGE-BINDINGS-QA.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-S3-ACCOUNT-V25-QA.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-S3-NATIVE.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-S4-NATIVE.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-S5-NATIVE.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-S6-FINAL-QA.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-S6-PREVIEW.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-S6-REMOTE-MCP-QA.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-S6-SSH-P24-QA.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-S7-CAPACITY.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-S7-CURRENT-PREVIEW.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-S7-INTEGRATED.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-S7-LOGIN-CAPACITY.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-S7A-LOCAL.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-S7B-LOCAL.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-S7C-BACKUP.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-S7D-POLICY.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-S8-BACKUP-RESTORE.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-S8-LOSSLESS-OUTPUT.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-S8-NATIVE-OFFICE.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-S8-NATIVE.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-S8-REPORT-WORKFLOW.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-S8-SKILLS-QA.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-SLICE2.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-SLICE3.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-SLICE4.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-SLICE5.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-SLICE6.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-STDIO-V2-NO-START.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-STDIO-V2-PREPARATION.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-STDIO-V2-RESULTS.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-STDIO-V2-RUNTIME.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-STDIO-V2-SERVICES.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-STDIO-V2-WORKER.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL-STDIO-V34-PERSISTENCE.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/reference/TRIAL.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/sandbox/README.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/sandbox/README.zh.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "manifests",
+      "path": "products/power-evolve/application/package.json",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "manifests",
+      "path": "products/power-evolve/client-account/package.json",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "manifests",
+      "path": "products/power-evolve/client-extension-center/package.json",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "manifests",
+      "path": "products/power-evolve/cloud-web/package.json",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "manifests",
+      "path": "products/power-evolve/connector-runner/package.json",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "manifests",
+      "path": "products/power-evolve/contracts/package.json",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "manifests",
+      "path": "products/power-evolve/host/package.json",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "manifests",
+      "path": "products/power-evolve/platform/package.json",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "nativeAssets",
+      "path": ".github/power-evolve-office/office-sdk-0.1.1-input/package-lock.json",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "assets-shared"
+    },
+    {
+      "kind": "nativeAssets",
+      "path": ".github/power-evolve-office/office-sdk-0.1.1-input/package.json",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "assets-shared"
+    },
+    {
+      "kind": "nativeAssets",
+      "path": "products/power-evolve/application/src/platform/safe-posix.py",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "assets-shared"
+    },
+    {
+      "kind": "nativeAssets",
+      "path": "products/power-evolve/deploy/Dockerfile",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "assets-shared"
+    },
+    {
+      "kind": "nativeAssets",
+      "path": "products/power-evolve/sandbox/Dockerfile",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "assets-shared"
+    },
+    {
+      "kind": "nativeAssets",
+      "path": "products/power-evolve/sandbox/Dockerfile.office-preview",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "assets-shared"
+    },
+    {
+      "kind": "nativeAssets",
+      "path": "products/power-evolve/sandbox/command-child.py",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "assets-shared"
+    },
+    {
+      "kind": "nativeAssets",
+      "path": "products/power-evolve/sandbox/qa-skills-toolchain.sh",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "assets-shared"
+    },
+    {
+      "kind": "nativeAssets",
+      "path": "products/power-evolve/sandbox/requirements-skills.in",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "assets-shared"
+    },
+    {
+      "kind": "nativeAssets",
+      "path": "products/power-evolve/sandbox/requirements-skills.lock",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "assets-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": ".github/power-evolve-office/reproduce-office-closure.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "office-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/account-contracts.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/continuation-input.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/contracts.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/file-download-http.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/host/attachments.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/host/browser-auth.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/host/connectors.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/host/durability.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/host/executions.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/host/index.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/host/mcp.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/host/model.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/host/native-archive-input.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/host/native-assistant-publisher.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/host/native-image-config.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/host/native-inbox-removal.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/host/native-input-coordinator.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/host/native-input-http.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/host/native-office-preview.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "office-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/host/native-operation-generation.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/host/native-pending-wake.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/host/native-prepared-cancel.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/host/native-remote.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/host/native-retained-intent-client.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/host/native-session-follow.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/host/native-settings.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/host/native-writer-client.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/host/office.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "office-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/host/persistence.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/host/scheduler.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/host/scope.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/host/skills.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/host/ssh-execute.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/host/stdio-mcp.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/host/stdio-v2.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/http.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/mcp-action-contracts.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/mcp-contracts.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/mcp-json-schema.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/mcp-management-rpc.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/mcp-model-tools.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/mcp-operation-contracts.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/native-archive-input-contracts.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/native-assistant-records.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/native-attachment-contracts.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/native-consumed-input-recovery-contracts.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/native-execution-frame-contracts.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/native-input-commit-contracts.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/native-input-ledger-contracts.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/native-input-ledger-records.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/native-input-owner-routing-config.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/native-prepared-cancel-contracts.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/native-prepared-input-recovery-contracts.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/native-retained-intent-contracts.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/native-session-contracts.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/native-session-stop-contracts.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/native-turn-continuation-v2-contracts.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/native-turn-contracts.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/native-workspace-contracts.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/native-writer-contracts.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/account-authority.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/account-bootstrap.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/account-config.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/account-credentials.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/account-execution-revocation.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/account-routes.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/account-settings.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/accounts.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/builtin-skills.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/cloud-execution-resolution-ownership.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/cloud-execution-resolution-types.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/cloud-execution-resolution.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/cloud-storage-types.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/connectors.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/database.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/download-stream.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/events.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/execution-resolution-routes.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/executions.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/file-downloads.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/files.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/identity.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/index.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/kubernetes.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-import-codec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-import-export.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-import-layout.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-import-owner-references.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-import-owners.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-import-preflight.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-import-storage.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-import-write.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-migration-v2-account-owners.ts",
+      "status": "shared",
+      "owner": "employee5",
+      "reason": "legacy-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-migration-v2-attachments.ts",
+      "status": "shared",
+      "owner": "employee5",
+      "reason": "legacy-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-migration-v2-builtin-skills.ts",
+      "status": "shared",
+      "owner": "employee5",
+      "reason": "legacy-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-migration-v2-cloud-cancel.ts",
+      "status": "shared",
+      "owner": "employee5",
+      "reason": "legacy-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-migration-v2-cloud-resolution.ts",
+      "status": "shared",
+      "owner": "employee5",
+      "reason": "legacy-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-migration-v2-connectors.ts",
+      "status": "shared",
+      "owner": "employee5",
+      "reason": "legacy-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-migration-v2-fixed-mcp.ts",
+      "status": "shared",
+      "owner": "employee5",
+      "reason": "legacy-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-migration-v2-history.ts",
+      "status": "shared",
+      "owner": "employee5",
+      "reason": "legacy-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-migration-v2-host-images.ts",
+      "status": "shared",
+      "owner": "employee5",
+      "reason": "legacy-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-migration-v2-image-reader.ts",
+      "status": "shared",
+      "owner": "employee5",
+      "reason": "legacy-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-migration-v2-images.ts",
+      "status": "shared",
+      "owner": "employee5",
+      "reason": "legacy-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-migration-v2-maintenance.ts",
+      "status": "shared",
+      "owner": "employee5",
+      "reason": "legacy-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-migration-v2-mcp-actions.ts",
+      "status": "shared",
+      "owner": "employee5",
+      "reason": "legacy-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-migration-v2-mcp-catalog-races.ts",
+      "status": "shared",
+      "owner": "employee5",
+      "reason": "legacy-mcp-current-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-migration-v2-mcp-check-closure.ts",
+      "status": "shared",
+      "owner": "employee5",
+      "reason": "legacy-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-migration-v2-mcp-started.ts",
+      "status": "shared",
+      "owner": "employee5",
+      "reason": "legacy-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-migration-v2-media-contracts.ts",
+      "status": "shared",
+      "owner": "employee5",
+      "reason": "legacy-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-migration-v2-mount-free.ts",
+      "status": "shared",
+      "owner": "employee5",
+      "reason": "legacy-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-migration-v2-office.ts",
+      "status": "shared",
+      "owner": "employee5",
+      "reason": "legacy-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-migration-v2-plan.ts",
+      "status": "shared",
+      "owner": "employee5",
+      "reason": "legacy-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-migration-v2-remote-mcp.ts",
+      "status": "shared",
+      "owner": "employee5",
+      "reason": "legacy-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-migration-v2-sandbox-stopped.ts",
+      "status": "shared",
+      "owner": "employee5",
+      "reason": "legacy-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-migration-v2-source.ts",
+      "status": "shared",
+      "owner": "employee5",
+      "reason": "legacy-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-migration-v2-ssh-actions.ts",
+      "status": "shared",
+      "owner": "employee5",
+      "reason": "legacy-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-migration-v2-ssh.ts",
+      "status": "shared",
+      "owner": "employee5",
+      "reason": "legacy-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-migration-v2-stdio-approval.ts",
+      "status": "shared",
+      "owner": "employee5",
+      "reason": "legacy-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-migration-v2-stdio-calls.ts",
+      "status": "shared",
+      "owner": "employee5",
+      "reason": "legacy-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-migration-v2-stdio-discovery.ts",
+      "status": "shared",
+      "owner": "employee5",
+      "reason": "legacy-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-migration-v2-stdio-management.ts",
+      "status": "shared",
+      "owner": "employee5",
+      "reason": "legacy-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-migration-v2-stdio-no-start.ts",
+      "status": "shared",
+      "owner": "employee5",
+      "reason": "legacy-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-migration-v2-stdio-started.ts",
+      "status": "shared",
+      "owner": "employee5",
+      "reason": "legacy-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-migration-v2-stdio-unallocated.ts",
+      "status": "shared",
+      "owner": "employee5",
+      "reason": "legacy-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-migration-v2-stdio.ts",
+      "status": "shared",
+      "owner": "employee5",
+      "reason": "legacy-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-migration-v2-storage-owners.ts",
+      "status": "shared",
+      "owner": "employee5",
+      "reason": "legacy-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-migration-v2-storage.ts",
+      "status": "shared",
+      "owner": "employee5",
+      "reason": "legacy-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/legacy-migration-v2-write.ts",
+      "status": "shared",
+      "owner": "employee5",
+      "reason": "legacy-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/login-admission.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/managed-storage.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/mcp-action-worker.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/mcp-actions.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/mcp-admission.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/mcp-catalog.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/mcp-check-worker.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/mcp-connections.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/mcp-credentials.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/mcp-network.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/mcp-platform-config.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/mcp-routes.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/mcp-transport.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/mcp.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/model.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-archive-input.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-assistant-lifecycle.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-assistant-read.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-assistant-store.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-attachment-storage.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-attachments.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-execution-authority.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-execution-frames.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-files.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-image-admission.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-image-route.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-images.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-input-commit.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-input-ledger.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-input-owner-routing.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-owned-append.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-preferences.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-prepared-cancel.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-projections.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-retained-intent-cipher.ts",
+      "status": "shared",
+      "owner": "employee1",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-retained-intent-store.ts",
+      "status": "shared",
+      "owner": "employee1",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-retained-intent-transaction.ts",
+      "status": "shared",
+      "owner": "employee1",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-retained-intent-validation.ts",
+      "status": "shared",
+      "owner": "employee1",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-session-activity-stop.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-session-commands.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-session-read.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-session-search.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-session-stop-completion.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-session-stop.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-session-writer.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-turn-advance-intent-v2.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-turn-continuation-v2.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-turn-continuation.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-turn-history.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-turn-input.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-upload-source.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-workspace-layout.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-workspace-read.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-writer-routes.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/office-preview-config.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "office-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/office-preview-pod.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "office-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/office-previews.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "office-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/plugins.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/pod-stop-status.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/report-skill-suite.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/runtime-skills.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/safe-posix.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/sandbox.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/skill-metadata.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/skill-package-extraction.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/skill-package-manifest.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/skills.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/ssh-calls.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/ssh-check.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/ssh-command.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/ssh-credentials.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/ssh-execute.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/ssh-runner.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/ssh.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/stdio-mcp.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/stdio-runner.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/stdio-v2-actions.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/stdio-v2-admission.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/stdio-v2-authorization.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/stdio-v2-call-admission.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/stdio-v2-call-authority.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/stdio-v2-cloud-capture.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/stdio-v2-cloud-runtime.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/stdio-v2-cloud-worker.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/stdio-v2-connections.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/stdio-v2-continuations.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/stdio-v2-leases.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/stdio-v2-no-start.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/stdio-v2-operation-admission.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/stdio-v2-platform-config.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/stdio-v2-results.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/stdio-v2-services.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/stdio-v2-worker-store.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/tasks.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/session-records.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/ssh-management-contracts.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/stdio-v2-management-rpc.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/stdio-v2-model-tools.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/stdio-v2-operation-contracts.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/trusted-account-ui.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/ui.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/web/approval.js",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/web/execution-resolution.js",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/web/locale.js",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/web/login.js",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/web/stdio-v2-approval.js",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-account/src/client/AccountMenu.tsx",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-account/src/client/account-api.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-account/src/client/identity.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-account/src/client/index.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-account/src/client/locales.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-account/src/client/navigation.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-account/src/client/session-expiry.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-account/src/index.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-account/src/trusted/AccountManagementSection.tsx",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-account/src/trusted/AccountPage.tsx",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-account/src/trusted/PasswordChange.tsx",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-account/src/trusted/http-client.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-account/src/trusted/locales.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-account/src/trusted/main.tsx",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-account/src/trusted/view.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-extension-center/src/client/ConnectorConfiguration.tsx",
+      "status": "enabled",
+      "owner": "employee3",
+      "reason": "mcp-current"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-extension-center/src/client/DeferredConnectorConfiguration.tsx",
+      "status": "deferred",
+      "owner": "employee3",
+      "reason": "ssh-client-retained"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-extension-center/src/client/McpPresentation.tsx",
+      "status": "enabled",
+      "owner": "Root",
+      "reason": "mcp-current"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-extension-center/src/client/PersonalMcpCheck.tsx",
+      "status": "enabled",
+      "owner": "employee3",
+      "reason": "mcp-current"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-extension-center/src/client/PersonalMcpPage.tsx",
+      "status": "enabled",
+      "owner": "employee3",
+      "reason": "mcp-current"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-extension-center/src/client/PersonalSshPage.tsx",
+      "status": "deferred",
+      "owner": "employee3",
+      "reason": "ssh-client-retained"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-extension-center/src/client/SkillDetailDialog.tsx",
+      "status": "shared",
+      "owner": "employee7",
+      "reason": "client-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-extension-center/src/client/SkillImportPanel.tsx",
+      "status": "shared",
+      "owner": "employee7",
+      "reason": "client-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-extension-center/src/client/SkillInstallPanel.tsx",
+      "status": "shared",
+      "owner": "employee7",
+      "reason": "client-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-extension-center/src/client/SkillMarkdown.tsx",
+      "status": "shared",
+      "owner": "employee7",
+      "reason": "client-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-extension-center/src/client/SkillToggle.tsx",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "client-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-extension-center/src/client/SkillsPage.tsx",
+      "status": "shared",
+      "owner": "employee7",
+      "reason": "client-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-extension-center/src/client/SkillsPanelIcon.tsx",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "client-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-extension-center/src/client/StdioV2Panel.tsx",
+      "status": "enabled",
+      "owner": "employee6",
+      "reason": "mcp-current"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-extension-center/src/client/approval-api.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "client-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-extension-center/src/client/connection-modal-layout.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "client-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-extension-center/src/client/index.ts",
+      "status": "shared",
+      "owner": "employee3",
+      "reason": "client-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-extension-center/src/client/locales.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "client-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-extension-center/src/client/personal-mcp-api.ts",
+      "status": "enabled",
+      "owner": "employee3",
+      "reason": "mcp-current"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-extension-center/src/client/personal-mcp-check-view.ts",
+      "status": "enabled",
+      "owner": "employee3",
+      "reason": "mcp-current"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-extension-center/src/client/personal-mcp-check-watch.ts",
+      "status": "enabled",
+      "owner": "employee3",
+      "reason": "mcp-current"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-extension-center/src/client/personal-mcp-client.ts",
+      "status": "enabled",
+      "owner": "Root",
+      "reason": "mcp-current"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-extension-center/src/client/personal-mcp-session-view.ts",
+      "status": "enabled",
+      "owner": "employee3",
+      "reason": "mcp-current"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-extension-center/src/client/personal-mcp-view.ts",
+      "status": "enabled",
+      "owner": "employee3",
+      "reason": "mcp-current"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-extension-center/src/client/personal-ssh-view.ts",
+      "status": "deferred",
+      "owner": "employee3",
+      "reason": "ssh-client-retained"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-extension-center/src/client/skill-import.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "client-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-extension-center/src/client/skill-try.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "client-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-extension-center/src/client/skills-api.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "client-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-extension-center/src/client/ssh-api.ts",
+      "status": "deferred",
+      "owner": "employee3",
+      "reason": "ssh-client-retained"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-extension-center/src/client/stdio-v2-api.ts",
+      "status": "enabled",
+      "owner": "Root",
+      "reason": "mcp-current"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-extension-center/src/client/stdio-v2-state.ts",
+      "status": "enabled",
+      "owner": "employee6",
+      "reason": "mcp-current"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-extension-center/src/client/styles.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "client-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-extension-center/src/client/use-personal-mcp.ts",
+      "status": "enabled",
+      "owner": "employee3",
+      "reason": "mcp-current"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-extension-center/src/index.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "client-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/cloud-web/scripts/build.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/connector-runner/src/egress.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/connector-runner/src/main.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/connector-runner/src/protocol.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/connector-runner/src/server.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/connector-runner/src/stdio-identity-server.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/connector-runner/src/stdio-v2-digest.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/connector-runner/src/stdio-v2-dispatch.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/connector-runner/src/stdio-v2-runtime.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/connector-runner/src/stdio-v2.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/connector-runner/src/stdio.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/connector-runner/src/transport.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/contracts/src/account.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/contracts/src/execution-resolution.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/contracts/src/file-download.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/contracts/src/office-preview.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "office-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/contracts/src/stdio-management.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/contracts/src/stdio-mcp-json.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/contracts/src/stdio-mcp.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/contracts/src/stdio-runtime.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/contracts/src/storage.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/deploy/backup-postgres.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/deploy/backup-tree.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/deploy/backup.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "tooling",
+      "path": "products/power-evolve/deploy/cloud-image-build.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/deploy/cloud-image-context.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "tooling",
+      "path": "products/power-evolve/deploy/cloud-image-pack.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/deploy/lifecycle.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/deploy/start.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/sandbox/command-children.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/sandbox/office-preview-docx.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "office-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/sandbox/office-preview.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "office-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/sandbox/runner.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/sandbox/scripts/assemble-office-preview.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "office-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/account-cloud-revocation.spec.ts",
+      "status": "shared",
+      "owner": "employee2",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/browser-auth.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/builtin-cloud-skills.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/builtin-skill-availability.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/cloud-files.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/continuation-input.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/database.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/employee1-mcp-approval.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/employee1-ssh-cancel.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/employee1-stdio-management.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/employee1-stdio-workflow.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/employee4-legacy-migration-v2-cloud-resolution.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/employee5-account-authority.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/employee5-events-fairness.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/employee5-history-windows.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/employee5-legacy-import-adapters.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/employee5-legacy-import-mcp.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/employee5-legacy-import.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/employee5-legacy-migration-v2.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/employee5-native-barrier.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/employee5-task-admission.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/employee5-task-concurrency.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/employee6-native-search-current-cancel.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/employee6-native-search-current-provider.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/employee6-native-search-current.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/employee6-native-search-review-corruption.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/employee6-native-search-review.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/employee6-office-review-persistence.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/employee6-peer-pack.test.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/employee6-peer-policy.test.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/employee6-peer-resolver.test.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/employee7-auth-review.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/employee7-native-assistant-read.client.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/employee7-native-assistant-read.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/employee7-native-assistant-store.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/employee7-native-cancel-wire.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/employee7-native-json.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/employee7-native-search-wire.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/employee7-skill-files.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/employee7-skill-pg.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/login-admission.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-archive-input.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-assistant-lifecycle.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-assistant-publisher.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-attachment-storage.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-attachments.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-event-transaction.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-execution-authority.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-host-tool-signal.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-image-admission.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-image-wiring.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-images.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-input-commit.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-input-coordinator.pg.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-input-ledger.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-input-owner-routing.pg.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-input-persistence.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-json-text.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-operation-generation.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-pending-wake.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-preferences.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-prepared-cancel.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-projections.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-retained-intent-client.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-retained-intent-store.spec.ts",
+      "status": "shared",
+      "owner": "employee1",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-running-inbox-maintenance.pg.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-scheduler.pg.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-session-activity-stop.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-session-cancel.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-session-commands.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-session-follow.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-session-search.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-session-stop-completion.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-session-writer.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-stdio-session-stop.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-turn-advance-intent-v2.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-turn-continuation-v2-contracts.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-turn-continuation-v2.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-turn-continuation.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-turn-seams.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-ui.spec.ts",
+      "status": "shared",
+      "owner": "employee1",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-workspaces.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-writer-integration.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-writer-routes.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/office-runtime.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/sandbox-protocol-service.test.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/trusted-account-ui.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/trusted-components-dom.spec.ts",
+      "status": "shared",
+      "owner": "employee6",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/trusted-web-dom.spec.ts",
+      "status": "shared",
+      "owner": "employee6",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/client-account/tests/account-api.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/client-account/tests/account-menu.client.spec.tsx",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/client-account/tests/account-navigation.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/client-account/tests/identity.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/client-account/tests/logout-lifecycle.client.spec.tsx",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/client-account/tests/native-launcher.client.spec.tsx",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/client-account/tests/session-expiry.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/client-account/tests/trusted-entry.client.spec.tsx",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/client-account/tests/trusted-http-client.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/client-account/tests/trusted-management.client.spec.tsx",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/client-account/tests/trusted-page.client.spec.tsx",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/client-account/tests/trusted-password.client.spec.tsx",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/client-extension-center/tests/approval-api.client.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "client-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/client-extension-center/tests/catalog-actions.client.spec.tsx",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "client-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/client-extension-center/tests/connector-configuration.client.spec.tsx",
+      "status": "deferred",
+      "owner": "employee3",
+      "reason": "ssh-client-retained"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/client-extension-center/tests/mcp-connector-configuration.client.spec.tsx",
+      "status": "enabled",
+      "owner": "employee3",
+      "reason": "mcp-current"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/client-extension-center/tests/mcp-lifecycle.client.spec.tsx",
+      "status": "enabled",
+      "owner": "Root",
+      "reason": "mcp-current"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/client-extension-center/tests/mcp-presentation.client.spec.tsx",
+      "status": "enabled",
+      "owner": "Root",
+      "reason": "mcp-current"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/client-extension-center/tests/native-seats.client.spec.tsx",
+      "status": "shared",
+      "owner": "employee3",
+      "reason": "client-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/client-extension-center/tests/personal-mcp-api.spec.ts",
+      "status": "enabled",
+      "owner": "Root",
+      "reason": "mcp-current"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/client-extension-center/tests/personal-mcp-check-view.client.spec.tsx",
+      "status": "enabled",
+      "owner": "Root",
+      "reason": "mcp-current"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/client-extension-center/tests/personal-mcp-check-watch.client.spec.tsx",
+      "status": "enabled",
+      "owner": "Root",
+      "reason": "mcp-current"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/client-extension-center/tests/personal-mcp-page.client.spec.tsx",
+      "status": "enabled",
+      "owner": "Root",
+      "reason": "mcp-current"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/client-extension-center/tests/personal-mcp-session-view.client.spec.tsx",
+      "status": "enabled",
+      "owner": "Root",
+      "reason": "mcp-current"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/client-extension-center/tests/personal-mcp-view.client.spec.tsx",
+      "status": "enabled",
+      "owner": "Root",
+      "reason": "mcp-current"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/client-extension-center/tests/skill-detail.client.spec.tsx",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "client-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/client-extension-center/tests/skill-markdown.client.spec.tsx",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "client-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/client-extension-center/tests/skill-panels.client.spec.tsx",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "client-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/client-extension-center/tests/skill-try.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "client-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/client-extension-center/tests/skills-api.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "client-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/client-extension-center/tests/skills-page.client.spec.tsx",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "client-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/client-extension-center/tests/ssh-api.spec.ts",
+      "status": "deferred",
+      "owner": "employee3",
+      "reason": "ssh-client-retained"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/client-extension-center/tests/ssh-page.client.spec.tsx",
+      "status": "deferred",
+      "owner": "employee3",
+      "reason": "ssh-client-retained"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/client-extension-center/tests/stdio-v2-api.spec.ts",
+      "status": "enabled",
+      "owner": "Root",
+      "reason": "mcp-current"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/client-extension-center/tests/stdio-v2-panel.client.spec.tsx",
+      "status": "enabled",
+      "owner": "Root",
+      "reason": "mcp-current"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/client-extension-center/tests/stdio-v2-state.spec.ts",
+      "status": "enabled",
+      "owner": "Root",
+      "reason": "mcp-current"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/client-extension-center/tests/transport-failures.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "client-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/connector-runner/tests/protocol.test.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/connector-runner/tests/server-effects.test.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/connector-runner/tests/server.test.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/connector-runner/tests/ssh2-effects.test.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/connector-runner/tests/ssh2.test.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/connector-runner/tests/stdio-v2-digest.test.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/connector-runner/tests/stdio-v2-dispatch.test.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/connector-runner/tests/stdio-v2-runtime.test.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/connector-runner/tests/stdio-v2.test.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/connector-runner/tests/stdio.test.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/contracts/tests/employee1-download-host.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/contracts/tests/employee1-download-platform.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/contracts/tests/employee1-office-host.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/contracts/tests/employee1-office-platform.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/contracts/tests/employee1-stdio-management-host.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/contracts/tests/employee1-stdio-management-platform.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/contracts/tests/employee1-stdio-mcp-runner.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/deploy/employee4-backup.test.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/deploy/employee4-image.test.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/deploy/employee4-schema3-backup.test.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/deploy/employee4-start.test.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/sandbox/tests/employee1-office-assembly.test.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/sandbox/tests/employee1-office-ci.test.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/sandbox/tests/employee1-office-docx.test.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/sandbox/tests/employee1-office-image.test.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/sandbox/tests/employee1-office-parser.test.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/sandbox/tests/employee4-runner-lifetime.test.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/sandbox/tests/runner.test.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "tooling",
+      "path": ".github/power-evolve-built/owned-built-input-directory.mjs",
+      "status": "shared",
+      "owner": "employee4",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "tooling",
+      "path": ".github/power-evolve-built/prepare-built-inputs.mjs",
+      "status": "shared",
+      "owner": "employee4",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "tooling",
+      "path": ".github/power-evolve-built/replicas-helpers/fault-proxy.mjs",
+      "status": "shared",
+      "owner": "employee4",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "tooling",
+      "path": ".github/power-evolve-built/replicas-helpers/identity-evidence.mjs",
+      "status": "shared",
+      "owner": "employee4",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "tooling",
+      "path": ".github/power-evolve-built/replicas-helpers/native-intent-key.mjs",
+      "status": "shared",
+      "owner": "employee4",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "tooling",
+      "path": ".github/power-evolve-built/replicas-helpers/replica-plan.mjs",
+      "status": "shared",
+      "owner": "employee4",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "tooling",
+      "path": "products/power-evolve/scripts/cloud-capture.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "tooling",
+      "path": "products/power-evolve/scripts/cloud-check.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "tooling",
+      "path": "products/power-evolve/scripts/cloud-coverage.d.mts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "tooling",
+      "path": "products/power-evolve/scripts/cloud-coverage.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "tooling",
+      "path": "products/power-evolve/scripts/cloud-peer-policy.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "tooling",
+      "path": "products/power-evolve/scripts/cloud-policy.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "tooling",
+      "path": "products/power-evolve/scripts/cloud-provider.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "tooling",
+      "path": "products/power-evolve/scripts/cloud-reporter.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "tooling",
+      "path": "products/power-evolve/scripts/cloud-scope.mjs",
+      "status": "shared",
+      "owner": "employee3",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "tooling",
+      "path": "products/power-evolve/scripts/cloud-selftest.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "tooling",
+      "path": "products/power-evolve/scripts/cloud-static.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/source-platform-http.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/connector-runner/tests/main-linux-entry.test.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/employee6-stdio-worker-source.test.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "mcp-current"
+    },
+    {
+      "kind": "tooling",
+      "path": ".github/power-evolve-built/accept-source-coverage-exception.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "tooling",
+      "path": ".github/power-evolve-built/reproduce-schema37-inputs.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "tooling",
+      "path": ".github/power-evolve-built/run-source-check.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "tooling",
+      "path": ".github/power-evolve-built/schema37-producer/bootstrap-profile.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "tooling",
+      "path": ".github/power-evolve-built/schema37-producer/resolution-profile.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "tooling",
+      "path": ".github/power-evolve-built/schema37-producer/runner-profile.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "tooling",
+      "path": ".github/power-evolve-built/schema37-producer/seal-current.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "tooling",
+      "path": ".github/power-evolve-built/schema37-producer/stdio-profile.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "tooling",
+      "path": ".github/power-evolve-built/source-runtime-errors-reporter.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "tooling",
+      "path": ".github/power-evolve-built/schema37-producer/cleanup-storage.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    }
+  ],
+  "lintSupport": [
+    {
+      "path": "products/power-evolve/application/tests/cloud-fixture.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "path": "products/power-evolve/application/tests/employee1-stdio-workflow-fixture.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "path": "products/power-evolve/application/tests/employee7-native-wire-fixture.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "path": "products/power-evolve/application/tests/native-image-offload-fixture.ts",
+      "status": "shared",
+      "owner": "employee1",
+      "reason": "gate-shared"
+    },
+    {
+      "path": "products/power-evolve/application/tests/native-retained-intent-fixture.ts",
+      "status": "shared",
+      "owner": "employee1",
+      "reason": "gate-shared"
+    },
+    {
+      "path": "products/power-evolve/application/tests/native-scheduler-archive-fixture.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "path": "products/power-evolve/application/tests/sandbox-linux-fixture.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "path": "products/power-evolve/application/tests/sandbox-protocol-flows.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "path": "products/power-evolve/application/tests/sandbox-unit-runtime.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "path": "products/power-evolve/client-account/tests/deferred-result.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "path": "products/power-evolve/client-account/tests/fetch-fixture.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "path": "products/power-evolve/client-extension-center/tests/builtin-catalog-fixture.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "path": "products/power-evolve/client-extension-center/tests/deferred-result.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "path": "products/power-evolve/client-extension-center/tests/fetch-fixture.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "path": "products/power-evolve/client-extension-center/tests/stdio-v2-fixtures.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "path": "products/power-evolve/connector-runner/tests/stdio-fixture.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "path": "products/power-evolve/connector-runner/tests/stdio-peer-trace.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "path": "products/power-evolve/connector-runner/tests/stdio-v2-fixture.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "path": "products/power-evolve/contracts/tests/employee1-stdio-consumer-fixture.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "path": "products/power-evolve/application/tests/source-platform-http-fixture.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "path": "products/power-evolve/connector-runner/tests/main-linux-fixture.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "path": "products/power-evolve/connector-runner/tests/main-linux-case.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "path": "products/power-evolve/connector-runner/tests/main-linux-unit-fault.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "path": "products/power-evolve/connector-runner/tests/main-linux-fs-boundary.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "path": "products/power-evolve/application/tests/employee6-stdio-worker-linux-fixture.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "path": "products/power-evolve/application/tests/employee6-stdio-worker-runtime.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "path": "products/power-evolve/application/tests/employee6-stdio-worker-protocol.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "path": "products/power-evolve/application/tests/employee6-stdio-worker-source-flows.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "path": "products/power-evolve/application/tests/fixtures/employee6-stdio-worker-mcp.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "path": "products/power-evolve/application/tests/employee5-maintenance-drain.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    }
+  ],
+  "approvedDeferrals": {
+    "runtime": [
+      "products/power-evolve/client-extension-center/src/client/DeferredConnectorConfiguration.tsx",
+      "products/power-evolve/client-extension-center/src/client/personal-ssh-view.ts",
+      "products/power-evolve/client-extension-center/src/client/PersonalSshPage.tsx",
+      "products/power-evolve/client-extension-center/src/client/ssh-api.ts"
+    ],
+    "sourceTests": [
+      "products/power-evolve/client-extension-center/tests/connector-configuration.client.spec.tsx",
+      "products/power-evolve/client-extension-center/tests/ssh-api.spec.ts",
+      "products/power-evolve/client-extension-center/tests/ssh-page.client.spec.tsx"
+    ]
+  }
+}

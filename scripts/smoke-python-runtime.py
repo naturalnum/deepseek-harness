@@ -1741,6 +1741,18 @@ def smoke_sdk_scheduler_recovery(base_url: str, executable: Path, update_snapsho
             raise AssertionError(f"scheduler recovery duplicated or lost tool outcomes: {tool_results}")
         if sum(record.get("type") == "todo/write" for record in records) != 1:
             raise AssertionError("scheduler recovery executed an unstarted todo update")
+        claims = [record for record in records if record.get("type") == "agent/inbox/spliced"
+                  and record["data"].get("removedCount") == 1
+                  and record["data"].get("outcome") is None]
+        expected_claim = {"target": "next-turn", "start": 0, "removedCount": 1, "inserted": []}
+        if [record["data"] for record in claims] != [expected_claim, expected_claim]:
+            raise AssertionError("Python SDK requires two complete canonical input claims")
+        for claim in claims:
+            index = records.index(claim)
+            if not any(record.get("type") == "turn/start" for record in records[:index]) or not any(
+                record.get("type") == "step/start" for record in records[index + 1:]
+            ):
+                raise AssertionError("Python SDK claim must precede its proposed step")
         replacements = [(str(root), "{{cwd}}"), (RECOVERY_SESSION_ID, "{{parent}}")]
         result_value = [{
             "session_id": result.session_id,

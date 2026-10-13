@@ -12,6 +12,8 @@ Desktop analytics follows the [product collection policy](../../client/product-a
 
 `@deepseek-ai/dsh-api-session-controller` owns the Host `ctx.sessionController` service and the generated Client `session`, `skills`, and `fileReferences` Remote namespaces. It serves Session lifecycle and history, the Host-generation model catalog, human background-job kill, workspace-path opening, user-invocable skill discovery, and Agent-scoped file references. Use it through API Gateway when a Client needs operations addressed by a Session.
 
+The package root exports `modelSelectionProjection` so authenticated persistence carriers can checkpoint the same durable model intent and request-use fold without activating a Session Controller.
+
 ## Table of Contents
 
 - [Use this package](#use-this-package)
@@ -66,7 +68,7 @@ The Client's initial `follow`, reconnect openings, and `loadOlder()` request at 
 
 Queue edits replace pending content with non-empty text only.
 
-Attachment authorization reads declared content fields of built-in Session events and completed assistant stream blocks, including flat V4 tool-role messages. Unknown event payloads and unrelated fields cannot authorize attachment reads.
+Attachment authorization reads declared content fields of built-in Session events and completed assistant stream blocks, including flat V4 tool-role messages. Unknown event payloads and unrelated fields cannot authorize attachment reads. Persistence adapters use the exported `referencedSessionImage()` to select the first matching original reference from authenticated, validated canonical history, then verify stored bytes through their attachment provider.
 
 The controller composes `ArchivedSessionGate` through `ctx.plugin`: it loads once the Agent registry, Session store, and Workspace registry exist and unwinds with the controller. Its `agent/pre-step` listener rejects a step proposed for an archived Session or for a subagent descendant of one — read from the Session header's lineage fields, never a fork — so a late waking delivery ends its turn as `blocked` without a model request; unarchiving lifts the gate for the whole lineage. The work an archived Session still runs is reported and stopped by its owners through the Workspace registry's archive admission ([seam](../../workspace/workspace/README.md)): the running turn by the [Agent registry](../../core/agent/README.md), owned jobs by the [job registry seam](../../jobs/jobs/README.md), subagent descendants by the [Subagent](../../subagent/subagent/README.md) runtime, reminders by the [Schedule](../../schedule/schedule/README.md) plugin; this controller reports nothing itself.
 

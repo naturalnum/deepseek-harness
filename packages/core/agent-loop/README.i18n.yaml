@@ -28,7 +28,10 @@
   zh: b04a18337281237a
 /deepseek-ai-dsh-agent-loop/understand-the-implementation:
   en: ce7e776e9d516bdb
-  zh: 59d2751743db7795
+  zh: b603769cdacd703c
+/deepseek-ai-dsh-agent-loop/understand-the-implementation/detached-native-input-planning:
+  en: 28874da5c1b40998
+  zh: e57ceb2dec1e2d6a
 /deepseek-ai-dsh-agent-loop/understand-the-implementation/design-concept:
   en: 030202c112f89366
   zh: 621d53ed755cafa3
@@ -39,14 +42,14 @@
   en: 2a8b93869eb5a2f9
   zh: ddab8e738d188a61
 /deepseek-ai-dsh-agent-loop/understand-the-implementation/creation-and-teardown:
-  en: 6bc52b8ef503eeda
-  zh: 3290052ebc47baf6
+  en: 5484e6cfc19bfe59
+  zh: 3e075db7c742a054
 /deepseek-ai-dsh-agent-loop/understand-the-implementation/persistence-integration:
-  en: da056b9f0dde4ab3
-  zh: ba9ce3b19c17ca22
+  en: 1e9367da6fc4e1cc
+  zh: 037e09b393bf6f5b
 /deepseek-ai-dsh-agent-loop/understand-the-implementation/turn-and-step-flow:
-  en: ed5137ef858b3424
-  zh: af2ff3bc15576456
+  en: d3f5e12b026fe19f
+  zh: a5ae031a6d476ab3
 /deepseek-ai-dsh-agent-loop/understand-the-implementation/failure-and-cancellation:
   en: eea56903c4ff82f5
   zh: c0d5abb5767780ed

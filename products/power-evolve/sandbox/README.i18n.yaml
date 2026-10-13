@@ -1,0 +1,34 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write products/power-evolve/sandbox/README.md
+/cloud-command-image:
+  en: 64e4cf5989242e9f
+  zh: f8fedb08ab9ac572
+/cloud-command-image/summary:
+  en: f8ace1ac918dbc8b
+  zh: c26cc2f66c0688b6
+/cloud-command-image/table-of-contents:
+  en: afb36aafa47bd783
+  zh: 013e66b5d72c52c8
+/cloud-command-image/runtime:
+  en: 0011f7e9b58f05f2
+  zh: 691bc82cb8423be4
+/cloud-command-image/toolchain-and-build:
+  en: ea0f51d7fa198e28
+  zh: 4ff015549e2aec12
+/cloud-command-image/verification:
+  en: 73bc44eea65ef5b3
+  zh: 23fabde69358d0a8
+/cloud-command-image/further-exploration:
+  en: 320c73743d512f2b
+  zh: d1b057e63d4bad70
+/cloud-command-image/model-experience:
+  en: cc1053507d5a75f0
+  zh: 9d10418d5dad9be0
+/cloud-command-image/known-limitations-and-deferred-work:
+  en: 22131ebc1515cff6
+  zh: 273a497fd3584431
+/cloud-command-image/known-limitations-and-deferred-work/dev-note:
+  en: 9bd41ab8e0ceb5c5
+  zh: a0e367e43e7f4b16

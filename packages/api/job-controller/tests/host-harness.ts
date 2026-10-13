@@ -21,6 +21,11 @@ export async function registerAgent(ctx: Context, rawId: string): Promise<Agent 
   const id = SessionId(rawId)
   const session = Session.create(id)
   const agent: Agent & { disposeScope: () => Promise<void> } = {
+    canMaintainInbox: true,
+    onBeforeTurn: () => () => {},
+    onAfterClaim: () => () => {},
+    captureInboxActivity: () => { throw new Error('This Agent double has no maintenance capture') },
+    wakePending: () => {},
     id,
     options: {},
     session,

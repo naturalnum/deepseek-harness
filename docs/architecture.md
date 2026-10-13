@@ -86,8 +86,10 @@ The [event map](event-producer-consumer.md) lists every event's producers and co
 A **step** is one model request plus the tools it calls. A **turn** is zero or more steps: it opens before its first input is claimed and closes once nothing is owed.
 
 ```text
+onBeforeTurn: await preparation
 turn/start
   claim next-step input plus one queued message
+  onAfterClaim: await complete canonical claim settlement
   assemble prompt sections + tool schemas; project runtime context
   -> agent/pre-step                   reject | enter(messages, startsRequestSeries?)
      reject, or a first enter rewritten empty -> close the turn with no step
@@ -110,13 +112,15 @@ turn/end
 
 One inbox feeds the driver; injected context waits for a waking message. AgentLoop’s durable `inbox` projection exposes pending input without live Agents.
 
-`agent/pre-step` decides the accepted input. Listeners may rewrite or reject claimed messages; a rejected or empty first claim closes a durable turn without a step. An enter decision may set `startsRequestSeries`: the loop logs a fresh `request/header` (reason `series`, or `change` with `startsSeries: true` when the envelope also changed). Wrapping listeners preserve that declaration with `{ ...decision, messages }`. After assembly and `step/start`, `agent/request` and `prepareCall()` resolve the actual route before the system prompt and accepted users are committed; cancellation during either async phase commits neither. Prepared call capabilities govern prompt admission, not preceding `request/context`. Every attempt synchronously reconciles the same rendered assembly, appends users only on the first attempt, logs header/context as needed, and derives and freezes the request before streaming the bound call. Retries do not repeat assembly or `agent/pre-step`. Surface replacements and image-offload decisions after attachment start a new request series, including during the first resumed pre-step; unchanged resume continues the series. The first admitted step reserves the system head before user messages even for an empty prompt (no wire message). The prompt travels only as `system/message` history: an empty rendering clears all active system nodes, leaving no old prompt model-visible; capable routes append non-empty updates after cached history, including supported tool updates; incapable routes and new request series consolidate non-empty prompt text at the first system node, with logged empty replacements for non-empty later system nodes ([decision](../.agents/notes/implemented/architecture/2026-09-02-system-prompt-as-surface-node.md); [decision rule](../packages/core/agent-loop/README.md#understand-the-implementation)).
+`agent/pre-step` admits, rewrites or rejects claimed messages; a rejected or empty first claim closes a turn without a step. Assembly and `step/start` precede route preparation; cancellation during preparation commits neither system nor user messages. Each attempt derives and freezes a request from durable history, while retries reuse the assembly. Surface replacements, image offload and `startsRequestSeries` start logged request series. System prompt updates are logged as surface nodes: empty rendering clears the prompt; capable routes append updates, while other routes consolidate them. The [AgentLoop contract](../packages/core/agent-loop/README.md#understand-the-implementation) owns admission and request details; the [system-prompt decision](../.agents/notes/implemented/architecture/2026-09-02-system-prompt-as-surface-node.md) owns update semantics.
 
 The loop sends immutable requests with live cancellation and reuses freeze evidence for frozen identities; [agent-loop](../packages/core/agent-loop/README.md) owns construction and cancellation causes.
 
 Failed steps [record missing tool results](../packages/core/agent-loop/README.md#understand-the-implementation).
 
 Details: the [sequence diagram](agent-lifecycle.md), the [tool pipeline](tool-execution-pipeline.md), and [cancellation and error recovery](subsystems/core.md#the-agent-handle).
+
+Running Inbox maintenance borrows the native model-streaming owner, reserving the event prefix through command commit and mirror cleanup; transient streaming continues while durable settlement and phase progress wait.
 
 ## Session log
 

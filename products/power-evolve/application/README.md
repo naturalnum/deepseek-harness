@@ -1,0 +1,128 @@
+---
+description: "Run tenant-owned DSH Sessions through separate cloud Host and trusted Platform Profiles."
+kind: package-reference
+---
+# @power-evolve/application
+
+English | [中文](README.zh.md)
+
+## Summary
+
+Use the cloud Host and Platform Profiles to authenticate users, persist native DSH conversations and isolate their workspaces. Platform owns PostgreSQL, credentials and execution authorization. Host receives bounded APIs and operation grants. The native Web client uses the upstream shell with the three extensions defined by the migration plan.
+
+## Table of Contents
+
+- [Use this package](#use-this-package)
+- [Understand the implementation](#understand-the-implementation)
+- [Further Exploration](#further-exploration)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="use-this-package"></a>
+## Use this package
+
+Launch through the named [Host](../host/README.md) and [Platform](../platform/README.md) bundles. Their configurations supply independent ports, private credential files, storage and database access. The deployment launcher reads an operator-owned document outside Git; it does not copy credential values into the Profile.
+
+The Host root redirects to `/native/`. Login, independent approvals and account administration belong to Platform. Independent approval modules obtain request identifiers from the public browser module of `@deepseek-ai/dsh-util-crypto`, served through an explicit same-origin asset route; they also work on plain HTTP LAN origins. The [native Web bundle](../cloud-web/README.md) contains the upstream components; [personal connector configuration](../client-extension-center/README.md) occupies the official Host bundle configuration slot.
+
+-----
+
+<a id="understand-the-implementation"></a>
+## Understand the implementation
+
+<details>
+<summary>Persistence, authorization and native behavior</summary>
+
+Accepted operations freeze their model, Skills and connector selections. Account locks, current credentials, Session leases and epochs fence writes. Native event appends commit their model, inbox and title projection checkpoints at the same PG watermark. Checkpoint encoding 2 stores validated JSON text inside jsonb to retain NUL and lone surrogates; retained encoding 1 remains readable and advances on append. Future encodings, malformed text and unequal watermarks reject. Turn classification reads validated event chunks without PostgreSQL JSON extraction; the original event JSON stays unchanged. Cold title and model mutations refuse while a writer holds the Session lease.
+
+The cloud-native database advances through adjacent migrations to schema 6. Existing generations retain their assets and records. Separate temporary assistant-presentation tables store JSON text; canonical Session events remain the recovery source. The fixed legacy importer produces schema 2, which normal Platform startup upgrades through the retained adjacent generations to schema 6. Event and projection writes can share the caller's authorized PG transaction with presentation changes; that caller owns the final lease fence and commit.
+
+Independent native writer occupancy is separate from an operation grant. Exact live worker, token digest and writer epoch govern maintenance; release retains the last identity and epoch for retries. Ordinary task claiming excludes live occupancy and rechecks it after Session lock waits. Caller-owned transactions can lock and recheck exact occupancy without renewing it. Grant restoration uses the original accepted input and selections, requires the exact live attempt, and rechecks authority after its reads; ordinary claiming uses the same restorer. Platform mounts bounded writer acquisition and maintenance routes. The Host Scheduler acquires one retained Writer identity for the Session run, renews it independently and releases it after all local generations drain; acquisition retries retain the same random token. The [writer integration record](../TRIAL-M3-NATIVE-WRITER.md) owns its current validation scope.
+
+One captured operation grant owns the ordered assistant publisher. Original native frames and canonical events share its bounded order; pending item and byte counters include the in-flight batch. The Host model iterator waits at watermarks derived from its existing item and byte limits, and resumes when validated acknowledgements or completed input reservations restore capacity. Each awaited gate rechecks the original Grant, Agent, Session and publisher. EOF waits for all staged items, excluding heartbeat-only work. Cancellation stops only the model waiter; the publisher retains mutation and input-reservation cleanup. The first publication failure prevents later publication and may include one fixed-label numeric budget snapshot without event or model text. Closing waits for owned work before releasing the exact publisher identity; release and expired-state pruning leave canonical history intact.
+
+During native execution, Host emits an `operation_first_failure` error record for the first retained failure of an operation epoch, with Session/operation IDs, epochs, stage and bounded category/code. It excludes error text, stacks, bodies and credentials; logger failures do not change cancellation or settlement.
+
+Canonical input, its ledger and presentation acknowledgements share the actual Platform transaction through the native input endpoints. The Host Coordinator reserves the native prefix before publication, commits complete claims before prompt assembly and binds the actual published step. Claim receipts retain removal splice coordinates and the entire claim batch digest, including the original operation digest. After a proved admission or queue receipt, Host silently synchronizes the exact write handle and live Session; it validates the complete suffix before changing its cache and retains each read's original prefix while waiting for the durability barrier. The Scheduler installs the Coordinator and current input-owner registration before waking input. Accepted origins enter through bounded polling only during unreserved idle or native model streaming; other stages leave them pending in PG.
+
+Platform installs the actual frame and execution-authority providers, accepted-input reads and [v2 continuation](native-turn-continuation-v2.md). Its [read-only advance preparer](native-turn-advance-intent-v2.md) derives the closed turn, complete cohorts and actual pending head from PG. Host retains the returned intent unchanged after an uncertain transition response. Retiring the exact consumed publisher seal prevents obsolete generation writes and skips a release already completed by that transition. The model proxy and runtime business-tool routes require actual claimed-step execution authorization. Snapshot, publication, original-image and selected-Skill reads retain their separate storage purpose. Before another turn starts, Scheduler drains admission and operation renewal, retains the complete prepared transition, retires the proved original seal, disposes its Agent with pending input preserved and installs only a separately proved live successor with its original selections. A native model failure can settle a durable closed turn through the same v2 transaction. Input or persistence failures mark settlement unsafe; the Coordinator reports these failures before native agent/error, while downstream model errors retain native meaning.
+
+After an expired or parked operation, ordinary claiming selects the canonical next-turn head before the first next-step input. A consumed current owner remains selected for reconciliation. Authorization identifies the operation through its open attempt at the current Session epoch. The prepared recovery endpoint retains the original accepted audit and full frozen snapshot under a newly issued attempt and independently acquired Writer; historical frame rows remain unchanged. Original audit attachments must match their ordered subset in the full snapshot. Admission is not repeated. An interrupted turn with no consumption or business events can use the native resume factory's repair before a new claim. Consumed recovery instead retains the original claimed identity, uses native interrupted closers and proves the complete historical cohort before settlement under current storage authority. It does not wake an inbox, install business tools or authorize another model execution for that consumed input.
+
+User cancellation of an unconsumed prepared input uses a [dedicated transaction](src/platform/native-prepared-cancel.ts). Host resumes native closers and plans one canceled removal of the original candidate’s latest pending revision. Canonical removal and its actual publication acknowledgement commit before the same transaction retires the frame, ends the source attempt and clears only that Session lease; original epochs, frozen selections and sibling inputs remain recorded. The complete tokenless acknowledgement is stored once under the original Writer scope and full request digest, so an uncertain reply can be retried unchanged after source or Writer expiry and publisher eviction. Host stops and awaits operation renewal before its first retirement request, keeps the independent Writer renewable through local synchronization and retires publication using the committed acknowledgement. The existing `operationTimeoutMs` covers resume, planning and retries. Ordinary browser removal retains its active prepared-owner refusal.
+
+Browser queue commands retain their original carrier nonce through Platform routing to the current live Writer's Host. `nativeInputOwnerRoutingFile` names an absolute private JSON file containing operator-owned `workerOrigins`, `timeoutMs` and `maxResponseBytes`; missing configuration refuses routing. Platform bounds input proofs with `nativeInputMaxCohortInputs`, `nativeInputMaxAcceptedAuditBytes`, `nativeInputMaxRevisionBytes`, `nativeInputMaxCommandBytes` and `nativeInputMaxFrameBytes`. The receiving Host requires its exact registered Coordinator and reuses the original browser bearer for the atomic PG mutation; neither client input nor routing issues an operation or Writer token.
+
+Opted-in assistant follow opens history and its native assistant baseline under the same owned PG Session lock. Private publisher positions remain outside native Client packets. A retired publisher or evicted ring ends the accepted generation normally so the native Client can reopen; invalid persisted state terminates the follow. Platform bounds the complete opening, baseline chunks, packet items and bytes with `nativeAssistantMaxOpeningBytes`, `nativeAssistantMaxBaselineChunks`, `nativeAssistantMaxPacketItems`, `nativeAssistantMaxPacketBytes` and `nativeAssistantMaxCanonicalReadBytes`. Host bounds each generation with `nativeFollowMaxGenerationMs`, `nativeFollowMaxGenerationItems` and `nativeFollowMaxGenerationBytes`. Generation timeout before opening reports a failure; timeout or cumulative budget exhaustion after opening retires normally. Cancellation reaches the in-flight Platform read. Host separately supplies `nativeStreamSendTimeoutMs`, defaulting to 10,000 ms, to the public Gateway. Its downlink frame deadline includes waiting behind earlier writes. Cancelling an unstarted frame removes it without interrupting the earlier write; cancellation or deadline expiry after an unconfirmed send starts terminates the physical carrier and its logical streams. Gateway closure waits for source cleanup.
+
+Browser credential exchange consumes the presented Agent token without extending its lifetime. Every Host verifies scoped browser cookies with Platform on each request, so revocation applies across replicas. Trusted account pages serve only manifest-listed assets with restrictive browser headers; missing or invalid assets do not fall back to the entry page. Personal presentation preferences persist independently per user and reject stale revisions and nested mutation paths.
+
+A native fork copies an exact committed event prefix through the official fork helper, including inherited history, closing events and parent lineage. Its next model comes from that prefix's official projection, and durable acceptance rechecks the user's current model grant. Native Session cancellation stops active work while retaining pending inputs and their receipts; the product cancellation endpoint can also cancel the oldest queued input.
+
+Current Session headers retain the official optional absolute working directory, subagent origin, delegation depth, agent preset and fork lineage. These fields do not grant ownership or continuation authority. Native browser responses present the cloud logical directory while stored metadata remains unchanged; unknown header fields fail validation.
+
+Search validates owned committed logs in one read-only PG snapshot and restores them into a request-private official SQLite memory index. The provider searches current user and assistant messages with native full-text ranking and Unicode-bounded snippets; original PG event JSON remains unchanged. The persisted event-byte watermark counts canonical JSON, verified separately from original JSON spelling. Queries require visible text, exclude NUL and contain at most 500 UTF-16 code units. Platform configuration controls `nativeSearchDeadlineMs`, `nativeSearchMaxSessions`, `nativeSearchMaxEvents` and `nativeSearchMaxBytes`; byte budgets charge the larger original or canonical UTF-8 total for each history, and per-history storage quotas also apply. Deadline or quota exhaustion fails without a partial success. A disconnected caller destroys its exclusive PG connection; synchronous projection and SQLite work observe cancellation before and after bounded work, and connection disposal does not promise immediate PG backend termination.
+
+Cloud directories are logical account-owned names under `/workspace`; they never select Host filesystem roots. Workspaces retain immutable Session membership and private physical storage. Removing a Workspace unregisters it while retaining its files and Sessions; adopting the same directory restores that registration. New Session creation refuses an unregistered Workspace. Private ordering, archive and pin records reject foreign identities, duplicate entries and incomplete directory trees.
+
+The persisted account-owned archive set and unfinished archival stop gate new prompt acceptance, ordinary claiming, native inbox mutations and business execution under the account and Session locks. An exact previously accepted prompt still replays its original receipt. A continuation with pending input refuses successor issuance while blocked; it does not report that input as an empty queue. Storage reads, native closers and settlement retain their separate authorization. Restoring visibility does not withdraw an issued stop. Its dedicated claiming lane acquires only storage ownership to cancel actual unclaimed pending inputs and settle consumed work, preserving original frames and frozen selections. Native cleanup completion requires empty inboxes, closed boundaries, ended attempts and a released Session lease; physical workers retain their own cancellation and cleanup evidence. Archival with `stopActivity` persists archive membership before issuing durable stops for the Session's original operation roots and owned execution carriers. Its response confirms issued requests; physical cleanup retains each provider's original identity and result.
+
+Office deployment requires an operator-verified RuntimeClass that disables external networking before parser startup. The immutable Pod intent and converter safety version 2 retain that selection; submission refuses missing or different runtimes. Safety version 1 snapshots remain readable as historical facts. NetworkPolicy remains additional isolation and cannot establish protection before its rules apply.
+
+The [file adapter](src/platform/native-files.ts) reads owned Workspace bytes through the protected file service. Independent conversion and execution services retain their original identities and uncertainty until matching observations settle them. Service schemas, limits and failure semantics live beside their implementations; historical source records do not certify the current runtime.
+
+Native file uploads stream through Host to Platform and commit a durable, receiving-Session receipt. Prompt acceptance binds the original ordered text and receipts in its transaction. Original bytes remain in private storage outside writable Workspace, Home and Skill mounts. The maintained attachment backend verifies their digest and length. Forks retain access only to file references in their exact inherited event prefix and keep the original storage identity. `cloud_file_read` reads bounded UTF-8 lines without a Sandbox; `cloud_file_copy` creates an idempotent Workspace copy for authorized Office or execution tools. The deployment refuses overlapping original-file and writable roots before database initialization. Intake measures the owner’s physical immutable objects, published names and crash staging under the account lock; failed receipt commits still consume the configured byte and file budgets. Database disconnection interrupts stalled intake, and the HTTP carrier closes unfinished input. File reads recheck the grant after original-byte verification; copy admission rechecks it after Workspace writer lock waits.
+
+Original images use Platform’s existing `attachmentRoot`, so attachment backups include unchanged SDK objects. The scoped Host reader checks the exact image reference and current operation before and after transport and SDK derivation. Migrated images retain their separate verified-history permissions; Host registers the maintained image-offload projection and preserves original metadata. `legacyImageMaxBytes`, `legacyImageMaxPixels`, `legacyImageMaxLedgerBytes` and `legacyImageReadTimeoutMs` bound historical reads. Host configures image dimensions, count and aggregate bytes; `legacyImageCacheRoot` resolves to `image-request-cache` beside its absolute `readyFile`, or another configured absolute private cache. Derivatives are regenerable.
+
+New prompts submit encoded images through the native carrier. Platform checks the selected model’s maintained capabilities before storage, binds staged files in order, and uses [SDK image admission](src/platform/native-image-admission.ts) for the complete batch under the account and Session locks. Exact request replay precedes storage. Shared physical attachment quotas include objects left by failed acceptance; saving never returns partial references. Disconnects and the intake deadline are checked before durable acceptance, together with current browser authority; uncancellable SDK work drains before its storage context closes. [Native image permissions](src/platform/native-images.ts) bind exact SDK metadata and original storage identity to the complete accepted content digest; operation reads verify that source and the current grant again after byte verification. Browser preview uses the current account credential, owned canonical history and the official image-reference lookup, without an active operation. Forks inherit only image references inside their retained native prefix. Platform’s `nativeImage*` configuration controls SDK admission, normalization, concurrency and permission bytes, and publishes the same admission limits to the native client. Both carriers’ `maxRequestBytes` also bound encoded prompts; `nativeUploadTimeoutMs` sets the acceptance deadline.
+
+The [account bridge](src/account-contracts.ts) exposes explicit runtime validators and retains type exports. Application declares Contracts as a matching peer and development dependency; the [Host](../host/README.md) and [Platform](../platform/README.md) installations supply its production provider. Each Node isolate must resolve every protocol subpath and Zod ESM entry to the selected provider before serving traffic. The cloud-only [peer policy](../scripts/cloud-peer-policy.mjs) preserves official SAFE classifications. Browser bundles have their own validation instances.
+
+</details>
+
+-----
+
+<a id="further-exploration"></a>
+## Further Exploration
+
+- [Confirmed migration scope](../CLOUD-MIGRATION-PLAN.md)
+- [Host bundle](../host/README.md) and [Platform bundle](../platform/README.md)
+- [Native Web](../cloud-web/README.md)
+- [Current migration evidence](../TRIAL-CLOUD-MIGRATION-M0.md)
+
+-----
+
+<a id="model-experience"></a>
+## Model Experience
+
+The model receives the accepted operation's authorized configuration and selected instructions. Inputs and results that reach the model are native Session events. Models propose controlled actions; independent approval credentials remain at Platform. The composed DeepSeek adapter resolves reasoning to `off`, which the native catalog and persisted selection also report.
+
+For accepted uploads, a logged instruction section lists only this Session's authorized file identities and explains the cloud reader and copy tools. File metadata alone does not assert that the model read the contents. The original files have no Host-local execution path.
+
+<a id="known-limitations-and-deferred-work"></a>
+## Known Limitations and Deferred Work
+
+Current constraints are explicit at the corresponding native API:
+
+- Host-local file opening and shared Profile changes require capabilities the cloud user does not automatically receive.
+- The prompt carrier accepts queued text, generic file receipts and SDK-admitted images. Steering, editing and removal use the current Writer's Coordinator. Active prepared-owner removal refuses.
+- Continuation supports closed-turn settlement, unconsumed prepared or capacity-parked takeover, and historical claimed reconciliation. Retained mutation intents across restart and the remaining stop/failure combinations still need acceptance; current source PG recovery checks do not certify a production restart deployment.
+- Historical prepared inputs can settle in a new owner's complete cohort or receive their original frozen snapshot as the actual pending successor. Each older attempt and frame must pass bounded prepared-only proof; original identities and counters remain recorded.
+- Incremental publication and coherent follow require same-version real Profile, Web and multi-replica acceptance, including actual transport pressure. Uncertain publication receipts still require reconciliation and retry handling.
+- A live Session refuses cold title or model writes. Archival without `stopActivity` refuses active work; archival with it issues durable cancellation requests before returning.
+- Search retains the authorized corpus within configured input quotas for its temporary native index; it does not retain a reusable cross-request search index.
+- Cloud execution, Office and connector workers need their explicit private deployment configuration and real-service acceptance. Disabled composition does not establish those feature paths.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Maintainer context</summary>
+
+Use the fixed official release and product instructions in [AGENTS.md](../AGENTS.md). Source tests and formal build artifacts use separate entry paths. Migration status and exact executed commands belong in trial evidence, rather than this reference.
+
+</details>

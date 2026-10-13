@@ -310,6 +310,7 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   OfficeToPdfGeneration: 'office-to-pdf.md',
   Agent: 'core.md',
   AgentCancelCause: 'core.md',
+  AgentDisposeOptions: 'core.md',
   AgentFactory: 'core.md',
   AgentHandle: 'core.md',
   ModelSelection: 'core.md',

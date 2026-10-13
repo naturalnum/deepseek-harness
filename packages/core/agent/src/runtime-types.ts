@@ -13,6 +13,7 @@ import type {
 import type { AgentCancelCause, Session, SessionSeq, UserMessage } from '@deepseek-ai/dsh-session'
 export type { AgentCancelCause } from '@deepseek-ai/dsh-session'
 import type { Agent, InboxTarget } from './types.ts'
+import type { InboxActivityCapture, InboxClaimBoundary } from './inbox-commands.ts'
 export type { Agent } from './types.ts'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 declare module '@deepseek-ai/dsh-system-prompt' {
@@ -32,6 +33,12 @@ export interface AgentOptions {
   reasoningEffort?: ReasoningEffortId
   /** Maximum output tokens for each conversation-model request. */
   maxTokens?: number
+}
+
+/** Scope of a native maintenance operation. */
+export interface MaintenanceOptions {
+  /** Reserve Inbox/native appends during model streaming; omitted keeps whole-agent idle maintenance. */
+  scope: 'inbox'
 }
 
 /** Options for {@link Agent.cancel}. */
@@ -170,8 +177,61 @@ declare module './types.ts' {
     readonly inbox: Inbox
     /** The current lifecycle state, mirrored on every `agent/status` transition. */
     readonly status: AgentStatus
+    /**
+     * Whether Inbox maintenance can enter now: idle or the exact running
+     * model-streaming stage, with no Inbox reservation held. Reading does not
+     * reserve that stage. Call runMaintenance with scope inbox immediately
+     * after the check; recheck after any await before calling it.
+     */
+    readonly canMaintainInbox: boolean
     /** Agent-scoped context; its contributions are agent-local, unwind on disposal, and reject registration afterward. */
     readonly ctx: Context
+
+    /**
+     * Register ordered preparation before a turn opens, claims input, or assembles
+     * its prompt. Only a non-empty registration list delays the synchronous
+     * default boundary. Failure reports agent/error for the proposed turn at step 0
+     * and leaves its unclaimed input pending. The driver contains the failure,
+     * so whenIdle fulfills at quiescence. Cancellation follows keepInbox.
+     * Listeners must observe the signal and finish cleanup before settling, and
+     * must not await this agent's whenIdle or disposal. Registrations made during
+     * preparation apply to later turns; removed listeners are skipped.
+     * @param listener - preparation receiving the proposed turn and its cancellation signal.
+     * @returns idempotent disposer, also owned by the agent scope; callers may own it with ctx.effect.
+     */
+    onBeforeTurn(listener: (turn: number, signal: AbortSignal) => void | Promise<void>): () => void
+
+    /**
+     * Wake existing pending input without inserting, replacing, or retargeting
+     * messages. An empty inbox is a no-op. Active drivers drain normally;
+     * maintenance and aborted activity latch the wake until quiescence, except
+     * disposed activity, which leaves pending input parked.
+     */
+    wakePending(): void
+
+    /**
+     * Register ordered durable claim settlement before prompt assembly, pre-step
+     * listeners and live claimed notifications. Failure permanently consumes the
+     * complete claim and closes the turn with an error; whenIdle still fulfills.
+     * Cancellation and earlier listener failures do not skip later settlement;
+     * the first failure is retained after all registered listeners finish. They
+     * observe cancellation and finish cleanup before settling; they
+     * must not await this Agent's whenIdle or disposal. Registrations made during
+     * settlement apply at later boundaries; removed listeners are skipped.
+     * @param listener - complete immutable claim and exact proposed position/signal.
+     * @returns idempotent disposer owned by this Agent's registration scope.
+     */
+    onAfterClaim(listener: (boundary: InboxClaimBoundary) => void | Promise<void>): () => void
+
+    /**
+     * Capture the exact owned maintenance signal or a reserved running model
+     * phase. No caller status/abort classification supplies authority. The
+     * capture rejects retirement, cancellation changes and prefix movement;
+     * synchronize imports an already committed mirror under the same owner.
+     * @param signal - exact current runMaintenance signal.
+     * @returns immutable native phase/position/abort/cursor and owned checks.
+     */
+    captureInboxActivity(signal: AbortSignal): InboxActivityCapture
 
     /**
    * Clear queued and steering work — unless `keepInbox` — and abort the active
@@ -191,15 +251,21 @@ declare module './types.ts' {
     whenIdle(): Promise<void>
 
     /**
-   * Run one non-turn maintenance task from the true idle phase. The task starts
-   * synchronously after claiming that phase; later waking input remains in the
-   * inbox until the task settles, while public status stays `idle`.
-   * `whenIdle()` follows both the task and any waking work released behind it.
-   * @param task - operation whose fulfillment or rejection is preserved, with a signal aborted by {@link cancel}.
-   * @throws synchronously when turn-driving or another maintenance task already owns the agent.
-   * @returns the task promise.
-   */
-    runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>): Promise<T>
+     * Run one owned maintenance operation. Without options this requires true
+     * idle and preserves whole-agent maintenance behavior. scope inbox also
+     * permits the exact native model-streaming stage: the model continues,
+     * while native settlement, Inbox mutations and phase migration wait until
+     * the command's commit/mirror cleanup releases its append reservation.
+     * Other running stages reject. Cancellation invalidates captures at once;
+     * a requested Inbox clear follows committed mirror/rollback cleanup.
+     * The holder must observe its signal, finish cleanup before settling, and
+     * never await this Agent's whenIdle or disposal. Capture acquisition and
+     * Writer-prefix flush precede external database locks.
+     * @param task - operation whose fulfillment/rejection is preserved.
+     * @param options - optional Inbox/native append reservation scope.
+     * @returns the task promise after owned cleanup releases the boundary.
+     */
+    runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>, options?: MaintenanceOptions): Promise<T>
 
     /**
    * Route identified input to an inbox boundary and optionally wake the driver.

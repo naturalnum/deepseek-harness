@@ -1,0 +1,100 @@
+\documentclass{techreport}
+
+% Default template mode requires Songti SC/SimSun, Heiti SC/SimHei and Times New
+% Roman for font validation. An explicitly accepted cloud typography deviation
+% uses \documentclass[portablefonts]{techreport} and validates with
+% --font-profile portable --log example-report.log. A fallback is not a pass.
+% This file is only a layout experiment. Replace all "待填写" values with
+% confirmed project data before using it for a real report.
+\techreportsetup{
+  report-no={待填写},
+  class-no={待填写},
+  secret-level={待填写},
+  project-source={国家电网有限公司总部科技项目},
+  title-cn={技术报告 LaTeX 模板试验},
+  title-en={Experimental LaTeX Template for Technical Reports},
+  project-name={科技项目技术报告排版一致性研究},
+  series-no={},
+  cooperator={},
+  report-date={2026年8月},
+  work-period={待填写},
+  leader={待填写},
+  staff={待填写},
+  writer={待填写},
+  abstract-cn={本示例用于验证技术报告模板的版式结构，不承载任何实际项目结论。模板将封面、审批页、摘要、目录、正文、图表、公式、附录和参考文献统一纳入同一套排版规则，便于后续与现有 Word 模板逐项比对。},
+  keywords-cn={技术报告；LaTeX；排版一致性},
+  abstract-en={This example is used only to verify the layout structure of the technical report template. It does not contain project results or conclusions. The template puts the cover, approval page, abstracts, contents, body, figures, tables, equations, appendices, and references under one set of typesetting rules.},
+  keywords-en={technical report; LaTeX; layout consistency}
+}
+
+\begin{document}
+
+\makecover
+\makeapproval
+
+\reportfrontmatter
+\makeabstract
+\makereporttoc
+
+\reportmainmatter
+
+\section{研究背景与意义}
+
+这是正文示例。正文使用宋体小四号、1.5 倍行距，并自动首行缩进两个字符。一级标题通过统一的类文件定义为黑体小三号，并从新页开始。
+
+\subsection{模板化排版的目标}
+
+将字号、字体、页边距、页眉页脚、标题层级和编号规则集中定义在类文件中，可以减少章节源文件之间的格式漂移。
+
+\subsubsection{内容与版式分离}
+
+报告正文只描述内容结构，具体版式由 \verb|techreport.cls| 控制。后续可以将现有 JSON 数据转换为 LaTeX 语义命令，而不是继续在章节内容中重复编写内联样式。
+
+\section{研究内容、目标与技术路线}
+
+下面展示图、表和公式的编号规则。图占位符位于图题上方，图题置于图下方居中，图号按章连续编号。
+
+\reportfigureplaceholder{技术路线示意图}
+
+\begin{center}
+  \reporttablecaption{排版规则示例}
+  \begin{tabular}{@{}p{0.28\textwidth}p{0.52\textwidth}@{}}
+    \toprule
+    项目 & 规则 \\
+    \midrule
+    页面 & A4，正文版心左右各 25 mm \\
+    正文 & 宋体小四号，1.5 倍行距，首行缩进 2 字符 \\
+    公式 & 章内连续编号，编号使用全角圆括号 \\
+    \bottomrule
+  \end{tabular}
+\end{center}
+
+公式示例：
+\begin{reportequation}
+  P = U \times I \times \cos\varphi
+\end{reportequation}
+
+\begin{symbols}
+  \symbolitem{$P$}{有功功率}
+  \symbolitem{$U$}{电压有效值}
+  \symbolitem{$I$}{电流有效值}
+\end{symbols}
+
+\section{结论与展望}
+
+本示例只用于验证排版结构。正式报告的专业内容、数据、结论和参考文献应全部来自已确认的任务书与研究资料。
+
+\reportappendices
+\appendixsection{补充说明}
+
+附录正文使用与正文相同的字号、字体、行距和首行缩进规则。附录标题、图、表和公式可继续使用附录编号。
+
+\subsection{附录内小节}
+
+这是附录小节示例。
+
+\begin{reportbibliography}
+  \reportbibitem{此处填写经核实的参考文献条目，按 GB/T 7714 整理}
+\end{reportbibliography}
+
+\end{document}

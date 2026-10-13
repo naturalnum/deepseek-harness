@@ -9,7 +9,7 @@ import AgentRegistry, { agentEvents, assembleContextFor } from '@deepseek-ai/dsh
 
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { scopeOf } from '@deepseek-ai/dsh-scope'
-import AgentLoop from '@deepseek-ai/dsh-agent-loop'
+import AgentLoop, { inboxProjectionDefinition } from '@deepseek-ai/dsh-agent-loop'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { MockAdapter, textResponse } from './mock-adapter.ts'
@@ -1069,6 +1069,98 @@ describe('agent scope lifecycle', () => {
     expect(ctx.sessions.get(SessionId('h1-s'))).toBeUndefined()
     await unload
   })
+
+  it.each([true, false])('first explicit disposal overrides the creator default and retains its mode (keepInbox=%s)', async (keepInbox) => {
+    const ctx = await harness()
+    const release = Promise.withResolvers<undefined>(), cleanup = Promise.withResolvers<undefined>()
+    onTestFinished(async () => { release.resolve(undefined); await ctx.fiber.dispose() })
+    const events: SessionEvent[] = []
+    const id = SessionId(`explicit-pending-${keepInbox}`)
+    ctx.on('session/event', (session, event) => { if (session.id === id) events.push(event) })
+    const handle = await ctx.agents.create({ sessionId: id, agentOptions: { provider: 'mock', model: 'mock' },
+      disposeOptions: { keepInbox: !keepInbox }, setup(agentCtx, agent) {
+        agentCtx.effect(() => async () => {
+          expect(agent.status).toBe('idle')
+          cleanup.resolve(undefined)
+          await release.promise
+        })
+      } })
+    const opened = Promise.withResolvers<undefined>()
+    ctx.on('session/event', (session, event) => {
+      if (session.id === id && event.type === 'turn/start') opened.resolve(undefined)
+    })
+    handle.agent.followup(createUserMessage({ content: text('A'), source: { kind: 'user' } }))
+    await opened.promise
+    expect(handle.agent.status).toBe('running')
+    const b = createUserMessage({ content: text('B pending'), source: { kind: 'user' } })
+    handle.agent.inbox.append('next-turn', b)
+    const first = handle.dispose({ keepInbox })
+    await cleanup.promise
+    const second = handle.dispose({ keepInbox: !keepInbox })
+    expect(second).toBe(first)
+    expect(ctx.agents.get(id)).toBe(handle.agent)
+    release.resolve(undefined); await first
+    expect(handle.agent.inbox.nextTurn).toEqual(keepInbox ? [b] : [])
+    expect(events.some(event => event.type === 'agent/inbox/spliced' && event.data.outcome === 'canceled')).toBe(!keepInbox)
+    expect(ctx.agents.get(id)).toBeUndefined()
+    expect(ctx.sessions.get(id)).toBeUndefined()
+  })
+
+  it.each([true, false])('an omitted handle option uses its creator default (keepInbox=%s)', async (keepInbox) => {
+    const ctx = await harness()
+    onTestFinished(() => ctx.fiber.dispose())
+    const handle = await ctx.agents.create({ sessionId: SessionId(`creator-default-${keepInbox}`),
+      disposeOptions: { keepInbox } })
+    const b = createUserMessage({ content: text('B pending'), source: { kind: 'user' } })
+    handle.agent.inbox.append('next-turn', b)
+    await handle.dispose()
+    expect(handle.agent.inbox.nextTurn).toEqual(keepInbox ? [b] : [])
+    expect(handle.agent.session.header).not.toHaveProperty('disposeOptions')
+  })
+
+  it('factory teardown uses the creator preservation default for native pending B', async () => {
+    const { ctx, loopFiber } = await harnessWithLoop()
+    onTestFinished(() => ctx.fiber.dispose())
+    const events: SessionEvent[] = []
+    ctx.on('session/event', (_session, event) => { events.push(event) })
+    const handle = await ctx.agents.create({ sessionId: SessionId('factory-preserve-pending'),
+      disposeOptions: { keepInbox: true } })
+    const b = createUserMessage({ content: text('B pending'), source: { kind: 'user' } })
+    handle.agent.inbox.append('next-turn', b)
+    const cursor = handle.agent.session.seq
+    await loopFiber.dispose()
+    await handle.dispose({ keepInbox: false })
+    const pending = events.reduce((state, event) => inboxProjectionDefinition.apply(state, event), inboxProjectionDefinition.init())
+    expect(pending['next-turn']).toEqual([b])
+    expect(handle.agent.session.seq).toBe(cursor)
+  })
+
+  it.each([true, false])('owner-first unload uses the creator policy before a conflicting handle call (keepInbox=%s)',
+    async (keepInbox) => {
+      const ctx = await harness()
+      const release = Promise.withResolvers<undefined>(), cleanup = Promise.withResolvers<undefined>()
+      onTestFinished(async () => { release.resolve(undefined); await ctx.fiber.dispose() })
+      let handle!: Awaited<ReturnType<typeof ctx.agents.create>>
+      const events: SessionEvent[] = []
+      ctx.on('session/event', (_session, event) => { events.push(event) })
+      const owner = await ctx.plugin(Object.assign(async (inner: Context) => {
+        handle = await inner.agents.create({ sessionId: SessionId(`owner-first-pending-${keepInbox}`),
+          ...keepInbox ? { disposeOptions: { keepInbox: true } } : {}, setup(agentCtx) {
+            agentCtx.effect(() => async () => { cleanup.resolve(undefined); await release.promise })
+          } })
+      }, { inject: ['agents'] }))
+      const b = createUserMessage({ content: text('B pending'), source: { kind: 'user' } })
+      handle.agent.inbox.append('next-turn', b)
+      const before = events.length, unloading = owner.dispose()
+      await cleanup.promise
+      const explicit = handle.dispose({ keepInbox: !keepInbox })
+      expect(ctx.agents.get(handle.agent.id)).toBe(handle.agent)
+      release.resolve(undefined); await Promise.all([unloading, explicit])
+      expect(handle.agent.inbox.nextTurn).toEqual(keepInbox ? [b] : [])
+      expect(events.slice(before).filter(event => event.type === 'agent/inbox/spliced')).toHaveLength(keepInbox ? 0 : 1)
+      expect(ctx.agents.get(handle.agent.id)).toBeUndefined()
+      expect(ctx.sessions.get(handle.agent.id)).toBeUndefined()
+    })
 
   it('successful handle disposal retires its caller ownership effect', async () => {
     const ctx = await harness()

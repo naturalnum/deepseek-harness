@@ -16,6 +16,11 @@ async function fixture() {
     const fiber = ctx.plugin(() => {})
     const session = Session.create(SessionId(id))
     const agent: Agent = {
+      canMaintainInbox: true,
+      onBeforeTurn: () => () => {},
+      onAfterClaim: () => () => {},
+      captureInboxActivity: () => { throw new Error('This Agent double has no maintenance capture') },
+      wakePending: () => {},
       id: session.id, session, ctx: fiber.ctx, options: {}, status: 'idle',
       inbox: unsupportedInbox(), send() {}, followup() {}, inject() {}, cancel() {},
       steer: () => ({ outcome: Promise.resolve({ status: 'rejected' as const }) }),

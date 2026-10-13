@@ -1,0 +1,32 @@
+{
+  "namespace": "replace-with-owned-namespace",
+  "runtimeClassName": "pe-office-offline",
+  "image": "registry.example.invalid/office-parser@sha256:REPLACE_WITH_REVIEWED_DIGEST",
+  "volumeClaimName": "replace-with-owned-claim",
+  "volumeSubPath": "office-cache",
+  "localRoot": "/var/lib/power-evolve/office-cache",
+  "fontPolicyDigest": "REPLACE_WITH_REVIEWED_FONT_POLICY_DIGEST",
+  "limits": {
+    "inputBytes": 16777216,
+    "outputBytes": 33554432,
+    "timeoutMs": 60000,
+    "archiveEntries": 1000,
+    "uncompressedBytes": 67108864,
+    "fontLoadedBytes": 67108864,
+    "pages": 200,
+    "fontFiles": 1000,
+    "fontFileBytes": 16777216,
+    "fontResolutionEntries": 10000,
+    "imageResolution": 144
+  },
+  "maxConcurrentParsers": 1,
+  "maxRetainedJobsPerUser": 100,
+  "leaseMs": 30000,
+  "jobDeadlineMs": 90000,
+  "pollMs": 1000,
+  "kubernetesTimeoutMs": 5000,
+  "terminationGraceSeconds": 5,
+  "cpuMilliCores": 1000,
+  "memoryMiB": 1024,
+  "temporaryMiB": 1024
+}

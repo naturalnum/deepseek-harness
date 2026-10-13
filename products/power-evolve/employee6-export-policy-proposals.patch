@@ -1,0 +1,32 @@
+--- a/scripts/package-dependency-policy.ts
++++ b/scripts/package-dependency-policy.ts
+@@ -57,6 +57,29 @@
+   '@deepseek-ai/dsh-session-format': ['sessionFormatLogFilename'],
+   '@deepseek-ai/dsh-timeout': ['MAX_TIMER_DELAY_MS'],
+   '@deepseek-ai/schemastery': ['default'],
++  '@power-evolve/contracts/execution-resolution': [
++    'EXECUTION_RESOLUTION_APPROVAL_ROUTES',
++    'EXECUTION_RESOLUTION_ROUTES',
++  ],
++  '@power-evolve/contracts/file-download': [
++    'FILE_DOWNLOAD_CONTENT_PATH',
++    'FILE_DOWNLOAD_MAX_FILES',
++    'FILE_DOWNLOAD_MAX_FILE_BYTES',
++    'FILE_DOWNLOAD_MAX_SOURCE_BYTES',
++    'FILE_DOWNLOAD_MAX_URL_BYTES',
++    'FILE_DOWNLOAD_PLATFORM_PATH',
++    'fileDownloadUrl',
++  ],
++  '@power-evolve/contracts/office-preview': [
++    'OFFICE_PREVIEW_MAX_INPUT_BYTES',
++    'OFFICE_PREVIEW_ROUTES',
++  ],
++  '@power-evolve/contracts/stdio-mcp': [
++    'stdioImageMatchesDeploymentV2',
++  ],
++  '@power-evolve/contracts/stdio-mcp-json': [
++    'stdioCanonicalJsonV2',
++  ],
+ } as const satisfies HostDependencyExports
+ 
+ /** Runtime exports that require every consumer to resolve the provider's shared peer instance. */

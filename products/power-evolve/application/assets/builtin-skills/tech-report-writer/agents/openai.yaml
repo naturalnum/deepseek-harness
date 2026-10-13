@@ -1,0 +1,4 @@
+interface:
+  display_name: "中国电科院技术报告排版"
+  short_description: "将审核通过的技术报告排版为中国电科院规范 Word，并完成结构与视觉校验"
+  default_prompt: "使用 $tech-report-writer 调整这份已有 Word 技术报告的格式并完成校验。"

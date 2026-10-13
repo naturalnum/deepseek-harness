@@ -1,0 +1,34 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write products/power-evolve/contracts/README.md
+/:
+  en: 54f31f004b7373c7
+  zh: 2d232b5d8413ddd8
+/powerevolve-wire-validation:
+  en: 35995a99597348c3
+  zh: 33e005120d6f3c47
+/powerevolve-wire-validation/summary:
+  en: 8d4efecde96d470a
+  zh: d8ab213e5b82fdf1
+/powerevolve-wire-validation/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: d3513fd636ffdf7c
+/powerevolve-wire-validation/use-this-package:
+  en: 8edec019c32ea546
+  zh: 18c673988a07262a
+/powerevolve-wire-validation/understand-the-implementation:
+  en: 8654d72a1588e078
+  zh: b83fd3cb4c9ea0f4
+/powerevolve-wire-validation/further-exploration:
+  en: 6de2e2e776f3c5da
+  zh: d295c36c0bb66ed2
+/powerevolve-wire-validation/model-experience:
+  en: e508670e0aab6bdd
+  zh: 0601f1728e908822
+/powerevolve-wire-validation/known-limitations-and-deferred-work:
+  en: 527dadf6f5de84b6
+  zh: ce3403fe9c080943
+/powerevolve-wire-validation/known-limitations-and-deferred-work/dev-note:
+  en: 72c6e02254db246c
+  zh: f010934127b22ce7

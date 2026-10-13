@@ -1,0 +1,12 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: office-deny-all
+  namespace: replace-with-owned-namespace
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: power-evolve-office-preview
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress: []

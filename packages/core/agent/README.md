@@ -44,7 +44,7 @@ await handle.dispose()   // stops the loop, unregisters, removes the session, un
 
 ### Drive an agent's conversation
 
-The handle's methods route identified user-role messages into the agent's inbox. `followup()` queues an ordinary next-turn prompt and wakes the driver; `steer()` submits next-step input and wakes it; `inject()` adds model-facing context without waking the driver, so it lands in the next admitted step. `cancel(cause)` aborts the active activity and, unless `keepInbox` is set, clears pending work; `whenIdle()` resolves after the whole agent reaches quiescence.
+The handle's methods route identified user-role messages into the agent's inbox. `wakePending()` wakes existing queued input without inserting or retargeting a message; an empty inbox remains idle. `followup()` queues an ordinary next-turn prompt and wakes the driver; `steer()` submits next-step input and wakes it; `inject()` adds model-facing context without waking the driver, so it lands in the next admitted step. `cancel(cause)` aborts the active activity and, unless `keepInbox` is set, clears pending work; `whenIdle()` resolves after the whole agent reaches quiescence.
 
 ```text
 handle.agent.followup({
@@ -62,9 +62,23 @@ await handle.agent.whenIdle()
 
 `Agent.ctx` is the agent's scoped context: registrations made through it (tools, prompt sections, variables, event listeners, restrictions) apply to that agent alone and unwind on disposal. The same mechanism is what agent presets use to give one session a different capability set without affecting its neighbors.
 
+
+### Settle native input claims
+
+`onAfterClaim(listener)` receives detached deeply frozen input messages for the complete next-step claim and, on a first step, one next-turn head, with canonical splice events, exact cursors, proposed turn/step and cancellation signal. The loop awaits all still-registered listeners before prompt assembly, pre-step interception and live claimed notifications, including after cancellation or an earlier listener failure. It retains the first listener failure, permanent consumption and the original historical message graphs; it never reinserts claimed input. Registrations belong to the Agent scope, and listeners finish cleanup before settling without awaiting their own Agent's quiescence or disposal.
+
+`captureInboxActivity(signal)` requires the exact current `runMaintenance()` signal. Acquire maintenance outside database locks; Inbox scope also reserves a running model stream. The immutable capture rejects retirement, changed cancellation and later live appends. A detached-plan consumer checks it immediately before commit; it does not infer phase from stored events or acquire execution authority from the capture.
+
 ### Intercept or observe work in flight
 
+`onBeforeTurn(listener)` registers ordered preparation before the next turn opens, claims input, or assembles its prompt and tools. Own its disposer with `ctx.effect()` to remove it on plugin unload; the Agent scope also removes it on disposal. Without registrations, turn opening and input claim retain their synchronous timing. A failed listener reports `agent/error` for the proposed turn at step 0 and leaves unclaimed input pending without a turn boundary; `whenIdle()` fulfills when the failed driver reaches quiescence. Listeners must observe the signal, finish cleanup before settling, and never await this Agent's `whenIdle()` or disposal. Pending input can be resumed with `wakePending()` after preparation is repaired.
+
 The `agent/*` events let plugins act on live work without depending on the loop package. `agent/pre-step` can reject a proposed step or replace the messages entering it; `agent/request-error` lets a listener retry a failed model request; `agent/turn-stopping` runs before an otherwise completed turn closes and can steer to keep it open. `agent/assistant-stream` carries one process-local Assistant attempt's ordered start, transient chunk, and end frames. Start names the attempt's turn and step, chunk indexes are dense from zero, and `end.index` is the next chunk position. The loop commits the complete compact stream as one `assistant/message` or `assistant/attempt` before a committed end frame, so the live event remains presentation data rather than the replay source. `agent/status`, `agent/created`, and `agent/disposed` drive UI and coordination state, and the per-message `agent/inbox/*` notifications keep inbox projections in sync. Exact signatures, dispatch modes, and payload contracts live in the generated region of the [core subsystem page](../../../docs/subsystems/core.md#cordis-surface).
+
+<a id="reserve-running-native-input"></a>
+### Reserve running native input
+
+`runMaintenance(task, { scope: 'inbox' })` also accepts the native model-streaming stage. It borrows that running phase and reserves native append ordering while the task commits and synchronizes a command. Transient streaming may continue; durable model settlement and phase progress wait for release. Other running stages and simultaneous holders reject. `captureInboxActivity(signal)` reports the actual running position or maintenance phase; its synchronous `synchronize()` callback imports an already committed mirror under the same owner, including reconciliation after cancellation. Cancellation invalidates planning immediately; a default Inbox clear runs after holder cleanup. The holder acquires its native reservation and prior Writer flush before PG locks, rechecks capture before commit, and finishes commit/rollback, mirror, Writer cursor and carrier cleanup before settling. It never waits for its Agent's quiescence or disposal. `Agent.canMaintainInbox` synchronously reports unreserved idle or native model-streaming admission; it reserves nothing, so query immediately before an inbox-scoped call and recheck after every await.
 
 -----
 
@@ -114,7 +128,7 @@ Each driver runs its complete lifetime inside `ctx.agents.withInitiator(agent, .
 
 ### Ownership invariants
 
-The `AgentHandle` disposer is a capability: among consumers, only its holder can tear the agent down. The registered factory provider is a structural co-owner, because scoped agents depend on that provider's service API; provider unload stops and drains every live handle it made. `ctx.agents.get(id)` still returns a bare `Agent` — the handle is exposed only to the consumer that created it.
+The `AgentHandle` disposer is a capability: among consumers, only its holder can tear the agent down. The registered factory provider is a structural co-owner, because scoped agents depend on that provider's service API; provider unload stops and drains every live handle it made. `ctx.agents.get(id)` still returns a bare `Agent` — the handle is exposed only to the consumer that created it. Create/resume callers choose a non-persistent `disposeOptions` default for handle, owner/factory teardown and rollback; omission clears pending input. The first explicit handle call may override it with `keepInbox`, while later callers share the first memoized result. Teardown stops the driver and awaits `whenIdle()` before unmounting its owned resources.
 
 </details>
 

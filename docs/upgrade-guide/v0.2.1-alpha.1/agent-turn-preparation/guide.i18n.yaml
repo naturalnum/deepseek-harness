@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for guide.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/upgrade-guide/v0.2.1-alpha.1/agent-turn-preparation/guide.md
+/:
+  en: 5b2ac17bfa585741
+  zh: f45fcf05dad5a553
+/agent-requires-turn-preparation-and-pending-wake:
+  en: e34d3943aa69cb06
+  zh: a2b876e3de05089a
+/agent-requires-turn-preparation-and-pending-wake/change:
+  en: 1ddcc66a1bda8e65
+  zh: 3665dea6e5b9133d
+/agent-requires-turn-preparation-and-pending-wake/migration:
+  en: c7e42f6d9032e273
+  zh: 3d32831bd8bc0832

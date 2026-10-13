@@ -322,12 +322,20 @@ describe('translation scope discovery', () => {
     'python/guide.md',
     'python/sdk-runtime/README.md',
     'python/sdk-runtime/src/deepseek_harness_runtime/README.md',
+    'products/power-evolve/application/native-turn-advance-intent-v2.md',
+    'products/power-evolve/application/native-turn-advance-intent-v2.zh.md',
+    'products/power-evolve/application/native-turn-advance-intent-v2.i18n.yaml',
+    'products/power-evolve/application/native-turn-continuation-v2.md',
+    'products/power-evolve/application/native-turn-continuation-v2.zh.md',
+    'products/power-evolve/application/native-turn-continuation-v2.i18n.yaml',
   ])('includes %s', (file) => {
     expect(isTranslationScopeFile(file)).toBe(true)
   })
 
   it.each([
     'packages/example/guide.md',
+    'products/power-evolve/TRIAL-CLOUD-MIGRATION-STATUS.md',
+    'products/power-evolve/application/native-turn-continuation-v2-extra.md',
     'packages/example/CONTRIBUTING.md',
     'packages/example/BRAND_GUIDELINES.md',
     'other/tutorial.md',

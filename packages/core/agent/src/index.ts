@@ -20,6 +20,7 @@ export * from './runtime-types.ts'
 export * from './types.ts'
 export type * from './projection.ts'
 export * from './consumed-work.ts'
+export * from './inbox-commands.ts'
 export * from './model-selection.ts'
 export { agentCarrier, agentEvents, assembleContextFor, emitAgentEvent } from './dispatch.ts'
 export type { AgentEventDispatch, AgentSubjectEvent } from './dispatch.ts'
@@ -98,6 +99,12 @@ export interface CreateAgentOptions {
   /** Optional creation-only cancellation signal; detached before the returned handle becomes visible. */
   readonly signal?: AbortSignal
   /**
+   * Non-persistent default for handle, owner/factory teardown and rollback;
+   * omitted clears pending input. The factory captures this choice before
+   * setup awaits. An explicit first handle disposal may override it.
+   */
+  readonly disposeOptions?: AgentDisposeOptions
+  /**
    * Creation-time composition of the agent's scoped world. The factory awaits
    * setup after minting `agentCtx` but BEFORE inserting or announcing either
    * the session or agent, so observers can never see a partially configured
@@ -131,6 +138,8 @@ export interface ResumeAgentOptions {
   readonly agentOptions?: AgentOptions
   /** Optional creation-only cancellation signal for persistence load/setup; detached before return. */
   readonly signal?: AbortSignal
+  /** Non-persistent teardown default, captured before loading; follows CreateAgentOptions.disposeOptions. */
+  readonly disposeOptions?: AgentDisposeOptions
   /**
    * Resume-time composition of the agent's fresh scoped world. Persistence is
    * loaded first; the factory then mints `agentCtx` and awaits setup while the
@@ -143,14 +152,20 @@ export interface ResumeAgentOptions {
   readonly setup?: AgentSetup
 }
 
+/** Non-persistent pending-input choice for Agent creation, resume and handle disposal. */
+export interface AgentDisposeOptions {
+  /** True preserves native pending input, false clears it; handle omission uses its creator's default, otherwise clear. */
+  readonly keepInbox?: boolean
+}
+
 /**
  * An owned agent plus its disposer, returned by {@link AgentRegistry.create} /
  * {@link AgentRegistry.resume}. The disposer is a CAPABILITY: among consumers,
  * only the holder can tear this agent down. The registered factory provider is
  * also a structural owner because the scoped agent depends on that provider's
  * service API; provider unload stops and drains every live handle it made.
- * `dispose()` stops the loop, awaits its exit, unregisters the agent, removes
- * its session from the store, and finally unwinds its scoped world.
+ * Disposal stops the driver and awaits whenIdle before unwinding its scope,
+ * closing its write path, detaching both registries and unmounting its owner.
  *
  * `ctx.agents.get(id)` still returns a bare {@link Agent} — the handle is
  * exposed only to the consumer owner that created it; the structural provider
@@ -159,7 +174,17 @@ export interface ResumeAgentOptions {
  */
 export interface AgentHandle {
   agent: Agent
-  dispose(): Promise<void>
+  /**
+   * Stop and drain this exact Agent, then unmount its owned resources. Pending
+   * input follows the non-persistent creator default, clearing when omitted
+   * at creation; explicit keepInbox overrides it for this first call. True
+   * preserves pending input while stopping only this driver. The first handle,
+   * owner or factory disposal chooses the memoized mode; later calls share its
+   * result and cannot change that choice.
+   * @param options - explicit pending-input behavior, otherwise the creator default.
+   * @returns shared fulfillment after teardown, or its retained cleanup failure.
+   */
+  dispose(options?: AgentDisposeOptions): Promise<void>
 }
 
 /**

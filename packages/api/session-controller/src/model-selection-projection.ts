@@ -55,7 +55,8 @@ function applyModelSelectionProjection(
     : { lastUsed, pending }
 }
 
-const modelSelectionProjection = {
+/** Standard durable model intent fold, reusable by authorized persistence carriers. */
+export const modelSelectionProjection = {
   key: 'modelSelection',
   stateSchema: modelSelectionProjectionStateSchema,
   init: () => ({ lastUsed: null, pending: null }),

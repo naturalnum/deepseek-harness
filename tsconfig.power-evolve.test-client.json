@@ -1,0 +1,45 @@
+{
+  "extends": "./tsconfig.base.client.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": [
+      "node"
+    ],
+    "composite": false,
+    "incremental": false,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false,
+    "rewriteRelativeImportExtensions": false
+  },
+  "include": [
+    "products/power-evolve/client-account/tests/**/*.ts",
+    "products/power-evolve/client-account/tests/**/*.tsx",
+    "products/power-evolve/client-extension-center/tests/**/*.ts",
+    "products/power-evolve/client-extension-center/tests/**/*.tsx",
+    "products/power-evolve/cloud-web/tests/**/*.ts",
+    "products/power-evolve/cloud-web/tests/**/*.tsx",
+    "products/power-evolve/application/tests/**/*.client.spec.ts",
+    "products/power-evolve/application/tests/**/*.client.spec.tsx"
+  ],
+  "references": [
+    {
+      "path": "products/power-evolve/client-account"
+    },
+    {
+      "path": "products/power-evolve/client-extension-center"
+    },
+    {
+      "path": "packages/client/modules"
+    },
+    {
+      "path": "vendor/loader"
+    },
+    {
+      "path": "packages/test-support/client-runtime"
+    },
+    {
+      "path": "packages/test-support/remote-mock"
+    }
+  ]
+}

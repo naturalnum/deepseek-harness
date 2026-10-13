@@ -1,0 +1,193 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Verified Reference Registry",
+  "type": "object",
+  "properties": {
+    "internet_access": {
+      "enum": [
+        "available",
+        "unavailable",
+        "unknown"
+      ]
+    },
+    "collection_confirmed": {
+      "type": "boolean"
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "reference_type",
+          "verification_status",
+          "supports",
+          "gbt7714_entry"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "reference_type": {
+            "enum": [
+              "journal_article",
+              "conference_paper",
+              "standard",
+              "official_document",
+              "dataset",
+              "book",
+              "thesis",
+              "report"
+            ]
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "authors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "year": {
+            "type": [
+              "integer",
+              "string"
+            ]
+          },
+          "venue": {
+            "type": "string"
+          },
+          "volume_issue_pages": {
+            "type": "string"
+          },
+          "doi_or_identifier": {
+            "type": "string"
+          },
+          "official_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "legal_download_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "verification_status": {
+            "enum": [
+              "verified",
+              "partially_verified",
+              "rejected"
+            ]
+          },
+          "verification_sources": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          "supports": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          },
+          "used_in": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "notes": {
+            "type": "string"
+          },
+          "gbt7714_entry": {
+            "type": "string",
+            "minLength": 5,
+            "description": "GB/T 7714—2015 顺序编码制的文后著录字符串，不含 [n] 序号；须包含文献类型标识并以句点结束。"
+          },
+          "source_kind": {
+            "enum": [
+              "external",
+              "local_file"
+            ],
+            "default": "external",
+            "description": "Explicit local project evidence; omitted means the original external-source contract."
+          },
+          "local_file_evidence": {
+            "type": "object",
+            "required": [
+              "relative_path",
+              "sha256",
+              "byte_size"
+            ],
+            "properties": {
+              "relative_path": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Normalized relative path beneath the caller-provided authorized source-root; no absolute paths, dot segments or symlinks."
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "byte_size": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "required": [
+                "source_kind"
+              ],
+              "properties": {
+                "source_kind": {
+                  "const": "local_file"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "local_file_evidence",
+                "doi_or_identifier"
+              ],
+              "properties": {
+                "reference_type": {
+                  "enum": [
+                    "report",
+                    "official_document",
+                    "dataset"
+                  ]
+                },
+                "official_url": false,
+                "legal_download_url": false,
+                "verification_sources": {
+                  "type": "array",
+                  "maxItems": 0
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "local_file_evidence": false
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "required": [
+    "internet_access",
+    "collection_confirmed",
+    "items"
+  ]
+}

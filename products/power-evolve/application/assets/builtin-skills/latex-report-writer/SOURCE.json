@@ -1,0 +1,25 @@
+{
+  "originalCommit": "a03460fe66a3f77114ff3bb906476105e1d470b7",
+  "originalPath": "services/cloud-server/assets/builtin-skills/latex-report-writer",
+  "originalRelease": "1.0.0",
+  "productRelease": "1.0.5",
+  "maintenance": "PowerEvolve product fork: explicit English title and supplied bilingual metadata; see tests/test_compatibility.py. Original class, logo and specification retained. Numbered reviewed Markdown compatibility is covered by tests/test_numbered_headings.py; local image validation and real figure compilation are covered by tests/test_local_images.py and tests/test_local_images_compile.py.",
+  "changes": [
+    {
+      "version": "1.0.5",
+      "summary": "Add opt-in portable typography using installed Noto CJK SC and TeX Gyre Termes faces without copying proprietary fonts; retain default template selection with explicit fallback diagnostics. Validate compact PDF names including the Noto SC collection's shared CFF aliases, required profile families, embedding/subsetting and the final compile log; reject missing glyphs, profile mismatches and compile/layout errors. Correct abstract body/keyword leading to an effective 18pt at 12pt type, retain source paragraphs and content, attach keywords to the preceding final line and allow normal continuation pages."
+    },
+    {
+      "version": "1.0.4",
+      "summary": "Separate labeled Markdown appendices from bibliography entries regardless of source placement, preserve source-link prose and URLs, emit the retained body/appendices/bibliography order and reject invalid or duplicate appendix labels. Preserve blank-line-separated bilingual abstract paragraphs, join continuous lines within each paragraph and escape prose before controlled TeX paragraph boundaries while retaining supplied word order and inline math."
+    },
+    {
+      "version": "1.0.3",
+      "summary": "Export validated local PNG, JPEG and PDF figures and convert static SVG through existing LibreOffice Draw; preserve authored figure numbering and a single caption, reject missing/invalid/external/escaping sources, copy compile-ready assets and disable TeX shell escape."
+    },
+    {
+      "version": "1.0.2",
+      "summary": "Read confirmed Arabic-numbered Markdown chapters alongside retained Chinese chapter forms, preserve heading numbers and hierarchy without duplicate numbering, and retain supplied abstracts, equations, references and tables."
+    }
+  ]
+}

@@ -1,0 +1,448 @@
+# Product CI candidate: fixed Office SDK inputs and complete native platform checks.
+name: PowerEvolve cloud
+
+on:
+  pull_request:
+    paths:
+      - 'products/power-evolve/**'
+      - 'packages/**'
+      - 'vendor/**'
+      - 'scripts/**'
+      - 'tsconfig*.json'
+      - 'vitest*.ts'
+      - 'package.json'
+      - 'pnpm-*.yaml'
+      - '.oxlintrc.json'
+      - '.jscpd.json'
+      - '.github/AGENTS.md'
+      - '.github/power-evolve-office/**'
+      - '.github/power-evolve-built/**'
+      - '.github/workflows/power-evolve-cloud.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: power-evolve-cloud-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cloud_windows_native:
+    name: PowerEvolve Windows native types, Client and portable built
+    runs-on: windows-2025
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      CI: 'true'
+      DSH_TELEMETRY_DISABLED: '1'
+      DSH_OXLINT_THREADS: '2'
+      pnpm_config_verify_deps_before_run: 'error'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: Install immutable workspace dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Prepare private evidence storage
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $evidence = Join-Path $env:RUNNER_TEMP 'pe-cloud-evidence'
+          New-Item -ItemType Directory -Path $evidence | Out-Null
+          "TMPDIR=$evidence" >> $env:GITHUB_ENV
+          "TEMP=$evidence" >> $env:GITHUB_ENV
+          "TMP=$evidence" >> $env:GITHUB_ENV
+      - name: Build upstream and product Host and native Web from this checkout
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          pnpm exec tsc -b tsconfig.host.json
+          pnpm exec tsdown --config-loader native --env.DSH_BUILD_FACE host
+          pnpm --filter @power-evolve/contracts run build
+          pnpm --filter @power-evolve/connector-runner run build
+          pnpm --filter @power-evolve/application run build
+          pnpm run build:lib:client
+          pnpm --filter @power-evolve/client-account run bundle
+          pnpm --filter @power-evolve/client-extension-center run bundle
+          pnpm run build:web
+          pnpm --filter @power-evolve/cloud-web run build
+      - name: Run native Windows static, complete Client and portable built checks
+        run: pnpm exec tsx products/power-evolve/scripts/cloud-check.mjs --scope=current --only=discovery,types,lint,jsdoc,dependencies,docs,duplication,client,built-portable
+      - name: Retain Windows evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: power-evolve-cloud-windows-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/pe-cloud-evidence/pe-cloud-check-*/
+          if-no-files-found: error
+
+  cloud_posix_source:
+    name: PowerEvolve POSIX complete source, unified coverage and complete built
+    # Narrow product exception: source fixtures require POSIX UID/GID and Linux Docker.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      CI: 'true'
+      DSH_TELEMETRY_DISABLED: '1'
+      DSH_OXLINT_THREADS: '2'
+      pnpm_config_verify_deps_before_run: 'error'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+      - name: Install immutable workspace dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Verify actual POSIX owner and Linux Docker execution
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          node --input-type=module -e 'import assert from "node:assert/strict"; assert.equal(process.platform,"linux"); assert.equal(typeof process.getuid,"function"); assert.notEqual(process.getuid(),0)'
+          $backend = docker info --format '{{.OSType}}'
+          if ($backend.Trim() -ne 'linux') { throw 'This source job requires an actual Linux Docker backend' }
+          $platform = docker run --rm --network none node:22.23.2-bookworm-slim node -p process.platform
+          if ($platform.Trim() -ne 'linux') { throw 'The actual container did not execute Linux Node' }
+          $gateway = docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}'
+          $resolved = docker run --rm --add-host=host.docker.internal:host-gateway node:22.23.2-bookworm-slim node --input-type=module -e 'import {lookup} from "node:dns/promises"; console.log((await lookup("host.docker.internal")).address)'
+          if ($resolved.Trim() -ne $gateway.Trim()) { throw 'Fixture host alias does not resolve to the actual Docker bridge gateway' }
+          "PE_CLOUD_DOCKER_GATEWAY=$($gateway.Trim())" >> $env:GITHUB_ENV
+      - name: Allocate owned PostgreSQL 16 and private evidence storage
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $evidence = Join-Path $env:RUNNER_TEMP 'pe-cloud-evidence'
+          $owned = Join-Path $env:RUNNER_TEMP ('pe-cloud-pg-' + [guid]::NewGuid())
+          New-Item -ItemType Directory -Path $evidence, $owned | Out-Null
+          "PE_CLOUD_PG_OWNED_DIR=$owned" >> $env:GITHUB_ENV
+          $owner = 'pe-cloud-source-' + $env:GITHUB_RUN_ID + '-' + $env:GITHUB_RUN_ATTEMPT + '-' + [guid]::NewGuid()
+          $password = [guid]::NewGuid().ToString('N')
+          "::add-mask::$password"
+          $env:POSTGRES_PASSWORD = $password
+          try {
+            $id = docker run -d --name $owner --label "codex.owner=$owner" --env POSTGRES_PASSWORD --env POSTGRES_USER=pe_cloud_ci --publish "$($env:PE_CLOUD_DOCKER_GATEWAY)::5432" --publish "127.0.0.1::5432" postgres:16-alpine
+          } finally { Remove-Item Env:POSTGRES_PASSWORD }
+          "PE_CLOUD_PG_ID=$($id.Trim())" >> $env:GITHUB_ENV
+          "PE_CLOUD_PG_OWNER=$owner" >> $env:GITHUB_ENV
+          $pgImageId = (docker inspect --format '{{.Image}}' $id).Trim()
+          if ($pgImageId -notmatch '^sha256:[a-f0-9]{64}$') { throw 'Owned PostgreSQL must report an immutable local image ID' }
+          if (-not (Test-Path Env:PE_SANDBOX_TEST_PG_IMAGE)) { "PE_SANDBOX_TEST_PG_IMAGE=$pgImageId" >> $env:GITHUB_ENV }
+          if (-not (Test-Path Env:PE_EMPLOYEE6_STDIO_PG_IMAGE)) { "PE_EMPLOYEE6_STDIO_PG_IMAGE=$pgImageId" >> $env:GITHUB_ENV }
+          $ready = $false
+          for ($attempt = 0; $attempt -lt 30; $attempt++) {
+            $PSNativeCommandUseErrorActionPreference = $false
+            docker exec $id pg_isready -U pe_cloud_ci -d postgres | Out-Null
+            $ready = $LASTEXITCODE -eq 0
+            $PSNativeCommandUseErrorActionPreference = $true
+            if ($ready) { break }
+            Start-Sleep -Seconds 1
+          }
+          if (-not $ready) { throw 'Owned PostgreSQL did not become ready' }
+          $bindings = @(docker port $id 5432/tcp)
+          $bridge = @($bindings | Where-Object { $_.StartsWith($env:PE_CLOUD_DOCKER_GATEWAY + ':') })
+          $loopback = @($bindings | Where-Object { $_.StartsWith('127.0.0.1:') })
+          if ($bridge.Count -ne 1 -or $loopback.Count -ne 1) { throw 'Owned PG requires one bridge and one loopback mapping' }
+          $port = ($bridge[0].Trim() -split ':')[-1]
+          $builtPort = ($loopback[0].Trim() -split ':')[-1]
+          $urlFile = Join-Path $owned 'database-url'
+          "postgresql://pe_cloud_ci:$password@$($env:PE_CLOUD_DOCKER_GATEWAY):$port/postgres" | Set-Content -Path $urlFile -Encoding utf8NoBOM
+          node -e 'require("node:fs").chmodSync(process.argv[1],0o600)' $urlFile
+          $builtUrlFile = Join-Path $owned 'built-admin-url'
+          "postgresql://pe_cloud_ci:$password@127.0.0.1:$builtPort/postgres" | Set-Content -Path $builtUrlFile -Encoding utf8NoBOM
+          node -e 'const fs=require("node:fs");fs.chmodSync(process.argv[1],0o700);fs.chmodSync(process.argv[2],0o600)' $owned $builtUrlFile
+          "PE_CLOUD_BUILT_ADMIN_URL_FILE=$builtUrlFile" >> $env:GITHUB_ENV
+          "PE_TEST_DATABASE_URL_FILE=$urlFile" >> $env:GITHUB_ENV
+          "TMPDIR=$evidence" >> $env:GITHUB_ENV
+          "TEMP=$evidence" >> $env:GITHUB_ENV
+          "TMP=$evidence" >> $env:GITHUB_ENV
+      - name: Build matching source-job Host and native Web artifacts
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          pnpm run build:native-system
+          pnpm exec tsc -b tsconfig.host.json
+          pnpm exec tsdown --config-loader native --env.DSH_BUILD_FACE host
+          pnpm --filter @power-evolve/contracts run build
+          pnpm --filter @power-evolve/connector-runner run build
+          $buildLog = Join-Path $env:TMPDIR 'application-build.log'
+          pnpm --filter @power-evolve/application run build 2>&1 | Tee-Object -FilePath $buildLog
+          if ($LASTEXITCODE -ne 0) { throw 'Current application build failed' }
+          "PE_CLOUD_APP_BUILD_LOG=$buildLog" >> $env:GITHUB_ENV
+          pnpm run build:lib:client
+          pnpm --filter @power-evolve/client-account run bundle
+          pnpm --filter @power-evolve/client-extension-center run bundle
+          pnpm run build:web
+          pnpm --filter @power-evolve/cloud-web run build
+      - name: Verify actual Linux Node-API flock acquisition
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          node --input-type=module -e 'import {open,mkdtemp,rm} from "node:fs/promises"; import {tmpdir} from "node:os"; import {join} from "node:path"; import {tryLockExclusive} from "@deepseek-ai/node-addon-system/flock"; const root=await mkdtemp(join(tmpdir(),"pe-ci-flock-")); const file=await open(join(root,"owned"),"wx",0o600); try{await tryLockExclusive(file.fd)}finally{await file.close();await rm(root,{recursive:true})}'
+      - name: Prepare fixed Office 0.1.1 x64 closure and an owned cold image
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $owner = [guid]::NewGuid().ToString('D')
+          $owned = Join-Path $env:RUNNER_TEMP ('pe-ci-office-' + $owner)
+          $officeEvidence = Join-Path $env:TMPDIR 'office-setup'
+          New-Item -ItemType Directory -Path $officeEvidence | Out-Null
+          $tag = 'pe-cloud-office-ci:' + $owner
+          "PE_CLOUD_OFFICE_OWNER=$owner" >> $env:GITHUB_ENV
+          "PE_CLOUD_OFFICE_REPRO_ROOT=$owned" >> $env:GITHUB_ENV
+          "PE_CLOUD_OFFICE_TAG=$tag" >> $env:GITHUB_ENV
+          try {
+            node .github/power-evolve-office/reproduce-office-closure.mjs --out $owned --mode online --arch x64 --validator (Join-Path $PWD.Path 'products/power-evolve/contracts/lib/browser/office-preview.js')
+            $context = Join-Path $owned 'context'
+            $runtime = Join-Path $context 'runtime'
+            docker build --no-cache --progress=plain --label "codex.owner=$owner" --tag $tag $context
+            $imageId = docker image inspect --format '{{.Id}}' $tag
+            $observed = docker image inspect --format '{{index .Config.Labels "codex.owner"}}' $tag
+            if ($observed.Trim() -ne $owner) { throw 'Office image owner differs' }
+            $target = docker image inspect --format '{{.Os}}/{{.Architecture}}' $imageId
+            if ($target.Trim() -ne 'linux/amd64') { throw 'Office image must match this Linux x64 source runner' }
+            docker run --rm --network none --workdir /opt/power-evolve --entrypoint node $imageId --input-type=module -e 'import assert from "node:assert/strict"; import {ENGINE_VERSION,discoverRuntime} from "@deepseek-ai/libreoffice-kit"; assert.equal(ENGINE_VERSION,"0.1.1"); assert.equal((await discoverRuntime()).backend,"wasm")'
+            @{owner=$owner;localImageId=$imageId.Trim();imageTag=$tag;target=$target.Trim()} | ConvertTo-Json | Set-Content -Path (Join-Path $officeEvidence 'image.json') -Encoding utf8NoBOM
+            $shared = Join-Path $PWD.Path 'node_modules/.pnpm/node_modules'
+            $private = Join-Path $runtime 'node_modules'
+            "NODE_PATH=$shared$([IO.Path]::PathSeparator)$private" >> $env:GITHUB_ENV
+            "PE_CLOUD_OFFICE_ROOT=$runtime" >> $env:GITHUB_ENV
+            "PE_CLOUD_OFFICE_IMAGE=$($imageId.Trim())" >> $env:GITHUB_ENV
+          } finally {
+            foreach ($name in @('npm-ci.log','base-pull.log','reproduction.json','install.json','assembled.json')) {
+              $file = Join-Path $owned $name
+              if (Test-Path $file) { Copy-Item -LiteralPath $file -Destination (Join-Path $officeEvidence $name) }
+            }
+          }
+      - name: Verify Office closure bytes and source-version binding
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $verify = @'
+          import assert from 'node:assert/strict'
+          import {createHash} from 'node:crypto'
+          import {lstat,readdir,readFile} from 'node:fs/promises'
+          import {createRequire} from 'node:module'
+          import {join,relative,resolve} from 'node:path'
+          import {pathToFileURL} from 'node:url'
+          const root=process.env.PE_CLOUD_OFFICE_ROOT
+          const hash=bytes=>createHash('sha256').update(bytes).digest('hex')
+          const manifest=JSON.parse(await readFile(join(root,'office-preview-closure.json'),'utf8'))
+          assert.equal(manifest.protocolVersion,1)
+          assert.equal(manifest.sdkVersion,'0.1.1');assert.equal(manifest.backend,'wasm')
+          assert.deepEqual(manifest.target,{platform:'linux',arch:'x64'})
+          const expected=new Map(manifest.files.map(file=>[file.path,file]))
+          assert.equal(expected.size,manifest.files.length)
+          async function walk(directory){for(const entry of await readdir(directory)){
+            const file=join(directory,entry),status=await lstat(file)
+            assert(!status.isSymbolicLink(),'Office closure contains a symlink')
+            if(status.isDirectory()){await walk(file);continue}
+            assert(status.isFile(),'Office closure contains a nonregular input')
+            const name=relative(root,file)
+            if(name==='office-preview-closure.json')continue
+            const record=expected.get(name);assert(record,'Unexpected Office closure input')
+            const bytes=await readFile(file);assert.equal(bytes.length,record.bytes);assert.equal(hash(bytes),record.sha256)
+            expected.delete(name)
+          }}
+          await walk(root);assert.equal(expected.size,0,'Office closure input missing')
+          for(const [image,current] of [['office-preview.mjs','products/power-evolve/sandbox/office-preview.mjs'],['office-preview-docx.mjs','products/power-evolve/sandbox/office-preview-docx.mjs'],['office-preview-contract.mjs','products/power-evolve/contracts/lib/browser/office-preview.js']]){
+            assert.equal(hash(await readFile(join(root,image))),hash(await readFile(current)),'Office image does not match this source/build')
+          }
+          const positive=createRequire(join(root,'office-preview.mjs'))
+          const kitPath=positive.resolve('@deepseek-ai/libreoffice-kit/package.json')
+          assert(kitPath.startsWith(root+'/'),'Positive consumer escaped the prepared Office closure')
+          const kit=JSON.parse(await readFile(kitPath,'utf8'));assert.equal(kit.version,'0.1.1')
+          const codecPath=createRequire(kitPath).resolve('fflate/package.json')
+          assert.equal(JSON.parse(await readFile(codecPath,'utf8')).version,'0.8.2')
+          const sdk=await import(pathToFileURL(positive.resolve('@deepseek-ai/libreoffice-kit')).href)
+          assert.equal(sdk.ENGINE_VERSION,'0.1.1');assert.equal(typeof sdk.createConverter,'function')
+          const negative=createRequire(resolve('products/power-evolve/sandbox/tests/employee1-office-parser.test.mjs'))
+          const negativePath=negative.resolve('@deepseek-ai/libreoffice-kit/package.json')
+          assert(!negativePath.startsWith(root+'/'),'Repository negative consumer resolved the deployed closure')
+          assert.equal(JSON.parse(await readFile(negativePath,'utf8')).version,'0.1.5')
+          const negativeCodec=createRequire(negativePath).resolve('fflate/package.json')
+          assert.equal(JSON.parse(await readFile(negativeCodec,'utf8')).version,'0.8.2')
+          console.log(JSON.stringify({prepared:true,sdkVersion:kit.version,image:process.env.PE_CLOUD_OFFICE_IMAGE,
+            sourceVersionBound:true,positivePackage:kitPath,negativePackage:negativePath,negativeSdkVersion:'0.1.5'}))
+          '@
+          node --input-type=module -e $verify
+      - name: Prepare owned cold-build inputs for the source test
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $owner = [guid]::NewGuid().ToString('D')
+          $owned = Join-Path $env:RUNNER_TEMP ('pe-ci-cold-image-' + $owner)
+          $context = Join-Path $owned 'context'
+          $imageEvidence = Join-Path $env:TMPDIR 'cold-image'
+          New-Item -ItemType Directory -Path $owned, $imageEvidence | Out-Null
+          @{owner=$owner} | ConvertTo-Json | Set-Content -Path (Join-Path $owned 'owner.json') -Encoding utf8NoBOM
+          $tag = 'pe-employee4-cloud:' + $owner
+          "PE_CLOUD_IMAGE_OWNER=$owner" >> $env:GITHUB_ENV
+          "PE_CLOUD_IMAGE_OWNED_DIR=$owned" >> $env:GITHUB_ENV
+          "PE_TEST_CLOUD_IMAGE=$tag" >> $env:GITHUB_ENV
+          if (Test-Path $context) { throw 'Cold source-test context must not already exist' }
+          $manifest = Join-Path $imageEvidence 'build.json'
+          @{version=1;id=$owner;context=$context;coldBuild=$true;image=$tag;owner=$owner;sourceJob=$env:GITHUB_RUN_ID;attempt=$env:GITHUB_RUN_ATTEMPT} | ConvertTo-Json | Set-Content -Path $manifest -Encoding utf8NoBOM
+          "PE_IMAGE_BUILD_MANIFEST=$manifest" >> $env:GITHUB_ENV
+          "PE_IMAGE_EVIDENCE_DIR=$imageEvidence" >> $env:GITHUB_ENV
+      - name: Run complete source discovery, selftests and unified coverage
+        id: complete_source
+        continue-on-error: true
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          node .github/power-evolve-built/run-source-check.mjs --evidence-root $env:TMPDIR
+          exit $LASTEXITCODE
+      - name: Evaluate only the named per-file coverage delivery exception
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          if ('${{ steps.complete_source.outputs.signal }}') { throw 'Terminated source execution remains blocking' }
+          node .github/power-evolve-built/accept-source-coverage-exception.mjs --report '${{ steps.complete_source.outputs.report }}' --evidence-root '${{ steps.complete_source.outputs.evidence_root }}' --exit-code '${{ steps.complete_source.outputs.exit_code }}' --out (Join-Path '${{ steps.complete_source.outputs.evidence_root }}' 'source-acceptance.json')
+      - name: Produce owned original Schema37 compatibility data and verify current built bootstrap
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $owner = [guid]::NewGuid().ToString('D')
+          $owned = Join-Path $env:RUNNER_TEMP ('pe-ci-built-' + $owner)
+          "PE_CLOUD_SCHEMA37_INPUT_DIR=$owned" >> $env:GITHUB_ENV
+          "PE_CLOUD_SCHEMA37_INPUT_OWNER=$owner" >> $env:GITHUB_ENV
+          node .github/power-evolve-built/owned-built-input-directory.mjs --action create --out $owned --owner $owner --runner-temp $env:RUNNER_TEMP
+          node .github/power-evolve-built/reproduce-schema37-inputs.mjs --out $owned --owner $owner --runner-temp $env:RUNNER_TEMP --admin-url-file $env:PE_CLOUD_BUILT_ADMIN_URL_FILE --current-image $env:PE_TEST_CLOUD_IMAGE --gateway $env:PE_CLOUD_DOCKER_GATEWAY
+          "PE_CI_SCHEMA37_BUILT_FIXTURE=$(Join-Path $owned 'maintenance-fixture.json')" >> $env:GITHUB_ENV
+      - name: Prepare explicit owned inputs for complete POSIX built checks
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          if (-not $env:PE_CI_SCHEMA37_BUILT_FIXTURE -or -not (Test-Path $env:PE_CI_SCHEMA37_BUILT_FIXTURE)) {
+            throw 'Current-job Schema37 fixture production did not publish its qualified output'
+          }
+          $playwrightCli = node --input-type=module -e 'import{createRequire}from"node:module";import{readFileSync}from"node:fs";import{dirname,resolve}from"node:path";const file=createRequire(resolve("apps/web/package.json")).resolve("playwright/package.json");const pkg=JSON.parse(readFileSync(file,"utf8"));const bin=typeof pkg.bin==="string"?pkg.bin:pkg.bin?.playwright;if(typeof bin!=="string")throw new Error("Playwright declared CLI bin is missing");console.log(resolve(dirname(file),bin))'
+          node $playwrightCli install --with-deps chromium
+          $chrome = node --input-type=module -e 'import{createRequire}from"node:module";import{resolve}from"node:path";console.log(createRequire(resolve("apps/web/package.json"))("playwright").chromium.executablePath())'
+          $owner = [guid]::NewGuid().ToString('D')
+          $owned = Join-Path $env:RUNNER_TEMP ('pe-ci-built-' + $owner)
+          "PE_CLOUD_BUILT_INPUT_DIR=$owned" >> $env:GITHUB_ENV
+          "PE_CLOUD_BUILT_INPUT_OWNER=$owner" >> $env:GITHUB_ENV
+          node .github/power-evolve-built/owned-built-input-directory.mjs --action create --out $owned --owner $owner --runner-temp $env:RUNNER_TEMP
+          $evidence = Join-Path $env:TMPDIR 'built-native'
+          node .github/power-evolve-built/prepare-built-inputs.mjs --out $owned --owner $owner --runner-temp $env:RUNNER_TEMP --evidence-root $evidence --admin-url-file $env:PE_CLOUD_BUILT_ADMIN_URL_FILE --legacy-fixture-file $env:PE_CI_SCHEMA37_BUILT_FIXTURE --build-log $env:PE_CLOUD_APP_BUILD_LOG --chrome $chrome
+      - name: Run complete original POSIX built corpus with prepared inputs
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          $inputs = Get-Content -Raw (Join-Path $env:PE_CLOUD_BUILT_INPUT_DIR 'environment.private.json') | ConvertFrom-Json
+          # Overrides are local to this step; the source lane retains its bridge URL and Office loader environment.
+          foreach ($property in $inputs.PSObject.Properties) { Set-Item -Path ('Env:' + $property.Name) -Value $property.Value }
+          foreach ($key in @('PE_E2E_REPLICAS_SCENARIO','POWER_EVOLVE_FACTORY_FILE','PE_NATIVE_WEB_DIST')) {
+            Remove-Item -Path ('Env:' + $key) -ErrorAction SilentlyContinue
+          }
+          pnpm exec tsx products/power-evolve/scripts/cloud-check.mjs --scope=current --only=built
+      - name: Remove only the owned built private inputs
+        if: always()
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          if ($env:PE_CLOUD_BUILT_INPUT_DIR -or $env:PE_CLOUD_BUILT_INPUT_OWNER) {
+            if (-not $env:PE_CLOUD_BUILT_INPUT_DIR -or -not $env:PE_CLOUD_BUILT_INPUT_OWNER) { throw 'Built cleanup ownership registration is incomplete' }
+            node .github/power-evolve-built/owned-built-input-directory.mjs --action remove --out $env:PE_CLOUD_BUILT_INPUT_DIR --owner $env:PE_CLOUD_BUILT_INPUT_OWNER --runner-temp $env:RUNNER_TEMP
+          }
+      - name: Retain Schema37 producer evidence without connection or approval files
+        if: always()
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:PE_CLOUD_SCHEMA37_INPUT_DIR) {
+            $evidence = Join-Path $env:TMPDIR 'schema37-producer'
+            New-Item -ItemType Directory -Path $evidence | Out-Null
+            foreach ($file in @('fixture-production.json','producer-terminal.json','seal-natural-exit.json','storage-cleanup.json','current-capture/lifecycle.json','current-capture/built-profile-binding.json','current-bootstrap/lifecycle.json','current-bootstrap/built-profile-binding.json')) {
+              $source = Join-Path $env:PE_CLOUD_SCHEMA37_INPUT_DIR $file
+              if (Test-Path $source) { Copy-Item -LiteralPath $source -Destination (Join-Path $evidence ($file -replace '/', '-')) }
+            }
+            $downloads = Join-Path $env:PE_CLOUD_SCHEMA37_INPUT_DIR 'logs'
+            if (Test-Path $downloads) {
+              Get-ChildItem -LiteralPath $downloads -Filter 'download-*.json' -File | Copy-Item -Destination $evidence
+            }
+          }
+      - name: Remove only the owned Schema37 private input directory
+        if: always()
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          if ($env:PE_CLOUD_SCHEMA37_INPUT_DIR -or $env:PE_CLOUD_SCHEMA37_INPUT_OWNER) {
+            if (-not $env:PE_CLOUD_SCHEMA37_INPUT_DIR -or -not $env:PE_CLOUD_SCHEMA37_INPUT_OWNER) { throw 'Schema37 ownership registration is incomplete' }
+            node .github/power-evolve-built/owned-built-input-directory.mjs --action remove --out $env:PE_CLOUD_SCHEMA37_INPUT_DIR --owner $env:PE_CLOUD_SCHEMA37_INPUT_OWNER --runner-temp $env:RUNNER_TEMP
+          }
+      - name: Remove only the owned PostgreSQL container and cold image
+        if: always()
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          if ($env:PE_CLOUD_PG_ID) {
+            $owner = docker inspect --format '{{index .Config.Labels "codex.owner"}}' $env:PE_CLOUD_PG_ID
+            if ($owner.Trim() -ne $env:PE_CLOUD_PG_OWNER) { throw 'Owned database label does not match' }
+            docker rm --force $env:PE_CLOUD_PG_ID
+          }
+          if ($env:PE_CLOUD_PG_OWNED_DIR -and (Test-Path $env:PE_CLOUD_PG_OWNED_DIR)) {
+            Remove-Item -LiteralPath $env:PE_CLOUD_PG_OWNED_DIR -Recurse -Force
+          }
+          if ($env:PE_TEST_CLOUD_IMAGE) {
+            $PSNativeCommandUseErrorActionPreference = $false
+            $observed = docker image inspect --format '{{index .Config.Labels "org.power-evolve.employee4"}}' $env:PE_TEST_CLOUD_IMAGE 2>$null
+            $exists = $LASTEXITCODE -eq 0
+            $PSNativeCommandUseErrorActionPreference = $true
+            if ($exists) {
+              if ($observed.Trim() -ne $env:PE_CLOUD_IMAGE_OWNER) { throw 'Cold image owner differs during cleanup' }
+              docker image rm $env:PE_TEST_CLOUD_IMAGE
+            }
+          }
+          if ($env:PE_CLOUD_IMAGE_OWNED_DIR -and (Test-Path $env:PE_CLOUD_IMAGE_OWNED_DIR)) {
+            $owner = Get-Content -Raw (Join-Path $env:PE_CLOUD_IMAGE_OWNED_DIR 'owner.json') | ConvertFrom-Json
+            $expected = Join-Path $env:RUNNER_TEMP ('pe-ci-cold-image-' + $env:PE_CLOUD_IMAGE_OWNER)
+            if ($owner.owner -ne $env:PE_CLOUD_IMAGE_OWNER -or $env:PE_CLOUD_IMAGE_OWNED_DIR -ne $expected) { throw 'Cold context ownership differs during cleanup' }
+            Remove-Item -LiteralPath $env:PE_CLOUD_IMAGE_OWNED_DIR -Recurse -Force
+          }
+      - name: Remove only the owned Office image
+        if: always()
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          if ($env:PE_CLOUD_OFFICE_TAG) {
+            $PSNativeCommandUseErrorActionPreference = $false
+            $observed = docker image inspect --format '{{index .Config.Labels "codex.owner"}}' $env:PE_CLOUD_OFFICE_TAG 2>$null
+            $exists = $LASTEXITCODE -eq 0
+            $PSNativeCommandUseErrorActionPreference = $true
+            if ($exists) {
+              if ($observed.Trim() -ne $env:PE_CLOUD_OFFICE_OWNER) { throw 'Office image owner differs during cleanup' }
+              docker image rm $env:PE_CLOUD_OFFICE_TAG
+            }
+          }
+      - name: Retain complete source and coverage evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: power-evolve-cloud-source-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/pe-cloud-evidence/
+          if-no-files-found: error
+
+  cloud:
+    # Preserve the existing product check name and reject failed/skipped/cancelled legs.
+    runs-on: windows-2025
+    needs: [cloud_windows_native, cloud_posix_source]
+    if: always()
+    timeout-minutes: 5
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Require both complete product signals
+        run: |
+          $windows = '${{ needs.cloud_windows_native.result }}'
+          $source = '${{ needs.cloud_posix_source.result }}'
+          if ($windows -ne 'success' -or $source -ne 'success') {
+            throw "PowerEvolve checks failed: Windows=$windows POSIX-source=$source"
+          }

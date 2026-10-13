@@ -1,0 +1,58 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write products/power-evolve/client-extension-center/README.md
+/:
+  en: 9fe6cf42d55d5258
+  zh: 373abe200701b3b1
+/powerevolve-extension-center:
+  en: c8c6664e61b144dd
+  zh: 6deffabc26d3ffc1
+/powerevolve-extension-center/summary:
+  en: e37bab1bca200556
+  zh: 86eeb4fda2529463
+/powerevolve-extension-center/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 91957bb5fa1bd8c5
+/powerevolve-extension-center/use-this-package:
+  en: 93a91896dfc84b87
+  zh: 1aa73edff61c0abe
+/powerevolve-extension-center/use-this-package/skills-and-package-import:
+  en: 639861576d2bafae
+  zh: a60b1a25e317dd0f
+/powerevolve-extension-center/use-this-package/personal-ssh:
+  en: a7ff6472b68b815e
+  zh: 269b1bf951afe983
+/powerevolve-extension-center/use-this-package/personal-remote-mcp:
+  en: be7d2652142cf09f
+  zh: 06e8651fa0044413
+/powerevolve-extension-center/use-this-package/cloud-stdio:
+  en: 0c9d6629819bc4e6
+  zh: 6b1cf8d24d0db63b
+/powerevolve-extension-center/understand-the-implementation:
+  en: a8815ff83e657b36
+  zh: ac74aa768809f45c
+/powerevolve-extension-center/further-exploration:
+  en: 814c36afbd478bac
+  zh: 32d772b1295e6904
+/powerevolve-extension-center/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/powerevolve-extension-center/model-experience/skill-trial-drafts:
+  en: 0a4b84107479c613
+  zh: 117aa466a74f6780
+/powerevolve-extension-center/model-experience/skill-trial-drafts/what-the-model-sees:
+  en: 21128e803689a968
+  zh: 4981d2e5f68a7b3a
+/powerevolve-extension-center/model-experience/skill-trial-drafts/token-effect:
+  en: 2beee65c92635353
+  zh: 8699e469ffa400c5
+/powerevolve-extension-center/model-experience/skill-trial-drafts/kv-cache-effect:
+  en: e7114fb725a74fca
+  zh: 7d181f8bda8236fc
+/powerevolve-extension-center/known-limitations-and-deferred-work:
+  en: b7029bb260a27931
+  zh: ffc2cb5127d41c02
+/powerevolve-extension-center/known-limitations-and-deferred-work/dev-note:
+  en: 2a2d9d421debbe86
+  zh: 9bdd02abada5a24a

@@ -4,6 +4,9 @@ English | [中文](core.zh.md)
 
 The **core** subsystem is [`packages/core`](../../packages/core/README.md) — the packages every composition boots: the event-sourced session log, system-prompt assembly, the tool registry, the agent types, and the concrete loop that drives them. This page explains what the `agent`/`agent-loop` pair declares — how an agent is created and owned, and the `Agent` handle's delivery, cancellation, and interception contracts — plus the two type patterns every subsystem follows. The group's dedicated pages and the rest of the folder are indexed in the [subsystems README](README.md).
 
+
+The Agent's [post-claim contract](../../packages/core/agent/README.md#settle-native-input-claims) settles complete canonical input before prompt effects; [detached planning](../../packages/core/agent-loop/README.md#detached-native-input-planning) uses a native maintenance capture and the official Inbox algorithm.
+
 ## The spine, package by package
 
 A turn flows through the six packages in one loop: the driver in [`agent-loop`](../../packages/core/agent-loop) claims a queued prompt, opens a turn on the [session log](session.md) (`ctx.sessions`), assembles the request prefix through [system-prompt](system-prompt.md) (`ctx.systemPrompt`) and derives history from the log, streams the model response through the [LLM seam](llm-streaming.md), dispatches tool calls through the [tool registry](tools.md) (`ctx.tools`), and appends every model-visible fact back onto the log before the next step derives from it. The conversation vocabulary the loop moves — `Message`, `ContentBlock`, `StreamChunk`, the model request — is declared by [`packages/llm`](../../packages/llm/README.md) and documented on [llm-streaming.md](llm-streaming.md).
@@ -32,8 +35,8 @@ Source: [`packages/core/agent/src/index.ts`](../../packages/core/agent/src/index
  * only the holder can tear this agent down. The registered factory provider is
  * also a structural owner because the scoped agent depends on that provider's
  * service API; provider unload stops and drains every live handle it made.
- * `dispose()` stops the loop, awaits its exit, unregisters the agent, removes
- * its session from the store, and finally unwinds its scoped world.
+ * Disposal stops the driver and awaits whenIdle before unwinding its scope,
+ * closing its write path, detaching both registries and unmounting its owner.
  *
  * `ctx.agents.get(id)` still returns a bare {@link Agent} — the handle is
  * exposed only to the consumer owner that created it; the structural provider
@@ -42,9 +45,29 @@ Source: [`packages/core/agent/src/index.ts`](../../packages/core/agent/src/index
  */
 interface AgentHandle {
   agent: Agent
-  dispose(): Promise<void>
+  /**
+     * Stop and drain this exact Agent, then unmount its owned resources. Pending
+     * input follows the non-persistent creator default, clearing when omitted
+     * at creation; explicit keepInbox overrides it for this first call. True
+     * preserves pending input while stopping only this driver. The first handle,
+     * owner or factory disposal chooses the memoized mode; later calls share its
+     * result and cannot change that choice.
+     * @param options - explicit pending-input behavior, otherwise the creator default.
+     * @returns shared fulfillment after teardown, or its retained cleanup failure.
+     */
+  dispose(options?: AgentDisposeOptions): Promise<void>
 }
 ```
+
+```ts type-equiv
+/** Non-persistent pending-input choice for Agent creation, resume and handle disposal. */
+interface AgentDisposeOptions {
+  /** True preserves native pending input, false clears it; handle omission uses its creator's default, otherwise clear. */
+  readonly keepInbox?: boolean
+}
+```
+
+`disposeOptions` on create or resume sets a non-persistent teardown default before setup starts. `keepInbox: true` preserves pending input when the handle, creator owner or factory closes the Agent. Ordinary creation still clears pending input. An explicit option on the first handle disposal overrides the creator default; the first disposal fixes the shared promise and mode for all later calls.
 
 `CreateAgentOptions` carries the shared identity and everything a fresh agent needs before publication: an optional live `parentAgent`, session metadata (`meta` — validated `cwd`, fork lineage, the `isSeeded` marker, origin classification, delegation depth, and `agentPreset`), the exact fork cut in sibling field `inheritedEventCount`, an optional `seed` replay prefix, per-agent `AgentOptions`, a creation-only cancellation `signal`, and `setup`. `ResumeAgentOptions` is the persisted-identity counterpart: `resumeSessionId`, `parentAgent`, `agentOptions`, `signal`, and `setup`. The `setup` callback (`AgentSetup`) receives `(agentCtx, agent)` while both ids are still unpublished: the context owns scoped registrations, while the explicit Agent supplies the exact child Session without a reverse property on the Context. Everything registered through `agentCtx` exists before `agent/created` and the first prompt assembly. Setup may return a synchronous commit invoked immediately before publication; a setup rejection, commit throw, or owner disposal rolls the transaction back without publishing either id.
 
@@ -69,74 +92,122 @@ interface Agent {
   readonly inbox: Inbox
   /** The current lifecycle state, mirrored on every `agent/status` transition. */
   readonly status: AgentStatus
+  /**
+       * Whether Inbox maintenance can enter now: idle or the exact running
+       * model-streaming stage, with no Inbox reservation held. Reading does not
+       * reserve that stage. Call runMaintenance with scope inbox immediately
+       * after the check; recheck after any await before calling it.
+       */
+  readonly canMaintainInbox: boolean
   /** Agent-scoped context; its contributions are agent-local, unwind on disposal, and reject registration afterward. */
   readonly ctx: Context
-
   /**
-   * Clear queued and steering work — unless `keepInbox` — and abort the active
-   * turn or between-turn task. The first cause wins for that activity. With no
-   * active activity, cancellation is a no-op and does not arm later work.
-   * @param cause - the stable caller intent carried by the active operation signal.
-   * @param options - cancellation options; `keepInbox` preserves pending work.
-   */
+       * Register ordered preparation before a turn opens, claims input, or assembles
+       * its prompt. Only a non-empty registration list delays the synchronous
+       * default boundary. Failure reports agent/error for the proposed turn at step 0
+       * and leaves its unclaimed input pending. The driver contains the failure,
+       * so whenIdle fulfills at quiescence. Cancellation follows keepInbox.
+       * Listeners must observe the signal and finish cleanup before settling, and
+       * must not await this agent's whenIdle or disposal. Registrations made during
+       * preparation apply to later turns; removed listeners are skipped.
+       * @param listener - preparation receiving the proposed turn and its cancellation signal.
+       * @returns idempotent disposer, also owned by the agent scope; callers may own it with ctx.effect.
+       */
+  onBeforeTurn(listener: (turn: number, signal: AbortSignal) => void | Promise<void>): () => void
+  /**
+       * Wake existing pending input without inserting, replacing, or retargeting
+       * messages. An empty inbox is a no-op. Active drivers drain normally;
+       * maintenance and aborted activity latch the wake until quiescence, except
+       * disposed activity, which leaves pending input parked.
+       */
+  wakePending(): void
+  /**
+       * Register ordered durable claim settlement before prompt assembly, pre-step
+       * listeners and live claimed notifications. Failure permanently consumes the
+       * complete claim and closes the turn with an error; whenIdle still fulfills.
+       * Cancellation and earlier listener failures do not skip later settlement;
+       * the first failure is retained after all registered listeners finish. They
+       * observe cancellation and finish cleanup before settling; they
+       * must not await this Agent's whenIdle or disposal. Registrations made during
+       * settlement apply at later boundaries; removed listeners are skipped.
+       * @param listener - complete immutable claim and exact proposed position/signal.
+       * @returns idempotent disposer owned by this Agent's registration scope.
+       */
+  onAfterClaim(listener: (boundary: InboxClaimBoundary) => void | Promise<void>): () => void
+  /**
+       * Capture the exact owned maintenance signal or a reserved running model
+       * phase. No caller status/abort classification supplies authority. The
+       * capture rejects retirement, cancellation changes and prefix movement;
+       * synchronize imports an already committed mirror under the same owner.
+       * @param signal - exact current runMaintenance signal.
+       * @returns immutable native phase/position/abort/cursor and owned checks.
+       */
+  captureInboxActivity(signal: AbortSignal): InboxActivityCapture
+  /**
+     * Clear queued and steering work — unless `keepInbox` — and abort the active
+     * turn or between-turn task. The first cause wins for that activity. With no
+     * active activity, cancellation is a no-op and does not arm later work.
+     * @param cause - the stable caller intent carried by the active operation signal.
+     * @param options - cancellation options; `keepInbox` preserves pending work.
+     */
   cancel(cause: AgentCancelCause, options?: CancelOptions): void
-
   /**
-   * Resolve after the current whole-agent activity reaches quiescence. This
-   * follows replacement work started before the observed driver retires,
-   * but does not identify the settlement of any particular message.
-   * @returns fulfillment after no active driver or maintenance task remains.
-   */
+     * Resolve after the current whole-agent activity reaches quiescence. This
+     * follows replacement work started before the observed driver retires,
+     * but does not identify the settlement of any particular message.
+     * @returns fulfillment after no active driver or maintenance task remains.
+     */
   whenIdle(): Promise<void>
-
   /**
-   * Run one non-turn maintenance task from the true idle phase. The task starts
-   * synchronously after claiming that phase; later waking input remains in the
-   * inbox until the task settles, while public status stays `idle`.
-   * `whenIdle()` follows both the task and any waking work released behind it.
-   * @param task - operation whose fulfillment or rejection is preserved, with a signal aborted by {@link cancel}.
-   * @throws synchronously when turn-driving or another maintenance task already owns the agent.
-   * @returns the task promise.
-   */
-  runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>): Promise<T>
-
+       * Run one owned maintenance operation. Without options this requires true
+       * idle and preserves whole-agent maintenance behavior. scope inbox also
+       * permits the exact native model-streaming stage: the model continues,
+       * while native settlement, Inbox mutations and phase migration wait until
+       * the command's commit/mirror cleanup releases its append reservation.
+       * Other running stages reject. Cancellation invalidates captures at once;
+       * a requested Inbox clear follows committed mirror/rollback cleanup.
+       * The holder must observe its signal, finish cleanup before settling, and
+       * never await this Agent's whenIdle or disposal. Capture acquisition and
+       * Writer-prefix flush precede external database locks.
+       * @param task - operation whose fulfillment/rejection is preserved.
+       * @param options - optional Inbox/native append reservation scope.
+       * @returns the task promise after owned cleanup releases the boundary.
+       */
+  runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>, options?: MaintenanceOptions): Promise<T>
   /**
-   * Route identified input to an inbox boundary and optionally wake the driver.
-   * Waking input submitted after active cancellation is queued for the next
-   * turn and runs when the aborted activity converges to idle; a `disposed`
-   * cancel leaves it parked. A wake submitted while already idle always opens
-   * its turn boundary, even when its message is cleared before the driver
-   * claims ([driver wake convergence](../../agent-loop/src/agent.ts)).
-   * @param message - identified content and the source that supplied it.
-   * @param target - the preferred next-turn or next-step inbox boundary.
-   * @param wakeup - whether delivery may wake the driver.
-   */
+     * Route identified input to an inbox boundary and optionally wake the driver.
+     * Waking input submitted after active cancellation is queued for the next
+     * turn and runs when the aborted activity converges to idle; a `disposed`
+     * cancel leaves it parked. A wake submitted while already idle always opens
+     * its turn boundary, even when its message is cleared before the driver
+     * claims ([driver wake convergence](../../agent-loop/src/agent.ts)).
+     * @param message - identified content and the source that supplied it.
+     * @param target - the preferred next-turn or next-step inbox boundary.
+     * @param wakeup - whether delivery may wake the driver.
+     */
   send(message: UserMessage, target: InboxTarget, wakeup: boolean): void
-
   /**
-   * Queue an ordinary follow-up turn and wake the driver. The item becomes the
-   * sole ordinary message of its own turn.
-   * @param message - identified prompt content and the source that supplied it.
-   */
+     * Queue an ordinary follow-up turn and wake the driver. The item becomes the
+     * sole ordinary message of its own turn.
+     * @param message - identified prompt content and the source that supplied it.
+     */
   followup(message: UserMessage): void
-
   /**
-   * Submit steering for the nearest step. An idle driver starts a turn;
-   * a running driver consumes it at its next step boundary.
-   * A rejected step leaves steering parked in the inbox until the next
-   * wake; cancellation or disposal may discard pending steering.
-   * @param message - identified steering content and the source that supplied it.
-   */
+     * Submit steering for the nearest step. An idle driver starts a turn;
+     * a running driver consumes it at its next step boundary.
+     * A rejected step leaves steering parked in the inbox until the next
+     * wake; cancellation or disposal may discard pending steering.
+     * @param message - identified steering content and the source that supplied it.
+     */
   steer(message: UserMessage): void
-
   /**
-   * Queue model-facing context for the next pre-step without waking the
-   * driver. A running driver claims it at the nearest later step boundary;
-   * idle drivers leave it pending until follow-up or steering
-   * wakes them. It may miss a request whose pre-step already claimed its
-   * batch. Cancellation or disposal may discard pending context.
-   * @param message - identified injected context and the source that supplied it.
-   */
+     * Queue model-facing context for the next pre-step without waking the
+     * driver. A running driver claims it at the nearest later step boundary;
+     * idle drivers leave it pending until follow-up or steering
+     * wakes them. It may miss a request whose pre-step already claimed its
+     * batch. Cancellation or disposal may discard pending context.
+     * @param message - identified injected context and the source that supplied it.
+     */
   inject(message: UserMessage): void
 }
 ```

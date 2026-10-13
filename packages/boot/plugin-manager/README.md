@@ -13,6 +13,8 @@ Application-owned profiles supply their bundled package-manager invocation throu
 
 Manage the current profile's plugins without editing configuration by hand. Enable or disable individual plugin entries, select installed bundles, and install or remove external bundles. With HMR enabled in YAML, configuration changes apply immediately; without HMR, the running composition remains until restart. Changes affect every session using the profile.
 
+Authorized carriers may return `permission-required` for Profile controls a peer cannot modify. The carrier owns peer authorization; PluginManager still validates patch ownership, protected modules and package operations.
+
 ## Table of Contents
 
 - [Use this package](#use-this-package)

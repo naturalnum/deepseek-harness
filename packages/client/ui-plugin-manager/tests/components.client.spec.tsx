@@ -194,6 +194,18 @@ function renderTab(
 }
 
 describe('PluginManagerPage', () => {
+  it('retains shared Profile details while disabling writes for a read-only peer', () => {
+    const { actions } = renderTab({ managementWritable: false,
+      packages: [pkg({ readOnlyReason: 'permission-required' })] })
+    const add = screen.getByRole('button', { name: en.addPlugin })
+    expect(add).toHaveProperty('disabled', true)
+    const toggle = screen.getByRole('switch', { name: en.enableToggle.replace('{name}', 'dsh-better-sidebar') })
+    expect(toggle).toHaveProperty('disabled', true)
+    expect(toggle.getAttribute('title')).toBe(en.reasonPermissionRequired)
+    fireEvent.click(toggle)
+    expect(actions.setEnabled).not.toHaveBeenCalled()
+    expect(screen.getByText('dsh-better-sidebar')).toBeTruthy()
+  })
   it('opens the add-plugin menu with ArrowDown and returns focus to its trigger on Escape', () => {
     const { actions } = renderTab({}, {}, {
       'plugins.add.actions:': (_view, owner) => <MenuItemButton

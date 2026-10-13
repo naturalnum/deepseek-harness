@@ -1,0 +1,5 @@
+[runsc_config]
+  platform = "systrap"
+  network = "none"
+  net-raw = "false"
+  gvisor-marker-file = "true"

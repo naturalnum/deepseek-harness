@@ -1,0 +1,492 @@
+{
+  "manifest": "references/runtime-pack-manifest.json",
+  "policy": {
+    "preserve_all_source_rules": true,
+    "deduplicate_exact_blocks_only": true,
+    "rewrite_rules": false,
+    "source_files_remain_authoritative": true,
+    "current_rule_baseline": "references/current-rule-baseline.md",
+    "historical_files_non_normative": [
+      "CHANGELOG.md"
+    ]
+  },
+  "packs": [
+    {
+      "name": "00-control",
+      "output": "compiled-packs/00-control.md",
+      "sources": [
+        {
+          "source": "stages/00-interaction-control.md",
+          "blocks": 78,
+          "kept": 75
+        },
+        {
+          "source": "references/interaction-protocol.md",
+          "blocks": 83,
+          "kept": 83
+        },
+        {
+          "source": "references/core-principles.md",
+          "blocks": 3,
+          "kept": 3
+        },
+        {
+          "source": "references/experiment-evidence-layering.md",
+          "blocks": 40,
+          "kept": 40
+        }
+      ],
+      "unique_blocks": 201,
+      "deduplicated_blocks": 3,
+      "characters": 19497
+    },
+    {
+      "name": "10-project-argument",
+      "output": "compiled-packs/10-project-argument.md",
+      "sources": [
+        {
+          "source": "stages/10-project-and-argument.md",
+          "blocks": 96,
+          "kept": 84
+        },
+        {
+          "source": "references/content-generation-mode.md",
+          "blocks": 53,
+          "kept": 52
+        },
+        {
+          "source": "references/report-scope-chapter-mapping.md",
+          "blocks": 19,
+          "kept": 19
+        },
+        {
+          "source": "references/experiment-evidence-layering.md",
+          "blocks": 40,
+          "kept": 40
+        }
+      ],
+      "unique_blocks": 195,
+      "deduplicated_blocks": 13,
+      "characters": 17330
+    },
+    {
+      "name": "20-outline",
+      "output": "compiled-packs/20-outline.md",
+      "sources": [
+        {
+          "source": "stages/20-outline-and-literature.md",
+          "blocks": 49,
+          "kept": 48
+        },
+        {
+          "source": "references/heading-transition.md",
+          "blocks": 23,
+          "kept": 23
+        },
+        {
+          "source": "references/chapter-summary.md",
+          "blocks": 48,
+          "kept": 48
+        },
+        {
+          "source": "references/report-architecture.md",
+          "blocks": 76,
+          "kept": 76
+        },
+        {
+          "source": "references/outline-hard-rules.md",
+          "blocks": 49,
+          "kept": 45
+        },
+        {
+          "source": "references/technical-title-naming.md",
+          "blocks": 145,
+          "kept": 145
+        },
+        {
+          "source": "references/three-subpoint-and-indicator-coverage.md",
+          "blocks": 70,
+          "kept": 70
+        },
+        {
+          "source": "references/research-content-traceability.md",
+          "blocks": 79,
+          "kept": 78
+        },
+        {
+          "source": "references/outline-research-innovation-alignment.md",
+          "blocks": 27,
+          "kept": 27
+        },
+        {
+          "source": "references/report-scope-chapter-mapping.md",
+          "blocks": 19,
+          "kept": 19
+        }
+      ],
+      "unique_blocks": 579,
+      "deduplicated_blocks": 6,
+      "characters": 68144
+    },
+    {
+      "name": "21-literature",
+      "output": "compiled-packs/21-literature.md",
+      "sources": [
+        {
+          "source": "stages/20-outline-and-literature.md",
+          "blocks": 49,
+          "kept": 48
+        },
+        {
+          "source": "references/citation-and-evidence.md",
+          "blocks": 64,
+          "kept": 64
+        },
+        {
+          "source": "references/abstract-and-introduction.md",
+          "blocks": 86,
+          "kept": 86
+        }
+      ],
+      "unique_blocks": 198,
+      "deduplicated_blocks": 1,
+      "characters": 23017
+    },
+    {
+      "name": "30-chapter-planning-core",
+      "output": "compiled-packs/30-chapter-planning-core.md",
+      "sources": [
+        {
+          "source": "stages/30-chapter-planning.md",
+          "blocks": 32,
+          "kept": 29
+        },
+        {
+          "source": "references/heading-transition.md",
+          "blocks": 23,
+          "kept": 23
+        },
+        {
+          "source": "references/chapter-summary.md",
+          "blocks": 48,
+          "kept": 48
+        },
+        {
+          "source": "references/chapter-generation-preflight.md",
+          "blocks": 80,
+          "kept": 80
+        },
+        {
+          "source": "references/research-content-traceability.md",
+          "blocks": 79,
+          "kept": 79
+        },
+        {
+          "source": "references/figure-and-table-guide.md",
+          "blocks": 12,
+          "kept": 12
+        },
+        {
+          "source": "references/formula-and-symbol-rules.md",
+          "blocks": 64,
+          "kept": 64
+        },
+        {
+          "source": "references/experiment-evidence-layering.md",
+          "blocks": 40,
+          "kept": 40
+        }
+      ],
+      "unique_blocks": 375,
+      "deduplicated_blocks": 3,
+      "characters": 39113
+    },
+    {
+      "name": "40-chapter-writing-core",
+      "output": "compiled-packs/40-chapter-writing-core.md",
+      "sources": [
+        {
+          "source": "stages/40-chapter-writing.md",
+          "blocks": 31,
+          "kept": 31
+        },
+        {
+          "source": "references/heading-transition.md",
+          "blocks": 23,
+          "kept": 23
+        },
+        {
+          "source": "references/chapter-summary.md",
+          "blocks": 48,
+          "kept": 48
+        },
+        {
+          "source": "references/chapter-generation-preflight.md",
+          "blocks": 80,
+          "kept": 80
+        },
+        {
+          "source": "references/narrative-and-heading-style.md",
+          "blocks": 53,
+          "kept": 53
+        },
+        {
+          "source": "references/style-guide.md",
+          "blocks": 31,
+          "kept": 31
+        },
+        {
+          "source": "references/independent-report-voice.md",
+          "blocks": 37,
+          "kept": 35
+        },
+        {
+          "source": "references/narrative-focus-and-power-grounding.md",
+          "blocks": 48,
+          "kept": 48
+        },
+        {
+          "source": "references/formula-and-symbol-rules.md",
+          "blocks": 64,
+          "kept": 64
+        },
+        {
+          "source": "references/power-grid-domain-guide.md",
+          "blocks": 4,
+          "kept": 4
+        },
+        {
+          "source": "references/experiment-evidence-layering.md",
+          "blocks": 40,
+          "kept": 40
+        }
+      ],
+      "unique_blocks": 457,
+      "deduplicated_blocks": 2,
+      "characters": 53377
+    },
+    {
+      "name": "50-abstract-finalization",
+      "output": "compiled-packs/50-abstract-finalization.md",
+      "sources": [
+        {
+          "source": "stages/50-abstract-and-finalization.md",
+          "blocks": 55,
+          "kept": 54
+        },
+        {
+          "source": "references/abstract-and-introduction.md",
+          "blocks": 86,
+          "kept": 86
+        },
+        {
+          "source": "references/conclusion-and-outlook.md",
+          "blocks": 14,
+          "kept": 14
+        },
+        {
+          "source": "references/style-guide.md",
+          "blocks": 31,
+          "kept": 31
+        },
+        {
+          "source": "references/independent-report-voice.md",
+          "blocks": 37,
+          "kept": 36
+        }
+      ],
+      "unique_blocks": 221,
+      "deduplicated_blocks": 2,
+      "characters": 23906
+    },
+    {
+      "name": "addon-foundation",
+      "output": "compiled-packs/addon-foundation.md",
+      "sources": [
+        {
+          "source": "references/foundation-chapter.md",
+          "blocks": 4,
+          "kept": 4
+        }
+      ],
+      "unique_blocks": 4,
+      "deduplicated_blocks": 0,
+      "characters": 593
+    },
+    {
+      "name": "addon-technical",
+      "output": "compiled-packs/addon-technical.md",
+      "sources": [
+        {
+          "source": "references/technical-chapter-generation.md",
+          "blocks": 39,
+          "kept": 39
+        },
+        {
+          "source": "references/experiment-evidence-layering.md",
+          "blocks": 40,
+          "kept": 40
+        }
+      ],
+      "unique_blocks": 79,
+      "deduplicated_blocks": 0,
+      "characters": 7615
+    },
+    {
+      "name": "addon-result-analysis",
+      "output": "compiled-packs/addon-result-analysis.md",
+      "sources": [
+        {
+          "source": "references/result-analysis-generation.md",
+          "blocks": 6,
+          "kept": 6
+        },
+        {
+          "source": "references/experiment-evidence-layering.md",
+          "blocks": 40,
+          "kept": 40
+        }
+      ],
+      "unique_blocks": 46,
+      "deduplicated_blocks": 0,
+      "characters": 3782
+    },
+    {
+      "name": "addon-citation",
+      "output": "compiled-packs/addon-citation.md",
+      "sources": [
+        {
+          "source": "references/citation-and-evidence.md",
+          "blocks": 64,
+          "kept": 64
+        }
+      ],
+      "unique_blocks": 64,
+      "deduplicated_blocks": 0,
+      "characters": 5742
+    },
+    {
+      "name": "addon-figure-table",
+      "output": "compiled-packs/addon-figure-table.md",
+      "sources": [
+        {
+          "source": "references/figure-and-table-guide.md",
+          "blocks": 12,
+          "kept": 12
+        }
+      ],
+      "unique_blocks": 12,
+      "deduplicated_blocks": 0,
+      "characters": 1362
+    },
+    {
+      "name": "type-algorithm",
+      "output": "compiled-packs/type-algorithm.md",
+      "sources": [
+        {
+          "source": "references/chapter-types/algorithm.md",
+          "blocks": 5,
+          "kept": 5
+        }
+      ],
+      "unique_blocks": 5,
+      "deduplicated_blocks": 0,
+      "characters": 687
+    },
+    {
+      "name": "type-data-knowledge-construction",
+      "output": "compiled-packs/type-data-knowledge-construction.md",
+      "sources": [
+        {
+          "source": "references/chapter-types/data-knowledge-construction.md",
+          "blocks": 41,
+          "kept": 41
+        }
+      ],
+      "unique_blocks": 41,
+      "deduplicated_blocks": 0,
+      "characters": 3665
+    },
+    {
+      "name": "type-engineering-integration",
+      "output": "compiled-packs/type-engineering-integration.md",
+      "sources": [
+        {
+          "source": "references/chapter-types/engineering-integration.md",
+          "blocks": 4,
+          "kept": 4
+        }
+      ],
+      "unique_blocks": 4,
+      "deduplicated_blocks": 0,
+      "characters": 667
+    },
+    {
+      "name": "type-optimization-module",
+      "output": "compiled-packs/type-optimization-module.md",
+      "sources": [
+        {
+          "source": "references/chapter-types/optimization-module.md",
+          "blocks": 5,
+          "kept": 5
+        }
+      ],
+      "unique_blocks": 5,
+      "deduplicated_blocks": 0,
+      "characters": 678
+    },
+    {
+      "name": "type-system-design",
+      "output": "compiled-packs/type-system-design.md",
+      "sources": [
+        {
+          "source": "references/chapter-types/system-design.md",
+          "blocks": 5,
+          "kept": 5
+        }
+      ],
+      "unique_blocks": 5,
+      "deduplicated_blocks": 0,
+      "characters": 621
+    },
+    {
+      "name": "type-theory-and-mechanism",
+      "output": "compiled-packs/type-theory-and-mechanism.md",
+      "sources": [
+        {
+          "source": "references/chapter-types/theory-and-mechanism.md",
+          "blocks": 4,
+          "kept": 4
+        }
+      ],
+      "unique_blocks": 4,
+      "deduplicated_blocks": 0,
+      "characters": 557
+    },
+    {
+      "name": "addon-experiment-reference",
+      "output": "compiled-packs/addon-experiment-reference.md",
+      "sources": [
+        {
+          "source": "references/experiment-reference-generation.md",
+          "blocks": 33,
+          "kept": 33
+        },
+        {
+          "source": "references/result-analysis-generation.md",
+          "blocks": 6,
+          "kept": 6
+        },
+        {
+          "source": "references/experiment-evidence-layering.md",
+          "blocks": 40,
+          "kept": 40
+        }
+      ],
+      "unique_blocks": 79,
+      "deduplicated_blocks": 0,
+      "characters": 7482
+    }
+  ],
+  "total_deduplicated_blocks": 30
+}

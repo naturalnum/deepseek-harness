@@ -25,6 +25,11 @@ function stubAgent(ctx: Context, id: string): { agent: Agent; session: Session }
   const inbox = createInboxStub()
   let status: AgentStatus = 'idle'
   const agent: Agent = {
+    get canMaintainInbox() { return status === 'idle' },
+    onBeforeTurn: () => () => {},
+    onAfterClaim: () => () => {},
+    captureInboxActivity: () => { throw new Error('This Agent double has no maintenance capture') },
+    wakePending: () => {},
     id: session.id,
     options: {},
     session,

@@ -113,6 +113,16 @@ it('hands a custom page the shared configuration form of its entry', () => {
   expect(face.configForm('bundle#row')).toBe('form:bundle#row' as never)
 })
 
+it('retains package reads and carries the Host peer write permission', async () => {
+  const { face, state, plugins } = bench({ inventory: vi.fn(() => Promise.resolve(ok({
+    entries: [], managementAvailable: true, managementWritable: false }))) })
+  face.ensure()
+  await vi.waitFor(() => { expect(state().status).toBe('ready') })
+  expect(state().managementWritable).toBe(false)
+  expect(state().packages).toHaveLength(1)
+  expect(plugins.listPlugins).toHaveBeenCalledOnce()
+})
+
 describe('packageView', () => {
   it('joins a bundle with the entries its rows run as', () => {
     expect(packageView(BUNDLE, PLUGINS)).toEqual({

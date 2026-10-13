@@ -1,0 +1,52 @@
+{
+  "extends": "../../../tsconfig.base.client.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "tsBuildInfoFile": "lib/tsconfig.client.tsbuildinfo"
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../contracts"
+    },
+    {
+      "path": "../../../vendor/cordis"
+    },
+    {
+      "path": "../../../packages/api/session-controller/tsconfig.client.json"
+    },
+    {
+      "path": "../../../packages/client/locale/tsconfig.client.json"
+    },
+    {
+      "path": "../../../packages/client/ui-layout"
+    },
+    {
+      "path": "../../../packages/client/ui-conversation/tsconfig.client.json"
+    },
+    {
+      "path": "../../../packages/client/ui-primitives"
+    },
+    {
+      "path": "../../../packages/client/ui-renderer"
+    },
+    {
+      "path": "../../../packages/client/ui-sidebar"
+    },
+    {
+      "path": "../../../packages/client/ui-slots"
+    },
+    {
+      "path": "../../../packages/client/ui-workspace"
+    },
+    {
+      "path": "../../../packages/client/ui-plugin-manager/tsconfig.client.json"
+    },
+    {
+      "path": "../../../packages/util/crypto"
+    }
+  ]
+}

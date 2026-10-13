@@ -1,0 +1,52 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write products/power-evolve/client-account/README.md
+/:
+  en: 02f380c8e6670eb6
+  zh: 87e3062bcc30d1f2
+/power-evolve-client-account:
+  en: 957af0da5cd7c4e8
+  zh: 6b4479a2955ba203
+/power-evolve-client-account/summary:
+  en: fea07f4d9e366700
+  zh: 8175f5ee527f5950
+/power-evolve-client-account/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 91957bb5fa1bd8c5
+/power-evolve-client-account/use-this-package:
+  en: b6ab6ab2cd24b0d2
+  zh: 5852935fa639aa1b
+/power-evolve-client-account/use-this-package/native-sign-in-lifetime:
+  en: ad8b414acb815c81
+  zh: b95843ebd08c5234
+/power-evolve-client-account/use-this-package/trusted-account-page:
+  en: 6675341175b9a8be
+  zh: 76e11755492f4eb6
+/power-evolve-client-account/understand-the-implementation:
+  en: 362df5b2d36ec4c7
+  zh: 9edce78a47694cc0
+/power-evolve-client-account/further-exploration:
+  en: d1cc1e3016c29b86
+  zh: 0229f7b0be499a8d
+/power-evolve-client-account/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/power-evolve-client-account/model-experience/account-controls:
+  en: 0ada61f9200cd36d
+  zh: 97c3ae76467aec6d
+/power-evolve-client-account/model-experience/account-controls/what-the-model-sees:
+  en: 0bd8eab323b2e5c6
+  zh: be789cff8f6ff471
+/power-evolve-client-account/model-experience/account-controls/token-effect:
+  en: fb4b1d5c3b03c0da
+  zh: f5765741069a74af
+/power-evolve-client-account/model-experience/account-controls/kv-cache-effect:
+  en: 156792dc820480f8
+  zh: 88056223114c46b3
+/power-evolve-client-account/known-limitations-and-deferred-work:
+  en: 75c12ea26df256f2
+  zh: 0c3dd3fb3ce57193
+/power-evolve-client-account/known-limitations-and-deferred-work/dev-note:
+  en: 235a9c82aac79447
+  zh: 198f03e577420dc2

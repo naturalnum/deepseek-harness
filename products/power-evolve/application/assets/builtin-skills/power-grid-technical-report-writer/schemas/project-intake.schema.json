@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Project Intake Fixed Questions",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "task_book",
+    "content_generation_mode",
+    "report_constraints",
+    "experimental_data"
+  ],
+  "properties": {
+    "task_book": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["available", "scope"],
+      "properties": {
+        "available": {"type": "boolean"},
+        "scope": {"enum": ["课题", "总报告", "无任务书"]},
+        "topic_name_or_number": {"type": ["string", "null"]}
+      }
+    },
+    "content_generation_mode": {
+      "enum": ["source_grounded", "model_autonomous"]
+    },
+    "report_constraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["has_requirements"],
+      "properties": {
+        "has_requirements": {"type": "boolean"},
+        "target_words": {"type": ["integer", "string", "null"]},
+        "template": {"type": ["string", "null"]},
+        "chapter_count": {"type": ["integer", "null"], "minimum": 1}
+      }
+    },
+    "experimental_data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["available"],
+      "properties": {
+        "available": {"type": "boolean"},
+        "description": {"type": ["string", "null"]},
+        "files_or_locations": {
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      }
+    }
+  }
+}

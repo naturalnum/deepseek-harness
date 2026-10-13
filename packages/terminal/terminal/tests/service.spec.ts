@@ -24,6 +24,11 @@ function stubAgent(ctx: Context, rawId: string): Agent {
   const scopeFiber = ctx.plugin(() => {})
   const session = Session.create(id)
   const agent: Agent = {
+    canMaintainInbox: true,
+    onBeforeTurn: () => () => {},
+    onAfterClaim: () => () => {},
+    captureInboxActivity: () => { throw new Error('This Agent double has no maintenance capture') },
+    wakePending: () => {},
     id,
     options: {},
     session,

@@ -1,0 +1,70 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write products/power-evolve/application/assets/builtin-skills/power-grid-technical-report-writer/README.md
+/power-grid-technical-report-generation-skill-v3-6-0:
+  en: fa535faeffeb4c79
+  zh: 7c396a8aee7d12fa
+/power-grid-technical-report-generation-skill-v3-6-0/v1-1-40-local-project-reference-evidence:
+  en: 794f4db20cc288e3
+  zh: c0ba9ea607a72ea2
+/power-grid-technical-report-generation-skill-v3-6-0/v1-1-31-figure-table-explanations-and-word-contents-collection:
+  en: 58406b504d018895
+  zh: 5350f07aa27c6593
+/power-grid-technical-report-generation-skill-v3-6-0/v1-1-30-optional-outline-technologies-and-abstract-results:
+  en: 701be45001c7372a
+  zh: 82097e713d19d9a5
+/power-grid-technical-report-generation-skill-v3-6-0/v3-6-0-progressive-stage-loading-and-main-file-organization:
+  en: 70fe925fd1a8712a
+  zh: fabcdbc5f797ab38
+/power-grid-technical-report-generation-skill-v3-6-0/report-scope-mapping-and-chapter-1-research-review:
+  en: c23f12bb90f065d5
+  zh: 39303931437f134a
+/power-grid-technical-report-generation-skill-v3-6-0/v3-5-3-mandatory-tertiary-headings-in-technical-chapters:
+  en: c4e7f1698ab66bc0
+  zh: 9fcabe0dc851e2fb
+/power-grid-technical-report-generation-skill-v3-6-0/v3-5-2-concrete-technical-names-in-tertiary-headings-now-requiring-variants-mechanisms:
+  en: d86e711483eb894d
+  zh: 6d520f2a4156939c
+/power-grid-technical-report-generation-skill-v3-6-0/v3-5-1-preservation-of-tertiary-headings:
+  en: 014d786716c92af3
+  zh: 6eae2b16479be1ec
+/power-grid-technical-report-generation-skill-v3-6-0/v3-5-workflow-additions:
+  en: 31bf2d3a1d1805ca
+  zh: ca30aa0c9af524ee
+/power-grid-technical-report-generation-skill-v3-6-0/fixed-report-structure:
+  en: cebe71b879f5996b
+  zh: 0457284cfa264edf
+/power-grid-technical-report-generation-skill-v3-6-0/fixed-three-paragraph-abstract:
+  en: bb80f6c91b4c7d78
+  zh: ff113e0c69daee69
+/power-grid-technical-report-generation-skill-v3-6-0/no-standalone-secondary-validation-section-by-default:
+  en: 44b32604adb078ba
+  zh: ef9e3a7de1696cf4
+/power-grid-technical-report-generation-skill-v3-6-0/report-scope-mapping-and-chapter-research-points:
+  en: ce2bb026fd165c7b
+  zh: b6d46510a2ab4117
+/power-grid-technical-report-generation-skill-v3-6-0/topic-roles:
+  en: 79b9648dcf8251c6
+  zh: 30d471ae73dcf18b
+/power-grid-technical-report-generation-skill-v3-6-0/power-domain-technical-requirements-for-core-secondary-headings:
+  en: 7d27418730d8a7d3
+  zh: aaa21811a30dd2ea
+/power-grid-technical-report-generation-skill-v3-6-0/implicit-coverage-of-internal-technical-requirements:
+  en: 5a924a46501140d1
+  zh: 14ee74cc34782bc7
+/power-grid-technical-report-generation-skill-v3-6-0/main-rule-files:
+  en: f61bc7045a0dd491
+  zh: 11bc49d1894e5af3
+/power-grid-technical-report-generation-skill-v3-6-0/validation:
+  en: bd2a65abcb45d5bb
+  zh: 767284408c2842bd
+/power-grid-technical-report-generation-skill-v3-6-0/formula-selection-priorities:
+  en: 0e2e0797c814b00b
+  zh: d60fec42f8de6b3a
+/power-grid-technical-report-generation-skill-v3-6-0/chapter-summaries-and-final-conclusions:
+  en: 4261f6aa73ac9c4d
+  zh: 901da3551a11f733
+/power-grid-technical-report-generation-skill-v3-6-0/author-naming-in-domestic-and-international-research-reviews:
+  en: 16f8c0eb03e44a2f
+  zh: bdef727bb594b072

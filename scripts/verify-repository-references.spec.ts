@@ -172,4 +172,37 @@ describe('maintained repository reference policy', () => {
     expect(findRepositoryReferences('.agents/notes/implemented/process/current.md', organizationUrl, new Set()))
       .toEqual([{ file: '.agents/notes/implemented/process/current.md', line: 1, kind: 'organization-url' }])
   })
+
+  it('retains product verification pins while rejecting commits in maintained product code and guidance', (test) => {
+    const fixture = repository(test)
+    for (const file of [
+      'products/power-evolve/reference/TRIAL-OLD.md',
+      'products/power-evolve/TRIAL-CLOUD-MIGRATION-ACCEPTANCE.md',
+      'products/power-evolve/EMPLOYEE2-HANDOFF.md',
+      'products/power-evolve/PARITY-AUDIT.md',
+      'products/power-evolve/deploy/QA-RESTORE.md',
+      'products/power-evolve/deploy/baseline.json',
+      'products/power-evolve/scripts/cloud-corpus.json',
+      '.github/power-evolve-built/schema37-producer/runtime-inputs.lock.json',
+      'products/power-evolve/application/tests/employee4-legacy-migration-v2-cloud-resolution.spec.ts',
+    ]) fixture.write(file, fixture.commit)
+    expect(scanRepositoryReferences(fixture.root)).toEqual([])
+    for (const file of [
+      'products/power-evolve/README.md',
+      'products/power-evolve/deploy/CLOUD-OPERATIONS.zh.md',
+      'products/power-evolve/application/src/platform/index.ts',
+      'products/power-evolve/application/tests/current.spec.ts',
+      '.github/power-evolve-built/reproduce-schema37-inputs.mjs',
+    ]) fixture.write(file, fixture.commit)
+    expect(scanRepositoryReferences(fixture.root)).toHaveLength(5)
+  })
+
+  it('keeps prohibited organization checks active in product verification records', () => {
+    for (const file of [
+      'products/power-evolve/reference/TRIAL-OLD.md',
+      'products/power-evolve/TRIAL-CLOUD-MIGRATION-ACCEPTANCE.md',
+      '.github/power-evolve-built/schema37-producer/runtime-inputs.lock.json',
+    ]) expect(findRepositoryReferences(file, organizationUrl, new Set()))
+      .toEqual([{ file, line: 1, kind: 'organization-url' }])
+  })
 })

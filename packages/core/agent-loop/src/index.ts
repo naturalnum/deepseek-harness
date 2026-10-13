@@ -13,6 +13,7 @@ import { z as zod } from 'zod'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type {
   Agent,
+  AgentDisposeOptions,
   AgentFactory,
   AgentHandle,
   AgentOptions,
@@ -33,6 +34,9 @@ import { SessionPersistenceNotFoundError } from '@deepseek-ai/dsh-session-persis
 import type { SessionHandle, SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
 import { ReactLoopAgent } from './agent.ts'
 import { inboxProjectionDefinition } from './inbox.ts'
+export { inboxProjectionDefinition } from './inbox.ts'
+export { planInboxCommand } from './inbox-plan.ts'
+export type { InboxPlanCommand } from './inbox-plan.ts'
 import { DEFAULT_MAX_PARALLEL_TOOL_CALLS } from './constants.ts'
 import type {} from './runtime-context.ts'
 
@@ -484,6 +488,7 @@ export class AgentLoop extends Service implements AgentFactory {
     callerSignal?: AbortSignal,
     handle?: SessionHandle,
     parentAgent?: Agent,
+    defaultKeepInbox = false,
   ): PreparedAgent {
     assertAgentOptions(options)
     ownerCtx.fiber.assertActive()
@@ -523,7 +528,7 @@ export class AgentLoop extends Service implements AgentFactory {
     // Reverse teardown, memoized so every racing owner awaits one quiescence:
     // stop the machine, drain and close the session's write path, leave the
     // registries, unwind the scope, release bookkeeping.
-    const dispose = (ownerTriggered = false): Promise<void> => (disposing ??= (async () => {
+    const dispose = (ownerTriggered = false, keepInbox = defaultKeepInbox): Promise<void> => (disposing ??= (async () => {
       abort.abort(new Error(`agent "${id}" lifecycle disposed`))
       callerSignal?.removeEventListener('abort', onCallerAbort)
       this.ownership.signal.removeEventListener('abort', onFactoryTeardown)
@@ -541,7 +546,7 @@ export class AgentLoop extends Service implements AgentFactory {
         if (machine === undefined) await machineReady.promise
         /* v8 ignore next -- setup failure untracks this disposer before resolving without a machine. */
         if (machine !== undefined) {
-          machine.cancel({ kind: 'disposed' })
+          machine.cancel({ kind: 'disposed' }, { keepInbox })
           await machine.whenIdle()
           await machine.scope.dispose()
         }
@@ -623,7 +628,7 @@ export class AgentLoop extends Service implements AgentFactory {
             assertLive()
             await loopCtx.agents.announce(agent, source, abort.signal)
             assertLive()
-            return { agent, dispose }
+            return { agent, dispose: (options?: AgentDisposeOptions) => dispose(false, options?.keepInbox ?? defaultKeepInbox) }
           } finally {
             publication.resolve()
             publication = undefined
@@ -712,6 +717,7 @@ export class AgentLoop extends Service implements AgentFactory {
    * @returns the published handle.
    */
   async createAgent(ownerCtx: Context, options: CreateAgentOptions): Promise<AgentHandle> {
+    const keepInbox = options.disposeOptions?.keepInbox === true
     const preparation = SessionPreparation.create(this.runtime.ctx.sessions.prepare(options.sessionId, {
       ...options.seed === undefined ? {} : { seed: options.seed },
       ...options.meta === undefined ? {} : { meta: options.meta },
@@ -744,6 +750,7 @@ export class AgentLoop extends Service implements AgentFactory {
         'startup',
         stored,
         options.parentAgent,
+        keepInbox,
       )
     })()
     this.ownership.trackWrapper(published)
@@ -761,12 +768,13 @@ export class AgentLoop extends Service implements AgentFactory {
     source: SessionStartSource,
     stored?: StoredSession,
     parentAgent?: Agent,
+    keepInbox = false,
   ): Promise<AgentHandle> {
     using ownedPreparation = preparation
     const session = ownedPreparation.session
     let prepared: PreparedAgent
     try {
-      prepared = this.prepare(ownerCtx, id, agentOptions, session, signal, stored?.handle, parentAgent)
+      prepared = this.prepare(ownerCtx, id, agentOptions, session, signal, stored?.handle, parentAgent, keepInbox)
     } catch (error: unknown) {
       await stored?.handle.close().catch(() => {})
       throw error
@@ -818,6 +826,7 @@ export class AgentLoop extends Service implements AgentFactory {
     persistence: SessionPersistence,
     options: ResumeAgentOptions,
   ): Promise<AgentHandle> {
+    const keepInbox = options.disposeOptions?.keepInbox === true
     const id = options.resumeSessionId
     const published = (async () => {
       // The open and read may outlive their owner: race them against caller
@@ -879,6 +888,7 @@ export class AgentLoop extends Service implements AgentFactory {
           'resume',
           owned,
           options.parentAgent,
+          keepInbox,
         )
       } finally {
         preparation?.[Symbol.dispose]()

@@ -106,6 +106,11 @@ async function mount(
 
 function sessionAgent(session: Session, id = 'agent'): Agent {
   const agent: Agent = {
+    canMaintainInbox: false,
+    onBeforeTurn: () => () => {},
+    onAfterClaim: () => () => {},
+    captureInboxActivity: () => { throw new Error('This Agent double has no maintenance capture') },
+    wakePending: () => {},
     id: SessionId(id),
     options: {},
     session,

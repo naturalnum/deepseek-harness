@@ -1438,7 +1438,8 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
                 </button>
               </Tooltip>
               {state.install.requestId === undefined
-                ? <AddPluginMenu t={t} disabled={!loaded} openInstall={props.openInstall} renderSlot={renderSlot} />
+                ? <AddPluginMenu t={t} disabled={!loaded || state.managementWritable === false}
+                  openInstall={props.openInstall} renderSlot={renderSlot} />
                 : <Button variant="primary" size="sm" className={css.addButton} icon={<IconPlusOutlineRegular size={13} />} disabled={!loaded} onClick={props.openInstall}>
                   {t('installViewTask')}
                 </Button>}

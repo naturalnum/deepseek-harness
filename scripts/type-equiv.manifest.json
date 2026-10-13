@@ -2118,6 +2118,11 @@
     },
     {
       "doc": "docs/subsystems/core.md",
+      "symbol": "AgentDisposeOptions",
+      "source": "packages/core/agent/src/index.ts"
+    },
+    {
+      "doc": "docs/subsystems/core.md",
       "symbol": "AgentStatus",
       "source": "packages/core/agent/src/runtime-types.ts"
     },

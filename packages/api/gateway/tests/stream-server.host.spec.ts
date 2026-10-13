@@ -1,7 +1,7 @@
 import { once } from 'node:events'
 import { createServer, type Server } from 'node:http'
 import { Context } from '@deepseek-ai/cordis'
-import { remoteErrorOf, type PeerId, type PeerScope } from '@deepseek-ai/dsh-typert-protocol'
+import { RemoteError, remoteErrorOf, type PeerId, type PeerScope } from '@deepseek-ai/dsh-typert-protocol'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import WebSocket from 'ws'
 import {
@@ -9,6 +9,7 @@ import {
   type RemoteStreamFailureMapper,
   type RemoteStreamOpener,
 } from '../src/stream-server.ts'
+import { parseRemoteStreamServerMessage, type RemoteStreamServerMessage } from '../src/stream-protocol.ts'
 
 interface RunningMux {
   readonly http: Server
@@ -257,6 +258,208 @@ describe('Remote stream mux server carrier lifecycle', () => {
   })
 })
 
+describe('Remote stream mux server downlink settlement', () => {
+  it.each(['client cancel', 'source cancel', 'send timeout', 'socket close', 'mux close'] as const)(
+    'releases a started write and waits for source cleanup after %s', async (mode) => {
+      const cleaning = Promise.withResolvers<undefined>()
+      const releaseCleanup = Promise.withResolvers<undefined>()
+      let active = 0
+      let control: AbortController | undefined
+      const entry = await startMux(async (_endpoint, _payload, _uplink, _peer, openedControl) => {
+        control = openedControl
+        return (async function* () {
+          active++
+          try { yield 'opening' }
+          finally { cleaning.resolve(undefined); await releaseCleanup.promise; active-- }
+        })()
+      }, 2_000, 262_144, undefined, mode === 'send timeout' ? 100 : 10_000)
+      const client = await connect(entry.url)
+      const socket = acceptedSocket(entry.mux)
+      const frames = collectFrames(client)
+      const writes = holdWriteCallbacks(socket, frame => frame.type === 'item')
+      client.send(openFrame('blocked'))
+      await vi.waitFor(() => { expect(writes.held).toHaveLength(1) })
+      const closed = once(client, 'close')
+      let closing: Promise<void> | undefined
+      if (mode === 'client cancel') client.send(JSON.stringify({ type: 'cancel', streamId: 'blocked' }))
+      if (mode === 'source cancel') control!.abort(new Error('fixture generation expired'))
+      if (mode === 'socket close') socket.terminate()
+      if (mode === 'mux close') closing = entry.mux.close()
+      await closed
+      await cleaning.promise
+      closing ??= entry.mux.close()
+      let quiescent = false
+      void closing.then(() => { quiescent = true })
+      await new Promise<void>((resolve) => { setImmediate(resolve) })
+      expect(quiescent).toBe(false)
+      expect(active).toBe(1)
+      expect(socket.readyState).toBe(WebSocket.CLOSED)
+      writes.held[0]!()
+      writes.held[0]!()
+      releaseCleanup.resolve(undefined)
+      await closing
+      running.delete(entry)
+      expect(active).toBe(0)
+      expect(frames).toEqual([{ type: 'item', streamId: 'blocked', value: 'opening' }])
+      expect(writes.sent).toHaveLength(1)
+    },
+  )
+
+  it.each(['item', 'end', 'error', 'Remote failure'] as const)(
+    'withdraws a queued %s without overtaking a stalled write or closing the carrier', async (kind) => {
+      const returned = Promise.withResolvers<undefined>()
+      const opened = Promise.withResolvers<AbortController>()
+      const entry = await startMux(async (endpoint, _payload, _uplink, _peer, control) => {
+        return (async function* () {
+          if (endpoint === 'fixture/queued') opened.resolve(control)
+          try {
+            if (endpoint === 'fixture/queued' && kind === 'error') throw new Error('fixture rejection')
+            if (endpoint !== 'fixture/queued' || kind !== 'end') yield endpoint
+          } finally {
+            if (endpoint === 'fixture/queued') returned.resolve(undefined)
+          }
+        })()
+      })
+      const client = await connect(entry.url)
+      const socket = acceptedSocket(entry.mux)
+      const frames = collectFrames(client)
+      const writes = holdWriteCallbacks(socket, frame => frame.streamId === 'first' && frame.type === 'item')
+      client.send(openFrame('first', 'fixture/first'))
+      await vi.waitFor(() => { expect(writes.held).toHaveLength(1) })
+      client.send(openFrame('queued', 'fixture/queued'))
+      const control = await opened.promise
+      await new Promise<void>((resolve) => { setImmediate(resolve) })
+      if (kind === 'Remote failure') {
+        control.abort(new RemoteError('gateway/protocol', 'fixture rejection', { endpoint: 'fixture/queued' }))
+        await returned.promise
+      }
+      client.send(JSON.stringify({ type: 'cancel', streamId: 'queued' }))
+      await returned.promise
+      client.send(openFrame('successor', 'fixture/successor'))
+      await new Promise<void>((resolve) => { setImmediate(resolve) })
+      expect(writes.sent).toEqual([{ type: 'item', streamId: 'first', value: 'fixture/first' }])
+      expect(socket.readyState).toBe(WebSocket.OPEN)
+      writes.held[0]!()
+      await vi.waitFor(() => {
+        expect(frames).toEqual(expect.arrayContaining([
+          { type: 'item', streamId: 'successor', value: 'fixture/successor' },
+          { type: 'end', streamId: 'successor' },
+        ]))
+      })
+      expect(frames.every(frame => frame.streamId !== 'queued')).toBe(true)
+      expect(socket.readyState).toBe(WebSocket.OPEN)
+      client.close()
+      await once(client, 'close')
+    },
+  )
+
+  it('includes queue time in the deadline when the frame starts writing later', async () => {
+    const queued = Promise.withResolvers<undefined>()
+    let returns = 0
+    const entry = await startMux(async endpoint => (async function* () {
+      try { if (endpoint === 'fixture/queued') queued.resolve(undefined); yield endpoint }
+      finally { returns++ }
+    })(), 2_000, 262_144, undefined, 100)
+    const client = await connect(entry.url)
+    const socket = acceptedSocket(entry.mux)
+    const writes = holdWriteCallbacks(socket, frame => frame.type === 'item')
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      client.send(openFrame('first', 'fixture/first'))
+      await new Promise<void>((resolve) => {
+        socket.once('message', () => { setImmediate(resolve) })
+      })
+      await new Promise<void>((resolve) => { setImmediate(resolve) })
+      expect(writes.held).toHaveLength(1)
+      await vi.advanceTimersByTimeAsync(20)
+      client.send(openFrame('queued', 'fixture/queued'))
+      await queued.promise
+      await new Promise<void>((resolve) => { setImmediate(resolve) })
+      await vi.advanceTimersByTimeAsync(60)
+      writes.held[0]!()
+      await new Promise<void>((resolve) => { setImmediate(resolve) })
+      await new Promise<void>((resolve) => { setImmediate(resolve) })
+      expect(writes.held).toHaveLength(2)
+      await vi.advanceTimersByTimeAsync(39)
+      expect(socket.readyState).toBe(WebSocket.OPEN)
+      const closed = once(client, 'close')
+      await vi.advanceTimersByTimeAsync(1)
+      await closed
+      await entry.mux.close()
+      running.delete(entry)
+      expect(returns).toBe(2)
+      writes.held[1]!()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('returns an unencodable item source and serves another stream on the same socket', async () => {
+    const cycle: { self?: object } = {}
+    cycle.self = cycle
+    let returns = 0
+    const entry = await startMux(async endpoint => (async function* () {
+      try { yield endpoint === 'fixture/cycle' ? cycle : 'served' }
+      finally { returns++ }
+    })())
+    const client = await connect(entry.url)
+    const frames = collectFrames(client)
+    client.send(openFrame('cycle', 'fixture/cycle'))
+    await vi.waitFor(() => {
+      expect(frames).toEqual([{ type: 'error', streamId: 'cycle', error: {
+        code: 'internal', message: 'api gateway: Remote stream item is not JSON serializable', details: {},
+      } }])
+    })
+    client.send(openFrame('healthy'))
+    await vi.waitFor(() => { expect(frames).toHaveLength(3) })
+    expect(frames.slice(1)).toEqual([
+      { type: 'item', streamId: 'healthy', value: 'served' }, { type: 'end', streamId: 'healthy' },
+    ])
+    expect(returns).toBe(2)
+    client.close()
+    await once(client, 'close')
+  })
+
+  it('contains a synchronous send exception and completes the source before another stream', async () => {
+    let returns = 0
+    const entry = await startMux(async () => (async function* () {
+      try { yield 'served' }
+      finally { returns++ }
+    })())
+    const client = await connect(entry.url)
+    const socket = acceptedSocket(entry.mux)
+    const frames = collectFrames(client)
+    vi.spyOn(socket, 'send').mockImplementationOnce(() => { throw new Error('fixture synchronous write failure') })
+    client.send(openFrame('throw'))
+    await vi.waitFor(() => {
+      expect(frames).toEqual([{ type: 'error', streamId: 'throw', error: {
+        code: 'internal', message: 'fixture synchronous write failure', details: {},
+      } }])
+    })
+    client.send(openFrame('healthy'))
+    await vi.waitFor(() => { expect(frames).toHaveLength(3) })
+    expect(returns).toBe(2)
+    expect(socket.readyState).toBe(WebSocket.OPEN)
+    client.close()
+    await once(client, 'close')
+  })
+
+  it('closes the carrier when a terminal failure cannot be encoded', async () => {
+    const cycle: { self?: object } = {}
+    cycle.self = cycle
+    const entry = await startMux(async () => { throw new Error('fixture opener failure') },
+      2_000, 262_144, undefined, 10_000, () => ({ code: 'fixture', message: 'rejected', details: cycle }))
+    const client = await connect(entry.url)
+    const frames = collectFrames(client)
+    const closed = once(client, 'close')
+    client.send(openFrame('unencodable-error'))
+    const closeEvent = await closed
+    expect(closeEvent[0]).toBe(1011)
+    expect(String(closeEvent[1])).toBe('Remote stream failure could not be delivered')
+    expect(frames).toEqual([])
+  })
+})
+
 describe('Remote stream mux server Peer binding', () => {
   it('closes an upgrade at once when the admitted Peer scope is already disposed', async () => {
     const peer = await fixturePeer()
@@ -500,9 +703,11 @@ async function startMux(
   heartbeatIntervalMs = 2_000,
   streamInboxBytes = 262_144,
   peer?: PeerScope,
+  streamSendTimeoutMs = 10_000,
+  failure: RemoteStreamFailureMapper = mapFailure,
 ): Promise<RunningMux> {
   const admitted = peer ?? await fixturePeer()
-  const mux = new RemoteStreamMuxServer(open, mapFailure, heartbeatIntervalMs, streamInboxBytes)
+  const mux = new RemoteStreamMuxServer(open, failure, heartbeatIntervalMs, streamInboxBytes, streamSendTimeoutMs)
   const http = createServer()
   http.on('upgrade', (request, socket, head) => { mux.handleUpgrade(request, socket, head, admitted) })
   await new Promise<void>((resolve, reject) => {
@@ -567,6 +772,24 @@ function failWrites(serverSocket: WebSocket): void {
   mutable.send = (_data, callback): void => {
     callback(new Error('fixture ws write failure'))
   }
+}
+
+/** Real ws writes reach the Client; this fault injection withholds only their completion callbacks. */
+function holdWriteCallbacks(socket: WebSocket, hold: (frame: RemoteStreamServerMessage) => boolean) {
+  const original = socket.send.bind(socket)
+  const sent: RemoteStreamServerMessage[] = []
+  const held: (() => void)[] = []
+  const mutable = socket as { send(data: unknown, callback: (error?: Error) => void): void }
+  mutable.send = (data, callback): void => {
+    if (typeof data !== 'string') throw new TypeError('fixture expected a text frame')
+    const frame = parseRemoteStreamServerMessage(data)
+    sent.push(frame)
+    original(data, (error) => {
+      if (hold(frame)) held.push(() => { callback(error) })
+      else callback(error)
+    })
+  }
+  return { sent, held }
 }
 
 function openFrame(streamId: string, endpoint = 'fixture/follow'): string {

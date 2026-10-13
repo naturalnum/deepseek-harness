@@ -22,6 +22,11 @@ function stubAgent(rawId: string, overrides: Partial<Agent> = {}): Agent {
   const session = overrides.session ?? Session.create(id)
   const ctx = overrides.ctx ?? new Context()
   return {
+    get canMaintainInbox() { return this.status === 'idle' },
+    onBeforeTurn: () => () => {},
+    onAfterClaim: () => () => {},
+    captureInboxActivity: () => { throw new Error('This Agent double has no maintenance capture') },
+    wakePending: () => {},
     id,
     options: {},
     session,

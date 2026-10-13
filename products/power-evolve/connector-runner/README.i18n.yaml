@@ -1,0 +1,34 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write products/power-evolve/connector-runner/README.md
+/:
+  en: c369359407357ebd
+  zh: b2d2fc7c1dc967f4
+/isolated-connector-runner:
+  en: 99d5f15d17fba89b
+  zh: 90960ca86baa702b
+/isolated-connector-runner/summary:
+  en: 6865f68b8cb9765d
+  zh: 6f8a4b919f9ac590
+/isolated-connector-runner/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: d3513fd636ffdf7c
+/isolated-connector-runner/use-this-package:
+  en: 65cc4a895ccc8e83
+  zh: 0108569ea29fa2da
+/isolated-connector-runner/understand-the-implementation:
+  en: c72cbd69235ec5d7
+  zh: 9e6c9da31e39e36d
+/isolated-connector-runner/further-exploration:
+  en: ae6faa8cba65a552
+  zh: 57fc32c8af72c366
+/isolated-connector-runner/model-experience:
+  en: 7492bd95b68b7f76
+  zh: bf86130f40bcb58f
+/isolated-connector-runner/known-limitations-and-deferred-work:
+  en: 415ab294a65ca68f
+  zh: 6e958e530046ed71
+/isolated-connector-runner/known-limitations-and-deferred-work/dev-note:
+  en: 70aa477a2ad67308
+  zh: 4f6de4a27976f4e2

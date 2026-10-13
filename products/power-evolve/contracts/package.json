@@ -1,0 +1,59 @@
+{
+  "name": "@power-evolve/contracts",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser-safe PowerEvolve wire validation and identifiers",
+  "files": [
+    "lib",
+    "README.md",
+    "README.zh.md"
+  ],
+  "exports": {
+    "./stdio-runtime": {
+      "types": "./lib/types/stdio-runtime.d.ts",
+      "default": "./lib/stdio-runtime.js"
+    },
+    "./stdio-mcp": {
+      "types": "./lib/types/stdio-mcp.d.ts",
+      "default": "./lib/stdio-mcp.js"
+    },
+    "./stdio-mcp-json": {
+      "types": "./lib/types/stdio-mcp-json.d.ts",
+      "default": "./lib/stdio-mcp-json.js"
+    },
+    "./office-preview": {
+      "types": "./lib/types/office-preview.d.ts",
+      "default": "./lib/office-preview.js"
+    },
+    "./execution-resolution": {
+      "types": "./lib/types/execution-resolution.d.ts",
+      "default": "./lib/execution-resolution.js"
+    },
+    "./file-download": {
+      "types": "./lib/types/file-download.d.ts",
+      "default": "./lib/file-download.js"
+    },
+    "./account": {
+      "types": "./lib/types/account.d.ts",
+      "default": "./lib/account.js"
+    },
+    "./package.json": "./package.json",
+    "./stdio-management": {
+      "types": "./lib/types/stdio-management.d.ts",
+      "default": "./lib/stdio-management.js"
+    },
+    "./storage": {
+      "types": "./lib/types/storage.d.ts",
+      "default": "./lib/storage.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b tsconfig.json && tsdown",
+    "typecheck": "tsc -p tsconfig.json --noEmit --pretty false"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-brand": "workspace:*",
+    "zod": "^4.4.3"
+  }
+}

@@ -1,4 +1,5 @@
 packages:
+  - products/power-evolve/*
   - vendor/*
   - packages/*/*
   # The Landlock launcher is developed with its harness consumers but keeps
@@ -15,6 +16,10 @@ packages:
   - python/sdk-runtime
 
 overrides:
+  # Use the same exclusive V8 range-end correction in Vitest and native coverage.
+  '@vitest/coverage-v8>ast-v8-to-istanbul': 1.0.5
+  # Keep markdown extension augmentations on the official baseline's shared type module.
+  micromark-util-types: 2.0.2
   'extract-zip>yauzl': '3.4.0'
   '@deepseek-ai/cosmokit': 'link:vendor/cosmokit'
   '@deepseek-ai/schemastery': 'link:vendor/schemastery'
@@ -29,6 +34,9 @@ peerDependencyRules:
 # default and only allow scripts we need. esbuild (native binary) and lefthook
 # (git hooks) genuinely need theirs.
 allowBuilds:
+  # The SSH Runner uses the supported JavaScript fallback.
+  cpu-features: false
+  ssh2: false
   esbuild: true
   lefthook: true
   # Cross-platform boundary for the persistent PTY backend, including ConPTY on Windows.
@@ -103,5 +111,6 @@ patchedDependencies:
   '@fortune-sheet/core@1.0.4': patches/@fortune-sheet__core@1.0.4.patch
   '@fortune-sheet/react@1.0.4': patches/@fortune-sheet__react@1.0.4.patch
   '@yao-pkg/pkg@6.21.0': patches/@yao-pkg__pkg@6.21.0.patch
+  ast-v8-to-istanbul@1.0.5: patches/ast-v8-to-istanbul@1.0.5.patch
   exceljs@4.4.0: patches/exceljs@4.4.0.patch
   node-pty@1.2.0-beta.15: patches/node-pty@1.2.0-beta.15.patch

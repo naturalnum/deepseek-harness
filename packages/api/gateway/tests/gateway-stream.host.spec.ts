@@ -413,14 +413,24 @@ describe('Typert Remote streams', () => {
   })
 
   it('validates the WebSocket heartbeat timer range and the stream inbox bound', () => {
-    expect(TypertGatewayService.Config({})).toEqual({ websocketHeartbeatIntervalMs: 2_000, streamInboxBytes: 262_144 })
+    expect(TypertGatewayService.Config({})).toEqual({
+      websocketHeartbeatIntervalMs: 2_000, streamInboxBytes: 262_144, streamSendTimeoutMs: 10_000,
+    })
     expect(TypertGatewayService.Config({ websocketHeartbeatIntervalMs: MAX_TIMER_DELAY_MS, streamInboxBytes: 1 }))
-      .toEqual({ websocketHeartbeatIntervalMs: MAX_TIMER_DELAY_MS, streamInboxBytes: 1 })
+      .toEqual({ websocketHeartbeatIntervalMs: MAX_TIMER_DELAY_MS, streamInboxBytes: 1, streamSendTimeoutMs: 10_000 })
     for (const websocketHeartbeatIntervalMs of [0, 1.5, MAX_TIMER_DELAY_MS + 1]) {
       expect(() => TypertGatewayService.Config({ websocketHeartbeatIntervalMs })).toThrow()
     }
     for (const streamInboxBytes of [0, 1.5]) {
       expect(() => TypertGatewayService.Config({ streamInboxBytes })).toThrow()
+    }
+  })
+
+  it('validates an explicit downlink send timer and keeps its configured value', () => {
+    expect(TypertGatewayService.Config({ streamSendTimeoutMs: MAX_TIMER_DELAY_MS }).streamSendTimeoutMs)
+      .toBe(MAX_TIMER_DELAY_MS)
+    for (const streamSendTimeoutMs of [0, 1.5, MAX_TIMER_DELAY_MS + 1]) {
+      expect(() => TypertGatewayService.Config({ streamSendTimeoutMs })).toThrow()
     }
   })
 

@@ -1,0 +1,1726 @@
+{
+  "primary_research_points": [
+    {
+      "id": "RP-01",
+      "source_summary": "研究数字化电网人机协同多智能体决策模型",
+      "normalized_problem": "复杂调度任务中数据、知识、模型和人员协作关系缺少统一组织",
+      "chapter_technology": "数字化电网人机协同多智能体决策模型",
+      "planned_chapter_id": "2",
+      "research_status_topic": "数字化电网人机协同多智能体决策模型",
+      "sub_item_ids": [
+        "RC-01",
+        "SP-01",
+        "AR-01"
+      ],
+      "source_order": 1,
+      "source_keywords": [
+        "数字化电网",
+        "人机协同",
+        "多智能体决策模型"
+      ],
+      "expected_capability": "形成面向复杂调度任务的数据、知识、模型和人员协同决策能力",
+      "parent_task_id": "TASK-01",
+      "parent_task_order": 1,
+      "task_role": "technical-research"
+    },
+    {
+      "id": "RP-02",
+      "source_summary": "研究调度规程知识表征与电子规则库构建技术",
+      "normalized_problem": "多源规程知识结构异构且难以统一检索和校核",
+      "chapter_technology": "调度规程知识表征与电子规则库构建技术",
+      "planned_chapter_id": "3",
+      "research_status_topic": "调度规程知识表征与电子规则库构建技术",
+      "sub_item_ids": [
+        "RC-02",
+        "SP-02",
+        "AR-02"
+      ],
+      "source_order": 2,
+      "source_keywords": [
+        "调度规程",
+        "知识表征",
+        "电子规则库"
+      ],
+      "expected_capability": "形成多源调度规程知识统一表示、校核和检索能力",
+      "parent_task_id": "TASK-02",
+      "parent_task_order": 2,
+      "task_role": "technical-research"
+    },
+    {
+      "id": "RP-03",
+      "source_summary": "研究自主决策智能体与动态趋优技术",
+      "normalized_problem": "复杂工况下自主决策能力和价值对齐稳定性不足",
+      "chapter_technology": "自主决策智能体与动态趋优技术",
+      "planned_chapter_id": "4",
+      "research_status_topic": "自主决策智能体与动态趋优技术",
+      "sub_item_ids": [
+        "RC-03",
+        "SP-03",
+        "AR-03"
+      ],
+      "source_order": 3,
+      "source_keywords": [
+        "复杂工况",
+        "自主决策智能体",
+        "价值对齐"
+      ],
+      "expected_capability": "形成复杂电网工况下自主决策与安全趋优能力",
+      "parent_task_id": "TASK-03",
+      "parent_task_order": 3,
+      "task_role": "technical-research"
+    },
+    {
+      "id": "RP-04",
+      "source_summary": "研究融合专业知识的电网运行智能辅助决策技术",
+      "normalized_problem": "规则知识、机理分析与交互决策缺少协同推理机制",
+      "chapter_technology": "融合专业知识的电网运行智能辅助决策技术",
+      "planned_chapter_id": "5",
+      "research_status_topic": "融合专业知识的电网运行智能辅助决策技术",
+      "sub_item_ids": [
+        "RC-04",
+        "SP-04",
+        "AR-04"
+      ],
+      "source_order": 4,
+      "source_keywords": [
+        "电网运行",
+        "专业知识",
+        "智能辅助决策"
+      ],
+      "expected_capability": "形成知识与机理协同驱动的运行辅助决策能力",
+      "parent_task_id": "TASK-04",
+      "parent_task_order": 4,
+      "task_role": "technical-research"
+    },
+    {
+      "id": "RP-05",
+      "source_summary": "开展人机协同智能决策模块研发与试点应用",
+      "normalized_problem": "多项技术成果缺少统一模块化集成和真实场景验证",
+      "chapter_technology": "人机协同智能决策模块研发与试点应用",
+      "planned_chapter_id": "6",
+      "research_status_topic": "人机协同智能决策模块研发与试点应用",
+      "sub_item_ids": [
+        "RC-05",
+        "SP-05",
+        "AR-05"
+      ],
+      "source_order": 5,
+      "source_keywords": [
+        "智能决策模块",
+        "试点应用",
+        "模块集成"
+      ],
+      "expected_capability": "形成可部署、可测试和可推广的智能决策模块能力",
+      "parent_task_id": "TASK-05",
+      "parent_task_order": 5,
+      "task_role": "engineering-implementation"
+    }
+  ],
+  "source_items": [
+    {
+      "id": "RC-01",
+      "source_type": "research-content",
+      "source_text": "数字化电网人机协同多智能体决策模型",
+      "normalized_requirement": "围绕“复杂调度任务中数据、知识、模型和人员协作关系缺少统一组织”研究数字化电网人机协同多智能体决策模型",
+      "research_point_id": "RP-01",
+      "planned_chapter_id": "2",
+      "planned_section": "核心技术小节",
+      "content_role": "method",
+      "evidence_needed": [
+        "技术原理与实现说明"
+      ],
+      "coverage_status": "planned",
+      "confirmed_location": "",
+      "notes": "",
+      "parent_task_id": "TASK-01",
+      "task_role": "technical-research"
+    },
+    {
+      "id": "GO-01",
+      "source_type": "expected-output",
+      "source_text": "形成与数字化电网人机协同多智能体决策模型对应的关键技术能力",
+      "normalized_requirement": "形成数字化电网人机协同多智能体决策模型对应的可复用技术能力",
+      "research_point_id": "RP-01",
+      "parent_task_id": "TASK-01",
+      "task_role": "technical-research",
+      "planned_chapter_id": "2",
+      "planned_section": "2.1",
+      "content_role": "result",
+      "evidence_needed": [],
+      "coverage_status": "planned",
+      "confirmed_location": "",
+      "notes": ""
+    },
+    {
+      "id": "SP-01",
+      "source_type": "schedule-plan",
+      "source_text": "对应阶段的技术研发与验证任务",
+      "normalized_requirement": "完成数字化电网人机协同多智能体决策模型的构建、实现和验证",
+      "research_point_id": "RP-01",
+      "planned_chapter_id": "2",
+      "planned_section": "技术实现与验证小节",
+      "content_role": "implementation",
+      "evidence_needed": [
+        "实现参数或测试记录"
+      ],
+      "coverage_status": "planned",
+      "confirmed_location": "",
+      "notes": "",
+      "parent_task_id": "TASK-01",
+      "task_role": "technical-research"
+    },
+    {
+      "id": "AR-01",
+      "source_type": "assessment-requirement",
+      "source_text": "对应技术指标和应用要求",
+      "normalized_requirement": "设置数字化电网人机协同多智能体决策模型的功能、性能和应用验证标准",
+      "research_point_id": "RP-01",
+      "planned_chapter_id": "2",
+      "planned_section": "2.3",
+      "content_role": "metric",
+      "evidence_needed": [
+        "真实指标结果或明确占位"
+      ],
+      "coverage_status": "planned",
+      "confirmed_location": "",
+      "notes": "在对应研究小点正文中隐性覆盖，不出现任务书、考核指标或内部编号。",
+      "parent_task_id": "TASK-01",
+      "task_role": "technical-research",
+      "assessment_name": "第2章技术指标",
+      "target_value": "【待补充目标值】",
+      "unit": "【待补充单位】",
+      "test_conditions": "【待补充测试条件】",
+      "content_form": "mixed",
+      "evidence_status": "target-only",
+      "prose_realization": "mixed",
+      "source_identity_hidden": true,
+      "evidence_section": "",
+      "assessment_kind": "mixed",
+      "qualitative_result_expectation": "形成对应功能、能力、应用状态或工程效果，并在技术章正文与摘要证据中给出可追溯结果。"
+    },
+    {
+      "id": "RC-02",
+      "source_type": "research-content",
+      "source_text": "调度规程知识表征与规则库",
+      "normalized_requirement": "围绕“多源规程知识结构异构且难以统一检索和校核”研究调度规程知识表征融合与电子规则库构建技术",
+      "research_point_id": "RP-02",
+      "planned_chapter_id": "3",
+      "planned_section": "核心技术小节",
+      "content_role": "method",
+      "evidence_needed": [
+        "技术原理与实现说明"
+      ],
+      "coverage_status": "planned",
+      "confirmed_location": "",
+      "notes": "",
+      "parent_task_id": "TASK-02",
+      "task_role": "technical-research"
+    },
+    {
+      "id": "GO-02",
+      "source_type": "expected-output",
+      "source_text": "形成与调度规程知识表征与规则库对应的关键技术能力",
+      "normalized_requirement": "形成调度规程知识表征与规则库对应的可复用技术能力",
+      "research_point_id": "RP-02",
+      "parent_task_id": "TASK-02",
+      "task_role": "technical-research",
+      "planned_chapter_id": "3",
+      "planned_section": "3.1",
+      "content_role": "result",
+      "evidence_needed": [],
+      "coverage_status": "planned",
+      "confirmed_location": "",
+      "notes": ""
+    },
+    {
+      "id": "SP-02",
+      "source_type": "schedule-plan",
+      "source_text": "对应阶段的技术研发与验证任务",
+      "normalized_requirement": "完成调度规程知识表征融合与电子规则库构建技术的构建、实现和验证",
+      "research_point_id": "RP-02",
+      "planned_chapter_id": "3",
+      "planned_section": "技术实现与验证小节",
+      "content_role": "implementation",
+      "evidence_needed": [
+        "实现参数或测试记录"
+      ],
+      "coverage_status": "planned",
+      "confirmed_location": "",
+      "notes": "",
+      "parent_task_id": "TASK-02",
+      "task_role": "technical-research"
+    },
+    {
+      "id": "AR-02",
+      "source_type": "assessment-requirement",
+      "source_text": "对应技术指标和应用要求",
+      "normalized_requirement": "设置调度规程知识表征融合与电子规则库构建技术的功能、性能和应用验证标准",
+      "research_point_id": "RP-02",
+      "planned_chapter_id": "3",
+      "planned_section": "3.3",
+      "content_role": "metric",
+      "evidence_needed": [
+        "真实指标结果或明确占位"
+      ],
+      "coverage_status": "planned",
+      "confirmed_location": "",
+      "notes": "在对应研究小点正文中隐性覆盖，不出现任务书、考核指标或内部编号。",
+      "parent_task_id": "TASK-02",
+      "task_role": "technical-research",
+      "assessment_name": "第3章技术指标",
+      "target_value": "【待补充目标值】",
+      "unit": "【待补充单位】",
+      "test_conditions": "【待补充测试条件】",
+      "content_form": "mixed",
+      "evidence_status": "target-only",
+      "prose_realization": "mixed",
+      "source_identity_hidden": true,
+      "evidence_section": "",
+      "assessment_kind": "mixed",
+      "qualitative_result_expectation": "形成对应功能、能力、应用状态或工程效果，并在技术章正文与摘要证据中给出可追溯结果。"
+    },
+    {
+      "id": "RC-03",
+      "source_type": "research-content",
+      "source_text": "自主决策智能体与动态趋优",
+      "normalized_requirement": "围绕“复杂工况下自主决策能力和价值对齐稳定性不足”研究自主决策智能体构建与人机协同动态趋优技术",
+      "research_point_id": "RP-03",
+      "planned_chapter_id": "4",
+      "planned_section": "核心技术小节",
+      "content_role": "method",
+      "evidence_needed": [
+        "技术原理与实现说明"
+      ],
+      "coverage_status": "planned",
+      "confirmed_location": "",
+      "notes": "",
+      "parent_task_id": "TASK-03",
+      "task_role": "technical-research"
+    },
+    {
+      "id": "GO-03",
+      "source_type": "expected-output",
+      "source_text": "形成与自主决策智能体与动态趋优对应的关键技术能力",
+      "normalized_requirement": "形成自主决策智能体与动态趋优对应的可复用技术能力",
+      "research_point_id": "RP-03",
+      "parent_task_id": "TASK-03",
+      "task_role": "technical-research",
+      "planned_chapter_id": "4",
+      "planned_section": "4.1",
+      "content_role": "result",
+      "evidence_needed": [],
+      "coverage_status": "planned",
+      "confirmed_location": "",
+      "notes": ""
+    },
+    {
+      "id": "SP-03",
+      "source_type": "schedule-plan",
+      "source_text": "对应阶段的技术研发与验证任务",
+      "normalized_requirement": "完成自主决策智能体构建与人机协同动态趋优技术的构建、实现和验证",
+      "research_point_id": "RP-03",
+      "planned_chapter_id": "4",
+      "planned_section": "技术实现与验证小节",
+      "content_role": "implementation",
+      "evidence_needed": [
+        "实现参数或测试记录"
+      ],
+      "coverage_status": "planned",
+      "confirmed_location": "",
+      "notes": "",
+      "parent_task_id": "TASK-03",
+      "task_role": "technical-research"
+    },
+    {
+      "id": "AR-03",
+      "source_type": "assessment-requirement",
+      "source_text": "对应技术指标和应用要求",
+      "normalized_requirement": "设置自主决策智能体构建与人机协同动态趋优技术的功能、性能和应用验证标准",
+      "research_point_id": "RP-03",
+      "planned_chapter_id": "4",
+      "planned_section": "4.3",
+      "content_role": "metric",
+      "evidence_needed": [
+        "真实指标结果或明确占位"
+      ],
+      "coverage_status": "planned",
+      "confirmed_location": "",
+      "notes": "在对应研究小点正文中隐性覆盖，不出现任务书、考核指标或内部编号。",
+      "parent_task_id": "TASK-03",
+      "task_role": "technical-research",
+      "assessment_name": "第4章技术指标",
+      "target_value": "【待补充目标值】",
+      "unit": "【待补充单位】",
+      "test_conditions": "【待补充测试条件】",
+      "content_form": "mixed",
+      "evidence_status": "target-only",
+      "prose_realization": "mixed",
+      "source_identity_hidden": true,
+      "evidence_section": "",
+      "assessment_kind": "mixed",
+      "qualitative_result_expectation": "形成对应功能、能力、应用状态或工程效果，并在技术章正文与摘要证据中给出可追溯结果。"
+    },
+    {
+      "id": "RC-04",
+      "source_type": "research-content",
+      "source_text": "知识融合智能辅助决策",
+      "normalized_requirement": "围绕“规则知识、机理分析与交互决策缺少协同推理机制”研究融合专业知识的电网运行智能辅助决策技术",
+      "research_point_id": "RP-04",
+      "planned_chapter_id": "5",
+      "planned_section": "核心技术小节",
+      "content_role": "method",
+      "evidence_needed": [
+        "技术原理与实现说明"
+      ],
+      "coverage_status": "planned",
+      "confirmed_location": "",
+      "notes": "",
+      "parent_task_id": "TASK-04",
+      "task_role": "technical-research"
+    },
+    {
+      "id": "GO-04",
+      "source_type": "expected-output",
+      "source_text": "形成与知识融合智能辅助决策对应的关键技术能力",
+      "normalized_requirement": "形成知识融合智能辅助决策对应的可复用技术能力",
+      "research_point_id": "RP-04",
+      "parent_task_id": "TASK-04",
+      "task_role": "technical-research",
+      "planned_chapter_id": "5",
+      "planned_section": "5.1",
+      "content_role": "result",
+      "evidence_needed": [],
+      "coverage_status": "planned",
+      "confirmed_location": "",
+      "notes": ""
+    },
+    {
+      "id": "SP-04",
+      "source_type": "schedule-plan",
+      "source_text": "对应阶段的技术研发与验证任务",
+      "normalized_requirement": "完成融合专业知识的电网运行智能辅助决策技术的构建、实现和验证",
+      "research_point_id": "RP-04",
+      "planned_chapter_id": "5",
+      "planned_section": "技术实现与验证小节",
+      "content_role": "implementation",
+      "evidence_needed": [
+        "实现参数或测试记录"
+      ],
+      "coverage_status": "planned",
+      "confirmed_location": "",
+      "notes": "",
+      "parent_task_id": "TASK-04",
+      "task_role": "technical-research"
+    },
+    {
+      "id": "AR-04",
+      "source_type": "assessment-requirement",
+      "source_text": "对应技术指标和应用要求",
+      "normalized_requirement": "设置融合专业知识的电网运行智能辅助决策技术的功能、性能和应用验证标准",
+      "research_point_id": "RP-04",
+      "planned_chapter_id": "5",
+      "planned_section": "5.3",
+      "content_role": "metric",
+      "evidence_needed": [
+        "真实指标结果或明确占位"
+      ],
+      "coverage_status": "planned",
+      "confirmed_location": "",
+      "notes": "在对应研究小点正文中隐性覆盖，不出现任务书、考核指标或内部编号。",
+      "parent_task_id": "TASK-04",
+      "task_role": "technical-research",
+      "assessment_name": "第5章技术指标",
+      "target_value": "【待补充目标值】",
+      "unit": "【待补充单位】",
+      "test_conditions": "【待补充测试条件】",
+      "content_form": "mixed",
+      "evidence_status": "target-only",
+      "prose_realization": "mixed",
+      "source_identity_hidden": true,
+      "evidence_section": "",
+      "assessment_kind": "mixed",
+      "qualitative_result_expectation": "形成对应功能、能力、应用状态或工程效果，并在技术章正文与摘要证据中给出可追溯结果。"
+    },
+    {
+      "id": "RC-05",
+      "source_type": "research-content",
+      "source_text": "模块研发与试点应用",
+      "normalized_requirement": "围绕“多项技术成果缺少统一模块化集成和真实场景验证”研究人机协同智能决策模块与试点应用技术",
+      "research_point_id": "RP-05",
+      "planned_chapter_id": "6",
+      "planned_section": "核心技术小节",
+      "content_role": "method",
+      "evidence_needed": [
+        "技术原理与实现说明"
+      ],
+      "coverage_status": "planned",
+      "confirmed_location": "",
+      "notes": "",
+      "parent_task_id": "TASK-05",
+      "task_role": "engineering-implementation"
+    },
+    {
+      "id": "GO-05",
+      "source_type": "expected-output",
+      "source_text": "形成与模块研发与试点应用对应的关键技术能力",
+      "normalized_requirement": "形成模块研发与试点应用对应的可复用技术能力",
+      "research_point_id": "RP-05",
+      "parent_task_id": "TASK-05",
+      "task_role": "engineering-implementation",
+      "planned_chapter_id": "6",
+      "planned_section": "6.1",
+      "content_role": "result",
+      "evidence_needed": [],
+      "coverage_status": "planned",
+      "confirmed_location": "",
+      "notes": ""
+    },
+    {
+      "id": "SP-05",
+      "source_type": "schedule-plan",
+      "source_text": "对应阶段的技术研发与验证任务",
+      "normalized_requirement": "完成人机协同智能决策模块与试点应用技术的构建、实现和验证",
+      "research_point_id": "RP-05",
+      "planned_chapter_id": "6",
+      "planned_section": "技术实现与验证小节",
+      "content_role": "implementation",
+      "evidence_needed": [
+        "实现参数或测试记录"
+      ],
+      "coverage_status": "planned",
+      "confirmed_location": "",
+      "notes": "",
+      "parent_task_id": "TASK-05",
+      "task_role": "engineering-implementation"
+    },
+    {
+      "id": "AR-05",
+      "source_type": "assessment-requirement",
+      "source_text": "对应技术指标和应用要求",
+      "normalized_requirement": "设置人机协同智能决策模块与试点应用技术的功能、性能和应用验证标准",
+      "research_point_id": "RP-05",
+      "planned_chapter_id": "6",
+      "planned_section": "6.3",
+      "content_role": "metric",
+      "evidence_needed": [
+        "真实指标结果或明确占位"
+      ],
+      "coverage_status": "planned",
+      "confirmed_location": "",
+      "notes": "在对应研究小点正文中隐性覆盖，不出现任务书、考核指标或内部编号。",
+      "parent_task_id": "TASK-05",
+      "task_role": "engineering-implementation",
+      "assessment_name": "第6章技术指标",
+      "target_value": "【待补充目标值】",
+      "unit": "【待补充单位】",
+      "test_conditions": "【待补充测试条件】",
+      "content_form": "mixed",
+      "evidence_status": "target-only",
+      "prose_realization": "mixed",
+      "source_identity_hidden": true,
+      "evidence_section": "",
+      "assessment_kind": "mixed",
+      "qualitative_result_expectation": "形成对应功能、能力、应用状态或工程效果，并在技术章正文与摘要证据中给出可追溯结果。"
+    }
+  ],
+  "chapter_mappings": [
+    {
+      "research_point_id": "RP-01",
+      "chapter_id": "2",
+      "chapter_problem": "复杂调度任务中数据、知识、模型和人员协作关系缺少统一组织",
+      "chapter_technology": "数字化电网人机协同多智能体决策模型",
+      "research_status_topic": "数字化电网人机协同多智能体决策模型",
+      "source_item_ids": [
+        "RC-01",
+        "GO-01",
+        "SP-01",
+        "AR-01"
+      ],
+      "source_order": 1,
+      "chapter_title": "数字化电网人机协同多智能体决策模型",
+      "title_alignment_basis": "删除来源小点开头的任务动作词，并按课题角色保留具体技术或工程实现中心词，未增加额外技术信息。",
+      "innovation_title_plans": [
+        {
+          "section_number": "2.1",
+          "title": "电网调度任务关系类型感知异构图变换注意力分配技术",
+          "parent_task_id": "TASK-01",
+          "power_element": "电网调度任务",
+          "technical_object": "电网调度任务",
+          "technical_method": "关系类型感知HGT",
+          "technical_role": "形成任务语义与角色表示",
+          "specificity_basis": "标题显式采用关系类型感知HGT作为区分性技术签名，避免只使用技术族或任务动作描述",
+          "source_item_ids": [
+            "RC-01",
+            "SP-01",
+            "GO-01"
+          ],
+          "supporting_heading_numbers": [
+            "2.1.1"
+          ],
+          "notes": "",
+          "research_subpoint_index": 1,
+          "derivation_basis": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解",
+          "assessment_item_ids": [],
+          "specific_computing_technology": "关系类型感知HGT",
+          "technology_specificity_basis": "标题显式采用关系类型感知HGT作为区分性技术签名，避免只使用技术族或任务动作描述",
+          "technology_origin": "user_confirmed_design",
+          "shared_chapter_question": "如何在人机协同条件下形成可解释、可适应风险变化的调度决策链？",
+          "chain_order": 1,
+          "chain_role": "角色分配",
+          "depends_on_previous": false,
+          "handoff_from_previous": "",
+          "output_to_next": "任务—角色匹配表示",
+          "technical_signature": "关系类型感知异构图变换注意力",
+          "parent_logic_link": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解"
+        },
+        {
+          "section_number": "2.2",
+          "title": "调度风险稀疏门控双专家混合决策方法",
+          "parent_task_id": "TASK-01",
+          "power_element": "调度风险",
+          "technical_object": "调度风险",
+          "technical_method": "稀疏门控Top2MoE",
+          "technical_role": "基于角色表示完成风险感知决策",
+          "specificity_basis": "标题显式采用稀疏门控Top2MoE作为区分性技术签名，避免只使用技术族或任务动作描述",
+          "source_item_ids": [
+            "RC-01",
+            "SP-01"
+          ],
+          "supporting_heading_numbers": [
+            "2.2.1"
+          ],
+          "notes": "",
+          "research_subpoint_index": 2,
+          "derivation_basis": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解",
+          "assessment_item_ids": [],
+          "specific_computing_technology": "稀疏门控Top2MoE",
+          "technology_specificity_basis": "标题显式采用稀疏门控Top2MoE作为区分性技术签名，避免只使用技术族或任务动作描述",
+          "technology_origin": "user_confirmed_design",
+          "shared_chapter_question": "如何在人机协同条件下形成可解释、可适应风险变化的调度决策链？",
+          "chain_order": 2,
+          "chain_role": "协同决策",
+          "depends_on_previous": true,
+          "handoff_from_previous": "任务—角色匹配表示",
+          "output_to_next": "候选协同决策",
+          "technical_signature": "稀疏门控双专家混合",
+          "parent_logic_link": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解"
+        },
+        {
+          "section_number": "2.3",
+          "title": "电网人机反馈安全约束分层近端策略优化调整方法",
+          "power_element": "电网人机反馈",
+          "source_item_ids": [
+            "RC-01",
+            "SP-01",
+            "AR-01"
+          ],
+          "supporting_heading_numbers": [
+            "2.3.1"
+          ],
+          "notes": "",
+          "parent_task_id": "TASK-01",
+          "technical_object": "电网人机反馈",
+          "technical_method": "安全约束分层PPO",
+          "technical_role": "利用人机反馈优化并约束决策策略",
+          "specificity_basis": "标题显式采用安全约束分层PPO作为区分性技术签名，避免只使用技术族或任务动作描述",
+          "research_subpoint_index": 3,
+          "derivation_basis": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解",
+          "assessment_item_ids": [
+            "AR-01"
+          ],
+          "specific_computing_technology": "安全约束分层PPO",
+          "technology_specificity_basis": "标题显式采用安全约束分层PPO作为区分性技术签名，避免只使用技术族或任务动作描述",
+          "technology_origin": "user_confirmed_design",
+          "shared_chapter_question": "如何在人机协同条件下形成可解释、可适应风险变化的调度决策链？",
+          "chain_order": 3,
+          "chain_role": "策略调整",
+          "depends_on_previous": true,
+          "handoff_from_previous": "候选协同决策",
+          "output_to_next": "可执行人机协同策略",
+          "technical_signature": "安全约束分层近端策略优化",
+          "parent_logic_link": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解"
+        }
+      ],
+      "parent_task_id": "TASK-01",
+      "parent_task_order": 1,
+      "task_role": "technical-research",
+      "assessment_coverage_plans": [
+        {
+          "assessment_item_id": "AR-01",
+          "planned_section": "2.3",
+          "content_form": "mixed",
+          "evidence_status": "target-only",
+          "confirmed_location": "",
+          "notes": "在X.1—X.3正文中转写为技术目标、条件、阈值、结果或边界，不暴露外部来源身份。",
+          "prose_realization": "mixed",
+          "source_identity_hidden": true,
+          "evidence_section": "",
+          "assessment_kind": "mixed",
+          "result_realization": "定量部分写实际值或结果，定性部分写已形成能力、功能、成果状态或工程效果，不只复述考核要求。"
+        }
+      ],
+      "standalone_validation_mode": "none",
+      "standalone_validation_reason": "",
+      "heading_source_term_plan": [
+        {
+          "source_item_id": "GO-01",
+          "source_type": "expected-output",
+          "term": "电网调度任务",
+          "granularity": "broad",
+          "target_heading_number": "2.1",
+          "target_heading_title": "电网调度任务关系类型感知异构图变换注意力分配技术"
+        },
+        {
+          "source_item_id": "SP-01",
+          "source_type": "schedule-plan",
+          "term": "关系类型感知异构图变换注意力",
+          "granularity": "broad",
+          "target_heading_number": "2.1",
+          "target_heading_title": "电网调度任务关系类型感知异构图变换注意力分配技术"
+        },
+        {
+          "source_item_id": "AR-01",
+          "source_type": "assessment-requirement",
+          "term": "安全约束分层近端策略优化",
+          "granularity": "broad",
+          "target_heading_number": "2.3",
+          "target_heading_title": "电网人机反馈安全约束分层近端策略优化调整方法"
+        }
+      ],
+      "chapter_mainline_map": {
+        "chapter_core_object": "数字化电网人机协同多智能体决策模型",
+        "chapter_core_problem": "复杂调度任务中数据、知识、模型和人员协作关系缺少统一组织",
+        "chapter_core_output": "数字化电网人机协同多智能体决策模型",
+        "excluded_adjacent_topics": []
+      },
+      "technology_option_sets": [
+        {
+          "section_number": "2.1",
+          "problem_or_role": "形成任务语义与角色表示",
+          "source_locked": true,
+          "candidates": [
+            {
+              "candidate_id": "2.1-A",
+              "technology_name": "关系类型感知HGT",
+              "technical_signature_cn": "关系类型感知异构图变换注意力",
+              "key_mechanisms": [
+                "标题显式采用关系类型感知HGT作为区分性技术签名，避免只使用技术族或任务动作描述"
+              ],
+              "fit_reason": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解",
+              "origin": "source_confirmed",
+              "scope_risk": "none",
+              "recommended": true
+            }
+          ],
+          "recommended_candidate_id": "2.1-A",
+          "selected_candidate_id": "2.1-A",
+          "selection_status": "user_confirmed"
+        },
+        {
+          "section_number": "2.2",
+          "problem_or_role": "基于角色表示完成风险感知决策",
+          "source_locked": true,
+          "candidates": [
+            {
+              "candidate_id": "2.2-A",
+              "technology_name": "稀疏门控Top2MoE",
+              "technical_signature_cn": "稀疏门控双专家混合",
+              "key_mechanisms": [
+                "标题显式采用稀疏门控Top2MoE作为区分性技术签名，避免只使用技术族或任务动作描述"
+              ],
+              "fit_reason": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解",
+              "origin": "source_confirmed",
+              "scope_risk": "none",
+              "recommended": true
+            }
+          ],
+          "recommended_candidate_id": "2.2-A",
+          "selected_candidate_id": "2.2-A",
+          "selection_status": "user_confirmed"
+        },
+        {
+          "section_number": "2.3",
+          "problem_or_role": "利用人机反馈优化并约束决策策略",
+          "source_locked": true,
+          "candidates": [
+            {
+              "candidate_id": "2.3-A",
+              "technology_name": "安全约束分层PPO",
+              "technical_signature_cn": "安全约束分层近端策略优化",
+              "key_mechanisms": [
+                "标题显式采用安全约束分层PPO作为区分性技术签名，避免只使用技术族或任务动作描述"
+              ],
+              "fit_reason": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解",
+              "origin": "source_confirmed",
+              "scope_risk": "none",
+              "recommended": true
+            }
+          ],
+          "recommended_candidate_id": "2.3-A",
+          "selected_candidate_id": "2.3-A",
+          "selection_status": "user_confirmed"
+        }
+      ]
+    },
+    {
+      "research_point_id": "RP-02",
+      "chapter_id": "3",
+      "chapter_problem": "多源规程知识结构异构且难以统一检索和校核",
+      "chapter_technology": "调度规程知识表征与电子规则库构建技术",
+      "research_status_topic": "调度规程知识表征与电子规则库构建技术",
+      "source_item_ids": [
+        "RC-02",
+        "GO-02",
+        "SP-02",
+        "AR-02"
+      ],
+      "source_order": 2,
+      "chapter_title": "调度规程知识表征与电子规则库构建技术",
+      "title_alignment_basis": "删除来源小点开头的任务动作词，并按课题角色保留具体技术或工程实现中心词，未增加额外技术信息。",
+      "innovation_title_plans": [
+        {
+          "section_number": "3.1",
+          "title": "调度对象关系类型感知异构图变换注意力表征方法",
+          "parent_task_id": "TASK-02",
+          "power_element": "调度对象",
+          "technical_object": "调度对象",
+          "technical_method": "关系类型感知HGT",
+          "technical_role": "形成统一调度对象表示",
+          "specificity_basis": "标题显式采用关系类型感知HGT作为区分性技术签名，避免只使用技术族或任务动作描述",
+          "source_item_ids": [
+            "RC-02",
+            "SP-02",
+            "GO-02"
+          ],
+          "supporting_heading_numbers": [
+            "3.1.1"
+          ],
+          "notes": "",
+          "research_subpoint_index": 1,
+          "derivation_basis": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解",
+          "assessment_item_ids": [],
+          "specific_computing_technology": "关系类型感知HGT",
+          "technology_specificity_basis": "标题显式采用关系类型感知HGT作为区分性技术签名，避免只使用技术族或任务动作描述",
+          "technology_origin": "user_confirmed_design",
+          "shared_chapter_question": "如何把调度对象与规程知识构造成可对齐、可推理、可检索的规则知识底座？",
+          "chain_order": 1,
+          "chain_role": "对象表征",
+          "depends_on_previous": false,
+          "handoff_from_previous": "",
+          "output_to_next": "统一对象表示",
+          "technical_signature": "关系类型感知异构图变换注意力",
+          "parent_logic_link": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解"
+        },
+        {
+          "section_number": "3.2",
+          "title": "调度规程规则约束解耦注意力预训练语言编码抽取对齐方法",
+          "parent_task_id": "TASK-02",
+          "power_element": "调度规程",
+          "technical_object": "调度规程条款",
+          "technical_method": "规则约束DeBERTa",
+          "technical_role": "利用对象表示抽取并对齐规程知识",
+          "specificity_basis": "标题显式采用规则约束DeBERTa作为区分性技术签名，避免只使用技术族或任务动作描述",
+          "source_item_ids": [
+            "RC-02",
+            "SP-02"
+          ],
+          "supporting_heading_numbers": [
+            "3.2.1"
+          ],
+          "notes": "",
+          "research_subpoint_index": 2,
+          "derivation_basis": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解",
+          "assessment_item_ids": [],
+          "specific_computing_technology": "规则约束DeBERTa",
+          "technology_specificity_basis": "标题显式采用规则约束DeBERTa作为区分性技术签名，避免只使用技术族或任务动作描述",
+          "technology_origin": "user_confirmed_design",
+          "shared_chapter_question": "如何把调度对象与规程知识构造成可对齐、可推理、可检索的规则知识底座？",
+          "chain_order": 2,
+          "chain_role": "知识抽取与对齐",
+          "depends_on_previous": true,
+          "handoff_from_previous": "统一对象表示",
+          "output_to_next": "结构化规则知识",
+          "technical_signature": "规则约束解耦注意力预训练语言编码",
+          "parent_logic_link": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解"
+        },
+        {
+          "section_number": "3.3",
+          "title": "电网规则混合检索后交互语义重排序技术",
+          "parent_task_id": "TASK-02",
+          "power_element": "电网规则",
+          "technical_object": "电网规则",
+          "technical_method": "混合检索ColBERT重排序",
+          "technical_role": "利用规则知识形成高召回检索服务",
+          "specificity_basis": "标题显式采用混合检索ColBERT重排序作为区分性技术签名，避免只使用技术族或任务动作描述",
+          "source_item_ids": [
+            "RC-02",
+            "SP-02",
+            "AR-02"
+          ],
+          "supporting_heading_numbers": [
+            "3.3.1"
+          ],
+          "notes": "",
+          "research_subpoint_index": 3,
+          "derivation_basis": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解",
+          "assessment_item_ids": [
+            "AR-02"
+          ],
+          "specific_computing_technology": "混合检索ColBERT重排序",
+          "technology_specificity_basis": "标题显式采用混合检索ColBERT重排序作为区分性技术签名，避免只使用技术族或任务动作描述",
+          "technology_origin": "user_confirmed_design",
+          "shared_chapter_question": "如何把调度对象与规程知识构造成可对齐、可推理、可检索的规则知识底座？",
+          "chain_order": 3,
+          "chain_role": "知识检索",
+          "depends_on_previous": true,
+          "handoff_from_previous": "结构化规则知识",
+          "output_to_next": "可服务检索结果",
+          "technical_signature": "混合检索后交互语义重排序",
+          "parent_logic_link": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解"
+        }
+      ],
+      "parent_task_id": "TASK-02",
+      "parent_task_order": 2,
+      "task_role": "technical-research",
+      "assessment_coverage_plans": [
+        {
+          "assessment_item_id": "AR-02",
+          "planned_section": "3.3",
+          "content_form": "mixed",
+          "evidence_status": "target-only",
+          "confirmed_location": "",
+          "notes": "在X.1—X.3正文中转写为技术目标、条件、阈值、结果或边界，不暴露外部来源身份。",
+          "prose_realization": "mixed",
+          "source_identity_hidden": true,
+          "evidence_section": "",
+          "assessment_kind": "mixed",
+          "result_realization": "定量部分写实际值或结果，定性部分写已形成能力、功能、成果状态或工程效果，不只复述考核要求。"
+        }
+      ],
+      "standalone_validation_mode": "none",
+      "standalone_validation_reason": "",
+      "heading_source_term_plan": [
+        {
+          "source_item_id": "GO-02",
+          "source_type": "expected-output",
+          "term": "调度对象",
+          "granularity": "broad",
+          "target_heading_number": "3.1",
+          "target_heading_title": "调度对象关系类型感知异构图变换注意力表征方法"
+        },
+        {
+          "source_item_id": "SP-02",
+          "source_type": "schedule-plan",
+          "term": "规则约束解耦注意力预训练语言编码",
+          "granularity": "broad",
+          "target_heading_number": "3.2",
+          "target_heading_title": "调度规程规则约束解耦注意力预训练语言编码抽取对齐方法"
+        },
+        {
+          "source_item_id": "AR-02",
+          "source_type": "assessment-requirement",
+          "term": "混合检索后交互语义重排序",
+          "granularity": "broad",
+          "target_heading_number": "3.3",
+          "target_heading_title": "电网规则混合检索后交互语义重排序技术"
+        }
+      ],
+      "chapter_mainline_map": {
+        "chapter_core_object": "调度规程知识表征与电子规则库构建技术",
+        "chapter_core_problem": "多源规程知识结构异构且难以统一检索和校核",
+        "chapter_core_output": "调度规程知识表征与电子规则库构建技术",
+        "excluded_adjacent_topics": []
+      },
+      "technology_option_sets": [
+        {
+          "section_number": "3.1",
+          "problem_or_role": "形成统一调度对象表示",
+          "source_locked": true,
+          "candidates": [
+            {
+              "candidate_id": "3.1-A",
+              "technology_name": "关系类型感知HGT",
+              "technical_signature_cn": "关系类型感知异构图变换注意力",
+              "key_mechanisms": [
+                "标题显式采用关系类型感知HGT作为区分性技术签名，避免只使用技术族或任务动作描述"
+              ],
+              "fit_reason": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解",
+              "origin": "source_confirmed",
+              "scope_risk": "none",
+              "recommended": true
+            }
+          ],
+          "recommended_candidate_id": "3.1-A",
+          "selected_candidate_id": "3.1-A",
+          "selection_status": "user_confirmed"
+        },
+        {
+          "section_number": "3.2",
+          "problem_or_role": "利用对象表示抽取并对齐规程知识",
+          "source_locked": true,
+          "candidates": [
+            {
+              "candidate_id": "3.2-A",
+              "technology_name": "规则约束DeBERTa",
+              "technical_signature_cn": "规则约束解耦注意力预训练语言编码",
+              "key_mechanisms": [
+                "标题显式采用规则约束DeBERTa作为区分性技术签名，避免只使用技术族或任务动作描述"
+              ],
+              "fit_reason": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解",
+              "origin": "source_confirmed",
+              "scope_risk": "none",
+              "recommended": true
+            }
+          ],
+          "recommended_candidate_id": "3.2-A",
+          "selected_candidate_id": "3.2-A",
+          "selection_status": "user_confirmed"
+        },
+        {
+          "section_number": "3.3",
+          "problem_or_role": "利用规则知识形成高召回检索服务",
+          "source_locked": true,
+          "candidates": [
+            {
+              "candidate_id": "3.3-A",
+              "technology_name": "混合检索ColBERT重排序",
+              "technical_signature_cn": "混合检索后交互语义重排序",
+              "key_mechanisms": [
+                "标题显式采用混合检索ColBERT重排序作为区分性技术签名，避免只使用技术族或任务动作描述"
+              ],
+              "fit_reason": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解",
+              "origin": "source_confirmed",
+              "scope_risk": "none",
+              "recommended": true
+            }
+          ],
+          "recommended_candidate_id": "3.3-A",
+          "selected_candidate_id": "3.3-A",
+          "selection_status": "user_confirmed"
+        }
+      ]
+    },
+    {
+      "research_point_id": "RP-03",
+      "chapter_id": "4",
+      "chapter_problem": "复杂工况下自主决策能力和价值对齐稳定性不足",
+      "chapter_technology": "自主决策智能体与动态趋优技术",
+      "research_status_topic": "自主决策智能体与动态趋优技术",
+      "source_item_ids": [
+        "RC-03",
+        "GO-03",
+        "SP-03",
+        "AR-03"
+      ],
+      "source_order": 3,
+      "chapter_title": "自主决策智能体与动态趋优技术",
+      "title_alignment_basis": "删除来源小点开头的任务动作词，并按课题角色保留具体技术或工程实现中心词，未增加额外技术信息。",
+      "innovation_title_plans": [
+        {
+          "section_number": "4.1",
+          "title": "复杂电网选择性状态空间序列决策技术",
+          "parent_task_id": "TASK-03",
+          "power_element": "复杂电网工况",
+          "technical_object": "复杂电网工况",
+          "technical_method": "选择性状态空间Mamba",
+          "technical_role": "形成工况状态表示与候选动作",
+          "specificity_basis": "标题显式采用选择性状态空间Mamba作为区分性技术签名，避免只使用技术族或任务动作描述",
+          "source_item_ids": [
+            "RC-03",
+            "SP-03",
+            "GO-03"
+          ],
+          "supporting_heading_numbers": [
+            "4.1.1"
+          ],
+          "notes": "",
+          "research_subpoint_index": 1,
+          "derivation_basis": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解",
+          "assessment_item_ids": [],
+          "specific_computing_technology": "选择性状态空间Mamba",
+          "technology_specificity_basis": "标题显式采用选择性状态空间Mamba作为区分性技术签名，避免只使用技术族或任务动作描述",
+          "technology_origin": "user_confirmed_design",
+          "shared_chapter_question": "如何在复杂电网工况下形成满足安全边界且可持续自适应的自主决策能力？",
+          "chain_order": 1,
+          "chain_role": "状态感知",
+          "depends_on_previous": false,
+          "handoff_from_previous": "",
+          "output_to_next": "工况状态与候选动作",
+          "technical_signature": "选择性状态空间序列建模",
+          "parent_logic_link": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解"
+        },
+        {
+          "section_number": "4.2",
+          "title": "调度安全边界安全约束分层近端策略优化趋优方法",
+          "parent_task_id": "TASK-03",
+          "power_element": "调度安全边界",
+          "technical_object": "调度安全边界",
+          "technical_method": "安全约束分层PPO",
+          "technical_role": "基于候选动作执行安全约束趋优",
+          "specificity_basis": "标题显式采用安全约束分层PPO作为区分性技术签名，避免只使用技术族或任务动作描述",
+          "source_item_ids": [
+            "RC-03",
+            "SP-03"
+          ],
+          "supporting_heading_numbers": [
+            "4.2.1"
+          ],
+          "notes": "",
+          "research_subpoint_index": 2,
+          "derivation_basis": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解",
+          "assessment_item_ids": [],
+          "specific_computing_technology": "安全约束分层PPO",
+          "technology_specificity_basis": "标题显式采用安全约束分层PPO作为区分性技术签名，避免只使用技术族或任务动作描述",
+          "technology_origin": "user_confirmed_design",
+          "shared_chapter_question": "如何在复杂电网工况下形成满足安全边界且可持续自适应的自主决策能力？",
+          "chain_order": 2,
+          "chain_role": "策略优化",
+          "depends_on_previous": true,
+          "handoff_from_previous": "工况状态与候选动作",
+          "output_to_next": "安全候选策略",
+          "technical_signature": "安全约束分层近端策略优化",
+          "parent_logic_link": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解"
+        },
+        {
+          "section_number": "4.3",
+          "title": "电网调度策略原型网络模型无关元学习自适应方法",
+          "power_element": "电网调度反馈",
+          "source_item_ids": [
+            "RC-03",
+            "SP-03",
+            "AR-03"
+          ],
+          "supporting_heading_numbers": [
+            "4.3.1"
+          ],
+          "notes": "",
+          "parent_task_id": "TASK-03",
+          "technical_object": "电网调度策略",
+          "technical_method": "原型网络MAML",
+          "technical_role": "利用反馈快速适应工况变化",
+          "specificity_basis": "标题显式采用原型网络MAML作为区分性技术签名，避免只使用技术族或任务动作描述",
+          "research_subpoint_index": 3,
+          "derivation_basis": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解",
+          "assessment_item_ids": [
+            "AR-03"
+          ],
+          "specific_computing_technology": "原型网络MAML",
+          "technology_specificity_basis": "标题显式采用原型网络MAML作为区分性技术签名，避免只使用技术族或任务动作描述",
+          "technology_origin": "user_confirmed_design",
+          "shared_chapter_question": "如何在复杂电网工况下形成满足安全边界且可持续自适应的自主决策能力？",
+          "chain_order": 3,
+          "chain_role": "策略自适应",
+          "depends_on_previous": true,
+          "handoff_from_previous": "安全候选策略",
+          "output_to_next": "自适应决策策略",
+          "technical_signature": "原型网络模型无关元学习",
+          "parent_logic_link": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解"
+        }
+      ],
+      "parent_task_id": "TASK-03",
+      "parent_task_order": 3,
+      "task_role": "technical-research",
+      "assessment_coverage_plans": [
+        {
+          "assessment_item_id": "AR-03",
+          "planned_section": "4.3",
+          "content_form": "mixed",
+          "evidence_status": "target-only",
+          "confirmed_location": "",
+          "notes": "在X.1—X.3正文中转写为技术目标、条件、阈值、结果或边界，不暴露外部来源身份。",
+          "prose_realization": "mixed",
+          "source_identity_hidden": true,
+          "evidence_section": "",
+          "assessment_kind": "mixed",
+          "result_realization": "定量部分写实际值或结果，定性部分写已形成能力、功能、成果状态或工程效果，不只复述考核要求。"
+        }
+      ],
+      "standalone_validation_mode": "none",
+      "standalone_validation_reason": "",
+      "heading_source_term_plan": [
+        {
+          "source_item_id": "GO-03",
+          "source_type": "expected-output",
+          "term": "复杂电网",
+          "granularity": "broad",
+          "target_heading_number": "4.1",
+          "target_heading_title": "复杂电网选择性状态空间序列决策技术"
+        },
+        {
+          "source_item_id": "SP-03",
+          "source_type": "schedule-plan",
+          "term": "安全约束分层近端策略优化",
+          "granularity": "broad",
+          "target_heading_number": "4.2",
+          "target_heading_title": "调度安全边界安全约束分层近端策略优化趋优方法"
+        },
+        {
+          "source_item_id": "AR-03",
+          "source_type": "assessment-requirement",
+          "term": "原型网络模型无关元学习",
+          "granularity": "broad",
+          "target_heading_number": "4.3",
+          "target_heading_title": "电网调度策略原型网络模型无关元学习自适应方法"
+        }
+      ],
+      "chapter_mainline_map": {
+        "chapter_core_object": "自主决策智能体与动态趋优技术",
+        "chapter_core_problem": "复杂工况下自主决策能力和价值对齐稳定性不足",
+        "chapter_core_output": "自主决策智能体与动态趋优技术",
+        "excluded_adjacent_topics": []
+      },
+      "technology_option_sets": [
+        {
+          "section_number": "4.1",
+          "problem_or_role": "形成工况状态表示与候选动作",
+          "source_locked": true,
+          "candidates": [
+            {
+              "candidate_id": "4.1-A",
+              "technology_name": "选择性状态空间Mamba",
+              "technical_signature_cn": "选择性状态空间序列建模",
+              "key_mechanisms": [
+                "标题显式采用选择性状态空间Mamba作为区分性技术签名，避免只使用技术族或任务动作描述"
+              ],
+              "fit_reason": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解",
+              "origin": "source_confirmed",
+              "scope_risk": "none",
+              "recommended": true
+            }
+          ],
+          "recommended_candidate_id": "4.1-A",
+          "selected_candidate_id": "4.1-A",
+          "selection_status": "user_confirmed"
+        },
+        {
+          "section_number": "4.2",
+          "problem_or_role": "基于候选动作执行安全约束趋优",
+          "source_locked": true,
+          "candidates": [
+            {
+              "candidate_id": "4.2-A",
+              "technology_name": "安全约束分层PPO",
+              "technical_signature_cn": "安全约束分层近端策略优化",
+              "key_mechanisms": [
+                "标题显式采用安全约束分层PPO作为区分性技术签名，避免只使用技术族或任务动作描述"
+              ],
+              "fit_reason": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解",
+              "origin": "source_confirmed",
+              "scope_risk": "none",
+              "recommended": true
+            }
+          ],
+          "recommended_candidate_id": "4.2-A",
+          "selected_candidate_id": "4.2-A",
+          "selection_status": "user_confirmed"
+        },
+        {
+          "section_number": "4.3",
+          "problem_or_role": "利用反馈快速适应工况变化",
+          "source_locked": true,
+          "candidates": [
+            {
+              "candidate_id": "4.3-A",
+              "technology_name": "原型网络MAML",
+              "technical_signature_cn": "原型网络模型无关元学习",
+              "key_mechanisms": [
+                "标题显式采用原型网络MAML作为区分性技术签名，避免只使用技术族或任务动作描述"
+              ],
+              "fit_reason": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解",
+              "origin": "source_confirmed",
+              "scope_risk": "none",
+              "recommended": true
+            }
+          ],
+          "recommended_candidate_id": "4.3-A",
+          "selected_candidate_id": "4.3-A",
+          "selection_status": "user_confirmed"
+        }
+      ]
+    },
+    {
+      "research_point_id": "RP-04",
+      "chapter_id": "5",
+      "chapter_problem": "规则知识、机理分析与交互决策缺少协同推理机制",
+      "chapter_technology": "融合专业知识的电网运行智能辅助决策技术",
+      "research_status_topic": "融合专业知识的电网运行智能辅助决策技术",
+      "source_item_ids": [
+        "RC-04",
+        "GO-04",
+        "SP-04",
+        "AR-04"
+      ],
+      "source_order": 4,
+      "chapter_title": "融合专业知识的电网运行智能辅助决策技术",
+      "title_alignment_basis": "删除来源小点开头的任务动作词，并按课题角色保留具体技术或工程实现中心词，未增加额外技术信息。",
+      "innovation_title_plans": [
+        {
+          "section_number": "5.1",
+          "title": "电网运行约束混合检索重排序检索增强生成生成技术",
+          "parent_task_id": "TASK-04",
+          "power_element": "电网运行约束",
+          "technical_object": "电网运行约束和专业知识",
+          "technical_method": "混合检索重排序RAG",
+          "technical_role": "形成知识约束的候选策略",
+          "specificity_basis": "标题显式采用混合检索重排序RAG作为区分性技术签名，避免只使用技术族或任务动作描述",
+          "source_item_ids": [
+            "RC-04",
+            "SP-04",
+            "GO-04"
+          ],
+          "supporting_heading_numbers": [
+            "5.1.1"
+          ],
+          "notes": "",
+          "research_subpoint_index": 1,
+          "derivation_basis": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解",
+          "assessment_item_ids": [],
+          "specific_computing_technology": "混合检索重排序RAG",
+          "technology_specificity_basis": "标题显式采用混合检索重排序RAG作为区分性技术签名，避免只使用技术族或任务动作描述",
+          "technology_origin": "user_confirmed_design",
+          "shared_chapter_question": "如何融合专业知识形成可信、可解释、可校核的电网运行辅助决策？",
+          "chain_order": 1,
+          "chain_role": "知识增强生成",
+          "depends_on_previous": false,
+          "handoff_from_previous": "",
+          "output_to_next": "知识增强候选策略",
+          "technical_signature": "混合检索重排序检索增强生成",
+          "parent_logic_link": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解"
+        },
+        {
+          "section_number": "5.2",
+          "title": "调度风险蒙特卡洛随机失活贝叶斯不确定性解释方法",
+          "parent_task_id": "TASK-04",
+          "power_element": "调度风险",
+          "technical_object": "调度风险",
+          "technical_method": "MC-Dropout贝叶斯不确定性",
+          "technical_role": "评估候选策略不确定性与风险",
+          "specificity_basis": "标题显式采用MC-Dropout贝叶斯不确定性作为区分性技术签名，避免只使用技术族或任务动作描述",
+          "source_item_ids": [
+            "RC-04",
+            "SP-04"
+          ],
+          "supporting_heading_numbers": [
+            "5.2.1"
+          ],
+          "notes": "",
+          "research_subpoint_index": 2,
+          "derivation_basis": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解",
+          "assessment_item_ids": [],
+          "specific_computing_technology": "MC-Dropout贝叶斯不确定性",
+          "technology_specificity_basis": "标题显式采用MC-Dropout贝叶斯不确定性作为区分性技术签名，避免只使用技术族或任务动作描述",
+          "technology_origin": "user_confirmed_design",
+          "shared_chapter_question": "如何融合专业知识形成可信、可解释、可校核的电网运行辅助决策？",
+          "chain_order": 2,
+          "chain_role": "风险解释",
+          "depends_on_previous": true,
+          "handoff_from_previous": "知识增强候选策略",
+          "output_to_next": "带风险置信的候选策略",
+          "technical_signature": "蒙特卡洛随机失活贝叶斯不确定性",
+          "parent_logic_link": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解"
+        },
+        {
+          "section_number": "5.3",
+          "title": "电网运行规则约束解耦注意力预训练语言编码神经符号校核方法",
+          "power_element": "电网运行",
+          "source_item_ids": [
+            "RC-04",
+            "SP-04",
+            "AR-04"
+          ],
+          "supporting_heading_numbers": [
+            "5.3.1"
+          ],
+          "notes": "",
+          "parent_task_id": "TASK-04",
+          "technical_object": "电网运行",
+          "technical_method": "规则约束DeBERTa",
+          "technical_role": "结合规则知识校核候选策略",
+          "specificity_basis": "标题显式采用规则约束DeBERTa作为区分性技术签名，避免只使用技术族或任务动作描述",
+          "research_subpoint_index": 3,
+          "derivation_basis": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解",
+          "assessment_item_ids": [
+            "AR-04"
+          ],
+          "specific_computing_technology": "规则约束DeBERTa",
+          "technology_specificity_basis": "标题显式采用规则约束DeBERTa作为区分性技术签名，避免只使用技术族或任务动作描述",
+          "technology_origin": "user_confirmed_design",
+          "shared_chapter_question": "如何融合专业知识形成可信、可解释、可校核的电网运行辅助决策？",
+          "chain_order": 3,
+          "chain_role": "决策校核",
+          "depends_on_previous": true,
+          "handoff_from_previous": "带风险置信的候选策略",
+          "output_to_next": "可信辅助决策",
+          "technical_signature": "规则约束解耦注意力预训练语言编码",
+          "parent_logic_link": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解"
+        }
+      ],
+      "parent_task_id": "TASK-04",
+      "parent_task_order": 4,
+      "task_role": "technical-research",
+      "assessment_coverage_plans": [
+        {
+          "assessment_item_id": "AR-04",
+          "planned_section": "5.3",
+          "content_form": "mixed",
+          "evidence_status": "target-only",
+          "confirmed_location": "",
+          "notes": "在X.1—X.3正文中转写为技术目标、条件、阈值、结果或边界，不暴露外部来源身份。",
+          "prose_realization": "mixed",
+          "source_identity_hidden": true,
+          "evidence_section": "",
+          "assessment_kind": "mixed",
+          "result_realization": "定量部分写实际值或结果，定性部分写已形成能力、功能、成果状态或工程效果，不只复述考核要求。"
+        }
+      ],
+      "standalone_validation_mode": "none",
+      "standalone_validation_reason": "",
+      "heading_source_term_plan": [
+        {
+          "source_item_id": "GO-04",
+          "source_type": "expected-output",
+          "term": "电网运行约束",
+          "granularity": "broad",
+          "target_heading_number": "5.1",
+          "target_heading_title": "电网运行约束混合检索重排序检索增强生成生成技术"
+        },
+        {
+          "source_item_id": "SP-04",
+          "source_type": "schedule-plan",
+          "term": "蒙特卡洛随机失活贝叶斯不确定性",
+          "granularity": "broad",
+          "target_heading_number": "5.2",
+          "target_heading_title": "调度风险蒙特卡洛随机失活贝叶斯不确定性解释方法"
+        },
+        {
+          "source_item_id": "AR-04",
+          "source_type": "assessment-requirement",
+          "term": "神经符号校核",
+          "granularity": "broad",
+          "target_heading_number": "5.3",
+          "target_heading_title": "电网运行规则约束解耦注意力预训练语言编码神经符号校核方法"
+        }
+      ],
+      "chapter_mainline_map": {
+        "chapter_core_object": "融合专业知识的电网运行智能辅助决策技术",
+        "chapter_core_problem": "规则知识、机理分析与交互决策缺少协同推理机制",
+        "chapter_core_output": "融合专业知识的电网运行智能辅助决策技术",
+        "excluded_adjacent_topics": []
+      },
+      "technology_option_sets": [
+        {
+          "section_number": "5.1",
+          "problem_or_role": "形成知识约束的候选策略",
+          "source_locked": true,
+          "candidates": [
+            {
+              "candidate_id": "5.1-A",
+              "technology_name": "混合检索重排序RAG",
+              "technical_signature_cn": "混合检索重排序检索增强生成",
+              "key_mechanisms": [
+                "标题显式采用混合检索重排序RAG作为区分性技术签名，避免只使用技术族或任务动作描述"
+              ],
+              "fit_reason": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解",
+              "origin": "source_confirmed",
+              "scope_risk": "none",
+              "recommended": true
+            }
+          ],
+          "recommended_candidate_id": "5.1-A",
+          "selected_candidate_id": "5.1-A",
+          "selection_status": "user_confirmed"
+        },
+        {
+          "section_number": "5.2",
+          "problem_or_role": "评估候选策略不确定性与风险",
+          "source_locked": true,
+          "candidates": [
+            {
+              "candidate_id": "5.2-A",
+              "technology_name": "MC-Dropout贝叶斯不确定性",
+              "technical_signature_cn": "蒙特卡洛随机失活贝叶斯不确定性",
+              "key_mechanisms": [
+                "标题显式采用MC-Dropout贝叶斯不确定性作为区分性技术签名，避免只使用技术族或任务动作描述"
+              ],
+              "fit_reason": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解",
+              "origin": "source_confirmed",
+              "scope_risk": "none",
+              "recommended": true
+            }
+          ],
+          "recommended_candidate_id": "5.2-A",
+          "selected_candidate_id": "5.2-A",
+          "selection_status": "user_confirmed"
+        },
+        {
+          "section_number": "5.3",
+          "problem_or_role": "结合规则知识校核候选策略",
+          "source_locked": true,
+          "candidates": [
+            {
+              "candidate_id": "5.3-A",
+              "technology_name": "规则约束DeBERTa",
+              "technical_signature_cn": "规则约束解耦注意力预训练语言编码",
+              "key_mechanisms": [
+                "标题显式采用规则约束DeBERTa作为区分性技术签名，避免只使用技术族或任务动作描述"
+              ],
+              "fit_reason": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解",
+              "origin": "source_confirmed",
+              "scope_risk": "none",
+              "recommended": true
+            }
+          ],
+          "recommended_candidate_id": "5.3-A",
+          "selected_candidate_id": "5.3-A",
+          "selection_status": "user_confirmed"
+        }
+      ]
+    },
+    {
+      "research_point_id": "RP-05",
+      "chapter_id": "6",
+      "chapter_problem": "多项技术成果缺少统一模块化集成和真实场景验证",
+      "chapter_technology": "人机协同智能决策模块研发与试点应用",
+      "research_status_topic": "人机协同智能决策模块研发与试点应用",
+      "source_item_ids": [
+        "RC-05",
+        "GO-05",
+        "SP-05",
+        "AR-05"
+      ],
+      "source_order": 5,
+      "chapter_title": "人机协同智能决策模块研发与试点应用",
+      "title_alignment_basis": "删除来源小点开头的任务动作词，并按课题角色保留具体技术或工程实现中心词，未增加额外技术信息。",
+      "innovation_title_plans": [
+        {
+          "section_number": "6.1",
+          "title": "电网决策稀疏门控双专家混合服务编排技术",
+          "parent_task_id": "TASK-05",
+          "power_element": "电网智能决策模块",
+          "technical_object": "智能决策服务模块",
+          "technical_method": "稀疏门控Top2MoE",
+          "technical_role": "形成可调用决策服务链",
+          "specificity_basis": "标题显式采用稀疏门控Top2MoE作为区分性技术签名，避免只使用技术族或任务动作描述",
+          "source_item_ids": [
+            "RC-05",
+            "SP-05",
+            "GO-05"
+          ],
+          "supporting_heading_numbers": [
+            "6.1.1"
+          ],
+          "notes": "",
+          "research_subpoint_index": 1,
+          "derivation_basis": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解",
+          "assessment_item_ids": [],
+          "specific_computing_technology": "稀疏门控Top2MoE",
+          "technology_specificity_basis": "标题显式采用稀疏门控Top2MoE作为区分性技术签名，避免只使用技术族或任务动作描述",
+          "technology_origin": "user_confirmed_design",
+          "shared_chapter_question": "如何把智能决策能力稳定集成到电网试点业务并形成可验证的工程闭环？",
+          "chain_order": 1,
+          "chain_role": "服务编排",
+          "depends_on_previous": false,
+          "handoff_from_previous": "",
+          "output_to_next": "可调用决策服务",
+          "technical_signature": "稀疏门控双专家混合",
+          "parent_logic_link": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解"
+        },
+        {
+          "section_number": "6.2",
+          "title": "调度试点多域物理联合仿真数字孪生闭环集成技术",
+          "parent_task_id": "TASK-05",
+          "power_element": "调度试点",
+          "technical_object": "调度试点",
+          "technical_method": "Modelica-FMI数字孪生",
+          "technical_role": "在试点工况中验证服务行为与边界",
+          "specificity_basis": "标题显式采用Modelica-FMI数字孪生作为区分性技术签名，避免只使用技术族或任务动作描述",
+          "source_item_ids": [
+            "RC-05",
+            "SP-05"
+          ],
+          "supporting_heading_numbers": [
+            "6.2.1"
+          ],
+          "notes": "",
+          "research_subpoint_index": 2,
+          "derivation_basis": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解",
+          "assessment_item_ids": [],
+          "specific_computing_technology": "Modelica-FMI数字孪生",
+          "technology_specificity_basis": "标题显式采用Modelica-FMI数字孪生作为区分性技术签名，避免只使用技术族或任务动作描述",
+          "technology_origin": "user_confirmed_design",
+          "shared_chapter_question": "如何把智能决策能力稳定集成到电网试点业务并形成可验证的工程闭环？",
+          "chain_order": 2,
+          "chain_role": "闭环验证",
+          "depends_on_previous": true,
+          "handoff_from_previous": "可调用决策服务",
+          "output_to_next": "已验证服务配置",
+          "technical_signature": "多域物理联合仿真数字孪生",
+          "parent_logic_link": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解"
+        },
+        {
+          "section_number": "6.3",
+          "title": "电网试点角色图约束多智能体近端策略优化多智能体集成技术",
+          "power_element": "电网试点业务",
+          "source_item_ids": [
+            "RC-05",
+            "SP-05",
+            "AR-05"
+          ],
+          "supporting_heading_numbers": [
+            "6.3.1"
+          ],
+          "notes": "",
+          "parent_task_id": "TASK-05",
+          "technical_object": "电网试点智能决策服务",
+          "technical_method": "角色图约束MAPPO",
+          "technical_role": "将验证后的服务适配到多业务流程",
+          "specificity_basis": "标题显式采用角色图约束MAPPO作为区分性技术签名，避免只使用技术族或任务动作描述",
+          "research_subpoint_index": 3,
+          "derivation_basis": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解",
+          "assessment_item_ids": [
+            "AR-05"
+          ],
+          "specific_computing_technology": "角色图约束MAPPO",
+          "technology_specificity_basis": "标题显式采用角色图约束MAPPO作为区分性技术签名，避免只使用技术族或任务动作描述",
+          "technology_origin": "user_confirmed_design",
+          "shared_chapter_question": "如何把智能决策能力稳定集成到电网试点业务并形成可验证的工程闭环？",
+          "chain_order": 3,
+          "chain_role": "服务集成",
+          "depends_on_previous": true,
+          "handoff_from_previous": "已验证服务配置",
+          "output_to_next": "试点业务服务能力",
+          "technical_signature": "角色图约束多智能体近端策略优化",
+          "parent_logic_link": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解"
+        }
+      ],
+      "parent_task_id": "TASK-05",
+      "parent_task_order": 5,
+      "task_role": "engineering-implementation",
+      "assessment_coverage_plans": [
+        {
+          "assessment_item_id": "AR-05",
+          "planned_section": "6.3",
+          "content_form": "mixed",
+          "evidence_status": "target-only",
+          "confirmed_location": "",
+          "notes": "在X.1—X.3正文中转写为技术目标、条件、阈值、结果或边界，不暴露外部来源身份。",
+          "prose_realization": "mixed",
+          "source_identity_hidden": true,
+          "evidence_section": "",
+          "assessment_kind": "mixed",
+          "result_realization": "定量部分写实际值或结果，定性部分写已形成能力、功能、成果状态或工程效果，不只复述考核要求。"
+        }
+      ],
+      "standalone_validation_mode": "none",
+      "standalone_validation_reason": "",
+      "heading_source_term_plan": [
+        {
+          "source_item_id": "GO-05",
+          "source_type": "expected-output",
+          "term": "电网决策",
+          "granularity": "broad",
+          "target_heading_number": "6.1",
+          "target_heading_title": "电网决策稀疏门控双专家混合服务编排技术"
+        },
+        {
+          "source_item_id": "SP-05",
+          "source_type": "schedule-plan",
+          "term": "多域物理联合仿真数字孪生",
+          "granularity": "broad",
+          "target_heading_number": "6.2",
+          "target_heading_title": "调度试点多域物理联合仿真数字孪生闭环集成技术"
+        },
+        {
+          "source_item_id": "AR-05",
+          "source_type": "assessment-requirement",
+          "term": "多智能体近端策略优化",
+          "granularity": "broad",
+          "target_heading_number": "6.3",
+          "target_heading_title": "电网试点角色图约束多智能体近端策略优化多智能体集成技术"
+        }
+      ],
+      "chapter_mainline_map": {
+        "chapter_core_object": "人机协同智能决策模块研发与试点应用",
+        "chapter_core_problem": "多项技术成果缺少统一模块化集成和真实场景验证",
+        "chapter_core_output": "人机协同智能决策模块研发与试点应用",
+        "excluded_adjacent_topics": []
+      },
+      "technology_option_sets": [
+        {
+          "section_number": "6.1",
+          "problem_or_role": "形成可调用决策服务链",
+          "source_locked": true,
+          "candidates": [
+            {
+              "candidate_id": "6.1-A",
+              "technology_name": "稀疏门控Top2MoE",
+              "technical_signature_cn": "稀疏门控双专家混合",
+              "key_mechanisms": [
+                "标题显式采用稀疏门控Top2MoE作为区分性技术签名，避免只使用技术族或任务动作描述"
+              ],
+              "fit_reason": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解",
+              "origin": "source_confirmed",
+              "scope_risk": "none",
+              "recommended": true
+            }
+          ],
+          "recommended_candidate_id": "6.1-A",
+          "selected_candidate_id": "6.1-A",
+          "selection_status": "user_confirmed"
+        },
+        {
+          "section_number": "6.2",
+          "problem_or_role": "在试点工况中验证服务行为与边界",
+          "source_locked": true,
+          "candidates": [
+            {
+              "candidate_id": "6.2-A",
+              "technology_name": "Modelica-FMI数字孪生",
+              "technical_signature_cn": "多域物理联合仿真数字孪生",
+              "key_mechanisms": [
+                "标题显式采用Modelica-FMI数字孪生作为区分性技术签名，避免只使用技术族或任务动作描述"
+              ],
+              "fit_reason": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解",
+              "origin": "source_confirmed",
+              "scope_risk": "none",
+              "recommended": true
+            }
+          ],
+          "recommended_candidate_id": "6.2-A",
+          "selected_candidate_id": "6.2-A",
+          "selection_status": "user_confirmed"
+        },
+        {
+          "section_number": "6.3",
+          "problem_or_role": "将验证后的服务适配到多业务流程",
+          "source_locked": true,
+          "candidates": [
+            {
+              "candidate_id": "6.3-A",
+              "technology_name": "角色图约束MAPPO",
+              "technical_signature_cn": "角色图约束多智能体近端策略优化",
+              "key_mechanisms": [
+                "标题显式采用角色图约束MAPPO作为区分性技术签名，避免只使用技术族或任务动作描述"
+              ],
+              "fit_reason": "由当前来源研究内容小点、对应预期目标、进度计划技术和考核要求共同拆解",
+              "origin": "source_confirmed",
+              "scope_risk": "none",
+              "recommended": true
+            }
+          ],
+          "recommended_candidate_id": "6.3-A",
+          "selected_candidate_id": "6.3-A",
+          "selection_status": "user_confirmed"
+        }
+      ]
+    }
+  ],
+  "coverage_summary": {
+    "total_items": 20,
+    "mapped_items": 20,
+    "confirmed_items": 0,
+    "unresolved_items": 0,
+    "unresolved_item_ids": []
+  },
+  "report_theme_type": "non-evaluation"
+}

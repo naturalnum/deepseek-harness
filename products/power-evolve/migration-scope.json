@@ -1,0 +1,794 @@
+{
+  "version": 1,
+  "upstreamReleaseTag": "dsh-v0.2.1-alpha.1",
+  "migrationBranch": "power-evolve/migrate-dsh-0.2.1-alpha.1",
+  "includedFeatures": [
+    "F01",
+    "F02",
+    "F03",
+    "F04",
+    "F05",
+    "F07",
+    "F09",
+    "F10",
+    "F11",
+    "F12",
+    "F13",
+    "F14",
+    "F15",
+    "F16",
+    "F17",
+    "F18",
+    "F19",
+    "F20"
+  ],
+  "packages": [
+    "application",
+    "contracts",
+    "connector-runner",
+    "host",
+    "platform",
+    "cloud-web",
+    "client-account",
+    "client-extension-center"
+  ],
+  "ui": {
+    "plugins.bundle.config": "@power-evolve/host",
+    "skills": "existing Skills page",
+    "account": "settings.launcher"
+  },
+  "coverage": {
+    "include": [
+      "products/power-evolve/*/src/**/*.{ts,tsx,js,mjs}",
+      "products/power-evolve/deploy/**/*.mjs",
+      "products/power-evolve/cloud-web/scripts/**/*.mjs"
+    ],
+    "thresholds": {
+      "perFile": true,
+      "lines": 100,
+      "statements": 100,
+      "functions": 100,
+      "branches": 100
+    },
+    "exceptions": [],
+    "pureTypes": "AST verification; no runtime statements",
+    "generated": "catalog hash and reproducible generation",
+    "worker": "collect subprocess V8 coverage; do not treat invisible files as exempt",
+    "python": "actual execution and artifact assertions"
+  },
+  "applicationSources": [
+    {
+      "source": "application/src/account-contracts.ts",
+      "target": "application/src/account-contracts.ts",
+      "sha256": "3c9c790075e218f8f0b88373f087dbd9e14b7630fefff20935ed5dddfae64b3e",
+      "action": "port"
+    },
+    {
+      "source": "application/src/continuation-input.ts",
+      "target": "application/src/continuation-input.ts",
+      "sha256": "5bb2c1d458e7a902fa5678dcf931af1bc3d99142d2cc79090773b9677e770147",
+      "action": "port"
+    },
+    {
+      "source": "application/src/contracts.ts",
+      "target": "application/src/contracts.ts",
+      "sha256": "e2c9cf1c7a34a7df686551a25d02a4cd9a91eb47e3edfea2826a933af03d6314",
+      "action": "adapt"
+    },
+    {
+      "source": "application/src/file-download-http.ts",
+      "target": "application/src/file-download-http.ts",
+      "sha256": "068439ce01e17209abb15a7e510b7adef01e55e98e6005c0788039c6b2ccb588",
+      "action": "port"
+    },
+    {
+      "source": "application/src/host/browser-auth.ts",
+      "target": "application/src/host/browser-auth.ts",
+      "sha256": "72d5762ef80bd2b02daa2e4e228f9185a5211fab57a1e5617665405925f90641",
+      "action": "port"
+    },
+    {
+      "source": "application/src/host/connectors.ts",
+      "target": "application/src/host/connectors.ts",
+      "sha256": "bff7b8596c2c4f12ff41a192510242986dc783ed7c7d7db82c5e84c24fead233",
+      "action": "port"
+    },
+    {
+      "source": "application/src/host/durability.ts",
+      "target": "application/src/host/durability.ts",
+      "sha256": "576b3aefe6a7e4beb26b130a505087b2d0e94efc962eb45c852b842d86743cef",
+      "action": "port"
+    },
+    {
+      "source": "application/src/host/executions.ts",
+      "target": "application/src/host/executions.ts",
+      "sha256": "edc80edd7a90ac3ff8dc4ab15b1022418c047bbd10d13e44986d455135aaffc8",
+      "action": "adapt"
+    },
+    {
+      "source": "application/src/host/index.ts",
+      "target": "application/src/host/index.ts",
+      "sha256": "ed8b85fa0ac684055b7302d344c4057755385b292f4cfe26aa096ffe149c385d",
+      "action": "adapt"
+    },
+    {
+      "source": "application/src/host/mcp.ts",
+      "target": "application/src/host/mcp.ts",
+      "sha256": "a2d131b3320ae57af49f68c0196c7ad1c8315a317d40b3e3b220633e8ef91ec1",
+      "action": "port"
+    },
+    {
+      "source": "application/src/host/model.ts",
+      "target": "application/src/host/model.ts",
+      "sha256": "ab2bbe9a6a1781adbbfee33dcc75297aeaf17879aeaf5c4fd32efd7a972f7a74",
+      "action": "port"
+    },
+    {
+      "source": "application/src/host/native-office-preview.ts",
+      "target": "application/src/host/native-office-preview.ts",
+      "sha256": "1f95eebeb364f7a4f737a66717625a07f39d4d64c5102cb7f2f8b5f03d9abf7a",
+      "action": "adapt"
+    },
+    {
+      "source": "application/src/host/native-remote.ts",
+      "target": "application/src/host/native-remote.ts",
+      "sha256": "2ac05effeea5cc63776b782165606ec2b524a4efcbdd31d035c0241fc7974c84",
+      "action": "port"
+    },
+    {
+      "source": "application/src/host/native-session-follow.ts",
+      "target": "application/src/host/native-session-follow.ts",
+      "sha256": "e0b9b60fd71a135adabb1bd703823ce1c51e1a7b54859ff396305d50aa2f0236",
+      "action": "port"
+    },
+    {
+      "source": "application/src/host/office.ts",
+      "target": "application/src/host/office.ts",
+      "sha256": "17c3fd4ce16c4f28559efcd0adbd9bb1bdf453dbb93336483ef5cb3b20bbf7f4",
+      "action": "adapt"
+    },
+    {
+      "source": "application/src/host/persistence.ts",
+      "target": "application/src/host/persistence.ts",
+      "sha256": "835864bdaa9c827bf9dfecc93e2b4dc6e25e764090ff482a56f8e82e6dbc8b13",
+      "action": "port"
+    },
+    {
+      "source": "application/src/host/scheduler.ts",
+      "target": "application/src/host/scheduler.ts",
+      "sha256": "04fbb080c195f68d1886109f8fa31f579d13368ec0e43439878430f7c56be23b",
+      "action": "adapt"
+    },
+    {
+      "source": "application/src/host/scope.ts",
+      "target": "application/src/host/scope.ts",
+      "sha256": "12d4fbdd5a90e1a5a2e769f5f2d24bdb0a681be6307cb4235a935bbecdf05a2e",
+      "action": "port"
+    },
+    {
+      "source": "application/src/host/skills.ts",
+      "target": "application/src/host/skills.ts",
+      "sha256": "b08535d55a652673f6a3762110d1f87f27faff33fcea7ae077fbe8847c616ac2",
+      "action": "adapt"
+    },
+    {
+      "source": "application/src/host/ssh-execute.ts",
+      "target": "application/src/host/ssh-execute.ts",
+      "sha256": "c4bc6e336e43c0d9869e896190837484cb228c59199a255daa8aba77e0e9bc1e",
+      "action": "port"
+    },
+    {
+      "source": "application/src/host/stdio-mcp.ts",
+      "target": "application/src/host/stdio-mcp.ts",
+      "sha256": "2009f256103d2e0fe10e2463a5323a778c95441d98b05f6e190527e518655452",
+      "action": "port"
+    },
+    {
+      "source": "application/src/host/stdio-v2.ts",
+      "target": "application/src/host/stdio-v2.ts",
+      "sha256": "565def3d74dba5a82c56088eb9139da15d07cbcfae98723c68019fe1cecba246",
+      "action": "port"
+    },
+    {
+      "source": "application/src/http.ts",
+      "target": "application/src/http.ts",
+      "sha256": "78d347b644d865fb5b165401867da36f52bf0e60f8e0e14d45d8794b16ecab5c",
+      "action": "port"
+    },
+    {
+      "source": "application/src/mcp-action-contracts.ts",
+      "target": "application/src/mcp-action-contracts.ts",
+      "sha256": "3300ebc5c9a1d5468f897e8af4fe4b99674887c7ec4a25d1b90bcbb7f480b37d",
+      "action": "port"
+    },
+    {
+      "source": "application/src/mcp-contracts.ts",
+      "target": "application/src/mcp-contracts.ts",
+      "sha256": "857553c3d71c10d309169007c001af3d7f6d1c355b80d7826798d66618de2e41",
+      "action": "port"
+    },
+    {
+      "source": "application/src/mcp-json-schema.ts",
+      "target": "application/src/mcp-json-schema.ts",
+      "sha256": "600dc9d1f650171e18d697b97fc5a754f7f5e24184ec438ba39c8401ae5ca02e",
+      "action": "port"
+    },
+    {
+      "source": "application/src/mcp-management-rpc.ts",
+      "target": "application/src/mcp-management-rpc.ts",
+      "sha256": "5a0bcd2ff1abd1462e78a9b56ea50fb4cdde4a53263a5dafadb69ec7193caeeb",
+      "action": "port"
+    },
+    {
+      "source": "application/src/mcp-model-tools.ts",
+      "target": "application/src/mcp-model-tools.ts",
+      "sha256": "5fae36eec7c93332b002831c65065d99e1fd5a11789689de223c8048923526fa",
+      "action": "adapt"
+    },
+    {
+      "source": "application/src/mcp-operation-contracts.ts",
+      "target": "application/src/mcp-operation-contracts.ts",
+      "sha256": "900dd1b72bbcdaab7cb088dde5b269ce72195aa522e5edb26e7b370504f9c1f3",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/account-authority.ts",
+      "target": "application/src/platform/account-authority.ts",
+      "sha256": "1c623e5093116c7b00ece5553e8fc2b3c9e0f7d67f8bdbbcc58aa66eb7d76fbe",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/account-bootstrap.ts",
+      "target": "application/src/platform/account-bootstrap.ts",
+      "sha256": "4e75d62cdb9f7069da564717648ad51919958253c3c53e1ecb936e2e6afd829e",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/account-config.ts",
+      "target": "application/src/platform/account-config.ts",
+      "sha256": "6c9b5cd8abc0786bcc2b214f464d55e4574e7c171f2efa5f8acd583dff4f42d6",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/account-credentials.ts",
+      "target": "application/src/platform/account-credentials.ts",
+      "sha256": "3cf7283433cf74083c56f309ad5a88fd1ec5ff61bf7a9ab14b0c673621d5c006",
+      "action": "adapt"
+    },
+    {
+      "source": "application/src/platform/account-execution-revocation.ts",
+      "target": "application/src/platform/account-execution-revocation.ts",
+      "sha256": "7a1fa98e767af01b35383c8b0ada78cc96aec4229ba9aaa7a78fb0cf700f6dbc",
+      "action": "adapt"
+    },
+    {
+      "source": "application/src/platform/account-routes.ts",
+      "target": "application/src/platform/account-routes.ts",
+      "sha256": "23d47e58cd822f2db9f581519219d9b4b8c0b0266b4ffcbaf1e781a70f247023",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/account-settings.ts",
+      "target": "application/src/platform/account-settings.ts",
+      "sha256": "4b44701756f29d9cf01203bf3f39a37c7e67cfc5d6b4d056f0ff114a2a31c058",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/accounts.ts",
+      "target": "application/src/platform/accounts.ts",
+      "sha256": "bf6238cd373668129ddc02b116f96d30be9cbd5ceb5fb9920ec4bb00fef07f16",
+      "action": "adapt"
+    },
+    {
+      "source": "application/src/platform/builtin-skills.ts",
+      "target": "application/src/platform/builtin-skills.ts",
+      "sha256": "e46e698233e6916897d3c53fc022397fa13d663cda0cf157c60aa9946adc3152",
+      "action": "adapt"
+    },
+    {
+      "source": "application/src/platform/cloud-execution-resolution-ownership.ts",
+      "target": "application/src/platform/cloud-execution-resolution-ownership.ts",
+      "sha256": "240497358950ba08e386f7c00751b555bbf1d939e886783e1b5d8dbf8c2e471b",
+      "action": "adapt"
+    },
+    {
+      "source": "application/src/platform/cloud-execution-resolution-types.ts",
+      "target": "application/src/platform/cloud-execution-resolution-types.ts",
+      "sha256": "8d47a5dff4dcf4f1acec2a4957b663a70ebbcfd49d6392b785151e3658cf19ab",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/cloud-execution-resolution.ts",
+      "target": "application/src/platform/cloud-execution-resolution.ts",
+      "sha256": "39b9e9bbff1720a18f42200115b0f261655f822ec49cd51411764eaab3464647",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/connectors.ts",
+      "target": "application/src/platform/connectors.ts",
+      "sha256": "e25ebcd3c5c6b86612b1d575db256dae208669771afd76d7ca5d252be63f550d",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/events.ts",
+      "target": "application/src/platform/events.ts",
+      "sha256": "7f0de091b0a0dc01f930a9c106445bdf6eae179c47fcb924404b52ea3f459e4c",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/execution-resolution-routes.ts",
+      "target": "application/src/platform/execution-resolution-routes.ts",
+      "sha256": "24759aa509888753b94e8b18e7f1c653870d00c87b359c91e993f2c2a06e3664",
+      "action": "adapt"
+    },
+    {
+      "source": "application/src/platform/executions.ts",
+      "target": "application/src/platform/executions.ts",
+      "sha256": "2dbc5560ee2452e0a3f186728d4506f18bd0bf5472b3eec34674b3060b4809cd",
+      "action": "adapt"
+    },
+    {
+      "source": "application/src/platform/file-downloads.ts",
+      "target": "application/src/platform/file-downloads.ts",
+      "sha256": "86db2354020a5c1bb7f9002efce68760bdbdc5039cc62a914f5a9d43c99bf250",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/files.ts",
+      "target": "application/src/platform/files.ts",
+      "sha256": "925a6f03e40c5a3963b489ba273ab845d6b4b3250614d9945407111980c91d6a",
+      "action": "adapt"
+    },
+    {
+      "source": "application/src/platform/identity.ts",
+      "target": "application/src/platform/identity.ts",
+      "sha256": "980c8b095a7cc4ca00c264eb64c973890687b90a5dacf4ade3559c87630fa04f",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/index.ts",
+      "target": "application/src/platform/index.ts",
+      "sha256": "24d696a8b02976850dc4e28ed292ca1f1bf4972b09222e2ee73953a072a3bace",
+      "action": "adapt"
+    },
+    {
+      "source": "application/src/platform/kubernetes.ts",
+      "target": "application/src/platform/kubernetes.ts",
+      "sha256": "7a7e70d0311f7a0491a121c1eafc93f847e1916aaa03969f63bbca89a50e3847",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/login-admission.ts",
+      "target": "application/src/platform/login-admission.ts",
+      "sha256": "0e05212cebc250364bf0234076d6356c276bfaa114fae5816b4abec0f2397628",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/mcp-action-worker.ts",
+      "target": "application/src/platform/mcp-action-worker.ts",
+      "sha256": "655a62d279d548a20c8c851f923e4f9ff1af91d8a561cfe180daadc210d9d5d4",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/mcp-actions.ts",
+      "target": "application/src/platform/mcp-actions.ts",
+      "sha256": "914af5c992b9d4f7ccf50e10c0f46ebb4466644f774ff8b412de472d6c5b923e",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/mcp-admission.ts",
+      "target": "application/src/platform/mcp-admission.ts",
+      "sha256": "c2be0f612f0050a7721d0a812da7730095d0ccb5f6396f1297e2eec2f1876dc8",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/mcp-catalog.ts",
+      "target": "application/src/platform/mcp-catalog.ts",
+      "sha256": "86c75ec3411fa26eb5650eec6f1ecda72c310b54098b36b2409fd3178bc582e1",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/mcp-check-worker.ts",
+      "target": "application/src/platform/mcp-check-worker.ts",
+      "sha256": "d2b75f880a59523d4d3ac7b092cb091052eecda74bc7a2ec85aa15cf2bb34d89",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/mcp-connections.ts",
+      "target": "application/src/platform/mcp-connections.ts",
+      "sha256": "0591f3a93ccac21f44ff754486f997f675f05c2db3241a7c3b50f48ac9f14c88",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/mcp-credentials.ts",
+      "target": "application/src/platform/mcp-credentials.ts",
+      "sha256": "f8b4034b0a8659a04e2e68d5983c6c52a856e6bd835e3a6fbac8a55e9ab54bf8",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/mcp-network.ts",
+      "target": "application/src/platform/mcp-network.ts",
+      "sha256": "5138033c7600f583a74f8837da49b6a256e28f1d71e49b336d0b72cf8d12c942",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/mcp-platform-config.ts",
+      "target": "application/src/platform/mcp-platform-config.ts",
+      "sha256": "93df8adce200042ea69f787dc13dd3f0e0ff07a0e9bed9b58ca9b5c386fa0b3a",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/mcp-routes.ts",
+      "target": "application/src/platform/mcp-routes.ts",
+      "sha256": "2d9d75391a35326006f0e5dc09f71f03d51146533af1fb08b039a64966a63e29",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/mcp-transport.ts",
+      "target": "application/src/platform/mcp-transport.ts",
+      "sha256": "290b426a063e0a2910dd894d6e0a0c9660ccc0d59eb718396d93343cc436c1ed",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/mcp.ts",
+      "target": "application/src/platform/mcp.ts",
+      "sha256": "eaf12779ed2a2b384655a45d67bc3244697832c23d5e2a8489d50aa22451ee3f",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/model.ts",
+      "target": "application/src/platform/model.ts",
+      "sha256": "d40eee06a1aee652f46561463fc26a68c3d58d8e35fd29d4ddca042ec06e7ba9",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/native-files.ts",
+      "target": "application/src/platform/native-files.ts",
+      "sha256": "c75bedf0709f437253bcf5a20826ab06913c381b87d9b895610c823830179977",
+      "action": "adapt"
+    },
+    {
+      "source": "application/src/platform/native-session-read.ts",
+      "target": "application/src/platform/native-session-read.ts",
+      "sha256": "f2ff8b851a3140fca49090086dd4c2bb6bb3a70bb70363506b9ea3d22f13b744",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/native-workspace-read.ts",
+      "target": "application/src/platform/native-workspace-read.ts",
+      "sha256": "149a92ebd370cf0d4f7d688d110abf57b664ce2a48ec056dd96faded1159a7f8",
+      "action": "adapt"
+    },
+    {
+      "source": "application/src/platform/office-preview-config.ts",
+      "target": "application/src/platform/office-preview-config.ts",
+      "sha256": "a128af5c0e20434483803a36232a4fad1f0b7b87fd247f93ece6ea09cd5d06af",
+      "action": "adapt"
+    },
+    {
+      "source": "application/src/platform/office-preview-pod.ts",
+      "target": "application/src/platform/office-preview-pod.ts",
+      "sha256": "19987361c3953427a6247035e9f98a53e0bfeba68bd780c5a664301dce8a5521",
+      "action": "adapt"
+    },
+    {
+      "source": "application/src/platform/office-previews.ts",
+      "target": "application/src/platform/office-previews.ts",
+      "sha256": "49cd5105657e6dca9a346c99b8d1d1b3dd6923097470924d775a0a4b21e09a73",
+      "action": "adapt"
+    },
+    {
+      "source": "application/src/platform/plugins.ts",
+      "target": "application/src/platform/plugins.ts",
+      "sha256": "579006d15898a33eec16b444fde790900a3e5f2a0f973fd47b5c9ffe72c0cdff",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/pod-stop-status.ts",
+      "target": "application/src/platform/pod-stop-status.ts",
+      "sha256": "2736ddc7ec2fe3ebf6f00a918ed210ce90e943c550f9a3715835d49a7669a248",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/report-skill-suite.ts",
+      "target": "application/src/platform/report-skill-suite.ts",
+      "sha256": "6897d4f7f968a844a3d24d4d9ac2a24728609c9037b7e6c83ca3edb99b2b8b3c",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/runtime-skills.ts",
+      "target": "application/src/platform/runtime-skills.ts",
+      "sha256": "a5b36a2c3f561909758d416f92921f811dad3cb2e80e1b956f51a797a897e564",
+      "action": "adapt"
+    },
+    {
+      "source": "application/src/platform/safe-posix.py",
+      "target": "application/src/platform/safe-posix.py",
+      "sha256": "1b25ffcc0cfb93f4fb69ece0b2bd633b92d08abaea64f9e47023ff3d2a951cab",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/safe-posix.ts",
+      "target": "application/src/platform/safe-posix.ts",
+      "sha256": "ce683f7cf3bb1f828e5ba940923a7156bfdfd1c581a8af9071ea001478174cbd",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/sandbox.ts",
+      "target": "application/src/platform/sandbox.ts",
+      "sha256": "a8945e6e0ad35c45a882e67428d83e989752b3ff193b8f9f921adfea8e2cf094",
+      "action": "adapt"
+    },
+    {
+      "source": "application/src/platform/skill-metadata.ts",
+      "target": "application/src/platform/skill-metadata.ts",
+      "sha256": "6b7734b2a96bb90fb58b3ac9d5c979d6359d025a20fe13be398aa9a465b2a139",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/skill-package-extraction.ts",
+      "target": "application/src/platform/skill-package-extraction.ts",
+      "sha256": "5ae7b142ff641a1c32fa554cb7cac835bccb5d4294d495021054c3633bf7c615",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/skill-package-manifest.ts",
+      "target": "application/src/platform/skill-package-manifest.ts",
+      "sha256": "b2d72df9b5fcd4d1519c08e1b28f0a2f9685bc42fd1863130421f5f9ae0a948d",
+      "action": "adapt"
+    },
+    {
+      "source": "application/src/platform/skills.ts",
+      "target": "application/src/platform/skills.ts",
+      "sha256": "ea845f470624b0f6cb9b330df942bd0d868520bd7e3618fbe550345150c8c355",
+      "action": "adapt"
+    },
+    {
+      "source": "application/src/platform/ssh-calls.ts",
+      "target": "application/src/platform/ssh-calls.ts",
+      "sha256": "17847758f964d77809e015a68478a69b96fd5eaa3dfc77c0482b185d5f1eb2fb",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/ssh-check.ts",
+      "target": "application/src/platform/ssh-check.ts",
+      "sha256": "99bc8d663e156a1ca1482045d67ac634093d22995d77693d02fb4e8ce001b14d",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/ssh-command.ts",
+      "target": "application/src/platform/ssh-command.ts",
+      "sha256": "c7548619107896e05a959708349265ebc81f844f06777cc034a4f1026f8fa777",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/ssh-credentials.ts",
+      "target": "application/src/platform/ssh-credentials.ts",
+      "sha256": "0ad7ea120ddbd76c5d7998d604620d7fa42fb942f2c0004800e1fc1c119bcadb",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/ssh-execute.ts",
+      "target": "application/src/platform/ssh-execute.ts",
+      "sha256": "833e4199abff9bc60f5b7c59e045f75e5e11bb38d2bd377ca615a7c644dddbd6",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/ssh-runner.ts",
+      "target": "application/src/platform/ssh-runner.ts",
+      "sha256": "68b6a8c745cfb3e2b16ee4db4803f2b23111a33e8bd0afd41ec278bf03190c5a",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/ssh.ts",
+      "target": "application/src/platform/ssh.ts",
+      "sha256": "82945e4d15952fd55ae60d0d5dfcfd2c5a7e5bf9e826cb7d4822f6108858b2c5",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/stdio-mcp.ts",
+      "target": "application/src/platform/stdio-mcp.ts",
+      "sha256": "030a0c65f28a3b1c9fa52dfae391fed334e831c5e7a13b27e8de629d7cb24a77",
+      "action": "adapt"
+    },
+    {
+      "source": "application/src/platform/stdio-runner.ts",
+      "target": "application/src/platform/stdio-runner.ts",
+      "sha256": "99dca26f0a85005a934f6deef54660bdb1557ddcdccfac619a1ddad7c19c7af2",
+      "action": "adapt"
+    },
+    {
+      "source": "application/src/platform/stdio-v2-actions.ts",
+      "target": "application/src/platform/stdio-v2-actions.ts",
+      "sha256": "95a7022f6de90ac844e7fd752c70cf2370dc26fb3d73afdbcb7b359aee246d8d",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/stdio-v2-admission.ts",
+      "target": "application/src/platform/stdio-v2-admission.ts",
+      "sha256": "db88fd7de149c0af84776a13ecafd943efbab705608c2cd7ab3a5e592aa88b6e",
+      "action": "adapt"
+    },
+    {
+      "source": "application/src/platform/stdio-v2-authorization.ts",
+      "target": "application/src/platform/stdio-v2-authorization.ts",
+      "sha256": "cefc381a64add7003d6759bfad69de3da6badc27174f262d4e135cf94c6c77d2",
+      "action": "adapt"
+    },
+    {
+      "source": "application/src/platform/stdio-v2-call-admission.ts",
+      "target": "application/src/platform/stdio-v2-call-admission.ts",
+      "sha256": "94b97cb02dca10ed77c1ee48f2a6d1c70afd69cbeb3b254197254f302c3ba91b",
+      "action": "adapt"
+    },
+    {
+      "source": "application/src/platform/stdio-v2-call-authority.ts",
+      "target": "application/src/platform/stdio-v2-call-authority.ts",
+      "sha256": "460583013bc583e40b914909fed032e8888be36734bf22388980dd6134f0172a",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/stdio-v2-cloud-capture.ts",
+      "target": "application/src/platform/stdio-v2-cloud-capture.ts",
+      "sha256": "a6171877849420aee5e97f72634ff710170d523a5373cbecc892fe732076fac3",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/stdio-v2-cloud-runtime.ts",
+      "target": "application/src/platform/stdio-v2-cloud-runtime.ts",
+      "sha256": "df8e3a3d16b9063e7cd8715d8a1ed80b56219f613d3fbae88e91eeeb50c7de68",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/stdio-v2-cloud-worker.ts",
+      "target": "application/src/platform/stdio-v2-cloud-worker.ts",
+      "sha256": "37ab89327c7a3309b836f985ee5be46f6a4b5f8d469463929aa17cac4354de6c",
+      "action": "adapt"
+    },
+    {
+      "source": "application/src/platform/stdio-v2-connections.ts",
+      "target": "application/src/platform/stdio-v2-connections.ts",
+      "sha256": "023e6bbab18aa9a8bca5fd5ba6c0e07457c4e9a5b6bec4385069c2f6c7ae88f3",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/stdio-v2-continuations.ts",
+      "target": "application/src/platform/stdio-v2-continuations.ts",
+      "sha256": "f32095de78ad7a58db0c852f38c066b71e323dce9e958d0fd6ed60cd991f6e26",
+      "action": "adapt"
+    },
+    {
+      "source": "application/src/platform/stdio-v2-leases.ts",
+      "target": "application/src/platform/stdio-v2-leases.ts",
+      "sha256": "6b01f7f7ea14da2cfab9588cfb71d9985b1c5e5203a9ad2fd8b86d16703ab7b2",
+      "action": "adapt"
+    },
+    {
+      "source": "application/src/platform/stdio-v2-no-start.ts",
+      "target": "application/src/platform/stdio-v2-no-start.ts",
+      "sha256": "a81da5e470461e807e4a764d4a81b7bdd8fefafaf6b1f1c8a733b311a2549985",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/stdio-v2-operation-admission.ts",
+      "target": "application/src/platform/stdio-v2-operation-admission.ts",
+      "sha256": "2581602f1ae6dc6ce8d6fc3db7a73171427cc229113dee81ad269cc49ad2649d",
+      "action": "adapt"
+    },
+    {
+      "source": "application/src/platform/stdio-v2-platform-config.ts",
+      "target": "application/src/platform/stdio-v2-platform-config.ts",
+      "sha256": "9623b64ca87926a71334507f315b1f9018e37ea2cbafc380573767713d2ec7d0",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/stdio-v2-results.ts",
+      "target": "application/src/platform/stdio-v2-results.ts",
+      "sha256": "3e88422846d2b0be64ac3cf8725a86012edeeeb98a96489a49a9907ae936002a",
+      "action": "port"
+    },
+    {
+      "source": "application/src/platform/stdio-v2-services.ts",
+      "target": "application/src/platform/stdio-v2-services.ts",
+      "sha256": "0349c327ee0d14a57a818642eb572a808cfc64458c5635403504dd69902d18d6",
+      "action": "adapt"
+    },
+    {
+      "source": "application/src/platform/stdio-v2-worker-store.ts",
+      "target": "application/src/platform/stdio-v2-worker-store.ts",
+      "sha256": "9f474d067213aca6a36b624520ee7452a2bc6effd657c1b27e72a60ff1cc87df",
+      "action": "adapt"
+    },
+    {
+      "source": "application/src/platform/tasks.ts",
+      "target": "application/src/platform/tasks.ts",
+      "sha256": "3799d19bcb0a392f2b0899b47e60bad7d0cf4bfc454b599383b9df64c18b6ff8",
+      "action": "adapt"
+    },
+    {
+      "source": "application/src/platform/workspace-binding-types.ts",
+      "target": "application/src/platform/workspace-binding-types.ts",
+      "sha256": "eeb7376c9ac94c16b6abff779196fb99487ee9656f6ff3736d886207595863c6",
+      "action": "adapt"
+    },
+    {
+      "source": "application/src/session-records.ts",
+      "target": "application/src/session-records.ts",
+      "sha256": "13b11be6089426615be5b5f28ce56190ca0e51cc11b63d60141a446acba085c5",
+      "action": "port"
+    },
+    {
+      "source": "application/src/ssh-management-contracts.ts",
+      "target": "application/src/ssh-management-contracts.ts",
+      "sha256": "8308cc0f98f556cd893580d5a20e64e8954eada1ab686bdd71e7540426548076",
+      "action": "port"
+    },
+    {
+      "source": "application/src/stdio-v2-management-rpc.ts",
+      "target": "application/src/stdio-v2-management-rpc.ts",
+      "sha256": "eee7965916fea3ceeccebd757a1165373cb814648e47def7b751678a526754af",
+      "action": "port"
+    },
+    {
+      "source": "application/src/stdio-v2-model-tools.ts",
+      "target": "application/src/stdio-v2-model-tools.ts",
+      "sha256": "bb53934b22935ef568812116e4c936fd73e3c1cbfab6e9c90bb7ed77b51e2f75",
+      "action": "adapt"
+    },
+    {
+      "source": "application/src/stdio-v2-operation-contracts.ts",
+      "target": "application/src/stdio-v2-operation-contracts.ts",
+      "sha256": "3deb566cf96935929ad0895de7a94e8fea256ac243ffd3388a10c73aa3b2783e",
+      "action": "port"
+    },
+    {
+      "source": "application/src/trusted-account-ui.ts",
+      "target": "application/src/trusted-account-ui.ts",
+      "sha256": "a10f715aaacbd0c1fdb95177d2cf6cb13864e095e9ead950e5e5a30dc74dd5b0",
+      "action": "port"
+    },
+    {
+      "source": "application/src/ui.ts",
+      "target": "application/src/ui.ts",
+      "sha256": "d5910d8785167a6dc6c2fa9b50799a7217c3d692486d08eefc4cc2f8b3c215b6",
+      "action": "adapt"
+    }
+  ],
+  "excludedSourceFiles": [
+    "device-report-suite.ts",
+    "platform/account-schema.ts",
+    "platform/artifacts.ts",
+    "platform/database.ts",
+    "platform/desktop-browser-scope.ts",
+    "platform/device-claim-closure-schema.ts",
+    "platform/device-execution-resolution-types.ts",
+    "platform/device-execution-resolution.ts",
+    "platform/device-execution-schema.ts",
+    "platform/device-resolution-schema.ts",
+    "platform/devices.ts",
+    "platform/download-zip-stream.ts",
+    "platform/execution-file-facts.ts",
+    "platform/execution-resolution-schema.ts",
+    "platform/mcp-actions-schema.ts",
+    "platform/mcp-connections-schema.ts",
+    "platform/office-artifact-schema.ts",
+    "platform/office-preview-schema.ts",
+    "platform/schema.ts",
+    "platform/ssh-schema.ts",
+    "platform/stdio-v2-continuation-schema.ts",
+    "platform/stdio-v2-no-start-schema.ts",
+    "platform/stdio-v2-observation-schema.ts",
+    "platform/stdio-v2-schema.ts",
+    "platform/storage-binding-schema.ts",
+    "platform/storage-bindings.ts"
+  ],
+  "schema": {
+    "family": "cloud-native",
+    "version": 1,
+    "sourceVersion": 37,
+    "tables": 68,
+    "columns": 726,
+    "import": "isolated empty target only; stop and reconcile old writers first; reject running/uncertain desktop inputs and unresolved binding recovery; preserve old backup; copy only included owned records; no legacy bearer reuse"
+  },
+  "upstreamPatches": []
+}

@@ -4,6 +4,9 @@
 
 **核心**子系统即 [`packages/core`](../../packages/core/README.zh.md)，包含每个组合都会启动的包：事件溯源的会话日志、系统提示词组装、工具注册表、agent（智能体）类型，以及驱动它们的具体循环。本页说明 `agent`/`agent-loop` 这对包所声明的内容：agent 如何被创建与拥有，以及 `Agent` 句柄的投递、取消与拦截约定；本页还说明每个子系统都遵循的两个类型模式。该组的专属页面与目录其余部分见[子系统 README](README.zh.md)。
 
+
+Agent 的 [post-claim 契约](../../packages/core/agent/README.zh.md#settle-native-input-claims) 在 prompt 效果前结算完整 canonical 输入；[detached 规划](../../packages/core/agent-loop/README.zh.md#detached-native-input-planning) 使用原生 maintenance 捕获和官方 Inbox 算法。
+
 ## 主干逐包速览
 
 一个轮次按同一条循环流经六个包：[`agent-loop`](../../packages/core/agent-loop) 中的 driver 认领一条排队的提示词，在[会话日志](session.zh.md)（`ctx.sessions`）上开启轮次，通过 [system-prompt](system-prompt.zh.md)（`ctx.systemPrompt`）组装请求前缀并从日志派生历史，经 [LLM（大语言模型） seam](llm-streaming.zh.md) 流式获取模型响应，经[工具注册表](tools.zh.md)（`ctx.tools`）分发工具调用，并把每个模型可见的事实追加回日志，供下一步派生。循环搬运的对话词汇——`Message`、`ContentBlock`、`StreamChunk`、模型请求——由 [`packages/llm`](../../packages/llm/README.zh.md) 声明，记录在 [llm-streaming.md](llm-streaming.zh.md)。
@@ -34,8 +37,8 @@
  * only the holder can tear this agent down. The registered factory provider is
  * also a structural owner because the scoped agent depends on that provider's
  * service API; provider unload stops and drains every live handle it made.
- * `dispose()` stops the loop, awaits its exit, unregisters the agent, removes
- * its session from the store, and finally unwinds its scoped world.
+ * Disposal stops the driver and awaits whenIdle before unwinding its scope,
+ * closing its write path, detaching both registries and unmounting its owner.
  *
  * `ctx.agents.get(id)` still returns a bare {@link Agent} — the handle is
  * exposed only to the consumer owner that created it; the structural provider
@@ -44,9 +47,29 @@
  */
 interface AgentHandle {
   agent: Agent
-  dispose(): Promise<void>
+  /**
+     * Stop and drain this exact Agent, then unmount its owned resources. Pending
+     * input follows the non-persistent creator default, clearing when omitted
+     * at creation; explicit keepInbox overrides it for this first call. True
+     * preserves pending input while stopping only this driver. The first handle,
+     * owner or factory disposal chooses the memoized mode; later calls share its
+     * result and cannot change that choice.
+     * @param options - explicit pending-input behavior, otherwise the creator default.
+     * @returns shared fulfillment after teardown, or its retained cleanup failure.
+     */
+  dispose(options?: AgentDisposeOptions): Promise<void>
 }
 ```
+
+```ts type-equiv
+/** Non-persistent pending-input choice for Agent creation, resume and handle disposal. */
+interface AgentDisposeOptions {
+  /** True preserves native pending input, false clears it; handle omission uses its creator's default, otherwise clear. */
+  readonly keepInbox?: boolean
+}
+```
+
+create 或 resume 的 `disposeOptions` 在 setup 开始前设定非持久化的销毁默认值。`keepInbox: true` 在句柄、创建者 owner 或工厂关闭 Agent 时保留待处理输入。普通创建仍默认清空待处理输入。首次句柄销毁的显式选项覆盖创建者默认值；首次销毁确定所有后续调用共享的 promise 与模式。
 
 `CreateAgentOptions` 携带共享标识以及新 agent 发布前所需的一切：可选的存活 `parentAgent`、会话元数据（`meta`——已校验的 `cwd`、fork 谱系、`isSeeded` 标记、来源分类、委派深度与 `agentPreset`）、同级字段 `inheritedEventCount` 所表示的精确 fork cut、可选的 `seed` 回放前缀、按 agent 的 `AgentOptions`、仅创建期有效的取消 `signal`，以及 `setup`。`ResumeAgentOptions` 是持久标识的对应项：`resumeSessionId`、`parentAgent`、`agentOptions`、`signal` 与 `setup`。`setup` 回调（`AgentSetup`）在两个 id 均未发布时接收 `(agentCtx, agent)`：上下文拥有作用域注册，显式 Agent 提供确切的子 Session，Context 无需反向属性。凡经 `agentCtx` 注册的内容都先于 `agent/created` 与第一次提示词组装存在。Setup 可以返回在发布前一刻调用的同步 commit；setup 拒绝、commit 抛出或所有者 dispose（资源释放）都会回滚事务，两个 id 均不发布。
 
@@ -73,74 +96,122 @@ interface Agent {
   readonly inbox: Inbox
   /** The current lifecycle state, mirrored on every `agent/status` transition. */
   readonly status: AgentStatus
+  /**
+       * Whether Inbox maintenance can enter now: idle or the exact running
+       * model-streaming stage, with no Inbox reservation held. Reading does not
+       * reserve that stage. Call runMaintenance with scope inbox immediately
+       * after the check; recheck after any await before calling it.
+       */
+  readonly canMaintainInbox: boolean
   /** Agent-scoped context; its contributions are agent-local, unwind on disposal, and reject registration afterward. */
   readonly ctx: Context
-
   /**
-   * Clear queued and steering work — unless `keepInbox` — and abort the active
-   * turn or between-turn task. The first cause wins for that activity. With no
-   * active activity, cancellation is a no-op and does not arm later work.
-   * @param cause - the stable caller intent carried by the active operation signal.
-   * @param options - cancellation options; `keepInbox` preserves pending work.
-   */
+       * Register ordered preparation before a turn opens, claims input, or assembles
+       * its prompt. Only a non-empty registration list delays the synchronous
+       * default boundary. Failure reports agent/error for the proposed turn at step 0
+       * and leaves its unclaimed input pending. The driver contains the failure,
+       * so whenIdle fulfills at quiescence. Cancellation follows keepInbox.
+       * Listeners must observe the signal and finish cleanup before settling, and
+       * must not await this agent's whenIdle or disposal. Registrations made during
+       * preparation apply to later turns; removed listeners are skipped.
+       * @param listener - preparation receiving the proposed turn and its cancellation signal.
+       * @returns idempotent disposer, also owned by the agent scope; callers may own it with ctx.effect.
+       */
+  onBeforeTurn(listener: (turn: number, signal: AbortSignal) => void | Promise<void>): () => void
+  /**
+       * Wake existing pending input without inserting, replacing, or retargeting
+       * messages. An empty inbox is a no-op. Active drivers drain normally;
+       * maintenance and aborted activity latch the wake until quiescence, except
+       * disposed activity, which leaves pending input parked.
+       */
+  wakePending(): void
+  /**
+       * Register ordered durable claim settlement before prompt assembly, pre-step
+       * listeners and live claimed notifications. Failure permanently consumes the
+       * complete claim and closes the turn with an error; whenIdle still fulfills.
+       * Cancellation and earlier listener failures do not skip later settlement;
+       * the first failure is retained after all registered listeners finish. They
+       * observe cancellation and finish cleanup before settling; they
+       * must not await this Agent's whenIdle or disposal. Registrations made during
+       * settlement apply at later boundaries; removed listeners are skipped.
+       * @param listener - complete immutable claim and exact proposed position/signal.
+       * @returns idempotent disposer owned by this Agent's registration scope.
+       */
+  onAfterClaim(listener: (boundary: InboxClaimBoundary) => void | Promise<void>): () => void
+  /**
+       * Capture the exact owned maintenance signal or a reserved running model
+       * phase. No caller status/abort classification supplies authority. The
+       * capture rejects retirement, cancellation changes and prefix movement;
+       * synchronize imports an already committed mirror under the same owner.
+       * @param signal - exact current runMaintenance signal.
+       * @returns immutable native phase/position/abort/cursor and owned checks.
+       */
+  captureInboxActivity(signal: AbortSignal): InboxActivityCapture
+  /**
+     * Clear queued and steering work — unless `keepInbox` — and abort the active
+     * turn or between-turn task. The first cause wins for that activity. With no
+     * active activity, cancellation is a no-op and does not arm later work.
+     * @param cause - the stable caller intent carried by the active operation signal.
+     * @param options - cancellation options; `keepInbox` preserves pending work.
+     */
   cancel(cause: AgentCancelCause, options?: CancelOptions): void
-
   /**
-   * Resolve after the current whole-agent activity reaches quiescence. This
-   * follows replacement work started before the observed driver retires,
-   * but does not identify the settlement of any particular message.
-   * @returns fulfillment after no active driver or maintenance task remains.
-   */
+     * Resolve after the current whole-agent activity reaches quiescence. This
+     * follows replacement work started before the observed driver retires,
+     * but does not identify the settlement of any particular message.
+     * @returns fulfillment after no active driver or maintenance task remains.
+     */
   whenIdle(): Promise<void>
-
   /**
-   * Run one non-turn maintenance task from the true idle phase. The task starts
-   * synchronously after claiming that phase; later waking input remains in the
-   * inbox until the task settles, while public status stays `idle`.
-   * `whenIdle()` follows both the task and any waking work released behind it.
-   * @param task - operation whose fulfillment or rejection is preserved, with a signal aborted by {@link cancel}.
-   * @throws synchronously when turn-driving or another maintenance task already owns the agent.
-   * @returns the task promise.
-   */
-  runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>): Promise<T>
-
+       * Run one owned maintenance operation. Without options this requires true
+       * idle and preserves whole-agent maintenance behavior. scope inbox also
+       * permits the exact native model-streaming stage: the model continues,
+       * while native settlement, Inbox mutations and phase migration wait until
+       * the command's commit/mirror cleanup releases its append reservation.
+       * Other running stages reject. Cancellation invalidates captures at once;
+       * a requested Inbox clear follows committed mirror/rollback cleanup.
+       * The holder must observe its signal, finish cleanup before settling, and
+       * never await this Agent's whenIdle or disposal. Capture acquisition and
+       * Writer-prefix flush precede external database locks.
+       * @param task - operation whose fulfillment/rejection is preserved.
+       * @param options - optional Inbox/native append reservation scope.
+       * @returns the task promise after owned cleanup releases the boundary.
+       */
+  runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>, options?: MaintenanceOptions): Promise<T>
   /**
-   * Route identified input to an inbox boundary and optionally wake the driver.
-   * Waking input submitted after active cancellation is queued for the next
-   * turn and runs when the aborted activity converges to idle; a `disposed`
-   * cancel leaves it parked. A wake submitted while already idle always opens
-   * its turn boundary, even when its message is cleared before the driver
-   * claims ([driver wake convergence](../../agent-loop/src/agent.ts)).
-   * @param message - identified content and the source that supplied it.
-   * @param target - the preferred next-turn or next-step inbox boundary.
-   * @param wakeup - whether delivery may wake the driver.
-   */
+     * Route identified input to an inbox boundary and optionally wake the driver.
+     * Waking input submitted after active cancellation is queued for the next
+     * turn and runs when the aborted activity converges to idle; a `disposed`
+     * cancel leaves it parked. A wake submitted while already idle always opens
+     * its turn boundary, even when its message is cleared before the driver
+     * claims ([driver wake convergence](../../agent-loop/src/agent.ts)).
+     * @param message - identified content and the source that supplied it.
+     * @param target - the preferred next-turn or next-step inbox boundary.
+     * @param wakeup - whether delivery may wake the driver.
+     */
   send(message: UserMessage, target: InboxTarget, wakeup: boolean): void
-
   /**
-   * Queue an ordinary follow-up turn and wake the driver. The item becomes the
-   * sole ordinary message of its own turn.
-   * @param message - identified prompt content and the source that supplied it.
-   */
+     * Queue an ordinary follow-up turn and wake the driver. The item becomes the
+     * sole ordinary message of its own turn.
+     * @param message - identified prompt content and the source that supplied it.
+     */
   followup(message: UserMessage): void
-
   /**
-   * Submit steering for the nearest step. An idle driver starts a turn;
-   * a running driver consumes it at its next step boundary.
-   * A rejected step leaves steering parked in the inbox until the next
-   * wake; cancellation or disposal may discard pending steering.
-   * @param message - identified steering content and the source that supplied it.
-   */
+     * Submit steering for the nearest step. An idle driver starts a turn;
+     * a running driver consumes it at its next step boundary.
+     * A rejected step leaves steering parked in the inbox until the next
+     * wake; cancellation or disposal may discard pending steering.
+     * @param message - identified steering content and the source that supplied it.
+     */
   steer(message: UserMessage): void
-
   /**
-   * Queue model-facing context for the next pre-step without waking the
-   * driver. A running driver claims it at the nearest later step boundary;
-   * idle drivers leave it pending until follow-up or steering
-   * wakes them. It may miss a request whose pre-step already claimed its
-   * batch. Cancellation or disposal may discard pending context.
-   * @param message - identified injected context and the source that supplied it.
-   */
+     * Queue model-facing context for the next pre-step without waking the
+     * driver. A running driver claims it at the nearest later step boundary;
+     * idle drivers leave it pending until follow-up or steering
+     * wakes them. It may miss a request whose pre-step already claimed its
+     * batch. Cancellation or disposal may discard pending context.
+     * @param message - identified injected context and the source that supplied it.
+     */
   inject(message: UserMessage): void
 }
 ```

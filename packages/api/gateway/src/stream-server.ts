@@ -39,7 +39,11 @@ export type RemoteStreamFailureMapper = (error: unknown) => RemoteStreamFailure
 
 const MAX_MISSED_HEARTBEATS = 2
 
-/** Own the no-server WebSocket acceptor and every active logical stream. */
+/**
+ * Own the no-server WebSocket acceptor and every active logical stream.
+ * Downlink deadlines include queue time. Cancelling an unstarted frame removes it;
+ * cancelling or timing out a write with no callback terminates the carrier.
+ */
 export class RemoteStreamMuxServer {
   private readonly server = new WebSocketServer({ noServer: true })
   private readonly connections = new Set<Promise<void>>()
@@ -51,12 +55,16 @@ export class RemoteStreamMuxServer {
    * @param failure - Gateway error-to-wire mapper.
    * @param heartbeatIntervalMs - interval between WebSocket Ping control frames.
    * @param streamInboxBytes - buffered uplink frame bytes one logical stream may hold before it fails.
+   * @param streamSendTimeoutMs - explicit positive integer deadline in milliseconds, at most 2,147,483,647,
+   * including the frame's wait behind earlier writes. Gateway Config resolves a 10,000 ms default;
+   * direct callers must provide their deployment's value.
    */
   constructor(
     private readonly open: RemoteStreamOpener,
     private readonly failure: RemoteStreamFailureMapper,
     private readonly heartbeatIntervalMs: number,
     private readonly streamInboxBytes: number,
+    private readonly streamSendTimeoutMs: number,
   ) {}
 
   /**
@@ -77,7 +85,9 @@ export class RemoteStreamMuxServer {
       this.startHeartbeat()
       const bound: BoundStreamOpener = (endpoint, payload, uplink, control) =>
         this.open(endpoint, payload, uplink, peer, control)
-      const connection = new RemoteStreamMuxConnection(websocket, bound, this.failure, this.streamInboxBytes)
+      const connection = new RemoteStreamMuxConnection(
+        websocket, bound, this.failure, this.streamInboxBytes, this.streamSendTimeoutMs,
+      )
       const done = connection.run()
       this.connections.add(done)
       void done.then(() => {
@@ -87,7 +97,10 @@ export class RemoteStreamMuxServer {
     })
   }
 
-  /** Terminate all sockets and wait until every iterator has returned. */
+  /**
+   * Terminate all sockets and wait until every iterator has returned, including asynchronous cleanup.
+   * @returns Completion after source cleanup and queued writes have settled; rejects on acceptor close failure.
+   */
   async close(): Promise<void> {
     clearInterval(this.heartbeatTimer)
     this.heartbeatTimer = undefined
@@ -126,6 +139,8 @@ export class RemoteStreamMuxServer {
 
 interface ActiveStream {
   readonly abort: AbortController
+  /** Terminal failures can still be delivered after the business controller aborts with a RemoteError. */
+  readonly delivery: AbortController
   readonly inbox: UplinkInbox
   /** Cancel the logical stream and end any Host read still waiting on its uplink. */
   readonly stop: (reason: Error) => void
@@ -134,6 +149,7 @@ interface ActiveStream {
 
 class RemoteStreamMuxConnection {
   private readonly streams = new Map<string, ActiveStream>()
+  private readonly closed = new AbortController()
   private writes = Promise.resolve()
 
   constructor(
@@ -141,13 +157,18 @@ class RemoteStreamMuxConnection {
     private readonly open: BoundStreamOpener,
     private readonly failure: RemoteStreamFailureMapper,
     private readonly streamInboxBytes: number,
+    private readonly streamSendTimeoutMs: number,
   ) {}
 
   async run(): Promise<void> {
     const closed = new Promise<void>((resolve) => {
-      this.socket.once('close', resolve)
+      this.socket.once('close', () => {
+        this.closed.abort(new Error('api gateway: Remote stream socket is closed'))
+        resolve()
+      })
       this.socket.once('error', () => { this.socket.terminate() })
       this.socket.on('message', (data, isBinary) => {
+        if (this.closed.signal.aborted) return
         if (isBinary) {
           this.socket.close(1003, 'text messages required')
           return
@@ -163,6 +184,7 @@ class RemoteStreamMuxConnection {
     const active = [...this.streams.values()]
     for (const stream of active) stream.stop(new Error('Remote stream socket closed'))
     await Promise.all(active.map(stream => stream.done))
+    await this.writes
   }
 
   /**
@@ -203,14 +225,21 @@ class RemoteStreamMuxConnection {
       throw new Error(`api gateway: duplicate Remote stream id ${JSON.stringify(message.streamId)}`)
     }
     const abort = new AbortController()
+    const delivery = new AbortController()
+    abort.signal.addEventListener('abort', () => {
+      const reason: unknown = abort.signal.reason
+      if (remoteErrorOf(reason) === undefined) delivery.abort(reason)
+    }, { once: true })
     // Created before the opener resolves so items the Client sends right
     // after `open` wait in the inbox instead of being lost.
     const inbox = new UplinkInbox(this.streamInboxBytes, message.endpoint, (error) => { abort.abort(error) })
     const active: ActiveStream = {
       abort,
+      delivery,
       inbox,
       stop: (reason) => {
         abort.abort(reason)
+        delivery.abort(reason)
         inbox.fail(reason)
       },
       done: Promise.resolve(),
@@ -232,7 +261,7 @@ class RemoteStreamMuxConnection {
     try {
       const source = await this.open(endpoint, payload, active.inbox, active.abort)
       for await (const value of source) {
-        await this.send({ type: 'item', streamId, value })
+        await this.send({ type: 'item', streamId, value }, active.abort.signal)
       }
       outcome = { failed: false }
     } catch (error) {
@@ -246,50 +275,88 @@ class RemoteStreamMuxConnection {
       // end); the Client is still waiting for that terminal frame. Any other
       // abort is a cancellation.
       const reason: unknown = active.abort.signal.reason
-      if (remoteErrorOf(reason) !== undefined) await this.sendFailure(streamId, reason)
+      if (remoteErrorOf(reason) !== undefined) await this.sendFailure(streamId, reason, active.delivery.signal)
       return
     }
     if (outcome.failed) {
-      await this.sendFailure(streamId, outcome.error)
+      await this.sendFailure(streamId, outcome.error, active.delivery.signal)
       return
     }
     try {
-      await this.send({ type: 'end', streamId })
+      await this.send({ type: 'end', streamId }, active.abort.signal)
     } catch (error) {
-      await this.sendFailure(streamId, error)
+      await this.sendFailure(streamId, error, active.delivery.signal)
     }
   }
 
-  private async sendFailure(streamId: string, error: unknown): Promise<void> {
+  private async sendFailure(streamId: string, error: unknown, signal: AbortSignal): Promise<void> {
     if (this.socket.readyState !== WebSocket.OPEN) return
     try {
-      await this.send({ type: 'error', streamId, error: this.failure(error) })
+      await this.send({ type: 'error', streamId, error: this.failure(error) }, signal)
     } catch {
+      if (signal.aborted) return
       // A terminal frame that cannot be encoded or written leaves the
       // logical stream ambiguous, so fail the physical generation.
       this.socket.close(1011, 'Remote stream failure could not be delivered')
     }
   }
 
-  private send(message: RemoteStreamServerMessage): Promise<void> {
+  private send(message: RemoteStreamServerMessage, signal: AbortSignal): Promise<void> {
     let text: string
     try {
       text = JSON.stringify(message)
     } catch (cause) {
       return Promise.reject(new Error('api gateway: Remote stream item is not JSON serializable', { cause }))
     }
-    const delivery = this.writes.then(() => new Promise<void>((resolve, reject) => {
+    const delivery = Promise.withResolvers<void>()
+    let settled = false
+    let started = false
+    const finish = (error?: unknown): void => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      signal.removeEventListener('abort', cancelled)
+      this.closed.signal.removeEventListener('abort', closed)
+      if (error === undefined) delivery.resolve()
+      else delivery.reject(error)
+    }
+    const cancel = (reason: unknown): void => {
+      if (settled) return
+      // A queued frame has not touched the carrier. Once send starts, its
+      // callback is the only delivery acknowledgement; cancellation makes
+      // that write uncertain and invalidates the physical generation.
+      if (started) this.socket.terminate()
+      finish(reason)
+    }
+    const cancelled = (): void => { cancel(signal.reason) }
+    const closed = (): void => { finish(this.closed.signal.reason) }
+    const timer = setTimeout(() => {
+      cancel(new Error('api gateway: Remote stream send timed out'))
+    }, this.streamSendTimeoutMs)
+    signal.addEventListener('abort', cancelled, { once: true })
+    this.closed.signal.addEventListener('abort', closed, { once: true })
+    if (signal.aborted) cancelled()
+    if (this.closed.signal.aborted) closed()
+    // The write barrier outlives cancellation of a queued frame. Skipping
+    // that frame must not let its successor overtake an earlier write.
+    this.writes = this.writes.then(async () => {
+      if (settled) return
       if (this.socket.readyState !== WebSocket.OPEN) {
-        reject(new Error('api gateway: Remote stream socket is closed'))
+        finish(new Error('api gateway: Remote stream socket is closed'))
         return
       }
-      this.socket.send(text, (error) => {
-        if (error) reject(error)
-        else resolve()
-      })
-    }))
-    this.writes = delivery.catch(() => undefined)
-    return delivery
+      started = true
+      try {
+        this.socket.send(text, (error) => {
+          if (error) finish(error)
+          else finish()
+        })
+      } catch (error) {
+        finish(error)
+      }
+      await delivery.promise.catch(() => undefined)
+    })
+    return delivery.promise
   }
 }
 
@@ -428,10 +495,10 @@ function rawText(data: RawData): string {
 /**
  * Reject an upgrade without transferring socket ownership to ws.
  * @param socket - carrier socket that receives the HTTP rejection.
- * @param status - authentication or browser-trust rejection status.
+ * @param status - authentication, browser trust, or unavailable authentication authority status.
  */
-export function rejectRemoteStreamUpgrade(socket: Duplex, status: 401 | 403): void {
-  const reason = status === 401 ? 'Unauthorized' : 'Forbidden'
+export function rejectRemoteStreamUpgrade(socket: Duplex, status: 401 | 403 | 503): void {
+  const reason = status === 401 ? 'Unauthorized' : status === 403 ? 'Forbidden' : 'Service Unavailable'
   const body = reason.toLowerCase()
   socket.end([
     `HTTP/1.1 ${String(status)} ${reason}`,

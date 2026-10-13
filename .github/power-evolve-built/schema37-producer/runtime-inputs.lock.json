@@ -1,0 +1,72 @@
+{
+  "sourceCommit": "4acb888058b3e5a95ec7d085ba75bcf2442d3636",
+  "replicasHelperSHA256": {
+    "replica-plan.mjs": "01700a33a874c70cb41d14455088463b2063f2abb58b95fb065110820550697a",
+    "fault-proxy.mjs": "b37b9440c5e0cb059b16bf36589570578dc4f7649e4e0bd19ed1bb163ce1726d",
+    "native-intent-key.mjs": "901a151b3cac75dae51a4753c10cd5afdecf3933e03ef80ca38e70748eace6cb",
+    "identity-evidence.mjs": "7ce4db5ddcd99897e4efda9a7ce1ae7d8161c626dc1c888065ca885a3de0e3da"
+  },
+  "kindVersion": "v0.25.0",
+  "kindNodeImage": "kindest/node:v1.31.2@sha256:18fbefc20a7113353c7b75b5c869d7145a6abd6269154825872dc59c1329912e",
+  "sandboxVersion": "v1.0.1",
+  "gvisorVersion": "20261005.0",
+  "upstreamGvisorKindDocumentation": "https://github.com/kubernetes-sigs/agent-sandbox/blob/d9c1a2bdff640907883d0dc7fa78dbb9924f179d/examples/quickstart/gvisor.md",
+  "downloads": {
+    "controller": {
+      "url": "https://raw.githubusercontent.com/kubernetes-sigs/agent-sandbox/v1.0.1/k8s/controller.yaml",
+      "algorithm": "sha256",
+      "digest": "0f47c522571956984fad16c7f0d5be7010fd79949e2b0b162668dc961d0d8c82"
+    },
+    "controller-rbac": {
+      "url": "https://raw.githubusercontent.com/kubernetes-sigs/agent-sandbox/v1.0.1/k8s/rbac.generated.yaml",
+      "algorithm": "sha256",
+      "digest": "5a6ca69f3ff8538d759fa35b45e4044086d1de1686acde19faf5f8f7251e89c5"
+    },
+    "controller-crd": {
+      "url": "https://raw.githubusercontent.com/kubernetes-sigs/agent-sandbox/v1.0.1/k8s/crds/agents.x-k8s.io_sandboxes.yaml",
+      "algorithm": "sha256",
+      "digest": "d828dde35568aa4b629878a051012bb9e29888151ae06b275948ca822b0cab3e"
+    }
+  },
+  "controllerImage": "registry.k8s.io/agent-sandbox/agent-sandbox-controller@sha256:e1787f95cda406e2d81322e8637b6dfa2d77514fbbd0536a872b8e5d409b7154",
+  "architectures": {
+    "amd64": {
+      "downloads": {
+        "kind": {
+          "url": "https://github.com/kubernetes-sigs/kind/releases/download/v0.25.0/kind-linux-amd64",
+          "algorithm": "sha256",
+          "digest": "b22ff7e5c02b8011e82cc3223d069d178b9e1543f1deb21e936d11764780a3d8"
+        },
+        "gvisor": {
+          "url": "https://storage.googleapis.com/gvisor/releases/release/20261005.0/x86_64/gvisor.tar.bz2",
+          "algorithm": "sha512",
+          "digest": "79869ae9a589355a46d46fdac068d9a954e741741ffe77c64e38c56ea955498c1cb04e9bce44e1cce5155333e6b76bee72347c6661bb7c78fd2fe3aad198c8fe"
+        },
+        "kubectl": {
+          "url": "https://dl.k8s.io/release/v1.31.2/bin/linux/amd64/kubectl",
+          "algorithm": "sha256",
+          "digest": "399e9d1995da80b64d2ef3606c1a239018660d8b35209fba3f7b0bc11c631c68"
+        }
+      }
+    },
+    "arm64": {
+      "downloads": {
+        "kind": {
+          "url": "https://github.com/kubernetes-sigs/kind/releases/download/v0.25.0/kind-linux-arm64",
+          "algorithm": "sha256",
+          "digest": "06e544e3f12ea54de5962ceaecd97513a25dbab4168a44f03f01833349afdda3"
+        },
+        "gvisor": {
+          "url": "https://storage.googleapis.com/gvisor/releases/release/20261005.0/aarch64/gvisor.tar.bz2",
+          "algorithm": "sha512",
+          "digest": "1bc58be6f881264ced1df8ff61db0205531abedcace005585ac5637c5c987831062b365f99f270ef0939849f130344b84e0f1a663294406f798b8f7c8cd326ac"
+        },
+        "kubectl": {
+          "url": "https://dl.k8s.io/release/v1.31.2/bin/linux/arm64/kubectl",
+          "algorithm": "sha256",
+          "digest": "bb9fd6e5a92c2e2378954a2f1a8b4ccb2e8ba5a3635f870c3f306a53b359f971"
+        }
+      }
+    }
+  }
+}

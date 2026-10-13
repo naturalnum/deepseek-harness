@@ -17,6 +17,9 @@ import type { WebUpgradeRoute } from '@deepseek-ai/dsh-host-webserver'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
 import type {} from '@deepseek-ai/dsh-cmdline'
 import z from '@deepseek-ai/schemastery'
+/** Reuse the native mux with an application-owned Peer authentication policy. */
+export { RemoteStreamMuxServer, rejectRemoteStreamUpgrade } from './stream-server.ts'
+export type { RemoteStreamOpener, RemoteStreamFailureMapper } from './stream-server.ts'
 export type { TypertGatewayFaultDetails } from './remote-error-codes.ts'
 import {
   RemoteError,
@@ -136,6 +139,7 @@ type ConnectionRpcError = Extract<ConnectionRpcResult, { readonly ok: false }>['
 const NEVER_ABORTED_SIGNAL = new AbortController().signal
 const DEFAULT_WEBSOCKET_HEARTBEAT_INTERVAL_MS = 2_000
 const DEFAULT_STREAM_INBOX_BYTES = 262_144
+const DEFAULT_STREAM_SEND_TIMEOUT_MS = 10_000
 const EMPTY_ASYNC_ITERABLE: AsyncIterable<never> = {
   [Symbol.asyncIterator]: () => ({ next: () => Promise.resolve({ value: undefined, done: true }) }),
 }
@@ -148,11 +152,14 @@ export interface Config {
   readonly websocketHeartbeatIntervalMs?: number
   /** Buffered uplink frame bytes one logical stream may hold before it fails with `gateway/uplink-overflow`. @default 262144 */
   readonly streamInboxBytes?: number
+  /** Downlink frame send deadline including queue time, from 1 through 2,147,483,647 milliseconds. @default 10000 */
+  readonly streamSendTimeoutMs?: number
 }
 
 interface ResolvedConfig extends Config {
   readonly websocketHeartbeatIntervalMs: number
   readonly streamInboxBytes: number
+  readonly streamSendTimeoutMs: number
 }
 
 /**
@@ -202,6 +209,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
     websocketHeartbeatIntervalMs: z.number().step(1).min(1).max(MAX_TIMER_DELAY_MS)
       .default(DEFAULT_WEBSOCKET_HEARTBEAT_INTERVAL_MS),
     streamInboxBytes: z.number().step(1).min(1).default(DEFAULT_STREAM_INBOX_BYTES),
+    streamSendTimeoutMs: z.number().step(1).min(1).max(MAX_TIMER_DELAY_MS).default(DEFAULT_STREAM_SEND_TIMEOUT_MS),
   })
 
   /** Carrier adapter shared by the WebSocket mux and local Host transports. */
@@ -245,6 +253,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
           this.wireStream.failure,
           resolved.websocketHeartbeatIntervalMs,
           resolved.streamInboxBytes,
+          resolved.streamSendTimeoutMs,
         )
         webCtx.effect(function* () {
           yield () => mux.close()

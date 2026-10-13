@@ -89,6 +89,8 @@ kind: "package-reference"
 
 通用文件字节的唯一规范对象位于 `<DSH_HOME>/attachments/v1/file-objects/<digest-prefix>/<digest>`。每条引用路径 `<DSH_HOME>/attachments/v1/files/<digest-prefix>/<digest>/<name>` 都是只读硬链接，所以名称不同但字节相同的文件不会重复占用磁盘。`readFileStream` 以有界分块读取引用路径，并在消费方成功结束前校验完整摘要与记录的字节数。对象缺失、被改写或截断时，消费方会失败，不会得到字节已经变化的完整导出。
 
+包根还导出 `saveFileStreamVerbatim`、`readFileStreamVerbatim`、`storedFilePath` 和 `fileLeafName`，供组合传入明确的存储 home。这些函数沿用相同文件格式和持久保证。调用方负责授权、字节与数量准入限额、取消、根目录隔离和保留策略。存储路径不是授权凭据。只有完整消费读取流后才能宣称字节已经核验；文件保存之后，若调用方的后续事务失败，未引用对象会保留，直到调用方的保留策略将其删除。
+
 ### 源码地图
 
 | 文件 | 职责 |

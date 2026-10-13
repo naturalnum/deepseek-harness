@@ -1,0 +1,55 @@
+{
+  "name": "@power-evolve/connector-runner",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./stdio-v2-dispatch": {
+      "types": "./lib/types/stdio-v2-dispatch.d.ts",
+      "default": "./lib/stdio-v2-dispatch.js"
+    },
+    "./stdio-v2-runtime": {
+      "types": "./lib/types/stdio-v2-runtime.d.ts",
+      "default": "./lib/stdio-v2-runtime.js"
+    },
+    "./stdio-v2": {
+      "types": "./lib/types/stdio-v2.d.ts",
+      "default": "./lib/stdio-v2.js"
+    },
+    "./stdio-v2-digest": {
+      "types": "./lib/types/stdio-v2-digest.d.ts",
+      "default": "./lib/stdio-v2-digest.js"
+    },
+    "./protocol": {
+      "types": "./lib/types/protocol.d.ts",
+      "default": "./lib/protocol.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib",
+    "README.md",
+    "README.zh.md",
+    "Dockerfile"
+  ],
+  "scripts": {
+    "build": "tsc -b tsconfig.json && tsdown",
+    "typecheck": "tsc -b tsconfig.json --pretty false",
+    "test": "tsx --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/client": "2.0.0",
+    "@modelcontextprotocol/server": "2.0.0",
+    "zod": "^4.4.3",
+    "ssh2": "1.17.0"
+  },
+  "devDependencies": {
+    "@types/ssh2": "1.15.6",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3",
+    "@power-evolve/contracts": "workspace:~"
+  },
+  "peerDependencies": {
+    "@power-evolve/contracts": "workspace:~"
+  }
+}

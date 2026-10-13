@@ -44,7 +44,7 @@ await handle.dispose()   // stops the loop, unregisters, removes the session, un
 
 ### 驱动 agent 的对话
 
-句柄的方法把带标识的 user 角色消息路由进 agent 的收件箱。`followup()` 排队一条普通的下一个轮次提示词并唤醒驱动器；`steer()` 提交下一步输入并唤醒它；`inject()` 添加面向模型的上下文但不唤醒驱动器，因此它落在下一个被接纳的步骤中。`cancel(cause)` 中止当前活动，并在未设置 `keepInbox` 时清除待处理工作；`whenIdle()` 会在整个 agent 达到完全停稳后完成。
+句柄方法把具有身份的用户角色消息交给 Agent inbox。`wakePending()` 唤醒已有排队输入，不插入消息或改变目标；空 inbox 保持 idle。`followup()` 排入普通 next-turn 输入并唤醒 driver；`steer()` 提交 next-step 输入并唤醒它；`inject()` 添加模型上下文但不唤醒，因而进入下一次获准的 step。`cancel(cause)` 中止活动，除非设置 `keepInbox`，否则清空 pending；`whenIdle()` 等待整个 Agent 静止。
 
 ```text
 handle.agent.followup({
@@ -62,9 +62,23 @@ await handle.agent.whenIdle()
 
 `Agent.ctx` 是该 agent 的作用域上下文：通过它进行的注册（工具、提示词段、变量、事件监听器、限制）只对该 agent 生效，并在 dispose（资源释放）时全部撤销。同一机制也是 agent preset 用来让一个会话获得不同能力集、同时不影响其邻居的方式。
 
+<a id="settle-native-input-claims"></a>
+### 结算原生输入领取
+
+`onAfterClaim(listener)` 接收完整 next-step 领取批次及首步一个 next-turn 队首的独立深冻结消息，并提供 canonical splice、准确 cursor、拟进入的 turn/step 和取消 signal。循环等待所有仍注册的 listener 完成后才组装 prompt、调用 pre-step 或发布 live claimed 通知，取消或前一个 listener 失败也不会跳过后续结算。它保留首个 listener 失败、永久消费和原历史消息图，不会重新插入消息。注册由 Agent scope 拥有；listener 必须等待自身清理完成，且不能等待所属 Agent 的静止或销毁。
+
+`captureInboxActivity(signal)` 要求准确的当前 `runMaintenance()` signal。调用方在数据库加锁前取得 maintenance；Inbox scope 也可预留运行中的 model stream。捕获在 phase 退役、取消状态改变或 live log 追加后失效。detached planner 的使用者在 commit 前立即复核，不从持久化事件猜测 phase，也不凭捕获取得执行权限。
+
 ### 拦截或观察进行中的工作
 
+`onBeforeTurn(listener)` 在下一 turn 打开、claim 输入、组装 prompt 与工具之前，按注册顺序执行准备。用 `ctx.effect()` 拥有其 disposer，使插件卸载移除它；Agent scope 也在处置时移除它。没有注册时，打开 turn 和 claim 输入保留同步时机。listener 失败会报告候选 turn、step 0 的 `agent/error`，保留未 claim 的输入且不写 turn 边界；`whenIdle()` 在失败 driver 静止后兑现。listener 必须响应 signal、完成清理后才结束，且不能等待本 Agent 的 `whenIdle()` 或处置。准备修复后，可用 `wakePending()` 恢复 pending 输入。
+
 `agent/*` 事件让插件无需依赖循环包即可作用于实时工作。`agent/pre-step` 可以拒绝拟进入的步骤或替换进入它的消息；`agent/request-error` 让监听器重试失败的模型请求；`agent/turn-stopping` 在本可完成的轮次关闭前运行，并可通过 steer 使其保持打开。`agent/assistant-stream` 携带一个进程本地 Assistant attempt 的有序 start、瞬态分片与 end frame。start 给出该 attempt 的轮次与步骤，分片索引从零开始密集递增，`end.index` 则是下一个分片位置。loop 会在 committed end frame 前把完整紧凑流提交为一个 `assistant/message` 或 `assistant/attempt`，因此实时事件仍是呈现数据而非回放来源。`agent/status`、`agent/created` 与 `agent/disposed` 驱动 UI 与协调状态，逐消息的 `agent/inbox/*` 通知则让收件箱投影保持同步。确切签名、分发 mode 与 payload 约定见 [core 子系统页](../../../docs/subsystems/core.zh.md#cordis-surface) 的生成区块。
+
+<a id="reserve-running-native-input"></a>
+### 预留运行中的原生输入
+
+`runMaintenance(task, { scope: 'inbox' })` 也接受原生 model-streaming 阶段。它借用同一 running phase，并在 task 提交和同步命令时预留 native append 顺序。transient streaming 可继续；持久模型结算和 phase 推进等待释放。其他运行阶段及同时持有者会被拒绝。`captureInboxActivity(signal)` 返回实际 running 坐标或 maintenance phase；同步 `synchronize()` 回调在同一 owner 下导入已提交 mirror，也支持取消后的 committed receipt 对账。取消立即使规划失效；默认 Inbox 清空延至持有者清理后。持有者在 PG 加锁前取得原生预留并 flush 旧 Writer prefix，在 commit 前复核捕获，且必须完成 commit/rollback、mirror、Writer cursor 和 carrier 清理后才结算，不能等待所属 Agent 的静止或销毁。 `Agent.canMaintainInbox` 同步查询没有 Inbox 预留的 idle 或原生 model-streaming 阶段是否允许进入；查询本身不预留阶段，因此在 inbox-scoped 调用前立即查询，每次 await 后重新检查。
 
 -----
 
@@ -114,7 +128,7 @@ await handle.agent.whenIdle()
 
 ### 所有权不变式
 
-`AgentHandle` disposer 是一项能力：在消费方中，只有其持有者能拆除该 agent。已注册的工厂提供方是结构化共同拥有者，因为作用域 agent 依赖该提供方的服务 API；提供方卸载会停止并排空它创建的每个实时句柄。`ctx.agents.get(id)` 仍返回裸 `Agent`——句柄只暴露给创建它的消费方。
+`AgentHandle` disposer 是一项能力：在消费方中，只有其持有者能拆除该 agent。已注册的工厂提供方是结构化共同拥有者，因为作用域 agent 依赖该提供方的服务 API；提供方卸载会停止并排空它创建的每个实时句柄。`ctx.agents.get(id)` 仍返回裸 `Agent`——句柄只暴露给创建它的消费方。 create/resume 调用方通过非持久化 `disposeOptions` 为 handle、owner/factory teardown 和 rollback 选择默认模式；省略时清空 pending 输入。首次显式 handle 调用可用 `keepInbox` 覆盖默认值，之后各调用方共享首次 memoized 结果。Teardown 先停止 driver 并等待 `whenIdle()`，再卸载其持有的资源。
 
 </details>
 

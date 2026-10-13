@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-10-10-native-input-settlement.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-10-native-input-settlement.md
+/agent-note-native-input-settlement-and-running-reservations:
+  en: 8cea90e72fcc2135
+  zh: a18e66b44a242d4a
+/agent-note-native-input-settlement-and-running-reservations/problem:
+  en: 1e2732ccc7ce2adc
+  zh: b4163e83588fcd46
+/agent-note-native-input-settlement-and-running-reservations/decision:
+  en: 7feb264f1a07b87b
+  zh: 7662bb03d95a3009
+/agent-note-native-input-settlement-and-running-reservations/alternatives-considered:
+  en: d174dce18b25e4a7
+  zh: 346ba0eaf0b3c941
+/agent-note-native-input-settlement-and-running-reservations/consequences:
+  en: 921b660e4c75eac4
+  zh: 9bdd7700815f2223

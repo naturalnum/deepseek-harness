@@ -1,0 +1,307 @@
+/** Dedicated no-egress Kubernetes placement for one process MCP call. */
+import { createHmac } from 'node:crypto'
+import { isIP } from 'node:net'
+import { setTimeout as delay } from 'node:timers/promises'
+import { KubernetesError, type KubernetesClient } from './kubernetes.ts'
+import { buildRestrictedRunnerResources, observeRunnerStatus, observeRunnerStatusError, type SshRunnerConfig } from './ssh-runner.ts'
+
+type Kube = Pick<KubernetesClient, 'call' | 'resourcePath' | 'proxyPath'>
+type Resource = { metadata: { name: string
+  uid?: string
+  labels?: Record<string, string>
+  deletionTimestamp?: string }
+spec?: unknown
+data?: Record<string, string>
+status?: { phase?: string; containerStatuses?: Array<{ ready?: boolean; restartCount?: number }> } }
+/** Persisted fixed-fallback call identity, prepared Pod UID and original Runner instance. */
+export interface StdioRunnerHandle { readonly callId: string; readonly podUid: string; readonly instanceId: string }
+/** Correlated fixed-fallback Runner report with bounded public result fields. */
+export interface StdioRunnerStatus { readonly callId: string
+  readonly instanceId: string
+  readonly digest: string
+  readonly state: 'running' | 'succeeded' | 'failed'
+  readonly result?: { kind: 'mcp.stdio.whoami'; text: string }
+  readonly errorCode?: string }
+/** Original matching status, pre-dispatch absence, or an uncertain outcome that cannot authorize replay. */
+export type StdioObservation = { readonly state: 'absent' }
+  | { readonly state: 'known'; readonly status: StdioRunnerStatus }
+  | { readonly state: 'uncertain'; readonly reason: string }
+
+/** Named fixed-fallback configuration, identity or readiness refusal. */
+export class StdioRunnerBlocked extends Error {
+  /** Stable refusal code retained by Platform coordinators. */
+  readonly code: string
+  constructor(code: string) { super(code); this.code = code }
+}
+
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu
+const hex = /^[0-9a-f]{64}$/u
+const nameOf = (id: string) => `pe-mcp-${id.replaceAll('-', '')}`
+const label = 'powerevolve.dev/stdio-call'
+const canonical = (value: unknown): unknown => Array.isArray(value) ? value.map(canonical)
+  : value && typeof value === 'object' ? Object.fromEntries(Object.entries(value)
+    .sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => [key, canonical(item)])) : value
+const record = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+const equal = (left: unknown, right: unknown) =>
+  JSON.stringify(canonical(left)) === JSON.stringify(canonical(right))
+type DefaultKey = 'protocol' | 'ipFamilyPolicy' | 'internalTrafficPolicy' | 'sessionAffinity'
+  | 'dnsPolicy' | 'schedulerName' | 'serviceAccount' | 'serviceAccountName' | 'priority' | 'preemptionPolicy'
+  | 'terminationMessagePath' | 'terminationMessagePolicy' | 'initialDelaySeconds' | 'successThreshold' | 'failureThreshold'
+const dropDefault = (value: Record<string, unknown>, key: DefaultKey, expected: unknown): void => {
+  if (value[key] !== expected) return
+  switch (key) {
+    case 'protocol': delete value.protocol; break
+    case 'ipFamilyPolicy': delete value.ipFamilyPolicy; break
+    case 'internalTrafficPolicy': delete value.internalTrafficPolicy; break
+    case 'sessionAffinity': delete value.sessionAffinity; break
+    case 'dnsPolicy': delete value.dnsPolicy; break
+    case 'schedulerName': delete value.schedulerName; break
+    case 'serviceAccount': delete value.serviceAccount; break
+    case 'serviceAccountName': delete value.serviceAccountName; break
+    case 'priority': delete value.priority; break
+    case 'preemptionPolicy': delete value.preemptionPolicy; break
+    case 'terminationMessagePath': delete value.terminationMessagePath; break
+    case 'terminationMessagePolicy': delete value.terminationMessagePolicy; break
+    case 'initialDelaySeconds': delete value.initialDelaySeconds; break
+    case 'successThreshold': delete value.successThreshold; break
+    case 'failureThreshold': delete value.failureThreshold; break
+  }
+}
+
+/** Normalize API-server defaults and omitted empty egress; all other execution fields must match. */
+const comparableSpec = (kind: string, source: unknown): unknown => {
+  const spec: unknown = structuredClone(source)
+  if (!record(spec)) return spec
+  if (kind === 'networkpolicies') {
+    if (equal(spec.egress, [])) delete spec.egress
+    if (Array.isArray(spec.ingress)) for (const rule of spec.ingress) {
+      if (!record(rule) || !Array.isArray(rule.ports)) continue
+      for (const port of rule.ports) if (record(port)) dropDefault(port, 'protocol', 'TCP')
+    }
+  }
+  if (kind === 'services') {
+    const ip = spec.clusterIP
+    if (typeof ip === 'string' && isIP(ip)) {
+      delete spec.clusterIP
+      if (equal(spec.clusterIPs, [ip])) delete spec.clusterIPs
+      const family = isIP(ip) === 4 ? 'IPv4' : 'IPv6'
+      if (equal(spec.ipFamilies, [family])) delete spec.ipFamilies
+    }
+    dropDefault(spec, 'ipFamilyPolicy', 'SingleStack')
+    dropDefault(spec, 'internalTrafficPolicy', 'Cluster')
+    dropDefault(spec, 'sessionAffinity', 'None')
+    if (Array.isArray(spec.ports)) for (const port of spec.ports) {
+      if (record(port)) dropDefault(port, 'protocol', 'TCP')
+    }
+  }
+  if (kind === 'pods') {
+    dropDefault(spec, 'dnsPolicy', 'ClusterFirst')
+    dropDefault(spec, 'schedulerName', 'default-scheduler')
+    dropDefault(spec, 'serviceAccount', 'default')
+    dropDefault(spec, 'serviceAccountName', 'default')
+    dropDefault(spec, 'priority', 0)
+    dropDefault(spec, 'preemptionPolicy', 'PreemptLowerPriority')
+    if (typeof spec.nodeName === 'string' && spec.nodeName) delete spec.nodeName
+    if (Array.isArray(spec.tolerations) && spec.tolerations.every(item =>
+      ['node.kubernetes.io/not-ready', 'node.kubernetes.io/unreachable'].some(key =>
+        equal(item, { key, operator: 'Exists', effect: 'NoExecute', tolerationSeconds: 300 })))) {
+      delete spec.tolerations
+    }
+    if (Array.isArray(spec.containers)) for (const container of spec.containers) {
+      if (!record(container)) continue
+      dropDefault(container, 'terminationMessagePath', '/dev/termination-log')
+      dropDefault(container, 'terminationMessagePolicy', 'File')
+      if (Array.isArray(container.ports)) for (const port of container.ports) {
+        if (record(port)) dropDefault(port, 'protocol', 'TCP')
+      }
+      if (record(container.readinessProbe)) {
+        dropDefault(container.readinessProbe, 'initialDelaySeconds', 0)
+        dropDefault(container.readinessProbe, 'successThreshold', 1)
+        dropDefault(container.readinessProbe, 'failureThreshold', 3)
+      }
+    }
+  }
+  return spec
+}
+
+/** A Pod has no egress exception; only a live forbidden-listener probe can open its call API. */
+export class StdioRunnerOrchestrator {
+  constructor(private readonly kube: Kube, private readonly config: SshRunnerConfig) {
+    if (!config.namespace || !config.image || !config.runtimeClassName || config.controlKey.length < 32
+      || !config.platformIngressCidrs.length || !Number.isSafeInteger(config.readyTimeoutMs)
+      || config.readyTimeoutMs < 1000) throw new StdioRunnerBlocked('mcp_runner_configuration_invalid')
+  }
+
+  private token(id: string): string {
+    return createHmac('sha256', this.config.controlKey).update(`stdio-runner-v1:${id}`).digest('hex')
+  }
+  private digest(body: object, id: string): string {
+    return createHmac('sha256', this.token(id)).update(JSON.stringify(canonical(body))).digest('hex')
+  }
+  private labels(id: string): Record<string, string> {
+    return { 'app.kubernetes.io/name': 'power-evolve-connector-runner', [label]: id }
+  }
+  private path(kind: string, name?: string): string {
+    const base = kind === 'networkpolicies'
+      ? `/apis/networking.k8s.io/v1/namespaces/${encodeURIComponent(this.config.namespace)}/networkpolicies`
+      : this.kube.resourcePath(this.config.namespace, kind as 'pods' | 'services' | 'secrets')
+    return name ? `${base}/${encodeURIComponent(name)}` : base
+  }
+  private async get(kind: string, name: string): Promise<Resource | null> {
+    try { return await this.kube.call<Resource>('GET', this.path(kind, name)) }
+    catch (error) { if (error instanceof KubernetesError && error.status === 404) return null; throw error }
+  }
+  private async ensure(kind: string, name: string, desired: Record<string, unknown>, token?: string): Promise<void> {
+    const matches = (value: Resource | null) => value?.metadata.name === name
+      && !value.metadata.deletionTimestamp
+      && equal(value.metadata.labels, (desired.metadata as Resource['metadata']).labels)
+      && (kind === 'secrets' ? token !== undefined && value.data?.token === Buffer.from(token).toString('base64')
+        : equal(comparableSpec(kind, value.spec), comparableSpec(kind, desired.spec)))
+    const prior = await this.get(kind, name)
+    if (prior) { if (!matches(prior)) throw new StdioRunnerBlocked('mcp_runner_resource_changed'); return }
+    try { await this.kube.call('POST', this.path(kind), desired) }
+    catch (error) {
+      if (!(error instanceof KubernetesError && error.status === 409) || !matches(await this.get(kind, name))) throw error
+    }
+  }
+  private runner<T>(id: string, method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
+    return this.kube.call<T>(method, this.kube.proxyPath(this.config.namespace, nameOf(id), path),
+      body, 10_000, this.token(id))
+  }
+  private async liveProbe(): Promise<boolean> {
+    try { return await this.config.proveForbiddenListener() }
+    catch (_unavailable) { return false }
+  }
+
+  /** Create no-egress policy before Pod creation; retain exact Pod identity for recovery.
+   * @param id - durable call UUID used for resource names and the original control token.
+   * @returns the ready Pod UID and Runner instance to persist before dispatch.
+   */
+  async prepare(id: string): Promise<StdioRunnerHandle> {
+    if (!uuid.test(id)) throw new StdioRunnerBlocked('mcp_runner_call_id_invalid')
+    if (!await this.liveProbe()) throw new StdioRunnerBlocked('mcp_runner_probe_unavailable')
+    const name = nameOf(id), labels = this.labels(id), token = this.token(id)
+    await this.ensure('networkpolicies', name, { apiVersion: 'networking.k8s.io/v1', kind: 'NetworkPolicy',
+      metadata: { name, namespace: this.config.namespace, labels },
+      spec: { podSelector: { matchLabels: labels }, policyTypes: ['Ingress', 'Egress'],
+        ingress: [{ from: this.config.platformIngressCidrs.map(cidr => ({ ipBlock: { cidr } })),
+          ports: [{ protocol: 'TCP', port: 8080 }] }], egress: [] } })
+    const resources = buildRestrictedRunnerResources(this.config, name, labels, token,
+      [{ name: 'CONNECTOR_RUNNER_FORBIDDEN_PROBE', value:
+        `${this.config.forbiddenProbe.ip}:${this.config.forbiddenProbe.port}` },
+      { name: 'CONNECTOR_RUNNER_REFUSED_PROVES_DENIAL', value: '1' }])
+    await this.ensure('secrets', name, resources.secret, token)
+    await this.ensure('services', name, resources.service)
+    await this.ensure('pods', name, resources.pod)
+    const until = Date.now() + this.config.readyTimeoutMs
+    while (Date.now() < until) {
+      const pod = await this.get('pods', name)
+      if (!pod || pod.metadata.deletionTimestamp || !pod.metadata.uid
+        || !equal(pod.metadata.labels, labels)) {
+        throw new StdioRunnerBlocked('mcp_runner_pod_identity_changed')
+      }
+      if (pod.status?.phase === 'Running' && pod.status.containerStatuses?.[0]?.ready
+        && (pod.status.containerStatuses[0].restartCount ?? 0) === 0) {
+        try {
+          const health = await this.runner<{ ready: boolean; instanceId: string }>(id, 'GET', '/health')
+          if (health.ready && uuid.test(health.instanceId) && await this.liveProbe()) {
+            const current = await this.get('pods', name)
+            if (current?.metadata.uid !== pod.metadata.uid
+              || (current.status?.containerStatuses?.[0]?.restartCount ?? 0) !== 0) {
+              throw new StdioRunnerBlocked('mcp_runner_pod_identity_changed')
+            }
+            return { callId: id, podUid: pod.metadata.uid, instanceId: health.instanceId }
+          }
+        } catch (error) { if (error instanceof StdioRunnerBlocked) throw error }
+      }
+      await delay(200)
+    }
+    throw new StdioRunnerBlocked('mcp_runner_not_ready')
+  }
+
+  private unsigned(handle: StdioRunnerHandle, accountId: string) {
+    return { kind: 'mcp.stdio.whoami' as const, callId: handle.callId, instanceId: handle.instanceId,
+      accountId, timeoutMs: 15_000, maxOutputBytes: 8192 }
+  }
+  /** Bind the fixed whoami request to its original call, instance and account.
+   * @param handle - persisted call and Runner instance identities.
+   * @param accountId - verified account UUID carried by the fixed request.
+   * @returns the canonical request HMAC under the original STDIO control-token domain.
+   */
+  digestFor(handle: StdioRunnerHandle, accountId: string): string {
+    if (!uuid.test(accountId)) throw new StdioRunnerBlocked('mcp_runner_account_invalid')
+    return this.digest(this.unsigned(handle, accountId), handle.callId)
+  }
+  private async same(handle: StdioRunnerHandle): Promise<boolean> {
+    const pod = await this.get('pods', nameOf(handle.callId))
+    if (pod?.metadata.uid !== handle.podUid || pod.metadata.deletionTimestamp
+      || (pod.status?.containerStatuses?.[0]?.restartCount ?? 0) !== 0) return false
+    try {
+      const health = await this.runner<{ ready: boolean; instanceId: string }>(handle.callId, 'GET', '/health')
+      return health.ready && health.instanceId === handle.instanceId && await this.liveProbe()
+    } catch (_unavailable) { return false }
+  }
+  /** A missing record after dispatch intent is uncertain, never a reason to POST again.
+   * @param handle - original persisted Pod, call and Runner instance to observe.
+   * @param dispatched - whether dispatch intent was already committed.
+   * @param expectedDigest - original request digest, required after dispatch intent.
+   * @returns matching status, verified absence before dispatch, or an uncertain outcome.
+   */
+  async reconcile(handle: StdioRunnerHandle, dispatched: boolean, expectedDigest?: string): Promise<StdioObservation> {
+    if (dispatched && !hex.test(expectedDigest ?? '')) return { state: 'uncertain', reason: 'dispatch_digest_missing' }
+    if (!await this.same(handle)) return { state: 'uncertain', reason: 'runner_identity_changed' }
+    try {
+      const status = await this.runner<StdioRunnerStatus>(handle.callId, 'GET', `/calls/${handle.callId}`)
+      return observeRunnerStatus(status, handle, expectedDigest || undefined)
+    } catch (error) {
+      return observeRunnerStatusError(error, dispatched)
+    }
+  }
+  /** Call only once after the platform commits the digest and dispatch intent.
+   * @param handle - persisted call and Runner instance authorized by the fresh dispatch permit.
+   * @param accountId - verified account UUID bound to the fixed request.
+   * @returns the matching original status or uncertainty when the first POST cannot be confirmed.
+   */
+  async dispatchFirst(handle: StdioRunnerHandle, accountId: string): Promise<StdioObservation> {
+    const digest = this.digestFor(handle, accountId)
+    const prior = await this.reconcile(handle, false, digest)
+    if (prior.state !== 'absent') return prior
+    const unsigned = this.unsigned(handle, accountId)
+    try {
+      const status = await this.runner<StdioRunnerStatus>(handle.callId, 'POST', '/calls', { ...unsigned, digest })
+      return status.callId === handle.callId && status.instanceId === handle.instanceId
+        && status.digest === digest ? { state: 'known', status }
+        : { state: 'uncertain', reason: 'runner_status_identity_changed' }
+    } catch (_unavailable) { return { state: 'uncertain', reason: 'dispatch_result_unknown' } }
+  }
+  /** Cleanup retains the Pod until an exact UID deletion is observed.
+   * @param callId - original durable call UUID naming its retained resources.
+   * @param expectedPodUid - original Pod UID, when persisted, that fences cleanup against replacements.
+   */
+  async cleanup(callId: string, expectedPodUid?: string): Promise<void> {
+    if (!uuid.test(callId)) throw new StdioRunnerBlocked('mcp_runner_call_id_invalid')
+    const name = nameOf(callId)
+    const pod = await this.get('pods', name)
+    if (pod && (expectedPodUid && pod.metadata.uid !== expectedPodUid
+      || !equal(pod.metadata.labels, this.labels(callId)))) {
+      throw new StdioRunnerBlocked('mcp_runner_pod_identity_changed')
+    }
+    try { await this.kube.call('DELETE', this.path('pods', name)) }
+    catch (error) { if (!(error instanceof KubernetesError && error.status === 404)) throw error }
+    const until = Date.now() + this.config.readyTimeoutMs
+    while (Date.now() < until) {
+      const current = await this.get('pods', name)
+      if (!current) break
+      if (expectedPodUid && current.metadata.uid !== expectedPodUid) {
+        throw new StdioRunnerBlocked('mcp_runner_pod_identity_changed')
+      }
+      await delay(200)
+    }
+    if (await this.get('pods', name)) throw new StdioRunnerBlocked('mcp_runner_deletion_unconfirmed')
+    for (const kind of ['services', 'secrets', 'networkpolicies']) {
+      try { await this.kube.call('DELETE', this.path(kind, name)) }
+      catch (error) { if (!(error instanceof KubernetesError && error.status === 404)) throw error }
+    }
+  }
+}

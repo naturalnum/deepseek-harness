@@ -41,7 +41,7 @@ kind: "package-library"
 
 ### 共享模块表
 
-`PLATFORM_MODULES`（位于 `src/platform.ts`）列出外壳预置的共享模块——React、Cordis 与静态 UI 库——并与 `PRELOADED_CLIENT_EXTERNALS`（parser 预载的运行时行）一起定义每个动态 bundle 解析所依据的隐式 external 基座。`dsh.client.external` 只添加基座之外的精确请求；参见[共享模块与模块图](../AGENTS.md#shared-modules-and-the-module-graph)。
+`PLATFORM_MODULES` 与 `PRELOADED_CLIENT_EXTERNALS` 可通过构建入口 `@deepseek-ai/dsh-client-web/platform` 读取，无需加载浏览器 UI 或 CSS。`PLATFORM_MODULES`（位于 `src/platform.ts`）列出外壳预置的共享模块——React、Cordis 与静态 UI 库——并与 `PRELOADED_CLIENT_EXTERNALS`（parser 预载的运行时行）一起定义每个动态 bundle 解析所依据的隐式 external 基座。`dsh.client.external` 只添加基座之外的精确请求；参见[共享模块与模块图](../AGENTS.md#shared-modules-and-the-module-graph)。
 
 ### 配置
 

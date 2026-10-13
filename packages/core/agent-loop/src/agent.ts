@@ -12,15 +12,19 @@ import type {
   AgentStatus,
   CancelOptions,
   InboxTarget,
+  MaintenanceOptions,
+  InboxActivityCapture,
+  InboxClaimBoundary,
   PreStepDecision,
   RequestErrorAction,
 } from '@deepseek-ai/dsh-agent'
-import { agentEvents, assembleContextFor } from '@deepseek-ai/dsh-agent'
+import { agentEvents, assembleContextFor, resolveInboxTarget } from '@deepseek-ai/dsh-agent'
 import type { GenerateOptions, LlmCallConfig, Message, PreparedLlmCall } from '@deepseek-ai/dsh-llm'
 import {
   LlmError,
   createAssistantMessage,
   createDeveloperMessage,
+  freezeMessage,
   errorChain,
   markAgentLoopRequest,
 } from '@deepseek-ai/dsh-llm'
@@ -49,7 +53,16 @@ type Phase =
   }
   | { kind: 'running'; abort: AbortController; turn: number; step: number; wakeRequested: boolean }
 
+type InboxReservation = {
+  phase: Exclude<Phase, { kind: 'idle' }>
+  done: Promise<void>
+  importing: boolean
+  clearRequested: boolean
+}
+
 type StepEndReason = Extract<TurnEndReason, { kind: 'completed' | 'max-tokens' }>
+
+type BeforeTurnListener = (turn: number, signal: AbortSignal) => void | Promise<void>
 
 type PreparedStep =
   | { kind: 'reject' }
@@ -98,7 +111,11 @@ function abortedCancelCause(signal: AbortSignal): AgentCancelCause | undefined {
 export class ReactLoopAgent implements Agent {
   readonly inbox: ReactLoopInbox
   private phase: Phase
+  private modelPhase: Phase | undefined
+  private inboxReservation: InboxReservation | undefined
   private activityDone: Promise<void> = Promise.resolve()
+  private readonly afterClaimHooks = new Set<{ listener: (boundary: InboxClaimBoundary) => void | Promise<void> }>()
+  private readonly beforeTurnHooks = new Set<{ listener: BeforeTurnListener }>()
 
   /** The agent-scoped registration boundary; the lifecycle owner unwinds it after the driver exits. */
   readonly scope: Scope
@@ -141,6 +158,82 @@ export class ReactLoopAgent implements Agent {
     return this.phase.kind === 'idle' || this.phase.kind === 'maintenance' ? 'idle' : 'running'
   }
 
+  get canMaintainInbox(): boolean {
+    return this.inboxReservation === undefined
+      && (this.phase.kind === 'idle' || (this.phase.kind === 'running' && this.modelPhase === this.phase))
+  }
+
+  onBeforeTurn(listener: BeforeTurnListener): () => void {
+    const hook = { listener }
+    const dispose = this.ctx.effect(() => {
+      this.beforeTurnHooks.add(hook)
+      return () => { this.beforeTurnHooks.delete(hook) }
+    })
+    return () => { void dispose() }
+  }
+
+  onAfterClaim(listener: (boundary: InboxClaimBoundary) => void | Promise<void>): () => void {
+    const hook = { listener }
+    const dispose = this.ctx.effect(() => {
+      this.afterClaimHooks.add(hook)
+      return () => { this.afterClaimHooks.delete(hook) }
+    })
+    return () => { void dispose() }
+  }
+
+  captureInboxActivity(signal: AbortSignal): InboxActivityCapture {
+    const reservation = this.inboxReservation
+    if (this.phase.kind === 'idle' || this.phase.abort.signal !== signal
+      || (this.phase.kind === 'running' && reservation?.phase !== this.phase)) {
+      throw new Error('Inbox activity capture requires the current protected maintenance signal')
+    }
+    const phase = this.phase
+    const cursor = this.session.seq
+    const aborted = signal.aborted
+    const position = phase.kind === 'running' ? { turn: phase.turn, step: phase.step } : undefined
+    const assertOwner = (): void => {
+      if (this.phase !== phase || this.session.seq !== cursor
+        || (reservation !== undefined && this.inboxReservation !== reservation)
+        || (position !== undefined && (phase.kind !== 'running'
+          || phase.turn !== position.turn || phase.step !== position.step))) {
+        throw new Error('Inbox activity capture is stale')
+      }
+    }
+    return Object.freeze({
+      sessionId: this.id, cursor, phase: phase.kind, aborted,
+      ...position === undefined ? {} : { position: Object.freeze(position) },
+      assertCurrent: () => {
+        assertOwner()
+        if (signal.aborted !== aborted) throw new Error('Inbox activity capture is stale')
+      },
+      synchronize: (operation: () => undefined) => {
+        assertOwner()
+        if (reservation !== undefined) reservation.importing = true
+        try { operation() } finally {
+          if (reservation !== undefined) reservation.importing = false
+        }
+      },
+    })
+  }
+
+  wakePending(): void {
+    if (!this.inbox.hasPending) return
+    this.wakeDriver(this.phase.kind !== 'idle' && this.phase.abort.signal.aborted)
+  }
+
+  private async prepareTurn(turn: number, signal: AbortSignal): Promise<void> {
+    try {
+      for (const hook of [...this.beforeTurnHooks]) {
+        signal.throwIfAborted()
+        if (this.beforeTurnHooks.has(hook)) await hook.listener(turn, signal)
+      }
+      signal.throwIfAborted()
+    } catch (error: unknown) {
+      if (!signal.aborted) this.dispatch.emit('agent/error', { turn, step: 0, error })
+      throw error
+    }
+  }
+
   /** Commit a phase and publish its externally visible status transition. */
   private setPhase(next: Phase): void {
     const previousStatus = this.status
@@ -155,7 +248,7 @@ export class ReactLoopAgent implements Agent {
     // Waking input cannot join an aborted activity, so it starts the next turn.
     // Captured before the insertion so a reentrant cancel from a splice observer cannot reclassify it.
     const wakingAfterAbort = wakeup && this.phase.kind !== 'idle' && this.phase.abort.signal.aborted
-    const resolvedTarget = wakingAfterAbort ? 'next-turn' : target
+    const resolvedTarget = resolveInboxTarget(target, wakeup, wakingAfterAbort)
     this.inbox.splice(resolvedTarget, Infinity, 0, [message])
     if (wakeup) this.wakeDriver(wakingAfterAbort)
   }
@@ -173,6 +266,14 @@ export class ReactLoopAgent implements Agent {
   }
 
   cancel(cause: AgentCancelCause, options: CancelOptions = {}): void {
+    if (this.inboxReservation !== undefined) {
+      if (!options.keepInbox) {
+        this.inboxReservation.clearRequested = true
+        this.inboxReservation.phase.wakeRequested = false
+      }
+      this.inboxReservation.phase.abort.abort(cause)
+      return
+    }
     if (!options.keepInbox) {
       this.inbox.clear()
       if (this.phase.kind !== 'idle') this.phase.wakeRequested = false
@@ -180,7 +281,16 @@ export class ReactLoopAgent implements Agent {
     if (this.phase.kind !== 'idle') this.phase.abort.abort(cause)
   }
 
-  runMaintenance<T>(job: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  runMaintenance<T>(job: (signal: AbortSignal) => Promise<T>, options?: MaintenanceOptions): Promise<T> {
+    if (options?.scope === 'inbox') {
+      if (this.phase.kind === 'idle') {
+        return this.runMaintenance(signal => this.reserveInbox(job, signal))
+      }
+      if (this.phase.kind !== 'running' || this.modelPhase !== this.phase) {
+        throw new Error('Inbox maintenance requires idle or the native model-streaming stage')
+      }
+      return this.reserveInbox(job, this.phase.abort.signal)
+    }
     if (this.phase.kind !== 'idle') throw new Error(`agent "${this.id}" already has active work`)
     const done = Promise.withResolvers<void>()
     const maintenance: Phase = {
@@ -201,6 +311,39 @@ export class ReactLoopAgent implements Agent {
         done.resolve()
       }
     })()
+  }
+
+  /** Hold one native prefix until command commit, mirror synchronization and cleanup settle. */
+  private reserveInbox<T>(job: (signal: AbortSignal) => Promise<T>, signal: AbortSignal): Promise<T> {
+    if (this.inboxReservation !== undefined || this.phase.kind === 'idle') {
+      throw new Error('Inbox maintenance already has an owner')
+    }
+    const done = Promise.withResolvers<void>()
+    const reservation: InboxReservation = {
+      phase: this.phase, done: done.promise, importing: false, clearRequested: false,
+    }
+    const unguard = this.ctx.effect(() => this.session.guardAppends(() => {
+      if (!reservation.importing) throw new Error('Native append is reserved by Inbox maintenance')
+    }))
+    this.inboxReservation = reservation
+    return (async () => {
+      try { return await job(signal) } finally {
+        try {
+          if (reservation.clearRequested) {
+            reservation.importing = true
+            this.inbox.clear()
+          }
+        } finally {
+          this.inboxReservation = undefined
+          try { await unguard() } finally { done.resolve() }
+        }
+      }
+    })()
+  }
+
+  /** Wait for the input holder's own cleanup, without waiting on this driver. */
+  private async waitInboxReservation(): Promise<void> {
+    while (this.inboxReservation !== undefined) await this.inboxReservation.done
   }
 
   /**
@@ -268,7 +411,22 @@ export class ReactLoopAgent implements Agent {
     /* v8 ignore next -- private callers establish the running phase before proposing a step */
     if (this.phase.kind !== 'running') throw new Error(`agent "${this.id}": pre-step outside running phase`)
     const signal = this.phase.abort.signal
-    const claimed = this.inbox.claim(target, position.turn)
+    const from = this.session.seq
+    const batch = this.inbox.claimBatch(target)
+    const claimed = batch.messages.map(message => freezeMessage(message))
+    const boundary: InboxClaimBoundary = Object.freeze({
+      target, ...position, from, to: this.session.seq,
+      messages: Object.freeze([...claimed]), events: Object.freeze([...batch.events]), signal,
+    })
+    let settlementFailure: { error: unknown } | undefined
+    for (const hook of [...this.afterClaimHooks]) {
+      if (!this.afterClaimHooks.has(hook)) continue
+      try { await hook.listener(boundary) }
+      catch (error) { settlementFailure ??= { error } }
+    }
+    if (settlementFailure) throw settlementFailure.error
+    signal.throwIfAborted()
+    this.inbox.publishClaimed(claimed, position.turn)
     const assembly = await this.loopCtx.systemPrompt.assemble(assembleContextFor(this, signal))
     signal.throwIfAborted()
     const sections = renderContextSections(assembly)
@@ -301,6 +459,8 @@ export class ReactLoopAgent implements Agent {
     const { signal } = phase.abort
     signal.throwIfAborted()
     const turn = phase.turn + 1
+    if (this.beforeTurnHooks.size > 0) await this.prepareTurn(turn, signal)
+    signal.throwIfAborted()
     try {
       this.session.append('turn/start', { turn })
     } catch (error: unknown) {
@@ -433,6 +593,7 @@ export class ReactLoopAgent implements Agent {
       )
       let started = false
       try {
+        this.modelPhase = this.phase
         const stream = preparedCall?.stream(request) ?? this.loopCtx.llm.stream(request)
         signal.throwIfAborted()
         live.start()
@@ -441,8 +602,12 @@ export class ReactLoopAgent implements Agent {
           signal.throwIfAborted()
           live.push(chunk)
         }
+        if (this.inboxReservation !== undefined) await this.waitInboxReservation()
+        this.modelPhase = undefined
         signal.throwIfAborted()
       } catch (error: unknown) {
+        if (this.inboxReservation !== undefined) await this.waitInboxReservation()
+        this.modelPhase = undefined
         if (!started) throw error
         try {
           if (signal.aborted) {

@@ -11,7 +11,9 @@ Desktop product events use the optional [product analytics service](../product-a
 
 ## Summary
 
-Use the **Plugins** entry in the Web sidebar to manage the profile's installed bundles and the official bundles the installation ships switched off. Switch bundles and their rows on and off, install a bundle after the Host has read what the spec names, watch pnpm's output, stop a run, and enable what it added. Uninstalling asks for confirmation. A plugin that registers a configuration page is edited here, on its own page; Settings keeps the read-only inventory.
+Use **Plugins** in the Web sidebar to manage the Profile's installed bundles and disabled official bundles shipped with the installation. Toggle bundles and rows, install after the Host inspects the spec's target, watch pnpm output, stop a run, and enable added bundles. Uninstallation requires confirmation; plugins with registered configuration pages are edited there, and Settings retains the read-only inventory.
+
+Host carriers can mark shared Profile management read-only for a peer: package/configuration details remain, installation is disabled, and locked bundle/row controls explain `permission-required`. Personal configuration contributions retain their own authorization.
 
 ## Table of Contents
 

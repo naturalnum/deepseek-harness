@@ -226,6 +226,11 @@ describe('JobController', () => {
   async function liveOwner(ctx: Context, rawId: string): Promise<Agent> {
     const session = ctx.sessions.create(SessionId(rawId))
     const owner: Agent = {
+      canMaintainInbox: true,
+      onBeforeTurn: () => () => {},
+      onAfterClaim: () => () => {},
+      captureInboxActivity: () => { throw new Error('This Agent double has no maintenance capture') },
+      wakePending: () => {},
       id: session.id,
       options: {},
       session,

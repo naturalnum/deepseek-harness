@@ -109,6 +109,8 @@ export interface TranslationPairingManifest {
 
 const README_ARTIFACT = /(?:^|\/)readme(?:\.md|\.zh\.md|\.i18n\.yaml)$/i
 const ROOT_PAIRED_DOCUMENT_ARTIFACT = /^(?:brand_guidelines|contributing|safety)(?:\.md|\.zh\.md|\.i18n\.yaml)$/i
+const PRODUCT_PROTOCOL_ARTIFACT
+  = /^products\/power-evolve\/application\/native-turn-(?:advance-intent|continuation)-v2(?:\.md|\.zh\.md|\.i18n\.yaml)$/
 const NON_SOURCE_DIRECTORIES = new Set([
   'node_modules',
   'lib',
@@ -162,6 +164,7 @@ export function isTranslationScopeFile(file: string): boolean {
   return !file.startsWith('.agents/notes/archived/')
     && !isTranslationSourceExcluded(file) && (README_ARTIFACT.test(file)
     || ROOT_PAIRED_DOCUMENT_ARTIFACT.test(file)
+    || PRODUCT_PROTOCOL_ARTIFACT.test(file)
     || file.startsWith('.agents/notes/')
     || file.startsWith('docs/')
     || file.startsWith('python/'))

@@ -441,6 +441,7 @@ const attachments = new WeakMap<Session, SessionEntry>()
  */
 export class Session {
   private log: SessionEvent[] = []
+  private readonly appendGuards = new Set<() => void>()
   /** Single incremental owner of surface acceptance and projection state. */
   private readonly surfaceManager: SurfaceManager
 
@@ -511,6 +512,28 @@ export class Session {
   }
 
   /**
+   * Snapshot a detached command-planning prefix without appending a lifecycle
+   * marker. Validation and message projections are identical to create(); only
+   * a live create/restore owns a new lifecycle edge. This Session stays private
+   * to the plan until its canonical events are committed by the consumer.
+   * @param id - exact Session identity.
+   * @param seed - borrowed authoritative event prefix.
+   * @param header - borrowed exact storage metadata.
+   * @param inheritedEventCount - exact inherited prefix length.
+   * @param projections - pure plugin message interpreters.
+   * @returns detached Session whose seq equals the supplied prefix length.
+   */
+  static forPlanning(
+    id: SessionId,
+    seed: readonly SessionEvent[],
+    header: SessionHeader,
+    inheritedEventCount: SessionLogOffset,
+    projections: readonly SessionMessageProjection[] = [],
+  ): Session {
+    return new Session(id, seed, header, 'snapshot', inheritedEventCount, projections, false)
+  }
+
+  /**
    * Restore a detached session by adopting an independently owned or deeply frozen seed.
    * Runtime-required event fields, event envelopes, sequence continuity, surface
    * transitions, and header fields are validated without copying or freezing events.
@@ -549,7 +572,8 @@ export class Session {
     header?: SessionHeader,
     mode: 'snapshot' | SessionSeedEventState = 'snapshot',
     suppliedInheritedEventCount?: SessionLogOffset,
-    projections: readonly SessionMessageProjection[] = [],
+    private readonly projections: readonly SessionMessageProjection[] = [],
+    appendLifecycleMarker = true,
   ) {
     this.surfaceManager = new SurfaceManager(this.log, SessionLogOffset(0), projections)
     const restoredHeader = mode === 'snapshot' ? undefined : validateRestoredSessionHeader(id, header)
@@ -611,9 +635,9 @@ export class Session {
     // A fresh seeded child always owns one tagged marker at its inherited cut,
     // even when the copied prefix already ends in an ancestor marker. Restore
     // retains that durable marker and appends only the ordinary resume marker.
-    if (seed !== undefined && mode === 'snapshot' && this.header.isSeeded && !markedSeed) {
+    if (appendLifecycleMarker && seed !== undefined && mode === 'snapshot' && this.header.isSeeded && !markedSeed) {
       this.append('session/end-seed', { inherited: true })
-    } else if (seed !== undefined && !(mode === 'snapshot' && this.header.isSeeded) && this.log.at(-1)?.type !== 'session/end-seed') {
+    } else if (appendLifecycleMarker && seed !== undefined && !(mode === 'snapshot' && this.header.isSeeded) && this.log.at(-1)?.type !== 'session/end-seed') {
       this.append('session/end-seed', {})
     }
   }
@@ -733,10 +757,6 @@ export class Session {
     if (surfaceMetadataSnapshot === undefined) {
       throw new Error(`session event "${type}" carries non-JSON-serializable surface metadata`)
     }
-    const entry = attachments.get(this)
-    if (entry?.appending) {
-      throw new Error('session append cannot reenter while another append is being published')
-    }
     const event = deepFreeze({
       type,
       seq: SessionSeq(this.log.length),
@@ -744,8 +764,54 @@ export class Session {
       data: dataSnapshot,
       ...(surfaceMetadataSnapshot as { surfaceOp?: unknown; sourceEventSeqs?: unknown }),
     } as unknown as SessionEvent<T>)
-    validateSessionEventData(event, `session event "${type}" at seq ${event.seq}`)
-    this.surfaceManager.validateNext(event as SessionEvent)
+    this.acceptEvent(event as SessionEvent)
+    return event
+  }
+
+  /**
+   * Register a synchronous check before native log acceptance. Own its disposer
+   * with the operation that reserves append ordering; failed checks leave the
+   * prefix unchanged. Guards apply to ordinary and committed synchronization.
+   * @param guard - synchronous reservation check.
+   * @returns idempotent disposer.
+   */
+  guardAppends(guard: () => void): () => void {
+    this.appendGuards.add(guard)
+    return () => { this.appendGuards.delete(guard) }
+  }
+
+  /**
+   * Atomically import an already committed exact suffix without publishing it
+   * again on session/event. Sequence, envelope and native surface acceptance
+   * are checked against a detached copy before this log changes. Projection
+   * readers fold the new suffix on their next read. Consumers prove external
+   * commit/Writer ownership; this method grants no persistence authority.
+   * @param events - immutable canonical suffix with exact persisted seq/time.
+   */
+  synchronizeCommitted(events: readonly SessionEvent[]): void {
+    for (const guard of this.appendGuards) guard()
+    if (attachments.get(this)?.appending) throw new Error('Committed synchronization cannot reenter native append')
+    const snapshots = events.map(event => snapshotSessionEvent(event))
+    const probe = new Session(this.id, this.log, this.header, 'shared-frozen',
+      this.inheritedEventCount, this.projections, false)
+    for (const event of snapshots) {
+      if (event.seq !== probe.log.length) throw new Error('Committed suffix cursor does not match the native prefix')
+      assertSessionEventEnvelope(event, event.seq)
+      probe.acceptEvent(event)
+    }
+    for (const event of snapshots) this.log.push(event)
+    this.eventsSnapshot = undefined
+  }
+
+  /** Validate and publish one immutable event through the existing acceptance owner. */
+  private acceptEvent(event: SessionEvent): void {
+    for (const guard of this.appendGuards) guard()
+    const entry = attachments.get(this)
+    if (entry?.appending) {
+      throw new Error('session append cannot reenter while another append is being published')
+    }
+    validateSessionEventData(event, `session event "${event.type}" at seq ${event.seq}`)
+    this.surfaceManager.validateNext(event)
 
     if (entry !== undefined) entry.appending = true
     try {
@@ -754,12 +820,11 @@ export class Session {
       if (entry !== undefined) {
         callbacks = collectSessionCallbacks(entry.emitCtx, [entry.carrier, 'session/event', ...callbackArgs])
       }
-      this.log.push(event as SessionEvent)
+      this.log.push(event)
       this.eventsSnapshot = undefined
       if (callbacks !== undefined && entry !== undefined) {
         invokeContainedSessionObservers(entry.emitCtx, 'session/event', entry.id, callbackArgs, callbacks)
       }
-      return event
     } finally {
       if (entry !== undefined) {
         entry.appending = false

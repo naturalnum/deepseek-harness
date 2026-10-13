@@ -1,0 +1,13 @@
+{
+  "catalogPredecessor": {
+    "version": "1.1.1",
+    "archiveDigest": "9211f019d069c3d99763ce7803e3d446686e328fd697ec30da321be5bff32106"
+  },
+  "productRelease": "1.1.3",
+  "changes": [
+    {
+      "version": "1.1.3",
+      "summary": "Publish cloud-only catalog metadata and aligned active Skill version; retain predecessor distribution bytes."
+    }
+  ]
+}

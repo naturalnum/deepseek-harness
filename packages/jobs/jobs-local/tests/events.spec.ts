@@ -19,6 +19,11 @@ function agentIn(ctx: Context, rawId: string, presetScope?: ScopeKey): Agent {
   }
   const session = Session.create(id)
   return {
+    canMaintainInbox: true,
+    onBeforeTurn: () => () => {},
+    onAfterClaim: () => () => {},
+    captureInboxActivity: () => { throw new Error('This Agent double has no maintenance capture') },
+    wakePending: () => {},
     id,
     options: {},
     session,

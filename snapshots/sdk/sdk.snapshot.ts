@@ -900,6 +900,17 @@ describe('TypeScript SDK snapshots over the jsonrpc runtime', () => {
           ['tool', 'scheduler-complete', false], ['tool', 'scheduler-fail', true], ['tool', 'scheduler-unstarted', true],
         ])
         expect(events.filter(event => event.type === 'todo/write')).toHaveLength(1)
+        const claims = events.filter(event => event.type === 'agent/inbox/spliced'
+          && event.data['removedCount'] === 1 && event.data['outcome'] === undefined)
+        expect(claims.map(event => event.data)).toEqual([
+          { target: 'next-turn', start: 0, removedCount: 1, inserted: [] },
+          { target: 'next-turn', start: 0, removedCount: 1, inserted: [] },
+        ])
+        for (const claim of claims) {
+          const index = events.indexOf(claim)
+          expect(events.slice(0, index).some(event => event.type === 'turn/start')).toBe(true)
+          expect(events.slice(index + 1).some(event => event.type === 'step/start')).toBe(true)
+        }
       }
       if (scenario.name === 'subagent-activation-limit') {
         expect(ordered).toHaveLength(2)

@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for guide.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/upgrade-guide/v0.2.1-alpha.1/remote-stream-send-deadline/guide.md
+/:
+  en: 25f5580cb695e298
+  zh: ba2a19e19972a0e9
+/remote-stream-sends-require-a-deadline:
+  en: 66941cf91977db7b
+  zh: 5120cd7d6bae81e4
+/remote-stream-sends-require-a-deadline/change:
+  en: 984e9c1e5e6ff8fd
+  zh: 417c2dfd12ea69a1
+/remote-stream-sends-require-a-deadline/migration:
+  en: bde2f62071281924
+  zh: 92b37b7bd3e2d563
