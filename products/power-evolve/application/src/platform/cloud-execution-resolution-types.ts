@@ -7,6 +7,14 @@ export type CloudExecutionState = 'queued' | 'starting' | 'running' | 'cancellin
 /** Legacy command fields selected by explicit kind from PostgreSQL; opaque results remain JSON, not JSONB. */
 export interface CloudExecutionRow {
   execution_kind: 'legacy_command'
+  /** Historical source fixtures omit v7 fields; the migrated database fills continuation explicitly. */
+  result_delivery?: 'continuation' | 'native_tool'
+  requested_timeout_ms?: number | null
+  command_timeout_ms?: number | null
+  native_tool_grant_digest?: string | null
+  native_tool_credential_version?: number | null
+  native_tool_stop_request_id?: string | null
+  native_tool_stop_target?: unknown
   id: string
   user_id: string
   session_id: string
@@ -30,7 +38,16 @@ export interface CloudExecutionRow {
 }
 /** Exact command request captured before the first Runner dispatch. */
 export const cloudRunnerRequest = z.object({ id: z.uuid(), command: z.string().min(1).max(8192), cwd: z.string().max(4096),
-  timeoutMs: z.number().int().positive(), instanceId: z.uuid() }).strict()
+  timeoutMs: z.number().int().min(1000).max(300_000), instanceId: z.uuid(), outputMode: z.literal('tail').optional(),
+  dshEnv: z.object({ DSH_SHELL: z.literal('1'), DSH_HOME: z.literal('/home/agent/.dsh'),
+    DSH_SESSION_ID: z.uuid() }).strict().optional() }).strict()
+/** Build only the native variables managed by the authorized Platform.
+ * @param sessionId Original execution Session, never supplied by the tool request.
+ * @returns Stable ordered fields for native request hashing and Runner dispatch.
+ */
+export function nativeCloudEnvironment(sessionId: string): NonNullable<z.infer<typeof cloudRunnerRequest>['dshEnv']> {
+  return { DSH_SHELL: '1', DSH_HOME: '/home/agent/.dsh', DSH_SESSION_ID: sessionId }
+}
 /** Bounded Runner observation; identities and digest must also match the captured request. */
 export const cloudRunnerResult = z.object({
   id: z.uuid(), state: z.enum(['running', 'succeeded', 'failed', 'cancelled']),
@@ -53,12 +70,19 @@ export function cloudRequestDigest(value: unknown): string { return createHash('
 export function capturedRunnerRequest(row: CloudExecutionRow, legacyTimeoutMs: number): z.infer<typeof cloudRunnerRequest> | null {
   if (!row.runner_instance_id) return null
   const raw = row.dispatch_request ?? { id: row.id, command: row.command, cwd: row.cwd,
-    timeoutMs: legacyTimeoutMs, instanceId: row.runner_instance_id }
+    timeoutMs: row.command_timeout_ms ?? legacyTimeoutMs, instanceId: row.runner_instance_id,
+    ...(row.result_delivery === 'native_tool' ? { outputMode: 'tail', dshEnv: nativeCloudEnvironment(row.session_id) } : {}) }
   const parsed = cloudRunnerRequest.safeParse(raw)
   if (!parsed.success) return null
   const request = parsed.data
   if (request.id !== row.id || request.command !== row.command || request.cwd !== row.cwd
     || request.instanceId !== row.runner_instance_id
-    || cloudRequestDigest({ command: request.command, cwd: request.cwd, timeoutMs: request.timeoutMs }) !== row.request_digest) return null
+    || row.result_delivery === 'native_tool' && (row.command_timeout_ms === null
+      || row.command_timeout_ms === undefined || request.timeoutMs !== row.command_timeout_ms || request.outputMode !== 'tail'
+      || request.dshEnv?.DSH_SESSION_ID !== row.session_id)
+    || row.result_delivery !== 'native_tool' && (request.outputMode !== undefined || request.dshEnv !== undefined)
+    || cloudRequestDigest({ command: request.command, cwd: request.cwd, timeoutMs: request.timeoutMs,
+      ...(request.outputMode === undefined ? {} : { outputMode: request.outputMode }),
+      ...(request.dshEnv === undefined ? {} : { dshEnv: request.dshEnv }) }) !== row.request_digest) return null
   return request
 }

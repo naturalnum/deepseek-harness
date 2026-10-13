@@ -102,6 +102,7 @@ import { SshAuthenticationCheck } from './ssh-check.ts'
 import { SshExecuteService } from './ssh-execute.ts'
 import { SshRunnerOrchestrator, type SshRunnerConfig } from './ssh-runner.ts'
 import { ExecutionService } from './executions.ts'
+import { cloudShellProposeRequest, cloudShellExecutionRequest } from '../cloud-shell-contracts.ts'
 import { routeExecutionResolutionRead, routeExecutionResolutionApproval } from './execution-resolution-routes.ts'
 import { LoginAdmission } from './login-admission.ts'
 import { KubernetesClient } from './kubernetes.ts'
@@ -184,7 +185,7 @@ export const Config = schema.object({
   sandboxReadyTimeoutMs: schema.number().min(1000).default(60000),
   sandboxConcurrency: schema.number().step(1).min(1).default(4),
   sandboxPollMs: schema.number().min(100).default(500), sandboxIdleMs: schema.number().min(1000).default(300000),
-  sandboxCommandTimeoutMs: schema.number().min(1000).default(60000),
+  sandboxCommandTimeoutMs: schema.number().step(1).min(1000).max(300000).default(60000),
   sandboxMaxExecutions: schema.number().step(1).min(1).max(65536).default(4096),
   nativeWriterLeaseMs: schema.number().step(1).min(1000).max(300000).default(30000),
   nativeInputOwnerRoutingFile: schema.string().default(''),
@@ -1008,6 +1009,20 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         case '/runtime/connectors/prepare': {
           const value = z.object({ callId: z.string().min(1).max(100), text: z.string().trim().min(1).max(1000) }).strict().parse(input)
           sendJson(res, await connectors.prepare(token, value.callId, value.text)); return
+        }
+        case '/runtime/shell/propose': {
+          if (!executions) throw new PlatformError(503, 'execution_unavailable')
+          sendJson(res, await executions.proposeShell(token, cloudShellProposeRequest.parse(input))); return
+        }
+        case '/runtime/shell/status': {
+          if (!executions) throw new PlatformError(503, 'execution_unavailable')
+          const value = cloudShellExecutionRequest.parse(input)
+          sendJson(res, await executions.statusShell(token, value.executionId)); return
+        }
+        case '/runtime/shell/cancel': {
+          if (!executions) throw new PlatformError(503, 'execution_unavailable')
+          const value = cloudShellExecutionRequest.parse(input)
+          sendJson(res, await executions.cancelShell(token, value.executionId)); return
         }
         case '/runtime/executions/propose': {
           if (!executions) throw new PlatformError(503, 'execution_unavailable')

@@ -6,20 +6,27 @@ import { z } from 'zod'
 import type { ExecutionResolutionInspection, ExecutionResolutionReceipt, ExecutionResolutionRequest, ExecutionResolutionsList,
   ExecutionResolutionsListRequest, ExecutionResolutionStatus, ResolutionExecutionId, ResolutionRequestId } from '@power-evolve/contracts/execution-resolution'
 import { CloudExecutionResolutionService } from './cloud-execution-resolution.ts'
-import { cloudRunnerResult as runnerResult, cloudRequestDigest as digest, capturedRunnerRequest,
+import { cloudRunnerResult as runnerResult, cloudRequestDigest as digest, capturedRunnerRequest, nativeCloudEnvironment,
   type CloudExecutionRow as ExecutionRow, type CloudExecutionState as State } from './cloud-execution-resolution-types.ts'
 import { executionTarget, PlatformError, type Identity } from '../contracts.ts'
 import { transaction } from './database.ts'
 import { lockAccountAuthorities, requireActiveAccount } from './account-authority.ts'
 import { userId as executionUserId } from '../contracts.ts'
 import { KubernetesError } from './kubernetes.ts'
-import { MountSlotBlocked, SandboxManager, type SandboxReady } from './sandbox.ts'
+import { MountSlotBlocked, SandboxManager, type SandboxReady, type CloudResolutionTarget } from './sandbox.ts'
+import { storageBinding } from './cloud-storage-types.ts'
 import type { TaskStore } from './tasks.ts'
 import { isSessionBusinessBlockedInTransaction } from './native-workspace-layout.ts'
 import { isSessionOperationStoppedInTransaction, requireActivityRow,
   requestCloudCommandStopInTransaction } from './native-session-activity-stop.ts'
+import { digest as grantDigest } from './identity.ts'
+import { cloudShellProposeRequest, cloudShellObservation, cloudShellResult,
+  type CloudShellObservation } from '../cloud-shell-contracts.ts'
 
 class ExecutionLeaseLost extends Error {}
+
+const nativeStopTarget = z.object({ userId: z.uuid(), sessionId: z.uuid(), workspaceId: z.uuid(),
+  generation: z.uuid(), name: z.string().min(1), podUid: z.uuid(), runnerInstanceId: z.uuid(), binding: storageBinding }).strict()
 
 /** A platform worker is the only caller allowed to create a Sandbox or dispatch commands. */
 export class ExecutionService {
@@ -94,7 +101,9 @@ export class ExecutionService {
       const prior = await client.query<ExecutionRow>(
         "SELECT * FROM pe_cloud_executions WHERE execution_kind='legacy_command' AND operation_id=$1 AND call_id=$2", [grant.operation_id, callId])
       if (prior.rows[0]) {
-        if (prior.rows[0].request_digest !== digest(request)) throw new PlatformError(409, 'request_id_conflict')
+        if (prior.rows[0].result_delivery === 'native_tool' || prior.rows[0].request_digest !== digest(request)) {
+          throw new PlatformError(409, 'request_id_conflict')
+        }
         return this.receipt(prior.rows[0])
       }
       if (await isSessionBusinessBlockedInTransaction(client, grant.user_id, grant.id)) {
@@ -110,12 +119,145 @@ export class ExecutionService {
         throw new PlatformError(409, 'sandbox_stop_unconfirmed')
       }
       const inserted = await client.query<ExecutionRow>(
-        `INSERT INTO pe_cloud_executions(id,user_id,session_id,operation_id,call_id,command,cwd,request_digest,execution_kind,state)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8,'legacy_command','queued') RETURNING *`,
-        [randomUUID(), grant.user_id, grant.id, grant.operation_id, callId, command, cwd, digest(request)])
+        `INSERT INTO pe_cloud_executions(id,user_id,session_id,operation_id,call_id,command,cwd,request_digest,execution_kind,state,
+          result_delivery,requested_timeout_ms,command_timeout_ms)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,'legacy_command','queued','continuation',$9,$9) RETURNING *`,
+        [randomUUID(), grant.user_id, grant.id, grant.operation_id, callId, command, cwd, digest(request), this.commandTimeoutMs])
       await client.query('SELECT pg_notify(\'pe_executions\',$1)', [grant.id])
       return this.receipt(requireActivityRow(inserted.rows))
     })
+  }
+
+  /** Persist a native foreground request or re-read the original receipt after transport loss.
+   * @param token Current grant for admission; its captured original value can only re-read/stop an existing request after expiry.
+   * @param input Native tool call identity, command, directory, timeout and optional cancellation intent.
+   * @returns The original observation; replay never starts a second command or changes its timeout.
+   */
+  async proposeShell(token: string, input: z.infer<typeof cloudShellProposeRequest>): Promise<CloudShellObservation> {
+    const request = cloudShellProposeRequest.parse(input), hashed = grantDigest(token)
+    return transaction(this.pool, async client => {
+      const captured = await client.query<ExecutionRow>(`SELECT e.* FROM pe_cloud_executions e
+        JOIN pe_sessions s ON s.id=e.session_id AND s.user_id=e.user_id
+        JOIN pe_operations o ON o.id=e.operation_id AND o.session_id=s.id
+        WHERE e.execution_kind='legacy_command' AND e.result_delivery='native_tool'
+          AND e.native_tool_grant_digest=$1 AND e.call_id=$2`, [hashed, request.callId])
+      const original = captured.rows[0]
+      if (original) {
+        const read = await this.shellControl(client, token, original.id)
+        this.sameShellRequest(read.row, request)
+        if (request.cancelRequested) await requestCloudCommandStopInTransaction(client, read.row.id)
+        return this.shellReceipt(read.row, read.outputAllowed)
+      }
+      // New writes always require the current native execution frame, not just a retained token.
+      const grant = await this.tasks.executionAuthorized(client, token)
+      executionTarget.parse(grant.execution_target)
+      const prior = await client.query<ExecutionRow>(
+        'SELECT * FROM pe_cloud_executions WHERE operation_id=$1 AND call_id=$2 FOR UPDATE', [grant.operation_id, request.callId])
+      if (prior.rows[0]) {
+        this.sameShellRequest(prior.rows[0], request)
+        const read = await this.shellControl(client, token, prior.rows[0].id)
+        if (request.cancelRequested) await requestCloudCommandStopInTransaction(client, read.row.id)
+        return this.shellReceipt(read.row, read.outputAllowed)
+      }
+      if (await isSessionBusinessBlockedInTransaction(client, grant.user_id, grant.id)) {
+        throw new PlatformError(409, 'native_session_archived')
+      }
+      const active = await client.query(`SELECT id FROM pe_cloud_executions WHERE session_id=$1
+        AND state IN ('queued','starting','running','cancelling','uncertain')`, [grant.id])
+      if (active.rowCount) throw new PlatformError(409, 'execution_busy')
+      const instance = await client.query<{ state: string }>('SELECT state FROM pe_sandbox_instances WHERE session_id=$1', [grant.id])
+      if (instance.rows[0] && ['unknown', 'deleting'].includes(instance.rows[0].state)) {
+        throw new PlatformError(409, 'sandbox_stop_unconfirmed')
+      }
+      const timeoutMs = Math.min(request.timeoutMs, this.commandTimeoutMs, 300_000)
+      if (!Number.isInteger(timeoutMs) || timeoutMs < 1000) throw new PlatformError(503, 'native_shell_timeout_invalid')
+      const authority = requireActivityRow(await lockAccountAuthorities(client, [executionUserId.parse(grant.user_id)], 'update'))
+      const admission = { command: request.command, cwd: request.cwd, timeoutMs, outputMode: 'tail',
+        dshEnv: nativeCloudEnvironment(grant.id) }
+      const inserted = await client.query<ExecutionRow>(`INSERT INTO pe_cloud_executions
+        (id,user_id,session_id,operation_id,call_id,command,cwd,request_digest,execution_kind,state,result_delivery,
+          requested_timeout_ms,command_timeout_ms,native_tool_grant_digest,native_tool_credential_version,cancel_requested)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,'legacy_command','queued','native_tool',$9,$10,$11,$12,$13) RETURNING *`,
+      [randomUUID(), grant.user_id, grant.id, grant.operation_id, request.callId, request.command, request.cwd,
+        digest(admission), request.timeoutMs, timeoutMs, hashed, authority.credentialVersion, request.cancelRequested ?? false])
+      await client.query("SELECT pg_notify('pe_executions',$1)", [grant.id])
+      return this.shellReceipt(requireActivityRow(inserted.rows))
+    })
+  }
+
+  /** Read only the original execution bound to this live or retained grant.
+   * @param token Original token retained for metadata after expiry, or the current grant for the same operation.
+   * @param executionId Exact native execution identity.
+   * @returns Persisted bounded terminal output only while its owner authority still permits reads.
+   */
+  statusShell(token: string, executionId: string): Promise<CloudShellObservation> {
+    return transaction(this.pool, async client => {
+      const current = await this.shellControl(client, token, executionId)
+      return this.shellReceipt(current.row, current.outputAllowed)
+    })
+  }
+
+  /** Request exact cleanup without treating its acceptance as a stopped process.
+   * @param token Captured original grant; account disable/expiry cannot revoke its cleanup-only capability.
+   * @param executionId The original execution, never an arbitrary owner execution.
+   * @returns Current observation; the worker still owns stop proof and terminal publication.
+   */
+  cancelShell(token: string, executionId: string): Promise<CloudShellObservation> {
+    return transaction(this.pool, async client => {
+      const current = await this.shellControl(client, token, executionId)
+      await requestCloudCommandStopInTransaction(client, current.row.id)
+      await client.query("SELECT pg_notify('pe_executions',$1)", [current.row.session_id])
+      return this.shellReceipt(current.row, current.outputAllowed)
+    })
+  }
+
+  private sameShellRequest(row: ExecutionRow, request: z.infer<typeof cloudShellProposeRequest>): void {
+    const expected = { command: request.command, cwd: request.cwd,
+      timeoutMs: row.command_timeout_ms, outputMode: 'tail', dshEnv: nativeCloudEnvironment(row.session_id) }
+    if (row.result_delivery !== 'native_tool' || row.command !== request.command || row.cwd !== request.cwd
+      || row.requested_timeout_ms !== request.timeoutMs || row.request_digest !== digest(expected)) {
+      throw new PlatformError(409, 'request_id_conflict')
+    }
+  }
+
+  private shellReceipt(row: ExecutionRow, outputAllowed = true): CloudShellObservation {
+    const terminal = ['succeeded', 'failed', 'cancelled'].includes(row.state)
+    return cloudShellObservation.parse({ executionId: row.id, state: row.state, command: row.command, cwd: row.cwd,
+      timeoutMs: row.command_timeout_ms,
+      result: outputAllowed && terminal && row.result !== null ? cloudShellResult.parse(row.result) : null,
+      errorCode: outputAllowed ? row.error_code : 'native_shell_output_revoked' })
+  }
+
+  private async shellControl(client: PoolClient, token: string, executionId: string): Promise<{
+    row: ExecutionRow; outputAllowed: boolean
+  }> {
+    const hashed = grantDigest(token)
+    const hint = await client.query<{ user_id: string }>(`SELECT e.user_id FROM pe_cloud_executions e
+      JOIN pe_sessions s ON s.id=e.session_id AND s.user_id=e.user_id
+      JOIN pe_operations o ON o.id=e.operation_id AND o.session_id=s.id
+      WHERE e.id=$1 AND e.execution_kind='legacy_command' AND e.result_delivery='native_tool'
+        AND (e.native_tool_grant_digest=$2 OR s.grant_digest=$2)`, [executionId, hashed])
+    if (!hint.rows[0]) throw new PlatformError(404, 'execution_not_found')
+    const authority = requireActivityRow(await lockAccountAuthorities(client, [executionUserId.parse(hint.rows[0].user_id)], 'update'))
+    const found = await client.query<ExecutionRow>(`SELECT e.* FROM pe_cloud_executions e
+      JOIN pe_sessions s ON s.id=e.session_id AND s.user_id=e.user_id
+      JOIN pe_operations o ON o.id=e.operation_id AND o.session_id=s.id
+      WHERE e.id=$1 AND e.execution_kind='legacy_command' AND e.result_delivery='native_tool'
+        AND (e.native_tool_grant_digest=$2 OR s.grant_digest=$2) FOR UPDATE OF e`, [executionId, hashed])
+    const row = found.rows[0]
+    if (!row) throw new PlatformError(404, 'execution_not_found')
+    if (row.native_tool_grant_digest !== hashed) {
+      const current = await this.tasks.authorized(client, token)
+      if (current.user_id !== row.user_id || current.id !== row.session_id || current.operation_id !== row.operation_id) {
+        throw new PlatformError(404, 'execution_not_found')
+      }
+    }
+    const outputAllowed = authority.enabled && authority.deletedAt === null
+      && authority.credentialVersion === row.native_tool_credential_version && row.error_code !== 'account_disabled'
+      && !await isSessionBusinessBlockedInTransaction(client, row.user_id, row.session_id)
+      && !await isSessionOperationStoppedInTransaction(client,
+        { userId: row.user_id, sessionId: row.session_id, operationId: row.operation_id })
+    return { row, outputAllowed }
   }
 
   private receipt(row: ExecutionRow): unknown {
@@ -187,6 +329,17 @@ export class ExecutionService {
     return transaction(this.pool, async (client) => {
       // Serialize claims across Platform replicas before counting live worker leases.
       await client.query('SELECT pg_advisory_xact_lock(72819532)')
+      // Foreground processes belong to their original operation generation. Receipt-style
+      // executions retain their independent continuation/reconciliation lifetime.
+      await client.query(`UPDATE pe_cloud_executions e SET cancel_requested=true,updated_at=clock_timestamp()
+        WHERE e.result_delivery='native_tool' AND e.state IN ('queued','starting','running','cancelling','uncertain')
+          AND NOT e.cancel_requested AND NOT EXISTS (
+            SELECT 1 FROM pe_sessions s JOIN pe_operations o ON o.session_id=s.id
+              JOIN pe_users u ON u.id=s.user_id
+            WHERE o.id=e.operation_id AND s.id=e.session_id AND s.user_id=e.user_id
+              AND o.state='running' AND s.grant_digest=e.native_tool_grant_digest
+              AND s.lease_until>clock_timestamp() AND u.enabled AND u.deleted_at IS NULL
+              AND u.credential_version=e.native_tool_credential_version)`)
       const leased = await client.query<{ count: number }>(
         `SELECT count(*)::integer AS count FROM pe_cloud_executions
          WHERE lease_owner IS NOT NULL AND lease_until>clock_timestamp()
@@ -253,6 +406,10 @@ export class ExecutionService {
   private async process(row: ExecutionRow, assertLease: () => Promise<void>): Promise<void> {
     try {
       await assertLease()
+      if (row.result_delivery === 'native_tool' && row.native_tool_stop_target !== null
+        && row.native_tool_stop_target !== undefined) {
+        await this.stopNativeTool(row, assertLease); return
+      }
       if (await this.currentCancel(row) && !row.sandbox_name) {
         await this.sandboxes.cancelCreation(row.id, row.session_id, row.user_id, this.workerId, assertLease)
         await this.settle(row, 'cancelled', null, null); return
@@ -284,6 +441,14 @@ export class ExecutionService {
       await this.observe(row, sandbox, cancelled, assertLease)
     } catch (error) {
       if (error instanceof ExecutionLeaseLost) return
+      if (row.result_delivery === 'native_tool' && await this.currentCancel(row)
+        && row.sandbox_name && row.pod_uid && row.runner_instance_id) {
+        try { await this.stopNativeTool(row, assertLease) }
+        catch (stopError) {
+          if (!(stopError instanceof ExecutionLeaseLost)) await this.defer(row, 'uncertain', 'native_tool_stop_unconfirmed')
+        }
+        return
+      }
       if (error instanceof MountSlotBlocked) {
         await this.defer(row, error.retryable ? 'starting' : 'uncertain', error.code); return
       }
@@ -292,7 +457,7 @@ export class ExecutionService {
       if (!recorded.rows[0]?.runner_instance_id) {
         // A timed-out Kubernetes creation may still have mounted the writable Home.
         await this.defer(row, 'uncertain', 'sandbox_creation_unconfirmed')
-      } else if (error instanceof KubernetesError && error.status === 400) {
+      } else if (error instanceof KubernetesError && error.status === 400 && row.result_delivery !== 'native_tool') {
         await this.settle(row, 'failed', null, 'runner_rejected_request')
       } else if (error instanceof KubernetesError && error.status === 409) {
         await this.defer(row, 'uncertain', 'sandbox_conflict')
@@ -312,7 +477,11 @@ export class ExecutionService {
     await this.sandboxes.assertCurrent(sandbox)
     try { status = runnerResult.parse(await this.sandboxes.runner(sandbox.name, sandbox.token, 'GET', path)) }
     catch (error) { if (!(error instanceof KubernetesError && error.status === 404)) throw error }
-    if (!status && cancelled) { await this.settle(row, 'cancelled', null, null); return }
+    if (!status && cancelled) {
+      if (row.result_delivery === 'native_tool') await this.stopNativeTool(row, assertLease)
+      else await this.settle(row, 'cancelled', null, null)
+      return
+    }
     if (!status) {
       if (row.state !== 'starting') {
         await this.defer(row, 'uncertain', 'runner_execution_missing'); return
@@ -363,6 +532,55 @@ export class ExecutionService {
           AND NOT EXISTS(SELECT 1 FROM pe_cloud_execution_resolutions r WHERE r.execution_id=pe_cloud_executions.id)`, [row.id, this.workerId, state, errorCode, this.pollMs])
   }
 
+  private async stopNativeTool(row: ExecutionRow, assertLease: () => Promise<void>): Promise<void> {
+    await assertLease()
+    const stopped = await transaction(this.pool, async client => {
+      await lockAccountAuthorities(client, [executionUserId.parse(row.user_id)], 'update')
+      const found = await client.query<ExecutionRow>(`SELECT * FROM pe_cloud_executions
+        WHERE id=$1 AND execution_kind='legacy_command' AND result_delivery='native_tool'
+          AND lease_owner=$2 AND lease_until>clock_timestamp() AND cancel_requested FOR UPDATE`, [row.id, this.workerId])
+      const current = found.rows[0]
+      if (!current) throw new ExecutionLeaseLost()
+      if (current.native_tool_stop_target !== null && current.native_tool_stop_target !== undefined) {
+        if (!current.native_tool_stop_request_id) throw new PlatformError(503, 'native_tool_stop_identity_invalid')
+        return { target: nativeStopTarget.parse(current.native_tool_stop_target), requestId: current.native_tool_stop_request_id }
+      }
+      const target = await this.sandboxes.captureExecutionResolution(client, { userId: current.user_id,
+        sessionId: current.session_id, name: current.sandbox_name, podUid: current.pod_uid,
+        runnerInstanceId: current.runner_instance_id })
+      const requestId = randomUUID()
+      await client.query(`UPDATE pe_cloud_executions SET native_tool_stop_request_id=$3,native_tool_stop_target=$4,
+        updated_at=clock_timestamp() WHERE id=$1 AND lease_owner=$2`, [row.id, this.workerId, requestId, target])
+      return { target, requestId }
+    })
+    const target: CloudResolutionTarget = stopped.target
+    if (target.userId !== row.user_id || target.sessionId !== row.session_id || target.name !== row.sandbox_name
+      || target.podUid !== row.pod_uid || target.runnerInstanceId !== row.runner_instance_id) {
+      throw new PlatformError(503, 'native_tool_stop_identity_invalid')
+    }
+    const guard = async (client?: PoolClient) => {
+      const found = await (client ?? this.pool).query(`SELECT id FROM pe_cloud_executions
+        WHERE id=$1 AND result_delivery='native_tool' AND user_id=$2 AND session_id=$3
+          AND lease_owner=$4 AND lease_until>clock_timestamp() AND native_tool_stop_request_id=$5
+          AND native_tool_stop_target=$6::jsonb AND cancel_requested
+          AND NOT EXISTS(SELECT 1 FROM pe_cloud_execution_resolutions r WHERE r.execution_id=pe_cloud_executions.id)`,
+      [row.id, row.user_id, row.session_id, this.workerId, stopped.requestId, target])
+      if (!found.rowCount) throw new ExecutionLeaseLost()
+    }
+    await this.sandboxes.stopForExecutionResolution(target, stopped.requestId, guard, async client => {
+      await guard(client)
+      const finished = await client.query(`UPDATE pe_cloud_executions SET state='closed_unknown',result=NULL,
+        error_code=CASE WHEN error_code='account_disabled' THEN error_code ELSE 'native_tool_outcome_unknown' END,
+        lease_owner=NULL,lease_until=NULL,updated_at=clock_timestamp()
+        WHERE id=$1 AND lease_owner=$2 AND lease_until>clock_timestamp() AND native_tool_stop_request_id=$3
+          AND NOT EXISTS(SELECT 1 FROM pe_cloud_execution_resolutions r WHERE r.execution_id=pe_cloud_executions.id) RETURNING id`,
+      [row.id, this.workerId, stopped.requestId])
+      if (!finished.rowCount) throw new ExecutionLeaseLost()
+      // stopForExecutionResolution commits this terminal fact with exact dual stop
+      // evidence and mount release. An unavailable outcome never becomes success.
+    })
+  }
+
   private async settle(row: ExecutionRow, state: State, result: unknown, errorCode: string | null): Promise<void> {
     await transaction(this.pool, async (client) => {
       await lockAccountAuthorities(client, [executionUserId.parse(row.user_id)], 'update')
@@ -381,13 +599,14 @@ export class ExecutionService {
   }
 
   private async enqueueContinuation(client: PoolClient, row: ExecutionRow): Promise<boolean> {
+    if (row.result_delivery === 'native_tool') return false
     const authority = requireActivityRow(await lockAccountAuthorities(client, [executionUserId.parse(row.user_id)], 'update'))
     if (row.error_code === 'account_disabled' || !authority.enabled || authority.deletedAt) return false
     if (await isSessionOperationStoppedInTransaction(client,
       { userId: row.user_id, sessionId: row.session_id, operationId: row.operation_id })) return false
     const original = await client.query(`SELECT id FROM pe_cloud_executions WHERE execution_kind='legacy_command'
       AND id=$1 AND user_id=$2 AND session_id=$3 AND operation_id=$4 AND call_id=$5
-      AND request_digest=$6 AND continuation_request_id=$7 FOR UPDATE`,
+      AND request_digest=$6 AND continuation_request_id=$7 AND result_delivery='continuation' FOR UPDATE`,
     [row.id,row.user_id,row.session_id,row.operation_id,row.call_id,row.request_digest,row.continuation_request_id])
     if (!original.rowCount) return false
     const text = row.state === 'closed_unknown'
