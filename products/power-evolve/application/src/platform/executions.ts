@@ -26,7 +26,8 @@ import { cloudShellProposeRequest, cloudShellObservation, cloudShellResult,
 class ExecutionLeaseLost extends Error {}
 
 const nativeStopTarget = z.object({ userId: z.uuid(), sessionId: z.uuid(), workspaceId: z.uuid(),
-  generation: z.string().regex(/^[1-9][0-9]*$/u), name: z.string().min(1), podUid: z.uuid(), runnerInstanceId: z.uuid(), binding: storageBinding }).strict()
+  generation: z.string().regex(/^[1-9][0-9]*$/u), name: z.string().min(1), podUid: z.uuid(),
+  runnerInstanceId: z.uuid(), binding: storageBinding }).strict()
 
 /** A platform worker is the only caller allowed to create a Sandbox or dispatch commands. */
 export class ExecutionService {
@@ -135,7 +136,7 @@ export class ExecutionService {
    */
   async proposeShell(token: string, input: z.infer<typeof cloudShellProposeRequest>): Promise<CloudShellObservation> {
     const request = cloudShellProposeRequest.parse(input), hashed = grantDigest(token)
-    return transaction(this.pool, async client => {
+    return transaction(this.pool, async (client) => {
       const captured = await client.query<ExecutionRow>(`SELECT e.* FROM pe_cloud_executions e
         JOIN pe_sessions s ON s.id=e.session_id AND s.user_id=e.user_id
         JOIN pe_operations o ON o.id=e.operation_id AND o.session_id=s.id
@@ -192,7 +193,7 @@ export class ExecutionService {
    * @returns Persisted bounded terminal output only while its owner authority still permits reads.
    */
   statusShell(token: string, executionId: string): Promise<CloudShellObservation> {
-    return transaction(this.pool, async client => {
+    return transaction(this.pool, async (client) => {
       const current = await this.shellControl(client, token, executionId)
       return this.shellReceipt(current.row, current.outputAllowed)
     })
@@ -205,7 +206,7 @@ export class ExecutionService {
    * @returns Current observation; the worker still owns stop proof and terminal publication.
    */
   cancelShell(token: string, executionId: string, cause: 'timeout' | 'abort'): Promise<CloudShellObservation> {
-    return transaction(this.pool, async client => {
+    return transaction(this.pool, async (client) => {
       const current = await this.shellControl(client, token, executionId)
       const row = await this.requestShellStop(client, current.row, cause)
       await client.query("SELECT pg_notify('pe_executions',$1)", [current.row.session_id])
@@ -239,7 +240,8 @@ export class ExecutionService {
   }
 
   private async shellControl(client: PoolClient, token: string, executionId: string): Promise<{
-    row: ExecutionRow; outputAllowed: boolean
+    row: ExecutionRow
+    outputAllowed: boolean
   }> {
     const hashed = grantDigest(token)
     const hint = await client.query<{ user_id: string }>(`SELECT e.user_id FROM pe_cloud_executions e
@@ -512,7 +514,7 @@ export class ExecutionService {
           [row.session_id, row.user_id, row.operation_id, row.native_tool_grant_digest])
           if (!account.enabled || account.deletedAt !== null || account.credentialVersion !== row.native_tool_credential_version
             || !owner.rowCount || await isSessionOperationStoppedInTransaction(client,
-              { userId: row.user_id, sessionId: row.session_id, operationId: row.operation_id })) {
+            { userId: row.user_id, sessionId: row.session_id, operationId: row.operation_id })) {
             await requestCloudCommandStopInTransaction(client, row.id)
             return false
           }
@@ -574,7 +576,7 @@ export class ExecutionService {
 
   private async stopNativeTool(row: ExecutionRow, assertLease: () => Promise<void>): Promise<void> {
     await assertLease()
-    const stopped = await transaction(this.pool, async client => {
+    const stopped = await transaction(this.pool, async (client) => {
       await lockAccountAuthorities(client, [executionUserId.parse(row.user_id)], 'update')
       const found = await client.query<ExecutionRow>(`SELECT * FROM pe_cloud_executions
         WHERE id=$1 AND execution_kind='legacy_command' AND result_delivery='native_tool'
@@ -607,7 +609,7 @@ export class ExecutionService {
       [row.id, row.user_id, row.session_id, this.workerId, stopped.requestId, target])
       if (!found.rowCount) throw new ExecutionLeaseLost()
     }
-    await this.sandboxes.stopForExecutionResolution(target, stopped.requestId, guard, async client => {
+    await this.sandboxes.stopForExecutionResolution(target, stopped.requestId, guard, async (client) => {
       await guard(client)
       const finished = await client.query(`UPDATE pe_cloud_executions SET state='closed_unknown',result=NULL,
         error_code=CASE WHEN error_code='account_disabled' THEN error_code ELSE 'native_tool_outcome_unknown' END,

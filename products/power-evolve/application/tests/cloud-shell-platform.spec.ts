@@ -39,7 +39,7 @@ function first<T>(rows: readonly T[]): T {
 
 function deferred<T>() {
   let resolve!: (value: T) => void
-  const promise = new Promise<T>(done => { resolve = done })
+  const promise = new Promise<T>((done) => { resolve = done })
   return { promise, resolve }
 }
 
@@ -81,7 +81,7 @@ async function prepare(f: Fixture, phase: 'prepared' | 'claimed' | 'step' = 'ste
     await ledger.claim({ command: claim, authority, expectedEventCount, events: consumed })
     if (phase === 'step') {
       const step = session.append('step/start', { turn: 1, step: 1 }); history.push(step)
-      await transaction(f.pool, async client => {
+      await transaction(f.pool, async (client) => {
         const current = await tasks.authorized(client, grant.token)
         await events.appendInTransaction(client, current, [step])
         await ledger.bindStepInTransaction(client, nativeInputStepCommand.parse({ cohortId: claim.cohortId,
@@ -89,8 +89,10 @@ async function prepare(f: Fixture, phase: 'prepared' | 'claimed' | 'step' = 'ste
       })
     }
   }
-  const nativeAuthority = new NativeExecutionAuthority((client, current, token) => frames.readExecutionInTransaction(client, current, token), executionLimits)
-  const executionTasks = new TaskStore(f.pool, taskLimits, (client, current, token) => nativeAuthority.assertExecutionInTransaction(client, current, token))
+  const nativeAuthority = new NativeExecutionAuthority(
+    (client, current, token) => frames.readExecutionInTransaction(client, current, token), executionLimits)
+  const executionTasks = new TaskStore(f.pool, taskLimits,
+    (client, current, token) => nativeAuthority.assertExecutionInTransaction(client, current, token))
   const kubeconfig = join(f.root, `unused-shell-${randomUUID()}.json`)
   await writeFile(kubeconfig, JSON.stringify({ 'current-context': 'owned',
     clusters: [{ name: 'owned', cluster: { server: 'https://127.0.0.1:9', 'certificate-authority-data': Buffer.from('unused').toString('base64') } }],
@@ -102,7 +104,7 @@ async function prepare(f: Fixture, phase: 'prepared' | 'claimed' | 'step' = 'ste
     executions: new ExecutionService(executionTasks, sandbox, 1, 10, 60_000, 3000) }
 }
 
-test('native Shell admission requires the actual claimed cohort and its current open step', () => cloudFixture(async f => {
+test('native Shell admission requires the actual claimed cohort and its current open step', () => cloudFixture(async (f) => {
   for (const phase of ['prepared', 'claimed'] as const) {
     const n = await prepare(f, phase)
     await expect(n.executions.proposeShell(n.grant.token, command())).rejects.toMatchObject({ status: 409,
@@ -111,7 +113,7 @@ test('native Shell admission requires the actual claimed cohort and its current 
   expect(first((await f.pool.query<{ count: number }>('SELECT count(*)::integer AS count FROM pe_cloud_executions')).rows).count).toBe(0)
 }))
 
-test('reply loss and configuration changes retain the original request, timeout and managed environment', () => cloudFixture(async f => {
+test('reply loss and configuration changes retain the original request, timeout and managed environment', () => cloudFixture(async (f) => {
   const n = await prepare(f), input = command(), receipt = await n.executions.proposeShell(n.grant.token, input)
   expect(receipt).toMatchObject({ state: 'queued', timeoutMs: 3000, result: null })
   const row = first((await f.pool.query<CloudExecutionRow>('SELECT * FROM pe_cloud_executions WHERE id=$1', [receipt.executionId])).rows)
@@ -128,7 +130,7 @@ test('reply loss and configuration changes retain the original request, timeout 
   expect(first((await f.pool.query<{ count: number }>('SELECT count(*)::integer AS count FROM pe_cloud_executions')).rows).count).toBe(1)
 }))
 
-test('native directory admission preserves Chinese and spaces but refuses traversal and control paths', () => cloudFixture(async f => {
+test('native directory admission preserves Chinese and spaces but refuses traversal and control paths', () => cloudFixture(async (f) => {
   const n = await prepare(f), input = { ...command(), cwd: '中文 项目' }
   const receipt = await n.executions.proposeShell(n.grant.token, input)
   expect(receipt.cwd).toBe(input.cwd)
@@ -140,7 +142,7 @@ test('native directory admission preserves Chinese and spaces but refuses traver
   expect(first((await f.pool.query<{ count: number }>('SELECT count(*)::integer AS count FROM pe_cloud_executions')).rows).count).toBe(1)
 }))
 
-test('an unknown cancelled receipt is persisted once and the delayed original call cannot create a second command', () => cloudFixture(async f => {
+test('an unknown cancelled receipt is persisted once and the delayed original call cannot create a second command', () => cloudFixture(async (f) => {
   const n = await prepare(f), input = command()
   const receipt = await n.executions.proposeShell(n.grant.token, { ...input, cancelRequested: true })
   expect(receipt.state).toBe('queued')
@@ -154,7 +156,7 @@ test('an unknown cancelled receipt is persisted once and the delayed original ca
   await expect(n.executions.statusShell(f.bob.token, receipt.executionId)).rejects.toMatchObject({ status: 404, code: 'execution_not_found' })
 }))
 
-test('credential revocation masks stored output while the original token still requests exact cleanup', () => cloudFixture(async f => {
+test('credential revocation masks stored output while the original token still requests exact cleanup', () => cloudFixture(async (f) => {
   const n = await prepare(f), receipt = await n.executions.proposeShell(n.grant.token, command())
   const result = { exitCode: 0, stdout: 'owned output', stderr: '', stdoutTruncated: false, stderrTruncated: false, timedOut: false }
   await f.pool.query("UPDATE pe_cloud_executions SET state='succeeded',result=$2 WHERE id=$1", [receipt.executionId, JSON.stringify(result)])
@@ -165,9 +167,9 @@ test('credential revocation masks stored output while the original token still r
   await expect(n.executions.proposeShell(n.grant.token, command())).rejects.toMatchObject({ status: 401, code: 'account_disabled' })
 }))
 
-test('archive suppresses result reads and keeps the captured cleanup capability', () => cloudFixture(async f => {
+test('archive suppresses result reads and keeps the captured cleanup capability', () => cloudFixture(async (f) => {
   const n = await prepare(f), receipt = await n.executions.proposeShell(n.grant.token, command())
-  await transaction(f.pool, async client => {
+  await transaction(f.pool, async (client) => {
     const workspaces = (await client.query<LayoutWorkspace>('SELECT id,title,is_default FROM pe_workspaces WHERE user_id=$1', [f.alice.user.userId])).rows
     const layout = await readWorkspaceLayout(client, f.alice.user.userId, workspaces)
     layout.archivedSessionIds = [n.grant.sessionId]
@@ -178,38 +180,39 @@ test('archive suppresses result reads and keeps the captured cleanup capability'
   expect(first((await f.pool.query<{ cancel_requested: boolean }>('SELECT cancel_requested FROM pe_cloud_executions WHERE id=$1', [receipt.executionId])).rows).cancel_requested).toBe(true)
 }))
 
-test('an ended foreground owner cancels its undispatched command without a continuation or Kubernetes call', () => cloudFixture(async f => {
+test('an ended foreground owner cancels its undispatched command without a continuation or Kubernetes call', () => cloudFixture(async (f) => {
   const n = await prepare(f), receipt = await n.executions.proposeShell(n.grant.token, command()), remote = vi.spyOn(n.kube, 'call')
   await f.pool.query("UPDATE pe_operations SET state='completed' WHERE id=$1", [n.grant.operationId])
   n.executions.start()
   try {
-    await vi.waitFor(async () => expect((await n.executions.statusShell(n.grant.token, receipt.executionId)).state).toBe('cancelled'), { timeout: 5000 })
+    await vi.waitFor(async () =>{  expect((await n.executions.statusShell(n.grant.token, receipt.executionId)).state).toBe('cancelled') }, { timeout: 5000 })
     expect(remote).not.toHaveBeenCalled()
     expect(first((await f.pool.query<{ count: number }>('SELECT count(*)::integer AS count FROM pe_operations WHERE source_execution_id=$1', [receipt.executionId])).rows).count).toBe(0)
   } finally { await n.executions.close(); remote.mockRestore() }
 }))
 
-test('a captured executor without matching stop identity stays uncertain and never publishes an invented terminal result', () => cloudFixture(async f => {
+test('a captured executor without matching stop identity stays uncertain and never publishes an invented terminal result', () => cloudFixture(async (f) => {
   const n = await prepare(f), receipt = await n.executions.proposeShell(n.grant.token, command())
   await f.pool.query("UPDATE pe_cloud_executions SET state='running',cancel_requested=true,sandbox_name='missing-owned-runner',pod_uid=$2,runner_instance_id=$3 WHERE id=$1",
     [receipt.executionId, randomUUID(), randomUUID()])
   n.executions.start()
   try {
-    await vi.waitFor(async () => expect(await n.executions.statusShell(n.grant.token, receipt.executionId))
-      .toMatchObject({ state: 'uncertain', result: null, errorCode: 'native_tool_stop_unconfirmed' }), { timeout: 5000 })
+    await vi.waitFor(async () =>{  expect(await n.executions.statusShell(n.grant.token, receipt.executionId))
+      .toMatchObject({ state: 'uncertain', result: null, errorCode: 'native_tool_stop_unconfirmed' }) }, { timeout: 5000 })
     expect(first((await f.pool.query<{ count: number }>('SELECT count(*)::integer AS count FROM pe_operations WHERE source_execution_id=$1', [receipt.executionId])).rows).count).toBe(0)
   } finally { await n.executions.close() }
 }))
 
 test.each(['expired', 'operation-ended', 'grant-replaced', 'credential-rotated'] as const)(
-  'cold preparation fences %s authority while its full execution slot cannot run another claim', reason => cloudFixture(async f => {
+  'cold preparation fences %s authority while its full execution slot cannot run another claim', reason => cloudFixture(async (f) => {
     const n = await prepare(f), receipt = await n.executions.proposeShell(n.grant.token, command())
     const workspace = first((await f.pool.query<{ workspace_id: string }>('SELECT workspace_id FROM pe_sessions WHERE id=$1', [n.grant.sessionId])).rows)
     const binding = await f.files.bindingForId(f.alice.user.userId, workspace.workspace_id)
     const writer: SandboxReady = { name: n.sandbox.name(f.alice.user.userId), sessionId: n.grant.sessionId,
       userId: f.alice.user.userId, binding, generation: '1', podUid: randomUUID(), runnerInstanceId: randomUUID(),
       token: randomUUID(), restartCount: 0 }
-    const prepared = deferred<void>(), ready = deferred<SandboxReady>(), stopRetry = deferred<void>(), releaseStop = deferred<void>()
+    const prepared = deferred<undefined>(), ready = deferred<SandboxReady>()
+    const stopRetry = deferred<undefined>(), releaseStop = deferred<undefined>()
     const ensure = vi.spyOn(n.sandbox, 'ensureReady').mockImplementation(async () => { prepared.resolve(undefined); return ready.promise })
     const current = vi.spyOn(n.sandbox, 'assertCurrent').mockResolvedValue(undefined)
     const allowed = vi.spyOn(n.sandbox, 'assertDispatchAllowed').mockResolvedValue(undefined)
@@ -246,7 +249,7 @@ test.each(['expired', 'operation-ended', 'grant-replaced', 'credential-rotated']
       await f.pool.query(`INSERT INTO pe_sandbox_instances(session_id,user_id,name,state,pod_uid,runner_instance_id,binding_snapshot)
         VALUES($1,$2,$3,'ready',$4,$5,$6)`, [writer.sessionId, writer.userId, writer.name, writer.podUid, writer.runnerInstanceId, binding])
       ready.resolve(writer)
-      await vi.waitFor(() => expect(stops).toBeGreaterThanOrEqual(2), { timeout: 5000 })
+      await vi.waitFor(() =>{  expect(stops).toBeGreaterThanOrEqual(2) }, { timeout: 5000 })
       await stopRetry.promise
       expect(runner.mock.calls.filter(call => call[2] === 'POST')).toHaveLength(0)
       const persisted = first((await f.pool.query<CloudExecutionRow>('SELECT * FROM pe_cloud_executions WHERE id=$1', [receipt.executionId])).rows)
@@ -269,7 +272,7 @@ test.each(['expired', 'operation-ended', 'grant-replaced', 'credential-rotated']
       .toMatchObject({ state: 'uncertain', dispatch_request: null, result: null, cancel_requested: true })
   }))
 
-test('timeout cancellation survives expired-grant reply recovery and later abort retries', () => cloudFixture(async f => {
+test('timeout cancellation survives expired-grant reply recovery and later abort retries', () => cloudFixture(async (f) => {
   const n = await prepare(f), input = command()
   const receipt = await n.executions.proposeShell(n.grant.token, { ...input, cancelRequested: true, cancelCause: 'timeout' })
   expect(receipt).toMatchObject({ state: 'queued', cancelCause: 'timeout', result: null })
@@ -281,7 +284,7 @@ test('timeout cancellation survives expired-grant reply recovery and later abort
 }))
 
 test.each(['timeout', 'abort', 'legacy', 'late-success'] as const)(
-  'Runner cancellation carries only the stored cause for %s delivery', reason => cloudFixture(async f => {
+  'Runner cancellation carries only the stored cause for %s delivery', reason => cloudFixture(async (f) => {
     const n = await prepare(f), input = command()
     if (reason === 'legacy') await n.executions.propose(n.grant.token, input.callId, input.command, input.cwd)
     else await n.executions.proposeShell(n.grant.token, input)

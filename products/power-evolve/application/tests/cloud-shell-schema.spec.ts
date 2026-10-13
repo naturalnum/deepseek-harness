@@ -5,6 +5,12 @@ import { expect, test } from 'vitest'
 import { initializeDatabase } from '../src/platform/database.ts'
 import { cloudFixture } from './cloud-fixture.ts'
 
+interface OriginalCommand {
+  command: string
+  cwd: string
+  request_digest: string
+}
+
 async function execution(pool: Pool, userId: string, native = false): Promise<{ id: string; sessionId: string; operationId: string }> {
   const workspaceId = randomUUID(), sessionId = randomUUID(), operationId = randomUUID(), id = randomUUID()
   await pool.query('INSERT INTO pe_workspaces(id,user_id,title,is_default) VALUES($1,$2,$3,false)', [workspaceId, userId, workspaceId])
@@ -50,9 +56,10 @@ test('schema 6 upgrades transactionally without inventing an old execution timeo
         DROP COLUMN native_tool_stop_request_id CASCADE,DROP COLUMN native_tool_stop_target CASCADE;
       UPDATE pe_schema SET version=6`)
     const row = await execution(pool, alice.user.userId)
-    const before = (await pool.query('SELECT command,cwd,request_digest FROM pe_cloud_executions WHERE id=$1', [row.id])).rows[0]
+    const before = (await pool.query<OriginalCommand>('SELECT command,cwd,request_digest FROM pe_cloud_executions WHERE id=$1', [row.id])).rows[0]
     await initializeDatabase(pool)
-    const after = (await pool.query('SELECT command,cwd,request_digest,result_delivery,command_timeout_ms FROM pe_cloud_executions WHERE id=$1', [row.id])).rows[0]
+    const after = (await pool.query<OriginalCommand & { result_delivery: 'continuation'; command_timeout_ms: number | null }>(
+      'SELECT command,cwd,request_digest,result_delivery,command_timeout_ms FROM pe_cloud_executions WHERE id=$1', [row.id])).rows[0]
     expect(after).toEqual({ ...before, result_delivery: 'continuation', command_timeout_ms: null })
     expect((await pool.query('SELECT version FROM pe_schema')).rows).toEqual([{ version: 8 }])
   }))
@@ -91,7 +98,7 @@ test('schema 7 upgrades its prior abort requests without changing original execu
       UPDATE pe_schema SET version=7`)
     const native = await execution(pool, alice.user.userId, true), legacy = await execution(pool, alice.user.userId)
     await pool.query('UPDATE pe_cloud_executions SET cancel_requested=true WHERE id=ANY($1::uuid[])', [[native.id, legacy.id]])
-    const before = (await pool.query('SELECT id,request_digest,command,cwd FROM pe_cloud_executions ORDER BY id')).rows
+    const before = (await pool.query<OriginalCommand & { id: string }>('SELECT id,request_digest,command,cwd FROM pe_cloud_executions ORDER BY id')).rows
     await initializeDatabase(pool)
     expect((await pool.query('SELECT id,request_digest,command,cwd FROM pe_cloud_executions ORDER BY id')).rows).toEqual(before)
     expect((await pool.query('SELECT native_tool_cancel_cause FROM pe_cloud_executions WHERE id=$1', [native.id])).rows)
