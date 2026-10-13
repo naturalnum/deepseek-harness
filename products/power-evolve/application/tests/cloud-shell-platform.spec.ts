@@ -10,18 +10,18 @@ import { admittedInputMessage, inputCohortId, nativeInputAdmissionCommand, nativ
 import { nativeTurnMessageId } from '../src/native-turn-contracts.ts'
 import { nativeWriterIdentity, nativeWriterWorkerId } from '../src/native-writer-contracts.ts'
 import { headerSchema } from '../src/session-records.ts'
-import { capturedRunnerRequest, cloudRequestDigest, nativeCloudEnvironment,
+import { capturedRunnerRequest, cloudRequestDigest, cloudRunnerRequest, nativeCloudEnvironment,
   type CloudExecutionRow } from '../src/platform/cloud-execution-resolution-types.ts'
 import { transaction } from '../src/platform/database.ts'
 import { EventStore } from '../src/platform/events.ts'
 import { ExecutionService } from '../src/platform/executions.ts'
-import { KubernetesClient } from '../src/platform/kubernetes.ts'
+import { KubernetesClient, KubernetesError } from '../src/platform/kubernetes.ts'
 import { NativeExecutionAuthority } from '../src/platform/native-execution-authority.ts'
 import { NativeExecutionFrames } from '../src/platform/native-execution-frames.ts'
 import { NativeInputLedger } from '../src/platform/native-input-ledger.ts'
 import { NativeSessionWriter } from '../src/platform/native-session-writer.ts'
 import { readWorkspaceLayout, writeWorkspaceLayout, type LayoutWorkspace } from '../src/platform/native-workspace-layout.ts'
-import { SandboxManager } from '../src/platform/sandbox.ts'
+import { SandboxManager, MountSlotBlocked, type SandboxReady } from '../src/platform/sandbox.ts'
 import { TaskStore } from '../src/platform/tasks.ts'
 import { cloudFixture } from './cloud-fixture.ts'
 
@@ -35,6 +35,12 @@ function first<T>(rows: readonly T[]): T {
   const row = rows[0]
   if (row === undefined) throw new Error('Owned native Shell fixture returned no row')
   return row
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>(done => { resolve = done })
+  return { promise, resolve }
 }
 
 async function prepare(f: Fixture, phase: 'prepared' | 'claimed' | 'step' = 'step') {
@@ -194,3 +200,71 @@ test('a captured executor without matching stop identity stays uncertain and nev
     expect(first((await f.pool.query<{ count: number }>('SELECT count(*)::integer AS count FROM pe_operations WHERE source_execution_id=$1', [receipt.executionId])).rows).count).toBe(0)
   } finally { await n.executions.close() }
 }))
+
+test.each(['expired', 'operation-ended', 'grant-replaced', 'credential-rotated'] as const)(
+  'cold preparation fences %s authority while its full execution slot cannot run another claim', reason => cloudFixture(async f => {
+    const n = await prepare(f), receipt = await n.executions.proposeShell(n.grant.token, command())
+    const workspace = first((await f.pool.query<{ workspace_id: string }>('SELECT workspace_id FROM pe_sessions WHERE id=$1', [n.grant.sessionId])).rows)
+    const binding = await f.files.bindingForId(f.alice.user.userId, workspace.workspace_id)
+    const writer: SandboxReady = { name: n.sandbox.name(f.alice.user.userId), sessionId: n.grant.sessionId,
+      userId: f.alice.user.userId, binding, generation: '1', podUid: randomUUID(), runnerInstanceId: randomUUID(),
+      token: randomUUID(), restartCount: 0 }
+    const prepared = deferred<void>(), ready = deferred<SandboxReady>(), stopRetry = deferred<void>(), releaseStop = deferred<void>()
+    const ensure = vi.spyOn(n.sandbox, 'ensureReady').mockImplementation(async () => { prepared.resolve(undefined); return ready.promise })
+    const current = vi.spyOn(n.sandbox, 'assertCurrent').mockResolvedValue(undefined)
+    const allowed = vi.spyOn(n.sandbox, 'assertDispatchAllowed').mockResolvedValue(undefined)
+    const recycle = vi.spyOn(n.sandbox, 'recycleIdle').mockResolvedValue(undefined)
+    const runner = vi.spyOn(n.sandbox, 'runner').mockImplementation(async (_name, _token, method, path, input) => {
+      if (method === 'GET') throw new KubernetesError(404, 'controlled missing receipt')
+      if (method !== 'POST' || path !== '/executions') throw new Error('Unexpected controlled Runner call')
+      const request = cloudRunnerRequest.parse(input)
+      return { id: request.id, instanceId: writer.runnerInstanceId, digest: cloudRequestDigest(request), state: 'succeeded',
+        exitCode: 0, stdout: 'must never dispatch', stderr: '', stdoutTruncated: false, stderrTruncated: false, timedOut: false }
+    })
+    let stops = 0
+    // This controlled provider never supplies physical stop proof. The test checks
+    // exact stop routing and persisted retry identity while completion stays uncertain.
+    const stop = vi.spyOn(n.sandbox, 'stopForExecutionResolution').mockImplementation(async (_target, _request, fence) => {
+      await fence()
+      if (++stops === 1) throw new MountSlotBlocked('controlled_stop_unconfirmed', false)
+      stopRetry.resolve(undefined)
+      await releaseStop.promise
+      throw new MountSlotBlocked('controlled_stop_unconfirmed', false)
+    })
+    n.executions.start()
+    try {
+      await prepared.promise
+      expect(first((await f.pool.query<{ count: number }>(`SELECT count(*)::integer AS count FROM pe_cloud_executions
+        WHERE lease_owner IS NOT NULL AND lease_until>clock_timestamp() AND state='starting'`)).rows).count).toBe(1)
+      if (reason === 'expired') await f.pool.query("UPDATE pe_sessions SET lease_until=clock_timestamp()-interval '1 millisecond' WHERE id=$1", [n.grant.sessionId])
+      if (reason === 'operation-ended') await f.pool.query("UPDATE pe_operations SET state='completed' WHERE id=$1", [n.grant.operationId])
+      if (reason === 'grant-replaced') await f.pool.query("UPDATE pe_sessions SET grant_digest=repeat('a',64) WHERE id=$1", [n.grant.sessionId])
+      if (reason === 'credential-rotated') await f.pool.query('UPDATE pe_users SET credential_version=credential_version+1 WHERE id=$1', [f.alice.user.userId])
+      expect(first((await f.pool.query<{ cancel_requested: boolean }>('SELECT cancel_requested FROM pe_cloud_executions WHERE id=$1', [receipt.executionId])).rows).cancel_requested).toBe(false)
+      await f.pool.query(`INSERT INTO pe_mount_slots(user_id,session_id,workspace_id,generation,state,pod_uid,runner_instance_id,binding_snapshot)
+        VALUES($1,$2,$3,1,'ready',$4,$5,$6)`, [writer.userId, writer.sessionId, binding.workspaceId, writer.podUid, writer.runnerInstanceId, binding])
+      await f.pool.query(`INSERT INTO pe_sandbox_instances(session_id,user_id,name,state,pod_uid,runner_instance_id,binding_snapshot)
+        VALUES($1,$2,$3,'ready',$4,$5,$6)`, [writer.sessionId, writer.userId, writer.name, writer.podUid, writer.runnerInstanceId, binding])
+      ready.resolve(writer)
+      await vi.waitFor(() => expect(stops).toBeGreaterThanOrEqual(2), { timeout: 5000 })
+      await stopRetry.promise
+      expect(runner.mock.calls.filter(call => call[2] === 'POST')).toHaveLength(0)
+      const persisted = first((await f.pool.query<CloudExecutionRow>('SELECT * FROM pe_cloud_executions WHERE id=$1', [receipt.executionId])).rows)
+      expect(persisted).toMatchObject({ cancel_requested: true, dispatch_request: null, result: null })
+      expect(['starting', 'uncertain']).toContain(persisted.state)
+      const exact = { userId: writer.userId, sessionId: writer.sessionId, workspaceId: binding.workspaceId,
+        generation: '1', name: writer.name, podUid: writer.podUid, runnerInstanceId: writer.runnerInstanceId, binding }
+      expect(persisted.native_tool_stop_target).toEqual(exact)
+      for (const [target, stopId] of stop.mock.calls) {
+        expect(target).toEqual(exact)
+        expect(stopId).toBe(persisted.native_tool_stop_request_id)
+      }
+      expect(first((await f.pool.query<{ count: number }>('SELECT count(*)::integer AS count FROM pe_operations WHERE source_execution_id=$1', [receipt.executionId])).rows).count).toBe(0)
+    } finally {
+      ready.resolve(writer); releaseStop.resolve(undefined)
+      await n.executions.close()
+      for (const spy of [ensure, current, allowed, recycle, runner, stop]) spy.mockRestore()
+    }
+    expect(first((await f.pool.query<CloudExecutionRow>('SELECT * FROM pe_cloud_executions WHERE id=$1', [receipt.executionId])).rows))
+      .toMatchObject({ state: 'uncertain', dispatch_request: null, result: null, cancel_requested: true })
+  }))

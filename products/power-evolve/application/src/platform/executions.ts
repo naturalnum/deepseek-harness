@@ -26,7 +26,7 @@ import { cloudShellProposeRequest, cloudShellObservation, cloudShellResult,
 class ExecutionLeaseLost extends Error {}
 
 const nativeStopTarget = z.object({ userId: z.uuid(), sessionId: z.uuid(), workspaceId: z.uuid(),
-  generation: z.uuid(), name: z.string().min(1), podUid: z.uuid(), runnerInstanceId: z.uuid(), binding: storageBinding }).strict()
+  generation: z.string().regex(/^[1-9][0-9]*$/u), name: z.string().min(1), podUid: z.uuid(), runnerInstanceId: z.uuid(), binding: storageBinding }).strict()
 
 /** A platform worker is the only caller allowed to create a Sandbox or dispatch commands. */
 export class ExecutionService {
@@ -436,7 +436,9 @@ export class ExecutionService {
         sandbox_name: sandbox.name, pod_uid: sandbox.podUid, runner_instance_id: sandbox.runnerInstanceId }
       const cancelled = await this.currentCancel(row)
       if (cancelled && row.state === 'starting') {
-        await this.settle(row, 'cancelled', null, null); return
+        if (row.result_delivery === 'native_tool') await this.stopNativeTool(row, assertLease)
+        else await this.settle(row, 'cancelled', null, null)
+        return
       }
       await this.observe(row, sandbox, cancelled, assertLease)
     } catch (error) {
@@ -489,14 +491,33 @@ export class ExecutionService {
       await assertLease()
       await this.sandboxes.assertDispatchAllowed(sandbox)
       const permitted = await transaction(this.pool, async (client) => {
-        await requireActiveAccount(client, executionUserId.parse(row.user_id), 'update')
+        if (row.result_delivery === 'native_tool') {
+          const account = requireActivityRow(await lockAccountAuthorities(client, [executionUserId.parse(row.user_id)], 'update'))
+          await client.query(`SELECT s.id FROM pe_sessions s JOIN pe_operations o ON o.session_id=s.id
+            WHERE s.id=$1 AND s.user_id=$2 AND o.id=$3 FOR UPDATE OF s,o`, [row.session_id, row.user_id, row.operation_id])
+          // Re-read the database clock after all account, Session and operation lock waits.
+          const owner = await client.query(`SELECT s.id FROM pe_sessions s JOIN pe_operations o ON o.session_id=s.id
+            WHERE s.id=$1 AND s.user_id=$2 AND o.id=$3 AND o.state='running'
+              AND s.grant_digest=$4 AND s.lease_until>clock_timestamp()`,
+          [row.session_id, row.user_id, row.operation_id, row.native_tool_grant_digest])
+          if (!account.enabled || account.deletedAt !== null || account.credentialVersion !== row.native_tool_credential_version
+            || !owner.rowCount || await isSessionOperationStoppedInTransaction(client,
+              { userId: row.user_id, sessionId: row.session_id, operationId: row.operation_id })) {
+            await requestCloudCommandStopInTransaction(client, row.id)
+            return false
+          }
+        } else await requireActiveAccount(client, executionUserId.parse(row.user_id), 'update')
         const issued = await client.query(`UPDATE pe_cloud_executions SET state='running',dispatch_request=$3,updated_at=now()
           WHERE execution_kind='legacy_command' AND id=$1 AND lease_owner=$2 AND lease_until>clock_timestamp()
           AND NOT EXISTS(SELECT 1 FROM pe_cloud_execution_resolutions r WHERE r.execution_id=pe_cloud_executions.id)
           AND state='starting' AND cancel_requested=false RETURNING id`, [row.id, this.workerId,JSON.stringify(request)])
         return !!issued.rowCount
       })
-      if (!permitted) { await this.settle(row, 'cancelled', null, null); return }
+      if (!permitted) {
+        if (row.result_delivery === 'native_tool') await this.stopNativeTool(row, assertLease)
+        else await this.settle(row, 'cancelled', null, null)
+        return
+      }
       await assertLease()
       await this.sandboxes.assertDispatchAllowed(sandbox)
       status = runnerResult.parse(await this.sandboxes.runner(sandbox.name, sandbox.token, 'POST', '/executions', request))
