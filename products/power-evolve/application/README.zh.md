@@ -30,6 +30,8 @@ Host 的 `nativeShellEnabled` 选项通过按操作授权绑定的云端 Shell �
 
 Host 根路径跳转至 `/native/`。登录、独立审批和账号管理由 Platform 提供。 独立审批模块从 `@deepseek-ai/dsh-util-crypto` 的公开浏览器模块生成请求编号；该模块由明确的同源资源路由提供，也适用于局域网普通 HTTP 来源。[原生 Web 构建](../cloud-web/README.zh.md)包含官方组件；[个人连接器配置](../client-extension-center/README.zh.md)占用官方 Host bundle 的配置插槽。
 
+登录页显示产品名称和居中的账号、密码表单。输入框聚焦、填写或由浏览器自动填充时，标签浮动至边框上方。Platform 验证凭据后，经 Host Cookie 交换进入原生界面。
+
 -----
 
 <a id="understand-the-implementation"></a>

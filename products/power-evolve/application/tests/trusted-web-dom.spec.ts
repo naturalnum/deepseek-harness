@@ -92,7 +92,9 @@ afterEach(async()=>{
 test('login sends entered credentials only to Platform, holds the button until cookie exchange, then clears the password and opens native UI',async()=>{
   const login=deferred(),exchange=deferred()
   const p=await page('login',{ handler:({ path })=>path==='/identity/login'?login.promise:path.endsWith('/auth/exchange')?exchange.promise:undefined })
-  expect(p.get('note').textContent).toBe('登录由可信平台处理。')
+  expect(p.get('brand').textContent).toBe('PowerEvolve')
+  expect(p.get('login-title').textContent).toBe('登录')
+  expect(p.get('username-label').textContent).toBe('账号');expect(p.get('password-label').textContent).toBe('密码')
   p.input('username').value='用户';p.input('password').value='synthetic-input';p.get('error').textContent='old'
   expect(p.submit('login')).toBe(false);expect(p.button('submit').disabled).toBe(true);expect(p.get('error').textContent).toBe('')
   expect(p.calls[0]).toMatchObject({ path:'/identity/login',body:{ username:'用户',password:'synthetic-input' },init:{ method:'POST',headers:{ 'content-type':'application/json' } } })

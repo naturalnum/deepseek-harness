@@ -1,1 +1,28 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PowerEvolve</title><link rel="stylesheet" href="/style.css"></head><body class="login"><main class="login-card"><div class="brand-mark">P</div><h1>PowerEvolve</h1><p id="note" class="muted"></p><form id="login"><label id="username-label" for="username"></label><input id="username" name="username" autocomplete="username" required><label id="password-label" for="password"></label><input id="password" name="password" type="password" autocomplete="current-password" required><button id="submit" type="submit"></button><p id="error" role="alert"></p></form></main><script type="module" src="/app.js"></script></body></html>
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>PowerEvolve</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="login">
+  <header class="login-brand" id="brand">PowerEvolve</header>
+  <main class="login-content" aria-labelledby="login-title">
+    <h1 id="login-title"></h1>
+    <form id="login">
+      <div class="login-field">
+        <input id="username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder=" " aria-describedby="error" required>
+        <label id="username-label" for="username"></label>
+      </div>
+      <div class="login-field">
+        <input id="password" name="password" type="password" autocomplete="current-password" placeholder=" " aria-describedby="error" required>
+        <label id="password-label" for="password"></label>
+      </div>
+      <button id="submit" type="submit"></button>
+      <p id="error" role="alert"></p>
+    </form>
+  </main>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
