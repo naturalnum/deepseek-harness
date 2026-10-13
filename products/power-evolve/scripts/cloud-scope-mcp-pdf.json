@@ -20,6 +20,7 @@
   },
   "currentClientEntry": "products/power-evolve/client-extension-center/src/client/index.ts",
   "currentClientRuntimeClosure": [
+    "products/power-evolve/client-extension-center/src/client/CloudProjectDialog.tsx",
     "products/power-evolve/client-extension-center/src/client/ConnectorConfiguration.tsx",
     "products/power-evolve/client-extension-center/src/client/McpPresentation.tsx",
     "products/power-evolve/client-extension-center/src/client/PersonalMcpCheck.tsx",
@@ -71,12 +72,12 @@
   "counts": {
     "runtime": {
       "enabled": 14,
-      "shared": 298,
+      "shared": 299,
       "deferred": 4
     },
     "sourceTests": {
       "enabled": 12,
-      "shared": 142,
+      "shared": 143,
       "deferred": 3
     },
     "builtTests": {
@@ -3301,6 +3302,13 @@
     },
     {
       "kind": "runtime",
+      "path": "products/power-evolve/client-extension-center/src/client/CloudProjectDialog.tsx",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "client-shared"
+    },
+    {
+      "kind": "runtime",
       "path": "products/power-evolve/client-extension-center/src/client/ConnectorConfiguration.tsx",
       "status": "enabled",
       "owner": "employee3",
@@ -4492,6 +4500,13 @@
     {
       "kind": "sourceTests",
       "path": "products/power-evolve/client-extension-center/tests/catalog-actions.client.spec.tsx",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "client-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/client-extension-center/tests/cloud-project-dialog.client.spec.tsx",
       "status": "shared",
       "owner": "Root",
       "reason": "client-shared"

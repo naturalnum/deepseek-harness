@@ -2,6 +2,17 @@ const id = '@power-evolve/client-extension-center'
 
 // The Skills layout and class structure follow the former PowerEvolve extension center.
 const css = `
+.pext-project-dialog.pext-project-dialog{width:min(400px,100%);max-height:100%;padding:24px;gap:0;overflow-y:auto;overscroll-behavior-y:contain}
+.pext-project-dialog .pext-project-close{position:absolute;top:12px;right:12px;width:28px;height:28px;padding:0;border-radius:var(--dsw-radius-sm);color:var(--dsw-alias-label-secondary)}
+.pext-project-form{display:flex;min-width:0;flex-direction:column;gap:20px}
+.pext-project-header{display:flex;flex-direction:column;align-items:center;gap:8px;padding-top:24px}
+.pext-project-icon{display:grid;width:48px;height:48px;place-items:center;border-radius:var(--dsw-radius-md);color:var(--dsw-alias-label-primary);background:var(--dsw-alias-interactive-bg-hover)}
+.pext-project-header h2{margin:0;font-size:16px;line-height:24px;font-weight:500;color:var(--dsw-alias-label-primary)}
+.pext-project-field{display:flex;min-width:0;flex-direction:column;gap:8px}
+.pext-project-field label{font-size:14px;line-height:22px;font-weight:500;color:var(--dsw-alias-label-primary)}
+.pext-project-input{box-sizing:border-box;width:100%}
+.pext-project-error{min-height:18px;font-size:12px;line-height:18px;color:var(--dsw-alias-state-error-primary);overflow-wrap:anywhere}
+.pext-project-actions{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}
 .pext-root[data-power-evolve-skills-page],.pext-root[data-power-evolve-plugins-page],.pext-root[data-power-evolve-plugin-detail]{box-sizing:border-box;display:flex;width:100%;height:100%;min-height:0;flex-direction:column;overflow-y:auto;overscroll-behavior-y:contain;scrollbar-gutter:stable;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-base);container-type:inline-size}
 .pext-catalog-header{box-sizing:border-box;display:flex;min-height:68px;align-items:center;justify-content:space-between;gap:16px;padding:0 clamp(24px,5vw,72px);border-bottom:1px solid var(--dsw-alias-border-l2)}
 .pext-catalog-tabs{display:flex;align-items:center;gap:4px}.pext-catalog-current{display:inline-flex;min-height:30px;align-items:center;gap:6px;padding:0 10px;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-layer-2);border-radius:10px;font-size:13px;font-weight:600}.pext-catalog-tabs small{color:var(--dsw-alias-label-secondary);font-size:10px;font-weight:500}

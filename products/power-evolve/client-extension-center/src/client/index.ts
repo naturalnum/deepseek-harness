@@ -19,6 +19,7 @@ import { approvalUrl } from './approval-api.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import { en, NS, zh, type ExtensionCenterLocaleKey } from './locales.ts'
 import { installExtensionCenterStyles } from './styles.ts'
+import { CloudProjectDialog } from './CloudProjectDialog.tsx'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap { 'powerEvolve.extensionCenter': ExtensionCenterLocaleKey }
@@ -27,7 +28,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 export const SKILLS_PANEL_ID = 'power-evolve-skills'
 export const inject = ['slots', 'locale', 'sessions', 'conversation', 'uiWorkspace']
 
-/** Register the personal Skills page and the official Host bundle configuration. */
+/** Register cloud project creation, personal Skills and the official Host bundle configuration. */
 export function apply(ctx: Context): void {
   const client = new SkillHttpClient()
   const personalMcp = new PersonalMcpConnectionHttpClient()
@@ -36,6 +37,19 @@ export function apply(ctx: Context): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'PowerEvolve extension center labels')
   ctx.effect(() => installExtensionCenterStyles(), 'PowerEvolve extension center styles')
   const t = ctx.locale.bind(NS)
+  const projectPorts = () => ({
+    createProjectDirectory: async (name: string) => {
+      const { home } = await ctx.uiWorkspace.listDirectory()
+      return ctx.uiWorkspace.createDirectory(home, name)
+    },
+  })
+  ctx.slots.inject('conversation.hero.workspace.directoryFlow', () =>
+    ctx.slots.inject('sidebar.workspaces.directoryFlow', function* () {
+      yield ctx.slots.register({ name: 'conversation.hero.workspace.directoryFlow', locale: NS, priority: -10,
+        inject: projectPorts }, CloudProjectDialog)
+      yield ctx.slots.register({ name: 'sidebar.workspaces.directoryFlow', locale: NS, priority: -10,
+        inject: projectPorts }, CloudProjectDialog)
+    }))
   ctx.slots.inject('main', () => ctx.slots.register({
     name: 'main', key: SKILLS_PANEL_ID, locale: NS, inject: () => ({ client,
       trySkill: (skill: import('./skills-api.ts').PersonalSkill) => fillSkillDraft(ctx,

@@ -13,6 +13,7 @@ import { apply, inject, SKILLS_PANEL_ID } from '../src/client/index.ts'
 import { SkillsPage } from '../src/client/SkillsPage.tsx'
 import { SkillsPanelIcon } from '../src/client/SkillsPanelIcon.tsx'
 import { ConnectorConfiguration } from '../src/client/ConnectorConfiguration.tsx'
+import { CloudProjectDialog, type CloudProjectDialogProps } from '../src/client/CloudProjectDialog.tsx'
 import { installExtensionCenterStyles } from '../src/client/styles.ts'
 import { en } from '../src/client/locales.ts'
 import { apply as applyServer } from '../src/index.ts'
@@ -24,13 +25,17 @@ function isSkillActions(value: unknown): value is Pick<SkillsPageProps, 'client'
   return typeof actions.trySkill === 'function' && typeof actions.client === 'object' && actions.client !== null
 }
 
+function isProjectActions(value: unknown): value is Pick<CloudProjectDialogProps, 'createProjectDirectory'> {
+  return typeof value === 'object' && value !== null && typeof jsonRecord(value).createProjectDirectory === 'function'
+}
+
 const objectMatcher: unknown = expect.any(Object)
 const functionMatcher: unknown = expect.any(Function)
 const passiveApply: () => unknown = applyServer
 
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
-it('registers only native Skills and Host bundle seats and withdraws them with their styles', async () => {
+it('registers native Skills, Host bundle and cloud project seats and withdraws them with their styles', async () => {
   const ctx = new Context(), scope = {}
   const setDraft = vi.fn(), openSession = vi.fn()
   const id = '00000000-0000-4000-8000-000000000003'
@@ -39,17 +44,34 @@ it('registers only native Skills and Host bundle seats and withdraws them with t
     create: async () => id, scope: () => scope,
     using: async (_id: string, _request: object, use: (ref: { sessionId: string }) => void) =>{  use({ sessionId: id }) } })
   ctx.reflect.provide('conversation', { input: { for: (current: object) => { expect(current).toBe(scope); return { setDraft } } } })
-  ctx.reflect.provide('uiWorkspace', { openSession })
+  const listDirectory = vi.fn(async () => ({ home: '/workspace' }))
+  const createDirectory = vi.fn(async (home: string, name: string) => `${home}/${name}`)
+  ctx.reflect.provide('uiWorkspace', { openSession, listDirectory, createDirectory })
   await ctx.plugin(SlotRegistry)
   try {
     ctx.slots.register({ name: 'root', children: { main: { kind: 'keyed', scope: 'root' },
-      'sidebar.panellist': { kind: 'list', scope: 'root' }, 'plugins.bundle.config': { kind: 'keyed', scope: 'root' } } },
+      'sidebar.panellist': { kind: 'list', scope: 'root' }, 'plugins.bundle.config': { kind: 'keyed', scope: 'root' },
+      'conversation.hero.workspace.directoryFlow': { kind: 'single', scope: 'root' },
+      'sidebar.workspaces.directoryFlow': { kind: 'single', scope: 'root' } } },
     ({ renderSlot }: PropsRenderSlots<'main' | 'sidebar.panellist' | 'plugins.bundle.config'>) => <>
       {renderSlot('main', {})}{renderSlot('sidebar.panellist', { size: 16, active: false })}
       {renderSlot('plugins.bundle.config', { view: 'page' })}
     </>)
+    const directoryFallback = () => null
+    for (const hole of ['conversation.hero.workspace.directoryFlow', 'sidebar.workspaces.directoryFlow'] as const) {
+      ctx.slots.register({ name: hole }, directoryFallback)
+    }
     const product = ctx.plugin({ name: 'employee2-extension-seats', inject, apply })
     await product
+    for (const hole of ['conversation.hero.workspace.directoryFlow', 'sidebar.workspaces.directoryFlow'] as const) {
+      const entry = ctx.slots.entriesOfSlot(hole)[0]
+      expect(entry?.component).toBe(CloudProjectDialog)
+      const ports = entry?.inject?.()
+      if (!isProjectActions(ports)) throw new Error('Missing native cloud project action')
+      expect(await ports.createProjectDirectory('New project')).toBe('/workspace/New project')
+    }
+    expect(listDirectory).toHaveBeenCalledTimes(2)
+    expect(createDirectory).toHaveBeenCalledWith('/workspace', 'New project')
     const skills = ctx.slots.entries('main')[0]
     expect(skills?.component).toBe(SkillsPage)
     expect(skills?.options.key).toBe(SKILLS_PANEL_ID)
@@ -75,16 +97,21 @@ it('registers only native Skills and Host bundle seats and withdraws them with t
     await product.dispose()
     expect(ctx.slots.entries('main')).toHaveLength(0)
     expect(ctx.slots.entries('plugins.bundle.config')).toHaveLength(0)
+    expect(ctx.slots.entriesOfSlot('sidebar.workspaces.directoryFlow')[0]?.component).toBe(directoryFallback)
+    expect(ctx.slots.entriesOfSlot('conversation.hero.workspace.directoryFlow')[0]?.component).toBe(directoryFallback)
     expect(document.getElementById('@power-evolve/client-extension-center')).toBeNull()
   } finally { await ctx.fiber.dispose() }
 })
 
 it('reuses an installed style element and renders a passive native sidebar icon', () => {
   const dispose = installExtensionCenterStyles(), reuse = installExtensionCenterStyles()
+  const unusedStandardHook = (): never => { throw new Error('The icon fixture does not read shared state') }
   try {
     reuse()
     expect(document.getElementById('@power-evolve/client-extension-center')).toBeTruthy()
-    const root = render(<SkillsPanelIcon size={16} active={false} usePanelInfo={selector => selector({ activePanelId: null })} />)
+    const root = render(<SkillsPanelIcon size={16} active={false} usePanelInfo={selector => selector({ activePanelId: null })}
+      useWorkspaces={unusedStandardHook} useSessions={unusedStandardHook}
+      useSessionStatus={unusedStandardHook} useSessionRetainInfo={unusedStandardHook} />)
     expect(root.container.querySelector('svg')).toBeTruthy()
     expect(passiveApply()).toBeUndefined()
   } finally { dispose() }

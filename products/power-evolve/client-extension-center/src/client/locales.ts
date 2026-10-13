@@ -1,6 +1,8 @@
 export const NS = 'powerEvolve.extensionCenter'
 
 export const zh = {
+  projectCreateTitle: '创建项目', projectName: '项目名称', projectNamePlaceholder: '为您的项目命名', projectCreate: '创建',
+  projectInvalidName: '项目名称不能包含路径分隔符或控制字符', projectCreateFailed: '无法创建项目，请检查名称是否重复后重试',
   stdioV2Title: '通用进程型 MCP', stdioV2Description: '保存程序与参数，在明确选择的云会话中检查并独立审批。',
   stdioV2Unavailable: '通用进程型 MCP 暂不可用。',
   stdioV2Notice: '配置只保存字面程序与参数。检查和调用需独立审批；旧 whoami 连接不会转换为通用连接。',
@@ -261,6 +263,9 @@ export const zh = {
 export type ExtensionCenterLocaleKey = keyof typeof zh
 
 export const en = {
+  projectCreateTitle: 'Create project', projectName: 'Project name', projectNamePlaceholder: 'Name your project', projectCreate: 'Create',
+  projectInvalidName: 'Use a folder name without path separators or control characters',
+  projectCreateFailed: 'Could not create the project. Check for a duplicate name and try again.',
   stdioV2Title: 'Generic process MCP', stdioV2Description: 'Save a program and arguments, then check and independently approve in an explicit cloud Session.',
   stdioV2Unavailable: 'Generic process MCP is unavailable.',
   stdioV2Notice: 'Configuration saves a literal program and arguments. Checks and calls require independent approval; old whoami connections are not converted.',
