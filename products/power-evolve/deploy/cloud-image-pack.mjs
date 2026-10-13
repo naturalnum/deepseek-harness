@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createRequire } from 'node:module'
 import { load, DEFAULT_SCHEMA, Type } from 'js-yaml'
+import { copyRuntimePackage } from './copy-runtime-package.mjs'
 const target = '/runtime'
 await mkdir(target, { recursive: true })
 async function copy(path) { await cp(path, join(target, path), { recursive: true, dereference: false, verbatimSymlinks: true }) }
@@ -23,9 +24,7 @@ for (const prefix of roots) {
     let files
     try { files = await readdir(directory) } catch (error) { if (error.code === 'ENOTDIR') continue; throw error }
     if (!files.includes('package.json')) continue
-    for (const name of files.filter(entryName => ['package.json', 'node_modules', 'lib', 'dist', 'assets', 'web', 'bin', 'cordis.patch.yml', 'cordis.yml'].includes(entryName))) {
-      await copy(join(directory, name))
-    }
+    await copyRuntimePackage(directory, join(target, directory))
   }
 }
 await mkdir(join(target, 'products/power-evolve/deploy'), { recursive: true })
