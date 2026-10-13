@@ -1,4 +1,4 @@
-/** Real Schema 6 PostgreSQL transport checks; formal Profile and business acceptance remain separate. */
+/** Real Schema 8 PostgreSQL transport checks; formal Profile and business acceptance remain separate. */
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
@@ -23,7 +23,7 @@ const nativeTables = ['pe_native_input_origins', 'pe_native_input_commands', 'pe
 
 function docker(args, env = process.env) {
   const result = spawnSync('docker', args, { encoding: 'utf8', env, timeout: 60000 })
-  if (result.error || result.signal || result.status !== 0) throw new Error('Owned Schema 6 PostgreSQL container action failed')
+  if (result.error || result.signal || result.status !== 0) throw new Error('Owned Schema 8 PostgreSQL container action failed')
   return result.stdout.trim()
 }
 
@@ -54,10 +54,10 @@ async function nativeFacts(client) {
   return facts
 }
 
-test('ordinary roles preserve 82 tables, native input facts, frames, receipts and writer tombstones while old versions and live writers are refused', { timeout: 180000 }, async (t) => {
+test('ordinary roles restore native facts, foreground executions and writer tombstones while refusing old or active state', { timeout: 180000 }, async (t) => {
   assert.deepEqual(Object.keys(process.env).filter(name => /^PE_NATIVE_.*_DDL$/u.test(name)), [])
-  assert.equal(APPLICATION_SCHEMA_VERSION, 6)
-  const root = await mkdtemp(join(tmpdir(), 'pe-employee4-schema6-'))
+  assert.equal(APPLICATION_SCHEMA_VERSION, 8)
+  const root = await mkdtemp(join(tmpdir(), 'pe-employee4-schema8-'))
   const id = randomUUID(), suffix = id.replaceAll('-', ''), adminPassword = randomUUID()
   const sourceRole = 'pe_employee4_src_' + suffix, targetRole = 'pe_employee4_dst_' + suffix
   const names = ['source', 'target', 'old2', 'occupied', 'temporary', 'live'].map(name => 'pe_employee4_' + name + '_' + suffix)
@@ -74,14 +74,14 @@ test('ordinary roles preserve 82 tables, native input facts, frames, receipts an
       docker(['rm', '--volumes', container])
       assert.equal(docker(['ps', '-a', '--filter', 'label=' + ownerLabel + '=' + id, '--format', '{{.ID}}']), '')
     }
-    if (process.env.PE_SCHEMA6_BACKUP_EVIDENCE_DIR) {
-      const evidence = process.env.PE_SCHEMA6_BACKUP_EVIDENCE_DIR
+    if (process.env.PE_SCHEMA8_BACKUP_EVIDENCE_DIR) {
+      const evidence = process.env.PE_SCHEMA8_BACKUP_EVIDENCE_DIR
       await mkdir(evidence, { recursive: true, mode: 0o700 })
       await writeFile(join(evidence, 'fixture-cleanup.json'), JSON.stringify({ id, containersRemaining: 0, passed, fixtureDirectory: root }) + '\n', { mode: 0o600 })
     }
     if (passed) await rm(root, { recursive: true, force: true })
   })
-  container = docker(['run', '-d', '--name', 'pe-employee4-schema6-' + id, '--label', ownerLabel + '=' + id,
+  container = docker(['run', '-d', '--name', 'pe-employee4-schema8-' + id, '--label', ownerLabel + '=' + id,
     '--publish', '127.0.0.1::5432', '--env', 'POSTGRES_PASSWORD', pgImage], { ...process.env, POSTGRES_PASSWORD: adminPassword })
   const deadline = Date.now() + 30000
   for (;;) {
@@ -135,7 +135,7 @@ test('ordinary roles preserve 82 tables, native input facts, frames, receipts an
       inventories.profiles.push(await inventoryTree(directory))
       await copyTree(directory, join(bundle, 'profiles', String(index)), inventories.profiles[index])
     }
-    const manifest = { format: 1, kind: 'power-evolve-current-cloud-backup', schema: 6, family: 'cloud-native',
+    const manifest = { format: 1, kind: 'power-evolve-current-cloud-backup', schema: 8, family: 'cloud-native',
       database: source.identity, sourceRoots: roots, sourceProfiles: profiles, nativeIntentKey, census: snapshot, inventories,
       files: (await inventoryTree(bundle)).filter(entry => entry.path !== '') }
     await durableJson(join(bundle, 'manifest.json'), manifest)
@@ -151,13 +151,13 @@ test('ordinary roles preserve 82 tables, native input facts, frames, receipts an
     query_timeout: 60000, statement_timeout: 60000 })
   try { await initializeDatabase(pool) }
   finally { await pool.end() }
-  assert.equal(CURRENT_SCHEMA_VERSION, 6)
+  assert.equal(CURRENT_SCHEMA_VERSION, 8)
   await requireCurrentSchema(source.client)
   await requireQuiescentDatabase(source.client)
   const old = await connect(names[2], sourceRole)
   await schema(old.client, 2)
   const oldBefore = (await old.client.query('SELECT family,version FROM pe_schema')).rows
-  await assert.rejects(requireCurrentSchema(old.client), /Schema 6/u)
+  await assert.rejects(requireCurrentSchema(old.client), /Schema 8/u)
   assert.deepEqual((await old.client.query('SELECT family,version FROM pe_schema')).rows, oldBefore)
   assert.equal((await old.client.query("SELECT count(*)::integer AS n FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'")).rows[0].n, 71)
   await old.client.query('BEGIN')
@@ -168,7 +168,7 @@ test('ordinary roles preserve 82 tables, native input facts, frames, receipts an
   } catch (error) { await old.client.query('ROLLBACK'); throw error }
   const old3Before = (await old.client.query('SELECT family,version FROM pe_schema')).rows
   assert.deepEqual(old3Before, [{ family: 'cloud-native', version: 3 }])
-  await assert.rejects(requireCurrentSchema(old.client), /Schema 6/u)
+  await assert.rejects(requireCurrentSchema(old.client), /Schema 8/u)
   assert.deepEqual((await old.client.query('SELECT family,version FROM pe_schema')).rows, old3Before)
   assert.equal((await old.client.query("SELECT count(*)::integer AS n FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'")).rows[0].n, 73)
   await old.client.query('BEGIN')
@@ -179,13 +179,25 @@ test('ordinary roles preserve 82 tables, native input facts, frames, receipts an
   } catch (error) { await old.client.query('ROLLBACK'); throw error }
   const old4Before = (await old.client.query('SELECT family,version FROM pe_schema')).rows
   assert.deepEqual(old4Before, [{ family: 'cloud-native', version: 4 }])
-  await assert.rejects(requireCurrentSchema(old.client), /Schema 6/u)
+  await assert.rejects(requireCurrentSchema(old.client), /Schema 8/u)
   assert.deepEqual((await old.client.query('SELECT family,version FROM pe_schema')).rows, old4Before)
   assert.equal((await old.client.query("SELECT count(*)::integer AS n FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'")).rows[0].n, 74)
+  for (const version of [5, 6, 7]) {
+    await old.client.query('BEGIN')
+    try {
+      await old.client.query(await readFile(new URL(`../application/assets/cloud-schema-v${version}.sql`, import.meta.url), 'utf8'))
+      await old.client.query('UPDATE pe_schema SET version=$1', [version])
+      await old.client.query('COMMIT')
+    } catch (error) { await old.client.query('ROLLBACK'); throw error }
+    const historical = (await old.client.query('SELECT family,version FROM pe_schema')).rows
+    assert.deepEqual(historical, [{ family: 'cloud-native', version }])
+    await assert.rejects(requireCurrentSchema(old.client), /Schema 8/u)
+    assert.deepEqual((await old.client.query('SELECT family,version FROM pe_schema')).rows, historical)
+  }
   await old.client.end(); clients.delete(old.client)
   const user = randomUUID(), workspace = randomUUID(), session = randomUUID(), publisher = randomUUID()
   await source.client.query('INSERT INTO pe_users(id,username,password_hash,settings,display_name) VALUES($1,$2,$3,$4,$2)',
-    [user, 'employee4-schema6', 'opaque-hash', { unicode: '中文😀', revision: 1 }])
+    [user, 'employee4-schema8', 'opaque-hash', { unicode: '中文😀', revision: 1 }])
   await source.client.query("INSERT INTO pe_workspaces(id,user_id,binding_state) VALUES($1,$2,'ready')", [workspace, user])
   await source.client.query('INSERT INTO pe_sessions(id,user_id,create_request_id,header,workspace_id) VALUES($1,$2,$3,$4,$5)',
     [session, user, randomUUID(), { fixture: 'opaque persisted header' }, workspace])
@@ -319,33 +331,83 @@ test('ordinary roles preserve 82 tables, native input facts, frames, receipts an
       [user, session, workspace])
     await assert.rejects(requireQuiescentDatabase(source.client), /active or uncertain in pe_mount_slots/u)
   } finally { await source.client.query('ROLLBACK') }
+  for (const state of ['queued', 'starting', 'running', 'cancelling', 'uncertain']) {
+    await source.client.query('BEGIN')
+    try {
+      await source.client.query(`INSERT INTO pe_cloud_executions
+        (id,user_id,session_id,operation_id,call_id,command,cwd,request_digest,state,cancel_requested,
+          result_delivery,requested_timeout_ms,command_timeout_ms,native_tool_grant_digest,native_tool_credential_version,
+          native_tool_cancel_cause)
+        VALUES($1,$2,$3,$4,$5,'printf native','','${'6'.repeat(64)}',$6,true,'native_tool',5000,3000,'${'7'.repeat(64)}',1,'abort')`,
+      [randomUUID(), user, session, operation, randomUUID(), state])
+      const original = (await source.client.query('SELECT to_jsonb(e)::text AS value FROM pe_cloud_executions e')).rows
+      await assert.rejects(requireQuiescentDatabase(source.client), /active or uncertain in pe_cloud_executions/u)
+      assert.deepEqual((await source.client.query('SELECT to_jsonb(e)::text AS value FROM pe_cloud_executions e')).rows, original)
+    } finally { await source.client.query('ROLLBACK') }
+  }
+  await source.client.query('BEGIN')
+  try {
+    await source.client.query(`INSERT INTO pe_mount_slots
+      (user_id,session_id,workspace_id,state,pod_uid,runner_instance_id)
+      VALUES($1,$2,$3,'stopping',$4,$5)`, [user, session, workspace, randomUUID(), randomUUID()])
+    await assert.rejects(requireQuiescentDatabase(source.client), /active or uncertain in pe_mount_slots/u)
+  } finally { await source.client.query('ROLLBACK') }
+  const nativeStopped = randomUUID(), nativeCompleted = randomUUID(), nativeCancelled = randomUUID(), stopRequestId = randomUUID()
+  const stoppedPodUid = randomUUID(), stoppedRunnerId = randomUUID()
+  const stopTarget = { userId: user, sessionId: session, workspaceId: workspace, generation: randomUUID(),
+    name: 'owned-stopped-fixture', podUid: stoppedPodUid, runnerInstanceId: stoppedRunnerId,
+    binding: { fixture: 'captured immutable storage binding' } }
+  const nativeResult = { exitCode: 0, stdout: '真实输出\n😀', stderr: '', stdoutTruncated: false,
+    stderrTruncated: false, timedOut: false }
+  await source.client.query(`INSERT INTO pe_cloud_executions
+    (id,user_id,session_id,operation_id,call_id,command,cwd,request_digest,state,cancel_requested,result,error_code,
+      sandbox_name,pod_uid,runner_instance_id,result_delivery,requested_timeout_ms,command_timeout_ms,
+      native_tool_grant_digest,native_tool_credential_version,native_tool_stop_request_id,native_tool_stop_target,native_tool_cancel_cause)
+    VALUES($1,$2,$3,$4,$5,'printf native','','${'6'.repeat(64)}','closed_unknown',true,NULL,'native_tool_outcome_unknown',
+      $6,$7,$8,'native_tool',5000,3000,'${'7'.repeat(64)}',1,$9,$10,'timeout'),
+      ($11,$2,$3,$4,$12,'printf complete','','${'8'.repeat(64)}','succeeded',false,$13,NULL,
+        NULL,NULL,NULL,'native_tool',5000,3000,'${'7'.repeat(64)}',1,NULL,NULL,NULL),
+      ($14,$2,$3,$4,$15,'printf cancelled','','${'9'.repeat(64)}','cancelled',true,NULL,NULL,
+        NULL,NULL,NULL,'native_tool',5000,3000,'${'7'.repeat(64)}',1,NULL,NULL,'abort')`,
+  [nativeStopped, user, session, operation, randomUUID(), stopTarget.name, stoppedPodUid, stoppedRunnerId,
+    stopRequestId, stopTarget, nativeCompleted, randomUUID(), JSON.stringify(nativeResult), nativeCancelled, randomUUID()])
+  const nativeExecutionsQuery = 'SELECT to_jsonb(e)::text AS value FROM pe_cloud_executions e ORDER BY id'
+  const nativeExecutionsBefore = (await source.client.query(nativeExecutionsQuery)).rows
+  await requireQuiescentDatabase(source.client)
   const competing = await connectDatabase(source.config); clients.add(competing.client)
   try { await assert.rejects(requireQuiescentDatabase(source.client), /another connection/u) }
   finally { await competing.client.end(); clients.delete(competing.client) }
   await requireQuiescentDatabase(source.client)
-  await source.client.query("CREATE SEQUENCE employee4_schema6_counter START 9; SELECT nextval('employee4_schema6_counter')")
+  await source.client.query("CREATE SEQUENCE employee4_schema8_counter START 9; SELECT nextval('employee4_schema8_counter')")
   await source.client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY')
   let before
-  const dump = join(root, 'schema6.dump')
+  const dump = join(root, 'schema8.dump')
   try {
     const snapshot = (await source.client.query('SELECT pg_export_snapshot() AS value')).rows[0].value
     before = await databaseCensus(source.client)
     dumpDatabase(dump, source, source.config, snapshot)
   } finally { await source.client.query('ROLLBACK') }
-  assert.equal(before.schema, 6); assert.equal(Object.keys(before.tables).length, 82)
+  assert.equal(before.schema, 8); assert.equal(Object.keys(before.tables).length, 82)
   assert.equal(before.tables.pe_native_presentations.rows, 0)
   assert.equal(before.tables.pe_native_presentation_entries.rows, 0)
   assert.equal(before.tables.pe_events.rows, 1)
   assert.equal(before.tables.pe_native_writers.rows, 3)
+  assert.equal(before.tables.pe_cloud_executions.rows, 3)
+  for (const [name, member] of [['pe_cloud_executions', 'pe_cloud_execution_keep_delivery'],
+    ['pe_operations', 'pe_operation_require_continuation_delivery'],
+    ['pe_cloud_executions', 'pe_cloud_execution_capture_native_cancel']]) {
+    assert.ok(before.definitions.some(row => row.kind === 'trigger' && row.name === name && row.member === member
+      && row.definition.startsWith('O:CREATE TRIGGER')))
+  }
   for (const table of nativeTables) assert.equal(before.tables[table].rows, nativeFactsBefore[table].length)
   assert.deepEqual(await nativeFacts(source.client), nativeFactsBefore)
   assert.deepEqual((await source.client.query(writersQuery)).rows, writerTombstones)
   const target = await connect(names[1], targetRole)
   await requireEmptyDatabase(target.client)
   await target.client.end(); clients.delete(target.client)
-  const bundle = await archive('schema6-bundle', dump, before)
+  const bundle = await archive('schema8-bundle', dump, before)
   const restore = await restoreBackup(restoreConfig(bundle, target, 'restored'))
-  assert.equal(restore.schema, 6); assert.equal(restore.tables, 82)
+  assert.equal(restore.schema, 8); assert.equal(restore.tables, 82)
   assert.equal(restore.allRowsVerified, true); assert.equal(restore.allFilesVerified, true)
   assert.deepEqual(await readFile(restoreConfig(bundle, target, 'restored').nativeIntentKeyFile), nativeIntentKeyBytes)
   assert.equal(restore.readinessChecked, false); assert.equal(restore.profilesRequireRebinding, true)
@@ -355,6 +417,18 @@ test('ordinary roles preserve 82 tables, native input facts, frames, receipts an
   await requireQuiescentDatabase(target.client)
   const after = await census(target.client)
   assert.deepEqual(after, before)
+  assert.deepEqual((await target.client.query(nativeExecutionsQuery)).rows, nativeExecutionsBefore)
+  assert.deepEqual((await target.client.query('SELECT native_tool_stop_request_id,native_tool_stop_target,native_tool_cancel_cause,result FROM pe_cloud_executions WHERE id=$1',
+    [nativeStopped])).rows, [{ native_tool_stop_request_id: stopRequestId, native_tool_stop_target: stopTarget,
+    native_tool_cancel_cause: 'timeout', result: null }])
+  for (const mutation of ["result_delivery='continuation'", "command='replayed command'", 'command_timeout_ms=4000',
+    "native_tool_cancel_cause='abort'"]) {
+    await assert.rejects(target.client.query(`UPDATE pe_cloud_executions SET ${mutation} WHERE id=$1`, [nativeStopped]), { code: '23514' })
+  }
+  await assert.rejects(target.client.query(`INSERT INTO pe_operations
+    (id,session_id,request_id,input,settings,state,source,source_execution_id)
+    VALUES($1,$2,$3,'unexpected native continuation','{}','queued','sandbox_result',$4)`,
+  [randomUUID(), session, randomUUID(), nativeCompleted]), { code: '23514' })
   assert.deepEqual(await nativeFacts(target.client), nativeFactsBefore)
   assert.deepEqual((await target.client.query('SELECT frame_json,grant_json FROM pe_native_turn_frames')).rows,
     [{ frame_json: frame, grant_json: grant }])
@@ -370,22 +444,26 @@ test('ordinary roles preserve 82 tables, native input facts, frames, receipts an
   assert.deepEqual(await nativeFacts(target.client), nativeFactsBefore)
   assert.deepEqual((await target.client.query(writersQuery)).rows, writerTombstones)
   assert.deepEqual((await target.client.query('SELECT event FROM pe_events WHERE session_id=$1', [session])).rows, [{ event }])
-  assert.deepEqual((await target.client.query('SELECT last_value::text,is_called FROM employee4_schema6_counter')).rows, [{ last_value: '9', is_called: true }])
+  assert.deepEqual((await target.client.query('SELECT last_value::text,is_called FROM employee4_schema8_counter')).rows, [{ last_value: '9', is_called: true }])
   await assert.rejects(requireEmptyDatabase(target.client), /not empty/u)
   const occupied = await connect(names[3], sourceRole)
   await occupied.client.query('CREATE TABLE employee4_existing(value text)')
   await assert.rejects(requireEmptyDatabase(occupied.client), /not empty/u)
   assert.equal((await occupied.client.query('SELECT count(*)::text AS n FROM employee4_existing')).rows[0].n, '0')
-  if (process.env.PE_SCHEMA6_BACKUP_EVIDENCE_DIR) {
-    await mkdir(process.env.PE_SCHEMA6_BACKUP_EVIDENCE_DIR, { recursive: true, mode: 0o700 })
-    await writeFile(join(process.env.PE_SCHEMA6_BACKUP_EVIDENCE_DIR, 'postgres-acceptance.json'), JSON.stringify({ schema: 6,
+  if (process.env.PE_SCHEMA8_BACKUP_EVIDENCE_DIR) {
+    await mkdir(process.env.PE_SCHEMA8_BACKUP_EVIDENCE_DIR, { recursive: true, mode: 0o700 })
+    await writeFile(join(process.env.PE_SCHEMA8_BACKUP_EVIDENCE_DIR, 'postgres-acceptance.json'), JSON.stringify({ schema: 8,
       tables: 82, ordinarySource: true, ordinaryTarget: true, old2RefusedWithoutWrites: true,
-      old3RefusedWithoutWrites: true, old4RefusedWithoutWrites: true,
+      old3RefusedWithoutWrites: true, old4RefusedWithoutWrites: true, old5RefusedWithoutWrites: true,
+      old6RefusedWithoutWrites: true, old7RefusedWithoutWrites: true,
       presentationsRefusedWithoutWrites: true, entriesRefusedWithoutWrites: true, allRowsDefinitionsSequencesEqual: true,
       temporaryDumpRefusedBeforeFileRestore: true, publicRestoreAllFilesVerified: true,
       liveWriterRefusedWithoutWrites: true, liveWriterDumpRefusedBeforeFileRestore: true,
       writerTombstoneRows: 3, releasedAndExpiredWritersPreserved: true, writerEpochsPreserved: true,
       nativeInputFactsFramesReceiptsPreserved: true, restoredInputFactsImmutable: true,
+      nativeExecutionsAndStopIdentityPreserved: true, nativeDeliveryTriggersPreserved: true,
+      nativeCancellationFirstCausePreserved: true,
+      activeNativeCancellationRefusedWithoutWrites: true, stoppingMountRefused: true,
       activeOperationRefused: true, uncertainMountRefused: true, otherConnectionRefused: true,
       emptyTemporaryTables: true, occupiedTargetRefused: true, formalProfilesChecked: false, businessReadinessChecked: false,
       sourceCensus: before, restoredCensus: after }, null, 2) + '\n', { mode: 0o600 })

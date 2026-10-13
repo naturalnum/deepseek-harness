@@ -23,7 +23,8 @@ async function fixture(t, config = {}, modify = () => {}) {
   const children = new Set(), commands = []
   const scanner = new CommandChildren(root, (file, args, options) => {
     assert.equal(options.uid, 1000); assert.equal(options.gid, 1000)
-    assert.deepEqual(Object.keys(options.env).sort(), ['HOME', 'LANG', 'PATH', 'USER'])
+    assert.deepEqual(Object.keys(options.env).sort(), Object.hasOwn(options.env, 'DSH_SHELL')
+      ? ['DSH_HOME', 'DSH_SESSION_ID', 'DSH_SHELL', 'HOME', 'LANG', 'PATH', 'USER'] : ['HOME', 'LANG', 'PATH', 'USER'])
     if (options.detached) commands.push(options)
     const child = spawn(file, args, { ...options, uid: process.getuid(), gid: process.getgid(),
       env: { ...options.env, HOME: root } })
@@ -111,7 +112,8 @@ test('actual cancellation and timeout close command children before another exec
   const value = f.request('printf started > started.txt; sleep 60')
   assert.equal((await f.post(value)).status, 202)
   await eventually(async () => { try { return await readFile(join(f.root, 'started.txt'), 'utf8') === 'started' } catch { return false } })
-  assert.equal((await f.cancel(value.id)).status, 200)
+  assert.equal((await fetch(`${f.url}/executions/${value.id}/cancel`, {
+    method: 'POST', headers: f.headers, body: '{}' })).status, 200)
   const cancelled = await f.terminal(value.id)
   assert.equal(cancelled.state, 'cancelled'); assert.equal(cancelled.timedOut, false)
   const timed = { ...f.request('sleep 60'), timeoutMs: 1000 }
@@ -134,6 +136,28 @@ test('leader exit retires its own background group before allowing new work', { 
   assert.equal((await f.terminal(next.id)).stdout, 'next')
 })
 
+test('explicit stopping causes preserve the first cause and cannot rewrite a completed receipt', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t)
+  const cancel = (id, cause) => fetch(`${f.url}/executions/${id}/cancel`, {
+    method: 'POST', headers: f.headers, body: JSON.stringify({ cause }) })
+  for (const first of ['timeout', 'abort']) {
+    const value = f.request("trap 'sleep 0.1; exit 0' TERM; printf ready > ready.txt; while :; do sleep 1; done")
+    await rm(join(f.root, 'ready.txt'), { force: true })
+    assert.equal((await f.post(value)).status, 202)
+    await eventually(async () => { try { return await readFile(join(f.root, 'ready.txt'), 'utf8') === 'ready' } catch { return false } })
+    assert.equal((await cancel(value.id, first)).status, 200)
+    assert.equal((await cancel(value.id, first === 'abort' ? 'timeout' : 'abort')).status, 200)
+    const result = await f.terminal(value.id)
+    assert.equal(result.timedOut, first === 'timeout')
+    assert.equal(result.state, first === 'timeout' ? 'failed' : 'cancelled')
+  }
+  const value = f.request('true')
+  assert.equal((await f.post(value)).status, 202)
+  const before = await f.terminal(value.id)
+  assert.deepEqual(await (await cancel(value.id, 'timeout')).json(), before)
+  assert.equal((await cancel(value.id, 'unrecognized')).status, 400)
+})
+
 test('partial UTF8 chunks survive decoding and truncated streams stay within their byte ceiling', { timeout: 10000 }, async (t) => {
   const f = await fixture(t)
   const value = f.request("/usr/bin/python3 -I -B -c 'import os,time; os.write(1,bytes([228])); time.sleep(0.1); os.write(1,bytes([184,173])); os.write(1,(\"文\"*30000).encode())'")
@@ -144,6 +168,45 @@ test('partial UTF8 chunks survive decoding and truncated streams stay within the
   assert.ok(Buffer.byteLength(result.stdout) <= 65536)
   assert.equal(result.stdoutTruncated, true)
   assert.equal(result.stdout.includes('\uFFFD'), false)
+})
+
+test('native foreground capture keeps a bounded UTF8 tail while legacy receipts retain their original prefix', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t)
+  const value = { ...f.request("/usr/bin/python3 -I -B -c 'import os; os.write(1,(\"前\"+\"文\"*30000+\"末尾\").encode()); os.write(2,(\"错\"*30000+\"错误结尾\").encode())'"), outputMode: 'tail' }
+  assert.equal((await f.post(value)).status, 202)
+  const result = await f.terminal(value.id)
+  assert.equal(result.state, 'succeeded')
+  assert.equal(result.stdout.endsWith('末尾'), true)
+  assert.equal(result.stderr.endsWith('错误结尾'), true)
+  assert.equal(result.stdout.includes('前'), false)
+  for (const field of ['stdout', 'stderr']) {
+    assert.ok(Buffer.byteLength(result[field]) <= 65536)
+    assert.equal(result[field].includes('\uFFFD'), false)
+    assert.equal(result[field + 'Truncated'], true)
+  }
+  assert.equal((await f.post({ ...f.request('true'), outputMode: 'head' })).status, 400)
+})
+
+test('native managed facts reach commands without copying Host configuration paths or credentials', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t), sessionId = randomUUID()
+  const value = { ...f.request('printf "%s|%s|%s" "$DSH_SHELL" "$DSH_SESSION_ID" "$DSH_HOME"'), outputMode: 'tail',
+    dshEnv: { DSH_SHELL: '1', DSH_HOME: '/home/agent/.dsh', DSH_SESSION_ID: sessionId } }
+  assert.equal((await f.post(value)).status, 202)
+  assert.equal((await f.terminal(value.id)).stdout, `1|${sessionId}|/home/agent/.dsh`)
+  for (const dshEnv of [{ ...value.dshEnv, SECRET_KEY: 'invalid' }, { ...value.dshEnv, DSH_HOME: '/run/host' },
+    { ...value.dshEnv, DSH_SESSION_ID: 'foreign' }]) {
+    assert.equal((await f.post({ ...value, id: randomUUID(), dshEnv })).status, 400)
+  }
+})
+
+test('native workdir admits Unicode project directories while preserving physical workspace confinement', { timeout: 10000 }, async (t) => {
+  const f = await fixture(t)
+  await mkdir(join(f.root, '中文 目录'))
+  const value = { ...f.request('printf native > greeting.txt'), cwd: '中文 目录', outputMode: 'tail' }
+  assert.equal((await f.post(value)).status, 202)
+  assert.equal((await f.terminal(value.id)).exitCode, 0)
+  assert.equal(await readFile(join(f.root, '中文 目录/greeting.txt'), 'utf8'), 'native')
+  assert.equal((await f.post({ ...f.request('true'), cwd: '../outside', outputMode: 'tail' })).status, 400)
 })
 
 test('invalid bodies and stale runner identities never start work, and STDIO disabled is explicit', { timeout: 10000 }, async (t) => {

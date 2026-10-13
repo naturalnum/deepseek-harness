@@ -88,7 +88,7 @@ export class CommandChildren {
    */
   command(value) {
     const child = this.spawnChild('/usr/bin/python3', ['-I', '-B', helper], {
-      uid: 1000, gid: 1000, cwd: '/', detached: true, env: { ...environment }, stdio: ['pipe', 'pipe', 'pipe'],
+      uid: 1000, gid: 1000, cwd: '/', detached: true, env: { ...environment, ...value.dshEnv }, stdio: ['pipe', 'pipe', 'pipe'],
     })
     child.stdin.on('error', () => { /* Process close determines command startup failure. */ })
     child.stdin.end(JSON.stringify({ mode: 'command', root: this.root, cwd: value.cwd, command: value.command }))

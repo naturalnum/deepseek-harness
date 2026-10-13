@@ -8,6 +8,14 @@ import { CommandChildren } from './command-children.mjs'
 
 const maximumOutput = 65_536
 
+function managedEnvironment(value) {
+  return value && typeof value === 'object'
+    && Object.keys(value).sort().join(',') === 'DSH_HOME,DSH_SESSION_ID,DSH_SHELL'
+    && value.DSH_HOME === '/home/agent/.dsh' && value.DSH_SHELL === '1'
+    && typeof value.DSH_SESSION_ID === 'string'
+    && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/u.test(value.DSH_SESSION_ID)
+}
+
 /** Compose the image's HTTP Runner with credential-free command children.
  * @param config Private token, Workspace root, retained receipt ceiling and optional STDIO budgets.
  * @param providers Dropped-privilege child provider, process-group signal and optional STDIO factory.
@@ -55,6 +63,14 @@ export function createRunner(config, providers = {}) {
   }
   function appendOutput(stream, text) {
     if (text.length === 0) return
+    if (stream.outputMode === 'tail') {
+      const bytes = Buffer.from(stream.text + text)
+      let start = Math.max(0, bytes.length - maximumOutput)
+      while (start < bytes.length && (bytes[start] & 0xc0) === 0x80) start++
+      stream.text = bytes.subarray(start).toString('utf8')
+      if (start > 0) stream.truncated = true
+      return
+    }
     const remaining = maximumOutput - Buffer.byteLength(stream.text)
     if (remaining <= 0) { stream.truncated = true; return }
     const bytes = Buffer.from(text)
@@ -72,8 +88,9 @@ export function createRunner(config, providers = {}) {
   function stop(entry, reason) {
     if (entry.state !== 'running') return
     if (entry.phase === 'command') {
-      if (reason === 'cancel') entry.cancelled = true
-      if (reason === 'timeout') entry.timedOut = true
+      entry.stopCause ??= reason
+      if (entry.stopCause === 'cancel') entry.cancelled = true
+      if (entry.stopCause === 'timeout') entry.timedOut = true
     }
     if (!entry.child?.pid) return
     try { signalGroup(entry.child.pid, 'SIGTERM') } catch (error) { if (error.code !== 'ESRCH') throw error }
@@ -85,8 +102,8 @@ export function createRunner(config, providers = {}) {
   }
   function start(value) {
     const entry = { id: value.id, digest: createHash('sha256').update(JSON.stringify(value)).digest('hex'),
-      state: 'running', exitCode: null, stdout: { text: '', truncated: false, decoder: new StringDecoder('utf8') },
-      stderr: { text: '', truncated: false, decoder: new StringDecoder('utf8') }, cancelled: false, timedOut: false, child: null, phase: 'command' }
+      state: 'running', exitCode: null, stdout: { text: '', truncated: false, outputMode: value.outputMode, decoder: new StringDecoder('utf8') },
+      stderr: { text: '', truncated: false, outputMode: value.outputMode, decoder: new StringDecoder('utf8') }, cancelled: false, timedOut: false, child: null, phase: 'command' }
     executions.set(value.id, entry)
     active = entry
     entry.finished = execute(value, entry)
@@ -207,15 +224,31 @@ export function createRunner(config, providers = {}) {
       if (request.method === 'POST' && match?.[2]) {
         const entry = executions.get(match[1])
         if (!entry) { reply(response, 404, { error: 'execution_not_found', instanceId }); return }
-        stop(entry, 'cancel'); reply(response, 200, view(entry)); return
+        let reason = 'cancel'
+        if (Number(request.headers['content-length'] ?? 0) > 0 || request.headers['transfer-encoding'] !== undefined) {
+          const value = await body(request, 1024)
+          if (!value || typeof value !== 'object' || Array.isArray(value)
+            || Object.keys(value).length > 0 && (Object.keys(value).join(',') !== 'cause'
+              || !['timeout', 'abort'].includes(value.cause))) {
+            reply(response, 400, { error: 'invalid_cancel_request', instanceId }); return
+          }
+          reason = value.cause === 'timeout' ? 'timeout' : 'cancel'
+        }
+        stop(entry, reason); reply(response, 200, view(entry)); return
       }
       if (request.method === 'POST' && path === '/executions') {
         const value = await body(request)
-        if (!value || typeof value !== 'object' || Object.keys(value).sort().join(',') !== 'command,cwd,id,instanceId,timeoutMs'
+        if (!value || typeof value !== 'object'
+          || !['command,cwd,id,instanceId,timeoutMs', 'command,cwd,id,instanceId,outputMode,timeoutMs',
+            'command,cwd,dshEnv,id,instanceId,outputMode,timeoutMs'].includes(Object.keys(value).sort().join(','))
+          || (Object.hasOwn(value, 'outputMode') && value.outputMode !== 'tail')
+          || (Object.hasOwn(value, 'dshEnv') && !managedEnvironment(value.dshEnv))
           || typeof value.id !== 'string' || !/^[a-f0-9-]{36}$/.test(value.id)
           || typeof value.instanceId !== 'string' || !/^[a-f0-9-]{36}$/.test(value.instanceId)
           || typeof value.command !== 'string' || value.command.length < 1 || value.command.length > 8192
-          || typeof value.cwd !== 'string' || !/^(?:|[A-Za-z0-9._/-]{1,256})$/.test(value.cwd)
+          || typeof value.cwd !== 'string' || (value.outputMode === 'tail'
+          ? value.cwd.length > 256 || value.cwd.startsWith('/') || /[\u0000-\u001f\u007f\\]/u.test(value.cwd)
+          : !/^(?:|[A-Za-z0-9._/-]{1,256})$/.test(value.cwd))
           || value.cwd.split('/').some(part => part === '..')
           || !Number.isInteger(value.timeoutMs) || value.timeoutMs < 1000 || value.timeoutMs > 300_000) {
           reply(response, 400, { error: 'invalid_execution' }); return

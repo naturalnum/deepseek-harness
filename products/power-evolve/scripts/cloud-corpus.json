@@ -6,11 +6,13 @@
   "runtime": [
     ".github/power-evolve-office/reproduce-office-closure.mjs",
     "products/power-evolve/application/src/account-contracts.ts",
+    "products/power-evolve/application/src/cloud-shell-contracts.ts",
     "products/power-evolve/application/src/continuation-input.ts",
     "products/power-evolve/application/src/contracts.ts",
     "products/power-evolve/application/src/file-download-http.ts",
     "products/power-evolve/application/src/host/attachments.ts",
     "products/power-evolve/application/src/host/browser-auth.ts",
+    "products/power-evolve/application/src/host/cloud-shell.ts",
     "products/power-evolve/application/src/host/connectors.ts",
     "products/power-evolve/application/src/host/durability.ts",
     "products/power-evolve/application/src/host/executions.ts",
@@ -236,6 +238,9 @@
     "products/power-evolve/application/tests/browser-auth.spec.ts",
     "products/power-evolve/application/tests/builtin-cloud-skills.spec.ts",
     "products/power-evolve/application/tests/cloud-files.spec.ts",
+    "products/power-evolve/application/tests/cloud-shell-native.spec.ts",
+    "products/power-evolve/application/tests/cloud-shell-platform.spec.ts",
+    "products/power-evolve/application/tests/cloud-shell-schema.spec.ts",
     "products/power-evolve/application/tests/database.spec.ts",
     "products/power-evolve/application/tests/employee1-mcp-approval.spec.ts",
     "products/power-evolve/application/tests/employee1-ssh-cancel.spec.ts",
@@ -330,6 +335,7 @@
     "products/power-evolve/contracts/tests/employee1-download-platform.spec.ts",
     "products/power-evolve/contracts/tests/employee1-office-host.spec.ts",
     "products/power-evolve/contracts/tests/employee1-office-platform.spec.ts",
+    "products/power-evolve/deploy/copy-runtime-package.test.mjs",
     "products/power-evolve/deploy/employee4-backup.test.mjs",
     "products/power-evolve/deploy/employee4-image.test.mjs",
     "products/power-evolve/deploy/employee4-start.test.mjs",
@@ -374,6 +380,7 @@
   ],
   "tooling": [
     "products/power-evolve/deploy/cloud-image-build.mjs",
-    "products/power-evolve/deploy/cloud-image-pack.mjs"
+    "products/power-evolve/deploy/cloud-image-pack.mjs",
+    "products/power-evolve/deploy/copy-runtime-package.mjs"
   ]
 }

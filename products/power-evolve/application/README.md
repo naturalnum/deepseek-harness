@@ -26,6 +26,8 @@ Use the cloud Host and Platform Profiles to authenticate users, persist native D
 
 Launch through the named [Host](../host/README.md) and [Platform](../platform/README.md) bundles. Their configurations supply independent ports, private credential files, storage and database access. The deployment launcher reads an operator-owned document outside Git; it does not copy credential values into the Profile.
 
+The Host `nativeShellEnabled` option selects the unmodified native Bash consumer over an operation-bound cloud Shell provider. It waits for the original durable execution result inside the same tool call. The provider uses explicit `shellPollMs`, `shellTimeoutMs`, `shellMaxTimeoutMs` and `shellMaxOutputBytes` bounds. The default keeps the existing receipt path; a candidate requires the matching Platform schema and Runner before enabling this option. Preparation and execution share the native fused deadline. Observation failures retain the original execution for exact cleanup; Agent disposal requests its original handles to stop and waits for terminal evidence. The foreground feature does not claim live stream output or background jobs.
+
 The Host root redirects to `/native/`. Login, independent approvals and account administration belong to Platform. Independent approval modules obtain request identifiers from the public browser module of `@deepseek-ai/dsh-util-crypto`, served through an explicit same-origin asset route; they also work on plain HTTP LAN origins. The [native Web bundle](../cloud-web/README.md) contains the upstream components; [personal connector configuration](../client-extension-center/README.md) occupies the official Host bundle configuration slot.
 
 -----
@@ -105,6 +107,8 @@ The [account bridge](src/account-contracts.ts) exposes explicit runtime validato
 
 The model receives the accepted operation's authorized configuration and selected instructions. Inputs and results that reach the model are native Session events. Models propose controlled actions; independent approval credentials remain at Platform. The composed DeepSeek adapter resolves reasoning to `off`, which the native catalog and persisted selection also report.
 
+Cloud Bash adds a logged instruction to avoid repeating a command when its outcome is unknown or unavailable. Its foreground result is the original tool result; it does not create a new user message. The Platform supplies only `DSH_SHELL`, `DSH_HOME` and the owned `DSH_SESSION_ID` to the command; Host Profile paths and credentials are not forwarded.
+
 For accepted uploads, a logged instruction section lists only this Session's authorized file identities and explains the cloud reader and copy tools. File metadata alone does not assert that the model read the contents. The original files have no Host-local execution path.
 
 <a id="known-limitations-and-deferred-work"></a>
@@ -112,6 +116,7 @@ For accepted uploads, a logged instruction section lists only this Session's aut
 
 Current constraints are explicit at the corresponding native API:
 
+- Native cloud Shell currently supports bounded foreground Bash only. Background jobs, stdin/environment overrides, native file permissions and complete FS/Subprocess/PTY providers remain separate slices in the [runtime plan](../CLOUD-RUNTIME-PLAN.md). An uncertain command is reconciled under its original identity.
 - Host-local file opening and shared Profile changes require capabilities the cloud user does not automatically receive.
 - The prompt carrier accepts queued text, generic file receipts and SDK-admitted images. Steering, editing and removal use the current Writer's Coordinator. Active prepared-owner removal refuses.
 - Continuation supports closed-turn settlement, unconsumed prepared or capacity-parked takeover, and historical claimed reconciliation. Retained mutation intents across restart and the remaining stop/failure combinations still need acceptance; current source PG recovery checks do not certify a production restart deployment.

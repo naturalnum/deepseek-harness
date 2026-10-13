@@ -16,7 +16,8 @@ export const runtimePatterns = [
   '.github/power-evolve-office/**/*.mjs',
 ]
 // Build-stage tools retain static checks and current cold-image qualification.
-const buildTooling = [product + '/deploy/cloud-image-build.mjs', product + '/deploy/cloud-image-pack.mjs']
+const buildTooling = [product + '/deploy/cloud-image-build.mjs', product + '/deploy/cloud-image-pack.mjs',
+  product + '/deploy/copy-runtime-package.mjs']
 const excluded = ['**/node_modules/**', '**/lib/**', '**/dist/**', '**/assets/**']
 const normalize = value => value.replaceAll('\\', '/')
 

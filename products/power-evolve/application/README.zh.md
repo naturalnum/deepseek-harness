@@ -26,6 +26,8 @@ kind: package-reference
 
 通过具名的 [Host](../host/README.zh.md) 与 [Platform](../platform/README.zh.md) bundle 启动。配置分别提供端口、私有凭据文件、存储和数据库访问。部署启动器读取 Git 之外的运维文档，不把凭据值复制进 Profile。
 
+Host 的 `nativeShellEnabled` 选项通过按操作授权绑定的云端 Shell 提供方组合未经修改的原生 Bash 工具，在同一工具调用中等待原持久执行结果。提供方显式使用 `shellPollMs`、`shellTimeoutMs`、`shellMaxTimeoutMs` 和 `shellMaxOutputBytes` 限制。默认保留现有回执路径；候选实例须具备匹配的 Platform 数据库代和 Runner 后才能启用此选项。 准备和执行共用原生合并截止时间。观察失败后仍保留原执行以完成精确清理；Agent 释放会请求原句柄停止，并等待终态证据。本片前台能力尚不提供实时输出流或后台任务。
+
 Host 根路径跳转至 `/native/`。登录、独立审批和账号管理由 Platform 提供。 独立审批模块从 `@deepseek-ai/dsh-util-crypto` 的公开浏览器模块生成请求编号；该模块由明确的同源资源路由提供，也适用于局域网普通 HTTP 来源。[原生 Web 构建](../cloud-web/README.zh.md)包含官方组件；[个人连接器配置](../client-extension-center/README.zh.md)占用官方 Host bundle 的配置插槽。
 
 -----
@@ -105,6 +107,8 @@ Office 部署必须指定经过运维验证、在解析器启动前禁用外部�
 
 模型接收受理操作中获授权的配置与选定说明。到达模型的输入和结果均记为原生 Session 事件。模型提议受控动作，独立审批凭据保留在 Platform。已组合的 DeepSeek 适配器将推理解析为 `off`；原生目录与持久选择也报告这一值。
 
+云端 Bash 增加已记录的说明，要求在命令结果未知或不可用时不要重复原命令。其前台结果属于原工具调用，不创建新的用户消息。Platform 只向命令提供 `DSH_SHELL`、`DSH_HOME` 和本人的 `DSH_SESSION_ID`，不转发 Host Profile 路径或凭据。
+
 对于已受理上传，已记录的说明区只列出本会话获授权的文件身份，解释云端读取与复制工具。文件元数据本身不表示模型已经读取内容。原文件不具有 Host 本机执行路径。
 
 <a id="known-limitations-and-deferred-work"></a>
@@ -112,6 +116,7 @@ Office 部署必须指定经过运维验证、在解析器启动前禁用外部�
 
 当前限制由相应原生 API 明确表达：
 
+- 原生云端 Shell 当前仅支持有界前台 Bash。后台任务、标准输入／环境覆盖、原生文件权限以及完整 FS／Subprocess／PTY 提供方仍属于[运行改造计划](../CLOUD-RUNTIME-PLAN.md)中的独立切片。不确定命令按原身份对账。
 - 打开 Host 本机文件及修改共享 Profile 需要云端用户不会自动获得的权限。
 - 当前输入适配器接受排队文本、普通文件回执及 SDK 受理的图片；插队、编辑和删除通过当前 Writer 的 Coordinator 提交。活动 prepared owner 的删除会被拒绝。
 - 当前续接支持关闭回合的结算、未消费的 prepared 或 capacity park 输入接管，以及历史 claimed 对账。跨重启保留修改意图及其余停止／失败组合仍需验收；当前源码 PG 恢复检查不能认证生产重启部署。

@@ -72,12 +72,12 @@
   "counts": {
     "runtime": {
       "enabled": 14,
-      "shared": 299,
+      "shared": 301,
       "deferred": 4
     },
     "sourceTests": {
       "enabled": 12,
-      "shared": 143,
+      "shared": 147,
       "deferred": 3
     },
     "builtTests": {
@@ -92,7 +92,7 @@
     },
     "tooling": {
       "enabled": 0,
-      "shared": 29,
+      "shared": 30,
       "deferred": 0
     },
     "docMetadata": {
@@ -102,7 +102,7 @@
     },
     "docs": {
       "enabled": 0,
-      "shared": 148,
+      "shared": 149,
       "deferred": 0
     },
     "manifests": {
@@ -5077,6 +5077,62 @@
       "status": "shared",
       "owner": "Root",
       "reason": "gate-shared"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/CLOUD-RUNTIME-PLAN.md",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/cloud-shell-contracts.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/host/cloud-shell.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/cloud-shell-native.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/cloud-shell-schema.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/deploy/copy-runtime-package.test.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "tooling",
+      "path": "products/power-evolve/deploy/copy-runtime-package.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/cloud-shell-platform.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
     }
   ],
   "lintSupport": [

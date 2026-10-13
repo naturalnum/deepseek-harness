@@ -10,6 +10,8 @@ import { PlatformError, type Grant } from '../contracts.ts'
 import type { McpActionId } from '../mcp-action-contracts.ts'
 import { installConnectorTools } from './connectors.ts'
 import { installExecutionTools } from './executions.ts'
+import { CloudShellExecutor } from './cloud-shell.ts'
+import { apply as installNativeBash } from '@deepseek-ai/dsh-tool-bash'
 import { installPersonalMcpTool, installRemoteMcpTools } from './mcp.ts'
 import { installStdioMcpTool } from './stdio-mcp.ts'
 import { installStdioOperationToolsV2 } from './stdio-v2.ts'
@@ -119,6 +121,7 @@ export interface SchedulerConfig {
   operationTimeoutMs: number
   nativeInputPollMs: number
   nativeInputBatchSize: number
+  nativeShellEnabled?: boolean
 }
 
 /** Dispatches platform-issued grants and settles their original failure after Agent and writer disposal. */
@@ -198,7 +201,12 @@ export class Scheduler {
     installStdioOperationToolsV2(agent, grant, grant.stdioV2Connections, runtime, this.config.platformOrigin)
     if (grant.source === 'user' || grant.source === 'sandbox_result') {
       installConnectorTools(agent, grant, runtime, this.config.platformOrigin)
-      installExecutionTools(agent, grant, runtime)
+      if (this.config.nativeShellEnabled && grant.executionEnabled) {
+        const shell = this.ctx.shell
+        if (!(shell instanceof CloudShellExecutor)) throw new Error('Native cloud Shell provider is missing')
+        shell.bind(agent, grant)
+        installNativeBash(agent.ctx, { enableRunInBackground: false, promoteOnTimeout: false })
+      } else installExecutionTools(agent, grant, runtime)
       installOfficeTool(agent, grant, runtime)
       installPersonalMcpTool(agent, grant, runtime)
       installStdioMcpTool(agent, grant, runtime)

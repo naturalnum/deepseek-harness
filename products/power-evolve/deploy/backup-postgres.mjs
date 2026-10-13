@@ -7,8 +7,8 @@ import { createRequire } from 'node:module'
 import { join } from 'node:path'
 const { Client } = createRequire(new URL('../application/package.json', import.meta.url))('pg')
 /** Only this current cloud generation is eligible for backup and restore. */
-export const CURRENT_SCHEMA_VERSION = 6
-const expectedColumns = JSON.parse(await readFile(new URL('../application/assets/cloud-schema-v6.manifest.json', import.meta.url), 'utf8'))
+export const CURRENT_SCHEMA_VERSION = 8
+const expectedColumns = JSON.parse(await readFile(new URL(`../application/assets/cloud-schema-v${CURRENT_SCHEMA_VERSION}.manifest.json`, import.meta.url), 'utf8'))
 const identifier = name => '"' + name.replaceAll('"', '""') + '"'
 const hash = value => createHash('sha256').update(value).digest('hex')
 const identityQuery = `SELECT current_database() AS database,current_user AS role,
@@ -161,7 +161,7 @@ export async function requireQuiescentDatabase(client) {
 
 /** Hash every row of every current table, retaining duplicates, JSON, timestamps and execution facts.
  * @param client Client already inside a repeatable-read transaction.
- * @returns Per-table row counts and SHA256 digests plus complete schema definitions and sequences.
+ * @returns Per-table row counts and SHA256 digests plus schema definitions, trigger modes and sequences.
  */
 export async function databaseCensus(client) {
   await requireCurrentSchema(client)
@@ -182,6 +182,7 @@ export async function databaseCensus(client) {
     UNION ALL SELECT 'constraint',relname,c.conname,pg_get_constraintdef(c.oid) FROM pg_constraint c JOIN pg_class t ON t.oid=c.conrelid JOIN pg_namespace n ON n.oid=t.relnamespace WHERE n.nspname='public'
     UNION ALL SELECT 'index',tablename,indexname,indexdef FROM pg_indexes WHERE schemaname='public'
     UNION ALL SELECT 'function',p.proname,pg_get_function_identity_arguments(p.oid),pg_get_functiondef(p.oid) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public'
+    UNION ALL SELECT 'trigger',c.relname,t.tgname,concat(t.tgenabled,':',pg_get_triggerdef(t.oid)) FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND NOT t.tgisinternal
     ORDER BY kind,name,member,definition`)).rows
   const sequences = {}
   const names = (await client.query("SELECT sequencename FROM pg_sequences WHERE schemaname='public' ORDER BY sequencename")).rows

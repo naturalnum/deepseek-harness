@@ -23,6 +23,8 @@ import { serveNativeUi } from '../ui.ts'
 import { BrowserAgentAuth } from './browser-auth.ts'
 import { installNativeRemote } from './native-remote.ts'
 import { Scheduler } from './scheduler.ts'
+import { CloudShellExecutor } from './cloud-shell.ts'
+import { ShellEnvRegistry } from '@deepseek-ai/dsh-shell-env'
 import { mcpManagementRequests, mcpManagementEndpoints, mcpTicketValue } from '../mcp-management-rpc.ts'
 import { sshManagementRequests, sshManagementEndpoints, sshConnectionValue,
   sshCredentialTicketValue, sshMutationReceiptValue } from '../ssh-management-contracts.ts'
@@ -323,6 +325,11 @@ export const inject = ['powerEvolveRuntime', 'sessionPersistence', 'agents', 'se
 export const Config = schema.object({
   origin: schema.string().required(), platformOrigin: schema.string().required(),
   concurrency: schema.number().step(1).min(1).required(), pollMs: schema.number().min(50).required(),
+  nativeShellEnabled: schema.boolean().default(false),
+  shellPollMs: schema.number().step(1).min(10).max(60_000).default(250),
+  shellTimeoutMs: schema.number().step(1).min(1000).max(300_000).default(120_000),
+  shellMaxTimeoutMs: schema.number().step(1).min(1000).max(300_000).default(120_000),
+  shellMaxOutputBytes: schema.number().step(1).min(1).max(65_536).default(65_536),
   renewMs: schema.number().min(100).required(), operationTimeoutMs: schema.number().min(1000).required(),
   nativeInputPollMs: schema.number().step(1).min(10).max(60_000).default(100),
   nativeInputBatchSize: schema.number().step(1).min(1).max(128).default(16),
@@ -380,6 +387,12 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   ctx.typert.register({ package: '@power-evolve/application', face: 'host', schemas: [], model: { services: [], events: [], objects: [] }, invocations })
   ctx.sessions.registerMessageProjection(imageOffloadProjection)
   new LegacyMigrationHostImages(ctx, ctx.powerEvolveRuntime, resolveNativeImageOptions(config))
+  if (config.nativeShellEnabled) {
+    if (config.shellTimeoutMs > config.shellMaxTimeoutMs) throw new Error('shellTimeoutMs exceeds shellMaxTimeoutMs')
+    new CloudShellExecutor(ctx, ctx.powerEvolveRuntime, { pollMs: config.shellPollMs,
+      timeoutMs: config.shellTimeoutMs, maxTimeoutMs: config.shellMaxTimeoutMs, maxOutputBytes: config.shellMaxOutputBytes })
+    new ShellEnvRegistry(ctx, { dshHome: '/home/agent/.dsh' })
+  }
   await ctx.inject(['attachments'], (imageCtx) => {
     const scheduler = new Scheduler(imageCtx, config)
     scheduler.start()

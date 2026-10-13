@@ -77,6 +77,10 @@ const CLOUD_SDK_PROVIDER_PEERS = Object.freeze({
   '@deepseek-ai/dsh-mcp-client': Object.freeze([
     'createMcpToolDefinition',
   ]),
+  '@deepseek-ai/dsh-shell': Object.freeze(['default']),
+  '@deepseek-ai/dsh-shell-env': Object.freeze(['ShellEnvRegistry']),
+  '@deepseek-ai/dsh-tool-bash': Object.freeze(['apply']),
+  '@deepseek-ai/dsh-timeout': Object.freeze(['deadline', 'timeoutOf']),
   '@deepseek-ai/dsh-session': Object.freeze([
     'KNOWN_SESSION_EVENT_TYPES',
     'Session',
@@ -193,6 +197,7 @@ export const CLOUD_PEER_REQUIRED_HOST_EXPORTS = Object.freeze({
     'accountValue',
   ]),
   '@power-evolve/contracts/execution-resolution': Object.freeze([
+    'resolutionExecutionId',
     'EXECUTION_RESOLUTION_APPROVAL_ROUTES',
     'EXECUTION_RESOLUTION_ROUTES',
     'executionResolutionInspectRequest',

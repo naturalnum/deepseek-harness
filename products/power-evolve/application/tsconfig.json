@@ -137,6 +137,21 @@
     },
     {
       "path": "../../../packages/compaction/compaction-image-offload"
+    },
+    {
+      "path": "../../../packages/shell/shell"
+    },
+    {
+      "path": "../../../packages/shell/shell-env"
+    },
+    {
+      "path": "../../../packages/shell/tool-bash"
+    },
+    {
+      "path": "../../../packages/subprocess/subprocess"
+    },
+    {
+      "path": "../../../packages/util/timeout"
     }
   ]
 }
