@@ -2,6 +2,8 @@
 export const t = {
   product: 'PowerEvolve', trial: '共享宿主', login: '登录', username: '账号', password: '密码',
   platform: '可信平台',
+  loginTitle: '进入你的云端工作空间',
+  loginDescription: '登录 PowerEvolve，继续你的项目、文件与 AI 对话。',
   loginNote: '登录由可信平台处理。', signout: '退出', newChat: '新建对话', untitled: '新对话',
   welcome: '从一句 hi 开始', intro: '对话保存在云端，可以刷新或稍后回来继续。',
   placeholder: '发送消息…', send: '发送', user: '你', assistant: 'PowerEvolve',

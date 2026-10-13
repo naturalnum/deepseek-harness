@@ -1,7 +1,8 @@
 import { t } from './locale.js'
 const element = id => document.getElementById(id)
 element('brand').textContent = t.product
-element('login-title').textContent = t.login
+element('login-title').textContent = t.loginTitle
+element('login-description').textContent = t.loginDescription
 element('username-label').textContent = t.username
 element('password-label').textContent = t.password
 element('submit').textContent = t.login

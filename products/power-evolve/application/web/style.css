@@ -26,23 +26,34 @@
 }
 .login-brand {
   padding: 28px 32px;
-  font-size: 20px;
-  line-height: 28px;
+  font-size: 24px;
+  line-height: 32px;
   font-weight: 500;
 }
 .login-content {
-  width: min(360px, calc(100% - 48px));
+  width: min(560px, calc(100% - 48px));
   margin-inline: auto;
-  padding-block: clamp(64px, 22svh, 200px) 48px;
+  padding-block: clamp(64px, 16svh, 160px) 48px;
 }
 .login-content h1 {
-  margin: 0 0 36px;
-  font-size: 28px;
-  line-height: 36px;
+  margin: 0;
+  font-size: 36px;
+  line-height: 44px;
   font-weight: 500;
   text-align: center;
+  text-wrap: balance;
+}
+.login-description {
+  margin: 16px 0 0;
+  color: var(--login-label);
+  font-size: 16px;
+  line-height: 26px;
+  text-align: center;
+  text-wrap: balance;
 }
 .login-content form {
+  width: min(400px, 100%);
+  margin: 40px auto 0;
   display: flex;
   flex-direction: column;
   gap: 20px;
@@ -93,7 +104,9 @@
 .login #error { margin: 0; min-height: 20px; color: var(--login-error); line-height: 20px; overflow-wrap: anywhere; }
 @media (max-width: 480px) {
   .login-brand { padding: 24px; }
-  .login-content { padding-top: clamp(48px, 16svh, 120px); }
+  .login-content { padding-top: clamp(48px, 12svh, 96px); }
+  .login-content h1 { font-size: 26px; line-height: 34px; }
+  .login-content form { margin-top: 32px; }
 }
 @media (prefers-color-scheme: dark) {
   .login {
