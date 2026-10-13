@@ -30,6 +30,8 @@
 
 使用 `docker build --no-cache --tag <owned-image> <new-context>` 构建该 context。Dockerfile 通过 digest 固定 Node 和 PG 工具，使用签名 Debian snapshot 和冻结 pnpm lockfile。Linux 编译生成原生 flock addon、CLI、云端应用和 Web 资产。应用通过其真实 package 文件清单导出，缺少版本 1–6 的 bootstrap SQL 和 manifest 会使导出失败。运行文件位于 `/opt/power-evolve`，入口通过具名 CLI Profile 启动 `start.mjs`。
 
+其他运行时包使用 npm 的包文件选择规则，包括 `files` glob、嵌套忽略规则，以及没有 `files` 时的默认选择。选择过程离线执行，禁用包生命周期脚本，并使用独立 npm 配置。资源路径及符号链接不得越出源包；声明的图标和 bundle patch 必须是选中的普通文件。现有 `node_modules` 链接原样复制，不跟随目标。输出目录必须为空。该规则保留声明的 preset、语言文件和模板，无需目录白名单；它不会构建缺失的运行时产物。
+
 使用 `host|platform <private-deployment-json>` 参数运行独立 Host、Platform 容器，分别挂载独立可写 `dshHome` 和只读凭据目录。默认 UID/GID 为 1000。Host 仅接收 worker token，Platform 接收自己的数据库及 provider 凭据。共享 PID namespace 时须使用不同服务 UID，防止通过另一个进程的 root 访问文件。备份时将六个存储根及两个已停止 Profile 目录挂载到同一 Linux PID namespace，并使用能够保留实际 UID/GID 的进程。
 
 [Office 运行时指南](office-runtime/README.zh.md) 定义独立 runsc handler、启动网络隔离、RuntimeClass、NetworkPolicy、PVC 和私有解析器配置。在 Platform 启用 Office 转换前，须先落实该指南的节点要求。
