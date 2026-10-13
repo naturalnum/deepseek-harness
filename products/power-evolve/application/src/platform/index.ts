@@ -102,7 +102,7 @@ import { SshAuthenticationCheck } from './ssh-check.ts'
 import { SshExecuteService } from './ssh-execute.ts'
 import { SshRunnerOrchestrator, type SshRunnerConfig } from './ssh-runner.ts'
 import { ExecutionService } from './executions.ts'
-import { cloudShellProposeRequest, cloudShellExecutionRequest } from '../cloud-shell-contracts.ts'
+import { cloudShellProposeRequest, cloudShellExecutionRequest, cloudShellCancelRequest } from '../cloud-shell-contracts.ts'
 import { routeExecutionResolutionRead, routeExecutionResolutionApproval } from './execution-resolution-routes.ts'
 import { LoginAdmission } from './login-admission.ts'
 import { KubernetesClient } from './kubernetes.ts'
@@ -1021,8 +1021,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         }
         case '/runtime/shell/cancel': {
           if (!executions) throw new PlatformError(503, 'execution_unavailable')
-          const value = cloudShellExecutionRequest.parse(input)
-          sendJson(res, await executions.cancelShell(token, value.executionId)); return
+          const value = cloudShellCancelRequest.parse(input)
+          sendJson(res, await executions.cancelShell(token, value.executionId, value.cause)); return
         }
         case '/runtime/executions/propose': {
           if (!executions) throw new PlatformError(503, 'execution_unavailable')

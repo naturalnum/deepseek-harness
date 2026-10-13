@@ -146,11 +146,11 @@ test('an unknown cancelled receipt is persisted once and the delayed original ca
   expect(receipt.state).toBe('queued')
   expect(await n.executions.proposeShell(n.grant.token, input)).toEqual(receipt)
   expect(first((await f.pool.query<{ cancel_requested: boolean }>('SELECT cancel_requested FROM pe_cloud_executions WHERE id=$1', [receipt.executionId])).rows).cancel_requested).toBe(true)
-  await n.executions.cancelShell(n.grant.token, receipt.executionId)
+  await n.executions.cancelShell(n.grant.token, receipt.executionId, 'abort')
   expect((await n.executions.statusShell(n.grant.token, receipt.executionId)).state).toBe('queued')
   const other = await prepare(f)
   await expect(n.executions.statusShell(other.grant.token, receipt.executionId)).rejects.toMatchObject({ status: 404, code: 'execution_not_found' })
-  await expect(n.executions.cancelShell(other.grant.token, receipt.executionId)).rejects.toMatchObject({ status: 404, code: 'execution_not_found' })
+  await expect(n.executions.cancelShell(other.grant.token, receipt.executionId, 'abort')).rejects.toMatchObject({ status: 404, code: 'execution_not_found' })
   await expect(n.executions.statusShell(f.bob.token, receipt.executionId)).rejects.toMatchObject({ status: 404, code: 'execution_not_found' })
 }))
 
@@ -161,7 +161,7 @@ test('credential revocation masks stored output while the original token still r
   expect((await n.executions.statusShell(n.grant.token, receipt.executionId)).result).toEqual(result)
   await f.pool.query('UPDATE pe_users SET credential_version=credential_version+1,enabled=false WHERE id=$1', [f.alice.user.userId])
   expect(await n.executions.statusShell(n.grant.token, receipt.executionId)).toMatchObject({ state: 'succeeded', result: null, errorCode: 'native_shell_output_revoked' })
-  expect((await n.executions.cancelShell(n.grant.token, receipt.executionId)).result).toBeNull()
+  expect((await n.executions.cancelShell(n.grant.token, receipt.executionId, 'abort')).result).toBeNull()
   await expect(n.executions.proposeShell(n.grant.token, command())).rejects.toMatchObject({ status: 401, code: 'account_disabled' })
 }))
 
@@ -174,7 +174,7 @@ test('archive suppresses result reads and keeps the captured cleanup capability'
     await writeWorkspaceLayout(client, f.alice.user.userId, layout)
   })
   expect(await n.executions.statusShell(n.grant.token, receipt.executionId)).toMatchObject({ result: null, errorCode: 'native_shell_output_revoked' })
-  await n.executions.cancelShell(n.grant.token, receipt.executionId)
+  await n.executions.cancelShell(n.grant.token, receipt.executionId, 'abort')
   expect(first((await f.pool.query<{ cancel_requested: boolean }>('SELECT cancel_requested FROM pe_cloud_executions WHERE id=$1', [receipt.executionId])).rows).cancel_requested).toBe(true)
 }))
 
@@ -267,4 +267,60 @@ test.each(['expired', 'operation-ended', 'grant-replaced', 'credential-rotated']
     }
     expect(first((await f.pool.query<CloudExecutionRow>('SELECT * FROM pe_cloud_executions WHERE id=$1', [receipt.executionId])).rows))
       .toMatchObject({ state: 'uncertain', dispatch_request: null, result: null, cancel_requested: true })
+  }))
+
+test('timeout cancellation survives expired-grant reply recovery and later abort retries', () => cloudFixture(async f => {
+  const n = await prepare(f), input = command()
+  const receipt = await n.executions.proposeShell(n.grant.token, { ...input, cancelRequested: true, cancelCause: 'timeout' })
+  expect(receipt).toMatchObject({ state: 'queued', cancelCause: 'timeout', result: null })
+  await f.pool.query("UPDATE pe_sessions SET lease_until=clock_timestamp()-interval '1 millisecond' WHERE id=$1", [n.grant.sessionId])
+  expect(await n.executions.proposeShell(n.grant.token, { ...input, cancelRequested: true, cancelCause: 'abort' })).toEqual(receipt)
+  expect(await n.executions.cancelShell(n.grant.token, receipt.executionId, 'abort')).toEqual(receipt)
+  expect(first((await f.pool.query<CloudExecutionRow>('SELECT * FROM pe_cloud_executions WHERE id=$1', [receipt.executionId])).rows))
+    .toMatchObject({ cancel_requested: true, native_tool_cancel_cause: 'timeout', dispatch_request: null })
+}))
+
+test.each(['timeout', 'abort', 'legacy', 'late-success'] as const)(
+  'Runner cancellation carries only the stored cause for %s delivery', reason => cloudFixture(async f => {
+    const n = await prepare(f), input = command()
+    if (reason === 'legacy') await n.executions.propose(n.grant.token, input.callId, input.command, input.cwd)
+    else await n.executions.proposeShell(n.grant.token, input)
+    const row = first((await f.pool.query<CloudExecutionRow>('SELECT * FROM pe_cloud_executions WHERE operation_id=$1 AND call_id=$2',
+      [n.grant.operationId, input.callId])).rows)
+    const workspace = first((await f.pool.query<{ workspace_id: string }>('SELECT workspace_id FROM pe_sessions WHERE id=$1', [n.grant.sessionId])).rows)
+    const binding = await f.files.bindingForId(f.alice.user.userId, workspace.workspace_id)
+    const writer: SandboxReady = { name: n.sandbox.name(f.alice.user.userId), sessionId: n.grant.sessionId, userId: f.alice.user.userId,
+      binding, generation: '1', podUid: randomUUID(), runnerInstanceId: randomUUID(), token: randomUUID(), restartCount: 0 }
+    const request = capturedRunnerRequest({ ...row, runner_instance_id: writer.runnerInstanceId }, 3000)
+    if (!request) throw new Error('Owned cancellation fixture did not capture its exact request')
+    await f.pool.query("UPDATE pe_cloud_executions SET state='running',sandbox_name=$2,pod_uid=$3,runner_instance_id=$4,dispatch_request=$5 WHERE id=$1",
+      [row.id, writer.name, writer.podUid, writer.runnerInstanceId, JSON.stringify(request)])
+    if (reason === 'legacy') await n.executions.cancel(f.alice.user, row.id)
+    else await n.executions.cancelShell(n.grant.token, row.id, reason === 'abort' ? 'abort' : 'timeout')
+    const observe = vi.spyOn(n.sandbox, 'observeReady').mockResolvedValue(writer)
+    const current = vi.spyOn(n.sandbox, 'assertCurrent').mockResolvedValue(undefined)
+    const fact = { id: row.id, instanceId: writer.runnerInstanceId, digest: cloudRequestDigest(request), exitCode: null,
+      stdout: '', stderr: '', stdoutTruncated: false, stderrTruncated: false, timedOut: false }
+    const runner = vi.spyOn(n.sandbox, 'runner').mockImplementation(async (_name, _token, method, path, value) => {
+      if (method === 'GET') return reason === 'late-success' ? { ...fact, state: 'succeeded', exitCode: 0 } : { ...fact, state: 'running' }
+      if (method !== 'POST' || path !== `/executions/${row.id}/cancel`) throw new Error('Unexpected cancellation Runner request')
+      expect(value).toEqual(reason === 'legacy' ? {} : { cause: reason })
+      return { ...fact, state: reason === 'timeout' ? 'failed' : 'cancelled', timedOut: reason === 'timeout' }
+    })
+    n.executions.start()
+    try {
+      await vi.waitFor(async () => {
+        const final = first((await f.pool.query<CloudExecutionRow>('SELECT * FROM pe_cloud_executions WHERE id=$1', [row.id])).rows)
+        expect(final.state).toBe(reason === 'late-success' ? 'succeeded' : reason === 'timeout' ? 'failed' : 'cancelled')
+      }, { timeout: 5000 })
+      expect(runner.mock.calls.filter(call => call[2] === 'POST')).toHaveLength(reason === 'late-success' ? 0 : 1)
+      const continuations = first((await f.pool.query<{ count: number }>('SELECT count(*)::integer AS count FROM pe_operations WHERE source_execution_id=$1', [row.id])).rows).count
+      expect(continuations).toBe(reason === 'legacy' ? 1 : 0)
+      if (reason !== 'legacy') {
+        const final = await n.executions.statusShell(n.grant.token, row.id)
+        expect(final.cancelCause).toBe(reason === 'abort' ? 'abort' : 'timeout')
+        expect(final.result?.timedOut).toBe(reason === 'timeout')
+        expect(await n.executions.cancelShell(n.grant.token, row.id, 'abort')).toEqual(final)
+      }
+    } finally { await n.executions.close(); observe.mockRestore(); current.mockRestore(); runner.mockRestore() }
   }))

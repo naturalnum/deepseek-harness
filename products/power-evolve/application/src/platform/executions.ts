@@ -145,8 +145,8 @@ export class ExecutionService {
       if (original) {
         const read = await this.shellControl(client, token, original.id)
         this.sameShellRequest(read.row, request)
-        if (request.cancelRequested) await requestCloudCommandStopInTransaction(client, read.row.id)
-        return this.shellReceipt(read.row, read.outputAllowed)
+        const row = request.cancelRequested ? await this.requestShellStop(client, read.row, request.cancelCause ?? 'abort') : read.row
+        return this.shellReceipt(row, read.outputAllowed)
       }
       // New writes always require the current native execution frame, not just a retained token.
       const grant = await this.tasks.executionAuthorized(client, token)
@@ -156,8 +156,8 @@ export class ExecutionService {
       if (prior.rows[0]) {
         this.sameShellRequest(prior.rows[0], request)
         const read = await this.shellControl(client, token, prior.rows[0].id)
-        if (request.cancelRequested) await requestCloudCommandStopInTransaction(client, read.row.id)
-        return this.shellReceipt(read.row, read.outputAllowed)
+        const row = request.cancelRequested ? await this.requestShellStop(client, read.row, request.cancelCause ?? 'abort') : read.row
+        return this.shellReceipt(row, read.outputAllowed)
       }
       if (await isSessionBusinessBlockedInTransaction(client, grant.user_id, grant.id)) {
         throw new PlatformError(409, 'native_session_archived')
@@ -176,10 +176,11 @@ export class ExecutionService {
         dshEnv: nativeCloudEnvironment(grant.id) }
       const inserted = await client.query<ExecutionRow>(`INSERT INTO pe_cloud_executions
         (id,user_id,session_id,operation_id,call_id,command,cwd,request_digest,execution_kind,state,result_delivery,
-          requested_timeout_ms,command_timeout_ms,native_tool_grant_digest,native_tool_credential_version,cancel_requested)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,'legacy_command','queued','native_tool',$9,$10,$11,$12,$13) RETURNING *`,
+          requested_timeout_ms,command_timeout_ms,native_tool_grant_digest,native_tool_credential_version,cancel_requested,native_tool_cancel_cause)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,'legacy_command','queued','native_tool',$9,$10,$11,$12,$13,$14) RETURNING *`,
       [randomUUID(), grant.user_id, grant.id, grant.operation_id, request.callId, request.command, request.cwd,
-        digest(admission), request.timeoutMs, timeoutMs, hashed, authority.credentialVersion, request.cancelRequested ?? false])
+        digest(admission), request.timeoutMs, timeoutMs, hashed, authority.credentialVersion, request.cancelRequested ?? false,
+        request.cancelRequested ? request.cancelCause ?? 'abort' : null])
       await client.query("SELECT pg_notify('pe_executions',$1)", [grant.id])
       return this.shellReceipt(requireActivityRow(inserted.rows))
     })
@@ -200,15 +201,24 @@ export class ExecutionService {
   /** Request exact cleanup without treating its acceptance as a stopped process.
    * @param token Captured original grant; account disable/expiry cannot revoke its cleanup-only capability.
    * @param executionId The original execution, never an arbitrary owner execution.
+   * @param cause Original timeout or caller abort; retries preserve the first stored cause.
    * @returns Current observation; the worker still owns stop proof and terminal publication.
    */
-  cancelShell(token: string, executionId: string): Promise<CloudShellObservation> {
+  cancelShell(token: string, executionId: string, cause: 'timeout' | 'abort'): Promise<CloudShellObservation> {
     return transaction(this.pool, async client => {
       const current = await this.shellControl(client, token, executionId)
-      await requestCloudCommandStopInTransaction(client, current.row.id)
+      const row = await this.requestShellStop(client, current.row, cause)
       await client.query("SELECT pg_notify('pe_executions',$1)", [current.row.session_id])
-      return this.shellReceipt(current.row, current.outputAllowed)
+      return this.shellReceipt(row, current.outputAllowed)
     })
+  }
+
+  private async requestShellStop(client: PoolClient, row: ExecutionRow, cause: 'timeout' | 'abort'): Promise<ExecutionRow> {
+    const updated = await client.query<ExecutionRow>(`UPDATE pe_cloud_executions SET cancel_requested=true,
+      native_tool_cancel_cause=COALESCE(native_tool_cancel_cause,$2),updated_at=clock_timestamp()
+      WHERE id=$1 AND execution_kind='legacy_command' AND result_delivery='native_tool'
+        AND state IN ('queued','starting','running','cancelling','uncertain') RETURNING *`, [row.id, cause])
+    return updated.rows[0] ?? row
   }
 
   private sameShellRequest(row: ExecutionRow, request: z.infer<typeof cloudShellProposeRequest>): void {
@@ -225,7 +235,7 @@ export class ExecutionService {
     return cloudShellObservation.parse({ executionId: row.id, state: row.state, command: row.command, cwd: row.cwd,
       timeoutMs: row.command_timeout_ms,
       result: outputAllowed && terminal && row.result !== null ? cloudShellResult.parse(row.result) : null,
-      errorCode: outputAllowed ? row.error_code : 'native_shell_output_revoked' })
+      errorCode: outputAllowed ? row.error_code : 'native_shell_output_revoked', cancelCause: row.native_tool_cancel_cause ?? null })
   }
 
   private async shellControl(client: PoolClient, token: string, executionId: string): Promise<{
@@ -528,7 +538,16 @@ export class ExecutionService {
     if (cancelled && status.state === 'running') {
       await assertLease()
       await this.sandboxes.assertCurrent(sandbox)
-      status = runnerResult.parse(await this.sandboxes.runner(sandbox.name, sandbox.token, 'POST', `${path}/cancel`, {}))
+      let input: { cause?: 'timeout' | 'abort' } = {}
+      if (row.result_delivery === 'native_tool') {
+        const found = await this.pool.query<Pick<ExecutionRow, 'native_tool_cancel_cause'>>(`SELECT native_tool_cancel_cause
+          FROM pe_cloud_executions WHERE id=$1 AND lease_owner=$2 AND lease_until>clock_timestamp()`, [row.id, this.workerId])
+        if (!found.rows[0]) throw new ExecutionLeaseLost()
+        const cause = found.rows[0].native_tool_cancel_cause
+        if (cause !== 'timeout' && cause !== 'abort') throw new PlatformError(503, 'native_tool_cancel_cause_missing')
+        input = { cause }
+      }
+      status = runnerResult.parse(await this.sandboxes.runner(sandbox.name, sandbox.token, 'POST', `${path}/cancel`, input))
       if (status.id !== row.id || status.instanceId !== sandbox.runnerInstanceId || status.digest !== digest(request)) {
         await this.defer(row, 'uncertain', 'runner_identity_mismatch'); return
       }

@@ -15,6 +15,7 @@ export interface CloudExecutionRow {
   native_tool_credential_version?: number | null
   native_tool_stop_request_id?: string | null
   native_tool_stop_target?: unknown
+  native_tool_cancel_cause?: 'timeout' | 'abort' | null
   id: string
   user_id: string
   session_id: string
