@@ -5,7 +5,8 @@ import type { SubprocessHandle, SubprocessOutcome, SubprocessTerminalHandle } fr
 import { z } from 'zod'
 import { PlatformError } from '../contracts.ts'
 import { nativeExecutionWorld, type NativeExecutionWorld } from '../native-execution/types.ts'
-import { nativeFsRequest, nativeProcessSpec, nativeTerminalSpec } from '../native-execution/wire.ts'
+import { nativeFsRequest, nativeFsTarget, nativeProcessSpec, nativeTerminalSpec } from '../native-execution/wire.ts'
+import { NativeExecutionByteQueue } from './native-execution-byte-queue.ts'
 import type { NativeExecutionBroker } from './native-execution-broker.ts'
 
 class ByteWindow {
@@ -17,20 +18,21 @@ class ByteWindow {
     this.total += data.length
     this.data = Buffer.concat([this.data, data]).subarray(-this.maximum)
   }
-  read(offset: number): { data: string; nextOffset: number; lossy: boolean } {
+  read(offset: number): { data: string; nextOffset: number; lossy: boolean; exhausted: boolean } {
     const start = this.total - this.data.length
-    return { data: this.data.subarray(Math.max(offset - start, 0)).toString('base64'), nextOffset: this.total, lossy: offset < start }
+    return { data: this.data.subarray(Math.max(offset - start, 0)).toString('base64'), nextOffset: this.total, lossy: offset < start, exhausted: this.ended }
   }
 }
 interface CommonEntry { world: NativeExecutionWorld; ctx: Context; outcome: SubprocessOutcome | null; error: string | null; state: 'running' | 'completed' | 'failed' }
-interface Entry extends CommonEntry { kind: 'process'; handle: SubprocessHandle; stdout: ByteWindow; stderr: ByteWindow; control: ByteWindow }
-interface TerminalEntry extends CommonEntry { kind: 'terminal'; handle: SubprocessTerminalHandle; output: ByteWindow }
+interface Entry extends CommonEntry { kind: 'process'; handle: SubprocessHandle; stdout: ByteWindow | NativeExecutionByteQueue; stderr: ByteWindow | NativeExecutionByteQueue; control: NativeExecutionByteQueue | undefined }
+interface StreamEntry extends CommonEntry { kind: 'filesystem'; handle: SubprocessHandle; output: NativeExecutionByteQueue }
+interface TerminalEntry extends CommonEntry { kind: 'terminal'; handle: SubprocessTerminalHandle; output: NativeExecutionByteQueue }
 /** Explicit live-handle and each channel's byte-retention bound; maps never grant execution authority. */
 export interface NativeExecutionRouteConfig { maxLiveHandles: number; maxOutputBytes: number }
 
 /** Byte observations and original-id cleanup. Missing live handles never restart an admitted command. */
 export class NativeExecutionRoutes {
-  private readonly handles = new Map<string, Entry | TerminalEntry>()
+  private readonly handles = new Map<string, Entry | TerminalEntry | StreamEntry>()
   private readonly pending = new Set<Promise<void>>()
   private readonly starts = new Map<string, { world: NativeExecutionWorld; settled: Promise<void>; controller: AbortController }>()
   private pendingStarts = 0
@@ -83,6 +85,27 @@ export class NativeExecutionRoutes {
       } catch (error) { if (error instanceof FsError) return { ok: false, code: error.code, message: error.message }; throw error }
       finally { await ctx.fiber.dispose() }
     }
+    if (path === '/runtime/native-world/fs/stream/start') {
+      const body = z.object({ world: nativeExecutionWorld, id: z.uuid(), target: nativeFsTarget }).strict().parse(input)
+      if (this.starts.has(body.id) || this.handles.has(body.id)) throw new PlatformError(409, 'native_process_duplicate_admission')
+      const submitted = Promise.withResolvers<void>(), controller = new AbortController()
+      this.starts.set(body.id, { world, settled: submitted.promise, controller })
+      const ctx = new Context()
+      try {
+        await this.broker.authority.assert(token, world, 'storage-read')
+        if (this.closing || controller.signal.aborted) throw new PlatformError(503, 'native_execution_routes_closing')
+        const fs = this.broker.binding(ctx, token, world).filesystem
+        const path = fs.processPath(body.target)
+        const handle = this.broker.openFilesystemStream(token, world, { targetKey: path, displayPath: body.target.displayPath }, controller.signal, body.id)
+        if (!handle.stdout) throw new PlatformError(500, 'native_fs_stream_output_unavailable')
+        const entry: StreamEntry = { world, ctx, kind: 'filesystem', handle, output: new NativeExecutionByteQueue(handle.stdout, this.config.maxOutputBytes),
+          state: 'running', outcome: null, error: null }
+        this.handles.set(body.id, entry)
+        void handle.done.then((value) => { entry.outcome = value; entry.state = 'completed' }, () => { entry.error = 'native_fs_stream_outcome_unavailable'; entry.state = 'failed' })
+        return { id: body.id }
+      } catch (error) { await ctx.fiber.dispose(); throw error }
+      finally { submitted.resolve(); this.starts.delete(body.id) }
+    }
     if (path === '/runtime/native-world/process/start' || path === '/runtime/native-world/terminal/start') {
       const terminal = path.includes('/terminal/')
       const body = z.object({ world: nativeExecutionWorld, id: z.uuid(), spec: terminal ? nativeTerminalSpec : nativeProcessSpec }).strict().parse(input)
@@ -90,32 +113,35 @@ export class NativeExecutionRoutes {
       const submitted = Promise.withResolvers<void>(), controller = new AbortController()
       this.starts.set(body.id, { world, settled: submitted.promise, controller })
       try {
-      await this.broker.authority.assert(token, world)
-      if (this.closing) throw new PlatformError(503, 'native_execution_routes_closing')
-      if (this.handles.has(body.id)) throw new PlatformError(409, 'native_process_duplicate_admission')
-      const ctx = new Context()
-      try {
-        const common = { world, ctx, outcome: null, error: null, state: 'running' as const }
-        let entry: Entry | TerminalEntry
-        if (terminal) {
-          const handle = await this.broker.terminal(token, world, { ...nativeTerminalSpec.parse(body.spec), signal: controller.signal }, body.id)
-          entry = { ...common, kind: 'terminal', handle, output: new ByteWindow(this.config.maxOutputBytes) }
-          handle.output.on('data', (data: Buffer) => { if (entry.kind === 'terminal') entry.output.push(Buffer.from(data)) })
-        } else {
-          const spec = nativeProcessSpec.parse(body.spec)
-          const handle = this.broker.spawn(token, world, { ...spec, stdio: { stdin: spec.stdio.stdin, stdout: 'pipe', stderr: 'pipe', ...(spec.stdio.control === undefined ? {} : { control: 'pipe' }) } }, 'process', false, body.id)
-          entry = { ...common, kind: 'process', handle, stdout: new ByteWindow(this.config.maxOutputBytes), stderr: new ByteWindow(this.config.maxOutputBytes), control: new ByteWindow(this.config.maxOutputBytes) }
-          const current = entry
-          handle.stdout?.on('data', (data: Buffer) => { current.stdout.push(Buffer.from(data)) })
-          handle.stderr?.on('data', (data: Buffer) => { current.stderr.push(Buffer.from(data)) })
-          handle.control?.on('data', (data: Buffer) => { current.control.push(Buffer.from(data)) })
-          handle.control?.on('end', () => { current.control.ended = true })
-        }
-        this.handles.set(body.id, entry)
-        void entry.handle.done.then(value => { entry.outcome = value; entry.state = 'completed' }, () => { entry.error = 'native_process_outcome_unavailable'; entry.state = 'failed' })
-        if (this.closing) { await this.stop(entry); await ctx.fiber.dispose(); this.handles.delete(body.id); throw new PlatformError(503, 'native_execution_routes_closing') }
-        return { id: body.id, ...(entry.kind === 'terminal' ? { pid: entry.handle.pid } : {}) }
-      } catch (error) { await ctx.fiber.dispose(); throw error }
+        await this.broker.authority.assert(token, world)
+        if (this.closing) throw new PlatformError(503, 'native_execution_routes_closing')
+        if (this.handles.has(body.id)) throw new PlatformError(409, 'native_process_duplicate_admission')
+        const ctx = new Context()
+        try {
+          const common = { world, ctx, outcome: null, error: null, state: 'running' as const }
+          let entry: Entry | TerminalEntry | StreamEntry
+          if (terminal) {
+            const handle = await this.broker.terminal(token, world, { ...nativeTerminalSpec.parse(body.spec), signal: controller.signal }, body.id)
+            entry = { ...common, kind: 'terminal', handle, output: new NativeExecutionByteQueue(handle.output, this.config.maxOutputBytes) }
+          } else {
+            const spec = nativeProcessSpec.parse(body.spec)
+            const handle = this.broker.spawn(token, world, { ...spec, stdio: { stdin: spec.stdio.stdin, stdout: 'pipe', stderr: 'pipe', ...(spec.stdio.control === undefined ? {} : { control: 'pipe' }) } }, 'process', false, body.id)
+            const channel = (stream: NonNullable<SubprocessHandle['stdout']>, mode: typeof spec.stdio.stdout) => {
+              if (mode === 'pipe') return new NativeExecutionByteQueue(stream, this.config.maxOutputBytes)
+              const tail = new ByteWindow(this.config.maxOutputBytes)
+              stream.on('data', (data: Buffer) => { tail.push(Buffer.from(data)) })
+              stream.on('end', () => { tail.ended = true })
+              return tail
+            }
+            if (!handle.stdout || !handle.stderr) throw new PlatformError(500, 'native_process_output_unavailable')
+            entry = { ...common, kind: 'process', handle, stdout: channel(handle.stdout, spec.stdio.stdout), stderr: channel(handle.stderr, spec.stdio.stderr),
+              control: handle.control ? new NativeExecutionByteQueue(handle.control, this.config.maxOutputBytes) : undefined }
+          }
+          this.handles.set(body.id, entry)
+          void entry.handle.done.then((value) => { entry.outcome = value; entry.state = 'completed' }, () => { entry.error = 'native_process_outcome_unavailable'; entry.state = 'failed' })
+          if (this.closing) { await this.stop(entry); await ctx.fiber.dispose(); this.handles.delete(body.id); throw new PlatformError(503, 'native_execution_routes_closing') }
+          return { id: body.id, ...(entry.kind === 'terminal' ? { pid: entry.handle.pid } : {}) }
+        } catch (error) { await ctx.fiber.dispose(); throw error }
       } finally { submitted.resolve(); this.starts.delete(body.id) }
     }
     const body = z.object({ world: nativeExecutionWorld, id: z.uuid(),
@@ -139,8 +165,12 @@ export class NativeExecutionRoutes {
       if (path.endsWith('/release')) { await entry.ctx.fiber.dispose(); this.handles.delete(body.id) }
       return { stopped: true }
     }
-    try { await this.broker.authority.assert(token, world) } catch (error) { await this.stop(entry); throw error }
+    try { await this.broker.authority.assert(token, world, entry.kind === 'filesystem' ? 'storage-read' : 'execution') } catch (error) { await this.stop(entry); throw error }
     if (this.closing) throw new PlatformError(503, 'native_execution_routes_closing')
+    if (entry.kind === 'filesystem') {
+      if (path !== '/runtime/native-world/fs/stream/poll') throw new PlatformError(404, 'not_found')
+      return { state: entry.state, outcome: entry.outcome, error: entry.error, output: entry.output.read(body.outputOffset ?? 0) }
+    }
     if (entry.kind === 'terminal') {
       if (path.endsWith('/write')) { if (body.data === undefined) throw new PlatformError(400, 'native_terminal_input_missing'); await entry.handle.write(Buffer.from(body.data, 'base64').toString('utf8')); return { written: true } }
       if (path.endsWith('/resize')) { if (!body.cols || !body.rows) throw new PlatformError(400, 'native_terminal_dimensions_missing'); await entry.handle.resize(body.cols, body.rows); return { resized: true } }
@@ -152,24 +182,24 @@ export class NativeExecutionRoutes {
       if (path.endsWith('/stdin') || path.endsWith('/control')) {
         const stream = path.endsWith('/control') ? entry.handle.control : entry.handle.stdin
         if (!stream || body.data === undefined) throw new PlatformError(400, 'native_process_channel_unavailable')
-        await new Promise<void>((resolve, reject) => stream.write(Buffer.from(body.data!, 'base64'), error => { if (error) reject(error); else resolve() }))
+        await new Promise<void>((resolve, reject) => stream.write(Buffer.from(body.data!, 'base64'), (error) => { if (error) reject(error); else resolve() }))
         return { written: true }
       }
       if (path.endsWith('/stdinEnd') || path.endsWith('/controlEnd')) {
         const stream = path.endsWith('/controlEnd') ? entry.handle.control : entry.handle.stdin
         if (!stream) throw new PlatformError(400, 'native_process_channel_unavailable')
-        await new Promise<void>(resolve => { stream.end(resolve) }); return { ended: true }
+        await new Promise<void>((resolve) => { stream.end(resolve) }); return { ended: true }
       }
       if (path.endsWith('/poll')) return { state: entry.state, outcome: entry.outcome, error: entry.error,
         stdout: entry.stdout.read(body.stdoutOffset ?? 0), stderr: entry.stderr.read(body.stderrOffset ?? 0),
-        control: { ...entry.control.read(body.controlOffset ?? 0), ended: entry.control.ended } }
+        control: (() => { const bytes = entry.control?.read(body.controlOffset ?? 0) ?? { data: '', nextOffset: 0, lossy: false, exhausted: true }; return { ...bytes, ended: bytes.exhausted } })() }
     }
     throw new PlatformError(404, 'not_found')
   }
 
-  private async stop(entry: Entry | TerminalEntry): Promise<void> {
+  private async stop(entry: Entry | TerminalEntry | StreamEntry): Promise<void> {
     await entry.handle.terminate()
-    if (entry.kind === 'process') await entry.handle.waitForExit()
+    if (entry.kind !== 'terminal') await entry.handle.waitForExit()
     // Provider failure must remain visible, while successful stop/release authenticates only
     // range cleanup. The handle's own done consumer retains its original operation error.
     await entry.handle.done.catch(() => undefined)
@@ -184,7 +214,7 @@ export class NativeExecutionRoutes {
     for (const submitted of this.starts.values()) submitted.controller.abort()
     return this.closeWork ??= (async () => {
       await Promise.all([...this.pending])
-      const results = await Promise.allSettled([...this.handles.values()].map(async entry => {
+      const results = await Promise.allSettled([...this.handles.values()].map(async (entry) => {
         try { await this.stop(entry) } finally { await entry.ctx.fiber.dispose() }
       }))
       this.handles.clear()

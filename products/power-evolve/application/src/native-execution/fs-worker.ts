@@ -77,3 +77,19 @@ export async function executeNativeFsRequest(request: unknown): Promise<unknown>
 }
 
 import { FsVersion as fsVersion } from '@deepseek-ai/dsh-fs'
+
+/** Stream text through the unchanged native provider while retaining its Context until iteration settles.
+ * @param request Original native target within the mounted user world.
+ * @returns Native text chunks; Context disposal joins the opened reader.
+ */
+export async function* streamNativeFsRequest(request: unknown): AsyncIterable<string> {
+  const parsed = z.object({ op: z.literal('streamText'), target: targetSchema }).strict().parse(request)
+  const ctx = new Context()
+  try {
+    await ctx.plugin(LocalFileSystem, { cwd: '/workspace', diffBasisMaxBytes: 10 * 1024 * 1024 })
+    const path = allowed(parsed.target.targetKey), fresh = await ctx.fs.resolve(path)
+    allowed(ctx.fs.processPath(fresh))
+    if (fresh.targetKey !== path) throw new FsError('File target changed.', 'FS_STALE_VERSION')
+    for await (const chunk of await ctx.fs.streamText(fresh)) yield chunk
+  } finally { await ctx.fiber.dispose() }
+}

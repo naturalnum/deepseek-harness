@@ -47,10 +47,17 @@ export class NativeExecutionAuthorityStore {
       if (agentId !== session.id) throw new PlatformError(403, 'native_world_agent_mismatch')
       const binding = await this.storage.resolve(session.user_id, session.workspace_id, client)
       const policy = await this.policy(client, session)
-      const world = nativeExecutionWorld.parse({ worldId: randomUUID(), userId: session.user_id, sessionId: session.id,
+      const previous = await client.query<{ id: string }>(`SELECT id FROM pe_native_execution_worlds
+        WHERE user_id=$1 AND session_id=$2 AND agent_id=$3 AND operation_id=$4 AND operation_epoch=$5
+        AND grant_digest=$6 AND workspace_id=$7 AND storage_generation=$8 AND permission_generation=$9
+        AND mode=$10 AND binding_snapshot=$11::jsonb AND revoked_at IS NULL ORDER BY created_at DESC LIMIT 1`,
+      [session.user_id, session.id, agentId, session.operation_id, session.lease_epoch, digest(token), session.workspace_id,
+        binding.generation, policy.permissionGeneration, policy.mode, JSON.stringify(binding)])
+      const existingId = previous.rows[0]?.id
+      const world = nativeExecutionWorld.parse({ worldId: existingId ?? randomUUID(), userId: session.user_id, sessionId: session.id,
         agentId, workspaceId: session.workspace_id, operationId: session.operation_id, operationEpoch: session.lease_epoch,
         storageGeneration: binding.generation, ...policy, workspaceRoot: '/workspace', homeRoot: '/home/agent' })
-      await client.query(`INSERT INTO pe_native_execution_worlds(id,user_id,session_id,agent_id,operation_id,operation_epoch,
+      if (existingId === undefined) await client.query(`INSERT INTO pe_native_execution_worlds(id,user_id,session_id,agent_id,operation_id,operation_epoch,
         grant_digest,workspace_id,storage_generation,permission_generation,mode,binding_snapshot)
         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`, [world.worldId, world.userId, world.sessionId, world.agentId,
         world.operationId, world.operationEpoch, digest(token), world.workspaceId, world.storageGeneration,
@@ -88,7 +95,7 @@ export class NativeExecutionAuthorityStore {
           JOIN pe_native_execution_worlds w ON w.id=p.world_id WHERE w.user_id=$1 AND w.workspace_id=$2
           AND (p.state='uncertain' OR p.state<>'stopped' AND (w.storage_generation<>$3 OR
           w.session_id=$4 AND (w.permission_generation<>$5 OR w.operation_epoch<>$6))) LIMIT 1`,
-          [world.userId, world.workspaceId, world.storageGeneration, world.sessionId, world.permissionGeneration, world.operationEpoch])
+        [world.userId, world.workspaceId, world.storageGeneration, world.sessionId, world.permissionGeneration, world.operationEpoch])
         if (uncertain.rowCount) throw new PlatformError(409, 'native_world_reconciliation_required')
       }
       return binding
@@ -111,17 +118,17 @@ export class NativeExecutionAuthorityStore {
     if (maximum === undefined || maximum < 3 || this.mutations >= maximum - 2) throw new PlatformError(429, 'native_fs_capacity')
     this.mutations++
     try {
-    const key = JSON.stringify([...root, path]), client = await this.pool.connect()
-    let locked = false, releaseError: unknown
-    try {
-      await client.query('SELECT pg_advisory_lock(hashtextextended($1,0))', [key])
-      locked = true
-      return await apply()
-    } finally {
-      try { if (locked) await client.query('SELECT pg_advisory_unlock(hashtextextended($1,0))', [key]) }
-      catch (error) { releaseError = error; throw error }
-      finally { client.release(releaseError !== undefined) }
-    }
+      const key = JSON.stringify([...root, path]), client = await this.pool.connect()
+      let locked = false, releaseError: unknown
+      try {
+        await client.query('SELECT pg_advisory_lock(hashtextextended($1,0))', [key])
+        locked = true
+        return await apply()
+      } finally {
+        try { if (locked) await client.query('SELECT pg_advisory_unlock(hashtextextended($1,0))', [key]) }
+        catch (error) { releaseError = error; throw error }
+        finally { client.release(releaseError !== undefined) }
+      }
     } finally { this.mutations-- }
   }
 

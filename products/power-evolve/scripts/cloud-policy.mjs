@@ -17,7 +17,8 @@ export const runtimePatterns = [
 ]
 // Build-stage tools retain static checks and current cold-image qualification.
 const buildTooling = [product + '/deploy/cloud-image-build.mjs', product + '/deploy/cloud-image-pack.mjs',
-  product + '/deploy/copy-runtime-package.mjs']
+  product + '/deploy/copy-runtime-package.mjs', product + '/application/native-execution-artifact-config.ts',
+  product + '/application/tsdown.config.ts', product + '/application/tsdown.native-execution-test.config.ts']
 const excluded = ['**/node_modules/**', '**/lib/**', '**/dist/**', '**/assets/**']
 const normalize = value => value.replaceAll('\\', '/')
 

@@ -18,8 +18,9 @@ import { createNativeExecutionHttpBinding } from '../lib/native-execution/http-c
  */
 export async function verifyNativeExecutionConsumers(inputs) {
   const ctx = new Context()
+  let binding
   try {
-    const binding = createNativeExecutionHttpBinding(ctx, inputs.world, inputs.token, inputs.transport, { pollMs: 50, maxOutputBytes: 1048576 })
+    binding = createNativeExecutionHttpBinding(ctx, inputs.world, inputs.token, inputs.transport, { pollMs: 50, maxOutputBytes: 1048576 })
     installNativeExecutionProviders(ctx, { defaultMode: inputs.world.mode, resolve: () => binding })
     await ctx.plugin(SessionProjectionRegistry)
     await ctx.plugin(SandboxPolicyService, { mode: inputs.world.mode, workspaceRoot: '/workspace' })
@@ -55,5 +56,5 @@ export async function verifyNativeExecutionConsumers(inputs) {
       assert.deepEqual(ctx.terminals.list(owner), [])
       return { shell, ptc, terminal: { waitReason: reply.waitReason, terminated: true } }
     } finally { await ownerCtx.fiber.dispose() }
-  } finally { await ctx.fiber.dispose() }
+  } finally { try { await binding?.close() } finally { await ctx.fiber.dispose() } }
 }

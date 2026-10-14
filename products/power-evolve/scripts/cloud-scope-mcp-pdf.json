@@ -73,7 +73,7 @@
   "counts": {
     "runtime": {
       "enabled": 14,
-      "shared": 332,
+      "shared": 334,
       "deferred": 4
     },
     "sourceTests": {
@@ -93,7 +93,7 @@
     },
     "tooling": {
       "enabled": 0,
-      "shared": 30,
+      "shared": 33,
       "deferred": 0
     },
     "docMetadata": {
@@ -5435,6 +5435,41 @@
       "status": "shared",
       "owner": "S3",
       "reason": "native-runtime-s3"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/native-execution/fs-stream.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-execution-byte-queue.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "tooling",
+      "path": "products/power-evolve/application/native-execution-artifact-config.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "tooling",
+      "path": "products/power-evolve/application/tsdown.config.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
+      "kind": "tooling",
+      "path": "products/power-evolve/application/tsdown.native-execution-test.config.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
     }
   ],
   "lintSupport": [

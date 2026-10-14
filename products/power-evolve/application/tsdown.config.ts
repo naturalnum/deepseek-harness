@@ -7,6 +7,7 @@ import { compiledNativePackages, packageMetadata } from './native-execution-arti
 
 const applicationRoot = dirname(fileURLToPath(import.meta.url))
 
+/** Production application modules and the credential-free filesystem utility. */
 export default defineConfig([{
   entry: ['lib/types/**/*.js'], outDir: 'lib', unbundle: true, format: 'esm', fixedExtension: false, platform: 'node',
   target: 'es2024', dts: false, clean: false,

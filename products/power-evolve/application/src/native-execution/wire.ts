@@ -40,8 +40,8 @@ export const nativeWorldRequest = z.object({ world: nativeExecutionWorld }).stri
 /** Offset-based process observation, preserving independently retained output streams. */
 export const nativeProcessObservation = z.object({ state: z.enum(['running', 'completed', 'failed']),
   outcome: z.object({ exitCode: z.number().int().nullable(), signal: z.string().nullable() }).strict().nullable(),
-  error: z.string().nullable(), control: z.object({ data: z.base64(), nextOffset: z.number().int().nonnegative(), lossy: z.boolean(), ended: z.boolean() }).strict(), stdout: z.object({ data: z.base64(), nextOffset: z.number().int().nonnegative(), lossy: z.boolean() }).strict(),
-  stderr: z.object({ data: z.base64(), nextOffset: z.number().int().nonnegative(), lossy: z.boolean() }).strict() }).strict()
+  error: z.string().nullable(), control: z.object({ data: z.base64(), nextOffset: z.number().int().nonnegative(), lossy: z.boolean(), exhausted: z.boolean(), ended: z.boolean() }).strict(), stdout: z.object({ data: z.base64(), nextOffset: z.number().int().nonnegative(), lossy: z.boolean(), exhausted: z.boolean() }).strict(),
+  stderr: z.object({ data: z.base64(), nextOffset: z.number().int().nonnegative(), lossy: z.boolean(), exhausted: z.boolean() }).strict() }).strict()
 
 /** Real guest terminal allocation request. */
 export const nativeTerminalSpec = nativeProcessSpec.omit({ stdio: true }).extend({
@@ -51,5 +51,5 @@ export const nativeTerminalSpec = nativeProcessSpec.omit({ stdio: true }).extend
 /** Byte-offset terminal observation and independent outcome. */
 export const nativeTerminalObservation = z.object({ state: z.enum(['running', 'completed', 'failed']),
   outcome: z.object({ exitCode: z.number().int().nullable(), signal: z.string().nullable() }).strict().nullable(), error: z.string().nullable(),
-  output: z.object({ data: z.base64(), nextOffset: z.number().int().nonnegative(), lossy: z.boolean() }).strict(),
+  output: z.object({ data: z.base64(), nextOffset: z.number().int().nonnegative(), lossy: z.boolean(), exhausted: z.boolean() }).strict(),
 }).strict()

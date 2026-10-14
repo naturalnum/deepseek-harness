@@ -23,6 +23,7 @@ const fsReply = z.discriminatedUnion('ok', [z.object({ ok: z.literal(true), valu
   z.object({ ok: z.literal(false), code: z.enum(['FS_NOT_FOUND', 'FS_NOT_DIRECTORY', 'FS_NOT_TEXT', 'FS_NOT_REGULAR_FILE',
     'FS_TOO_LARGE', 'FS_PERMISSION_DENIED', 'FS_SANDBOX_DENIED', 'FS_IO_ERROR', 'FS_STALE_VERSION', 'FS_NOT_OBSERVED',
     'FS_AMBIGUOUS_EDIT', 'FS_EDIT_NOT_FOUND', 'FS_ABORTED']), message: z.string() }).strict()])
+import { decodeNativeFsStream, ownNativeFsStream } from '../native-execution/fs-stream.ts'
 import { NativeExecutionRelay } from './native-execution-relay.ts'
 
 
@@ -75,21 +76,36 @@ export class NativeExecutionBroker {
     const operation = z.object({ op: z.string() }).passthrough().parse(request).op
     const storageRead = operation !== 'writeText' && operation !== 'editText'
     const apply = async () => {
-    const handle = this.spawn(token, world, { argv: ['node', this.config.fsWorkerPath], cwd: '/workspace',
-      stdio: { stdin: { data }, stdout: { maxBytes: this.config.maxReplyBytes }, stderr: { maxBytes: 4096 } },
-      graceMs: this.config.transportGraceMs, signal }, 'filesystem', storageRead)
-    const result = await handle.done
-    if (result.exitCode !== 0) throw new FsError('Filesystem worker did not complete.', signal?.aborted ? 'FS_ABORTED' : 'FS_IO_ERROR',
-      { cause: new Error(handle.collected.stderr?.readFrom(0).text ?? 'No worker diagnostic was retained.') })
-    const output = handle.collected.stdout?.readFrom(0)
-    if (!output || output.lossy) throw new FsError('Filesystem reply exceeds its byte bound.', 'FS_TOO_LARGE')
-    const envelope = fsReply.parse(JSON.parse(output.text))
-    if (!envelope.ok) throw new FsError(envelope.message, envelope.code)
-    return schema.parse(envelope.value)
+      const handle = this.spawn(token, world, { argv: ['node', this.config.fsWorkerPath], cwd: '/workspace',
+        stdio: { stdin: { data }, stdout: { maxBytes: this.config.maxReplyBytes }, stderr: { maxBytes: 4096 } },
+        graceMs: this.config.transportGraceMs, signal }, 'filesystem', storageRead)
+      const result = await handle.done
+      if (result.exitCode !== 0) throw new FsError('Filesystem worker did not complete.', signal?.aborted ? 'FS_ABORTED' : 'FS_IO_ERROR',
+        { cause: new Error(handle.collected.stderr?.readFrom(0).text ?? 'No worker diagnostic was retained.') })
+      const output = handle.collected.stdout?.readFrom(0)
+      if (!output || output.lossy) throw new FsError('Filesystem reply exceeds its byte bound.', 'FS_TOO_LARGE')
+      const envelope = fsReply.parse(JSON.parse(output.text))
+      if (!envelope.ok) throw new FsError(envelope.message, envelope.code)
+      return schema.parse(envelope.value)
     }
     if (storageRead) return await apply()
     const target = z.object({ target: z.object({ targetKey: z.string() }).passthrough() }).passthrough().parse(request).target
     return await this.authority.mutate(token, world, target.targetKey, apply)
+  }
+
+  /** Open the fixed native text reader in its own credential-free original range.
+   * @param token Original Agent bearer.
+   * @param world Captured storage world.
+   * @param target Canonical target without the external world-key prefix.
+   * @param signal Caller cancellation, joined before reader release.
+   * @param admissionId Original optional HTTP nonce for cleanup after reply loss.
+   * @returns Native raw stream handle; callers must close and join it on iterator return.
+   */
+  openFilesystemStream(token: string, world: NativeExecutionWorld, target: { targetKey: string; displayPath: string }, signal?: AbortSignal, admissionId?: string): SubprocessHandle {
+    const data = JSON.stringify({ op: 'streamText', target })
+    return this.spawn(token, world, { argv: ['node', this.config.fsWorkerPath], cwd: '/workspace', signal,
+      stdio: { stdin: { data }, stdout: 'pipe', stderr: { maxBytes: this.config.maxReplyBytes } },
+      graceMs: this.config.transportGraceMs }, 'filesystem', true, admissionId)
   }
 
   /** Start one exact Pod-managed process and return native streams immediately.
@@ -122,7 +138,7 @@ export class NativeExecutionBroker {
           await this.settleWithin(relay.terminate(), spec.graceMs)
           await this.settleWithin(relay.done, spec.graceMs)
         }
-        try { await this.pods.stop(range!, stopCause!) }
+        try { await this.pods.stop(range, stopCause) }
         finally {
           relay?.interrupt(); local?.terminate()
           if (local) await local.waitForExit()
@@ -326,7 +342,7 @@ export class NativeExecutionBroker {
 
   private async settleWithin(work: Promise<unknown>, ms: number): Promise<void> {
     let timer: ReturnType<typeof setTimeout> | undefined
-    try { await Promise.race([work.catch(() => undefined), new Promise<void>(resolve => { timer = setTimeout(resolve, ms) })]) }
+    try { await Promise.race([work.catch(() => undefined), new Promise<void>((resolve) => { timer = setTimeout(resolve, ms) })]) }
     finally { clearTimeout(timer) }
   }
 
@@ -336,7 +352,7 @@ export class NativeExecutionBroker {
     const terminal = 'terminalType' in spec
     const request = JSON.stringify({ argv, cwd: spec.cwd, env, graceMs: spec.graceMs, terminal,
       maxFrameBytes: this.config.maxRequestBytes, ...(terminal ? { rows: spec.rows, cols: spec.cols, terminalType: spec.terminalType, shellActivity: spec.shellActivity === true }
-        : { stdin: spec.stdio.stdin, control: spec.stdio.control === 'pipe' }) })
+        : { stdin: typeof spec.stdio.stdin === 'object' ? 'pipe' : spec.stdio.stdin, control: spec.stdio.control === 'pipe' }) })
     if (Buffer.byteLength(request) > this.config.maxRequestBytes) throw new Error('native_cloud_invalid_process_request')
     return [this.config.kubectlExecutable, '--kubeconfig', this.config.kubeconfigPath, '--namespace', this.pods.config.namespace,
       'exec', '-i', range.name, '-c', 'payload', '--', '/usr/bin/python3', '-I', '-B', this.config.processWorkerPath, request]
@@ -346,6 +362,10 @@ export class NativeExecutionBroker {
   closeAdmission(): void {
     this.disposed = true
     for (const cancel of this.pendingCancels) cancel()
+    for (const handle of this.live) {
+      const stopped = Promise.resolve(handle.terminate())
+      void stopped.catch((error: unknown) => { this.cleanupFailures.push(error) })
+    }
   }
 
   /** Join every live exact managed range before releasing trusted transport ownership. */
@@ -383,7 +403,20 @@ export class NativeExecutionBroker {
 interface BoundConfig { broker: NativeExecutionBroker; token: string; world: NativeExecutionWorld }
 
 class BoundFileSystem extends FileSystem {
-  constructor(ctx: Context, private readonly binding: BoundConfig) { super(ctx) }
+  private readonly readers = new Set<SubprocessHandle>()
+  private readonly calls = new Set<Promise<unknown>>()
+  private disposed = false
+  constructor(ctx: Context, private readonly binding: BoundConfig) {
+    super(ctx)
+    ctx.effect(() => async () => {
+      this.disposed = true
+      const stops = [...this.readers].map(async (handle) => { handle.terminate(); await handle.waitForExit() })
+      const joined = await Promise.allSettled([...stops, ...this.calls])
+      const failed = joined.filter(result => result.status === 'rejected' && !(result.reason instanceof FsError))
+        .map(result => (result as PromiseRejectedResult).reason as unknown)
+      if (failed.length) throw new AggregateError(failed, 'Native filesystem disposal failed')
+    }, 'native filesystem lifetime')
+  }
   override get sandboxMode() { return this.binding.world.mode }
   private key(path: string) { return FsTargetKey(this.binding.world.worldId + ':' + path) }
   private target(target: FsTarget) {
@@ -392,7 +425,9 @@ class BoundFileSystem extends FileSystem {
     return { targetKey: target.targetKey.slice(prefix.length), displayPath: target.displayPath }
   }
   private call<T>(request: unknown, schema: z.ZodType<T>, signal?: AbortSignal) {
-    return this.binding.broker.filesystem(this.binding.token, this.binding.world, request, schema, signal)
+    if (this.disposed) return Promise.reject(new FsError('Native filesystem is closed.', 'FS_ABORTED'))
+    const work = this.binding.broker.filesystem(this.binding.token, this.binding.world, request, schema, signal)
+    this.calls.add(work); void work.then(() => { this.calls.delete(work) }, () => { this.calls.delete(work) }); return work
   }
   private mutation(policy?: SandboxExecutionPolicy) {
     const world = this.binding.world
@@ -420,9 +455,24 @@ class BoundFileSystem extends FileSystem {
       ...(result.size === undefined ? {} : { size: result.size }) }
   }
   override readText(target: FsTarget, signal?: AbortSignal) { return this.call({ op: 'readText', target: this.target(target) }, z.string(), signal) }
-  override async streamText(target: FsTarget, signal?: AbortSignal) {
-    const text = await this.readText(target, signal)
-    return (async function* () { signal?.throwIfAborted(); yield text })()
+  override streamText(target: FsTarget, signal?: AbortSignal): Promise<AsyncIterable<string>> {
+    if (this.disposed) return Promise.reject(new FsError('Native filesystem is closed.', 'FS_ABORTED'))
+    const owner = this, handle = this.binding.broker.openFilesystemStream(this.binding.token, this.binding.world, this.target(target), signal)
+    this.readers.add(handle)
+    let closeWork: Promise<void> | undefined
+    const close = () => closeWork ??= (async () => {
+      try { handle.terminate(); await handle.waitForExit(); await handle.done.catch(() => undefined) }
+      finally { owner.readers.delete(handle) }
+    })()
+    const source = (async function* () {
+      try {
+        if (!handle.stdout) throw new FsError('Native text reader has no output.', 'FS_IO_ERROR')
+        for await (const chunk of decodeNativeFsStream(handle.stdout, owner.binding.broker.config.maxReplyBytes, signal)) yield chunk
+        const outcome = await handle.done
+        if (outcome.exitCode !== 0) throw new FsError('Native text reader failed.', 'FS_IO_ERROR')
+      } finally { await close() }
+    })()
+    return Promise.resolve(ownNativeFsStream(source, close))
   }
   override async readBytes(target: FsTarget, signal: AbortSignal | undefined, maxBytes: number) {
     return Buffer.from(await this.call({ op: 'readBytes', target: this.target(target), maxBytes }, z.base64(), signal), 'base64')
@@ -460,7 +510,7 @@ class BoundSubprocess extends SubprocessRuntime {
       this.disposed = true
       this.allocationAbort.abort()
       await Promise.all([...this.pending])
-      await Promise.all([...this.live].map(async handle => { await handle.terminate(); if ('waitForExit' in handle) await handle.waitForExit(); await handle.done.catch(() => undefined) }))
+      await Promise.all([...this.live].map(async (handle) => { await handle.terminate(); if ('waitForExit' in handle) await handle.waitForExit(); await handle.done.catch(() => undefined) }))
     }, 'native world subprocess teardown')
   }
   override async resolveExecutable(command: string, env?: Readonly<Record<string, string>>, signal?: AbortSignal) {

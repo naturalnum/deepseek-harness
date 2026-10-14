@@ -1,7 +1,7 @@
 /** Artifact-plane physical admission through an explicitly owned Linux controller and namespace. */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { readFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
@@ -20,6 +20,9 @@ test('Linux artifacts provide native Fs and generation-fenced physical execution
     owner.controllerId + ':/opt/power-evolve/products/power-evolve/application/tests/native-execution-physical-case.mjs'])
   const result = await exec('docker', ['exec', '-e', 'PE_NATIVE_EXECUTION_PHYSICAL_INPUT=/input/physical-input.private.json',
     owner.controllerId, 'node', '--test', '/opt/power-evolve/products/power-evolve/application/tests/native-execution-physical-case.mjs'],
-  { timeout: 330000, maxBuffer: 4 * 1024 * 1024 })
+  { timeout: 330000, maxBuffer: 4 * 1024 * 1024 }).catch(async error => {
+    await writeFile(path + '.last-physical-failure.log', String(error.stdout ?? '') + String(error.stderr ?? ''), { mode: 0o600 })
+    throw error
+  })
   assert.match(result.stdout, /# pass 1\n/u); assert.match(result.stdout, /# fail 0\n/u)
 })

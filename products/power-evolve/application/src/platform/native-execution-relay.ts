@@ -39,14 +39,28 @@ export class NativeExecutionRelay {
     this.stdout = spec.stdio.stdout === 'pipe' ? new PassThrough() : undefined
     this.stderr = spec.stdio.stderr === 'pipe' ? new PassThrough() : undefined
     const write = (op: string) => (chunk: Buffer, _encoding: BufferEncoding, callback: (error?: Error | null) => void) => {
-      this.send({ op, data: Buffer.from(chunk).toString('base64') }).then(() => { callback() }, (error: unknown) => { callback(error instanceof Error ? error : new Error('Native relay write failed', { cause: error })) })
+      const work = (async () => {
+        const bytes = Buffer.from(chunk), quantum = Math.max(1, Math.floor(maxFrameBytes / 4))
+        for (let offset = 0; offset < bytes.length; offset += quantum) await this.send({ op, data: bytes.subarray(offset, offset + quantum).toString('base64') })
+      })()
+      work.then(() => { callback() }, (error: unknown) => { callback(error instanceof Error ? error : new Error('Native relay write failed', { cause: error })) })
     }
-    this.stdin = spec.stdio.stdin === 'pipe' ? new Writable({ write: write('stdin'), final: callback => {
+    this.stdin = spec.stdio.stdin === 'pipe' ? new Writable({ write: write('stdin'), final: (callback) => {
       this.send({ op: 'stdinEnd' }).then(() => { callback() }, callback)
     } }) : undefined
-    this.control = spec.stdio.control === 'pipe' ? new Duplex({ read() {}, write: write('control'), final: callback => {
+    this.control = spec.stdio.control === 'pipe' ? new Duplex({ read() {}, write: write('control'), final: (callback) => {
       this.send({ op: 'controlEnd' }).then(() => { callback() }, callback)
     } }) : undefined
+    if (typeof spec.stdio.stdin === 'object') {
+      const data = Buffer.from(spec.stdio.stdin.data)
+      const batch = (async () => {
+        for (let offset = 0; offset < data.length; offset += Math.max(1, Math.floor(maxFrameBytes / 4))) {
+          await this.send({ op: 'stdin', data: data.subarray(offset, offset + Math.max(1, Math.floor(maxFrameBytes / 4))).toString('base64') })
+        }
+        await this.send({ op: 'stdinEnd' })
+      })()
+      this.writes.add(batch); void batch.then(() => { this.writes.delete(batch) }, () => { this.writes.delete(batch); local.terminate() })
+    }
     this.done = (async () => {
       let buffer = Buffer.alloc(0), outcome: SubprocessOutcome | undefined
       try {

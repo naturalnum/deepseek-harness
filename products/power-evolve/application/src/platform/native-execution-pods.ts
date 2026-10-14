@@ -14,8 +14,8 @@ import { SafePosix } from './safe-posix.ts'
 const FINALIZER = 'powerevolve.dev/native-execution-stop'
 const podSchema = z.object({ metadata: z.object({ name: z.string(), uid: z.string().min(1), resourceVersion: z.string(),
   labels: z.record(z.string(), z.string()), finalizers: z.array(z.string()).optional(), deletionTimestamp: z.string().optional() }).loose(),
-  spec: z.object({ nodeName: z.string().optional() }).loose(), status: z.object({ phase: z.string().optional(),
-    containerStatuses: z.array(z.object({ ready: z.boolean() }).loose()).optional() }).loose().optional() }).loose()
+spec: z.object({ nodeName: z.string().optional() }).loose(), status: z.object({ phase: z.string().optional(),
+  containerStatuses: z.array(z.object({ ready: z.boolean() }).loose()).optional() }).loose().optional() }).loose()
 
 /** Platform-only Pod configuration; every resource is created inside one explicit owned namespace. */
 export interface NativeExecutionPodConfig {
@@ -106,7 +106,7 @@ export class NativeExecutionPods {
       }
       this.check(current, name, labels)
       const range = { id, name, uid: current.metadata.uid, world }
-      await this.pool.query("UPDATE pe_native_execution_processes SET pod_uid=$2 WHERE id=$1 AND pod_uid IS NULL", [id, range.uid])
+      await this.pool.query('UPDATE pe_native_execution_processes SET pod_uid=$2 WHERE id=$1 AND pod_uid IS NULL', [id, range.uid])
       const deadline = Date.now() + this.config.readyTimeoutMs
       while (Date.now() < deadline) {
         await assertAuthority()
