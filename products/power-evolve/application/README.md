@@ -116,6 +116,8 @@ The [account bridge](src/account-contracts.ts) exposes explicit runtime validato
 
 The model receives the accepted operation's authorized configuration and selected instructions. Inputs and results that reach the model are native Session events. Models propose controlled actions; independent approval credentials remain at Platform. The composed DeepSeek adapter resolves reasoning to `off`, which the native catalog and persisted selection also report.
 
+Native model egress pins the committed request Header to the current operation and epoch. A host-only Session projection retains its sequence across the original loop's continuing steps; the maintained loop starts the next operation's own request series. Platform checks the original claimed Frame prefix before accepting that sequence and freezes the sampled native tool schemas alongside the admitted MCP/STDIO definitions. Derived children use either their original fresh-create record or their inherited seed cut; inherited children without that marker fail closed. Names-only startup registration reserves catalog names and cannot authorize a native model request.
+
 Cloud Bash adds a logged instruction to avoid repeating a command when its outcome is unknown or unavailable. Its foreground result is the original tool result; it does not create a new user message. The Platform supplies only `DSH_SHELL`, `DSH_HOME` and the owned `DSH_SESSION_ID` to the command; Host Profile paths and credentials are not forwarded.
 
 For accepted uploads, a logged instruction section lists only this Session's authorized file identities and explains the cloud reader and copy tools. File metadata alone does not assert that the model read the contents. The original files have no Host-local execution path.

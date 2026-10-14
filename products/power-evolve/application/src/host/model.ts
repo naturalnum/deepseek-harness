@@ -10,9 +10,14 @@ import type { SessionId } from '@deepseek-ai/dsh-session'
 import type RuntimeScope from './scope.ts'
 import { scopeOf } from '@deepseek-ai/dsh-scope'
 import { mcpModelTool } from '../mcp-model-tools.ts'
+import { z } from 'zod'
+
+declare module '@deepseek-ai/dsh-session-projection/types' {
+  interface SessionProjectionStateMap { powerEvolveModelHeader: number | null }
+}
 
 export const name = 'power-evolve-model'
-export const inject = ['llm', 'powerEvolveRuntime', 'sessions', 'sessionPersistence', 'agents']
+export const inject = ['llm', 'powerEvolveRuntime', 'sessions', 'sessionPersistence', 'agents', 'sessionProjections']
 export const Config = schema.object({ streamIdleTimeoutMs: schema.number().min(1000).required() })
 /** Validated native model transport timeout settings. */
 export type Config = ReturnType<typeof Config>
@@ -61,7 +66,10 @@ class PlatformModel extends LlmAdapter {
         ...captured.stdioV2Connections.flatMap(group => group.tools.map(tool => tool.model.name))])
       const native = agent.ctx.tools.schemas(scopeOf(agent.ctx)).filter(tool => !external.has(tool.name))
         .map(tool => mcpModelTool.parse({ name: tool.name, description: tool.description, parameters: tool.parameters }))
-      await this.runtime.call('/runtime/tools/register', captured.token, { names: native.map(tool => tool.name), tools: native }, options.signal)
+      const headerSeq = this.ctx.sessionProjections.stateOf(session, 'powerEvolveModelHeader')
+      if (headerSeq === undefined || headerSeq === null) throw new Error('Native model call requires its committed request header')
+      await this.runtime.call('/runtime/tools/register', captured.token,
+        { names: native.map(tool => tool.name), tools: native, headerSeq }, options.signal)
       assertCurrent()
     }
     await publisher.backpressure(options.signal)
@@ -85,5 +93,7 @@ class PlatformModel extends LlmAdapter {
  * @param config - stream timeout policy.
  */
 export function apply(ctx: Context, config: Config): void {
+  ctx.sessionProjections.register({ key: 'powerEvolveModelHeader', stateSchema: z.number().int().nonnegative().nullable(),
+    stateVersion: 1, init: () => null, apply: (state, event) => event.type === 'request/header' ? event.seq : state })
   ctx.llm.registerAdapter(['power-evolve'], new PlatformModel(ctx, ctx.powerEvolveRuntime, config))
 }

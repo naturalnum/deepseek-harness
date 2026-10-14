@@ -16,8 +16,11 @@ import SessionStore, { Session, type SessionEvent, type SessionId } from '@deeps
 import { imageOffloadProjection } from '@deepseek-ai/dsh-compaction-image-offload/projection'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SkillRegistry from '@deepseek-ai/dsh-skill'
+import SandboxPolicy from '@deepseek-ai/dsh-sandbox-policy'
+import AgentPresets from '@deepseek-ai/dsh-agent-preset-registry'
+import Loader from '@deepseek-ai/cordis-plugin-loader'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
-import ToolRuntime from '@deepseek-ai/dsh-tools'
+import ToolRuntime, { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
 import { expect, test, vi } from 'vitest'
 import { z } from 'zod'
 import { MockAdapter, textResponse } from '../../../../packages/core/agent-loop/tests/mock-adapter.ts'
@@ -68,6 +71,10 @@ import { readRuntimeSkill } from '../src/platform/runtime-skills.ts'
 import { SkillService } from '../src/platform/skills.ts'
 import { TaskStore } from '../src/platform/tasks.ts'
 import { cloudFixture } from './cloud-fixture.ts'
+import * as NativeModel from '../src/host/model.ts'
+import { proxyModel } from '../src/platform/model.ts'
+import { NativeRuntimeAuthority } from '../src/platform/native-runtime-authority.ts'
+import { nativeToolRegistration, registerNativeToolNames, readNativeModelTools } from '../src/platform/native-tool-catalog.ts'
 import { prepareSchedulerArchiveSource } from './native-scheduler-archive-fixture.ts'
 import { prepareNativeImageOffloadHistory } from './native-image-offload-fixture.ts'
 
@@ -172,15 +179,28 @@ class GenerationModel extends MockAdapter {
 
 /** Build an independent actual Host so restart recovery obtains a separately issued worker identity. */
 async function prepareHost(host: Context, origin: string, workerFile: string, imageCache: string,
-  budgetFirstChunk = false, runtimeTimeoutMs = 5000): Promise<{
+  budgetFirstChunk = false, runtimeTimeoutMs = 5000, tenant?: { userId: string; runtimeId: string }): Promise<{
   ctx: Context
   runtime: ObservedRuntime
 }> {
-  await host.plugin(ObservedRuntime, { platformUrl: origin, workerTokenFile: workerFile,
+  await host.plugin(ObservedRuntime, { platformUrl: origin, workerTokenFile: tenant ? '' : workerFile,
+    ...tenant ? { runtimeUserId: tenant.userId, workerId: tenant.runtimeId, runtimeTokenFile: workerFile } : {},
     timeoutMs: runtimeTimeoutMs, maxResponseBytes: historyLimits.maxHistoryBytes,
     ...budgetFirstChunk ? { nativePublicationMaxItemBytes: budgetMaxItemBytes } : {} })
   for (const plugin of [LlmRuntime, SessionStore, SessionProjectionRegistry, SystemPrompt, ToolRuntime, AgentRegistry,
     SkillRegistry, PlatformPersistence]) await host.plugin(plugin)
+  if (tenant) {
+    await host.plugin(Loader)
+    await host.plugin(SandboxPolicy, { mode: 'read-only', workspaceRoot: '/workspace' })
+    await host.plugin(AgentPresets, { default: 'standard' })
+    await host.inject(['agentPresets'], async (ctx) => { await ctx.agentPresets.register({ id: 'standard', plugins: [] }) })
+    await host.inject(['powerEvolveRuntime'], (ctx) => {
+      ctx.provide('nativeRuntimeExecution', { bind: (agent: Agent, operation: Grant) => {
+        expect(agent.id).toBe(operation.sessionId); expect(ctx.powerEvolveRuntime.require(agent.id)).toBe(operation)
+        return Promise.resolve()
+      }, drain: () => Promise.resolve() } as never)
+    })
+  }
   host.sessions.registerMessageProjection(imageOffloadProjection)
   await host.plugin(AgentLoop, { agents: [] })
   await host.inject(['powerEvolveRuntime'], (ctx) => {
@@ -191,7 +211,7 @@ async function prepareHost(host: Context, origin: string, workerFile: string, im
   })
   let active: { ctx: Context; runtime: ObservedRuntime } | undefined
   await host.inject(['powerEvolveRuntime', 'sessions', 'sessionPersistence', 'sessionProjections', 'llm', 'agents',
-    'agentLoop', 'tools', 'skills', 'attachments'], (ctx) => {
+    'agentLoop', 'tools', 'skills', 'attachments', ...tenant ? ['agentPresets', 'sandboxPolicy', 'nativeRuntimeExecution'] : []], (ctx) => {
     if (!(ctx.powerEvolveRuntime instanceof ObservedRuntime)) throw new Error('Expected actual observed RuntimeScope')
     active = { ctx, runtime: ctx.powerEvolveRuntime }
   })
@@ -203,7 +223,8 @@ async function schedulerCase(ownerFirst: boolean, failFirstModel = false, loseSt
   recoverPrepared = false, capacityPark = false, loseClaimBeforeCommit = false,
   recoverConsumed: 'none' | 'complete' | 'timeout' | 'prepared-cancel' | 'archive-prepared' | 'archive-claimed'
     | 'archive-parked' | 'archive-warm-pending' | 'archive-warm-admission' = 'none', loggerThrows = false,
-  budgetFirstChunk = false, imageOffload = false, holdWriterRenew = false, timeoutWriterRenew = false): Promise<void> {
+  budgetFirstChunk = false, imageOffload = false, holdWriterRenew = false, timeoutWriterRenew = false,
+  headerChecks = false): Promise<void> {
   const archiveRecovery = recoverConsumed === 'archive-prepared' ? 'prepared' : recoverConsumed === 'archive-claimed' ? 'claimed' : undefined
   const warmArchive = recoverConsumed === 'archive-warm-pending' ? 'pending'
     : recoverConsumed === 'archive-warm-admission' ? 'admission' : undefined
@@ -278,14 +299,74 @@ async function schedulerCase(ownerFirst: boolean, failFirstModel = false, loseSt
     let warmPendingPhase: 'before-read' | 'after-read' | undefined
     let warmPendingHeld = false
     let warmBatch: z.infer<typeof nativeInputPendingResponse> | undefined
-    const workerToken = randomBytes(32).toString('base64url')
+    const runtimeAuthority = new NativeRuntimeAuthority(f.pool)
+    const tenant = headerChecks ? await runtimeAuthority.issue({ userId: f.alice.user.userId,
+      runtimeId: randomUUID(), generation: 1, lifetimeMs: 60000 }) : undefined
+    const workerToken = tenant?.token ?? randomBytes(32).toString('base64url')
     let nativeCodecRequests = 0, nativeCodecClosures = 0
+    const headerRequests: { operationId: string; epoch: number; seq: number }[] = []
+    const headerModels: { operationId: string; epoch: number }[] = []
+    const firstHeaderModel = Promise.withResolvers<undefined>(), releaseHeaderModel = Promise.withResolvers<undefined>()
+    let headerOrigin = '', oldHeaderRefusals = 0
+    const upstream = createServer((request, response) => {
+      const work = (async () => {
+        await readJson(request, ledgerLimits.maxCommandBytes)
+        const index = headerModels.length
+        if (index === 1) { firstHeaderModel.resolve(undefined); await releaseHeaderModel.promise }
+        response.setHeader('content-type', 'text/event-stream')
+        const content = index === 1 ? { type: 'tool_use', id: 'native-owned-call', name: 'native_header_probe', input: {} }
+          : { type: 'text', text: 'Actual native fixture response' }
+        for (const event of [
+          { type: 'message_start', message: { id: `native-message-${index}`, model: 'trial-model', role: 'assistant', content: [], usage: { input_tokens: 1, output_tokens: 0 } } },
+          { type: 'content_block_start', index: 0, content_block: content }, { type: 'content_block_stop', index: 0 },
+          { type: 'message_delta', delta: { stop_reason: index === 1 ? 'tool_use' : 'end_turn' }, usage: { output_tokens: 1 } },
+          { type: 'message_stop' },
+        ]) response.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`)
+        response.end()
+      })()
+      requests.add(work); void work.finally(() => { requests.delete(work) })
+    })
     const server = createServer((request, response) => {
       const work = (async () => {
-        let mutationRoute = request.url
+        let mutationRoute = request.url ?? ''
         try {
+          if (headerChecks && request.url === '/model/v1/messages') {
+            const original = await transaction(f.pool, client => businessTasks.executionAuthorized(client, bearer(request)))
+            headerModels.push({ operationId: original.operation_id, epoch: original.lease_epoch })
+            await proxyModel(businessTasks, { url: headerOrigin, apiKey: 'owned-upstream-transport-key', timeoutMs: 5000,
+              maxRequestBytes: ledgerLimits.maxCommandBytes, maxResponseBytes: 1048576 }, request, response)
+            return
+          }
           const token = bearer(request), input = await readJson(request, ledgerLimits.maxCommandBytes)
-          switch (request.url) {
+          const route = headerChecks ? request.url?.replace('/runtime/user/', '/runtime/') : request.url
+          switch (route) {
+            case '/runtime/identity': {
+              const identity = await runtimeAuthority.authenticate(token)
+              const account = first((await f.pool.query<{ settings: unknown }>('SELECT settings FROM pe_users WHERE id=$1', [identity.userId])).rows)
+              sendJson(response, { ...identity, settings: account.settings }); return
+            }
+            case '/runtime/tools/register': {
+              const inputTools = nativeToolRegistration.parse(input)
+              if (inputTools.headerSeq === undefined) {
+                await registerNativeToolNames(tasks, token, inputTools); sendJson(response, { registered: true }); return
+              }
+              const owner = await transaction(f.pool, client => businessTasks.executionAuthorized(client, token))
+              if (headerRequests.length === 2) {
+                const previous = first(headerRequests)
+                const before = (await f.pool.query<{ value: unknown }>('SELECT value FROM pe_native_preferences WHERE user_id=$1 AND namespace=$2',
+                  [owner.user_id, `runtime-tools:${owner.operation_id}:${owner.lease_epoch}`])).rows
+                expect(first(before).value).toEqual({ names: inputTools.names })
+                await expect(transaction(f.pool, client => readNativeModelTools(client, owner, [])))
+                  .rejects.toMatchObject({ code: 'native_tool_snapshot_missing' })
+                await expect(registerNativeToolNames(businessTasks, token, { ...inputTools, headerSeq: previous.seq }))
+                  .rejects.toMatchObject({ code: 'native_tool_snapshot_missing' })
+                expect((await f.pool.query('SELECT value FROM pe_native_preferences WHERE user_id=$1 AND namespace=$2',
+                  [owner.user_id, `runtime-tools:${owner.operation_id}:${owner.lease_epoch}`])).rows).toEqual(before)
+              }
+              await registerNativeToolNames(businessTasks, token, inputTools)
+              headerRequests.push({ operationId: owner.operation_id, epoch: owner.lease_epoch, seq: inputTools.headerSeq })
+              sendJson(response, { registered: true }); return
+            }
             case '/model/v1/messages': {
               if (!budgetFirstChunk) throw new PlatformError(404, 'unexpected_owned_scheduler_route')
               await transaction(f.pool, client => businessTasks.executionAuthorized(client, token))
@@ -305,24 +386,42 @@ async function schedulerCase(ownerFirst: boolean, failFirstModel = false, loseSt
               const parsed = nativeRetainedPrepare.parse(input)
               const result = await retained.prepare(token, parsed)
               retainedMutations.set(result.intentId, parsed.mutation)
-              retainedRoutes.push(request.url)
+              retainedRoutes.push(request.url ?? '')
               sendJson(response, result); return
             }
             case NATIVE_RETAINED_ROUTES.reconcile:
             case NATIVE_RETAINED_ROUTES.resolve: {
               if (token !== workerToken) throw new PlatformError(401, 'unauthorized_worker')
-              retainedRoutes.push(request.url)
-              sendJson(response, await (request.url === NATIVE_RETAINED_ROUTES.reconcile
+              retainedRoutes.push(request.url ?? '')
+              sendJson(response, await (route === NATIVE_RETAINED_ROUTES.reconcile
                 ? retained.reconcile(input) : retained.resolve(input))); return
             }
             case NATIVE_RETAINED_ROUTES.execute: {
               const parsed = nativeRetainedExecute.parse(input), mutation = retainedMutations.get(parsed.intentId)
               if (!mutation) throw new Error('Owned journal observer did not see the original prepare')
-              retainedRoutes.push(request.url)
+              retainedRoutes.push(request.url ?? '')
               let transitionObservation: { writerBefore: Record<string, unknown>[]; entries: NativeAssistantEntry[] } | undefined
               switch (mutation.family) {
                 case 'publication':
                   mutationRoute = '/runtime/native-assistant'
+                  if (headerChecks && headerRequests.length === 2 && oldHeaderRefusals === 0
+                    && mutation.request.items.some(item => item.type === 'event' && item.event.type === 'request/header')) {
+                    const owner = await transaction(f.pool, client => businessTasks.executionAuthorized(client, token))
+                    const previous = first(headerRequests)
+                    expect(owner.operation_id).not.toBe(previous.operationId)
+                    const latest = first((await f.pool.query<{ seq: number }>(
+                      "SELECT seq FROM pe_events WHERE session_id=$1 AND event->>'type'='request/header' ORDER BY seq DESC LIMIT 1",
+                      [owner.id])).rows)
+                    expect(latest.seq).toBe(previous.seq)
+                    const frozen = first((await f.pool.query<{ value: unknown }>(
+                      'SELECT value FROM pe_native_preferences WHERE user_id=$1 AND namespace=$2',
+                      [owner.user_id, `runtime-tools:${previous.operationId}:${previous.epoch}`])).rows).value
+                    const schemas = z.object({ names: nativeToolRegistration.shape.names,
+                      tools: nativeToolRegistration.shape.tools }).parse(frozen)
+                    await expect(registerNativeToolNames(businessTasks, token, { ...schemas, headerSeq: previous.seq }))
+                      .rejects.toMatchObject({ code: 'native_tool_snapshot_missing' })
+                    oldHeaderRefusals++
+                  }
                   if (failedHeartbeatPublisher && failedHeartbeats === 0
                     && mutation.request.publisherId === failedHeartbeatPublisher && mutation.request.items.length === 0) {
                     failedHeartbeats++
@@ -402,7 +501,8 @@ async function schedulerCase(ownerFirst: boolean, failFirstModel = false, loseSt
             case '/runtime/claim': {
               if (token !== workerToken) throw new PlatformError(401, 'unauthorized_worker')
               const value = z.object({ workerId: z.uuid() }).strict().parse(input)
-              sendJson(response, await tasks.claim(value.workerId)); return
+              sendJson(response, await tasks.claim(value.workerId, tenant ? { userId: tenant.userId,
+                authenticate: async (client) => { await runtimeAuthority.authenticateInTransaction(client, token, tenant, 'update') } } : undefined)); return
             }
             case '/runtime/claim-archive-stop': {
               if (token !== workerToken) throw new PlatformError(401, 'unauthorized_worker')
@@ -436,7 +536,7 @@ async function schedulerCase(ownerFirst: boolean, failFirstModel = false, loseSt
             case '/runtime/native-writer/acquire':
             case '/runtime/native-writer/renew':
             case '/runtime/native-writer/release': {
-              writerRoutes.push(request.url)
+              writerRoutes.push(route)
               if (holdWriterRenew && z.object({ workerId: z.string() }).loose().parse(input).workerId === refusedReconcileWorker) {
                 if (request.url === '/runtime/native-writer/renew' && !heldWriterRenew) {
                   heldWriterRenew = true; writerRenewEntered.resolve(undefined)
@@ -445,7 +545,7 @@ async function schedulerCase(ownerFirst: boolean, failFirstModel = false, loseSt
                   writerReleasedWhileHeld.resolve(undefined)
                 }
               }
-              sendJson(response, await routeNativeWriter(writers, request.url, token, input)); return
+              sendJson(response, await routeNativeWriter(writers, route, token, input)); return
             }
             case '/runtime/native-input/recover-prepared': {
               const value = nativeInputFrameRequest.parse(input)
@@ -532,12 +632,18 @@ async function schedulerCase(ownerFirst: boolean, failFirstModel = false, loseSt
     const consoleRecords: string[] = []
     let restoreConsole: (() => void) | undefined
     try {
+      if (headerChecks) {
+        upstream.listen(0, '127.0.0.1'); await once(upstream, 'listening')
+        const address = upstream.address()
+        if (!address || typeof address === 'string') throw new Error('Native header upstream fixture did not listen')
+        headerOrigin = `http://127.0.0.1:${address.port}`
+      }
       server.listen(0, '127.0.0.1'); await once(server, 'listening')
       const address = server.address()
       if (!address || typeof address === 'string') throw new Error('Expected owned HTTP listener')
       const origin = `http://127.0.0.1:${address.port}`, workerFile = join(f.root, 'native-scheduler-worker-token')
       await writeFile(workerFile, workerToken, { mode: 0o600 })
-      const { ctx, runtime: actualRuntime } = await prepareHost(host, origin, workerFile, join(f.root, 'image-cache'), budgetFirstChunk)
+      const { ctx, runtime: actualRuntime } = await prepareHost(host, origin, workerFile, join(f.root, 'image-cache'), budgetFirstChunk, 5000, tenant)
       if (failFirstModel || budgetFirstChunk) {
         const capture = vi.spyOn(console, 'log').mockImplementation((message: unknown) => {
           if (typeof message !== 'string') throw new Error('Expected the actual console exporter text')
@@ -566,6 +672,47 @@ async function schedulerCase(ownerFirst: boolean, failFirstModel = false, loseSt
       await skills.install(f.alice.user, skillA, 'scheduler-skill-a', 'A accepted selection', 'A original instructions')
       const session = await tasks.create(f.alice.user, requestId.parse(randomUUID()), f.alice.token)
       await tasks.accept(f.alice.user, session.sessionId, requestId.parse(randomUUID()), 'A original input', f.alice.token)
+      if (headerChecks) {
+        // This Model test grants no filesystem/process capability or preset composition; its unused setup seams are substituted.
+        let executed = 0
+        ctx.tools.register(defineContentToolFixture({ name: 'native_header_probe', description: 'Actual maintained native tool dispatch fixture',
+          parameters: {}, async execute() { executed++; return [{ type: 'text', text: 'Observed native tool result' }] } }))
+        await ctx.plugin(NativeModel, { streamIdleTimeoutMs: 5000 })
+        scheduler = new Scheduler(ctx, { platformOrigin: origin, concurrency: 1, pollMs: 20, renewMs: 10000,
+          operationTimeoutMs: 30000, nativeInputPollMs: 10, nativeInputBatchSize: 8 })
+        scheduler.start()
+        try {
+          await expect.poll(() => ({ requests: headerModels.length, failures: routeFailures, errors: agentErrors }), poll)
+            .toEqual({ requests: 1, failures: [], errors: [] })
+        } catch (error: unknown) {
+          const events = (await f.pool.query<{ event: SessionEvent }>('SELECT event FROM pe_events WHERE session_id=$1 ORDER BY seq', [session.sessionId])).rows.map(row => row.event)
+          process.stdout.write(JSON.stringify({ headerConsumer: { requests: headerModels.length, routeFailures, agentErrors,
+            eventTypes: events.map(event => event.type), endings: events.filter(event => event.type === 'turn/end').map(event => event.data) } }) + '\n')
+          throw error
+        }
+        await firstHeaderModel.promise
+        const second = z.object({ operationId: z.string() }).parse(await tasks.accept(f.alice.user, session.sessionId,
+          requestId.parse(randomUUID()), 'B original next operation', f.alice.token))
+        releaseHeaderModel.resolve(undefined)
+        await expect.poll(() => transitions.length, poll).toBe(2)
+        await scheduler.close(); scheduler = undefined
+        process.stdout.write(JSON.stringify({ headerRequests, headerModels, routeFailures, agentErrors, executed }) + '\n')
+        expect(routeFailures).toEqual([]); expect(agentErrors).toEqual([]); expect(executed).toBe(1)
+        expect(headerRequests).toHaveLength(3); expect(headerModels).toHaveLength(3); expect(oldHeaderRefusals).toBe(1)
+        expect(headerRequests[1]).toEqual(headerRequests[0])
+        expect(headerRequests[2]?.operationId).toBe(second.operationId)
+        expect(headerRequests[2]?.seq).toBeGreaterThan(first(headerRequests).seq)
+        expect(headerModels.slice(0, 2).map(row => row.operationId))
+          .toEqual([first(headerRequests).operationId, first(headerRequests).operationId])
+        const records = (await f.pool.query<{ event: SessionEvent }>('SELECT event FROM pe_events WHERE session_id=$1 ORDER BY seq', [session.sessionId])).rows.map(row => row.event)
+        expect(records.filter(event => event.type === 'request/header')).toHaveLength(2)
+        expect(records.filter(event => event.type === 'step/start')).toHaveLength(3)
+        expect(records.filter(event => event.type === 'turn/end').map(event => event.data.reason.kind)).toEqual(['completed', 'completed'])
+        expect((await f.pool.query('SELECT state FROM pe_operations WHERE session_id=$1 ORDER BY created_at', [session.sessionId])).rows)
+          .toEqual([{ state: 'completed' }, { state: 'completed' }])
+        expect(created).toHaveLength(2); expect(disposed).toHaveLength(2)
+        return
+      }
       model = new GenerationModel(ctx, businessTasks, session.sessionId, failFirstModel, budgetFirstChunk ? origin : undefined)
       const actualModel = model
       ctx.llm.registerAdapter(['power-evolve'], actualModel)
@@ -2047,6 +2194,7 @@ async function schedulerCase(ownerFirst: boolean, failFirstModel = false, loseSt
         itemId: b.operation.operationId, action: { kind: 'remove' } } })
       expect(() => actualRuntime.queueInput(f.alice.token, unavailable)).toThrow('native_input_owner_unavailable')
     } finally {
+      releaseHeaderModel.resolve(undefined)
       writerRenewRelease.resolve(undefined)
       await heldWriterCloseResult
       stepReplyGate.resolve(undefined)
@@ -2062,6 +2210,9 @@ async function schedulerCase(ownerFirst: boolean, failFirstModel = false, loseSt
       finally {
         try {
           await Promise.all(requests)
+          if (upstream.listening) await new Promise<void>((resolve, reject) => {
+            upstream.close((error) => { if (error) reject(error); else resolve() }); upstream.closeIdleConnections()
+          })
           if (server.listening) await new Promise<void>((resolve, reject) => {
             server.close((error) => { if (error) reject(error); else resolve() })
           })
@@ -2127,3 +2278,6 @@ test('warm Host settles original A after actual archive refuses pending read bef
 
 test('warm Host settles original A after actual archive refuses admission of B already read from PG',
   () => schedulerCase(false, false, false, false, false, false, 'archive-warm-admission'))
+
+test('native Model consumer keeps its continuing-step header and rejects the previous operation header for the next cohort',
+  () => schedulerCase(false, false, false, false, false, false, 'none', false, false, false, false, false, true), 30000)
