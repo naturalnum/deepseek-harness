@@ -18,12 +18,13 @@ export const Config = schema.object({ renewMs: schema.number().step(1).min(1).de
   maxPendingOpens: schema.number().step(1).min(1).default(32) })
 /** Validated interactive maintenance configuration. */
 export type Config = ReturnType<typeof Config>
-interface Owner { grant: Grant
-  writer: HostNativeWriterLease
-  handle: AgentHandle
+interface Maintenance { writer: HostNativeWriterLease
   stop: AbortController
   renewal: Promise<void>
-  writerFailure?: { error: unknown }
+  writerFailure?: { error: unknown } }
+interface Owner { grant: Grant
+  handle: AgentHandle
+  maintenance: Maintenance
   closing?: Promise<void> }
 
 /** Session identity is always fixed by PG ownership before the native Gateway resolves its Agent. */
@@ -70,6 +71,8 @@ export default class NativeRuntimeSessions extends Service {
   /** Reuse a live native Agent or acquire one bounded interactive Writer for this Browser-authorized Session.
    * @param id Exact ordinary Session identity from the authenticated original Remote arguments.
    * @param browserToken Original Browser Agent bearer, separately fixed to this Runtime account.
+   * Grant and Writer maintenance begins before persisted Session load or preset setup, and
+   * setup rollback joins accepted renewal transports before original cleanup.
    * @returns The native Agent after actual preset mounting; its before-turn hook forbids model work.
    */
   async ensure(id: SessionId, browserToken: string): Promise<Agent> {
@@ -109,9 +112,34 @@ export default class NativeRuntimeSessions extends Service {
     let writer: HostNativeWriterLease | undefined
     let handle: AgentHandle | undefined
     let preparing: Agent | undefined
+    let maintenance: Maintenance | undefined
     try {
       writer = await writers.acquire(captured, randomBytes(32).toString('base64url'))
-      handle = await this.ctx.agents.resume({ resumeSessionId: id, disposeOptions: { keepInbox: true },
+      const stop = new AbortController(), capturedMaintenance: Maintenance = { writer, stop, renewal: Promise.resolve() }
+      maintenance = capturedMaintenance
+      const stopped = () => stop.signal.aborted
+      capturedMaintenance.renewal = (async () => {
+        while (!stopped()) {
+          try { await delay(this.config.renewMs, undefined, { signal: stop.signal }) }
+          catch (error) { if (stopped()) return; throw error }
+          if (stopped()) return
+          let status: { pending: boolean; cancelRequested: boolean }
+          try { status = z.object({ pending: z.boolean(), cancelRequested: z.boolean() }).parse(
+            await runtime.call('/runtime/interactive/status', captured.token, {})) }
+          catch (error) { capturedMaintenance.writerFailure ??= { error }; throw error }
+          if (status.pending || status.cancelRequested) { stop.abort(new PlatformError(409, 'native_interactive_pending'))
+            void this.close(id).catch((error: unknown) => { this.ctx.logger.error('Native interactive cleanup failed', error) }); return }
+          runtime.heartbeatPublication(captured)
+          if (stopped()) return
+          // Already issued Writer maintenance retains the independent bounded transport until acknowledgement or failure.
+          try { await writers.renew(capturedMaintenance.writer.identity) }
+          catch (error) { capturedMaintenance.writerFailure ??= { error }; throw error }
+        }
+      })().catch((error: unknown) => {
+        if (!stopped()) { stop.abort(error); void this.close(id).catch((failure: unknown) => {  this.ctx.logger.error('Native interactive cleanup failed', failure) }) }
+      })
+      handle = await this.ctx.agents.resume({ resumeSessionId: id, signal: capturedMaintenance.stop.signal,
+        disposeOptions: { keepInbox: true },
         agentOptions: { provider: 'power-evolve', model: captured.settings.model, maxTokens: captured.settings.maxTokens },
         setup: async (agentCtx, agent) => {
           preparing = agent
@@ -127,32 +155,18 @@ export default class NativeRuntimeSessions extends Service {
           const selection = selected === null ? [agent.session.append('agent-preset/selected', { agentPreset: preset.id })] : []
           await flushNativeSession(this.ctx, agent.session, selection)
           return { commit: () => { if (this.isClosing()) throw new PlatformError(409,
-            'native_interactive_closing'); runtime.assertGrant(captured); runtime.publication(captured).assertOpen() } }
+            'native_interactive_closing'); capturedMaintenance.stop.signal.throwIfAborted(); runtime.assertGrant(captured); runtime.publication(captured).assertOpen() } }
         } })
       if (this.isClosing()) throw new PlatformError(409, 'native_interactive_closing')
-      const stop = new AbortController(), owner: Owner = { grant: captured, writer, handle, stop, renewal: Promise.resolve() }
-      const stopped = () => stop.signal.aborted
+      capturedMaintenance.stop.signal.throwIfAborted()
+      const owner: Owner = { grant: captured, handle, maintenance: capturedMaintenance }
       this.owners.set(id, owner)
-      owner.renewal = (async () => {
-        while (!stopped()) {
-          try { await delay(this.config.renewMs, undefined, { signal: stop.signal }) }
-          catch (error) { if (stopped()) return; throw error }
-          if (stopped()) return
-          const status = z.object({ pending: z.boolean(), cancelRequested: z.boolean() }).parse(
-            await runtime.call('/runtime/interactive/status', captured.token, {}, stop.signal))
-          if (status.pending || status.cancelRequested) { void this.close(id).catch((error: unknown) => {  this.ctx.logger.error('Native interactive cleanup failed', error) }); return }
-          runtime.heartbeatPublication(captured)
-          if (stopped()) return
-          // Already issued Writer maintenance retains the independent bounded transport until acknowledgement or failure.
-          try { await writers.renew(owner.writer.identity) }
-          catch (error) { owner.writerFailure ??= { error }; throw error }
-        }
-      })().catch((error: unknown) => {
-        if (!stopped()) { stop.abort(error); void this.close(id).catch((failure: unknown) => {  this.ctx.logger.error('Native interactive cleanup failed', failure) }) }
-      })
       return handle.agent
     } catch (error) {
       const failures: unknown[] = []
+      maintenance?.stop.abort(error)
+      await maintenance?.renewal
+      if (maintenance?.writerFailure) failures.push(maintenance.writerFailure.error)
       try { await handle?.dispose({ keepInbox: true }) } catch (failure) { failures.push(failure) }
       if (preparing) {
         try { await this.ctx.nativeRuntimeExecution.drain(preparing) } catch (failure) { failures.push(failure) }
@@ -167,6 +181,9 @@ export default class NativeRuntimeSessions extends Service {
         const failed = new AggregateError([error, ...failures], 'Native interactive setup cleanup failed')
         this.teardownFailures.push(failed)
         this.closing = true
+        const retained = Promise.reject<void>(failed)
+        void retained.catch(() => {})
+        this.failedClosures.set(id, retained)
         throw failed
       }
       throw error
@@ -183,18 +200,18 @@ export default class NativeRuntimeSessions extends Service {
     if (!owner) return this.failedClosures.get(id) ?? Promise.resolve()
     const closing = owner.closing ??= (async () => {
       const runtime = this.ctx.powerEvolveRuntime, failures: unknown[] = []
-      owner.stop.abort()
-      await owner.renewal
-      if (owner.writerFailure) failures.push(owner.writerFailure.error)
+      owner.maintenance.stop.abort()
+      await owner.maintenance.renewal
+      if (owner.maintenance.writerFailure) failures.push(owner.maintenance.writerFailure.error)
       try { await owner.handle.dispose({ keepInbox: true }) } catch (error) { failures.push(error) }
       try { await this.ctx.nativeRuntimeExecution.drain(owner.handle.agent) } catch (error) { failures.push(error) }
       try {
         if (failures.length) throw new PlatformError(409, 'native_interactive_close_failed')
-        await new HostNativeWriterClient(runtime).release(owner.writer.identity)
+        await new HostNativeWriterClient(runtime).release(owner.maintenance.writer.identity)
         await runtime.call('/runtime/finish', owner.grant.token, { outcome: 'completed', errorCode: null })
       } catch (error) {
         try { await runtime.call('/runtime/cleanup', owner.grant.token, { operationId: owner.grant.operationId,
-          epoch: owner.grant.epoch, writer: owner.writer.identity,
+          epoch: owner.grant.epoch, writer: owner.maintenance.writer.identity,
           errorCode: failures.length ? 'native_interactive_close_failed' : 'native_interactive_closed' }) }
         catch (cleanupError) { failures.push(error, cleanupError) }
       } finally {
