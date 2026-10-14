@@ -43,6 +43,8 @@ The [native tenant Runtime bundle](../native-runtime/README.md) composes the mai
 <details>
 <summary>Persistence, authorization and native behavior</summary>
 
+An exact Runtime Pod with `restartPolicy: Never` may retain generation-one kubelet status after its first deletion increments metadata to generation two. The native stop classifier requires the original UID, immutable images, zero restarts, every declared container strictly ended before the deletion cutoff, and positive sandbox and readiness stop conditions. The sandbox-stop timestamp may equal the cutoff only when both timestamps have whole-second precision; fractional equality and later observations remain uncertain. Original observations and finalizers remain intact until the owner commits positive stop evidence.
+
 Host RPC, streamed uploads and each complete native-intent reconciliation pass own a disposable request deadline. Caller cancellation and the configured timeout cover response bodies; completion releases the caller listener and timer.
 
 Accepted operations freeze their model, Skills and connector selections. Account locks, current credentials, Session leases and epochs fence writes. Native event appends commit their model, inbox and title projection checkpoints at the same PG watermark. Checkpoint encoding 2 stores validated JSON text inside jsonb to retain NUL and lone surrogates; retained encoding 1 remains readable and advances on append. Future encodings, malformed text and unequal watermarks reject. Turn classification reads validated event chunks without PostgreSQL JSON extraction; the original event JSON stays unchanged. Cold title and model mutations refuse while a writer holds the Session lease.

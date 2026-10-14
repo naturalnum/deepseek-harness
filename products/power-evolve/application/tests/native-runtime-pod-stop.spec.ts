@@ -100,3 +100,28 @@ test('unexpected ephemeral or unfinished init processes never reuse completed ap
   expect(nativeRuntimePodStopStatus({ ...pod, spec: { ...pod.spec, ephemeralContainers: [{ name: 'debug' }] } }, uid, 15)).toBeNull()
   expect(nativeRuntimePodStopStatus({ ...pod, spec: { ...pod.spec, initContainers: [{ name: 'prepare-private', image }] } }, uid, 15)).toBeNull()
 })
+
+
+test('a whole-second sandbox stop at deletion retains strict earlier container termination', () => {
+  const pod = observation()
+  pod.status.conditions[0]!.lastTransitionTime = pod.metadata.deletionTimestamp
+  const unchanged = structuredClone(pod)
+  expect(kubernetesPodStopStatus(pod)).toBeNull()
+  expect(nativeRuntimePodStopStatus(pod, uid, 15)).toBe('KUBELET_STOPPED')
+  expect(pod).toEqual(unchanged)
+  pod.status.containerStatuses[0]!.state.terminated.finishedAt = pod.metadata.deletionTimestamp
+  expect(nativeRuntimePodStopStatus(pod, uid, 15)).toBeNull()
+})
+
+test('sandbox stop after the cutoff or with fractional equality never borrows second precision', () => {
+  for (const transition of ['2026-10-14T08:00:56Z', '2026-10-14T08:00:55.000000001Z',
+    '2026-10-14T08:00:55.000Z']) {
+    const pod = observation()
+    pod.status.conditions[0]!.lastTransitionTime = transition
+    expect(nativeRuntimePodStopStatus(pod, uid, 15)).toBeNull()
+  }
+  const pod = observation()
+  pod.metadata.deletionTimestamp = '2026-10-14T08:00:55.000000001Z'
+  pod.status.conditions[0]!.lastTransitionTime = '2026-10-14T08:00:55Z'
+  expect(nativeRuntimePodStopStatus(pod, uid, 15)).toBeNull()
+})

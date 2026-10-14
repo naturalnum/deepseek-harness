@@ -34,7 +34,9 @@ const completedBeforeDeletion = z.object({
 /** Validate native stop without rewriting the original Kubernetes observation or relaxing shared classifiers.
  * A completed Never Runtime may retain generation-one kubelet status after the first DELETE increments
  * its metadata generation. This narrow fallback requires the sandbox and every process to have ended
- * before that deletion request; an exit field alone never proves whole-Pod quiescence.
+ * strictly before the deletion cutoff. The sandbox-stop condition may equal that cutoff only
+ * when both timestamps have whole-second precision; fractional equality remains uncertain.
+ * An exit field alone never proves whole-Pod quiescence.
  * @param pod Original authenticated API observation, retained unchanged in the durable proof.
  * @param expectedUid Original immutable Pod UID, independently fenced by its owner.
  * @param maximumGraceSeconds Original controller deletion-grace ceiling.
@@ -84,7 +86,7 @@ export function nativeRuntimePodStopStatus(pod: unknown, expectedUid: string, ma
   const runtimeState = status.containerStatuses[0]?.state
   if (!hasExit || runtimeState && 'waiting' in runtimeState && !failedInit) return null
   const conditions = new Set<string>()
-  let sandboxGone = 0
+  let sandboxGone = 0, sandboxTimestamp = ''
   for (const condition of status.conditions) {
     if (conditions.has(condition.type)) return null
     conditions.add(condition.type)
@@ -93,10 +95,12 @@ export function nativeRuntimePodStopStatus(pod: unknown, expectedUid: string, ma
       || condition.type === 'Initialized' && condition.status !== (failedInit ? 'False' : 'True')) return null
     if (condition.type === 'PodReadyToStartContainers') {
       if (condition.observedGeneration !== 1 || condition.lastTransitionTime === undefined) return null
-      sandboxGone = Date.parse(condition.lastTransitionTime)
+      sandboxTimestamp = condition.lastTransitionTime
+      sandboxGone = Date.parse(sandboxTimestamp)
     }
   }
   if (!['PodReadyToStartContainers', 'Ready', 'ContainersReady', 'Initialized', 'PodScheduled'].every(name => conditions.has(name))
-    || !Number.isFinite(sandboxGone) || sandboxGone < latestExit || sandboxGone >= cutoff) return null
+    || !Number.isFinite(sandboxGone) || sandboxGone < latestExit || sandboxGone > cutoff
+    || sandboxGone === cutoff && (sandboxTimestamp.includes('.') || metadata.deletionTimestamp.includes('.'))) return null
   return 'KUBELET_STOPPED'
 }

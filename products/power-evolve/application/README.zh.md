@@ -43,6 +43,8 @@ Host 根路径跳转至 `/native/`。登录、独立审批和账号管理由 Pla
 <details>
 <summary>持久化、授权与原生行为</summary>
 
+采用 `restartPolicy: Never` 的原 Runtime Pod 在首次删除把元数据代际推进到第二代后，kubelet 状态仍可能保留第一代。原生停止分类器要求原 UID、不可变镜像、零次重启、每个声明的容器严格早于删除截止时间结束，以及 sandbox 和就绪条件的正向停止事实。仅当两项时间戳均精确到整秒时，sandbox 停止时间可以等于截止时间；带小数的相等时间或更晚的观察仍保持不确定。拥有方提交正向停止证据前，原观察和 finalizer 均保留。
+
 Host RPC、流式上传和每轮完整的 native-intent reconciliation 均持有可释放的请求 deadline。调用方取消和配置超时覆盖响应 body；完成后释放调用方监听和计时器。
 
 受理操作固定模型、Skills 和连接器选择。账号锁、当前凭据、Session 租约与 epoch 约束写入。原生事件追加在同一 PG 水位提交模型、输入队列和标题投影检查点。检查点编码 2 将已验证 JSON 文本存入 jsonb，以保留 NUL 和未配对代理项；旧编码 1 仍可读取，并在追加时升级。未来编码、损坏文本和不一致水位会被拒绝。转次判断按块读取已验证事件，避免 PostgreSQL JSON 提取，原始事件 JSON 保持不变。当前写者持有 Session 租约时，冷会话的标题和模型修改会被拒绝。
