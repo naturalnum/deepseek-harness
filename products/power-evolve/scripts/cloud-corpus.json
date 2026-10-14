@@ -444,6 +444,7 @@
     "products/power-evolve/application/tests/native-json-text.spec.ts",
     "products/power-evolve/application/tests/native-operation-generation.spec.ts",
     "products/power-evolve/application/tests/native-pending-wake.spec.ts",
+    "products/power-evolve/application/tests/native-persistent-execution-fixture.ts",
     "products/power-evolve/application/tests/native-preferences.spec.ts",
     "products/power-evolve/application/tests/native-prepared-cancel.spec.ts",
     "products/power-evolve/application/tests/native-projections.spec.ts",

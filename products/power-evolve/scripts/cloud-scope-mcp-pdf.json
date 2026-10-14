@@ -5686,6 +5686,12 @@
       "reason": "gate-shared"
     },
     {
+      "path": "products/power-evolve/application/tests/native-persistent-execution-fixture.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "gate-shared"
+    },
+    {
       "path": "products/power-evolve/application/tests/native-retained-intent-fixture.ts",
       "status": "shared",
       "owner": "employee1",
