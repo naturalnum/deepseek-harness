@@ -1,4 +1,4 @@
-/** Private POSIX SSH helper; filesystem and process effects use the installed local providers. */
+/** POSIX SSH helper dispatch over owned local providers or a caller's composed Context. */
 import { createHash, randomUUID } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
@@ -49,16 +49,38 @@ export interface HelperTransport {
 /**
  * Run a helper until its channel closes or its client lease expires.
  * @param transport - private process streams, entry identity, and cancellation.
+ * @param context - optional caller-owned Context providing fs, subprocess and sandbox; its disposal closes the helper.
+ * @returns after in-flight requests, owned processes and streams finish cleanup.
  */
-export async function runSshHelper(transport: HelperTransport): Promise<void> {
+export async function runSshHelper(transport: HelperTransport, context?: Context): Promise<void> {
   if (process.platform !== 'linux' && process.platform !== 'darwin') throw new Error('SSH helper requires a POSIX host')
   transport.signal.throwIfAborted()
-  const runtime = await services()
+  if (context !== undefined) {
+    for (const name of ['fs', 'subprocess', 'sandbox'] as const) {
+      if (context.get(name) === undefined) throw new Error(`SSH helper Context requires ${name}`)
+    }
+  }
+  if (context === undefined) return serveHelper(transport, await services())
+  const controller = new AbortController()
+  let serving = Promise.resolve()
+  const releaseContext = context.effect(() => async () => {
+    controller.abort(new Error('SSH helper Context was disposed'))
+    await serving
+  }, 'SSH helper channel lifetime')
+  serving = serveHelper({ ...transport, signal: AbortSignal.any([transport.signal, controller.signal]) }, {
+    ctx: context, close: async () => {},
+  })
+  try { await serving }
+  finally { await releaseContext() }
+}
+
+async function serveHelper(transport: HelperTransport, runtime: Awaited<ReturnType<typeof services>>): Promise<void> {
   const { ctx } = runtime
   const root = await mkdtemp('/tmp/dsh-ssh-')
   const processes = new RemoteProcesses(ctx, root, SSH_MAX_PROCESS_HANDLES, 30_000)
   const lifetime = new AbortController()
   const iterators = new Map<SshTextStreamId, { iterator: AsyncIterator<string>; controller: AbortController }>()
+  const operations = new Set<Promise<unknown>>()
   let lease: NodeJS.Timeout | undefined
   let leaseMs = 30_000
   let initialized = false
@@ -73,8 +95,11 @@ export async function runSshHelper(transport: HelperTransport): Promise<void> {
       iterators.clear()
       try { await processes.close() }
       finally {
-        try { await runtime.close() }
-        finally { await rm(root, { recursive: true, force: true }) }
+        try { await Promise.allSettled([...operations]) }
+        finally {
+          try { await runtime.close() }
+          finally { await rm(root, { recursive: true, force: true }) }
+        }
       }
     })()
     return cleanup
@@ -89,7 +114,7 @@ export async function runSshHelper(transport: HelperTransport): Promise<void> {
     return { ...parsed, workspaceRoot: ctx.fs.processPath(target) } as SandboxExecutionPolicy
   }
   const asTarget = (raw: unknown): FsTarget => targetSchema.parse(raw) as FsTarget
-  const peer = new SshRpcPeer(transport.input, transport.output, MAX_FRAME_BYTES, 128, async (method, raw, requestSignal) => {
+  const handleRequest = async (method: string, raw: unknown, requestSignal: AbortSignal): Promise<unknown> => {
     const signal = AbortSignal.any([requestSignal, lifetime.signal])
     if (method === 'hello') {
       if (initialized) throw new Error('SSH helper handshake already completed')
@@ -241,6 +266,13 @@ export async function runSshHelper(transport: HelperTransport): Promise<void> {
       )
     }
     throw new Error(`Unknown SSH helper operation: ${method}`)
+  }
+  const peer = new SshRpcPeer(transport.input, transport.output, MAX_FRAME_BYTES, 128, (method, raw, signal) => {
+    const operation = handleRequest(method, raw, signal)
+    // A close request waits for cleanup and must not join itself.
+    if (method === 'close') return operation
+    operations.add(operation)
+    return operation.finally(() => { operations.delete(operation) })
   })
   const closed = Promise.withResolvers<undefined>()
   peer.once('closed', () => {

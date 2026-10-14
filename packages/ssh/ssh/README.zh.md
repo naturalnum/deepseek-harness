@@ -46,6 +46,12 @@ kind: "package-reference"
 
 使用 PTC 时，配置两个引导字段，并将验证后的 `ctx.ssh.nodeExecutable` 与 `ctx.ssh.bootstrapPath` 传给 [`NodePtcRuntime`](../../ptc-runtime/ptc-runtime-node/README.zh.md)。仅使用文件系统和 Bash 时可以省略这对字段。未配置 PTC 部署时，`bootstrapPath` getter 会拒绝访问。
 
+### 组合 helper 提供方
+
+`@deepseek-ai/dsh-ssh/helper-runtime` 导出 `runSshHelper(transport, context?)`，导入时不会接管进程流。提供的 Context 必须已装配 `fs`、`subprocess` 和 `sandbox`；helper 不会安装备用提供方。helper 关闭时取消并等待进行中的请求、进程及流清理，提供方仍归调用方所有。释放传入的 Context 会关闭 helper 通道并等待清理。不传 Context 时保留私有 helper 的本地提供方组合及清理方式。
+
+传输所有者提供已认证的输入／输出、原有摘要握手使用的已安装入口路径及 AbortSignal。stdout 专用于 framed RPC。该入口改变提供方组合，不改变 OpenSSH 启动器、不分配程序身份，也不建立控制进程隔离。
+
 -----
 
 <a id="understand-the-implementation"></a>

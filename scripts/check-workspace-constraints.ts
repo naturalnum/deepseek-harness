@@ -209,6 +209,7 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   // between that helper and the connection owner.
   '@deepseek-ai/dsh-ssh': [
     'lib/helper.js', 'lib/protocol.js', 'lib/schemas.js',
+    'lib/helper-runtime.js', 'lib/helper-*.js',
     'lib/protocol-*.js', 'lib/schemas-*.js', 'lib/stream-security-*.js',
   ],
   // Ordinary native containment ships a path-loaded runner and its shared

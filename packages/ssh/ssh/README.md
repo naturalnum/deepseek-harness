@@ -46,6 +46,12 @@ Install the built helper and its matching runtime dependencies on the remote hos
 
 For PTC, configure both bootstrap fields and pass the verified `ctx.ssh.nodeExecutable` and `ctx.ssh.bootstrapPath` to [`NodePtcRuntime`](../../ptc-runtime/ptc-runtime-node/README.md). Basic filesystem and Bash use may omit the pair. The `bootstrapPath` getter refuses an unconfigured PTC deployment.
 
+### Composed helper providers
+
+`@deepseek-ai/dsh-ssh/helper-runtime` exports `runSshHelper(transport, context?)` without claiming process streams on import. A supplied Context must already provide `fs`, `subprocess` and `sandbox`; the helper installs no fallback providers. Helper shutdown cancels and joins in-flight requests, processes and streams, while the caller retains provider ownership. Disposing the supplied Context closes the helper channel and joins cleanup. Omitting the Context retains the private helper's local-provider composition and cleanup.
+
+The transport owner supplies authenticated input/output, the installed entry path used by the original digest handshake and an AbortSignal. Reserve stdout for framed RPC. This entry changes provider composition; it does not change the OpenSSH launcher, assign payload identities or establish control-process isolation.
+
 -----
 
 <a id="understand-the-implementation"></a>

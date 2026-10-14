@@ -24,6 +24,10 @@
       "types": "./lib/types/helper-entry.d.ts",
       "default": "./lib/helper.js"
     },
+    "./helper-runtime": {
+      "types": "./lib/types/helper-runtime.d.ts",
+      "default": "./lib/helper-runtime.js"
+    },
     "./protocol": {
       "types": "./lib/types/protocol.d.ts",
       "default": "./lib/protocol.js"
@@ -38,6 +42,8 @@
     "lib/helper.js",
     "lib/protocol.js",
     "lib/schemas.js",
+    "lib/helper-runtime.js",
+    "lib/helper-*.js",
     "lib/protocol-*.js",
     "lib/schemas-*.js",
     "lib/stream-security-*.js",
