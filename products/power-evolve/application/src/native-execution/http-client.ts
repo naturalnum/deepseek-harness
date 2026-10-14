@@ -35,6 +35,7 @@ interface ClientConfig {
   transport: NativeExecutionHttpTransport
   config: NativeExecutionHttpConfig
 }
+const stoppedReply = z.object({ stopped: z.literal(true) }).strict()
 const fsReply = z.object({ ok: z.boolean(), value: z.unknown().optional(), code: z.string().optional(),
   message: z.string().optional() }).strict()
 const codes = z.enum(['FS_NOT_FOUND', 'FS_NOT_DIRECTORY', 'FS_NOT_TEXT', 'FS_NOT_REGULAR_FILE', 'FS_TOO_LARGE',
@@ -45,6 +46,7 @@ class HttpFileSystem extends FileSystem {
   private disposed = false
   private readonly calls = new Set<Promise<unknown>>()
   private readonly readers = new Set<() => Promise<void>>()
+  private readonly cleanupFailures = new Set<unknown>()
   private closeWork: Promise<void> | undefined
   constructor(ctx: Context, private readonly client: ClientConfig) {
     super(ctx)
@@ -59,8 +61,8 @@ class HttpFileSystem extends FileSystem {
       const joined = await Promise.allSettled([...this.readers].map(stop => stop()).concat([...this.calls].map(async (work) => {
         await work
       })))
-      const failures: unknown[] = joined.filter(result => result.status === 'rejected' && !(result.reason instanceof FsError))
-        .map(result => (result as PromiseRejectedResult).reason as unknown)
+      const failures: unknown[] = [...this.cleanupFailures, ...joined.filter(result => result.status === 'rejected'
+        && !(result.reason instanceof FsError)).map(result => (result as PromiseRejectedResult).reason as unknown)]
       if (failures.length) throw new AggregateError(failures, 'Native HTTP filesystem disposal failed')
     })()
   }
@@ -105,8 +107,13 @@ class HttpFileSystem extends FileSystem {
     const { config } = this.client
     const waitDrain = (stream: PassThrough, abort: AbortSignal) => this.waitDrain(stream, abort)
     output.on('error', () => {})
-    const call = (path: string, body: Record<string, unknown>) => this.client.transport('/runtime/native-world/fs/stream/' + path,
-      this.client.token, { world: this.client.world, id, ...body })
+    const call = (path: string, body: Record<string, unknown>) => {
+      const cleanup = path === 'stop' || path === 'release'
+      const work = Promise.resolve().then(() => this.client.transport('/runtime/native-world/fs/stream/' + path,
+        this.client.token, { world: this.client.world, id, ...body })).then(reply => cleanup ? stoppedReply.parse(reply) : reply)
+      if (cleanup) void work.catch((error: unknown) => { this.cleanupFailures.add(error) })
+      return work
+    }
     let stopping: Promise<void> | undefined, stopRequested = false, pump: Promise<void> | undefined
     const stop = () => {
       stopRequested = true; interrupted.abort()
@@ -225,9 +232,10 @@ class HttpSubprocess extends SubprocessRuntime {
   }
   private isDisposed(): boolean { return this.disposed }
   private call(kind: 'process' | 'terminal', path: string, request: Record<string, unknown>): Promise<unknown> {
-    const work = this.client.transport('/runtime/native-world/' + kind + '/' + path, this.client.token,
-      { world: this.client.world, ...request })
-    if (path === 'stop' || path === 'release') void work.catch((error: unknown) => { this.cleanupFailures.add(error) })
+    const cleanup = path === 'stop' || path === 'release'
+    const work = Promise.resolve().then(() => this.client.transport('/runtime/native-world/' + kind + '/' + path, this.client.token,
+      { world: this.client.world, ...request })).then(reply => cleanup ? stoppedReply.parse(reply) : reply)
+    if (cleanup) void work.catch((error: unknown) => { this.cleanupFailures.add(error) })
     return work
   }
   override spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
