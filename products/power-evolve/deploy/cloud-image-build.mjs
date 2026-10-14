@@ -118,7 +118,9 @@ run('pnpm', ['exec', 'tsdown', '--config-loader', 'native', '--config', 'cloud-i
 for (const path of ['contracts', 'connector-runner', 'application', 'client-account', 'client-extension-center']) {
   run('pnpm', ['--dir', 'products/power-evolve/' + path, 'exec', 'tsdown', '--config-loader', 'native'])
 }
-run('pnpm', ['exec', 'tsdown', '--config-loader', 'native', '--config', 'products/power-evolve/sandbox/tsdown.config.ts'])
+writeFileSync('cloud-image.sandbox.tsdown.config.ts', `import{defineConfig}from'tsdown';
+export default defineConfig({entry:{'stdio-v2-runtime':'products/power-evolve/connector-runner/lib/stdio-v2-runtime.js'},outDir:'products/power-evolve/sandbox/lib',format:'esm',platform:'node',target:'es2024',fixedExtension:true,clean:true,dts:false,deps:{alwaysBundle:[/.*/u]},failOnWarn:true});\n`)
+run('pnpm', ['exec', 'tsdown', '--config-loader', 'native', '--config', 'cloud-image.sandbox.tsdown.config.ts'])
 run('pnpm', ['exec', 'tsdown', '--config-loader', 'native', '--config', 'products/power-evolve/deploy/tsdown.attachment.config.ts'])
 run('pnpm', ['--dir', 'apps/web', 'exec', 'vite', 'build', '--config', '../../products/power-evolve/deploy/cloud-image.vite.config.ts'])
 run('node', ['products/power-evolve/cloud-web/scripts/build.mjs'])

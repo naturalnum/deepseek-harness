@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const directories = ['vendor', 'packages', 'patches', 'native/system', 'apps/cli', 'apps/web', 'scripts', 'python/sdk-runtime',
-  ...['application', 'contracts', 'connector-runner', 'client-account', 'client-extension-center', 'cloud-web', 'host', 'platform', 'native-runtime', 'deploy']
+  ...['application', 'contracts', 'connector-runner', 'client-account', 'client-extension-center', 'cloud-web', 'host', 'platform', 'native-runtime', 'sandbox', 'deploy']
     .map(name => 'products/power-evolve/' + name), 'products/power-evolve/scripts']
 const rootFiles = ['package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'LICENSE']
 const hash = bytes => createHash('sha256').update(bytes).digest('hex')
