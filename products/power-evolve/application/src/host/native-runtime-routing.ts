@@ -18,18 +18,19 @@ export function installNativeRuntimeRoutingUpgrade(ctx: Context, auth: BrowserAg
   origin: string, platformUrl: string, timeoutMs: number): void {
   const sockets = new Set<Duplex>(), pending = new Set<Promise<void>>()
   let closing = false
+  const isClosing = (): boolean => closing
   ctx.effect(() => ctx.webServer.registerUpgrade({ path: '/native/api/remote.mux', handler: async (request, socket, head) => {
     sockets.add(socket)
-    const closed = socket.closed ? Promise.resolve() : new Promise<void>(resolve => {
+    const closed = socket.closed ? Promise.resolve() : new Promise<void>((resolve) => {
       const failed = (): void => { socket.destroy() }
       socket.on('error', failed)
       socket.once('close', () => { socket.off('error', failed); resolve() })
     })
     const work = (async () => {
       try {
-        if (closing) throw new PlatformError(503, 'native_runtime_closing')
+        if (isClosing()) throw new PlatformError(503, 'native_runtime_closing')
         const credential = await auth.authenticate(request)
-        if (request.headers.host !== new URL(origin).host || closing) throw new PlatformError(403, 'invalid_host_authority')
+        if (request.headers.host !== new URL(origin).host || isClosing()) throw new PlatformError(403, 'invalid_host_authority')
         if (socket.destroyed) return
         await proxyRuntimeUpgrade(request, socket, head, new URL('/native/runtime/mux', platformUrl),
           { headers: { authorization: `Bearer ${credential.token}`, origin } }, timeoutMs)

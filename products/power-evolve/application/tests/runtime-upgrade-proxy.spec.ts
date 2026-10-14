@@ -16,8 +16,8 @@ async function listener(server: Server) {
 
 async function close(server: Server, sockets: Set<Socket>) {
   const closing = server.listening
-    ? new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())) : Promise.resolve()
-  await Promise.all([...sockets].map(async socket => {
+    ? new Promise<void>((resolve, reject) => server.close((error) => { if (error) reject(error); else resolve() })) : Promise.resolve()
+  await Promise.all([...sockets].map(async (socket) => {
     const closed = socket.closed ? Promise.resolve() : once(socket, 'close')
     socket.destroy(); await closed
   }))
@@ -26,7 +26,7 @@ async function close(server: Server, sockets: Set<Socket>) {
 
 function track(server: Server) {
   const sockets = new Set<Socket>()
-  server.on('connection', socket => { sockets.add(socket); socket.once('close', () => sockets.delete(socket)) })
+  server.on('connection', (socket) => { sockets.add(socket); socket.once('close', () => { sockets.delete(socket) }) })
   return sockets
 }
 
@@ -38,12 +38,12 @@ const handshake = 'GET /native/api/remote.mux HTTP/1.1\r\nHost: localhost\r\nCon
 test('raw 101 proxy preserves both initial byte buffers and replaces client credentials', async () => {
   const upstream = createServer(), downstream = createServer()
   const upstreamSockets = track(upstream), downstreamSockets = track(downstream)
-  const received = Promise.withResolvers<Buffer>(), served = Promise.withResolvers<void>()
+  const received = Promise.withResolvers<Buffer>(), served = Promise.withResolvers<undefined>()
   const upstreamClosed = Promise.withResolvers<undefined>()
   let serving: Promise<void> | undefined, client: Socket | undefined
   upstream.on('upgrade', (request, socket, head) => {
-    socket.once('close', () => upstreamClosed.resolve(undefined))
-    socket.once('end', () => socket.end())
+    socket.once('close', () => { upstreamClosed.resolve(undefined) })
+    socket.once('end', () => { socket.end() })
     expect(request.headers.authorization).toBe('Bearer platform-value')
     expect(request.headers.cookie).toBeUndefined()
     expect(request.headers['x-power-evolve-runner-token']).toBe('owned-process-value')
@@ -51,7 +51,7 @@ test('raw 101 proxy preserves both initial byte buffers and replaces client cred
     socket.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n'
       + 'Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\nupstream-head:')
     if (head.length) socket.write(head)
-    socket.on('data', data => socket.write(data))
+    socket.on('data', (data) => { socket.write(data) })
   })
   try {
     const target = await listener(upstream)
@@ -60,12 +60,12 @@ test('raw 101 proxy preserves both initial byte buffers and replaces client cred
         headers: { authorization: 'Bearer platform-value', 'x-power-evolve-runner-token': 'owned-process-value',
           origin: 'https://trial.example' },
       }, 2000)
-      void serving.then(() => served.resolve(), served.reject)
+      void serving.then(() => { served.resolve(undefined) }, served.reject)
     })
     const destination = await listener(downstream)
     client = createConnection({ host: destination.hostname, port: Number(destination.port) })
     let response = Buffer.alloc(0)
-    client.on('data', data => {
+    client.on('data', (data) => {
       response = Buffer.concat([response, data])
       if (response.includes(Buffer.from('upstream-head:downstream-head'))) received.resolve(response)
     })
@@ -85,19 +85,19 @@ test('raw 101 proxy preserves both initial byte buffers and replaces client cred
 })
 
 test('failed handshake settles only after its downstream transport closes', async () => {
-  const upstream = createServer((_request, response) => { response.writeHead(403); response.write('denied'); })
+  const upstream = createServer((_request, response) => { response.writeHead(403); response.write('denied') })
   const downstream = createServer(), upstreamSockets = track(upstream), downstreamSockets = track(downstream)
-  const served = Promise.withResolvers<void>()
+  const served = Promise.withResolvers<undefined>()
   let serving: Promise<void> | undefined, client: Socket | undefined
   try {
     const target = await listener(upstream)
     downstream.on('upgrade', (request, socket, head) => {
       serving = proxyRuntimeUpgrade(request, socket, head, target, {}, 2000).then(
-        () => { throw new Error('Upgrade unexpectedly accepted') }, error => {
+        () => { throw new Error('Upgrade unexpectedly accepted') }, (error: unknown) => {
           expect(error).toMatchObject({ message: 'Native runtime upgrade refused (403)' })
           expect(socket.closed).toBe(true)
         })
-      void serving.then(() => served.resolve(), served.reject)
+      void serving.then(() => { served.resolve(undefined) }, served.reject)
     })
     const destination = await listener(downstream)
     client = createConnection({ host: destination.hostname, port: Number(destination.port) })
@@ -118,7 +118,7 @@ class DeferredCloseTransport extends PassThrough {
 
   override _destroy(error: Error | null, callback: (error: Error | null) => void): void {
     this.closing.resolve(undefined)
-    void this.release.promise.then(() => callback(error))
+    void this.release.promise.then(() => { callback(error) })
   }
 }
 
@@ -132,7 +132,7 @@ test('refusal waits for an asynchronously destroyed downstream before rejecting'
     downstream.on('upgrade', (request, socket, head) => {
       socket.destroy()
       serving = proxyRuntimeUpgrade(request, transport, head, target, {}, 2000).then(
-        () => { throw new Error('Upgrade unexpectedly accepted') }, error => {
+        () => { throw new Error('Upgrade unexpectedly accepted') }, (error: unknown) => {
           settled = true
           expect(error).toMatchObject({ message: 'Native runtime upgrade refused (403)' })
           expect(transport.closed).toBe(true)

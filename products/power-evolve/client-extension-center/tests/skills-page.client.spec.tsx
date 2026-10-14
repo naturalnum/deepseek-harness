@@ -10,6 +10,7 @@ import { SkillHttpClient, SkillHttpError } from '../src/client/skills-api.ts'
 import { requestUrl } from './fetch-fixture.ts'
 import { SkillMarkdown } from '../src/client/SkillMarkdown.tsx'
 import { en } from '../src/client/locales.ts'
+import { unusedSessionStandards } from './unused-session-standards.ts'
 import { builtinCatalog as catalog, builtinWord } from './builtin-catalog-fixture.ts'
 
 afterEach(cleanup)
@@ -30,7 +31,8 @@ function port(overrides: Partial<SkillPort> = {}): FixtureSkillPort {
 }
 
 function fixture(client: SkillPort) {
-  return render(<SkillsPage client={client} t={t} trySkill={vi.fn()} usePanelInfo={selector => selector({ activePanelId: null })} />)
+  return render(<SkillsPage {...unusedSessionStandards} client={client} t={t} trySkill={vi.fn()}
+    usePanelInfo={selector => selector({ activePanelId: null })} />)
 }
 
 test.each(['list', 'catalog'] as const)('a late old-account %s refusal cannot publish an error into the replacement library', async (operation) => {
@@ -41,7 +43,8 @@ test.each(['list', 'catalog'] as const)('a late old-account %s refusal cannot pu
   if (operation === 'catalog') await waitFor(() => { expect(catalogRead).toHaveBeenCalledOnce() })
   const bob = { ...item, skillId: 'da95a0a2-a53d-490b-a7eb-f0608ad6f2b0', name: 'Bob skill' }
   const next = port({ list: async () => [bob], catalog: async () => [] })
-  page.rerender(<SkillsPage client={next} t={t} trySkill={vi.fn()} usePanelInfo={selector => selector({ activePanelId: null })} />)
+  page.rerender(<SkillsPage {...unusedSessionStandards} client={next} t={t} trySkill={vi.fn()}
+    usePanelInfo={selector => selector({ activePanelId: null })} />)
   await screen.findByRole('button', { name: bob.name })
   const read = operation === 'list' ? list : catalogRead
   expect(read.mock.calls[0]?.[0]?.aborted).toBe(true)
@@ -65,7 +68,8 @@ test.each(['success', 'failure'] as const)('a late built-in install %s cannot po
   const bob = { ...item, skillId: 'da95a0a2-a53d-490b-a7eb-f0608ad6f2b0', name: 'Bob skill' }
   const toggle = vi.fn<SkillPort['toggle']>(() => newReply.promise)
   const next = port({ list: async () => [bob], catalog: async () => [], toggle })
-  page.rerender(<SkillsPage client={next} t={t} trySkill={vi.fn()} usePanelInfo={selector => selector({ activePanelId: null })} />)
+  page.rerender(<SkillsPage {...unusedSessionStandards} client={next} t={t} trySkill={vi.fn()}
+    usePanelInfo={selector => selector({ activePanelId: null })} />)
   fireEvent.click(screen.getByRole('tab', { name: new RegExp(en.mySkills, 'u') }))
   await screen.findByRole('button', { name: bob.name })
   fireEvent.click(screen.getByRole('switch'))
@@ -428,7 +432,8 @@ test.each([
   }
   const bob = { ...item, skillId: 'f4a7b4e2-2d5b-47c1-a790-dc5d0bb70346', name: 'Bob skill' }
   const next = port({ list: async () => [bob], toggle: vi.fn(() => fresh.promise) })
-  page.rerender(<SkillsPage client={next} t={t} trySkill={vi.fn()} usePanelInfo={selector => selector({ activePanelId: null })} />)
+  page.rerender(<SkillsPage {...unusedSessionStandards} client={next} t={t} trySkill={vi.fn()}
+    usePanelInfo={selector => selector({ activePanelId: null })} />)
   await screen.findByRole('button', { name: bob.name })
   fireEvent.click(screen.getByRole('switch'))
   await act(async () => {
@@ -567,7 +572,8 @@ test.each(['install', 'import'] as const)('account switching withdraws a pending
   const bob = { ...item, skillId: '00000000-0000-4000-8000-000000000208', name: 'Bob skill' }
   const list = vi.fn<SkillPort['list']>(async () => [bob])
   const next = port({ list, catalog: async () => [] })
-  page.rerender(<SkillsPage client={next} t={t} trySkill={vi.fn()} usePanelInfo={selector => selector({ activePanelId: null })} />)
+  page.rerender(<SkillsPage {...unusedSessionStandards} client={next} t={t} trySkill={vi.fn()}
+    usePanelInfo={selector => selector({ activePanelId: null })} />)
   await screen.findByRole('button', { name: bob.name })
   expect(screen.queryByRole('dialog')).toBeNull()
   await act(async () => { response.resolve({ ...item, name: 'Late installation' }) })

@@ -28,15 +28,34 @@ const packages = new Map(manifests.map((path) => {
 }))
 const patchSchema = DEFAULT_SCHEMA.extend([new Type('tag:yaml.org,2002:js', { kind: 'scalar', construct: value => value })])
 const patch = load(readFileSync('packages/bundle/web-app/cordis.patch.yml', 'utf8'), { schema: patchSchema })
-const profilePrograms = [...new Set(['host', 'platform'].flatMap(role =>
-  load(readFileSync('products/power-evolve/' + role + '/cordis.patch.yml', 'utf8'), { schema: patchSchema })
-    .flatMap(row => row.insert ?? []).map((row) => {
-      const id = row.name.startsWith('@') ? row.name.split('/').slice(0, 2).join('/') : row.name.split('/')[0]
-      const record = packages.get(id)
-      if (!record) throw new Error('Missing declared product Profile package: ' + id)
-      const host = join(record.path, 'tsconfig.host.json')
-      return existsSync(host) ? host : join(record.path, 'tsconfig.json')
-    })))]
+const profilePatches = ['host', 'platform', 'native-runtime'].map(role => 'products/power-evolve/' + role + '/cordis.patch.yml')
+  .concat(['base', 'web-app'].map(role => 'packages/bundle/' + role + '/cordis.patch.yml'),
+    ['standard', 'ptc', 'minimal', 'cordis'].map(preset => 'packages/bundle/web-app/presets/' + preset + '.patch.yml'))
+function pluginPackages(value) {
+  if (Array.isArray(value)) return value.flatMap(pluginPackages)
+  if (value === null || typeof value !== 'object') return []
+  const names = typeof value.name === 'string' && /^@(?:deepseek-ai|power-evolve)\//u.test(value.name) ? [value.name] : []
+  return names.concat(Object.values(value).flatMap(pluginPackages))
+}
+const profilePackages = [...new Set(profilePatches.flatMap(path =>
+  pluginPackages(load(readFileSync(path, 'utf8'), { schema: patchSchema })).map((name) => {
+    const id = name.split('/').slice(0, 2).join('/')
+    const record = packages.get(id)
+    if (!record) throw new Error('Missing declared product Profile package: ' + id)
+    return record.path
+  })))]
+function profilePrograms(face) {
+  return profilePackages.flatMap((path) => {
+    const leaf = join(path, 'tsconfig.' + face + '.json')
+    if (existsSync(leaf)) return [leaf]
+    const program = join(path, 'tsconfig.json'), parsed = ts.readConfigFile(program, ts.sys.readFile)
+    if (parsed.error) throw new Error('Missing declared Profile type program: ' + program)
+    if (parsed.config.files?.length === 0 && parsed.config.references?.length) return []
+    const client = parsed.config.extends?.endsWith('tsconfig.base.client.json') === true
+    return client === (face === 'client') ? [program] : []
+  })
+}
+const profileHostPrograms = profilePrograms('host'), profileClientPrograms = profilePrograms('client')
 const pending = [...patch.flatMap(row => row.insert ?? []).filter(row => row.disabled === undefined)
   .map(row => row.name.startsWith('@') ? row.name.split('/').slice(0, 2).join('/') : row.name.split('/')[0]),
 '@deepseek-ai/dsh-client-ui-directory-picker-browse', '@power-evolve/client-account', '@power-evolve/client-extension-center']
@@ -54,7 +73,7 @@ const web = [...selected]
 const initial = ['apps/cli/tsconfig.json', 'products/power-evolve/application/tsconfig.json',
   'products/power-evolve/client-account/tsconfig.json', 'products/power-evolve/client-extension-center/tsconfig.json',
   'packages/typert/generator/tsconfig.json',
-  ...profilePrograms,
+  ...profileHostPrograms, ...profileClientPrograms,
   ...web.flatMap((path) => {
     const faces = ['tsconfig.host.json', 'tsconfig.client.json'].map(name => join(path, name)).filter(existsSync)
     return faces.length > 0 ? faces : [join(path, 'tsconfig.json')]
@@ -73,9 +92,9 @@ for (const path of initial) visit(path)
 const programPath = path => resolve(path.endsWith('.json') ? path : join(path, 'tsconfig.json'))
 const faceRoots = face => ts.readConfigFile('tsconfig.' + face + '.json', ts.sys.readFile).config.references
   .map(ref => programPath(ref.path)).filter(path => [...projects].some(project => dirname(project) === dirname(path)))
-const host = [...new Set([...faceRoots('host'), ...profilePrograms.map(programPath), ...['apps/cli/tsconfig.json', 'products/power-evolve/application/tsconfig.json',
+const host = [...new Set([...faceRoots('host'), ...profileHostPrograms.map(programPath), ...['apps/cli/tsconfig.json', 'products/power-evolve/application/tsconfig.json',
   'packages/typert/generator/tsconfig.json'].map(programPath)])]
-const client = [...new Set([...faceRoots('client'), ...['products/power-evolve/client-account/tsconfig.json',
+const client = [...new Set([...faceRoots('client'), ...profileClientPrograms.map(programPath), ...['products/power-evolve/client-account/tsconfig.json',
   'products/power-evolve/client-extension-center/tsconfig.json'].map(programPath)])]
 writeFileSync('tsconfig.host.json', JSON.stringify({ extends: './tsconfig.base.json', files: [], references: host.map(path => ({ path: relative(root, path) })) }))
 writeFileSync('tsconfig.client.json', JSON.stringify({ extends: './tsconfig.base.client.json', files: [], references: client.map(path => ({ path: relative(root, path) })) }))
@@ -99,6 +118,7 @@ run('pnpm', ['exec', 'tsdown', '--config-loader', 'native', '--config', 'cloud-i
 for (const path of ['contracts', 'connector-runner', 'application', 'client-account', 'client-extension-center']) {
   run('pnpm', ['--dir', 'products/power-evolve/' + path, 'exec', 'tsdown', '--config-loader', 'native'])
 }
+run('pnpm', ['exec', 'tsdown', '--config-loader', 'native', '--config', 'products/power-evolve/sandbox/tsdown.config.ts'])
 run('pnpm', ['exec', 'tsdown', '--config-loader', 'native', '--config', 'products/power-evolve/deploy/tsdown.attachment.config.ts'])
 run('pnpm', ['--dir', 'apps/web', 'exec', 'vite', 'build', '--config', '../../products/power-evolve/deploy/cloud-image.vite.config.ts'])
 run('node', ['products/power-evolve/cloud-web/scripts/build.mjs'])

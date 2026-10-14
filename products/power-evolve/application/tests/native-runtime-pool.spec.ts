@@ -14,28 +14,45 @@ import { cloudFixture } from './cloud-fixture.ts'
 
 const object = z.object({ metadata: z.object({ name: z.string(), labels: z.record(z.string(), z.string()),
   finalizers: z.array(z.string()).optional() }).loose(), stringData: z.record(z.string(), z.string()).optional(),
-  spec: z.record(z.string(), z.unknown()).optional() }).loose()
+spec: z.record(z.string(), z.unknown()).optional() }).loose()
 
-async function fixture(run: (value: {
-  pool: NativeRuntimePool; main: Pool; locks: Pool; config: NativeRuntimePoolConfig;
-  userId: z.infer<typeof accountUserId>; otherUserId: z.infer<typeof accountUserId>; resources: Map<string, Record<string, unknown>>;
-  barrier: { entered: PromiseWithResolvers<undefined>; release: PromiseWithResolvers<undefined>; block: boolean; blockStop: boolean };
-  calls: Array<{ method: string; path: string }>; seed: (unlinked?: boolean) => Promise<string>; retry: (next?: NativeRuntimePoolConfig) => NativeRuntimePool;
-  expectedFailures: Set<NativeRuntimePool>; hooks: { invalidStop: boolean; failPatchOnce: boolean; losePodResponse: boolean }
-}) => Promise<void>) {
-  await cloudFixture(async f => {
+interface NativePoolFixture {
+  pool: NativeRuntimePool
+  main: Pool
+  locks: Pool
+  config: NativeRuntimePoolConfig
+  userId: z.infer<typeof accountUserId>
+  otherUserId: z.infer<typeof accountUserId>
+  resources: Map<string, Record<string, unknown>>
+  barrier: {
+    entered: PromiseWithResolvers<undefined>
+    release: PromiseWithResolvers<undefined>
+    block: boolean
+    blockStop: boolean
+  }
+  calls: Array<{ method: string; path: string }>
+  seed: (unlinked?: boolean) => Promise<string>
+  retry: (next?: NativeRuntimePoolConfig) => NativeRuntimePool
+  expectedFailures: Set<NativeRuntimePool>
+  hooks: { invalidStop: boolean; failPatchOnce: boolean; losePodResponse: boolean; runtimeNotReady: boolean }
+}
+
+async function fixture(run: (value: NativePoolFixture) => Promise<void>) {
+  await cloudFixture(async (f) => {
     for (let next = CURRENT_SCHEMA_VERSION + 1; next <= 11; next++) {
       await f.pool.query(await readFile(new URL(`../assets/cloud-schema-v${next}.sql`, import.meta.url), 'utf8'))
     }
     const main = new Pool({ ...f.pool.options, max: 1, connectionTimeoutMillis: 2000 })
     const locks = new Pool({ ...f.pool.options, max: 2, connectionTimeoutMillis: 2000 })
     const file = join(f.root, 'kubeconfig')
-    await writeFile(file, JSON.stringify({ 'current-context': 'owned', contexts: [{ name: 'owned', context: { cluster: 'owned', user: 'owned' } }],
+    await writeFile(file, JSON.stringify({ 'current-context': 'owned',
+      contexts: [{ name: 'owned', context: { cluster: 'owned', user: 'owned' } }],
       clusters: [{ name: 'owned', cluster: { server: 'https://127.0.0.1:1', 'certificate-authority-data': 'dGVzdA==' } }],
       users: [{ name: 'owned', user: { token: 'fixture-token' } }] }), { mode: 0o600 })
     const kube = await KubernetesClient.fromFile(file)
     const resources = new Map<string, Record<string, unknown>>(), calls: Array<{ method: string; path: string }> = []
-    const barrier = { entered: Promise.withResolvers<undefined>(), release: Promise.withResolvers<undefined>(), block: false, blockStop: false }
+    const barrier = { entered: Promise.withResolvers<undefined>(), release: Promise.withResolvers<undefined>(),
+      block: false, blockStop: false }
     const config: NativeRuntimePoolConfig = { kubeconfigFile: file, namespace: 'owned',
       image: 'fixture@sha256:' + 'a'.repeat(64), runtimeClass: 'gvisor', volumeClaimName: 'owned',
       storageSubPath: 'homes', localStateRoot: join(await realpath(f.root), 'homes'),
@@ -45,11 +62,12 @@ async function fixture(run: (value: {
       reconcileMs: 1000, maxResponseBytes: 1048576, maxRuntimeSeconds: 60, maxAccounts: 10, lockConnections: 2,
       resources: { requests: { cpu: '1', memory: '256Mi' }, limits: { cpu: '1', memory: '256Mi' } } }
     const userId = accountUserId.parse(f.alice.user.userId)
-    const hooks = { invalidStop: false, failPatchOnce: false, losePodResponse: false }
+    const hooks = { invalidStop: false, failPatchOnce: false, losePodResponse: false, runtimeNotReady: false }
     const call = async (method: string, path: string, body?: unknown): Promise<unknown> => {
       calls.push({ method, path })
       if (path.includes('/proxy/')) {
         const id = path.match(/http:pe-runtime-([^:]+):8080/u)?.[1]
+        if (!id) throw new Error('Missing Runtime identity in fixture proxy address')
         const namespace = path.split('/')[4]
         if (!namespace) throw new Error('Missing namespace in fixture proxy address')
         const value = resources.get(kube.resourcePath(namespace, 'secrets', 'pe-runtime-' + id))
@@ -57,7 +75,8 @@ async function fixture(run: (value: {
         const data = z.object({ data: z.object({ 'deployment.json': z.string() }) }).parse(value)
         const deployment = z.object({ runtimeIdentity: z.object({ userId: z.string(), runtimeId: z.string(), generation: z.number() }) })
           .parse(JSON.parse(Buffer.from(data.data['deployment.json'], 'base64').toString()))
-        return { runtimeUserId: deployment.runtimeIdentity.userId, runtimeId: deployment.runtimeIdentity.runtimeId,
+        return { ready: !hooks.runtimeNotReady, runtimeUserId: deployment.runtimeIdentity.userId,
+          runtimeId: deployment.runtimeIdentity.runtimeId,
           generation: deployment.runtimeIdentity.generation }
       }
       if (method === 'POST') {
@@ -88,14 +107,19 @@ async function fixture(run: (value: {
         const metadata = z.record(z.string(), z.unknown()).parse(value['metadata'])
         value['metadata'] = { ...metadata, deletionTimestamp: '2026-10-14T00:00:01Z' }
         const containerID = 'containerd://' + 'a'.repeat(64)
+        const initID = 'containerd://' + 'b'.repeat(64)
         value['status'] = { phase: 'Failed', ...(hooks.invalidStop ? { reason: 'NodeLost' } : {}), conditions: [{ type: 'PodReadyToStartContainers', status: 'False', observedGeneration: 1 }],
+          initContainerStatuses: [{ name: 'prepare-private', ready: true, restartCount: 0, containerID: initID, lastState: {},
+            state: { terminated: { exitCode: 0, containerID: initID,
+              startedAt: '2026-10-14T00:00:00Z', finishedAt: '2026-10-14T00:00:00Z' } } }],
           containerStatuses: [{ name: 'native-runtime', ready: false, restartCount: 0, containerID, lastState: {},
-            state: { terminated: { exitCode: 0, containerID, startedAt: '2026-10-14T00:00:00Z', finishedAt: '2026-10-14T00:00:01Z' } } }] }
+            state: { terminated: { exitCode: 0, containerID,
+              startedAt: '2026-10-14T00:00:00Z', finishedAt: '2026-10-14T00:00:01Z' } } }] }
         return value
       }
       throw new Error('Unexpected Kubernetes fixture method')
     }
-    vi.spyOn(kube, 'call').mockImplementation(async <T>(method: 'GET' | 'POST' | 'DELETE' | 'PATCH', path: string, body?: unknown) => await call(method, path, body) as T)
+    vi.spyOn(kube, 'call').mockImplementation(async (method, path, body) => await call(method, path, body))
     const pool = new NativeRuntimePool(main, locks, kube, config)
     const owners = [pool], expectedFailures = new Set<NativeRuntimePool>()
     const retry = (next = config) => { const owner = new NativeRuntimePool(main, locks, kube, next); owners.push(owner); return owner }
@@ -111,17 +135,18 @@ async function fixture(run: (value: {
       } })
       return runtimeId
     }
-    try { await run({ pool, main, locks, config, userId, otherUserId: accountUserId.parse(f.bob.user.userId), resources, barrier, calls, seed, retry, expectedFailures, hooks }) }
+    try { await run({ pool, main, locks, config, userId, otherUserId: accountUserId.parse(f.bob.user.userId), resources, barrier,
+      calls, seed, retry, expectedFailures, hooks }) }
     finally {
       barrier.release.resolve(undefined)
       try {
-        for (const owner of owners) await owner.close().catch(error => { if (!expectedFailures.has(owner)) throw error })
+        for (const owner of owners) await owner.close().catch((error: unknown) => { if (!expectedFailures.has(owner)) throw error })
       } finally { await Promise.all([main.end(), locks.end()]) }
     }
   })
 }
 
-test('account advisory locks cannot consume the saturated main query pool', () => fixture(async f => {
+test('account advisory locks cannot consume the saturated main query pool', () => fixture(async (f) => {
   await f.seed()
   f.barrier.block = true
   const work = Promise.all(Array.from({ length: 4 }, () => f.pool.ensure(f.userId)))
@@ -134,7 +159,7 @@ test('account advisory locks cannot consume the saturated main query pool', () =
   expect(new Set(result.map(row => row.runtimeId)).size).toBe(1)
 }))
 
-test('a committed Secret resumes the same creating generation without issuing another credential', () => fixture(async f => {
+test('a committed Secret resumes the same creating generation without issuing another credential', () => fixture(async (f) => {
   const original = await f.seed()
   const selected = await f.pool.ensure(f.userId)
   expect(selected.runtimeId).toBe(original)
@@ -143,7 +168,18 @@ test('a committed Secret resumes the same creating generation without issuing an
   expect(f.calls.filter(row => row.method === 'POST' && row.path.endsWith('/pods'))).toHaveLength(1)
 }))
 
-test('close joins a blocked allocation, refuses new work and drains exact owned resources once', () => fixture(async f => {
+test('an account identity without native composition readiness remains in its original creating generation', () => fixture(async (f) => {
+  f.hooks.runtimeNotReady = true
+  await expect(f.pool.ensure(f.userId)).rejects.toMatchObject({ code: 'native_runtime_ready_timeout' })
+  const rows = (await f.main.query<{ runtime_id: string; phase: string }>('SELECT runtime_id,phase FROM pe_native_runtime_instances')).rows
+  expect(rows).toHaveLength(1)
+  expect(rows[0]?.phase).toBe('creating')
+  f.hooks.runtimeNotReady = false
+  expect((await f.pool.ensure(f.userId)).runtimeId).toBe(rows[0]?.runtime_id)
+  expect(f.calls.filter(row => row.method === 'POST' && row.path.endsWith('/pods'))).toHaveLength(1)
+}))
+
+test('close joins a blocked allocation, refuses new work and drains exact owned resources once', () => fixture(async (f) => {
   await f.seed(); f.barrier.block = true
   const work = f.pool.ensure(f.userId)
   void work.catch(() => {})
@@ -161,7 +197,7 @@ test('close joins a blocked allocation, refuses new work and drains exact owned 
   expect(f.resources.size).toBe(0)
 }))
 
-test('NodeLost termination fields remain uncertain and cannot release the original runtime finalizer', () => fixture(async f => {
+test('NodeLost termination fields remain uncertain and cannot release the original runtime finalizer', () => fixture(async (f) => {
   await f.pool.ensure(f.userId)
   f.hooks.invalidStop = true
   f.expectedFailures.add(f.pool)
@@ -177,24 +213,24 @@ test('NodeLost termination fields remain uncertain and cannot release the origin
   await f.retry().close()
 }))
 
-test('restart finishes finalizer cleanup from immutable persisted stop evidence', () => fixture(async f => {
+test('restart finishes finalizer cleanup from immutable persisted stop evidence', () => fixture(async (f) => {
   const selected = await f.pool.ensure(f.userId)
   f.hooks.failPatchOnce = true
   f.expectedFailures.add(f.pool)
   await expect(f.pool.close()).rejects.toMatchObject({ message: 'Native runtime drain failed' })
-  const original = (await f.main.query('SELECT stop_proof FROM pe_native_runtime_instances')).rows[0]?.stop_proof
+  const original = (await f.main.query<{ stop_proof: unknown }>('SELECT stop_proof FROM pe_native_runtime_instances')).rows[0]?.stop_proof
   expect(original).not.toBeNull()
   for (const [path, value] of f.resources) if (path.includes('/pods/')) {
     const metadata = z.record(z.string(), z.unknown()).parse(value['metadata'])
     value['metadata'] = { ...metadata, resourceVersion: '2' }
   }
   await f.retry().close()
-  expect((await f.main.query('SELECT runtime_id,phase,stop_proof FROM pe_native_runtime_instances')).rows)
+  expect((await f.main.query<{ runtime_id: string; phase: string; stop_proof: unknown }>('SELECT runtime_id,phase,stop_proof FROM pe_native_runtime_instances')).rows)
     .toEqual([{ runtime_id: selected.runtimeId, phase: 'stopped', stop_proof: original }])
   expect(f.resources.size).toBe(0)
 }))
 
-test('a lost Pod creation followed by missing original identity cannot create a replacement generation', () => fixture(async f => {
+test('a lost Pod creation followed by missing original identity cannot create a replacement generation', () => fixture(async (f) => {
   await f.seed(); f.hooks.losePodResponse = true
   f.expectedFailures.add(f.pool)
   await expect(f.pool.ensure(f.userId)).rejects.toMatchObject({ code: 'native_runtime_stop_proof_unavailable' })
@@ -206,7 +242,7 @@ test('a lost Pod creation followed by missing original identity cannot create a 
   await expect(f.pool.close()).rejects.toMatchObject({ message: 'Native runtime drain failed' })
 }))
 
-test('different account allocations cannot race past the shared runtime capacity', () => fixture(async f => {
+test('different account allocations cannot race past the shared runtime capacity', () => fixture(async (f) => {
   const controller = f.retry({ ...f.config, maxAccounts: 1 })
   const outcomes = await Promise.allSettled([controller.ensure(f.userId), controller.ensure(f.otherUserId)])
   expect(outcomes.filter(result => result.status === 'fulfilled')).toHaveLength(1)
@@ -228,7 +264,7 @@ async function waitingForAccountLock(database: Pool, signal?: AbortSignal): Prom
   }
 }
 
-test('reconciliation rechecks a creating reservation after waiting for account ownership', () => fixture(async f => {
+test('reconciliation rechecks a creating reservation after waiting for account ownership', () => fixture(async (f) => {
   const runtimeId = await f.seed(true)
   const credential = (await f.main.query<{ id: string }>('SELECT id FROM pe_runtime_credentials')).rows[0]?.id
   const lock = await f.locks.connect()
@@ -246,7 +282,7 @@ test('reconciliation rechecks a creating reservation after waiting for account o
   expect((await f.main.query('SELECT revoked_at FROM pe_runtime_credentials')).rows).toEqual([{ revoked_at: null }])
 }))
 
-test('reconciliation observes a Pod request committed while it waited for account ownership', () => fixture(async f => {
+test('reconciliation observes a Pod request committed while it waited for account ownership', () => fixture(async (f) => {
   const runtimeId = await f.seed(true)
   const lock = await f.locks.connect()
   let work: Promise<void> | undefined
@@ -265,7 +301,7 @@ test('reconciliation observes a Pod request committed while it waited for accoun
   await expect(f.pool.ensure(f.userId)).rejects.toMatchObject({ code: 'native_runtime_stop_proof_unavailable' })
 }))
 
-test('drain requests only its configured number of account locks before a stop barrier releases', () => fixture(async f => {
+test('drain requests only its configured number of account locks before a stop barrier releases', () => fixture(async (f) => {
   const controller = f.retry({ ...f.config, lockConnections: 1 })
   await controller.ensure(f.userId); await controller.ensure(f.otherUserId)
   f.barrier.blockStop = true
@@ -280,7 +316,7 @@ test('drain requests only its configured number of account locks before a stop b
   expect(f.resources.size).toBe(0)
 }))
 
-test('configuration digest is canonical and detects a changed immutable deployment', () => fixture(async f => {
+test('configuration digest is canonical and detects a changed immutable deployment', () => fixture(async (f) => {
   const original = { ...f.config, deployment: { ...f.config.deployment, rows: { 'native-runtime': { a: { z: 1, b: 2 }, b: { value: 3 } } } } }
   const reordered = { ...f.config, deployment: { ...f.config.deployment, rows: { 'native-runtime': { b: { value: 3 }, a: { b: 2, z: 1 } } } } }
   expect(nativeRuntimePoolConfigDigest(original)).toBe(nativeRuntimePoolConfigDigest(reordered))
@@ -288,7 +324,7 @@ test('configuration digest is canonical and detects a changed immutable deployme
     .not.toBe(nativeRuntimePoolConfigDigest(original))
 }))
 
-test('a changed namespace and image stop the original Pod before allocating the next configured generation', () => fixture(async f => {
+test('a changed namespace and image stop the original Pod before allocating the next configured generation', () => fixture(async (f) => {
   const original = await f.pool.ensure(f.userId)
   f.calls.length = 0
   const config = { ...f.config, namespace: 'next-owned', image: 'fixture@sha256:' + 'b'.repeat(64) }
@@ -304,7 +340,7 @@ test('a changed namespace and image stop the original Pod before allocating the 
       { namespace: config.namespace, config_digest: nativeRuntimePoolConfigDigest(config), phase: 'ready' }])
 }))
 
-test('a ready Pod with a changed actual image is refused despite its unchanged durable configuration', () => fixture(async f => {
+test('a ready Pod with a changed actual image is refused despite its unchanged durable configuration', () => fixture(async (f) => {
   await f.pool.ensure(f.userId)
   for (const [path, value] of f.resources) if (path.includes('/pods/')) {
     const spec = z.object({ containers: z.array(z.object({ name: z.string(), image: z.string() }).loose()) }).loose().parse(value['spec'])
@@ -313,7 +349,33 @@ test('a ready Pod with a changed actual image is refused despite its unchanged d
   await expect(f.pool.ensure(f.userId)).rejects.toMatchObject({ code: 'native_runtime_pod_configuration_mismatch' })
 }))
 
-for (const phase of ['ready', 'creating'] as const) test(`reconciliation retires an exact failed ${phase} Pod with a still live credential`, () => fixture(async f => {
+test.each(['init-image', 'init-subpath', 'foreign-state', 'writable-private'] as const)(
+  'an altered %s cannot change the ready Runtime private files or account storage', alteration => fixture(async (f) => {
+    await f.pool.ensure(f.userId)
+    for (const [path, value] of f.resources) if (path.includes('/pods/')) {
+      const spec = z.object({
+        initContainers: z.array(z.object({ image: z.string(), volumeMounts: z.array(z.record(z.string(), z.unknown())) }).loose()),
+        containers: z.array(z.object({ volumeMounts: z.array(z.record(z.string(), z.unknown())) }).loose()),
+      }).loose().parse(value['spec'])
+      const init = spec.initContainers[0], runtime = spec.containers[0]
+      if (!init || !runtime) throw new Error('Fixture Runtime composition is absent')
+      if (alteration === 'init-image') init.image = 'fixture@sha256:' + 'c'.repeat(64)
+      if (alteration === 'init-subpath') {
+        const mount = init.volumeMounts[0]
+        if (!mount) throw new Error('Fixture initialization mount is absent')
+        mount['subPath'] = 'another-key'
+      }
+      const state = runtime.volumeMounts.find(mount => mount['name'] === 'state')
+      const privateFiles = runtime.volumeMounts.find(mount => mount['name'] === 'private')
+      if (!state || !privateFiles) throw new Error('Fixture account mounts are absent')
+      if (alteration === 'foreign-state') state['subPath'] = `homes/${f.otherUserId}/.native-runtime`
+      if (alteration === 'writable-private') privateFiles['readOnly'] = false
+      value['spec'] = spec
+    }
+    await expect(f.pool.ensure(f.userId)).rejects.toMatchObject({ code: 'native_runtime_private_preparation_mismatch' })
+  }))
+
+for (const phase of ['ready', 'creating'] as const) test(`reconciliation retires an exact failed ${phase} Pod with a still live credential`, () => fixture(async (f) => {
   const original = await f.pool.ensure(f.userId)
   await f.main.query('UPDATE pe_native_runtime_instances SET phase=$2 WHERE runtime_id=$1', [original.runtimeId, phase])
   for (const [path, value] of f.resources) if (path.includes('/pods/')) value['status'] = { phase: 'Failed' }
@@ -329,7 +391,7 @@ for (const phase of ['ready', 'creating'] as const) test(`reconciliation retires
   expect(next.generation).toBe(2); expect(next.runtimeId).not.toBe(original.runtimeId)
 }))
 
-test('reconciliation observes a live credential Pod failure only after acquiring its original account lock', () => fixture(async f => {
+test('reconciliation observes a live credential Pod failure only after acquiring its original account lock', () => fixture(async (f) => {
   const original = await f.pool.ensure(f.userId), lock = await f.locks.connect()
   let work: Promise<void> | undefined, observing: Promise<void> | undefined
   const stopObserving = new AbortController()
@@ -346,11 +408,11 @@ test('reconciliation observes a live credential Pod failure only after acquiring
     await lock.query('SELECT pg_advisory_unlock(72819544,hashtext($1))', [f.userId]); lock.release()
   }
   await work
-  expect((await f.main.query('SELECT runtime_id,phase FROM pe_native_runtime_instances')).rows)
+  expect((await f.main.query<{ runtime_id: string; phase: string }>('SELECT runtime_id,phase FROM pe_native_runtime_instances')).rows)
     .toEqual([{ runtime_id: original.runtimeId, phase: 'stopped' }])
 }))
 
-test('reconciliation preserves a healthy original Pod and never issues a credential or replays a request', () => fixture(async f => {
+test('reconciliation preserves a healthy original Pod and never issues a credential or replays a request', () => fixture(async (f) => {
   const original = await f.pool.ensure(f.userId)
   f.calls.length = 0
   await f.pool.reconcile()
@@ -359,7 +421,7 @@ test('reconciliation preserves a healthy original Pod and never issues a credent
   expect((await f.main.query('SELECT revoked_at FROM pe_runtime_credentials')).rows).toEqual([{ revoked_at: null }])
 }))
 
-test('reconciliation cannot release a missing original Pod or allocate a replacement generation', () => fixture(async f => {
+test('reconciliation cannot release a missing original Pod or allocate a replacement generation', () => fixture(async (f) => {
   const original = await f.pool.ensure(f.userId)
   for (const path of f.resources.keys()) if (path.includes('/pods/')) f.resources.delete(path)
   f.expectedFailures.add(f.pool); f.calls.length = 0
@@ -370,7 +432,7 @@ test('reconciliation cannot release a missing original Pod or allocate a replace
   expect(f.calls.some(row => row.method === 'POST' || row.method === 'PATCH')).toBe(false)
 }))
 
-test('reconciliation refuses a substituted Pod UID and preserves its original stopped-proof obligation', () => fixture(async f => {
+test('reconciliation refuses a substituted Pod UID and preserves its original stopped-proof obligation', () => fixture(async (f) => {
   const original = await f.pool.ensure(f.userId)
   for (const [path, value] of f.resources) if (path.includes('/pods/')) {
     const metadata = z.record(z.string(), z.unknown()).parse(value['metadata'])
@@ -384,7 +446,7 @@ test('reconciliation refuses a substituted Pod UID and preserves its original st
   expect(f.calls.some(row => row.method === 'POST' || row.method === 'DELETE' || row.method === 'PATCH')).toBe(false)
 }))
 
-test('reconciliation never promotes NodeLost failure into kubelet stop proof', () => fixture(async f => {
+test('reconciliation never promotes NodeLost failure into kubelet stop proof', () => fixture(async (f) => {
   const original = await f.pool.ensure(f.userId)
   for (const [path, value] of f.resources) if (path.includes('/pods/')) value['status'] = { phase: 'Failed', reason: 'NodeLost' }
   f.hooks.invalidStop = true; f.expectedFailures.add(f.pool); f.calls.length = 0
@@ -394,9 +456,9 @@ test('reconciliation never promotes NodeLost failure into kubelet stop proof', (
   expect(f.calls.some(row => row.method === 'POST' || row.method === 'PATCH')).toBe(false)
 }))
 
-test('a Kubernetes read transport failure never retires or replays the original healthy generation', () => fixture(async f => {
+test('a Kubernetes read transport failure never retires or replays the original healthy generation', () => fixture(async (f) => {
   const original = await f.pool.ensure(f.userId), get = f.resources.get.bind(f.resources)
-  const observe = vi.spyOn(f.resources, 'get').mockImplementation(path => {
+  const observe = vi.spyOn(f.resources, 'get').mockImplementation((path) => {
     if (path.includes('/pods/')) throw new KubernetesError(503, 'Original Pod observation interrupted')
     return get(path)
   })

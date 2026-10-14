@@ -8,6 +8,7 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import { ShellEnvRegistry } from '@deepseek-ai/dsh-shell-env'
 import * as NativeBash from '@deepseek-ai/dsh-tool-bash'
 import { expect, test } from 'vitest'
+import { z } from 'zod'
 import { grant as grantSchema, PlatformError, type Grant } from '../src/contracts.ts'
 import { cloudShellObservation, cloudShellProposeRequest, type CloudShellObservation } from '../src/cloud-shell-contracts.ts'
 import { CloudShellExecutor } from '../src/host/cloud-shell.ts'
@@ -240,7 +241,7 @@ test('the original native Agent loop sees a real Bash result and continues withi
     expect(adapter.requests).toHaveLength(2)
     expect(adapter.requests[1]?.messages.some(m => m.role === 'tool')).toBe(true)
     const declarations = adapter.requests[0]?.tools?.map(tool => ({ name: tool.name,
-      description: tool.description, input_schema: tool.parameters })) ?? []
+      description: tool.description, input_schema: z.record(z.string(), z.json()).parse(tool.parameters) })) ?? []
     expect(declarations.some(tool => tool.name === 'bash')).toBe(true)
     expect(() => { assertModelToolDeclarations(declarations, []) }).not.toThrow()
     expect(STDIO_PRODUCT_RESERVED_NAMES_V2).toContain('bash')

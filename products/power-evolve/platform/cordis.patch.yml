@@ -13,6 +13,8 @@
       name: '@power-evolve/application/platform'
       config:
         databaseUrlFile: !!js process.env.PE_PRIVATE_DIR + '/database-url'
+        nativeRuntimePoolFile: !!js process.env.PE_NATIVE_RUNTIME_POOL_FILE || ''
+        nativeExecutionConfigFile: !!js process.env.PE_NATIVE_EXECUTION_CONFIG_FILE || ''
         nativeIntentKeyFile: !!js process.env.PE_NATIVE_INTENT_KEY_FILE || process.env.PE_PRIVATE_DIR + '/native-intent-key'
         nativeIntentMaxRequestBytes: 8388608
         nativeIntentMaxPendingPerSession: 64

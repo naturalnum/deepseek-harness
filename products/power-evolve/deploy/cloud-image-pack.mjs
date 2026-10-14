@@ -43,6 +43,14 @@ await mkdir(applicationTarget, { recursive: true })
 const extracted = spawnSync('tar', ['-xf', archive, '--strip-components=1', '-C', applicationTarget], { stdio: 'inherit' })
 if (extracted.error || extracted.status !== 0) throw new Error('Application package extraction failed')
 await copy(application + '/node_modules')
+const sandboxPayload = join(target, 'sandbox-payload')
+await mkdir(join(sandboxPayload, 'lib'), { recursive: true })
+for (const name of ['Dockerfile', 'requirements-skills.lock', 'runner.mjs', 'command-children.mjs', 'command-child.py']) {
+  await cp(join('products/power-evolve/sandbox', name), join(sandboxPayload, name))
+}
+await cp('products/power-evolve/sandbox/lib/stdio-v2-runtime.mjs', join(sandboxPayload, 'lib/stdio-v2-runtime.mjs'))
+await cp(join(application, 'lib/native-execution-worker'), join(sandboxPayload, 'native-execution-worker'), { recursive: true })
+await cp('packages/ptc-runtime/ptc-runtime-node/lib/process.js', join(sandboxPayload, 'native-ptc-process.mjs'))
 const { CURRENT_SCHEMA_VERSION } = await import(
   pathToFileURL(join(applicationTarget, 'lib/platform/database.js')).href,
 )
@@ -59,7 +67,7 @@ if (builtinReleases.length !== 1 || builtinReleases[0].id !== 'builtin.pdf'
 const digest = bytes => createHash('sha256').update(bytes).digest('hex')
 const profileEntries = {}
 const patchSchema = DEFAULT_SCHEMA.extend([new Type('tag:yaml.org,2002:js', { kind: 'scalar', construct: value => value })])
-for (const role of ['host', 'platform']) {
+for (const role of ['host', 'platform', 'native-runtime']) {
   const consumer = createRequire(join(target, 'products/power-evolve', role, 'package.json'))
   const patch = load(await readFile('products/power-evolve/' + role + '/cordis.patch.yml', 'utf8'), { schema: patchSchema })
   const entries = [...new Set(patch.flatMap(row => row.insert ?? []).map(row => row.name))]

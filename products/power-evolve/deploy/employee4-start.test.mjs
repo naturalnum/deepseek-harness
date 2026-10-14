@@ -57,8 +57,8 @@ test('public origins and override rows reject unsupported deployment input befor
     { rows: { host: { INVALID: {} } } },
     { rows: { host: { valid: [] } } },
   ]) assert.throws(() => deployment({ ...config, ...changed }))
-  await assert.rejects(renderProfile('unrelated', config), /Choose host or platform/u)
-  await assert.rejects(launch('unrelated', config), /Choose host or platform/u)
+  await assert.rejects(renderProfile('unrelated', config), /supported cloud Profile role/u)
+  await assert.rejects(launch('unrelated', config), /supported cloud Profile role/u)
 })
 test('private metadata refuses public files, directories, malformed JSON and symlink aliases', async (t) => {
   const { root } = await fixture(t), file = join(root, 'metadata.json')
@@ -97,6 +97,50 @@ test('another deployment config cannot rewrite the same Profile', async (t) => {
   const before = await readFile(join(profile.directory, 'cordis.patch.yml'))
   await assert.rejects(renderProfile('host', { ...config, privateDir: config.privateDir + '-other' }), /another deployment/u)
   assert.deepEqual(await readFile(join(profile.directory, 'cordis.patch.yml')), before)
+})
+test('tenant Profile preserves native configuration while launch identity changes by generation', async (t) => {
+  const { config } = await fixture(t), userId = randomUUID(), firstRuntimeId = randomUUID()
+  const native = { ...config, runtimeIdentity: { userId, runtimeId: firstRuntimeId, generation: 1 },
+    rows: { 'native-runtime': { 'power-evolve-runtime': { runtimeUserId: userId, workerId: firstRuntimeId,
+      runtimeTokenFile: '/runtime/private/runtime-token', workerTokenFile: '' },
+    webserver: { host: '0.0.0.0', port: 8080 } } } }
+  const first = await renderProfile('native-runtime', native)
+  const packageFile = join(first.directory, 'package.json'), patchFile = join(first.directory, 'cordis.patch.yml')
+  const manifest = JSON.parse(await readFile(packageFile, 'utf8'))
+  assert.deepEqual(manifest.dsh.profile.bundles, ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@power-evolve/native-runtime'])
+  manifest.dependencies['user-native-plugin'] = '1.0.0'
+  await durableJson(packageFile, manifest)
+  const patches = JSON.parse(await readFile(patchFile, 'utf8'))
+  patches.push({ id: 'sandbox-policy', config: { mode: 'read-only', workspaceRoot: '/workspace' } },
+    { id: 'native-custom-settings', config: { expression: { __jsExpr: '1 + 2' }, chosenPreset: 'minimal' } })
+  await durableJson(patchFile, patches)
+  await durableJson(join(first.lifecycleDirectory, 'lifecycle.json'), { phase: 'running', child: { pid: process.pid, birth: 'former-pod' } })
+  const secondRuntimeId = randomUUID()
+  const second = await renderProfile('native-runtime', { ...native,
+    runtimeIdentity: { userId, runtimeId: secondRuntimeId, generation: 2 },
+    rows: { 'native-runtime': { ...native.rows['native-runtime'],
+      'power-evolve-runtime': { ...native.rows['native-runtime']['power-evolve-runtime'], workerId: secondRuntimeId } } } })
+  assert.equal(second.directory, first.directory)
+  assert.notEqual(second.lifecycleDirectory, first.lifecycleDirectory)
+  assert.equal(JSON.parse(await readFile(packageFile, 'utf8')).dependencies['user-native-plugin'], '1.0.0')
+  const retained = JSON.parse(await readFile(patchFile, 'utf8'))
+  assert.deepEqual(retained.find(row => row.id === 'sandbox-policy').config, { mode: 'read-only', workspaceRoot: '/workspace' })
+  assert.deepEqual(retained.find(row => row.id === 'native-custom-settings').config,
+    { expression: { __jsExpr: '1 + 2' }, chosenPreset: 'minimal' })
+  assert.equal(retained.findLast(row => row.id === 'power-evolve-runtime').config.workerId, secondRuntimeId)
+  assert.equal(JSON.parse(await readFile(join(first.lifecycleDirectory, 'lifecycle.json'), 'utf8')).phase, 'running')
+  const before = await readFile(patchFile)
+  await assert.rejects(renderProfile('native-runtime', { ...native,
+    runtimeIdentity: { userId: randomUUID(), runtimeId: randomUUID(), generation: 1 } }), /another deployment/u)
+  assert.deepEqual(await readFile(patchFile), before)
+})
+test('native runtime role refuses missing or malformed account process identity', async (t) => {
+  const { config } = await fixture(t)
+  await assert.rejects(renderProfile('native-runtime', config), /account process identity/u)
+  for (const runtimeIdentity of [null, {}, { userId: randomUUID(), runtimeId: randomUUID(), generation: 0 },
+    { userId: randomUUID(), runtimeId: 'not-a-process', generation: 1 }]) {
+    assert.throws(() => deployment({ ...config, runtimeIdentity }), /native runtime process identity/u)
+  }
 })
 test('old ready file without stop identity cannot be overwritten', async (t) => {
   const { config } = await fixture(t), profile = await renderProfile('host', config)

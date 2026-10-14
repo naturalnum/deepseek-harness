@@ -6,6 +6,7 @@ import { afterEach, expect, test, vi } from 'vitest'
 import { SkillsPage } from '../src/client/SkillsPage.tsx'
 import type { PersonalSkill, SkillPort } from '../src/client/skills-api.ts'
 import { en } from '../src/client/locales.ts'
+import { unusedSessionStandards } from './unused-session-standards.ts'
 import { builtinWord } from './builtin-catalog-fixture.ts'
 import { deferredResult } from './deferred-result.ts'
 
@@ -20,7 +21,7 @@ function makePort(overrides: Partial<SkillPort> = {}): SkillPort {
     install: vi.fn(), installBuiltin: vi.fn(), importPackage: vi.fn(), toggle: vi.fn(), revoke: vi.fn(), ...overrides }
 }
 function page(client: SkillPort) {
-  return render(<SkillsPage client={client} t={t} trySkill={vi.fn()}
+  return render(<SkillsPage {...unusedSessionStandards} client={client} t={t} trySkill={vi.fn()}
     usePanelInfo={selector => selector({ activePanelId: null })} />)
 }
 

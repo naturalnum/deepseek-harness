@@ -14341,6 +14341,9 @@ importers:
       '@deepseek-ai/dsh-agent-loop-testkit':
         specifier: workspace:*
         version: link:../../../packages/test-support/agent-loop-testkit
+      '@deepseek-ai/dsh-agent-preset-registry':
+        specifier: workspace:*
+        version: link:../../../packages/preset/agent-preset-registry
       '@deepseek-ai/dsh-anonymous-user-id':
         specifier: workspace:*
         version: link:../../../packages/identity/anonymous-user-id
@@ -14350,6 +14353,9 @@ importers:
       '@deepseek-ai/dsh-api-session-controller':
         specifier: workspace:*
         version: link:../../../packages/api/session-controller
+      '@deepseek-ai/dsh-app-boot':
+        specifier: workspace:*
+        version: link:../../../packages/boot/app-boot
       '@deepseek-ai/dsh-attachment':
         specifier: workspace:*
         version: link:../../../packages/attachment/attachment
@@ -14377,6 +14383,9 @@ importers:
       '@deepseek-ai/dsh-compaction-image-offload':
         specifier: workspace:*
         version: link:../../../packages/compaction/compaction-image-offload
+      '@deepseek-ai/dsh-config-editor':
+        specifier: workspace:*
+        version: link:../../../packages/boot/config-editor
       '@deepseek-ai/dsh-fs':
         specifier: workspace:*
         version: link:../../../packages/fs/fs
@@ -14398,6 +14407,9 @@ importers:
       '@deepseek-ai/dsh-mcp-client':
         specifier: workspace:*
         version: link:../../../packages/mcp/mcp-client
+      '@deepseek-ai/dsh-permission-presets':
+        specifier: workspace:*
+        version: link:../../../packages/interaction/permission-presets
       '@deepseek-ai/dsh-plugin-manager':
         specifier: workspace:*
         version: link:../../../packages/boot/plugin-manager
@@ -14449,6 +14461,9 @@ importers:
       '@deepseek-ai/dsh-session-title':
         specifier: workspace:*
         version: link:../../../packages/session/session-title
+      '@deepseek-ai/dsh-settings':
+        specifier: workspace:*
+        version: link:../../../packages/settings/settings
       '@deepseek-ai/dsh-shell':
         specifier: workspace:*
         version: link:../../../packages/shell/shell
@@ -14461,6 +14476,9 @@ importers:
       '@deepseek-ai/dsh-skill-filesystem':
         specifier: workspace:*
         version: link:../../../packages/skill/skill-filesystem
+      '@deepseek-ai/dsh-subagent':
+        specifier: workspace:*
+        version: link:../../../packages/subagent/subagent
       '@deepseek-ai/dsh-subprocess':
         specifier: workspace:*
         version: link:../../../packages/subprocess/subprocess
@@ -14488,6 +14506,12 @@ importers:
       '@deepseek-ai/dsh-typert-registry':
         specifier: workspace:*
         version: link:../../../packages/typert/registry
+      '@deepseek-ai/dsh-web':
+        specifier: workspace:*
+        version: link:../../../packages/web/web
+      '@deepseek-ai/dsh-web-search-deepseek':
+        specifier: workspace:*
+        version: link:../../../packages/web/web-search-deepseek
       '@power-evolve/connector-runner':
         specifier: workspace:~
         version: link:../connector-runner
@@ -14777,6 +14801,18 @@ importers:
       zod:
         specifier: 4.4.3
         version: 4.4.3
+
+  products/power-evolve/native-runtime:
+    dependencies:
+      '@deepseek-ai/dsh-base':
+        specifier: workspace:*
+        version: link:../../../packages/bundle/base
+      '@deepseek-ai/dsh-web-app':
+        specifier: workspace:*
+        version: link:../../../packages/bundle/web-app
+      '@power-evolve/application':
+        specifier: workspace:*
+        version: link:../application
 
   products/power-evolve/platform:
     dependencies:

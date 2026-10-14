@@ -73,12 +73,12 @@
   "counts": {
     "runtime": {
       "enabled": 14,
-      "shared": 337,
+      "shared": 341,
       "deferred": 4
     },
     "sourceTests": {
       "enabled": 12,
-      "shared": 155,
+      "shared": 162,
       "deferred": 3
     },
     "builtTests": {
@@ -5505,6 +5505,83 @@
       "status": "shared",
       "owner": "S3",
       "reason": "native-runtime-s3"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-execution-http.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-runtime-pod-stop.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-runtime-pool-routes.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-runtime-pool.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/kubernetes-request-lifetime.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-carrier-lifetime.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-execution-consumer-lifetime.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-runtime-pod-stop.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-runtime-pool.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/runtime-upgrade-proxy.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-execution-broker-lifetime.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
     }
   ],
   "lintSupport": [
@@ -5696,6 +5773,12 @@
     },
     {
       "path": "products/power-evolve/application/tests/native-execution-consumers-case.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "path": "products/power-evolve/client-extension-center/tests/unused-session-standards.ts",
       "status": "shared",
       "owner": "Root",
       "reason": "core-shared"

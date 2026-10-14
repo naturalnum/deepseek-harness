@@ -42,14 +42,37 @@ type Instance = z.infer<typeof instance>
 const resource = z.object({ metadata: z.object({ uid: z.string().min(1), resourceVersion: z.string().min(1),
   labels: z.record(z.string(), z.string()).optional(), deletionTimestamp: z.string().optional(),
   finalizers: z.array(z.string()).optional() }).loose(),
-  status: z.object({ phase: z.string().optional(), containerStatuses: z.array(z.object({
-    state: z.object({ terminated: z.object({ finishedAt: z.string().min(1) }).loose().optional() }).loose(),
-  }).loose()).optional() }).loose().optional() }).loose()
+status: z.object({ phase: z.string().optional(), containerStatuses: z.array(z.object({
+  state: z.object({ terminated: z.object({ finishedAt: z.string().min(1) }).loose().optional() }).loose(),
+}).loose()).optional() }).loose().optional() }).loose()
 const secret = z.object({ metadata: resource.shape.metadata, data: z.object({ 'runtime-token': z.string().min(1) }).loose() }).loose()
-const ready = z.object({ runtimeUserId: accountUserId, runtimeId: z.uuid(), generation: z.number().int().positive() }).loose()
+const ready = z.object({ ready: z.boolean(), runtimeUserId: accountUserId, runtimeId: z.uuid(),
+  generation: z.number().int().positive() }).loose()
+const volumeMount = z.object({ name: z.string(), mountPath: z.string(), readOnly: z.boolean().optional(),
+  subPath: z.string().optional(), subPathExpr: z.string().optional() }).loose()
 const podConfiguration = z.object({ spec: z.object({ runtimeClassName: z.string(),
-  containers: z.array(z.object({ name: z.literal('native-runtime'), image: z.string() }).loose()).length(1) }).loose() }).loose()
+  containers: z.array(z.object({ name: z.literal('native-runtime'), image: z.string(), volumeMounts: z.array(volumeMount) }).loose()).length(1),
+  initContainers: z.array(z.object({ name: z.literal('prepare-private'), image: z.string(), command: z.array(z.string()),
+    volumeMounts: z.array(volumeMount) }).loose()).length(1),
+  volumes: z.array(z.object({ name: z.string(), emptyDir: z.object({ medium: z.string(), sizeLimit: z.string() }).loose().optional(),
+    secret: z.object({ secretName: z.string(), defaultMode: z.number() }).loose().optional(),
+    persistentVolumeClaim: z.object({ claimName: z.string() }).loose().optional() }).loose()),
+}).loose() }).loose()
 const FINALIZER = 'power-evolve.io/native-runtime-stop'
+const PRIVATE_PREPARATION = ['python3', '-c', `import os,pathlib
+source=pathlib.Path('/runtime/source-private')
+target=pathlib.Path('/runtime/prepared-private/files')
+target.mkdir(mode=0o700)
+for name in ('runtime-token','deployment.json'):
+    data=(source/name).read_bytes()
+    fd=os.open(target/name,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+    with os.fdopen(fd,'wb') as output:
+        output.write(data)
+        output.flush()
+        os.fsync(output.fileno())
+`]
+const PRIVATE_PREPARATION_MOUNTS = [{ name: 'private-source', mountPath: '/runtime/source-private', readOnly: true },
+  { name: 'private', mountPath: '/runtime/prepared-private' }]
 
 /** Load a private deployment file before any account process is allocated.
  * @param path Explicit operator file; empty disables the pool.
@@ -120,7 +143,7 @@ export class NativeRuntimePool {
           current = null
         }
       }
-      const { runtimeId, next } = await transaction(this.database, async client => {
+      const { runtimeId, next } = await transaction(this.database, async (client) => {
         await client.query('SELECT pg_advisory_xact_lock(72819545)')
         const count = await client.query<{ count: string }>(
           "SELECT count(*) FROM pe_native_runtime_instances WHERE phase<>'stopped'")
@@ -200,8 +223,8 @@ export class NativeRuntimePool {
 
   private async reconcileOwned(): Promise<void> {
     const rows = await this.database.query("SELECT * FROM pe_native_runtime_instances WHERE phase<>'stopped' ORDER BY created_at,runtime_id")
-    const errors = await this.settleAccounts(rows.rows, async row => {
-      const observed = await this.database.query(`SELECT r.*,
+    const errors = await this.settleAccounts(rows.rows, async (row) => {
+      const observed = await this.database.query<Instance & { retire: boolean }>(`SELECT r.*,
         (r.phase='stopping' OR c.id IS NULL OR c.revoked_at IS NOT NULL
           OR c.expires_at<=clock_timestamp() OR c.credential_version<>u.credential_version
           OR NOT u.enabled OR u.deleted_at IS NOT NULL) AS retire
@@ -246,7 +269,7 @@ export class NativeRuntimePool {
   private async drain(): Promise<void> {
     await Promise.allSettled([...this.pending])
     const rows = await this.database.query("SELECT * FROM pe_native_runtime_instances WHERE phase<>'stopped'")
-    const errors = await this.settleAccounts(rows.rows, async row => { await this.markStopping(row); await this.stopLocked(row) })
+    const errors = await this.settleAccounts(rows.rows, async (row) => { await this.markStopping(row); await this.stopLocked(row) })
     if (errors.length) throw new AggregateError(errors, 'Native runtime drain failed')
   }
 
@@ -343,15 +366,20 @@ export class NativeRuntimePool {
         activeDeadlineSeconds: this.config.maxRuntimeSeconds, terminationGracePeriodSeconds: 15,
         securityContext: { runAsUser: 1000, runAsGroup: 1000, fsGroup: 1000, runAsNonRoot: true,
           seccompProfile: { type: 'RuntimeDefault' } },
+        initContainers: [{ name: 'prepare-private', image: this.config.image, imagePullPolicy: 'IfNotPresent',
+          command: PRIVATE_PREPARATION, resources: this.config.resources,
+          securityContext: { readOnlyRootFilesystem: true, allowPrivilegeEscalation: false, capabilities: { drop: ['ALL'] } },
+          volumeMounts: PRIVATE_PREPARATION_MOUNTS }],
         containers: [{ name: 'native-runtime', image: this.config.image, imagePullPolicy: 'IfNotPresent',
           args: ['native-runtime', '/runtime/private/deployment.json'],
           env: [{ name: 'NODE_ENV', value: 'production' }], ports: [{ name: 'http', containerPort: 8080 }],
           securityContext: { readOnlyRootFilesystem: true, allowPrivilegeEscalation: false, capabilities: { drop: ['ALL'] } },
           resources: this.config.resources,
-          volumeMounts: [{ name: 'private', mountPath: '/runtime/private', readOnly: true },
+          volumeMounts: [{ name: 'private', mountPath: '/runtime/private', subPath: 'files', readOnly: true },
             { name: 'state', mountPath: '/runtime/state', subPath: `${this.config.storageSubPath}/${row.user_id}/.native-runtime` },
             { name: 'tmp', mountPath: '/tmp' }],
-        }], volumes: [{ name: 'private', secret: { secretName: name, defaultMode: 0o440 } },
+        }], volumes: [{ name: 'private-source', secret: { secretName: name, defaultMode: 0o440 } },
+          { name: 'private', emptyDir: { medium: 'Memory', sizeLimit: '1Mi' } },
           { name: 'state', persistentVolumeClaim: { claimName: this.config.volumeClaimName } },
           { name: 'tmp', emptyDir: { medium: 'Memory', sizeLimit: '128Mi' } }],
       },
@@ -386,7 +414,7 @@ export class NativeRuntimePool {
       }
     }
     this.assertLabels(pod.metadata.labels, row)
-    this.assertPodConfiguration(pod)
+    this.assertPodConfiguration(pod, row)
     if (row.pod_uid && pod.metadata.uid !== row.pod_uid) throw new PlatformError(409, 'native_runtime_pod_replaced')
     if (!pod.metadata.finalizers?.includes(FINALIZER)) throw new PlatformError(409, 'native_runtime_stop_finalizer_missing')
     await this.database.query('UPDATE pe_native_runtime_instances SET pod_uid=$2 WHERE runtime_id=$1 AND pod_uid IS NULL',
@@ -399,10 +427,30 @@ export class NativeRuntimePool {
     return { ...row, pod_uid: pod.metadata.uid }
   }
 
-  private assertPodConfiguration(pod: unknown): void {
+  private assertPodConfiguration(pod: unknown, row: Instance): void {
     const parsed = podConfiguration.parse(pod)
     if (parsed.spec.runtimeClassName !== this.config.runtimeClass || parsed.spec.containers[0]?.image !== this.config.image) {
       throw new PlatformError(409, 'native_runtime_pod_configuration_mismatch')
+    }
+    const preparation = parsed.spec.initContainers[0]
+    const source = parsed.spec.volumes.find(volume => volume.name === 'private-source')
+    const prepared = parsed.spec.volumes.find(volume => volume.name === 'private')
+    const state = parsed.spec.volumes.find(volume => volume.name === 'state')
+    const privateMount = parsed.spec.containers[0].volumeMounts.find(mount => mount.mountPath === '/runtime/private')
+    const stateMount = parsed.spec.containers[0].volumeMounts.find(mount => mount.mountPath === '/runtime/state')
+    if (preparation?.image !== this.config.image || JSON.stringify(preparation.command) !== JSON.stringify(PRIVATE_PREPARATION)
+      || preparation.volumeMounts.some(mount => mount.subPath !== undefined || mount.subPathExpr !== undefined)
+      || JSON.stringify(preparation.volumeMounts.map(({ name, mountPath, readOnly }) => ({
+        name, mountPath, ...(readOnly === undefined ? {} : { readOnly }),
+      }))) !== JSON.stringify(PRIVATE_PREPARATION_MOUNTS)
+      || !source?.secret || source.secret.secretName !== this.name(row)
+      || source.secret.defaultMode !== 0o440 || prepared?.emptyDir?.medium !== 'Memory' || prepared.emptyDir.sizeLimit !== '1Mi'
+      || state?.persistentVolumeClaim?.claimName !== this.config.volumeClaimName
+      || privateMount?.name !== 'private' || privateMount.subPath !== 'files' || privateMount.subPathExpr !== undefined
+      || privateMount.readOnly !== true || stateMount?.name !== 'state'
+      || stateMount.subPath !== `${this.config.storageSubPath}/${row.user_id}/.native-runtime`
+      || stateMount.subPathExpr !== undefined || stateMount.readOnly === true) {
+      throw new PlatformError(409, 'native_runtime_private_preparation_mismatch')
     }
   }
 
@@ -437,7 +485,7 @@ export class NativeRuntimePool {
     while (Date.now() < deadline) {
       const pod = resource.parse(await this.kube.call('GET', this.kube.resourcePath(row.namespace, 'pods', this.name(row))))
       this.assertLabels(pod.metadata.labels, row)
-      this.assertPodConfiguration(pod)
+      this.assertPodConfiguration(pod, row)
       if (row.pod_uid && pod.metadata.uid !== row.pod_uid) throw new PlatformError(409, 'native_runtime_pod_replaced')
       if (!pod.metadata.finalizers?.includes(FINALIZER)) throw new PlatformError(409, 'native_runtime_stop_finalizer_missing')
       if (pod.metadata.deletionTimestamp || ['Failed', 'Succeeded'].includes(pod.status?.phase ?? '')) {
@@ -449,9 +497,11 @@ export class NativeRuntimePool {
         if (response.runtimeUserId !== row.user_id || response.runtimeId !== row.runtime_id || response.generation !== row.generation) {
           throw new PlatformError(409, 'native_runtime_identity_mismatch')
         }
-        await this.database.query("UPDATE pe_native_runtime_instances SET phase='ready' WHERE runtime_id=$1 AND phase='creating'",
-          [row.runtime_id])
-        return
+        if (response.ready) {
+          await this.database.query("UPDATE pe_native_runtime_instances SET phase='ready' WHERE runtime_id=$1 AND phase='creating'",
+            [row.runtime_id])
+          return
+        }
       } catch (error) {
         if (!(error instanceof KubernetesError) || ![502, 503, 504].includes(error.status)) throw error
       }

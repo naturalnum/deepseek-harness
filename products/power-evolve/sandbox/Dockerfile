@@ -76,6 +76,8 @@ ENV HOME=/home/agent \
 
 COPY --chmod=0444 runner.mjs command-children.mjs command-child.py /opt/power-evolve/
 COPY --chmod=0444 lib/stdio-v2-runtime.mjs /opt/power-evolve/lib/stdio-v2-runtime.mjs
+COPY --chmod=0444 native-execution-worker/ /opt/power-evolve/native-execution-worker/
+COPY --chmod=0444 native-ptc-process.mjs /opt/power-evolve/native-ptc-process.mjs
 # UNO uses Debian's system Python; the isolated report Python environment stays unchanged.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends python3-uno \

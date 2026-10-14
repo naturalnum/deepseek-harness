@@ -66,6 +66,11 @@ export class NativeExecutionBroker {
 
   private isDisposed(): boolean { return this.disposed }
 
+  private retainStop(work: Promise<void>): Promise<void> {
+    void work.catch((error: unknown) => { this.cleanupFailures.push(error) })
+    return work
+  }
+
   /** Run one native filesystem request, waiting for the precise worker Pod to stop before returning.
    * @param token Original operation bearer.
    * @param world Captured Agent identity.
@@ -142,7 +147,7 @@ export class NativeExecutionBroker {
     const stop = (cause: NonNullable<typeof stopCause>) => {
       stopCause ??= cause
       const original = range, causeAtStop = stopCause
-      if (original && !stopping) stopping = (async () => {
+      if (original && !stopping) stopping = this.retainStop((async () => {
         if (stopCause !== 'completed' && relay) {
           await this.settleWithin(relay.terminate(), spec.graceMs)
           await this.settleWithin(relay.done, spec.graceMs)
@@ -153,7 +158,7 @@ export class NativeExecutionBroker {
           if (local) await local.waitForExit()
           await relay?.done.catch(() => undefined)
         }
-      })()
+      })())
       return stopping
     }
     const abort = () => { void stop('abort')?.catch(() => {}) }
@@ -305,7 +310,7 @@ export class NativeExecutionBroker {
         let stopping: Promise<void> | undefined, closing = false, authorityWork: Promise<void> | undefined
         const stop = (cause: 'abort' | 'authority' | 'dispose' | 'completed' | 'failure') => {
           closing = true
-          return stopping ??= (async () => {
+          return stopping ??= this.retainStop((async () => {
             if (cause !== 'completed') { await this.settleWithin(remote.terminate(), spec.graceMs)
               await this.settleWithin(remote.done, spec.graceMs) }
             try { await this.pods.stop(range, cause) }
@@ -314,7 +319,7 @@ export class NativeExecutionBroker {
               await remote.done.catch(() => undefined)
               await Promise.allSettled([...operations])
             }
-          })()
+          })())
         }
         const isClosing = (): boolean => closing
         const tracked = <T>(fn: () => Promise<T>): Promise<T> => {

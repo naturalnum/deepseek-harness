@@ -1,5 +1,5 @@
 /** Raw WebSocket upgrades preserve native stream multiplexing through trusted HTTP proxies. */
-import { request as httpRequest, type ClientRequest, type IncomingMessage, type RequestOptions } from 'node:http'
+import { request as httpRequest, type ClientRequest, type IncomingMessage, type RequestOptions, type OutgoingHttpHeaders } from 'node:http'
 import { request as httpsRequest } from 'node:https'
 import type { Duplex } from 'node:stream'
 import type { ConnectionOptions } from 'node:tls'
@@ -14,7 +14,7 @@ import type { ConnectionOptions } from 'node:tls'
  * @returns Completion after owned transports have closed, including failed handshakes.
  */
 export async function proxyRuntimeUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer,
-  target: URL, options: RequestOptions & ConnectionOptions, timeoutMs: number): Promise<void> {
+  target: URL, options: Omit<RequestOptions, 'headers'> & ConnectionOptions & { headers?: OutgoingHttpHeaders }, timeoutMs: number): Promise<void> {
   if (!['http:', 'https:'].includes(target.protocol) || target.username || target.password) throw new Error('Invalid runtime proxy URL')
   const headers = { upgrade: 'websocket', connection: 'Upgrade',
     'sec-websocket-key': request.headers['sec-websocket-key'],
@@ -50,7 +50,7 @@ export async function proxyRuntimeUpgrade(request: IncomingMessage, socket: Dupl
       requestClosed = false
       outgoing.once('close', () => { requestClosed = true; settle() })
       outgoing.once('error', fail)
-      outgoing.once('response', response => {
+      outgoing.once('response', (response) => {
         refused = response; responseClosed = response.closed
         response.once('error', fail)
         response.once('close', () => { responseClosed = true; settle() })
@@ -75,7 +75,7 @@ export async function proxyRuntimeUpgrade(request: IncomingMessage, socket: Dupl
         if (head.length) transport.write(head)
         transport.pipe(socket); socket.pipe(transport)
       })
-      timer = setTimeout(() => fail(new Error('Native runtime upgrade timed out')), timeoutMs)
+      timer = setTimeout(() => { fail(new Error('Native runtime upgrade timed out')) }, timeoutMs)
       outgoing.end()
     } catch (error) { fail(error instanceof Error ? error : new Error('Native runtime upgrade failed', { cause: error })) }
   })

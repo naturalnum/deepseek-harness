@@ -30,19 +30,20 @@ export function installNativeRuntimePoolRoutes(ctx: Context,
   const streams = new Set<Duplex>(), pending = new Set<Promise<void>>()
   const requests = new Set<IncomingMessage>(), responses = new Set<ServerResponse>()
   let closing = false
+  const isClosing = (): boolean => closing
   const origin = config.deployment.hostOrigin
   ctx.effect(() => ctx.webServer.register({ kind: 'exact', path: '/native/runtime/invoke', handler: async (request, response) => {
     requests.add(request); responses.add(response)
     const requestClosed = transportClosed(request), responseClosed = transportClosed(response)
     const work = (async () => {
       try {
-        if (closing) throw new PlatformError(503, 'native_runtime_closing')
+        if (isClosing()) throw new PlatformError(503, 'native_runtime_closing')
         if (request.method !== 'POST') throw new PlatformError(405, 'method_not_allowed')
         if (request.headers.origin !== undefined && request.headers.origin !== origin) throw new PlatformError(403, 'invalid_origin')
         const token = bearer(request), user = await identities.authenticate(token)
-        if (closing || request.destroyed) throw new PlatformError(503, 'native_runtime_closing')
+        if (isClosing() || request.destroyed) throw new PlatformError(503, 'native_runtime_closing')
         const body = envelope.parse(await readJson(request, maxRequestBytes))
-        if (closing || response.destroyed) throw new PlatformError(503, 'native_runtime_closing')
+        if (isClosing() || response.destroyed) throw new PlatformError(503, 'native_runtime_closing')
         sendJson(response, await pool.invoke(user.userId, token, body))
       } catch (error) { if (!response.destroyed) sendFailure(response, error) }
       finally {
@@ -58,14 +59,15 @@ export function installNativeRuntimePoolRoutes(ctx: Context,
   ctx.effect(() => ctx.webServer.registerUpgrade({ path: '/native/runtime/mux', handler: async (request, socket, head) => {
     streams.add(socket)
     const closed = transportClosed(socket)
+    const socketUnavailable = (): boolean => socket.destroyed
     const work = (async () => {
       try {
-        if (closing) throw new PlatformError(503, 'native_runtime_closing')
+        if (isClosing()) throw new PlatformError(503, 'native_runtime_closing')
         if (request.headers.origin !== origin) throw new PlatformError(403, 'invalid_origin')
         const token = bearer(request), user = await identities.authenticate(token)
-        if (closing || socket.destroyed) return
+        if (isClosing() || socketUnavailable()) return
         const target = await pool.streamTarget(user.userId)
-        if (closing || socket.destroyed) { socket.destroy(); return }
+        if (isClosing() || socketUnavailable()) { socket.destroy(); return }
         await kube.proxyUpgrade(request, socket, head, target.path, target.token, token, origin, config.requestTimeoutMs)
       } catch (error) {
         if (!socket.destroyed) {
@@ -80,9 +82,10 @@ export function installNativeRuntimePoolRoutes(ctx: Context,
   } }))
   let reconciliation: Promise<void> | undefined
   const timer = setInterval(() => {
-    if (closing || reconciliation) return
-    reconciliation = pool.reconcile().catch(error => ctx.logger.warn('Native runtime reconciliation failed (%s)',
-      error instanceof Error ? error.name : 'unknown')).finally(() => { reconciliation = undefined })
+    if (isClosing() || reconciliation) return
+    reconciliation = pool.reconcile().catch((error: unknown) => {
+      ctx.logger.warn('Native runtime reconciliation failed (%s)', error instanceof Error ? error.name : 'unknown')
+    }).finally(() => { reconciliation = undefined })
   }, config.reconcileMs)
   let closePromise: Promise<void> | undefined
   const close = (): Promise<void> => closePromise ??= (async () => {
@@ -99,7 +102,7 @@ export function installNativeRuntimePoolRoutes(ctx: Context,
 
 function transportClosed(transport: Duplex | IncomingMessage | ServerResponse): Promise<void> {
   if (transport.closed) return Promise.resolve()
-  return new Promise(resolve => {
+  return new Promise((resolve) => {
     const failed = (): void => { transport.destroy() }
     transport.on('error', failed)
     transport.once('close', () => { transport.off('error', failed); resolve() })

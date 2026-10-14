@@ -20,6 +20,7 @@ RUN printf '%s\n' \
   && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
 
 FROM system AS build
+ARG TARGETARCH
 ENV CI=true ELECTRON_SKIP_BINARY_DOWNLOAD=1 PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm_config_nodedir=/usr/local
 RUN apt-get update \
   && apt-get install -y --no-install-recommends build-essential git \
@@ -27,7 +28,8 @@ RUN apt-get update \
   && npm install --global pnpm@11.7.0
 WORKDIR /build
 COPY source/ /build/
-RUN pnpm install --frozen-lockfile --store-dir /build/.linux-pnpm-store --network-concurrency=4 --fetch-retries=5 --fetch-timeout=120000
+RUN --mount=type=cache,id=pe-cloud-linux-pnpm-${TARGETARCH},target=/build/.linux-pnpm-store \
+    pnpm install --frozen-lockfile --store-dir /build/.linux-pnpm-store --network-concurrency=4 --fetch-retries=5 --fetch-timeout=120000
 COPY native-coverage/ /build/.pe-native-coverage/
 RUN if [ -f /build/.pe-native-coverage/build/inputs.json ]; then \
     env PE_CLOUD_COVERAGE_INPUT=/build/.pe-native-coverage/build/inputs.json \
@@ -42,11 +44,29 @@ RUN if [ -f /build/.pe-native-coverage/pack/inputs.json ]; then \
     node products/power-evolve/deploy/cloud-image-pack.mjs; \
   else node products/power-evolve/deploy/cloud-image-pack.mjs; fi
 
+FROM system AS kubectl-tools
+ARG TARGETARCH
+ARG KUBECTL_VERSION=v1.35.5
+ARG KUBECTL_SHA256_ARM64=ac69e06fd6860d69786692f5af1c3a1208ed54f8366a4d97ab15c172e99765ee
+ARG KUBECTL_SHA256_AMD64=90f75ea6ecc9ea5633262e1c0b83a40560003b30fc94a04cb099404fcef0c224
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends curl \
+  && case "${TARGETARCH:-$(dpkg --print-architecture)}" in \
+       arm64) kubectl_arch=arm64; kubectl_sha256="${KUBECTL_SHA256_ARM64}" ;; \
+       amd64) kubectl_arch=amd64; kubectl_sha256="${KUBECTL_SHA256_AMD64}" ;; \
+       *) echo 'unsupported kubectl architecture' >&2; exit 1 ;; \
+     esac \
+  && curl --fail --location --silent --show-error \
+       "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/${kubectl_arch}/kubectl" --output /usr/local/bin/kubectl \
+  && printf '%s  %s\n' "${kubectl_sha256}" /usr/local/bin/kubectl | sha256sum --check --strict \
+  && chmod 0555 /usr/local/bin/kubectl
+
 FROM scratch AS native-coverage-evidence
 COPY --from=build /build/.pe-native-coverage/ /
 
 FROM system AS runtime
 COPY --from=postgres-tools /usr/lib/postgresql/16/bin/psql /usr/lib/postgresql/16/bin/pg_dump /usr/lib/postgresql/16/bin/pg_restore /usr/local/bin/
+COPY --from=kubectl-tools /usr/local/bin/kubectl /usr/local/bin/kubectl
 COPY --from=build /runtime/ /opt/power-evolve/
 RUN install -d -o 1000 -g 1000 -m 0700 /var/lib/power-evolve /run/power-evolve
 WORKDIR /opt/power-evolve

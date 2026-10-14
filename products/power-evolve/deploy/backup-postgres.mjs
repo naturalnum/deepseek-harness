@@ -7,7 +7,7 @@ import { createRequire } from 'node:module'
 import { join } from 'node:path'
 const { Client } = createRequire(new URL('../application/package.json', import.meta.url))('pg')
 /** Only this current cloud generation is eligible for backup and restore. */
-export const CURRENT_SCHEMA_VERSION = 8
+export const CURRENT_SCHEMA_VERSION = 12
 const expectedColumns = JSON.parse(await readFile(new URL(`../application/assets/cloud-schema-v${CURRENT_SCHEMA_VERSION}.manifest.json`, import.meta.url), 'utf8'))
 const identifier = name => '"' + name.replaceAll('"', '""') + '"'
 const hash = value => createHash('sha256').update(value).digest('hex')
@@ -150,6 +150,9 @@ export async function requireQuiescentDatabase(client) {
     pe_ssh_calls: "state IN ('accepted','preparing','ready','dispatch-intent','running','uncertain')",
     pe_ssh_execute_actions: "state='approved'",
     pe_stdio_v2_actions: "state NOT IN ('succeeded','failed','cancelled','expired','rejected')",
+    pe_native_execution_processes: "state<>'stopped'",
+    pe_native_runtime_instances: "phase<>'stopped'",
+    pe_native_interactive_grants: 'released_at IS NULL AND expires_at>clock_timestamp()',
   }
   for (const [table, predicate] of Object.entries(predicates)) {
     const { rows: [row] } = await client.query(`SELECT count(*)::text AS count FROM ${identifier(table)} WHERE ${predicate}`)

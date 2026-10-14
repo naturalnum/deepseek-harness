@@ -117,6 +117,11 @@ import { proxyModel } from './model.ts'
 import { nativeToolRegistration, registerNativeToolNames } from './native-tool-catalog.ts'
 import { NativeRuntimeAuthority } from './native-runtime-authority.ts'
 import { routeNativeRuntime } from './native-runtime-routes.ts'
+import { NativeRuntimePool, loadNativeRuntimePoolConfig } from './native-runtime-pool.ts'
+import { installNativeRuntimePoolRoutes } from './native-runtime-pool-routes.ts'
+import { installNativeExecutionPlatform } from './native-execution-platform.ts'
+import { installNativeExecutionHttp } from './native-execution-http.ts'
+import { readNativeRuntimePolicy } from './native-runtime-policy.ts'
 import { proxyNativeWebSearch } from './native-web-search.ts'
 import { NativeInteractive, nativeInteractiveOpen } from './native-interactive.ts'
 import { cleanupNativeRuntime, nativeRuntimeCleanupRequest } from './native-runtime-cleanup.ts'
@@ -133,6 +138,7 @@ export const inject = ['webServer']
 /** Platform settings contain file references; profile dumps do not contain secret values. */
 export const Config = schema.object({
   databaseUrlFile: schema.string().required(), workerTokenFile: schema.string().required(),
+  nativeRuntimePoolFile: schema.string().default(''), nativeExecutionConfigFile: schema.string().default(''),
   nativeIntentKeyFile: schema.string().required(),
   nativeIntentMaxRequestBytes: schema.number().step(1).min(1).default(8_388_608),
   nativeIntentMaxPendingPerSession: schema.number().step(1).min(1).default(64),
@@ -274,6 +280,8 @@ function uploadPreflight(req: IncomingMessage, res: ServerResponse, hostOrigin: 
 
 /** Register the platform only after its schema and configured users are ready. */
 export async function apply(ctx: Context, config: Config): Promise<void> {
+  const nativeRuntimePoolConfig = await loadNativeRuntimePoolConfig(config.nativeRuntimePoolFile)
+  if (nativeRuntimePoolConfig && !config.nativeExecutionConfigFile) throw new Error('Tenant runtime requires native execution configuration')
   const instanceId = randomUUID()
   await NativeAttachments.validateRoot(config.attachmentRoot, [config.workspaceRoot,
     ...(config.sandboxLocalRoot ? [resolve(config.sandboxLocalRoot)] : []),
@@ -324,8 +332,11 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const mcpShutdown = new Set<() => Promise<void>>()
   // Cordis disposers run concurrently; trusted worker writes must settle before this pool enters ending.
   ctx.effect(() => async () => {
-    await Promise.allSettled([...mcpShutdown].map(stop => stop()))
-    await pool.end()
+    const results = await Promise.allSettled([...mcpShutdown].map(stop => stop()))
+    const failures: unknown[] = []
+    for (const result of results) if (result.status === 'rejected') failures.push(result.reason)
+    try { await pool.end() } catch (error) { failures.push(error) }
+    if (failures.length) throw new AggregateError(failures, 'Platform shutdown failed')
   })
   ctx.effect(() => () => healthPool.end())
   await initializeDatabase(pool)
@@ -598,8 +609,26 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const runtimeAuthority = new NativeRuntimeAuthority(pool)
   const nativeInteractive = new NativeInteractive(tasks, runtimeAuthority, { lifetimeMs: config.nativeInteractiveLifetimeMs,
     maxActivePerUser: config.nativeInteractiveMaxActivePerUser, leaseMs: config.leaseMs })
-  const nativeSubagents = new NativeSubagents(tasks, { maxChildren: config.nativeSubagentMaxChildren,
-    maxDepth: config.nativeSubagentMaxDepth,
+  if (config.nativeExecutionConfigFile) {
+    const nativeExecution = await installNativeExecutionPlatform(ctx, pool, tasks, files.storage,
+      readNativeRuntimePolicy, config.nativeExecutionConfigFile)
+    mcpShutdown.add(installNativeExecutionHttp(ctx, nativeExecution.routes, config.maxRequestBytes))
+    mcpShutdown.add(() => nativeExecution.close())
+  }
+  if (nativeRuntimePoolConfig) {
+    if (nativeRuntimePoolConfig.deployment.hostOrigin !== config.hostOrigin
+      || nativeRuntimePoolConfig.deployment.platformOrigin !== config.platformOrigin) throw new Error('Tenant runtime public origins differ')
+    const runtimeKube = await KubernetesClient.fromFile(nativeRuntimePoolConfig.kubeconfigFile)
+    const runtimeLocks = new Pool({ connectionString: databaseUrl.trim(), max: nativeRuntimePoolConfig.lockConnections,
+      connectionTimeoutMillis: config.databaseTimeoutMs })
+    runtimeLocks.on('error', databaseUnavailable)
+    const runtimePool = new NativeRuntimePool(pool, runtimeLocks, runtimeKube, nativeRuntimePoolConfig)
+    const closeRoutes = installNativeRuntimePoolRoutes(ctx, runtimePool, runtimeKube, identities,
+      nativeRuntimePoolConfig, config.maxRequestBytes)
+    mcpShutdown.add(async () => { try { await closeRoutes() } finally { await runtimeLocks.end() } })
+  }
+  const nativeSubagents = new NativeSubagents(tasks, {
+    maxChildren: config.nativeSubagentMaxChildren, maxDepth: config.nativeSubagentMaxDepth,
     lifetimeMs: config.nativeSubagentLifetimeMs, leaseMs: config.leaseMs })
   const nativeAssistantReader = new NativeAssistantRead(nativeAssistantLimits, {
     maxOpeningBytes: config.nativeAssistantMaxOpeningBytes, maxBaselineChunks: config.nativeAssistantMaxBaselineChunks,
@@ -884,7 +913,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     if (path.startsWith('/runtime/user/')) {
       const input: unknown = await readJson(req, 4096)
       sendJson(res, await routeNativeRuntime(runtimeAuthority, tasks, nativeIntents, path, token,
-        input, { limits: config, maxSessions: config.nativeDerivedCleanupMaxSessions })); return
+        input, { limits: { maxHistoryBytes: config.maxHistoryBytes, maxHistoryEvents: config.maxHistoryEvents,
+          maxEventBytes: config.maxEventBytes }, maxSessions: config.nativeDerivedCleanupMaxSessions })); return
     }
     if (path === '/runtime/claim' || path === '/runtime/claim-archive-stop'
       || path === NATIVE_RETAINED_ROUTES.reconcile || path === NATIVE_RETAINED_ROUTES.resolve) {

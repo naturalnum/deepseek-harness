@@ -7,6 +7,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { AccountHttpClient, AccountHttpError } from '../src/client/account-api.ts'
 import { AccountMenu, type AccountMenuProps } from '../src/client/AccountMenu.tsx'
 import { en } from '../src/client/locales.ts'
+import { unusedSessionStandards } from '../../client-extension-center/tests/unused-session-standards.ts'
 
 vi.mock('@deepseek-ai/dsh-client-ui-primitives', () => ({
   Menu: ({ anchor, open, children, onClose }: {
@@ -43,7 +44,7 @@ function client(overrides: Partial<AccountHttpClient> = {}) {
   })
 }
 function props(overrides: Partial<AccountMenuProps> = {}) {
-  return { client: client(), navigate: vi.fn(), loadNavigation: vi.fn(async () => capability),
+  return { ...unusedSessionStandards, client: client(), navigate: vi.fn(), loadNavigation: vi.fn(async () => capability),
     wide: true, settingsOpen: false, openSettings: vi.fn(),
     usePanelInfo: (selector => selector({ activePanelId: null })) satisfies AccountMenuProps['usePanelInfo'],
     openOnboarding: vi.fn(), t, ...overrides }
