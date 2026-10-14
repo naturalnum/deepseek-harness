@@ -10,6 +10,7 @@ import { KubernetesClient, KubernetesError } from './kubernetes.ts'
 import { NativeRuntimeAuthority } from './native-runtime-authority.ts'
 import { kubernetesPodStopStatus } from './pod-stop-status.ts'
 import { transaction } from './database.ts'
+import { digest } from './identity.ts'
 
 const dns = z.string().regex(/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u).max(63)
 const milliseconds = z.number().int().min(1000).max(2_147_483_647)
@@ -34,6 +35,7 @@ const configuration = z.object({ kubeconfigFile: z.string().min(1), namespace: d
 export type NativeRuntimePoolConfig = z.infer<typeof configuration>
 
 const instance = z.object({ runtime_id: z.uuid(), user_id: accountUserId, generation: z.number().int().positive(),
+  namespace: dns, config_digest: z.string().regex(/^[a-f0-9]{64}$/u),
   credential_id: z.uuid().nullable(), pod_uid: z.string().min(1).nullable(), pod_create_requested_at: z.date().nullable(),
   phase: z.enum(['creating', 'ready', 'stopping', 'stopped']), created_at: z.date(), stop_proof: z.unknown().nullable() })
 type Instance = z.infer<typeof instance>
@@ -45,6 +47,8 @@ const resource = z.object({ metadata: z.object({ uid: z.string().min(1), resourc
   }).loose()).optional() }).loose().optional() }).loose()
 const secret = z.object({ metadata: resource.shape.metadata, data: z.object({ 'runtime-token': z.string().min(1) }).loose() }).loose()
 const ready = z.object({ runtimeUserId: accountUserId, runtimeId: z.uuid(), generation: z.number().int().positive() }).loose()
+const podConfiguration = z.object({ spec: z.object({ runtimeClassName: z.string(),
+  containers: z.array(z.object({ name: z.literal('native-runtime'), image: z.string() }).loose()).length(1) }).loose() }).loose()
 const FINALIZER = 'power-evolve.io/native-runtime-stop'
 
 /** Load a private deployment file before any account process is allocated.
@@ -55,15 +59,32 @@ export async function loadNativeRuntimePoolConfig(path: string): Promise<NativeR
   return path ? configuration.parse(JSON.parse(await readFile(path, 'utf8'))) : null
 }
 
+/** Bind an instance to the complete validated operator deployment, independent of JSON key order.
+ * @param input Operator configuration containing paths and resource bounds, with runtime bearers issued separately.
+ * @returns SHA-256 of canonical deployment JSON for durable generation fencing.
+ */
+export function nativeRuntimePoolConfigDigest(input: NativeRuntimePoolConfig): string {
+  return digest(JSON.stringify(configuration.parse(input), (_key, value: unknown) => {
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) return value
+    return Object.fromEntries(Object.entries(value).sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0))
+  }))
+}
+
 /** One account has at most one live process; uncertain allocation and stop retain their exact identities. */
 export class NativeRuntimePool {
   private readonly pending = new Set<Promise<unknown>>()
   private closing = false
   private closed: Promise<void> | undefined
   private readonly authority: NativeRuntimeAuthority
+  private readonly configDigest: string
+  private readonly config: NativeRuntimePoolConfig
 
   constructor(private readonly database: Pool, private readonly lockPool: Pool, private readonly kube: KubernetesClient,
-    private readonly config: NativeRuntimePoolConfig) { this.authority = new NativeRuntimeAuthority(database) }
+    config: NativeRuntimePoolConfig) {
+    this.authority = new NativeRuntimeAuthority(database)
+    this.config = configuration.parse(config)
+    this.configDigest = nativeRuntimePoolConfigDigest(this.config)
+  }
 
   /** Resolve one current account process without returning Kubernetes or process credentials.
    * @param userId Browser-authenticated account selected by Platform.
@@ -78,6 +99,13 @@ export class NativeRuntimePool {
           await this.stopLocked(current)
           throw new PlatformError(503, 'native_runtime_stopping')
         }
+        if (current.config_digest !== this.configDigest) {
+          await this.markStopping(current)
+          await this.stopLocked(current)
+          current = null
+        }
+      }
+      if (current) {
         try {
           const credentials = await this.credentials(current)
           await this.authority.authenticate(credentials.token, { userId, runtimeId: current.runtime_id })
@@ -102,8 +130,8 @@ export class NativeRuntimePool {
             UNION ALL SELECT generation FROM pe_native_runtime_instances WHERE user_id=$1) previous`, [userId])
         const runtimeId = randomUUID(), next = generation.rows[0]?.generation
         if (!next) throw new PlatformError(503, 'native_runtime_generation_unavailable')
-        await client.query(`INSERT INTO pe_native_runtime_instances(runtime_id,user_id,generation,phase)
-          VALUES($1,$2,$3,'creating')`, [runtimeId, userId, next])
+        await client.query(`INSERT INTO pe_native_runtime_instances(runtime_id,user_id,generation,namespace,config_digest,phase)
+          VALUES($1,$2,$3,$4,$5,'creating')`, [runtimeId, userId, next, this.config.namespace, this.configDigest])
         return { runtimeId, next }
       })
       current = await this.current(userId)
@@ -114,7 +142,7 @@ export class NativeRuntimePool {
         [runtimeId, credential.credentialId])
       current = { ...current, credential_id: credential.credentialId }
       const name = this.name(current)
-      await this.kube.call('POST', this.kube.resourcePath(this.config.namespace, 'secrets'), {
+      await this.kube.call('POST', this.kube.resourcePath(current.namespace, 'secrets'), {
         apiVersion: 'v1', kind: 'Secret', metadata: { name, labels: this.labels(current) }, type: 'Opaque',
         stringData: { 'runtime-token': credential.token, 'deployment.json': JSON.stringify(this.deployment(current)) },
       })
@@ -141,7 +169,7 @@ export class NativeRuntimePool {
     const current = await this.current(userId)
     if (!current || current.runtime_id !== selected.runtimeId) throw new PlatformError(409, 'native_runtime_replaced')
     const credentials = await this.credentials(current)
-    return this.kube.call('POST', this.kube.proxyPath(this.config.namespace, selected.service, '/native/runtime/invoke'),
+    return this.kube.call('POST', this.kube.proxyPath(current.namespace, selected.service, '/native/runtime/invoke'),
       request, this.config.requestTimeoutMs, credentials.token, this.config.maxResponseBytes,
       { 'x-power-evolve-browser-token': browserToken, origin: this.config.deployment.hostOrigin })
   }
@@ -159,7 +187,7 @@ export class NativeRuntimePool {
     const selected = await this.ensure(userId), current = await this.current(userId)
     if (!current || current.runtime_id !== selected.runtimeId) throw new PlatformError(409, 'native_runtime_replaced')
     const credentials = await this.credentials(current)
-    return { path: this.kube.proxyPath(this.config.namespace, selected.service, '/native/api/remote.mux'), token: credentials.token }
+    return { path: this.kube.proxyPath(current.namespace, selected.service, '/native/api/remote.mux'), token: credentials.token }
   }
 
   /** Retire revoked, expired and disabled account processes; transport errors leave stop evidence pending.
@@ -269,7 +297,7 @@ export class NativeRuntimePool {
 
   private async credentials(row: Instance): Promise<{ token: string }> {
     let raw: unknown
-    try { raw = await this.kube.call('GET', this.kube.resourcePath(this.config.namespace, 'secrets', this.name(row))) }
+    try { raw = await this.kube.call('GET', this.kube.resourcePath(row.namespace, 'secrets', this.name(row))) }
     catch (error) {
       if (error instanceof KubernetesError && error.status === 404) throw new PlatformError(401, 'unauthorized_runtime')
       throw error
@@ -290,7 +318,7 @@ export class NativeRuntimePool {
   private async createPod(row: Instance): Promise<Instance> {
     await this.prepareStateDirectory(row.user_id)
     const name = this.name(row), labels = this.labels(row)
-    const podPath = this.kube.resourcePath(this.config.namespace, 'pods', name)
+    const podPath = this.kube.resourcePath(row.namespace, 'pods', name)
     const podTemplate = {
       apiVersion: 'v1', kind: 'Pod', metadata: { name, labels, finalizers: [FINALIZER] }, spec: {
         automountServiceAccountToken: false, runtimeClassName: this.config.runtimeClass, restartPolicy: 'Never',
@@ -327,7 +355,7 @@ export class NativeRuntimePool {
       const intent = requested.rows[0]
       if (!intent) throw new PlatformError(409, 'native_runtime_pod_intent_changed')
       row = { ...row, pod_create_requested_at: intent.pod_create_requested_at }
-      try { pod = resource.parse(await this.kube.call('POST', this.kube.resourcePath(this.config.namespace, 'pods'), podTemplate)) }
+      try { pod = resource.parse(await this.kube.call('POST', this.kube.resourcePath(row.namespace, 'pods'), podTemplate)) }
       catch (_podCreateOutcomeUnknown) {
         try { pod = resource.parse(await this.kube.call('GET', podPath)) }
         catch (readError) {
@@ -340,6 +368,7 @@ export class NativeRuntimePool {
       }
     }
     this.assertLabels(pod.metadata.labels, row)
+    this.assertPodConfiguration(pod)
     if (row.pod_uid && pod.metadata.uid !== row.pod_uid) throw new PlatformError(409, 'native_runtime_pod_replaced')
     if (!pod.metadata.finalizers?.includes(FINALIZER)) throw new PlatformError(409, 'native_runtime_stop_finalizer_missing')
     await this.database.query('UPDATE pe_native_runtime_instances SET pod_uid=$2 WHERE runtime_id=$1 AND pod_uid IS NULL',
@@ -350,6 +379,13 @@ export class NativeRuntimePool {
     })
     this.assertLabels(service.metadata.labels, row)
     return { ...row, pod_uid: pod.metadata.uid }
+  }
+
+  private assertPodConfiguration(pod: unknown): void {
+    const parsed = podConfiguration.parse(pod)
+    if (parsed.spec.runtimeClassName !== this.config.runtimeClass || parsed.spec.containers[0]?.image !== this.config.image) {
+      throw new PlatformError(409, 'native_runtime_pod_configuration_mismatch')
+    }
   }
 
   private async prepareStateDirectory(userId: UserId): Promise<void> {
@@ -368,9 +404,9 @@ export class NativeRuntimePool {
   }
 
   private async createOrRead(kind: 'services', row: Instance, value: unknown): Promise<z.infer<typeof resource>> {
-    try { return resource.parse(await this.kube.call('POST', this.kube.resourcePath(this.config.namespace, kind), value)) }
+    try { return resource.parse(await this.kube.call('POST', this.kube.resourcePath(row.namespace, kind), value)) }
     catch (error) {
-      try { return resource.parse(await this.kube.call('GET', this.kube.resourcePath(this.config.namespace, kind, this.name(row)))) }
+      try { return resource.parse(await this.kube.call('GET', this.kube.resourcePath(row.namespace, kind, this.name(row)))) }
       catch (readError) {
         if (readError instanceof KubernetesError && readError.status === 404) throw error
         throw readError
@@ -381,15 +417,16 @@ export class NativeRuntimePool {
   private async waitReady(row: Instance, token: string): Promise<void> {
     const deadline = Date.now() + this.config.readyTimeoutMs
     while (Date.now() < deadline) {
-      const pod = resource.parse(await this.kube.call('GET', this.kube.resourcePath(this.config.namespace, 'pods', this.name(row))))
+      const pod = resource.parse(await this.kube.call('GET', this.kube.resourcePath(row.namespace, 'pods', this.name(row))))
       this.assertLabels(pod.metadata.labels, row)
+      this.assertPodConfiguration(pod)
       if (row.pod_uid && pod.metadata.uid !== row.pod_uid) throw new PlatformError(409, 'native_runtime_pod_replaced')
       if (!pod.metadata.finalizers?.includes(FINALIZER)) throw new PlatformError(409, 'native_runtime_stop_finalizer_missing')
       if (pod.metadata.deletionTimestamp || ['Failed', 'Succeeded'].includes(pod.status?.phase ?? '')) {
         throw new PlatformError(503, 'native_runtime_process_stopped')
       }
       try {
-        const response = ready.parse(await this.kube.call('GET', this.kube.proxyPath(this.config.namespace,
+        const response = ready.parse(await this.kube.call('GET', this.kube.proxyPath(row.namespace,
           this.name(row), '/native/runtime/ready'), undefined, this.config.requestTimeoutMs, token))
         if (response.runtimeUserId !== row.user_id || response.runtimeId !== row.runtime_id || response.generation !== row.generation) {
           throw new PlatformError(409, 'native_runtime_identity_mismatch')
@@ -417,7 +454,7 @@ export class NativeRuntimePool {
     if (!latest.rows[0]) throw new PlatformError(409, 'native_runtime_instance_missing')
     row = instance.parse(latest.rows[0])
     if (row.phase === 'stopped') return
-    const name = this.name(row), path = this.kube.resourcePath(this.config.namespace, 'pods', name)
+    const name = this.name(row), path = this.kube.resourcePath(row.namespace, 'pods', name)
     let proof: z.infer<typeof resource> | null = row.stop_proof === null ? null : resource.parse(row.stop_proof)
     if (proof) {
       this.assertLabels(proof.metadata.labels, row)
@@ -460,7 +497,7 @@ export class NativeRuntimePool {
           finalizers: observed.metadata.finalizers.filter(value => value !== FINALIZER) } })
     }
     for (const kind of ['services', 'secrets'] as const) {
-      const target = this.kube.resourcePath(this.config.namespace, kind, name)
+      const target = this.kube.resourcePath(row.namespace, kind, name)
       try {
         const owned = resource.parse(await this.kube.call('GET', target)); this.assertLabels(owned.metadata.labels, row)
         await this.kube.call('DELETE', target, { apiVersion: 'v1', kind: 'DeleteOptions', preconditions: { uid: owned.metadata.uid } })

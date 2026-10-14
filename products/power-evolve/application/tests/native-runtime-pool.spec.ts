@@ -9,7 +9,7 @@ import { accountUserId } from '../src/account-contracts.ts'
 import { CURRENT_SCHEMA_VERSION } from '../src/platform/database.ts'
 import { KubernetesClient, KubernetesError } from '../src/platform/kubernetes.ts'
 import { NativeRuntimeAuthority } from '../src/platform/native-runtime-authority.ts'
-import { NativeRuntimePool, type NativeRuntimePoolConfig } from '../src/platform/native-runtime-pool.ts'
+import { NativeRuntimePool, nativeRuntimePoolConfigDigest, type NativeRuntimePoolConfig } from '../src/platform/native-runtime-pool.ts'
 import { cloudFixture } from './cloud-fixture.ts'
 
 const object = z.object({ metadata: z.object({ name: z.string(), labels: z.record(z.string(), z.string()),
@@ -20,7 +20,7 @@ async function fixture(run: (value: {
   pool: NativeRuntimePool; main: Pool; locks: Pool; config: NativeRuntimePoolConfig;
   userId: z.infer<typeof accountUserId>; otherUserId: z.infer<typeof accountUserId>; resources: Map<string, Record<string, unknown>>;
   barrier: { entered: PromiseWithResolvers<undefined>; release: PromiseWithResolvers<undefined>; block: boolean; blockStop: boolean };
-  calls: Array<{ method: string; path: string }>; seed: (unlinked?: boolean) => Promise<string>; retry: () => NativeRuntimePool;
+  calls: Array<{ method: string; path: string }>; seed: (unlinked?: boolean) => Promise<string>; retry: (next?: NativeRuntimePoolConfig) => NativeRuntimePool;
   expectedFailures: Set<NativeRuntimePool>; hooks: { invalidStop: boolean; failPatchOnce: boolean; losePodResponse: boolean }
 }) => Promise<void>) {
   await cloudFixture(async f => {
@@ -50,7 +50,9 @@ async function fixture(run: (value: {
       calls.push({ method, path })
       if (path.includes('/proxy/')) {
         const id = path.match(/http:pe-runtime-([^:]+):8080/u)?.[1]
-        const value = resources.get(kube.resourcePath(config.namespace, 'secrets', 'pe-runtime-' + id))
+        const namespace = path.split('/')[4]
+        if (!namespace) throw new Error('Missing namespace in fixture proxy address')
+        const value = resources.get(kube.resourcePath(namespace, 'secrets', 'pe-runtime-' + id))
         if (!value) throw new KubernetesError(404, 'Missing secret')
         const data = z.object({ data: z.object({ 'deployment.json': z.string() }) }).parse(value)
         const deployment = z.object({ runtimeIdentity: z.object({ userId: z.string(), runtimeId: z.string(), generation: z.number() }) })
@@ -96,12 +98,13 @@ async function fixture(run: (value: {
     vi.spyOn(kube, 'call').mockImplementation(async <T>(method: 'GET' | 'POST' | 'DELETE' | 'PATCH', path: string, body?: unknown) => await call(method, path, body) as T)
     const pool = new NativeRuntimePool(main, locks, kube, config)
     const owners = [pool], expectedFailures = new Set<NativeRuntimePool>()
-    const retry = () => { const owner = new NativeRuntimePool(main, locks, kube, config); owners.push(owner); return owner }
+    const retry = (next = config) => { const owner = new NativeRuntimePool(main, locks, kube, next); owners.push(owner); return owner }
     const seed = async (unlinked = false) => {
       const runtimeId = randomUUID(), authority = new NativeRuntimeAuthority(main)
       const credential = await authority.issue({ userId, runtimeId, generation: 1, lifetimeMs: 60000 })
-      await main.query(`INSERT INTO pe_native_runtime_instances(runtime_id,user_id,generation,phase,credential_id)
-        VALUES($1,$2,1,'creating',$3)`, [runtimeId, userId, unlinked ? null : credential.credentialId])
+      await main.query(`INSERT INTO pe_native_runtime_instances(runtime_id,user_id,generation,phase,credential_id,namespace,config_digest)
+        VALUES($1,$2,1,'creating',$3,$4,$5)`, [runtimeId, userId, unlinked ? null : credential.credentialId,
+        config.namespace, nativeRuntimePoolConfigDigest(config)])
       await call('POST', kube.resourcePath(config.namespace, 'secrets'), { metadata: { name: 'pe-runtime-' + runtimeId,
         labels: { 'power-evolve.io/runtime': runtimeId, 'power-evolve.io/user': userId } }, stringData: {
         'runtime-token': credential.token, 'deployment.json': JSON.stringify({ runtimeIdentity: { userId, runtimeId, generation: 1 } }),
@@ -204,8 +207,8 @@ test('a lost Pod creation followed by missing original identity cannot create a 
 }))
 
 test('different account allocations cannot race past the shared runtime capacity', () => fixture(async f => {
-  f.config.maxAccounts = 1
-  const outcomes = await Promise.allSettled([f.pool.ensure(f.userId), f.pool.ensure(f.otherUserId)])
+  const controller = f.retry({ ...f.config, maxAccounts: 1 })
+  const outcomes = await Promise.allSettled([controller.ensure(f.userId), controller.ensure(f.otherUserId)])
   expect(outcomes.filter(result => result.status === 'fulfilled')).toHaveLength(1)
   const rejected = outcomes.find(result => result.status === 'rejected')
   expect(rejected).toMatchObject({ status: 'rejected', reason: { code: 'native_runtime_capacity' } })
@@ -262,11 +265,11 @@ test('reconciliation observes a Pod request committed while it waited for accoun
 }))
 
 test('drain requests only its configured number of account locks before a stop barrier releases', () => fixture(async f => {
-  await f.pool.ensure(f.userId); await f.pool.ensure(f.otherUserId)
-  f.config.lockConnections = 1
+  const controller = f.retry({ ...f.config, lockConnections: 1 })
+  await controller.ensure(f.userId); await controller.ensure(f.otherUserId)
   f.barrier.blockStop = true
   const connections = vi.spyOn(f.locks, 'connect')
-  const draining = f.pool.close(); void draining.catch(() => {})
+  const draining = controller.close(); void draining.catch(() => {})
   try {
     await Promise.race([f.barrier.entered.promise, draining])
     expect(connections).toHaveBeenCalledTimes(1)
@@ -274,4 +277,37 @@ test('drain requests only its configured number of account locks before a stop b
   await draining
   expect(connections).toHaveBeenCalledTimes(2)
   expect(f.resources.size).toBe(0)
+}))
+
+test('configuration digest is canonical and detects a changed immutable deployment', () => fixture(async f => {
+  const original = { ...f.config, deployment: { ...f.config.deployment, rows: { 'native-runtime': { a: { z: 1, b: 2 }, b: { value: 3 } } } } }
+  const reordered = { ...f.config, deployment: { ...f.config.deployment, rows: { 'native-runtime': { b: { value: 3 }, a: { b: 2, z: 1 } } } } }
+  expect(nativeRuntimePoolConfigDigest(original)).toBe(nativeRuntimePoolConfigDigest(reordered))
+  expect(nativeRuntimePoolConfigDigest({ ...original, image: 'fixture@sha256:' + 'b'.repeat(64) }))
+    .not.toBe(nativeRuntimePoolConfigDigest(original))
+}))
+
+test('a changed namespace and image stop the original Pod before allocating the next configured generation', () => fixture(async f => {
+  const original = await f.pool.ensure(f.userId)
+  f.calls.length = 0
+  const config = { ...f.config, namespace: 'next-owned', image: 'fixture@sha256:' + 'b'.repeat(64) }
+  const selected = await f.retry(config).ensure(f.userId)
+  expect(selected.runtimeId).not.toBe(original.runtimeId)
+  expect(selected.generation).toBe(2)
+  const originalDelete = f.calls.findIndex(row => row.method === 'DELETE' && row.path.includes('/owned/pods/pe-runtime-' + original.runtimeId))
+  const nextCreate = f.calls.findIndex(row => row.method === 'POST' && row.path.endsWith('/next-owned/pods'))
+  expect(originalDelete).toBeGreaterThanOrEqual(0)
+  expect(nextCreate).toBeGreaterThan(originalDelete)
+  expect((await f.main.query('SELECT namespace,config_digest,phase FROM pe_native_runtime_instances ORDER BY generation')).rows)
+    .toEqual([{ namespace: 'owned', config_digest: nativeRuntimePoolConfigDigest(f.config), phase: 'stopped' },
+      { namespace: config.namespace, config_digest: nativeRuntimePoolConfigDigest(config), phase: 'ready' }])
+}))
+
+test('a ready Pod with a changed actual image is refused despite its unchanged durable configuration', () => fixture(async f => {
+  await f.pool.ensure(f.userId)
+  for (const [path, value] of f.resources) if (path.includes('/pods/')) {
+    const spec = z.object({ containers: z.array(z.object({ name: z.string(), image: z.string() }).loose()) }).loose().parse(value['spec'])
+    value['spec'] = { ...spec, containers: spec.containers.map(container => ({ ...container, image: 'fixture@sha256:' + 'b'.repeat(64) })) }
+  }
+  await expect(f.pool.ensure(f.userId)).rejects.toMatchObject({ code: 'native_runtime_pod_configuration_mismatch' })
 }))
