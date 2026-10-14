@@ -276,6 +276,8 @@ export const EVENT_WALK_EXEMPTIONS: Record<string, string> = {
  * appear on more than one page.
  */
 export const LINK_MAP: Readonly<Record<string, string>> = {
+  InvocationDescriptor: 'typert.md',
+  PermissionSelection: 'permission-presets.md',
   EventLogOptions: 'otel.md',
   EventLogReporter: 'otel.md',
   SessionLogOptions: 'otel.md',

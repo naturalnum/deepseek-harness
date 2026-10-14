@@ -338,6 +338,15 @@ export class TypertGatewayService extends Service implements TypertGateway {
     }
   }
 
+  /** Read the authoritative generated or SRC invocation shape before a carrier materializes owned lookup identities.
+   * @param endpoint Canonical Remote namespace and method.
+   * @returns The same active descriptor used by the dispatcher; no lookup or method is invoked.
+   */
+  describeInvocation(endpoint: string): InvocationDescriptor {
+    const [namespace, method] = remoteEndpoint(endpoint)
+    return this.resolveDescriptor(namespace, method, endpoint)
+  }
+
   private claimsEndpoint(endpoint: string): boolean {
     if (endpoint === REMOTE_EVENT_RESULT_ENDPOINT) return true
     const segments = endpoint.split('/')
@@ -1159,17 +1168,21 @@ function parseRemoteEventResultPayload(payload: unknown): ReturnType<typeof pars
   return parseRemoteEventResult(payload.args)
 }
 
+function remoteEndpoint(endpoint: string): [string, string] {
+  const segments = endpoint.split('/')
+  if (segments.length !== 2 || segments[0] === '' || segments[1] === '') {
+    throw new Error(`invalid Remote endpoint ${JSON.stringify(endpoint)}`)
+  }
+  return segments as [string, string]
+}
+
 function remoteRequest(
   endpoint: string,
   payload: unknown,
   signal: AbortSignal,
   peer?: PeerScope,
 ): InvokeRemoteRequest {
-  const segments = endpoint.split('/')
-  if (segments.length !== 2 || segments[0] === '' || segments[1] === '') {
-    throw new Error(`invalid Remote endpoint ${JSON.stringify(endpoint)}`)
-  }
-  const [namespace, method] = segments as [string, string]
+  const [namespace, method] = remoteEndpoint(endpoint)
   if (!isObject(payload)
     || !isPlainObject(payload)
     || Reflect.ownKeys(payload).length !== 1

@@ -48,7 +48,7 @@ interface Config {
 
 Auto integration 会在自身 effect 生命周期内调用 `registerAuto(admit)`。本服务固定 `auto` 身份以及 `danger-full-access` 加 `ask` 的组合，已记录的 Auto 选择也匹配委派子会话固定的 `never` 策略；shipped 客户端的 locale 字典拥有 Auto 的 label 与 description，而配置预设的展示信息仍归 Host 所有。调用方不能通过通用 contribution API 发布其他预设。Auto 排列在配置预设之后，绝不会进入 `permission.defaultPreset` 设置 schema，并在 effect dispose 时消失。同步 `admit` 回调会在 Auto 选择修改 Session 前，以及存储的 Auto Session 发布前运行，因此 integration 缺失或正在关闭时不会改写持久身份。
 
-注册或移除 Auto 会发出无 payload 的 `permission-presets/catalog-changed` 通知。进程级消费方先订阅，再调用 `catalog()`；每次收到通知后重新读取完整的可选目录。`permissions` Session 投影只包含 `currentValue`，因此目录变化不会追加 Session 事件、发布 Session 投影帧或改变 Session 序列。
+注册或移除 Auto 会发出无 payload 的 `permission-presets/catalog-changed` 通知。进程级消费方先订阅，再调用 `catalog()`；每次收到通知后重新读取完整的可选目录。`permissions` Session 投影只包含 `PermissionSelection` wire 视图中的 `currentValue`，因此目录变化不会追加 Session 事件、发布 Session 投影帧或改变 Session 序列。
 
 ## 当前预设与派生的 `custom`
 
@@ -113,6 +113,14 @@ registerAuto(admit: () => void): () => Promise<void>
  * @returns the effective preset name, or `custom` when nothing matches.
  */
 current(session: Session): string
+
+/**
+ * Project a committed knob fold using this composition's live defaults and
+ * configured preset catalog, without activating a Session.
+ * @param state - the exact committed preset, sandbox and approval overrides.
+ * @returns the same current-value projection used by the native Session registry.
+ */
+viewKnobs(state: KnobState): PermissionSelection
 
 /**
  * Resolve an available preset's knob bundle.

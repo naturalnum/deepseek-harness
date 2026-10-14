@@ -465,6 +465,12 @@ hasLiveClient(): boolean
  */
 registerRemoteEvents( source: TypertRemoteEventSource, host: RemoteEventHostInfo, ): () => Promise<void>
 
+/** Read the authoritative generated or SRC invocation shape before a carrier materializes owned lookup identities.
+ * @param endpoint Canonical Remote namespace and method.
+ * @returns The same active descriptor used by the dispatcher; no lookup or method is invoked.
+ */
+describeInvocation(endpoint: string): InvocationDescriptor
+
 /**
  * Invoke one live Remote method through strict generated reflection or SRC markers.
  * @param request - decoded endpoint and exact named wire arguments.
@@ -479,6 +485,18 @@ async invoke(request: InvokeRemoteRequest): Promise<unknown>
  * @returns a cancellation-aware iterable over the business results.
  */
 async stream(request: InvokeRemoteRequest): Promise<AsyncIterable<unknown>>
+
+/** Open the registered native event carrier without replacing its queue, invocation identities or cancellation.
+ * @param signal Authenticated carrier lifetime.
+ * @returns Original native ready, notification, invocation and cancellation frames.
+ */
+remoteEventStream(signal: AbortSignal): AsyncIterable<unknown>
+
+/** Commit one native Client waterfall reply to its original active stream invocation.
+ * @param payload Original carrier payload; the Gateway validates client and invocation identities.
+ * @returns Nothing after the original native dispatcher accepts the outcome.
+ */
+remoteEventResult(payload: unknown): void
 ```
 
 Source: [`packages/api/gateway/src/index.ts`](../../packages/api/gateway/src/index.ts)

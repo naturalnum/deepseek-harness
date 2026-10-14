@@ -1,6 +1,16 @@
 /** Cold interactive disposal waits for the real native factory's unpublished setup and rejects new opens. */
 import { randomUUID } from 'node:crypto'
 import { once } from 'node:events'
+import { Service } from '@deepseek-ai/cordis'
+import type { Agent } from '@deepseek-ai/dsh-agent'
+import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
+import TypertGateway from '@deepseek-ai/dsh-api-gateway'
+import { bindTypertRemote, Remote } from '@deepseek-ai/dsh-typert-protocol'
+import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
+import { createWebConnectionRpc } from '../../../../packages/client/connection/src/client/rpc.ts'
+import { installNativeRemote } from '../src/host/native-remote.ts'
+import { BrowserAgentAuth } from '../src/host/browser-auth.ts'
+import { NativeSessionRead, nativeFollowRequest } from '../src/platform/native-session-read.ts'
 import { createServer } from 'node:http'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -35,15 +45,22 @@ import { NativeTurnContinuationV2 } from '../src/platform/native-turn-continuati
 import { NATIVE_RETAINED_ROUTES } from '../src/native-retained-intent-contracts.ts'
 import { retainedTestStore } from './native-retained-intent-fixture.ts'
 
+class WireAgentProbe extends Service {
+  readonly typertRemote = bindTypertRemote(this, 'nativeWireProbe')
+  constructor(ctx: import('@deepseek-ai/cordis').Context) { super(ctx, 'nativeWireProbe') }
+  @Remote
+  read(agent: Agent): string { return agent.id }
+}
+
 const limits = { maxEventBytes: 524288, maxHistoryEvents: 1000, maxHistoryBytes: 8388608,
   leaseMs: 30000, maxPendingPerUser: 8, maxActivePerUser: 2 }
 
 test.each(['closing', 'publishing', 'failed-cleanup',
-  'normal-failed-cleanup'] as const)('real cold Agent setup %s keeps original PG durability and lifetime ownership', mode => cloudFixture(async (f) => {
+  'normal-failed-cleanup', 'gateway-wire'] as const)('real cold Agent setup %s keeps original PG durability and lifetime ownership', mode => cloudFixture(async (f) => {
   const tasks = new TaskStore(f.pool, limits), events = new EventStore(tasks, limits), authority = new NativeRuntimeAuthority(f.pool)
   const issued = await authority.issue({ userId: f.alice.user.userId, runtimeId: randomUUID(), generation: 1, lifetimeMs: 60000 })
   const interactive = new NativeInteractive(tasks, authority, { leaseMs: 30000, lifetimeMs: 30000, maxActivePerUser: 2 })
-  const writers = new NativeSessionWriter(tasks, { leaseMs: 30000 })
+  const writers = new NativeSessionWriter(tasks, { leaseMs: 30000 }), nativeRead = new NativeSessionRead(f.pool)
   const presentation = { maxBatchItems: 32, maxBatchBytes: 1048576, maxItemBytes: 1048576,
     maxActiveBytes: 4194304, maxRingItems: 1024, maxRingBytes: 4194304, ttlMs: 20000, maxEventBytes: limits.maxEventBytes }
   const publisher = new NativeAssistantStore(tasks, events, presentation)
@@ -71,11 +88,20 @@ test.each(['closing', 'publishing', 'failed-cleanup',
   const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
   const published: string[] = []
   let service: NativeRuntimeSessions | undefined, calls = 0
+  const routes: WebRoute[] = []
+  const hostServer = createServer((request, response) => {
+    const route = routes.find(candidate => candidate.kind === 'prefix' && (request.url ?? '').startsWith(candidate.path))
+    if (!route) { response.writeHead(404).end(); return }
+    void route.handler(request, response)
+  })
   const server = createServer((request, response) => {
     const work = (async () => {
       try {
         const token = bearer(request), input = await readJson(request, 1048576)
         switch (request.url) {
+          case '/identity/me': sendJson(response, await f.identities.authenticate(token)); return
+          case '/native/sessions/snapshot': sendJson(response, await nativeRead.snapshot(await f.identities.authenticate(token),
+            nativeFollowRequest.parse(input))); return
           case NATIVE_RETAINED_ROUTES.prepare: sendJson(response, await retained.prepare(token, input)); return
           case NATIVE_RETAINED_ROUTES.execute: sendJson(response, await retained.execute(token, input)); return
           case '/runtime/user/identity': {
@@ -123,6 +149,34 @@ test.each(['closing', 'publishing', 'failed-cleanup',
     await ctx.inject(['nativeRuntimeSessions'], (owned) => { service = owned.nativeRuntimeSessions })
     if (!service) throw new Error('Actual interactive service inactive')
     ctx.on('agent/created', ({ agent }) => { published.push(agent.id) })
+    if (mode === 'gateway-wire') {
+      await ctx.plugin(TypertRegistry); await ctx.plugin(TypertGateway); await ctx.plugin(WireAgentProbe)
+      ctx.provide('webServer', { register: (route: WebRoute) => {
+        routes.push(route); return () => { routes.splice(routes.indexOf(route), 1) }
+      }, registerUpgrade: () => () => undefined })
+      hostServer.listen(0, '127.0.0.1'); await once(hostServer, 'listening')
+      const listener = hostServer.address()
+      if (!listener || typeof listener === 'string') throw new Error('Owned native RPC listener missing')
+      const origin = `http://127.0.0.1:${listener.port}`
+      installNativeRemote(ctx, new BrowserAgentAuth(origin, origin, ctx.powerEvolveRuntime, issued.userId), origin,
+        20, 1048576, 8, [], { maxGenerationMs: 10000, maxGenerationItems: 1000, maxGenerationBytes: 1048576 }, 5000)
+      release.resolve(undefined)
+      expect(ctx.agents.get(first.sessionId)).toBeUndefined()
+      const caller = createWebConnectionRpc((route, init) => fetch(new URL(route, origin + '/native/'), {
+        ...init, headers: { ...Object.fromEntries(new Headers(init.headers).entries()), origin, authorization: `Bearer ${f.alice.token}` },
+      }))
+      expect(await caller.call('/api', 'nativeWireProbe/read', { args: { agentId: first.sessionId } }))
+        .toEqual({ ok: true, value: first.sessionId })
+      expect(calls).toBe(1)
+      expect(ctx.agents.get(first.sessionId)?.session.header.id).toBe(first.sessionId)
+      expect((await f.pool.query('SELECT source,state FROM pe_operations WHERE session_id=$1', [first.sessionId])).rows)
+        .toEqual([{ source: 'native_interactive', state: 'running' }])
+      const missing = await caller.call('/api', 'missing/read', { args: { agentId: second.sessionId } })
+      expect(missing).toMatchObject({ ok: false, error: { code: 'gateway/invocation-unavailable' } })
+      expect((await f.pool.query('SELECT * FROM pe_operations WHERE session_id=$1', [second.sessionId])).rowCount).toBe(0)
+      await service.close(first.sessionId)
+      return
+    }
     const opening = service.ensure(first.sessionId, f.alice.token)
     const result = opening.then(() => undefined, (error: unknown) => error)
     await Promise.race([entered.promise, result.then((error) => { if (error) throw error })])
@@ -170,6 +224,8 @@ test.each(['closing', 'publishing', 'failed-cleanup',
     expect((await f.pool.query('SELECT * FROM pe_operations WHERE session_id=$1', [second.sessionId])).rowCount).toBe(0)
   } finally {
     release.resolve(undefined)
+    hostServer.closeAllConnections(); if (hostServer.listening) await new Promise<void>((resolve,
+      reject) => hostServer.close((error) => { if (error) reject(error); else resolve() }))
     await ctx.fiber.dispose()
     server.closeAllConnections(); if (server.listening) await new Promise<void>((resolve,
       reject) => server.close((error) => { if (error) reject(error); else resolve() }))

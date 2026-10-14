@@ -48,7 +48,7 @@ The service requires a confining `ctx.shell` executor and `ctx.approval`, and mi
 
 The Auto integration calls `registerAuto(admit)` for its effect lifetime. This service fixes the `auto` identity and its `danger-full-access` plus `ask` bundle, and a recorded Auto selection also matches the `never` policy that delegated children pin; the shipped client locale dictionaries own Auto's label and description, while configured preset presentation remains Host-owned. Callers cannot publish another preset through a generic contribution API. Auto appears after configured presets, never enters the `permission.defaultPreset` settings schema, and disappears when the effect is disposed. The synchronous `admit` callback runs before Auto selection mutates the Session and before a stored Auto Session publishes, so a missing or closing integration does not rewrite the durable identity.
 
-Registering or removing Auto emits the payload-free `permission-presets/catalog-changed` notification. Process consumers subscribe before calling `catalog()`, then re-read the complete selectable catalog after each notification. The `permissions` Session projection contains only `currentValue`, so catalog changes append no Session event, publish no Session projection frame, and leave the Session sequence unchanged.
+Registering or removing Auto emits the payload-free `permission-presets/catalog-changed` notification. Process consumers subscribe before calling `catalog()`, then re-read the complete selectable catalog after each notification. The `PermissionSelection` wire view of the `permissions` Session projection contains only `currentValue`, so catalog changes append no Session event, publish no Session projection frame, and leave the Session sequence unchanged.
 
 ## Current preset and the derived `custom`
 
@@ -113,6 +113,14 @@ registerAuto(admit: () => void): () => Promise<void>
  * @returns the effective preset name, or `custom` when nothing matches.
  */
 current(session: Session): string
+
+/**
+ * Project a committed knob fold using this composition's live defaults and
+ * configured preset catalog, without activating a Session.
+ * @param state - the exact committed preset, sandbox and approval overrides.
+ * @returns the same current-value projection used by the native Session registry.
+ */
+viewKnobs(state: KnobState): PermissionSelection
 
 /**
  * Resolve an available preset's knob bundle.

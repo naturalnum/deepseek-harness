@@ -5,7 +5,7 @@
 
 import type { ConnectionRpcHandlerResult } from '@deepseek-ai/dsh-client-connection'
 import type { Context } from '@deepseek-ai/cordis'
-import type { PeerScope } from '@deepseek-ai/dsh-typert-protocol'
+import type { InvocationDescriptor, PeerScope } from '@deepseek-ai/dsh-typert-protocol'
 import type { RemoteEventHostInfo } from './stream-protocol.ts'
 
 /** One Remote method request after a carrier has decoded its envelope. */
@@ -150,6 +150,11 @@ export type TypertGatewayErrorCode =
 
 /** Host dispatcher consumed by Connection adapters. */
 export interface TypertGateway {
+  /** Inspect the same current strict or SRC descriptor used by invocation, without resolving identities or executing code.
+   * @param endpoint Canonical Remote namespace and method.
+   * @returns Original active invocation descriptor; withdrawn strict definitions refuse SRC fallback.
+   */
+  describeInvocation(endpoint: string): InvocationDescriptor
   /** Carrier adapter shared by WebSocket and in-process transports. */
   readonly wireStream: TypertGatewayWireStream
   /** Unary carrier adapter preserving native byte result encoding. */

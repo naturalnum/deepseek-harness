@@ -402,7 +402,10 @@ describe('TypertGatewayService', () => {
     const { ctx, service } = await setup()
     const agent = { id: 'agent-1' }
     registerAgentLookup(ctx, agent)
-    registerStrict(ctx, [createDescriptor()])
+    const descriptor = createDescriptor()
+    registerStrict(ctx, [descriptor])
+    expect(ctx.typertGateway.describeInvocation('goals/create')).toEqual(descriptor)
+    expect(service.calls).toEqual([])
     const caller = ctx.extend({ fixtureScope: 'direct-caller' })
     const abort = new AbortController()
 
@@ -442,6 +445,10 @@ describe('TypertGatewayService', () => {
     const { ctx, service } = await setup()
     const agent = { id: 'agent-1' }
     registerAgentLookup(ctx, agent)
+    expect(ctx.typertGateway.describeInvocation('goals/create').parameters[0]).toMatchObject({
+      name: 'agent', wire: 'agentId', source: 'lookup', lookup: 'gatewayFixture',
+    })
+    expect(service.calls).toEqual([])
     const caller = ctx.extend({ fixtureScope: 'direct-src' })
     const abort = new AbortController()
 
@@ -673,6 +680,9 @@ describe('TypertGatewayService', () => {
     const { ctx } = await setup()
     const dispose = registerStrict(ctx, [passthroughDescriptor()])
     await dispose()
+    expect(() => ctx.typertGateway.describeInvocation('goals/passthrough')).toThrowError(
+      expect.objectContaining({ code: 'gateway/definition-unavailable' }),
+    )
 
     await expectCode(ctx.typertGateway.invoke({
       namespace: 'goals',

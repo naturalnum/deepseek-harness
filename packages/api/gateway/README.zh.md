@@ -11,6 +11,8 @@ kind: "package-reference"
 
 为 Host 与 Client 两侧的 Cordis 环境提供 Typert RPC endpoint。Host 入口提供 `ctx.typertGateway`，`@deepseek-ai/dsh-api-gateway/client` 则提供 `ctx.remote`；两者使用同一份生成的 `InvocationDescriptor` 约定，并将业务选择交给 API Remotes。Connection 承载一元调用的请求关联、信任和响应 envelope，Gateway 则拥有多路复用的 Remote 流，每条流都在同一条逻辑流上携带从 Client 到 Host 的上行（uplink）。
 
+Host 装配可以在加载已授权的查找身份前调用 `describeInvocation(endpoint)`。它返回分发器使用的同一份有效 generated 或 SRC 描述符，包括查找与 Context 的 wire 字段；该读取不解析身份，也不执行方法。已撤回的严格定义仍拒绝降级为 SRC。
+
 Host 装配在验证传输通道身份后，可以调用 `wireRpc.invoke(endpoint, payload, peer, signal)`。该入口复用 Connection 的原生一元分发器和结果编解码，返回 JSON 元数据与相对结果路径的字节附件。代理必须保留附件，并在浏览器边界恢复原生 multipart；`invoke()` 仍返回业务值。
 
 

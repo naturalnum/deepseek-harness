@@ -72,6 +72,20 @@ const uploadResult = z.object({ receiptId: fileReceiptId, file: nativeFileAttach
 
 type NativeCall = (path: string, token: string, input: unknown, signal?: AbortSignal) => Promise<unknown>
 
+/** Read Agent wire identity from the actual dispatcher shape, including generated and conservative SRC methods.
+ * @param ctx Account-owned native Gateway.
+ * @param method Current canonical Remote endpoint.
+ * @param args Original named wire arguments.
+ * @returns Parsed Session identity when the actual descriptor selects an Agent, or no Agent for an unscoped method.
+ */
+export function nativeRemoteAgentIdentity(ctx: Context, method: string, args: Readonly<Record<string, unknown>>) {
+  const descriptor = ctx.typertGateway.describeInvocation(method)
+  const wire = descriptor.invocation.kind === 'context' && descriptor.invocation.context === 'agent'
+    ? descriptor.invocation.wire
+    : descriptor.parameters.find(parameter => parameter.source === 'lookup' && parameter.lookup === 'agent')?.wire
+  return sessionId.safeParse(wire === undefined ? undefined : args[wire])
+}
+
 function failure(error: unknown): { code: string; message: string; details: object } {
   const remote = remoteErrorOf(error)
   if (remote !== undefined) return { code: remote.code, message: remote.message, details: remote.details }
@@ -415,7 +429,7 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
         const [namespace, operation] = method.split('/')
         if (!namespace || !operation) throw new PlatformError(400, 'invalid_request')
         const arguments_ = z.record(z.string(), z.unknown()).parse(args)
-        const id = sessionId.safeParse(arguments_.agent)
+        const id = nativeRemoteAgentIdentity(ctx, method, arguments_)
         if (!id.success) return new NativeWireResult(await ctx.typertGateway.wireRpc.invoke(method,
           { args: arguments_ }, undefined, signal))
         await call('/native/sessions/snapshot', token, { address: { kind: 'session', sessionId: id.data }, maxMessages: 1 })
@@ -559,7 +573,7 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
         if (ctx.powerEvolveRuntime.config.runtimeUserId === '') throw new PlatformError(404, 'native_stream_not_enabled')
         const [namespace, operation] = method.split('/')
         if (!namespace || !operation) throw new PlatformError(400, 'invalid_request')
-        const arguments_ = z.record(z.string(), z.unknown()).parse(args), id = sessionId.safeParse(arguments_.agent)
+        const arguments_ = z.record(z.string(), z.unknown()).parse(args), id = nativeRemoteAgentIdentity(ctx, method, arguments_)
         if (!id.success) { yield* await ctx.typertGateway.wireStream.open(method, { args: arguments_ }, uplink, peer, signal); return }
         await call('/native/sessions/snapshot', token, { address: { kind: 'session', sessionId: id.data }, maxMessages: 1 })
         const agent = await ctx.nativeRuntimeSessions.ensure(id.data, token)
