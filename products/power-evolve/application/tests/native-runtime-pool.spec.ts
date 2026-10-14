@@ -216,9 +216,10 @@ test('different account allocations cannot race past the shared runtime capacity
     .toEqual([{ count: 1 }])
 }))
 
-async function waitingForAccountLock(database: Pool): Promise<void> {
+async function waitingForAccountLock(database: Pool, signal?: AbortSignal): Promise<void> {
   const deadline = Date.now() + 10000
   for (;;) {
+    signal?.throwIfAborted()
     const result = await database.query<{ waiting: boolean }>(`SELECT EXISTS(SELECT 1 FROM pg_locks
       WHERE locktype='advisory' AND classid=72819544 AND NOT granted) AS waiting`)
     if (result.rows[0]?.waiting) return
@@ -310,4 +311,101 @@ test('a ready Pod with a changed actual image is refused despite its unchanged d
     value['spec'] = { ...spec, containers: spec.containers.map(container => ({ ...container, image: 'fixture@sha256:' + 'b'.repeat(64) })) }
   }
   await expect(f.pool.ensure(f.userId)).rejects.toMatchObject({ code: 'native_runtime_pod_configuration_mismatch' })
+}))
+
+for (const phase of ['ready', 'creating'] as const) test(`reconciliation retires an exact failed ${phase} Pod with a still live credential`, () => fixture(async f => {
+  const original = await f.pool.ensure(f.userId)
+  await f.main.query('UPDATE pe_native_runtime_instances SET phase=$2 WHERE runtime_id=$1', [original.runtimeId, phase])
+  for (const [path, value] of f.resources) if (path.includes('/pods/')) value['status'] = { phase: 'Failed' }
+  expect((await f.main.query('SELECT revoked_at FROM pe_runtime_credentials')).rows).toEqual([{ revoked_at: null }])
+  f.calls.length = 0
+  await f.pool.reconcile()
+  expect((await f.main.query('SELECT runtime_id,generation,phase,stop_proof IS NOT NULL AS proof FROM pe_native_runtime_instances')).rows)
+    .toEqual([{ runtime_id: original.runtimeId, generation: 1, phase: 'stopped', proof: true }])
+  expect((await f.main.query('SELECT revoked_at IS NOT NULL AS revoked FROM pe_runtime_credentials')).rows).toEqual([{ revoked: true }])
+  expect(f.calls.filter(row => row.method === 'POST')).toHaveLength(0)
+  expect(f.resources.size).toBe(0)
+  const next = await f.pool.ensure(f.userId)
+  expect(next.generation).toBe(2); expect(next.runtimeId).not.toBe(original.runtimeId)
+}))
+
+test('reconciliation observes a live credential Pod failure only after acquiring its original account lock', () => fixture(async f => {
+  const original = await f.pool.ensure(f.userId), lock = await f.locks.connect()
+  let work: Promise<void> | undefined, observing: Promise<void> | undefined
+  const stopObserving = new AbortController()
+  f.calls.length = 0
+  try {
+    await lock.query('SELECT pg_advisory_lock(72819544,hashtext($1))', [f.userId])
+    work = f.pool.reconcile(); void work.catch(() => {})
+    observing = waitingForAccountLock(f.main, stopObserving.signal)
+    await Promise.race([observing, work.then(() => { throw new Error('Live Pod reconciliation did not acquire account ownership') })])
+    expect(f.calls).toHaveLength(0)
+    for (const [path, value] of f.resources) if (path.includes('/pods/')) value['status'] = { phase: 'Failed' }
+  } finally {
+    stopObserving.abort(); await observing?.catch(() => {})
+    await lock.query('SELECT pg_advisory_unlock(72819544,hashtext($1))', [f.userId]); lock.release()
+  }
+  await work
+  expect((await f.main.query('SELECT runtime_id,phase FROM pe_native_runtime_instances')).rows)
+    .toEqual([{ runtime_id: original.runtimeId, phase: 'stopped' }])
+}))
+
+test('reconciliation preserves a healthy original Pod and never issues a credential or replays a request', () => fixture(async f => {
+  const original = await f.pool.ensure(f.userId)
+  f.calls.length = 0
+  await f.pool.reconcile()
+  expect(f.calls).toEqual([{ method: 'GET', path: `/api/v1/namespaces/owned/pods/pe-runtime-${original.runtimeId}` }])
+  expect((await f.main.query('SELECT phase FROM pe_native_runtime_instances')).rows).toEqual([{ phase: 'ready' }])
+  expect((await f.main.query('SELECT revoked_at FROM pe_runtime_credentials')).rows).toEqual([{ revoked_at: null }])
+}))
+
+test('reconciliation cannot release a missing original Pod or allocate a replacement generation', () => fixture(async f => {
+  const original = await f.pool.ensure(f.userId)
+  for (const path of f.resources.keys()) if (path.includes('/pods/')) f.resources.delete(path)
+  f.expectedFailures.add(f.pool); f.calls.length = 0
+  await expect(f.pool.reconcile()).rejects.toMatchObject({ message: 'Native runtime reconciliation failed' })
+  await expect(f.pool.ensure(f.userId)).rejects.toMatchObject({ code: 'native_runtime_stop_proof_unavailable' })
+  expect((await f.main.query('SELECT runtime_id,generation,phase,stop_proof FROM pe_native_runtime_instances')).rows)
+    .toEqual([{ runtime_id: original.runtimeId, generation: 1, phase: 'stopping', stop_proof: null }])
+  expect(f.calls.some(row => row.method === 'POST' || row.method === 'PATCH')).toBe(false)
+}))
+
+test('reconciliation refuses a substituted Pod UID and preserves its original stopped-proof obligation', () => fixture(async f => {
+  const original = await f.pool.ensure(f.userId)
+  for (const [path, value] of f.resources) if (path.includes('/pods/')) {
+    const metadata = z.record(z.string(), z.unknown()).parse(value['metadata'])
+    value['metadata'] = { ...metadata, uid: randomUUID() }; value['status'] = { phase: 'Failed' }
+  }
+  f.expectedFailures.add(f.pool); f.calls.length = 0
+  await expect(f.pool.reconcile()).rejects.toMatchObject({ message: 'Native runtime reconciliation failed' })
+  await expect(f.pool.ensure(f.userId)).rejects.toMatchObject({ code: 'native_runtime_pod_replaced' })
+  expect((await f.main.query('SELECT runtime_id,generation,phase,stop_proof FROM pe_native_runtime_instances')).rows)
+    .toEqual([{ runtime_id: original.runtimeId, generation: 1, phase: 'stopping', stop_proof: null }])
+  expect(f.calls.some(row => row.method === 'POST' || row.method === 'DELETE' || row.method === 'PATCH')).toBe(false)
+}))
+
+test('reconciliation never promotes NodeLost failure into kubelet stop proof', () => fixture(async f => {
+  const original = await f.pool.ensure(f.userId)
+  for (const [path, value] of f.resources) if (path.includes('/pods/')) value['status'] = { phase: 'Failed', reason: 'NodeLost' }
+  f.hooks.invalidStop = true; f.expectedFailures.add(f.pool); f.calls.length = 0
+  await expect(f.pool.reconcile()).rejects.toMatchObject({ message: 'Native runtime reconciliation failed' })
+  expect((await f.main.query('SELECT runtime_id,generation,phase,stop_proof FROM pe_native_runtime_instances')).rows)
+    .toEqual([{ runtime_id: original.runtimeId, generation: 1, phase: 'stopping', stop_proof: null }])
+  expect(f.calls.some(row => row.method === 'POST' || row.method === 'PATCH')).toBe(false)
+}))
+
+test('a Kubernetes read transport failure never retires or replays the original healthy generation', () => fixture(async f => {
+  const original = await f.pool.ensure(f.userId), get = f.resources.get.bind(f.resources)
+  const observe = vi.spyOn(f.resources, 'get').mockImplementation(path => {
+    if (path.includes('/pods/')) throw new KubernetesError(503, 'Original Pod observation interrupted')
+    return get(path)
+  })
+  f.calls.length = 0
+  try {
+    await expect(f.pool.reconcile()).rejects.toMatchObject({ message: 'Native runtime reconciliation failed' })
+    expect((await f.main.query('SELECT runtime_id,generation,phase FROM pe_native_runtime_instances')).rows)
+      .toEqual([{ runtime_id: original.runtimeId, generation: 1, phase: 'ready' }])
+    expect((await f.main.query('SELECT revoked_at FROM pe_runtime_credentials')).rows).toEqual([{ revoked_at: null }])
+    expect(f.calls.some(row => row.method !== 'GET')).toBe(false)
+  } finally { observe.mockRestore() }
 }))

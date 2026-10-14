@@ -190,7 +190,7 @@ export class NativeRuntimePool {
     return { path: this.kube.proxyPath(current.namespace, selected.service, '/native/api/remote.mux'), token: credentials.token }
   }
 
-  /** Retire revoked, expired and disabled account processes; transport errors leave stop evidence pending.
+  /** Observe original Pod identities and retire failed, revoked, expired or disabled account processes.
    * @returns Completion of this bounded observation pass.
    */
   reconcile(): Promise<void> {
@@ -199,19 +199,37 @@ export class NativeRuntimePool {
   }
 
   private async reconcileOwned(): Promise<void> {
-    const rows = await this.database.query(`SELECT r.* FROM pe_native_runtime_instances r
-      LEFT JOIN pe_runtime_credentials c ON c.id=r.credential_id LEFT JOIN pe_users u ON u.id=r.user_id
-      WHERE r.phase<>'stopped' AND (r.phase='stopping' OR c.id IS NULL OR c.revoked_at IS NOT NULL
-        OR c.expires_at<=clock_timestamp() OR c.credential_version<>u.credential_version
-        OR NOT u.enabled OR u.deleted_at IS NOT NULL)`)
+    const rows = await this.database.query("SELECT * FROM pe_native_runtime_instances WHERE phase<>'stopped' ORDER BY created_at,runtime_id")
     const errors = await this.settleAccounts(rows.rows, async row => {
-      const eligible = await this.database.query(`SELECT r.* FROM pe_native_runtime_instances r
-        LEFT JOIN pe_runtime_credentials c ON c.id=r.credential_id LEFT JOIN pe_users u ON u.id=r.user_id
-        WHERE r.runtime_id=$1 AND r.phase<>'stopped' AND (r.phase='stopping' OR c.id IS NULL OR c.revoked_at IS NOT NULL
+      const observed = await this.database.query(`SELECT r.*,
+        (r.phase='stopping' OR c.id IS NULL OR c.revoked_at IS NOT NULL
           OR c.expires_at<=clock_timestamp() OR c.credential_version<>u.credential_version
-          OR NOT u.enabled OR u.deleted_at IS NOT NULL)`, [row.runtime_id])
-      if (!eligible.rows[0]) return
-      const current = instance.parse(eligible.rows[0])
+          OR NOT u.enabled OR u.deleted_at IS NOT NULL) AS retire
+        FROM pe_native_runtime_instances r
+        LEFT JOIN pe_runtime_credentials c ON c.id=r.credential_id LEFT JOIN pe_users u ON u.id=r.user_id
+        WHERE r.runtime_id=$1 AND r.phase<>'stopped'`, [row.runtime_id])
+      const latest = observed.rows[0]
+      if (!latest) return
+      const current = instance.parse(latest)
+      if (!z.object({ retire: z.boolean() }).parse(latest).retire) {
+        if (!current.pod_uid && !current.pod_create_requested_at) return
+        let pod: z.infer<typeof resource>
+        try {
+          pod = resource.parse(await this.kube.call('GET', this.kube.resourcePath(current.namespace, 'pods', this.name(current)),
+            undefined, this.config.requestTimeoutMs))
+        } catch (error) {
+          if (!(error instanceof KubernetesError) || error.status !== 404) throw error
+          await this.markStopping(current)
+          await this.stopLocked(current)
+          return
+        }
+        this.assertLabels(pod.metadata.labels, current)
+        if (current.pod_uid && pod.metadata.uid !== current.pod_uid) {
+          await this.markStopping(current)
+          throw new PlatformError(409, 'native_runtime_pod_replaced')
+        }
+        if (!pod.metadata.deletionTimestamp && pod.status?.phase !== 'Failed' && pod.status?.phase !== 'Succeeded') return
+      }
       await this.markStopping(current); await this.stopLocked(current)
     })
     if (errors.length) throw new AggregateError(errors, 'Native runtime reconciliation failed')
