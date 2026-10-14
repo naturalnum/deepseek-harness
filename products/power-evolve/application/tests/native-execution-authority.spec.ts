@@ -26,6 +26,8 @@ import { requireBrowserAccount } from '../src/platform/account-authority.ts'
 import { CURRENT_SCHEMA_VERSION, transaction } from '../src/platform/database.ts'
 import { EventStore } from '../src/platform/events.ts'
 import { NativeExecutionAuthority, type NativeExecutionFrameReader } from '../src/platform/native-execution-authority.ts'
+import { NativeExecutionAuthorityStore } from '../src/platform/native-execution-authority-store.ts'
+import { digest } from '../src/platform/identity.ts'
 import { NativeExecutionFrames } from '../src/platform/native-execution-frames.ts'
 import { NativeInputLedger } from '../src/platform/native-input-ledger.ts'
 import { NativeSessionWriter } from '../src/platform/native-session-writer.ts'
@@ -143,7 +145,9 @@ async function prepare(f: Fixture, deferredQueuedAdmission = false) {
   const frameReader: NativeExecutionFrameReader = (client, session, token) => frames.readExecutionInTransaction(client, session, token)
   const executionAuthority = new NativeExecutionAuthority(frameReader, executionLimits)
   const executionTasks = new TaskStore(f.pool, taskLimits,
-    (client, session, token) => executionAuthority.assertExecutionInTransaction(client, session, token))
+    (client, session, token, purpose) => purpose === 'process-lifecycle'
+      ? executionAuthority.assertProcessInTransaction(client, session, token)
+      : executionAuthority.assertExecutionInTransaction(client, session, token))
   return { tasks, executionTasks, executionAuthority, frameReader, writers, authority, writer, a, events, frames, ledger,
     native, history, inputs, frame, admit }
 }
@@ -181,6 +185,101 @@ async function openStep(f: Fixture, n: Prepared) {
 async function execute(f: Fixture, n: Prepared): Promise<void> {
   await transaction(f.pool, async (client) => { await n.executionTasks.executionAuthorized(client, n.a.token) })
 }
+
+async function admittedProcess(f: Fixture, n: Prepared) {
+  const store = new NativeExecutionAuthorityStore(f.pool, n.executionTasks, f.files.storage, readNativeRuntimePolicy)
+  const { world } = await store.open(n.a.token, n.a.sessionId)
+  const process = { id: randomUUID(), name: 'owned-original-process', uid: randomUUID(), namespace: 'owned-fixture' }
+  // This authority-only fixture owns a durable admission; it makes no Kubernetes or physical-stop claim.
+  await f.pool.query(`INSERT INTO pe_native_execution_processes(id,world_id,kind,namespace,pod_name,pod_uid,state,request_digest)
+    VALUES($1,$2,'terminal',$3,$4,$5,'running',$6)`,
+  [process.id, world.worldId, process.namespace, process.name, process.uid, digest('owned-original-request')])
+  return { store, world, process }
+}
+
+test('an exact admitted process retains its original full cohort through a closed step without granting another dispatch',
+  () => executionCase(async (f, n) => {
+    await openStep(f, n)
+    const { store, world, process } = await admittedProcess(f, n)
+    await store.assertProcess(n.a.token, world, process)
+    const end = n.native.append('step/end', { turn: 1, step: 1 }); n.history.push(end)
+    await n.events.append(n.a.token, [end])
+    await store.assertProcess(n.a.token, world, process)
+    await expect(store.assert(n.a.token, world)).rejects.toMatchObject({ code: 'native_execution_step_unclaimed' })
+    for (const field of ['id', 'name', 'uid', 'namespace'] as const) {
+      await expect(store.assertProcess(n.a.token, world, { ...process, [field]: randomUUID() }))
+        .rejects.toMatchObject({ code: 'native_process_admission_lost' })
+    }
+    expect((await f.pool.query('SELECT id,pod_uid,state FROM pe_native_execution_processes')).rows)
+      .toEqual([{ id: process.id, pod_uid: process.uid, state: 'running' }])
+  }))
+
+test.each(['writer', 'operation', 'account', 'permission', 'uncertain'] as const)(
+  'an already admitted process still refuses original %s authority loss during the step gap',
+  fence => executionCase(async (f, n) => {
+    await openStep(f, n)
+    const { store, world, process } = await admittedProcess(f, n)
+    await n.events.append(n.a.token, [n.native.append('step/end', { turn: 1, step: 1 })])
+    await store.assertProcess(n.a.token, world, process)
+    if (fence === 'writer') await f.pool.query("UPDATE pe_native_writers SET expires_at=clock_timestamp()-interval '1 second' WHERE session_id=$1", [n.a.sessionId])
+    if (fence === 'operation') await n.tasks.cancel(f.alice.user, n.a.sessionId, f.alice.token)
+    if (fence === 'account') await f.pool.query('UPDATE pe_users SET enabled=false WHERE id=$1', [f.alice.user.userId])
+    if (fence === 'permission') await n.events.append(n.a.token, [n.native.append('sandbox/mode', { mode: 'workspace-write' })])
+    if (fence === 'uncertain') await f.pool.query("UPDATE pe_native_execution_processes SET state='uncertain' WHERE id=$1", [process.id])
+    await expect(store.assertProcess(n.a.token, world, process)).rejects.toBeInstanceOf(PlatformError)
+  }))
+
+test('a newly claimed but not yet bound cohort cannot replace the existing process admission proof',
+  () => executionCase(async (f, n) => {
+    const initial = await openStep(f, n), { store, world, process } = await admittedProcess(f, n)
+    const end = n.native.append('step/end', { turn: 1, step: 1 }); n.history.push(end)
+    await n.events.append(n.a.token, [end])
+    const command = nativeInputClaimCommand.parse({ rpcNonce: 'process-life-unbound-next-cohort',
+      cohortId: inputCohortId.parse(randomUUID()), frame: initial.cohort.frame, boundaryKind: 'continuing-step' })
+    await n.ledger.claim({ command, authority: n.authority, expectedEventCount: n.history.length, events: [] })
+    expect((await f.pool.query('SELECT step_start_seq FROM pe_native_input_cohorts WHERE cohort_id=$1', [command.cohortId])).rows)
+      .toEqual([{ step_start_seq: null }])
+    await store.assertProcess(n.a.token, world, process)
+    await expect(store.assert(n.a.token, world)).rejects.toMatchObject({ code: 'native_execution_step_unclaimed' })
+  }))
+
+test('the original bound turn prefix remains valid for process collection after turn end and before original operation disposal',
+  () => executionCase(async (f, n) => {
+    await openStep(f, n)
+    const { store, world, process } = await admittedProcess(f, n)
+    await n.events.append(n.a.token, [n.native.append('step/end', { turn: 1, step: 1 }),
+      n.native.append('turn/end', { turn: 1, reason: { kind: 'completed' } })])
+    await store.assertProcess(n.a.token, world, process)
+    await expect(store.assert(n.a.token, world)).rejects.toMatchObject({ code: 'native_execution_step_unclaimed' })
+    await f.pool.query('UPDATE pe_native_execution_processes SET state=$3,stop_evidence=$2 WHERE id=$1',
+      [process.id, { status: 'KUBELET_STOPPED', podUid: process.uid }, 'stopped'])
+    await expect(store.assertProcess(n.a.token, world, process)).rejects.toMatchObject({ code: 'native_process_admission_lost' })
+  }))
+
+test('a process admission lock cannot extend the original Writer clock after its first full cohort proof',
+  () => executionCase(async (f, n) => {
+    await openStep(f, n)
+    const { store, world, process } = await admittedProcess(f, n), blocker = await f.pool.connect()
+    await f.pool.query("UPDATE pe_native_writers SET expires_at=clock_timestamp()+interval '2 seconds' WHERE session_id=$1", [n.a.sessionId])
+    await blocker.query('BEGIN')
+    await blocker.query('SELECT id FROM pe_native_execution_processes WHERE id=$1 FOR UPDATE', [process.id])
+    const checking = store.assertProcess(n.a.token, world, process)
+      .then(() => ({ allowed: true }), (error: unknown) => ({ allowed: false, error }))
+    try {
+      await expect.poll(async () => first((await f.pool.query<{ blocked: boolean }>(`SELECT EXISTS(SELECT 1 FROM pg_stat_activity
+        WHERE datname=current_database() AND wait_event_type='Lock'
+        AND query LIKE '%SELECT state,stop_evidence,request_digest FROM pe_native_execution_processes%') AS blocked`)).rows).blocked,
+      { interval: 20, timeout: 5000 }).toBe(true)
+      await expect.poll(async () => first((await blocker.query<{ expired: boolean }>(
+        'SELECT expires_at<=clock_timestamp() AS expired FROM pe_native_writers WHERE session_id=$1', [n.a.sessionId])).rows).expired,
+      { interval: 20, timeout: 5000 }).toBe(true)
+      await blocker.query('COMMIT')
+      const result = await checking
+      expect(result.allowed).toBe(false)
+      if (!('error' in result)) throw new Error('Admission lock extended original Writer authority')
+      expect(result.error).toBeInstanceOf(PlatformError)
+    } finally { await blocker.query('ROLLBACK'); blocker.release(); await checking }
+  }))
 
 test('a real full B,C,A cohort bound to the actual current step authorizes only the original A operation',
   () => executionCase(async (f, n) => {

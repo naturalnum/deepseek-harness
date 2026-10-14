@@ -7,14 +7,14 @@ import type { SandboxExecutionPolicy, SandboxPolicy } from '@deepseek-ai/dsh-san
 import { SubprocessRuntime, SubprocessExecutableNotFoundError } from '@deepseek-ai/dsh-subprocess'
 import type { SubprocessHandle, SubprocessSpawnSpec, SubprocessTerminalHandle,
   SubprocessTerminalSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { PassThrough, Duplex } from 'node:stream'
+import { PassThrough, Duplex, Transform } from 'node:stream'
 import { posix } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { z } from 'zod'
 import { nativeFsInfo as infoSchema, nativeFsPathInfo as pathInfoSchema, nativeFsTarget as targetSchema,
   nativeFsWrite as writeResultSchema, nativeFsEdit as editResultSchema } from '../native-execution/wire.ts'
 import type { NativeExecutionBinding, NativeExecutionWorld } from '../native-execution/types.ts'
-import type { NativeExecutionAuthorityStore } from './native-execution-authority-store.ts'
+import type { NativeExecutionAuthorityStore, NativeExecutionProcessIdentity } from './native-execution-authority-store.ts'
 import { NativeExecutionPods, type NativeExecutionPod } from './native-execution-pods.ts'
 
 const POLICY_MARKER = '@power-evolve/native-world-policy'
@@ -39,6 +39,16 @@ export interface NativeExecutionBrokerConfig {
   maxProcessMs: number
   authorityPollMs: number
   transportGraceMs: number
+}
+
+/** Native process handle with its server-retained exact admission for pure output collection. */
+export interface NativeExecutionProcessHandle extends SubprocessHandle {
+  admission: Promise<NativeExecutionProcessIdentity>
+}
+
+/** Native PTY handle with the exact admission; input and foreground methods still require a current step. */
+export interface NativeExecutionTerminalHandle extends SubprocessTerminalHandle {
+  admission: Promise<NativeExecutionProcessIdentity>
 }
 
 /** Trusted control transport never executes model-controlled argv in the Platform process. */
@@ -130,16 +140,20 @@ export class NativeExecutionBroker {
    * @returns Deferred native handle; outcome waits for whole-Pod quiescence.
    */
   spawn(token: string, world: NativeExecutionWorld, spec: SubprocessSpawnSpec,
-    kind: 'process' | 'filesystem' = 'process', storageRead = false, admissionId?: string): SubprocessHandle {
+    kind: 'process' | 'filesystem' = 'process', storageRead = false, admissionId?: string): NativeExecutionProcessHandle {
     if (this.isDisposed()) throw new Error('native_execution_broker_disposed')
     spec.signal?.throwIfAborted()
     const argv = this.unwrap(world, spec.argv)
     this.cwd(spec.cwd)
     if (!Number.isFinite(spec.graceMs) || spec.graceMs <= 0) throw new Error('native_cloud_invalid_grace')
-    const stdin = spec.stdio.stdin === 'pipe' ? new PassThrough() : undefined
     const stdout = spec.stdio.stdout === 'pipe' ? new PassThrough() : undefined
     const stderr = spec.stdio.stderr === 'pipe' ? new PassThrough() : undefined
     const ready = Promise.withResolvers<NativeExecutionRelay>(), stopped = Promise.withResolvers<void>()
+    const admission = Promise.withResolvers<NativeExecutionProcessIdentity>()
+    void admission.promise.catch(() => {})
+    const writes = new Set<Promise<unknown>>()
+    let inputFailure: unknown
+    const assertDispatch = () => this.authority.assert(token, world, storageRead ? 'storage-read' : 'execution')
     let relay: NativeExecutionRelay | undefined, range: NativeExecutionPod | undefined, local: SubprocessHandle | undefined
     let stopCause: 'abort' | 'authority' | 'dispose' | 'completed' | 'failure' | undefined
     let stopping: Promise<void> | undefined
@@ -162,27 +176,46 @@ export class NativeExecutionBroker {
       return stopping
     }
     const abort = () => { void stop('abort')?.catch(() => {}) }
+    const channelError = (error: unknown) => { inputFailure ??= error; void stop('failure')?.catch(() => {}) }
+    const input = (apply: (remote: NativeExecutionRelay) => void | Promise<void>, callback: (error?: Error | null) => void) => {
+      const work = (async () => {
+        const remote = await ready.promise
+        await assertDispatch()
+        if (currentCause() || this.isDisposed()) throw new Error('native_process_channel_closed')
+        await apply(remote)
+      })()
+      writes.add(work)
+      void work.then(() => { writes.delete(work); callback() }, (error: unknown) => {
+        writes.delete(work); channelError(error)
+        callback(error instanceof Error ? error : new Error('Native process input failed', { cause: error }))
+      })
+    }
+    const stdin = spec.stdio.stdin === 'pipe' ? new Transform({ transform(chunk: Buffer, _encoding, callback) {
+      input(() => { callback(null, chunk) }, (error) => { if (error) callback(error) })
+    } }) : undefined
+    stdin?.on('error', channelError)
     const control = spec.stdio.control === 'pipe' ? new Duplex({ read() {},
       write(chunk: Buffer, _encoding, callback) {
-        ready.promise.then(remote => new Promise<void>((resolve, reject) => {
+        input(remote => new Promise<void>((resolve, reject) => {
           if (!remote.control) { reject(new Error('Native control unavailable')); return }
           remote.control.write(chunk, (error?: Error | null) => { if (error) reject(error); else resolve() })
-        })).then(() => { callback() },
-          (error: unknown) => { callback(error instanceof Error ? error : new Error('Native control write failed', { cause: error })) })
+        }), callback)
       }, final(callback) {
-        ready.promise.then(remote => new Promise<void>((resolve) => { remote.control?.end(resolve) }))
-          .then(() => { callback() }, callback)
+        input(remote => new Promise<void>((resolve) => { remote.control?.end(resolve) }), callback)
       },
     }) : undefined
+    control?.on('error', channelError)
     spec.signal?.addEventListener('abort', abort, { once: true })
     const done = (async () => {
       let monitor: ReturnType<typeof setInterval> | undefined, deadline: ReturnType<typeof setTimeout> | undefined
       let authorityWork: Promise<void> | undefined
       try {
-        const assert = () => this.authority.assert(token, world, storageRead ? 'storage-read' : 'execution')
+        const assert = assertDispatch
         const binding = await assert()
         if (currentCause() || spec.signal?.aborted || this.isDisposed()) return { exitCode: null, signal: 'SIGTERM' as const }
         range = await this.pods.create(world, binding, kind, { argv, cwd: spec.cwd, env: spec.env, stdio: spec.stdio }, assert, admissionId)
+        const original = { id: range.id, name: range.name, uid: range.uid, namespace: this.pods.config.namespace }
+        admission.resolve(original)
         if (currentCause() || spec.signal?.aborted || this.isDisposed()) { await stop(currentCause() ?? 'abort'); return { exitCode: null,
           signal: 'SIGTERM' as const } }
         await assert()
@@ -201,7 +234,8 @@ export class NativeExecutionBroker {
         }
         monitor = setInterval(() => {
           if (authorityWork) return
-          authorityWork = assert().then(() => undefined, async () => { await stop('authority') })
+          authorityWork = (storageRead ? assert() : this.authority.assertProcess(token, world, original))
+            .then(() => undefined, async () => { await stop('authority') })
             .finally(() => { authorityWork = undefined })
           void authorityWork.catch(() => {})
         }, this.config.authorityPollMs)
@@ -210,11 +244,15 @@ export class NativeExecutionBroker {
         try { outcome = await relay.done }
         catch (error) { if (!currentCause()) throw error; outcome = { exitCode: null, signal: 'SIGTERM' } }
         await stop(currentCause() ?? 'completed')
+        if (inputFailure !== undefined && currentCause() !== 'abort' && currentCause() !== 'dispose') {
+          throw inputFailure instanceof Error ? inputFailure : new Error('Native process input failed', { cause: inputFailure })
+        }
         if (currentCause() === 'authority') throw new Error('native_world_authority_lost')
         const result = currentCause() === 'abort' || currentCause() === 'dispose' ? { exitCode: null, signal: 'SIGTERM' as const } : outcome
         await this.pods.recordOutcome(range, result)
         return result
       } catch (error) {
+        admission.reject(error)
         ready.reject(error)
         if (range) await stop(currentCause() ?? 'failure')
         throw error
@@ -227,13 +265,15 @@ export class NativeExecutionBroker {
           if (local) await local.waitForExit()
         } finally {
           ready.reject(new Error('Native process finished before admission'))
+          admission.reject(new Error('Native process finished before admission'))
           stdin?.destroy(); stdout?.end(); stderr?.end(); control?.push(null)
+          await Promise.allSettled([...writes])
           stopped.resolve()
         }
       }
     })()
     void ready.promise.catch(() => {})
-    const handle: SubprocessHandle = { stdin, stdout, stderr, control, done,
+    const handle: NativeExecutionProcessHandle = { stdin, stdout, stderr, control, done, admission: admission.promise,
       collected: {
         ...(typeof spec.stdio.stdout === 'object' ? { stdout: { readFrom(offset: number) {
           return relay?.collected.stdout?.readFrom(offset) ?? { text: '', nextOffset: 0, lossy: false }
@@ -266,7 +306,7 @@ export class NativeExecutionBroker {
    * @returns Guest PID, raw terminal output, actual foreground operations and exact joined Pod cleanup.
    */
   async terminal(token: string, world: NativeExecutionWorld, spec: SubprocessTerminalSpawnSpec,
-    admissionId?: string): Promise<SubprocessTerminalHandle> {
+    admissionId?: string): Promise<NativeExecutionTerminalHandle> {
     if (this.isDisposed()) throw new Error('native_execution_broker_disposed')
     const reservation = Promise.withResolvers<void>()
     this.pending.add(reservation.promise)
@@ -276,6 +316,7 @@ export class NativeExecutionBroker {
       this.cwd(spec.cwd)
       const assert = () => this.authority.assert(token, world), binding = await assert()
       const range = await this.pods.create(world, binding, 'terminal', { argv, cwd: spec.cwd, env: spec.env }, assert, admissionId)
+      const original = { id: range.id, name: range.name, uid: range.uid, namespace: this.pods.config.namespace }
       let local: SubprocessHandle | undefined, relay: NativeExecutionRelay | undefined
       const cancelled = Promise.withResolvers<never>()
       void cancelled.promise.catch(() => {})
@@ -331,7 +372,7 @@ export class NativeExecutionBroker {
         }
         const monitor = setInterval(() => {
           if (authorityWork || closing) return
-          authorityWork = assert().then(() => undefined,
+          authorityWork = this.authority.assertProcess(token, world, original).then(() => undefined,
             async () => { await stop('authority') }).finally(() => { authorityWork = undefined })
           void authorityWork.catch(() => {})
         }, this.config.authorityPollMs)
@@ -345,7 +386,7 @@ export class NativeExecutionBroker {
         })()
         const output = remote.stdout
         if (!output) throw new Error('Native terminal output unavailable')
-        const terminal: SubprocessTerminalHandle = { pid, output, done,
+        const terminal: NativeExecutionTerminalHandle = { pid, output, done, admission: Promise.resolve(original),
           write: data => tracked(() => remote.write(data)), resize: (cols, rows) => tracked(() => remote.resize(cols, rows)),
           inspectForeground: () => tracked(() => remote.inspectForeground()),
           inspectActivity: () => tracked(() => remote.inspectActivity()),

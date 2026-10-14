@@ -28,7 +28,7 @@ import type { NativeSessionStopIntent } from '../native-session-stop-contracts.t
 import type { NativeTurnHistoryLimits } from './native-turn-history.ts'
 import { completeSessionStopInTransaction } from './native-session-stop-completion.ts'
 import { readNativeToolNames } from './native-tool-catalog.ts'
-import { assertNativeSubagentStorage, assertNativeSubagentExecution } from './native-subagent-authority.ts'
+import { assertNativeSubagentStorage, assertNativeSubagentExecution, assertNativeSubagentProcess } from './native-subagent-authority.ts'
 import { assertNativeInteractiveStorage, assertNativeInteractiveWorld } from './native-interactive-authority.ts'
 import { assertNativeRuntimeGrant } from './native-runtime-authority.ts'
 
@@ -68,10 +68,12 @@ export interface TaskLimits {
  * @param client Caller transaction holding account and Session locks.
  * @param session Exact live operation returned by TaskStore.authorized.
  * @param token Current operation bearer whose native consumption must be checked.
- * @returns Completion only when the native execution provider authorizes the current step.
+ * @param purpose Current dispatch or observation of an already admitted process; observations grant no new dispatch.
+ * @returns Completion only when the native execution provider authorizes the explicit purpose.
  */
 export type TaskExecutionAuthority = (client: PoolClient,
-  session: Awaited<ReturnType<TaskStore['authorized']>>, token: string) => Promise<void>
+  session: Awaited<ReturnType<TaskStore['authorized']>>, token: string,
+  purpose: 'dispatch' | 'process-lifecycle') => Promise<void>
 
 /** Select the original native pending owner after the account and Session have been locked.
  * @param client Caller transaction holding account and Session locks before a new attempt is issued.
@@ -661,20 +663,31 @@ export class TaskStore {
       throw new PlatformError(409, 'native_session_archived')
     }
     if (await assertNativeSubagentStorage(client, session)) await assertNativeSubagentExecution(client, session)
-    else await this.executionAuthority(client, session, token)
+    else await this.executionAuthority(client, session, token, 'dispatch')
     return session
   }
 
   /** Authorize one native execution world by its explicit purpose without granting interactive model consumption.
    * @param client Existing account and Session transaction.
    * @param token Exact original operation or formal interactive bearer.
-   * @param purpose Read-only storage initialization or native Fs/process execution.
+   * @param purpose Storage initialization, current dispatch, or the lifecycle of an already admitted process.
    * @returns Current exact Session after purpose-specific clocks and durable interactive Writer checks.
    */
-  async nativeWorldAuthorized(client: PoolClient, token: string, purpose: 'storage-read' | 'execution' = 'execution'):
+  async nativeWorldAuthorized(client: PoolClient, token: string,
+    purpose: 'storage-read' | 'execution' | 'process-lifecycle' = 'execution'):
   Promise<Awaited<ReturnType<TaskStore['authorized']>>> {
     const session = await this.authorized(client, token)
-    if (session.source !== 'native_interactive') return purpose === 'storage-read' ? session : this.executionAuthorized(client, token)
+    if (session.source !== 'native_interactive') {
+      if (purpose === 'storage-read') return session
+      if (purpose === 'execution') return this.executionAuthorized(client, token)
+      if (!this.executionAuthority) throw new PlatformError(503, 'execution_authority_unavailable')
+      if (await isSessionBusinessBlockedInTransaction(client, session.user_id, session.id)) {
+        throw new PlatformError(409, 'native_session_archived')
+      }
+      if (await assertNativeSubagentStorage(client, session)) await assertNativeSubagentProcess(client, session)
+      else await this.executionAuthority(client, session, token, 'process-lifecycle')
+      return session
+    }
     if (await isSessionBusinessBlockedInTransaction(client, session.user_id,
       session.id)) throw new PlatformError(409, 'native_session_archived')
     await assertNativeInteractiveWorld(client, session)

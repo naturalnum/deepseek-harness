@@ -131,6 +131,8 @@ Platform JSON 响应读取器在消费响应期间保留原始调用者 signal �
 
 通过同步的原 Agent binding resolver 装配 `installNativeExecutionProviders`。`createNativeExecutionHttpBinding` 仅使用该 operation bearer 和 native-world 路由。存储读取允许 Agent 在首个已声明步骤前初始化；修改和任意子进程须具有完整的当前原生执行 cohort。配置内需声明构建产物 `lib/native-execution-worker` 中的无凭据文件工具、Platform 的 kubectl、私有 kubeconfig、控制端与 PVC 对应的存储路径和有限 Pod 截止时间。每个原生消费者均受 PG 授权和同 world 挂载约束。
 
+进程监控与纯输出收集校验精确的原 PG 受理记录、Pod UID、原已声明 cohort、operation、Writer、租约和 world 代际。在原 operation 仍活跃时，这些检查保留已经受理的持久 Shell，使它跨越步骤边界和正常 turn 结束。新子进程、stdin、control、终端写入和前台操作仍须通过完整的当前开放步骤检查。收集已停止范围的输出还会校验原有的正向 Pod 停止观测；收集不会分配或重启进程。
+
 当前限制由相应原生 API 明确表达：
 
 - broker 的文件工具回包和保留输出有明确上限。无凭据进程 relay 承载原始子进程字节、fd7 控制通道和真实 guest PTY；产物平面的物理用例实际执行原生 Bash、PTC 宿主绑定和已注册 Terminal 后端。文本流读取使用有界 UTF-8 帧和已确认的字节窗口，与文件总大小无关。Runtime 消费者暂停读取时，原始子进程和 PTY 管道会暂停真实来源。显式 binding `close()` 等待原始 start、stop 和 release 完成，并在 Cordis 销毁之外保留清理失败。Pod 调度请求 `requestCpu` 和 `requestMemory` 可独立于硬限制 `cpu` 和 `memory` 配置；加载部署配置时，未指定的请求会显式采用对应硬限制的值。文件监听及完整输出溢出文件恢复尚不可用。生产 Profile 与浏览器验收另行执行。

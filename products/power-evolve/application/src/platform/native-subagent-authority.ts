@@ -46,11 +46,22 @@ export async function assertNativeSubagentStorage(client: PoolClient,
  */
 export async function assertNativeSubagentExecution(client: PoolClient,
   session: { id: string; user_id: string; operation_id: string; lease_epoch: number }): Promise<void> {
-  const operation = await client.query("SELECT 1 FROM pe_operations WHERE id=$1 AND session_id=$2 AND state='running' AND error_code IS DISTINCT FROM 'cancel_requested'", [session.operation_id, session.id])
-  if (operation.rowCount !== 1) throw new PlatformError(409, 'native_subagent_cancelled')
+  await assertNativeSubagentProcess(client, session)
   const current = await client.query<{ type: string }>(`SELECT event->>'type' AS type FROM pe_events
     WHERE session_id=$1 AND event->>'type' IN ('step/start','step/end','turn/end') ORDER BY seq DESC LIMIT 1`, [session.id])
   if (current.rows[0]?.type !== 'step/start') throw new PlatformError(409, 'native_execution_step_unclaimed')
+}
+
+/** Retain only a previously admitted child's process while its parent derivation and own Writer remain live.
+ * The caller must additionally prove the exact original process; this check grants no new child dispatch.
+ * @param client Current child transaction, after the original parent storage/permission checks.
+ * @param session Exact original child operation and Session clocks.
+ * @returns Completion after the original operation and current Writer remain live, without requiring an open step.
+ */
+export async function assertNativeSubagentProcess(client: PoolClient,
+  session: { id: string; user_id: string; operation_id: string; lease_epoch: number }): Promise<void> {
+  const operation = await client.query("SELECT 1 FROM pe_operations WHERE id=$1 AND session_id=$2 AND state='running' AND error_code IS DISTINCT FROM 'cancel_requested'", [session.operation_id, session.id])
+  if (operation.rowCount !== 1) throw new PlatformError(409, 'native_subagent_cancelled')
   const writer = await client.query(`SELECT w.session_id FROM pe_native_writers w
     JOIN pe_attempts a ON a.worker_id=w.worker_id AND a.operation_id=$2 AND a.epoch=$3
     WHERE w.session_id=$1 AND w.expires_at>clock_timestamp() AND a.ended_at IS NULL`,

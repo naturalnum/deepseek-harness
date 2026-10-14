@@ -7,6 +7,7 @@ import { PlatformError } from '../contracts.ts'
 import { storageBinding, type StorageBinding } from './cloud-storage-types.ts'
 import { digest } from './identity.ts'
 import { transaction } from './database.ts'
+import { kubernetesPodStopStatus } from './pod-stop-status.ts'
 import type { TaskStore } from './tasks.ts'
 import type { ManagedCloudStorage } from './managed-storage.ts'
 
@@ -25,7 +26,16 @@ export type NativeExecutionPolicyReader = (client: PoolClient,
  * @returns The original authorized Session with its exact operation epoch.
  */
 export interface NativeExecutionTaskAuthority {
-  nativeWorldAuthorized(client: PoolClient, token: string, purpose: 'storage-read' | 'execution'): ReturnType<TaskStore['authorized']>
+  nativeWorldAuthorized(client: PoolClient, token: string,
+    purpose: 'storage-read' | 'execution' | 'process-lifecycle'): ReturnType<TaskStore['authorized']>
+}
+
+/** Exact server-retained admission identity; observations cannot substitute another process or allocate a new one. */
+export interface NativeExecutionProcessIdentity {
+  id: string
+  name: string
+  uid: string
+  namespace: string
 }
 
 const rowSchema = z.object({ world: nativeExecutionWorld, binding: storageBinding, grant: z.string(), revoked: z.boolean() }).strict()
@@ -73,6 +83,23 @@ export class NativeExecutionAuthorityStore {
    * @returns Private storage binding only when all current generations match.
    */
   async assert(token: string, world: NativeExecutionWorld, purpose: 'execution' | 'storage-read' = 'execution'): Promise<StorageBinding> {
+    return this.check(token, world, purpose)
+  }
+
+  /** Check only the lifetime and collected output of one already admitted exact process.
+   * New spawn, input, control and terminal actions must continue using the current-step assertion.
+   * @param token Original operation or interactive bearer.
+   * @param world Frozen originally issued Agent world.
+   * @param process Original server-retained admission, name, UID and namespace.
+   * @returns Original private binding while all authority clocks and generations remain current.
+   */
+  async assertProcess(token: string, world: NativeExecutionWorld,
+    process: NativeExecutionProcessIdentity): Promise<StorageBinding> {
+    return this.check(token, world, 'process-lifecycle', process)
+  }
+
+  private async check(token: string, world: NativeExecutionWorld,
+    purpose: 'execution' | 'storage-read' | 'process-lifecycle', process?: NativeExecutionProcessIdentity): Promise<StorageBinding> {
     return transaction(this.pool, async (client) => {
       const session = await this.tasks.nativeWorldAuthorized(client, token, purpose)
       const found = await client.query<{ world: unknown; binding: unknown; grant: string; revoked: boolean }>(
@@ -90,13 +117,38 @@ export class NativeExecutionAuthorityStore {
       const policy = await this.policy(client, session)
       if (JSON.stringify(binding) !== JSON.stringify(result.data.binding) || policy.mode !== world.mode
         || policy.permissionGeneration !== world.permissionGeneration) throw new PlatformError(409, 'native_world_generation_changed')
-      if (purpose === 'execution') {
+      if (purpose !== 'storage-read') {
         const uncertain = await client.query(`SELECT p.id FROM pe_native_execution_processes p
           JOIN pe_native_execution_worlds w ON w.id=p.world_id WHERE w.user_id=$1 AND w.workspace_id=$2
           AND (p.state='uncertain' OR p.state<>'stopped' AND (w.storage_generation<>$3 OR
           w.session_id=$4 AND (w.permission_generation<>$5 OR w.operation_epoch<>$6))) LIMIT 1`,
         [world.userId, world.workspaceId, world.storageGeneration, world.sessionId, world.permissionGeneration, world.operationEpoch])
         if (uncertain.rowCount) throw new PlatformError(409, 'native_world_reconciliation_required')
+      }
+      if (purpose === 'process-lifecycle') {
+        if (!process) throw new PlatformError(409, 'native_process_admission_lost')
+        const original = await client.query<{ state: string; stop_evidence: unknown; request_digest: string }>(
+          `SELECT state,stop_evidence,request_digest FROM pe_native_execution_processes
+          WHERE id=$1 AND world_id=$2 AND pod_name=$3 AND pod_uid=$4 AND namespace=$5 FOR UPDATE`,
+          [process.id, world.worldId, process.name, process.uid, process.namespace])
+        const row = original.rows[0]
+        if (original.rowCount !== 1 || !row || !['running', 'stopping', 'stopped'].includes(row.state)
+          || !/^[a-f0-9]{64}$/u.test(row.request_digest)) throw new PlatformError(409, 'native_process_admission_lost')
+        if (row.state === 'stopped') {
+          const proof = z.object({ status: z.enum(['KUBELET_STOPPED', 'UNSCHEDULED_DELETING']), podUid: z.literal(process.uid),
+            processId: z.literal(process.id), worldId: z.literal(world.worldId), storageGeneration: z.literal(world.storageGeneration),
+            permissionGeneration: z.literal(world.permissionGeneration), observation: z.object({ metadata: z.object({
+              uid: z.literal(process.uid), name: z.literal(process.name), labels: z.record(z.string(), z.string()),
+            }).loose() }).loose() }).loose().safeParse(row.stop_evidence)
+          if (!proof.success || proof.data.observation.metadata.labels['powerevolve.dev/native-process'] !== process.id
+            || proof.data.observation.metadata.labels['powerevolve.dev/native-world'] !== world.worldId
+            || kubernetesPodStopStatus(proof.data.observation) !== proof.data.status) {
+            throw new PlatformError(409, 'native_process_admission_lost')
+          }
+        }
+        // The original admission row may have waited on another transaction after the
+        // first cohort proof. Recheck the same original authority clocks before observing it.
+        await this.tasks.nativeWorldAuthorized(client, token, 'process-lifecycle')
       }
       return binding
     })

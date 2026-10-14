@@ -1,13 +1,13 @@
 /** Original-Agent-bearer native execution routes; PG authority precedes dispatch and original ownership permits only cleanup. */
 import { Context } from '@deepseek-ai/cordis'
 import { FsError } from '@deepseek-ai/dsh-fs'
-import type { SubprocessHandle, SubprocessOutcome, SubprocessTerminalHandle } from '@deepseek-ai/dsh-subprocess'
+import type { SubprocessHandle, SubprocessOutcome } from '@deepseek-ai/dsh-subprocess'
 import { z } from 'zod'
 import { PlatformError } from '../contracts.ts'
 import { nativeExecutionWorld, type NativeExecutionWorld } from '../native-execution/types.ts'
 import { nativeFsRequest, nativeFsTarget, nativeProcessSpec, nativeTerminalSpec } from '../native-execution/wire.ts'
 import { NativeExecutionByteQueue } from './native-execution-byte-queue.ts'
-import type { NativeExecutionBroker } from './native-execution-broker.ts'
+import type { NativeExecutionBroker, NativeExecutionProcessHandle, NativeExecutionTerminalHandle } from './native-execution-broker.ts'
 
 class ByteWindow {
   private data = Buffer.alloc(0)
@@ -33,13 +33,13 @@ interface CommonEntry {
 }
 interface Entry extends CommonEntry {
   kind: 'process'
-  handle: SubprocessHandle
+  handle: NativeExecutionProcessHandle
   stdout: ByteWindow | NativeExecutionByteQueue
   stderr: ByteWindow | NativeExecutionByteQueue
   control: NativeExecutionByteQueue | undefined
 }
 interface StreamEntry extends CommonEntry { kind: 'filesystem'; handle: SubprocessHandle; output: NativeExecutionByteQueue }
-interface TerminalEntry extends CommonEntry { kind: 'terminal'; handle: SubprocessTerminalHandle; output: NativeExecutionByteQueue }
+interface TerminalEntry extends CommonEntry { kind: 'terminal'; handle: NativeExecutionTerminalHandle; output: NativeExecutionByteQueue }
 /** Explicit live-handle and each channel's byte-retention bound; maps never grant execution authority. */
 export interface NativeExecutionRouteConfig { maxLiveHandles: number; maxOutputBytes: number }
 
@@ -192,8 +192,11 @@ export class NativeExecutionRoutes {
       if (path.endsWith('/release')) { await entry.ctx.fiber.dispose(); this.handles.delete(body.id) }
       return { stopped: true }
     }
-    try { await this.broker.authority.assert(token, world,
-      entry.kind === 'filesystem' ? 'storage-read' : 'execution') } catch (error) { await this.stop(entry); throw error }
+    try {
+      if (entry.kind !== 'filesystem' && path.endsWith('/poll')) {
+        await this.broker.authority.assertProcess(token, world, await entry.handle.admission)
+      } else await this.broker.authority.assert(token, world, entry.kind === 'filesystem' ? 'storage-read' : 'execution')
+    } catch (error) { await this.stop(entry); throw error }
     if (this.isClosing()) throw new PlatformError(503, 'native_execution_routes_closing')
     if (entry.kind === 'filesystem') {
       if (path !== '/runtime/native-world/fs/stream/poll') throw new PlatformError(404, 'not_found')

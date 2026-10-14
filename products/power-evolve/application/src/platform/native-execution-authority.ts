@@ -69,6 +69,22 @@ export class NativeExecutionAuthority {
    * @returns Completion only when current business execution is authorized; no grant or lease is created or renewed.
    */
   async assertExecutionInTransaction(client: PoolClient, session: AuthorizedSession, token: string): Promise<void> {
+    await this.assertClaimedCohort(client, session, token, true)
+  }
+
+  /** Retain a previously admitted process through an inter-step gap without authorizing new execution.
+   * The caller must separately verify its exact immutable process admission and world.
+   * @param client Existing account and Session-locked transaction.
+   * @param session Exact live original operation returned by TaskStore.authorized.
+   * @param token Original operation bearer; the same durable owner, Writer and both clocks remain mandatory.
+   * @returns Completion only while a complete original claimed cohort and its turn remain authoritative.
+   */
+  async assertProcessInTransaction(client: PoolClient, session: AuthorizedSession, token: string): Promise<void> {
+    await this.assertClaimedCohort(client, session, token, false)
+  }
+
+  private async assertClaimedCohort(client: PoolClient, session: AuthorizedSession, token: string,
+    currentOpenStep: boolean): Promise<void> {
     const frame = await this.frameReader(client, session, token)
     if (frame.operationId !== session.operation_id || frame.operationEpoch !== session.lease_epoch || frame.sessionId !== session.id
       || frame.frozenSnapshot.userId !== session.user_id) {
@@ -77,20 +93,34 @@ export class NativeExecutionAuthority {
     if (frame.owner === null) refuse('native_execution_step_unclaimed')
     const stored = await readNativeTurnHistory(client, frame.sessionId, this.limits)
     const history = foldInputHistory(headerSchema.parse(session.header), stored.events)
-    const step = history.step, turn = history.turn
-    if (step === null || turn === null || turn.seq !== frame.owner.turnStartSeq || turn.turn !== frame.owner.turn
-      || step.turn !== frame.owner.turn) refuse('native_execution_step_unclaimed')
+    const turn = currentOpenStep ? history.turn
+      : foldInputHistory(history.header, history.events.slice(0, frame.owner.turnStartSeq + 1)).turn
+    if (turn === null || turn.seq !== frame.owner.turnStartSeq || turn.turn !== frame.owner.turn
+      || currentOpenStep && (history.step === null || history.step.turn !== frame.owner.turn)) {
+      refuse('native_execution_step_unclaimed')
+    }
     const rows = await client.query<Record<string, unknown>>(`SELECT cohort_id AS "cohortId",session_id AS "sessionId",
       execution_operation_id AS "operationId",operation_epoch::double precision AS "operationEpoch",
       writer_epoch::double precision AS "writerEpoch",frozen_snapshot_digest AS "frozenSnapshotDigest",
       owner_kind AS "ownerKind",owner_origin_input_id AS "ownerOriginInputId",owner_input_revision AS "ownerInputRevision",
       owner_input_digest AS "ownerInputDigest",turn_start_seq AS "turnStartSeq",turn_number AS turn,
       boundary_ordinal AS "boundaryOrdinal",step_start_seq AS "stepStartSeq",claim_count AS "claimCount",command_id AS "commandId"
-      FROM pe_native_input_cohorts WHERE session_id=$1 AND step_start_seq=$2 LIMIT 2`, [frame.sessionId, step.seq])
+      FROM pe_native_input_cohorts WHERE session_id=$1 AND ${currentOpenStep ? 'step_start_seq=$2 LIMIT 2'
+        : `execution_operation_id=$2 AND operation_epoch=$3 AND writer_epoch=$4 AND frozen_snapshot_digest=$5
+        AND owner_origin_input_id=$6 AND owner_input_revision=$7 AND owner_input_digest=$8
+        AND turn_start_seq=$9 AND turn_number=$10 AND step_start_seq IS NOT NULL ORDER BY step_start_seq DESC LIMIT 1`}`,
+    currentOpenStep ? [frame.sessionId, history.step?.seq] : [frame.sessionId, frame.operationId, frame.operationEpoch,
+      frame.writerEpoch, frame.frozenSnapshotDigest, frame.owner.originInputId, frame.owner.inputRevision,
+      frame.owner.inputDigest, turn.seq, turn.turn])
     if (rows.rows.length !== 1) refuse('native_execution_step_unbound')
     const decoded = cohortSchema.safeParse(rows.rows[0])
     if (!decoded.success) corrupt()
     const cohort = decoded.data
+    const step = currentOpenStep ? history.step
+      : foldInputHistory(history.header, history.events.slice(0, cohort.stepStartSeq + 1)).step
+    if (step === null || step.seq !== cohort.stepStartSeq || step.turn !== frame.owner.turn) {
+      refuse('native_execution_step_unclaimed')
+    }
     if (cohort.operationId !== frame.operationId || cohort.operationEpoch !== frame.operationEpoch
       || cohort.writerEpoch !== frame.writerEpoch || cohort.frozenSnapshotDigest !== frame.frozenSnapshotDigest
       || cohort.ownerOriginInputId !== frame.owner.originInputId || cohort.ownerInputRevision !== frame.owner.inputRevision
