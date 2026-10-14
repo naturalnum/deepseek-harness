@@ -55,7 +55,7 @@ function exchange(origin: string, token: string): Promise<Response> {
 
 function credential(response: Response): string {
   const cookies = response.headers.getSetCookie()
-  expect(cookies).toHaveLength(2)
+  expect(cookies).toHaveLength(3)
   const cookie = cookies[0]
   if (cookie === undefined) throw new Error('Expected scoped cookie')
   const pair = cookie.split(';')[0]
@@ -74,6 +74,7 @@ test('exchange consumes the original Agent token and both replicas admit its rep
     const cookies = exchanged.headers.getSetCookie()
     expect(cookies.some(value => value.includes('Path=/native/api; HttpOnly; SameSite=Strict'))).toBe(true)
     expect(cookies.some(value => value.includes('Path=/api/powerEvolve; HttpOnly; SameSite=Strict'))).toBe(true)
+    expect(cookies.some(value => value.includes('Path=/native/plugins; HttpOnly; SameSite=Strict'))).toBe(true)
     expect(cookies.every(value => !value.includes('Secure'))).toBe(true)
     const cookie = credential(exchanged), replacement = cookie.slice('pe_agent='.length)
     await expect(identities.authenticate(alice.token)).rejects.toMatchObject({ status: 401 })
@@ -195,7 +196,7 @@ test('an IncomingMessage without a URL cannot admit a scoped browser cookie', as
   finally { request.destroy(); socket.destroy() }
 })
 
-test('revocation at Platform is observed by both Hosts and clear removes both browser cookie paths', () =>
+test('revocation at Platform is observed by both Hosts and clear removes every browser cookie path', () =>
   cloudFixture(async ({ identities, alice }) => replicas(identities, async (a, b) => {
     await identities.logout(alice.token)
     for (const instance of [a, b]) {
@@ -207,6 +208,7 @@ test('revocation at Platform is observed by both Hosts and clear removes both br
     expect(clear.headers.getSetCookie()).toEqual([
       'pe_agent=; Path=/native/api; HttpOnly; SameSite=Strict; Max-Age=0',
       'pe_agent=; Path=/api/powerEvolve; HttpOnly; SameSite=Strict; Max-Age=0',
+      'pe_agent=; Path=/native/plugins; HttpOnly; SameSite=Strict; Max-Age=0',
     ])
     await clear.arrayBuffer()
   })))

@@ -24,6 +24,7 @@ import { readJson, sendFailure, sendJson, writeLine } from '../http.ts'
 import { nativeInputQueueCommand } from '../native-input-ledger-contracts.ts'
 import { serveNativeUi } from '../ui.ts'
 import { BrowserAgentAuth } from './browser-auth.ts'
+import { installNativeClientRouting } from './native-client-routing.ts'
 import { installNativeRemote } from './native-remote.ts'
 import { Scheduler } from './scheduler.ts'
 import { CloudShellExecutor } from './cloud-shell.ts'
@@ -376,6 +377,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     runtimeUserId === '' ? undefined : runtimeUserId,
     runtimeUserId === '' ? undefined : token => ctx.powerEvolveRuntime.verifyBroker(token))
   ctx.provide('powerEvolveBrowserAuth', browserAuth)
+  if (config.nativeRuntimeRouting && runtimeUserId === '') installNativeClientRouting(ctx, browserAuth, config.origin,
+    ctx.powerEvolveRuntime.config.platformUrl, config.maxRequestBytes, ctx.powerEvolveRuntime.config.timeoutMs)
   const installRemote = (remoteCtx: Context) => {
     installNativeRemote(remoteCtx, browserAuth, config.origin, config.pollMs,
       config.maxRequestBytes, config.maxStreams, config.profileAdministrators,
@@ -463,7 +466,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         const registry = ctx.get('agentPresets')
         const presets = registry === undefined ? [] : await registry.list()
         const services = ['settings', 'configEditor', 'permissionPresets', 'commands', 'sessionProjections', 'terminalController',
-          'agentLoop', 'subagents', 'web', 'fs', 'subprocess', 'sandbox']
+          'agentLoop', 'subagents', 'web', 'fs', 'subprocess', 'sandbox', 'clientModules', 'connection', 'nativeRuntimeUiAdmission']
         const ready = ctx.get('nativeRuntimeSessions')?.available === true && services.every(service => ctx.get(service) !== undefined)
           && ['standard', 'ptc', 'minimal', 'cordis'].every(id => presets.some(preset => preset.id === id && preset.broken === undefined))
         sendJson(res, { ready, runtimeUserId, runtimeId: ctx.powerEvolveRuntime.workerId,

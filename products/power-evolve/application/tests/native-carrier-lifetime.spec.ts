@@ -37,7 +37,7 @@ async function web() {
 function dependencies(authenticate: IdentityService['authenticate'] = async () => user) {
   return { pool: { invoke: vi.fn<NativeRuntimePool['invoke']>(async (_id, _token, request) => ({ original: request })),
     streamTarget: vi.fn(async () => ({ path: '/owned', token: 'fixture-runtime' })),
-    reconcile: vi.fn(async () => {}), close: vi.fn(async () => {}) },
+    clientResource: vi.fn(async () => {}), reconcile: vi.fn(async () => {}), close: vi.fn(async () => {}) },
   identities: { authenticate }, kube: { proxyUpgrade: vi.fn(async () => {}) } }
 }
 

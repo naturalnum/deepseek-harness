@@ -30,10 +30,13 @@ export const inject = ['clientModules', 'webServer']
 export interface Config {
   /** Bundle stat-poll interval in milliseconds (default 500, the build-side watcher's polling default). */
   pollIntervalMs?: number
+  /** Maximum original graph or rebuilt frame size; slow consumers reconnect for the current graph. */
+  maxFrameBytes?: number
 }
 
 export const Config: z<Config> = z.object({
   pollIntervalMs: z.number().step(1).min(1).default(500),
+  maxFrameBytes: z.number().step(1).min(1).default(16_777_216),
 })
 
 /** Serialize one frame as an SSE data line. */
@@ -157,10 +160,14 @@ export function apply(ctx: Context, config: Config): void {
 
   // --- /plugins/events SSE channel ----------------------------------------
   const connections = new Set<ServerResponse>()
+  const send = (res: ServerResponse, line: string): void => {
+    if (res.writableNeedDrain || Buffer.byteLength(line) > (config.maxFrameBytes ?? 16_777_216)) res.destroy()
+    else res.write(line)
+  }
 
   const publishGraph = (): void => {
     const line = sseData({ type: 'graph', graph: ctx.clientModules.graph() })
-    for (const res of connections) res.write(line)
+    for (const res of connections) send(res, line)
   }
 
   const connect = (res: ServerResponse): void => {
@@ -173,8 +180,8 @@ export function apply(ctx: Context, config: Config): void {
     // no rebuild ever happens; EventSource frame parsing skips it naturally.
     res.write(': connected\n\n')
     connections.add(res)
-    res.write(sseData({ type: 'graph', graph: ctx.clientModules.graph() }))
     res.on('close', () => { connections.delete(res) })
+    send(res, sseData({ type: 'graph', graph: ctx.clientModules.graph() }))
   }
 
   ctx.effect(() => {
@@ -195,7 +202,7 @@ export function apply(ctx: Context, config: Config): void {
     const unsubscribeGraph = ctx.clientModules.onGraphChanged(publishGraph)
     const unsubscribe = ctx.clientModules.onRebuilt((id, rev) => {
       const line = sseData({ type: 'rebuilt', id, rev })
-      for (const res of connections) res.write(line)
+      for (const res of connections) send(res, line)
     })
     return () => {
       unsubscribeGraph()

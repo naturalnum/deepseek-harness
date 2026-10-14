@@ -337,3 +337,31 @@ it('broadcasts the desired graph without waiting for Host activation or cleanup'
     await ctx.fiber.dispose()
   }
 })
+
+it('retains one initial graph and disconnects a slow consumer before queuing another original frame', async () => {
+  const host = fakeClientModuleHost(new Map()), routes: WebRoute[] = []
+  const fiber = await mount(host, fakeHttpServer(routes))
+  const response = new EventEmitter() as EventEmitter & {
+    writableNeedDrain: boolean
+    writeHead: ReturnType<typeof vi.fn>
+    write: ReturnType<typeof vi.fn>
+    destroy: ReturnType<typeof vi.fn>
+  }
+  response.writableNeedDrain = false
+  response.writeHead = vi.fn()
+  response.write = vi.fn((line: string) => {
+    if (line.startsWith('data:')) response.writableNeedDrain = true
+    return !response.writableNeedDrain
+  })
+  response.destroy = vi.fn(() => { response.emit('close') })
+  try {
+    const route = routes[0]
+    if (!route) throw new Error('Original HMR route missing')
+    await route.handler({ method: 'GET' } as IncomingMessage, response as unknown as ServerResponse)
+    expect(response.destroy).not.toHaveBeenCalled()
+    expect(response.write).toHaveBeenCalledTimes(2)
+    host.fireGraphChanged()
+    expect(response.destroy).toHaveBeenCalledOnce()
+    expect(response.write).toHaveBeenCalledTimes(2)
+  } finally { await fiber.dispose() }
+})

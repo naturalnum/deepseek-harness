@@ -5,7 +5,7 @@ import { identity, settings, PlatformError } from '../contracts.ts'
 import { bearer, readJson, sendJson } from '../http.ts'
 
 const cookieName = 'pe_agent'
-const cookiePaths = ['/native/api', '/api/powerEvolve'] as const
+const cookiePaths = ['/native/api', '/api/powerEvolve', '/native/plugins'] as const
 const tokenSchema = z.string().regex(/^[A-Za-z0-9_-]{32,256}$/)
 const exchangeRequest = z.object({ token: tokenSchema }).strict()
 const agentIdentity = identity.safeExtend({ settings })

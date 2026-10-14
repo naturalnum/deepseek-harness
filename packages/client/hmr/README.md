@@ -47,6 +47,8 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 
 A successful swap shows the edited UI immediately with no page reload, and the plugin keeps working after the swap. Remember the trade-off: React state inside the reloaded plugin is lost, while session, workspace, and connection state survives.
 
+`maxFrameBytes` defaults to 16 MiB and bounds each original graph or rebuilt frame. A channel with queued bytes closes before accepting another frame; the original EventSource reconnects and receives the current graph. One large initial graph can drain without a reconnect loop.
+
 -----
 
 <a id="understand-the-implementation"></a>

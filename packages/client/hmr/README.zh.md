@@ -47,6 +47,8 @@ kind: "package-reference"
 
 成功的替换会立即显示编辑后的 UI，无需页面重载，且插件在替换后继续工作。请记住权衡：被重载插件内的 React 状态会丢失，而会话、工作区与连接状态会保留。
 
+`maxFrameBytes` 默认 16 MiB，对每个原始模块图或重建帧限长。通道仍有排队字节时会在接受下一帧前关闭；原生 EventSource 重连后接收当前模块图。单个较大的初始模块图可正常排空，不会形成重连循环。
+
 -----
 
 <a id="understand-the-implementation"></a>

@@ -51,7 +51,8 @@
     "./native-runtime-policy": "./lib/platform/native-runtime-policy.js",
     "./native-execution": "./lib/native-execution/providers.js",
     "./native-execution-client": "./lib/native-execution/http-client.js",
-    "./native-runtime-sessions": "./lib/host/native-runtime-sessions.js"
+    "./native-runtime-sessions": "./lib/host/native-runtime-sessions.js",
+    "./native-runtime-ui-admission": "./lib/host/native-runtime-ui-admission.js"
   },
   "dependencies": {
     "@deepseek-ai/dsh-brand": "workspace:*",

@@ -1,4 +1,5 @@
 /** Platform-owned tenant processes keep Creator code away from shared credentials and other Profiles. */
+import type { ServerResponse } from 'node:http'
 import { randomUUID } from 'node:crypto'
 import { lstat, mkdir, readFile, realpath } from 'node:fs/promises'
 import { isAbsolute, resolve } from 'node:path'
@@ -211,6 +212,34 @@ export class NativeRuntimePool {
     if (!current || current.runtime_id !== selected.runtimeId) throw new PlatformError(409, 'native_runtime_replaced')
     const credentials = await this.credentials(current)
     return { path: this.kube.proxyPath(current.namespace, selected.service, '/native/api/remote.mux'), token: credentials.token }
+  }
+
+  /** Stream the original client module graph assets from the selected account Runtime.
+   * @param userId Platform-authenticated owner.
+   * @param browserToken Original browser credential, rechecked by the tenant.
+   * @param target Original /plugins path and unchanged revision query.
+   * @param method Safe original HTTP method.
+   * @param response Admitted downstream transport.
+   * @param signal Whole accepted request lifetime.
+   * @returns Joined transport completion without retrying a dispatched request.
+   */
+  clientResource(userId: UserId, browserToken: string, target: string, method: 'GET' | 'HEAD',
+    response: ServerResponse, signal: AbortSignal): Promise<void> {
+    if (this.closing) return Promise.reject(new PlatformError(503, 'native_runtime_closing'))
+    return this.track((async () => {
+      const parsed = new URL(target, 'http://tenant')
+      if (parsed.origin !== 'http://tenant' || !(parsed.pathname === '/plugins' || parsed.pathname.startsWith('/plugins/'))
+        || parsed.hash) throw new PlatformError(400, 'invalid_native_resource')
+      const selected = await this.ensure(userId), current = await this.current(userId)
+      signal.throwIfAborted()
+      if (!current || current.runtime_id !== selected.runtimeId) throw new PlatformError(409, 'native_runtime_replaced')
+      const credentials = await this.credentials(current)
+      signal.throwIfAborted()
+      await this.kube.proxyHttp(response, this.kube.proxyPath(current.namespace, selected.service, parsed.pathname + parsed.search),
+        credentials.token, browserToken, this.config.deployment.hostOrigin, method, parsed.pathname === '/plugins/events',
+        { maxBytes: this.config.maxResponseBytes, maxFrameBytes: this.config.maxResponseBytes,
+          handshakeMs: this.config.requestTimeoutMs, lifetimeMs: 30_000 }, signal)
+    })())
   }
 
   /** Observe original Pod identities and retire failed, revoked, expired or disabled account processes.

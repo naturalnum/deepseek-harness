@@ -29,6 +29,8 @@ The [deployment launcher](../deploy/README.md) owns the private named Profile an
 
 Port 8080 serves `/native/runtime/invoke`, `/native/runtime/ready`, `/health` and `/native/api/remote.mux`. Unary and multiplexed browser carriers require the original Browser Agent token in `x-power-evolve-browser-token`, plus this instance's own broker token in `x-power-evolve-runner-token`. Health and ready require the broker token. Every admission rechecks Platform revocation, fixed account and generation; readiness reports the actual native service and preset registrations.
 
+The original Connection and own-Profile credentials remain active so the native client graph includes its real dependencies and both PowerEvolve client packages. Startup admission covers original routes before listening and refuses the old `/api` carrier; execution RPC continues through `/native/api`. The shared Host proxies the original `/plugins` assets and HMR events under `/native/plugins`, with a separate HttpOnly cookie path, same-user Platform admission and bounded, joined transports. Slow HMR consumers reconnect to the original current graph.
+
 -----
 
 <a id="understand-the-implementation"></a>

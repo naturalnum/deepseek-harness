@@ -55,12 +55,17 @@ export interface WebUpgradeRoute {
   handler: (req: IncomingMessage, socket: Duplex, head: Buffer) => void | Promise<void>
 }
 
+/** Caller-owned admission runs before HTTP routes and upgrade handlers, including during startup. */
+export type WebRequestAdmission = (request: IncomingMessage) => boolean | Promise<boolean>
+
 /** Web server listen and response-compression config. */
 export interface Config {
   /** Listen host; the two supported values are loopback and all-interfaces. */
   host: '127.0.0.1' | '0.0.0.0'
   /** Listen port; zero requests an OS-assigned port. */
   port: number
+  /** Optional admission supplied before listening; false refuses the request without dispatching a route. */
+  requestAdmission?: WebRequestAdmission
   /** Response compression for socket-backed HTTP requests. @default 'none' */
   compression?: 'none' | 'gzip'
   /** Gzip DEFLATE level from 0 through 9. @default 1 */
@@ -129,12 +134,16 @@ export class WebServer extends Service {
     compression: z.union([z.const('none'), z.const('gzip')]).default(DEFAULT_COMPRESSION),
     compressionLevel: z.number().step(1).min(0).max(9).default(DEFAULT_COMPRESSION_LEVEL),
     compressionThresholdBytes: z.natural().default(DEFAULT_COMPRESSION_THRESHOLD_BYTES),
+    requestAdmission: z.function(),
   })
 
   private readonly exact = new Map<string, WebRoute>()
   private readonly prefixes = new Map<string, WebRoute>()
   private readonly upgrades = new Map<string, WebUpgradeRoute>()
   private readonly upgradedSockets = new Set<Duplex>()
+  private readonly pending = new Set<Promise<void>>()
+  private closing = false
+  private isClosing(): boolean { return this.closing }
   private readonly indexTaps: ((html: string) => string)[] = []
   private fallback: WebRoute['handler'] | undefined
   private server!: Server
@@ -220,6 +229,11 @@ export class WebServer extends Service {
   /** Listen; resolves once the socket is bound (rejection = FAILED fiber). */
   async [Service.init](): Promise<void> {
     const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+      if (this.isClosing() || (this.config.requestAdmission && !await this.config.requestAdmission(req))) {
+        if (!res.destroyed) { res.writeHead(403); res.end() }
+        return
+      }
+      if (res.destroyed || this.isClosing()) return
       /* v8 ignore next -- `?? '/'` arm: node:http always sets url on server
       requests; the field is only optional on the client-side IncomingMessage type */
       const rawPath = new URL(req.url ?? '/', 'http://x').pathname
@@ -242,7 +256,7 @@ export class WebServer extends Service {
     // never a process exit.
     this.server = createServer((req, res) => {
       const next = (): void => {
-        void handle(req, res).catch((err: unknown) => {
+        const work = handle(req, res).catch((err: unknown) => {
           this.ctx.logger.warn(err instanceof Error ? err : new Error(String(err)))
           if (res.headersSent) {
             res.destroy()
@@ -250,7 +264,8 @@ export class WebServer extends Service {
           }
           res.writeHead(400)
           res.end()
-        })
+        }).finally(() => { this.pending.delete(work) })
+        this.pending.add(work)
       }
       if (this.gzip === undefined) next()
       else this.gzip(req, res, next)
@@ -280,10 +295,22 @@ export class WebServer extends Service {
       }
       this.upgradedSockets.add(socket)
       try {
-        Promise.resolve(route.handler(req, socket, head)).catch((error: unknown) => {
+        const selected = route
+        const available = (): boolean => !socket.destroyed && !this.isClosing()
+        const work = (async () => {
+          if (this.isClosing() || (this.config.requestAdmission && !await this.config.requestAdmission(req))) {
+            if (!socket.destroyed) {
+              socket.once('finish', () => { socket.destroy() })
+              socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n')
+            }
+            return
+          }
+          if (available()) await selected.handler(req, socket, head)
+        })().catch((error: unknown) => {
           this.ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
           socket.destroy()
-        })
+        }).finally(() => { this.pending.delete(work) })
+        this.pending.add(work)
       } catch (error) {
         this.ctx.logger.warn(error instanceof Error ? error : new Error(String(error)))
         socket.destroy()
@@ -303,6 +330,7 @@ export class WebServer extends Service {
     // Node does not include upgraded sockets in closeAllConnections(). The service
     // owns them with the other connections, so it tracks and destroys them explicitly.
     this.ctx.effect(() => async () => {
+      this.closing = true
       const serverClosed = new Promise<void>((resolve) => {
         this.server.close(() => { resolve() })
       })
@@ -311,7 +339,7 @@ export class WebServer extends Service {
         socket.once('close', () => { resolve() })
         socket.destroy()
       }))
-      await Promise.all([serverClosed, ...upgradedClosed])
+      await Promise.all([serverClosed, ...upgradedClosed, ...this.pending])
     }, 'webServer.listen')
   }
 

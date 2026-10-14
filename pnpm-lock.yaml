@@ -14813,6 +14813,12 @@ importers:
       '@power-evolve/application':
         specifier: workspace:*
         version: link:../application
+      '@power-evolve/client-account':
+        specifier: workspace:*
+        version: link:../client-account
+      '@power-evolve/client-extension-center':
+        specifier: workspace:*
+        version: link:../client-extension-center
 
   products/power-evolve/platform:
     dependencies:

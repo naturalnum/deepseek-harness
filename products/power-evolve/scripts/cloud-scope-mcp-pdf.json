@@ -73,12 +73,12 @@
   "counts": {
     "runtime": {
       "enabled": 14,
-      "shared": 341,
+      "shared": 345,
       "deferred": 4
     },
     "sourceTests": {
       "enabled": 12,
-      "shared": 162,
+      "shared": 163,
       "deferred": 3
     },
     "builtTests": {
@@ -5582,6 +5582,41 @@
       "status": "shared",
       "owner": "Root",
       "reason": "core-shared"
+    },
+    {
+      "path": "products/power-evolve/application/src/host/native-client-routing.ts",
+      "kind": "runtime",
+      "status": "shared",
+      "owner": "HelperReview",
+      "reason": "native-runtime-s3"
+    },
+    {
+      "path": "products/power-evolve/application/src/host/native-runtime-ui-admission.ts",
+      "kind": "runtime",
+      "status": "shared",
+      "owner": "HelperReview",
+      "reason": "native-runtime-s3"
+    },
+    {
+      "path": "products/power-evolve/application/src/native-client-http.ts",
+      "kind": "runtime",
+      "status": "shared",
+      "owner": "HelperReview",
+      "reason": "native-runtime-s3"
+    },
+    {
+      "path": "products/power-evolve/application/src/runtime-http-proxy.ts",
+      "kind": "runtime",
+      "status": "shared",
+      "owner": "HelperReview",
+      "reason": "native-runtime-s3"
+    },
+    {
+      "path": "products/power-evolve/application/tests/native-client-http.spec.ts",
+      "kind": "sourceTests",
+      "status": "shared",
+      "owner": "HelperReview",
+      "reason": "native-runtime-s3"
     }
   ],
   "lintSupport": [

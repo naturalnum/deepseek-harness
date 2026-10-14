@@ -11,7 +11,7 @@
 - id: sandbox
   disabled: true
 - id: credentials
-  disabled: true
+  disabled: false
 - id: authorization
   disabled: true
 - id: deepseek-account
@@ -35,7 +35,10 @@
 - id: web-runtime
   disabled: true
 - id: connection
-  disabled: true
+  disabled: false
+  inject: [credentials]
+  config:
+    trustedHosts: !!js "[new URL(process.env.PE_HOST_PUBLIC_ORIGIN).host]"
 - id: open-in-app
   disabled: true
 - id: directory-picker
@@ -47,10 +50,11 @@
 - id: office-to-pdf
   disabled: true
 - id: webserver
-  inject: []
+  inject: [nativeRuntimeUiAdmission]
   config:
     host: 0.0.0.0
     port: 8080
+    requestAdmission: !!js ctx.nativeRuntimeUiAdmission.admit
 - id: sandbox-policy
   config:
     mode: workspace-write
@@ -73,6 +77,16 @@
   config:
     model: !!js ctx.powerEvolveRuntime.runtimeDefaultModel
 - insert:
+    - id: native-runtime-ui-admission
+      name: '@power-evolve/application/native-runtime-ui-admission'
+      inject: [powerEvolveRuntime]
+      config:
+        origin: !!js process.env.PE_HOST_PUBLIC_ORIGIN
+        platformOrigin: !!js process.env.PE_PLATFORM_PUBLIC_ORIGIN
+    - id: power-evolve-client-account
+      name: '@power-evolve/client-account'
+    - id: power-evolve-client-extension-center
+      name: '@power-evolve/client-extension-center'
     - id: power-evolve-runtime
       name: '@power-evolve/application/scope'
       config:

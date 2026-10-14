@@ -5,6 +5,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import { rejectRemoteStreamUpgrade } from '@deepseek-ai/dsh-api-gateway'
 import { z } from 'zod'
+import { installNativeClientHttp } from '../native-client-http.ts'
 import { PlatformError } from '../contracts.ts'
 import { bearer, readJson, sendFailure, sendJson } from '../http.ts'
 import type { IdentityService } from './identity.ts'
@@ -24,7 +25,7 @@ const envelope = z.object({ type: z.literal('client-request'), rpcId: z.string()
  * @returns Idempotent joined shutdown, also registered with the Context lifetime.
  */
 export function installNativeRuntimePoolRoutes(ctx: Context,
-  pool: Pick<NativeRuntimePool, 'invoke' | 'streamTarget' | 'reconcile' | 'close'>,
+  pool: Pick<NativeRuntimePool, 'invoke' | 'streamTarget' | 'reconcile' | 'close' | 'clientResource'>,
   kube: Pick<KubernetesClient, 'proxyUpgrade'>,
   identities: Pick<IdentityService, 'authenticate'>, config: NativeRuntimePoolConfig, maxRequestBytes: number): () => Promise<void> {
   const streams = new Set<Duplex>(), pending = new Set<Promise<void>>()
@@ -80,6 +81,12 @@ export function installNativeRuntimePoolRoutes(ctx: Context,
     pending.add(work)
     try { await work } finally { pending.delete(work) }
   } }))
+  const closeClients = installNativeClientHttp(ctx, '/native/runtime/plugins', async (request, response, target, method, signal) => {
+    if (request.headers.origin !== origin) throw new PlatformError(403, 'invalid_origin')
+    const token = bearer(request), user = await identities.authenticate(token)
+    signal.throwIfAborted()
+    await pool.clientResource(user.userId, token, target, method, response, signal)
+  })
   let reconciliation: Promise<void> | undefined
   const timer = setInterval(() => {
     if (isClosing() || reconciliation) return
@@ -94,6 +101,7 @@ export function installNativeRuntimePoolRoutes(ctx: Context,
     for (const response of responses) response.destroy()
     for (const socket of streams) socket.destroy()
     await Promise.allSettled([...pending, ...(reconciliation ? [reconciliation] : [])])
+    await closeClients()
     await pool.close()
   })()
   ctx.effect(() => close)

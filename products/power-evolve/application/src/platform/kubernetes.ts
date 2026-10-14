@@ -3,8 +3,9 @@ import { readFile } from 'node:fs/promises'
 import { request as httpsRequest } from 'node:https'
 import yaml from 'js-yaml'
 import { z } from 'zod'
-import type { IncomingMessage } from 'node:http'
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Duplex } from 'node:stream'
+import { proxyRuntimeHttp, type RuntimeHttpLimits } from '../runtime-http-proxy.ts'
 import { proxyRuntimeUpgrade } from '../runtime-upgrade-proxy.ts'
 
 /** Two 64 KiB Sandbox streams or 128 KiB aggregate SSH output can expand sixfold in JSON. */
@@ -187,6 +188,30 @@ export class KubernetesClient {
       headers: { ...(token ? { authorization: `Bearer ${token}` } : {}),
         'x-power-evolve-runner-token': processToken, 'x-power-evolve-browser-token': browserToken, origin },
     }, timeoutMs)
+  }
+
+  /** Forward original client assets or HMR bytes through a fixed Kubernetes service proxy.
+   * @param response Admitted downstream transport.
+   * @param path Platform-selected namespaced service path and original revision query.
+   * @param processToken Selected Runtime credential.
+   * @param browserToken Original browser account credential.
+   * @param origin Public Host origin.
+   * @param method Original safe HTTP method.
+   * @param events Whether the original path is the HMR endpoint.
+   * @param limits Transport and byte budgets.
+   * @param signal Owner cancellation, joined before completion.
+   * @returns Completion after every accepted transport closes.
+   */
+  async proxyHttp(response: ServerResponse, path: string, processToken: string, browserToken: string,
+    origin: string, method: 'GET' | 'HEAD', events: boolean, limits: RuntimeHttpLimits, signal: AbortSignal): Promise<void> {
+    const url = new URL(path, this.server)
+    if (url.origin !== this.server.origin) throw new Error('Kubernetes HTTP origin changed')
+    const token = this.tokenFile ? (await readFile(this.tokenFile, 'utf8')).trim() : this.token
+    if (!token && !this.cert) throw new Error('Kubernetes service account token is unavailable')
+    await proxyRuntimeHttp(response, url, { ca: this.ca, cert: this.cert, key: this.key, rejectUnauthorized: true,
+      headers: { ...(token ? { authorization: `Bearer ${token}` } : {}),
+        'x-power-evolve-runner-token': processToken, 'x-power-evolve-browser-token': browserToken, origin },
+      method, events, limits, signal })
   }
 
   /**
