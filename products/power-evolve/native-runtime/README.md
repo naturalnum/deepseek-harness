@@ -31,6 +31,8 @@ Port 8080 serves `/native/runtime/invoke`, `/native/runtime/ready`, `/health` an
 
 The original Connection and own-Profile credentials remain active so the native client graph includes its real dependencies and both PowerEvolve client packages. Startup admission covers original routes before listening and refuses the old `/api` carrier; execution RPC continues through `/native/api`. The shared Host proxies the original `/plugins` assets and HMR events under `/native/plugins`, with a separate HttpOnly cookie path, same-user Platform admission and bounded, joined transports. Slow HMR consumers reconnect to the original current graph.
 
+Host config `nativeClientMaxRequests` and Pool config `clientMaxRequests` default to 100 accepted requests, including pending authentication. `nativeClientLifetimeMs` and `clientLifetimeMs` default to 30 seconds; the original EventSource reconnects after that bounded generation. Old operator Pool JSON receives these validated defaults.
+
 -----
 
 <a id="understand-the-implementation"></a>

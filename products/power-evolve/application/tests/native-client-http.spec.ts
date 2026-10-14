@@ -5,7 +5,7 @@ import { createServer, request as httpRequest } from 'node:http'
 import { once } from 'node:events'
 import { randomUUID } from 'node:crypto'
 import { expect, test, vi } from 'vitest'
-import { installNativeClientHttp } from '../src/native-client-http.ts'
+import { installNativeClientHttp, resolveNativeClientHttpConfig } from '../src/native-client-http.ts'
 import { installNativeClientRouting } from '../src/host/native-client-routing.ts'
 import { proxyRuntimeHttp } from '../src/runtime-http-proxy.ts'
 import { BrowserAgentAuth } from '../src/host/browser-auth.ts'
@@ -76,7 +76,7 @@ test('browser-scoped cookie forwards unchanged combo revision bytes through the 
   const auth = new BrowserAgentAuth(origin, 'https://platform.example', { call: async (_path, credential) => {
     if (credential !== token) throw new Error('denied'); return user
   } })
-  const close = installNativeClientRouting(ctx, auth, origin, `http://127.0.0.1:${address.port}`, 1048576, 1000)
+  const close = installNativeClientRouting(ctx, auth, origin, `http://127.0.0.1:${address.port}`, 1048576, 1000, { maxRequests: 100, lifetimeMs: 3000 })
   try {
     const response = await fetch(origin + '/native/plugins/??fixture/client.js&rev=original',
       { headers: { cookie: `pe_agent=${token}`, 'sec-fetch-site': 'same-origin' } })
@@ -115,5 +115,59 @@ test('an unanswered upstream handshake is interrupted and joined within its orig
     const response = await fetch(`http://127.0.0.1:${ctx.webServer.port}/native/plugins/events`)
     expect(response.status).toBe(503)
     await response.text(); await close(); await expect.poll(() => accepted.size).toBe(0)
+  } finally { await close(); await ctx.fiber.dispose(); upstream.closeAllConnections(); upstream.close(); await once(upstream, 'close') }
+})
+
+
+test('accepted client authentication and transport owners have a finite admission ceiling', async () => {
+  expect(resolveNativeClientHttpConfig()).toEqual({ maxRequests: 100 })
+  expect(() => resolveNativeClientHttpConfig({ maxRequests: 0 })).toThrow()
+  const ctx = await web(), accepted = new Set<import('node:http').ServerResponse>()
+  const close = installNativeClientHttp(ctx, '/native/plugins', async (_request, response) => {
+    accepted.add(response)
+    response.writeHead(200, { 'content-type': 'text/event-stream' }); response.write(': original\n\n')
+    await new Promise<void>((resolve) => { response.once('close', resolve) })
+    accepted.delete(response)
+  }, { maxRequests: 2 })
+  const controllers = Array.from({ length: 2 }, () => new AbortController())
+  const url = `http://127.0.0.1:${ctx.webServer.port}/native/plugins/events`
+  try {
+    const responses = await Promise.all(controllers.map(controller => fetch(url, { signal: controller.signal })))
+    expect(responses.every(response => response.status === 200)).toBe(true)
+    expect(accepted.size).toBe(2)
+    const refused = await fetch(url)
+    expect(refused.status).toBe(503); expect(await refused.json()).toMatchObject({ error: 'native_client_capacity' })
+    expect(accepted.size).toBe(2)
+    controllers[0]?.abort()
+    await expect.poll(() => accepted.size).toBe(1)
+    const replacement = new AbortController(); controllers.push(replacement)
+    expect((await fetch(url, { signal: replacement.signal })).status).toBe(200)
+    expect(accepted.size).toBe(2)
+  } finally { for (const controller of controllers) controller.abort(); await close(); await ctx.fiber.dispose() }
+})
+
+test('configured Host HMR lifetime disconnects and joins the original upstream stream', async () => {
+  const upstream = createServer((_request, response) => {
+    response.writeHead(200, { 'content-type': 'text/event-stream' }); response.write(': original\n\n')
+  })
+  const sockets = new Set<import('node:net').Socket>()
+  upstream.on('connection', (socket) => { sockets.add(socket); socket.once('close', () => { sockets.delete(socket) }) })
+  upstream.listen(0, '127.0.0.1'); await once(upstream, 'listening')
+  const address = upstream.address()
+  if (!address || typeof address === 'string') throw new Error('Missing owned listener')
+  const ctx = await web(), origin = `http://127.0.0.1:${ctx.webServer.port}`
+  const close = installNativeClientRouting(ctx, new BrowserAgentAuth(origin, 'https://platform.example', { call: async () => user }),
+    origin, `http://127.0.0.1:${address.port}`, 1048576, 1000, { maxRequests: 2, lifetimeMs: 1000 })
+  try {
+    const response = await fetch(origin + '/native/plugins/events', { headers: { cookie: `pe_agent=${token}` } })
+    expect(response.status).toBe(200)
+    let finished = false
+    const body = response.text().then((value) => { finished = true; return { value } }, (error: unknown) => {
+      finished = true; return { error }
+    })
+    await expect.poll(() => finished, { timeout: 1500 }).toBe(true)
+    expect(await body).toHaveProperty('error')
+    await expect.poll(() => sockets.size).toBe(0)
+    await close()
   } finally { await close(); await ctx.fiber.dispose(); upstream.closeAllConnections(); upstream.close(); await once(upstream, 'close') }
 })

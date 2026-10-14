@@ -86,7 +86,7 @@ export function installNativeRuntimePoolRoutes(ctx: Context,
     const token = bearer(request), user = await identities.authenticate(token)
     signal.throwIfAborted()
     await pool.clientResource(user.userId, token, target, method, response, signal)
-  })
+  }, { ...(config.clientMaxRequests === undefined ? {} : { maxRequests: config.clientMaxRequests }) })
   let reconciliation: Promise<void> | undefined
   const timer = setInterval(() => {
     if (isClosing() || reconciliation) return

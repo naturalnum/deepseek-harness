@@ -349,6 +349,8 @@ export const Config = schema.object({
     schema.string().pattern(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u),
   ).default([]),
   nativeRuntimeRouting: schema.boolean().default(false),
+  nativeClientMaxRequests: schema.number().step(1).min(1).max(10_000).default(100),
+  nativeClientLifetimeMs: schema.number().step(1).min(1000).max(2_147_483_647).default(30_000),
 
   officePreviewEnabled: schema.boolean().default(false),
   officePreviewPollMs: schema.number().step(1).min(1).max(2_147_483_647).default(500),
@@ -378,7 +380,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     runtimeUserId === '' ? undefined : token => ctx.powerEvolveRuntime.verifyBroker(token))
   ctx.provide('powerEvolveBrowserAuth', browserAuth)
   if (config.nativeRuntimeRouting && runtimeUserId === '') installNativeClientRouting(ctx, browserAuth, config.origin,
-    ctx.powerEvolveRuntime.config.platformUrl, config.maxRequestBytes, ctx.powerEvolveRuntime.config.timeoutMs)
+    ctx.powerEvolveRuntime.config.platformUrl, config.maxRequestBytes, ctx.powerEvolveRuntime.config.timeoutMs,
+    { maxRequests: config.nativeClientMaxRequests, lifetimeMs: config.nativeClientLifetimeMs })
   const installRemote = (remoteCtx: Context) => {
     installNativeRemote(remoteCtx, browserAuth, config.origin, config.pollMs,
       config.maxRequestBytes, config.maxStreams, config.profileAdministrators,

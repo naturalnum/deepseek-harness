@@ -184,7 +184,7 @@ export interface Config {
 ## `@deepseek-ai/dsh-api-gateway`
 
 - `inject`: `typert`
-- `source`: [`packages/api/gateway/src/index.ts:150`](../packages/api/gateway/src/index.ts)
+- `source`: [`packages/api/gateway/src/index.ts:152`](../packages/api/gateway/src/index.ts)
 
 ```ts config-catalog
 /** Gateway transport configuration. */
@@ -493,6 +493,8 @@ export interface ConnectionRecoveryConfig {
 export interface Config {
   /** Bundle stat-poll interval in milliseconds (default 500, the build-side watcher's polling default). */
   pollIntervalMs?: number
+  /** Maximum original graph or rebuilt frame size; slow consumers reconnect for the current graph. */
+  maxFrameBytes?: number
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-client-hmr -->
@@ -1524,7 +1526,8 @@ export interface Config {
 
 ## `@deepseek-ai/dsh-host-webserver`
 
-- `source`: [`packages/host/webserver/src/index.ts:59`](../packages/host/webserver/src/index.ts)
+- `refs`: `IncomingMessage` (`node:http`)
+- `source`: [`packages/host/webserver/src/index.ts:62`](../packages/host/webserver/src/index.ts)
 
 ```ts config-catalog
 /** Web server listen and response-compression config. */
@@ -1533,6 +1536,8 @@ export interface Config {
   host: '127.0.0.1' | '0.0.0.0'
   /** Listen port; zero requests an OS-assigned port. */
   port: number
+  /** Optional admission supplied before listening; false refuses the request without dispatching a route. */
+  requestAdmission?: WebRequestAdmission
   /** Response compression for socket-backed HTTP requests. @default 'none' */
   compression?: 'none' | 'gzip'
   /** Gzip DEFLATE level from 0 through 9. @default 1 */
@@ -1540,6 +1545,9 @@ export interface Config {
   /** Minimum known response length eligible for gzip; unknown-length streams are eligible. @default 1024 */
   compressionThresholdBytes?: number
 }
+
+/** Caller-owned admission runs before HTTP routes and upgrade handlers, including during startup. */
+export type WebRequestAdmission = (request: IncomingMessage) => boolean | Promise<boolean>
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-host-webserver -->
 

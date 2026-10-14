@@ -12,10 +12,12 @@ import type { BrowserAgentAuth } from './browser-auth.ts'
  * @param platformUrl Fixed private Platform origin.
  * @param maxBytes Whole asset and HMR frame budget.
  * @param timeoutMs Upstream admission deadline.
+ * @param clientLimits Validated Host client request count and streaming lifetime.
  * @returns Cached joined carrier shutdown.
  */
 export function installNativeClientRouting(ctx: Context, auth: BrowserAgentAuth, origin: string,
-  platformUrl: string, maxBytes: number, timeoutMs: number): () => Promise<void> {
+  platformUrl: string, maxBytes: number, timeoutMs: number,
+  clientLimits: { maxRequests: number; lifetimeMs: number }): () => Promise<void> {
   return installNativeClientHttp(ctx, '/native/plugins', async (request, response, target, method, signal) => {
     const credential = await auth.authenticate(request, true)
     signal.throwIfAborted()
@@ -23,7 +25,7 @@ export function installNativeClientRouting(ctx: Context, auth: BrowserAgentAuth,
     await proxyRuntimeHttp(response, new URL(`/native/runtime${target}`, platformUrl), {
       headers: { authorization: `Bearer ${credential.token}`, origin }, method,
       events: new URL(target, origin).pathname === '/plugins/events', signal,
-      limits: { maxBytes, maxFrameBytes: maxBytes, handshakeMs: timeoutMs, lifetimeMs: 30_000 },
+      limits: { maxBytes, maxFrameBytes: maxBytes, handshakeMs: timeoutMs, lifetimeMs: clientLimits.lifetimeMs },
     })
-  })
+  }, { maxRequests: clientLimits.maxRequests })
 }

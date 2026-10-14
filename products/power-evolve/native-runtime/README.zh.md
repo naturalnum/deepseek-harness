@@ -31,6 +31,8 @@ kind: package-bundle
 
 原生 Connection 与自身 Profile 凭据保持启用，使原生客户端图包含真实依赖和两个 PowerEvolve 客户端包。监听前的统一准入覆盖原始路由并拒绝旧 `/api` 运输；执行 RPC 继续经过 `/native/api`。共享 Host 将原始 `/plugins` 资源与 HMR 事件代理到 `/native/plugins`，使用独立 HttpOnly cookie 路径、Platform 同用户准入，以及有界并等待关闭的运输。慢 HMR 消费者重连后读取原始当前模块图。
 
+Host 配置 `nativeClientMaxRequests` 与 Pool 配置 `clientMaxRequests` 默认最多受理 100 个请求，在途鉴权也计入。`nativeClientLifetimeMs` 与 `clientLifetimeMs` 默认 30 秒；原生 EventSource 会在这一有界运输代结束后重连。旧操作员 Pool JSON 使用这些经校验的默认值。
+
 -----
 
 <a id="understand-the-implementation"></a>

@@ -2,6 +2,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
+import { z } from 'zod'
 import { PlatformError } from './contracts.ts'
 import { sendFailure } from './http.ts'
 
@@ -9,13 +10,26 @@ import { sendFailure } from './http.ts'
 export type NativeClientForward = (request: IncomingMessage, response: ServerResponse, target: string,
   method: 'GET' | 'HEAD', signal: AbortSignal) => Promise<void>
 
+const admission = z.object({ maxRequests: z.number().int().min(1).max(10_000).default(100) }).strict()
+
+/** Resolve the explicit client carrier admission budget without accepting arbitrary fields.
+ * @param input Operator-provided limit; omitted input retains the compatible default.
+ * @returns Validated maximum accepted requests, including in-flight authentication.
+ */
+export function resolveNativeClientHttpConfig(input: { maxRequests?: number } = {}): z.infer<typeof admission> {
+  return admission.parse(input)
+}
+
 /** Install one original resource prefix and join every accepted authentication and transport on shutdown.
  * @param ctx Owning HTTP server lifetime.
  * @param prefix External resource prefix mapped to original /plugins.
  * @param forward Caller-owned authoritative admission and fixed-target forwarding.
+ * @param config Explicit validated admission budget; omission resolves the compatible default.
  * @returns Cached explicit shutdown; callers join it before credential and database shutdown.
  */
-export function installNativeClientHttp(ctx: Context, prefix: string, forward: NativeClientForward): () => Promise<void> {
+export function installNativeClientHttp(ctx: Context, prefix: string, forward: NativeClientForward,
+  config: { maxRequests?: number } = {}): () => Promise<void> {
+  const budget = resolveNativeClientHttpConfig(config)
   const pending = new Set<Promise<void>>()
   const live = new Map<ServerResponse, { request: IncomingMessage; controller: AbortController }>()
   let closing = false, closePromise: Promise<void> | undefined
@@ -30,6 +44,7 @@ export function installNativeClientHttp(ctx: Context, prefix: string, forward: N
     const work = (async () => {
       try {
         if (isClosing()) throw new PlatformError(503, 'native_runtime_closing')
+        if (pending.size >= budget.maxRequests) throw new PlatformError(503, 'native_client_capacity')
         const method = request.method
         if (method !== 'GET' && method !== 'HEAD') throw new PlatformError(405, 'method_not_allowed')
         const original = new URL(request.url ?? '/', 'http://native')

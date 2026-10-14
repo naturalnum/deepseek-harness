@@ -26,6 +26,7 @@ const configuration = z.object({ kubeconfigFile: z.string().min(1), namespace: d
   deployment: template, credentialLifetimeMs: milliseconds, readyTimeoutMs: milliseconds,
   requestTimeoutMs: milliseconds, stopTimeoutMs: milliseconds, reconcileMs: milliseconds,
   maxResponseBytes: z.number().int().positive().max(134_217_728),
+  clientMaxRequests: z.number().int().min(1).max(10_000).default(100), clientLifetimeMs: milliseconds.default(30_000),
   maxRuntimeSeconds: z.number().int().min(60).max(2_147_483_647),
   maxAccounts: z.number().int().positive().max(10000),
   lockConnections: z.number().int().positive().max(256),
@@ -33,7 +34,8 @@ const configuration = z.object({ kubeconfigFile: z.string().min(1), namespace: d
     limits: z.object({ cpu: z.string().min(1), memory: z.string().min(1) }).strict() }).strict(),
 }).strict()
 /** Operator-selected tenant process resources and named Profile overrides. */
-export type NativeRuntimePoolConfig = z.infer<typeof configuration>
+export type NativeRuntimePoolConfig = Omit<z.infer<typeof configuration>, 'clientMaxRequests' | 'clientLifetimeMs'>
+  & Partial<Pick<z.infer<typeof configuration>, 'clientMaxRequests' | 'clientLifetimeMs'>>
 
 const instance = z.object({ runtime_id: z.uuid(), user_id: accountUserId, generation: z.number().int().positive(),
   namespace: dns, config_digest: z.string().regex(/^[a-f0-9]{64}$/u),
@@ -101,7 +103,7 @@ export class NativeRuntimePool {
   private closed: Promise<void> | undefined
   private readonly authority: NativeRuntimeAuthority
   private readonly configDigest: string
-  private readonly config: NativeRuntimePoolConfig
+  private readonly config: z.infer<typeof configuration>
 
   constructor(private readonly database: Pool, private readonly lockPool: Pool, private readonly kube: KubernetesClient,
     config: NativeRuntimePoolConfig) {
@@ -238,7 +240,7 @@ export class NativeRuntimePool {
       await this.kube.proxyHttp(response, this.kube.proxyPath(current.namespace, selected.service, parsed.pathname + parsed.search),
         credentials.token, browserToken, this.config.deployment.hostOrigin, method, parsed.pathname === '/plugins/events',
         { maxBytes: this.config.maxResponseBytes, maxFrameBytes: this.config.maxResponseBytes,
-          handshakeMs: this.config.requestTimeoutMs, lifetimeMs: 30_000 }, signal)
+          handshakeMs: this.config.requestTimeoutMs, lifetimeMs: this.config.clientLifetimeMs }, signal)
     })())
   }
 
