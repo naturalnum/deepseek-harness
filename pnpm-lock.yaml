@@ -14274,9 +14274,6 @@ importers:
 
   products/power-evolve/application:
     dependencies:
-      '@deepseek-ai/dsh-web-frontend':
-        specifier: workspace:*
-        version: link:../../../apps/web
       '@deepseek-ai/dsh-brand':
         specifier: workspace:*
         version: link:../../../packages/util/brand
@@ -14292,6 +14289,9 @@ importers:
       '@deepseek-ai/dsh-util-crypto':
         specifier: workspace:*
         version: link:../../../packages/util/crypto
+      '@deepseek-ai/dsh-web-frontend':
+        specifier: workspace:*
+        version: link:../../../apps/web
       '@deepseek-ai/node-addon-system':
         specifier: workspace:~
         version: link:../../../native/system/packages/entry
@@ -14503,6 +14503,9 @@ importers:
       '@deepseek-ai/dsh-tool-bash':
         specifier: workspace:*
         version: link:../../../packages/shell/tool-bash
+      '@deepseek-ai/dsh-tool-bash-persistent':
+        specifier: workspace:*
+        version: link:../../../packages/shell/tool-bash-persistent
       '@deepseek-ai/dsh-tool-skill':
         specifier: workspace:*
         version: link:../../../packages/skill/tool-skill

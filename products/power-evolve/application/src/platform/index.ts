@@ -422,7 +422,9 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     ...(remoteMcpConfig ? { remoteMcpAdmission: remoteMcpConfig.settings.admission } : {}),
     stdioMcpEnabled: !!config.sshRunnerKubeconfigFile,
     sshEnabled: !!config.sshRunnerKubeconfigFile && !!config.sshCredentialKeyFile },
-  (client, session, token): Promise<void> => nativeExecution.assertExecutionInTransaction(client, session, token),
+  (client, session, token, purpose): Promise<void> => purpose === 'process-lifecycle'
+    ? nativeExecution.assertProcessInTransaction(client, session, token)
+    : nativeExecution.assertExecutionInTransaction(client, session, token),
   (client, sessionId, fallback) => nativeFrames.selectClaimInTransaction(client, sessionId, fallback))
   const nativeWriter = new NativeSessionWriter(tasks, { leaseMs: config.nativeWriterLeaseMs })
   const nativeInputLimits = { maxCohortInputs: config.nativeInputMaxCohortInputs,
