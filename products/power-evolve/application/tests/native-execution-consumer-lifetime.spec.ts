@@ -13,10 +13,23 @@ import RuntimeScope from '../src/host/scope.ts'
 import NativeRuntimeExecution from '../src/host/native-runtime-execution.ts'
 import { nativeExecutionWorld } from '../src/native-execution/types.ts'
 
-const cases = [{ failed: false, heldWorld: false }, { failed: true, heldWorld: false }, { failed: true, heldWorld: true }]
-for (const { failed, heldWorld } of cases) test(heldWorld
-  ? 'actual execution shutdown joins a held world read and rejects late reuse before original cleanup'
-  : `actual native execution drain ${failed ? 'retains rejected' : 'joins successful'} original HTTP cleanup`, async () => {
+const cases = [
+  { failed: false, heldWorld: false, fsFailure: null, nullCleanup: false },
+  { failed: true, heldWorld: false, fsFailure: null, nullCleanup: false },
+  { failed: true, heldWorld: true, fsFailure: null, nullCleanup: false },
+  { failed: true, heldWorld: false, fsFailure: 'stop', nullCleanup: false },
+  { failed: true, heldWorld: false, fsFailure: 'release', nullCleanup: false },
+  { failed: true, heldWorld: false, fsFailure: 'stop', nullCleanup: true },
+  { failed: true, heldWorld: false, fsFailure: null, nullCleanup: true },
+]
+for (const { failed, heldWorld, fsFailure, nullCleanup } of cases) test(nullCleanup
+  ? `actual ${fsFailure ? 'Fs reader return' : 'process drain'} rejects an invalid original cleanup acknowledgment`
+  : fsFailure
+    ? `actual Fs reader return preserves original ${fsFailure} failure through repeated execution drain`
+    : heldWorld
+      ? 'actual execution shutdown joins a held world read and rejects late reuse before original cleanup'
+      : `actual native execution drain ${failed ? 'retains rejected' : 'joins successful'} original HTTP cleanup`, async () => {
+  const filesystem = fsFailure !== null
   const grant = grantSchema.parse({ operationId: randomUUID(), sessionId: randomUUID(), userId: randomUUID(),
     requestId: randomUUID(), text: 'consumer fixture', token: 'f'.repeat(43), epoch: 1,
     settings: { model: 'fixture', maxTokens: 1000, revision: 1 }, executionEnabled: true })
@@ -38,6 +51,15 @@ for (const { failed, heldWorld } of cases) test(heldWorld
           if (heldWorld && ++opened > 1) { worldEntered.resolve(undefined); await worldRelease.promise }
           sendJson(response, world); return
         }
+        if (path === '/runtime/native-world/fs') {
+          sendJson(response, { ok: true, value: { targetKey: world.worldId + ':/workspace/fixture.txt', displayPath: '/workspace/fixture.txt' } }); return
+        }
+        if (path === '/runtime/native-world/fs/stream/start') { sendJson(response, { id: input.id }); return }
+        if (path === '/runtime/native-world/fs/stream/poll') {
+          entered.resolve(undefined); await release.promise
+          sendJson(response, { state: 'running', outcome: null, error: null,
+            output: { data: '', nextOffset: 0, lossy: false, exhausted: false } }); return
+        }
         if (path === '/runtime/native-world/process/start') { sendJson(response, { id: input.id }); return }
         if (path === '/runtime/native-world/process/poll') {
           entered.resolve(undefined); await release.promise
@@ -45,8 +67,9 @@ for (const { failed, heldWorld } of cases) test(heldWorld
           sendJson(response, { state: 'running', outcome: null, error: null, stdout: channel, stderr: channel,
             control: { ...channel, ended: false } }); return
         }
-        if (path === '/runtime/native-world/process/stop' || path === '/runtime/native-world/process/release') {
-          if (failed) throw new PlatformError(503, 'native_original_stop_unconfirmed')
+        if (path.endsWith('/stop') || path.endsWith('/release')) {
+          if (nullCleanup) { sendJson(response, null); return }
+          if (failed && (!filesystem || path.endsWith('/' + fsFailure))) throw new PlatformError(503, 'native_original_stop_unconfirmed')
           sendJson(response, { stopped: true }); return
         }
         throw new Error('Unexpected execution consumer route')
@@ -70,6 +93,28 @@ for (const { failed, heldWorld } of cases) test(heldWorld
     const agent = await harness.create(grant.sessionId, { provider: 'fixture', model: 'fixture' }, { cwd: '/workspace' })
     const execution = new NativeRuntimeExecution(ctx, { pollMs: 1, maxOutputBytes: 65536 })
     await execution.bind(agent, grant)
+    if (filesystem) {
+      const target = await ctx.agents.withInitiator(agent, () => ctx.fs.resolve('/workspace/fixture.txt'))
+      const stream = await ctx.agents.withInitiator(agent, () => ctx.fs.streamText(target))
+      const iterator = stream[Symbol.asyncIterator]()
+      if (!iterator.return) throw new Error('Native reader did not retain its explicit close')
+      await entered.promise
+      release.resolve(undefined)
+      if (nullCleanup) await expect(iterator.return()).rejects.toBeInstanceOf(Error)
+      else await expect(iterator.return()).rejects.toMatchObject({ message: 'native_original_stop_unconfirmed' })
+      const original = await execution.drain(agent).then(() => undefined, (error: unknown) => error)
+      expect(original).toBeInstanceOf(AggregateError)
+      const attempted = calls.length
+      await expect(execution.drain(agent)).rejects.toBe(original)
+      await agent.ctx.fiber.dispose()
+      await expect(execution.drain(agent)).rejects.toBe(original)
+      expect(calls).toHaveLength(attempted)
+      const ids = calls.filter(call => call.path.startsWith('/runtime/native-world/fs/stream/')).map(call => call.id)
+      expect(ids.every(id => id !== undefined)).toBe(true); expect(new Set(ids).size).toBe(1)
+      expect(calls.filter(call => call.path.endsWith('/start'))).toHaveLength(1)
+      expect(faults).toEqual([])
+      return
+    }
     const process = ctx.agents.withInitiator(agent, () => ctx.subprocess.spawn({ argv: ['fixture'], cwd: '/workspace',
       graceMs: 1000, stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' } }))
     void process.done.catch(() => {})
