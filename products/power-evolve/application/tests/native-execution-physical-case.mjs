@@ -42,10 +42,12 @@ const history = { maxHistoryEvents: 1000, maxHistoryBytes: 8388608 }
  * @param name Original server-selected trial database name.
  * @param evidenceFile Private evidence path; retained identity never contains database credentials.
  * @param cleanupFailed Whether any original owner failed to join its cleanup.
+ * @param cleanupErrors Original owner errors retained with their name, message, stack and aggregate items.
  * @returns Whether the original database was safely dropped; uncertainty preserves it for reconciliation.
  */
-async function closePhysicalTrialDatabase(pool, admin, name, evidenceFile, cleanupFailed) {
-  let originals, inspectionError, confirmed = false, poolClosed = false
+async function closePhysicalTrialDatabase(pool, admin, name, evidenceFile, cleanupFailed, cleanupErrors = []) {
+  let originals, inspectionError, confirmed = false, poolError, dropped = false
+  const errors = []
   try {
     originals = (await pool.query(`SELECT id,world_id,pod_name,pod_uid,state,stop_evidence
       FROM pe_native_execution_processes ORDER BY id`)).rows
@@ -58,17 +60,40 @@ async function closePhysicalTrialDatabase(pool, admin, name, evidenceFile, clean
         && kubernetesPodStopStatus(proof.observation) === proof.status
     })
   } catch (error) { inspectionError = error.message }
+  try { await pool.end() } catch (error) { poolError = error; errors.push(error) }
   try {
-    if (cleanupFailed || !confirmed) {
+    if (cleanupFailed || !confirmed || poolError) {
       await writeFile(evidenceFile + '.retained-database', JSON.stringify({ database: name, retained: true,
-        cleanupFailed, inspectionError, originalAdmissions: originals }, null, 2) + '\n', { mode: 0o600 })
-      return false
-    }
-    await pool.end()
-    poolClosed = true
-    await admin.query('DROP DATABASE "' + name + '"')
-    return true
-  } finally { if (!poolClosed) await pool.end(); await admin.end() }
+        cleanupFailed, inspectionError, originalAdmissions: originals,
+        cleanupErrors: [...cleanupErrors, ...errors].map(error => ({ name: error?.name, message: String(error), stack: error?.stack,
+          errors: Array.isArray(error?.errors) ? error.errors.map(String) : undefined })) }, null, 2) + '\n', { mode: 0o600 })
+    } else { await admin.query('DROP DATABASE "' + name + '"'); dropped = true }
+  } catch (error) { errors.push(error) }
+  try { await admin.end() } catch (error) { errors.push(error) }
+  if (errors.length) throw new AggregateError(errors, 'Original physical trial cleanup failed', { cause: errors[0] })
+  return dropped
+}
+
+/** Attempt and join every admitted owner even when an earlier cleanup rejects.
+ * @param bindings Native HTTP bindings, all joined before closing their broker or server.
+ * @param broker Original outside process owner.
+ * @param server Original HTTP carrier, closed after all binding and broker cleanup attempts.
+ * @param runtimes Original native Context owners.
+ * @param ctx Original Platform Context owner.
+ * @returns Original cleanup failures, retained separately from the original test failure.
+ */
+async function closePhysicalOwners(bindings, broker, server, runtimes, ctx) {
+  const errors = []
+  const attempt = async (close) => { try { await close() } catch (error) { errors.push(error) } }
+  await Promise.all(bindings.map(binding => attempt(() => binding.close())))
+  if (broker) await attempt(() => broker.dispose())
+  if (server) await attempt(async () => {
+    server.closeAllConnections()
+    await new Promise((resolve, reject) => server.close((error) => { if (error) reject(error); else resolve() }))
+  })
+  await Promise.all(runtimes.map(runtime => attempt(() => runtime.fiber.dispose())))
+  await attempt(() => ctx.fiber.dispose())
+  return errors
 }
 
 async function prepare(pool, identity, modes, files, account) {
@@ -354,23 +379,19 @@ test('native Fs, Bash and physical permissions share one generation and exact st
       stream: { streamed, streamChunks }, evidence }, null, 2) + '\n', { mode: 0o600 })
   } catch (error) { originalFailure = error; throw error }
   finally {
-    let cleanupFailure
-    try {
-      for (const binding of nativeBindings) await binding.close()
-      if (broker) await broker.dispose()
-      if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }
-      for (const runtime of runtimeContexts) await runtime.fiber.dispose()
-      await ctx.fiber.dispose()
-    } catch (error) { cleanupFailure = error }
+    const cleanupErrors = await closePhysicalOwners(nativeBindings, broker, server, runtimeContexts, ctx)
     let dropped
-    try { dropped = await closePhysicalTrialDatabase(pool, admin, name, config.evidenceFile, cleanupFailure !== undefined) }
+    try {
+      dropped = await closePhysicalTrialDatabase(pool, admin, name, config.evidenceFile, cleanupErrors.length > 0, cleanupErrors)
+    }
     catch (error) {
       if (originalFailure) throw new AggregateError([originalFailure, error], 'Physical cleanup failed; original failure retained',
         { cause: originalFailure })
       throw error
     }
     if (!originalFailure) {
-      if (cleanupFailure) throw cleanupFailure
+      if (cleanupErrors.length) throw new AggregateError(cleanupErrors, 'Original physical owner cleanup failed',
+        { cause: cleanupErrors[0] })
       if (!dropped) throw new Error('Original physical trial database retained because admission cleanup is unconfirmed')
     }
   }
