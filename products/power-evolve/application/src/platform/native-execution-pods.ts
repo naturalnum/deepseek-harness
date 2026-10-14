@@ -1,6 +1,7 @@
 /** Credential-free gVisor payload Pods with durable admission and exact kubelet stop observations. */
 import { randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
+import { isDeepStrictEqual } from 'node:util'
 import { z } from 'zod'
 import type { Pool } from 'pg'
 import type { SubprocessOutcome } from '@deepseek-ai/dsh-subprocess'
@@ -147,6 +148,7 @@ export class NativeExecutionPods {
    * @returns Completion only after positive exact stop evidence is durable.
    */
   async stop(range: NativeExecutionPod, cause: 'abort' | 'authority' | 'dispose' | 'completed' | 'failure'): Promise<void> {
+    const deadline = Date.now() + this.config.stopTimeoutMs
     const stored = await this.pool.query<{ state: string; stop_evidence: unknown }>(
       `UPDATE pe_native_execution_processes SET first_stop_cause=COALESCE(first_stop_cause,$3),
        state=CASE WHEN state='stopped' THEN state ELSE 'stopping' END,updated_at=clock_timestamp()
@@ -155,29 +157,24 @@ export class NativeExecutionPods {
     const record = stored.rows[0]
     if (!record) throw new Error('native_payload_stop_identity_changed')
     const labels = { 'powerevolve.dev/native-world': range.world.worldId, 'powerevolve.dev/native-process': range.id }
-    let pod = await this.get(range.name)
+    let pod = await this.get(range.name, this.remaining(deadline))
     if (record.state === 'stopped') {
       const proof = z.object({ processId: z.string(), podUid: z.string(), worldId: z.string(),
-        status: z.enum(['KUBELET_STOPPED', 'UNSCHEDULED_DELETING']) }).loose().parse(record.stop_evidence)
+        status: z.enum(['KUBELET_STOPPED', 'UNSCHEDULED_DELETING']), observation: podSchema }).loose().parse(record.stop_evidence)
       if (proof.processId !== range.id || proof.podUid !== range.uid || proof.worldId !== range.world.worldId) {
         throw new Error('native_payload_stop_evidence_identity_changed')
       }
-      if (pod) {
-        this.check(pod, range.name, labels, range.uid, false)
-        if (!pod.metadata.deletionTimestamp) throw new Error('native_payload_stopped_identity_reappeared')
-        if (pod.metadata.finalizers?.includes(FINALIZER)) await this.releaseFinalizer(pod)
-      }
-      await this.pool.query(`UPDATE pe_native_execution_processes SET stop_evidence=stop_evidence||'{"resourceReleased":true}'::jsonb
-        WHERE id=$1 AND pod_uid=$2 AND state='stopped'`, [range.id, range.uid])
+      this.check(proof.observation, range.name, labels, range.uid, false)
+      if (kubernetesPodStopStatus(proof.observation) !== proof.status) throw new Error('native_payload_stop_evidence_invalid')
+      await this.releaseFinalizer(proof.observation, deadline)
       return
     }
     if (!pod) throw new Error('native_payload_stop_evidence_missing')
     this.check(pod, range.name, labels, range.uid)
     if (!pod.metadata.deletionTimestamp) await this.kube.call('DELETE', this.path(range.name), {
-      apiVersion: 'v1', kind: 'DeleteOptions', preconditions: { uid: range.uid }, gracePeriodSeconds: 1 })
-    const deadline = Date.now() + this.config.stopTimeoutMs
+      apiVersion: 'v1', kind: 'DeleteOptions', preconditions: { uid: range.uid }, gracePeriodSeconds: 1 }, this.remaining(deadline))
     while (Date.now() < deadline) {
-      pod = await this.get(range.name)
+      pod = await this.get(range.name, this.remaining(deadline))
       if (!pod) throw new Error('native_payload_stop_evidence_missing')
       this.check(pod, range.name, labels, range.uid)
       const status = kubernetesPodStopStatus(pod)
@@ -187,10 +184,10 @@ export class NativeExecutionPods {
           observedAt: new Date().toISOString(), observation: pod }
         await this.pool.query(`UPDATE pe_native_execution_processes SET state='stopped',stop_evidence=$3,
           updated_at=clock_timestamp() WHERE id=$1 AND pod_uid=$2 AND state='stopping'`, [range.id, range.uid, evidence])
-        await this.releaseFinalizer(pod)
+        await this.releaseFinalizer(pod, deadline)
         return
       }
-      await delay(this.config.pollMs)
+      await delay(Math.min(this.config.pollMs, Math.max(0, deadline - Date.now())))
     }
     await this.pool.query("UPDATE pe_native_execution_processes SET state='uncertain',updated_at=clock_timestamp() WHERE id=$1 AND pod_uid=$2 AND state<>'stopped'", [range.id, range.uid])
     throw new Error('native_payload_stop_unconfirmed')
@@ -263,18 +260,60 @@ export class NativeExecutionPods {
     return uncertain
   }
 
-  private async releaseFinalizer(pod: z.infer<typeof podSchema>) {
-    try {
-      await this.kube.call('PATCH', this.path(pod.metadata.name), { metadata: { uid: pod.metadata.uid,
-        resourceVersion: pod.metadata.resourceVersion, finalizers: pod.metadata.finalizers?.filter(value => value !== FINALIZER) ?? [] } })
-    } catch (error) { if (!(error instanceof KubernetesError && error.status === 404)) throw error }
-    await this.pool.query(`UPDATE pe_native_execution_processes SET stop_evidence=stop_evidence||'{"resourceReleased":true}'::jsonb
-      WHERE pod_name=$1 AND pod_uid=$2 AND namespace=$3 AND state='stopped'`, [pod.metadata.name, pod.metadata.uid, this.config.namespace])
+  private releaseObservation(original: z.infer<typeof podSchema>, current: z.infer<typeof podSchema>): void {
+    if (!current.metadata.deletionTimestamp || !isDeepStrictEqual(current.spec, original.spec)
+      || current.metadata.generation !== original.metadata.generation) throw new Error('native_payload_stopped_identity_changed')
+    if (kubernetesPodStopStatus(current) !== kubernetesPodStopStatus(original)
+      || !isDeepStrictEqual(current.status?.containerStatuses, original.status?.containerStatuses)
+      || !isDeepStrictEqual(current.status?.initContainerStatuses, original.status?.initContainerStatuses)) {
+      throw new Error('native_payload_stop_facts_changed')
+    }
+  }
+
+  private remaining(deadline: number): number {
+    const remaining = deadline - Date.now()
+    if (remaining <= 0) throw new Error('native_payload_release_unconfirmed')
+    return Math.min(10_000, remaining)
+  }
+
+  private async releaseFinalizer(original: z.infer<typeof podSchema>, deadline: number): Promise<void> {
+    const worldId = original.metadata.labels['powerevolve.dev/native-world']
+    const processId = original.metadata.labels['powerevolve.dev/native-process']
+    const positive = kubernetesPodStopStatus(original)
+    if (!worldId || !processId || !positive) throw new Error('native_payload_stop_evidence_invalid')
+    const labels = { 'powerevolve.dev/native-world': worldId, 'powerevolve.dev/native-process': processId }
+    for (;;) {
+      const current = await this.get(original.metadata.name, this.remaining(deadline))
+      // Absence is a resource-release fact only after the original positive stop observation was durable.
+      if (!current) break
+      this.check(current, original.metadata.name, labels, original.metadata.uid, false)
+      this.releaseObservation(original, current)
+      if (!current.metadata.finalizers?.includes(FINALIZER)) break
+      try {
+        const updated = podSchema.parse(await this.kube.call('PATCH', this.path(current.metadata.name), { metadata: { uid: current.metadata.uid,
+          resourceVersion: current.metadata.resourceVersion,
+          finalizers: current.metadata.finalizers.filter(value => value !== FINALIZER) } }, this.remaining(deadline)))
+        this.check(updated, original.metadata.name, labels, original.metadata.uid, false)
+        this.releaseObservation(original, updated)
+        if (updated.metadata.finalizers?.includes(FINALIZER) || current.metadata.finalizers.some(value => value !== FINALIZER
+          && !updated.metadata.finalizers?.includes(value))) throw new Error('native_payload_finalizer_release_unconfirmed')
+        break
+      } catch (error) {
+        if (error instanceof KubernetesError && error.status === 404) break
+        if (!(error instanceof KubernetesError && error.status === 409)) throw error
+        // Reconcile only this original cleanup CAS; payload admission and execution are never repeated.
+        await delay(Math.min(this.config.pollMs, this.remaining(deadline)))
+      }
+    }
+    const released = await this.pool.query(`UPDATE pe_native_execution_processes SET stop_evidence=stop_evidence||'{"resourceReleased":true}'::jsonb
+      WHERE id=$1 AND world_id=$2 AND pod_name=$3 AND pod_uid=$4 AND namespace=$5 AND state='stopped' RETURNING id`,
+    [processId, worldId, original.metadata.name, original.metadata.uid, this.config.namespace])
+    if (released.rowCount !== 1) throw new Error('native_payload_release_identity_changed')
   }
 
   private path(name?: string) { return this.kube.resourcePath(this.config.namespace, 'pods', name) }
-  private async get(name: string) {
-    try { return podSchema.parse(await this.kube.call('GET', this.path(name))) }
+  private async get(name: string, timeoutMs = 10_000) {
+    try { return podSchema.parse(await this.kube.call('GET', this.path(name), undefined, timeoutMs)) }
     catch (error) { if (error instanceof KubernetesError && error.status === 404) return undefined; throw error }
   }
   private check(pod: z.infer<typeof podSchema>, name: string, labels: Record<string, string>, uid?: string, requireFinalizer = true) {

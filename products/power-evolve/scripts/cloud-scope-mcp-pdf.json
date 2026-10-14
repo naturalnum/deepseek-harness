@@ -78,7 +78,7 @@
     },
     "sourceTests": {
       "enabled": 12,
-      "shared": 165,
+      "shared": 166,
       "deferred": 3
     },
     "builtTests": {
@@ -5631,6 +5631,13 @@
       "status": "shared",
       "owner": "HelperReview",
       "reason": "native-runtime-s3"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-execution-finalizer.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
     }
   ],
   "lintSupport": [
