@@ -125,7 +125,7 @@ Office 部署必须指定经过运维验证、在解析器启动前禁用外部�
 
 当前限制由相应原生 API 明确表达：
 
-- broker 的文件工具回包和保留输出有明确上限。无凭据进程 relay 承载原始子进程字节、fd7 控制通道和真实 guest PTY；产物平面的物理用例实际执行原生 Bash、PTC 宿主绑定和已注册 Terminal 后端。文本流读取使用有界 UTF-8 帧和已确认的字节窗口，与文件总大小无关。Runtime 消费者暂停读取时，原始子进程和 PTY 管道会暂停真实来源。显式 binding `close()` 等待原始 start、stop 和 release 完成，并在 Cordis 销毁之外保留清理失败。文件监听及完整输出溢出文件恢复尚不可用。生产 Profile 与浏览器验收另行执行。
+- broker 的文件工具回包和保留输出有明确上限。无凭据进程 relay 承载原始子进程字节、fd7 控制通道和真实 guest PTY；产物平面的物理用例实际执行原生 Bash、PTC 宿主绑定和已注册 Terminal 后端。文本流读取使用有界 UTF-8 帧和已确认的字节窗口，与文件总大小无关。Runtime 消费者暂停读取时，原始子进程和 PTY 管道会暂停真实来源。显式 binding `close()` 等待原始 start、stop 和 release 完成，并在 Cordis 销毁之外保留清理失败。Pod 调度请求 `requestCpu` 和 `requestMemory` 可独立于硬限制 `cpu` 和 `memory` 配置；加载部署配置时，未指定的请求会显式采用对应硬限制的值。文件监听及完整输出溢出文件恢复尚不可用。生产 Profile 与浏览器验收另行执行。
 - 原生云端 Shell 当前仅支持有界前台 Bash。后台任务、标准输入／环境覆盖、原生文件权限以及完整 FS／Subprocess／PTY 提供方仍属于[运行改造计划](../CLOUD-RUNTIME-PLAN.md)中的独立切片。不确定命令按原身份对账。
 - 打开 Host 本机文件及修改共享 Profile 需要云端用户不会自动获得的权限。
 - 当前输入适配器接受排队文本、普通文件回执及 SDK 受理的图片；插队、编辑和删除通过当前 Writer 的 Coordinator 提交。活动 prepared owner 的删除会被拒绝。
