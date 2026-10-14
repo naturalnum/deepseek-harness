@@ -1,5 +1,6 @@
 /** Actual PG separates browser-authorized interactive occupancy from accepted native model consumption. */
 import { randomBytes, randomUUID } from 'node:crypto'
+import { setTimeout as delay } from 'node:timers/promises'
 import { Session } from '@deepseek-ai/dsh-session'
 import { expect, test } from 'vitest'
 import { TaskStore } from '../src/platform/tasks.ts'
@@ -163,3 +164,56 @@ test('expired idle archival cleanup completes the original stop without a model 
     expect(await tasks.claimArchiveStop(issued.runtimeId, owner)).toBeNull()
     expect((await pool.query('SELECT * FROM pe_native_input_origins WHERE session_id=$1', [created.sessionId])).rowCount).toBe(0)
   }))
+
+
+test('normal settlement releases only its original interactive grant while other exact owners remain live', () => cloudFixture(async ({ pool, alice, bob }) => {
+  const tasks = new TaskStore(pool, limits), authority = new NativeRuntimeAuthority(pool),
+    writers = new NativeSessionWriter(tasks, { leaseMs: 30000 })
+  const service = new NativeInteractive(tasks, authority, { lifetimeMs: 30000, leaseMs: 30000, maxActivePerUser: 2 })
+  const issued = await authority.issue({ userId: alice.user.userId, runtimeId: randomUUID(), generation: 1, lifetimeMs: 60000 })
+  const foreignRuntime = await authority.issue({ userId: bob.user.userId, runtimeId: randomUUID(), generation: 1, lifetimeMs: 60000 })
+  const guardSession = await tasks.create(alice.user, requestId.parse(randomUUID()), alice.token)
+  const foreignSession = await tasks.create(bob.user, requestId.parse(randomUUID()), bob.token)
+  const guard = await service.open(issued.token, { sessionId: guardSession.sessionId,
+    requestId: requestId.parse(randomUUID()), browserToken: alice.token, candidateToken: secret() })
+  const foreign = await service.open(foreignRuntime.token, { sessionId: foreignSession.sessionId,
+    requestId: requestId.parse(randomUUID()), browserToken: bob.token, candidateToken: secret() })
+  const guardToken = secret(), guardLease = await writers.acquire(guard.token,
+    { sessionId: guard.sessionId, workerId: issued.runtimeId, token: guardToken })
+  for (let index = 0; index < 4; index++) {
+    const created = await tasks.create(alice.user, requestId.parse(randomUUID()), alice.token)
+    const current = await service.open(issued.token, { sessionId: created.sessionId,
+      requestId: requestId.parse(randomUUID()), browserToken: alice.token, candidateToken: secret() })
+    const token = secret(), lease = await writers.acquire(current.token,
+      { sessionId: current.sessionId, workerId: issued.runtimeId, token })
+    await writers.release(nativeWriterIdentity.parse(
+      { sessionId: current.sessionId, workerId: issued.runtimeId, token, epoch: lease.epoch }))
+    await tasks.finish(current.token, 'completed', null)
+    expect((await pool.query('SELECT released_at IS NOT NULL AS released FROM pe_native_interactive_grants WHERE operation_id=$1', [current.operationId])).rows).toEqual([{ released: true }])
+    expect((await pool.query('SELECT released_at IS NULL AS held FROM pe_native_interactive_grants WHERE operation_id=ANY($1::uuid[]) ORDER BY operation_id', [[guard.operationId, foreign.operationId]])).rows).toEqual([{ held: true }, { held: true }])
+    expect(await transaction(pool, client => tasks.nativeWorldAuthorized(client, guard.token))).toMatchObject({ id: guard.sessionId })
+  }
+  expect(guardLease.epoch).toBe(1)
+  expect((await pool.query('SELECT count(*)::int AS held FROM pe_native_interactive_grants WHERE user_id=$1 AND released_at IS NULL', [alice.user.userId])).rows).toEqual([{ held: 1 }])
+}))
+
+test.each(['bad-token', 'expired', 'revoked', 'account', 'rollback'] as const)('normal finish %s refuses without releasing the original grant or partially settling its attempt', mode => cloudFixture(async ({ pool, alice }) => {
+  const tasks = new TaskStore(pool, limits), authority = new NativeRuntimeAuthority(pool)
+  const issued = await authority.issue({ userId: alice.user.userId, runtimeId: randomUUID(), generation: 1, lifetimeMs: 60000 })
+  const created = await tasks.create(alice.user, requestId.parse(randomUUID()), alice.token)
+  const service = new NativeInteractive(tasks, authority, { lifetimeMs: mode === 'expired' ? 1000 : 30000, leaseMs: 30000, maxActivePerUser: 2 })
+  const bound = await service.open(issued.token, { sessionId: created.sessionId,
+    requestId: requestId.parse(randomUUID()), browserToken: alice.token, candidateToken: secret() })
+  if (mode === 'expired') await delay(1100)
+  else if (mode === 'revoked') await authority.revoke(issued.credentialId)
+  else if (mode === 'account') await pool.query('UPDATE pe_users SET enabled=false WHERE id=$1', [alice.user.userId])
+  else if (mode === 'rollback') await transaction(pool, async (client) => {
+    const actor = await requireBrowserAccount(client, alice.token, { lock: 'update' })
+    await tasks.requestArchiveStopInTransaction(client, actor, created.sessionId)
+  })
+  await expect(tasks.finish(mode === 'bad-token' ? secret() : bound.token, 'completed', null)).rejects.toMatchObject({ status: mode === 'revoked' || mode === 'account' ? 401 : mode === 'rollback' ? 503 : 409 })
+  expect((await pool.query('SELECT released_at IS NULL AS held FROM pe_native_interactive_grants WHERE operation_id=$1', [bound.operationId])).rows).toEqual([{ held: true }])
+  expect((await pool.query('SELECT state FROM pe_operations WHERE id=$1', [bound.operationId])).rows).toEqual([{ state: 'running' }])
+  expect((await pool.query('SELECT ended_at IS NULL AS held FROM pe_attempts WHERE operation_id=$1 AND epoch=$2', [bound.operationId, bound.epoch])).rows).toEqual([{ held: true }])
+  expect((await pool.query('SELECT lease_until IS NOT NULL AS held FROM pe_sessions WHERE id=$1', [created.sessionId])).rows).toEqual([{ held: true }])
+}))

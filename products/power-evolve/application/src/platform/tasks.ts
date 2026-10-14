@@ -730,6 +730,7 @@ export class TaskStore {
 
   /** Settle an Operation only after the caller has flushed and disposed its Agent.
    * The current grant must remain authorized; settlement ends its attempt and releases the Session lease atomically.
+   * Native interactive settlement retires only that original Operation's bounded grant in the same transaction.
    * @param token Current execution grant for the Operation being settled.
    * @param outcome Terminal state observed by the Host.
    * @param errorCode Host failure code, or null; an aborted cancellation is recorded as turn_user.
@@ -741,8 +742,8 @@ export class TaskStore {
       const source = stop?.status === 'requested' ? (await client.query<{ deadline: string }>(
         'SELECT lease_until::text AS deadline FROM pe_sessions WHERE id=$1', [row.id])).rows[0] : undefined
       if (stop?.status === 'requested' && !source) throw new PlatformError(409, 'lease_lost')
-      const operation = await client.query<{ error_code: string | null }>(
-        'SELECT error_code FROM pe_operations WHERE id=$1', [row.operation_id],
+      const operation = await client.query<{ error_code: string | null; source: string }>(
+        'SELECT error_code,source FROM pe_operations WHERE id=$1 AND session_id=$2', [row.operation_id, row.id],
       )
       // The native turn can finish while its cancellation request is in flight.
       // A completed durable turn remains completed; cancellation only settles
@@ -757,6 +758,11 @@ export class TaskStore {
         WHERE id=$1 AND grant_digest=$2 AND lease_epoch=$3 AND lease_until>clock_timestamp() RETURNING id`,
       [row.id, digest(token), row.lease_epoch])
       if (!settled.rowCount) throw new PlatformError(409, 'lease_lost')
+      if (operation.rows[0]?.source === 'native_interactive') {
+        await client.query(`UPDATE pe_native_interactive_grants SET released_at=clock_timestamp()
+          WHERE operation_id=$1 AND session_id=$2 AND user_id=$3 AND released_at IS NULL`,
+        [row.operation_id, row.id, row.user_id])
+      }
       if (stop?.status === 'requested') {
         const history = this.limits.archiveStopHistory
         if (!history) throw new PlatformError(503, 'native_session_stop_history_unavailable')

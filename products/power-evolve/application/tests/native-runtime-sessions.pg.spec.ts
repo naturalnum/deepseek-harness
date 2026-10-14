@@ -61,7 +61,7 @@ const limits = { maxEventBytes: 524288, maxHistoryEvents: 1000, maxHistoryBytes:
 test.each(['closing', 'publishing', 'failed-cleanup',
   'normal-failed-cleanup', 'gateway-wire', 'renew-ack', 'renew-timeout',
   'setup-renew-live', 'setup-renew-ack', 'setup-renew-timeout', 'authority-expiry', 'authority-status-failure',
-  'authority-stop-failure', 'authority-retained-blocked', 'authority-cleanup-invalid'] as const)('real cold Agent setup %s keeps original PG durability and lifetime ownership', mode => cloudFixture(async (f) => {
+  'authority-stop-failure', 'authority-retained-blocked', 'authority-cleanup-invalid', 'normal-finish-reentry'] as const)('real cold Agent setup %s keeps original PG durability and lifetime ownership', mode => cloudFixture(async (f) => {
   const expiring = mode.startsWith('authority-')
   let service: NativeRuntimeSessions | undefined
   const setupRenewing = mode.startsWith('setup-renew-'), leaseMs = setupRenewing ? 1000 : 30000
@@ -318,6 +318,25 @@ test.each(['closing', 'publishing', 'failed-cleanup',
       expect(committed[0]?.event).toMatchObject({ seq: 0, type: 'session/end-seed', data: {} })
       expect(committed[1]?.event).toMatchObject({ seq: 1, type: 'sandbox/mode', data: { mode: 'read-only' } })
       expect((await f.pool.query('SELECT * FROM pe_native_input_origins WHERE session_id=$1', [first.sessionId])).rowCount).toBe(0)
+      if (mode === 'normal-finish-reentry') {
+        const third = await tasks.create(f.alice.user, requestId.parse(randomUUID()), f.alice.token, undefined, 'standard')
+        const fourth = await tasks.create(f.alice.user, requestId.parse(randomUUID()), f.alice.token, undefined, 'standard')
+        for (const current of [first, second, third, fourth]) {
+          if (current !== first) expect((await service.ensure(current.sessionId, f.alice.token)).id).toBe(current.sessionId)
+          await service.close(current.sessionId)
+          expect((await f.pool.query(`SELECT o.state,g.released_at IS NOT NULL AS released
+            FROM pe_native_interactive_grants g JOIN pe_operations o ON o.id=g.operation_id WHERE g.session_id=$1`,
+          [current.sessionId])).rows).toEqual([{ state: 'completed', released: true }])
+          expect((await f.pool.query('SELECT expires_at IS NULL AS released FROM pe_native_writers WHERE session_id=$1',
+            [current.sessionId])).rows).toEqual([{ released: true }])
+          expect((await f.pool.query('SELECT * FROM pe_native_input_origins WHERE session_id=$1', [current.sessionId])).rowCount).toBe(0)
+          expect(service.available).toBe(true)
+        }
+        expect(published).toEqual([first.sessionId, second.sessionId, third.sessionId, fourth.sessionId])
+        expect(calls).toBe(4)
+        await expect(service.shutdown()).resolves.toBeUndefined()
+        return
+      }
       if (expiring) {
         if (!ownedPool) throw new Error('Original consumer Pool missing')
         const captured = ctx.powerEvolveRuntime.require(first.sessionId), localPublisher = ctx.powerEvolveRuntime.publication(captured)
