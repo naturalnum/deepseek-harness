@@ -4,11 +4,10 @@ import { stdioCatalogFingerprintV2, stdioSha256V2 } from '@power-evolve/connecto
 import { stdioJsonV2, stdioLimitsV2, stdioObjectV2, type StdioLimitsV2,
   type StdioToolV2 } from '@power-evolve/contracts/stdio-mcp'
 import { compileMcpJsonSchema, type McpJsonSchemaValidator } from './mcp-json-schema.ts'
+import { PRODUCT_MODEL_TOOL_NAMES } from './mcp-model-tools.ts'
 import { stdioOperationSchemasV2, type StdioOperationAdmissionLimitsV2,
   type StdioOperationConnectionV2 } from './stdio-v2-operation-contracts.ts'
 
-const fixedTools = ['trial_notes_list', 'trial_notes_append', 'cloud_exec', 'cloud_file_read', 'cloud_file_copy',
-  'mcp__personal__whoami', 'mcp__stdio__whoami', 'ssh_execute_propose', 'skill', 'skill_resource', 'office']
 const guidance = 'This tool proposes an external STDIO MCP action. A receipt records acceptance, not completion. '
   + 'If approval is required, give the user the trusted approval link and wait. '
   + 'The Platform will deliver the outcome in this conversation. Do not repeat a pending or uncertain action.'
@@ -53,7 +52,7 @@ export function compileStdioOperationToolsV2(value: unknown, limits: StdioLimits
   let inputs
   try { inputs = validators.inputs.parse(value) }
   catch (_invalidSelection) { throw new StdioOperationToolErrorV2('stdio_v2_selection_invalid') }
-  const names = new Set([...fixedTools, ...reservedNames])
+  const names = new Set([...PRODUCT_MODEL_TOOL_NAMES, ...reservedNames])
   if (new Set(reservedNames).size !== reservedNames.length) throw new StdioOperationToolErrorV2('stdio_v2_tool_name_conflict')
   const compiled = inputs.map((input) => {
     if (stdioSha256V2('configuration', input.configuration, budget) !== input.configDigest

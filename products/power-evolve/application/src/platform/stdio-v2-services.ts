@@ -18,12 +18,10 @@ import { StdioCloudWorkerStoreV2 } from './stdio-v2-worker-store.ts'
 import { StdioCloudRunTransportV2 } from './stdio-v2-cloud-runtime.ts'
 import { StdioCloudWorkerV2 } from './stdio-v2-cloud-worker.ts'
 import { StdioActionServiceV2 } from './stdio-v2-actions.ts'
+import { PRODUCT_MODEL_TOOL_NAMES } from '../mcp-model-tools.ts'
 
 /** Product tool names excluded from generic catalogs; original remote MCP names are added by TaskStore. */
-export const STDIO_PRODUCT_RESERVED_NAMES_V2: readonly string[] = Object.freeze([
-  'trial_notes_list', 'trial_notes_append', 'cloud_exec', 'cloud_file_read', 'cloud_file_copy', 'ssh_execute_propose',
-  'skill_resource', 'office', 'mcp__personal__whoami', 'mcp__stdio__whoami', 'skill',
-])
+export const STDIO_PRODUCT_RESERVED_NAMES_V2: readonly string[] = PRODUCT_MODEL_TOOL_NAMES
 
 /** Platform-owned Cloud services; the caller starts and drains the worker under its process lifecycle. */
 export interface StdioCloudServicesV2 {

@@ -11,6 +11,8 @@ import { expect, test } from 'vitest'
 import { grant as grantSchema, PlatformError, type Grant } from '../src/contracts.ts'
 import { cloudShellObservation, cloudShellProposeRequest, type CloudShellObservation } from '../src/cloud-shell-contracts.ts'
 import { CloudShellExecutor } from '../src/host/cloud-shell.ts'
+import { assertModelToolDeclarations, compileMcpModelTool } from '../src/mcp-model-tools.ts'
+import { STDIO_PRODUCT_RESERVED_NAMES_V2 } from '../src/platform/stdio-v2-services.ts'
 import { MockAdapter, textResponse, toolCallResponse } from '../../../../packages/core/agent-loop/tests/mock-adapter.ts'
 
 type Transport = ConstructorParameters<typeof CloudShellExecutor>[1]
@@ -237,6 +239,15 @@ test('the original native Agent loop sees a real Bash result and continues withi
     expect(events.filter(e => e.type === 'turn/end')).toHaveLength(1)
     expect(adapter.requests).toHaveLength(2)
     expect(adapter.requests[1]?.messages.some(m => m.role === 'tool')).toBe(true)
+    const declarations = adapter.requests[0]?.tools?.map(tool => ({ name: tool.name,
+      description: tool.description, input_schema: tool.parameters })) ?? []
+    expect(declarations.some(tool => tool.name === 'bash')).toBe(true)
+    expect(() => { assertModelToolDeclarations(declarations, []) }).not.toThrow()
+    expect(STDIO_PRODUCT_RESERVED_NAMES_V2).toContain('bash')
+    expect(() => compileMcpModelTool({ publicName: 'bash', raw: { name: 'bash', inputSchema: { type: 'object' } } },
+      { maxToolBytes: 16_384, maxDescriptionBytes: 4096 })).toThrow('mcp_tool_name_conflict')
+    expect(() => { assertModelToolDeclarations([...declarations, { name: 'unregistered', description: '', input_schema: {} }], []) })
+      .toThrow('model_tool_not_authorized')
   } finally { dispose() }
 }))
 

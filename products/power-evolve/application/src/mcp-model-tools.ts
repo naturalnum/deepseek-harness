@@ -40,8 +40,12 @@ const receiptGuidance = 'This tool proposes an external MCP action. A receipt re
   + 'If approval is required, give the user the trusted approval link and wait. '
   + 'The Platform will deliver the outcome in this conversation. Do not repeat a pending or uncertain action.'
 
-const fixedTools = new Set(['trial_notes_list', 'trial_notes_append', 'cloud_exec', 'cloud_file_read', 'cloud_file_copy',
-  'mcp__personal__whoami', 'mcp__stdio__whoami', 'ssh_execute_propose', 'skill', 'skill_resource', 'office'])
+/** Trusted product consumer names, shared by model declaration and external catalog admission. */
+export const PRODUCT_MODEL_TOOL_NAMES: readonly string[] = Object.freeze([
+  'trial_notes_list', 'trial_notes_append', 'cloud_exec', 'cloud_file_read', 'cloud_file_copy',
+  'mcp__personal__whoami', 'mcp__stdio__whoami', 'ssh_execute_propose', 'skill', 'skill_resource', 'office', 'bash',
+])
+const fixedTools = new Set(PRODUCT_MODEL_TOOL_NAMES)
 
 /** Stable refusals contain no remote descriptions, arguments, credentials, or schema diagnostics. */
 export class McpToolAdmissionError extends Error {
