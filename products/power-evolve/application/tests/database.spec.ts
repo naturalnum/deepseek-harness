@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { afterEach, expect, test } from 'vitest'
 import { Pool } from 'pg'
 import { CURRENT_SCHEMA_VERSION, initializeDatabase, transaction } from '../src/platform/database.ts'
+import { currentCloudTableNames } from './cloud-fixture.ts'
 
 const path = process.env.PE_TEST_DATABASE_URL_FILE
 if (!path) throw new Error('Cloud PG tests require PE_TEST_DATABASE_URL_FILE; missing infrastructure cannot count as acceptance')
@@ -34,7 +35,7 @@ test('two concurrent bootstraps create one cloud schema and retain every include
   await Promise.all([initializeDatabase(pool), initializeDatabase(pool)])
   expect((await pool.query('SELECT family,version FROM pe_schema')).rows).toEqual([{ family: 'cloud-native', version: CURRENT_SCHEMA_VERSION }])
   const names = (await pool.query<{ tablename: string }>("SELECT tablename FROM pg_tables WHERE schemaname='public'")).rows.map(row => row.tablename)
-  expect(names).toHaveLength(82)
+  expect(names.sort()).toEqual(currentCloudTableNames)
   expect(names).toContain('pe_native_writers')
   expect(names).toContain('pe_native_input_claims')
   expect(names).toContain('pe_native_turn_frames')
@@ -137,7 +138,7 @@ test.each([2, 3, 4, 5])('cloud version %i retains its records through an ordinar
     expect((await limited.query<{ version: number }>('SELECT version FROM pe_schema')).rows)
       .toEqual([{ version: CURRENT_SCHEMA_VERSION }])
     expect((await limited.query<{ count: number }>(
-      "SELECT count(*)::integer AS count FROM pg_tables WHERE schemaname='public'")).rows).toEqual([{ count: 82 }])
+      "SELECT count(*)::integer AS count FROM pg_tables WHERE schemaname='public'")).rows).toEqual([{ count: currentCloudTableNames.length }])
     expect((await limited.query<{ id: string; username: string; settings: unknown; display_name: string }>(
       'SELECT id,username,settings,display_name FROM pe_users')).rows).toEqual(before)
     await initializeDatabase(limited)

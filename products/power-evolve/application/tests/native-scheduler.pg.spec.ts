@@ -44,7 +44,7 @@ import { foldInputHistory, readInputReceipt } from '../src/native-input-ledger-r
 import { nativeTurnReceiptV2, type NativeTurnResponseV2,
   type NativeTurnTransitionV2 } from '../src/native-turn-continuation-v2-contracts.ts'
 import { headerSchema, parseEvents } from '../src/session-records.ts'
-import { transaction } from '../src/platform/database.ts'
+import { CURRENT_SCHEMA_VERSION, transaction } from '../src/platform/database.ts'
 import { EventStore } from '../src/platform/events.ts'
 import { LegacyMigrationHostImages } from '../src/platform/legacy-migration-v2-host-images.ts'
 import { releaseNativeAssistant } from '../src/platform/native-assistant-lifecycle.ts'
@@ -91,8 +91,8 @@ async function schema(f: Fixture): Promise<void> {
     throw new Error('Formal native Scheduler tests refuse private DDL overrides')
   }
   const versions = (await f.pool.query<{ family: string; version: number }>('SELECT family,version FROM pe_schema')).rows
-  if (versions.length !== 1 || versions[0]?.family !== 'cloud-native' || versions[0].version !== 6) {
-    throw new Error('Native Scheduler requires formal cloud-native schema6')
+  if (versions.length !== 1 || versions[0]?.family !== 'cloud-native' || versions[0].version !== CURRENT_SCHEMA_VERSION) {
+    throw new Error('Native Scheduler requires the current formal cloud-native schema')
   }
   const tables = ['pe_native_turn_frames', 'pe_native_input_origins', 'pe_native_input_commands', 'pe_native_input_revisions',
     'pe_native_input_cohorts', 'pe_native_input_claims', 'pe_native_turn_transitions_v2', 'pe_native_retained_intents']

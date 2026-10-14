@@ -4,7 +4,8 @@ import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Pool, type PoolClient, type PoolConfig } from 'pg'
-import { initializeDatabase } from '../src/platform/database.ts'
+import { z } from 'zod'
+import { CURRENT_SCHEMA_VERSION, initializeDatabase, transaction } from '../src/platform/database.ts'
 import { seedNewUser } from '../src/platform/account-settings.ts'
 import { hashPassword, IdentityService } from '../src/platform/identity.ts'
 import { FileService } from '../src/platform/files.ts'
@@ -12,6 +13,10 @@ import { FileService } from '../src/platform/files.ts'
 const urlFile = process.env.PE_TEST_DATABASE_URL_FILE
 if (!urlFile) throw new Error('Cloud tests require PE_TEST_DATABASE_URL_FILE')
 const address = new URL((await readFile(urlFile, 'utf8')).trim())
+/** Table names from the complete committed current generation. */
+export const currentCloudTableNames = Object.keys(z.record(z.string(), z.array(z.string())).parse(JSON.parse(
+  await readFile(new URL(`../assets/cloud-schema-v${CURRENT_SCHEMA_VERSION}.manifest.json`, import.meta.url), 'utf8'),
+))).sort()
 type Outcome<T> = { ok: true; value: T } | { ok: false; error: unknown }
 const observe = <T>(promise: Promise<T>): Promise<Outcome<T>> =>
   promise.then<Outcome<T>, Outcome<T>>(value => ({ ok: true, value }), (error: unknown) => ({ ok: false, error }))
@@ -96,6 +101,7 @@ function poolOwner(pool: Pool, report: (event: CloudFixturePhase) => void,
 /** Run one isolated cloud case and remove only its database and storage.
  * @param run Case that settles before fixture disposal.
  * @param lifetime Optional cancellation and PostgreSQL limits for subprocess cases.
+ * @param schemaVersion Exact archived generation for adjacent-upgrade cases; ordinary cases initialize the current generation.
  * @returns The case result after owned resources have been released.
  */
 export async function cloudFixture<T>(run: (fixture: {
@@ -105,7 +111,7 @@ export async function cloudFixture<T>(run: (fixture: {
   identities: IdentityService
   alice: Awaited<ReturnType<IdentityService['login']>>
   bob: Awaited<ReturnType<IdentityService['login']>>
-}) => Promise<T>, lifetime?: CloudFixtureLifetime): Promise<T> {
+}) => Promise<T>, lifetime?: CloudFixtureLifetime, schemaVersion?: 6 | 7): Promise<T> {
   const name = `pe_cloud_case_${randomUUID().replaceAll('-', '')}`
   const limits: PoolConfig = lifetime ? { connectionTimeoutMillis: lifetime.queryTimeoutMs,
     statement_timeout: lifetime.queryTimeoutMs, query_timeout: lifetime.queryTimeoutMs + 1000,
@@ -155,7 +161,14 @@ export async function cloudFixture<T>(run: (fixture: {
     controller.signal.throwIfAborted()
     await admin.query(`CREATE DATABASE "${name}"`)
     controller.signal.throwIfAborted()
-    await initializeDatabase(pool)
+    if (schemaVersion === undefined) await initializeDatabase(pool)
+    else await transaction(pool, async (client) => {
+      await client.query('SET LOCAL check_function_bodies=false')
+      for (let version = 1; version <= schemaVersion; version++) {
+        await client.query(await readFile(new URL(`../assets/cloud-schema-v${version}.sql`, import.meta.url), 'utf8'))
+      }
+      await client.query("INSERT INTO pe_schema VALUES($1,'cloud-native')", [schemaVersion])
+    })
     controller.signal.throwIfAborted()
     const password = randomUUID()
     const initial = { model: 'trial-model', maxTokens: 1000, revision: 1 }

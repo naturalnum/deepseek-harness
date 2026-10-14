@@ -158,7 +158,8 @@ async function renderReservedProfile(role, config, profile, owner) {
     if (!Array.isArray(retained)) throw new Error('Native Profile patch is invalid')
     const controlled = ['power-evolve-runtime', 'power-evolve-host', 'webserver']
     const preserved = retained.filter(patch => !controlled.includes(patch?.id))
-    await durableText(profilePatch, dump([...preserved, ...controlled.map(id => ({ id, config: rows.get(id), disabled: false }))], { schema: entrySchema }))
+    await durableText(profilePatch, dump([...preserved, ...controlled.map(id => ({ id, config: rows.get(id), disabled: false }))],
+      { schema: entrySchema }))
   } else {
     await durableJson(join(directory, 'package.json'), { name, private: true, type: 'module',
       dependencies, dsh: { profile: { bundles } } })

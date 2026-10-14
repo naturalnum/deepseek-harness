@@ -1,4 +1,4 @@
-/** Source plane: real schema6 PG account lifecycle, without excluded Device tables or service substitutes. */
+/** Source plane: current PG account lifecycle, without excluded Device tables or service substitutes. */
 import assert from 'node:assert/strict'
 import { randomUUID } from 'node:crypto'
 import type { Pool } from 'pg'
@@ -9,19 +9,19 @@ import { AccountService } from '../src/platform/accounts.ts'
 import { accountManagementConfig } from '../src/platform/account-config.ts'
 import { revokeAccountExecutions } from '../src/platform/account-execution-revocation.ts'
 import { hashPassword } from '../src/platform/identity.ts'
-import { transaction } from '../src/platform/database.ts'
+import { CURRENT_SCHEMA_VERSION, transaction } from '../src/platform/database.ts'
 import { TaskStore } from '../src/platform/tasks.ts'
-import { cloudFixture } from './cloud-fixture.ts'
+import { cloudFixture, currentCloudTableNames } from './cloud-fixture.ts'
 
 const management = accountManagementConfig.parse({ maxUsers: 10,
   models: [{ id: 'trial-model', label: 'Trial', maxTokens: 2000 }],
   initialSettings: { model: 'trial-model', maxTokens: 1000 } })
 
 async function cloudSchema(pool: Pool): Promise<void> {
-  expect((await pool.query('SELECT family,version FROM pe_schema')).rows).toEqual([{ family: 'cloud-native', version: 6 }])
+  expect((await pool.query('SELECT family,version FROM pe_schema')).rows).toEqual([{ family: 'cloud-native', version: CURRENT_SCHEMA_VERSION }])
   const tables = await pool.query<{ name: string }>(
     "SELECT table_name AS name FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'")
-  expect(tables.rows).toHaveLength(82)
+  expect(tables.rows.map(row => row.name).sort()).toEqual(currentCloudTableNames)
   expect(tables.rows.some(row => row.name === 'pe_device_pairings' || row.name === 'pe_devices')).toBe(false)
   const database = (await pool.query<{ name: string }>('SELECT current_database() AS name')).rows[0]
   assert(database)

@@ -1,4 +1,4 @@
-/** Owned schema6 fixture for current-source Platform HTTP through the shipped CLI and Loader. */
+/** Owned current-schema fixture for source Platform HTTP through the shipped CLI and Loader. */
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
@@ -9,6 +9,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Pool } from 'pg'
 import type { TestContext } from 'vitest'
 import { z } from 'zod'
+import { CURRENT_SCHEMA_VERSION } from '../src/platform/database.ts'
 import { accountLoginValue, type AccountValue } from '../src/account-contracts.ts'
 import { identity } from '../src/contracts.ts'
 import { seedModel, seedNewUser } from '../src/platform/account-settings.ts'
@@ -544,7 +545,7 @@ async function runSourcePlatformHttpFixture(run: (fixture: SourceHttpFixture) =>
         await control.phase('http-business', budgets.body, async () => {
           const live = await http('/live', undefined, { method: 'GET' }), health = await http('/health', undefined, { method: 'GET' })
           assert.equal(live.status, 200); assert.equal(health.status, 200)
-          z.object({ ready: z.literal(true), schema: z.literal(6), executionEnabled: z.literal(false),
+          z.object({ ready: z.literal(true), schema: z.literal(CURRENT_SCHEMA_VERSION), executionEnabled: z.literal(false),
             mcpAvailable: z.literal(false), remoteMcpAvailable: z.literal(false), stdioV2Available: z.literal(false),
             sshAvailable: z.literal(false) }).loose().parse(health.value)
           assert((await connections()) >= 2)
