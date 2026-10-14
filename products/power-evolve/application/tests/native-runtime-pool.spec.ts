@@ -409,3 +409,37 @@ test('a Kubernetes read transport failure never retires or replays the original 
     expect(f.calls.some(row => row.method !== 'GET')).toBe(false)
   } finally { observe.mockRestore() }
 }))
+
+test('restart preserves completed-before-deletion raw proof and retries only its original finalizer cleanup', () => fixture(async (f) => {
+  const original = await f.pool.ensure(f.userId)
+  const containerID = 'containerd://' + 'a'.repeat(64)
+  for (const [path, value] of f.resources) if (path.includes('/pods/')) {
+    const metadata = z.record(z.string(), z.unknown()).parse(value['metadata'])
+    value['metadata'] = { ...metadata, generation: 2, deletionTimestamp: '2026-10-14T08:00:55Z', deletionGracePeriodSeconds: 0 }
+    const init = z.object({ initContainers: z.array(z.object({ name: z.string() }).loose()).optional() }).loose().parse(value['spec'])
+    const initID = 'containerd://' + 'b'.repeat(64)
+    value['status'] = { phase: 'Failed', observedGeneration: 1,
+      ...(init.initContainers?.length ? { initContainerStatuses: [{ name: 'prepare-private', ready: true, started: false,
+        restartCount: 0, containerID: initID, imageID: f.config.image, lastState: {},
+        state: { terminated: { containerID: initID, exitCode: 0, startedAt: '2026-10-14T07:07:00Z',
+          finishedAt: '2026-10-14T07:07:01Z' } } }] } : {}),
+      conditions: ['PodReadyToStartContainers', 'Initialized', 'Ready', 'ContainersReady', 'PodScheduled'].map(type => ({ type,
+        status: ['Initialized', 'PodScheduled'].includes(type) ? 'True' : 'False', observedGeneration: 1,
+        lastTransitionTime: '2026-10-14T07:07:32Z' })),
+      containerStatuses: [{ name: 'native-runtime', ready: false, started: false, restartCount: 0, containerID,
+        imageID: f.config.image, lastState: {}, state: { terminated: { containerID, exitCode: 1,
+          startedAt: '2026-10-14T07:07:31Z', finishedAt: '2026-10-14T07:07:31Z' } } }],
+    }
+  }
+  f.hooks.failPatchOnce = true; f.calls.length = 0
+  await expect(f.pool.reconcile()).rejects.toMatchObject({ message: 'Native runtime reconciliation failed' })
+  const result = await f.main.query<{ stop_proof: unknown }>(
+    'SELECT stop_proof FROM pe_native_runtime_instances WHERE runtime_id=$1', [original.runtimeId])
+  const persisted = result.rows[0]?.stop_proof
+  expect(persisted).toMatchObject({ metadata: { generation: 2 }, status: { observedGeneration: 1 } })
+  await f.retry().close()
+  expect((await f.main.query('SELECT runtime_id,phase,stop_proof FROM pe_native_runtime_instances')).rows)
+    .toEqual([{ runtime_id: original.runtimeId, phase: 'stopped', stop_proof: persisted }])
+  expect(f.calls.some(row => row.method === 'POST' || row.method === 'DELETE' && row.path.includes('/pods/'))).toBe(false)
+  expect(f.resources.size).toBe(0)
+}))

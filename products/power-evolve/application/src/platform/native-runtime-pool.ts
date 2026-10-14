@@ -8,7 +8,7 @@ import { accountUserId, type UserId } from '../account-contracts.ts'
 import { PlatformError } from '../contracts.ts'
 import { KubernetesClient, KubernetesError } from './kubernetes.ts'
 import { NativeRuntimeAuthority } from './native-runtime-authority.ts'
-import { kubernetesPodStopStatus } from './pod-stop-status.ts'
+import { nativeRuntimePodStopStatus } from './native-runtime-pod-stop.ts'
 import { transaction } from './database.ts'
 import { digest } from './identity.ts'
 
@@ -476,7 +476,7 @@ export class NativeRuntimePool {
     let proof: z.infer<typeof resource> | null = row.stop_proof === null ? null : resource.parse(row.stop_proof)
     if (proof) {
       this.assertLabels(proof.metadata.labels, row)
-      if (!row.pod_uid || proof.metadata.uid !== row.pod_uid || !kubernetesPodStopStatus(proof)) {
+      if (!row.pod_uid || proof.metadata.uid !== row.pod_uid || !nativeRuntimePodStopStatus(proof, row.pod_uid, 15)) {
         throw new PlatformError(503, 'native_runtime_stop_proof_unavailable')
       }
     }
@@ -502,7 +502,7 @@ export class NativeRuntimePool {
           this.assertLabels(observed.metadata.labels, row)
           if (observed.metadata.uid !== uid) throw new PlatformError(409, 'native_runtime_pod_replaced')
           if (!observed.metadata.finalizers?.includes(FINALIZER)) throw new PlatformError(503, 'native_runtime_stop_finalizer_missing')
-          if (kubernetesPodStopStatus(observed)) break
+          if (nativeRuntimePodStopStatus(observed, uid, 15)) break
           if (Date.now() >= deadline) throw new PlatformError(503, 'native_runtime_stop_proof_pending')
           await new Promise<void>(resolve => setTimeout(resolve, this.config.reconcileMs))
         }
