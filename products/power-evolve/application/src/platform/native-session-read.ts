@@ -65,7 +65,7 @@ export class NativeSessionRead {
   constructor(private readonly pool: Pool, private readonly imageLimits?: ImageAttachmentLimits) {}
 
   private projections(row: NativeSessionRow) {
-    const baseline = nativeProjectionView(row.projection_state, row.event_count)
+    const baseline = nativeProjectionView(row.projection_state, row.event_count, headerSchema.parse(row.header))
     return this.imageLimits === undefined ? baseline : { ...baseline,
       values: z.record(z.string(), z.json()).parse({ ...baseline.values, imageLimits: this.imageLimits }) }
   }

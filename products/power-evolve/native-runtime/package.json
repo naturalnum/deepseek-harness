@@ -1,0 +1,20 @@
+{
+  "name": "@power-evolve/native-runtime",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./package.json": "./package.json",
+    "./cordis.patch.yml": "./cordis.patch.yml"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-base": "workspace:*",
+    "@deepseek-ai/dsh-web-app": "workspace:*",
+    "@power-evolve/application": "workspace:*"
+  }
+}

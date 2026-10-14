@@ -7,6 +7,7 @@ import { compileMcpModelTool, McpToolAdmissionError, type McpToolAdmissionLimits
 import { mcpOperationTool, type McpOperationTool } from '../mcp-operation-contracts.ts'
 import { z } from 'zod'
 import { mcpCanonicalJson } from './mcp-credentials.ts'
+import { readNativeToolNames } from './native-tool-catalog.ts'
 
 /** Bounded per-operation admission, independent of the number of installed connections. */
 export interface McpOperationAdmissionLimits extends McpToolAdmissionLimits {
@@ -42,6 +43,7 @@ export async function selectMcpOperationTools(client: PoolClient, userId: UserId
        AND cat.credential_revision IS NOT DISTINCT FROM v.credential_revision
      WHERE c.user_id=$1 AND c.enabled AND c.deleted_at IS NULL ORDER BY c.id FOR SHARE OF c`, [userId])
   const selection: McpOperationTool[] = []
+  const reserved = await readNativeToolNames(client, userId)
   const names = new Set<string>()
   let bytes = 2
   for (const row of catalogs.rows) {
@@ -50,7 +52,7 @@ export async function selectMcpOperationTools(client: PoolClient, userId: UserId
       names.add(tool.publicName)
       let model
       try { model = compileMcpModelTool(tool, limits,
-        { connectionId: row.connection_id, displayName: row.display_name }) }
+        { connectionId: row.connection_id, displayName: row.display_name }, reserved) }
       catch (error) {
         if (error instanceof McpToolAdmissionError) throw new PlatformError(409, error.code)
         throw error

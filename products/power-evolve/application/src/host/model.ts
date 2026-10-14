@@ -8,6 +8,8 @@ import { DeepSeekAdapter, resolveAdapterOptions } from '@deepseek-ai/dsh-llm-dee
 import { getOrCreateAnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type RuntimeScope from './scope.ts'
+import { scopeOf } from '@deepseek-ai/dsh-scope'
+import { mcpModelTool } from '../mcp-model-tools.ts'
 
 export const name = 'power-evolve-model'
 export const inject = ['llm', 'powerEvolveRuntime', 'sessions', 'sessionPersistence', 'agents']
@@ -54,6 +56,14 @@ class PlatformModel extends LlmAdapter {
     // Commit consumed input and the native request events before external inference.
     await this.ctx.sessions.flush(session)
     assertCurrent()
+    if (this.runtime.config.runtimeUserId !== '') {
+      const external = new Set([...captured.remoteMcpTools.map(tool => tool.model.name),
+        ...captured.stdioV2Connections.flatMap(group => group.tools.map(tool => tool.model.name))])
+      const native = agent.ctx.tools.schemas(scopeOf(agent.ctx)).filter(tool => !external.has(tool.name))
+        .map(tool => mcpModelTool.parse({ name: tool.name, description: tool.description, parameters: tool.parameters }))
+      await this.runtime.call('/runtime/tools/register', captured.token, { names: native.map(tool => tool.name), tools: native }, options.signal)
+      assertCurrent()
+    }
     await publisher.backpressure(options.signal)
     assertCurrent()
     for await (const chunk of this.adapter(captured.token, agent.ctx.get('attachments')).stream(options)) {

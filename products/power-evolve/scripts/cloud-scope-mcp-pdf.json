@@ -67,17 +67,18 @@
     "office-shared": "Authored Office support remains in both current and full corpora pending explicit profile and dependency verification; no Office filename exclusion is admitted.",
     "assets-shared": "Native execution, sandbox and packaged support assets remain enumerated and validated; no threshold or discovery rule changes.",
     "gate-shared": "Tooling, manifests and documentation remain enumerated by the current and full entries; the named selection is shared by CLI, Vitest, coverage, native collection and CI without changing quality thresholds.",
-    "legacy-mcp-current-shared": "Current shared legacy MCP catalog, draft, history and concurrency migration required by the core/MCP scope; retain the complete file in both current and full corpora."
+    "legacy-mcp-current-shared": "Current shared legacy MCP catalog, draft, history and concurrency migration required by the core/MCP scope; retain the complete file in both current and full corpora.",
+    "native-runtime-s3": "Original native tenant Profile, runtime account authority, PG Session ownership, registered tools and their behavior tests belong to the shared native runtime slice."
   },
   "counts": {
     "runtime": {
       "enabled": 14,
-      "shared": 301,
+      "shared": 318,
       "deferred": 4
     },
     "sourceTests": {
       "enabled": 12,
-      "shared": 147,
+      "shared": 151,
       "deferred": 3
     },
     "builtTests": {
@@ -97,17 +98,17 @@
     },
     "docMetadata": {
       "enabled": 0,
-      "shared": 13,
+      "shared": 14,
       "deferred": 0
     },
     "docs": {
       "enabled": 0,
-      "shared": 149,
+      "shared": 151,
       "deferred": 0
     },
     "manifests": {
       "enabled": 0,
-      "shared": 8,
+      "shared": 9,
       "deferred": 0
     }
   },
@@ -5133,6 +5134,181 @@
       "status": "shared",
       "owner": "Root",
       "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/host/native-runtime-execution.ts",
+      "status": "shared",
+      "owner": "S3",
+      "reason": "native-runtime-s3"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/host/web-search.ts",
+      "status": "shared",
+      "owner": "S3",
+      "reason": "native-runtime-s3"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/native-execution/http-client.ts",
+      "status": "shared",
+      "owner": "S2",
+      "reason": "native-runtime-s3"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/native-execution/providers.ts",
+      "status": "shared",
+      "owner": "S2",
+      "reason": "native-runtime-s3"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/native-execution/types.ts",
+      "status": "shared",
+      "owner": "S2",
+      "reason": "native-runtime-s3"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/native-execution/wire.ts",
+      "status": "shared",
+      "owner": "S2",
+      "reason": "native-runtime-s3"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-preset-selection.ts",
+      "status": "shared",
+      "owner": "S3",
+      "reason": "native-runtime-s3"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-runtime-authority.ts",
+      "status": "shared",
+      "owner": "S3",
+      "reason": "native-runtime-s3"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-runtime-routes.ts",
+      "status": "shared",
+      "owner": "S3",
+      "reason": "native-runtime-s3"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-subagent-authority.ts",
+      "status": "shared",
+      "owner": "S3",
+      "reason": "native-runtime-s3"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-subagents.ts",
+      "status": "shared",
+      "owner": "S3",
+      "reason": "native-runtime-s3"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-tool-catalog.ts",
+      "status": "shared",
+      "owner": "S3",
+      "reason": "native-runtime-s3"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-web-search.ts",
+      "status": "shared",
+      "owner": "S3",
+      "reason": "native-runtime-s3"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-runtime-authority.pg.spec.ts",
+      "status": "shared",
+      "owner": "S3",
+      "reason": "native-runtime-s3"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-runtime-presets.pg.spec.ts",
+      "status": "shared",
+      "owner": "S3",
+      "reason": "native-runtime-s3"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-runtime-tools.spec.ts",
+      "status": "shared",
+      "owner": "S3",
+      "reason": "native-runtime-s3"
+    },
+    {
+      "kind": "docs",
+      "path": "products/power-evolve/native-runtime/README.md",
+      "status": "shared",
+      "owner": "S3",
+      "reason": "native-runtime-s3"
+    },
+    {
+      "kind": "manifests",
+      "path": "products/power-evolve/native-runtime/package.json",
+      "status": "shared",
+      "owner": "S3",
+      "reason": "native-runtime-s3"
+    },
+    {
+      "path": "products/power-evolve/application/src/host/native-runtime-events.ts",
+      "kind": "runtime",
+      "status": "shared",
+      "owner": "S3",
+      "reason": "native-runtime-s3"
+    },
+    {
+      "path": "products/power-evolve/application/src/host/native-runtime-routing.ts",
+      "kind": "runtime",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "native-runtime-s3"
+    },
+    {
+      "path": "products/power-evolve/application/src/platform/native-runtime-policy.ts",
+      "kind": "runtime",
+      "status": "shared",
+      "owner": "S3",
+      "reason": "native-runtime-s3"
+    },
+    {
+      "path": "products/power-evolve/application/src/runtime-upgrade-proxy.ts",
+      "kind": "runtime",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "native-runtime-s3"
+    },
+    {
+      "path": "products/power-evolve/application/tests/native-runtime-policy.pg.spec.ts",
+      "kind": "sourceTests",
+      "status": "shared",
+      "owner": "S3",
+      "reason": "native-runtime-s3"
+    },
+    {
+      "path": "products/power-evolve/native-runtime/README.i18n.yaml",
+      "kind": "docMetadata",
+      "status": "shared",
+      "owner": "S3",
+      "reason": "native-runtime-s3"
+    },
+    {
+      "path": "products/power-evolve/native-runtime/README.zh.md",
+      "kind": "docs",
+      "status": "shared",
+      "owner": "S3",
+      "reason": "native-runtime-s3"
     }
   ],
   "lintSupport": [

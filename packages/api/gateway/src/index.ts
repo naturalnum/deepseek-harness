@@ -396,6 +396,25 @@ export class TypertGatewayService extends Service implements TypertGateway {
     return this.openStream(request, new AbortController())
   }
 
+  /** Open the registered native event carrier without replacing its queue, invocation identities or cancellation.
+   * @param signal Authenticated carrier lifetime.
+   * @returns Original native ready, notification, invocation and cancellation frames.
+   */
+  remoteEventStream(signal: AbortSignal): AsyncIterable<unknown> {
+    return this.openRemoteEvents({ args: {} }, signal)
+  }
+
+  /** Commit one native Client waterfall reply to its original active stream invocation.
+   * @param payload Original carrier payload; the Gateway validates client and invocation identities.
+   * @returns Nothing after the original native dispatcher accepts the outcome.
+   */
+  remoteEventResult(payload: unknown): void {
+    const result = parseRemoteEventResultPayload(payload)
+    const client = this.remoteEventClients.get(result.clientId)
+    if (client === undefined) throw new Error('typert gateway: Remote event result identifies no active event stream')
+    this.receiveRemoteEventResult(client, result)
+  }
+
   /**
    * `control` belongs to the logical stream: a rejected uplink item aborts it
    * with the Remote failure as the reason so the carrier delivers that failure.

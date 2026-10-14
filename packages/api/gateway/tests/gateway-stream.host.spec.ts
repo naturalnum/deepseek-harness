@@ -339,6 +339,35 @@ afterEach(async () => {
 })
 
 describe('Typert Remote streams', () => {
+  it('preserves callback identity and cancellation through an authenticated application event carrier', async () => {
+    const { ctx } = await setup(false)
+    const source = new RemoteEventSourceProbe(), stop = new AbortController()
+    const unregister = ctx.typertGateway.registerRemoteEvents(source.source, REMOTE_HOST)
+    const events = ctx.typertGateway.remoteEventStream(stop.signal)[Symbol.asyncIterator]()
+    const ready = (await events.next()).value as { clientId: string; type: string }
+    expect(ready.type).toBe('ready')
+    const approval = pendingInvocation(ctx)
+    source.push(approval.dispatch)
+    const frame = (await events.next()).value as { eventId: string; event: string }
+    expect(frame.event).toBe('fixture/approval')
+    expect(() => { ctx.typertGateway.remoteEventResult({ args: { clientId: 'foreign', eventId: frame.eventId,
+      outcome: { kind: 'result', value: { approved: true } } } }) }).toThrow('no active event stream')
+    ctx.typertGateway.remoteEventResult({ args: { clientId: ready.clientId, eventId: frame.eventId,
+      outcome: { kind: 'result', value: { approved: true } } } })
+    await expect(approval.outcome).resolves.toEqual({ kind: 'result', value: { approved: true } })
+    const waiting = pendingInvocation(ctx, stop.signal)
+    source.push(waiting.dispatch)
+    await events.next()
+    const cancelled = expect(waiting.outcome).rejects.toMatchObject({ name: 'AbortError' })
+    stop.abort()
+    await events.return?.()
+    await cancelled
+    expect(source.signal?.aborted).toBe(false)
+    expect(ctx.typertGateway.hasLiveClient()).toBe(false)
+    await unregister()
+    expect(source.signal?.aborted).toBe(true)
+  })
+
   it('reports Client event streams without counting a bare WebSocket', async () => {
     const { ctx } = await setup(true)
     const source = new RemoteEventSourceProbe()

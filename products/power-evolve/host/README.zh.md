@@ -33,6 +33,8 @@ Host 通过[应用适配器](../application/README.zh.md)提供原生 agent 执�
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
+`nativeRuntimeRouting=true` 时，此 Host 提供原生 UI、已认证 RPC 路由、PG 字节读取和 Office 适配。它不创建或启动共享 Scheduler 或云 Shell。Platform Runtime pool 选择账号拥有的子进程；原始浏览器 bearer 与 broker 凭据保持独立。默认 `false` 保留此 bundle 独立共享 worker 的执行行为。
+
 <details>
 <summary>Profile 组合与操作授权</summary>
 

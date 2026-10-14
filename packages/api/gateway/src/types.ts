@@ -170,6 +170,18 @@ export interface TypertGateway {
    * @returns a cancellation-aware iterable over the business results.
    */
   stream(request: InvokeRemoteRequest): Promise<AsyncIterable<unknown>>
+
+  /** Open native ready, notification and waterfall frames for one authenticated carrier.
+   * @param signal Carrier lifetime.
+   * @returns The original native Remote Event stream.
+   */
+  remoteEventStream(signal: AbortSignal): AsyncIterable<unknown>
+
+  /** Deliver a Client reply using its original stream and invocation ids.
+   * @param payload Original native Remote Event result payload.
+   * @returns Nothing after the native dispatcher accepts the outcome.
+   */
+  remoteEventResult(payload: unknown): void
 }
 
 declare module '@deepseek-ai/cordis' {

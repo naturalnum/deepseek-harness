@@ -24,6 +24,8 @@ kind: "package-reference"
 <a id="host-service-typertgatewayservice-ctx-key-typertgateway"></a>
 ## Host 服务：`TypertGatewayService`（ctx key：`typertGateway`）
 
+Host 组合拥有已认证 carrier 时，可调用 `remoteEventStream(signal)` 和 `remoteEventResult(payload)`。这些方法复用已注册 source、原生回调身份及 Client 取消；未知 Client 的结果会被拒绝。调用方负责 carrier 认证，并在释放传输前取消原始流。
+
 每次调用时，`ctx.typertGateway.invoke()` 都会解析当前的描述符和 Cordis 服务，校验具名参数是否完全匹配，解析已注册的对象或 Context 身份标识，并调用公开的业务方法。业务服务继承 [`dsh-typert-protocol`](../../typert/protocol/README.zh.md) 的 `TypertRemoteService`，并用 `@Remote` 或 `@RemoteScope` 标记方法；已有其他基类时仍可改用 `bindTypertRemote()`。
 
 严格模式从 `ctx.typert.local` 读取生成的调用描述符。查找参数使用 `ctx.typert.lookups` 中当前有效的解析器：业务包注册稳定声明与默认策略，Host 组合可用 effect-scoped `configure()` 覆盖解析行为；`@RemoteScope` 则通过已注册的 Host Context 适配器解析其接收者。SRC 模式是开发阶段的回退路径，适用于从未具备严格定义的端点；它解析简单参数名，并且只允许非查找参数使用可安全表示为 JSON 的值。已观测到的严格定义一旦撤回，系统会直接报错，而不会降低校验强度。对于一元结果，Gateway 在生成 codec 提供 `encode()` 时执行它，否则保持 strict JSON 值不变；SRC 则递归识别运行时字节值。两条路径都向 Connection 返回 JSON 兼容元数据及相对于结果的字节附件，由 Connection 完成传输帧封装。

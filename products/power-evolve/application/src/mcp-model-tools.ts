@@ -40,7 +40,7 @@ const receiptGuidance = 'This tool proposes an external MCP action. A receipt re
   + 'If approval is required, give the user the trusted approval link and wait. '
   + 'The Platform will deliver the outcome in this conversation. Do not repeat a pending or uncertain action.'
 
-/** Trusted product consumer names, shared by model declaration and external catalog admission. */
+/** Legacy product consumers; native runtimes additionally reserve their actual registered tool catalog. */
 export const PRODUCT_MODEL_TOOL_NAMES: readonly string[] = Object.freeze([
   'trial_notes_list', 'trial_notes_append', 'cloud_exec', 'cloud_file_read', 'cloud_file_copy',
   'mcp__personal__whoami', 'mcp__stdio__whoami', 'ssh_execute_propose', 'skill', 'skill_resource', 'office', 'bash',
@@ -58,14 +58,16 @@ export class McpToolAdmissionError extends Error {
  * @param tool Raw discovered tool with a Platform-generated public name.
  * @param limits Deployment-owned descriptor and model-description budgets.
  * @param connection Optional current PG metadata supplied only by Platform admission; labels grant no authority.
+ * @param reservedNames Actual native registration names reserved by the operation's account runtime.
  * @returns A detached native declaration suitable for durable admission and Host registration.
  */
 export function compileMcpModelTool(tool: Pick<McpCatalogTool, 'publicName' | 'raw'>,
-  limits: McpToolAdmissionLimits, connection?: Pick<McpConnection, 'connectionId' | 'displayName'>): McpModelTool {
+  limits: McpToolAdmissionLimits, connection?: Pick<McpConnection, 'connectionId' | 'displayName'>,
+  reservedNames: readonly string[] = []): McpModelTool {
   if (Buffer.byteLength(JSON.stringify(tool.raw)) > limits.maxToolBytes) {
     throw new McpToolAdmissionError('mcp_tool_size_limit')
   }
-  if (fixedTools.has(tool.publicName) || !/^[A-Za-z0-9_-]{1,64}$/u.test(tool.publicName)) {
+  if (fixedTools.has(tool.publicName) || reservedNames.includes(tool.publicName) || !/^[A-Za-z0-9_-]{1,64}$/u.test(tool.publicName)) {
     throw new McpToolAdmissionError('mcp_tool_name_conflict')
   }
   if (tool.raw.execution?.taskSupport === 'required') {
@@ -104,23 +106,28 @@ export function assertMcpToolArguments(tool: McpDiscoveredTool, args: unknown): 
  * Check Host declarations against the operation's Platform-owned MCP definitions.
  * @param declared Parsed Messages tools submitted by the shared Host.
  * @param admitted Exact MCP definitions loaded from the durable operation, never from Host input.
+ * @param native Exact native schemas frozen from the current durable request header; omission serves legacy operations.
  * @returns Nothing for a valid subset; undeclared, changed, or duplicate tools are refused.
  */
 export function assertModelToolDeclarations(declared: readonly ModelMessageTool[],
-  admitted: readonly McpModelTool[]): void {
+  admitted: readonly McpModelTool[], native?: readonly McpModelTool[]): void {
   const known = new Map(admitted.map(tool => [tool.name, tool]))
   if (known.size !== admitted.length || admitted.some(tool => fixedTools.has(tool.name))) {
+    throw new McpToolAdmissionError('mcp_snapshot_conflict')
+  }
+  const registered = new Map(native?.map(tool => [tool.name, tool]))
+  if (registered.size !== (native?.length ?? 0) || [...registered.keys()].some(name => known.has(name))) {
     throw new McpToolAdmissionError('mcp_snapshot_conflict')
   }
   const seen = new Set<string>()
   for (const tool of declared) {
     if (seen.has(tool.name)) throw new McpToolAdmissionError('model_tool_duplicate')
     seen.add(tool.name)
-    if (fixedTools.has(tool.name)) {
+    if (native === undefined && fixedTools.has(tool.name)) {
       if (tool.description.length > 1000) throw new McpToolAdmissionError('model_tool_not_authorized')
       continue
     }
-    const expected = known.get(tool.name)
+    const expected = known.get(tool.name) ?? registered.get(tool.name)
     if (!expected || tool.description !== expected.description
       || !isDeepStrictEqual(tool.input_schema, expected.parameters)) {
       throw new McpToolAdmissionError('model_tool_not_authorized')

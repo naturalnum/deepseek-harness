@@ -13,6 +13,7 @@ import { assertModelToolChanges, assertModelToolDeclarations, McpToolAdmissionEr
   modelMessageTool } from '../mcp-model-tools.ts'
 import { mcpOperationTools } from '../mcp-operation-contracts.ts'
 import type { StdioOperationAdmissionV2 } from './stdio-v2-operation-admission.ts'
+import { readNativeModelTools } from './native-tool-catalog.ts'
 
 const messageRequest = z.object({
   model: z.string().min(1).max(100), max_tokens: z.number().int().positive(), stream: z.literal(true),
@@ -73,7 +74,8 @@ export async function proxyModel(
     }
     const admitted = [...remote, ...stdio.flatMap(group => group.tools.map(tool => tool.model))]
     try {
-      assertModelToolDeclarations(body.tools ?? [], admitted)
+      assertModelToolDeclarations(body.tools ?? [], admitted,
+        await readNativeModelTools(client, authorized, admitted))
       return assertModelToolChanges(body.model, body.tools ?? [], body.messages, body.system)
     }
     catch (error) {

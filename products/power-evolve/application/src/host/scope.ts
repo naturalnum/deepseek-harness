@@ -1,12 +1,12 @@
 /** Host access to platform APIs and operation-local execution grants. */
 import { readFile } from 'node:fs/promises'
-import { randomUUID } from 'node:crypto'
+import { randomUUID, timingSafeEqual } from 'node:crypto'
 import { addAbortListener } from 'node:events'
 import { Context, Service } from '@deepseek-ai/cordis'
 import schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
-import { grant, type Grant, PlatformError } from '../contracts.ts'
+import { grant, settings, type Grant, PlatformError } from '../contracts.ts'
 import type { NativeAssistantPublisher, NativePublicationSeal } from './native-assistant-publisher.ts'
 import type { NativeInputCoordinator } from './native-input-coordinator.ts'
 import type { InputCommandReceipt, NativeInputQueueCommand } from '../native-input-ledger-contracts.ts'
@@ -35,14 +35,16 @@ declare module '@deepseek-ai/cordis' {
 
 /** Deployment-owned platform endpoint, worker identity, and transport bounds. */
 export const Config = schema.object({
-  platformUrl: schema.string().required(), workerTokenFile: schema.string().required(),
+  platformUrl: schema.string().required(), workerTokenFile: schema.string().default(''),
   workerId: schema.string().default(''),
+  runtimeUserId: schema.string().default(''), runtimeTokenFile: schema.string().default(''),
   timeoutMs: schema.number().min(1000).required(), maxResponseBytes: schema.number().min(1024).required(),
   nativePublicationMaxQueueItems: schema.number().step(1).min(1).default(256),
   nativePublicationMaxQueueBytes: schema.number().step(1).min(1).default(4_194_304),
   nativePublicationMaxBatchItems: schema.number().step(1).min(1).default(32),
   nativePublicationMaxBatchBytes: schema.number().step(1).min(1).default(1_048_576),
   nativePublicationMaxItemBytes: schema.number().step(1).min(1).default(1_048_576),
+  nativeSubagentRenewMs: schema.number().step(1).min(1).default(8000),
   nativeIntentReconcileLimit: schema.number().step(1).min(1).max(2_147_483_647).default(32),
   nativeIntentMaxLocalReceipts: schema.number().step(1).min(1).max(2_147_483_647).default(65_536),
 })
@@ -54,6 +56,10 @@ export default class RuntimeScope extends Service {
   static Config = Config
   /** Identity of this RuntimeScope instance, presented when claiming work. */
   readonly workerId: string
+  /** Current Platform-issued pool generation; zero denotes the legacy shared worker. */
+  runtimeGeneration = 0
+  /** Platform-selected account model sampled at process startup; every operation retains its own current settings. */
+  runtimeDefaultModel = ''
   /** Shared Platform mutation journal; historical results remain separate from the live Grant map. */
   readonly nativeRetainedIntents: NativeRetainedIntentClient
   /** Current Session grants; exact object identity fences asynchronous access. */
@@ -77,10 +83,36 @@ export default class RuntimeScope extends Service {
     this.workerId = config.workerId === '' ? randomUUID() : z.uuid().parse(config.workerId)
     this.nativeRetainedIntents = new NativeRetainedIntentClient(this.workerId,
       (path, token, input, signal) => this.call(path, token, input, signal),
-      (path, input, signal) => this.call(path, this.workerToken, input, signal))
+      (path, input, signal) => this.call(config.runtimeUserId === '' ? path : path.replace('/runtime/', '/runtime/user/'), this.workerToken, input, signal))
   }
 
-  async [Service.init](): Promise<void> { this.workerToken = (await readFile(this.config.workerTokenFile, 'utf8')).trim() }
+  async [Service.init](): Promise<void> {
+    if (this.config.runtimeUserId !== '') {
+      z.uuid().parse(this.config.runtimeUserId)
+      if (this.config.workerTokenFile !== '' || this.config.runtimeTokenFile === '') throw new Error('Tenant runtime requires only its own runtimeTokenFile')
+      this.workerToken = (await readFile(this.config.runtimeTokenFile, 'utf8')).trim()
+      const identity = z.object({ userId: z.uuid(), runtimeId: z.uuid(), generation: z.number().int().positive(), settings }).parse(
+        await this.call('/runtime/user/identity', this.workerToken, {}))
+      if (identity.userId !== this.config.runtimeUserId || identity.runtimeId !== this.workerId) throw new PlatformError(401, 'runtime_identity_mismatch')
+      this.runtimeGeneration = identity.generation
+      this.runtimeDefaultModel = identity.settings.model
+    } else this.workerToken = (await readFile(this.config.workerTokenFile, 'utf8')).trim()
+  }
+
+  /** Authenticate one Platform broker hop using only this process's revocable credential.
+   * @param token Broker-forwarded runtime token; browser and shared-worker tokens refuse.
+   * @returns Completion after the local exact token and current Platform account/instance/generation checks.
+   */
+  async verifyBroker(token: string | undefined): Promise<void> {
+    const supplied = Buffer.from(token ?? ''), expected = Buffer.from(this.workerToken)
+    if (this.config.runtimeUserId === '' || expected.length !== supplied.length || !timingSafeEqual(expected, supplied)) {
+      throw new PlatformError(401, 'unauthorized_runtime')
+    }
+    const current = z.object({ userId: z.uuid(), runtimeId: z.uuid(), generation: z.number().int().positive() }).parse(
+      await this.call('/runtime/user/identity', this.workerToken, {}))
+    if (current.userId !== this.config.runtimeUserId || current.runtimeId !== this.workerId
+      || current.generation !== this.runtimeGeneration) throw new PlatformError(401, 'runtime_identity_mismatch')
+  }
 
   /** Dispatch a complete original mutation through the shared journal before returning its provider reply.
    * @param token Exact locally installed operation bearer.
@@ -144,7 +176,8 @@ export default class RuntimeScope extends Service {
    * @returns a scoped grant or null when no work is available.
    */
   async claim(signal?: AbortSignal): Promise<Grant | null> {
-    return grant.nullable().parse(await this.call('/runtime/claim', this.workerToken, { workerId: this.workerId }, signal))
+    return this.validateClaim(await this.call(this.config.runtimeUserId === '' ? '/runtime/claim' : '/runtime/user/claim',
+      this.workerToken, { workerId: this.workerId }, signal))
   }
 
   /** Claim only current storage ownership for an unfinished archival stop.
@@ -152,8 +185,16 @@ export default class RuntimeScope extends Service {
    * @returns Original fenced operation under a new storage attempt, or absence of eligible archival maintenance.
    */
   async claimArchiveStop(signal?: AbortSignal): Promise<Grant | null> {
-    return grant.nullable().parse(await this.call('/runtime/claim-archive-stop', this.workerToken,
-      { workerId: this.workerId }, signal))
+    return this.validateClaim(await this.call(this.config.runtimeUserId === '' ? '/runtime/claim-archive-stop' : '/runtime/user/claim-archive-stop',
+      this.workerToken, { workerId: this.workerId }, signal))
+  }
+
+  private validateClaim(raw: unknown): Grant | null {
+    const value = grant.nullable().parse(raw)
+    if (value && this.config.runtimeUserId !== '' && value.userId !== this.config.runtimeUserId) {
+      throw new PlatformError(401, 'runtime_identity_mismatch')
+    }
+    return value
   }
 
   /** Require a live grant before accessing one Session's resources.
@@ -257,7 +298,8 @@ export default class RuntimeScope extends Service {
    * @param expected Original operation and epoch captured by the caller.
    */
   assertGrant(expected: Grant): void {
-    if (this.grants.get(expected.sessionId) !== expected) throw new PlatformError(409, 'lease_lost')
+    if (this.grants.get(expected.sessionId) !== expected
+      || this.config.runtimeUserId !== '' && expected.userId !== this.config.runtimeUserId) throw new PlatformError(409, 'lease_lost')
   }
 
   /** Call one configured platform endpoint with an explicit credential.

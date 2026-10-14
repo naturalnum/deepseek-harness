@@ -33,6 +33,8 @@ The Host supplies native Agent execution and authenticated browser access throug
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
+With `nativeRuntimeRouting=true`, this Host serves the native UI and authenticated RPC routing, PG byte reads and Office adapters. It does not construct or start the shared Scheduler or cloud Shell. The Platform Runtime pool selects the account-owned child; its original browser bearer remains distinct from the broker credential. The default `false` preserves this bundle's standalone shared-worker execution.
+
 <details>
 <summary>Profile composition and operation grants</summary>
 

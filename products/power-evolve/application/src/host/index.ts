@@ -342,6 +342,7 @@ export const Config = schema.object({
   profileAdministrators: schema.array(
     schema.string().pattern(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u),
   ).default([]),
+  nativeRuntimeRouting: schema.boolean().default(false),
 
   officePreviewEnabled: schema.boolean().default(false),
   officePreviewPollMs: schema.number().step(1).min(1).max(2_147_483_647).default(500),
@@ -365,7 +366,10 @@ export type Config = ReturnType<typeof Config>
  */
 export async function apply(ctx: Context, config: Config): Promise<void> {
   const instanceId = randomUUID()
-  const browserAuth = new BrowserAgentAuth(config.origin, config.platformOrigin, ctx.powerEvolveRuntime)
+  const runtimeUserId = ctx.powerEvolveRuntime.config.runtimeUserId
+  const browserAuth = new BrowserAgentAuth(config.origin, config.platformOrigin, ctx.powerEvolveRuntime,
+    runtimeUserId === '' ? undefined : runtimeUserId,
+    runtimeUserId === '' ? undefined : token => ctx.powerEvolveRuntime.verifyBroker(token))
   ctx.provide('powerEvolveBrowserAuth', browserAuth)
   installNativeRemote(ctx, browserAuth, config.origin, config.pollMs,
     config.maxRequestBytes, config.maxStreams, config.profileAdministrators,
@@ -373,7 +377,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       maxGenerationBytes: config.nativeFollowMaxGenerationBytes }, config.nativeStreamSendTimeoutMs,
     config.officePreviewEnabled ? { pollMs: config.officePreviewPollMs,
       renderDeadlineMs: config.officePreviewRenderDeadlineMs, cancelTimeoutMs: config.officePreviewCancelTimeoutMs,
-      maxActiveRenders: config.officePreviewMaxActiveRenders } : undefined)
+      maxActiveRenders: config.officePreviewMaxActiveRenders } : undefined, config.nativeRuntimeRouting)
   const tokens = new WeakMap<PeerScope, string>()
   ctx.plugin(ProductRemote, { tokens, pollMs: config.pollMs, platformOrigin: config.platformOrigin })
   const invocations: InvocationDescriptor[] = Object.entries(requests).map(([method, request]) => ({
@@ -387,14 +391,28 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   ctx.typert.register({ package: '@power-evolve/application', face: 'host', schemas: [], model: { services: [], events: [], objects: [] }, invocations })
   ctx.sessions.registerMessageProjection(imageOffloadProjection)
   new LegacyMigrationHostImages(ctx, ctx.powerEvolveRuntime, resolveNativeImageOptions(config))
-  if (config.nativeShellEnabled) {
+  if (!config.nativeRuntimeRouting && config.nativeShellEnabled && runtimeUserId === '') {
     if (config.shellTimeoutMs > config.shellMaxTimeoutMs) throw new Error('shellTimeoutMs exceeds shellMaxTimeoutMs')
     new CloudShellExecutor(ctx, ctx.powerEvolveRuntime, { pollMs: config.shellPollMs,
       timeoutMs: config.shellTimeoutMs, maxTimeoutMs: config.shellMaxTimeoutMs, maxOutputBytes: config.shellMaxOutputBytes })
     new ShellEnvRegistry(ctx, { dshHome: '/home/agent/.dsh' })
   }
-  await ctx.inject(['attachments'], (imageCtx) => {
+  if (!config.nativeRuntimeRouting) await ctx.inject(['attachments'], (imageCtx) => {
     const scheduler = new Scheduler(imageCtx, config)
+    if (runtimeUserId !== '') {
+      imageCtx.on('agent/created', async ({ agent }) => {
+        if (agent.session.header.origin !== 'subagent') return
+        const runtime = imageCtx.powerEvolveRuntime, grant = runtime.require(agent.id)
+        const images = imageCtx.attachments
+        if (!(images instanceof LegacyMigrationHostImages)) throw new Error('Host migration image provider is missing')
+        images.bind(agent.ctx, grant)
+        await imageCtx.nativeRuntimeExecution.bind(agent, grant)
+        const publisher = runtime.publication(grant)
+        agent.ctx.effect(() => publisher.onFailure(() => { agent.cancel({ kind: 'disposed' }, { keepInbox: true }) }))
+        agent.ctx.on('agent/assistant-stream', ({ agent: source, frame }) => { if (source === agent) publisher.frame(frame) })
+        await scheduler.installTools(agent, grant)
+      })
+    }
     scheduler.start()
     imageCtx.effect(() => () => scheduler.close())
   })
@@ -414,7 +432,25 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         sendJson(res, await ctx.powerEvolveRuntime.queueInput(credential.token, command)); return
       }
       if (req.method === 'GET' && path === '/health') {
-        sendJson(res, { ready: true, service: 'host', activeAgents: ctx.agents.list().length, loadedSessions: ctx.sessions.list().length, activeGrants: ctx.powerEvolveRuntime.grants.size, instanceId }); return
+        if (runtimeUserId !== '') {
+          const token = req.headers['x-power-evolve-runner-token']
+          await ctx.powerEvolveRuntime.verifyBroker(typeof token === 'string' ? token : undefined)
+        }
+        sendJson(res, { ready: true, service: 'host', activeAgents: ctx.agents.list().length, loadedSessions: ctx.sessions.list().length,
+          activeGrants: ctx.powerEvolveRuntime.grants.size, instanceId,
+          ...(runtimeUserId === '' ? {} : { runtimeUserId, runtimeId: ctx.powerEvolveRuntime.workerId,
+            generation: ctx.powerEvolveRuntime.runtimeGeneration }) }); return
+      }
+      if (req.method === 'GET' && path === '/native/runtime/ready' && runtimeUserId !== '') {
+        const token = req.headers['x-power-evolve-runner-token']
+        await ctx.powerEvolveRuntime.verifyBroker(typeof token === 'string' ? token : undefined)
+        const presets = await ctx.agentPresets.list()
+        const services = ['settings', 'configEditor', 'permissionPresets', 'commands', 'sessionProjections', 'terminalController',
+          'agentLoop', 'subagents', 'web', 'fs', 'subprocess', 'sandbox']
+        const ready = services.every(service => ctx.get(service) !== undefined)
+          && ['standard', 'ptc', 'minimal', 'cordis'].every(id => presets.some(preset => preset.id === id && preset.broken === undefined))
+        sendJson(res, { ready, runtimeUserId, runtimeId: ctx.powerEvolveRuntime.workerId,
+          generation: ctx.powerEvolveRuntime.runtimeGeneration, presets }); return
       }
       if (req.method === 'GET' && path === '/config') { sendJson(res, { loginUrl: `${config.platformOrigin}/login`,
         approvalUrl: `${config.platformOrigin}/approval` }); return }
@@ -473,5 +509,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       if (peer) { tokens.delete(peer); await peer.dispose() }
     }
   }))
-  await writeFile(config.readyFile, JSON.stringify({ pid: process.pid, url: `http://${ctx.webServer.host}:${ctx.webServer.port}`, instanceId }), { mode: 0o600 })
+  await writeFile(config.readyFile, JSON.stringify({ pid: process.pid, url: `http://${ctx.webServer.host}:${ctx.webServer.port}`, instanceId,
+    ...(runtimeUserId === '' ? {} : { runtimeUserId, runtimeId: ctx.powerEvolveRuntime.workerId,
+      generation: ctx.powerEvolveRuntime.runtimeGeneration }) }), { mode: 0o600 })
 }

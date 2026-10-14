@@ -51,7 +51,8 @@ export class BrowserAgentAuth {
   private readonly secure: boolean
 
   constructor(private readonly hostOrigin: string, private readonly platformOrigin: string,
-    private readonly verifier: AgentVerifier) {
+    private readonly verifier: AgentVerifier, private readonly expectedUserId?: string,
+    private readonly broker?: (token: string | undefined) => Promise<void>) {
     this.secure = secureCookie(hostOrigin)
     const platform = new URL(platformOrigin)
     if (platform.origin !== platformOrigin || platform.username || platform.password) throw new Error('Invalid platform origin')
@@ -80,6 +81,7 @@ export class BrowserAgentAuth {
       throw new PlatformError(415, 'invalid_content_type')
     }
     const { token } = exchangeRequest.parse(await readJson(request, 4096))
+    this.assertOwner(agentIdentity.parse(await this.verifier.call('/identity/me', token, {})))
     const replacement = z.object({ token: tokenSchema }).strict().parse(
       await this.verifier.call('/identity/exchange', token, {}),
     ).token
@@ -100,6 +102,14 @@ export class BrowserAgentAuth {
     fromCookie: boolean
     user: z.infer<typeof agentIdentity>
   }> {
+    if (this.broker !== undefined) {
+      const runtimeToken = request.headers['x-power-evolve-runner-token']
+      await this.broker(typeof runtimeToken === 'string' ? runtimeToken : undefined)
+      const raw = request.headers['x-power-evolve-browser-token']
+      const token = tokenSchema.parse(typeof raw === 'string' ? raw : undefined)
+      if (request.headers.origin !== undefined && request.headers.origin !== this.hostOrigin) throw new PlatformError(403, 'invalid_origin')
+      return { token, fromCookie: false, user: this.assertOwner(agentIdentity.parse(await this.verifier.call('/identity/me', token, {}))) }
+    }
     const cookie = cookieToken(request, this.hostOrigin)
     if (request.headers.authorization !== undefined) {
       if (cookie !== undefined) throw new PlatformError(401, 'ambiguous_credential')
@@ -107,14 +117,19 @@ export class BrowserAgentAuth {
         throw new PlatformError(403, 'invalid_origin')
       }
       const token = bearer(request)
-      return { token, fromCookie: false, user: agentIdentity.parse(await this.verifier.call('/identity/me', token, {})) }
+      return { token, fromCookie: false, user: this.assertOwner(agentIdentity.parse(await this.verifier.call('/identity/me', token, {}))) }
     }
     const sameOriginNavigation = safeGet && request.method === 'GET' && request.headers.origin === undefined
       && (request.headers['sec-fetch-site'] === undefined
         || request.headers['sec-fetch-site'] === 'same-origin' || request.headers['sec-fetch-site'] === 'none')
     if (request.headers.origin !== this.hostOrigin && !sameOriginNavigation) throw new PlatformError(403, 'invalid_origin')
     if (!cookie) throw new PlatformError(401, 'unauthorized')
-    return { token: cookie, fromCookie: true, user: agentIdentity.parse(await this.verifier.call('/identity/me', cookie, {})) }
+    return { token: cookie, fromCookie: true, user: this.assertOwner(agentIdentity.parse(await this.verifier.call('/identity/me', cookie, {}))) }
+  }
+
+  private assertOwner(user: z.infer<typeof agentIdentity>): z.infer<typeof agentIdentity> {
+    if (this.expectedUserId !== undefined && user.userId !== this.expectedUserId) throw new PlatformError(401, 'unauthorized')
+    return user
   }
 
   /** Clear a browser credential after the platform has revoked it.

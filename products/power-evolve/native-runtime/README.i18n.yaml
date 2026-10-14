@@ -1,0 +1,34 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write products/power-evolve/native-runtime/README.md
+/:
+  en: 4f09f5b3c7192524
+  zh: d12e4aecda7f9b08
+/power-evolve-native-runtime:
+  en: ec07fd34c4459340
+  zh: 5cf5ccc4cfa5fe88
+/power-evolve-native-runtime/summary:
+  en: fc805bbffc37e5c1
+  zh: 818ca4807b9d2237
+/power-evolve-native-runtime/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: d152484eb41ac6b4
+/power-evolve-native-runtime/use-this-package:
+  en: 036e306cdc890e7c
+  zh: 5ebeff96bdcba9c7
+/power-evolve-native-runtime/understand-the-implementation:
+  en: 67ee520447d510be
+  zh: 7a9627b0e9c7549a
+/power-evolve-native-runtime/further-exploration:
+  en: ff277aad16a14a6a
+  zh: 14a0ffc4d3f82a2a
+/power-evolve-native-runtime/model-experience:
+  en: 6fa7458deac50a3e
+  zh: 74d2b0f3d757788e
+/power-evolve-native-runtime/known-limitations-and-deferred-work:
+  en: c33cdaf640c53553
+  zh: 4f914c1ea93d2453
+/power-evolve-native-runtime/known-limitations-and-deferred-work/dev-note:
+  en: e57da0232b47f948
+  zh: 3f50d953764078f2

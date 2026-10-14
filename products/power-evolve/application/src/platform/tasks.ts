@@ -4,7 +4,7 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import type { Pool, PoolClient } from 'pg'
 import { SESSION_FORMAT_VERSION, type SessionId, type SessionHeader } from '@deepseek-ai/dsh-session'
 import { executionTarget, grant, mcpSelection, stdioMcpSelection, sshSelection, skillSelection, PlatformError, settings,
-  userId as executionUserId, operationId as executionOperationId, type OperationId, type ExecutionTarget, type Grant, type Identity, type RequestId, type WorkspaceId } from '../contracts.ts'
+  userId as executionUserId, operationId as executionOperationId, type OperationId, type ExecutionTarget, type Grant, type Identity, type RequestId, type WorkspaceId, type UserId } from '../contracts.ts'
 import { z } from 'zod'
 import { digest } from './identity.ts'
 import { transaction } from './database.ts'
@@ -26,6 +26,9 @@ import { readSessionStopInTransaction, requestSessionStopInTransaction } from '.
 import type { NativeSessionStopIntent } from '../native-session-stop-contracts.ts'
 import type { NativeTurnHistoryLimits } from './native-turn-history.ts'
 import { completeSessionStopInTransaction } from './native-session-stop-completion.ts'
+import { readNativeToolNames } from './native-tool-catalog.ts'
+import { assertNativeSubagentStorage, assertNativeSubagentExecution } from './native-subagent-authority.ts'
+import { assertNativeRuntimeGrant } from './native-runtime-authority.ts'
 
 interface SessionRow {
   id: string
@@ -95,10 +98,10 @@ export class TaskStore {
    * @returns The new or previously accepted native Session identity.
    */
   async create(user: Identity, requestId: RequestId, credentialToken: string,
-    workspaceId?: WorkspaceId): Promise<{ sessionId: SessionId }> {
+    workspaceId?: WorkspaceId, agentPreset?: string): Promise<{ sessionId: SessionId }> {
     const id = randomUUID()
     const header: SessionHeader = { id: brandString<SessionId>(id), version: SESSION_FORMAT_VERSION,
-      createdAt: Date.now(), isSeeded: false }
+      createdAt: Date.now(), isSeeded: false, cwd: '/workspace', ...(agentPreset === undefined ? {} : { agentPreset }) }
     return transaction(this.pool, async (client) => {
       const actor = await requireBrowserAccount(client, credentialToken, { lock: 'update' })
       if (actor.userId !== user.userId) throw new PlatformError(401, 'unauthorized')
@@ -262,7 +265,7 @@ export class TaskStore {
       const ssh = z.array(sshSelection).max(8).parse(sshRows.rows)
       const stdioV2 = this.limits.stdioV2Admission ? await this.limits.stdioV2Admission.selection.select(client,
         user.userId, session, target,
-        [...this.limits.stdioV2Admission.reservedNames, ...remoteMcp.map(tool => tool.model.name)]) : []
+        [...this.limits.stdioV2Admission.reservedNames, ...await readNativeToolNames(client, user.userId), ...remoteMcp.map(tool => tool.model.name)]) : []
       const id = randomUUID()
       const bound = await NativeAttachments.bind(client, user, session, requestId, submitted)
       let admitted: z.infer<typeof admittedNativeContent>
@@ -415,8 +418,8 @@ export class TaskStore {
    * @param workerId Trusted Host worker identity.
    * @returns One execution grant, or null when eligible work is unavailable.
    */
-  async claim(workerId: string): Promise<Grant | null> {
-    return this.claimForPurpose(workerId, false)
+  async claim(workerId: string, owner?: { userId: UserId; authenticate: (client: PoolClient) => Promise<void> }): Promise<Grant | null> {
+    return this.claimForPurpose(workerId, false, owner)
   }
 
   /** Acquire only storage ownership for an unfinished archival stop, including after unarchive.
@@ -424,16 +427,20 @@ export class TaskStore {
    * @param workerId Trusted Host worker that will acquire an independent Session Writer.
    * @returns Current original storage grant, or null when no stopped Session is eligible for maintenance.
    */
-  async claimArchiveStop(workerId: string): Promise<Grant | null> {
-    return this.claimForPurpose(workerId, true)
+  async claimArchiveStop(workerId: string, owner?: { userId: UserId; authenticate: (client: PoolClient) => Promise<void> }): Promise<Grant | null> {
+    return this.claimForPurpose(workerId, true, owner)
   }
 
-  private async claimForPurpose(workerId: string, archiveStop: boolean): Promise<Grant | null> {
+  private async claimForPurpose(workerId: string, archiveStop: boolean,
+    owner?: { userId: UserId; authenticate: (client: PoolClient) => Promise<void> }): Promise<Grant | null> {
     return transaction(this.pool, async (client) => {
+      await owner?.authenticate(client)
       const candidate = await client.query<{ id: string; session_id: string; user_id: string }>(
         `SELECT o.id,o.session_id,s.user_id
          FROM pe_operations o JOIN pe_sessions s ON s.id=o.session_id JOIN pe_users u ON u.id=s.user_id
          WHERE u.enabled=true AND u.deleted_at IS NULL AND o.state IN ('queued','running')
+         AND ($3::uuid IS NULL OR s.user_id=$3)
+         AND NOT EXISTS (SELECT 1 FROM pe_native_subagent_grants g WHERE g.operation_id=o.id)
          AND (CASE WHEN $2::boolean THEN EXISTS (SELECT 1 FROM pe_native_preferences p WHERE p.user_id=s.user_id
            AND p.namespace='session-archive-stop:'||s.id::text AND p.value->>'status'='requested')
          ELSE NOT EXISTS (SELECT 1 FROM pe_native_preferences p WHERE p.user_id=s.user_id
@@ -447,7 +454,7 @@ export class TaskStore {
          AND NOT EXISTS (SELECT 1 FROM pe_operations earlier WHERE earlier.session_id=s.id
            AND earlier.state IN ('queued','running') AND (earlier.created_at,earlier.id)<(o.created_at,o.id))
          ORDER BY u.last_claim_at NULLS FIRST,o.created_at,o.id LIMIT 1 FOR NO KEY UPDATE OF u SKIP LOCKED`,
-        [this.limits.maxActivePerUser, archiveStop],
+        [this.limits.maxActivePerUser, archiveStop, owner?.userId ?? null],
       )
       const row = candidate.rows[0]
       if (!row) return null
@@ -455,6 +462,7 @@ export class TaskStore {
       await requireActiveAccount(client, executionUserId.parse(row.user_id), 'update')
       const resource = await client.query(`SELECT o.id FROM pe_operations o JOIN pe_sessions s ON s.id=o.session_id
         WHERE o.id=$1 AND s.user_id=$2 AND o.state IN ('queued','running')
+        AND NOT EXISTS (SELECT 1 FROM pe_native_subagent_grants g WHERE g.operation_id=o.id)
         AND (s.lease_until IS NULL OR s.lease_until<=clock_timestamp())
         AND NOT EXISTS (SELECT 1 FROM pe_native_writers w WHERE w.session_id=s.id AND w.expires_at>clock_timestamp())
         AND NOT EXISTS (SELECT 1 FROM pe_native_retained_intents j WHERE j.session_id=s.id AND j.state='prepared')
@@ -616,6 +624,8 @@ export class TaskStore {
       AND grant_digest=$2 AND lease_epoch=$3 AND lease_until>clock_timestamp()`,
     [row.id, digest(token), row.lease_epoch])
     if (!live.rowCount) throw new PlatformError(409, 'lease_lost')
+    await assertNativeRuntimeGrant(client, row)
+    await assertNativeSubagentStorage(client, row)
     return row
   }
 
@@ -630,7 +640,8 @@ export class TaskStore {
     if (await isSessionBusinessBlockedInTransaction(client, session.user_id, session.id)) {
       throw new PlatformError(409, 'native_session_archived')
     }
-    await this.executionAuthority(client, session, token)
+    if (await assertNativeSubagentStorage(client, session)) await assertNativeSubagentExecution(client, session)
+    else await this.executionAuthority(client, session, token)
     return session
   }
 

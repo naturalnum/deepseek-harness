@@ -108,6 +108,12 @@ import { LoginAdmission } from './login-admission.ts'
 import { KubernetesClient } from './kubernetes.ts'
 import { SandboxManager } from './sandbox.ts'
 import { proxyModel } from './model.ts'
+import { nativeToolRegistration, registerNativeToolNames } from './native-tool-catalog.ts'
+import { NativeRuntimeAuthority } from './native-runtime-authority.ts'
+import { routeNativeRuntime } from './native-runtime-routes.ts'
+import { proxyNativeWebSearch } from './native-web-search.ts'
+import { NativeSubagents } from './native-subagents.ts'
+import { nativePresetSelection, selectNativePreset } from './native-preset-selection.ts'
 import { serveUi } from '../ui.ts'
 import { serveTrustedAccountUi } from '../trusted-account-ui.ts'
 
@@ -218,6 +224,11 @@ export const Config = schema.object({
   enabledBuiltinSkills: schema.array(schema.string()).default(['builtin.pdf']),
   maxHistoryBytes: schema.number().step(1).min(1024).required(), maxHistoryEvents: schema.number().step(1).min(1).required(),
   maxEventBytes: schema.number().step(1).min(1024).required(), maxRequestBytes: schema.number().step(1).min(1024).required(),
+  nativeWebSearchUrl: schema.string().default('https://api.deepseek.com/anthropic/v1/messages'),
+  nativeWebSearchMaxUses: schema.number().step(1).min(1).default(5),
+  nativeSubagentMaxChildren: schema.number().step(1).min(1).default(32),
+  nativeSubagentMaxDepth: schema.number().step(1).min(1).default(8),
+  nativeSubagentLifetimeMs: schema.number().step(1).min(1000).default(600000),
   modelTimeoutMs: schema.number().min(1000).required(), maxModelResponseBytes: schema.number().min(1024).required(),
   readyFile: schema.string().required(), databasePoolSize: schema.number().step(1).min(1).required(),
   databaseTimeoutMs: schema.number().min(100).required(), loginWindowMs: schema.number().step(1).min(1000).required(),
@@ -573,6 +584,9 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const nativeQueueRouting = config.nativeInputOwnerRoutingFile ? new NativeInputOwnerRouting(pool,
     await loadNativeInputOwnerRoutingConfig(config.nativeInputOwnerRoutingFile),
     (credential, command) => transaction(pool, client => nativeLedger.lookupQueueReceiptInTransaction(client, credential, command))) : null
+  const runtimeAuthority = new NativeRuntimeAuthority(pool)
+  const nativeSubagents = new NativeSubagents(tasks, { maxChildren: config.nativeSubagentMaxChildren, maxDepth: config.nativeSubagentMaxDepth,
+    lifetimeMs: config.nativeSubagentLifetimeMs, leaseMs: config.leaseMs })
   const nativeAssistantReader = new NativeAssistantRead(nativeAssistantLimits, {
     maxOpeningBytes: config.nativeAssistantMaxOpeningBytes, maxBaselineChunks: config.nativeAssistantMaxBaselineChunks,
     maxPacketItems: config.nativeAssistantMaxPacketItems, maxPacketBytes: config.nativeAssistantMaxPacketBytes,
@@ -736,6 +750,10 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       return
     }
     if (req.method !== 'POST') throw new PlatformError(404, 'not_found')
+    if (path === '/runtime/web-search/messages') {
+      await proxyNativeWebSearch(tasks, { maxUses: config.nativeWebSearchMaxUses, url: config.nativeWebSearchUrl, apiKey: modelKey.trim(), timeoutMs: config.modelTimeoutMs,
+        maxRequestBytes: config.maxRequestBytes, maxResponseBytes: config.maxModelResponseBytes }, req, res); return
+    }
     if (path === '/model/v1/messages') {
       await proxyModel(tasks, {
         url: config.modelUrl, apiKey: modelKey.trim(), timeoutMs: config.modelTimeoutMs,
@@ -837,6 +855,9 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         case '/approvals/logout': z.object({}).strict().parse(input); await identities.logout(token); sendJson(res, { ok: true }); return
         default: throw new PlatformError(404, 'not_found')
       }
+    }
+    if (path.startsWith('/runtime/user/')) {
+      sendJson(res, await routeNativeRuntime(runtimeAuthority, tasks, nativeIntents, path, token, await readJson(req, 4096))); return
     }
     if (path === '/runtime/claim' || path === '/runtime/claim-archive-stop'
       || path === NATIVE_RETAINED_ROUTES.reconcile || path === NATIVE_RETAINED_ROUTES.resolve) {
@@ -966,6 +987,11 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
           if (!stdioV2) throw new PlatformError(503, 'stdio_v2_unavailable')
           sendJson(res, await stdioV2.calls.propose(token, input)); return
         }
+        case '/runtime/subagents/create': {
+          const request = z.object({ header: z.unknown() }).strict().parse(input)
+          sendJson(res, await nativeSubagents.create(token, request.header)); return
+        }
+        case '/runtime/tools/register': sendJson(res, await registerNativeToolNames(tasks, token, nativeToolRegistration.parse(input))); return
         case '/runtime/snapshot': z.object({}).strict().parse(input); sendJson(res, await events.runtimeSnapshot(token)); return
         case '/runtime/append': sendJson(res, await events.append(token, z.object({ events: z.array(z.json()).max(256) }).strict().parse(input).events)); return
         case '/runtime/native-assistant/release': {
@@ -1084,6 +1110,9 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       case '/native/preferences/read': {
         const value = z.object({ ns: nativePreferenceNamespace }).strict().parse(input)
         sendJson(res, await nativePreferences.read(user, value.ns)); return
+      }
+      case '/native/presets/select': {
+        sendJson(res, await selectNativePreset(pool, user, token, nativePresetSelection.parse(input), config)); return
       }
       case '/native/preferences/write': {
         sendJson(res, await nativePreferences.write(user, token, nativePreferenceWrite.parse(input))); return
@@ -1219,7 +1248,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       case '/sessions/create': {
         const value = createRequest.parse(input)
         await skills.ensurePreinstalled(user, config.preinstalledSkills)
-        sendJson(res, await tasks.create(user, value.requestId, token, value.workspaceId)); return
+        sendJson(res, await tasks.create(user, value.requestId, token, value.workspaceId, value.agentPreset)); return
       }
       case '/sessions/list': {
         const { offset, limit } = listRequest.parse(input)

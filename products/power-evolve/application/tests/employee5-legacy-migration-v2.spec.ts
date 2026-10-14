@@ -2800,7 +2800,7 @@ test('the public maintenance Profile preserves original images and offload decis
     const address = server.address()
     if (!address || typeof address === 'string') throw new Error('Owned runtime listener missing')
     const runtime = new RuntimeScope(rootCtx, { platformUrl: `http://127.0.0.1:${address.port}`, workerTokenFile: join(f.root, 'unused-worker-token'),
-      workerId: randomUUID(),
+      workerId: randomUUID(), runtimeUserId: '', runtimeTokenFile: '', nativeSubagentRenewMs: 8000,
       timeoutMs: 5000, maxResponseBytes: 262144, nativePublicationMaxQueueItems: 16, nativePublicationMaxQueueBytes: 262144,
       nativePublicationMaxBatchItems: 16, nativePublicationMaxBatchBytes: 262144, nativePublicationMaxItemBytes: 65536,
       nativeIntentReconcileLimit: 32, nativeIntentMaxLocalReceipts: 65536 })

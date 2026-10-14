@@ -26,6 +26,8 @@ import type {} from './scope.ts'
 import { followNativeSession, type NativeFollowLimits } from './native-session-follow.ts'
 import { nativeSettings } from './native-settings.ts'
 import { readPluginInventory } from '@deepseek-ai/dsh-host-plugin-inventory'
+import { installNativeRuntimeRoutingUpgrade } from './native-runtime-routing.ts'
+import { nativeRuntimeEvents } from './native-runtime-events.ts'
 import { NativeOfficePreview, NativeOfficePreviewError,
   type NativeOfficePreviewOptions, type NativeOfficePreviewContent } from './native-office-preview.ts'
 
@@ -158,7 +160,8 @@ async function sendMultipart(response: ServerResponse, rpcId: string, value: obj
  */
 export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin: string,
   pollMs: number, maxRequestBytes: number, maxStreams: number, profileAdministrators: readonly string[],
-  followLimits: NativeFollowLimits, streamSendTimeoutMs: number, officeOptions?: NativeOfficePreviewOptions): void {
+  followLimits: NativeFollowLimits, streamSendTimeoutMs: number, officeOptions?: NativeOfficePreviewOptions,
+  nativeRuntimeRouting = false): void {
   const tokens = new WeakMap<PeerScope, string>()
   const call: NativeCall = (path, token, input, signal) => ctx.powerEvolveRuntime.call(path, token, input, signal)
   const office = officeOptions === undefined ? undefined
@@ -170,9 +173,21 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
     return token
   }
   const unary = async (method: string, args: unknown, token: string, rpcId: string, signal: AbortSignal): Promise<unknown> => {
-    if (method.startsWith('settings/')) return nativeSettings(call, method, args, token)
+    if (method === '$events/result' && ctx.powerEvolveRuntime.config.runtimeUserId !== '') {
+      ctx.typertGateway.remoteEventResult({ args })
+      return undefined
+    }
+    if (method.startsWith('settings/')) {
+      if (ctx.powerEvolveRuntime.config.runtimeUserId === '') return nativeSettings(call, method, args, token)
+      return ctx.typertGateway.invoke({ namespace: 'settings', method: method.slice('settings/'.length),
+        args: z.record(z.string(), z.unknown()).parse(args), signal })
+    }
     if (method.startsWith('pluginManager/')) {
       const operation = method.slice('pluginManager/'.length)
+      if (ctx.powerEvolveRuntime.config.runtimeUserId !== '') {
+        return ctx.typertGateway.invoke({ namespace: 'pluginManager', method: operation,
+          args: z.record(z.string(), z.unknown()).parse(args), signal })
+      }
       const readOnly = ['listVersionExemptions', 'listPlugins', 'listBundles', 'registries'].includes(operation)
       const identity = z.object({ userId: z.uuid() }).parse(await call('/identity/me', token, {}))
       const capability = profileAdministrators.includes(identity.userId)
@@ -198,6 +213,7 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
     switch (method) {
       case 'pluginInventory/list': {
         z.object({}).strict().parse(args)
+        if (ctx.powerEvolveRuntime.config.runtimeUserId !== '') return { ...await readPluginInventory(ctx), managementWritable: true }
         const identity = z.object({ userId: z.uuid() }).parse(await call('/identity/me', token, {}))
         const capability = profileAdministrators.includes(identity.userId)
           ? z.object({ userId: z.uuid(), role: z.string(), canManage: z.boolean() }).parse(await call('/account/capabilities', token, {}))
@@ -241,13 +257,24 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
         const { refs } = z.object({ refs: z.array(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/u)).max(64) }).strict().parse(args)
         return Object.fromEntries(refs.map(ref => [ref, { configured: false, writable: false }]))
       }
-      case 'agentPresets/list': z.object({}).strict().parse(args); return { presets: [] }
+      case 'agentPresets/list': {
+        z.object({}).strict().parse(args)
+        if (ctx.powerEvolveRuntime.config.runtimeUserId === '') return { presets: [] }
+        return ctx.agentPresets.remoteExportList()
+      }
+      case 'agentPresets/select': {
+        if (ctx.powerEvolveRuntime.config.runtimeUserId === '') throw new PlatformError(404, 'native_remote_not_enabled')
+        const selection = z.object({ agent: sessionId, agentPreset: z.string().min(1).max(256) }).strict().parse(args)
+        const preset = await ctx.agentPresets.resolve(selection.agentPreset)
+        if (preset.broken !== undefined) throw new PlatformError(409, 'native_preset_invalid')
+        return call('/native/presets/select', token, { sessionId: selection.agent, agentPreset: preset.id })
+      }
       case 'session/list': {
         z.object({ _request: z.object({ cursor: z.string().max(512).optional() }).strict() }).strict().parse(args)
         return call('/native/sessions/list', token, {})
       }
       case 'session/create': {
-        const { request } = withRequest(z.object({ workspaceId: z.uuid().optional(),
+        const { request } = withRequest(z.object({ workspaceId: z.uuid().optional(), agentPreset: z.string().min(1).max(256).optional(),
           sessionId: sessionId.optional() }).strict()).parse(args)
         // Check Session ownership before comparing its Workspace membership. A foreign
         // Session must be indistinguishable from a missing one to this caller.
@@ -264,8 +291,11 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
             throw new PlatformError(409, 'workspace_session_mismatch')
           }
         }
+        const preset = ctx.powerEvolveRuntime.config.runtimeUserId === '' ? undefined : await ctx.agentPresets.resolve(request.agentPreset)
+        if (preset?.broken !== undefined) throw new PlatformError(409, 'native_preset_invalid')
         return request.sessionId === undefined
           ? call('/sessions/create', token, { requestId: requestId.parse(rpcId),
+            ...(preset === undefined ? {} : { agentPreset: preset.id }),
             ...(request.workspaceId === undefined ? {} : { workspaceId: request.workspaceId }) })
           : { sessionId: request.sessionId }
       }
@@ -346,7 +376,12 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
         return call('/native/files/readBytes', token, { sessionId: input.workspaceFileScopeId,
           path: input.path, options: input.options })
       }
-      default: throw new PlatformError(404, 'native_remote_not_enabled')
+      default: {
+        if (ctx.powerEvolveRuntime.config.runtimeUserId === '') throw new PlatformError(404, 'native_remote_not_enabled')
+        const [namespace, operation] = method.split('/')
+        if (!namespace || !operation) throw new PlatformError(400, 'invalid_request')
+        return ctx.typertGateway.invoke({ namespace, method: operation, args: z.record(z.string(), z.unknown()).parse(args), signal })
+      }
     }
   }
   const stream = async function* (method: string, args: unknown, peer: PeerScope, signal: AbortSignal): AsyncGenerator {
@@ -355,6 +390,11 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
     switch (method) {
       case '$events': {
         z.object({}).strict().parse(args)
+        if (ctx.powerEvolveRuntime.config.runtimeUserId !== '') {
+          yield* nativeRuntimeEvents(ctx, async () => sessionList.parse(await call('/native/sessions/list', token, {})).items,
+            pollMs, signal)
+          return
+        }
         const initial = sessionList.parse(await call('/native/sessions/list', token, {})).items
         let previous = new Map(initial.map(item => [item.sessionId, item]))
         yield { type: 'ready', clientId: randomUUID(), host: { home: '/workspace' } }
@@ -452,7 +492,14 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
         }
         return
       }
-      default: throw new PlatformError(404, 'native_stream_not_enabled')
+      default: {
+        if (ctx.powerEvolveRuntime.config.runtimeUserId === '') throw new PlatformError(404, 'native_stream_not_enabled')
+        const [namespace, operation] = method.split('/')
+        if (!namespace || !operation) throw new PlatformError(400, 'invalid_request')
+        yield* await ctx.typertGateway.stream({ namespace, method: operation,
+          args: z.record(z.string(), z.unknown()).parse(args), signal })
+        return
+      }
     }
   }
   let activeStreams = 0
@@ -466,11 +513,13 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
     })()
   }), failure, 2000, 262_144, streamSendTimeoutMs)
   ctx.effect(() => () => mux.close())
-  ctx.effect(() => ctx.webServer.registerUpgrade({ path: '/native/api/remote.mux',
+  if (nativeRuntimeRouting) installNativeRuntimeRoutingUpgrade(ctx, auth, origin,
+    ctx.powerEvolveRuntime.config.platformUrl, ctx.powerEvolveRuntime.config.timeoutMs)
+  else ctx.effect(() => ctx.webServer.registerUpgrade({ path: '/native/api/remote.mux',
     handler: async (req: IncomingMessage, socket: Duplex, head: Buffer) => {
       try {
         const credential = await auth.authenticate(req)
-        assertHostAuthority(req, origin)
+        if (ctx.powerEvolveRuntime.config.runtimeUserId === '') assertHostAuthority(req, origin)
         const scope = createScope(ctx, {})
         const peer: PeerScope = { id: brandString<PeerId>(randomUUID()), ctx: scope.ctx, dispose: () => scope.dispose() }
         tokens.set(peer, credential.token)
@@ -481,13 +530,13 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
       }
     },
   }))
-  ctx.effect(() => ctx.webServer.register({ kind: 'prefix', path: '/native/api', handler: async (req: IncomingMessage, res: ServerResponse) => {
+  const nativeHandler = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const lifetime = new AbortController()
     const disconnected = () => { if (!res.writableEnded) lifetime.abort() }
     res.on('close', disconnected)
     try {
       const credential = await auth.authenticate(req)
-      assertHostAuthority(req, origin)
+      if (ctx.powerEvolveRuntime.config.runtimeUserId === '') assertHostAuthority(req, origin)
       const path = new URL(req.url ?? '/', 'http://localhost').pathname
       if (path === '/native/api/session/uploadFileBinary') {
         if (req.method !== 'POST') throw new PlatformError(405, 'method_not_allowed')
@@ -521,15 +570,19 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
         }
         return
       }
-      if (req.method !== 'POST' || !/^\/native\/api\/[A-Za-z0-9_$.-]+\/[A-Za-z0-9_$.-]+$/.test(path)) {
+      if (req.method !== 'POST' || path !== '/native/runtime/invoke' && !/^\/native\/api\/[A-Za-z0-9_$.-]+\/[A-Za-z0-9_$.-]+$/.test(path)) {
         throw new PlatformError(404, 'not_found')
       }
       if (!/^application\/json(?:;\s*charset=utf-8)?$/i.test(req.headers['content-type'] ?? '')) {
         throw new PlatformError(415, 'invalid_content_type')
       }
       const message = envelope.parse(await readJson(req, maxRequestBytes))
-      const method = path.slice('/native/api/'.length)
+      const method = path === '/native/runtime/invoke' ? message.method : path.slice('/native/api/'.length)
       if (message.method !== method) throw new PlatformError(400, 'method_mismatch')
+      if (nativeRuntimeRouting && method !== 'workspaceFiles/readBytes' && method !== 'officeToPdf/render') {
+        sendJson(res, await ctx.powerEvolveRuntime.call('/native/runtime/invoke', credential.token, message, lifetime.signal))
+        return
+      }
       try {
         let value: unknown
         if (method === 'officeToPdf/generation' || method === 'officeToPdf/render') {
@@ -551,5 +604,9 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
       }
     } catch (error) { if (!lifetime.signal.aborted) sendFailure(res, error) }
     finally { res.off('close', disconnected) }
-  } }))
+  }
+  ctx.effect(() => ctx.webServer.register({ kind: 'prefix', path: '/native/api', handler: nativeHandler }))
+  if (ctx.powerEvolveRuntime.config.runtimeUserId !== '') {
+    ctx.effect(() => ctx.webServer.register({ kind: 'exact', path: '/native/runtime/invoke', handler: nativeHandler }))
+  }
 }

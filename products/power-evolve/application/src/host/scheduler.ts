@@ -33,6 +33,9 @@ import { NativeInputHttp } from './native-input-http.ts'
 import { HostNativeWriterClient } from './native-writer-client.ts'
 import { cancelPreparedInput } from './native-prepared-cancel.ts'
 import { nativeSessionStopIntent, type NativeSessionStopIntent } from '../native-session-stop-contracts.ts'
+import { scopeOf } from '@deepseek-ai/dsh-scope'
+import type {} from '@deepseek-ai/dsh-agent-preset-registry'
+import type {} from './native-runtime-execution.ts'
 import { cancelArchivePendingInputs } from './native-archive-input.ts'
 
 declare module '@deepseek-ai/dsh-llm' {
@@ -193,16 +196,21 @@ export class Scheduler {
     }
   }
 
-  private async installTools(agent: Agent, grant: Grant): Promise<void> {
+  /** Install one operation's authorized product tools beside its maintained native preset.
+   * @param agent Exact native Agent whose effect scope owns the registrations.
+   * @param grant Current parent or bounded native child operation.
+   * @returns Completion after native-name reservation and external-schema conflict checks.
+   */
+  async installTools(agent: Agent, grant: Grant): Promise<void> {
     const runtime = this.ctx.powerEvolveRuntime
     installDurableToolDispatch(agent)
     installAttachmentTools(agent, grant, runtime)
     installSelectedSkills(agent, grant, runtime)
-    installRemoteMcpTools(agent, grant, runtime, this.config.platformOrigin)
-    installStdioOperationToolsV2(agent, grant, grant.stdioV2Connections, runtime, this.config.platformOrigin)
     if (grant.source === 'user' || grant.source === 'sandbox_result') {
       installConnectorTools(agent, grant, runtime, this.config.platformOrigin)
-      if (this.config.nativeShellEnabled && grant.executionEnabled) {
+      if (runtime.config.runtimeUserId !== '') {
+        // The native preset owns Bash/Fs/PTY; its providers capture this Agent's world.
+      } else if (this.config.nativeShellEnabled && grant.executionEnabled) {
         const shell = this.ctx.shell
         if (!(shell instanceof CloudShellExecutor)) throw new Error('Native cloud Shell provider is missing')
         shell.bind(agent, grant)
@@ -214,6 +222,16 @@ export class Scheduler {
       installStdioMcpTool(agent, grant, runtime)
       installSshExecuteTool(agent, grant, runtime, this.config.platformOrigin)
     }
+    const nativeNames = agent.ctx.tools.schemas(scopeOf(agent.ctx)).map(tool => tool.name)
+    const external = [...grant.remoteMcpTools.map(tool => tool.model.name),
+      ...grant.stdioV2Connections.flatMap(group => group.tools.map(tool => tool.model.name))]
+    if (external.some(name => nativeNames.includes(name))) throw new PlatformError(409, 'mcp_tool_name_conflict')
+    if (runtime.config.runtimeUserId !== '') {
+      await runtime.call('/runtime/tools/register', grant.token, { names: nativeNames })
+      runtime.assertGrant(grant)
+    }
+    installRemoteMcpTools(agent, grant, runtime, this.config.platformOrigin)
+    installStdioOperationToolsV2(agent, grant, grant.stdioV2Connections, runtime, this.config.platformOrigin)
     if (grant.source === 'platform_action') agent.ctx.effect(() => agent.ctx.systemPrompt.section({
       name: 'power-evolve:action-result', order: 710, interpolate: false,
       text: 'A trusted platform action result is arriving as the next message. Report its exact outcome to the user. Do not propose or repeat another external write in this turn.',
@@ -490,7 +508,17 @@ export class Scheduler {
         resumeSessionId: operation.sessionId, signal: lifetime.signal,
         disposeOptions: { keepInbox: true },
         agentOptions: { provider: 'power-evolve', model: operation.settings.model, maxTokens: operation.settings.maxTokens },
-        setup: (agentCtx, agent) => {
+        setup: async (agentCtx, agent) => {
+          if (runtime.config.runtimeUserId !== '') {
+            const selected = this.ctx.sessionProjections.stateOf(agent.session, 'agentPreset')
+            if (this.ctx.sandboxPolicy.overrideOf(agent.session) === undefined) {
+              agent.session.append('sandbox/mode', { mode: this.ctx.sandboxPolicy.defaultMode })
+              await this.ctx.sessions.flush(agent.session)
+            }
+            await this.ctx.nativeRuntimeExecution.bind(agent, operation)
+            const preset = await this.ctx.agentPresets.mount(agentCtx, selected ?? 'standard')
+            if (selected === null) agent.session.append('agent-preset/selected', { agentPreset: preset.id })
+          }
           images.bind(agentCtx, operation)
           const publisher = runtime.publication(operation)
           agentCtx.effect(() => publisher.onFailure((error, diagnostic) => {

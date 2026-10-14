@@ -1,0 +1,109 @@
+# Apply after the maintained base and web-app bundles in a private tenant profile.
+# Platform remains the only Session, model-credential and execution authority.
+- id: session-persistence-jsonl
+  disabled: true
+- id: attachment-local
+  disabled: true
+- id: fs-sandbox
+  disabled: true
+- id: subprocess
+  disabled: true
+- id: sandbox
+  disabled: true
+- id: credentials
+  disabled: true
+- id: authorization
+  disabled: true
+- id: deepseek-account
+  disabled: true
+- id: llm-deepseek
+  disabled: true
+- id: llm-deepseek-account
+  disabled: true
+- id: llm-pi-ai
+  disabled: true
+- id: session-title-llm
+  disabled: true
+- id: session-telemetry-otel
+  disabled: true
+- id: desktop-product-telemetry
+  disabled: true
+- id: product-analytics
+  disabled: true
+- id: web-startup
+  disabled: true
+- id: web-runtime
+  disabled: true
+- id: connection
+  disabled: true
+- id: open-in-app
+  disabled: true
+- id: directory-picker
+  disabled: true
+- id: account-controller
+  disabled: true
+- id: file-reference-local
+  disabled: true
+- id: office-to-pdf
+  disabled: true
+- id: webserver
+  inject: []
+  config:
+    host: 0.0.0.0
+    port: 8080
+- id: sandbox-policy
+  config:
+    mode: workspace-write
+    workspaceRoot: /workspace
+- id: ptc-runtime
+  config:
+    bootstrapPath: /opt/power-evolve/native-ptc-process.mjs
+    nodeExecutable: /usr/local/bin/node
+- id: shell-env
+  config:
+    dshHome: /home/agent/.dsh
+- id: agent-default-model
+  inject: [powerEvolveRuntime]
+  config:
+    provider: power-evolve
+    model: !!js ctx.powerEvolveRuntime.runtimeDefaultModel
+- id: web-search-deepseek
+  name: '@power-evolve/application/web-search'
+  inject: [powerEvolveRuntime]
+  config:
+    model: !!js ctx.powerEvolveRuntime.runtimeDefaultModel
+- insert:
+    - id: power-evolve-runtime
+      name: '@power-evolve/application/scope'
+      config:
+        platformUrl: !!js process.env.PE_PLATFORM_INTERNAL_URL
+        workerTokenFile: ''
+        workerId: !!js process.env.PE_RUNTIME_ID
+        runtimeUserId: !!js process.env.PE_RUNTIME_USER_ID
+        runtimeTokenFile: !!js process.env.PE_RUNTIME_TOKEN_FILE
+        timeoutMs: 15000
+        maxResponseBytes: 67108864
+        nativeIntentReconcileLimit: 32
+        nativeIntentMaxLocalReceipts: 65536
+    - id: power-evolve-persistence
+      name: '@power-evolve/application/persistence'
+    - id: power-evolve-model
+      name: '@power-evolve/application/model'
+      config:
+        streamIdleTimeoutMs: 120000
+    - id: native-execution
+      name: '@power-evolve/application/native-runtime-execution'
+    - id: power-evolve-host
+      name: '@power-evolve/application/host'
+      config:
+        origin: !!js process.env.PE_HOST_PUBLIC_ORIGIN
+        platformOrigin: !!js process.env.PE_PLATFORM_PUBLIC_ORIGIN
+        concurrency: 4
+        nativeShellEnabled: false
+        pollMs: 500
+        renewMs: 8000
+        operationTimeoutMs: 600000
+        maxRequestBytes: 50331648
+        maxStreams: 100
+        fileDownloadTimeoutMs: 60000
+        readyFile: !!js dshHomePath('ready.json')

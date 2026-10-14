@@ -35,6 +35,8 @@ The Host root redirects to `/native/`. Login, independent approvals and account 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
+The [native tenant Runtime bundle](../native-runtime/README.md) composes the maintained base and Web bundles in one account-owned process. A distinct revocable Runtime credential binds account, instance and generation; it cannot authenticate as a Browser Agent or shared worker. Native Runtime claims, intent maintenance and every browser carrier check their fixed account. Platform owns the committed native sandbox-policy generation and exact operation tool snapshot. Native child grants derive from the original live parent operation and Writer, and ordinary task claiming excludes those children to prevent prompt replay after process loss.
+
 <details>
 <summary>Persistence, authorization and native behavior</summary>
 

@@ -85,6 +85,8 @@ declare module '@deepseek-ai/dsh-session/types' {
 
 /** Resolved provider options (the plugin's `apply` supplies credential and constant defaults). */
 export interface DeepSeekSearchProviderOptions {
+  /** Optional maintained transport seam; brokers can await durable logging before dispatching the unchanged Messages request. */
+  fetch?: typeof globalThis.fetch
   /**
    * Resolve the DeepSeek account token for one search endpoint. A token takes
    * precedence over every API key and is sent only as `x-dsh-auth-token`;
@@ -235,7 +237,7 @@ export class DeepSeekSearchProvider implements WebSearchProvider {
     throwIfSearchAborted(signal)
     let response: Response
     try {
-      response = await fetch(endpoint, {
+      response = await (options.fetch ?? fetch)(endpoint, {
         method: 'POST',
         redirect: 'error',
         headers: {

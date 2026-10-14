@@ -186,6 +186,26 @@ describe('DeepSeekSearchProvider availability', () => {
 })
 
 describe('DeepSeekSearchProvider request mapping', () => {
+  it('uses a configured transport that can await request durability without changing native results', async () => {
+    const durable = Promise.withResolvers<undefined>(), recorded: unknown[] = [], posted: unknown[] = []
+    const fallback = vi.fn()
+    vi.stubGlobal('fetch', fallback)
+    const operation = searchProvider({ ...options, recordRequest: (request) => { recorded.push(request.body) },
+      fetch: async (_address, init) => {
+        await durable.promise
+        if (typeof init?.body !== 'string') throw new Error('Native request body must retain its original JSON text')
+        posted.push(JSON.parse(init.body))
+        return jsonResponse(searchResponse())
+      } }).search({ query: 'durable search' })
+    await vi.waitFor(() => { expect(recorded).toHaveLength(1) })
+    expect(posted).toEqual([])
+    durable.resolve(undefined)
+    const result = await operation
+    expect(posted).toEqual(recorded)
+    expect(result.sources).toEqual(mapAnthropicResponse(searchResponse()).sources)
+    expect(fallback).not.toHaveBeenCalled()
+  })
+
   it('records and posts the same Anthropic Messages request with the web_search server tool', async () => {
     const fetchMock = vi.fn(async () => jsonResponse(searchResponse()))
     const recordRequest = vi.fn()

@@ -1,3 +1,4 @@
+import { readNativeToolNames } from './native-tool-catalog.ts'
 /** Admit one frozen generic Cloud tool call without granting program start authority. */
 import { randomUUID } from 'node:crypto'
 import type { PoolClient } from 'pg'
@@ -123,7 +124,7 @@ export class StdioCallAdmissionV2 {
           FROM pe_operations o JOIN pe_operations r ON r.id=COALESCE(o.mcp_root_operation_id,o.id)
           JOIN pe_sessions s ON s.id=r.session_id WHERE o.id=$1 AND o.session_id=$2`, [grant.operation_id, grant.id])).rows[0])
       if (operation.root_session_id !== grant.id || operation.root_user_id !== grant.user_id) this.deny('stdio_v2_origin_changed')
-      const reserved = [...this.options.reservedNames,
+      const reserved = [...this.options.reservedNames, ...await readNativeToolNames(client, grant.user_id),
         ...mcpOperationTools.parse(operation.remote_mcp_selection).map(tool => tool.model.name)]
       const groups = this.selection.restore(operation.stdio_v2_selection, reserved)
       const selected = groups.find(group => group.tools.some(tool => tool.model.name === input.toolName))

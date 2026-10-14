@@ -35,6 +35,8 @@ Host 根路径跳转至 `/native/`。登录、独立审批和账号管理由 Pla
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
+[原生租户 Runtime bundle](../native-runtime/README.zh.md) 在单个账号拥有的进程中组合维护中的 base 与 Web bundles。独立可撤销的 Runtime 凭据绑定账号、实例和代际；它不能作为 Browser Agent 或共享 worker 认证。原生 Runtime 的任务领取、intent 维护及每次浏览器 carrier 均校验固定账号。Platform 拥有已提交的原生 sandbox-policy 代际和精确 operation 工具快照。原生子会话 grant 派生自原始活跃父 operation 与 Writer；普通任务领取排除这些子会话，防止进程丢失后重放提示。
+
 <details>
 <summary>持久化、授权与原生行为</summary>
 

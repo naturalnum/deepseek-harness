@@ -26,7 +26,11 @@
     "assets/cloud-schema-v7.manifest.json",
     "assets/cloud-schema-v8.sql",
     "assets/cloud-schema-v8.manifest.json",
-    "web"
+    "web",
+    "assets/cloud-schema-v9.sql",
+    "assets/cloud-schema-v9.manifest.json",
+    "assets/cloud-schema-v10.sql",
+    "assets/cloud-schema-v10.manifest.json"
   ],
   "exports": {
     "./platform": "./lib/platform/index.js",
@@ -36,7 +40,11 @@
     "./host": "./lib/host/index.js",
     "./browser-auth": "./lib/host/browser-auth.js",
     "./package.json": "./package.json",
-    "./legacy-migration-v2-maintenance": "./lib/platform/legacy-migration-v2-maintenance.js"
+    "./legacy-migration-v2-maintenance": "./lib/platform/legacy-migration-v2-maintenance.js",
+    "./native-runtime-authority": "./lib/platform/native-runtime-authority.js",
+    "./native-runtime-execution": "./lib/host/native-runtime-execution.js",
+    "./web-search": "./lib/host/web-search.js",
+    "./native-runtime-policy": "./lib/platform/native-runtime-policy.js"
   },
   "dependencies": {
     "@deepseek-ai/dsh-brand": "workspace:*",
@@ -107,7 +115,20 @@
     "@power-evolve/contracts": "workspace:~",
     "@types/js-yaml": "^4.0.9",
     "@types/pg": "^8.15.5",
-    "@types/unzipper": "^0.10.11"
+    "@types/unzipper": "^0.10.11",
+    "@deepseek-ai/dsh-agent-preset-registry": "workspace:*",
+    "@deepseek-ai/dsh-permission-presets": "workspace:*",
+    "@deepseek-ai/dsh-web": "workspace:*",
+    "@deepseek-ai/dsh-web-search-deepseek": "workspace:*",
+    "@deepseek-ai/dsh-settings": "workspace:*",
+    "@deepseek-ai/dsh-config-editor": "workspace:*",
+    "@deepseek-ai/dsh-app-boot": "workspace:*",
+    "@deepseek-ai/dsh-terminal": "workspace:*",
+    "@deepseek-ai/dsh-subagent": "workspace:*",
+    "@deepseek-ai/dsh-fs": "workspace:*",
+    "@deepseek-ai/dsh-sandbox": "workspace:*",
+    "@deepseek-ai/dsh-sandbox-policy": "workspace:*",
+    "@deepseek-ai/dsh-subprocess-local": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
@@ -144,7 +165,20 @@
     "@deepseek-ai/dsh-tool-bash": "workspace:*",
     "@deepseek-ai/dsh-tools": "workspace:*",
     "@power-evolve/connector-runner": "workspace:~",
-    "@power-evolve/contracts": "workspace:~"
+    "@power-evolve/contracts": "workspace:~",
+    "@deepseek-ai/dsh-agent-preset-registry": "workspace:*",
+    "@deepseek-ai/dsh-permission-presets": "workspace:*",
+    "@deepseek-ai/dsh-web": "workspace:*",
+    "@deepseek-ai/dsh-web-search-deepseek": "workspace:*",
+    "@deepseek-ai/dsh-settings": "workspace:*",
+    "@deepseek-ai/dsh-config-editor": "workspace:*",
+    "@deepseek-ai/dsh-app-boot": "workspace:*",
+    "@deepseek-ai/dsh-terminal": "workspace:*",
+    "@deepseek-ai/dsh-subagent": "workspace:*",
+    "@deepseek-ai/dsh-fs": "workspace:*",
+    "@deepseek-ai/dsh-sandbox": "workspace:*",
+    "@deepseek-ai/dsh-sandbox-policy": "workspace:*",
+    "@deepseek-ai/dsh-subprocess-local": "workspace:*"
   },
   "scripts": {
     "build": "tsc -b tsconfig.json && tsdown",

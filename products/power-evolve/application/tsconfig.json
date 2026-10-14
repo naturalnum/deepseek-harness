@@ -152,6 +152,45 @@
     },
     {
       "path": "../../../packages/util/timeout"
+    },
+    {
+      "path": "../../../packages/preset/agent-preset-registry"
+    },
+    {
+      "path": "../../../packages/interaction/permission-presets"
+    },
+    {
+      "path": "../../../packages/web/web"
+    },
+    {
+      "path": "../../../packages/web/web-search-deepseek"
+    },
+    {
+      "path": "../../../packages/settings/settings"
+    },
+    {
+      "path": "../../../packages/boot/config-editor"
+    },
+    {
+      "path": "../../../packages/boot/app-boot"
+    },
+    {
+      "path": "../../../packages/terminal/terminal"
+    },
+    {
+      "path": "../../../packages/subagent/subagent"
+    },
+    {
+      "path": "../../../packages/fs/fs"
+    },
+    {
+      "path": "../../../packages/sandbox/sandbox"
+    },
+    {
+      "path": "../../../packages/sandbox/sandbox-policy"
+    },
+    {
+      "path": "../../../packages/subprocess/subprocess-local"
     }
   ]
 }

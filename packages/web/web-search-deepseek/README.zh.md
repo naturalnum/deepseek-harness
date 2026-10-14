@@ -77,6 +77,8 @@ kind: "package-reference"
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
+嵌入部署可提供 `DeepSeekSearchProviderOptions.fetch`，在外部请求前等待自身的请求持久化屏障。配置的传输接收原始 URL、headers、body 和 signal；provider 保留原生响应校验及搜索来源映射。不提供此选项时，provider 使用全局 Fetch 传输。
+
 <details>
 <summary>实现细节——点击展开</summary>
 

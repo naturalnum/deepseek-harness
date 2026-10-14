@@ -14,6 +14,11 @@ import { headerSchema, parseEvents } from '../session-records.ts'
 import { PlatformError, type Grant } from '../contracts.ts'
 import { NativeAssistantPublisher, type NativePublicationSeal } from './native-assistant-publisher.ts'
 import { nativeAssistantBatch } from '../native-assistant-records.ts'
+import { randomBytes } from 'node:crypto'
+import { grant as grantSchema } from '../contracts.ts'
+import { HostNativeWriterClient } from './native-writer-client.ts'
+import type { HostNativeWriterLease } from './native-writer-client.ts'
+import { setTimeout as delay } from 'node:timers/promises'
 
 const snapshot = z.object({ header: headerSchema, events: z.array(z.json()), eventCount: z.number().int() })
 
@@ -26,7 +31,7 @@ class PlatformHandle implements SessionHandle {
 
   constructor(
     private readonly runtime: RuntimeScope, readonly header: SessionHeader,
-    readonly access: SessionAccess, private events: SessionEvent[], private readonly released: () => void,
+    readonly access: SessionAccess, private events: SessionEvent[], private readonly released: (failure: Error | undefined) => void | Promise<void>,
     private readonly publisher: NativeAssistantPublisher | undefined,
     private readonly capturedGrant: Grant,
   ) {
@@ -125,7 +130,7 @@ class PlatformHandle implements SessionHandle {
         if (this.publisher && errors.length === 0) this.runtime.confirmNativeIntents(this.capturedGrant)
       } finally {
         this.closed = true
-        this.released()
+        try { await this.released(errors[0]) } catch (error) { retain(error) }
       }
       const first = errors[0]
       if (first) throw first
@@ -139,6 +144,7 @@ export default class PlatformPersistence extends SessionPersistence {
   static inject = ['powerEvolveRuntime']
   private readonly writers = new Map<SessionId, PlatformHandle>()
   private readonly handles = new Set<PlatformHandle>()
+  private readonly children = new Map<SessionId, { grant: Grant; writer: HostNativeWriterLease; stop: AbortController; renewal: Promise<void> }>()
 
   constructor(ctx: Context) {
     super(ctx)
@@ -160,8 +166,48 @@ export default class PlatformPersistence extends SessionPersistence {
     })
   }
 
-  create(_header: SessionHeader): Promise<SessionHandle> {
-    return Promise.reject(new Error('Create sessions through the authenticated platform API'))
+  async create(header: SessionHeader): Promise<SessionHandle> {
+    const runtime = this.ctx.powerEvolveRuntime
+    if (runtime.config.runtimeUserId === '' || header.parentSession === undefined || header.origin !== 'subagent') {
+      throw new Error('Create sessions through the authenticated platform API')
+    }
+    const parent = runtime.require(header.parentSession)
+    const child = grantSchema.parse(await runtime.call('/runtime/subagents/create', parent.token, { header }))
+    runtime.assertGrant(parent)
+    if (child.userId !== parent.userId || child.sessionId !== header.id) throw new PlatformError(502, 'native_subagent_identity')
+    runtime.grants.set(child.sessionId, child)
+    const writers = new HostNativeWriterClient(runtime)
+    let writer: HostNativeWriterLease | undefined
+    try {
+      writer = await writers.acquire(child, randomBytes(32).toString('base64url'))
+      const capturedWriter = writer
+      const stop = new AbortController()
+      const renewal = (async () => {
+        while (!stop.signal.aborted) {
+          try { await delay(runtime.config.nativeSubagentRenewMs, undefined, { signal: stop.signal }) }
+          catch (error) { if (stop.signal.aborted) return; throw error }
+          if (stop.signal.aborted) return
+          await runtime.call('/runtime/renew', child.token, {}, stop.signal)
+          runtime.heartbeatPublication(child)
+          await writers.renew(capturedWriter.identity, stop.signal)
+        }
+      })().catch((error: unknown) => {
+        if (!stop.signal.aborted) {
+          stop.abort(error)
+          this.ctx.get('agents')?.get(child.sessionId)?.cancel({ kind: 'disposed' }, { keepInbox: true })
+        }
+      })
+      this.children.set(child.sessionId, { grant: child, writer, stop, renewal })
+      return await this.open(child.sessionId, 'write')
+    } catch (error) {
+      const childOwner = this.children.get(child.sessionId)
+      this.children.delete(child.sessionId)
+      childOwner?.stop.abort()
+      await childOwner?.renewal
+      if (writer) await writers.release(writer.identity).catch((_releaseFailure: unknown) => { /* Original create failure retains authority for expiry reconciliation. */ })
+      runtime.grants.delete(child.sessionId)
+      throw error
+    }
   }
 
   async open(id: SessionId, access: SessionAccess, options?: SessionPersistenceOpenOptions): Promise<SessionHandle> {
@@ -184,10 +230,21 @@ export default class PlatformPersistence extends SessionPersistence {
       }, (token, input) => runtime.commitNativeMutation(token,
         { family: 'publication', request: nativeAssistantBatch.parse(input) }))
     }
-    const handle = new PlatformHandle(runtime, value.header, access, parseEvents(value.header, value.events), () => {
+    const handle = new PlatformHandle(runtime, value.header, access, parseEvents(value.header, value.events), async (failure) => {
       this.handles.delete(handle)
       if (this.writers.get(id) === handle) this.writers.delete(id)
       releasePublication?.()
+      const child = this.children.get(id)
+      if (access === 'write' && child?.grant === captured) {
+        this.children.delete(id)
+        child.stop.abort()
+        await child.renewal
+        try {
+          await new HostNativeWriterClient(runtime).release(child.writer.identity)
+          await runtime.call('/runtime/finish', child.grant.token, { outcome: failure === undefined ? 'completed' : 'failed',
+            errorCode: failure === undefined ? null : 'native_subagent_publication_failed' })
+        } finally { if (runtime.grants.get(id) === child.grant) runtime.grants.delete(id) }
+      }
     }, publisher, captured)
     if (access === 'write' && this.writers.has(id)) throw new SessionAlreadyOwnedError(id)
     if (publisher) releasePublication = runtime.registerPublication(captured, publisher,

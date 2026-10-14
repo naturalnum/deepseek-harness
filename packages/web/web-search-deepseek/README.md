@@ -77,6 +77,8 @@ Failures throw `WebError` with a machine-routable code: a missing credential is 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
+An embedding deployment may supply `DeepSeekSearchProviderOptions.fetch` to await its own request durability barrier before egress. The configured transport receives the original URL, headers, body and signal; the provider retains its native response validation and search-source mapping. Without that option, the provider uses the global Fetch transport.
+
 <details>
 <summary>Implementation internals — click to expand</summary>
 

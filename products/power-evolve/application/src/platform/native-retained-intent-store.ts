@@ -204,14 +204,15 @@ export class NativeRetainedIntentStore {
    * @param input Authenticated caller worker and explicit shared scan size; results preserve each original worker identity.
    * @returns Tokenless immutable acknowledgements or blocked/abandoned records; nothing grants execution.
    */
-  async reconcile(input: unknown): Promise<Reconciled> {
+  async reconcile(input: unknown, owner?: string): Promise<Reconciled> {
     const parsed = nativeRetainedReconcile.safeParse(input)
     if (!parsed.success) throw new PlatformError(400, 'invalid_request')
     if (parsed.data.limit > this.limits.maxRecordsPerSession) throw new PlatformError(413, 'native_intent_scan_budget')
     const hints = await this.tasks.pool.query<{ intentId: string }>(`SELECT j.intent_id AS "intentId"
       FROM pe_native_retained_intents j JOIN pe_users u ON u.id=j.user_id
       WHERE u.enabled AND u.deleted_at IS NULL AND j.resolved_at IS NULL AND j.state<>'abandoned'
-      ORDER BY (j.state='prepared') DESC,j.created_at,j.intent_id LIMIT $1`, [parsed.data.limit + 1])
+      AND ($2::uuid IS NULL OR j.user_id=$2)
+      ORDER BY (j.state='prepared') DESC,j.created_at,j.intent_id LIMIT $1`, [parsed.data.limit + 1, owner ?? null])
     const items: Reconciled['items'] = []
     let more = hints.rows.length > parsed.data.limit
     for (const hint of hints.rows) {
@@ -220,6 +221,7 @@ export class NativeRetainedIntentStore {
         const item = await transaction(this.tasks.pool, async (client) => {
           const original = await this.hint(client, nativeRetainedIntentId.parse(hint.intentId))
           if (!original) corrupt()
+          if (owner !== undefined && original.userId !== owner) throw new PlatformError(401, 'unauthorized_runtime')
           if (!await this.scanOwner(client, original)) return undefined
           const row = await this.read(client, original.intentId)
           const identity = { intentId: row.intentId, userId: row.userId, sessionId: row.sessionId,
@@ -267,11 +269,12 @@ export class NativeRetainedIntentStore {
    * @param input Authenticated caller worker, original intent and canonical ACK digest; other workers require retired authority.
    * @returns The permanent identity and matching digest; native facts and the immutable ACK remain intact.
    */
-  async resolve(input: unknown): Promise<z.infer<typeof nativeRetainedResolved>> {
+  async resolve(input: unknown, owner?: string): Promise<z.infer<typeof nativeRetainedResolved>> {
     const parsed = nativeRetainedResolve.safeParse(input)
     if (!parsed.success) throw new PlatformError(400, 'invalid_request')
     return transaction(this.tasks.pool, async (client) => {
       const row = await this.ownedIntent(client, parsed.data.intentId)
+      if (owner !== undefined && row.userId !== owner) throw new PlatformError(401, 'unauthorized_runtime')
       if (nativeInputRecordDigest(this.receipt(row)) !== parsed.data.receiptDigest) refuse('native_intent_receipt_conflict')
       if (row.workerId !== parsed.data.workerId && !await this.retired(client, row)) refuse('native_intent_not_retired')
       if (row.sealed !== null) {
