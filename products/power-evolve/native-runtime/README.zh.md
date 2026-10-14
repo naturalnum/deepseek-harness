@@ -44,6 +44,8 @@ Filesystem、subprocess 与 sandbox providers 捕获精确发起 Agent 的服务
 
 冷启动的原生命令和闲置 Terminal 获取独立、有界的交互 PG grant 与 Writer。它不记录 prompt 或模型输入，也不能调用模型。默认有效期为 15 分钟，每 8 秒检查续期；新的模型任务先关闭交互 owner。关闭时 drain 原生 Agent 与执行 clients，再释放原占用。撤销后，仅精确的原 operation 与 Writer 证明可关闭已提交日志；数据库 receipt 不证明物理进程已停止。Runtime claim 轮询终结已过期且无 owner 的派生任务，不重启 Agent 或重放命令。
 
+未发布的 Agent setup 通过已获取的 Platform write handle 提交明确的新 append events。随后原生 factory 接受同一精确前缀而不重复写入；setup 不执行同步历史扫描。Runtime Sessions 与持久化提供缓存的 `shutdown()` 结果，保留 cleanup 失败。执行 binding 的显式 `close()` 在释放 Context 前 join 原始文件与进程 cleanup，因为 Cordis 会记录 effect 失败并让 fiber disposal fulfilled。Cleanup 失败使交互 admission 不再可用，并保留原失败供调用方观察。
+
 原生子 grant 冻结父会话的权限模式与代际。父权限变化使子 grant 失效。子 Agent 可在首个 turn 前选择账号已授权的模型，并将 token 预算限制在父预算内；随后 Platform 冻结该选择用于模型出口。
 
 </details>

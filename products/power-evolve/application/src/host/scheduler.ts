@@ -1,4 +1,5 @@
 /** Bounded operation dispatch into the native Agent loop; no execution environment is loaded. */
+import { flushNativeSession } from './native-session-flush.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent, AgentHandle } from '@deepseek-ai/dsh-agent'
 import { LlmError } from '@deepseek-ai/dsh-llm'
@@ -517,8 +518,8 @@ export class Scheduler {
           if (runtime.config.runtimeUserId !== '') {
             const selected = this.ctx.sessionProjections.stateOf(agent.session, 'agentPreset')
             if (this.ctx.sandboxPolicy.overrideOf(agent.session) === undefined) {
-              agent.session.append('sandbox/mode', { mode: this.ctx.sandboxPolicy.defaultMode })
-              await this.ctx.sessions.flush(agent.session)
+              const initial = agent.session.append('sandbox/mode', { mode: this.ctx.sandboxPolicy.defaultMode })
+              await flushNativeSession(this.ctx, agent.session, [initial])
             }
             await this.ctx.nativeRuntimeExecution.bind(agent, operation)
             const preset = await this.ctx.agents.withInitiator(agent, () => this.ctx.agentPresets.mount(agentCtx, selected ?? undefined))

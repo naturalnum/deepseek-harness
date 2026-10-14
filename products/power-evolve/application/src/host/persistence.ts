@@ -1,6 +1,7 @@
 /** Native Session persistence over the platform's fenced PostgreSQL event API. */
+import { isDeepStrictEqual } from 'node:util'
 import { brandString } from '@deepseek-ai/dsh-brand'
-import { Context } from '@deepseek-ai/cordis'
+import { Context, FiberState, type Fiber } from '@deepseek-ai/cordis'
 import { z } from 'zod'
 import { SessionLogOffset, type SessionEvent, type SessionHeader, type SessionId } from '@deepseek-ai/dsh-session'
 import {
@@ -66,7 +67,16 @@ class PlatformHandle implements SessionHandle {
     this.assertOpen()
     options?.signal?.throwIfAborted()
     if (this.access !== 'write') throw new SessionReadOnlyError(this.id, 'append')
-    const batch = structuredClone(events)
+    const batch: SessionEvent[] = []
+    for (const event of structuredClone(events)) {
+      if (event.seq < this.events.length) {
+        if (!isDeepStrictEqual(this.events[event.seq], event)) throw new PlatformError(409, 'native_persistence_prefix_conflict')
+        continue
+      }
+      if (event.seq !== this.events.length + batch.length) throw new PlatformError(409, 'native_persistence_prefix_gap')
+      batch.push(event)
+    }
+    if (batch.length === 0) return this.chain
     let publication: Promise<void>
     try {
       if (!this.publisher) throw new PlatformError(409, 'native_publication_missing')
@@ -142,6 +152,11 @@ class PlatformHandle implements SessionHandle {
 /** Only the leased operation may open a native Session in this host. */
 export default class PlatformPersistence extends SessionPersistence {
   static inject = ['powerEvolveRuntime']
+  private readonly ownerFiber: Fiber
+  private closing = false
+  private readonly pending = new Set<Promise<SessionHandle>>()
+  private shutdownPromise: Promise<void> | undefined
+  private readonly teardownFailures: unknown[] = []
   private readonly writers = new Map<SessionId, PlatformHandle>()
   private readonly handles = new Set<PlatformHandle>()
   private readonly children = new Map<SessionId, { grant: Grant; writer: HostNativeWriterLease; stop: AbortController; renewal: Promise<void>;
@@ -149,6 +164,7 @@ export default class PlatformPersistence extends SessionPersistence {
 
   constructor(ctx: Context) {
     super(ctx)
+    this.ownerFiber = ctx.fiber
     ctx.on('session/event', (session, event) => {
       const child = this.children.get(session.id)
       if (child && event.type === 'turn/end') {
@@ -165,14 +181,38 @@ export default class PlatformPersistence extends SessionPersistence {
       if (!writer) throw new PlatformError(403, 'session_not_leased')
       return writer.flush()
     })
-    ctx.effect(() => async () => {
-      const results = await Promise.allSettled([...this.handles].map(handle => handle.close()))
-      const errors = results.flatMap((result): unknown[] => result.status === 'rejected' ? [result.reason] : [])
-      if (errors.length) throw new AggregateError(errors, 'Platform persistence shutdown failed')
-    })
+    ctx.effect(() => () => this.shutdown())
   }
 
-  async create(header: SessionHeader): Promise<SessionHandle> {
+  /** Drain all accepted native acquisitions before closing handles and retain the original cleanup result.
+   * @returns One cached strict result for callers; Cordis teardown also invokes it but only logs a rejection.
+   */
+  shutdown(): Promise<void> {
+    this.closing = true
+    return this.shutdownPromise ??= (async () => {
+      await Promise.allSettled(this.pending)
+      const results = await Promise.allSettled([...this.handles].map(handle => handle.close()))
+      const errors = [...this.teardownFailures, ...results.flatMap((result): unknown[] => result.status === 'rejected' ? [result.reason] : [])]
+      if (errors.length) throw new AggregateError(errors, 'Platform persistence shutdown failed')
+    })()
+  }
+
+  private isClosing(): boolean {
+    return this.closing || this.ownerFiber.state === FiberState.UNLOADING || this.ownerFiber.state === FiberState.DISPOSED
+  }
+
+  create(header: SessionHeader): Promise<SessionHandle> {
+    if (this.isClosing()) return Promise.reject(new PlatformError(409, 'native_persistence_closing'))
+    return this.track(this.createOwned(header))
+  }
+
+  private track(work: Promise<SessionHandle>): Promise<SessionHandle> {
+    this.pending.add(work)
+    void work.then(() => { this.pending.delete(work) }, () => { this.pending.delete(work) })
+    return work
+  }
+
+  private async createOwned(header: SessionHeader): Promise<SessionHandle> {
     const runtime = this.ctx.powerEvolveRuntime
     if (runtime.config.runtimeUserId === '' || header.parentSession === undefined || header.origin !== 'subagent') {
       throw new Error('Create sessions through the authenticated platform API')
@@ -186,6 +226,7 @@ export default class PlatformPersistence extends SessionPersistence {
     let writer: HostNativeWriterLease | undefined
     try {
       writer = await writers.acquire(child, randomBytes(32).toString('base64url'))
+      if (this.isClosing()) throw new PlatformError(409, 'native_persistence_closing')
       const capturedWriter = writer
       const stop = new AbortController()
       const renewal = (async () => {
@@ -213,13 +254,29 @@ export default class PlatformPersistence extends SessionPersistence {
       this.children.delete(child.sessionId)
       childOwner?.stop.abort()
       await childOwner?.renewal
-      if (writer) await writers.release(writer.identity).catch((_releaseFailure: unknown) => { /* Original create failure retains authority for expiry reconciliation. */ })
+      let cleanupFailure: unknown
+      if (writer) {
+        try { await runtime.call('/runtime/cleanup', child.token, { operationId: child.operationId, epoch: child.epoch,
+          writer: writer.identity, errorCode: 'native_subagent_setup_failed' }) }
+        catch (failure) { cleanupFailure = failure }
+      }
       runtime.grants.delete(child.sessionId)
+      if (cleanupFailure !== undefined) {
+        const failed = new AggregateError([error, cleanupFailure], 'Native subagent setup cleanup failed')
+        this.teardownFailures.push(failed)
+        this.closing = true
+        throw failed
+      }
       throw error
     }
   }
 
-  async open(id: SessionId, access: SessionAccess, options?: SessionPersistenceOpenOptions): Promise<SessionHandle> {
+  open(id: SessionId, access: SessionAccess, options?: SessionPersistenceOpenOptions): Promise<SessionHandle> {
+    if (this.isClosing()) return Promise.reject(new PlatformError(409, 'native_persistence_closing'))
+    return this.track(this.openOwned(id, access, options))
+  }
+
+  private async openOwned(id: SessionId, access: SessionAccess, options?: SessionPersistenceOpenOptions): Promise<SessionHandle> {
     options?.signal?.throwIfAborted()
     if (access === 'write' && this.writers.has(id)) throw new SessionAlreadyOwnedError(id)
     const runtime = this.ctx.powerEvolveRuntime
@@ -228,6 +285,7 @@ export default class PlatformPersistence extends SessionPersistence {
     options?.signal?.throwIfAborted()
     runtime.assertGrant(captured)
     if (value.header.id !== id) throw new Error('Platform returned another Session')
+    if (this.isClosing()) throw new PlatformError(409, 'native_persistence_closing')
     let publisher: NativeAssistantPublisher | undefined
     let releasePublication: (() => void) | undefined
     if (access === 'write') {
@@ -268,6 +326,19 @@ export default class PlatformPersistence extends SessionPersistence {
     this.handles.add(handle)
     if (access === 'write') this.writers.set(id, handle)
     return handle
+  }
+
+  /** Commit explicit setup events through the already acquired native write handle before Agent publication.
+   * @param id Exact unpublished Session being resumed under its current operation and Writer.
+   * @param events Newly returned append events, in native sequence order; no historical Session scan is performed.
+   * @returns Completion after the original Publisher acknowledgement; the factory's later exact-prefix append is idempotent.
+   */
+  async flushUnpublished(id: SessionId, events: readonly SessionEvent[]): Promise<void> {
+    const handle = this.writers.get(id)
+    if (!handle) throw new PlatformError(403, 'session_not_leased')
+    this.ctx.powerEvolveRuntime.assertGrant(this.ctx.powerEvolveRuntime.require(id))
+    await handle.append(events)
+    await handle.flush()
   }
 
   async flush(): Promise<void> {

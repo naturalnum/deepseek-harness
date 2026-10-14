@@ -12,6 +12,8 @@ import { cleanupExpiredNativeDerivations } from '../src/platform/native-derived-
 import { readNativeRuntimePolicy } from '../src/platform/native-runtime-policy.ts'
 import { transaction } from '../src/platform/database.ts'
 import { headerSchema } from '../src/session-records.ts'
+import { requireBrowserAccount } from '../src/platform/account-authority.ts'
+import { readSessionStopInTransaction } from '../src/platform/native-session-stop.ts'
 import { requestId } from '../src/contracts.ts'
 import { nativeWriterIdentity } from '../src/native-writer-contracts.ts'
 import { cloudFixture } from './cloud-fixture.ts'
@@ -121,5 +123,28 @@ test('owned startup maintenance terminalizes expired idle holders without replay
   expect(await cleanupExpiredNativeDerivations(tasks, owner, limits, 16)).toBe(0)
   expect((await pool.query('SELECT state,error_code FROM pe_operations WHERE id=$1', [original.operationId])).rows)
     .toEqual([{ state: 'failed', error_code: 'native_derivation_expired' }])
+  expect((await pool.query('SELECT * FROM pe_native_input_origins WHERE session_id=$1', [created.sessionId])).rowCount).toBe(0)
+}))
+
+
+test('expired idle archival cleanup completes the original stop without a model claim or input replay', () => cloudFixture(async ({ pool, alice }) => {
+  const tasks = new TaskStore(pool, limits), authority = new NativeRuntimeAuthority(pool)
+  const issued = await authority.issue({ userId: alice.user.userId, runtimeId: randomUUID(), generation: 1, lifetimeMs: 60000 })
+  const created = await tasks.create(alice.user, requestId.parse(randomUUID()), alice.token)
+  const service = new NativeInteractive(tasks, authority, { lifetimeMs: 30000, leaseMs: 30000, maxActivePerUser: 2 })
+  await service.open(issued.token, { sessionId: created.sessionId, requestId: requestId.parse(randomUUID()), browserToken: alice.token, candidateToken: secret() })
+  const original = await transaction(pool, async client => {
+    const actor = await requireBrowserAccount(client, alice.token, { lock: 'update' })
+    return tasks.requestArchiveStopInTransaction(client, actor, created.sessionId)
+  })
+  expect(original.status).toBe('requested')
+  await pool.query("UPDATE pe_sessions SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1", [created.sessionId])
+  const owner = { userId: issued.userId, authenticate: async (client: Parameters<NativeRuntimeAuthority['authenticateInTransaction']>[0]) => {
+    await authority.authenticateInTransaction(client, issued.token, undefined, 'update')
+  } }
+  expect(await cleanupExpiredNativeDerivations(tasks, owner, limits, 16)).toBe(1)
+  expect(await transaction(pool, client => readSessionStopInTransaction(client, issued.userId, created.sessionId)))
+    .toMatchObject({ stopId: original.stopId, status: 'complete' })
+  expect(await tasks.claimArchiveStop(issued.runtimeId, owner)).toBeNull()
   expect((await pool.query('SELECT * FROM pe_native_input_origins WHERE session_id=$1', [created.sessionId])).rowCount).toBe(0)
 }))

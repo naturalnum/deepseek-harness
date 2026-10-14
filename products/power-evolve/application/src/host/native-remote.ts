@@ -391,6 +391,7 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
         return ctx.agents.withInitiator(agent, async () => {
           const value = await ctx.typertGateway.invoke({ namespace, method: operation, args: arguments_, signal })
           await ctx.sessions.flush(agent.session)
+          await ctx.nativeRuntimeExecution.bind(agent, ctx.powerEvolveRuntime.require(agent.id))
           return value
         })
       }

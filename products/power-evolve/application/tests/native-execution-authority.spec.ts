@@ -1,9 +1,20 @@
 /** Actual PG business execution through the Root v2 reader and permanent native ledger cohorts. */
 import { randomBytes, randomUUID } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
+import { once } from 'node:events'
+import { createServer } from 'node:http'
+import { join } from 'node:path'
+import { Context } from '@deepseek-ai/cordis'
 import { Session, type SessionEvent } from '@deepseek-ai/dsh-session'
 import { expect, test } from 'vitest'
-import { operationId, requestId } from '../src/contracts.ts'
+import { operationId, requestId, PlatformError } from '../src/contracts.ts'
+import { bearer, readJson, sendFailure, sendJson } from '../src/http.ts'
+import RuntimeScope from '../src/host/scope.ts'
+import PlatformPersistence from '../src/host/persistence.ts'
+import { NativeRuntimeAuthority } from '../src/platform/native-runtime-authority.ts'
+import { routeNativeWriter } from '../src/platform/native-writer-routes.ts'
+import { releaseNativeAssistant } from '../src/platform/native-assistant-lifecycle.ts'
+import { z } from 'zod'
 import { admittedInputMessage, inputCohortId, nativeInputAdmissionCommand, nativeInputClaimCommand,
   nativeInputStepCommand, originInputId, type NativeInputLedgerLimits } from '../src/native-input-ledger-contracts.ts'
 import { nativeTurnMessageId } from '../src/native-turn-contracts.ts'
@@ -547,4 +558,86 @@ test('the actual allowed child model freezes separately within the original pare
   session.append('turn/start', { turn: 1 })
   await n.events.append(child.token, session.snapshotEvents())
   await expect(children.configure(child.token, { provider: 'power-evolve', model: 'delegated-model', maxTokens: n.a.settings.maxTokens })).rejects.toMatchObject({ code: 'native_subagent_model_frozen' })
+}))
+
+
+test.each(['parent', 'account'] as const)('the actual child write handle cleans PG after %s loss and a rejected Writer release', loss => executionCase(async (f, n) => {
+  await openStep(f, n)
+  const children = new NativeSubagents(n.executionTasks, { maxChildren: 2, maxDepth: 2, lifetimeMs: 60000, leaseMs: 30000 })
+  const authority = new NativeRuntimeAuthority(f.pool)
+  const issued = await authority.issue({ userId: f.alice.user.userId, runtimeId: n.writer.workerId, generation: 1, lifetimeMs: 60000 })
+  const host = new Context(), pending = new Set<Promise<void>>(), observed: string[] = []
+  const server = createServer((request, response) => {
+    const work = (async () => {
+      try {
+        const token = bearer(request), input = await readJson(request, 1048576)
+        switch (request.url) {
+          case '/runtime/user/identity': {
+            const actor = await authority.authenticate(token)
+            const account = await f.pool.query('SELECT settings FROM pe_users WHERE id=$1', [actor.userId])
+            sendJson(response, { ...actor, settings: account.rows[0]?.settings }); return
+          }
+          case '/runtime/subagents/create': sendJson(response, await children.create(token, z.object({ header: z.unknown() }).parse(input).header)); return
+          case '/runtime/snapshot': sendJson(response, await n.events.runtimeSnapshot(token)); return
+          case '/runtime/native-writer/acquire': sendJson(response, await routeNativeWriter(n.writers, request.url, token, input)); return
+          case '/runtime/native-writer/release': {
+            try { sendJson(response, await routeNativeWriter(n.writers, request.url, token, input)) }
+            catch (error) { observed.push('writer-release-rejected'); throw error }
+            return
+          }
+          case '/runtime/native-assistant/release': {
+            await releaseNativeAssistant(n.tasks, token, z.object({ publisherId: z.string() }).parse(input).publisherId)
+            sendJson(response, {}); return
+          }
+          case '/runtime/finish': await n.tasks.finish(token, 'completed', null); sendJson(response, {}); return
+          case '/runtime/cleanup': {
+            const value = z.object({ operationId, epoch: z.number(), writer: nativeWriterIdentity, errorCode: z.string() }).parse(input)
+            sendJson(response, await cleanupNativeRuntime(f.pool, token, value, { ...taskLimits, ...historyLimits }))
+            observed.push('cleanup-complete'); return
+          }
+          default: throw new PlatformError(404, 'fixture_route_not_found')
+        }
+      } catch (error) { sendFailure(response, error) }
+    })()
+    pending.add(work); void work.finally(() => { pending.delete(work) })
+  })
+  try {
+    server.listen(0, '127.0.0.1'); await once(server, 'listening')
+    const address = server.address(); if (!address || typeof address === 'string') throw new Error('Owned listener missing')
+    const runtimeTokenFile = join(f.root, 'child-consumer-runtime-token')
+    await writeFile(runtimeTokenFile, issued.token, { mode: 0o600 })
+    await host.plugin(RuntimeScope, { platformUrl: `http://127.0.0.1:${address.port}`, workerId: issued.runtimeId,
+      runtimeUserId: issued.userId, runtimeTokenFile, timeoutMs: 5000, maxResponseBytes: 8388608, nativeSubagentRenewMs: 60000 })
+    await host.plugin(PlatformPersistence)
+    let runtime: RuntimeScope | undefined, persistence: PlatformPersistence | undefined
+    await host.inject(['powerEvolveRuntime', 'sessionPersistence'], ctx => {
+      runtime = ctx.powerEvolveRuntime
+      if (!(ctx.sessionPersistence instanceof PlatformPersistence)) throw new Error('Actual PlatformPersistence missing')
+      persistence = ctx.sessionPersistence
+    })
+    if (!runtime || !persistence) throw new Error('Owned native services inactive')
+    runtime.grants.set(n.a.sessionId, n.a)
+    const header = headerSchema.parse({ ...n.native.header, id: randomUUID(), origin: 'subagent', parentSession: n.a.sessionId, delegationDepth: 1, isSeeded: false })
+    const handle = await persistence.create(header), child = runtime.require(header.id)
+    const session = Session.create(header.id, undefined, header)
+    session.append('turn/start', { turn: 1 }); session.append('step/start', { turn: 1, step: 1 })
+    await n.events.append(child.token, session.snapshotEvents())
+    if (loss === 'parent') {
+      await n.writers.release(n.writer)
+      await f.pool.query("UPDATE pe_native_writers SET expires_at=clock_timestamp()-interval '1 second' WHERE session_id=$1", [child.sessionId])
+    } else await f.pool.query('UPDATE pe_users SET enabled=false WHERE id=$1', [f.alice.user.userId])
+    await expect(handle.close()).rejects.toBeInstanceOf(Error)
+    expect(observed).toEqual(['writer-release-rejected', 'cleanup-complete'])
+    expect(runtime.grants.has(child.sessionId)).toBe(false)
+    expect((await f.pool.query('SELECT state,error_code FROM pe_operations WHERE id=$1', [child.operationId])).rows)
+      .toEqual([{ state: 'failed', error_code: 'native_subagent_closed' }])
+    expect((await f.pool.query('SELECT ended_at FROM pe_attempts WHERE operation_id=$1', [child.operationId])).rows[0]?.ended_at).not.toBeNull()
+    expect((await f.pool.query('SELECT event FROM pe_events WHERE session_id=$1 ORDER BY seq', [child.sessionId])).rows.slice(-2).map(row => row.event.type))
+      .toEqual(['step/end', 'turn/end'])
+    expect((await f.pool.query('SELECT * FROM pe_native_cleanup_receipts WHERE operation_id=$1', [child.operationId])).rowCount).toBe(1)
+  } finally {
+    await host.fiber.dispose()
+    server.closeAllConnections(); await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()))
+    await Promise.allSettled(pending)
+  }
 }))

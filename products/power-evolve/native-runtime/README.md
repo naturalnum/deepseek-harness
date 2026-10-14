@@ -44,6 +44,8 @@ The original ToolRuntime registrations and current logged request header freeze 
 
 Cold native commands and idle Terminals acquire a separate bounded interactive PG grant and Writer. It records no prompt or model input and cannot call a model. The default lifetime is 15 minutes, with an 8-second renewal check; incoming model work closes the interactive owner first. Shutdown drains the native Agent and execution clients, then releases its original occupancy. After revocation, only the exact original operation and Writer proof may close committed logs; that database receipt does not prove a physical process stopped. Runtime claim polling terminalizes expired unowned derivations without restarting an Agent or replaying commands.
 
+Unpublished Agent setup commits its explicit newly appended events through the already acquired Platform write handle. The native factory then accepts the same exact prefix without writing it twice; setup performs no synchronous history scan. Runtime Sessions and persistence expose cached `shutdown()` results that retain cleanup failures. Execution bindings expose an explicit `close()` that joins original filesystem and process cleanup before releasing their Context, because Cordis logs effect failures while fulfilling fiber disposal. A cleanup failure makes interactive admission unavailable and keeps its original failure observable.
+
 Native child grants freeze their parent’s permission mode and generation. A parent permission change invalidates the child grant. The child may choose an account-authorized model and a token budget within the parent budget before its first turn; Platform then freezes that selection for model egress.
 
 </details>

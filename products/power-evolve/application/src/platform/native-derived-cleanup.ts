@@ -5,6 +5,8 @@ import { appendOwnedEvents, type OwnedAppendState } from './native-owned-append.
 import { headerSchema, parseEvents } from '../session-records.ts'
 import { transaction } from './database.ts'
 import type { EventLimits } from './events.ts'
+import { readSessionStopInTransaction } from './native-session-stop.ts'
+import { completeSessionStopInTransaction } from './native-session-stop-completion.ts'
 import type { TaskStore } from './tasks.ts'
 
 /** Reconcile only an authenticated account's expired, unowned interactive and native child operations.
@@ -43,6 +45,8 @@ export async function cleanupExpiredNativeDerivations(tasks: TaskStore,
       await client.query('UPDATE pe_sessions SET grant_digest=NULL,lease_until=NULL WHERE id=$1 AND lease_epoch=$2', [row.id, row.lease_epoch])
       await client.query('DELETE FROM pe_native_presentations WHERE session_id=$1 AND epoch=$2', [row.id, row.lease_epoch])
       await client.query('UPDATE pe_native_interactive_grants SET released_at=clock_timestamp() WHERE operation_id=$1 AND released_at IS NULL', [row.operation_id])
+      const stop = await readSessionStopInTransaction(client, owner.userId, header.id)
+      if (stop) await completeSessionStopInTransaction(client, owner.userId, header.id, stop.stopId, limits)
       closed++
     }
     return closed

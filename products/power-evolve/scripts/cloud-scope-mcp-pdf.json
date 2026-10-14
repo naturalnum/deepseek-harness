@@ -73,12 +73,12 @@
   "counts": {
     "runtime": {
       "enabled": 14,
-      "shared": 334,
+      "shared": 335,
       "deferred": 4
     },
     "sourceTests": {
       "enabled": 12,
-      "shared": 153,
+      "shared": 154,
       "deferred": 3
     },
     "builtTests": {
@@ -5470,6 +5470,20 @@
       "status": "shared",
       "owner": "Root",
       "reason": "gate-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-runtime-sessions.pg.spec.ts",
+      "status": "shared",
+      "owner": "S3",
+      "reason": "native-runtime-s3"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/host/native-session-flush.ts",
+      "status": "shared",
+      "owner": "S3",
+      "reason": "native-runtime-s3"
     }
   ],
   "lintSupport": [

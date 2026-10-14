@@ -371,13 +371,17 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     runtimeUserId === '' ? undefined : runtimeUserId,
     runtimeUserId === '' ? undefined : token => ctx.powerEvolveRuntime.verifyBroker(token))
   ctx.provide('powerEvolveBrowserAuth', browserAuth)
-  installNativeRemote(ctx, browserAuth, config.origin, config.pollMs,
+  const installRemote = (remoteCtx: Context) => {
+  installNativeRemote(remoteCtx, browserAuth, config.origin, config.pollMs,
     config.maxRequestBytes, config.maxStreams, config.profileAdministrators,
     { maxGenerationMs: config.nativeFollowMaxGenerationMs, maxGenerationItems: config.nativeFollowMaxGenerationItems,
       maxGenerationBytes: config.nativeFollowMaxGenerationBytes }, config.nativeStreamSendTimeoutMs,
     config.officePreviewEnabled ? { pollMs: config.officePreviewPollMs,
       renderDeadlineMs: config.officePreviewRenderDeadlineMs, cancelTimeoutMs: config.officePreviewCancelTimeoutMs,
       maxActiveRenders: config.officePreviewMaxActiveRenders } : undefined, config.nativeRuntimeRouting)
+  }
+  if (runtimeUserId === '') installRemote(ctx)
+  else await ctx.inject(['agentPresets', 'nativeRuntimeSessions', 'nativeRuntimeExecution'], installRemote)
   const tokens = new WeakMap<PeerScope, string>()
   ctx.plugin(ProductRemote, { tokens, pollMs: config.pollMs, platformOrigin: config.platformOrigin })
   const invocations: InvocationDescriptor[] = Object.entries(requests).map(([method, request]) => ({
@@ -397,7 +401,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       timeoutMs: config.shellTimeoutMs, maxTimeoutMs: config.shellMaxTimeoutMs, maxOutputBytes: config.shellMaxOutputBytes })
     new ShellEnvRegistry(ctx, { dshHome: '/home/agent/.dsh' })
   }
-  if (!config.nativeRuntimeRouting) await ctx.inject(['attachments'], (imageCtx) => {
+  if (!config.nativeRuntimeRouting) await ctx.inject(runtimeUserId === '' ? ['attachments'] : ['attachments', 'agentPresets', 'nativeRuntimeExecution', 'sandboxPolicy', 'sessionProjections'], (imageCtx) => {
     const scheduler = new Scheduler(imageCtx, config)
     if (runtimeUserId !== '') {
       imageCtx.on('agent/created', async ({ agent }) => {
@@ -448,10 +452,11 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       if (req.method === 'GET' && path === '/native/runtime/ready' && runtimeUserId !== '') {
         const token = req.headers['x-power-evolve-runner-token']
         await ctx.powerEvolveRuntime.verifyBroker(typeof token === 'string' ? token : undefined)
-        const presets = await ctx.agentPresets.list()
+        const registry = ctx.get('agentPresets')
+        const presets = registry === undefined ? [] : await registry.list()
         const services = ['settings', 'configEditor', 'permissionPresets', 'commands', 'sessionProjections', 'terminalController',
           'agentLoop', 'subagents', 'web', 'fs', 'subprocess', 'sandbox']
-        const ready = services.every(service => ctx.get(service) !== undefined)
+        const ready = ctx.get('nativeRuntimeSessions')?.available === true && services.every(service => ctx.get(service) !== undefined)
           && ['standard', 'ptc', 'minimal', 'cordis'].every(id => presets.some(preset => preset.id === id && preset.broken === undefined))
         sendJson(res, { ready, runtimeUserId, runtimeId: ctx.powerEvolveRuntime.workerId,
           generation: ctx.powerEvolveRuntime.runtimeGeneration, presets }); return
