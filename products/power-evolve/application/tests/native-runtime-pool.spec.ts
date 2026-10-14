@@ -1,8 +1,12 @@
 /** Real PostgreSQL reservations and controlled Kubernetes observations exercise tenant pool lifecycle. */
 import { randomUUID } from 'node:crypto'
+import { execFileSync } from 'node:child_process'
+import { once } from 'node:events'
+import { createServer, type Server } from 'node:https'
 import { readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { Pool } from 'pg'
+import type { Duplex } from 'node:stream'
 import { expect, test, vi } from 'vitest'
 import { z } from 'zod'
 import { accountUserId } from '../src/account-contracts.ts'
@@ -34,10 +38,17 @@ interface NativePoolFixture {
   seed: (unlinked?: boolean) => Promise<string>
   retry: (next?: NativeRuntimePoolConfig) => NativeRuntimePool
   expectedFailures: Set<NativeRuntimePool>
-  hooks: { invalidStop: boolean; failPatchOnce: boolean; losePodResponse: boolean; runtimeNotReady: boolean }
+  hooks: {
+    invalidStop: boolean
+    failPatchOnce: boolean
+    losePodResponse: boolean
+    runtimeNotReady: boolean
+    podPhase: 'Pending' | 'Running'
+    readPod?: () => Promise<void>
+    readReady?: (path: string, timeoutMs: number, token?: string) => Promise<unknown> }
 }
 
-async function fixture(run: (value: NativePoolFixture) => Promise<void>) {
+async function fixture(run: (value: NativePoolFixture) => Promise<void>, overrides: Partial<NativeRuntimePoolConfig> = {}) {
   await cloudFixture(async (f) => {
     for (let next = CURRENT_SCHEMA_VERSION + 1; next <= 11; next++) {
       await f.pool.query(await readFile(new URL(`../assets/cloud-schema-v${next}.sql`, import.meta.url), 'utf8'))
@@ -60,12 +71,14 @@ async function fixture(run: (value: NativePoolFixture) => Promise<void>) {
         platformOrigin: 'http://trial.example', platformInternalUrl: 'http://platform', rows: { 'native-runtime': {} } },
       credentialLifetimeMs: 60000, readyTimeoutMs: 2000, requestTimeoutMs: 1000, stopTimeoutMs: 1000,
       reconcileMs: 1000, maxResponseBytes: 1048576, maxRuntimeSeconds: 60, maxAccounts: 10, lockConnections: 2,
-      resources: { requests: { cpu: '1', memory: '256Mi' }, limits: { cpu: '1', memory: '256Mi' } } }
+      resources: { requests: { cpu: '1', memory: '256Mi' }, limits: { cpu: '1', memory: '256Mi' } }, ...overrides }
     const userId = accountUserId.parse(f.alice.user.userId)
-    const hooks = { invalidStop: false, failPatchOnce: false, losePodResponse: false, runtimeNotReady: false }
-    const call = async (method: string, path: string, body?: unknown): Promise<unknown> => {
+    const hooks: NativePoolFixture['hooks'] = { invalidStop: false, failPatchOnce: false, losePodResponse: false,
+      runtimeNotReady: false, podPhase: 'Running' }
+    const call = async (method: string, path: string, body?: unknown, timeoutMs = 1000, token?: string): Promise<unknown> => {
       calls.push({ method, path })
       if (path.includes('/proxy/')) {
+        if (hooks.readReady) return hooks.readReady(path, timeoutMs, token)
         const id = path.match(/http:pe-runtime-([^:]+):8080/u)?.[1]
         if (!id) throw new Error('Missing Runtime identity in fixture proxy address')
         const namespace = path.split('/')[4]
@@ -84,7 +97,10 @@ async function fixture(run: (value: NativePoolFixture) => Promise<void>) {
         if (resources.has(target)) throw new KubernetesError(409, 'Already exists')
         const value: Record<string, unknown> = { ...input, metadata: { ...input.metadata, uid: randomUUID(), resourceVersion: '1', generation: 1 } }
         if (input.stringData) value['data'] = Object.fromEntries(Object.entries(input.stringData).map(([key, data]) => [key, Buffer.from(data).toString('base64')]))
-        if (path.endsWith('/pods')) value['spec'] = { ...input.spec, nodeName: 'owned-node' }
+        if (path.endsWith('/pods')) {
+          value['spec'] = { ...input.spec, nodeName: 'owned-node' }
+          value['status'] = { phase: hooks.podPhase }
+        }
         resources.set(target, value)
         if (path.endsWith('/pods') && hooks.losePodResponse) {
           resources.delete(target); throw new KubernetesError(503, 'Pod creation response lost')
@@ -94,6 +110,7 @@ async function fixture(run: (value: NativePoolFixture) => Promise<void>) {
       const value = resources.get(path)
       if (!value) throw new KubernetesError(404, 'Missing resource')
       if (method === 'GET') {
+        if (path.includes('/pods/')) await hooks.readPod?.()
         if (barrier.block && path.includes('/secrets/')) { barrier.entered.resolve(undefined); await barrier.release.promise }
         return value
       }
@@ -119,7 +136,7 @@ async function fixture(run: (value: NativePoolFixture) => Promise<void>) {
       }
       throw new Error('Unexpected Kubernetes fixture method')
     }
-    vi.spyOn(kube, 'call').mockImplementation(async (method, path, body) => await call(method, path, body))
+    vi.spyOn(kube, 'call').mockImplementation(async (method, path, body, timeoutMs, token) => await call(method, path, body, timeoutMs, token))
     const pool = new NativeRuntimePool(main, locks, kube, config)
     const owners = [pool], expectedFailures = new Set<NativeRuntimePool>()
     const retry = (next = config) => { const owner = new NativeRuntimePool(main, locks, kube, next); owners.push(owner); return owner }
@@ -145,6 +162,120 @@ async function fixture(run: (value: NativePoolFixture) => Promise<void>) {
     }
   })
 }
+
+async function readinessTls(f: NativePoolFixture, run: (server: Server) => Promise<void>): Promise<void> {
+  const key = join(f.config.localStateRoot, '..', 'readiness-key.pem')
+  const certificate = join(f.config.localStateRoot, '..', 'readiness-cert.pem')
+  const token = join(f.config.localStateRoot, '..', 'readiness-platform-token')
+  execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-subj', '/CN=localhost',
+    '-addext', 'subjectAltName=IP:127.0.0.1', '-days', '1', '-keyout', key, '-out', certificate], { stdio: 'ignore', timeout: 10000 })
+  await writeFile(token, 'owned-readiness-platform-token', { mode: 0o600 })
+  const sockets = new Set<Duplex>(), server = createServer({ key: await readFile(key), cert: await readFile(certificate) })
+  server.on('connection', (socket) => { sockets.add(socket); socket.once('close', () => { sockets.delete(socket) }) })
+  try {
+    server.listen(0, '127.0.0.1'); await once(server, 'listening')
+    const address = server.address()
+    if (!address || typeof address === 'string') throw new Error('Missing owned readiness listener')
+    const client = await KubernetesClient.fromServiceAccount(`https://127.0.0.1:${address.port}`, certificate, token)
+    f.hooks.readReady = (path, timeoutMs, runnerToken) => client.call('GET', path, undefined, timeoutMs, runnerToken)
+    await run(server)
+  } finally {
+    delete f.hooks.readReady
+    const closing = new Promise<void>((resolve, reject) => {
+      server.close((error) => { if (error) reject(error); else resolve() })
+    })
+    await Promise.all([...sockets].map(async (socket) => {
+      const closed = socket.closed ? Promise.resolve() : once(socket, 'close')
+      socket.destroy(); await closed
+    }))
+    await closing
+  }
+}
+
+function readinessReply(f: NativePoolFixture): Record<string, unknown> {
+  const secret = [...f.resources].find(([path]) => path.includes('/secrets/'))?.[1]
+  const deployment = z.object({ data: z.object({ 'deployment.json': z.string() }) }).parse(secret)
+  const identity = z.object({ runtimeIdentity: z.object({ userId: z.string(), runtimeId: z.string(), generation: z.number() }) })
+    .parse(JSON.parse(Buffer.from(deployment.data['deployment.json'], 'base64').toString())).runtimeIdentity
+  return { ready: true, runtimeUserId: identity.userId, runtimeId: identity.runtimeId, generation: identity.generation }
+}
+
+test('cold readiness skips Pending and survives original TLS proxy misses without another generation or business request', () => fixture(async (f) => {
+  f.hooks.podPhase = 'Pending'
+  const pending = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  let reads = 0, requests = 0
+  f.hooks.readPod = async () => { if (++reads === 2) { pending.resolve(undefined); await release.promise } }
+  const before = (await f.main.query('SELECT count(*) AS count FROM pe_sessions')).rows
+  await readinessTls(f, async (server) => {
+    const statuses = [404, 500, 0, 502, 503, 504, 200]
+    server.on('request', (request, response) => {
+      requests++
+      expect(request.method).toBe('GET')
+      const status = statuses.shift()
+      if (status === 0) { request.socket.destroy(); return }
+      response.statusCode = status ?? 500
+      response.end(JSON.stringify(status === 200 ? readinessReply(f) : { unavailable: true }))
+    })
+    const work = f.pool.ensure(f.userId)
+    void work.catch(() => {})
+    try {
+      await Promise.race([pending.promise, work])
+      expect(requests).toBe(0)
+      for (const [path, pod] of f.resources) if (path.includes('/pods/')) pod['status'] = { phase: 'Running' }
+    } finally { release.resolve(undefined) }
+    const selected = await work
+    expect(requests).toBe(7)
+    expect((await f.main.query('SELECT runtime_id,generation,phase FROM pe_native_runtime_instances')).rows)
+      .toEqual([{ runtime_id: selected.runtimeId, generation: 1, phase: 'ready' }])
+    expect(f.calls.filter(call => call.method === 'POST' && call.path.endsWith('/pods'))).toHaveLength(1)
+    expect(f.calls.filter(call => call.path.includes('/proxy/')).every(call => call.method === 'GET')).toBe(true)
+    expect((await f.main.query('SELECT count(*) AS count FROM pe_sessions')).rows).toEqual(before)
+  })
+}, { readyTimeoutMs: 15000 }))
+
+test.each([401, 403])('cold readiness refuses original TLS authorization status %s without retry', status => fixture(async (f) => {
+  await readinessTls(f, async (server) => {
+    let requests = 0
+    server.on('request', (_request, response) => { requests++; response.statusCode = status; response.end('{}') })
+    await expect(f.pool.ensure(f.userId)).rejects.toMatchObject({ status })
+    expect(requests).toBe(1)
+    expect((await f.main.query('SELECT generation,phase FROM pe_native_runtime_instances')).rows)
+      .toEqual([{ generation: 1, phase: 'creating' }])
+  })
+}))
+
+test.each(['schema', 'identity'])('cold readiness retains an original TLS %s refusal', kind => fixture(async (f) => {
+  await readinessTls(f, async (server) => {
+    let requests = 0
+    server.on('request', (_request, response) => {
+      requests++
+      response.end(JSON.stringify(kind === 'schema' ? { ready: true }
+        : { ...readinessReply(f), runtimeUserId: f.otherUserId }))
+    })
+    const work = f.pool.ensure(f.userId)
+    if (kind === 'schema') await expect(work).rejects.toBeInstanceOf(z.ZodError)
+    else await expect(work).rejects.toMatchObject({ code: 'native_runtime_identity_mismatch' })
+    expect(requests).toBe(1)
+  })
+}))
+
+test('every cold readiness TLS GET fits the remaining deadline and joins its interrupted response', () => fixture(async (f) => {
+  await readinessTls(f, async (server) => {
+    const closed = Promise.withResolvers<undefined>(), budgets: number[] = []
+    const read = f.hooks.readReady
+    if (!read) throw new Error('Missing original TLS reader')
+    f.hooks.readReady = (path, timeoutMs, token) => { budgets.push(timeoutMs); return read(path, timeoutMs, token) }
+    server.on('request', (_request, response) => { response.write('{'); response.once('close', () => { closed.resolve(undefined) }) })
+    await expect(f.pool.ensure(f.userId)).rejects.toMatchObject({ code: 'native_runtime_ready_timeout' })
+    await closed.promise
+    expect(budgets).toHaveLength(1)
+    expect(budgets[0]).toBeGreaterThan(0)
+    expect(budgets[0]).toBeLessThanOrEqual(f.config.readyTimeoutMs)
+    expect(budgets[0]).toBeLessThan(f.config.requestTimeoutMs)
+    expect((await f.main.query('SELECT generation,phase FROM pe_native_runtime_instances')).rows)
+      .toEqual([{ generation: 1, phase: 'creating' }])
+  })
+}, { requestTimeoutMs: 180000 }))
 
 test('account advisory locks cannot consume the saturated main query pool', () => fixture(async (f) => {
   await f.seed()

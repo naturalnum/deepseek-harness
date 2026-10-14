@@ -514,7 +514,8 @@ export class NativeRuntimePool {
   private async waitReady(row: Instance, token: string): Promise<void> {
     const deadline = Date.now() + this.config.readyTimeoutMs
     while (Date.now() < deadline) {
-      const pod = resource.parse(await this.kube.call('GET', this.kube.resourcePath(row.namespace, 'pods', this.name(row))))
+      const pod = resource.parse(await this.kube.call('GET', this.kube.resourcePath(row.namespace, 'pods', this.name(row)),
+        undefined, Math.min(this.config.requestTimeoutMs, deadline - Date.now())))
       this.assertLabels(pod.metadata.labels, row)
       this.assertPodConfiguration(pod, row)
       if (row.pod_uid && pod.metadata.uid !== row.pod_uid) throw new PlatformError(409, 'native_runtime_pod_replaced')
@@ -522,9 +523,11 @@ export class NativeRuntimePool {
       if (pod.metadata.deletionTimestamp || ['Failed', 'Succeeded'].includes(pod.status?.phase ?? '')) {
         throw new PlatformError(503, 'native_runtime_process_stopped')
       }
-      try {
+      const remaining = deadline - Date.now()
+      if (remaining <= 0) break
+      if (pod.status?.phase === 'Running') try {
         const response = ready.parse(await this.kube.call('GET', this.kube.proxyPath(row.namespace,
-          this.name(row), '/native/runtime/ready'), undefined, this.config.requestTimeoutMs, token))
+          this.name(row), '/native/runtime/ready'), undefined, Math.min(this.config.requestTimeoutMs, remaining), token))
         if (response.runtimeUserId !== row.user_id || response.runtimeId !== row.runtime_id || response.generation !== row.generation) {
           throw new PlatformError(409, 'native_runtime_identity_mismatch')
         }
@@ -534,11 +537,21 @@ export class NativeRuntimePool {
           return
         }
       } catch (error) {
-        if (!(error instanceof KubernetesError) || ![502, 503, 504].includes(error.status)) throw error
+        // A bound Pod can run before its port or Service endpoint is available. Only this
+        // read may retry; authentication, schema and identity failures retain their refusal.
+        if (!this.temporaryReadinessFailure(error)) throw error
       }
-      await new Promise<void>(resolve => setTimeout(resolve, Math.min(this.config.reconcileMs, deadline - Date.now())))
+      const delay = deadline - Date.now()
+      if (delay > 0) await new Promise<void>(resolve => setTimeout(resolve, Math.min(this.config.reconcileMs, delay)))
     }
     throw new PlatformError(503, 'native_runtime_ready_timeout')
+  }
+
+  private temporaryReadinessFailure(error: unknown): boolean {
+    if (error instanceof KubernetesError) return [404, 500, 502, 503, 504].includes(error.status)
+    return error instanceof Error && ('code' in error && typeof error.code === 'string'
+      && ['ECONNREFUSED', 'ECONNRESET', 'ECONNABORTED', 'EPIPE', 'ETIMEDOUT', 'EHOSTUNREACH', 'ENETUNREACH', 'EAI_AGAIN'].includes(error.code)
+      || ['Kubernetes request timed out', 'Kubernetes response aborted', 'Kubernetes response closed before completion'].includes(error.message))
   }
 
   private async markStopping(row: Instance): Promise<void> {

@@ -43,6 +43,8 @@ Host 根路径跳转至 `/native/`。登录、独立审批和账号管理由 Pla
 <details>
 <summary>持久化、授权与原生行为</summary>
 
+Runtime 冷启动就绪检查先等待原 Pod 运行，再读取其服务。代理路由尚未出现、暂时的服务端失败和连接中断仅可在配置的就绪 deadline 内重试；每次读取均受剩余预算限制。账号、UID、镜像、finalizer、schema 和认证检查仍立即拒绝失配。就绪重试不会创建另一代 Runtime，也不会重放原生 RPC。
+
 采用 `restartPolicy: Never` 的原 Runtime Pod 在首次删除把元数据代际推进到第二代后，kubelet 状态仍可能保留第一代。原生停止分类器要求原 UID、不可变镜像、零次重启、每个声明的容器严格早于删除截止时间结束，以及 sandbox 和就绪条件的正向停止事实。仅当两项时间戳均精确到整秒时，sandbox 停止时间可以等于截止时间；带小数的相等时间或更晚的观察仍保持不确定。拥有方提交正向停止证据前，原观察和 finalizer 均保留。
 
 Host RPC、流式上传和每轮完整的 native-intent reconciliation 均持有可释放的请求 deadline。调用方取消和配置超时覆盖响应 body；完成后释放调用方监听和计时器。

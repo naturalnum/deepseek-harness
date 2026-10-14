@@ -43,6 +43,8 @@ The [native tenant Runtime bundle](../native-runtime/README.md) composes the mai
 <details>
 <summary>Persistence, authorization and native behavior</summary>
 
+Cold Runtime readiness waits for its original Pod to run before reading its service. Missing proxy routes, temporary server failures and interrupted connections may retry only within the configured readiness deadline; each read fits the remaining budget. Account, UID, image, finalizer, schema and authentication checks still refuse mismatches immediately. Readiness retries never create another generation or replay a native RPC.
+
 An exact Runtime Pod with `restartPolicy: Never` may retain generation-one kubelet status after its first deletion increments metadata to generation two. The native stop classifier requires the original UID, immutable images, zero restarts, every declared container strictly ended before the deletion cutoff, and positive sandbox and readiness stop conditions. The sandbox-stop timestamp may equal the cutoff only when both timestamps have whole-second precision; fractional equality and later observations remain uncertain. Original observations and finalizers remain intact until the owner commits positive stop evidence.
 
 Host RPC, streamed uploads and each complete native-intent reconciliation pass own a disposable request deadline. Caller cancellation and the configured timeout cover response bodies; completion releases the caller listener and timer.
