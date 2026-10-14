@@ -148,7 +148,7 @@ Platform JSON 响应读取器在消费响应期间保留原始调用者 signal �
 - 搜索在配置的输入额度内保留授权语料，建立临时原生索引；不保留跨请求复用的搜索索引。
 - 云执行、Office 和连接器 worker 需要明确的私有部署配置与真实服务验收；关闭组合不构成这些功能的通过证据。
 
-租户 Role 禁用上游搜索 provider，并将 `power-evolve-web-search` 作为独立的 Platform provider 条目插入。原生 Settings 保留现有 `web-search-deepseek` 页面命名空间，同时把真实描述、写入和变更通知路由到该条目。模型、API 版本及 token/搜索次数预算仍是原生实时偏好。原 Settings schema、密钥隐藏及修订号检查仍是权威；搜索发出前仍先提交原请求事件，再使用有界操作令牌。
+租户 Role 禁用上游搜索 provider，并将 `power-evolve-web-search` 作为独立的 Platform provider 条目插入。原生 Settings 保留现有 `web-search-deepseek` 页面命名空间，同时把真实描述、写入和变更通知路由到该条目。模型、API 版本及 token/搜索次数预算仍是原生实时偏好。原 Settings schema、密钥隐藏及修订号检查仍是权威；搜索发出前仍先提交原请求事件，再使用有界操作令牌。 并发查询各自须匹配当前步骤内已记录的精确请求体和 API 版本；其他步骤的记录不能授权。
 
 原生权限检查点将精确的预设、沙箱和审批覆盖值私下传给账户 Runtime。维护中的原生权限服务按该账户当前目录与默认值，在相同已提交水位派生当前名称。原生一元字节结果跨越有界私有 JSON 中转时，保留原 Gateway 编解码及浏览器 multipart 格式。
 

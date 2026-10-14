@@ -1,8 +1,12 @@
 /** Actual PG request series retain their Header across steps without admitting another operation or inherited seed. */
 import { randomBytes, randomUUID } from 'node:crypto'
+import { once } from 'node:events'
+import { createServer, type ServerResponse } from 'node:http'
 import { Session, SessionLogOffset, type SessionEvent } from '@deepseek-ai/dsh-session'
 import { buildForkSeed } from '@deepseek-ai/dsh-session/fork'
+import { DeepSeekSearchProvider, type DeepSeekSearchLlmRequest } from '@deepseek-ai/dsh-web-search-deepseek'
 import { expect, test } from 'vitest'
+import { z } from 'zod'
 import { TaskStore } from '../src/platform/tasks.ts'
 import { EventStore } from '../src/platform/events.ts'
 import { NativeRuntimeAuthority } from '../src/platform/native-runtime-authority.ts'
@@ -12,7 +16,9 @@ import { NativeExecutionAuthority } from '../src/platform/native-execution-autho
 import { NativeInputLedger } from '../src/platform/native-input-ledger.ts'
 import { NativeSubagents } from '../src/platform/native-subagents.ts'
 import { readNativeModelTools, registerNativeToolNames } from '../src/platform/native-tool-catalog.ts'
+import { proxyNativeWebSearch } from '../src/platform/native-web-search.ts'
 import { transaction } from '../src/platform/database.ts'
+import { readJson, sendFailure, sendJson } from '../src/http.ts'
 import { headerSchema } from '../src/session-records.ts'
 import { requestId } from '../src/contracts.ts'
 import { nativeWriterIdentity, nativeWriterWorkerId } from '../src/native-writer-contracts.ts'
@@ -81,7 +87,7 @@ async function prepare(f: Fixture) {
     }); history.push(event)
   }
   await step(1)
-  return { tasks, business, events, writers, writer, original, authority, session, history, ledger, initial, append, step }
+  return { tasks, business, events, writers, writer, runtime, original, authority, session, history, ledger, initial, append, step }
 }
 
 function header(session: Session) {
@@ -159,3 +165,128 @@ test.each(['fresh', 'inherited', 'missing-marker'] as const)('derived child Head
       epoch: child.epoch, preparedEventCount: mode === 'fresh' ? 0 : parentHeader.seq + 2 } })
   }
 }))
+
+type SearchBody = DeepSeekSearchLlmRequest['body']
+function searchBody(query: string): SearchBody {
+  return { model: 'trial-model', max_tokens: 1000,
+    messages: [{ role: 'user', content: [{ type: 'text', text: `Perform a web search for the query: ${query}` }] }],
+    tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5 }] }
+}
+
+async function searchProxy(n: Awaited<ReturnType<typeof prepare>>, run: (http: {
+  origin: string
+  observed: { body: unknown; apiVersion: string | string[] | undefined; key: string | string[] | undefined }[]
+  post: (body: SearchBody, version?: string) => Promise<{ status: number; body: unknown }>
+}) => Promise<void>, concurrent = false) {
+  const observed: { body: unknown; apiVersion: string | string[] | undefined; key: string | string[] | undefined }[] = []
+  const waiting: { response: ServerResponse; query: string }[] = []
+  const upstream = createServer((request, response) => {
+    void (async () => {
+      const body = await readJson(request, 65536)
+      const query = z.object({ messages: z.tuple([z.object({ content: z.tuple([z.object({ text: z.string() })]) })]) })
+        .parse(body).messages[0].content[0].text
+      observed.push({ body, apiVersion: request.headers['anthropic-version'], key: request.headers['x-api-key'] })
+      waiting.push({ response, query })
+      if (concurrent && waiting.length < 2) return
+      for (const item of waiting.splice(0)) sendJson(item.response, { content: [{ type: 'web_search_tool_result',
+        content: [{ type: 'web_search_result', url: 'https://search-fixture.example/' + encodeURIComponent(item.query),
+          title: item.query }] }] })
+    })().catch((error: unknown) => { sendFailure(response, error) })
+  })
+  const listen = async (server: ReturnType<typeof createServer>) => {
+    server.listen(0, '127.0.0.1'); await once(server, 'listening')
+    const address = server.address()
+    if (!address || typeof address === 'string') throw new Error('Owned Search fixture address missing')
+    return `http://127.0.0.1:${address.port}`
+  }
+  const endpoint = await listen(upstream)
+  const platform = createServer((request, response) => {
+    void proxyNativeWebSearch(n.business, { url: endpoint, apiKey: 'owned-search-fixture-key', timeoutMs: 3000,
+      maxRequestBytes: 65536, maxResponseBytes: 65536, maxUses: 5 }, request, response)
+      .catch((error: unknown) => { sendFailure(response, error) })
+  })
+  try {
+    const origin = await listen(platform)
+    await run({ origin, observed, post: async (body, version = '2023-06-01') => {
+      const response = await fetch(origin + '/runtime/web-search/messages', { method: 'POST',
+        headers: { authorization: 'Bearer ' + n.original.token, 'content-type': 'application/json', 'anthropic-version': version },
+        body: JSON.stringify(body), signal: AbortSignal.timeout(5000) })
+      return { status: response.status, body: await response.json() }
+    } })
+  } finally {
+    for (const server of [platform, upstream]) {
+      server.closeAllConnections()
+      await new Promise<void>((resolve, reject) => { server.close((error) => { if (error) reject(error); else resolve() }) })
+    }
+  }
+}
+
+test('concurrent native Search queries each match their own durable current-step input over actual HTTP', () => cloudFixture(async (f) => {
+  const n = await prepare(f)
+  await searchProxy(n, async ({ origin, observed }) => {
+    const recorded: SessionEvent[] = [], ready = Promise.withResolvers<undefined>()
+    let committed: Promise<unknown> | undefined
+    const provider = new DeepSeekSearchProvider(() => ({ baseURL: origin + '/runtime/web-search',
+      model: 'trial-model', maxTokens: 1000, maxUses: 5, apiVersion: '2023-06-01', apiKey: n.original.token,
+      recordRequest: (request) => {
+        recorded.push(n.session.append('web/deepseek-search-llm-request', request))
+        if (recorded.length === 2) ready.resolve(undefined)
+      }, fetch: async (address: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+        await ready.promise
+        await (committed ??= n.events.append(n.original.token, recorded))
+        return await fetch(address, init)
+      },
+    }))
+    const queries = ['current official Linux kernel release', 'kernel.org latest stable kernel version']
+    const results = await Promise.allSettled(queries.map(query => provider.search({ query }, AbortSignal.timeout(5000))))
+    expect(results.every(result => result.status === 'fulfilled')).toBe(true)
+    expect(results.map(result => result.status === 'fulfilled' ? result.value.sources[0]?.title : undefined))
+      .toEqual(queries.map(query => searchBody(query).messages[0].content[0].text))
+    expect(observed).toHaveLength(2)
+    expect(observed.map(item => item.body)).toEqual(expect.arrayContaining(queries.map(searchBody)))
+    expect(observed.every(item => item.apiVersion === '2023-06-01' && item.key === 'owned-search-fixture-key')).toBe(true)
+    const durable = (await f.pool.query<{ event: unknown }>(
+      "SELECT event FROM pe_events WHERE session_id=$1 AND event->>'type'='web/deepseek-search-llm-request' ORDER BY seq",
+      [n.original.sessionId])).rows.map(row => row.event)
+    expect(durable).toEqual(recorded)
+  }, true)
+}))
+
+test('native Search refuses altered bodies, versions, closed steps and exact requests from an earlier step', () => cloudFixture(async (f) => {
+  const n = await prepare(f), a = searchBody('first query'), b = searchBody('second query')
+  const log = (body: SearchBody) => n.append(n.session.append('web/deepseek-search-llm-request', {
+    endpoint: 'https://original-search.example/messages', apiVersion: '2023-06-01', body }))
+  await log(a)
+  await searchProxy(n, async ({ post, observed }) => {
+    for (const [body, version] of [[b, '2023-06-01'], [a, 'different-version']] as const) {
+      expect(await post(body, version)).toEqual({ status: 403, body: { error: 'native_search_not_authorized' } })
+    }
+    await n.append(n.session.append('step/end', { turn: 1, step: 1 }))
+    expect(await post(a)).toEqual({ status: 409, body: { error: 'native_execution_step_unclaimed' } })
+    const next = nativeInputClaimCommand.parse({ rpcNonce: randomUUID(), cohortId: randomUUID(),
+      frame: n.initial.frame, boundaryKind: 'continuing-step' })
+    await n.ledger.claim({ command: next, authority: n.authority, expectedEventCount: n.history.length, events: [] })
+    await n.step(2, next); await log(b)
+    expect(await post(a)).toEqual({ status: 403, body: { error: 'native_search_not_authorized' } })
+    expect((await post(b)).status).toBe(200)
+    expect(observed.map(item => item.body)).toEqual([b])
+  })
+}))
+
+test.each(['writer', 'lease', 'runtime', 'account', 'model'] as const)(
+  'a durable native Search request cannot bypass the current %s authorization fence', fence => cloudFixture(async (f) => {
+    const n = await prepare(f), body = searchBody('original durable query')
+    await n.append(n.session.append('web/deepseek-search-llm-request', {
+      endpoint: 'https://original-search.example/messages', apiVersion: '2023-06-01', body }))
+    if (fence === 'writer') await n.writers.release(n.writer)
+    if (fence === 'lease') await f.pool.query("UPDATE pe_sessions SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1", [n.original.sessionId])
+    if (fence === 'runtime') await new NativeRuntimeAuthority(f.pool).revoke(n.runtime.credentialId)
+    if (fence === 'account') await f.pool.query('UPDATE pe_users SET enabled=false WHERE id=$1', [f.alice.user.userId])
+    if (fence === 'model') await f.pool.query('UPDATE pe_user_models SET enabled=false WHERE user_id=$1', [f.alice.user.userId])
+    await searchProxy(n, async ({ post, observed }) => {
+      const result = await post(body)
+      expect(result.status).toBeGreaterThanOrEqual(400)
+      expect(result.status).toBeLessThan(500)
+      expect(observed).toEqual([])
+    })
+  }))

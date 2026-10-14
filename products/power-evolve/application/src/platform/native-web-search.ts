@@ -16,7 +16,7 @@ const bodySchema = z.object({ model: z.string().min(1).max(100), max_tokens: z.n
     max_uses: z.number().int().positive() }).strict()]),
 }).strict()
 
-/** Forward one native auxiliary request only after its exact original input is durable.
+/** Forward one native auxiliary request matching a durable original input in the current step.
  * @param tasks Current operation, account and native consumption authority.
  * @param config Platform-owned provider address, key and byte/deadline bounds.
  * @param request Original native provider request with a current operation bearer.
@@ -33,9 +33,11 @@ export async function proxyNativeWebSearch(tasks: TaskStore, config: ModelProxyC
     const records = await client.query<{ event: unknown }>(
       `SELECT event FROM pe_events WHERE session_id=$1 AND event->>'type'='web/deepseek-search-llm-request'
         AND seq>(SELECT COALESCE(max(seq),
-          -1) FROM pe_events WHERE session_id=$1 AND event->>'type'='step/start') ORDER BY seq DESC LIMIT 1`, [owner.id])
-    const logged = z.object({ data: z.object({ apiVersion: z.string(), body: bodySchema }) }).parse(records.rows[0]?.event)
-    if (!isDeepStrictEqual(logged.data.body, body) || logged.data.apiVersion !== request.headers['anthropic-version']) {
+          -1) FROM pe_events WHERE session_id=$1 AND event->>'type'='step/start')`, [owner.id])
+    const logged = z.array(z.object({ data: z.object({ apiVersion: z.string(), body: bodySchema }) }))
+      .parse(records.rows.map(row => row.event))
+    if (!logged.some(event => isDeepStrictEqual(event.data.body, body)
+      && event.data.apiVersion === request.headers['anthropic-version'])) {
       throw new PlatformError(403, 'native_search_not_authorized')
     }
   })
