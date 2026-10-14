@@ -27,7 +27,7 @@ import type { BrowserAgentAuth } from './browser-auth.ts'
 import type {} from './scope.ts'
 import { nativePermissionKnobs, nativePermissionProjection } from './native-permission-projection.ts'
 import { followNativeSession, type NativeFollowLimits } from './native-session-follow.ts'
-import { nativeSettings } from './native-settings.ts'
+import { nativeSettings, nativeTenantSettingsArguments, nativeTenantSettingsResult } from './native-settings.ts'
 import { readPluginInventory } from '@deepseek-ai/dsh-host-plugin-inventory'
 import { installNativeRuntimeRoutingUpgrade } from './native-runtime-routing.ts'
 import type {} from './native-runtime-sessions.ts'
@@ -219,8 +219,9 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
     }
     if (method.startsWith('settings/')) {
       if (ctx.powerEvolveRuntime.config.runtimeUserId === '') return nativeSettings(call, method, args, token)
-      return new NativeWireResult(await ctx.typertGateway.wireRpc.invoke(method, { args: z.record(z.string(),
-        z.unknown()).parse(args) }, undefined, signal))
+      const input = nativeTenantSettingsArguments(z.record(z.string(), z.unknown()).parse(args))
+      return new NativeWireResult(nativeTenantSettingsResult(method,
+        await ctx.typertGateway.wireRpc.invoke(method, { args: input }, undefined, signal)))
     }
     if (method.startsWith('pluginManager/')) {
       const operation = method.slice('pluginManager/'.length)

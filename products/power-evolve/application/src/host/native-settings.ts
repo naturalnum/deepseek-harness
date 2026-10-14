@@ -2,6 +2,8 @@
 import { Config as DeveloperConfig } from '@deepseek-ai/dsh-client-ui-settings'
 import { Config as WelcomeConfig } from '@deepseek-ai/dsh-client-ui-settings-general'
 import { z } from 'zod'
+import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-api-gateway'
 import { PlatformError } from '../contracts.ts'
 
 const namespace = z.enum(['ui-settings', 'ui-settings-general'])
@@ -11,6 +13,48 @@ const operation = z.discriminatedUnion('op', [
   z.object({ op: z.literal('unset'), path: z.array(z.string()).length(1) }).strict(),
 ])
 type Call = (path: string, token: string, input: unknown) => Promise<unknown>
+type WireResult = Awaited<ReturnType<Context['typertGateway']['wireRpc']['invoke']>>
+const searchNamespace = 'web-search-deepseek', searchEntry = 'power-evolve-web-search'
+
+/** Preserve the upstream Search page namespace while the owned Profile contains a distinct Platform provider entry.
+ * @param args Original native Settings arguments, validated by their original Remote descriptor after routing.
+ * @returns The exact arguments with only the known Search entry identity translated.
+ */
+export function nativeTenantSettingsArguments(args: Record<string, unknown>): Record<string, unknown> {
+  return args.ns === searchNamespace ? { ...args, ns: searchEntry } : args
+}
+
+/** Project the real original Settings result back to the maintained Search UI namespace without synthesizing a descriptor.
+ * @param method Original native Settings method.
+ * @param result Original Gateway result, including unchanged refusals and schema/revision/value fields.
+ * @returns The same result with only the mounted Search descriptor's namespace translated.
+ */
+export function nativeTenantSettingsResult(method: string, result: WireResult): WireResult {
+  if (!result.ok) return result
+  const descriptor = (value: unknown): unknown => {
+    const row = z.object({ ns: z.string() }).loose().parse(value)
+    return row.ns === searchEntry ? { ...row, ns: searchNamespace } : value
+  }
+  if (method === 'settings/describe') {
+    const value = z.object({ namespaces: z.array(z.unknown()) }).loose().parse(result.value)
+    return { ...result, value: { ...value, namespaces: value.namespaces.map(descriptor) } }
+  }
+  if (['settings/update', 'settings/replace', 'settings/mutate'].includes(method)) {
+    return { ...result, value: descriptor(result.value) }
+  }
+  return result
+}
+
+/** Preserve the original Search UI subscription identity for actual Settings changes.
+ * @param frame Original native event frame.
+ * @returns The same notification with only its known Search namespace translated.
+ */
+export function nativeTenantSettingsEvent(frame: unknown): unknown {
+  const value = z.object({ type: z.literal('emit'), event: z.literal('settings/document-updated'),
+    args: z.tuple([z.string()]).rest(z.unknown()) }).loose().safeParse(frame)
+  return value.success && value.data.args[0] === searchEntry
+    ? { ...value.data, args: [searchNamespace, ...value.data.args.slice(1)] } : frame
+}
 function view(ns: z.infer<typeof namespace>, value: z.infer<typeof stored>) {
   const config = ns === 'ui-settings' ? DeveloperConfig : WelcomeConfig
   return { ns, autoGenerate: false, schema: config.toJSON(),

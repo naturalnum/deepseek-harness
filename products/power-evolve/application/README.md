@@ -140,6 +140,8 @@ Current constraints are explicit at the corresponding native API:
 - Search retains the authorized corpus within configured input quotas for its temporary native index; it does not retain a reusable cross-request search index.
 - Cloud execution, Office and connector workers need their explicit private deployment configuration and real-service acceptance. Disabled composition does not establish those feature paths.
 
+The tenant Role disables the upstream Search provider and inserts `power-evolve-web-search` as a distinct Platform-backed entry. Native Settings keeps the maintained `web-search-deepseek` page namespace while routing its real descriptor, writes and change notifications to that entry. Model, API version and token/use budgets remain live native preferences. The original Settings schema, secret redaction and revision checks remain authoritative; Search dispatch still commits the original request event before using the bounded operation bearer.
+
 Native permission checkpoints carry the exact preset, sandbox and approval overrides privately to the account Runtime. The maintained native permission service resolves the current name using that account’s live catalog and defaults at the same committed watermark. Native unary byte results retain the original Gateway codec and browser multipart framing across the bounded private JSON relay.
 
 <a id="dev-note"></a>

@@ -2,6 +2,7 @@
 import { setTimeout as delay } from 'node:timers/promises'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-gateway'
+import { nativeTenantSettingsEvent } from './native-settings.ts'
 
 interface Summary { sessionId: string; running: boolean }
 type Read = () => Promise<readonly Summary[]>
@@ -48,7 +49,7 @@ export async function* nativeRuntimeEvents(ctx: Context, read: Read, pollMs: num
       if (next.value.done) return
       if (next.source === 'native') {
         nativeNext = native.next().then(value => ({ source: 'native' as const, value }))
-        if (!isTransientSession(next.value.value)) yield next.value.value
+        if (!isTransientSession(next.value.value)) yield nativeTenantSettingsEvent(next.value.value)
       } else {
         sessionNext = sessions.next().then(value => ({ source: 'sessions' as const, value }))
         yield next.value.value

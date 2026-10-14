@@ -72,10 +72,7 @@
     provider: power-evolve
     model: !!js ctx.powerEvolveRuntime.runtimeDefaultModel
 - id: web-search-deepseek
-  name: '@power-evolve/application/web-search'
-  inject: [powerEvolveRuntime]
-  config:
-    model: !!js ctx.powerEvolveRuntime.runtimeDefaultModel
+  disabled: true
 - insert:
     - id: native-runtime-ui-admission
       name: '@power-evolve/application/native-runtime-ui-admission'
@@ -87,6 +84,11 @@
       name: '@power-evolve/client-account'
     - id: power-evolve-client-extension-center
       name: '@power-evolve/client-extension-center'
+    - id: power-evolve-web-search
+      name: '@power-evolve/application/web-search'
+      inject: [powerEvolveRuntime]
+      config:
+        model: !!js ctx.powerEvolveRuntime.runtimeDefaultModel
     - id: power-evolve-runtime
       name: '@power-evolve/application/scope'
       config:
