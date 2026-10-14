@@ -30,10 +30,13 @@ export class NativeExecutionRelay {
   private readonly replies = new Map<string, ReturnType<typeof Promise.withResolvers<unknown>>>()
   private readonly writes = new Set<Promise<void>>()
   private closed = false
+  private readonly failures: Error[] = []
+  private transportStopping = false
   private readonly interrupted = new AbortController()
 
   constructor(private readonly local: SubprocessHandle, spec: Pick<SubprocessSpawnSpec, 'stdio'>, private readonly maxFrameBytes: number) {
     this.ready = this.admission.promise
+    this.ownInput(local.stdin)
     const out = typeof spec.stdio.stdout === 'object' ? new OutputCollector(spec.stdio.stdout.maxBytes, 'stdout', undefined) : undefined
     const err = typeof spec.stdio.stderr === 'object' ? new OutputCollector(spec.stdio.stderr.maxBytes, 'stderr', undefined) : undefined
     this.collected = { ...(out ? { stdout: out } : {}), ...(err ? { stderr: err } : {}) }
@@ -54,6 +57,7 @@ export class NativeExecutionRelay {
     this.control = spec.stdio.control === 'pipe' ? new Duplex({ read() {}, write: write('control'), final: (callback) => {
       this.send({ op: 'controlEnd' }).then(() => { callback() }, callback)
     } }) : undefined
+    this.ownInput(this.stdin); this.ownInput(this.control)
     if (typeof spec.stdio.stdin === 'object') {
       const data = Buffer.from(spec.stdio.stdin.data)
       const batch = (async () => {
@@ -105,23 +109,68 @@ export class NativeExecutionRelay {
           if (buffer.length > maxFrameBytes) throw new Error('Native relay incomplete frame exceeds configured bound')
         }
         const transport = await local.done
+        const inputFailure = this.failures[0]
+        if (inputFailure) throw inputFailure
         if (buffer.length || transport.exitCode !== 0 || !outcome) throw new Error('Native relay outcome unavailable',
           { cause: new Error('transport=' + JSON.stringify(transport) + '; stderr=' + (local.collected.stderr?.readFrom(0).text ?? '') + '; trailing=' + String(buffer.length) + '; outcome=' + JSON.stringify(outcome)) })
-        return outcome
+      } catch (error) {
+        this.retainFailure(error)
+        this.stopTransport()
       } finally {
         this.closed = true
-        const error = new Error('Native relay closed')
+        const error = this.failures[0] ?? new Error('Native relay closed')
         this.admission.reject(error)
         for (const reply of this.replies.values()) reply.reject(error)
         this.replies.clear()
         const pending = await Promise.allSettled([...this.writes])
-        this.stdout?.end(); this.stderr?.end(); this.control?.push(null); this.stdin?.destroy()
+        try {
+          if (!await local.waitForExit()) this.retainFailure(new Error('Native relay transport exit is unconfirmed'))
+        } catch (error) { this.retainFailure(error) }
+        this.stdout?.end(); this.stderr?.end(); this.control?.push(null)
+        await Promise.all([this.stdin, this.control].map((stream) => {
+          if (!stream || stream.closed) return Promise.resolve()
+          return new Promise<void>((resolve) => { stream.once('close', resolve); stream.destroy() })
+        }))
         out?.seal(); err?.seal()
         // Joining failed writes is mandatory; their originating calls retain their own rejection.
         void pending
       }
+      if (this.failures.length > 1) throw new AggregateError(this.failures, 'Native relay transport failed')
+      const failure = this.failures[0]
+      if (failure) throw failure
+      if (!outcome) throw new Error('Native relay outcome unavailable')
+      return outcome
     })()
     void this.ready.catch(() => {})
+  }
+
+  private retainFailure(error: unknown): void {
+    const failure = error instanceof Error ? error : new Error('Native relay transport failed', { cause: error })
+    if (!this.failures.includes(failure)) this.failures.push(failure)
+  }
+
+  private stopTransport(): void {
+    if (this.transportStopping) return
+    this.transportStopping = true
+    try { this.local.terminate() } catch (error) { this.retainFailure(error) }
+  }
+
+  private ownInput(stream: Writable | undefined): void {
+    if (!stream) return
+    const failed = (error: Error) => {
+      this.retainFailure(error)
+      this.closed = true
+      this.interrupted.abort(error)
+      this.admission.reject(error)
+      for (const reply of this.replies.values()) reply.reject(error)
+      this.replies.clear()
+      this.stopTransport()
+    }
+    // Node emits error independently of the write callback. Keep ownership until actual close,
+    // including callback rejection and shutdown, rather than treating a callback as an event join.
+    stream.on('error', failed)
+    stream.once('close', () => { stream.off('error', failed) })
+    if (stream.errored) failed(stream.errored)
   }
 
   private waitDrain(stream: PassThrough): Promise<void> {
@@ -152,11 +201,11 @@ export class NativeExecutionRelay {
     })
   }
   private send(input: Record<string, unknown>): Promise<void> {
-    if (this.closed) return Promise.reject(new Error('Native relay closed'))
+    if (this.closed) return Promise.reject(this.failures[0] ?? new Error('Native relay closed'))
     const work = (async () => {
       await this.ready
       const channel = this.local.stdin
-      if (this.closed || !channel) throw new Error('Native relay input unavailable')
+      if (this.closed || !channel) throw this.failures[0] ?? new Error('Native relay input unavailable')
       const bytes = Buffer.from(JSON.stringify(input) + '\n')
       if (bytes.length > this.maxFrameBytes) throw new Error('Native relay input exceeds configured frame bound')
       await new Promise<void>((resolve, reject) => channel.write(bytes, (error?: Error | null) => { if (error) reject(error)
@@ -168,6 +217,8 @@ export class NativeExecutionRelay {
   private async request(op: string, fields: Record<string, unknown> = {}): Promise<unknown> {
     if (this.closed) throw new Error('Native relay closed')
     const id = randomUUID(), result = Promise.withResolvers<unknown>()
+    // A failed write can reject the reply before send settles; the caller still receives that failure.
+    void result.promise.catch(() => {})
     this.replies.set(id, result)
     try { await this.send({ op, id, ...fields }); return await result.promise }
     finally { this.replies.delete(id) }

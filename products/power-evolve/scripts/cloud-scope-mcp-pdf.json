@@ -78,7 +78,7 @@
     },
     "sourceTests": {
       "enabled": 12,
-      "shared": 164,
+      "shared": 165,
       "deferred": 3
     },
     "builtTests": {
@@ -4123,6 +4123,13 @@
     {
       "kind": "sourceTests",
       "path": "products/power-evolve/application/tests/native-execution-config.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-execution-relay.spec.ts",
       "status": "shared",
       "owner": "Root",
       "reason": "core-shared"
