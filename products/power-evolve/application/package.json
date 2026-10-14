@@ -187,6 +187,7 @@
   },
   "scripts": {
     "build": "tsc -b tsconfig.json && tsdown",
-    "typecheck": "tsc -b tsconfig.json --pretty false"
+    "typecheck": "tsc -b tsconfig.json --pretty false",
+    "build:native-execution-test": "tsc -b tsconfig.json && tsdown --config tsdown.native-execution-test.config.ts"
   }
 }
