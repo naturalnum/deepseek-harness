@@ -116,6 +116,8 @@ Office 部署必须指定经过运维验证、在解析器启动前禁用外部�
 
 模型接收受理操作中获授权的配置与选定说明。到达模型的输入和结果均记为原生 Session 事件。模型提议受控动作，独立审批凭据保留在 Platform。已组合的 DeepSeek 适配器将推理解析为 `off`；原生目录与持久选择也报告这一值。
 
+原生关闭回合的转移会先在原 operation 和 Writer 仍有效时等待该 Agent 已捕获执行绑定的原始停止完成。只有确认原对象停止后才允许封存 publisher 并在 PG 退役操作；排空失败保留原始错误并阻止结算。既有进程的观察通过此前明确提交的 cohort 跨越步和回合的关闭窗口，新执行仍要求当前已 claim 的开放步。持久 Bash 回归使用原生 Loop、两条真实命令与原 PG/HTTP provider，Kubernetes 侧限于受控 TLS 观察、工作进程使用调用者拥有的不可变 Linux 镜像（`PE_TEST_CLOUD_IMAGE`）；这些观察不能替代实际 gVisor 验收。
+
 原生模型出口把已提交的请求 Header 绑定到当前 operation 和 epoch。仅 Host 可见的 Session projection 在原生 Loop 的继续步骤中保留该序号；原生 Loop 为下一 operation 开始自己的请求系列。Platform 先核对原始已认领 Frame 的前缀，再接受该序号，并把采样的原生工具 schema 与已受理 MCP／STDIO 定义一起冻结。派生子会话使用原始新建记录或继承 seed 的切点；继承会话缺失该标记时拒绝授权。启动期间只含名称的注册用于保留目录名称，不能授权原生模型请求。
 
 Platform JSON 响应读取器在消费响应期间保留原始调用者 signal 与配置的 deadline。读取中断时，先取消并等待自己持有的 Reader，再报告原始取消或超时原因。独立的取消失败同时保留该原因与清理错误。传输取消后，服务端事务结果仍然未知；只有原始保留回执才能证明确认。

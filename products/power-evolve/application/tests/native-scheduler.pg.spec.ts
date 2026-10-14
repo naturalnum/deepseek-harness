@@ -32,6 +32,12 @@ import type { NativePublicationBudgetDiagnostic, NativePublicationSeal } from '.
 import PlatformPersistence from '../src/host/persistence.ts'
 import { Scheduler } from '../src/host/scheduler.ts'
 import RuntimeScope from '../src/host/scope.ts'
+import NativeRuntimeExecution from '../src/host/native-runtime-execution.ts'
+import { cleanupNativeRuntime, nativeRuntimeCleanupRequest } from '../src/platform/native-runtime-cleanup.ts'
+import { TerminalSessionService } from '@deepseek-ai/dsh-terminal'
+import * as TerminalBash from '@deepseek-ai/dsh-terminal-bash'
+import * as PersistentBash from '@deepseek-ai/dsh-tool-bash-persistent'
+import { persistentExecutionFixture } from './native-persistent-execution-fixture.ts'
 import { nativeAssistantBatch, nativeAssistantEntry, type NativeAssistantEntry } from '../src/native-assistant-records.ts'
 import { type NativeArchiveInputCancelCommit,
   type NativeArchiveInputCancelReceipt } from '../src/native-archive-input-contracts.ts'
@@ -179,7 +185,7 @@ class GenerationModel extends MockAdapter {
 
 /** Build an independent actual Host so restart recovery obtains a separately issued worker identity. */
 async function prepareHost(host: Context, origin: string, workerFile: string, imageCache: string,
-  budgetFirstChunk = false, runtimeTimeoutMs = 5000, tenant?: { userId: string; runtimeId: string }): Promise<{
+  budgetFirstChunk = false, runtimeTimeoutMs = 5000, tenant?: { userId: string; runtimeId: string }, persistentChecks = false): Promise<{
   ctx: Context
   runtime: ObservedRuntime
 }> {
@@ -194,7 +200,8 @@ async function prepareHost(host: Context, origin: string, workerFile: string, im
     await host.plugin(SandboxPolicy, { mode: 'read-only', workspaceRoot: '/workspace' })
     await host.plugin(AgentPresets, { default: 'standard' })
     await host.inject(['agentPresets'], async (ctx) => { await ctx.agentPresets.register({ id: 'standard', plugins: [] }) })
-    await host.inject(['powerEvolveRuntime'], (ctx) => {
+    if (persistentChecks) await host.plugin(NativeRuntimeExecution, { pollMs: 20, maxOutputBytes: 1048576 })
+    else await host.inject(['powerEvolveRuntime'], (ctx) => {
       ctx.provide('nativeRuntimeExecution', { bind: (agent: Agent, operation: Grant) => {
         expect(agent.id).toBe(operation.sessionId); expect(ctx.powerEvolveRuntime.require(agent.id)).toBe(operation)
         return Promise.resolve()
@@ -224,7 +231,7 @@ async function schedulerCase(ownerFirst: boolean, failFirstModel = false, loseSt
   recoverConsumed: 'none' | 'complete' | 'timeout' | 'prepared-cancel' | 'archive-prepared' | 'archive-claimed'
     | 'archive-parked' | 'archive-warm-pending' | 'archive-warm-admission' = 'none', loggerThrows = false,
   budgetFirstChunk = false, imageOffload = false, holdWriterRenew = false, timeoutWriterRenew = false,
-  headerChecks = false): Promise<void> {
+  headerChecks = false, persistentChecks = false, persistentStopFailure = false): Promise<void> {
   const archiveRecovery = recoverConsumed === 'archive-prepared' ? 'prepared' : recoverConsumed === 'archive-claimed' ? 'claimed' : undefined
   const warmArchive = recoverConsumed === 'archive-warm-pending' ? 'pending'
     : recoverConsumed === 'archive-warm-admission' ? 'admission' : undefined
@@ -261,7 +268,11 @@ async function schedulerCase(ownerFirst: boolean, failFirstModel = false, loseSt
     const execution = new NativeExecutionAuthority((client, session, token) => frames.readExecutionInTransaction(client, session, token),
       { ...historyLimits, maxCohortInputs: 128, maxFactBytes: 2_097_152 })
     const businessTasks = new TaskStore(f.pool, taskLimits,
-      (client, session, token) => execution.assertExecutionInTransaction(client, session, token))
+      (client, session, token, purpose) => purpose === 'process-lifecycle'
+        ? execution.assertProcessInTransaction(client, session, token) : execution.assertExecutionInTransaction(client, session, token))
+    const persistent = persistentChecks ? await persistentExecutionFixture(f, businessTasks, persistentStopFailure) : undefined
+    let closedStepRefusals = 0
+    const originalCleanups: { operationId: string; epoch: number; writerEpoch: number }[] = []
     const skills = new SkillService(f.pool, join(f.root, 'skills')); await skills.init()
     const host = new Context(), requests = new Set<Promise<void>>()
     const claims: { request: NativeInputClaimCommit; receipt: InputCommandReceipt }[] = []
@@ -314,12 +325,15 @@ async function schedulerCase(ownerFirst: boolean, failFirstModel = false, loseSt
         const index = headerModels.length
         if (index === 1) { firstHeaderModel.resolve(undefined); await releaseHeaderModel.promise }
         response.setHeader('content-type', 'text/event-stream')
-        const content = index === 1 ? { type: 'tool_use', id: 'native-owned-call', name: 'native_header_probe', input: {} }
-          : { type: 'text', text: 'Actual native fixture response' }
+        const tool = persistentChecks && index <= 2
+        const content = tool ? { type: 'tool_use', id: `native-owned-bash-${index}`, name: 'bash',
+          input: { command: index === 1 ? 'export QA_NATIVE_PERSISTED=ORIGINAL_TWO_STEP_ENV' : 'printenv QA_NATIVE_PERSISTED' } }
+          : index === 1 ? { type: 'tool_use', id: 'native-owned-call', name: 'native_header_probe', input: {} }
+            : { type: 'text', text: 'Actual native fixture response' }
         for (const event of [
           { type: 'message_start', message: { id: `native-message-${index}`, model: 'trial-model', role: 'assistant', content: [], usage: { input_tokens: 1, output_tokens: 0 } } },
           { type: 'content_block_start', index: 0, content_block: content }, { type: 'content_block_stop', index: 0 },
-          { type: 'message_delta', delta: { stop_reason: index === 1 ? 'tool_use' : 'end_turn' }, usage: { output_tokens: 1 } },
+          { type: 'message_delta', delta: { stop_reason: tool || index === 1 ? 'tool_use' : 'end_turn' }, usage: { output_tokens: 1 } },
           { type: 'message_stop' },
         ]) response.write(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`)
         response.end()
@@ -339,7 +353,17 @@ async function schedulerCase(ownerFirst: boolean, failFirstModel = false, loseSt
           }
           const token = bearer(request), input = await readJson(request, ledgerLimits.maxCommandBytes)
           const route = headerChecks ? request.url?.replace('/runtime/user/', '/runtime/') : request.url
+          if (persistent && route?.startsWith('/runtime/native-world/')) {
+            sendJson(response, await persistent.routes.route(route, token, input)); return
+          }
           switch (route) {
+            case '/runtime/cleanup': {
+              const cleanup = nativeRuntimeCleanupRequest.parse(input)
+              const result = await cleanupNativeRuntime(f.pool, token, cleanup,
+                { ...historyLimits, maxEventBytes: taskLimits.maxEventBytes })
+              originalCleanups.push({ operationId: cleanup.operationId, epoch: cleanup.epoch, writerEpoch: cleanup.writer.epoch })
+              sendJson(response, result); return
+            }
             case '/runtime/identity': {
               const identity = await runtimeAuthority.authenticate(token)
               const account = first((await f.pool.query<{ settings: unknown }>('SELECT settings FROM pe_users WHERE id=$1', [identity.userId])).rows)
@@ -351,7 +375,7 @@ async function schedulerCase(ownerFirst: boolean, failFirstModel = false, loseSt
                 await registerNativeToolNames(tasks, token, inputTools); sendJson(response, { registered: true }); return
               }
               const owner = await transaction(f.pool, client => businessTasks.executionAuthorized(client, token))
-              if (headerRequests.length === 2) {
+              if (headerRequests.length === (persistentChecks ? 3 : 2)) {
                 const previous = first(headerRequests)
                 const before = (await f.pool.query<{ value: unknown }>('SELECT value FROM pe_native_preferences WHERE user_id=$1 AND namespace=$2',
                   [owner.user_id, `runtime-tools:${owner.operation_id}:${owner.lease_epoch}`])).rows
@@ -404,7 +428,7 @@ async function schedulerCase(ownerFirst: boolean, failFirstModel = false, loseSt
               switch (mutation.family) {
                 case 'publication':
                   mutationRoute = '/runtime/native-assistant'
-                  if (headerChecks && headerRequests.length === 2 && oldHeaderRefusals === 0
+                  if (headerChecks && headerRequests.length === (persistentChecks ? 3 : 2) && oldHeaderRefusals === 0
                     && mutation.request.items.some(item => item.type === 'event' && item.event.type === 'request/header')) {
                     const owner = await transaction(f.pool, client => businessTasks.executionAuthorized(client, token))
                     const previous = first(headerRequests)
@@ -431,6 +455,26 @@ async function schedulerCase(ownerFirst: boolean, failFirstModel = false, loseSt
                 case 'admission': mutationRoute = '/runtime/native-input/admit'; admissionCalls++; break
                 case 'claim':
                   mutationRoute = '/runtime/native-input/claim'
+                  if (persistent && claims.length === 1 && closedStepRefusals === 0) {
+                    // The original Loop has committed step/end; hold its real next claim, rather than manufacturing history.
+                    await expect(transaction(f.pool, client => businessTasks.executionAuthorized(client, token)))
+                      .rejects.toMatchObject({ code: 'native_execution_step_unclaimed' })
+                    const original = first((await f.pool.query<{ id: string; pod_name: string; pod_uid: string; world_id: string }>(
+                      "SELECT p.id,p.pod_name,p.pod_uid,p.world_id FROM pe_native_execution_processes p JOIN pe_native_execution_worlds w ON w.id=p.world_id WHERE w.operation_id=$1 AND p.state='running'",
+                      [mutation.request.command.frame.operationId])).rows)
+                    const world = (await persistent.authority.open(token, mutation.request.command.frame.sessionId)).world
+                    await expect(persistent.authority.assert(token, world)).rejects.toMatchObject({ code: 'native_execution_step_unclaimed' })
+                    await expect(persistent.routes.route('/runtime/native-world/process/start', token, { world, id: randomUUID(),
+                      spec: { argv: ['/bin/bash', '-c', 'true'], cwd: '/workspace', graceMs: 100,
+                        stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' } } }))
+                      .rejects.toMatchObject({ code: 'native_execution_step_unclaimed' })
+                    expect((await f.pool.query('SELECT id FROM pe_native_execution_processes')).rowCount).toBe(1)
+                    await persistent.authority.assertProcess(token, world, { id: original.id, name: original.pod_name,
+                      uid: original.pod_uid, namespace: 'owned-persistent' })
+                    await delay(150)
+                    expect(first((await f.pool.query<{ state: string }>('SELECT state FROM pe_native_execution_processes WHERE id=$1', [original.id])).rows).state).toBe('running')
+                    closedStepRefusals++
+                  }
                   if (loseClaimBeforeCommit && gatedClaims.length === 0) {
                     gatedClaims.push(mutation.request)
                     await claimReplyGate.promise
@@ -643,7 +687,7 @@ async function schedulerCase(ownerFirst: boolean, failFirstModel = false, loseSt
       if (!address || typeof address === 'string') throw new Error('Expected owned HTTP listener')
       const origin = `http://127.0.0.1:${address.port}`, workerFile = join(f.root, 'native-scheduler-worker-token')
       await writeFile(workerFile, workerToken, { mode: 0o600 })
-      const { ctx, runtime: actualRuntime } = await prepareHost(host, origin, workerFile, join(f.root, 'image-cache'), budgetFirstChunk, 5000, tenant)
+      const { ctx, runtime: actualRuntime } = await prepareHost(host, origin, workerFile, join(f.root, 'image-cache'), budgetFirstChunk, persistentChecks ? 30000 : 5000, tenant, persistentChecks)
       if (failFirstModel || budgetFirstChunk) {
         const capture = vi.spyOn(console, 'log').mockImplementation((message: unknown) => {
           if (typeof message !== 'string') throw new Error('Expected the actual console exporter text')
@@ -675,11 +719,16 @@ async function schedulerCase(ownerFirst: boolean, failFirstModel = false, loseSt
       if (headerChecks) {
         // This Model test grants no filesystem/process capability or preset composition; its unused setup seams are substituted.
         let executed = 0
-        ctx.tools.register(defineContentToolFixture({ name: 'native_header_probe', description: 'Actual maintained native tool dispatch fixture',
+        if (persistent) {
+          await ctx.plugin(TerminalSessionService)
+          await ctx.plugin(TerminalBash, { timeoutMs: 20000, pollIntervalMs: 20, exactProbeAfterMs: 20,
+            idleSilenceMs: 100, handoffGraceMs: 20, disposeGraceMs: 100 })
+          await ctx.plugin(PersistentBash, { timeoutMs: 20000 })
+        } else ctx.tools.register(defineContentToolFixture({ name: 'native_header_probe', description: 'Actual maintained native tool dispatch fixture',
           parameters: {}, async execute() { executed++; return [{ type: 'text', text: 'Observed native tool result' }] } }))
         await ctx.plugin(NativeModel, { streamIdleTimeoutMs: 5000 })
         scheduler = new Scheduler(ctx, { platformOrigin: origin, concurrency: 1, pollMs: 20, renewMs: 10000,
-          operationTimeoutMs: 30000, nativeInputPollMs: 10, nativeInputBatchSize: 8 })
+          operationTimeoutMs: persistentChecks ? 60000 : 30000, nativeInputPollMs: 10, nativeInputBatchSize: 8 })
         scheduler.start()
         try {
           await expect.poll(() => ({ requests: headerModels.length, failures: routeFailures, errors: agentErrors }), poll)
@@ -691,22 +740,75 @@ async function schedulerCase(ownerFirst: boolean, failFirstModel = false, loseSt
           throw error
         }
         await firstHeaderModel.promise
-        const second = z.object({ operationId: z.string() }).parse(await tasks.accept(f.alice.user, session.sessionId,
-          requestId.parse(randomUUID()), 'B original next operation', f.alice.token))
+        const second = persistentStopFailure ? undefined : z.object({ operationId: z.string() }).parse(await tasks.accept(
+          f.alice.user, session.sessionId, requestId.parse(randomUUID()), 'B original next operation', f.alice.token))
         releaseHeaderModel.resolve(undefined)
-        await expect.poll(() => transitions.length, poll).toBe(2)
+        if (persistent) {
+          await persistent.stopEntered
+          expect(transitions).toEqual([])
+          const original = first(headerModels)
+          const authority = await transaction(f.pool, client => businessTasks.authorized(client,
+            actualRuntime.require(session.sessionId).token))
+          expect(authority.operation_id).toBe(original.operationId)
+          expect(first((await f.pool.query<{ live: boolean }>(
+            'SELECT expires_at>clock_timestamp() AS live FROM pe_native_writers WHERE session_id=$1', [session.sessionId])).rows).live).toBe(true)
+          await delay(100)
+          expect(transitions).toEqual([])
+          if (persistentStopFailure) persistent.rejectStop()
+          persistent.releaseStop()
+        }
+        if (persistent && persistentStopFailure) {
+          await expect.poll(() => originalCleanups.length, poll).toBe(1)
+          await scheduler.close(); scheduler = undefined
+          expect(transitions).toEqual([])
+          expect(originalCleanups).toEqual([{ operationId: first(headerModels).operationId, epoch: 1, writerEpoch: 1 }])
+          const native = first(created)
+          const failed = await ctx.nativeRuntimeExecution.drain(native).then(() => undefined, (error: unknown) => error)
+          expect(failed).toBeInstanceOf(AggregateError)
+          await expect(ctx.nativeRuntimeExecution.drain(native)).rejects.toBe(failed)
+          expect((await f.pool.query('SELECT state,error_code FROM pe_operations WHERE session_id=$1', [session.sessionId])).rows)
+            .toEqual([{ state: 'failed', error_code: 'native_runtime_closed' }])
+          expect(first((await f.pool.query<{ stop_evidence: unknown }>('SELECT stop_evidence FROM pe_native_execution_processes')).rows).stop_evidence).toBeNull()
+          const records = (await f.pool.query<{ event: SessionEvent }>('SELECT event FROM pe_events WHERE session_id=$1 ORDER BY seq', [session.sessionId])).rows.map(row => row.event)
+          expect(records.filter(event => event.type === 'tool/result').map(event => event.data.message.isError)).toEqual([false, false])
+          process.stdout.write(JSON.stringify({ retainedStopFailure: { originalCleanups, routeFailures, transitions: transitions.length } }) + '\n')
+          expect(routeFailures).toEqual(['/runtime/native-world/terminal/stop:Error', '/runtime/native-world/terminal/release:Error'])
+          return
+        }
+        if (!second) throw new Error('Missing actual successor')
+        try { await expect.poll(() => transitions.length, persistentChecks ? { ...poll, timeout: 40000 } : poll).toBe(2) }
+        catch (error: unknown) {
+          if (persistent) {
+            const history = (await f.pool.query<{ event: SessionEvent }>('SELECT event FROM pe_events WHERE session_id=$1 ORDER BY seq', [session.sessionId])).rows.map(row => row.event)
+            const ranges = (await f.pool.query('SELECT kind,state,first_stop_cause,outcome FROM pe_native_execution_processes')).rows
+            process.stdout.write(JSON.stringify({ persistentConsumer: { headerRequests, headerModels, routeFailures, agentErrors,
+              closedStepRefusals, history, ranges } }) + '\n')
+          }
+          throw error
+        }
         await scheduler.close(); scheduler = undefined
         process.stdout.write(JSON.stringify({ headerRequests, headerModels, routeFailures, agentErrors, executed }) + '\n')
-        expect(routeFailures).toEqual([]); expect(agentErrors).toEqual([]); expect(executed).toBe(1)
-        expect(headerRequests).toHaveLength(3); expect(headerModels).toHaveLength(3); expect(oldHeaderRefusals).toBe(1)
+        expect(routeFailures).toEqual([]); expect(agentErrors).toEqual([]); expect(executed).toBe(persistentChecks ? 0 : 1)
+        expect(headerRequests).toHaveLength(persistentChecks ? 4 : 3)
+        expect(headerModels).toHaveLength(persistentChecks ? 4 : 3); expect(oldHeaderRefusals).toBe(1)
         expect(headerRequests[1]).toEqual(headerRequests[0])
-        expect(headerRequests[2]?.operationId).toBe(second.operationId)
-        expect(headerRequests[2]?.seq).toBeGreaterThan(first(headerRequests).seq)
+        expect(headerRequests[persistentChecks ? 3 : 2]?.operationId).toBe(second.operationId)
+        expect(headerRequests[persistentChecks ? 3 : 2]?.seq).toBeGreaterThan(first(headerRequests).seq)
         expect(headerModels.slice(0, 2).map(row => row.operationId))
           .toEqual([first(headerRequests).operationId, first(headerRequests).operationId])
         const records = (await f.pool.query<{ event: SessionEvent }>('SELECT event FROM pe_events WHERE session_id=$1 ORDER BY seq', [session.sessionId])).rows.map(row => row.event)
         expect(records.filter(event => event.type === 'request/header')).toHaveLength(2)
-        expect(records.filter(event => event.type === 'step/start')).toHaveLength(3)
+        expect(records.filter(event => event.type === 'step/start')).toHaveLength(persistentChecks ? 4 : 3)
+        if (persistent) {
+          expect(closedStepRefusals).toBe(1)
+          const calls = records.filter(event => event.type === 'tool/call')
+          const results = records.filter(event => event.type === 'tool/result')
+          expect(calls.map(event => event.data.name)).toEqual(['bash', 'bash'])
+          expect(results.map(event => event.data.message.isError)).toEqual([false, false])
+          expect(JSON.stringify(results[1]?.data.message.content)).toContain('ORIGINAL_TWO_STEP_ENV')
+          expect((await f.pool.query('SELECT kind,state,first_stop_cause FROM pe_native_execution_processes')).rows)
+            .toEqual([{ kind: 'terminal', state: 'stopped', first_stop_cause: 'abort' }])
+        }
         expect(records.filter(event => event.type === 'turn/end').map(event => event.data.reason.kind)).toEqual(['completed', 'completed'])
         expect((await f.pool.query('SELECT state FROM pe_operations WHERE session_id=$1 ORDER BY created_at', [session.sessionId])).rows)
           .toEqual([{ state: 'completed' }, { state: 'completed' }])
@@ -2195,6 +2297,7 @@ async function schedulerCase(ownerFirst: boolean, failFirstModel = false, loseSt
       expect(() => actualRuntime.queueInput(f.alice.token, unavailable)).toThrow('native_input_owner_unavailable')
     } finally {
       releaseHeaderModel.resolve(undefined)
+      persistent?.releaseStop()
       writerRenewRelease.resolve(undefined)
       await heldWriterCloseResult
       stepReplyGate.resolve(undefined)
@@ -2202,7 +2305,7 @@ async function schedulerCase(ownerFirst: boolean, failFirstModel = false, loseSt
       warmPendingGate.resolve(undefined)
       for (const value of [model, recoveryModel]) for (const gate of value?.gates ?? []) gate.resolve(undefined)
       try {
-        try { await scheduler?.close(); await owner?.dispose() }
+        try { await scheduler?.close(); await owner?.dispose(); await persistent?.close() }
         finally {
           try { await recoveryHost?.fiber.dispose(); await host.fiber.dispose() } finally { await preserved?.dispose() }
         }
@@ -2281,3 +2384,11 @@ test('warm Host settles original A after actual archive refuses admission of B a
 
 test('native Model consumer keeps its continuing-step header and rejects the previous operation header for the next cohort',
   () => schedulerCase(false, false, false, false, false, false, 'none', false, false, false, false, false, true), 30000)
+
+
+test('original native Loop preserves one real persistent Bash across two claimed steps and rejects dispatch in the closed-step gap',
+  () => schedulerCase(false, false, false, false, false, false, 'none', false, false, false, false, false, true, true), 60000)
+
+
+test('original native Loop retains a real failed stop and refuses normal PG settlement',
+  () => schedulerCase(false, false, false, false, false, false, 'none', false, false, false, false, false, true, true, true), 60000)

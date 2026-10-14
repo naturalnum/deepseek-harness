@@ -425,6 +425,7 @@ export class Scheduler {
       const stop = renewalResult.archiveStop ?? archiveStop()
       if (stop) await cancelArchivePendingInputs({ ctx: this.ctx, agent: handle.agent, operation, frame,
         writer, stop, transport, signal: lifetime.signal, pollMs: this.config.nativeInputPollMs })
+      if (runtime.config.runtimeUserId !== '') await this.ctx.nativeRuntimeExecution.drain(handle.agent)
       const publisher = runtime.publication(operation)
       // A previously closed prefix may add no native events; acknowledge this new publisher before its seal is proved.
       publisher.heartbeat()
@@ -603,6 +604,8 @@ export class Scheduler {
           if (failure && !state.canSettle()) throw failure.error
           lifetime.signal.throwIfAborted()
           await this.ctx.sessions.flush(agent.session)
+          // Join the original execution world before the PG transition retires its operation bearer.
+          if (runtime.config.runtimeUserId !== '') await this.ctx.nativeRuntimeExecution.drain(agent)
           renewalPaused = true
           await renewing
           const renewed = renewal.parse(await runtime.call('/runtime/renew', operation.token, {}, lifetime.signal))
