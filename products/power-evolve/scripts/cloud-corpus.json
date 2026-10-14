@@ -425,6 +425,7 @@
     "products/power-evolve/application/tests/native-event-transaction.spec.ts",
     "products/power-evolve/application/tests/native-execution-authority.spec.ts",
     "products/power-evolve/application/tests/native-execution-broker-lifetime.spec.ts",
+    "products/power-evolve/application/tests/native-execution-config.spec.ts",
     "products/power-evolve/application/tests/native-execution-consumer-lifetime.spec.ts",
     "products/power-evolve/application/tests/native-host-tool-signal.spec.ts",
     "products/power-evolve/application/tests/native-image-admission.spec.ts",

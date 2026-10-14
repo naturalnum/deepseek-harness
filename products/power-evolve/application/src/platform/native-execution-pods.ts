@@ -31,6 +31,9 @@ export interface NativeExecutionPodConfig {
   nodeName?: string
   cpu: string
   memory: string
+  /** Scheduling requests; omitted fields retain the corresponding hard limit. */
+  requestCpu?: string
+  requestMemory?: string
   pollMs: number
   readyTimeoutMs: number
   stopTimeoutMs: number
@@ -47,9 +50,11 @@ export interface NativeExecutionPod {
 
 /** Owns only native-execution Pods; user processes receive neither control credentials nor shared roots. */
 export class NativeExecutionPods {
+  readonly config: NativeExecutionPodConfig & { requestCpu: string; requestMemory: string }
   private readonly homes: SafePosix
   private readonly temporary: SafePosix
-  constructor(private readonly pool: Pool, private readonly kube: KubernetesClient, readonly config: NativeExecutionPodConfig) {
+  constructor(private readonly pool: Pool, private readonly kube: KubernetesClient, config: NativeExecutionPodConfig) {
+    this.config = { ...config, requestCpu: config.requestCpu ?? config.cpu, requestMemory: config.requestMemory ?? config.memory }
     this.homes = new SafePosix(config.homeLocalRoot, { uid: 1000, gid: 1000 })
     this.temporary = new SafePosix(config.tmpLocalRoot, { uid: 1000, gid: 1000 })
   }
@@ -89,7 +94,7 @@ export class NativeExecutionPods {
         command: ['/bin/sleep', 'infinity'], workingDir: '/workspace',
         env: [{ name: 'HOME', value: '/home/agent' }, { name: 'PATH', value: '/usr/local/bin:/usr/bin:/bin' }],
         securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: ['ALL'] } },
-        resources: { requests: { cpu: this.config.cpu, memory: this.config.memory }, limits: { cpu: this.config.cpu,
+        resources: { requests: { cpu: this.config.requestCpu, memory: this.config.requestMemory }, limits: { cpu: this.config.cpu,
           memory: this.config.memory } },
         volumeMounts: [{ name: 'data', mountPath: '/workspace', subPath: root, readOnly: world.mode === 'read-only' },
           { name: 'data', mountPath: '/home/agent', subPath: home, readOnly: world.mode !== 'danger-full-access' },
