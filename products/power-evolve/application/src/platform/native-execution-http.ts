@@ -16,16 +16,17 @@ export function installNativeExecutionHttp(ctx: Context, routes: Pick<NativeExec
   maxRequestBytes: number): () => Promise<void> {
   const requests = new Set<IncomingMessage>(), responses = new Set<ServerResponse>(), pending = new Set<Promise<void>>()
   let closing = false, closed: Promise<void> | undefined
+  const isClosing = (): boolean => closing
   ctx.effect(() => ctx.webServer.register({ kind: 'prefix', path: '/runtime/native-world', handler: async (request, response) => {
     requests.add(request); responses.add(response)
     const requestClosed = transportClosed(request), responseClosed = transportClosed(response)
     const work = (async () => {
       try {
-        if (closing) throw new PlatformError(503, 'native_execution_closing')
+        if (isClosing()) throw new PlatformError(503, 'native_execution_closing')
         if (request.method !== 'POST') throw new PlatformError(405, 'method_not_allowed')
         const token = bearer(request), path = new URL(request.url ?? '/', 'http://localhost').pathname
         const input = await readJson(request, maxRequestBytes)
-        if (closing || response.destroyed) throw new PlatformError(503, 'native_execution_closing')
+        if (isClosing() || response.destroyed) throw new PlatformError(503, 'native_execution_closing')
         sendJson(response, await routes.route(path, token, input))
       } catch (error) { if (!response.destroyed) sendFailure(response, error) }
       finally {
@@ -50,7 +51,7 @@ export function installNativeExecutionHttp(ctx: Context, routes: Pick<NativeExec
 
 function transportClosed(transport: IncomingMessage | ServerResponse): Promise<void> {
   if (transport.closed) return Promise.resolve()
-  return new Promise(resolve => {
+  return new Promise((resolve) => {
     const failed = (): void => { transport.destroy() }
     transport.on('error', failed)
     transport.once('close', () => { transport.off('error', failed); resolve() })

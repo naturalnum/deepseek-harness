@@ -20,7 +20,7 @@ for (const failed of [false, true]) test(`actual native execution drain ${failed
   const world = nativeExecutionWorld.parse({ worldId: randomUUID(), userId: grant.userId, sessionId: grant.sessionId,
     agentId: grant.sessionId, workspaceId: randomUUID(), operationId: grant.operationId, operationEpoch: grant.epoch,
     storageGeneration: 1, permissionGeneration: 1, mode: 'read-only', workspaceRoot: '/workspace', homeRoot: '/home/agent' })
-  const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>()
+  const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
   const calls: Array<{ path: string; id: string | undefined }> = [], faults: unknown[] = []
   const server = createServer((request, response) => {
     void (async () => {
@@ -32,7 +32,7 @@ for (const failed of [false, true]) test(`actual native execution drain ${failed
         if (path === '/runtime/native-world/open') { sendJson(response, world); return }
         if (path === '/runtime/native-world/process/start') { sendJson(response, { id: input.id }); return }
         if (path === '/runtime/native-world/process/poll') {
-          entered.resolve(); await release.promise
+          entered.resolve(undefined); await release.promise
           const channel = { data: '', nextOffset: 0, lossy: false, exhausted: false }
           sendJson(response, { state: 'running', outcome: null, error: null, stdout: channel, stderr: channel,
             control: { ...channel, ended: false } }); return
@@ -70,7 +70,7 @@ for (const failed of [false, true]) test(`actual native execution drain ${failed
     const draining = execution.drain(agent).finally(() => { settled = true })
     void draining.catch(() => {})
     await new Promise<void>(resolve => setImmediate(resolve)); expect(settled).toBe(false)
-    release.resolve()
+    release.resolve(undefined)
     if (failed) {
       const original = await draining.then(() => undefined, (error: unknown) => error)
       expect(original).toBeInstanceOf(AggregateError)
@@ -91,7 +91,7 @@ for (const failed of [false, true]) test(`actual native execution drain ${failed
     expect(calls.filter(call => call.path.endsWith('/start'))).toHaveLength(1)
     expect(faults).toEqual([])
   } finally {
-    release.resolve(); await ctx.fiber.dispose()
-    await new Promise<void>((resolve, reject) => { server.close(error => { if (error) reject(error); else resolve() }) })
+    release.resolve(undefined); await ctx.fiber.dispose()
+    await new Promise<void>((resolve, reject) => { server.close((error) => { if (error) reject(error); else resolve() }) })
   }
 })

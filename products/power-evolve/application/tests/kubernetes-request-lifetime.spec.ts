@@ -19,7 +19,7 @@ async function fixture(run: (server: Server, client: KubernetesClient) => Promis
       '-addext', 'subjectAltName=IP:127.0.0.1', '-days', '1', '-keyout', key, '-out', cert], { stdio: 'ignore', timeout: 10000 })
     await writeFile(token, 'owned-platform-fixture-token', { mode: 0o600 })
     server = createServer({ key: await readFile(key), cert: await readFile(cert) })
-    server.on('connection', socket => { sockets.add(socket); socket.once('close', () => sockets.delete(socket)) })
+    server.on('connection', (socket) => { sockets.add(socket); socket.once('close', () => { sockets.delete(socket) }) })
     server.listen(0, '127.0.0.1'); await once(server, 'listening')
     const address = server.address()
     if (!address || typeof address === 'string') throw new Error('Missing HTTPS listener address')
@@ -28,8 +28,11 @@ async function fixture(run: (server: Server, client: KubernetesClient) => Promis
   } finally {
     vi.useRealTimers()
     if (server) {
-      const closing = new Promise<void>((resolve, reject) => server!.close(error => error ? reject(error) : resolve()))
-      await Promise.all([...sockets].map(async socket => {
+      const active = server
+      const closing = new Promise<void>((resolve, reject) => {
+        active.close((error) => { if (error) reject(error); else resolve() })
+      })
+      await Promise.all([...sockets].map(async (socket) => {
         const closed = socket.closed ? Promise.resolve() : once(socket, 'close')
         socket.destroy(); await closed
       }))
@@ -59,14 +62,14 @@ test('continuous response progress cannot extend the elapsed request deadline', 
     response.on('error', () => {})
     response.write('{')
     ticker = setInterval(() => { response.write(' '); progress++ }, 200)
-    response.once('close', () => clearInterval(ticker))
+    response.once('close', () => { clearInterval(ticker) })
     began.resolve(undefined)
   })
   vi.useFakeTimers()
   let settled = false
   const result = client.call('GET', '/', undefined, 1000).then(() => {
     throw new Error('Incomplete response unexpectedly accepted')
-  }, error => { settled = true; return error })
+  }, (error: unknown) => { settled = true; return error })
   try {
     await began.promise
     await vi.advanceTimersByTimeAsync(1001)

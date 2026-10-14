@@ -107,7 +107,6 @@ export class KubernetesClient {
       let response: IncomingMessage | undefined
       let result: { ok: true; value: T } | { ok: false; error: Error } | undefined
       let requestClosed = false, responseClosed = true, settled = false
-      let timer: NodeJS.Timeout | undefined
       const settle = (): void => {
         if (settled || !result || !requestClosed || !responseClosed) return
         settled = true
@@ -160,7 +159,7 @@ export class KubernetesClient {
       })
       request.once('close', () => { requestClosed = true; settle() })
       request.once('error', fail)
-      timer = setTimeout(() => fail(new Error('Kubernetes request timed out')), timeoutMs)
+      const timer = setTimeout(() => { fail(new Error('Kubernetes request timed out')) }, timeoutMs)
       if (payload !== undefined) request.write(payload)
       request.end()
     })

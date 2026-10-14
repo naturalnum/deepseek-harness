@@ -42,7 +42,7 @@ function dependencies(authenticate: IdentityService['authenticate'] = async () =
 }
 
 class DeferredCloseTransport extends PassThrough {
-  release = Promise.withResolvers<void>()
+  release = Promise.withResolvers<undefined>()
   override _destroy(error: Error | null, callback: (error: Error | null) => void): void {
     void this.release.promise.then(() => { callback(error) })
   }
@@ -66,18 +66,18 @@ for (const kind of ['host', 'platform'] as const) test(`${kind} rejection remain
     disposing = ctx.fiber.dispose().then(() => { settled = true })
     await new Promise<void>(resolve => setImmediate(resolve))
     expect(settled).toBe(false)
-    socket.release.resolve(); await serving; await disposing
+    socket.release.resolve(undefined); await serving; await disposing
     expect(socket.closed).toBe(true)
   } finally {
-    socket.release.resolve(); socket.destroy(); request.destroy()
+    socket.release.resolve(undefined); socket.destroy(); request.destroy()
     await serving; await (disposing ?? ctx.fiber.dispose())
   }
 })
 
 test('platform shutdown joins authentication and never starts a late account allocation', async () => {
   const ctx = await web(), registered = vi.spyOn(ctx.webServer, 'registerUpgrade'), socket = new PassThrough()
-  const entered = Promise.withResolvers<void>(), release = Promise.withResolvers<typeof user>()
-  const deps = dependencies(async () => { entered.resolve(); return await release.promise })
+  const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<typeof user>()
+  const deps = dependencies(async () => { entered.resolve(undefined); return await release.promise })
   const close = installNativeRuntimePoolRoutes(ctx, deps.pool, deps.kube, deps.identities, config, 4096)
   const handler = registered.mock.calls[0]?.[0].handler
   if (!handler) throw new Error('Factory did not register its native upgrade')
@@ -97,7 +97,8 @@ test('platform shutdown joins authentication and never starts a late account all
 })
 
 test('the registered platform HTTP carrier preserves the original native envelope and bearer', async () => {
-  const ctx = await web(), deps = dependencies(), close = installNativeRuntimePoolRoutes(ctx, deps.pool, deps.kube, deps.identities, config, 4096)
+  const ctx = await web(), deps = dependencies()
+  const close = installNativeRuntimePoolRoutes(ctx, deps.pool, deps.kube, deps.identities, config, 4096)
   const body = { type: 'client-request', rpcId: 'original', method: 'pluginManager/example', payload: { args: { exact: 'original' } } }
   try {
     const response = await fetch(`http://127.0.0.1:${ctx.webServer.port}/native/runtime/invoke`, { method: 'POST',
@@ -108,9 +109,9 @@ test('the registered platform HTTP carrier preserves the original native envelop
 })
 
 for (const kind of ['platform', 'execution'] as const) test(`${kind} HTTP shutdown cancels a partial body and joins its transport before returning`, async () => {
-  const ctx = await web(), entered = Promise.withResolvers<void>(), original = ctx.webServer.register.bind(ctx.webServer)
+  const ctx = await web(), entered = Promise.withResolvers<undefined>(), original = ctx.webServer.register.bind(ctx.webServer)
   vi.spyOn(ctx.webServer, 'register').mockImplementation(route => original({ ...route, handler: (request, response) => {
-    request.once('data', () => { entered.resolve() }); return route.handler(request, response)
+    request.once('data', () => { entered.resolve(undefined) }); return route.handler(request, response)
   } }))
   const deps = dependencies(), dispatch = vi.fn(async () => ({ stopped: true }))
   const close = kind === 'platform' ? installNativeRuntimePoolRoutes(ctx, deps.pool, deps.kube, deps.identities, config, 4096)
@@ -118,7 +119,7 @@ for (const kind of ['platform', 'execution'] as const) test(`${kind} HTTP shutdo
   const client = httpRequest(`http://127.0.0.1:${ctx.webServer.port}` + (kind === 'platform' ? '/native/runtime/invoke' : '/runtime/native-world/process/release'),
     { method: 'POST', headers: { authorization: 'Bearer ' + token, origin, 'content-type': 'application/json' } })
   client.on('error', () => {})
-  const exited = new Promise<void>(resolve => { client.once('close', () => { resolve() }) })
+  const exited = new Promise<void>((resolve) => { client.once('close', () => { resolve() }) })
   try {
     client.write('{"incomplete":'); await entered.promise
     expect(close()).toBe(close()); await close(); await exited
@@ -127,7 +128,8 @@ for (const kind of ['platform', 'execution'] as const) test(`${kind} HTTP shutdo
 })
 
 test('the registered execution cleanup carrier forwards the original bearer without browser substitution', async () => {
-  const ctx = await web(), dispatch = vi.fn(async () => ({ stopped: true })), close = installNativeExecutionHttp(ctx, { route: dispatch }, 4096)
+  const ctx = await web(), dispatch = vi.fn(async () => ({ stopped: true }))
+  const close = installNativeExecutionHttp(ctx, { route: dispatch }, 4096)
   const body = { world: { original: 'identity' }, id: randomUUID() }
   try {
     const response = await fetch(`http://127.0.0.1:${ctx.webServer.port}/runtime/native-world/process/release`, {
@@ -138,8 +140,8 @@ test('the registered execution cleanup carrier forwards the original bearer with
 })
 
 for (const kind of ['platform', 'execution'] as const) test(`${kind} HTTP shutdown joins a dispatch already admitted before close`, async () => {
-  const ctx = await web(), entered = Promise.withResolvers<void>(), release = Promise.withResolvers<void>()
-  const dispatch = vi.fn(async () => { entered.resolve(); await release.promise; return { stopped: true } })
+  const ctx = await web(), entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  const dispatch = vi.fn(async () => { entered.resolve(undefined); await release.promise; return { stopped: true } })
   const deps = dependencies()
   deps.pool.invoke = dispatch
   const close = kind === 'platform' ? installNativeRuntimePoolRoutes(ctx, deps.pool, deps.kube, deps.identities, config, 4096)
@@ -149,15 +151,15 @@ for (const kind of ['platform', 'execution'] as const) test(`${kind} HTTP shutdo
   const client = httpRequest(`http://127.0.0.1:${ctx.webServer.port}` + (kind === 'platform' ? '/native/runtime/invoke' : '/runtime/native-world/process/release'),
     { method: 'POST', headers: { authorization: 'Bearer ' + token, origin, 'content-type': 'application/json' } })
   client.on('error', () => {})
-  const exited = new Promise<void>(resolve => { client.once('close', () => { resolve() }) })
+  const exited = new Promise<void>((resolve) => { client.once('close', () => { resolve() }) })
   let disposing: Promise<void> | undefined, settled = false
   try {
     client.end(JSON.stringify(body)); await entered.promise
     disposing = close().then(() => { settled = true })
     await exited; await new Promise<void>(resolve => setImmediate(resolve))
     expect(settled).toBe(false)
-    release.resolve(); await disposing
+    release.resolve(undefined); await disposing
     expect(dispatch).toHaveBeenCalledTimes(1)
     if (kind === 'platform') expect(deps.pool.close).toHaveBeenCalledTimes(1)
-  } finally { release.resolve(); client.destroy(); await disposing; await close(); await ctx.fiber.dispose() }
+  } finally { release.resolve(undefined); client.destroy(); await disposing; await close(); await ctx.fiber.dispose() }
 })
