@@ -38,7 +38,7 @@ function cookieHeaders(token: string, secure: boolean, clear = false): string[] 
 
 function cookieToken(request: IncomingMessage, origin: string, document = false): string | undefined {
   const path = new URL(request.url ?? '/', origin).pathname
-  if (document ? !(path === '/native/' || path === '/native/index.html' || path.startsWith('/native/boot/') || path.startsWith('/native/assets/'))
+  if (document ? !(path === '/native/' || path === '/native/index.html' || ['/native/manifest.webmanifest', '/native/favicon.svg', '/native/favicon-dark.svg'].includes(path) || path.startsWith('/native/boot/') || path.startsWith('/native/assets/'))
     : !cookiePaths.some(prefix => path === prefix || path.startsWith(`${prefix}/`))) return undefined
   const name = document ? documentCookieName : cookieName
   const [match, ...duplicates] = (request.headers.cookie ?? '').split(';').map(part => part.trim())

@@ -381,7 +381,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   ctx.provide('powerEvolveBrowserAuth', browserAuth)
   if (config.nativeRuntimeRouting && runtimeUserId === '') installNativeClientRouting(ctx, browserAuth, config.origin,
     ctx.powerEvolveRuntime.config.platformUrl, config.maxRequestBytes, ctx.powerEvolveRuntime.config.timeoutMs,
-    { maxRequests: config.nativeClientMaxRequests, lifetimeMs: config.nativeClientLifetimeMs })
+    { maxRequests: config.nativeClientMaxRequests, lifetimeMs: config.nativeClientLifetimeMs, platformOrigin: config.platformOrigin })
   const installRemote = (remoteCtx: Context) => {
     installNativeRemote(remoteCtx, browserAuth, config.origin, config.pollMs,
       config.maxRequestBytes, config.maxStreams, config.profileAdministrators,

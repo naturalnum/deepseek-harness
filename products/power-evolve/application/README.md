@@ -151,3 +151,5 @@ Use the fixed official release and product instructions in [AGENTS.md](../AGENTS
 </details>
 
 The tenant-rendered Native document, boot scripts and assets use a separate `pe_native_document` HttpOnly cookie. The original three `pe_agent` cookie scopes remain distinct; the tenant document and HMR share the original account graph and artifact revisions.
+
+Tenant boot scripts retain their exact original bytes, move to content-addressed `/boot` resources and retain the original browser CSP. Native UI admission exposes `maxBootBytes` and `maxBootResources` as bounded cache budgets.

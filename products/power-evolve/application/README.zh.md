@@ -151,3 +151,5 @@ Office 部署必须指定经过运维验证、在解析器启动前禁用外部�
 </details>
 
 租户渲染的 Native 文档、引导脚本和资源使用独立的 `pe_native_document` HttpOnly Cookie。原来的三个 `pe_agent` Cookie 作用域保持独立；租户文档与 HMR 使用同一账号的原始模块图和资源修订。
+
+租户引导脚本保留原文，以内容寻址的 `/boot` 资源交付，并保持原浏览器 CSP。Native UI 准入通过 `maxBootBytes` 与 `maxBootResources` 显式配置有界缓存预算。

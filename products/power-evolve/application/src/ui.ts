@@ -19,6 +19,18 @@ const nativeMime: Record<string, string> = {
   '.woff': 'font/woff', '.woff2': 'font/woff2', '.png': 'image/png',
 }
 
+/** Resolve the original Native browser CSP for both static and tenant-rendered documents.
+ * @param platformOrigin Exact configured public Platform origin.
+ * @returns The unchanged original script, worker and browser-origin policy.
+ */
+export function nativeUiCsp(platformOrigin?: string): string {
+  const platform = platformOrigin === undefined ? undefined : new URL(platformOrigin)
+  if (platform && (platform.origin !== platformOrigin || platform.username || platform.password)) {
+    throw new Error('Invalid platform origin for native Web CSP')
+  }
+  return `default-src 'self'; script-src 'self' 'unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; connect-src 'self'${platform ? ` ${platform.origin}` : ''}; img-src 'self' data: blob:; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`
+}
+
 /** Serve the built upstream DSH shell and allowlisted assets with its PDF and spreadsheet worker CSP.
  * @param url - Parsed request URL, preserving the exact client resource and revision query.
  * @param response - HTTP response owned by the Host.
@@ -46,14 +58,10 @@ export async function serveNativeUi(url: URL, response: ServerResponse, platform
   }
   const extension = asset.slice(asset.lastIndexOf('.'))
   const body = await readFile(join(nativeDist, asset))
-  const platform = platformOrigin === undefined ? undefined : new URL(platformOrigin)
-  if (platform && (platform.origin !== platformOrigin || platform.username || platform.password)) {
-    throw new Error('Invalid platform origin for native Web CSP')
-  }
   response.writeHead(200, {
     'content-type': `${nativeMime[extension] ?? 'application/octet-stream'}; charset=utf-8`,
     'cache-control': 'no-store', 'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer',
-    'content-security-policy': `default-src 'self'; script-src 'self' 'unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; connect-src 'self'${platform ? ` ${platform.origin}` : ''}; img-src 'self' data: blob:; font-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`,
+    'content-security-policy': nativeUiCsp(platformOrigin),
   })
   response.end(body)
   return true

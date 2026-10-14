@@ -230,7 +230,7 @@ export class NativeRuntimePool {
     if (this.closing) return Promise.reject(new PlatformError(503, 'native_runtime_closing'))
     return this.track((async () => {
       const parsed = new URL(target, 'http://tenant')
-      if (parsed.origin !== 'http://tenant' || !(parsed.pathname === '/plugins' || parsed.pathname.startsWith('/plugins/') || parsed.pathname === '/native/runtime/document' || parsed.pathname.startsWith('/boot/') || parsed.pathname.startsWith('/assets/'))
+      if (parsed.origin !== 'http://tenant' || !(parsed.pathname === '/plugins' || parsed.pathname.startsWith('/plugins/') || parsed.pathname === '/native/runtime/document' || parsed.pathname.startsWith('/boot/') || parsed.pathname.startsWith('/assets/') || ['/manifest.webmanifest', '/favicon.svg', '/favicon-dark.svg'].includes(parsed.pathname))
         || parsed.hash) throw new PlatformError(400, 'invalid_native_resource')
       const selected = await this.ensure(userId), current = await this.current(userId)
       signal.throwIfAborted()

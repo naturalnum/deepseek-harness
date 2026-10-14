@@ -103,16 +103,17 @@ test('the separately scoped document cookie forwards original document and boot 
   const close = installNativeClientRouting(ctx, auth, origin, `http://127.0.0.1:${address.port}`, 1048576, 1000,
     { maxRequests: 100, lifetimeMs: 3000 })
   try {
-    for (const path of ['/native/', '/native/boot/inline.original.js', '/native/assets/original.js']) {
+    for (const path of ['/native/', '/native/boot/inline.original.js']) {
       const response = await fetch(origin + path, { headers: { cookie: `pe_native_document=${token}` } })
       expect(response.status).toBe(200); expect(await response.text()).toBe('original-renderer-bytes')
     }
-    expect(received).toEqual(['/native/runtime/document', '/native/runtime/boot/inline.original.js', '/native/runtime/assets/original.js'])
+    expect((await fetch(origin + '/native/assets/unlisted.js', { headers: { cookie: `pe_native_document=${token}` } })).status).toBe(404)
+    expect(received).toEqual(['/native/runtime/document', '/native/runtime/boot/inline.original.js'])
     expect((await fetch(origin + '/native/', { headers: { cookie: `pe_agent=${token}` } })).status).toBe(401)
     expect((await fetch(origin + '/native/plugins/events', { headers: { cookie: `pe_native_document=${token}` } })).status).toBe(401)
     expect((await fetch(origin + '/native/api/remote.mux', { headers: { cookie: `pe_native_document=${token}` } })).status).toBe(401)
     expect((await fetch(origin + '/native/', { headers: { cookie: `pe_native_document=${token}; pe_native_document=${token}` } })).status).toBe(401)
-    expect(received).toHaveLength(3)
+    expect(received).toHaveLength(2)
   } finally { await close(); await ctx.fiber.dispose(); upstream.closeAllConnections(); upstream.close(); await once(upstream, 'close') }
 })
 
