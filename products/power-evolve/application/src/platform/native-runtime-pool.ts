@@ -176,20 +176,16 @@ export class NativeRuntimePool {
       WHERE r.phase<>'stopped' AND (r.phase='stopping' OR c.id IS NULL OR c.revoked_at IS NOT NULL
         OR c.expires_at<=clock_timestamp() OR c.credential_version<>u.credential_version
         OR NOT u.enabled OR u.deleted_at IS NOT NULL)`)
-    const outcomes = await Promise.allSettled(rows.rows.map(raw => {
-      const row = instance.parse(raw)
-      return this.track(this.withAccount(row.user_id, async () => {
-        const eligible = await this.database.query(`SELECT r.* FROM pe_native_runtime_instances r
-          LEFT JOIN pe_runtime_credentials c ON c.id=r.credential_id LEFT JOIN pe_users u ON u.id=r.user_id
-          WHERE r.runtime_id=$1 AND r.phase<>'stopped' AND (r.phase='stopping' OR c.id IS NULL OR c.revoked_at IS NOT NULL
-            OR c.expires_at<=clock_timestamp() OR c.credential_version<>u.credential_version
-            OR NOT u.enabled OR u.deleted_at IS NOT NULL)`, [row.runtime_id])
-        if (!eligible.rows[0]) return
-        const current = instance.parse(eligible.rows[0])
-        await this.markStopping(current); await this.stopLocked(current)
-      }))
-    }))
-    const errors = outcomes.flatMap(result => result.status === 'rejected' ? [result.reason as unknown] : [])
+    const errors = await this.settleAccounts(rows.rows, async row => {
+      const eligible = await this.database.query(`SELECT r.* FROM pe_native_runtime_instances r
+        LEFT JOIN pe_runtime_credentials c ON c.id=r.credential_id LEFT JOIN pe_users u ON u.id=r.user_id
+        WHERE r.runtime_id=$1 AND r.phase<>'stopped' AND (r.phase='stopping' OR c.id IS NULL OR c.revoked_at IS NOT NULL
+          OR c.expires_at<=clock_timestamp() OR c.credential_version<>u.credential_version
+          OR NOT u.enabled OR u.deleted_at IS NOT NULL)`, [row.runtime_id])
+      if (!eligible.rows[0]) return
+      const current = instance.parse(eligible.rows[0])
+      await this.markStopping(current); await this.stopLocked(current)
+    })
     if (errors.length) throw new AggregateError(errors, 'Native runtime reconciliation failed')
   }
 
@@ -204,12 +200,23 @@ export class NativeRuntimePool {
   private async drain(): Promise<void> {
     await Promise.allSettled([...this.pending])
     const rows = await this.database.query("SELECT * FROM pe_native_runtime_instances WHERE phase<>'stopped'")
-    const outcomes = await Promise.allSettled(rows.rows.map(raw => {
-      const row = instance.parse(raw)
-      return this.withAccount(row.user_id, async () => { await this.markStopping(row); await this.stopLocked(row) })
-    }))
-    const errors = outcomes.flatMap(result => result.status === 'rejected' ? [result.reason as unknown] : [])
+    const errors = await this.settleAccounts(rows.rows, async row => { await this.markStopping(row); await this.stopLocked(row) })
     if (errors.length) throw new AggregateError(errors, 'Native runtime drain failed')
+  }
+
+  private async settleAccounts(rows: unknown[], work: (row: Instance) => Promise<void>): Promise<unknown[]> {
+    const queue = rows.values(), errors: unknown[] = []
+    await Promise.all(Array.from({ length: Math.min(rows.length, this.config.lockConnections) }, async () => {
+      for (;;) {
+        const next = queue.next()
+        if (next.done) return
+        try {
+          const row = instance.parse(next.value)
+          await this.withAccount(row.user_id, () => work(row))
+        } catch (error) { errors.push(error) }
+      }
+    }))
+    return errors
   }
 
   private track<T>(work: Promise<T>): Promise<T> {

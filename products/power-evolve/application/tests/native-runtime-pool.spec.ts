@@ -19,7 +19,7 @@ const object = z.object({ metadata: z.object({ name: z.string(), labels: z.recor
 async function fixture(run: (value: {
   pool: NativeRuntimePool; main: Pool; locks: Pool; config: NativeRuntimePoolConfig;
   userId: z.infer<typeof accountUserId>; otherUserId: z.infer<typeof accountUserId>; resources: Map<string, Record<string, unknown>>;
-  barrier: { entered: PromiseWithResolvers<undefined>; release: PromiseWithResolvers<undefined>; block: boolean };
+  barrier: { entered: PromiseWithResolvers<undefined>; release: PromiseWithResolvers<undefined>; block: boolean; blockStop: boolean };
   calls: Array<{ method: string; path: string }>; seed: (unlinked?: boolean) => Promise<string>; retry: () => NativeRuntimePool;
   expectedFailures: Set<NativeRuntimePool>; hooks: { invalidStop: boolean; failPatchOnce: boolean; losePodResponse: boolean }
 }) => Promise<void>) {
@@ -35,7 +35,7 @@ async function fixture(run: (value: {
       users: [{ name: 'owned', user: { token: 'fixture-token' } }] }), { mode: 0o600 })
     const kube = await KubernetesClient.fromFile(file)
     const resources = new Map<string, Record<string, unknown>>(), calls: Array<{ method: string; path: string }> = []
-    const barrier = { entered: Promise.withResolvers<undefined>(), release: Promise.withResolvers<undefined>(), block: false }
+    const barrier = { entered: Promise.withResolvers<undefined>(), release: Promise.withResolvers<undefined>(), block: false, blockStop: false }
     const config: NativeRuntimePoolConfig = { kubeconfigFile: file, namespace: 'owned',
       image: 'fixture@sha256:' + 'a'.repeat(64), runtimeClass: 'gvisor', volumeClaimName: 'owned',
       storageSubPath: 'homes', localStateRoot: join(await realpath(f.root), 'homes'),
@@ -82,6 +82,7 @@ async function fixture(run: (value: {
       }
       if (method === 'DELETE') {
         if (!path.includes('/pods/')) { resources.delete(path); return value }
+        if (barrier.blockStop) { barrier.entered.resolve(undefined); await barrier.release.promise }
         const metadata = z.record(z.string(), z.unknown()).parse(value['metadata'])
         value['metadata'] = { ...metadata, deletionTimestamp: '2026-10-14T00:00:01Z' }
         const containerID = 'containerd://' + 'a'.repeat(64)
@@ -258,4 +259,19 @@ test('reconciliation observes a Pod request committed while it waited for accoun
   expect((await f.main.query('SELECT phase,stop_proof FROM pe_native_runtime_instances')).rows)
     .toEqual([{ phase: 'stopping', stop_proof: null }])
   await expect(f.pool.ensure(f.userId)).rejects.toMatchObject({ code: 'native_runtime_stop_proof_unavailable' })
+}))
+
+test('drain requests only its configured number of account locks before a stop barrier releases', () => fixture(async f => {
+  await f.pool.ensure(f.userId); await f.pool.ensure(f.otherUserId)
+  f.config.lockConnections = 1
+  f.barrier.blockStop = true
+  const connections = vi.spyOn(f.locks, 'connect')
+  const draining = f.pool.close(); void draining.catch(() => {})
+  try {
+    await Promise.race([f.barrier.entered.promise, draining])
+    expect(connections).toHaveBeenCalledTimes(1)
+  } finally { f.barrier.release.resolve(undefined) }
+  await draining
+  expect(connections).toHaveBeenCalledTimes(2)
+  expect(f.resources.size).toBe(0)
 }))
