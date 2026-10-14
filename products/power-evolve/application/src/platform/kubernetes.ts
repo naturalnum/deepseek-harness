@@ -3,6 +3,9 @@ import { readFile } from 'node:fs/promises'
 import { request as httpsRequest } from 'node:https'
 import yaml from 'js-yaml'
 import { z } from 'zod'
+import type { IncomingMessage } from 'node:http'
+import type { Duplex } from 'node:stream'
+import { proxyRuntimeUpgrade } from '../runtime-upgrade-proxy.ts'
 
 /** Two 64 KiB Sandbox streams or 128 KiB aggregate SSH output can expand sixfold in JSON. */
 export const RUNNER_RESPONSE_MAX_BYTES = 1_048_576
@@ -83,15 +86,17 @@ export class KubernetesClient {
    * @param method Kubernetes or Runner HTTP method.
    * @param path Path resolved only against the configured Kubernetes origin.
    * @param body Optional JSON request payload.
-   * @param timeoutMs Socket inactivity deadline in milliseconds.
+   * @param timeoutMs Maximum elapsed request and response time in milliseconds.
    * @param runnerToken Optional token for the separate Runner authorization boundary.
    * @param maxResponseBytes Positive whole-response byte ceiling; resource reads default to 256 KiB and Runner callers select
    * their protocol budget.
-   * @returns Parsed JSON whose resource or Runner shape must be validated by the consumer.
+   * @param proxyHeaders Platform-owned browser authorization and Origin passed to a native process.
+   * @returns Parsed JSON after request cleanup; the consumer validates resource or Runner fields.
    */
   async call<T>(method: 'GET' | 'POST' | 'DELETE' | 'PATCH', path: string, body?: unknown,
     timeoutMs = 10_000, runnerToken?: string,
-    maxResponseBytes: number = 262_144): Promise<T> {
+    maxResponseBytes: number = 262_144,
+    proxyHeaders?: { 'x-power-evolve-browser-token'?: string; origin?: string }): Promise<T> {
     if (!Number.isSafeInteger(maxResponseBytes) || maxResponseBytes <= 0) throw new TypeError('Kubernetes response budget invalid')
     const token = this.tokenFile ? (await readFile(this.tokenFile, 'utf8')).trim() : this.token
     if (!token && !this.cert) throw new Error('Kubernetes service account token is unavailable')
@@ -99,50 +104,90 @@ export class KubernetesClient {
     const url = new URL(path, this.server)
     if (url.origin !== this.server.origin) throw new Error('Kubernetes request origin changed')
     return new Promise<T>((resolve, reject) => {
+      let response: IncomingMessage | undefined
+      let result: { ok: true; value: T } | { ok: false; error: Error } | undefined
+      let requestClosed = false, responseClosed = true, settled = false
+      let timer: NodeJS.Timeout | undefined
+      const settle = (): void => {
+        if (settled || !result || !requestClosed || !responseClosed) return
+        settled = true
+        clearTimeout(timer)
+        if (result.ok) resolve(result.value)
+        else reject(result.error)
+      }
+      const fail = (error: Error): void => {
+        result ??= { ok: false, error }
+        clearTimeout(timer)
+        response?.destroy(); request.destroy()
+        settle()
+      }
       const request = httpsRequest(url, {
         method, ca: this.ca, cert: this.cert, key: this.key, rejectUnauthorized: true,
-        headers: { accept: 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}),
+        headers: { ...proxyHeaders, accept: 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}),
           ...(runnerToken === undefined ? {} : { 'x-power-evolve-runner-token': runnerToken }),
           ...(payload === undefined ? {} : { 'content-type': method === 'PATCH' ? 'application/merge-patch+json' : 'application/json',
             'content-length': Buffer.byteLength(payload) }) },
-        timeout: timeoutMs,
-      }, (response) => {
+      }, (incoming) => {
+        response = incoming; responseClosed = incoming.closed
         const chunks: Buffer[] = []; let size = 0
-        response.once('error', reject)
-        response.once('aborted', () => { reject(new Error('Kubernetes response aborted')) })
-        response.once('close', () => {
-          if (!response.complete) reject(new Error('Kubernetes response closed before completion'))
+        incoming.once('error', fail)
+        incoming.once('aborted', () => { fail(new Error('Kubernetes response aborted')) })
+        incoming.once('close', () => {
+          responseClosed = true
+          if (!incoming.complete && !result) fail(new Error('Kubernetes response closed before completion'))
+          settle()
         })
-        response.on('data', (chunk: Buffer) => {
+        if (result) { incoming.destroy(); return }
+        incoming.on('data', (chunk: Buffer) => {
+          if (result) return
           size += chunk.length
-          if (size > maxResponseBytes) {
-            const error = new Error('Kubernetes response exceeds limit')
-            reject(error)
-            request.destroy()
-            return
-          }
+          if (size > maxResponseBytes) { fail(new Error('Kubernetes response exceeds limit')); return }
           chunks.push(chunk)
         })
-        response.once('end', () => {
+        incoming.once('end', () => {
+          if (result) return
           const raw = Buffer.concat(chunks).toString('utf8')
-          if ((response.statusCode ?? 500) >= 400) {
-            reject(new KubernetesError(response.statusCode ?? 500, `Kubernetes ${method} ${path} returned ${response.statusCode}`)); return
+          if ((incoming.statusCode ?? 500) >= 400) {
+            result = { ok: false, error: new KubernetesError(incoming.statusCode ?? 500,
+              `Kubernetes ${method} ${path} returned ${incoming.statusCode}`) }
+          } else {
+            try { result = { ok: true, value: (raw ? JSON.parse(raw) : null) as T } }
+            catch (error) { result = { ok: false, error: error instanceof Error ? error
+              : new Error('Kubernetes response JSON invalid', { cause: error }) } }
           }
-          try { resolve((raw ? JSON.parse(raw) : null) as T) }
-          catch (error) {
-            reject(error instanceof Error ? error : new Error('Kubernetes response JSON invalid', { cause: error }))
-          }
+          settle()
         })
       })
-      request.once('timeout', () => {
-        const error = new Error('Kubernetes request timed out')
-        reject(error)
-        request.destroy()
-      })
-      request.once('error', reject)
+      request.once('close', () => { requestClosed = true; settle() })
+      request.once('error', fail)
+      timer = setTimeout(() => fail(new Error('Kubernetes request timed out')), timeoutMs)
       if (payload !== undefined) request.write(payload)
       request.end()
     })
+  }
+
+  /** Forward an admitted native stream through the credentialed Kubernetes service proxy.
+   * @param request Original WebSocket handshake.
+   * @param socket Admitted downstream transport.
+   * @param head Already-received stream bytes.
+   * @param path Server-selected namespaced service proxy path.
+   * @param processToken Exact selected account process token.
+   * @param browserToken Original Agent bearer, rechecked by the account process.
+   * @param origin Configured public Host origin.
+   * @param timeoutMs Handshake deadline.
+   * @returns Completion after both stream transports close.
+   */
+  async proxyUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer, path: string,
+    processToken: string, browserToken: string, origin: string, timeoutMs: number): Promise<void> {
+    const url = new URL(path, this.server)
+    if (url.origin !== this.server.origin) throw new Error('Kubernetes stream origin changed')
+    const token = this.tokenFile ? (await readFile(this.tokenFile, 'utf8')).trim() : this.token
+    if (!token && !this.cert) throw new Error('Kubernetes service account token is unavailable')
+    await proxyRuntimeUpgrade(request, socket, head, url, {
+      ca: this.ca, cert: this.cert, key: this.key, rejectUnauthorized: true,
+      headers: { ...(token ? { authorization: `Bearer ${token}` } : {}),
+        'x-power-evolve-runner-token': processToken, 'x-power-evolve-browser-token': browserToken, origin },
+    }, timeoutMs)
   }
 
   /**
