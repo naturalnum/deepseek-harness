@@ -184,7 +184,8 @@ export async function launch(role, config) {
   try { profile = await renderReservedProfile(role, config, { name, directory, lifecycleDirectory: launchIdentity.directory }, owner) }
   catch (error) { await lock.release(); throw error }
   const child = spawn(process.execPath, [join(repository, 'apps/cli/lib/bin.js'), '--profile', profile.name], {
-    cwd: repository, stdio: 'inherit', env: { ...process.env, DSH_HOME: config.dshHome, PE_PRIVATE_DIR: config.privateDir },
+    cwd: repository, stdio: 'inherit', env: { ...process.env, DSH_HOME: config.dshHome, PE_PRIVATE_DIR: config.privateDir,
+      PE_HOST_PUBLIC_ORIGIN: config.hostOrigin, PE_PLATFORM_PUBLIC_ORIGIN: config.platformOrigin },
   })
   await superviseChild(child, lock, join(profile.lifecycleDirectory, 'lifecycle.json'))
 }
