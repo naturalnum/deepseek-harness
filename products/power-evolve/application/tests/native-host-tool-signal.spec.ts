@@ -393,6 +393,7 @@ interface ScopeHttpCase {
   readonly requests: { url: string; authorization: string | undefined; type: string | undefined; bytes: Buffer }[]
   readonly token: string
   mode: 'complete' | 'body' | 'headers'
+  onResponseBody?: (body: ReadableStream<unknown>) => void
   invoke(kind: ScopeTransport, stop?: AbortController): Promise<unknown>
 }
 
@@ -433,7 +434,10 @@ async function scopeHttp(run: (fixture: ScopeHttpCase) => Promise<void>, timeout
     const responseObserver = vi.spyOn(Response.prototype, 'body', 'get').mockImplementation(function(this: Response) {
       const body: unknown = descriptor.get?.call(this)
       if (body !== null && !(body instanceof ReadableStream)) throw new Error('Native response body is unavailable')
-      if (this.url.startsWith(origin + '/')) responseBodyStarted.resolve(true)
+      if (this.url.startsWith(origin + '/')) {
+        if (body instanceof ReadableStream) fixture?.onResponseBody?.(body)
+        responseBodyStarted.resolve(true)
+      }
       return body
     })
     restoreResponseBody = () => { responseObserver.mockRestore() }
@@ -528,3 +532,55 @@ for (const kind of ['call', 'upload', 'reconcile'] as const) {
     expect(getEventListeners(f.stop.signal, 'abort')).toHaveLength(0)
   }, 1000))
 }
+
+
+test.each(['ack', 'failure'] as const)('HostScope upload joins real Reader cancellation %s before reporting its original deadline', mode =>
+  scopeHttp(async (f) => {
+    f.mode = 'body'
+    const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+    const failed = new Error('Owned original Reader cancellation failed')
+    const restorers: (() => void)[] = []
+    let observed = false, settled = false
+    f.onResponseBody = (body) => {
+      if (observed) return
+      observed = true
+      const getReader = body.getReader.bind(body)
+      const reading = vi.spyOn(body, 'getReader').mockImplementation(() => {
+        const reader = getReader(), cancel = reader.cancel.bind(reader)
+        const cancellation = vi.spyOn(reader, 'cancel').mockImplementation(async (reason: unknown) => {
+          const actual = cancel(reason).then(() => ({ ok: true as const }), (error: unknown) => ({ ok: false as const, error }))
+          entered.resolve(undefined)
+          await release.promise
+          const outcome = await actual
+          if (mode === 'failure') throw failed
+          if (!outcome.ok) throw outcome.error
+        })
+        restorers.push(() => { cancellation.mockRestore() })
+        return reader
+      })
+      restorers.push(() => { reading.mockRestore() })
+    }
+    const result = f.invoke('upload')
+    const outcome = result.then(value => ({ value }), (error: unknown) => ({ error }))
+      .finally(() => { settled = true })
+    try {
+      await Promise.race([entered.promise, outcome.then(() => { throw new Error('Response settled without its owned cancellation') })])
+      await delay(25)
+      expect(settled).toBe(false)
+      release.resolve(undefined)
+      if (mode === 'failure') {
+        const actual = await outcome
+        expect(actual).toHaveProperty('error')
+        if (!('error' in actual) || !(actual.error instanceof AggregateError)) throw new Error('Distinct cancellation failure was discarded')
+        expect(actual.error.errors).toHaveLength(2)
+        expect(actual.error.errors[0]).toMatchObject({ name: 'TimeoutError', message: 'The operation was aborted due to timeout' })
+        expect(actual.error.errors[1]).toBe(failed)
+      } else {
+        await expect(result).rejects.toMatchObject({ name: 'TimeoutError', message: 'The operation was aborted due to timeout' })
+      }
+    } finally {
+      release.resolve(undefined)
+      await outcome
+      for (const restore of restorers.reverse()) restore()
+    }
+  }, 1000))

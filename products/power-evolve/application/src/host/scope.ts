@@ -326,7 +326,7 @@ export default class RuntimeScope extends Service {
       method: 'POST', redirect: 'error', signal: lifetime.signal,
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify(input),
     })
-    return await this.responseValue(response)
+    return await this.responseValue(response, lifetime.signal)
   }
 
   /** Forward an authorized native file stream without retaining complete upload bytes in the Host.
@@ -348,23 +348,47 @@ export default class RuntimeScope extends Service {
       signal: lifetime.signal,
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/octet-stream' },
     }
-    return await this.responseValue(await fetch(url, init))
+    return await this.responseValue(await fetch(url, init), lifetime.signal)
   }
 
-  private async responseValue(response: Response): Promise<unknown> {
-    if (!response.body) throw new PlatformError(502, 'platform_empty_response')
+  private async responseValue(response: Response, signal: AbortSignal): Promise<unknown> {
+    const body = response.body
+    if (!body) { signal.throwIfAborted(); throw new PlatformError(502, 'platform_empty_response') }
+    const reader = body.getReader()
+    type Cancellation = { ok: true } | { ok: false; error: unknown }
+    let cancellation: Promise<Cancellation> | undefined
+    const cancel = (reason: unknown): Promise<Cancellation> => cancellation ??= Promise.resolve()
+      .then(() => reader.cancel(reason)).then<Cancellation, Cancellation>(() => ({ ok: true }), (error: unknown) => ({ ok: false, error }))
+    const listener = addAbortListener(signal, () => { void cancel(signal.reason) })
     const chunks: Uint8Array[] = []
     let bytes = 0
-    for await (const chunk of response.body) {
-      bytes += chunk.byteLength
-      if (bytes > this.config.maxResponseBytes) throw new PlatformError(502, 'platform_response_limit')
-      chunks.push(chunk)
+    try {
+      signal.throwIfAborted()
+      for (;;) {
+        const chunk = await reader.read()
+        signal.throwIfAborted()
+        if (chunk.done) break
+        bytes += chunk.value.byteLength
+        if (bytes > this.config.maxResponseBytes) throw new PlatformError(502, 'platform_response_limit')
+        chunks.push(chunk.value)
+      }
+      const data: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+      if (!response.ok) {
+        const error = z.object({ error: z.string(), details: z.record(z.string(), z.json()).optional() }).safeParse(data)
+        throw new PlatformError(response.status, error.success ? error.data.error : 'platform_error', error.success ? error.data.details : undefined)
+      }
+      return data
+    } catch (error: unknown) {
+      const reason: unknown = signal.aborted ? signal.reason : error
+      const closed = await cancel(reason)
+      if (!closed.ok && closed.error !== error && closed.error !== reason) {
+        throw new AggregateError([reason, closed.error], 'Platform response body cancellation failed')
+      }
+      throw reason
+    } finally {
+      listener[Symbol.dispose]()
+      if (cancellation) await cancellation
+      reader.releaseLock()
     }
-    const data: unknown = JSON.parse(Buffer.concat(chunks).toString('utf8'))
-    if (!response.ok) {
-      const error = z.object({ error: z.string(), details: z.record(z.string(), z.json()).optional() }).safeParse(data)
-      throw new PlatformError(response.status, error.success ? error.data.error : 'platform_error', error.success ? error.data.details : undefined)
-    }
-    return data
   }
 }
