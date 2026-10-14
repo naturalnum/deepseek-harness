@@ -13,7 +13,10 @@ import RuntimeScope from '../src/host/scope.ts'
 import NativeRuntimeExecution from '../src/host/native-runtime-execution.ts'
 import { nativeExecutionWorld } from '../src/native-execution/types.ts'
 
-for (const failed of [false, true]) test(`actual native execution drain ${failed ? 'retains rejected' : 'joins successful'} original HTTP cleanup`, async () => {
+const cases = [{ failed: false, heldWorld: false }, { failed: true, heldWorld: false }, { failed: true, heldWorld: true }]
+for (const { failed, heldWorld } of cases) test(heldWorld
+  ? 'actual execution shutdown joins a held world read and rejects late reuse before original cleanup'
+  : `actual native execution drain ${failed ? 'retains rejected' : 'joins successful'} original HTTP cleanup`, async () => {
   const grant = grantSchema.parse({ operationId: randomUUID(), sessionId: randomUUID(), userId: randomUUID(),
     requestId: randomUUID(), text: 'consumer fixture', token: 'f'.repeat(43), epoch: 1,
     settings: { model: 'fixture', maxTokens: 1000, revision: 1 }, executionEnabled: true })
@@ -21,6 +24,8 @@ for (const failed of [false, true]) test(`actual native execution drain ${failed
     agentId: grant.sessionId, workspaceId: randomUUID(), operationId: grant.operationId, operationEpoch: grant.epoch,
     storageGeneration: 1, permissionGeneration: 1, mode: 'read-only', workspaceRoot: '/workspace', homeRoot: '/home/agent' })
   const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  const worldEntered = Promise.withResolvers<undefined>(), worldRelease = Promise.withResolvers<undefined>()
+  let opened = 0, lateBind: Promise<void> | undefined
   const calls: Array<{ path: string; id: string | undefined }> = [], faults: unknown[] = []
   const server = createServer((request, response) => {
     void (async () => {
@@ -29,7 +34,10 @@ for (const failed of [false, true]) test(`actual native execution drain ${failed
         const path = new URL(request.url ?? '/', 'http://localhost').pathname
         const input = z.object({ id: z.uuid().optional() }).loose().parse(await readJson(request, 4096))
         calls.push({ path, id: input.id })
-        if (path === '/runtime/native-world/open') { sendJson(response, world); return }
+        if (path === '/runtime/native-world/open') {
+          if (heldWorld && ++opened > 1) { worldEntered.resolve(undefined); await worldRelease.promise }
+          sendJson(response, world); return
+        }
         if (path === '/runtime/native-world/process/start') { sendJson(response, { id: input.id }); return }
         if (path === '/runtime/native-world/process/poll') {
           entered.resolve(undefined); await release.promise
@@ -66,19 +74,32 @@ for (const failed of [false, true]) test(`actual native execution drain ${failed
       graceMs: 1000, stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' } }))
     void process.done.catch(() => {})
     await entered.promise
+    if (heldWorld) {
+      release.resolve(undefined)
+      const originalFailure = await execution.drain(agent).then(() => undefined, (error: unknown) => error)
+      expect(originalFailure).toBeInstanceOf(AggregateError)
+      lateBind = execution.bind(agent, grant)
+      void lateBind.catch(() => {})
+      await worldEntered.promise
+    }
+    const lifecycle = (): Promise<void> => heldWorld ? execution.shutdown() : execution.drain(agent)
     let settled = false
-    const draining = execution.drain(agent).finally(() => { settled = true })
+    const draining = lifecycle().finally(() => { settled = true })
     void draining.catch(() => {})
     await new Promise<void>(resolve => setImmediate(resolve)); expect(settled).toBe(false)
+    if (heldWorld) {
+      worldRelease.resolve(undefined)
+      await expect(lateBind).rejects.toMatchObject({ message: 'native_execution_closing' })
+    }
     release.resolve(undefined)
     if (failed) {
       const original = await draining.then(() => undefined, (error: unknown) => error)
       expect(original).toBeInstanceOf(AggregateError)
       const attempted = calls.length
-      await expect(execution.drain(agent)).rejects.toBe(original)
+      await expect(lifecycle()).rejects.toBe(original)
       await agent.ctx.fiber.dispose()
       // Cordis records disposer errors; a fulfilled Fiber disposal cannot erase explicit original cleanup failure.
-      await expect(execution.drain(agent)).rejects.toBe(original)
+      await expect(lifecycle()).rejects.toBe(original)
       expect(calls).toHaveLength(attempted)
     } else {
       await draining; await expect(process.done).resolves.toEqual({ exitCode: null, signal: 'SIGTERM' })
@@ -91,7 +112,8 @@ for (const failed of [false, true]) test(`actual native execution drain ${failed
     expect(calls.filter(call => call.path.endsWith('/start'))).toHaveLength(1)
     expect(faults).toEqual([])
   } finally {
-    release.resolve(undefined); await ctx.fiber.dispose()
+    worldRelease.resolve(undefined); release.resolve(undefined)
+    await lateBind?.catch(() => {}); await ctx.fiber.dispose()
     await new Promise<void>((resolve, reject) => { server.close((error) => { if (error) reject(error); else resolve() }) })
   }
 })
