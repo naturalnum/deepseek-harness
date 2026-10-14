@@ -470,7 +470,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         const presets = registry === undefined ? [] : await registry.list()
         const services = ['settings', 'configEditor', 'permissionPresets', 'commands', 'sessionProjections', 'terminalController',
           'agentLoop', 'subagents', 'web', 'fs', 'subprocess', 'sandbox', 'clientModules', 'connection', 'nativeRuntimeUiAdmission']
-        const ready = ctx.get('nativeRuntimeSessions')?.available === true && services.every(service => ctx.get(service) !== undefined)
+        const ready = ctx.get('nativeRuntimeSessions')?.available === true && ctx.get('nativeRuntimeUiAdmission')?.available === true && services.every(service => ctx.get(service) !== undefined)
           && ['standard', 'ptc', 'minimal', 'cordis'].every(id => presets.some(preset => preset.id === id && preset.broken === undefined))
         sendJson(res, { ready, runtimeUserId, runtimeId: ctx.powerEvolveRuntime.workerId,
           generation: ctx.powerEvolveRuntime.runtimeGeneration, presets }); return

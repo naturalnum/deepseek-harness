@@ -55,7 +55,7 @@ function exchange(origin: string, token: string): Promise<Response> {
 
 function credential(response: Response): string {
   const cookies = response.headers.getSetCookie()
-  expect(cookies).toHaveLength(3)
+  expect(cookies).toHaveLength(4)
   const cookie = cookies[0]
   if (cookie === undefined) throw new Error('Expected scoped cookie')
   const pair = cookie.split(';')[0]
@@ -209,6 +209,7 @@ test('revocation at Platform is observed by both Hosts and clear removes every b
       'pe_agent=; Path=/native/api; HttpOnly; SameSite=Strict; Max-Age=0',
       'pe_agent=; Path=/api/powerEvolve; HttpOnly; SameSite=Strict; Max-Age=0',
       'pe_agent=; Path=/native/plugins; HttpOnly; SameSite=Strict; Max-Age=0',
+      'pe_native_document=; Path=/native/; HttpOnly; SameSite=Strict; Max-Age=0',
     ])
     await clear.arrayBuffer()
   })))

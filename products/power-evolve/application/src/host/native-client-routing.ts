@@ -18,14 +18,20 @@ import type { BrowserAgentAuth } from './browser-auth.ts'
 export function installNativeClientRouting(ctx: Context, auth: BrowserAgentAuth, origin: string,
   platformUrl: string, maxBytes: number, timeoutMs: number,
   clientLimits: { maxRequests: number; lifetimeMs: number }): () => Promise<void> {
-  return installNativeClientHttp(ctx, '/native/plugins', async (request, response, target, method, signal) => {
-    const credential = await auth.authenticate(request, true)
+  return installNativeClientHttp(ctx, '/native', async (request, response, target, method, signal) => {
+    const resource = new URL(target || '/', origin)
+    const credential = await auth.authenticate(request, true, !resource.pathname.startsWith('/plugins/'))
     signal.throwIfAborted()
     if (request.headers.host !== new URL(origin).host) throw new PlatformError(403, 'invalid_host_authority')
-    await proxyRuntimeHttp(response, new URL(`/native/runtime${target}`, platformUrl), {
+    const document = resource.pathname === '/' || resource.pathname === '/index.html'
+    if (document && resource.search) throw new PlatformError(400, 'invalid_native_document')
+    if (!document && !['/plugins/', '/boot/', '/assets/'].some(prefix => resource.pathname.startsWith(prefix))) {
+      throw new PlatformError(404, 'not_found')
+    }
+    await proxyRuntimeHttp(response, new URL(document ? '/native/runtime/document' : `/native/runtime${target}`, platformUrl), {
       headers: { authorization: `Bearer ${credential.token}`, origin }, method,
-      events: new URL(target, origin).pathname === '/plugins/events', signal,
+      events: resource.pathname === '/plugins/events', signal,
       limits: { maxBytes, maxFrameBytes: maxBytes, handshakeMs: timeoutMs, lifetimeMs: clientLimits.lifetimeMs },
     })
-  }, { maxRequests: clientLimits.maxRequests })
+  }, { maxRequests: clientLimits.maxRequests }, '')
 }

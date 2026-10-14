@@ -81,12 +81,12 @@ export function installNativeRuntimePoolRoutes(ctx: Context,
     pending.add(work)
     try { await work } finally { pending.delete(work) }
   } }))
-  const closeClients = installNativeClientHttp(ctx, '/native/runtime/plugins', async (request, response, target, method, signal) => {
+  const closeClients = installNativeClientHttp(ctx, '/native/runtime', async (request, response, target, method, signal) => {
     if (request.headers.origin !== origin) throw new PlatformError(403, 'invalid_origin')
     const token = bearer(request), user = await identities.authenticate(token)
     signal.throwIfAborted()
-    await pool.clientResource(user.userId, token, target, method, response, signal)
-  }, { ...(config.clientMaxRequests === undefined ? {} : { maxRequests: config.clientMaxRequests }) })
+    await pool.clientResource(user.userId, token, target === '/document' ? '/native/runtime/document' : target, method, response, signal)
+  }, { ...(config.clientMaxRequests === undefined ? {} : { maxRequests: config.clientMaxRequests }) }, '')
   let reconciliation: Promise<void> | undefined
   const timer = setInterval(() => {
     if (isClosing() || reconciliation) return

@@ -2,6 +2,10 @@
 import { Context, FiberState, Service } from '@deepseek-ai/cordis'
 import schema from '@deepseek-ai/schemastery'
 import type { IncomingMessage } from 'node:http'
+import { readFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
+import { dirname, join } from 'node:path'
+import type {} from '@deepseek-ai/dsh-host-webserver'
 import { BrowserAgentAuth } from './browser-auth.ts'
 
 declare module '@deepseek-ai/cordis' {
@@ -20,6 +24,7 @@ export default class NativeRuntimeUiAdmission extends Service {
   private readonly ownerFiber
   private readonly auth: BrowserAgentAuth
   private readonly pending = new Set<Promise<boolean>>()
+  private documentReady = false
   private closing = false
   private closePromise: Promise<void> | undefined
 
@@ -30,8 +35,25 @@ export default class NativeRuntimeUiAdmission extends Service {
     if (runtime.config.runtimeUserId === '') throw new Error('Tenant HTTP admission requires an account Runtime')
     this.auth = new BrowserAgentAuth(config.origin, config.platformOrigin, runtime,
       runtime.config.runtimeUserId, token => runtime.verifyBroker(token))
+    owner.inject(['webServer', 'connection'], (ui) => {
+      const require = createRequire(import.meta.url)
+      const index = join(dirname(require.resolve('@deepseek-ai/dsh-web-frontend/package.json')), 'dist', 'index.html')
+      ui.effect(() => ui.webServer.register({ kind: 'exact', path: '/native/runtime/document', handler: async (request, response) => {
+        if (request.method !== 'GET' && request.method !== 'HEAD') { response.writeHead(405); response.end(); return }
+        if (new URL(request.url ?? '/', 'http://tenant').search) { response.writeHead(400); response.end(); return }
+        const html = ui.webServer.renderIndex(await readFile(index, 'utf8'))
+          .replace(/<head(?:\s[^>]*)?>/iu, open => `${open}<base href="./">`)
+        response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
+        response.end(request.method === 'HEAD' ? undefined : html)
+      } }))
+      this.documentReady = true
+      ui.effect(() => () => { this.documentReady = false })
+    })
     owner.effect(() => () => this.shutdown())
   }
+
+  /** Whether the original tenant document renderer has joined its required services. */
+  get available(): boolean { return this.documentReady && !this.isClosing() }
 
   private isClosing(): boolean {
     return this.closing || this.ownerFiber.state === FiberState.UNLOADING || this.ownerFiber.state === FiberState.DISPOSED

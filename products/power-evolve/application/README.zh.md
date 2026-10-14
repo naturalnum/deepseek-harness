@@ -149,3 +149,5 @@ Office 部署必须指定经过运维验证、在解析器启动前禁用外部�
 采用固定官方发布版及产品 [AGENTS.md](../AGENTS.md) 的要求。源码测试和正式构建产物使用独立入口。迁移状态与准确执行命令保存在试用证据中，不放入本文参考。
 
 </details>
+
+租户渲染的 Native 文档、引导脚本和资源使用独立的 `pe_native_document` HttpOnly Cookie。原来的三个 `pe_agent` Cookie 作用域保持独立；租户文档与 HMR 使用同一账号的原始模块图和资源修订。

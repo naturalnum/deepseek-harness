@@ -85,6 +85,37 @@ test('browser-scoped cookie forwards unchanged combo revision bytes through the 
   } finally { await close(); await ctx.fiber.dispose(); upstream.closeAllConnections(); upstream.close(); await once(upstream, 'close') }
 })
 
+test('the separately scoped document cookie forwards original document and boot resources without admitting legacy API', async () => {
+  const received: string[] = []
+  const upstream = createServer((request, response) => {
+    received.push(request.url ?? '')
+    expect(request.headers.authorization).toBe(`Bearer ${token}`)
+    response.writeHead(200, { 'content-type': request.url === '/native/runtime/document' ? 'text/html' : 'text/javascript' })
+    response.end('original-renderer-bytes')
+  })
+  upstream.listen(0, '127.0.0.1'); await once(upstream, 'listening')
+  const address = upstream.address()
+  if (!address || typeof address === 'string') throw new Error('Missing owned listener')
+  const ctx = await web(), origin = `http://127.0.0.1:${ctx.webServer.port}`
+  const auth = new BrowserAgentAuth(origin, 'https://platform.example', { call: async (_path, credential) => {
+    if (credential !== token) throw new Error('denied'); return user
+  } })
+  const close = installNativeClientRouting(ctx, auth, origin, `http://127.0.0.1:${address.port}`, 1048576, 1000,
+    { maxRequests: 100, lifetimeMs: 3000 })
+  try {
+    for (const path of ['/native/', '/native/boot/inline.original.js', '/native/assets/original.js']) {
+      const response = await fetch(origin + path, { headers: { cookie: `pe_native_document=${token}` } })
+      expect(response.status).toBe(200); expect(await response.text()).toBe('original-renderer-bytes')
+    }
+    expect(received).toEqual(['/native/runtime/document', '/native/runtime/boot/inline.original.js', '/native/runtime/assets/original.js'])
+    expect((await fetch(origin + '/native/', { headers: { cookie: `pe_agent=${token}` } })).status).toBe(401)
+    expect((await fetch(origin + '/native/plugins/events', { headers: { cookie: `pe_native_document=${token}` } })).status).toBe(401)
+    expect((await fetch(origin + '/native/api/remote.mux', { headers: { cookie: `pe_native_document=${token}` } })).status).toBe(401)
+    expect((await fetch(origin + '/native/', { headers: { cookie: `pe_native_document=${token}; pe_native_document=${token}` } })).status).toBe(401)
+    expect(received).toHaveLength(3)
+  } finally { await close(); await ctx.fiber.dispose(); upstream.closeAllConnections(); upstream.close(); await once(upstream, 'close') }
+})
+
 test('whole accepted client carrier shutdown joins held admission and refuses late dispatch', async () => {
   const ctx = await web(), entered = Promise.withResolvers<undefined>(), gate = Promise.withResolvers<undefined>()
   const dispatch = vi.fn(), close = installNativeClientHttp(ctx, '/native/plugins', async (_request, response, _target, _method, signal) => {

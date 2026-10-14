@@ -5,6 +5,7 @@ import { identity, settings, PlatformError } from '../contracts.ts'
 import { bearer, readJson, sendJson } from '../http.ts'
 
 const cookieName = 'pe_agent'
+const documentCookieName = 'pe_native_document'
 const cookiePaths = ['/native/api', '/api/powerEvolve', '/native/plugins'] as const
 const tokenSchema = z.string().regex(/^[A-Za-z0-9_-]{32,256}$/)
 const exchangeRequest = z.object({ token: tokenSchema }).strict()
@@ -31,17 +32,20 @@ function secureCookie(origin: string): boolean {
 }
 
 function cookieHeaders(token: string, secure: boolean, clear = false): string[] {
-  return cookiePaths.map(path => `${cookieName}=${token}; Path=${path}; HttpOnly; SameSite=Strict${secure ? '; Secure' : ''}${clear ? '; Max-Age=0' : ''}`)
+  return [...cookiePaths.map(path => `${cookieName}=${token}; Path=${path}; HttpOnly; SameSite=Strict${secure ? '; Secure' : ''}${clear ? '; Max-Age=0' : ''}`),
+    `${documentCookieName}=${token}; Path=/native/; HttpOnly; SameSite=Strict${secure ? '; Secure' : ''}${clear ? '; Max-Age=0' : ''}`]
 }
 
-function cookieToken(request: IncomingMessage, origin: string): string | undefined {
+function cookieToken(request: IncomingMessage, origin: string, document = false): string | undefined {
   const path = new URL(request.url ?? '/', origin).pathname
-  if (!cookiePaths.some(prefix => path === prefix || path.startsWith(`${prefix}/`))) return undefined
+  if (document ? !(path === '/native/' || path === '/native/index.html' || path.startsWith('/native/boot/') || path.startsWith('/native/assets/'))
+    : !cookiePaths.some(prefix => path === prefix || path.startsWith(`${prefix}/`))) return undefined
+  const name = document ? documentCookieName : cookieName
   const [match, ...duplicates] = (request.headers.cookie ?? '').split(';').map(part => part.trim())
-    .filter(part => part.startsWith(`${cookieName}=`))
+    .filter(part => part.startsWith(`${name}=`))
   if (match === undefined) return undefined
   if (duplicates.length) throw new PlatformError(401, 'ambiguous_credential')
-  const token = match.slice(cookieName.length + 1)
+  const token = match.slice(name.length + 1)
   if (!tokenSchema.safeParse(token).success) throw new PlatformError(401, 'unauthorized')
   return token
 }
@@ -95,9 +99,10 @@ export class BrowserAgentAuth {
   /** Verify every RPC or stream request at the platform and return its current identity.
    * @param request - product RPC or native API request, including WebSocket upgrade.
    * @param safeGet - allow a same-origin GET navigation whose browser omits the Origin header.
+   * @param document Select only the separate document/boot/assets cookie; original RPC and plugin scopes remain unchanged.
    * @returns the current Agent credential and platform identity.
    */
-  async authenticate(request: IncomingMessage, safeGet = false): Promise<{
+  async authenticate(request: IncomingMessage, safeGet = false, document = false): Promise<{
     token: string
     fromCookie: boolean
     user: z.infer<typeof agentIdentity>
@@ -110,7 +115,7 @@ export class BrowserAgentAuth {
       if (request.headers.origin !== undefined && request.headers.origin !== this.hostOrigin) throw new PlatformError(403, 'invalid_origin')
       return { token, fromCookie: false, user: this.assertOwner(agentIdentity.parse(await this.verifier.call('/identity/me', token, {}))) }
     }
-    const cookie = cookieToken(request, this.hostOrigin)
+    const cookie = cookieToken(request, this.hostOrigin, document)
     if (request.headers.authorization !== undefined) {
       if (cookie !== undefined) throw new PlatformError(401, 'ambiguous_credential')
       if (request.headers.origin !== undefined && request.headers.origin !== this.hostOrigin) {

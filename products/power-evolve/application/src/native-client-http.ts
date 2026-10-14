@@ -25,10 +25,11 @@ export function resolveNativeClientHttpConfig(input: { maxRequests?: number } = 
  * @param prefix External resource prefix mapped to original /plugins.
  * @param forward Caller-owned authoritative admission and fixed-target forwarding.
  * @param config Explicit validated admission budget; omission resolves the compatible default.
+ * @param targetPrefix Caller-owned resource mapping; empty preserves the original document-relative resource path.
  * @returns Cached explicit shutdown; callers join it before credential and database shutdown.
  */
 export function installNativeClientHttp(ctx: Context, prefix: string, forward: NativeClientForward,
-  config: { maxRequests?: number } = {}): () => Promise<void> {
+  config: { maxRequests?: number } = {}, targetPrefix = '/plugins'): () => Promise<void> {
   const budget = resolveNativeClientHttpConfig(config)
   const pending = new Set<Promise<void>>()
   const live = new Map<ServerResponse, { request: IncomingMessage; controller: AbortController }>()
@@ -48,7 +49,7 @@ export function installNativeClientHttp(ctx: Context, prefix: string, forward: N
         const method = request.method
         if (method !== 'GET' && method !== 'HEAD') throw new PlatformError(405, 'method_not_allowed')
         const original = new URL(request.url ?? '/', 'http://native')
-        const target = `/plugins${original.pathname.slice(prefix.length)}${original.search}`
+        const target = `${targetPrefix}${original.pathname.slice(prefix.length)}${original.search}`
         await forward(request, response, target, method, controller.signal)
         if (!response.writableEnded && !response.destroyed) response.end()
       } catch (error) {

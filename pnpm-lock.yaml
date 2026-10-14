@@ -14274,6 +14274,9 @@ importers:
 
   products/power-evolve/application:
     dependencies:
+      '@deepseek-ai/dsh-web-frontend':
+        specifier: workspace:*
+        version: link:../../../apps/web
       '@deepseek-ai/dsh-brand':
         specifier: workspace:*
         version: link:../../../packages/util/brand

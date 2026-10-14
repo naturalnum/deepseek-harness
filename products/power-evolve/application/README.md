@@ -149,3 +149,5 @@ Native permission checkpoints carry the exact preset, sandbox and approval overr
 Use the fixed official release and product instructions in [AGENTS.md](../AGENTS.md). Source tests and formal build artifacts use separate entry paths. Migration status and exact executed commands belong in trial evidence, rather than this reference.
 
 </details>
+
+The tenant-rendered Native document, boot scripts and assets use a separate `pe_native_document` HttpOnly cookie. The original three `pe_agent` cookie scopes remain distinct; the tenant document and HMR share the original account graph and artifact revisions.
