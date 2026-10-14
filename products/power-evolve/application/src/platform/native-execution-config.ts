@@ -11,7 +11,7 @@ export const nativeExecutionConfig = z.object({
   broker: z.object({ kubectlExecutable: absolute, kubeconfigPath: absolute, fsWorkerPath: absolute, processWorkerPath: absolute,
     maxRequestBytes: positive, maxReplyBytes: positive, maxProcessMs: positive, authorityPollMs: positive,
     transportGraceMs: positive }).strict(),
-  pods: z.object({ namespace: name, runtimeClassName: name, image: z.string().min(1).max(2048),
+  pods: z.object({ namespace: name, runtimeClassName: name, image: z.string().min(1).max(2048).regex(/@sha256:[a-f0-9]{64}$/u),
     storageVolumeClaim: name, storageVolumePrefix: relative, homeVolumePrefix: relative, homeLocalRoot: absolute, tmpVolumePrefix: relative, tmpLocalRoot: absolute,
     nodeName: z.string().min(1).max(253).optional(), cpu: z.string().regex(/^\d+(?:m)?$/u),
     memory: z.string().regex(/^\d+(?:[KMGTPE]i)?$/u), pollMs: positive, readyTimeoutMs: positive,

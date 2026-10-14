@@ -32,6 +32,7 @@ const rowSchema = z.object({ world: nativeExecutionWorld, binding: storageBindin
 
 /** Platform owns original grant checks; trusted Runtime receives only its issued world and bounded methods. */
 export class NativeExecutionAuthorityStore {
+  private mutations = 0
   constructor(readonly pool: Pool, private readonly tasks: NativeExecutionTaskAuthority, private readonly storage: ManagedCloudStorage,
     private readonly policy: NativeExecutionPolicyReader) {}
 
@@ -43,6 +44,7 @@ export class NativeExecutionAuthorityStore {
   async open(token: string, agentId: string): Promise<{ world: NativeExecutionWorld; binding: StorageBinding }> {
     return transaction(this.pool, async (client) => {
       const session = await this.tasks.nativeWorldAuthorized(client, token, 'storage-read')
+      if (agentId !== session.id) throw new PlatformError(403, 'native_world_agent_mismatch')
       const binding = await this.storage.resolve(session.user_id, session.workspace_id, client)
       const policy = await this.policy(client, session)
       const world = nativeExecutionWorld.parse({ worldId: randomUUID(), userId: session.user_id, sessionId: session.id,
@@ -84,11 +86,43 @@ export class NativeExecutionAuthorityStore {
       if (purpose === 'execution') {
         const uncertain = await client.query(`SELECT p.id FROM pe_native_execution_processes p
           JOIN pe_native_execution_worlds w ON w.id=p.world_id WHERE w.user_id=$1 AND w.workspace_id=$2
-          AND p.state='uncertain' LIMIT 1`, [world.userId, world.workspaceId])
+          AND (p.state='uncertain' OR p.state<>'stopped' AND (w.storage_generation<>$3 OR
+          w.session_id=$4 AND (w.permission_generation<>$5 OR w.operation_epoch<>$6))) LIMIT 1`,
+          [world.userId, world.workspaceId, world.storageGeneration, world.sessionId, world.permissionGeneration, world.operationEpoch])
         if (uncertain.rowCount) throw new PlatformError(409, 'native_world_reconciliation_required')
       }
       return binding
     })
+  }
+
+  /** Serialize native guarded mutations across utility processes and alias bindings to the same physical root.
+   * The lock precedes payload submission; waiting never retries a write or holds account/Session locks; two PG slots remain available for payload authority and stop evidence.
+   * @param token Original world bearer.
+   * @param world Captured Agent world.
+   * @param path Canonical execution-world target path.
+   * @param apply One non-replayed mutation dispatch.
+   * @returns Native mutation outcome after joined worker cleanup.
+   */
+  async mutate<T>(token: string, world: NativeExecutionWorld, path: string, apply: () => Promise<T>): Promise<T> {
+    const binding = await this.assert(token, world)
+    const root = path.startsWith('/workspace/') ? ['workspace', binding.rootKey, binding.rootRelativePath]
+      : path.startsWith('/tmp/') ? ['temporary', world.userId, world.sessionId] : ['home', world.userId]
+    const maximum = this.pool.options.max
+    if (maximum === undefined || maximum < 3 || this.mutations >= maximum - 2) throw new PlatformError(429, 'native_fs_capacity')
+    this.mutations++
+    try {
+    const key = JSON.stringify([...root, path]), client = await this.pool.connect()
+    let locked = false, releaseError: unknown
+    try {
+      await client.query('SELECT pg_advisory_lock(hashtextextended($1,0))', [key])
+      locked = true
+      return await apply()
+    } finally {
+      try { if (locked) await client.query('SELECT pg_advisory_unlock(hashtextextended($1,0))', [key]) }
+      catch (error) { releaseError = error; throw error }
+      finally { client.release(releaseError !== undefined) }
+    }
+    } finally { this.mutations-- }
   }
 
   /** Revoke one issued world without altering original operation authority.

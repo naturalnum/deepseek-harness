@@ -5574,6 +5574,12 @@
       "status": "shared",
       "owner": "Root",
       "reason": "core-shared"
+    },
+    {
+      "path": "products/power-evolve/application/tests/native-execution-consumers-case.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
     }
   ],
   "approvedDeferrals": {

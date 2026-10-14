@@ -42,8 +42,9 @@ def emit(value):
     if len(encoded) > maximum:
         raise ValueError('native relay reply exceeds configured frame bound')
     with lock:
-        sys.stdout.buffer.write(encoded)
-        sys.stdout.buffer.flush()
+        view = memoryview(encoded)
+        while view:
+            view = view[os.write(1, view):]
 
 
 def pump(fd, channel):
@@ -76,7 +77,16 @@ def snapshot():
 
 
 def foreground():
-    group = os.tcgetpgrp(master)
+    # The native Linux provider uses the kernel's tpgid stat field as well.
+    # runsc does not implement TIOCGPGRP on the PTY master, so inspect the original
+    # shell's kernel record instead of synthesizing a group from its PID.
+    try:
+        with open('/proc/' + str(child_pid) + '/stat', 'r', encoding='utf-8') as source:
+            raw = source.read(16384)
+        values = raw[raw.rfind(')') + 2:].split()
+        group = int(values[5])
+    except (OSError, ValueError, IndexError):
+        return None
     if group <= 0:
         return None
     # Positive input-wait evidence only; unsupported runsc wchan observations stay false.
@@ -129,8 +139,19 @@ def terminate():
 
 def receive():
     global revision, activity
+    pending = b''
     while not finished.is_set():
-        raw = sys.stdin.buffer.readline(maximum + 1)
+        while b'\n' not in pending:
+            chunk = os.read(0, min(4096, maximum))
+            if not chunk:
+                terminate()
+                return
+            pending += chunk
+            if len(pending) > maximum:
+                terminate()
+                return
+        raw, pending = pending.split(b'\n', 1)
+        raw += b'\n'
         if not raw:
             terminate()
             return
@@ -188,7 +209,7 @@ def receive():
                 emit({'kind': 'reply', 'id': command['id'], 'ok': True, 'value': result})
         except (OSError, ValueError) as error:
             if 'id' in command:
-                emit({'kind': 'reply', 'id': command['id'], 'ok': False, 'error': type(error).__name__})
+                emit({'kind': 'reply', 'id': command['id'], 'ok': False, 'error': type(error).__name__ + ':' + str(getattr(error, 'errno', None)) + ':' + operation})
             else:
                 terminate()
                 return
@@ -284,3 +305,6 @@ for thread in threads:
         thread.join()
 emit({'kind': 'exit', 'exitCode': result if result >= 0 else None,
       'signal': signal.Signals(-result).name if result < 0 else None})
+
+# Relay-owned daemon input may be blocked in read(0); no Python buffered-I/O finalizers remain.
+os._exit(0)

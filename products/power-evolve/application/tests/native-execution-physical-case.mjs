@@ -23,6 +23,7 @@ import { NativeExecutionAuthorityStore } from '../lib/platform/native-execution-
 import { NativeExecutionPods } from '../lib/platform/native-execution-pods.js'
 import { NativeExecutionBroker } from '../lib/platform/native-execution-broker.js'
 import { NativeExecutionRoutes } from '../lib/platform/native-execution-routes.js'
+import { verifyNativeExecutionConsumers } from '../lib/native-execution-consumers/native-consumers.mjs'
 import { createNativeExecutionHttpBinding } from '../lib/native-execution/http-client.js'
 import { readNativeRuntimePolicy } from '../lib/platform/native-runtime-policy.js'
 import { installNativeExecutionPlatform } from '../lib/platform/native-execution-platform.js'
@@ -71,7 +72,7 @@ async function prepare(pool, identity, modes, files, account) {
   await events.append(grant.token, [session.append('sandbox/mode', { mode: 'workspace-write' })])
   const taskAuthority = { nativeWorldAuthorized: (client, token, purpose) => purpose === 'storage-read' ? executionTasks.authorized(client, token) : executionTasks.executionAuthorized(client, token) }
   const store = new NativeExecutionAuthorityStore(pool, taskAuthority, files.storage, readNativeRuntimePolicy)
-  const issued = await store.open(grant.token, randomUUID())
+  const issued = await store.open(grant.token, grant.sessionId)
   await mkdir(join(config.homeRoot, issued.world.userId), { recursive: true, mode: 0o755 })
   return { store, grant, issued, tasks, session, identity, events, taskAuthority }
 }
@@ -114,6 +115,10 @@ test('native Fs, Bash and physical permissions share one generation and exact st
     const read = await run(n, 'cat native-proof.txt; printf bash >> native-proof.txt')
     assert.equal(read.outcome.exitCode, 0); assert.match(read.stdout.text, /native Fs wrote this/)
     assert.match(await n.filesystem.readText(file), /bash$/)
+    await n.filesystem.writeText(await n.filesystem.resolve('/tmp/native-shared.txt'), 'same session temporary data')
+    assert.match((await run(n, 'cat /tmp/native-shared.txt')).stdout.text, /same session temporary data/)
+    const header = (await pool.query('SELECT header FROM pe_sessions WHERE id=$1', [a.grant.sessionId])).rows[0].header
+    const consumers = await verifyNativeExecutionConsumers({ world: a.issued.world, token: a.grant.token, header, transport: (path, bearer, body) => routes.route(path, bearer, body) })
     const home = await run(n, 'echo forbidden > /home/agent/blocked')
     assert.notEqual(home.outcome.exitCode, 0); assert.match(home.stderr.text, /Read-only file system|Permission denied/)
     const escape = await run(n, 'test ! -r /input/kubeconfig.yaml && test ! -r /input/database-url && test ! -d /s2-volume; id -u; env')
@@ -124,23 +129,23 @@ test('native Fs, Bash and physical permissions share one generation and exact st
     await assert.rejects(other.filesystem.readText(file), /another world|another execution world/)
     await a.events.append(a.grant.token, [a.session.append('sandbox/mode', { mode: 'read-only' })])
     await assert.rejects(a.store.assert(a.grant.token, a.issued.world), error => error.code === 'native_world_generation_changed')
-    const readonly = await a.store.open(a.grant.token, randomUUID()), ro = native(readonly, a.grant.token)
+    const readonly = await a.store.open(a.grant.token, a.grant.sessionId), ro = native(readonly, a.grant.token)
     const blocked = await run(ro, 'echo no > /workspace/no; echo no > /tmp/no')
     assert.notEqual(blocked.outcome.exitCode, 0); assert.match(blocked.stderr.text, /Read-only file system/)
     await assert.rejects(ro.filesystem.writeText(await ro.filesystem.resolve('/workspace/no'), 'no'), error => error.code === 'FS_SANDBOX_DENIED')
     await a.events.append(a.grant.token, [a.session.append('sandbox/mode', { mode: 'workspace-write' })])
-    const live = native(await a.store.open(a.grant.token, randomUUID()), a.grant.token)
+    const live = native(await a.store.open(a.grant.token, a.grant.sessionId), a.grant.token)
     const controller = new AbortController(), cancelled = run(live, 'echo started; sleep 30; echo wrong > /workspace/after-cancel', controller.signal)
     setTimeout(() => controller.abort(), 1500)
     const cancelledResult = await cancelled; assert.equal(cancelledResult.outcome.signal, 'SIGTERM')
     const evidence = (await pool.query("SELECT state,pod_uid,first_stop_cause,stop_evidence FROM pe_native_execution_processes WHERE state='stopped'")).rows
     assert.ok(evidence.length >= 8); assert.ok(evidence.every(row => row.pod_uid === row.stop_evidence.podUid && row.stop_evidence.status === 'KUBELET_STOPPED'))
-    const stale = await a.store.open(a.grant.token, randomUUID())
+    const stale = await a.store.open(a.grant.token, a.grant.sessionId)
     await pool.query('UPDATE pe_workspaces SET binding_generation=binding_generation+1 WHERE id=$1', [stale.world.workspaceId])
     await assert.rejects(a.store.assert(a.grant.token, stale.world), error => error.code === 'native_world_generation_changed')
     await routes.dispose()
     assert.deepEqual(await pods.recover(100), [])
-    await writeFile(config.evidenceFile, JSON.stringify({ database: name, passed: true, evidence }, null, 2) + '\n', { mode: 0o600 })
+    await writeFile(config.evidenceFile, JSON.stringify({ database: name, passed: true, consumers, evidence }, null, 2) + '\n', { mode: 0o600 })
   } finally {
     if (broker) await broker.dispose()
     for (const runtime of runtimeContexts) await runtime.fiber.dispose()

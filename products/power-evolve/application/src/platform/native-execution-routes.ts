@@ -32,7 +32,7 @@ export interface NativeExecutionRouteConfig { maxLiveHandles: number; maxOutputB
 export class NativeExecutionRoutes {
   private readonly handles = new Map<string, Entry | TerminalEntry>()
   private readonly pending = new Set<Promise<void>>()
-  private readonly starts = new Map<string, { world: NativeExecutionWorld; settled: Promise<void> }>()
+  private readonly starts = new Map<string, { world: NativeExecutionWorld; settled: Promise<void>; controller: AbortController }>()
   private pendingStarts = 0
   private closing = false
   private closeWork: Promise<void> | undefined
@@ -87,8 +87,8 @@ export class NativeExecutionRoutes {
       const terminal = path.includes('/terminal/')
       const body = z.object({ world: nativeExecutionWorld, id: z.uuid(), spec: terminal ? nativeTerminalSpec : nativeProcessSpec }).strict().parse(input)
       if (this.starts.has(body.id) || this.handles.has(body.id)) throw new PlatformError(409, 'native_process_duplicate_admission')
-      const submitted = Promise.withResolvers<void>()
-      this.starts.set(body.id, { world, settled: submitted.promise })
+      const submitted = Promise.withResolvers<void>(), controller = new AbortController()
+      this.starts.set(body.id, { world, settled: submitted.promise, controller })
       try {
       await this.broker.authority.assert(token, world)
       if (this.closing) throw new PlatformError(503, 'native_execution_routes_closing')
@@ -98,7 +98,7 @@ export class NativeExecutionRoutes {
         const common = { world, ctx, outcome: null, error: null, state: 'running' as const }
         let entry: Entry | TerminalEntry
         if (terminal) {
-          const handle = await this.broker.terminal(token, world, nativeTerminalSpec.parse(body.spec), body.id)
+          const handle = await this.broker.terminal(token, world, { ...nativeTerminalSpec.parse(body.spec), signal: controller.signal }, body.id)
           entry = { ...common, kind: 'terminal', handle, output: new ByteWindow(this.config.maxOutputBytes) }
           handle.output.on('data', (data: Buffer) => { if (entry.kind === 'terminal') entry.output.push(Buffer.from(data)) })
         } else {
@@ -125,7 +125,7 @@ export class NativeExecutionRoutes {
     const cleanup = path.endsWith('/stop') || path.endsWith('/release') || path.endsWith('/cleanup')
     await this.broker.authority.assertOwnership(token, world)
     const submitted = this.starts.get(body.id)
-    if (cleanup && submitted && JSON.stringify(submitted.world) === JSON.stringify(world)) await submitted.settled
+    if (cleanup && submitted && JSON.stringify(submitted.world) === JSON.stringify(world)) { submitted.controller.abort(); await submitted.settled }
     const entry = this.handles.get(body.id)
     if (!entry) {
       if (!cleanup) throw new PlatformError(409, 'native_process_handle_unavailable')
@@ -180,6 +180,8 @@ export class NativeExecutionRoutes {
    */
   dispose(): Promise<void> {
     this.closing = true
+    this.broker.closeAdmission()
+    for (const submitted of this.starts.values()) submitted.controller.abort()
     return this.closeWork ??= (async () => {
       await Promise.all([...this.pending])
       const results = await Promise.allSettled([...this.handles.values()].map(async entry => {

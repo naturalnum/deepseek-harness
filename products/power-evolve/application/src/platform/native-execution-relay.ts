@@ -87,7 +87,7 @@ export class NativeExecutionRelay {
           if (buffer.length > maxFrameBytes) throw new Error('Native relay incomplete frame exceeds configured bound')
         }
         const transport = await local.done
-        if (buffer.length || transport.exitCode !== 0 || !outcome) throw new Error('Native relay outcome unavailable')
+        if (buffer.length || transport.exitCode !== 0 || !outcome) throw new Error('Native relay outcome unavailable', { cause: new Error('transport=' + JSON.stringify(transport) + '; stderr=' + (local.collected.stderr?.readFrom(0).text ?? '') + '; trailing=' + buffer.length + '; outcome=' + JSON.stringify(outcome)) })
         return outcome
       } finally {
         this.closed = true

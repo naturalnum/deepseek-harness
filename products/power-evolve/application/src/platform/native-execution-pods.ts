@@ -60,6 +60,7 @@ export class NativeExecutionPods {
    * @param kind Process, terminal, or native filesystem utility.
    * @param request Exact wire request retained as an identity digest.
    * @param assertAuthority Rechecks current grant and both generations before mutation.
+   * @param admissionId Optional original caller nonce; never reused for another dispatch.
    * @returns Exact ready Pod UID, or a durable uncertain admission.
    */
   async create(world: NativeExecutionWorld, binding: StorageBinding, kind: 'process' | 'terminal' | 'filesystem',

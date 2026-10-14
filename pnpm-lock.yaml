@@ -14356,6 +14356,9 @@ importers:
       '@deepseek-ai/dsh-attachment-local':
         specifier: workspace:*
         version: link:../../../packages/attachment/attachment-local
+      '@deepseek-ai/dsh-bash-sandbox':
+        specifier: workspace:*
+        version: link:../../../packages/shell/bash-sandbox
       '@deepseek-ai/dsh-client-file-upload':
         specifier: workspace:*
         version: link:../../../packages/client/file-upload
@@ -14398,12 +14401,18 @@ importers:
       '@deepseek-ai/dsh-plugin-manager':
         specifier: workspace:*
         version: link:../../../packages/boot/plugin-manager
+      '@deepseek-ai/dsh-ptc-runtime-node':
+        specifier: workspace:*
+        version: link:../../../packages/ptc-runtime/ptc-runtime-node
       '@deepseek-ai/dsh-remote-mock':
         specifier: workspace:*
         version: link:../../../packages/test-support/remote-mock
       '@deepseek-ai/dsh-sandbox':
         specifier: workspace:*
         version: link:../../../packages/sandbox/sandbox
+      '@deepseek-ai/dsh-sandbox-policy':
+        specifier: workspace:*
+        version: link:../../../packages/sandbox/sandbox-policy
       '@deepseek-ai/dsh-scope':
         specifier: workspace:*
         version: link:../../../packages/core/scope
@@ -14458,6 +14467,12 @@ importers:
       '@deepseek-ai/dsh-subprocess-local':
         specifier: workspace:*
         version: link:../../../packages/subprocess/subprocess-local
+      '@deepseek-ai/dsh-terminal':
+        specifier: workspace:*
+        version: link:../../../packages/terminal/terminal
+      '@deepseek-ai/dsh-terminal-bash':
+        specifier: workspace:*
+        version: link:../../../packages/terminal/terminal-bash
       '@deepseek-ai/dsh-timeout':
         specifier: workspace:*
         version: link:../../../packages/util/timeout
@@ -21728,6 +21743,10 @@ packages:
 
   resolve.exports@2.0.3:
     resolution: {integrity: sha512-OcXjMsGdhL4XnbShKpAcSqPMzQoYkYyhbEaeSko47MjRP9NfEQMhZkXL1DoFlt9LWQn4YttrdnV6X2OiyzBi+A==}
+    engines: {node: '>=10'}
+
+  resolve.exports@2.0.4:
+    resolution: {integrity: sha512-zepuGL0ulf+nt+XaFrlKeaiTJeyPFPLLY62+ncq1/VTHBdt3HsfXOH60priZ6tnXQozdGcDeIF5JVTanvIcYWQ==}
     engines: {node: '>=10'}
 
   resolve@1.22.12:
@@ -29411,6 +29430,8 @@ snapshots:
   resolve-pkg-maps@1.0.0: {}
 
   resolve.exports@2.0.3: {}
+
+  resolve.exports@2.0.4: {}
 
   resolve@1.22.12:
     dependencies:

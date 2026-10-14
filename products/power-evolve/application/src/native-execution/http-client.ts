@@ -84,10 +84,12 @@ class HttpSubprocess extends SubprocessRuntime {
   private readonly live = new Set<SubprocessHandle | SubprocessTerminalHandle>()
   private readonly pending = new Set<Promise<void>>()
   private disposed = false
+  private readonly allocationStops = new Set<() => void>()
   constructor(ctx: Context, private readonly client: ClientConfig) {
     super(ctx)
     ctx.effect(() => async () => {
       this.disposed = true
+      for (const stop of this.allocationStops) stop()
       await Promise.all([...this.pending])
       const results = await Promise.allSettled([...this.live].map(async handle => {
         await handle.terminate()
@@ -195,10 +197,14 @@ class HttpSubprocess extends SubprocessRuntime {
     const reservation = Promise.withResolvers<void>()
     this.pending.add(reservation.promise)
     const id = randomUUID(), output = new PassThrough()
+    let allocationCleanup: Promise<unknown> | undefined
+    const cancel = () => { allocationCleanup ??= this.call('terminal', 'stop', { id }); void allocationCleanup.catch(() => {}) }
+    this.allocationStops.add(cancel); spec.signal?.addEventListener('abort', cancel, { once: true })
     try {
       spec.signal?.throwIfAborted()
       const { signal: _signal, ...body } = spec
       const accepted = z.object({ id: z.uuid(), pid: z.number().int().positive() }).strict().parse(await this.call('terminal', 'start', { id, spec: body }))
+      this.allocationStops.delete(cancel); spec.signal?.removeEventListener('abort', cancel)
       let closing = false, stopWork: Promise<void> | undefined
       const operations = new Set<Promise<unknown>>()
       const operation = <T>(path: string, data: Record<string, unknown>, schema: z.ZodType<T>): Promise<T> => {
@@ -240,7 +246,7 @@ class HttpSubprocess extends SubprocessRuntime {
       if (this.disposed || spec.signal?.aborted) { await terminal.terminate(); throw new Error('Native terminal allocation cancelled') }
       return terminal
     } catch (error) { await this.call('terminal', 'stop', { id }); await this.call('terminal', 'release', { id }); output.end(); throw error }
-    finally { reservation.resolve(); this.pending.delete(reservation.promise) }
+    finally { this.allocationStops.delete(cancel); spec.signal?.removeEventListener('abort', cancel); try { await allocationCleanup } finally { reservation.resolve(); this.pending.delete(reservation.promise) } }
   }
 }
 

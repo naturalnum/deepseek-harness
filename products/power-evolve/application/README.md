@@ -122,7 +122,7 @@ Mount `installNativeExecutionProviders` with a synchronous original-Agent bindin
 
 Current constraints are explicit at the corresponding native API:
 
-- The broker's filesystem utility replies and foreground output are bounded. HTTP terminal allocation and the separate subprocess control channel fail explicitly until their native consumers pass physical acceptance; filesystem watching and complete-output spill recovery are not available through this provider.
+- The broker's filesystem utility replies and retained output are bounded. The credential-free process relay carries raw subprocess bytes, fd7 control and actual guest PTYs; the artifact-plane physical case exercises native Bash, PTC host bindings and the registered Terminal backend. Filesystem text streaming currently reads a whole bounded reply; filesystem watching and complete-output spill recovery remain unavailable. Production Profile and browser acceptance are separate checks.
 - Native cloud Shell currently supports bounded foreground Bash only. Background jobs, stdin/environment overrides, native file permissions and complete FS/Subprocess/PTY providers remain separate slices in the [runtime plan](../CLOUD-RUNTIME-PLAN.md). An uncertain command is reconciled under its original identity.
 - Host-local file opening and shared Profile changes require capabilities the cloud user does not automatically receive.
 - The prompt carrier accepts queued text, generic file receipts and SDK-admitted images. Steering, editing and removal use the current Writer's Coordinator. Active prepared-owner removal refuses.
