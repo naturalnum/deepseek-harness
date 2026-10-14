@@ -4,6 +4,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { once } from 'node:events'
 import { createServer } from 'node:http'
 import { join } from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
 import { Context } from '@deepseek-ai/cordis'
 import { Session, type SessionEvent } from '@deepseek-ai/dsh-session'
 import { expect, test } from 'vitest'
@@ -34,6 +35,11 @@ import { readNativeRuntimePolicy } from '../src/platform/native-runtime-policy.t
 import { NativeSubagents } from '../src/platform/native-subagents.ts'
 import { cleanupNativeRuntime } from '../src/platform/native-runtime-cleanup.ts'
 import { TaskStore } from '../src/platform/tasks.ts'
+import { NativeAssistantStore } from '../src/platform/native-assistant-store.ts'
+import { NativeInputCommit } from '../src/platform/native-input-commit.ts'
+import { NativeTurnContinuationV2 } from '../src/platform/native-turn-continuation-v2.ts'
+import { NATIVE_RETAINED_ROUTES } from '../src/native-retained-intent-contracts.ts'
+import { retainedTestStore } from './native-retained-intent-fixture.ts'
 import { cloudFixture } from './cloud-fixture.ts'
 
 type Fixture = Parameters<Parameters<typeof cloudFixture>[0]>[0]
@@ -583,18 +589,33 @@ test('the actual allowed child model freezes separately within the original pare
 }))
 
 
-test.each(['parent', 'account', 'late-open'] as const)('the actual child write handle cleans PG after %s loss and a rejected Writer release', loss => executionCase(async (f, n) => {
+test.each(['parent', 'account', 'late-open', 'renew-ack', 'renew-timeout'] as const)('the actual child write handle preserves original PG lifetime after %s', loss => executionCase(async (f, n) => {
   await openStep(f, n)
   const children = new NativeSubagents(n.executionTasks, { maxChildren: 2, maxDepth: 2, lifetimeMs: 60000, leaseMs: 30000 })
+  const presentation = { maxBatchItems: 32, maxBatchBytes: 1048576, maxItemBytes: 1048576,
+    maxActiveBytes: 4194304, maxRingItems: 1024, maxRingBytes: 4194304, ttlMs: 20000, maxEventBytes: taskLimits.maxEventBytes }
+  const publisher = new NativeAssistantStore(n.tasks, n.events, presentation)
+  const config = { input: ledgerLimits, presentation }
+  const bridge = new NativeInputCommit(n.tasks, n.ledger, n.frames, publisher, n.writers, config)
+  const turn = new NativeTurnContinuationV2(n.tasks, n.writers,
+    (client, command) => n.frames.verifyInTransaction(client, command),
+    { ...ledgerLimits, leaseMs: taskLimits.leaseMs, maxActivePerUser: taskLimits.maxActivePerUser, assistant: presentation }, n.frames)
+  const retained = retainedTestStore({ tasks: n.tasks, writers: n.writers, publisher, ledger: n.ledger,
+    frames: n.frames, bridge }, config, turn)()
   const authority = new NativeRuntimeAuthority(f.pool)
   const issued = await authority.issue({ userId: f.alice.user.userId, runtimeId: n.writer.workerId, generation: 1, lifetimeMs: 60000 })
   const host = new Context(), pending = new Set<Promise<void>>(), observed: string[] = []
   const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  const renewEntered = Promise.withResolvers<undefined>(), renewRelease = Promise.withResolvers<undefined>()
+  const renewalRoutes: string[] = [], renewalFailures: string[] = []
+  const renewing = loss === 'renew-ack' || loss === 'renew-timeout'
   const server = createServer((request, response) => {
     const work = (async () => {
       try {
         const token = bearer(request), input = await readJson(request, 1048576)
         switch (request.url) {
+          case NATIVE_RETAINED_ROUTES.prepare: sendJson(response, await retained.prepare(token, input)); return
+          case NATIVE_RETAINED_ROUTES.execute: sendJson(response, await retained.execute(token, input)); return
           case '/runtime/user/identity': {
             const actor = await authority.authenticate(token)
             const account = await f.pool.query<{ settings: unknown }>('SELECT settings FROM pe_users WHERE id=$1', [actor.userId])
@@ -607,8 +628,13 @@ test.each(['parent', 'account', 'late-open'] as const)('the actual child write h
             if (loss === 'late-open') { entered.resolve(undefined); await release.promise }
             sendJson(response, snapshot); return
           }
+          case '/runtime/renew': sendJson(response, await n.tasks.renew(token)); return
+          case '/runtime/native-writer/renew':
+            renewalRoutes.push('renew'); renewEntered.resolve(undefined); await renewRelease.promise
+            sendJson(response, await routeNativeWriter(n.writers, request.url, token, input)); return
           case '/runtime/native-writer/acquire': sendJson(response, await routeNativeWriter(n.writers, request.url, token, input)); return
           case '/runtime/native-writer/release': {
+            renewalRoutes.push('release')
             try { sendJson(response, await routeNativeWriter(n.writers, request.url, token, input)) }
             catch (error) { observed.push('writer-release-rejected'); throw error }
             return
@@ -628,7 +654,10 @@ test.each(['parent', 'account', 'late-open'] as const)('the actual child write h
           }
           default: throw new PlatformError(404, 'fixture_route_not_found')
         }
-      } catch (error) { sendFailure(response, error) }
+      } catch (error) {
+        if (request.url === '/runtime/native-writer/renew' && error instanceof PlatformError) renewalFailures.push(error.code)
+        sendFailure(response, error)
+      }
     })()
     pending.add(work); void work.finally(() => { pending.delete(work) })
   })
@@ -638,7 +667,8 @@ test.each(['parent', 'account', 'late-open'] as const)('the actual child write h
     const runtimeTokenFile = join(f.root, 'child-consumer-runtime-token')
     await writeFile(runtimeTokenFile, issued.token, { mode: 0o600 })
     await host.plugin(RuntimeScope, { platformUrl: `http://127.0.0.1:${address.port}`, workerId: issued.runtimeId,
-      runtimeUserId: issued.userId, runtimeTokenFile, timeoutMs: 5000, maxResponseBytes: 8388608, nativeSubagentRenewMs: 60000 })
+      runtimeUserId: issued.userId, runtimeTokenFile, timeoutMs: loss === 'renew-timeout' ? 1000 : 5000,
+      maxResponseBytes: 8388608, nativeSubagentRenewMs: renewing ? 50 : 60000 })
     await host.plugin(PlatformPersistence)
     let runtime: RuntimeScope | undefined, persistence: PlatformPersistence | undefined
     await host.inject(['powerEvolveRuntime', 'sessionPersistence'], (ctx) => {
@@ -670,6 +700,40 @@ test.each(['parent', 'account', 'late-open'] as const)('the actual child write h
       return
     }
     const handle = await opening, child = runtime.require(header.id)
+    if (renewing) {
+      await renewEntered.promise
+      let settled = false
+      const closing = handle.close().then(() => { settled = true; return undefined },
+        (error: unknown) => { settled = true; return error })
+      await delay(200)
+      expect(settled).toBe(false)
+      expect(renewalRoutes).toEqual(['renew'])
+      expect((await f.pool.query<{ live: boolean }>('SELECT expires_at>clock_timestamp() AS live FROM pe_native_writers WHERE session_id=$1',
+        [child.sessionId])).rows[0]?.live).toBe(true)
+      if (loss === 'renew-timeout') {
+        const failed = await closing
+        expect(failed).toBeInstanceOf(AggregateError)
+        if (!(failed instanceof AggregateError)) throw new Error('Expected exact child Writer maintenance failure')
+        expect(failed.errors).toContainEqual(expect.objectContaining({ name: 'TimeoutError' }))
+        await expect(handle.close()).rejects.toBe(failed)
+        await expect(persistence.shutdown()).rejects.toBeInstanceOf(AggregateError)
+        expect(observed).toEqual(['cleanup-complete'])
+        expect((await f.pool.query('SELECT state,error_code FROM pe_operations WHERE id=$1', [child.operationId])).rows)
+          .toEqual([{ state: 'failed', error_code: 'native_subagent_writer_renew_failed' }])
+        renewRelease.resolve(undefined); await Promise.all(pending)
+        expect(renewalFailures).toEqual(['native_writer_lost'])
+      } else {
+        renewRelease.resolve(undefined)
+        expect(await closing).toBeUndefined()
+        expect(renewalRoutes).toEqual(['renew', 'release'])
+        expect(renewalFailures).toEqual([])
+        expect((await f.pool.query('SELECT state,error_code FROM pe_operations WHERE id=$1', [child.operationId])).rows)
+          .toEqual([{ state: 'failed', error_code: 'native_subagent_incomplete' }])
+      }
+      expect((await f.pool.query<{ released: boolean }>('SELECT expires_at IS NULL AS released FROM pe_native_writers WHERE session_id=$1',
+        [child.sessionId])).rows[0]?.released).toBe(true)
+      return
+    }
     const session = Session.create(header.id, undefined, header)
     session.append('turn/start', { turn: 1 }); session.append('step/start', { turn: 1, step: 1 })
     await n.events.append(child.token, session.snapshotEvents())
@@ -689,6 +753,7 @@ test.each(['parent', 'account', 'late-open'] as const)('the actual child write h
       .toEqual(['step/end', 'turn/end'])
     expect((await f.pool.query('SELECT * FROM pe_native_cleanup_receipts WHERE operation_id=$1', [child.operationId])).rowCount).toBe(1)
   } finally {
+    renewRelease.resolve(undefined)
     release.resolve(undefined)
     await host.fiber.dispose()
     server.closeAllConnections(); await new Promise<void>((resolve,

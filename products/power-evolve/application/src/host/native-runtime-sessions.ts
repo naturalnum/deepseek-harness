@@ -23,6 +23,7 @@ interface Owner { grant: Grant
   handle: AgentHandle
   stop: AbortController
   renewal: Promise<void>
+  writerFailure?: { error: unknown }
   closing?: Promise<void> }
 
 /** Session identity is always fixed by PG ownership before the native Gateway resolves its Agent. */
@@ -35,6 +36,7 @@ export default class NativeRuntimeSessions extends Service {
   private shutdownPromise: Promise<void> | undefined
   private readonly teardownFailures: unknown[] = []
   private readonly owners = new Map<SessionId, Owner>()
+  private readonly failedClosures = new Map<SessionId, Promise<void>>()
   private readonly requests = new Map<SessionId,
     { sessionId: SessionId; browserToken: string; requestId: string; candidateToken: string }>()
   private readonly openings = new Map<SessionId, Promise<Agent>>()
@@ -135,11 +137,15 @@ export default class NativeRuntimeSessions extends Service {
         while (!stopped()) {
           try { await delay(this.config.renewMs, undefined, { signal: stop.signal }) }
           catch (error) { if (stopped()) return; throw error }
+          if (stopped()) return
           const status = z.object({ pending: z.boolean(), cancelRequested: z.boolean() }).parse(
             await runtime.call('/runtime/interactive/status', captured.token, {}, stop.signal))
           if (status.pending || status.cancelRequested) { void this.close(id).catch((error: unknown) => {  this.ctx.logger.error('Native interactive cleanup failed', error) }); return }
           runtime.heartbeatPublication(captured)
-          await writers.renew(owner.writer.identity, stop.signal)
+          if (stopped()) return
+          // Already issued Writer maintenance retains the independent bounded transport until acknowledgement or failure.
+          try { await writers.renew(owner.writer.identity) }
+          catch (error) { owner.writerFailure ??= { error }; throw error }
         }
       })().catch((error: unknown) => {
         if (!stopped()) { stop.abort(error); void this.close(id).catch((failure: unknown) => {  this.ctx.logger.error('Native interactive cleanup failed', failure) }) }
@@ -170,14 +176,16 @@ export default class NativeRuntimeSessions extends Service {
   /** Drain the native Agent and exact execution clients before releasing its original interactive occupancy.
    * @param id Exact local interactive owner; ordinary Scheduler Agents are unaffected.
    * @returns Original local cleanup result; revocation uses only the narrow original cleanup proof.
+   * @throws AggregateError when issued Writer maintenance or exact execution cleanup failed; repeat close retains that failure.
    */
   close(id: SessionId): Promise<void> {
     const owner = this.owners.get(id)
-    if (!owner) return Promise.resolve()
-    return owner.closing ??= (async () => {
+    if (!owner) return this.failedClosures.get(id) ?? Promise.resolve()
+    const closing = owner.closing ??= (async () => {
       const runtime = this.ctx.powerEvolveRuntime, failures: unknown[] = []
       owner.stop.abort()
       await owner.renewal
+      if (owner.writerFailure) failures.push(owner.writerFailure.error)
       try { await owner.handle.dispose({ keepInbox: true }) } catch (error) { failures.push(error) }
       try { await this.ctx.nativeRuntimeExecution.drain(owner.handle.agent) } catch (error) { failures.push(error) }
       try {
@@ -200,5 +208,7 @@ export default class NativeRuntimeSessions extends Service {
         throw failed
       }
     })()
+    void closing.catch(() => { this.failedClosures.set(id, closing) })
+    return closing
   }
 }

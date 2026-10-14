@@ -164,6 +164,7 @@ export default class PlatformPersistence extends SessionPersistence {
     writer: HostNativeWriterLease
     stop: AbortController
     renewal: Promise<void>
+    maintenance: { failure?: { error: unknown } }
     outcome: 'completed' | 'failed'
     errorCode: string | null }>()
 
@@ -235,6 +236,7 @@ export default class PlatformPersistence extends SessionPersistence {
       if (this.isClosing()) throw new PlatformError(409, 'native_persistence_closing')
       const capturedWriter = writer
       const stop = new AbortController()
+      const maintenance: { failure?: { error: unknown } } = {}
       const stopped = () => stop.signal.aborted
       const renewal = (async () => {
         while (!stopped()) {
@@ -247,7 +249,14 @@ export default class PlatformPersistence extends SessionPersistence {
             this.ctx.get('agents')?.get(child.sessionId)?.cancel({ kind: 'user' }, { keepInbox: true })
           }
           runtime.heartbeatPublication(child)
-          await writers.renew(capturedWriter.identity, stop.signal)
+          if (stopped()) return
+          // Stop new maintenance on cancellation, but join an issued Writer request through its own bounded transport.
+          try { await writers.renew(capturedWriter.identity) }
+          catch (error) {
+            maintenance.failure ??= { error }
+            this.teardownFailures.push(error)
+            throw error
+          }
         }
       })().catch((error: unknown) => {
         if (!stopped()) {
@@ -255,7 +264,7 @@ export default class PlatformPersistence extends SessionPersistence {
           this.ctx.get('agents')?.get(child.sessionId)?.cancel({ kind: 'disposed' }, { keepInbox: true })
         }
       })
-      this.children.set(child.sessionId, { grant: child, writer, stop, renewal, outcome: 'failed',
+      this.children.set(child.sessionId, { grant: child, writer, stop, renewal, maintenance, outcome: 'failed',
         errorCode: 'native_subagent_incomplete' })
       return await this.open(child.sessionId, 'write')
     } catch (error) {
@@ -316,6 +325,13 @@ export default class PlatformPersistence extends SessionPersistence {
         child.stop.abort()
         await child.renewal
         try {
+          if (child.maintenance.failure) {
+            const failure = child.maintenance.failure.error
+            try { await runtime.call('/runtime/cleanup', child.grant.token, { operationId: child.grant.operationId,
+              epoch: child.grant.epoch, writer: child.writer.identity, errorCode: 'native_subagent_writer_renew_failed' }) }
+            catch (cleanupError) { throw new AggregateError([failure, cleanupError], 'Native child Writer cleanup failed') }
+            throw new AggregateError([failure], 'Native child Writer maintenance did not acknowledge shutdown')
+          }
           try {
             await new HostNativeWriterClient(runtime).release(child.writer.identity)
             await runtime.call('/runtime/finish', child.grant.token, { outcome: failure === undefined ? child.outcome : 'failed',

@@ -14,6 +14,7 @@ import { NativeSessionRead, nativeFollowRequest } from '../src/platform/native-s
 import { createServer } from 'node:http'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
 import { expect, test } from 'vitest'
 import { z } from 'zod'
 import { Session } from '@deepseek-ai/dsh-session'
@@ -56,7 +57,7 @@ const limits = { maxEventBytes: 524288, maxHistoryEvents: 1000, maxHistoryBytes:
   leaseMs: 30000, maxPendingPerUser: 8, maxActivePerUser: 2 }
 
 test.each(['closing', 'publishing', 'failed-cleanup',
-  'normal-failed-cleanup', 'gateway-wire'] as const)('real cold Agent setup %s keeps original PG durability and lifetime ownership', mode => cloudFixture(async (f) => {
+  'normal-failed-cleanup', 'gateway-wire', 'renew-ack', 'renew-timeout'] as const)('real cold Agent setup %s keeps original PG durability and lifetime ownership', mode => cloudFixture(async (f) => {
   const tasks = new TaskStore(f.pool, limits), events = new EventStore(tasks, limits), authority = new NativeRuntimeAuthority(f.pool)
   const issued = await authority.issue({ userId: f.alice.user.userId, runtimeId: randomUUID(), generation: 1, lifetimeMs: 60000 })
   const interactive = new NativeInteractive(tasks, authority, { leaseMs: 30000, lifetimeMs: 30000, maxActivePerUser: 2 })
@@ -86,6 +87,9 @@ test.each(['closing', 'publishing', 'failed-cleanup',
   })
   const ctx = await harness(), pending = new Set<Promise<void>>()
   const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  const renewalEntered = Promise.withResolvers<undefined>(), renewalRelease = Promise.withResolvers<undefined>()
+  const renewalRoutes: string[] = [], renewalFailures: string[] = []
+  const renewing = mode === 'renew-ack' || mode === 'renew-timeout'
   const published: string[] = []
   let service: NativeRuntimeSessions | undefined, calls = 0
   const routes: WebRoute[] = []
@@ -111,7 +115,20 @@ test.each(['closing', 'publishing', 'failed-cleanup',
           }
           case '/runtime/user/interactive/open': calls++; sendJson(response, await interactive.open(token,
             z.object({ sessionId, requestId, browserToken: z.string(), candidateToken: z.string() }).parse(input))); return
-          case '/runtime/native-writer/release': sendJson(response, await routeNativeWriter(writers, request.url, token, input)); return
+          case '/runtime/interactive/status': {
+            const status = await transaction(f.pool, async (client) => {
+              const owner = await tasks.authorized(client, token)
+              const pending = await client.query("SELECT 1 FROM pe_operations WHERE session_id=$1 AND id<>$2 AND state IN ('queued','running') LIMIT 1",
+                [owner.id, owner.operation_id])
+              return { pending: Boolean(pending.rowCount) }
+            })
+            sendJson(response, { ...status, ...await tasks.renew(token) }); return
+          }
+          case '/runtime/native-writer/renew':
+            renewalRoutes.push('renew'); renewalEntered.resolve(undefined); await renewalRelease.promise
+            sendJson(response, await routeNativeWriter(writers, request.url, token, input)); return
+          case '/runtime/native-writer/release':
+            renewalRoutes.push('release'); sendJson(response, await routeNativeWriter(writers, request.url, token, input)); return
           case '/runtime/finish': {
             const value = z.object({ outcome: z.enum(['completed', 'failed']), errorCode: z.string().nullable() }).parse(input)
             await tasks.finish(token, value.outcome, value.errorCode); sendJson(response, {}); return
@@ -128,7 +145,10 @@ test.each(['closing', 'publishing', 'failed-cleanup',
           }
           default: throw new PlatformError(404, 'fixture_route_not_found')
         }
-      } catch (error) { sendFailure(response, error) }
+      } catch (error) {
+        if (request.url === '/runtime/native-writer/renew' && error instanceof PlatformError) renewalFailures.push(error.code)
+        sendFailure(response, error)
+      }
     })()
     pending.add(work); void work.finally(() => { pending.delete(work) })
   })
@@ -138,14 +158,14 @@ test.each(['closing', 'publishing', 'failed-cleanup',
     const runtimeTokenFile = join(f.root, 'late-setup-runtime-token')
     await writeFile(runtimeTokenFile, issued.token, { mode: 0o600 })
     await ctx.plugin(RuntimeScope, { platformUrl: `http://127.0.0.1:${address.port}`, runtimeUserId: issued.userId,
-      workerId: issued.runtimeId, runtimeTokenFile, timeoutMs: 5000, maxResponseBytes: 8388608 })
+      workerId: issued.runtimeId, runtimeTokenFile, timeoutMs: mode === 'renew-timeout' ? 1000 : 5000, maxResponseBytes: 8388608 })
     await ctx.plugin(PlatformPersistence)
     await ctx.plugin(SandboxPolicy, { mode: 'read-only', workspaceRoot: '/workspace' })
     await declare(ctx, { id: 'standard', plugins: [] })
     // Only the external execution bind is held; AgentLoop, Session load, preset binding and PG Writer are real.
     ctx.provide('nativeRuntimeExecution', { bind: async () => { entered.resolve(undefined); await release.promise },
       drain: async () => { if (mode === 'failed-cleanup' || mode === 'normal-failed-cleanup') throw new Error('fixture execution cleanup proof failed') } })
-    const fiber = await ctx.plugin(NativeRuntimeSessions, { renewMs: 60000 })
+    const fiber = await ctx.plugin(NativeRuntimeSessions, { renewMs: renewing ? 50 : 60000 })
     await ctx.inject(['nativeRuntimeSessions'], (owned) => { service = owned.nativeRuntimeSessions })
     if (!service) throw new Error('Actual interactive service inactive')
     ctx.on('agent/created', ({ agent }) => { published.push(agent.id) })
@@ -210,6 +230,39 @@ test.each(['closing', 'publishing', 'failed-cleanup',
       expect(committed[0]?.event).toMatchObject({ seq: 0, type: 'session/end-seed', data: {} })
       expect(committed[1]?.event).toMatchObject({ seq: 1, type: 'sandbox/mode', data: { mode: 'read-only' } })
       expect((await f.pool.query('SELECT * FROM pe_native_input_origins WHERE session_id=$1', [first.sessionId])).rowCount).toBe(0)
+      if (renewing) {
+        await renewalEntered.promise
+        let settled = false
+        const closing = service.close(first.sessionId).then(() => { settled = true; return undefined },
+          (error: unknown) => { settled = true; return error })
+        await delay(200)
+        expect(settled).toBe(false)
+        expect(renewalRoutes).toEqual(['renew'])
+        expect((await f.pool.query<{ live: boolean }>('SELECT expires_at>clock_timestamp() AS live FROM pe_native_writers WHERE session_id=$1',
+          [first.sessionId])).rows[0]?.live).toBe(true)
+        if (mode === 'renew-timeout') {
+          const failed = await closing
+          expect(failed).toBeInstanceOf(AggregateError)
+          if (!(failed instanceof AggregateError)) throw new Error('Expected exact interactive Writer failure')
+          expect(failed.errors).toContainEqual(expect.objectContaining({ name: 'TimeoutError' }))
+          await expect(service.close(first.sessionId)).rejects.toBe(failed)
+          await expect(service.shutdown()).rejects.toBeInstanceOf(AggregateError)
+          expect((await f.pool.query('SELECT state,error_code FROM pe_operations WHERE session_id=$1', [first.sessionId])).rows)
+            .toEqual([{ state: 'failed', error_code: 'native_interactive_close_failed' }])
+          renewalRelease.resolve(undefined); await Promise.all(pending)
+          expect(renewalFailures).toEqual(['native_writer_lost'])
+        } else {
+          renewalRelease.resolve(undefined)
+          expect(await closing).toBeUndefined()
+          expect(renewalRoutes).toEqual(['renew', 'release'])
+          expect(renewalFailures).toEqual([])
+          expect((await f.pool.query('SELECT state,error_code FROM pe_operations WHERE session_id=$1', [first.sessionId])).rows)
+            .toEqual([{ state: 'completed', error_code: null }])
+        }
+        expect((await f.pool.query<{ released: boolean }>('SELECT expires_at IS NULL AS released FROM pe_native_writers WHERE session_id=$1',
+          [first.sessionId])).rows[0]?.released).toBe(true)
+        return
+      }
       if (mode === 'normal-failed-cleanup') {
         await expect(service.close(first.sessionId)).rejects.toBeInstanceOf(AggregateError)
         await expect(service.shutdown()).rejects.toBeInstanceOf(AggregateError)
@@ -223,6 +276,7 @@ test.each(['closing', 'publishing', 'failed-cleanup',
     }
     expect((await f.pool.query('SELECT * FROM pe_operations WHERE session_id=$1', [second.sessionId])).rowCount).toBe(0)
   } finally {
+    renewalRelease.resolve(undefined)
     release.resolve(undefined)
     hostServer.closeAllConnections(); if (hostServer.listening) await new Promise<void>((resolve,
       reject) => hostServer.close((error) => { if (error) reject(error); else resolve() }))
