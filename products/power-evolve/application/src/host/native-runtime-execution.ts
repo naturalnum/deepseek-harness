@@ -25,6 +25,7 @@ export default class NativeRuntimeExecution extends Service {
   private shutdownPromise: Promise<void> | undefined
   private closing = false
   private readonly ownerFiber: Fiber
+  private readonly pending = new Map<Agent, Promise<void>>()
   private readonly bindings = new Map<Agent, { grant: Grant
     binding: ReturnType<typeof createNativeExecutionHttpBinding>
     owner: Context }>()
@@ -36,6 +37,7 @@ export default class NativeRuntimeExecution extends Service {
     if (ownerContext.powerEvolveRuntime.config.runtimeUserId === '') throw new Error('Native runtime execution requires a fixed account')
     installNativeExecutionProviders(ownerContext, { defaultMode: ownerContext.sandboxPolicy.defaultMode,
       resolve: () => {
+        if (this.isClosing()) throw new PlatformError(409, 'native_execution_closing')
         const agent = ownerContext.agents.requireInitiator()
         const current = this.bindings.get(agent)
         if (!current || current.owner.fiber.state === FiberState.UNLOADING || current.owner.fiber.state === FiberState.DISPOSED) throw new PlatformError(403, 'native_execution_scope_missing')
@@ -49,12 +51,13 @@ export default class NativeRuntimeExecution extends Service {
     })
   }
 
-  /** Explicitly join every original binding and retain cleanup rejection outside Cordis's logging-only teardown.
+  /** Join accepted binding reads and every original binding, retaining cleanup rejection outside Cordis's logging-only teardown.
    * @returns One cached result; failures preserve their exact binding identities for diagnosis and repeated drain.
    */
   shutdown(): Promise<void> {
     this.closing = true
     return this.shutdownPromise ??= (async () => {
+      await Promise.allSettled(this.pending.values())
       const closed = await Promise.allSettled([...this.bindings.keys()].map(agent => this.drain(agent)))
       const failures = closed.flatMap(item => item.status === 'rejected' ? [item.reason as unknown] : [])
       if (failures.length) throw new AggregateError(failures, 'Native execution shutdown failed')
@@ -71,12 +74,26 @@ export default class NativeRuntimeExecution extends Service {
    * @returns Completion after the same generation is captured; replacement disposes the former process clients.
    */
   async bind(agent: Agent, grant: Grant): Promise<void> {
+    if (this.isClosing()) throw new PlatformError(409, 'native_execution_closing')
+    const preceding = this.pending.get(agent)
+    const accepted = (async () => {
+      if (preceding) await preceding
+      await this.bindOwned(agent, grant)
+    })()
+    this.pending.set(agent, accepted)
+    const release = () => { if (this.pending.get(agent) === accepted) this.pending.delete(agent) }
+    void accepted.then(release, release)
+    return accepted
+  }
+
+  private async bindOwned(agent: Agent, grant: Grant): Promise<void> {
     const runtime = this.ownerContext.powerEvolveRuntime
     if (this.isClosing()) throw new PlatformError(409, 'native_execution_closing')
     runtime.assertGrant(grant)
     if (agent.id !== grant.sessionId) throw new PlatformError(403, 'native_execution_scope_missing')
     const world = nativeExecutionWorld.parse(await runtime.call('/runtime/native-world/open', grant.token, { agentId: agent.id }))
     runtime.assertGrant(grant)
+    if (this.isClosing()) throw new PlatformError(409, 'native_execution_closing')
     if (world.userId !== grant.userId || world.sessionId !== agent.id || world.agentId !== agent.id
       || world.operationId !== grant.operationId || world.operationEpoch !== grant.epoch) throw new PlatformError(502, 'native_execution_world_identity')
     const modes = ['read-only', 'workspace-write', 'danger-full-access'] as const
@@ -85,7 +102,7 @@ export default class NativeRuntimeExecution extends Service {
       const narrowed = agent.session.append('sandbox/mode', { mode: world.mode, source: 'delegation' })
       await flushNativeSession(this.ownerContext, agent.session, [narrowed])
       runtime.assertGrant(grant)
-      return this.bind(agent, grant)
+      return this.bindOwned(agent, grant)
     }
     const existing = this.bindings.get(agent)
     if (existing?.grant === grant && JSON.stringify(existing.binding.world) === JSON.stringify(world)) return
