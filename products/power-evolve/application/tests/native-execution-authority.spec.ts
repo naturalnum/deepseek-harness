@@ -118,7 +118,8 @@ async function prepare(f: Fixture, deferredQueuedAdmission = false) {
     const operation = first((await f.pool.query<{ id: string }>('SELECT id FROM pe_operations WHERE session_id=$1 AND request_id=$2', [created.sessionId, id])).rows)
     const content = first((await f.pool.query<{ admitted: unknown }>('SELECT admitted FROM pe_native_prompt_inputs WHERE session_id=$1 AND request_id=$2', [created.sessionId, id])).rows).admitted
     inputs.push({ operationId: operationId.parse(operation.id), originInputId: originInputId.parse(randomUUID()),
-      message: admittedInputMessage.parse({ id: nativeTurnMessageId.parse(randomUUID()), role: 'user', source: { kind: 'user', rpcId: id }, content }) })
+      message: admittedInputMessage.parse({ id: nativeTurnMessageId.parse(randomUUID()), role: 'user',
+        source: { kind: 'user', rpcId: id }, content }) })
   }
   const admit = async (item: typeof inputs[number], target: 'next-step' | 'next-turn', storageAuthority = authority) => {
     const expectedEventCount = history.length, start = foldInputHistory(header, history).inbox[target].length
@@ -148,7 +149,8 @@ async function executionCase(run: (f: Fixture, n: Prepared) => Promise<void>, de
 async function claim(n: Prepared) {
   const expectedEventCount = n.history.length, nextStep = foldInputHistory(n.native.header, n.history).inbox['next-step']
   const events = [n.native.append('turn/start', { turn: 1 }),
-    ...(nextStep.length ? [n.native.append('agent/inbox/spliced', { target: 'next-step', start: 0, removedCount: nextStep.length, inserted: [] })] : []),
+    ...(nextStep.length ? [n.native.append('agent/inbox/spliced', { target: 'next-step', start: 0,
+      removedCount: nextStep.length, inserted: [] })] : []),
     n.native.append('agent/inbox/spliced', { target: 'next-turn', start: 0, removedCount: 1, inserted: [] })]
   n.history.push(...events)
   const command = nativeInputClaimCommand.parse({ rpcNonce: 'actual-complete-cohort', cohortId: inputCohortId.parse(randomUUID()),
@@ -174,13 +176,14 @@ async function execute(f: Fixture, n: Prepared): Promise<void> {
   await transaction(f.pool, async (client) => { await n.executionTasks.executionAuthorized(client, n.a.token) })
 }
 
-test('a real full B,C,A cohort bound to the actual current step authorizes only the original A operation', () => executionCase(async (f, n) => {
-  await openStep(f, n)
-  await execute(f, n)
-  const operations = (await f.pool.query<{ id: string; state: string }>('SELECT id,state FROM pe_operations')).rows
-  for (const item of n.inputs) expect(operations.find(row => row.id === item.operationId)?.state).toBe(item.operationId === n.a.operationId ? 'running' : 'queued')
-  expect(first((await f.pool.query<{ count: string }>('SELECT count(*)::text AS count FROM pe_attempts')).rows).count).toBe('1')
-}))
+test('a real full B,C,A cohort bound to the actual current step authorizes only the original A operation',
+  () => executionCase(async (f, n) => {
+    await openStep(f, n)
+    await execute(f, n)
+    const operations = (await f.pool.query<{ id: string; state: string }>('SELECT id,state FROM pe_operations')).rows
+    for (const item of n.inputs) expect(operations.find(row => row.id === item.operationId)?.state).toBe(item.operationId === n.a.operationId ? 'running' : 'queued')
+    expect(first((await f.pool.query<{ count: string }>('SELECT count(*)::text AS count FROM pe_attempts')).rows).count).toBe('1')
+  }))
 
 test('persisted native archive fences business while retaining native ownership and exact acceptance replay',
   () => executionCase(async (f, n) => {
@@ -209,7 +212,8 @@ test('persisted native archive fences business while retaining native ownership 
         'SELECT * FROM pe_native_input_revisions ORDER BY origin_input_id,input_revision')).rows,
       claims: (await f.pool.query<Record<string, unknown>>('SELECT * FROM pe_native_input_claims ORDER BY origin_input_id')).rows,
       cohorts: (await f.pool.query<Record<string, unknown>>('SELECT * FROM pe_native_input_cohorts ORDER BY cohort_id')).rows,
-      frames: (await f.pool.query<Record<string, unknown>>('SELECT * FROM pe_native_turn_frames ORDER BY operation_id,operation_epoch')).rows,
+      frames: (await f.pool.query<Record<string,
+        unknown>>('SELECT * FROM pe_native_turn_frames ORDER BY operation_id,operation_epoch')).rows,
       commands: (await f.pool.query<Record<string, unknown>>('SELECT * FROM pe_native_input_commands ORDER BY command_id')).rows,
     })
     // This owned persisted layout tests the gate; the public archive stop flow remains unavailable.
@@ -263,46 +267,48 @@ test('permanent claim consumption without any step remains ineligible for execut
   expect(first((await f.pool.query<{ count: string }>('SELECT count(*)::text AS count FROM pe_native_input_claims')).rows).count).toBe('3')
 }))
 
-test('native claim selection retains an unsettled consumed owner and prepared recovery refuses replay', () => executionCase(async (f, n) => {
-  await claim(n)
-  const b = first(n.inputs.slice(1)), c = first(n.inputs.slice(2))
-  await n.admit(b, 'next-step'); await n.admit(c, 'next-turn')
-  const before = (await f.pool.query<Record<string, unknown>>('SELECT * FROM pe_native_turn_frames ORDER BY operation_id,operation_epoch')).rows
-  await n.writers.release(n.writer)
-  await f.pool.query('UPDATE pe_sessions SET lease_until=clock_timestamp()-interval \'1 millisecond\' WHERE id=$1', [n.a.sessionId])
-  const tasks = new TaskStore(f.pool, taskLimits, undefined,
-    (client, session, fallback) => n.frames.selectClaimInTransaction(client, session, fallback))
-  const workerId = nativeWriterWorkerId.parse(randomUUID()), current = await tasks.claim(workerId)
-  if (!current) throw new Error('Consumed current A did not receive its actual reconciliation attempt')
-  expect(current.operationId).toBe(n.a.operationId)
-  expect(current.epoch).toBe(n.a.epoch + 1)
-  const acquire = { sessionId: current.sessionId, workerId, token: randomBytes(32).toString('base64url') }
-  const lease = await n.writers.acquire(current.token, acquire)
-  const writer = nativeWriterIdentity.parse({ ...acquire, epoch: lease.epoch })
-  await expect(transaction(f.pool, client => n.frames.recoverPreparedInTransaction(client,
-    { writer, operationToken: current.token }))).rejects.toMatchObject({ status: 409, code: 'native_input_recovery_required' })
-  const historical = await transaction(f.pool, client => n.frames.readConsumedInTransaction(client,
-    { writer, operationToken: current.token }))
-  const original = first(before)
-  expect(historical.operationFrame).toEqual(original.frame_json)
-  expect(historical.operationFrame).toMatchObject({ phase: 'claimed', operationId: n.a.operationId,
-    operationEpoch: n.a.epoch, writerEpoch: n.writer.epoch })
-  expect(historical.frame.frozenSnapshot).toEqual(original.grant_json)
-  expect(historical.operationDigest).toBe(original.grant_digest)
-  expect(historical.workerId).toBe(n.writer.workerId)
-  const { token: storageToken, ...storage } = historical.storageGrant
-  expect(storageToken).toBe(current.token)
-  expect(storageToken).not.toBe(n.a.token)
-  expect(storage).toEqual({ ...historical.frame.frozenSnapshot, epoch: current.epoch })
-  await expect(transaction(f.pool, client => n.executionTasks.executionAuthorized(client, storageToken)))
-    .rejects.toMatchObject({ status: 409, code: 'native_execution_frame_missing' })
-  expect((await f.pool.query('SELECT * FROM pe_native_turn_frames ORDER BY operation_id,operation_epoch')).rows).toEqual(before)
-  expect(first((await f.pool.query<{ count: number }>('SELECT count(*)::integer AS count FROM pe_native_input_claims')).rows).count).toBe(1)
-  expect(first((await f.pool.query<{ state: string; attempts: number }>(
-    'SELECT state,attempts FROM pe_operations WHERE id=$1', [c.operationId])).rows)).toEqual({ state: 'queued', attempts: 0 })
-  expect(first((await f.pool.query<{ count: number }>(
-    'SELECT count(*)::integer AS count FROM pe_attempts WHERE operation_id=$1', [n.a.operationId])).rows).count).toBe(2)
-}, true))
+test('native claim selection retains an unsettled consumed owner and prepared recovery refuses replay',
+  () => executionCase(async (f, n) => {
+    await claim(n)
+    const b = first(n.inputs.slice(1)), c = first(n.inputs.slice(2))
+    await n.admit(b, 'next-step'); await n.admit(c, 'next-turn')
+    const before = (await f.pool.query<Record<string,
+      unknown>>('SELECT * FROM pe_native_turn_frames ORDER BY operation_id,operation_epoch')).rows
+    await n.writers.release(n.writer)
+    await f.pool.query('UPDATE pe_sessions SET lease_until=clock_timestamp()-interval \'1 millisecond\' WHERE id=$1', [n.a.sessionId])
+    const tasks = new TaskStore(f.pool, taskLimits, undefined,
+      (client, session, fallback) => n.frames.selectClaimInTransaction(client, session, fallback))
+    const workerId = nativeWriterWorkerId.parse(randomUUID()), current = await tasks.claim(workerId)
+    if (!current) throw new Error('Consumed current A did not receive its actual reconciliation attempt')
+    expect(current.operationId).toBe(n.a.operationId)
+    expect(current.epoch).toBe(n.a.epoch + 1)
+    const acquire = { sessionId: current.sessionId, workerId, token: randomBytes(32).toString('base64url') }
+    const lease = await n.writers.acquire(current.token, acquire)
+    const writer = nativeWriterIdentity.parse({ ...acquire, epoch: lease.epoch })
+    await expect(transaction(f.pool, client => n.frames.recoverPreparedInTransaction(client,
+      { writer, operationToken: current.token }))).rejects.toMatchObject({ status: 409, code: 'native_input_recovery_required' })
+    const historical = await transaction(f.pool, client => n.frames.readConsumedInTransaction(client,
+      { writer, operationToken: current.token }))
+    const original = first(before)
+    expect(historical.operationFrame).toEqual(original.frame_json)
+    expect(historical.operationFrame).toMatchObject({ phase: 'claimed', operationId: n.a.operationId,
+      operationEpoch: n.a.epoch, writerEpoch: n.writer.epoch })
+    expect(historical.frame.frozenSnapshot).toEqual(original.grant_json)
+    expect(historical.operationDigest).toBe(original.grant_digest)
+    expect(historical.workerId).toBe(n.writer.workerId)
+    const { token: storageToken, ...storage } = historical.storageGrant
+    expect(storageToken).toBe(current.token)
+    expect(storageToken).not.toBe(n.a.token)
+    expect(storage).toEqual({ ...historical.frame.frozenSnapshot, epoch: current.epoch })
+    await expect(transaction(f.pool, client => n.executionTasks.executionAuthorized(client, storageToken)))
+      .rejects.toMatchObject({ status: 409, code: 'native_execution_frame_missing' })
+    expect((await f.pool.query('SELECT * FROM pe_native_turn_frames ORDER BY operation_id,operation_epoch')).rows).toEqual(before)
+    expect(first((await f.pool.query<{ count: number }>('SELECT count(*)::integer AS count FROM pe_native_input_claims')).rows).count).toBe(1)
+    expect(first((await f.pool.query<{ state: string; attempts: number }>(
+      'SELECT state,attempts FROM pe_operations WHERE id=$1', [c.operationId])).rows)).toEqual({ state: 'queued', attempts: 0 })
+    expect(first((await f.pool.query<{ count: number }>(
+      'SELECT count(*)::integer AS count FROM pe_attempts WHERE operation_id=$1', [n.a.operationId])).rows).count).toBe(2)
+  }, true))
 
 test('native next-turn C claim across an empty interrupted tail preserves metadata and never authorizes an older running prepared B', () => executionCase(async (f, n) => {
   await claim(n)
@@ -321,10 +327,12 @@ test('native next-turn C claim across an empty interrupted tail preserves metada
   const bAuthority = { writer: bWriter, operationToken: bGrant.token }
   await n.admit(b, 'next-step', bAuthority); await n.admit(c, 'next-turn', bAuthority)
   const bFrame = await transaction(f.pool, client => n.frames.prepareInTransaction(client, bAuthority, b.originInputId))
-  const bStored = first((await f.pool.query<Record<string, unknown>>('SELECT * FROM pe_native_turn_frames WHERE operation_id=$1 AND operation_epoch=$2',
+  const bStored = first((await f.pool.query<Record<string,
+    unknown>>('SELECT * FROM pe_native_turn_frames WHERE operation_id=$1 AND operation_epoch=$2',
     [b.operationId, bGrant.epoch])).rows)
   const origin = async (id: typeof c.originInputId) => readInputOrigin(first((await f.pool.query<Record<string, unknown>>(`SELECT
-    origin_input_id AS "originInputId",session_id AS "sessionId",origin_operation_id AS "originOperationId",original_request_id AS "originalRequestId",
+    origin_input_id AS "originInputId",session_id AS "sessionId",origin_operation_id AS "originOperationId",
+      original_request_id AS "originalRequestId",
     message_id AS "messageId",accepted_snapshot_digest AS "acceptedSnapshotDigest",accepted_audit_json AS "acceptedAudit"
     FROM pe_native_input_origins WHERE origin_input_id=$1`, [id])).rows))
   const bOrigin = await origin(b.originInputId), cOrigin = await origin(c.originInputId)
@@ -406,15 +414,18 @@ test.each([false, true])('a continuing current-frame cohort with new input=%s au
       await n.tasks.accept(f.alice.user, n.a.sessionId, id, 'D next-step input', f.alice.token)
       const operation = first((await f.pool.query<{ id: string }>('SELECT id FROM pe_operations WHERE session_id=$1 AND request_id=$2', [n.a.sessionId, id])).rows)
       const content = first((await f.pool.query<{ admitted: unknown }>('SELECT admitted FROM pe_native_prompt_inputs WHERE session_id=$1 AND request_id=$2', [n.a.sessionId, id])).rows).admitted
-      const message = admittedInputMessage.parse({ id: nativeTurnMessageId.parse(randomUUID()), role: 'user', source: { kind: 'user', rpcId: id }, content })
-      const expectedEventCount = n.history.length, event = n.native.append('agent/inbox/spliced', { target: 'next-step', start: 0, inserted: [message] })
+      const message = admittedInputMessage.parse({ id: nativeTurnMessageId.parse(randomUUID()), role: 'user',
+        source: { kind: 'user', rpcId: id }, content })
+      const expectedEventCount = n.history.length, event = n.native.append('agent/inbox/spliced',
+        { target: 'next-step', start: 0, inserted: [message] })
       n.history.push(event)
       await n.ledger.admit(f.alice.token, { command: nativeInputAdmissionCommand.parse({ rpcNonce: 'D-admission', sessionId: n.a.sessionId,
         originInputId: originInputId.parse(randomUUID()), originOperationId: operation.id, messageId: message.id, target: 'next-step' }),
       authority: n.authority, expectedEventCount, events: [event] })
     }
     const expectedEventCount = n.history.length
-    const events = newInput ? [n.native.append('agent/inbox/spliced', { target: 'next-step', start: 0, removedCount: 1, inserted: [] })] : []
+    const events = newInput ? [n.native.append('agent/inbox/spliced', { target: 'next-step', start: 0,
+      removedCount: 1, inserted: [] })] : []
     n.history.push(...events)
     const command = nativeInputClaimCommand.parse({ rpcNonce: 'second-cohort', cohortId: inputCohortId.parse(randomUUID()),
       frame: initial.cohort.frame, boundaryKind: 'continuing-step' })
@@ -498,7 +509,8 @@ test('native children derive only from the real claimed parent and stop after PG
   const children = new NativeSubagents(n.executionTasks, { maxChildren: 1, maxDepth: 2, lifetimeMs: 60000, leaseMs: 30000 })
   const header = headerSchema.parse({ ...n.native.header, id: randomUUID(), origin: 'subagent', parentSession: n.a.sessionId,
     delegationDepth: 1, isSeeded: false, agentPreset: 'minimal' })
-  await expect(children.create(n.a.token, { ...header, delegationDepth: 2 })).rejects.toMatchObject({ code: 'native_subagent_header_invalid' })
+  await expect(children.create(n.a.token, { ...header,
+    delegationDepth: 2 })).rejects.toMatchObject({ code: 'native_subagent_header_invalid' })
   const child = await children.create(n.a.token, header)
   expect(child).toMatchObject({ userId: n.a.userId, sessionId: header.id, text: '', remoteMcpTools: n.a.remoteMcpTools })
   await expect(children.create(n.a.token, { ...header, id: randomUUID() })).rejects.toMatchObject({ code: 'native_subagent_limit' })
@@ -515,7 +527,8 @@ test('native children derive only from the real claimed parent and stop after PG
     .toMatchObject({ mode: 'read-only' })
   await n.tasks.cancel(f.alice.user, child.sessionId, f.alice.token)
   expect(await n.tasks.renew(child.token)).toMatchObject({ cancelRequested: true })
-  await expect(transaction(f.pool, client => n.executionTasks.executionAuthorized(client, child.token))).rejects.toMatchObject({ code: 'native_subagent_cancelled' })
+  await expect(transaction(f.pool, client => n.executionTasks.executionAuthorized(client,
+    child.token))).rejects.toMatchObject({ code: 'native_subagent_cancelled' })
   await n.writers.release(n.writer)
   await expect(n.events.runtimeSnapshot(child.token)).rejects.toMatchObject({ code: 'native_subagent_parent_lost' })
   await f.pool.query("UPDATE pe_sessions SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1", [child.sessionId])
@@ -532,14 +545,16 @@ test('native children derive only from the real claimed parent and stop after PG
 test('a later parent mode generation revokes its original native child before another dispatch', () => executionCase(async (f, n) => {
   await openStep(f, n)
   const children = new NativeSubagents(n.executionTasks, { maxChildren: 2, maxDepth: 2, lifetimeMs: 60000, leaseMs: 30000 })
-  const header = headerSchema.parse({ ...n.native.header, id: randomUUID(), origin: 'subagent', parentSession: n.a.sessionId, delegationDepth: 1, isSeeded: false })
+  const header = headerSchema.parse({ ...n.native.header, id: randomUUID(), origin: 'subagent',
+    parentSession: n.a.sessionId, delegationDepth: 1, isSeeded: false })
   const child = await children.create(n.a.token, header)
   await n.events.runtimeSnapshot(child.token)
   const changed = n.native.append('sandbox/mode', { mode: 'workspace-write' })
   n.history.push(changed)
   await n.events.append(n.a.token, [changed])
   await expect(n.events.runtimeSnapshot(child.token)).rejects.toMatchObject({ code: 'native_subagent_parent_policy_changed' })
-  await expect(transaction(f.pool, client => n.executionTasks.nativeWorldAuthorized(client, child.token))).rejects.toMatchObject({ code: 'native_subagent_parent_policy_changed' })
+  await expect(transaction(f.pool, client => n.executionTasks.nativeWorldAuthorized(client,
+    child.token))).rejects.toMatchObject({ code: 'native_subagent_parent_policy_changed' })
 }))
 
 
@@ -547,26 +562,34 @@ test('the actual allowed child model freezes separately within the original pare
   await openStep(f, n)
   await f.pool.query("INSERT INTO pe_user_models(user_id,model_id,label,max_tokens,enabled) VALUES($1,'delegated-model','Delegated',4096,true)", [f.alice.user.userId])
   const children = new NativeSubagents(n.executionTasks, { maxChildren: 2, maxDepth: 2, lifetimeMs: 60000, leaseMs: 30000 })
-  const header = headerSchema.parse({ ...n.native.header, id: randomUUID(), origin: 'subagent', parentSession: n.a.sessionId, delegationDepth: 1, isSeeded: false })
+  const header = headerSchema.parse({ ...n.native.header, id: randomUUID(), origin: 'subagent',
+    parentSession: n.a.sessionId, delegationDepth: 1, isSeeded: false })
   const child = await children.create(n.a.token, header)
-  const picked = await children.configure(child.token, { provider: 'power-evolve', model: 'delegated-model', maxTokens: n.a.settings.maxTokens })
+  const picked = await children.configure(child.token, { provider: 'power-evolve', model: 'delegated-model',
+    maxTokens: n.a.settings.maxTokens })
   expect(picked).toMatchObject({ model: 'delegated-model', maxTokens: n.a.settings.maxTokens })
-  expect((await transaction(f.pool, client => n.executionTasks.restoreGrantInTransaction(client, child.operationId, child.token, child.epoch))).settings).toEqual(picked)
-  await expect(children.configure(child.token, { provider: 'power-evolve', model: 'ungranted-model', maxTokens: n.a.settings.maxTokens })).rejects.toMatchObject({ code: 'model_not_authorized' })
-  await expect(children.configure(child.token, { provider: 'power-evolve', model: 'delegated-model', maxTokens: n.a.settings.maxTokens + 1 })).rejects.toMatchObject({ code: 'native_subagent_token_ceiling' })
+  const restored = await transaction(f.pool, client => n.executionTasks.restoreGrantInTransaction(client,
+    child.operationId, child.token, child.epoch))
+  expect(restored.settings).toEqual(picked)
+  await expect(children.configure(child.token, { provider: 'power-evolve', model: 'ungranted-model',
+    maxTokens: n.a.settings.maxTokens })).rejects.toMatchObject({ code: 'model_not_authorized' })
+  await expect(children.configure(child.token, { provider: 'power-evolve', model: 'delegated-model',
+    maxTokens: n.a.settings.maxTokens + 1 })).rejects.toMatchObject({ code: 'native_subagent_token_ceiling' })
   const session = Session.create(header.id, undefined, header)
   session.append('turn/start', { turn: 1 })
   await n.events.append(child.token, session.snapshotEvents())
-  await expect(children.configure(child.token, { provider: 'power-evolve', model: 'delegated-model', maxTokens: n.a.settings.maxTokens })).rejects.toMatchObject({ code: 'native_subagent_model_frozen' })
+  await expect(children.configure(child.token, { provider: 'power-evolve', model: 'delegated-model',
+    maxTokens: n.a.settings.maxTokens })).rejects.toMatchObject({ code: 'native_subagent_model_frozen' })
 }))
 
 
-test.each(['parent', 'account'] as const)('the actual child write handle cleans PG after %s loss and a rejected Writer release', loss => executionCase(async (f, n) => {
+test.each(['parent', 'account', 'late-open'] as const)('the actual child write handle cleans PG after %s loss and a rejected Writer release', loss => executionCase(async (f, n) => {
   await openStep(f, n)
   const children = new NativeSubagents(n.executionTasks, { maxChildren: 2, maxDepth: 2, lifetimeMs: 60000, leaseMs: 30000 })
   const authority = new NativeRuntimeAuthority(f.pool)
   const issued = await authority.issue({ userId: f.alice.user.userId, runtimeId: n.writer.workerId, generation: 1, lifetimeMs: 60000 })
   const host = new Context(), pending = new Set<Promise<void>>(), observed: string[] = []
+  const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
   const server = createServer((request, response) => {
     const work = (async () => {
       try {
@@ -574,11 +597,16 @@ test.each(['parent', 'account'] as const)('the actual child write handle cleans 
         switch (request.url) {
           case '/runtime/user/identity': {
             const actor = await authority.authenticate(token)
-            const account = await f.pool.query('SELECT settings FROM pe_users WHERE id=$1', [actor.userId])
+            const account = await f.pool.query<{ settings: unknown }>('SELECT settings FROM pe_users WHERE id=$1', [actor.userId])
             sendJson(response, { ...actor, settings: account.rows[0]?.settings }); return
           }
-          case '/runtime/subagents/create': sendJson(response, await children.create(token, z.object({ header: z.unknown() }).parse(input).header)); return
-          case '/runtime/snapshot': sendJson(response, await n.events.runtimeSnapshot(token)); return
+          case '/runtime/subagents/create': sendJson(response, await children.create(token,
+            z.object({ header: z.unknown() }).parse(input).header)); return
+          case '/runtime/snapshot': {
+            const snapshot = await n.events.runtimeSnapshot(token)
+            if (loss === 'late-open') { entered.resolve(undefined); await release.promise }
+            sendJson(response, snapshot); return
+          }
           case '/runtime/native-writer/acquire': sendJson(response, await routeNativeWriter(n.writers, request.url, token, input)); return
           case '/runtime/native-writer/release': {
             try { sendJson(response, await routeNativeWriter(n.writers, request.url, token, input)) }
@@ -589,7 +617,10 @@ test.each(['parent', 'account'] as const)('the actual child write handle cleans 
             await releaseNativeAssistant(n.tasks, token, z.object({ publisherId: z.string() }).parse(input).publisherId)
             sendJson(response, {}); return
           }
-          case '/runtime/finish': await n.tasks.finish(token, 'completed', null); sendJson(response, {}); return
+          case '/runtime/finish': {
+            const value = z.object({ outcome: z.enum(['completed', 'failed']), errorCode: z.string().nullable() }).parse(input)
+            await n.tasks.finish(token, value.outcome, value.errorCode); sendJson(response, {}); return
+          }
           case '/runtime/cleanup': {
             const value = z.object({ operationId, epoch: z.number(), writer: nativeWriterIdentity, errorCode: z.string() }).parse(input)
             sendJson(response, await cleanupNativeRuntime(f.pool, token, value, { ...taskLimits, ...historyLimits }))
@@ -610,15 +641,35 @@ test.each(['parent', 'account'] as const)('the actual child write handle cleans 
       runtimeUserId: issued.userId, runtimeTokenFile, timeoutMs: 5000, maxResponseBytes: 8388608, nativeSubagentRenewMs: 60000 })
     await host.plugin(PlatformPersistence)
     let runtime: RuntimeScope | undefined, persistence: PlatformPersistence | undefined
-    await host.inject(['powerEvolveRuntime', 'sessionPersistence'], ctx => {
+    await host.inject(['powerEvolveRuntime', 'sessionPersistence'], (ctx) => {
       runtime = ctx.powerEvolveRuntime
       if (!(ctx.sessionPersistence instanceof PlatformPersistence)) throw new Error('Actual PlatformPersistence missing')
       persistence = ctx.sessionPersistence
     })
     if (!runtime || !persistence) throw new Error('Owned native services inactive')
     runtime.grants.set(n.a.sessionId, n.a)
-    const header = headerSchema.parse({ ...n.native.header, id: randomUUID(), origin: 'subagent', parentSession: n.a.sessionId, delegationDepth: 1, isSeeded: false })
-    const handle = await persistence.create(header), child = runtime.require(header.id)
+    const header = headerSchema.parse({ ...n.native.header, id: randomUUID(), origin: 'subagent',
+      parentSession: n.a.sessionId, delegationDepth: 1, isSeeded: false })
+    const opening = persistence.create(header)
+    if (loss === 'late-open') {
+      const rejected = opening.then(() => undefined, (error: unknown) => error)
+      await Promise.race([entered.promise, rejected.then((error) => { if (error) throw error })])
+      let closed = false
+      const shutdown = persistence.shutdown().then(() => { closed = true })
+      await expect(persistence.create(headerSchema.parse({ ...header,
+        id: randomUUID() }))).rejects.toMatchObject({ code: 'native_persistence_closing' })
+      expect(closed).toBe(false)
+      release.resolve(undefined)
+      expect(await rejected).toMatchObject({ code: 'native_persistence_closing' })
+      await shutdown
+      expect(observed).toEqual(['cleanup-complete'])
+      expect(runtime.grants.has(header.id)).toBe(false)
+      expect((await f.pool.query('SELECT state,error_code FROM pe_operations WHERE session_id=$1', [header.id])).rows)
+        .toEqual([{ state: 'failed', error_code: 'native_subagent_setup_failed' }])
+      expect((await f.pool.query<{ ended_at: Date | null }>('SELECT ended_at FROM pe_attempts a JOIN pe_operations o ON o.id=a.operation_id WHERE o.session_id=$1', [header.id])).rows[0]?.ended_at).not.toBeNull()
+      return
+    }
+    const handle = await opening, child = runtime.require(header.id)
     const session = Session.create(header.id, undefined, header)
     session.append('turn/start', { turn: 1 }); session.append('step/start', { turn: 1, step: 1 })
     await n.events.append(child.token, session.snapshotEvents())
@@ -631,13 +682,17 @@ test.each(['parent', 'account'] as const)('the actual child write handle cleans 
     expect(runtime.grants.has(child.sessionId)).toBe(false)
     expect((await f.pool.query('SELECT state,error_code FROM pe_operations WHERE id=$1', [child.operationId])).rows)
       .toEqual([{ state: 'failed', error_code: 'native_subagent_closed' }])
-    expect((await f.pool.query('SELECT ended_at FROM pe_attempts WHERE operation_id=$1', [child.operationId])).rows[0]?.ended_at).not.toBeNull()
-    expect((await f.pool.query('SELECT event FROM pe_events WHERE session_id=$1 ORDER BY seq', [child.sessionId])).rows.slice(-2).map(row => row.event.type))
+    expect((await f.pool.query<{ ended_at: Date | null }>('SELECT ended_at FROM pe_attempts WHERE operation_id=$1',
+      [child.operationId])).rows[0]?.ended_at).not.toBeNull()
+    expect((await f.pool.query<{ event: unknown }>('SELECT event FROM pe_events WHERE session_id=$1 ORDER BY seq',
+      [child.sessionId])).rows.slice(-2).map(row => z.object({ type: z.string() }).parse(row.event).type))
       .toEqual(['step/end', 'turn/end'])
     expect((await f.pool.query('SELECT * FROM pe_native_cleanup_receipts WHERE operation_id=$1', [child.operationId])).rowCount).toBe(1)
   } finally {
+    release.resolve(undefined)
     await host.fiber.dispose()
-    server.closeAllConnections(); await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()))
+    server.closeAllConnections(); await new Promise<void>((resolve,
+      reject) => server.close((error) => { if (error) reject(error); else resolve() }))
     await Promise.allSettled(pending)
   }
 }))

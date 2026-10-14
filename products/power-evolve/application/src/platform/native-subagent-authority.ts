@@ -12,7 +12,12 @@ export async function assertNativeSubagentStorage(client: PoolClient,
   session: { id: string; user_id: string; operation_id: string; lease_epoch: number }): Promise<boolean> {
   const record = await client.query<{ session_id: string }>('SELECT session_id FROM pe_native_subagent_grants WHERE session_id=$1', [session.id])
   if (!record.rows[0]) return false
-  const live = await client.query<{ id: string; user_id: string; operation_id: string; lease_epoch: number; parent_mode: string | null; parent_permission_generation: string | null }>(
+  const live = await client.query<{ id: string
+    user_id: string
+    operation_id: string
+    lease_epoch: number
+    parent_mode: string | null
+    parent_permission_generation: string | null }>(
     `SELECT p.id,p.user_id,o.id AS operation_id,p.lease_epoch,d.parent_mode,d.parent_permission_generation FROM pe_native_subagent_grants d
     JOIN pe_sessions p ON p.id=d.parent_session_id AND p.user_id=d.user_id
     JOIN pe_operations o ON o.id=d.parent_operation_id AND o.session_id=p.id

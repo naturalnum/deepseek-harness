@@ -240,7 +240,7 @@ export class PermissionPresetService extends TypertRemoteService {
       stateSchema: permissionStateSchema,
       init: () => ({ ...EMPTY_KNOBS, seeded: false }),
       apply: applyPermissionEvent,
-      wire: { viewSchema: selectionSchema, view: state => ({ currentValue: this.derive(state) }) },
+      wire: { viewSchema: selectionSchema, view: state => this.viewKnobs(state) },
     })
     ctx.on('session/created', (session) => {
       this.pinInitialPermission(session)
@@ -342,6 +342,16 @@ export class PermissionPresetService extends TypertRemoteService {
    */
   current(session: Session): string {
     return this.derive(this.permissionState(session))
+  }
+
+  /**
+   * Project a committed knob fold using this composition's live defaults and
+   * configured preset catalog, without activating a Session.
+   * @param state - the exact committed preset, sandbox and approval overrides.
+   * @returns the same current-value projection used by the native Session registry.
+   */
+  viewKnobs(state: KnobState): PermissionSelection {
+    return { currentValue: this.derive(state) }
   }
 
   /** Resolve the preset for one folded knob state (the shared mathematics of `current` and the projection unit). */

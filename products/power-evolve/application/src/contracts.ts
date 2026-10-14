@@ -34,7 +34,8 @@ export const settingsUpdateRequest = z.object({
   model: z.string().min(1).max(100), maxTokens: z.number().int().min(1).max(8192),
 }).strict()
 export type SettingsUpdateRequest = z.infer<typeof settingsUpdateRequest>
-export const createRequest = z.object({ requestId, workspaceId: workspaceId.optional(), agentPreset: z.string().min(1).max(256).optional() }).strict()
+export const createRequest = z.object({ requestId, workspaceId: workspaceId.optional(),
+  agentPreset: z.string().min(1).max(256).optional() }).strict()
 export const workspaceCreateRequest = z.object({ requestId, title: z.string().trim().min(1).max(80) }).strict()
 export const executionTarget = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('cloud') }).strict(),

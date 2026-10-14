@@ -30,7 +30,7 @@ export async function readNativeToolNames(client: PoolClient, userId: string): P
  */
 export async function registerNativeToolNames(tasks: TaskStore, token: string,
   input: z.infer<typeof nativeToolRegistration>): Promise<{ registered: true }> {
-  return transaction(tasks.pool, async client => {
+  return transaction(tasks.pool, async (client) => {
     const owner = await tasks.authorized(client, token)
     const tools = nativeToolRegistration.parse(input)
     await client.query(`INSERT INTO pe_native_preferences(user_id,namespace,value,revision) VALUES($1,$2,$3,1)

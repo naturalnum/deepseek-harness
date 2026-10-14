@@ -6,9 +6,10 @@ import type {} from '@deepseek-ai/dsh-api-gateway'
 interface Summary { sessionId: string; running: boolean }
 type Read = () => Promise<readonly Summary[]>
 
-async function* sessionEvents(read: Read, pollMs: number, signal: AbortSignal): AsyncGenerator<unknown> {
+async function* sessionEvents(read: Read, pollMs: number, signal: AbortSignal): AsyncGenerator {
+  const stopped = () => signal.aborted
   let previous = new Map<string, Summary>()
-  while (!signal.aborted) {
+  while (!stopped()) {
     const items = await read(), current = new Map(items.map(item => [item.sessionId, item]))
     for (const item of items) {
       const before = previous.get(item.sessionId)
@@ -18,7 +19,7 @@ async function* sessionEvents(read: Read, pollMs: number, signal: AbortSignal): 
     for (const id of previous.keys()) if (!current.has(id)) yield { type: 'emit', event: 'api-session/removed', args: [id] }
     previous = current
     try { await delay(Math.max(pollMs, 1000), undefined, { signal }) }
-    catch (error) { if (signal.aborted) return; throw error }
+    catch (error) { if (stopped()) return; throw error }
   }
 }
 
@@ -35,7 +36,7 @@ function isTransientSession(frame: unknown): boolean {
  * @returns Native callback frames plus durable Session notifications; transient Agent disposal cannot delete PG history.
  */
 export async function* nativeRuntimeEvents(ctx: Context, read: Read, pollMs: number,
-  signal: AbortSignal): AsyncGenerator<unknown> {
+  signal: AbortSignal): AsyncGenerator {
   const stop = new AbortController(), lifetime = AbortSignal.any([signal, stop.signal])
   const native = ctx.typertGateway.remoteEventStream(lifetime)[Symbol.asyncIterator]()
   const sessions = sessionEvents(read, pollMs, lifetime)[Symbol.asyncIterator]()
@@ -56,6 +57,6 @@ export async function* nativeRuntimeEvents(ctx: Context, read: Read, pollMs: num
   } finally {
     stop.abort()
     await Promise.allSettled([nativeNext, sessionNext])
-    await Promise.allSettled([native.return?.(), sessions.return?.(undefined)])
+    await Promise.allSettled([native.return?.(), sessions.return(undefined)])
   }
 }

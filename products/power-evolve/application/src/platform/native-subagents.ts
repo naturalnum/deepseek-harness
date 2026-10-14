@@ -26,7 +26,7 @@ export class NativeSubagents {
   async configure(token: string, selection: { provider: string; model: string; maxTokens: number }): Promise<Grant['settings']> {
     const value = z.object({ provider: z.literal('power-evolve'), model: z.string().min(1).max(100),
       maxTokens: z.number().int().positive() }).strict().parse(selection)
-    return transaction(this.tasks.pool, async client => {
+    return transaction(this.tasks.pool, async (client) => {
       const child = await this.tasks.authorized(client, token)
       const derived = await client.query<{ parent_settings: unknown }>(`SELECT p.settings AS parent_settings FROM pe_native_subagent_grants d
         JOIN pe_operations p ON p.id=d.parent_operation_id WHERE d.operation_id=$1 AND d.session_id=$2 FOR UPDATE OF d`, [child.operation_id, child.id])
@@ -55,7 +55,7 @@ export class NativeSubagents {
       || header.delegationDepth < 1 || header.delegationDepth > this.limits.maxDepth) {
       throw new PlatformError(400, 'native_subagent_header_invalid')
     }
-    return transaction(this.tasks.pool, async client => {
+    return transaction(this.tasks.pool, async (client) => {
       const parent = await this.tasks.executionAuthorized(client, token)
       if (header.parentSession !== parent.id || header.id === parent.id) throw new PlatformError(403, 'native_subagent_parent_mismatch')
       const expectedDepth = (headerSchema.parse(parent.header).delegationDepth ?? 0) + 1

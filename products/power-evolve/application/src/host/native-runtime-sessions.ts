@@ -18,18 +18,25 @@ export const Config = schema.object({ renewMs: schema.number().step(1).min(1).de
   maxPendingOpens: schema.number().step(1).min(1).default(32) })
 /** Validated interactive maintenance configuration. */
 export type Config = ReturnType<typeof Config>
-interface Owner { grant: Grant; writer: HostNativeWriterLease; handle: AgentHandle; stop: AbortController; renewal: Promise<void>; closing?: Promise<void> }
+interface Owner { grant: Grant
+  writer: HostNativeWriterLease
+  handle: AgentHandle
+  stop: AbortController
+  renewal: Promise<void>
+  closing?: Promise<void> }
 
 /** Session identity is always fixed by PG ownership before the native Gateway resolves its Agent. */
 export default class NativeRuntimeSessions extends Service {
-  static inject = ['powerEvolveRuntime', 'agents', 'sessions', 'sessionProjections', 'agentPresets', 'nativeRuntimeExecution', 'sandboxPolicy', 'sessionPersistence']
+  static inject = ['powerEvolveRuntime', 'agents', 'sessions', 'sessionProjections', 'agentPresets',
+    'nativeRuntimeExecution', 'sandboxPolicy', 'sessionPersistence']
   static Config = Config
   private readonly ownerFiber: Fiber
   private closing = false
   private shutdownPromise: Promise<void> | undefined
   private readonly teardownFailures: unknown[] = []
   private readonly owners = new Map<SessionId, Owner>()
-  private readonly requests = new Map<SessionId, { sessionId: SessionId; browserToken: string; requestId: string; candidateToken: string }>()
+  private readonly requests = new Map<SessionId,
+    { sessionId: SessionId; browserToken: string; requestId: string; candidateToken: string }>()
   private readonly openings = new Map<SessionId, Promise<Agent>>()
   constructor(ctx: Context, private readonly config: Config) {
     super(ctx, 'nativeRuntimeSessions')
@@ -45,7 +52,8 @@ export default class NativeRuntimeSessions extends Service {
     return this.shutdownPromise ??= (async () => {
       await Promise.allSettled(this.openings.values())
       const results = await Promise.allSettled([...this.owners.keys()].map(id => this.close(id)))
-      const failures = [...this.teardownFailures, ...results.flatMap(result => result.status === 'rejected' ? [result.reason as unknown] : [])]
+      const failures = [...this.teardownFailures,
+        ...results.flatMap(result => result.status === 'rejected' ? [result.reason as unknown] : [])]
       if (failures.length) throw new AggregateError(failures, 'Native interactive shutdown failed')
     })()
   }
@@ -72,7 +80,8 @@ export default class NativeRuntimeSessions extends Service {
     }
     let opening = this.openings.get(id)
     if (!opening) {
-      if (this.openings.size >= this.config.maxPendingOpens || !this.requests.has(id) && this.requests.size >= this.config.maxPendingOpens) {
+      if (this.openings.size >= this.config.maxPendingOpens
+        || !this.requests.has(id) && this.requests.size >= this.config.maxPendingOpens) {
         throw new PlatformError(429, 'native_interactive_open_limit')
       }
       opening = this.open(id, browserToken).finally(() => { this.openings.delete(id) })
@@ -115,23 +124,25 @@ export default class NativeRuntimeSessions extends Service {
           const preset = await this.ctx.agents.withInitiator(agent, () => this.ctx.agentPresets.mount(agentCtx, selected ?? undefined))
           const selection = selected === null ? [agent.session.append('agent-preset/selected', { agentPreset: preset.id })] : []
           await flushNativeSession(this.ctx, agent.session, selection)
-          return { commit: () => { if (this.isClosing()) throw new PlatformError(409, 'native_interactive_closing'); runtime.assertGrant(captured); runtime.publication(captured).assertOpen() } }
+          return { commit: () => { if (this.isClosing()) throw new PlatformError(409,
+            'native_interactive_closing'); runtime.assertGrant(captured); runtime.publication(captured).assertOpen() } }
         } })
       if (this.isClosing()) throw new PlatformError(409, 'native_interactive_closing')
       const stop = new AbortController(), owner: Owner = { grant: captured, writer, handle, stop, renewal: Promise.resolve() }
+      const stopped = () => stop.signal.aborted
       this.owners.set(id, owner)
       owner.renewal = (async () => {
-        while (!stop.signal.aborted) {
+        while (!stopped()) {
           try { await delay(this.config.renewMs, undefined, { signal: stop.signal }) }
-          catch (error) { if (stop.signal.aborted) return; throw error }
+          catch (error) { if (stopped()) return; throw error }
           const status = z.object({ pending: z.boolean(), cancelRequested: z.boolean() }).parse(
             await runtime.call('/runtime/interactive/status', captured.token, {}, stop.signal))
-          if (status.pending || status.cancelRequested) { void this.close(id).catch(error => this.ctx.logger.error('Native interactive cleanup failed', error)); return }
+          if (status.pending || status.cancelRequested) { void this.close(id).catch((error: unknown) => {  this.ctx.logger.error('Native interactive cleanup failed', error) }); return }
           runtime.heartbeatPublication(captured)
           await writers.renew(owner.writer.identity, stop.signal)
         }
       })().catch((error: unknown) => {
-        if (!stop.signal.aborted) { stop.abort(error); void this.close(id).catch(failure => this.ctx.logger.error('Native interactive cleanup failed', failure)) }
+        if (!stopped()) { stop.abort(error); void this.close(id).catch((failure: unknown) => {  this.ctx.logger.error('Native interactive cleanup failed', failure) }) }
       })
       return handle.agent
     } catch (error) {
@@ -168,13 +179,15 @@ export default class NativeRuntimeSessions extends Service {
       owner.stop.abort()
       await owner.renewal
       try { await owner.handle.dispose({ keepInbox: true }) } catch (error) { failures.push(error) }
+      try { await this.ctx.nativeRuntimeExecution.drain(owner.handle.agent) } catch (error) { failures.push(error) }
       try {
         if (failures.length) throw new PlatformError(409, 'native_interactive_close_failed')
         await new HostNativeWriterClient(runtime).release(owner.writer.identity)
         await runtime.call('/runtime/finish', owner.grant.token, { outcome: 'completed', errorCode: null })
       } catch (error) {
         try { await runtime.call('/runtime/cleanup', owner.grant.token, { operationId: owner.grant.operationId,
-          epoch: owner.grant.epoch, writer: owner.writer.identity, errorCode: 'native_interactive_closed' }) }
+          epoch: owner.grant.epoch, writer: owner.writer.identity,
+          errorCode: failures.length ? 'native_interactive_close_failed' : 'native_interactive_closed' }) }
         catch (cleanupError) { failures.push(error, cleanupError) }
       } finally {
         if (runtime.grants.get(id) === owner.grant) runtime.grants.delete(id)

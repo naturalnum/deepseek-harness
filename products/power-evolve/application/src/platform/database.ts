@@ -66,7 +66,8 @@ export async function initializeDatabase(pool: Pool): Promise<void> {
     const entry = versions.rows[0]
     const version = entry?.version
     if (versions.rows.length !== 1 || entry?.family !== SCHEMA_FAMILY
-      || (version !== 1 && version !== 2 && version !== 3 && version !== 4 && version !== 5 && version !== 6 && version !== 7 && version !== 8 && version !== 9
+      || (version !== 1 && version !== 2 && version !== 3 && version !== 4 && version !== 5
+        && version !== 6 && version !== 7 && version !== 8 && version !== 9
         && version !== 10 && version !== 11 && version !== CURRENT_SCHEMA_VERSION)) throw new Error('Unsupported PowerEvolve cloud schema')
     await assertManifest(client, version)
     for (let current = version; current < CURRENT_SCHEMA_VERSION; current++) {

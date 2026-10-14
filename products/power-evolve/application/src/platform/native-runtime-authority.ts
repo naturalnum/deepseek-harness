@@ -9,7 +9,8 @@ import { transaction } from './database.ts'
 import { digest } from './identity.ts'
 
 const binding = z.object({ credentialId: z.uuid(), userId: accountUserId, runtimeId: z.uuid(),
-  generation: z.number().int().positive(), credentialVersion: z.number().int().positive(), expiresAt: z.number().int().positive() }).strict()
+  generation: z.number().int().positive(), credentialVersion: z.number().int().positive(),
+  expiresAt: z.number().int().positive() }).strict()
 /** Tokenless identity of a current tenant runtime. */
 export type NativeRuntimeIdentity = Readonly<z.infer<typeof binding>>
 
@@ -39,11 +40,12 @@ export class NativeRuntimeAuthority {
    * @param input Platform-selected owner, instance, monotonically increasing pool generation and elapsed lifetime.
    * @returns An opaque bearer for the owned private token file and its tokenless binding.
    */
-  async issue(input: { userId: UserId; runtimeId: string; generation: number; lifetimeMs: number }): Promise<NativeRuntimeIdentity & { token: string }> {
+  async issue(input: { userId: UserId; runtimeId: string; generation: number; lifetimeMs: number }):
+  Promise<NativeRuntimeIdentity & { token: string }> {
     const parsed = z.object({ userId: accountUserId, runtimeId: z.uuid(), generation: z.number().int().positive(),
       lifetimeMs: z.number().int().positive().max(2_147_483_647) }).strict().parse(input)
     const credentialId = randomUUID(), token = randomBytes(32).toString('base64url')
-    return transaction(this.pool, async client => {
+    return transaction(this.pool, async (client) => {
       const account = await requireActiveAccount(client, parsed.userId, 'update')
       assertProductLoginAllowed(account)
       const previous = await client.query<{ generation: number }>(
@@ -77,10 +79,15 @@ export class NativeRuntimeAuthority {
     if (!hint.rows[0]) throw new PlatformError(401, 'unauthorized_runtime')
     const account = await requireActiveAccount(client, accountUserId.parse(hint.rows[0].user_id), accountLock)
     assertProductLoginAllowed(account)
-    const rows = await client.query<{ id: string; user_id: string; runtime_id: string; generation: number; credential_version: number; expires_at: Date }>(
+    const rows = await client.query<{ id: string
+      user_id: string
+      runtime_id: string
+      generation: number
+      credential_version: number
+      expires_at: Date }>(
       `SELECT id,user_id,runtime_id,generation,credential_version,expires_at FROM pe_runtime_credentials
        WHERE digest=$1 AND user_id=$2 AND credential_version=$3 AND revoked_at IS NULL AND expires_at>clock_timestamp() FOR SHARE`,
-    [hashed, account.userId, account.credentialVersion])
+      [hashed, account.userId, account.credentialVersion])
     const row = rows.rows[0]
     if (!row || expected && (row.user_id !== expected.userId || row.runtime_id !== expected.runtimeId)) {
       throw new PlatformError(401, 'unauthorized_runtime')

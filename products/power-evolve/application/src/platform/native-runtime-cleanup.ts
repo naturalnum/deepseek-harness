@@ -27,17 +27,24 @@ const receipt = z.object({ cleaned: z.literal(true), operationId, sessionId: z.u
 export async function cleanupNativeRuntime(pool: Pool, token: string,
   input: z.infer<typeof nativeRuntimeCleanupRequest>, limits: EventLimits): Promise<z.infer<typeof receipt>> {
   const hashed = digest(token), writerDigest = digest(input.writer.token)
-  return transaction(pool, async client => {
+  return transaction(pool, async (client) => {
     const known = await client.query<{ user_id: string }>('SELECT s.user_id FROM pe_operations o JOIN pe_sessions s ON s.id=o.session_id WHERE o.id=$1', [input.operationId])
     const hint = known.rows[0]
     if (!hint) throw new PlatformError(409, 'native_cleanup_lost')
     await lockAccountAuthorities(client, [userId.parse(hint.user_id)], 'update')
-    const old = await client.query<{ grant_digest: string; writer_digest: string; writer_epoch: string; worker_id: string;
-      operation_epoch: string; error_code: string; receipt: unknown }>('SELECT * FROM pe_native_cleanup_receipts WHERE operation_id=$1 FOR UPDATE', [input.operationId])
+    const old = await client.query<{ grant_digest: string
+      writer_digest: string
+      writer_epoch: string
+      worker_id: string
+      operation_epoch: string
+      error_code: string
+      receipt: unknown }>('SELECT * FROM pe_native_cleanup_receipts WHERE operation_id=$1 FOR UPDATE', [input.operationId])
     const repeated = old.rows[0]
     if (repeated) {
-      if (repeated.grant_digest !== hashed || repeated.writer_digest !== writerDigest || Number(repeated.writer_epoch) !== input.writer.epoch
-        || repeated.worker_id !== input.writer.workerId || Number(repeated.operation_epoch) !== input.epoch || repeated.error_code !== input.errorCode) {
+      if (repeated.grant_digest !== hashed || repeated.writer_digest !== writerDigest
+        || Number(repeated.writer_epoch) !== input.writer.epoch
+        || repeated.worker_id !== input.writer.workerId || Number(repeated.operation_epoch) !== input.epoch
+        || repeated.error_code !== input.errorCode) {
         throw new PlatformError(409, 'native_cleanup_conflict')
       }
       return receipt.parse(repeated.receipt)
@@ -59,8 +66,9 @@ export async function cleanupNativeRuntime(pool: Pool, token: string,
     if (closers.length) await appendOwnedEvents(client, hint.user_id, session, closers, limits)
     const result = receipt.parse({ cleaned: true, operationId: input.operationId, sessionId: session.id,
       epoch: input.epoch, eventCount: session.event_count + closers.length })
-    await client.query(`UPDATE pe_operations SET state='failed',error_code=$2,completed_at=clock_timestamp() WHERE id=$1`, [input.operationId, input.errorCode])
-    await client.query('UPDATE pe_attempts SET ended_at=clock_timestamp() WHERE operation_id=$1 AND epoch=$2', [input.operationId, input.epoch])
+    await client.query('UPDATE pe_operations SET state=\'failed\',error_code=$2,completed_at=clock_timestamp() WHERE id=$1', [input.operationId, input.errorCode])
+    await client.query('UPDATE pe_attempts SET ended_at=clock_timestamp() WHERE operation_id=$1 AND epoch=$2',
+      [input.operationId, input.epoch])
     await client.query('UPDATE pe_sessions SET grant_digest=NULL,lease_until=NULL WHERE id=$1 AND grant_digest=$2 AND lease_epoch=$3', [session.id, hashed, input.epoch])
     await client.query('UPDATE pe_native_writers SET expires_at=NULL WHERE session_id=$1 AND worker_id=$2 AND epoch=$3 AND token_digest=$4',
       [session.id, input.writer.workerId, input.writer.epoch, writerDigest])

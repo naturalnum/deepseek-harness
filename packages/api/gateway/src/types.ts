@@ -3,6 +3,7 @@
  * @module @deepseek-ai/dsh-api-gateway/types
  */
 
+import type { ConnectionRpcHandlerResult } from '@deepseek-ai/dsh-client-connection'
 import type { Context } from '@deepseek-ai/cordis'
 import type { PeerScope } from '@deepseek-ai/dsh-typert-protocol'
 import type { RemoteEventHostInfo } from './stream-protocol.ts'
@@ -80,6 +81,19 @@ export type TypertRemoteEventSource = (
   signal: AbortSignal,
 ) => AsyncIterable<TypertRemoteEventDispatch>
 
+/** Authenticated carrier access to original unary validation, result codecs and byte attachments. */
+export interface TypertGatewayWireRpc {
+  /** Invoke one wire payload without changing the maintained result encoding.
+   * @param endpoint Canonical Remote endpoint or native Remote Event result endpoint.
+   * @param payload Original named wire arguments in their carrier payload.
+   * @param peer Authenticated carrier Peer, or undefined for the in-process operator.
+   * @param signal Original unary request lifetime.
+   * @returns Native success metadata and byte attachments, or the original stable Remote failure.
+   */
+  readonly invoke: (endpoint: string, payload: unknown, peer: PeerScope | undefined,
+    signal: AbortSignal) => Promise<ConnectionRpcHandlerResult>
+}
+
 /** Carrier-facing access to decoded Remote streams and their stable failures. */
 export interface TypertGatewayWireStream {
   /**
@@ -138,6 +152,8 @@ export type TypertGatewayErrorCode =
 export interface TypertGateway {
   /** Carrier adapter shared by WebSocket and in-process transports. */
   readonly wireStream: TypertGatewayWireStream
+  /** Unary carrier adapter preserving native byte result encoding. */
+  readonly wireRpc: TypertGatewayWireRpc
 
   /**
    * Check for an active Client event stream.

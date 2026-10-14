@@ -32,7 +32,8 @@ class PlatformHandle implements SessionHandle {
 
   constructor(
     private readonly runtime: RuntimeScope, readonly header: SessionHeader,
-    readonly access: SessionAccess, private events: SessionEvent[], private readonly released: (failure: Error | undefined) => void | Promise<void>,
+    readonly access: SessionAccess, private events: SessionEvent[],
+    private readonly released: (failure: Error | undefined) => void | Promise<void>,
     private readonly publisher: NativeAssistantPublisher | undefined,
     private readonly capturedGrant: Grant,
   ) {
@@ -159,8 +160,12 @@ export default class PlatformPersistence extends SessionPersistence {
   private readonly teardownFailures: unknown[] = []
   private readonly writers = new Map<SessionId, PlatformHandle>()
   private readonly handles = new Set<PlatformHandle>()
-  private readonly children = new Map<SessionId, { grant: Grant; writer: HostNativeWriterLease; stop: AbortController; renewal: Promise<void>;
-    outcome: 'completed' | 'failed'; errorCode: string | null }>()
+  private readonly children = new Map<SessionId, { grant: Grant
+    writer: HostNativeWriterLease
+    stop: AbortController
+    renewal: Promise<void>
+    outcome: 'completed' | 'failed'
+    errorCode: string | null }>()
 
   constructor(ctx: Context) {
     super(ctx)
@@ -192,7 +197,8 @@ export default class PlatformPersistence extends SessionPersistence {
     return this.shutdownPromise ??= (async () => {
       await Promise.allSettled(this.pending)
       const results = await Promise.allSettled([...this.handles].map(handle => handle.close()))
-      const errors = [...this.teardownFailures, ...results.flatMap((result): unknown[] => result.status === 'rejected' ? [result.reason] : [])]
+      const errors = [...this.teardownFailures,
+        ...results.flatMap((result): unknown[] => result.status === 'rejected' ? [result.reason] : [])]
       if (errors.length) throw new AggregateError(errors, 'Platform persistence shutdown failed')
     })()
   }
@@ -229,12 +235,14 @@ export default class PlatformPersistence extends SessionPersistence {
       if (this.isClosing()) throw new PlatformError(409, 'native_persistence_closing')
       const capturedWriter = writer
       const stop = new AbortController()
+      const stopped = () => stop.signal.aborted
       const renewal = (async () => {
-        while (!stop.signal.aborted) {
+        while (!stopped()) {
           try { await delay(runtime.config.nativeSubagentRenewMs, undefined, { signal: stop.signal }) }
-          catch (error) { if (stop.signal.aborted) return; throw error }
-          if (stop.signal.aborted) return
-          const renewed = z.object({ cancelRequested: z.boolean() }).parse(await runtime.call('/runtime/renew', child.token, {}, stop.signal))
+          catch (error) { if (stopped()) return; throw error }
+          if (stopped()) return
+          const renewed = z.object({ cancelRequested: z.boolean() }).parse(await runtime.call('/runtime/renew',
+            child.token, {}, stop.signal))
           if (renewed.cancelRequested) {
             this.ctx.get('agents')?.get(child.sessionId)?.cancel({ kind: 'user' }, { keepInbox: true })
           }
@@ -242,12 +250,13 @@ export default class PlatformPersistence extends SessionPersistence {
           await writers.renew(capturedWriter.identity, stop.signal)
         }
       })().catch((error: unknown) => {
-        if (!stop.signal.aborted) {
+        if (!stopped()) {
           stop.abort(error)
           this.ctx.get('agents')?.get(child.sessionId)?.cancel({ kind: 'disposed' }, { keepInbox: true })
         }
       })
-      this.children.set(child.sessionId, { grant: child, writer, stop, renewal, outcome: 'failed', errorCode: 'native_subagent_incomplete' })
+      this.children.set(child.sessionId, { grant: child, writer, stop, renewal, outcome: 'failed',
+        errorCode: 'native_subagent_incomplete' })
       return await this.open(child.sessionId, 'write')
     } catch (error) {
       const childOwner = this.children.get(child.sessionId)
@@ -347,7 +356,8 @@ export default class PlatformPersistence extends SessionPersistence {
     if (failures.length) throw new AggregateError(failures, 'Session flush failed')
   }
   async stat(id: SessionId) {
-    const value = snapshot.parse(await this.ctx.powerEvolveRuntime.call('/runtime/snapshot', this.ctx.powerEvolveRuntime.require(id).token, {}))
+    const value = snapshot.parse(await this.ctx.powerEvolveRuntime.call('/runtime/snapshot',
+      this.ctx.powerEvolveRuntime.require(id).token, {}))
     return { header: value.header, revision: brandString<SessionPersistenceRevision>(String(value.eventCount)),
       eventCount: value.eventCount }
   }

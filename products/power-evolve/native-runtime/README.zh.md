@@ -10,6 +10,7 @@ kind: package-bundle
 
 此 bundle 为单个账号提供维护中的原生 Settings、Profile 编辑器、权限命令与四种 Agent 预设。Platform pool 在该账号隔离的 Runtime Pod 内，将其挂载在 base 与 Web bundles 之后。原生 consumers 在有界 Platform 适配之上保留自身实现。PostgreSQL 拥有 Sessions、模型凭据和 execution grants；Runtime 只持有自身可撤销账号凭据与私有 Profile 状态。
 
+
 ## Table of Contents
 
 - [Use this package](#use-this-package)
@@ -70,6 +71,8 @@ Filesystem、subprocess 与 sandbox providers 捕获精确发起 Agent 的服务
 ## Known Limitations and Deferred Work
 
 源码与隔离 PG 检查不能证明物理 Linux 隔离或真实 PTY/PTC 执行。这些结果要求部署的执行镜像与原始原生 consumers。持久化交互 authority 之外，仍需验证 Runtime 装配与冷启动原生 consumers；Browser Agent cookie 本身不授予执行权限。
+
+原生一元 RPC 使用维护中的 Gateway 结果编解码。有界私有 JSON 中转显式携带字节附件，共享 Host 恢复原生 multipart，使浏览器调用者收到 `Uint8Array`。PG 在 Session 水位保存已提交的权限旋钮折叠值，账户 Runtime 通过其当前原生预设目录与默认值展示，包括自定义名称和 Auto。浏览器不会收到私有旋钮元数据。
 
 <a id="dev-note"></a>
 ### Dev Note

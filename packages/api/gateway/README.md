@@ -24,6 +24,8 @@ Two-sided Typert RPC endpoint for Host and Client Cordis environments. The Host 
 <a id="host-service-typertgatewayservice-ctx-key-typertgateway"></a>
 ## Host service: `TypertGatewayService` (ctx key: `typertGateway`)
 
+Host composition can call `wireRpc.invoke(endpoint, payload, peer, signal)` after authenticating its carrier. This face runs the same registered unary dispatcher and result codec as Connection, returning JSON metadata and result-relative byte attachments. A broker must retain these attachments and restore native multipart at the browser boundary; plain `invoke()` remains the business-value face.
+
 Host composition can call `remoteEventStream(signal)` and `remoteEventResult(payload)` when it owns an authenticated carrier. These methods reuse the registered source, native callback identities and Client cancellation; a result for an unknown Client refuses. The caller owns carrier authentication and cancels its original stream before releasing the transport.
 
 `ctx.typertGateway.invoke()` resolves the current descriptor and Cordis Service for each call, validates exact named arguments, resolves registered object or Context identities, and invokes the public business method. Business Services extend `TypertRemoteService` and mark methods with `@Remote` or `@RemoteScope` from [`dsh-typert-protocol`](../../typert/protocol/README.md); `bindTypertRemote()` remains available when another base class owns inheritance.

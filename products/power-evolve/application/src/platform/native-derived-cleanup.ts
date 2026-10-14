@@ -19,7 +19,7 @@ import type { TaskStore } from './tasks.ts'
 export async function cleanupExpiredNativeDerivations(tasks: TaskStore,
   owner: { userId: string; authenticate: (client: PoolClient) => Promise<void> }, limits: EventLimits,
   maxSessions: number): Promise<number> {
-  return transaction(tasks.pool, async client => {
+  return transaction(tasks.pool, async (client) => {
     await owner.authenticate(client)
     const rows = await client.query<OwnedAppendState & { operation_id: string; lease_epoch: number }>(`
       SELECT s.id,s.header,s.event_count,s.event_bytes,s.lease_epoch,o.id AS operation_id FROM pe_sessions s

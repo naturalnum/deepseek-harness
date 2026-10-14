@@ -9,7 +9,7 @@ import { z } from 'zod'
 import { PlatformError } from '../contracts.ts'
 import { parseEvents } from '../session-records.ts'
 import { agentPresetProjectionDefinition } from '@deepseek-ai/dsh-agent-preset-registry'
-import type {} from '@deepseek-ai/dsh-permission-presets'
+import type { KnobState } from '@deepseek-ai/dsh-permission-presets'
 
 const cursor = z.number().int().min(-1).max(Number.MAX_SAFE_INTEGER).transform(value => value === -1 ? -1 : SessionSeq(value))
 const runtimeProjection = z.object({ agentPreset: z.string().nullable(),
@@ -54,37 +54,31 @@ function initialRuntime(header: SessionHeader): z.infer<typeof runtimeProjection
 function advanceRuntime(prior: z.infer<typeof runtimeProjection>, events: readonly SessionEvent[]): z.infer<typeof runtimeProjection> {
   let value = prior
   for (const event of events) {
-    if (event.type === 'agent-preset/selected') value = { ...value, agentPreset: agentPresetProjectionDefinition.apply(value.agentPreset, event) }
+    if (event.type === 'agent-preset/selected') value = { ...value,
+      agentPreset: agentPresetProjectionDefinition.apply(value.agentPreset, event) }
     else if (event.type === 'permission/preset') value = { ...value, preset: event.data.preset }
     else if (event.type === 'sandbox/mode') value = { ...value, sandbox: event.data.mode }
     else if (event.type === 'approval/policy') value = { ...value, approval: event.data.policy }
   }
   return value
 }
-function permissionValue(value: z.infer<typeof runtimeProjection>): string | undefined {
-  if (value.sandbox === null && value.approval === null && value.preset === null) return undefined
-  if (value.sandbox === 'read-only' && value.approval === 'ask') return value.preset === 'read-only' ? value.preset : 'read-only'
-  if (value.sandbox === 'workspace-write' && value.approval === 'ask') return value.preset === 'workspace-write' ? value.preset : 'workspace-write'
-  if (value.sandbox === 'danger-full-access' && value.approval === 'never') return value.preset === 'danger-full-access' ? value.preset : 'danger-full-access'
-  return 'custom'
-}
-
 /** Project a stored checkpoint without opening or activating a Session.
  * @param raw Private PG checkpoint, or absence for a new Session.
  * @param eventCount Committed native event count at the same database cut.
  * @returns Standard native values at the exact watermark; missing or stale history rejects.
  */
-export function nativeProjectionView(raw: unknown, eventCount: number, header?: SessionHeader): SessionProjectionBaseline {
+export function nativeProjectionView(raw: unknown, eventCount: number,
+  header?: SessionHeader): SessionProjectionBaseline & { permissionKnobs: KnobState } {
   const value = raw === null || raw === undefined ? empty() : checkpoint(raw)
   if (value.asOfSeq !== eventCount - 1) throw new PlatformError(503, 'native_projection_gap')
   const runtime = value.runtime ?? (header?.agentPreset === undefined ? undefined : initialRuntime(header))
-  const permission = runtime === undefined ? undefined : permissionValue(runtime)
-  return { asOfSeq: value.asOfSeq, values: z.record(z.string(), z.json()).parse({
+  const permissionKnobs: KnobState = { preset: runtime?.preset ?? null, sandbox: runtime?.sandbox ?? null,
+    approval: runtime?.approval ?? null }
+  return { asOfSeq: value.asOfSeq, permissionKnobs, values: z.record(z.string(), z.json()).parse({
     modelSelection: modelSelectionProjection.wire.viewSchema.parse(modelSelectionProjection.wire.view(value.modelSelection)),
     inbox: inboxProjectionDefinition.wire.viewSchema.parse(inboxProjectionDefinition.wire.view(value.inbox)),
     title: titleProjectionDefinition.wire.viewSchema.parse(titleProjectionDefinition.wire.view(value.title)),
     ...(runtime === undefined ? {} : { agentPreset: runtime.agentPreset }),
-    ...(permission === undefined ? {} : { permissions: { currentValue: permission } }),
   }) }
 }
 
@@ -115,7 +109,8 @@ export async function checkpointNativeProjections(client: PoolClient, userId: st
   if (prior.asOfSeq !== eventCount - 1) throw new PlatformError(503, 'native_projection_gap')
   const next = advance(prior, events)
   await client.query(`INSERT INTO pe_native_preferences(user_id,namespace,value,revision) VALUES($1,$2,$3,1)
-    ON CONFLICT(user_id,namespace) DO UPDATE SET value=EXCLUDED.value,revision=pe_native_preferences.revision+1,updated_at=clock_timestamp()`,
+    ON CONFLICT(user_id,namespace) DO UPDATE SET value=EXCLUDED.value,revision=pe_native_preferences.revision+1,
+      updated_at=clock_timestamp()`,
   // JSON text inside jsonb retains strings PostgreSQL cannot represent directly, including NUL and lone surrogates.
   [userId, namespace, encodedState.parse({ version: 2, asOfSeq: next.asOfSeq, stateJson: JSON.stringify(state.parse(next)) })])
 }

@@ -10,6 +10,7 @@ English | [中文](README.zh.md)
 
 This bundle gives one account its maintained native Settings, Profile editor, permission commands and four Agent presets. The Platform pool mounts it after the base and Web bundles inside that account's isolated Runtime Pod. Native consumers retain their implementations above bounded Platform adapters. PostgreSQL owns Sessions, model credentials and execution grants; the Runtime has only its own revocable account credential and private Profile state.
 
+
 ## Table of Contents
 
 - [Use this package](#use-this-package)
@@ -70,6 +71,8 @@ This layer changes consumer providers and account ownership. The maintained nati
 ## Known Limitations and Deferred Work
 
 Source and isolated PG checks do not establish physical Linux containment or live PTY/PTC execution. Those results require the deployed execution image and original native consumers. Idle Terminal also requires durable interactive Session authority; an operation-bound provider cannot infer execution permission from a Browser Agent cookie.
+
+Native unary RPC uses the maintained Gateway result codec. Its bounded private JSON hop explicitly carries byte attachments; the shared Host restores original multipart so browser callers receive `Uint8Array`. PG stores committed permission knob folds at the Session watermark; the account Runtime presents them through its live native preset catalog and defaults, including custom names and Auto. Private knob metadata is removed before reaching the browser.
 
 <a id="dev-note"></a>
 ### Dev Note

@@ -4,7 +4,8 @@ import { randomBytes, randomUUID } from 'node:crypto'
 import type { Pool, PoolClient } from 'pg'
 import { SESSION_FORMAT_VERSION, type SessionId, type SessionHeader } from '@deepseek-ai/dsh-session'
 import { executionTarget, grant, mcpSelection, stdioMcpSelection, sshSelection, skillSelection, PlatformError, settings,
-  userId as executionUserId, operationId as executionOperationId, type OperationId, type ExecutionTarget, type Grant, type Identity, type RequestId, type WorkspaceId, type UserId } from '../contracts.ts'
+  userId as executionUserId, operationId as executionOperationId, type OperationId, type ExecutionTarget,
+  type Grant, type Identity, type RequestId, type WorkspaceId, type UserId } from '../contracts.ts'
 import { z } from 'zod'
 import { digest } from './identity.ts'
 import { transaction } from './database.ts'
@@ -51,7 +52,9 @@ export interface TaskLimits {
   readonly executionEnabled?: boolean
   readonly mcpEnabled?: boolean
   readonly remoteMcpAdmission?: McpOperationAdmissionLimits
-  readonly stdioV2Admission?: { readonly selection: Pick<StdioOperationAdmissionV2, 'select' | 'restore'>; readonly reservedNames: readonly string[] }
+  readonly stdioV2Admission?: { readonly selection: Pick<StdioOperationAdmissionV2,
+    'select' | 'restore'>
+  readonly reservedNames: readonly string[] }
   readonly stdioMcpEnabled?: boolean
   readonly sshEnabled?: boolean
   readonly archiveStopHistory?: NativeTurnHistoryLimits
@@ -207,7 +210,8 @@ export class TaskStore {
         'SELECT value FROM pe_native_preferences WHERE user_id=$1 AND namespace=$2',
         [user.userId, `session-model:${session}`])
       if (modelIntent.rows[0]) {
-        const selectedModel = z.object({ provider: z.literal('power-evolve'), model: z.string().min(1).max(100), reasoningEffort: z.literal('off').optional() }).strict()
+        const selectedModel = z.object({ provider: z.literal('power-evolve'), model: z.string().min(1).max(100),
+          reasoningEffort: z.literal('off').optional() }).strict()
           .parse(modelIntent.rows[0].value)
         const grant = await client.query<{ max_tokens: number }>(
           'SELECT max_tokens FROM pe_user_models WHERE user_id=$1 AND model_id=$2 AND enabled=true', [user.userId, selectedModel.model])
@@ -269,7 +273,8 @@ export class TaskStore {
       const ssh = z.array(sshSelection).max(8).parse(sshRows.rows)
       const stdioV2 = this.limits.stdioV2Admission ? await this.limits.stdioV2Admission.selection.select(client,
         user.userId, session, target,
-        [...this.limits.stdioV2Admission.reservedNames, ...await readNativeToolNames(client, user.userId), ...remoteMcp.map(tool => tool.model.name)]) : []
+        [...this.limits.stdioV2Admission.reservedNames, ...await readNativeToolNames(client, user.userId),
+          ...remoteMcp.map(tool => tool.model.name)]) : []
       const id = randomUUID()
       const bound = await NativeAttachments.bind(client, user, session, requestId, submitted)
       let admitted: z.infer<typeof admittedNativeContent>
@@ -431,7 +436,8 @@ export class TaskStore {
    * @param workerId Trusted Host worker that will acquire an independent Session Writer.
    * @returns Current original storage grant, or null when no stopped Session is eligible for maintenance.
    */
-  async claimArchiveStop(workerId: string, owner?: { userId: UserId; authenticate: (client: PoolClient) => Promise<void> }): Promise<Grant | null> {
+  async claimArchiveStop(workerId: string,
+    owner?: { userId: UserId; authenticate: (client: PoolClient) => Promise<void> }): Promise<Grant | null> {
     return this.claimForPurpose(workerId, true, owner)
   }
 
@@ -456,7 +462,8 @@ export class TaskStore {
          AND NOT EXISTS (SELECT 1 FROM pe_native_retained_intents j WHERE j.session_id=s.id AND j.state='prepared')
          AND (SELECT count(*) FROM pe_sessions active WHERE active.user_id=s.user_id AND active.lease_until>clock_timestamp())<$1
          AND NOT EXISTS (SELECT 1 FROM pe_operations earlier WHERE earlier.session_id=s.id
-           AND earlier.state IN ('queued','running') AND earlier.source<>'native_interactive' AND (earlier.created_at,earlier.id)<(o.created_at,o.id))
+           AND earlier.state IN ('queued',
+             'running') AND earlier.source<>'native_interactive' AND (earlier.created_at,earlier.id)<(o.created_at,o.id))
          ORDER BY u.last_claim_at NULLS FIRST,o.created_at,o.id LIMIT 1 FOR NO KEY UPDATE OF u SKIP LOCKED`,
         [this.limits.maxActivePerUser, archiveStop, owner?.userId ?? null],
       )
@@ -665,10 +672,11 @@ export class TaskStore {
    * @returns Current exact Session after purpose-specific clocks and durable interactive Writer checks.
    */
   async nativeWorldAuthorized(client: PoolClient, token: string, purpose: 'storage-read' | 'execution' = 'execution'):
-    Promise<Awaited<ReturnType<TaskStore['authorized']>>> {
+  Promise<Awaited<ReturnType<TaskStore['authorized']>>> {
     const session = await this.authorized(client, token)
     if (session.source !== 'native_interactive') return purpose === 'storage-read' ? session : this.executionAuthorized(client, token)
-    if (await isSessionBusinessBlockedInTransaction(client, session.user_id, session.id)) throw new PlatformError(409, 'native_session_archived')
+    if (await isSessionBusinessBlockedInTransaction(client, session.user_id,
+      session.id)) throw new PlatformError(409, 'native_session_archived')
     await assertNativeInteractiveWorld(client, session)
     return session
   }

@@ -18,7 +18,8 @@ import type { NativeRuntimeAuthority } from './native-runtime-authority.ts'
  * @returns Owned native reply; foreign operations and journal records remain inaccessible.
  */
 export async function routeNativeRuntime(authority: NativeRuntimeAuthority, tasks: TaskStore,
-  intents: NativeRetainedIntentStore, path: string, token: string, raw: unknown, maintenance?: { limits: EventLimits; maxSessions: number }): Promise<unknown> {
+  intents: NativeRetainedIntentStore, path: string, token: string, raw: unknown,
+  maintenance?: { limits: EventLimits; maxSessions: number }): Promise<unknown> {
   const actor = await authority.authenticate(token)
   if (path === '/runtime/user/identity') {
     z.object({}).strict().parse(raw)
@@ -30,7 +31,8 @@ export async function routeNativeRuntime(authority: NativeRuntimeAuthority, task
   const owner = { userId: actor.userId, authenticate: async (client: Parameters<NativeRuntimeAuthority['authenticateInTransaction']>[0]) => {
     await authority.authenticateInTransaction(client, token, { userId: actor.userId, runtimeId: actor.runtimeId }, 'update')
   } }
-  if (maintenance && path === '/runtime/user/claim') await cleanupExpiredNativeDerivations(tasks, owner, maintenance.limits, maintenance.maxSessions)
+  if (maintenance && path === '/runtime/user/claim') await cleanupExpiredNativeDerivations(tasks, owner,
+    maintenance.limits, maintenance.maxSessions)
   switch (path) {
     case '/runtime/user/claim': z.object({ workerId: z.uuid() }).strict().parse(raw); return tasks.claim(actor.runtimeId, owner)
     case '/runtime/user/claim-archive-stop': z.object({ workerId: z.uuid() }).strict().parse(raw); return tasks.claimArchiveStop(actor.runtimeId, owner)

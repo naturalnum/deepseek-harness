@@ -21,11 +21,12 @@ export const nativePresetSelection = z.object({ sessionId, agentPreset: z.string
  */
 export async function selectNativePreset(pool: Pool, user: Identity, token: string,
   request: z.infer<typeof nativePresetSelection>, limits: EventLimits): Promise<string> {
-  return transaction(pool, async client => {
+  return transaction(pool, async (client) => {
     const actor = await requireBrowserAccount(client, token, { lock: 'update' })
     if (actor.userId !== user.userId) throw new PlatformError(401, 'unauthorized')
     const found = await client.query<OwnedAppendState & { leased: boolean }>(`SELECT id,header,event_count,event_bytes,
-      COALESCE(lease_until>clock_timestamp(),false) AS leased FROM pe_sessions WHERE id=$1 AND user_id=$2 FOR UPDATE`, [request.sessionId, user.userId])
+      COALESCE(lease_until>clock_timestamp(),
+        false) AS leased FROM pe_sessions WHERE id=$1 AND user_id=$2 FOR UPDATE`, [request.sessionId, user.userId])
     const row = found.rows[0]
     if (!row) throw new PlatformError(404, 'session_not_found')
     if (row.leased || (await client.query('SELECT 1 FROM pe_native_writers WHERE session_id=$1 AND expires_at>clock_timestamp()', [row.id])).rowCount) {
@@ -34,7 +35,8 @@ export async function selectNativePreset(pool: Pool, user: Identity, token: stri
     if ((await client.query("SELECT 1 FROM pe_events WHERE session_id=$1 AND event->>'type'='turn/start' LIMIT 1", [row.id])).rowCount) {
       throw new PlatformError(409, 'native_preset_locked')
     }
-    const event: SessionEvent = { seq: SessionSeq(row.event_count), time: Date.now(), type: 'agent-preset/selected', data: { agentPreset: request.agentPreset } }
+    const event: SessionEvent = { seq: SessionSeq(row.event_count), time: Date.now(),
+      type: 'agent-preset/selected', data: { agentPreset: request.agentPreset } }
     await appendOwnedEvents(client, user.userId, row, [event], limits)
     return request.agentPreset
   })

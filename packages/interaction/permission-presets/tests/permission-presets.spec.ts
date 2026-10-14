@@ -80,6 +80,24 @@ describe('permission preset fold', () => {
 })
 
 describe('PermissionPresetService', () => {
+  it('projects committed knob folds with the same live defaults and selection ties as the Session view', async () => {
+    const ctx = await mounted({ config: { presets: { first: { sandbox: 'workspace-write', approval: 'ask' },
+      selected: { sandbox: 'workspace-write', approval: 'ask' } } } })
+    try {
+      expect(ctx.permissionPresets.viewKnobs({ preset: null, sandbox: null, approval: null })).toEqual({ currentValue: 'first' })
+      expect(ctx.permissionPresets.viewKnobs({ preset: 'selected', sandbox: 'workspace-write',
+        approval: 'ask' })).toEqual({ currentValue: 'selected' })
+      expect(ctx.permissionPresets.viewKnobs({ preset: 'selected', sandbox: 'read-only',
+        approval: 'ask' })).toEqual({ currentValue: 'custom' })
+      const auto = await mountAuto(ctx)
+      expect(ctx.permissionPresets.viewKnobs({ preset: 'auto', sandbox: 'danger-full-access',
+        approval: 'never' })).toEqual({ currentValue: 'auto' })
+      await auto.dispose()
+      expect(ctx.permissionPresets.viewKnobs({ preset: 'auto', sandbox: 'danger-full-access',
+        approval: 'never' })).toEqual({ currentValue: 'custom' })
+    } finally { await ctx.fiber.dispose() }
+  })
+
   it('does not activate without the required projection registry', async () => {
     const ctx = await mounted({ projection: false })
     expect(ctx.get('permissionPresets')).toBeUndefined()
@@ -265,8 +283,10 @@ describe('PermissionPresetService', () => {
 
   it('optionOf() presents shipped labels/descriptions, falls back to the raw key, and fixes custom', async () => {
     const ctx = await mounted()
-    expect(ctx.permissionPresets.optionOf('danger-full-access')).toEqual({ value: 'danger-full-access', name: 'danger-full-access', description: 'Full file access without approval prompts.' })
-    expect(ctx.permissionPresets.optionOf('custom')).toEqual({ value: 'custom', name: 'Custom', description: 'Current sandbox and approval settings do not match a preset.' })
+    expect(ctx.permissionPresets.optionOf('danger-full-access')).toEqual({ value: 'danger-full-access',
+      name: 'danger-full-access', description: 'Full file access without approval prompts.' })
+    expect(ctx.permissionPresets.optionOf('custom')).toEqual({ value: 'custom', name: 'Custom',
+      description: 'Current sandbox and approval settings do not match a preset.' })
     const bare = await mounted({ config: { presets: { plain: { sandbox: 'workspace-write', approval: 'ask' } } } })
     expect(bare.permissionPresets.optionOf('plain')).toEqual({ value: 'plain', name: 'plain' })
     expect(() => ctx.permissionPresets.optionOf('plan')).toThrow(/unknown preset/)

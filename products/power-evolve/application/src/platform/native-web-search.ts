@@ -10,8 +10,10 @@ import type { TaskStore } from './tasks.ts'
 import type { ModelProxyConfig } from './model.ts'
 
 const bodySchema = z.object({ model: z.string().min(1).max(100), max_tokens: z.number().int().positive(),
-  messages: z.tuple([z.object({ role: z.literal('user'), content: z.tuple([z.object({ type: z.literal('text'), text: z.string() }).strict()]) }).strict()]),
-  tools: z.tuple([z.object({ type: z.literal('web_search_20250305'), name: z.literal('web_search'), max_uses: z.number().int().positive() }).strict()]),
+  messages: z.tuple([z.object({ role: z.literal('user'), content: z.tuple([z.object({ type: z.literal('text'),
+    text: z.string() }).strict()]) }).strict()]),
+  tools: z.tuple([z.object({ type: z.literal('web_search_20250305'), name: z.literal('web_search'),
+    max_uses: z.number().int().positive() }).strict()]),
 }).strict()
 
 /** Forward one native auxiliary request only after its exact original input is durable.
@@ -25,12 +27,13 @@ export async function proxyNativeWebSearch(tasks: TaskStore, config: ModelProxyC
   request: IncomingMessage, response: ServerResponse): Promise<void> {
   const body = bodySchema.parse(await readJson(request, config.maxRequestBytes))
   if (body.tools[0].max_uses > config.maxUses) throw new PlatformError(400, 'native_search_use_limit')
-  await transaction(tasks.pool, async client => {
+  await transaction(tasks.pool, async (client) => {
     const owner = await tasks.executionAuthorized(client, bearer(request))
     await requireModelGrant(client, owner.user_id, body.model, body.max_tokens)
     const records = await client.query<{ event: unknown }>(
       `SELECT event FROM pe_events WHERE session_id=$1 AND event->>'type'='web/deepseek-search-llm-request'
-        AND seq>(SELECT COALESCE(max(seq),-1) FROM pe_events WHERE session_id=$1 AND event->>'type'='step/start') ORDER BY seq DESC LIMIT 1`, [owner.id])
+        AND seq>(SELECT COALESCE(max(seq),
+          -1) FROM pe_events WHERE session_id=$1 AND event->>'type'='step/start') ORDER BY seq DESC LIMIT 1`, [owner.id])
     const logged = z.object({ data: z.object({ apiVersion: z.string(), body: bodySchema }) }).parse(records.rows[0]?.event)
     if (!isDeepStrictEqual(logged.data.body, body) || logged.data.apiVersion !== request.headers['anthropic-version']) {
       throw new PlatformError(403, 'native_search_not_authorized')

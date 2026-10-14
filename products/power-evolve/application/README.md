@@ -10,6 +10,7 @@ English | [中文](README.zh.md)
 
 Use the cloud Host and Platform Profiles to authenticate users, persist native DSH conversations and isolate their workspaces. Platform owns PostgreSQL, credentials and execution authorization. Host receives bounded APIs and operation grants. The native Web client uses the upstream shell with the three extensions defined by the migration plan.
 
+
 ## Table of Contents
 
 - [Use this package](#use-this-package)
@@ -46,7 +47,7 @@ Host RPC, streamed uploads and each complete native-intent reconciliation pass o
 
 Accepted operations freeze their model, Skills and connector selections. Account locks, current credentials, Session leases and epochs fence writes. Native event appends commit their model, inbox and title projection checkpoints at the same PG watermark. Checkpoint encoding 2 stores validated JSON text inside jsonb to retain NUL and lone surrogates; retained encoding 1 remains readable and advances on append. Future encodings, malformed text and unequal watermarks reject. Turn classification reads validated event chunks without PostgreSQL JSON extraction; the original event JSON stays unchanged. Cold title and model mutations refuse while a writer holds the Session lease.
 
-The cloud-native database advances through adjacent migrations to schema 8. Existing generations retain their assets and records. Separate temporary assistant-presentation tables store JSON text; canonical Session events remain the recovery source. The fixed legacy importer produces schema 2, which normal Platform startup upgrades through the retained adjacent generations to schema 8. Event and projection writes can share the caller's authorized PG transaction with presentation changes; that caller owns the final lease fence and commit.
+The cloud-native database advances through adjacent migrations to schema 12. Existing generations retain their assets and records. Separate temporary assistant-presentation tables store JSON text; canonical Session events remain the recovery source. The fixed legacy importer produces schema 2, which normal Platform startup upgrades through the retained adjacent generations to schema 12. Event and projection writes can share the caller's authorized PG transaction with presentation changes; that caller owns the final lease fence and commit.
 
 Native foreground Shell admission requires the actual claimed input cohort and current open step. Platform retains the original requested and applied timeout, grant digest and credential version. Its captured Runner request uses bounded tail output and only the managed `DSH_SHELL`, `DSH_HOME` and `DSH_SESSION_ID` variables. Results belong to the original tool call; these executions never create a sandbox-result continuation. The retained original token can recover the same receipt and request cleanup after expiry, while account revocation and archival still suppress output reads. The first cancellation cause is durable and immutable; automatic ownership loss records abort. Native Runner cancellation carries that stored cause. Preparation without a result uses the stored cause; a real result retains the Runner's `timedOut` fact, so a late Host deadline cannot turn success into timeout. Cancellation acceptance is not stop confirmation. Missing outcomes remain uncertain until the exact captured executor is stopped; an unverifiable outcome closes as `closed_unknown`. Retained receipt-style executions keep their continuation delivery.
 
@@ -134,6 +135,8 @@ Current constraints are explicit at the corresponding native API:
 - A live Session refuses cold title or model writes. Archival without `stopActivity` refuses active work; archival with it issues durable cancellation requests before returning.
 - Search retains the authorized corpus within configured input quotas for its temporary native index; it does not retain a reusable cross-request search index.
 - Cloud execution, Office and connector workers need their explicit private deployment configuration and real-service acceptance. Disabled composition does not establish those feature paths.
+
+Native permission checkpoints carry the exact preset, sandbox and approval overrides privately to the account Runtime. The maintained native permission service resolves the current name using that account’s live catalog and defaults at the same committed watermark. Native unary byte results retain the original Gateway codec and browser multipart framing across the bounded private JSON relay.
 
 <a id="dev-note"></a>
 ### Dev Note

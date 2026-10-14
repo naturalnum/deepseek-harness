@@ -39,7 +39,7 @@ export function apply(ctx: Context, config: SearchConfig): void {
         ctx.powerEvolveRuntime.assertGrant(captured)
         return Promise.resolve(captured.token)
       },
-      recordRequest: request => {
+      recordRequest: (request) => {
         if (!captured || !agent) throw new PlatformError(403, 'native_execution_scope_missing')
         ctx.powerEvolveRuntime.assertGrant(captured)
         agent.session.append('web/deepseek-search-llm-request', request)

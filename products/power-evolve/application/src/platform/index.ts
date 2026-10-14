@@ -12,7 +12,12 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 import schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
 import { Pool } from 'pg'
-import { createRequest, filesListRequest, fileReadRequest, filePutRequest, sessionFilesListRequest, sessionFileReadRequest, sessionFilePutRequest, listRequest, loginRequest, modelsListRequest, pageRequest, promptRequest, sessionId, sessionRequest, settingsUpdateRequest, builtinSkillInstallRequest, skillInstallRequest, skillRequest, skillResourceRequest, skillToggleRequest, skillUploadTicketRequest, sshCreateTicketRequest, sshToggleRequest, sshCheckRequest, sshCallRefRequest, sshExecuteProposeRequest, sshExecuteRefRequest, settings, workspaceCreateRequest, PlatformError } from '../contracts.ts'
+import { createRequest, filesListRequest, fileReadRequest, filePutRequest, sessionFilesListRequest,
+  sessionFileReadRequest, sessionFilePutRequest, listRequest, loginRequest, modelsListRequest, pageRequest,
+  promptRequest, sessionId, sessionRequest, settingsUpdateRequest, builtinSkillInstallRequest,
+  skillInstallRequest, skillRequest, skillResourceRequest, skillToggleRequest, skillUploadTicketRequest,
+  sshCreateTicketRequest, sshToggleRequest, sshCheckRequest, sshCallRefRequest, sshExecuteProposeRequest,
+  sshExecuteRefRequest, settings, workspaceCreateRequest, PlatformError } from '../contracts.ts'
 import { bearer, readJson, sendFailure, sendJson } from '../http.ts'
 import { initializeDatabase, transaction } from './database.ts'
 import { hashPassword, IdentityService } from './identity.ts'
@@ -50,7 +55,8 @@ import { NativeAssistantRead, nativeAssistantPosition } from './native-assistant
 import { pruneNativeAssistant, releaseNativeAssistant } from './native-assistant-lifecycle.ts'
 import { NativeWorkspaceRead } from './native-workspace-read.ts'
 import { nativeDirectoryList, nativeDirectoryCreate, nativeWorkspaceCreate, nativeWorkspaceRename,
-  nativeWorkspaceDelete, nativeWorkspaceOrder, nativeSessionOrder, nativeSessionArchive, nativeSessionGrouping } from '../native-workspace-contracts.ts'
+  nativeWorkspaceDelete, nativeWorkspaceOrder, nativeSessionOrder, nativeSessionArchive,
+  nativeSessionGrouping } from '../native-workspace-contracts.ts'
 import { requestId } from '../contracts.ts'
 import { NativeSessionCommands } from './native-session-commands.ts'
 import { nativeSessionRename, nativeSessionFork, nativeSessionSearch } from '../native-session-contracts.ts'
@@ -228,6 +234,7 @@ export const Config = schema.object({
   maxEventBytes: schema.number().step(1).min(1024).required(), maxRequestBytes: schema.number().step(1).min(1024).required(),
   nativeWebSearchUrl: schema.string().default('https://api.deepseek.com/anthropic/v1/messages'),
   nativeWebSearchMaxUses: schema.number().step(1).min(1).default(5),
+  nativeDerivedCleanupMaxSessions: schema.number().step(1).min(1).max(1024).default(32),
   nativeSubagentMaxChildren: schema.number().step(1).min(1).default(32),
   nativeSubagentMaxDepth: schema.number().step(1).min(1).default(8),
   nativeInteractiveLifetimeMs: schema.number().step(1).min(1000).default(900000),
@@ -591,7 +598,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const runtimeAuthority = new NativeRuntimeAuthority(pool)
   const nativeInteractive = new NativeInteractive(tasks, runtimeAuthority, { lifetimeMs: config.nativeInteractiveLifetimeMs,
     maxActivePerUser: config.nativeInteractiveMaxActivePerUser, leaseMs: config.leaseMs })
-  const nativeSubagents = new NativeSubagents(tasks, { maxChildren: config.nativeSubagentMaxChildren, maxDepth: config.nativeSubagentMaxDepth,
+  const nativeSubagents = new NativeSubagents(tasks, { maxChildren: config.nativeSubagentMaxChildren,
+    maxDepth: config.nativeSubagentMaxDepth,
     lifetimeMs: config.nativeSubagentLifetimeMs, leaseMs: config.leaseMs })
   const nativeAssistantReader = new NativeAssistantRead(nativeAssistantLimits, {
     maxOpeningBytes: config.nativeAssistantMaxOpeningBytes, maxBaselineChunks: config.nativeAssistantMaxBaselineChunks,
@@ -757,7 +765,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     }
     if (req.method !== 'POST') throw new PlatformError(404, 'not_found')
     if (path === '/runtime/web-search/messages') {
-      await proxyNativeWebSearch(tasks, { maxUses: config.nativeWebSearchMaxUses, url: config.nativeWebSearchUrl, apiKey: modelKey.trim(), timeoutMs: config.modelTimeoutMs,
+      await proxyNativeWebSearch(tasks, { maxUses: config.nativeWebSearchMaxUses, url: config.nativeWebSearchUrl,
+        apiKey: modelKey.trim(), timeoutMs: config.modelTimeoutMs,
         maxRequestBytes: config.maxRequestBytes, maxResponseBytes: config.maxModelResponseBytes }, req, res); return
     }
     if (path === '/model/v1/messages') {
@@ -826,8 +835,10 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         if (!stdioV2) throw new PlatformError(503, 'stdio_v2_unavailable')
         switch (path) {
           case '/approvals/stdio-v2/list': sendJson(res, await stdioV2.actions.approvalList(token, listRequest.parse(input))); return
-          case '/approvals/stdio-v2/inspect': sendJson(res, await stdioV2.authorization.inspect(token, stdioActionRequestV2.parse(input).actionId)); return
-          case '/approvals/stdio-v2/decide': sendJson(res, await stdioV2.authorization.decide(token, stdioApprovalRequestV2.parse(input))); return
+          case '/approvals/stdio-v2/inspect': sendJson(res, await stdioV2.authorization.inspect(token,
+            stdioActionRequestV2.parse(input).actionId)); return
+          case '/approvals/stdio-v2/decide': sendJson(res, await stdioV2.authorization.decide(token,
+            stdioApprovalRequestV2.parse(input))); return
           default: throw new PlatformError(404, 'not_found')
         }
       }
@@ -836,7 +847,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         case '/approvals/list': z.object({}).strict().parse(input); sendJson(res, await connectors.list(user)); return
         case '/approvals/permissions': z.object({}).strict().parse(input); sendJson(res, await connectors.permissions(user)); return
         case '/approvals/permission': {
-          const value = z.object({ capability: z.enum(['trial_note_query', 'trial_note_append']), enabled: z.boolean() }).strict().parse(input)
+          const value = z.object({ capability: z.enum(['trial_note_query', 'trial_note_append']),
+            enabled: z.boolean() }).strict().parse(input)
           sendJson(res, await connectors.setPermission(user, value.capability, value.enabled)); return
         }
         case '/approvals/decide': {
@@ -866,10 +878,13 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       sendJson(res, await nativeInteractive.open(token, nativeInteractiveOpen.parse(await readJson(req, config.maxRequestBytes)))); return
     }
     if (path === '/runtime/cleanup') {
-      sendJson(res, await cleanupNativeRuntime(pool, token, nativeRuntimeCleanupRequest.parse(await readJson(req, config.maxRequestBytes)), config)); return
+      sendJson(res, await cleanupNativeRuntime(pool, token, nativeRuntimeCleanupRequest.parse(await readJson(req,
+        config.maxRequestBytes)), config)); return
     }
     if (path.startsWith('/runtime/user/')) {
-      sendJson(res, await routeNativeRuntime(runtimeAuthority, tasks, nativeIntents, path, token, await readJson(req, 4096), { limits: config, maxSessions: config.nativeIntentReconcileLimit })); return
+      const input: unknown = await readJson(req, 4096)
+      sendJson(res, await routeNativeRuntime(runtimeAuthority, tasks, nativeIntents, path, token,
+        input, { limits: config, maxSessions: config.nativeDerivedCleanupMaxSessions })); return
     }
     if (path === '/runtime/claim' || path === '/runtime/claim-archive-stop'
       || path === NATIVE_RETAINED_ROUTES.reconcile || path === NATIVE_RETAINED_ROUTES.resolve) {
@@ -1001,7 +1016,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         }
         case '/runtime/interactive/status': {
           z.object({}).strict().parse(input)
-          const status = await transaction(pool, async client => {
+          const status = await transaction(pool, async (client) => {
             const owner = await tasks.authorized(client, token)
             if (owner.source !== 'native_interactive') throw new PlatformError(403, 'native_interactive_required')
             const pending = await client.query("SELECT 1 FROM pe_operations WHERE session_id=$1 AND id<>$2 AND state IN ('queued','running') LIMIT 1", [owner.id, owner.operation_id])
@@ -1017,9 +1032,11 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
           const request = z.object({ header: z.unknown() }).strict().parse(input)
           sendJson(res, await nativeSubagents.create(token, request.header)); return
         }
-        case '/runtime/tools/register': sendJson(res, await registerNativeToolNames(tasks, token, nativeToolRegistration.parse(input))); return
+        case '/runtime/tools/register': sendJson(res, await registerNativeToolNames(tasks, token,
+          nativeToolRegistration.parse(input))); return
         case '/runtime/snapshot': z.object({}).strict().parse(input); sendJson(res, await events.runtimeSnapshot(token)); return
-        case '/runtime/append': sendJson(res, await events.append(token, z.object({ events: z.array(z.json()).max(256) }).strict().parse(input).events)); return
+        case '/runtime/append': sendJson(res, await events.append(token,
+          z.object({ events: z.array(z.json()).max(256) }).strict().parse(input).events)); return
         case '/runtime/native-assistant/release': {
           const value = z.object({ publisherId: z.uuid() }).strict().parse(input)
           sendJson(res, await releaseNativeAssistant(tasks, token, value.publisherId)); return
@@ -1034,7 +1051,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         }
         case '/runtime/renew': z.object({}).strict().parse(input); sendJson(res, await tasks.renew(token)); return
         case '/runtime/finish': {
-          const result = z.object({ outcome: z.enum(['completed', 'failed']), errorCode: z.string().max(80).nullable() }).strict().parse(input)
+          const result = z.object({ outcome: z.enum(['completed', 'failed']),
+            errorCode: z.string().max(80).nullable() }).strict().parse(input)
           await tasks.finish(token, result.outcome, result.errorCode)
           sendJson(res, { ok: true }); return
         }
@@ -1489,5 +1507,6 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       sendFailure(res, error)
     }
   }))
-  await writeFile(config.readyFile, JSON.stringify({ pid: process.pid, url: `http://${ctx.webServer.host}:${ctx.webServer.port}`, instanceId }), { mode: 0o600 })
+  await writeFile(config.readyFile, JSON.stringify({ pid: process.pid,
+    url: `http://${ctx.webServer.host}:${ctx.webServer.port}`, instanceId }), { mode: 0o600 })
 }

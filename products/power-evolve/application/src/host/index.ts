@@ -16,7 +16,10 @@ import type {} from '@deepseek-ai/dsh-typert-registry'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import { TypertRemoteService, Remote, type PeerScope, type PeerId, type InvocationDescriptor } from '@deepseek-ai/dsh-typert-protocol'
-import { settings, createRequest, sessionFilesListRequest, sessionFileReadRequest, listRequest, pageRequest, promptRequest, settingsUpdateRequest, builtinSkillInstallRequest, skillInstallRequest, skillRequest, skillToggleRequest, sshCreateTicketRequest, sshToggleRequest, sshCheckRequest, sshCallRefRequest, sshCheckView, sshExecuteRefRequest, sshExecuteView, PlatformError } from '../contracts.ts'
+import { settings, createRequest, sessionFilesListRequest, sessionFileReadRequest, listRequest, pageRequest,
+  promptRequest, settingsUpdateRequest, builtinSkillInstallRequest, skillInstallRequest, skillRequest,
+  skillToggleRequest, sshCreateTicketRequest, sshToggleRequest, sshCheckRequest, sshCallRefRequest, sshCheckView,
+  sshExecuteRefRequest, sshExecuteView, PlatformError } from '../contracts.ts'
 import { readJson, sendFailure, sendJson, writeLine } from '../http.ts'
 import { nativeInputQueueCommand } from '../native-input-ledger-contracts.ts'
 import { serveNativeUi } from '../ui.ts'
@@ -75,7 +78,8 @@ const requests = { ...mcpManagementRequests, ...sshManagementRequests, ...stdioM
   executionResolutionInspect: executionResolutionInspectRequest,
   executionResolutionStatus: executionResolutionStatusRequest }
 const endpoint = { ...mcpManagementEndpoints, ...sshManagementEndpoints, ...stdioManagementEndpointsV2,
-  ...EXECUTION_RESOLUTION_ROUTES, me: '/identity/me', logout: '/identity/logout', modelsList: '/identity/models', settingsUpdate: '/identity/settings/update',
+  ...EXECUTION_RESOLUTION_ROUTES, me: '/identity/me', logout: '/identity/logout', modelsList: '/identity/models',
+  settingsUpdate: '/identity/settings/update',
   accountCapabilities: ACCOUNT_ROUTES.capabilities,
   create: '/sessions/create', list: '/sessions/list', prompt: '/sessions/prompt', page: '/sessions/page',
   filesList: '/files/session/list', filesRead: '/files/session/read',
@@ -321,7 +325,8 @@ class ProductRemote extends TypertRemoteService {
 }
 
 export const name = 'power-evolve-host'
-export const inject = ['powerEvolveRuntime', 'sessionPersistence', 'agents', 'sessions', 'tools', 'webServer', 'typert', 'typertGateway', 'agentLoop', 'pluginManager', 'sessionTitle']
+export const inject = ['powerEvolveRuntime', 'sessionPersistence', 'agents', 'sessions', 'tools', 'webServer',
+  'typert', 'typertGateway', 'agentLoop', 'pluginManager', 'sessionTitle']
 export const Config = schema.object({
   origin: schema.string().required(), platformOrigin: schema.string().required(),
   concurrency: schema.number().step(1).min(1).required(), pollMs: schema.number().min(50).required(),
@@ -372,28 +377,30 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     runtimeUserId === '' ? undefined : token => ctx.powerEvolveRuntime.verifyBroker(token))
   ctx.provide('powerEvolveBrowserAuth', browserAuth)
   const installRemote = (remoteCtx: Context) => {
-  installNativeRemote(remoteCtx, browserAuth, config.origin, config.pollMs,
-    config.maxRequestBytes, config.maxStreams, config.profileAdministrators,
-    { maxGenerationMs: config.nativeFollowMaxGenerationMs, maxGenerationItems: config.nativeFollowMaxGenerationItems,
-      maxGenerationBytes: config.nativeFollowMaxGenerationBytes }, config.nativeStreamSendTimeoutMs,
-    config.officePreviewEnabled ? { pollMs: config.officePreviewPollMs,
-      renderDeadlineMs: config.officePreviewRenderDeadlineMs, cancelTimeoutMs: config.officePreviewCancelTimeoutMs,
-      maxActiveRenders: config.officePreviewMaxActiveRenders } : undefined, config.nativeRuntimeRouting)
+    installNativeRemote(remoteCtx, browserAuth, config.origin, config.pollMs,
+      config.maxRequestBytes, config.maxStreams, config.profileAdministrators,
+      { maxGenerationMs: config.nativeFollowMaxGenerationMs, maxGenerationItems: config.nativeFollowMaxGenerationItems,
+        maxGenerationBytes: config.nativeFollowMaxGenerationBytes }, config.nativeStreamSendTimeoutMs,
+      config.officePreviewEnabled ? { pollMs: config.officePreviewPollMs,
+        renderDeadlineMs: config.officePreviewRenderDeadlineMs, cancelTimeoutMs: config.officePreviewCancelTimeoutMs,
+        maxActiveRenders: config.officePreviewMaxActiveRenders } : undefined, config.nativeRuntimeRouting)
   }
   if (runtimeUserId === '') installRemote(ctx)
-  else await ctx.inject(['agentPresets', 'nativeRuntimeSessions', 'nativeRuntimeExecution'], installRemote)
+  else await ctx.inject(['agentPresets', 'permissionPresets', 'nativeRuntimeSessions', 'nativeRuntimeExecution'], installRemote)
   const tokens = new WeakMap<PeerScope, string>()
   ctx.plugin(ProductRemote, { tokens, pollMs: config.pollMs, platformOrigin: config.platformOrigin })
   const invocations: InvocationDescriptor[] = Object.entries(requests).map(([method, request]) => ({
     id: `@power-evolve/application#powerEvolve/${method}`, service: 'powerEvolve', namespace: 'powerEvolve', method,
     invocation: { kind: 'direct' },
-    parameters: [{ name: 'request', wire: 'request', source: 'json', codec: { mode: 'strict', typeSymbol: `PowerEvolve/${method}`, create: () => request } }],
+    parameters: [{ name: 'request', wire: 'request', source: 'json', codec: { mode: 'strict',
+      typeSymbol: `PowerEvolve/${method}`, create: () => request } }],
     result: { mode: 'strict', typeSymbol: 'PowerEvolve/Json', create: () => z.json() },
     ...(method === 'follow' ? { mode: 'stream' as const } : {}),
     ...(['follow', 'filesDownloadPrepare'].includes(method) ? { cancellation: { parameter: 'signal' } } : {}),
   }))
-  ctx.typert.register({ package: '@power-evolve/application', face: 'host', schemas: [], model: { services: [], events: [], objects: [] }, invocations })
-  ctx.sessions.registerMessageProjection(imageOffloadProjection)
+  ctx.typert.register({ package: '@power-evolve/application', face: 'host', schemas: [], model: { services: [],
+    events: [], objects: [] }, invocations })
+  if (runtimeUserId === '') ctx.sessions.registerMessageProjection(imageOffloadProjection)
   new LegacyMigrationHostImages(ctx, ctx.powerEvolveRuntime, resolveNativeImageOptions(config))
   if (!config.nativeRuntimeRouting && config.nativeShellEnabled && runtimeUserId === '') {
     if (config.shellTimeoutMs > config.shellMaxTimeoutMs) throw new Error('shellTimeoutMs exceeds shellMaxTimeoutMs')
@@ -401,7 +408,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       timeoutMs: config.shellTimeoutMs, maxTimeoutMs: config.shellMaxTimeoutMs, maxOutputBytes: config.shellMaxOutputBytes })
     new ShellEnvRegistry(ctx, { dshHome: '/home/agent/.dsh' })
   }
-  if (!config.nativeRuntimeRouting) await ctx.inject(runtimeUserId === '' ? ['attachments'] : ['attachments', 'agentPresets', 'nativeRuntimeExecution', 'sandboxPolicy', 'sessionProjections'], (imageCtx) => {
+  if (!config.nativeRuntimeRouting) await ctx.inject(runtimeUserId === '' ? ['attachments'] : ['attachments',
+    'agentPresets', 'nativeRuntimeExecution', 'sandboxPolicy', 'sessionProjections'], (imageCtx) => {
     const scheduler = new Scheduler(imageCtx, config)
     if (runtimeUserId !== '') {
       imageCtx.on('agent/created', async ({ agent }) => {
@@ -518,7 +526,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       if (peer) { tokens.delete(peer); await peer.dispose() }
     }
   }))
-  await writeFile(config.readyFile, JSON.stringify({ pid: process.pid, url: `http://${ctx.webServer.host}:${ctx.webServer.port}`, instanceId,
+  await writeFile(config.readyFile, JSON.stringify({ pid: process.pid,
+    url: `http://${ctx.webServer.host}:${ctx.webServer.port}`, instanceId,
     ...(runtimeUserId === '' ? {} : { runtimeUserId, runtimeId: ctx.powerEvolveRuntime.workerId,
       generation: ctx.powerEvolveRuntime.runtimeGeneration }) }), { mode: 0o600 })
 }

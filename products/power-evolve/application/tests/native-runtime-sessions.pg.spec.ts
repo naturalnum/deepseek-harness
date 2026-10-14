@@ -38,7 +38,8 @@ import { retainedTestStore } from './native-retained-intent-fixture.ts'
 const limits = { maxEventBytes: 524288, maxHistoryEvents: 1000, maxHistoryBytes: 8388608,
   leaseMs: 30000, maxPendingPerUser: 8, maxActivePerUser: 2 }
 
-test.each(['closing', 'publishing', 'failed-cleanup'] as const)('real cold Agent setup %s keeps original PG durability and lifetime ownership', mode => cloudFixture(async f => {
+test.each(['closing', 'publishing', 'failed-cleanup',
+  'normal-failed-cleanup'] as const)('real cold Agent setup %s keeps original PG durability and lifetime ownership', mode => cloudFixture(async (f) => {
   const tasks = new TaskStore(f.pool, limits), events = new EventStore(tasks, limits), authority = new NativeRuntimeAuthority(f.pool)
   const issued = await authority.issue({ userId: f.alice.user.userId, runtimeId: randomUUID(), generation: 1, lifetimeMs: 60000 })
   const interactive = new NativeInteractive(tasks, authority, { leaseMs: 30000, lifetimeMs: 30000, maxActivePerUser: 2 })
@@ -46,17 +47,20 @@ test.each(['closing', 'publishing', 'failed-cleanup'] as const)('real cold Agent
   const presentation = { maxBatchItems: 32, maxBatchBytes: 1048576, maxItemBytes: 1048576,
     maxActiveBytes: 4194304, maxRingItems: 1024, maxRingBytes: 4194304, ttlMs: 20000, maxEventBytes: limits.maxEventBytes }
   const publisher = new NativeAssistantStore(tasks, events, presentation)
-  const inputLimits = { maxEventBytes: limits.maxEventBytes, maxHistoryBytes: limits.maxHistoryBytes, maxHistoryEvents: limits.maxHistoryEvents, maxAcceptedAuditBytes: 2097152, maxRevisionBytes: 262144,
+  const inputLimits = { maxEventBytes: limits.maxEventBytes, maxHistoryBytes: limits.maxHistoryBytes,
+    maxHistoryEvents: limits.maxHistoryEvents, maxAcceptedAuditBytes: 2097152, maxRevisionBytes: 262144,
     maxCohortInputs: 128, maxCommandBytes: 4194304 }
-  const frames = new NativeExecutionFrames(tasks, writers, { maxHistoryEvents: limits.maxHistoryEvents, maxHistoryBytes: limits.maxHistoryBytes, maxFrameBytes: 2097152, maxCohortInputs: 128 })
+  const frames = new NativeExecutionFrames(tasks, writers, { maxHistoryEvents: limits.maxHistoryEvents,
+    maxHistoryBytes: limits.maxHistoryBytes, maxFrameBytes: 2097152, maxCohortInputs: 128 })
   const verifier: ConstructorParameters<typeof NativeInputLedger>[4] = (client, command) => frames.verifyInTransaction(client, command)
   const ledger = new NativeInputLedger(tasks, writers, events, inputLimits, verifier)
   const config = { input: inputLimits, presentation }, bridge = new NativeInputCommit(tasks, ledger, frames, publisher, writers, config)
-  const turn = new NativeTurnContinuationV2(tasks, writers, verifier, { ...inputLimits, leaseMs: limits.leaseMs, maxActivePerUser: limits.maxActivePerUser, assistant: presentation }, frames)
+  const turn = new NativeTurnContinuationV2(tasks, writers, verifier, { ...inputLimits, leaseMs: limits.leaseMs,
+    maxActivePerUser: limits.maxActivePerUser, assistant: presentation }, frames)
   const retained = retainedTestStore({ tasks, writers, publisher, ledger, frames, bridge }, config, turn)()
   const first = await tasks.create(f.alice.user, requestId.parse(randomUUID()), f.alice.token, undefined, 'standard')
   const second = await tasks.create(f.alice.user, requestId.parse(randomUUID()), f.alice.token, undefined, 'standard')
-  if (mode !== 'publishing') await transaction(f.pool, async client => {
+  if (mode === 'closing' || mode === 'failed-cleanup') await transaction(f.pool, async (client) => {
     const row = (await client.query<OwnedAppendState>('SELECT id,header,event_count,event_bytes FROM pe_sessions WHERE id=$1 FOR UPDATE', [first.sessionId])).rows[0]
     if (!row) throw new Error('Owned cold fixture Session missing')
     const header = headerSchema.parse(row.header), native = Session.create(header.id, undefined, header)
@@ -76,10 +80,11 @@ test.each(['closing', 'publishing', 'failed-cleanup'] as const)('real cold Agent
           case NATIVE_RETAINED_ROUTES.execute: sendJson(response, await retained.execute(token, input)); return
           case '/runtime/user/identity': {
             const actor = await authority.authenticate(token)
-            const account = await f.pool.query('SELECT settings FROM pe_users WHERE id=$1', [actor.userId])
+            const account = await f.pool.query<{ settings: unknown }>('SELECT settings FROM pe_users WHERE id=$1', [actor.userId])
             sendJson(response, { ...actor, settings: account.rows[0]?.settings }); return
           }
-          case '/runtime/user/interactive/open': calls++; sendJson(response, await interactive.open(token, z.object({ sessionId, requestId, browserToken: z.string(), candidateToken: z.string() }).parse(input))); return
+          case '/runtime/user/interactive/open': calls++; sendJson(response, await interactive.open(token,
+            z.object({ sessionId, requestId, browserToken: z.string(), candidateToken: z.string() }).parse(input))); return
           case '/runtime/native-writer/release': sendJson(response, await routeNativeWriter(writers, request.url, token, input)); return
           case '/runtime/finish': {
             const value = z.object({ outcome: z.enum(['completed', 'failed']), errorCode: z.string().nullable() }).parse(input)
@@ -113,17 +118,17 @@ test.each(['closing', 'publishing', 'failed-cleanup'] as const)('real cold Agent
     await declare(ctx, { id: 'standard', plugins: [] })
     // Only the external execution bind is held; AgentLoop, Session load, preset binding and PG Writer are real.
     ctx.provide('nativeRuntimeExecution', { bind: async () => { entered.resolve(undefined); await release.promise },
-      drain: async () => { if (mode === 'failed-cleanup') throw new Error('fixture execution cleanup proof failed') } })
+      drain: async () => { if (mode === 'failed-cleanup' || mode === 'normal-failed-cleanup') throw new Error('fixture execution cleanup proof failed') } })
     const fiber = await ctx.plugin(NativeRuntimeSessions, { renewMs: 60000 })
-    await ctx.inject(['nativeRuntimeSessions'], owned => { service = owned.nativeRuntimeSessions })
+    await ctx.inject(['nativeRuntimeSessions'], (owned) => { service = owned.nativeRuntimeSessions })
     if (!service) throw new Error('Actual interactive service inactive')
     ctx.on('agent/created', ({ agent }) => { published.push(agent.id) })
     const opening = service.ensure(first.sessionId, f.alice.token)
-    const result = opening.then(() => undefined, error => error as unknown)
-    await Promise.race([entered.promise, result.then(error => { if (error) throw error })])
-    if (mode !== 'publishing') {
+    const result = opening.then(() => undefined, (error: unknown) => error)
+    await Promise.race([entered.promise, result.then((error) => { if (error) throw error })])
+    if (mode === 'closing' || mode === 'failed-cleanup') {
       let disposed = false
-      const disposal = fiber.dispose().then(() => { disposed = true }, error => { disposed = true; return error as unknown })
+      const disposal = fiber.dispose().then(() => { disposed = true }, (error: unknown) => { disposed = true; return error })
       await expect(service.ensure(second.sessionId, f.alice.token)).rejects.toMatchObject({ code: 'native_interactive_closing' })
       expect(disposed).toBe(false)
       expect(calls).toBe(1)
@@ -145,19 +150,29 @@ test.each(['closing', 'publishing', 'failed-cleanup'] as const)('real cold Agent
       const agent = await opening
       expect(agent.id).toBe(first.sessionId)
       expect(published).toEqual([first.sessionId])
-      expect((await f.pool.query('SELECT event FROM pe_events WHERE session_id=$1 ORDER BY seq', [first.sessionId])).rows)
-        .toEqual([{ event: expect.objectContaining({ seq: 0, type: 'session/end-seed', data: {} }) },
-          { event: expect.objectContaining({ seq: 1, type: 'sandbox/mode', data: { mode: 'read-only' } }) }])
+      const committed = (await f.pool.query<{ event: unknown }>('SELECT event FROM pe_events WHERE session_id=$1 ORDER BY seq',
+        [first.sessionId])).rows
+      expect(committed).toHaveLength(2)
+      expect(committed[0]?.event).toMatchObject({ seq: 0, type: 'session/end-seed', data: {} })
+      expect(committed[1]?.event).toMatchObject({ seq: 1, type: 'sandbox/mode', data: { mode: 'read-only' } })
       expect((await f.pool.query('SELECT * FROM pe_native_input_origins WHERE session_id=$1', [first.sessionId])).rowCount).toBe(0)
-      await service.close(first.sessionId)
-      expect((await f.pool.query('SELECT state,error_code FROM pe_operations WHERE session_id=$1', [first.sessionId])).rows)
-        .toEqual([{ state: 'completed', error_code: null }])
+      if (mode === 'normal-failed-cleanup') {
+        await expect(service.close(first.sessionId)).rejects.toBeInstanceOf(AggregateError)
+        await expect(service.shutdown()).rejects.toBeInstanceOf(AggregateError)
+        expect((await f.pool.query('SELECT state,error_code FROM pe_operations WHERE session_id=$1', [first.sessionId])).rows)
+          .toEqual([{ state: 'failed', error_code: 'native_interactive_close_failed' }])
+      } else {
+        await service.close(first.sessionId)
+        expect((await f.pool.query('SELECT state,error_code FROM pe_operations WHERE session_id=$1', [first.sessionId])).rows)
+          .toEqual([{ state: 'completed', error_code: null }])
+      }
     }
     expect((await f.pool.query('SELECT * FROM pe_operations WHERE session_id=$1', [second.sessionId])).rowCount).toBe(0)
   } finally {
     release.resolve(undefined)
     await ctx.fiber.dispose()
-    server.closeAllConnections(); if (server.listening) await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()))
+    server.closeAllConnections(); if (server.listening) await new Promise<void>((resolve,
+      reject) => server.close((error) => { if (error) reject(error); else resolve() }))
     await Promise.allSettled(pending)
   }
 }))

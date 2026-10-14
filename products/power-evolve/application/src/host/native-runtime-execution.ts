@@ -22,17 +22,17 @@ export type Config = ReturnType<typeof Config>
 export default class NativeRuntimeExecution extends Service {
   static inject = ['powerEvolveRuntime', 'agents', 'sessions', 'sessionPersistence', 'sandboxPolicy']
   static Config = Config
+  private shutdownPromise: Promise<void> | undefined
+  private closing = false
   private readonly ownerFiber: Fiber
-  private readonly bindings = new Map<Agent, { grant: Grant; binding: ReturnType<typeof createNativeExecutionHttpBinding>; owner: Context }>()
+  private readonly bindings = new Map<Agent, { grant: Grant
+    binding: ReturnType<typeof createNativeExecutionHttpBinding>
+    owner: Context }>()
 
   constructor(private readonly ownerContext: Context, private readonly config: Config) {
     super(ownerContext, 'nativeRuntimeExecution')
     this.ownerFiber = ownerContext.fiber
-    ownerContext.effect(() => async () => {
-      const closed = await Promise.allSettled([...this.bindings.keys()].map(agent => this.drain(agent)))
-      const failures = closed.flatMap(item => item.status === 'rejected' ? [item.reason as unknown] : [])
-      if (failures.length) throw new AggregateError(failures, 'Native execution shutdown failed')
-    })
+    ownerContext.effect(() => () => this.shutdown())
     if (ownerContext.powerEvolveRuntime.config.runtimeUserId === '') throw new Error('Native runtime execution requires a fixed account')
     installNativeExecutionProviders(ownerContext, { defaultMode: ownerContext.sandboxPolicy.defaultMode,
       resolve: () => {
@@ -49,8 +49,20 @@ export default class NativeRuntimeExecution extends Service {
     })
   }
 
+  /** Explicitly join every original binding and retain cleanup rejection outside Cordis's logging-only teardown.
+   * @returns One cached result; failures preserve their exact binding identities for diagnosis and repeated drain.
+   */
+  shutdown(): Promise<void> {
+    this.closing = true
+    return this.shutdownPromise ??= (async () => {
+      const closed = await Promise.allSettled([...this.bindings.keys()].map(agent => this.drain(agent)))
+      const failures = closed.flatMap(item => item.status === 'rejected' ? [item.reason as unknown] : [])
+      if (failures.length) throw new AggregateError(failures, 'Native execution shutdown failed')
+    })()
+  }
+
   private isClosing(): boolean {
-    return this.ownerFiber.state === FiberState.UNLOADING || this.ownerFiber.state === FiberState.DISPOSED
+    return this.closing || this.ownerFiber.state === FiberState.UNLOADING || this.ownerFiber.state === FiberState.DISPOSED
   }
 
   /** Resolve the current storage and permission generation before a native consumer starts work.

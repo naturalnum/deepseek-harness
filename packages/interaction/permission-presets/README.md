@@ -96,6 +96,8 @@ Mounting pins every live and future session: a genuinely fresh session gains the
 
 ### Catalog, projection, and optional command
 
+`viewKnobs(state)` presents an exact committed preset, sandbox and approval fold without activating a Session. It uses the same current catalog, composed defaults, selection ties and live Auto registration as the Session projection, so a durable remote store can retain knob events while the native owner derives presentation.
+
 The service requires `ctx.sessionProjections` and registers a `permissions` projection containing only `currentValue`. Its process-level `catalog()` Remote returns one complete selectable snapshot. Registering or removing Auto emits the payload-free `permission-presets/catalog-changed` notification, so clients subscribe first and then re-read the catalog without appending a Session event, publishing a Session projection frame, or changing Session sequence. The `/permission` command registers only when a `ctx.commands` registry is composed. Calls that derive the current preset or pin an initial selection fail explicitly when the projection key is absent.
 
 </details>

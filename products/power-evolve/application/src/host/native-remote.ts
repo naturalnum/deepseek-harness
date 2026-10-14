@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Duplex } from 'node:stream'
 import { setTimeout as delay } from 'node:timers/promises'
+import { NativeWireResult, nativeRuntimeResponse, sendNativeRuntimeResponse } from './native-rpc-response.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { RemoteStreamMuxServer, rejectRemoteStreamUpgrade } from '@deepseek-ai/dsh-api-gateway'
@@ -17,12 +18,14 @@ import { requestId, sessionId, PlatformError } from '../contracts.ts'
 import { nativeInputQueueCommand, inputCommandReceipt } from '../native-input-ledger-contracts.ts'
 import { nativeInputRecordDigest } from '../native-input-ledger-records.ts'
 import { nativeDirectoryList, nativeDirectoryCreate, nativeWorkspaceCreate, nativeWorkspaceRename,
-  nativeWorkspaceDelete, nativeWorkspaceOrder, nativeSessionOrder, nativeSessionArchive, nativeSessionGrouping } from '../native-workspace-contracts.ts'
+  nativeWorkspaceDelete, nativeWorkspaceOrder, nativeSessionOrder, nativeSessionArchive,
+  nativeSessionGrouping } from '../native-workspace-contracts.ts'
 import { nativeSessionRename, nativeSessionSearch, nativeSessionFork, nativeModelSelect } from '../native-session-contracts.ts'
 import { fileReceiptId, nativeFileAttachment, nativePromptContent, NATIVE_FILE_MAX_BYTES } from '../native-attachment-contracts.ts'
 import { readJson, sendFailure, sendJson } from '../http.ts'
 import type { BrowserAgentAuth } from './browser-auth.ts'
 import type {} from './scope.ts'
+import { nativePermissionKnobs, nativePermissionProjection } from './native-permission-projection.ts'
 import { followNativeSession, type NativeFollowLimits } from './native-session-follow.ts'
 import { nativeSettings } from './native-settings.ts'
 import { readPluginInventory } from '@deepseek-ai/dsh-host-plugin-inventory'
@@ -52,7 +55,7 @@ const workspaceBaseline = z.object({ items: z.array(workspace),
 const sessionSummary = z.object({ sessionId, updatedAt: z.number(), agentAvailable: z.boolean(),
   running: z.boolean(), blank: z.boolean(), cwd: z.string().optional(),
   projections: z.object({ kind: z.literal('sequenced'), asOfSeq: z.number().int().min(-1),
-    values: z.record(z.string(), z.json()) }).strict() }).loose()
+    values: z.record(z.string(), z.json()), permissionKnobs: nativePermissionKnobs.optional() }).strict() }).loose()
 const sessionList = z.object({ items: z.array(sessionSummary) }).strict()
 const fileScope = z.object({ workspaceFileScopeId: sessionId, path: z.string().min(1).max(1024) }).strict()
 const fileRead = fileScope.extend({ range: z.object({ offset: z.number().int().min(1).optional(),
@@ -79,26 +82,40 @@ function failure(error: unknown): { code: string; message: string; details: obje
   }
   if (error instanceof PlatformError) {
     const detail = error.details ?? {}
-    if (isAttachmentError(error)) return { code: 'session/attachment-invalid', message: 'Image attachment is unavailable.', details: { reason: error.code } }
-    if (error.code === 'native_image_not_referenced') return { code: 'session/attachment-invalid', message: 'Image is not referenced by this Session.', details: { reason: 'ATTACHMENT_NOT_REFERENCED' } }
-    if (error.code === 'model_image_unsupported') return { code: 'session/attachment-invalid', message: 'The selected model does not support image input.', details: { reason: 'MODEL_DOES_NOT_SUPPORT_IMAGES' } }
-    if (error.code === 'directory_unreadable') return { code: 'directory-picker/unreadable', message: 'Cloud directory is unavailable.', details: detail }
-    if (error.code === 'directory_exists') return { code: 'directory-picker/exists', message: 'Cloud directory already exists.', details: detail }
-    if (error.code === 'workspace_name_conflict') return { code: 'workspace/name-conflict', message: 'Workspace title is already in use.', details: detail }
-    if (error.code === 'native_move_invalid') return { code: 'workspace/move-invalid', message: 'Session is not a member of this Workspace.', details: detail }
-    if (error.code === 'native_session_active') return { code: 'workspace/session-active', message: 'Session still has active work.', details: detail }
+    if (isAttachmentError(error)) return { code: 'session/attachment-invalid',
+      message: 'Image attachment is unavailable.', details: { reason: error.code } }
+    if (error.code === 'native_image_not_referenced') return { code: 'session/attachment-invalid',
+      message: 'Image is not referenced by this Session.', details: { reason: 'ATTACHMENT_NOT_REFERENCED' } }
+    if (error.code === 'model_image_unsupported') return { code: 'session/attachment-invalid',
+      message: 'The selected model does not support image input.', details: { reason: 'MODEL_DOES_NOT_SUPPORT_IMAGES' } }
+    if (error.code === 'directory_unreadable') return { code: 'directory-picker/unreadable',
+      message: 'Cloud directory is unavailable.', details: detail }
+    if (error.code === 'directory_exists') return { code: 'directory-picker/exists',
+      message: 'Cloud directory already exists.', details: detail }
+    if (error.code === 'workspace_name_conflict') return { code: 'workspace/name-conflict',
+      message: 'Workspace title is already in use.', details: detail }
+    if (error.code === 'native_move_invalid') return { code: 'workspace/move-invalid',
+      message: 'Session is not a member of this Workspace.', details: detail }
+    if (error.code === 'native_session_active') return { code: 'workspace/session-active',
+      message: 'Session still has active work.', details: detail }
     if (error.code === 'native_session_archived') return { code: 'gateway/bad-request', message: 'Session is archived.', details: {} }
-    if (error.code === 'native_title_invalid') return { code: 'session/title-invalid', message: 'Session title must contain visible text.', details: detail }
-    if (error.code === 'native_search_invalid') return { code: 'gateway/bad-request', message: 'Search requires visible text without NUL, at most 500 UTF-16 code units.', details: {} }
+    if (error.code === 'native_title_invalid') return { code: 'session/title-invalid',
+      message: 'Session title must contain visible text.', details: detail }
+    if (error.code === 'native_search_invalid') return { code: 'gateway/bad-request',
+      message: 'Search requires visible text without NUL, at most 500 UTF-16 code units.', details: {} }
     if (error.code === 'native_search_cancelled') return { code: 'gateway/cancelled', message: 'The search was cancelled.', details: {} }
     if (error.code === 'native_search_timeout' || error.code === 'native_search_budget_exceeded'
       || error.code === 'native_search_unavailable') {
       return { code: 'gateway/service-unavailable', message: 'Session search is unavailable.', details: { reason: error.code } }
     }
-    if (error.code === 'attachment_not_staged') return { code: 'session/attachment-invalid', message: 'File was not staged for this Session request.', details: { reason: 'FILE_NOT_STAGED' } }
-    if (error.code === 'attachment_bytes_limit') return { code: 'gateway/arguments-invalid', message: 'Upload exceeds its file or owner byte limit.', details: {} }
-    if (error.code === 'attachment_count_limit') return { code: 'session/agent-busy', message: 'Session file capacity is unavailable.', details: { reason: 'CAPACITY' } }
-    if (error.code === 'native_fork_unavailable') return { code: 'session/fork-unavailable', message: 'The requested Session prefix cannot be forked.', details: detail }
+    if (error.code === 'attachment_not_staged') return { code: 'session/attachment-invalid',
+      message: 'File was not staged for this Session request.', details: { reason: 'FILE_NOT_STAGED' } }
+    if (error.code === 'attachment_bytes_limit') return { code: 'gateway/arguments-invalid',
+      message: 'Upload exceeds its file or owner byte limit.', details: {} }
+    if (error.code === 'attachment_count_limit') return { code: 'session/agent-busy',
+      message: 'Session file capacity is unavailable.', details: { reason: 'CAPACITY' } }
+    if (error.code === 'native_fork_unavailable') return { code: 'session/fork-unavailable',
+      message: 'The requested Session prefix cannot be forked.', details: detail }
     if (error.code === 'native_remote_not_enabled' || error.code === 'native_stream_not_enabled') {
       return { code: 'gateway/invocation-unavailable', message: 'Remote endpoint is not enabled', details: {} }
     }
@@ -106,15 +123,20 @@ function failure(error: unknown): { code: string; message: string; details: obje
       return { code: 'workspace/not-found', message: 'Workspace not found', details: {} }
     }
     if (error.code === 'file_not_found') return { code: 'workspace-file/not-found', message: 'File not found', details: { path: '' } }
-    if (error.code === 'file_not_directory') return { code: 'workspace-file/not-directory', message: 'Path is not a directory', details: { path: '', kind: 'file' } }
+    if (error.code === 'file_not_directory') return { code: 'workspace-file/not-directory',
+      message: 'Path is not a directory', details: { path: '', kind: 'file' } }
     if (error.code === 'file_not_text') return { code: 'workspace-file/not-text', message: 'File is not UTF-8 text', details: { path: '' } }
-    if (error.code === 'file_too_large') return { code: 'workspace-file/too-large', message: 'File exceeds read limit', details: { path: '', limit: 32 * 1024 * 1024 } }
-    if (error.code === 'invalid_path') return { code: 'workspace-file/outside-workspace', message: 'File path is unavailable', details: { path: '' } }
-    if (error.code === 'invalid_execution_target') return { code: 'gateway/arguments-invalid', message: 'Invalid execution target', details: {} }
+    if (error.code === 'file_too_large') return { code: 'workspace-file/too-large',
+      message: 'File exceeds read limit', details: { path: '', limit: 32 * 1024 * 1024 } }
+    if (error.code === 'invalid_path') return { code: 'workspace-file/outside-workspace',
+      message: 'File path is unavailable', details: { path: '' } }
+    if (error.code === 'invalid_execution_target') return { code: 'gateway/arguments-invalid',
+      message: 'Invalid execution target', details: {} }
     if (error.status === 404) return { code: 'session/not-found', message: 'Session not found', details: {} }
     if (error.status === 401 || error.status === 403) return { code: 'gateway/forbidden', message: 'Access denied', details: {} }
     if (error.status === 409) return { code: 'session/conflict', message: 'Session request conflicts with stored state', details: {} }
-    if (error.status === 429) return { code: 'session/agent-busy', message: 'Session capacity is unavailable', details: { reason: 'CAPACITY' } }
+    if (error.status === 429) return { code: 'session/agent-busy', message: 'Session capacity is unavailable',
+      details: { reason: 'CAPACITY' } }
   }
   if (error instanceof z.ZodError) return { code: 'gateway/arguments-invalid', message: 'Invalid Remote request', details: {} }
   return { code: 'gateway/service-unavailable', message: 'Remote request unavailable', details: {} }
@@ -165,6 +187,9 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
   nativeRuntimeRouting = false): void {
   const tokens = new WeakMap<PeerScope, string>()
   const call: NativeCall = (path, token, input, signal) => ctx.powerEvolveRuntime.call(path, token, input, signal)
+  const projection = (raw: unknown) => nativePermissionProjection(ctx.powerEvolveRuntime.config.runtimeUserId === '' ? undefined : ctx, raw)
+  const list = async (token: string) => sessionList.parse(await call('/native/sessions/list', token, {})).items
+    .map(item => ({ ...item, projections: { kind: 'sequenced' as const, ...projection(item.projections) } }))
   const office = officeOptions === undefined ? undefined
     : new NativeOfficePreview((path, token, input, signal) => ctx.powerEvolveRuntime.call(path, token, input, signal), officeOptions)
   if (office !== undefined) ctx.effect(() => () => office.close())
@@ -180,14 +205,14 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
     }
     if (method.startsWith('settings/')) {
       if (ctx.powerEvolveRuntime.config.runtimeUserId === '') return nativeSettings(call, method, args, token)
-      return ctx.typertGateway.invoke({ namespace: 'settings', method: method.slice('settings/'.length),
-        args: z.record(z.string(), z.unknown()).parse(args), signal })
+      return new NativeWireResult(await ctx.typertGateway.wireRpc.invoke(method, { args: z.record(z.string(),
+        z.unknown()).parse(args) }, undefined, signal))
     }
     if (method.startsWith('pluginManager/')) {
       const operation = method.slice('pluginManager/'.length)
       if (ctx.powerEvolveRuntime.config.runtimeUserId !== '') {
-        return ctx.typertGateway.invoke({ namespace: 'pluginManager', method: operation,
-          args: z.record(z.string(), z.unknown()).parse(args), signal })
+        return new NativeWireResult(await ctx.typertGateway.wireRpc.invoke(method, { args: z.record(z.string(),
+          z.unknown()).parse(args) }, undefined, signal))
       }
       const readOnly = ['listVersionExemptions', 'listPlugins', 'listBundles', 'registries'].includes(operation)
       const identity = z.object({ userId: z.uuid() }).parse(await call('/identity/me', token, {}))
@@ -231,8 +256,9 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
         const models = z.object({ models: z.array(z.object({ id: z.string(), label: z.string() })) }).parse(catalog).models
         return { default: { provider: 'power-evolve', model: selected.model, reasoningEffort: 'off' },
           routableProviders: models.length ? ['power-evolve'] : [],
-          groups: models.length ? [{ id: 'power-evolve', name: 'PowerEvolve', models: models.map(model => ({ id: model.id, name: model.label,
-            reasoning: { defaultEffort: 'off', efforts: [{ id: 'off', name: 'off' }] } })) }] : [],
+          groups: models.length ? [{ id: 'power-evolve', name: 'PowerEvolve',
+            models: models.map(model => ({ id: model.id, name: model.label,
+              reasoning: { defaultEffort: 'off', efforts: [{ id: 'off', name: 'off' }] } })) }] : [],
           failures: [] }
       }
       case 'session/selectModel': {
@@ -273,7 +299,7 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
       }
       case 'session/list': {
         z.object({ _request: z.object({ cursor: z.string().max(512).optional() }).strict() }).strict().parse(args)
-        return call('/native/sessions/list', token, {})
+        return { items: await list(token) }
       }
       case 'session/create': {
         const { request } = withRequest(z.object({ workspaceId: z.uuid().optional(), agentPreset: z.string().min(1).max(256).optional(),
@@ -315,18 +341,23 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
       case 'directoryPicker/createDirectory': return call('/native/directories/create', token, nativeDirectoryCreate.parse(args))
       case 'workspace/rename': return call('/native/workspaces/rename', token, withRequest(nativeWorkspaceRename).parse(args).request)
       case 'workspace/delete': return call('/native/workspaces/delete', token, withRequest(nativeWorkspaceDelete).parse(args).request)
-      case 'workspace/insertBefore': return call('/native/workspaces/insertBefore', token, withRequest(nativeWorkspaceOrder).parse(args).request)
-      case 'workspace/insertSessionBefore': return call('/native/workspaces/insertSessionBefore', token, withRequest(nativeSessionOrder).parse(args).request)
-      case 'workspace/archiveSession': return call('/native/workspaces/archiveSession', token, withRequest(nativeSessionArchive).parse(args).request)
+      case 'workspace/insertBefore': return call('/native/workspaces/insertBefore', token,
+        withRequest(nativeWorkspaceOrder).parse(args).request)
+      case 'workspace/insertSessionBefore': return call('/native/workspaces/insertSessionBefore', token,
+        withRequest(nativeSessionOrder).parse(args).request)
+      case 'workspace/archiveSession': return call('/native/workspaces/archiveSession', token,
+        withRequest(nativeSessionArchive).parse(args).request)
       case 'workspace/unarchiveSession':
       case 'workspace/pinSession':
-      case 'workspace/unpinSession': return call(`/native/workspaces/${method.split('/')[1]}`, token, withRequest(nativeSessionGrouping).parse(args).request)
+      case 'workspace/unpinSession': return call(`/native/workspaces/${method.split('/')[1]}`, token,
+        withRequest(nativeSessionGrouping).parse(args).request)
       case 'session/prompt': {
         const { request: value } = withRequest(prompt).parse(args)
         if (ctx.powerEvolveRuntime.config.runtimeUserId !== '') await ctx.nativeRuntimeSessions.close(value.sessionId)
-        const accepted = z.object({ accepted: z.literal(true) }).parse(await call('/sessions/prompt', token, { sessionId: value.sessionId, requestId: value.requestId,
-          text: value.content.filter(part => part.type === 'text').map(part => part.text).join('\n'),
-          nativeContent: value.content, target: { kind: 'cloud' } }))
+        const accepted = z.object({ accepted: z.literal(true) }).parse(await call('/sessions/prompt', token,
+          { sessionId: value.sessionId, requestId: value.requestId,
+            text: value.content.filter(part => part.type === 'text').map(part => part.text).join('\n'),
+            nativeContent: value.content, target: { kind: 'cloud' } }))
         return { accepted: accepted.accepted }
       }
       case 'session/updateQueue': {
@@ -357,9 +388,9 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
       case 'session/page': return call('/native/sessions/page', token, withRequest(page).parse(args).request)
       case 'session/projections': {
         const { sessionId: id } = withRequest(projectionRequest).parse(args).request
-        const snapshot = z.object({ projections: z.object({ asOfSeq: z.number().int(), values: z.record(z.string(), z.json()) }) })
+        const snapshot = z.object({ projections: z.unknown() })
           .parse(await call('/native/sessions/snapshot', token, { address: { kind: 'session', sessionId: id }, maxMessages: 1 }))
-        return snapshot.projections
+        return projection(snapshot.projections)
       }
       case 'workspaceFiles/list': {
         const input = fileScope.parse(args)
@@ -385,11 +416,12 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
         if (!namespace || !operation) throw new PlatformError(400, 'invalid_request')
         const arguments_ = z.record(z.string(), z.unknown()).parse(args)
         const id = sessionId.safeParse(arguments_.agent)
-        if (!id.success) return ctx.typertGateway.invoke({ namespace, method: operation, args: arguments_, signal })
+        if (!id.success) return new NativeWireResult(await ctx.typertGateway.wireRpc.invoke(method,
+          { args: arguments_ }, undefined, signal))
         await call('/native/sessions/snapshot', token, { address: { kind: 'session', sessionId: id.data }, maxMessages: 1 })
         const agent = await ctx.nativeRuntimeSessions.ensure(id.data, token)
         return ctx.agents.withInitiator(agent, async () => {
-          const value = await ctx.typertGateway.invoke({ namespace, method: operation, args: arguments_, signal })
+          const value = new NativeWireResult(await ctx.typertGateway.wireRpc.invoke(method, { args: arguments_ }, undefined, signal))
           await ctx.sessions.flush(agent.session)
           await ctx.nativeRuntimeExecution.bind(agent, ctx.powerEvolveRuntime.require(agent.id))
           return value
@@ -397,18 +429,19 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
       }
     }
   }
-  const stream = async function* (method: string, args: unknown, peer: PeerScope, signal: AbortSignal, uplink: AsyncIterable<unknown>): AsyncGenerator {
+  const stream = async function* (method: string, args: unknown, peer: PeerScope, signal: AbortSignal,
+    uplink: AsyncIterable<unknown>): AsyncGenerator {
     const stopped = () => signal.aborted
     const token = tokenOf(peer)
     switch (method) {
       case '$events': {
         z.object({}).strict().parse(args)
         if (ctx.powerEvolveRuntime.config.runtimeUserId !== '') {
-          yield* nativeRuntimeEvents(ctx, async () => sessionList.parse(await call('/native/sessions/list', token, {})).items,
+          yield* nativeRuntimeEvents(ctx, async () => await list(token),
             pollMs, signal)
           return
         }
-        const initial = sessionList.parse(await call('/native/sessions/list', token, {})).items
+        const initial = await list(token)
         let previous = new Map(initial.map(item => [item.sessionId, item]))
         yield { type: 'ready', clientId: randomUUID(), host: { home: '/workspace' } }
         for (const item of initial) {
@@ -417,7 +450,7 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
         while (!signal.aborted) {
           try { await delay(Math.max(pollMs, 1000), undefined, { signal }) }
           catch (error) { if (stopped()) return; throw error }
-          const items = sessionList.parse(await call('/native/sessions/list', token, {})).items
+          const items = await list(token)
           const current = new Map(items.map(item => [item.sessionId, item]))
           for (const item of items) {
             const before = previous.get(item.sessionId)
@@ -437,13 +470,19 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
       }
       case 'session/control': {
         z.object({}).strict().parse(args)
-        let previous = sessionList.parse(await call('/native/sessions/list', token, {})).items
+        let previous = await list(token)
         yield { type: 'baseline', value: { projections: Object.fromEntries(previous.map(item =>
           [item.sessionId, { asOfSeq: item.projections.asOfSeq, values: item.projections.values }])) } }
         while (!signal.aborted) {
           try { await delay(pollMs, undefined, { signal }) }
           catch (error) { if (stopped()) return; throw error }
-          const current = sessionList.parse(await call('/native/sessions/list', token, {})).items
+          const current = await list(token)
+          if (current.some(item => item.projections.asOfSeq === -1
+            && JSON.stringify(item.projections.values)
+            !== JSON.stringify(previous.find(before => before.sessionId === item.sessionId)?.projections.values))) {
+            yield { type: 'baseline', value: { projections: Object.fromEntries(current.map(item =>
+              [item.sessionId, { asOfSeq: item.projections.asOfSeq, values: item.projections.values }])) } }
+          }
           const byId = new Map(previous.map(item => [item.sessionId, item]))
           for (const item of current) {
             const prior = byId.get(item.sessionId)
@@ -486,8 +525,19 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
       }
       case 'session/follow': {
         const input = withRequest(follow).parse(args).request
-        yield* followNativeSession((path, request, readSignal) => call(path, token, request, readSignal),
-          input, pollMs, signal, followLimits)
+        yield* followNativeSession(async (path, request, readSignal) => {
+          const raw = await call(path, token, request, readSignal)
+          if (path === '/native/sessions/snapshot') {
+            const value = z.object({ projections: z.unknown() }).loose().parse(raw)
+            return { ...value, projections: projection(value.projections) }
+          }
+          if (path === '/native/sessions/open') {
+            const value = z.object({ snapshot: z.object({ projections: z.unknown() }).loose() }).loose().parse(raw)
+            return { ...value, snapshot: { ...value.snapshot, projections: projection(value.snapshot.projections) } }
+          }
+          return raw
+        },
+        input, pollMs, signal, followLimits)
         return
       }
       case 'workspaceFiles/changes': {
@@ -513,7 +563,8 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
         if (!id.success) { yield* await ctx.typertGateway.wireStream.open(method, { args: arguments_ }, uplink, peer, signal); return }
         await call('/native/sessions/snapshot', token, { address: { kind: 'session', sessionId: id.data }, maxMessages: 1 })
         const agent = await ctx.nativeRuntimeSessions.ensure(id.data, token)
-        const source = await ctx.agents.withInitiator(agent, () => ctx.typertGateway.wireStream.open(method, { args: arguments_ }, uplink, peer, signal))
+        const source = await ctx.agents.withInitiator(agent, () => ctx.typertGateway.wireStream.open(method,
+          { args: arguments_ }, uplink, peer, signal))
         const iterator = source[Symbol.asyncIterator]()
         try {
           while (!signal.aborted) {
@@ -604,7 +655,9 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
       const method = path === '/native/runtime/invoke' ? message.method : path.slice('/native/api/'.length)
       if (message.method !== method) throw new PlatformError(400, 'method_mismatch')
       if (nativeRuntimeRouting && method !== 'workspaceFiles/readBytes' && method !== 'officeToPdf/render') {
-        sendJson(res, await ctx.powerEvolveRuntime.call('/native/runtime/invoke', credential.token, message, lifetime.signal))
+        await sendNativeRuntimeResponse(res, message.rpcId,
+          await ctx.powerEvolveRuntime.call('/native/runtime/invoke', credential.token, message, lifetime.signal),
+          ctx.powerEvolveRuntime.config.maxResponseBytes)
         return
       }
       try {
@@ -621,10 +674,15 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
           value = await office.generation(credential.token, message.rpcId, message.payload.args, lifetime.signal)
         } else value = await unary(method, message.payload.args, credential.token, message.rpcId, lifetime.signal)
         if (lifetime.signal.aborted) return
-        if (method === 'workspaceFiles/readBytes') await sendNativeBytes(res, message.rpcId, value)
+        if (value instanceof NativeWireResult) {
+          const encoded = nativeRuntimeResponse(message.rpcId, value.result)
+          if (path === '/native/runtime/invoke') sendJson(res, encoded)
+          else await sendNativeRuntimeResponse(res, message.rpcId, encoded, ctx.powerEvolveRuntime.config.maxResponseBytes)
+        } else if (method === 'workspaceFiles/readBytes') await sendNativeBytes(res, message.rpcId, value)
         else sendJson(res, { type: 'server-response', rpcId: message.rpcId, result: { ok: true, value } })
       } catch (error) {
-        if (!lifetime.signal.aborted) sendJson(res, { type: 'server-response', rpcId: message.rpcId, result: { ok: false, error: failure(error) } })
+        if (!lifetime.signal.aborted) sendJson(res, { type: 'server-response', rpcId: message.rpcId,
+          result: { ok: false, error: failure(error) } })
       }
     } catch (error) { if (!lifetime.signal.aborted) sendFailure(res, error) }
     finally { res.off('close', disconnected) }

@@ -1107,6 +1107,8 @@ describe('TypertGatewayService', () => {
       rawGoalService(ctx).nextResult = value
       const handler = rawConnection(ctx).handler!
       const source = await handler('goals/passthrough', { args: { value: null } }, new AbortController().signal)
+      expect(await ctx.typertGateway.wireRpc.invoke('goals/passthrough', { args: { value: null } }, undefined,
+        new AbortController().signal)).toEqual(source)
       expect(source).toEqual({
         ok: true,
         value: { content: null },
@@ -1124,6 +1126,8 @@ describe('TypertGatewayService', () => {
       }
       const remove = registerStrict(ctx, [{ ...descriptor, result: codec }])
       const strict = await handler('goals/passthrough', { args: { value: null } }, new AbortController().signal)
+      expect(await ctx.typertGateway.wireRpc.invoke('goals/passthrough', { args: { value: null } }, undefined,
+        new AbortController().signal)).toEqual(strict)
       expect(strict).toEqual({
         ok: true,
         value: { content: null },
