@@ -45,6 +45,8 @@ Host 配置 `nativeClientMaxRequests` 与 Pool 配置 `clientMaxRequests` 默认
 
 Filesystem、subprocess 与 sandbox providers 捕获精确发起 Agent 的服务器签发 execution world。权限模式来自已提交的原生 Session events，后续模式 event 会使旧代际失效。原生 PTC node bootstrap 为执行镜像中的 `/opt/power-evolve/native-ptc-process.mjs`。Platform 控制物理执行 Pod；Runtime 没有 Kubernetes 或数据库凭据，也不挂载执行 Workspace。
 
+原生指令配置提供方先于 standard、PTC 与 Cordis 预设激活。它保留维护版指令加载器及字节预算，以 `/home/agent/.dsh/AGENTS.md` 读取用户全局指令，并通过 `.` 标记将规范化 Session cwd `/workspace` 作为项目根。Workspace 发现不会探测执行世界外的祖先路径。Home 与 Workspace 指令保留原生持久指令 events；执行权限仍来自 Platform 与物理挂载。
+
 原始 ToolRuntime 注册和当前已记录 request header 冻结每个 operation 的原生工具声明。MCP 与 STDIO 保留已接受 catalogs 和 schemas，与原生注册冲突时拒绝。原生 Search 保留原始 Messages 请求、持久化请求 event 与结果映射；Platform 固定其 endpoint 与凭据。原生 event callbacks 保留原始 Gateway 身份，PG 提供持久化 Session membership。
 
 冷启动的原生命令和闲置 Terminal 获取独立、有界的交互 PG grant 与 Writer。它不记录 prompt 或模型输入，也不能调用模型。默认有效期为 15 分钟，每 8 秒检查续期；新的模型任务先关闭交互 owner。关闭时 drain 原生 Agent 与执行 clients，再释放原占用。撤销后，仅精确的原 operation 与 Writer 证明可关闭已提交日志；数据库 receipt 不证明物理进程已停止。Runtime claim 轮询终结已过期且无 owner 的派生任务，不重启 Agent 或重放命令。

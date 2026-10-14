@@ -73,12 +73,12 @@
   "counts": {
     "runtime": {
       "enabled": 14,
-      "shared": 345,
+      "shared": 346,
       "deferred": 4
     },
     "sourceTests": {
       "enabled": 12,
-      "shared": 166,
+      "shared": 167,
       "deferred": 3
     },
     "builtTests": {
@@ -5637,6 +5637,20 @@
       "path": "products/power-evolve/application/tests/native-execution-finalizer.spec.ts",
       "status": "shared",
       "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/host/native-instruction-config.ts",
+      "status": "shared",
+      "owner": "S2",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-instruction-config.spec.ts",
+      "status": "shared",
+      "owner": "S2",
       "reason": "core-shared"
     }
   ],

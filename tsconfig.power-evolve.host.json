@@ -6,6 +6,9 @@
     },
     {
       "path": "products/power-evolve/connector-runner"
+    },
+    {
+      "path": "packages/context/agent-instructions"
     }
   ]
 }

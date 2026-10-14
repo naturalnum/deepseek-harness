@@ -206,6 +206,9 @@
     },
     {
       "path": "./tsconfig.native-execution-build.json"
+    },
+    {
+      "path": "../../../packages/context/agent-instructions"
     }
   ]
 }

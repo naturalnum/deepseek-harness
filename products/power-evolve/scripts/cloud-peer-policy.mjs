@@ -3,6 +3,7 @@ import { isDeepStrictEqual } from 'node:util'
 
 /** Named SDK exports resolved through the cloud Profile's shared providers. */
 const CLOUD_SDK_PROVIDER_PEERS = Object.freeze({
+  '@deepseek-ai/dsh-agent-instructions': Object.freeze(['apply']),
   '@deepseek-ai/dsh-fs': Object.freeze(['FileSystem', 'FsError', 'FsTargetKey', 'FsVersion']),
   '@deepseek-ai/dsh-fs-local': Object.freeze(['LocalFileSystem']),
   '@deepseek-ai/dsh-sandbox': Object.freeze(['SandboxProvider']),

@@ -66,6 +66,12 @@
 - id: shell-env
   config:
     dshHome: /home/agent/.dsh
+- id: preset-standard
+  inject: [nativeInstructionConfig]
+- id: preset-ptc
+  inject: [nativeInstructionConfig]
+- id: preset-cordis
+  inject: [nativeInstructionConfig]
 - id: agent-default-model
   inject: [powerEvolveRuntime]
   config:
@@ -74,6 +80,11 @@
 - id: web-search-deepseek
   disabled: true
 - insert:
+    - id: native-instruction-config
+      name: '@power-evolve/application/native-instruction-config'
+      config:
+        dshHome: /home/agent/.dsh
+        projectRootMarkers: ['.']
     - id: native-runtime-ui-admission
       name: '@power-evolve/application/native-runtime-ui-admission'
       inject: [powerEvolveRuntime]

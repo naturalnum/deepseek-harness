@@ -142,6 +142,9 @@
     },
     {
       "path": "packages/session/session-format-v3-to-v4"
+    },
+    {
+      "path": "packages/context/agent-instructions"
     }
   ],
   "exclude": [
