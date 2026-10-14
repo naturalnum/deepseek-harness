@@ -133,12 +133,13 @@ export class NativeExecutionBroker {
     let stopping: Promise<void> | undefined
     const stop = (cause: NonNullable<typeof stopCause>) => {
       stopCause ??= cause
-      if (range && !stopping) stopping = (async () => {
+      const original = range, causeAtStop = stopCause
+      if (original && !stopping) stopping = (async () => {
         if (stopCause !== 'completed' && relay) {
           await this.settleWithin(relay.terminate(), spec.graceMs)
           await this.settleWithin(relay.done, spec.graceMs)
         }
-        try { await this.pods.stop(range, stopCause) }
+        try { await this.pods.stop(original, causeAtStop) }
         finally {
           relay?.interrupt(); local?.terminate()
           if (local) await local.waitForExit()
