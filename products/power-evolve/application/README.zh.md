@@ -116,8 +116,13 @@ Office 部署必须指定经过运维验证、在解析器启动前禁用外部�
 <a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与待完成工作
 
+原生执行 broker 在 PG 中冻结原 Agent operation、存储 generation 和权限 generation。Runtime 客户端仅获得有界 world 方法；数据库及 Kubernetes 凭据留在 Platform。每个进程或文件工具在独立 gVisor Pod 中以 UID 1000 运行，移除 capabilities、不挂载 service-account token，镜像根只读。只读模式将用户数据和临时文件挂载为只读；工作区写入模式允许 Workspace 和私有临时文件写入，Home 保持只读。原生调用完成前等待精确 Pod 的持久 kubelet 停止观测。broker 启动时按原 Pod 名称和 UID 对账，不重建命令；缺少停止证据的受理记录保持不确定。
+
+通过同步的原 Agent binding resolver 装配 `installNativeExecutionProviders`。`createNativeExecutionHttpBinding` 仅使用该 operation bearer 和 native-world 路由。存储读取允许 Agent 在首个已声明步骤前初始化；修改和任意子进程须具有完整的当前原生执行 cohort。配置内需声明构建产物 `lib/native-execution-worker` 中的无凭据文件工具、Platform 的 kubectl、私有 kubeconfig、控制端与 PVC 对应的存储路径和有限 Pod 截止时间。每个原生消费者均受 PG 授权和同 world 挂载约束。
+
 当前限制由相应原生 API 明确表达：
 
+- broker 的文件工具回包和前台输出有明确上限。HTTP 终端分配及子进程独立控制通道在原生消费者通过物理验收前明确拒绝；此提供方尚不提供文件监听和完整输出溢出文件恢复。
 - 原生云端 Shell 当前仅支持有界前台 Bash。后台任务、标准输入／环境覆盖、原生文件权限以及完整 FS／Subprocess／PTY 提供方仍属于[运行改造计划](../CLOUD-RUNTIME-PLAN.md)中的独立切片。不确定命令按原身份对账。
 - 打开 Host 本机文件及修改共享 Profile 需要云端用户不会自动获得的权限。
 - 当前输入适配器接受排队文本、普通文件回执及 SDK 受理的图片；插队、编辑和删除通过当前 Writer 的 Coordinator 提交。活动 prepared owner 的删除会被拒绝。

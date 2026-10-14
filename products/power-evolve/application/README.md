@@ -116,8 +116,13 @@ For accepted uploads, a logged instruction section lists only this Session's aut
 <a id="known-limitations-and-deferred-work"></a>
 ## Known Limitations and Deferred Work
 
+The native execution broker freezes the original Agent operation, storage generation and permission generation in PG. Runtime clients receive bounded world methods; Platform retains database and Kubernetes credentials. Each process or filesystem utility runs in a separate gVisor Pod with UID 1000, dropped capabilities, no service-account token and a read-only image root. Read-only mode mounts user data and temporary files read-only; workspace-write permits the Workspace and private temporary files while keeping Home read-only. A completed native call waits for its exact Pod's durable kubelet stop observation. Broker startup reconciles original Pod names and UIDs without recreating commands; unresolved admissions remain uncertain.
+
+Mount `installNativeExecutionProviders` with a synchronous original-Agent binding resolver. `createNativeExecutionHttpBinding` uses only that operation bearer and the native-world routes. Storage reads can initialize an Agent before its first claimed step; mutations and arbitrary subprocesses require the complete current native execution cohort. Configure the credential-free filesystem worker from the built `lib/native-execution-worker` directory, Platform's kubectl executable, its private kubeconfig, matching controller/PVC storage paths and finite Pod deadlines. PG authority and same-world mounts apply to every native consumer.
+
 Current constraints are explicit at the corresponding native API:
 
+- The broker's filesystem utility replies and foreground output are bounded. HTTP terminal allocation and the separate subprocess control channel fail explicitly until their native consumers pass physical acceptance; filesystem watching and complete-output spill recovery are not available through this provider.
 - Native cloud Shell currently supports bounded foreground Bash only. Background jobs, stdin/environment overrides, native file permissions and complete FS/Subprocess/PTY providers remain separate slices in the [runtime plan](../CLOUD-RUNTIME-PLAN.md). An uncertain command is reconciled under its original identity.
 - Host-local file opening and shared Profile changes require capabilities the cloud user does not automatically receive.
 - The prompt carrier accepts queued text, generic file receipts and SDK-admitted images. Steering, editing and removal use the current Writer's Coordinator. Active prepared-owner removal refuses.

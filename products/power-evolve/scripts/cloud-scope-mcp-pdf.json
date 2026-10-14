@@ -73,7 +73,7 @@
   "counts": {
     "runtime": {
       "enabled": 14,
-      "shared": 318,
+      "shared": 327,
       "deferred": 4
     },
     "sourceTests": {
@@ -83,12 +83,12 @@
     },
     "builtTests": {
       "enabled": 0,
-      "shared": 10,
+      "shared": 11,
       "deferred": 0
     },
     "nativeAssets": {
       "enabled": 0,
-      "shared": 10,
+      "shared": 11,
       "deferred": 0
     },
     "tooling": {
@@ -5309,6 +5309,83 @@
       "status": "shared",
       "owner": "S3",
       "reason": "native-runtime-s3"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/native-execution/fs-worker-entry.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/native-execution/fs-worker.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-execution-authority-store.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-execution-broker.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-execution-pods.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-execution-routes.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "builtTests",
+      "path": "products/power-evolve/application/tests/native-execution.physical.built.test.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-execution-config.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-execution-platform.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-execution-relay.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "nativeAssets",
+      "path": "products/power-evolve/application/src/native-execution/process-worker.py",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
     }
   ],
   "lintSupport": [
@@ -5491,6 +5568,12 @@
       "status": "shared",
       "owner": "Root",
       "reason": "gate-shared"
+    },
+    {
+      "path": "products/power-evolve/application/tests/native-execution-physical-case.mjs",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
     }
   ],
   "approvedDeferrals": {

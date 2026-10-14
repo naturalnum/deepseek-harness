@@ -44,7 +44,9 @@
     "./native-runtime-authority": "./lib/platform/native-runtime-authority.js",
     "./native-runtime-execution": "./lib/host/native-runtime-execution.js",
     "./web-search": "./lib/host/web-search.js",
-    "./native-runtime-policy": "./lib/platform/native-runtime-policy.js"
+    "./native-runtime-policy": "./lib/platform/native-runtime-policy.js",
+    "./native-execution": "./lib/native-execution/providers.js",
+    "./native-execution-client": "./lib/native-execution/http-client.js"
   },
   "dependencies": {
     "@deepseek-ai/dsh-brand": "workspace:*",
@@ -128,7 +130,8 @@
     "@deepseek-ai/dsh-fs": "workspace:*",
     "@deepseek-ai/dsh-sandbox": "workspace:*",
     "@deepseek-ai/dsh-sandbox-policy": "workspace:*",
-    "@deepseek-ai/dsh-subprocess-local": "workspace:*"
+    "@deepseek-ai/dsh-subprocess-local": "workspace:*",
+    "@deepseek-ai/dsh-fs-local": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
@@ -178,7 +181,9 @@
     "@deepseek-ai/dsh-fs": "workspace:*",
     "@deepseek-ai/dsh-sandbox": "workspace:*",
     "@deepseek-ai/dsh-sandbox-policy": "workspace:*",
-    "@deepseek-ai/dsh-subprocess-local": "workspace:*"
+    "@deepseek-ai/dsh-subprocess-local": "workspace:*",
+    "@deepseek-ai/dsh-fs-local": "workspace:*",
+    "@deepseek-ai/dsh-subprocess": "workspace:*"
   },
   "scripts": {
     "build": "tsc -b tsconfig.json && tsdown",

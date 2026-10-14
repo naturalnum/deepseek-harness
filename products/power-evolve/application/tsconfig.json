@@ -191,6 +191,9 @@
     },
     {
       "path": "../../../packages/subprocess/subprocess-local"
+    },
+    {
+      "path": "../../../packages/fs/fs-local"
     }
   ]
 }

@@ -1720,7 +1720,7 @@ importers:
         version: 0.1.6
       resolve.exports:
         specifier: ^2.0.3
-        version: 2.0.3
+        version: 2.0.4
       semver:
         specifier: ^7.8.5
         version: 7.8.5
@@ -14374,6 +14374,12 @@ importers:
       '@deepseek-ai/dsh-compaction-image-offload':
         specifier: workspace:*
         version: link:../../../packages/compaction/compaction-image-offload
+      '@deepseek-ai/dsh-fs':
+        specifier: workspace:*
+        version: link:../../../packages/fs/fs
+      '@deepseek-ai/dsh-fs-local':
+        specifier: workspace:*
+        version: link:../../../packages/fs/fs-local
       '@deepseek-ai/dsh-host-plugin-inventory':
         specifier: workspace:*
         version: link:../../../packages/host/plugin-inventory
@@ -14395,6 +14401,9 @@ importers:
       '@deepseek-ai/dsh-remote-mock':
         specifier: workspace:*
         version: link:../../../packages/test-support/remote-mock
+      '@deepseek-ai/dsh-sandbox':
+        specifier: workspace:*
+        version: link:../../../packages/sandbox/sandbox
       '@deepseek-ai/dsh-scope':
         specifier: workspace:*
         version: link:../../../packages/core/scope
@@ -14446,6 +14455,9 @@ importers:
       '@deepseek-ai/dsh-subprocess':
         specifier: workspace:*
         version: link:../../../packages/subprocess/subprocess
+      '@deepseek-ai/dsh-subprocess-local':
+        specifier: workspace:*
+        version: link:../../../packages/subprocess/subprocess-local
       '@deepseek-ai/dsh-timeout':
         specifier: workspace:*
         version: link:../../../packages/util/timeout
