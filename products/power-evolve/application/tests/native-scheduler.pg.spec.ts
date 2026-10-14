@@ -4,6 +4,7 @@ import { once } from 'node:events'
 import { writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { join } from 'node:path'
+import { setTimeout as delay } from 'node:timers/promises'
 import { Context, Logger, type Exporter, type Fiber } from '@deepseek-ai/cordis'
 import AgentRegistry, { type Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
@@ -170,12 +171,13 @@ class GenerationModel extends MockAdapter {
 }
 
 /** Build an independent actual Host so restart recovery obtains a separately issued worker identity. */
-async function prepareHost(host: Context, origin: string, workerFile: string, imageCache: string, budgetFirstChunk = false): Promise<{
+async function prepareHost(host: Context, origin: string, workerFile: string, imageCache: string,
+  budgetFirstChunk = false, runtimeTimeoutMs = 5000): Promise<{
   ctx: Context
   runtime: ObservedRuntime
 }> {
   await host.plugin(ObservedRuntime, { platformUrl: origin, workerTokenFile: workerFile,
-    timeoutMs: 5000, maxResponseBytes: historyLimits.maxHistoryBytes,
+    timeoutMs: runtimeTimeoutMs, maxResponseBytes: historyLimits.maxHistoryBytes,
     ...budgetFirstChunk ? { nativePublicationMaxItemBytes: budgetMaxItemBytes } : {} })
   for (const plugin of [LlmRuntime, SessionStore, SessionProjectionRegistry, SystemPrompt, ToolRuntime, AgentRegistry,
     SkillRegistry, PlatformPersistence]) await host.plugin(plugin)
@@ -201,7 +203,7 @@ async function schedulerCase(ownerFirst: boolean, failFirstModel = false, loseSt
   recoverPrepared = false, capacityPark = false, loseClaimBeforeCommit = false,
   recoverConsumed: 'none' | 'complete' | 'timeout' | 'prepared-cancel' | 'archive-prepared' | 'archive-claimed'
     | 'archive-parked' | 'archive-warm-pending' | 'archive-warm-admission' = 'none', loggerThrows = false,
-  budgetFirstChunk = false, imageOffload = false): Promise<void> {
+  budgetFirstChunk = false, imageOffload = false, holdWriterRenew = false, timeoutWriterRenew = false): Promise<void> {
   const archiveRecovery = recoverConsumed === 'archive-prepared' ? 'prepared' : recoverConsumed === 'archive-claimed' ? 'claimed' : undefined
   const warmArchive = recoverConsumed === 'archive-warm-pending' ? 'pending'
     : recoverConsumed === 'archive-warm-admission' ? 'admission' : undefined
@@ -266,6 +268,12 @@ async function schedulerCase(ownerFirst: boolean, failFirstModel = false, loseSt
     const stepReplyGate = Promise.withResolvers<undefined>()
     const claimReplyGate = Promise.withResolvers<undefined>()
     const warmPendingGate = Promise.withResolvers<undefined>()
+    const writerRenewEntered = Promise.withResolvers<undefined>()
+    const writerRenewRelease = Promise.withResolvers<undefined>()
+    const writerReleasedWhileHeld = Promise.withResolvers<undefined>()
+    let heldWriterRenew = false
+    let closingHeldWriter: Promise<void> | undefined
+    let heldWriterCloseResult: Promise<unknown> | undefined
     const warmTimeline: string[] = []
     let warmPendingPhase: 'before-read' | 'after-read' | undefined
     let warmPendingHeld = false
@@ -429,6 +437,14 @@ async function schedulerCase(ownerFirst: boolean, failFirstModel = false, loseSt
             case '/runtime/native-writer/renew':
             case '/runtime/native-writer/release': {
               writerRoutes.push(request.url)
+              if (holdWriterRenew && z.object({ workerId: z.string() }).loose().parse(input).workerId === refusedReconcileWorker) {
+                if (request.url === '/runtime/native-writer/renew' && !heldWriterRenew) {
+                  heldWriterRenew = true; writerRenewEntered.resolve(undefined)
+                  await writerRenewRelease.promise
+                } else if (request.url === '/runtime/native-writer/release' && heldWriterRenew) {
+                  writerReleasedWhileHeld.resolve(undefined)
+                }
+              }
               sendJson(response, await routeNativeWriter(writers, request.url, token, input)); return
             }
             case '/runtime/native-input/recover-prepared': {
@@ -789,7 +805,8 @@ async function schedulerCase(ownerFirst: boolean, failFirstModel = false, loseSt
         await skills.toggle(f.alice.user, skillA, false)
         await f.pool.query("UPDATE pe_sessions SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1", [session.sessionId])
         recoveryHost = new Context()
-        let recovered = await prepareHost(recoveryHost, origin, workerFile, join(f.root, 'claimed-tail-image-cache'))
+        let recovered = await prepareHost(recoveryHost, origin, workerFile, join(f.root, 'claimed-tail-image-cache'),
+          false, timeoutWriterRenew ? 1000 : 5000)
         expect(recovered.runtime.workerId).not.toBe(actualRuntime.workerId)
         recoveryHost.on('agent/created', ({ agent }) => { created.push(agent) })
         recoveryHost.on('agent/disposed', ({ agent }) => { disposed.push(agent) })
@@ -797,7 +814,7 @@ async function schedulerCase(ownerFirst: boolean, failFirstModel = false, loseSt
         recoveryModel = new GenerationModel(recovered.ctx, businessTasks, session.sessionId)
         let resumedModel = recoveryModel
         recovered.ctx.llm.registerAdapter(['power-evolve'], resumedModel)
-        const timeoutMs = 1500
+        const timeoutMs = timeoutWriterRenew ? 500 : 1500
         let timeoutAttempts: Record<string, unknown>[] | undefined
         let closedPrefix: SessionEvent[] | undefined
         if (recoverConsumed === 'timeout') refusedReconcileWorker = recovered.runtime.workerId
@@ -806,6 +823,43 @@ async function schedulerCase(ownerFirst: boolean, failFirstModel = false, loseSt
         const recoveryStarted = performance.now(), renewalsBefore = writerRoutes.filter(path => path === '/runtime/native-writer/renew').length
         scheduler.start()
         if (recoverConsumed === 'timeout') {
+          if (holdWriterRenew) {
+            await writerRenewEntered.promise
+            await expect.poll(() => first([...recovered.runtime.transitionSignals]).aborted, poll).toBe(true)
+            await expect.poll(() => disposed.length, poll).toBe(2)
+            let stopped = false
+            closingHeldWriter = scheduler.close().then(() => { stopped = true })
+            heldWriterCloseResult = closingHeldWriter.then(() => undefined, (error: unknown) => error)
+            const outcome = await Promise.race([writerReleasedWhileHeld.promise.then(() => 'released'),
+              closingHeldWriter.then(() => 'closed'), delay(300).then(() => 'waiting')])
+            expect(outcome).toBe('waiting')
+            expect(stopped).toBe(false)
+            expect(writerRoutes.filter(path => path === '/runtime/native-writer/release')).toHaveLength(1)
+            expect(first((await f.pool.query<{ live: boolean }>(
+              'SELECT expires_at>clock_timestamp() AS live FROM pe_native_writers WHERE session_id=$1', [session.sessionId])).rows).live).toBe(true)
+            if (timeoutWriterRenew) {
+              const failure = await heldWriterCloseResult
+              expect(failure).toBeInstanceOf(AggregateError)
+              if (!(failure instanceof AggregateError)) throw new Error('Expected explicit issued-renewal shutdown failure')
+              expect(failure.errors).toContainEqual(expect.objectContaining({ name: 'TimeoutError' }))
+              expect(stopped).toBe(false)
+              expect(writerRoutes.filter(path => path === '/runtime/native-writer/release')).toHaveLength(2)
+              expect(first((await f.pool.query<{ released: boolean }>(
+                'SELECT expires_at IS NULL AS released FROM pe_native_writers WHERE session_id=$1', [session.sessionId])).rows).released).toBe(true)
+              writerRenewRelease.resolve(undefined)
+              await Promise.all(requests)
+              expect(routeFailures.filter(value => value !== '/runtime/native-turn/transition:owned_reconcile_unavailable'))
+                .toEqual(['/runtime/native-assistant:owned_claimed_publisher_unavailable',
+                  '/runtime/native-input/recover-prepared:native_input_recovery_required', '/runtime/native-writer/renew:native_writer_lost'])
+              expect(resumedModel.requests).toEqual([])
+              expect(resumedModel.calls).toEqual([])
+              await expect(scheduler.close()).rejects.toBeInstanceOf(AggregateError)
+              scheduler = undefined
+              return
+            }
+            writerRenewRelease.resolve(undefined)
+            await closingHeldWriter
+          }
           await expect.poll(() => ({ disposed: disposed.length, owners: recovered.runtime.observedOwners.size,
             grants: recovered.runtime.grants.size, releases: writerRoutes.filter(path => path === '/runtime/native-writer/release').length }),
           { ...poll, timeout: 5000 }).toEqual({ disposed: 2, owners: 0, grants: 0, releases: 2 })
@@ -1993,6 +2047,8 @@ async function schedulerCase(ownerFirst: boolean, failFirstModel = false, loseSt
         itemId: b.operation.operationId, action: { kind: 'remove' } } })
       expect(() => actualRuntime.queueInput(f.alice.token, unavailable)).toThrow('native_input_owner_unavailable')
     } finally {
+      writerRenewRelease.resolve(undefined)
+      await heldWriterCloseResult
       stepReplyGate.resolve(undefined)
       claimReplyGate.resolve(undefined)
       warmPendingGate.resolve(undefined)
@@ -2044,6 +2100,12 @@ test('new worker reconciles an actual open claimed turn without re-executing its
 
 test('claimed reconciliation times out and releases its renewing Writer before another Host settles the closed original turn',
   () => schedulerCase(false, false, false, false, false, false, 'timeout'))
+
+test('claimed reconciliation shutdown joins the already accepted real HTTP Writer renewal before release',
+  () => schedulerCase(false, false, false, false, false, false, 'timeout', false, false, false, true))
+
+test('claimed reconciliation rejects shutdown when accepted Writer HTTP renewal reaches its configured timeout without acknowledgement',
+  () => schedulerCase(false, false, false, false, false, false, 'timeout', false, false, false, true, true))
 
 test('new Host retires an unclaimed prepared user-canceled input once after an actual lost reply and preserves its unadmitted sibling',
   () => schedulerCase(false, false, false, false, false, true, 'prepared-cancel'))

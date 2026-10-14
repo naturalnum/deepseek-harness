@@ -136,6 +136,7 @@ export class Scheduler {
   private readonly handles = new Set<AgentHandle>()
   private readonly sessionRuns = new Map<Grant['sessionId'], { done: Promise<void>; cancel: () => void }>()
   private polling: Promise<void> | undefined
+  private writerMaintenanceFailure: { error: unknown } | undefined
 
   constructor(private readonly ctx: Context, private readonly config: SchedulerConfig) {}
   private stopped(): boolean { return this.stop.signal.aborted }
@@ -143,13 +144,17 @@ export class Scheduler {
   /** Begin polling after the profile services are ready. */
   start(): void { this.polling = this.poll() }
 
-  /** Stop admission and drain active Agents before service teardown. */
+  /** Stop admission and drain active Agents before service teardown.
+   * @throws AggregateError when issued Writer maintenance failed instead of acknowledging the retained identity.
+   */
   async close(): Promise<void> {
     this.stop.abort()
     for (const run of this.sessionRuns.values()) run.cancel()
     for (const handle of this.handles) handle.agent.cancel({ kind: 'disposed' }, { keepInbox: true })
     await this.polling
     await Promise.allSettled(this.active.values())
+    if (this.writerMaintenanceFailure) throw new AggregateError([this.writerMaintenanceFailure.error],
+      'Issued native Writer maintenance did not acknowledge clean shutdown')
   }
 
   private async poll(): Promise<void> {
@@ -299,11 +304,16 @@ export class Scheduler {
         while (!writerAborted()) {
           try { await delay(this.config.renewMs, undefined, { signal: lifetime.signal }) }
           catch (error) { if (writerAborted()) return; throw error }
-          await writers.renew(identity, lifetime.signal)
+          if (writerAborted()) return
+          // Issued Writer maintenance must settle through its bounded transport before release.
+          // Operation cancellation stops admission and this loop, but cannot stand in for the server's acknowledgement.
+          await writers.renew(identity)
         }
       })().catch((error: unknown) => {
-        if (writerAborted()) return
+        // The request has its independent transport lifetime, so failure is never normal operation cancellation.
+        this.writerMaintenanceFailure ??= { error }
         retain(error)
+        if (writerAborted()) return
         lifetime.abort()
         for (const handle of this.handles) if (handle.agent.session.id === identity.sessionId) {
           handle.agent.cancel({ kind: 'disposed' }, { keepInbox: true })
