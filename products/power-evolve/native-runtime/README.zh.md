@@ -42,6 +42,10 @@ Filesystem、subprocess 与 sandbox providers 捕获精确发起 Agent 的服务
 
 原始 ToolRuntime 注册和当前已记录 request header 冻结每个 operation 的原生工具声明。MCP 与 STDIO 保留已接受 catalogs 和 schemas，与原生注册冲突时拒绝。原生 Search 保留原始 Messages 请求、持久化请求 event 与结果映射；Platform 固定其 endpoint 与凭据。原生 event callbacks 保留原始 Gateway 身份，PG 提供持久化 Session membership。
 
+冷启动的原生命令和闲置 Terminal 获取独立、有界的交互 PG grant 与 Writer。它不记录 prompt 或模型输入，也不能调用模型。默认有效期为 15 分钟，每 8 秒检查续期；新的模型任务先关闭交互 owner。关闭时 drain 原生 Agent 与执行 clients，再释放原占用。撤销后，仅精确的原 operation 与 Writer 证明可关闭已提交日志；数据库 receipt 不证明物理进程已停止。Runtime claim 轮询终结已过期且无 owner 的派生任务，不重启 Agent 或重放命令。
+
+原生子 grant 冻结父会话的权限模式与代际。父权限变化使子 grant 失效。子 Agent 可在首个 turn 前选择账号已授权的模型，并将 token 预算限制在父预算内；随后 Platform 冻结该选择用于模型出口。
+
 </details>
 
 -----
@@ -63,7 +67,7 @@ Filesystem、subprocess 与 sandbox providers 捕获精确发起 Agent 的服务
 <a id="known-limitations-and-deferred-work"></a>
 ## Known Limitations and Deferred Work
 
-源码与隔离 PG 检查不能证明物理 Linux 隔离或真实 PTY/PTC 执行。这些结果要求部署的执行镜像与原始原生 consumers。闲置 Terminal 还需要持久化交互 Session authority；operation 绑定的 provider 不能从 Browser Agent cookie 推断执行权限。
+源码与隔离 PG 检查不能证明物理 Linux 隔离或真实 PTY/PTC 执行。这些结果要求部署的执行镜像与原始原生 consumers。持久化交互 authority 之外，仍需验证 Runtime 装配与冷启动原生 consumers；Browser Agent cookie 本身不授予执行权限。
 
 <a id="dev-note"></a>
 ### Dev Note

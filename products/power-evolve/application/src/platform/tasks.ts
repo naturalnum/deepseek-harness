@@ -28,6 +28,7 @@ import type { NativeTurnHistoryLimits } from './native-turn-history.ts'
 import { completeSessionStopInTransaction } from './native-session-stop-completion.ts'
 import { readNativeToolNames } from './native-tool-catalog.ts'
 import { assertNativeSubagentStorage, assertNativeSubagentExecution } from './native-subagent-authority.ts'
+import { assertNativeInteractiveStorage, assertNativeInteractiveWorld } from './native-interactive-authority.ts'
 import { assertNativeRuntimeGrant } from './native-runtime-authority.ts'
 
 interface SessionRow {
@@ -192,6 +193,9 @@ export class TaskStore {
         if (JSON.stringify(original) !== JSON.stringify(submitted)) throw new PlatformError(409, 'request_id_conflict')
         return { accepted: true, operationId: found.id, state: found.state }
       }
+      const derived = await client.query(`SELECT 1 FROM pe_native_subagent_grants g
+        JOIN pe_operations o ON o.id=g.operation_id WHERE o.session_id=$1 LIMIT 1`, [session])
+      if (derived.rowCount) throw new PlatformError(403, 'native_subagent_input_forbidden')
       if (await isSessionBusinessBlockedInTransaction(client, user.userId, session)) {
         throw new PlatformError(409, 'native_session_archived')
       }
@@ -439,8 +443,8 @@ export class TaskStore {
         `SELECT o.id,o.session_id,s.user_id
          FROM pe_operations o JOIN pe_sessions s ON s.id=o.session_id JOIN pe_users u ON u.id=s.user_id
          WHERE u.enabled=true AND u.deleted_at IS NULL AND o.state IN ('queued','running')
-         AND ($3::uuid IS NULL OR s.user_id=$3)
-         AND NOT EXISTS (SELECT 1 FROM pe_native_subagent_grants g WHERE g.operation_id=o.id)
+         AND ($3::uuid IS NULL OR s.user_id=$3) AND o.source<>'native_interactive'
+         AND NOT EXISTS (SELECT 1 FROM pe_native_subagent_grants g JOIN pe_operations child ON child.id=g.operation_id WHERE child.session_id=s.id)
          AND (CASE WHEN $2::boolean THEN EXISTS (SELECT 1 FROM pe_native_preferences p WHERE p.user_id=s.user_id
            AND p.namespace='session-archive-stop:'||s.id::text AND p.value->>'status'='requested')
          ELSE NOT EXISTS (SELECT 1 FROM pe_native_preferences p WHERE p.user_id=s.user_id
@@ -452,7 +456,7 @@ export class TaskStore {
          AND NOT EXISTS (SELECT 1 FROM pe_native_retained_intents j WHERE j.session_id=s.id AND j.state='prepared')
          AND (SELECT count(*) FROM pe_sessions active WHERE active.user_id=s.user_id AND active.lease_until>clock_timestamp())<$1
          AND NOT EXISTS (SELECT 1 FROM pe_operations earlier WHERE earlier.session_id=s.id
-           AND earlier.state IN ('queued','running') AND (earlier.created_at,earlier.id)<(o.created_at,o.id))
+           AND earlier.state IN ('queued','running') AND earlier.source<>'native_interactive' AND (earlier.created_at,earlier.id)<(o.created_at,o.id))
          ORDER BY u.last_claim_at NULLS FIRST,o.created_at,o.id LIMIT 1 FOR NO KEY UPDATE OF u SKIP LOCKED`,
         [this.limits.maxActivePerUser, archiveStop, owner?.userId ?? null],
       )
@@ -461,13 +465,13 @@ export class TaskStore {
       // Serialize a user's capacity check across otherwise independent Session rows.
       await requireActiveAccount(client, executionUserId.parse(row.user_id), 'update')
       const resource = await client.query(`SELECT o.id FROM pe_operations o JOIN pe_sessions s ON s.id=o.session_id
-        WHERE o.id=$1 AND s.user_id=$2 AND o.state IN ('queued','running')
-        AND NOT EXISTS (SELECT 1 FROM pe_native_subagent_grants g WHERE g.operation_id=o.id)
+        WHERE o.id=$1 AND s.user_id=$2 AND o.state IN ('queued','running') AND o.source<>'native_interactive'
+        AND NOT EXISTS (SELECT 1 FROM pe_native_subagent_grants g JOIN pe_operations child ON child.id=g.operation_id WHERE child.session_id=s.id)
         AND (s.lease_until IS NULL OR s.lease_until<=clock_timestamp())
         AND NOT EXISTS (SELECT 1 FROM pe_native_writers w WHERE w.session_id=s.id AND w.expires_at>clock_timestamp())
         AND NOT EXISTS (SELECT 1 FROM pe_native_retained_intents j WHERE j.session_id=s.id AND j.state='prepared')
         AND NOT EXISTS (SELECT 1 FROM pe_operations earlier WHERE earlier.session_id=s.id
-          AND earlier.state IN ('queued','running') AND (earlier.created_at,earlier.id)<(o.created_at,o.id))
+          AND earlier.state IN ('queued','running') AND earlier.source<>'native_interactive' AND (earlier.created_at,earlier.id)<(o.created_at,o.id))
         FOR UPDATE OF s,o`, [row.id, row.user_id])
       if (!resource.rowCount) return null
       const pending = await client.query(`SELECT 1 FROM pe_native_retained_intents
@@ -486,6 +490,12 @@ export class TaskStore {
       const activeCount = active.rows[0]
       if (!activeCount) throw new Error('Active Session count is missing')
       if (Number(activeCount.count) >= this.limits.maxActivePerUser) return null
+      await client.query(`UPDATE pe_native_interactive_grants SET released_at=clock_timestamp()
+        WHERE session_id=$1 AND released_at IS NULL`, [row.session_id])
+      await client.query(`UPDATE pe_attempts a SET ended_at=clock_timestamp() FROM pe_operations o
+        WHERE o.session_id=$1 AND o.source='native_interactive' AND o.state='running' AND a.operation_id=o.id AND a.ended_at IS NULL`, [row.session_id])
+      await client.query(`UPDATE pe_operations SET state='failed',error_code='native_interactive_expired',completed_at=clock_timestamp()
+        WHERE session_id=$1 AND source='native_interactive' AND state='running'`, [row.session_id])
       const selected = this.claimSelection
         ? await this.claimSelection(client, brandString<SessionId>(row.session_id), executionOperationId.parse(row.id))
         : executionOperationId.parse(row.id)
@@ -575,7 +585,7 @@ export class TaskStore {
       [row.user_id, row.session_id])
     const restored = grant.parse({
       operationId: row.id, sessionId: row.session_id, userId: row.user_id, requestId: row.request_id,
-      text: row.source === 'user' ? row.input : continuationInput(row.input, this.limits.maxEventBytes),
+      text: row.source === 'native_interactive' ? '' : row.source === 'user' ? row.input : continuationInput(row.input, this.limits.maxEventBytes),
       nativeContent: row.source === 'user' && prompt.rows[0] ? admittedNativeContent.parse(prompt.rows[0].admitted) : null,
       attachments: attached.rows.map(item => nativeFileAttachment.parse(item.file)).sort((a, b) =>
         a.attachmentId.localeCompare(b.attachmentId) || a.name.localeCompare(b.name)),
@@ -608,12 +618,13 @@ export class TaskStore {
     operation_id: string
     settings: unknown
     execution_target: unknown
+    source: string
   }> {
     const owner = await client.query<{ user_id: string }>('SELECT user_id FROM pe_sessions WHERE grant_digest=$1', [digest(token)])
     if (!owner.rows[0]) throw new PlatformError(409, 'lease_lost')
     await requireActiveAccount(client, executionUserId.parse(owner.rows[0].user_id), 'update')
-    const result = await client.query<SessionRow & { operation_id: string; settings: unknown; execution_target: unknown }>(
-      `SELECT s.*,o.id AS operation_id,o.settings,o.execution_target FROM pe_sessions s JOIN pe_operations o ON o.session_id=s.id
+    const result = await client.query<SessionRow & { operation_id: string; settings: unknown; execution_target: unknown; source: string }>(
+      `SELECT s.*,o.id AS operation_id,o.settings,o.execution_target,o.source FROM pe_sessions s JOIN pe_operations o ON o.session_id=s.id
        JOIN pe_attempts a ON a.operation_id=o.id AND a.epoch=s.lease_epoch AND a.ended_at IS NULL
        WHERE s.grant_digest=$1 AND s.lease_until>clock_timestamp() AND o.state='running' FOR UPDATE OF s`, [digest(token)],
     )
@@ -625,6 +636,7 @@ export class TaskStore {
     [row.id, digest(token), row.lease_epoch])
     if (!live.rowCount) throw new PlatformError(409, 'lease_lost')
     await assertNativeRuntimeGrant(client, row)
+    if (row.source === 'native_interactive') await assertNativeInteractiveStorage(client, row)
     await assertNativeSubagentStorage(client, row)
     return row
   }
@@ -637,11 +649,27 @@ export class TaskStore {
   async executionAuthorized(client: PoolClient, token: string): Promise<Awaited<ReturnType<TaskStore['authorized']>>> {
     if (!this.executionAuthority) throw new PlatformError(503, 'execution_authority_unavailable')
     const session = await this.authorized(client, token)
+    if (session.source === 'native_interactive') throw new PlatformError(403, 'native_interactive_model_forbidden')
     if (await isSessionBusinessBlockedInTransaction(client, session.user_id, session.id)) {
       throw new PlatformError(409, 'native_session_archived')
     }
     if (await assertNativeSubagentStorage(client, session)) await assertNativeSubagentExecution(client, session)
     else await this.executionAuthority(client, session, token)
+    return session
+  }
+
+  /** Authorize one native execution world by its explicit purpose without granting interactive model consumption.
+   * @param client Existing account and Session transaction.
+   * @param token Exact original operation or formal interactive bearer.
+   * @param purpose Read-only storage initialization or native Fs/process execution.
+   * @returns Current exact Session after purpose-specific clocks and durable interactive Writer checks.
+   */
+  async nativeWorldAuthorized(client: PoolClient, token: string, purpose: 'storage-read' | 'execution' = 'execution'):
+    Promise<Awaited<ReturnType<TaskStore['authorized']>>> {
+    const session = await this.authorized(client, token)
+    if (session.source !== 'native_interactive') return purpose === 'storage-read' ? session : this.executionAuthorized(client, token)
+    if (await isSessionBusinessBlockedInTransaction(client, session.user_id, session.id)) throw new PlatformError(409, 'native_session_archived')
+    await assertNativeInteractiveWorld(client, session)
     return session
   }
 

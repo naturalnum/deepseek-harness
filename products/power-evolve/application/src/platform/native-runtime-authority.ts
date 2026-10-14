@@ -4,7 +4,7 @@ import type { Pool, PoolClient } from 'pg'
 import { z } from 'zod'
 import { accountUserId, type UserId } from '../account-contracts.ts'
 import { PlatformError } from '../contracts.ts'
-import { requireActiveAccount, assertProductLoginAllowed } from './account-authority.ts'
+import { requireActiveAccount, assertProductLoginAllowed, type AccountLockMode } from './account-authority.ts'
 import { transaction } from './database.ts'
 import { digest } from './identity.ts'
 
@@ -65,16 +65,17 @@ export class NativeRuntimeAuthority {
    * @param client Transaction before Session or operation locks.
    * @param token Exact runtime bearer; browser and global worker tokens are refused.
    * @param expected Optional server-configured account and process instance.
+   * @param accountLock Acquire update ownership before subsequent claims or interactive Session mutation.
    * @returns Current immutable binding after account rotation, revocation and expiry checks.
    */
   async authenticateInTransaction(client: PoolClient, token: string,
-    expected?: { userId: UserId; runtimeId: string }): Promise<NativeRuntimeIdentity> {
+    expected?: { userId: UserId; runtimeId: string }, accountLock: AccountLockMode = 'share'): Promise<NativeRuntimeIdentity> {
     if (!/^[A-Za-z0-9_-]{43}$/u.test(token)) throw new PlatformError(401, 'unauthorized_runtime')
     const hashed = digest(token)
     const hint = await client.query<{ user_id: string }>(
       'SELECT user_id FROM pe_runtime_credentials WHERE digest=$1', [hashed])
     if (!hint.rows[0]) throw new PlatformError(401, 'unauthorized_runtime')
-    const account = await requireActiveAccount(client, accountUserId.parse(hint.rows[0].user_id))
+    const account = await requireActiveAccount(client, accountUserId.parse(hint.rows[0].user_id), accountLock)
     assertProductLoginAllowed(account)
     const rows = await client.query<{ id: string; user_id: string; runtime_id: string; generation: number; credential_version: number; expires_at: Date }>(
       `SELECT id,user_id,runtime_id,generation,credential_version,expires_at FROM pe_runtime_credentials

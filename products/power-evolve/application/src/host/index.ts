@@ -16,7 +16,7 @@ import type {} from '@deepseek-ai/dsh-typert-registry'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import { TypertRemoteService, Remote, type PeerScope, type PeerId, type InvocationDescriptor } from '@deepseek-ai/dsh-typert-protocol'
-import { createRequest, sessionFilesListRequest, sessionFileReadRequest, listRequest, pageRequest, promptRequest, settingsUpdateRequest, builtinSkillInstallRequest, skillInstallRequest, skillRequest, skillToggleRequest, sshCreateTicketRequest, sshToggleRequest, sshCheckRequest, sshCallRefRequest, sshCheckView, sshExecuteRefRequest, sshExecuteView, PlatformError } from '../contracts.ts'
+import { settings, createRequest, sessionFilesListRequest, sessionFileReadRequest, listRequest, pageRequest, promptRequest, settingsUpdateRequest, builtinSkillInstallRequest, skillInstallRequest, skillRequest, skillToggleRequest, sshCreateTicketRequest, sshToggleRequest, sshCheckRequest, sshCallRefRequest, sshCheckView, sshExecuteRefRequest, sshExecuteView, PlatformError } from '../contracts.ts'
 import { readJson, sendFailure, sendJson, writeLine } from '../http.ts'
 import { nativeInputQueueCommand } from '../native-input-ledger-contracts.ts'
 import { serveNativeUi } from '../ui.ts'
@@ -403,6 +403,10 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       imageCtx.on('agent/created', async ({ agent }) => {
         if (agent.session.header.origin !== 'subagent') return
         const runtime = imageCtx.powerEvolveRuntime, grant = runtime.require(agent.id)
+        grant.settings = settings.parse(await runtime.call('/runtime/subagents/configure', grant.token, {
+          provider: agent.options.provider ?? 'power-evolve', model: agent.options.model ?? grant.settings.model,
+          maxTokens: agent.options.maxTokens ?? grant.settings.maxTokens }))
+        runtime.assertGrant(grant)
         const images = imageCtx.attachments
         if (!(images instanceof LegacyMigrationHostImages)) throw new Error('Host migration image provider is missing')
         images.bind(agent.ctx, grant)

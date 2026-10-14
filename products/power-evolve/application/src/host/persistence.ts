@@ -144,11 +144,17 @@ export default class PlatformPersistence extends SessionPersistence {
   static inject = ['powerEvolveRuntime']
   private readonly writers = new Map<SessionId, PlatformHandle>()
   private readonly handles = new Set<PlatformHandle>()
-  private readonly children = new Map<SessionId, { grant: Grant; writer: HostNativeWriterLease; stop: AbortController; renewal: Promise<void> }>()
+  private readonly children = new Map<SessionId, { grant: Grant; writer: HostNativeWriterLease; stop: AbortController; renewal: Promise<void>;
+    outcome: 'completed' | 'failed'; errorCode: string | null }>()
 
   constructor(ctx: Context) {
     super(ctx)
     ctx.on('session/event', (session, event) => {
+      const child = this.children.get(session.id)
+      if (child && event.type === 'turn/end') {
+        child.outcome = event.data.reason.kind === 'completed' ? 'completed' : 'failed'
+        child.errorCode = child.outcome === 'completed' ? null : `turn_${event.data.reason.kind.replaceAll('-', '_')}`
+      }
       const writer = this.writers.get(session.id)
       if (writer) void writer.append([event]).catch(() => {
         // The awaited session/flush barrier propagates this retained failure.
@@ -187,7 +193,10 @@ export default class PlatformPersistence extends SessionPersistence {
           try { await delay(runtime.config.nativeSubagentRenewMs, undefined, { signal: stop.signal }) }
           catch (error) { if (stop.signal.aborted) return; throw error }
           if (stop.signal.aborted) return
-          await runtime.call('/runtime/renew', child.token, {}, stop.signal)
+          const renewed = z.object({ cancelRequested: z.boolean() }).parse(await runtime.call('/runtime/renew', child.token, {}, stop.signal))
+          if (renewed.cancelRequested) {
+            this.ctx.get('agents')?.get(child.sessionId)?.cancel({ kind: 'user' }, { keepInbox: true })
+          }
           runtime.heartbeatPublication(child)
           await writers.renew(capturedWriter.identity, stop.signal)
         }
@@ -197,7 +206,7 @@ export default class PlatformPersistence extends SessionPersistence {
           this.ctx.get('agents')?.get(child.sessionId)?.cancel({ kind: 'disposed' }, { keepInbox: true })
         }
       })
-      this.children.set(child.sessionId, { grant: child, writer, stop, renewal })
+      this.children.set(child.sessionId, { grant: child, writer, stop, renewal, outcome: 'failed', errorCode: 'native_subagent_incomplete' })
       return await this.open(child.sessionId, 'write')
     } catch (error) {
       const childOwner = this.children.get(child.sessionId)
@@ -240,9 +249,15 @@ export default class PlatformPersistence extends SessionPersistence {
         child.stop.abort()
         await child.renewal
         try {
-          await new HostNativeWriterClient(runtime).release(child.writer.identity)
-          await runtime.call('/runtime/finish', child.grant.token, { outcome: failure === undefined ? 'completed' : 'failed',
-            errorCode: failure === undefined ? null : 'native_subagent_publication_failed' })
+          try {
+            await new HostNativeWriterClient(runtime).release(child.writer.identity)
+            await runtime.call('/runtime/finish', child.grant.token, { outcome: failure === undefined ? child.outcome : 'failed',
+              errorCode: failure === undefined ? child.errorCode : 'native_subagent_publication_failed' })
+          } catch (error) {
+            await runtime.call('/runtime/cleanup', child.grant.token, { operationId: child.grant.operationId, epoch: child.grant.epoch,
+              writer: child.writer.identity, errorCode: 'native_subagent_closed' })
+            if (failure === undefined) throw error
+          }
         } finally { if (runtime.grants.get(id) === child.grant) runtime.grants.delete(id) }
       }
     }, publisher, captured)

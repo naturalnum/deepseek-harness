@@ -13,6 +13,9 @@ const CLOUD_SDK_PROVIDER_PEERS = Object.freeze({
     'foldConsumedWork',
     'resolveInboxTarget',
   ]),
+  '@deepseek-ai/dsh-agent-preset-registry': Object.freeze([
+    'agentPresetProjectionDefinition',
+  ]),
   '@deepseek-ai/dsh-agent-loop': Object.freeze([
     'inboxProjectionDefinition',
     'planInboxCommand',
@@ -94,6 +97,7 @@ const CLOUD_SDK_PROVIDER_PEERS = Object.freeze({
     'SessionSeq',
     'default',
     'isAppendSurfaceEvent',
+    'interruptedTurnClosers',
   ]),
   '@deepseek-ai/dsh-session-format': Object.freeze([
     'SessionFormatEventCollector',
@@ -152,6 +156,13 @@ const CLOUD_SDK_PROVIDER_PEERS = Object.freeze({
   ]),
   '@deepseek-ai/dsh-skill-filesystem': Object.freeze([
     'FileSystemSkillProvider',
+  ]),
+  '@deepseek-ai/dsh-web-search-deepseek': Object.freeze([
+    'DeepSeekSearchProvider',
+    'DEEPSEEK_DEFAULT_API_VERSION',
+    'DEEPSEEK_DEFAULT_MAX_TOKENS',
+    'DEEPSEEK_DEFAULT_MAX_USES',
+    'DEEPSEEK_DEFAULT_MODEL',
   ]),
   '@deepseek-ai/dsh-tools': Object.freeze([
     'defineTool',

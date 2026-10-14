@@ -74,6 +74,10 @@ export const acceptedInputAudit = z.object(grant.shape).omit({
     stdio_v2_no_start: value.sourceStdioV2NoStartActionId,
   }
   const present = Object.values(refs).filter(ref => ref !== null)
+  if (value.source === 'native_interactive') {
+    context.addIssue({ code: 'custom', message: 'Interactive occupancy cannot admit model input' })
+    return
+  }
   if (value.source === 'user' ? present.length !== 0 : present.length !== 1 || refs[value.source] === null) {
     context.addIssue({ code: 'custom', message: 'Original accepted source must select exactly its own reference' })
   }

@@ -19,7 +19,7 @@ export type Config = ReturnType<typeof Config>
 
 /** One private process mounts global providers whose resolver requires the exact initiating native Agent. */
 export default class NativeRuntimeExecution extends Service {
-  static inject = ['powerEvolveRuntime', 'agents', 'sandboxPolicy']
+  static inject = ['powerEvolveRuntime', 'agents', 'sessions', 'sandboxPolicy']
   static Config = Config
   private readonly bindings = new WeakMap<Agent, { grant: Grant; binding: NativeExecutionBinding; owner: Context }>()
 
@@ -54,6 +54,14 @@ export default class NativeRuntimeExecution extends Service {
     runtime.assertGrant(grant)
     if (world.userId !== grant.userId || world.sessionId !== agent.id || world.agentId !== agent.id
       || world.operationId !== grant.operationId || world.operationEpoch !== grant.epoch) throw new PlatformError(502, 'native_execution_world_identity')
+    const modes = ['read-only', 'workspace-write', 'danger-full-access'] as const
+    const localMode = this.ownerContext.sandboxPolicy.resolve({ session: agent.session }).mode
+    if (agent.session.header.origin === 'subagent' && modes.indexOf(localMode) > modes.indexOf(world.mode)) {
+      agent.session.append('sandbox/mode', { mode: world.mode, source: 'delegation' })
+      await this.ownerContext.sessions.flush(agent.session)
+      runtime.assertGrant(grant)
+      return this.bind(agent, grant)
+    }
     const existing = this.bindings.get(agent)
     if (existing?.grant === grant && JSON.stringify(existing.binding.world) === JSON.stringify(world)) return
     const owner = new Context()

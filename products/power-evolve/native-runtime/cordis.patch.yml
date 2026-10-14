@@ -93,6 +93,8 @@
         streamIdleTimeoutMs: 120000
     - id: native-execution
       name: '@power-evolve/application/native-runtime-execution'
+    - id: native-runtime-sessions
+      name: '@power-evolve/application/native-runtime-sessions'
     - id: power-evolve-host
       name: '@power-evolve/application/host'
       config:

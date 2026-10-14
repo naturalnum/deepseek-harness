@@ -112,6 +112,8 @@ import { nativeToolRegistration, registerNativeToolNames } from './native-tool-c
 import { NativeRuntimeAuthority } from './native-runtime-authority.ts'
 import { routeNativeRuntime } from './native-runtime-routes.ts'
 import { proxyNativeWebSearch } from './native-web-search.ts'
+import { NativeInteractive, nativeInteractiveOpen } from './native-interactive.ts'
+import { cleanupNativeRuntime, nativeRuntimeCleanupRequest } from './native-runtime-cleanup.ts'
 import { NativeSubagents } from './native-subagents.ts'
 import { nativePresetSelection, selectNativePreset } from './native-preset-selection.ts'
 import { serveUi } from '../ui.ts'
@@ -228,6 +230,8 @@ export const Config = schema.object({
   nativeWebSearchMaxUses: schema.number().step(1).min(1).default(5),
   nativeSubagentMaxChildren: schema.number().step(1).min(1).default(32),
   nativeSubagentMaxDepth: schema.number().step(1).min(1).default(8),
+  nativeInteractiveLifetimeMs: schema.number().step(1).min(1000).default(900000),
+  nativeInteractiveMaxActivePerUser: schema.number().step(1).min(1).default(4),
   nativeSubagentLifetimeMs: schema.number().step(1).min(1000).default(600000),
   modelTimeoutMs: schema.number().min(1000).required(), maxModelResponseBytes: schema.number().min(1024).required(),
   readyFile: schema.string().required(), databasePoolSize: schema.number().step(1).min(1).required(),
@@ -585,6 +589,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     await loadNativeInputOwnerRoutingConfig(config.nativeInputOwnerRoutingFile),
     (credential, command) => transaction(pool, client => nativeLedger.lookupQueueReceiptInTransaction(client, credential, command))) : null
   const runtimeAuthority = new NativeRuntimeAuthority(pool)
+  const nativeInteractive = new NativeInteractive(tasks, runtimeAuthority, { lifetimeMs: config.nativeInteractiveLifetimeMs,
+    maxActivePerUser: config.nativeInteractiveMaxActivePerUser, leaseMs: config.leaseMs })
   const nativeSubagents = new NativeSubagents(tasks, { maxChildren: config.nativeSubagentMaxChildren, maxDepth: config.nativeSubagentMaxDepth,
     lifetimeMs: config.nativeSubagentLifetimeMs, leaseMs: config.leaseMs })
   const nativeAssistantReader = new NativeAssistantRead(nativeAssistantLimits, {
@@ -856,8 +862,14 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         default: throw new PlatformError(404, 'not_found')
       }
     }
+    if (path === '/runtime/user/interactive/open') {
+      sendJson(res, await nativeInteractive.open(token, nativeInteractiveOpen.parse(await readJson(req, config.maxRequestBytes)))); return
+    }
+    if (path === '/runtime/cleanup') {
+      sendJson(res, await cleanupNativeRuntime(pool, token, nativeRuntimeCleanupRequest.parse(await readJson(req, config.maxRequestBytes)), config)); return
+    }
     if (path.startsWith('/runtime/user/')) {
-      sendJson(res, await routeNativeRuntime(runtimeAuthority, tasks, nativeIntents, path, token, await readJson(req, 4096))); return
+      sendJson(res, await routeNativeRuntime(runtimeAuthority, tasks, nativeIntents, path, token, await readJson(req, 4096), { limits: config, maxSessions: config.nativeIntentReconcileLimit })); return
     }
     if (path === '/runtime/claim' || path === '/runtime/claim-archive-stop'
       || path === NATIVE_RETAINED_ROUTES.reconcile || path === NATIVE_RETAINED_ROUTES.resolve) {
@@ -986,6 +998,20 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         case '/runtime/stdio-v2/calls/propose': {
           if (!stdioV2) throw new PlatformError(503, 'stdio_v2_unavailable')
           sendJson(res, await stdioV2.calls.propose(token, input)); return
+        }
+        case '/runtime/interactive/status': {
+          z.object({}).strict().parse(input)
+          const status = await transaction(pool, async client => {
+            const owner = await tasks.authorized(client, token)
+            if (owner.source !== 'native_interactive') throw new PlatformError(403, 'native_interactive_required')
+            const pending = await client.query("SELECT 1 FROM pe_operations WHERE session_id=$1 AND id<>$2 AND state IN ('queued','running') LIMIT 1", [owner.id, owner.operation_id])
+            return { pending: Boolean(pending.rowCount) }
+          })
+          sendJson(res, { ...status, ...await tasks.renew(token) }); return
+        }
+        case '/runtime/subagents/configure': {
+          const selection = z.object({ provider: z.string(), model: z.string(), maxTokens: z.number() }).strict().parse(input)
+          sendJson(res, await nativeSubagents.configure(token, selection)); return
         }
         case '/runtime/subagents/create': {
           const request = z.object({ header: z.unknown() }).strict().parse(input)

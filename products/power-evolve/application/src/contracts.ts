@@ -151,7 +151,7 @@ export const grant = z.object({
   token: z.string().min(32).max(256),
   epoch: z.number().int().positive(),
   settings,
-  source: z.enum(['user', 'platform_action', 'sandbox_result', 'stdio_mcp_result',
+  source: z.enum(['user', 'native_interactive', 'platform_action', 'sandbox_result', 'stdio_mcp_result',
     'ssh_execute_result', 'remote_mcp_result', 'stdio_v2_result', 'stdio_v2_no_start']).default('user'),
   sourceActionId: z.uuid().nullable().default(null),
   sourceExecutionId: z.uuid().nullable().default(null),

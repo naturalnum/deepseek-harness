@@ -73,12 +73,12 @@
   "counts": {
     "runtime": {
       "enabled": 14,
-      "shared": 327,
+      "shared": 332,
       "deferred": 4
     },
     "sourceTests": {
       "enabled": 12,
-      "shared": 151,
+      "shared": 153,
       "deferred": 3
     },
     "builtTests": {
@@ -5386,6 +5386,55 @@
       "status": "shared",
       "owner": "Root",
       "reason": "core-shared"
+    },
+    {
+      "path": "products/power-evolve/application/src/host/native-runtime-sessions.ts",
+      "kind": "runtime",
+      "status": "shared",
+      "owner": "S3",
+      "reason": "native-runtime-s3"
+    },
+    {
+      "path": "products/power-evolve/application/src/platform/native-interactive-authority.ts",
+      "kind": "runtime",
+      "status": "shared",
+      "owner": "S3",
+      "reason": "native-runtime-s3"
+    },
+    {
+      "path": "products/power-evolve/application/src/platform/native-interactive.ts",
+      "kind": "runtime",
+      "status": "shared",
+      "owner": "S3",
+      "reason": "native-runtime-s3"
+    },
+    {
+      "path": "products/power-evolve/application/src/platform/native-runtime-cleanup.ts",
+      "kind": "runtime",
+      "status": "shared",
+      "owner": "S3",
+      "reason": "native-runtime-s3"
+    },
+    {
+      "path": "products/power-evolve/application/tests/native-interactive.pg.spec.ts",
+      "kind": "sourceTests",
+      "status": "shared",
+      "owner": "S3",
+      "reason": "native-runtime-s3"
+    },
+    {
+      "path": "products/power-evolve/application/tests/native-runtime-tools.pg.spec.ts",
+      "kind": "sourceTests",
+      "status": "shared",
+      "owner": "S3",
+      "reason": "native-runtime-s3"
+    },
+    {
+      "path": "products/power-evolve/application/src/platform/native-derived-cleanup.ts",
+      "kind": "runtime",
+      "status": "shared",
+      "owner": "S3",
+      "reason": "native-runtime-s3"
     }
   ],
   "lintSupport": [

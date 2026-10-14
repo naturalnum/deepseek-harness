@@ -42,6 +42,10 @@ Filesystem, subprocess and sandbox providers capture the exact initiating Agent'
 
 The original ToolRuntime registrations and current logged request header freeze each operation's native tool declarations. MCP and STDIO retain their accepted catalogs and schemas, and collisions with native registrations refuse. Native Search preserves the original Messages request, persisted request event and result mapping; Platform fixes its endpoint and credentials. Native event callbacks retain their original Gateway identities while PG supplies durable Session membership.
 
+Cold native commands and idle Terminals acquire a separate bounded interactive PG grant and Writer. It records no prompt or model input and cannot call a model. The default lifetime is 15 minutes, with an 8-second renewal check; incoming model work closes the interactive owner first. Shutdown drains the native Agent and execution clients, then releases its original occupancy. After revocation, only the exact original operation and Writer proof may close committed logs; that database receipt does not prove a physical process stopped. Runtime claim polling terminalizes expired unowned derivations without restarting an Agent or replaying commands.
+
+Native child grants freeze their parent’s permission mode and generation. A parent permission change invalidates the child grant. The child may choose an account-authorized model and a token budget within the parent budget before its first turn; Platform then freezes that selection for model egress.
+
 </details>
 
 -----

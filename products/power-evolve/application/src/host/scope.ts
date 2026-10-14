@@ -99,6 +99,17 @@ export default class RuntimeScope extends Service {
     } else this.workerToken = (await readFile(this.config.workerTokenFile, 'utf8')).trim()
   }
 
+  /** Call one owned Runtime control route with this instance's private credential.
+   * @param path Formal account-bound Runtime route.
+   * @param input Original controlled payload; it cannot select another account.
+   * @param signal Original caller lifetime.
+   * @returns Bounded Platform reply after its fixed Runtime credential is checked.
+   */
+  callOwned(path: string, input: unknown, signal?: AbortSignal): Promise<unknown> {
+    if (this.config.runtimeUserId === '' || !path.startsWith('/runtime/user/')) throw new PlatformError(403, 'native_runtime_required')
+    return this.call(path, this.workerToken, input, signal)
+  }
+
   /** Authenticate one Platform broker hop using only this process's revocable credential.
    * @param token Broker-forwarded runtime token; browser and shared-worker tokens refuse.
    * @returns Completion after the local exact token and current Platform account/instance/generation checks.

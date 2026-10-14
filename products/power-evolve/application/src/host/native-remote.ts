@@ -27,6 +27,7 @@ import { followNativeSession, type NativeFollowLimits } from './native-session-f
 import { nativeSettings } from './native-settings.ts'
 import { readPluginInventory } from '@deepseek-ai/dsh-host-plugin-inventory'
 import { installNativeRuntimeRoutingUpgrade } from './native-runtime-routing.ts'
+import type {} from './native-runtime-sessions.ts'
 import { nativeRuntimeEvents } from './native-runtime-events.ts'
 import { NativeOfficePreview, NativeOfficePreviewError,
   type NativeOfficePreviewOptions, type NativeOfficePreviewContent } from './native-office-preview.ts'
@@ -265,6 +266,7 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
       case 'agentPresets/select': {
         if (ctx.powerEvolveRuntime.config.runtimeUserId === '') throw new PlatformError(404, 'native_remote_not_enabled')
         const selection = z.object({ agent: sessionId, agentPreset: z.string().min(1).max(256) }).strict().parse(args)
+        await ctx.nativeRuntimeSessions.close(selection.agent)
         const preset = await ctx.agentPresets.resolve(selection.agentPreset)
         if (preset.broken !== undefined) throw new PlatformError(409, 'native_preset_invalid')
         return call('/native/presets/select', token, { sessionId: selection.agent, agentPreset: preset.id })
@@ -321,6 +323,7 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
       case 'workspace/unpinSession': return call(`/native/workspaces/${method.split('/')[1]}`, token, withRequest(nativeSessionGrouping).parse(args).request)
       case 'session/prompt': {
         const { request: value } = withRequest(prompt).parse(args)
+        if (ctx.powerEvolveRuntime.config.runtimeUserId !== '') await ctx.nativeRuntimeSessions.close(value.sessionId)
         const accepted = z.object({ accepted: z.literal(true) }).parse(await call('/sessions/prompt', token, { sessionId: value.sessionId, requestId: value.requestId,
           text: value.content.filter(part => part.type === 'text').map(part => part.text).join('\n'),
           nativeContent: value.content, target: { kind: 'cloud' } }))
@@ -380,11 +383,20 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
         if (ctx.powerEvolveRuntime.config.runtimeUserId === '') throw new PlatformError(404, 'native_remote_not_enabled')
         const [namespace, operation] = method.split('/')
         if (!namespace || !operation) throw new PlatformError(400, 'invalid_request')
-        return ctx.typertGateway.invoke({ namespace, method: operation, args: z.record(z.string(), z.unknown()).parse(args), signal })
+        const arguments_ = z.record(z.string(), z.unknown()).parse(args)
+        const id = sessionId.safeParse(arguments_.agent)
+        if (!id.success) return ctx.typertGateway.invoke({ namespace, method: operation, args: arguments_, signal })
+        await call('/native/sessions/snapshot', token, { address: { kind: 'session', sessionId: id.data }, maxMessages: 1 })
+        const agent = await ctx.nativeRuntimeSessions.ensure(id.data, token)
+        return ctx.agents.withInitiator(agent, async () => {
+          const value = await ctx.typertGateway.invoke({ namespace, method: operation, args: arguments_, signal })
+          await ctx.sessions.flush(agent.session)
+          return value
+        })
       }
     }
   }
-  const stream = async function* (method: string, args: unknown, peer: PeerScope, signal: AbortSignal): AsyncGenerator {
+  const stream = async function* (method: string, args: unknown, peer: PeerScope, signal: AbortSignal, uplink: AsyncIterable<unknown>): AsyncGenerator {
     const stopped = () => signal.aborted
     const token = tokenOf(peer)
     switch (method) {
@@ -496,19 +508,30 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
         if (ctx.powerEvolveRuntime.config.runtimeUserId === '') throw new PlatformError(404, 'native_stream_not_enabled')
         const [namespace, operation] = method.split('/')
         if (!namespace || !operation) throw new PlatformError(400, 'invalid_request')
-        yield* await ctx.typertGateway.stream({ namespace, method: operation,
-          args: z.record(z.string(), z.unknown()).parse(args), signal })
+        const arguments_ = z.record(z.string(), z.unknown()).parse(args), id = sessionId.safeParse(arguments_.agent)
+        if (!id.success) { yield* await ctx.typertGateway.wireStream.open(method, { args: arguments_ }, uplink, peer, signal); return }
+        await call('/native/sessions/snapshot', token, { address: { kind: 'session', sessionId: id.data }, maxMessages: 1 })
+        const agent = await ctx.nativeRuntimeSessions.ensure(id.data, token)
+        const source = await ctx.agents.withInitiator(agent, () => ctx.typertGateway.wireStream.open(method, { args: arguments_ }, uplink, peer, signal))
+        const iterator = source[Symbol.asyncIterator]()
+        try {
+          while (!signal.aborted) {
+            const item = await ctx.agents.withInitiator(agent, () => iterator.next())
+            if (item.done) return
+            yield item.value
+          }
+        } finally { await ctx.agents.withInitiator(agent, () => iterator.return?.()) }
         return
       }
     }
   }
   let activeStreams = 0
-  const mux = new RemoteStreamMuxServer((method, payload, _uplink, peer, control) => Promise.resolve().then(() => {
+  const mux = new RemoteStreamMuxServer((method, payload, uplink, peer, control) => Promise.resolve().then(() => {
     const value = z.object({ args: z.unknown() }).strict().parse(payload)
     if (activeStreams >= maxStreams) throw new PlatformError(429, 'native_stream_limit')
     activeStreams++
     return (async function* (): AsyncGenerator {
-      try { yield* stream(method, value.args, peer, control.signal) }
+      try { yield* stream(method, value.args, peer, control.signal, uplink) }
       finally { activeStreams-- }
     })()
   }), failure, 2000, 262_144, streamSendTimeoutMs)

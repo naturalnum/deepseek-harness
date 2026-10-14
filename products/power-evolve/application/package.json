@@ -30,7 +30,11 @@
     "assets/cloud-schema-v9.sql",
     "assets/cloud-schema-v9.manifest.json",
     "assets/cloud-schema-v10.sql",
-    "assets/cloud-schema-v10.manifest.json"
+    "assets/cloud-schema-v10.manifest.json",
+    "assets/cloud-schema-v11.sql",
+    "assets/cloud-schema-v11.manifest.json",
+    "assets/cloud-schema-v12.sql",
+    "assets/cloud-schema-v12.manifest.json"
   ],
   "exports": {
     "./platform": "./lib/platform/index.js",
@@ -46,7 +50,8 @@
     "./web-search": "./lib/host/web-search.js",
     "./native-runtime-policy": "./lib/platform/native-runtime-policy.js",
     "./native-execution": "./lib/native-execution/providers.js",
-    "./native-execution-client": "./lib/native-execution/http-client.js"
+    "./native-execution-client": "./lib/native-execution/http-client.js",
+    "./native-runtime-sessions": "./lib/host/native-runtime-sessions.js"
   },
   "dependencies": {
     "@deepseek-ai/dsh-brand": "workspace:*",
@@ -173,17 +178,9 @@
     "@power-evolve/connector-runner": "workspace:~",
     "@power-evolve/contracts": "workspace:~",
     "@deepseek-ai/dsh-agent-preset-registry": "workspace:*",
-    "@deepseek-ai/dsh-permission-presets": "workspace:*",
-    "@deepseek-ai/dsh-web": "workspace:*",
     "@deepseek-ai/dsh-web-search-deepseek": "workspace:*",
-    "@deepseek-ai/dsh-settings": "workspace:*",
-    "@deepseek-ai/dsh-config-editor": "workspace:*",
-    "@deepseek-ai/dsh-app-boot": "workspace:*",
-    "@deepseek-ai/dsh-terminal": "workspace:*",
-    "@deepseek-ai/dsh-subagent": "workspace:*",
     "@deepseek-ai/dsh-fs": "workspace:*",
     "@deepseek-ai/dsh-sandbox": "workspace:*",
-    "@deepseek-ai/dsh-sandbox-policy": "workspace:*",
     "@deepseek-ai/dsh-subprocess-local": "workspace:*",
     "@deepseek-ai/dsh-fs-local": "workspace:*",
     "@deepseek-ai/dsh-subprocess": "workspace:*"

@@ -19,6 +19,9 @@ import { NativeInputLedger } from '../src/platform/native-input-ledger.ts'
 import { NativeSessionWriter } from '../src/platform/native-session-writer.ts'
 import { readWorkspaceLayout, writeWorkspaceLayout, type LayoutWorkspace } from '../src/platform/native-workspace-layout.ts'
 import { SkillService } from '../src/platform/skills.ts'
+import { readNativeRuntimePolicy } from '../src/platform/native-runtime-policy.ts'
+import { NativeSubagents } from '../src/platform/native-subagents.ts'
+import { cleanupNativeRuntime } from '../src/platform/native-runtime-cleanup.ts'
 import { TaskStore } from '../src/platform/tasks.ts'
 import { cloudFixture } from './cloud-fixture.ts'
 
@@ -476,4 +479,72 @@ test.each(['operation', 'writer'] as const)('the final PG clock refuses %s expir
     blocker.release()
     await outcome
   }
+}))
+
+
+test('native children derive only from the real claimed parent and stop after PG cancellation or original parent loss', () => executionCase(async (f, n) => {
+  await openStep(f, n)
+  const children = new NativeSubagents(n.executionTasks, { maxChildren: 1, maxDepth: 2, lifetimeMs: 60000, leaseMs: 30000 })
+  const header = headerSchema.parse({ ...n.native.header, id: randomUUID(), origin: 'subagent', parentSession: n.a.sessionId,
+    delegationDepth: 1, isSeeded: false, agentPreset: 'minimal' })
+  await expect(children.create(n.a.token, { ...header, delegationDepth: 2 })).rejects.toMatchObject({ code: 'native_subagent_header_invalid' })
+  const child = await children.create(n.a.token, header)
+  expect(child).toMatchObject({ userId: n.a.userId, sessionId: header.id, text: '', remoteMcpTools: n.a.remoteMcpTools })
+  await expect(children.create(n.a.token, { ...header, id: randomUUID() })).rejects.toMatchObject({ code: 'native_subagent_limit' })
+  const acquire = { sessionId: child.sessionId, workerId: n.writer.workerId, token: randomBytes(32).toString('base64url') }
+  const leased = await n.writers.acquire(child.token, acquire), writer = nativeWriterIdentity.parse({ ...acquire, epoch: leased.epoch })
+  const session = Session.create(header.id, undefined, header)
+  session.append('turn/start', { turn: 1 })
+  session.append('step/start', { turn: 1, step: 1 })
+  await n.events.append(child.token, session.snapshotEvents())
+  await transaction(f.pool, client => n.executionTasks.executionAuthorized(client, child.token))
+  session.append('sandbox/mode', { mode: 'workspace-write' })
+  await n.events.append(child.token, session.snapshotEvents())
+  expect(await transaction(f.pool, async client => readNativeRuntimePolicy(client, await n.executionTasks.authorized(client, child.token))))
+    .toMatchObject({ mode: 'read-only' })
+  await n.tasks.cancel(f.alice.user, child.sessionId, f.alice.token)
+  expect(await n.tasks.renew(child.token)).toMatchObject({ cancelRequested: true })
+  await expect(transaction(f.pool, client => n.executionTasks.executionAuthorized(client, child.token))).rejects.toMatchObject({ code: 'native_subagent_cancelled' })
+  await n.writers.release(n.writer)
+  await expect(n.events.runtimeSnapshot(child.token)).rejects.toMatchObject({ code: 'native_subagent_parent_lost' })
+  await f.pool.query("UPDATE pe_sessions SET lease_until=clock_timestamp()-interval '1 second' WHERE id=$1", [child.sessionId])
+  await f.pool.query("UPDATE pe_native_writers SET expires_at=clock_timestamp()-interval '1 second' WHERE session_id=$1", [child.sessionId])
+  expect(await n.tasks.claim(randomUUID())).toBeNull()
+  const closed = await cleanupNativeRuntime(f.pool, child.token, { operationId: child.operationId, epoch: child.epoch, writer,
+    errorCode: 'native_subagent_closed' }, { ...taskLimits, ...historyLimits })
+  expect(closed.cleaned).toBe(true)
+  expect((await f.pool.query('SELECT state,error_code FROM pe_operations WHERE id=$1', [child.operationId])).rows)
+    .toEqual([{ state: 'failed', error_code: 'native_subagent_closed' }])
+}))
+
+
+test('a later parent mode generation revokes its original native child before another dispatch', () => executionCase(async (f, n) => {
+  await openStep(f, n)
+  const children = new NativeSubagents(n.executionTasks, { maxChildren: 2, maxDepth: 2, lifetimeMs: 60000, leaseMs: 30000 })
+  const header = headerSchema.parse({ ...n.native.header, id: randomUUID(), origin: 'subagent', parentSession: n.a.sessionId, delegationDepth: 1, isSeeded: false })
+  const child = await children.create(n.a.token, header)
+  await n.events.runtimeSnapshot(child.token)
+  const changed = n.native.append('sandbox/mode', { mode: 'workspace-write' })
+  n.history.push(changed)
+  await n.events.append(n.a.token, [changed])
+  await expect(n.events.runtimeSnapshot(child.token)).rejects.toMatchObject({ code: 'native_subagent_parent_policy_changed' })
+  await expect(transaction(f.pool, client => n.executionTasks.nativeWorldAuthorized(client, child.token))).rejects.toMatchObject({ code: 'native_subagent_parent_policy_changed' })
+}))
+
+
+test('the actual allowed child model freezes separately within the original parent token budget', () => executionCase(async (f, n) => {
+  await openStep(f, n)
+  await f.pool.query("INSERT INTO pe_user_models(user_id,model_id,label,max_tokens,enabled) VALUES($1,'delegated-model','Delegated',4096,true)", [f.alice.user.userId])
+  const children = new NativeSubagents(n.executionTasks, { maxChildren: 2, maxDepth: 2, lifetimeMs: 60000, leaseMs: 30000 })
+  const header = headerSchema.parse({ ...n.native.header, id: randomUUID(), origin: 'subagent', parentSession: n.a.sessionId, delegationDepth: 1, isSeeded: false })
+  const child = await children.create(n.a.token, header)
+  const picked = await children.configure(child.token, { provider: 'power-evolve', model: 'delegated-model', maxTokens: n.a.settings.maxTokens })
+  expect(picked).toMatchObject({ model: 'delegated-model', maxTokens: n.a.settings.maxTokens })
+  expect((await transaction(f.pool, client => n.executionTasks.restoreGrantInTransaction(client, child.operationId, child.token, child.epoch))).settings).toEqual(picked)
+  await expect(children.configure(child.token, { provider: 'power-evolve', model: 'ungranted-model', maxTokens: n.a.settings.maxTokens })).rejects.toMatchObject({ code: 'model_not_authorized' })
+  await expect(children.configure(child.token, { provider: 'power-evolve', model: 'delegated-model', maxTokens: n.a.settings.maxTokens + 1 })).rejects.toMatchObject({ code: 'native_subagent_token_ceiling' })
+  const session = Session.create(header.id, undefined, header)
+  session.append('turn/start', { turn: 1 })
+  await n.events.append(child.token, session.snapshotEvents())
+  await expect(children.configure(child.token, { provider: 'power-evolve', model: 'delegated-model', maxTokens: n.a.settings.maxTokens })).rejects.toMatchObject({ code: 'native_subagent_model_frozen' })
 }))

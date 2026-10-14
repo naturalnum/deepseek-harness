@@ -376,6 +376,11 @@ export class Scheduler {
       if (writer) {
         try { await writers.release(writer) }
         catch (error) { retain(error) }
+        if (raised && runtime.config.runtimeUserId !== '') {
+          try { await runtime.call('/runtime/cleanup', current.token, { operationId: current.operationId,
+            epoch: current.epoch, writer, errorCode: 'native_runtime_closed' }) }
+          catch (error) { retain(error) }
+        }
       }
       if (runtime.grants.get(current.sessionId) === current) runtime.grants.delete(current.sessionId)
     }
@@ -516,7 +521,7 @@ export class Scheduler {
               await this.ctx.sessions.flush(agent.session)
             }
             await this.ctx.nativeRuntimeExecution.bind(agent, operation)
-            const preset = await this.ctx.agentPresets.mount(agentCtx, selected ?? 'standard')
+            const preset = await this.ctx.agents.withInitiator(agent, () => this.ctx.agentPresets.mount(agentCtx, selected ?? undefined))
             if (selected === null) agent.session.append('agent-preset/selected', { agentPreset: preset.id })
           }
           images.bind(agentCtx, operation)
