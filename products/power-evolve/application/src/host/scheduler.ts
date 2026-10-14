@@ -11,7 +11,8 @@ import type { McpActionId } from '../mcp-action-contracts.ts'
 import { installConnectorTools } from './connectors.ts'
 import { installExecutionTools } from './executions.ts'
 import { CloudShellExecutor } from './cloud-shell.ts'
-import { apply as installNativeBash } from '@deepseek-ai/dsh-tool-bash'
+import { apply as nativeBashApply, inject as nativeBashInject, name as nativeBashName,
+  Config as NativeBashConfig } from '@deepseek-ai/dsh-tool-bash'
 import { installPersonalMcpTool, installRemoteMcpTools } from './mcp.ts'
 import { installStdioMcpTool } from './stdio-mcp.ts'
 import { installStdioOperationToolsV2 } from './stdio-v2.ts'
@@ -192,7 +193,7 @@ export class Scheduler {
     }
   }
 
-  private installTools(agent: Agent, grant: Grant): void {
+  private async installTools(agent: Agent, grant: Grant): Promise<void> {
     const runtime = this.ctx.powerEvolveRuntime
     installDurableToolDispatch(agent)
     installAttachmentTools(agent, grant, runtime)
@@ -205,7 +206,8 @@ export class Scheduler {
         const shell = this.ctx.shell
         if (!(shell instanceof CloudShellExecutor)) throw new Error('Native cloud Shell provider is missing')
         shell.bind(agent, grant)
-        installNativeBash(agent.ctx, { enableRunInBackground: false, promoteOnTimeout: false })
+        await agent.ctx.plugin({ apply: nativeBashApply, inject: nativeBashInject, name: nativeBashName,
+          Config: NativeBashConfig }, { enableRunInBackground: false, promoteOnTimeout: false })
       } else installExecutionTools(agent, grant, runtime)
       installOfficeTool(agent, grant, runtime)
       installPersonalMcpTool(agent, grant, runtime)
@@ -519,7 +521,7 @@ export class Scheduler {
       })
       this.handles.add(handle)
       const { agent } = handle
-      this.installTools(agent, operation)
+      await this.installTools(agent, operation)
       await this.ctx.sessions.flush(agent.session)
       const reader = await this.ctx.sessionPersistence.open(agent.session.id, 'read', { signal: lifetime.signal })
       const history = await (async () => {

@@ -26,7 +26,7 @@ kind: package-reference
 
 通过具名的 [Host](../host/README.zh.md) 与 [Platform](../platform/README.zh.md) bundle 启动。配置分别提供端口、私有凭据文件、存储和数据库访问。部署启动器读取 Git 之外的运维文档，不把凭据值复制进 Profile。
 
-Host 的 `nativeShellEnabled` 选项通过按操作授权绑定的云端 Shell 提供方组合未经修改的原生 Bash 工具，在同一工具调用中等待原持久执行结果。提供方显式使用 `shellPollMs`、`shellTimeoutMs`、`shellMaxTimeoutMs` 和 `shellMaxOutputBytes` 限制。默认保留现有回执路径；候选实例须具备匹配的 Platform 数据库代和 Runner 后才能启用此选项。 准备和执行共用原生合并截止时间。观察失败后仍保留原执行以完成精确清理；Agent 释放会请求原句柄停止，并等待终态证据。本片前台能力尚不提供实时输出流或后台任务。
+Host 的 `nativeShellEnabled` 选项通过按操作授权绑定的云端 Shell 提供方组合未经修改的原生 Bash 工具。Host 使用原插件声明的服务注入，并等待安装完成后再接入输入。工具在同一调用中等待原持久执行结果。提供方显式使用 `shellPollMs`、`shellTimeoutMs`、`shellMaxTimeoutMs` 和 `shellMaxOutputBytes` 限制。默认保留现有回执路径；候选实例须具备匹配的 Platform 数据库代和 Runner 后才能启用此选项。准备和执行共用原生合并截止时间。观察失败后仍保留原执行以完成精确清理；Agent 释放会请求原句柄停止，并等待终态证据。本片前台能力尚不提供实时输出流或后台任务。
 
 Host 根路径跳转至 `/native/`。登录、独立审批和账号管理由 Platform 提供。 独立审批模块从 `@deepseek-ai/dsh-util-crypto` 的公开浏览器模块生成请求编号；该模块由明确的同源资源路由提供，也适用于局域网普通 HTTP 来源。[原生 Web 构建](../cloud-web/README.zh.md)包含官方组件；[个人连接器配置](../client-extension-center/README.zh.md)占用官方 Host bundle 的配置插槽。
 

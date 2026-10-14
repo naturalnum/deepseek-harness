@@ -79,7 +79,7 @@ const CLOUD_SDK_PROVIDER_PEERS = Object.freeze({
   ]),
   '@deepseek-ai/dsh-shell': Object.freeze(['default']),
   '@deepseek-ai/dsh-shell-env': Object.freeze(['ShellEnvRegistry']),
-  '@deepseek-ai/dsh-tool-bash': Object.freeze(['apply']),
+  '@deepseek-ai/dsh-tool-bash': Object.freeze(['apply', 'inject', 'name', 'Config']),
   '@deepseek-ai/dsh-timeout': Object.freeze(['deadline', 'timeoutOf']),
   '@deepseek-ai/dsh-session': Object.freeze([
     'KNOWN_SESSION_EVENT_TYPES',

@@ -6,7 +6,7 @@ import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-test
 import { ToolCallId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { ShellEnvRegistry } from '@deepseek-ai/dsh-shell-env'
-import { apply as installBash } from '@deepseek-ai/dsh-tool-bash'
+import * as NativeBash from '@deepseek-ai/dsh-tool-bash'
 import { expect, test } from 'vitest'
 import { grant as grantSchema, PlatformError, type Grant } from '../src/contracts.ts'
 import { cloudShellObservation, cloudShellProposeRequest, type CloudShellObservation } from '../src/cloud-shell-contracts.ts'
@@ -61,7 +61,7 @@ async function fixture<T>(run: (f: Fixture) => Promise<T>): Promise<T> {
   const f: Fixture = { ctx, shell, wire, calls, seen, async makeAgent(grant) {
     const agent = await ctx.agentLoop.create(SessionId(grant.sessionId), { provider: 'mock', model: 'mock' })
     shell.bind(agent, grant)
-    installBash(agent.ctx, { enableRunInBackground: false, promoteOnTimeout: false })
+    await agent.ctx.plugin(NativeBash, { enableRunInBackground: false, promoteOnTimeout: false })
     return agent
   } }
   try {
@@ -239,3 +239,15 @@ test('the original native Agent loop sees a real Bash result and continues withi
     expect(adapter.requests[1]?.messages.some(m => m.role === 'tool')).toBe(true)
   } finally { dispose() }
 }))
+
+test('a restricted plugin owner mounts native Bash through its declared service injection', async () => { await fixture(async (f) => {
+  let installed = false
+  await f.ctx.plugin({
+    name: 'cloud-shell-restricted-owner', inject: ['tools', 'systemPrompt'],
+    async apply(ctx: Context) {
+      await ctx.plugin(NativeBash, { enableRunInBackground: false, promoteOnTimeout: false })
+      installed = true
+    },
+  })
+  expect(installed).toBe(true)
+}) })
