@@ -5680,6 +5680,12 @@
       "reason": "gate-shared"
     },
     {
+      "path": "products/power-evolve/application/tests/native-interactive-pool-fixture.ts",
+      "status": "shared",
+      "owner": "employee4",
+      "reason": "gate-shared"
+    },
+    {
       "path": "products/power-evolve/application/tests/native-retained-intent-fixture.ts",
       "status": "shared",
       "owner": "employee1",

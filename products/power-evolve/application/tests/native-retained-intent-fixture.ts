@@ -16,6 +16,7 @@ import { NativeRetainedIntentStore } from '../src/platform/native-retained-inten
  * @param native Existing actual fixture providers, never substituted authority or receipt providers.
  * @param config Explicit input and presentation budgets used by this fixture.
  * @param turn Actual continuation service with its original frame verifier.
+ * @param maxRecordsPerSession Explicit fixture journal capacity; existing callers retain the original default.
  * @returns A factory recreating only the journal service over the same private PG records.
  */
 export function retainedTestStore(native: {
@@ -25,13 +26,13 @@ export function retainedTestStore(native: {
   ledger: NativeInputLedger
   frames: NativeExecutionFrames
   bridge: NativeInputCommit
-}, config: NativeInputCommitConfig, turn: NativeTurnContinuationV2): () => NativeRetainedIntentStore {
+}, config: NativeInputCommitConfig, turn: NativeTurnContinuationV2, maxRecordsPerSession = 32): () => NativeRetainedIntentStore {
   const key = randomBytes(32).toString('base64url')
   const preparedCancel = new NativePreparedCancel(native.tasks, native.ledger, native.frames, native.publisher, native.writers, config)
   const archiveCancel = new NativeArchiveInputCancel(native.tasks, native.ledger, native.frames, native.publisher, native.writers, config)
   return () => new NativeRetainedIntentStore(native.tasks, native.writers, { publication: native.publisher, input: native.bridge,
     preparedCancel, archiveCancel, turn }, key, { maxRequestBytes: 8_388_608, maxPendingPerSession: 16,
-    maxRecordsPerSession: 32, maxRetainedBytesPerSession: 33_554_432 })
+    maxRecordsPerSession, maxRetainedBytesPerSession: 33_554_432 })
 }
 
 /** Read full actual rows for every native mutation surface relevant to the atomic acknowledgement.

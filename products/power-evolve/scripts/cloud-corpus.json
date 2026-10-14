@@ -1200,6 +1200,7 @@
     "products/power-evolve/application/tests/native-input-owner-routing.pg.spec.ts",
     "products/power-evolve/application/tests/native-input-persistence.spec.ts",
     "products/power-evolve/application/tests/native-instruction-config.spec.ts",
+    "products/power-evolve/application/tests/native-interactive-pool-fixture.ts",
     "products/power-evolve/application/tests/native-interactive.pg.spec.ts",
     "products/power-evolve/application/tests/native-json-text.spec.ts",
     "products/power-evolve/application/tests/native-operation-generation.spec.ts",

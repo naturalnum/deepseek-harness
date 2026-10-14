@@ -49,7 +49,7 @@ Filesystem、subprocess 与 sandbox providers 捕获精确发起 Agent 的服务
 
 原始 ToolRuntime 注册和当前已记录 request header 冻结每个 operation 的原生工具声明。MCP 与 STDIO 保留已接受 catalogs 和 schemas，与原生注册冲突时拒绝。原生 Search 保留原始 Messages 请求、持久化请求 event 与结果映射；Platform 固定其 endpoint 与凭据。原生 event callbacks 保留原始 Gateway 身份，PG 提供持久化 Session membership。
 
-冷启动的原生命令和闲置 Terminal 获取独立、有界的交互 PG grant 与 Writer。它不记录 prompt 或模型输入，也不能调用模型。默认有效期为 15 分钟，每 8 秒检查续期；新的模型任务先关闭交互 owner。关闭时 drain 原生 Agent 与执行 clients，再释放原占用。撤销后，仅精确的原 operation 与 Writer 证明可关闭已提交日志；数据库 receipt 不证明物理进程已停止。Runtime claim 轮询终结已过期且无 owner 的派生任务，不重启 Agent 或重放命令。
+冷启动的原生命令和闲置 Terminal 获取独立、有界的交互 PG grant 与 Writer。它不记录 prompt 或模型输入，也不能调用模型。默认有效期为 15 分钟，每 8 秒检查续期；新的模型任务先关闭交互 owner。 原 authority 明确结束的 409 触发精确 cleanup，而不使 Runtime 永久不可用。原 Agent、执行 clients 和 cleanup receipt 必须全部 settle，随后通过有界 journal reconciliation 解析已退休的 receipt，或放弃未物化的原请求。所有 32 条记录的批次共用一个 transport deadline。当前 operation 的 blocked 记录、混合错误、无效 cleanup ACK、Writer transport 失败和未确认的物理停止仍保留为 sticky 拒绝；完整证明到期收口后，同一 Runtime 代际可提供新的交互 Session。关闭时 drain 原生 Agent 与执行 clients，再释放原占用。撤销后，仅精确的原 operation 与 Writer 证明可关闭已提交日志；数据库 receipt 不证明物理进程已停止。Runtime claim 轮询终结已过期且无 owner 的派生任务，不重启 Agent 或重放命令。
 
 未发布的 Agent setup 通过已获取的 Platform write handle 提交明确的新 append events。随后原生 factory 接受同一精确前缀而不重复写入；setup 不执行同步历史扫描。Runtime Sessions 与持久化提供缓存的 `shutdown()` 结果，保留 cleanup 失败。执行关闭拒绝提供方解析，并先等待每个 Agent 已接受的绑定读取，再清理保留的 binding。执行 binding 的显式 `close()` 在释放 Context 前 join 原始文件与进程 cleanup，因为 Cordis 会记录 effect 失败并让 fiber disposal fulfilled。Cleanup 失败使交互 admission 不再可用，并保留原失败供调用方观察。
 
