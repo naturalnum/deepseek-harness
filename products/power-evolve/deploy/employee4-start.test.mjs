@@ -3,16 +3,22 @@ import assert from 'node:assert/strict'
 import { spawn, spawnSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { once } from 'node:events'
-import { chmod, mkdtemp, mkdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, lstat, mkdtemp, mkdir, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
+import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
+import { load, JSON_SCHEMA, Type } from 'js-yaml'
 import { nativeDockerCoverageArguments } from '../scripts/cloud-coverage.mjs'
 import { deployment, launch, renderProfile } from './start.mjs'
-import { durableJson, privateDirectory, privateJson, processIdentity, reserveProfile, superviseChild } from './lifecycle.mjs'
+import { durableJson, durableText, privateDirectory, privateJson, processIdentity, reserveProfile, superviseChild } from './lifecycle.mjs'
 
 const supervisor = fileURLToPath(new URL('./lifecycle.mjs', import.meta.url))
+const patchSchema = JSON_SCHEMA.extend(new Type('tag:yaml.org,2002:js', {
+  kind: 'scalar', construct: value => ({ __jsExpr: value }),
+}))
+async function patchRows(path) { return load(await readFile(path, 'utf8'), { schema: patchSchema }) }
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), 'pe-employee4-start-'))
   t.after(() => rm(root, { recursive: true, force: true }))
@@ -29,11 +35,11 @@ async function observed(check) {
     await new Promise(resolve => setTimeout(resolve, 10))
   }
 }
-function ownChild(t, args, limitDescriptors = false) {
+function ownChild(t, args, limitDescriptors = false, env = process.env) {
   const executable = limitDescriptors ? '/usr/bin/python3' : process.execPath
   const argv = limitDescriptors ? ['-I', '-B', '-c',
     'import os,resource,sys;resource.setrlimit(resource.RLIMIT_NOFILE,(64,64));os.execv(sys.argv[1],sys.argv[1:])', process.execPath, ...args] : args
-  const child = spawn(executable, argv, { stdio: ['pipe', 'pipe', 'pipe'] })
+  const child = spawn(executable, argv, { stdio: ['pipe', 'pipe', 'pipe'], env })
   const done = once(child, 'close').then(([code, signal]) => ({ code, signal }))
   let output = ''
   child.stdout.on('data', (data) => { output += data })
@@ -76,6 +82,67 @@ test('private metadata refuses public files, directories, malformed JSON and sym
   await assert.rejects(privateDirectory(join(root, 'directory')), /private and real/u)
   await assert.rejects(processIdentity(0), /Invalid process identity/u)
 })
+test('private text and JSON retain atomic replacement bytes and private permissions', async (t) => {
+  const { root } = await fixture(t), path = join(root, 'metadata')
+  await writeFile(path, 'prior public bytes', { mode: 0o644 })
+  await durableText(path, '- config: !!js process.env.PRIVATE_FIXTURE\n')
+  assert.equal(await readFile(path, 'utf8'), '- config: !!js process.env.PRIVATE_FIXTURE\n')
+  assert.equal((await lstat(path)).mode & 0o777, 0o600)
+  await durableJson(path, { phase: 'stopped' })
+  assert.equal(await readFile(path, 'utf8'), '{"phase":"stopped"}\n')
+  assert.deepEqual(await privateJson(path), { phase: 'stopped' })
+})
+test('default Host expressions stay YAML scalars until the original Loader activates the real Profile', { timeout: 45000 }, async (t) => {
+  const { root, config, directory } = await fixture(t), worker = randomUUID()
+  let credentialsMatched = true
+  const platform = createServer((req, res) => {
+    credentialsMatched &&= req.headers.authorization === `Bearer ${worker}`
+    req.resume()
+    res.writeHead(200, { 'content-type': 'application/json' }); res.end('null')
+  })
+  t.after(() => new Promise((resolve, reject) => {
+    platform.close(error => error ? reject(error) : resolve())
+    platform.closeAllConnections()
+  }))
+  await new Promise((resolve, reject) => { platform.once('error', reject); platform.listen(0, '127.0.0.1', resolve) })
+  config.platformInternalUrl = `http://127.0.0.1:${platform.address().port}`
+  config.rows.host = { 'web-server': { port: 0 } }
+  await mkdir(config.privateDir, { mode: 0o700 })
+  await writeFile(join(config.privateDir, 'worker-token'), worker, { mode: 0o600 })
+  const profile = await renderProfile('host', config), patchFile = join(directory, 'cordis.patch.yml')
+  const rows = await patchRows(patchFile), host = rows.find(row => row.id === 'power-evolve-host')
+  const input = join(root, 'deployment.json')
+  await durableJson(input, config)
+  const child = ownChild(t, [fileURLToPath(new URL('./start.mjs', import.meta.url)), 'host', input], false,
+    { ...process.env, PE_NATIVE_SHELL_ENABLED: '0', PE_OFFICE_PREVIEW_ENABLED: '0' })
+  try {
+    await observed(async () => {
+      assert.equal(child.child.exitCode, null, 'Default Host exited before readiness')
+      return !!await privateJson(profile.readyFile)
+    })
+    const ready = await privateJson(profile.readyFile)
+    const response = await fetch(ready.url + '/health')
+    assert.equal(response.status, 200)
+    assert.equal((await response.json()).service, 'host')
+    assert.deepEqual(host.config.operationTimeoutMs, { __jsExpr: "process.env.PE_NATIVE_SHELL_ENABLED === '1' ? 600000 : 150000" })
+    assert.match(await readFile(patchFile, 'utf8'), /operationTimeoutMs: !!js/u)
+    assert.equal((await lstat(patchFile)).mode & 0o777, 0o600)
+    assert.equal(credentialsMatched, true)
+    child.child.kill('SIGTERM')
+    assert.deepEqual(await child.done, { code: 0, signal: null })
+    const stopped = await privateJson(join(directory, 'lifecycle.json'))
+    assert.equal(stopped.phase, 'stopped')
+    assert.equal(stopped.child.pid, ready.pid)
+    assert.equal(await privateJson(join(directory + '.lifecycle-lock', 'instance.json')), null)
+  } catch (error) {
+    const diagnostics = join(process.env.PE_IMAGE_EVIDENCE_DIR ?? tmpdir(), `employee4-default-host-${randomUUID()}-private.log`)
+    await writeFile(diagnostics, child.output(), { mode: 0o600, flag: 'wx' })
+    throw new Error('Default Host Profile failed; private diagnostics: ' + diagnostics, { cause: error })
+  } finally {
+    if (child.child.exitCode === null && child.child.signalCode === null) child.child.kill('SIGTERM')
+    await child.done
+  }
+})
 test('reservation replacement cannot release the new owner or erase its record', async (t) => {
   const { directory } = await fixture(t), lock = await reserveProfile(directory, { role: 'host' })
   const path = join(directory + '.lifecycle-lock', 'instance.json')
@@ -110,7 +177,7 @@ test('tenant Profile preserves native configuration while launch identity change
   assert.deepEqual(manifest.dsh.profile.bundles, ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app', '@power-evolve/native-runtime'])
   manifest.dependencies['user-native-plugin'] = '1.0.0'
   await durableJson(packageFile, manifest)
-  const patches = JSON.parse(await readFile(patchFile, 'utf8'))
+  const patches = await patchRows(patchFile)
   patches.push({ id: 'sandbox-policy', config: { mode: 'read-only', workspaceRoot: '/workspace' } },
     { id: 'native-custom-settings', config: { expression: { __jsExpr: '1 + 2' }, chosenPreset: 'minimal' } })
   await durableJson(patchFile, patches)
@@ -123,7 +190,7 @@ test('tenant Profile preserves native configuration while launch identity change
   assert.equal(second.directory, first.directory)
   assert.notEqual(second.lifecycleDirectory, first.lifecycleDirectory)
   assert.equal(JSON.parse(await readFile(packageFile, 'utf8')).dependencies['user-native-plugin'], '1.0.0')
-  const retained = JSON.parse(await readFile(patchFile, 'utf8'))
+  const retained = await patchRows(patchFile)
   assert.deepEqual(retained.find(row => row.id === 'sandbox-policy').config, { mode: 'read-only', workspaceRoot: '/workspace' })
   assert.deepEqual(retained.find(row => row.id === 'native-custom-settings').config,
     { expression: { __jsExpr: '1 + 2' }, chosenPreset: 'minimal' })

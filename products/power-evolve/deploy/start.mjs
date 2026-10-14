@@ -4,13 +4,15 @@ import { lstat, readFile, readlink, readdir, rm, symlink } from 'node:fs/promise
 import { createHash } from 'node:crypto'
 import { isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { load, JSON_SCHEMA, Type } from 'js-yaml'
-import { durableJson, privateDirectory, privateJson, processIdentity, reserveProfile, superviseChild } from './lifecycle.mjs'
+import { dump, load, JSON_SCHEMA, Type } from 'js-yaml'
+import { durableJson, durableText, privateDirectory, privateJson, processIdentity, reserveProfile, superviseChild } from './lifecycle.mjs'
 
 const repository = resolve(fileURLToPath(new URL('../../..', import.meta.url)))
 const roles = ['host', 'platform', 'native-runtime']
 const entrySchema = JSON_SCHEMA.extend(new Type('tag:yaml.org,2002:js', {
   kind: 'scalar', construct: value => ({ __jsExpr: value }),
+  predicate: value => object(value) && typeof value.__jsExpr === 'string',
+  represent: value => value.__jsExpr,
 }))
 function object(value) { return value !== null && typeof value === 'object' && !Array.isArray(value) }
 function absolute(value) { return typeof value === 'string' && isAbsolute(value) && resolve(value) === value && value !== '/' && !/\p{Cc}/u.test(value) }
@@ -156,11 +158,11 @@ async function renderReservedProfile(role, config, profile, owner) {
     if (!Array.isArray(retained)) throw new Error('Native Profile patch is invalid')
     const controlled = ['power-evolve-runtime', 'power-evolve-host', 'webserver']
     const preserved = retained.filter(patch => !controlled.includes(patch?.id))
-    await durableJson(profilePatch, [...preserved, ...controlled.map(id => ({ id, config: rows.get(id), disabled: false }))])
+    await durableText(profilePatch, dump([...preserved, ...controlled.map(id => ({ id, config: rows.get(id), disabled: false }))], { schema: entrySchema }))
   } else {
     await durableJson(join(directory, 'package.json'), { name, private: true, type: 'module',
       dependencies, dsh: { profile: { bundles } } })
-    await durableJson(join(directory, 'cordis.patch.yml'), [...rows].map(([id, fields]) => ({ id, config: fields })))
+    await durableText(join(directory, 'cordis.patch.yml'), dump([...rows].map(([id, fields]) => ({ id, config: fields })), { schema: entrySchema }))
   }
   return { name, directory, readyFile, lifecycleDirectory }
 }

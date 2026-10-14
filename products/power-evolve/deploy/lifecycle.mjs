@@ -40,19 +40,28 @@ export async function privateJson(path) {
   finally { await handle?.close() }
 }
 
+/** Write and sync private text atomically in an owned directory.
+ * @param path Destination filename.
+ * @param text Already serialized bytes without credential values.
+ * @returns Completion after the text is atomically published and its directory is synced.
+ */
+export async function durableText(path, text) {
+  const temporary = `${path}.${randomUUID()}.tmp`
+  const file = await open(temporary, 'wx', 0o600)
+  try { await file.writeFile(text); await file.sync() }
+  finally { await file.close() }
+  await rename(temporary, path)
+  const parent = await open(dirname(path), 'r')
+  try { await parent.sync() } finally { await parent.close() }
+}
+
 /** Write and sync metadata atomically in an owned directory.
  * @param path Destination filename.
  * @param value JSON metadata without credential values.
  * @returns Completion after the metadata is atomically published and its directory is synced.
  */
 export async function durableJson(path, value) {
-  const temporary = `${path}.${randomUUID()}.tmp`
-  const file = await open(temporary, 'wx', 0o600)
-  try { await file.writeFile(JSON.stringify(value) + '\n'); await file.sync() }
-  finally { await file.close() }
-  await rename(temporary, path)
-  const parent = await open(dirname(path), 'r')
-  try { await parent.sync() } finally { await parent.close() }
+  await durableText(path, JSON.stringify(value) + '\n')
 }
 
 /** Create or verify a private real directory.

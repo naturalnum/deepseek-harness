@@ -12,12 +12,13 @@ import { fileURLToPath } from 'node:url'
 import { test } from 'node:test'
 import { initializeDatabase } from '../application/src/platform/database.ts'
 import { backupConfig, createBackup, restoreBackup } from './backup.mjs'
-import { connectDatabase, databaseCensus, postgresTool, requireCurrentSchema, requireEmptyDatabase, requireQuiescentDatabase, verifyTools } from './backup-postgres.mjs'
+import { CURRENT_SCHEMA_VERSION, connectDatabase, databaseCensus, postgresTool, requireCurrentSchema, requireEmptyDatabase, requireQuiescentDatabase, verifyTools } from './backup-postgres.mjs'
 import { copyTree, inventoryTree, newPrivatePath, physicalPath, separatePaths } from './backup-tree.mjs'
 import { durableJson, privateJson } from './lifecycle.mjs'
 
 const { Client, Pool } = createRequire(new URL('../application/package.json', import.meta.url))('pg')
 const labels = ['privateConfig', 'workspaces', 'homes', 'skillPackages', 'attachments', 'officeCache']
+const currentTables = Object.keys(JSON.parse(await readFile(new URL(`../application/assets/cloud-schema-v${CURRENT_SCHEMA_VERSION}.manifest.json`, import.meta.url), 'utf8'))).length
 async function observed(check) {
   const deadline = Date.now() + 30000
   for (;;) {
@@ -126,7 +127,7 @@ test('native intent key archives bind original private bytes and reject substitu
   await writeFile(join(config.bundle, 'database.dump'), 'pre-database key validation fixture', { mode: 0o600 })
   const nativeIntentKey = { path: 'platform/native-intent-key', size: original.length,
     sha256: createHash('sha256').update(original).digest('hex') }
-  const manifest = { format: 1, kind: 'power-evolve-current-cloud-backup', schema: 8, family: 'cloud-native',
+  const manifest = { format: 1, kind: 'power-evolve-current-cloud-backup', schema: CURRENT_SCHEMA_VERSION, family: 'cloud-native',
     sourceRoots: roots, sourceProfiles: profiles, nativeIntentKey, inventories,
     files: (await inventoryTree(config.bundle)).filter(entry => entry.path !== '') }
   const saveManifest = async (value) => {
@@ -138,7 +139,7 @@ test('native intent key archives bind original private bytes and reject substitu
   const targetRoots = Object.fromEntries(labels.map(label => [label, join(root, 'target-' + label)]))
   const target = { ...config, roots: targetRoots, profiles: [join(root, 'target-host'), join(root, 'target-platform')],
     nativeIntentKeyFile: join(targetRoots.privateConfig, nativeIntentKey.path) }
-  for (const schema of [2, 3, 4, 5, 6, 7]) {
+  for (let schema = 2; schema < CURRENT_SCHEMA_VERSION; ++schema) {
     await saveManifest({ ...manifest, schema })
     const oldBytes = await readFile(join(config.bundle, 'manifest.json'))
     await assert.rejects(restoreBackup(target), /Invalid current-cloud backup manifest or digest/u)
@@ -402,7 +403,7 @@ test('ordinary deployment role restores all current tables and original private/
   assert.equal((await readdir(root)).filter(name => name.startsWith('changed-backup.') && name.endsWith('.partial')).length, 1)
   for (const path of profiles) assert.equal(await privateJson(join(path + '.lifecycle-lock', 'instance.json')), null)
   const capture = await backupCli('create', config, join(root, 'create-config.json'))
-  assert.equal(capture.schema, 8); assert.equal(capture.tables, 82); assert.equal(capture.keptStopped, true)
+  assert.equal(capture.schema, CURRENT_SCHEMA_VERSION); assert.equal(capture.tables, currentTables); assert.equal(capture.keptStopped, true)
   const before = await inventoryTree(config.bundle)
   await assert.rejects(createBackup(config), /already exists/u)
   assert.deepEqual(await inventoryTree(config.bundle), before)
@@ -410,7 +411,7 @@ test('ordinary deployment role restores all current tables and original private/
     nativeIntentKeyFile: join(targetParent, 'privateConfig/native-intent-key'),
     roots: Object.fromEntries(labels.map(label => [label, join(targetParent, label)])), profiles: [join(targetParent, 'host-snapshot'), join(targetParent, 'platform-snapshot')] }
   const restored = await backupCli('restore', target, join(root, 'restore-config.json'))
-  assert.equal(restored.schema, 8); assert.equal(restored.tables, 82)
+  assert.equal(restored.schema, CURRENT_SCHEMA_VERSION); assert.equal(restored.tables, currentTables)
   assert.equal(restored.allRowsVerified, true); assert.equal(restored.allFilesVerified, true)
   assert.equal(restored.readinessChecked, false)
   assert.deepEqual(await readFile(target.nativeIntentKeyFile), await readFile(nativeIntentKeyFile))
@@ -494,7 +495,7 @@ test('ordinary deployment role restores all current tables and original private/
   const legacyConfig = await postgres(names[3], join(root, 'legacy-url'))
   const legacy = await connectDatabase(legacyConfig); clients.push(legacy.client)
   await legacy.client.query("CREATE TABLE pe_schema(version integer,family text); INSERT INTO pe_schema VALUES(37,'legacy')")
-  await assert.rejects(requireCurrentSchema(legacy.client), /Schema 8/u)
+  await assert.rejects(requireCurrentSchema(legacy.client), new RegExp(`Schema ${CURRENT_SCHEMA_VERSION};`, 'u'))
   assert.deepEqual((await legacy.client.query('SELECT version,family FROM pe_schema')).rows, [{ version: 37, family: 'legacy' }])
   await legacy.client.end(); clients.pop()
   const competing = await connectDatabase(sourcePg); clients.push(competing.client)

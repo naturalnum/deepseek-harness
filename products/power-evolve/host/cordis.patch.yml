@@ -81,7 +81,7 @@
         shellMaxOutputBytes: 65536
         pollMs: 500
         renewMs: 8000
-        operationTimeoutMs: !!js process.env.PE_NATIVE_SHELL_ENABLED === '1' ? 600000 : 150000
+        operationTimeoutMs: !!js "process.env.PE_NATIVE_SHELL_ENABLED === '1' ? 600000 : 150000"
         maxRequestBytes: 50331648
         maxStreams: 100
         fileDownloadTimeoutMs: 60000
