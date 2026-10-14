@@ -45,7 +45,8 @@ test('tenant startup admission rejects missing and foreign credentials on actual
   })
   ctx.provide('powerEvolveRuntime', { config: { runtimeUserId: userId }, call: verifier,
     verifyBroker: async (credential?: string) => { if (credential !== runtimeToken) throw new Error('denied') } })
-  const admission = new NativeAdmission(ctx, { origin: 'http://127.0.0.1:12345', platformOrigin: 'https://platform.example' })
+  const admission = new NativeAdmission(ctx, { origin: 'http://127.0.0.1:12345', platformOrigin: 'https://platform.example',
+    maxBootBytes: 16777216, maxBootResources: 128 })
   await ctx.plugin(WebServer, { host: '127.0.0.1', port: 0, requestAdmission: admission.admit })
   for (const path of ['/plugins/events', '/api', '/api/remote.mux']) {
     ctx.webServer.register({ kind: 'exact', path, handler: (_request, response) => { response.end('original') } })
