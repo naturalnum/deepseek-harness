@@ -1,5 +1,7 @@
 # Employee1 Contracts consumer handoff
 
+历史私有归档引用：以下 `.artifacts/employee1` 路径和原记录名称保留为文本；当前 checkout 不提供这些收据，本轮当前验收未使用它们。原历史结果、失败与验证限度继续保留。
+
 2026-10-09：新增四份员工1专属 source 测试，最终 **132/132 通过，0 fail、0 skip**；仅 Office 与 file-download 两份 Contracts 源码的 lines/statements/functions/branches 均为 100%，保留原每文件四项 100% 门槛。 本批没有修改生产、旧测试、Manifest、锁文件、构建上下文或配置；Office 原有生产与 CI helper 继续冻结。 独立 wire fixtures 未由 schema.shape 生成，也未复制生产谓词；实际消费入口和边界如下。
 
 | 新测试 | 实际 source 入口 | 验证行为 |
@@ -17,4 +19,4 @@
 
 官方 cloud 映射规则对这四文件的真实 Host leaf typed lint 为 **exit 0**。 完整 TestHost source program 的最终 tsc 为 **exit 2**，本批四文件诊断为 **0**；该次实际日志有 27 项其他 source/test 诊断，项目类型检查仍未通过。 这些结果只覆盖本批两个协议源文件，不表示所有 Contracts 模块、Host/Platform 源码覆盖率或整个迁移验收通过。 员工3拥有 source-plane 配置，本批未修改它。
 
-最终冻结与检查证据：[机器记录](../../.artifacts/employee1/contracts-consumer-final-proof.json)、[14 个输入 SHA](../../.artifacts/employee1/contracts-consumer-final-inputs.json)、[132 项与 coverage 原日志](../../.artifacts/employee1/contracts-consumer-final4.log)、[coverage 原始转换结果](../../.artifacts/employee1/contracts-consumer-coverage-final4/coverage-final.json)、[typed lint](../../.artifacts/employee1/contracts-consumer-lint-final4.log)、[完整 source types 失败日志](../../.artifacts/employee1/contracts-consumer-types-final4.log)。 最终测试及消费源码/配置输入前后 SHA 未漂移，两份协议源码 SHA 与员工3提案相同。 此前 direct pg import、非法 HTTP header 错误预期、巨大 Buffer deep-equality 超时、自己的 types/lint 与初次两项 coverage guard 失败日志全部保留，没有改门槛或跳过用例。
+最终冻结与检查证据：机器记录（`../../.artifacts/employee1/contracts-consumer-final-proof.json`）、14 个输入 SHA（`../../.artifacts/employee1/contracts-consumer-final-inputs.json`）、132 项与 coverage 原日志（`../../.artifacts/employee1/contracts-consumer-final4.log`）、coverage 原始转换结果（`../../.artifacts/employee1/contracts-consumer-coverage-final4/coverage-final.json`）、typed lint（`../../.artifacts/employee1/contracts-consumer-lint-final4.log`）、完整 source types 失败日志（`../../.artifacts/employee1/contracts-consumer-types-final4.log`）。 最终测试及消费源码/配置输入前后 SHA 未漂移，两份协议源码 SHA 与员工3提案相同。 此前 direct pg import、非法 HTTP header 错误预期、巨大 Buffer deep-equality 超时、自己的 types/lint 与初次两项 coverage guard 失败日志全部保留，没有改门槛或跳过用例。
