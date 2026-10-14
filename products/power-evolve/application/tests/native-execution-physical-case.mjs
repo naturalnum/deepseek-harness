@@ -28,12 +28,48 @@ import { verifyNativeExecutionConsumers } from '../lib/native-execution-consumer
 import { createNativeExecutionHttpBinding } from '../lib/native-execution/http-client.js'
 import { readNativeRuntimePolicy } from '../lib/platform/native-runtime-policy.js'
 import { installNativeExecutionPlatform } from '../lib/platform/native-execution-platform.js'
+import { kubernetesPodStopStatus } from '../lib/platform/pod-stop-status.js'
 
 const input = process.env.PE_NATIVE_EXECUTION_PHYSICAL_INPUT
 if (!input) throw new Error('PE_NATIVE_EXECUTION_PHYSICAL_INPUT must name owned physical inputs')
 const config = JSON.parse(await readFile(input, 'utf8'))
 const limits = { maxEventBytes: 524288, leaseMs: 600000, maxPendingPerUser: 8, maxActivePerUser: 4 }
 const history = { maxHistoryEvents: 1000, maxHistoryBytes: 8388608 }
+
+/** Close a trial only after every original admission has positive released stop evidence.
+ * @param pool Original trial database connection.
+ * @param admin Original administrative connection used only for this owned database.
+ * @param name Original server-selected trial database name.
+ * @param evidenceFile Private evidence path; retained identity never contains database credentials.
+ * @param cleanupFailed Whether any original owner failed to join its cleanup.
+ * @returns Whether the original database was safely dropped; uncertainty preserves it for reconciliation.
+ */
+async function closePhysicalTrialDatabase(pool, admin, name, evidenceFile, cleanupFailed) {
+  let originals, inspectionError, confirmed = false, poolClosed = false
+  try {
+    originals = (await pool.query(`SELECT id,world_id,pod_name,pod_uid,state,stop_evidence
+      FROM pe_native_execution_processes ORDER BY id`)).rows
+    confirmed = originals.every((row) => {
+      const proof = row.stop_evidence
+      return row.state === 'stopped' && proof?.resourceReleased === true && proof.processId === row.id
+        && proof.worldId === row.world_id && proof.podUid === row.pod_uid
+        && proof.observation?.metadata?.uid === row.pod_uid && proof.observation.metadata.name === row.pod_name
+        && ['KUBELET_STOPPED', 'UNSCHEDULED_DELETING'].includes(proof.status)
+        && kubernetesPodStopStatus(proof.observation) === proof.status
+    })
+  } catch (error) { inspectionError = error.message }
+  try {
+    if (cleanupFailed || !confirmed) {
+      await writeFile(evidenceFile + '.retained-database', JSON.stringify({ database: name, retained: true,
+        cleanupFailed, inspectionError, originalAdmissions: originals }, null, 2) + '\n', { mode: 0o600 })
+      return false
+    }
+    await pool.end()
+    poolClosed = true
+    await admin.query('DROP DATABASE "' + name + '"')
+    return true
+  } finally { if (!poolClosed) await pool.end(); await admin.end() }
+}
 
 async function prepare(pool, identity, modes, files, account) {
   const tasks = new TaskStore(pool, limits), request = randomUUID()
@@ -91,8 +127,10 @@ test('native Fs, Bash and physical permissions share one generation and exact st
   const connection = new URL((await readFile(config.databaseUrlFile, 'utf8')).trim()); connection.pathname = '/' + name
   const pool = new Pool({ connectionString: connection.href })
   const ctx = new Context(), runtimeContexts = [], nativeBindings = [], modes = new Map()
-  let broker, server
+  let broker, server, originalFailure
   try {
+    await writeFile(config.evidenceFile + '.database-identity', JSON.stringify({ database: name,
+      namespace: config.pods.namespace, source: 'original-physical-trial' }) + '\n', { mode: 0o600 })
     await initializeDatabase(pool)
     const password = randomUUID(), hash = await hashPassword(password)
     for (const user of ['alice', 'bob']) await seedNewUser(pool, user, hash, { model: 'trial-model', maxTokens: 1000, revision: 1 })
@@ -314,11 +352,26 @@ test('native Fs, Bash and physical permissions share one generation and exact st
     assert.deepEqual(await pods.recover(100), [])
     await writeFile(config.evidenceFile, JSON.stringify({ database: name, passed: true, consumers, pipeEvidence,
       stream: { streamed, streamChunks }, evidence }, null, 2) + '\n', { mode: 0o600 })
-  } finally {
-    for (const binding of nativeBindings) await binding.close()
-    if (broker) await broker.dispose()
-    if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }
-    for (const runtime of runtimeContexts) await runtime.fiber.dispose()
-    await ctx.fiber.dispose(); await pool.end(); await admin.query('DROP DATABASE "' + name + '"'); await admin.end()
+  } catch (error) { originalFailure = error; throw error }
+  finally {
+    let cleanupFailure
+    try {
+      for (const binding of nativeBindings) await binding.close()
+      if (broker) await broker.dispose()
+      if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }
+      for (const runtime of runtimeContexts) await runtime.fiber.dispose()
+      await ctx.fiber.dispose()
+    } catch (error) { cleanupFailure = error }
+    let dropped
+    try { dropped = await closePhysicalTrialDatabase(pool, admin, name, config.evidenceFile, cleanupFailure !== undefined) }
+    catch (error) {
+      if (originalFailure) throw new AggregateError([originalFailure, error], 'Physical cleanup failed; original failure retained',
+        { cause: originalFailure })
+      throw error
+    }
+    if (!originalFailure) {
+      if (cleanupFailure) throw cleanupFailure
+      if (!dropped) throw new Error('Original physical trial database retained because admission cleanup is unconfirmed')
+    }
   }
 })
