@@ -34,7 +34,8 @@ export class NativeExecutionByteQueue {
       this.length -= count; this.offset += count; remove -= count
     }
     const bytes = Buffer.concat(this.chunks, this.length).subarray(0, this.maximum)
-    const result = { data: bytes.toString('base64'), nextOffset: this.offset + bytes.length, lossy: false, exhausted: this.source.readableEnded && this.offset + bytes.length === this.total }
+    const result = { data: bytes.toString('base64'), nextOffset: this.offset + bytes.length, lossy: false,
+      exhausted: this.source.readableEnded && this.offset + bytes.length === this.total }
     if (this.length < this.maximum) this.source.resume()
     return result
   }

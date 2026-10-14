@@ -3,7 +3,8 @@ import { Context } from '@deepseek-ai/cordis'
 import { LocalSubprocessRuntime } from '@deepseek-ai/dsh-subprocess-local'
 import type { Pool } from 'pg'
 import type { ManagedCloudStorage } from './managed-storage.ts'
-import { NativeExecutionAuthorityStore, type NativeExecutionPolicyReader, type NativeExecutionTaskAuthority } from './native-execution-authority-store.ts'
+import { NativeExecutionAuthorityStore, type NativeExecutionPolicyReader,
+  type NativeExecutionTaskAuthority } from './native-execution-authority-store.ts'
 import { NativeExecutionBroker } from './native-execution-broker.ts'
 import { NativeExecutionPods } from './native-execution-pods.ts'
 import { NativeExecutionRoutes } from './native-execution-routes.ts'
@@ -36,6 +37,7 @@ export async function installNativeExecutionPlatform(ctx: Context, pool: Pool, t
   const ready = Promise.withResolvers<void>()
   let disposed = false, broker: NativeExecutionBroker | undefined, routes: NativeExecutionRoutes | undefined
   let closing: Promise<void> | undefined
+  const isDisposed = (): boolean => disposed
   const close = () => closing ??= (async () => {
     disposed = true; await ready.promise
     const failures: unknown[] = []
@@ -48,12 +50,12 @@ export async function installNativeExecutionPlatform(ctx: Context, pool: Pool, t
   try {
     const config = await loadNativeExecutionConfig(configFile)
     await transport.plugin(LocalSubprocessRuntime)
-    if (disposed) throw new Error('native_execution_platform_disposed')
+    if (isDisposed()) throw new Error('native_execution_platform_disposed')
     const kube = await KubernetesClient.fromFile(config.broker.kubeconfigPath)
     const { nodeName, ...podConfig } = config.pods
     const pods = new NativeExecutionPods(pool, kube, { ...podConfig, ...(nodeName === undefined ? {} : { nodeName }) })
     const uncertainProcessIds = await pods.recover(config.pods.maxRecoveryRows)
-    if (disposed) throw new Error('native_execution_platform_disposed')
+    if (isDisposed()) throw new Error('native_execution_platform_disposed')
     const authority = new NativeExecutionAuthorityStore(pool, tasks, storage, policyReader)
     broker = new NativeExecutionBroker(authority, pods, transport.subprocess, config.broker)
     routes = new NativeExecutionRoutes(broker, config.routes)

@@ -1,0 +1,13 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "lib/native-execution-build-types",
+    "tsBuildInfoFile": "lib/tsconfig.native-execution-build.tsbuildinfo"
+  },
+  "files": [
+    "native-execution-artifact-config.ts",
+    "tsdown.config.ts",
+    "tsdown.native-execution-test.config.ts"
+  ]
+}

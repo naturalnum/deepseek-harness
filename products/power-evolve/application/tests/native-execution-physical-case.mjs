@@ -52,25 +52,32 @@ async function prepare(pool, identity, modes, files, account) {
   (client, value) => frames.verifyInTransaction(client, value))
   const header = (await pool.query('SELECT header FROM pe_sessions WHERE id=$1', [created.sessionId])).rows[0].header
   const session = Session.create(header.id, undefined, header)
-  const content = (await pool.query('SELECT admitted FROM pe_native_prompt_inputs WHERE session_id=$1 AND request_id=$2', [created.sessionId, request])).rows[0].admitted
+  const content = (await pool.query('SELECT admitted FROM pe_native_prompt_inputs WHERE session_id=$1 AND request_id=$2',
+    [created.sessionId, request])).rows[0].admitted
   const origin = randomUUID(), message = { id: randomUUID(), role: 'user', source: { kind: 'user', rpcId: request }, content }
   const admission = session.append('agent/inbox/spliced', { target: 'next-turn', start: 0, inserted: [message] })
   await ledger.admit(account.token, { authority, expectedEventCount: 0, events: [admission], command: nativeInputAdmissionCommand.parse({
     rpcNonce: randomUUID(), sessionId: created.sessionId, originInputId: origin, originOperationId: grant.operationId,
     messageId: message.id, target: 'next-turn' }) })
   const frame = await transaction(pool, client => frames.prepareInTransaction(client, authority, origin))
-  const consumed = [session.append('turn/start', { turn: 1 }), session.append('agent/inbox/spliced', { target: 'next-turn', start: 0, removedCount: 1, inserted: [] })]
+  const consumed = [session.append('turn/start', { turn: 1 }), session.append('agent/inbox/spliced', { target: 'next-turn',
+    start: 0, removedCount: 1, inserted: [] })]
   const claim = nativeInputClaimCommand.parse({ rpcNonce: randomUUID(), cohortId: randomUUID(), boundaryKind: 'initial-turn-step',
     frame: { sessionId: grant.sessionId, operationId: grant.operationId, operationEpoch: grant.epoch,
       writerEpoch: writer.epoch, frozenSnapshotDigest: frame.frozenSnapshotDigest } })
   await ledger.claim({ command: claim, authority, expectedEventCount: 1, events: consumed })
   const step = session.append('step/start', { turn: 1, step: 1 })
-  await transaction(pool, async client => { const current = await tasks.authorized(client, grant.token); await events.appendInTransaction(client, current, [step]);
-    await ledger.bindStepInTransaction(client, nativeInputStepCommand.parse({ cohortId: claim.cohortId, frame: claim.frame, stepStartSeq: step.seq }), authority) })
-  const nativeAuthority = new NativeExecutionAuthority((client, current, token) => frames.readExecutionInTransaction(client, current, token), { ...history, maxCohortInputs: 128, maxFactBytes: 2097152 })
-  const executionTasks = new TaskStore(pool, limits, (client, current, token) => nativeAuthority.assertExecutionInTransaction(client, current, token))
+  await transaction(pool, async (client) => { const current = await tasks.authorized(client, grant.token)
+    await events.appendInTransaction(client, current, [step])
+    await ledger.bindStepInTransaction(client, nativeInputStepCommand.parse({ cohortId: claim.cohortId, frame: claim.frame,
+      stepStartSeq: step.seq }), authority) })
+  const nativeAuthority = new NativeExecutionAuthority((client, current, token) => frames.readExecutionInTransaction(client,
+    current, token), { ...history, maxCohortInputs: 128, maxFactBytes: 2097152 })
+  const executionTasks = new TaskStore(pool, limits, (client, current,
+    token) => nativeAuthority.assertExecutionInTransaction(client, current, token))
   await events.append(grant.token, [session.append('sandbox/mode', { mode: 'workspace-write' })])
-  const taskAuthority = { nativeWorldAuthorized: (client, token, purpose) => purpose === 'storage-read' ? executionTasks.authorized(client, token) : executionTasks.executionAuthorized(client, token) }
+  const taskAuthority = { nativeWorldAuthorized: (client, token,
+    purpose) => purpose === 'storage-read' ? executionTasks.authorized(client, token) : executionTasks.executionAuthorized(client, token) }
   const store = new NativeExecutionAuthorityStore(pool, taskAuthority, files.storage, readNativeRuntimePolicy)
   const issued = await store.open(grant.token, grant.sessionId)
   await mkdir(join(config.homeRoot, issued.world.userId), { recursive: true, mode: 0o755 })
@@ -89,10 +96,12 @@ test('native Fs, Bash and physical permissions share one generation and exact st
     await initializeDatabase(pool)
     const password = randomUUID(), hash = await hashPassword(password)
     for (const user of ['alice', 'bob']) await seedNewUser(pool, user, hash, { model: 'trial-model', maxTokens: 1000, revision: 1 })
-    const identity = new IdentityService(pool, 600000), alice = await identity.login('alice', password), bob = await identity.login('bob', password)
+    const identity = new IdentityService(pool, 600000), alice = await identity.login('alice', password),
+      bob = await identity.login('bob', password)
     const files = new FileService(pool, config.storageRoot, { uid: 1000, gid: 1000 }); await files.init()
     const a = await prepare(pool, identity, modes, files, alice), b = await prepare(pool, identity, modes, files, bob)
-    const assembled = await installNativeExecutionPlatform(ctx, pool, a.taskAuthority, files.storage, readNativeRuntimePolicy, config.nativeConfigFile)
+    const assembled = await installNativeExecutionPlatform(ctx, pool, a.taskAuthority, files.storage, readNativeRuntimePolicy,
+      config.nativeConfigFile)
     const { pods, routes } = assembled; broker = assembled.broker
     // Exercise the Runtime's real serialized HTTP request/reply path in this owned controller.
     // The production Webserver carrier has its own admission/body/teardown acceptance tests.
@@ -125,7 +134,8 @@ test('native Fs, Bash and physical permissions share one generation and exact st
     }
     assert.equal((await a.store.open(a.grant.token, a.grant.sessionId)).world.worldId, a.issued.world.worldId)
     const waitFile = async (issued, path) => {
-      const deadline = Date.now() + 30000, filename = join(config.storageRoot, issued.binding.rootKey, issued.binding.rootRelativePath, path)
+      const deadline = Date.now() + 30000, filename = join(config.storageRoot, issued.binding.rootKey,
+        issued.binding.rootRelativePath, path)
       while (Date.now() < deadline) {
         try { return await readFile(filename, 'utf8') } catch (error) { if (error.code !== 'ENOENT') throw error }
         await delay(100)
@@ -137,7 +147,8 @@ test('native Fs, Bash and physical permissions share one generation and exact st
     const direct = broker.binding(directCtx, a.grant.token, a.issued.world)
     let firstFile
     try { firstFile = await direct.filesystem.resolve('/workspace/native-proof.txt') }
-    catch (error) { await writeFile(config.evidenceFile + '.failure', JSON.stringify({ error: error.message, cause: error.cause?.message }) + '\n', { mode: 0o600 }); throw error }
+    catch (error) { await writeFile(config.evidenceFile + '.failure', JSON.stringify({ error: error.message,
+      cause: error.cause?.message }) + '\n', { mode: 0o600 }); throw error }
     assert.equal(direct.filesystem.processPath(firstFile), '/workspace/native-proof.txt')
     const file = await n.filesystem.resolve('/workspace/native-proof.txt')
     await n.filesystem.writeText(file, 'native Fs wrote this\n')
@@ -155,9 +166,11 @@ test('native Fs, Bash and physical permissions share one generation and exact st
     assert.match((await run(n, 'cat /tmp/native-shared.txt')).stdout.text, /same session temporary data/)
     const observed = await n.filesystem.stat(file)
     assert(observed?.version)
-    const edited = await n.filesystem.editText(file, { oldString: 'bash', newString: 'guarded', replaceAll: false }, { version: observed.version })
+    const edited = await n.filesystem.editText(file, { oldString: 'bash', newString: 'guarded', replaceAll: false },
+      { version: observed.version })
     assert(edited.version)
-    await assert.rejects(n.filesystem.editText(file, { oldString: 'guarded', newString: 'stale', replaceAll: false }, { version: observed.version }), error => error.code === 'FS_STALE_VERSION')
+    await assert.rejects(n.filesystem.editText(file, { oldString: 'guarded', newString: 'stale', replaceAll: false },
+      { version: observed.version }), error => error.code === 'FS_STALE_VERSION')
     assert.match(await n.filesystem.readText(file), /guarded$/)
     const largeWrite = await n.filesystem.resolve('/workspace/large-write.txt'), text = 'UTF8-中文🌍\n'.repeat(40000)
     await n.filesystem.writeText(largeWrite, text)
@@ -166,10 +179,23 @@ test('native Fs, Bash and physical permissions share one generation and exact st
     assert.equal((await run(n, "python3 -c \"open('large-stream.txt','w').write('中文🌍\\n'*400000)\"")).outcome.exitCode, 0)
     await assert.rejects(n.filesystem.readText(large), error => error.code === 'FS_TOO_LARGE')
     const streamHash = createHash('sha256'); let streamed = 0, streamChunks = 0
-    for await (const chunk of await n.filesystem.streamText(large)) { streamHash.update(chunk); streamed += Buffer.byteLength(chunk); streamChunks++ }
+    for await (const chunk of await n.filesystem.streamText(large)) { streamHash.update(chunk)
+      streamed += Buffer.byteLength(chunk); streamChunks++ }
     const wanted = '中文🌍\n'.repeat(400000)
     assert.equal(streamed, Buffer.byteLength(wanted)); assert.ok(streamChunks > 1)
     assert.equal(streamHash.digest('hex'), createHash('sha256').update(wanted).digest('hex'))
+    const binary = await n.filesystem.resolve('/workspace/native-binary.txt')
+    assert.equal((await run(n, "python3 -c \"open('native-binary.txt','wb').write(b'hello\\x00world')\"")).outcome.exitCode, 0)
+    assert.deepEqual([...await n.filesystem.readBytes(binary, undefined, 32)], [...Buffer.from('hello\0world')])
+    assert.equal(Buffer.from(await n.filesystem.readByteRange(binary, { offset: 1, length: 3 })).toString(), 'ell')
+    await assert.rejects(async () => { for await (const chunk of await n.filesystem.streamText(binary)) void chunk },
+      error => error.code === 'FS_NOT_TEXT')
+    assert.equal((await n.filesystem.lstat('/workspace')).type, 'directory')
+    assert.ok((await n.filesystem.listDir(await n.filesystem.resolve('/workspace'))).some(entry => entry.name === 'large-stream.txt'))
+    assert.equal((await run(n, 'ln -s /proc/1/environ escape-link')).outcome.exitCode, 0)
+    assert.equal((await n.filesystem.lstat('/workspace/escape-link')).type, 'symlink')
+    await assert.rejects(n.filesystem.resolve('/workspace/escape-link'),
+      error => error.code === 'FS_SANDBOX_DENIED' || error.code === 'FS_PERMISSION_DENIED')
     // An eagerly allocated reader must close even when JS has not started its generator.
     const unopened = (await n.filesystem.streamText(large))[Symbol.asyncIterator]()
     await unopened.return(); await unopened.return()
@@ -205,7 +231,7 @@ test('native Fs, Bash and physical permissions share one generation and exact st
     assert.doesNotMatch(escape.stdout.text, /KUBECONFIG|POSTGRES_PASSWORD|workerToken|model.key/)
     const sameUid = n.subprocess.spawn({ argv: ['/usr/bin/python3', '-I', '-B', '-c',
       "import os,errno; p=os.getppid(); failures=[]\nfor tail in ['fd/1','environ','mem']:\n try:\n  fd=os.open('/proc/%d/%s'%(p,tail),os.O_RDONLY); os.close(fd); failures.append(tail)\n except OSError as e:\n  assert e.errno in [errno.EACCES,errno.EPERM],(tail,e.errno)\nprint('outer-fds-denied'); os._exit(23 if not failures else 99)"], cwd: '/workspace', graceMs: 1000,
-      stdio: { stdin: 'ignore', stdout: { maxBytes: 65536 }, stderr: { maxBytes: 65536 } } })
+    stdio: { stdin: 'ignore', stdout: { maxBytes: 65536 }, stderr: { maxBytes: 65536 } } })
     assert.equal((await sameUid.done).exitCode, 23)
     const pipeEvidence = []
     for (const channel of ['stdout', 'control']) {
@@ -245,11 +271,13 @@ test('native Fs, Bash and physical permissions share one generation and exact st
     const readonly = await a.store.open(a.grant.token, a.grant.sessionId), ro = native(readonly, a.grant.token)
     const blocked = await run(ro, 'echo no > /workspace/no; echo no > /tmp/no')
     assert.notEqual(blocked.outcome.exitCode, 0); assert.match(blocked.stderr.text, /Read-only file system/)
-    await assert.rejects(ro.filesystem.writeText(await ro.filesystem.resolve('/workspace/no'), 'no'), error => error.code === 'FS_SANDBOX_DENIED')
+    await assert.rejects(ro.filesystem.writeText(await ro.filesystem.resolve('/workspace/no'), 'no'),
+      error => error.code === 'FS_SANDBOX_DENIED')
     await a.events.append(a.grant.token, [a.session.append('sandbox/mode', { mode: 'workspace-write' })])
     const live = native(await a.store.open(a.grant.token, a.grant.sessionId), a.grant.token)
     const current = await a.store.open(a.grant.token, a.grant.sessionId)
-    const controller = new AbortController(), cancelled = run(live, 'printf entered > running-cancel.txt; sleep 30; echo wrong > after-cancel', controller.signal)
+    const controller = new AbortController(), cancelled = run(live,
+      'printf entered > running-cancel.txt; sleep 30; echo wrong > after-cancel', controller.signal)
     assert.equal(await waitFile(current, 'running-cancel.txt'), 'entered'); controller.abort()
     assert.equal((await cancelled).outcome.signal, 'SIGTERM')
     const changed = run(live, 'printf entered > running-generation.txt; sleep 30; echo wrong > after-generation')
@@ -266,13 +294,15 @@ test('native Fs, Bash and physical permissions share one generation and exact st
     assert.equal(await waitFile(revoking, 'running-revoke.txt'), 'entered')
     await pool.query("UPDATE pe_users SET role='ADMIN' WHERE id=$1", [bob.user.userId])
     const accounts = new AccountService(pool, identity, { platformOrigin: 'http://127.0.0.1:1', workspaceRoot: config.storageRoot,
-      management: { maxUsers: 10, models: [{ id: 'trial-model', label: 'Trial', maxTokens: 1000 }], initialSettings: { model: 'trial-model', maxTokens: 1000 } },
+      management: { maxUsers: 10, models: [{ id: 'trial-model', label: 'Trial', maxTokens: 1000 }],
+        initialSettings: { model: 'trial-model', maxTokens: 1000 } },
       revokeExecutions: revokeAccountExecutions })
     const administrator = await accounts.login('bob', password)
     await accounts.update(administrator.token, { userId: alice.user.userId, requestId: randomUUID(), expectedRevision: 1, enabled: false })
     await assert.rejects(revoked)
     await assert.rejects(original.filesystem.readText(file))
-    const bobFile = await other.filesystem.resolve('/workspace/bob-owned.txt'); await other.filesystem.writeText(bobFile, 'bob survives alice revoke')
+    const bobFile = await other.filesystem.resolve('/workspace/bob-owned.txt'); await other.filesystem.writeText(bobFile,
+      'bob survives alice revoke')
     assert.equal(await other.filesystem.readText(bobFile), 'bob survives alice revoke')
     await original.close()
     const evidence = (await pool.query("SELECT state,pod_uid,first_stop_cause,stop_evidence FROM pe_native_execution_processes WHERE state='stopped'")).rows
@@ -282,7 +312,8 @@ test('native Fs, Bash and physical permissions share one generation and exact st
     await assert.rejects(b.store.assert(b.grant.token, stale.world), error => error.code === 'native_world_generation_changed')
     await routes.dispose()
     assert.deepEqual(await pods.recover(100), [])
-    await writeFile(config.evidenceFile, JSON.stringify({ database: name, passed: true, consumers, pipeEvidence, stream: { streamed, streamChunks }, evidence }, null, 2) + '\n', { mode: 0o600 })
+    await writeFile(config.evidenceFile, JSON.stringify({ database: name, passed: true, consumers, pipeEvidence,
+      stream: { streamed, streamChunks }, evidence }, null, 2) + '\n', { mode: 0o600 })
   } finally {
     for (const binding of nativeBindings) await binding.close()
     if (broker) await broker.dispose()

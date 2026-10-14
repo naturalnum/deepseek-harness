@@ -11,7 +11,8 @@ const event = z.discriminatedUnion('kind', [
   z.object({ kind: z.enum(['stdout', 'stderr', 'control']), data: z.base64() }).strict(),
   z.object({ kind: z.enum(['stdoutEnd', 'stderrEnd', 'controlEnd']) }).strict(),
   z.object({ kind: z.literal('exit'), exitCode: z.number().int().nonnegative().nullable(), signal: z.string().nullable() }).strict(),
-  z.object({ kind: z.literal('reply'), id: z.uuid(), ok: z.boolean(), value: z.unknown().optional(), error: z.string().optional() }).strict(),
+  z.object({ kind: z.literal('reply'), id: z.uuid(), ok: z.boolean(), value: z.unknown().optional(),
+    error: z.string().optional() }).strict(),
 ])
 const foreground = z.object({ processGroupId: z.number().int().positive(), inputWaiting: z.boolean() }).strict()
 const activity = z.object({ state: z.enum(['idle', 'busy', 'unknown']), revision: z.number().int().nonnegative() }).strict()
@@ -41,9 +42,11 @@ export class NativeExecutionRelay {
     const write = (op: string) => (chunk: Buffer, _encoding: BufferEncoding, callback: (error?: Error | null) => void) => {
       const work = (async () => {
         const bytes = Buffer.from(chunk), quantum = Math.max(1, Math.floor(maxFrameBytes / 4))
-        for (let offset = 0; offset < bytes.length; offset += quantum) await this.send({ op, data: bytes.subarray(offset, offset + quantum).toString('base64') })
+        for (let offset = 0; offset < bytes.length; offset += quantum) await this.send({ op, data: bytes.subarray(offset,
+          offset + quantum).toString('base64') })
       })()
-      work.then(() => { callback() }, (error: unknown) => { callback(error instanceof Error ? error : new Error('Native relay write failed', { cause: error })) })
+      work.then(() => { callback() },
+        (error: unknown) => { callback(error instanceof Error ? error : new Error('Native relay write failed', { cause: error })) })
     }
     this.stdin = spec.stdio.stdin === 'pipe' ? new Writable({ write: write('stdin'), final: (callback) => {
       this.send({ op: 'stdinEnd' }).then(() => { callback() }, callback)
@@ -55,7 +58,8 @@ export class NativeExecutionRelay {
       const data = Buffer.from(spec.stdio.stdin.data)
       const batch = (async () => {
         for (let offset = 0; offset < data.length; offset += Math.max(1, Math.floor(maxFrameBytes / 4))) {
-          await this.send({ op: 'stdin', data: data.subarray(offset, offset + Math.max(1, Math.floor(maxFrameBytes / 4))).toString('base64') })
+          await this.send({ op: 'stdin', data: data.subarray(offset, offset + Math.max(1,
+            Math.floor(maxFrameBytes / 4))).toString('base64') })
         }
         await this.send({ op: 'stdinEnd' })
       })()
@@ -96,12 +100,13 @@ export class NativeExecutionRelay {
               }
             } else if (frame.kind === 'controlEnd') this.control?.push(null)
             else if (frame.kind === 'stdoutEnd') this.stdout?.end()
-            else if (frame.kind === 'stderrEnd') this.stderr?.end()
+            else this.stderr?.end()
           }
           if (buffer.length > maxFrameBytes) throw new Error('Native relay incomplete frame exceeds configured bound')
         }
         const transport = await local.done
-        if (buffer.length || transport.exitCode !== 0 || !outcome) throw new Error('Native relay outcome unavailable', { cause: new Error('transport=' + JSON.stringify(transport) + '; stderr=' + (local.collected.stderr?.readFrom(0).text ?? '') + '; trailing=' + buffer.length + '; outcome=' + JSON.stringify(outcome)) })
+        if (buffer.length || transport.exitCode !== 0 || !outcome) throw new Error('Native relay outcome unavailable',
+          { cause: new Error('transport=' + JSON.stringify(transport) + '; stderr=' + (local.collected.stderr?.readFrom(0).text ?? '') + '; trailing=' + String(buffer.length) + '; outcome=' + JSON.stringify(outcome)) })
         return outcome
       } finally {
         this.closed = true
@@ -124,7 +129,8 @@ export class NativeExecutionRelay {
     if (stream.destroyed) return Promise.reject(new Error('Native relay stream closed'))
     return new Promise((resolve, reject) => {
       const drain = () => { cleanup(); resolve() }, close = () => { cleanup(); reject(new Error('Native relay stream closed')) }
-      const cleanup = () => { stream.off('drain', drain); stream.off('close', close); this.interrupted.signal.removeEventListener('abort', close) }
+      const cleanup = () => { stream.off('drain', drain); stream.off('close', close)
+        this.interrupted.signal.removeEventListener('abort', close) }
       stream.once('drain', drain); stream.once('close', close)
       this.interrupted.signal.addEventListener('abort', close, { once: true })
       if (this.interrupted.signal.aborted) close()
@@ -137,7 +143,8 @@ export class NativeExecutionRelay {
     if (stream.destroyed) return Promise.reject(new Error('Native relay control closed'))
     return new Promise((resolve, reject) => {
       const read = () => { cleanup(); resolve() }, close = () => { cleanup(); reject(new Error('Native relay control closed')) }
-      const cleanup = () => { stream.off('resume', read); stream.off('close', close); this.interrupted.signal.removeEventListener('abort', close) }
+      const cleanup = () => { stream.off('resume', read); stream.off('close', close)
+        this.interrupted.signal.removeEventListener('abort', close) }
       stream.once('resume', read); stream.once('close', close)
       this.interrupted.signal.addEventListener('abort', close, { once: true })
       if (this.interrupted.signal.aborted) close()
@@ -148,10 +155,12 @@ export class NativeExecutionRelay {
     if (this.closed) return Promise.reject(new Error('Native relay closed'))
     const work = (async () => {
       await this.ready
-      if (this.closed || !this.local.stdin) throw new Error('Native relay input unavailable')
+      const channel = this.local.stdin
+      if (this.closed || !channel) throw new Error('Native relay input unavailable')
       const bytes = Buffer.from(JSON.stringify(input) + '\n')
       if (bytes.length > this.maxFrameBytes) throw new Error('Native relay input exceeds configured frame bound')
-      await new Promise<void>((resolve, reject) => this.local.stdin!.write(bytes, (error?: Error | null) => { if (error) reject(error); else resolve() }))
+      await new Promise<void>((resolve, reject) => channel.write(bytes, (error?: Error | null) => { if (error) reject(error)
+      else resolve() }))
     })()
     this.writes.add(work); void work.then(() => { this.writes.delete(work) }, () => { this.writes.delete(work) })
     return work

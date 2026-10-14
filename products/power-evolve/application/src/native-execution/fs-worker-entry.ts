@@ -25,6 +25,7 @@ try {
     process.stdout.write(JSON.stringify({ ok: true, value }) + '\n')
   }
 } catch (error) {
-  process.stdout.write(JSON.stringify({ ...(streaming ? { kind: 'error' } : { ok: false }), code: error instanceof FsError ? error.code : 'FS_IO_ERROR',
+  process.stdout.write(JSON.stringify({ ...(streaming ? { kind: 'error' } : { ok: false }),
+    code: error instanceof FsError ? error.code : 'FS_IO_ERROR',
     message: error instanceof FsError ? error.message : 'Native filesystem request failed.' }) + '\n')
 }

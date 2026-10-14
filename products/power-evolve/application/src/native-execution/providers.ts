@@ -32,9 +32,11 @@ export class NativeCloudFileSystem extends FileSystem {
   }
   override listDir(target: FsTarget, signal?: AbortSignal) { return this.config.resolve().filesystem.listDir(target, signal) }
   override writeText(target: FsTarget, content: string, expected?: FsWriteIntent, signal?: AbortSignal,
-    sandboxPolicy?: SandboxExecutionPolicy) { return this.config.resolve().filesystem.writeText(target, content, expected, signal, sandboxPolicy) }
+    sandboxPolicy?: SandboxExecutionPolicy) { return this.config.resolve().filesystem.writeText(target, content, expected,
+    signal, sandboxPolicy) }
   override editText(target: FsTarget, edit: FsEditRequest, expected?: { version: FsVersion }, signal?: AbortSignal,
-    sandboxPolicy?: SandboxExecutionPolicy) { return this.config.resolve().filesystem.editText(target, edit, expected, signal, sandboxPolicy) }
+    sandboxPolicy?: SandboxExecutionPolicy) { return this.config.resolve().filesystem.editText(target, edit, expected, signal,
+    sandboxPolicy) }
 }
 
 /** Subprocess selection never changes after its synchronous spawn captures the Agent. */
@@ -67,4 +69,5 @@ export function installNativeExecutionProviders(ctx: Context, config: NativeExec
 }
 
 export { nativeExecutionWorld } from './types.ts'
-export type { NativeExecutionWorld, NativeExecutionBinding, NativeExecutionBindingResolver, NativeExecutionProviderConfig } from './types.ts'
+export type { NativeExecutionWorld, NativeExecutionBinding, NativeExecutionBindingResolver,
+  NativeExecutionProviderConfig } from './types.ts'

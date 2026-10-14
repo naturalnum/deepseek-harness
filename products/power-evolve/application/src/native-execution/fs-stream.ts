@@ -21,7 +21,7 @@ export const nativeFsStreamFrame = z.discriminatedUnion('kind', [
 export async function* decodeNativeFsStream(stream: Readable, maximum: number, signal?: AbortSignal): AsyncIterable<string> {
   let pending = Buffer.alloc(0), ended = false
   for await (const chunk of stream) {
-    signal?.throwIfAborted()
+    if (signal?.aborted) throw new FsError('Native text read aborted.', 'FS_ABORTED')
     pending = Buffer.concat([pending, Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array)])
     for (;;) {
       const end = pending.indexOf(10)
@@ -32,7 +32,7 @@ export async function* decodeNativeFsStream(stream: Readable, maximum: number, s
       if (ended) throw new FsError('Native text stream continued after EOF.', 'FS_IO_ERROR')
       if (frame.kind === 'error') throw new FsError(frame.message, frame.code)
       if (frame.kind === 'end') ended = true
-      else { signal?.throwIfAborted(); yield frame.text }
+      else { if (signal?.aborted) throw new FsError('Native text read aborted.', 'FS_ABORTED'); yield frame.text }
     }
     if (pending.length > maximum) throw new FsError('Native text frame exceeds its bound.', 'FS_TOO_LARGE')
   }

@@ -203,6 +203,9 @@
     },
     {
       "path": "../../../packages/ptc-runtime/ptc-runtime-node"
+    },
+    {
+      "path": "./tsconfig.native-execution-build.json"
     }
   ]
 }

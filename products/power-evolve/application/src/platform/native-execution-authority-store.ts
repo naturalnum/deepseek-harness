@@ -103,7 +103,8 @@ export class NativeExecutionAuthorityStore {
   }
 
   /** Serialize native guarded mutations across utility processes and alias bindings to the same physical root.
-   * The lock precedes payload submission; waiting never retries a write or holds account/Session locks; two PG slots remain available for payload authority and stop evidence.
+   * The lock precedes payload submission; waiting never retries a write or holds account/Session locks.
+   * Two PG slots remain available for payload authority and stop evidence.
    * @param token Original world bearer.
    * @param world Captured Agent world.
    * @param path Canonical execution-world target path.
@@ -115,7 +116,7 @@ export class NativeExecutionAuthorityStore {
     const root = path.startsWith('/workspace/') ? ['workspace', binding.rootKey, binding.rootRelativePath]
       : path.startsWith('/tmp/') ? ['temporary', world.userId, world.sessionId] : ['home', world.userId]
     const maximum = this.pool.options.max
-    if (maximum === undefined || maximum < 3 || this.mutations >= maximum - 2) throw new PlatformError(429, 'native_fs_capacity')
+    if (maximum < 3 || this.mutations >= maximum - 2) throw new PlatformError(429, 'native_fs_capacity')
     this.mutations++
     try {
       const key = JSON.stringify([...root, path]), client = await this.pool.connect()

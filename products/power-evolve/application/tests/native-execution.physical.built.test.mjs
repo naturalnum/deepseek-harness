@@ -20,7 +20,7 @@ test('Linux artifacts provide native Fs and generation-fenced physical execution
     owner.controllerId + ':/opt/power-evolve/products/power-evolve/application/tests/native-execution-physical-case.mjs'])
   const result = await exec('docker', ['exec', '-e', 'PE_NATIVE_EXECUTION_PHYSICAL_INPUT=/input/physical-input.private.json',
     owner.controllerId, 'node', '--test', '/opt/power-evolve/products/power-evolve/application/tests/native-execution-physical-case.mjs'],
-  { timeout: 330000, maxBuffer: 4 * 1024 * 1024 }).catch(async error => {
+  { timeout: 330000, maxBuffer: 4 * 1024 * 1024 }).catch(async (error) => {
     await writeFile(path + '.last-physical-failure.log', String(error.stdout ?? '') + String(error.stderr ?? ''), { mode: 0o600 })
     throw error
   })

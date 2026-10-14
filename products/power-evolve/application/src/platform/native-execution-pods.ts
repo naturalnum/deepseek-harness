@@ -89,7 +89,8 @@ export class NativeExecutionPods {
         command: ['/bin/sleep', 'infinity'], workingDir: '/workspace',
         env: [{ name: 'HOME', value: '/home/agent' }, { name: 'PATH', value: '/usr/local/bin:/usr/bin:/bin' }],
         securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: ['ALL'] } },
-        resources: { requests: { cpu: this.config.cpu, memory: this.config.memory }, limits: { cpu: this.config.cpu, memory: this.config.memory } },
+        resources: { requests: { cpu: this.config.cpu, memory: this.config.memory }, limits: { cpu: this.config.cpu,
+          memory: this.config.memory } },
         volumeMounts: [{ name: 'data', mountPath: '/workspace', subPath: root, readOnly: world.mode === 'read-only' },
           { name: 'data', mountPath: '/home/agent', subPath: home, readOnly: world.mode !== 'danger-full-access' },
           { name: 'data', mountPath: '/tmp', subPath: temporary, readOnly: world.mode === 'read-only' }] }],
@@ -152,7 +153,7 @@ export class NativeExecutionPods {
     let pod = await this.get(range.name)
     if (record.state === 'stopped') {
       const proof = z.object({ processId: z.string(), podUid: z.string(), worldId: z.string(),
-        status: z.enum(['KUBELET_STOPPED', 'UNSCHEDULED_DELETING']) }).passthrough().parse(record.stop_evidence)
+        status: z.enum(['KUBELET_STOPPED', 'UNSCHEDULED_DELETING']) }).loose().parse(record.stop_evidence)
       if (proof.processId !== range.id || proof.podUid !== range.uid || proof.worldId !== range.world.worldId) {
         throw new Error('native_payload_stop_evidence_identity_changed')
       }
