@@ -27,7 +27,7 @@ import { readSessionStopInTransaction, requestSessionStopInTransaction } from '.
 import type { NativeSessionStopIntent } from '../native-session-stop-contracts.ts'
 import type { NativeTurnHistoryLimits } from './native-turn-history.ts'
 import { completeSessionStopInTransaction } from './native-session-stop-completion.ts'
-import { readNativeToolNames } from './native-tool-catalog.ts'
+import { readNativeReservedToolNames } from './native-tool-catalog.ts'
 import { assertNativeSubagentStorage, assertNativeSubagentExecution, assertNativeSubagentProcess } from './native-subagent-authority.ts'
 import { assertNativeInteractiveStorage, assertNativeInteractiveWorld } from './native-interactive-authority.ts'
 import { assertNativeRuntimeGrant } from './native-runtime-authority.ts'
@@ -270,7 +270,7 @@ export class TaskStore {
       const ssh = z.array(sshSelection).max(8).parse(sshRows.rows)
       const stdioV2 = this.limits.stdioV2Admission ? await this.limits.stdioV2Admission.selection.select(client,
         user.userId, session, target,
-        [...this.limits.stdioV2Admission.reservedNames, ...await readNativeToolNames(client, user.userId),
+        [...await readNativeReservedToolNames(client, user.userId, this.limits.stdioV2Admission.reservedNames),
           ...remoteMcp.map(tool => tool.model.name)]) : []
       const id = randomUUID()
       const bound = await NativeAttachments.bind(client, user, session, requestId, submitted)

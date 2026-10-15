@@ -1,11 +1,63 @@
 /** Real PG dispatch, approval, result and writer fences; synthetic private observations grant no physical execution evidence. */
 import { randomUUID } from 'node:crypto'
 import { expect, test } from 'vitest'
+import { z } from 'zod'
 import { stdioCloudStopEvidenceV2, stdioRuntimeViewV2, stdioWorkerIdV2 } from '@power-evolve/contracts/stdio-runtime'
 import { stdioCheckRequestV2, stdioExecutorOwnerV2 } from '@power-evolve/contracts/stdio-mcp'
 import { requestId } from '../src/contracts.ts'
 import { StdioActionLeaseServiceV2 } from '../src/platform/stdio-v2-leases.ts'
+import { registerNativeToolNames } from '../src/platform/native-tool-catalog.ts'
+import { PRODUCT_MODEL_TOOL_NAMES } from '../src/mcp-model-tools.ts'
+import { mcpOperationTool } from '../src/mcp-operation-contracts.ts'
 import { stdioWorkflow, workflowCatalog, workflowLimits, workflowRequest } from './employee1-stdio-workflow-fixture.ts'
+
+const nativeNames = ['job_output', 'job_list', 'job_kill', 'skill', 'web_search', 'web_fetch', 'todo_write',
+  'send_message', 'interrupt_agent', 'list_agents', 'get_goal', 'create_goal', 'update_goal', 'ask_user_question',
+  'exit_plan_mode', 'subagent_fork', 'read', 'write', 'edit', 'present', 'glob', 'grep', 'bash', 'workflow', 'read_image',
+  'schedule_create', 'schedule_list', 'schedule_delete', 'schedule_update', 'subagent', 'skill_resource',
+  'trial_notes_list', 'trial_notes_append', 'office']
+type Workflow = Parameters<Parameters<typeof stdioWorkflow>[0]>[0]
+async function rememberNativeTools(f: Workflow): Promise<void> {
+  await f.tasks.accept(f.owner.user, f.session.sessionId, requestId.parse(randomUUID()), 'Register original native tools', f.owner.token)
+  const grant = await f.tasks.claim(randomUUID())
+  if (!grant) throw new Error('Owned registration operation missing')
+  await registerNativeToolNames(f.tasks, grant.token, { names: nativeNames })
+  await f.tasks.finish(grant.token, 'completed', null)
+}
+
+test('six overlapping native reservations admit an ordinary prompt with no STDIO selection', () => stdioWorkflow(async (f) => {
+  expect(nativeNames.filter(name => PRODUCT_MODEL_TOOL_NAMES.includes(name))).toHaveLength(6)
+  await rememberNativeTools(f)
+  const nonce = requestId.parse(randomUUID())
+  const accepted = z.object({ accepted: z.literal(true), operationId: z.uuid(), state: z.literal('queued') }).parse(
+    await f.tasks.accept(f.owner.user, f.session.sessionId, nonce, 'Next native prompt', f.owner.token))
+  expect(accepted.state).toBe('queued')
+  expect((await f.pool.query('SELECT state,stdio_v2_selection FROM pe_operations WHERE session_id=$1 AND request_id=$2',
+    [f.session.sessionId, nonce])).rows).toEqual([{ state: 'queued', stdio_v2_selection: [] }])
+  const grant = await f.tasks.claim(randomUUID())
+  expect(grant?.operationId).toBe(accepted.operationId)
+  expect(grant?.stdioV2Connections).toEqual([])
+  expect(() => f.selection.restore([], ['skill', 'skill']))
+    .toThrow(expect.objectContaining({ status: 409, code: 'stdio_v2_tool_name_conflict' }))
+}))
+
+test('native reservation overlap preserves STDIO acceptance and calls while independent tool collisions still refuse', () => stdioWorkflow(async (f) => {
+  await rememberNativeTools(f)
+  const { grant, input, call } = await f.startCall()
+  expect(call.state).toBe('queued')
+  expect(grant.stdioV2Connections).toHaveLength(1)
+  const before = (await f.pool.query('SELECT count(*)::integer AS count FROM pe_stdio_v2_actions')).rows
+  for (const names of [['skill'], ['web_fetch'], ['owned_remote', 'owned_remote'], [input.toolName]]) {
+    const remote = names.map(name => mcpOperationTool.parse({ formatVersion: 1, connectionId: randomUUID(),
+      connectionRevision: 1, configurationRevision: 1, credentialRevision: null, catalogId: randomUUID(),
+      toolId: randomUUID(), descriptorDigest: 'a'.repeat(64), raw: { name: 'owned_remote', inputSchema: { type: 'object' } },
+      model: { name, description: 'Owned collision fixture', parameters: { type: 'object' } }, modelDigest: 'b'.repeat(64) }))
+    await f.pool.query('UPDATE pe_operations SET remote_mcp_selection=$2 WHERE id=$1', [grant.operationId, JSON.stringify(remote)])
+    await expect(f.calls.propose(grant.token, { ...input, callKey: 'collision' }))
+      .rejects.toMatchObject({ status: 409, code: 'stdio_v2_tool_name_conflict' })
+    expect((await f.pool.query('SELECT count(*)::integer AS count FROM pe_stdio_v2_actions')).rows).toEqual(before)
+  }
+}))
 
 test('STDIO independent approval commits one first reply and never replays start authority', () => stdioWorkflow(async (f) => {
   const lease = await f.claim(), prepared = await f.prepare(lease)

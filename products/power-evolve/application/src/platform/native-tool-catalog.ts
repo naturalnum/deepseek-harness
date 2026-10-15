@@ -28,6 +28,17 @@ export async function readNativeToolNames(client: PoolClient, userId: string): P
   return stored.rows[0] === undefined ? [] : nativeToolRegistration.parse(stored.rows[0].value).names
 }
 
+/** Combine the fixed and current native reservations for the same built-in tools.
+ * @param client User-authorized admission transaction.
+ * @param userId Platform-derived account.
+ * @param fixedNames Validated product reservations; independent remote names must be appended afterward.
+ * @returns Unique native reservations, retaining validation of the stored native registry.
+ */
+export async function readNativeReservedToolNames(client: PoolClient, userId: string,
+  fixedNames: readonly string[]): Promise<string[]> {
+  return [...new Set([...fixedNames, ...await readNativeToolNames(client, userId)])]
+}
+
 /** Persist the original native registrations under the exact live operation authority.
  * @param tasks Platform lease and account authority.
  * @param token Current operation bearer.

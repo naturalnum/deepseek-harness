@@ -53,7 +53,7 @@ Host RPC、流式上传和每轮完整的 native-intent reconciliation 均持有
 
 cloud-native 数据库通过相邻迁移推进至 schema 15。STDIO 环境变量版本在 Platform 加密，并仅绑定一次到所属连接的配置修订；直传票据不授予执行权限。只有原始获批 worker 可在准确的存活租约与派发下解密该版本一次。保留既有代际的资产和记录。独立的临时助手呈现表存储 JSON 文本；原生 Session 事件仍是恢复来源。固定旧版导入器生成 schema 2，由正常 Platform 启动经保留的相邻代际升级至 schema 15。事件与投影写入可与呈现状态变更共用调用者已授权的 PG 事务；调用者负责最终租约核验和提交。
 
-原生 Agent 进程、终端、已受理云命令与通用 STDIO 动作共用无凭据的 gVisor 提供方。每个 STDIO 动作拥有独立服务身份和预备 Pod，不占用账户挂载槽，也不借用 Session 写者。配置云执行或 STDIO 时必须提供 `nativeExecutionConfigFile`。新云命令在原受理事务中记录原生提供方；留存的旧资源仅按原身份对账。固定的原生 payload 镜像须包含 `native-stdio-worker.mjs`。准备阶段把实际 Pod UID、镜像、原生策略挂载和完整 SDK 选择绑定到审批。原预备 Pod 只能激活一次；只有 kubelet 对原 UID 的停止证明和资源释放均完成，SDK 输出才可成为终态。输出丢失时保留未对账状态，不能启动第二次调用。worker 的 `maxActive` 限制所有 worker 同时持有租约的动作数。受保护的原生文件编辑协调同一物理路径的别名；不同路径和 Session 可以并发处理。
+原生 Agent 进程、终端、已受理云命令与通用 STDIO 动作共用无凭据的 gVisor 提供方。每个 STDIO 动作拥有独立服务身份和预备 Pod，不占用账户挂载槽，也不借用 Session 写者。配置云执行或 STDIO 时必须提供 `nativeExecutionConfigFile`。新云命令在原受理事务中记录原生提供方；留存的旧资源仅按原身份对账。固定的原生 payload 镜像须包含 `native-stdio-worker.mjs`。准备阶段把实际 Pod UID、镜像、原生策略挂载和完整 SDK 选择绑定到审批。原预备 Pod 只能激活一次；只有 kubelet 对原 UID 的停止证明和资源释放均完成，SDK 输出才可成为终态。输出丢失时保留未对账状态，不能启动第二次调用。worker 的 `maxActive` 限制所有 worker 同时持有租约的动作数。受保护的原生文件编辑协调同一物理路径的别名；不同路径和 Session 可以并发处理。 Prompt 和 STDIO 调用接纳对固定工具名与当前原生工具名取集合并，再追加独立远程 MCP 名称；不同工具之间的重名仍然拒绝接纳。
 
 原生前台 Shell 接收要求实际已消费的输入集合及当前打开的步骤。Platform 保留原始请求超时、实际采用的超时、grant 摘要和凭据版本。捕获的 Runner 请求使用有界尾部输出，只附带受控的 `DSH_SHELL`、`DSH_HOME` 和 `DSH_SESSION_ID` 变量。结果归属于原工具调用；这些执行不会创建沙盒结果续跑。原始 token 过期后仍可恢复同一回执并请求清理，但账号撤销和归档仍禁止输出读取。首次取消原因持久保存且不可覆盖；自动丢失执行所有权记录为 abort。原生 Runner 取消携带该持久原因。准备阶段尚无结果时使用持久原因；真实结果保留 Runner 的 `timedOut` 事实，Host 晚到的期限不能把成功改为超时。接受取消不等于确认停止。结果缺失时保留未决状态，直到确切停止捕获的原执行器；无法核验的结果以 `closed_unknown` 结案。既有回执式执行保留续跑交付方式。
 

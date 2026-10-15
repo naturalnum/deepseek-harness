@@ -22,6 +22,7 @@ import { StdioCallAdmissionV2 } from '../src/platform/stdio-v2-call-admission.ts
 import { StdioCallContinuationV2 } from '../src/platform/stdio-v2-continuations.ts'
 import type { SandboxReady } from '../src/platform/sandbox.ts'
 import { requestId } from '../src/contracts.ts'
+import { PRODUCT_MODEL_TOOL_NAMES } from '../src/mcp-model-tools.ts'
 
 /** Frozen fixture SDK limits, also checked by every task/result parser. */
 export const workflowLimits = { runtimeMs: 10_000, requestMs: 2000, stdinGraceMs: 0, terminateGraceMs: 100, killGraceMs: 1000,
@@ -59,7 +60,7 @@ async function createWorkflow(base: Parameters<Parameters<typeof cloudFixture>[0
   const selection = new StdioOperationAdmissionV2(files, { limits: workflowLimits, admission: admissionLimits,
     maxReplyBytes, cloudDeployment: deployment })
   const tasks = new TaskStore(pool, { maxEventBytes: 524_288, leaseMs: 60_000, maxPendingPerUser: 8, maxActivePerUser: 1,
-    stdioV2Admission: { selection, reservedNames: [] } })
+    stdioV2Admission: { selection, reservedNames: PRODUCT_MODEL_TOOL_NAMES } })
   const connections = new StdioConnectionServiceV2(pool, workflowLimits, management)
   const actions = new StdioActionServiceV2(pool, { limits: workflowLimits, maxReplyBytes, maxPageSize: management.pageItems })
   const admission = new StdioAdmissionServiceV2(pool, files, { limits: workflowLimits, management,
@@ -68,7 +69,7 @@ async function createWorkflow(base: Parameters<Parameters<typeof cloudFixture>[0
   const store = new StdioCloudWorkerStoreV2(pool, { limits: workflowLimits, leaseMs: 60_000, maxActive: 2, maxCandidates: 8, continuation })
   const results = new StdioResultServiceV2(pool, { limits: workflowLimits, maxReplyBytes, continuation })
   const calls = new StdioCallAdmissionV2(tasks, selection, files, { limits: workflowLimits, cloudDeployment: deployment,
-    maxPendingPerUser: 4, maxCallsPerChain: 4, chainLifetimeMs: 600_000, reservedNames: [] })
+    maxPendingPerUser: 4, maxCallsPerChain: 4, chainLifetimeMs: 600_000, reservedNames: PRODUCT_MODEL_TOOL_NAMES })
   let writer: SandboxReady | undefined
   const capture = async (_client: PoolClient, task: StdioTaskV2, executionRef: StdioExecutionRefV2) => {
     if (!writer) throw new Error('Fixture writer must be attached before synthetic capture')
