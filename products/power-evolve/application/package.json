@@ -154,7 +154,9 @@
     "@deepseek-ai/dsh-ptc-runtime-node": "workspace:*",
     "@deepseek-ai/dsh-agent-instructions": "workspace:*",
     "@deepseek-ai/dsh-llm-deepseek-api-key": "workspace:*",
-    "@deepseek-ai/dsh-llm-pi-ai": "workspace:*"
+    "@deepseek-ai/dsh-llm-pi-ai": "workspace:*",
+    "ws": "^8.21.0",
+    "@types/ws": "^8.18.1"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~",

@@ -1,4 +1,4 @@
-/** Shared real Host HTTP fixture; all Platform identity, queue, search and acknowledgement behavior is explicitly substituted. */
+/** Shared real Host HTTP fixture; all Platform identity, roster, queue, search and acknowledgement behavior is explicitly substituted. */
 import { once } from 'node:events'
 import { randomUUID } from 'node:crypto'
 import { createServer } from 'node:http'
@@ -22,6 +22,8 @@ interface PlatformSubstitute {
   readonly calls: Call[]
   readonly queued: QueuedInput[]
   identityDenied: boolean
+  sessionItems: unknown[]
+  listReads: number
   cancelDenial: { status: number; code: string } | undefined
   acknowledgement: unknown
   searchValue: unknown
@@ -56,7 +58,7 @@ export async function nativeHost<T>(run: (fixture: NativeFixture) => Promise<T>)
       { requestId: randomUUID(), text: 'first durable pending input', state: 'queued' },
       { requestId: randomUUID(), text: 'second durable pending input', state: 'queued' },
     ],
-    identityDenied: false, cancelDenial: undefined, acknowledgement: { accepted: true },
+    identityDenied: false, sessionItems: [], listReads: 0, cancelDenial: undefined, acknowledgement: { accepted: true },
     searchValue: { items: [{ sessionId: id, snippet: 'Explicit Platform substitute' }], hasMore: false },
     searchDenial: undefined, holdSearch: false, searchDisconnected: false,
   }
@@ -74,6 +76,12 @@ export async function nativeHost<T>(run: (fixture: NativeFixture) => Promise<T>)
           z.object({}).strict().parse(input)
           if (platform.identityDenied) throw new PlatformError(401, 'account_unauthorized')
           sendJson(response, user)
+          return
+        }
+        if (request.url === '/native/sessions/list') {
+          z.object({}).strict().parse(input)
+          platform.listReads++
+          sendJson(response, { items: platform.sessionItems })
           return
         }
         if (request.url === '/native/sessions/search') {

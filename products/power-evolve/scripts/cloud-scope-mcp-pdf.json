@@ -112,7 +112,7 @@
     },
     "sourceTests": {
       "enabled": 14,
-      "shared": 175,
+      "shared": 177,
       "deferred": 3
     }
   },
@@ -4106,6 +4106,20 @@
     {
       "kind": "sourceTests",
       "path": "products/power-evolve/application/tests/native-attachments.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-control-baseline.client.spec.ts",
+      "status": "shared",
+      "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-control-baseline.spec.ts",
       "status": "shared",
       "owner": "Root",
       "reason": "core-shared"

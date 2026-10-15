@@ -525,12 +525,8 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
           try { await delay(pollMs, undefined, { signal }) }
           catch (error) { if (stopped()) return; throw error }
           const current = await list(token)
-          if (current.some(item => item.projections.asOfSeq === -1
-            && JSON.stringify(item.projections.values)
-            !== JSON.stringify(previous.find(before => before.sessionId === item.sessionId)?.projections.values))) {
-            yield { type: 'baseline', value: { projections: Object.fromEntries(current.map(item =>
-              [item.sessionId, { asOfSeq: item.projections.asOfSeq, values: item.projections.values }])) } }
-          }
+          // Empty Sessions enter through $events' sequenced api-session/added block.
+          // A control generation owns only its opening baseline; deltas require a real event seq.
           const byId = new Map(previous.map(item => [item.sessionId, item]))
           for (const item of current) {
             const prior = byId.get(item.sessionId)

@@ -75,6 +75,8 @@ Platform 安装实际 frame、执行授权 provider、已受理输入读取和 [
 
 启用助手流的 follow 在同一归属校验和 PG Session 锁下读取历史及原生助手基线。私有 publisher 位置不进入原生 Client 数据包。publisher 退役或环形条目淘汰时，已发出 opening 的 generation 正常结束，原生 Client 随后重开；持久状态损坏则终止 follow。Platform 通过 `nativeAssistantMaxOpeningBytes`、`nativeAssistantMaxBaselineChunks`、`nativeAssistantMaxPacketItems`、`nativeAssistantMaxPacketBytes` 和 `nativeAssistantMaxCanonicalReadBytes` 限制完整 opening、基线片段及数据包条目和字节。Host 通过 `nativeFollowMaxGenerationMs`、`nativeFollowMaxGenerationItems` 和 `nativeFollowMaxGenerationBytes` 限制每个 generation。opening 前超时报错；opening 后超时或累计预算耗尽则正常退役。取消传至正在执行的 Platform 读取。Host 另外向公共 Gateway 提供 `nativeStreamSendTimeoutMs`，默认10,000毫秒；下行帧截止时间包含等待前序写入的时间。取消尚未开始的帧会移除该帧，保留前序写入；未收到完成回调的发送开始后，取消或截止时间到达会终止物理通道及其逻辑流。Gateway 关闭等待源迭代器清理完成。
 
+Session 控制流在每个 generation 中仅发送一次 opening baseline。新空 Session 通过现有账户归属的 `api-session/added` 事件携带投影游标 `-1`；后续控制替换必须使用真实的非负事件序号。原生 Client 保留较高序号优先规则，包括拒绝同一游标下变更的值，并继续拒绝第二次 opening baseline。
+
 浏览器凭据交换消耗提交的 Agent token，保留原有效期。每个 Host 在每次请求中通过 Platform 核验限定路径的浏览器 Cookie，因此撤销在副本间生效。可信账号页面仅提供清单内的资源，并设置限制性的浏览器响应头；资源缺失或无效时不回退到入口页面。个人展示偏好按用户独立持久化，拒绝过期修订号和嵌套修改路径。
 
 原生分支通过官方分支函数复制准确的已提交事件前缀，保留继承历史、收尾事件和父会话关系。后续提供方、模型及可选推理强度取自该前缀的官方投影，持久受理时重新核验用户当前的模型权限。原生 Session 取消停止活动工作，保留排队输入及其回执；产品取消接口还可取消最早的排队输入。
