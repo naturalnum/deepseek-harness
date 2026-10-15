@@ -222,12 +222,13 @@ export class StdioCloudRuntimeV2 {
       // A slow traversal check cannot carry the original reply beyond its expiry into program startup.
       validateStdioStartV2(entry.packet, this.options.limits, this.options.executorOwner, Date.now())
       attempted = true
-      outcome = await this.driver(structuredClone(entry.packet.dispatch), structuredClone(this.options.environment), signal)
+      outcome = await this.driver(structuredClone(entry.packet.dispatch), structuredClone(this.options.environment), signal, entry.packet.environment)
     } catch (error) {
       outcome = failed(attempted ? 'stdio_v2_driver_failed' : error instanceof StdioRuntimeErrorV2
         ? error.code : error instanceof Error && /^stdio_v2_[a-z0-9_]+$/u.test(error.message)
           ? error.message : 'stdio_v2_cwd_failed', attempted)
     }
+    delete entry.packet.environment
     const quiet = await this.quiet()
     const view: StdioRuntimeViewV2 = { ...entry.view, outcome, writerStopConfirmed: quiet,
       state: quiet ? signal.aborted ? 'cancelled' : outcome.state : 'unknown' }

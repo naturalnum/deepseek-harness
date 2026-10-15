@@ -1,6 +1,7 @@
 /** SDK start-message validation and literal dispatch; trusted control authentication and writer stop remain external. */
 import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { z } from 'zod'
+import { stdioEnvironmentValues } from '@power-evolve/contracts/stdio-environment'
 import { stdioDispatchV2, stdioExecutorOwnerV2, stdioJsonV2, stdioLimitsV2, stdioStartAuthorizationV2,
   type StdioDispatchV2, type StdioLimitsV2 } from '@power-evolve/contracts/stdio-mcp'
 import { stdioCanonicalJsonV2 } from '@power-evolve/contracts/stdio-mcp-json'
@@ -10,13 +11,14 @@ import { runStdioV2, type StdioV2Identity, type StdioV2Outcome } from './stdio-v
 /** Executor-owned paths, environment and process identity; no task-selected physical root or ambient variables. */
 export interface StdioExecutionEnvironmentV2 {
   workspaceRoot: string
-  env: { HOME: string; PATH: string; LANG: string }
+  env: { HOME: string; PATH: string; LANG: string } & Readonly<Record<string, string>>
   identity: StdioV2Identity
 }
 /** Independent snapshot of a dispatch and its exact original authorization receipt. */
 export interface StdioStartV2 {
   dispatch: StdioDispatchV2
   authorization: z.infer<typeof stdioStartAuthorizationV2>
+  environment?: Readonly<Record<string, string>> | undefined
 }
 type StdioExecutorOwnerV2 = z.infer<typeof stdioExecutorOwnerV2>
 
@@ -40,8 +42,8 @@ function verifiedDispatch(value: unknown, limits: StdioLimitsV2): StdioDispatchV
  */
 export function parseStdioStartV2(value: unknown, limits: StdioLimitsV2): StdioStartV2 {
   limits = stdioLimitsV2.parse(limits)
-  const packet = stdioJsonV2(budget(limits)).pipe(z.object({ dispatch: stdioDispatchV2(limits),
-    authorization: stdioStartAuthorizationV2 }).strict()).parse(value)
+  const packet = z.object({ dispatch: stdioDispatchV2(limits), authorization: stdioStartAuthorizationV2,
+    environment: stdioEnvironmentValues.optional() }).strict().parse(stdioJsonV2(budget(limits)).parse(value))
   if (stdioCanonicalJsonV2(packet.dispatch.permit, budget(limits))
     !== stdioCanonicalJsonV2(packet.authorization.permit, budget(limits))) throw new TypeError('stdio_v2_start_permit_mismatch')
   verifiedDispatch(packet.dispatch, limits)
@@ -71,10 +73,11 @@ export function validateStdioStartV2(value: unknown, limits: StdioLimitsV2,
  * @param dispatch Original validated dispatch; the caller must have consumed its authenticated true start reply.
  * @param environment Trusted executor paths, credential-free environment and configured process identity.
  * @param signal Cancellation of this invocation; provider cleanup retains its independent configured deadlines.
+ * @param overrides Platform-decrypted variables from the original current worker authority, never inherited ambient values.
  * @returns Complete provider outcome and direct-child facts; thrown validation failures remain thrown.
  */
 export function runStdioDispatchV2(dispatch: StdioDispatchV2, environment: StdioExecutionEnvironmentV2,
-  signal: AbortSignal): Promise<StdioV2Outcome> {
+  signal: AbortSignal, overrides?: Readonly<Record<string, string>>): Promise<StdioV2Outcome> {
   const limits = stdioLimitsV2.parse(dispatch.task.limits)
   const original = structuredClone(verifiedDispatch(dispatch, limits)), task = original.task
   if (typeof environment.workspaceRoot !== 'string' || !isAbsolute(environment.workspaceRoot)
@@ -84,6 +87,6 @@ export function runStdioDispatchV2(dispatch: StdioDispatchV2, environment: Stdio
   // The dropped-privilege helper must still verify filesystem traversal and stop the complete configured UID.
   return runStdioV2({ ...task.invocation, cwd, ...(task.phase === 'discover' ? { phase: 'discover' }
     : { phase: 'call', catalogExpectation: task.selection.rawCatalog, rawName: task.selection.rawName,
-      arguments: task.selection.arguments }) }, { env: { ...environment.env }, identity: { ...environment.identity }, limits,
+      arguments: task.selection.arguments }) }, { env: { ...environment.env, ...(overrides === undefined ? {} : stdioEnvironmentValues.parse(overrides)) }, identity: { ...environment.identity }, limits,
     fingerprintCatalog: tools => stdioCatalogFingerprintV2(tools, limits) }, signal)
 }

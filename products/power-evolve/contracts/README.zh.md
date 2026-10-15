@@ -35,6 +35,8 @@ kind: package-library
 | 本人存储与 Workspace 注册 | `@power-evolve/contracts/storage` | [存储记录](src/storage.ts) |
 | 工作区文档转换请求与结果 | `@power-evolve/contracts/office-preview` | [Office 记录](src/office-preview.ts) |
 | 原 Cloud 执行的检查与对账 | `@power-evolve/contracts/execution-resolution` | [对账记录](src/execution-resolution.ts) |
+| MCP 图标、备注与隐藏值的环境变量引用 | `@power-evolve/contracts/mcp-metadata` | [MCP 元数据](src/mcp-metadata.ts) |
+| Platform 环境变量直传元数据与字节 | `@power-evolve/contracts/stdio-environment` | [环境变量记录](src/stdio-environment.ts) |
 | 有界的字面 STDIO 连接配置 | `@power-evolve/contracts/stdio-management` | [管理记录](src/stdio-management.ts) |
 | 固定的 STDIO 目录、任务与首次启动许可 | `@power-evolve/contracts/stdio-mcp` | [任务记录](src/stdio-mcp.ts) |
 | worker 租约、SDK 响应与清理观察 | `@power-evolve/contracts/stdio-runtime` | [运行记录](src/stdio-runtime.ts) |

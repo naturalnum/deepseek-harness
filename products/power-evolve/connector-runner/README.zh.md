@@ -28,7 +28,7 @@ kind: package-library
 
 Contracts 是匹配的 `workspace:~` peer 与开发依赖。Host 和 Platform 在生产清单中显式提供 Contracts、本库和固定版本 Zod。独立 worker 安装必须自行提供同样完整的闭包，关闭 peer 自动安装，并核验实测 ESM 路径和身份。工作区源码测试成功不能认证生产镜像。
 
-`runStdioV2` 接收字面程序、参数数组、绝对 cwd、完整固定目录与 JSON 参数。选项提供全部预算、准确的 `HOME`/`PATH`/`LANG` 环境，以及同步目录校验／指纹回调。不合并父环境；macOS 中 Node 可能添加自己的编码提示。`current` 保留已隔离的 UID/GID；`unix` 将校验后的身份传给 spawn。云端 runtime 要求 Unix 1000/1000。
+`runStdioV2` 接收字面程序、参数数组、绝对 cwd、完整固定目录与 JSON 参数。选项提供全部预算、包含 `HOME`/`PATH`/`LANG` 及有界命名覆盖值的显式环境，以及同步目录校验／指纹回调。不合并父环境；macOS 中 Node 可能添加自己的编码提示。`current` 保留已隔离的 UID/GID；`unix` 将校验后的身份传给 spawn。云端 runtime 要求 Unix 1000/1000。
 
 执行器负责审批、不可变程序／镜像 pin、目录授权、prepare／permit 与持久请求身份。派发和运行叶模块校验原始包、预留唯一写者并限制完整响应；它们不认证 HTTP 调用者或保存 Platform 状态。启动程序本身可能产生效果。调用 `start` 时同步预留写者，再将控制交给 provider 任务；完全相同的重复启动只返回已保留视图。取消等待原任务及其独立清理确认。
 
