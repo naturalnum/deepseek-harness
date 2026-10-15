@@ -54,6 +54,9 @@
       "path": "packages/llm/llm-deepseek"
     },
     {
+      "path": "packages/llm/llm-retry"
+    },
+    {
       "path": "packages/mcp/mcp-client"
     },
     {
