@@ -65,7 +65,7 @@ function actionSchemas(limits: StdioLimitsV2, maxReplyBytes: number, pageItems: 
   const detail = reply.pipe(value.extend({ task: stdioTaskSchemasV2(execution).task,
     outcome: stdioOutcomeV2(execution, bytes).nullable(),
     noStart: z.object({ kind: z.literal('unstarted_closed'), startNeverAuthorized: z.literal(true),
-      resourceDisposition: z.enum(['unallocated', 'ready_retained', 'creation_stopped']) }).strict().nullable(),
+      resourceDisposition: z.enum(['unallocated', 'ready_retained', 'creation_stopped', 'native_stopped']) }).strict().nullable(),
   }).strict().superRefine((item, ctx) => {
     const task = item.task, outcome = item.outcome, terminal = ['succeeded', 'failed', 'cancelled'].includes(item.state)
     if (task.actionId !== item.actionId || task.sessionId !== item.sessionId || task.connectionId !== item.connectionId

@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { stdioSavedConfigurationV2 } from '@power-evolve/contracts/stdio-management'
 import { stdioApprovalBindingV2, stdioDigestV2, stdioDispatchV2, stdioExecutorOwnerV2,
   stdioJsonV2, stdioLimitsV2, stdioPreparedV2, stdioStartPermitV2, stdioTaskSchemasV2,
-  type StdioLimitsV2 } from '@power-evolve/contracts/stdio-mcp'
+  type StdioLimitsV2, type StdioTaskV2 } from '@power-evolve/contracts/stdio-mcp'
 import { stdioActionLeaseV2, stdioCloudStopEvidenceV2, stdioRuntimeViewV2,
   type StdioActionLeaseV2, type StdioCloudObservationV2 } from '@power-evolve/contracts/stdio-runtime'
 import { stdioCatalogFingerprintV2 } from '@power-evolve/connector-runner/stdio-v2-digest'
@@ -48,15 +48,18 @@ export class StdioResultServiceV2 {
   private readonly limits: StdioLimitsV2
   private readonly view: ReturnType<typeof stdioRuntimeViewV2>
   private readonly task: ReturnType<typeof stdioTaskSchemasV2>['task']
+  private readonly assertStopped: ((client: PoolClient, task: StdioTaskV2, uid: string) => Promise<void>) | undefined
   private readonly continuation: Pick<StdioCallContinuationV2, 'enqueueLeased'> | undefined
   constructor(private readonly pool: Pool, options: { limits: StdioLimitsV2
     maxReplyBytes: number
-    continuation?: Pick<StdioCallContinuationV2, 'enqueueLeased'> }) {
+    continuation?: Pick<StdioCallContinuationV2, 'enqueueLeased'>
+    assertStopped?: (client: PoolClient, task: StdioTaskV2, uid: string) => Promise<void> }) {
     this.limits = stdioLimitsV2.parse(options.limits)
     this.digests = stdioRecordDigestsV2(this.limits)
     this.view = stdioRuntimeViewV2(this.limits, options.maxReplyBytes)
     this.task = stdioTaskSchemasV2(this.limits).task
     this.continuation = options.continuation
+    this.assertStopped = options.assertStopped
   }
   private deny(code: string): never { throw new PlatformError(409, code) }
   private observation(value: unknown) {
@@ -175,6 +178,7 @@ export class StdioResultServiceV2 {
         || stopEvidence.preparedDigest !== preparation.prepared_digest || stopEvidence.fullScopeDigest !== prepared.fullScopeDigest
         || stopEvidence.podUid !== execution.pod_uid || stopEvidence.runnerInstanceId !== execution.runner_instance_id
         || stopEvidence.mountGeneration !== prepared.capture.mountGeneration)) this.deny('stdio_v2_stop_evidence_changed')
+      if (stopEvidence) await this.assertStopped?.(client, task, stopEvidence.podUid)
       const stored = (await client.query<Record<string, unknown>>('SELECT result,result_digest,observation,stop_evidence FROM pe_stdio_v2_results WHERE action_id=$1', [action.id])).rows[0]
       const catalog = (await client.query<Record<string, unknown>>('SELECT * FROM pe_stdio_v2_catalogs WHERE action_id=$1', [action.id])).rows[0]
       if (stored) {

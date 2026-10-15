@@ -13,8 +13,9 @@ import { pathToFileURL } from 'node:url'
 import { z } from 'zod'
 import { nativeFsInfo as infoSchema, nativeFsPathInfo as pathInfoSchema, nativeFsTarget as targetSchema,
   nativeFsWrite as writeResultSchema, nativeFsEdit as editResultSchema } from '../native-execution/wire.ts'
-import type { NativeExecutionBinding, NativeExecutionWorld } from '../native-execution/types.ts'
+import type { NativeExecutionBinding, NativeExecutionWorld, NativeExecutionProcessWorld } from '../native-execution/types.ts'
 import type { NativeExecutionAuthorityStore, NativeExecutionProcessIdentity } from './native-execution-authority-store.ts'
+import type { NativeProcessAuthority } from './native-process-authority.ts'
 import { NativeExecutionPods, type NativeExecutionPod } from './native-execution-pods.ts'
 
 const POLICY_MARKER = '@power-evolve/native-world-policy'
@@ -52,13 +53,13 @@ export interface NativeExecutionTerminalHandle extends SubprocessTerminalHandle 
 }
 
 /** Trusted control transport never executes model-controlled argv in the Platform process. */
-export class NativeExecutionBroker {
+export class NativeProcessBroker<World extends NativeExecutionProcessWorld> {
   private readonly live = new Set<SubprocessHandle | SubprocessTerminalHandle>()
   private readonly pending = new Set<Promise<void>>()
   private readonly pendingCancels = new Set<() => void>()
   private readonly cleanupFailures: unknown[] = []
   private disposed = false
-  constructor(readonly authority: NativeExecutionAuthorityStore, readonly pods: NativeExecutionPods,
+  constructor(readonly authority: NativeProcessAuthority<World>, readonly pods: NativeExecutionPods,
     private readonly transport: SubprocessRuntime, readonly config: NativeExecutionBrokerConfig) {}
 
   /** Mount already-issued, original-Agent-bound native services in a private Context.
@@ -67,7 +68,8 @@ export class NativeExecutionBroker {
    * @param world Platform-issued execution identity.
    * @returns Fs, Subprocess and Sandbox implementations in the same frozen world.
    */
-  binding(ctx: Context, token: string, world: NativeExecutionWorld): NativeExecutionBinding {
+  binding(ctx: Context, token: string, world: World): NativeExecutionBinding<World> {
+    if ('serviceId' in world) throw new Error('native_service_requires_explicit_worker_fence')
     const config = { broker: this, token, world }
     const filesystem = new BoundFileSystem(ctx, config), subprocess = new BoundSubprocess(ctx, config),
       sandbox = new BoundSandbox(ctx, config)
@@ -89,7 +91,7 @@ export class NativeExecutionBroker {
    * @param signal Cancels execution and joins the original Pod.
    * @returns Native result; writes are dispatched once and never retried.
    */
-  async filesystem<T>(token: string, world: NativeExecutionWorld, request: unknown, schema: z.ZodType<T>,
+  async filesystem<T>(token: string, world: World, request: unknown, schema: z.ZodType<T>,
     signal?: AbortSignal): Promise<T> {
     const data = JSON.stringify(request)
     if (Buffer.byteLength(data) > this.config.maxRequestBytes) throw new FsError('Filesystem request exceeds its byte bound.',
@@ -122,7 +124,7 @@ export class NativeExecutionBroker {
    * @param admissionId Original optional HTTP nonce for cleanup after reply loss.
    * @returns Native raw stream handle; callers must close and join it on iterator return.
    */
-  openFilesystemStream(token: string, world: NativeExecutionWorld, target: { targetKey: string; displayPath: string },
+  openFilesystemStream(token: string, world: World, target: { targetKey: string; displayPath: string },
     signal?: AbortSignal, admissionId?: string): SubprocessHandle {
     const data = JSON.stringify({ op: 'streamText', target })
     return this.spawn(token, world, { argv: ['node', this.config.fsWorkerPath], cwd: '/workspace', signal,
@@ -137,11 +139,15 @@ export class NativeExecutionBroker {
    * @param kind Durable process classification.
    * @param storageRead Allows only the fixed native filesystem utility to initialize storage before the first claimed step.
    * @param admissionId Original caller nonce persisted as the immutable process identity.
+   * @param prepared Original idle range; one durable activation precedes the first transport start.
+   * @param ownerFence Independent service caller lease; required before dispatch, input and lifecycle collection.
    * @returns Deferred native handle; outcome waits for whole-Pod quiescence.
    */
-  spawn(token: string, world: NativeExecutionWorld, spec: SubprocessSpawnSpec,
-    kind: 'process' | 'filesystem' = 'process', storageRead = false, admissionId?: string): NativeExecutionProcessHandle {
+  spawn(token: string, world: World, spec: SubprocessSpawnSpec,
+    kind: 'process' | 'filesystem' = 'process', storageRead = false, admissionId?: string,
+    prepared?: NativeExecutionPod, ownerFence?: () => Promise<void>): NativeExecutionProcessHandle {
     if (this.isDisposed()) throw new Error('native_execution_broker_disposed')
+    if ('serviceId' in world && !ownerFence) throw new Error('native_service_worker_fence_required')
     spec.signal?.throwIfAborted()
     const argv = this.unwrap(world, spec.argv)
     this.cwd(spec.cwd)
@@ -153,7 +159,8 @@ export class NativeExecutionBroker {
     void admission.promise.catch(() => {})
     const writes = new Set<Promise<unknown>>()
     let inputFailure: unknown
-    const assertDispatch = () => this.authority.assert(token, world, storageRead ? 'storage-read' : 'execution')
+    const assertDispatch = async () => { await ownerFence?.()
+      return this.authority.assert(token, world, storageRead ? 'storage-read' : 'execution') }
     let relay: NativeExecutionRelay | undefined, range: NativeExecutionPod | undefined, local: SubprocessHandle | undefined
     let stopCause: 'abort' | 'authority' | 'dispose' | 'completed' | 'failure' | undefined
     let stopping: Promise<void> | undefined
@@ -213,7 +220,14 @@ export class NativeExecutionBroker {
         const assert = assertDispatch
         const binding = await assert()
         if (currentCause() || spec.signal?.aborted || this.isDisposed()) return { exitCode: null, signal: 'SIGTERM' as const }
-        range = await this.pods.create(world, binding, kind, { argv, cwd: spec.cwd, env: spec.env, stdio: spec.stdio }, assert, admissionId)
+        const request = { argv, cwd: spec.cwd, env: spec.env, stdio: spec.stdio }
+        if (prepared) {
+          if (prepared.world.worldId !== world.worldId || prepared.id !== admissionId || storageRead || kind !== 'process') {
+            throw new Error('native_payload_preparation_mismatch')
+          }
+          await this.pods.activate(prepared, request, assert)
+          range = prepared
+        } else range = await this.pods.create(world, binding, kind, request, assert, admissionId)
         const original = { id: range.id, name: range.name, uid: range.uid, namespace: this.pods.config.namespace }
         admission.resolve(original)
         if (currentCause() || spec.signal?.aborted || this.isDisposed()) { await stop(currentCause() ?? 'abort'); return { exitCode: null,
@@ -234,7 +248,8 @@ export class NativeExecutionBroker {
         }
         monitor = setInterval(() => {
           if (authorityWork) return
-          authorityWork = (storageRead ? assert() : this.authority.assertProcess(token, world, original))
+          authorityWork = (async () => { await ownerFence?.()
+            return storageRead ? assert() : this.authority.assertProcess(token, world, original) })()
             .then(() => undefined, async () => { await stop('authority') })
             .finally(() => { authorityWork = undefined })
           void authorityWork.catch(() => {})
@@ -303,18 +318,20 @@ export class NativeExecutionBroker {
    * @param world Captured Agent world.
    * @param spec Native terminal specification.
    * @param admissionId Original caller nonce for restart-safe exact cleanup.
+   * @param ownerFence Independent service caller lease, rechecked before input and lifecycle collection.
    * @returns Guest PID, raw terminal output, actual foreground operations and exact joined Pod cleanup.
    */
-  async terminal(token: string, world: NativeExecutionWorld, spec: SubprocessTerminalSpawnSpec,
-    admissionId?: string): Promise<NativeExecutionTerminalHandle> {
+  async terminal(token: string, world: World, spec: SubprocessTerminalSpawnSpec,
+    admissionId?: string, ownerFence?: () => Promise<void>): Promise<NativeExecutionTerminalHandle> {
     if (this.isDisposed()) throw new Error('native_execution_broker_disposed')
+    if ('serviceId' in world && !ownerFence) throw new Error('native_service_worker_fence_required')
     const reservation = Promise.withResolvers<void>()
     this.pending.add(reservation.promise)
     try {
       spec.signal?.throwIfAborted()
       const argv = this.unwrap(world, spec.argv)
       this.cwd(spec.cwd)
-      const assert = () => this.authority.assert(token, world), binding = await assert()
+      const assert = async () => { await ownerFence?.(); return this.authority.assert(token, world) }, binding = await assert()
       const range = await this.pods.create(world, binding, 'terminal', { argv, cwd: spec.cwd, env: spec.env }, assert, admissionId)
       const original = { id: range.id, name: range.name, uid: range.uid, namespace: this.pods.config.namespace }
       let local: SubprocessHandle | undefined, relay: NativeExecutionRelay | undefined
@@ -372,8 +389,9 @@ export class NativeExecutionBroker {
         }
         const monitor = setInterval(() => {
           if (authorityWork || closing) return
-          authorityWork = this.authority.assertProcess(token, world, original).then(() => undefined,
-            async () => { await stop('authority') }).finally(() => { authorityWork = undefined })
+          authorityWork = (async () => { await ownerFence?.(); await this.authority.assertProcess(token, world, original) })()
+            .then(() => undefined,
+              async () => { await stop('authority') }).finally(() => { authorityWork = undefined })
           void authorityWork.catch(() => {})
         }, this.config.authorityPollMs)
         const deadline = setTimeout(() => { void stop('abort').catch(() => {}) }, this.config.maxProcessMs)
@@ -459,7 +477,7 @@ export class NativeExecutionBroker {
       throw new Error('native_cloud_cwd_outside_world')
     }
   }
-  private unwrap(world: NativeExecutionWorld, argv: readonly string[]) {
+  private unwrap(world: World, argv: readonly string[]) {
     if (argv[0] !== POLICY_MARKER) return [...argv]
     if (argv[1] !== world.worldId || argv[2] !== world.mode || argv[3] !== String(world.permissionGeneration) || argv.length < 5) {
       throw new Error('native_cloud_policy_generation_changed')
@@ -472,14 +490,14 @@ export class NativeExecutionBroker {
 
 }
 
-interface BoundConfig { broker: NativeExecutionBroker; token: string; world: NativeExecutionWorld }
+interface BoundConfig<World extends NativeExecutionProcessWorld> { broker: NativeProcessBroker<World>; token: string; world: World }
 
-class BoundFileSystem extends FileSystem {
+class BoundFileSystem<World extends NativeExecutionProcessWorld> extends FileSystem {
   private isDisposed(): boolean { return this.disposed }
   private readonly readers = new Set<SubprocessHandle>()
   private readonly calls = new Set<Promise<unknown>>()
   private disposed = false
-  constructor(ctx: Context, private readonly binding: BoundConfig) {
+  constructor(ctx: Context, private readonly binding: BoundConfig<World>) {
     super(ctx)
     ctx.effect(() => async () => {
       this.disposed = true
@@ -575,13 +593,13 @@ class BoundFileSystem extends FileSystem {
   }
 }
 
-class BoundSubprocess extends SubprocessRuntime {
+class BoundSubprocess<World extends NativeExecutionProcessWorld> extends SubprocessRuntime {
   private isDisposed(): boolean { return this.disposed }
   private readonly allocationAbort = new AbortController()
   private readonly live = new Set<SubprocessHandle | SubprocessTerminalHandle>()
   private readonly pending = new Set<Promise<void>>()
   private disposed = false
-  constructor(ctx: Context, private readonly binding: BoundConfig) {
+  constructor(ctx: Context, private readonly binding: BoundConfig<World>) {
     super(ctx)
     ctx.effect(() => async () => {
       this.disposed = true
@@ -622,8 +640,8 @@ class BoundSubprocess extends SubprocessRuntime {
   }
 }
 
-class BoundSandbox extends SandboxProvider {
-  constructor(ctx: Context, private readonly binding: BoundConfig) { super(ctx) }
+class BoundSandbox<World extends NativeExecutionProcessWorld> extends SandboxProvider {
+  constructor(ctx: Context, private readonly binding: BoundConfig<World>) { super(ctx) }
   override async confine(argv: readonly string[], policy: SandboxPolicy, signal?: AbortSignal) {
     signal?.throwIfAborted()
     const world = this.binding.world
@@ -633,4 +651,10 @@ class BoundSandbox extends SandboxProvider {
     return { argv: [POLICY_MARKER, world.worldId, world.mode, String(world.permissionGeneration), ...argv],
       enforcement: 'full' as const, denialSignatures: ['Read-only file system', 'Permission denied'], runnerFailureRules: [] }
   }
+}
+
+/** Agent-facing provider retains the original current-step and operation authority. */
+export class NativeExecutionBroker extends NativeProcessBroker<NativeExecutionWorld> {
+  declare readonly authority: NativeExecutionAuthorityStore
+
 }

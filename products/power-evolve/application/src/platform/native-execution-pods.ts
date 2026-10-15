@@ -5,7 +5,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { z } from 'zod'
 import type { Pool } from 'pg'
 import type { SubprocessOutcome } from '@deepseek-ai/dsh-subprocess'
-import { nativeExecutionWorld, type NativeExecutionWorld } from '../native-execution/types.ts'
+import { nativeExecutionProcessWorld, type NativeExecutionProcessWorld } from '../native-execution/types.ts'
 import type { StorageBinding } from './cloud-storage-types.ts'
 import { KubernetesClient, KubernetesError } from './kubernetes.ts'
 import { kubernetesPodStopStatus } from './pod-stop-status.ts'
@@ -46,7 +46,7 @@ export interface NativeExecutionPod {
   id: string
   name: string
   uid: string
-  world: NativeExecutionWorld
+  world: NativeExecutionProcessWorld
 }
 
 /** Owns only native-execution Pods; user processes receive neither control credentials nor shared roots. */
@@ -67,10 +67,12 @@ export class NativeExecutionPods {
    * @param request Exact wire request retained as an identity digest.
    * @param assertAuthority Rechecks current grant and both generations before mutation.
    * @param admissionId Optional original caller nonce; never reused for another dispatch.
+   * @param preparation Creates only an idle range whose single activation still requires its producer start permit.
    * @returns Exact ready Pod UID, or a durable uncertain admission.
    */
-  async create(world: NativeExecutionWorld, binding: StorageBinding, kind: 'process' | 'terminal' | 'filesystem',
-    request: unknown, assertAuthority: () => Promise<unknown>, admissionId?: string): Promise<NativeExecutionPod> {
+  async create(world: NativeExecutionProcessWorld, binding: StorageBinding, kind: 'process' | 'terminal' | 'filesystem',
+    request: unknown, assertAuthority: () => Promise<unknown>, admissionId?: string,
+    preparation = false): Promise<NativeExecutionPod> {
     await assertAuthority()
     await this.homes.init()
     await this.homes.ensureWorkspace(world.userId)
@@ -79,8 +81,10 @@ export class NativeExecutionPods {
     await this.temporary.createDirectory(world.userId, [], '.native-tmp')
     await this.temporary.createDirectory(world.userId, ['.native-tmp'], world.sessionId)
     const id = admissionId ?? randomUUID(), name = 'pe-native-' + id
-    await this.pool.query(`INSERT INTO pe_native_execution_processes(id,world_id,kind,namespace,pod_name,state,request_digest)
-      VALUES($1,$2,$3,$4,$5,'admitted',$6)`, [id, world.worldId, kind, this.config.namespace, name, digest(JSON.stringify(request))])
+    const requestDigest = digest(JSON.stringify(request))
+    await this.pool.query(`INSERT INTO pe_native_execution_processes(id,world_id,kind,namespace,pod_name,state,request_digest,activation_digest)
+      VALUES($1,$2,$3,$4,$5,'admitted',$6,$7)`,
+    [id, world.worldId, kind, this.config.namespace, name, requestDigest, preparation ? null : requestDigest])
     const labels = { 'powerevolve.dev/native-world': world.worldId, 'powerevolve.dev/native-process': id }
     const prefix = this.config.storageVolumePrefix.replace(/\/$/u, '')
     const root = [prefix, binding.rootKey, binding.rootRelativePath].filter(Boolean).join('/')
@@ -141,6 +145,46 @@ export class NativeExecutionPods {
     }
   }
 
+  /** Consume one prepared range after its producer has committed the exact start permit.
+   * @param range Original prepared Pod; another identity or an already consumed range cannot start.
+   * @param request Exact invocation retained as a digest, including its environment but never its values.
+   * @param assertAuthority Current producer dispatch authority, checked before and after admission.
+   * @returns Completion after the one activation is durable; an unknown acknowledgement cannot be retried.
+   */
+  async activate(range: NativeExecutionPod, request: unknown, assertAuthority: () => Promise<unknown>): Promise<void> {
+    await assertAuthority()
+    await this.capture(range)
+    const result = await this.pool.query(`UPDATE pe_native_execution_processes SET activation_digest=$6,
+      updated_at=clock_timestamp() WHERE id=$1 AND world_id=$2 AND pod_name=$3 AND pod_uid=$4 AND namespace=$5
+      AND state='running' AND activation_digest IS NULL RETURNING id`,
+    [range.id, range.world.worldId, range.name, range.uid, this.config.namespace, digest(JSON.stringify(request))])
+    if (result.rowCount !== 1) throw new Error('native_payload_activation_already_consumed')
+    await assertAuthority()
+  }
+
+  /** Capture the original live Pod and node without granting a process start.
+   * @param range Exact durable admission and Pod UID.
+   * @returns Two equal live observations plus the actual node identity; stopped or changed resources reject.
+   */
+  async capture(range: NativeExecutionPod): Promise<{ pod: unknown; node: unknown }> {
+    const labels = { 'powerevolve.dev/native-world': range.world.worldId, 'powerevolve.dev/native-process': range.id }
+    const first = await this.get(range.name)
+    if (!first) throw new Error('native_payload_capture_missing')
+    this.check(first, range.name, labels, range.uid)
+    const live = (pod: z.infer<typeof podSchema>) => !pod.metadata.deletionTimestamp
+      && pod.status?.phase === 'Running' && pod.status.containerStatuses?.length === 1
+      && pod.status.containerStatuses[0]?.ready === true && !!pod.spec.nodeName
+    if (!live(first)) throw new Error('native_payload_capture_not_ready')
+    const nodeName = first.spec.nodeName
+    if (!nodeName) throw new Error('native_payload_capture_node_missing')
+    const node = await this.kube.call('GET', `/api/v1/nodes/${encodeURIComponent(nodeName)}`)
+    const second = await this.get(range.name)
+    if (!second) throw new Error('native_payload_capture_missing')
+    this.check(second, range.name, labels, range.uid)
+    if (!live(second) || !isDeepStrictEqual(first, second)) throw new Error('native_payload_capture_changed')
+    return { pod: second, node }
+  }
+
   /** Stop the whole original Pod range, persist native kubelet evidence, then release its finalizer.
    * Cleanup remains permitted after account/operation revocation; no new execution is authorized.
    * @param range Exact original Pod identity.
@@ -198,7 +242,7 @@ export class NativeExecutionPods {
    * @param id Caller-retained original admission nonce.
    * @returns Exact original Pod identity, or undefined if no admission occurred.
    */
-  async original(world: NativeExecutionWorld, id: string): Promise<NativeExecutionPod | undefined> {
+  async original(world: NativeExecutionProcessWorld, id: string): Promise<NativeExecutionPod | undefined> {
     const result = await this.pool.query<{ name: string; uid: string | null }>(
       'SELECT pod_name AS name,pod_uid AS uid FROM pe_native_execution_processes WHERE id=$1 AND world_id=$2 AND namespace=$3',
       [id, world.worldId, this.config.namespace])
@@ -232,16 +276,18 @@ export class NativeExecutionPods {
   async recover(maximum: number): Promise<string[]> {
     const result = await this.pool.query<{ id: string; name: string; uid: string | null; world: unknown }>(
       `SELECT p.id,p.pod_name AS name,p.pod_uid AS uid,jsonb_build_object('worldId',w.id,'userId',w.user_id,
-       'sessionId',w.session_id,'agentId',w.agent_id,'workspaceId',w.workspace_id,'operationId',w.operation_id,
-       'operationEpoch',w.operation_epoch,'storageGeneration',w.storage_generation,'permissionGeneration',w.permission_generation,
-       'mode',w.mode,'workspaceRoot','/workspace','homeRoot','/home/agent') AS world
+       'sessionId',w.session_id,'workspaceId',w.workspace_id,'storageGeneration',w.storage_generation,
+       'permissionGeneration',w.permission_generation,'mode',w.mode,'workspaceRoot','/workspace','homeRoot','/home/agent')
+       || CASE WHEN w.service_id IS NULL THEN jsonb_build_object('agentId',w.agent_id,'operationId',w.operation_id,
+         'operationEpoch',w.operation_epoch) ELSE jsonb_build_object('serviceId',w.service_id,
+         'serviceEpoch',w.service_epoch,'authorityKind',w.authority_kind) END AS world
        FROM pe_native_execution_processes p JOIN pe_native_execution_worlds w ON w.id=p.world_id
        WHERE p.namespace=$1 AND (p.state<>'stopped' OR p.stop_evidence->>'resourceReleased' IS DISTINCT FROM 'true')
        ORDER BY p.created_at LIMIT $2`, [this.config.namespace, maximum + 1])
     if (result.rows.length > maximum) throw new Error('native_payload_recovery_budget')
     const uncertain: string[] = []
     for (const row of result.rows) {
-      const world = nativeExecutionWorld.parse(row.world)
+      const world = nativeExecutionProcessWorld.parse(row.world)
       let uid = row.uid
       if (uid === null) {
         const pod = await this.get(row.name)

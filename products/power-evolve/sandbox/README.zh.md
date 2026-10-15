@@ -26,7 +26,7 @@
 
 认证 Runner 在私有镜像中作为 root PID1 运行；命令和目录子进程使用 UID/GID 1000。Platform 提供私有 token。Workspace 与 Home 挂载可写，Skill 挂载与镜像文件系统只读。
 
-无凭据原生执行使用 UID/GID 1000。Linux 构建的 worker 文件和目录使用 0555 权限，进程可遍历 worker 目录，镜像仍保持只读。
+无凭据原生执行使用 UID/GID 1000。Linux 构建的文件系统、进程与 STDIO SDK worker 文件和目录使用 0555 权限，进程可遍历 worker 目录，镜像仍保持只读。
 
 `runner.mjs` 在 Runner token 下提供 health、命令受理、已受理状态及取消。请求绑定准确 Runner 实例、执行 ID、命令、相对 cwd 和超时。相同已受理输入只返回留存状态；同 ID 的不同输入冲突。`PE_RUNNER_MAX_EXECUTIONS` 配置回执留存上限，默认 4096、最大 65536；达到上限拒绝新 ID，不遗忘已受理回执。每条输出流最多保存 64 KiB，并解码跨块 UTF-8。此镜像不提供文件发布或产物观测。
 

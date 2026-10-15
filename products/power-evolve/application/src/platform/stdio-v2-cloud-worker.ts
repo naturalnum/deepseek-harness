@@ -22,6 +22,9 @@ export interface StdioCloudWorkerOptionsV2 {
   readonly pollMs: number
   readonly renewMs: number
   readonly leaseMs: number
+  readonly concurrency?: number
+  readonly nativeResources?: { prepare(lease: StdioActionLeaseV2): Promise<import('./sandbox.ts').SandboxReady>
+    retireUnstarted(lease: StdioActionLeaseV2): Promise<void> }
   /** Resolve private values only for the original true start; recovery and readback never invoke it. */
   readonly environment?: (lease: StdioActionLeaseV2, dispatch: StdioDispatchV2,
     signal: AbortSignal) => Promise<Readonly<Record<string, string>>>
@@ -63,7 +66,8 @@ export class StdioCloudWorkerV2 {
     private readonly transport: Pick<StdioCloudRunTransportV2, 'startDetached' | 'observeDetached' | 'cancelDetached'>,
     private readonly results: Pick<StdioResultServiceV2, 'record'>, options: StdioCloudWorkerOptionsV2) {
     if ([options.pollMs, options.renewMs, options.leaseMs].some(value => !Number.isSafeInteger(value)
-      || value < 1 || value > 2_147_483_647) || options.renewMs >= options.leaseMs) {
+      || value < 1 || value > 2_147_483_647) || options.renewMs >= options.leaseMs
+      || options.concurrency !== undefined && (!Number.isSafeInteger(options.concurrency) || options.concurrency < 1)) {
       throw new TypeError('stdio_v2_worker_budget_invalid')
     }
     this.options = Object.freeze({ ...options, workerId: stdioWorkerIdV2.parse(options.workerId) })
@@ -76,7 +80,13 @@ export class StdioCloudWorkerV2 {
   async run(signal: AbortSignal): Promise<void> {
     if (this.active || this.stepping) throw new Error('stdio_v2_worker_running')
     const combined = this.pollingLifetime(signal)
-    const active = Promise.resolve().then(() => this.loop(combined))
+    const active = Promise.resolve().then(async () => {
+      const concurrency = this.options.concurrency ?? 1
+      if (concurrency === 1) return this.loop(combined)
+      const children = Array.from({ length: concurrency }, () => new StdioCloudWorkerV2(this.store, this.authorization,
+        this.sandboxes, this.transport, this.results, { ...this.options, concurrency: 1 }))
+      await Promise.all(children.map(worker => worker.run(combined)))
+    })
     this.active = active
     try { await active }
     finally { this.active = undefined; this.controller = undefined }
@@ -165,11 +175,12 @@ export class StdioCloudWorkerV2 {
         if (!original.prepared) await this.store.beginPreparation(lease)
         if (!original.writer) {
           const { sessionId, userId } = original.task
-          const writer = await this.sandboxes.ensureReady(sessionId, userId, assertCreation, async (client, mode) => {
-            if (isLost()) throw new WorkInterrupted('lease-lost')
-            await this.store.assertProvisioning(client, lease, sessionId, userId, mode)
-            if (isLost()) throw new WorkInterrupted('lease-lost')
-          })
+          const writer = this.options.nativeResources ? await this.options.nativeResources.prepare(lease)
+            : await this.sandboxes.ensureReady(sessionId, userId, assertCreation, async (client, mode) => {
+              if (isLost()) throw new WorkInterrupted('lease-lost')
+              await this.store.assertProvisioning(client, lease, sessionId, userId, mode)
+              if (isLost()) throw new WorkInterrupted('lease-lost')
+            })
           if (isLost()) throw new WorkInterrupted('lease-lost')
           // Retain a known physical identity even if the supervisor stopped while creation completed.
           await this.store.attach(lease, writer)
@@ -245,7 +256,7 @@ export class StdioCloudWorkerV2 {
       || receipt.executionRef.executionId !== original.executionRef.executionId || receipt.taskDigest !== original.taskDigest
       || receipt.userId !== original.task.userId || receipt.sessionId !== original.task.sessionId
       || receipt.phase !== original.task.phase || receipt.preparedDigest !== (original.prepared?.preparedDigest ?? null)
-      || original.writer && (receipt.resource.kind !== 'ready_retained'
+      || original.writer && (receipt.resource.kind !== 'ready_retained' && receipt.resource.kind !== 'native_stopped'
         || receipt.resource.name !== original.writer.name || receipt.resource.podUid !== original.writer.podUid
         || receipt.resource.runnerInstanceId !== original.writer.runnerInstanceId)) {
       throw new PlatformError(409, 'stdio_v2_no_start_receipt_changed')
@@ -255,6 +266,7 @@ export class StdioCloudWorkerV2 {
   private async closeUnstarted(lease: StdioActionLeaseV2,
     original: Awaited<ReturnType<StdioCloudWorkerStoreV2['snapshot']>>, isLost: () => boolean): Promise<void> {
     if (isLost()) throw new WorkInterrupted('lease-lost')
+    await this.options.nativeResources?.retireUnstarted(lease)
     let receipt: StdioNoStartReceiptV2
     try { receipt = await this.store.closeUnstarted(lease) }
     catch (error) {
@@ -283,7 +295,7 @@ export class StdioCloudWorkerV2 {
     }
     const current = await assertLive()
     // Ready writers retain their mounts; only an uncaptured original creation can be cleaned up here.
-    if (current.dispatch || current.writer) return 'deferred'
+    if (current.dispatch || current.writer || this.options.nativeResources) return 'deferred'
     await this.sandboxes.cancelCreation(current.executionRef.executionId, current.task.sessionId, current.task.userId,
       lease.workerId, async () => { await assertLive() })
     const stopped = await assertLive()

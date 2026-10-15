@@ -5,6 +5,7 @@ import type { Pool, PoolClient } from 'pg'
 import { z } from 'zod'
 import type { ExecutionResolutionInspection, ExecutionResolutionReceipt, ExecutionResolutionRequest, ExecutionResolutionsList,
   ExecutionResolutionsListRequest, ExecutionResolutionStatus, ResolutionExecutionId, ResolutionRequestId } from '@power-evolve/contracts/execution-resolution'
+import type { NativeCloudCommands } from './native-cloud-commands.ts'
 import { CloudExecutionResolutionService } from './cloud-execution-resolution.ts'
 import { cloudRunnerResult as runnerResult, cloudRequestDigest as digest, capturedRunnerRequest, nativeCloudEnvironment,
   type CloudExecutionRow as ExecutionRow, type CloudExecutionState as State } from './cloud-execution-resolution-types.ts'
@@ -41,8 +42,8 @@ export class ExecutionService {
   constructor(private readonly tasks: TaskStore, private readonly sandboxes: SandboxManager,
     private readonly concurrency: number, private readonly pollMs: number,
     private readonly idleMs: number, private readonly commandTimeoutMs: number,
-    private readonly leaseMs = 90_000) {
-    this.resolutions = new CloudExecutionResolutionService(tasks.pool, sandboxes,
+    private readonly leaseMs = 90_000, private readonly native?: NativeCloudCommands) {
+    this.resolutions = new CloudExecutionResolutionService(tasks.pool, native?.resolutionTransport(sandboxes) ?? sandboxes,
       (client, row) => this.enqueueContinuation(client, row), commandTimeoutMs, leaseMs, pollMs)
   }
   /** PostgreSQL pool shared with the durable task store. */
@@ -86,6 +87,21 @@ export class ExecutionService {
     return this.resolutions.status(user, requestId)
   }
 
+  private async assertCommandAdmission(client: PoolClient, userId: string, sessionId: string): Promise<void> {
+    if (await isSessionBusinessBlockedInTransaction(client, userId, sessionId)) {
+      throw new PlatformError(409, 'native_session_archived')
+    }
+    const active = await client.query(
+      `SELECT id FROM pe_cloud_executions WHERE session_id=$1
+       AND state IN ('queued','starting','running','cancelling','uncertain')`, [sessionId])
+    if (active.rowCount) throw new PlatformError(409, 'execution_busy')
+    const instance = await client.query<{ state: string }>(
+      'SELECT state FROM pe_sandbox_instances WHERE session_id=$1', [sessionId])
+    if (instance.rows[0] && ['unknown', 'deleting'].includes(instance.rows[0].state)) {
+      throw new PlatformError(409, 'sandbox_stop_unconfirmed')
+    }
+  }
+
   /**
    * Persist one tool request before returning an accepted receipt to the Agent.
    * @param token Current operation grant.
@@ -107,24 +123,14 @@ export class ExecutionService {
         }
         return this.receipt(prior.rows[0])
       }
-      if (await isSessionBusinessBlockedInTransaction(client, grant.user_id, grant.id)) {
-        throw new PlatformError(409, 'native_session_archived')
-      }
-      const active = await client.query(
-        `SELECT id FROM pe_cloud_executions WHERE session_id=$1
-         AND state IN ('queued','starting','running','cancelling','uncertain')`, [grant.id])
-      if (active.rowCount) throw new PlatformError(409, 'execution_busy')
-      const instance = await client.query<{ state: string }>(
-        'SELECT state FROM pe_sandbox_instances WHERE session_id=$1', [grant.id])
-      if (instance.rows[0] && ['unknown', 'deleting'].includes(instance.rows[0].state)) {
-        throw new PlatformError(409, 'sandbox_stop_unconfirmed')
-      }
+      await this.assertCommandAdmission(client, grant.user_id, grant.id)
       const inserted = await client.query<ExecutionRow>(
         `INSERT INTO pe_cloud_executions(id,user_id,session_id,operation_id,call_id,command,cwd,request_digest,execution_kind,state,
           result_delivery,requested_timeout_ms,command_timeout_ms)
          VALUES($1,$2,$3,$4,$5,$6,$7,$8,'legacy_command','queued','continuation',$9,$9) RETURNING *`,
         [randomUUID(), grant.user_id, grant.id, grant.operation_id, callId, command, cwd, digest(request), this.commandTimeoutMs])
       await client.query('SELECT pg_notify(\'pe_executions\',$1)', [grant.id])
+      await this.native?.admit(client, requireActivityRow(inserted.rows))
       return this.receipt(requireActivityRow(inserted.rows))
     })
   }
@@ -160,16 +166,7 @@ export class ExecutionService {
         const row = request.cancelRequested ? await this.requestShellStop(client, read.row, request.cancelCause ?? 'abort') : read.row
         return this.shellReceipt(row, read.outputAllowed)
       }
-      if (await isSessionBusinessBlockedInTransaction(client, grant.user_id, grant.id)) {
-        throw new PlatformError(409, 'native_session_archived')
-      }
-      const active = await client.query(`SELECT id FROM pe_cloud_executions WHERE session_id=$1
-        AND state IN ('queued','starting','running','cancelling','uncertain')`, [grant.id])
-      if (active.rowCount) throw new PlatformError(409, 'execution_busy')
-      const instance = await client.query<{ state: string }>('SELECT state FROM pe_sandbox_instances WHERE session_id=$1', [grant.id])
-      if (instance.rows[0] && ['unknown', 'deleting'].includes(instance.rows[0].state)) {
-        throw new PlatformError(409, 'sandbox_stop_unconfirmed')
-      }
+      await this.assertCommandAdmission(client, grant.user_id, grant.id)
       const timeoutMs = Math.min(request.timeoutMs, this.commandTimeoutMs, 300_000)
       if (!Number.isInteger(timeoutMs) || timeoutMs < 1000) throw new PlatformError(503, 'native_shell_timeout_invalid')
       const authority = requireActivityRow(await lockAccountAuthorities(client, [executionUserId.parse(grant.user_id)], 'update'))
@@ -182,6 +179,7 @@ export class ExecutionService {
       [randomUUID(), grant.user_id, grant.id, grant.operation_id, request.callId, request.command, request.cwd,
         digest(admission), request.timeoutMs, timeoutMs, hashed, authority.credentialVersion, request.cancelRequested ?? false,
         request.cancelRequested ? request.cancelCause ?? 'abort' : null])
+      await this.native?.admit(client, requireActivityRow(inserted.rows))
       await client.query("SELECT pg_notify('pe_executions',$1)", [grant.id])
       return this.shellReceipt(requireActivityRow(inserted.rows))
     })
@@ -310,7 +308,8 @@ export class ExecutionService {
   /** Start the execution admission and reconciliation worker. */
   start(): void { this.polling = this.poll() }
   /** Stop polling and wait for active reconciliation attempts to finish. */
-  async close(): Promise<void> { this.stop.abort(); await this.polling; await Promise.allSettled(this.active) }
+  async close(): Promise<void> { this.stop.abort(); await this.polling
+    try { await Promise.allSettled(this.active) } finally { await this.native?.dispose() } }
 
   private stopped(): boolean { return this.stop.signal.aborted }
 
@@ -354,7 +353,7 @@ export class ExecutionService {
               AND u.credential_version=e.native_tool_credential_version)`)
       const leased = await client.query<{ count: number }>(
         `SELECT count(*)::integer AS count FROM pe_cloud_executions
-         WHERE lease_owner IS NOT NULL AND lease_until>clock_timestamp()
+         WHERE execution_kind='legacy_command' AND lease_owner IS NOT NULL AND lease_until>clock_timestamp()
           AND NOT EXISTS(SELECT 1 FROM pe_cloud_execution_resolutions r WHERE r.execution_id=pe_cloud_executions.id)
            AND state IN ('queued','starting','running','cancelling','uncertain')`)
       if (requireActivityRow(leased.rows).count >= this.concurrency) return null
@@ -416,11 +415,25 @@ export class ExecutionService {
   }
 
   private async process(row: ExecutionRow, assertLease: () => Promise<void>): Promise<void> {
+    if (this.native && await this.native.owns(row)) {
+      try {
+        const outcome = await this.native.run(row, this.workerId, assertLease, this.stop.signal)
+        await assertLease()
+        await this.settle(row, outcome.state, outcome.result, outcome.errorCode)
+      } catch (error) {
+        if (!(error instanceof ExecutionLeaseLost)) await this.defer(row, 'uncertain', 'native_cloud_command_unconfirmed')
+      }
+      return
+    }
     try {
       await assertLease()
       if (row.result_delivery === 'native_tool' && row.native_tool_stop_target !== null
         && row.native_tool_stop_target !== undefined) {
         await this.stopNativeTool(row, assertLease); return
+      }
+      if (this.native && (!row.runner_instance_id || !row.pod_uid)) {
+        await this.sandboxes.cancelCreation(row.id, row.session_id, row.user_id, this.workerId, assertLease)
+        await this.settle(row, 'closed_unknown', null, 'historical_cloud_command_retired'); return
       }
       if (await this.currentCancel(row) && !row.sandbox_name) {
         await this.sandboxes.cancelCreation(row.id, row.session_id, row.user_id, this.workerId, assertLease)
@@ -497,6 +510,9 @@ export class ExecutionService {
       return
     }
     if (!status) {
+      if (this.native) {
+        await this.defer(row, 'uncertain', 'historical_cloud_command_outcome_unknown'); return
+      }
       if (row.state !== 'starting') {
         await this.defer(row, 'uncertain', 'runner_execution_missing'); return
       }

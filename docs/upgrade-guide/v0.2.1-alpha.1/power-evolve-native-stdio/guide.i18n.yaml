@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for guide.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/upgrade-guide/v0.2.1-alpha.1/power-evolve-native-stdio/guide.md
+/:
+  en: 2b296f3b2ef7e4a9
+  zh: a850b648dccbab79
+/powerevolve-stdio-uses-native-execution:
+  en: 7ed50c40b8d065e7
+  zh: 5beab916902855a4
+/powerevolve-stdio-uses-native-execution/change:
+  en: d0d3154e12a1270b
+  zh: 305baf494759f2ee
+/powerevolve-stdio-uses-native-execution/migration:
+  en: 21c1868731793295
+  zh: 8083cbb9edb787b5

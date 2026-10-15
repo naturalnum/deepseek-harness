@@ -14,6 +14,8 @@ export const stdioCreationStopEvidenceV2 = z.object({
 }).strict()
 const resource = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('unallocated') }).strict(),
+  z.object({ kind: z.literal('native_stopped'), name, podUid: uuid, runnerInstanceId: uuid,
+    mountGeneration: generation, bindingSnapshot: storageBinding, processId: uuid, worldId: uuid }).strict(),
   z.object({ kind: z.literal('ready_retained'), name, podUid: uuid, runnerInstanceId: uuid,
     mountGeneration: generation, bindingSnapshot: storageBinding }).strict(),
   z.object({ kind: z.literal('creation_stopped'), name, mountGeneration: generation,

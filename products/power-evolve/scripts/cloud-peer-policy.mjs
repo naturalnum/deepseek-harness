@@ -179,6 +179,7 @@ export const CLOUD_PEER_REQUIRED_HOST_EXPORTS = Object.freeze({
     'stdioSha256V2',
   ]),
   '@power-evolve/connector-runner/stdio-v2-dispatch': Object.freeze([
+    'runStdioDispatchV2',
     'parseStdioStartV2',
     'validateStdioStartV2',
   ]),
@@ -260,6 +261,7 @@ export const CLOUD_PEER_REQUIRED_HOST_EXPORTS = Object.freeze({
   '@power-evolve/contracts/stdio-environment': Object.freeze([
     'stdioEnvironmentOptions', 'stdioEnvironmentReceipt', 'stdioEnvironmentReceiptRequest',
     'stdioEnvironmentTicket', 'stdioEnvironmentTicketRequest', 'stdioEnvironmentUpload',
+    'stdioEnvironmentValues',
   ]),
   '@power-evolve/contracts/stdio-management': Object.freeze([
     'stdioActionSchemasV2',

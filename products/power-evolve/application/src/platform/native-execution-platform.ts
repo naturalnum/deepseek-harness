@@ -5,7 +5,9 @@ import type { Pool } from 'pg'
 import type { ManagedCloudStorage } from './managed-storage.ts'
 import { NativeExecutionAuthorityStore, type NativeExecutionPolicyReader,
   type NativeExecutionTaskAuthority } from './native-execution-authority-store.ts'
-import { NativeExecutionBroker } from './native-execution-broker.ts'
+import { NativeExecutionServiceAuthority, type NativeExecutionServiceReader } from './native-execution-service-authority.ts'
+import type { NativeExecutionServiceWorld } from '../native-execution/types.ts'
+import { NativeProcessBroker, NativeExecutionBroker } from './native-execution-broker.ts'
 import { NativeExecutionPods } from './native-execution-pods.ts'
 import { NativeExecutionRoutes } from './native-execution-routes.ts'
 import { loadNativeExecutionConfig } from './native-execution-config.ts'
@@ -17,6 +19,12 @@ export interface NativeExecutionPlatform {
   readonly broker: NativeExecutionBroker
   readonly pods: NativeExecutionPods
   readonly uncertainProcessIds: readonly string[]
+  /** Create a separately authorized service over the same physical provider and joined transport lifetime.
+   * @param reader Producer-owned independent lease verifier.
+   * @param key Private producer grant key; never sent into payloads.
+   * @returns Broker whose process lifetime is owned by this Platform assembly.
+   */
+  service(reader: NativeExecutionServiceReader, key: Uint8Array): NativeProcessBroker<NativeExecutionServiceWorld>
   /** Join route, broker and transport disposal before the Platform PG pool is released. */
   close(): Promise<void>
 }
@@ -36,12 +44,14 @@ export async function installNativeExecutionPlatform(ctx: Context, pool: Pool, t
   const transport = new Context()
   const ready = Promise.withResolvers<void>()
   let disposed = false, broker: NativeExecutionBroker | undefined, routes: NativeExecutionRoutes | undefined
+  const services = new Set<NativeProcessBroker<NativeExecutionServiceWorld>>()
   let closing: Promise<void> | undefined
   const isDisposed = (): boolean => disposed
   const close = () => closing ??= (async () => {
     disposed = true; await ready.promise
     const failures: unknown[] = []
-    for (const dispose of [() => routes?.dispose(), () => broker?.dispose(), () => transport.fiber.dispose()]) {
+    for (const dispose of [() => routes?.dispose(), () => broker?.dispose(),
+      ...[...services].map(service => () => service.dispose()), () => transport.fiber.dispose()]) {
       try { await dispose() } catch (error) { failures.push(error) }
     }
     if (failures.length) throw new AggregateError(failures, 'Native execution Platform disposal failed')
@@ -59,7 +69,13 @@ export async function installNativeExecutionPlatform(ctx: Context, pool: Pool, t
     const authority = new NativeExecutionAuthorityStore(pool, tasks, storage, policyReader)
     broker = new NativeExecutionBroker(authority, pods, transport.subprocess, config.broker)
     routes = new NativeExecutionRoutes(broker, config.routes)
-    return { broker, routes, pods, uncertainProcessIds, close }
+    return { broker, routes, pods, uncertainProcessIds, close, service(reader, key) {
+      if (isDisposed()) throw new Error('native_execution_platform_disposed')
+      const service = new NativeProcessBroker(new NativeExecutionServiceAuthority(pool, storage, reader, key),
+        pods, transport.subprocess, config.broker)
+      services.add(service)
+      return service
+    } }
   } catch (error) {
     await transport.fiber.dispose()
     throw error

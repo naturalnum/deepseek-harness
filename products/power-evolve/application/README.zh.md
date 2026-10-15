@@ -53,6 +53,8 @@ Host RPC、流式上传和每轮完整的 native-intent reconciliation 均持有
 
 cloud-native 数据库通过相邻迁移推进至 schema 14。STDIO 环境变量版本在 Platform 加密，并仅绑定一次到所属连接的配置修订；直传票据不授予执行权限。只有原始获批 worker 可在准确的存活租约与派发下解密该版本一次。保留既有代际的资产和记录。独立的临时助手呈现表存储 JSON 文本；原生 Session 事件仍是恢复来源。固定旧版导入器生成 schema 2，由正常 Platform 启动经保留的相邻代际升级至 schema 14。事件与投影写入可与呈现状态变更共用调用者已授权的 PG 事务；调用者负责最终租约核验和提交。
 
+原生 Agent 进程、终端、已受理云命令与通用 STDIO 动作共用无凭据的 gVisor 提供方。每个 STDIO 动作拥有独立服务身份和预备 Pod，不占用账户挂载槽，也不借用 Session 写者。配置云执行或 STDIO 时必须提供 `nativeExecutionConfigFile`。新云命令在原受理事务中记录原生提供方；留存的旧资源仅按原身份对账。固定的原生 payload 镜像须包含 `native-stdio-worker.mjs`。准备阶段把实际 Pod UID、镜像、原生策略挂载和完整 SDK 选择绑定到审批。原预备 Pod 只能激活一次；只有 kubelet 对原 UID 的停止证明和资源释放均完成，SDK 输出才可成为终态。输出丢失时保留未对账状态，不能启动第二次调用。worker 的 `maxActive` 限制所有 worker 同时持有租约的动作数。受保护的原生文件编辑协调同一物理路径的别名；不同路径和 Session 可以并发处理。
+
 原生前台 Shell 接收要求实际已消费的输入集合及当前打开的步骤。Platform 保留原始请求超时、实际采用的超时、grant 摘要和凭据版本。捕获的 Runner 请求使用有界尾部输出，只附带受控的 `DSH_SHELL`、`DSH_HOME` 和 `DSH_SESSION_ID` 变量。结果归属于原工具调用；这些执行不会创建沙盒结果续跑。原始 token 过期后仍可恢复同一回执并请求清理，但账号撤销和归档仍禁止输出读取。首次取消原因持久保存且不可覆盖；自动丢失执行所有权记录为 abort。原生 Runner 取消携带该持久原因。准备阶段尚无结果时使用持久原因；真实结果保留 Runner 的 `timedOut` 事实，Host 晚到的期限不能把成功改为超时。接受取消不等于确认停止。结果缺失时保留未决状态，直到确切停止捕获的原执行器；无法核验的结果以 `closed_unknown` 结案。既有回执式执行保留续跑交付方式。
 
 独立的原生会话写入占有与操作授权分离。准确的活动 worker、token 摘要及 writer epoch 控制维护操作；释放保留最后身份和 epoch 以供重试。普通任务领取排除活动占有，在 Session 锁等待后再次核验。调用者持有的事务可锁定并复查准确占有，不延长其有效期。授权恢复使用原受理输入及选择，要求准确的活动 attempt，并在读取后重新核验权限；普通领取使用同一恢复方法。Platform已挂载有界writer取得及维护路由。Host Scheduler 为整个 Session run 取得一个保留的 Writer 身份，独立续租，在所有本地代际释放后再 release；取得响应不确定时保留同一随机 token 重试。操作取消立即停止新增续租；已发出的 Writer 续租保留原配置的传输期限，release 等待其原始响应或有界传输超时。已发请求的真实失败由显式 Scheduler close 报告，期限到达不代表服务器已确认。冷交互 owner 与子会话写入句柄使用相同的已发请求屏障；维护失败调用原身份 cleanup，不能完成为 completed，显式 close 和 shutdown 会保留失败；当前验证范围由 冷 Session 在取得原占用后立即开始 grant 和 Writer 维护，早于持久化加载以及 preset、文件系统和 shell 初始化。初始化取消会等待已发出的维护与精确清理；真实传输失败在重复 close 和 shutdown 时仍可见。[writer集成记录](../TRIAL-M3-NATIVE-WRITER.md) 拥有。
@@ -138,7 +140,7 @@ Platform JSON 响应读取器在消费响应期间保留原始调用者 signal �
 当前限制由相应原生 API 明确表达：
 
 - broker 的文件工具回包和保留输出有明确上限。无凭据进程 relay 承载原始子进程字节、fd7 控制通道和真实 guest PTY；产物平面的物理用例实际执行原生 Bash、PTC 宿主绑定和已注册 Terminal 后端。文本流读取使用有界 UTF-8 帧和已确认的字节窗口，与文件总大小无关。Runtime 消费者暂停读取时，原始子进程和 PTY 管道会暂停真实来源。显式 binding `close()` 等待原始 start、stop 和 release 完成，并在 Cordis 销毁之外保留清理失败。Pod 调度请求 `requestCpu` 和 `requestMemory` 可独立于硬限制 `cpu` 和 `memory` 配置；加载部署配置时，未指定的请求会显式采用对应硬限制的值。文件监听及完整输出溢出文件恢复尚不可用。生产 Profile 与浏览器验收另行执行。
-- 原生云端 Shell 当前仅支持有界前台 Bash。后台任务、标准输入／环境覆盖、原生文件权限以及完整 FS／Subprocess／PTY 提供方仍属于[运行改造计划](../CLOUD-RUNTIME-PLAN.md)中的独立切片。不确定命令按原身份对账。
+- 保留的云端命令回执 API 支持有界前台 Bash。该 API 尚不支持后台任务和调用者 stdin／环境覆盖；原生 Fs、Subprocess 与 PTY 使用各自已注册的提供方。不确定命令的独立审批仅停止原生原 UID；输出不可用时记录 `closed_unknown`，不重建命令。参见[运行改造计划](../CLOUD-RUNTIME-PLAN.md)。
 - 打开 Host 本机文件及修改共享 Profile 需要云端用户不会自动获得的权限。
 - 当前输入适配器接受排队文本、普通文件回执及 SDK 受理的图片；插队、编辑和删除通过当前 Writer 的 Coordinator 提交。活动 prepared owner 的删除会被拒绝。
 - 当前续接支持关闭回合的结算、未消费的 prepared 或 capacity park 输入接管，以及历史 claimed 对账。跨重启保留修改意图及其余停止／失败组合仍需验收；当前源码 PG 恢复检查不能认证生产重启部署。

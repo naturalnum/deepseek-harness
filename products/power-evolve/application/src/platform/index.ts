@@ -108,6 +108,7 @@ import { SshCallStore } from './ssh-calls.ts'
 import { SshAuthenticationCheck } from './ssh-check.ts'
 import { SshExecuteService } from './ssh-execute.ts'
 import { SshRunnerOrchestrator, type SshRunnerConfig } from './ssh-runner.ts'
+import { NativeCloudCommands } from './native-cloud-commands.ts'
 import { ExecutionService } from './executions.ts'
 import { cloudShellProposeRequest, cloudShellExecutionRequest, cloudShellCancelRequest } from '../cloud-shell-contracts.ts'
 import { routeExecutionResolutionRead, routeExecutionResolutionApproval } from './execution-resolution-routes.ts'
@@ -344,6 +345,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const loginAdmission = new LoginAdmission(pool, config)
   await loginAdmission.initialize()
   const executionEnabled = config.sandboxKubeconfigFile.length > 0
+  if (executionEnabled && !config.nativeExecutionConfigFile) throw new Error('Cloud execution requires native execution configuration')
   if (executionEnabled && (!config.sandboxKeyFile || !config.sandboxNamespace || !config.sandboxImage
     || !config.sandboxLocalRoot || Boolean(config.sandboxNodeRoot) === Boolean(config.sandboxVolumeClaimName))) {
     throw new Error('Incomplete Agent Sandbox configuration')
@@ -612,9 +614,11 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   const runtimeAuthority = new NativeRuntimeAuthority(pool)
   const nativeInteractive = new NativeInteractive(tasks, runtimeAuthority, { lifetimeMs: config.nativeInteractiveLifetimeMs,
     maxActivePerUser: config.nativeInteractiveMaxActivePerUser, leaseMs: config.leaseMs })
+  let nativePhysical: Awaited<ReturnType<typeof installNativeExecutionPlatform>> | undefined
   if (config.nativeExecutionConfigFile) {
     const nativeExecution = await installNativeExecutionPlatform(ctx, pool, tasks, files.storage,
       readNativeRuntimePolicy, config.nativeExecutionConfigFile)
+    nativePhysical = nativeExecution
     mcpShutdown.add(installNativeExecutionHttp(ctx, nativeExecution.routes, config.maxRequestBytes))
     mcpShutdown.add(() => nativeExecution.close())
   }
@@ -680,9 +684,10 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       readyTimeoutMs: config.sandboxReadyTimeoutMs,
       maxExecutions: config.sandboxMaxExecutions,
     }) : null
+  if (stdioV2Config && !nativePhysical) throw new Error('Cloud STDIO requires native execution configuration')
   const stdioV2 = sandboxManager && stdioV2Config && stdioV2Selection
     ? createStdioCloudServicesV2(pool, tasks, stdioV2Selection, files, sandboxManager,
-      stdioV2Config, stdioWorkerIdV2.parse(instanceId)) : null
+      stdioV2Config, stdioWorkerIdV2.parse(instanceId), nativePhysical) : null
   let stdioWorkerReady = true
   if (stdioV2) {
     const stop = new AbortController()
@@ -692,12 +697,15 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         ctx.logger.error('STDIO v2 worker stopped unexpectedly')
       }
     })
-    const close = async () => { stop.abort(); await stdioV2.worker.stop(); await polling }
+    const close = async () => { stop.abort(); try { await stdioV2.close() } finally { await polling } }
     mcpShutdown.add(close)
     ctx.effect(() => close)
   }
+  const nativeCommands = nativePhysical && sandboxManager ? new NativeCloudCommands(pool, nativePhysical,
+    Buffer.from((await readFile(config.sandboxKeyFile, 'utf8')).trim()), config.sandboxCommandTimeoutMs, config.leaseMs) : undefined
   const executions = sandboxManager ? new ExecutionService(tasks, sandboxManager,
-    config.sandboxConcurrency, config.sandboxPollMs, config.sandboxIdleMs, config.sandboxCommandTimeoutMs) : null
+    config.sandboxConcurrency, config.sandboxPollMs, config.sandboxIdleMs, config.sandboxCommandTimeoutMs,
+    config.leaseMs, nativeCommands) : null
   if (executions) { executions.start(); ctx.effect(() => () => executions.close()) }
 
   const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {

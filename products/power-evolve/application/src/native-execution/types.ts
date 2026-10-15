@@ -20,9 +20,25 @@ export const nativeExecutionWorld = z.object({
 /** Frozen Agent execution address. */
 export type NativeExecutionWorld = z.infer<typeof nativeExecutionWorld>
 
+/** Opaque independently leased execution owner; it is neither a Session writer nor a model operation. */
+export type NativeExecutionServiceId = Branded<'PowerEvolveNativeExecutionServiceId'>
+/** Shared storage address for one independently owned service process. */
+export const nativeExecutionServiceWorld = nativeExecutionWorld.omit({ agentId: true, operationId: true,
+  operationEpoch: true }).extend({
+  serviceId: z.uuid().transform(value => brandString<NativeExecutionServiceId>(value)),
+  serviceEpoch: z.number().int().positive(),
+  authorityKind: z.enum(['cloud-command', 'stdio-action', 'mcp-service']),
+}).strict()
+/** An independently authorized service uses the same physical process provider as an Agent. */
+export type NativeExecutionServiceWorld = z.infer<typeof nativeExecutionServiceWorld>
+/** Physical process ownership never substitutes a service lease for an Agent's current-step grant. */
+export const nativeExecutionProcessWorld = z.union([nativeExecutionWorld, nativeExecutionServiceWorld])
+/** Original owner and storage address accepted by the common physical provider. */
+export type NativeExecutionProcessWorld = z.infer<typeof nativeExecutionProcessWorld>
+
 /** Already authorized services selected by the caller's original Agent scope. */
-export interface NativeExecutionBinding {
-  readonly world: NativeExecutionWorld
+export interface NativeExecutionBinding<World extends NativeExecutionProcessWorld = NativeExecutionWorld> {
+  readonly world: World
   readonly filesystem: FileSystem
   readonly subprocess: SubprocessRuntime
   readonly sandbox: SandboxProvider

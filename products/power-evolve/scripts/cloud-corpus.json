@@ -372,7 +372,13 @@
     "products/power-evolve/sandbox/office-preview-docx.mjs",
     "products/power-evolve/sandbox/office-preview.mjs",
     "products/power-evolve/sandbox/runner.mjs",
-    "products/power-evolve/sandbox/scripts/assemble-office-preview.mjs"
+    "products/power-evolve/sandbox/scripts/assemble-office-preview.mjs",
+    "products/power-evolve/application/src/native-execution/stdio-worker-entry.ts",
+    "products/power-evolve/application/src/platform/native-cloud-commands.ts",
+    "products/power-evolve/application/src/platform/native-execution-mutations.ts",
+    "products/power-evolve/application/src/platform/native-execution-service-authority.ts",
+    "products/power-evolve/application/src/platform/native-process-authority.ts",
+    "products/power-evolve/application/src/platform/stdio-v2-native-cloud.ts"
   ],
   "sourceTests": [
     "products/power-evolve/application/tests/account-cloud-revocation.spec.ts",
@@ -558,7 +564,9 @@
     "products/power-evolve/sandbox/tests/employee1-office-image.test.mjs",
     "products/power-evolve/sandbox/tests/employee1-office-parser.test.mjs",
     "products/power-evolve/sandbox/tests/employee4-runner-lifetime.test.mjs",
-    "products/power-evolve/sandbox/tests/runner.test.mjs"
+    "products/power-evolve/sandbox/tests/runner.test.mjs",
+    "products/power-evolve/application/tests/native-service-concurrency.spec.ts",
+    "products/power-evolve/application/tests/stdio-native-preparation.spec.ts"
   ],
   "builtTests": [
     "products/power-evolve/application/tests/employee5-legacy-migration-v2-maintenance.built.test.mjs",
@@ -568,6 +576,7 @@
     "products/power-evolve/application/tests/native-browser-replicas.built.test.mjs",
     "products/power-evolve/application/tests/native-execution.physical.built.test.mjs",
     "products/power-evolve/application/tests/native-image-profile.built.test.mjs",
+    "products/power-evolve/application/tests/native-stdio-concurrent.physical.built.test.mjs",
     "products/power-evolve/application/tests/stdio-v2-host-scheduler.built.test.mjs",
     "products/power-evolve/client-account/tests/client-factory.built.test.mjs",
     "products/power-evolve/client-extension-center/tests/client-factory.built.test.mjs",
@@ -793,7 +802,9 @@
     "products/power-evolve/contracts/tests/employee1-office-platform.spec.ts",
     "products/power-evolve/contracts/tests/employee1-stdio-management-host.spec.ts",
     "products/power-evolve/contracts/tests/employee1-stdio-management-platform.spec.ts",
-    "products/power-evolve/contracts/tests/employee1-stdio-mcp-runner.spec.ts"
+    "products/power-evolve/contracts/tests/employee1-stdio-mcp-runner.spec.ts",
+    "products/power-evolve/application/tests/native-service-concurrency.spec.ts",
+    "products/power-evolve/application/tests/stdio-native-preparation.spec.ts"
   ],
   "nodeTests": [
     "products/power-evolve/application/tests/employee6-peer-pack.test.mjs",
@@ -1457,7 +1468,16 @@
     "products/power-evolve/scripts/cloud-reporter.mjs",
     "products/power-evolve/scripts/cloud-scope.mjs",
     "products/power-evolve/scripts/cloud-selftest.mjs",
-    "products/power-evolve/scripts/cloud-static.mjs"
+    "products/power-evolve/scripts/cloud-static.mjs",
+    "products/power-evolve/application/src/native-execution/stdio-worker-entry.ts",
+    "products/power-evolve/application/src/platform/native-cloud-commands.ts",
+    "products/power-evolve/application/src/platform/native-execution-mutations.ts",
+    "products/power-evolve/application/src/platform/native-execution-service-authority.ts",
+    "products/power-evolve/application/src/platform/native-process-authority.ts",
+    "products/power-evolve/application/src/platform/stdio-v2-native-cloud.ts",
+    "products/power-evolve/application/tests/native-service-concurrency.spec.ts",
+    "products/power-evolve/application/tests/native-stdio-concurrent-case.mjs",
+    "products/power-evolve/application/tests/stdio-native-preparation.spec.ts"
   ],
   "docs": [
     "products/power-evolve/AGENTS.md",

@@ -222,8 +222,8 @@ export const stdioCaptureV2 = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('cloud'), podUid: opaque<Branded<'PowerEvolveStdioPodUidV2'>>(), podName: text,
     namespace: text, nodeName: text, runnerInstanceId: opaque<Branded<'PowerEvolveStdioRunnerInstanceV2'>>(),
     containerId: text, restartCount: z.number().int().nonnegative(), mountGeneration: z.string().regex(/^(0|[1-9][0-9]*)$/u),
-    workspaceMount: z.object({ claimName: text, subPath: text, mountPath: z.literal('/workspace'), readOnly: z.literal(false) }).strict(),
-    homeMount: z.object({ claimName: text, subPath: text, mountPath: z.literal('/home/agent'), readOnly: z.literal(false) }).strict(),
+    workspaceMount: z.object({ claimName: text, subPath: text, mountPath: z.literal('/workspace'), readOnly: z.boolean() }).strict(),
+    homeMount: z.object({ claimName: text, subPath: text, mountPath: z.literal('/home/agent'), readOnly: z.boolean() }).strict(),
   }).strict(),
 ])
 /** One write-once preparation, bound to the original task and exact execution observations. */

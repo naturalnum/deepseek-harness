@@ -26,7 +26,7 @@ Run authorized cloud commands against persistent Workspace and Home mounts, with
 
 The authenticated Runner runs as root PID1 in the private image; command and directory children use UID/GID 1000. Platform supplies its private token. Workspace and Home mounts are writable, Skill mounts and the image filesystem are read-only.
 
-Credential-free native execution uses UID/GID 1000. Its Linux-built worker files and directories use mode 0555 so the process can traverse the worker directory while the image remains read-only.
+Credential-free native execution uses UID/GID 1000. Its Linux-built filesystem, process and STDIO SDK worker files and directories use mode 0555 so the process can traverse the worker directory while the image remains read-only.
 
 `runner.mjs` supports health, command acceptance, retained status and cancellation under the Runner token. Requests bind the exact Runner instance, execution ID, command, relative cwd and timeout. Repeating accepted input returns its retained status; different input under the same ID conflicts. `PE_RUNNER_MAX_EXECUTIONS` sets the retained receipt limit, default 4096 and maximum 65536; reaching the limit refuses new IDs without forgetting accepted receipts. Output retains at most 64 KiB per stream and decodes split UTF-8 chunks. File publication and artifact observations are absent.
 

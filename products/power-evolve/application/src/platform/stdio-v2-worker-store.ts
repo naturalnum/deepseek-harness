@@ -8,7 +8,7 @@ import { stdioApprovalBindingV2, stdioDigestV2, stdioDispatchV2, stdioExecutionR
 import { stdioActionLeaseV2, stdioWorkerIdV2, type StdioActionLeaseV2, type StdioWorkerIdV2 } from '@power-evolve/contracts/stdio-runtime'
 import { stdioCatalogFingerprintV2 } from '@power-evolve/connector-runner/stdio-v2-digest'
 import { accountUserId } from '../account-contracts.ts'
-import { PlatformError } from '../contracts.ts'
+import { PlatformError, sessionId as nativeSessionId, workspaceId as nativeWorkspaceId } from '../contracts.ts'
 import { transaction } from './database.ts'
 import type { SandboxReady } from './sandbox.ts'
 import type { StdioPreparationViewV2 } from './stdio-v2-authorization.ts'
@@ -16,6 +16,8 @@ import type { StdioCallContinuationV2 } from './stdio-v2-continuations.ts'
 import { readStdioCallRootAuthorityV2, stdioRecordDigestsV2, lockStdioActionAccountV2 } from './stdio-v2-call-authority.ts'
 import { assertStdioActionLeaseV2 } from './stdio-v2-leases.ts'
 import { storageBinding } from './cloud-storage-types.ts'
+import type { NativeExecutionServiceReader } from './native-execution-service-authority.ts'
+import { readNativeSessionExecutionPolicy } from './native-runtime-policy.ts'
 import { parseStdioNoStartReceiptV2, stdioCreationStopEvidenceV2,
   type StdioNoStartReceiptV2, type StdioNoStartResourceV2 } from './stdio-v2-no-start.ts'
 
@@ -57,12 +59,17 @@ export class StdioCloudWorkerStoreV2 {
   private readonly limits: StdioLimitsV2
   private readonly schemas: ReturnType<typeof stdioTaskSchemasV2>
   private readonly options: { leaseMs: number; maxActive: number; maxCandidates: number }
+  private readonly nativeResources: {
+    ready(client: PoolClient, task: StdioTaskV2, ready: SandboxReady): Promise<void>
+    noStart(client: PoolClient, task: StdioTaskV2): Promise<StdioNoStartResourceV2>
+  } | undefined
   private readonly continuation: Pick<StdioCallContinuationV2, 'enqueueLeased'> | undefined
   constructor(private readonly pool: Pool, options: { limits: StdioLimitsV2
     leaseMs: number
     maxActive: number
     maxCandidates: number
-    continuation?: Pick<StdioCallContinuationV2, 'enqueueLeased'> }) {
+    continuation?: Pick<StdioCallContinuationV2, 'enqueueLeased'>
+    nativeResources?: StdioCloudWorkerStoreV2['nativeResources'] }) {
     this.limits = stdioLimitsV2.parse(options.limits)
     this.digests = stdioRecordDigestsV2(this.limits)
     for (const value of [options.leaseMs, options.maxActive, options.maxCandidates]) {
@@ -70,8 +77,37 @@ export class StdioCloudWorkerStoreV2 {
     }
     this.options = { leaseMs: options.leaseMs, maxActive: options.maxActive, maxCandidates: options.maxCandidates }
     this.continuation = options.continuation
+    this.nativeResources = options.nativeResources
     this.schemas = stdioTaskSchemasV2(this.limits)
   }
+  /** Recheck this original STDIO action independently of any Session writer before using the common native provider.
+   * @param client Existing account-locked transaction; all original action and execution locks reuse it.
+   * @param owner Exact original action, worker instance and action-lease epoch.
+   * @param purpose Provisioning never starts the server; execution requires its original committed start permit.
+   * @returns Current original lease, immutable task identity, storage Session and committed permission generation.
+   */
+  readonly nativeServiceLease: NativeExecutionServiceReader = async (client, owner, purpose) => {
+    if (owner.kind !== 'stdio-action') this.deny('stdio_v2_native_owner_changed')
+    const held = (await client.query<{ lease_owner: string; lease_epoch: string }>(
+      'SELECT lease_owner,lease_epoch FROM pe_stdio_v2_actions WHERE id=$1', [owner.id])).rows[0]
+    const lease = stdioActionLeaseV2.parse({ actionId: owner.id, workerId: held?.lease_owner, leaseEpoch: Number(held?.lease_epoch) })
+    const original = await this.current(client, lease)
+    if (owner.epoch !== 1 || owner.workerId !== original.execution.id
+      || original.account.userId !== owner.userId || original.cancelRequested
+      || !activeExecutions.includes(original.execution.state) || !workStates.includes(original.action.state)
+      || !original.action.lease_until) this.deny('stdio_v2_native_authority_lost')
+    if ((purpose === 'execution' || purpose === 'process-lifecycle')
+      && (!original.dispatch || !original.prepared || !original.writer)) this.deny('stdio_v2_native_start_not_authorized')
+    const current = await readNativeSessionExecutionPolicy(client, original.task.sessionId,
+      original.task.phase === 'call' ? original.task.origin.operationId : undefined)
+    await assertStdioActionLeaseV2(client, lease)
+    return { sessionId: nativeSessionId.parse(original.task.sessionId),
+      workspaceId: nativeWorkspaceId.parse(original.task.scopeBinding.workspaceId),
+      ...current, expiresAt: original.action.lease_until, source: { formatVersion: 1, actionId: original.task.actionId,
+        executionId: original.execution.id, taskDigest: original.action.task_digest,
+        configRevision: original.action.config_revision, configDigest: original.action.config_digest } }
+  }
+
   private deny(code: string): never { throw new PlatformError(409, code) }
   private async write(client: PoolClient, lease: StdioActionLeaseV2, sql: string, values: readonly unknown[]): Promise<void> {
     const changed = await client.query<Record<string, unknown>>(sql, [lease.actionId, lease.workerId, lease.leaseEpoch, ...values])
@@ -198,6 +234,7 @@ export class StdioCloudWorkerStoreV2 {
       || !['queued', 'starting'].includes(original.execution.state))) this.deny('stdio_v2_action_not_startable')
   }
   private async ready(client: PoolClient, original: Awaited<ReturnType<StdioCloudWorkerStoreV2['read']>>, ready: SandboxReady): Promise<void> {
+    if (this.nativeResources) return this.nativeResources.ready(client, original.task, ready)
     const scope = original.task.scopeBinding
     const slot = z.object({ user_id: accountUserId, session_id: uuid,
       workspace_id: uuid, generation: z.coerce.string().regex(/^(0|[1-9][0-9]*)$/u),
@@ -248,7 +285,7 @@ export class StdioCloudWorkerStoreV2 {
       || resource.kind === 'creation_stopped' && (resource.stopEvidence.sessionId !== o.task.sessionId
         || resource.stopEvidence.generation !== resource.mountGeneration
         || !this.digests.same(resource.stopEvidence.bindingSnapshot, resource.bindingSnapshot))) this.deny('stdio_v2_no_start_receipt_changed')
-    if (resource.kind === 'ready_retained') {
+    if (resource.kind === 'ready_retained' || resource.kind === 'native_stopped') {
       if (!o.writer || resource.name !== o.writer.name || resource.podUid !== o.writer.podUid
         || resource.runnerInstanceId !== o.writer.runnerInstanceId || o.prepared !== null
           && o.prepared.prepared.capture.mountGeneration !== resource.mountGeneration) {
@@ -264,6 +301,7 @@ export class StdioCloudWorkerStoreV2 {
       && binding.spaceId === scope.target.spaceId && binding.rootRelativePath === scope.target.rootRelativePath
   }
   private async noStartResource(client: PoolClient, o: Awaited<ReturnType<StdioCloudWorkerStoreV2['read']>>): Promise<StdioNoStartResourceV2> {
+    if (this.nativeResources) return this.nativeResources.noStart(client, o.task)
     const scope = o.task.scopeBinding
     if (!(await client.query<Record<string, unknown>>('SELECT id FROM pe_workspaces WHERE id=$1 AND user_id=$2 FOR UPDATE',
       [scope.workspaceId, o.task.userId])).rowCount) this.deny('stdio_v2_no_start_resources_unavailable')
@@ -455,7 +493,7 @@ export class StdioCloudWorkerStoreV2 {
       const receipt = parseStdioNoStartReceiptV2({ formatVersion: 2, kind: 'unstarted_closed', actionId: o.task.actionId,
         executionRef: o.executionRef, taskDigest: o.action.task_digest, preparedDigest: o.prepared?.preparedDigest ?? null,
         userId: o.task.userId, sessionId: o.task.sessionId, phase: o.task.phase, state: 'cancelled', startNeverAuthorized: true, resource }, this.limits)
-      if (resource.kind === 'ready_retained' && !o.writer) {
+      if ((resource.kind === 'ready_retained' || resource.kind === 'native_stopped') && !o.writer) {
         await this.write(client, selected, `UPDATE pe_cloud_executions SET sandbox_name=$4,pod_uid=$5,runner_instance_id=$6,updated_at=clock_timestamp()
           WHERE id=$7 AND execution_kind='stdio_v2' AND stdio_action_id=$1 AND sandbox_name IS NULL AND pod_uid IS NULL
             AND runner_instance_id IS NULL AND ${guard}`, [resource.name, resource.podUid, resource.runnerInstanceId, o.execution.id])

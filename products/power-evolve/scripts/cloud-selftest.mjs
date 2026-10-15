@@ -37,8 +37,9 @@ const detail = { [join(root, file)]: { statementMap: { 0: {} } } }
 
 test('built artifact invocation retains mandatory reporters and fixtures without source resolver inheritance', () => {
   const files = cloudScope(root, 'current').corpus.builtTests
-  assert.equal(files.length, 10)
-  assert.equal(files.filter(path => path.endsWith('.mjs')).length, 9)
+  assert.equal(files.length, 12)
+  assert.equal(files.filter(path => path.endsWith('.mjs')).length, 11)
+  assert.ok(files.includes('products/power-evolve/application/tests/native-stdio-concurrent.physical.built.test.mjs'))
   const typed = 'products/power-evolve/cloud-web/tests/native-assets.built.spec.ts'
   assert.deepEqual(files.filter(path => !path.endsWith('.mjs')), [typed])
   const runtimeConfig = join(root, 'tsconfig.power-evolve.built-runtime.json')

@@ -42,6 +42,21 @@ interface ResolutionRow {
   lease_epoch: string
 }
 class ResolutionLeaseLost extends Error {}
+/** Captured provider identity for one explicitly addressed durable command. */
+export interface CloudResolutionCapture {
+  executionId: string
+  userId: string
+  sessionId: string
+  name: string | null
+  podUid: string | null
+  runnerInstanceId: string | null
+}
+/** Cleanup providers retain the same independent approval and original resolution lease. */
+export interface CloudResolutionTransport {
+  captureExecutionResolution(client: PoolClient, execution: CloudResolutionCapture): Promise<CloudResolutionTarget>
+  observeExecutionResolution: SandboxManager['observeExecutionResolution']
+  stopForExecutionResolution: SandboxManager['stopForExecutionResolution']
+}
 type EnqueueContinuation = (client: PoolClient, row: CloudExecutionRow) => Promise<boolean>
 function receipt(row: ResolutionRow): ExecutionResolutionReceipt {
   return executionResolutionReceipt.parse({ requestId: row.request_id, executionId: row.execution_id,
@@ -73,7 +88,7 @@ const permanent = (error: unknown): boolean => error instanceof MountSlotBlocked
 /** The worker reuses strict Sandbox stop evidence; no browser can supply a result or a stopped-writer assertion. */
 export class CloudExecutionResolutionService {
   private readonly ownerId = randomUUID()
-  constructor(private readonly pool: Pool, private readonly sandboxes: SandboxManager,
+  constructor(private readonly pool: Pool, private readonly sandboxes: CloudResolutionTransport,
     private readonly enqueue: EnqueueContinuation, private readonly legacyTimeoutMs: number,
     private readonly leaseMs: number, private readonly pollMs: number) {}
 
@@ -134,7 +149,8 @@ export class CloudExecutionResolutionService {
       const row = await this.owned(client,user.userId,executionId), existing = await this.resolution(client,row.id)
       if (existing || row.state !== 'uncertain') return { row, existing, writer: null, reason: existing ? 'execution_resolution_exists' : 'execution_not_uncertain' }
       try {
-        const writer = await this.sandboxes.captureExecutionResolution(client, { userId: row.user_id, sessionId: row.session_id,
+        const writer = await this.sandboxes.captureExecutionResolution(client, { executionId: row.id,
+          userId: row.user_id, sessionId: row.session_id,
           name: row.sandbox_name, podUid: row.pod_uid, runnerInstanceId: row.runner_instance_id })
         return { row, existing, writer, reason: null }
       } catch (error) {
@@ -169,7 +185,8 @@ export class CloudExecutionResolutionService {
       const row = await this.owned(client,user.userId,input.executionId)
       if (await this.resolution(client,row.id)) throw new PlatformError(409,'execution_resolution_exists')
       if (row.state !== 'uncertain') throw new PlatformError(409,'execution_not_uncertain')
-      const writer = await this.sandboxes.captureExecutionResolution(client,{ userId: row.user_id, sessionId: row.session_id,
+      const writer = await this.sandboxes.captureExecutionResolution(client,{ executionId: row.id,
+        userId: row.user_id, sessionId: row.session_id,
         name: row.sandbox_name, podUid: row.pod_uid, runnerInstanceId: row.runner_instance_id })
       if (fingerprint(row,writer) !== input.fingerprint) throw new PlatformError(409,'execution_identity_changed')
       const dispatched = capturedRunnerRequest(row,this.legacyTimeoutMs)

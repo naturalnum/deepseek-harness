@@ -77,17 +77,17 @@
   "counts": {
     "runtime": {
       "enabled": 19,
-      "shared": 346,
+      "shared": 352,
       "deferred": 4
     },
     "sourceTests": {
       "enabled": 14,
-      "shared": 167,
+      "shared": 169,
       "deferred": 3
     },
     "builtTests": {
       "enabled": 0,
-      "shared": 11,
+      "shared": 12,
       "deferred": 0
     },
     "nativeAssets": {
@@ -5705,6 +5705,69 @@
       "status": "enabled",
       "owner": "plugin-skills",
       "reason": "mcp-current"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-execution-mutations.ts",
+      "status": "shared",
+      "owner": "SandboxAgent",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-execution-service-authority.ts",
+      "status": "shared",
+      "owner": "SandboxAgent",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-process-authority.ts",
+      "status": "shared",
+      "owner": "SandboxAgent",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/native-execution/stdio-worker-entry.ts",
+      "status": "shared",
+      "owner": "SandboxAgent",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/stdio-v2-native-cloud.ts",
+      "status": "shared",
+      "owner": "SandboxAgent",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-service-concurrency.spec.ts",
+      "status": "shared",
+      "owner": "SandboxAgent",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/stdio-native-preparation.spec.ts",
+      "status": "shared",
+      "owner": "SandboxAgent",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/native-cloud-commands.ts",
+      "status": "shared",
+      "owner": "SandboxAgent",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "builtTests",
+      "path": "products/power-evolve/application/tests/native-stdio-concurrent.physical.built.test.mjs",
+      "status": "shared",
+      "owner": "SandboxAgent",
+      "reason": "core-shared"
     }
   ],
   "lintSupport": [
@@ -5916,6 +5979,12 @@
       "path": "products/power-evolve/client-extension-center/tests/unused-session-standards.ts",
       "status": "shared",
       "owner": "Root",
+      "reason": "core-shared"
+    },
+    {
+      "path": "products/power-evolve/application/tests/native-stdio-concurrent-case.mjs",
+      "status": "shared",
+      "owner": "SandboxAgent",
       "reason": "core-shared"
     }
   ],

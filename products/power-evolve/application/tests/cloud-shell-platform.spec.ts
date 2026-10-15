@@ -2,8 +2,12 @@
 import { randomBytes, randomUUID } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { Context } from '@deepseek-ai/cordis'
+import { LocalSubprocessRuntime } from '@deepseek-ai/dsh-subprocess-local'
 import { Session, type SessionEvent } from '@deepseek-ai/dsh-session'
 import { expect, test, vi } from 'vitest'
+import { resolutionExecutionId, resolutionRequestId } from '@power-evolve/contracts/execution-resolution'
+import { hashPassword } from '../src/platform/identity.ts'
 import { requestId } from '../src/contracts.ts'
 import { admittedInputMessage, inputCohortId, nativeInputAdmissionCommand, nativeInputClaimCommand,
   nativeInputStepCommand, originInputId } from '../src/native-input-ledger-contracts.ts'
@@ -16,6 +20,10 @@ import { transaction } from '../src/platform/database.ts'
 import { EventStore } from '../src/platform/events.ts'
 import { ExecutionService } from '../src/platform/executions.ts'
 import { KubernetesClient, KubernetesError } from '../src/platform/kubernetes.ts'
+import { NativeCloudCommands } from '../src/platform/native-cloud-commands.ts'
+import { NativeProcessBroker } from '../src/platform/native-execution-broker.ts'
+import { NativeExecutionPods } from '../src/platform/native-execution-pods.ts'
+import { NativeExecutionServiceAuthority, nativeExecutionServiceOwner } from '../src/platform/native-execution-service-authority.ts'
 import { NativeExecutionAuthority } from '../src/platform/native-execution-authority.ts'
 import { NativeExecutionFrames } from '../src/platform/native-execution-frames.ts'
 import { NativeInputLedger } from '../src/platform/native-input-ledger.ts'
@@ -326,4 +334,128 @@ test.each(['timeout', 'abort', 'legacy', 'late-success'] as const)(
         expect(await n.executions.cancelShell(n.grant.token, row.id, 'abort')).toEqual(final)
       }
     } finally { await n.executions.close(); observe.mockRestore(); current.mockRestore(); runner.mockRestore() }
+  }))
+
+
+async function nativeCommands(f: Fixture, n: Awaited<ReturnType<typeof prepare>>) {
+  const ctx = new Context()
+  await ctx.plugin(LocalSubprocessRuntime)
+  const pods = new NativeExecutionPods(f.pool, n.kube, { namespace: 'owned-unused-cloud-native', runtimeClassName: 'gvisor',
+    image: 'unused.invalid/owned', storageVolumeClaim: 'owned-data', storageVolumePrefix: 'workspaces',
+    homeVolumePrefix: 'homes', homeLocalRoot: f.root, tmpVolumePrefix: 'tmp', tmpLocalRoot: f.root,
+    pollMs: 1, readyTimeoutMs: 1000, stopTimeoutMs: 1000, maxPodSeconds: 120, cpu: '1', memory: '128Mi' })
+  let original: NativeProcessBroker<import('../src/native-execution/types.ts').NativeExecutionServiceWorld> | undefined
+  const commands = new NativeCloudCommands(f.pool, { service(reader, key) {
+    original = new NativeProcessBroker(new NativeExecutionServiceAuthority(f.pool, f.files.storage, reader, key),
+      pods, ctx.subprocess, { kubectlExecutable: '/unused', kubeconfigPath: '/unused',
+        fsWorkerPath: '/opt/native/native-fs-worker.mjs', processWorkerPath: '/opt/native/native-process-worker.py',
+        maxRequestBytes: 262_144, maxReplyBytes: 262_144, maxProcessMs: 10_000, authorityPollMs: 1000, transportGraceMs: 100 })
+    return original
+  } }, randomBytes(32), 3000, 60_000)
+  if (!original || !(original.authority instanceof NativeExecutionServiceAuthority)) throw new Error('Owned native service not installed')
+  const broker = original, authority = original.authority
+  const execution = (source: typeof n) => new ExecutionService(source.executionTasks, source.sandbox, 2, 10, 60_000, 3000, 60_000, commands)
+  return { commands, authority, broker, execution, async close() {
+    await commands.dispose(); await broker.dispose(); await ctx.fiber.dispose()
+  } }
+}
+
+test('new cloud_exec and foreground Shell admissions commit independent native markers and fence their original leases',
+  () => cloudFixture(async (f) => {
+    const a = await prepare(f), b = await prepare(f), native = await nativeCommands(f, a)
+    const remote = vi.spyOn(a.kube, 'call')
+    try {
+      await native.execution(a).propose(a.grant.token, randomUUID(), 'printf accepted', '')
+      const second = await native.execution(b).proposeShell(b.grant.token, command())
+      const rows = (await f.pool.query<CloudExecutionRow>('SELECT * FROM pe_cloud_executions ORDER BY created_at')).rows
+      expect(rows).toHaveLength(2)
+      expect((await f.pool.query('SELECT * FROM pe_native_execution_services')).rowCount).toBe(2)
+      expect((await f.pool.query('SELECT * FROM pe_native_execution_worlds')).rowCount).toBe(2)
+      expect((await f.pool.query('SELECT * FROM pe_mount_slots')).rowCount).toBe(0)
+      expect((await f.pool.query('SELECT * FROM pe_sandbox_instances')).rowCount).toBe(0)
+      const issue = (id: string, workerId = id) => native.authority.issue(nativeExecutionServiceOwner.parse({
+        userId: f.alice.user.userId, kind: 'cloud-command', id, epoch: 1, workerId }))
+      const queued = await issue(first(rows).id)
+      await expect(native.authority.assert(queued.token, queued.world)).rejects.toThrow('native_cloud_command_authority_lost')
+      await f.pool.query("UPDATE pe_cloud_executions SET state='starting',lease_owner=$1,lease_until=clock_timestamp()+interval '1 minute'", [randomUUID()])
+      const firstIssue = await issue(first(rows).id), secondIssue = await issue(second.executionId)
+      expect(firstIssue.world.worldId).not.toBe(secondIssue.world.worldId)
+      await expect(issue(second.executionId, randomUUID())).rejects.toThrow('native_cloud_command_authority_lost')
+      await expect(native.authority.assert(firstIssue.token, secondIssue.world)).rejects.toThrow('native_service_authority_lost')
+      const stale = native.broker.spawn(firstIssue.token, firstIssue.world, { argv: ['true'], cwd: '/workspace', graceMs: 100,
+        stdio: { stdin: 'ignore', stdout: { maxBytes: 128 }, stderr: { maxBytes: 128 } } }, 'process', false, first(rows).id, undefined,
+      async () => { throw new Error('original_worker_lease_lost') })
+      await expect(stale.done).rejects.toThrow('original_worker_lease_lost')
+      expect(remote).not.toHaveBeenCalled()
+      expect((await f.pool.query('SELECT * FROM pe_native_execution_processes')).rowCount).toBe(0)
+      await f.pool.query('UPDATE pe_users SET credential_version=credential_version+1 WHERE id=$1', [f.alice.user.userId])
+      await expect(native.authority.assert(secondIssue.token, secondIssue.world)).rejects.toThrow('native_cloud_command_authority_lost')
+      await expect(native.authority.assert(firstIssue.token, firstIssue.world)).resolves.toEqual(firstIssue.binding)
+      await f.pool.query("UPDATE pe_cloud_executions SET lease_until=clock_timestamp()-interval '1 millisecond' WHERE id=$1", [first(rows).id])
+      await expect(native.authority.assert(firstIssue.token, firstIssue.world)).rejects.toThrow('native_cloud_command_authority_lost')
+    } finally { remote.mockRestore(); await native.close() }
+  }))
+
+test('native command marker admission is atomic and pre-cancelled Shell keeps one original marker without allocating',
+  () => cloudFixture(async (f) => {
+    const n = await prepare(f), native = await nativeCommands(f, n), execution = native.execution(n)
+    try {
+      const reject = vi.spyOn(native.commands, 'admit').mockRejectedValueOnce(new Error('owned_admission_rollback'))
+      await expect(execution.propose(n.grant.token, randomUUID(), 'printf rollback', '')).rejects.toThrow('owned_admission_rollback')
+      reject.mockRestore()
+      expect((await f.pool.query('SELECT * FROM pe_cloud_executions')).rowCount).toBe(0)
+      expect((await f.pool.query('SELECT * FROM pe_native_execution_services')).rowCount).toBe(0)
+      const input = { ...command(), cancelRequested: true }, receipt = await execution.proposeShell(n.grant.token, input)
+      expect(await execution.proposeShell(n.grant.token, input)).toEqual(receipt)
+      expect((await f.pool.query('SELECT * FROM pe_native_execution_services')).rowCount).toBe(1)
+      expect((await f.pool.query('SELECT * FROM pe_native_execution_processes')).rowCount).toBe(0)
+      expect((await f.pool.query('SELECT * FROM pe_mount_slots')).rowCount).toBe(0)
+    } finally { await native.close() }
+  }))
+
+
+test('native uncertain command reconciliation retains independent approval, exact UID and unknown effects without mount slots',
+  () => cloudFixture(async (f) => {
+    const n = await prepare(f), native = await nativeCommands(f, n), execution = native.execution(n)
+    const password = randomUUID()
+    await f.pool.query('UPDATE pe_users SET password_hash=$2 WHERE id=$1', [f.alice.user.userId, await hashPassword(password)])
+    const approval = await f.identities.login('alice', password, 'approval')
+    const receipt = await execution.proposeShell(n.grant.token, command()), id = resolutionExecutionId.parse(receipt.executionId)
+    const world = first((await f.pool.query<{ id: string }>('SELECT id FROM pe_native_execution_worlds')).rows).id
+    const uid = randomUUID(), name = 'pe-native-' + id
+    await f.pool.query(`INSERT INTO pe_native_execution_processes
+      (id,world_id,kind,namespace,pod_name,pod_uid,state,request_digest,activation_digest)
+      VALUES($1,$2,'process',$3,$4,$5,'running',$6,$6)`, [id, world, native.broker.pods.config.namespace,
+      name, uid, 'a'.repeat(64)])
+    await f.pool.query('UPDATE pe_cloud_executions SET state=\'uncertain\',sandbox_name=$2,pod_uid=$3,runner_instance_id=id WHERE id=$1',
+      [id, name, uid])
+    const legacy = vi.spyOn(n.sandbox, 'captureExecutionResolution'), remote = vi.spyOn(n.kube, 'call')
+    // Explicit simulated native stop exercises only the PG approval/receipt bridge; physical stop is checked separately.
+    const stopped = vi.spyOn(native.broker.pods, 'stop').mockImplementation(async (range) => {
+      expect(range).toMatchObject({ id, uid, name, world: { worldId: world } })
+      const proof = { processId: id, worldId: world, podUid: uid, resourceReleased: true,
+        status: 'UNSCHEDULED_DELETING', observation: { metadata: { deletionTimestamp: new Date().toISOString() },
+          spec: { containers: [{ name: 'payload' }] }, status: { phase: 'Pending' } } }
+      await f.pool.query("UPDATE pe_native_execution_processes SET state='stopped',stop_evidence=$2 WHERE id=$1", [id, proof])
+    })
+    try {
+      const inspected = await execution.inspectResolution(f.alice.user, id)
+      expect(inspected).toMatchObject({ canStop: true, runnerObservation: 'not_observed' })
+      if (!inspected.fingerprint) throw new Error('Owned native original must have an approval fingerprint')
+      const request = { executionId: id, requestId: resolutionRequestId.parse(randomUUID()), target: 'cloud' as const,
+        fingerprint: inspected.fingerprint, note: 'Reconcile original without replay' }
+      await expect(execution.resolveUncertain(f.alice.user, request, f.alice.token)).rejects.toThrow('account_unauthorized')
+      await expect(execution.resolveUncertain(f.alice.user, { ...request, fingerprint: 'b'.repeat(64) }, approval.token))
+        .rejects.toThrow('execution_identity_changed')
+      await execution.resolveUncertain(f.alice.user, request, approval.token)
+      execution.start()
+      await vi.waitFor(async () => {
+        expect((await execution.resolutionStatus(f.alice.user, request.requestId)).receipt).toMatchObject({
+          state: 'completed', finalState: 'closed_unknown', stopConfirmed: true, continuationQueued: false })
+      }, { timeout: 5000 })
+      expect(stopped).toHaveBeenCalledTimes(1)
+      expect(legacy).not.toHaveBeenCalled(); expect(remote).not.toHaveBeenCalled()
+      expect((await f.pool.query('SELECT * FROM pe_mount_slots')).rowCount).toBe(0)
+      expect((await f.pool.query('SELECT * FROM pe_native_execution_processes')).rowCount).toBe(1)
+    } finally { await execution.close(); stopped.mockRestore(); legacy.mockRestore(); remote.mockRestore(); await native.close() }
   }))

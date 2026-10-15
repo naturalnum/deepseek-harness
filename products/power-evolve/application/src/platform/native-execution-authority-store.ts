@@ -8,6 +8,7 @@ import { storageBinding, type StorageBinding } from './cloud-storage-types.ts'
 import { digest } from './identity.ts'
 import { transaction } from './database.ts'
 import { kubernetesPodStopStatus } from './pod-stop-status.ts'
+import { mutateNativeExecutionPath } from './native-execution-mutations.ts'
 import type { TaskStore } from './tasks.ts'
 import type { ManagedCloudStorage } from './managed-storage.ts'
 
@@ -42,7 +43,6 @@ const rowSchema = z.object({ world: nativeExecutionWorld, binding: storageBindin
 
 /** Platform owns original grant checks; trusted Runtime receives only its issued world and bounded methods. */
 export class NativeExecutionAuthorityStore {
-  private mutations = 0
   constructor(readonly pool: Pool, private readonly tasks: NativeExecutionTaskAuthority, private readonly storage: ManagedCloudStorage,
     private readonly policy: NativeExecutionPolicyReader) {}
 
@@ -165,24 +165,7 @@ export class NativeExecutionAuthorityStore {
    */
   async mutate<T>(token: string, world: NativeExecutionWorld, path: string, apply: () => Promise<T>): Promise<T> {
     const binding = await this.assert(token, world)
-    const root = path.startsWith('/workspace/') ? ['workspace', binding.rootKey, binding.rootRelativePath]
-      : path.startsWith('/tmp/') ? ['temporary', world.userId, world.sessionId] : ['home', world.userId]
-    const maximum = this.pool.options.max
-    if (maximum < 3 || this.mutations >= maximum - 2) throw new PlatformError(429, 'native_fs_capacity')
-    this.mutations++
-    try {
-      const key = JSON.stringify([...root, path]), client = await this.pool.connect()
-      let locked = false, releaseError: unknown
-      try {
-        await client.query('SELECT pg_advisory_lock(hashtextextended($1,0))', [key])
-        locked = true
-        return await apply()
-      } finally {
-        try { if (locked) await client.query('SELECT pg_advisory_unlock(hashtextextended($1,0))', [key]) }
-        catch (error) { releaseError = error; throw error }
-        finally { client.release(releaseError !== undefined) }
-      }
-    } finally { this.mutations-- }
+    return mutateNativeExecutionPath(this.pool, world, binding, path, apply)
   }
 
   /** Revoke one issued world without altering original operation authority.
