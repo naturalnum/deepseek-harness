@@ -1,4 +1,4 @@
-/** Operator-only remote MCP settings; personal connection metadata cannot change egress or resource limits. */
+/** Operator-owned HTTP egress and remote MCP settings; personal metadata cannot change network policy. */
 import { readFile } from 'node:fs/promises'
 import { isAbsolute } from 'node:path'
 import { isIP } from 'node:net'
@@ -33,6 +33,33 @@ const configuration = z.object({
     allowHttp: z.boolean().optional(), caFile: filePath.optional() }).strict()),
 }).strict()
 
+const networkConfiguration = configuration.pick({ requireOriginException: true, internalExceptions: true })
+async function readNetworkPolicy(settings: z.infer<typeof networkConfiguration>,
+  readText: (filename: string) => Promise<string>): Promise<McpNetworkPolicy> {
+  const origins = new Set<string>()
+  const internalExceptions = []
+  for (const exception of settings.internalExceptions) {
+    const url = new URL(exception.origin)
+    if (url.origin !== exception.origin || url.username || url.password
+      || !['http:', 'https:'].includes(url.protocol) || origins.has(url.origin)
+      || url.protocol === 'http:' && !exception.allowHttp) throw new Error('Invalid network exception')
+    origins.add(url.origin)
+    let ca: string | undefined
+    if (exception.caFile) {
+      ca = await readText(exception.caFile)
+      const certificates = ca.match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/gu)
+      if (!certificates?.length || certificates.some(pem => !new X509Certificate(pem).ca)) {
+        throw new Error('Invalid CA bundle')
+      }
+    }
+    internalExceptions.push({ origin: url.origin, addresses: exception.addresses,
+      ...(exception.allowHttp === undefined ? {} : { allowHttp: exception.allowHttp }),
+      ...(ca === undefined ? {} : { ca }) })
+  }
+  return { internalExceptions,
+    ...(settings.requireOriginException === undefined ? {} : { requireOriginException: settings.requireOriginException }) }
+}
+
 /** Fully validated deployment configuration and resolved Platform-private key and CA material. */
 export interface McpPlatformConfig {
   settings: z.infer<typeof configuration>
@@ -57,31 +84,27 @@ export async function loadMcpPlatformConfig(path: string,
       || settings.actions.leaseMs > settings.actions.approvalLifetimeMs) throw new Error('Invalid lease timing')
     const credentialKey = (await readText(settings.credentialKeyFile)).trim()
     new McpCredentialCipher(credentialKey)
-    const origins = new Set<string>()
-    const internalExceptions = []
-    for (const exception of settings.internalExceptions) {
-      const url = new URL(exception.origin)
-      if (url.origin !== exception.origin || url.username || url.password
-        || !['http:', 'https:'].includes(url.protocol) || origins.has(url.origin)
-        || url.protocol === 'http:' && !exception.allowHttp) throw new Error('Invalid network exception')
-      origins.add(url.origin)
-      let ca: string | undefined
-      if (exception.caFile) {
-        ca = await readText(exception.caFile)
-        const certificates = ca.match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/gu)
-        if (!certificates?.length || certificates.some(pem => !new X509Certificate(pem).ca)) {
-          throw new Error('Invalid CA bundle')
-        }
-      }
-      internalExceptions.push({ origin: url.origin, addresses: exception.addresses,
-        ...(exception.allowHttp === undefined ? {} : { allowHttp: exception.allowHttp }),
-        ...(ca === undefined ? {} : { ca }) })
-    }
-    return { settings, credentialKey, networkPolicy: { internalExceptions,
-      ...(settings.requireOriginException === undefined ? {} : { requireOriginException: settings.requireOriginException }) } }
+    return { settings, credentialKey, networkPolicy: await readNetworkPolicy(settings, readText) }
   } catch {
     // Filenames, parser inputs and credential bytes remain private even in startup diagnostics.
     throw new Error('Invalid remote MCP platform configuration')
+  }
+}
+
+/** Read model-only egress exceptions without inheriting MCP's origin list.
+ * @param path Absolute operator file; empty selects the existing public HTTPS policy.
+ * @param readText Trusted private file reader, including referenced CA files.
+ * @returns Independently validated DNS/socket policy for native model HTTP.
+ */
+export async function loadModelNetworkPolicy(path: string,
+  readText: (filename: string) => Promise<string> = filename => readFile(filename, 'utf8')): Promise<McpNetworkPolicy> {
+  if (!path) return {}
+  try {
+    filePath.parse(path)
+    return await readNetworkPolicy(networkConfiguration.parse(JSON.parse(await readText(path))), readText)
+  } catch {
+    // Operator filenames and CA material remain private in startup diagnostics.
+    throw new Error('Invalid model network configuration')
   }
 }
 

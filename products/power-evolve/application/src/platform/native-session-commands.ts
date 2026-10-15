@@ -131,10 +131,10 @@ export class NativeSessionCommands {
       for (const event of seed) modelState = modelSelectionProjection.apply(modelState, event)
       const model = modelSelectionProjection.wire.view(modelState).next
       if (model !== null) {
-        const selected = nativeModelSelect.parse({ sessionId: id, ...model,
-          reasoningEffort: model.reasoningEffort ?? 'off' })
+        const selected = nativeModelSelect.parse({ sessionId: id, ...model })
         await client.query('INSERT INTO pe_native_preferences(user_id,namespace,value,revision) VALUES($1,$2,$3,1)',
-          [user.userId, `session-model:${id}`, { provider: selected.provider, model: selected.model, reasoningEffort: 'off' }])
+          [user.userId, `session-model:${id}`, { provider: selected.provider, model: selected.model,
+            ...selected.reasoningEffort === undefined ? {} : { reasoningEffort: selected.reasoningEffort } }])
       }
       await client.query('INSERT INTO pe_native_preferences(user_id,namespace,value,revision) VALUES($1,$2,$3,1)',
         [user.userId, `session-fork:${id}`, request])

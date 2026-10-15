@@ -92,7 +92,7 @@ import { PluginService } from './plugins.ts'
 import { PersonalMcpService } from './mcp.ts'
 import { McpConnectionService } from './mcp-connections.ts'
 import { McpActionStore } from './mcp-actions.ts'
-import { loadMcpPlatformConfig, assertMcpPlatformEndpoint } from './mcp-platform-config.ts'
+import { loadMcpPlatformConfig, loadModelNetworkPolicy, assertMcpPlatformEndpoint } from './mcp-platform-config.ts'
 import { routeMcpManagement, routeMcpApproval } from './mcp-routes.ts'
 import { mcpActionId, mcpActionRequest } from '../mcp-action-contracts.ts'
 import { mcpLeaseOwnerId } from '../mcp-contracts.ts'
@@ -195,6 +195,7 @@ export const Config = schema.object({
   modelMaxHttpRequests: schema.number().step(1).min(1).default(64),
   modelMaxPreparedCalls: schema.number().step(1).min(1).default(64),
   modelMaxHeaderBytes: schema.number().step(1).min(1).default(65_536),
+  modelNetworkPolicyFile: schema.string().default(''),
   mcpUrl: schema.string().default(''), mcpTokenFile: schema.string().default(''),
   remoteMcpConfigFile: schema.string().default(''),
   stdioV2ConfigFile: schema.string().default(''),
@@ -303,6 +304,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     ...(config.sandboxLocalRoot ? [resolve(config.sandboxLocalRoot)] : []),
     ...(config.skillLibraryRoot ? [resolve(config.skillLibraryRoot)] : [])])
   const remoteMcpConfig = await loadMcpPlatformConfig(config.remoteMcpConfigFile)
+  const modelNetworkPolicy = await loadModelNetworkPolicy(config.modelNetworkPolicyFile)
   const stdioV2Config = await loadStdioPlatformConfigV2(config.stdioV2ConfigFile)
   if (stdioV2Config && (!config.sandboxKubeconfigFile || !config.sandboxVolumeClaimName
     || config.sandboxNodeRoot || config.sandboxImage !== stdioV2Config.settings.cloudDeployment.imageReference
@@ -635,7 +637,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     maxTotalResponseBytes: config.maxModelResponseBytes, maxResponseHeaderBytes: config.modelMaxHeaderBytes,
     maxRequests: config.modelMaxHttpRequests, maxHeaderBytes: config.modelMaxHeaderBytes,
     maxHeaders: config.modelMaxHeaderBytes, maxPages: 1, maxTools: 1, maxCatalogBytes: config.maxRequestBytes },
-  remoteMcpConfig?.networkPolicy ?? {})
+  modelNetworkPolicy)
   const modelCredentials = new TenantModelCredentials(pool, nativeIntentKey.trim(), modelLimits)
   const tenantModels = new TenantModelSettings(pool, modelCredentials, modelLimits,
     endpoint => modelHttp.assertEndpoint(endpoint), { baseURL: config.modelUrl.replace(/\/v1\/messages\/?$/u, ''),

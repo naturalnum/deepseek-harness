@@ -11,6 +11,7 @@ import { TenantModelCredentials } from '../src/platform/tenant-model-credentials
 import { TenantModelSettings } from '../src/platform/tenant-model-settings.ts'
 import { TenantModelHttp } from '../src/platform/tenant-model-services.ts'
 import { TenantModelRuntime } from '../src/platform/tenant-model-runtime.ts'
+import { loadModelNetworkPolicy } from '../src/platform/mcp-platform-config.ts'
 import { NativeRuntimeAuthority } from '../src/platform/native-runtime-authority.ts'
 import { NativeInteractive } from '../src/platform/native-interactive.ts'
 import { NativePreferences, nativeModelSelect } from '../src/platform/native-preferences.ts'
@@ -99,6 +100,28 @@ async function save(credentials: TenantModelCredentials, token: string, ref: str
   const ticket = await credentials.ticket(token, { requestId: randomUUID(), ref, sizeBytes: Buffer.byteLength(value) }, 'https://platform.example')
   return credentials.upload(ticket.ticket, Buffer.from(value))
 }
+
+test('model HTTP policy stays independent of MCP origins and private peers require an explicit operator exception', async () => {
+  const server = await peer('openai-completions')
+  const baseline = await loadModelNetworkPolicy('')
+  expect(baseline).toEqual({})
+  await expect(new TenantModelHttp(transportLimits, baseline).assertEndpoint(server.url)).rejects.toMatchObject({ code: 'address_denied' })
+  const policy = await loadModelNetworkPolicy('/owned/model-network.json', () => Promise.resolve(JSON.stringify({
+    internalExceptions: [{ origin: server.url, addresses: ['127.0.0.1'], allowHttp: true }],
+  })))
+  const models = new TenantModelHttp(transportLimits, policy), transport = models.open(AbortSignal.timeout(10_000), () => Promise.resolve())
+  try {
+    expect(await (await transport.fetch(server.url + '/models')).json()).toEqual({ data: [{ id: 'peer-model', name: 'Peer' }] })
+  } finally { await transport.dispose() }
+  const mcpOnly = new TenantModelHttp(transportLimits, { requireOriginException: true, internalExceptions: [] })
+  await expect(mcpOnly.assertEndpoint(server.url)).rejects.toMatchObject({ code: 'address_denied' })
+  expect(server.calls).toHaveLength(1)
+  await expect(loadModelNetworkPolicy('relative', () => Promise.reject(new Error('Reader must not run'))))
+    .rejects.toThrow('Invalid model network configuration')
+  await expect(loadModelNetworkPolicy('/owned/model-network.json', () => Promise.resolve(JSON.stringify({
+    internalExceptions: [{ origin: server.url + '/path', addresses: ['127.0.0.1'], allowHttp: true }],
+  })))).rejects.toThrow('Invalid model network configuration')
+})
 
 test('credentials are write-only, encrypted, owner-bound and preserve keep, replacement, clear and original receipts', () => cloudFixture(async ({ pool, alice, bob, identities }) => {
   const credentials = new TenantModelCredentials(pool, key, limits), ref = 'OWNED_MODEL_KEY', value = 'owned-key-a'

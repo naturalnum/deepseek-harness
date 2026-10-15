@@ -91,12 +91,19 @@ test('forks without completed turns and reused creation identities refuse before
   expect(await commands.search(alice.user, 'not found')).toEqual({ items: [], hasMore: false })
 }))
 
-test('a fork inherits model intent from its exact prefix and uses that model at durable acceptance', () => cloudFixture(async ({ pool, alice }) => {
+test.each([
+  { provider: 'power-evolve', effort: 'off' }, { provider: 'owned-peer', effort: 'high' },
+])('a fork inherits $provider model intent from its exact prefix at durable acceptance', ({ provider, effort }) => cloudFixture(async ({ pool, alice }) => {
   const tasks = new TaskStore(pool, limits), events = new EventStore(tasks, limits), commands = new NativeSessionCommands(pool, limits)
   const preferences = new NativePreferences(pool, limits)
   await pool.query('INSERT INTO pe_user_models(user_id,model_id,label,max_tokens,enabled) VALUES($1,\'other-model\',\'Other model\',1000,true)', [alice.user.userId])
+  if (provider !== 'power-evolve') {
+    await pool.query(`INSERT INTO pe_tenant_model_catalog(user_id,provider,model_id,descriptor,max_tokens)
+      SELECT $1,$2,model,$3::json,1000 FROM unnest(ARRAY['trial-model','other-model']) AS model`,
+    [alice.user.userId, provider, JSON.stringify({ reasoning: { efforts: [{ id: 'off' }, { id: 'high' }] } })])
+  }
   const source = await tasks.create(alice.user, requestId.parse(randomUUID()), alice.token)
-  await preferences.selectModel(alice.user, alice.token, { sessionId: source.sessionId, provider: 'power-evolve', model: 'trial-model' })
+  await preferences.selectModel(alice.user, alice.token, { sessionId: source.sessionId, provider, model: 'trial-model', reasoningEffort: effort })
   const input = requestId.parse(randomUUID())
   await tasks.accept(alice.user, source.sessionId, input, 'first turn', alice.token)
   const grant = await tasks.claim(randomUUID())
@@ -111,16 +118,17 @@ test('a fork inherits model intent from its exact prefix and uses that model at 
   session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
   await events.append(grant!.token, session.snapshotEvents().slice(1))
   await tasks.finish(grant!.token, 'completed', null)
-  await preferences.selectModel(alice.user, alice.token, { sessionId: source.sessionId, provider: 'power-evolve', model: 'other-model' })
+  await preferences.selectModel(alice.user, alice.token, { sessionId: source.sessionId, provider, model: 'other-model', reasoningEffort: 'off' })
   const first = await commands.fork(alice.user, alice.token, { sessionId: source.sessionId, atSeq: 3 }, requestId.parse(randomUUID()))
   const latest = await commands.fork(alice.user, alice.token, { sessionId: source.sessionId }, requestId.parse(randomUUID()))
-  for (const [child, model] of [[first, 'trial-model'], [latest, 'other-model']] as const) {
+  for (const [child, model, reasoningEffort] of [[first, 'trial-model', effort], [latest, 'other-model', 'off']] as const) {
     await tasks.accept(alice.user, child.sessionId, requestId.parse(randomUUID()), 'child turn', alice.token)
     const accepted = (await pool.query<{ settings: unknown }>(
       'SELECT settings FROM pe_operations WHERE session_id=$1', [child.sessionId])).rows[0]!
     expect(settings.parse(accepted.settings).model).toBe(model)
+    if (provider !== 'power-evolve') expect(settings.parse(accepted.settings)).toMatchObject({ provider, reasoningEffort })
     expect((await new NativeSessionRead(pool).list(alice.user)).items.find(item => item.sessionId === child.sessionId))
-      .toMatchObject({ projections: { values: { modelSelection: { next: { provider: 'power-evolve', model, reasoningEffort: 'off' } } } } })
+      .toMatchObject({ projections: { values: { modelSelection: { next: { provider, model, reasoningEffort } } } } })
   }
 }))
 
