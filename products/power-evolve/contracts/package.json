@@ -54,6 +54,10 @@
     "./stdio-environment": {
       "types": "./lib/types/stdio-environment.d.ts",
       "default": "./lib/stdio-environment.js"
+    },
+    "./model-settings": {
+      "types": "./lib/types/model-settings.d.ts",
+      "default": "./lib/model-settings.js"
     }
   },
   "scripts": {

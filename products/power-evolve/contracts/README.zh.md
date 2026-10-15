@@ -82,6 +82,8 @@ Node Application 与 Connector 消费者声明匹配的 Contracts peer；安装�
 
 通过校验模型输入或工具结果的消费者间接影响模型。本库不提供自己的提示文本、工具或 Session 事件；消费者负责记录和模型呈现。
 
+`model-settings` 入口提供原生适配器命名空间写入、公开模型发现元数据和一次性凭据直传票据。浏览器把 API key 字节直接上传至 Platform；Host 仅接收引用、存在状态和原始写入回执。发现回执可同时包含 `models` 和 `saved: false`，因为草稿使用的一次性密钥不会持久化。
+
 <a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与待完成工作
 

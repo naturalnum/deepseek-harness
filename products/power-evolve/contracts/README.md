@@ -82,6 +82,8 @@ Node Application and Connector consumers declare matching Contracts peers; their
 
 Indirectly, through consumers that validate model inputs or tool results. This library supplies no prompt text, tools or Session events of its own; consumers own logging and model presentation.
 
+The `model-settings` entry carries native adapter namespace mutations, public discovery metadata and one-use direct credential intake tickets. API key bytes are uploaded from the browser directly to Platform; the Host receives only references, presence facts and original write receipts. A discovery receipt can contain `models` with `saved: false`, because a one-shot draft key is never persisted.
+
 <a id="known-limitations-and-deferred-work"></a>
 ## Known Limitations and Deferred Work
 
