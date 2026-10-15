@@ -23,7 +23,9 @@ export const sessionId = z.uuid().transform(brandString<SessionId>)
 export const identity = z.object({ userId, username: z.string().min(1).max(80) }).strict()
 export type Identity = z.infer<typeof identity>
 export const settings = z.object({
-  model: z.string().min(1).max(100),
+  model: z.string().min(1).max(1024),
+  provider: z.string().min(1).max(128).optional(),
+  reasoningEffort: z.string().min(1).max(128).optional(),
   maxTokens: z.number().int().min(1).max(8192),
   revision: z.number().int().positive(),
 }).strict()
@@ -31,7 +33,8 @@ export type Settings = z.infer<typeof settings>
 export const modelsListRequest = z.object({}).strict()
 export const settingsUpdateRequest = z.object({
   requestId, expectedRevision: z.number().int().positive(),
-  model: z.string().min(1).max(100), maxTokens: z.number().int().min(1).max(8192),
+  model: z.string().min(1).max(1024), maxTokens: z.number().int().min(1).max(8192),
+  provider: z.string().min(1).max(128).optional(), reasoningEffort: z.string().min(1).max(128).optional(),
 }).strict()
 export type SettingsUpdateRequest = z.infer<typeof settingsUpdateRequest>
 export const createRequest = z.object({ requestId, workspaceId: workspaceId.optional(),

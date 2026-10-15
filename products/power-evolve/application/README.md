@@ -128,6 +128,8 @@ Cloud Bash adds a logged instruction to avoid repeating a command when its outco
 
 For accepted uploads, a logged instruction section lists only this Session's authorized file identities and explains the cloud reader and copy tools. File metadata alone does not assert that the model read the contents. The original files have no Host-local execution path.
 
+Native model requests carry provider, model and reasoning effort identities in optional account/operation settings fields. Historical `power-evolve` settings retain their original JSON. The provider-neutral runtime request transports native GenerateOptions and StreamChunk values; adapter replay envelopes remain opaque and provider credentials stay on Platform.
+
 <a id="known-limitations-and-deferred-work"></a>
 ## Known Limitations and Deferred Work
 

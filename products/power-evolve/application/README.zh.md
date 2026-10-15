@@ -128,6 +128,8 @@ Platform JSON 响应读取器在消费响应期间保留原始调用者 signal �
 
 对于已受理上传，已记录的说明区只列出本会话获授权的文件身份，解释云端读取与复制工具。文件元数据本身不表示模型已经读取内容。原文件不具有 Host 本机执行路径。
 
+原生模型请求通过账户和操作设置的可选字段携带提供方、模型及推理强度标识。历史 `power-evolve` 设置保留原始 JSON。提供方无关的运行时请求传输原生 GenerateOptions 和 StreamChunk；适配器重放记录保持不透明，提供方凭据保留在 Platform。
+
 <a id="known-limitations-and-deferred-work"></a>
 ## 已知限制与待完成工作
 
