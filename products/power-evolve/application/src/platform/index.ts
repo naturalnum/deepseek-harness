@@ -7,7 +7,7 @@ import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { setTimeout as delay } from 'node:timers/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import type { Context } from '@deepseek-ai/cordis'
+import { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
@@ -22,6 +22,11 @@ import { bearer, readJson, sendFailure, sendJson } from '../http.ts'
 import { initializeDatabase, transaction } from './database.ts'
 import { hashPassword, IdentityService } from './identity.ts'
 import { AccountSettingsService, seedModel, seedNewUser } from './account-settings.ts'
+import { modelSettingsLimits, modelCredentialReference } from '@power-evolve/contracts/model-settings'
+import { TenantModelCredentials } from './tenant-model-credentials.ts'
+import { TenantModelSettings } from './tenant-model-settings.ts'
+import { TenantModelRuntime } from './tenant-model-runtime.ts'
+import { TenantModelHttp, TenantModelImages } from './tenant-model-services.ts'
 import { loadAccountManagementConfig, loadAccountBootstrapConfig } from './account-config.ts'
 import { bootstrapAccount } from './account-bootstrap.ts'
 import { AccountService } from './accounts.ts'
@@ -181,6 +186,15 @@ export const Config = schema.object({
   modelKeyFile: schema.string().required(), connectorKeyFile: schema.string().required(), seedUsersFile: schema.string().default(''),
   accountManagementFile: schema.string().default(''), accountBootstrapFile: schema.string().default(''),
   modelUrl: schema.string().required(), hostOrigin: schema.string().required(), platformOrigin: schema.string().required(),
+  modelMaxSettingsBytes: schema.number().step(1).min(1).default(1_048_576),
+  modelMaxCredentialBytes: schema.number().step(1).min(1).default(8192),
+  modelMaxCredentialReferences: schema.number().step(1).min(1).default(256),
+  modelMaxPendingTickets: schema.number().step(1).min(1).default(16),
+  modelTicketLifetimeMs: schema.number().step(1).min(1).max(2_147_483_647).default(60_000),
+  modelMaxCatalogModels: schema.number().step(1).min(1).default(4096),
+  modelMaxHttpRequests: schema.number().step(1).min(1).default(64),
+  modelMaxPreparedCalls: schema.number().step(1).min(1).default(64),
+  modelMaxHeaderBytes: schema.number().step(1).min(1).default(65_536),
   mcpUrl: schema.string().default(''), mcpTokenFile: schema.string().default(''),
   remoteMcpConfigFile: schema.string().default(''),
   stdioV2ConfigFile: schema.string().default(''),
@@ -612,6 +626,36 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
     await loadNativeInputOwnerRoutingConfig(config.nativeInputOwnerRoutingFile),
     (credential, command) => transaction(pool, client => nativeLedger.lookupQueueReceiptInTransaction(client, credential, command))) : null
   const runtimeAuthority = new NativeRuntimeAuthority(pool)
+  const modelLimits = modelSettingsLimits.parse({ maxSettingsBytes: config.modelMaxSettingsBytes,
+    maxCredentialBytes: config.modelMaxCredentialBytes, maxCredentialReferences: config.modelMaxCredentialReferences,
+    maxPendingTickets: config.modelMaxPendingTickets, ticketLifetimeMs: config.modelTicketLifetimeMs,
+    maxCatalogModels: config.modelMaxCatalogModels })
+  const modelHttp = new TenantModelHttp({ timeoutMs: config.modelTimeoutMs, idleTimeoutMs: config.modelTimeoutMs,
+    maxRequestBytes: config.maxRequestBytes, maxResponseBytes: config.maxModelResponseBytes,
+    maxTotalResponseBytes: config.maxModelResponseBytes, maxResponseHeaderBytes: config.modelMaxHeaderBytes,
+    maxRequests: config.modelMaxHttpRequests, maxHeaderBytes: config.modelMaxHeaderBytes,
+    maxHeaders: config.modelMaxHeaderBytes, maxPages: 1, maxTools: 1, maxCatalogBytes: config.maxRequestBytes },
+  remoteMcpConfig?.networkPolicy ?? {})
+  const modelCredentials = new TenantModelCredentials(pool, nativeIntentKey.trim(), modelLimits)
+  const tenantModels = new TenantModelSettings(pool, modelCredentials, modelLimits,
+    endpoint => modelHttp.assertEndpoint(endpoint), { baseURL: config.modelUrl.replace(/\/v1\/messages\/?$/u, ''),
+      apiKey: modelKey.trim(), streamIdleTimeoutMs: config.modelTimeoutMs }, modelHttp, runtimeAuthority)
+  const nativeModelExecution = new TenantModelRuntime(tasks, tenantModels, runtimeAuthority, {
+    timeoutMs: config.modelTimeoutMs, maxRequestBytes: config.maxRequestBytes, maxResponseBytes: config.maxModelResponseBytes,
+    maxHistoryBytes: config.maxHistoryBytes, maxHistoryEvents: config.maxHistoryEvents,
+    preparation: { maxPending: config.modelMaxPreparedCalls, lifetimeMs: config.modelTimeoutMs },
+    ...stdioV2Selection ? { stdioV2Admission: { selection: stdioV2Selection, reservedNames: STDIO_PRODUCT_RESERVED_NAMES_V2 } } : {},
+    attachments: (token, signal, authorize) => {
+      const imageContext = new Context(), transport = modelHttp.open(signal, authorize)
+      const images = new TenantModelImages(imageContext, { maxImageBytes: config.nativeImageMaxBytes,
+        maxImagePixels: config.nativeImageMaxPixels, maxImageDimension: config.nativeImageMaxDimension,
+        maxImagesPerMessage: config.nativeImageMaxImagesPerMessage, maxMessageImageBytes: config.nativeImageMaxMessageBytes,
+        mediaTypes: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'] }, nativeImages, token, signal,
+      join(config.attachmentRoot, 'model-request-cache'))
+      return { fetch: transport.fetch, resolveAttachments: () => images, resolveImageAccess: () => undefined,
+        dispose: async () => { try { await transport.dispose() } finally { await imageContext.fiber.dispose() } } }
+    },
+  })
   const nativeInteractive = new NativeInteractive(tasks, runtimeAuthority, { lifetimeMs: config.nativeInteractiveLifetimeMs,
     maxActivePerUser: config.nativeInteractiveMaxActivePerUser, leaseMs: config.leaseMs })
   let nativePhysical: Awaited<ReturnType<typeof installNativeExecutionPlatform>> | undefined
@@ -769,6 +813,37 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       sendJson(res, uploaded.item, uploaded.created ? 201 : 200)
       return
     }
+    if (path === '/model-credentials/upload') {
+      if (uploadPreflight(req, res, config.hostOrigin)) return
+      if (req.headers['content-type'] !== 'application/octet-stream') throw new PlatformError(415, 'invalid_content_type')
+      const chunks: Buffer[] = [], abort = new AbortController()
+      const signal = AbortSignal.any([abort.signal, AbortSignal.timeout(config.modelTimeoutMs)])
+      const disconnected = () => { if (!res.writableEnded) abort.abort() }
+      const expired = () => { if (!req.complete) req.destroy(new PlatformError(408, 'model_credential_upload_timeout')) }
+      res.once('close', disconnected)
+      signal.addEventListener('abort', expired, { once: true })
+      let size = 0
+      try {
+        for await (const value of req) {
+          signal.throwIfAborted()
+          if (!Buffer.isBuffer(value)) throw new PlatformError(400, 'invalid_body')
+          size += value.length
+          if (size > modelLimits.maxCredentialBytes) throw new PlatformError(413, 'model_credential_too_large')
+          chunks.push(value)
+        }
+        const bytes = Buffer.concat(chunks)
+        try { sendJson(res, await modelCredentials.upload(bearer(req), bytes,
+          (owner, draft, key, client) => tenantModels.discoverOwned(client, owner, draft, key, signal)), 201) }
+        finally { bytes.fill(0) }
+      } finally {
+        res.off('close', disconnected)
+        signal.removeEventListener('abort', expired)
+        abort.abort()
+        chunks.forEach(chunk => chunk.fill(0))
+        if (!req.complete) req.destroy()
+      }
+      return
+    }
     if (path === '/ssh/upload' || path === '/mcp/connections/upload' || path === '/stdio-environment/upload') {
       if (uploadPreflight(req, res, config.hostOrigin)) return
       if (req.headers['content-type'] !== 'application/octet-stream') throw new PlatformError(415, 'invalid_content_type')
@@ -820,6 +895,19 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       return
     }
     if (req.method !== 'POST') throw new PlatformError(404, 'not_found')
+    if (path === '/runtime/models/stream') { await nativeModelExecution.serve(req, res); return }
+    if (path === '/runtime/models/prepare' || path === '/runtime/models/resolve' || path === '/runtime/models/image-pricing'
+      || path === '/runtime/models/providers' || path === '/runtime/models/catalog') {
+      const input = await readJson(req, config.maxRequestBytes), token = bearer(req)
+      if (path === '/runtime/models/resolve') sendJson(res, await nativeModelExecution.resolve(token, input))
+      else if (path === '/runtime/models/prepare') sendJson(res, await nativeModelExecution.prepare(token, input))
+      else if (path === '/runtime/models/image-pricing') sendJson(res, await nativeModelExecution.imagePricing(token, input))
+      else {
+        z.object({}).strict().parse(input)
+        sendJson(res, path === '/runtime/models/providers' ? await tenantModels.providers(token, true) : await tenantModels.modelCatalog(token, true))
+      }
+      return
+    }
     if (path === '/runtime/web-search/messages') {
       await proxyNativeWebSearch(tasks, { maxUses: config.nativeWebSearchMaxUses, url: config.nativeWebSearchUrl,
         apiKey: modelKey.trim(), timeoutMs: config.modelTimeoutMs,
@@ -1084,8 +1172,11 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
           sendJson(res, { ...status, ...await tasks.renew(token) }); return
         }
         case '/runtime/subagents/configure': {
-          const selection = z.object({ provider: z.string(), model: z.string(), maxTokens: z.number() }).strict().parse(input)
-          sendJson(res, await nativeSubagents.configure(token, selection)); return
+          const selection = z.object({ provider: z.string(), model: z.string(), maxTokens: z.number(),
+            reasoningEffort: z.string().optional() }).strict().parse(input)
+          sendJson(res, await nativeSubagents.configure(token, { provider: selection.provider, model: selection.model,
+            maxTokens: selection.maxTokens,
+            ...selection.reasoningEffort === undefined ? {} : { reasoningEffort: selection.reasoningEffort } })); return
         }
         case '/runtime/subagents/create': {
           const request = z.object({ header: z.unknown() }).strict().parse(input)
@@ -1183,6 +1274,33 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       return
     }
     const input = await readJson(req, config.maxRequestBytes)
+    if (path.startsWith('/native/models/') && path !== '/native/models/select') {
+      switch (path) {
+        case '/native/models/settings/describe': z.object({}).strict().parse(input); sendJson(res, await tenantModels.describe(token)); return
+        case '/native/models/settings/write': sendJson(res, await tenantModels.write(token, input)); return
+        case '/native/models/providers': {
+          z.object({}).strict().parse(input)
+          const { registered, directory } = await tenantModels.providers(token)
+          sendJson(res, { registered, directory }); return
+        }
+        case '/native/models/catalog': z.object({}).strict().parse(input); sendJson(res, await tenantModels.modelCatalog(token)); return
+        case '/native/models/discovery': sendJson(res, await tenantModels.discover(token, input, AbortSignal.timeout(config.modelTimeoutMs))); return
+        case '/native/models/credentials/describe': {
+          const value = z.object({ refs: z.array(modelCredentialReference) }).strict().parse(input)
+          sendJson(res, { refs: await modelCredentials.describe(token, value.refs) }); return
+        }
+        case '/native/models/credentials/ticket': sendJson(res, await modelCredentials.ticket(token, input, config.platformOrigin)); return
+        case '/native/models/credentials/receipt': {
+          const value = z.object({ requestId: z.uuid() }).strict().parse(input)
+          sendJson(res, await modelCredentials.receipt(token, value.requestId)); return
+        }
+        case '/native/models/credentials/unset': {
+          const value = z.object({ ref: modelCredentialReference }).strict().parse(input)
+          await modelCredentials.unset(token, value.ref); sendJson(res, { ok: true }); return
+        }
+        default: throw new PlatformError(404, 'not_found')
+      }
+    }
     if (path.startsWith('/mcp/connections/')) {
       sendJson(res, await routeMcpManagement(remoteMcp, path, user, input, config.platformOrigin)); return
     }

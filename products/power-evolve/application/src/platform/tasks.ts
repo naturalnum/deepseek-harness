@@ -9,7 +9,7 @@ import { executionTarget, grant, mcpSelection, stdioMcpSelection, sshSelection, 
 import { z } from 'zod'
 import { digest } from './identity.ts'
 import { transaction } from './database.ts'
-import { requireModelGrant } from './account-settings.ts'
+import { sessionModelSettings } from './account-settings.ts'
 import { continuationInput } from '../continuation-input.ts'
 import { mcpOperationTools } from '../mcp-operation-contracts.ts'
 import { selectMcpOperationTools, type McpOperationAdmissionLimits } from './mcp-admission.ts'
@@ -138,6 +138,11 @@ export class TaskStore {
       await client.query(
         `INSERT INTO pe_sessions(id,user_id,workspace_id,create_request_id,header)
          VALUES ($1,$2,$3,$4,$5)`, [id, user.userId, chosen, requestId, header])
+      const defaults = settings.parse((await client.query<{ settings: unknown }>('SELECT settings FROM pe_users WHERE id=$1', [user.userId])).rows[0]?.settings)
+      await client.query('INSERT INTO pe_native_preferences(user_id,namespace,value,revision) VALUES($1,$2,$3,1)',
+        [user.userId, `session-model:${id}`, { provider: defaults.provider ?? 'power-evolve', model: defaults.model,
+          ...defaults.reasoningEffort === undefined ? defaults.provider === undefined ? { reasoningEffort: 'off' } : {}
+            : { reasoningEffort: defaults.reasoningEffort } }])
       return { sessionId: brandString<SessionId>(id) }
     })
   }
@@ -207,26 +212,16 @@ export class TaskStore {
       if (submitted.filter(part => part.type === 'text').map(part => part.text).join('\n') !== text) {
         throw new PlatformError(400, 'native_input_mismatch')
       }
-      const config = settings.parse(current.rows[0].settings)
-      const modelIntent = await client.query<{ value: unknown }>(
-        'SELECT value FROM pe_native_preferences WHERE user_id=$1 AND namespace=$2',
-        [user.userId, `session-model:${session}`])
-      if (modelIntent.rows[0]) {
-        const selectedModel = z.object({ provider: z.literal('power-evolve'), model: z.string().min(1).max(100),
-          reasoningEffort: z.literal('off').optional() }).strict()
-          .parse(modelIntent.rows[0].value)
-        const grant = await client.query<{ max_tokens: number }>(
-          'SELECT max_tokens FROM pe_user_models WHERE user_id=$1 AND model_id=$2 AND enabled=true', [user.userId, selectedModel.model])
-        if (!grant.rows[0]) throw new PlatformError(403, 'model_not_authorized')
-        config.model = selectedModel.model
-        config.maxTokens = Math.min(config.maxTokens, grant.rows[0].max_tokens)
-      }
-      await requireModelGrant(client, user.userId, config.model, config.maxTokens)
+      const config = await sessionModelSettings(client, user.userId, session, settings.parse(current.rows[0].settings))
       const imageAdmission = this.limits.nativeImageAdmission
       if (submitted.some(part => part.type === 'image')) {
         if (!imageAdmission) throw new PlatformError(403, 'native_image_admission_unavailable')
         const model = resolveAdapterOptions({ thinking: 'disabled' }).models.find(item => item.id === config.model)
-        if (model === undefined || !catalogModelInfo('power-evolve', model).inputModalities?.includes('image')) {
+        const descriptor = config.provider === undefined ? model === undefined ? undefined : catalogModelInfo('power-evolve', model)
+          : z.object({ inputModalities: z.array(z.string()).optional() }).parse((await client.query<{ descriptor: unknown }>(
+            'SELECT descriptor FROM pe_tenant_model_catalog WHERE user_id=$1 AND provider=$2 AND model_id=$3',
+            [user.userId, config.provider, config.model])).rows[0]?.descriptor)
+        if (!descriptor?.inputModalities?.includes('image')) {
           throw new PlatformError(400, 'model_image_unsupported')
         }
       }

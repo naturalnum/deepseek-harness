@@ -196,6 +196,8 @@ loop 保留的响应块会追加到下一个请求，并保留其更早的可复
 ## 已知限制与延期工作
 
 
+适配器可选接收所有者提供的 `fetch`，用于 Messages 和默认 Files 存储；省略时继续使用全局传输。协议转换、图像处理和重放仍由适配器负责。
+
 <a id="known-limitations-and-deferred-work"></a>
 
 

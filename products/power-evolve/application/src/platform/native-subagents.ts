@@ -5,7 +5,7 @@ import type { SessionHeader } from '@deepseek-ai/dsh-session'
 import { PlatformError, type Grant, operationId } from '../contracts.ts'
 import { headerSchema } from '../session-records.ts'
 import { transaction } from './database.ts'
-import { requireModelGrant } from './account-settings.ts'
+import { requireModelGrant, resolveModelEffort } from './account-settings.ts'
 import { settings } from '../contracts.ts'
 import { readNativeRuntimePolicy } from './native-runtime-policy.ts'
 import { digest } from './identity.ts'
@@ -23,9 +23,9 @@ export class NativeSubagents {
    * @param selection Actual native Agent options after resolveChildAgentOptions, never a provider credential.
    * @returns Validated child settings whose model the existing proxy continues to require exactly.
    */
-  async configure(token: string, selection: { provider: string; model: string; maxTokens: number }): Promise<Grant['settings']> {
-    const value = z.object({ provider: z.literal('power-evolve'), model: z.string().min(1).max(100),
-      maxTokens: z.number().int().positive() }).strict().parse(selection)
+  async configure(token: string, selection: { provider: string; model: string; maxTokens: number; reasoningEffort?: string }): Promise<Grant['settings']> {
+    const value = z.object({ provider: z.string().min(1).max(128), model: z.string().min(1).max(1024),
+      maxTokens: z.number().int().positive(), reasoningEffort: z.string().min(1).max(128).optional() }).strict().parse(selection)
     return transaction(this.tasks.pool, async (client) => {
       const child = await this.tasks.authorized(client, token)
       const derived = await client.query<{ parent_settings: unknown }>(`SELECT p.settings AS parent_settings FROM pe_native_subagent_grants d
@@ -37,8 +37,10 @@ export class NativeSubagents {
         AND seq>COALESCE((SELECT max(seq) FROM pe_events WHERE session_id=$1 AND event->>'type'='session/end-seed'
           AND event->'data'->>'inherited'='true'),-1) LIMIT 1`, [child.id])
       if (started.rowCount) throw new PlatformError(409, 'native_subagent_model_frozen')
-      await requireModelGrant(client, child.user_id, value.model, value.maxTokens)
-      const selected = settings.parse({ model: value.model, maxTokens: value.maxTokens, revision: parent.revision })
+      const effort = await resolveModelEffort(client, child.user_id, value.provider, value.model, value.reasoningEffort)
+      await requireModelGrant(client, child.user_id, value.model, value.maxTokens, value.provider, effort)
+      const selected = settings.parse({ model: value.model, maxTokens: value.maxTokens, revision: parent.revision,
+        ...value.provider === 'power-evolve' ? {} : { provider: value.provider, ...effort === undefined ? {} : { reasoningEffort: effort } } })
       await client.query('UPDATE pe_operations SET settings=$2 WHERE id=$1', [child.operation_id, selected])
       return selected
     })

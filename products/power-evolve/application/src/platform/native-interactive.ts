@@ -10,6 +10,7 @@ import { headerSchema } from '../session-records.ts'
 import { isSessionBusinessBlockedInTransaction } from './native-workspace-layout.ts'
 import type { TaskStore } from './tasks.ts'
 import type { NativeRuntimeAuthority } from './native-runtime-authority.ts'
+import { sessionModelSettings } from './account-settings.ts'
 
 /** Original caller ids and token are retained before dispatch; uncertain opens never mint a replacement. */
 export const nativeInteractiveOpen = z.object({ sessionId, requestId, browserToken: z.string().min(32).max(256),
@@ -66,7 +67,9 @@ export class NativeInteractive {
       const active = await client.query<{ count: string }>('SELECT count(*) FROM pe_native_interactive_grants WHERE user_id=$1 AND released_at IS NULL AND expires_at>clock_timestamp()', [runtime.userId])
       if (Number(active.rows[0]?.count) >= this.limits.maxActivePerUser) throw new PlatformError(429, 'native_interactive_limit')
       const account = await client.query<{ settings: unknown }>('SELECT settings FROM pe_users WHERE id=$1', [runtime.userId])
-      const originalSettings = settings.parse(account.rows[0]?.settings), id = operationId.parse(randomUUID()),
+      const originalSettings = await sessionModelSettings(client, runtime.userId, input.sessionId,
+        settings.parse(account.rows[0]?.settings))
+      const id = operationId.parse(randomUUID()),
         epoch = session.lease_epoch + 1
       await client.query(`INSERT INTO pe_operations(id,session_id,request_id,input,settings,state,attempts,source)
         VALUES($1,$2,$3,'',$4,'running',1,'native_interactive')`, [id, input.sessionId, input.requestId, originalSettings])

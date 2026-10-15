@@ -149,6 +149,8 @@ Reasoning-effort materialization preserves the assembled request prefix. Image i
 
 ## Known Limitations and Deferred Work
 
+`adapterFailureChunk` exposes the same failure normalization used by LlmRuntime, so private transport adapters retain native codes, retry facts and cancellation classification without reimplementing them.
+
 <a id="known-limitations-and-deferred-work"></a>
 
 

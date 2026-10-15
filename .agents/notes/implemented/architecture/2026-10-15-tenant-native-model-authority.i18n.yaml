@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-10-15-tenant-native-model-authority.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-15-tenant-native-model-authority.md
+/agent-note-tenant-model-configuration-and-native-prepared-calls:
+  en: 76a93c6306711997
+  zh: d50f7d53b749f837
+/agent-note-tenant-model-configuration-and-native-prepared-calls/problem:
+  en: d6d5f394cd4c08a1
+  zh: ceb1d32f0263d20a
+/agent-note-tenant-model-configuration-and-native-prepared-calls/decision:
+  en: 4d5d849d8907a739
+  zh: a83dce875a86d44b
+/agent-note-tenant-model-configuration-and-native-prepared-calls/alternatives-considered:
+  en: ba69c5417d77eafd
+  zh: bde124356725ca2d
+/agent-note-tenant-model-configuration-and-native-prepared-calls/consequences:
+  en: a410aed44014f541
+  zh: fe2b17a4c400cffd

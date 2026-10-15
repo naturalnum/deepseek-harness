@@ -68,6 +68,8 @@ Consumers that change request prefixes determine cache effects.
 
 ## Known Limitations and Deferred Work
 
+`applySettingsPathOp` and `mergeSettingsLayers` expose the native schema-aware path operation and recursive configuration merge, for consumers persisting native namespace values in another authoritative store. The caller owns authorization, revision checks and commit.
+
 <a id="known-limitations-and-deferred-work"></a>
 
 - Nested Includes own separate configurations and are not editable through the active profile’s form.

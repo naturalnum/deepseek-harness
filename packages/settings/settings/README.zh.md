@@ -68,6 +68,8 @@ Settings 启动后、Loader 完成所有条目的加载时，早期版本留在 
 
 ## 已知限制与延后工作
 
+`applySettingsPathOp` 和 `mergeSettingsLayers` 导出原生基于 schema 的路径操作及递归配置合并，供把原生命名空间持久化至其他权威存储的消费者复用。调用者负责授权、版本检查和提交。
+
 <a id="known-limitations-and-deferred-work"></a>
 
 - 嵌套 Include 独立拥有配置，不能通过当前 profile 的表单编辑。

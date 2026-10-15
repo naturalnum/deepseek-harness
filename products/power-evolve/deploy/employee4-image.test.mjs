@@ -120,12 +120,12 @@ test('cold Linux native flock excludes another process and releases on exact des
   const program = `import assert from 'node:assert/strict';import{spawn}from'node:child_process';import{createHash}from'node:crypto';import{once}from'node:events';import{open,readFile}from'node:fs/promises';import{createRequire}from'node:module';import{pathToFileURL}from'node:url';import{tryLockExclusive}from'./native/system/packages/entry/lib/flock.js';
     assert.equal(createHash('sha256').update(await readFile('image-source.json')).digest('hex'),${JSON.stringify(sourceSha256)});
     const build=JSON.parse(await readFile('image-build.json','utf8'));assert.equal(build.platform,'linux');assert.equal(build.desktopBuilt,false);
-    const pack=JSON.parse(await readFile('image-pack.json','utf8'));assert.equal(pack.schemaVersion,14);assert.match(pack.applicationManifestSha256,/^[a-f0-9]{64}$/);assert.match(pack.applicationArchiveSha256,/^[a-f0-9]{64}$/);
+    const pack=JSON.parse(await readFile('image-pack.json','utf8'));assert.equal(pack.schemaVersion,15);assert.match(pack.applicationManifestSha256,/^[a-f0-9]{64}$/);assert.match(pack.applicationArchiveSha256,/^[a-f0-9]{64}$/);
     for(const role of ['host','platform','native-runtime']){const consumer=createRequire(process.cwd()+'/products/power-evolve/'+role+'/package.json');assert.ok(pack.profileEntries[role].length>0);for(const entry of pack.profileEntries[role])await import(pathToFileURL(consumer.resolve(entry)).href)}
     assert.deepEqual(pack.queryExports,['@deepseek-ai/dsh-session-query','@deepseek-ai/dsh-session-query-sqlite','@deepseek-ai/dsh-session-format-catalog','@deepseek-ai/dsh-session-format-catalog/message-projections']);
     const queryConsumer=createRequire(process.cwd()+'/products/power-evolve/application/package.json');for(const entry of pack.queryExports)await import(pathToFileURL(queryConsumer.resolve(entry)).href);
-    for(const version of Array.from({length:14},(_,index)=>index+1))for(const suffix of ['sql','manifest.json'])assert.ok((await readFile('products/power-evolve/application/assets/cloud-schema-v'+version+'.'+suffix)).length>0);
-    assert.equal(Object.keys(JSON.parse(await readFile('products/power-evolve/application/assets/cloud-schema-v14.manifest.json','utf8'))).length,${currentTableCount});
+    for(const version of Array.from({length:15},(_,index)=>index+1))for(const suffix of ['sql','manifest.json'])assert.ok((await readFile('products/power-evolve/application/assets/cloud-schema-v'+version+'.'+suffix)).length>0);
+    assert.equal(Object.keys(JSON.parse(await readFile('products/power-evolve/application/assets/cloud-schema-v15.manifest.json','utf8'))).length,${currentTableCount});
     const file=await open('/tmp/owned-flock','w+');await tryLockExclusive(file.fd);
     const probe="import{open}from'node:fs/promises';import{tryLockExclusive}from'./native/system/packages/entry/lib/flock.js';const file=await open('/tmp/owned-flock','r+');try{await tryLockExclusive(file.fd);console.log('acquired')}catch(error){if(!['EAGAIN','EWOULDBLOCK'].includes(error.code))throw error;console.log('contended')}finally{await file.close()}";
     async function child(){const p=spawn(process.execPath,['--input-type=module','--eval',probe],{stdio:['ignore','pipe','inherit']});let output='';p.stdout.on('data',bytes=>output+=bytes);const[code,signal]=await once(p,'close');assert.equal(code,0);assert.equal(signal,null);return output.trim()}
@@ -291,25 +291,25 @@ test('real Linux Host and Platform keep separate credentials and restore bytes w
     roots: Object.fromEntries(['privateConfig', ...labels].map(label => [label, '/restore/' + label])), profiles: ['/restore/host', '/restore/platform'] }
   exec(`import{writeFile}from'node:fs/promises';await writeFile('/settings/create.json',${JSON.stringify(JSON.stringify(config))},{mode:0o600});await writeFile('/settings/restore.json',${JSON.stringify(JSON.stringify(targetConfig))},{mode:0o600});`)
   const capture = JSON.parse(docker(['exec', anchor, 'node', 'products/power-evolve/deploy/backup.mjs', 'create', '/settings/create.json']))
-  assert.equal(capture.schema, 14); assert.equal(capture.tables, currentTableCount)
+  assert.equal(capture.schema, 15); assert.equal(capture.tables, currentTableCount)
   const restored = JSON.parse(docker(['exec', anchor, 'node', 'products/power-evolve/deploy/backup.mjs', 'restore', '/settings/restore.json']))
-  assert.equal(restored.schema, 14); assert.equal(restored.tables, currentTableCount)
+  assert.equal(restored.schema, 15); assert.equal(restored.tables, currentTableCount)
   assert.equal(restored.allFilesVerified, true); assert.equal(restored.allRowsVerified, true)
   assert.equal(restored.readinessChecked, false)
   exec(`import assert from'node:assert/strict';import{lstat,readFile}from'node:fs/promises';import{connectDatabase,requireCurrentSchema}from'./products/power-evolve/deploy/backup-postgres.mjs';
     for(const config of [${JSON.stringify(config.postgres)},${JSON.stringify(targetConfig.postgres)}]){const db=await connectDatabase(config);try{
       const{rows:[r]}=await db.client.query('SELECT rolsuper,rolcreatedb,rolcreaterole FROM pg_roles WHERE rolname=current_user');assert.deepEqual(r,{rolsuper:false,rolcreatedb:false,rolcreaterole:false});
-      await requireCurrentSchema(db.client);const before=(await db.client.query('SELECT family,version FROM pe_schema')).rows;assert.deepEqual(before,[{family:'cloud-native',version:14}]);
+      await requireCurrentSchema(db.client);const before=(await db.client.query('SELECT family,version FROM pe_schema')).rows;assert.deepEqual(before,[{family:'cloud-native',version:15}]);
       const{rows:[temporary]}=await db.client.query('SELECT (SELECT count(*)::text FROM pe_native_presentations) AS presentations,(SELECT count(*)::text FROM pe_native_presentation_entries) AS entries');assert.deepEqual(temporary,{presentations:'0',entries:'0'});
       assert.equal((await db.client.query('SELECT count(*)::text AS count FROM pe_native_writers WHERE expires_at>clock_timestamp()')).rows[0].count,'0');
-      for(const oldVersion of [2,3,4,5,6,7,8,9,10,11,12,13]){await db.client.query('BEGIN');try{assert.equal((await db.client.query('UPDATE pe_schema SET version=$1 WHERE version=14',[oldVersion])).rowCount,1);await assert.rejects(requireCurrentSchema(db.client),/Schema 14/)}finally{await db.client.query('ROLLBACK')}
+      for(const oldVersion of [2,3,4,5,6,7,8,9,10,11,12,13,14]){await db.client.query('BEGIN');try{assert.equal((await db.client.query('UPDATE pe_schema SET version=$1 WHERE version=15',[oldVersion])).rowCount,1);await assert.rejects(requireCurrentSchema(db.client),/Schema 15/)}finally{await db.client.query('ROLLBACK')}
         assert.deepEqual((await db.client.query('SELECT family,version FROM pe_schema')).rows,before);}
     }finally{await db.client.end()}}
     assert.deepEqual(await readFile('/restore/privateConfig/platform/native-intent-key'),await readFile('/run/privateConfig/platform/native-intent-key'));assert.equal((await lstat('/restore/privateConfig/platform/native-intent-key')).mode&0o7777,0o600);
     const original=await lstat('/restore/attachments/original'),alias=await lstat('/restore/attachments/alias');assert.equal(original.uid,0);assert.equal(original.gid,0);assert.equal(original.ino,alias.ino);assert.equal(original.dev,alias.dev);assert.equal(await readFile('/restore/attachments/original','utf8'),'native-original中文');const tenant=await lstat('/restore/workspaces/owned');assert.equal(tenant.uid,1000);assert.equal(tenant.gid,1000);assert.equal(tenant.mode&0o777,0o640);console.log('Ordinary roles and actual owners/hardlinks verified');`)
   if (evidence) await writeFile(join(evidence, 'linux-image-acceptance.json'), JSON.stringify({ sourceRoleOrdinary: true, targetRoleOrdinary: true,
     samePidNamespace: true, exactHostPlatformStops: true, hostCredentialsIsolated: true, nativeWeb: true,
-    schema: 14, tables: currentTableCount,
+    schema: 15, tables: currentTableCount,
     schema2VersionRefused: true, schema3VersionRefused: true, schema4VersionRefused: true, schema5VersionRefused: true,
     temporaryTablesEmpty: true, liveWritersAbsent: true,
     originalRootUidPreserved: true, tenantUid1000Preserved: true, hardlinkPreserved: true, businessReadinessChecked: false,

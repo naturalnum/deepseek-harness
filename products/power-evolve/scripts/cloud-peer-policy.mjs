@@ -72,6 +72,7 @@ const CLOUD_SDK_PROVIDER_PEERS = Object.freeze({
     'readPluginInventory',
   ]),
   '@deepseek-ai/dsh-llm': Object.freeze([
+    'adapterFailureChunk',
     'AssistantStreamAccumulator',
     'LlmAdapter',
     'LlmError',
@@ -84,6 +85,9 @@ const CLOUD_SDK_PROVIDER_PEERS = Object.freeze({
     'catalogModelInfo',
     'resolveAdapterOptions',
   ]),
+  '@deepseek-ai/dsh-llm-deepseek-api-key': Object.freeze(['Config', 'plainOptions', 'resolveAdapterOptions']),
+  '@deepseek-ai/dsh-llm-pi-ai': Object.freeze(['Config', 'PiAiAdapter', 'resolveProfiles', 'assertServiceable', 'catalogProviderIds', 'discoverModels']),
+  '@deepseek-ai/dsh-settings': Object.freeze(['applySettingsPathOp', 'mergeSettingsLayers']),
   '@deepseek-ai/dsh-mcp-client': Object.freeze([
     'createMcpToolDefinition',
   ]),
@@ -92,6 +96,7 @@ const CLOUD_SDK_PROVIDER_PEERS = Object.freeze({
   '@deepseek-ai/dsh-tool-bash': Object.freeze(['apply', 'inject', 'name', 'Config']),
   '@deepseek-ai/dsh-timeout': Object.freeze(['deadline', 'timeoutOf']),
   '@deepseek-ai/dsh-session': Object.freeze([
+    'ToolHistoryProjection',
     'KNOWN_SESSION_EVENT_TYPES',
     'Session',
     'SessionLogOffset',
@@ -258,6 +263,10 @@ export const CLOUD_PEER_REQUIRED_HOST_EXPORTS = Object.freeze({
     'officePreviewSourcePrepareRequest',
   ]),
   '@power-evolve/contracts/mcp-metadata': Object.freeze(['mcpPresentation', 'stdioEnvironmentRef']),
+  '@power-evolve/contracts/model-settings': Object.freeze([
+    'modelSettingsNamespace', 'modelCredentialReference', 'modelDiscoveryDraft', 'modelDiscovered',
+    'modelSettingsWrite', 'modelCredentialTicketRequest', 'modelCredentialReceipt', 'modelSettingsLimits',
+  ]),
   '@power-evolve/contracts/stdio-environment': Object.freeze([
     'stdioEnvironmentOptions', 'stdioEnvironmentReceipt', 'stdioEnvironmentReceiptRequest',
     'stdioEnvironmentTicket', 'stdioEnvironmentTicketRequest', 'stdioEnvironmentUpload',

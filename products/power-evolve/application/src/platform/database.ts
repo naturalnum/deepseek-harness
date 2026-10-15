@@ -6,7 +6,7 @@ import { z } from 'zod'
 /** Database family prevents an old product version from being mistaken for the cloud migration. */
 export const SCHEMA_FAMILY = 'cloud-native'
 /** Current adjacent version inside the cloud database family. */
-export const CURRENT_SCHEMA_VERSION = 14
+export const CURRENT_SCHEMA_VERSION = 15
 
 /** Run exclusive transactional work, preserving its failure and discarding disconnected clients.
  * @param pool Database connection owner.
@@ -68,7 +68,8 @@ export async function initializeDatabase(pool: Pool): Promise<void> {
     if (versions.rows.length !== 1 || entry?.family !== SCHEMA_FAMILY
       || (version !== 1 && version !== 2 && version !== 3 && version !== 4 && version !== 5
         && version !== 6 && version !== 7 && version !== 8 && version !== 9
-        && version !== 10 && version !== 11 && version !== 12 && version !== 13 && version !== CURRENT_SCHEMA_VERSION)) throw new Error('Unsupported PowerEvolve cloud schema')
+        && version !== 10 && version !== 11 && version !== 12 && version !== 13 && version !== 14
+        && version !== CURRENT_SCHEMA_VERSION)) throw new Error('Unsupported PowerEvolve cloud schema')
     await assertManifest(client, version)
     for (let current = version; current < CURRENT_SCHEMA_VERSION; current++) {
       const next = current + 1

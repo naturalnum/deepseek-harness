@@ -209,6 +209,12 @@
     },
     {
       "path": "../../../packages/context/agent-instructions"
+    },
+    {
+      "path": "../../../packages/llm/llm-deepseek-api-key"
+    },
+    {
+      "path": "../../../packages/llm/llm-pi-ai"
     }
   ]
 }

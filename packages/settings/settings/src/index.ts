@@ -82,8 +82,13 @@ export type SettingsPathOp =
   | { op: 'set'; path: readonly string[]; value: unknown }
   | { op: 'unset'; path: readonly string[] }
 
-/** Apply one path op to a detached section, returning the next section. */
-function applyPathOp(section: Record<string, unknown>, op: SettingsPathOp, schema: z): Record<string, unknown> {
+/** Apply one path operation to a detached user section using its native schema defaults.
+ * @param section Stored user section, left unchanged.
+ * @param op Exact native set or unset operation.
+ * @param schema Namespace schema used to traverse nested defaults and arrays.
+ * @returns The next user section; the owner still validates and commits it.
+ */
+export function applySettingsPathOp(section: Record<string, unknown>, op: SettingsPathOp, schema: z): Record<string, unknown> {
   const edit = (input: unknown, path: readonly string[], node?: z): unknown => {
     const [head, ...rest] = path
     if (head === undefined) return op.op === 'set' ? op.value : undefined
@@ -126,7 +131,7 @@ function describeRejected(value: unknown): string {
  * booleans, `null`) may reach a provider document. `structuredClone` alone
  * would admit Dates, Maps, BigInts, and cycles that YAML/JSON storage then
  * silently distorts on the reload round-trip. `undefined` entries in objects
- * are skipped — the same sparse-patch semantics as {@link mergeLayers} — while
+ * are skipped — the same sparse-patch semantics as {@link mergeSettingsLayers} — while
  * an `undefined` array entry is rejected rather than coerced.
  * @param root - write input to validate before merging.
  * @returns the detached JSON-compatible clone.
@@ -171,13 +176,16 @@ function cloneJsonShaped(root: object): Record<string, unknown> {
  * carries `undefined` entries — sections come from parsed documents and write
  * snapshots pass {@link cloneJsonShaped}, which strips them so a sparse patch
  * cannot erase lower keys.
+ * @param under Original native configuration layer.
+ * @param over JSON patch without undefined entries.
+ * @returns The same recursively merged native configuration value.
  */
-function mergeLayers(under: unknown, over: unknown): unknown {
+export function mergeSettingsLayers(under: unknown, over: unknown): unknown {
   if (!isPlainObject(under) || !isPlainObject(over)) return over
   const merged: Record<string, unknown> = { ...under }
   for (const [key, value] of Object.entries(over)) {
     Object.defineProperty(merged, key, {
-      value: Object.hasOwn(merged, key) ? mergeLayers(merged[key], value) : value,
+      value: Object.hasOwn(merged, key) ? mergeSettingsLayers(merged[key], value) : value,
       enumerable: true, configurable: true, writable: true,
     })
   }
@@ -346,7 +354,7 @@ export class SettingsForms extends Service {
    */
   async update(ns: string, patch: object, expectedRevision?: number): Promise<void> {
     const input = cloneJsonShaped(patch)
-    await this.write(ns, current => mergeLayers(current, input) as Record<string, unknown>, expectedRevision)
+    await this.write(ns, current => mergeSettingsLayers(current, input) as Record<string, unknown>, expectedRevision)
   }
 
   /** Reset all live fields, then set the supplied fields; ordinary config is preserved.
@@ -356,7 +364,7 @@ export class SettingsForms extends Service {
    */
   async replace(ns: string, section: object, expectedRevision?: number): Promise<void> {
     const input = cloneJsonShaped(section)
-    await this.write(ns, (_current, base) => mergeLayers(base, input) as Record<string, unknown>, expectedRevision)
+    await this.write(ns, (_current, base) => mergeSettingsLayers(base, input) as Record<string, unknown>, expectedRevision)
   }
 
   /** Apply field edits without restating redacted secrets; unsetting an array index removes its element.
@@ -366,11 +374,11 @@ export class SettingsForms extends Service {
    */
   async mutate(ns: string, ops: readonly SettingsPathOp[], expectedRevision?: number): Promise<void> {
     await this.write(ns, (current, base, schema) => ops.reduce((value, op) => {
-      if (op.op === 'set') return applyPathOp(value, op, schema)
+      if (op.op === 'set') return applySettingsPathOp(value, op, schema)
       const parent = op.path.slice(0, -1).reduce<unknown>((node, key) => member(node, key), value)
-      if (Array.isArray(parent)) return applyPathOp(value, op, schema)
+      if (Array.isArray(parent)) return applySettingsPathOp(value, op, schema)
       const inherited = op.path.reduce<unknown>((node, key) => member(node, key, true), base)
-      return applyPathOp(value, inherited === undefined ? op : { op: 'set', path: op.path, value: inherited }, schema)
+      return applySettingsPathOp(value, inherited === undefined ? op : { op: 'set', path: op.path, value: inherited }, schema)
     }, current), expectedRevision, ops.map(op => op.path))
   }
 
@@ -417,7 +425,7 @@ export class SettingsForms extends Service {
         }
         return result
       }
-      return mergeLayers(strip(raw, form), next) as Record<string, unknown>
+      return mergeSettingsLayers(strip(raw, form), next) as Record<string, unknown>
     })
     this.describe()
   }

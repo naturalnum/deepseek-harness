@@ -75,7 +75,9 @@ import { registerPiAiFlows } from './login.ts'
 
 export { PiAiAdapter } from './adapter.ts'
 export type { PiAiAdapterOptions } from './adapter.ts'
-export { Config } from './config.ts'
+export { Config, resolveProfiles, assertServiceable } from './config.ts'
+export { catalogProviderIds } from './catalog.ts'
+export { discoverModels } from './discovery.ts'
 export type {
   Options,
   PiAiCompatProfile,

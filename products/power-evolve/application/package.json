@@ -38,7 +38,9 @@
     "assets/cloud-schema-v13.sql",
     "assets/cloud-schema-v13.manifest.json",
     "assets/cloud-schema-v14.sql",
-    "assets/cloud-schema-v14.manifest.json"
+    "assets/cloud-schema-v14.manifest.json",
+    "assets/cloud-schema-v15.sql",
+    "assets/cloud-schema-v15.manifest.json"
   ],
   "exports": {
     "./platform": "./lib/platform/index.js",
@@ -149,7 +151,9 @@
     "@deepseek-ai/dsh-bash-sandbox": "workspace:*",
     "@deepseek-ai/dsh-terminal-bash": "workspace:*",
     "@deepseek-ai/dsh-ptc-runtime-node": "workspace:*",
-    "@deepseek-ai/dsh-agent-instructions": "workspace:*"
+    "@deepseek-ai/dsh-agent-instructions": "workspace:*",
+    "@deepseek-ai/dsh-llm-deepseek-api-key": "workspace:*",
+    "@deepseek-ai/dsh-llm-pi-ai": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
@@ -194,7 +198,10 @@
     "@deepseek-ai/dsh-subprocess-local": "workspace:*",
     "@deepseek-ai/dsh-fs-local": "workspace:*",
     "@deepseek-ai/dsh-subprocess": "workspace:*",
-    "@deepseek-ai/dsh-agent-instructions": "workspace:*"
+    "@deepseek-ai/dsh-agent-instructions": "workspace:*",
+    "@deepseek-ai/dsh-llm-deepseek-api-key": "workspace:*",
+    "@deepseek-ai/dsh-llm-pi-ai": "workspace:*",
+    "@deepseek-ai/dsh-settings": "workspace:*"
   },
   "scripts": {
     "build": "tsc -b tsconfig.json && tsdown",

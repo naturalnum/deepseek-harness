@@ -26,7 +26,8 @@ export class DeepSeekAdapter<C extends Connection = Connection> extends LlmAdapt
 
   constructor(private readonly dependencies: DeepSeekAdapterOptions<C>) {
     super()
-    this.files = dependencies.resolveFiles?.() ?? new DeepSeekFileStore()
+    this.files = dependencies.resolveFiles?.()
+      ?? new DeepSeekFileStore(dependencies.fetch === undefined ? {} : { fetch: dependencies.fetch })
   }
 
   override providerInfo(provider: string) { return { id: provider, name: this.dependencies.providerName ?? 'DeepSeek' } }
@@ -117,7 +118,7 @@ export class DeepSeekAdapter<C extends Connection = Connection> extends LlmAdapt
             ? [MESSAGES_TOOL_CHANGES_BETA]
             : [],
         ]
-        const response = await fetch(`${messagesApiRoot(connection.baseURL)}/messages`, {
+        const response = await (this.dependencies.fetch ?? globalThis.fetch)(`${messagesApiRoot(connection.baseURL)}/messages`, {
           method: 'POST', signal, body: extensions.payload, redirect: 'error',
           headers: {
             ...attributionHeaders(),

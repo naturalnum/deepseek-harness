@@ -4,7 +4,6 @@ import { request as httpRequest, type ClientRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
 import { isIP } from 'node:net'
 import ipaddr from 'ipaddr.js'
-import type { FetchLike } from '@modelcontextprotocol/client'
 
 /** Explicit limits cover the entire handshake, directory, call, and session cleanup. */
 export interface McpTransportBudgets {
@@ -190,10 +189,11 @@ export class McpNetworkOperation {
    * @param endpoint Exact caller endpoint, never followed to another URL.
    * @param policy Privileged operator exceptions and resolver.
    * @param beforeCall Gate immediately before the unique tools/call HTTP request.
+   * @param mode Native HTTP gates every request and accepts the provider SDK's standard Request bodies.
    * @returns SDK-compatible streaming fetch using native Node sockets.
    */
   async fetchFor(endpoint: string, policy: McpNetworkPolicy,
-    beforeCall: () => Promise<void>): Promise<{ url: URL; fetch: FetchLike }> {
+    beforeCall: () => Promise<void>, mode: 'mcp' | 'native' = 'mcp'): Promise<{ url: URL; fetch: typeof fetch }> {
     this.check()
     let url: URL
     try { url = new URL(endpoint) } catch (_invalidEndpoint) {
@@ -242,29 +242,50 @@ export class McpNetworkOperation {
     const pinned = addresses[0]
     if (pinned === undefined) throw new McpTransportError('dns_failed', false)
     let callAttempted = false
-    const send: FetchLike = async (input, init) => {
+    const send: typeof fetch = async (input, init) => {
       this.check()
       const actual = input instanceof Request ? input.url : String(input)
       if (new URL(actual).href !== url.href) throw new McpTransportError('endpoint_changed', this.dispatched)
-      const method = init?.method ?? 'GET'
-      const body = init?.body
-      if (!['POST', 'GET', 'DELETE'].includes(method) || body !== undefined && typeof body !== 'string') {
+      const native = mode === 'native' ? new Request(input, init) : undefined
+      const method = native?.method ?? init?.method ?? 'GET'
+      let body: string | Uint8Array | undefined
+      if (native?.body) {
+        const reader = native.body.getReader(), chunks: Uint8Array[] = []
+        let bytes = 0
+        try {
+          for (;;) {
+            const part = await this.bounded(reader.read())
+            if (part.done) break
+            bytes += part.value.byteLength
+            if (bytes > this.budgets.maxRequestBytes) throw new McpTransportError('request_limit', this.dispatched)
+            chunks.push(part.value)
+          }
+          body = Buffer.concat(chunks)
+        } finally { await reader.cancel(); reader.releaseLock() }
+      } else if (typeof init?.body === 'string') body = init.body
+      if ((mode === 'mcp' && !['POST', 'GET', 'DELETE'].includes(method))
+        || mode === 'mcp' && init?.body !== undefined && typeof init.body !== 'string') {
         throw new McpTransportError('invalid_config', this.dispatched)
       }
       if (body && Buffer.byteLength(body) > this.budgets.maxRequestBytes) {
         throw new McpTransportError('request_limit', this.dispatched)
       }
       if (++this.requestCount > this.budgets.maxRequests) throw new McpTransportError('request_limit', this.dispatched)
-      const headers = new Headers(init?.headers)
+      const headers = new Headers(native?.headers ?? init?.headers)
       if (headers.has('last-event-id')) throw new McpTransportError('dispatch_replay_denied', this.dispatched)
       let headerBytes = 0
       headers.forEach((value, name) => { headerBytes += Buffer.byteLength(name) + Buffer.byteLength(value) + 4 })
       if (headerBytes > this.budgets.maxHeaderBytes) throw new McpTransportError('request_limit', this.dispatched)
       headers.set('accept-encoding', 'identity')
-      const requestSignal = init?.signal ? AbortSignal.any([this.signal, init.signal]) : this.signal
+      const callerSignal = native?.signal ?? init?.signal
+      const requestSignal = callerSignal ? AbortSignal.any([this.signal, callerSignal]) : this.signal
       const requestAborted = () => requestSignal.aborted
       if (requestAborted()) throw new McpTransportError('aborted', this.dispatched)
-      if (method === 'POST' && typeof body === 'string') {
+      if (mode === 'native') {
+        await this.bounded(beforeCall())
+        this.check()
+        if (requestAborted()) throw new McpTransportError('aborted', this.dispatched)
+      } else if (method === 'POST' && typeof body === 'string') {
         const message: unknown = JSON.parse(body)
         if (message === null || typeof message !== 'object' || Array.isArray(message)) {
           throw new McpTransportError('invalid_config', this.dispatched)
@@ -277,9 +298,9 @@ export class McpNetworkOperation {
           if (requestAborted()) throw new McpTransportError('aborted', this.dispatched)
         }
       }
-      return this.request(url, pinned, exception?.ca, method, headers, body, requestSignal)
+      return this.request(url, pinned, exception?.ca, method, headers, body, requestSignal, mode)
     }
-    const controlled: FetchLike = async (input, init) => {
+    const controlled: typeof fetch = async (input, init) => {
       try { return await send(input, init) }
       catch (error) {
         this.fail(error instanceof McpTransportError ? error.code : 'protocol_error')
@@ -290,7 +311,7 @@ export class McpNetworkOperation {
   }
 
   private request(url: URL, pinned: { address: string; family: 4 | 6 }, ca: string | undefined,
-    method: string, headers: Headers, body: string | undefined, signal: AbortSignal): Promise<Response> {
+    method: string, headers: Headers, body: string | Uint8Array | undefined, signal: AbortSignal, mode: 'mcp' | 'native'): Promise<Response> {
     return new Promise((resolve, reject) => {
       let controller: ReadableStreamDefaultController<Uint8Array> | undefined
       let ended = false
@@ -312,7 +333,7 @@ export class McpNetworkOperation {
       }, (response) => {
         const status = response.statusCode ?? 500
         // Preserve authentication denial before SDK connect cleanup aborts the request.
-        if (status === 401 || status === 403) { fail('auth_rejected'); response.destroy(); return }
+        if (mode === 'mcp' && (status === 401 || status === 403)) { fail('auth_rejected'); response.destroy(); return }
         if (status >= 300 && status < 400) { response.destroy(); fail('redirect_denied'); return }
         if (response.headers['content-encoding'] && response.headers['content-encoding'] !== 'identity') {
           response.destroy(); fail('unsupported_response'); return
@@ -343,7 +364,7 @@ export class McpNetworkOperation {
         for (const [name, value] of Object.entries(response.headers)) {
           if (value !== undefined) responseHeaders.set(name, Array.isArray(value) ? value.join(', ') : value)
         }
-        const noBody = [204, 205, 304].includes(status)
+        const noBody = method === 'HEAD' || [204, 205, 304].includes(status)
         if (noBody) { ended = true; response.resume() }
         resolve(new Response(noBody ? null : stream, { status, headers: responseHeaders }))
       })

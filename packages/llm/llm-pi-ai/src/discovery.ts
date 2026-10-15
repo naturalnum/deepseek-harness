@@ -262,6 +262,7 @@ export interface StoredModelDiscoveryProfile {
  * @param storedProfile - Host-owned headers and lazy credential resolution for
  *   the named route. It is read only on the path that reaches the network; the
  *   credential is resolved only when the draft carries none.
+ * @param httpFetch - owner-controlled HTTP transport; omission uses global fetch.
  * @returns the advertised models in endpoint order.
  * @throws LlmError when the protocol has no readable listing, the endpoint
  *   refuses or fails the request, or the reply is not a model listing.
@@ -269,6 +270,7 @@ export interface StoredModelDiscoveryProfile {
 export async function discoverModels(
   request: LlmModelDiscoveryOperation,
   storedProfile?: () => StoredModelDiscoveryProfile | undefined,
+  httpFetch: typeof fetch = globalThis.fetch,
 ): Promise<readonly LlmDiscoveredModel[]> {
   // A catalog route already has its answer, and a better one: the installed
   // entries carry context windows and output caps no listing endpoint reports.
@@ -324,7 +326,7 @@ export async function discoverModels(
       headers.set('authorization', `Bearer ${apiKey}`)
     }
     for (const [name, value] of Object.entries(attributionHeaders())) headers.set(name, value)
-    response = await fetch(url, {
+    response = await httpFetch(url, {
       method: 'GET',
       headers,
       ...request.signal === undefined ? {} : { signal: request.signal },

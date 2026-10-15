@@ -209,6 +209,8 @@ Recorded response content appends to the next request and does not invalidate it
 
 ## Known Limitations and Deferred Work
 
+Embedding consumers can reuse the exported native Config, profile resolver and model discovery helpers. An optional adapter or discovery `fetch` injects the HTTP transport while the maintained SDK retains provider conversion and replay. WebSocket transport remains separately provider-owned.
+
 <a id="known-limitations-and-deferred-work"></a>
 
 

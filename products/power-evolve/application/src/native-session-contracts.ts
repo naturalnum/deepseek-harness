@@ -12,6 +12,6 @@ export const nativeSessionFork = z.object({
 /** Native content-search request; visible text is limited to 500 UTF-16 code units and excludes NUL. */
 export const nativeSessionSearch = z.object({ query: z.string().trim().min(1).max(500)
   .refine(query => !query.includes('\0')) }).strict()
-/** The composed DeepSeek adapter has one resolved reasoning policy: disabled. */
-export const nativeModelSelect = z.object({ sessionId, provider: z.literal('power-evolve'),
-  model: z.string().min(1).max(100), reasoningEffort: z.literal('off').optional() }).strict()
+/** Native route and effort identities are checked against this owner's adapter catalog at admission. */
+export const nativeModelSelect = z.object({ sessionId, provider: z.string().min(1).max(128),
+  model: z.string().min(1).max(1024), reasoningEffort: z.string().min(1).max(128).optional() }).strict()

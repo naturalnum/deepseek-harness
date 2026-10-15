@@ -196,6 +196,8 @@ Loop-retained response blocks append to the next request and preserve its earlie
 ## Known Limitations and Deferred Work
 
 
+The adapter accepts an optional owner-provided `fetch` for Messages and its default Files store. Omission keeps the normal global transport; protocol conversion, image handling and replay remain adapter-owned.
+
 <a id="known-limitations-and-deferred-work"></a>
 
 

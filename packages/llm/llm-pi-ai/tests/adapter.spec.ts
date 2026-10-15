@@ -440,9 +440,8 @@ describe('PiAiAdapter provider routing', () => {
 })
 
 describe('provider profile lifecycle', () => {
-  it('keeps adapter helpers off the package root', () => {
+  it('keeps provider conversion helpers off the package root', () => {
     for (const helper of [
-      'resolveProfiles',
       'toPiContext',
       'toPiReplayState',
       'toPiAssistant',

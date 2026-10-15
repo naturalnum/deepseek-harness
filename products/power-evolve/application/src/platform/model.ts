@@ -53,7 +53,8 @@ export async function proxyModel(
   const beta = await transaction(tasks.pool, async (client) => {
     const authorized = await tasks.executionAuthorized(client, bearer(request))
     const selected = settings.parse(authorized.settings)
-    if (body.model !== selected.model || body.max_tokens > selected.maxTokens) throw new PlatformError(403, 'model_not_authorized')
+    if ((selected.provider ?? 'power-evolve') !== 'power-evolve' || body.model !== selected.model
+      || body.max_tokens > selected.maxTokens) throw new PlatformError(403, 'model_not_authorized')
     await requireModelGrant(client, authorized.user_id, selected.model, selected.maxTokens)
     const record = await client.query<{ remote_mcp_selection: unknown; stdio_v2_selection: unknown; workspace_id: string }>(
       `SELECT o.remote_mcp_selection,o.stdio_v2_selection,s.workspace_id FROM pe_operations o

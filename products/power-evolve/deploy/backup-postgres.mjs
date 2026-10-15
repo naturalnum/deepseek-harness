@@ -7,7 +7,7 @@ import { createRequire } from 'node:module'
 import { join } from 'node:path'
 const { Client } = createRequire(new URL('../application/package.json', import.meta.url))('pg')
 /** Only this current cloud generation is eligible for backup and restore. */
-export const CURRENT_SCHEMA_VERSION = 14
+export const CURRENT_SCHEMA_VERSION = 15
 const expectedColumns = JSON.parse(await readFile(new URL(`../application/assets/cloud-schema-v${CURRENT_SCHEMA_VERSION}.manifest.json`, import.meta.url), 'utf8'))
 const identifier = name => '"' + name.replaceAll('"', '""') + '"'
 const hash = value => createHash('sha256').update(value).digest('hex')

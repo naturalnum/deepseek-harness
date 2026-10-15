@@ -190,6 +190,8 @@ session.deriveMessages()         // the derived model history
 
 ## 已知限制与延期工作
 
+`ToolHistoryProjection` 同时导出，供权威消费者从已提交请求头和开发者消息重建原生工具历史。快照保留每个原始请求头引用选中的历史定义。
+
 <a id="known-limitations-and-deferred-work"></a>
 
 

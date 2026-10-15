@@ -1142,8 +1142,12 @@ export class LlmRuntime extends TypertRemoteService {
   }
 }
 
-/** Convert one adapter throw into the stream protocol's terminal outcome. */
-function adapterFailureChunk(error: unknown, signal?: AbortSignal): StreamChunk {
+/** Convert one adapter throw into the native stream protocol's terminal outcome.
+ * @param error Original dispatch or iteration failure.
+ * @param signal Original request lifetime, if present.
+ * @returns Native finish with the maintained failure classification and retry facts.
+ */
+export function adapterFailureChunk(error: unknown, signal?: AbortSignal): Extract<StreamChunk, { type: 'finish' }> {
   const failure = normalizeLlmFailure(error)
   return {
     type: 'finish',

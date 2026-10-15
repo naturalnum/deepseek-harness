@@ -91,6 +91,8 @@ export interface DeepSeekRequestAuth {
 
 /** Constructor options for {@link DeepSeekAdapter}: the operation-local resolution hooks the plugin owns. */
 export interface DeepSeekAdapterOptions<Connection extends DeepSeekConnectionOptions = DeepSeekConnectionOptions> {
+  /** Owner-controlled HTTP transport for Messages and default Files operations; omission uses global fetch. */
+  fetch?: typeof fetch
   /** Report unusable native Messages replay metadata without exposing content or signatures. */
   onReplayDegrade?: (detail: { provider: string; model: string; reason: string }) => void
   /** Report extension fields omitted from one request because the merged request failed to serialize. */

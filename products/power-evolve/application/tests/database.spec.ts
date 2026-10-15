@@ -87,7 +87,7 @@ test('a complete preceding cloud generation upgrades atomically without replacin
   await initializeDatabase(pool)
 })
 
-test.each([2, 3, 4, 5])('cloud version %i retains its records through an ordinary-role adjacent upgrade and permission failure', async (version) => {
+test.each([2, 3, 4, 5, 14])('cloud version %i retains its records through an ordinary-role adjacent upgrade and permission failure', async (version) => {
   const pool = await database()
   await pool.query('SET check_function_bodies=false')
   for (const generation of Array.from({ length: version }, (_unused, index) => index + 1)) {

@@ -1,10 +1,10 @@
 /** Tenant-owned native browser settings and Session model intent; shared Profile configuration stays separate. */
 import type { Pool } from 'pg'
 import { z } from 'zod'
-import { PlatformError, type Identity } from '../contracts.ts'
+import { PlatformError, settings, type Identity } from '../contracts.ts'
 import { transaction } from './database.ts'
 import { requireBrowserAccount } from './account-authority.ts'
-import { requireModelGrant } from './account-settings.ts'
+import { requireModelGrant, resolveModelEffort, retainSessionModelDefaults } from './account-settings.ts'
 import { SessionSeq, type SessionEvent } from '@deepseek-ai/dsh-session'
 import type { EventLimits } from './events.ts'
 import { appendOwnedEvents } from './native-owned-append.ts'
@@ -94,7 +94,9 @@ export class NativePreferences {
    * @param request Native model selection, with cloud placement fixed by Platform.
    * @returns The exact authorized selection; other Sessions retain their own intent.
    */
-  async selectModel(user: Identity, token: string, request: z.infer<typeof nativeModelSelect>): Promise<{ selected: { provider: string; model: string; reasoningEffort: 'off' } }> {
+  async selectModel(user: Identity, token: string, request: z.infer<typeof nativeModelSelect>): Promise<{
+    selected: { provider: string; model: string; reasoningEffort?: string }
+  }> {
     return transaction(this.pool, async (client) => {
       const actor = await requireBrowserAccount(client, token, { lock: 'update' })
       if (actor.userId !== user.userId) throw new PlatformError(401, 'unauthorized')
@@ -105,8 +107,16 @@ export class NativePreferences {
       if (!row) throw new PlatformError(404, 'session_not_found')
       // A live writer owns the append sequence. User intent may only append while no lease exists.
       if (row.leased) throw new PlatformError(409, 'native_session_busy')
-      await requireModelGrant(client, user.userId, request.model, 1)
-      const selected = { provider: request.provider, model: request.model, reasoningEffort: 'off' as const }
+      const effort = await resolveModelEffort(client, user.userId, request.provider, request.model, request.reasoningEffort)
+      await requireModelGrant(client, user.userId, request.model, 1, request.provider, effort)
+      const selected = { provider: request.provider, model: request.model, ...effort === undefined ? {} : { reasoningEffort: effort } }
+      const account = await client.query<{ settings: unknown }>('SELECT settings FROM pe_users WHERE id=$1', [user.userId])
+      const previous = settings.parse(account.rows[0]?.settings)
+      await retainSessionModelDefaults(client, user.userId, previous)
+      await client.query('UPDATE pe_users SET settings=$2 WHERE id=$1', [user.userId, settings.parse({ ...previous,
+        model: selected.model, revision: previous.revision + 1,
+        ...selected.provider === 'power-evolve' ? { provider: undefined, reasoningEffort: undefined }
+          : { provider: selected.provider, reasoningEffort: effort } })])
       const event: SessionEvent = { seq: SessionSeq(row.event_count), time: Date.now(), type: 'model/selection', data: selected }
       await appendOwnedEvents(client, user.userId, { ...row, id: request.sessionId }, [event], this.limits)
       await client.query(`INSERT INTO pe_native_preferences(user_id,namespace,value,revision) VALUES($1,$2,$3,1)

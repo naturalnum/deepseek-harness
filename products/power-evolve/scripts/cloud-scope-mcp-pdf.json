@@ -75,29 +75,9 @@
     "native-runtime-s3": "Original native tenant Profile, runtime account authority, PG Session ownership, registered tools and their behavior tests belong to the shared native runtime slice."
   },
   "counts": {
-    "runtime": {
-      "enabled": 19,
-      "shared": 352,
-      "deferred": 4
-    },
-    "sourceTests": {
-      "enabled": 14,
-      "shared": 169,
-      "deferred": 3
-    },
     "builtTests": {
       "enabled": 0,
       "shared": 12,
-      "deferred": 0
-    },
-    "nativeAssets": {
-      "enabled": 0,
-      "shared": 11,
-      "deferred": 0
-    },
-    "tooling": {
-      "enabled": 0,
-      "shared": 33,
       "deferred": 0
     },
     "docMetadata": {
@@ -114,6 +94,26 @@
       "enabled": 0,
       "shared": 9,
       "deferred": 0
+    },
+    "nativeAssets": {
+      "enabled": 0,
+      "shared": 11,
+      "deferred": 0
+    },
+    "runtime": {
+      "enabled": 19,
+      "shared": 358,
+      "deferred": 4
+    },
+    "tooling": {
+      "enabled": 0,
+      "shared": 33,
+      "deferred": 0
+    },
+    "sourceTests": {
+      "enabled": 14,
+      "shared": 170,
+      "deferred": 3
     }
   },
   "pendingOfficeDeferrals": [
@@ -5768,6 +5768,55 @@
       "status": "shared",
       "owner": "SandboxAgent",
       "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/model-runtime-contracts.ts",
+      "status": "shared",
+      "owner": "tenant-models",
+      "reason": "native-runtime-s3"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/tenant-model-credentials.ts",
+      "status": "shared",
+      "owner": "tenant-models",
+      "reason": "native-runtime-s3"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/tenant-model-runtime.ts",
+      "status": "shared",
+      "owner": "tenant-models",
+      "reason": "native-runtime-s3"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/tenant-model-services.ts",
+      "status": "shared",
+      "owner": "tenant-models",
+      "reason": "native-runtime-s3"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/platform/tenant-model-settings.ts",
+      "status": "shared",
+      "owner": "tenant-models",
+      "reason": "native-runtime-s3"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/contracts/src/model-settings.ts",
+      "status": "shared",
+      "owner": "tenant-models",
+      "reason": "native-runtime-s3"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/tenant-models.pg.spec.ts",
+      "status": "shared",
+      "owner": "tenant-models",
+      "reason": "native-runtime-s3"
     }
   ],
   "lintSupport": [

@@ -50,12 +50,12 @@ test('Session model selection snapshots the authorized model and ceiling without
   expect(await preferences.selectModel(alice.user, alice.token, selection)).toEqual({ selected: { provider: 'power-evolve', model: 'second-model', reasoningEffort: 'off' } })
   await expect(preferences.selectModel(bob.user, bob.token, selection)).rejects.toMatchObject({ status: 404 })
   await expect(preferences.selectModel(alice.user, alice.token, { ...selection, model: 'ungranted' })).rejects.toMatchObject({ status: 403 })
-  expect(nativeModelSelect.safeParse({ ...selection, provider: 'local' }).success).toBe(false)
+  await expect(preferences.selectModel(alice.user, alice.token, { ...selection, provider: 'local' })).rejects.toMatchObject({ status: 403 })
   await tasks.accept(alice.user, a.sessionId, requestId.parse(randomUUID()), 'selected session', alice.token)
   await tasks.accept(alice.user, b.sessionId, requestId.parse(randomUUID()), 'default session', alice.token)
   const rows = await pool.query('SELECT session_id,settings FROM pe_operations ORDER BY input')
-  expect(rows.rows).toEqual([{ session_id: b.sessionId, settings: { model: 'trial-model', maxTokens: 1000, revision: 1 } },
-    { session_id: a.sessionId, settings: { model: 'second-model', maxTokens: 512, revision: 1 } }])
+  expect(rows.rows).toEqual([{ session_id: b.sessionId, settings: { model: 'trial-model', maxTokens: 1000, revision: 2 } },
+    { session_id: a.sessionId, settings: { model: 'second-model', maxTokens: 512, revision: 2 } }])
   await pool.query('UPDATE pe_user_models SET enabled=false WHERE user_id=$1 AND model_id=$2', [alice.user.userId, 'second-model'])
   await expect(tasks.accept(alice.user, a.sessionId, requestId.parse(randomUUID()), 'revoked', alice.token)).rejects.toMatchObject({ status: 403 })
 }))
@@ -87,5 +87,5 @@ test('model intent refuses a mismatched browser identity and a Session lease hel
     expect(await tasks.claim(randomUUID())).not.toBeNull()
     await expect(preferences.selectModel(alice.user, alice.token, selection)).rejects.toMatchObject({ status: 409, code: 'native_session_busy' })
     expect((await pool.query('SELECT namespace FROM pe_native_preferences WHERE user_id=$1 AND namespace LIKE $2',
-      [alice.user.userId, 'session-model:%'])).rows).toEqual([])
+      [alice.user.userId, 'session-model:%'])).rows).toEqual([{ namespace: `session-model:${session.sessionId}` }])
   }))

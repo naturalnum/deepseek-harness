@@ -25,6 +25,7 @@ import type { ToolHistory } from '@deepseek-ai/dsh-llm'
 import { buildForkSeed } from './fork.ts'
 
 export { buildForkSeed } from './fork.ts'
+export { ToolHistoryProjection } from './tool-history.ts'
 export * from './types.ts'
 export { SessionPreparation } from './preparation.ts'
 export type { SessionPreparationOptions } from './preparation.ts'

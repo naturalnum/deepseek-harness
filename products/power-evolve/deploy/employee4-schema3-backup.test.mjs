@@ -1,4 +1,4 @@
-/** Real Schema 14 PostgreSQL transport checks; formal Profile and business acceptance remain separate. */
+/** Real Schema 15 PostgreSQL transport checks; formal Profile and business acceptance remain separate. */
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
@@ -24,7 +24,7 @@ const nativeTables = ['pe_native_input_origins', 'pe_native_input_commands', 'pe
 
 function docker(args, env = process.env) {
   const result = spawnSync('docker', args, { encoding: 'utf8', env, timeout: 60000 })
-  if (result.error || result.signal || result.status !== 0) throw new Error('Owned Schema 14 PostgreSQL container action failed')
+  if (result.error || result.signal || result.status !== 0) throw new Error('Owned Schema 15 PostgreSQL container action failed')
   return result.stdout.trim()
 }
 
@@ -57,7 +57,7 @@ async function nativeFacts(client) {
 
 test('ordinary roles restore native facts, foreground executions and writer tombstones while refusing old or active state', { timeout: 180000 }, async (t) => {
   assert.deepEqual(Object.keys(process.env).filter(name => /^PE_NATIVE_.*_DDL$/u.test(name)), [])
-  assert.equal(APPLICATION_SCHEMA_VERSION, 14)
+  assert.equal(APPLICATION_SCHEMA_VERSION, 15)
   const root = await mkdtemp(join(tmpdir(), 'pe-employee4-schema12-'))
   const id = randomUUID(), suffix = id.replaceAll('-', ''), adminPassword = randomUUID()
   const sourceRole = 'pe_employee4_src_' + suffix, targetRole = 'pe_employee4_dst_' + suffix
@@ -136,7 +136,7 @@ test('ordinary roles restore native facts, foreground executions and writer tomb
       inventories.profiles.push(await inventoryTree(directory))
       await copyTree(directory, join(bundle, 'profiles', String(index)), inventories.profiles[index])
     }
-    const manifest = { format: 1, kind: 'power-evolve-current-cloud-backup', schema: 14, family: 'cloud-native',
+    const manifest = { format: 1, kind: 'power-evolve-current-cloud-backup', schema: 15, family: 'cloud-native',
       database: source.identity, sourceRoots: roots, sourceProfiles: profiles, nativeIntentKey, census: snapshot, inventories,
       files: (await inventoryTree(bundle)).filter(entry => entry.path !== '') }
     await durableJson(join(bundle, 'manifest.json'), manifest)
@@ -152,13 +152,13 @@ test('ordinary roles restore native facts, foreground executions and writer tomb
     query_timeout: 60000, statement_timeout: 60000 })
   try { await initializeDatabase(pool) }
   finally { await pool.end() }
-  assert.equal(CURRENT_SCHEMA_VERSION, 14)
+  assert.equal(CURRENT_SCHEMA_VERSION, 15)
   await requireCurrentSchema(source.client)
   await requireQuiescentDatabase(source.client)
   const old = await connect(names[2], sourceRole)
   await schema(old.client, 2)
   const oldBefore = (await old.client.query('SELECT family,version FROM pe_schema')).rows
-  await assert.rejects(requireCurrentSchema(old.client), /Schema 14/u)
+  await assert.rejects(requireCurrentSchema(old.client), /Schema 15/u)
   assert.deepEqual((await old.client.query('SELECT family,version FROM pe_schema')).rows, oldBefore)
   assert.equal((await old.client.query("SELECT count(*)::integer AS n FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'")).rows[0].n, 71)
   await old.client.query('BEGIN')
@@ -169,7 +169,7 @@ test('ordinary roles restore native facts, foreground executions and writer tomb
   } catch (error) { await old.client.query('ROLLBACK'); throw error }
   const old3Before = (await old.client.query('SELECT family,version FROM pe_schema')).rows
   assert.deepEqual(old3Before, [{ family: 'cloud-native', version: 3 }])
-  await assert.rejects(requireCurrentSchema(old.client), /Schema 14/u)
+  await assert.rejects(requireCurrentSchema(old.client), /Schema 15/u)
   assert.deepEqual((await old.client.query('SELECT family,version FROM pe_schema')).rows, old3Before)
   assert.equal((await old.client.query("SELECT count(*)::integer AS n FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'")).rows[0].n, 73)
   await old.client.query('BEGIN')
@@ -180,10 +180,10 @@ test('ordinary roles restore native facts, foreground executions and writer tomb
   } catch (error) { await old.client.query('ROLLBACK'); throw error }
   const old4Before = (await old.client.query('SELECT family,version FROM pe_schema')).rows
   assert.deepEqual(old4Before, [{ family: 'cloud-native', version: 4 }])
-  await assert.rejects(requireCurrentSchema(old.client), /Schema 14/u)
+  await assert.rejects(requireCurrentSchema(old.client), /Schema 15/u)
   assert.deepEqual((await old.client.query('SELECT family,version FROM pe_schema')).rows, old4Before)
   assert.equal((await old.client.query("SELECT count(*)::integer AS n FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE'")).rows[0].n, 74)
-  for (const version of [5, 6, 7, 8, 9, 10, 11, 12, 13]) {
+  for (const version of [5, 6, 7, 8, 9, 10, 11, 12, 13, 14]) {
     await old.client.query('BEGIN')
     try {
       await old.client.query(await readFile(new URL(`../application/assets/cloud-schema-v${version}.sql`, import.meta.url), 'utf8'))
@@ -192,7 +192,7 @@ test('ordinary roles restore native facts, foreground executions and writer tomb
     } catch (error) { await old.client.query('ROLLBACK'); throw error }
     const historical = (await old.client.query('SELECT family,version FROM pe_schema')).rows
     assert.deepEqual(historical, [{ family: 'cloud-native', version }])
-    await assert.rejects(requireCurrentSchema(old.client), /Schema 14/u)
+    await assert.rejects(requireCurrentSchema(old.client), /Schema 15/u)
     assert.deepEqual((await old.client.query('SELECT family,version FROM pe_schema')).rows, historical)
   }
   await old.client.end(); clients.delete(old.client)
@@ -422,7 +422,7 @@ test('ordinary roles restore native facts, foreground executions and writer tomb
     before = await databaseCensus(source.client)
     dumpDatabase(dump, source, source.config, snapshot)
   } finally { await source.client.query('ROLLBACK') }
-  assert.equal(before.schema, 14); assert.equal(Object.keys(before.tables).length, currentTableCount)
+  assert.equal(before.schema, 15); assert.equal(Object.keys(before.tables).length, currentTableCount)
   assert.equal(before.tables.pe_native_presentations.rows, 0)
   assert.equal(before.tables.pe_native_presentation_entries.rows, 0)
   assert.equal(before.tables.pe_events.rows, 1)
@@ -442,7 +442,7 @@ test('ordinary roles restore native facts, foreground executions and writer tomb
   await target.client.end(); clients.delete(target.client)
   const bundle = await archive('schema12-bundle', dump, before)
   const restore = await restoreBackup(restoreConfig(bundle, target, 'restored'))
-  assert.equal(restore.schema, 14); assert.equal(restore.tables, currentTableCount)
+  assert.equal(restore.schema, 15); assert.equal(restore.tables, currentTableCount)
   assert.equal(restore.allRowsVerified, true); assert.equal(restore.allFilesVerified, true)
   assert.deepEqual(await readFile(restoreConfig(bundle, target, 'restored').nativeIntentKeyFile), nativeIntentKeyBytes)
   assert.equal(restore.readinessChecked, false); assert.equal(restore.profilesRequireRebinding, true)
@@ -487,7 +487,7 @@ test('ordinary roles restore native facts, foreground executions and writer tomb
   assert.equal((await occupied.client.query('SELECT count(*)::text AS n FROM employee4_existing')).rows[0].n, '0')
   if (process.env.PE_SCHEMA12_BACKUP_EVIDENCE_DIR) {
     await mkdir(process.env.PE_SCHEMA12_BACKUP_EVIDENCE_DIR, { recursive: true, mode: 0o700 })
-    await writeFile(join(process.env.PE_SCHEMA12_BACKUP_EVIDENCE_DIR, 'postgres-acceptance.json'), JSON.stringify({ schema: 14,
+    await writeFile(join(process.env.PE_SCHEMA12_BACKUP_EVIDENCE_DIR, 'postgres-acceptance.json'), JSON.stringify({ schema: 15,
       tables: currentTableCount, ordinarySource: true, ordinaryTarget: true, old2RefusedWithoutWrites: true,
       old3RefusedWithoutWrites: true, old4RefusedWithoutWrites: true, old5RefusedWithoutWrites: true,
       old6RefusedWithoutWrites: true, old7RefusedWithoutWrites: true,
