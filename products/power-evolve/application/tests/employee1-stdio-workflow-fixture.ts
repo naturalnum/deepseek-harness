@@ -1,5 +1,6 @@
 /** Real PG STDIO services; private writer observations are synthetic inputs, with no Pod or user program started. */
 import { randomBytes, randomUUID } from 'node:crypto'
+import type { StdioConfigurationV2 } from '@power-evolve/contracts/stdio-management'
 import type { PoolClient } from 'pg'
 import { stdioCheckRequestV2, stdioCloudDeploymentV2, stdioPreparedV2, stdioReceiptRequestV2,
   type StdioExecutionRefV2, type StdioTaskV2 } from '@power-evolve/contracts/stdio-mcp'
@@ -46,7 +47,9 @@ export const workflowRequest = () => stdioReceiptRequestV2.shape.requestId.parse
 export const workflowDigest = (domain: StdioDigestDomainV2, value: unknown) => stdioSha256V2(domain, value,
   { maxDepth: workflowLimits.maxJsonDepth, maxNodes: workflowLimits.maxJsonNodes, maxBytes: workflowLimits.maxInputBytes })
 
-async function createWorkflow(base: Parameters<Parameters<typeof cloudFixture>[0]>[0], approvalLifetimeMs: number) {
+async function createWorkflow(base: Parameters<Parameters<typeof cloudFixture>[0]>[0], approvalLifetimeMs: number,
+  configure?: (pool: typeof base.pool, owner: Awaited<ReturnType<typeof base.identities.login>>) =>
+  Promise<Partial<StdioConfigurationV2>>) {
   const { pool, files, identities, bob } = base, password = randomUUID()
   await seedNewUser(pool, 'stdio-owner', await hashPassword(password), { model: 'trial-model', maxTokens: 1000, revision: 1 })
   const owner = await identities.login('stdio-owner', password), approval = await identities.login('stdio-owner', password, 'approval')
@@ -83,7 +86,7 @@ async function createWorkflow(base: Parameters<Parameters<typeof cloudFixture>[0
   const authorization = new StdioAuthorizationServiceV2(pool, { limits: workflowLimits, approvalKey: randomBytes(32),
     approvalLifetimeMs, capture })
   const session = await tasks.create(owner.user, requestId.parse(randomUUID()), owner.token)
-  const configuration = { name: 'Workflow process', invocation: { program: 'node', argv: ['', 'literal;$(not-a-shell)', '中文'], cwd: '.' } }
+  const configuration = { ...await configure?.(pool, owner), name: 'Workflow process', invocation: { program: 'node', argv: ['', 'literal;$(not-a-shell)', '中文'], cwd: '.' } }
   const connection = await connections.create(owner.token, { requestId: workflowRequest(), configuration })
   const discovery = await admission.check(owner.token, stdioCheckRequestV2.parse({ requestId: workflowRequest(),
     connectionId: connection.connectionId,
@@ -168,6 +171,7 @@ async function createWorkflow(base: Parameters<Parameters<typeof cloudFixture>[0
  * @returns Completion after the fixture releases only its own database and temporary files.
  */
 export async function stdioWorkflow(run: (fixture: Awaited<ReturnType<typeof createWorkflow>>) => Promise<void>,
-  approvalLifetimeMs = 300_000): Promise<void> {
-  return cloudFixture(async base => run(await createWorkflow(base, approvalLifetimeMs)))
+  approvalLifetimeMs = 300_000,
+  configure?: Parameters<typeof createWorkflow>[2]): Promise<void> {
+  return cloudFixture(async base => run(await createWorkflow(base, approvalLifetimeMs, configure)))
 }

@@ -98,6 +98,7 @@ import { StdioRunnerOrchestrator } from './stdio-runner.ts'
 import { loadStdioPlatformConfigV2 } from './stdio-v2-platform-config.ts'
 import { StdioOperationAdmissionV2 } from './stdio-v2-operation-admission.ts'
 import { createStdioCloudServicesV2, STDIO_PRODUCT_RESERVED_NAMES_V2 } from './stdio-v2-services.ts'
+import { stdioEnvironmentOptions } from '@power-evolve/contracts/stdio-environment'
 import { stdioWorkerIdV2 } from '@power-evolve/contracts/stdio-runtime'
 import { stdioActionRequestV2, stdioApprovalRequestV2, stdioCheckRequestV2,
   stdioReceiptRequestV2 } from '@power-evolve/contracts/stdio-mcp'
@@ -760,10 +761,26 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       sendJson(res, uploaded.item, uploaded.created ? 201 : 200)
       return
     }
-    if (path === '/ssh/upload' || path === '/mcp/connections/upload') {
+    if (path === '/ssh/upload' || path === '/mcp/connections/upload' || path === '/stdio-environment/upload') {
       if (uploadPreflight(req, res, config.hostOrigin)) return
       if (req.headers['content-type'] !== 'application/octet-stream') throw new PlatformError(415, 'invalid_content_type')
-      if (path === '/mcp/connections/upload') {
+      if (path === '/stdio-environment/upload') {
+        if (!stdioV2 || !stdioV2Config) throw new PlatformError(503, 'stdio_v2_unavailable')
+        const maximum = stdioEnvironmentOptions.parse(stdioV2Config.settings.environment ?? {}).maxUploadBytes
+        const chunks: Buffer[] = []
+        let length = 0
+        try {
+          for await (const chunk of req) {
+            if (!Buffer.isBuffer(chunk)) throw new PlatformError(400, 'invalid_body')
+            length += chunk.length
+            if (length > maximum) throw new PlatformError(413, 'stdio_environment_too_large')
+            chunks.push(chunk)
+          }
+          const bytes = Buffer.concat(chunks)
+          try { sendJson(res, await stdioV2.environment.upload(bearer(req), bytes), 201) }
+          finally { bytes.fill(0) }
+        } finally { chunks.forEach(chunk => chunk.fill(0)) }
+      } else if (path === '/mcp/connections/upload') {
         if (!remoteMcp) throw new PlatformError(503, 'mcp_unavailable')
         sendJson(res, await remoteMcp.upload(bearer(req), req), 201)
       } else sendJson(res, await ssh.upload(bearer(req), req), 201)
@@ -947,6 +964,8 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
       const input = await readJson(req, stdioV2Config.settings.limits.maxInputBytes)
       const { requests, connections, discovery } = stdioV2
       switch (path) {
+        case '/stdio-v2/environment/ticket': sendJson(res, await stdioV2.environment.issueTicket(token, input, config.platformOrigin)); return
+        case '/stdio-v2/environment/receipt': sendJson(res, await stdioV2.environment.receipt(token, input)); return
         case '/stdio-v2/actions/list': {
           const value = listRequest.extend({ sessionId: sessionId.optional() }).parse(input)
           sendJson(res, await stdioV2.actions.list(token, { offset: value.offset, limit: value.limit,

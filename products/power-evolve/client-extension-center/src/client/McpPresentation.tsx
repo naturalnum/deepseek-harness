@@ -72,6 +72,7 @@ export function McpList({ children }: { readonly children: ReactNode }): ReactNo
 
 /** One original connection row with independently interactive enablement. */
 export interface McpListRowProps {
+  readonly icon?: string
   readonly openLabel: string
   readonly title: string
   readonly badge?: ReactNode
@@ -92,7 +93,7 @@ export function McpListRow(props: McpListRowProps): ReactNode {
         aria-label={props.openLabel}
         onClick={props.onOpen}
       >
-        <span className="pext-mcp-glyph" aria-hidden="true"><IconApiOutlineRegular size={18} /></span>
+        <span className="pext-mcp-glyph" aria-hidden="true">{props.icon ? <img src={props.icon} alt="" /> : <IconApiOutlineRegular size={18} />}</span>
         <span className="pext-mcp-row-copy">
           <span className="pext-mcp-row-title">
             <strong>{props.title}</strong>
@@ -112,6 +113,7 @@ export function McpListRow(props: McpListRowProps): ReactNode {
 
 /** Original detail hero, back action, and caller-owned cards. */
 export interface McpDetailFrameProps {
+  readonly icon?: string
   readonly label: string
   readonly backLabel: string
   readonly name: string
@@ -132,7 +134,7 @@ export function McpDetailFrame(props: McpDetailFrameProps): ReactNode {
       </button>
       <header className="pext-mcp-detail-hero">
         <span className="pext-mcp-glyph pext-mcp-glyph-large" aria-hidden="true">
-          <IconApiOutlineRegular size={22} />
+          {props.icon ? <img src={props.icon} alt="" /> : <IconApiOutlineRegular size={22} />}
         </span>
         <div className="pext-mcp-detail-hero-copy">
           <div className="pext-mcp-detail-title"><h2>{props.name}</h2>{props.status}</div>

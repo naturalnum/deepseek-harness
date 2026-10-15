@@ -46,6 +46,14 @@
     "./storage": {
       "types": "./lib/types/storage.d.ts",
       "default": "./lib/storage.js"
+    },
+    "./mcp-metadata": {
+      "types": "./lib/types/mcp-metadata.d.ts",
+      "default": "./lib/mcp-metadata.js"
+    },
+    "./stdio-environment": {
+      "types": "./lib/types/stdio-environment.d.ts",
+      "default": "./lib/stdio-environment.js"
     }
   },
   "scripts": {

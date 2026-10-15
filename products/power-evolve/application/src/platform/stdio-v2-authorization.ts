@@ -2,8 +2,9 @@
 import { randomUUID } from 'node:crypto'
 import type { Pool, PoolClient } from 'pg'
 import { z } from 'zod'
+import { stdioSavedConfigurationV2 } from '@power-evolve/contracts/stdio-management'
 import { stdioActionRequestV2, stdioApprovalBindingV2, stdioApprovalRequestV2, stdioDispatchV2,
-  stdioExecutorOwnerV2, stdioInvocationV2, stdioJsonV2, stdioLimitsV2, stdioPreparedV2,
+  stdioExecutorOwnerV2, stdioJsonV2, stdioLimitsV2, stdioPreparedV2,
   stdioReceiptRequestV2, stdioStartAuthorizationV2, stdioStartPermitV2, stdioTaskSchemasV2,
   type StdioActionIdV2, type StdioDigestV2, type StdioExecutionRefV2, type StdioLimitsV2,
   type StdioPreparedV2, type StdioTaskV2 } from '@power-evolve/contracts/stdio-mcp'
@@ -150,8 +151,8 @@ export class StdioAuthorizationServiceV2 {
         || action.continuation_request_id === null) this.deny('stdio_v2_origin_changed')
     const config = (await client.query<Record<string, unknown>>(`SELECT configuration,config_digest FROM pe_stdio_v2_configurations
       WHERE connection_id=$1 AND user_id=$2 AND revision=$3`, [action.connection_id, userId, action.config_revision])).rows[0]
-    const parsed = z.object({ configuration: stdioJsonV2(this.digests.budget).pipe(z.object({
-      name: z.string().min(1).refine(value => !value.includes('\0')), invocation: stdioInvocationV2 }).strict()), config_digest: digest }).parse(config)
+    const parsed = z.object({ configuration: stdioJsonV2(this.digests.budget)
+      .transform((value): unknown => value).pipe(stdioSavedConfigurationV2), config_digest: digest }).parse(config)
     if (this.digests.sha('configuration', parsed.configuration) !== action.config_digest || parsed.config_digest !== action.config_digest
       || !this.digests.same(task.invocation, parsed.configuration.invocation)) this.deny('stdio_v2_configuration_changed')
     return { action, task, executionRef, execution, connection }

@@ -194,6 +194,50 @@ function renderTab(
 }
 
 describe('PluginManagerPage', () => {
+  it('combines category, search and installed filters and retains them after a native detail visit', () => {
+    renderTab({ packages: [pkg({ name: 'dsh-bash-main' }),
+      pkg({ name: 'dsh-bash-extra', installed: false, optional: true }),
+      pkg({ name: 'dsh-agent-team' }), pkg({ name: 'dsh-web-search' }),
+      pkg({ name: 'dsh-mcp-connector' }), pkg({ name: 'dsh-custom' })] })
+    const cards = () => Array.from(document.querySelectorAll('[data-plugin-package]'), card => card.getAttribute('data-plugin-package'))
+    for (const [label, expected] of [
+      [en.categoryAgents, ['dsh-agent-team']], [en.categorySearch, ['dsh-web-search']],
+      [en.categoryIntegrations, ['dsh-mcp-connector']], [en.categoryOther, ['dsh-custom']],
+      [en.categoryExecution, ['dsh-bash-extra', 'dsh-bash-main']],
+    ] as const) {
+      fireEvent.click(screen.getByRole('button', { name: label }))
+      expect(cards()).toEqual(expected)
+    }
+    fireEvent.change(screen.getByRole('searchbox', { name: en.searchCatalog }), { target: { value: '  BASH  ' } })
+    fireEvent.click(screen.getByRole('switch', { name: en.installedOnly }))
+    expect(cards()).toEqual(['dsh-bash-main'])
+    fireEvent.click(screen.getByText('dsh-bash-main'))
+    expect(screen.queryByRole('searchbox', { name: en.searchCatalog })).toBeNull()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: en.backToList }))
+    expect(screen.getByRole('searchbox', { name: en.searchCatalog })).toHaveProperty('value', '  BASH  ')
+    expect(screen.getByRole('button', { name: en.categoryExecution }).getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByRole('switch', { name: en.installedOnly }).getAttribute('aria-checked')).toBe('true')
+    expect(cards()).toEqual(['dsh-bash-main'])
+    fireEvent.change(screen.getByRole('searchbox', { name: en.searchCatalog }), { target: { value: 'missing' } })
+    expect(screen.getByText(en.searchEmpty)).toBeTruthy()
+    fireEvent.change(screen.getByRole('searchbox', { name: en.searchCatalog }), { target: { value: '' } })
+    fireEvent.click(screen.getByRole('button', { name: en.allCategories }))
+    fireEvent.click(screen.getByRole('switch', { name: en.installedOnly }))
+    expect(cards()).toHaveLength(6)
+  })
+
+  it('opens a real recommended contribution in the native detail page', () => {
+    renderTab({}, { items: [{ id: 'shell', label: 'Terminal' }] }, {
+      'plugins.item:shell': view => view === 'summary' ? 'Run a terminal command' : 'Terminal settings',
+    })
+    fireEvent.click(screen.getByRole('button', { name: en.recommendationOpen.replace('{name}', 'Terminal') }))
+    expect(screen.getByText('Terminal settings')).toBeTruthy()
+    expect(screen.queryByRole('dialog')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: en.backToList }))
+    expect(screen.getByRole('searchbox', { name: en.searchCatalog })).toBeTruthy()
+  })
+
   it('retains shared Profile details while disabling writes for a read-only peer', () => {
     const { actions } = renderTab({ managementWritable: false,
       packages: [pkg({ readOnlyReason: 'permission-required' })] })
@@ -1391,8 +1435,8 @@ describe('PluginManagerPage', () => {
         installed: 'dsh-x',
       },
     })
-    expect(screen.getByText(en.installedTitle)).toBeTruthy()
-    expect(screen.getByText(en.installedTitle).parentElement?.querySelector('[data-state="done"]')).not.toBeNull()
+    expect(screen.getByText(en.installedTitle, { selector: 'h2' })).toBeTruthy()
+    expect(screen.getByText(en.installedTitle, { selector: 'h2' }).parentElement?.querySelector('[data-state="done"]')).not.toBeNull()
     // A path without a description reads by its kind.
     expect(screen.getByText('dsh-x')).toBeTruthy()
     expect(screen.getByText(en.installSubjectPath)).toBeTruthy()
@@ -1959,7 +2003,7 @@ it('offers bundle-owned guidance only after explicit enablement and navigates to
   set({ packages: [pkg()] })
   expect(screen.queryByText('Go to setup')).toBeNull()
   set({ packages: [pkg({ enabled: false })] })
-  fireEvent.click(screen.getByRole('switch'))
+  fireEvent.click(screen.getByRole('switch', { name: /Enable /u }))
   expect(actions.setEnabled).toHaveBeenCalledWith(name, true)
   expect(screen.queryByText('Go to setup')).toBeNull()
   set({ packages: [pkg()], busy: [name] })
@@ -1975,14 +2019,14 @@ it('dismisses activation guidance until the user enables the bundle again', () =
   const { set } = renderTab({ packages: [pkg({ enabled: false })] }, {}, {
     [`plugins.bundle.activation:${name}`]: (_view, owner) => <button onClick={(owner as PluginActivationOwnerProps).onDismiss}>Later</button>,
   })
-  fireEvent.click(screen.getByRole('switch'))
+  fireEvent.click(screen.getByRole('switch', { name: /Enable /u }))
   set({ packages: [pkg()] })
   fireEvent.click(screen.getByText('Later'))
   set({ packages: [pkg()] })
   expect(screen.queryByText('Later')).toBeNull()
-  fireEvent.click(screen.getByRole('switch'))
+  fireEvent.click(screen.getByRole('switch', { name: /Enable /u }))
   set({ packages: [pkg({ enabled: false })] })
-  fireEvent.click(screen.getByRole('switch'))
+  fireEvent.click(screen.getByRole('switch', { name: /Enable /u }))
   set({ packages: [pkg()] })
   expect(screen.getByText('Later')).toBeTruthy()
 })

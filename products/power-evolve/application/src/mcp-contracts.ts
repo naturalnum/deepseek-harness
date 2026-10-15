@@ -1,5 +1,6 @@
 /** Version-one management contracts. Secret values belong only to direct Platform intake. */
 import { z } from 'zod'
+import { mcpPresentation, type McpPresentation } from '@power-evolve/contracts/mcp-metadata'
 import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { RequestId, UserId } from './contracts.ts'
@@ -45,6 +46,7 @@ const headerName = z.string().trim().min(1).max(200)
 
 /** Public configuration carries credential intent, never credential bytes. */
 export const mcpConfigurationInput = z.object({
+  presentation: mcpPresentation.optional(),
   displayName: text, serverUrl: z.string().trim().min(1).max(2048), enabled: z.boolean(),
   authentication: z.discriminatedUnion('kind', [
     z.object({ kind: z.literal('none') }).strict(),
@@ -103,6 +105,7 @@ export type McpCredentialUpload = z.infer<typeof mcpCredentialUpload>
 export type McpDiscoveredTool = z.infer<typeof mcpDiscoveredTool>
 /** Public live/historical connection metadata with explicit credential readiness. */
 export interface McpConnection {
+  presentation?: McpPresentation | undefined
   connectionId: McpConnectionId
   revision: number
   configurationRevision: number

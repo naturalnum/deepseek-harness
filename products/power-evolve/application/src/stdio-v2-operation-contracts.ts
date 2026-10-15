@@ -1,8 +1,9 @@
 /** Frozen STDIO operation selections retain complete catalog JSON; they grant no execution authority. */
 import { z } from 'zod'
+import { stdioSavedConfigurationV2 } from '@power-evolve/contracts/stdio-management'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { stdioCatalogV2, stdioCheckRequestV2, stdioDeploymentV2, stdioDigestV2, stdioExecutorImageV2,
-  stdioImageMatchesDeploymentV2, stdioInvocationV2, stdioJsonV2, stdioLimitsV2, stdioObjectV2,
+  stdioImageMatchesDeploymentV2, stdioJsonV2, stdioLimitsV2, stdioObjectV2,
   stdioScopeV2, type StdioCatalogIdV2, type StdioLimitsV2, type StdioObjectV2,
   type StdioToolV2 } from '@power-evolve/contracts/stdio-mcp'
 import { stdioCanonicalJsonV2 } from '@power-evolve/contracts/stdio-mcp-json'
@@ -30,8 +31,7 @@ const tool = z.object({ rawName: z.string().min(1), model, modelDigest: stdioDig
 export const stdioOperationConnectionFieldsV2 = {
   formatVersion: z.literal(2), connectionId: stdioCheckRequestV2.shape.connectionId,
   configRevision: stdioCheckRequestV2.shape.expectedRevision, configDigest: stdioDigestV2,
-  configuration: z.object({ name: z.string().min(1).refine(value => !value.includes('\0')),
-    invocation: stdioInvocationV2 }).strict(),
+  configuration: stdioSavedConfigurationV2,
   limits: stdioLimitsV2, scopeBinding: stdioScopeV2, expectedDeploymentPin: stdioDeploymentV2,
   catalogId: z.uuid().transform(value => brandString<StdioCatalogIdV2>(value)), catalogDigest: stdioDigestV2,
   rawCatalog: z.array(rawTool), catalogImageExpectation: stdioExecutorImageV2,
@@ -64,14 +64,15 @@ function operationSchemas(limits: StdioLimitsV2, admission: StdioOperationAdmiss
     }
   })
   const bounded = stdioJsonV2(jsonLimits)
-  const input = bounded.pipe(base)
-  const connection = bounded.pipe(base.safeExtend({ tools: fields.tools }).strict().superRefine((value, ctx) => {
+  const input = bounded.transform((value): unknown => value).pipe(base)
+  const connectionSchema = base.safeExtend({ tools: fields.tools }).strict().superRefine((value, ctx) => {
     if (value.tools.length !== value.rawCatalog.length || value.tools.some((entry, index) => {
       const descriptor = value.rawCatalog[index]
       return !descriptor || descriptor.name !== entry.rawName
         || stdioCanonicalJsonV2(descriptor.inputSchema, jsonLimits) !== stdioCanonicalJsonV2(entry.model.parameters, jsonLimits)
     })) ctx.addIssue({ code: 'custom', message: 'stdio_v2_operation_model_map_invalid' })
-  }))
+  })
+  const connection = bounded.transform((value): unknown => value).pipe(connectionSchema)
   const selection = stdioJsonV2({ ...jsonLimits, maxBytes: accepted.maxSnapshotBytes })
     .pipe(z.array(connection).max(accepted.maxConnections).superRefine((value, ctx) => {
       const ids = new Set(value.map(entry => entry.connectionId))

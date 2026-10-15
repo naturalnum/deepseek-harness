@@ -59,8 +59,8 @@ export function apply(ctx: Context): void {
     name: 'sidebar.panellist', id: SKILLS_PANEL_ID, order: 20,
     locale: NS, label: () => t('skillsNav'),
   }, SkillsPanelIcon))
-  ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
-    name: 'plugins.bundle.config', key: '@power-evolve/host', locale: NS,
+  ctx.slots.inject('plugins.item', () => ctx.slots.register({
+    name: 'plugins.item', id: 'power-evolve-mcp', order: 50, label: () => t('mcpPluginTitle'), locale: NS,
     inject: () => ({ personalMcp, sessions: mcpSessions, stdioV2, approvalUrl }),
   }, ConnectorConfiguration))
 }

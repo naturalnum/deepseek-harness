@@ -21,6 +21,7 @@ export interface PersonalMcpHeaderFormValue {
 
 /** Browser-local form state; credential values never enter a Host request. */
 export interface PersonalMcpFormValue {
+  readonly presentation?: import('@power-evolve/contracts/mcp-metadata').McpPresentation
   readonly displayName: string
   readonly serverUrl: string
   readonly authenticationKind: PersonalMcpAuthenticationKind
@@ -54,6 +55,7 @@ export function emptyPersonalMcpForm(): PersonalMcpFormValue {
 export function personalMcpFormFromConnection(connection: PersonalMcpConnection): PersonalMcpFormValue {
   const kind = connection.authentication.kind
   return {
+    ...(connection.presentation === undefined ? {} : { presentation: connection.presentation }),
     displayName: connection.display_name,
     serverUrl: connection.server_url,
     authenticationKind: kind,
@@ -136,6 +138,7 @@ export function buildPersonalMcpCreateRequest(
     ? 'none'
     : form.authenticationKind
   return {
+    ...(form.presentation === undefined ? {} : { presentation: form.presentation }),
     display_name: form.displayName.trim().normalize('NFC'),
     server_url: form.serverUrl.trim(),
     authentication: { kind },
@@ -169,6 +172,7 @@ export function buildPersonalMcpUpdateRequest(
     || kind !== 'bearer' && currentKind === 'bearer' && current.authentication.secret_configured)
   return {
     expected_revision: current.revision,
+    ...(form.presentation === undefined ? {} : { presentation: form.presentation }),
     display_name: form.displayName.trim().normalize('NFC'),
     server_url: form.serverUrl.trim(),
     authentication: { kind },

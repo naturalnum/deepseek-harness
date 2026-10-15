@@ -35,6 +35,8 @@ Choose the record family for the operation; the linked source owns its fields an
 | Owned storage and Workspace registration | `@power-evolve/contracts/storage` | [Storage records](src/storage.ts) |
 | Workspace document conversion requests and results | `@power-evolve/contracts/office-preview` | [Office records](src/office-preview.ts) |
 | Original Cloud execution inspection and reconciliation | `@power-evolve/contracts/execution-resolution` | [Resolution records](src/execution-resolution.ts) |
+| MCP icons, notes and masked environment references | `@power-evolve/contracts/mcp-metadata` | [MCP metadata](src/mcp-metadata.ts) |
+| Direct Platform environment upload metadata and bytes | `@power-evolve/contracts/stdio-environment` | [Environment records](src/stdio-environment.ts) |
 | Bounded literal STDIO connection configuration | `@power-evolve/contracts/stdio-management` | [Management records](src/stdio-management.ts) |
 | Frozen STDIO catalogs, tasks and first-start permits | `@power-evolve/contracts/stdio-mcp` | [Task records](src/stdio-mcp.ts) |
 | Worker leases, SDK replies and cleanup observations | `@power-evolve/contracts/stdio-runtime` | [Runtime records](src/stdio-runtime.ts) |

@@ -16,7 +16,7 @@ import {
   Button, IconCheckCircleFillRegular, IconChevronDownOutlineRegular, IconChevronLeftOutlineMedium,
   IconChevronRightOutlineRegular, IconCloseOutlineMedium,
   IconDownloadOutlineRegular, IconInfoOutlineRegular, IconPlusOutlineRegular, IconRefreshOutlineRegular, IconTrashOutlineRegular,
-  IconWarningOutlineRegular, Input, Menu, MenuItemButton, Modal, pointerModality,
+  IconWarningOutlineRegular, IconSearchOutlineRegular, Input, Menu, MenuItemButton, Modal, pointerModality,
   PluginArtworkDefault, PluginArtworkLoop, PluginArtworkSearch, PluginArtworkSubagent, PluginArtworkTerminal,
   StateDot, Switch, Tag, TerminalBlock, Toast, Tooltip, useAnchoredPosition, useDismissOnOutsidePointer,
   type IconProps, type StateDotState, type TerminalBlockLabels,
@@ -34,6 +34,7 @@ import { managementText, noticeText, packageText, registryText, rowText, type Tr
 import type { PluginPackageRef, PluginRowRef, PluginsSubject } from './slot-contract.ts'
 import type { ConfigPageForm } from './slot-contract.ts'
 import css from './PluginManagerPage.module.css'
+import { pluginCategory } from './catalog.ts'
 
 /** Full component props assembled by the main slot renderer. */
 export type PluginManagerPageProps =
@@ -1345,7 +1346,10 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
   const state = props.usePluginManager(snapshot => snapshot)
   const ledger = props.useConfigLedger(snapshot => snapshot)
   // What is open; a package that leaves the list (uninstalled) drops back to the cards.
-  const view = props.useStore(state => state.view), { setView } = props.actions
+  const view = props.useStore(state => state.view)
+  const query = props.useStore(state => state.query), category = props.useStore(state => state.category)
+  const installedOnly = props.useStore(state => state.installedOnly)
+  const { setView, setQuery, setCategory, setInstalledOnly } = props.actions
   const [activation, setActivation] = useState<string | null>(null)
   useEffect(() => { ensure() }, [ensure])
   // A package an install just enabled: scroll it into view and mark it for a moment.
@@ -1364,8 +1368,22 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
   // Plugins section's Plugin list tab.
   const listed = state.packages.filter(pkg => !BUILTIN_PROFILE_BUNDLES.has(pkg.name)
     && (pkg.installed || pkg.optional || pkg.error !== undefined))
-  const mine = listed.filter(pkg => pkg.installed || !pkg.optional)
-  const official = listed.filter(pkg => pkg.optional && !pkg.installed)
+  const normalizedQuery = query.trim().toLocaleLowerCase()
+  const matches = (identity: string, text: string, installed: boolean): boolean =>
+    (!installedOnly || installed) && (!category || pluginCategory(identity) === category)
+      && text.toLocaleLowerCase().includes(normalizedQuery)
+  const filtered = listed.filter((pkg) => {
+    const text = packageText(pkg, resolveText)
+    return matches(pkg.name, `${text.title} ${text.description} ${pkg.name}`, pkg.installed || !pkg.optional)
+  })
+  const mine = filtered.filter(pkg => pkg.installed || !pkg.optional)
+  const official = filtered.filter(pkg => pkg.optional && !pkg.installed)
+  const filteredItems = ledger.items.filter(item => matches(item.id, item.label, true))
+  const recommendations = ledger.items.filter(item => ['shell', 'subagent', 'web-search'].includes(item.id)).slice(0, 3)
+  const categories = [
+    ['execution', 'categoryExecution'], ['agents', 'categoryAgents'], ['search', 'categorySearch'],
+    ['integrations', 'categoryIntegrations'], ['other', 'categoryOther'],
+  ] as const
   const loaded = state.status === 'ready' || state.status === 'error'
   const refreshing = state.refreshStatus === 'refreshing'
   const openPkg = view.kind === 'package' || view.kind === 'row' ? listed.find(pkg => pkg.name === view.name) : undefined
@@ -1396,7 +1414,7 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
   // The Official group: the bundles the installation ships, then the plugins that registered their configuration.
   const officialCards = [
     ...official.map(packageCard),
-    ...ledger.items.map(item => (
+    ...filteredItems.map(item => (
       <ItemCard key={`item:${item.id}`} item={item} t={t} renderSlot={renderSlot} onOpen={() => { setView({ kind: 'item', id: item.id }) }} />
     )),
   ]
@@ -1447,6 +1465,27 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
           </header>
         )
         : null}
+      {showsCards && loaded ? <div className={css.catalogControls}>
+        {recommendations.length > 0 && <section aria-label={t('recommended')}>
+          <h2 className={css.sectionLabel}>{t('recommended')}</h2>
+          <div className={css.recommendations}>{recommendations.map(item => <button key={item.id} type="button"
+            className={css.recommendation} aria-label={t('recommendationOpen', { name: item.label })}
+            onClick={() => { setView({ kind: 'item', id: item.id }) }}>
+            <span className={css.recommendationHead}>{itemArtwork(item.id)}<strong>{item.label}</strong>
+              <IconChevronRightOutlineRegular size={15} /></span>
+            <span className={css.recommendationSummary}>{renderSlot('plugins.item', { view: 'summary' }, { only: item.id })}</span>
+          </button>)}</div>
+        </section>}
+        <label className={css.catalogSearch}><IconSearchOutlineRegular size={17} />
+          <input type="search" value={query} aria-label={t('searchCatalog')} placeholder={t('searchCatalog')}
+            onChange={(event) => { setQuery(event.target.value) }} /></label>
+        <div className={css.filterBar}><div className={css.categories} aria-label={t('catalogCategory')}>
+          <button type="button" aria-pressed={category === ''} onClick={() => { setCategory('') }}>{t('allCategories')}</button>
+          {categories.map(([value, label]) => <button key={value} type="button" aria-pressed={category === value}
+            onClick={() => { setCategory(value) }}>{t(label)}</button>)}
+        </div><label className={css.installedFilter}>{t('installedOnly')}<Switch checked={installedOnly}
+          label={t('installedOnly')} onChange={setInstalledOnly} /></label></div>
+      </div> : null}
       {showsCards && state.status === 'loading' ? <ListSkeleton label={t('loading')} /> : null}
       {showsCards && state.status === 'unavailable' ? (
         <p className={`${css.status} ${css.statusWithDot}`} role="status">
@@ -1510,7 +1549,7 @@ export function PluginManagerPage(props: PluginManagerPageProps): ReactNode {
         : null}
       {loaded && showsCards
         ? officialCards.length === 0 && mine.length === 0 && state.status !== 'error'
-          ? <p className={css.empty}>{t('empty')}</p>
+          ? <p className={css.empty}>{t(query || category || installedOnly ? 'searchEmpty' : 'empty')}</p>
           : (
             <>
               {renderGroup('official', t('officialTitle'), officialCards)}

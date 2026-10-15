@@ -1,5 +1,5 @@
 /** MCP controls rendered inside the official Host bundle page. */
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import { PersonalMcpPage } from './PersonalMcpPage.tsx'
@@ -10,7 +10,7 @@ import type { StdioV2Port } from './stdio-v2-api.ts'
 import { StdioV2State } from './stdio-v2-state.ts'
 
 /** Native bundle seat, localized text and account-scoped connector APIs. */
-export type ConnectorConfigurationProps = PropsRuntime<'plugins.bundle.config'>
+export type ConnectorConfigurationProps = PropsRuntime<'plugins.item'>
   & PropsLocale<'powerEvolve.extensionCenter'> & {
     readonly personalMcp: PersonalMcpConnectionPort
     readonly sessions: PersonalMcpSessionSource
@@ -22,10 +22,15 @@ export type ConnectorConfigurationProps = PropsRuntime<'plugins.bundle.config'>
  * @param props Native configuration seat and current account ports.
  * @returns Personal remote MCP and cloud STDIO sections.
  */
-export function ConnectorConfiguration({ personalMcp, sessions, stdioV2, approvalUrl, t }: ConnectorConfigurationProps) {
+export function ConnectorConfiguration({ personalMcp, sessions, stdioV2, approvalUrl, t, view }: ConnectorConfigurationProps) {
   const state = useMemo(() => new StdioV2State(stdioV2), [stdioV2])
-  return <div className="pe-extension-center" data-power-evolve-bundle-config="">
-    <section><h3>{t('personalMcpTitle')}</h3><PersonalMcpPage personalMcp={personalMcp} sessions={sessions} t={t} /></section>
-    <section><h3>{t('stdioV2Title')}</h3><StdioV2Panel state={state} sessions={sessions} approvalUrl={approvalUrl} t={t} /></section>
+  const [transport, setTransport] = useState<'streamable-http' | 'stdio'>('streamable-http')
+  if (view === 'summary') return <>{t('mcpPluginSummary')}</>
+  return <div className="pe-extension-center pext-mcp-transports" data-power-evolve-bundle-config="">
+    <label className="pext-transport-choice">{t('mcpTransport')}<select value={transport} onChange={(event) => {
+      setTransport(event.target.value === 'stdio' ? 'stdio' : 'streamable-http')
+    }}><option value="streamable-http">{t('mcpTransportHttp')}</option><option value="stdio">{t('mcpTransportStdio')}</option></select></label>
+    <section className="pext-transport-panel" hidden={transport !== 'streamable-http'}><h3>{t('personalMcpTitle')}</h3><PersonalMcpPage personalMcp={personalMcp} sessions={sessions} t={t} /></section>
+    <section className="pext-transport-panel" hidden={transport !== 'stdio'}><h3>{t('stdioV2Title')}</h3><StdioV2Panel state={state} sessions={sessions} approvalUrl={approvalUrl} t={t} /></section>
   </div>
 }

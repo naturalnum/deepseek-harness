@@ -32,7 +32,7 @@ test.each([
 ] as const)('new catalog entries remain discoverable through their %s category', async (category, label) => {
   const entry = { ...builtinWord, id: 'catalog.new-entry', name: 'New catalog entry', category, installedSkillId: null }
   page(makePort({ list: async () => [], catalog: async () => [entry] }))
-  fireEvent.click(screen.getByRole('tab', { name: en.allSkills }))
+
   await screen.findByRole('button', { name: entry.name })
   fireEvent.click(screen.getByRole('button', { name: en[label] }))
   expect(screen.getByRole('button', { name: entry.name })).toBeTruthy()
@@ -55,8 +55,6 @@ test('personal card details can be opened and dismissed through the native modal
 test('installed catalog details open the matching personal skill without reinstalling it', async () => {
   const installBuiltin = vi.fn<SkillPort['installBuiltin']>()
   page(makePort({ catalog: async () => [{ ...builtinWord, installedSkillId: skill.skillId }], installBuiltin }))
-  await screen.findByRole('button', { name: skill.name })
-  fireEvent.click(screen.getByRole('tab', { name: en.allSkills }))
   await screen.findByRole('button', { name: builtinWord.name })
   fireEvent.click(screen.getByRole('button', { name: en.viewDetails }))
   const catalog = await screen.findByRole('dialog', { name: builtinWord.name })
@@ -71,7 +69,7 @@ test('installed catalog details open the matching personal skill without reinsta
 test('installed catalog metadata without a personal record cannot expose another account detail', async () => {
   const read = vi.fn<SkillPort['read']>()
   page(makePort({ list: async () => [], catalog: async () => [{ ...builtinWord, installedSkillId: skill.skillId }], read }))
-  fireEvent.click(screen.getByRole('tab', { name: en.allSkills }))
+
   fireEvent.click(await screen.findByRole('button', { name: builtinWord.name }))
   const dialog = await screen.findByRole('dialog', { name: builtinWord.name })
   expect(within(dialog).getByText(en.builtinInstalled)).toBeTruthy()
@@ -85,7 +83,7 @@ test('two native catalog install gestures before React commits reserve one reque
   const result = deferredResult<PersonalSkill>()
   const installBuiltin = vi.fn<SkillPort['installBuiltin']>(() => result.promise)
   page(makePort({ list: async () => [], catalog: async () => [builtinWord], installBuiltin }))
-  fireEvent.click(screen.getByRole('tab', { name: en.allSkills }))
+
   fireEvent.click(await screen.findByRole('button', { name: builtinWord.name }))
   const dialog = await screen.findByRole('dialog', { name: builtinWord.name })
   const button = within(dialog).getByRole('button', { name: en.builtinInstall })
@@ -100,7 +98,7 @@ test('an uncertain catalog install blocks a different entry until the original o
   const second = { ...builtinWord, id: 'catalog.second', name: 'Second entry' }
   const installBuiltin = vi.fn<SkillPort['installBuiltin']>().mockRejectedValueOnce(new Error('reply lost'))
   page(makePort({ list: async () => [], catalog: async () => [builtinWord, second], installBuiltin }))
-  fireEvent.click(screen.getByRole('tab', { name: en.allSkills }))
+
   const firstCard = (await screen.findByRole('button', { name: builtinWord.name })).closest('article')
   if (!firstCard) throw new Error('Missing first native catalog card')
   fireEvent.click(within(firstCard).getByRole('button', { name: en.builtinInstall }))
@@ -130,7 +128,7 @@ test('queued native toggle gestures share a pending mutation', async () => {
   const result = deferredResult<PersonalSkill>(), toggle = vi.fn<SkillPort['toggle']>(() => result.promise)
   page(makePort({ toggle }))
   await screen.findByRole('button', { name: skill.name })
-  const button = screen.getByRole('switch')
+  const button = screen.getByRole('switch', { name: /Enable skill/u })
   act(() => { button.click(); button.click() })
   expect(toggle).toHaveBeenCalledOnce()
   await act(async () => { result.resolve({ ...skill, enabled: false, revision: 2 }) })

@@ -11,6 +11,7 @@ import { stdioManagementLimitsV2, stdioManagementSchemasV2, type StdioConfigurat
 import { stdioCatalogFingerprintV2, stdioSha256V2 } from '@power-evolve/connector-runner/stdio-v2-digest'
 import { PlatformError, type UserId } from '../contracts.ts'
 import { requireBrowserAccount } from './account-authority.ts'
+import { bindStdioEnvironment } from './stdio-environment.ts'
 import { transaction } from './database.ts'
 
 type Mutation = { purpose: 'create'; input: StdioCreateRequestV2 }
@@ -121,6 +122,7 @@ export class StdioConnectionServiceV2 {
     await client.query<Record<string, unknown>>(`INSERT INTO pe_stdio_v2_configurations(connection_id,user_id,revision,configuration,config_digest)
       VALUES($1,$2,$3,$4::json,$5)`, [connectionId, userId, revision, JSON.stringify(configuration),
       stdioSha256V2('configuration', configuration, this.jsonLimits)])
+    await bindStdioEnvironment(client, userId, connectionId, revision, configuration.environment)
   }
 
   private async cancel(client: PoolClient, userId: UserId, connectionId: string, callsOnly = false): Promise<void> {

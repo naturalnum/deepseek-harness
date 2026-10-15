@@ -1,4 +1,5 @@
 /** Native metadata RPC and direct Platform credential intake for the original MCP page Port. */
+import { mcpPresentation, type McpPresentation } from '@power-evolve/contracts/mcp-metadata'
 import { approvalUrl } from './approval-api.ts'
 import { PersonalMcpConnectionRequestError, type PersonalMcpConnection,
   type PersonalMcpConnectionCheck, type PersonalMcpConnectionCheckDraftRequest,
@@ -18,6 +19,7 @@ type Authentication = { readonly kind: 'none' }
   | { readonly kind: 'bearer'; readonly action: 'retain' | 'replace' | 'clear' }
   | { readonly kind: 'headers'; readonly headers: readonly { readonly name: string; readonly action: 'retain' | 'replace' }[] }
 interface Configuration {
+  readonly presentation?: McpPresentation
   readonly displayName: string
   readonly serverUrl: string
   readonly enabled: boolean
@@ -38,7 +40,8 @@ function configuration(input: PersonalMcpConnectionCreateRequest, canRetain: boo
       : input.clear_secret_keys?.includes('bearer_token') || !canRetain ? 'clear' : 'retain' }
       : { kind, headers: (input.headers ?? []).map(header => ({ name: header.name,
         action: header.value === undefined ? 'retain' : 'replace' })) }
-  return { displayName: input.display_name, serverUrl: input.server_url, enabled: input.enabled, authentication }
+  return { ...(input.presentation === undefined ? {} : { presentation: mcpPresentation.parse(input.presentation) }),
+    displayName: input.display_name, serverUrl: input.server_url, enabled: input.enabled, authentication }
 }
 
 function editedConfiguration(input: PersonalMcpConnectionUpdateRequest): Configuration {
@@ -76,7 +79,7 @@ function invalid(): never { throw new PersonalMcpConnectionRequestError(502) }
 function requestId(value: string): void { if (!uuid(value)) throw new PersonalMcpConnectionRequestError(400) }
 
 function connection(value: unknown, deleted = false): PersonalMcpConnection {
-  if (!exact(value, CONNECTION_KEYS) || !uuid(value.connectionId) || !positive(value.revision)
+  if (!record(value) || !exact(value, [...CONNECTION_KEYS, ...('presentation' in value ? ['presentation'] : [])]) || !uuid(value.connectionId) || !positive(value.revision)
     || !positive(value.configurationRevision) || value.credentialRevision !== null && !positive(value.credentialRevision)
     || !text(value.displayName, 100) || !text(value.serverName, 100) || !text(value.serverUrl, 2048)
     || value.transport !== 'streamable-http' || !Array.isArray(value.headerNames)
@@ -94,7 +97,8 @@ function connection(value: unknown, deleted = false): PersonalMcpConnection {
     return name
   })
   if (new Set(headerNames.map(name => name.toLowerCase())).size !== headerNames.length) invalid()
-  return { connection_id: value.connectionId, revision: value.revision,
+  return { ...('presentation' in value ? { presentation: mcpPresentation.parse(value.presentation) } : {}),
+    connection_id: value.connectionId, revision: value.revision,
     configuration_revision: value.configurationRevision, credential_revision: value.credentialRevision,
     display_name: value.displayName, server_name: value.serverName, server_url: value.serverUrl,
     authentication: kind === 'none' ? { kind, secret_configured: false } : { kind, secret_configured: value.secretConfigured },

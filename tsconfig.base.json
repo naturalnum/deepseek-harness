@@ -40,6 +40,8 @@
       "@power-evolve/connector-runner/stdio-v2-digest": ["./products/power-evolve/connector-runner/src/stdio-v2-digest.ts"],
       "@power-evolve/connector-runner/stdio-v2-dispatch": ["./products/power-evolve/connector-runner/src/stdio-v2-dispatch.ts"],
       "@power-evolve/connector-runner/stdio-v2-runtime": ["./products/power-evolve/connector-runner/src/stdio-v2-runtime.ts"],
+      "@power-evolve/contracts/mcp-metadata": ["./products/power-evolve/contracts/src/mcp-metadata.ts"],
+      "@power-evolve/contracts/stdio-environment": ["./products/power-evolve/contracts/src/stdio-environment.ts"],
       "@power-evolve/contracts/account": ["./products/power-evolve/contracts/src/account.ts"],
       "@power-evolve/contracts/execution-resolution": ["./products/power-evolve/contracts/src/execution-resolution.ts"],
       "@power-evolve/contracts/file-download": ["./products/power-evolve/contracts/src/file-download.ts"],

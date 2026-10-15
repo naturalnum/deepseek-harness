@@ -7,6 +7,7 @@ import {
   PERSONAL_MCP_CONNECTION_SERVER_URL_MAX_LENGTH,
   type PersonalMcpConnection,
 } from './personal-mcp-client.ts'
+import { McpMetadataFields } from './McpMetadataFields.tsx'
 import { SkillToggle } from './SkillToggle.tsx'
 import { ConnectionCheckCard, DraftCheckControls } from './PersonalMcpCheck.tsx'
 import {
@@ -116,7 +117,8 @@ export function PersonalMcpPage(props: PersonalMcpPageProps): ReactNode {
           label={props.t('mcpConnectionDetails')}
           backLabel={props.t('backToMcpConnections')}
           name={selected.display_name}
-          description={selected.server_url}
+          description={selected.presentation?.note || selected.server_url}
+          {...(selected.presentation?.icon ? { icon: selected.presentation.icon } : {})}
           meta={`${selected.server_name} · ${props.t('mcpRevision')} ${String(selected.revision)}`}
           status={<ConnectionState connection={selected} t={props.t} />}
           action={(
@@ -282,7 +284,8 @@ export function PersonalMcpPage(props: PersonalMcpPageProps): ReactNode {
                       : connection.authentication.kind === 'headers'
                         ? props.t('mcpAuthenticationHeaders')
                         : undefined}
-                    description={connection.server_url}
+                    description={connection.presentation?.note || connection.server_url}
+                    {...(connection.presentation?.icon ? { icon: connection.presentation.icon } : {})}
                     meta={`${connection.server_name} · ${props.t('mcpRevision')} ${String(connection.revision)}`}
                     status={<ConnectionState connection={connection} t={props.t} />}
                     action={(
@@ -392,6 +395,7 @@ function ConnectionDialog({
             onChange={(event) => { update({ displayName: event.target.value }); setValidation(undefined) }}
           />
         </McpDialogField>
+        <McpMetadataFields value={form.presentation} t={t} onChange={(presentation) => { update({ presentation }) }} />
         <McpDialogField label={t('mcpServerUrl')}>
           <input
             type="url"

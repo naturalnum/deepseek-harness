@@ -42,7 +42,7 @@ export interface StdioV2Limits {
 export type StdioV2Identity = { kind: 'current' } | { kind: 'unix'; uid: number; gid: number }
 /** Executor-owned environment and Root's validator/fingerprint; no parent environment is inherited. */
 export interface StdioV2Options {
-  env: { HOME: string; PATH: string; LANG: string }
+  env: { HOME: string; PATH: string; LANG: string } & Readonly<Record<string, string>>
   identity: StdioV2Identity
   limits: StdioV2Limits
   /** Validate the entire raw directory and compute the shared frozen catalog digest without mutation.
@@ -135,8 +135,9 @@ function validate(input: StdioV2Input, options: StdioV2Options): void {
       || name.endsWith('Ms') && value > 2_147_483_647) throw new Failure('configuration_invalid')
   }
   if (!validIdentity(options.identity)) throw new Failure('identity_invalid')
-  if (Object.keys(options.env).sort().join(',') !== 'HOME,LANG,PATH'
-    || Object.values(options.env).some(value => !value || value.includes('\u0000'))
+  if (!['HOME', 'LANG', 'PATH'].every(name => options.env[name])
+    || Object.keys(options.env).some(name => !/^[A-Za-z_][A-Za-z0-9_]{0,127}$/u.test(name))
+    || Object.values(options.env).some(value => value.includes('\u0000'))
     || !validPhase(input.phase)
     || !input.program || input.program.includes('\u0000') || !isAbsolute(input.cwd)
     || input.cwd.includes('\u0000') || input.argv.some(value => value.includes('\u0000'))) throw new Failure('invocation_invalid')

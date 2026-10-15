@@ -11,6 +11,7 @@ import { McpConnectionService } from '../src/platform/mcp-connections.ts'
 import { routeMcpApproval } from '../src/platform/mcp-routes.ts'
 import { transaction } from '../src/platform/database.ts'
 import { mcpCatalogDigest, mcpCatalogTools } from '../src/platform/mcp-catalog.ts'
+import { mcpConnectionValue } from '../src/mcp-management-rpc.ts'
 import { mcpResourceId, mcpLeaseOwnerId } from '../src/mcp-contracts.ts'
 import { requestId } from '../src/contracts.ts'
 import { requireBrowserAccount } from '../src/platform/account-authority.ts'
@@ -189,9 +190,11 @@ test('MCP draft tickets reject incomplete source revision pairs without durable 
   })
   const tasks = new TaskStore(pool, taskLimits)
   const session = await tasks.create(alice.user, requestId.parse(randomUUID()), alice.token)
-  const configuration = { displayName: 'Draft ticket fixture', serverUrl: endpoint, enabled: true,
+  const configuration = { presentation: { note: 'Owned service', icon: null },
+    displayName: 'Draft ticket fixture', serverUrl: endpoint, enabled: true,
     authentication: { kind: 'none' as const } }
   const connection = await service.create(alice.user, { requestId: randomUUID(), configuration })
+  expect(mcpConnectionValue.parse(connection).presentation).toEqual(configuration.presentation)
   const credentials = Buffer.from(JSON.stringify({ formatVersion: 1, bearerToken: 'owned-draft-fixture' }))
   const snapshot = async () => {
     const [tickets, requests, drafts] = await Promise.all([

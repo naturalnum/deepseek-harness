@@ -1,7 +1,7 @@
 /** Leased Cloud STDIO orchestration; committed start grants are never reconstructed during recovery. */
 import { randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
-import { stdioReceiptRequestV2 } from '@power-evolve/contracts/stdio-mcp'
+import { type StdioDispatchV2, stdioReceiptRequestV2 } from '@power-evolve/contracts/stdio-mcp'
 import { stdioWorkerIdV2, type StdioActionLeaseV2, type StdioWorkerIdV2 } from '@power-evolve/contracts/stdio-runtime'
 import { PlatformError } from '../contracts.ts'
 import type { StdioAuthorizationServiceV2 } from './stdio-v2-authorization.ts'
@@ -22,6 +22,9 @@ export interface StdioCloudWorkerOptionsV2 {
   readonly pollMs: number
   readonly renewMs: number
   readonly leaseMs: number
+  /** Resolve private values only for the original true start; recovery and readback never invoke it. */
+  readonly environment?: (lease: StdioActionLeaseV2, dispatch: StdioDispatchV2,
+    signal: AbortSignal) => Promise<Readonly<Record<string, string>>>
 }
 
 /** Fixed orchestration outcomes; no private database, command or Runner errors are returned. */
@@ -193,9 +196,11 @@ export class StdioCloudWorkerV2 {
         original = await assertLive()
         if (!original.dispatch || !original.prepared) throw new Error('stdio_v2_dispatch_missing')
         if (stopped()) return 'stopped'
+        const dispatch = original.dispatch, environment = this.options.environment
         const observation = original.cancelRequested
           ? await this.transport.cancelDetached(original.dispatch, original.prepared.prepared, capture)
-          : await this.transport.startDetached(original.dispatch, grant, original.prepared.prepared, capture)
+          : await this.transport.startDetached(original.dispatch, grant, original.prepared.prepared, capture,
+            environment ? () => environment(lease, dispatch, signal) : undefined)
         if (isLost()) return 'lease-lost'
         if (!observation) { await this.store.defer(lease, 'stdio_v2_runner_absent'); return 'deferred' }
         const receipt = await this.results.record(lease, observation)

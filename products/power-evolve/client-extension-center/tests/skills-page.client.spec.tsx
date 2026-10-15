@@ -61,7 +61,7 @@ test.each(['success', 'failure'] as const)('a late built-in install %s cannot po
   const oldReply = deferredResult<PersonalSkill>(), newReply = deferredResult<PersonalSkill>()
   const installBuiltin = vi.fn<SkillPort['installBuiltin']>(() => oldReply.promise)
   const page = fixture(port({ catalog: async () => [builtinWord], installBuiltin }))
-  fireEvent.click(screen.getByRole('tab', { name: en.allSkills }))
+
   fireEvent.click(await screen.findByRole('button', { name: builtinWord.name }))
   fireEvent.click(within(screen.getByRole('dialog', { name: builtinWord.name })).getByRole('button', { name: en.builtinInstall }))
   expect(installBuiltin).toHaveBeenCalledOnce()
@@ -70,9 +70,9 @@ test.each(['success', 'failure'] as const)('a late built-in install %s cannot po
   const next = port({ list: async () => [bob], catalog: async () => [], toggle })
   page.rerender(<SkillsPage {...unusedSessionStandards} client={next} t={t} trySkill={vi.fn()}
     usePanelInfo={selector => selector({ activePanelId: null })} />)
-  fireEvent.click(screen.getByRole('tab', { name: new RegExp(en.mySkills, 'u') }))
+  fireEvent.click(screen.getByRole('switch', { name: en.installedOnly }))
   await screen.findByRole('button', { name: bob.name })
-  fireEvent.click(screen.getByRole('switch'))
+  fireEvent.click(screen.getByRole('switch', { name: /Enable skill/u }))
   expect(toggle).toHaveBeenCalledOnce()
   expect(installBuiltin.mock.calls[0]?.[1]?.aborted).toBe(true)
   await act(async () => {
@@ -83,9 +83,9 @@ test.each(['success', 'failure'] as const)('a late built-in install %s cannot po
   expect(screen.queryByRole('alert')).toBeNull()
   expect(screen.queryByText(en.installed)).toBeNull()
   expect(screen.queryByRole('button', { name: builtinWord.name })).toBeNull()
-  expect(screen.getByRole('switch')).toHaveProperty('disabled', true)
+  expect(screen.getByRole('switch', { name: /Enable skill/u })).toHaveProperty('disabled', true)
   await act(async () => { newReply.resolve({ ...bob, revision: 2, enabled: false }) })
-  expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('false')
+  expect(screen.getByRole('switch', { name: /Enable skill/u }).getAttribute('aria-checked')).toBe('false')
 })
 
 test('personal cards search, read instructions, and change enabled state', async () => {
@@ -115,7 +115,7 @@ test('uncertain install retries the same request and body', async () => {
     .mockImplementationOnce(async (input: { requestId: string }) => ({ ...item, skillId: input.requestId }))
   const client = port({ list: vi.fn(async () => []), install })
   fixture(client)
-  await screen.findByText('No skills are installed for this account')
+  await screen.findByRole('button', { name: builtinWord.name })
   fireEvent.click(screen.getByRole('button', { name: 'Install skill' }))
   const dialog = screen.getByRole('dialog', { name: 'Install text skill' })
   fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'Proofreading' } })
@@ -201,7 +201,7 @@ test('package trial opens the native draft and revoke disables later trials', as
 test('all skills filters the nine-item catalog and previews metadata without a Sandbox', async () => {
   const client = port()
   fixture(client)
-  fireEvent.click(screen.getByRole('tab', { name: 'All skills' }))
+
   await screen.findByRole('button', { name: builtinWord.name })
   expect(client.catalog).toHaveBeenCalledTimes(1)
   fireEvent.click(screen.getByRole('button', { name: 'Writing & office' }))
@@ -219,7 +219,7 @@ test('all skills filters the nine-item catalog and previews metadata without a S
 test('catalog failure stays visible and refresh retries without sample data', async () => {
   const catalogCall = vi.fn().mockRejectedValueOnce(new SkillHttpError(503)).mockResolvedValueOnce(catalog)
   fixture(port({ catalog: catalogCall }))
-  fireEvent.click(screen.getByRole('tab', { name: 'All skills' }))
+
   await screen.findByText('Could not load the built-in skill catalog. Please retry.')
   expect(screen.queryByRole('button', { name: builtinWord.name })).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: 'Refresh list' }))
@@ -233,7 +233,7 @@ test('uncertain built-in install reuses request ID and updates My skills after s
   const installBuiltin = vi.fn().mockRejectedValueOnce(new Error('response lost')).mockResolvedValueOnce(packaged)
   const client = port({ installBuiltin, read: vi.fn(async () => ({ ...packaged, instructions: '# word instructions' })) })
   fixture(client)
-  fireEvent.click(screen.getByRole('tab', { name: 'All skills' }))
+
   await screen.findByRole('button', { name: builtinWord.name })
   fireEvent.click(screen.getAllByRole('button', { name: 'Install built-in skill' })[0]!)
   await screen.findByText('The installation result is uncertain. Retry uses the same request ID.')
@@ -241,7 +241,7 @@ test('uncertain built-in install reuses request ID and updates My skills after s
   await waitFor(() => { expect(installBuiltin).toHaveBeenCalledTimes(2) })
   expect(installBuiltin.mock.calls[0]![0]).toEqual(installBuiltin.mock.calls[1]![0])
   expect(installBuiltin.mock.calls[0]![0]).toMatchObject({ catalogId: builtinWord.id, version: builtinWord.version })
-  await waitFor(() => { expect(screen.getByRole('tab', { name: /My skills/u }).getAttribute('aria-selected')).toBe('true') })
+  await waitFor(() => { expect(installBuiltin).toHaveBeenCalledTimes(2) })
   expect(screen.getByRole('button', { name: builtinWord.name })).toBeTruthy()
   await within(screen.getByRole('dialog', { name: builtinWord.name })).findByText('word instructions')
 })
@@ -250,7 +250,7 @@ test('revoked catalog installation cannot be directly reenabled', async () => {
   const revoked: PersonalSkill = { ...item, name: builtinWord.name, kind: 'package', version: builtinWord.version,
     packageDigest: builtinWord.archiveDigest, manifestDigest: builtinWord.manifestDigest.slice(7), enabled: false, observedState: 'revoked' }
   fixture(port({ list: async () => [revoked], catalog: async () => [{ ...catalog[0]!, installedSkillId: id }, ...catalog.slice(1)] }))
-  fireEvent.click(screen.getByRole('tab', { name: 'All skills' }))
+
   const card = (await screen.findByRole('button', { name: builtinWord.name })).closest('article')!
   expect(within(card).getByText('Revoked')).toBeTruthy()
   expect(within(card).queryByRole('switch')).toBeNull()
@@ -263,7 +263,7 @@ test('disabled catalog installation uses the personal state and can be enabled',
   const toggle = vi.fn(async () => ({ ...disabled, enabled: true, revision: 2 }))
   fixture(port({ list: async () => [disabled],
     catalog: async () => [{ ...catalog[0]!, installedSkillId: id }, ...catalog.slice(1)], toggle }))
-  fireEvent.click(screen.getByRole('tab', { name: 'All skills' }))
+
   const card = (await screen.findByRole('button', { name: builtinWord.name })).closest('article')!
   expect(within(card).getByText('Disabled')).toBeTruthy()
   fireEvent.click(within(card).getByRole('switch'))
@@ -281,7 +281,7 @@ test('catalog waits for the personal list to finish preinstalling', async () => 
   }))
   const catalogCall = vi.fn(async () => [{ ...catalog[0]!, installedSkillId: preinstalled ? id : null }, ...catalog.slice(1)])
   fixture(port({ list, catalog: catalogCall }))
-  fireEvent.click(screen.getByRole('tab', { name: 'All skills' }))
+
   expect(catalogCall).not.toHaveBeenCalled()
   await act(async () => { finishPreinstall() })
   const card = (await screen.findByRole('button', { name: builtinWord.name })).closest('article')!
@@ -334,7 +334,7 @@ test('changing the injected client aborts reads from the prior account', async (
   await act(async () => { resolveOld([item]) })
   expect(oldCatalog).not.toHaveBeenCalled()
   expect(screen.queryByRole('button', { name: 'Proofreading' })).toBeNull()
-  await screen.findByText('No skills are installed for this account')
+  await screen.findByRole('button', { name: builtinWord.name })
 })
 
 test('changing accounts immediately hides the prior personal library', async () => {
@@ -367,9 +367,9 @@ test.each([
   const toggle = vi.fn<SkillPort['toggle']>(async () => { throw error })
   fixture(port({ list: async () => [item], toggle }))
   await screen.findByRole('button', { name: item.name })
-  fireEvent.click(screen.getByRole('switch'))
+  fireEvent.click(screen.getByRole('switch', { name: /Enable skill/u }))
   await screen.findByText(message)
-  expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('true')
+  expect(screen.getByRole('switch', { name: /Enable skill/u }).getAttribute('aria-checked')).toBe('true')
   expect(toggle).toHaveBeenCalledWith(item.skillId, false)
 })
 
@@ -400,7 +400,7 @@ test.each([
     packageDigest: builtinWord.archiveDigest, manifestDigest: builtinWord.manifestDigest.slice(7) }
   const installBuiltin = vi.fn<SkillPort['installBuiltin']>().mockRejectedValueOnce(new SkillHttpError(status)).mockResolvedValueOnce(packaged)
   fixture(port({ catalog: async () => [builtinWord], installBuiltin, read: async () => ({ ...packaged, instructions: 'Pinned document' }) }))
-  fireEvent.click(screen.getByRole('tab', { name: en.allSkills }))
+
   fireEvent.click(await screen.findByRole('button', { name: builtinWord.name }))
   const dialog = within(screen.getByRole('dialog', { name: builtinWord.name }))
   fireEvent.click(dialog.getByRole('button', { name: en.builtinInstall }))
@@ -435,27 +435,27 @@ test.each([
   page.rerender(<SkillsPage {...unusedSessionStandards} client={next} t={t} trySkill={vi.fn()}
     usePanelInfo={selector => selector({ activePanelId: null })} />)
   await screen.findByRole('button', { name: bob.name })
-  fireEvent.click(screen.getByRole('switch'))
+  fireEvent.click(screen.getByRole('switch', { name: /Enable skill/u }))
   await act(async () => {
     if (outcome === 'success') old.resolve({ ...item, enabled: false, observedState: kind === 'revoke' ? 'revoked' : 'ready' })
     else old.reject(new SkillHttpError(401))
   })
-  expect(screen.getByRole('switch')).toHaveProperty('disabled', true)
+  expect(screen.getByRole('switch', { name: /Enable skill/u })).toHaveProperty('disabled', true)
   expect(screen.queryByRole('alert')).toBeNull()
   expect(screen.queryByRole('dialog')).toBeNull()
   await act(async () => { fresh.resolve({ ...bob, enabled: false, revision: 2 }) })
-  expect(screen.getByRole('switch')).toHaveProperty('disabled', false)
-  expect(screen.getByRole('switch').getAttribute('aria-checked')).toBe('false')
+  expect(screen.getByRole('switch', { name: /Enable skill/u })).toHaveProperty('disabled', false)
+  expect(screen.getByRole('switch', { name: /Enable skill/u }).getAttribute('aria-checked')).toBe('false')
 })
 
 test.each(['success', 'failure'] as const)('refresh discards a superseded catalog %s from the same account', async (outcome) => {
   const old = deferredResult<readonly BuiltinSkill[]>()
   const catalogRead = vi.fn<SkillPort['catalog']>().mockImplementationOnce(() => old.promise).mockResolvedValueOnce([])
   fixture(port({ catalog: catalogRead }))
-  fireEvent.click(screen.getByRole('tab', { name: en.allSkills }))
+
   await waitFor(() => { expect(catalogRead).toHaveBeenCalledOnce() })
   fireEvent.click(screen.getByRole('button', { name: en.refreshList }))
-  await screen.findByText(en.builtinCatalogEmpty)
+  await screen.findByText(en.mySkillsEmpty)
   expect(catalogRead.mock.calls[0]?.[0]?.aborted).toBe(true)
   await act(async () => {
     if (outcome === 'success') old.resolve([builtinWord])
@@ -463,7 +463,7 @@ test.each(['success', 'failure'] as const)('refresh discards a superseded catalo
   })
   expect(screen.queryByRole('button', { name: builtinWord.name })).toBeNull()
   expect(screen.queryByRole('alert')).toBeNull()
-  expect(screen.getByText(en.builtinCatalogEmpty)).toBeTruthy()
+  expect(screen.getByText(en.mySkillsEmpty)).toBeTruthy()
 })
 
 test.each([
@@ -476,10 +476,10 @@ test.each([
   if (operation === 'list') list.mockRejectedValueOnce(cause)
   else catalogRead.mockRejectedValueOnce(cause)
   fixture(port({ list, catalog: catalogRead }))
-  fireEvent.click(screen.getByRole('tab', { name: en.allSkills }))
+
   await screen.findByRole('alert')
   expect(screen.getByRole('alert').textContent).toBe(message)
-  expect(screen.queryByText(en.builtinCatalogEmpty)).toBeNull()
+  expect(screen.queryByText(en.mySkillsEmpty)).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: en.refreshList }))
   await screen.findByRole('button', { name: builtinWord.name })
   expect(screen.queryByRole('alert')).toBeNull()
@@ -494,7 +494,7 @@ test.each(['toggle', 'revoke', 'builtin'] as const)('unmount fences a pending %s
   const page = fixture(port({ list: async () => [item], catalog: async () => [builtinWord],
     read: async () => ({ ...item, instructions: 'Account-owned document' }), toggle, revoke, installBuiltin }))
   await screen.findByRole('button', { name: item.name })
-  if (operation === 'toggle') fireEvent.click(screen.getByRole('switch'))
+  if (operation === 'toggle') fireEvent.click(screen.getByRole('switch', { name: /Enable skill/u }))
   else if (operation === 'revoke') {
     fireEvent.click(screen.getByRole('button', { name: item.name }))
     const dialog = within(screen.getByRole('dialog', { name: item.name }))
@@ -502,7 +502,7 @@ test.each(['toggle', 'revoke', 'builtin'] as const)('unmount fences a pending %s
     fireEvent.click(dialog.getByRole('button', { name: en.revokeSkill }))
     fireEvent.click(dialog.getByRole('button', { name: en.confirmRevoke }))
   } else {
-    fireEvent.click(screen.getByRole('tab', { name: en.allSkills }))
+
     fireEvent.click(await screen.findByRole('button', { name: builtinWord.name }))
     fireEvent.click(within(screen.getByRole('dialog', { name: builtinWord.name })).getByRole('button', { name: en.builtinInstall }))
   }
@@ -519,15 +519,15 @@ test('installed category filters distinguish catalog skills from imports and can
   const pdf = { ...builtinWord, id: 'builtin.pdf', name: 'PDF', installedSkillId: item.skillId }
   const imported = { ...item, skillId: '00000000-0000-4000-8000-000000000207', name: 'Personal import' }
   fixture(port({ list: async () => [item, imported], catalog: async () => [pdf] }))
-  await screen.findByRole('button', { name: item.name })
+  await screen.findByRole('button', { name: pdf.name })
   fireEvent.click(screen.getByRole('button', { name: en.skillCategoryResearchKnowledge }))
-  expect(screen.getByRole('button', { name: item.name })).toBeTruthy()
+  expect(screen.getByRole('button', { name: pdf.name })).toBeTruthy()
   expect(screen.queryByRole('button', { name: imported.name })).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: en.skillCategoryImported }))
   expect(screen.getByRole('button', { name: imported.name })).toBeTruthy()
-  expect(screen.queryByRole('button', { name: item.name })).toBeNull()
+  expect(screen.queryByRole('button', { name: pdf.name })).toBeNull()
   fireEvent.click(screen.getByRole('button', { name: en.allCategories }))
-  expect(screen.getByRole('button', { name: item.name })).toBeTruthy()
+  expect(screen.getByRole('button', { name: pdf.name })).toBeTruthy()
   expect(screen.getByRole('button', { name: imported.name })).toBeTruthy()
 })
 
@@ -539,7 +539,7 @@ test('an uncertain built-in installation stays retryable in its detail dialog wh
     packageDigest: builtinWord.archiveDigest, manifestDigest: builtinWord.manifestDigest.slice(7) }
   fixture(port({ list: async () => [], catalog: async () => [builtinWord], installBuiltin,
     read: async () => ({ ...packaged, instructions: 'Installed document' }) }))
-  fireEvent.click(screen.getByRole('tab', { name: en.allSkills }))
+
   fireEvent.click(await screen.findByRole('button', { name: builtinWord.name }))
   const dialog = within(screen.getByRole('dialog', { name: builtinWord.name }))
   fireEvent.click(dialog.getByRole('button', { name: en.builtinInstall }))
@@ -596,9 +596,9 @@ test.each(['install', 'import', 'builtin'] as const)('a plain HTTP browser can s
     const installBuiltin = vi.fn<SkillPort['installBuiltin']>(async () => installed)
     fixture(port({ list: async () => imported ? [installed] : [], catalog: async () => [builtinWord],
       read: async () => ({ ...installed, instructions: 'Installed document' }), install, importPackage, installBuiltin }))
-    await screen.findByText(en.mySkillsEmpty)
+    await screen.findByRole('button', { name: builtinWord.name })
     if (operation === 'builtin') {
-      fireEvent.click(screen.getByRole('tab', { name: en.allSkills }))
+
       fireEvent.click(await screen.findByRole('button', { name: builtinWord.name }))
       fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: en.builtinInstall }))
     } else {
@@ -614,7 +614,8 @@ test.each(['install', 'import', 'builtin'] as const)('a plain HTTP browser can s
         fireEvent.click(dialog.getByRole('button', { name: en.skillImportAction }))
       }
     }
-    await screen.findByRole('button', { name: installed.name })
+    if (operation === 'builtin') await within(await screen.findByRole('dialog', { name: installed.name })).findByText('Installed document')
+    else await screen.findByRole('button', { name: installed.name })
     const requestId = operation === 'import' ? importPackage.mock.calls[0]?.[1]
       : operation === 'builtin' ? installBuiltin.mock.calls[0]?.[0].requestId : install.mock.calls[0]?.[0].requestId
     expect(requestId).toMatch(/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/u)
@@ -652,9 +653,9 @@ test('the HTTP client and Skills page install the PDF-only catalog while retaini
   })
   fixture(client)
   await screen.findByRole('button', { name: word.name })
-  fireEvent.click(screen.getByRole('tab', { name: en.allSkills }))
+
   fireEvent.click(await screen.findByRole('button', { name: pdf.name }))
-  expect(screen.queryByRole('button', { name: word.name })).toBeNull()
+  expect(screen.getByRole('button', { name: word.name })).toBeTruthy()
   fireEvent.click(within(screen.getByRole('dialog', { name: pdf.name })).getByRole('button', { name: en.builtinInstall }))
   await screen.findByText('Current PDF document')
   fireEvent.click(within(screen.getByRole('dialog', { name: pdf.name })).getByRole('button', { name: en.close }))

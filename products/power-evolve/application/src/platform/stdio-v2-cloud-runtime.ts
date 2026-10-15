@@ -67,17 +67,19 @@ export class StdioCloudRunTransportV2 {
    * @param prepared Original stored private image/spec/mount/Runner snapshot, never browser-supplied facts.
    * @param capture Trusted worker callback locking the original account/Session/connection/action/execution and current lease,
    * then committing and releasing.
+   * @param environment Private one-use values resolved after exact capture, only before the original true start.
    * @returns Bounded original observation; expiry/retry query only, and missing or failed replies never confirm stopped.
    */
   async startDetached(dispatch: StdioDispatchV2, authorization: StdioCloudAuthorizationV2, prepared: StdioPreparedV2,
-    capture: StdioCloudCaptureTransactionV2): Promise<StdioCloudObservationV2 | null> {
+    capture: StdioCloudCaptureTransactionV2,
+    environment?: (() => Promise<Readonly<Record<string, string>>>)): Promise<StdioCloudObservationV2 | null> {
     const original = this.original(dispatch, prepared, authorization), now = this.now(), first = this.bind(original, now)
     if (first && original.authorization.grantOnce) {
       try { validateStdioStartV2({ dispatch: original.dispatch, authorization: original.authorization }, this.options.limits,
         { kind: 'cloud', runnerInstanceId: original.prepared.capture.runnerInstanceId }, now) }
       catch (_startRejected) { throw new PlatformError(409, 'stdio_v2_cloud_start_denied') }
       return this.request(capture, original, 'POST', '/stdio/v2/executions', 'dispatch',
-        { dispatch: original.dispatch, authorization: original.authorization })
+        { dispatch: original.dispatch, authorization: original.authorization }, environment)
     }
     return this.request(capture, original, 'GET', this.path(original), 'observe')
   }
@@ -205,11 +207,16 @@ export class StdioCloudRunTransportV2 {
   }
 
   private async request(capture: StdioCloudCaptureTransactionV2, original: Original, method: 'GET' | 'POST', path: string,
-    mode: 'dispatch' | 'observe', body?: unknown): Promise<StdioCloudObservationV2 | null> {
+    mode: 'dispatch' | 'observe', body?: unknown,
+    environment?: (() => Promise<Readonly<Record<string, string>>>)): Promise<StdioCloudObservationV2 | null> {
     const writer = await capture(mode, client => this.capture(client, original, mode))
     // Capture may outlast the permit; an unsent start becomes only a query, including after clock rollback.
     if (mode === 'dispatch' && Date.parse(original.dispatch.permit.expiresAt) <= this.now()) {
       method = 'GET'; path = this.path(original); body = undefined
+    }
+    if (mode === 'dispatch' && method === 'POST' && environment) {
+      const values = await environment()
+      body = { dispatch: original.dispatch, authorization: original.authorization, environment: values }
     }
     let value: unknown, failed = false, missing = false
     try {

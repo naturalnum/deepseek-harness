@@ -24,7 +24,8 @@ type Mutation = { purpose: 'create' | 'update' | 'draft'
   sourceConnectionId?: McpConnectionId
   baseRevision?: number
   sessionId?: z.infer<typeof mcpSessionId> }
-type Configuration = { displayName: string
+type Configuration = { presentation?: McpConfigurationInput['presentation']
+  displayName: string
   serverUrl: string
   serverName: string
   authentication: 'none' | 'bearer' | 'headers'
@@ -119,6 +120,7 @@ export class McpConnectionService {
   private present(row: ConnectionRow): McpConnection {
     return { connectionId: mcpConnectionId.parse(row.id), revision: row.revision,
       configurationRevision: row.configuration_revision, credentialRevision: row.credential_revision,
+      ...(row.configuration.presentation === undefined ? {} : { presentation: row.configuration.presentation }),
       displayName: row.configuration.displayName, serverName: row.server_name,
       serverUrl: row.configuration.serverUrl, transport: 'streamable-http',
       authentication: row.configuration.authentication, headerNames: row.configuration.headerNames,
@@ -239,7 +241,8 @@ export class McpConnectionService {
     return normalizeMcpUpload({ formatVersion: 1, headers })
   }
   private stored(input: McpConfigurationInput, secret: McpCredentialUpload, serverName: string): Configuration {
-    return { displayName: input.displayName, serverUrl: input.serverUrl, serverName,
+    return { ...(input.presentation === undefined ? {} : { presentation: input.presentation }),
+      displayName: input.displayName, serverUrl: input.serverUrl, serverName,
       authentication: input.authentication.kind,
       headerNames: input.authentication.kind === 'headers' ? input.authentication.headers.map(header => header.name) : [],
       secretConfigured: secret.bearerToken !== undefined || (secret.headers?.length ?? 0) > 0 }

@@ -227,12 +227,12 @@ void test('child exit with a descendant-held pipe leaves cleanup unconfirmed and
   assert.equal('catalog' in result, false)
 })
 
-void test('a legitimate empty directory remains empty and environment extensions refuse before spawn', async (t) => {
+void test('a legitimate empty directory remains empty and invalid environment names refuse before spawn', async (t) => {
   const p = peer(t, 'empty')
   const empty = await runStdioV2(p.input, p.options, new AbortController().signal)
   if (empty.state !== 'completed') assert.fail('expected complete empty directory')
   assert.deepEqual(empty.catalog, [])
-  const extraEnvironment = { ...p.options.env, NODE_OPTIONS: '--synthetic' }
+  const extraEnvironment = { ...p.options.env, 'INVALID-NAME': 'synthetic' }
   const unsafe = await runStdioV2(p.input, { ...p.options, env: extraEnvironment }, new AbortController().signal)
   if (unsafe.state !== 'failed') assert.fail('expected env refusal')
   assert.equal(unsafe.errorCode, 'invocation_invalid')
@@ -300,4 +300,16 @@ void test('missing, extended or invalid Unix identities are rejected before any 
     assert.equal(result.errorCode, 'identity_invalid'); assert.equal(result.facts.programStartAttempted, false)
     assert.equal(result.facts.effectMayHaveOccurred, false); assert.equal(p.trace().length, 0)
   }
+})
+
+
+void test('explicit variable overrides reach a real SDK child without inheriting the parent environment', async (t) => {
+  const p = peer(t)
+  const result = await runStdioV2(p.input, { ...p.options, env: { ...p.options.env, API_TOKEN: 'private-fixture-value', EMPTY: '' } },
+    new AbortController().signal)
+  if (result.state !== 'completed') assert.fail(result.errorCode)
+  const keys = p.trace()[0]?.envKeys ?? []
+  assert.ok(keys.includes('API_TOKEN')); assert.ok(keys.includes('EMPTY'))
+  assert.equal(keys.includes('PE_TEST_DATABASE_URL_FILE'), false)
+  assert.equal(JSON.stringify(result).includes('private-fixture-value'), false)
 })

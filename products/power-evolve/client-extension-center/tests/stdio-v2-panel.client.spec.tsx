@@ -3,6 +3,7 @@
 import { deferredResult } from './deferred-result.ts'
 import { afterEach, expect, test, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { stdioEnvironmentRef } from '@power-evolve/contracts/mcp-metadata'
 import { StdioV2Panel } from '../src/client/StdioV2Panel.tsx'
 import { StdioV2State } from '../src/client/stdio-v2-state.ts'
 import { StdioV2HttpError, type StdioV2Port } from '../src/client/stdio-v2-api.ts'
@@ -425,3 +426,27 @@ test.each(['create', 'check', 'toggle', 'delete'] as const)(
     } finally { vi.unstubAllGlobals() }
   },
 )
+
+
+test('the process form masks environment values and submits only their immutable version reference', async () => {
+  const port = makePort({ list: async () => ({ items: [], next: null }) })
+  const environment = { prepare: vi.fn(async () => stdioEnvironmentRef.parse({ credentialVersion: id(30), keys: ['API_TOKEN'] })) }
+  render(<StdioV2Panel state={new StdioV2State(port)} sessions={nativeSessions().source}
+    approvalUrl={approvalUrl} environment={environment} t={t} />)
+  select(); await ready()
+  fireEvent.change(screen.getByRole('textbox', { name: 'Connection name' }), { target: { value: 'Private process' } })
+  fireEvent.change(screen.getByRole('textbox', { name: 'Program' }), { target: { value: 'node' } })
+  fireEvent.change(screen.getByRole('textbox', { name: 'Note' }), { target: { value: 'My private service' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Add environment variable' }))
+  fireEvent.change(screen.getByLabelText('Variable name'), { target: { value: 'API_TOKEN' } })
+  const secret = screen.getByLabelText<HTMLInputElement>('Variable value')
+  expect(secret.type).toBe('password')
+  fireEvent.change(secret, { target: { value: 'private-secret' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
+  await waitFor(() => { expect(port.create).toHaveBeenCalledOnce() })
+  expect(environment.prepare).toHaveBeenCalledWith(expect.any(String), [{ name: 'API_TOKEN', value: 'private-secret' }], undefined)
+  const input = vi.mocked(port.create).mock.calls[0]![0]
+  expect(input.configuration).toMatchObject({ environment: { credentialVersion: id(30), keys: ['API_TOKEN'] },
+    presentation: { note: 'My private service', icon: null } })
+  expect(JSON.stringify(input)).not.toContain('private-secret')
+})

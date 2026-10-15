@@ -7,6 +7,7 @@
   gap: 32px;
   box-sizing: border-box;
   height: 100%;
+  container-type: inline-size;
   overflow: auto;
   /* Inline and bottom insets only: the 28px top inset belongs to the head row
      (`.pageHead`, `.detailTop`). macOS window dragging is owned by a row's own box,
@@ -1460,3 +1461,29 @@ label.registryOption {
   color: var(--dsw-alias-state-error-primary);
   overflow-wrap: anywhere;
 }
+
+/* The catalog shares the Skills page's compact cards and full-width controls. */
+.catalogControls { display: grid; gap: 24px; }
+.sectionLabel { margin: 0 0 13px; font-size: 12px; font-weight: 500; color: var(--dsw-alias-label-secondary); }
+.recommendations { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.recommendation { display: flex; flex-direction: column; gap: 15px; padding: 20px; text-align: left; border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; background: var(--dsw-alias-bg-layer-1); cursor: pointer; }
+.recommendation:hover { border-color: var(--dsw-alias-border-l1); }
+.recommendationHead { display: flex; align-items: center; gap: 11px; color: var(--dsw-alias-label-primary); }
+.recommendationHead strong { flex: 1; font-size: 14px; font-weight: 500; }
+.recommendationSummary { font-size: 12px; line-height: 1.7; color: var(--dsw-alias-label-secondary); }
+.catalogSearch { display: flex; align-items: center; gap: 10px; height: 43px; padding: 0 13px; border: 1px solid var(--dsw-alias-border-l2); border-radius: 8px; background: var(--dsw-alias-bg-layer-1); }
+.catalogSearch input { width: 100%; min-width: 0; height: 100%; border: 0; background: transparent; font: inherit; font-size: 13px; color: var(--dsw-alias-label-primary); }
+.filterBar { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.categories { display: flex; flex-wrap: wrap; gap: 5px; }
+.categories button { padding: 7px 13px; border: 0; border-radius: 6px; color: var(--dsw-alias-label-secondary); background: transparent; font: inherit; font-size: 12px; cursor: pointer; }
+.categories button[aria-pressed='true'] { color: var(--dsw-alias-label-primary); background: var(--dsw-alias-interactive-bg-hover); }
+.installedFilter { display: flex; align-items: center; gap: 10px; flex: none; font-size: 12px; color: var(--dsw-alias-label-secondary); }
+@container (max-width: 640px) { .recommendations { grid-template-columns: 1fr; } .filterBar { align-items: flex-start; flex-direction: column; } }
+
+.cards { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+.card { margin: 0; border: 1px solid var(--dsw-alias-border-l2); border-radius: 10px; background: var(--dsw-alias-bg-layer-1); }
+.cardHead { min-height: 86px; padding: 16px; gap: 13px; box-sizing: border-box; }
+.cardIcon { width: 36px; height: 36px; border-radius: 8px; }
+.cardTitle,.cardOpen { font-size: 13px; }
+.cardDesc { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; white-space: normal; overflow: hidden; }
+@container (max-width: 640px) { .cards { grid-template-columns: 1fr; } }
