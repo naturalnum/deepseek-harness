@@ -44,7 +44,9 @@ test('cloud native RPC refuses unavailable bundles, rows and install activation 
     kind: 'scalar', construct: (value: unknown): unknown => value,
   })])
   const patch = patches.parse(load(await readFile(new URL('../../native-runtime/cordis.patch.yml', import.meta.url), 'utf8'), { schema: yamlSchema }))
-  const config = PluginManager.Config(patch.find(row => row.id === 'plugin-manager')?.config)
+  const deployment = z.object({ unavailablePackages: z.array(z.string()) }).strict()
+    .parse(patch.find(row => row.id === 'plugin-manager')?.config)
+  const config = PluginManager.Config(deployment)
   expect(config.unavailablePackages).toEqual(expect.arrayContaining(groups.flatMap(([name, modules]) => [name, ...modules])))
   expect(config.unavailablePackages).toHaveLength(13)
   initProfile(dir, ['core', ...aliases.values()])
