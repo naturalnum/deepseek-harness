@@ -78,6 +78,8 @@ Every stream ends in exactly one terminal `finish` chunk: `{ kind: 'error', fail
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
+`adapterFailureChunk` exposes the same failure normalization used by LlmRuntime, so private transport adapters retain native codes, retry facts and cancellation classification without reimplementing them.
+
 <details>
 <summary>Implementation internals — click to expand</summary>
 
@@ -149,7 +151,6 @@ Reasoning-effort materialization preserves the assembled request prefix. Image i
 
 ## Known Limitations and Deferred Work
 
-`adapterFailureChunk` exposes the same failure normalization used by LlmRuntime, so private transport adapters retain native codes, retry facts and cancellation classification without reimplementing them.
 
 <a id="known-limitations-and-deferred-work"></a>
 

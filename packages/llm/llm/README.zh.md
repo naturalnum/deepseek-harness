@@ -78,6 +78,8 @@ for await (const chunk of ctx.llm.stream({
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
+`adapterFailureChunk` 导出 LlmRuntime 使用的同一失败归一化逻辑，供私有传输适配器保留原生错误代码、重试信息和取消分类，无须重新实现。
+
 <details>
 <summary>实现细节——点击展开</summary>
 
@@ -149,7 +151,6 @@ for await (const chunk of ctx.llm.stream({
 
 ## 已知限制与延期工作
 
-`adapterFailureChunk` 导出 LlmRuntime 使用的同一失败归一化逻辑，供私有传输适配器保留原生错误代码、重试信息和取消分类，无须重新实现。
 
 <a id="known-limitations-and-deferred-work"></a>
 

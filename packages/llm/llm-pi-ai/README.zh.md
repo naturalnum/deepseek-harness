@@ -125,6 +125,8 @@ Config 更新严格验证发生变化的 provider。初始加载将已存储的�
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
+嵌入方可复用导出的原生 Config、配置解析和模型发现助手。适配器和发现助手的可选 `fetch` 注入 HTTP 传输，维护中的 SDK 仍负责提供方转换和重放。WebSocket 传输仍由提供方单独负责。
+
 <details>
 <summary>实现细节——点击展开</summary>
 
@@ -209,7 +211,6 @@ pi-ai 事件变成 harness 的推理、文本、工具调用、用量与 finish 
 
 ## 已知限制与延期工作
 
-嵌入方可复用导出的原生 Config、配置解析和模型发现助手。适配器和发现助手的可选 `fetch` 注入 HTTP 传输，维护中的 SDK 仍负责提供方转换和重放。WebSocket 传输仍由提供方单独负责。
 
 <a id="known-limitations-and-deferred-work"></a>
 

@@ -124,6 +124,8 @@ Provider plugins own catalog availability; only the account route requires a sto
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
+The adapter accepts an optional owner-provided `fetch` for Messages and its default Files store. Omission keeps the normal global transport; protocol conversion, image handling and replay remain adapter-owned.
+
 <details>
 <summary>Implementation internals — click to expand</summary>
 
@@ -196,7 +198,6 @@ Loop-retained response blocks append to the next request and preserve its earlie
 ## Known Limitations and Deferred Work
 
 
-The adapter accepts an optional owner-provided `fetch` for Messages and its default Files store. Omission keeps the normal global transport; protocol conversion, image handling and replay remain adapter-owned.
 
 <a id="known-limitations-and-deferred-work"></a>
 
@@ -205,7 +206,7 @@ These limits define where the adapter stops and future work begins. They are cur
 
 - **Replacing `models` replaces the complete catalog list** — use path edits when changing one model entry.
 - **`tool_choice` is not mapped** — not part of the core vocabulary (shared with the pi-ai twin).
-- **Requests use raw `fetch`, not `@cordisjs/plugin-http`** — no shared proxy or interception configuration.
+- **HTTP transport is injectable** — the default uses global `fetch`; deployments may supply `DeepSeekAdapterOptions.fetch`. The adapter does not read `@cordisjs/plugin-http` settings.
 - **Messages in-history system updates require a retained user or tool-result turn** — if all user input after an update is omitted and the preceding wire turn is assistant, serialization fails with `UNSUPPORTED_CONTENT` before the next assistant or at the end of the request. Text or an empty tool result can retain that turn. Moving the update to an earlier turn is not supported; the [input-history reference](README.md) records the ordering constraint.
 - **Images are input-only durable attachments** — direct external URLs and assistant image output are not supported; DeepSeek input normally uses the Files API and uses inline base64 only for per-request recovery.
 - The default catalog advertises `deepseek-flash` and its text/image and in-history capabilities without probing gateway availability. Requests can fail with `INVALID_REQUEST` until the gateway enables the id.

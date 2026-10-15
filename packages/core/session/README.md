@@ -86,6 +86,8 @@ The logical `SessionHeader.isSeeded` field reports whether fork history exists w
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
+`ToolHistoryProjection` is also exported for authoritative consumers reconstructing native tool history from committed headers and developer messages. Its snapshot retains the historical definition selected by each original header reference.
+
 <details>
 <summary>Implementation internals — click to expand</summary>
 
@@ -190,7 +192,6 @@ Logging causes no invalidation, and exact reconstruction preserves request-prefi
 
 ## Known Limitations and Deferred Work
 
-`ToolHistoryProjection` is also exported for authoritative consumers reconstructing native tool history from committed headers and developer messages. Its snapshot retains the historical definition selected by each original header reference.
 
 <a id="known-limitations-and-deferred-work"></a>
 

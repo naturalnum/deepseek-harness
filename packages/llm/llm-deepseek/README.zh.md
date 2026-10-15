@@ -124,6 +124,8 @@ Files 模式通过 `maxRequestFilesBytes` 与 `maxImagesPerRequest` 限制保留
 <a id="understand-the-implementation"></a>
 ## 理解实现
 
+适配器可选接收所有者提供的 `fetch`，用于 Messages 和默认 Files 存储；省略时继续使用全局传输。协议转换、图像处理和重放仍由适配器负责。
+
 <details>
 <summary>实现细节——点击展开</summary>
 
@@ -196,7 +198,6 @@ loop 保留的响应块会追加到下一个请求，并保留其更早的可复
 ## 已知限制与延期工作
 
 
-适配器可选接收所有者提供的 `fetch`，用于 Messages 和默认 Files 存储；省略时继续使用全局传输。协议转换、图像处理和重放仍由适配器负责。
 
 <a id="known-limitations-and-deferred-work"></a>
 
@@ -205,7 +206,7 @@ loop 保留的响应块会追加到下一个请求，并保留其更早的可复
 
 - **替换 `models` 会替换完整目录列表**——修改单个模型条目时使用路径编辑。
 - **不映射 `tool_choice`**——不属于核心词汇（与 pi-ai 孪生共享）。
-- **请求使用原始 `fetch`，而非 `@cordisjs/plugin-http`**——没有共享代理或拦截配置。
+- **HTTP 传输可注入**——默认使用全局 `fetch`；部署可提供 `DeepSeekAdapterOptions.fetch`。适配器不读取 `@cordisjs/plugin-http` 设置。
 - **Messages 历史内 system 更新需要保留用户或工具结果轮次**——若更新后的全部用户输入都被省略，且前一个协议轮次是 assistant，序列化会在下一个 assistant 之前或请求结束处以 `UNSUPPORTED_CONTENT` 失败。文本或空工具结果可以保留该轮次。不支持将更新移到更早的轮次；[输入历史参考](README.zh.md)记录了排序约束。
 - **图片是仅用于输入的持久附件**——不支持直接外部 URL 与 assistant 图片输出；DeepSeek 输入通常使用 Files API，仅在单次请求恢复时使用内联 base64。
 - 默认目录公布 `deepseek-flash` 及其文本、图片和历史内更新能力，不探测网关可用性。网关开放该 ID 前，请求可能以 `INVALID_REQUEST` 失败。
