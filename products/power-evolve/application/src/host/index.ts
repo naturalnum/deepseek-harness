@@ -43,9 +43,12 @@ import type { StdioActionListRequestV2, StdioCreateRequestV2, StdioDeleteRequest
   StdioListRequestV2, StdioToggleRequestV2, StdioUpdateRequestV2 } from '@power-evolve/contracts/stdio-management'
 import { stdioActionRequestV2, stdioCheckRequestV2, stdioReceiptRequestV2 } from '@power-evolve/contracts/stdio-mcp'
 import { StdioManagementRpcV2, stdioManagementRequestsV2, stdioManagementEndpointsV2 } from '../stdio-v2-management-rpc.ts'
+import { modelCredentialTicketRequest, modelCredentialTicket, modelCredentialReceipt } from '@power-evolve/contracts/model-settings'
 
 const requests = { ...mcpManagementRequests, ...sshManagementRequests, ...stdioManagementRequestsV2,
   me: z.object({}).strict(), logout: z.object({}).strict(), modelsList: z.object({}).strict(), settingsUpdate: settingsUpdateRequest,
+  modelCredentialTicket: modelCredentialTicketRequest,
+  modelCredentialReceipt: z.object({ requestId: z.uuid() }).strict(),
   accountCapabilities: accountEmptyRequest,
   create: createRequest, list: listRequest, prompt: promptRequest, page: pageRequest, follow: pageRequest,
   filesList: sessionFilesListRequest, filesRead: sessionFileReadRequest,
@@ -81,6 +84,7 @@ const requests = { ...mcpManagementRequests, ...sshManagementRequests, ...stdioM
 const endpoint = { ...mcpManagementEndpoints, ...sshManagementEndpoints, ...stdioManagementEndpointsV2,
   ...EXECUTION_RESOLUTION_ROUTES, me: '/identity/me', logout: '/identity/logout', modelsList: '/identity/models',
   settingsUpdate: '/identity/settings/update',
+  modelCredentialTicket: '/native/models/credentials/ticket', modelCredentialReceipt: '/native/models/credentials/receipt',
   accountCapabilities: ACCOUNT_ROUTES.capabilities,
   create: '/sessions/create', list: '/sessions/list', prompt: '/sessions/prompt', page: '/sessions/page',
   filesList: '/files/session/list', filesRead: '/files/session/read',
@@ -105,6 +109,7 @@ type Method = keyof typeof requests
 declare module '@deepseek-ai/cordis' { interface Context { powerEvolve: ProductRemote; powerEvolveBrowserAuth: BrowserAgentAuth } }
 
 class ProductRemote extends TypertRemoteService {
+  static inject = ['powerEvolveRuntime']
   private readonly stdio: StdioManagementRpcV2
   constructor(ctx: Context, private readonly options: { tokens: WeakMap<PeerScope, string>
     pollMs: number
@@ -124,6 +129,18 @@ class ProductRemote extends TypertRemoteService {
   @Remote me(request: z.infer<typeof requests.me>) { return this.call('me', request) }
   @Remote logout(request: z.infer<typeof requests.logout>) { return this.call('logout', request) }
   @Remote modelsList(request: z.infer<typeof requests.modelsList>) { return this.call('modelsList', request) }
+  @Remote async modelCredentialTicket(request: z.infer<typeof requests.modelCredentialTicket>) {
+    const result = modelCredentialTicket.parse(await this.call('modelCredentialTicket', request))
+    const upload = new URL(result.uploadUrl)
+    if (result.requestId !== request.requestId || upload.origin !== this.options.platformOrigin
+      || upload.pathname !== '/model-credentials/upload' || upload.username || upload.password || upload.search || upload.hash) {
+      throw new PlatformError(503, 'model_credential_upload_unavailable')
+    }
+    return result
+  }
+  @Remote async modelCredentialReceipt(request: z.infer<typeof requests.modelCredentialReceipt>) {
+    return modelCredentialReceipt.parse(await this.call('modelCredentialReceipt', request))
+  }
   @Remote async accountCapabilities(request: z.infer<typeof requests.accountCapabilities>) {
     return accountCapabilitiesValue.parse(await this.call('accountCapabilities', request))
   }
@@ -400,7 +417,7 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
   if (runtimeUserId === '') installRemote(ctx)
   else await ctx.inject(['agentPresets', 'permissionPresets', 'nativeRuntimeSessions', 'nativeRuntimeExecution'], installRemote)
   const tokens = new WeakMap<PeerScope, string>()
-  ctx.plugin(ProductRemote, { tokens, pollMs: config.pollMs, platformOrigin: config.platformOrigin })
+  await ctx.plugin(ProductRemote, { tokens, pollMs: config.pollMs, platformOrigin: config.platformOrigin }).await()
   const invocations: InvocationDescriptor[] = Object.entries(requests).map(([method, request]) => ({
     id: `@power-evolve/application#powerEvolve/${method}`, service: 'powerEvolve', namespace: 'powerEvolve', method,
     invocation: { kind: 'direct' },
@@ -428,7 +445,9 @@ export async function apply(ctx: Context, config: Config): Promise<void> {
         if (agent.session.header.origin !== 'subagent') return
         const runtime = imageCtx.powerEvolveRuntime, grant = runtime.require(agent.id)
         grant.settings = settings.parse(await runtime.call('/runtime/subagents/configure', grant.token, {
-          provider: agent.options.provider ?? 'power-evolve', model: agent.options.model ?? grant.settings.model,
+          provider: agent.options.provider ?? grant.settings.provider ?? 'power-evolve', model: agent.options.model ?? grant.settings.model,
+          ...((agent.options.reasoningEffort ?? grant.settings.reasoningEffort) === undefined ? {}
+            : { reasoningEffort: agent.options.reasoningEffort ?? grant.settings.reasoningEffort }),
           maxTokens: agent.options.maxTokens ?? grant.settings.maxTokens }))
         runtime.assertGrant(grant)
         const images = imageCtx.attachments

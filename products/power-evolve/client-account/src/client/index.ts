@@ -6,10 +6,12 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import type {} from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import { AccountHttpClient } from './account-api.ts'
 import { AccountMenu } from './AccountMenu.tsx'
 import { AccountSession } from './session-expiry.ts'
 import { en, NS, zh, type AccountLocaleKey } from './locales.ts'
+import { ModelCredentialIntake } from './model-credential-intake.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap { 'powerEvolve.account': AccountLocaleKey }
@@ -39,6 +41,12 @@ export function apply(ctx: Context): void {
   }, 'PowerEvolve account identity browser wake')
   const loadNavigation = (signal: AbortSignal) => client.navigation(signal)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'PowerEvolve account labels')
+  const t = ctx.locale.bind(NS)
+  const modelIntake = new ModelCredentialIntake(async signal => new URL(await client.loginUrl(signal)).origin,
+    () => ({ failed: t('modelKeyFailed'), uncertain: t('modelKeyUncertain') }), undefined,
+    () => { ctx.get('modelDirectories')?.refreshCatalog() })
+  ctx.provide('modelsCredentialIntake', modelIntake)
+  ctx.effect(() => () => modelIntake.close(), 'PowerEvolve direct model credential intake')
   ctx.slots.inject('settings.launcher', () => ctx.slots.register({
     name: 'settings.launcher', locale: NS, priority: -10,
     inject: () => ({ client, loadNavigation, navigate: (url: string) => { window.location.assign(url) } }),

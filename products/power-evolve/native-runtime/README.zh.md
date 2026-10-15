@@ -43,6 +43,8 @@ Host 配置 `nativeClientMaxRequests` 与 Pool 配置 `clientMaxRequests` 默认
 
 [cordis.patch.yml](cordis.patch.yml) 通过[应用适配](../application/README.zh.md) 替换本地 JSONL、provider 凭据和执行 providers。原生 base 与 Web bundles 拥有自身 Settings、tools 与 consumer 行为。原生设置和插件编辑保存完整账号私有 Profile，包括用户 patch、package 配置与 storage。Launcher 在 Runtime 代际之间保留该 Profile，同时每个 incarnation 拥有独立生命周期目录；恢复进程不会重放子会话提示。
 
+原生 Models 页面编辑此账号由 Platform 持有的适配器设置和只写凭据引用。浏览器必须使用直接接收器；Runtime 只接收公开模型元数据和原生块。提供商注册从账号目录刷新，并保留原生重试策略；模型解析保留原生上下文、推理和图片计价行为。原生 `prepareCall()` 在 Platform 捕获当前账号的一份配置快照及其模型元数据与图片计价信息，分发时以原始操作 bearer 消费该不透明标识。原生块与重放状态保持不变。Session 与子 Agent 消费者使用各自冻结的提供商、模型和可选推理选择；新 Session 继承账号默认值。
+
 Filesystem、subprocess 与 sandbox providers 捕获精确发起 Agent 的服务器签发 execution world。权限模式来自已提交的原生 Session events，后续模式 event 会使旧代际失效。原生 PTC node bootstrap 为执行镜像中的 `/opt/power-evolve/native-ptc-process.mjs`。Platform 控制物理执行 Pod；Runtime 没有 Kubernetes 或数据库凭据，也不挂载执行 Workspace。
 
 原生指令配置提供方先于 standard、PTC 与 Cordis 预设激活。它保留维护版指令加载器及字节预算，以 `/home/agent/.dsh/AGENTS.md` 读取用户全局指令，并通过 `.` 标记将规范化 Session cwd `/workspace` 作为项目根。Workspace 发现不会探测执行世界外的祖先路径。Home 与 Workspace 指令保留原生持久指令 events；执行权限仍来自 Platform 与物理挂载。

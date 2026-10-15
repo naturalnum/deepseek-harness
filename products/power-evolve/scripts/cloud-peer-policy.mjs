@@ -76,12 +76,14 @@ const CLOUD_SDK_PROVIDER_PEERS = Object.freeze({
     'AssistantStreamAccumulator',
     'LlmAdapter',
     'LlmError',
+    'ReasoningEffortId',
     'attributionHeaders',
     'expandAssistantStream',
     'resolveImageAttachmentAccess',
   ]),
   '@deepseek-ai/dsh-llm-deepseek': Object.freeze([
     'DeepSeekAdapter',
+    'deepSeekImageRequestPricing',
     'catalogModelInfo',
     'resolveAdapterOptions',
   ]),
@@ -94,7 +96,7 @@ const CLOUD_SDK_PROVIDER_PEERS = Object.freeze({
   '@deepseek-ai/dsh-shell': Object.freeze(['default']),
   '@deepseek-ai/dsh-shell-env': Object.freeze(['ShellEnvRegistry']),
   '@deepseek-ai/dsh-tool-bash': Object.freeze(['apply', 'inject', 'name', 'Config']),
-  '@deepseek-ai/dsh-timeout': Object.freeze(['deadline', 'timeoutOf']),
+  '@deepseek-ai/dsh-timeout': Object.freeze(['deadline', 'idleWatchdog', 'timeoutOf']),
   '@deepseek-ai/dsh-session': Object.freeze([
     'ToolHistoryProjection',
     'KNOWN_SESSION_EVENT_TYPES',
@@ -265,7 +267,7 @@ export const CLOUD_PEER_REQUIRED_HOST_EXPORTS = Object.freeze({
   '@power-evolve/contracts/mcp-metadata': Object.freeze(['mcpPresentation', 'stdioEnvironmentRef']),
   '@power-evolve/contracts/model-settings': Object.freeze([
     'modelSettingsNamespace', 'modelCredentialReference', 'modelDiscoveryDraft', 'modelDiscovered',
-    'modelSettingsWrite', 'modelCredentialTicketRequest', 'modelCredentialReceipt', 'modelSettingsLimits',
+    'modelSettingsWrite', 'modelCredentialTicketRequest', 'modelCredentialReceipt', 'modelCredentialTicket', 'modelSettingsLimits',
   ]),
   '@power-evolve/contracts/stdio-environment': Object.freeze([
     'stdioEnvironmentOptions', 'stdioEnvironmentReceipt', 'stdioEnvironmentReceiptRequest',

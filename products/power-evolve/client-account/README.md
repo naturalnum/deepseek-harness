@@ -35,6 +35,8 @@ The plugin checks the personal `/api/powerEvolve/me` endpoint on activation, Con
 
 The login address comes from `/config` and must be HTTP(S) without embedded credentials. A failed lookup leaves the Connection stopped and records an unavailable destination; `AccountSession.returnToLogin()` supports an explicit retry. This package does not add a recovery modal. Plugin disposal cancels identity, capability and logout requests. Client replacement clears the launcher identity and cancels pending logout; late responses cannot navigate the replacement client. The plugin requires the browser Connection service's [stop method](../../../packages/client/connection/README.md#connection-generation).
 
+The plugin installs the native Models page's optional browser credential intake. Host receives only ticket metadata and original receipt identities; the browser sends key bytes directly to the configured Platform origin with a one-use ticket. Draft discovery uses the same direct transport without storing the key. An uncertain upload queries its original receipt without resending bytes. Confirmed storage refreshes the native model selectors, and plugin disposal aborts and joins its accepted requests.
+
 <a id="trusted-account-page"></a>
 ### Trusted account page
 

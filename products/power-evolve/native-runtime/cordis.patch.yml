@@ -45,6 +45,9 @@
   disabled: true
 - id: account-controller
   disabled: true
+- id: ui-settings-models
+  config:
+    directCredentialIntake: true
 - id: file-reference-local
   disabled: true
 - id: office-to-pdf
@@ -75,7 +78,7 @@
 - id: agent-default-model
   inject: [powerEvolveRuntime]
   config:
-    provider: power-evolve
+    provider: !!js ctx.powerEvolveRuntime.runtimeDefaultProvider
     model: !!js ctx.powerEvolveRuntime.runtimeDefaultModel
 - id: web-search-deepseek
   disabled: true

@@ -10,6 +10,7 @@ import { RemoteStreamMuxServer, rejectRemoteStreamUpgrade } from '@deepseek-ai/d
 import type { PeerId, PeerScope } from '@deepseek-ai/dsh-typert-protocol'
 import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-plugin-manager'
+import type { SettingsNamespace } from '@deepseek-ai/dsh-settings/types'
 import { createScope } from '@deepseek-ai/dsh-scope'
 import { z } from 'zod'
 import { isAttachmentError } from '@deepseek-ai/dsh-attachment'
@@ -27,7 +28,9 @@ import type { BrowserAgentAuth } from './browser-auth.ts'
 import type {} from './scope.ts'
 import { nativePermissionKnobs, nativePermissionProjection } from './native-permission-projection.ts'
 import { followNativeSession, type NativeFollowLimits } from './native-session-follow.ts'
-import { nativeSettings, nativeTenantSettingsArguments, nativeTenantSettingsResult } from './native-settings.ts'
+import { nativeSettings, nativeTenantSettingsArguments, nativeTenantSettingsResult,
+  nativeModelSettingsDescribe, nativeModelSettingsWrite } from './native-settings.ts'
+import { modelCredentialReference, modelDiscoveryDraft, modelSettingsNamespace } from '@power-evolve/contracts/model-settings'
 import { readPluginInventory } from '@deepseek-ai/dsh-host-plugin-inventory'
 import { installNativeRuntimeRoutingUpgrade } from './native-runtime-routing.ts'
 import type {} from './native-runtime-sessions.ts'
@@ -96,6 +99,7 @@ function failure(error: unknown): { code: string; message: string; details: obje
   }
   if (error instanceof PlatformError) {
     const detail = error.details ?? {}
+    if (error.code === 'settings/conflict') return { code: 'settings/conflict', message: 'Settings changed. Read the current revision before saving.', details: detail }
     if (isAttachmentError(error)) return { code: 'session/attachment-invalid',
       message: 'Image attachment is unavailable.', details: { reason: error.code } }
     if (error.code === 'native_image_not_referenced') return { code: 'session/attachment-invalid',
@@ -218,10 +222,25 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
       return undefined
     }
     if (method.startsWith('settings/')) {
-      if (ctx.powerEvolveRuntime.config.runtimeUserId === '') return nativeSettings(call, method, args, token)
+      const requested = z.record(z.string(), z.unknown()).parse(args)
+      if (modelSettingsNamespace.safeParse(requested.ns).success) {
+        const result = await nativeModelSettingsWrite(call, method, args, token)
+        await ctx.get('nativeModelRoutes')?.refresh(signal)
+        ctx.emit('settings/document-updated', brandString<SettingsNamespace>(z.string().parse(requested.ns)),
+          z.object({ revision: z.number().int().positive() }).parse(result).revision)
+        ctx.emit('llm/adapters-updated')
+        return result
+      }
+      if (ctx.powerEvolveRuntime.config.runtimeUserId === '') {
+        const base = await nativeSettings(call, method, args, token)
+        return method === 'settings/describe'
+          ? nativeModelSettingsDescribe(base, await call('/native/models/settings/describe', token, {}, signal)) : base
+      }
       const input = nativeTenantSettingsArguments(z.record(z.string(), z.unknown()).parse(args))
-      return new NativeWireResult(nativeTenantSettingsResult(method,
-        await ctx.typertGateway.wireRpc.invoke(method, { args: input }, undefined, signal)))
+      const result = nativeTenantSettingsResult(method, await ctx.typertGateway.wireRpc.invoke(method, { args: input }, undefined, signal))
+      return method === 'settings/describe' && result.ok
+        ? new NativeWireResult({ ...result, value: nativeModelSettingsDescribe(result.value,
+          await call('/native/models/settings/describe', token, {}, signal)) }) : new NativeWireResult(result)
     }
     if (method.startsWith('pluginManager/')) {
       const operation = method.slice('pluginManager/'.length)
@@ -264,20 +283,25 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
       }
       case 'session/modelCatalog': {
         z.object({}).strict().parse(args)
-        const [identity, catalog] = await Promise.all([
-          call('/identity/me', token, {}), call('/identity/models', token, {}),
-        ])
-        const selected = z.object({ settings: z.object({ model: z.string() }) }).parse(identity).settings
-        const models = z.object({ models: z.array(z.object({ id: z.string(), label: z.string() })) }).parse(catalog).models
-        return { default: { provider: 'power-evolve', model: selected.model, reasoningEffort: 'off' },
-          routableProviders: models.length ? ['power-evolve'] : [],
-          groups: models.length ? [{ id: 'power-evolve', name: 'PowerEvolve',
-            models: models.map(model => ({ id: model.id, name: model.label,
-              reasoning: { defaultEffort: 'off', efforts: [{ id: 'off', name: 'off' }] } })) }] : [],
-          failures: [] }
+        await ctx.get('nativeModelRoutes')?.refresh(signal)
+        return call('/native/models/catalog', token, {}, signal)
+      }
+      case 'llm/listProviders':
+      case 'llm/listConfigurableProviders': {
+        z.object({}).strict().parse(args)
+        const providers = z.object({ registered: z.array(z.unknown()), directory: z.array(z.unknown()) }).strict()
+          .parse(await call('/native/models/providers', token, {}, signal))
+        return method === 'llm/listProviders' ? providers.registered : providers.directory
+      }
+      case 'llm/discoverModels': {
+        const { settingsNs, request } = z.object({ settingsNs: modelSettingsNamespace,
+          request: modelDiscoveryDraft.omit({ settingsNs: true }) }).strict().parse(args)
+        return call('/native/models/discovery', token, { settingsNs, ...request }, signal)
       }
       case 'session/selectModel': {
         const input = withRequest(nativeModelSelect).parse(args)
+        if (ctx.powerEvolveRuntime.config.runtimeUserId !== '') await ctx.nativeRuntimeSessions.close(input.request.sessionId)
+        await ctx.get('nativeModelRoutes')?.refresh(signal)
         return call('/native/models/select', token, input.request)
       }
       case 'session/rename': return call('/native/sessions/rename', token, withRequest(nativeSessionRename).parse(args).request)
@@ -296,9 +320,18 @@ export function installNativeRemote(ctx: Context, auth: BrowserAgentAuth, origin
         return []
       }
       case 'credentials/describe': {
-        const { refs } = z.object({ refs: z.array(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/u)).max(64) }).strict().parse(args)
-        return Object.fromEntries(refs.map(ref => [ref, { configured: false, writable: false }]))
+        const input = z.object({ refs: z.array(modelCredentialReference) }).strict().parse(args)
+        const result = z.object({ refs: z.record(modelCredentialReference,
+          z.object({ configured: z.boolean(), writable: z.boolean(), source: z.string().optional() }).strict()) }).strict()
+          .parse(await call('/native/models/credentials/describe', token, input, signal))
+        return result.refs
       }
+      case 'credentials/unset': {
+        const input = z.object({ ref: modelCredentialReference }).strict().parse(args)
+        await call('/native/models/credentials/unset', token, input, signal)
+        return undefined
+      }
+      case 'credentials/set': throw new PlatformError(403, 'model_credential_direct_intake_required')
       case 'agentPresets/list': {
         z.object({}).strict().parse(args)
         if (ctx.powerEvolveRuntime.config.runtimeUserId === '') return { presets: [] }

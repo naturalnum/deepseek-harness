@@ -9,6 +9,8 @@ import { z } from 'zod'
 import { grant as grantSchema, PlatformError, type Grant } from '../contracts.ts'
 import { HostNativeWriterClient, type HostNativeWriterLease } from './native-writer-client.ts'
 import type {} from './native-runtime-execution.ts'
+import { nativeModelAgentOptions } from './model.ts'
+import type {} from './model.ts'
 import { flushNativeSession } from './native-session-flush.ts'
 
 declare module '@deepseek-ai/cordis' { interface Context { nativeRuntimeSessions: NativeRuntimeSessions } }
@@ -35,7 +37,7 @@ function authorityEnded(error: unknown): boolean {
 /** Session identity is always fixed by PG ownership before the native Gateway resolves its Agent. */
 export default class NativeRuntimeSessions extends Service {
   static inject = ['powerEvolveRuntime', 'agents', 'sessions', 'sessionProjections', 'agentPresets',
-    'nativeRuntimeExecution', 'sandboxPolicy', 'sessionPersistence']
+    'nativeRuntimeExecution', 'sandboxPolicy', 'sessionPersistence', 'nativeModelRoutes']
   static Config = Config
   private readonly ownerFiber: Fiber
   private closing = false
@@ -82,6 +84,7 @@ export default class NativeRuntimeSessions extends Service {
    */
   async ensure(id: SessionId, browserToken: string): Promise<Agent> {
     if (!this.available) throw new PlatformError(409, 'native_interactive_closing')
+    await this.ctx.nativeModelRoutes.refresh()
     const current = this.ctx.agents.get(id)
     if (current) {
       this.ctx.powerEvolveRuntime.assertGrant(this.ctx.powerEvolveRuntime.require(id))
@@ -152,7 +155,7 @@ export default class NativeRuntimeSessions extends Service {
       })
       handle = await this.ctx.agents.resume({ resumeSessionId: id, signal: capturedMaintenance.stop.signal,
         disposeOptions: { keepInbox: true },
-        agentOptions: { provider: 'power-evolve', model: captured.settings.model, maxTokens: captured.settings.maxTokens },
+        agentOptions: nativeModelAgentOptions(captured.settings),
         setup: async (agentCtx, agent) => {
           preparing = agent
           agentCtx.effect(() => agent.onBeforeTurn(() => { throw new PlatformError(403, 'native_interactive_model_forbidden') }))

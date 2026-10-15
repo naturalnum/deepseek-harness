@@ -30,6 +30,26 @@ export type ModelDiscoveryOutcome =
   /** The interrogation was refused, with the Host's own diagnostic. */
   | { readonly kind: 'refused'; readonly message: string }
 
+/** Optional browser-owned credential transport for a remote credential authority. */
+export interface ModelsCredentialIntake {
+  /** Store a typed key without passing its value through Host RPC.
+   * @param ref Native credential reference.
+   * @param value Browser-owned key draft.
+   * @returns A refusal message, or absence after confirmed storage.
+   */
+  storeCredential(ref: string, value: string): Promise<string | undefined>
+  /** Discover models with a one-shot key without storing it or passing it through Host RPC.
+   * @param settingsNs Adapter namespace owning the discovery.
+   * @param request Browser draft including its one-shot key.
+   * @returns Native discovered models or a refusal.
+   */
+  discoverModels(settingsNs: string, request: LlmModelDiscoveryRequest): Promise<ModelDiscoveryOutcome>
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Context { modelsCredentialIntake: ModelsCredentialIntake }
+}
+
 /** The Host operations the Models page and its cards invoke. */
 export interface ModelsOperations {
   /**
@@ -77,15 +97,19 @@ export interface ModelsOperations {
  * Bind the page's Host operations to the plugin's own Remote namespaces.
  * @param ctx - the page plugin's context, which declares `remote.credentials`,
  * `remote.llm`, and `remote.settings` in its own `inject`.
+ * @param direct - optional deployment requirement and localized refusal when its browser intake is unavailable.
  * @returns the callbacks the section and its cards are injected with.
  */
-export function createModelsOperations(ctx: ClientContext): ModelsOperations {
+export function createModelsOperations(ctx: ClientContext, direct?: { required: boolean; unavailable(): string }): ModelsOperations {
   return {
     describeCredential: async (ref) => {
       const response = await ctx.remote.credentials.describe([ref])
       return response.ok ? response.value[ref] : undefined
     },
     storeCredential: async (ref, value) => {
+      const intake = ctx.get('modelsCredentialIntake')
+      if (intake !== undefined) return intake.storeCredential(ref, value)
+      if (direct?.required === true) return direct.unavailable()
       const response = await ctx.remote.credentials.set(ref, value)
       return response.ok ? undefined : response.error.message
     },
@@ -95,11 +119,17 @@ export function createModelsOperations(ctx: ClientContext): ModelsOperations {
     },
     writeSettings: async (ns, ops, expectedRevision) => {
       const response = await ctx.remote.settings.mutate(ns, ops, expectedRevision)
-      if (response.ok) return { kind: 'written', view: response.value }
+      if (response.ok) {
+        ctx.get('configForms')?.describe().acceptView(response.value)
+        return { kind: 'written', view: response.value }
+      }
       const { code, message } = response.error
       return code === 'settings/conflict' ? { kind: 'conflict', message } : { kind: 'refused', message }
     },
     discoverModels: async (settingsNs, request) => {
+      const intake = ctx.get('modelsCredentialIntake')
+      if (intake !== undefined && request.apiKey !== undefined) return intake.discoverModels(settingsNs, request)
+      if (request.apiKey !== undefined && direct?.required === true) return { kind: 'refused', message: direct.unavailable() }
       const response = await ctx.remote.llm.discoverModels(settingsNs, request)
       return response.ok
         ? { kind: 'found', models: response.value }

@@ -47,7 +47,7 @@ const NS = 'settings.models'
 export type {
   ModelsSettingsState, ProviderDirectoryEntry, ProviderRow,
 } from './store.ts'
-export type { ModelDiscoveryOutcome, ModelsOperations, SettingsWriteOutcome } from './operations.ts'
+export type { ModelDiscoveryOutcome, ModelsCredentialIntake, ModelsOperations, SettingsWriteOutcome } from './operations.ts'
 
 /**
  * Refetch the page snapshot only after its first load: an unopened Models
@@ -83,13 +83,13 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-settings-models: copy dictionaries')
 
   const schema = createSettingsSchemaOperations(ctx.settingsSchema)
+  const t = ctx.locale.bind(NS) as ModelsSectionInjected['t']
   // Bound once here, where the Remote namespaces are declared in this plugin's
   // own `inject`; the cards receive callbacks and never a context.
-  const operations = createModelsOperations(ctx)
+  const operations = createModelsOperations(ctx, { required: configured.directCredentialIntake, unavailable: () => t('keyIntakeUnavailable') })
   const controller = new ModelsSettingsStore(ctx, schema, ctx.configForms.describe())
   // Registration-time text (the nav label thunk) and the inject faces share
   // one bound translate; copy freshness rides the locale revision.
-  const t = ctx.locale.bind(NS) as ModelsSectionInjected['t']
   const injected = (): ModelsSectionInjected => ({
     controller,
     hooks: { snapshot: controller.store },

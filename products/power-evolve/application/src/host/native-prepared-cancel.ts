@@ -2,6 +2,7 @@
 import { randomUUID } from 'node:crypto'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent, AgentHandle } from '@deepseek-ai/dsh-agent'
+import { nativeModelAgentOptions } from './model.ts'
 import { z } from 'zod'
 import { PlatformError, type Grant } from '../contracts.ts'
 import type { NativeExecutionFrame } from '../native-execution-frame-contracts.ts'
@@ -73,7 +74,7 @@ export async function cancelPreparedInput(input: NativePreparedCancellationRun):
   try {
     handle = await ctx.agents.resume({ resumeSessionId: operation.sessionId, signal: lifetime.signal,
       disposeOptions: { keepInbox: true },
-      agentOptions: { provider: 'power-evolve', model: operation.settings.model, maxTokens: operation.settings.maxTokens },
+      agentOptions: nativeModelAgentOptions(operation.settings),
       setup: (agentCtx, agent) => {
         const publisher = runtime.publication(operation)
         agentCtx.effect(() => publisher.onFailure((error) => { lifetime.abort(error) }))

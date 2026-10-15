@@ -35,6 +35,8 @@ kind: package-reference
 
 登录地址来自 `/config`，必须为不含内嵌凭据的 HTTP(S) URL。查询失败后 Connection 保持停止，并记录登录地址不可用；`AccountSession.returnToLogin()` 支持明确重试。本包不增加恢复弹窗。插件销毁时取消身份、能力和退出请求。替换客户端时清除入口身份并取消待处理的退出操作；迟到响应不能导航新的客户端。插件要求浏览器 Connection 服务提供[停止方法](../../../packages/client/connection/README.zh.md#connection-generation)。
 
+此插件安装原生 Models 页面的可选浏览器凭据接收器。Host 只接收票据元数据和原始收据标识；浏览器使用一次性票据，把密钥字节直接发到配置的 Platform 来源。草稿发现使用同一直接传输，且不保存密钥。上传结果不确定时查询原始收据，不重发字节。确认保存后刷新原生模型选择器；插件卸载会取消并等待已接收的请求结束。
+
 <a id="trusted-account-page"></a>
 ### 可信账号页面
 

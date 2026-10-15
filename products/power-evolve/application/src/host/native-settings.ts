@@ -5,6 +5,7 @@ import { z } from 'zod'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-api-gateway'
 import { PlatformError } from '../contracts.ts'
+import { modelSettingsNamespace, modelSettingsWrite } from '@power-evolve/contracts/model-settings'
 
 const namespace = z.enum(['ui-settings', 'ui-settings-general'])
 const stored = z.object({ value: z.record(z.string(), z.json()), revision: z.number().int().positive() }).strict()
@@ -15,6 +16,43 @@ const operation = z.discriminatedUnion('op', [
 type Call = (path: string, token: string, input: unknown) => Promise<unknown>
 type WireResult = Awaited<ReturnType<Context['typertGateway']['wireRpc']['invoke']>>
 const searchNamespace = 'web-search-deepseek', searchEntry = 'power-evolve-web-search'
+
+/** Join native model descriptors with other settings without exposing the shared Profile.
+ * @param base Original non-model settings describe response.
+ * @param models Original tenant model describe response.
+ * @returns One native describe response retaining the authoritative model schemas and revisions.
+ */
+export function nativeModelSettingsDescribe(base: unknown, models: unknown): unknown {
+  const describe = z.object({ writable: z.boolean(), hasDocument: z.boolean(),
+    namespaces: z.array(z.object({ ns: z.string() }).loose()) }).loose()
+  const original = describe.parse(base), tenant = describe.parse(models)
+  return { ...original, writable: original.writable || tenant.writable,
+    namespaces: [...original.namespaces.filter(row => !modelSettingsNamespace.safeParse(row.ns).success), ...tenant.namespaces] }
+}
+
+/** Translate an original native model Settings write without accepting credential literals.
+ * @param call Tenant-authorized Platform caller.
+ * @param method Native update, replace or mutate method.
+ * @param raw Exact native wire arguments.
+ * @param token Current browser credential.
+ * @returns The authoritative namespace view after its revisioned write.
+ */
+export function nativeModelSettingsWrite(call: Call, method: string, raw: unknown, token: string): Promise<unknown> {
+  const common = z.object({ ns: modelSettingsNamespace, expectedRevision: z.number().int().positive().optional() })
+  const mode = method.slice('settings/'.length)
+  let input: { ns: z.infer<typeof modelSettingsNamespace>; value: unknown; expectedRevision?: number | undefined }
+  if (mode === 'update') {
+    const { patch, ...rest } = common.extend({ patch: z.record(z.string(), z.json()) }).strict().parse(raw)
+    input = { ...rest, value: patch }
+  } else if (mode === 'replace') {
+    const { section, ...rest } = common.extend({ section: z.record(z.string(), z.json()) }).strict().parse(raw)
+    input = { ...rest, value: section }
+  } else if (mode === 'mutate') {
+    const { ops, ...rest } = common.extend({ ops: modelSettingsWrite.shape.value.options[1] }).strict().parse(raw)
+    input = { ...rest, value: ops }
+  } else throw new PlatformError(403, 'native_settings_rejected')
+  return call('/native/models/settings/write', token, modelSettingsWrite.parse({ ...input, mode }))
+}
 
 /** Preserve the upstream Search page namespace while the owned Profile contains a distinct Platform provider entry.
  * @param args Original native Settings arguments, validated by their original Remote descriptor after routing.

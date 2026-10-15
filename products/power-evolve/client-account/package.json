@@ -52,7 +52,9 @@
     "@deepseek-ai/dsh-util-crypto": "workspace:*",
     "@power-evolve/contracts": "workspace:~",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "@deepseek-ai/dsh-client-ui-settings-models": "workspace:*",
+    "@deepseek-ai/dsh-client-ui-model-selection": "workspace:*"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~"

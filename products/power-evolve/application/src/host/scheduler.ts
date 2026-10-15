@@ -3,6 +3,7 @@ import { flushNativeSession } from './native-session-flush.ts'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent, AgentHandle } from '@deepseek-ai/dsh-agent'
 import { LlmError } from '@deepseek-ai/dsh-llm'
+import { nativeModelAgentOptions } from './model.ts'
 import type { StdioTaskV2 } from '@power-evolve/contracts/stdio-mcp'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -409,7 +410,7 @@ export class Scheduler {
     try {
       handle = await this.ctx.agents.resume({ resumeSessionId: operation.sessionId, signal: lifetime.signal,
         disposeOptions: { keepInbox: true },
-        agentOptions: { provider: 'power-evolve', model: operation.settings.model, maxTokens: operation.settings.maxTokens },
+        agentOptions: nativeModelAgentOptions(operation.settings),
         setup: (agentCtx, agent) => {
           const publisher = runtime.publication(operation)
           agentCtx.effect(() => publisher.onFailure(() => { lifetime.abort() }))
@@ -524,7 +525,7 @@ export class Scheduler {
       handle = await this.ctx.agents.resume({
         resumeSessionId: operation.sessionId, signal: lifetime.signal,
         disposeOptions: { keepInbox: true },
-        agentOptions: { provider: 'power-evolve', model: operation.settings.model, maxTokens: operation.settings.maxTokens },
+        agentOptions: nativeModelAgentOptions(operation.settings),
         setup: async (agentCtx, agent) => {
           if (runtime.config.runtimeUserId !== '') {
             const selected = this.ctx.sessionProjections.stateOf(agent.session, 'agentPreset')

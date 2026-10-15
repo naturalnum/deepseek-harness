@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { realpathSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { lstat, mkdir, readFile, readdir, symlink, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -75,8 +76,12 @@ export interface SourceHttpLifetime {
   ownedDatabaseRemoved: boolean
   requests: { path: string; status: number }[]
 }
+/** Explicit operator policy for one case-owned loopback model peer. */
+export interface SourceHttpFixtureOptions { readonly modelPeerOrigin?: string }
 /** Real account and metadata routes against one owned PostgreSQL database. */
 export interface SourceHttpFixture {
+  /** Original case lifetime, including its phase deadline and parent cancellation. */
+  readonly signal: AbortSignal
   pool: Pool
   url: string
   actors: { admin: SourceHttpActor; alice: SourceHttpActor; bob: SourceHttpActor }
@@ -308,7 +313,7 @@ async function loadedSource(inputPath: string, pid: number): Promise<SourceHttpW
 }
 
 async function runSourcePlatformHttpFixture(run: (fixture: SourceHttpFixture) => Promise<void>,
-  control: CaseLifetime): Promise<SourceHttpLifetime> {
+  control: CaseLifetime, options: SourceHttpFixtureOptions): Promise<SourceHttpLifetime> {
   const failures: unknown[] = []
   let ownedRoot = '', ownedDatabase = '', cleanupConfirmed = false
   let lifetime: SourceHttpLifetime | undefined
@@ -322,6 +327,15 @@ async function runSourcePlatformHttpFixture(run: (fixture: SourceHttpFixture) =>
       coverage = sourceEnvironment.parse(JSON.parse(encoded))
       assert.equal(coverage.PE_CLOUD_COVERAGE_INPUT, process.env.PE_CLOUD_COVERAGE_INPUT)
       sourceBefore = sha(await readFile(sourcePath))
+      const require = createRequire(import.meta.url)
+      for (const name of ['@power-evolve/contracts', '@power-evolve/connector-runner']) {
+        const manifest = z.object({ exports: z.record(z.string(), z.unknown()) }).loose().parse(
+          JSON.parse(await readFile(require.resolve(`${name}/package.json`), 'utf8')))
+        for (const key of Object.keys(manifest.exports)) {
+          const path = require.resolve(key === '.' ? name : `${name}/${key.slice(2)}`)
+          assert((await lstat(path)).isFile(), 'Source CLI requires built workspace dependency exports')
+        }
+      }
       control.signal.throwIfAborted()
     })
     assert(coverage)
@@ -409,6 +423,15 @@ async function runSourcePlatformHttpFixture(run: (fixture: SourceHttpFixture) =>
           assert(before !== undefined && after !== undefined)
           patch = replace(patch, before, after)
         }
+        if (options.modelPeerOrigin !== undefined) {
+          const peer = new URL(options.modelPeerOrigin)
+          assert.equal(peer.origin, options.modelPeerOrigin)
+          assert.equal(peer.protocol, 'http:'); assert.equal(peer.hostname, '127.0.0.1')
+          const policy = join(privateDir, 'model-network-policy.json')
+          await save(policy, { internalExceptions: [{ origin: peer.origin, addresses: ['127.0.0.1'], allowHttp: true }] })
+          patch = replace(patch, 'modelUrl: http://127.0.0.1:9/anthropic/v1/messages',
+            `modelUrl: http://127.0.0.1:9/anthropic/v1/messages\n        modelNetworkPolicyFile: ${JSON.stringify(policy)}`)
+        }
         await save(join(bundle, 'cordis.patch.yml'), patch)
         await save(join(bundle, 'platform.ts'), `export { name, inject, Config, apply } from ${JSON.stringify(sourcePath)}\n`)
         await save(join(bundle, 'package.json'), { name: bundleName, version: '0.0.0-private', private: true, type: 'module',
@@ -481,8 +504,8 @@ async function runSourcePlatformHttpFixture(run: (fixture: SourceHttpFixture) =>
       })
       // close is observed from spawn until disposal; an outer timeout cannot abandon it.
       const closed = observe(done)
-      const sanitizeLog = (): string => {
-        let text = childLog
+      const sanitizeLog = (original = childLog): string => {
+        let text = original
         for (const secret of secrets) text = text.replaceAll(secret, '[private]')
         return text.replace(/postgres(?:ql)?:\/\/[^\s"']+/gu, '[private-database-url]')
       }
@@ -567,7 +590,7 @@ async function runSourcePlatformHttpFixture(run: (fixture: SourceHttpFixture) =>
           assert(admin && alice && bob)
           assert.equal(admin.user.role, 'ADMIN'); assert.equal(alice.user.role, 'USER'); assert.equal(bob.user.role, 'USER')
           control.signal.throwIfAborted()
-          await run({ pool, url: platformUrl, actors: { admin, alice, bob }, http, binaryHttp,
+          await run({ signal: control.signal, pool, url: platformUrl, actors: { admin, alice, bob }, http, binaryHttp,
             attachmentRoot: join(root, 'private', 'attachments'),
             storageSnapshot: async () => {
               control.signal.throwIfAborted()
@@ -577,7 +600,11 @@ async function runSourcePlatformHttpFixture(run: (fixture: SourceHttpFixture) =>
             }, snapshot: () => { control.signal.throwIfAborted(); return publicSnapshot(pool) } })
 
         })
-      } catch (error) { caseFailures.push(error); control.abort(error) }
+      } catch (error) {
+        if (port === 0) console.error('Source HTTP CLI readiness diagnostic: ' + sanitizeLog())
+        else console.error('Source HTTP business diagnostic: ' + sanitizeLog(error instanceof Error ? error.stack ?? error.message : String(error)))
+        caseFailures.push(error); control.abort(error)
+      }
       try { caseFailures.push(...await control.drain()) }
       catch (error) { caseFailures.push(error) }
       let stop: SourceHttpLifetime['stop'] | undefined
@@ -646,15 +673,16 @@ async function runSourcePlatformHttpFixture(run: (fixture: SourceHttpFixture) =>
 /** Launch one actual source Platform Profile and join disposal even when Vitest times out the case.
  * @param run Account, settings and metadata assertions against real HTTP and PostgreSQL.
  * @param lifecycle Actual Vitest cancellation and completion callbacks for this case.
+ * @param options Exact case-owned model peer; its isolated operator policy never changes the production defaults.
  * @returns Nonsecret source execution and disposal receipt after the original cloudFixture removes its resources.
  */
 export async function sourcePlatformHttpFixture(run: (fixture: SourceHttpFixture) => Promise<void>,
-  lifecycle: Pick<TestContext, 'signal' | 'onTestFinished'>): Promise<SourceHttpLifetime> {
+  lifecycle: Pick<TestContext, 'signal' | 'onTestFinished'>, options: SourceHttpFixtureOptions = {}): Promise<SourceHttpLifetime> {
   // This latch is checked synchronously before mkdtemp, Pool checkout or CLI spawn.
   if (fileUnsafe) throw new AggregateError([fileUnsafe.error], 'Source HTTP file is quarantined before resource acquisition')
   const control = new CaseLifetime(lifecycle.signal)
   let finished = false
-  const running = runSourcePlatformHttpFixture(run, control).finally(() => { finished = true; control.finish() })
+  const running = runSourcePlatformHttpFixture(run, control, options).finally(() => { finished = true; control.finish() })
   const completion = observe(running)
   lifecycle.onTestFinished(async () => {
     if (!finished) control.abort(new Error('Vitest finished before owned source HTTP fixture settled'))

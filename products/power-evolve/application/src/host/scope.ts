@@ -60,6 +60,8 @@ export default class RuntimeScope extends Service {
   runtimeGeneration = 0
   /** Platform-selected account model sampled at process startup; every operation retains its own current settings. */
   runtimeDefaultModel = ''
+  /** Provider sampled with the startup default; each original operation retains its own selection. */
+  runtimeDefaultProvider = 'power-evolve'
   /** Shared Platform mutation journal; historical results remain separate from the live Grant map. */
   readonly nativeRetainedIntents: NativeRetainedIntentClient
   /** Current Session grants; exact object identity fences asynchronous access. */
@@ -96,6 +98,7 @@ export default class RuntimeScope extends Service {
       if (identity.userId !== this.config.runtimeUserId || identity.runtimeId !== this.workerId) throw new PlatformError(401, 'runtime_identity_mismatch')
       this.runtimeGeneration = identity.generation
       this.runtimeDefaultModel = identity.settings.model
+      this.runtimeDefaultProvider = identity.settings.provider ?? 'power-evolve'
     } else this.workerToken = (await readFile(this.config.workerTokenFile, 'utf8')).trim()
   }
 
@@ -107,6 +110,18 @@ export default class RuntimeScope extends Service {
    */
   callOwned(path: string, input: unknown, signal?: AbortSignal): Promise<unknown> {
     if (this.config.runtimeUserId === '' || !path.startsWith('/runtime/user/')) throw new PlatformError(403, 'native_runtime_required')
+    return this.call(path, this.workerToken, input, signal)
+  }
+
+  /** Read only this tenant's model metadata using the private runtime credential.
+   * @param path Fixed native model metadata endpoint; inference uses its original operation credential separately.
+   * @param input Original provider/model lookup, or an empty directory request.
+   * @param signal Metadata lookup lifetime.
+   * @returns Bounded native public metadata without credentials.
+   */
+  callModelMetadata(path: '/runtime/models/providers' | '/runtime/models/catalog' | '/runtime/models/resolve' | '/runtime/models/image-pricing' | '/runtime/models/prepare',
+    input: unknown, signal?: AbortSignal): Promise<unknown> {
+    if (this.config.runtimeUserId === '') throw new PlatformError(403, 'native_runtime_required')
     return this.call(path, this.workerToken, input, signal)
   }
 

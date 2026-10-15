@@ -102,7 +102,7 @@
     },
     "runtime": {
       "enabled": 19,
-      "shared": 358,
+      "shared": 360,
       "deferred": 4
     },
     "tooling": {
@@ -112,7 +112,7 @@
     },
     "sourceTests": {
       "enabled": 14,
-      "shared": 170,
+      "shared": 174,
       "deferred": 3
     }
   },
@@ -5817,6 +5817,48 @@
       "status": "shared",
       "owner": "tenant-models",
       "reason": "native-runtime-s3"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/application/src/host/native-model-stream.ts",
+      "status": "shared",
+      "owner": "Tenant Models",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "runtime",
+      "path": "products/power-evolve/client-account/src/client/model-credential-intake.ts",
+      "status": "shared",
+      "owner": "Tenant Models",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-model-stream.spec.ts",
+      "status": "shared",
+      "owner": "Tenant Models",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/client-account/tests/model-credential-intake.spec.ts",
+      "status": "shared",
+      "owner": "Tenant Models",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/native-model-metadata.spec.ts",
+      "status": "shared",
+      "owner": "Tenant Models",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/tenant-models-host-flow.pg.spec.ts",
+      "status": "shared",
+      "owner": "Tenant Models",
+      "reason": "core-shared"
     }
   ],
   "lintSupport": [
@@ -6034,6 +6076,12 @@
       "path": "products/power-evolve/application/tests/native-stdio-concurrent-case.mjs",
       "status": "shared",
       "owner": "SandboxAgent",
+      "reason": "core-shared"
+    },
+    {
+      "path": "products/power-evolve/application/tests/tenant-model-inference.ts",
+      "status": "shared",
+      "owner": "Tenant Models",
       "reason": "core-shared"
     }
   ],

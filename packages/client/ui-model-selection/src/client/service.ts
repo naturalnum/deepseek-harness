@@ -57,6 +57,11 @@ export class ModelDirectoryResolver extends Service {
     ctx.remote.$on('credentials/reference-updated', () => { this.catalog.refresh() })
   }
 
+  /** Refresh selectors after a browser-owned credential intake commits outside Host RPC.
+   * @returns Nothing; all live selection directories observe the shared catalog update.
+   */
+  refreshCatalog(): void { this.catalog.refresh() }
+
   /**
    * Resolve the per-session shared directory (lazy; the scope disposer
    * removes and disposes it). Unknown sessions fail loud.
