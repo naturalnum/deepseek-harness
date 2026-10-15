@@ -1,11 +1,25 @@
 /** Provider-neutral native model transport; adapters alone own provider conversion and replay metadata. */
 import { z } from 'zod'
-import type { GenerateOptions, RequestMessage, StreamChunk } from '@deepseek-ai/dsh-llm'
+import type { GenerateOptions, LlmResolvedModelInfo, RequestMessage, StreamChunk } from '@deepseek-ai/dsh-llm'
+import type { DeepSeekCatalogModel } from '@deepseek-ai/dsh-llm-deepseek'
+import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
 import { modelMessageJson } from './mcp-model-tools.ts'
 import { nativeFileAttachment } from './native-attachment-contracts.ts'
 import { legacyMigrationImage } from './platform/legacy-migration-v2-media-contracts.ts'
 
 const identity = z.string().min(1)
+/** A private prepared native configuration, carrying no execution authority. */
+export type NativeModelPreparationId = Branded<'PowerEvolveModelPreparationId'>
+/** Validated opaque identity of one prepared native call. */
+export const nativeModelPreparationId = z.uuid().transform(brandString<NativeModelPreparationId>)
+/** Public catalog facts consumed by the original synchronous native image pricing helper. */
+export type NativeModelImagePricing = { kind: 'none' } | { kind: 'deepseek'; model?: DeepSeekCatalogModel }
+/** Native prepared-call metadata; the identity binds private configuration without granting execution. */
+export interface NativePreparedModel {
+  readonly preparationId: NativeModelPreparationId
+  readonly model: LlmResolvedModelInfo
+  readonly imagePricing: NativeModelImagePricing
+}
 const block = z.discriminatedUnion('type', [
   z.object({ type: z.literal('text'), text: z.string() }).strict(),
   z.object({ type: z.literal('reasoning'), text: z.string() }).strict(),
@@ -32,17 +46,24 @@ const tool = z.object({ name: identity, description: z.string(), parameters: z.r
   deferLoading: z.literal(true).optional() }).strict()
 const request = z.object({ provider: identity, model: identity, reasoningEffort: identity.optional(),
   messages: z.array(nativeMessage), tools: z.array(tool).optional(), system: z.string().optional(),
-  toolHistory: z.object({ tools: z.array(tool), updates: z.array(z.object({ messageId: identity, additions: z.array(tool) }).strict()) }).strict().optional(),
+  toolHistory: z.object({ tools: z.array(tool),
+    updates: z.array(z.object({ messageId: identity, additions: z.array(tool) }).strict()) }).strict().optional(),
   temperature: z.number().optional(), maxTokens: z.number().int().positive().optional(), stop: z.array(z.string()).optional(),
   sessionId: z.uuid(), purpose: z.enum(['compaction', 'session-title']).optional(),
+  preparationId: nativeModelPreparationId,
 }).strict()
 
+type NativeModelRequest = Omit<GenerateOptions, 'signal'> & {
+  sessionId: NonNullable<GenerateOptions['sessionId']>
+  preparationId: NativeModelPreparationId
+}
 /** Complete JSON request accepted only with its original operation bearer; AbortSignal stays in the HTTP lifetime. */
-export const nativeModelRequest = z.custom<Omit<GenerateOptions, 'signal'> & { sessionId: NonNullable<GenerateOptions['sessionId']> }>(
+export const nativeModelRequest = z.custom<NativeModelRequest>(
   value => request.safeParse(value).success,
 )
 const failure = z.object({ message: z.string(), code: identity, status: z.number().optional(),
-  providerRetryAfterMs: z.number().optional(), requestId: z.string().optional(), offloadImages: z.number().int().positive().optional() }).strict()
+  providerRetryAfterMs: z.number().optional(), requestId: z.string().optional(),
+  offloadImages: z.number().int().positive().optional() }).strict()
 const reason = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('stop') }).strict(), z.object({ kind: z.literal('tool-calls') }).strict(),
   z.object({ kind: z.literal('max-tokens') }).strict(),

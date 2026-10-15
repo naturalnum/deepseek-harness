@@ -128,7 +128,9 @@ Cloud Bash adds a logged instruction to avoid repeating a command when its outco
 
 For accepted uploads, a logged instruction section lists only this Session's authorized file identities and explains the cloud reader and copy tools. File metadata alone does not assert that the model read the contents. The original files have no Host-local execution path.
 
-Native model requests carry provider, model and reasoning effort identities in optional account/operation settings fields. Historical `power-evolve` settings retain their original JSON. The provider-neutral runtime request transports native GenerateOptions and StreamChunk values; adapter replay envelopes remain opaque and provider credentials stay on Platform.
+Native model requests carry provider, model and reasoning effort identities in optional account/operation settings fields. Historical `power-evolve` settings retain their original JSON. The provider-neutral runtime request transports native GenerateOptions and StreamChunk values; adapter replay envelopes remain opaque and provider credentials stay on Platform. An owner-bound, expiring preparation identity keeps native model capabilities, image pricing and dispatch on one private configuration generation. It is consumed once under the original operation and carries no execution authority.
+
+Tenant model settings and credentials use the adjacent current database generation. Both maintained native adapter families execute on Platform using the owner’s encrypted references and native refresh storage. The browser uploads key bytes directly with a bounded one-use ticket; Host receives only public catalog facts, model selections and receipts. Native HTTP providers reuse the Platform destination and socket policy. Explicit WebSocket transports are unavailable in this cloud composition.
 
 <a id="known-limitations-and-deferred-work"></a>
 ## Known Limitations and Deferred Work
