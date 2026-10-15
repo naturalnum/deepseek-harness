@@ -101,6 +101,7 @@ async function prepare(f: Fixture, deferredQueuedAdmission = false) {
     (client, command) => frames.verifyInTransaction(client, command))
   const header = headerSchema.parse(first((await f.pool.query<{ header: unknown }>('SELECT header FROM pe_sessions WHERE id=$1', [created.sessionId])).rows).header)
   const native = Session.create(header.id, undefined, header), history: SessionEvent[] = []
+  let accountModelAtCAcceptance: string | undefined
   const inputs: {
     message: ReturnType<typeof admittedInputMessage.parse>
     operationId: ReturnType<typeof operationId.parse>
@@ -115,8 +116,10 @@ async function prepare(f: Fixture, deferredQueuedAdmission = false) {
         await skills.toggle(f.alice.user, skillId, true)
         await f.pool.query('INSERT INTO pe_user_models(user_id,model_id,label,max_tokens,enabled) VALUES($1,$2,$2,1000,true)',
           [f.alice.user.userId, 'C original model'])
-        await f.pool.query('UPDATE pe_users SET settings=jsonb_set(settings,\'{model}\',to_jsonb(\'C original model\'::text)) WHERE id=$1',
-          [f.alice.user.userId])
+        const changed = await f.pool.query<{ model: string }>(`UPDATE pe_users
+          SET settings=jsonb_set(settings,'{model}',to_jsonb('C original model'::text)) WHERE id=$1
+          RETURNING settings->>'model' AS model`, [f.alice.user.userId])
+        accountModelAtCAcceptance = first(changed.rows).model
         await tasks.accept(f.alice.user, created.sessionId, id, 'C queued input', f.alice.token)
         await skills.toggle(f.alice.user, skillId, false)
         await f.pool.query('UPDATE pe_users SET settings=jsonb_set(settings,\'{model}\',to_jsonb(\'changed after C acceptance\'::text)) WHERE id=$1',
@@ -149,7 +152,7 @@ async function prepare(f: Fixture, deferredQueuedAdmission = false) {
       ? executionAuthority.assertProcessInTransaction(client, session, token)
       : executionAuthority.assertExecutionInTransaction(client, session, token))
   return { tasks, executionTasks, executionAuthority, frameReader, writers, authority, writer, a, events, frames, ledger,
-    native, history, inputs, frame, admit }
+    native, history, inputs, frame, admit, accountModelAtCAcceptance }
 }
 
 async function executionCase(run: (f: Fixture, n: Prepared) => Promise<void>, deferredQueuedAdmission = false): Promise<void> {
@@ -441,7 +444,13 @@ test('native next-turn C claim across an empty interrupted tail preserves metada
     message_id AS "messageId",accepted_snapshot_digest AS "acceptedSnapshotDigest",accepted_audit_json AS "acceptedAudit"
     FROM pe_native_input_origins WHERE origin_input_id=$1`, [id])).rows))
   const bOrigin = await origin(b.originInputId), cOrigin = await origin(c.originInputId)
-  expect(cOrigin.acceptedAudit.settings.model).toBe('C original model')
+  expect(n.accountModelAtCAcceptance).toBe('C original model')
+  expect(n.accountModelAtCAcceptance).not.toBe(n.a.settings.model)
+  const sessionModel = first((await f.pool.query<{ model: string }>(
+    "SELECT value->>'model' AS model FROM pe_native_preferences WHERE user_id=$1 AND namespace=$2",
+    [f.alice.user.userId, `session-model:${n.a.sessionId}`])).rows).model
+  expect(sessionModel).toBe(n.a.settings.model)
+  expect(cOrigin.acceptedAudit.settings.model).toBe(n.a.settings.model)
   expect(cOrigin.acceptedAudit.selection).toHaveLength(1)
   const interruptedStart = n.native.append('turn/start', { turn: 2 })
   n.history.push(interruptedStart)
