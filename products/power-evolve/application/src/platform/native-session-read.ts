@@ -5,8 +5,10 @@ import { isAppendSurfaceEvent, type SessionEvent, type SessionId } from '@deepse
 import type {
   SessionFollowFrame, SessionListValue, SessionPage, SessionSummary,
 } from '@deepseek-ai/dsh-api-session-controller/types'
+import { modelSelectionProjection } from '@deepseek-ai/dsh-api-session-controller'
 import { z } from 'zod'
-import { sessionId, type Identity, PlatformError } from '../contracts.ts'
+import { sessionId, settings, type Identity, PlatformError } from '../contracts.ts'
+import { nativeModelSelect } from '../native-session-contracts.ts'
 import { headerSchema, parseEvents } from '../session-records.ts'
 import { transaction } from './database.ts'
 import { nativeProjectionView } from './native-projections.ts'
@@ -48,6 +50,8 @@ interface NativeSessionRow {
   updated_at: Date
   running: boolean
   projection_state: unknown
+  model_selection: unknown
+  account_settings: unknown
 }
 
 /** Private Host opening retains the generation cursor outside the official Client frame. */
@@ -66,6 +70,21 @@ export class NativeSessionRead {
 
   private projections(row: NativeSessionRow) {
     const baseline = nativeProjectionView(row.projection_state, row.event_count, headerSchema.parse(row.header))
+    const projected = modelSelectionProjection.wire.viewSchema.parse(baseline.values.modelSelection)
+    if (projected.next === null) {
+      let intended = row.model_selection
+      if (intended === null || intended === undefined) {
+        const current = settings.parse(row.account_settings)
+        intended = { provider: current.provider ?? 'power-evolve', model: current.model,
+          ...current.reasoningEffort === undefined ? current.provider === undefined ? { reasoningEffort: 'off' } : {}
+            : { reasoningEffort: current.reasoningEffort } }
+      }
+      const selection = nativeModelSelect.omit({ sessionId: true }).parse(intended)
+      baseline.values.modelSelection = { ...projected, next: {
+        provider: selection.provider, model: selection.model,
+        ...selection.reasoningEffort === undefined ? {} : { reasoningEffort: selection.reasoningEffort },
+      } }
+    }
     return this.imageLimits === undefined ? baseline : { ...baseline,
       values: z.record(z.string(), z.json()).parse({ ...baseline.values, imageLimits: this.imageLimits }) }
   }
@@ -82,8 +101,10 @@ export class NativeSessionRead {
   async list(user: Identity): Promise<SessionListValue> {
     const result = await this.pool.query<NativeSessionRow>(
       `SELECT s.id,s.header,s.event_count,s.lease_epoch,s.created_at,s.updated_at,COALESCE(s.lease_until>now(),FALSE) AS running,
-        p.value AS projection_state FROM pe_sessions s LEFT JOIN pe_native_preferences p
+        p.value AS projection_state,m.value AS model_selection,u.settings AS account_settings
+        FROM pe_sessions s JOIN pe_users u ON u.id=s.user_id LEFT JOIN pe_native_preferences p
           ON p.user_id=s.user_id AND p.namespace='session-projections:'||s.id::text
+        LEFT JOIN pe_native_preferences m ON m.user_id=s.user_id AND m.namespace='session-model:'||s.id::text
        WHERE s.user_id=$1 ORDER BY s.updated_at DESC,s.id LIMIT $2`,
       [user.userId, MAX_LIST_SESSIONS + 1],
     )
@@ -191,15 +212,16 @@ export class NativeSessionRead {
 
 async function ownedSnapshot(client: PoolClient, user: Identity, sessionId: string): Promise<NativeSessionRow> {
   const result = await client.query<NativeSessionRow>(
-    `SELECT id,header,event_count,lease_epoch,created_at,updated_at,COALESCE(lease_until>now(),FALSE) AS running
-     FROM pe_sessions WHERE id=$1 AND user_id=$2 FOR SHARE`, [sessionId, user.userId],
+    `SELECT s.id,s.header,s.event_count,s.lease_epoch,s.created_at,s.updated_at,COALESCE(s.lease_until>now(),FALSE) AS running,
+      p.value AS projection_state,m.value AS model_selection,u.settings AS account_settings
+      FROM pe_sessions s JOIN pe_users u ON u.id=s.user_id
+      LEFT JOIN pe_native_preferences p ON p.user_id=s.user_id AND p.namespace='session-projections:'||s.id::text
+      LEFT JOIN pe_native_preferences m ON m.user_id=s.user_id AND m.namespace='session-model:'||s.id::text
+     WHERE s.id=$1 AND s.user_id=$2 FOR SHARE OF s`, [sessionId, user.userId],
   )
   const row = result.rows[0]
   if (!row) throw new PlatformError(404, 'session_not_found')
-  const checkpoint = await client.query<{ value: unknown }>(
-    'SELECT value FROM pe_native_preferences WHERE user_id=$1 AND namespace=$2',
-    [user.userId, `session-projections:${row.id}`])
-  return { ...row, projection_state: checkpoint.rows[0]?.value }
+  return row
 }
 
 async function hasTurn(client: Pool | PoolClient, row: NativeSessionRow): Promise<boolean> {

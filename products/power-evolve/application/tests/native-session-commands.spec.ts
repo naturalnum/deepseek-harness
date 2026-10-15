@@ -2,14 +2,16 @@
 import { randomUUID } from 'node:crypto'
 import { Session, SessionLogOffset } from '@deepseek-ai/dsh-session'
 import { MessageId } from '@deepseek-ai/dsh-llm'
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
+import { Pool } from 'pg'
 import { appendOwnedEvents, type OwnedAppendState } from '../src/platform/native-owned-append.ts'
 import { transaction } from '../src/platform/database.ts'
 import { requireBrowserAccount } from '../src/platform/account-authority.ts'
 import { cloudFixture } from './cloud-fixture.ts'
 import { TaskStore } from '../src/platform/tasks.ts'
 import { EventStore } from '../src/platform/events.ts'
-import { NativeSessionRead } from '../src/platform/native-session-read.ts'
+import { NativeSessionRead, nativeFollowRequest } from '../src/platform/native-session-read.ts'
+import { followNativeSession } from '../src/host/native-session-follow.ts'
 import { NativeSessionCommands } from '../src/platform/native-session-commands.ts'
 import { NativePreferences } from '../src/platform/native-preferences.ts'
 import { headerSchema, parseEvents } from '../src/session-records.ts'
@@ -89,6 +91,106 @@ test('forks without completed turns and reused creation identities refuse before
   await identities.logout(alice.token)
   await expect(commands.rename(alice.user, alice.token, { sessionId: blank.sessionId, title: 'Revoked' })).rejects.toMatchObject({ status: 401 })
   expect(await commands.search(alice.user, 'not found')).toEqual({ items: [], hasMore: false })
+}))
+
+test('native metadata retains each Session model before its first request and across account default changes', () => cloudFixture(async ({ pool, alice, bob }) => {
+  const tasks = new TaskStore(pool, limits), preferences = new NativePreferences(pool, limits), reads = new NativeSessionRead(pool)
+  const create = () => tasks.create(alice.user, requestId.parse(randomUUID()), alice.token)
+  const original = await create(), legacy = await create(), selected = await create()
+  await pool.query('DELETE FROM pe_native_preferences WHERE user_id=$1 AND namespace=$2',
+    [alice.user.userId, `session-model:${legacy.sessionId}`])
+  await pool.query(`INSERT INTO pe_tenant_model_catalog(user_id,provider,model_id,descriptor,max_tokens)
+    SELECT $1,'owned-provider',model,$2::json,1000 FROM unnest(ARRAY['owned-a','owned-b']) AS model`,
+  [alice.user.userId, JSON.stringify({ reasoning: { efforts: [{ id: 'high' }] } })])
+  const first = { provider: 'owned-provider', model: 'owned-a', reasoningEffort: 'high' }
+  const latest = { ...first, model: 'owned-b' }
+  await preferences.selectModel(alice.user, alice.token, { sessionId: selected.sessionId, ...first })
+  const inherited = await create(), changer = await create()
+  await preferences.selectModel(alice.user, alice.token, { sessionId: changer.sessionId, ...latest })
+  const fresh = await create()
+  const account = (await pool.query<{ settings: unknown }>('SELECT settings FROM pe_users WHERE id=$1', [alice.user.userId])).rows[0]!
+  expect(settings.parse(account.settings)).toMatchObject(latest)
+  const expected = [[original, { provider: 'power-evolve', model: 'trial-model', reasoningEffort: 'off' }],
+    [legacy, { provider: 'power-evolve', model: 'trial-model', reasoningEffort: 'off' }],
+    [selected, first], [inherited, first], [fresh, latest]] as const
+  const listed = await reads.list(alice.user)
+  for (const [session, selection] of expected) {
+    expect(listed.items.find(item => item.sessionId === session.sessionId))
+      .toMatchObject({ projections: { values: { modelSelection: { lastUsed: null, next: selection } } } })
+    expect(await reads.snapshot(alice.user, { address: { kind: 'session', sessionId: session.sessionId } }))
+      .toMatchObject({ projections: { values: { modelSelection: { lastUsed: null, next: selection } } } })
+    const follow = followNativeSession(async (path, input) => {
+      expect(path).toBe('/native/sessions/snapshot')
+      return reads.snapshot(alice.user, nativeFollowRequest.parse(input))
+    }, { address: { kind: 'session', sessionId: session.sessionId } }, 100,
+    new AbortController().signal, { maxGenerationMs: 1000, maxGenerationItems: 8, maxGenerationBytes: 1_048_576 })
+    try {
+      expect((await follow.next()).value).toMatchObject({ type: 'snapshot',
+        projections: { values: { modelSelection: { lastUsed: null, next: selection } } } })
+    } finally { await follow.return(undefined) }
+    if (session !== selected) expect((await pool.query('SELECT 1 FROM pe_events WHERE session_id=$1', [session.sessionId])).rowCount).toBe(0)
+  }
+  const other = await tasks.create(bob.user, requestId.parse(randomUUID()), bob.token)
+  expect((await reads.list(bob.user)).items[0]).toMatchObject({ sessionId: other.sessionId,
+    projections: { values: { modelSelection: { next: { provider: 'power-evolve', model: 'trial-model', reasoningEffort: 'off' } } } } })
+  await expect(reads.snapshot(bob.user, { address: { kind: 'session', sessionId: fresh.sessionId } }))
+    .rejects.toMatchObject({ code: 'session_not_found' })
+}))
+
+test('native model metadata ignores foreign preferences and refuses malformed owned intent', () => cloudFixture(async ({ pool, alice, bob }) => {
+  const tasks = new TaskStore(pool, limits), reads = new NativeSessionRead(pool)
+  const created = await tasks.create(alice.user, requestId.parse(randomUUID()), alice.token)
+  const namespace = `session-model:${created.sessionId}`
+  await pool.query('INSERT INTO pe_native_preferences(user_id,namespace,value,revision) VALUES($1,$2,$3,1)',
+    [bob.user.userId, namespace, { provider: 'foreign', model: 'foreign-model' }])
+  expect(await reads.snapshot(alice.user, { address: { kind: 'session', sessionId: created.sessionId } }))
+    .toMatchObject({ projections: { values: { modelSelection: { next: { provider: 'power-evolve', model: 'trial-model' } } } } })
+  await pool.query('DELETE FROM pe_native_preferences WHERE user_id=$1 AND namespace=$2', [alice.user.userId, namespace])
+  expect(await reads.snapshot(alice.user, { address: { kind: 'session', sessionId: created.sessionId } }))
+    .toMatchObject({ projections: { values: { modelSelection: { next: { provider: 'power-evolve', model: 'trial-model' } } } } })
+  await pool.query('INSERT INTO pe_native_preferences(user_id,namespace,value,revision) VALUES($1,$2,$3,1)',
+    [alice.user.userId, namespace, { provider: 'power-evolve', model: 'trial-model' }])
+  await pool.query("UPDATE pe_users SET settings='{}'::jsonb WHERE id=$1", [alice.user.userId])
+  expect(await reads.snapshot(alice.user, { address: { kind: 'session', sessionId: created.sessionId } }))
+    .toMatchObject({ projections: { values: { modelSelection: { next: { provider: 'power-evolve', model: 'trial-model' } } } } })
+  await pool.query('UPDATE pe_native_preferences SET value=$3 WHERE user_id=$1 AND namespace=$2',
+    [alice.user.userId, namespace, { provider: 'owned', model: 123 }])
+  await expect(reads.list(alice.user)).rejects.toMatchObject({ name: 'ZodError' })
+  await expect(reads.snapshot(alice.user, { address: { kind: 'session', sessionId: created.sessionId } }))
+    .rejects.toMatchObject({ name: 'ZodError' })
+}))
+
+test('a metadata read waiting on the original writer refuses mixed PostgreSQL cuts', () => cloudFixture(async ({ pool, alice }) => {
+  const tasks = new TaskStore(pool, limits), created = await tasks.create(alice.user, requestId.parse(randomUUID()), alice.token)
+  const writer = await pool.connect(), applicationName = `native_model_read_${randomUUID()}`
+  const reading = new Pool({ ...pool.options, max: 1, application_name: applicationName })
+  try {
+    await writer.query('BEGIN')
+    const row = (await writer.query<OwnedAppendState>(
+      'SELECT id,header,event_count,event_bytes FROM pe_sessions WHERE id=$1 FOR UPDATE', [created.sessionId])).rows[0]!
+    const header = headerSchema.parse(row.header), native = Session.create(header.id, undefined, header)
+    const selection = { provider: 'owned', model: 'new-cut' }
+    await writer.query('UPDATE pe_native_preferences SET value=$3 WHERE user_id=$1 AND namespace=$2',
+      [alice.user.userId, `session-model:${created.sessionId}`, selection])
+    await appendOwnedEvents(writer, alice.user.userId, row, [native.append('model/selection', selection)], limits)
+    const observed = new NativeSessionRead(reading).snapshot(alice.user,
+      { address: { kind: 'session', sessionId: created.sessionId } }).then(
+      value => ({ ok: true as const, value }), (error: unknown) => ({ ok: false as const, error }))
+    await vi.waitFor(async () => {
+      const waiters = await pool.query('SELECT 1 FROM pg_stat_activity WHERE application_name=$1 AND wait_event_type=\'Lock\'',
+        [applicationName])
+      expect(waiters.rowCount).toBe(1)
+    })
+    await writer.query('COMMIT')
+    const result = await observed
+    expect(result).toMatchObject({ ok: false, error: { status: 503, code: 'native_projection_gap' } })
+    expect(await new NativeSessionRead(pool).snapshot(alice.user, { address: { kind: 'session', sessionId: created.sessionId } }))
+      .toMatchObject({ cursor: 0, projections: { asOfSeq: 0, values: { modelSelection: { next: selection } } } })
+  } finally {
+    await writer.query('ROLLBACK')
+    writer.release()
+    await reading.end()
+  }
 }))
 
 test.each([

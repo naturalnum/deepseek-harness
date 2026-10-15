@@ -204,6 +204,33 @@ async function bench(locale: 'zh' | 'en' = 'zh') {
 const projection = (id: string) => ({ sessionId: sid(id) })
 
 describe('ui-model-selection dual entry', () => {
+  it('uses each captured Session intent when the account catalog default changes', async () => {
+    const b = await bench()
+    try {
+      const implicit = { provider: 'deepseek-official', model: 'deepseek-v4-flash', reasoningEffort: 'off' }
+      const explicit = { provider: 'deepseek-official', model: 'deepseek-v4-pro', reasoningEffort: 'high' }
+      const nextDefault = { provider: 'external', model: 'deepseek-v4-flash' }
+      b.mint('implicit', true)
+      b.setProjected(sid('implicit'), { lastUsed: null, next: implicit })
+      b.mint('explicit')
+      b.setProjected(sid('explicit'), { lastUsed: implicit, next: explicit })
+      const oldImplicit = b.seat().inject!(sid('implicit')), oldExplicit = b.seat().inject!(sid('explicit'))
+      await oldImplicit.load()
+      b.setHostCurrent(nextDefault)
+      b.remote.emit('settings/document-updated', ['llm-deepseek', 1])
+      b.mint('fresh', true)
+      b.setProjected(sid('fresh'), { lastUsed: null, next: nextDefault })
+      const fresh = b.seat().inject!(sid('fresh'))
+      await fresh.load()
+      expect(oldImplicit.directory.getSnapshot()).toMatchObject({ current: implicit, routable: true })
+      expect(oldExplicit.directory.getSnapshot()).toMatchObject({ current: explicit, routable: true })
+      expect(fresh.directory.getSnapshot()).toMatchObject({ current: nextDefault, routable: true })
+      expect(b.calls.select).toBe(0)
+    } finally {
+      await b.ctx.fiber.dispose()
+    }
+  })
+
   it('carries writer contention to the model seat and localizes the command failure', async () => {
     const b = await bench()
     b.mint('owned')
