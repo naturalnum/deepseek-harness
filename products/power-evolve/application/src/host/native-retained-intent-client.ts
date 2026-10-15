@@ -5,7 +5,7 @@ import { nativeWriterWorkerId, type NativeWriterWorkerId } from '../native-write
 import { NATIVE_RETAINED_ROUTES, nativeRetainedPrepare, nativeRetainedPrepared, nativeRetainedExecute,
   nativeRetainedExecutionResult, nativeRetainedReceipt, nativeRetainedReconcile, nativeRetainedReconciled,
   nativeRetainedResolve, nativeRetainedResolved, type NativeRetainedIntentId,
-  type NativeRetainedMutation, type NativeRetainedReceipt, type NativeRetainedExecutionResult,
+  type NativeRetainedMutation, type NativeRetainedReceipt, type NativeRetainedExecutionResult, type NativeRetainedReconcileScope,
 } from '../native-retained-intent-contracts.ts'
 
 /** Bounded operation transport; the original bearer is kept separate from the mutation body. */
@@ -62,12 +62,15 @@ export class NativeRetainedIntentClient {
   /** Read shared original outcomes before independent claims, without replaying models or external actions.
    * @param limit Explicit bounded number of original records to examine in one maintenance request.
    * @param signal Host maintenance lifetime.
+   * @param scope Original attempt to drain during cleanup; Platform verifies its owner and worker before scanning.
    * @returns Tokenless historical outcomes; live old tuples remain blocked and are never replaced by inferred authority.
    */
-  async reconcile(limit: number, signal?: AbortSignal) {
-    const input = nativeRetainedReconcile.parse({ version: 1, workerId: this.workerId, limit })
+  async reconcile(limit: number, signal?: AbortSignal, scope?: NativeRetainedReconcileScope) {
+    const input = nativeRetainedReconcile.parse({ version: 1, workerId: this.workerId, limit, ...scope ? { scope } : {} })
     const result = nativeRetainedReconciled.parse(await this.maintenance(NATIVE_RETAINED_ROUTES.reconcile, input, signal))
     if (result.items.length > input.limit || (result.more && result.items.length === 0)
+      || scope !== undefined && result.items.some(item => item.sessionId !== scope.sessionId
+        || item.operationId !== scope.operationId || item.operationEpoch !== scope.operationEpoch || item.workerId !== this.workerId)
       || new Set(result.items.map(item => item.intentId)).size !== result.items.length) {
       throw new PlatformError(502, 'native_retained_reconciliation_receipt')
     }

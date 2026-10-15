@@ -64,9 +64,14 @@ export const nativeRetainedExecutionResult = z.discriminatedUnion('family', [
   ...inputResults,
   z.object({ family: z.literal('turn-transition'), result: nativeTurnResponseV2 }).strict(),
 ])
+/** Original attempt whose cleanup must not be hidden behind another live Session's journal. */
+export const nativeRetainedReconcileScope = z.object({ sessionId, operationId,
+  operationEpoch: nativeOperationEpoch }).strict()
+/** Parsed original attempt identity; it grants no read, mutation or execution authority. */
+export type NativeRetainedReconcileScope = z.infer<typeof nativeRetainedReconcileScope>
 /** Private bounded maintenance request; routed workers never receive another worker's stored credentials. */
 export const nativeRetainedReconcile = z.object({ version: z.literal(1), workerId: nativeWriterWorkerId,
-  limit: z.number().int().positive().max(2_147_483_647) }).strict()
+  limit: z.number().int().positive().max(2_147_483_647), scope: nativeRetainedReconcileScope.optional() }).strict()
 /** Historical reconciliation is separate from live grant installation and original model/tool execution. */
 export const nativeRetainedReconciled = z.object({ version: z.literal(1), items: z.array(z.object({
   intentId: nativeRetainedIntentId, userId, sessionId, operationId,

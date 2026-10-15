@@ -142,6 +142,35 @@ test('lost reply and a new store read the original tokenless ACK after actual ex
   expect(await journal(f)).toEqual(resolved)
 }))
 
+test('cleanup scope requires the original account, Session, operation, epoch and worker even for an empty page', () => cloudFixture(async (f) => {
+  const n = await setup(f), store = n.fresh()
+  const scope = { sessionId: n.grant.sessionId, operationId: n.grant.operationId, operationEpoch: n.grant.epoch }
+  const request = { version: 1, workerId: n.workerId, limit: 4, scope }
+  expect(await store.reconcile(request, f.alice.user.userId)).toEqual({ version: 1, items: [], more: false })
+  for (const changed of [{ sessionId: randomUUID() }, { operationId: randomUUID() },
+    { operationEpoch: n.grant.epoch + 1 }]) {
+    await expect(store.reconcile({ ...request, scope: { ...scope, ...changed } }, f.alice.user.userId))
+      .rejects.toMatchObject({ status: 409, code: 'native_intent_scope' })
+  }
+  await expect(store.reconcile(request, f.bob.user.userId)).rejects.toMatchObject({ status: 409, code: 'native_intent_scope' })
+  await expect(store.reconcile({ ...request, workerId: randomUUID() }, f.alice.user.userId))
+    .rejects.toMatchObject({ status: 409, code: 'native_intent_scope' })
+  await expect(store.reconcile({ ...request, scope: { sessionId: scope.sessionId } }, f.alice.user.userId))
+    .rejects.toMatchObject({ status: 400, code: 'invalid_request' })
+  const original = await store.prepare(n.grant.token, n.prepare)
+  const before = await journal(f)
+  expect(await store.reconcile(request, f.alice.user.userId)).toMatchObject({ items: [{ intentId: original.intentId,
+    sessionId: scope.sessionId, operationId: scope.operationId, operationEpoch: scope.operationEpoch,
+    outcome: { state: 'blocked' } }], more: false })
+  await expect(store.reconcile(request, f.bob.user.userId)).rejects.toMatchObject({ code: 'native_intent_scope' })
+  expect(await journal(f)).toEqual(before)
+  await store.execute(n.grant.token, { version: 1, workerId: n.workerId, intentId: original.intentId })
+  const committed = await journal(f)
+  expect(await store.reconcile(request, f.alice.user.userId)).toMatchObject({ items: [{ intentId: original.intentId,
+    outcome: { state: 'committed', retired: false } }], more: false })
+  expect(await journal(f)).toEqual(committed)
+}))
+
 test('an actual expired original scope abandons under locks while a journal ACK delay remains behind the original final fence', () => cloudFixture(async (f) => {
   const n = await setup(f), store = n.fresh()
   const prepared = await store.prepare(n.grant.token, n.prepare)

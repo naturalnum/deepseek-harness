@@ -250,7 +250,8 @@ export default class NativeRuntimeSessions extends Service {
           const signal = AbortSignal.timeout(runtime.config.timeoutMs), limit = runtime.config.nativeIntentReconcileLimit
           let resolved = 0
           for (;;) {
-            const original = await runtime.nativeRetainedIntents.reconcile(limit, signal)
+            const original = await runtime.nativeRetainedIntents.reconcile(limit, signal, {
+              sessionId: owner.grant.sessionId, operationId: owner.grant.operationId, operationEpoch: owner.grant.epoch })
             if (original.items.some(item => item.operationId === owner.grant.operationId
               && item.operationEpoch === owner.grant.epoch && (item.outcome.state === 'blocked'
                 || item.outcome.state === 'committed' && !item.outcome.retired))) {

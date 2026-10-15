@@ -201,18 +201,30 @@ export class NativeRetainedIntentStore {
   }
 
   /** Reconcile bounded original requests under actual account, Session and journal locks.
-   * @param input Authenticated caller worker and explicit shared scan size; results preserve each original worker identity.
+   * @param input Caller worker, bounded scan size and optional original attempt; scoped scans require its stored owner and worker.
    * @returns Tokenless immutable acknowledgements or blocked/abandoned records; nothing grants execution.
    */
   async reconcile(input: unknown, owner?: string): Promise<Reconciled> {
     const parsed = nativeRetainedReconcile.safeParse(input)
     if (!parsed.success) throw new PlatformError(400, 'invalid_request')
     if (parsed.data.limit > this.limits.maxRecordsPerSession) throw new PlatformError(413, 'native_intent_scan_budget')
+    const scope = parsed.data.scope
+    if (scope) {
+      const original = await this.tasks.pool.query(`SELECT s.id FROM pe_sessions s
+        JOIN pe_operations o ON o.session_id=s.id JOIN pe_attempts a ON a.operation_id=o.id
+        WHERE s.id=$1 AND o.id=$2 AND a.epoch=$3 AND a.worker_id=$4
+          AND ($5::uuid IS NULL OR s.user_id=$5)`,
+      [scope.sessionId, scope.operationId, scope.operationEpoch, parsed.data.workerId, owner ?? null])
+      if (original.rowCount !== 1) refuse('native_intent_scope')
+    }
     const hints = await this.tasks.pool.query<{ intentId: string }>(`SELECT j.intent_id AS "intentId"
       FROM pe_native_retained_intents j JOIN pe_users u ON u.id=j.user_id
       WHERE u.enabled AND u.deleted_at IS NULL AND j.resolved_at IS NULL AND j.state<>'abandoned'
       AND ($2::uuid IS NULL OR j.user_id=$2)
-      ORDER BY (j.state='prepared') DESC,j.created_at,j.intent_id LIMIT $1`, [parsed.data.limit + 1, owner ?? null])
+      AND ($3::uuid IS NULL OR (j.session_id=$3 AND j.operation_id=$4 AND j.operation_epoch=$5 AND j.worker_id=$6))
+      ORDER BY (j.state='prepared') DESC,j.created_at,j.intent_id LIMIT $1`,
+    [parsed.data.limit + 1, owner ?? null, scope?.sessionId ?? null, scope?.operationId ?? null,
+      scope?.operationEpoch ?? null, scope ? parsed.data.workerId : null])
     const items: Reconciled['items'] = []
     let more = hints.rows.length > parsed.data.limit
     for (const hint of hints.rows) {

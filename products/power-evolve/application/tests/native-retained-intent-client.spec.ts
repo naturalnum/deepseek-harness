@@ -6,7 +6,8 @@ import { bearer, readJson, sendFailure, sendJson } from '../src/http.ts'
 import { expect, test } from 'vitest'
 import { NativeRetainedIntentClient } from '../src/host/native-retained-intent-client.ts'
 import { nativeRetainedIntentId, NATIVE_RETAINED_ROUTES, nativeRetainedPrepare,
-  nativeRetainedExecute, nativeRetainedResolve, nativeRetainedExecutionResult, type NativeRetainedMutation } from '../src/native-retained-intent-contracts.ts'
+  nativeRetainedExecute, nativeRetainedResolve, nativeRetainedExecutionResult,
+  nativeRetainedReconcile, nativeRetainedReconcileScope, type NativeRetainedMutation } from '../src/native-retained-intent-contracts.ts'
 import { nativeInputRecordDigest } from '../src/native-input-ledger-records.ts'
 
 function publication(): Extract<NativeRetainedMutation, { family: 'publication' }> {
@@ -109,6 +110,26 @@ test('cold reconciliation and resolution reject unbounded or substituted acknowl
   expect(await client.reconcile(1)).toEqual(reply)
   await expect(client.resolve(intentId, acknowledgement(mutation)))
     .rejects.toThrow('native_retained_resolution_receipt')
+})
+
+test('cleanup reconciliation carries one complete original scope and rejects another attempt in its reply', async () => {
+  const workerId = randomUUID(), scope = nativeRetainedReconcileScope.parse({ sessionId: randomUUID(),
+    operationId: randomUUID(), operationEpoch: 7 })
+  const item = { intentId: 'a'.repeat(64), userId: randomUUID(), ...scope, workerId,
+    outcome: { state: 'abandoned' } }
+  let reply: unknown = { version: 1, items: [item], more: false }
+  const client = new NativeRetainedIntentClient(workerId, async () => { throw new Error('Cleanup cannot dispatch') },
+    async (path, input) => {
+      expect(path).toBe(NATIVE_RETAINED_ROUTES.reconcile)
+      expect(nativeRetainedReconcile.parse(input)).toEqual({ version: 1, workerId, limit: 32, scope })
+      return reply
+    })
+  expect(await client.reconcile(32, undefined, scope)).toEqual(reply)
+  for (const changed of [{ sessionId: randomUUID() }, { operationId: randomUUID() },
+    { operationEpoch: 8 }, { workerId: randomUUID() }]) {
+    reply = { version: 1, items: [{ ...item, ...changed }], more: false }
+    await expect(client.reconcile(32, undefined, scope)).rejects.toThrow('native_retained_reconciliation_receipt')
+  }
 })
 
 test('a valid HTTP execution reply of another family refuses acknowledgement and an unchanged retry keeps the original intent', async () => {
