@@ -29,7 +29,10 @@ declare module '@deepseek-ai/cordis' {
  * @returns Native Agent options, retaining the historical PowerEvolve provider when absent.
  */
 export function nativeModelAgentOptions(settings: Grant['settings']): {
-  provider: string; model: string; maxTokens: number; reasoningEffort?: ReasoningEffortId
+  provider: string
+  model: string
+  maxTokens: number
+  reasoningEffort?: ReasoningEffortId
 } {
   return { provider: settings.provider ?? 'power-evolve', model: settings.model, maxTokens: settings.maxTokens,
     ...(settings.reasoningEffort === undefined ? {} : { reasoningEffort: ReasoningEffortId(settings.reasoningEffort) }) }
