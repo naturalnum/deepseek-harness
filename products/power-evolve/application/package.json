@@ -83,6 +83,7 @@
     "@deepseek-ai/dsh-web-frontend": "workspace:*"
   },
   "devDependencies": {
+    "@deepseek-ai/dsh-api-settings-controller": "workspace:*",
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/dsh-agent": "workspace:*",
     "@deepseek-ai/dsh-agent-loop": "workspace:*",

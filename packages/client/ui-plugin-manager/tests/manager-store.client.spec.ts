@@ -124,6 +124,11 @@ it('retains package reads and carries the Host peer write permission', async () 
 })
 
 describe('packageView', () => {
+  it('retains deployment enablement refusals for disabled bundles and rows without a live entry', () => {
+    const enableError = { code: 'runtime-unavailable' as const }
+    const bundle = { ...BUNDLE, enableError, rows: BUNDLE.rows.map(row => ({ ...row, enableError })) }
+    expect(packageView(bundle, PLUGINS)).toMatchObject({ enableError, rows: [{ enableError }, { enableError }] })
+  })
   it('joins a bundle with the entries its rows run as', () => {
     expect(packageView(BUNDLE, PLUGINS)).toEqual({
       name: 'dsh-better-sidebar', version: '0.16.0', description: 'A sidebar.', source: 'dsh-better-sidebar@^0.16.0',

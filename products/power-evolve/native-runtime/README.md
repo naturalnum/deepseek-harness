@@ -33,6 +33,8 @@ The original Connection and own-Profile credentials remain active so the native 
 
 Host config `nativeClientMaxRequests` and Pool config `clientMaxRequests` default to 100 accepted requests, including pending authentication. `nativeClientLifetimeMs` and `clientLifetimeMs` default to 30 seconds; the original EventSource reconnects after that bounded generation. Old operator Pool JSON receives these validated defaults.
 
+Agent Teams, Auto Review, Developer Tools and Voice Input remain visible with a localized deployment-unavailable notice. This cloud image does not supply their runtime components. Native management refuses bundle and component enablement, including automatic activation during installation, while allowing existing selections to be disabled. Terminal, Agent Loop, Subagent, Web Search and MCP configuration retain their native behavior.
+
 -----
 
 <a id="understand-the-implementation"></a>

@@ -33,6 +33,8 @@ kind: package-bundle
 
 Host 配置 `nativeClientMaxRequests` 与 Pool 配置 `clientMaxRequests` 默认最多受理 100 个请求，在途鉴权也计入。`nativeClientLifetimeMs` 与 `clientLifetimeMs` 默认 30 秒；原生 EventSource 会在这一有界运输代结束后重连。旧操作员 Pool JSON 使用这些经校验的默认值。
 
+智能体团队、自动授权审查、开发者工具和语音输入仍显示在页面中，并提示当前部署不可用。此云端镜像未提供它们的运行组件。原生管理器拒绝启用相应组合包与组件，包括安装时自动启用，但允许关闭已有选择。终端、Agent 循环、子智能体、网页搜索和 MCP 配置保留原生行为。
+
 -----
 
 <a id="understand-the-implementation"></a>

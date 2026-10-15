@@ -74,6 +74,8 @@ export interface PackageRow {
   readonly phase: PluginInfo['fiberPhase']
   /** Why the Host refuses to switch the row, when it does. */
   readonly readOnlyReason?: ReadOnlyReason
+  /** Why this deployment refuses enablement while retaining disable recovery. */
+  readonly enableError?: ManagementError
 }
 
 /** One bundle as the page shows it: the Host's bundle joined with the entries its rows run as. */
@@ -97,6 +99,8 @@ export interface PackageView {
   readonly readOnlyReason?: ReadOnlyReason
   /** Why the Host cannot read the bundle, when it cannot. */
   readonly error?: ManagementError
+  /** Why this deployment refuses enablement while retaining deselection. */
+  readonly enableError?: ManagementError
   readonly rows: readonly PackageRow[]
 }
 
@@ -424,6 +428,7 @@ export function packageView(bundle: BundleInfo, plugins: readonly PluginInfo[]):
       ...row.meta === undefined ? {} : { meta: row.meta },
       ...row.entryId === undefined ? {} : { entryId: row.entryId },
       ...live?.readOnlyReason === undefined ? {} : { readOnlyReason: live.readOnlyReason },
+      ...(live?.enableError ?? row.enableError) === undefined ? {} : { enableError: live?.enableError ?? row.enableError },
     }
   })
   return {
@@ -439,6 +444,7 @@ export function packageView(bundle: BundleInfo, plugins: readonly PluginInfo[]):
     ...bundle.meta === undefined ? {} : { meta: bundle.meta },
     ...bundle.readOnlyReason === undefined ? {} : { readOnlyReason: bundle.readOnlyReason },
     ...bundle.error === undefined ? {} : { error: bundle.error },
+    ...bundle.enableError === undefined ? {} : { enableError: bundle.enableError },
   }
 }
 

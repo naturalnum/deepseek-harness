@@ -112,7 +112,7 @@
     },
     "sourceTests": {
       "enabled": 14,
-      "shared": 174,
+      "shared": 175,
       "deferred": 3
     }
   },
@@ -5858,6 +5858,13 @@
       "path": "products/power-evolve/application/tests/tenant-models-host-flow.pg.spec.ts",
       "status": "shared",
       "owner": "Tenant Models",
+      "reason": "core-shared"
+    },
+    {
+      "kind": "sourceTests",
+      "path": "products/power-evolve/application/tests/tenant-plugin-availability.spec.ts",
+      "status": "shared",
+      "owner": "Tenant Plugins",
       "reason": "core-shared"
     }
   ],

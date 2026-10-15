@@ -1,8 +1,9 @@
 /** Launcher-owned profile locations and composition inputs. */
 import { join } from 'node:path'
-import { composeEntries, loadProfileDirectory, PROFILE_PATCH_FILENAME, type Profile } from './profile.ts'
+import { composeEntries, loadProfileDirectory, readProfileManifest, PROFILE_PATCH_FILENAME, type Profile } from './profile.ts'
 import { loadOptionalPatches } from './index.ts'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
+import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 
 /** Application-owned package manager executable; environment applies only to package operations. */
 export interface ProfilePnpmInvocation {
@@ -55,6 +56,7 @@ export function resolveTelemetryPatch(disabledEnv: string | undefined, hasRow: b
 }
 
 /** Read current bundle and user layers with the launch-time overlays.
+ * Deployment-unavailable bundle layers and modules are omitted in memory; saved selections and patches remain unchanged.
  * @param binName Diagnostic prefix for malformed or missing configuration.
  * @param context Data supplied by the profile launcher.
  * @param initialProfile Already loaded startup profile; omitted reads the current files.
@@ -62,14 +64,53 @@ export function resolveTelemetryPatch(disabledEnv: string | undefined, hasRow: b
  */
 export function readProfilePatches(binName: string, context: ProfileContext, initialProfile?: Profile): PatchOptions[] {
   const profile = initialProfile ?? loadProfileDirectory(binName, context.dir, context.installAnchor, { userLayer: false })
-  const patches = structuredClone([
-    ...profile.layers.flatMap(layer => layer.patches),
+  const user = [
     ...(initialProfile?.patches ?? loadOptionalPatches(binName, context.patchPath) ?? []),
     ...(loadOptionalPatches(binName, join(context.home, PROFILE_PATCH_FILENAME)) ?? []),
     ...context.overlays,
-  ])
+  ]
+  const patches = structuredClone([...profile.layers.flatMap(layer => layer.patches), ...user])
   const telemetryPatch = resolveTelemetryPatch(context.telemetryDisabledEnv,
     composeEntries([patches]).some(row => row.id === TELEMETRY_ROW_ID))
   if (telemetryPatch !== undefined) patches.push(telemetryPatch)
-  return patches
+  const manager = composeEntries([patches]).find(row => row.id === 'plugin-manager' || row.name === '@deepseek-ai/dsh-plugin-manager')
+  const config: unknown = manager?.config
+  if (typeof config !== 'object' || config === null || !('unavailablePackages' in config)
+    || config.unavailablePackages === undefined) return patches
+  const names: unknown = config.unavailablePackages
+  if (!Array.isArray(names) || !names.every((name): name is string => typeof name === 'string')) {
+    throw new Error('Plugin deployment unavailablePackages must be an array of package names')
+  }
+  if (names.length === 0) return patches
+  const unavailable = new Set<string>(names)
+  const blocked = (name: string | undefined): boolean => name !== undefined
+    && unavailable.has(name.split('/').slice(0, name.startsWith('@') ? 2 : 1).join('/'))
+  const containsBlocked = (rows: readonly PatchOptions[]): boolean => rows.some(row => blocked(row.name)
+    || row.insert !== undefined && containsBlocked(row.insert)
+    || row.group === true && Array.isArray(row.config) && containsBlocked(row.config))
+  const omitted = profile.layers.filter(layer => blocked(layer.packageName)
+    || blocked(readProfileManifest(binName, layer.packageDir).name) || containsBlocked(layer.patches))
+  const omittedIds = new Set<string>()
+  const remember = (rows: readonly PatchOptions[]): void => {
+    for (const row of rows) {
+      if (row.name !== undefined && row.id !== undefined) omittedIds.add(row.id)
+      if (row.insert !== undefined) remember(row.insert)
+      if (row.group === true && Array.isArray(row.config)) remember(row.config)
+    }
+  }
+  for (const layer of omitted) remember(layer.patches)
+  const retained = structuredClone([
+    ...profile.layers.filter(layer => !omitted.includes(layer)).flatMap(layer => layer.patches), ...user,
+    ...telemetryPatch === undefined ? [] : [telemetryPatch],
+  ])
+  const keep = (row: PatchOptions): boolean => !blocked(row.name)
+    && !(row.name === undefined && row.id !== undefined && omittedIds.has(row.id))
+  const pruneEntries = (rows: readonly EntryOptions[]): EntryOptions[] => rows.filter(keep).map(row => ({ ...row,
+    ...row.group !== true || !Array.isArray(row.config) ? {} : { config: pruneEntries(row.config) } }))
+  const prune = (rows: readonly PatchOptions[]): PatchOptions[] => rows.flatMap((row) => {
+    if (!keep(row)) return []
+    return [{ ...row, ...row.insert === undefined ? {} : { insert: pruneEntries(row.insert) },
+      ...row.group !== true || !Array.isArray(row.config) ? {} : { config: prune(row.config) } }]
+  })
+  return prune(retained)
 }

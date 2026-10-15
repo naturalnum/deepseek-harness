@@ -250,6 +250,32 @@ describe('PluginManagerPage', () => {
     expect(actions.setEnabled).not.toHaveBeenCalled()
     expect(screen.getByText('dsh-better-sidebar')).toBeTruthy()
   })
+
+  it('explains deployment unavailability in both languages and keeps disable recovery available', () => {
+    const enableError = { code: 'runtime-unavailable' as const }
+    const { actions, set, setLanguage } = renderTab({ packages: [pkg({ enabled: false, enableError,
+      rows: [row({ enabled: false, enableError })] })] })
+    const toggle = () => screen.getByRole('switch', { name: en.enableToggle.replace('{name}', 'dsh-better-sidebar') })
+    expect(toggle()).toHaveProperty('disabled', true)
+    expect(toggle().getAttribute('title')).toBe(en.reasonRuntimeUnavailable)
+    fireEvent.click(toggle()); expect(actions.setEnabled).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: en.openDetail.replace('{name}', 'dsh-better-sidebar') }))
+    set({ packages: [pkg({ enabled: true, enableError, rows: [row({ enabled: false, enableError })] })] })
+    const part = screen.getByRole('switch', { name: en.partToggle.replace('{name}', 'dsh-better-sidebar') })
+    expect(part).toHaveProperty('disabled', true)
+    expect(part.getAttribute('title')).toBe(en.reasonRuntimeUnavailable)
+    expect(screen.getAllByText(en.reasonRuntimeUnavailable).length).toBeGreaterThan(0)
+    setLanguage(zh)
+    expect(screen.getAllByText(zh.reasonRuntimeUnavailable).length).toBeGreaterThan(0)
+    setLanguage(en)
+    set({ packages: [pkg({ enabled: true, enableError, rows: [row({ enabled: true, enableError })] })] })
+    const recover = toggle()
+    expect(recover).toHaveProperty('disabled', false)
+    fireEvent.click(recover); expect(actions.setEnabled).toHaveBeenCalledWith('dsh-better-sidebar', false)
+    const rowRecovery = screen.getByRole('switch', { name: en.partToggle.replace('{name}', 'dsh-better-sidebar') })
+    expect(rowRecovery).toHaveProperty('disabled', false)
+    fireEvent.click(rowRecovery); expect(actions.setRowEnabled).toHaveBeenCalled()
+  })
   it('opens the add-plugin menu with ArrowDown and returns focus to its trigger on Escape', () => {
     const { actions } = renderTab({}, {}, {
       'plugins.add.actions:': (_view, owner) => <MenuItemButton

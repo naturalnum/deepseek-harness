@@ -38,6 +38,8 @@ export { InvalidInstallSpecError, parseInstallSpec, type ParsedInstallSpec } fro
 
 /** The pnpm executable, registries, and limits for diagnostics, lookups and connection checks. */
 export interface Config {
+  /** Packages unavailable in this deployment; package names also cover their module subpaths. Not editable through Settings. */
+  unavailablePackages?: string[]
   /** The pnpm executable name or path; resolved through `PATH` like the `dsh plugin` command. */
   pnpmCommand?: string
   /** Maximum retained package-operation diagnostic bytes. */
@@ -176,6 +178,7 @@ declare module '@deepseek-ai/cordis' {
 export class PluginManager extends TypertRemoteService {
   static inject = ['loader', 'profileContext']
   static Config: z<Config> = z.object({
+    unavailablePackages: z.array(z.string()).default([]),
     pnpmCommand: z.string().default('pnpm'),
     outputBytes: z.number().step(1).min(1).default(16384),
     lockWaitMs: z.number().step(1).min(0).default(120000),
@@ -187,6 +190,7 @@ export class PluginManager extends TypertRemoteService {
   })
   /** Management bundles remain protected if their files become unreadable. */
   private readonly managementBundles = new Set<string>()
+  private readonly unavailablePackages: ReadonlySet<string>
   private readonly ownerEntryId: string | undefined
   private readonly packageOperations = new Set<Promise<unknown>>()
   private readonly profile: ProfileContext
@@ -207,6 +211,7 @@ export class PluginManager extends TypertRemoteService {
     this.ownerEntryId = ctx.fiber.entry?.id
     this.ownerContext = ctx
     this.profile = ctx.profileContext
+    this.unavailablePackages = new Set((config as Required<Config>).unavailablePackages)
     for (const name of this.profile.startedBundles) this.protectsManager(name)
     this.outputBytes = (config as Required<Config>).outputBytes
     this.lockWaitMs = (config as Required<Config>).lockWaitMs
@@ -257,17 +262,19 @@ export class PluginManager extends TypertRemoteService {
     const rows = flatten(composeEntries([readProfilePatches('dsh', this.profile)]))
     const snapshot = await readPluginInventory(this.ctx)
     return snapshot.entries.map((entry) => {
+      const enableError = this.enableError([entry.moduleName])
+      const availability = enableError === undefined ? {} : { enableError }
       const actual = [...this.ctx.loader.entries()].find(row => row.id === entry.entryId)
       const candidates = rows.filter(row => row.id === actual?.options.id)
       const candidate = candidates[0]
       if (protectedModules.has(entry.moduleName) || entry.entryId === this.ownerEntryId) {
-        return { ...entry, readOnlyReason: 'management-required' as const }
+        return { ...entry, ...availability, readOnlyReason: 'management-required' as const }
       }
       if (candidate === undefined || candidates.length > 1 || candidate.name !== entry.moduleName
         || actual?.parent.tree.ctx.fiber.entry?.id !== 'include') {
-        return { ...entry, readOnlyReason: 'unaddressable' as const }
+        return { ...entry, ...availability, readOnlyReason: 'unaddressable' as const }
       }
-      return { ...entry, patchId: candidate.id }
+      return { ...entry, ...availability, patchId: candidate.id }
     })
   }
 
@@ -311,12 +318,14 @@ export class PluginManager extends TypertRemoteService {
         if (compatibility !== undefined && !compatibility.exempted) throw new ManagementFailure('incompatible-version', [incompatiblePlugin(compatibility)])
         const dir = resolveBundleDir('dsh', name, this.profile.installAnchor, this.profile.dir)
         const meta = readPluginMeta(info.name ?? name, pathToFileURL(join(dir, 'package.json')).href)
+        const declared = this.declaredRows(name, info)
+        const enableError = this.bundleEnableError(name, info)
         bundles.push({ name, ...(info.version === undefined ? {} : { version: info.version }),
           ...(info.description === undefined || info.description === '' ? {} : { description: info.description }),
           ...meta === undefined ? {} : { meta },
           ...sourceOf(info.name), enabled, installed, optional, removable: removable && readOnlyReason === undefined,
           ...(readOnlyReason === undefined ? {} : { readOnlyReason }),
-          ...this.declaredRows(name, info) })
+          ...enableError === undefined ? {} : { enableError }, ...declared })
       } catch (error) {
         if (enabled || installed) {
           bundles.push({ name, ...sourceOf(), enabled, installed, optional, removable: removable && readOnlyReason === undefined,
@@ -436,6 +445,7 @@ export class PluginManager extends TypertRemoteService {
       const row = (await this.listPlugins()).find(item => item.entryId === id)
       if (row === undefined) throw new ManagementFailure('unknown-plugin')
       if (row.readOnlyReason !== undefined) throw new ManagementFailure(row.readOnlyReason)
+      if (enabled && row.enableError !== undefined) throw new ManagementFailure(row.enableError.code)
       await writePluginEnabled(this.profile.patchPath, row.patchId, row.moduleName, enabled)
       result.warnings = await this.reload(enabled ? [row.patchId] : [])
       const current = (await this.listPlugins()).find(item => item.entryId === id)
@@ -555,6 +565,8 @@ export class PluginManager extends TypertRemoteService {
         const dir = resolveBundleDir('dsh', name, this.profile.installAnchor, this.profile.dir)
         const manifest = bundleManifest(name, this.profile.dir, this.profile.installAnchor)
         if (manifest?.dsh?.bundle === undefined) throw new ManagementFailure('not-bundle')
+        const enableError = this.bundleEnableError(name, manifest)
+        if (options?.enabled !== false && enableError !== undefined) throw new ManagementFailure(enableError.code)
         const compatibility = evaluatePluginCompatibility(manifest, readProfileVersionExemptions(this.profile.dir))
         if (compatibility !== undefined && !compatibility.exempted) throw new ManagementFailure('incompatible-version', [incompatiblePlugin(compatibility)])
         for (const file of bundlePatchPaths(dir, manifest.dsh.bundle)) loadOverlayPatches('dsh', file)
@@ -667,7 +679,9 @@ export class PluginManager extends TypertRemoteService {
       const entryId = active?.entryId
       const base = active?.baseUrl ?? pathToFileURL(join(dir, 'package.json')).href
       const meta = packages?.metaOf(row.name, base)
+      const enableError = this.enableError([row.name])
       rows.push({ rowId: row.id, moduleName: row.name,
+        ...enableError === undefined ? {} : { enableError },
         ...entryId === undefined ? {} : { entryId }, ...meta === undefined ? {} : { meta } })
     }
     const declared = new Set(rows.map(row => row.rowId))
@@ -738,6 +752,8 @@ export class PluginManager extends TypertRemoteService {
       const metadata = bundleManifest(name, this.profile.dir, this.profile.installAnchor)
       if (metadata === undefined) throw new ManagementFailure('not-bundle')
       if (enabled) {
+        const enableError = this.bundleEnableError(name, metadata)
+        if (enableError !== undefined) throw new ManagementFailure(enableError.code)
         const compatibility = evaluatePluginCompatibility(metadata, readProfileVersionExemptions(this.profile.dir))
         if (compatibility !== undefined && !compatibility.exempted) throw new ManagementFailure('incompatible-version', [incompatiblePlugin(compatibility)])
         this.bundleRows(name)
@@ -758,6 +774,16 @@ export class PluginManager extends TypertRemoteService {
     if (info?.dsh?.bundle === undefined) return []
     const dir = resolveBundleDir('dsh', name, this.profile.installAnchor, this.profile.dir)
     return flatten(composeEntries([bundlePatchPaths(dir, info.dsh.bundle).flatMap(file => loadOverlayPatches('dsh', file))]))
+  }
+
+  private enableError(modules: readonly string[]): ManagementError | undefined {
+    return modules.some(name => this.unavailablePackages.has(name.split('/').slice(0, name.startsWith('@') ? 2 : 1).join('/')))
+      ? { code: 'runtime-unavailable' } : undefined
+  }
+
+  private bundleEnableError(name: string, info: ProfileManifest): ManagementError | undefined {
+    return this.enableError([name, ...info.name === undefined ? [] : [info.name],
+      ...this.bundleRows(name).map(row => row.name)])
   }
 
   private protectsManager(name: string): boolean {

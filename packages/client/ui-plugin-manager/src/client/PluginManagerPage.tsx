@@ -196,13 +196,14 @@ function RowSwitch({ row, title, t, busy, onChange }: {
   readonly busy: boolean
   readonly onChange: (enabled: boolean) => void
 }): ReactNode {
-  const locked = row.readOnlyReason !== undefined || row.entryId === undefined
+  const locked = row.readOnlyReason !== undefined || row.entryId === undefined || !row.enabled && row.enableError !== undefined
+  const reason = row.readOnlyReason === undefined ? row.enableError : { code: row.readOnlyReason }
   return (
     <Switch
       checked={row.enabled}
       label={t('partToggle', { name: title })}
       disabled={busy || locked}
-      {...row.readOnlyReason === undefined ? {} : { title: managementText({ code: row.readOnlyReason }, t) }}
+      {...reason === undefined ? {} : { title: managementText(reason, t) }}
       onChange={onChange}
     />
   )
@@ -301,6 +302,7 @@ function RowsSection({ rows, t, resolveText, toggle, configure }: {
                     />}
                 </div>
                 <MetadataError error={row.meta?.error} t={t} />
+                {row.enableError === undefined ? null : <p className={css.reason} role="status">{managementText(row.enableError, t)}</p>}
               </li>
             ))}
           </ul>
@@ -349,12 +351,13 @@ function EnableSwitch({ pkg, title, t, busy, onSetEnabled }: {
   readonly busy: boolean
   readonly onSetEnabled: (enabled: boolean) => void
 }): ReactNode {
+  const reason = pkg.readOnlyReason === undefined ? pkg.enableError : { code: pkg.readOnlyReason }
   return (
     <Switch
       checked={pkg.enabled}
       label={t('enableToggle', { name: title })}
-      disabled={busy || pkg.readOnlyReason !== undefined || (!pkg.enabled && pkg.error !== undefined)}
-      {...pkg.readOnlyReason === undefined ? {} : { title: managementText({ code: pkg.readOnlyReason }, t) }}
+      disabled={busy || pkg.readOnlyReason !== undefined || (!pkg.enabled && (pkg.error !== undefined || pkg.enableError !== undefined))}
+      {...reason === undefined ? {} : { title: managementText(reason, t) }}
       onChange={onSetEnabled}
     />
   )
@@ -673,6 +676,7 @@ function PackageDetail({
       </div>
       <MetadataError error={pkg.meta?.error} t={t} />
       {pkg.error === undefined ? null : <p className={css.reason} role="status">{t('reasonLabel')}: {managementText(pkg.error, t)}</p>}
+      {pkg.enableError === undefined ? null : <p className={css.reason} role="status">{managementText(pkg.enableError, t)}</p>}
       {pkg.readOnlyReason === undefined ? null : <p className={css.reason} role="status">{managementText({ code: pkg.readOnlyReason }, t)}</p>}
       <div className={css.detailSections}>
         {configured

@@ -19,14 +19,18 @@ export interface IncompatiblePlugin {
 
 /** Localizable management failure and optional external diagnostic. */
 export interface ManagementError {
-  code: ReadOnlyReason | 'unknown-plugin' | 'invalid-spec' | 'ambiguous-install' | 'not-bundle' | 'not-removable' | 'stop-profile' | 'bundle-in-use' | 'stale-approval' | 'incompatible-version' | 'operation-error'
+  code: ReadOnlyReason | 'unknown-plugin' | 'invalid-spec' | 'ambiguous-install' | 'not-bundle' | 'not-removable'
+    | 'stop-profile' | 'bundle-in-use' | 'stale-approval' | 'incompatible-version' | 'runtime-unavailable' | 'operation-error'
   diagnostic?: string
   /** Present with `incompatible-version`: the packages the running DSH version rejects. */
   incompatible?: IncompatiblePlugin[]
 }
 
 /** One running-profile entry and its persistent control availability. */
-export type PluginInfo = PluginInventoryEntry & (
+export type PluginInfo = PluginInventoryEntry & {
+  /** Why the deployment refuses enablement; disabling an existing entry remains available. */
+  enableError?: ManagementError
+} & (
   | { patchId: string; readOnlyReason?: never }
   | { patchId?: never; readOnlyReason: ReadOnlyReason }
 )
@@ -37,6 +41,8 @@ export interface BundleRowInfo {
   rowId: string
   /** The module the row names. */
   moduleName: string
+  /** Why the deployment refuses enablement, including a row of a disabled bundle. */
+  enableError?: ManagementError
   /** Local package display metadata, including rows whose bundle is disabled. */
   meta?: PluginLocalizedMeta
   /** The Loader entry carrying this row, when exactly one live entry has its id. */
@@ -67,6 +73,8 @@ export interface BundleInfo {
   optional: boolean
   removable: boolean
   readOnlyReason?: ReadOnlyReason
+  /** Why the deployment refuses enablement; deselecting an existing layer remains available. */
+  enableError?: ManagementError
   error?: ManagementError
   /** The rows the bundle's patch inserts, in declaration order; empty when the patch cannot be read. */
   rows: BundleRowInfo[]

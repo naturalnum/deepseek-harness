@@ -461,6 +461,24 @@ it('turns a plugin off and on without duplicating patch overrides', async () => 
   expect(readFileSync(join(dir, 'cordis.patch.yml'), 'utf8').match(/id: managed/g)).toHaveLength(1)
 })
 
+it('refuses unavailable live-row enablement before saving a patch and permits disabling', async () => {
+  const { manager, dir } = await fixture('live', false, (ctx) => {
+    ctx.loader.builtins.restricted = { apply() {} }
+  }, { unavailablePackages: ['cordis:restricted'] }, undefined, (dir) => {
+    writeFileSync(join(dir, 'node_modules/extra/cordis.patch.yml'), JSON.stringify([
+      { insert: [{ id: 'managed', name: 'cordis:restricted' }] },
+    ]))
+  })
+  const row = (await manager.listPlugins()).find(row => row.moduleName === 'cordis:restricted')!
+  expect(row.enableError).toEqual({ code: 'runtime-unavailable' })
+  const before = readFileSync(join(dir, 'cordis.patch.yml'), 'utf8')
+  expect(await manager.setPluginEnabled(row.entryId, true)).toMatchObject({
+    application: 'failed', changed: false, error: { code: 'runtime-unavailable' },
+  })
+  expect(readFileSync(join(dir, 'cordis.patch.yml'), 'utf8')).toBe(before)
+  expect(await manager.setPluginEnabled(row.entryId, false)).toMatchObject({ application: 'applied', changed: true })
+})
+
 it('retains installed dependencies when toggling a bundle and appends it when re-enabled', async () => {
   const { manager, dir, bundle } = await fixture()
   bundle('third', [])
