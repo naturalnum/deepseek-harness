@@ -1,4 +1,5 @@
 /** Browser-local MCP page fields and metadata/credential-separated operations. */
+import type { McpPresentation } from '@power-evolve/contracts/mcp-metadata'
 import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import type { ExtensionCenterLocaleKey } from './locales.ts'
 
@@ -49,6 +50,7 @@ export interface PersonalMcpMaskedHeader {
 
 /** Original UI projection; this is a page Port type, not a wire DTO. */
 export interface PersonalMcpConnection {
+  readonly presentation?: McpPresentation
   readonly connection_id: string
   readonly revision: number
   readonly configuration_revision?: number
@@ -80,6 +82,7 @@ export interface PersonalMcpHeaderInput {
 
 /** Form submission consumed only by the browser adapter; secrets go directly to Platform. */
 export interface PersonalMcpConnectionCreateRequest {
+  readonly presentation?: McpPresentation
   readonly display_name: string
   readonly server_url: string
   readonly authentication: { readonly kind: 'none' | 'bearer' | 'headers' }

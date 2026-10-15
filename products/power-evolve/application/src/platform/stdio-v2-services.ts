@@ -18,6 +18,8 @@ import { StdioCloudWorkerStoreV2 } from './stdio-v2-worker-store.ts'
 import { StdioCloudRunTransportV2 } from './stdio-v2-cloud-runtime.ts'
 import { StdioCloudWorkerV2 } from './stdio-v2-cloud-worker.ts'
 import { StdioActionServiceV2 } from './stdio-v2-actions.ts'
+import { StdioEnvironmentService } from './stdio-environment.ts'
+import { stdioEnvironmentOptions } from '@power-evolve/contracts/stdio-environment'
 import { PRODUCT_MODEL_TOOL_NAMES } from '../mcp-model-tools.ts'
 
 /** Product tool names excluded from generic catalogs; original remote MCP names are added by TaskStore. */
@@ -31,6 +33,7 @@ export interface StdioCloudServicesV2 {
   readonly calls: StdioCallAdmissionV2
   readonly authorization: StdioAuthorizationServiceV2
   readonly worker: StdioCloudWorkerV2
+  readonly environment: StdioEnvironmentService
   readonly requests: ReturnType<typeof stdioManagementSchemasV2>
 }
 
@@ -48,6 +51,7 @@ export function createStdioCloudServicesV2(pool: Pool, tasks: TaskStore, selecti
   files: FileService, sandboxes: SandboxManager, config: StdioPlatformConfigV2, workerId: StdioWorkerIdV2): StdioCloudServicesV2 {
   const { settings, approvalKey } = config
   const { limits, admission, management, maxReplyBytes, cloudDeployment } = settings
+  const environment = new StdioEnvironmentService(pool, approvalKey, limits, stdioEnvironmentOptions.parse(settings.environment ?? {}))
   const connections = new StdioConnectionServiceV2(pool, limits, management)
   const actions = new StdioActionServiceV2(pool, { limits, maxReplyBytes, maxPageSize: management.pageItems })
   const discovery = new StdioAdmissionServiceV2(pool, files, {
@@ -69,7 +73,7 @@ export function createStdioCloudServicesV2(pool: Pool, tasks: TaskStore, selecti
   const store = new StdioCloudWorkerStoreV2(pool, { limits, ...settings.worker, continuation })
   const transport = new StdioCloudRunTransportV2(sandboxes, { limits, maxReplyBytes, ...settings.transport })
   const worker = new StdioCloudWorkerV2(store, authorization, sandboxes, transport, results,
-    { workerId, ...settings.worker })
-  return { connections, actions, discovery, calls, authorization, worker,
+    { workerId, ...settings.worker, environment: (lease, dispatch, signal) => environment.readForWorker({ lease, dispatch }, signal) })
+  return { connections, actions, discovery, calls, authorization, worker, environment,
     requests: stdioManagementSchemasV2(limits, management) }
 }

@@ -84,9 +84,11 @@ export function runStdioDispatchV2(dispatch: StdioDispatchV2, environment: Stdio
     || environment.workspaceRoot.includes('\0')) throw new TypeError('stdio_v2_workspace_root_invalid')
   const root = resolve(environment.workspaceRoot), cwd = resolve(root, task.invocation.cwd), path = relative(root, cwd)
   if (isAbsolute(path) || path === '..' || path.startsWith(`..${sep}`)) throw new TypeError('stdio_v2_cwd_invalid')
+  const values = overrides === undefined ? {} : stdioEnvironmentValues.parse(overrides)
   // The dropped-privilege helper must still verify filesystem traversal and stop the complete configured UID.
   return runStdioV2({ ...task.invocation, cwd, ...(task.phase === 'discover' ? { phase: 'discover' }
     : { phase: 'call', catalogExpectation: task.selection.rawCatalog, rawName: task.selection.rawName,
-      arguments: task.selection.arguments }) }, { env: { ...environment.env, ...(overrides === undefined ? {} : stdioEnvironmentValues.parse(overrides)) }, identity: { ...environment.identity }, limits,
+      arguments: task.selection.arguments }) }, { env: { ...environment.env, ...values },
+    identity: { ...environment.identity }, limits,
     fingerprintCatalog: tools => stdioCatalogFingerprintV2(tools, limits) }, signal)
 }

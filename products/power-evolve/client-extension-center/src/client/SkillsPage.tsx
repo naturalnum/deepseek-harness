@@ -11,7 +11,6 @@ import { SkillToggle } from './SkillToggle.tsx'
 export type SkillsPageProps = PropsRuntime<'main'> & PropsLocale<'powerEvolve.extensionCenter'>
   & InjectFace<{ readonly client: SkillPort; readonly trySkill: (skill: PersonalSkill) => Promise<void> }>
 
-type View = 'installed' | 'all'
 type Category = 'writing-office' | 'data-analysis' | 'research-knowledge' | 'development-tools' | 'imported' | 'other'
 const purposeCategories: readonly Category[] = ['writing-office', 'data-analysis', 'research-knowledge', 'development-tools']
 const builtinCategories: Readonly<Record<string, Category>> = {
@@ -49,9 +48,9 @@ function catalogStatus(skill: BuiltinSkill, personal: PersonalSkill | undefined,
   return skill.installedSkillId === null ? t('builtinAvailable') : t('builtinInstalled')
 }
 
-/** The old PowerEvolve catalog layout with owner-scoped personal-skill RPCs. */
+/** Unified skill discovery and installed controls over the owner-scoped native skill APIs. */
 export function SkillsPage({ client, t, trySkill }: SkillsPageProps): ReactNode {
-  const [view, setView] = useState<View>('installed')
+  const [installedOnly, setInstalledOnly] = useState(false)
   const [items, setItems] = useState<readonly PersonalSkill[]>([])
   const [catalog, setCatalog] = useState<readonly BuiltinSkill[]>([])
   const [loading, setLoading] = useState(true)
@@ -180,7 +179,7 @@ export function SkillsPage({ client, t, trySkill }: SkillsPageProps): ReactNode 
       setPendingBuiltin(undefined)
       setCatalog(current => current.map(item => item.id === entry.id ? { ...item, installedSkillId: skill.skillId } : item))
       installed(skill)
-      setSelectedCatalogId(undefined); setSelectedId(skill.skillId); setView('installed'); setCategory('')
+      setSelectedCatalogId(undefined); setSelectedId(skill.skillId)
     } catch (cause) {
       if (!alive.current || currentClient.current !== client || controller.signal.aborted) return
       if (cause instanceof SkillHttpError && [400, 401, 404, 409, 413].includes(cause.status)) {
@@ -202,30 +201,30 @@ export function SkillsPage({ client, t, trySkill }: SkillsPageProps): ReactNode 
   const query = search.trim().toLocaleLowerCase()
   const visiblePersonal = items.filter((item) => {
     const entry = catalogByPersonalId.get(item.skillId)
-    return (category === '' || (entry === undefined ? 'imported' : categoryOf(entry)) === category)
+    return entry === undefined && (category === '' || category === 'imported')
       && (!query || matches([item.name, item.description], query))
   })
-  const visibleCatalog = catalog.filter(entry => (category === '' || categoryOf(entry) === category)
+  const visibleCatalog = catalog.filter(entry => (!installedOnly || entry.installedSkillId !== null)
+    && (category === '' || categoryOf(entry) === category)
     && (!query || matches([entry.name, entry.id, entry.summary, entry.description, entry.category, entry.publisher], query)))
-  const categories = view === 'all'
-    ? [...purposeCategories, ...(catalog.some(entry => categoryOf(entry) === 'other') ? ['other' as const] : [])]
-    : [...purposeCategories, 'imported' as const]
+  const categories = [...purposeCategories, 'imported' as const,
+    ...(catalog.some(entry => categoryOf(entry) === 'other') ? ['other' as const] : [])]
+  const recommended = catalog.filter(entry => ['builtin.word', 'builtin.pdf', 'builtin.excel'].includes(entry.id)).slice(0, 3)
+  const openCatalog = (entry: BuiltinSkill): void => {
+    setMutationError(undefined)
+    setSelectedCatalogId(entry.id)
+  }
   const selected = items.find(item => item.skillId === selectedId)
   const selectedCatalog = catalog.find(item => item.id === selectedCatalogId)
   const clientChanged = currentClient.current !== client
-  const pageLoading = clientChanged || loading || (view === 'all' && catalogLoading)
-  const pageError = clientChanged ? undefined : loadError ?? (view === 'all' ? catalogError : undefined)
-  const visibleCount = view === 'all' ? visibleCatalog.length : visiblePersonal.length
+  const pageLoading = clientChanged || loading || catalogLoading
+  const pageError = clientChanged ? undefined : loadError ?? catalogError
+  const visibleCount = visibleCatalog.length + visiblePersonal.length
   const refresh = (): void => { reload() }
 
   return <main className="pext-root pext-catalog-page" data-power-evolve-skills-page>
     <header className="pext-catalog-header">
-      <nav className="pext-catalog-tabs" role="tablist" aria-label={t('skillsTitle')}>
-        <button type="button" role="tab" aria-selected={view === 'installed'} onClick={() => { setView('installed'); setCategory('') }}>
-          {t('mySkills')}<small>{clientChanged ? 0 : items.length}</small></button>
-        <button type="button" role="tab" aria-selected={view === 'all'} onClick={() => { setView('all'); setCategory('') }}>
-          {t('allSkills')}</button>
-      </nav>
+      <div><h1>{t('skillsTitle')}</h1><p className="pext-page-description">{t('catalogDescription')}</p></div>
       <div className="pext-catalog-actions">
         <button type="button" className="pext-dialog-button" onClick={() => { setMutationError(undefined); setInstallOpen(true) }}>
           <IconPlusOutlineRegular size={15} />{t('installSkill')}</button>
@@ -233,10 +232,20 @@ export function SkillsPage({ client, t, trySkill }: SkillsPageProps): ReactNode 
           onClick={() => { setMutationError(undefined); setImportOpen(true) }}>{t('importSkillPackage')}</button>
       </div>
     </header>
-    <section className="pext-catalog-content" role="tabpanel" aria-label={view === 'all' ? t('allSkills') : t('mySkills')}>
-      <label className="pext-catalog-search"><span className="pext-visually-hidden">{view === 'all' ? t('searchAllSkills') : t('searchMySkills')}</span>
+    <section className="pext-catalog-content" aria-label={t('allSkills')}>
+      {!clientChanged && recommended.length > 0 && <section aria-label={t('recommended')}>
+        <h2 className="pext-section-label">{t('recommended')}</h2>
+        <div className="pext-recommendations">{recommended.map(entry => <button type="button" key={entry.id}
+          className="pext-recommendation" aria-label={t('recommendationOpen').replace('{name}', entry.name)}
+          onClick={() => { openCatalog(entry) }}>
+          <span className="pext-recommendation-head"><IconSkillOutlineRegular size={30} /><strong>{entry.name}</strong></span>
+          <span>{entry.summary}</span>
+        </button>)}</div>
+      </section>}
+
+      <label className="pext-catalog-search"><span className="pext-visually-hidden">{t('searchAllSkills')}</span>
         <IconSearchOutlineRegular size={17} /><input type="search" value={search}
-          placeholder={view === 'all' ? t('searchAllSkills') : t('searchMySkills')}
+          placeholder={t('searchAllSkills')}
           onChange={(event) => { setSearch(event.target.value) }} /></label>
       <div className="pext-catalog-filter-row">
         <div className="pext-category-tabs" aria-label={t('skillCategory')}>
@@ -244,7 +253,8 @@ export function SkillsPage({ client, t, trySkill }: SkillsPageProps): ReactNode 
           {categories.map(value => <button key={value} type="button" aria-pressed={category === value}
             onClick={() => { setCategory(value) }}>{t(categoryLabels[value])}</button>)}
         </div>
-        <span>{t('resultCount').replace('{count}', String(clientChanged ? 0 : visibleCount))}</span>
+        <label className="pext-installed-filter">{t('installedOnly')}<SkillToggle label={t('installedOnly')}
+          checked={installedOnly} disabled={false} onChange={setInstalledOnly} /></label>
         <button type="button" className="pext-card-action" onClick={refresh}>{t('refreshList')}</button>
       </div>
       {pageError && <div className="pext-error" role="alert">{pageError}</div>}
@@ -253,8 +263,8 @@ export function SkillsPage({ client, t, trySkill }: SkillsPageProps): ReactNode 
       {pageLoading ? <div className="pext-loading" role="status">{t('loading')}</div>
         : pageError ? null
           : visibleCount === 0 ? <div className="pext-empty">{search.trim() || category
-            ? t('searchEmpty') : view === 'all' ? t('builtinCatalogEmpty') : t('mySkillsEmpty')}</div>
-            : view === 'all' ? <div className="pext-card-grid">{visibleCatalog.map((entry) => {
+            ? t('searchEmpty') : t('mySkillsEmpty')}</div>
+            : <div className="pext-card-grid">{visibleCatalog.map((entry) => {
               const personal = entry.installedSkillId === null ? undefined : personalById.get(entry.installedSkillId)
               const canInstall = entry.installedSkillId === null && (pendingBuiltin === undefined || pendingBuiltin.catalogId === entry.id)
               return <article className="pext-extension-card" key={entry.id}>
@@ -263,11 +273,11 @@ export function SkillsPage({ client, t, trySkill }: SkillsPageProps): ReactNode 
                   <span className="pext-extension-badge" data-enabled={personal?.enabled && personal.observedState === 'ready' || undefined}>
                     {catalogStatus(entry, personal, t)}</span>
                 </div>
-                <button type="button" className="pext-extension-title" onClick={() => { setSelectedCatalogId(entry.id); setMutationError(undefined) }}>
+                <button type="button" className="pext-extension-title" onClick={() => { openCatalog(entry) }}>
                   {entry.name}</button>
                 <p>{entry.summary}</p>
                 <div className="pext-extension-card-bottom"><span>{t('skillVersion').replace('{version}', entry.version)}</span>
-                  <div><button type="button" className="pext-card-action" onClick={() => { setSelectedCatalogId(entry.id); setMutationError(undefined) }}>
+                  <div><button type="button" className="pext-card-action" onClick={() => { openCatalog(entry) }}>
                     {t('viewDetails')}</button>
                   {canInstall && <button type="button" className="pext-card-action pext-card-action-primary"
                     disabled={busyId !== undefined} onClick={() => { void installBuiltin(entry) }}>
@@ -278,27 +288,27 @@ export function SkillsPage({ client, t, trySkill }: SkillsPageProps): ReactNode 
                     onChange={(enabled) => { void toggle(personal.skillId, enabled) }} />}</div>
                 </div>
               </article>
-            })}</div>
-              : <div className="pext-card-grid">{visiblePersonal.map(skill => <article className="pext-extension-card" key={skill.skillId}>
-                <div className="pext-extension-card-top">
-                  <span className="pext-extension-icon" aria-hidden="true"><IconSkillOutlineRegular size={21} /></span>
-                  <span className="pext-extension-badge" data-enabled={skill.enabled && skill.observedState === 'ready' || undefined}>
-                    {t(skill.observedState === 'revoked' ? 'revokedState' : skill.enabled ? 'enabledState' : 'disabledState')}</span>
-                </div>
-                <button type="button" className="pext-extension-title" onClick={() => { setSelectedId(skill.skillId); setMutationError(undefined) }}>
-                  {skill.name}</button>
-                <p>{skill.description}</p>
-                <div className="pext-extension-card-bottom">
-                  <span>{skill.kind === 'package' ? `${t('skillVersion').replace('{version}', String(skill.version))} · ${t(skill.observedState === 'ready' ? 'readyState' : 'revokedState')}`
-                    : t('revision').replace('{count}', String(skill.revision))}</span>
-                  <div><button type="button" className="pext-card-action" onClick={() => { setSelectedId(skill.skillId); setMutationError(undefined) }}>
-                    {t('viewDetails')}</button>
-                  <SkillToggle label={`${skill.name} ${t('enable')}`} checked={skill.enabled}
-                    disabled={busyId !== undefined || skill.observedState === 'revoked'}
-                    onChange={(enabled) => { void toggle(skill.skillId, enabled) }} /></div>
-                </div>
-              </article>)}</div>}
-      <aside className="pext-catalog-note">{view === 'all' ? t('builtinPreviewHint') : t('nextTaskHint')}</aside>
+            })}
+            {visiblePersonal.map(skill => <article className="pext-extension-card" key={skill.skillId}>
+              <div className="pext-extension-card-top">
+                <span className="pext-extension-icon" aria-hidden="true"><IconSkillOutlineRegular size={21} /></span>
+                <span className="pext-extension-badge" data-enabled={skill.enabled && skill.observedState === 'ready' || undefined}>
+                  {t(skill.observedState === 'revoked' ? 'revokedState' : skill.enabled ? 'enabledState' : 'disabledState')}</span>
+              </div>
+              <button type="button" className="pext-extension-title" onClick={() => { setSelectedId(skill.skillId); setMutationError(undefined) }}>
+                {skill.name}</button>
+              <p>{skill.description}</p>
+              <div className="pext-extension-card-bottom">
+                <span>{skill.kind === 'package' ? `${t('skillVersion').replace('{version}', String(skill.version))} · ${t(skill.observedState === 'ready' ? 'readyState' : 'revokedState')}`
+                  : t('revision').replace('{count}', String(skill.revision))}</span>
+                <div><button type="button" className="pext-card-action" onClick={() => { setSelectedId(skill.skillId); setMutationError(undefined) }}>
+                  {t('viewDetails')}</button>
+                <SkillToggle label={`${skill.name} ${t('enable')}`} checked={skill.enabled}
+                  disabled={busyId !== undefined || skill.observedState === 'revoked'}
+                  onChange={(enabled) => { void toggle(skill.skillId, enabled) }} /></div>
+              </div>
+            </article>)}</div>}
+      <aside className="pext-catalog-note">{t('nextTaskHint')}</aside>
     </section>
     <SkillInstallPanel open={!clientChanged && installOpen} client={client} t={t} onClose={() => { setInstallOpen(false) }}
       onInstalled={installed} />

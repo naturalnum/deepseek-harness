@@ -2,7 +2,8 @@
 import { isDeepStrictEqual } from 'node:util'
 import type { Pool, PoolClient } from 'pg'
 import { z } from 'zod'
-import { stdioActionRequestV2, stdioDigestV2, stdioExecutionRefV2, stdioInvocationV2, stdioJsonV2,
+import { stdioSavedConfigurationV2 } from '@power-evolve/contracts/stdio-management'
+import { stdioActionRequestV2, stdioDigestV2, stdioExecutionRefV2, stdioJsonV2,
   stdioLimitsV2, stdioTaskSchemasV2, type StdioLimitsV2, type StdioTaskV2 } from '@power-evolve/contracts/stdio-mcp'
 import { stdioCloudStopEvidenceV2, stdioRuntimeViewV2, type StdioOutcomeV2 } from '@power-evolve/contracts/stdio-runtime'
 import type { StdioActionSummaryV2, StdioActionDetailV2, StdioActionListV2 } from '@power-evolve/contracts/stdio-management'
@@ -89,8 +90,8 @@ export class StdioActionServiceV2 {
       [action.connection_id, userId, action.config_revision])).rows[0]
     const original = this.stored(() => {
       const execution = executionRow.parse(rawExecution), task = this.task.parse(action.task)
-      const configuration = z.object({ config_digest: digest, configuration: stdioJsonV2(this.budget()).pipe(
-        z.object({ name: z.string().min(1), invocation: stdioInvocationV2 }).strict()) }).parse(rawConfiguration)
+      const configuration = z.object({ config_digest: digest, configuration: stdioJsonV2(this.budget())
+        .transform((value): unknown => value).pipe(stdioSavedConfigurationV2) }).parse(rawConfiguration)
       const s = z.object({ id: uuid, workspace_id: uuid }).parse(session)
       const c = z.object({ id: uuid, user_id: accountUserId }).parse(connection)
       if (action.id !== id || action.user_id !== userId || action.session_id !== s.id

@@ -7,6 +7,11 @@ export const INSTALL_PATH_EXAMPLE = '/Users/name/my-plugin'
 
 /** Simplified Chinese dictionary and key source of truth. */
 export const zh = {
+  recommended: '推荐', searchCatalog: '搜索插件名称或介绍', allCategories: '全部',
+  categoryExecution: '终端与执行', categoryAgents: '智能体', categorySearch: '搜索与浏览',
+  categoryIntegrations: '集成服务', categoryOther: '其他', installedOnly: '已安装',
+  catalogCategory: '插件分类', searchEmpty: '没有找到符合条件的插件', recommendationOpen: '推荐：{name}',
+
   panel: '插件',
   title: '插件',
   intro: '安装、启用和配置插件',
@@ -212,6 +217,11 @@ export type PluginManagerLocaleKey = keyof typeof zh
 
 /** English dictionary checked against the Chinese key set. */
 export const en = {
+  recommended: 'Recommended', searchCatalog: 'Search plugins by name or description', allCategories: 'All',
+  categoryExecution: 'Terminal & execution', categoryAgents: 'Agents', categorySearch: 'Search & browsing',
+  categoryIntegrations: 'Integrations', categoryOther: 'Other', installedOnly: 'Installed',
+  catalogCategory: 'Plugin categories', searchEmpty: 'No matching plugins', recommendationOpen: 'Recommended: {name}',
+
   panel: 'Plugins',
   title: 'Plugins',
   intro: 'Install, enable, and configure plugins',

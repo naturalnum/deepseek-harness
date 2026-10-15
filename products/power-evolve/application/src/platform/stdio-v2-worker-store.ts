@@ -1,7 +1,8 @@
 /** Short ordered Cloud worker transactions retain original writers through cancellation and uncertainty. */
 import type { Pool, PoolClient } from 'pg'
 import { z } from 'zod'
-import { stdioApprovalBindingV2, stdioDigestV2, stdioDispatchV2, stdioExecutionRefV2, stdioInvocationV2, stdioJsonV2,
+import { stdioSavedConfigurationV2 } from '@power-evolve/contracts/stdio-management'
+import { stdioApprovalBindingV2, stdioDigestV2, stdioDispatchV2, stdioExecutionRefV2, stdioJsonV2,
   stdioLimitsV2, stdioPreparedV2, stdioStartPermitV2, stdioTaskSchemasV2,
   type StdioDigestV2, type StdioDispatchV2, type StdioExecutionRefV2, type StdioLimitsV2, type StdioTaskV2 } from '@power-evolve/contracts/stdio-mcp'
 import { stdioActionLeaseV2, stdioWorkerIdV2, type StdioActionLeaseV2, type StdioWorkerIdV2 } from '@power-evolve/contracts/stdio-runtime'
@@ -108,8 +109,8 @@ export class StdioCloudWorkerStoreV2 {
         || action.operation_id !== task.origin.operationId
         || action.call_id !== task.origin.callKey || action.continuation_request_id === null || execution.origin_kind !== 'operation'
         || stdioCatalogFingerprintV2(task.selection.rawCatalog, this.limits) !== task.selection.catalogDigest) this.deny('stdio_v2_origin_changed')
-    const configuration = z.object({ configuration: stdioJsonV2(this.digests.budget).pipe(z.object({ name: text,
-      invocation: stdioInvocationV2 }).strict()),
+    const configuration = z.object({ configuration: stdioJsonV2(this.digests.budget)
+      .transform((value): unknown => value).pipe(stdioSavedConfigurationV2),
     config_digest: digest }).parse((await client.query<Record<string, unknown>>('SELECT configuration,config_digest FROM pe_stdio_v2_configurations WHERE connection_id=$1 AND user_id=$2 AND revision=$3',
       [connection.id, account.userId, action.config_revision])).rows[0])
     if (configuration.config_digest !== action.config_digest || this.digests.sha('configuration', configuration.configuration) !== action.config_digest

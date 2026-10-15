@@ -1,5 +1,6 @@
 /** Browser-safe MCP presentation metadata and opaque environment version references. */
 import { z } from 'zod'
+import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
 
 /** Uploaded raster artwork stays inert; remote URLs and active SVG documents are not accepted. */
 export const mcpPresentation = z.object({
@@ -10,8 +11,11 @@ export const mcpPresentation = z.object({
 /** Display-only connection fields; neither field grants transport or execution authority. */
 export type McpPresentation = z.infer<typeof mcpPresentation>
 
+/** Immutable encrypted credential-version identity; distinct from connections and actions. */
+export type StdioEnvironmentVersionId = Branded<'PowerEvolveStdioEnvironmentVersionId'>
+
 /** A frozen encrypted environment version exposes names only, never values. */
-export const stdioEnvironmentRef = z.object({ credentialVersion: z.uuid(),
+export const stdioEnvironmentRef = z.object({ credentialVersion: z.uuid().transform(value => brandString<StdioEnvironmentVersionId>(value)),
   keys: z.array(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]{0,127}$/u)).min(1).max(64),
 }).strict().refine(value => new Set(value.keys).size === value.keys.length)
 

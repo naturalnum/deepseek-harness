@@ -1,11 +1,13 @@
 /** Metadata-only native RPC vocabulary; credential bytes use the direct Platform upload capability. */
 import { z } from 'zod'
+import { mcpPresentation } from '@power-evolve/contracts/mcp-metadata'
 import { mcpCatalogId, mcpCheckId, mcpConnectionId, mcpDraftId, mcpRequestId, mcpSessionId,
   mcpCreateRequest, mcpUpdateRequest, mcpToggleRequest, mcpDeleteRequest, mcpTicketRequest,
   mcpCheckRequest, mcpDraftRequest, type McpConnection, type McpCheck } from './mcp-contracts.ts'
 
 /** Public connection metadata; no endpoint headers or bearer value can cross this parser. */
 export const mcpConnectionValue = z.object({
+  presentation: mcpPresentation.optional(),
   connectionId: mcpConnectionId, revision: z.number().int().positive(),
   configurationRevision: z.number().int().positive(), credentialRevision: z.number().int().positive().nullable(),
   displayName: z.string().min(1).max(100), serverName: z.string().min(1).max(100),

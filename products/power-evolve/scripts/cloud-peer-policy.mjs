@@ -256,11 +256,17 @@ export const CLOUD_PEER_REQUIRED_HOST_EXPORTS = Object.freeze({
     'officePreviewResultSchema',
     'officePreviewSourcePrepareRequest',
   ]),
+  '@power-evolve/contracts/mcp-metadata': Object.freeze(['mcpPresentation', 'stdioEnvironmentRef']),
+  '@power-evolve/contracts/stdio-environment': Object.freeze([
+    'stdioEnvironmentOptions', 'stdioEnvironmentReceipt', 'stdioEnvironmentReceiptRequest',
+    'stdioEnvironmentTicket', 'stdioEnvironmentTicketRequest', 'stdioEnvironmentUpload',
+  ]),
   '@power-evolve/contracts/stdio-management': Object.freeze([
     'stdioActionSchemasV2',
     'stdioManagementLimitsV2',
     'stdioManagementSchemasV2',
     'stdioPublicConfigV2',
+    'stdioSavedConfigurationV2',
   ]),
   '@power-evolve/contracts/stdio-mcp': Object.freeze([
     'stdioActionRequestV2',
@@ -277,7 +283,6 @@ export const CLOUD_PEER_REQUIRED_HOST_EXPORTS = Object.freeze({
     'stdioExecutorImageV2',
     'stdioExecutorOwnerV2',
     'stdioImageMatchesDeploymentV2',
-    'stdioInvocationV2',
     'stdioJsonV2',
     'stdioLimitsV2',
     'stdioObjectV2',

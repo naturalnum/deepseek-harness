@@ -220,6 +220,12 @@ class ProductRemote extends TypertRemoteService {
   @Remote stdioMcpToggle(request: z.infer<typeof requests.stdioMcpToggle>) { return this.call('stdioMcpToggle', request) }
   @Remote stdioMcpCalls(request: z.infer<typeof requests.stdioMcpCalls>) { return this.call('stdioMcpCalls', request) }
   @Remote stdioMcpStatus(request: z.infer<typeof requests.stdioMcpStatus>) { return this.call('stdioMcpStatus', request) }
+  @Remote stdioV2EnvironmentTicket(request: z.infer<typeof requests.stdioV2EnvironmentTicket>) {
+    return this.stdio.environmentTicket(this.token(), request)
+  }
+  @Remote stdioV2EnvironmentReceipt(request: z.infer<typeof requests.stdioV2EnvironmentReceipt>) {
+    return this.stdio.environmentReceipt(this.token(), request)
+  }
   @Remote stdioV2Config(request: Record<string, never>) { return this.stdio.config(this.token(), request) }
   @Remote stdioV2ConnectionsList(request: StdioListRequestV2) { return this.stdio.list(this.token(), request) }
   @Remote stdioV2ConnectionsCreate(request: StdioCreateRequestV2) { return this.stdio.create(this.token(), request) }

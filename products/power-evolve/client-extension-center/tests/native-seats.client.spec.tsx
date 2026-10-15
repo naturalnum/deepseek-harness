@@ -35,7 +35,7 @@ const passiveApply: () => unknown = applyServer
 
 afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
-it('registers native Skills, Host bundle and cloud project seats and withdraws them with their styles', async () => {
+it('registers native Skills, MCP plugin and cloud project seats and withdraws them with their styles', async () => {
   const ctx = new Context(), scope = {}
   const setDraft = vi.fn(), openSession = vi.fn()
   const id = '00000000-0000-4000-8000-000000000003'
@@ -50,12 +50,12 @@ it('registers native Skills, Host bundle and cloud project seats and withdraws t
   await ctx.plugin(SlotRegistry)
   try {
     ctx.slots.register({ name: 'root', children: { main: { kind: 'keyed', scope: 'root' },
-      'sidebar.panellist': { kind: 'list', scope: 'root' }, 'plugins.bundle.config': { kind: 'keyed', scope: 'root' },
+      'sidebar.panellist': { kind: 'list', scope: 'root' }, 'plugins.item': { kind: 'list', scope: 'root' },
       'conversation.hero.workspace.directoryFlow': { kind: 'single', scope: 'root' },
       'sidebar.workspaces.directoryFlow': { kind: 'single', scope: 'root' } } },
-    ({ renderSlot }: PropsRenderSlots<'main' | 'sidebar.panellist' | 'plugins.bundle.config'>) => <>
+    ({ renderSlot }: PropsRenderSlots<'main' | 'sidebar.panellist' | 'plugins.item'>) => <>
       {renderSlot('main', {})}{renderSlot('sidebar.panellist', { size: 16, active: false })}
-      {renderSlot('plugins.bundle.config', { view: 'page' })}
+      {renderSlot('plugins.item', { view: 'page' })}
     </>)
     const directoryFallback = () => null
     for (const hole of ['conversation.hero.workspace.directoryFlow', 'sidebar.workspaces.directoryFlow'] as const) {
@@ -78,14 +78,14 @@ it('registers native Skills, Host bundle and cloud project seats and withdraws t
     const sidebar = ctx.slots.entries('sidebar.panellist')[0]
     expect(sidebar?.component).toBe(SkillsPanelIcon)
     expect(typeof sidebar?.options.label === 'function' && sidebar.options.label()).toBe(en.skillsNav)
-    const config = ctx.slots.entries('plugins.bundle.config')[0]
+    const config = ctx.slots.entries('plugins.item')[0]
     expect(config?.component).toBe(ConnectorConfiguration)
-    expect(config?.options.key).toBe('@power-evolve/host')
+    expect(config?.options.id).toBe('power-evolve-mcp')
     const configuration = config?.inject?.()
     expect(configuration).toMatchObject({ personalMcp: objectMatcher, sessions: objectMatcher,
       stdioV2: objectMatcher, approvalUrl: functionMatcher })
     expect(Object.keys(jsonRecord(configuration)).sort()).toEqual(['approvalUrl', 'personalMcp', 'sessions', 'stdioV2'])
-    expect(ctx.slots.entries('plugins.item')).toHaveLength(0)
+    expect(ctx.slots.entries('plugins.item')).toHaveLength(1)
     const actions = skills?.inject?.()
     if (!isSkillActions(actions)) throw new Error('Missing native skill trial action')
     expect(actions?.client).toBeTruthy()
@@ -96,7 +96,7 @@ it('registers native Skills, Host bundle and cloud project seats and withdraws t
     expect(document.getElementById('@power-evolve/client-extension-center')).toBeTruthy()
     await product.dispose()
     expect(ctx.slots.entries('main')).toHaveLength(0)
-    expect(ctx.slots.entries('plugins.bundle.config')).toHaveLength(0)
+    expect(ctx.slots.entries('plugins.item')).toHaveLength(0)
     expect(ctx.slots.entriesOfSlot('sidebar.workspaces.directoryFlow')[0]?.component).toBe(directoryFallback)
     expect(ctx.slots.entriesOfSlot('conversation.hero.workspace.directoryFlow')[0]?.component).toBe(directoryFallback)
     expect(document.getElementById('@power-evolve/client-extension-center')).toBeNull()

@@ -1,5 +1,6 @@
 /** Native Cloud STDIO management over the original browser credential; metadata supplies budgets, never authority. */
 import { z } from 'zod'
+import { stdioEnvironmentTicketRequest, stdioEnvironmentTicket, stdioEnvironmentReceiptRequest, stdioEnvironmentReceipt } from '@power-evolve/contracts/stdio-environment'
 import { stdioActionRequestV2, stdioCheckRequestV2, stdioJsonV2, stdioReceiptRequestV2 } from '@power-evolve/contracts/stdio-mcp'
 import { stdioActionSchemasV2, stdioManagementSchemasV2, stdioPublicConfigV2,
   type StdioActionDetailV2, type StdioActionListRequestV2, type StdioActionListV2, type StdioActionSummaryV2,
@@ -12,6 +13,7 @@ import type RuntimeScope from './host/scope.ts'
 /** Flat native methods; dynamic request validation occurs after this peer's authenticated metadata read. */
 export const stdioManagementRequestsV2 = {
   stdioV2Config: z.object({}).strict(),
+  stdioV2EnvironmentTicket: stdioEnvironmentTicketRequest, stdioV2EnvironmentReceipt: stdioEnvironmentReceiptRequest,
   stdioV2ConnectionsList: z.unknown(), stdioV2ConnectionsCreate: z.unknown(),
   stdioV2ConnectionsUpdate: z.unknown(), stdioV2ConnectionsToggle: z.unknown(),
   stdioV2ConnectionsDelete: z.unknown(), stdioV2ConnectionsReceipt: z.unknown(),
@@ -22,6 +24,7 @@ export const stdioManagementRequestsV2 = {
 /** Exact Platform management paths; no runtime, approval or executor endpoint is exposed. */
 export const stdioManagementEndpointsV2 = {
   stdioV2Config: '/stdio-v2/config',
+  stdioV2EnvironmentTicket: '/stdio-v2/environment/ticket', stdioV2EnvironmentReceipt: '/stdio-v2/environment/receipt',
   stdioV2ConnectionsList: '/stdio-v2/connections/list', stdioV2ConnectionsCreate: '/stdio-v2/connections/create',
   stdioV2ConnectionsUpdate: '/stdio-v2/connections/update', stdioV2ConnectionsToggle: '/stdio-v2/connections/toggle',
   stdioV2ConnectionsDelete: '/stdio-v2/connections/delete', stdioV2ConnectionsReceipt: '/stdio-v2/connections/receipt',
@@ -76,6 +79,21 @@ export class StdioManagementRpcV2 {
     const result = stdioPublicConfigV2.safeParse(await this.runtime.call(stdioManagementEndpointsV2.stdioV2Config, token, parsed))
     if (!result.success) throw new PlatformError(502, 'stdio_v2_config_invalid')
     return result.data.available ? this.reply(result.data, stdioPublicConfigV2, result.data) : result.data
+  }
+
+  /** Issue a direct Platform upload capability using metadata alone.
+   * @param token Current browser credential. @param input Complete key plan without values.
+   * @returns One-use direct upload destination, with no process or approval authority.
+   */
+  environmentTicket(token: string, input: z.infer<typeof stdioEnvironmentTicketRequest>) {
+    return this.invoke('stdioV2EnvironmentTicket', token, input, () => ({ request: stdioEnvironmentTicketRequest, response: stdioEnvironmentTicket }))
+  }
+  /** Read the original private upload outcome without resubmitting values.
+   * @param token Current browser credential. @param input Original request identity.
+   * @returns Masked version reference, or null until committed.
+   */
+  environmentReceipt(token: string, input: z.infer<typeof stdioEnvironmentReceiptRequest>) {
+    return this.invoke('stdioV2EnvironmentReceipt', token, input, () => ({ request: stdioEnvironmentReceiptRequest, response: stdioEnvironmentReceipt }))
   }
 
   /** Read one owner-scoped connection page without creating a process.

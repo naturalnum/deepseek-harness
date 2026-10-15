@@ -71,15 +71,15 @@ describe('ui-plugin-manager browser plugin', () => {
     const navigation = entry.store.create()
     b.ctx.pluginNavigation.openBundle('dsh-navigation-test')
     expect(b.panelInfo.getSnapshot().activePanelId).toBe(PANEL_ID)
-    expect(navigation.getSnapshot()).toEqual({ view: { kind: 'package', name: 'dsh-navigation-test' } })
+    expect(navigation.getSnapshot()).toEqual({ view: { kind: 'package', name: 'dsh-navigation-test' }, query: '', category: '', installedOnly: false })
     b.selectPanel(null)
-    expect(navigation.getSnapshot()).toEqual({ view: { kind: 'list' } })
+    expect(navigation.getSnapshot()).toEqual({ view: { kind: 'list' }, query: '', category: '', installedOnly: false })
     b.selectPanel(PANEL_ID)
-    expect(navigation.getSnapshot()).toEqual({ view: { kind: 'list' } })
+    expect(navigation.getSnapshot()).toEqual({ view: { kind: 'list' }, query: '', category: '', installedOnly: false })
     b.ctx.pluginNavigation.openBundle('dsh-navigation-test')
     removeRoot()
     b.selectPanel(null)
-    expect(navigation.getSnapshot()).toEqual({ view: { kind: 'package', name: 'dsh-navigation-test' } })
+    expect(navigation.getSnapshot()).toEqual({ view: { kind: 'package', name: 'dsh-navigation-test' }, query: '', category: '', installedOnly: false })
   })
 
   it('shares refresh failures with the overlay after navigation and releases both registrations across reloads', async () => {
@@ -131,7 +131,7 @@ describe('ui-plugin-manager browser plugin', () => {
     expect(b.selectPanel).toHaveBeenCalledWith(PANEL_ID)
     const entry = b.slots.entries('main')[0]!
     assert(entry.store && 'create' in entry.store)
-    expect(entry.store.create().getSnapshot()).toEqual({ view: { kind: 'package', name: 'dsh-navigation-test' } })
+    expect(entry.store.create().getSnapshot()).toEqual({ view: { kind: 'package', name: 'dsh-navigation-test' }, query: '', category: '', installedOnly: false })
     expect(entry.component).toBe(PluginManagerPage)
     expect(entry.options).toMatchObject({ key: PANEL_ID })
     expect(entry.locale).toBe(NS)

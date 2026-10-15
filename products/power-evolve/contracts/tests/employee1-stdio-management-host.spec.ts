@@ -24,6 +24,9 @@ function completed(phase: 'discover' | 'call' = 'call') {
 
 for (const [method, input, reply] of [
   ['stdioV2ConnectionsCreate', { requestId: ids.request, configuration }, mutation],
+  ['stdioV2EnvironmentTicket', { requestId: ids.request, sizeBytes: 100, keys: [{ name: 'TOKEN', action: 'replace' }] },
+    { requestId: ids.request, ticket: 'a'.repeat(43), uploadUrl: 'https://platform.test/stdio-environment/upload', expiresAt: '2099-01-01T00:00:00.000Z' }],
+  ['stdioV2EnvironmentReceipt', { requestId: ids.request }, { environment: { credentialVersion: ids.other, keys: ['TOKEN'] } }],
   ['stdioV2ConnectionsUpdate', { ...select, configuration }, { ...mutation, purpose: 'update', revision: 2 }],
   ['stdioV2ConnectionsToggle', { ...select, enabled: true }, { ...mutation, purpose: 'toggle', enabled: true }],
   ['stdioV2ConnectionsDelete', select, { ...mutation, purpose: 'delete', deleted: true }],

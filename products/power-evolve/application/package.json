@@ -36,7 +36,9 @@
     "assets/cloud-schema-v12.sql",
     "assets/cloud-schema-v12.manifest.json",
     "assets/cloud-schema-v13.sql",
-    "assets/cloud-schema-v13.manifest.json"
+    "assets/cloud-schema-v13.manifest.json",
+    "assets/cloud-schema-v14.sql",
+    "assets/cloud-schema-v14.manifest.json"
   ],
   "exports": {
     "./platform": "./lib/platform/index.js",

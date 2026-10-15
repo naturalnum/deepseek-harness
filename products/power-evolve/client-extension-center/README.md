@@ -24,7 +24,7 @@ Users can browse, install and try personal or built-in Skills from the native Sk
 <a id="use-this-package"></a>
 ## Use this package
 
-The existing native Skills page provides My skills and All skills with category search. The current cloud profile exposes built-in PDF; the retained release catalog contains nine pinned packages. The page lists, reads, installs, enables, disables and revokes personal text skills and ZIP packages. Upload tickets send package bytes directly to Platform; Host receives no ZIP body. “Try skill” opens an editable native invocation draft in a new Conversation. Personal Remote MCP and generic Cloud STDIO controls render in the official Plugins page’s `@power-evolve/host` bundle configuration. Their slot is `plugins.bundle.config`; shared plugin inventory, navigation and deployment permissions remain native.
+Plugins and Skills share recommendations, full-width search and combined purpose/installed filters. Skills use a responsive multi-column catalog and retain their existing detail dialogs. The current cloud profile exposes built-in PDF; the retained release catalog contains nine pinned packages. The page lists, reads, installs, enables, disables and revokes personal text skills and ZIP packages. Upload tickets send package bytes directly to Platform; Host receives no ZIP body. “Try skill” opens an editable native invocation draft in a new Conversation. MCP controls register `plugins.item` within the native plugin detail page; shared inventory, navigation and deployment permissions remain native. Both STDIO and Streamable HTTP accept inert raster icons and notes.
 
 The [cloud Web shell](../cloud-web/README.md) includes this browser plugin through native client metadata. It has no separate Profile layer or user-supplied mount fields; the configured [Host bundle](../host/README.md) owns the server-side composition.
 
@@ -63,6 +63,8 @@ Checks use an existing native Session, defaulting to the Session retained by the
 The generic Cloud STDIO section manages literal programs, JSON argument arrays and relative working directories. Users select an existing Session before saving or requesting discovery. Saving grants no start permission; discovery requires independent approval. The section displays persisted task details, cancellation requests and original-request reconciliation after lost replies. Closing the section retains unresolved requests within the same authenticated page instance. Unavailable composition disables generic writes and displays the metadata error; it does not substitute a fixed connection or a successful empty catalog.
 
 STDIO Session selectors preserve the receiver when calling native `Session.list` methods. Management request IDs can be generated on plain HTTP when `crypto.randomUUID` is unavailable. Cancelled reads do not start a later action query or report availability from a retired generation. When Platform reports management unavailable, historical connections remain visible as read-only records with a localized status, and management controls are removed.
+
+STDIO environment rows mask saved values. Blank saved rows retain their exact source revision, edited rows replace values, and removing a row clears that variable. Replacement bytes go directly to Platform; Host RPC and connection readback carry names and an immutable encrypted-version reference. Saving a configuration does not grant execution.
 
 -----
 

@@ -1,10 +1,13 @@
 /** Generic STDIO management inside the existing native Plugins card; every Check selects an existing Session. */
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import { stdioCheckRequestV2 } from '@power-evolve/contracts/stdio-mcp'
 import { stdioManagementSchemasV2, type StdioConnectionV2 } from '@power-evolve/contracts/stdio-management'
 import type { PersonalMcpSessionSource } from './personal-mcp-session-view.ts'
+import type { McpPresentation } from '@power-evolve/contracts/mcp-metadata'
+import { McpMetadataFields } from './McpMetadataFields.tsx'
+import { StdioEnvironmentHttpClient, type StdioEnvironmentField } from './stdio-environment-api.ts'
 import { SkillToggle } from './SkillToggle.tsx'
 import { StdioV2State, stdioV2Configuration } from './stdio-v2-state.ts'
 
@@ -13,6 +16,7 @@ const blank = { name: '', program: '', argv: '[]', cwd: '.' }
 
 /** Existing-card props; no page creates Sessions, selects a deployment or grants approval. */
 export interface StdioV2PanelProps {
+  readonly environment?: Pick<StdioEnvironmentHttpClient, 'prepare'>
   readonly state: StdioV2State
   readonly sessions: PersonalMcpSessionSource
   readonly approvalUrl: () => Promise<string>
@@ -26,7 +30,9 @@ export interface StdioV2PanelProps {
  * @param props Owned controller, existing Sessions and trusted independent-approval destination.
  * @returns Generic management content within the original STDIO card.
  */
-export function StdioV2Panel({ state, sessions, approvalUrl, onUnavailable, onInstalledChange, t }: StdioV2PanelProps): ReactNode {
+export function StdioV2Panel({
+  state, sessions, approvalUrl, onUnavailable, onInstalledChange, environment, t,
+}: StdioV2PanelProps): ReactNode {
   const storedView = useSyncExternalStore(state.subscribe, state.getSnapshot)
   const subscribeToSessions = useCallback((listener: () => void) => sessions.list.subscribe(listener), [sessions.list])
   const readSessions = useCallback(() => sessions.list.getSnapshot(), [sessions.list])
@@ -35,6 +41,11 @@ export function StdioV2Panel({ state, sessions, approvalUrl, onUnavailable, onIn
   const [edited, setEdited] = useState<StdioConnectionV2>()
   const [fields, setFields] = useState(blank)
   const [invalid, setInvalid] = useState(false)
+  const [presentation, setPresentation] = useState<McpPresentation>()
+  const [variables, setVariables] = useState<readonly StdioEnvironmentField[]>([])
+  const [saving, setSaving] = useState(false)
+  const environmentClient = useMemo(() => environment ?? new StdioEnvironmentHttpClient(), [environment])
+  const formEpoch = useRef(0)
   const [approval, setApproval] = useState<string>()
   const [approvalFailed, setApprovalFailed] = useState(false)
   const mounted = useRef(false)
@@ -52,9 +63,12 @@ export function StdioV2Panel({ state, sessions, approvalUrl, onUnavailable, onIn
       if (available === false) onUnavailable?.()
       else if (available === true && connections) onInstalledChange?.(connections.items.length > 0)
     })
-    return () => { active = false; mounted.current = false; state.stop() }
+    return () => { active = false; mounted.current = false; formEpoch.current++; state.stop() }
   }, [state, sessionId, snapshot, onUnavailable, onInstalledChange])
-  useEffect(() => { setEdited(undefined); setFields(blank); setInvalid(false) }, [view.sessionId])
+  useEffect(() => {
+    formEpoch.current++; setSaving(false); setEdited(undefined); setFields(blank)
+    setVariables([]); setPresentation(undefined); setInvalid(false)
+  }, [view.sessionId])
   useEffect(() => {
     let active = true
     setApproval(undefined); setApprovalFailed(false)
@@ -71,22 +85,36 @@ export function StdioV2Panel({ state, sessions, approvalUrl, onUnavailable, onIn
   const config = view.config
   const connectionCursor = view.connections?.next
   const actionOffset = view.actions?.nextOffset
-  const disabled = view.busy || view.pending !== undefined || !view.sessionId || !config?.available
+  const disabled = saving || view.busy || view.pending !== undefined || !view.sessionId || !config?.available
   const edit = (item?: StdioConnectionV2): void => {
-    setEdited(item); setInvalid(false)
+    formEpoch.current++; setEdited(item); setInvalid(false)
+    setPresentation(item?.configuration.presentation)
+    setVariables(item?.configuration.environment?.keys.map(name => ({ name })) ?? [])
     setFields(item ? { name: item.configuration.name, program: item.configuration.invocation.program,
       argv: JSON.stringify(item.configuration.invocation.argv), cwd: item.configuration.invocation.cwd } : blank)
   }
-  const save = (): void => {
+  const save = async (): Promise<void> => {
     if (!config?.available || disabled) return
+    const epoch = formEpoch.current
     try {
-      const configuration = stdioV2Configuration(fields, config), schemas = stdioManagementSchemasV2(config.limits, config.management)
+      const base = stdioV2Configuration(fields, config), schemas = stdioManagementSchemasV2(config.limits, config.management)
+      setSaving(true)
+      const source = edited?.configuration.environment ? { connectionId: edited.connectionId, expectedRevision: edited.revision,
+        credentialVersion: edited.configuration.environment.credentialVersion } : undefined
+      const reference = await environmentClient.prepare(randomUUID(), variables, source)
+      if (!mounted.current || formEpoch.current !== epoch) return
+      const configuration = schemas.configuration.parse({ ...base, ...(presentation ? { presentation } : {}),
+        ...(reference ? { environment: reference } : {}) })
       const requestId = randomUUID()
-      void state.submit(edited ? { kind: 'update', input: schemas.update.parse({ requestId,
+      await state.submit(edited ? { kind: 'update', input: schemas.update.parse({ requestId,
         connectionId: edited.connectionId, expectedRevision: edited.revision, configuration }) }
         : { kind: 'create', input: schemas.create.parse({ requestId, configuration }) })
-      setInvalid(false)
-    } catch (_invalidFields) { setInvalid(true) }
+      if (formEpoch.current === epoch) {
+        if (state.getSnapshot().receipt?.requestId === requestId) setVariables([])
+        setInvalid(false)
+      }
+    } catch (_invalidFields) { if (mounted.current && formEpoch.current === epoch) setInvalid(true) }
+    finally { if (mounted.current) setSaving(false) }
   }
   const change = (key: keyof typeof blank, value: string): void => { setFields(current => ({ ...current, [key]: value })) }
   const reload = (after?: StdioConnectionV2['connectionId'], offset = 0): void => {
@@ -97,7 +125,7 @@ export function StdioV2Panel({ state, sessions, approvalUrl, onUnavailable, onIn
       else if (available === true && after === undefined && connections) onInstalledChange?.(connections.items.length > 0)
     })
   }
-  return <section className="pext-plugin-detail-content" data-power-evolve-stdio-v2-panel>
+  return <section className="pext-plugin-detail-content pext-stdio-v2" data-power-evolve-stdio-v2-panel>
     <h1>{t('stdioV2Title')}</h1><p>{t('stdioV2Notice')}</p>
     <label>{t('stdioV2Session')}<select value={snapshot.ids.includes(sessionId) ? sessionId : ''}
       disabled={snapshot.phase !== 'ready'} onChange={(event) => { setSessionId(event.target.value) }}>
@@ -116,7 +144,8 @@ export function StdioV2Panel({ state, sessions, approvalUrl, onUnavailable, onIn
     {view.receipt && <div><p>{t('stdioV2ReceiptNotice')}</p><pre data-stdio-v2-receipt>{JSON.stringify(view.receipt, null, 2)}</pre></div>}
     <h2>{t('stdioV2Connections')}</h2>
     {view.connections?.items.map(item => <div key={item.connectionId} className="pext-plugin-detail-setting">
-      <strong>{item.configuration.name}</strong><span>{t('revision').replace('{count}', String(item.revision))}</span>
+      {item.configuration.presentation?.icon && <img className="pext-mcp-uploaded-icon" src={item.configuration.presentation.icon} alt="" />}
+      <strong>{item.configuration.name}</strong>{item.configuration.presentation?.note && <p>{item.configuration.presentation.note}</p>}<span>{t('revision').replace('{count}', String(item.revision))}</span>
       {config?.available && <>
         <SkillToggle label={`${item.configuration.name} ${t('pluginEnable')}`} checked={item.enabled}
           disabled={disabled || !item.enabled && item.catalogId === null} onChange={(enabled) => {
@@ -142,7 +171,21 @@ export function StdioV2Panel({ state, sessions, approvalUrl, onUnavailable, onIn
       <label>{t('stdioV2Program')}<input value={visibleFields.program} onChange={(event) => { change('program', event.target.value) }} /></label>
       <label>{t('stdioV2Argv')}<textarea value={visibleFields.argv} onChange={(event) => { change('argv', event.target.value) }} /></label>
       <label>{t('stdioV2Cwd')}<input value={visibleFields.cwd} onChange={(event) => { change('cwd', event.target.value) }} /></label>
-      <p>{t('stdioV2Literal')}</p><button type="button" onClick={save}>{t('stdioV2Save')}</button>
+      <McpMetadataFields value={presentation} onChange={setPresentation} t={t} />
+      <fieldset><legend>{t('stdioEnvironment')}</legend>
+        {variables.map((item, index) => <div className="pext-mcp-form-row" key={index}>
+          <label>{t('stdioEnvironmentName')}<input value={item.name} onChange={(event) => { setVariables(current => current.map((row, i) =>
+            i === index ? { name: event.target.value, value: row.value ?? '' } : row)) }} /></label>
+          <label>{t('stdioEnvironmentValue')}<input type="password" value={item.value ?? ''}
+            placeholder={item.value === undefined ? t('stdioEnvironmentRetain') : ''} autoComplete="new-password"
+            onChange={(event) => {
+              setVariables(current => current.map((row, i) => i === index ? { ...row, value: event.target.value } : row))
+            }} /></label>
+          <button type="button" onClick={() => { setVariables(current => current.filter((_row, i) => i !== index)) }}>{t('mcpRemoveHeader')}</button>
+        </div>)}
+        <button type="button" onClick={() => { setVariables(current => [...current, { name: '', value: '' }]) }}>{t('stdioEnvironmentAdd')}</button>
+      </fieldset>
+      <p>{t('stdioV2Literal')}</p><button type="button" onClick={() => { void save() }}>{t('stdioV2Save')}</button>
     </fieldset>
     {invalid && <p role="alert">{t('stdioV2Invalid')}</p>}
     <h2>{t('stdioRecentCalls')}</h2><p>{t('stdioV2CancelNotice')}</p>

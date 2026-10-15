@@ -2,7 +2,8 @@
 import { randomUUID } from 'node:crypto'
 import type { Pool, PoolClient } from 'pg'
 import { z } from 'zod'
-import { stdioApprovalBindingV2, stdioDigestV2, stdioDispatchV2, stdioExecutorOwnerV2, stdioInvocationV2,
+import { stdioSavedConfigurationV2 } from '@power-evolve/contracts/stdio-management'
+import { stdioApprovalBindingV2, stdioDigestV2, stdioDispatchV2, stdioExecutorOwnerV2,
   stdioJsonV2, stdioLimitsV2, stdioPreparedV2, stdioStartPermitV2, stdioTaskSchemasV2,
   type StdioLimitsV2 } from '@power-evolve/contracts/stdio-mcp'
 import { stdioActionLeaseV2, stdioCloudStopEvidenceV2, stdioRuntimeViewV2,
@@ -122,7 +123,7 @@ export class StdioResultServiceV2 {
         : execution.origin_kind !== 'operation' || action.operation_id !== task.origin.operationId || action.root_operation_id !== task.origin.rootOperationId
           || action.call_id !== task.origin.callKey || action.request_id !== null || action.continuation_request_id === null
           || stdioCatalogFingerprintV2(task.selection.rawCatalog, this.limits) !== task.selection.catalogDigest) this.deny('stdio_v2_origin_changed')
-      const configuration = z.object({ config_digest: digest, configuration: z.object({ name: z.string().min(1).refine(value => !value.includes('\0')), invocation: stdioInvocationV2 }).strict() })
+      const configuration = z.object({ config_digest: digest, configuration: stdioSavedConfigurationV2 })
         .parse((await client.query<Record<string, unknown>>('SELECT configuration,config_digest FROM pe_stdio_v2_configurations WHERE connection_id=$1 AND user_id=$2 AND revision=$3',
           [action.connection_id, action.user_id, action.config_revision])).rows[0])
       if (configuration.config_digest !== action.config_digest || this.digests.sha('configuration', configuration.configuration) !== action.config_digest

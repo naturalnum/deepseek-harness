@@ -1,8 +1,17 @@
 export const NS = 'powerEvolve.extensionCenter'
 
 export const zh = {
+  mcpPluginTitle: 'MCP 服务', mcpPluginSummary: '连接您自己的工具与数据，管理 STDIO 和 Streamable HTTP 服务',
+  mcpIcon: '图标', mcpNote: '备注', mcpRemoveIcon: '移除图标', mcpIconInvalid: '请选择不超过 48 KB 的 PNG、JPEG 或 WebP 图片',
+  mcpTransport: '连接类型', mcpTransportStdio: 'STDIO', mcpTransportHttp: 'Streamable HTTP',
+
+  recommended: '推荐', installedOnly: '已安装', recommendationOpen: '推荐：{name}',
+  catalogDescription: '发现、安装和管理技能，让智能体完成更多工作',
+
   projectCreateTitle: '创建项目', projectName: '项目名称', projectNamePlaceholder: '为您的项目命名', projectCreate: '创建',
   projectInvalidName: '项目名称不能包含路径分隔符或控制字符', projectCreateFailed: '无法创建项目，请检查名称是否重复后重试',
+  stdioEnvironment: '环境变量', stdioEnvironmentName: '变量名', stdioEnvironmentValue: '变量值',
+  stdioEnvironmentRetain: '保留已保存的值', stdioEnvironmentAdd: '添加环境变量',
   stdioV2Title: '通用进程型 MCP', stdioV2Description: '保存程序与参数，在明确选择的云会话中检查并独立审批。',
   stdioV2Unavailable: '通用进程型 MCP 暂不可用。',
   stdioV2Notice: '配置只保存字面程序与参数。检查和调用需独立审批；旧 whoami 连接不会转换为通用连接。',
@@ -263,9 +272,18 @@ export const zh = {
 export type ExtensionCenterLocaleKey = keyof typeof zh
 
 export const en = {
+  mcpPluginTitle: 'MCP services', mcpPluginSummary: 'Connect your tools and data with STDIO and Streamable HTTP services',
+  mcpIcon: 'Icon', mcpNote: 'Note', mcpRemoveIcon: 'Remove icon', mcpIconInvalid: 'Choose a PNG, JPEG or WebP image up to 48 KB',
+  mcpTransport: 'Connection type', mcpTransportStdio: 'STDIO', mcpTransportHttp: 'Streamable HTTP',
+
+  recommended: 'Recommended', installedOnly: 'Installed', recommendationOpen: 'Recommended: {name}',
+  catalogDescription: 'Discover, install and manage skills for your agents',
+
   projectCreateTitle: 'Create project', projectName: 'Project name', projectNamePlaceholder: 'Name your project', projectCreate: 'Create',
   projectInvalidName: 'Use a folder name without path separators or control characters',
   projectCreateFailed: 'Could not create the project. Check for a duplicate name and try again.',
+  stdioEnvironment: 'Environment variables', stdioEnvironmentName: 'Variable name', stdioEnvironmentValue: 'Variable value',
+  stdioEnvironmentRetain: 'Keep saved value', stdioEnvironmentAdd: 'Add environment variable',
   stdioV2Title: 'Generic process MCP', stdioV2Description: 'Save a program and arguments, then check and independently approve in an explicit cloud Session.',
   stdioV2Unavailable: 'Generic process MCP is unavailable.',
   stdioV2Notice: 'Configuration saves a literal program and arguments. Checks and calls require independent approval; old whoami connections are not converted.',

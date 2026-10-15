@@ -1,8 +1,17 @@
 /** Owner-scoped STDIO v2 management; requests select literal programs but grant no execution authority. */
 import { z } from 'zod'
+import { mcpPresentation, stdioEnvironmentRef } from './mcp-metadata.ts'
 import { stdioActionRequestV2, stdioCheckRequestV2, stdioExecutionRefV2, stdioInvocationV2, stdioJsonV2,
   stdioLimitsV2, stdioReceiptRequestV2, stdioDigestV2, stdioTaskSchemasV2, type StdioLimitsV2 } from './stdio-mcp.ts'
 import { stdioOutcomeV2 } from './stdio-runtime.ts'
+
+/** Saved fields are optional additions: reading a historical configuration never inserts defaults into its digest. */
+export const stdioSavedConfigurationV2 = z.object({
+  name: z.string().min(1).refine(value => !value.includes('\0')),
+  invocation: stdioInvocationV2,
+  presentation: mcpPresentation.optional(),
+  environment: stdioEnvironmentRef.optional(),
+}).strict()
 
 /** Deployment budgets for connection labels, lists and each owner's live configurations. */
 export const stdioManagementLimitsV2 = z.object({ maxNameBytes: z.number().int().positive(),
@@ -101,10 +110,11 @@ function managementSchemas(executionLimits: StdioLimitsV2, managementLimits: Std
     maxBytes: execution.maxInputBytes })
   const requestId = stdioReceiptRequestV2.shape.requestId, connectionId = stdioCheckRequestV2.shape.connectionId
   const revision = stdioCheckRequestV2.shape.expectedRevision
-  const configuration = z.object({ name: z.string().min(1).refine(value => !value.includes('\0')
-    && new TextEncoder().encode(value).byteLength <= management.maxNameBytes), invocation: stdioInvocationV2 }).strict()
-  const create = json.pipe(z.object({ requestId, configuration }).strict())
-  const update = json.pipe(z.object({ requestId, connectionId, expectedRevision: revision, configuration }).strict())
+  const configuration = stdioSavedConfigurationV2.extend({ name: stdioSavedConfigurationV2.shape.name
+    .refine(value => new TextEncoder().encode(value).byteLength <= management.maxNameBytes) })
+  const create = json.transform((value): unknown => value).pipe(z.object({ requestId, configuration }).strict())
+  const update = json.transform((value): unknown => value).pipe(
+    z.object({ requestId, connectionId, expectedRevision: revision, configuration }).strict())
   const toggle = json.pipe(z.object({ requestId, connectionId, expectedRevision: revision, enabled: z.boolean() }).strict())
   const remove = json.pipe(z.object({ requestId, connectionId, expectedRevision: revision }).strict())
   const mutationReceipt = z.object({ requestId, purpose: z.enum(['create', 'update', 'toggle', 'delete']),
@@ -118,7 +128,7 @@ function managementSchemas(executionLimits: StdioLimitsV2, managementLimits: Std
     createdAt: z.iso.datetime(), updatedAt: z.iso.datetime() }).strict()
   const listRequest = z.object({ after: connectionId.optional() }).strict()
   const list = z.object({ items: z.array(connection).max(management.pageItems), next: connectionId.nullable() }).strict()
-  return { configuration: json.pipe(configuration), create, update, toggle, remove, mutationReceipt,
+  return { configuration: json.transform((value): unknown => value).pipe(configuration), create, update, toggle, remove, mutationReceipt,
     checkReceipt, receipt, connection, listRequest, list }
 }
 

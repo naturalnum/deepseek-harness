@@ -328,7 +328,9 @@ void test('close installs its tracked promise before a synchronous cleanup callb
 
 void test('explicit private environment reaches only the original driver and stays out of query views', async () => {
   const seen: Array<Record<string, string>> = []
-  const f = fixture({}, async (_dispatch, environment, _signal, overrides) => { seen.push({ ...environment.env, ...overrides }); return completed() })
+  const f = fixture({}, async (_dispatch, environment, _signal, overrides) => {
+    seen.push({ ...environment.env, ...overrides }); return completed()
+  })
   const input = { ...f.input, environment: { API_TOKEN: 'private-secret', EMPTY: '' } }
   await f.runtime.start(input)
   const result = await settled(f.runtime, f.id)

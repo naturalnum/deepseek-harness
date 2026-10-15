@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /** Current native bundle composition with account-scoped MCP and STDIO port substitutes. */
 import type {} from '../src/client/index.ts'
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { ConnectorConfiguration, type ConnectorConfigurationProps } from '../src/client/ConnectorConfiguration.tsx'
 import type { PersonalMcpConnectionPort } from '../src/client/personal-mcp-client.ts'
@@ -40,9 +40,10 @@ it('mounts remote MCP and cloud STDIO in the native bundle configuration', async
   const root = render(<ConnectorConfiguration {...props} />)
   await screen.findByText(en.personalMcpUnavailable)
   await screen.findByText(en.stdioV2Unavailable)
-  expect(screen.getAllByRole('heading', { level: 3 }).map(heading => heading.textContent))
-    .toEqual([en.personalMcpTitle, en.stdioV2Title])
-  expect(root.container.querySelector('[data-power-evolve-bundle-config]')?.children).toHaveLength(2)
+  expect(screen.getAllByRole('heading', { level: 3 }).map(heading => heading.textContent)).toEqual([en.personalMcpTitle])
+  fireEvent.change(screen.getByRole('combobox', { name: en.mcpTransport }), { target: { value: 'stdio' } })
+  expect(screen.getAllByRole('heading', { level: 3 }).map(heading => heading.textContent)).toEqual([en.stdioV2Title])
+  expect(root.container.querySelector('[data-power-evolve-bundle-config]')?.children).toHaveLength(3)
   expect(list).toHaveBeenCalledOnce()
   expect(config).toHaveBeenCalledOnce()
 })

@@ -15,7 +15,7 @@ export const stdioEnvironmentOptions = z.object({
 
 /** A retained value must come from this user's exact saved connection revision. */
 export const stdioEnvironmentSource = z.object({ connectionId: uuid, expectedRevision: z.number().int().positive(),
-  credentialVersion: uuid }).strict()
+  credentialVersion: stdioEnvironmentRef.shape.credentialVersion }).strict()
 
 /** Keys and replacement intent may pass through Host; replacement values may not. */
 export const stdioEnvironmentTicketRequest = z.object({ requestId: uuid,

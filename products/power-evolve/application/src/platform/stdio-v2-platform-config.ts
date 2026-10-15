@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises'
 import { isAbsolute } from 'node:path'
 import { z } from 'zod'
 import { stdioCloudDeploymentV2, stdioLimitsV2 } from '@power-evolve/contracts/stdio-mcp'
+import { stdioEnvironmentOptions } from '@power-evolve/contracts/stdio-environment'
 import { stdioManagementLimitsV2 } from '@power-evolve/contracts/stdio-management'
 import { stdioOperationAdmissionLimitsV2 } from '../stdio-v2-operation-contracts.ts'
 
@@ -11,6 +12,7 @@ const timer = positive.max(2_147_483_647)
 const filePath = z.string().min(1).refine(value => isAbsolute(value) && !/[\u0000-\u001f\u007f-\u009f]/u.test(value))
 const configuration = z.object({
   approvalKeyFile: filePath,
+  environment: stdioEnvironmentOptions.optional(),
   limits: stdioLimitsV2,
   management: stdioManagementLimitsV2,
   admission: stdioOperationAdmissionLimitsV2,

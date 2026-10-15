@@ -1391,8 +1391,8 @@ describe('PluginManagerPage', () => {
         installed: 'dsh-x',
       },
     })
-    expect(screen.getByText(en.installedTitle)).toBeTruthy()
-    expect(screen.getByText(en.installedTitle).parentElement?.querySelector('[data-state="done"]')).not.toBeNull()
+    expect(screen.getByText(en.installedTitle, { selector: 'h2' })).toBeTruthy()
+    expect(screen.getByText(en.installedTitle, { selector: 'h2' }).parentElement?.querySelector('[data-state="done"]')).not.toBeNull()
     // A path without a description reads by its kind.
     expect(screen.getByText('dsh-x')).toBeTruthy()
     expect(screen.getByText(en.installSubjectPath)).toBeTruthy()
@@ -1959,7 +1959,7 @@ it('offers bundle-owned guidance only after explicit enablement and navigates to
   set({ packages: [pkg()] })
   expect(screen.queryByText('Go to setup')).toBeNull()
   set({ packages: [pkg({ enabled: false })] })
-  fireEvent.click(screen.getByRole('switch'))
+  fireEvent.click(screen.getByRole('switch', { name: /Enable /u }))
   expect(actions.setEnabled).toHaveBeenCalledWith(name, true)
   expect(screen.queryByText('Go to setup')).toBeNull()
   set({ packages: [pkg()], busy: [name] })
@@ -1975,14 +1975,14 @@ it('dismisses activation guidance until the user enables the bundle again', () =
   const { set } = renderTab({ packages: [pkg({ enabled: false })] }, {}, {
     [`plugins.bundle.activation:${name}`]: (_view, owner) => <button onClick={(owner as PluginActivationOwnerProps).onDismiss}>Later</button>,
   })
-  fireEvent.click(screen.getByRole('switch'))
+  fireEvent.click(screen.getByRole('switch', { name: /Enable /u }))
   set({ packages: [pkg()] })
   fireEvent.click(screen.getByText('Later'))
   set({ packages: [pkg()] })
   expect(screen.queryByText('Later')).toBeNull()
-  fireEvent.click(screen.getByRole('switch'))
+  fireEvent.click(screen.getByRole('switch', { name: /Enable /u }))
   set({ packages: [pkg({ enabled: false })] })
-  fireEvent.click(screen.getByRole('switch'))
+  fireEvent.click(screen.getByRole('switch', { name: /Enable /u }))
   set({ packages: [pkg()] })
   expect(screen.getByText('Later')).toBeTruthy()
 })
