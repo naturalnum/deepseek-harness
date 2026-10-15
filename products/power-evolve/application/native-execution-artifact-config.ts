@@ -1,11 +1,22 @@
 /** Compiled native dependency resolution shared by production utilities and explicit artifact tests. */
 import { readFileSync, readdirSync, existsSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { isBuiltin } from 'node:module'
+import { dirname, isAbsolute, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import type { Rolldown } from 'tsdown'
 import { z } from 'zod'
 
 const applicationRoot = dirname(fileURLToPath(import.meta.url))
 
+/** Credential-free utility bundles may leave only Node builtins as external imports. */
+export const nativeWorkerImports: Rolldown.Plugin = {
+  name: 'native-worker-imports',
+  moduleParsed(info) {
+    const unavailable = [...info.importedIds, ...info.dynamicallyImportedIds].filter(id =>
+      !id.startsWith('.') && !id.startsWith('\0') && !isAbsolute(id) && !isBuiltin(id))
+    if (unavailable.length) this.error('Native execution utility has unavailable external imports: ' + unavailable.join(', '))
+  },
+}
 
 const root = resolve(applicationRoot, '../../..')
 const manifestSchema = z.object({ name: z.string(), version: z.string(), main: z.string().optional(),
