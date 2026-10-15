@@ -54,6 +54,7 @@ export class NativeExecutionPods {
   readonly config: NativeExecutionPodConfig & { requestCpu: string; requestMemory: string }
   private readonly homes: SafePosix
   private readonly temporary: SafePosix
+  private readonly stopping = new Map<string, { world: NativeExecutionProcessWorld; result: Promise<void> }>()
   constructor(private readonly pool: Pool, private readonly kube: KubernetesClient, config: NativeExecutionPodConfig) {
     this.config = { ...config, requestCpu: config.requestCpu ?? config.cpu, requestMemory: config.requestMemory ?? config.memory }
     this.homes = new SafePosix(config.homeLocalRoot, { uid: 1000, gid: 1000 })
@@ -186,12 +187,27 @@ export class NativeExecutionPods {
   }
 
   /** Stop the whole original Pod range, persist native kubelet evidence, then release its finalizer.
+   * Concurrent callers for the identical original range join its in-flight result; later calls revalidate durable proof.
    * Cleanup remains permitted after account/operation revocation; no new execution is authorized.
    * @param range Exact original Pod identity.
    * @param cause First stop cause; subsequent requests cannot replace it.
    * @returns Completion only after positive exact stop evidence is durable.
    */
   async stop(range: NativeExecutionPod, cause: 'abort' | 'authority' | 'dispose' | 'completed' | 'failure'): Promise<void> {
+    const key = JSON.stringify([this.config.namespace, range.id, range.world.worldId, range.name, range.uid])
+    const current = this.stopping.get(key)
+    if (current) {
+      if (!isDeepStrictEqual(current.world, range.world)) throw new Error('native_payload_stop_identity_changed')
+      return current.result
+    }
+    const original = { ...range, world: structuredClone(range.world) }
+    const entry = { world: original.world, result: Promise.resolve().then(() => this.stopOriginal(original, cause)) }
+    this.stopping.set(key, entry)
+    try { await entry.result }
+    finally { if (this.stopping.get(key) === entry) this.stopping.delete(key) }
+  }
+
+  private async stopOriginal(range: NativeExecutionPod, cause: 'abort' | 'authority' | 'dispose' | 'completed' | 'failure'): Promise<void> {
     const deadline = Date.now() + this.config.stopTimeoutMs
     const stored = await this.pool.query<{ state: string; stop_evidence: unknown }>(
       `UPDATE pe_native_execution_processes SET first_stop_cause=COALESCE(first_stop_cause,$3),
