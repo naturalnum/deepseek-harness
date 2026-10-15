@@ -96,7 +96,7 @@ export class BrowserAgentAuth {
     sendJson(response, { ok: true })
   }
 
-  /** Verify every RPC or stream request at the platform and return its current identity.
+  /** Verify scoped credentials; trusted Platform top-level document navigation also requires its exact referrer origin.
    * @param request - product RPC or native API request, including WebSocket upgrade.
    * @param safeGet - allow a same-origin GET navigation whose browser omits the Origin header.
    * @param document Select only the separate document/boot/assets cookie; original RPC and plugin scopes remain unchanged.
@@ -127,7 +127,14 @@ export class BrowserAgentAuth {
     const sameOriginNavigation = safeGet && request.method === 'GET' && request.headers.origin === undefined
       && (request.headers['sec-fetch-site'] === undefined
         || request.headers['sec-fetch-site'] === 'same-origin' || request.headers['sec-fetch-site'] === 'none')
-    if (request.headers.origin !== this.hostOrigin && !sameOriginNavigation) throw new PlatformError(403, 'invalid_origin')
+    const platformDocumentNavigation = safeGet && document && request.method === 'GET'
+      && request.headers.origin === undefined && request.headers['sec-fetch-site'] === 'same-site'
+      && request.headers['sec-fetch-mode'] === 'navigate' && request.headers['sec-fetch-dest'] === 'document'
+      && ['/native/', '/native/index.html'].includes(new URL(request.url ?? '/', this.hostOrigin).pathname)
+      && URL.parse(request.headers.referer ?? '')?.origin === this.platformOrigin
+    if (request.headers.origin !== this.hostOrigin && !sameOriginNavigation && !platformDocumentNavigation) {
+      throw new PlatformError(403, 'invalid_origin')
+    }
     if (!cookie) throw new PlatformError(401, 'unauthorized')
     return { token: cookie, fromCookie: true, user: this.assertOwner(agentIdentity.parse(await this.verifier.call('/identity/me', cookie, {}))) }
   }

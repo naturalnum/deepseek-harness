@@ -118,6 +118,50 @@ test('the separately scoped document cookie forwards original document and boot 
   } finally { await close(); await ctx.fiber.dispose(); upstream.closeAllConnections(); upstream.close(); await once(upstream, 'close') }
 })
 
+test('only the configured Platform top-level navigation can enter a same-site native document', async () => {
+  const received: string[] = [], platformOrigin = 'http://127.0.0.1:12345'
+  const upstream = createServer((request, response) => {
+    received.push(request.url ?? '')
+    response.end('original native document')
+  })
+  upstream.listen(0, '127.0.0.1'); await once(upstream, 'listening')
+  try {
+    const address = upstream.address()
+    if (!address || typeof address === 'string') throw new Error('Missing owned listener')
+    const ctx = await web(), origin = `http://127.0.0.1:${ctx.webServer.port}`
+    const verifier = vi.fn(async () => user)
+    const close = installNativeClientRouting(ctx, new BrowserAgentAuth(origin, platformOrigin, { call: verifier }),
+      origin, `http://127.0.0.1:${address.port}`, 1048576, 1000, { maxRequests: 100, lifetimeMs: 3000 })
+    const headers = { cookie: `pe_native_document=${token}; pe_agent=${token}`, referer: platformOrigin + '/login',
+      'sec-fetch-site': 'same-site', 'sec-fetch-mode': 'navigate', 'sec-fetch-dest': 'document' }
+    const get = (path: string, fields: Record<string, string>) => new Promise<number>((resolve, reject) => {
+      const request = httpRequest(origin + path, { headers: { ...fields, connection: 'close' } }, (response) => {
+        response.resume(); response.once('end', () => { resolve(response.statusCode ?? 0) })
+        response.once('error', reject)
+      })
+      request.once('error', reject); request.end()
+    })
+    try {
+      for (const path of ['/native/', '/native/index.html']) expect(await get(path, headers)).toBe(200)
+      expect(received).toEqual(['/native/runtime/document', '/native/runtime/document'])
+      expect(verifier).toHaveBeenCalledTimes(2)
+      for (const fields of [
+        { ...headers, referer: 'http://127.0.0.1:12346/login' },
+        { ...headers, referer: 'http://127.0.0.1.evil.test:12345/login' },
+        { ...headers, referer: 'not a URL' }, { ...headers, referer: '' },
+        { ...headers, origin: platformOrigin }, { ...headers, origin: 'https://evil.test' },
+        { ...headers, 'sec-fetch-site': 'cross-site' },
+        { ...headers, 'sec-fetch-mode': 'cors' }, { ...headers, 'sec-fetch-mode': '' },
+        { ...headers, 'sec-fetch-dest': 'iframe' }, { ...headers, 'sec-fetch-dest': '' },
+      ]) expect(await get('/native/', fields)).toBe(403)
+      for (const path of ['/native/boot/inline.original.js', '/native/assets/asset.js',
+        '/native/plugins/events', '/native/api/remote.mux']) expect(await get(path, headers)).toBe(403)
+      expect(verifier).toHaveBeenCalledTimes(2)
+      expect(received).toHaveLength(2)
+    } finally { await close(); await ctx.fiber.dispose() }
+  } finally { upstream.closeAllConnections(); upstream.close(); await once(upstream, 'close') }
+})
+
 test('whole accepted client carrier shutdown joins held admission and refuses late dispatch', async () => {
   const ctx = await web(), entered = Promise.withResolvers<undefined>(), gate = Promise.withResolvers<undefined>()
   const dispatch = vi.fn(), close = installNativeClientHttp(ctx, '/native/plugins', async (_request, response, _target, _method, signal) => {

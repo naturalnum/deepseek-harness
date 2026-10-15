@@ -31,7 +31,7 @@ The Host `nativeShellEnabled` option selects the unmodified native Bash consumer
 
 The Host root redirects to `/native/`. Login, independent approvals and account administration belong to Platform. Independent approval modules obtain request identifiers from the public browser module of `@deepseek-ai/dsh-util-crypto`, served through an explicit same-origin asset route; they also work on plain HTTP LAN origins. The [native Web bundle](../cloud-web/README.md) contains the upstream components; [personal connector configuration](../client-extension-center/README.md) occupies the official Host bundle configuration slot.
 
-The login page displays the product name, a workspace heading and description, and a centered account/password form. Field labels float when focused or filled, including browser autofill. Platform verifies credentials before the Host cookie exchange opens the native UI.
+The login page displays the product name, a workspace heading and description, and a centered account/password form. Field labels float when focused or filled, including browser autofill. Platform verifies credentials before the Host cookie exchange opens the native UI. Login documents send only their origin as the referrer. Host admits the cross-port top-level native document navigation only from that exact configured Platform origin; API, worker, asset and WebSocket requests retain their existing origin checks.
 
 -----
 

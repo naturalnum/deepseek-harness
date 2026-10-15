@@ -67,7 +67,7 @@ export async function serveNativeUi(url: URL, response: ServerResponse, platform
   return true
 }
 
-/** Serve a known UI asset without resolving user-controlled filesystem paths.
+/** Serve allowlisted assets; login documents send only their origin for the trusted Host navigation.
  * @param path - decoded URL pathname.
  * @param application - trusted login entry.
  * @param response - HTTP response owned by the caller.
@@ -96,7 +96,7 @@ export async function serveUi(path: string, application: 'login', response: Serv
     ? `'self' ${new URL(loginHostOrigin).origin}` : "'self'"
   response.writeHead(200, {
     'content-type': `${asset[1]}; charset=utf-8`, 'cache-control': 'no-store',
-    'x-content-type-options': 'nosniff', 'referrer-policy': 'no-referrer',
+    'x-content-type-options': 'nosniff', 'referrer-policy': path === '/' || path === '/login' ? 'strict-origin' : 'no-referrer',
     'content-security-policy': `default-src 'self'; script-src 'self'; style-src 'self'; connect-src ${connectSource}; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`,
   })
   response.end(await readFile(asset[2] ?? new URL(`../web/${asset[0]}`, import.meta.url)))

@@ -223,7 +223,7 @@ test('source login and approval assets retain their bytes and admit only the con
         expect(response.headers.get('content-type')).toBe(`${mime}; charset=utf-8`)
         expect(response.headers.get('cache-control')).toBe('no-store')
         expect(response.headers.get('x-content-type-options')).toBe('nosniff')
-        expect(response.headers.get('referrer-policy')).toBe('no-referrer')
+        expect(response.headers.get('referrer-policy')).toBe(path === '/' || path === '/login' ? 'strict-origin' : 'no-referrer')
         expect(response.headers.get('content-security-policy')).toContain(loginHostOrigin === undefined
           ? "connect-src 'self';" : `connect-src 'self' ${loginHostOrigin};`)
         expect(response.headers.get('content-security-policy')).toContain("frame-ancestors 'none'; base-uri 'none';")
