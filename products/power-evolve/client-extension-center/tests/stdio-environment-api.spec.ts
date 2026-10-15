@@ -1,5 +1,5 @@
 /** Browser network substitutes assert secret separation; this suite does not run a real Platform or executor. */
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { stdioEnvironmentSource } from '@power-evolve/contracts/stdio-environment'
 import { StdioEnvironmentHttpClient } from '../src/client/stdio-environment-api.ts'
 import { requestUrl, bodyText } from './fetch-fixture.ts'
@@ -62,3 +62,65 @@ test('a ticket cannot redirect secret bytes to another origin', async () => {
   await expect(new StdioEnvironmentHttpClient(request).prepare(id(20), [{ name: 'API_TOKEN', value: 'secret' }])).rejects.toMatchObject({ status: 502 })
   expect(uploads).toBe(0)
 })
+
+test('empty environments need no capability while an existing receipt uses the original reference', async () => {
+  const request = vi.spyOn(globalThis, 'fetch').mockResolvedValue(json({ environment: ref }))
+  try {
+    const client = new StdioEnvironmentHttpClient()
+    expect(await client.prepare(id(20), [])).toBeUndefined()
+    expect(request).not.toHaveBeenCalled()
+    expect(await client.prepare(id(20), [{ name: 'API_TOKEN', value: 'private-secret' }])).toEqual(ref)
+    expect(request).toHaveBeenCalledOnce()
+    expect(request.mock.calls[0]?.[0]).toBe('/api/powerEvolve/stdioV2EnvironmentReceipt')
+    expect(bodyText(request.mock.calls[0]?.[1]?.body)).not.toContain('private-secret')
+  } finally { request.mockRestore() }
+})
+
+test.each([
+  { uploadUrl: `${origin}/another-path` },
+  { uploadUrl: 'https://user@platform.example.test/stdio-environment/upload' },
+  { uploadUrl: 'https://:password@platform.example.test/stdio-environment/upload' },
+  { uploadUrl: `${origin}/stdio-environment/upload?redirect=1` },
+  { uploadUrl: `${origin}/stdio-environment/upload#fragment` },
+  { requestId: id(21) },
+  { expiresAt: '2020-01-01T00:00:00.000Z' },
+])('rejects an altered or expired upload capability without sending any secret bytes: %j', async (changed) => {
+  const request = vi.fn<typeof fetch>(async (input) => {
+    const url = requestUrl(input)
+    if (url.endsWith('stdioV2EnvironmentReceipt')) return json({ environment: null })
+    if (url.endsWith('stdioV2EnvironmentTicket')) return json({ requestId: id(20), ticket: 'a'.repeat(43),
+      uploadUrl: `${origin}/stdio-environment/upload`, expiresAt: '2099-01-01T00:00:00.000Z', ...changed })
+    if (url === '/config') return json({ approvalUrl: `${origin}/approval` })
+    throw new Error('Unexpected direct upload')
+  })
+  await expect(new StdioEnvironmentHttpClient(request).prepare(id(20), [{ name: 'API_TOKEN', value: 'secret' }]))
+    .rejects.toMatchObject({ status: 502 })
+  expect(request.mock.calls.every(([input]) => !requestUrl(input).startsWith(`${origin}/stdio-environment/`))).toBe(true)
+})
+
+test.each(['missing-reference', 'rejected-upload', 'network-error'] as const)(
+  'propagates %s after an empty original receipt and erases its private byte buffer', async (mode) => {
+    let reads = 0
+    let uploaded: Uint8Array | undefined
+    const request: typeof fetch = async (input, init) => {
+      const url = requestUrl(input)
+      if (url.endsWith('stdioV2EnvironmentReceipt')) { reads++; return json({ environment: null }) }
+      if (url.endsWith('stdioV2EnvironmentTicket')) return json({ requestId: id(20), ticket: 'a'.repeat(43),
+        uploadUrl: `${origin}/stdio-environment/upload`, expiresAt: '2099-01-01T00:00:00.000Z' })
+      if (url === '/config') return json({ approvalUrl: `${origin}/approval` })
+      if (url === `${origin}/stdio-environment/upload`) {
+        if (!(init?.body instanceof Uint8Array)) throw new Error('Private byte buffer required')
+        uploaded = init.body
+        if (mode === 'network-error') throw new Error('Connection lost')
+        return mode === 'rejected-upload' ? new Response('', { status: 403 }) : json({ environment: null })
+      }
+      throw new Error(`Unexpected fixture URL: ${url}`)
+    }
+    const operation = new StdioEnvironmentHttpClient(request).prepare(id(20), [{ name: 'API_TOKEN', value: 'secret' }])
+    if (mode === 'network-error') await expect(operation).rejects.toThrow('Connection lost')
+    else await expect(operation).rejects.toMatchObject({ status: mode === 'rejected-upload' ? 403 : 502 })
+    expect(reads).toBe(2)
+    expect(uploaded?.byteLength).toBeGreaterThan(0)
+    expect(uploaded?.every(byte => byte === 0)).toBe(true)
+  },
+)
