@@ -61,7 +61,7 @@ cloud-native 数据库通过相邻迁移推进至 schema 12，保留既有代际
 
 在 native 执行期间，Host 为操作 epoch 的首个保留异常输出一条 `operation_first_failure` 错误日志，包含 Session/operation ID、epoch、stage 及有界类别／错误码。日志不含异常文本、堆栈、正文或凭证；日志输出失败不改变取消或结算。
 
-canonical 输入、账本和呈现回执通过原生输入端点共用实际 Platform 事务。Host Coordinator 在发布前预留原生前缀，在 prompt 组装前提交完整领取，并绑定实际已发布的 step。claim 回执保留 removal splice 坐标及完整 claim batch 摘要，其中包括原始 operation 摘要。验证 admission 或 queue 的真实回执后，Host 静默同步准确写 handle 和 live Session；它在修改 cache 前验证完整 suffix，并在等候持久性屏障时保留每次读取的原 prefix。Scheduler 在唤醒输入前安装 Coordinator 并登记当前输入归属。受理 origin 仅在未预留的 idle 或原生模型流阶段通过有界 polling 入队；其他阶段保留在 PG pending 中。
+canonical 输入、账本和呈现回执通过原生输入端点共用实际 Platform 事务。Host Coordinator 在发布前预留原生前缀，在 prompt 组装前提交完整领取，并绑定实际已发布的 step。同一 cohort 的模型重试保留首次确认的 step 绑定；每次重试仍提交当前事件，并要求原始执行授权继续有效。claim 回执保留 removal splice 坐标及完整 claim batch 摘要，其中包括原始 operation 摘要。验证 admission 或 queue 的真实回执后，Host 静默同步准确写 handle 和 live Session；它在修改 cache 前验证完整 suffix，并在等候持久性屏障时保留每次读取的原 prefix。Scheduler 在唤醒输入前安装 Coordinator 并登记当前输入归属。受理 origin 仅在未预留的 idle 或原生模型流阶段通过有界 polling 入队；其他阶段保留在 PG pending 中。
 
 Platform 安装实际 frame、执行授权 provider、已受理输入读取和 [v2 续接](native-turn-continuation-v2.zh.md)。[只读 advance 准备器](native-turn-advance-intent-v2.zh.md)从 PG 推导关闭的 turn、完整 cohorts 和准确的 pending head。转移响应不确定时，Host 保留返回的完整意图并原样重试。准确退役已消费的 publisher seal 会阻止旧代际写入，并跳过该转移已完成的 release。模型代理及 runtime 业务工具路由要求实际 claimed-step 执行授权。snapshot、publication、原始图片及已选 Skill 读取分别使用其存储授权。下一 turn 开始前，Scheduler 排空 admission 和 operation 续租，保留完整准备意图，退役已证实的原始 seal，销毁 Agent 并保留待处理输入，仅安装单独证实为 live 且具有原始选择的后继。 原生模型失败可以通过同一 v2 事务结算已持久化并关闭的回合。输入或持久化失败使结算进入 unsafe 状态；Coordinator 在原生 agent/error 发出前报告这些失败，下游模型错误仍保持原生含义。
 

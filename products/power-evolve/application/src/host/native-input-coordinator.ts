@@ -48,7 +48,7 @@ export class NativeInputCoordinator {
   private readonly events: SessionEvent[]
   private readonly authority: NativeInputStorageAuthority
   private frame: NativeInputFrameExpected | undefined
-  private cohort: { command: NativeInputClaimCommand; turn: number; step: number } | undefined
+  private cohort: { command: NativeInputClaimCommand; turn: number; step: number; boundStepStartSeq?: number } | undefined
   private initialized = false
 
   /**
@@ -93,9 +93,14 @@ export class NativeInputCoordinator {
         if (!start) throw new PlatformError(409, 'native_input_step_missing')
         await agent.ctx.sessions.flush(agent.session)
         this.assertOwner()
-        const seal = await runtime.publication(operation).seal()
-        await transport.bindStep({ cohortId: cohort.command.cohortId, frame: cohort.command.frame,
-          stepStartSeq: start.seq }, this.authority, seal)
+        // Official retries retain this step's first acknowledged binding and its original publication position.
+        if (cohort.boundStepStartSeq !== start.seq) {
+          const seal = await runtime.publication(operation).seal()
+          await transport.bindStep({ cohortId: cohort.command.cohortId, frame: cohort.command.frame,
+            stepStartSeq: start.seq }, this.authority, seal)
+          this.assertOwner()
+          cohort.boundStepStartSeq = start.seq
+        }
         this.assertOwner()
       } catch (error) { onStorageFailure?.(error); throw error }
       // Downstream model errors retain native turn settlement semantics.

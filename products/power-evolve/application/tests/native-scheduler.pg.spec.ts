@@ -12,6 +12,7 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import type { AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import LlmRuntime, { type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import { DeepSeekAdapter, resolveAdapterOptions } from '@deepseek-ai/dsh-llm-deepseek'
+import * as LlmRetry from '@deepseek-ai/dsh-llm-retry'
 import SessionStore, { Session, type SessionEvent, type SessionId } from '@deepseek-ai/dsh-session'
 import { imageOffloadProjection } from '@deepseek-ai/dsh-compaction-image-offload/projection'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
@@ -231,7 +232,8 @@ async function schedulerCase(ownerFirst: boolean, failFirstModel = false, loseSt
   recoverConsumed: 'none' | 'complete' | 'timeout' | 'prepared-cancel' | 'archive-prepared' | 'archive-claimed'
     | 'archive-parked' | 'archive-warm-pending' | 'archive-warm-admission' = 'none', loggerThrows = false,
   budgetFirstChunk = false, imageOffload = false, holdWriterRenew = false, timeoutWriterRenew = false,
-  headerChecks = false, persistentChecks = false, persistentStopFailure = false): Promise<void> {
+  headerChecks = false, persistentChecks = false, persistentStopFailure = false,
+  retryModel = false, releaseRetryWriter = false): Promise<void> {
   const archiveRecovery = recoverConsumed === 'archive-prepared' ? 'prepared' : recoverConsumed === 'archive-claimed' ? 'claimed' : undefined
   const warmArchive = recoverConsumed === 'archive-warm-pending' ? 'pending'
     : recoverConsumed === 'archive-warm-admission' ? 'admission' : undefined
@@ -314,7 +316,7 @@ async function schedulerCase(ownerFirst: boolean, failFirstModel = false, loseSt
     const tenant = headerChecks ? await runtimeAuthority.issue({ userId: f.alice.user.userId,
       runtimeId: randomUUID(), generation: 1, lifetimeMs: 60000 }) : undefined
     const workerToken = tenant?.token ?? randomBytes(32).toString('base64url')
-    let nativeCodecRequests = 0, nativeCodecClosures = 0
+    let nativeCodecRequests = 0, nativeCodecClosures = 0, retryWriterReleased = false
     const headerRequests: { operationId: string; epoch: number; seq: number }[] = []
     const headerModels: { operationId: string; epoch: number }[] = []
     const firstHeaderModel = Promise.withResolvers<undefined>(), releaseHeaderModel = Promise.withResolvers<undefined>()
@@ -324,6 +326,11 @@ async function schedulerCase(ownerFirst: boolean, failFirstModel = false, loseSt
         await readJson(request, ledgerLimits.maxCommandBytes)
         const index = headerModels.length
         if (index === 1) { firstHeaderModel.resolve(undefined); await releaseHeaderModel.promise }
+        if (retryModel && index === 1) {
+          response.statusCode = 503
+          response.end(JSON.stringify({ error: { type: 'overloaded_error', message: 'Owned first model request unavailable' } }))
+          return
+        }
         response.setHeader('content-type', 'text/event-stream')
         const tool = persistentChecks && index <= 2
         const content = tool ? { type: 'tool_use', id: `native-owned-bash-${index}`, name: 'bash',
@@ -373,6 +380,10 @@ async function schedulerCase(ownerFirst: boolean, failFirstModel = false, loseSt
               const inputTools = nativeToolRegistration.parse(input)
               if (inputTools.headerSeq === undefined) {
                 await registerNativeToolNames(tasks, token, inputTools); sendJson(response, { registered: true }); return
+              }
+              if (releaseRetryWriter && headerRequests.length === 1 && !retryWriterReleased) {
+                await writers.release(first(claims).request.writer)
+                retryWriterReleased = true
               }
               const owner = await transaction(f.pool, client => businessTasks.executionAuthorized(client, token))
               if (headerRequests.length === (persistentChecks ? 3 : 2)) {
@@ -727,6 +738,7 @@ async function schedulerCase(ownerFirst: boolean, failFirstModel = false, loseSt
         } else ctx.tools.register(defineContentToolFixture({ name: 'native_header_probe', description: 'Actual maintained native tool dispatch fixture',
           parameters: {}, async execute() { executed++; return [{ type: 'text', text: 'Observed native tool result' }] } }))
         await ctx.plugin(NativeModel, { streamIdleTimeoutMs: 5000 })
+        if (retryModel) await ctx.plugin(LlmRetry)
         scheduler = new Scheduler(ctx, { platformOrigin: origin, concurrency: 1, pollMs: 20, renewMs: 10000,
           operationTimeoutMs: persistentChecks ? 60000 : 30000, nativeInputPollMs: 10, nativeInputBatchSize: 8 })
         scheduler.start()
@@ -740,6 +752,55 @@ async function schedulerCase(ownerFirst: boolean, failFirstModel = false, loseSt
           throw error
         }
         await firstHeaderModel.promise
+        if (retryModel) {
+          releaseHeaderModel.resolve(undefined)
+          if (releaseRetryWriter) {
+            await expect.poll(() => originalCleanups.length, poll).toBe(1)
+            await scheduler.close(); scheduler = undefined
+            const history = (await f.pool.query<{ event: SessionEvent }>(
+              'SELECT event FROM pe_events WHERE session_id=$1 ORDER BY seq', [session.sessionId])).rows.map(row => row.event)
+            process.stdout.write(JSON.stringify({ retryWriterFence: { headerModels, headerRequests, routeFailures,
+              agentErrors, originalCleanups, events: history.map(event => event.type) } }) + '\n')
+            expect(retryWriterReleased).toBe(true)
+            expect(headerModels).toHaveLength(1); expect(headerRequests).toHaveLength(1)
+            expect(claims).toHaveLength(1); expect(transitions).toEqual([])
+            expect(history.filter(event => event.type === 'llm/retry-started')).toHaveLength(1)
+            expect(history.filter(event => event.type === 'assistant/message')).toEqual([])
+            expect((await f.pool.query('SELECT state,error_code FROM pe_operations WHERE session_id=$1', [session.sessionId])).rows)
+              .toEqual([{ state: 'failed', error_code: 'native_runtime_closed' }])
+            const requiredFailures = ['/model/v1/messages:model_http_503', '/runtime/tools/register:native_execution_frame_lease_lost']
+            expect(routeFailures).toEqual(expect.arrayContaining(requiredFailures))
+            // Admission polling may independently observe the same released Writer.
+            expect(routeFailures.every(path => [...requiredFailures, '/runtime/native-input/pending:native_writer_lost'].includes(path))).toBe(true)
+            return
+          }
+          try { await expect.poll(() => transitions.length, poll).toBe(1) }
+          catch (error: unknown) {
+            const history = (await f.pool.query<{ event: SessionEvent }>('SELECT event FROM pe_events WHERE session_id=$1 ORDER BY seq', [session.sessionId])).rows.map(row => row.event)
+            process.stdout.write(JSON.stringify({ retryConsumer: { headerModels, headerRequests, routeFailures, agentErrors,
+              originalCleanups, history, intents: (await f.pool.query('SELECT family,state FROM pe_native_retained_intents WHERE session_id=$1', [session.sessionId])).rows } }) + '\n')
+            throw error
+          }
+          await scheduler.close(); scheduler = undefined
+          const records = (await f.pool.query<{ event: SessionEvent }>('SELECT event FROM pe_events WHERE session_id=$1 ORDER BY seq', [session.sessionId])).rows.map(row => row.event)
+          expect(routeFailures).toEqual(['/model/v1/messages:model_http_503']); expect(agentErrors).toEqual([])
+          expect(headerModels).toHaveLength(2)
+          expect(headerModels[1]).toEqual(headerModels[0])
+          expect(headerRequests).toHaveLength(2)
+          expect(headerRequests[1]).toEqual(headerRequests[0])
+          expect(records.filter(event => event.type === 'llm/retry')).toHaveLength(1)
+          expect(records.filter(event => event.type === 'llm/retry-started')).toHaveLength(1)
+          expect(records.filter(event => event.type === 'step/start')).toHaveLength(1)
+          expect((await f.pool.query("SELECT 1 FROM pe_native_retained_intents WHERE session_id=$1 AND family='step' AND state='committed'",
+            [session.sessionId])).rowCount).toBe(1)
+          expect((await f.pool.query('SELECT step_start_seq FROM pe_native_input_cohorts WHERE session_id=$1', [session.sessionId])).rows)
+            .toEqual([{ step_start_seq: first(records.filter(event => event.type === 'step/start')).seq }])
+          expect(records.filter(event => event.type === 'turn/end').map(event => event.data.reason.kind)).toEqual(['completed'])
+          expect((await f.pool.query('SELECT state FROM pe_operations WHERE session_id=$1', [session.sessionId])).rows)
+            .toEqual([{ state: 'completed' }])
+          expect(claims).toHaveLength(1); expect(created).toHaveLength(1); expect(disposed).toHaveLength(1)
+          return
+        }
         const second = persistentStopFailure ? undefined : z.object({ operationId: z.string() }).parse(await tasks.accept(
           f.alice.user, session.sessionId, requestId.parse(randomUUID()), 'B original next operation', f.alice.token))
         releaseHeaderModel.resolve(undefined)
@@ -2392,3 +2453,9 @@ test('original native Loop preserves one real persistent Bash across two claimed
 
 test('original native Loop retains a real failed stop and refuses normal PG settlement',
   () => schedulerCase(false, false, false, false, false, false, 'none', false, false, false, false, false, true, true, true), 60000)
+
+test('original native Loop retries a 503 model response within its original bound step and completes once',
+  () => schedulerCase(false, false, false, false, false, false, 'none', false, false, false, false, false, true, false, false, true), 30000)
+
+test('original native Loop cannot dispatch its model retry after the original Writer is released',
+  () => schedulerCase(false, false, false, false, false, false, 'none', false, false, false, false, false, true, false, false, true, true), 30000)
