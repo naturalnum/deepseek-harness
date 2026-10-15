@@ -36,6 +36,8 @@ test('two concurrent bootstraps create one cloud schema and retain every include
   expect((await pool.query('SELECT family,version FROM pe_schema')).rows).toEqual([{ family: 'cloud-native', version: CURRENT_SCHEMA_VERSION }])
   const names = (await pool.query<{ tablename: string }>("SELECT tablename FROM pg_tables WHERE schemaname='public'")).rows.map(row => row.tablename)
   expect(names.sort()).toEqual(currentCloudTableNames)
+  expect(names).toContain('pe_native_execution_services')
+  expect(names).toContain('pe_native_stdio_executions')
   expect(names).toContain('pe_native_writers')
   expect(names).toContain('pe_native_input_claims')
   expect(names).toContain('pe_native_turn_frames')
