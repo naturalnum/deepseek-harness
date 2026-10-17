@@ -171,11 +171,14 @@ try {
   const port = server.NetworkSettings.Ports['8080/tcp'][0].HostPort
   const domain = `127.0.0.1:${port}`
   let healthy = false
+  const healthErrors = []
+  report.observations.controlHealthErrors = healthErrors
   for (let i = 0; i < 40; i++) {
+    let response
     try {
-      const response = await fetch(`http://${domain}/health`, { headers: { 'OPEN-SANDBOX-API-KEY': apiKey }, signal: AbortSignal.timeout(1000) })
-      if (response.ok) { healthy = true; break }
-    } catch (error) { /* Startup observation continues within this bounded loop. */ }
+      response = await fetch(`http://${domain}/health`, { headers: { 'OPEN-SANDBOX-API-KEY': apiKey }, signal: AbortSignal.timeout(1000) })
+    } catch (error) { healthErrors.push(failure(error)) }
+    if (response?.ok) { healthy = true; break }
     await delay(250)
   }
   if (!healthy) throw new Error('task control server did not become healthy')
