@@ -17,6 +17,7 @@ import { remoteMethods, type PeerId, type PeerScope } from '@deepseek-ai/dsh-typ
 import { mountAgentLoopTestDependencies, mountAgentLoopTestHarness } from '@deepseek-ai/dsh-agent-loop-testkit'
 import SessionQueryEngine from '@deepseek-ai/dsh-session-query'
 import { SessionId } from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-working-directory'
 import { LlmAdapter, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import type { AccountBinding, AccountId, OwnerEpoch } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import { brandString } from '@deepseek-ai/dsh-brand'

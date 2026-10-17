@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
 import * as root from '../src/root.ts'
 import * as account from '../src/account.ts'
 
@@ -14,8 +15,8 @@ const limits = {
 
 describe('cloud files unavailable production integration', () => {
   it('requires explicit finite root budgets', () => {
-    expect(() => root.Config({})).toThrow()
-    expect(() => root.Config({ ...limits, waitTimeoutMs: Number.POSITIVE_INFINITY })).toThrow()
+    expect(() => z.resolve({}, root.Config, {})).toThrow()
+    expect(() => z.resolve({ ...limits, waitTimeoutMs: Number.POSITIVE_INFINITY }, root.Config, {})).toThrow()
     expect(root.Config(limits)).toEqual(limits)
   })
 
