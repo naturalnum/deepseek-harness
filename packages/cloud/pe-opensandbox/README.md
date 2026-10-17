@@ -96,6 +96,6 @@ Execution remains unavailable until its actual owners and target guarantees are 
 <details>
 <summary>Working context for maintainers — click to expand</summary>
 
-None.
+The portable [opt-in scope probe](tests/opensandbox-scope-probe.mjs) requires explicit `--workspace-root`, `--sdk-root`, `--out` and `--execute-authorized-once` arguments. It uses fixed cached images and at most one bounded Sandbox with two inner scopes. Its evidence separates scoped stopping, namespace security facts and binary-file Range transport; it does not enable execution or validate complete subprocess semantics.
 
 </details>

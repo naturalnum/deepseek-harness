@@ -27,7 +27,7 @@ if (diagnoseIsolation && (!qualifyHardening || !enableIsolation)) throw new Erro
 const execdToken = qualifyHardening ? randomBytes(32).toString('hex') : ''
 const report = { kind: 'real-channel-feasibility-only', task, startedAt: new Date().toISOString(), phases: [], observations: {}, errors: [], cleanup: {} }
 const head = spawnSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8', timeout: 2000 })
-report.executionProvenance = {
+report.executionSource = {
   productHeadAtStart: head.status === 0 ? head.stdout.trim() : null,
   probeScriptSha256: createHash('sha256').update(await readFile(fileURLToPath(import.meta.url))).digest('hex'),
   nativeProductCodeImported: false,

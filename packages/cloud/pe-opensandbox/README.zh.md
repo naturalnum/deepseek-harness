@@ -96,6 +96,6 @@ Host 库公开能力评估、其类型化错误和协调器 Service Definition�
 <details>
 <summary>维护者工作上下文——点击展开</summary>
 
-无。
+可移植的[显式启用作用域探针](tests/opensandbox-scope-probe.mjs) 要求明确传入 `--workspace-root`、`--sdk-root`、`--out` 和 `--execute-authorized-once` 参数。它使用固定的缓存镜像，最多创建一个有界 Sandbox 及两个内部作用域。其证据分别描述作用域停止、namespace 安全事实和二进制文件 Range 传输；它不启用执行，也不验证完整的 subprocess 语义。
 
 </details>
