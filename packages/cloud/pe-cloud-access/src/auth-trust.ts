@@ -12,6 +12,7 @@ import { AuthAccessError } from './auth-error.ts'
  * @param secure - Whether the actual socket uses TLS.
  * @param config - Validated fixed-origin deployment inputs.
  * @param requestId - Server-generated correlation id.
+ * @param transport - HTTP by omission; websocket requires exactly one original Origin equal to publicOrigin.
  * @throws AuthAccessError when the request crosses an unapproved origin or transport.
  */
 export function assertAuthTransport(
@@ -21,6 +22,7 @@ export function assertAuthTransport(
   secure: boolean,
   config: AccessConfig,
   requestId: Branded<'pe-request-id'>,
+  transport: 'http' | 'websocket' = 'http',
 ): void {
   const origin = new URL(config.publicOrigin)
   const hostCount = rawHeaders.filter((value, index) => index % 2 === 0 && value.toLowerCase() === 'host').length
@@ -29,6 +31,7 @@ export function assertAuthTransport(
   const forwardedHost = headers['x-forwarded-host']
   const forwardedProto = headers['x-forwarded-proto']
   if (hostCount !== 1 || headers.host !== origin.host || originCount > 1
+    || (transport === 'websocket' && (originCount !== 1 || headers.origin !== config.publicOrigin))
     || (headers.origin !== undefined && headers.origin !== config.publicOrigin)
     || ((forwardedHost !== undefined || forwardedProto !== undefined || headers.forwarded !== undefined) && !trustedProxy)
     || (forwardedHost !== undefined && forwardedHost !== origin.host)

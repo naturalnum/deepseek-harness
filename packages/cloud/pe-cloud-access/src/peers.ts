@@ -9,6 +9,7 @@ import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { AccountBinding, AccountUse, AccountId } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import { BetterAuthAccess } from './auth.ts'
 import { AuthAccessError } from './auth-error.ts'
+import { assertAuthTransport } from './auth-trust.ts'
 import type { AccessConfig, AuthenticatedPrincipal } from './types.ts'
 
 type RequestId = Branded<'pe-request-id'>
@@ -217,13 +218,15 @@ export class LoginPeerRegistry {
   /**
    * Transfer a reauthenticated socket to the real native stream mux; stream opens guard the pinned login.
    * @param handle - Fixed login Peer selected by trusted root routing.
-   * @param request - Original upgrade request; no new RPC envelope or identity field is added.
-   * @param socket - Caller-owned socket transferred after admission; failure destroys it.
+   * @param request - Original upgrade request with exactly one same-origin Origin, checked before auth DB work.
+   * @param socket - Caller-owned until admission; caller contains early refusals, admitted failures destroy it.
    * @param head - Original upgrade bytes.
    * @param requestId - Server correlation id.
    * @returns Admission settlement; the carrier reservation lasts to actual socket close.
    */
   handleUpgrade(handle: LoginPeer, request: IncomingMessage, socket: Duplex, head: Buffer, requestId: RequestId): Promise<void> {
+    const secure = 'encrypted' in request.socket && request.socket.encrypted === true
+    assertAuthTransport(request.headers, request.rawHeaders, request.socket.remoteAddress, secure, this.config, requestId, 'websocket')
     const entry = this.admitCarrier(handle, requestId)
     entry.carriers.add(socket)
     let upgraded = false

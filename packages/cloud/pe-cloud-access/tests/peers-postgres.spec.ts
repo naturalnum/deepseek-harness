@@ -249,11 +249,14 @@ function memoryHttp(fixture: Fixture, handle: LoginPeer, cookie = fixture.cookie
 }
 
 /** Minimal RFC6455 test client, independent of the native server's parsing implementation. */
-async function memoryWebsocket(fixture: Fixture, handle: LoginPeer): Promise<{ socket: MemorySocket; frames: unknown[] }> {
+async function memoryWebsocket(
+  fixture: Fixture, handle: LoginPeer, origins: readonly string[] = [config().publicOrigin],
+): Promise<{ socket: MemorySocket; frames: unknown[] }> {
   const server = createServer()
   server.on('upgrade', (req, socket, head) => {
-    void fixture.registry.handleUpgrade(handle, req, socket, head, requestId).catch((_error: unknown) => {
-      // The handshake completion observes rejection; fixture routing only closes its socket here.
+    void Promise.resolve().then(() => fixture.registry.handleUpgrade(handle, req, socket, head, requestId)).catch((error: unknown) => {
+      // The real admission error settles the handshake; caller-owned early refusals close only this fixture socket.
+      handshake.reject(error instanceof Error ? error : new Error('Upgrade refused before handshake'))
       socket.destroy()
     })
   })
@@ -284,7 +287,8 @@ async function memoryWebsocket(fixture: Fixture, handle: LoginPeer): Promise<{ s
     }
   })
   server.emit('connection', incoming)
-  client.write(`GET /api/remote.mux HTTP/1.1\r\nHost: 127.0.0.1:4100\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\nCookie: ${fixture.cookieA}\r\n\r\n`)
+  const originFields = origins.map(origin => `Origin: ${origin}\r\n`).join('')
+  client.write(`GET /api/remote.mux HTTP/1.1\r\nHost: 127.0.0.1:4100\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n${originFields}Cookie: ${fixture.cookieA}\r\n\r\n`)
   await handshake.promise
   return { socket: client, frames }
 }
@@ -328,6 +332,40 @@ describe.skipIf(configPath === undefined)('internal login Peer with real PG/nati
     expect(handle.peer.signal.aborted).toBe(true)
     expect(fixture.releases.get(fixture.a.accountId)).toBe(2)
     expect(fixture.registry.reservedPeers).toBe(0)
+  })
+
+  it.each([
+    { name: 'missing', origins: [] },
+    { name: 'cross-origin', origins: ['https://other.example.test'] },
+    { name: 'literal-null', origins: ['null'] },
+    { name: 'duplicate', origins: [config().publicOrigin, config().publicOrigin] },
+  ])('refuses $name WS Origin before DB authentication, native upgrade or logical dispatch', async ({ origins }) => {
+    const beforeStream = vi.fn()
+    const fixture = await setup({}, undefined, ports => ({ ...ports, beforeStream }))
+    const initialUse = await fixture.borrow(fixture.bindingA)
+    const gateway = initialUse.context.get('typertGateway')
+    if (!(gateway instanceof TypertGatewayService)) throw new Error('Real fixture Gateway unavailable')
+    const realFactory = gateway.createNodeStreamTransport.bind(gateway)
+    let nativeUpgradeCalls = 0
+    const factory = vi.spyOn(gateway, 'createNodeStreamTransport').mockImplementation((peer, guard) => {
+      const native = realFactory(peer, guard)
+      return { ...native, handleUpgrade: (...args: Parameters<typeof native.handleUpgrade>) => {
+        nativeUpgradeCalls++
+        native.handleUpgrade(...args)
+      } }
+    })
+    const handle = await acquire(fixture)
+    initialUse.release()
+    expect(factory).toHaveBeenCalledOnce()
+    const authenticate = vi.spyOn(fixture.auth, 'authenticate')
+    await expect(memoryWebsocket(fixture, handle, origins)).rejects.toMatchObject({ code: 'cloud/forbidden', status: 403 })
+    expect(authenticate).not.toHaveBeenCalled()
+    expect(fixture.auth.pendingOperations).toBe(0)
+    expect(nativeUpgradeCalls).toBe(0)
+    expect(beforeStream).not.toHaveBeenCalled()
+    expect(fixture.contexts.get(fixture.a.accountId)?.get('accessPeerFixture')?.peers).toHaveLength(0)
+    expect(fixture.registry.reservedCarriers).toBe(0)
+    expect(handle.peer.signal.aborted).toBe(false)
   })
 
   it('closes exact revoked login carriers and Peer while B keeps serving native calls', async () => {
@@ -483,8 +521,11 @@ describe.skipIf(configPath === undefined)('internal login Peer with real PG/nati
     const ws = await memoryWebsocket(fixture, handle)
     expect(fixture.registry.reservedCarriers).toBe(1)
     const [extra] = pair()
+    const request = authRequest(fixture.cookieA)
+    request.headers.origin = config().publicOrigin
+    request.rawHeaders.push('Origin', config().publicOrigin)
     await expect(Promise.resolve().then(() => fixture.registry.handleUpgrade(
-      handle, authRequest(fixture.cookieA), extra, Buffer.alloc(0), requestId,
+      handle, request, extra, Buffer.alloc(0), requestId,
     ))).rejects.toMatchObject({ code: 'cloud/capacity' })
     expect(fixture.registry.reservedCarriers).toBe(1)
     ws.socket.destroy()

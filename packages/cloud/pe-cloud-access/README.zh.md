@@ -54,7 +54,7 @@ kind: "package-reference"
 
 `authenticate` 通过 `disableCookieCache` 和 `disableRefresh` 强制查库。`recheckLogin` 使用原 cookie 的固定快照；已准入的验证失败时调用传入的登录失效处理者。`assertLoginCurrent` 在派发前拒绝已到复查时间的登录。Peer watcher 必须调度复查，并在任何拒绝（含容量拒绝）时关闭精确 Peer；本适配器不安装 watcher。
 
-`handleNodeRequest` 在 Host/Origin/TLS/代理检查后，将未经通用解析的正文交给 Better Auth Node bridge。转发头不决定身份，也不动态决定认证源。生产使用 Secure cookie；所有 cookie 均为 HttpOnly、SameSite=Lax。仅显式可信代理可声明固定转发 host/protocol；客户端 IP 跟踪使用实际 socket 地址。
+`handleNodeRequest` 在 Host/Origin/TLS/代理检查后，将未经通用解析的正文交给 Better Auth Node bridge。转发头不决定身份，也不动态决定认证源。生产使用 Secure cookie；所有 cookie 均为 HttpOnly、SameSite=Lax。仅显式可信代理可声明固定转发 host/protocol；客户端 IP 跟踪使用实际 socket 地址。WS 握手在认证查库及原生 upgrade 前，要求恰好一个原始 Origin 且等于 `publicOrigin`。普通 HTTP 仍可省略 Origin；认证修改请求的 HTTP CSRF 检查仍由 Better Auth 负责。
 
 `revokeLogin` 先通过库删除，再由登录会话删除 hook 通知失效处理者。`planMigrations` 返回库生成的计划而不应用。认证操作只预留一个有限名额，覆盖真实查询及失效收尾；嵌套 hook 不再预留名额。等待超时后，该名额继续计入 `pendingOperations`，直到实际工作结算。`close` 停止准入并等待，不关闭调用方持有的池。认证失败不会取消 Agent 任务。
 
