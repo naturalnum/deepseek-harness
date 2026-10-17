@@ -48,6 +48,7 @@ import type {
 import {
   RemoteStreamMuxServer,
   rejectRemoteStreamUpgrade,
+  type NodeStreamTransport,
 } from './stream-server.ts'
 import {
   REMOTE_EVENT_STREAM_ENDPOINT,
@@ -81,6 +82,7 @@ export type {
   TypertRemoteEventSource,
 } from './types.ts'
 export type { RemoteEventHostInfo } from './stream-protocol.ts'
+export type { NodeStreamTransport } from './stream-server.ts'
 
 interface GatewayErrorOptions {
   readonly cause?: unknown
@@ -225,6 +227,35 @@ export class TypertGatewayService extends Service implements TypertGateway {
   private remoteEvents: RegisteredRemoteEventSource | undefined
   private readonly remoteEventClients = new Map<RemoteEventClientId, RemoteEventClient>()
   private readonly pendingRemoteEvents = new Map<RemoteEventId, PendingRemoteEvent>()
+  private readonly nodeTransportConfig: ResolvedConfig
+
+  /**
+   * Create a native Node mux pinned to an externally authenticated Peer.
+   * The caller owns authentication, Host/Origin checks, and the Peer's lifetime.
+   * @param peer - fixed live Peer selected by the external carrier.
+   * @param beforeOpen - synchronous guard before each logical-stream dispatch; a throw refuses that stream.
+   * @returns carrier closed explicitly or when the calling Context unloads.
+   */
+  createNodeStreamTransport(peer: PeerScope, beforeOpen: (endpoint: string) => void): NodeStreamTransport {
+    const mux = new RemoteStreamMuxServer(
+      (endpoint, payload, uplink, admittedPeer, control, window) => {
+        beforeOpen(endpoint)
+        return this.openWireStream(endpoint, payload, uplink, admittedPeer, control.signal, control, window)
+      },
+      this.wireStream.failure,
+      this.nodeTransportConfig.websocketHeartbeatIntervalMs,
+      this.nodeTransportConfig.streamInboxBytes,
+    )
+    let closing: Promise<void> | undefined
+    const dispose = this.ctx.effect(() => () => closing ??= mux.close(), 'api-gateway: admitted Node stream transport')
+    return {
+      handleUpgrade: (request, socket, head) => { mux.handleUpgrade(request, socket, head, peer) },
+      close: () => {
+        const disposed = dispose()
+        return closing ??= Promise.resolve(disposed)
+      },
+    }
+  }
 
   /**
    * Register the Gateway against the active Typert registry.
@@ -236,6 +267,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
   constructor(ctx: Context, config: Config) {
     super(ctx, 'typertGateway')
     const resolved = config as ResolvedConfig
+    this.nodeTransportConfig = resolved
     ctx.on('internal/service', () => {
       this.srcClaims = undefined
     })

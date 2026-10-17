@@ -9,6 +9,7 @@ import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { runInNewContext } from 'node:vm'
 import { Context, FiberState, type Fiber } from '@deepseek-ai/cordis'
+import Loader, { type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { renderIndexInjections, type WebServer, type WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import * as modulesClient from '../src/client/index.ts'
@@ -203,6 +204,97 @@ function constructWithRoute(
 function construct(packageNames: string[]): ClientModuleRegistry {
   return constructWithRoute(packageNames).service
 }
+
+it('declares built browser packages without activating a Host entry and withdraws with the caller', async () => {
+  writeBuiltPackage('@fixture/browser-only', {})
+  const { context, service } = constructWithRoute([])
+  const owner = await context.plugin((scope) => {
+    scope.get('clientModules')!.registerClientPackages(['@fixture/browser-only'], pathToFileURL(root!).href + '/')
+  })
+  expect(service.graph().entries.map(entry => entry.id)).toEqual(['@fixture/browser-only'])
+  expect([...context.loader.entries()]).toEqual([])
+  expect((await service.fetchBundle(new Request(`http://localhost/${service.graph().batches[0]!.url}`))).status).toBe(200)
+  await owner.dispose()
+  expect(service.graph().entries).toEqual([])
+})
+
+it('rejects duplicate browser declarations atomically and permits reuse after withdrawal', async () => {
+  writeBuiltPackage('@fixture/browser-only', {})
+  const service = construct([])
+  const baseUrl = pathToFileURL(root!).href + '/'
+  expect(() => service.registerClientPackages(['@fixture/browser-only', '@fixture/browser-only'], baseUrl)).toThrow('duplicate browser declaration')
+  expect(service.graph().entries).toEqual([])
+  const dispose = service.registerClientPackages(['@fixture/browser-only'], baseUrl)
+  expect(() => service.registerClientPackages(['@fixture/browser-only'], baseUrl)).toThrow('duplicate browser declaration')
+  await dispose()
+  const again = service.registerClientPackages(['@fixture/browser-only'], baseUrl)
+  expect(service.graph().entries).toHaveLength(1)
+  await again()
+  expect(service.graph().entries).toEqual([])
+})
+
+it('rolls back browser declarations when a required built artifact is missing', async () => {
+  writeBuiltPackage('@fixture/good', {})
+  const missing = writePackage('@fixture/missing')
+  const service = construct([])
+  const baseUrl = pathToFileURL(root!).href + '/'
+  expect(() => service.registerClientPackages(['@fixture/good', '@fixture/missing'], baseUrl)).toThrow()
+  expect(service.graph().entries).toEqual([])
+  mkdirSync(dirname(missing), { recursive: true })
+  writeFileSync(missing, 'module.exports = {}\n')
+  const dispose = service.registerClientPackages(['@fixture/good', '@fixture/missing'], baseUrl)
+  expect(service.graph().entries).toHaveLength(2)
+  await dispose()
+  expect(service.graph().entries).toEqual([])
+})
+
+it('rejects a package without browser metadata before publishing other declarations', () => {
+  writeBuiltPackage('@fixture/good', {})
+  writePackage('@fixture/host-only', {})
+  const service = construct([])
+  expect(() => service.registerClientPackages(['@fixture/good', '@fixture/host-only'], pathToFileURL(root!).href + '/'))
+    .toThrow('does not declare dsh.client')
+  expect(service.graph().entries).toEqual([])
+})
+
+it('publishes and withdraws declared browser assets through a Loader-owned config', async () => {
+  const clientPath = writePackage('@fixture/browser-only', {
+    dsh: { client: { platform: 'web' } },
+    exports: { '.': './lib/index.js', './client': './lib/client.js', './package.json': './package.json' },
+  })
+  mkdirSync(dirname(clientPath), { recursive: true })
+  writeFileSync(clientPath, 'module.exports = {}\n')
+  writeFileSync(join(dirname(clientPath), 'index.js'), 'throw new Error("browser declaration activated its Host")\n')
+  const ctx = new Context()
+  contexts.push({ ctx })
+  const baseUrl = pathToFileURL(root!).href + '/'
+  ctx.baseUrl = baseUrl
+  await ctx.plugin(Loader)
+  Object.assign(ctx.loader.builtins, {
+    modules: ClientModuleRegistry,
+    declaration: {
+      inject: ['clientModules'],
+      apply(scope: Context) {
+        scope.clientModules.registerClientPackages(['@fixture/browser-only'], baseUrl)
+      },
+    },
+  })
+  const configPath = join(root!, 'cordis.yml')
+  writeFileSync(configPath, JSON.stringify([{ id: 'modules', name: 'cordis:modules' }, { id: 'declaration', name: 'cordis:declaration' }]))
+  const rows = JSON.parse(readFileSync(configPath, 'utf8')) as EntryOptions[]
+  for (const row of rows) await ctx.loader.create(row)
+  await ctx.loader.await()
+  expect(ctx.loader.resolve('declaration').fiber?.state).toBe(FiberState.ACTIVE)
+  const service = ctx.get('clientModules')!
+  expect(service.graph().entries.map(entry => entry.id)).toEqual(['@fixture/browser-only'])
+  expect([...ctx.loader.entries()].map(entry => entry.options.name)).toEqual(['cordis:modules', 'cordis:declaration'])
+  const bundle = await service.fetchBundle(new Request(`http://localhost/${service.graph().batches[0]!.url}`))
+  expect(bundle.status).toBe(200)
+  expect(await bundle.text()).toContain('@fixture/browser-only')
+  ctx.loader.remove('declaration')
+  await ctx.loader.await()
+  expect(service.graph().entries).toEqual([])
+})
 
 /** Invoke the registered plugin route and capture status, headers, and bytes. */
 async function routeRequest(route: Promise<WebRoute>, url: string, method = 'GET'): Promise<{

@@ -1,6 +1,7 @@
 /** Host registry and HTTP adapter for generic Connection RPC channels. */
 
 import { Context, Service } from '@deepseek-ai/cordis'
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import type { PeerId, PeerScope, Principal } from '@deepseek-ai/dsh-typert-protocol'
 import type { ConnectionInteractions } from './connect-protocol.ts'
@@ -75,6 +76,19 @@ export class HostConnectionService extends Service implements HostConnectionHand
   private disposed = false
   private readonly interceptors = new Map<string, ConnectionRpcInterceptor>()
   private readonly fetchRoutes = new Map<string, RegisteredFetchRoute>()
+
+  /**
+   * Dispatch an externally admitted request through the native shared HTTP bridge.
+   * The caller owns authentication, Host/Origin checks, and the Peer's lifetime.
+   * @param request - incoming request whose body has not been consumed.
+   * @param response - response owned until the bridge and body cleanup settle.
+   * @param peer - fixed live Peer selected by the external carrier.
+   * @param maxRequestBodyBytes - byte limit for buffered request bodies.
+   * @returns completion of response transfer and request-body cleanup.
+   */
+  handleNodeRequest(request: IncomingMessage, response: ServerResponse, peer: PeerScope, maxRequestBodyBytes: number): Promise<void> {
+    return bridge(request, response, this.createSharedFetchHandler(API_PATH), peer, maxRequestBodyBytes)
+  }
 
   readonly allowsRemoteAuthorities: boolean
 

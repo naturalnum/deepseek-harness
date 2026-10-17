@@ -41,6 +41,22 @@ export type RemoteStreamFailureMapper = (error: unknown) => RemoteStreamFailure
 
 const MAX_MISSED_HEARTBEATS = 2
 
+/** Node carrier using the native stream mux and a fixed, admitted Peer. */
+export interface NodeStreamTransport {
+  /**
+   * Accept an upgrade after outer authentication and Host/Origin checks.
+   * @param request - admitted upgrade request.
+   * @param socket - socket transferred to the native mux.
+   * @param head - bytes already read after the upgrade headers.
+   */
+  handleUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): void
+  /**
+   * Terminate sockets and await iterator cleanup; repeated calls share completion.
+   * @returns fulfillment after every carrier iterator has returned.
+   */
+  close(): Promise<void>
+}
+
 /** Own the no-server WebSocket acceptor and every active logical stream. */
 export class RemoteStreamMuxServer {
   private readonly server = new WebSocketServer({ noServer: true })

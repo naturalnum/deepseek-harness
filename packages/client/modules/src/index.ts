@@ -610,6 +610,7 @@ export class ClientModuleRegistry extends Service {
   private readonly release: WebBootRelease
   private readonly table = new Map<string, WebPluginRecord>()
   private readonly sources = new Map<string, ClientPackageSource>()
+  private readonly declaredSources = new Map<string, ClientPackageSource>()
   // Resolution is entry-local: the same specifier can resolve differently in
   // separate config trees. Negative verdicts remain stable until restart.
   private readonly pkgMeta = new Map<string, ResolvedPkgMeta | null>()
@@ -678,6 +679,45 @@ export class ClientModuleRegistry extends Service {
    */
   graph(): WebBootGraph {
     return this.composed
+  }
+
+  /**
+   * Declare browser packages without activating their Host plugins.
+   * Invalid declarations or missing artifacts reject the batch and withdraw its sources.
+   * @param packages - approved package specifiers whose manifests declare dsh.client.
+   * @param baseUrl - resolution base of the deployment-owned package installation.
+   * @returns awaitable disposer removing these declarations, also called when the caller unloads.
+   */
+  registerClientPackages(packages: readonly string[], baseUrl: string): () => Promise<void> {
+    const sources = packages.map((loaderName) => {
+      const resolved = this.resolveMeta(loaderName, baseUrl)
+      if (resolved === null) throw new Error(`client-modules: ${loaderName} does not declare dsh.client`)
+      return { ...resolved, loaderName, baseUrl, sourceKey: this.sourceKey(loaderName, baseUrl) }
+    })
+    const seen = new Set<string>()
+    for (const source of sources) {
+      if (seen.has(source.sourceKey) || this.declaredSources.has(source.sourceKey)) {
+        throw new Error(`client-modules: duplicate browser declaration ${source.loaderName}`)
+      }
+      seen.add(source.sourceKey)
+    }
+    const refresh = (): void => {
+      for (const source of sources) this.dirty.add(source.loaderName)
+      this.flush((error) => { throw error })
+    }
+    const dispose = this.ctx.effect(() => {
+      for (const source of sources) this.declaredSources.set(source.sourceKey, source)
+      try { refresh() } catch (error) {
+        for (const source of sources) this.declaredSources.delete(source.sourceKey)
+        refresh()
+        throw error
+      }
+      return () => {
+        for (const source of sources) this.declaredSources.delete(source.sourceKey)
+        refresh()
+      }
+    }, 'client-modules: declared browser packages')
+    return () => Promise.resolve(dispose())
   }
 
   /**
@@ -1001,6 +1041,9 @@ export class ClientModuleRegistry extends Service {
   /** Reconcile one entry name against the live Loader sources. @returns whether the table changed. */
   private processOne(entryName: string, onError: (err: Error) => void): boolean {
     const nextSources = new Map<string, ClientPackageSource>()
+    for (const [key, source] of this.declaredSources) {
+      if (source.loaderName === entryName) nextSources.set(key, source)
+    }
     for (const entry of this.ctx.loader.entries()) {
       if (entry.options.name !== entryName || entry.fiber === undefined || entry.disabled) continue
       const source = this.resolveSource(entry)
