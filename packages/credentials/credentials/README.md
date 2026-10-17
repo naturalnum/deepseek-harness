@@ -141,6 +141,10 @@ The `./types` subpath export holds the event declarations together with the `Cre
 
 The service is a Cordis `Service` registered by the provider: disposing the mounting fiber removes `ctx.credentials`.
 
+An embedding Host can install one `CredentialSaveSubmissionHook` using `registerSaveHook()`. Providers opt in by calling the protected `submitSave(operation, submit)` before their own writer queue. The hook decides admission synchronously, invokes the actual submission at most once, and observes its Promise through required storage and publication, preserving results and failures. `CredentialSaveOperation` carries only the operation kind and, for addressed writes, the reference or record address; `migrate-flat-document` identifies initialization migration without an address. Without a hook, submission returns the original operation Promise. This Service Definition owns the hook independently of configuration persistence; a provider has no dependency on config-editor. A registered hook covers only instrumented provider writers. Stop and settle those writers before disposing the hook; caller unload also removes it.
+
+A provider subclass can call `registerSaveHook()` in its constructor after `super()`. Cordis calls `Service.init` after the complete constructor returns, so this registration can protect initialization saves. Mount that subclass with the Host's hook bound to its own instance; registering through a ready service cannot cover earlier writes.
+
 </details>
 
 -----

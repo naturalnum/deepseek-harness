@@ -1,5 +1,6 @@
 /** Profile-owned configuration edits, serialized with Loader hot reload. */
 import { readFile } from 'node:fs/promises'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { join } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import { Context, FiberState, Service, resolveConfig } from '@deepseek-ai/cordis'
@@ -7,7 +8,10 @@ import { entryListSchema, type PatchOptions } from '@deepseek-ai/cordis-plugin-i
 import yaml from 'js-yaml'
 import type { Entry, EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-hmr'
-import { composeEntries, loadProfileDirectory, readProfilePatches, reconcileProfilePatches } from '@deepseek-ai/dsh-app-boot'
+import {
+  composeEntries, loadProfileDirectory, readProfilePatches, reconcileProfilePatches,
+  prepareProfileConfigUpdate, assertProfileConfigUpdate, withProfileConfigUpdate, type ProfileConfigUpdatePlan,
+} from '@deepseek-ai/dsh-app-boot'
 import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { isMap, isSeq, parseDocument, Scalar, visit } from 'yaml'
 
@@ -18,6 +22,29 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
+/** Admission and observation of an explicitly instrumented native save submission. */
+export interface ConfigSaveSubmissionHook {
+  /**
+   * Decide admission synchronously before invoking submit or entering a writer queue.
+   * Accepted work must retain its result and rejection through required application;
+   * invoke submit at most once and observe the Promise it returns.
+   * @param writer - native writer identifier, without config values or secrets.
+   * @param submit - actual queue submission, including required write and reconciliation.
+   * @returns the operation's result after the hook's admitted work settles.
+   */
+  submit<T>(writer: string, submit: () => Promise<T>): Promise<T>
+}
+
+/** Host policy checked against a native prepared profile decision before persistence. */
+export interface ConfigImpactGuard {
+  /**
+   * Approve or reject the native plan; approval cannot grant an unsupported impact.
+   * @param plan - opaque native entry identities, versions and impact decisions.
+   * @returns Completion of the policy check; rejection leaves the profile unwritten.
+   */
+  check(plan: ProfileConfigUpdatePlan): void | Promise<void>
+}
+
 function flatten(rows: EntryOptions[]): EntryOptions[] {
   return rows.flatMap(row => [row, ...row.group && Array.isArray(row.config) ? flatten(row.config as EntryOptions[]) : []])
 }
@@ -25,9 +52,69 @@ function flatten(rows: EntryOptions[]): EntryOptions[] {
 /** Persist complete raw configs and apply them through the normal Loader path. */
 export class ConfigEditor extends Service {
   static inject = ['loader', 'profileContext']
+  private saveHook: ConfigSaveSubmissionHook | undefined
+  private impactGuard: ConfigImpactGuard | undefined
+  private readonly saveScopes = new AsyncLocalStorage<{ active: boolean }>()
 
   constructor(private readonly ownerContext: Context) {
     super(ownerContext, 'configEditor')
+  }
+
+  /**
+   * Install one live-only impact policy for actual edits through this editor.
+   * Without a guard the original reconciliation and rollback path is unchanged.
+   * @param guard - policy for the native plan, without a cloud field allowlist.
+   * @returns awaitable disposer; caller unload removes the guard.
+   * @throws If another impact guard is installed.
+   */
+  registerImpactGuard(guard: ConfigImpactGuard): () => Promise<void> {
+    const dispose = this.ctx.effect(() => {
+      if (this.impactGuard !== undefined) throw new Error('config-editor: an impact guard is already registered')
+      this.impactGuard = guard
+      return () => { this.impactGuard = undefined }
+    }, 'config-editor: impact guard')
+    return () => Promise.resolve(dispose())
+  }
+
+  /**
+   * Install the sole hook for explicit save submissions through this editor.
+   * The caller must stop and settle protected writers before withdrawing the hook.
+   * Nested submissions in one admitted operation share its hook and completion.
+   * @param hook - synchronous admission and Promise observation owned by the caller.
+   * @returns awaitable disposer; caller unload also removes the hook.
+   * @throws If a hook is already installed.
+   */
+  registerSaveHook(hook: ConfigSaveSubmissionHook): () => Promise<void> {
+    const dispose = this.ctx.effect(() => {
+      if (this.saveHook !== undefined) throw new Error('config-editor: a save submission hook is already registered')
+      this.saveHook = hook
+      return () => { this.saveHook = undefined }
+    }, 'config-editor: save submission hook')
+    return () => Promise.resolve(dispose())
+  }
+
+  /**
+   * Submit one instrumented save before its writer enters any private queue.
+   * Without a hook, invoke submit directly and return its original Promise.
+   * Nested submissions through the same editor share the admitted operation;
+   * callers must await all nested work. A continuation after settlement submits anew.
+   * @param writer - native writer identifier, without config values or secrets.
+   * @param submit - actual queue submission and all required write/application work.
+   * @returns the original operation Promise, or the hook's admitted operation Promise.
+   * @throws If synchronous admission rejects the submission.
+   */
+  submitSave<T>(writer: string, submit: () => Promise<T>): Promise<T> {
+    if (this.saveHook === undefined || this.saveScopes.getStore()?.active === true) return submit()
+    return this.saveHook.submit(writer, () => {
+      const scope = { active: true }
+      let operation: Promise<T>
+      try { operation = this.saveScopes.run(scope, submit) } catch (error) {
+        scope.active = false
+        throw error
+      }
+      void operation.then(() => { scope.active = false }, () => { scope.active = false })
+      return operation
+    })
   }
 
   /** The profile patch edited by this service. */
@@ -80,6 +167,9 @@ export class ConfigEditor extends Service {
   }
 
   /** Validate, persist, and reconcile a plugin's next config; ordinary fields keep normal lifecycle rules.
+   * An impact guard selects the restricted live path; unsupported plans reject before writing.
+   * A required post-replacement failure remains failed with its committed state for caller diagnosis;
+   * that path never falls back to an unguarded rollback or remount.
    * @param entry Current Loader entry, also used to detect replacement during the write.
    * @param change Derive a raw config from the current entry and its inherited layer.
    * @returns Fulfillment after Loader reconciliation completes.
@@ -93,15 +183,21 @@ export class ConfigEditor extends Service {
       await withFileLock(join(this.ownerContext.profileContext.dir, 'package.json'), async () => {
         if (!this.entries().includes(entry) || entry.fiber === undefined) throw new Error('Configuration entry is no longer available')
         const beforePatches = readProfilePatches('dsh', this.ownerContext.profileContext)
-        await reconcileProfilePatches(this.ownerContext.root, beforePatches, 'dsh')
+        const guard = this.impactGuard
+        if (guard === undefined) await reconcileProfilePatches(this.ownerContext.root, beforePatches, 'dsh')
+        else for (const row of this.entries()) {
+          if (row.fiber?.runtime?.Config !== undefined) row.assertConfigUpdateSupported()
+        }
         if (!this.entries().includes(entry)) throw new Error('Configuration entry changed during reload')
         const current = structuredClone((entry.options.config ?? {}) as Record<string, unknown>)
         const inherited = this.inherited(entry, loadProfileDirectory('dsh', this.ownerContext.profileContext.dir, this.ownerContext.profileContext.installAnchor))
         const next = change(current, inherited)
         const fiber = entry.fiber
         if (fiber.state !== FiberState.ACTIVE) throw new Error('Configuration plugin is no longer active')
-        const resolved: unknown = fiber.ctx.waterfall(fiber, 'internal/config', next, () => next)
-        resolveConfig(fiber.runtime as NonNullable<typeof fiber.runtime>, resolved)
+        if (guard === undefined) {
+          const resolved: unknown = fiber.ctx.waterfall(fiber, 'internal/config', next, () => next)
+          resolveConfig(fiber.runtime as NonNullable<typeof fiber.runtime>, resolved)
+        }
         let before: string
         try { before = await readFile(path, 'utf8') }
         catch (error) {
@@ -139,6 +235,18 @@ export class ConfigEditor extends Service {
         if (!isDeepStrictEqual(effective?.config ?? {}, next)) {
           throw new Error(`Configuration for "${entry.options.id}" is overridden by a home patch or command-line overlay`)
         }
+        if (guard !== undefined) {
+          const plan = prepareProfileConfigUpdate(this.ownerContext.root, entry, beforePatches, patches)
+          await guard.check(plan)
+          assertProfileConfigUpdate(plan)
+          await withProfileConfigUpdate(plan, async () => {
+            assertProfileConfigUpdate(plan)
+            await writeFileAtomic(path, String(document), { mode: 0o600 })
+            assertProfileConfigUpdate(plan, true)
+            await reconcileProfilePatches(this.ownerContext.root, patches, 'dsh', [entry.options.id])
+          })
+          return
+        }
         await writeFileAtomic(path, String(document), { mode: 0o600 })
         try {
           await reconcileProfilePatches(this.ownerContext.root, patches, 'dsh', [entry.options.id])
@@ -149,8 +257,10 @@ export class ConfigEditor extends Service {
         }
       })
     }
-    const hmr = this.ownerContext.get('hmr')
-    await (hmr === undefined ? run() : hmr.runExclusive(run))
+    await this.submitSave('config-editor/edit', () => {
+      const hmr = this.ownerContext.get('hmr')
+      return hmr === undefined ? run() : hmr.runExclusive(run)
+    })
   }
 }
 

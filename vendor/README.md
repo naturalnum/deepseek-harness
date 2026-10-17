@@ -62,6 +62,8 @@ Keep this log exhaustive — every divergence from upstream must be listed.
 
 24. **`timer/locale/{en,zh}.json` display metadata**: local English and Chinese titles and descriptions for the Settings plugin inventory. `timer/package.json` exports and publishes these locale resources.
 
+25. **`loader/src/{index,config/entry,config/group,config/diff}.ts` guarded config planning**: adds opaque per-entry config plans bound to native mutation versions, fiber/runtime/module identity, raw options, schema metadata and effective values. The original raw-volatile predicate, config resolution and volatile-reference commit are shared with the actual update; the unguarded order and remount fallback remain unchanged. The guarded subset checks deterministic built-in schemas and the sole native config resolver before parsing, and rejects unknown callbacks, expressions and unsupported snapshots. `Loader.withUpdateGuard` reserves the Loader across persistence/application; entry, group, create and remove checks run before their mutations, and actual planned commits recheck their options. Non-live stop closures remain unproven. The owning app-boot extension only supports one config edit in a settled flat root Include over an empty root file. `loader/README.md` documents the extension; `packages/boot/config-editor/tests/config-impact.spec.ts` covers its real profile/Loader path and `scripts/loader-volatile-update.spec.ts` covers the unchanged unguarded behavior. No upstream version, commit pin or package manifest changes.
+
 ## Sync procedure
 
 To update a vendored package from upstream:

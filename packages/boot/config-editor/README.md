@@ -32,13 +32,21 @@ Mount this service in a profile application with Loader and `profileContext`. It
 
 Use [settings](../../settings/settings/README.md) for forms restricted to live fields. Callers that edit complete configuration can use `ctx.configEditor.edit()`; ordinary fields retain Loader’s normal lifecycle.
 
+An embedding Host can install one `ConfigSaveSubmissionHook` with `registerSaveHook()`. Instrumented writers call `submitSave(writer, submit)` before their private queue; the hook decides admission synchronously and observes the actual operation Promise, including required application and its failures. The native writer id carries no configuration values or secrets. Without a hook, submission calls the operation directly and returns its original Promise. The caller must stop and settle protected writers before disposing the hook; caller unload also removes it.
+
+`edit()` submits before HMR and the file lock. Settings and default-model writers submit at their own outer boundary, so their full completion is observed. Nested submissions through the same editor share one admitted operation until its Promise settles; callers must await nested work. Independent submissions and continuations after settlement require fresh admission. This prevents a nested `edit()` from waiting on its own slot in an embedding Host's save queue. Plugin selection writes its own files, and credential providers have their own hook; neither is covered by this editor hook.
+
+An embedding Host can also install one `ConfigImpactGuard` with `registerImpactGuard()`. The editor obtains an opaque native profile plan, awaits the policy check, and rechecks the plan before persistence and actual Loader mutation. Approval cannot grant a remount or unknown impact. The guarded subset supports only a config edit in a settled, flat root Include over an empty root file, using deterministic built-in schemas and the sole native config resolver. Unsupported schemas and extra config callbacks reject before candidate parsing. Pending old patches, expressions, nested trees and structural changes also reject. Field permissions remain the Host's responsibility.
+
+The Loader reservation spans persistence and application, rejecting competing tree mutations. Native versions, entry/fiber/module identities, raw options, schema and effective values bind the plan. A guarded failure after the replacement can leave committed state; it rejects without attempting an unguarded rollback that could remount. The caller must retain that failure and reconcile the account's state before further changes. This is a live-only subset, not a general impact planner. Stop and settle protected edits before withdrawing the guard.
+
 <a id="understand-the-implementation"></a>
 ## Understand the implementation
 
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The [editor](src/index.ts) reconciles external changes before deriving a candidate, locks the profile manifest alongside other profile operations, and atomically replaces its config override. It preserves YAML comments and `!!js` expressions outside replaced values. A failed reconciliation restores the prior document and reloads the prior patches.
+Without an impact guard, the [editor](src/index.ts) reconciles external changes before deriving a candidate, locks the profile manifest alongside other profile operations, and atomically replaces its config override. It preserves YAML comments and `!!js` expressions outside replaced values. A failed reconciliation restores the prior document and reloads the prior patches. Installing an impact guard selects the checked live-only path described above; it never first applies pending old patches.
 
 Configuration reads share one composition for entries without profile config overrides. Overridden entries are composed separately with only their own override removed; profile inserts and other entries' overrides remain effective. Returned configs are detached, and compositions are not cached between reads.
 

@@ -145,6 +145,25 @@ export interface CredentialRecordEntry {
   kind: CredentialRecord['kind']
 }
 
+/** One provider save operation; metadata may contain addresses but never secret values. */
+export type CredentialSaveOperation =
+  | { readonly kind: 'set' | 'unset'; readonly ref: CredentialRef }
+  | { readonly kind: 'modify-record' | 'delete-record'; readonly key: CredentialKey }
+  | { readonly kind: 'migrate-flat-document' }
+
+/** Admission and observation installed on one credential provider. */
+export interface CredentialSaveSubmissionHook {
+  /**
+   * Decide admission synchronously before invoking submit or entering a provider queue.
+   * Invoke submit at most once and observe its original Promise through required
+   * storage and publication; preserve its result and rejection.
+   * @param operation - native operation and credential address, without values.
+   * @param submit - actual provider queue submission and required completion work.
+   * @returns the admitted operation's result after its required work settles.
+   */
+  submit<T>(operation: CredentialSaveOperation, submit: () => Promise<T>): Promise<T>
+}
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     credentials: CredentialProvider
@@ -169,8 +188,39 @@ declare module '@deepseek-ai/cordis' {
  * one lock).
  */
 export abstract class CredentialProvider extends Service {
+  private saveHook: CredentialSaveSubmissionHook | undefined
+
   constructor(ctx: Context) {
     super(ctx, 'credentials')
+  }
+
+  /**
+   * Install the sole save hook for provider-instrumented submissions.
+   * Providers opt in by calling submitSave before entering their own queue.
+   * A provider subclass may register during construction, before Service.init.
+   * The caller must stop and settle protected work before withdrawing the hook.
+   * @param hook - synchronous admission and actual-Promise observation.
+   * @returns awaitable disposer; caller unload also removes the hook.
+   * @throws If a hook is already installed.
+   */
+  registerSaveHook(hook: CredentialSaveSubmissionHook): () => Promise<void> {
+    const dispose = this.ctx.effect(() => {
+      if (this.saveHook !== undefined) throw new Error('credentials: a save submission hook is already registered')
+      this.saveHook = hook
+      return () => { this.saveHook = undefined }
+    }, 'credentials: save submission hook')
+    return () => Promise.resolve(dispose())
+  }
+
+  /**
+   * Admit one provider-owned save before its private queue starts.
+   * Without a hook, invoke submit directly and return its original Promise.
+   * @param operation - native operation and address; never include secret values.
+   * @param submit - actual queue submission through required storage/publication.
+   * @returns the operation's original Promise or the installed hook's Promise.
+   */
+  protected submitSave<T>(operation: CredentialSaveOperation, submit: () => Promise<T>): Promise<T> {
+    return this.saveHook === undefined ? submit() : this.saveHook.submit(operation, submit)
   }
 
   /**

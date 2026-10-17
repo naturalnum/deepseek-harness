@@ -18,6 +18,7 @@ export class EntryGroup {
   }
 
   async create(options: Omit<EntryOptions, 'id'>) {
+    this.ctx.loader.updateGuard?.create(this, options)
     const id = this.tree.ensureId(options)
     const entry: Entry = this.tree.store[id] ??= new Entry(this.ctx.loader)
     // Entry may be moved from another group,
@@ -37,6 +38,7 @@ export class EntryGroup {
   remove(id: string, isDispose = false) {
     const entry = this.tree.store[id]
     if (!entry) return
+    this.ctx.loader.updateGuard?.remove(entry)
     entry.fiber?.dispose()
     if (!isDispose) {
       this.unlink(entry.options)
@@ -46,6 +48,7 @@ export class EntryGroup {
   }
 
   async update(config: EntryOptions[]) {
+    this.ctx.loader.updateGuard?.group(this, config)
     const oldConfig = this.data as EntryOptions[]
     this.data = config
     const oldMap = Object.fromEntries(oldConfig.map(options => [options.id, options]))

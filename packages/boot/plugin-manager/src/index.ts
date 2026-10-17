@@ -38,6 +38,28 @@ export type * from './types.ts'
 export { classifyInstallFailure, type InstallFailureFacts } from './install-failure.ts'
 export { InvalidInstallSpecError, parseInstallSpec, type ParsedInstallSpec } from './install-spec.ts'
 
+/** A native management submission, without package specs or configuration values. */
+export interface PluginSaveOperation {
+  /** Requested stage, captured before installation can advance to enablement. */
+  readonly stage: ChangeResult['stage']
+  /** Native management operation family. */
+  readonly reason: PluginChange['reason']
+}
+
+/** Admission and complete-result observation for one manager's state changes. */
+export interface PluginSaveSubmissionHook {
+  /**
+   * Decide admission synchronously before invoking submit or entering the profile lock.
+   * Invoke submit at most once and preserve its result and rejection. A fulfilled
+   * ChangeResult is not proof of success: inspect application, including failed,
+   * cancelled, overridden and restart-required, before classifying completion.
+   * @param operation - native submission metadata, without values or package specs.
+   * @param submit - actual operation through persistence, application and result publication.
+   * @returns the original ChangeResult semantics after the admitted work settles.
+   */
+  submit(operation: PluginSaveOperation, submit: () => Promise<ChangeResult>): Promise<ChangeResult>
+}
+
 /** The pnpm executable, registries, and limits for diagnostics, lookups and connection checks. */
 export interface Config {
   /** The pnpm executable name or path; resolved through `PATH` like the `dsh plugin` command. */
@@ -235,6 +257,7 @@ export class PluginManager extends TypertRemoteService {
   private readonly configuredRegistries: Omit<PluginRegistries, 'resolved'>
   private readonly ownerContext: Context
   private readonly abort = new AbortController()
+  private saveHook: PluginSaveSubmissionHook | undefined
   /** Installations by request id, from their call until it settles. */
   private readonly installs = new Map<PluginInstallRequestId, InstallControl>()
 
@@ -258,6 +281,22 @@ export class PluginManager extends TypertRemoteService {
       this.abort.abort()
       await Promise.allSettled([...this.packageOperations])
     }, 'plugin-manager: package cancellation')
+  }
+
+  /**
+   * Install the sole hook for this manager's native state-change submissions.
+   * Stop and settle protected operations before withdrawing the hook.
+   * @param hook - synchronous admission and typed ChangeResult observation.
+   * @returns awaitable disposer; caller unload also removes the hook.
+   * @throws If a hook is already installed.
+   */
+  registerSaveHook(hook: PluginSaveSubmissionHook): () => Promise<void> {
+    const dispose = this.ctx.effect(() => {
+      if (this.saveHook !== undefined) throw new Error('plugin-manager: a save submission hook is already registered')
+      this.saveHook = hook
+      return () => { this.saveHook = undefined }
+    }, 'plugin-manager: save submission hook')
+    return () => Promise.resolve(dispose())
   }
 
   /** Read exact plugin-version exemptions saved in this profile.
@@ -900,7 +939,7 @@ export class PluginManager extends TypertRemoteService {
     request: Pick<ChangeResult, 'stage' | 'target' | 'enabled'>,
     reason: PluginChange['reason'],
   ): Promise<ChangeResult> {
-    return withFileLock(join(this.profile.dir, 'package.json'), async () => {
+    const submit = () => withFileLock(join(this.profile.dir, 'package.json'), async () => {
       this.abort.signal.throwIfAborted()
       const before = this.diskState()
       const result: ChangeResult = { ...request, changed: false,
@@ -923,6 +962,7 @@ export class PluginManager extends TypertRemoteService {
       this.ownerContext.emit('plugin-manager/changed', { reason })
       return result
     }, { waitMs: this.lockWaitMs })
+    return this.saveHook === undefined ? submit() : this.saveHook.submit({ stage: request.stage, reason }, submit)
   }
 
   private diskState(): string {

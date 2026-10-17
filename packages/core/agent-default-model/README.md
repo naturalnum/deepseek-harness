@@ -56,6 +56,8 @@ await ctx.agentDefaultModel.saveSelection({ provider, model, reasoningEffort: 'h
 
 Without a configuration editor, `saveSelection()` is a no-op. The service does not validate catalog membership; the consumer opening a model request owns availability diagnostics.
 
+`saveSelection()` uses ConfigEditor’s optional [save submission hook](../../boot/config-editor/README.md#use-this-package) with writer id `agent-default-model/saveSelection` before entering its private save queue. The observed operation includes queued work, the profile write and required reconciliation; background callers can retain that Promise independently of their response.
+
 -----
 
 <a id="understand-the-implementation"></a>

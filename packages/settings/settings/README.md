@@ -46,6 +46,8 @@ Each form reports `autoGenerate`, enabled by default, for clients that build pag
 
 The [form projection](src/schema.ts) strips runtime references and ordinary fields. The [service](src/index.ts) supplies revisioned descriptors and validates edits against the full plugin Config before delegating persistence. Business plugins read their Config references directly.
 
+`update`, `replace` and `mutate` submit through config-editor's optional save hook before validation and writing. Their observed Promise includes the editor operation and the required descriptor publication afterward. The nested editor call shares that admission. Legacy import submits its rename and each section separately: it retains the original partial-import behavior, and a rejected section remains observable even though the importer logs and continues. Install the hook before import starts to observe those startup writes.
+
 Secret roles are redacted from values, inherited values, profile overrides, and schema defaults; clients receive presence markers. Path edits preserve fields a client did not receive.
 
 </details>

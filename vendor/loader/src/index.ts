@@ -1,7 +1,8 @@
 import { Context, FiberState, Inject, Service, type Fiber } from '@deepseek-ai/cordis'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { defineProperty, isNullable, type Dict } from '@deepseek-ai/cosmokit'
 import { ModuleLoader } from './internal.ts'
-import { Entry, type EntryOptions } from './config/entry.ts'
+import { Entry, type EntryOptions, type EntryConfigUpdatePlan } from './config/entry.ts'
 import { EntryGroup } from './config/group.ts'
 import isolate from './config/isolate.ts'
 import { EntryTree } from './config/tree.ts'
@@ -69,6 +70,36 @@ export namespace Loader {
   }
 }
 
+/** Synchronous checks run before each actual tree mutation in a guarded operation. */
+export interface LoaderUpdateGuard {
+  /**
+   * Check an entry before its options or runtime state changes.
+   * @param entry - target entry.
+   * @param options - proposed options.
+   * @param create - whether options replace the row.
+   * @param force - native force flag.
+   * @returns A prepared live plan, or undefined for an explicitly audited carrier update.
+   */
+  entry(entry: Entry, options: Partial<EntryOptions>, create: boolean, force: boolean): EntryConfigUpdatePlan | undefined
+  /**
+   * Check a group before its child list changes.
+   * @param group - target group.
+   * @param config - complete proposed child rows.
+   */
+  group(group: EntryGroup, config: EntryOptions[]): void
+  /**
+   * Check a child before assigning its id or parent.
+   * @param group - target group.
+   * @param options - proposed child row.
+   */
+  create(group: EntryGroup, options: Omit<EntryOptions, 'id'>): void
+  /**
+   * Check an entry before it stops and leaves its group.
+   * @param entry - entry about to stop.
+   */
+  remove(entry: Entry): void
+}
+
 /**
  * Service that owns a loader entry tree and imports configured plugins.
  *
@@ -85,6 +116,34 @@ export class Loader extends EntryTree {
   public internal = ModuleLoader.fromInternal()
 
   public builtins: Dict<any> = Object.create(null)
+  private activeUpdateGuard: LoaderUpdateGuard | undefined
+  private readonly updateScope = new AsyncLocalStorage<LoaderUpdateGuard>()
+
+  /**
+   * Active mutation checks for this Loader.
+   * @returns The active checks, or undefined without a guarded operation.
+   * @throws If a concurrent unbound update attempts a reserved tree mutation.
+   */
+  get updateGuard(): LoaderUpdateGuard | undefined {
+    if (this.activeUpdateGuard !== undefined && this.updateScope.getStore() !== this.activeUpdateGuard) {
+      throw new Error('Loader configuration is reserved by a guarded update')
+    }
+    return this.activeUpdateGuard
+  }
+
+  /**
+   * Reserve this Loader's mutations for one checked native update operation.
+   * @param guard - synchronous checks at the actual mutation points.
+   * @param operation - complete persistence/application operation; await all child updates.
+   * @returns The operation's result after the reservation releases.
+   * @throws If another guarded operation already reserves this Loader.
+   */
+  async withUpdateGuard<T>(guard: LoaderUpdateGuard, operation: () => Promise<T>): Promise<T> {
+    if (this.activeUpdateGuard !== undefined) throw new Error('Loader configuration is already reserved')
+    this.activeUpdateGuard = guard
+    try { return await this.updateScope.run(guard, operation) }
+    finally { this.activeUpdateGuard = undefined }
+  }
 
   constructor(ctx: Context, public config: Loader.Config = {}) {
     super(ctx)

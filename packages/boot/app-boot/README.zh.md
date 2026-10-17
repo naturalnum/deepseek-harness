@@ -147,6 +147,8 @@ Loader 结算后，app-boot 在仅 optional 条目未激活时输出警告。如
 
 ### Helper 行为
 
+可选的[配置影响路径](src/config-impact.ts) 为已稳定、根文件为空的平坦 root Include 中的一项配置编辑准备绑定身份与版本的 Loader 决定。它在持久化与协调应用期间预留实际树变更，并拒绝未应用 patch、结构变化、未知依赖及无法证明的 live 影响。通常的协调应用路径保持不变。此有限扩展不对任意重挂分类，也不证明其依赖闭包；调用方须保持不支持的修改关闭。
+
 每个导出各负责启动的一个阶段：配置解析与快照回放、分层环境加载、明确报错的保护机制、激活审计、patch 解析、根 include 挂载、配置 dump 渲染与 profile 组合。各导出的约定在代码中，不在本 README——见 [`src/index.ts`](src/index.ts) 与 [`src/profile.ts`](src/profile.ts)。
 
 ### 源码地图
@@ -157,6 +159,7 @@ Loader 结算后，app-boot 在仅 optional 条目未激活时输出警告。如
 | [`src/profile.ts`](src/profile.ts) | profile 发现、初始化、组合包解析、runtime resolution 构造 |
 | [`src/profile-plugins.ts`](src/profile-plugins.ts) | 已安装依赖、bundle 启用策略与 manifest 更新 |
 | [`src/profile-sanitize.ts`](src/profile-sanitize.ts) | profile patch 备份与恢复 bundle 启用状态 |
+| [`src/config-impact.ts`](src/config-impact.ts) | 有限原生配置规划与实际变更检查 |
 | [`src/config-schema/`](src/config-schema/) | Profile schema 生成、发现、原生投影与结果类型 |
 | [`src/profile-resolution/`](src/profile-resolution/) | 运行时 resolver、package metadata 服务与构建后 Worker bootstrap |
 

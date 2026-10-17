@@ -243,7 +243,7 @@ export class SettingsForms extends Service {
     const path = join(profile.home, 'settings.yaml')
     if (!existsSync(path)) return
     const imported = `${path}.imported`
-    await rename(path, imported)
+    await this.ownerContext.configEditor.submitSave('settings/legacyRename', () => rename(path, imported))
     const sections = parse(await readFile(imported, 'utf8')) as Record<string, object> | null
     for (const [section, values] of Object.entries(sections ?? {})) {
       const ns = LEGACY_SECTION_ENTRIES[section] ?? section
@@ -379,47 +379,49 @@ export class SettingsForms extends Service {
     change: (current: Record<string, unknown>, base: Record<string, unknown>, schema: z) => Record<string, unknown>,
     expected?: number, paths: readonly (readonly string[])[] = [],
   ): Promise<void> {
-    const entry = this.ownerContext.configEditor.entries().find(row => row.options.id === ns)
-    const schema = entry === undefined ? undefined : this.schema(entry)
-    if (entry === undefined || schema === undefined) throw new Error(`No configurable plugin entry "${ns}"`)
-    const form = volatileForm(schema)
-    if (form === undefined) throw new Error(`Plugin entry "${ns}" has no volatile fields`)
-    for (const path of paths) {
-      if (path.length && !isVolatilePath(schema, path)) throw new Error(`Config field "${path.join('.')}" is not volatile`)
-    }
-    await this.ownerContext.configEditor.edit(entry, (raw, inherited) => {
-      const descriptor = this.describe().find(row => row.ns === ns)
-      if (descriptor === undefined) throw new Error(`Plugin entry "${ns}" is no longer configurable`)
-      if (expected !== undefined && descriptor.revision !== expected) {
-        throw new SettingsConflictError(ns as SettingsNamespace, expected, descriptor.revision)
+    await this.ownerContext.configEditor.submitSave('settings/write', async () => {
+      const entry = this.ownerContext.configEditor.entries().find(row => row.options.id === ns)
+      const schema = entry === undefined ? undefined : this.schema(entry)
+      if (entry === undefined || schema === undefined) throw new Error(`No configurable plugin entry "${ns}"`)
+      const form = volatileForm(schema)
+      if (form === undefined) throw new Error(`Plugin entry "${ns}" has no volatile fields`)
+      for (const path of paths) {
+        if (path.length && !isVolatilePath(schema, path)) throw new Error(`Config field "${path.join('.')}" is not volatile`)
       }
-      const current = projectForm(form, raw) as Record<string, unknown>
-      const base = projectForm(form, inherited) as Record<string, unknown>
-      const next = cloneJsonShaped(change(current, base, schema))
-      const validatePaths = (value: Record<string, unknown>, node: z, path: string[] = []): void => {
-        for (const [key, child] of Object.entries(value)) {
-          const target = [...path, key]
-          if (isVolatilePath(schema, target)) continue
-          const fields = node.dict as Record<string, z>
-          const field = Object.hasOwn(fields, key) ? fields[key] : undefined
-          if (isPlainObject(child) && field !== undefined) validatePaths(child, field, target)
-          else throw new Error(`Config field "${target.join('.')}" is not volatile`)
+      await this.ownerContext.configEditor.edit(entry, (raw, inherited) => {
+        const descriptor = this.describe().find(row => row.ns === ns)
+        if (descriptor === undefined) throw new Error(`Plugin entry "${ns}" is no longer configurable`)
+        if (expected !== undefined && descriptor.revision !== expected) {
+          throw new SettingsConflictError(ns as SettingsNamespace, expected, descriptor.revision)
         }
-      }
-      validatePaths(next, form)
-      const strip = (value: Record<string, unknown>, node: z, path: string[] = []): Record<string, unknown> => {
-        if (isVolatilePath(schema, path)) return {}
-        const result = { ...value }
-        for (const [key, field] of Object.entries(node.dict as Record<string, z>)) {
-          const target = [...path, key]
-          if (isVolatilePath(schema, target)) Reflect.deleteProperty(result, key)
-          else if (isPlainObject(result[key])) result[key] = strip(result[key], field, target)
+        const current = projectForm(form, raw) as Record<string, unknown>
+        const base = projectForm(form, inherited) as Record<string, unknown>
+        const next = cloneJsonShaped(change(current, base, schema))
+        const validatePaths = (value: Record<string, unknown>, node: z, path: string[] = []): void => {
+          for (const [key, child] of Object.entries(value)) {
+            const target = [...path, key]
+            if (isVolatilePath(schema, target)) continue
+            const fields = node.dict as Record<string, z>
+            const field = Object.hasOwn(fields, key) ? fields[key] : undefined
+            if (isPlainObject(child) && field !== undefined) validatePaths(child, field, target)
+            else throw new Error(`Config field "${target.join('.')}" is not volatile`)
+          }
         }
-        return result
-      }
-      return mergeLayers(strip(raw, form), next) as Record<string, unknown>
+        validatePaths(next, form)
+        const strip = (value: Record<string, unknown>, node: z, path: string[] = []): Record<string, unknown> => {
+          if (isVolatilePath(schema, path)) return {}
+          const result = { ...value }
+          for (const [key, field] of Object.entries(node.dict as Record<string, z>)) {
+            const target = [...path, key]
+            if (isVolatilePath(schema, target)) Reflect.deleteProperty(result, key)
+            else if (isPlainObject(result[key])) result[key] = strip(result[key], field, target)
+          }
+          return result
+        }
+        return mergeLayers(strip(raw, form), next) as Record<string, unknown>
+      })
+      this.describe()
     })
-    this.describe()
   }
 
   private schema(entry: Entry): z | undefined {

@@ -152,6 +152,10 @@ This section explains the design decisions behind the provider and points at the
 
 ### Reload lifecycle
 
+The provider's `set`, `unset`, `modifyRecord` and `deleteRecord` submit through the credential service's optional save hook before joining the operation chain. The observed Promise includes lock acquisition, an asynchronous record mutator, atomic replacement, cache updates and update-event dispatch. A failed task remains observable even though the internal queue recovers for later tasks; optional listener failures retain their existing contained behavior. Read-only refreshes are not save submissions.
+
+Initialization submits a recognized flat-document migration as `migrate-flat-document` before acquiring its writer lock. The observed Promise includes the atomic rewrite and subsequent parsing and cache loading; refusal or failure prevents service readiness. An embedding Host must mount a subclass whose constructor calls `super(ctx, config)` and then `this.registerSaveHook(hook)`, binding the hook to that instance before Cordis calls `Service.init`. A hook installed through the ready service cannot protect initialization. Without a hook, startup retains its ordinary migration behavior.
+
 A watcher event or the ready-time reconciliation queues a refresh behind the same chain. `reconcileFromDisk` re-checks permissions, re-reads the text, replaces both snapshots wholesale when the text differs, and publishes one event per changed reference or record; content equal to the text cache — including the provider's own writes — is a no-op. Disposal sets the closed flag, stops accepting events, closes the watcher, and waits out queued operations so nothing publishes after teardown.
 
 ### Document versioning

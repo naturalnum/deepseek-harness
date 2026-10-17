@@ -56,6 +56,8 @@ await ctx.agentDefaultModel.saveSelection({ provider, model, reasoningEffort: 'h
 
 没有配置编辑器时，`saveSelection()` 不执行写入。此服务不验证目录成员资格；发起模型请求的消费者负责可用性诊断。
 
+`saveSelection()` 在进入私有保存队列之前，以 writer id `agent-default-model/saveSelection` 经过 ConfigEditor 的可选[保存提交 hook](../../boot/config-editor/README.zh.md#use-this-package)。被观察的操作包含排队、profile 写入及必需的协调应用；后台调用方可独立于响应保留该 Promise。
+
 -----
 
 <a id="understand-the-implementation"></a>

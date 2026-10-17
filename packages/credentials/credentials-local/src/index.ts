@@ -52,6 +52,7 @@ import type {
   CredentialRecord,
   CredentialRecordEntry,
   CredentialRecordInfo,
+  CredentialSaveOperation,
   CredentialRef,
   ResolvedCredential,
 } from '@deepseek-ai/dsh-credentials'
@@ -707,7 +708,7 @@ export class LocalCredentialProvider extends CredentialProvider {
         this.notifyRecordUpdated(key)
         return next
       }, { waitMs: DOCUMENT_LOCK_WAIT_MS })
-    })
+    }, { kind: 'modify-record', key })
   }
 
   override async deleteRecord(key: CredentialKey): Promise<void> {
@@ -726,14 +727,17 @@ export class LocalCredentialProvider extends CredentialProvider {
         this.records.delete(key)
         this.notifyRecordUpdated(key)
       }, { waitMs: DOCUMENT_LOCK_WAIT_MS })
-    })
+    }, { kind: 'delete-record', key })
   }
 
   /** Queue one exclusive document operation behind every earlier one. */
-  private enqueue<T>(operation: () => Promise<T>): Promise<T> {
-    const task = this.operations.then(operation)
-    this.operations = task.then(() => undefined, () => undefined)
-    return task
+  private enqueue<T>(operation: () => Promise<T>, save?: CredentialSaveOperation): Promise<T> {
+    const submit = (): Promise<T> => {
+      const task = this.operations.then(operation)
+      this.operations = task.then(() => undefined, () => undefined)
+      return task
+    }
+    return save === undefined ? submit() : this.submitSave(save, submit)
   }
 
   /** Queue a reload; `refresh()` contains its own failures, so the queued task never rejects. */
@@ -772,7 +776,7 @@ export class LocalCredentialProvider extends CredentialProvider {
         // write look failed.
         this.notifyUpdated(ref)
       }, { waitMs: DOCUMENT_LOCK_WAIT_MS })
-    })
+    }, { kind: value === undefined ? 'unset' : 'set', ref })
   }
 
   /**
@@ -792,12 +796,17 @@ export class LocalCredentialProvider extends CredentialProvider {
       if (!isENOENT(error)) throw error
       return
     }
-    if (renderFlatLayoutMigration(text) !== undefined) text = await this.migrateFlatDocument()
-    const document = parseCredentialsDocument(text, this.spec.filename)
-    this.warnIgnoredKeys(document)
-    this.values = document.refs
-    this.records = document.records
-    this.text = text
+    const apply = (text: string): void => {
+      const document = parseCredentialsDocument(text, this.spec.filename)
+      this.warnIgnoredKeys(document)
+      this.values = document.refs
+      this.records = document.records
+      this.text = text
+    }
+    if (renderFlatLayoutMigration(text) === undefined) apply(text)
+    else await this.submitSave({ kind: 'migrate-flat-document' }, async () => {
+      apply(await this.migrateFlatDocument())
+    })
   }
 
   /**

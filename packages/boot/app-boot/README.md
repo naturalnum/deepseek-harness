@@ -147,6 +147,8 @@ The startup error also retains inactive-entry metadata and raw startup warning/e
 
 ### Helper behavior
 
+The optional [config impact path](src/config-impact.ts) prepares identity/version-bound Loader decisions for one config edit in a settled, flat root Include over an empty file. It reserves actual tree mutations across persistence and reconciliation, and rejects pending patches, structural changes, unknown dependencies and any unproven live impact. The normal reconciliation path is unchanged. This limited extension does not classify arbitrary remounts or prove their dependency closure; callers must keep unsupported changes closed.
+
 The exports each own one stage of the boot: config resolution and snapshot replay, layered environment loading, fail-loud reporting, activation auditing, patch parsing, root-include mounting, config dump rendering, and profile composition. Per-export contracts live in the code, not this README — see [`src/index.ts`](src/index.ts) and [`src/profile.ts`](src/profile.ts).
 
 ### Source map
@@ -157,6 +159,7 @@ The exports each own one stage of the boot: config resolution and snapshot repla
 | [`src/profile.ts`](src/profile.ts) | Profile discovery, initialization, bundle resolution, runtime resolution construction |
 | [`src/profile-plugins.ts`](src/profile-plugins.ts) | Installed dependencies, bundle activation policy, and manifest updates |
 | [`src/profile-sanitize.ts`](src/profile-sanitize.ts) | Profile patch backup and recovery bundle activation |
+| [`src/config-impact.ts`](src/config-impact.ts) | Restricted native config planning and mutation checks |
 | [`src/config-schema/`](src/config-schema/) | Profile schema generation, discovery, native projection, and result types |
 | [`src/profile-resolution/`](src/profile-resolution/) | Runtime resolver, package-metadata service, and built Worker bootstrap |
 

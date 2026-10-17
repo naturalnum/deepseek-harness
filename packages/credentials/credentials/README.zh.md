@@ -141,6 +141,10 @@ apiKeyEnv: DEEPSEEK_API_KEY
 
 服务是提供方注册的 Cordis `Service`：释放挂载 fiber 会移除 `ctx.credentials`。
 
+嵌入式 Host 可通过 `registerSaveHook()` 安装唯一的 `CredentialSaveSubmissionHook`。Provider 在进入自己的 writer 队列前调用受保护的 `submitSave(operation, submit)` 来接入。hook 同步决定准入，最多调用一次实际提交，并观察涵盖必需存储与发布的 Promise，保留结果及失败。`CredentialSaveOperation` 只携带操作类型，以及定址写入所需的引用或记录地址；`migrate-flat-document` 标识不带地址的初始化迁移。没有 hook 时，提交返回操作的原始 Promise。此 Service Definition 独立于配置持久化拥有 hook；provider 不依赖 config-editor。注册的 hook 只覆盖已接入的 provider writer。释放 hook 前须先停止并结算这些 writer；调用方卸载时也会移除 hook。
+
+Provider 子类可在构造函数的 `super()` 之后调用 `registerSaveHook()`。Cordis 在完整构造函数返回后调用 `Service.init`，因此该注册能保护初始化保存。挂载此子类时，将 Host 的 hook 绑定到其自身实例；通过已就绪服务注册无法覆盖更早的写入。
+
 </details>
 
 -----

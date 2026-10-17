@@ -647,6 +647,74 @@ describe('Web session model selection', () => {
     expect(saves).toHaveLength(2)
   })
 
+  it('returns model selections while the real default writer and its admitted queue remain pending', async () => {
+    const { configurationFixture } = await import('../../../settings/settings/tests/configuration-fixture.ts')
+    const configured = await configurationFixture({ hmr: false })
+    const { ctx, sessionId } = await harness(undefined, configured.ctx)
+    const release = Promise.withResolvers<undefined>()
+    const entered = Promise.withResolvers<undefined>()
+    const pending: Promise<unknown>[] = []
+    const writers: string[] = []
+    const dispose = ctx.configEditor.registerSaveHook({
+      submit<T>(writer: string, submit: () => Promise<T>): Promise<T> {
+        const operation = submit()
+        writers.push(writer)
+        pending.push(operation)
+        return operation
+      },
+    })
+    const edit = ctx.configEditor.edit.bind(ctx.configEditor)
+    const intercepted = vi.spyOn(ctx.configEditor, 'edit').mockImplementationOnce(async (...args) => {
+      entered.resolve(undefined)
+      await release.promise
+      await edit(...args)
+    })
+    onTestFinished(async () => {
+      release.resolve(undefined)
+      await Promise.allSettled(pending)
+      intercepted.mockRestore()
+      await dispose()
+    })
+    const remote = createSessionTestRemote(ctx, {
+      defaultModelSelection: () => ctx.agentDefaultModel.currentSelection(), cwd: '/tmp',
+    })
+    for (const model of ['deepseek-reasoner', 'deepseek-chat']) {
+      const result = expectValue(await remote.selectModel({ sessionId, provider: 'deepseek-official', model }))
+      expect(result.selected).toMatchObject({ provider: 'deepseek-official', model })
+    }
+    await entered.promise
+    expect(writers).toEqual(['agent-default-model/saveSelection', 'agent-default-model/saveSelection'])
+    expect(pending).toHaveLength(2)
+    expect(intercepted).toHaveBeenCalledOnce()
+    expect(ctx.agentDefaultModel.currentSelection().model).toBe('original')
+    release.resolve(undefined)
+    await Promise.all(pending)
+    expect(ctx.agentDefaultModel.currentSelection()).toMatchObject({ provider: 'deepseek-official', model: 'deepseek-chat' })
+  })
+
+  it('preserves the native selection response when default-save admission refuses submission', async () => {
+    const { configurationFixture } = await import('../../../settings/settings/tests/configuration-fixture.ts')
+    const configured = await configurationFixture({ hmr: false })
+    const { ctx, sessionId } = await harness(undefined, configured.ctx)
+    const failure = new Error('default save admission closed')
+    const dispose = ctx.configEditor.registerSaveHook({ submit: () => { throw failure } })
+    const edit = vi.spyOn(ctx.configEditor, 'edit')
+    const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
+    onTestFinished(async () => {
+      await dispose()
+      edit.mockRestore()
+      warn.mockRestore()
+    })
+    const remote = createSessionTestRemote(ctx, {
+      defaultModelSelection: () => ctx.agentDefaultModel.currentSelection(), cwd: '/tmp',
+    })
+    expectValue(await remote.selectModel({ sessionId, provider: 'deepseek-official', model: 'deepseek-reasoner' }))
+    expect(currentSelection(ctx, sessionId)).toMatchObject({ provider: 'deepseek-official', model: 'deepseek-reasoner' })
+    expect(ctx.agentDefaultModel.currentSelection().model).toBe('original')
+    expect(edit).not.toHaveBeenCalled()
+    await vi.waitFor(() => { expect(warn).toHaveBeenCalledOnce() })
+  })
+
   it('saves an accepted selection as the default and survives a storage failure', async () => {
     const { ctx, sessionId } = await harness()
     const warn = vi.spyOn(ctx.logger, 'warn').mockImplementation(() => {})
