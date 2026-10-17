@@ -37,6 +37,9 @@
     },
     {
       "path": "../../credentials/credentials"
+    },
+    {
+      "path": "../../core/agent-loop"
     }
   ]
 }

@@ -60,6 +60,10 @@ Controller 准入使用实际安装的图 AccountBinding 及与实际 LLM 守卫
 
 工厂须提供真实 files/Workspace/Preset/模型守卫，包括不另建批准表的同步活跃 scope 核验。可信端口和生命周期要求完成集成前，账户入口保持关闭。
 
+[私有 AgentLoop 工厂](src/native-agent-factory.ts) 检查同一实际安装的图绑定，在原生持久化创建或恢复写入 ownership 前，等待共享项目/模型/Preset 准入。它保留原 setup 及其同步 commit，在 setup 后及 commit 前后核验实际准备的 Agent。普通根 Session 允许省略委托深度或深度为零；parent/subagent/seeded 路径、启动 agents 及 direct AgentLoop.create 保持关闭。所属配方声明原生 AgentLoop 依赖，并排除第二个 loop。
+
+原生持久化 append 可在 setup commit 与 registry 发布之间等待。调用者和图生命周期取消会传入原生事务；commit 后取消会在实际 append 结算后阻止后续发布。成功发布后的调用者取消继续保留原生 creation-only 含义，不取消已提交的 Agent。Runtime 必须在重配置及实际 teardown 中持续持有已准入工作；仅观察者被拒绝不能证明迟到的后端 ownership 已关闭。
+
 [LLM 监听器](src/llm-guard.ts) 在原生流继续前检查账户代际及批准的 provider/model。它保留冻结请求。账户工厂必须提供与目录和模型选择共用的允许集。
 
 Runtime 创建并持有一个[配置协调器](src/config-saves.ts)，显式限制全局/账户在途、排队、跟踪条目、嵌套工作和观察者数量。准入在调用原生 callback 前同步登记责任。同一账户的保存串行执行；必需嵌套写入归入当前操作，不排在自己后面等待。必需应用仍属于同一结果。
@@ -114,7 +118,7 @@ Pause 关闭顶层准入，但允许已登记工作完成；只有静止、无�
 - 启动期凭据迁移、其他凭据 provider、PluginManager 写入及技能发布/投影仍未覆盖。Watch 刷新和可选监听器工作保留原生语义，安装 hook 不代表它们已被核定为持久保存。
 - F09 影响预检、受控提交、插件/key/技能修改及版本资源 hook 保持关闭。
 - 原生 Profile 测试覆盖默认模型、Settings、直接 editor、本地 credentials 及启动安装缺口。实际私有 Controller 装配测试覆盖原生 Gateway 派发、创建、prompt、fork、同步 cancel 及恢复尝试的先后顺序。完整账户持久化恢复、认证 Web 及完整云端配方验收仍需集成；产品构建及这些检查由主控负责。
-- 历史测试使用真实 JSONL 读取和冷 follow 恢复。Follow 准入不能撤销已经开始的原生后台 promotion；完整激活覆盖仍需实际 AgentLoop 守卫及可信项目集成。账户装配继续关闭。
+- 历史测试使用真实 JSONL 读取和冷 follow 恢复。私有 AgentLoop 适配守卫普通工厂激活，但生产装配及可信项目/模型/Preset 提供者尚未集成。其他激活及 child 路径仍待审核；账户装配继续关闭。
 
 <a id="dev-note"></a>
 ### 开发备注

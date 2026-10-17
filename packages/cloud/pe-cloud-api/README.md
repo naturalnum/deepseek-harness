@@ -60,6 +60,10 @@ Controller admission uses the installed graph AccountBinding and the same truste
 
 Factories supply the real files/Workspace/Preset/model guards, including synchronous active-scope verification without a second approval store. The account entry remains closed until those trusted ports and lifecycle requirements are integrated.
 
+The [private AgentLoop factory](src/native-agent-factory.ts) checks the same installed graph binding and awaits shared project/model/Preset admission before native persistence creation or resume write-open. It preserves original setup and its synchronous commit, checking the actual prepared Agent after setup and around that commit. Ordinary root Sessions allow absent or zero delegation depth; parent/subagent/seeded paths, configured startup agents, and direct AgentLoop.create remain closed. The owning recipe declares the native AgentLoop dependencies and excludes a second loop.
+
+Native persistence append can await between setup commit and registry publication. Caller and graph-lifetime cancellation reach the native transaction; a post-commit abort prevents later publication after actual append settlement. Caller cancellation after successful publication keeps its native creation-only meaning and does not cancel the committed Agent. Runtime must retain already admitted work through reconfiguration and actual teardown; a rejected observer alone does not prove that late backend ownership has closed.
+
 The [LLM listener](src/llm-guard.ts) checks the account generation and approved provider/model immediately before the native stream continues. It preserves frozen request options. The account factory must supply the same approved set used by catalog and selection.
 
 Runtime creates and retains one [configuration coordinator](src/config-saves.ts) with explicit global/account running, queue, tracking, nested-work, and observer limits. Admission records responsibility synchronously before invoking the native callback. Saves run serially per account; required nested writes join the executing operation and cannot wait behind themselves. Mandatory apply remains part of the same result.
@@ -114,7 +118,7 @@ The account entry fails explicitly while mandatory integration is absent.
 - Startup credential migration, other credential providers, PluginManager writes, and skill publication/projection remain uncovered. Watch refreshes and optional listener work retain native semantics and are not certified as durable saves by hook registration.
 - F09 impact preflight, controlled commit, plugin/key/skill mutation, and version-resource hooks remain closed.
 - Native profile tests cover default-model, Settings, direct editor, local credentials, and the startup installation gap. Actual private Controller assembly tests exercise native Gateway dispatch, creation, prompt, fork, synchronous cancel, and the ordering of a resume attempt. Full persisted-account recovery, authenticated Web, and full cloud recipe acceptance remain integration requirements; product builds and those checks belong to the coordinator.
-- History tests use real JSONL reads and cold follow recovery. Follow admission cannot revoke a native background promotion that has already begun; complete activation coverage still requires the actual AgentLoop guards and trusted project integration. Account assembly remains closed.
+- History tests use real JSONL reads and cold follow recovery. The private AgentLoop adapter guards ordinary factory activation, but production assembly and the trusted project/model/Preset provider remain absent. Other activation and child paths still need review; account assembly remains closed.
 
 <a id="dev-note"></a>
 ### Dev Note
