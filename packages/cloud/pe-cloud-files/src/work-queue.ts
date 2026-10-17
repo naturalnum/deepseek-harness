@@ -12,6 +12,13 @@ export interface ResidentResult<T> {
 
 /** Internal capability minted by one queue; never derived from a request identity. */
 export interface WorkLane {
+  /**
+   * Reserve finite capacity for one operation and any result retained by the service.
+   * @param reservedBytes Positive safe integer covering the operation's buffers and overhead.
+   * @param work Backend work whose actual settlement remains owned after caller cancellation.
+   * @param signal Cancels this caller's wait and signals actual work to stop.
+   * @returns A result whose reservation remains held until release.
+   */
   run<T>(reservedBytes: number, work: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<ResidentResult<T>>
   close(): void
   pending(): readonly OperationId[]
@@ -145,8 +152,8 @@ export class FilesWorkQueue {
       return Promise.reject(new FilesFailure('cloud/stale-generation', 'files generation admission is closed'))
     }
     if (signal?.aborted) return Promise.reject(callerAbortReason(signal))
-    if (!Number.isSafeInteger(bytes) || bytes < 0) {
-      return Promise.reject(new FilesFailure('cloud/capacity', 'files reservation must be a nonnegative safe byte count'))
+    if (!Number.isSafeInteger(bytes) || bytes < 1) {
+      return Promise.reject(new FilesFailure('cloud/capacity', 'files reservation must be a positive safe byte count'))
     }
     if (bytes > this.limits.maxResidentBytes - this.residentBytes
       || bytes > this.limits.maxResidentBytesPerLane - lane.residentBytes) {

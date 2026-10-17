@@ -26,7 +26,7 @@ describe('files generation work owner', () => {
     expect(() => port.run(0, async () => {})).toThrow()
     const next = binding('A', '2')
     const nextPort = owner.bind(next, () => {})
-    const result = await nextPort.run(0, async () => 'new generation')
+    const result = await nextPort.run(1, async () => 'new generation')
     expect(result.value).toBe('new generation')
     result.release()
     owner.close()

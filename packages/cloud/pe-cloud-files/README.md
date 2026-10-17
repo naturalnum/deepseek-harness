@@ -39,7 +39,7 @@ Trusted account/root port issuance, complete directory-anchor ownership, native 
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The [work queue](src/work-queue.ts) reserves global and per-lane bytes before admission, bounds concurrent and queued work, cancels queued work without starting it, and keeps running work after its caller aborts or times out. A settled successful result retains its reservation until its consumer releases it. Closing a lane stops new work while preserving unresolved records; closing the queue stops all lanes.
+The [work queue](src/work-queue.ts) reserves global and per-lane bytes before admission, bounds concurrent and queued work, cancels queued work without starting it, and keeps running work after its caller aborts or times out. Every operation requires a positive safe-integer reservation that includes its overhead. Zero is refused before backend invocation, so retained records cannot bypass the resident budget. A settled successful result retains its reservation until its consumer releases it. Closing a lane stops new work while preserving unresolved records; closing the queue stops all lanes.
 
 Settlement observers run independently: a failed observer is reported without preventing budget release, later observers, or queued work. A failed reporter falls back to a default-enabled diagnostic without exposing the original exception text. A final abort check immediately before the deferred backend invocation prevents cancelled work from starting.
 
