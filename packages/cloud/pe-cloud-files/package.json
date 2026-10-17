@@ -1,0 +1,56 @@
+{
+  "name": "@deepseek-ai/dsh-pe-cloud-files",
+  "version": "0.2.1-rc.2",
+  "description": "Bounded shared Linux file workers and actual-work ownership; account filesystem activation requires trusted storage and complete native FS integration",
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./root": {
+      "types": "./lib/types/root.d.ts",
+      "default": "./lib/root.js"
+    },
+    "./account": {
+      "types": "./lib/types/account.d.ts",
+      "default": "./lib/account.js"
+    },
+    "./types": {
+      "types": "./lib/types/types.d.ts",
+      "default": "./lib/types/types.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "lib/*.js",
+    "lib/types/**/*.js",
+    "lib/types/**/*.d.ts"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/dsh-fs": "workspace:*",
+    "@deepseek-ai/dsh-pe-cloud-runtime": "workspace:*"
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "workspace:~"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/dsh-fs": "workspace:*",
+    "@deepseek-ai/dsh-pe-cloud-runtime": "workspace:*",
+    "@deepseek-ai/dsh-app-boot": "workspace:*"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/cloud/pe-cloud-files"
+  }
+}

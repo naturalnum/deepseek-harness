@@ -1,0 +1,122 @@
+---
+description: "校验云端浏览器限额并检查固定绑定的原生载体，不启动未绑定的客户端。"
+kind: "package-reference"
+---
+
+# @deepseek-ai/dsh-pe-cloud-client
+
+[English](README.md) | 中文
+
+## 概述
+
+你可以校验公共 bootstrap 限额，并通过包内测试检查 HTTP、WebSocket 与导航请求的固定账户绑定。取消与晚到响应仍与已确认清理分开表达。bootstrap 解码、原生启动和账户缓存分区尚未接通，因此浏览器入口拒绝激活，本包尚不提供可用的登录或对话。
+
+## 目录
+
+- [使用本包](#use-this-package)
+- [理解实现](#understand-the-implementation)
+- [延伸阅读](#further-exploration)
+- [模型体验](#model-experience)
+- [已知限制与后续工作](#known-limitations-and-deferred-work)
+- [开发备注](#dev-note)
+
+-----
+
+<a id="use-this-package"></a>
+## 使用本包
+
+`/schema` 导出提供浏览器安全的公共配置校验；`/types` 包含其配置类型。Host 入口只声明浏览器包。
+
+### 适用场景
+
+在云端集成时，使用配置校验器和包内测试检查载体行为。`/client` Loader 入口校验限额后拒绝激活，因为 access 的正式 bootstrap 解码器、Cordis 启动前的应用装配和账户缓存分区尚未接通。它不打开 socket、不挂载会话页面，也不发布 ready 服务。
+
+### 最小配置
+
+目前没有可用的浏览器挂载方式：合法配置也会进入明确的装配拒绝。相关适配接通前，不应将此入口纳入 ready 浏览器配方。下列字段均必填，没有生产默认值；可接受限额由[配置 schema](src/config.ts) 唯一规定。
+
+| 字段 | 默认值 | 含义 |
+|---|---|---|
+| `bootstrapPath` | 必填 | 文档相对路径的静态 bootstrap 路由，不含 query 或 fragment。 |
+| `bootstrapTimeoutMs` | 必填 | 结果截止时间；实际请求清理仍独立追踪。 |
+| `maxBootstrapResponseBytes` | 必填 | 解码前最多读取的 bootstrap 响应字节数。 |
+| `maxErrorResponseBytes` | 必填 | 最多检查的 HTTP 409 响应字节数。 |
+| `maxPendingFetches` | 必填 | 等待响应头或本包错误正文处理的 fetch 数量上限。 |
+| `maxSockets` | 必填 | 单个固定载体拥有的 socket 数量上限。 |
+| `closeTimeoutMs` | 必填 | 关闭观察截止时间；到期不代表清理已确认。 |
+
+-----
+
+<a id="understand-the-implementation"></a>
+## 理解实现
+
+本包将 bootstrap 请求结果和原生载体生命周期与权威账户、Session 状态分开。
+
+<details>
+<summary>实现细节 — 点击展开</summary>
+
+内部 bootstrap attempt 只发起一次同源、文档相对路径的 GET，不自动重试。调用者提供类型拥有者的解码器；本包不定义替代 bootstrap DTO。取消或超时使结果拒绝，而 `settled` 追踪实际 fetch/body 结束，`cleanup` 独立记录已确认或仍不明的清理结果。晚到数据不能调用解码器。响应有显式字节上限。
+
+内部原生 transport 捕获 access 包的 `RequestExpectation` 和 `BindingFieldNames`。它保留原生 RPC 正文及请求关联，为 HTTP 添加专用头，为原生 WS 和导航 URL 添加专用 query 字段。预期值冲突、外部源或应用挂载路径外的请求在发送前拒绝。HTTP 401 和 `cloud/stale-generation` 使原绑定生命周期失效；其他 409 响应保留原字节供原生处理。它不替换旧请求预期值，也不重放修改。
+
+关闭时立即拒绝新操作、取消在途 fetch，并请求 socket 关闭。缺少结束确认时状态为 `unconfirmed`；实际工作仍被追踪，稍后结束可确认关闭。这只说明载体清理，不证明 Agent 已取消或账户已排空。限额覆盖等待响应头的 fetch、socket、bootstrap 字节及检查的错误字节；成功响应正文和原生订阅生命周期仍由原生应用持有。
+
+| 源码 | 职责 |
+|---|---|
+| [浏览器入口](src/client/index.ts) | 拒绝不完整的客户端装配。 |
+| [Bootstrap attempt](src/client/bootstrap.ts) | 分开追踪结果、实际结束和清理。 |
+| [固定载体](src/client/transport.ts) | 在原生载体外添加 access 预期值。 |
+| [行为测试](tests/transport.spec.ts) | 检查原生 Connection envelope 与生命周期拒绝。 |
+
+</details>
+
+-----
+
+<a id="further-exploration"></a>
+## 延伸阅读
+
+账户检查与原生浏览器行为由以下页面所属模块持有，本包只消费相应能力。
+
+- [Cloud access](../pe-cloud-access/README.zh.md) — 请求预期值与认证的职责归属。
+- [原生 Connection](../../client/connection/README.zh.md) — 原生 HTTP/WS 载体与连接代际。
+- [Web Client 架构](../../../docs/subsystems/web-client.zh.md) — 原生应用启动与状态归属。
+
+-----
+
+<a id="model-experience"></a>
+## 模型体验
+
+### 不提供模型上下文的浏览器传输
+
+#### 模型所见
+
+本包不向模型提供任何内容。`/client` 不注册提示词或工具，`BoundTransport` 只向 HTTP 头或 WS/导航 query 字段添加一致性值，并保持原生 RPC 正文不变。
+
+#### 令牌影响
+
+直接令牌开销为零。bootstrap 校验、绑定捕获和载体清理不添加系统文本、工具声明、保留的 Session 内容或独立模型请求。
+
+#### KV 缓存影响
+
+本包不追加或替换模型请求令牌，也不发起独立模型请求。它不添加改变前缀的内容；模型装配、提供方缓存可用性与复用由包外负责。
+
+## 已知限制与后续工作
+
+<a id="known-limitations-and-deferred-work"></a>
+
+以下缺口使内部载体尚不能提供 ready 浏览器应用。
+
+- Access 尚无正式 bootstrap DTO/解码器或代际签发器。内部解码回调是本地测试/装配输入，不是公共 wire 协议或生产集成。
+- 原生启动必须在 Gateway 构造前安装固定载体。未实现全局 fetch/Storage patch、新 mux、会话 UI、登录表单或账户 ready 状态。
+- 原生草稿、选择、直接 localStorage helpers、resources、上传 Worker 及下载的账户/代际分区需要协调公开适配；对应能力继续关闭。
+- 原生应用须在载体失效后释放 effects 和响应消费者。本增量不声明完整原生应用关闭、浏览器装配覆盖或 S1/S2 验收通过。
+
+<a id="dev-note"></a>
+### 开发备注
+
+<details>
+<summary>维护者工作背景 — 点击展开</summary>
+
+云端客户端通过 access 包的 `/types` 消费现有绑定类型。根源码别名、编译聚合、锁文件登记、公共 bootstrap 字段及构建产物由包外统一协调。
+
+</details>

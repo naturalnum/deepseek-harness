@@ -1,0 +1,8 @@
+- id: execution-root
+  name: cordis:opensandbox-root-m0
+  config:
+    requiredCapabilities: [argv-collect]
+- id: execution-account
+  name: cordis:opensandbox-account-m0
+  config:
+    requiredCapabilities: []

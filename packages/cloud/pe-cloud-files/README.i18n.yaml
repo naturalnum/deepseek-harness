@@ -1,0 +1,46 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/cloud/pe-cloud-files/README.md
+/:
+  en: 531b08b64dbd58aa
+  zh: 99e40a0bf19f1950
+/deepseek-ai-dsh-pe-cloud-files:
+  en: 97424ef659fe671d
+  zh: ac0300386bbab2f9
+/deepseek-ai-dsh-pe-cloud-files/summary:
+  en: 123870007de8a6ed
+  zh: 7ca4b30e7b94ebcb
+/deepseek-ai-dsh-pe-cloud-files/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 405b30feaf48c087
+/deepseek-ai-dsh-pe-cloud-files/use-this-package:
+  en: 740f4a2e5acbffd1
+  zh: 3aa8acd9510d3a5d
+/deepseek-ai-dsh-pe-cloud-files/understand-the-implementation:
+  en: 87265d2d4bae3a81
+  zh: 6565d7d709322778
+/deepseek-ai-dsh-pe-cloud-files/further-exploration:
+  en: 3b84ef36ff549b18
+  zh: e2dcd38b02f1f3f7
+/deepseek-ai-dsh-pe-cloud-files/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-pe-cloud-files/model-experience/file-operations:
+  en: 01f2b17fa31f6a9f
+  zh: e79496d585d83095
+/deepseek-ai-dsh-pe-cloud-files/model-experience/file-operations/what-the-model-sees:
+  en: 3eb99454136701f0
+  zh: c27cbbfee6b654e5
+/deepseek-ai-dsh-pe-cloud-files/model-experience/file-operations/token-effect:
+  en: b4de7a7d1902a50c
+  zh: 8df0175351bd1d83
+/deepseek-ai-dsh-pe-cloud-files/model-experience/file-operations/kv-cache-effect:
+  en: 15b5a1b698796376
+  zh: b2d920ead495efee
+/deepseek-ai-dsh-pe-cloud-files/known-limitations-and-deferred-work:
+  en: da37a90eae20f70d
+  zh: 672f9b697a752527
+/deepseek-ai-dsh-pe-cloud-files/known-limitations-and-deferred-work/dev-note:
+  en: e67f633dc6fe7773
+  zh: bd8a8936229e035e

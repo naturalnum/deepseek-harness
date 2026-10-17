@@ -16,6 +16,13 @@ export interface ProductPackagePolicy {
  * Optional integrations may be reached by an optional bundle without becoming default capabilities.
  */
 export const PRODUCT_PACKAGE_POLICY: Readonly<Record<string, ProductPackagePolicy>> = {
+  'packages/cloud/pe-account-instructions': { category: 'optional', reason: 'Account instruction snapshots selected only by an explicit cloud composition.' },
+  'packages/cloud/pe-cloud-access': { category: 'optional', reason: 'Cloud ingress requires explicit database-backed authentication and routing configuration.' },
+  'packages/cloud/pe-cloud-api': { category: 'optional', reason: 'Cloud endpoint policy is selected by an audited cloud composition.' },
+  'packages/cloud/pe-cloud-client': { category: 'optional', reason: 'Cloud browser binding is selected with the cloud ingress composition.' },
+  'packages/cloud/pe-cloud-files': { category: 'optional', reason: 'Cloud filesystem activation requires an explicitly verified storage backend.' },
+  'packages/cloud/pe-cloud-runtime': { category: 'optional', reason: 'Cloud account ownership and lifecycle require an explicit deployment composition.' },
+  'packages/cloud/pe-opensandbox': { category: 'optional', reason: 'Remote execution requires an explicitly configured and verified OpenSandbox backend.' },
   'packages/browser-use/browser-use': { category: 'optional', reason: 'Service definition used by explicitly selected browser providers.' },
   'packages/computer-use/computer-use': { category: 'optional', reason: 'Service definition used by explicitly selected computer providers.' },
   'packages/lsp/lsp': { category: 'optional', reason: 'Service definition for deployment-configured language servers.' },

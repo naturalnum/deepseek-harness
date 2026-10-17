@@ -1,0 +1,10 @@
+- id: exposure
+  name: cordis:api-exposure-m0
+  config:
+    recipeVersion: d08-m0
+    rpcEndpoints: []
+    streamEndpoints: []
+    exactFetchRoutes: []
+    allowedSettings: []
+- id: llm
+  name: cordis:api-llm-m0

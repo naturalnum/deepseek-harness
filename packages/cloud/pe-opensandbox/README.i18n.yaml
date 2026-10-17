@@ -1,0 +1,49 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/cloud/pe-opensandbox/README.md
+/:
+  en: 4d29746adb4a4086
+  zh: d9677d06e62e8bed
+/deepseek-ai-dsh-pe-opensandbox:
+  en: a76fafd83f153607
+  zh: 86b153da19c276bf
+/deepseek-ai-dsh-pe-opensandbox/summary:
+  en: aad4876c855ad1a2
+  zh: b005d22f12aedd95
+/deepseek-ai-dsh-pe-opensandbox/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 09388d293f9be9cb
+/deepseek-ai-dsh-pe-opensandbox/use-this-package:
+  en: f63b8edebd75ada2
+  zh: 4f21ff2811010584
+/deepseek-ai-dsh-pe-opensandbox/use-this-package/configuration-and-failure:
+  en: 346357ec46be8de5
+  zh: fa26d0317aa88793
+/deepseek-ai-dsh-pe-opensandbox/understand-the-implementation:
+  en: 1a5379759bd98aea
+  zh: 6dcfac80d2679bb8
+/deepseek-ai-dsh-pe-opensandbox/further-exploration:
+  en: 1056c23626848355
+  zh: da9916417b80de33
+/deepseek-ai-dsh-pe-opensandbox/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-pe-opensandbox/model-experience/execution-admission:
+  en: b8f9eeef9f29929c
+  zh: f1ef9496ddd011ee
+/deepseek-ai-dsh-pe-opensandbox/model-experience/execution-admission/what-the-model-sees:
+  en: a7443dc7a81f0ca0
+  zh: e679309ce87f3eb9
+/deepseek-ai-dsh-pe-opensandbox/model-experience/execution-admission/token-effect:
+  en: 990a54d0ec300c74
+  zh: 929d019cd151ce7f
+/deepseek-ai-dsh-pe-opensandbox/model-experience/execution-admission/kv-cache-effect:
+  en: 42dd80c06c5dc537
+  zh: 6323729c631b9450
+/deepseek-ai-dsh-pe-opensandbox/known-limitations-and-deferred-work:
+  en: df6c24073cf0a237
+  zh: b233a95e9981ecda
+/deepseek-ai-dsh-pe-opensandbox/known-limitations-and-deferred-work/dev-note:
+  en: e67f633dc6fe7773
+  zh: e88aeb617ffb74ea

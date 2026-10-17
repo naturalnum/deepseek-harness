@@ -1,0 +1,25 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/cloud/README.md
+/:
+  en: 2b8e8c139f535ba1
+  zh: 87b171d22b6c3be1
+/cloud-cloud-account-integration:
+  en: 1504d7f918f94048
+  zh: 650128f9b32322ee
+/cloud-cloud-account-integration/summary:
+  en: 228cfa1d5dabd929
+  zh: 6c29f316cee528e5
+/cloud-cloud-account-integration/table-of-contents:
+  en: 1eb35b015a6c423f
+  zh: a8a3dceee2c9e943
+/cloud-cloud-account-integration/packages:
+  en: 1298460c5cfdbd6d
+  zh: 4921b309ff837d1b
+/cloud-cloud-account-integration/related-documentation:
+  en: ef57a69f284f298e
+  zh: bce2d7d3e9a504b8
+/cloud-cloud-account-integration/dev-note:
+  en: b75c8458928b72b9
+  zh: 003ba4e17b4b5269

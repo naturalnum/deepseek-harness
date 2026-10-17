@@ -1,0 +1,44 @@
+{
+  "name": "@deepseek-ai/dsh-pe-cloud-runtime",
+  "description": "Account runtime inputs, required drain registration, and bounded local capacity",
+  "version": "0.2.1-rc.2",
+  "publishConfig": { "access": "public" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/cloud/pe-cloud-runtime"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" },
+    "./root": { "types": "./lib/types/root.d.ts", "default": "./lib/root.js" },
+    "./account": { "types": "./lib/types/account.d.ts", "default": "./lib/account.js" },
+    "./types": { "types": "./lib/types/types.d.ts", "default": "./lib/types.js" },
+    "./schema": { "types": "./lib/types/schema.d.ts", "default": "./lib/schema.js" },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
+  },
+  "files": ["lib/*.js", "lib/types/**/*.d.ts"],
+  "license": "MIT",
+  "dependencies": { "@deepseek-ai/schemastery": "workspace:~" },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/dsh-brand": "workspace:*",
+    "@deepseek-ai/dsh-app-boot": "workspace:*",
+    "@deepseek-ai/dsh-launch-environment": "workspace:*",
+    "pg": "8.16.3"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/dsh-brand": "workspace:*",
+    "@deepseek-ai/dsh-app-boot": "workspace:*",
+    "@deepseek-ai/dsh-launch-environment": "workspace:*",
+    "@deepseek-ai/dsh-settings": "workspace:*",
+    "@deepseek-ai/dsh-config-editor": "workspace:*",
+    "@deepseek-ai/dsh-pe-cloud-api": "workspace:*",
+    "pg": "8.16.3",
+    "@types/pg": "8.15.5"
+  }
+}

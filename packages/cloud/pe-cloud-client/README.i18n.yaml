@@ -1,0 +1,52 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/cloud/pe-cloud-client/README.md
+/:
+  en: 20d6540896e42d6b
+  zh: 476cce052babcacc
+/deepseek-ai-dsh-pe-cloud-client:
+  en: be4bbf66de262b10
+  zh: 9436ab85c2b4518b
+/deepseek-ai-dsh-pe-cloud-client/summary:
+  en: 549d876d9fb874cf
+  zh: 121997cdd7a4f51b
+/deepseek-ai-dsh-pe-cloud-client/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 405b30feaf48c087
+/deepseek-ai-dsh-pe-cloud-client/use-this-package:
+  en: 2dbb99f17769f462
+  zh: 36224a78eb1569e3
+/deepseek-ai-dsh-pe-cloud-client/use-this-package/when-to-choose-it:
+  en: 8ba64272287037a3
+  zh: 38198e666834fa08
+/deepseek-ai-dsh-pe-cloud-client/use-this-package/minimal-configuration:
+  en: cc82c7d301d5cfee
+  zh: 05ae285730dc6c6f
+/deepseek-ai-dsh-pe-cloud-client/understand-the-implementation:
+  en: 668cdcbcbab30070
+  zh: cb2175d92384e626
+/deepseek-ai-dsh-pe-cloud-client/further-exploration:
+  en: d7c95e090311d849
+  zh: c9f288ccc8f9fa39
+/deepseek-ai-dsh-pe-cloud-client/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-pe-cloud-client/model-experience/browser-transport-without-model-context:
+  en: b7ccfadfe2e01492
+  zh: 5bd7aef002111ec6
+/deepseek-ai-dsh-pe-cloud-client/model-experience/browser-transport-without-model-context/what-the-model-sees:
+  en: 8bf2671390b040a1
+  zh: 5422e046897675a3
+/deepseek-ai-dsh-pe-cloud-client/model-experience/browser-transport-without-model-context/token-effect:
+  en: d152b7dad135666d
+  zh: 160009b3f855d67f
+/deepseek-ai-dsh-pe-cloud-client/model-experience/browser-transport-without-model-context/kv-cache-effect:
+  en: b2a8101acd22e2cd
+  zh: a5813e864630d1a7
+/deepseek-ai-dsh-pe-cloud-client/known-limitations-and-deferred-work:
+  en: 0dc20d19d5519b2a
+  zh: 507f896523f1df12
+/deepseek-ai-dsh-pe-cloud-client/known-limitations-and-deferred-work/dev-note:
+  en: 832fba8e470a086d
+  zh: ec863987f873378a

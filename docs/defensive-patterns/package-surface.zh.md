@@ -78,6 +78,7 @@ import { isSurfaceEligibleType } from '../../core/session/src/surface.ts'
 
 - 标准键，每个键在全仓只有一个含义，统计口径是 `packages/*/*/package.json` 与 `apps/*/package.json`：`.`（包主入口）、`./package.json`（工具链访问，不是语义导出）、`./src/*`（测试与工具的源码透传，文档状态仍待定）、`./client`（浏览器入口，与 `dsh.client` 声明配对）、`./types`（类型入口）、`./typert`（typert 类型运行时）、`./remote`（`@Remote` 调用面）、`./locale/*.json`（本地化资源）、`./cordis.patch.yml`（`dsh.bundle` 声明的 bundle 补丁层）。这里不列各键的包数，因为下一个包就会让它过期；下面的复算命令会打印当前数字。
 - 集合之外的键（`./brand` 5 个包、`./worker` 4 个、`./startup`、`./runner`、`./protocol` 各 2 个，另有大量一次性键）没有文档含义，属待核项，不是可照抄的先例。
+- [云端装配](../../packages/cloud/README.zh.md)另以 `./root`、`./account` 和 `./session` 表达批准的 Loader 作用域，以 `./schema` 提供纯配置导出。[工作区约束](../../scripts/check-workspace-constraints.ts)中的 `checkCloudLoaderEntries` 固定这七包的作用域，并拒绝额外入口或指向源码的运行时目标。其发布文件模式包含入口间共享的 JavaScript chunk，以保留服务和错误的对象身份。
 - 判定条件：改动是否新增了标准集合以外的 export 键？
 - 例外：无默认例外；新增键须先改正家文档与检查，并取得对应领域专家确认。
 - 复算分布：

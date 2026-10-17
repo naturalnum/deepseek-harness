@@ -1,0 +1,58 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/cloud/pe-cloud-access/README.md
+/:
+  en: a8d6cb2c2684331c
+  zh: e7502c542c3e9c41
+/deepseek-ai-dsh-pe-cloud-access:
+  en: 9402de485b6349ee
+  zh: 8c04b8e95456d187
+/deepseek-ai-dsh-pe-cloud-access/summary:
+  en: 62c3b67251716eab
+  zh: caf021675cd5fb9e
+/deepseek-ai-dsh-pe-cloud-access/table-of-contents:
+  en: b563e4ec4727d0de
+  zh: 0b283b30acc898ed
+/deepseek-ai-dsh-pe-cloud-access/use-this-package:
+  en: 1568eb347a383f44
+  zh: 9c7912f1d1caf4e2
+/deepseek-ai-dsh-pe-cloud-access/use-this-package/configuration:
+  en: ef74b7d60780d5bf
+  zh: 932bdf5a467e6d51
+/deepseek-ai-dsh-pe-cloud-access/use-this-package/request-bindings:
+  en: fbd4b203ac4e1e8a
+  zh: bbe076dc0a81a9b5
+/deepseek-ai-dsh-pe-cloud-access/use-this-package/authentication-adapter:
+  en: 9dba81d03c5a1129
+  zh: fecda654a8ef6cf7
+/deepseek-ai-dsh-pe-cloud-access/use-this-package/failure-and-recovery:
+  en: cb1578a2d1ac8f90
+  zh: 7a47300b08602bd7
+/deepseek-ai-dsh-pe-cloud-access/understand-the-implementation:
+  en: e0c0d354c54873e5
+  zh: 8e12faf6463e356a
+/deepseek-ai-dsh-pe-cloud-access/further-exploration:
+  en: 4cd687a6806208b0
+  zh: 4a5d543ea4ad8513
+/deepseek-ai-dsh-pe-cloud-access/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-pe-cloud-access/model-experience/request-context-and-condition:
+  en: cd8530c72534ee6b
+  zh: 16dbf6046e7e51fd
+/deepseek-ai-dsh-pe-cloud-access/model-experience/request-context-and-condition/what-the-model-sees:
+  en: 7860100314691acc
+  zh: e97e011dce58d3cd
+/deepseek-ai-dsh-pe-cloud-access/model-experience/request-context-and-condition/token-effect:
+  en: 6c6e5c1adc822cd0
+  zh: e58aaa8fc8a31efc
+/deepseek-ai-dsh-pe-cloud-access/model-experience/request-context-and-condition/kv-cache-effect:
+  en: 69e9749cddb257e8
+  zh: 063906c5ff47a213
+/deepseek-ai-dsh-pe-cloud-access/known-limitations-and-deferred-work:
+  en: c0a83aa58492c166
+  zh: 65db9da2389b0a32
+/deepseek-ai-dsh-pe-cloud-access/known-limitations-and-deferred-work/dev-note:
+  en: 1fdae11f988aceda
+  zh: bd330aeef71da0d6

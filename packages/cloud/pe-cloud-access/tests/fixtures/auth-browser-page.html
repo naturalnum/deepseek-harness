@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>M3 认证组件测试</title>
+<style nonce="__NONCE__">
+body{font:16px system-ui,sans-serif;max-width:850px;margin:32px auto;padding:0 20px;color:#17202a;background:#f5f7fa}
+h1{font-size:25px}.notice{padding:16px;border:2px solid #a86000;background:#fff4dc;font-weight:700}
+section{margin:20px 0;padding:20px;background:white;border:1px solid #ced7e0;border-radius:8px}
+label{display:block;margin:12px 0}input{display:block;width:95%;padding:9px;margin-top:5px}
+button{padding:10px 12px;margin:5px 5px 5px 0;cursor:pointer}pre{white-space:pre-wrap;overflow-wrap:anywhere}
+code{overflow-wrap:anywhere}.muted{color:#465464}
+</style>
+</head>
+<body>
+<h1>M3 认证组件测试</h1>
+<p class="notice">认证组件测试，无账户Context/Session。不是产品 Web，不代表 S1/S2；未验证 generation 或 WS。</p>
+<p class="muted">使用真实 Better Auth 与临时 PostgreSQL 数据。相同浏览器 context 的标签页共享认证 cookie；本页捕获的预期账户独立保留。</p>
+<section>
+<h2>注册、登录、退出</h2>
+<button id="fill-a" type="button">填写测试账户 A</button><button id="fill-b" type="button">填写测试账户 B</button>
+<label>测试邮箱<input id="email" type="email" autocomplete="off"></label>
+<label>密码（至少 8 字符，请自行填写）<input id="password" type="password" autocomplete="new-password"></label>
+<button id="register" type="button">注册并捕获本页账户</button>
+<button id="login" type="button">登录并捕获本页账户</button>
+<button id="logout" type="button">退出当前共享登录</button>
+<p id="auth-result" role="status">尚未操作。</p>
+</section>
+<section>
+<h2>本标签页预期与当前认证</h2>
+<p>本页捕获的预期账户：<code id="expected">未捕获</code></p>
+<button id="principal" type="button">读取当前认证 principal（保留本页预期）</button>
+<button id="capture" type="button">捕获当前账户为本页预期</button>
+<button id="account-only" type="button">发送本页账户预期对比</button>
+<pre id="result" aria-live="polite">尚未读取。</pre>
+<p class="muted">切换另一标签页的登录后，旧页不会自动替换预期账户。错配必须先返回 409，测试 business 计数不增加。</p>
+</section>
+<section><h2>测试计数</h2><button id="refresh-status" type="button">刷新计数</button><pre id="status"></pre></section>
+<script id="fixture-data" type="application/json">__FIXTURE_DATA__</script>
+<script nonce="__NONCE__">
+'use strict';
+const fixture = JSON.parse(document.getElementById('fixture-data').textContent);
+const field = id => document.getElementById(id);
+let expectedAccountId = null;
+const show = (id, value) => { field(id).textContent = JSON.stringify(value, null, 2); };
+async function call(path, options = {}) {
+  const response = await fetch(path, { credentials: 'same-origin', cache: 'no-store', ...options });
+  const data = await response.json();
+  return { status: response.status, ok: response.ok, data };
+}
+async function status() { const value = await call('/probe/status'); show('status', value.data); }
+async function principal(capture = false) {
+  const value = await call('/probe/principal');
+  if (capture && value.ok) { expectedAccountId = value.data.principal.accountId; field('expected').textContent = expectedAccountId; }
+  show('result', value);
+  return value;
+}
+async function authenticate(kind) {
+  const email = field('email').value;
+  const password = field('password').value;
+  const payload = kind === 'sign-up' ? { email, password, name: 'M3 component test' } : { email, password };
+  const value = await call('/cloud/auth/' + kind + '/email', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(payload),
+  });
+  // Native auth JSON may contain a token; display only status/code, never its bearer value.
+  show('auth-result', { status: value.status, ok: value.ok, code: value.data.code ?? null });
+  field('password').value = '';
+  if (value.ok) await principal(true);
+  await status();
+}
+async function accountOnly() {
+  if (expectedAccountId === null) { show('result', { message: '请先捕获本标签页预期账户。' }); return; }
+  const value = await call('/probe/account-only', { method: 'POST', headers: { 'x-probe-expected-account': expectedAccountId } });
+  show('result', value);
+  await status();
+}
+function bind(id, action) {
+  field(id).addEventListener('click', () => {
+    void action().catch((_error) => { /* The status area owns the safe request failure; bearer/driver details stay hidden. */ show('result', { message: '组件请求未完成；请核对 harness 状态，不自动重试。' }); });
+  });
+}
+field('fill-a').onclick = () => { field('email').value = fixture.emailA; };
+field('fill-b').onclick = () => { field('email').value = fixture.emailB; };
+bind('register', () => authenticate('sign-up'));
+bind('login', () => authenticate('sign-in'));
+bind('principal', () => principal(false));
+bind('capture', () => principal(true));
+bind('account-only', accountOnly);
+bind('refresh-status', status);
+bind('logout', async () => {
+  const value = await call('/cloud/auth/sign-out', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+  show('auth-result', { status: value.status, ok: value.ok, code: value.data.code ?? null });
+  // Keep this tab's expected account after logout so the old-page comparison remains inspectable.
+  await principal(false);
+  await status();
+});
+field('email').value = fixture.emailA;
+void status().catch((_error) => { /* Initial status has no dependent action or retry. */ show('status', { message: '认证组件不可达。' }); });
+</script>
+</body>
+</html>

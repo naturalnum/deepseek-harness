@@ -113,6 +113,45 @@ export interface WorkspaceManifest {
   manifest: PackageManifest
 }
 
+/** Loader scopes admitted by the explicit cloud deployment composition. */
+const cloudLoaderEntries: Readonly<Record<string, readonly string[]>> = {
+  '@deepseek-ai/dsh-pe-cloud-access': ['root'],
+  '@deepseek-ai/dsh-pe-cloud-runtime': ['root', 'account'],
+  '@deepseek-ai/dsh-pe-cloud-api': ['root', 'account'],
+  '@deepseek-ai/dsh-pe-cloud-files': ['root', 'account'],
+  '@deepseek-ai/dsh-pe-opensandbox': ['root', 'account'],
+  '@deepseek-ai/dsh-pe-account-instructions': ['session'],
+  '@deepseek-ai/dsh-pe-cloud-client': ['client'],
+}
+
+/**
+ * Validate the cloud composition's Loader entries without admitting arbitrary subpaths.
+ * @param manifest Package manifest whose name selects its approved Loader scopes.
+ * @returns Violations, or an empty list for conforming and unrelated packages.
+ */
+export function checkCloudLoaderEntries(manifest: PackageManifest): string[] {
+  const scopes = manifest.name !== undefined && Object.hasOwn(cloudLoaderEntries, manifest.name)
+    ? cloudLoaderEntries[manifest.name] : undefined
+  if (scopes === undefined) return []
+  const errors: string[] = []
+  const allowed = new Set(['.', './package.json', './src/*', './types', './schema', './typert', './remote', './cordis.patch.yml', ...scopes.map(scope => `./${scope}`)])
+  for (const key of Object.keys(manifest.exports ?? {})) {
+    const locale = /^\.\/(?:([^/]+)\/)?locale\/[^/]+\.json$/u.exec(key)
+    const resource = locale !== null && (locale[1] === undefined || scopes.includes(locale[1]))
+    if (!allowed.has(key) && !resource && !(key === './client/typert' && scopes.includes('client'))) {
+      errors.push(`${manifest.name}: unapproved cloud package export ${key}`)
+    }
+  }
+  for (const scope of scopes) {
+    const key = `./${scope}`
+    const declarations = scope === 'client' ? './lib/types/client/index.d.ts' : `./lib/types/${scope}.d.ts`
+    if (!hasExportPair(manifest, key, declarations, `./lib/${scope}.js`)) {
+      errors.push(`${manifest.name}: ${key} must export ${declarations} and ./lib/${scope}.js`)
+    }
+  }
+  return errors
+}
+
 function readJson(path: string): PackageManifest {
   return JSON.parse(readFileSync(path, 'utf8')) as PackageManifest
 }
@@ -257,6 +296,7 @@ function sameStringList(actual: readonly string[] | undefined, expected: readonl
  * @returns the icon and deduplicated locale targets followed by runtime and declaration payloads.
  */
 export function expectedDshPackageFiles(manifest: PackageManifest): readonly string[] {
+  const cloud = manifest.name !== undefined && Object.hasOwn(cloudLoaderEntries, manifest.name)
   const localeFiles = new Set<string>()
   for (const resource of Object.keys(manifest.exports ?? {})) {
     if (!/^\.\/(?:.+\/)?locale\/[^/]+\.json$/u.test(resource)) continue
@@ -277,9 +317,8 @@ export function expectedDshPackageFiles(manifest: PackageManifest): readonly str
     ...Object.entries(manifest.exports ?? {}).filter(([key]) => /^\.\/(?:.+\/)?icon$/u.test(key))
       .flatMap(([, target]) => targets(target)).filter(icon => icon.startsWith('./')).map(icon => icon.slice(2)),
   ]
-  return [
-    ...new Set(icons),
-    ...[...localeFiles].sort(),
+  // Cloud Loader entries share chunks; metadata and composition resources retain the common policy.
+  const runtimeEntries = cloud ? ['lib/*.js'] : [
     'lib/index.js',
     ...manifest.bin ? ['lib/bin.js'] : [],
     // Worker-thread packages ship a CJS worker entry; the browser worker
@@ -299,6 +338,11 @@ export function expectedDshPackageFiles(manifest: PackageManifest): readonly str
     // A surface bundle's startup row is its own bundle: the Loader imports it
     // as a row module, so it cannot ride inside the package entry.
     ...exportDefault(manifest, './startup') === './lib/startup.js' ? ['lib/startup.js'] : [],
+  ]
+  return [
+    ...new Set(icons),
+    ...[...localeFiles].sort(),
+    ...runtimeEntries,
     ...extras,
     // Subpaths whose runtime default is the tsc-emitted tree (lib/types/*.js —
     // browser-safe source channels rehomed off src so plain Node can import
@@ -432,7 +476,7 @@ export function checkDshFamilyVersion(manifest: PackageManifest, expected: strin
  * @returns path-qualified policy violations.
  */
 export function checkWorkspaceManifest({ dir, manifest }: WorkspaceManifest): string[] {
-  const errors = checkExperimentalManifest({ dir, manifest })
+  const errors = [...checkExperimentalManifest({ dir, manifest }), ...checkCloudLoaderEntries(manifest)]
   const label = manifest.name ?? dir
   const familyVersionError = checkDshFamilyVersion(manifest, repositoryVersion)
   if (familyVersionError !== undefined) errors.push(familyVersionError)

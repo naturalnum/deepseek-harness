@@ -11,6 +11,7 @@ import {
 } from './experimental-package-policy.ts'
 import {
   checkDshFamilyVersion,
+  checkCloudLoaderEntries,
   checkWorkspaceManifest,
   checkWorkspaceProtocol,
   checkExperimentalDependencyIsolation,
@@ -20,6 +21,55 @@ import {
   readWorkspaceManifests,
   type WorkspaceManifest,
 } from './check-workspace-constraints.ts'
+
+describe('cloud Loader publication', () => {
+  const manifest = {
+    name: '@deepseek-ai/dsh-pe-cloud-runtime',
+    exports: {
+      './root': { types: './lib/types/root.d.ts', default: './lib/root.js' },
+      './account': { types: './lib/types/account.d.ts', default: './lib/account.js' },
+    },
+  }
+
+  it('accepts the approved scopes and retains their shared runtime chunks', () => {
+    expect(checkCloudLoaderEntries(manifest)).toEqual([])
+    expect(expectedDshPackageFiles(manifest)).toEqual(['lib/*.js', 'lib/types/**/*.d.ts'])
+    expect(expectedDshPackageFiles({ ...manifest, exports: {
+      ...manifest.exports,
+      './types': { types: './lib/types/types.d.ts', default: './lib/types/types.js' },
+    } })).toEqual(['lib/*.js', 'lib/types/**/*.js', 'lib/types/**/*.d.ts'])
+  })
+
+  it('rejects missing scopes, private source targets and additional Loader scopes', () => {
+    expect(checkCloudLoaderEntries({ ...manifest, exports: {} })).toHaveLength(2)
+    expect(checkCloudLoaderEntries({ ...manifest, exports: {
+      ...manifest.exports,
+      './account': { types: './lib/types/account.d.ts', default: './src/account.ts' },
+      './session': { types: './lib/types/session.d.ts', default: './lib/session.js' },
+    } })).toEqual([
+      expect.stringContaining('unapproved cloud package export ./session'),
+      expect.stringContaining('./account must export'),
+    ])
+  })
+
+  it('retains standard locale payloads while refusing an unapproved plugin scope', () => {
+    const localized = { ...manifest, exports: { ...manifest.exports, './root/locale/en.json': './locale/root/en.json' } }
+    expect(checkCloudLoaderEntries(localized)).toEqual([])
+    expect(expectedDshPackageFiles(localized)).toEqual(['locale/root/en.json', 'lib/*.js', 'lib/types/**/*.d.ts'])
+    expect(checkCloudLoaderEntries({ ...manifest, exports: {
+      ...manifest.exports, './session/locale/en.json': './locale/session/en.json',
+    } })).toEqual([expect.stringContaining('unapproved cloud package export ./session/locale/en.json')])
+  })
+
+  it('keeps other packages on their existing publication requirements', () => {
+    expect(checkCloudLoaderEntries({ name: 'constructor' })).toEqual([])
+    for (const name of ['@deepseek-ai/dsh-example', '@deepseek-ai/dsh-pe-cloud-other']) {
+      const other = { name, exports: {} }
+      expect(checkCloudLoaderEntries(other)).toEqual([])
+      expect(expectedDshPackageFiles(other)).toEqual(['lib/index.js', 'lib/types/**/*.d.ts'])
+    }
+  })
+})
 
 const experimental = {
   dir: 'packages/experimental/prototype',

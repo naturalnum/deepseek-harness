@@ -1,0 +1,6 @@
+- id: runtime
+  name: cordis:runtime-m0
+  config:
+    maxMountedAccounts: 2
+    maxConcurrentMounts: 1
+    maxConcurrentDrains: 1

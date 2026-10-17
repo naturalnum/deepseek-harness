@@ -1,0 +1,52 @@
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write packages/cloud/pe-account-instructions/README.md
+/:
+  en: c63b58eaae60bc4c
+  zh: ae38945f98367cf4
+/deepseek-ai-dsh-pe-account-instructions:
+  en: d2b90732d5dac65d
+  zh: f4cf24d091bf3945
+/deepseek-ai-dsh-pe-account-instructions/summary:
+  en: 9b5b4dee8681ef8b
+  zh: 4cf91ed93e1f7862
+/deepseek-ai-dsh-pe-account-instructions/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 9f0336825ccdaacd
+/deepseek-ai-dsh-pe-account-instructions/use-this-package:
+  en: 14c71c1802e7770b
+  zh: de410681c06af5af
+/deepseek-ai-dsh-pe-account-instructions/use-this-package/minimal-configuration:
+  en: a56c070e98b03e52
+  zh: e1bed35420da3154
+/deepseek-ai-dsh-pe-account-instructions/understand-the-implementation:
+  en: dbd718ba5e639af2
+  zh: 2e485e6bbbaef8ed
+/deepseek-ai-dsh-pe-account-instructions/further-exploration:
+  en: 7d1a5649e0b18e90
+  zh: 8f265a6c4f1a4698
+/deepseek-ai-dsh-pe-account-instructions/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-pe-account-instructions/model-experience/instruction-context:
+  en: 7298c7fafe2bf9a6
+  zh: 827edda7de6e265e
+/deepseek-ai-dsh-pe-account-instructions/model-experience/instruction-context/what-the-model-sees:
+  en: 2f808aedf8e187f0
+  zh: 218cfb8177dc80a0
+/deepseek-ai-dsh-pe-account-instructions/model-experience/instruction-context/what-the-model-sees/complete-snapshot-framing:
+  en: 0262516aee7e8120
+  zh: 1b23d193b4b06d5a
+/deepseek-ai-dsh-pe-account-instructions/model-experience/instruction-context/token-effect:
+  en: a4bbd8078ce7dd80
+  zh: 9c7919b7c971a47a
+/deepseek-ai-dsh-pe-account-instructions/model-experience/instruction-context/kv-cache-effect:
+  en: 5b3599d5f3a91014
+  zh: 2f3c082f3f9878e1
+/deepseek-ai-dsh-pe-account-instructions/known-limitations-and-deferred-work:
+  en: 53c4acea1d004506
+  zh: 609244929b041c53
+/deepseek-ai-dsh-pe-account-instructions/known-limitations-and-deferred-work/dev-note:
+  en: e67f633dc6fe7773
+  zh: 8ec3e73528ddb1a6

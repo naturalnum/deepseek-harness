@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for cloud.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/subsystems/cloud.md
+/cloud-account-integration:
+  en: 750d4de56c06682a
+  zh: 5271be08a1337394
+/cloud-account-integration/account-identities:
+  en: b53a9ea08652b72c
+  zh: c07aedea158b39ba
+/cloud-account-integration/actual-work-and-capacity:
+  en: 354b7e27c337150f
+  zh: b047efa8c4893bdb
+/cloud-account-integration/native-adapters:
+  en: 10e5ca628ae9fd48
+  zh: 01f3c835ac261500

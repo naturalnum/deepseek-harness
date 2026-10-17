@@ -1,0 +1,28 @@
+- id: runtime
+  name: cordis:files-runtime-test
+  config:
+    maxMountedAccounts: 3
+    maxConcurrentMounts: 1
+    maxConcurrentDrains: 1
+- id: files
+  name: cordis:files-pool-test
+  config:
+    maxLanes: 3
+    maxRunning: 2
+    maxRunningPerLane: 1
+    maxQueued: 2
+    maxQueuedPerLane: 1
+    maxResidentBytes: 16384
+    maxResidentBytesPerLane: 8192
+    waitTimeoutMs: 5000
+    workerCount: 2
+    minimumHealthyWorkers: 1
+    workerReservationBytes: 128
+    replyOverheadBytes: 128
+    readyTimeoutMs: 2000
+    drainTimeoutMs: 20
+    helperPath: /not-loaded/test.node
+    maxReadBytes: 100
+    maxPathBytes: 1024
+    maxResolveRetries: 2
+    readChunkBytes: 16
