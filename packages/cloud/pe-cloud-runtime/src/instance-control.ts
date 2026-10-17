@@ -80,6 +80,7 @@ function decode(input: unknown, operation: Operation): RuntimeInstanceRecord {
  * a read cannot clear uncertainty. Only definitely unsubmitted writes permit an explicit retry.
  */
 export class RuntimeInstanceControl {
+  /** Server-generated startup identity shared unchanged with the owner store. */
   readonly identity: OwnerStoreIdentity = createProcessInstanceIdentity()
   private readonly deployment: InstanceDeployment
   private migrated = false
