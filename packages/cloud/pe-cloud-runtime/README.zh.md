@@ -10,7 +10,7 @@ kind: "package-reference"
 <a id="summary"></a>
 ## 概述
 
-本包通过预期 epoch CAS 保存 PostgreSQL 账户归属，拒绝不完整的排空参与者登记，并限制本地装配和排空预留。它提供云端 provider 共用的不可变代际输入及实际工作证据类型。账户入口要求私有工厂交接，不从配置接受账户身份。领取 owner 仅返回 mounting 元数据，不发布可用账户图。
+本包通过预期 epoch CAS 保存 PostgreSQL 账户归属，记录进程登记观察，拒绝不完整的排空参与者登记，并限制本地装配和排空预留。它提供云端 provider 共用的不可变代际输入及实际工作证据类型。账户入口要求私有工厂交接，不从配置接受账户身份。领取 owner 仅返回 mounting 元数据，不发布可用账户图。
 
 <a id="table-of-contents"></a>
 ## 目录
@@ -56,6 +56,14 @@ Provider 经根服务登记必需的 `files` 和 `execution` 参与者。登记�
 `beginDrain()` 接受 ready 图或 mounting 图的已知清理，不发布 ready 或解除隔离。之后，`release()` 和 `park()` 要求完整且匹配的 runtime 证据：原生 idle、配置保存 confirmed、两个参与者 confirmed、持久化已 flush、Context 已 dispose 且无销毁错误。匹配但不完整的证据改为隔离 owner。隔离态没有普通释放或领取出口。Store 保留 unowned 行，不删除或重置 epoch；epoch 从不转为 Number。
 
 被拒绝的 mutation 可能已经提交而结果未知。Store 保留该账户及尝试的 epoch，关闭该账户后续写入，并允许读取状态，不重放或自动解除未知。其他账户继续受正常 CAS 及容量规则约束。每次 mutation 前预留责任记录；未知记录保留在配置上界内，耗尽时拒绝新观察，不丢弃旧记录。迁移失败使整个 store 保持关闭。完整 runtime 必须经可信生命周期完成对账；构造存储 adapter 不代表获准恢复。
+
+### Process instance metadata
+
+私有[实例组件](src/instance-control.ts)在 `pe_instances` 保存启动身份、可信部署地址、配方版本、观察阶段及 heartbeat 时间。其原子迁移遇到不兼容字段或约束时拒绝，不重置记录。组件在内部生成并冻结身份；持有者在每次 Node 启动时构造唯一组件，并将同一个身份交给 owner store。构造器不接受外部提供的实例 id。地址是不透明的部署元数据，不用于选择网络目标。
+
+登记合并相同的本地调用，遇到已有的持久化 id 时拒绝，不覆盖其元数据。单行读取区分行不存在、读取失败及无效结果。Heartbeat 仅更新组件自身的 registered 行。`registered`、`closed` 或过期 heartbeat 均不代表账户 ready、进程死亡或获准回收 owner。实例操作不修改账户 owner 或 epoch。
+
+每个组件最多持有一个实际 mutation。Close 关闭本地 mutation 准入，等待实际 schema/登记/heartbeat 工作，然后仅将自身登记标为 closed；账户排空及共享 executor 关闭由根单独持有。等待复用 adapter 的有界观察，不结算实际 SQL。已提交结果未知会保留类型化责任，读取或观察超时均不自动解除或重放；其他组件仍可继续。只有确定的提交前失败允许显式重试，重试 close 仍保持本地准入关闭。
 
 -----
 
@@ -108,7 +116,7 @@ Provider 经根服务登记必需的 `files` 和 `execution` 参与者。登记�
 该基础尚不能准入生产账户流量。
 
 - **账户工厂** — 尚无共享图装配 Promise、`AccountUse`、围绕私有原生适配的生产配方/port 集成、配方封口及 ready 发布。数据库领取合并不等于完成账户 acquire。
-- **数据库集成与恢复** — 私有 pg 适配尚未接入根部署配置及进程身份。尚无实例登记、恢复审计、分配对账及可信 RecoveryProof 应用；本模块不能重领隔离态 owner。
+- **数据库集成与恢复** — 私有 pg 适配及实例组件尚未接入根部署配置或启动。尚无根 heartbeat 调度、恢复审计、分配对账及可信 RecoveryProof 应用；本模块不能重领隔离态 owner。
 - **必需证据** — 参与者存在不验证存储配额、原生 provider、配置保存 hook、manifest、进程停止或销毁成功。容量预留不执行参与者排空。
 - **账户交接** — 只有包内工厂 helper 安装 binding。Helper 要求可信 owner 输入，自身不核验 PG 归属；测试提供 binding 夹具，不据此宣称账户图 ready。
 - **关闭顺序** — 根卸载仅关闭本地准入。按序排空图、持久化未知结果、配置保存收据、flush 及共享池关闭仍需完整生命周期实现。

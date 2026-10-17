@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package stores PostgreSQL account ownership with expected-epoch CAS, rejects incomplete drain registration, and bounds local mount and drain reservations. It supplies the shared immutable generation and actual-work evidence types used by cloud providers. Its account entry requires a private factory handoff instead of accepting account identity from configuration. An owner claim returns mounting metadata; it does not publish a usable account graph.
+This package stores PostgreSQL account ownership with expected-epoch CAS, records process registration observations, rejects incomplete drain registration, and bounds local mount and drain reservations. It supplies the shared immutable generation and actual-work evidence types used by cloud providers. Its account entry requires a private factory handoff instead of accepting account identity from configuration. An owner claim returns mounting metadata; it does not publish a usable account graph.
 
 ## Table of Contents
 
@@ -54,6 +54,14 @@ The private [pg adapter](src/owner-pg-executor.ts) uses `pg@8.16.3` with one sta
 `beginDrain()` accepts a ready graph or known cleanup of a mounting graph; it never publishes ready or clears quarantine. `release()` and `park()` then require complete matching runtime evidence: native idle, confirmed config saving, both confirmed participants, flushed persistence, disposed Context, and no disposal errors. Incomplete matching evidence quarantines the owner instead. Quarantine has no normal release or claim exit. The store retains unowned rows and never deletes or resets their epoch; no epoch passes through Number.
 
 A rejected mutation can have an unknown commit result. The store retains that account and attempted epoch, closes subsequent writes for that account, and allows status reads without replay or automatic clearing. Other accounts continue under normal CAS and capacity rules. Responsibility is reserved before each mutation; unknown records remain within the configured bound, and exhaustion rejects new observations without discarding old ones. Migration failure closes the store globally. The full runtime must reconcile through its trusted lifecycle; constructing a storage adapter is not recovery authorization.
+
+### Process instance metadata
+
+The private [instance component](src/instance-control.ts) stores startup identity, trusted deployment address, recipe version, observational phase, and heartbeat time in `pe_instances`. Its atomic migration rejects incompatible columns or constraints without resetting rows. The component generates and freezes its identity internally; its owner constructs one component per Node startup and shares that exact identity with the owner store. The constructor accepts no supplied instance id. The address is opaque deployment metadata, not a selected network destination.
+
+Registration coalesces identical local calls and rejects an existing durable id without overwriting its metadata. Point reads distinguish an absent row from a failed or invalid result. Heartbeat updates only the component's registered row. Neither `registered`, `closed`, nor stale heartbeat establishes account readiness, process death, or owner-reclamation authority. Instance operations never modify account owners or epochs.
+
+Each component retains at most one actual mutation. Close stops local mutation admission, joins actual schema/registration/heartbeat work, then marks its own registration closed; the root separately owns account drain and shared executor shutdown. Waiting uses the adapter's bounded observation without settling actual SQL. Submitted uncertainty remains typed and retained after reads or observation deadlines, with no automatic replay; another component can continue. Only a definite pre-submission failure permits an explicit retry, and retrying close keeps local admission closed.
 
 -----
 
@@ -106,7 +114,7 @@ Local bookkeeping does not alter a model request prefix or retained Session hist
 This foundation cannot admit production account traffic.
 
 - **Account factory** — shared graph mount promises, `AccountUse`, production recipe/port integration around the private native adapter, sealing, and ready publication are absent. Database claim coalescing does not complete account acquisition.
-- **Database integration and recovery** — the private pg adapter is not attached to root deployment configuration or process identity. Instance registration, recovery audit, allocation reconciliation, and trusted RecoveryProof application are absent; quarantined ownership cannot be reclaimed here.
+- **Database integration and recovery** — the private pg adapter and instance component are not attached to root deployment configuration or startup. Root heartbeat scheduling, recovery audit, allocation reconciliation, and trusted RecoveryProof application are absent; quarantined ownership cannot be reclaimed here.
 - **Required evidence** — participant presence does not verify storage quotas, native providers, config-save hooks, manifests, stopped processes, or disposal success. Capacity reservations perform no participant drain.
 - **Account handoff** — only the same-package factory helper installs a binding. The helper requires trusted owner input and does not itself verify PG ownership; tests supply binding fixtures without claiming an account graph is ready.
 - **Shutdown** — root unload closes local admission only. Ordered graph drain, persistent unknown outcomes, config-save receipts, flush, and shared pool shutdown require the full lifecycle implementation.
