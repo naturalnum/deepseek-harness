@@ -4,6 +4,7 @@ import SessionController from '@deepseek-ai/dsh-api-session-controller'
 import type {
   SessionCreateRequest, SessionCreateValue, SessionPromptRequest, SessionPromptValue,
   SessionCancelRequest, SessionCancelValue, SessionForkRequest, SessionForkValue,
+  SessionAddress, SessionPageRequest, SessionPage, SessionFollowRequest, SessionFollowFrame,
 } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
@@ -21,7 +22,7 @@ export interface NativeSessionGuards {
   assertHandlerEnabled(handlerId: string): void
   /** Resolve and verify the project's location and approved Preset without creating a Session. */
   resolveCreate(request: SessionCreateRequest): Promise<SessionCreateRequest>
-  /** Check the native Session's project before prompt/resume or fork. */
+  /** Check the native Session's project before commands or ordinary history reads. */
   assertSessionProject(sessionId: SessionId): Promise<void>
   /**
    * Check the attached Agent's existing approved project/directory evidence
@@ -63,6 +64,23 @@ class NativeSessionAdmission {
     await this.guards.assertSessionProject(sessionId)
   }
 
+  async history(endpoint: 'session/page' | 'session/follow', address: SessionAddress): Promise<void> {
+    this.admitHistory(endpoint)
+    // Subagent history has separate parent/mode authority; this slice admits only ordinary Sessions.
+    if (address.kind !== 'session') {
+      throw new CloudApiError('cloud/forbidden', 'Subagent history is not admitted by this account adapter.')
+    }
+    await this.guards.assertSessionProject(address.sessionId)
+  }
+
+  historySignal(signal: AbortSignal): AbortSignal {
+    return AbortSignal.any([signal, this.binding.lifetime])
+  }
+
+  admitHistory(endpoint: 'session/page' | 'session/follow'): void {
+    this.admit(endpoint, 'account-session', endpoint === 'session/follow' ? 'stream' : 'rpc')
+  }
+
   cancel(sessionId: SessionId): void {
     this.admit('session/cancel', 'account-session')
     const agent = this.ctx.agents.get(sessionId)
@@ -78,11 +96,11 @@ class NativeSessionAdmission {
     }
   }
 
-  admit(endpoint: string, guard: 'account-project' | 'account-session'): void {
+  admit(endpoint: string, guard: 'account-project' | 'account-session', mode: 'rpc' | 'stream' = 'rpc'): void {
     this.assertBinding()
     this.ctx.fiber.assertActive()
     this.assertCurrent(this.binding)
-    const declared = this.policy.requireRpc(endpoint)
+    const declared = mode === 'stream' ? this.policy.requireStream(endpoint) : this.policy.requireRpc(endpoint)
     if (declared.guard !== guard) {
       throw new CloudApiError('cloud/invalid-config', 'Native Session operation requires its reviewed resource guard.')
     }
@@ -120,6 +138,41 @@ class AccountSessionController extends SessionController {
     this.admission.cancel(request.sessionId)
     return super.cancel(request)
   }
+
+  override async page(request: SessionPageRequest, signal: AbortSignal): Promise<SessionPage> {
+    const nativeSignal = this.admission.historySignal(signal)
+    nativeSignal.throwIfAborted()
+    await this.admission.history('session/page', request.address)
+    this.admission.admitHistory('session/page')
+    nativeSignal.throwIfAborted()
+    const page = await super.page(request, nativeSignal)
+    this.admission.admitHistory('session/page')
+    nativeSignal.throwIfAborted()
+    return page
+  }
+
+  override async *follow(request: SessionFollowRequest, signal: AbortSignal): AsyncIterable<SessionFollowFrame> {
+    const nativeSignal = this.admission.historySignal(signal)
+    nativeSignal.throwIfAborted()
+    await this.admission.history('session/follow', request.address)
+    this.admission.admitHistory('session/follow')
+    nativeSignal.throwIfAborted()
+    const source = super.follow(request, nativeSignal)[Symbol.asyncIterator]()
+    try {
+      while (true) {
+        // Native cold promotion resumes after the snapshot yield, inside the next advance.
+        this.admission.admitHistory('session/follow')
+        nativeSignal.throwIfAborted()
+        const next = await source.next()
+        this.admission.admitHistory('session/follow')
+        nativeSignal.throwIfAborted()
+        if (next.done) return
+        yield next.value
+      }
+    } finally {
+      await source.return?.()
+    }
+  }
 }
 
 /**
@@ -128,6 +181,9 @@ class AccountSessionController extends SessionController {
  * base Controller from the recipe. Native Remote markers, Config and business
  * implementation remain inherited. Installation validates the binding; runtime
  * readiness is checked on each call, after shared asynchronous validation too.
+ * Ordinary history reads retain native behavior; follow rechecks each advance
+ * and frame delivery and passes caller/graph cancellation to the native iterator.
+ * Subagent history addresses remain denied pending their separate scope review.
  * @param ctx - owning fiber in the independent, runtime-bound account graph.
  * @param binding - installed graph lifetime, never a request borrow or signal.
  * @param assertCurrent - trusted graph admission shared with the actual LLM guard;

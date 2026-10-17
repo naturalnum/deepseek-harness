@@ -54,6 +54,8 @@ kind: "package-reference"
 
 根拥有不可变策略，并在其 fiber 销毁时撤销审核。[开放清单实现](src/exposure.ts) 使用精确映射，不解码路径或按前缀授权。[私有原生装配](src/native.ts) 注册公开 SessionController 的唯一子类，继承其 Config、DTO、Remote 标记及业务方法。Create、prompt 和 fork 等待共享项目/Preset 核验，并在调用原生 super 前立即复核准入。同步 cancel 检查实际附着 Agent 的既有 scope，随后保留原生取消或 notfound，不加载 Session。
 
+Page 和 follow 对普通 Session 地址等待共享项目守卫。Page 在原生读取前和返回结果前复核准入。Follow 要求已审核的流声明，并在每次推进原生迭代器前及交付结果前检查准入和取消。原生迭代器接收调用者与图生命周期的取消，继续独占历史、promotion 及清理责任。Subagent 历史地址在单独范围审核前继续拒绝。
+
 Controller 准入使用实际安装的图 AccountBinding 及与实际 LLM 守卫共用的可信 runtime 回调，独立于 HTTP/Peer AccountUse 生命周期。装配须声明原生依赖、保留所属 fiber，并排除第二个基础 Controller。共享守卫失败、binding 过期、开放审核撤销或处理者停用都会阻止委派。原生进程内调用保留守卫抛出的错误；传输序列化遵循现有 Gateway 规则。原生业务结果与失败保持原义。
 
 工厂须提供真实 files/Workspace/Preset/模型守卫，包括不另建批准表的同步活跃 scope 核验。可信端口和生命周期要求完成集成前，账户入口保持关闭。
@@ -111,7 +113,8 @@ Pause 关闭顶层准入，但允许已登记工作完成；只有静止、无�
 - F06 对所有可达原生 writer 的提交覆盖及 runtime 装配仍不完整。协调器和已审核的原生适配不构成完整 F06 验收；账户入口中的模型选择和配置写入保持关闭。
 - 启动期凭据迁移、其他凭据 provider、PluginManager 写入及技能发布/投影仍未覆盖。Watch 刷新和可选监听器工作保留原生语义，安装 hook 不代表它们已被核定为持久保存。
 - F09 影响预检、受控提交、插件/key/技能修改及版本资源 hook 保持关闭。
-- 原生 Profile 测试覆盖默认模型、Settings、直接 editor、本地 credentials 及启动安装缺口。实际私有 Controller 装配测试覆盖原生 Gateway 派发、创建、prompt、fork、同步 cancel 及恢复尝试的先后顺序。成功持久化恢复、认证 Web 及完整云端配方验收仍需集成；产品构建及这些检查由主控负责。
+- 原生 Profile 测试覆盖默认模型、Settings、直接 editor、本地 credentials 及启动安装缺口。实际私有 Controller 装配测试覆盖原生 Gateway 派发、创建、prompt、fork、同步 cancel 及恢复尝试的先后顺序。完整账户持久化恢复、认证 Web 及完整云端配方验收仍需集成；产品构建及这些检查由主控负责。
+- 历史测试使用真实 JSONL 读取和冷 follow 恢复。Follow 准入不能撤销已经开始的原生后台 promotion；完整激活覆盖仍需实际 AgentLoop 守卫及可信项目集成。账户装配继续关闭。
 
 <a id="dev-note"></a>
 ### 开发备注
