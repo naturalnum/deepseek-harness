@@ -167,6 +167,24 @@ it('joins actual event withdrawal before disposing native owners and closes audi
   expect(() => events.inspect()).toThrow(expect.objectContaining({ code: 'cloud/account-unavailable' }))
 })
 
+it('joins an audited original event registration after binding abort without rereading closed files admission', async () => {
+  const graph = await policyFixture([], bounds).start(), events = graph.events
+  if (events === undefined) throw new Error('Original event registration absent')
+  const eventStream = await stream(graph, '$events')
+  expect(await eventStream.iterator.next()).toMatchObject({ value: { type: 'ready' } })
+  expect(graph.ctx.sessions.list()).toEqual([])
+  expect(graph.adapter.calls).toBe(0)
+
+  graph.lifetime.abort()
+  expect(() => graph.files.project()).toThrow()
+  await expect(graph.api.stopFirstScreenEvents()).resolves.toBeUndefined()
+  expect(await eventStream.iterator.next()).toMatchObject({ done: true })
+  await expect(events.dispose()).resolves.toBeUndefined()
+  await expect(graph.close()).resolves.toBeUndefined()
+  await expect(graph.observeNativeDisposal()).resolves.toEqual({ status: 'confirmed', errorEvents: 0, warningEvents: 0, overflow: false })
+  expect(graph.ctx.get('loader')).toBeUndefined()
+})
+
 it('refuses a supplied home that differs from the actual native profile instead of substituting another path', async () => {
   const fixture = policyFixture([], { ...bounds, expectedHome: '/foreign-first-screen-home' })
   await expect(fixture.start()).rejects.toMatchObject({ code: 'cloud/account-unavailable' })

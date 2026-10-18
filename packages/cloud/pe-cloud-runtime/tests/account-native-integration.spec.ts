@@ -110,8 +110,9 @@ async function fixture(options: {
   mkdirSync(layout.credentialsRoot, { recursive: true })
   const credentialPath = join(layout.credentialsRoot, 'credentials.yaml')
   writeFileSync(credentialPath, 'version: 1\nrefs: {}\n', { mode: 0o600 })
+  const lifetime = new AbortController()
   const binding: AccountBinding = Object.freeze({ accountId, epoch: brandString<OwnerEpoch>('1'),
-    recipeVersion: 'm8s', lifetime: new AbortController().signal })
+    recipeVersion: 'm8s', lifetime: lifetime.signal })
   const input: AccountMountInput = { binding, instanceId: identity.instanceId, layout,
     environment: createLaunchEnvironmentSnapshot([{ source: 'process', values: { HOME: layout.privateRoot, DSH_HOME: layout.privateRoot } }]) }
   const guards = vi.fn((_ctx: Context, _installed: AccountBinding): AccountNativeGuards => {
@@ -243,7 +244,7 @@ async function fixture(options: {
     if (outcome.status === 'mounted') context = outcome.context
     return outcome
   }
-  return { factory, capacity, root, saves, barriers, input, recipe, start, guards, project, layout, credentialPath }
+  return { factory, capacity, root, saves, barriers, input, recipe, start, guards, project, layout, credentialPath, lifetime }
 }
 
 it('boots the actual factory NativeLoader with API hooks, guarded native providers and root-issued closed execution', async () => {
@@ -283,6 +284,37 @@ it('boots the actual factory NativeLoader with API hooks, guarded native provide
   await expect(f.factory.stopNative(binding.accountId)).resolves.toMatchObject({ status: 'observed', native: { status: 'confirmed' } })
   expect(f.saves.snapshot().accounts).toBe(1)
   expect(ctx.get('peCloudApi')).toBeUndefined()
+})
+
+it.each(['admission', 'fiber'] as const)('joins native teardown after Root %s closure and native-only binding abort', async (rootClose) => {
+  const f = await fixture({ firstScreen: true })
+  const outcome = await f.start()
+  if (outcome.status === 'failed') throw outcome.cause
+  const ctx = outcome.context, binding = outcome.binding, files = ctx.peCloudFiles
+  const loop = [...ctx.loader.entries()].find(entry => entry.options.id === 'loop')?.fiber
+  expect(loop?.state).toBe(FiberState.ACTIVE)
+  expect(files.project().binding).toBe(binding)
+  expect(ctx.agents.list()).toEqual([])
+  expect(ctx.sessions.list()).toEqual([])
+
+  const runtime = f.root.peAccountRuntime
+  if (rootClose === 'fiber') await f.root.fiber.dispose()
+  else await runtime.close()
+  expect(() => { runtime.assertRecipeSealed('m8s') }).toThrow('closed')
+  // This native-only fixture owns its generation controller; production claimAndMount owns it inside the factory.
+  f.lifetime.abort()
+  const closing = f.factory.close()
+  expect(binding.lifetime.aborted).toBe(true)
+  expect(() => { f.factory.assertMountCurrent(binding) }).toThrow(expect.objectContaining({ code: 'cloud/stale-generation' }))
+  expect(() => files.project()).toThrow(expect.objectContaining({ code: 'cloud/stale-generation' }))
+  await expect(closing).resolves.toEqual([{ accountId: binding.accountId, status: 'observed', native: {
+    status: 'confirmed', errorEvents: 0, warningEvents: 0, overflow: false,
+  } }])
+  expect(loop?.state).toBe(FiberState.DISPOSED)
+  expect(ctx.get('loader')).toBeUndefined()
+  expect(ctx.get('peCloudApi')).toBeUndefined()
+  expect(f.barriers[0]?.snapshot()).toMatchObject({ admission: 'stopped', pending: [], failures: [] })
+  expect(f.factory.inspect()).toMatchObject({ pending: 0, borrows: 0, waiters: 0, unknown: 0 })
 })
 
 it('retains the actual graph and save hooks while an admitted native credential rename is pending', async () => {

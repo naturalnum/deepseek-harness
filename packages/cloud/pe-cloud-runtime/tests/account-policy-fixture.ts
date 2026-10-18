@@ -288,6 +288,7 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
       args: { request }, peer: { id: brandString<PeerId>('policy-component'), ctx: outcome.context, principal: { kind: 'owner' },
         interactions: 'answer', signal: peerLifetime.signal, dispose: async () => { peerLifetime.abort() } } })
     return { ctx: outcome.context, binding: outcome.binding, files, guards, api, adapter, close, invoke, lifetime,
+      observeNativeDisposal: () => handle.dispose(),
       directoryCalls, maxEntries, events, nativeFirstScreen, profileHome: privateRoot,
       expectEventDisposalFailure: (error: unknown) => { expectedEventFailure = { error } },
       withdrawProvider: () => { adapterRegistration?.() }, withdrawLlmGuard: () => { removeLlmGuard?.() } }
