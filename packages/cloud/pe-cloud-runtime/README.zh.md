@@ -76,6 +76,10 @@ Provider 经根服务登记必需的 `files` 和 `execution` 参与者。登记�
 
 同一策略通过惰性闭包提供 API 的只读 bootstrap 断言。Root 将既有 `native.maxEntries` 作为选中开放清单条目及实际遍历的原生 runtime/fiber 的共享上界，不新增部署值或默认值。它核验原 Workspace、固定原生 Preset/default/composition、当前默认模型元数据和实际 native handler，并在 await 后复核 provider 与选择。它不准备目录、不创建或恢复 Session/Agent、不解析凭据，也不请求模型推理。构造不读取未完成的 files 项目，不捕获请求级 `AccountUse`。该断言不替代生产存储交接或 Root seal。
 
+可选 `native.firstScreen` 选择固定只读首屏切片。提供时，`maxHomeBytes`、`maxCollectionItems`、`maxFrameBytes`、`maxQueuedEvents`、`maxQueuedBytes` 均须显式为正数、有限安全整数；省略时保持关闭，不补默认值。Root 通过配方传递原始预算，并从同一账户的规范 Profile 得到预期 home，在原生 boot 前核对一致。既有 `native.maxEntries` 继续限制原生 owner/marker 清单。元数据或配置条目名称不能满足实际 prepared 审核。
+
+私有 builtin 只提供受守卫的 Workspace/Settings 构造器和保留的原事件注册 Loader scope。构造器不读取未完成的 files 项目。Unpublished bootstrap 先取得实际 files project，要求原共享 Session 只读策略，向真实 Gateway 注册事件源，再执行 `auditPrepared`；business-ready 发布及之后的 `assertBootstrapCurrent` 仍独立。共享策略允许在 Workspace 关联前检查实际 live Session/Agent 元数据，按原 Workspace 关系核对冷列表元数据，不新增 Session 库、成员缓存，也不从 id/cwd 签发 ProjectScope。Stop 先等待事件撤销，再销毁 AgentLoop、检查原生 idle 并刷新持久化。源或 disposer 失败仍为未确认，不能证明 clean release。原下游原生队列上界仍需各自公开原生接口支持。
+
 ### Account layout
 
 `/types` 声明唯一的 `AccountLayout`，包含共享 private/Profile/patch、凭据、Session、storage、附件原件、技能、指令、项目、环境及进程本地 Session 索引地址。`AccountMountInput` 将这些地址与既有 binding、启动 InstanceId 及原生 `LaunchEnvironmentSnapshot` 配对。这些是可信装配数据；路径不授予目录访问、ready 或配额证据。凭据只交给需要的原生消费者。

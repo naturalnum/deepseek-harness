@@ -27,6 +27,9 @@ import FsLocal from '@deepseek-ai/dsh-fs-local'
 import WorkingDirectory from '@deepseek-ai/dsh-working-directory'
 import DefaultModel from '@deepseek-ai/dsh-agent-default-model'
 import RemoteAccess from '@deepseek-ai/dsh-api-remote-access'
+import Gateway from '@deepseek-ai/dsh-api-gateway'
+import Settings from '@deepseek-ai/dsh-settings'
+import * as Locale from '@deepseek-ai/dsh-client-locale'
 import Typert from '@deepseek-ai/dsh-typert-registry'
 import SessionQuery from '@deepseek-ai/dsh-session-query'
 import * as Jsonl from '@deepseek-ai/dsh-session-persistence-jsonl'
@@ -37,7 +40,7 @@ import { AccountFactory } from '../src/account-factory.ts'
 import { RuntimeCapacity } from '../src/capacity.ts'
 import { deriveAccountLayout, defaultProjectLayout } from '../src/account-layout.ts'
 import { createProcessInstanceIdentity } from '../src/instance-identity.ts'
-import { ACCOUNT_NATIVE_ENTRIES as names, type AccountNativeGuards } from '../src/account-native-integration.ts'
+import { ACCOUNT_NATIVE_ENTRIES as names, ACCOUNT_FIRST_SCREEN_ENTRIES as firstScreenNames, type AccountNativeGuards } from '../src/account-native-integration.ts'
 import type { AccountRecipe } from '../src/account-mount.ts'
 import type { AccountBinding, AccountId, AccountMountInput, OwnerEpoch } from '../src/types.ts'
 
@@ -66,6 +69,7 @@ afterEach(async () => {
 
 async function fixture(options: {
   missingGuards?: boolean
+  firstScreen?: boolean
   copiedFilesBinding?: boolean
   stopTimeoutMs?: number
   earlyLlmAndController?: boolean
@@ -123,6 +127,7 @@ async function fixture(options: {
   const dependencies = { async apply(ctx: Context) {
     await ctx.plugin(Typert)
     await ctx.plugin(RemoteAccess)
+    if (options.firstScreen) await ctx.plugin(Gateway)
     await ctx.plugin(Sessions)
     await ctx.plugin(Projections)
     await ctx.plugin(SystemPrompt, {})
@@ -150,6 +155,12 @@ async function fixture(options: {
     { id: 'loop', name: 'cordis:' + names.agentLoop, config: { agents: [] } },
     { id: 'controller', name: 'cordis:' + names.controller, config: { nativeOpen: false } },
     { id: 'execution', name: 'cordis:' + names.execution, config: { mode: 'closed', requiredCapabilities: [] } },
+    ...options.firstScreen ? [
+      { id: 'settings', name: 'cordis:m8ax-settings' }, { id: 'locale', name: 'cordis:m8ax-locale' },
+      { id: 'workspace-controller', name: 'cordis:' + firstScreenNames.workspaceController },
+      { id: 'settings-controller', name: 'cordis:' + firstScreenNames.settingsController },
+      { id: 'first-screen-events', name: 'cordis:' + firstScreenNames.events },
+    ] : [],
   ]
   if (options.earlyLlmAndController) rows.sort((a, b) => Number(b.id === 'controller') - Number(a.id === 'controller'))
   writeFileSync(layout.patchPath, JSON.stringify([{ insert: rows }]))
@@ -160,6 +171,8 @@ async function fixture(options: {
     requiredEntryIds: ['include', ...rows.map(row => row.id)], maxObservedEvents: 16, maxPathBytes: 4096,
     native: { saves, exposure: root.peExposure.policy, execution: root.peSandboxCoordinator, stopTimeoutMs: options.stopTimeoutMs ?? 5000,
       maxNativeInventoryEntries: 128,
+      ...options.firstScreen ? { firstScreen: { home: layout.privateRoot, maxHomeBytes: 4096,
+        maxCollectionItems: 16, maxFrameBytes: 65536, maxQueuedEvents: 16, maxQueuedBytes: 131072 } } : {},
       assertRootCurrent: () => { root.peAccountRuntime.assertRecipeSealed('m8s') },
       ...options.missingGuards ? {} : { guards },
       files(_ctx, installed): AccountFilesPreparation {
@@ -192,7 +205,7 @@ async function fixture(options: {
       } },
     prepare(ctx) {
       Object.assign(ctx.loader.builtins, { 'm8s-dependencies': dependencies, 'm8s-jsonl': Jsonl, 'm8s-model': DefaultModel,
-        'm8s-working-directory': WorkingDirectory,
+        'm8s-working-directory': WorkingDirectory, 'm8ax-settings': Settings, 'm8ax-locale': Locale,
         // A separately guarded native LLM lets all Controller dependencies activate before files/account settles.
         'm8s-early-llm': { inject: ['peCloudApi'], apply(owner: Context) {
           new LlmRuntime(owner)
@@ -372,4 +385,22 @@ it.each(['complete', 'fail'] as const)('defers Controller project access while d
       expect(f.factory.inspect().borrows).toBe(0)
     }
   } finally { release.resolve(undefined); await starting }
+})
+
+it('mounts only the fixed optional first-screen constructors while native-only assembly grants no event/business readiness', async () => {
+  const f = await fixture({ firstScreen: true })
+  const outcome = await f.start()
+  if (outcome.status === 'failed') throw outcome.cause
+  const ctx = outcome.context
+  const firstScreenEntries = [...ctx.loader.entries()]
+    .filter(row => Object.values(firstScreenNames).some(name => row.options.name === 'cordis:' + name))
+  expect(firstScreenEntries).toHaveLength(3)
+  expect(firstScreenEntries.every(row => row.fiber?.state === FiberState.ACTIVE)).toBe(true)
+  expect(ctx.get('workspaceController')).toBeDefined()
+  expect(ctx.get('settingsController')).toBeDefined()
+  expect(ctx.get('typertGateway')).toBeInstanceOf(Gateway)
+  expect(() => ctx.peCloudApi.requireStream('$events')).toThrow(expect.objectContaining({ code: 'cloud/account-unavailable' }))
+  expect(() => ctx.settingsController.describe()).toThrow(expect.objectContaining({ code: 'cloud/account-unavailable' }))
+  expect(ctx.sessions.list()).toEqual([])
+  await expect(f.factory.stopNative(outcome.binding.accountId)).resolves.toMatchObject({ status: 'observed', native: { status: 'confirmed' } })
 })

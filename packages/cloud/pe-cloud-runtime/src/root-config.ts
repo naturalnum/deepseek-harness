@@ -5,6 +5,7 @@ import type { RuntimeConfig } from './types.ts'
 import type { AccountFactoryLimits } from './account-factory.ts'
 import type { OwnerPgLimits } from './owner-pg-executor.ts'
 import type { AccountPolicyConfig } from './account-policy.ts'
+import type { AccountNativePreparation } from './account-native-integration.ts'
 import { AccountRuntimeError } from './errors.ts'
 
 /** Required deployment inputs for the actual root Loader; component capacities stay separate. */
@@ -42,6 +43,8 @@ export interface RuntimeRootConfig extends RuntimeConfig {
     readonly requiredEntryIds: string[]
     readonly maxObservedEvents: number
     readonly maxEntries: number
+    /** Explicit optional readonly budgets; Root supplies the actual per-account profile home. */
+    readonly firstScreen?: Omit<NonNullable<AccountNativePreparation['firstScreen']>, 'home'>
   }
 }
 
@@ -106,5 +109,9 @@ export const RuntimeRootConfigSchema: z<RuntimeRootConfig> = z.object({
   native: z.object({
     configPath: text(), installAnchor: text(), bareModuleBaseUrl: text(),
     requiredEntryIds: z.array(z.string().pattern(/\S/)).required(), maxObservedEvents: positive(), maxEntries: positive(),
+    firstScreen: z.union([z.object({
+      maxHomeBytes: positive(), maxCollectionItems: positive(), maxFrameBytes: positive(),
+      maxQueuedEvents: positive(), maxQueuedBytes: positive(),
+    }).required()]),
   }).required(),
 })

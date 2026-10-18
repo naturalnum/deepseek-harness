@@ -106,6 +106,7 @@
     "@deepseek-ai/dsh-api-gateway": "workspace:*",
     "@deepseek-ai/dsh-persona": "workspace:*",
     "@deepseek-ai/dsh-cmdline": "workspace:*",
-    "@deepseek-ai/dsh-session-persistence": "workspace:*"
+    "@deepseek-ai/dsh-session-persistence": "workspace:*",
+    "@deepseek-ai/dsh-client-locale": "workspace:*"
   }
 }

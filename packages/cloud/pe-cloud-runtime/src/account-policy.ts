@@ -7,6 +7,7 @@ import AgentPresets from '@deepseek-ai/dsh-agent-preset-registry'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import type {} from '@deepseek-ai/dsh-agent-default-model'
 import SessionController from '@deepseek-ai/dsh-api-session-controller'
+import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/types'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import { CloudApiError, type ExposureService } from '@deepseek-ai/dsh-pe-cloud-api'
 import { CloudAccountFiles } from '@deepseek-ai/dsh-pe-cloud-files'
@@ -280,6 +281,37 @@ class AccountPolicy {
     if (this.project() !== project || !project.workspace.sessionIds.includes(id)) refuse()
   }
 
+  readSession(id: SessionId, summary?: SessionSummary): void {
+    this.current()
+    const project = this.project()
+    this.pin()
+    if (this.modules === undefined) unavailable()
+    if (summary !== undefined) {
+      if (summary.sessionId !== id || summary.cwd !== project.workspace.path
+        || summary.origin !== undefined || summary.parentSessionId !== undefined) refuse()
+      const values = summary.projections?.values
+      if ((values?.workingDirectory !== undefined && values.workingDirectory !== project.workspace.path)
+        || (values?.agentPreset !== undefined && values.agentPreset !== this.config.presetId)) refuse()
+    }
+    const sessions = this.provider('sessions'), agents = this.provider('agents')
+    const session = sessions.get(id), agent = agents.get(id)
+    if (agent !== undefined) {
+      if (agent.session !== session) refuse()
+      this.prepared(agent, false)
+    } else if (session !== undefined) {
+      // Original Session publication can precede Agent and Workspace publication.
+      // Read only actual store/projection facts; this does not issue command/history authority.
+      if (session.id !== id || session.header.id !== id) refuse()
+      this.header(session.header, project.workspace.path)
+      if (this.provider('workingDirectory').get(session) !== project.workspace.path
+        || this.provider('sessionProjections').stateOf(session, 'agentPreset') !== this.config.presetId) refuse()
+    } else if (!project.workspace.sessionIds.includes(id)) refuse()
+    // A cold or removed id has only the original approved Workspace's existing readonly relationship.
+    // Exact history/commands still perform their original persisted-header and Preset observation.
+    this.current()
+    if (this.project() !== project) refuse()
+  }
+
   prepared(agent: Agent, attached: boolean): void {
     this.current()
     const project = this.project()
@@ -335,6 +367,7 @@ export function createAccountPolicy(
   const policy = new AccountPolicy(ctx, binding, files, config, exposure, maxEntries)
   return {
     assertBootstrapCurrent: signal => policy.assertBootstrapCurrent(signal),
+    assertSessionRead: (id, summary) => { policy.readSession(id, summary) },
     sessions: {
       assertHandlerEnabled: (id) => { policy.handlers(id) },
       resolveCreate: async (request) => {

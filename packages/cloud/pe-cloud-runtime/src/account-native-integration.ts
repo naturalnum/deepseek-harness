@@ -4,6 +4,7 @@ import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import SessionPersistence from '@deepseek-ai/dsh-session-persistence'
 import SessionController from '@deepseek-ai/dsh-api-session-controller'
+import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/types'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import { CloudAccountApi, type ConfigSaveBarrier, type ConfigSaveCoordinator, type ConfigSaveReceipt,
   type ExposureService } from '@deepseek-ai/dsh-pe-cloud-api'
@@ -14,6 +15,7 @@ import { assertClosedAccountExecution, installAccountExecutionPort, type Account
 import * as ExecutionAccount from '@deepseek-ai/dsh-pe-opensandbox/account'
 import * as RuntimeAccount from './account.ts'
 import { AccountRuntimeError } from './errors.ts'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { AccountBinding } from './types.ts'
 
 /** Shared approved project/model/Preset checks, supplied by the trusted fixed account composition. */
@@ -21,6 +23,8 @@ export interface AccountNativeGuards {
   readonly sessions: Omit<Parameters<CloudAccountApi['createController']>[1], 'projectDirectory'>
   readonly agents: Parameters<CloudAccountApi['createAgentLoop']>[1]
   readonly allowedModel: Parameters<CloudAccountApi['installLlmGuard']>[1]
+  /** Original synchronous readonly Session metadata check; required only for first-screen selection. */
+  readonly assertSessionRead?: (id: SessionId, summary?: SessionSummary) => void
   /** Read the same original project/Preset/default-model policy without creating business resources. */
   readonly assertBootstrapCurrent: (signal?: AbortSignal) => Promise<void>
 }
@@ -33,6 +37,15 @@ export interface AccountNativePreparation {
   readonly stopTimeoutMs: number
   /** Existing Root native.maxEntries bounds each bootstrap native inventory read. */
   readonly maxNativeInventoryEntries: number
+  /** Optional fixed readonly first-screen composition; every limit and exact graph home is required when selected. */
+  readonly firstScreen?: {
+    readonly home: string
+    readonly maxHomeBytes: number
+    readonly maxCollectionItems: number
+    readonly maxFrameBytes: number
+    readonly maxQueuedEvents: number
+    readonly maxQueuedBytes: number
+  }
   /** Actual Root seal recheck for business dispatch and ready publication, independent of mounting. */
   readonly assertRootCurrent: () => void
   /** Existing restricted lane/grant issuer; absence cannot supply a native files owner. */
@@ -46,6 +59,12 @@ export const ACCOUNT_NATIVE_ENTRIES = Object.freeze({
   runtime: 'pe-cloud-runtime-account', api: 'pe-cloud-api-account', files: 'pe-cloud-files-account', execution: 'pe-cloud-execution-account',
   editor: 'pe-cloud-config-editor', credentials: 'pe-cloud-credentials',
   controller: 'pe-cloud-session-controller', agentLoop: 'pe-cloud-agent-loop', llm: 'pe-cloud-llm',
+})
+
+/** Additional fixed private builtins selected only with explicit first-screen inputs. */
+export const ACCOUNT_FIRST_SCREEN_ENTRIES = Object.freeze({
+  workspaceController: 'pe-cloud-workspace-controller', settingsController: 'pe-cloud-settings-controller',
+  events: 'pe-cloud-first-screen-events',
 })
 
 /** One graph's real save barrier/API/execution ownership, including partially completed preparation. */
@@ -158,10 +177,28 @@ export class AccountNativeIntegration {
         throw new AccountRuntimeError('cloud/stale-generation', 'The account files project changed during directory preparation')
       }
     } })
+    const readSession = (id: SessionId, summary?: SessionSummary): void => {
+      const approved = requireGuards(ctx), check = approved.assertSessionRead
+      if (check === undefined) {
+        throw new AccountRuntimeError('cloud/account-unavailable', 'The original shared readonly Session metadata check is absent')
+      }
+      check(id, summary)
+    }
+    const firstScreenInput = input.firstScreen
+    const firstScreen = firstScreenInput === undefined ? undefined : api.prepareFirstScreen(ctx, {
+      project: () => project(ctx), assertSessionRead: readSession,
+      maxInventoryEntries: input.maxNativeInventoryEntries,
+      maxCollectionItems: firstScreenInput.maxCollectionItems, maxFrameBytes: firstScreenInput.maxFrameBytes,
+    })
     const controller = {
       inject: [...SessionController.inject, 'peCloudApi'], Config: SessionController.Config,
       apply(owner: Context, config: ConstructorParameters<typeof SessionController>[1]) {
-        api.createController(owner, { ...requireGuards(owner).sessions, projectDirectory }, config)
+        api.createController(owner, { ...requireGuards(owner).sessions, projectDirectory,
+          ...firstScreenInput === undefined ? {} : { firstScreen: {
+            assertSessionRead: readSession, maxCollectionItems: firstScreenInput.maxCollectionItems,
+            maxFrameBytes: firstScreenInput.maxFrameBytes,
+          } },
+        }, config)
       },
     }
     const agentLoop = {
@@ -196,12 +233,27 @@ export class AccountNativeIntegration {
       [ACCOUNT_NATIVE_ENTRIES.agentLoop]: agentLoop,
       [ACCOUNT_NATIVE_ENTRIES.llm]: llm,
     }
-    for (const key of Object.keys(entries)) {
+    let eventOwner: Context | undefined
+    const firstScreenEntries = firstScreen === undefined || firstScreenInput === undefined ? {} : {
+      [ACCOUNT_FIRST_SCREEN_ENTRIES.workspaceController]: firstScreen.workspaceController,
+      [ACCOUNT_FIRST_SCREEN_ENTRIES.settingsController]: firstScreen.settingsController,
+      [ACCOUNT_FIRST_SCREEN_ENTRIES.events]: {
+        inject: ['peCloudApi', 'workspaceController', 'settingsController', 'remoteAccess', 'typertGateway'],
+        apply(owner: Context) {
+          api.assertInstalled(owner)
+          if (eventOwner !== undefined) {
+            throw new AccountRuntimeError('cloud/account-unavailable', 'The original first-screen registration entry is duplicated')
+          }
+          eventOwner = owner
+        },
+      },
+    }
+    for (const key of [...Object.keys(entries), ...Object.keys(firstScreenEntries)]) {
       if (Object.hasOwn(builtins, key)) {
         throw new AccountRuntimeError('cloud/invalid-config', 'A fixed native account builtin has already been installed')
       }
     }
-    Object.assign(builtins, entries)
+    Object.assign(builtins, entries, firstScreenEntries)
     this.bootstrap = async () => {
       this.input.assertRootCurrent()
       mountCurrent(binding)
@@ -230,6 +282,15 @@ export class AccountNativeIntegration {
           }
         }
         if (count !== 1) throw new AccountRuntimeError('cloud/account-unavailable', 'The original guarded native writer is missing')
+      }
+      if (firstScreenInput !== undefined) {
+        if (requireGuards(ctx).assertSessionRead === undefined) {
+          throw new AccountRuntimeError('cloud/account-unavailable', 'The original shared readonly Session metadata check is absent')
+        }
+        if (eventOwner?.fiber.state !== FiberState.ACTIVE) {
+          throw new AccountRuntimeError('cloud/account-unavailable', 'The original first-screen registration entry is absent')
+        }
+        api.installFirstScreenEvents(eventOwner, { ...firstScreenInput, maxInventoryEntries: input.maxNativeInventoryEntries })
       }
       await api.auditPrepared(ctx)
       this.input.assertRootCurrent()
@@ -281,6 +342,7 @@ export class AccountNativeIntegration {
       if (receipt?.status === 'confirmed') {
         // The original audit may still own a native metadata read; joining is not a successful audit.
         try { await this.bootstrapping } catch (_cause) { /* factory retains the original assembly failure */ }
+        await this.api?.stopFirstScreenEvents()
         await this.loopFiber?.dispose()
         if (this.agents !== undefined && this.agents.list().length !== 0) {
           throw new AccountRuntimeError('cloud/stop-unconfirmed', 'Native Agent lifecycle work has not settled')

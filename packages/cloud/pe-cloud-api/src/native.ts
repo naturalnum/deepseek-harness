@@ -6,11 +6,13 @@ import type {
   SessionCreateRequest, SessionCreateValue, SessionPromptRequest, SessionPromptValue,
   SessionCancelRequest, SessionCancelValue, SessionForkRequest, SessionForkValue,
   SessionAddress, SessionPageRequest, SessionPage, SessionFollowRequest, SessionFollowFrame,
+  SessionListRequest, SessionListValue, SessionControlFrame, SessionSummary,
 } from '@deepseek-ai/dsh-api-session-controller/types'
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type {} from '@deepseek-ai/dsh-pe-cloud-runtime/account'
 import { CloudApiError } from './errors.ts'
+import { firstScreenJsonBytes } from './first-screen-json.ts'
 import type { ExposurePolicy } from './exposure.ts'
 import type { ExposureInventory } from './types.ts'
 
@@ -28,6 +30,18 @@ export interface NativeSessionDirectory {
   prepare(cwd: string): Promise<void>
 }
 
+/** Explicit readonly limits and original shared metadata check; absent means list/control stay closed. */
+export interface NativeSessionReadGuards {
+  readonly maxCollectionItems: number
+  readonly maxFrameBytes: number
+  /**
+   * Check original Session/Workspace metadata without creating a project grant or requiring post-attach Agent state.
+   * @param id - identity read from the actual native result or notification.
+   * @param summary - actual original list row when a cold header-derived view is available.
+   */
+  readonly assertSessionRead: (id: SessionId, summary?: SessionSummary) => void
+}
+
 /**
  * Shared guards supplied by trusted account assembly, using the files-owned
  * project resolver and approved native Preset/model configuration. These
@@ -36,6 +50,8 @@ export interface NativeSessionDirectory {
 export interface NativeSessionGuards {
   /** Fixed graph-owned directory capability; never an HTTP/Peer AccountUse borrow. */
   readonly projectDirectory: NativeSessionDirectory
+  /** Optional actual first-screen reader; its omission keeps inherited list/control unavailable. */
+  readonly firstScreen?: NativeSessionReadGuards
   /** Require a handler in this account's actual enabled native composition. */
   assertHandlerEnabled(handlerId: string): void
   /** Resolve and verify the project's location and approved Preset without creating a Session. */
@@ -53,6 +69,7 @@ export interface NativeSessionGuards {
 class NativeSessionAdmission {
   private readonly directory: NativeSessionDirectory
   private readonly prepareDirectory: NativeSessionDirectory['prepare']
+  private readonly reader: NativeSessionReadGuards | undefined
 
   constructor(
     private readonly ctx: Context,
@@ -63,6 +80,16 @@ class NativeSessionAdmission {
   ) {
     this.directory = guards.projectDirectory
     this.prepareDirectory = this.directory.prepare.bind(this.directory)
+    const reader = guards.firstScreen
+    if (reader !== undefined) {
+      for (const maximum of [reader.maxCollectionItems, reader.maxFrameBytes]) {
+        if (!Number.isSafeInteger(maximum) || maximum < 1) {
+          throw new CloudApiError('cloud/invalid-config', 'Native first-screen reads require explicit finite limits.')
+        }
+      }
+      this.reader = Object.freeze({ maxCollectionItems: reader.maxCollectionItems, maxFrameBytes: reader.maxFrameBytes,
+        assertSessionRead: reader.assertSessionRead.bind(reader) })
+    }
   }
 
   assertBinding(): void {
@@ -118,6 +145,31 @@ class NativeSessionAdmission {
 
   admitHistory(endpoint: 'session/page' | 'session/follow'): void {
     this.admit(endpoint, 'account-session', endpoint === 'session/follow' ? 'stream' : 'rpc')
+  }
+
+  hasReader(): boolean { return this.reader !== undefined }
+
+  admitRead(endpoint: 'session/list' | 'session/control'): void {
+    if (this.reader === undefined) {
+      throw new CloudApiError('cloud/account-unavailable', 'The original first-screen Session reader is absent.')
+    }
+    this.admit(endpoint, 'account-session', endpoint === 'session/control' ? 'stream' : 'rpc')
+  }
+
+  read(endpoint: 'session/list' | 'session/control', value: SessionListValue | SessionControlFrame): void {
+    this.admitRead(endpoint)
+    const reader = this.reader
+    if (reader === undefined) throw new CloudApiError('cloud/account-unavailable', 'The original Session reader is absent.')
+    firstScreenJsonBytes(value, reader.maxFrameBytes)
+    const ids = 'items' in value ? value.items.map(row => row.sessionId)
+      : value.type === 'baseline' ? Object.keys(value.value.projections).map(SessionId) : [value.sessionId]
+    if (ids.length > reader.maxCollectionItems) {
+      throw new CloudApiError('cloud/account-unavailable', 'The native first-screen collection exceeds its explicit limit.')
+    }
+    if ('items' in value) {
+      for (const row of value.items) reader.assertSessionRead(row.sessionId, row)
+    } else for (const id of ids) reader.assertSessionRead(id)
+    this.admitRead(endpoint)
   }
 
   cancel(sessionId: SessionId): void {
@@ -180,6 +232,37 @@ class AccountSessionController extends SessionController {
   override cancel(request: SessionCancelRequest): SessionCancelValue {
     this.admission.cancel(request.sessionId)
     return super.cancel(request)
+  }
+
+  /** Actual optional reader installation, used only by native inventory inspection. */
+  hasFirstScreenReader(): boolean { return this.admission.hasReader() }
+
+  override async list(request: SessionListRequest, signal: AbortSignal): Promise<SessionListValue> {
+    const control = this.admission.historySignal(signal)
+    control.throwIfAborted()
+    this.admission.admitRead('session/list')
+    const value = await super.list(request, control)
+    control.throwIfAborted()
+    this.admission.read('session/list', value)
+    return value
+  }
+
+  override async *control(signal: AbortSignal): AsyncIterable<SessionControlFrame> {
+    const control = this.admission.historySignal(signal)
+    control.throwIfAborted()
+    this.admission.admitRead('session/control')
+    const source = super.control(control)[Symbol.asyncIterator]()
+    try {
+      while (true) {
+        this.admission.admitRead('session/control')
+        const next = await source.next()
+        control.throwIfAborted()
+        this.admission.admitRead('session/control')
+        if (next.done) return
+        this.admission.read('session/control', next.value)
+        yield next.value
+      }
+    } finally { await source.return?.() }
   }
 
   override async page(request: SessionPageRequest, signal: AbortSignal): Promise<SessionPage> {
@@ -277,14 +360,16 @@ export function inspectNativeController(
   const rpc: ExposureInventory['rpcEndpoints'][number][] = [], stream: ExposureInventory['streamEndpoints'][number][] = []
   for (const marker of methods) {
     const method = marker.method
-    if (!['create', 'prompt', 'fork', 'cancel', 'page', 'follow'].includes(method)) continue
-    if ((marker.exportName ?? method) !== method || (marker.mode ?? 'rpc') !== (method === 'follow' ? 'stream' : 'rpc')
+    if (!['create', 'prompt', 'fork', 'cancel', 'page', 'follow'].includes(method)
+      && !(actual.hasFirstScreenReader() && ['list', 'control'].includes(method))) continue
+    const streaming = method === 'follow' || method === 'control'
+    if ((marker.exportName ?? method) !== method || (marker.mode ?? 'rpc') !== (streaming ? 'stream' : 'rpc')
       || Reflect.get(actual, method) !== Reflect.get(AccountSessionController.prototype, method)) {
       throw new CloudApiError('cloud/account-unavailable', 'The original native guarded method changed.')
     }
     const row = Object.freeze({ endpoint: `${binding.namespace}/${method}`, handlerId: `native:${binding.serviceKey}`,
       guard: method === 'create' ? 'account-project' as const : 'account-session' as const })
-    if (method === 'follow') stream.push(row)
+    if (streaming) stream.push(row)
     else rpc.push(row)
   }
   return Object.freeze({ recipeVersion, rpcEndpoints: Object.freeze(rpc), streamEndpoints: Object.freeze(stream),

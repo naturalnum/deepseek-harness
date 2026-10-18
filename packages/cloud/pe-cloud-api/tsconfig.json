@@ -49,6 +49,33 @@
     },
     {
       "path": "../../typert/protocol"
+    },
+    {
+      "path": "../../api/workspace-controller/tsconfig.host.json"
+    },
+    {
+      "path": "../../api/settings-controller"
+    },
+    {
+      "path": "../../api/remote-access/tsconfig.host.json"
+    },
+    {
+      "path": "../../workspace/workspace"
+    },
+    {
+      "path": "../../settings/settings"
+    },
+    {
+      "path": "../../client/locale/tsconfig.host.json"
+    },
+    {
+      "path": "../../util/values"
+    },
+    {
+      "path": "../../util/deque"
+    },
+    {
+      "path": "../../boot/app-boot"
     }
   ]
 }

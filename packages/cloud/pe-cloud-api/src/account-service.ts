@@ -7,6 +7,8 @@ import TypertGateway from '@deepseek-ai/dsh-api-gateway'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import { prepareAccountApiInstall, type AccountApiInstall } from './account-install.ts'
 import { CloudApiError } from './errors.ts'
+import { prepareNativeFirstScreen, type FirstScreenNativeInput, type NativeFirstScreen } from './native-first-screen.ts'
+import { registerFirstScreenEvents, type FirstScreenEventInput, type FirstScreenEvents } from './first-screen-events.ts'
 import type { ExposurePolicy } from './exposure.ts'
 import { installActualLlmGuard } from './llm-guard.ts'
 import { createNativeAgentLoop, type NativeAgentFactoryGuards } from './native-agent-factory.ts'
@@ -62,6 +64,7 @@ export class CloudAccountApi extends Service {
   // These cells retain original installations across caller-scoped Cordis proxies.
   private readonly native: Partial<Record<NativeKey, NativeInstallation>> = {}
   private readonly streamGuard: { dispose?: () => void } = {}
+  private readonly firstScreen: { native?: NativeFirstScreen; events?: FirstScreenEvents } = {}
   // Cordis traces services through caller-scoped proxies; their object identities differ.
   private readonly identity = Symbol('account-api-owner')
 
@@ -157,18 +160,31 @@ export class CloudAccountApi extends Service {
     if (installed === undefined || maximum === undefined) this.nativeUnavailable()
     const controller = owner.get('sessionController')
     if (controller === undefined || original(controller) !== installed.value) this.nativeUnavailable()
-    const inventory = inspectNativeController(controller, this.binding.recipeVersion, maximum)
+    const sessionInventory = inspectNativeController(controller, this.binding.recipeVersion, maximum)
+    const firstScreen = this.firstScreen.native?.inspect()
+    const events = this.firstScreen.events?.inspect()
+    const inventory: ExposureInventory = {
+      recipeVersion: this.binding.recipeVersion,
+      rpcEndpoints: [...sessionInventory.rpcEndpoints, ...firstScreen?.rpcEndpoints ?? []],
+      streamEndpoints: [...sessionInventory.streamEndpoints, ...firstScreen?.streamEndpoints ?? [],
+        ...events === undefined ? [] : [{ endpoint: events.endpoint, handlerId: 'native:typertGateway',
+          guard: 'authenticated-account' as const }]],
+      exactFetchRoutes: [],
+    }
+    if (inventory.rpcEndpoints.length + inventory.streamEndpoints.length > maximum) this.nativeUnavailable()
     const typert = owner.get('typert')
     if (typert === undefined) this.nativeUnavailable()
     for (const [rows, mode] of [[inventory.rpcEndpoints, 'rpc'], [inventory.streamEndpoints, 'stream']] as const) {
       for (const row of rows) {
+        if (row.endpoint === '$events') continue // Reserved native Gateway registration, inspected above; it has no Remote marker.
         const descriptor = typert.local.get(row.endpoint)
         if (descriptor === undefined) {
           if (typert.local.hasSeen(row.endpoint)) this.nativeUnavailable()
           continue // Actual Gateway source discovery reads these same original native markers.
         }
-        const method = row.endpoint.slice('session/'.length)
-        if (descriptor.service !== 'sessionController' || descriptor.namespace !== 'session' || descriptor.method !== method
+        const separator = row.endpoint.indexOf('/'), namespace = row.endpoint.slice(0, separator)
+        const method = row.endpoint.slice(separator + 1), service = row.handlerId.slice('native:'.length)
+        if (descriptor.service !== service || descriptor.namespace !== namespace || descriptor.method !== method
           || (descriptor.implementation ?? descriptor.method) !== method || (descriptor.mode ?? 'rpc') !== mode) this.nativeUnavailable()
       }
     }
@@ -201,7 +217,12 @@ export class CloudAccountApi extends Service {
    */
   requireRpc(endpoint: string): EndpointExposure {
     this.admit()
-    return this.installation.exposure.requireRpc(endpoint)
+    const row = this.installation.exposure.requireRpc(endpoint)
+    if (endpoint === 'workspace/initializeDefault' || endpoint === 'settings/describe') {
+      if (this.firstScreen.native === undefined) this.nativeUnavailable()
+      this.firstScreen.native.assertCurrent()
+    }
+    return row
   }
 
   /**
@@ -211,7 +232,16 @@ export class CloudAccountApi extends Service {
    */
   requireStream(endpoint: string): EndpointExposure {
     this.admit()
-    return this.installation.exposure.requireStream(endpoint)
+    const row = this.installation.exposure.requireStream(endpoint)
+    if (endpoint === 'workspace/follow' || endpoint === 'remoteAccess/follow') {
+      if (this.firstScreen.native === undefined) this.nativeUnavailable()
+      this.firstScreen.native.assertCurrent()
+    }
+    if (endpoint === '$events') {
+      if (this.firstScreen.events === undefined) this.nativeUnavailable()
+      this.firstScreen.events.inspect()
+    }
+    return row
   }
 
   /**
@@ -224,6 +254,45 @@ export class CloudAccountApi extends Service {
     this.admit()
     return this.installation.exposure.requireFetch(method, pathname)
   }
+
+  /**
+   * Prepare fixed readonly native constructors; original Loader activation and complete auditing still follow.
+   * @param owner Independent graph's prepare scope.
+   * @param input Actual files-owned project, shared Session metadata check and explicit native limits.
+   * @returns Original constructor installation, with no readiness publication or directory creation.
+   */
+  prepareFirstScreen(owner: Context, input: Omit<FirstScreenNativeInput, 'api' | 'binding'>): NativeFirstScreen {
+    this.assertInstalled(owner)
+    if (this.firstScreen.native !== undefined) this.duplicateNative()
+    if (this.installation.exposure.manifest.allowedSettings.length !== 0) {
+      throw new CloudApiError('cloud/invalid-config', 'The readonly first-screen API requires empty allowedSettings.')
+    }
+    const native = prepareNativeFirstScreen(owner, { ...input, api: this, binding: this.binding })
+    this.firstScreen.native = native
+    return native
+  }
+
+  /**
+   * Register the actual bounded native event subset on the original Gateway.
+   * @param owner Original registration Loader fiber after readonly native providers activate.
+   * @param input Exact graph profile home and all required event bounds.
+   * @returns Actual registration/disposer; native Gateway owns ready and wire framing.
+   */
+  installFirstScreenEvents(owner: Context, input: Omit<FirstScreenEventInput, 'api' | 'native'>): FirstScreenEvents {
+    this.assertInstalled(owner)
+    if (this.firstScreen.events !== undefined) this.duplicateNative()
+    const native = this.firstScreen.native
+    if (native === undefined) this.nativeUnavailable()
+    const events = registerFirstScreenEvents(owner, { ...input, api: this, native })
+    this.firstScreen.events = events
+    return events
+  }
+
+  /**
+   * Join the original cached event-source withdrawal before native teardown.
+   * @returns Actual registration/disposer settlement; absent registration has no work.
+   */
+  async stopFirstScreenEvents(): Promise<void> { await this.firstScreen.events?.dispose() }
 
   /**
    * Construct the sole native Controller in its actual Loader fiber.
@@ -311,7 +380,10 @@ export class CloudAccountApi extends Service {
   }
 
   /** Withdraw only after confirmed terminal save settlement, before disposing native providers. */
-  withdraw(): Promise<void> { return this.installation.withdraw() }
+  async withdraw(): Promise<void> {
+    await this.stopFirstScreenEvents()
+    await this.installation.withdraw()
+  }
 
   private admit(): void {
     this.assertInstalled()
@@ -368,6 +440,11 @@ export class CloudAccountApi extends Service {
       }
     }
     if (Object.values(counts).some(count => count !== 1)) this.nativeUnavailable()
+    if (this.firstScreen.native !== undefined) {
+      this.firstScreen.native.assertCurrent()
+      if (this.firstScreen.events === undefined) this.nativeUnavailable()
+      this.firstScreen.events.inspect()
+    }
     if (!audited) return
     for (const row of exposure.manifest.rpcEndpoints) exposure.requireRpc(row.endpoint)
     for (const row of exposure.manifest.streamEndpoints) exposure.requireStream(row.endpoint)

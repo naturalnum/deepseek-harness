@@ -15,6 +15,8 @@ import * as Persona from '@deepseek-ai/dsh-persona'
 import DefaultModel from '@deepseek-ai/dsh-agent-default-model'
 import SessionController from '@deepseek-ai/dsh-api-session-controller'
 import RemoteAccess from '@deepseek-ai/dsh-api-remote-access'
+import Settings from '@deepseek-ai/dsh-settings'
+import * as Locale from '@deepseek-ai/dsh-client-locale'
 import Gateway from '@deepseek-ai/dsh-api-gateway'
 import Sessions from '@deepseek-ai/dsh-session'
 import Projections from '@deepseek-ai/dsh-session-projection'
@@ -64,7 +66,9 @@ export class TextAdapter extends LlmAdapter {
  * Own one persistent Node directory; repeated graph starts preserve its actual native Workspace and JSONL data.
  * @returns Native graph starter and explicit finite deployment policy, without a PG owner, quota grant or AccountUse.
  */
-export function policyFixture(extraRpc: readonly EndpointExposure[] = []) {
+export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
+  firstScreen?: Omit<NonNullable<Parameters<CloudAccountApi['installFirstScreenEvents']>[1]>, 'home' | 'maxInventoryEntries'>
+    & { readonly maxCollectionItems: number; readonly expectedHome?: string }) {
   const home = realpathSync(mkdtempSync(join(tmpdir(), 'm8z-account-policy-')))
   const privateRoot = join(home, 'private'), projects = join(home, 'projects'), project = join(projects, 'default-workspace')
   const profileRoot = join(privateRoot, 'profile'), credentials = join(privateRoot, 'credentials.yaml')
@@ -85,7 +89,16 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = []) {
   const manifest = { recipeVersion: 'm8z', rpcEndpoints: [...['create', 'prompt', 'cancel', 'page'].map(method => ({
     endpoint: 'session/' + method, handlerId: 'native:sessionController',
     guard: method === 'create' ? 'account-project' as const : 'account-session' as const,
-  })), ...extraRpc], streamEndpoints: [{ endpoint: 'session/follow', handlerId: 'native:sessionController', guard: 'account-session' as const }],
+  })), ...extraRpc, ...firstScreen === undefined ? [] : [
+    { endpoint: 'session/list', handlerId: 'native:sessionController', guard: 'account-session' as const },
+    { endpoint: 'workspace/initializeDefault', handlerId: 'native:workspaceController', guard: 'account-project' as const },
+    { endpoint: 'settings/describe', handlerId: 'native:settingsController', guard: 'authenticated-account' as const },
+  ]], streamEndpoints: [{ endpoint: 'session/follow', handlerId: 'native:sessionController', guard: 'account-session' as const }, ...firstScreen === undefined ? [] : [
+    { endpoint: 'session/control', handlerId: 'native:sessionController', guard: 'account-session' as const },
+    { endpoint: 'workspace/follow', handlerId: 'native:workspaceController', guard: 'account-project' as const },
+    { endpoint: 'remoteAccess/follow', handlerId: 'native:remoteAccess', guard: 'authenticated-account' as const },
+    { endpoint: '$events', handlerId: 'native:typertGateway', guard: 'authenticated-account' as const },
+  ]],
   exactFetchRoutes: [], allowedSettings: [] }
   const exposure = new ExposureService(shared, manifest).policy
   const graphs: { close(): Promise<void> }[] = []
@@ -101,6 +114,9 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = []) {
     let ctx: Context | undefined, api: CloudAccountApi | undefined, files: CloudAccountFiles | undefined
     let barrier: ConfigSaveBarrier | undefined, guards: ReturnType<typeof createAccountPolicy> | undefined
     let removeLlmGuard: (() => void) | undefined
+    let nativeFirstScreen: ReturnType<CloudAccountApi['prepareFirstScreen']> | undefined
+    let eventOwner: Context | undefined
+    let events: ReturnType<CloudAccountApi['installFirstScreenEvents']> | undefined
     const directoryCalls: string[] = []
     const actualGraph = (binding: AccountBinding): void => {
       if (ctx === undefined || ctx.get('peAccount') !== binding || binding.lifetime.aborted) throw new Error('Component graph lifetime ended')
@@ -131,7 +147,13 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = []) {
           prepare: async (cwd) => {
             if (files === undefined) throw new Error('Component files absent')
             await files.project().projectDirectory.prepare(cwd)
-          } } }, options)
+          } }, ...firstScreen === undefined ? {} : { firstScreen: {
+          ...firstScreen, assertSessionRead: (id, summary) => {
+            const check = requireGuards().assertSessionRead
+            if (check === undefined) throw new Error('Original readonly Session check absent')
+            check(id, summary)
+          },
+        } } }, options)
       } }
     const llm = { inject: ['peCloudApi'], apply(owner: Context) {
       new LlmRuntime(owner)
@@ -151,6 +173,12 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = []) {
       { id: 'model', name: 'cordis:m8z-model', config: { provider: 'local-text', model: 'plain-text' } },
       { id: 'agent-loop', name: 'cordis:' + ACCOUNT_NATIVE_ENTRIES.agentLoop, config: { agents: [] } },
       { id: 'controller', name: 'cordis:m8z-controller', config: { nativeOpen: false } },
+      ...firstScreen === undefined ? [] : [
+        { id: 'settings', name: 'cordis:m8ax-settings' }, { id: 'locale', name: 'cordis:m8ax-locale', config: { preference: 'en' } },
+        { id: 'workspace-controller', name: 'cordis:m8ax-workspace-controller' },
+        { id: 'settings-controller', name: 'cordis:m8ax-settings-controller' },
+        { id: 'first-screen-events', name: 'cordis:m8ax-events' },
+      ],
     ]
     writeFileSync(patchPath, JSON.stringify([{ insert: rows }]))
     const handle = startNativeAccountBoot({
@@ -198,6 +226,26 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = []) {
           } }
         files = new CloudAccountFiles(owner, input)
         guards = createAccountPolicy(owner, binding, files, selected, exposure, maxEntries)
+        if (firstScreen !== undefined) {
+          nativeFirstScreen = api.prepareFirstScreen(owner, { ...firstScreen, maxInventoryEntries: maxEntries,
+            project: () => {
+              if (files === undefined) throw new Error('Original fixture files owner absent')
+              return files.project()
+            },
+            assertSessionRead: (id) => {
+              const check = requireGuards().assertSessionRead
+              if (check === undefined) throw new Error('Original fixture readonly policy absent')
+              check(id)
+            },
+          })
+          Object.assign(owner.loader.builtins, {
+            'm8ax-settings': Settings, 'm8ax-locale': Locale,
+            'm8ax-workspace-controller': nativeFirstScreen.workspaceController,
+            'm8ax-settings-controller': nativeFirstScreen.settingsController,
+            'm8ax-events': { inject: ['workspaceController', 'settingsController', 'typertGateway'],
+              apply(scope: Context) { eventOwner = scope } },
+          })
+        }
         Object.assign(owner.loader.builtins, { 'm8z-dependencies': dependencies, 'm8z-editor': api.providers.configEditor,
           'm8z-credentials': api.providers.credentials, 'm8z-jsonl': Jsonl, 'm8z-files': FilesAccount,
           'm8z-llm': llm, 'm8z-working-directory': WorkingDirectory, 'm8z-presets': AgentPresets, 'm8z-preset': AgentPreset,
@@ -205,13 +253,16 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = []) {
           [ACCOUNT_NATIVE_ENTRIES.agentLoop]: loop, 'm8z-controller': controller })
       },
     })
-    let closing: Promise<void> | undefined
+    let closing: Promise<void> | undefined, expectedEventFailure: { readonly error: unknown } | undefined
     const close = (): Promise<void> => closing ??= (async () => {
       peerLifetime.abort()
       if (barrier !== undefined) {
         const stopped = await barrier.stopConfigSaves(Date.now() + 1000)
         if (stopped.status !== 'confirmed') throw new Error('Component saves remain owned')
-        await api?.withdraw()
+        try { await api?.withdraw() }
+        catch (error) {
+          if (expectedEventFailure === undefined || error !== expectedEventFailure.error) throw error
+        }
       }
       await handle.dispose()
       if (barrier !== undefined) saves.releaseAccount(barrier)
@@ -226,12 +277,19 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = []) {
         && (marker.mode ?? 'rpc') === 'rpc')), streamEndpoints: manifest.streamEndpoints.filter(row =>
       remoteMethods(outcome.context.sessionController).some(marker => `${outcome.context.sessionController.typertRemote.namespace}/${marker.exportName ?? marker.method}` === row.endpoint
         && marker.mode === 'stream')), exactFetchRoutes: [] }
-    api.audit(inventory)
+    if (firstScreen === undefined) api.audit(inventory)
+    else {
+      if (eventOwner === undefined) throw new Error('Actual event registration Loader entry absent')
+      events = api.installFirstScreenEvents(eventOwner, { ...firstScreen,
+        home: firstScreen.expectedHome ?? privateRoot, maxInventoryEntries: maxEntries })
+      await api.auditPrepared(outcome.context)
+    }
     const invoke = (method: string, request: object) => outcome.context.typertGateway.invoke({ namespace: 'session', method,
       args: { request }, peer: { id: brandString<PeerId>('policy-component'), ctx: outcome.context, principal: { kind: 'owner' },
         interactions: 'answer', signal: peerLifetime.signal, dispose: async () => { peerLifetime.abort() } } })
     return { ctx: outcome.context, binding: outcome.binding, files, guards, api, adapter, close, invoke, lifetime,
-      directoryCalls, maxEntries,
+      directoryCalls, maxEntries, events, nativeFirstScreen, profileHome: privateRoot,
+      expectEventDisposalFailure: (error: unknown) => { expectedEventFailure = { error } },
       withdrawProvider: () => { adapterRegistration?.() }, withdrawLlmGuard: () => { removeLlmGuard?.() } }
   }
   return { start, config, declaration, project, privateRoot, patchPath }

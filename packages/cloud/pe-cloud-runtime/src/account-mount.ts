@@ -67,7 +67,8 @@ export function requireAccountProductionPorts(recipe?: AccountRecipe): NonNullab
 export function mountAccount(input: AccountMountInput, recipe: AccountRecipe, lease?: StaticAccountStorageLease): NativeAccountBootHandle {
   const expectedCwd = defaultProjectLayout(input.layout, recipe.maxPathBytes).root
   if (recipe.profile.dir !== input.layout.profileRoot || recipe.profile.patchPath !== input.layout.patchPath
-    || recipe.profile.home !== input.layout.privateRoot || recipe.profile.cwd !== expectedCwd) {
+    || recipe.profile.home !== input.layout.privateRoot || recipe.profile.cwd !== expectedCwd
+    || (recipe.native?.firstScreen !== undefined && recipe.native.firstScreen.home !== recipe.profile.home)) {
     throw new AccountRuntimeError('cloud/invalid-config', 'Native Profile addresses disagree with the account layout')
   }
   return startNativeAccountBoot({
