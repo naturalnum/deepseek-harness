@@ -1,6 +1,8 @@
 /** Loader schema for the deployment's exact reviewed exposure policy. */
 import z from '@deepseek-ai/schemastery'
 import type { ConfigSaveLimits } from './save-hooks.ts'
+import type { ExposureRootConfig, EndpointExposure, ExactFetchExposure } from './types.ts'
+import { parseApprovedConfigurationCatalog } from './approved-catalog.ts'
 
 const guard = z.union([
   z.const('authenticated-account'), z.const('account-project'),
@@ -27,8 +29,17 @@ export const ConfigSaveLimitsSchema: z<ConfigSaveLimits> = z.object({
   maxWaitersPerAccount: positive(),
 })
 
+interface ManifestInput {
+  recipeVersion: string
+  rpcEndpoints: EndpointExposure[]
+  streamEndpoints: EndpointExposure[]
+  exactFetchRoutes: ExactFetchExposure[]
+  allowedSettings: Array<{ namespace: string; fields: string[] }>
+}
+interface RootInput extends ManifestInput { approvedConfiguration?: unknown }
+
 /** Required manifest fields; canonical names and duplicates are checked during policy construction. */
-export const ExposureManifestSchema = z.object({
+export const ExposureManifestSchema: z<ManifestInput> = z.object({
   recipeVersion: z.string().required(),
   rpcEndpoints: z.array(endpoint).required(),
   streamEndpoints: z.array(endpoint).required(),
@@ -40,4 +51,18 @@ export const ExposureManifestSchema = z.object({
     namespace: z.string().required(),
     fields: z.array(z.string()).required(),
   })).required(),
+})
+
+const rootFields: z<RootInput> = z.intersect([
+  ExposureManifestSchema,
+  z.object({ approvedConfiguration: z.any<unknown>().default(undefined as never) }),
+])
+
+/** Optional explicit Root catalog, bounded and canonical before the original owner retains it. */
+export const ExposureRootConfigSchema = z.transform(rootFields, (input): ExposureRootConfig => {
+  const approved = parseApprovedConfigurationCatalog(
+    input.approvedConfiguration, input.recipeVersion, input.allowedSettings.length === 0,
+  )
+  const { approvedConfiguration: _raw, ...manifest } = input
+  return approved === undefined ? manifest : { ...manifest, approvedConfiguration: approved }
 })

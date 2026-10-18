@@ -1,4 +1,5 @@
 /** Native policy component fixture: real Loader/JSONL/Preset/API with owned Node files and an in-process model, no Root ready authority. */
+import type {} from '@deepseek-ai/dsh-pe-cloud-runtime/account'
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -92,11 +93,15 @@ export function policyFixture() {
     try { for (const graph of graphs.toReversed()) await graph.close(); saves.close(); await shared.fiber.dispose() }
     finally { rmSync(home, { recursive: true, force: true }) }
   })
-  const start = async (epoch = '1', selected = config) => {
+  const maxEntries = 128
+  const start = async (epoch = '1', selected = config, bootstrapPolicy = true,
+    bootstrapInventory: { maxNativeInventoryEntries?: number } = { maxNativeInventoryEntries: maxEntries }) => {
     const lifetime = new AbortController(), peerLifetime = new AbortController(), adapter = new TextAdapter()
     let adapterRegistration: ReturnType<LlmRuntime['registerAdapter']> | undefined
     let ctx: Context | undefined, api: CloudAccountApi | undefined, files: CloudAccountFiles | undefined
     let barrier: ConfigSaveBarrier | undefined, guards: ReturnType<typeof createAccountPolicy> | undefined
+    let removeLlmGuard: (() => void) | undefined
+    const directoryCalls: string[] = []
     const actualGraph = (binding: AccountBinding): void => {
       if (ctx === undefined || ctx.get('peAccount') !== binding || binding.lifetime.aborted) throw new Error('Component graph lifetime ended')
       ctx.fiber.assertActive()
@@ -131,7 +136,7 @@ export function policyFixture() {
     const llm = { inject: ['peCloudApi'], apply(owner: Context) {
       new LlmRuntime(owner)
       adapterRegistration = owner.llm.registerAdapter(['local-text'], adapter)
-      requireApi().installLlmGuard(owner, requireGuards().allowedModel)
+      removeLlmGuard = requireApi().installLlmGuard(owner, requireGuards().allowedModel)
     } }
     const rows = [
       { id: 'dependencies', name: 'cordis:m8z-dependencies' },
@@ -159,7 +164,10 @@ export function policyFixture() {
       prepare(owner, binding) {
         ctx = owner; barrier = saves.createAccount(binding)
         api = new CloudAccountApi(owner, { binding, saves: barrier, selected: manifest, rootExposure: exposure,
-          assertMountCurrent: actualGraph, assertBusinessCurrent: actualGraph })
+          assertMountCurrent: actualGraph, assertBusinessCurrent: actualGraph,
+          ...bootstrapPolicy ? { assertBootstrapCurrent: (signal: AbortSignal) => requireGuards().assertBootstrapCurrent(signal) } : {},
+          ...bootstrapInventory,
+        })
         class NodeFileSystem extends FsLocal {
           static inject = ['peAccount']
           constructor(scope: Context) { super(scope, FsLocal.Config({ cwd: project })) }
@@ -171,6 +179,7 @@ export function policyFixture() {
             if (workspace === undefined) throw new Error('Native default Workspace absent')
             return { binding, workspaceId: workspace.id, FileSystem: NodeFileSystem,
               projectDirectory: { binding, prepare: async (cwd: string) => {
+                directoryCalls.push(cwd)
                 actualGraph(binding)
                 if (cwd !== workspace.path || !statSync(cwd).isDirectory()) throw new Error('Outside component project')
               } } }
@@ -187,7 +196,7 @@ export function policyFixture() {
             if (entry?.fiber?.state === FiberState.ACTIVE) throw new Error('Component registration window ended')
           } }
         files = new CloudAccountFiles(owner, input)
-        guards = createAccountPolicy(owner, binding, files, selected, exposure, 128)
+        guards = createAccountPolicy(owner, binding, files, selected, exposure, maxEntries)
         Object.assign(owner.loader.builtins, { 'm8z-dependencies': dependencies, 'm8z-editor': api.providers.configEditor,
           'm8z-credentials': api.providers.credentials, 'm8z-jsonl': Jsonl, 'm8z-files': FilesAccount,
           'm8z-llm': llm, 'm8z-working-directory': WorkingDirectory, 'm8z-presets': AgentPresets, 'm8z-preset': AgentPreset,
@@ -220,8 +229,9 @@ export function policyFixture() {
     const invoke = (method: string, request: object) => outcome.context.typertGateway.invoke({ namespace: 'session', method,
       args: { request }, peer: { id: brandString<PeerId>('policy-component'), ctx: outcome.context, principal: { kind: 'owner' },
         interactions: 'answer', signal: peerLifetime.signal, dispose: async () => { peerLifetime.abort() } } })
-    return { ctx: outcome.context, binding: outcome.binding, files, guards, api, adapter, close, invoke,
-      withdrawProvider: () => { adapterRegistration?.() } }
+    return { ctx: outcome.context, binding: outcome.binding, files, guards, api, adapter, close, invoke, lifetime,
+      directoryCalls, maxEntries,
+      withdrawProvider: () => { adapterRegistration?.() }, withdrawLlmGuard: () => { removeLlmGuard?.() } }
   }
   return { start, config, declaration, project, privateRoot, patchPath }
 }

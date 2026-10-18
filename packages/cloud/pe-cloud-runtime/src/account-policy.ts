@@ -242,6 +242,22 @@ class AccountPolicy {
     if (resolved.provider !== provider || resolved.id !== model || !this.allowedModel(provider, model)) modelDenied()
   }
 
+  async assertBootstrapCurrent(signal?: AbortSignal): Promise<void> {
+    const control = signal === undefined ? this.binding.lifetime : AbortSignal.any([signal, this.binding.lifetime])
+    control.throwIfAborted()
+    const project = this.project(), { provider, model } = this.defaultModel()
+    if (provider === undefined || model === undefined) modelDenied()
+    const selection = { provider, model }
+    this.handlers('native:sessionController')
+    await this.preset(this.config.presetId, control)
+    await this.model(selection, control)
+    control.throwIfAborted()
+    this.current()
+    const current = this.defaultModel()
+    if (this.project() !== project || current.provider !== selection.provider || current.model !== selection.model) unavailable()
+    this.handlers('native:sessionController')
+  }
+
   header(header: Header, path: string): void {
     if (header.cwd !== path || header.origin !== undefined || header.parentSession !== undefined
       || (header.delegationDepth ?? 0) !== 0 || header.isSeeded) refuse()
@@ -318,6 +334,7 @@ export function createAccountPolicy(
 ): AccountNativeGuards {
   const policy = new AccountPolicy(ctx, binding, files, config, exposure, maxEntries)
   return {
+    assertBootstrapCurrent: signal => policy.assertBootstrapCurrent(signal),
     sessions: {
       assertHandlerEnabled: (id) => { policy.handlers(id) },
       resolveCreate: async (request) => {

@@ -383,6 +383,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
         requiredEntryIds: config.native.requiredEntryIds, maxObservedEvents: config.native.maxObservedEvents,
         maxPathBytes: config.paths.maxPathBytes,
         native: { saves: control.saves, exposure: exposure.policy, execution, stopTimeoutMs: config.shutdownTimeoutMs,
+          maxNativeInventoryEntries: config.native.maxEntries,
           guards: (ctx, binding, files) => createAccountPolicy(
             ctx, binding, files, config.accountPolicy, exposure.policy, config.native.maxEntries,
           ),

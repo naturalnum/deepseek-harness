@@ -74,6 +74,8 @@ Provider 经根服务登记必需的 `files` 和 `execution` 参与者。登记�
 
 业务回调从原 files owner 读取当前 Workspace 和目录能力。Create 请求只解析到该 Workspace；历史/恢复读取实际原生 Session observation 和经过头校验的 Workspace 成员关系。普通 JSONL 冷恢复保留其 SessionId 并被接受；导入/分叉或 subagent 身份仍拒绝。精确模型路由必须存在已注册的原生 provider，create/resume 使用原生模型解析并在 await 前后复核。LLM 派发保持同步路由/provider 检查。Guard 构造不读取部分完成的 files 项目。
 
+同一策略通过惰性闭包提供 API 的只读 bootstrap 断言。Root 将既有 `native.maxEntries` 作为选中开放清单条目及实际遍历的原生 runtime/fiber 的共享上界，不新增部署值或默认值。它核验原 Workspace、固定原生 Preset/default/composition、当前默认模型元数据和实际 native handler，并在 await 后复核 provider 与选择。它不准备目录、不创建或恢复 Session/Agent、不解析凭据，也不请求模型推理。构造不读取未完成的 files 项目，不捕获请求级 `AccountUse`。该断言不替代生产存储交接或 Root seal。
+
 ### Account layout
 
 `/types` 声明唯一的 `AccountLayout`，包含共享 private/Profile/patch、凭据、Session、storage、附件原件、技能、指令、项目、环境及进程本地 Session 索引地址。`AccountMountInput` 将这些地址与既有 binding、启动 InstanceId 及原生 `LaunchEnvironmentSnapshot` 配对。这些是可信装配数据；路径不授予目录访问、ready 或配额证据。凭据只交给需要的原生消费者。

@@ -85,6 +85,7 @@ it('loads the real account entry while business stays closed and native writes r
   traced?.assertInstalled()
   expect(f.businessCurrent).not.toHaveBeenCalled()
   expect(() => traced?.requireRpc('session/create')).toThrow(f.businessClosed)
+  await expect(f.api.assertBootstrapCurrent(f.ctx)).rejects.toBe(f.businessClosed)
   expect((await f.ctx.credentials.resolve(ref))?.value).toBe('value-A')
   await f.ctx.credentials.set(ref, 'updated-A')
   const before = readFileSync(f.credentials, 'utf8')

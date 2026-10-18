@@ -1,7 +1,8 @@
 /** Graph-owned API preparation and native providers consumed by trusted runtime assembly. */
-import { Context, Service } from '@deepseek-ai/cordis'
+import { Context, FiberState, Service, symbols, type Fiber } from '@deepseek-ai/cordis'
 import type AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import type SessionController from '@deepseek-ai/dsh-api-session-controller'
+import LlmRuntime from '@deepseek-ai/dsh-llm'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import { prepareAccountApiInstall, type AccountApiInstall } from './account-install.ts'
 import { CloudApiError } from './errors.ts'
@@ -22,6 +23,18 @@ export interface AccountApiPreparation {
   readonly assertMountCurrent: (binding: AccountBinding) => void
   /** Require the original graph's actual business-ready publication on every dispatch. */
   readonly assertBusinessCurrent: (binding: AccountBinding) => void
+  /** Read the original shared project/Preset/default-model policy; absence keeps bootstrap assertions closed. */
+  readonly assertBootstrapCurrent?: (signal: AbortSignal) => Promise<void>
+  /** Positive finite bound shared by visited native runtimes, fibers and selected exposure rows; no default. */
+  readonly maxNativeInventoryEntries?: number
+}
+
+type NativeKey = 'sessionController' | 'agentLoop' | 'llm'
+interface NativeInstallation { readonly value: object; readonly fiber: Fiber }
+
+function original(value: object): object {
+  const target: unknown = Reflect.get(value, symbols.original)
+  return target !== null && typeof target === 'object' ? target : value
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -33,12 +46,18 @@ declare module '@deepseek-ai/cordis' {
 
 /** One account's API providers and save controls; runtime retains assembly and drain ownership. */
 export class CloudAccountApi extends Service {
+  /** Exact runtime-installed graph binding; presence does not publish business readiness. */
   readonly binding: AccountBinding
   /** Native constructors fixed before their Loader activation, using this graph's existing save hooks. */
   readonly providers: Readonly<Pick<AccountApiInstall, 'configEditor' | 'credentials'>>
   private readonly installation: AccountApiInstall
   private readonly mountCurrent: AccountApiPreparation['assertMountCurrent']
   private readonly businessCurrent: AccountApiPreparation['assertBusinessCurrent']
+  private readonly bootstrapCurrent: AccountApiPreparation['assertBootstrapCurrent']
+  private readonly maxNativeInventoryEntries: AccountApiPreparation['maxNativeInventoryEntries']
+  // These cells retain original installations across caller-scoped Cordis proxies.
+  private readonly native: Partial<Record<NativeKey, NativeInstallation>> = {}
+  private readonly streamGuard: { dispose?: () => void } = {}
   // Cordis traces services through caller-scoped proxies; their object identities differ.
   private readonly identity = Symbol('account-api-owner')
 
@@ -59,6 +78,8 @@ export class CloudAccountApi extends Service {
     this.binding = input.binding
     this.mountCurrent = input.assertMountCurrent
     this.businessCurrent = input.assertBusinessCurrent
+    this.bootstrapCurrent = input.assertBootstrapCurrent
+    this.maxNativeInventoryEntries = input.maxNativeInventoryEntries
     this.installation = installation
     this.providers = Object.freeze({ configEditor: installation.configEditor, credentials: installation.credentials })
     this.assertInstalled()
@@ -75,6 +96,31 @@ export class CloudAccountApi extends Service {
   }
 
   /**
+   * Check original native installations and the shared policy without creating or writing business resources.
+   * Mount/business admission and native ownership are checked around the awaited policy metadata read.
+   * Selected exposure rows and visited runtimes/fibers share the explicit preparation budget; missing or exceeded budgets reject.
+   * @param owner Actual consumer scope in this account graph.
+   * @param signal Optional observer cancellation, combined with the original graph lifetime.
+   * @returns Settlement of the current checks; no readiness token, catalog or account authority is issued.
+   * @throws CloudApiError for absent policy, removed/replaced native installations or closed admission;
+   * policy failures and cancellation retain their original identity.
+   */
+  async assertBootstrapCurrent(owner: Context, signal?: AbortSignal): Promise<void> {
+    const control = signal === undefined ? this.binding.lifetime : AbortSignal.any([signal, this.binding.lifetime])
+    control.throwIfAborted()
+    this.assertInstalled(owner)
+    this.admit()
+    const check = this.bootstrapCurrent
+    if (check === undefined) this.nativeUnavailable()
+    this.assertNativeCurrent(owner)
+    await check(control)
+    control.throwIfAborted()
+    this.assertInstalled(owner)
+    this.admit()
+    this.assertNativeCurrent(owner)
+  }
+
+  /**
    * Audit this view against actual native inventory supplied by trusted assembly.
    * @param inventory Mounted handlers and reviewed guards, never configuration availability flags.
    */
@@ -86,19 +132,28 @@ export class CloudAccountApi extends Service {
   /** Revoke only this graph's inventory during replacement or drain. */
   invalidate(): void { this.installation.exposure.invalidate() }
 
-  /** @param endpoint Native unary URL endpoint. @returns The audited declaration after business admission. */
+  /**
+   * Require a reviewed native unary endpoint after business admission.
+   * @param endpoint Native unary URL endpoint.
+   * @returns The audited declaration after business admission.
+   */
   requireRpc(endpoint: string): EndpointExposure {
     this.admit()
     return this.installation.exposure.requireRpc(endpoint)
   }
 
-  /** @param endpoint Native logical-stream endpoint. @returns Its audited declaration after business admission. */
+  /**
+   * Require a reviewed native logical-stream endpoint after business admission.
+   * @param endpoint Native logical-stream endpoint.
+   * @returns Its audited declaration after business admission.
+   */
   requireStream(endpoint: string): EndpointExposure {
     this.admit()
     return this.installation.exposure.requireStream(endpoint)
   }
 
   /**
+   * Require an exact reviewed Fetch route after business admission.
    * @param method Original HTTP method.
    * @param pathname Original canonical pathname.
    * @returns Its exact audited declaration after business admission.
@@ -119,7 +174,10 @@ export class CloudAccountApi extends Service {
     owner: Context, guards: NativeSessionGuards, config: ConstructorParameters<typeof SessionController>[1],
   ): SessionController {
     this.assertInstalled(owner)
-    return createNativeController(owner, this.binding, this.businessCurrent, this.installation.exposure, guards, config)
+    this.requireUninstalled(owner, 'sessionController')
+    const controller = createNativeController(owner, this.binding, this.businessCurrent, this.installation.exposure, guards, config)
+    this.native.sessionController = { value: original(controller), fiber: owner.fiber }
+    return controller
   }
 
   /**
@@ -131,7 +189,10 @@ export class CloudAccountApi extends Service {
    */
   createAgentLoop(owner: Context, guards: NativeAgentFactoryGuards, config: ConstructorParameters<typeof AgentLoop>[1]): AgentLoop {
     this.assertInstalled(owner)
-    return createNativeAgentLoop(owner, this.binding, this.businessCurrent, guards, config)
+    this.requireUninstalled(owner, 'agentLoop')
+    const loop = createNativeAgentLoop(owner, this.binding, this.businessCurrent, guards, config)
+    this.native.agentLoop = { value: original(loop), fiber: owner.fiber }
+    return loop
   }
 
   /**
@@ -142,10 +203,26 @@ export class CloudAccountApi extends Service {
    */
   installLlmGuard(owner: Context, allowed: (provider: string, model: string) => boolean): () => void {
     this.assertInstalled(owner)
-    return installActualLlmGuard(owner, this.binding, this.businessCurrent, allowed)
+    if (this.native.llm !== undefined) this.duplicateNative()
+    // The actual constructor registers while its Loader fiber is still LOADING.
+    const llm = owner.get('llm', false), installed = owner.fiber.store?.llm
+    const installedValue: unknown = installed?.value
+    if (!(llm instanceof LlmRuntime) || installed?.fiber !== owner.fiber || installedValue === null || typeof installedValue !== 'object'
+      || original(installedValue) !== original(llm)) this.nativeUnavailable()
+    const remove = installActualLlmGuard(owner, this.binding, this.businessCurrent, allowed)
+    const dispose = (): void => {
+      if (this.streamGuard.dispose !== dispose) return
+      delete this.streamGuard.dispose
+      remove()
+    }
+    this.native.llm = { value: original(llm), fiber: owner.fiber }
+    this.streamGuard.dispose = dispose
+    owner.effect(() => dispose, 'pe-cloud-api: withdraw original LLM guard')
+    return dispose
   }
 
   /**
+   * Pause new top-level configuration submissions while retaining admitted native work.
    * @param deadlineAtMs Finite observation deadline; actual submitted writes remain owned.
    * @param signal Optional observer cancellation; absence waits to the deadline.
    * @returns The existing save barrier's pause evidence.
@@ -161,6 +238,7 @@ export class CloudAccountApi extends Service {
   }
 
   /**
+   * Close configuration submissions and retain actual native save settlement.
    * @param deadlineAtMs Finite observation deadline; timeout does not stop actual native writes.
    * @param signal Optional observer cancellation; absence waits to the deadline.
    * @returns Existing terminal save evidence, available after business admission closes.
@@ -177,6 +255,60 @@ export class CloudAccountApi extends Service {
     this.assertInstalled()
     this.businessCurrent(this.binding)
     this.assertInstalled()
+  }
+
+  private requireUninstalled(owner: Context, key: Exclude<NativeKey, 'llm'>): void {
+    if (this.native[key] !== undefined || owner.get(key) !== undefined || owner.root.get(key) !== undefined) this.duplicateNative()
+  }
+
+  private duplicateNative(): never {
+    throw new CloudApiError('cloud/invalid-config', 'The account API already has a native installation.')
+  }
+
+  private nativeUnavailable(): never {
+    throw new CloudApiError('cloud/account-unavailable', 'Bootstrap requires the original guarded native providers and shared policy.')
+  }
+
+  private assertNativeCurrent(owner: Context): void {
+    owner.fiber.assertActive()
+    if (this.streamGuard.dispose === undefined) this.nativeUnavailable()
+    const maximum = this.maxNativeInventoryEntries
+    if (maximum === undefined || !Number.isSafeInteger(maximum) || maximum < 1) this.nativeUnavailable()
+    let remaining = maximum
+    const consume = (count: number): void => {
+      if (count > remaining) this.nativeUnavailable()
+      remaining -= count
+    }
+    const exposure = this.installation.exposure
+    // Charge all selected lists before any registry traversal or endpoint lookup.
+    consume(exposure.manifest.rpcEndpoints.length)
+    consume(exposure.manifest.streamEndpoints.length)
+    consume(exposure.manifest.exactFetchRoutes.length)
+    const counts: Record<NativeKey, number> = { sessionController: 0, agentLoop: 0, llm: 0 }
+    for (const key of ['sessionController', 'agentLoop', 'llm'] as const) {
+      const expected = this.native[key], local = owner.get(key), root = owner.root.get(key)
+      if (expected === undefined || local === undefined || root === undefined
+        || expected.fiber.state !== FiberState.ACTIVE || expected.fiber.ctx.root !== owner.root
+        || original(local) !== expected.value || original(root) !== expected.value) this.nativeUnavailable()
+    }
+    for (const runtime of owner.registry.values()) {
+      consume(1)
+      for (const fiber of runtime.fibers) {
+        consume(1)
+        if (fiber.ctx.root !== owner.root || fiber.state !== FiberState.ACTIVE) continue
+        for (const key of ['sessionController', 'agentLoop', 'llm'] as const) {
+          const installed = fiber.store?.[key], expected = this.native[key]
+          if (installed === undefined || installed.fiber !== fiber) continue
+          const value: unknown = installed.value
+          if (++counts[key] > 1 || expected === undefined || fiber !== expected.fiber || value === null || typeof value !== 'object'
+            || original(value) !== expected.value) this.nativeUnavailable()
+        }
+      }
+    }
+    if (Object.values(counts).some(count => count !== 1)) this.nativeUnavailable()
+    for (const row of exposure.manifest.rpcEndpoints) exposure.requireRpc(row.endpoint)
+    for (const row of exposure.manifest.streamEndpoints) exposure.requireStream(row.endpoint)
+    for (const row of exposure.manifest.exactFetchRoutes) exposure.requireFetch(row.method, row.path)
   }
 
   private assertOwner(owner: Context): void {

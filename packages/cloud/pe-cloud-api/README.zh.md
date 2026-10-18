@@ -64,6 +64,10 @@ Controller 必须接收固定的 `NativeSessionGuards.projectDirectory` 能力�
 
 可信 runtime 在准备阶段，以精确 binding、独立的挂载/业务核验、部署开放策略和根签发保存屏障构造公开 `CloudAccountApi` 服务。其 `providers` 提供固定的原生编辑器和凭据构造函数；原生安装方法沿用既有 Controller、AgentLoop 和 LLM 守卫。空 `/account` 入口要求这个精确准备好的 `peCloudApi` owner。服务存在和入口激活不发布账户就绪：runtime 仍负责实际 files/Workspace/Preset/模型核验、inventory 审核及 ready 发布。当前产品 runtime 尚未连接这些交接。
 
+`assertBootstrapCurrent(owner, signal?)` 要求原始共享策略回调及正数有限 `maxNativeInventoryEntries`，没有默认值。该预算在遍历前计入所有选中开放清单条目，再于单次扫描中在检查每个实际 runtime 和 fiber 前计数；超限在读取策略元数据前拒绝。它在策略元数据读取前后核验挂载/业务准入、已审核开放清单、原 Controller/AgentLoop/LLM 对象、它们唯一的 ACTIVE 拥有 fiber 和实际 LLM listener。重复安装、替换或 listener 销毁均拒绝。省略回调或预算保留一般准备能力，但此断言保持关闭。取消跟随调用者与图 lifetime。该断言不创建业务资源，也不返回 catalog 或 ready 权限。
+
+Root 配置还可提供 `approvedConfiguration`：显式 recipe/catalog 版本，有限条目、字符串及完整字节上限，非空固定已安装 DSH 包到条目的对应表（禁止安装/启停）、关闭技能、只读凭据及无可写字段。规范解析器先复制并冻结完整值，再由原 `ExposureService` 持有。省略时保留仅开放策略的组合，不产生 catalog。这只是批准元数据；bootstrap 投影公开 id 前，仍必须比对实际账户 Loader 条目、包版本、原模块及配置计划。它不启用安装器、写入者或接口。
+
 [私有 AgentLoop 工厂](src/native-agent-factory.ts) 检查同一实际安装的图绑定，在原生持久化创建或恢复写入 ownership 前，等待共享项目/模型/Preset 准入。安装时只检查已安装的图身份，可信 runtime 装配另行核验准备期权限；创建、恢复与发布都要求独立的业务准入检查。它保留原 setup 及其同步 commit，在 setup 后及 commit 前后核验实际准备的 Agent。普通根 Session 允许省略委托深度或深度为零；parent/subagent/seeded 路径、启动 agents 及 direct AgentLoop.create 保持关闭。所属配方声明原生 AgentLoop 依赖，并排除第二个 loop。
 
 原生持久化 append 可在 setup commit 与 registry 发布之间等待。调用者和图生命周期取消会传入原生事务；commit 后取消会在实际 append 结算后阻止后续发布。成功发布后的调用者取消继续保留原生 creation-only 含义，不取消已提交的 Agent。Runtime 必须在重配置及实际 teardown 中持续持有已准入工作；仅观察者被拒绝不能证明迟到的后端 ownership 已关闭。

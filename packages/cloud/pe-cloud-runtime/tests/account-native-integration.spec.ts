@@ -1,4 +1,5 @@
 /** Actual factory/Profile/Include/native providers; owned Node paths and closed business are fixtures, never quota evidence. */
+import type {} from '@deepseek-ai/dsh-subprocess'
 import * as fs from 'node:fs/promises'
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
@@ -116,6 +117,7 @@ async function fixture(options: {
         resolveCreate: async () => unavailable(), assertSessionProject: async () => unavailable(), assertActiveScope: unavailable },
       agents: { assertCreate: async () => unavailable(), assertResume: async () => unavailable(), assertPrepared: unavailable },
       allowedModel: () => false,
+      assertBootstrapCurrent: async () => unavailable(),
     }
   })
   const dependencies = { async apply(ctx: Context) {
@@ -157,6 +159,7 @@ async function fixture(options: {
     configPath, bareModuleBaseUrl: new URL('../../../../package.json', import.meta.url).href,
     requiredEntryIds: ['include', ...rows.map(row => row.id)], maxObservedEvents: 16, maxPathBytes: 4096,
     native: { saves, exposure: root.peExposure.policy, execution: root.peSandboxCoordinator, stopTimeoutMs: options.stopTimeoutMs ?? 5000,
+      maxNativeInventoryEntries: 128,
       assertRootCurrent: () => { root.peAccountRuntime.assertRecipeSealed('m8s') },
       ...options.missingGuards ? {} : { guards },
       files(_ctx, installed): AccountFilesPreparation {
@@ -251,6 +254,7 @@ it('boots the actual factory NativeLoader with API hooks, guarded native provide
   expect([...ctx.loader.entries()].every(row => row.fiber?.state === FiberState.ACTIVE)).toBe(true)
   expect(f.guards).toHaveBeenCalledTimes(1)
   const denied = { code: 'cloud/account-unavailable' }
+  await expect(ctx.peCloudApi.assertBootstrapCurrent(ctx)).rejects.toMatchObject(denied)
   await expect(ctx.sessionController.create({ cwd: f.project })).rejects.toMatchObject(denied)
   await expect(ctx.agents.create({ sessionId: SessionId('must-not-write'), meta: { cwd: f.project } })).rejects.toMatchObject(denied)
   const stream = ctx.llm.stream({ provider: 'unused', model: 'unused', messages: [] })[Symbol.asyncIterator]()

@@ -19,6 +19,8 @@ export interface AccountNativeGuards {
   readonly sessions: Omit<Parameters<CloudAccountApi['createController']>[1], 'projectDirectory'>
   readonly agents: Parameters<CloudAccountApi['createAgentLoop']>[1]
   readonly allowedModel: Parameters<CloudAccountApi['installLlmGuard']>[1]
+  /** Read the same original project/Preset/default-model policy without creating business resources. */
+  readonly assertBootstrapCurrent: (signal?: AbortSignal) => Promise<void>
 }
 
 /** Actual Root resources, retained by the factory; none is installed as an account Root service. */
@@ -27,6 +29,8 @@ export interface AccountNativePreparation {
   readonly exposure: ExposureService['policy']
   readonly execution: SandboxCoordinator
   readonly stopTimeoutMs: number
+  /** Existing Root native.maxEntries bounds each bootstrap native inventory read. */
+  readonly maxNativeInventoryEntries: number
   /** Actual Root seal recheck for business dispatch and ready publication, independent of mounting. */
   readonly assertRootCurrent: () => void
   /** Existing restricted lane/grant issuer; absence cannot supply a native files owner. */
@@ -78,6 +82,8 @@ export class AccountNativeIntegration {
       binding, saves: this.saves, rootExposure: this.input.exposure, selected: this.input.exposure.manifest,
       assertMountCurrent: mountCurrent,
       assertBusinessCurrent: (current) => { this.input.assertRootCurrent(); businessCurrent(current) },
+      assertBootstrapCurrent: signal => requireGuards(ctx).assertBootstrapCurrent(signal),
+      maxNativeInventoryEntries: this.input.maxNativeInventoryEntries,
     })
     this.api = api
     this.execution = this.input.execution.bindAccount(ctx, binding, () => { mountCurrent(binding) })
