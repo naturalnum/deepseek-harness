@@ -1,3 +1,4 @@
+import { loadRecentTimeZones, rememberTimeZone } from '../src/client/recent-time-zones.ts'
 // @vitest-environment jsdom
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -182,6 +183,7 @@ function mount(
       ok: true, value: { id: expected.id, updated: false, record: expected },
     })),
     onOpenSession: vi.fn(),
+    loadRecentTimeZones, rememberTimeZone,
     loadHistory: vi.fn<TaskManagerPageProps['loadHistory']>(async ({ id }) => {
       const receipt = snapshot.records.find(record => record.id === id)?.lastDelivery
       return { ok: true, value: {

@@ -1,5 +1,5 @@
 /** Metadata inventory of saved and adopted layouts without mounting their content. */
-import { createSnapshotStore, type ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
+import { createSnapshotStore, resolveClientPersistence, type ClientPersistence, type ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { TabId, TabRecord } from '@deepseek-ai/dsh-client-ui-dockkit'
 import { readSidebarLayout, sidebarPersistence } from './persistence.ts'
@@ -20,20 +20,17 @@ export class SidebarTabInventory {
   readonly source: ObservableSnapshot<readonly SidebarRightOpenTab[]> = this.snapshot
 
   /** Read saved layouts once before the root service is published. */
-  constructor() {
-    try {
-      if (typeof localStorage === 'undefined') return
-      const keys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))
-      for (const key of keys) {
-        if (key === null || !key.startsWith(`${sidebarPersistence}.`)) continue
-        const sessionId = key.slice(sidebarPersistence.length + 1) as SessionId
-        const saved = readSidebarLayout(sessionId)
-        if (saved !== undefined) this.sessions.set(sessionId, Object.values(saved.layout.tabs).map(tab => ({
-          sessionId, tabId: tab.id, kind: tab.kind, contentId: tab.contentId,
-        })))
-      }
-      this.publish()
-    } catch (_storageUnavailable) { /* Adopted in-memory layouts still publish their open tabs. */ }
+  constructor(persistence?: ClientPersistence) {
+    const storage = resolveClientPersistence(persistence)
+    for (const key of storage.keys()) {
+      if (!key.startsWith(`${sidebarPersistence}.`)) continue
+      const sessionId = key.slice(sidebarPersistence.length + 1) as SessionId
+      const saved = readSidebarLayout(sessionId, storage)
+      if (saved !== undefined) this.sessions.set(sessionId, Object.values(saved.layout.tabs).map(tab => ({
+        sessionId, tabId: tab.id, kind: tab.kind, contentId: tab.contentId,
+      })))
+    }
+    this.publish()
   }
 
   /**

@@ -12,16 +12,52 @@ import { subscribeWithSelector } from 'zustand/middleware'
 import { shallow } from 'zustand/shallow'
 import { freeze, produce } from 'immer'
 import type {
-  ActionsDecl, BakedActions, ObservableSnapshot, StoreHandle, StoreInstance, StoreSpec,
+  ActionsDecl, BakedActions, ClientPersistence, ObservableSnapshot, StoreHandle, StoreInstance, StoreSpec,
 } from './contract.ts'
 
 // Store contract types are ui-slots authority; re-exported beside the engine
 // so store consumers get one import path.
 export type {
-  ActionsDecl, BakedActions, BoundActions, DefineStore, HandleOf, MaybeSnapshotSelectorHook,
+  ActionsDecl, BakedActions, BoundActions, ClientPersistence, DefineStore, HandleOf, MaybeSnapshotSelectorHook,
   ObservableSnapshot, PropsStore, SnapshotSelectorHook, StoreDecl, StoreFactory,
   StoreHandle, StoreInstance, StoreSpec,
 } from './contract.ts'
+
+/**
+ * Capture an explicit port, or ordinary browser storage with best-effort I/O.
+ * The default captures one Storage object; unavailable storage behaves as empty.
+ * Explicit ports retain their own failure and revocation semantics.
+ * @param persistence - supplied page port; absent selects ordinary localStorage.
+ * @param strict - when no port is supplied, propagate I/O failures to a caller with its own recovery; otherwise report and continue.
+ * @returns the captured dependency for this consumer's entire lifetime.
+ */
+export function resolveClientPersistence(persistence?: ClientPersistence, strict = false): ClientPersistence {
+  if (persistence !== undefined) return persistence
+  let storage: Storage | undefined
+  let accessFailure: { cause: unknown } | undefined
+  try { storage = globalThis.localStorage } catch (error) {
+    if (strict) accessFailure = { cause: error }
+    else console.error('Client persistence unavailable:', error)
+  }
+  const attempt = <T>(operation: () => T, fallback: T): T => {
+    try {
+      if (accessFailure !== undefined) throw accessFailure.cause
+      return operation()
+    } catch (error) {
+      if (strict) throw error
+      console.error('Client persistence failed:', error)
+      return fallback
+    }
+  }
+  return {
+    getItem: key => attempt(() => storage?.getItem(key) ?? null, null),
+    setItem: (key, value) => { attempt(() => storage?.setItem(key, value), undefined) },
+    removeItem: (key) => { attempt(() => storage?.removeItem(key), undefined) },
+    keys: () => attempt(() => storage === undefined ? [] : Array.from(
+      { length: storage.length }, (_, index) => storage.key(index),
+    ).filter((key): key is string => key !== null), []),
+  }
+}
 
 /** Writable snapshot store (bare data face; React selector hooks are synthesized in ui-renderer). */
 export interface SnapshotStore<T> extends ObservableSnapshot<T> {
@@ -97,16 +133,16 @@ function rafBatch(notify: () => void): () => void {
  * frame-level skew, same nature as the object layer's microtask batching.
  *
  * @param init - initial state.
- * @param opts - flush mode and opt-in persistence (localStorage, keyed by name).
- * @returns the store.
+ * @param opts - flush mode and named persistence; omitted storage uses ordinary localStorage.
+ * @returns the store; explicit port read failures abort creation and write failures propagate after the in-memory update.
  */
 export function createSnapshotStore<T>(
-  init: T, opts?: { flush?: 'raf' | 'sync'; persist?: { name: string } }): SnapshotStore<T> {
+  init: T, opts?: { flush?: 'raf' | 'sync'; persist?: { name: string; storage?: ClientPersistence | undefined } }): SnapshotStore<T> {
   // Immer enters through produce() in update() below (identical semantics to
   // the immer middleware without its setState-signature mutator generics).
   const withSelector = subscribeWithSelector(() => init)
   const api: StoreApi<T> = createStore<T>()(withSelector)
-  if (opts?.persist) attachPersistence(api, opts.persist.name)
+  if (opts?.persist) attachPersistence(api, opts.persist.name, resolveClientPersistence(opts.persist.storage))
 
   let subscribe = (fn: () => void) => api.subscribe(() => {
     notifySubscribers([fn], '[client-store]')
@@ -135,21 +171,10 @@ export function createSnapshotStore<T>(
   }
 }
 
-/**
- * Whole-value JSON persistence to localStorage. Hand-rolled instead of the
- * zustand persist middleware: its write path spreads state into an object
- * (`partialize({ ...get() })`), exploding primitive state (a persisted string
- * draft becomes {0:'h',1:'e',...}) — not fixable via merge/deserialize options
- * because the corruption happens before serialization. Storage failures
- * (quota, private mode) only disable persistence, never break the store.
- */
-function attachPersistence<T>(api: StoreApi<T>, name: string): void {
-  // Non-browser runs (node e2e booting the client tree) have no localStorage:
-  // persistence silently disables — same contract as a storage failure, minus
-  // the per-store console noise a ReferenceError would produce.
-  if (typeof localStorage === 'undefined') return
+/** Persist whole JSON values without spreading scalar or array roots. */
+function attachPersistence<T>(api: StoreApi<T>, name: string, storage: ClientPersistence): void {
+  const raw = storage.getItem(name)
   try {
-    const raw = localStorage.getItem(name)
     if (raw !== null) {
       api.setState(devFreeze(JSON.parse(raw) as T), true)
     }
@@ -157,11 +182,12 @@ function attachPersistence<T>(api: StoreApi<T>, name: string): void {
     console.error(`snapshot store '${name}' rehydration failed:`, error)
   }
   api.subscribe((state) => {
-    try {
-      localStorage.setItem(name, JSON.stringify(state))
-    } catch (error) {
-      console.error(`snapshot store '${name}' persistence failed:`, error)
+    let raw: string
+    try { raw = JSON.stringify(state) } catch (error) {
+      console.error(`snapshot store '${name}' serialization failed:`, error)
+      return
     }
+    storage.setItem(name, raw)
   })
 }
 
@@ -187,15 +213,16 @@ export interface EngineStoreHandle<T, A extends ActionsDecl<T>> extends StoreHan
    *
    * Known boundary: the persist key is the storage identity, so multiple live
    * instances created under the same resolved key share (and cross-pollute)
-   * one localStorage entry. Instance uniqueness per key is the caller's
+   * one logical entry on the captured port. Instance uniqueness per key is the caller's
    * responsibility — production is safe because the framework caches one
    * instance per handle x scope key; tests wanting isolation use distinct
    * scope keys or persist-free declarations (multi-create freedom is a
    * feature there, so create() deliberately does not dedupe or throw).
    * @param scopeKey - session id for session-scope instances; omitted for root scope.
+   * @param persistence - captured page port; omitted selects ordinary browser storage.
    * @returns the engine instance.
    */
-  create(scopeKey?: string): EngineStoreInstance<T, A>
+  create(scopeKey?: string, persistence?: ClientPersistence): EngineStoreInstance<T, A>
 }
 
 /**
@@ -218,13 +245,14 @@ export function defineStore<T, A extends ActionsDecl<T>>(
   decl: StoreSpec<T, A> & { actions: A & ActionsDecl<T> }): EngineStoreHandle<T, A> {
   return {
     spec: decl,
-    create(scopeKey?: string): EngineStoreInstance<T, A> {
+    create(scopeKey?: string, persistence?: ClientPersistence): EngineStoreInstance<T, A> {
+      const storage = decl.persist === undefined ? undefined : resolveClientPersistence(persistence)
       const persistKey = decl.persist === undefined
         ? undefined
         : scopeKey === undefined ? decl.persist : `${decl.persist}.${scopeKey}`
       const store = createSnapshotStore<T>(
         decl.init(),
-        persistKey !== undefined ? { persist: { name: persistKey } } : undefined)
+        persistKey !== undefined ? { persist: { name: persistKey, storage } } : undefined)
       const actions = {} as Record<string, (...params: unknown[]) => void>
       for (const key of Object.keys(decl.actions)) {
         const mutate = decl.actions[key] as (draft: T, ...params: unknown[]) => void
@@ -236,13 +264,7 @@ export function defineStore<T, A extends ActionsDecl<T>>(
         subscribe: fn => store.subscribe(fn),
         store,
         clearPersisted: () => {
-          if (persistKey === undefined || typeof localStorage === 'undefined') return
-          try {
-            localStorage.removeItem(persistKey)
-          } catch {
-            // Storage failures (private mode, quota teardown races) only skip
-            // cleanup — the same non-fatal contract as attachPersistence.
-          }
+          if (persistKey !== undefined && storage !== undefined) storage.removeItem(persistKey)
         },
       }
     },

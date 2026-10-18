@@ -106,6 +106,7 @@ export function apply(ctx: ClientContext): void {
   // still the active scope stalls browser boot with no error at all. The
   // template this follows (ui-conversation's definition registry) is built at
   // its own apply top level for the same reason.
+  const persistence = ctx.get('clientPersistence')
   const t = ctx.locale.bind(NS)
   const tabs = new SidebarRightTabRegistry(ctx)
   const views = new SidebarSessionViews(ctx.sessions)
@@ -128,6 +129,7 @@ export function apply(ctx: ClientContext): void {
       openWithFocus: (sessionId, open) => { openWithPaneFocus(document, sessionId, open) },
       closeWithFocus: (sessionId, paneId, close) => { closeWithPaneFocus(document, sessionId, paneId, close) },
     },
+    persistence,
   )
   // The Session on screen: the selected one while the Conversation fills the
   // main column. Both sources notify before React renders their change, so the
@@ -172,8 +174,8 @@ export function apply(ctx: ClientContext): void {
     const adoptions = new Map<SessionId, () => void>()
     const store: typeof handle = {
       ...handle,
-      create: (scopeKey) => {
-        const instance = handle.create(scopeKey)
+      create: (scopeKey, storage) => {
+        const instance = handle.create(scopeKey, storage)
         if (scopeKey !== undefined) {
           const sessionId = scopeKey as SessionId
           adoptions.get(sessionId)?.()

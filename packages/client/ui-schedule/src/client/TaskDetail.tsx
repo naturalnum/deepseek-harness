@@ -29,7 +29,6 @@ import type { FrequencyZone } from './schedule-format.ts'
 import { cronPreview, cronShapeExpression, parseCronExpression, recognizeCronShape } from './task-cron.ts'
 import type { CronBuilderState } from './task-cron.ts'
 import { sessionLabel, sessionLinkState } from './session-link.ts'
-import { loadRecentTimeZones, rememberTimeZone } from './recent-time-zones.ts'
 import type { TaskManagerKey } from './task-manager-locales.ts'
 import { TaskMenu } from './TaskMenu.tsx'
 import type { TaskMenuEntry } from './TaskMenu.tsx'
@@ -157,6 +156,10 @@ const sessionLinkMessages = {
  * actions one task's detail calls.
  */
 export interface TaskDetailInjected extends DeliveryHistoryInjected, TaskTimingInjected {
+  /** Read this page's recent time-zone preferences. */
+  readonly loadRecentTimeZones: (system: string) => readonly string[]
+  /** Remember one preference through this page's captured storage. */
+  readonly rememberTimeZone: (recent: readonly string[], zone: string) => readonly string[]
   /**
    * Delete one retained task through its original Session binding.
    * @param id - Task shown in this detail.
@@ -289,7 +292,8 @@ export function useTaskDetail(
  * @returns the detail region, its deletion confirmation dialog, and the linked Session entry.
  */
 export function TaskDetail({
-  task, authoritative, id, status, deleting, onDelete, onRetry, onUpdateTiming, loadHistory, onOpenSession,
+  task, authoritative, id, status, deleting, loadRecentTimeZones, rememberTimeZone,
+  onDelete, onRetry, onUpdateTiming, loadHistory, onOpenSession,
   onEditState, tab, onTabChange, confirmId, onConfirm, onDeleted, onClose, withinSession, useSessions, useWorkspaces, t,
 }: TaskDetailProps): ReactNode {
   const sessions = useSessions(snapshot => snapshot)
@@ -850,6 +854,8 @@ export function TaskDetail({
                 onChange={(event) => { editContent({ prompt: event.target.value }) }}
               />}
             <RuleCard
+              loadRecentTimeZones={loadRecentTimeZones}
+              rememberTimeZone={rememberTimeZone}
               key={JSON.stringify([task.sessionId, task.id])}
               task={task}
               disabled={busy || pending || task.status === 'inactive'}
@@ -1245,6 +1251,8 @@ function guardMenuEscape(event: KeyboardEvent<HTMLElement>, open: boolean, close
 
 /** Inputs of the Run time card: the detail's staged values, its blocking state, and the draft owners. */
 interface RuleCardProps extends PropsLocale<'schedule.manager'> {
+  readonly loadRecentTimeZones: TaskDetailInjected['loadRecentTimeZones']
+  readonly rememberTimeZone: TaskDetailInjected['rememberTimeZone']
   /** Rule whose timing rows the card edits. */
   readonly task: ScheduleCatalogEntry
   /** Whether catalog loading, a pending save, an in-flight deletion, or an ended rule blocks every edit. */
@@ -1490,7 +1498,8 @@ function WeekdayRow({ weekdays, disabled, t, rowId, onToggle }: {
  * @returns the bordered Run time card with its staged rows.
  */
 function RuleCard({
-  task, disabled, values, intervalUnit, failure, onChooseKind, onChooseZone, onToggleWeekday, onEditDraft, t,
+  task, disabled, values, intervalUnit, failure, loadRecentTimeZones, rememberTimeZone,
+  onChooseKind, onChooseZone, onToggleWeekday, onEditDraft, t,
 }: RuleCardProps): ReactNode {
   const shown = values
   const [repeatOpen, setRepeatOpen] = useState(false)

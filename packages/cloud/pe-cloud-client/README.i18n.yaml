@@ -24,8 +24,8 @@
   en: cc82c7d301d5cfee
   zh: 05ae285730dc6c6f
 /deepseek-ai-dsh-pe-cloud-client/understand-the-implementation:
-  en: 668cdcbcbab30070
-  zh: cb2175d92384e626
+  en: 798a2628ec2d1311
+  zh: 87022523cfad922f
 /deepseek-ai-dsh-pe-cloud-client/further-exploration:
   en: d7c95e090311d849
   zh: c9f288ccc8f9fa39
@@ -40,13 +40,13 @@
   zh: 5422e046897675a3
 /deepseek-ai-dsh-pe-cloud-client/model-experience/browser-transport-without-model-context/token-effect:
   en: d152b7dad135666d
-  zh: 160009b3f855d67f
+  zh: 05ea4c8b8b15949c
 /deepseek-ai-dsh-pe-cloud-client/model-experience/browser-transport-without-model-context/kv-cache-effect:
   en: b2a8101acd22e2cd
   zh: a5813e864630d1a7
 /deepseek-ai-dsh-pe-cloud-client/known-limitations-and-deferred-work:
-  en: 0dc20d19d5519b2a
-  zh: 507f896523f1df12
+  en: 1e0b469752b1b106
+  zh: ea5c85f0158994b6
 /deepseek-ai-dsh-pe-cloud-client/known-limitations-and-deferred-work/dev-note:
   en: 832fba8e470a086d
   zh: ec863987f873378a

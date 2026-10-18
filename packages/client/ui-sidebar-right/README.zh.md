@@ -138,6 +138,8 @@ Tab 域按（Session，Tab id）保留品牌化 occurrence id、导航、中止�
 
 <a id="known-limitations-and-deferred-work"></a>
 
+原生页面在激活前捕获 [Client 持久化端口](../store/README.zh.md#page-persistence)；本包的持久化偏好、store 和直接缓存访问均使用该依赖。普通调用者保留浏览器存储默认行为。
+
 - **布局保存在当前浏览器。** 布局不跨设备同步；provider 专属状态需要由该 provider 支持恢复。
 - **没有会话就没有停靠面。** 状态按会话 id 键控，因此 hero 画面右侧什么都不显示。
 - **硬编码的层叠。** 内容树使用固定层叠层；浮窗在该层内重排，不会把整层抬到菜单之上。

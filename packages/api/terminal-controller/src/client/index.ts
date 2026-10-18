@@ -5,7 +5,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-api-gateway/client'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import { TerminalView, type TerminalRemote } from './model.ts'
-import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { createSnapshotStore, resolveClientPersistence, type ClientPersistence, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import type { TerminalShell, WebTerminalId, WebTerminalInfo } from '../types.ts'
 import { preferredShell, rememberShell } from './shell-preference.ts'
@@ -40,13 +40,14 @@ export interface TerminalCloseFailure {
 export class ClientTerminals extends Service {
   /** Failed cleanup tasks; successful and in-progress closes have no visible notification. */
   readonly closeFailures: SnapshotStore<readonly TerminalCloseFailure[]> = createSnapshotStore<readonly TerminalCloseFailure[]>([])
-  private readonly requests = new TerminalCloseRequests()
+  private readonly persistence: ClientPersistence
+  private readonly requests: TerminalCloseRequests
   private readonly closing = new Map<WebTerminalId, Promise<void>>()
-  private readonly closed = new Set<WebTerminalId>(this.requests.pending().map(request => request.id))
+  private readonly closed: Set<WebTerminalId>
   private disposed = false
   private readonly views = new Map<SessionId, Map<string, TerminalView>>()
   private readonly inventories = new Map<SessionId, TerminalInventory>()
-  private readonly bindings = new TerminalBindings()
+  private readonly bindings: TerminalBindings
   private readonly holds = new Map<SessionId, Map<WebTerminalId, TerminalWindowHold>>()
   private readonly releasing = new Set<Promise<void>>()
   private openTabs: readonly { sessionId: SessionId; tabId: string; contentId: string }[] = []
@@ -57,6 +58,10 @@ export class ClientTerminals extends Service {
    */
   constructor(ctx: Context, private readonly remote: TerminalRemote) {
     super(ctx, 'webTerminals')
+    this.persistence = resolveClientPersistence(ctx.get('clientPersistence'))
+    this.requests = new TerminalCloseRequests(this.persistence)
+    this.closed = new Set(this.requests.pending().map(request => request.id))
+    this.bindings = new TerminalBindings(this.persistence)
     const connection = ctx.get('connection') as ConnectionHandle
     let connected = connection.generation.getSnapshot() !== undefined
     ctx.on('connection/reset', () => {
@@ -101,7 +106,7 @@ export class ClientTerminals extends Service {
       const id = saved ?? randomUUID() as WebTerminalId
       this.bindings.set(sessionId, contentId, id)
       view = new TerminalView(sessionId, this.remote, this.ctx.remote, this.inventory(sessionId), id, saved === undefined, shellPath,
-        signal => this.hold(sessionId, id).ready(signal))
+        signal => this.hold(sessionId, id).ready(signal), this.persistence)
       views.set(key, view)
       this.reconcileHolds()
       void view.refresh()
@@ -127,7 +132,7 @@ export class ClientTerminals extends Service {
   async launchShells(sessionId: SessionId, signal: AbortSignal): Promise<TerminalLaunchShells> {
     const result = await this.remote.shells(sessionId, signal)
     if (!result.ok) throw new Error(result.error.message)
-    const previous = preferredShell()
+    const previous = preferredShell(this.persistence)
     return { shells: result.value, selectedShell: result.value.find(shell => shell.path === previous)?.path ?? result.value[0]?.path }
   }
 
@@ -135,7 +140,7 @@ export class ClientTerminals extends Service {
    * Remember the guide selection before allocating its terminal tab.
    * @param path - shell selected from Host discovery.
    */
-  selectShell(path: string): void { rememberShell(path) }
+  selectShell(path: string): void { rememberShell(path, this.persistence) }
 
   /**
    * Save a close intent and release the tab immediately; cleanup outlives DOM unmount and reload.

@@ -15,6 +15,8 @@ export interface BoundTransportInput {
   readonly fetch: RpcFetch
   readonly createWebSocket: ConnectionWebSocketFactory
   readonly limits: Pick<CloudClientConfig, 'maxPendingFetches' | 'maxSockets' | 'maxErrorResponseBytes' | 'closeTimeoutMs'>
+  /** Revoke page persistence synchronously before any carrier is stopped. */
+  readonly beforeClose?: (reason: ClientFailureCode) => void
 }
 
 interface SocketUse {
@@ -43,11 +45,13 @@ export class BoundTransport {
   private phase: TransportSnapshot['phase'] = 'open'
   private reason: ClientFailureCode | undefined
   private closing: Promise<void> | undefined
+  private readonly beforeClose: BoundTransportInput['beforeClose']
   /** Native installer input; the original Connection still owns envelopes and correlation. */
   readonly hooks: ClientTransportHooks
 
   /** @param input - owner-validated expectations/field names and real native carrier factories. */
   constructor(input: BoundTransportInput) {
+    this.beforeClose = input.beforeClose
     this.base = new URL(input.baseUrl)
     if (!['http:', 'https:'].includes(this.base.protocol) || !this.base.pathname.endsWith('/')
       || this.base.search !== '' || this.base.hash !== '' || this.base.username !== '' || this.base.password !== '') {
@@ -91,8 +95,11 @@ export class BoundTransport {
    */
   close(reason: ClientFailureCode = 'closed'): Promise<void> {
     if (this.closing !== undefined) return this.closing
+    const completion = Promise.withResolvers<void>()
+    this.closing = completion.promise
     this.phase = 'closing'
     this.reason = reason
+    try { this.beforeClose?.(reason) } catch (error) { this.cleanupFailures.push(error) }
     this.abort.abort(new ClientFailure(reason))
     const uses = [...this.sockets]
     for (const { socket } of uses) {
@@ -114,7 +121,7 @@ export class BoundTransport {
     const deadline = new Promise<never>((_resolve, reject) => {
       timer = setTimeout(() => { reject(new ClientFailure('close-unconfirmed')) }, this.limits.closeTimeoutMs)
     })
-    this.closing = Promise.race([work, deadline]).finally(() => { clearTimeout(timer) })
+    void Promise.race([work, deadline]).finally(() => { clearTimeout(timer) }).then(completion.resolve, completion.reject)
     // Keep the automatic 401/stale invalidation observable even without an awaiting UI consumer.
     void this.closing.catch((_error: unknown) => { if (this.phase !== 'closed') this.phase = 'unconfirmed' })
     return this.closing

@@ -164,6 +164,8 @@ None; this package neither assembles nor sends a provider request.
 
 <a id="known-limitations-and-deferred-work"></a>
 
+The native page captures the [Client persistence port](../store/README.md#page-persistence) before activation; this package uses it for persisted preferences, stores and direct cache access. Ordinary callers retain browser storage defaults.
+
 
 These limits define the reach of the management view; they are current package constraints.
 

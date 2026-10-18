@@ -53,6 +53,8 @@ import { ScheduleTaskTabTitle } from './ScheduleTaskTabTitle.tsx'
 import { SessionScheduleHover } from './SessionScheduleHover.tsx'
 import { SessionScheduleMark } from './SessionScheduleMark.tsx'
 import { createSessionScheduleSource, type SessionScheduleSourceFactory } from './session-schedule-state.ts'
+import { loadRecentTimeZones, rememberTimeZone } from './recent-time-zones.ts'
+import { resolveClientPersistence } from '@deepseek-ai/dsh-client-store'
 import { TaskTabBindings } from './task-tab-bindings.ts'
 import { TaskManagerPage, type TaskManagerInjected } from './TaskManagerPage.tsx'
 import type { TaskDetailInjected } from './TaskDetail.tsx'
@@ -137,7 +139,10 @@ export function apply(ctx: ClientContext): void {
       ctx.uiWorkspace.openSession(id)
     }
   }
+  const persistence = resolveClientPersistence(ctx.get('clientPersistence'))
   const detail: TaskDetailInjected & ScheduleTaskCatalogInjected = {
+    loadRecentTimeZones: system => loadRecentTimeZones(system, persistence),
+    rememberTimeZone: (recent, zone) => rememberTimeZone(recent, zone, persistence),
     hooks: manager.hooks,
     onDelete: reportedDelete(manager.onDelete),
     onRetry: manager.onRetry,
@@ -151,6 +156,7 @@ export function apply(ctx: ClientContext): void {
   // leaves no entry behind.
   const taskBindings = new TaskTabBindings(
     sessionId => ctx.sidebarRight.tabsIn(sessionId).map(tab => tab.id),
+    persistence,
   )
   ctx.effect(() => ctx.sidebarRightTabs.register(scheduleTaskDefinition(t)), 'ui-schedule: task tab type')
   ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register({

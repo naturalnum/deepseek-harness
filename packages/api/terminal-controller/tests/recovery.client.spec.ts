@@ -581,7 +581,7 @@ it('keeps cleanup usable in memory when storage access itself is denied', () => 
   expect(requests.pending()).toHaveLength(1)
   requests.remove(info.id)
   expect(requests.pending()).toEqual([])
-  expect(error).toHaveBeenCalledTimes(3)
+  expect(error).toHaveBeenCalledTimes(1)
 })
 
 it.each(['saved', 'view'] as const)('clears a %s close request after the Host confirms that its Session does not exist', async (source) => {

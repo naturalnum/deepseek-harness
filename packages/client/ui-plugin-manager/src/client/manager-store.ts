@@ -565,9 +565,7 @@ export class PluginManagerController {
   /** A Discover entry chose the dialog's registry; that choice applies to this dialog only and is never remembered. */
   private transientRegistry = false
   /** The registry last used from this browser, kept across dialogs and page loads; null until one was used. */
-  private readonly registryMemory: SnapshotStore<RegistryChoice | null> = createSnapshotStore<RegistryChoice | null>(null, {
-    persist: { name: 'dsh.plugin-manager.install-registry' },
-  })
+  private readonly registryMemory: SnapshotStore<RegistryChoice | null>
 
   /**
    * @param ctx - the tab plugin's context, whose `remote.pluginManager` and `remote.pluginInventory` namespaces answer.
@@ -575,6 +573,9 @@ export class PluginManagerController {
   constructor(
     private readonly ctx: ClientContext,
   ) {
+    this.registryMemory = createSnapshotStore<RegistryChoice | null>(null, {
+      persist: { name: 'dsh.plugin-manager.install-registry', storage: ctx.get('clientPersistence') },
+    })
     this.store = createSnapshotStore<PluginManagerState>({
       status: 'idle', refreshStatus: 'idle', packages: [], busy: [], notice: null,
       install: IDLE_INSTALL, confirm: null, highlight: null,

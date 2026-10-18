@@ -1,3 +1,4 @@
+import { resolveClientPersistence, type ClientPersistence } from '@deepseek-ai/dsh-client-store'
 /** Independent content-to-terminal records keep concurrent browser writes disjoint. */
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { WebTerminalId } from '../types.ts'
@@ -6,6 +7,11 @@ const PREFIX = 'dsh.terminal.binding.v1.'
 
 /** Saved recovery targets keyed by Session and globally unique terminal content identity. */
 export class TerminalBindings {
+  private readonly persistence: ClientPersistence
+
+  /** @param persistence - page port; absent retains ordinary browser persistence. */
+  constructor(persistence?: ClientPersistence) { this.persistence = resolveClientPersistence(persistence) }
+
   private readonly memory = new Map<string, WebTerminalId>()
 
   /**
@@ -18,9 +24,8 @@ export class TerminalBindings {
     const key = this.key(sessionId, contentId)
     const known = this.memory.get(key)
     if (known !== undefined) return known
-    if (typeof localStorage === 'undefined') return undefined
+    const raw = this.persistence.getItem(key)
     try {
-      const raw = localStorage.getItem(key)
       if (raw === null) return undefined
       const value: unknown = JSON.parse(raw)
       if (typeof value !== 'string' || !/^[\w-]{1,128}$/u.test(value)) return undefined
@@ -38,9 +43,7 @@ export class TerminalBindings {
   set(sessionId: SessionId, contentId: string, id: WebTerminalId): void {
     const key = this.key(sessionId, contentId)
     this.memory.set(key, id)
-    if (typeof localStorage === 'undefined') return
-    try { localStorage.setItem(key, JSON.stringify(id)) }
-    catch (error) { console.error('Terminal binding persistence failed:', error) }
+    this.persistence.setItem(key, JSON.stringify(id))
   }
 
   /**
@@ -51,9 +54,7 @@ export class TerminalBindings {
   delete(sessionId: SessionId, contentId: string): void {
     const key = this.key(sessionId, contentId)
     this.memory.delete(key)
-    if (typeof localStorage === 'undefined') return
-    try { localStorage.removeItem(key) }
-    catch (error) { console.error('Terminal binding cleanup failed:', error) }
+    this.persistence.removeItem(key)
   }
 
   /** Release cached values when the Client service is disposed. */

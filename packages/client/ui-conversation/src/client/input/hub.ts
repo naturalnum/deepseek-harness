@@ -15,7 +15,7 @@ import type {
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { TranslateNS } from '@deepseek-ai/dsh-client-locale/client'
 import type { InboxState } from '@deepseek-ai/dsh-agent/types'
-import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
+import { resolveClientPersistence, type ClientPersistence, type ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type {
   DraftAttachmentId, DraftAttachmentSerializationResult, DraftInitializationOptions, DraftInitializationResult, InputTriggerController,
   SessionInputResolver, SessionInput, SubmitOutcome,
@@ -53,6 +53,7 @@ interface ConversationAttachmentFace {
 
 /** Session-addressed input facade registry (SessionInputResolver face + composer-layer extras). */
 export class InputHub implements SessionInputResolver {
+  private readonly persistence: ClientPersistence
   private readonly shells = new WeakMap<SessionBinding, SessionInputShell>()
 
   /**
@@ -62,7 +63,7 @@ export class InputHub implements SessionInputResolver {
   constructor(
     private readonly rootCtx: Context,
     private readonly t: TranslateNS<'conversation'>,
-  ) {}
+  ) { this.persistence = resolveClientPersistence(rootCtx.get('clientPersistence')) }
 
   /**
    * Resolve the facade for one session-scope ctx (SessionInputResolver face).
@@ -167,7 +168,7 @@ export class InputHub implements SessionInputResolver {
         return () => { shell.refreshLexiconSubscription() }
       }, 'conversation.input: reference catalogs')
     })
-    shell.setDraft(readConversationDraft(binding.sessionId))
+    shell.setDraft(readConversationDraft(binding.sessionId, this.persistence))
     return shell
   }
 

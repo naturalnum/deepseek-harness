@@ -1,4 +1,30 @@
 /** Framework-neutral snapshot and store contracts. */
+import '@deepseek-ai/cordis'
+
+/** Page-owned logical-key storage. Explicit ports report failures to their owner. */
+export interface ClientPersistence {
+  /**
+   * @param key - logical key.
+   * @returns the saved value, or null when absent.
+   */
+  getItem(key: string): string | null
+  /**
+   * @param key - logical key.
+   * @param value - complete replacement value.
+   */
+  setItem(key: string, value: string): void
+  /** @param key - logical key to remove. */
+  removeItem(key: string): void
+  /** @returns only the logical keys this port can access. */
+  keys(): readonly string[]
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /** Captured before client activation; absent in ordinary standalone consumers. */
+    clientPersistence: ClientPersistence
+  }
+}
 
 /** Minimal observable snapshot source shared by controllers, stores, and render adapters. */
 export interface ObservableSnapshot<T> {
@@ -97,9 +123,10 @@ export interface StoreHandle<T, A extends ActionsDecl<T>> {
    * @param scopeKey - session id for session-scope instances; suffixes the
    * persist key so per-session instances persist independently (root-scope
    * instances omit it).
+   * @param persistence - captured page port; omitted uses ordinary browser storage.
    * @returns a fresh instance seeded from `spec.init()`.
    */
-  create(scopeKey?: string): StoreInstance<T, A>
+  create(scopeKey?: string, persistence?: ClientPersistence): StoreInstance<T, A>
 }
 
 /**

@@ -4,7 +4,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { ISessions, SessionBinding } from '@deepseek-ai/dsh-api-session-controller/client'
 import { IconPaperclipOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
-import { createSnapshotStore, type BoundActions } from '@deepseek-ai/dsh-client-store'
+import { createSnapshotStore, resolveClientPersistence, type BoundActions } from '@deepseek-ai/dsh-client-store'
 import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 // Type-only service and declaration merges used by this assembly.
@@ -187,6 +187,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-conversation: dictionaries')
   const t = ctx.locale.bind(NS)
   const conversationStore = createConversationStore()
+  const persistence = resolveClientPersistence(ctx.get('clientPersistence'))
   const submissionPolicy = new ComposerSubmissionPolicy(
     ctx.configForms.get<ConversationSettings>(CONVERSATION_SETTINGS_NAMESPACE),
   )
@@ -222,7 +223,7 @@ export function apply(ctx: Context, config: Config = Config({})): void {
     if (active !== undefined) uiConversation.binding(sessionId).activate(active.id)
   }
   const restoreView = (sessionId: SessionId): void => {
-    activateView(sessionId, readConversationViewPreference(sessionId))
+    activateView(sessionId, readConversationViewPreference(sessionId, persistence))
   }
   const conversationViews = createSnapshotStore<readonly ViewTab[]>(viewTabs())
   const bindings = new Set<SessionBinding>()
@@ -352,6 +353,12 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       widthControls: { scope: 'root' },
     },
     inject: (sessionId: SessionId | undefined): ConversationInjected => ({
+      readContentWidth: () => {
+        const raw = persistence.getItem('dsh.conversation.contentWidth')
+        const value = raw === null ? NaN : Number(raw)
+        return Number.isFinite(value) && value > 0 ? value : null
+      },
+      writeContentWidth: (width) => { persistence.setItem('dsh.conversation.contentWidth', String(width)) },
       hooks: {
         composerBlock: sessionId === undefined ? ABSENT_BLOCK : composerBlocks.storeFor(sessionId),
       },

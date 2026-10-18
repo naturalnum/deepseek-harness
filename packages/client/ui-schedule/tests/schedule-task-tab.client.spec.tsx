@@ -1,3 +1,4 @@
+import { loadRecentTimeZones, rememberTimeZone } from '../src/client/recent-time-zones.ts'
 // @vitest-environment jsdom
 /** The task tab renders the one task its navigation parameters name. */
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
@@ -111,6 +112,7 @@ function mount(
       },
     })),
     onOpenSession: vi.fn(),
+    loadRecentTimeZones, rememberTimeZone,
     taskBindings: new TaskTabBindings(() => [TAB.id]),
     t: makeTranslate(dictionary),
     ...overrides,

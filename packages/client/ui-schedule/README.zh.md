@@ -92,6 +92,8 @@ kind: "package-reference"
 
 <a id="known-limitations-and-deferred-work"></a>
 
+原生页面在激活前捕获 [Client 持久化端口](../store/README.zh.md#page-persistence)；本包的持久化偏好、store 和直接缓存访问均使用该依赖。普通调用者保留浏览器存储默认行为。
+
 - 已保存的记录描述收件箱投递，不表示模型执行结果。没有已保存历史的任务仅呈现已有回执，直到新投递追加记录；未保存的更早记录和提示文本快照无法恢复。此前已物理删除的任务不会恢复。
 - 每页 20 条仅限制请求的记录数，不限制提示文本字节数或任务保留的存储。投递历史由 Host 插件的配置设界：`deliveryHistoryDays`（默认 30）与 `deliveryHistoryRecords`（默认 200），在追加确认时裁剪，最近一次回执始终保留，被裁剪的更早窗口报告为不可用；见 [Schedule 限制](../../schedule/schedule/README.zh.md#known-limitations-and-deferred-work)。
 - 删除不会取消已经排队执行的提醒。详情页签条内的关联会话入口使用普通会话导航及其恢复策略打开原对话，不直接跳转到特定消息。

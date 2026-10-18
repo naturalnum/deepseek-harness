@@ -79,6 +79,8 @@ The Host verifies the path through the composed filesystem before opening or rev
 
 <a id="known-limitations-and-deferred-work"></a>
 
+The native page captures the [Client persistence port](../store/README.md#page-persistence) before activation; this package uses it for persisted preferences, stores and direct cache access. Ordinary callers retain browser storage defaults.
+
 - **The dictionaries gate the menu.** A host catalog extension without a matching `app.<id>` entry in both dictionaries stays invisible instead of showing a raw id; extending the catalog means extending [`dsh-host-open-in-app`](../../host/open-in-app/README.md) and this package's locales together.
 - **Availability is read once per page.** An application installed while the page is open appears after a reload (and, host-side, after a host restart); the desktop answer behind the file controls is read once per page as well.
 - **One reveal label for every platform.** The Session Remote reports whether a desktop exists, not which file manager it runs, so the menu says "Show file location" rather than naming Finder or File Explorer as the delivery cards do.

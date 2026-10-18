@@ -66,7 +66,7 @@ kind: "package-reference"
 | [浏览器入口](src/client/index.ts) | 拒绝不完整的客户端装配。 |
 | [Bootstrap attempt](src/client/bootstrap.ts) | 分开追踪结果、实际结束和清理。 |
 | [固定载体](src/client/transport.ts) | 在原生载体外添加 access 预期值。 |
-| [行为测试](tests/transport.spec.ts) | 检查原生 Connection envelope 与生命周期拒绝。 |
+| [行为测试](tests/transport.client.spec.ts) | 检查原生 Connection envelope 与生命周期拒绝。 |
 
 </details>
 
@@ -96,6 +96,12 @@ kind: "package-reference"
 
 直接令牌开销为零。bootstrap 校验、绑定捕获和载体清理不添加系统文本、工具声明、保留的 Session 内容或独立模型请求。
 
+`/client` 还为 Cordis 启动前的页面拥有者导出 `CloudPageLifetime`、`CloudPagePersistence` 及其类型。用已解码的固定账户／代际、真实存储、carrier 工厂和显式持久化预算构造生命周期。将 `page.nativeOptions` 传给 `AppWebEntry`，在原生 Connection 激活前安装 `page.transport.hooks`，然后调用 `page.start(entry)`。必需原生端口缺失时在模块加载前拒绝。Loader 的 `apply` entry 仍拒绝未完成的生产装配。
+
+缓存接受有限正安全整数 `maxKeys`、`maxKeyBytes`、`maxValueBytes`、`maxTotalBytes` 和 `maxNamespaceBytes`。字节预算按 UTF-8 计算；总量包含物理命名空间键和序列化 envelope。键保持逻辑形式，枚举只暴露该命名空间。账户／代际元组使用不会发生分隔符碰撞的 JSON 编码。不恢复旧的未分区缓存。每次变更原子替换一个有界 envelope；同账户／同代际页面并发使用后写覆盖的完整快照，可能丢失独立更新。撤销仅作用于已签发的本地端口，不宣称跨标签页全局撤销。
+
+`dispose()` 同步撤销旧端口，停止捕获的 carrier 与原生图，等待其实际清理，然后仅移除并核验旧命名空间。自动 401／stale-generation 关闭和缓存失败进入同一流程。迟到原生订阅不能通过已撤销端口写入或删除。停止失败时保留命名空间；移除失败时保留未确认状态。原生 disposer 挂起时继续等待。清理错误通过返回的 promise、页面／缓存快照和默认启用的控制台报告保持可观察。相同账户／代际刷新恢复自己的缓存；不同代际获得另一个命名空间。
+
 #### KV 缓存影响
 
 本包不追加或替换模型请求令牌，也不发起独立模型请求。它不添加改变前缀的内容；模型装配、提供方缓存可用性与复用由包外负责。
@@ -108,8 +114,8 @@ kind: "package-reference"
 
 - Access 尚无正式 bootstrap DTO/解码器或代际签发器。内部解码回调是本地测试/装配输入，不是公共 wire 协议或生产集成。
 - 原生启动必须在 Gateway 构造前安装固定载体。未实现全局 fetch/Storage patch、新 mux、会话 UI、登录表单或账户 ready 状态。
-- 原生草稿、选择、直接 localStorage helpers、resources、上传 Worker 及下载的账户/代际分区需要协调公开适配；对应能力继续关闭。
-- 原生应用须在载体失效后释放 effects 和响应消费者。本增量不声明完整原生应用关闭、浏览器装配覆盖或 S1/S2 验收通过。
+- 页面生命周期和原生缓存端口需要真实 bootstrap／页面拥有者。resources、upload Worker 和 downloads 仍须协调准入；不发布就绪的云端应用。
+- 生产浏览器装配和 S1/S2 验收需要独立集成证据。组件清理与缓存测试不能证明完整账户准入或服务端排空。
 
 <a id="dev-note"></a>
 ### 开发备注

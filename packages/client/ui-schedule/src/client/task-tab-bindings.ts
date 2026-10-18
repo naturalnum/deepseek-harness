@@ -18,6 +18,7 @@
  * succeeded after the tab appeared cannot resolve. Only the task's Session and id are stored; its name, instruction, and
  * deliveries are not.
  */
+import { resolveClientPersistence, type ClientPersistence } from '@deepseek-ai/dsh-client-store'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ScheduleId } from '@deepseek-ai/dsh-schedule/client'
 
@@ -110,10 +111,15 @@ function entriesOf(raw: string): Map<string, StoredEntry> {
 export class TaskTabBindings {
   private readonly memory = new Map<SessionId, Map<string, StoredEntry>>()
 
+  private readonly persistence: ClientPersistence
+
   /**
    * @param liveTabIds - the committed layout's tab ids for one Session, read when an entry is stored.
+   * @param persistence - captured page storage; omitted uses ordinary browser persistence.
    */
-  constructor(private readonly liveTabIds?: TaskTabLiveIds) {}
+  constructor(private readonly liveTabIds?: TaskTabLiveIds, persistence?: ClientPersistence) {
+    this.persistence = resolveClientPersistence(persistence)
+  }
 
   /**
    * Read the task one page last showed.
@@ -184,13 +190,7 @@ export class TaskTabBindings {
   private document(sessionId: SessionId): Map<string, StoredEntry> {
     const cached = this.memory.get(sessionId)
     if (cached !== undefined) return cached
-    if (typeof localStorage === 'undefined') return new Map()
-    let raw: string | null
-    try {
-      raw = localStorage.getItem(PREFIX + sessionId)
-    } catch (_storageUnavailable) {
-      return new Map()
-    }
+    const raw = this.persistence.getItem(PREFIX + sessionId)
     if (raw === null) return new Map()
     const entries = entriesOf(raw)
     this.memory.set(sessionId, entries)
@@ -211,13 +211,8 @@ export class TaskTabBindings {
       ? entries
       : new Map([...entries].filter(([tabId]) => live.includes(tabId)))
     this.memory.set(sessionId, kept)
-    if (typeof localStorage === 'undefined') return
-    try {
-      const key = PREFIX + sessionId
-      if (kept.size === 0) localStorage.removeItem(key)
-      else localStorage.setItem(key, JSON.stringify(Object.fromEntries(kept)))
-    } catch (error) {
-      console.error('Task tab binding persistence failed:', error)
-    }
+    const key = PREFIX + sessionId
+    if (kept.size === 0) this.persistence.removeItem(key)
+    else this.persistence.setItem(key, JSON.stringify(Object.fromEntries(kept)))
   }
 }

@@ -179,7 +179,7 @@ it('keeps this window working when storage is absent or rejects writes', () => {
   expect(bindings.read(session, page('tab1'))).toEqual(target('task-1'))
   bindings.forget(session, page('tab1'))
   expect(bindings.read(session, page('tab1'))).toBeUndefined()
-  expect(reported).toHaveBeenCalledTimes(2)
+  expect(reported).toHaveBeenCalledTimes(3)
   vi.stubGlobal('localStorage', undefined)
   bindings.write(session, page('tab2'), target('task-2'))
   expect(bindings.read(session, page('tab2'))).toEqual(target('task-2'))

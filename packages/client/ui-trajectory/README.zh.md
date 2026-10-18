@@ -98,6 +98,8 @@ Trajectory 要求会话壳把 composer 作为浮层置于全高记录表上方�
 
 <a id="known-limitations-and-deferred-work"></a>
 
+原生页面在激活前捕获 [Client 持久化端口](../store/README.zh.md#page-persistence)；本包的持久化偏好、store 和直接缓存访问均使用该依赖。普通调用者保留浏览器存储默认行为。
+
 - **工具变更展示** — 仅包含工具变更的 developer 消息在单个工具新增或移除时直接显示工具名，不提供展开操作。多个变更显示新增、移除数量，展开后按变更类型分别以逗号分隔显示一行工具列表。混合内容使用通用上下文展示。
 
 

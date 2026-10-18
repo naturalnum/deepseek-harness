@@ -90,6 +90,8 @@ Client 在分配前将每条 Session/内容与终端身份的关联保存到独�
 
 <a id="known-limitations-and-deferred-work"></a>
 
+终端绑定、待完成关闭请求与 shell 偏好使用捕获的[页面持久化端口](../../client/store/README.zh.md#page-persistence)，恢复枚举也使用同一依赖。省略端口时保留普通浏览器存储；显式失败会停止拥有该端口的云端页面。
+
 - 浏览器刷新保留进程和屏幕；Host 或 Session owner 卸载不保留。不提供持久终端恢复或自动重启 shell。 已退出的终端仍计入 `maxTerminals`；关闭不用的标签页可释放其屏幕和名额。
 - 原生 PTY 可用性和进程树清理保证由 subprocess provider 决定。找到可执行文件并不保证 PTY 分配成功。
 - 自动回收依赖 provider [支持的 shell 活动观察](../../subprocess/subprocess-local/README.zh.md#running-terminal-sessions)。不支持的 shell、自定义启动参数和不确定的进程观察可能让资源一直保留到明确关闭或 owner 卸载。运行中的命令没有强制最长执行时间。

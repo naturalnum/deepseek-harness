@@ -92,6 +92,8 @@ None. Catalog presentation does not enter model requests.
 
 <a id="known-limitations-and-deferred-work"></a>
 
+The native page captures the [Client persistence port](../store/README.md#page-persistence) before activation; this package uses it for persisted preferences, stores and direct cache access. Ordinary callers retain browser storage defaults.
+
 - Saved records describe inbox delivery, not model execution results. Tasks without saved history expose only their existing receipt until new deliveries append records; unsaved earlier records and prompt snapshots cannot be recovered. Previously physically deleted tasks are not restored.
 - Twenty-record pages bound the number of records requested, not prompt bytes or the storage a task retains. Delivery history is bounded by the Host plugin's configuration: `deliveryHistoryDays` (default 30) and `deliveryHistoryRecords` (default 200), pruned when an acknowledgment is appended, with the latest receipt always kept and a pruned older window reported as unavailable; see [Schedule limits](../../schedule/schedule/README.md#known-limitations-and-deferred-work).
 - Deletion does not cancel a reminder already queued for execution. The linked-Session control in the detail tab strip opens the original conversation through ordinary Session navigation and its recovery policy, not a message-specific jump.

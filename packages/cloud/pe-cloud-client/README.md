@@ -52,6 +52,12 @@ No working browser mount is available: even valid configuration reaches the expl
 
 The package keeps bootstrap request outcomes and native carrier lifetimes separate from authoritative account and Session state.
 
+`/client` also exports `CloudPageLifetime`, `CloudPagePersistence`, and their types for the pre-Cordis page owner. Construct the lifetime from a decoded fixed account/generation, actual storage, carrier factories and explicit persistence limits. Pass `page.nativeOptions` to `AppWebEntry`, install `page.transport.hooks` before native Connection activation, then call `page.start(entry)`. A missing required native port rejects before module loading. The Loader `apply` entry still rejects incomplete production assembly.
+
+The cache accepts finite positive safe-integer `maxKeys`, `maxKeyBytes`, `maxValueBytes`, `maxTotalBytes`, and `maxNamespaceBytes`. Byte budgets use UTF-8; total includes the physical namespace key and serialized envelope. Keys are logical and enumeration exposes only that namespace. Account/generation tuples use JSON encoding without delimiter collisions. No legacy unpartitioned cache is restored. Each mutation atomically replaces one bounded envelope; concurrent same-account/same-generation pages use last-writer-wins whole snapshots and may lose independent updates. Revocation is local to the issued port; it makes no cross-tab global-revocation claim.
+
+`dispose()` synchronously revokes the old port, stops the captured carrier and native graph, joins their actual cleanup, then removes and verifies only the old namespace. Automatic 401/stale-generation closure and cache failure enter the same sequence. Late native subscriptions cannot write or delete through a revoked port. A failed stop leaves the namespace uncleared; a failed removal remains unconfirmed. A hung native disposer remains pending. Cleanup errors remain observable through the returned promise, page/cache snapshots and default-enabled console reporting. Same account/generation refresh restores its own cache; a different generation receives another namespace.
+
 <details>
 <summary>Implementation internals — click to expand</summary>
 
@@ -66,7 +72,7 @@ Closing rejects new operations immediately, aborts pending fetches, and requests
 | [Browser entry](src/client/index.ts) | Rejects incomplete client assembly. |
 | [Bootstrap attempt](src/client/bootstrap.ts) | Tracks result, settlement, and cleanup separately. |
 | [Captured carrier](src/client/transport.ts) | Adds access expectations around native carriers. |
-| [Behavior tests](tests/transport.spec.ts) | Exercise native Connection envelopes and lifetime rejection. |
+| [Behavior tests](tests/transport.client.spec.ts) | Exercise native Connection envelopes and lifetime rejection. |
 
 </details>
 
@@ -108,8 +114,8 @@ These gaps prevent the internal carriers from providing a ready browser applicat
 
 - Access has no canonical bootstrap DTO/decoder or generation issuer yet. The internal decoder callback is a local test/composition input, not a public wire protocol or production integration.
 - Native startup must install captured carriers before Gateway construction. No global fetch/Storage patch, new mux, session UI, login form, or account-ready state is implemented.
-- Account/generation partitioning of native drafts, selection, direct localStorage helpers, resources, upload Worker, and downloads requires coordinated public adapters. Those capabilities remain unopened.
-- A native application must dispose its effects and response consumers after carrier invalidation. This increment does not assert complete native application shutdown, browser composition coverage, or S1/S2 acceptance.
+- The page lifetime and native cache port require a real bootstrap/page owner. Resources, upload Worker and downloads still require coordinated admission; no ready cloud application is published.
+- Production browser composition and S1/S2 acceptance require independent integration evidence. Component cleanup and cache tests do not establish full account admission or server drain.
 
 <a id="dev-note"></a>
 ### Dev Note

@@ -1,5 +1,5 @@
 /** Per-session Conversation store shared by the shell body and header. */
-import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
+import { defineStore, resolveClientPersistence, type ClientPersistence, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ConversationStoreState } from './contract/views.ts'
 import type { DraftInput, DraftSnapshot } from './contract/draft-editor.ts'
@@ -38,19 +38,19 @@ export function createConversationStore(): EngineStoreHandle<ConversationStoreSt
 /**
  * Read a Session's draft before its input source is published to React.
  * @param sessionId - Session-scoped persistence suffix.
+ * @param persistence - captured page port; omitted uses ordinary browser storage.
  * @returns saved semantic content, or an empty document when storage is absent or invalid.
  */
-export function readConversationDraft(sessionId: SessionId): DraftSnapshot {
+export function readConversationDraft(sessionId: SessionId, persistence?: ClientPersistence): DraftSnapshot {
   const empty: DraftSnapshot = { text: '', references: [] }
-  if (typeof localStorage === 'undefined') return empty
+  const raw = resolveClientPersistence(persistence).getItem(`${CONVERSATION_STORE_KEY}.${sessionId}`)
   try {
-    const raw = localStorage.getItem(`${CONVERSATION_STORE_KEY}.${sessionId}`)
     if (raw === null) return empty
     const stored: unknown = JSON.parse(raw)
     if (typeof stored !== 'object' || stored === null || !('draft' in stored)) return empty
     return parseStoredDraft(stored.draft) ?? empty
   } catch (_error: unknown) {
-    // Unavailable browser storage or malformed JSON has no usable saved draft.
+    // Malformed JSON has no usable saved draft.
     return empty
   }
 }
@@ -58,12 +58,12 @@ export function readConversationDraft(sessionId: SessionId): DraftSnapshot {
 /**
  * Read the persisted View preference before the Slot store is materialized.
  * @param sessionId - Session-scoped persistence suffix.
+ * @param persistence - captured page port; omitted uses ordinary browser storage.
  * @returns the preferred View id, or null when storage has no usable value.
  */
-export function readConversationViewPreference(sessionId: SessionId): string | null {
-  if (typeof localStorage === 'undefined') return null
+export function readConversationViewPreference(sessionId: SessionId, persistence?: ClientPersistence): string | null {
+  const raw = resolveClientPersistence(persistence).getItem(`${CONVERSATION_STORE_KEY}.${sessionId}`)
   try {
-    const raw = localStorage.getItem(`${CONVERSATION_STORE_KEY}.${sessionId}`)
     if (raw === null) return null
     const stored: unknown = JSON.parse(raw)
     if (typeof stored !== 'object' || stored === null || !('view' in stored)) return null

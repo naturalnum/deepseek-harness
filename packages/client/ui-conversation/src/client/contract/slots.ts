@@ -403,6 +403,10 @@ export type ConvViewProps = PropsRuntime<'conversation.view'>
 
 /** Business callbacks injected into the resident Conversation shell. */
 export interface ConversationInjected {
+  /** Read the page's saved transcript width; null when absent or invalid. */
+  readContentWidth: () => number | null
+  /** Persist a measured transcript width through the captured page port. */
+  writeContentWidth: (width: number) => void
   /** Connect and open a blank Session in the selected Workspace. */
   selectWorkspace: (workspaceId: WorkspaceId) => Promise<void>
   /** Session-addressed composer block source, or the stable absent source. */

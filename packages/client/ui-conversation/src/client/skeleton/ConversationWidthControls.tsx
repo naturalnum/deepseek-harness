@@ -2,8 +2,6 @@ import { useCallback, useLayoutEffect, useRef } from 'react'
 import type { ConversationWidthControlsProps } from '../contract/slots.ts'
 import css from './ConversationRoot.module.css'
 
-/** localStorage key for the dragged transcript width preference (px). */
-const WIDTH_PREF_KEY = 'dsh.conversation.contentWidth'
 /** Floor for a dragged content width; matches the layout center-column minimum. */
 const CONTENT_MIN = 640
 /** Horizontal room reserved for both handles and their safe edge zones. */
@@ -11,14 +9,6 @@ const CONTENT_EDGE_BUDGET = 176
 const WHEEL_DELTA_LINE = 1
 const WHEEL_DELTA_PAGE = 2
 const FALLBACK_WHEEL_LINE_PX = 16
-
-/** Read a valid persisted width preference, or null when absent or corrupt. */
-function readWidthPreference(): number | null {
-  const raw = localStorage.getItem(WIDTH_PREF_KEY)
-  if (raw === null) return null
-  const value = Number(raw)
-  return Number.isFinite(value) && value > 0 ? value : null
-}
 
 /** Resolve the width displayed for one measured Conversation column. */
 function resolveContentWidth(columnWidth: number, preference: number | null): number {
@@ -133,15 +123,15 @@ function WidthHandle(props: {
  * @param props - Mounted Conversation body and current presentation phase.
  * @returns two active-phase width handles, or no controls outside the active phase.
  */
-export function ConversationWidthControls({ container, phase }: ConversationWidthControlsProps) {
+export function ConversationWidthControls({ container, phase, readContentWidth, writeContentWidth }: ConversationWidthControlsProps) {
   const publishWidths = useCallback((container: HTMLDivElement): void => {
     const target = container.parentElement ?? container
     const column = container.offsetWidth
     target.style.setProperty('--dsh-conversation-column-width', `${column}px`)
-    const preference = readWidthPreference()
+    const preference = readContentWidth()
     if (preference === null) target.style.removeProperty('--dsh-chat-user-width')
     else target.style.setProperty('--dsh-chat-user-width', `${resolveContentWidth(column, preference)}px`)
-  }, [])
+  }, [readContentWidth])
 
   useLayoutEffect(() => {
     if (container === null) return
@@ -153,8 +143,8 @@ export function ConversationWidthControls({ container, phase }: ConversationWidt
 
   const onStart = useCallback((): number => {
     if (container === null) return 680
-    return resolveContentWidth(container.offsetWidth, readWidthPreference())
-  }, [container])
+    return resolveContentWidth(container.offsetWidth, readContentWidth())
+  }, [container, readContentWidth])
   const onDrag = useCallback((width: number): void => {
     if (container === null) return
     const target = container.parentElement ?? container
@@ -162,8 +152,8 @@ export function ConversationWidthControls({ container, phase }: ConversationWidt
   }, [container])
   const onCommit = useCallback((width: number): void => {
     if (container === null) return
-    localStorage.setItem(WIDTH_PREF_KEY, `${resolveContentWidth(container.offsetWidth, width)}`)
-  }, [container])
+    writeContentWidth(resolveContentWidth(container.offsetWidth, width))
+  }, [container, writeContentWidth])
   const onEnd = useCallback((): void => {
     if (container !== null) publishWidths(container)
   }, [container, publishWidths])

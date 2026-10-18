@@ -179,6 +179,8 @@ selector 必须是 owner currency 的纯函数。非 null 返回值作为 `match
 
 <a id="known-limitations-and-deferred-work"></a>
 
+原生页面在激活前捕获 [Client 持久化端口](../store/README.zh.md#page-persistence)；本包的持久化偏好、store 和直接缓存访问均使用该依赖。普通调用者保留浏览器存储默认行为。
+
 - **只有已注册 target 可以渲染**——除已注册的 `chat` 偏好外，shell 刻意不提供隐式 fallback target。
 - **Factory occurrence 继承渲染位置的 Session**——`conversation.content` 不接受独立寻址的 Session；该能力需要单独的 Session provider。
 

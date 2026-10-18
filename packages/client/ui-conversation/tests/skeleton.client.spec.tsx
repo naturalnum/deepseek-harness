@@ -20,6 +20,7 @@ import type { ConversationSnapshot } from '../src/client/contract/snapshot.ts'
 import { createConversationStore } from '../src/client/stores.ts'
 import { SessionInputShell } from '../src/client/input/facade.ts'
 import { en, zh } from '../src/client/locales.ts'
+import { ConversationWidthControls } from '../src/client/skeleton/ConversationWidthControls.tsx'
 import { ConversationContent } from '../src/client/skeleton/ConversationContent.tsx'
 import { ConversationHeader } from '../src/client/skeleton/ConversationHeader.tsx'
 import { ConversationMainPanel } from '../src/client/skeleton/ConversationMainPanel.tsx'
@@ -33,7 +34,7 @@ import type { InputBarProps } from '../src/client/skeleton/InputBar.tsx'
 import type {
   ComposerBarOwnerProps, ConversationContentInputProps, ConversationContentProps,
   ConversationHeaderLineageOwnerProps, ConversationSessionHeaderSlotProps, ConversationSessionSlotProps, ConversationSlotProps,
-  ConversationViewsProps,
+  ConversationViewsProps, ConversationWidthControlsInputProps,
 } from '../src/client/contract/slots.ts'
 import type { ViewTab } from '../src/client/contract/views.ts'
 
@@ -46,6 +47,12 @@ function StableConversationViews() {
   const props = useContext(FactoryViewsTestContext)
   if (props === undefined) throw new Error('Factory views test context is missing')
   return <>{props.renderSlot('conversation.session', {})}</>
+}
+
+function StableConversationWidthControls(input: ConversationWidthControlsInputProps) {
+  const props = useContext(FactoryViewsTestContext)
+  if (props === undefined) throw new Error('Factory width-controls test context is missing')
+  return <ConversationWidthControls {...props} {...input} />
 }
 
 // jsdom implements no Range geometry (Lexical's scroll-into-view measures the
@@ -349,10 +356,17 @@ function mount(
       renderSlotChain,
       renderFactorySlot,
       selectWorkspace: retargetWorkspace,
+      readContentWidth: () => {
+        const raw = localStorage.getItem('dsh.conversation.contentWidth')
+        return raw === null ? null : Number(raw)
+      },
+      writeContentWidth: (width: number) => { localStorage.setItem('dsh.conversation.contentWidth', String(width)) },
       t,
     }
     const useFactorySlot = ((name: string, fallback: (props: never) => ReactNode) => (
-      name === 'views' ? StableConversationViews : factoryOptions?.slots?.[name] ?? fallback
+      name === 'views' ? StableConversationViews
+        : name === 'widthControls' && factoryOptions?.slots?.[name] !== undefined
+          ? StableConversationWidthControls : factoryOptions?.slots?.[name] ?? fallback
     )) as ConversationContentProps['useFactorySlot']
     return (
       <FactoryViewsTestContext.Provider value={common}>

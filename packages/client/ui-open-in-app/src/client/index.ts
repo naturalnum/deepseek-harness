@@ -48,7 +48,7 @@ export const inject = ['sessions', 'slots', 'locale', 'remote', 'remote.session'
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
-  const controller = new OpenInAppController()
+  const controller = new OpenInAppController(undefined, ctx.get('clientPersistence'))
   void controller.load()
   const paths = new OpenInAppPathController(ctx.remote)
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'open-in-app: dictionaries')

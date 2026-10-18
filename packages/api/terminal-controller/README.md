@@ -90,6 +90,8 @@ Directory recovery appends user context without replacing the system-prompt pref
 
 <a id="known-limitations-and-deferred-work"></a>
 
+Terminal bindings, pending close requests and shell preferences use the captured [page persistence port](../../client/store/README.md#page-persistence), including recovery enumeration. An omitted port retains ordinary browser storage; explicit failures stop the owning cloud page.
+
 - Processes and screens survive browser reloads, but not Host or Session owner disposal. There is no durable terminal restoration or automatic shell respawn. Exited terminals count toward `maxTerminals`; close unused tabs to release their screens and quota.
 - The subprocess provider determines native PTY availability and process-tree cleanup guarantees. Finding an executable does not prove PTY allocation will succeed.
 - Automatic reclamation depends on the provider's [supported shell activity observation](../../subprocess/subprocess-local/README.md#running-terminal-sessions). Unsupported shells, custom launch arguments and uncertain process observations may retain resources until explicit close or owner disposal. No maximum runtime kills busy commands.

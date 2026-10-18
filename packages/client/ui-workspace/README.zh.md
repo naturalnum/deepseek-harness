@@ -215,6 +215,8 @@ Workspace 与 Session 悬浮卡片会复制对应行被截断的值：激活 Wor
 
 <a id="known-limitations-and-deferred-work"></a>
 
+原生页面在激活前捕获 [Client 持久化端口](../store/README.zh.md#page-persistence)；本包的持久化偏好、store 和直接缓存访问均使用该依赖。普通调用者保留浏览器存储默认行为。
+
 
 这些限制定义搜索深度、归档界面与选取载体；它们是当前包约束。
 

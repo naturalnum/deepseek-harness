@@ -138,6 +138,8 @@ None; this package neither assembles nor sends a provider request.
 
 <a id="known-limitations-and-deferred-work"></a>
 
+The native page captures the [Client persistence port](../store/README.md#page-persistence) before activation; this package uses it for persisted preferences, stores and direct cache access. Ordinary callers retain browser storage defaults.
+
 - **Browser-local layout.** Layout does not synchronize between devices; provider-specific state requires its provider's recovery support.
 - **No surface without a session.** State is keyed by session id, so the hero screen shows nothing on the right.
 - **Hard-coded stacking.** The content tree uses a fixed stacking layer; floats reorder within it without raising that layer above menus.

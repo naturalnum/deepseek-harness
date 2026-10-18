@@ -179,6 +179,8 @@ None; Conversation assembly and browser input state do not alter provider-side p
 
 <a id="known-limitations-and-deferred-work"></a>
 
+The native page captures the [Client persistence port](../store/README.md#page-persistence) before activation; this package uses it for persisted preferences, stores and direct cache access. Ordinary callers retain browser storage defaults.
+
 - **Only registered targets can render** — the shell deliberately has no implicit fallback target beyond the registered `chat` preference.
 - **Factory occurrences inherit their render-position Session** — `conversation.content` does not accept an independently addressed Session; that requires a separate Session-provider capability.
 

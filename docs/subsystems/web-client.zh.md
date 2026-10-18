@@ -25,6 +25,10 @@ Host 把组合后的 `WebBootGraph` 写入 `window.__DSH_BOOT__`，并在 parser
 
 Web boot kernel 创建模块系统、预取 `immediately` entry、挂载 vendored Cordis Loader，再创建图中的每个 entry。Cordis service injection 决定激活顺序；module graph 顺序只决定同步 import 能否被 materialize。完整 roster 到达 settled 状态后，`ui-renderer` hydrate 不依赖框架的 boot DOM，并调用唯一一次 context 级 `renderSlot('root')`。[Client Modules](client-modules.zh.md)负责 graph、bundle route、cache revision 与 loader 细节。
 
+`AppWebEntry` 可接收通用 `ClientPersistence` 依赖，提供 `getItem`、`setItem`、`removeItem` 及逻辑 `keys`。指定 `requirePersistence` 后，缺少依赖会在 boot DOM 或 module system 创建之前拒绝。传入对象在 Loader 激活之前安装到新 Context。Snapshot store、Slot store 实例化及直接 UI 缓存都捕获同一页面依赖；普通浏览器组合保留其浏览器存储行为。自定义 store 包装须转发 `StoreHandle.create` 的可选 persistence 参数。
+
+部署 owner 可提供有界且可撤销的实现，例如 [Cloud 页面生命周期](../../packages/cloud/pe-cloud-client/README.zh.md)。该 owner 固定账户/代际命名空间，在原生或载体销毁之前撤销写入，并只在实际结算后清理自身命名空间。通用 port 不携带认证或 Host 持久化授权。
+
 ## Remote 通信
 
 Host 业务 service 使用 Typert Remote decorator 标记可调用 method。Host generation 产出严格 descriptor、runtime codec、declaration merge 与 source map。Client 侧 `api-remotes` assembly 选择这些生成贡献，并把具体 method 挂到 `ctx.remote.<namespace>` 与 Session scope 的 `agentCtx.remote.<namespace>`。功能包依赖生成的 service face，而不依赖 Gateway 实现或 Host 包的运行时 entry。

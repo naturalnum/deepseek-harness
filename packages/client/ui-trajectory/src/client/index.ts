@@ -64,8 +64,8 @@ export function apply(ctx: Context): void {
   // translate as a thunk, so it follows the active locale without
   // re-registration.
   const t = ctx.locale.bind(NS)
-  const duration = createTrajectoryDurationStore()
-  const stringWrapping = createTrajectoryStringWrappingStore()
+  const duration = createTrajectoryDurationStore(ctx.get('clientPersistence'))
+  const stringWrapping = createTrajectoryStringWrappingStore(ctx.get('clientPersistence'))
   registerTrajectoryMessageDefinitions(ctx)
   registerTrajectoryRequestHeaderDefinition(ctx)
   registerTrajectoryAssistantDefinition(ctx)

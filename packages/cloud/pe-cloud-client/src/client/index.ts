@@ -22,3 +22,11 @@ export function apply(_ctx: Context, config: Config): never {
   parseCloudClientConfig(config)
   throw new Error('pe-cloud-client/client cannot start: access bootstrap decoding, pre-Cordis native startup and account cache partitioning are not integrated')
 }
+
+export { CloudPagePersistence, CloudPersistenceError } from './persistence.ts'
+export type {
+  CloudPersistenceFailureCode, CloudPersistenceInput, CloudPersistenceLimits,
+  CloudPersistenceSnapshot, CloudPersistenceStorage,
+} from './persistence.ts'
+export { CloudPageLifetime } from './page-lifetime.ts'
+export type { CloudNativeEntry, CloudPageLifetimeInput, CloudPageSnapshot } from './page-lifetime.ts'

@@ -6,7 +6,8 @@
  * resolution and lifecycle on the ledger axis, and the entry-unload cascade.
  */
 import { Context } from '@deepseek-ai/cordis'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, onTestFinished, vi } from 'vitest'
+import { defineStore, type ClientPersistence } from '@deepseek-ai/dsh-client-store'
 import type { FC } from 'react'
 import { StaleAuthorizationError } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ScopedStandardSourceBinding, SlotRendererHost } from '@deepseek-ai/dsh-client-ui-slots'
@@ -43,8 +44,9 @@ interface Bench {
   erased: ErasedService
 }
 
-async function boot(): Promise<Bench> {
+async function boot(persistence?: ClientPersistence): Promise<Bench> {
   const ctx = new Context()
+  if (persistence !== undefined) ctx.provide('clientPersistence', persistence)
   const fiber = ctx.plugin(SlotRegistry)
   await fiber
   // Service accessor (ctx.get reads the reflect store, which Service-class
@@ -182,8 +184,8 @@ describe('Factory definition ledger', () => {
     expect(second).not.toBe(first)
     expect(factory).toHaveBeenCalledTimes(2)
     expect(handles[0]?.created).toHaveLength(1)
-    expect(handles[0]?.handle.create).toHaveBeenCalledWith('s1')
-    expect(handles[1]?.handle.create).toHaveBeenCalledWith('s1')
+    expect(handles[0]?.handle.create).toHaveBeenCalledWith('s1', expect.anything())
+    expect(handles[1]?.handle.create).toHaveBeenCalledWith('s1', expect.anything())
 
     releaseFirst()
     releaseFirst()
@@ -240,7 +242,7 @@ describe('Factory definition ledger', () => {
     expect(first).toBe(second)
     expect(scoped).toBe(first)
     expect(handle.create).toHaveBeenCalledOnce()
-    expect(handle.create).toHaveBeenCalledWith('s1')
+    expect(handle.create).toHaveBeenCalledWith('s1', expect.anything())
     await scope.fiber.dispose()
   })
 })
@@ -559,7 +561,7 @@ describe('declaration injection', () => {
     const panelEntry = host.entriesOf('t.panel')[0]
     const scope = scopedBinding(bench.ctx, 's1')
     expect(host.storeOf(panelEntry as never, scope.binding)).toBeDefined()
-    expect(handle.create).toHaveBeenLastCalledWith('s1')
+    expect(handle.create).toHaveBeenLastCalledWith('s1', expect.anything())
     await scope.fiber.dispose()
   })
 })
@@ -679,6 +681,41 @@ describe('host face', () => {
 })
 
 describe('store instance axis', () => {
+  it('keeps two actual store materializations on their originally captured page ports', async () => {
+    const backing = new Map<string, string>()
+    const page = (prefix: string): ClientPersistence => ({
+      getItem: key => backing.get(prefix + key) ?? null,
+      setItem: (key, value) => { backing.set(prefix + key, value) },
+      removeItem: (key) => { backing.delete(prefix + key) },
+      keys: () => [...backing.keys()].filter(key => key.startsWith(prefix)).map(key => key.slice(prefix.length)),
+    })
+    const pa = page('A:'), pb = page('B:')
+    const a = await boot(pa), b = await boot(pb)
+    onTestFinished(async () => { await Promise.all([a.ctx.fiber.dispose(), b.ctx.fiber.dispose()]) })
+    const handle = defineStore({ init: () => ({ draft: '' }), persist: 'same-slot',
+      actions: { setDraft: (state, text: string) => { state.draft = text } } })
+    const create = vi.spyOn(handle, 'create')
+    // An existing registry must retain its boot dependency after the Context's provider changes.
+    a.ctx.clientPersistence = pb
+    for (const bench of [a, b]) {
+      const host = captureHost(bench, { 't.host': { kind: 'single', scope: 'root' } })
+      bench.erased.register({ name: 't.host', store: handle }, C)
+      host.storeOf(host.entriesOf('t.host')[0] as never, undefined)
+    }
+    const instances = create.mock.results.map((result) => {
+      if (result.type !== 'return') throw new Error('native store materialization did not return')
+      return result.value
+    })
+    expect(create.mock.calls).toEqual([[undefined, pa], [undefined, pb]])
+    instances[0]!.actions.setDraft('first-page')
+    instances[1]!.actions.setDraft('second-page')
+    expect(JSON.parse(backing.get('A:same-slot')!)).toEqual({ draft: 'first-page' })
+    expect(JSON.parse(backing.get('B:same-slot')!)).toEqual({ draft: 'second-page' })
+    instances[0]!.clearPersisted()
+    expect(backing.has('A:same-slot')).toBe(false)
+    expect(JSON.parse(backing.get('B:same-slot')!)).toEqual({ draft: 'second-page' })
+  })
+
   /** Boot with 'root' occupied and the three test children declared. */
   async function storeBench() {
     const bench = await boot()
@@ -703,7 +740,7 @@ describe('store instance axis', () => {
     expect(a).toBeDefined()
     expect(a).toBe(b) // shared handle, same scope key = same instance
     expect(handle.create).toHaveBeenCalledTimes(1)
-    expect(handle.create).toHaveBeenCalledWith() // root scope: keyless create
+    expect(handle.create).toHaveBeenCalledWith(undefined, expect.anything()) // root scope
   })
 
   it('resolves per-session instances keyed by session id, created with the scope key', async () => {
@@ -717,8 +754,8 @@ describe('store instance axis', () => {
     const s2 = host.storeOf(entry as never, scope2.binding)
     expect(s1).not.toBe(s2)
     expect(host.storeOf(entry as never, scope1.binding)).toBe(s1) // cached per key
-    expect(handle.create).toHaveBeenCalledWith('s1')
-    expect(handle.create).toHaveBeenCalledWith('s2')
+    expect(handle.create).toHaveBeenCalledWith('s1', expect.anything())
+    expect(handle.create).toHaveBeenCalledWith('s2', expect.anything())
     expect(() => host.storeOf(entry as never, undefined)).toThrow(/requires a session id/)
     await Promise.all([scope1.fiber.dispose(), scope2.fiber.dispose()])
   })
@@ -865,7 +902,7 @@ describe('store instance axis', () => {
     const replacement = scopedBinding(bench.ctx, 's1')
     const after = host.storeOf(entry as never, replacement.binding)
     expect(after).not.toBe(before)
-    expect(handle.create).toHaveBeenLastCalledWith('s1')
+    expect(handle.create).toHaveBeenLastCalledWith('s1', expect.anything())
     await replacement.fiber.dispose()
   })
 })

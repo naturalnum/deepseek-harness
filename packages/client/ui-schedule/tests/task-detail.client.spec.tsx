@@ -1,3 +1,4 @@
+import { loadRecentTimeZones, rememberTimeZone } from '../src/client/recent-time-zones.ts'
 // @vitest-environment jsdom
 /**
  * TaskDetail behaviors the Tasks page suite leaves unreached: an authoritative
@@ -126,6 +127,7 @@ function mount(
       ok: true, value: { id: expected.id, updated: false, record: expected },
     })),
     onOpenSession: vi.fn(),
+    loadRecentTimeZones, rememberTimeZone,
     loadHistory: vi.fn<TaskManagerPageProps['loadHistory']>(async ({ id }) => ({
       ok: true, value: {
         id, records: [], earlierRecordsUnavailable: false,

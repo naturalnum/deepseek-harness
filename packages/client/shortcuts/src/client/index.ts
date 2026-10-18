@@ -57,7 +57,7 @@ export default class ShortcutsService extends Service implements Shortcuts {
     const publish = (snapshot: ReturnType<Shortcuts['config']['getSnapshot']>): void => {
       if (this.active && this.connected && snapshot.sequence >= this.config.getSnapshot().sequence) this.registry.configure(snapshot)
     }
-    const web = this.runtime === 'web' ? webShortcutStorage(window, this.platform, publish) : undefined
+    const web = this.runtime === 'web' ? webShortcutStorage(window, this.platform, publish, ctx.get('clientPersistence')) : undefined
     this.adapter = web ?? desktopShortcutStorage(window)
     if (keyboard !== undefined) ctx.effect(() => installNativeKeyboard(window, keyboard, this.registry,
       () => this.config.getSnapshot(), () => { this.fixedInput({ type: 'reset' }) }), 'shortcuts: native keyboard')

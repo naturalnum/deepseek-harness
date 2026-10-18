@@ -6,6 +6,7 @@
  * @module @deepseek-ai/dsh-client-web/src/boot
  */
 import { Context, type Fiber } from '@deepseek-ai/cordis'
+import type { ClientPersistence } from '@deepseek-ai/dsh-client-store'
 import type {
   BootManifest, ClientModuleCreateOptions, ClientModuleSystem, DshWindow,
 } from '@deepseek-ai/dsh-client-modules/client'
@@ -16,13 +17,19 @@ import { getStaticModules } from './seed.ts'
 import { installWindowDragRecall } from './window-drag/recall.ts'
 import './base.css'
 
-/** Module transport hook replaced by jsdom tests. */
-export type BootSeams = Pick<ClientModuleCreateOptions, 'loadBundle'>
+/** Optional module transport and pre-activation page persistence inputs. */
+export type BootSeams = Pick<ClientModuleCreateOptions, 'loadBundle'> & {
+  /** Page-owned port captured before activation; absent uses ordinary browser storage. */
+  persistence?: ClientPersistence
+  /** Cloud owners require an explicit port; missing input fails before module loading. */
+  requirePersistence?: boolean
+}
 
 /** Browser boot entry consumed by `apps/web`. */
 export class AppWebEntry {
   private readonly container: HTMLElement
   private readonly seams: BootSeams | undefined
+  private readonly persistence: ClientPersistence | undefined
   private readonly page: BootPage
   private ctx: Context | undefined
   private running: Promise<void> | undefined
@@ -37,11 +44,16 @@ export class AppWebEntry {
   /**
    * Draw the boot page; {@link run} starts the loader.
    * @param container - Application mount point.
-   * @param seams - Optional module transport replacement.
+   * @param seams - Optional transport replacement and captured page persistence.
+   * @throws Error before module loading when persistence is required but absent.
    */
   constructor(container: HTMLElement, seams?: BootSeams) {
+    if (seams?.requirePersistence === true && seams.persistence === undefined) {
+      throw new Error('web boot: required page persistence is missing')
+    }
     this.container = container
-    this.seams = seams
+    this.seams = seams?.loadBundle === undefined ? undefined : { loadBundle: seams.loadBundle }
+    this.persistence = seams?.persistence
     this.page = new BootPage(container)
   }
 
@@ -100,6 +112,7 @@ export class AppWebEntry {
       if (this.isDisposed()) return
       const ctx = new Context()
       this.ctx = ctx
+      if (this.persistence !== undefined) ctx.provide('clientPersistence', this.persistence)
       // Cordis reports async disposer errors through its logger even when the
       // fiber settles successfully. Retain one cause until disposal finishes.
       ctx.logger.exporter({ levels: { default: 1 }, export: (message) => {

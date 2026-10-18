@@ -26,7 +26,7 @@
  * into the pane's own — the arriving tab closes and the pane's own is focused.
  * The kit plans none of this; it is decided here before its planners run.
  */
-import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
+import { defineStore, resolveClientPersistence, type EngineStoreHandle } from '@deepseek-ai/dsh-client-store'
 import { clearSidebarLayout, readSidebarLayout, writeSidebarLayout } from './persistence.ts'
 import type {
   DockMode, DockZone, FloatRect, History, LayoutOp, LayoutState, Mint, PaneId, SplitId, TabId, TabRecord,
@@ -424,15 +424,16 @@ export function createSidebarRightStore(
       },
     },
   })
-  return { ...handle, create(scopeKey) {
-    const instance = handle.create(scopeKey)
+  return { ...handle, create(scopeKey, persistence) {
+    const storage = resolveClientPersistence(persistence)
+    const instance = handle.create(scopeKey, storage)
     if (scopeKey === undefined) return instance
-    const saved = readSidebarLayout(scopeKey)
+    const saved = readSidebarLayout(scopeKey, storage)
     if (saved !== undefined) instance.store.set({ bySession: { [scopeKey]: saved } })
     instance.subscribe(() => {
       const surface = instance.getSnapshot().bySession[scopeKey]
-      if (surface !== undefined) writeSidebarLayout(scopeKey, surface)
+      if (surface !== undefined) writeSidebarLayout(scopeKey, surface, storage)
     })
-    return { ...instance, clearPersisted: () => { clearSidebarLayout(scopeKey) } }
+    return { ...instance, clearPersisted: () => { clearSidebarLayout(scopeKey, storage) } }
   } }
 }

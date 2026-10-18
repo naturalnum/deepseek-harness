@@ -25,6 +25,10 @@ The Host writes the composed `WebBootGraph` to `window.__DSH_BOOT__` and install
 
 The Web boot kernel creates the module system, prefetches `immediately` entries, mounts the vendored Cordis Loader, and creates every graph entry. Cordis service injection determines activation; module graph order determines only whether synchronous imports can be materialized. After the complete roster reaches a settled state, `ui-renderer` hydrates the framework-free boot DOM and calls the sole context-level `renderSlot('root')` operation. [Client Modules](client-modules.md) owns the graph, bundle route, cache revision, and loader details.
 
+`AppWebEntry` accepts a generic `ClientPersistence` dependency for `getItem`, `setItem`, `removeItem` and logical `keys`. With `requirePersistence`, a missing dependency rejects before boot DOM or module-system creation. The supplied object is installed on the fresh Context before Loader activation. Snapshot stores, Slot store materialization and direct UI caches capture that same page dependency; ordinary browser composition retains its browser-storage behavior. Custom store wrappers must forward the optional persistence argument of `StoreHandle.create`.
+
+A deployment owner may provide a bounded, revocable implementation, such as the [Cloud page lifetime](../../packages/cloud/pe-cloud-client/README.md). That owner fixes the account/generation namespace, revokes writes before native or carrier teardown, and clears its namespace only after actual settlement. The generic port carries no authentication or Host persistence authority.
+
 ## Remote communication
 
 Host business services annotate callable methods with Typert Remote decorators. Host generation emits strict descriptors, runtime codecs, declaration merges, and source maps. The Client-side `api-remotes` assembly selects those generated contributions and mounts concrete methods under `ctx.remote.<namespace>` and Session-scoped `agentCtx.remote.<namespace>`. Feature packages depend on the generated service face, not the Gateway implementation or a Host package's runtime entry.

@@ -14,6 +14,7 @@
  * holds this package's 'root' row in this compilation unit, but consumers
  * merge keys in; the rule fires on the narrow-map view, not on real
  * redundancy. */
+import { resolveClientPersistence, type ClientPersistence } from '@deepseek-ai/dsh-client-store'
 import { Service } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
 import { SlotCore, StaleAuthorizationError, standardHookPropName } from '@deepseek-ai/dsh-client-ui-slots'
@@ -153,11 +154,14 @@ export class SlotRegistry extends Service {
     },
   }
 
+  private readonly persistence: ClientPersistence
+
   /**
    * @param ctx - owning root context.
    */
   constructor(ctx: Context) {
     super(ctx, 'slots')
+    this.persistence = resolveClientPersistence(ctx.get('clientPersistence'))
     this._core.onMutate((key) => { ctx.emit('slots/changed', key) })
   }
 
@@ -620,7 +624,7 @@ export class SlotRegistry extends Service {
     if (instance === undefined) {
       // Session instances get the scope key (the engine suffixes the persist
       // key per session); root instances stay keyless.
-      instance = record.scope === 'root' ? handle.create() : handle.create(key)
+      instance = record.scope === 'root' ? handle.create(undefined, this.persistence) : handle.create(key, this.persistence)
       record.instances.set(key, instance)
     }
     return instance
@@ -658,8 +662,8 @@ export class SlotRegistry extends Service {
     const existing = record.instances.get(scopeKey)
     if (existing !== undefined) return existing
     const instance = definition.scope === 'root' || scopeBinding === undefined
-      ? record.handle.create()
-      : record.handle.create(scopeBinding.key)
+      ? record.handle.create(undefined, this.persistence)
+      : record.handle.create(scopeBinding.key, this.persistence)
     record.instances.set(scopeKey, instance)
     return instance
   }

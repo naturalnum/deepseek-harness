@@ -1,14 +1,36 @@
 {
   "extends": "../../../tsconfig.base.client.json",
-  "compilerOptions": { "rootDir": "src", "outDir": "lib/types", "tsBuildInfoFile": "lib/tsconfig.client.tsbuildinfo" },
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "tsBuildInfoFile": "lib/tsconfig.client.tsbuildinfo"
+  },
   "files": [
-    "src/types.ts", "src/config.ts", "src/client/index.ts", "src/client/errors.ts",
-    "src/client/read-response.ts", "src/client/bootstrap.ts", "src/client/transport.ts"
+    "src/types.ts",
+    "src/config.ts",
+    "src/client/index.ts",
+    "src/client/errors.ts",
+    "src/client/read-response.ts",
+    "src/client/bootstrap.ts",
+    "src/client/transport.ts",
+    "src/client/persistence.ts",
+    "src/client/page-lifetime.ts"
   ],
   "references": [
-    { "path": "../../../vendor/cordis" },
-    { "path": "../../../vendor/schemastery" },
-    { "path": "../../client/connection/tsconfig.client.json" },
-    { "path": "../pe-cloud-access" }
+    {
+      "path": "../../../vendor/cordis"
+    },
+    {
+      "path": "../../../vendor/schemastery"
+    },
+    {
+      "path": "../../client/connection/tsconfig.client.json"
+    },
+    {
+      "path": "../pe-cloud-access"
+    },
+    {
+      "path": "../../client/store"
+    }
   ]
 }

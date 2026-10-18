@@ -1,3 +1,4 @@
+import { createSnapshotStore, type ClientPersistence } from '@deepseek-ai/dsh-client-store'
 // @vitest-environment jsdom
 import type { Context } from '@deepseek-ai/cordis'
 import * as modulesClient from '@deepseek-ai/dsh-client-modules/client'
@@ -19,6 +20,8 @@ afterEach(() => {
 
 /** Real module system and Loader; only the external bundle and renderer are fixtures. */
 function fixture(options: {
+  persistence?: ClientPersistence
+  requirePersistence?: boolean
   immediately?: boolean
   bundle?: Promise<undefined>
   activate?: (ctx: Context) => Promise<void> | void
@@ -56,6 +59,8 @@ function fixture(options: {
     await options.activate?.(ctx)
   }
   const entry = new AppWebEntry(container, {
+    ...(options.persistence === undefined ? {} : { persistence: options.persistence }),
+    ...(options.requirePersistence === undefined ? {} : { requirePersistence: options.requirePersistence }),
     loadBundle: async () => {
       loading.resolve(undefined)
       await options.bundle
@@ -304,5 +309,32 @@ describe('AppWebEntry disposal', () => {
     await closing
     expect(f.unmount).toHaveBeenCalledOnce()
     expect(f.container.childNodes).toHaveLength(0)
+  })
+})
+
+
+describe('AppWebEntry page persistence', () => {
+  it('rejects a required missing port before loading any module', () => {
+    expect(() => fixture({ requirePersistence: true })).toThrow('required page persistence is missing')
+  })
+
+  it('provides the captured port before native activation without forwarding it to the module system', async () => {
+    const values = new Map<string, string>([['boot.cache', '"saved"']])
+    const persistence: ClientPersistence = {
+      getItem: vi.fn((key: string) => values.get(key) ?? null),
+      setItem: (key, value) => { values.set(key, value) },
+      removeItem: (key) => { values.delete(key) }, keys: () => [...values.keys()],
+    }
+    const f = fixture({ persistence, requirePersistence: true, activate: (ctx) => {
+      expect(ctx.get('clientPersistence')).toBe(persistence)
+      const source = createSnapshotStore('', { persist: { name: 'boot.cache', storage: ctx.get('clientPersistence') } })
+      expect(source.getSnapshot()).toBe('saved')
+    } })
+    await f.entry.run()
+    expect(values.get('boot.cache')).toBe('"saved"')
+    const options = f.create.mock.calls[0]![0]
+    expect(options).not.toHaveProperty('persistence')
+    expect(options).not.toHaveProperty('requirePersistence')
+    await f.entry.dispose()
   })
 })

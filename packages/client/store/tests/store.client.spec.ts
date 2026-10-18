@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createSnapshotStore, defineStore, shallowEqual } from '../src/index.ts'
+import { createSnapshotStore, defineStore, resolveClientPersistence, shallowEqual } from '../src/index.ts'
 
 interface State {
   a: { n: number }
@@ -163,7 +163,7 @@ describe('createSnapshotStore', () => {
 
     expect(store.getSnapshot()).toEqual(init())
     expect(report).toHaveBeenCalledWith(
-      "snapshot store 'spec-broken-read' rehydration failed:",
+      'Client persistence failed:',
       failure,
     )
   })
@@ -181,7 +181,7 @@ describe('createSnapshotStore', () => {
     expect(() => { store.update((draft) => { draft.a.n = 7 }) }).not.toThrow()
     expect(store.getSnapshot().a.n).toBe(7)
     expect(report).toHaveBeenCalledWith(
-      "snapshot store 'spec-broken-write' persistence failed:",
+      'Client persistence failed:',
       failure,
     )
   })
@@ -292,4 +292,14 @@ describe('shallowEqual', () => {
     expect(shallowEqual([1, 2], [1, 2])).toBe(true)
     expect(shallowEqual([1, 2], [2, 1])).toBe(false)
   })
+})
+
+
+it("defers a denied default-storage accessor to a strict caller's actual I/O", () => {
+  const denied = new Error('storage denied')
+  vi.stubGlobal('localStorage', undefined)
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, get() { throw denied } })
+  const persistence = resolveClientPersistence(undefined, true)
+  expect(() => persistence.getItem('shortcut')).toThrow(denied)
+  expect(() => { persistence.setItem('shortcut', 'value') }).toThrow(denied)
 })

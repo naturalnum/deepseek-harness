@@ -1,6 +1,6 @@
 /** Browser availability/choice state and the launch carrier for the split button. */
 
-import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { createSnapshotStore, type ClientPersistence, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import {
   OPEN_IN_APP_APPS_ROUTE, OPEN_IN_APP_OPEN_ROUTE,
   type OpenInAppAppsPayload, type OpenInAppOpenPayload,
@@ -25,9 +25,7 @@ export class OpenInAppController {
   /** Installed app ids in host menu order; null until the host answered. */
   readonly apps: SnapshotStore<readonly string[] | null> = createSnapshotStore<readonly string[] | null>(null)
   /** Last chosen app id, or empty before the first choice, shared across sessions and browser restarts. */
-  readonly choice: SnapshotStore<string> = createSnapshotStore<string>('', {
-    persist: { name: 'dsh.open-in-app.choice' },
-  })
+  readonly choice: SnapshotStore<string>
 
   /** Current launch, shared by pointer and keyboard gestures. */
   readonly operation = createSnapshotStore<OpenInAppLaunchState>({ phase: 'idle', path: null })
@@ -47,7 +45,9 @@ export class OpenInAppController {
   /**
    * @param fetcher - HTTP carrier for the apps read and the launch POST.
    */
-  constructor(private readonly fetcher: Fetch = (input, init) => fetch(input, init)) {}
+  constructor(private readonly fetcher: Fetch = (input, init) => fetch(input, init), persistence?: ClientPersistence) {
+    this.choice = createSnapshotStore('', { persist: { name: 'dsh.open-in-app.choice', storage: persistence } })
+  }
 
   /**
    * Read availability once per controller life; concurrent calls share the read.
