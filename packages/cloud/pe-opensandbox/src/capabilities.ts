@@ -2,9 +2,9 @@ import { ExecutionUnavailableError } from './errors.ts'
 import type { ExecutionAvailability, ExecutionRequirements } from './types.ts'
 
 /**
- * Assess the capabilities of this package increment without allocating or contacting a backend.
+ * Assess unverified execution without allocating or contacting a backend.
  * @param requirements - modes required by the fixed deployment recipe.
- * @returns evidence gaps; no mode is verified by this implementation.
+ * @returns enabling prerequisites; closed registration readiness is owned by the actual coordinator.
  */
 export function assessExecution(requirements: ExecutionRequirements): ExecutionAvailability {
   return Object.freeze({

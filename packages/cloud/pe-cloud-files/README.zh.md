@@ -55,7 +55,7 @@ kind: "package-reference"
 
 ABI 5 增加自持 FD 的单 leaf 准备及 exact empty-directory 清理，创建模式为 `0700`，并实际核验 tmpfs 后端。固定 64 字节帧记录变更阶段、父目录及 leaf 身份、原 mkdir errno 与实际描述符关闭。确证未创建的失败仍拒绝业务，但结算其临时责任；完整验证成功的 created 帧之后取消仍保留身份与责任。创建后的父目录验证失败会永久禁用清理，即使路径或窗口断言随后恢复；丢回复、worker 故障及模糊结果继续为 unknown。清理要求原 private 身份和仍有效的完整 namespace 独占窗口；空目录或路径缺失本身从不证明可安全删除。close 错误先退役 FD 号，再使 worker 致命失败，避免 finalizer 重试可能已被复用的号码。本实现仍不提供通用递归准备；真实发布包 ABI 5 syscall 验证仍由主控负责。
 
-受控未发布的 [Workspace 适配](src/workspace-adapter.ts)在原生初始化前固定全部三个目录方法。其构造函数及 metadata 选择要求 Context 及其独立根都持有绑定的原始 `peAccount` 代际对象。读取方法复用已有池与 lane。`ensureDirectory` 仅允许预授的 `default-workspace` leaf；公开原生默认初始化器继续决定资格、历史二次检查及持久身份。薄覆盖使用账户项目地址替换桌面 Documents resolver。新项目接收一次选定的服务端 UUID grant，与显示标题无关，然后调用原始原生 `create` 操作。
+[Workspace 适配](src/workspace-adapter.ts)在注册窗口有效时、原生初始化前固定全部三个目录方法。其构造函数及 metadata 选择要求 Context 及其独立根都持有绑定的原始 `peAccount` 代际对象。读取方法复用已有池与 lane，并在 I/O 前后检查当前图。注册窗口关闭后，读取仍可使用；目录准备、公开地址及责任转交仍要求该独立窗口。`ensureDirectory` 仅允许预授的 `default-workspace` leaf；公开原生默认初始化器继续决定资格、历史二次检查及持久身份。薄覆盖使用账户项目地址替换桌面 Documents resolver。窗口关闭后，原生默认初始化仍可返回已有默认项目，或其已删除／无资格状态；实际请求新目录会在登记 ticket 或 mkdir 前被拒绝。新项目接收一次选定的服务端 UUID grant，与显示标题无关，然后调用原始原生 `create` 操作。
 
 仅当实际原生注册 Promise 以 Workspace 成功返回后，临时目录责任才移交。私有适配在注册前后核验原 ticket、当前未发布图及每个候选的完整 namespace 窗口、匹配的物理路径与内部 FD 身份。原生缓存成员仅用于交叉检查。移交释放长期预留，不删除目录，也不保留项目到 ticket 的映射。undefined 结果、拒绝、迟到的图关闭、身份不符及准备等待丢失都保留 unknown 责任并禁止清理；随后成功的准备回复不能逆转这种不确定性。普通 prepared-leaf 控制仍仅有公开地址与清理。
 
@@ -101,7 +101,7 @@ ABI 5 增加自持 FD 的单 leaf 准备及 exact empty-directory 清理，创�
 
 以下集成缺失时，生产启用持续关闭。
 
-- 共享根池仅在可信未发布隔离组件内提供完整 Workspace 元数据适配与原生注册移交。通用递归准备、live 并发注册与删除、生产 grant 签发、其余原生文件系统方法、完整 target 及写入语义、链接竞态验收、完整分配计量与字节及 inode 硬配额尚未完成。
+- 共享根池在可信隔离图内提供完整 Workspace 元数据适配。注册移交要求其未发布窗口；发布后的图仍为当前图时，元数据读取可以继续。这项生命周期区分不提供生产存储授权。通用递归准备、live 并发注册与删除、生产 grant 签发、其余原生文件系统方法、完整 target 及写入语义、链接竞态验收、完整分配计量与字节及 inode 硬配额尚未完成。
 - 账户绑定与收据类型来自 runtime 包。根入口在 worker 启动后注册 files 参与者，但投入生产前，仍须由可信工厂签发经过批准的存储及根能力，并接通完整后端。
 - 原生 FileSystem 适配、完整流式及目录和写入计量、附件接收与暂存、指令、技能投影及部署存储证明仍不可用。helper 二进制必须由已审核的 Linux 部署配方构建并固定；本包不分发已经验证的二进制。
 - Workspace 源码测试使用真实原生 Loader、JSONL 与 JSON StorageDomain，配合仅供测试的 Node-backed worker 传输；它们不建立 Linux FD、tmpfs、namespace 或配额事实。发布包 Linux 验证仍是独立要求。真实 Loader 生命周期检查及 Linux tmpfs syscall 测试覆盖元数据及版本观察、跨 rename 的单 FD 文本读取、文件增长限额、UTF-8 校验、池复用、实际 worker 故障及期限内 unknown 结果。它们不证明 ext4/NFS 隔离、阻塞的 NFS syscall、硬配额、F02、F03、F05、账户就绪或 Web 流程成立。启用之前仍须检查完整生产装配及发布产物消费者。

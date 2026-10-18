@@ -1,5 +1,5 @@
 ---
-description: "OpenSandbox capability declarations, unavailable-execution diagnostics, and trusted session scope checks for cloud composition maintainers."
+description: "Explicitly closed cloud execution, native refusal providers and capability diagnostics for composition maintainers."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package rejects cloud execution when required infrastructure or target verification is missing. It lets composition maintainers inspect capability gaps and validate bounded, revocable session scopes without allocating a sandbox. No execution mode is available, and an empty requirement list cannot make an account ready.
+Composition maintainers can explicitly disable cloud execution while mounting the required native refusal providers. Every Shell and subprocess request fails before execution preparation, without creating a sandbox or contacting a backend. Enabled execution remains unavailable, and an empty requirement list alone cannot make an account ready.
 
 ## Table of Contents
 
@@ -25,17 +25,19 @@ This package rejects cloud execution when required infrastructure or target veri
 <a id="use-this-package"></a>
 ## Use this package
 
-The `/root` and `/account` Loader entries belong in a `dsh` profile composition. Both currently fail with `cloud/execution-unavailable` before publishing a coordinator, drain participant or native provider. There is no configuration that enables execution. Importing the package, parsing its configuration and creating internal scopes do not allocate compute or contact a backend.
+Mount `/root` and `/account` in a `dsh` profile composition. Explicit `mode: closed` registers the actual root execution owner and installs one native ShellExecutor and SubprocessRuntime per account. No configuration enables execution. Omitted closed mode and nonempty required capabilities fail startup with `cloud/execution-unavailable`.
 
 ### Configuration and failure
 
-Both entries require the same explicit capability declaration. The [schema](src/config.ts) owns the accepted mode names; declaring a mode does not verify it.
+Both entries require explicit closed mode and an empty capability declaration. The [schema](src/config.ts) owns the accepted values; declarations never verify execution capabilities.
 
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `requiredCapabilities` | required | Modes required by the deployment recipe; an empty array does not bypass missing infrastructure. |
+| `mode` | omitted: startup fails | Only `closed` is supported; all execution remains disabled. |
+| `requiredCapabilities` | required | Must be empty in closed mode; any required capability prevents mounting. |
+| `maxBoundAccounts` | root requires it | Positive finite capacity for simultaneously open exact account-generation registrations. |
 
-Persistent allocation reconciliation, trusted account ports, target channel verification, resource isolation and managed-range stopping remain prerequisites. The [Loader fixture](tests/fixtures/entries.cordis.yml) and [composition tests](tests/composition.spec.ts) demonstrate the refusal path rather than a working deployment.
+Runtime first installs its immutable binding in an independent account graph. During native prepare, the trusted factory calls the root coordinator’s `bindAccount` with that exact installed object and its graph-current check, then calls `installAccountExecutionPort` before the account entry. Missing, copied, foreign or shadowed bindings and ports fail. Duplicate providers and exhausted capacity fail. Closed registration does not satisfy other account readiness checks.
 
 -----
 
@@ -45,9 +47,9 @@ Persistent allocation reconciliation, trusted account ports, target channel veri
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The Host library exposes the capability assessment, its typed error and the coordinator Service Definition. The [coordinator definition](src/coordinator.ts) consumes the runtime package's AccountBinding and drain receipt types and uses Cordis's unique service registration. It supplies no backend or receipt implementation.
+The [root owner](src/closed-owner.ts) retains exact registrations and permanent admission state. Its dependencies contain no execution backend or process launcher. Stopping a known registration closes its port and retains an observation of this owner’s zero-work generation; unknown or cloned bindings reject. Root teardown closes all ports before participant withdrawal. Account teardown closes only its own port. These observations cannot certify resources from an earlier owner or epoch.
 
-The internal [scope issuer](src/scopes.ts) retains that same binding and the project type supplied by its owning adapter. It checks exact native Agent identity, bounds live scopes and invokes the current account-generation, project, consumer and mode authorization check at issuance and use. Copied or foreign scopes are rejected. Revocation closes user admission without claiming any process or allocation has stopped.
+The [native providers](src/closed-providers.ts) share that port and reject every method, including executable lookup and terminal preparation. Spawn refuses synchronously; asynchronous methods return rejected Promises, and pre-aborted callers retain their reason. The internal [scope issuer](src/scopes.ts) remains separate: scope revocation never proves that an allocation or process has stopped.
 
 </details>
 
@@ -69,11 +71,11 @@ The internal [scope issuer](src/scopes.ts) retains that same binding and the pro
 
 #### What the model sees
 
-The package registers no model tool, changes no model input and emits no Session event. A model cannot set `requiredCapabilities`, construct a scope or invoke an unverified mode.
+The package registers no model tool or Session event. A model cannot enable execution through configuration or a copied scope. If another composed native tool requests execution, it receives `Cloud execution is disabled by this deployment.`
 
 #### Token effect
 
-The package adds no model-visible content and therefore adds no input tokens.
+The package injects no prompt content. A refused invocation can add the native consumer’s error text to its conversation.
 
 #### KV Cache effect
 
@@ -83,12 +85,12 @@ The package does not modify request content, ordering or cache prefixes.
 
 <a id="known-limitations-and-deferred-work"></a>
 
-Execution remains unavailable until its actual owners and target guarantees are integrated.
+Closed mode is a restricted deployment configuration, not verified remote execution.
 
-- The root coordinator implementation and mandatory execution participant registration require persistent reconciliation and verified target evidence. Native ShellExecutor and SubprocessRuntime providers remain absent, so these entries cannot satisfy account readiness.
-- The scope issuer is internal. It does not replace the account factory's restricted execution port, project authorization or target capability validation, and it defines no substitute AccountBinding or drain protocol.
+- All execution modes and consumers remain disabled. Enabling a mode requires persistent allocation reconciliation, complete deployment configuration, target channel and isolation evidence, and managed-range stopping.
+- A closed drain observation covers only its exact registered generation. It supplies no allocation, remote stop or recovery proof and cannot clear old unknown work. Runtime still owns account readiness and recovery.
 - The native default Bash executor settles from subprocess `done`, which does not establish that all descendants have stopped. Shell preparation and scope completion need an explicit compatible adapter.
-- OpenSandbox's text command stream does not supply the complete raw-pipe/control behavior or managed-range observation required by the native subprocess interface. No helper, final execution protocol, stopping proof, host fallback or automatic recovery is supplied here.
+- OpenSandbox’s text command stream does not supply complete raw pipes/control or managed-range observation for native subprocess. This package supplies no enabled execution protocol, host fallback or automatic recovery.
 
 <a id="dev-note"></a>
 ### Dev Note

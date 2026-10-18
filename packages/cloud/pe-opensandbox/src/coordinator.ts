@@ -1,6 +1,7 @@
 /** Root coordinator Service Definition; implementations retain the runtime-owned receipt types. */
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { AccountBinding, DrainParticipant, ParticipantReceipt } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
+import type { AccountExecutionPort } from './account-port.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -11,7 +12,7 @@ declare module '@deepseek-ai/cordis' {
 
 /**
  * A concrete implementation must register as runtime's mandatory execution participant
- * and verify its own required execution capabilities before readiness. This definition
+ * and verify its own required execution capabilities or explicit closed mode before readiness. This definition
  * supplies neither an implementation nor an empty-work stopping receipt.
  */
 export abstract class SandboxCoordinator extends Service implements DrainParticipant {
@@ -26,8 +27,17 @@ export abstract class SandboxCoordinator extends Service implements DrainPartici
     super(ctx, 'peSandboxCoordinator')
   }
 
-  /** Throw unless the recipe's required channel, isolation and lifecycle evidence is verified. */
+  /** Check actual registration and declared requirements; closed mode authorizes no execution. */
   abstract assertReady(): void
+
+  /**
+   * Issue one restricted port from runtime's trusted native prepare scope.
+   * @param ctx - independent account graph with its actual installed binding.
+   * @param binding - exact installed runtime generation, never serialized identity.
+   * @param assertCurrent - runtime-owned graph-current check, valid during mounting.
+   * @returns an account-only port; issuance does not establish account readiness.
+   */
+  abstract bindAccount(ctx: Context, binding: AccountBinding, assertCurrent: () => void): AccountExecutionPort
 
   /**
    * Stop all actual work and nonterminal allocations for this exact generation.

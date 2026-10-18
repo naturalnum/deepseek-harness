@@ -217,6 +217,24 @@ export class AccountFactory {
   }
 
   /**
+   * Check graph business admission without capturing an HTTP or Peer borrow.
+   * @param binding Exact installed generation; mounting and unpublished graphs reject.
+   */
+  assertBusinessCurrent(binding: AccountBinding): void {
+    this.assertMountCurrent(binding)
+    if (this.slots.get(binding.accountId)?.state !== 'ready') {
+      throw new AccountRuntimeError('cloud/account-unavailable', 'The account graph has not passed production readiness')
+    }
+  }
+
+  /**
+   * Inspect whether the factory still owns an actual account operation or graph.
+   * @param accountId Trusted root request whose input resources may be released only after removal.
+   * @returns Whether the original slot remains retained, including failed or uncertain work.
+   */
+  retainsAccount(accountId: AccountId): boolean { return this.slots.has(accountId) }
+
+  /**
    * Borrow only an exact, current, ready graph within explicit reference ceilings.
    * Native-only fixtures never reach ready, and a copied binding cannot move a borrow to a new graph.
    * @param binding Exact ready graph binding selected by trusted runtime/access code.

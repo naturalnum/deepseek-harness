@@ -57,7 +57,7 @@ export interface PoolReadPort {
   /**
    * Fix the native Workspace dependency before its graph starts; this grants no production authority.
    * @param defaultGrant Trusted fixed default leaf under this exact binding and parent.
-   * @param assertUnpublished Trusted recipe guard held through actual registration and identity verification.
+   * @param assertUnpublished Trusted recipe guard for installation, preparation and registration; reads use the bound current check.
    * @returns Native subclass with same-lane metadata and privately completed directory transfer.
    */
   createWorkspaceRegistry(defaultGrant: IsolatedLeafGrant, assertUnpublished: () => void): ReturnType<typeof createBoundWorkspaceRegistry>
@@ -265,7 +265,7 @@ export class LinuxFilesPool implements DrainParticipant {
         const defaultPort = derivePreparedLeaf(defaultGrant)
         const assertWindow = (): void => { checkCurrent(); assertUnpublished(); defaultGrant.assertExclusive() }
         return createBoundWorkspaceRegistry({
-          directory, defaultGrant, assertWindow,
+          directory, defaultGrant, assertCurrent: checkCurrent, assertWindow,
           prepareDefault: () => defaultPort.prepare(),
           prepareRegistration: (grant) => {
             assertWindow()

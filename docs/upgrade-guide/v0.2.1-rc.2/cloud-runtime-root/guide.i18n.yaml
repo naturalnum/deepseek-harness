@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for guide.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/upgrade-guide/v0.2.1-rc.2/cloud-runtime-root/guide.md
+/:
+  en: 914243021a63d70c
+  zh: 522cdd81cddba4da
+/configure-the-cloud-runtime-root:
+  en: 8e4bede1ab0e2770
+  zh: 9edfa39ad47ed1b9
+/configure-the-cloud-runtime-root/change:
+  en: c0fc890937bb5a51
+  zh: 50966a38bc79bcd0
+/configure-the-cloud-runtime-root/migration:
+  en: 10fecb0b9d430745
+  zh: d1e7186237475be6

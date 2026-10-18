@@ -1,0 +1,18 @@
+- id: execution-account
+  name: cordis:closed-execution-account
+  config:
+    mode: closed
+    requiredCapabilities: []
+- id: system-prompt
+  name: cordis:closed-system-prompt
+- id: tools
+  name: cordis:closed-tools
+- id: shell-env
+  name: cordis:closed-shell-env
+  config:
+    dshHome: /closed-private-dsh
+- id: bash-consumer
+  name: cordis:closed-bash-consumer
+  config:
+    enableRunInBackground: false
+    promoteOnTimeout: false

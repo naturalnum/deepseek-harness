@@ -110,6 +110,7 @@ describe('bounded concrete native account mounts', () => {
     expect(ctx.nativeAccountProbe.binding).not.toBe(f.input.binding)
     const binding = ctx.nativeAccountProbe.binding
     expect(() => { value.assertMountCurrent(binding) }).not.toThrow()
+    expect(() => { value.assertBusinessCurrent(binding) }).toThrow('production readiness')
     await expect(value.borrowCurrent(binding)).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
     await expect(value.borrowCurrent({ ...binding })).rejects.toMatchObject({ code: 'cloud/stale-generation' })
     let calls = 0

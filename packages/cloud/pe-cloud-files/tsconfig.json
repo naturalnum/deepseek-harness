@@ -21,7 +21,7 @@
       "path": "../../fs/fs"
     },
     {
-      "path": "../pe-cloud-runtime"
+      "path": "../pe-cloud-runtime/tsconfig.account.json"
     },
     {
       "path": "../../workspace/workspace"

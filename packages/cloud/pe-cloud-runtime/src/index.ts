@@ -1,3 +1,3 @@
-/** Default Host entry aliases the root Loader service; cross-package data types live at /types. */
-export { default, PeAccountRuntime, AccountRuntimeError } from './root.ts'
+/** Actual root Loader entry and the separately consumable capacity/participant component. */
+export { name, inject, Config, apply, PeAccountRuntime, AccountRuntimeError } from './root.ts'
 export type * from './types.ts'

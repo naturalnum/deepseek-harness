@@ -9,7 +9,8 @@ export interface OwnerPgConnection {
   readonly host: string
   readonly port: number
   readonly user: string
-  readonly password: string
+  /** Resolve again for each actual connection; a fixed value remains available to direct component consumers. */
+  readonly password: string | (() => Promise<string>)
   readonly database: string
   readonly ssl: NonNullable<ClientConfig['ssl']>
 }
@@ -212,13 +213,14 @@ export class PgOwnerExecutor implements OwnerPgExecutor {
       if (defaults.query_timeout) {
         throw new OwnerPgNotSubmittedError('cloud/account-unavailable', 'Owner database requires pg client query timeout to stay disabled')
       }
+      const password = this.connection.password
       const client = new Client({
         host: this.connection.host,
         port: this.connection.port,
         user: this.connection.user,
         database: this.connection.database,
         ssl: this.connection.ssl,
-        password: () => this.connection.password,
+        password: typeof password === 'string' ? () => password : password,
         connectionTimeoutMillis: this.limits.connectionTimeoutMs,
         query_timeout: 0,
         statement_timeout: this.limits.statementTimeoutMs,

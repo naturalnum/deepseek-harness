@@ -8,3 +8,5 @@ export const RuntimeConfigSchema: z<RuntimeConfig> = z.object({
   maxConcurrentMounts: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
   maxConcurrentDrains: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
 })
+
+export { RuntimeRootConfigSchema } from './root-config.ts'

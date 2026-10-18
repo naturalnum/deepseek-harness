@@ -1,27 +1,50 @@
-/** Root-only participant registration and local capacity; no account graph is published here. */
+/** Root control composition retains actual PG/native work; missing production ports still prevent account ready. */
+import { posix } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
+import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
+import { ConfigSaveCoordinator } from '@deepseek-ai/dsh-pe-cloud-api'
+import type { RuntimeRootConfig } from './root-config.ts'
+import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
+import { AccountFactory, type AccountFactoryRequest, type AccountNativeCloseObservation } from './account-factory.ts'
+import { deriveAccountLayout, defaultProjectLayout } from './account-layout.ts'
+import { requireAccountProductionPorts } from './account-mount.ts'
+import { PgOwnerExecutor } from './owner-pg-executor.ts'
+import { RuntimeInstanceControl } from './instance-control.ts'
+import { PostgresOwnerStore } from './owner-store.ts'
 import { RuntimeCapacity } from './capacity.ts'
 import { AccountRuntimeError } from './errors.ts'
-import { RuntimeConfigSchema } from './schema.ts'
-import type { AccountId, DrainCapacityReservation, DrainParticipant, MountCapacityReservation, ParticipantId, RuntimeConfig } from './types.ts'
+import { RuntimeConfigSchema, RuntimeRootConfigSchema } from './schema.ts'
+import type { AccountBinding, AccountId, AccountOwner, AccountRuntimeService, AccountUse, RuntimeControlObservation, DrainCapacityReservation, DrainParticipant, MountCapacityReservation, ParticipantId, RuntimeConfig } from './types.ts'
 
 export { AccountRuntimeError } from './errors.ts'
 export type * from './types.ts'
 
-declare module '@deepseek-ai/cordis' {
-  interface Context {
-    /** Root runtime registration and local capacity, not a readiness declaration. */
-    peAccountRuntime: PeAccountRuntime
-  }
+
+interface RootControl {
+  readonly config: RuntimeRootConfig
+  readonly executor: PgOwnerExecutor
+  readonly instance: RuntimeInstanceControl
+  readonly owners: PostgresOwnerStore
+  readonly factory: AccountFactory
+  readonly saves: ConfigSaveCoordinator
+  readonly requests: Map<AccountId, AccountFactoryRequest>
+  readonly secrets: Set<Promise<string>>
+  phase: 'starting' | 'active' | 'failed' | 'closing' | 'closed'
+  starting: Promise<void>
+  heartbeat?: Promise<unknown>
+  timer?: ReturnType<typeof setTimeout>
+  closing?: Promise<void>
+  failure?: unknown
 }
 
-/** Runtime-owned root foundation; owner acquisition, recipe sealing, and mounting are not exposed. */
-export class PeAccountRuntime extends Service {
+/** Runtime-owned component API; only the function Loader entry creates the actual control plane. */
+export class PeAccountRuntime extends Service implements AccountRuntimeService {
   static Config = RuntimeConfigSchema
 
   private readonly participants = new Map<ParticipantId, DrainParticipant>()
   private readonly capacity: RuntimeCapacity
   private closed = false
+  private control: RootControl | undefined
 
   /**
    * Install one root with explicit limits; this does not acquire a PG owner or mark an account ready.
@@ -32,10 +55,10 @@ export class PeAccountRuntime extends Service {
     const resolved = RuntimeConfigSchema(config)
     super(ctx, 'peAccountRuntime')
     this.capacity = new RuntimeCapacity(resolved)
-    ctx.effect(() => () => {
-      this.closed = true
-      this.capacity.close()
-    }, 'pe-cloud-runtime: close local admission')
+    const rootClose = ctx.root.effect(() => () => this.close(), 'pe-cloud-runtime: join actual control at root disposal')
+    ctx.effect(() => async () => {
+      try { await this.close() } finally { await rootClose() }
+    }, 'pe-cloud-runtime: close actual root control')
   }
 
   /**
@@ -89,9 +112,299 @@ export class PeAccountRuntime extends Service {
     return this.capacity.reserveDrain(accountId)
   }
 
+  /**
+   * Construct the component and establish actual root control through the formal credential provider.
+   * @param ctx Root Loader scope with credentials already available.
+   * @param config Complete validated deployment configuration, never component-only capacities.
+   * @returns The registered runtime after migrations and process registration; accounts remain unready.
+   */
+  static async mountRoot(ctx: Context, config: RuntimeRootConfig): Promise<PeAccountRuntime> {
+    const resolved = structuredClone(RuntimeRootConfigSchema(config))
+    validateRootLocations(resolved)
+    const credentials = ctx.get('credentials')
+    if (credentials === undefined) throw new AccountRuntimeError('cloud/invalid-config', 'Runtime root requires the formal credentials service')
+    const runtime = new PeAccountRuntime(ctx, resolved)
+    const actual = runtime.startControl(resolved, credentials)
+    try { await observe(actual, resolved.startupTimeoutMs, 'Runtime root startup observation expired') }
+    catch (cause) {
+      runtime.controlFailure(cause)
+      await runtime.close()
+      throw new AccountRuntimeError('cloud/account-unavailable', 'Runtime root startup failed; account admission remains closed')
+    }
+    return runtime
+  }
+
+  /**
+   * Query actual owner metadata without creating a graph or treating absence as recovery authority.
+   * @param accountId Authenticated identity supplied by trusted access composition.
+   * @returns Current PG ownership or confirmed absence.
+   */
+  locateAccount(accountId: AccountId): Promise<AccountOwner | undefined> {
+    return this.activeControl().owners.locate(accountId)
+  }
+
+  /**
+   * Enter the retained concrete factory with root-selected inputs and a finite observer budget.
+   * Missing real production ports still reject before native boot and ready CAS.
+   * @param accountId Authenticated account; browser expectations never select this value.
+   * @param signal Optional observer abandonment; absence waits to accountWaitTimeoutMs.
+   * @returns A ready AccountUse only after the factory's actual production checks; unavailable in this slice.
+   */
+  acquireAccount(accountId: AccountId, signal?: AbortSignal): Promise<AccountUse> {
+    const control = this.activeControl()
+    this.assertRequiredParticipants()
+    let request = control.requests.get(accountId)
+    const fresh = request === undefined
+    if (request === undefined) {
+      if (control.requests.size >= control.config.maxMountedAccounts) {
+        throw new AccountRuntimeError('cloud/capacity', 'Runtime root account input capacity is exhausted')
+      }
+      request = this.accountRequest(control, accountId)
+      control.requests.set(accountId, request)
+    }
+    // The factory checks observer admission before starting an actual claim.
+    const borrowed = control.factory.acquireAccount(
+      control.owners, request, Date.now() + control.config.accountWaitTimeoutMs, signal,
+    )
+    if (fresh) {
+      if (!control.factory.retainsAccount(accountId)) control.requests.delete(accountId)
+      else {
+        const retained = request
+        const settled = (): void => {
+          if (!control.factory.retainsAccount(accountId) && control.requests.get(accountId) === retained) control.requests.delete(accountId)
+        }
+        void control.factory.claimAndMount(control.owners, request).then(settled, settled)
+      }
+    }
+    return borrowed
+  }
+
+  /**
+   * Check the exact installed graph during restricted native preparation as well as ready.
+   * @param binding Original graph binding, never a request borrow.
+   */
+  assertMountCurrent(binding: AccountBinding): void { this.activeControl().factory.assertMountCurrent(binding) }
+
+  /**
+   * Admit business only after exact ready publication, independently of mount-current checks.
+   * @param binding Original installed graph binding; unpublished, stale and closed graphs reject.
+   */
+  assertBusinessCurrent(binding: AccountBinding): void { this.activeControl().factory.assertBusinessCurrent(binding) }
+
+  /**
+   * Inspect root-control counts without deployment paths, secrets, SQL or native Contexts.
+   * @returns Component-only status or actual retained control disposition; neither is account readiness.
+   */
+  inspectControl(): RuntimeControlObservation {
+    const control = this.control
+    return Object.freeze({
+      phase: control?.phase ?? 'component', pendingSecrets: control?.secrets.size ?? 0,
+      accounts: control?.factory.inspect().slots ?? 0, hasFailure: control?.failure !== undefined,
+    })
+  }
+
+  /**
+   * Close admission, then join actual root work before releasing its capacity or PG connections.
+   * Observation expiry reports uncertainty and keeps awaiting the retained operation; it never releases resources.
+   * Native-only observations cannot release an account owner or prove a clean drain.
+   * @returns The retained close Promise; rejects after settlement when control/cleanup remains uncertain.
+   */
+  close(): Promise<void> {
+    this.closed = true
+    const control = this.control
+    if (control === undefined) { this.capacity.close(); return Promise.resolve() }
+    if (control.closing !== undefined) return control.closing
+    control.phase = 'closing'
+    clearTimeout(control.timer)
+    const actual = this.finishControl(control)
+    control.closing = actual
+    const timer = setTimeout(() => {
+      this.ctx.logger.error('Runtime root shutdown observation expired; actual work and owner responsibility remain retained')
+    }, control.config.shutdownTimeoutMs)
+    timer.unref()
+    void actual.then(() => { clearTimeout(timer) }, () => { clearTimeout(timer) })
+    return actual
+  }
+
+  private startControl(config: RuntimeRootConfig, credentials: CredentialProvider): Promise<void> {
+    const secrets = new Set<Promise<string>>()
+    const password = (): Promise<string> => this.resolvePassword(config, credentials, secrets)
+    const executor = new PgOwnerExecutor({ ...config.database, password }, config.pg)
+    const instance = new RuntimeInstanceControl(executor, config)
+    const owners = new PostgresOwnerStore(executor, instance.identity, config)
+    const factory = new AccountFactory(this.capacity, config.factory)
+    const saves = new ConfigSaveCoordinator(config.saves)
+    const control: RootControl = {
+      config, executor, instance, owners, factory, saves, requests: new Map(), secrets,
+      phase: 'starting', starting: Promise.resolve(),
+    }
+    this.control = control
+    control.starting = (async () => {
+      await password()
+      this.assertStarting(control)
+      await instance.migrate()
+      this.assertStarting(control)
+      await owners.migrate()
+      this.assertStarting(control)
+      await instance.register()
+      this.assertStarting(control)
+      control.phase = 'active'
+      this.scheduleHeartbeat(control)
+    })()
+    return control.starting
+  }
+
+  private resolvePassword(config: RuntimeRootConfig, credentials: CredentialProvider, pending: Set<Promise<string>>): Promise<string> {
+    if (pending.size >= config.pg.maxConnections) {
+      return Promise.reject(new AccountRuntimeError('cloud/capacity', 'Runtime credential resolution admission is unavailable'))
+    }
+    const actual = Promise.resolve().then(async () => {
+      const resolved = await credentials.resolve(credentialRef(config.database.passwordRef))
+      if (resolved === undefined || resolved.value.length === 0
+        || resolved.value.length > config.maxSecretBytes || Buffer.byteLength(resolved.value) > config.maxSecretBytes) {
+        throw new AccountRuntimeError('cloud/invalid-config', 'Runtime database credential is absent or exceeds its finite limit')
+      }
+      return resolved.value
+    })
+    pending.add(actual)
+    void actual.then(() => { pending.delete(actual) }, () => { pending.delete(actual) })
+    return observe(actual, config.secretResolveTimeoutMs, 'Runtime credential resolution observation expired')
+  }
+
+  private scheduleHeartbeat(control: RootControl): void {
+    if (this.closed || control.phase !== 'active') return
+    control.timer = setTimeout(() => {
+      if (this.closed || control.phase !== 'active') return
+      const actual = Promise.resolve().then(() => control.instance.heartbeat())
+      control.heartbeat = actual
+      void observe(actual, control.config.heartbeatTimeoutMs, 'Runtime instance heartbeat observation expired').then(
+        () => { if (control.heartbeat === actual) delete control.heartbeat; this.scheduleHeartbeat(control) },
+        (cause: unknown) => { this.controlFailure(cause) },
+      )
+    }, control.config.heartbeatIntervalMs)
+    control.timer.unref()
+  }
+
+  private async finishControl(control: RootControl): Promise<void> {
+    const faults: unknown[] = []
+    try { await control.starting } catch (cause) { control.failure ??= cause }
+    try { await control.heartbeat } catch (cause) { faults.push(cause) }
+    let native: readonly AccountNativeCloseObservation[] = []
+    try { native = await control.factory.close() } catch (cause) { faults.push(cause) }
+    for (const observation of native) {
+      // No account-clean evidence is available: preserve the durable owner rather than release it.
+      try {
+        const owner = await control.owners.locate(observation.accountId)
+        if (owner?.ownerInstanceId === control.instance.identity.instanceId
+          && (owner.phase === 'mounting' || owner.phase === 'ready')) {
+          await control.owners.quarantine({ accountId: owner.accountId, epoch: owner.epoch })
+        }
+      } catch (cause) { faults.push(cause) }
+      if (observation.status === 'unknown') faults.push(observation.cause ?? new AccountRuntimeError('cloud/stop-unconfirmed', 'Native account shutdown is not confirmed'))
+    }
+    try { control.saves.close() } catch (cause) { faults.push(cause) }
+    try { await control.instance.close() } catch (cause) { faults.push(cause) }
+    await Promise.allSettled([...control.secrets])
+    try { await control.executor.close() } catch (cause) { faults.push(cause) }
+    this.capacity.close()
+    control.requests.clear()
+    if (faults.length !== 0) {
+      control.failure ??= faults[0]
+      control.phase = 'failed'
+      this.ctx.logger.error('Runtime root control or shutdown is unconfirmed; account ownership was not released and automatic recovery remains closed')
+      throw new AccountRuntimeError('cloud/stop-unconfirmed', 'Runtime root shutdown retained unresolved control or cleanup evidence')
+    }
+    control.phase = control.failure === undefined ? 'closed' : 'failed'
+  }
+
+  private accountRequest(control: RootControl, accountId: AccountId): AccountFactoryRequest {
+    const { config } = control
+    const instanceId = control.instance.identity.instanceId
+    const layout = deriveAccountLayout(accountId, instanceId, config.paths)
+    return Object.freeze({
+      accountId, instanceId, recipeVersion: config.recipeVersion, deployment: config.paths,
+      environment: createLaunchEnvironmentSnapshot([{ source: 'process', values: { HOME: layout.privateRoot, DSH_HOME: layout.privateRoot } }]),
+      recipe: Object.freeze({
+        profile: {
+          name: 'pe-cloud-account', dir: layout.profileRoot, patchPath: layout.patchPath, installAnchor: config.native.installAnchor,
+          cwd: defaultProjectLayout(layout, config.paths.maxPathBytes).root, home: layout.privateRoot,
+          startedBundles: [], overlays: [], telemetryDisabledEnv: undefined,
+        },
+        configPath: config.native.configPath, bareModuleBaseUrl: config.native.bareModuleBaseUrl,
+        requiredEntryIds: config.native.requiredEntryIds, maxObservedEvents: config.native.maxObservedEvents,
+        maxPathBytes: config.paths.maxPathBytes,
+        prepare: requireAccountProductionPorts,
+      }),
+    })
+  }
+
+  private activeControl(): RootControl {
+    this.assertOpen()
+    const control = this.control
+    if (control === undefined || control.phase !== 'active') {
+      throw new AccountRuntimeError('cloud/account-unavailable', 'Runtime root control is not available')
+    }
+    return control
+  }
+
+  private assertStarting(control: RootControl): void {
+    if (this.closed || control.phase !== 'starting') {
+      throw new AccountRuntimeError('cloud/account-unavailable', 'Runtime root startup admission has closed')
+    }
+  }
+
+  private controlFailure(cause: unknown): void {
+    const control = this.control
+    if (control === undefined) return
+    control.failure ??= cause
+    if (!this.closed) control.phase = 'failed'
+    this.ctx.logger.error('Runtime root control failed or became uncertain; new account admission is closed and status requires inspection')
+  }
+
   private assertOpen(): void {
     if (this.closed) throw new AccountRuntimeError('cloud/account-unavailable', 'Runtime registration is closed')
   }
 }
 
-export default PeAccountRuntime
+
+function validateRootLocations(config: RuntimeRootConfig): void {
+  const { maxPathBytes } = config.paths
+  const paths = [config.paths.sharedAccountsRoot, config.paths.localCacheRoot, config.native.configPath, config.native.installAnchor]
+  for (const path of paths) {
+    if (!posix.isAbsolute(path) || posix.normalize(path) !== path || path.includes('\0') || path.includes('\\')
+      || path.length > maxPathBytes || Buffer.byteLength(path) > maxPathBytes) {
+      throw new AccountRuntimeError('cloud/invalid-config', 'Runtime deployment locations must be normalized bounded absolute POSIX paths')
+    }
+  }
+  const base = new URL(config.native.bareModuleBaseUrl)
+  if (base.protocol !== 'file:' || base.search !== '' || base.hash !== ''
+    || config.native.requiredEntryIds.length === 0 || config.native.requiredEntryIds.length > config.native.maxEntries
+    || new Set(config.native.requiredEntryIds).size !== config.native.requiredEntryIds.length) {
+    throw new AccountRuntimeError('cloud/invalid-config', 'Runtime native recipe locations or required entries are invalid')
+  }
+}
+
+function observe<T>(actual: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => { reject(new AccountRuntimeError('cloud/account-unavailable', message)) }, timeoutMs)
+  })
+  return Promise.race([actual, timeout]).finally(() => { clearTimeout(timer) })
+}
+
+/** Actual root Loader identity. */
+export const name = 'pe-cloud-runtime/root'
+/** Root control requires a formal credential provider before any database work. */
+export const inject = ['credentials']
+export type { RuntimeRootConfig } from './root-config.ts'
+/** Complete production deployment configuration, separate from RuntimeConfigSchema capacities. */
+export const Config = RuntimeRootConfigSchema
+/**
+ * Establish real root control without waiting for downstream files/execution injection.
+ * @param ctx Root Loader scope; participant presence is checked when acquiring an account.
+ * @param config Explicit database references, deployment paths and finite budgets.
+ * @returns After actual migrations and instance registration, never account readiness.
+ */
+export async function apply(ctx: Context, config: RuntimeRootConfig): Promise<void> {
+  await PeAccountRuntime.mountRoot(ctx, config)
+}

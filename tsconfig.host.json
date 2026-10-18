@@ -242,7 +242,7 @@
     { "path": "./packages/cloud/pe-cloud-api" },
     { "path": "./packages/cloud/pe-cloud-client/tsconfig.host.json" },
     { "path": "./packages/cloud/pe-cloud-files" },
-    { "path": "./packages/cloud/pe-cloud-runtime" },
+    { "path": "./packages/cloud/pe-cloud-runtime/tsconfig.host.json" },
     { "path": "./packages/cloud/pe-opensandbox" },
     { "path": "./packages/experimental/client-ui-cot-translation/tsconfig.host.json" },
     { "path": "./packages/experimental/cot-translation-bundle" },

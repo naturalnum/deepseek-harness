@@ -1,12 +1,14 @@
 /** Execution modes reviewed separately under C-08; declarations do not authorize execution. */
 export type ExecutionCapability = 'argv-collect' | 'pipes' | 'control' | 'inherit' | 'terminal'
 
-/** Requested deployment capabilities; accepting an empty list cannot establish readiness. */
+/** Requested deployment capabilities; an empty list alone cannot establish readiness. */
 export interface ExecutionRequirements {
+  /** Explicit deployment refusal; omission retains unverified-execution startup failure. */
+  readonly mode?: 'closed'
   readonly requiredCapabilities: readonly ExecutionCapability[]
 }
 
-/** Static evidence gaps which prevent execution from being mounted by this increment. */
+/** Static evidence gaps which prevent enabling unverified execution. */
 export type ExecutionPrerequisite =
   | 'runtime-participant-registration'
   | 'allocation-store-and-reconciliation'

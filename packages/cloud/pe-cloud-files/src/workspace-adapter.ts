@@ -1,4 +1,4 @@
-/** Controlled unpublished Workspace composition; public native business/persistence logic remains native-owned. */
+/** Graph-lived Workspace metadata with unpublished-only registration; native business/persistence remains native-owned. */
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-pe-cloud-runtime/account'
 import WorkspaceRegistry, { WorkspaceDirectoryMetadataError } from '@deepseek-ai/dsh-workspace'
@@ -33,10 +33,11 @@ export interface WorkspacePreparation {
   assertWindow(): void
 }
 
-/** Existing same-lane operations and the fixture's real unpublished graph window. */
+/** Existing same-lane reads and the separate unpublished registration window. */
 export interface WorkspaceAdapterBackend {
   readonly directory: DirectoryReadPort
   readonly defaultGrant: IsolatedLeafGrant
+  assertCurrent(): void
   assertWindow(): void
   prepareDefault(): ReturnType<PreparedLeafPort['prepare']>
   prepareRegistration(grant: IsolatedLeafGrant): WorkspacePreparation
@@ -59,7 +60,7 @@ async function metadata<T>(operation: () => Promise<T>): Promise<T> {
 
 /**
  * Construct one graph-fixed native subclass with complete metadata and private registration ownership.
- * @param backend Existing bound lane and trusted unpublished fixture window; no production issuer is created.
+ * @param backend Existing bound lane, current graph and separate registration window; no production issuer is created.
  * @returns Native Registry subclass; default resolver policy changes, native queues and durable writes do not.
  */
 export function createBoundWorkspaceRegistry(backend: WorkspaceAdapterBackend): ControlledWorkspaceRegistryConstructor {
@@ -69,15 +70,15 @@ export function createBoundWorkspaceRegistry(backend: WorkspaceAdapterBackend): 
   if (backend.defaultGrant.leaf !== 'default-workspace') throw unavailable()
   const provider: WorkspaceDirectoryMetadata = Object.freeze({
     canonicalPath: (path: string) => metadata(async () => {
-      backend.assertWindow()
+      backend.assertCurrent()
       const result = await backend.directory.canonicalPath(path)
-      backend.assertWindow()
+      backend.assertCurrent()
       return result
     }),
     isDirectory: (path: string) => metadata(async () => {
-      backend.assertWindow()
+      backend.assertCurrent()
       const result = await backend.directory.isDirectory(path)
-      backend.assertWindow()
+      backend.assertCurrent()
       return result
     }),
     ensureDirectory: (path: string) => metadata(async () => {
@@ -108,8 +109,9 @@ export function createBoundWorkspaceRegistry(backend: WorkspaceAdapterBackend): 
     override async initializeDefault(_resolveDirectory: () => Promise<string>): Promise<Workspace | undefined> {
       let prepared: WorkspacePreparation | undefined
       try {
-        backend.assertWindow()
+        backend.assertCurrent()
         const result = await super.initializeDefault(async () => {
+          backend.assertWindow()
           const captured = backend.prepareRegistration(backend.defaultGrant)
           prepared = captured
           await metadata(() => captured.work.observation.waitPrepared())
@@ -118,6 +120,7 @@ export function createBoundWorkspaceRegistry(backend: WorkspaceAdapterBackend): 
           captured.assertWindow()
           return captured.work.control.expose()
         })
+        backend.assertCurrent()
         if (prepared !== undefined) {
           if (result === undefined) prepared.record.registrationFailed()
           else await this.finishRegistration(prepared, result)

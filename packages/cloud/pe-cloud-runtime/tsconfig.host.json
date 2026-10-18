@@ -1,0 +1,46 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types"
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../../../vendor/cosmokit"
+    },
+    {
+      "path": "../../../vendor/cordis"
+    },
+    {
+      "path": "../../../vendor/schemastery"
+    },
+    {
+      "path": "../../util/brand"
+    },
+    {
+      "path": "../../boot/app-boot"
+    },
+    {
+      "path": "../../util/launch-environment"
+    },
+    {
+      "path": "../../credentials/credentials"
+    },
+    {
+      "path": "./tsconfig.account.json"
+    },
+    {
+      "path": "../pe-cloud-api"
+    }
+  ],
+  "exclude": [
+    "src/types.ts",
+    "src/owner-types.ts",
+    "src/account.ts",
+    "src/binding.ts",
+    "src/errors.ts"
+  ]
+}

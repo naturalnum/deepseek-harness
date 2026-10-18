@@ -18,7 +18,7 @@
       "path": "../../util/brand"
     },
     {
-      "path": "../pe-cloud-runtime"
+      "path": "../pe-cloud-runtime/tsconfig.account.json"
     },
     {
       "path": "../../client/connection/tsconfig.host.json"

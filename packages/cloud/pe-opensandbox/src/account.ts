@@ -1,8 +1,11 @@
-/** Account Loader entry; it cannot install an unverified provider or host fallback. */
+/** Account Loader entry installs an actual native refusal pair for explicit closed execution. */
 import type { Context } from '@deepseek-ai/cordis'
 import { requireExecution } from './capabilities.ts'
 import { executionRequirementsSchema } from './config.ts'
 import type { ExecutionRequirements } from './types.ts'
+import { requireAccountExecutionPort } from './closed-owner.ts'
+import { ClosedShellExecutor, ClosedSubprocessRuntime } from './closed-providers.ts'
+import { ExecutionStateError } from './errors.ts'
 
 /** Loader identity for the account-native execution composition. */
 export const name = 'pe-opensandbox/account'
@@ -14,11 +17,21 @@ export interface Config extends ExecutionRequirements {}
 export const Config = executionRequirementsSchema
 
 /**
- * Reject mounting rather than install a provider that only pretends to satisfy readiness.
- * @param _ctx - account plugin context, never a source of a global current account.
+ * Install one native provider pair using the existing root-issued refusal port.
+ * @param ctx - account plugin context with its exact installed root binding and port.
  * @param config - fixed recipe requirements.
- * @throws ExecutionUnavailableError; no provider, allocation, or remote process is created.
+ * @throws for unverified modes, required capabilities, missing/shadowed ports or duplicate providers.
  */
-export function apply(_ctx: Context, config: Config): never {
-  return requireExecution(config)
+export function apply(ctx: Context, config: Config): void {
+  if (config.mode !== 'closed') return requireExecution(config)
+  const resolved = Config({ mode: 'closed', requiredCapabilities: [...config.requiredCapabilities] })
+  if (resolved.requiredCapabilities.length !== 0) return requireExecution(resolved)
+  const port = requireAccountExecutionPort(ctx)
+  if (ctx.get('shell') !== undefined || ctx.get('subprocess') !== undefined
+    || ctx.root.get('shell') !== undefined || ctx.root.get('subprocess') !== undefined) {
+    throw new ExecutionStateError('cloud/invalid-config', 'The account already has a native execution provider.')
+  }
+  port.claim(ctx)
+  new ClosedShellExecutor(ctx, port)
+  new ClosedSubprocessRuntime(ctx, port)
 }

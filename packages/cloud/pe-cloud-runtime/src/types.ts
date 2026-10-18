@@ -139,3 +139,42 @@ export interface DrainCapacityReservation {
   /** Idempotently release this slot; an HTTP deadline alone must not release it. */
   release(): void
 }
+
+/** Safe process-control observation; it is never an account-ready certificate. */
+export interface RuntimeControlObservation {
+  readonly phase: 'component' | 'starting' | 'active' | 'failed' | 'closing' | 'closed'
+  readonly pendingSecrets: number
+  readonly accounts: number
+  readonly hasFailure: boolean
+}
+
+/** Shared service definition; providers need no dependency on Host control implementation. */
+export interface AccountRuntimeService {
+  /** Register the caller-owned files or execution contribution; duplicates and closed admission reject. */
+  registerDrainParticipant(participant: DrainParticipant): () => void | Promise<void>
+  /** Reject missing mandatory participants; success is not recipe sealing. */
+  assertRequiredParticipants(): void
+  /** Reserve bounded actual mount work after participant registration; no owner is claimed. */
+  reserveMountCapacity(accountId: AccountId): MountCapacityReservation
+  /** Retain a finite drain slot until actual settlement. */
+  reserveDrainCapacity(accountId: AccountId): DrainCapacityReservation
+  /** Read actual PG metadata without creating or reclaiming an owner. */
+  locateAccount(accountId: AccountId): Promise<AccountOwner | undefined>
+  /** Enter actual root acquisition; optional signal abandons only this observer. */
+  acquireAccount(accountId: AccountId, signal?: AbortSignal): Promise<AccountUse>
+  /** Check installed mounting/current identity independently of business readiness. */
+  assertMountCurrent(binding: AccountBinding): void
+  /** Require exact live ready publication without capturing a request borrow. */
+  assertBusinessCurrent(binding: AccountBinding): void
+  /** Return safe retained control counts without credentials or paths. */
+  inspectControl(): RuntimeControlObservation
+  /** Close new admission and join actual retained root control work. */
+  close(): Promise<void>
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /** Runtime registration and acquisition definition; component-only instances reject control operations. */
+    peAccountRuntime: AccountRuntimeService
+  }
+}

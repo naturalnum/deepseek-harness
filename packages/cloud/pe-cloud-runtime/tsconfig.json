@@ -1,13 +1,11 @@
 {
-  "extends": "../../../tsconfig.base.json",
-  "compilerOptions": { "rootDir": "src", "outDir": "lib/types" },
-  "include": ["src"],
+  "files": [],
   "references": [
-    { "path": "../../../vendor/cosmokit" },
-    { "path": "../../../vendor/cordis" },
-    { "path": "../../../vendor/schemastery" },
-    { "path": "../../util/brand" },
-    { "path": "../../boot/app-boot" },
-    { "path": "../../util/launch-environment" }
+    {
+      "path": "./tsconfig.account.json"
+    },
+    {
+      "path": "./tsconfig.host.json"
+    }
   ]
 }

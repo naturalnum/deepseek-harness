@@ -1,6 +1,6 @@
 /** Ordered root contributions remain registered until actual pool and result ownership ends. */
 import type { Context } from '@deepseek-ai/cordis'
-import type { PeAccountRuntime } from '@deepseek-ai/dsh-pe-cloud-runtime/root'
+import type { AccountRuntimeService } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { Worker } from 'node:worker_threads'
 import type { FdWorkerInput } from './worker-protocol.ts'
 import { LinuxFilesPool } from './worker-pool.ts'
@@ -19,7 +19,7 @@ export async function mountRootPool(
   config: FilesPoolConfig,
   createWorker?: (input: FdWorkerInput) => Worker,
 ): Promise<void> {
-  const runtime: PeAccountRuntime | undefined = ctx.get('peAccountRuntime')
+  const runtime: AccountRuntimeService | undefined = ctx.get('peAccountRuntime')
   if (runtime === undefined) throw new FilesFailure('files/prerequisite-missing', 'files/root requires peAccountRuntime')
   if (ctx.get('peFilesPool') !== undefined) throw new FilesFailure('files/prerequisite-missing', 'files/root pool already exists')
   const pool = new LinuxFilesPool(config, createWorker)

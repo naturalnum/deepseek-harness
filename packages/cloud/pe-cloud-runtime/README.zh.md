@@ -27,11 +27,11 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## Use this package
 
-根 Loader 入口为 `/root`，包默认入口是它的别名。`/account` 仅接受空配置，拒绝身份或其他 JSON 字段，并核验私有工厂安装的不可变 `peAccount` 贡献。`/types` 提供共享数据声明，`/schema` 导出容量解析器。
+根 Loader 入口为 `/root`，包入口重导出其具名 `name`、`inject`、`Config` 和 `apply`，没有 default 导出。具名 `PeAccountRuntime` 类仍可用于容量/参与者组件装配，其 `Config` 只解析容量。`/account` 仅接受空配置，拒绝身份或其他 JSON 字段，并核验私有工厂安装的不可变 `peAccount` 贡献。`/types` 提供共享数据声明，`/schema` 分别导出容量与完整根部署解析器。
 
 ### Configuration
 
-根入口要求三个限制均为正安全整数，不推断部署默认值。
+组件要求下列三个限制均为正安全整数。实际 Loader 入口还要求 [Host 部署 schema](src/root-config.ts) 的全部字段；只有容量的配置不能启动根控制面。两者均不推断部署默认值。
 
 | 字段 | 默认值 | 含义 |
 | --- | --- | --- |
@@ -39,9 +39,15 @@ kind: "package-reference"
 | `maxConcurrentMounts` | 必填 | 尚未实际结算的装配操作。 |
 | `maxConcurrentDrains` | 必填 | 尚未实际结算的排空操作。 |
 
+实际根配置包括 `recipeVersion`、`internalAddress`、明确的心跳/启动/停止/账户观察预算、凭据解析时间和字节限制、PostgreSQL 连接字段及 `passwordRef`、有限 `pg`/`factory`/`saves` 容量、规范化的共享/本地路径，以及固定原生配方位置、必需条目和诊断上限。根要求正式 `credentials` 服务，先预检引用，再为每次实际 PG 连接重新解析；不读取 `process.env`，不使用账户凭据提供者。等待被放弃后，解析仍计入容量直至实际结算。
+
+函数入口创建唯一既有容量持有者、PG executor、进程登记组件、owner store、账户 factory 和 API 配置保存 coordinator。它先迁移两张控制表并登记生成的进程身份，再提供 active 根控制面。初始化不等待下游 files/execution 贡献；参与者检查归账户领取，避免 Loader 注入环。真实账户准备尚未集成，因此保存 coordinator 尚不持有账户屏障。
+
+`locateAccount()` 读取实际 PG 元数据；`acquireAccount()` 用根选定路径、配方和独立账户环境进入既有保留型 factory。`assertMountCurrent()` 检查已安装的准备期/当前身份；`assertBusinessCurrent()` 还要求 factory 的 ready 状态。根控制面 active 或原生 mounted 均不发布账户 ready。四项生产 provider 缺口检查全部保持关闭。
+
 Provider 经根服务登记必需的 `files` 和 `execution` 参与者。登记归调用 fiber 所有，重复项会被拒绝。缺参与者时拒绝装配容量预留；通过此检查不等于配方封口。配置保存使用 API 单独持有的屏障，不是第三个参与者。
 
-账户工厂持有容量预留，直至实际工作结算。`settleMount()` 释放并发装配槽并保留账户槽。装配或排空仍持有账户时，`releaseAccount()` 拒绝释放。请求超时不授权这两种释放。根卸载关闭新的本地预留，不报告既有工作已停止。
+账户工厂持有容量预留，直至实际工作结算。`settleMount()` 释放并发装配槽并保留账户槽。装配或排空仍持有账户时，`releaseAccount()` 拒绝释放。请求超时不授权这两种释放。根卸载先关闭新准入，并等待实际控制清理后再关闭容量。观察过期会报告不确定状态并保留实际关闭 Promise。
 
 ### Account layout
 
@@ -55,7 +61,7 @@ Provider 经根服务登记必需的 `files` 和 `execution` 参与者。登记�
 
 私有 owner store 接受根持有的 PostgreSQL query adapter 及服务端生成的实例身份。该实现归包内账户工厂持有，不是导出的账户管理 SDK。Adapter 绑定参数，并限制连接、statement 及 query 预算。`migrate()` 执行 `pe_account_owners` 的原子 DDL；并发迁移在 PostgreSQL 内串行，既有字段或约束不兼容时拒绝，不重置记录。
 
-私有 [pg 适配](src/owner-pg-executor.ts)使用 `pg@8.16.3`，每个连接仅执行一条语句，不使用隐藏连接池。显式构造参数限制连接、排队提交、队列/连接/服务端 statement/锁等待时间、被观察的实际 Promise 及并发等待者；这些不是新增的根 Loader 配置字段。`ClientConfig.query_timeout` 为零；pg 共享 query-timeout 默认值非零时，在创建连接前拒绝。Query 持有槽位直到真实 driver 结算且连接结束；连接不复用。服务端 `statement_timeout` 限制执行，已提交写入失败对 store 仍属于结果未知。
+私有 [pg 适配](src/owner-pg-executor.ts)使用 `pg@8.16.3`，每个连接仅执行一条语句，不使用隐藏连接池。显式构造参数限制连接、排队提交、队列/连接/服务端 statement/锁等待时间、被观察的实际 Promise 及并发等待者；实际根要求在 `pg` 下提供同样的值。`ClientConfig.query_timeout` 为零；pg 共享 query-timeout 默认值非零时，在创建连接前拒绝。Query 持有槽位直到真实 driver 结算且连接结束；连接不复用。服务端 `statement_timeout` 限制执行，已提交写入失败对 store 仍属于结果未知。
 
 `observe(actual, deadlineAtMs, signal)` 只限制本次等待。超时/取消移除该等待者，并在实际 Promise 结算前保留唯一且有界的结算订阅。它不拒绝实际 SQL，也不释放连接。`close()` 关闭准入并拒绝从未提交的排队 SQL，随后持有同一个关闭 Promise，直至全部已启动连接结束。只有可信 adapter 确认的提交前失败才允许 store 丢弃该在途写入责任；SQL 从未发送时，队列耗尽、过期及连接初始化失败不会隔离该账户。
 
@@ -85,7 +91,7 @@ Provider 经根服务登记必需的 `files` 和 `execution` 参与者。登记�
 
 每个根独立持有参与者表和容量计数。每个独立账户根接收冻结的 binding，其中包含无精度损失的 epoch 字符串和图 lifetime。内部交接拒绝子 Context、仅结构相似的对象和已结束的 lifetime；没有公开构造器将浏览器 JSON 转为 binding。原生队列、Session、设置及执行状态仍由各自包持有。
 
-[根服务](src/root.ts)、[PostgreSQL owner store](src/owner-store.ts)、[容量记录](src/capacity.ts)、[私有 binding 交接](src/binding.ts)和[共享类型](src/types.ts)定义已实现行为。[Loader 测试](tests/runtime.spec.ts)覆盖 runtime 输入；[PostgreSQL 测试](tests/owner-postgres.spec.ts)在显式指定的测试库执行 CAS 及迁移场景，排空证据使用测试夹具。
+[根服务](src/root.ts)、[PostgreSQL owner store](src/owner-store.ts)、[容量记录](src/capacity.ts)、[私有 binding 交接](src/binding.ts)和[共享类型](src/types.ts)定义已实现行为。[组件 Loader 测试](tests/runtime.spec.ts)覆盖容量/登记输入；[实际根测试](tests/root-control-postgres.spec.ts)使用单独分配的 PostgreSQL 数据库验证函数 Loader 的迁移、登记、心跳、factory 拒绝及关闭；[PostgreSQL 测试](tests/owner-postgres.spec.ts)在显式指定的测试库执行 CAS 及迁移场景，排空证据使用测试夹具。
 
 私有[原生 Profile 适配](src/native-boot.ts)通过公开 app boot 创建独立根，在 `prepare` 中提供复制的 ProfileContext、显式启动环境及不可变 binding，并且只装配一次 root Include。所有保存/files/execution port 均须在 `prepare` 内使用同一个已安装 binding 构造、核验及注入，并保留其图 lifetime。等待 setup 完成后，prepare 在返回 boot 前再次核验已安装代际的寿命及关闭请求。若 setup 期间代际结束或收到关闭请求，不启动任何 Include entry，并继续等待实际清理。已装配图仍由 runtime 驱动销毁。它不安装账户 CLI、信号处理、代理、watcher 或代码 HMR。调用者必须先核验真实根能力和固定配方。装配结果仅说明原生装配完成。适配持有 boot/disposal Promise，并有界观察错误，覆盖部分启动和异步 disposer 失败；错误或观察溢出均阻止原生销毁 confirmed。该观察不代表业务工作排空或账户 clean。
 
@@ -93,7 +99,7 @@ Provider 经根服务登记必需的 `files` 和 `execution` 参与者。登记�
 
 装配容量随实际启动及已开始的原生清理结算。仅原生销毁不能证明完整排空，因此账户预留仍保留。工厂关闭外部准入时仍保留内部排空预留及原生销毁责任；清理未知继续持有排空容量。只有确定在 claim 前或从未提交的失败且没有原生资源时，才释放未启动账户槽。已提交结果未知保留原槽，不盲目重启。
 
-PG 路径使用真实 owner store，随后在启动原生 fallback 或提交 ready 之前拒绝缺失的生产交接。独立的 native-only 路径为既有可信代际执行真实 Loader 装配，不授予 `AccountUse`。当前借用要求同一个已安装、有效、ready 的图及尚未释放的引用；release 幂等且不 cancel Agent。真实 files/execution/API/存储能力签发仍缺失，因此任何生产路径都无法满足该 ready 条件或发布借用。原生 mounted 结果及配置标记均不能提供这些能力。
+实际根经唯一 factory 调用 PG 路径，随后在启动原生 fallback 或提交 ready 之前拒绝缺失的生产交接。独立的 native-only 路径为既有可信代际执行真实 Loader 装配，不授予 `AccountUse`。当前借用要求同一个已安装、有效、ready 的图及尚未释放的引用；release 幂等且不 cancel Agent。真实 files/execution/API/存储能力签发仍缺失，因此任何生产路径都无法满足该 ready 条件或发布借用。原生 mounted 结果及配置标记均不能提供这些能力。
 
 </details>
 
@@ -131,12 +137,12 @@ PG 路径使用真实 owner store，随后在启动原生 fallback 或提交 rea
 
 该基础尚不能准入生产账户流量。
 
-- **账户工厂** — 私有共享实际装配及借用协调器尚未接入 Root 或 access。真实 provider/API/存储交接、配方封口及生产 `AccountUse` 发布仍不可用；仅原生装配及数据库领取不等于完成账户 acquire。
+- **账户工厂** — 共享实际装配协调器已接入 Root；access 装配仍未提供。真实 provider/API/存储交接、配方封口及生产 `AccountUse` 发布仍不可用；仅原生装配及数据库领取不等于完成账户 acquire。
 - **布局接线** — 私有原生桥已核对 layout/Profile 一致性，但布局数据不能创建 files 能力或验证存储。已包含 environments 父根，尚无按 Session 的环境派生。
-- **数据库集成与恢复** — 私有 pg 适配及实例组件尚未接入根部署配置或启动。尚无根 heartbeat 调度、恢复审计、分配对账及可信 RecoveryProof 应用；本模块不能重领隔离态 owner。
+- **数据库集成与恢复** — 实际根持有 PG 部署配置、迁移、登记及串行实例 heartbeat 调度。恢复审计、分配对账及可信 RecoveryProof 应用仍未提供；本模块不能重领隔离态 owner。
 - **必需证据** — 参与者存在不验证存储配额、原生 provider、配置保存 hook、manifest、进程停止或销毁成功。容量预留不执行参与者排空。
 - **账户交接** — 只有包内工厂 helper 安装 binding。Helper 要求可信 owner 输入，自身不核验 PG 归属；测试提供 binding 夹具，不据此宣称账户图 ready。
-- **关闭顺序** — 根卸载仅关闭本地准入。按序排空图、持久化未知结果、配置保存收据、flush 及共享池关闭仍需完整生命周期实现。
+- **关闭顺序** — 根卸载等待启动、在途 heartbeat、native factory 关闭、保存 coordinator 关闭、进程登记关闭及实际 PG/凭据结算。缺账户 clean 证据时保留或隔离 owner，不释放。完整 Agent/provider 排空、保存收据、持久化 flush 及共享 provider 关闭仍是未来 clean 账户释放的前置条件。
 
 <a id="dev-note"></a>
 ### 开发备注

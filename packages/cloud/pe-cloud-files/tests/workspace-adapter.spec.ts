@@ -12,7 +12,7 @@ import Storage, { storageBackendServiceKey, type StorageBackend, type KvUnit } f
 import * as JsonStorage from '@deepseek-ai/dsh-storage-json'
 import * as DomainStorage from '@deepseek-ai/dsh-storage-domain'
 import * as Jsonl from '@deepseek-ai/dsh-session-persistence-jsonl'
-import { WorkspaceDirectoryMetadataError, WorkspaceId } from '@deepseek-ai/dsh-workspace'
+import { WorkspaceDirectoryMetadataError, WorkspaceId, type WorkspaceDirectoryMetadata } from '@deepseek-ai/dsh-workspace'
 import type { AccountBinding, AccountId, OwnerEpoch } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { LinuxFilesPool, type IsolatedLeafGrant } from '../src/worker-pool.ts'
@@ -35,7 +35,10 @@ async function fixture(mode = 'normal', waitTimeoutMs = 3000) {
   const binding: AccountBinding = Object.freeze({ accountId: 'A' as AccountId, epoch: '1' as OwnerEpoch,
     recipeVersion: 'test-only-unpublished', lifetime: lifetime.signal })
   let current = true, unpublished = true
-  const assertWindow = () => { if (!current || !unpublished || lifetime.signal.aborted) throw new Error('test graph window closed') }
+  const assertCurrent = () => { if (!current || lifetime.signal.aborted) throw new Error('test graph is stale') }
+  const assertWindow = () => { assertCurrent(); if (!unpublished) throw new Error('test registration window closed') }
+  // Namespace protection remains valid after publication; it does not grant another native registration window.
+  const assertExclusive = () => { assertCurrent() }
   const gate = new SharedArrayBuffer(24), counters = new Int32Array(gate), workers: Worker[] = []
   const budget = directoryWorkBudget({ parent: root, leaf: randomUUID() }, { maxPathBytes: 256, replyOverheadBytes: 32 })
   const pool = new LinuxFilesPool({
@@ -59,9 +62,9 @@ async function fixture(mode = 'normal', waitTimeoutMs = 3000) {
     } finally { rmSync(home, { recursive: true, force: true }) }
   })
   await pool.start()
-  const bound = pool.bind(binding, root, assertWindow)
+  const bound = pool.bind(binding, root, assertCurrent)
   const grant = (leaf: string): IsolatedLeafGrant => Object.freeze({ backend: 'root-owned-isolated-linux-tmpfs',
-    binding, parent: root, leaf, assertExclusive: assertWindow })
+    binding, parent: root, leaf, assertExclusive })
   const defaultGrant = grant('default-workspace')
   const Registry = bound.createWorkspaceRegistry(defaultGrant, assertWindow)
   let beforeRecord: ((table: string, key: string) => Promise<void>) | undefined
@@ -91,6 +94,15 @@ async function fixture(mode = 'normal', waitTimeoutMs = 3000) {
   } }
   let generation = 0
   const start = async (options: { binding?: AccountBinding; registry?: boolean } = {}) => {
+    let provider: WorkspaceDirectoryMetadata | undefined
+    let selections = 0
+    class ObservedRegistry extends Registry {
+      protected override createDirectoryMetadata(): WorkspaceDirectoryMetadata | undefined {
+        provider = super.createDirectoryMetadata()
+        selections++
+        return provider
+      }
+    }
     const config = join(home, `cordis-${++generation}.yml`)
     writeFileSync(config, JSON.stringify([
       { id: 'sessions', name: 'cordis:m7c-sessions' }, { id: 'storage', name: 'cordis:m7c-storage' },
@@ -102,14 +114,17 @@ async function fixture(mode = 'normal', waitTimeoutMs = 3000) {
       roots.push(rootContext)
       rootContext.provide('peAccount', options.binding ?? binding)
       Object.assign(rootContext.loader.builtins, { 'm7c-sessions': SessionStore, 'm7c-storage': Storage,
-        'm7c-json': controlledJson, 'm7c-domain': DomainStorage, 'm7c-jsonl': Jsonl, 'm7c-workspace': Registry })
+        'm7c-json': controlledJson, 'm7c-domain': DomainStorage, 'm7c-jsonl': Jsonl, 'm7c-workspace': ObservedRegistry })
     })
     const entry = [...ctx.loader.entries()].find(row => row.options.id === 'workspace')
     return { ctx, entry, registry(): ControlledWorkspaceRegistry {
       const instance = ctx.get('workspaceRegistry')
       if (instance === undefined || !(instance instanceof Registry)) throw new Error('test registry absent')
       return instance
-    }, close: () => ctx.fiber.dispose() }
+    }, metadata(): WorkspaceDirectoryMetadata {
+      if (provider === undefined) throw new Error('test metadata was not selected')
+      return provider
+    }, selections: () => selections, close: () => ctx.fiber.dispose() }
   }
   return { home, projects, storageRoot, sessionsRoot, pool, bound, binding, defaultGrant, grant, start, counters,
     setBeforeRecord: (callback?: (table: string, key: string) => Promise<void>) => { beforeRecord = callback },
@@ -359,4 +374,127 @@ it('rejects an A adapter in a B root even when the child service scope provides 
   expect(Atomics.load(test.counters, 2)).toBe(0)
   expect(existsSync(join(test.storageRoot, 'workspace.json'))).toBe(false)
   expect(test.pool.inspect().work).toMatchObject({ residentBytes: 0, pending: 0 })
+})
+
+it('keeps native metadata and Session consumers usable after the registration window permanently closes', async () => {
+  const test = await fixture(), graph = await test.start(), registry = graph.registry()
+  const workspace = await registry.initializeDefault(async () => { throw new Error('desktop resolver must not run') })
+  if (workspace === undefined) throw new Error('default Workspace absent')
+  const fixed = graph.metadata(), beforePrepare = Atomics.load(test.counters, 0)
+  test.closeWindow()
+  expect(await fixed.canonicalPath(workspace.path)).toBe(workspace.path)
+  expect(await fixed.isDirectory(workspace.path)).toBe(true)
+  expect(await workspace.status()).toBe('ok')
+  expect(await registry.resolveByPath(workspace.path)).toBe(workspace)
+  expect(await registry.initializeDefault(async () => { throw new Error('existing default must not resolve again') })).toBe(workspace)
+
+  const attached = SessionId('after-window-close-attached')
+  await persistSession(graph.ctx, attached, workspace.path)
+  await workspace.attachSession(attached)
+  expect(workspace.sessionIds).toEqual([attached])
+  const later = SessionId('after-window-close-indexed'), beforeIndex = Atomics.load(test.counters, 1)
+  await persistSession(graph.ctx, later, workspace.path)
+  await registry.pinSession(later)
+  expect(Atomics.load(test.counters, 1)).toBeGreaterThan(beforeIndex)
+  await workspace.attachSession(later)
+  expect(workspace.sessionIds).toEqual([later, attached])
+  expect(graph.metadata()).toBe(fixed)
+  expect(graph.selections()).toBe(1)
+
+  const candidate = test.grant(randomUUID()), path = join(test.projects, candidate.leaf)
+  await expect(registry.createProject(candidate)).rejects.toThrow('registration window closed')
+  await expect(fixed.ensureDirectory(workspace.path)).rejects.toMatchObject({ reason: 'unavailable' })
+  await expect(fixed.ensureDirectory(path)).rejects.toMatchObject({ reason: 'unavailable' })
+  expect(existsSync(path)).toBe(false)
+  expect(Atomics.load(test.counters, 0)).toBe(beforePrepare)
+  expect(test.pool.inspect().work).toMatchObject({ lanes: 1, running: 0, residentBytes: 0, pending: 0 })
+
+  await registry.delete(workspace.id)
+  expect(await registry.initializeDefault(async () => { throw new Error('deleted default must not resolve') })).toBeUndefined()
+  expect(Atomics.load(test.counters, 0)).toBe(beforePrepare)
+  expect(existsSync(workspace.path)).toBe(true)
+  expect(test.workers).toHaveLength(1)
+})
+
+it('requires the registration window only when the real native default resolver is eligible', async () => {
+  const test = await fixture(), graph = await test.start(), registry = graph.registry()
+  test.closeWindow()
+  await expect(registry.initializeDefault(async () => { throw new Error('desktop resolver must not run') }))
+    .rejects.toThrow('registration window closed')
+  expect(registry.list()).toEqual([])
+  expect(existsSync(join(test.projects, 'default-workspace'))).toBe(false)
+  expect(Atomics.load(test.counters, 0)).toBe(0)
+  expect(test.pool.inspect().work).toMatchObject({ running: 0, residentBytes: 0, pending: 0 })
+
+  await persistSession(graph.ctx, SessionId('history-prevents-default-after-close'), join(test.projects, 'default-workspace'))
+  expect(await registry.initializeDefault(async () => { throw new Error('ineligible native default must not resolve') })).toBeUndefined()
+  expect(Atomics.load(test.counters, 0)).toBe(0)
+  expect(Atomics.load(test.counters, 1)).toBe(0)
+  expect(test.pool.inspect().work).toMatchObject({ residentBytes: 0, pending: 0 })
+})
+
+it('rejects all directory consumers after current-generation validity ends without dispatching more files work', async () => {
+  const test = await fixture(), graph = await test.start(), registry = graph.registry()
+  const workspace = await registry.initializeDefault(async () => 'unused')
+  if (workspace === undefined) throw new Error('default Workspace absent')
+  const id = SessionId('uncached-after-current-end')
+  await persistSession(graph.ctx, id, workspace.path)
+  test.closeWindow()
+  const before = [...test.counters]
+  test.stale()
+  await expect(graph.metadata().canonicalPath(workspace.path)).rejects.toMatchObject({ reason: 'unavailable' })
+  await expect(graph.metadata().isDirectory(workspace.path)).rejects.toMatchObject({ reason: 'unavailable' })
+  await expect(workspace.status()).rejects.toMatchObject({ reason: 'unavailable' })
+  await expect(registry.resolveByPath(workspace.path)).rejects.toMatchObject({ reason: 'unavailable' })
+  await expect(workspace.attachSession(id)).rejects.toMatchObject({ reason: 'unavailable' })
+  await expect(registry.pinSession(id)).rejects.toMatchObject({ reason: 'unavailable' })
+  await expect(registry.initializeDefault(async () => 'unused')).rejects.toThrow('graph is stale')
+  await expect(graph.metadata().ensureDirectory(workspace.path)).rejects.toMatchObject({ reason: 'unavailable' })
+  expect(workspace.sessionIds).toEqual([])
+  expect([...test.counters]).toEqual(before)
+  expect(test.pool.inspect().work).toMatchObject({ running: 0, residentBytes: 0, pending: 0 })
+})
+
+it('does not recover unknown responsibility when ready-phase metadata reads succeed', async () => {
+  const test = await fixture(), graph = await test.start(), registry = graph.registry(), candidate = test.grant(randomUUID())
+  test.setAfterCommit(async () => { test.closeWindow() })
+  await expect(registry.createProject(candidate)).rejects.toThrow('registration window closed')
+  const workspace = registry.list()[0]
+  if (workspace === undefined) throw new Error('durably committed Workspace absent')
+  const original = test.bound.derivePreparedLeaf(candidate).prepare()
+  const retained = test.pool.inspect().work.residentBytes
+  expect(retained).toBeGreaterThan(0)
+  expect(await graph.metadata().canonicalPath(workspace.path)).toBe(workspace.path)
+  expect(await graph.metadata().isDirectory(workspace.path)).toBe(true)
+  expect(await workspace.status()).toBe('ok')
+  expect(await registry.resolveByPath(workspace.path)).toBe(workspace)
+  await expect(original.observation.waitPrepared()).rejects.toThrow()
+  await expect(original.control.cleanup()).rejects.toThrow()
+  await expect(registry.createProject(candidate)).rejects.toThrow('registration window closed')
+  expect(test.bound.derivePreparedLeaf(candidate).prepare().observation.id).toBe(original.observation.id)
+  expect(test.pool.inspect().work).toMatchObject({ running: 0, residentBytes: retained, pending: 1 })
+  expect(Atomics.load(test.counters, 0)).toBe(1)
+  expect(Atomics.load(test.counters, 3)).toBe(0)
+})
+
+it('rechecks current validity after a queued native default lookup returns an existing Workspace', async () => {
+  const test = await fixture(), graph = await test.start(), registry = graph.registry()
+  const workspace = await registry.initializeDefault(async () => 'unused')
+  if (workspace === undefined) throw new Error('default Workspace absent')
+  const id = SessionId('native-queue-before-default-lookup')
+  await persistSession(graph.ctx, id, workspace.path)
+  const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  onTestFinished(() => { release.resolve(undefined) })
+  test.setAfterCommit(async () => { entered.resolve(undefined); await release.promise })
+  test.closeWindow()
+  const pin = registry.pinSession(id)
+  await entered.promise
+  const pending = registry.initializeDefault(async () => { throw new Error('existing default must not resolve') })
+  const rejected = expect(pending).rejects.toThrow('graph is stale')
+  test.stale()
+  release.resolve(undefined)
+  await pin
+  await rejected
+  expect(Atomics.load(test.counters, 0)).toBe(1)
+  expect(test.pool.inspect().work).toMatchObject({ running: 0, residentBytes: 0, pending: 0 })
 })

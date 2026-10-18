@@ -11,6 +11,7 @@ import * as account from '../src/account.ts'
 
 class UnverifiedCoordinator extends SandboxCoordinator {
   assertReady(): void { requireExecution({ requiredCapabilities: ['argv-collect'] }) }
+  bindAccount(): never { return requireExecution({ requiredCapabilities: ['argv-collect'] }) }
   async stopEpoch(binding: AccountBinding): Promise<ParticipantReceipt> {
     return {
       participant: 'execution', accountId: binding.accountId, epoch: binding.epoch,

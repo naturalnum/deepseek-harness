@@ -24,7 +24,7 @@
       "path": "../../llm/llm"
     },
     {
-      "path": "../pe-cloud-runtime"
+      "path": "../pe-cloud-runtime/tsconfig.account.json"
     },
     {
       "path": "../../util/brand"

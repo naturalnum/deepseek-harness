@@ -1,5 +1,5 @@
 ---
-description: "面向云端组合维护者的 OpenSandbox 能力声明、执行不可用诊断和可信会话作用域检查。"
+description: "面向组合维护者的显式关闭云端执行、原生拒绝提供方及能力诊断。"
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-本包在必需基础设施或目标验证缺失时拒绝云端执行。组合维护者可以检查能力缺口，校验有界、可撤销的会话作用域，且不分配沙盒。当前没有可用的执行模式，空的需求列表也不能使账户就绪。
+组合维护者可以明确关闭云端执行，同时装配必需的原生拒绝提供方。每个 Shell 和子进程请求都会在执行准备前失败，不创建沙盒或联系后端。启用执行仍不可用，只有空需求列表不能使账户就绪。
 
 ## 目录
 
@@ -25,17 +25,19 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-`/root` 和 `/account` Loader 入口属于 `dsh` profile 组合。两个入口目前都会在发布协调器、排空参与者或原生提供方之前以 `cloud/execution-unavailable` 失败。不存在能开启执行的配置。导入本包、解析其配置和创建内部作用域都不会分配计算资源或联系后端。
+在 `dsh` profile 组合中挂载 `/root` 和 `/account`。显式 `mode: closed` 会注册实际根执行拥有者，并为每个账户装配各一个原生 ShellExecutor 与 SubprocessRuntime。没有配置能够开启执行；省略关闭模式或声明非空必需能力都会以 `cloud/execution-unavailable` 阻止启动。
 
 ### 配置与失败
 
-两个入口都要求同一份显式能力声明。[schema](src/config.ts) 唯一持有允许的模式名称；声明某种模式并不等于完成验证。
+两个入口都要求显式关闭模式和空能力声明。[schema](src/config.ts) 唯一持有允许的取值；声明不能验证执行能力。
 
 | 字段 | 默认值 | 含义 |
 | --- | --- | --- |
-| `requiredCapabilities` | 必填 | 部署配方要求的模式；空数组不能绕过缺失的基础设施。 |
+| `mode` | 省略时启动失败 | 仅支持 `closed`，全部执行保持禁用。 |
+| `requiredCapabilities` | 必填 | 关闭模式下必须为空；任何必需能力都会阻止装配。 |
+| `maxBoundAccounts` | 根入口必填 | 同时开放准入的精确账户代际数量，必须为有限正整数。 |
 
-持久分配对账、可信账户端口、目标通道验证、资源隔离和受管范围停止仍是前置条件。[Loader fixture（测试前置数据）](tests/fixtures/entries.cordis.yml) 和[组合测试](tests/composition.spec.ts) 展示的是拒绝路径，而不是可工作的部署。
+runtime 先在独立账户图中安装不可变绑定。原生 prepare 期间，可信工厂将安装后的精确对象及图当前性检查传给根协调器的 `bindAccount`，再在账户入口之前调用 `installAccountExecutionPort`。绑定或 port 缺失、复制、跨图或被影子替换都会失败；重复提供方或容量耗尽也会失败。关闭登记不替代其他账户就绪检查。
 
 -----
 
@@ -45,9 +47,9 @@ kind: "package-reference"
 <details>
 <summary>实现内部细节——点击展开</summary>
 
-Host 库公开能力评估、其类型化错误和协调器 Service Definition。[协调器定义](src/coordinator.ts) 直接使用 runtime 包的 AccountBinding 与排空收据类型，并复用 Cordis 的服务唯一注册机制。它不提供后端或收据实现。
+[根拥有者](src/closed-owner.ts) 保留精确登记和永久准入状态，依赖中没有执行后端或进程启动器。停止已知登记时会关闭其 port，并保留该拥有者本代无工作事实的观察；未知或克隆绑定被拒绝。根卸载先关闭全部 port 再撤销参与者；账户卸载只关闭自己的 port。这些观察不能证明较早拥有者或代际的资源。
 
-内部[作用域签发器](src/scopes.ts) 保留同一个绑定，以及由项目所属适配器提供的项目类型。它检查精确的原生 agent（智能体）身份、限制存活作用域数量，并在签发和使用时调用当前账户代际、项目、消费方和模式授权检查。复制的或来自其他签发器的作用域会被拒绝。撤销只关闭用户准入，不声称任何进程或分配已经停止。
+[原生提供方](src/closed-providers.ts) 共用该 port，拒绝所有方法，包括可执行文件查找和终端准备。spawn 同步拒绝；异步方法返回被拒绝的 Promise，已预先取消的调用者保留原始原因。内部[作用域签发器](src/scopes.ts) 仍单独存在：作用域撤销不能证明分配或进程已停。
 
 </details>
 
@@ -69,11 +71,11 @@ Host 库公开能力评估、其类型化错误和协调器 Service Definition�
 
 #### 模型会看到什么
 
-本包不注册模型工具、不改变模型输入，也不发出 Session 事件。模型不能设置 `requiredCapabilities`、构造作用域或调用未验证的模式。
+本包不注册模型工具或 Session 事件。模型不能通过配置或复制作用域来开启执行。若其他已装配的原生工具请求执行，会收到 `Cloud execution is disabled by this deployment.`。
 
 #### Token 影响
 
-本包不添加模型可见内容，因此不增加输入 token。
+本包不注入提示词内容。调用被拒绝时，原生消费者的错误文本可能进入其对话。
 
 #### KV Cache 影响
 
@@ -83,12 +85,12 @@ Host 库公开能力评估、其类型化错误和协调器 Service Definition�
 
 <a id="known-limitations-and-deferred-work"></a>
 
-在接入真实所属服务并验证目标保证之前，执行始终不可用。
+关闭模式是受限部署配置，不是已验证的远端执行。
 
-- 根协调器实现和必需执行参与者注册依赖持久对账与已验证的目标证据。原生 ShellExecutor 和 SubprocessRuntime 提供方仍未安装，因此这些入口不能满足账户就绪要求。
-- 作用域签发器仅供内部使用。它不能替代账户工厂的受限执行端口、项目授权或目标能力验证，也不定义替代的 AccountBinding 或排空协议。
+- 全部执行模式和消费者保持禁用。开放任何模式都需要持久分配对账、完整部署配置、目标通道与隔离证据，以及受管范围停止。
+- 关闭排空观察只覆盖其精确登记的本代，不提供分配、远端停止或恢复证明，也不能清除旧未知工作。账户就绪和恢复仍由 runtime 持有。
 - 原生默认 Bash 执行器依据 subprocess 的 `done` 结算，而该值不能证明所有后代均已停止。Shell 准备与作用域完成仍需要显式、兼容的适配器。
-- OpenSandbox 的文本命令流不提供原生 subprocess 接口所需的完整原始管道/control 行为或受管范围观察。本包不提供 helper、最终执行协议、停止证明、宿主回退或自动恢复。
+- OpenSandbox 的文本命令流不能提供原生 subprocess 所需的完整原始管道/control 或受管范围观察。本包不提供可启用的执行协议、宿主回退或自动恢复。
 
 <a id="dev-note"></a>
 ### 开发备注

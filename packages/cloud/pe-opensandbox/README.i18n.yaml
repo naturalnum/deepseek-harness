@@ -3,26 +3,26 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/cloud/pe-opensandbox/README.md
 /:
-  en: 4d29746adb4a4086
-  zh: d9677d06e62e8bed
+  en: a4d964819bd3a547
+  zh: 287c352b99ed403a
 /deepseek-ai-dsh-pe-opensandbox:
   en: a76fafd83f153607
   zh: 86b153da19c276bf
 /deepseek-ai-dsh-pe-opensandbox/summary:
-  en: aad4876c855ad1a2
-  zh: b005d22f12aedd95
+  en: bd15daf3093cefb5
+  zh: 12b69cf1ac43a74d
 /deepseek-ai-dsh-pe-opensandbox/table-of-contents:
   en: d152484eb41ac6b4
   zh: 09388d293f9be9cb
 /deepseek-ai-dsh-pe-opensandbox/use-this-package:
-  en: f63b8edebd75ada2
-  zh: 4f21ff2811010584
+  en: c97349b015b71be2
+  zh: 8c41e1b26717cb4d
 /deepseek-ai-dsh-pe-opensandbox/use-this-package/configuration-and-failure:
-  en: 346357ec46be8de5
-  zh: fa26d0317aa88793
+  en: 51a66cadf33f06d2
+  zh: 3d3ecce7d2a7f3e6
 /deepseek-ai-dsh-pe-opensandbox/understand-the-implementation:
-  en: 1a5379759bd98aea
-  zh: 6dcfac80d2679bb8
+  en: 3de6b36fba05b403
+  zh: 69f114471e74a11f
 /deepseek-ai-dsh-pe-opensandbox/further-exploration:
   en: 1056c23626848355
   zh: da9916417b80de33
@@ -33,17 +33,17 @@
   en: b8f9eeef9f29929c
   zh: f1ef9496ddd011ee
 /deepseek-ai-dsh-pe-opensandbox/model-experience/execution-admission/what-the-model-sees:
-  en: a7443dc7a81f0ca0
-  zh: e679309ce87f3eb9
+  en: d38a0999012d8405
+  zh: cfbbcde5e7d2bbdd
 /deepseek-ai-dsh-pe-opensandbox/model-experience/execution-admission/token-effect:
-  en: 990a54d0ec300c74
-  zh: 929d019cd151ce7f
+  en: 162c4ad18e09b7bb
+  zh: bf40699611d667e2
 /deepseek-ai-dsh-pe-opensandbox/model-experience/execution-admission/kv-cache-effect:
   en: 42dd80c06c5dc537
   zh: 6323729c631b9450
 /deepseek-ai-dsh-pe-opensandbox/known-limitations-and-deferred-work:
-  en: df6c24073cf0a237
-  zh: b233a95e9981ecda
+  en: 9a212cfb87244f75
+  zh: 09f5750a3e4d4e17
 /deepseek-ai-dsh-pe-opensandbox/known-limitations-and-deferred-work/dev-note:
   en: 537abd4ac53f34f9
   zh: 8d11e9ece6cb7de5

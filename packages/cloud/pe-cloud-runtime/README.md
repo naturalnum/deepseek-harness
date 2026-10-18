@@ -25,11 +25,11 @@ This package stores PostgreSQL account ownership with expected-epoch CAS, record
 <a id="use-this-package"></a>
 ## Use this package
 
-The root Loader entry is `/root`; the default package entry aliases it. `/account` accepts empty configuration only, rejects identity or other JSON fields, and verifies the immutable `peAccount` contribution installed by the private factory. `/types` contains shared data declarations, and `/schema` exposes the capacity parser.
+The root Loader entry is `/root`; the package entry re-exports its named `name`, `inject`, `Config`, and `apply` without a default export. The named `PeAccountRuntime` class remains available for capacity/participant component composition, using its capacity-only `Config`. `/account` accepts empty configuration only, rejects identity or other JSON fields, and verifies the immutable `peAccount` contribution installed by the private factory. `/types` contains shared data declarations, and `/schema` exposes separate capacity and complete root deployment parsers.
 
 ### Configuration
 
-The root requires all three positive safe-integer limits. It infers no deployment defaults.
+The component requires the three positive safe-integer limits below. The actual Loader entry additionally requires every field in [the Host deployment schema](src/root-config.ts); capacity-only configuration cannot launch root control. No deployment defaults are inferred.
 
 | Field | Default | Meaning |
 | --- | --- | --- |
@@ -37,9 +37,15 @@ The root requires all three positive safe-integer limits. It infers no deploymen
 | `maxConcurrentMounts` | required | Actual mount operations that have not settled. |
 | `maxConcurrentDrains` | required | Actual drain operations that have not settled. |
 
+Actual root configuration includes `recipeVersion`, `internalAddress`, explicit heartbeat/startup/shutdown/account-observation budgets, secret-resolution time and byte limits, PostgreSQL connection fields and `passwordRef`, finite `pg`/`factory`/`saves` capacities, normalized shared/local paths, and fixed native recipe locations, required-entry and diagnostic bounds. The root requires the formal `credentials` service. It preflights the reference and resolves it again for each actual PG connection; it neither reads `process.env` nor uses an account's credential provider. Abandoned resolution stays counted until actual settlement.
+
+The function entry constructs one existing capacity owner, PG executor, process-registration component, owner store, account factory, and API configuration-save coordinator. It migrates both control tables and registers the generated process identity before exposing active root control. It does not wait for downstream files/execution contributions during initialization; participant checks belong to account acquisition, avoiding a Loader injection cycle. The save coordinator owns no account barrier until real account preparation is integrated.
+
+`locateAccount()` reads actual PG metadata; `acquireAccount()` enters the existing retained factory using root-selected paths, recipe and an isolated account environment. `assertMountCurrent()` checks installed preparation/current identity; `assertBusinessCurrent()` additionally requires the factory's ready state. Neither active root control nor a native mounted result publishes account readiness. All four missing production-provider checks remain closed.
+
 Providers register the mandatory `files` and `execution` participants through the root service. Registration belongs to the calling fiber and rejects duplicates. A missing participant rejects mount capacity reservation; passing this check is not recipe sealing. Configuration saving has a separate API-owned barrier and is not a third participant.
 
-The account factory owns each capacity reservation until the actual work settles. `settleMount()` releases the concurrent mount slot while retaining the account slot. `releaseAccount()` rejects while mounting or draining still holds that account. A request timeout does not authorize either release. Root unload closes new local reservations without reporting existing work stopped.
+The account factory owns each capacity reservation until the actual work settles. `settleMount()` releases the concurrent mount slot while retaining the account slot. `releaseAccount()` rejects while mounting or draining still holds that account. A request timeout does not authorize either release. Root unload stops new admission and joins actual control cleanup before closing capacity. Observation expiry reports uncertainty and retains the actual shutdown Promise.
 
 ### Account layout
 
@@ -53,7 +59,7 @@ The default project candidate uses the fixed `default-workspace` basename, prese
 
 The private owner store accepts a root-owned PostgreSQL query adapter and a server-generated instance identity. The same-package account factory owns this implementation; it is not an exported account-management SDK. The adapter binds parameters and enforces finite connection, statement, and query budgets. `migrate()` runs atomic DDL for `pe_account_owners`; concurrent migration calls serialize in PostgreSQL, and incompatible existing columns or constraints reject without resetting rows.
 
-The private [pg adapter](src/owner-pg-executor.ts) uses `pg@8.16.3` with one statement per connection and no hidden pool. Explicit constructor limits bound connections, queued submissions, queue/connect/server statement/lock time, observed actual Promises, and concurrent waiting observers; these are not additional root Loader configuration fields. `ClientConfig.query_timeout` is zero; a nonzero shared pg query-timeout default rejects before connection setup. A query retains its slot through actual driver settlement and connection end; no connection is reused. Server `statement_timeout` bounds execution, and a submitted write failure still has an unknown outcome to the store.
+The private [pg adapter](src/owner-pg-executor.ts) uses `pg@8.16.3` with one statement per connection and no hidden pool. Explicit constructor limits bound connections, queued submissions, queue/connect/server statement/lock time, observed actual Promises, and concurrent waiting observers; the actual root requires the same values under `pg`. `ClientConfig.query_timeout` is zero; a nonzero shared pg query-timeout default rejects before connection setup. A query retains its slot through actual driver settlement and connection end; no connection is reused. Server `statement_timeout` bounds execution, and a submitted write failure still has an unknown outcome to the store.
 
 `observe(actual, deadlineAtMs, signal)` limits only that wait. Timeout/cancellation removes its waiter, retaining one bounded settlement subscription per actual Promise until settlement. It neither rejects the actual SQL nor releases its connection. `close()` stops admission and rejects queued SQL that was never submitted, then retains the same close Promise through every started connection. Only the trusted adapter's definite pre-submission failure permits the store to discard that pending write responsibility; queue exhaustion, expiry, and failed connection setup do not quarantine an account whose SQL was never sent.
 
@@ -83,7 +89,7 @@ Each component retains at most one actual mutation. Close stops local mutation a
 
 Each root owns its participant map and capacity counters. Each independent account root receives a frozen binding with a lossless epoch string and a graph lifetime. The internal handoff rejects child Contexts, structural lookalikes, and ended lifetimes; no public constructor converts browser JSON into a binding. Native queues, Sessions, settings, and execution state remain with their owning packages.
 
-The [root service](src/root.ts), [PostgreSQL owner store](src/owner-store.ts), [capacity bookkeeping](src/capacity.ts), [private binding handoff](src/binding.ts), and [shared types](src/types.ts) define the implemented behavior. The [Loader tests](tests/runtime.spec.ts) cover runtime inputs; the [PostgreSQL tests](tests/owner-postgres.spec.ts) execute CAS and migration cases against an explicitly assigned test database, with synthetic teardown evidence.
+The [root service](src/root.ts), [PostgreSQL owner store](src/owner-store.ts), [capacity bookkeeping](src/capacity.ts), [private binding handoff](src/binding.ts), and [shared types](src/types.ts) define the implemented behavior. The [component Loader tests](tests/runtime.spec.ts) cover capacity/registration inputs; [actual root tests](tests/root-control-postgres.spec.ts) use a separately assigned PostgreSQL database for function-Loader migration, registration, heartbeat, factory refusal and shutdown; the [PostgreSQL tests](tests/owner-postgres.spec.ts) execute CAS and migration cases against an explicitly assigned test database, with synthetic teardown evidence.
 
 The private [native Profile adapter](src/native-boot.ts) uses public app boot to create an independent root, provide a copied ProfileContext, explicit launch environment and immutable binding in `prepare`, and mount the root Include once. Construct, verify, and inject every save/files/execution port inside `prepare` from the exact installed binding, retaining its graph lifetime. After awaited setup, preparation rechecks the installed lifetime and close request before returning to boot. If the generation ended or closure was requested during setup, no Include entries start, and actual cleanup remains awaited. The runtime still disposes already mounted graphs. It installs no account CLI, signals, proxy, watcher, or code HMR. Its caller must verify the real root capabilities and fixed recipe before invoking it. A mounted result only establishes native assembly. The retained boot/disposal Promises and bounded error observation include partial startup and asynchronous disposer failures; an error or observation overflow prevents confirmed native disposal. This observation does not establish business-work drain or account clean.
 
@@ -91,7 +97,7 @@ The private [mount bridge](src/account-mount.ts) checks Profile directory, patch
 
 Mount capacity settles with actual startup and any started native cleanup. Account reservations survive native-only disposal because it cannot prove full drain. Factory shutdown closes external admission while retaining internal drain reservations and native disposal ownership; unresolved cleanup retains its drain capacity. Only a definite pre-claim or never-submitted failure with no native resources releases an unstarted account slot. Submitted uncertainty keeps the original slot and prevents blind restart.
 
-The PG path uses the actual owner store, then rejects missing production handoffs before starting native fallback or committing ready. The separate native-only path executes concrete Loader assembly for a previously trusted generation; it grants no `AccountUse`. Current borrowing requires the exact installed, live, ready graph and an unreleased reference; release is idempotent and does not cancel an Agent. Real files/execution/API/storage issuers are still missing, so no production path can satisfy that ready condition or publish a borrow. Neither a native mounted result nor a configuration flag supplies those capabilities.
+The actual root now calls the PG path through its single factory, which rejects missing production handoffs before starting native fallback or committing ready. The separate native-only path executes concrete Loader assembly for a previously trusted generation; it grants no `AccountUse`. Current borrowing requires the exact installed, live, ready graph and an unreleased reference; release is idempotent and does not cancel an Agent. Real files/execution/API/storage issuers are still missing, so no production path can satisfy that ready condition or publish a borrow. Neither a native mounted result nor a configuration flag supplies those capabilities.
 
 </details>
 
@@ -127,14 +133,14 @@ Local bookkeeping does not alter a model request prefix or retained Session hist
 
 <a id="known-limitations-and-deferred-work"></a>
 
-This foundation cannot admit production account traffic.
+The actual root establishes its control plane; production account traffic remains unavailable.
 
-- **Account factory** — the private shared actual-mount and borrow coordinator is not wired to Root or access. Real provider/API/storage handoffs, recipe sealing, and production `AccountUse` publication remain unavailable; native-only assembly and database claim do not complete account acquisition.
+- **Account factory** — the shared actual-mount coordinator is wired to Root, while access composition remains absent. Real provider/API/storage handoffs, recipe sealing, and production `AccountUse` publication remain unavailable; native-only assembly and database claim do not complete account acquisition.
 - **Layout integration** — the private native bridge checks layout/Profile agreement, but layout data cannot create files capabilities or validate storage. The environments parent is included; per-Session environment derivation is absent.
-- **Database integration and recovery** — the private pg adapter and instance component are not attached to root deployment configuration or startup. Root heartbeat scheduling, recovery audit, allocation reconciliation, and trusted RecoveryProof application are absent; quarantined ownership cannot be reclaimed here.
+- **Database integration and recovery** — actual root owns PG deployment configuration, migrations, registration, and serialized instance heartbeat scheduling. Recovery audit, allocation reconciliation, and trusted RecoveryProof application remain absent; quarantined ownership cannot be reclaimed here.
 - **Required evidence** — participant presence does not verify storage quotas, native providers, config-save hooks, manifests, stopped processes, or disposal success. Capacity reservations perform no participant drain.
 - **Account handoff** — only the same-package factory helper installs a binding. The helper requires trusted owner input and does not itself verify PG ownership; tests supply binding fixtures without claiming an account graph is ready.
-- **Shutdown** — root unload closes local admission only. Ordered graph drain, persistent unknown outcomes, config-save receipts, flush, and shared pool shutdown require the full lifecycle implementation.
+- **Shutdown** — root unload joins startup, in-flight heartbeat, native factory close, save-coordinator close, process-registration close and actual PG/credential settlement. It preserves or quarantines retained account owners rather than releasing them without account-clean evidence. Complete Agent/provider drain, save receipts, persistence flush and shared provider shutdown remain prerequisites for any future clean account release.
 
 <a id="dev-note"></a>
 ### Dev Note
