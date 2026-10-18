@@ -1,6 +1,6 @@
 /** Bounded, escalating process shutdown for the long-lived CLI surfaces. */
 
-/** Maximum grace allowed for the application tree to dispose before process exit. */
+/** Default grace allowed for the application tree to dispose before process exit. */
 export const PROCESS_SHUTDOWN_TIMEOUT_MS = 5_000
 
 /** Process-exit controller shared by normal completion and Unix signal handlers. */
@@ -16,7 +16,7 @@ export interface ProcessShutdown {
  * @param dispose - Whole-application teardown that resolves at quiescence.
  * @param forceExit - Function that exits the process immediately, replaceable by tests.
  * @param complete - Function that records the natural completion code, replaceable by tests.
- * @param timeoutMs - Grace before forced exit, replaceable by tests.
+ * @param timeoutMs - Grace in milliseconds before forced exit.
  * @returns A controller whose normal calls coalesce and whose repeated signal call escalates.
  */
 export function createProcessShutdown(

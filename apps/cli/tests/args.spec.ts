@@ -56,6 +56,45 @@ describe('parseDshArgs', () => {
       .toEqual({ mode: 'profile', profile: 'web', fromDefaultProfile: 'web', patches: [], args: [] })
   })
 
+  it.each([['cloud'], ['--profile', 'cloud']])('accepts a bounded shutdown budget for %j', (...prefix: string[]) => {
+    for (const value of ['1', '120000', '2147483647']) {
+      expect(parse([...prefix, '--shutdown-timeout-ms', value, '--patch', 'extra.yml', '--no-open']))
+        .toEqual({ mode: 'profile', profile: 'cloud', shutdownTimeoutMs: Number(value), patches: ['extra.yml'], args: ['--no-open'] })
+    }
+    expect(parse([...prefix, '--shutdown-timeout-ms=120000'])).toMatchObject({ shutdownTimeoutMs: 120000 })
+    expect(parse([...prefix, '--app-option', '--shutdown-timeout-ms', 'NaN']))
+      .toEqual({ mode: 'profile', profile: 'cloud', patches: [], args: ['--app-option', '--shutdown-timeout-ms', 'NaN'] })
+    expect(parse([...prefix, '--', '--shutdown-timeout-ms', '120000']))
+      .toEqual({ mode: 'profile', profile: 'cloud', patches: [], args: ['--shutdown-timeout-ms', '120000'] })
+  })
+
+  it.each(['', 'NaN', 'Infinity', '0', '-1', '1.5', '2147483648', '9007199254740992', '1e309', '1e3', '0x10'])(
+    'rejects invalid shutdown milliseconds %j before the application boundary', (value) => {
+      expect(exitCode(['cloud', '--shutdown-timeout-ms=' + value])).toBe(1)
+      expect(exitCode(['--profile', 'cloud', '--shutdown-timeout-ms', value])).toBe(1)
+    },
+  )
+
+  it('rejects a missing shutdown budget', () => {
+    expect(exitCode(['cloud', '--shutdown-timeout-ms'])).toBe(1)
+  })
+
+  it.each(['--dump-config', '--dump-default-config', '--dump-config-schema'])('refuses shutdown budgets for %s', (dump) => {
+    expect(exitCode(['cloud', '--shutdown-timeout-ms', '120000', dump])).toBe(1)
+    expect(exitCode(['--profile', 'cloud', dump, '--shutdown-timeout-ms', '120000'])).toBe(1)
+  })
+
+  it('refuses launcher shutdown budgets for plugin mode and preserves the pnpm argument boundary', () => {
+    expect(exitCode(['plugin', '--profile', 'tui', '--shutdown-timeout-ms', '120000', 'add', 'x'])).toBe(1)
+    expect(exitCode(['plugin', '--profile', 'tui', '--shutdown-timeout-ms=120000', 'add', 'x'])).toBe(1)
+    expect(parse(['plugin', '--profile', 'tui', 'add', '--shutdown-timeout-ms', 'NaN']))
+      .toEqual({ mode: 'plugin', profile: 'tui', args: ['add', '--shutdown-timeout-ms', 'NaN'] })
+    expect(parse(['plugin', '--profile', 'tui', '--filter', 'x', '--shutdown-timeout-ms', '120000']))
+      .toEqual({ mode: 'plugin', profile: 'tui', args: ['--filter', 'x', '--shutdown-timeout-ms', '120000'] })
+    expect(parse(['plugin', '--profile', 'tui', '--', '--shutdown-timeout-ms', '120000']))
+      .toEqual({ mode: 'plugin', profile: 'tui', args: ['--shutdown-timeout-ms', '120000'] })
+  })
+
   it.each(['web', 'headless', 'sdk', 'sdk-minimal', 'acp', 'tui', 'custom', 'run', 'help'])('expands %s without looking up profiles', (profile) => {
     for (const args of [
       [], ['task', 'words'], ['--help'], ['-h'], ['web'],
@@ -139,6 +178,7 @@ describe('parseDshArgs', () => {
     const stdout = vi.spyOn(process.stdout, 'write').mockReturnValue(true)
     expect(exitCode(argv)).toBe(0)
     expect(stdout.mock.calls.map(([chunk]) => String(chunk)).join('')).toContain('Usage: dsh plugin [options] [args...]')
+    expect(stdout.mock.calls.map(([chunk]) => String(chunk)).join('')).not.toContain('--shutdown-timeout-ms')
   })
 
   it.each(['desktop', 'Desktop', 'DESKTOP'])('permits installed Desktop plugin commands for %s', (profile) => {
@@ -251,6 +291,7 @@ describe('parseDshArgs', () => {
     const stdout = vi.spyOn(process.stdout, 'write').mockReturnValue(true)
     expect(exitCode(['--help'])).toBe(0)
     expect(stdout.mock.calls.map(([chunk]) => String(chunk)).join('')).not.toContain('help [command]')
+    expect(stdout.mock.calls.map(([chunk]) => String(chunk)).join('')).toContain('--shutdown-timeout-ms <ms>')
     expect(exitCode(['-h'])).toBe(0)
     expect(exitCode(['--version'])).toBe(0)
   })

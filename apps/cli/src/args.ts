@@ -15,7 +15,7 @@
  * @module @deepseek-ai/dsh/args
  */
 
-import { Command, CommanderError, InvalidArgumentError } from 'commander'
+import { Command, CommanderError, InvalidArgumentError, Option } from 'commander'
 
 /** Boot a named profile and hand it the invocation's inner arguments. */
 interface ProfileInvocation {
@@ -23,6 +23,8 @@ interface ProfileInvocation {
   profile: string
   /** Shipped template that replaces the named profile. */
   fromDefaultProfile?: string | undefined
+  /** Optional grace in milliseconds before the launcher forces process exit during disposal. */
+  shutdownTimeoutMs?: number | undefined
   /** Extra patch-list overlays applied after the profile's own layer, in argv order. */
   patches: string[]
   /** Everything after the launcher's own flags, verbatim, for injected app plugins. */
@@ -67,6 +69,7 @@ interface BootOptions {
   dumpDefaultConfig?: boolean
   dumpConfigSchema?: boolean
   fromDefaultProfile?: string
+  shutdownTimeoutMs?: number
 }
 
 /**
@@ -78,6 +81,14 @@ const collect = (value: string, previous: string[] = []): string[] => [...previo
 function selectProfile(value: string, previous?: string): string {
   if (previous !== undefined) throw new InvalidArgumentError('select a profile only once')
   return value
+}
+
+function parseShutdownTimeoutMs(value: string): number {
+  const milliseconds = Number(value)
+  if (!/^\d+$/.test(value) || !Number.isInteger(milliseconds) || milliseconds < 1 || milliseconds > 2_147_483_647) {
+    throw new InvalidArgumentError('shutdown timeout must be an integer from 1 to 2147483647 milliseconds')
+  }
+  return milliseconds
 }
 
 function rejectElectronProfile(program: Command, profile: string): void {
@@ -114,8 +125,10 @@ function resolveBoot(program: Command, profile: string, options: BootOptions, ar
   if (options.fromDefaultProfile === '') program.error('error: --from-default-profile needs a name')
   const dumps = [options.dumpConfig, options.dumpDefaultConfig, options.dumpConfigSchema].filter(Boolean)
   if (dumps.length === 0) {
-    return { mode: 'profile', profile, fromDefaultProfile: options.fromDefaultProfile, patches, args }
+    return { mode: 'profile', profile, fromDefaultProfile: options.fromDefaultProfile,
+      shutdownTimeoutMs: options.shutdownTimeoutMs, patches, args }
   }
+  if (options.shutdownTimeoutMs !== undefined) program.error('error: --shutdown-timeout-ms applies only to profile boot')
   if (dumps.length > 1) {
     program.error('error: --dump-config, --dump-default-config, and --dump-config-schema are mutually exclusive')
   }
@@ -168,6 +181,7 @@ export function parseDshArgs(argv: readonly string[], version: string, manageDes
     .option('--profile <name>', 'the profile under $DSH_HOME/profiles to boot', selectProfile)
     .option('--from-default-profile <name>', 'replace a custom profile with a fresh copy of a shipped profile template')
     .option('--patch <path>', 'extra patch-list overlay applied after the profile layer (repeatable)', collect)
+    .option('--shutdown-timeout-ms <ms>', 'wait for profile disposal before forced exit (default: 5000 milliseconds)', parseShutdownTimeoutMs)
     .option('--dump-config', 'print the composed profile tree and exit')
     .option('--dump-config-schema', 'print JSON Schema for profile entries and patches without mounting')
     .option('--dump-default-config', 'print the profile tree without its user layer or --patch overlays and exit')
@@ -192,9 +206,13 @@ export function parseDshArgs(argv: readonly string[], version: string, manageDes
       .helpOption('-h, --help', 'show this help')
       .passThroughOptions()
       .requiredOption('--profile <name>', 'the profile whose plugins to manage (initialized on first use)', selectProfile)
+      .addOption(new Option('--shutdown-timeout-ms <ms>').hideHelp())
       .allowUnknownOption()
       .argument('[args...]', 'pnpm arguments, forwarded verbatim (add <pkg>, remove <pkg>, why <pkg>, ...)')
-      .action((args: string[], options: { profile: string }) => {
+      .action((args: string[], options: { profile: string; shutdownTimeoutMs?: string }) => {
+        if (options.shutdownTimeoutMs !== undefined || program.opts<BootOptions>().shutdownTimeoutMs !== undefined) {
+          plugin.error('error: --shutdown-timeout-ms applies only to profile boot')
+        }
         if (options.profile === '') program.error('error: --profile needs a name')
         if (!manageDesktopProfile) rejectElectronProfile(plugin, options.profile)
         if (args.length === 0) program.error('error: plugin needs pnpm arguments to forward (e.g. add <package>)')

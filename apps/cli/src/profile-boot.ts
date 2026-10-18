@@ -253,6 +253,8 @@ export interface RunProfileOptions {
   resolvedProfile?: ResolvedProfileRuntime | undefined
   /** Shipped template that replaces the named profile before boot. */
   fromDefaultProfile?: string | undefined
+  /** Optional integer process-exit grace from 1 through 2147483647 ms; omission keeps the 5000 ms default. */
+  shutdownTimeoutMs?: number | undefined
   /** `--patch` overlay paths, in argv order. */
   patchFiles: readonly string[]
   /** The invocation's inner arguments, handed to the tree through `ctx.cmdlineArgs`. */
@@ -266,9 +268,15 @@ export interface RunProfileOptions {
  * mounted plugins (or to a one-shot runner the composition mounts).
  * @param options - environment snapshot, profile name, overlays, and the booted app's own arguments.
  * @returns the settled root context and the shutdown controller.
+ * @throws RangeError before proxy setup or profile I/O if an explicit shutdown budget is outside its integer range.
  * @throws after disposing startup resources; cleanup failures retain the original error.
  */
 export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Context; shutdown: ProcessShutdown }> {
+  const shutdownTimeoutMs = options.shutdownTimeoutMs
+  if (shutdownTimeoutMs !== undefined
+    && (!Number.isInteger(shutdownTimeoutMs) || shutdownTimeoutMs < 1 || shutdownTimeoutMs > 2_147_483_647)) {
+    throw new RangeError('dsh: shutdownTimeoutMs must be an integer from 1 to 2147483647 milliseconds')
+  }
   // Before the first plugin mounts and before anything can issue a request: Node's fetch ignores the
   // proxy environment on its own, so every profile would otherwise connect directly. Resolving from
   // the launcher's snapshot — not `process.env` — is what lets a proxy declared in a `.env` layer
@@ -293,7 +301,7 @@ export async function runProfile(options: RunProfileOptions): Promise<{ ctx: Con
       options.profile, options.patchFiles, options.fromDefaultProfile, options.resolvedProfile,
     )
     const appReady = createAppReady()
-    const shutdown = createProcessShutdown(dispose)
+    const shutdown = createProcessShutdown(dispose, undefined, undefined, shutdownTimeoutMs)
     const signalShutdown = new AbortController()
     const interrupt = (code: number): void => {
       signalShutdown.abort()

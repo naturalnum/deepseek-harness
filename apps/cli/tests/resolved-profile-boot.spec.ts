@@ -26,6 +26,7 @@ vi.mock('@deepseek-ai/dsh-http-proxy', () => ({ installProxyFromEnvironment: vi.
 
 const homes: string[] = []
 afterEach(() => {
+  vi.useRealTimers()
   vi.restoreAllMocks()
   vi.unstubAllEnvs()
   vi.resetAllMocks()
@@ -33,6 +34,31 @@ afterEach(() => {
 })
 
 describe('runProfile with an application-owned profile', () => {
+  it.each([NaN, Infinity, -Infinity, 0, -1, 1.5, 2_147_483_648, Number.MAX_SAFE_INTEGER])(
+    'rejects the direct shutdown budget %s before proxy setup or profile I/O', async (shutdownTimeoutMs) => {
+      vi.mocked(installProxyFromEnvironment).mockRejectedValue(new Error('Proxy setup must not begin'))
+      const application = runProfile({
+        environment: createLaunchEnvironmentSnapshot([]), profile: 'unopened-profile', patchFiles: [], args: [], shutdownTimeoutMs,
+      })
+      await expect(application).rejects.toBeInstanceOf(RangeError)
+      await expect(application).rejects.toThrow('shutdownTimeoutMs must be an integer from 1 to 2147483647 milliseconds')
+      expect(installProxyFromEnvironment).not.toHaveBeenCalled()
+      expect(createRuntimeResolution).not.toHaveBeenCalled()
+      expect(boot).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each([undefined, 1, 2_147_483_647])('accepts the direct shutdown budget %s before proxy setup', async (shutdownTimeoutMs) => {
+    const sentinel = new Error('Stop at proxy setup without profile I/O')
+    vi.mocked(installProxyFromEnvironment).mockRejectedValue(sentinel)
+    await expect(runProfile({
+      environment: createLaunchEnvironmentSnapshot([]), profile: 'unopened-profile', patchFiles: [], args: [], shutdownTimeoutMs,
+    })).rejects.toBe(sentinel)
+    expect(installProxyFromEnvironment).toHaveBeenCalledOnce()
+    expect(createRuntimeResolution).not.toHaveBeenCalled()
+    expect(boot).not.toHaveBeenCalled()
+  })
+
   it.each(
     ['composition', 'boot', 'watch', 'cleanup', 'tree-cleanup', 'both-cleanups'] as const,
   )('releases startup resources after a %s failure', async (stage) => {
@@ -83,6 +109,71 @@ describe('runProfile with an application-owned profile', () => {
       expect(dispose).toHaveBeenCalledTimes(stage === 'composition' ? 0 : 1)
     } finally {
       await ctx.fiber.dispose()
+    }
+  })
+
+  it.each(['settles', 'timeout', 'second-signal'] as const)('uses the profile shutdown budget when disposal %s', async (outcome) => {
+    const home = mkdtempSync(join(tmpdir(), 'dsh-profile-shutdown-budget-'))
+    homes.push(home)
+    mkdirSync(join(home, 'runtime'))
+    writeFileSync(join(home, 'runtime/package.json'), '{"name":"test-runtime","version":"1.0.0"}')
+    writeFileSync(join(home, 'package.json'), '{"name":"test-bundle","version":"1.0.0"}')
+    vi.stubEnv('DSH_HOME', home)
+    const signals = vi.spyOn(process, 'on').mockReturnValue(process)
+    const exit = vi.spyOn(process, 'exit').mockImplementation(_code => undefined as never)
+    const oldExitCode = process.exitCode
+    const ctx = new Context(), held = Promise.withResolvers<undefined>()
+    ctx.provide('loader', { create: vi.fn() })
+    const disposeProxy = vi.fn().mockResolvedValue(undefined)
+    vi.mocked(installProxyFromEnvironment).mockResolvedValue(disposeProxy)
+    vi.mocked(boot).mockImplementation(async (_name, _root, _patches, setup) => { await setup?.(ctx); return ctx })
+    const profile: Profile = { name: 'shutdown-budget', dir: home, patchPath: join(home, 'cordis.patch.yml'),
+      patches: [], layers: [], skippedBundles: [] }
+    let pending: Promise<void> | undefined
+    try {
+      const { shutdown } = await runProfile({
+        environment: createLaunchEnvironmentSnapshot([]), profile: profile.name, patchFiles: [], args: [],
+        resolvedProfile: { profile, installAnchor: join(home, 'runtime/package.json') }, shutdownTimeoutMs: 120_000,
+      })
+      ctx.effect(() => () => held.promise, 'test: held actual application disposal')
+      const signal = (name: 'SIGTERM' | 'SIGINT'): void => {
+        const listener = signals.mock.calls.find(([event]) => event === name)?.[1]
+        if (listener === undefined) throw new Error('Profile signal handler was not registered')
+        Reflect.apply(listener, process, [])
+      }
+      vi.useFakeTimers()
+      signal('SIGTERM')
+      pending = shutdown.shutdown(0)
+      let settled = false
+      void pending.then(() => { settled = true })
+      await vi.advanceTimersByTimeAsync(5_000)
+      expect(exit).not.toHaveBeenCalled()
+      expect(settled).toBe(false)
+      expect(disposeProxy).not.toHaveBeenCalled()
+      if (outcome === 'timeout') {
+        await vi.advanceTimersByTimeAsync(114_999)
+        expect(exit).not.toHaveBeenCalled()
+        await vi.advanceTimersByTimeAsync(1)
+        expect(exit).toHaveBeenCalledWith(0)
+        expect(settled).toBe(false)
+        expect(disposeProxy).not.toHaveBeenCalled()
+      } else if (outcome === 'second-signal') {
+        signal('SIGINT')
+        expect(exit).toHaveBeenCalledWith(130)
+        expect(settled).toBe(false)
+        expect(disposeProxy).not.toHaveBeenCalled()
+      }
+      held.resolve(undefined)
+      await pending
+      expect(exit).toHaveBeenCalledOnce()
+      expect(exit).toHaveBeenCalledWith(outcome === 'second-signal' ? 130 : 0)
+      expect(disposeProxy).toHaveBeenCalledOnce()
+      expect(settled).toBe(true)
+    } finally {
+      held.resolve(undefined)
+      await pending
+      await ctx.fiber.dispose()
+      process.exitCode = oldExitCode
     }
   })
 
