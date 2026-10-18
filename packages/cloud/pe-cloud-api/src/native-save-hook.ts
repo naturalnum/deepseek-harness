@@ -1,7 +1,8 @@
 /** Bind reviewed native save submissions to the runtime-owned account barrier. */
 import type { Context } from '@deepseek-ai/cordis'
+import type ConfigEditor from '@deepseek-ai/dsh-config-editor'
 import type { ConfigSaveSubmissionHook } from '@deepseek-ai/dsh-config-editor'
-import type { CredentialSaveSubmissionHook } from '@deepseek-ai/dsh-credentials'
+import type { CredentialProvider, CredentialSaveSubmissionHook } from '@deepseek-ai/dsh-credentials'
 import type {} from '@deepseek-ai/dsh-pe-cloud-runtime/account'
 import { CloudApiError } from './errors.ts'
 import type { ConfigSaveBarrier, ConfigSaveKind } from './save-hooks.ts'
@@ -30,18 +31,23 @@ function admit<T>(ctx: Context, barrier: ConfigSaveBarrier, kind: ConfigSaveKind
   })
 }
 
-function installEditorSaveHook(
-  ctx: Context, barrier: ConfigSaveBarrier, kindOf: (writer: string) => ConfigSaveKind,
+function bindEditorSaveHook(
+  ctx: Context, barrier: ConfigSaveBarrier, editor: ConfigEditor, kindOf: (writer: string) => ConfigSaveKind,
 ): () => Promise<void> {
+  assertBinding(ctx, barrier)
+  const hook: ConfigSaveSubmissionHook = {
+    submit: (writer, submit) => admit(ctx, barrier, kindOf(writer), submit),
+  }
+  return guardDisposal(barrier, editor.registerSaveHook(hook))
+}
+
+function requireEditor(ctx: Context, barrier: ConfigSaveBarrier): ConfigEditor {
   assertBinding(ctx, barrier)
   const editor = ctx.get('configEditor')
   if (editor === undefined) {
     throw new CloudApiError('cloud/account-unavailable', 'The account native configuration editor is not mounted.')
   }
-  const hook: ConfigSaveSubmissionHook = {
-    submit: (writer, submit) => admit(ctx, barrier, kindOf(writer), submit),
-  }
-  return guardDisposal(barrier, editor.registerSaveHook(hook))
+  return editor
 }
 
 function unreviewedWriter(): never {
@@ -57,7 +63,8 @@ function unreviewedWriter(): never {
  * @returns a disposer that refuses withdrawal before terminal confirmed quiescence.
  */
 export function installNativeDefaultModelSaveHook(ctx: Context, barrier: ConfigSaveBarrier): () => Promise<void> {
-  return installEditorSaveHook(ctx, barrier, writer => writer === 'agent-default-model/saveSelection' ? 'default-model' : unreviewedWriter())
+  return bindEditorSaveHook(ctx, barrier, requireEditor(ctx, barrier),
+    writer => writer === 'agent-default-model/saveSelection' ? 'default-model' : unreviewedWriter())
 }
 
 /**
@@ -70,7 +77,18 @@ export function installNativeDefaultModelSaveHook(ctx: Context, barrier: ConfigS
  * @returns disposer requiring terminal, failure-free quiescence.
  */
 export function installNativeConfigSaveHook(ctx: Context, barrier: ConfigSaveBarrier): () => Promise<void> {
-  return installEditorSaveHook(ctx, barrier, (writer) => {
+  return bindNativeConfigSaveHook(ctx, barrier, requireEditor(ctx, barrier))
+}
+
+/**
+ * Bind the reviewed editor hook to its actual constructor receiver before consumers activate.
+ * @param ctx - native receiver's owning account fiber.
+ * @param barrier - exact graph save barrier, retained through terminal quiescence.
+ * @param editor - actual native editor, including a receiver not yet published as ready.
+ * @returns the same terminal-confirmed guarded hook disposer.
+ */
+export function bindNativeConfigSaveHook(ctx: Context, barrier: ConfigSaveBarrier, editor: ConfigEditor): () => Promise<void> {
+  return bindEditorSaveHook(ctx, barrier, editor, (writer) => {
     switch (writer) {
       case 'agent-default-model/saveSelection': return 'default-model'
       case 'settings/write':
@@ -84,7 +102,7 @@ export function installNativeConfigSaveHook(ctx: Context, barrier: ConfigSaveBar
 /**
  * Observe provider-instrumented set/unset/modify-record/delete-record operations.
  * Only the local provider's actual writers have been verified. Registration does
- * not cover another provider or initial migration/watch work. Runtime must retain
+ * not cover another provider, earlier initial migration, or watch work. Runtime must retain
  * the calling fiber through terminal quiescence; no secret metadata is retained.
  * @param ctx - caller in the independent account root with its credential provider.
  * @param barrier - the same runtime barrier used by this graph's editor hook.
@@ -96,6 +114,20 @@ export function installNativeCredentialSaveHook(ctx: Context, barrier: ConfigSav
   if (credentials === undefined) {
     throw new CloudApiError('cloud/account-unavailable', 'The account native credential provider is not mounted.')
   }
+  return bindNativeCredentialSaveHook(ctx, barrier, credentials)
+}
+
+/**
+ * Bind the native credential receiver during construction, before Service.init migration.
+ * @param ctx - receiver's owning account fiber, never a temporary HTTP borrow.
+ * @param barrier - exact graph save barrier shared with the editor.
+ * @param credentials - actual instrumented native receiver; this does not instrument other providers.
+ * @returns the terminal-confirmed guarded disposer; runtime retains the fiber until actual settlement.
+ */
+export function bindNativeCredentialSaveHook(
+  ctx: Context, barrier: ConfigSaveBarrier, credentials: CredentialProvider,
+): () => Promise<void> {
+  assertBinding(ctx, barrier)
   const hook: CredentialSaveSubmissionHook = {
     submit: (_operation, submit) => admit(ctx, barrier, 'credentials', submit),
   }

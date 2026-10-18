@@ -54,11 +54,11 @@ kind: "package-reference"
 
 根拥有不可变策略，并在其 fiber 销毁时撤销审核。[开放清单实现](src/exposure.ts) 使用精确映射，不解码路径或按前缀授权。[私有原生装配](src/native.ts) 注册公开 SessionController 的唯一子类，继承其 Config、DTO、Remote 标记及业务方法。Create、prompt 和 fork 等待共享项目/Preset 核验，并在调用原生 super 前立即复核准入。同步 cancel 检查实际附着 Agent 的既有 scope，随后保留原生取消或 notfound，不加载 Session。
 
-私有[账户暴露视图](src/account-exposure.ts) 从根的冻结 manifest 中选择同配方子集。RPC 与流类别、Fetch 方法/路径、handler、guard 和 settings 字段必须对应根的精确声明。每图拥有自己的 inventory 审核和销毁失效；A 的审核或失效不改变 B 或根。审核及操作准入核验实际安装的精确 AccountBinding 与可信 runtime current 回调。现有 ExposurePolicy 消费者可直接接收该视图，不增加 Loader 服务或全局账户注册表。
+私有[账户暴露视图](src/account-exposure.ts) 从根的冻结 manifest 中选择同配方子集。RPC 与流类别、Fetch 方法/路径、handler、guard 和 settings 字段必须对应根的精确声明。每图拥有自己的 inventory 审核和销毁失效；A 的审核或失效不改变 B 或根。审核及操作准入核验实际安装的精确 AccountBinding 与可信 graph/mount-current 回调，允许在 ready 前受限挂载时审核，拒绝过期或关闭的图。现有 ExposurePolicy 消费者可直接接收该视图，不增加 Loader 服务或全局账户注册表。
 
 Page 和 follow 对普通 Session 地址等待共享项目守卫。Page 在原生读取前和返回结果前复核准入。Follow 要求已审核的流声明，并在每次推进原生迭代器前及交付结果前检查准入和取消。原生迭代器接收调用者与图生命周期的取消，继续独占历史、promotion 及清理责任。Subagent 历史地址在单独范围审核前继续拒绝。
 
-Controller 准入使用实际安装的图 AccountBinding 及与实际 LLM 守卫共用的可信 runtime 回调，独立于 HTTP/Peer AccountUse 生命周期。装配须声明原生依赖、保留所属 fiber，并排除第二个基础 Controller。共享守卫失败、binding 过期、开放审核撤销或处理者停用都会阻止委派。原生进程内调用保留守卫抛出的错误；传输序列化遵循现有 Gateway 规则。原生业务结果与失败保持原义。
+Controller 准入使用实际安装的图 AccountBinding 及与实际 LLM 守卫共用的可信 business-ready 回调，独立于 HTTP/Peer AccountUse 生命周期。外部 AccountUse 也必须满足 business-ready；视图的 graph/mount-current 审核不能代替这一检查。装配须声明原生依赖、保留所属 fiber，并排除第二个基础 Controller。共享守卫失败、binding 过期、开放审核撤销或处理者停用都会阻止委派。原生进程内调用保留守卫抛出的错误；传输序列化遵循现有 Gateway 规则。原生业务结果与失败保持原义。
 
 工厂须提供真实 files/Workspace/Preset/模型守卫，包括不另建批准表的同步活跃 scope 核验。可信端口和生命周期要求完成集成前，账户入口保持关闭。
 
@@ -76,7 +76,9 @@ Pause 关闭顶层准入，但允许已登记工作完成；只有静止、无�
 
 两个安装器要求调用 Context 及其独立根持有与屏障完全相同的 binding，并在准入及排队后提交前复核。Runtime 必须保留每个 hook 的调用 fiber，直到终态确认静止；强制销毁 fiber 可以绕过显式 disposer 守卫撤回原生 hook。实际 Settings/editor 嵌套共用原生准入，跨服务嵌套工作仍登记到同一屏障操作。
 
-在 Loader 静止前通过启动期注入安装 editor hook，可以观察 legacy 导入。就绪后安装无法补记更早的写入。Credentials 注入发生在 provider 初始化之后，因此本地 provider 初次扁平文档迁移仍在此 hook 范围外。Runtime 必须解决该启动缺口，并完成图、生命周期及实际 I/O 预算集成后，才能开放账户。
+私有[prepare 期安装](src/account-install.ts) 返回两个固定原生子类，在初始化前将 hook 绑定到实际 constructor receiver。因此本地凭据 provider 的初次扁平文档迁移及 Settings legacy 导入也被覆盖，无需复制原生队列或写入。Credentials 要求显式绝对路径及 watch=false。句柄持有实际安装的精确 binding 与根签发的屏障，暴露既有 pause/resume/stop 控制，暴露视图初始未审核。撤钩要求终态、无失败的实际结算，并等待真实原生 Loader 初始化；它不销毁账户 Context，也不释放根容量。
+
+服务就绪后安装 hook 无法补记更早的初始化写入。Constructor 路径解决该本地迁移缺口，但 runtime 仍须在迟到结算期间保留 hook fiber 及初始化 ownership，在 resume 前重新审核，并在开放账户前提供真实图、存储授权及 I/O 预算。保存失败保留证据；观察者取消和强制 fiber 销毁不能证明 teardown 干净完成。
 
 </details>
 
@@ -115,11 +117,11 @@ Pause 关闭顶层准入，但允许已登记工作完成；只有静止、无�
 
 必需集成缺失时，账户入口明确失败。
 
-- 原生清单提取、传输选路、项目核验和绑定签发属于外部集成要求；本包不发布 ready。账户视图测试使用模拟 inventory，只证明策略隔离，不代表真实原生 UI 入口清单或 bootstrap capabilities。
+- 生产原生清单提取、传输选路、项目核验和绑定签发仍需集成；本包不发布 ready。策略测试证明视图隔离；独立的原生 Loader 测试检查真实公开 handler 元数据。安装测试使用显式 runtime 绑定及自有 Node 路径，不代表生产 owner 或存储授权。
 - F06 对所有可达原生 writer 的提交覆盖及 runtime 装配仍不完整。协调器和已审核的原生适配不构成完整 F06 验收；账户入口中的模型选择和配置写入保持关闭。
-- 启动期凭据迁移、其他凭据 provider、PluginManager 写入及技能发布/投影仍未覆盖。Watch 刷新和可选监听器工作保留原生语义，安装 hook 不代表它们已被核定为持久保存。
+- 其他凭据 provider、PluginManager 写入及技能发布/投影仍未覆盖。Watch 刷新和可选监听器工作保留原生语义，安装 hook 不代表它们已被核定为持久保存。
 - F09 影响预检、受控提交、插件/key/技能修改及版本资源 hook 保持关闭。
-- 原生 Profile 测试覆盖默认模型、Settings、直接 editor、本地 credentials 及启动安装缺口。实际私有 Controller 装配测试覆盖原生 Gateway 派发、创建、prompt、fork、同步 cancel 及恢复尝试的先后顺序。完整账户持久化恢复、认证 Web 及完整云端配方验收仍需集成；产品构建及这些检查由主控负责。
+- 原生 Profile 测试覆盖默认模型、Settings、直接 editor、本地 credentials、constructor 期迁移及迟到的启动/写入结算。实际私有 Controller 装配测试覆盖原生 Gateway 派发、创建、prompt、fork、同步 cancel 及恢复尝试的先后顺序。完整账户持久化恢复、认证 Web 及完整云端配方验收仍需集成；产品构建及这些检查由主控负责。
 - 历史测试使用真实 JSONL 读取和冷 follow 恢复。私有 AgentLoop 适配守卫普通工厂激活，但生产装配及可信项目/模型/Preset 提供者尚未集成。其他激活及 child 路径仍待审核；账户装配继续关闭。
 
 <a id="dev-note"></a>

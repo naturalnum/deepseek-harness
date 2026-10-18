@@ -35,7 +35,7 @@ class AccountExposure extends ExposurePolicy {
   constructor(
     private readonly ctx: Context,
     private readonly binding: AccountBinding,
-    private readonly assertCurrent: (binding: AccountBinding) => void,
+    private readonly assertGraphCurrent: (binding: AccountBinding) => void,
     root: ExposurePolicy,
     manifest: ExposureManifest,
   ) {
@@ -87,7 +87,7 @@ class AccountExposure extends ExposurePolicy {
 
   private admit(): void {
     this.assertBinding()
-    this.assertCurrent(this.binding)
+    this.assertGraphCurrent(this.binding)
     // The trusted callback can close or replace its graph during the same synchronous call.
     this.assertBinding()
   }
@@ -102,7 +102,8 @@ class AccountExposure extends ExposurePolicy {
  * or establish readiness. Graph disposal invalidates only this view.
  * @param ctx - owning fiber inside the independent account graph.
  * @param binding - runtime's exact installed AccountBinding, not a request borrow.
- * @param assertCurrent - trusted runtime admission shared with Controller/LLM checks; draining and stale graphs reject.
+ * @param assertGraphCurrent - trusted runtime graph/mount-current; restricted mounting may audit, closed/stale graphs reject.
+ * Business-ready is checked separately by Controller, LLM and external AccountUse admission.
  * @param root - deployment-owned policy whose immutable manifest defines the upper bound.
  * @param manifest - this graph's selected subset, copied and frozen before use.
  * @returns an unaudited native-compatible ExposurePolicy owned by this graph.
@@ -111,9 +112,9 @@ class AccountExposure extends ExposurePolicy {
 export function createAccountExposure(
   ctx: Context,
   binding: AccountBinding,
-  assertCurrent: (binding: AccountBinding) => void,
+  assertGraphCurrent: (binding: AccountBinding) => void,
   root: ExposurePolicy,
   manifest: ExposureManifest,
 ): ExposurePolicy {
-  return new AccountExposure(ctx, binding, assertCurrent, root, manifest)
+  return new AccountExposure(ctx, binding, assertGraphCurrent, root, manifest)
 }
