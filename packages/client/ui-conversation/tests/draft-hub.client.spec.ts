@@ -41,14 +41,14 @@ async function storedSession(draft: unknown) {
     await sessions.disposeScopes()
     await ctx.fiber.dispose()
   })
-  ctx.provide('sessions', sessions)
+  const withdrawSessions = ctx.provide('sessions', sessions)
   await sessions.add({ id })
   const reference = sessions.retain(id)
   onTestFinished(() => { reference.release() })
   await reference.ready
   const binding = reference.binding
   const hub = new InputHub(ctx, makeTranslate(zh, {}))
-  return { ctx, sessions, id, key, raw, reference, binding, hub }
+  return { ctx, sessions, withdrawSessions, id, key, raw, reference, binding, hub }
 }
 
 async function fixture(draft: unknown) {
@@ -259,6 +259,50 @@ it('subscribes when a provider arrives and disconnects each withdrawn provider',
   expect(b.shell.draftSnapshot).toBe(current)
   expect(b.sessions.binding(b.id)).toBe(b.binding)
   expect(b.shell.requestDraftInitialization({})).toBe('preserved')
+})
+
+it('detaches the catalog without cleanup errors after the Sessions provider is withdrawn', async () => {
+  const b = await fixture(saved)
+  const cleanupErrors: unknown[] = []
+  b.ctx.logger.exporter({
+    export(message) {
+      if (message.type === 'error') cleanupErrors.push(message)
+    },
+  })
+  const source = catalog(['saved'])
+  const provider = b.ctx.plugin(TriggerProvider, { controller: controller(() => source.source) })
+  await provider.await()
+  await vi.waitFor(() => { expect(source.subscribers).toBe(1) })
+  const draft = b.shell.draftSnapshot
+  const persisted = localStorage.getItem(b.key)
+
+  b.withdrawSessions()
+  expect(b.ctx.get('sessions')).toBeUndefined()
+  await provider.dispose()
+
+  expect.soft(cleanupErrors).toEqual([])
+  expect.soft(source.subscribers).toBe(0)
+  expect.soft(source.releases).toBe(source.subscriptions)
+  source.set(['saved'])
+  expect(textReferences(b.shell)).toEqual([])
+  expect(b.shell.draftSnapshot).toBe(draft)
+  expect(localStorage.getItem(b.key)).toBe(persisted)
+  expect(() => { b.shell.dismissPopup() }).not.toThrow()
+  expect(() => b.hub.for(b.binding.ctx)).toThrow('conversation.input: sessions service unavailable')
+  expect(() => b.hub.shell(b.id)).toThrow('conversation.input: sessions service unavailable')
+  expect(() => b.hub.requestDraftInitialization(b.binding, { prompt: 'late edit' }))
+    .toThrow('conversation.input: sessions service unavailable')
+})
+
+it('propagates failures from an installed Sessions provider during optional lookups', async () => {
+  const b = await fixture(saved)
+  const failure = new Error('installed Sessions lookup failed')
+  const lookup = vi.spyOn(b.sessions, 'sessionOf').mockImplementation(() => { throw failure })
+  onTestFinished(() => { lookup.mockRestore() })
+
+  expect(() => { b.shell.refreshLexiconSubscription() }).toThrow(failure)
+  expect(() => { b.shell.dismissPopup() }).toThrow(failure)
+  lookup.mockRestore()
 })
 
 it('reconnects a replacement lexicon source on an explicit subscription refresh', async () => {

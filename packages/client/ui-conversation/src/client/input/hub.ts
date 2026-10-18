@@ -3,6 +3,8 @@
  * Each retained Session binding owns one shell, its input listeners, and its
  * catalog subscription. Saved drafts enter the model before the first lookup
  * returns; Session-scope disposal releases the shell and its resources.
+ * Trigger and popup lookups return undefined after the Sessions provider is
+ * withdrawn; operations requiring a Session still reject its absence.
  */
 import type {} from '@deepseek-ai/dsh-client-product-analytics/client'
 import type { ModelSelectionProjection } from '@deepseek-ai/dsh-api-session-controller/types'
@@ -268,13 +270,15 @@ export class InputHub implements SessionInputResolver {
   }
 
   private controller(actx: Context): InputTriggerController | undefined {
-    if (this.sessions().sessionOf(actx) === undefined) return undefined
+    const sessions = this.rootCtx.get('sessions')
+    if (sessions === undefined || sessions.sessionOf(actx) === undefined) return undefined
     const inputTriggers = this.rootCtx.get('inputTriggers') as InputTriggerServiceFace | undefined
     return inputTriggers?.sessionOf(actx)
   }
 
   private popup(actx: Context): PopupDismissFace | undefined {
-    if (this.sessions().sessionOf(actx) === undefined) return undefined
+    const sessions = this.rootCtx.get('sessions')
+    if (sessions === undefined || sessions.sessionOf(actx) === undefined) return undefined
     const command = this.rootCtx.get('commandUi') as CommandFace | undefined
     return command?.popupFor(actx)
   }
