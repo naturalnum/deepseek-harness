@@ -2,6 +2,7 @@
 import type { OperationId } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { FsErrorCode } from '@deepseek-ai/dsh-fs'
 import type { DirectoryCreatedIdentity } from './directory-responsibility.ts'
+import type { StaticStorageConfig } from './storage-types.ts'
 
 /** Internal verified-root identity; the runtime factory still owns authorization and quota. */
 export interface FdRootIdentity {
@@ -19,6 +20,21 @@ export interface FdWorkerInput {
   readonly maxPathBytes: number
   readonly maxResolveRetries: number
   readonly readChunkBytes: number
+  readonly storageProbe?: StaticStorageConfig
+}
+
+/** Root-only static deployment commands; they never use a fabricated account lane. */
+export type FdStorageRequest = {
+  readonly id: OperationId
+  readonly cancel: SharedArrayBuffer
+} & ({ readonly kind: 'storage-probe'; readonly path: string }
+  | { readonly kind: 'storage-record' }
+  | { readonly kind: 'storage-view' })
+
+/** Bounded process view; every buffer is exact and closed before transfer. */
+export interface FdStorageView {
+  readonly mountInfo: Uint8Array<ArrayBuffer>
+  readonly status: Uint8Array<ArrayBuffer>
 }
 
 /** One bounded operation beneath the port's fixed root. */
@@ -75,7 +91,10 @@ export interface FdStreamControl {
 
 /** Success follows FD closure except stream-ready/chunk, which retain actual operation ownership. */
 export type FdWorkerReply =
-  | { readonly kind: 'ready'; readonly abiVersion: 6 }
+  | { readonly kind: 'ready'; readonly abiVersion: 6; readonly storageProbeVersion?: 1 }
+  | { readonly kind: 'storage-probe-reply'; readonly id: OperationId; readonly frame: Uint8Array<ArrayBuffer> }
+  | { readonly kind: 'storage-record-reply'; readonly id: OperationId; readonly bytes: Uint8Array<ArrayBuffer> }
+  | { readonly kind: 'storage-view-reply'; readonly id: OperationId; readonly view: FdStorageView }
   | { readonly kind: 'leaf-prepare-reply' | 'leaf-cleanup-reply'; readonly id: OperationId; readonly frame: Uint8Array<ArrayBuffer> }
   | { readonly kind: 'startup-failed'; readonly code: FsErrorCode; readonly syscallCode?: string }
   | { readonly kind: 'reply'; readonly id: OperationId; readonly ok: true; readonly bytes: Uint8Array<ArrayBuffer> }

@@ -5,6 +5,9 @@ import type { FilesPoolConfig, LinuxFilesPool } from './worker-pool.ts'
 import { mountRootPool } from './root-lifecycle.ts'
 import { FilesFailure } from './error.ts'
 
+export { RootStorageOwner, StaticAccountStorageLease } from './storage-owner.ts'
+export type { StaticStorageConfig, StaticStoragePlan, StaticStorageAccount, StaticStorageDomain } from './storage-types.ts'
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     /** Root-only worker pool; presence does not mean account or production readiness. */
@@ -20,6 +23,17 @@ export const inject = ['peAccountRuntime']
 export interface Config extends FilesPoolConfig {}
 /** All limits are required; none is a claimed production capacity. */
 export const Config: z<Config> = z.object({
+  staticStorage: z.union([z.object({
+    planPath: z.string().required(),
+    planSha256: z.string().required(),
+    probeHelperPath: z.string().required(),
+    probeHelperSha256: z.string().required(),
+    maxProbeAssetBytes: z.natural().min(1).max(4194304).required(),
+    rootProbeReservationBytes: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
+    maxPlanBytes: z.natural().min(1).max(262144).required(),
+    maxMountInfoBytes: z.natural().min(1).max(1048576).required(),
+    probeTimeoutMs: z.natural().min(1).max(2147483647).required(),
+  })]),
   maxLanes: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
   maxRunning: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
   maxRunningPerLane: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
@@ -45,7 +59,7 @@ export const Config: z<Config> = z.object({
  * Prebuild and register the root files participant without installing a native fs or marking an account ready.
  * @param ctx Root Loader scope with runtime already present.
  * @param config Deployment capacities and a reviewed Linux helper path.
- * @returns Completes after all configured workers handshake and the unique participant is registered.
+ * @returns Completes after worker handshakes, configured storage verification and unique participant registration.
  */
 export async function apply(ctx: Context, config: Config): Promise<void> {
   if (process.platform !== 'linux') throw new FilesFailure('files/prerequisite-missing', 'files/root requires the real Linux FD worker backend')

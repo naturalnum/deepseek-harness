@@ -65,6 +65,7 @@ describe('files root pool through the real Loader', () => {
     const { ctx, config } = await mounted()
     expect(ctx.peFilesPool.inspect()).toMatchObject({ state: 'running', workers: 2, healthy: 2 })
     expect(workers).toHaveLength(2)
+    expect(() => { ctx.peFilesPool.requireStorageOwner() }).toThrow(/no static storage owner/)
     expect(() => { ctx.peAccountRuntime.assertRequiredParticipants() }).toThrow('execution')
     addExecution(ctx)
     expect(() => { ctx.peAccountRuntime.assertRequiredParticipants() }).not.toThrow()
@@ -76,7 +77,7 @@ describe('files root pool through the real Loader', () => {
     })).rejects.toThrow(/already exists/)
     expect(duplicateStarted).toBe(false)
     expect(ctx.get('fs')).toBeUndefined()
-    expect(() => { Account.apply(ctx, {}) }).toThrow(/runtime-bound/)
+    expect(() => { void Account.apply(ctx, {}) }).toThrow(/runtime-bound/)
   })
 
   it('keeps registration and root budget until worker exits and held result ownership settle', async () => {

@@ -7,6 +7,8 @@ import type { FdTaskRequest, FdWorkerInput, FdWorkerReply, FdMetadata, FdDirecto
 import type { FsErrorCode } from '@deepseek-ai/dsh-fs'
 import { directoryWorkBudget } from './directory-budget.ts'
 import { cancelledLeafFrame, parseLeafFrame } from './leaf-frame.ts'
+import { createStorageWorker, storageRequest } from './storage-worker.ts'
+import type { StaticStorageConfig } from './storage-types.ts'
 
 interface LinuxFdHelper {
   openAnchor(this: void, path: string, device: string, inode: string, mountId: string): void
@@ -70,7 +72,21 @@ function input(value: unknown): FdWorkerInput {
     helperPath: value.helperPath,
     maxReadBytes: value.maxReadBytes, maxPathBytes: value.maxPathBytes,
     maxResolveRetries: value.maxResolveRetries, readChunkBytes: value.readChunkBytes,
+    ...value.storageProbe === undefined ? {} : { storageProbe: storageConfig(value.storageProbe) },
   }
+}
+
+function storageConfig(value: unknown): StaticStorageConfig {
+  if (!record(value) || typeof value.planPath !== 'string' || typeof value.planSha256 !== 'string'
+    || typeof value.probeHelperPath !== 'string' || typeof value.probeHelperSha256 !== 'string'
+    || typeof value.maxProbeAssetBytes !== 'number' || typeof value.rootProbeReservationBytes !== 'number'
+    || typeof value.maxPlanBytes !== 'number' || typeof value.maxMountInfoBytes !== 'number' || typeof value.probeTimeoutMs !== 'number') {
+    throw new WorkerFailure('FS_IO_ERROR')
+  }
+  return { planPath: value.planPath, planSha256: value.planSha256, probeHelperPath: value.probeHelperPath,
+    probeHelperSha256: value.probeHelperSha256, maxProbeAssetBytes: value.maxProbeAssetBytes,
+    rootProbeReservationBytes: value.rootProbeReservationBytes, maxPlanBytes: value.maxPlanBytes,
+    maxMountInfoBytes: value.maxMountInfoBytes, probeTimeoutMs: value.probeTimeoutMs }
 }
 
 function helper(path: string): LinuxFdHelper {
@@ -341,9 +357,11 @@ function start(): void {
   if (port === null) throw new Error('files worker requires a parent port')
   let limits: FdWorkerInput
   let native: LinuxFdHelper
+  let storage: ReturnType<typeof createStorageWorker> | undefined
   try {
     const raw: unknown = workerData
     limits = input(raw)
+    if (limits.storageProbe !== undefined) storage = createStorageWorker(limits.storageProbe, limits.maxPathBytes, limits.helperPath)
     native = helper(limits.helperPath)
     native.probeKernel()
   } catch (error) {
@@ -388,6 +406,23 @@ function start(): void {
       return
     }
     if (active !== undefined) { port.close(); return }
+    if (record(raw) && ['storage-probe', 'storage-record', 'storage-view'].includes(String(raw.kind))) {
+      if (storage === undefined) throw new WorkerFailure('FS_PERMISSION_DENIED')
+      const request = storageRequest(raw, limits.maxPathBytes)
+      if (Atomics.load(new Int32Array(request.cancel), 0) !== 0) {
+        port.postMessage({ kind: 'reply', id: request.id, ok: false, code: 'FS_ABORTED' } satisfies FdWorkerReply)
+      } else if (request.kind === 'storage-probe') {
+        const frame = storage.probe(request.path)
+        port.postMessage({ kind: 'storage-probe-reply', id: request.id, frame } satisfies FdWorkerReply, [frame.buffer])
+      } else if (request.kind === 'storage-record') {
+        const bytes = storage.record()
+        port.postMessage({ kind: 'storage-record-reply', id: request.id, bytes } satisfies FdWorkerReply, [bytes.buffer])
+      } else {
+        const view = storage.view()
+        port.postMessage({ kind: 'storage-view-reply', id: request.id, view } satisfies FdWorkerReply, [view.mountInfo.buffer, view.status.buffer])
+      }
+      return
+    }
     if (record(raw) && (raw.kind === 'leaf-prepare' || raw.kind === 'leaf-cleanup')) {
       // Invalid frames/N-API exceptions are fatal; actual exit leaves creation ownership unknown.
       const request = leafRequest(raw, limits)
@@ -439,7 +474,7 @@ function start(): void {
       port.postMessage({ kind: 'reply', id: request.id, ok: false, ...failure(error) } satisfies FdWorkerReply)
     }
   })
-  port.postMessage({ kind: 'ready', abiVersion: 6 } satisfies FdWorkerReply)
+  port.postMessage({ kind: 'ready', abiVersion: 6, ...storage === undefined ? {} : { storageProbeVersion: 1 as const } } satisfies FdWorkerReply)
 }
 
 start()

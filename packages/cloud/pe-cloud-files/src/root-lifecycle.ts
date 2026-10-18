@@ -1,4 +1,4 @@
-/** Ordered root contributions remain registered until actual pool and result ownership ends. */
+/** Root contributions remain registered until actual pool, storage probe and result ownership ends. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { AccountRuntimeService } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { Worker } from 'node:worker_threads'
@@ -12,7 +12,7 @@ import { FilesFailure } from './error.ts'
  * @param ctx Root Loader effect scope carrying runtime registration.
  * @param config Explicit validated capacities and helper location.
  * @param createWorker Internal test override; omission uses the reviewed private asset.
- * @returns Completes after worker startup and unique participant registration.
+ * @returns Completes after worker startup, configured static-storage verification and unique participant registration.
  */
 export async function mountRootPool(
   ctx: Context,

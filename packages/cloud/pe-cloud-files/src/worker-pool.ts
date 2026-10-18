@@ -21,6 +21,9 @@ import { directoryWorkBudget } from './directory-budget.ts'
 import type { DirectoryObservation, DirectoryPrepareOutcome } from './directory-responsibility.ts'
 import { createS2ProjectPort } from './s2-project.ts'
 import { createBoundWorkspaceRegistry } from './workspace-adapter.ts'
+import { RootStorageOwner } from './storage-owner.ts'
+import type { StaticStorageConfig } from './storage-types.ts'
+import { staticStorageReservation } from './storage-probe.ts'
 
 /** Privileged fixture input; layout/stat/mode/name alone never establishes this namespace guarantee. */
 export type IsolatedLeafGrant = {
@@ -47,7 +50,8 @@ export interface PreparedLeafPort {
 }
 
 /** Required finite root capacities; no storage or account-readiness evidence is represented here. */
-export interface FilesPoolConfig extends FilesLimits, FdWorkerInput {
+export interface FilesPoolConfig extends FilesLimits, Omit<FdWorkerInput, 'storageProbe'> {
+  readonly staticStorage?: StaticStorageConfig
   readonly workerCount: number
   readonly minimumHealthyWorkers: number
   readonly workerReservationBytes: number
@@ -91,11 +95,17 @@ function workerInput(config: FilesPoolConfig): FdWorkerInput {
   return {
     helperPath: config.helperPath, maxReadBytes: config.maxReadBytes, maxPathBytes: config.maxPathBytes,
     maxResolveRetries: config.maxResolveRetries, readChunkBytes: config.readChunkBytes,
+    ...config.staticStorage === undefined ? {} : { storageProbe: config.staticStorage },
   }
 }
 
+function rootReservation(config: FilesPoolConfig): number {
+  return config.workerCount * config.workerReservationBytes
+    + (config.staticStorage === undefined ? 0 : staticStorageReservation(config.staticStorage, config.maxPathBytes, config.workerCount))
+}
+
 function limits(config: FilesPoolConfig): FilesLimits {
-  const rootBytes = config.workerCount * config.workerReservationBytes
+  const rootBytes = rootReservation(config)
   return {
     maxLanes: config.maxLanes, maxRunning: config.maxRunning, maxRunningPerLane: config.maxRunningPerLane,
     maxQueued: config.maxQueued, maxQueuedPerLane: config.maxQueuedPerLane,
@@ -126,14 +136,14 @@ function validate(config: FilesPoolConfig): void {
     || config.readChunkBytes > config.maxReadBytes + 1
     || config.readyTimeoutMs > 2_147_483_647 || config.drainTimeoutMs > 2_147_483_647
     || config.minimumHealthyWorkers > config.workerCount || config.maxRunning > config.workerCount
-    || !Number.isSafeInteger(config.workerCount * config.workerReservationBytes)) {
+    || !Number.isSafeInteger(rootReservation(config))) {
     throw new FilesFailure('files/prerequisite-missing', 'files pool configuration exceeds its declared limits')
   }
 }
 
 /**
- * One root pool and files participant. Successful startup proves only fixed healthy slots,
- * not complete FS, trusted mount inputs, hard quota, account ready, or a sealed recipe.
+ * One root pool and files participant; configured static storage is verified before startup completes.
+ * Omission grants healthy fixed slots only. Neither mode certifies a complete account recipe or readiness.
  */
 export class LinuxFilesPool implements DrainParticipant {
   readonly id: Extract<DrainParticipant['id'], 'files'> = 'files'
@@ -143,6 +153,8 @@ export class LinuxFilesPool implements DrainParticipant {
   private readonly closedObservers = new Set<() => void>()
   private state: 'new' | 'starting' | 'running' | 'closing' | 'closed' = 'new'
   private startTask: Promise<void> | undefined
+  private readonly storageOwner?: RootStorageOwner
+  private rootOperation: { readonly id: OperationId; readonly settled: Promise<void> } | undefined
 
   constructor(
     private readonly config: FilesPoolConfig,
@@ -151,6 +163,15 @@ export class LinuxFilesPool implements DrainParticipant {
   ) {
     validate(config)
     this.owner = new FilesWorkOwner(limits(config))
+    const storage = config.staticStorage
+    if (storage !== undefined) this.storageOwner = new RootStorageOwner(storage, config.maxPathBytes, {
+      record: () => this.probeOperation((client, signal) => client.storageRecord(storage.maxPlanBytes, signal)),
+      probe: path => this.probeOperation((client, signal) => client.storageProbe(path, signal)),
+      view: () => this.probeOperation((client, signal) => client.storageView(storage.maxMountInfoBytes, signal)),
+      assertPoolCurrent: () => { this.assertHealthy() },
+      bind: (binding, root, current) => this.bind(binding, root, current),
+      joinEpoch: binding => this.owner.joinEpoch(binding),
+    })
   }
 
   /** Prebuild exactly the configured number of slots; any handshake failure stops the entire startup. */
@@ -160,6 +181,16 @@ export class LinuxFilesPool implements DrainParticipant {
     this.state = 'starting'
     this.startTask = this.startAll()
     return this.startTask
+  }
+
+  /**
+   * Require the actual verified storage owner after successful root startup.
+   * @returns Original root-only owner; omission, incomplete startup or closure rejects.
+   */
+  requireStorageOwner(): RootStorageOwner {
+    if (this.storageOwner === undefined) throw new FilesFailure('files/prerequisite-missing', 'files root has no static storage owner')
+    this.storageOwner.assertRootCurrent()
+    return this.storageOwner
   }
 
   /**
@@ -379,7 +410,7 @@ export class LinuxFilesPool implements DrainParticipant {
     return {
       status: this.state === 'closed' ? 'confirmed' : 'unknown',
       pendingWorkerIds: this.slots.filter(slot => !slot.exited).map(slot => slot.id),
-      pendingOperationIds: this.owner.pending(),
+      pendingOperationIds: [...this.owner.pending(), ...this.rootOperation === undefined ? [] : [this.rootOperation.id]],
     }
   }
 
@@ -404,7 +435,7 @@ export class LinuxFilesPool implements DrainParticipant {
       healthy: this.slots.filter(slot => slot.client.available).length,
       busy: this.slots.filter(slot => slot.busy).length,
       exited: this.slots.filter(slot => slot.exited).length,
-      rootReservedBytes: this.state === 'closed' ? 0 : this.config.workerCount * this.config.workerReservationBytes,
+      rootReservedBytes: this.state === 'closed' ? 0 : rootReservation(this.config),
       work: this.owner.inspect(),
     }
   }
@@ -430,6 +461,7 @@ export class LinuxFilesPool implements DrainParticipant {
       if (this.state !== 'starting') throw new FdWorkerFailure('FS_IO_ERROR')
       this.state = 'running'
       this.assertHealthy()
+      await this.storageOwner?.initializeStatic()
     } catch (error) {
       this.requestStop()
       throw error
@@ -439,8 +471,9 @@ export class LinuxFilesPool implements DrainParticipant {
   private requestStop(): void {
     if (this.state === 'closing' || this.state === 'closed') return
     this.state = 'closing'
+    this.storageOwner?.closeAdmission()
     this.owner.close()
-    void this.owner.whenClosed().then(async () => {
+    void Promise.all([this.owner.whenClosed(), this.rootOperation?.settled]).then(async () => {
       for (const slot of this.slots) void slot.client.close()
       await Promise.all(this.slots.map(slot => slot.client.exited))
       this.state = 'closed'
@@ -448,6 +481,30 @@ export class LinuxFilesPool implements DrainParticipant {
       for (const finish of this.closedObservers) finish()
       this.closedObservers.clear()
     })
+  }
+
+  private probeOperation<T>(work: (client: FdWorkerClient, signal: AbortSignal) => Promise<T>): Promise<T> {
+    this.assertHealthy()
+    const storage = this.config.staticStorage
+    if (storage === undefined) throw new FilesFailure('files/prerequisite-missing', 'files root has no static probe configuration')
+    if (this.rootOperation !== undefined) throw new FilesFailure('cloud/capacity', 'files root probe is still active')
+    const controller = new AbortController()
+    const observed = Promise.withResolvers<T>()
+    const actual = this.withSlot(false, client => work(client, controller.signal))
+    const completion = Promise.withResolvers<void>()
+    const operation = { id: randomUUID() as OperationId, settled: completion.promise }
+    this.rootOperation = operation
+    const timer = setTimeout(() => {
+      controller.abort()
+      observed.reject(new FilesFailure('files/prerequisite-missing', 'files root probe observation expired; actual operation remains owned'))
+    }, storage.probeTimeoutMs)
+    const finish = (): void => {
+      clearTimeout(timer)
+      if (this.rootOperation === operation) this.rootOperation = undefined
+      completion.resolve()
+    }
+    void actual.then((value) => { finish(); observed.resolve(value) }, (error: unknown) => { finish(); observed.reject(error) })
+    return observed.promise
   }
 
   private async withSlot<T>(cleanup: boolean, work: (client: FdWorkerClient) => Promise<T>): Promise<T> {

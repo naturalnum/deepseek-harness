@@ -27,9 +27,12 @@ kind: "package-reference"
 
 `/root` 与 `/account` 是 Loader 插件入口。在 Linux 上，`/root` 要求 runtime 注册服务、经过审核的 ABI 6 helper 二进制及显式池限额。它在全部配置 worker 启动之后注册唯一 files 参与者。`/account` 要求 runtime 预备的 `CloudAccountFiles` owner 及空配置。它保留原生 Registry 依赖，在自己的原生子 fiber 中安装该 Registry 与其 S2 FileSystem，并等待实际 default 项目。根池启动和 files 安装成功都不证明账户就绪。
 
-[FilesLimits](src/types.ts) 的所有字段都必须显式提供有限的正安全整数。每个 lane 的并发数、队列容量与驻留字节不得超过对应全局限额；等待时间必须在 Node 定时器的范围内。[根配置 schema](src/root.ts) 还要求 worker 数量、最低健康数、worker 及回复预留、握手及排空期限、helper 位置和读取、路径、分块及重试限额。全局驻留限额包含固定 worker 预留；剩余容量限制账户工作。配置的预留必须保守覆盖缓冲区、克隆、解码及被持有的结果。
+[FilesLimits](src/types.ts) 的所有字段都必须显式提供有限的正安全整数。每个 lane 的并发数、队列容量与驻留字节不得超过对应全局限额；等待时间必须在 Node 定时器的范围内。[根配置 schema](src/root.ts) 还要求 worker 数量、最低健康数、worker 及回复预留、握手及排空期限、helper 位置和读取、路径、分块及重试限额。全局驻留限额包含固定 worker 预留及启用静态存储时的 root 预留；剩余容量限制账户工作。配置的预留必须保守覆盖缓冲区、克隆、解码及被持有的结果。
 
-在原生账户 boot 准备阶段，可信 runtime 使用 exact installed binding、既有有限 lane 的 Registry 构造口、固定 default grant，以及分开的挂载/current 和未发布窗口核验，构造 [CloudAccountFiles](src/account-service.ts)。该输入不接受共享根池、调用者选择的路径、Workspace receipt 或插件。Loader 稳定后，`project()` 向 API/runtime 装配交付实际原生 Workspace 及其 files 持有的 `projectDirectory`。缺失或异图 owner、非空配置、竞争 provider 及旧代都会拒绝。本包不提供宿主文件系统回退或生产存储 issuer。
+在原生账户 boot 准备阶段，可信 runtime 使用 exact installed binding、既有有限 lane 的 Registry 构造口、固定 default grant，以及分开的挂载/current 和未发布窗口核验，构造 [CloudAccountFiles](src/account-service.ts)。该输入不接受共享根池、调用者选择的路径、Workspace receipt 或插件。Loader 稳定后，`project()` 向 API/runtime 装配交付实际原生 Workspace 及其 files 持有的 `projectDirectory`。缺失或异图 owner、非空配置、竞争 provider 及旧代都会拒绝。本包不提供宿主文件系统回退。
+
+
+生产工厂首先通过原池的 `requireStorageOwner()` 取得实际存储 owner。可选的根配置 `staticStorage` 见 [StaticStorageConfig](src/storage-types.ts)；省略仅支持组件调用者，不授予 owner。准备核验恰好两份预置账户分配之一。工厂须在原生 Profile 读取前保留实际 lease，核验其 Profile/base 地址，再把规范的 installed runtime 代际仅绑定一次到原 projects lane。另一个仍活动的 epoch 会被拒绝。runtime 等待 native/save/execution writer 后，lease 关闭继续等待该 lane 的实际工作与持有结果；它从不归还持久容量或重新挂载存储。本地索引及 environment 执行写入不获得授权。
 
 -----
 
@@ -67,7 +70,12 @@ ABI 6 增加自持 FD 的单 leaf 准备及 exact empty-directory 清理，创�
 
 [共享根池](src/worker-pool.ts) 预建固定数量的 worker，并在绑定账户之间复用。绑定及读取不创建 worker；失败的 worker 不自动替换。每次操作只从队列申请一次请求及结果缓冲区预留。文本流在两次 pull 之间保留 slot，只授予一块 credit，以 `readChunkBytes` 限制每块，并以 `maxReadBytes` 限制完整原始内容。它最多读取总上限加一字节，跨块解码 UTF-8，并沿用原生严格解码与前 8192 字节 NUL 采样规则。消费者提前返回会取消操作，不宣告 FD 已关闭。 I/O 关闭后，暂停的迭代器继续为其解码块保留同一预算，直至迭代结束或返回。消费者必须结束或返回其迭代器。[传输层](src/worker-client.ts) 在取消后等待真实回复或实际退出；畸形回复及 worker 错误停止准入，迟到回复不能逆转传输失败。账户排空关闭该代际并向实际 I/O 发出停止信号，同时保留共享池。
 
-[根 effect](src/root-lifecycle.ts) 保留固定 worker 预留及 files 参与者，直至所有 worker 实际退出、全部账户工作及被持有结果结算。有界关闭可以报告 unknown；effect 继续持有清理责任，并在实际关闭之前保留注册与根服务。该生命周期行为不验证存储配额，也不授予项目根权限。
+[根 effect](src/root-lifecycle.ts) 保留 root 预留及 files 参与者，直至 root probe 实际结束、全部 worker 退出、全部账户工作及被持有结果结算。有界关闭可以报告 unknown；effect 继续持有清理责任，并在实际关闭之前保留注册与根服务。池的生命周期本身不授予项目根。
+
+
+[静态存储 owner](src/storage-owner.ts) 通过独立只读的 [probe ABI1](native/storage-probe.c) 读取 root 持有、hash 固定的部署记录。Root 在实际分配、同步并持续持有 backing 资源后才写入记录。既有 slot 测量 ext4 身份、有限字节与 inode 容量、backing 元数据、arena 可用 reserve、受保护祖先和应用权限。root 初始化要求应用根只读、记录的非 root UID/GID、全部 capability 集合为零、NoNewPrivs 及 seccomp。这些观察不识别 seccomp filter 或设备策略：可信 Root 装配必须持续持有该限制，并实际验证 mount/device/loop/execute 尝试被拒绝。宿主或整个 VM 存储失败属于基础设施故障；账户获准写入导致另一账户或 control 失败仍属于部署失败。hash 及要求值不能替代实时观察或 Root 对资源的持有。
+
+root probe 配置在账户准入前，从全局预留有界记录、proc、资产副本、native 临时空间及持有事实。同一时间仅运行一个账户核验；额外并发核验直接拒绝，不另设队列。观察超时后，busy slot、root operation id 及预留持续保留，直至实际回复或退出。组件传输及 macOS 均不能签发真实存储 owner。ABI6 及其 S2 行为保持独立；Linux helper 编译、实际权限限制、字节与 inode 耗尽后 control/其他账户持续写入，均须由部署验证。
 
 </details>
 
@@ -105,9 +113,9 @@ ABI 6 增加自持 FD 的单 leaf 准备及 exact empty-directory 清理，创�
 
 以下集成缺失时，生产启用持续关闭。
 
-- 共享根池在可信隔离图内提供完整 Workspace 元数据适配。注册移交要求其未发布窗口；发布后的图仍为当前图时，元数据读取可以继续。这项生命周期区分不提供生产存储授权。通用递归准备、live 并发注册与删除、生产 grant 签发、S3 文件系统能力、完整 target 及写入语义、链接竞态验收、完整分配计量与字节及 inode 硬配额尚未完成。ext4 组件仍要求实际部署 owner、精确 mount 身份、权限隔离及全部 writer 的容量预留；后端字符串或 statfs 结果不能提供这些事实。
-- 账户绑定与收据类型来自 runtime 包。根入口在 worker 启动后注册 files 参与者，但投入生产前，仍须由可信工厂签发经过批准的存储及根能力，并接通完整后端。
-- 已安装的原生 S2 FileSystem 仅授予元数据方法。完整流式及目录和写入计量、附件接收与暂存、指令、技能投影及部署存储证明仍不可用。helper 二进制必须由已审核的 Linux 部署配方构建并固定；本包不分发已经验证的二进制。
+- 共享根池在可信隔离图内提供完整 Workspace 元数据适配。注册移交要求其未发布窗口；发布后的图仍为当前图时，元数据读取可以继续。这项生命周期区分不提供生产存储授权。静态准入覆盖恰好两组由 Root 预置、独立的 private/projects 域及有界辅助挂载。动态分配、通用递归准备、live 并发注册与删除、S3 能力、完整 target 及写入语义、链接竞态验收与完整分配计量仍不可用。后端字符串或 statfs 结果不能提供实际部署归属、权限隔离或全部 writer 的字节及 inode reserve。
+- 账户绑定与收据类型来自 runtime 包。根入口在 worker 启动后注册 files 参与者，但投入生产前，可信工厂仍须在 Profile I/O 前持有实际存储 owner/lease，并接通完整获准配方。
+- 已安装的原生 S2 FileSystem 仅授予元数据方法。完整流式及目录和写入计量、附件接收与暂存、指令及技能投影仍不可用。两份 helper 二进制必须由已审核的 Linux 部署配方构建并固定；本包不分发已经验证的二进制。
 - Workspace 源码测试使用真实原生 Loader、JSONL 与 JSON StorageDomain，配合仅供测试的 Node-backed worker 传输；它们不建立内核或配额事实。独立的发布版 ABI 6 Linux 检查验证精确 ext4 mount 身份，拒绝错误 mount id 及同设备的嵌套 bind，并在干净卸载及新容器/Node 进程中恢复同一原生 Workspace 与 Session JSONL event hash。这些组件检查不验收账户入口的完整产品配方。目录同步故障注入、原生 WorkingDirectory/SessionController 装配、生产全部 writer 的隔离与硬配额、总物理 reserve、崩溃/断电恢复及 Web 流程仍是独立要求。
 
 <a id="dev-note"></a>

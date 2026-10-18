@@ -3,12 +3,15 @@ import { randomUUID } from 'node:crypto'
 import type { Worker } from 'node:worker_threads'
 import type { OperationId } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { FsErrorCode } from '@deepseek-ai/dsh-fs'
-import type { FdTaskRequest, FdRootIdentity, FdMetadata, FdDirectoryRequest, FdDirectoryObservation, LeafBackend } from './worker-protocol.ts'
+import type { FdTaskRequest, FdRootIdentity, FdMetadata, FdDirectoryRequest, FdDirectoryObservation, LeafBackend,
+  FdStorageRequest, FdStorageView } from './worker-protocol.ts'
 import { FilesFailure } from './error.ts'
 import { DirectoryMetadataFailure } from './directory-error.ts'
 import { parseLeafFrame, leafPreparation, DirectoryPreparationFailure } from './leaf-frame.ts'
 import type { LeafFrame } from './leaf-frame.ts'
 import type { DirectoryPrepareOutcome, DirectoryCreatedIdentity } from './directory-responsibility.ts'
+import { parseStorageProbeFrame } from './storage-probe.ts'
+import type { StorageProbeFacts } from './storage-types.ts'
 
 /** Transport failure retains the native error category without private paths. */
 export class FdWorkerFailure extends Error {
@@ -52,6 +55,11 @@ interface PendingLeaf extends PendingBase {
   readonly resolve: (frame: LeafFrame) => void
   readonly reject: (error: Error) => void
 }
+interface PendingStorage extends PendingBase {
+  readonly kind: 'storage-probe' | 'storage-record' | 'storage-view'
+  readonly accept: (value: Record<string, unknown>) => void
+  readonly reject: (error: Error) => void
+}
 interface Pull {
   readonly resolve: (result: IteratorResult<Uint8Array<ArrayBuffer>>) => void
   readonly reject: (error: Error) => void
@@ -65,7 +73,7 @@ interface PendingStream extends PendingBase {
   cancelled: boolean
   total: number
 }
-type Pending = PendingRead | PendingStat | PendingStream | PendingDirectory | PendingLeaf
+type Pending = PendingRead | PendingStat | PendingStream | PendingDirectory | PendingLeaf | PendingStorage
 
 function object(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null }
 function wireError(value: Record<string, unknown>): FdWorkerFailure | undefined {
@@ -91,6 +99,7 @@ export class FdWorkerClient {
   /** Resolves with the actual worker exit code after its exit event is observed. */
   readonly exited: Promise<number>
   private readyResolved = false
+  private storageVersion: 1 | undefined
   private closed = false
   private failure: Error | undefined
   private pending: Pending | undefined
@@ -112,6 +121,65 @@ export class FdWorkerClient {
       this.failPending(error)
       this.resolveExit(code)
     })
+  }
+
+  /**
+   * Probe one fixed root deployment selector on the existing worker.
+   * @param path Fixed root deployment selector.
+   * @param signal Actual operation cancellation; ownership lasts until reply or exit.
+   * @returns Closed-FD measured facts.
+   */
+  storageProbe(path: string, signal: AbortSignal): Promise<StorageProbeFacts> {
+    return this.storage('storage-probe', 256, signal, value => value.kind === 'storage-probe-reply' ? parseStorageProbeFrame(value.frame) : undefined, path)
+  }
+
+  /**
+   * Read the protected deployment record on the existing worker.
+   * @param maximum Root record byte bound.
+   * @param signal Actual operation cancellation; ownership lasts until reply or exit.
+   * @returns Protected record bytes after closure.
+   */
+  storageRecord(maximum: number, signal: AbortSignal): Promise<Uint8Array<ArrayBuffer>> {
+    return this.storage('storage-record', maximum, signal, value => value.kind === 'storage-record-reply' && this.exactBytes(value.bytes, maximum) ? value.bytes : undefined)
+  }
+
+  /**
+   * Inspect bounded process and mount facts on the existing worker.
+   * @param maximum Per-proc-file byte bound.
+   * @param signal Actual operation cancellation; ownership lasts until reply or exit.
+   * @returns Bounded process and mount view after closure.
+   */
+  storageView(maximum: number, signal: AbortSignal): Promise<FdStorageView> {
+    return this.storage('storage-view', 2 * maximum, signal, (value) => {
+      if (value.kind !== 'storage-view-reply' || !object(value.view)
+        || !this.exactBytes(value.view.mountInfo, maximum) || !this.exactBytes(value.view.status, maximum)) return undefined
+      return { mountInfo: value.view.mountInfo, status: value.view.status }
+    })
+  }
+
+  private storage<T>(
+    kind: PendingStorage['kind'], maximum: number, signal: AbortSignal,
+    decode: (value: Record<string, unknown>) => T | undefined, path?: string,
+  ): Promise<T> {
+    this.assertAvailable(signal)
+    if (this.storageVersion !== 1) throw new FdWorkerFailure('FS_IO_ERROR')
+    return new Promise((resolve, reject) => {
+      const pending: PendingStorage = { kind, ...this.base(maximum, signal), reject, accept: (value) => {
+        const result = decode(value)
+        if (result === undefined) { this.failProtocol(); return }
+        pending.removeAbort(); this.pending = undefined; resolve(result)
+      } }
+      this.pending = pending
+      const base = { id: pending.id, cancel: pending.cancel.buffer }
+      if (kind === 'storage-probe' && path !== undefined) this.post({ ...base, kind, path } satisfies FdStorageRequest)
+      else if (kind === 'storage-record' || kind === 'storage-view') this.post({ ...base, kind } satisfies FdStorageRequest)
+      else this.failProtocol()
+    })
+  }
+
+  private exactBytes(value: unknown, limit: number): value is Uint8Array<ArrayBuffer> {
+    return value instanceof Uint8Array && value.buffer instanceof ArrayBuffer && value.byteOffset === 0
+      && value.byteLength === value.buffer.byteLength && value.byteLength > 0 && value.byteLength <= limit
   }
 
   /**
@@ -313,7 +381,9 @@ export class FdWorkerClient {
     if (this.failure !== undefined) return
     if (!object(value)) { this.failProtocol(); return }
     if (value.kind === 'ready') {
-      if (value.abiVersion !== 6 || this.readyResolved || this.closed) { this.failProtocol(); return }
+      if (value.abiVersion !== 6 || this.readyResolved || this.closed
+        || (value.storageProbeVersion !== undefined && value.storageProbeVersion !== 1)) { this.failProtocol(); return }
+      this.storageVersion = value.storageProbeVersion
       this.readyResolved = true
       this.resolveReady()
       return
@@ -341,6 +411,9 @@ export class FdWorkerClient {
       if (error === undefined) this.failProtocol()
       else this.failPending(error)
       return
+    }
+    if (pending.kind === 'storage-probe' || pending.kind === 'storage-record' || pending.kind === 'storage-view') {
+      pending.accept(value); return
     }
     if (pending.kind === 'stat' && value.kind === 'stat-reply') {
       const info = metadata(value.metadata)

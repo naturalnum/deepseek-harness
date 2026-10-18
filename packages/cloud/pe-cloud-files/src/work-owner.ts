@@ -124,6 +124,22 @@ export class FilesWorkOwner implements DrainParticipant {
     return this.receipt(binding, generation.lane.pending())
   }
 
+  /**
+   * Close exact-generation admission and join its actual lane without an observation deadline.
+   * @param binding Original installed generation; a foreign object rejects even after retirement.
+   * @returns Completion only after work, retained results and directory responsibility settle.
+   */
+  async joinEpoch(binding: AccountBinding): Promise<void> {
+    const generation = this.active.get(binding.accountId)
+    if (generation === undefined) {
+      if (this.retired.has(binding)) return
+      this.stale()
+    }
+    if (generation.binding !== binding) this.stale()
+    this.stopGeneration(binding)
+    await new Promise<void>((resolve) => { generation.lane.onSettled(resolve) })
+  }
+
   /** Stop root admission without claiming that unsettled resources have ended. */
   close(): void {
     const generations = [...this.active.values()]

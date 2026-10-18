@@ -98,6 +98,40 @@ describe('files generation work owner', () => {
     expect(b.stopping.aborted).toBe(true)
   })
 
+  it('joins the actual lane after a bounded drain expires, retaining held results until release', async () => {
+    const owner = new FilesWorkOwner(limits), bound = binding()
+    const port = owner.bind(bound, () => {})
+    const result = await port.run(10, async () => 'held')
+    expect((await owner.stopEpoch(bound, Date.now())).status).toBe('unknown')
+    let joined = false
+    const join = owner.joinEpoch(bound).then(() => { joined = true })
+    await Promise.resolve()
+    expect(joined).toBe(false)
+    await expect(owner.joinEpoch({ ...bound })).rejects.toMatchObject({ code: 'cloud/stale-generation' })
+    result.release()
+    await join
+    await owner.joinEpoch(bound)
+    owner.close()
+  })
+
+  it('keeps the actual join pending after caller rejection until backend work really finishes', async () => {
+    const owner = new FilesWorkOwner(limits), bound = binding()
+    const port = owner.bind(bound, () => {})
+    const actual = Promise.withResolvers<undefined>()
+    const started = Promise.withResolvers<undefined>()
+    const work = port.run(10, async () => { started.resolve(undefined); await actual.promise })
+    await started.promise
+    const rejection = expect(work).rejects.toMatchObject({ code: 'cloud/stale-generation' })
+    let joined = false
+    const join = owner.joinEpoch(bound).then(() => { joined = true })
+    await rejection
+    expect(joined).toBe(false)
+    actual.resolve(undefined)
+    await join
+    expect(owner.inspect().residentBytes).toBe(0)
+    owner.close()
+  })
+
   it('rejects an invalid drain deadline and unknown generation', async () => {
     const owner = new FilesWorkOwner(limits)
     const bound = binding()
