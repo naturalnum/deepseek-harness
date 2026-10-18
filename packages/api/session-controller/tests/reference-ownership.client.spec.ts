@@ -269,6 +269,56 @@ describe('Client reference sources', () => {
     expect(b.svc.binding(ID)).toBe(replacement.binding)
   })
 
+  it('withdraws held references before direct scope cleanup and preserves a same-id replacement', async ({ mock, start }) => {
+    const b = await bench(mock, start)
+    using main = b.svc.retain(ID, { source: 'mainView' })
+    using work = b.svc.retain(ID, { source: workSource })
+    await Promise.all([main.ready, work.ready])
+    const binding = main.binding
+    const source = b.svc.retainInfo(ID)
+    expect(source.getSnapshot()).toEqual({ referenceCount: 2, retainedBy: { mainView: 1, referenceTestWork: 1 } })
+    const entered = Promise.withResolvers<undefined>()
+    const resume = Promise.withResolvers<undefined>()
+    b.unblock.push(() => { resume.resolve(undefined) })
+    const observe = vi.fn(() => ({
+      bindingWithdrawn: b.svc.binding(ID) === undefined,
+      scopeWithdrawn: b.svc.scope(ID) === undefined,
+      sessionWithdrawn: b.svc.sessionOf(binding.ctx) === undefined,
+      retention: source.getSnapshot(),
+    }))
+    const cleaned = vi.fn()
+    binding.ctx.effect(() => async () => {
+      observe()
+      entered.resolve(undefined)
+      await resume.promise
+      cleaned()
+    }, 'test: late registered scope cleanup')
+
+    const disposal = binding.ctx.fiber.dispose()
+    await entered.promise
+    expect(observe).toHaveBeenCalledOnce()
+    expect(observe.mock.results[0]?.value).toEqual({
+      bindingWithdrawn: true, scopeWithdrawn: true, sessionWithdrawn: true,
+      retention: { referenceCount: 0, retainedBy: {} },
+    })
+    expect(() => main.binding).toThrow('is released')
+    expect(() => work.binding).toThrow('is released')
+    using replacement = b.svc.retain(ID, { source: viewSource })
+    await replacement.ready
+    const nextBinding = replacement.binding
+    const snapshot = source.getSnapshot()
+    expect(nextBinding).not.toBe(binding)
+    main.release()
+    work.release()
+    resume.resolve(undefined)
+    await disposal
+    expect(cleaned).toHaveBeenCalledOnce()
+    expect(b.svc.binding(ID)).toBe(nextBinding)
+    expect(b.svc.sessionOf(binding.ctx)).toBeUndefined()
+    expect(source.getSnapshot()).toBe(snapshot)
+    expect(snapshot).toEqual({ referenceCount: 1, retainedBy: { referenceTestView: 1 } })
+  })
+
   it('invalidates references and zeroes their observable on root disposal', async ({ mock, start }) => {
     const b = await bench(mock, start)
     const reference = b.svc.retain(ID, { source: viewSource })

@@ -594,7 +594,10 @@ export class ClientSessions implements ISessions {
     this.startScopeDrop(id, record, disposeFiber, sessionDisposal)
   }
 
-  /** Materialize one scope after its caller establishes that the id may be addressed. */
+  /**
+   * Materialize one scope after its caller establishes that the id may be addressed.
+   * Direct scope disposal withdraws its generation before scope cleanup callbacks.
+   */
   private materializeScope(id: SessionId): ScopeRecord {
     const { fiber, ctx } = createScope(this.rootCtx, id)
     const session = this.manager.get(id)
@@ -611,6 +614,10 @@ export class ClientSessions implements ISessions {
       live: true,
     }
     this.scopes.set(id, record)
+    // Lifecycle events carry the actual fiber; createScope returns a thenable wrapper.
+    ctx.on('internal/plugin', (scope) => {
+      if (scope === ctx.fiber && scope.uid === null) this.retireScope(id, record, false)
+    })
     ctx.effect(() => () => { this.retireScope(id, record, false) }, 'session-controller: exact generation')
     return record
   }
