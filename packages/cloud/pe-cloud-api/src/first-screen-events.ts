@@ -140,7 +140,8 @@ export function registerFirstScreenEvents(ctx: Context, input: FirstScreenEventI
         if (failure !== undefined) throw failure.error
       }
     })()
-  }, { home: input.home })
+  }, { home: input.home }, { maxQueuedEvents: input.maxQueuedEvents,
+    maxQueuedBytes: input.maxQueuedBytes, maxFrameBytes: input.maxFrameBytes })
   const dispose = (): Promise<void> => closing ??= (async () => {
     try { await unregister() } catch (error) { failure ??= { error } }
     stop()

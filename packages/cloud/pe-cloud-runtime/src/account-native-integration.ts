@@ -197,6 +197,7 @@ export class AccountNativeIntegration {
           ...firstScreenInput === undefined ? {} : { firstScreen: {
             assertSessionRead: readSession, maxCollectionItems: firstScreenInput.maxCollectionItems,
             maxFrameBytes: firstScreenInput.maxFrameBytes,
+            maxQueuedEvents: firstScreenInput.maxQueuedEvents, maxQueuedBytes: firstScreenInput.maxQueuedBytes,
           } },
         }, config)
       },

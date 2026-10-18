@@ -78,7 +78,7 @@ Provider 经根服务登记必需的 `files` 和 `execution` 参与者。登记�
 
 可选 `native.firstScreen` 选择固定只读首屏切片。提供时，`maxHomeBytes`、`maxCollectionItems`、`maxFrameBytes`、`maxQueuedEvents`、`maxQueuedBytes` 均须显式为正数、有限安全整数；省略时保持关闭，不补默认值。Root 通过配方传递原始预算，并从同一账户的规范 Profile 得到预期 home，在原生 boot 前核对一致。既有 `native.maxEntries` 继续限制原生 owner/marker 清单。元数据或配置条目名称不能满足实际 prepared 审核。
 
-私有 builtin 只提供受守卫的 Workspace/Settings 构造器和保留的原事件注册 Loader scope。构造器不读取未完成的 files 项目。Unpublished bootstrap 先取得实际 files project，要求原共享 Session 只读策略，向真实 Gateway 注册事件源，再执行 `auditPrepared`；business-ready 发布及之后的 `assertBootstrapCurrent` 仍独立。共享策略允许在 Workspace 关联前检查实际 live Session/Agent 元数据，按原 Workspace 关系核对冷列表元数据，不新增 Session 库、成员缓存，也不从 id/cwd 签发 ProjectScope。Stop 先等待事件撤销，再销毁 AgentLoop、检查原生 idle 并刷新持久化。源或 disposer 失败仍为未确认，不能证明 clean release。原下游原生队列上界仍需各自公开原生接口支持。
+私有 builtin 只提供受守卫的 Workspace/Settings 构造器和保留的原事件注册 Loader scope。构造器不读取未完成的 files 项目。Unpublished bootstrap 先取得实际 files project，要求原共享 Session 只读策略，向真实 Gateway 注册事件源，再执行 `auditPrepared`；business-ready 发布及之后的 `assertBootstrapCurrent` 仍独立。共享策略允许在 Workspace 关联前检查实际 live Session/Agent 元数据，按原 Workspace 关系核对冷列表元数据，不新增 Session 库、成员缓存，也不从 id/cwd 签发 ProjectScope。Stop 先等待事件撤销，再销毁 AgentLoop、检查原生 idle 并刷新持久化。源或 disposer 失败仍为未确认，不能证明 clean release。Integration 将既有 `maxQueuedEvents`、`maxQueuedBytes` 和 `maxFrameBytes` 同时交给受守卫 reader 与原 Gateway 注册。Reader 捕获这些值，供原 protected control-buffer hook 使用；每个原生 control 代际和事件 client 都沿用原有界队列。下游慢读超限只终止对应流，实际 source 失败仍保留既有审核撤销与未确认清理语义。不增加配置字段、预算默认值或队列。
 
 ### Account layout
 

@@ -1,7 +1,7 @@
 /** Private account-graph admission and native Session Controller assembly. */
 import { symbols, type Context } from '@deepseek-ai/cordis'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
-import SessionController from '@deepseek-ai/dsh-api-session-controller'
+import SessionController, { type SessionControlBufferLimits } from '@deepseek-ai/dsh-api-session-controller'
 import type {
   SessionCreateRequest, SessionCreateValue, SessionPromptRequest, SessionPromptValue,
   SessionCancelRequest, SessionCancelValue, SessionForkRequest, SessionForkValue,
@@ -34,6 +34,8 @@ export interface NativeSessionDirectory {
 export interface NativeSessionReadGuards {
   readonly maxCollectionItems: number
   readonly maxFrameBytes: number
+  readonly maxQueuedEvents: number
+  readonly maxQueuedBytes: number
   /**
    * Check original Session/Workspace metadata without creating a project grant or requiring post-attach Agent state.
    * @param id - identity read from the actual native result or notification.
@@ -82,12 +84,13 @@ class NativeSessionAdmission {
     this.prepareDirectory = this.directory.prepare.bind(this.directory)
     const reader = guards.firstScreen
     if (reader !== undefined) {
-      for (const maximum of [reader.maxCollectionItems, reader.maxFrameBytes]) {
+      for (const maximum of [reader.maxCollectionItems, reader.maxFrameBytes, reader.maxQueuedEvents, reader.maxQueuedBytes]) {
         if (!Number.isSafeInteger(maximum) || maximum < 1) {
           throw new CloudApiError('cloud/invalid-config', 'Native first-screen reads require explicit finite limits.')
         }
       }
       this.reader = Object.freeze({ maxCollectionItems: reader.maxCollectionItems, maxFrameBytes: reader.maxFrameBytes,
+        maxQueuedEvents: reader.maxQueuedEvents, maxQueuedBytes: reader.maxQueuedBytes,
         assertSessionRead: reader.assertSessionRead.bind(reader) })
     }
   }
@@ -149,6 +152,8 @@ class NativeSessionAdmission {
 
   hasReader(): boolean { return this.reader !== undefined }
 
+  controlBufferLimits(): SessionControlBufferLimits | undefined { return this.reader }
+
   admitRead(endpoint: 'session/list' | 'session/control'): void {
     if (this.reader === undefined) {
       throw new CloudApiError('cloud/account-unavailable', 'The original first-screen Session reader is absent.')
@@ -209,6 +214,10 @@ class AccountSessionController extends SessionController {
 
   protected override ensureProjectDirectory(cwd: string): Promise<void> {
     return this.admission.ensureProjectDirectory(cwd)
+  }
+
+  protected override controlBufferLimits(): SessionControlBufferLimits | undefined {
+    return this.admission.controlBufferLimits()
   }
 
   override async create(request: SessionCreateRequest): Promise<SessionCreateValue> {

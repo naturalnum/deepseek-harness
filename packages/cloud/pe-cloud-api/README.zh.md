@@ -66,11 +66,11 @@ Controller 必须接收固定的 `NativeSessionGuards.projectDirectory` 能力�
 
 `auditPrepared(owner, signal?)` 要求 factory 的原始未发布权限，以及同一共享策略和有限原生清单上限。它在异步策略读取前后检查装配/未发布权限，从实际受守卫 Controller 方法及原生 Typert 标记/路由推导选中处理器，失败时撤销先前审核。继承但未受守卫的方法不能满足 manifest 声明。它不执行业务操作，也不授予 ready；业务调用仍要求独立 ready 检查。
 
-固定可选首屏装配将 `session/list` 和 `session/control` 委派给原 SessionController，将 `workspace/follow` 委派给原 WorkspaceController，并保留原生、按 Peer 读取的 `remoteAccess/follow`。列表行与 control 帧共用原 AccountPolicy 的只读元数据检查；它可在 Workspace 关联前检查已发布 Session，不签发命令或历史权限。冷 id 只保留原批准 Workspace 的既有只读关系，原生列表行还核对实际项目、父关系和已有投影字段。集合数量及完整原生结果/帧字节都有显式有限上界。原六个 Session 守卫继续保留。
+固定可选首屏装配将 `session/list` 和 `session/control` 委派给原 SessionController，将 `workspace/follow` 委派给原 WorkspaceController，并保留原生、按 Peer 读取的 `remoteAccess/follow`。列表行与 control 帧共用原 AccountPolicy 的只读元数据检查；它可在 Workspace 关联前检查已发布 Session，不签发命令或历史权限。冷 id 只保留原批准 Workspace 的既有只读关系，原生列表行还核对实际项目、父关系和已有投影字段。集合数量及完整原生结果/帧字节都有显式有限上界。Reader 还必须提供 `maxQueuedEvents` 和 `maxQueuedBytes`；它验证并复制这些值及帧上界，通过 `controlBufferLimits()` 交给原生 control 队列。因此原生 baseline 检查可先于 Cloud 结果检查拒绝。这里不改变 Remote 参数，也不引入队列实现。原六个 Session 守卫继续保留。
 
 `workspace/initializeDefault` 以拒绝目录解析器调用原 Registry helper，只能复用 files owner 持有的精确默认 Workspace。它不打开 Documents 回退、不创建目录，也不重开注册窗。`settings/describe` 投影真实 ACTIVE `locale` 命名空间及其 `preference` 值；provider 或 locale fiber 缺失、替换均拒绝。`writable=false` 和 `hasDocument=false` 描述此 Cloud API 可用的操作，不表示磁盘上不存在 settings 文档。`allowedSettings` 必须为空。模型选择/目录及其它 Settings 方法仍不在首版范围。
 
-[只读事件源](src/first-screen-events.ts) 通过原 Gateway 公开注册接口，订阅真实 Session added/removed/activity/status/error 通知和 locale 文档更新。Gateway 生成 `$events` ready/client id 和传输帧，home 必须来自实际 `profileContext.home`，并与 runtime 预期精确一致。不准入 waterfall 或 `$events/result`。Home、事件数量、驻留字节及完整 emit 帧上界均须显式提供，没有部署默认值。源队列超限保留首个错误、撤销本账户审核、卸载监听并等待原注册 disposer；stop 与 withdrawal 等待同一缓存工作。源队列上界本身不能限制原 Gateway 下游 client 队列或原生 Session control 队列。
+[只读事件源](src/first-screen-events.ts) 通过原 Gateway 公开注册接口，订阅真实 Session added/removed/activity/status/error 通知和 locale 文档更新。Gateway 生成 `$events` ready/client id 和传输帧，home 必须来自实际 `profileContext.home`，并与 runtime 预期精确一致。不准入 waterfall 或 `$events/result`。Home、事件数量、驻留字节及完整 emit 帧上界均须显式提供，没有部署默认值。源队列超限保留首个错误、撤销本账户审核、卸载监听并等待原注册 disposer；stop 与 withdrawal 等待同一缓存工作。同一显式队列/帧预算会传给原 Gateway 注册的每个 client 上界。下游 client 超限只使对应实际事件流失败；source、API 审核、健康 client 和后续 ready 代际继续可用。原生退队和关闭释放该队列的驻留字节；实际清理及资源结算仍归原迭代器/载体所有。
 
 `assertBootstrapCurrent(owner, signal?)` 要求原始共享策略回调及正数有限 `maxNativeInventoryEntries`，没有默认值。该预算在遍历前计入所有选中开放清单条目，再于单次扫描中在检查每个实际 runtime 和 fiber 前计数；超限在读取策略元数据前拒绝。它在策略元数据读取前后核验挂载/业务准入、已审核开放清单、原 Controller/AgentLoop/LLM 对象、它们唯一的 ACTIVE 拥有 fiber 和实际 LLM listener。重复安装、替换或 listener 销毁均拒绝。省略回调或预算保留一般准备能力，但此断言保持关闭。取消跟随调用者与图 lifetime。该断言不创建业务资源，也不返回 catalog 或 ready 权限。
 

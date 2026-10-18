@@ -3,10 +3,10 @@ import { expect, it, onTestFinished, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { AccountBinding, AccountId, OwnerEpoch } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
-import { createNativeController, type NativeSessionGuards } from '../src/native.ts'
+import { createNativeController, type NativeSessionGuards, type NativeSessionReadGuards } from '../src/native.ts'
 import { ExposurePolicy } from '../src/exposure.ts'
 
-function setup() {
+function setup(firstScreen?: NativeSessionReadGuards) {
   const ctx = new Context()
   onTestFinished(async () => { await ctx.fiber.dispose() })
   const lifetime = new AbortController()
@@ -19,6 +19,7 @@ function setup() {
   })
   const guards: NativeSessionGuards = {
     projectDirectory: { binding, prepare: async () => {} },
+    ...firstScreen === undefined ? {} : { firstScreen },
     assertHandlerEnabled: vi.fn(), resolveCreate: vi.fn<NativeSessionGuards['resolveCreate']>(async request => request),
     assertSessionProject: vi.fn(async () => {}), assertActiveScope: vi.fn(),
   }
@@ -55,4 +56,23 @@ it('rejects an ended graph or mismatched recipe without constructing a native Co
   lifetime.abort()
   expect(() => install()).toThrow(expect.objectContaining({ code: 'cloud/stale-generation' }))
   expect(ctx.get('sessionController')).toBeUndefined()
+})
+
+it('requires both explicit finite native queue limits before first-screen Controller registration', () => {
+  const reader = { maxCollectionItems: 16, maxFrameBytes: 65536, maxQueuedEvents: 2, maxQueuedBytes: 65536,
+    assertSessionRead: () => {} }
+  for (const key of ['maxQueuedEvents', 'maxQueuedBytes']) {
+    const missing = { ...reader }
+    Reflect.deleteProperty(missing, key)
+    const absent = setup(missing)
+    absent.ctx.provide('peAccount', absent.binding)
+    expect(() => absent.install()).toThrow(expect.objectContaining({ code: 'cloud/invalid-config' }))
+    for (const value of [0, -1, 0.5, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+      const f = setup({ ...reader, [key]: value })
+      f.ctx.provide('peAccount', f.binding)
+      expect(() => f.install()).toThrow(expect.objectContaining({ code: 'cloud/invalid-config' }))
+      expect(f.ctx.get('sessionController')).toBeUndefined()
+      expect(f.current).not.toHaveBeenCalled()
+    }
+  }
 })

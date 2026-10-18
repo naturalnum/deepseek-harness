@@ -1,5 +1,6 @@
 /** Actual native first-screen component reads and event lifetimes; no production Root or AccountUse is issued. */
 import { readdirSync } from 'node:fs'
+import { symbols } from '@deepseek-ai/cordis'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { PeerId, PeerScope } from '@deepseek-ai/dsh-typert-protocol'
@@ -169,4 +170,50 @@ it('joins actual event withdrawal before disposing native owners and closes audi
 it('refuses a supplied home that differs from the actual native profile instead of substituting another path', async () => {
   const fixture = policyFixture([], { ...bounds, expectedHome: '/foreign-first-screen-home' })
   await expect(fixture.start()).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+})
+
+it('passes the complete control frame budget into the original native baseline queue through the protected hook', async () => {
+  const graph = await policyFixture([], { ...bounds, maxFrameBytes: 1 }).start()
+  const source = graph.ctx.sessionController.control(graph.lifetime.signal)[Symbol.asyncIterator]()
+  // This RangeError is raised by the original native baseline check before the Cloud result checker sees a frame.
+  await expect(source.next()).rejects.toBeInstanceOf(RangeError)
+  const repeated = graph.ctx.sessionController.control(graph.lifetime.signal)[Symbol.asyncIterator]()
+  await expect(repeated.next()).rejects.toThrow('Session control frame exceeds its explicit byte limit')
+  await source.return?.(); await repeated.return?.()
+  expect(graph.api.requireStream('session/control').guard).toBe('account-session')
+  expect(graph.events?.inspect().queuedEvents).toBe(0)
+  expect(graph.adapter.calls).toBe(0)
+})
+
+it('bounds the original downstream event client after each real source emission settles and keeps healthy streams ready', async () => {
+  const graph = await policyFixture([], { ...bounds, maxQueuedEvents: 1 }).start()
+  const events = graph.events, workspace = graph.files.project().workspace
+  const sessions: unknown = Reflect.get(graph.ctx.sessions, symbols.original)
+  expect(typeof sessions).toBe('object')
+  if (events === undefined) throw new Error('Actual event source absent')
+  const slow = await stream(graph, '$events'), healthy = await stream(graph, '$events')
+  await slow.iterator.next(); await healthy.iterator.next()
+  const locale = brandString<SettingsNamespace>('locale')
+  for (const revision of [101, 102]) {
+    graph.ctx.emit('settings/document-updated', locale, revision)
+    // Real native delivery to another client acknowledges consumption of the original source before the next emit.
+    await expect(healthy.iterator.next()).resolves.toMatchObject({ value: {
+      type: 'emit', event: 'settings/document-updated', args: [locale, revision],
+    } })
+    expect(events.inspect().queuedEvents).toBe(0)
+    expect(events.inspect().queuedBytes).toBe(0)
+  }
+  await expect(slow.iterator.next()).rejects.toThrow('Remote event client exceeds its explicit queued-event limit')
+  await slow.close()
+  expect(graph.api.requireStream('$events').guard).toBe('authenticated-account')
+  const later = await stream(graph, '$events')
+  await expect(later.iterator.next()).resolves.toMatchObject({ value: { type: 'ready', host: { home: graph.profileHome } } })
+  graph.ctx.emit('settings/document-updated', locale, 103)
+  for (const opened of [healthy, later]) {
+    await expect(opened.iterator.next()).resolves.toMatchObject({ value: { type: 'emit', args: [locale, 103] } })
+  }
+  expect(events.inspect().queuedEvents).toBe(0)
+  expect(graph.files.project().workspace).toBe(workspace)
+  expect(Reflect.get(graph.ctx.sessions, symbols.original) === sessions).toBe(true)
+  expect(graph.adapter.calls).toBe(0)
 })
