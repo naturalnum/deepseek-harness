@@ -22,12 +22,12 @@ type SafeDetails = ReturnType<AuthAccessError['toJSON']>
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface RemoteErrorDetailsMap {
     'cloud/unauthenticated': SafeDetails
-    'cloud/forbidden': SafeDetails
+    'cloud/forbidden': {}
     'cloud/login-active': SafeDetails
-    'cloud/account-unavailable': SafeDetails
-    'cloud/capacity': SafeDetails
+    'cloud/account-unavailable': {}
+    'cloud/capacity': {}
     'cloud/stop-unconfirmed': SafeDetails
-    'cloud/stale-generation': ReturnType<RequestBindingError['toJSON']>
+    'cloud/stale-generation': {}
   }
 }
 

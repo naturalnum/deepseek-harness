@@ -1,6 +1,8 @@
 /** Concrete native policy callbacks and ordinary JSONL cold recovery; no runtime owner/ready or Web acceptance is inferred. */
 import { createHash } from 'node:crypto'
 import { SessionId } from '@deepseek-ai/dsh-session'
+import { CloudApiError } from '@deepseek-ai/dsh-pe-cloud-api'
+import { SessionQueryError } from '@deepseek-ai/dsh-session-query'
 import { expect, it, vi } from 'vitest'
 import { accountPresetConfigDigest } from '../src/account-policy.ts'
 import { AccountPolicyConfigSchema } from '../src/schema.ts'
@@ -17,6 +19,69 @@ it('uses the actual files Workspace, finite registered model and fixed native Pr
   expect(graph.ctx.agents.get(created.sessionId)?.session.header.cwd).toBe(f.project)
   expect(graph.files.project().workspace.sessionIds).toContain(created.sessionId)
   await graph.guards.sessions.assertSessionProject(created.sessionId)
+})
+
+it("rejects another account's missing native history and commands before querying it and preserves the denial on the wire", async () => {
+  const a = await policyFixture([], undefined, 'account-a').start()
+  const b = await policyFixture([], undefined, 'account-b').start()
+  const foreign = await a.ctx.sessionController.create({})
+  const own = await b.ctx.sessionController.create({})
+  await expect(b.invoke('page', { address: { kind: 'session', sessionId: own.sessionId }, throughSeq: -1 }))
+    .resolves.toBeDefined()
+  expect(b.files.project().workspace.sessionIds).not.toContain(foreign.sessionId)
+  const observe = vi.spyOn(b.ctx.sessionQuery, 'observeSession')
+  const operations = [
+    () => b.invoke('page', { address: { kind: 'session', sessionId: foreign.sessionId }, throughSeq: -1 }),
+    () => b.invoke('prompt', { sessionId: foreign.sessionId, requestId: 'foreign-prompt', mode: 'followup',
+      content: [{ type: 'text', text: 'Must not be enqueued.' }] }),
+    () => b.guards.agents.assertResume({ resumeSessionId: foreign.sessionId,
+      agentOptions: { provider: 'local-text', model: 'plain-text' } }, new AbortController().signal),
+  ]
+  for (const operation of operations) {
+    const failure: unknown = await operation().then(() => { throw new Error('Foreign operation was accepted') },
+      (error: unknown) => error)
+    expect.soft(failure).toBeInstanceOf(CloudApiError)
+    expect.soft(failure).toMatchObject({ code: 'cloud/forbidden' })
+    expect.soft(b.ctx.typertGateway.wireStream.failure(failure)).toMatchObject({ code: 'cloud/forbidden' })
+  }
+  expect(observe.mock.calls.length).toBe(0)
+  expect(b.adapter.calls).toBe(0)
+})
+
+it('creates the same explicit new SessionId independently in two accounts but rejects existing nonmember history', async () => {
+  const a = await policyFixture([], undefined, 'account-a').start()
+  const b = await policyFixture([], undefined, 'account-b').start()
+  const sessionId = SessionId('same-account-local-session-id')
+  await expect(a.ctx.sessionController.create({ sessionId })).resolves.toMatchObject({ sessionId })
+  await expect(b.ctx.sessionController.create({ sessionId })).resolves.toMatchObject({ sessionId })
+  expect(a.binding.accountId).not.toBe(b.binding.accountId)
+  expect(a.files.project().workspace.path).not.toBe(b.files.project().workspace.path)
+  await expect(b.guards.sessions.resolveCreate({ sessionId })).resolves.toMatchObject({ sessionId })
+  await b.files.project().workspace.detachSession(sessionId)
+  await expect(b.guards.sessions.resolveCreate({ sessionId })).rejects.toMatchObject({ code: 'cloud/forbidden' })
+})
+
+it('retains missing-member query failures for history and explicit creation instead of treating them as new ids', async () => {
+  const graph = await policyFixture().start(), { sessionId } = await graph.ctx.sessionController.create({})
+  const missing = new SessionQueryError('Native member history is missing.', 'SESSION_QUERY_SESSION_NOT_FOUND')
+  const observe = vi.spyOn(graph.ctx.sessionQuery, 'observeSession').mockRejectedValue(missing)
+  await expect(graph.guards.sessions.assertSessionProject(sessionId)).rejects.toBe(missing)
+  await expect(graph.guards.sessions.resolveCreate({ sessionId })).rejects.toBe(missing)
+  observe.mockRestore()
+})
+
+it.each([
+  new SessionQueryError('Native history read failed.', 'SESSION_QUERY_PERSISTENCE_FAILED'),
+  new Error('Unknown native history failure.'),
+])('retains the original query error through member history and both creation probes: %s', async (error) => {
+  const graph = await policyFixture().start(), { sessionId: member } = await graph.ctx.sessionController.create({})
+  const fresh = SessionId('new-io-failure')
+  const observe = vi.spyOn(graph.ctx.sessionQuery, 'observeSession').mockRejectedValue(error)
+  await expect(graph.guards.sessions.assertSessionProject(member)).rejects.toBe(error)
+  await expect(graph.guards.sessions.resolveCreate({ sessionId: member })).rejects.toBe(error)
+  await expect(graph.guards.sessions.resolveCreate({ sessionId: fresh })).rejects.toBe(error)
+  expect(observe.mock.calls.length).toBe(3)
+  observe.mockRestore()
 })
 
 it('runs a native plain-text turn, then cold-observes and resumes the same ordinary SessionId from actual JSONL', async () => {
@@ -107,6 +172,7 @@ it('reads actual persisted headers and Workspace relationships but rejects unsup
   await graph.files.project().workspace.attachSession(detached.header.id)
   expect(graph.files.project().workspace.sessionIds).toContain(detached.header.id)
   await expect(graph.guards.sessions.assertSessionProject(detached.header.id)).rejects.toMatchObject({ code: 'cloud/forbidden' })
+  await expect(graph.guards.sessions.resolveCreate({ sessionId: detached.header.id })).rejects.toMatchObject({ code: 'cloud/forbidden' })
   await expect(graph.guards.agents.assertResume({ resumeSessionId: detached.header.id,
     agentOptions: { provider: 'local-text', model: 'plain-text' } }, new AbortController().signal))
     .rejects.toMatchObject({ code: 'cloud/forbidden' })

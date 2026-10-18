@@ -68,7 +68,7 @@ export class TextAdapter extends LlmAdapter {
  */
 export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
   firstScreen?: Omit<NonNullable<Parameters<CloudAccountApi['installFirstScreenEvents']>[1]>, 'home' | 'maxInventoryEntries'>
-    & { readonly maxCollectionItems: number; readonly expectedHome?: string }) {
+    & { readonly maxCollectionItems: number; readonly expectedHome?: string }, accountId = 'component') {
   const home = realpathSync(mkdtempSync(join(tmpdir(), 'm8z-account-policy-')))
   const privateRoot = join(home, 'private'), projects = join(home, 'projects'), project = join(projects, 'default-workspace')
   const profileRoot = join(privateRoot, 'profile'), credentials = join(privateRoot, 'credentials.yaml')
@@ -182,7 +182,7 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
     ]
     writeFileSync(patchPath, JSON.stringify([{ insert: rows }]))
     const handle = startNativeAccountBoot({
-      binding: { accountId: brandString<AccountId>('component'), epoch: brandString<OwnerEpoch>(epoch),
+      binding: { accountId: brandString<AccountId>(accountId), epoch: brandString<OwnerEpoch>(epoch),
         recipeVersion: 'm8z', lifetime: lifetime.signal },
       profile: { name: 'component', dir: profileRoot, patchPath, home: privateRoot, cwd: project,
         installAnchor: join(home, 'package.json'), startedBundles: [], overlays: [], telemetryDisabledEnv: undefined },

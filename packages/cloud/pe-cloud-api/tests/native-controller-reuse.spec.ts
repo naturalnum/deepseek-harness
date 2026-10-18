@@ -213,7 +213,8 @@ it.each(['lifetime', 'replacement', 'business', 'handler', 'fiber'] as const)(
     guards.projectDirectory.prepare.mockImplementationOnce(async () => { entered.resolve(undefined); await release.promise })
     const nativeCreate = vi.spyOn(ctx.agents, 'create')
     const operation = create()
-    const rejected = expect(operation).rejects.toMatchObject({ code: 'gateway/internal' })
+    const code = closed === 'business' || closed === 'handler' ? 'gateway/internal' : 'cloud/stale-generation'
+    const rejected = expect(operation).rejects.toMatchObject({ code })
     onTestFinished(async () => { release.resolve(undefined); await Promise.allSettled([operation]) })
     await entered.promise
     expect(nativeCreate).not.toHaveBeenCalled()
@@ -249,7 +250,7 @@ it('leaves B creation usable while A directory work waits and its graph then clo
   const release = Promise.withResolvers<undefined>()
   a.guards.projectDirectory.prepare.mockImplementationOnce(async () => { entered.resolve(undefined); await release.promise })
   const operation = a.create()
-  const rejected = expect(operation).rejects.toMatchObject({ code: 'gateway/internal' })
+  const rejected = expect(operation).rejects.toMatchObject({ code: 'cloud/stale-generation' })
   onTestFinished(async () => { release.resolve(undefined); await Promise.allSettled([operation]) })
   await entered.promise
   const accepted = await b.create()

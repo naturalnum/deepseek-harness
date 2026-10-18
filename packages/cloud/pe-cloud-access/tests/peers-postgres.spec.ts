@@ -577,7 +577,9 @@ describe.skipIf(configPath === undefined)('internal login Peer with real PG/nati
     await vi.waitFor(() => {
       expect(ws.frames.find(frame => typeof frame === 'object' && frame !== null
         && 'type' in frame && frame.type === 'error' && 'streamId' in frame && frame.streamId === 'denied'))
-        .toMatchObject({ error: { code: 'cloud/forbidden' } })
+        .toMatchObject({ error: { code: 'cloud/forbidden', details: {
+          code: 'cloud/forbidden', message: 'Stream not permitted.', requestId, retry: 'never',
+        } } })
     })
     expect(seen).toHaveLength(2)
     expect(fixture.contexts.get(fixture.a.accountId)?.get('accessPeerFixture')?.peers).toHaveLength(1)

@@ -264,9 +264,10 @@ class AccountPolicy {
       || (header.delegationDepth ?? 0) !== 0 || header.isSeeded) refuse()
   }
 
-  async history(id: SessionId, signal?: AbortSignal): Promise<void> {
+  async history(id: SessionId, signal?: AbortSignal, mode: 'member' | 'create-probe' = 'member'): Promise<void> {
     const control = signal === undefined ? this.binding.lifetime : AbortSignal.any([signal, this.binding.lifetime])
     const project = await this.directory(control)
+    if (mode === 'member' && !project.workspace.sessionIds.includes(id)) refuse()
     const query = this.provider('sessionQuery')
     using observed = await query.observeSession(id, { projectionMode: 'all', signal: control })
     control.throwIfAborted()
@@ -378,9 +379,11 @@ export function createAccountPolicy(
         await policy.preset(request.agentPreset)
         await policy.model(policy.defaultModel())
         if (request.sessionId !== undefined) {
-          try { await policy.history(request.sessionId) }
+          const member = project.workspace.sessionIds.includes(request.sessionId)
+          try { await policy.history(request.sessionId, undefined, 'create-probe') }
           catch (error) {
-            if (!(error instanceof SessionQueryError) || error.code !== 'SESSION_QUERY_SESSION_NOT_FOUND') throw error
+            if (member || project.workspace.sessionIds.includes(request.sessionId)
+              || !(error instanceof SessionQueryError) || error.code !== 'SESSION_QUERY_SESSION_NOT_FOUND') throw error
           }
         }
         policy.current()
