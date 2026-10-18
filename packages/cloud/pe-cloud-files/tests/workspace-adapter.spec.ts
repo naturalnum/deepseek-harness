@@ -1,5 +1,5 @@
 /** Real native Loader/JSONL/StorageDomain, with a TEST ONLY Node-backed files worker transport. */
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { randomUUID } from 'node:crypto'
@@ -497,4 +497,99 @@ it('rechecks current validity after a queued native default lookup returns an ex
   await rejected
   expect(Atomics.load(test.counters, 0)).toBe(1)
   expect(test.pool.inspect().work).toMatchObject({ running: 0, residentBytes: 0, pending: 0 })
+})
+
+
+it('derives a native S2 service and Session directory capability from the actual registered default on one lane', async () => {
+  const test = await fixture(), graph = await test.start(), registry = graph.registry()
+  const scope = await registry.createS2Project()
+  const workspace = registry.get(scope.workspaceId)
+  if (workspace === undefined) throw new Error('native default absent')
+  expect(scope.binding).toBe(test.binding)
+  test.closeWindow()
+  await graph.ctx.plugin(scope.FileSystem)
+  const fs = graph.ctx.fs
+  const target = await fs.resolve(workspace.path)
+  expect((await fs.stat(target))?.type).toBe('directory')
+  expect(fs.processPath(target)).toBe(workspace.path)
+  await scope.projectDirectory.prepare(workspace.path)
+  expect((await registry.createS2Project()).workspaceId).toBe(workspace.id)
+  expect(test.pool.inspect().work).toMatchObject({ lanes: 1, running: 0, residentBytes: 0, pending: 0 })
+  expect(test.workers).toHaveLength(1)
+  expect(Atomics.load(test.counters, 0)).toBe(1)
+  const before = [...test.counters]
+  await expect(fs.resolve(test.projects)).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+  await expect(fs.resolve(join(test.projects, randomUUID()))).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+  await expect(fs.stat({ ...target })).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+  await expect(scope.projectDirectory.prepare(test.projects)).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+  expect([...test.counters]).toEqual(before)
+})
+
+it('rejects every ungranted native content/mutation method before any files dispatch', async () => {
+  const test = await fixture(), graph = await test.start(), scope = await graph.registry().createS2Project()
+  await graph.ctx.plugin(scope.FileSystem)
+  const fs = graph.ctx.fs, target = await fs.resolve('.')
+  const before = [...test.counters]
+  const denied = [
+    () => fs.lstat('child'), () => fs.readText(target), () => fs.streamText(target),
+    () => fs.readBytes(target, undefined, 4), () => fs.readByteRange(target, { offset: 0, length: 1 }),
+    () => fs.listDir(target), () => fs.writeText(target, 'data'),
+    () => fs.editText(target, { oldString: 'a', newString: 'b', replaceAll: false }),
+    () => fs.watch(target, () => {}, new AbortController().signal),
+  ]
+  for (const call of denied) await expect(call()).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+  expect(() => fs.fileUrl(target)).toThrow()
+  expect(() => fs.contains(target, target)).toThrow()
+  expect(fs.processPathFromHostPath('/host-private')).toBeUndefined()
+  expect([...test.counters]).toEqual(before)
+  expect(test.pool.inspect().work).toMatchObject({ residentBytes: 0, pending: 0 })
+})
+
+it('rejects stale project anchors after real directory replacement without deriving authority from the path', async () => {
+  const test = await fixture(), graph = await test.start(), scope = await graph.registry().createS2Project()
+  await graph.ctx.plugin(scope.FileSystem)
+  const fs = graph.ctx.fs, target = await fs.resolve('.')
+  const rootPath = fs.processPath(target)
+  renameSync(rootPath, rootPath + '-old')
+  mkdirSync(rootPath)
+  await expect(fs.stat(target)).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+  await expect(scope.projectDirectory.prepare(rootPath)).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+  expect(test.pool.inspect().work).toMatchObject({ residentBytes: 0, pending: 0 })
+})
+
+it('requires the real native default identity and revokes the S2 scope when that Workspace is removed', async () => {
+  const test = await fixture(), graph = await test.start(), registry = graph.registry(), scope = await registry.createS2Project()
+  await graph.ctx.plugin(scope.FileSystem)
+  const target = await graph.ctx.fs.resolve('.')
+  await registry.delete(scope.workspaceId)
+  test.closeWindow()
+  const before = [...test.counters]
+  await expect(graph.ctx.fs.stat(target)).rejects.toThrow()
+  await expect(scope.projectDirectory.prepare(join(test.projects, 'default-workspace'))).rejects.toThrow()
+  await expect(registry.createS2Project()).rejects.toThrow()
+  expect([...test.counters]).toEqual(before)
+})
+
+it('rejects an unowned root Context and a second native provider installation', async () => {
+  const test = await fixture(), graph = await test.start(), scope = await graph.registry().createS2Project()
+  const foreign = new Context()
+  foreign.provide('peAccount', test.binding)
+  onTestFinished(() => foreign.fiber.dispose())
+  await expect(foreign.plugin(scope.FileSystem)).rejects.toThrow()
+  expect(foreign.get('fs')).toBeUndefined()
+  await graph.ctx.plugin(scope.FileSystem)
+  expect(() => new scope.FileSystem(graph.ctx)).toThrow()
+})
+
+
+it('cannot mint S2 scope from a manually registered directory that is not the native default', async () => {
+  const test = await fixture(), graph = await test.start(), registry = graph.registry()
+  const path = join(test.projects, 'default-workspace')
+  mkdirSync(path)
+  await registry.create(path)
+  test.closeWindow()
+  await expect(registry.createS2Project()).rejects.toThrow()
+  expect(graph.ctx.get('fs')).toBeUndefined()
+  expect(Atomics.load(test.counters, 0)).toBe(0)
+  expect(test.pool.inspect().work).toMatchObject({ residentBytes: 0, pending: 0 })
 })

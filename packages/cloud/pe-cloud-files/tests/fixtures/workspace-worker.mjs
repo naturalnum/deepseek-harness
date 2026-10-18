@@ -4,7 +4,7 @@ import { mkdirSync, realpathSync, rmdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 const { gate, mode } = workerData
 const counters = new Int32Array(gate)
-parentPort.postMessage({ kind: 'ready', abiVersion: 5 })
+parentPort.postMessage({ kind: 'ready', abiVersion: 6 })
 parentPort.on('message', request => {
   const root = request.root
   const path = join(root.rootPath, request.relativePath ?? request.leaf)
@@ -21,6 +21,11 @@ parentPort.on('message', request => {
     return
   }
   if (request.kind === 'stat') {
+    const anchor = statSync(root.rootPath, { bigint: true })
+    if (String(anchor.dev) !== root.rootDevice || String(anchor.ino) !== root.rootInode) {
+      parentPort.postMessage({ kind: 'reply', id: request.id, ok: false, code: 'FS_PERMISSION_DENIED', syscallCode: 'ESTALE' })
+      return
+    }
     const count = Atomics.add(counters, 2, 1) + 1
     const info = statSync(path, { bigint: true })
     const identity = `${info.dev}:${mode === 'identity-change' && count % 2 === 0 ? info.ino + 1n : info.ino}`
@@ -49,7 +54,7 @@ parentPort.on('message', request => {
     Atomics.wait(counters, 5, 0)
   }
   const frame = new Uint8Array(64), view = new DataView(frame.buffer)
-  view.setUint32(0, 0x44534635)
+  view.setUint32(0, 0x44534636)
   frame[4] = 1; frame[5] = cleanup ? 2 : 1; frame[6] = tag; frame[7] = 5
   view.setUint32(8, errno, true); view.setUint32(12, flags, true); view.setUint32(48, mkdirErrno, true)
   if (flags & 4) {

@@ -124,7 +124,7 @@ describe('prebuilt files root pool', () => {
     expect(pool.inspect()).toMatchObject({ state: 'closed', exited: 2, rootReservedBytes: 0 })
   })
 
-  it.each(['no-ready', 'old-abi', 'old-abi3'])('rejects %s startup without publishing a healthy replacement pool', async (mode) => {
+  it.each(['no-ready', 'old-abi', 'old-abi3', 'old-abi5'])('rejects %s startup without publishing a healthy replacement pool', async (mode) => {
     const { pool, count } = createPool(mode, undefined, { readyTimeoutMs: 30 })
     await expect(pool.start()).rejects.toMatchObject({ code: 'FS_IO_ERROR' })
     await pool.whenClosed()

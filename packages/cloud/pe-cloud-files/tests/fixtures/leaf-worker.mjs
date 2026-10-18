@@ -1,7 +1,7 @@
-/** ABI5 transport facts only; this fixture performs no filesystem operations. */
+/** ABI6 transport facts only; this fixture performs no filesystem operations. */
 import { parentPort, workerData } from 'node:worker_threads'
 const { mode = 'created', gate } = workerData
-parentPort.postMessage({ kind: 'ready', abiVersion: 5 })
+parentPort.postMessage({ kind: 'ready', abiVersion: 6 })
 parentPort.on('message', request => {
   const cleanup = request.kind === 'leaf-cleanup'
   if (cleanup && gate?.byteLength >= 12) Atomics.add(new Int32Array(gate), 2, 1)
@@ -28,7 +28,7 @@ parentPort.on('message', request => {
   }
   const frame = new Uint8Array(mode === 'pooled' ? 128 : 64)
   const v = new DataView(frame.buffer)
-  v.setUint32(0, 0x44534635)
+  v.setUint32(0, 0x44534636)
   frame[4] = 1; frame[5] = cleanup ? 2 : 1; frame[7] = 5
   let tag = cleanup ? 6 : 2
   let flags = cleanup ? 124 : 103
@@ -39,6 +39,16 @@ parentPort.on('message', request => {
   if (!cleanup && mode === 'known-failure') { tag = 4; errno = 5 }
   if (!cleanup && mode === 'unknown') { tag = 5; flags = 99; errno = 5; frame[7] = 4 }
   if (cleanup && mode === 'cleanup-unknown') { tag = 7; flags = 108; errno = 39; frame[7] = 6 }
+  if (request.backend === 'ext4') {
+    frame[52] = 1
+    flags |= 256
+    v.setBigUint64(56, BigInt(request.root.rootMountId), true)
+    if (mode === 'ext4-fsync-failure' && !cleanup) { tag = 4; errno = 5; frame[7] = 9 }
+    else if (mode === 'ext4-cleanup-sync' && cleanup) { tag = 7; errno = 5; frame[7] = 9 }
+    else if (errno === 0 && mode !== 'ext4-missing-sync') flags |= 128
+    if (mode === 'ext4-wrong-mount') v.setBigUint64(56, BigInt(request.root.rootMountId) + 1n, true)
+    if (mode === 'ext4-wrong-branch') frame[52] = 0
+  }
   frame[6] = tag
   v.setUint32(8, errno, true); v.setUint32(12, flags, true); v.setUint32(48, mkdirErrno, true)
   if (flags & 4) { v.setBigUint64(16, 1n, true); v.setBigUint64(24, 3n, true) }
@@ -46,7 +56,7 @@ parentPort.on('message', request => {
   if (mode === 'bad-tag') frame[6] = 99
   if (mode === 'bad-close') v.setUint32(12, flags & ~32, true)
   if (mode === 'bad-parent') v.setBigUint64(40, 99n, true)
-  if (mode === 'bad-reserved') frame[63] = 1
+  if (mode === 'bad-reserved') frame[54] = 1
   if (mode === 'bad-operation') frame[5] = cleanup ? 1 : 2
   parentPort.postMessage({ kind: cleanup ? 'leaf-cleanup-reply' : 'leaf-prepare-reply',
     id: mode === 'wrong-id' ? 'wrong' : request.id, frame: frame.subarray(0, 64) }, [frame.buffer])

@@ -37,7 +37,7 @@ export function directoryWorkBudget(intent: DirectoryIntent, limits: DirectoryBu
   const { maxPathBytes: pathLimit, replyOverheadBytes: overhead } = limits
   if (!Number.isSafeInteger(pathLimit) || pathLimit < 1 || pathLimit > 16384
     || !Number.isSafeInteger(overhead) || overhead < 1) capacity()
-  const { rootPath, rootDevice, rootInode } = intent.parent
+  const { rootPath, rootDevice, rootInode, rootMountId } = intent.parent
   if (rootPath.length > pathLimit || intent.leaf.length > 36 || rootDevice.length > 20 || rootInode.length > 20) {
     throw new FilesFailure('files/prerequisite-missing', 'directory intent exceeds its character bounds')
   }
@@ -47,17 +47,18 @@ export function directoryWorkBudget(intent: DirectoryIntent, limits: DirectoryBu
     || /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(intent.leaf)
   if (!posix.isAbsolute(rootPath) || rootPath.includes('\0') || rootPath.split('/').includes('..')
     || !/^\d{1,20}$/.test(rootDevice) || !/^\d{1,20}$/.test(rootInode)
+    || (rootMountId !== undefined && !/^[1-9]\d{0,19}$/.test(rootMountId))
     || !serverLeaf || parentBytes + leafBytes + (rootPath === '/' ? 0 : 1) > pathLimit) {
     throw new FilesFailure('files/prerequisite-missing', 'directory intent requires a bounded parent and server-selected leaf')
   }
-  // Two UTF-16 copies of parent/leaf plus separators, independent of Latin-1 string optimization.
-  const intentBytes = 4 * (parentBytes + leafBytes + 2)
+  // Two UTF-16 copies of parent/leaf, separators and optional mount id, independent of Latin-1 optimization.
+  const intentBytes = 4 * (parentBytes + leafBytes + 2 + (rootMountId?.length ?? 0))
   // Four 20-digit device/inode fields, with two UTF-16 copies and bounded framing.
   const identityBytes = 4 * 4 * 20 + 128
   const recordBytes = 2048 // Responsibility, controls and one queue-entry/object allowance.
   const observerBytes = 1024 // One pending observer, timer, abort listener and fixed completion state.
   const frameBytes = 64
-  const nativeScratchBytes = 2048 // stat/statfs, bounded arguments and nested identity verification calls.
+  const nativeScratchBytes = 2048 // stat/statfs/statx, bounded arguments and nested identity verification calls.
   const outcomeBytes = 4 * overhead + 256 + 2 * frameBytes // Fixed facts; no retained raw error or stack.
   // Four native path buffers, raw/UTF-16/clone peaks, one I/O record, input and reply copies.
   const ioBytes = 12 * (pathLimit + 1) + intentBytes + 4 * overhead + 2048 + 4 * frameBytes + nativeScratchBytes

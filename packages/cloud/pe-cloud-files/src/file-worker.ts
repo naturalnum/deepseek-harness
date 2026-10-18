@@ -9,7 +9,7 @@ import { directoryWorkBudget } from './directory-budget.ts'
 import { cancelledLeafFrame, parseLeafFrame } from './leaf-frame.ts'
 
 interface LinuxFdHelper {
-  openAnchor(this: void, path: string, device: string, inode: string): void
+  openAnchor(this: void, path: string, device: string, inode: string, mountId: string): void
   openRead(this: void, relativePath: string): number
   openMetadata(this: void, relativePath: string): number
   closeRead(this: void): void
@@ -17,6 +17,13 @@ interface LinuxFdHelper {
   canonicalPath(this: void, rootPath: string, maxPathBytes: number): Uint8Array
   probeKernel(this: void): void
   prepareLeaf(this: void, path: string, device: string, inode: string, leaf: string, limit: number, retries: number): Uint8Array
+  prepareExt4Leaf(
+    this: void, path: string, device: string, inode: string, leaf: string, mountId: string, limit: number, retries: number,
+  ): Uint8Array
+  removeExt4Leaf(
+    this: void, path: string, device: string, inode: string, leaf: string,
+    leafDevice: string, leafInode: string, mountId: string, limit: number, retries: number,
+  ): Uint8Array
   removeEmptyLeaf(
     this: void, path: string, device: string, inode: string, leaf: string,
     leafDevice: string, leafInode: string, limit: number, retries: number,
@@ -24,7 +31,8 @@ interface LinuxFdHelper {
 }
 
 function isHelper(value: unknown): value is LinuxFdHelper {
-  return record(value) && value.abiVersion === 5
+  return record(value) && value.abiVersion === 6
+    && typeof value.prepareExt4Leaf === 'function' && typeof value.removeExt4Leaf === 'function'
     && typeof value.prepareLeaf === 'function' && typeof value.removeEmptyLeaf === 'function'
     && typeof value.openAnchor === 'function' && typeof value.openRead === 'function' && typeof value.closeRead === 'function'
     && typeof value.canonicalPath === 'function' && typeof value.openMetadata === 'function' && typeof value.closeAnchor === 'function' && typeof value.probeKernel === 'function'
@@ -79,8 +87,15 @@ function helper(path: string): LinuxFdHelper {
   const probeKernel = loaded.probeKernel
   const prepareLeaf = loaded.prepareLeaf
   const removeEmptyLeaf = loaded.removeEmptyLeaf
+  const prepareExt4Leaf = loaded.prepareExt4Leaf
+  const removeExt4Leaf = loaded.removeExt4Leaf
   return {
-    openAnchor: (path, device, inode) => { openAnchor(path, device, inode) },
+    openAnchor: (path, device, inode, mountId) => {
+      try { openAnchor(path, device, inode, mountId) } catch (error) {
+        if (record(error) && error.code === 'DSH_FD_CLOSE') throw new AnchorCloseFailure('Mount validation close is unconfirmed')
+        throw error
+      }
+    },
     openRead: (path) => {
       const fd: unknown = openRead(path)
       if (typeof fd !== 'number' || !Number.isSafeInteger(fd) || fd < 0) throw new WorkerFailure('FS_IO_ERROR')
@@ -100,36 +115,61 @@ function helper(path: string): LinuxFdHelper {
     },
     probeKernel: () => { probeKernel() },
     prepareLeaf: (path, device, inode, leaf, limit, retries) => prepareLeaf(path, device, inode, leaf, limit, retries),
+    prepareExt4Leaf: (path, device, inode, leaf, mountId, limit, retries) =>
+      prepareExt4Leaf(path, device, inode, leaf, mountId, limit, retries),
+    removeExt4Leaf: (path, device, inode, leaf, leafDevice, leafInode, mountId, limit, retries) =>
+      removeExt4Leaf(path, device, inode, leaf, leafDevice, leafInode, mountId, limit, retries),
     removeEmptyLeaf: (path, device, inode, leaf, leafDevice, leafInode, limit, retries) =>
       removeEmptyLeaf(path, device, inode, leaf, leafDevice, leafInode, limit, retries),
   }
 }
 
+function mountField(root: Record<string, unknown>): { readonly rootMountId?: string } {
+  if (root.rootMountId === undefined) return {}
+  if (typeof root.rootMountId !== 'string' || root.rootMountId.length > 20 || !/^[1-9]\d{0,19}$/.test(root.rootMountId)) {
+    throw new WorkerFailure('FS_PERMISSION_DENIED')
+  }
+  return { rootMountId: root.rootMountId }
+}
+
 function leafRequest(value: unknown, limits: FdWorkerInput): FdLeafRequest {
   if (!record(value) || (value.kind !== 'leaf-prepare' && value.kind !== 'leaf-cleanup')
+    || (value.backend !== 'tmpfs' && value.backend !== 'ext4')
     || typeof value.id !== 'string' || value.id.length !== 36 || !/^[a-f0-9-]{36}$/.test(value.id)
     || !record(value.root) || typeof value.root.rootPath !== 'string' || typeof value.root.rootDevice !== 'string'
     || typeof value.root.rootInode !== 'string' || typeof value.leaf !== 'string'
     || !(value.cancel instanceof SharedArrayBuffer) || value.cancel.byteLength !== 4) throw new WorkerFailure('FS_IO_ERROR')
-  const root = { rootPath: value.root.rootPath, rootDevice: value.root.rootDevice, rootInode: value.root.rootInode }
+  const root = { rootPath: value.root.rootPath, rootDevice: value.root.rootDevice,
+    rootInode: value.root.rootInode, ...mountField(value.root) }
+  if (value.backend === 'ext4' && root.rootMountId === undefined) throw new WorkerFailure('FS_PERMISSION_DENIED')
   directoryWorkBudget({ parent: root, leaf: value.leaf }, { maxPathBytes: limits.maxPathBytes, replyOverheadBytes: 1 })
-  if (value.kind === 'leaf-prepare') return { kind: value.kind, id: value.id as FdLeafRequest['id'], root, leaf: value.leaf, cancel: value.cancel }
+  if (value.kind === 'leaf-prepare') return { kind: value.kind, id: value.id as FdLeafRequest['id'], root, backend: value.backend, leaf: value.leaf, cancel: value.cancel }
   const identity = value.identity
   if (!record(identity) || typeof identity.device !== 'string' || identity.device.length > 20 || !/^\d{1,20}$/.test(identity.device)
     || typeof identity.inode !== 'string' || identity.inode.length > 20 || !/^\d{1,20}$/.test(identity.inode)) throw new WorkerFailure('FS_IO_ERROR')
-  return { kind: value.kind, id: value.id as FdLeafRequest['id'], root, leaf: value.leaf, cancel: value.cancel,
+  return { kind: value.kind, id: value.id as FdLeafRequest['id'], root, backend: value.backend, leaf: value.leaf, cancel: value.cancel,
     identity: { device: identity.device, inode: identity.inode } }
 }
 
 function leafOperation(native: LinuxFdHelper, request: FdLeafRequest, limits: FdWorkerInput): Uint8Array<ArrayBuffer> {
   const operation = request.kind === 'leaf-prepare' ? 1 : 2
-  if (Atomics.load(new Int32Array(request.cancel), 0) !== 0) return cancelledLeafFrame(operation)
+  if (Atomics.load(new Int32Array(request.cancel), 0) !== 0) return cancelledLeafFrame(operation, request.backend)
   const { root, leaf } = request
-  const raw: unknown = request.kind === 'leaf-prepare'
-    ? native.prepareLeaf(root.rootPath, root.rootDevice, root.rootInode, leaf, limits.maxPathBytes, limits.maxResolveRetries)
-    : native.removeEmptyLeaf(root.rootPath, root.rootDevice, root.rootInode, leaf,
-      request.identity.device, request.identity.inode, limits.maxPathBytes, limits.maxResolveRetries)
-  if (parseLeafFrame(raw, operation, root, request.kind === 'leaf-cleanup' ? request.identity : undefined) === undefined
+  let raw: unknown
+  if (request.backend === 'ext4') {
+    if (root.rootMountId === undefined) throw new WorkerFailure('FS_PERMISSION_DENIED')
+    raw = request.kind === 'leaf-prepare'
+      ? native.prepareExt4Leaf(root.rootPath, root.rootDevice, root.rootInode, leaf,
+        root.rootMountId, limits.maxPathBytes, limits.maxResolveRetries)
+      : native.removeExt4Leaf(root.rootPath, root.rootDevice, root.rootInode, leaf,
+        request.identity.device, request.identity.inode, root.rootMountId, limits.maxPathBytes, limits.maxResolveRetries)
+  } else {
+    raw = request.kind === 'leaf-prepare'
+      ? native.prepareLeaf(root.rootPath, root.rootDevice, root.rootInode, leaf, limits.maxPathBytes, limits.maxResolveRetries)
+      : native.removeEmptyLeaf(root.rootPath, root.rootDevice, root.rootInode, leaf,
+        request.identity.device, request.identity.inode, limits.maxPathBytes, limits.maxResolveRetries)
+  }
+  if (parseLeafFrame(raw, operation, root, request.kind === 'leaf-cleanup' ? request.identity : undefined, request.backend) === undefined
     || !(raw instanceof Uint8Array) || !(raw.buffer instanceof ArrayBuffer)) throw new WorkerFailure('FS_IO_ERROR')
   // Cancellation after C must retain its real creation/unlink facts instead of replacing the reply.
   return new Uint8Array(raw.buffer, 0, 64)
@@ -161,7 +201,7 @@ function taskRequest(value: unknown, limits: FdWorkerInput): FdTaskRequest {
   }
   return {
     kind: value.kind as FdTaskRequest['kind'], id: value.id as FdTaskRequest['id'], relativePath: value.relativePath, maxBytes: value.maxBytes, cancel: value.cancel,
-    root: { rootPath: value.root.rootPath, rootDevice: value.root.rootDevice, rootInode: value.root.rootInode },
+    root: { rootPath: value.root.rootPath, rootDevice: value.root.rootDevice, rootInode: value.root.rootInode, ...mountField(value.root) },
   }
 }
 
@@ -234,7 +274,7 @@ function directoryRequest(value: unknown, limits: FdWorkerInput): FdDirectoryReq
     || !(value.cancel instanceof SharedArrayBuffer) || value.cancel.byteLength !== 4) throw new WorkerFailure('FS_PERMISSION_DENIED')
   return {
     kind: 'directory', id: value.id as FdDirectoryRequest['id'], relativePath: value.relativePath, cancel: value.cancel,
-    root: { rootPath: value.root.rootPath, rootDevice: value.root.rootDevice, rootInode: value.root.rootInode },
+    root: { rootPath: value.root.rootPath, rootDevice: value.root.rootDevice, rootInode: value.root.rootInode, ...mountField(value.root) },
   }
 }
 
@@ -251,7 +291,7 @@ function observeDirectory(native: LinuxFdHelper, request: FdDirectoryRequest, li
   }
   try {
     assertRunning()
-    native.openAnchor(request.root.rootPath, request.root.rootDevice, request.root.rootInode)
+    native.openAnchor(request.root.rootPath, request.root.rootDevice, request.root.rootInode, request.root.rootMountId ?? '0')
     anchor = true
     phase = 'target'
     const fd = openWithRetry(native, request, limits, true)
@@ -370,7 +410,7 @@ function start(): void {
     }
     let opened = false
     try {
-      native.openAnchor(request.root.rootPath, request.root.rootDevice, request.root.rootInode)
+      native.openAnchor(request.root.rootPath, request.root.rootDevice, request.root.rootInode, request.root.rootMountId ?? '0')
       opened = true
       if (request.kind === 'stream') {
         const fd = openWithRetry(native, request, limits, false)
@@ -399,7 +439,7 @@ function start(): void {
       port.postMessage({ kind: 'reply', id: request.id, ok: false, ...failure(error) } satisfies FdWorkerReply)
     }
   })
-  port.postMessage({ kind: 'ready', abiVersion: 5 } satisfies FdWorkerReply)
+  port.postMessage({ kind: 'ready', abiVersion: 6 } satisfies FdWorkerReply)
 }
 
 start()

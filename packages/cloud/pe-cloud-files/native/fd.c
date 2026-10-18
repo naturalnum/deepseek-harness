@@ -14,7 +14,14 @@
 #include <sys/vfs.h>
 #include <unistd.h>
 
-typedef struct { int anchor; int reader; } owned_fds;
+typedef struct { int anchor; int reader; uint64_t mount_id; } owned_fds;
+
+static int mount_identity(int fd, uint64_t expected) {
+  struct statx observed;
+  if (statx(fd, "", AT_EMPTY_PATH | AT_STATX_SYNC_AS_STAT, STATX_MNT_ID, &observed) != 0) return errno;
+  if (!(observed.stx_mask & STATX_MNT_ID)) return EOPNOTSUPP;
+  return observed.stx_mnt_id == expected ? 0 : EXDEV;
+}
 
 static napi_value fail(napi_env env, int error) {
   const char *code;
@@ -72,14 +79,14 @@ static int decimal(napi_env env, napi_value value, uint64_t *result) {
 }
 
 static napi_value open_anchor(napi_env env, napi_callback_info info) {
-  size_t count = 3;
-  napi_value args[3], result;
-  uint64_t device, inode;
+  size_t count = 4;
+  napi_value args[4], result;
+  uint64_t device, inode, mount_id;
   owned_fds *owned = state(env);
   if (!owned || owned->anchor != -1) return fail(env, EINVAL);
-  if (napi_get_cb_info(env, info, &count, args, NULL, NULL) != napi_ok || count != 3) return fail(env, EINVAL);
+  if (napi_get_cb_info(env, info, &count, args, NULL, NULL) != napi_ok || count != 4) return fail(env, EINVAL);
   char *path = text(env, args[0]);
-  if (!path || path[0] != '/' || !decimal(env, args[1], &device) || !decimal(env, args[2], &inode)) {
+  if (!path || path[0] != '/' || !decimal(env, args[1], &device) || !decimal(env, args[2], &inode) || !decimal(env, args[3], &mount_id)) {
     free(path);
     return fail(env, EINVAL);
   }
@@ -93,14 +100,22 @@ static napi_value open_anchor(napi_env env, napi_callback_info info) {
     close(fd);
     return fail(env, ESTALE);
   }
+  if (mount_id && (error = mount_identity(fd, mount_id)) != 0) {
+    if (close(fd) != 0) {
+      napi_throw_error(env, "DSH_FD_CLOSE", "Mount validation descriptor close is unconfirmed");
+      return NULL;
+    }
+    return fail(env, error);
+  }
   /* Probe the required kernel operation on this anchor; ENOSYS never falls back. */
   struct open_how how = {0};
   how.flags = O_RDONLY | O_DIRECTORY | O_CLOEXEC;
-  how.resolve = RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS;
+  how.resolve = RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_XDEV;
   int probe = (int)syscall(SYS_openat2, fd, ".", &how, sizeof(how));
   if (probe < 0) { error = errno; close(fd); return fail(env, error); }
   close(probe);
   owned->anchor = fd;
+  owned->mount_id = mount_id;
   napi_get_undefined(env, &result);
   return result;
 }
@@ -115,7 +130,7 @@ static napi_value open_read(napi_env env, napi_callback_info info) {
   if (!path || path[0] == '/') { free(path); return fail(env, EINVAL); }
   struct open_how how = {0};
   how.flags = O_RDONLY | O_NONBLOCK | O_CLOEXEC;
-  how.resolve = RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS;
+  how.resolve = RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_XDEV;
   int fd = (int)syscall(SYS_openat2, owned->anchor, path, &how, sizeof(how));
   int error = errno;
   free(path);
@@ -150,7 +165,7 @@ static napi_value open_metadata(napi_env env, napi_callback_info info) {
   if (!path || path[0] == '/') { free(path); return fail(env, EINVAL); }
   struct open_how how = {0};
   how.flags = O_PATH | O_CLOEXEC;
-  how.resolve = RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS;
+  how.resolve = RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_XDEV;
   int fd = (int)syscall(SYS_openat2, owned->anchor, path, &how, sizeof(how));
   int error = errno;
   free(path);
@@ -173,6 +188,7 @@ static napi_value close_anchor(napi_env env, napi_callback_info info) {
   if (!owned || owned->anchor < 0 || owned->reader >= 0) return fail(env, EINVAL);
   int fd = owned->anchor;
   owned->anchor = -1;
+  owned->mount_id = 0;
   if (close(fd) != 0) return fail(env, errno);
   napi_get_undefined(env, &result);
   return result;
@@ -199,6 +215,7 @@ static int verify_anchor_path(owned_fds *owned, const char *path) {
   int fd = open(path, O_PATH | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
   if (fd < 0) return errno;
   int error = same_identity(owned->anchor, fd);
+  if (error == 0 && owned->mount_id) error = mount_identity(fd, owned->mount_id);
   if (close(fd) != 0 && error == 0) error = errno;
   return error;
 }
@@ -233,7 +250,7 @@ static napi_value canonical_path(napi_env env, napi_callback_info info) {
     /* The spelling only addresses a re-open: the same anchored kernel operation enforces authority. */
     struct open_how how = {0};
     how.flags = O_PATH | O_CLOEXEC;
-    how.resolve = RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS;
+    how.resolve = RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_XDEV;
     int fd = (int)syscall(SYS_openat2, owned->anchor, relative, &how, sizeof(how));
     if (fd < 0) error = errno;
     else {
@@ -272,7 +289,7 @@ static napi_value probe_kernel(napi_env env, napi_callback_info info) {
   if (root < 0) return fail(env, errno);
   struct open_how how = {0};
   how.flags = O_RDONLY | O_DIRECTORY | O_CLOEXEC;
-  how.resolve = RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS;
+  how.resolve = RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_XDEV;
   int probe = (int)syscall(SYS_openat2, root, ".", &how, sizeof(how));
   int error = errno;
   if (probe >= 0) close(probe);
@@ -283,9 +300,9 @@ static napi_value probe_kernel(napi_env env, napi_callback_info info) {
   return result;
 }
 
-/* ABI5 leaf operations own their complete FD lifetime and return a fixed, path-free fact frame. */
+/* ABI6 leaf operations own their complete FD lifetime and return a fixed, path-free fact frame. */
 enum { LEAF_ATTEMPT = 1, LEAF_CREATED = 2, LEAF_ID = 4, LEAF_UNLINK = 8,
-  LEAF_REMOVED = 16, LEAF_CLOSED = 32, LEAF_PARENT = 64 };
+  LEAF_REMOVED = 16, LEAF_CLOSED = 32, LEAF_PARENT = 64, LEAF_SYNCED = 128, LEAF_MOUNT = 256 };
 
 static void put32(unsigned char *out, uint32_t value) {
   for (unsigned i = 0; i < 4; i++) out[i] = (unsigned char)(value >> (8 * i));
@@ -324,10 +341,10 @@ static int bounded_decimal(napi_env env, napi_value value, uint64_t *out) {
   return decimal(env, value, out);
 }
 
-static int leaf_open(int parent, const char *leaf, uint64_t retries) {
+static int leaf_open(int parent, const char *leaf, uint64_t retries, int durable) {
   struct open_how how = {0};
-  how.flags = O_PATH | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC;
-  how.resolve = RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS;
+  how.flags = (durable ? O_RDONLY | O_NONBLOCK : O_PATH) | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC;
+  how.resolve = RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_XDEV;
   uint64_t attempts = 0;
   for (;;) {
     int fd = (int)syscall(SYS_openat2, parent, leaf, &how, sizeof(how));
@@ -340,6 +357,7 @@ static int leaf_parent(owned_fds *owned, const char *path, int *close_failed) {
   int fd = open(path, O_PATH | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
   if (fd < 0) return errno;
   int error = same_identity(owned->anchor, fd);
+  if (error == 0 && owned->mount_id) error = mount_identity(fd, owned->mount_id);
   int closing = retire_close(&fd);
   if (closing != 0) { *close_failed = 1; return closing; }
   return error;
@@ -351,26 +369,28 @@ static int definite_no_create(int error) {
     || error == ENOSPC || error == EROFS || error == ENAMETOOLONG || error == EDQUOT;
 }
 
-static napi_value leaf_operation(napi_env env, napi_callback_info info, int removing) {
-  size_t count = removing ? 8 : 6;
-  napi_value args[8], result;
+static napi_value leaf_operation(napi_env env, napi_callback_info info, int removing, int durable) {
+  size_t wanted = (removing ? 8u : 6u) + (durable ? 1u : 0u);
+  size_t count = wanted;
+  napi_value args[9], result;
   void *backing = NULL;
   owned_fds *owned = state(env);
   if (!owned || owned->anchor >= 0 || owned->reader >= 0) return fail(env, EINVAL);
   if (napi_create_arraybuffer(env, 64, &backing, &result) != napi_ok) return fail(env, ENOMEM);
   unsigned char *frame = backing;
   memset(frame, 0, 64);
-  memcpy(frame, "DSF5", 4);
-  frame[4] = 1; frame[5] = removing ? 2 : 1;
+  memcpy(frame, "DSF6", 4);
+  frame[4] = 1; frame[5] = removing ? 2 : 1; frame[52] = durable ? 1 : 0;
   napi_value array;
   if (napi_create_typedarray(env, napi_uint8_array, 64, result, 0, &array) != napi_ok) return fail(env, EIO);
-  uint64_t parent_dev = 0, parent_ino = 0, expected_dev = 0, expected_ino = 0;
+  uint64_t parent_dev = 0, parent_ino = 0, expected_dev = 0, expected_ino = 0, mount_id = 0;
   double limit_value, retry_value;
   int error = EINVAL, mkdir_error = 0, phase = 0, tag = removing ? 7 : 3, close_failed = 0;
   uint32_t flags = 0;
   char *path = NULL, *leaf = NULL;
-  size_t limit_index = removing ? 6 : 4;
-  if (napi_get_cb_info(env, info, &count, args, NULL, NULL) != napi_ok || count != (removing ? 8u : 6u)
+  size_t mount_index = removing ? 6 : 4;
+  size_t limit_index = mount_index + (durable ? 1 : 0);
+  if (napi_get_cb_info(env, info, &count, args, NULL, NULL) != napi_ok || count != wanted
     || napi_get_value_double(env, args[limit_index], &limit_value) != napi_ok
     || napi_get_value_double(env, args[limit_index + 1], &retry_value) != napi_ok
     || !(limit_value >= 1 && limit_value <= 16384) || limit_value != (uint32_t)limit_value
@@ -380,13 +400,14 @@ static napi_value leaf_operation(napi_env env, napi_callback_info info, int remo
   if (!path || path[0] != '/' || !leaf || !leaf_name(leaf)
     || strlen(path) + strlen(leaf) + (strcmp(path, "/") == 0 ? 0u : 1u) > (size_t)limit_value
     || !bounded_decimal(env, args[1], &parent_dev) || !bounded_decimal(env, args[2], &parent_ino)
+    || (durable && (!bounded_decimal(env, args[mount_index], &mount_id) || mount_id == 0))
     || (removing && (!bounded_decimal(env, args[4], &expected_dev) || !bounded_decimal(env, args[5], &expected_ino)))) goto finished;
   phase = 1;
-  owned->anchor = open(path, O_PATH | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+  owned->anchor = open(path, (durable ? O_RDONLY | O_NONBLOCK : O_PATH) | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
   if (owned->anchor < 0) { error = errno; goto finished; }
   struct stat parent, target;
   struct statfs backend;
-  _Static_assert(4 * sizeof(struct stat) + sizeof(struct statfs) + sizeof(struct open_how) + 512 <= 2048,
+  _Static_assert(4 * sizeof(struct stat) + sizeof(struct statfs) + sizeof(struct open_how) + sizeof(struct statx) + 512 <= 2048,
     "leaf scratch exceeds reservation");
   _Static_assert(sizeof(parent.st_dev) <= 8 && sizeof(parent.st_ino) <= 8, "leaf identity exceeds fixed frame");
   if (fstat(owned->anchor, &parent) != 0) { error = errno; goto finished; }
@@ -394,9 +415,17 @@ static napi_value leaf_operation(napi_env env, napi_callback_info info, int remo
   flags |= LEAF_PARENT;
   put64(frame + 32, parent_dev); put64(frame + 40, parent_ino);
   if (fstatfs(owned->anchor, &backend) != 0) { error = errno; goto finished; }
-  if (backend.f_type != TMPFS_MAGIC) { error = EOPNOTSUPP; goto finished; }
+  if (durable) {
+    /* An exact independent ext4 mount root is required, not a directory on any ext4 filesystem. */
+    if (backend.f_type != EXT4_SUPER_MAGIC || parent.st_ino != 2) { error = EOPNOTSUPP; goto finished; }
+    error = mount_identity(owned->anchor, mount_id);
+    if (error != 0) goto finished;
+    owned->mount_id = mount_id;
+    flags |= LEAF_MOUNT;
+    put64(frame + 56, mount_id);
+  } else if (backend.f_type != TMPFS_MAGIC) { error = EOPNOTSUPP; goto finished; }
   phase = 2;
-  owned->reader = leaf_open(owned->anchor, leaf, (uint64_t)retry_value);
+  owned->reader = leaf_open(owned->anchor, leaf, (uint64_t)retry_value, durable);
   if (owned->reader < 0 && !removing && errno == ENOENT) {
     phase = 1;
     error = leaf_parent(owned, path, &close_failed);
@@ -413,12 +442,17 @@ static napi_value leaf_operation(napi_env env, napi_callback_info info, int remo
       if (error != EEXIST) goto finished;
     }
     phase = 4;
-    owned->reader = leaf_open(owned->anchor, leaf, (uint64_t)retry_value);
+    owned->reader = leaf_open(owned->anchor, leaf, (uint64_t)retry_value, durable);
   }
   if (owned->reader < 0) { error = errno; goto finished; }
   phase = 4;
   if (fstat(owned->reader, &target) != 0) { error = errno; goto finished; }
   if (!S_ISDIR(target.st_mode)) { error = ENOTDIR; goto finished; }
+  if (durable) {
+    if ((uint64_t)target.st_dev != parent_dev) { error = EXDEV; goto finished; }
+    error = mount_identity(owned->reader, mount_id);
+    if (error != 0) goto finished;
+  }
   if (removing || (flags & LEAF_CREATED)) {
     flags |= LEAF_ID;
     put64(frame + 16, (uint64_t)target.st_dev); put64(frame + 24, (uint64_t)target.st_ino);
@@ -435,17 +469,33 @@ static napi_value leaf_operation(napi_env env, napi_callback_info info, int remo
     flags |= LEAF_UNLINK;
     if (unlinkat(owned->anchor, leaf, AT_REMOVEDIR) != 0) { error = errno; goto finished; }
     flags |= LEAF_REMOVED;
+    if (durable) {
+      phase = 9;
+      if (fsync(owned->anchor) != 0) { error = errno; goto finished; }
+      flags |= LEAF_SYNCED;
+    }
     phase = 5;
     error = leaf_parent(owned, path, &close_failed);
     if (error != 0) goto finished;
     tag = 6;
-  } else tag = (flags & LEAF_CREATED) ? 2 : 1;
+  } else {
+    if (durable) {
+      phase = 9;
+      if (fsync(owned->reader) != 0 || fsync(owned->anchor) != 0) { error = errno; goto finished; }
+      flags |= LEAF_SYNCED;
+      phase = 5;
+      error = leaf_parent(owned, path, &close_failed);
+      if (error != 0) goto finished;
+    }
+    tag = (flags & LEAF_CREATED) ? 2 : 1;
+  }
   error = 0;
 finished:
   {
     int closing = retire_close(&owned->reader);
     if (closing != 0) close_failed = 1;
     closing = retire_close(&owned->anchor);
+    owned->mount_id = 0;
     if (closing != 0) close_failed = 1;
   }
   free(path); free(leaf);
@@ -457,8 +507,11 @@ finished:
   return array;
 }
 
-static napi_value prepare_leaf(napi_env env, napi_callback_info info) { return leaf_operation(env, info, 0); }
-static napi_value remove_empty_leaf(napi_env env, napi_callback_info info) { return leaf_operation(env, info, 1); }
+static napi_value prepare_leaf(napi_env env, napi_callback_info info) { return leaf_operation(env, info, 0, 0); }
+static napi_value remove_empty_leaf(napi_env env, napi_callback_info info) { return leaf_operation(env, info, 1, 0); }
+
+static napi_value prepare_ext4_leaf(napi_env env, napi_callback_info info) { return leaf_operation(env, info, 0, 1); }
+static napi_value remove_ext4_leaf(napi_env env, napi_callback_info info) { return leaf_operation(env, info, 1, 1); }
 
 static void cleanup(napi_env env, void *data, void *hint) {
   (void)env;
@@ -474,6 +527,7 @@ static napi_value init(napi_env env, napi_value exports) {
   if (!owned) return fail(env, ENOMEM);
   owned->anchor = -1;
   owned->reader = -1;
+  owned->mount_id = 0;
   if (napi_set_instance_data(env, owned, cleanup, NULL) != napi_ok) { free(owned); return fail(env, EIO); }
   napi_property_descriptor methods[] = {
     {"openAnchor", NULL, open_anchor, NULL, NULL, NULL, napi_default, NULL},
@@ -484,12 +538,14 @@ static napi_value init(napi_env env, napi_value exports) {
     {"canonicalPath", NULL, canonical_path, NULL, NULL, NULL, napi_default, NULL},
     {"probeKernel", NULL, probe_kernel, NULL, NULL, NULL, napi_default, NULL},
     {"prepareLeaf", NULL, prepare_leaf, NULL, NULL, NULL, napi_default, NULL},
-    {"removeEmptyLeaf", NULL, remove_empty_leaf, NULL, NULL, NULL, napi_default, NULL}
+    {"removeEmptyLeaf", NULL, remove_empty_leaf, NULL, NULL, NULL, napi_default, NULL},
+    {"prepareExt4Leaf", NULL, prepare_ext4_leaf, NULL, NULL, NULL, napi_default, NULL},
+    {"removeExt4Leaf", NULL, remove_ext4_leaf, NULL, NULL, NULL, napi_default, NULL}
   };
   napi_value abi;
-  napi_create_uint32(env, 5, &abi);
+  napi_create_uint32(env, 6, &abi);
   napi_set_named_property(env, exports, "abiVersion", abi);
-  napi_define_properties(env, exports, 9, methods);
+  napi_define_properties(env, exports, 11, methods);
   return exports;
 }
 

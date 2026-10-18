@@ -19,17 +19,24 @@ import type { DirectoryReadPort } from './directory.ts'
 import type { DirectoryIntent } from './directory-budget.ts'
 import { directoryWorkBudget } from './directory-budget.ts'
 import type { DirectoryObservation, DirectoryPrepareOutcome } from './directory-responsibility.ts'
+import { createS2ProjectPort } from './s2-project.ts'
 import { createBoundWorkspaceRegistry } from './workspace-adapter.ts'
 
 /** Privileged fixture input; layout/stat/mode/name alone never establishes this namespace guarantee. */
-export interface IsolatedLeafGrant {
-  readonly backend: 'root-owned-isolated-linux-tmpfs'
+export type IsolatedLeafGrant = {
   readonly binding: AccountBinding
-  readonly parent: FdRootIdentity
   readonly leaf: string
-  /** The trusted fixture must hold the complete unpublished namespace window; not an RPC-supplied assertion. */
+  /** Held by trusted deployment composition, never an RPC-supplied assertion. */
   assertExclusive(this: void): void
-}
+} & ({
+  readonly backend: 'root-owned-isolated-linux-tmpfs'
+  readonly parent: FdRootIdentity
+} | {
+  readonly backend: 'root-owned-isolated-ext4'
+  readonly parent: FdRootIdentity & { readonly rootMountId: string }
+  /** Deployment owner verifies ext4 driver, exact backing ownership, privilege exclusion and hard reserve; statfs is insufficient. */
+  assertDeployment(this: void): void
+})
 
 /** Fixed-grant component only; no caller-selected path, callback, transfer or recursive ensure. */
 export interface PreparedLeafPort {
@@ -167,7 +174,8 @@ export class LinuxFilesPool implements DrainParticipant {
     if (root.rootPath.length > this.config.maxPathBytes || !isAbsolute(root.rootPath)
       || root.rootPath.includes('\0') || root.rootPath.split('/').includes('..')
       || Buffer.byteLength(root.rootPath) > this.config.maxPathBytes
-      || !/^\d{1,20}$/.test(root.rootDevice) || !/^\d{1,20}$/.test(root.rootInode)) {
+      || !/^\d{1,20}$/.test(root.rootDevice) || !/^\d{1,20}$/.test(root.rootInode)
+      || (root.rootMountId !== undefined && !/^[1-9]\d{0,19}$/.test(root.rootMountId))) {
       throw new FdWorkerFailure('FS_PERMISSION_DENIED')
     }
     const fixedRoot = Object.freeze({ ...root })
@@ -179,7 +187,7 @@ export class LinuxFilesPool implements DrainParticipant {
       }
       const bytes = Buffer.byteLength(path)
       if (bytes > this.config.maxPathBytes) throw new FdWorkerFailure('FS_TOO_LARGE')
-      return 2 * (bytes + Buffer.byteLength(fixedRoot.rootPath))
+      return 2 * (bytes + Buffer.byteLength(fixedRoot.rootPath)) + 4 * (fixedRoot.rootMountId?.length ?? 0)
     }
     const run = <T>(
       bytes: number, work: (client: FdWorkerClient, control: AbortSignal) => Promise<T>, signal?: AbortSignal,
@@ -224,17 +232,21 @@ export class LinuxFilesPool implements DrainParticipant {
     })
     const directory = createDirectoryReadPort(fixedRoot.rootPath, {
       maxPathBytes: this.config.maxPathBytes, replyOverheadBytes: this.config.replyOverheadBytes, assertCurrent: checkCurrent,
-      inspect: (relativePath, reservedBytes, signal) => run(reservedBytes,
+      inspect: (relativePath, reservedBytes, signal) => run(reservedBytes + 4 * (fixedRoot.rootMountId?.length ?? 0),
         (client, control) => client.directory(fixedRoot, relativePath, this.config.maxPathBytes, control), signal),
     })
     const derivePreparedLeaf = (grant: IsolatedLeafGrant): PreparedLeafPort => {
       checkCurrent()
       if (grant.binding !== binding
         || grant.parent.rootPath !== fixedRoot.rootPath || grant.parent.rootDevice !== fixedRoot.rootDevice
-        || grant.parent.rootInode !== fixedRoot.rootInode) throw new FdWorkerFailure('FS_PERMISSION_DENIED')
+        || grant.parent.rootInode !== fixedRoot.rootInode || grant.parent.rootMountId !== fixedRoot.rootMountId) throw new FdWorkerFailure('FS_PERMISSION_DENIED')
       const intent: DirectoryIntent = Object.freeze({ parent: fixedRoot, leaf: grant.leaf })
       directoryWorkBudget(intent, this.config)
-      const assertWindow = grant.assertExclusive
+      const exclusive = grant.assertExclusive
+      const deployment = grant.backend === 'root-owned-isolated-ext4' ? grant.assertDeployment : undefined
+      const backend = grant.backend === 'root-owned-isolated-ext4' ? 'ext4' : 'tmpfs'
+      if (backend === 'ext4' && fixedRoot.rootMountId === undefined) throw new FdWorkerFailure('FS_PERMISSION_DENIED')
+      const assertWindow = (): void => { deployment?.(); exclusive() }
       assertWindow()
       return Object.freeze({ prepare: () => {
         checkCurrent()
@@ -246,13 +258,13 @@ export class LinuxFilesPool implements DrainParticipant {
           if (!this.slots.some(slot => !slot.busy && slot.client.available)) {
             return { kind: 'not-created-failure', failure: { errno: 11, phase: 0 } }
           }
-          return await this.withSlot(false, client => client.prepareLeaf(fixed.parent, fixed.leaf, control))
+          return await this.withSlot(false, client => client.prepareLeaf(fixed.parent, fixed.leaf, control, backend))
         })
         return Object.freeze({ observation: owned.observation, control: Object.freeze({
           expose: () => { assertWindow(); return owned.control.expose() },
           cleanup: (signal?: AbortSignal) => owned.control.cleanup(async (identity, control, fixed) => {
             assertWindow()
-            return await this.withSlot(true, client => client.removeEmptyLeaf(fixed.parent, fixed.leaf, identity, control))
+            return await this.withSlot(true, client => client.removeEmptyLeaf(fixed.parent, fixed.leaf, identity, control, backend))
           }, signal),
         }) })
       } })
@@ -263,16 +275,54 @@ export class LinuxFilesPool implements DrainParticipant {
       derivePreparedLeaf,
       createWorkspaceRegistry: (defaultGrant: IsolatedLeafGrant, assertUnpublished: () => void) => {
         const defaultPort = derivePreparedLeaf(defaultGrant)
-        const assertWindow = (): void => { checkCurrent(); assertUnpublished(); defaultGrant.assertExclusive() }
+        const assertGraph = (): void => {
+          checkCurrent()
+          if (defaultGrant.backend === 'root-owned-isolated-ext4') defaultGrant.assertDeployment()
+        }
+        const assertWindow = (): void => {
+          assertGraph(); assertUnpublished(); defaultGrant.assertExclusive()
+          if (defaultGrant.backend === 'root-owned-isolated-ext4') defaultGrant.assertDeployment()
+        }
         return createBoundWorkspaceRegistry({
-          directory, defaultGrant, assertCurrent: checkCurrent, assertWindow,
+          directory, defaultGrant, assertCurrent: assertGraph, assertWindow,
           prepareDefault: () => defaultPort.prepare(),
           prepareRegistration: (grant) => {
             assertWindow()
             const work = (grant === defaultGrant ? defaultPort : derivePreparedLeaf(grant)).prepare()
             const record = port.captureRegistration(work.observation)
             const assertCandidate = grant.assertExclusive
-            return { work, record, assertWindow: () => { assertWindow(); assertCandidate() } }
+            return { work, record, assertWindow: () => {
+              assertWindow(); assertCandidate()
+              if (grant.backend === 'root-owned-isolated-ext4') grant.assertDeployment()
+            } }
+          },
+          project: async (workspace, assertRegistryCurrent, assertInstalled) => {
+            assertRegistryCurrent()
+            const canonical = await directory.canonicalPath(workspace.path)
+            assertRegistryCurrent()
+            const held = await stat('default-workspace')
+            let projectRoot: FdRootIdentity
+            try {
+              assertRegistryCurrent()
+              const value = held.value
+              if (value?.type !== 'directory' || canonical !== workspace.path) throw new FdWorkerFailure('FS_PERMISSION_DENIED')
+              const separator = value.identity.indexOf(':')
+              projectRoot = Object.freeze({ rootPath: canonical, rootDevice: value.identity.slice(0, separator),
+                rootInode: value.identity.slice(separator + 1),
+                ...fixedRoot.rootMountId === undefined ? {} : { rootMountId: fixedRoot.rootMountId } })
+            } finally { held.release() }
+            const projectReader = createFixedRootReader(projectRoot.rootPath, {
+              maxPathBytes: this.config.maxPathBytes, assertCurrent: assertRegistryCurrent,
+              stat: (path, signal) => {
+                assertRegistryCurrent()
+                const reservation = 2 * (Buffer.byteLength(path) + Buffer.byteLength(projectRoot.rootPath))
+                  + 4 * (256 + 64) + this.config.replyOverheadBytes + 4 * (projectRoot.rootMountId?.length ?? 0)
+                return run(reservation, (client, control) => client.stat(projectRoot, path, control), signal)
+              },
+              // S2 never grants content reads; no stream is dispatched through this reader.
+              streamText: () => Promise.reject(new FdWorkerFailure('FS_PERMISSION_DENIED')),
+            })
+            return createS2ProjectPort({ binding, workspace, reader: projectReader, assertCurrent: assertRegistryCurrent, assertInstalled })
           },
           identity: async (record) => {
             assertWindow()

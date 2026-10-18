@@ -8,6 +8,8 @@ export interface FdRootIdentity {
   readonly rootPath: string
   readonly rootDevice: string
   readonly rootInode: string
+  /** Exact verified Linux mount id for a deployment-isolated persistent domain/project. */
+  readonly rootMountId?: string
 }
 
 /** Root bootstrap creates idle workers before any account/project is selected. */
@@ -45,11 +47,15 @@ export interface FdDirectoryObservation {
   readonly directory: boolean
 }
 
+/** Two explicit helper branches; neither value grants storage authority. */
+export type LeafBackend = 'tmpfs' | 'ext4'
+
 /** Fixed-parent single-leaf commands; only a trusted isolated-fixture grant may issue them. */
 export type FdLeafRequest = {
   readonly id: OperationId
   readonly root: FdRootIdentity
   readonly leaf: string
+  readonly backend: LeafBackend
   readonly cancel: SharedArrayBuffer
 } & ({ readonly kind: 'leaf-prepare' } | { readonly kind: 'leaf-cleanup'; readonly identity: DirectoryCreatedIdentity })
 
@@ -69,7 +75,7 @@ export interface FdStreamControl {
 
 /** Success follows FD closure except stream-ready/chunk, which retain actual operation ownership. */
 export type FdWorkerReply =
-  | { readonly kind: 'ready'; readonly abiVersion: 5 }
+  | { readonly kind: 'ready'; readonly abiVersion: 6 }
   | { readonly kind: 'leaf-prepare-reply' | 'leaf-cleanup-reply'; readonly id: OperationId; readonly frame: Uint8Array<ArrayBuffer> }
   | { readonly kind: 'startup-failed'; readonly code: FsErrorCode; readonly syscallCode?: string }
   | { readonly kind: 'reply'; readonly id: OperationId; readonly ok: true; readonly bytes: Uint8Array<ArrayBuffer> }

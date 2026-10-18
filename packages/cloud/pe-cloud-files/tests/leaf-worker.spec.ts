@@ -21,8 +21,10 @@ afterEach(async () => {
   await Promise.all(pools.splice(0).map(pool => pool.stop(Date.now() + 20)))
   await Promise.all(workers.splice(0).map(worker => worker.terminate()))
 })
-async function setup(mode = 'created', gate?: SharedArrayBuffer, changes: Partial<FilesPoolConfig> = {}) {
-  const pool = new LinuxFilesPool({ ...config, ...changes }, () => {
+async function setup(mode = 'created', gate?: SharedArrayBuffer, changes: Partial<FilesPoolConfig> = {}, persistent = false) {
+  const parent = persistent ? { ...root, rootMountId: '41' } : root
+  const bytes = directoryWorkBudget({ parent, leaf: intent.leaf }, config).totalBytes
+  const pool = new LinuxFilesPool({ ...config, maxResidentBytes: bytes + 128, maxResidentBytesPerLane: bytes, ...changes }, () => {
     const worker = new Worker(new URL('./fixtures/leaf-worker.mjs', import.meta.url), { workerData: { mode, gate } })
     workers.push(worker)
     return worker
@@ -31,16 +33,19 @@ async function setup(mode = 'created', gate?: SharedArrayBuffer, changes: Partia
   await pool.start()
   const binding: AccountBinding = Object.freeze({ accountId: 'A' as AccountId, epoch: '1' as OwnerEpoch,
     recipeVersion: 'transport-only', lifetime: new AbortController().signal })
-  const bound = pool.bind(binding, root, () => {})
+  const bound = pool.bind(binding, parent, () => {})
   let exclusive = true
   // This is a simulated trusted input for transport tests, not a real namespace/permission proof.
-  const grant: IsolatedLeafGrant = { backend: 'root-owned-isolated-linux-tmpfs', binding, parent: root,
+  const grant: IsolatedLeafGrant = persistent ? {
+    backend: 'root-owned-isolated-ext4', binding, parent: { ...root, rootMountId: '41' }, leaf: intent.leaf,
+    assertDeployment: () => {}, assertExclusive: () => { if (!exclusive) throw new Error('fixture window ended') },
+  } : { backend: 'root-owned-isolated-linux-tmpfs', binding, parent,
     leaf: intent.leaf, assertExclusive: () => { if (!exclusive) throw new Error('fixture window ended') } }
   const port = bound.derivePreparedLeaf(grant)
   return { pool, bound, binding, grant, port, endWindow: () => { exclusive = false }, restoreWindow: () => { exclusive = true } }
 }
 
-describe('ABI5 single-leaf transport and shared pool lifecycle', () => {
+describe('ABI6 single-leaf transport and shared pool lifecycle', () => {
   it('retains Rdir after actual created frame and cleans on the same idle slot after business close', async () => {
     const { pool, binding, port, bound } = await setup()
     const work = port.prepare()
@@ -208,6 +213,7 @@ describe('ABI5 single-leaf transport and shared pool lifecycle', () => {
   it('refuses another binding, parent or naming input and never treats a lost window as cleanup proof', async () => {
     const { bound, grant, port, endWindow, pool, binding } = await setup()
     expect(() => bound.derivePreparedLeaf({ ...grant, binding: { ...binding } })).toThrow()
+    if (grant.backend !== 'root-owned-isolated-linux-tmpfs') throw new Error('expected tmpfs fixture')
     expect(() => bound.derivePreparedLeaf({ ...grant, parent: { ...root, rootInode: '99' } })).toThrow()
     expect(() => bound.derivePreparedLeaf({ ...grant, leaf: 'client-title' })).toThrow()
     const work = port.prepare()
@@ -220,7 +226,7 @@ describe('ABI5 single-leaf transport and shared pool lifecycle', () => {
 })
 
 describe('leaf budget and fixed frame facts', () => {
-  it('reserves exact ABI5 native/frame additions without enlarging capacity defaults', () => {
+  it('reserves exact ABI6 native/frame additions without enlarging capacity defaults', () => {
     expect(directoryWorkBudget(intent, config)).toEqual({ ioBytes: 6140, responsibilityBytes: 10284, totalBytes: 16424 })
   })
 
@@ -237,12 +243,51 @@ describe('leaf budget and fixed frame facts', () => {
 
   it('refuses no-create proof for ambiguous mkdir errors and permits prior definite EEXIST proof', () => {
     const frame = new Uint8Array(64), v = new DataView(frame.buffer)
-    v.setUint32(0, 0x44534635); frame[4] = 1; frame[5] = 1; frame[6] = 3; frame[7] = 4
+    v.setUint32(0, 0x44534636); frame[4] = 1; frame[5] = 1; frame[6] = 3; frame[7] = 4
     v.setUint32(8, 5, true); v.setUint32(12, 97, true)
     v.setBigUint64(32, 1n, true); v.setBigUint64(40, 2n, true)
     v.setUint32(48, 5, true)
     expect(parseLeafFrame(frame, 1, root)).toBeUndefined()
     v.setUint32(48, 17, true)
     expect(parseLeafFrame(frame, 1, root)).toMatchObject({ tag: 3, failure: { errno: 5 } })
+  })
+})
+
+
+describe('ABI6 explicit persistent branch facts (transport fixture only)', () => {
+  it('requires a synced ext4 success frame and retains original mount intent for cleanup', async () => {
+    const { port, pool } = await setup('created', undefined, {}, true)
+    const work = port.prepare()
+    expect(await work.observation.waitPrepared()).toBe('created')
+    expect(pool.inspect().work.pending).toBe(1)
+    expect(await work.control.cleanup()).toBe('cleaned')
+    expect(pool.inspect().work).toMatchObject({ residentBytes: 0, pending: 0 })
+  })
+
+  it.each(['ext4-missing-sync', 'ext4-wrong-mount', 'ext4-wrong-branch', 'ext4-fsync-failure'])
+  ('keeps %s unresolved without cleanup or a replacement worker', async (mode) => {
+    const { port, pool } = await setup(mode, undefined, {}, true)
+    const work = port.prepare()
+    await expect(work.observation.waitPrepared()).rejects.toThrow()
+    await expect(work.control.cleanup()).rejects.toThrow()
+    expect(pool.inspect().work.pending).toBe(1)
+    expect(workers).toHaveLength(1)
+  })
+
+  it('keeps unlink-without-parent-sync unknown rather than confirming cleanup', async () => {
+    const { port, pool } = await setup('ext4-cleanup-sync', undefined, {}, true)
+    const work = port.prepare()
+    await work.observation.waitPrepared()
+    await expect(work.control.cleanup()).rejects.toMatchObject({ fact: 'unknown', details: { phase: 9 } })
+    expect(pool.inspect().work.pending).toBe(1)
+  })
+
+  it('rejects a deployment owner failure before ticket admission', async () => {
+    const { bound, grant, pool } = await setup('created', undefined, {}, true)
+    const fixed = { ...root, rootMountId: '41' }
+    // A mount address alone cannot be attached to a differently bound parent.
+    expect(() => bound.derivePreparedLeaf({ ...grant, backend: 'root-owned-isolated-ext4', parent: fixed,
+      assertDeployment: () => { throw new Error('deployment resource unavailable') } })).toThrow('deployment resource unavailable')
+    expect(pool.inspect().work.pending).toBe(0)
   })
 })

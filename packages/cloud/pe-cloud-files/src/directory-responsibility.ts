@@ -135,7 +135,7 @@ export class DirectoryResponsibility {
       && typeof value.failure === 'object' && value.failure !== null && 'errno' in value.failure && 'phase' in value.failure
       && typeof value.failure.errno === 'number' && Number.isInteger(value.failure.errno) && value.failure.errno > 0
       && value.failure.errno <= 4095 && typeof value.failure.phase === 'number'
-      && Number.isInteger(value.failure.phase) && value.failure.phase >= 0 && value.failure.phase <= 8) {
+      && Number.isInteger(value.failure.phase) && value.failure.phase >= 0 && value.failure.phase <= 9) {
       this.failure = Object.freeze({ errno: value.failure.errno, phase: value.failure.phase })
     }
     if (!invoked) {

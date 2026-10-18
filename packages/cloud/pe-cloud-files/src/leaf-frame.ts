@@ -1,5 +1,5 @@
-/** Fixed ABI5 leaf facts; only validated actual completion can end temporary creation responsibility. */
-import type { FdRootIdentity } from './worker-protocol.ts'
+/** Fixed ABI6 leaf facts; only validated actual completion can end temporary creation responsibility. */
+import type { FdRootIdentity, LeafBackend } from './worker-protocol.ts'
 import type { DirectoryCreatedIdentity, DirectoryPrepareOutcome } from './directory-responsibility.ts'
 
 /** Bounded syscall metadata; no supplied paths, stacks or arbitrary error messages. */
@@ -26,22 +26,35 @@ export interface LeafFrame {
  * @param operation Expected prepare or cleanup operation.
  * @param parent Fixed expected parent identity.
  * @param expected Exact created identity, required for cleanup success.
+ * @param backend Expected explicit helper branch; ext4 success requires mount and directory-sync facts.
  * @returns Parsed bounded facts, or undefined for a fatal protocol failure.
  */
 export function parseLeafFrame(
-  value: unknown, operation: 1 | 2, parent: FdRootIdentity, expected?: DirectoryCreatedIdentity,
+  value: unknown, operation: 1 | 2, parent: FdRootIdentity, expected?: DirectoryCreatedIdentity, backend: LeafBackend = 'tmpfs',
 ): LeafFrame | undefined {
   if (!(value instanceof Uint8Array) || !(value.buffer instanceof ArrayBuffer)
     || value.byteLength !== 64 || value.byteOffset !== 0 || value.buffer.byteLength !== 64) return undefined
   const view = new DataView(value.buffer)
-  if (view.getUint32(0, false) !== 0x44534635 || value[4] !== 1 || value[5] !== operation
-    || value.subarray(52).some(byte => byte !== 0)) return undefined
+  if (view.getUint32(0, false) !== 0x44534636 || value[4] !== 1 || value[5] !== operation
+    || value.subarray(53, 56).some(byte => byte !== 0)) return undefined
   const tag = view.getUint8(6)
   const phase = view.getUint8(7)
   const errno = view.getUint32(8, true)
   const flags = view.getUint32(12, true)
   const mkdirErrno = view.getUint32(48, true)
-  if (phase > 8 || errno > 4095 || mkdirErrno > 4095 || flags > 127 || (flags & 32) === 0) return undefined
+  if (phase > 9 || errno > 4095 || mkdirErrno > 4095 || flags > 511 || (flags & 32) === 0) return undefined
+  const durable = backend === 'ext4'
+  if (value[52] !== (durable ? 1 : 0)) return undefined
+  if (phase === 9 && (!durable || (flags & 128) !== 0)) return undefined
+  if (!durable && ((flags & 384) !== 0 || view.getBigUint64(56, true) !== 0n)) return undefined
+  if (durable) {
+    if (parent.rootMountId === undefined || !/^[1-9]\d{0,19}$/.test(parent.rootMountId)) return undefined
+    if ((flags & 256) !== 0) {
+      if ((flags & 64) === 0 || view.getBigUint64(56, true).toString() !== parent.rootMountId) return undefined
+    } else if (view.getBigUint64(56, true) !== 0n) return undefined
+    if ((flags & 128) !== 0 && (flags & 256) === 0) return undefined
+    if ((tag === 1 || tag === 2 || tag === 6) && (flags & 384) !== 384) return undefined
+  }
   if ((flags & 64) !== 0) {
     if (view.getBigUint64(32, true).toString() !== BigInt(parent.rootDevice).toString()
       || view.getBigUint64(40, true).toString() !== BigInt(parent.rootInode).toString()) return undefined
@@ -60,7 +73,7 @@ export function parseLeafFrame(
     if ((tag === 1 || tag === 2) && phase !== 5) return undefined
     if (tag === 1 && ((flags & 6) !== 0 || (flags & 64) === 0)) return undefined
     if ((tag === 2 || tag === 4) && ((flags & 67) !== 67 || identity === undefined)) return undefined
-    if (tag === 4 && phase !== 4 && phase !== 5) return undefined
+    if (tag === 4 && phase !== 4 && phase !== 5 && !(durable && phase === 9)) return undefined
     if (tag === 3 && ((flags & 6) !== 0
       || ((flags & 1) !== 0 && (![3, 4, 5].includes(phase)
         || ![1, 13, 17, 20, 22, 28, 30, 36, 122].includes(mkdirErrno)))
@@ -91,12 +104,14 @@ export function leafPreparation(frame: LeafFrame): DirectoryPrepareOutcome {
 /**
  * Represent cancellation known to precede any helper invocation.
  * @param operation Expected worker operation.
+ * @param backend Expected helper branch, preserved on a pre-dispatch cancellation.
  * @returns Exact closed-FD failure frame; cleanup remains unknown rather than clean.
  */
-export function cancelledLeafFrame(operation: 1 | 2): Uint8Array<ArrayBuffer> {
+export function cancelledLeafFrame(operation: 1 | 2, backend: LeafBackend = 'tmpfs'): Uint8Array<ArrayBuffer> {
   const frame = new Uint8Array(64)
   const view = new DataView(frame.buffer)
-  view.setUint32(0, 0x44534635, false)
+  view.setUint32(0, 0x44534636, false)
+  frame[52] = backend === 'ext4' ? 1 : 0
   frame[4] = 1; frame[5] = operation; frame[6] = operation === 1 ? 3 : 7; frame[7] = 8
   view.setUint32(8, 125, true)
   view.setUint32(12, 32, true)

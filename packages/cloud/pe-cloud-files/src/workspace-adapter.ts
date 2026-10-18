@@ -7,6 +7,7 @@ import type { DirectoryReadPort } from './directory.ts'
 import type { IsolatedLeafGrant, PreparedLeafPort } from './worker-pool.ts'
 import type { DirectoryCreatedIdentity, DirectoryResponsibility } from './directory-responsibility.ts'
 import { DirectoryMetadataFailure } from './directory-error.ts'
+import type { S2ProjectPort } from './s2-project.ts'
 import { DirectoryPreparationFailure } from './leaf-frame.ts'
 
 /** Native service plus the private server-candidate entry; not re-exported by package entrypoints. */
@@ -18,6 +19,11 @@ export interface ControlledWorkspaceRegistry extends WorkspaceRegistry {
    * @returns Actual durable native Workspace after private ownership transfer.
    */
   createProject(grant: IsolatedLeafGrant, title?: string): Promise<Workspace>
+  /**
+   * Obtain a fixed S2 scope from the actual native default result; no path argument grants a project.
+   * @returns Same-lane native FS constructor and existing-project directory validation.
+   */
+  createS2Project(): Promise<S2ProjectPort>
 }
 
 /** Explicit constructor shape keeps inherited native private fields out of anonymous declarations. */
@@ -42,6 +48,7 @@ export interface WorkspaceAdapterBackend {
   prepareDefault(): ReturnType<PreparedLeafPort['prepare']>
   prepareRegistration(grant: IsolatedLeafGrant): WorkspacePreparation
   identity(record: DirectoryResponsibility): Promise<DirectoryCreatedIdentity>
+  project(workspace: Workspace, assertCurrent: () => void, assertInstalled: (ctx: Context) => void): Promise<S2ProjectPort>
 }
 
 function unavailable(cause?: unknown): WorkspaceDirectoryMetadataError {
@@ -90,11 +97,12 @@ export function createBoundWorkspaceRegistry(backend: WorkspaceAdapterBackend): 
     }),
   })
 
-  const assertInstallation = (ctx: Context): void => {
-    backend.assertWindow()
+  const assertBinding = (ctx: Context): void => {
+    backend.assertCurrent()
     if (ctx.get('peAccount') !== backend.defaultGrant.binding
       || ctx.root.get('peAccount') !== backend.defaultGrant.binding || ctx.fiber.uid === null) throw unavailable()
   }
+  const assertInstallation = (ctx: Context): void => { assertBinding(ctx); backend.assertWindow() }
   return class BoundWorkspaceRegistry extends WorkspaceRegistry {
     constructor(ctx: Context) {
       assertInstallation(ctx)
@@ -156,6 +164,21 @@ export function createBoundWorkspaceRegistry(backend: WorkspaceAdapterBackend): 
         prepared?.record.registrationFailed()
         throw error
       } finally { prepared = undefined }
+    }
+
+    async createS2Project(): Promise<S2ProjectPort> {
+      assertBinding(this.ctx)
+      const workspace = await this.initializeDefault(() => Promise.resolve(defaultPath))
+      if (workspace === undefined || workspace.path !== defaultPath || this.get(workspace.id) !== workspace) throw unavailable()
+      const assertCurrent = (): void => {
+        assertBinding(this.ctx)
+        if (this.get(workspace.id) !== workspace || workspace.path !== defaultPath) throw unavailable()
+      }
+      return await backend.project(workspace, assertCurrent, (ctx) => {
+        assertCurrent()
+        if (ctx.root !== this.ctx.root) throw unavailable()
+        assertBinding(ctx)
+      })
     }
 
     private async finishRegistration(prepared: WorkspacePreparation, result: Workspace): Promise<void> {
