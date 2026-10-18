@@ -5,7 +5,7 @@
  * point after every client entry activates.
  * @module @deepseek-ai/dsh-client-web/src/boot
  */
-import { Context } from '@deepseek-ai/cordis'
+import { Context, type Fiber } from '@deepseek-ai/cordis'
 import type {
   BootManifest, ClientModuleCreateOptions, ClientModuleSystem, DshWindow,
 } from '@deepseek-ai/dsh-client-modules/client'
@@ -25,6 +25,11 @@ export class AppWebEntry {
   private readonly seams: BootSeams | undefined
   private readonly page: BootPage
   private ctx: Context | undefined
+  private running: Promise<void> | undefined
+  private disposal: Promise<void> | undefined
+  private cleanupFailure: Error | undefined
+  private readonly fibers = new Set<Fiber>()
+  private readonly stopping: Promise<unknown[]>[] = []
   private stopDragRecall: (() => void) | undefined
   private modules!: ClientModuleSystem
   private manifest!: BootManifest
@@ -42,11 +47,23 @@ export class AppWebEntry {
 
   /**
    * Load and activate every client entry, then hand the mount point to the
-   * UI renderer. Plugin failures remain visible on the boot page.
+   * UI renderer. Repeated calls join the first run; calls after disposal do
+   * not start another tree. Plugin failures remain visible on the boot page.
    * @param onFailure - Optional carrier-owned fatal presentation; keeps the boot page visible.
-   * @returns Resolves after application mount or failure reporting.
+   * @returns Resolves after mount, failure reporting, or a stopped run settles.
+   * @throws The original failure if reporting throws or disposal has started.
    */
-  async run(onFailure?: (reason: unknown) => void): Promise<void> {
+  run(onFailure?: (reason: unknown) => void): Promise<void> {
+    if (this.running !== undefined) return this.running
+    if (this.disposal !== undefined) return Promise.resolve()
+    return this.running = this.start(onFailure)
+  }
+
+  private isDisposed(): boolean {
+    return this.disposal !== undefined
+  }
+
+  private async start(onFailure?: (reason: unknown) => void): Promise<void> {
     try {
       // Boot-readiness gate: whichever bootstrap applies the injection table
       // settles this deferred once every row has taken effect — the served
@@ -55,6 +72,7 @@ export class AppWebEntry {
       // row, or rejects it into the failure rendering below. An absent global
       // means no bootstrap owns the document and there is nothing to wait for.
       await (globalThis as { __DSH_BOOT_READY__?: { promise: Promise<void> } }).__DSH_BOOT_READY__?.promise
+      if (this.isDisposed()) return
       const win = globalThis as DshWindow
       const moduleLoader = win.__ModuleLoader__
       if (moduleLoader === undefined) {
@@ -74,42 +92,114 @@ export class AppWebEntry {
         ...transport?.loadBundle === undefined ? {} : { loadBundle: transport.loadBundle },
         ...this.seams,
       })
+      if (this.isDisposed()) return
       this.manifest = this.modules.manifest
 
       const prefetching = this.prefetchImmediateTier()
+      await prefetching
+      if (this.isDisposed()) return
       const ctx = new Context()
       this.ctx = ctx
+      // Cordis reports async disposer errors through its logger even when the
+      // fiber settles successfully. Retain one cause until disposal finishes.
+      ctx.logger.exporter({ levels: { default: 1 }, export: (message) => {
+        if (message.type !== 'error' || !this.isDisposed() || this.cleanupFailure !== undefined) return
+        const reason: unknown = message.args[0]
+        this.cleanupFailure = reason instanceof Error
+          ? reason : new Error('web boot: native cleanup reported an error', { cause: reason })
+      } })
+      // Root disposal restarts a Context and unloads children asynchronously.
+      // Retain each child so disposal can seal pending activation immediately.
+      ctx.on('internal/plugin', (fiber) => {
+        if (fiber.uid === null) this.fibers.delete(fiber)
+        else {
+          this.fibers.add(fiber)
+          if (this.isDisposed()) this.stopFiber(fiber)
+        }
+      })
       this.page.setTotal(this.manifest.plugins.length)
-      await prefetching
       await bootClient({
         ctx,
         modules: this.modules,
         manifest: this.manifest,
         onEntryState: (name, state) => {
-          if (onFailure === undefined || state !== 'failed') this.page.setState(name, state)
+          if (!this.isDisposed() && (onFailure === undefined || state !== 'failed')) {
+            this.page.setState(name, state)
+          }
         },
       })
+      if (this.isDisposed()) return
       // The shell owns the one watcher that keeps Electron's window drag rects in
       // step with the rows that own them (electron#32341), so no chrome row has to
       // know that trap. It installs before the first mount, so the surface the
       // renderer draws is the one the first frame measures.
       this.stopDragRecall = installWindowDragRecall({ document: this.container.ownerDocument })
+      if (this.isDisposed()) return
       await mountClient(ctx, this.container)
     } catch (reason) {
+      if (this.isDisposed()) throw reason
       console.error(reason)
+      if (this.isDisposed()) throw reason
       if (onFailure !== undefined) onFailure(reason)
       else this.page.fail(reason instanceof Error ? reason.message : String(reason))
     }
   }
 
-  /** Dispose the client plugin tree and whichever page owns the mount point. */
-  async dispose(): Promise<void> {
-    this.stopDragRecall?.()
-    this.stopDragRecall = undefined
+  /**
+   * Permanently stop further activation and mounting, then join the actual run
+   * and native cleanup. Repeated calls share completion, including failures.
+   * External readiness and bundle work must settle; disposal does not cancel it.
+   * @returns Resolves once startup and owned cleanup have settled.
+   * @throws The startup or cleanup failure, including the first native cleanup
+   * error reported through Cordis logging; aggregates when several failures remain.
+   */
+  dispose(): Promise<void> {
+    if (this.disposal !== undefined) return this.disposal
+    const completion = Promise.withResolvers<void>()
+    this.disposal = completion.promise
+    void this.finishDisposal().then(completion.resolve, completion.reject)
+    return this.disposal
+  }
+
+  private stopFiber(fiber: Fiber): void {
+    this.stopping.push((async () => {
+      try {
+        await fiber.dispose()
+        return []
+      } catch (reason) {
+        return [reason]
+      }
+    })())
+  }
+
+  private async finishDisposal(): Promise<void> {
+    const failures: unknown[] = []
+    const running = Promise.allSettled(this.running === undefined ? [] : [this.running])
+    const stopDragRecall = (): void => {
+      const stop = this.stopDragRecall
+      this.stopDragRecall = undefined
+      try { stop?.() } catch (reason) { failures.push(reason) }
+    }
+    stopDragRecall()
+    try { this.page.dispose() } catch (reason) { failures.push(reason) }
+    for (const fiber of [...this.fibers].reverse()) this.stopFiber(fiber)
+    for (const result of await running) {
+      if (result.status === 'rejected') failures.push(result.reason)
+    }
+    // Late imports are still observed until startup and every sealed child settle.
+    for (const stopped of this.stopping) {
+      failures.push(...await stopped)
+    }
     const ctx = this.ctx
     this.ctx = undefined
-    if (ctx !== undefined) await ctx.fiber.dispose()
-    this.page.dispose()
+    try { await ctx?.fiber.dispose() } catch (reason) { failures.push(reason) }
+    stopDragRecall()
+    if (this.cleanupFailure !== undefined && !failures.includes(this.cleanupFailure)) failures.push(this.cleanupFailure)
+    if (failures.length === 1) {
+      const reason = failures[0]
+      throw reason instanceof Error ? reason : new Error('web boot: disposal failed', { cause: reason })
+    }
+    if (failures.length > 1) throw new AggregateError(failures, 'web boot: startup and disposal failed')
   }
 
   /** Prefetch stage-one bundles and their dynamic requests before concurrent plugin imports. */
