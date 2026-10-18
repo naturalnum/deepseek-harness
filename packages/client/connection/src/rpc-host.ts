@@ -19,6 +19,7 @@ import { Peer } from './peer.ts'
 import type {
   PeerAdmission,
   ConnectionAdmission,
+  ConnectionDispatchGuard,
   ConnectionIndexRequest,
   ConnectionIndexResponse,
   ConnectionFetchRoute,
@@ -45,7 +46,7 @@ interface PeerRecord {
 
 interface ConnectionRpcInterceptor {
   readonly matches: ConnectionRpcEndpointMatcher
-  readonly fetchHandler: ConnectionFetchHandler
+  readonly handler: ConnectionRpcHandler
 }
 
 interface RegisteredFetchRoute {
@@ -84,10 +85,14 @@ export class HostConnectionService extends Service implements HostConnectionHand
    * @param response - response owned until the bridge and body cleanup settle.
    * @param peer - fixed live Peer selected by the external carrier.
    * @param maxRequestBodyBytes - byte limit for buffered request bodies.
+   * @param beforeDispatch - optional caller admission after actual route/envelope selection; omission retains native behavior.
    * @returns completion of response transfer and request-body cleanup.
    */
-  handleNodeRequest(request: IncomingMessage, response: ServerResponse, peer: PeerScope, maxRequestBodyBytes: number): Promise<void> {
-    return bridge(request, response, this.createSharedFetchHandler(API_PATH), peer, maxRequestBodyBytes)
+  handleNodeRequest(
+    request: IncomingMessage, response: ServerResponse, peer: PeerScope, maxRequestBodyBytes: number,
+    beforeDispatch?: ConnectionDispatchGuard,
+  ): Promise<void> {
+    return bridge(request, response, this.createSharedFetchHandler(API_PATH, beforeDispatch), peer, maxRequestBodyBytes)
   }
 
   readonly allowsRemoteAuthorities: boolean
@@ -216,10 +221,12 @@ export class HostConnectionService extends Service implements HostConnectionHand
   /**
    * Compose one shared-channel Fetch handler from exact routes and its interceptor.
    * @param channel - shared channel mounted by Connection.
+   * @param beforeDispatch - optional final target admission; omission performs ordinary native dispatch.
    * @returns Fetch handler that selects one owner or returns 404.
    */
   createSharedFetchHandler(
     channel: '/api',
+    beforeDispatch?: ConnectionDispatchGuard,
   ): ConnectionFetchHandler {
     return {
       requestBodyMode: ({ method, url }) => {
@@ -233,6 +240,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
           // Exact routes bypass Gateway access checks, so only the owner reaches them.
           // oxlint-disable-next-line typescript/no-unnecessary-condition -- other packages merge non-owner kinds into PrincipalMap.
           if (peer.principal.kind !== 'owner') return Promise.resolve(new Response('forbidden', { status: 403 }))
+          beforeDispatch?.({ kind: 'fetch', method: request.method, pathname })
           return route.fetch(request)
         }
         const endpoint = endpointFromPath(channel, pathname)
@@ -240,7 +248,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
         if (endpoint === undefined || interceptor === undefined || !interceptor.matches(endpoint)) {
           return Promise.resolve(new Response('not found', { status: 404 }))
         }
-        return interceptor.fetchHandler.fetch(request, peer)
+        return rpcFetchHandler(channel, interceptor.handler, beforeDispatch).fetch(request, peer)
       },
     }
   }
@@ -301,7 +309,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
     }
     const interceptor: ConnectionRpcInterceptor = {
       matches,
-      fetchHandler: rpcFetchHandler(channel, handler),
+      handler,
     }
     return owner.effect(() => {
       if (this.interceptors.has(channel)) {
@@ -318,6 +326,7 @@ export class HostConnectionService extends Service implements HostConnectionHand
 function rpcFetchHandler(
   channel: string,
   handler: ConnectionRpcHandler,
+  beforeDispatch?: ConnectionDispatchGuard,
 ): ConnectionFetchHandler {
   return {
     requestBodyMode: () => 'buffered',
@@ -352,6 +361,7 @@ function rpcFetchHandler(
         })
       }
 
+      beforeDispatch?.({ kind: 'rpc', endpoint })
       try {
         const result = await handler(endpoint, message.payload, request.signal, peer)
         return fullResponse(message.rpcId, result)

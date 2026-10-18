@@ -130,3 +130,11 @@ export interface BootstrapDecodeLimits {
   /** Combined maximum entries across consumers, plugins and configuration fields; zero permits only empty lists. */
   readonly maxListItems: number
 }
+
+/** Safe actual registration observation consumed by root recipe audit, without calling that audit recursively. */
+export interface IngressObservation {
+  readonly state: 'absent' | 'prepared' | 'installing' | 'installed' | 'closing' | 'closed' | 'unknown'
+  readonly current: boolean
+  readonly registeredRoutes: number
+  readonly pendingOperations: number
+}

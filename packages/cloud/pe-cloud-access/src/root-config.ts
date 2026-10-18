@@ -5,6 +5,21 @@ import { AccessConfigSchema } from './config-schema.ts'
 import { parseAccessConfig } from './config.ts'
 import type { AccessConfig } from './types.ts'
 
+/** Optional shared-Web registration inputs; none grants recipe, account or transport readiness. */
+export interface AuthIngressConfig {
+  readonly maxOperations: number
+  readonly maxOperationsPerAccount: number
+  readonly requestTimeoutMs: number
+  readonly maxAuthRequestBodyBytes: number
+  readonly maxRequestBodyBytes: number
+  readonly maxBootstrapResponseBytes: number
+  readonly maxGenerationBindings: number
+  readonly maxFrameBytes: number
+  readonly maxLogicalStreams: number
+  readonly maxLogicalStreamsPerAccount: number
+  readonly maxLogicalStreamsPerPeer: number
+}
+
 /** Explicit root resources; SSL enables certificate verification with the system trust store. */
 export interface AuthRootConfig extends AccessConfig {
   readonly database: {
@@ -28,6 +43,8 @@ export interface AuthRootConfig extends AccessConfig {
   readonly secretResolveTimeoutMs: number
   readonly maxSecretOperations: number
   readonly maxSecretBytes: number
+  /** Omission initializes authentication resources only, preserving deployment schema verification. */
+  readonly ingress?: AuthIngressConfig
 }
 
 const positive = () => z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required()
@@ -48,6 +65,13 @@ export const AuthRootConfigSchema: z<AuthRootConfig> = z.intersect([
       maxLifetimeSeconds: z.natural().min(1).max(2_147_483).required(),
     }).required(),
     startupTimeoutMs: timer(), secretResolveTimeoutMs: timer(), maxSecretOperations: positive(), maxSecretBytes: positive(),
+    ingress: z.object({
+      maxOperations: positive(), maxOperationsPerAccount: positive(), requestTimeoutMs: timer(),
+      maxAuthRequestBodyBytes: positive(), maxRequestBodyBytes: positive(),
+      maxBootstrapResponseBytes: positive(), maxGenerationBindings: positive(),
+      maxFrameBytes: positive(), maxLogicalStreams: positive(),
+      maxLogicalStreamsPerAccount: positive(), maxLogicalStreamsPerPeer: positive(),
+    }).default(undefined as never),
   }),
 ])
 
@@ -64,6 +88,9 @@ export function parseAuthRootConfig(input: AuthRootConfig): AuthRootConfig {
     credentialRef(config.authSecretRef)
     credentialRef(config.database.passwordRef)
     if (config.maxSecretBytes < 32 || config.pool.lockTimeoutMs > config.pool.statementTimeoutMs) throw new TypeError()
+    if (config.ingress !== undefined && config.ingress.maxOperationsPerAccount > config.ingress.maxOperations) throw new TypeError()
+    if (config.ingress !== undefined && (config.ingress.maxLogicalStreamsPerAccount > config.ingress.maxLogicalStreams
+      || config.ingress.maxLogicalStreamsPerPeer > config.ingress.maxLogicalStreamsPerAccount)) throw new TypeError()
     return config
   } catch (_error) {
     // Schema diagnostics can contain supplied configuration; root exposes only this fixed deployment error.

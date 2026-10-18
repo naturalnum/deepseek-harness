@@ -17,6 +17,8 @@ import { ConnectionRecoveryConfigSchema, resolveConnectionConfig, type Connectio
 export type {
   PeerAdmission,
   ConnectionAdmission,
+  ConnectionDispatch,
+  ConnectionDispatchGuard,
   ConnectionFetchMethod,
   ConnectionFetchHandler,
   ConnectionFetchRoute,

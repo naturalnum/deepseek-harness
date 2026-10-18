@@ -18,9 +18,9 @@ export interface Config extends AuthRootConfig {}
 export const Config = AuthRootConfigSchema
 
 /**
- * Initialize root authentication resources without opening any shared Web route.
+ * Initialize authentication resources and optional shared-Web route ownership; the actual root seal gates admission.
  * @param ctx - Root Context with official credentials.
- * @param config - Explicit authentication, database and secret budgets.
+ * @param config - Explicit authentication/database budgets and optional finite ingress configuration.
  * @returns After library schema inspection; the resource provider is available through ctx.get('peAuth').
  * @throws AuthAccessError on failed or timed-out initialization; actual cleanup remains retained.
  */

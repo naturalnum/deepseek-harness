@@ -47,8 +47,12 @@ import type {
 } from './types.ts'
 import {
   RemoteStreamMuxServer,
+  StreamCleanupError,
+  isStreamCancellation,
+  assertStreamReturned,
   rejectRemoteStreamUpgrade,
   type NodeStreamTransport,
+  type NodeStreamTransportOptions,
 } from './stream-server.ts'
 import {
   REMOTE_EVENT_STREAM_ENDPOINT,
@@ -82,7 +86,7 @@ export type {
   TypertRemoteEventSource,
 } from './types.ts'
 export type { RemoteEventHostInfo } from './stream-protocol.ts'
-export type { NodeStreamTransport } from './stream-server.ts'
+export type { NodeStreamTransport, NodeStreamTransportOptions } from './stream-server.ts'
 
 interface GatewayErrorOptions {
   readonly cause?: unknown
@@ -234,9 +238,12 @@ export class TypertGatewayService extends Service implements TypertGateway {
    * The caller owns authentication, Host/Origin checks, and the Peer's lifetime.
    * @param peer - fixed live Peer selected by the external carrier.
    * @param beforeOpen - synchronous guard before each logical-stream dispatch; a throw refuses that stream.
+   * @param options - optional frame limit and pre-allocation logical resource reservation; settlement is synchronous.
    * @returns carrier closed explicitly or when the calling Context unloads.
    */
-  createNodeStreamTransport(peer: PeerScope, beforeOpen: (endpoint: string) => void): NodeStreamTransport {
+  createNodeStreamTransport(
+    peer: PeerScope, beforeOpen: (endpoint: string) => void, options?: NodeStreamTransportOptions,
+  ): NodeStreamTransport {
     const mux = new RemoteStreamMuxServer(
       (endpoint, payload, uplink, admittedPeer, control, window) => {
         beforeOpen(endpoint)
@@ -245,15 +252,16 @@ export class TypertGatewayService extends Service implements TypertGateway {
       this.wireStream.failure,
       this.nodeTransportConfig.websocketHeartbeatIntervalMs,
       this.nodeTransportConfig.streamInboxBytes,
+      options,
     )
     let closing: Promise<void> | undefined
-    const dispose = this.ctx.effect(() => () => closing ??= mux.close(), 'api-gateway: admitted Node stream transport')
+    const dispose = this.ctx.effect(() => () => mux.close(), 'api-gateway: admitted Node stream transport')
     return {
       handleUpgrade: (request, socket, head) => { mux.handleUpgrade(request, socket, head, peer) },
-      close: () => {
-        const disposed = dispose()
-        return closing ??= Promise.resolve(disposed)
-      },
+      close: () => closing ??= (async () => {
+        const results = await Promise.allSettled([mux.close(), Promise.resolve().then(() => dispose())])
+        for (const result of results) if (result.status === 'rejected') throw result.reason
+      })(),
     }
   }
 
@@ -288,10 +296,12 @@ export class TypertGatewayService extends Service implements TypertGateway {
           resolved.streamInboxBytes,
         )
         const releases = new Set<Promise<void>>()
+        let cleanupFailure: { readonly error: unknown } | undefined
         webCtx.effect(function* () {
           yield async () => {
-            await mux.close()
-            await Promise.all(releases)
+            try { await mux.close() } catch (error) { cleanupFailure ??= { error } }
+            await Promise.allSettled(releases)
+            if (cleanupFailure !== undefined) throw cleanupFailure.error
           }
           const route: WebUpgradeRoute = {
             path: REMOTE_STREAM_MUX_PATH,
@@ -304,11 +314,13 @@ export class TypertGatewayService extends Service implements TypertGateway {
               const release = (): void => {
                 // release removes the API Peer synchronously, before awaiting
                 // scope cleanup or any logical-stream iterator's return.
-                const done = admission.release().catch((error: unknown) => {
-                  console.error('[api-gateway] Peer release failed:', error)
-                })
+                let done: Promise<void>
+                try { done = admission.release() } catch (error) { cleanupFailure ??= { error }; return }
                 releases.add(done)
-                void done.then(() => { releases.delete(done) })
+                void done.then(() => { releases.delete(done) }, (error: unknown) => {
+                  cleanupFailure ??= { error }
+                  releases.delete(done)
+                })
               }
               const closed = (): void => {
                 socket.removeListener('error', release)
@@ -548,7 +560,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
   ): Promise<AsyncIterable<unknown>> {
     if (endpoint === REMOTE_EVENT_STREAM_ENDPOINT) {
       // A Gateway-owned stream reads no uplink: releasing it now keeps its items out of the bounded inbox.
-      releaseUplink(uplink)
+      await releaseUplink(uplink)
       assertPeerLive(peer, endpoint)
       requireInteractions(peer, endpoint)
       return this.openRemoteEvents(payload, signal, peer)
@@ -1338,22 +1350,26 @@ async function *cancellableStream(
   const { signal } = invocation
   const asyncFactory: unknown = Reflect.get(source, Symbol.asyncIterator)
   const syncFactory: unknown = Reflect.get(source, Symbol.iterator)
-  const iterator = typeof asyncFactory === 'function'
-    ? Reflect.apply(asyncFactory, source, []) as AsyncIterator<unknown>
-    : Reflect.apply(syncFactory as (...args: never[]) => Iterator<unknown>, source, [])
+  let iterator: AsyncIterator<unknown> | Iterator<unknown> | undefined
+  let pending: Promise<IteratorResult<unknown>> | undefined
   let rejectAbort: ((error: unknown) => void) | undefined
   const onAbort = (): void => {
     rejectAbort?.(streamAbortFailure(endpoint, signal.reason))
   }
   signal.addEventListener('abort', onAbort, { once: true })
   try {
+    iterator = typeof asyncFactory === 'function'
+      ? Reflect.apply(asyncFactory, source, []) as AsyncIterator<unknown>
+      : Reflect.apply(syncFactory as (...args: never[]) => Iterator<unknown>, source, [])
     while (true) {
       if (signal.aborted) throw streamAbortFailure(endpoint, signal.reason)
       // Reusing a pending cancellation promise retains every completed race.
       const aborted = new Promise<never>((_resolve, reject) => { rejectAbort = reject })
       // next() can abort and throw synchronously before the race subscribes.
       void aborted.catch(() => undefined)
-      const next = await Promise.race([Promise.resolve(iterator.next()), aborted])
+      pending = Promise.resolve(iterator.next())
+      const next = await Promise.race([pending, aborted])
+      pending = undefined
       rejectAbort = undefined
       if (next.done === true) return
       yield next.value
@@ -1361,10 +1377,20 @@ async function *cancellableStream(
   } finally {
     rejectAbort = undefined
     signal.removeEventListener('abort', onAbort)
-    // The uplink closes first so a method blocked on `uplink.next()` unwinds
-    // before its iterator is asked to return.
-    await invocation.close()
-    await iterator.return?.()
+    // Uplink finish wakes blocked consumers before downlink return; join both even if either fails.
+    let cleanup: { readonly error: unknown } | undefined
+    const retain = async (work: Promise<unknown>, read = false): Promise<void> => {
+      try { await work } catch (error) {
+        if (read && (!signal.aborted || isStreamCancellation(error, signal))) return
+        cleanup ??= { error }
+      }
+    }
+    await Promise.all([
+      retain(invocation.close()),
+      retain(Promise.resolve().then(async () => { assertStreamReturned(await iterator?.return?.()) })),
+      retain(Promise.resolve(pending), true),
+    ])
+    if (cleanup !== undefined) throw new StreamCleanupError(cleanup.error)
   }
 }
 
@@ -1398,6 +1424,9 @@ class UplinkDecoder implements AsyncIterable<unknown>, AsyncIterator<unknown> {
     for (const read of this.interrupted) read.reject(failure)
   }
   private closed = false
+  private readonly reads = new Set<Promise<IteratorResult<unknown>>>()
+  private closing: Promise<IteratorResult<unknown>> | undefined
+  private failure_: { readonly error: unknown } | undefined
 
   constructor(
     uplink: AsyncIterable<unknown>,
@@ -1425,7 +1454,13 @@ class UplinkDecoder implements AsyncIterable<unknown>, AsyncIterator<unknown> {
     void interrupted.promise.catch(() => undefined)
     let next: IteratorResult<unknown>
     try {
-      next = await Promise.race([this.source.next(), interrupted.promise])
+      const actual = Promise.resolve(this.source.next())
+      this.reads.add(actual)
+      void actual.then(() => { this.reads.delete(actual) }, (error: unknown) => {
+        if ((this.closed || this.signal.aborted) && !isStreamCancellation(error, this.signal)) this.failure_ ??= { error }
+        this.reads.delete(actual)
+      })
+      next = await Promise.race([actual, interrupted.promise])
     } finally {
       this.interrupted.delete(interrupted)
     }
@@ -1447,15 +1482,19 @@ class UplinkDecoder implements AsyncIterable<unknown>, AsyncIterator<unknown> {
     return { value, done: false }
   }
 
-  /** Downlink finished or the method stopped reading: unread uplink items are dropped. */
+  /** Drop unread items, wake consumers and await actual source return and pending reads. */
   return(): Promise<IteratorResult<unknown>> {
-    if (!this.closed) {
-      this.finish()
-      // The carrier owns the source iterator; a generator blocked in next()
-      // completes this return once it yields, so it is not awaited here.
-      void Promise.resolve().then(() => this.source.return?.()).catch(() => undefined)
-    }
-    return Promise.resolve(UPLINK_DONE)
+    return this.closing ??= this.closeActual()
+  }
+
+  private async closeActual(): Promise<IteratorResult<unknown>> {
+    this.finish()
+    const returned = Promise.resolve().then(async () => { assertStreamReturned(await this.source.return?.()) }).catch((error: unknown) => {
+      this.failure_ ??= { error }
+    })
+    await Promise.allSettled([returned, ...this.reads])
+    if (this.failure_ !== undefined) throw new StreamCleanupError(this.failure_.error)
+    return UPLINK_DONE
   }
 
   private finish(): void {
@@ -1473,6 +1512,7 @@ class UplinkDecoder implements AsyncIterable<unknown>, AsyncIterator<unknown> {
 class GatewayInvocation implements RemoteInvocation {
   private decoder: UplinkDecoder | undefined
   private taken = false
+  private closing: Promise<void> | undefined
 
   get uplinkWindow(): RemoteInvocation['uplinkWindow'] { return this.uplink_.window }
 
@@ -1506,26 +1546,28 @@ class GatewayInvocation implements RemoteInvocation {
    * The downlink finished: release the uplink. Unread items are dropped, and a
    * carrier iterable the method never took is returned so it stops producing;
    * a later `uplink()` throws like a second one would.
-   * @returns settles once a taken uplink has closed.
+   * @returns actual taken or unread uplink cleanup, including pending source reads.
    */
-  async close(): Promise<void> {
-    if (this.decoder !== undefined) {
-      await this.decoder.return()
-      return
-    }
+  close(): Promise<void> {
+    return this.closing ??= this.closeActual()
+  }
+
+  private async closeActual(): Promise<void> {
     this.taken = true
-    releaseUplink(this.uplink_.source)
+    try {
+      if (this.decoder !== undefined) await this.decoder.return()
+      else await releaseUplink(this.uplink_.source)
+    } catch (error) { throw new StreamCleanupError(error) }
   }
 }
 
 /**
- * Return a carrier uplink nobody will read, so it drops later items instead of
- * buffering them. The carrier owns the iterator and `return()` is not awaited:
- * a generator blocked in `next()` completes it only once it yields.
+ * Return a carrier uplink nobody will read and retain its actual cleanup result.
  * @param source - the carrier's uplink iterable.
+ * @returns actual iterator return completion.
  */
-function releaseUplink(source: AsyncIterable<unknown>): void {
-  void Promise.resolve().then(() => source[Symbol.asyncIterator]().return?.()).catch(() => undefined)
+async function releaseUplink(source: AsyncIterable<unknown>): Promise<void> {
+  try { assertStreamReturned(await source[Symbol.asyncIterator]().return?.()) } catch (error) { throw new StreamCleanupError(error) }
 }
 
 function rpcFailure(error: unknown): ConnectionRpcResult {

@@ -4,9 +4,12 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import pg from 'pg'
+import { ExposureService } from '@deepseek-ai/dsh-pe-cloud-api'
 import { BetterAuthAccess } from './auth.ts'
 import { AuthAccessError } from './auth-error.ts'
 import { parseAuthRootConfig, type AuthRootConfig } from './root-config.ts'
+import { CloudIngress } from './ingress.ts'
+import type { IngressObservation } from './types.ts'
 
 import { assertAuthSchemaCurrent } from './auth-schema.ts'
 
@@ -23,6 +26,7 @@ export interface AuthRootObservation {
   readonly pendingSecrets: number
   readonly pendingAuthentication: number
   readonly poolAllocated: boolean
+  readonly ingress?: IngressObservation
 }
 
 /** Owns one finite authentication pool and its actual secret/library work, without publishing raw resources. */
@@ -34,6 +38,8 @@ export class PeAuthService extends Service {
   private auth: BetterAuthAccess | undefined
   private starting: Promise<void> = Promise.resolve()
   private closing: Promise<void> | undefined
+  private ingress: CloudIngress | undefined
+  private ingressFinal: IngressObservation | undefined
 
   private constructor(ctx: Context, private readonly config: AuthRootConfig, private readonly credentials: CredentialProvider) {
     super(ctx, 'peAuth')
@@ -45,7 +51,7 @@ export class PeAuthService extends Service {
 
   /**
    * Resolve official credentials, create the real pool/library and inspect deployed migrations.
-   * No HTTP/WS/bootstrap route or listener is registered; missing root seal and graph API handoffs keep admission closed.
+   * Optional ingress registers on the existing Web service after schema inspection; the actual seal still gates every request.
    * @param ctx - Root Loader scope with the official credentials service.
    * @param config - Explicit Host database and operation budgets.
    * @returns The installed resource provider after a gap-free library schema inspection.
@@ -77,6 +83,9 @@ export class PeAuthService extends Service {
     return Object.freeze({
       phase: this.phase, requestAdmission: 'closed', pendingSecrets: this.secrets.size,
       pendingAuthentication: this.auth?.pendingOperations ?? 0, poolAllocated: this.pool !== undefined,
+      ...this.config.ingress === undefined ? {} : { ingress: this.ingress?.observe() ?? this.ingressFinal ?? Object.freeze({
+        state: 'absent' as const, current: false, registeredRoutes: 0, pendingOperations: 0,
+      }) },
     })
   }
 
@@ -88,6 +97,9 @@ export class PeAuthService extends Service {
   close(): Promise<void> {
     if (this.closing !== undefined) return this.closing
     this.phase = 'closing'
+    void this.ingress?.closeActual().catch((_error: unknown) => {
+      // finishClose joins the same actual ingress barrier and reports its safe failure.
+    })
     this.closing = this.finishClose().catch(() => { throw new AuthAccessError('cloud/stop-unconfirmed', this.requestId) })
     return this.closing
   }
@@ -114,13 +126,28 @@ export class PeAuthService extends Service {
       this.ctx.logger.error('Cloud authentication database failed; admission remains closed.')
       void this.close().catch(() => { this.ctx.logger.error('Cloud authentication cleanup is unconfirmed; admission remains closed.') })
     })
-    this.auth = await BetterAuthAccess.create(this.config, this.pool, secret, async () => {
-      // No Peer can exist while this resource-only provider has no request routes.
+    this.auth = await BetterAuthAccess.create(this.config, this.pool, secret, async (loginId) => {
+      // Before optional ingress exists, no request route can have issued a Peer.
+      await this.ingress?.invalidateLogin(loginId)
     })
     this.assertStarting()
     const plan = await this.auth.planMigrations(this.requestId)
     assertAuthSchemaCurrent(plan, this.requestId)
     this.assertStarting()
+    if (this.config.ingress !== undefined) {
+      const web = this.ctx.get('webServer'), runtime = this.ctx.get('peAccountRuntime'), exposure = this.ctx.get('peExposure')
+      if (web === undefined || runtime === undefined || !(exposure instanceof ExposureService)) {
+        throw new AuthAccessError('cloud/account-unavailable', this.requestId)
+      }
+      this.ingress = new CloudIngress(this.ctx, this.config, this.config.ingress, this.auth, {
+        web, runtime, recipeVersion: exposure.policy.manifest.recipeVersion,
+        assertAuthenticationCurrent: () => {
+          if (this.phase !== 'initialized') throw new AuthAccessError('cloud/account-unavailable', this.requestId)
+        },
+      })
+      await this.ingress.install()
+      this.assertStarting()
+    }
     this.phase = 'initialized'
   }
 
@@ -149,11 +176,14 @@ export class PeAuthService extends Service {
 
   private async finishClose(): Promise<void> {
     await Promise.allSettled([this.starting])
+    await this.ingress?.closeActual()
+    this.ingressFinal = this.ingress?.observe()
     await this.auth?.close()
     await Promise.allSettled([...this.secrets])
     await this.pool?.end()
     this.pool = undefined
     this.auth = undefined
+    this.ingress = undefined
     this.phase = 'closed'
   }
 

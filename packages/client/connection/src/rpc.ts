@@ -202,6 +202,14 @@ export interface HostConnectionRpc {
   ): () => Promise<void>
 }
 
+/** Actual target selected by the native HTTP dispatcher, before its handler is called. */
+export type ConnectionDispatch =
+  | { readonly kind: 'rpc'; readonly endpoint: string }
+  | { readonly kind: 'fetch'; readonly method: string; readonly pathname: string }
+
+/** Caller-owned synchronous admission; a throw prevents the selected native handler from running. */
+export type ConnectionDispatchGuard = (dispatch: ConnectionDispatch) => void
+
 /** Host `ctx.connection` members consumed by transport-independent adapters. */
 export interface HostConnectionHandle {
   /** Generic RPC channel registry. */
@@ -220,9 +228,10 @@ export interface HostConnectionHandle {
   /**
    * Compose exact Fetch routes and the shared-channel RPC interceptor.
    * @param channel - shared channel mounted by Connection.
+   * @param beforeDispatch - optional final target admission; omission retains ordinary native dispatch.
    * @returns Fetch handler for trusted, authenticated requests.
    */
-  createSharedFetchHandler(channel: '/api'): ConnectionFetchHandler
+  createSharedFetchHandler(channel: '/api', beforeDispatch?: ConnectionDispatchGuard): ConnectionFetchHandler
 
   /**
    * Apply Connection's Host/Origin checks and browser authentication to

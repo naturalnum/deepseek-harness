@@ -14,6 +14,8 @@ import { PeAuthService } from '../src/auth-root.ts'
 import { assertAuthSchemaCurrent } from '../src/auth-schema.ts'
 import { AuthRootConfigSchema, parseAuthRootConfig, type AuthRootConfig } from '../src/root-config.ts'
 import * as root from '../src/root.ts'
+import { CloudIngress } from '../src/ingress.ts'
+import { ingressConfig } from './ingress-fixture.ts'
 
 const contexts: Context[] = []
 const gates: Array<() => void> = []
@@ -308,8 +310,23 @@ describe('root authentication resources remain closed on incomplete or failed in
     const password = pool.options.password
     expect(typeof password).toBe('function')
     expect(ctx.peAuth.observe()).toMatchObject({ phase: 'closed', pendingAuthentication: 0, pendingSecrets: 0, requestAdmission: 'closed' })
+    expect(ctx.peAuth.observe()).not.toHaveProperty('ingress')
     if (typeof password !== 'function') throw new Error('Expected a per-connection credential resolver')
     await expect(password()).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+  })
+
+  it('does not bypass real schema inspection or claim ingress installation when optional routing dependencies are absent', async () => {
+    const { ctx } = await context()
+    const inspect = vi.spyOn(BetterAuthAccess.prototype, 'planMigrations')
+    const install = vi.spyOn(CloudIngress.prototype, 'install')
+    await expect(root.apply(ctx, { ...config(), ingress: ingressConfig() })).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+    await ctx.peAuth.close()
+    expect(inspect).toHaveBeenCalledTimes(1)
+    expect(install).not.toHaveBeenCalled()
+    expect(ctx.peAuth.observe()).toMatchObject({
+      phase: 'closed', poolAllocated: false,
+      ingress: { state: 'absent', current: false, registeredRoutes: 0, pendingOperations: 0 },
+    })
   })
 
   it('retains the real pool through late library creation and timed-out per-connection secret work', async () => {

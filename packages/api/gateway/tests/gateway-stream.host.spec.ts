@@ -416,6 +416,95 @@ describe('Typert Remote streams', () => {
     expect(() => { startup.commit() }).not.toThrow()
   })
 
+  it('joins default Web Peer releases after an earlier native cleanup failure was logged', async () => {
+    const { ctx, service } = await setup(true)
+    const origin = `http://127.0.0.1:${String(ctx.webServer.port)}`
+    const observer = new Context()
+    observer.logger = ctx.logger
+    const errors: unknown[] = []
+    let overflow = false
+    observer.logger.exporter({ levels: { default: 0 }, export(message) {
+      if (message.type !== 'error') return
+      if (errors.length >= 8) { overflow = true; return }
+      const args: readonly unknown[] = message.args
+      errors.push(...args.slice(0, 8 - errors.length))
+    } })
+    const clients: Array<{ socket: WebSocket; closed: Promise<void> }> = []
+    const entered = Promise.withResolvers<undefined>()
+    const finish = Promise.withResolvers<undefined>()
+    const failure = new Error('fixture admitted Peer release cleanup failed')
+    let secondFinished = false
+    let stopping: Promise<unknown> | undefined
+    const connectPeer = async (label: string): Promise<PeerScope> => {
+      const response = await fetch(ctx.connection.authenticatedUrl(`${origin}/connect`), { redirect: 'manual' })
+      expect(response.status).toBe(302)
+      const cookie = response.headers.get('set-cookie')
+      await response.text()
+      if (cookie === null) throw new Error('default Web release fixture did not receive its API cookie')
+      const socket = new WebSocket(`${origin.replace('http:', 'ws:')}/api/remote.mux`, {
+        headers: { cookie: cookie.split(';', 1)[0]! },
+      })
+      const closed = new Promise<void>((resolve) => { socket.once('close', () => { resolve() }) })
+      socket.on('error', () => {})
+      clients.push({ socket, closed })
+      await once(socket, 'open')
+      sendOpen(socket, label, 'feed/echo', { prefix: label })
+      await vi.waitFor(() => { expect(service.peers).toHaveLength(clients.length) })
+      return service.peers[clients.length - 1]!
+    }
+    try {
+      const first = await connectPeer('first-release')
+      const second = await connectPeer('second-release')
+      expect(first).not.toBe(second)
+      expect(first).not.toBe(ctx.connection.browserPeer)
+      expect(second).not.toBe(ctx.connection.browserPeer)
+      // Inject only fixture-owned work in the real admitted Peers' release paths.
+      // No Connection, Gateway or Peer method is replaced.
+      first.ctx.effect(() => () => { throw failure }, 'fixture: failing admitted Peer release')
+      second.ctx.effect(() => async () => {
+        entered.resolve(undefined)
+        await finish.promise
+        secondFinished = true
+      }, 'fixture: pending admitted Peer release')
+      clients[0]!.socket.close()
+      await clients[0]!.closed
+      await vi.waitFor(() => { expect(first.signal.aborted).toBe(true) })
+      // Join actual native release before Gateway teardown. Cordis logs ordinary
+      // disposer errors, so this public Peer disposal fulfills rather than rejects.
+      await expect(first.dispose()).resolves.toBeUndefined()
+      await new Promise<void>((resolve) => { setImmediate(resolve) })
+      expect(errors.filter(error => error === failure)).toHaveLength(1)
+      expect(first.ctx.fiber.uid).toBeNull()
+      const fibers = [...ctx.registry.get(TypertGatewayService)!.fibers]
+      expect(fibers).toHaveLength(1)
+      let settled = false
+      stopping = Promise.resolve(fibers[0]!.dispose())
+      void stopping.then(() => { settled = true }, () => { settled = true })
+      await entered.promise
+      await clients[1]!.closed
+      expect(second.signal.aborted).toBe(true)
+      expect(secondFinished).toBe(false)
+      expect(settled).toBe(false)
+      expect(errors.filter(error => error === failure)).toHaveLength(1)
+      finish.resolve(undefined)
+      await expect(stopping).resolves.toBeUndefined()
+      await second.dispose()
+      expect(secondFinished).toBe(true)
+      expect(second.ctx.fiber.uid).toBeNull()
+      expect(errors.filter(error => error === failure)).toHaveLength(1)
+      expect(overflow).toBe(false)
+      observer.fiber.assertActive()
+      // native-boot's surviving logger observer treats this error as unknown;
+      // fulfilled native disposal is not a clean resource/drain receipt.
+    } finally {
+      finish.resolve(undefined)
+      for (const client of clients) client.socket.terminate()
+      await Promise.all(clients.map(client => client.closed))
+      await stopping
+      await observer.fiber.dispose()
+    }
+  })
+
   it('validates the WebSocket heartbeat timer range and the stream inbox bound', () => {
     expect(TypertGatewayService.Config({})).toEqual({ websocketHeartbeatIntervalMs: 2_000, streamInboxBytes: 262_144 })
     expect(TypertGatewayService.Config({ websocketHeartbeatIntervalMs: MAX_TIMER_DELAY_MS, streamInboxBytes: 1 }))
@@ -468,9 +557,10 @@ describe('Typert Remote streams', () => {
       message: 'typert gateway: feed/echo: stream Remote methods must be opened through the stream carrier',
     })
 
-    // The caller's iterator is released even when its own return() rejects.
+    // A real return failure is retained even when the method never reads its uplink.
+    const releaseFailure = new Error('fixture release failure')
     const returned = vi.fn(async (): Promise<IteratorResult<string>> => {
-      throw new Error('fixture release failure')
+      throw releaseFailure
     })
     const unread: AsyncIterable<string> = {
       [Symbol.asyncIterator]: () => ({
@@ -481,7 +571,7 @@ describe('Typert Remote streams', () => {
     await expect(collect(await ctx.typertGateway.stream({
       peer: ownerPeer(ctx),
       namespace: 'feed', method: 'ignore', args: { prefix: 'i' }, uplink: unread,
-    }))).resolves.toEqual(['i:one', 'i:two'])
+    }))).rejects.toMatchObject({ cause: releaseFailure })
     await vi.waitFor(() => { expect(returned).toHaveBeenCalledOnce() })
   })
 
@@ -511,18 +601,26 @@ describe('Typert Remote streams', () => {
   it('ends a pending uplink read on cancellation and reports later reads as cancelled', async () => {
     const { ctx, service } = await setup(false)
     const abort = new AbortController()
+    const actual = Promise.withResolvers<IteratorResult<string>>()
     const source = await ctx.typertGateway.stream({
       peer: ownerPeer(ctx),
-      namespace: 'feed', method: 'peek', args: {}, uplink: neverYielding(), signal: abort.signal,
+      namespace: 'feed', method: 'peek', args: {}, signal: abort.signal,
+      uplink: { [Symbol.asyncIterator]: () => ({
+        next: () => actual.promise, return: async () => ({ done: true, value: undefined }),
+      }) },
     })
     const iterator = source[Symbol.asyncIterator]()
     await expect(iterator.next()).resolves.toEqual({ done: false, value: 'ready' })
     const pending = iterator.next()
     abort.abort(new Error('fixture cancellation'))
-    await expect(pending).rejects.toThrow('Remote invocation "feed/peek" was aborted')
-    await vi.waitFor(() => { expect(service.peeked).toHaveLength(2) })
-    expect(service.peeked.map(outcome => remoteErrorOf(outcome)?.code))
-      .toEqual(['gateway/cancelled', 'gateway/cancelled'])
+    const rejected = expect(pending).rejects.toThrow('Remote invocation "feed/peek" was aborted')
+    try {
+      await vi.waitFor(() => { expect(service.peeked).toHaveLength(2) })
+      expect(service.peeked.map(outcome => remoteErrorOf(outcome)?.code))
+        .toEqual(['gateway/cancelled', 'gateway/cancelled'])
+      actual.resolve({ done: true, value: undefined })
+      await rejected
+    } finally { actual.resolve({ done: true, value: undefined }); await Promise.allSettled([pending]) }
   })
 
   it('drops unread uplink items once the method finishes', async () => {
@@ -585,8 +683,9 @@ describe('Typert Remote streams', () => {
   it('releases a taken uplink source even when its return() rejects', async () => {
     const { ctx } = await setup(false)
     const abort = new AbortController()
+    const releaseFailure = new Error('fixture release failure')
     const returned = vi.fn(async (): Promise<IteratorResult<string>> => {
-      throw new Error('fixture release failure')
+      throw releaseFailure
     })
     const stuck: AsyncIterable<string> = {
       [Symbol.asyncIterator]: () => ({
@@ -602,7 +701,7 @@ describe('Typert Remote streams', () => {
     await expect(iterator.next()).resolves.toEqual({ done: false, value: 'held' })
     const pending = iterator.next()
     abort.abort(new Error('fixture cancellation'))
-    await expect(pending).rejects.toThrow('Remote invocation "feed/hold" was aborted')
+    await expect(pending).rejects.toMatchObject({ cause: releaseFailure })
     await vi.waitFor(() => { expect(returned).toHaveBeenCalledOnce() })
   })
 
@@ -637,12 +736,15 @@ describe('Typert Remote streams', () => {
       await expect(iterator.next()).resolves.toEqual({ done: false, value: 'held' })
       const uplink = service.leftover!
       pending.push(...reads.map(() => uplink.next().then((result) => { completed.push(result) })))
-      await iterator.return?.()
+      const closing = iterator.return?.()
+      await Promise.all(pending)
       expect(completed).toEqual([
         { done: true, value: undefined },
         { done: true, value: undefined },
       ])
       expect(returned).toHaveBeenCalledOnce()
+      for (const read of reads) read.resolve({ done: true, value: undefined })
+      await closing
     } finally {
       for (const read of reads) read.resolve({ done: true, value: undefined })
       await Promise.all(pending)

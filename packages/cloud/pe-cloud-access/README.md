@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Validate fixed-origin deployment inputs and reject stale account/generation expectations before native business work. `BetterAuthAccess` delegates authentication to pinned Better Auth and PostgreSQL, returning identity only from verified user/session rows. The `/root` Loader entry owns real authentication resources through `peAuth`; request admission remains closed while the root seal and account routing are incomplete.
+Validate fixed-origin deployment inputs and reject stale account/generation expectations before native business work. `BetterAuthAccess` delegates authentication to pinned Better Auth and PostgreSQL, returning identity only from verified user/session rows. The `/root` Loader entry owns authentication resources through `peAuth`; optional ingress registers on the existing shared Web service. The actual root seal still rejects business admission while storage and account prerequisites are incomplete.
 
 ## Table of Contents
 
@@ -28,7 +28,7 @@ Use the browser-safe `/schema` for structural `AccessConfigSchema`, request-expe
 
 ### Configuration
 
-All configuration is explicit; examples do not supply production defaults. Browser structural inputs live in [config-schema.ts](src/config-schema.ts); [config.ts](src/config.ts) retains full Host policy with unchanged Node IP semantics. Root additionally requires [root-config.ts](src/root-config.ts), the official `credentials` service and an already deployed Better Auth schema. No production route is open.
+All configuration is explicit; examples do not supply production defaults. Browser structural inputs live in [config-schema.ts](src/config-schema.ts); [config.ts](src/config.ts) retains full Host policy with unchanged Node IP semantics. Root requires [root-config.ts](src/root-config.ts), official `credentials` and an already deployed Better Auth schema. Omitting `ingress` retains resource-only initialization; configuring it requires the Loader entry's `inject` to include `webServer`, `peAccountRuntime` and `peExposure`, so these actual providers are active at schema inspection. Missing providers fail initialization. Production business remains closed.
 
 | Fields | Requirement |
 | --- | --- |
@@ -46,16 +46,21 @@ All configuration is explicit; examples do not supply production defaults. Brows
 | `database` | Explicit `host`, `port`, `user`, `database`, `passwordRef`, `ssl`; SSL verifies the server certificate with system trust. |
 | `pool` | Explicit positive `maxConnections`, `connectionTimeoutMs`, `statementTimeoutMs`, `lockTimeoutMs`, `idleTimeoutMs`, `idleTransactionTimeoutMs`, `maxLifetimeSeconds`; lock timeout cannot exceed statement timeout. |
 | `startupTimeoutMs`, `secretResolveTimeoutMs`, `maxSecretOperations`, `maxSecretBytes` | Finite startup/secret waits and actual-read capacity; byte cap is at least 32 and applies to each secret, including UTF-8. |
+| Optional `ingress` | Requires positive finite `maxOperations`, `maxOperationsPerAccount`, `requestTimeoutMs`, `maxAuthRequestBodyBytes`, `maxRequestBodyBytes`, `maxBootstrapResponseBytes`, `maxGenerationBindings`, `maxFrameBytes`, `maxLogicalStreams`, `maxLogicalStreamsPerAccount`, `maxLogicalStreamsPerPeer`; child capacities cannot exceed parents. Presence grants no readiness. |
 
 `peAuth` resolves the authentication secret through `ctx.credentials` and resolves the password again for each physical pool connection. References use the official credential-reference grammar; root reads no environment variables or default connection. The pool pins its schema to `public`; server statement/lock/idle-transaction limits stop SQL work, while no client query timer claims early completion. Startup checks all library migration categories, including indexes, unsafe changes and schema problems, without compiling or running DDL. Apply migrations explicitly during deployment.
 
-`PeAuthService.observe()` exposes only resource phase/counts and `requestAdmission: 'closed'`. Startup or secret timeout retains actual work; a timed-out secret still consumes its slot. `close()` joins actual startup, library operations and secret reads before awaiting `Pool.end()`, and repeated calls join the same cleanup. Failed cleanup retains resources and reports `cloud/stop-unconfirmed`. No HTTP/WS/bootstrap handler or additional listener is installed; authentication initialization does not establish account readiness.
+`PeAuthService.observe()` exposes resource phase/counts and `requestAdmission: 'closed'`. With ingress configured, nested state records actual retained registrations, owner/Web identity and pending work; it never recursively calls the seal. `close()` stops and withdraws ingress, joins actual handlers, body cancellation and native Peer cleanup, then authentication/secret work before `Pool.end()`. Timeout retains work; unknown cleanup retains ownership and reports `cloud/stop-unconfirmed`. Resource-only mode registers no routes; neither mode creates a listener or establishes account readiness.
 
 Root `apply` is an async Loader effect returning `Promise<void>`; Loader activation waits for authentication initialization and observes its rejection. Obtain the provider through `ctx.get('peAuth')`, or use `PeAuthService.mountRoot` from trusted same-process assembly. A missing secret fails the actual Loader entry and withdraws its provider; native boot's required-entry policy decides whether that entry failure rejects application startup.
 
 ### Request bindings
 
 Preserve every carrier-field occurrence for `parseRequestExpectation`; missing, repeated, empty, padded or control-character values fail with HTTP 409. After real authentication, compare the expected account before owner lookup, then compare the generation after acquiring the current graph. Pure comparison success grants no Peer, project scope or business permission; `AccountUse.assertCurrent()` remains required before dispatch and every WS logical stream.
+
+Private ingress owns `/cloud/auth`, `/cloud/bootstrap`, `/cloud/settings`, `/api` and native `/api/remote.mux` upgrade registrations. Every handler/continuation checks the actual seal; registration does not wait for sealing or create a Loader cycle. Raw header and WS query occurrences are preserved without fallback. Bounded opaque generation tokens require actual runtime business-current checks. Request borrows last through HTTP response/error settlement; upgraded sockets use the independent Peer borrow. Full root capacity closes the carrier without queuing.
+
+The native final-dispatch callback rechecks the original request, login, Use, generation and graph-local `CloudAccountApi` after actual route/envelope selection. Every logical stream checks its original Peer and per-graph policy. Native frame limits and acquire/actual-settle callbacks enforce global/account/Peer stream capacity; unknown cleanup retains slots and schedules closure without awaiting its own transport. Missing actual catalog/capability descriptions and C06 control keep bootstrap/settings refused.
 
 ### Bootstrap metadata
 
@@ -71,7 +76,7 @@ Unknown fields, invalid availability/reason pairs, non-false restricted capabili
 
 Internal `authenticateForBootstrap(request, requestId, maxDisplayNameBytes)` shares the same authentication operation and library lookup as `authenticate`, returning its normal principal and a frozen account projection from that verified user's name. The explicit positive byte limit is checked first against character length, then UTF-8 bytes. The principal and its login records gain no name field; later authentication can observe a changed name while prior projections stay immutable. Oversized names return `cloud/capacity`; an invalid limit returns `cloud/account-unavailable` before DB work. Neither failure exposes the name or account id.
 
-`handleNodeRequest` delegates the untouched body to Better Auth's Node bridge after Host/Origin/TLS/proxy checks. Forwarded headers never determine identity or a dynamic auth origin. Production uses Secure cookies; all cookies are HttpOnly with SameSite=Lax. Only explicitly trusted proxies may assert the fixed forwarded host/protocol; client IP tracking uses the actual socket address. WS handshake admission requires exactly one original Origin equal to `publicOrigin` before authentication DB work and native upgrade. Ordinary HTTP may omit Origin; mutating authentication HTTP CSRF checks remain owned by Better Auth.
+`handleNodeRequest` delegates untouched bytes to Better Auth's Node bridge after Host/Origin/TLS/proxy checks. Ingress supplies byte limits and observer cancellation; standard streams count raw chunks before parsing and join actual request/response cancellation. The library bridge's early Promise does not release response ownership. Forwarded headers determine neither identity nor auth origin. Production cookies are Secure, HttpOnly and SameSite=Lax. WS requires exactly one matching original Origin before auth DB work; HTTP may omit it, with mutating authentication CSRF checks still library-owned.
 
 `revokeLogin` deletes through the library before its session-deletion hook notifies the login invalidator. `planMigrations` returns the library-generated plan without applying it. Auth operations reserve one finite slot covering the real query and invalidation cleanup; nested hooks do not reserve another slot. A timed-out wait retains that slot in `pendingOperations` until actual work settles. `close` stops admission and waits without ending the caller-owned pool. No Agent task is cancelled by authentication failure.
 
@@ -104,6 +109,9 @@ Revocation or lifetime end closes admission and destroys carriers, then awaits n
 | [root.ts](src/root.ts) | Loader entry for root-owned authentication resources. |
 | [root-config.ts](src/root-config.ts) | Host database and secret budgets. |
 | [auth-root.ts](src/auth-root.ts) | Real pool/library initialization, schema inspection and actual cleanup. |
+| [ingress.ts](src/ingress.ts) | Private shared-Web ownership, real seal checks and retained requests. |
+| [expectation.ts](src/expectation.ts), [generations.ts](src/generations.ts) | Original occurrences and bounded runtime-bound tokens. |
+| [body-stream.ts](src/body-stream.ts), [stream-capacity.ts](src/stream-capacity.ts) | Actual cancellation and native stream reservations. |
 
 </details>
 
@@ -139,9 +147,9 @@ Request authentication and binding checks change no prompt prefix or model cache
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- Root request admission remains closed: a real root seal issuer is absent, runtime has not integrated the prepared graph-local `peCloudApi`, and the Peer/native routes are not wired. Runtime has `borrowAccount(binding)`, but its required files, execution, API save/exposure and all-writer quota production handoffs still reject account creation. Graph exposure policy already exists and cannot be replaced with root policy. A library authentication check does not establish S1/S2 or the full F01 browser/WS flow.
+- Actual recipe audit still rejects missing production storage authority; account production prerequisites remain separate. `CloudAccountApi` and native dispatch/stream hooks are wired without substituting root policy. Registered ingress still refuses business work. Library initialization and refusal tests do not establish S1/S2 or full F01 browser/WS success.
 - Proxy forwarding remains restricted to the configured fixed origin; forwarded client-IP chains and cross-instance service identity/routing require separate deployment integration.
-- Generated authentication SQL requires deployment migration review and packaging. Root rejects a nonempty library migration plan and never runs migrations. Shared Web routing still needs actual streamed body limits, root request budgets and seal admission before the original Better Auth Node bridge may receive traffic.
+- Root rejects a nonempty library migration plan and never runs migrations. Actual C11 catalog/capability descriptions, C06 control and approved navigation-download carrier selection remain pending; native HTTP currently requires binding headers, while WS uses query fields. Formal producer/consumer builds and real PG/Web integration are required before opening the complete chain.
 
 <a id="dev-note"></a>
 ### Dev Note

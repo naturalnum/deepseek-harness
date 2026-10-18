@@ -2,15 +2,18 @@
 import { randomUUID } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Duplex } from 'node:stream'
-import { Peer, HostConnectionService } from '@deepseek-ai/dsh-client-connection'
+import { Peer, HostConnectionService, type ConnectionDispatch } from '@deepseek-ai/dsh-client-connection'
 import { TypertGatewayService, type NodeStreamTransport } from '@deepseek-ai/dsh-api-gateway'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { AccountBinding, AccountUse, AccountId } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import { BetterAuthAccess } from './auth.ts'
 import { AuthAccessError } from './auth-error.ts'
+import { RequestBindingError } from './binding.ts'
 import { assertAuthTransport } from './auth-trust.ts'
 import type { AccessConfig, AuthenticatedPrincipal } from './types.ts'
+import type { AuthIngressConfig } from './root-config.ts'
+import { StreamCapacity } from './stream-capacity.ts'
 
 type RequestId = Branded<'pe-request-id'>
 type LoginId = AuthenticatedPrincipal['authSessionId']
@@ -23,6 +26,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'cloud/account-unavailable': SafeDetails
     'cloud/capacity': SafeDetails
     'cloud/stop-unconfirmed': SafeDetails
+    'cloud/stale-generation': ReturnType<RequestBindingError['toJSON']>
   }
 }
 
@@ -37,7 +41,10 @@ export interface LoginPeer {
 export interface LoginPeerPorts {
   readonly borrow: (binding: AccountBinding) => Promise<AccountUse>
   readonly beforeHttp: (request: IncomingMessage, peer: LoginPeer) => void
+  readonly beforeDispatch?: (request: IncomingMessage, dispatch: ConnectionDispatch, peer: LoginPeer) => void
   readonly beforeStream: (endpoint: string, peer: LoginPeer) => void
+  readonly streams?: Pick<AuthIngressConfig,
+    'maxFrameBytes' | 'maxLogicalStreams' | 'maxLogicalStreamsPerAccount' | 'maxLogicalStreamsPerPeer'>
   /** Default-enabled root diagnostics must persist this safe failure; callback must not throw. */
   readonly cleanupFailed: (failure: SafeDetails) => void
 }
@@ -70,6 +77,7 @@ interface Entry {
   timer: NodeJS.Timeout | undefined
   recheck: Promise<void> | undefined
   carrierCount: number
+  streamCount: number
 }
 
 /**
@@ -87,13 +95,17 @@ export class LoginPeerRegistry {
   private waiters: number = 0
   private carriers: number = 0
   private accepting: boolean = true
+  private closingActual: Promise<void> | undefined
+  private readonly streams: StreamCapacity | undefined
 
   /**
    * @param config - Validated finite admission/cleanup budgets.
    * @param auth - Actual M1 adapter.
    * @param ports - Trusted runtime and exposure callbacks.
    */
-  constructor(private readonly config: AccessConfig, private readonly auth: BetterAuthAccess, private readonly ports: LoginPeerPorts) {}
+  constructor(private readonly config: AccessConfig, private readonly auth: BetterAuthAccess, private readonly ports: LoginPeerPorts) {
+    this.streams = ports.streams === undefined ? undefined : new StreamCapacity(ports.streams)
+  }
 
   /** Reserved login slots. @returns Count including preparing and uncertain cleanup. */
   get reservedPeers(): number { return this.entries.size }
@@ -135,7 +147,7 @@ export class LoginPeerRegistry {
         waiters: new Set(), tasks: new Set(), carriers: new Set(), phase: 'preparing', preparing: true,
         use: undefined, handle: undefined, connection: undefined, mux: undefined, cleanupFault: false, removeObserver: undefined,
         nativeCleanup: undefined, cleanup: undefined,
-        timer: undefined, recheck: undefined, carrierCount: 0,
+        timer: undefined, recheck: undefined, carrierCount: 0, streamCount: 0,
         lifetimeEnded: () => { void this.startClose(owned, requestId) },
       }
       entry = owned
@@ -206,7 +218,11 @@ export class LoginPeerRegistry {
       this.assertCurrent(handle, requestId)
       const connection = entry.connection
       if (connection === undefined) throw new AuthAccessError('cloud/account-unavailable', requestId)
-      await connection.handleNodeRequest(request, response, handle.peer, maxRequestBodyBytes)
+      await connection.handleNodeRequest(request, response, handle.peer, maxRequestBodyBytes, (dispatch) => {
+        this.assertCurrent(handle, requestId)
+        this.ports.beforeDispatch?.(request, dispatch, handle)
+        this.assertCurrent(handle, requestId)
+      })
     })()
     return this.trackCarrier(entry, task, () => {
       entry.carriers.delete(request)
@@ -290,11 +306,22 @@ export class LoginPeerRegistry {
    * @returns Confirmed closure; unknown work remains retained after rejection.
    */
   async close(deadlineAtMs: number): Promise<void> {
+    await this.wait(this.closeActual(), deadlineAtMs, undefined, this.requestId())
+  }
+
+  /**
+   * Stop admission and join actual creation, carriers and native cleanup without an observer deadline.
+   * @returns The retained completion; failed cleanup rejects without releasing its entry or Use.
+   */
+  closeActual(): Promise<void> {
+    if (this.closingActual !== undefined) return this.closingActual
     this.accepting = false
+    this.streams?.close()
     const id = this.requestId()
     const entries = [...this.entries.values()]
     for (const entry of entries) void this.startClose(entry, id)
-    await this.wait(Promise.all(entries.map(entry => entry.done.promise)).then(() => {}), deadlineAtMs, undefined, id)
+    this.closingActual = Promise.all(entries.map(entry => entry.done.promise)).then(() => {})
+    return this.closingActual
   }
 
   private async prepare(entry: Entry, requestId: RequestId): Promise<void> {
@@ -336,10 +363,30 @@ export class LoginPeerRegistry {
         const id = this.requestId()
         try { this.assertCurrent(handle, id); this.ports.beforeStream(endpoint, handle); this.assertCurrent(handle, id) }
         catch (error) {
-          const failure = error instanceof AuthAccessError ? error : undefined
+          const failure = error instanceof AuthAccessError || error instanceof RequestBindingError ? error : undefined
           if (failure === undefined) throw error // Preserve the exposure owner's native RemoteError.
           throw new RemoteError(failure.code, failure.message, failure.toJSON())
         }
+      }, this.ports.streams === undefined ? undefined : {
+        maxFrameBytes: this.ports.streams.maxFrameBytes,
+        acquireStream: (_endpoint: string) => {
+          const id = this.requestId()
+          this.assertCurrent(handle, id)
+          const settle = this.streams?.acquire(entry.binding.accountId, entry, id, () => {
+            entry.cleanupFault = true
+            // Never await transport closure from the settlement callback of that same transport.
+            queueMicrotask(() => { void this.startClose(entry, id) })
+          })
+          if (settle === undefined) throw new AuthAccessError('cloud/account-unavailable', id)
+          entry.streamCount++
+          let settled = false
+          return (status: 'confirmed' | 'unknown') => {
+            if (settled) return
+            settled = true
+            settle(status)
+            if (status === 'confirmed') entry.streamCount--
+          }
+        },
       })
       this.handles.set(handle, entry)
       entry.phase = 'ready'
@@ -387,7 +434,9 @@ export class LoginPeerRegistry {
     entry.nativeCleanup ??= (async () => {
       // Physical carriers were destroyed above. Native iterator/scope cleanup proceeds together to avoid deadlock.
       const results = await Promise.allSettled([entry.mux?.close(), entry.handle?.peer.dispose()])
-      if (entry.cleanupFault || results.some(result => result.status === 'rejected')) throw new AuthAccessError('cloud/stop-unconfirmed', requestId)
+      if (entry.cleanupFault || entry.streamCount !== 0 || results.some(result => result.status === 'rejected')) {
+        throw new AuthAccessError('cloud/stop-unconfirmed', requestId)
+      }
     })()
     const cleanup = (async () => {
       // M1's invalidation callback awaits nativeCleanup only. A carrier auth read may own that callback.
@@ -426,7 +475,8 @@ export class LoginPeerRegistry {
 
   private finish(entry: Entry): void {
     if (entry.phase !== 'closing' || entry.preparing || entry.cleanup !== undefined || entry.use !== undefined
-      || entry.handle !== undefined || entry.mux !== undefined || entry.tasks.size !== 0 || entry.carrierCount !== 0) return
+      || entry.handle !== undefined || entry.mux !== undefined || entry.tasks.size !== 0
+      || entry.carrierCount !== 0 || entry.streamCount !== 0) return
     this.entries.delete(entry.key)
     this.increment(this.peerCounts, entry.binding.accountId, -1)
     entry.done.resolve()

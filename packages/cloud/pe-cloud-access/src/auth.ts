@@ -10,6 +10,7 @@ import { parseAccessConfig } from './config.ts'
 import type { AccessConfig, AuthenticatedPrincipal, CloudBootstrap } from './types.ts'
 import { AuthAccessError } from './auth-error.ts'
 import { assertAuthTransport } from './auth-trust.ts'
+import { trackBody, type TrackedBody } from './body-stream.ts'
 
 type NodeAuth = typeof import('better-auth/node')
 type AuthFactory = typeof import('better-auth')['betterAuth']
@@ -32,6 +33,11 @@ interface AuthInvocation {
   readonly requestId: Branded<'pe-request-id'>
   failure: 'cloud/capacity' | 'cloud/account-unavailable' | undefined
 }
+interface AuthNodeLimits {
+  readonly maxBodyBytes: number
+  readonly signal: AbortSignal
+  readonly assertCurrent?: () => void
+}
 
 /**
  * Owns library-backed identity extraction and revocation, without owning native Peer or Session state.
@@ -52,6 +58,7 @@ export class BetterAuthAccess {
   private readonly invocation: AsyncLocalStorage<AuthInvocation> = new AsyncLocalStorage()
   private ordinal: bigint = 0n
   private accepting: boolean = true
+  private readonly bridges = new Set<Promise<void>>()
 
   private constructor(
     config: AccessConfig, database: Pool, secret: string, invalidate: LoginInvalidator,
@@ -171,7 +178,7 @@ export class BetterAuthAccess {
    * @param requestId - Server-generated correlation id.
    * @throws AuthAccessError on expiry, revocation, capacity, failure or timeout.
    * Admitted verification failure invokes the login invalidator. A Peer watcher must run within sessionRecheckMs
-   * and close its exact Peer on every rejection, including admission/capacity denial; root does not install it yet.
+   * and close its exact Peer on every rejection, including admission/capacity denial; the owning ingress registry schedules it.
    */
   async recheckLogin(principal: AuthenticatedPrincipal, requestId: Branded<'pe-request-id'>): Promise<void> {
     if (!this.accepting) throw new AuthAccessError('cloud/account-unavailable', requestId)
@@ -225,26 +232,22 @@ export class BetterAuthAccess {
    * @param request - Node request, before any general JSON parser consumes it.
    * @param response - Node response owned by the library bridge.
    * @param requestId - Server-generated correlation id.
+   * @param limits - Optional internal caller byte limit and observer signal; production ingress always supplies both.
    * @throws AuthAccessError before delegation on trust/path failure; caller owns partial-response containment.
    */
-  async handleNodeRequest(request: IncomingMessage, response: ServerResponse, requestId: Branded<'pe-request-id'>): Promise<void> {
+  async handleNodeRequest(
+    request: IncomingMessage, response: ServerResponse, requestId: Branded<'pe-request-id'>,
+    limits?: AuthNodeLimits,
+  ): Promise<void> {
     const headers = this.trustedHeaders(request, requestId)
     const url = new URL(request.url ?? '/', this.config.publicOrigin)
     if (url.origin !== this.config.publicOrigin || (url.pathname !== '/cloud/auth' && !url.pathname.startsWith('/cloud/auth/'))) {
       throw new AuthAccessError('cloud/forbidden', requestId)
     }
-    const handler = this.node.toNodeHandler(async (incoming) => {
-      const init: RequestInit & { duplex: 'half' } = { method: incoming.method, headers, signal: incoming.signal, duplex: 'half' }
-      if (incoming.body !== null) init.body = incoming.body
-      try {
-        const result = await this.withDeadline(() => this.auth.handler(new Request(url, init)), requestId)
-        if (result.status === 429) return this.errorResponse(new AuthAccessError('cloud/capacity', requestId))
-        return result.status >= 500 ? this.errorResponse(new AuthAccessError('cloud/account-unavailable', requestId)) : result
-      } catch (error) {
-        return this.errorResponse(this.failure(error, requestId))
-      }
-    })
-    await handler(request, response)
+    if (!this.accepting || limits?.signal.aborted === true) throw new AuthAccessError('cloud/account-unavailable', requestId)
+    const actual = this.transferNodeRequest(request, response, requestId, headers, url, limits)
+    this.bridges.add(actual)
+    try { await actual } finally { this.bridges.delete(actual) }
   }
 
   /**
@@ -263,7 +266,89 @@ export class BetterAuthAccess {
   /** Stop new auth work and await actual library settlement; the caller still owns the PG pool. */
   async close(): Promise<void> {
     this.accepting = false
-    await Promise.allSettled([...this.pending.keys()])
+    await Promise.allSettled([...this.bridges, ...this.pending.keys()])
+  }
+
+  private async transferNodeRequest(
+    request: IncomingMessage, response: ServerResponse, requestId: Branded<'pe-request-id'>, headers: Headers, url: URL,
+    limits: AuthNodeLimits | undefined,
+  ): Promise<void> {
+    let input: TrackedBody | undefined
+    let output: TrackedBody | undefined
+    const transferred = Promise.withResolvers<void>()
+    const cancelBodies = async (): Promise<void> => {
+      const results = await Promise.allSettled([input?.cancel(), output?.cancel()])
+      if (results.some(result => result.status === 'rejected')) throw new AuthAccessError('cloud/stop-unconfirmed', requestId)
+    }
+    const onClosed = (): void => {
+      transferred.resolve()
+      void cancelBodies().catch((_error: unknown) => {
+        // The actual bridge below joins these same original reader cancellations and exposes their safe failure.
+      })
+    }
+    const onAbort = (): void => {
+      request.destroy()
+      if (!response.writableEnded) response.destroy()
+      onClosed()
+    }
+    response.once('finish', onClosed)
+    response.once('close', onClosed)
+    response.once('error', onAbort)
+    limits?.signal.addEventListener('abort', onAbort, { once: true })
+    const handler = this.node.toNodeHandler(async (incoming) => {
+      const signal = limits === undefined ? incoming.signal : AbortSignal.any([incoming.signal, limits.signal])
+      const init: RequestInit & { duplex: 'half' } = { method: incoming.method, headers, signal, duplex: 'half' }
+      if (incoming.body !== null) {
+        input = trackBody(incoming.body, limits?.maxBodyBytes, requestId)
+        init.body = input.stream
+      }
+      let result: Response
+      let received: Response | undefined
+      const discard = async (value: Response): Promise<void> => {
+        try { await value.body?.cancel() }
+        catch (_error) { throw new AuthAccessError('cloud/stop-unconfirmed', requestId) }
+      }
+      try {
+        result = await this.withDeadline(() => {
+          limits?.assertCurrent?.()
+          return this.auth.handler(new Request(url, init))
+        }, requestId)
+        received = result
+        limits?.assertCurrent?.()
+        const failure = input?.failure ?? (result.status === 429 ? new AuthAccessError('cloud/capacity', requestId)
+          : result.status >= 500 ? new AuthAccessError('cloud/account-unavailable', requestId) : undefined)
+        if (failure !== undefined) {
+          await discard(result)
+          received = undefined
+          limits?.assertCurrent?.()
+          result = this.errorResponse(failure)
+        }
+      } catch (error) {
+        if (error instanceof AuthAccessError && error.code === 'cloud/stop-unconfirmed') throw error
+        if (received !== undefined) await discard(received)
+        result = this.errorResponse(this.failure(error, requestId))
+      }
+      if (result.body === null) return result
+      output = trackBody(result.body, undefined, requestId)
+      return new Response(output.stream, { status: result.status, statusText: result.statusText, headers: result.headers })
+    })
+    try {
+      await handler(request, response)
+      // The pinned Node bridge starts response pumping before its Promise returns.
+      await transferred.promise
+      await cancelBodies()
+      await Promise.all([input?.settled, output?.settled])
+    } catch (error) {
+      request.destroy()
+      response.destroy()
+      await cancelBodies()
+      throw this.failure(error, requestId)
+    } finally {
+      response.off('finish', onClosed)
+      response.off('close', onClosed)
+      response.off('error', onAbort)
+      limits?.signal.removeEventListener('abort', onAbort)
+    }
   }
 
   private record(principal: AuthenticatedPrincipal, requestId: Branded<'pe-request-id'>): LoginCheck {

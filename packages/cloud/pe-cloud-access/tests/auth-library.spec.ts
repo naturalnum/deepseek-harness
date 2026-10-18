@@ -6,6 +6,7 @@ import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { AccountId } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import { BetterAuthAccess } from '../src/auth.ts'
 import type { AccessConfig, AuthenticatedPrincipal } from '../src/types.ts'
+import { carrier } from './ingress-fixture.ts'
 
 const requestId = 'server-auth-test' as Branded<'pe-request-id'>
 const adapters: BetterAuthAccess[] = []
@@ -51,6 +52,18 @@ afterEach(async () => {
 })
 
 describe('pinned Better Auth/PostgreSQL adapter denial paths', () => {
+  it('joins the actual Better Auth Node response before releasing a failed PostgreSQL authentication request', async () => {
+    const { adapter } = await create()
+    const { request, response, socket } = carrier('/cloud/auth/get-session')
+    try {
+      await adapter.handleNodeRequest(request, response, requestId, { maxBodyBytes: 128, signal: new AbortController().signal })
+      expect(response.writableFinished).toBe(true)
+      expect(response.statusCode).toBe(503)
+      expect(Buffer.concat(socket.output).toString('utf8')).toContain('cloud/account-unavailable')
+      expect(adapter.pendingOperations).toBe(0)
+    } finally { request.destroy(); response.destroy(); socket.destroy() }
+  })
+
   it('does not turn client account claims into a principal when PostgreSQL is unavailable', async () => {
     const { adapter } = await create()
     await expect(adapter.authenticate(request({ 'x-pe-account': 'forged-account' }), requestId)).rejects.toMatchObject({

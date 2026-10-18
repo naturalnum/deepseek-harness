@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-校验固定源部署输入，在原生业务执行前拒绝陈旧的账户/代际预期。`BetterAuthAccess` 将认证交给固定版本的 Better Auth 和 PostgreSQL，仅从已验证的用户及登录会话记录返回身份。`/root` Loader 入口通过 `peAuth` 持有真实认证资源；根 seal 和账户路由未完成时，请求准入保持关闭。
+校验固定源部署输入，在原生业务执行前拒绝陈旧的账户/代际预期。`BetterAuthAccess` 将认证交给固定版本的 Better Auth 和 PostgreSQL，仅从已验证的用户及登录会话记录返回身份。`/root` Loader 入口通过 `peAuth` 持有认证资源；可选 ingress 在已有共享 Web 服务上注册。存储及账户前提未完成时，真实根 seal 仍拒绝业务准入。
 
 ## 目录
 
@@ -28,7 +28,7 @@ kind: "package-reference"
 
 ### 配置
 
-所有配置均显式提供，示例不充当生产默认值。浏览器结构输入见 [config-schema.ts](src/config-schema.ts)；[config.ts](src/config.ts) 保留完整 Host 策略，Node IP 语义不变。根还要求 [root-config.ts](src/root-config.ts)、正式 `credentials` 服务及已部署的 Better Auth schema。目前没有开放生产路由。
+所有配置均显式提供，示例不充当生产默认值。浏览器结构输入见 [config-schema.ts](src/config-schema.ts)；[config.ts](src/config.ts) 保留完整 Host 策略，Node IP 语义不变。根要求 [root-config.ts](src/root-config.ts)、正式 `credentials` 及已部署的 Better Auth schema。省略 `ingress` 保留仅初始化资源的路径；配置后，Loader 条目的 `inject` 必须包含 `webServer`、`peAccountRuntime` 和 `peExposure`，确保 schema 检查时这些真实 provider 已激活。缺失 provider 会使初始化失败。生产业务保持关闭。
 
 | 字段 | 要求 |
 | --- | --- |
@@ -46,16 +46,21 @@ kind: "package-reference"
 | `database` | 显式 `host`、`port`、`user`、`database`、`passwordRef`、`ssl`；SSL 使用系统信任验证服务端证书。 |
 | `pool` | 显式正值 `maxConnections`、`connectionTimeoutMs`、`statementTimeoutMs`、`lockTimeoutMs`、`idleTimeoutMs`、`idleTransactionTimeoutMs`、`maxLifetimeSeconds`；锁超时不得大于语句超时。 |
 | `startupTimeoutMs`、`secretResolveTimeoutMs`、`maxSecretOperations`、`maxSecretBytes` | 有限启动/秘密等待和实际读取容量；每个秘密的字节上限至少为 32，并按 UTF-8 计数。 |
+| 可选 `ingress` | 必填正有限值 `maxOperations`、`maxOperationsPerAccount`、`requestTimeoutMs`、`maxAuthRequestBodyBytes`、`maxRequestBodyBytes`、`maxBootstrapResponseBytes`、`maxGenerationBindings`、`maxFrameBytes`、`maxLogicalStreams`、`maxLogicalStreamsPerAccount`、`maxLogicalStreamsPerPeer`；子级容量不得大于父级。配置存在不授予 ready。 |
 
 `peAuth` 通过 `ctx.credentials` 解析认证秘密，每个池物理连接再次解析密码。引用使用正式凭据引用语法；根不读取环境变量或默认连接。池将 schema 固定为 `public`；服务端语句/锁/事务空闲上限负责停止 SQL 工作，不用客户端查询定时器宣称提前结算。启动检查库返回的所有迁移类别，包含索引、不安全变更及 schema 问题，不编译或执行 DDL。迁移须在部署时显式执行。
 
-`PeAuthService.observe()` 仅暴露资源阶段/计数及 `requestAdmission: 'closed'`。启动或秘密超时保留实际工作；超时秘密仍占用容量。`close()` 先等待实际启动、库操作及秘密读取，再等待 `Pool.end()`；重复调用共用同一清理。清理失败保留资源并报告 `cloud/stop-unconfirmed`。不安装 HTTP/WS/bootstrap handler 或额外监听；认证初始化不代表账户 ready。
+`PeAuthService.observe()` 暴露资源阶段/计数及 `requestAdmission: 'closed'`。配置 ingress 后，嵌套状态记录实际保留的注册、owner/Web 身份及未结算工作；观察从不递归调用 seal。`close()` 先关闭并撤回 ingress，等待实际 handler、正文取消及原生 Peer 清理，再等待认证/秘密工作，最后执行 `Pool.end()`。超时保留工作；未知清理保留所有权并报告 `cloud/stop-unconfirmed`。仅资源模式不注册路由；两种模式都不创建监听，也不代表账户 ready。
 
 根 `apply` 是返回 `Promise<void>` 的 async Loader effect；Loader 激活会等待认证初始化并观察其拒绝。通过 `ctx.get('peAuth')` 取得提供者，或在可信同进程装配中使用 `PeAuthService.mountRoot`。缺少秘密会使真实 Loader 入口失败并撤回提供者；原生 boot 的必需入口策略决定该入口失败是否拒绝应用启动。
 
 ### 请求绑定
 
 向 `parseRequestExpectation` 提供载体字段的全部出现值；缺失、重复、空值、首尾空白或控制字符均以 HTTP 409 失败。真实认证后，先比较预期账户再查询 owner，取得当前图后再比较代际。纯比较通过不会授予 Peer、项目范围或业务权限；派发及每个 WS 逻辑流前仍须执行 `AccountUse.assertCurrent()`。
+
+私有 ingress 持有 `/cloud/auth`、`/cloud/bootstrap`、`/cloud/settings`、`/api` 及原生 `/api/remote.mux` upgrade 注册。每个 handler/继续执行点均检查真实 seal；注册不等待 seal，也不形成 Loader 循环。原始头和 WS query 的全部出现值保留，不互相回退。有界 opaque 代际 token 要求真实 runtime 业务当前检查。请求借用保留到 HTTP 响应/错误结算；已升级 socket 使用独立 Peer 借用。根容量满时关闭 carrier，不排队。
+
+原生最终分派 callback 在实际路由/envelope 选择后复核原请求、登录、Use、代际及图内 `CloudAccountApi`。每个逻辑流检查原 Peer 和每图策略。原生帧上限及 acquire/实际 settle callback 限制全局/账户/Peer 流容量；未知清理保留槽位并调度关闭，不等待自己的 transport。真实目录/能力描述及 C06 控制缺失时，bootstrap/settings 保持拒绝。
 
 ### Bootstrap 元数据
 
@@ -71,7 +76,7 @@ kind: "package-reference"
 
 内部 `authenticateForBootstrap(request, requestId, maxDisplayNameBytes)` 与 `authenticate` 共用同一认证操作及库查询，返回常规 principal 和从本次已验证用户名称产生的冻结账户投影。显式正字节上限先检查字符长度，再检查 UTF-8 字节。principal 及其登录记录不增加名称字段；后续认证可观察改名，旧投影保持不变。名称超限返回 `cloud/capacity`；非法上限在查库前返回 `cloud/account-unavailable`。两类失败均不暴露名称或账户 id。
 
-`handleNodeRequest` 在 Host/Origin/TLS/代理检查后，将未经通用解析的正文交给 Better Auth Node bridge。转发头不决定身份，也不动态决定认证源。生产使用 Secure cookie；所有 cookie 均为 HttpOnly、SameSite=Lax。仅显式可信代理可声明固定转发 host/protocol；客户端 IP 跟踪使用实际 socket 地址。WS 握手在认证查库及原生 upgrade 前，要求恰好一个原始 Origin 且等于 `publicOrigin`。普通 HTTP 仍可省略 Origin；认证修改请求的 HTTP CSRF 检查仍由 Better Auth 负责。
+`handleNodeRequest` 在 Host/Origin/TLS/代理检查后，将原始字节交给 Better Auth Node bridge。ingress 提供字节上限和观察者取消；标准 stream 在解析前逐 chunk 计数，并等待真实请求/响应取消。库 bridge 提前返回的 Promise 不释放响应所有权。转发头不决定身份或认证源。生产 cookie 使用 Secure、HttpOnly 和 SameSite=Lax。WS 在认证查库前要求恰好一个匹配的原始 Origin；HTTP 可省略，认证修改的 CSRF 检查仍由库负责。
 
 `revokeLogin` 先通过库删除，再由登录会话删除 hook 通知失效处理者。`planMigrations` 返回库生成的计划而不应用。认证操作只预留一个有限名额，覆盖真实查询及失效收尾；嵌套 hook 不再预留名额。等待超时后，该名额继续计入 `pendingOperations`，直到实际工作结算。`close` 停止准入并等待，不关闭调用方持有的池。认证失败不会取消 Agent 任务。
 
@@ -104,6 +109,9 @@ kind: "package-reference"
 | [root.ts](src/root.ts) | 根持有认证资源的 Loader 入口。 |
 | [root-config.ts](src/root-config.ts) | Host 数据库及秘密预算。 |
 | [auth-root.ts](src/auth-root.ts) | 真实池/库初始化、schema 检查及实际清理。 |
+| [ingress.ts](src/ingress.ts) | 私有共享 Web 所有权、真实 seal 检查及请求保留。 |
+| [expectation.ts](src/expectation.ts)、[generations.ts](src/generations.ts) | 原始出现值及有界 runtime 绑定 token。 |
+| [body-stream.ts](src/body-stream.ts)、[stream-capacity.ts](src/stream-capacity.ts) | 实际取消及原生流预留。 |
 
 </details>
 
@@ -139,9 +147,9 @@ kind: "package-reference"
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- 根请求准入保持关闭：缺少真实根 seal 签发者，runtime 尚未集成准备好的图内 `peCloudApi`，Peer/原生路由尚未接线。runtime 已有 `borrowAccount(binding)`，但必需的 files、execution、API 保存/暴露和全写入者 quota 生产交接仍拒绝创建账户。每图暴露策略已经存在，不能以根策略替代。库级认证检查不代表 S1/S2 或完整 F01 浏览器/WS 流程成立。
+- 真实配方审核仍拒绝缺失的生产存储权；账户生产前提仍独立存在。`CloudAccountApi` 及原生分派/流 hook 已接线，不以根策略替代。已注册的 ingress 仍拒绝业务工作。库初始化及拒绝测试不代表 S1/S2 或完整 F01 浏览器/WS 成功。
 - 代理转发仅限已配置固定源；转发客户端 IP 链及跨实例服务身份/选路须另行部署集成。
-- 生成的认证 SQL 须经过部署迁移审核及打包。根拒绝非空库迁移计划，且从不执行迁移。共享 Web 选路仍须具备实际流正文限制、根请求预算及 seal 准入，才能将流量交给原始 Better Auth Node bridge。
+- 根拒绝非空库迁移计划，且从不执行迁移。真实 C11 目录/能力描述、C06 控制及批准的导航下载载体选择仍待提供；原生 HTTP 当前要求绑定头，WS 使用 query 字段。开放完整链路前，仍须正式生产者/消费者构建及真实 PG/Web 集成验证。
 
 <a id="dev-note"></a>
 ### 开发备注

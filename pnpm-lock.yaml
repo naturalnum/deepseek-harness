@@ -6676,12 +6676,6 @@ importers:
         specifier: 8.16.3
         version: 8.16.3
     devDependencies:
-      '@deepseek-ai/dsh-app-boot':
-        specifier: workspace:*
-        version: link:../../boot/app-boot
-      '@deepseek-ai/dsh-credentials':
-        specifier: workspace:*
-        version: link:../../credentials/credentials
       '@deepseek-ai/cordis':
         specifier: workspace:~
         version: link:../../../vendor/cordis
@@ -6691,15 +6685,27 @@ importers:
       '@deepseek-ai/dsh-api-remote-access':
         specifier: workspace:*
         version: link:../../api/remote-access
+      '@deepseek-ai/dsh-app-boot':
+        specifier: workspace:*
+        version: link:../../boot/app-boot
       '@deepseek-ai/dsh-brand':
         specifier: workspace:*
         version: link:../../util/brand
       '@deepseek-ai/dsh-client-connection':
         specifier: workspace:*
         version: link:../../client/connection
+      '@deepseek-ai/dsh-credentials':
+        specifier: workspace:*
+        version: link:../../credentials/credentials
       '@deepseek-ai/dsh-credentials-local':
         specifier: workspace:*
         version: link:../../credentials/credentials-local
+      '@deepseek-ai/dsh-host-webserver':
+        specifier: workspace:*
+        version: link:../../host/webserver
+      '@deepseek-ai/dsh-pe-cloud-api':
+        specifier: workspace:*
+        version: link:../pe-cloud-api
       '@deepseek-ai/dsh-pe-cloud-runtime':
         specifier: workspace:*
         version: link:../pe-cloud-runtime
