@@ -87,6 +87,22 @@ describe('pinned Better Auth/PostgreSQL adapter denial paths', () => {
     expect(adapter.pendingOperations).toBe(0)
   })
 
+  it('keeps bootstrap projection denial and unavailable errors safe without inventing identity', async () => {
+    const { adapter } = await create()
+    for (const limit of [0, -1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+      expect(() => adapter.authenticateForBootstrap(request(), requestId, limit))
+        .toThrow(expect.objectContaining({ code: 'cloud/account-unavailable', status: 503 }))
+    }
+    expect(adapter.pendingOperations).toBe(0)
+    expect(() => adapter.authenticateForBootstrap(request({ origin: 'https://other.example' }), requestId, 64))
+      .toThrow(expect.objectContaining({ code: 'cloud/forbidden', status: 403 }))
+    await expect(adapter.authenticateForBootstrap(request({ cookie: 'invalid.signature' }), requestId, 64))
+      .rejects.toMatchObject({ code: 'cloud/account-unavailable', status: 503 })
+    await adapter.close()
+    await expect(adapter.authenticateForBootstrap(request(), requestId, 64))
+      .rejects.toMatchObject({ code: 'cloud/account-unavailable', status: 503 })
+  })
+
   it('stops new library work after close', async () => {
     const { adapter } = await create()
     await adapter.close()

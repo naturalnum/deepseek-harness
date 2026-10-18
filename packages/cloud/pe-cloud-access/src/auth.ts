@@ -7,7 +7,7 @@ import type { Pool } from 'pg'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { AccountId } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import { parseAccessConfig } from './config.ts'
-import type { AccessConfig, AuthenticatedPrincipal } from './types.ts'
+import type { AccessConfig, AuthenticatedPrincipal, CloudBootstrap } from './types.ts'
 import { AuthAccessError } from './auth-error.ts'
 import { assertAuthTransport } from './auth-trust.ts'
 
@@ -119,18 +119,49 @@ export class BetterAuthAccess {
    * @throws AuthAccessError for forbidden transport, missing/expired login, capacity, DB failure or timeout.
    */
   authenticate(request: IncomingMessage, requestId: Branded<'pe-request-id'>): Promise<AuthenticatedPrincipal> {
+    return this.authenticateAndProject(request, requestId, (_login, principal) => principal)
+  }
+
+  /**
+   * Authenticate once and project the same verified user's bounded display metadata for future bootstrap assembly.
+   * Neither the projection nor its wrapper is retained in a Peer principal record.
+   * @param request - Original request whose cookie is captured before the library query.
+   * @param requestId - Server-generated correlation id; errors contain no user id or display name.
+   * @param maxDisplayNameBytes - Explicit positive safe-integer UTF-8 limit, e.g. the bootstrap maxStringBytes.
+   * @returns Frozen wrapper containing the normal adapter-tracked principal and a frozen C-11 account projection.
+   * @throws AuthAccessError with existing authentication failure semantics; an oversized name is capacity,
+   * while an invalid deployment limit is account-unavailable. No route, generation or account readiness is published.
+   */
+  authenticateForBootstrap(
+    request: IncomingMessage, requestId: Branded<'pe-request-id'>, maxDisplayNameBytes: number,
+  ): Promise<Readonly<{ principal: AuthenticatedPrincipal; account: CloudBootstrap['account'] }>> {
+    if (!Number.isSafeInteger(maxDisplayNameBytes) || maxDisplayNameBytes <= 0) {
+      throw new AuthAccessError('cloud/account-unavailable', requestId)
+    }
+    return this.authenticateAndProject(request, requestId, (login, principal) => {
+      const displayName = login.user.name
+      if (displayName.length > maxDisplayNameBytes || Buffer.byteLength(displayName, 'utf8') > maxDisplayNameBytes) {
+        throw new AuthAccessError('cloud/capacity', requestId)
+      }
+      return Object.freeze({ principal, account: Object.freeze({ id: principal.accountId, displayName }) })
+    })
+  }
+
+  private authenticateAndProject<T>(
+    request: IncomingMessage, requestId: Branded<'pe-request-id'>,
+    project: (login: LibraryLogin, principal: AuthenticatedPrincipal) => T,
+  ): Promise<T> {
     const headers = this.trustedHeaders(request, requestId)
     return this.withDeadline(async (ordinal) => {
       const login = await this.readLogin(headers, ordinal, requestId)
-      const state = this.loginState(login, requestId)
       const principal: AuthenticatedPrincipal = Object.freeze({
         accountId: login.user.id as AccountId,
         authSessionId: login.session.id as Branded<'pe-auth-session-id'>,
       })
-      this.principals.set(principal, {
-        headers, verifiedAtMs: performance.now(), state,
-      })
-      return principal
+      const result = project(login, principal)
+      const state = this.loginState(login, requestId)
+      this.principals.set(principal, { headers, verifiedAtMs: performance.now(), state })
+      return result
     }, requestId)
   }
 

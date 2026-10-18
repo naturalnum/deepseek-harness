@@ -52,13 +52,15 @@ kind: "package-reference"
 
 `decodeCloudBootstrap(input, limits)` 严格校验 C-11 的账户、版本、代际和能力描述，返回独立副本及深只读数据。显式传入 `maxBodyBytes`、`maxStringBytes` 和合计 `maxListItems`，不补默认值。正文预算计入完整紧凑结果的字段名、分隔符和转义后 UTF-8 字符串。调用方仍须在 `JSON.parse` 前限制原始 HTTP 字节；三项上限均可由其 `maxBootstrapResponseBytes` 派生。
 
-未知字段、错误状态/reason 组合、非 false 的受限能力及非法预算均拒绝，错误不回显输入。解码不认证、不签发代际，也不核验 provider 或 ready。配置应用等级仅描述服务端响应，不提交变更或决定服务端实际应用方式。生产 bootstrap 路由与真实账户投影仍未开放。
+未知字段、错误状态/reason 组合、非 false 的受限能力及非法预算均拒绝，错误不回显输入。解码不认证、不签发代际，也不核验 provider 或 ready。配置应用等级仅描述服务端响应，不提交变更或决定服务端实际应用方式。生产 bootstrap 路由及真实图/代际装配仍未开放。
 
 ### 认证适配器
 
 `BetterAuthAccess.create` 要求 Better Auth 1.7.10、调用方持有的有限 PostgreSQL 池及已解析密钥。它核对已加载库版本、禁用 cookie 身份缓存，并将基础 URL/路径固定为批准源和 `/cloud/auth`。原始 cookie 交给认证库；客户端账户字段不能产生 principal。
 
 `authenticate` 通过 `disableCookieCache` 和 `disableRefresh` 强制查库。`recheckLogin` 使用原 cookie 的固定快照；已准入的验证失败时调用传入的登录失效处理者。`assertLoginCurrent` 在派发前拒绝已到复查时间的登录。Peer watcher 必须调度复查，并在任何拒绝（含容量拒绝）时关闭精确 Peer；本适配器不安装 watcher。
+
+内部 `authenticateForBootstrap(request, requestId, maxDisplayNameBytes)` 与 `authenticate` 共用同一认证操作及库查询，返回常规 principal 和从本次已验证用户名称产生的冻结账户投影。显式正字节上限先检查字符长度，再检查 UTF-8 字节。principal 及其登录记录不增加名称字段；后续认证可观察改名，旧投影保持不变。名称超限返回 `cloud/capacity`；非法上限在查库前返回 `cloud/account-unavailable`。两类失败均不暴露名称或账户 id。
 
 `handleNodeRequest` 在 Host/Origin/TLS/代理检查后，将未经通用解析的正文交给 Better Auth Node bridge。转发头不决定身份，也不动态决定认证源。生产使用 Secure cookie；所有 cookie 均为 HttpOnly、SameSite=Lax。仅显式可信代理可声明固定转发 host/protocol；客户端 IP 跟踪使用实际 socket 地址。WS 握手在认证查库及原生 upgrade 前，要求恰好一个原始 Origin 且等于 `publicOrigin`。普通 HTTP 仍可省略 Origin；认证修改请求的 HTTP CSRF 检查仍由 Better Auth 负责。
 
