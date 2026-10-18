@@ -18,7 +18,7 @@ const pools = []
 const extraWorkers = []
 try {
   fs.writeFileSync(path.join(temporary, 'package.json'), '{"type":"module"}\n')
-  for (const file of ['error', 'types', 'work-queue', 'work-owner', 'worker-protocol', 'file-worker', 'worker-client', 'worker-pool', 'read-only']) {
+  for (const file of ['error', 'types', 'work-queue', 'work-owner', 'worker-protocol', 'file-worker', 'worker-client', 'worker-pool', 'read-only', 'directory', 'directory-error']) {
     const output = ts.transpileModule(fs.readFileSync(path.join(packageRoot, 'src', `${file}.ts`), 'utf8'), {
       fileName: `${file}.ts`,
       compilerOptions: { target: ts.ScriptTarget.ES2024, module: ts.ModuleKind.ESNext, rewriteRelativeImportExtensions: true },
@@ -265,7 +265,7 @@ try {
   const filesystem = spawnSync('stat', ['-f', '-c', '%T', root], { encoding: 'utf8' })
   console.log(JSON.stringify({
     platform: process.platform, node: process.version, kernel: os.release(), filesystem: filesystem.stdout.trim(),
-    workerCount: 2, actualWorkersCreatedAcrossRepeatedABReads: created, helperAbiVersion: 3,
+    workerCount: 2, actualWorkersCreatedAcrossRepeatedABReads: created, helperAbiVersion: 4,
     passed: ['prebuilt-shared-pool', 'repeated-AB-root-isolation', 'bounded-transfer', 'link-FIFO-refusal', 'account-drain-preserves-pool', 'actual-root-exit-before-release', 'anchor-FD-cleanup', 'root-identity-mismatch', 'real-thread-drain-deadline-unknown', 'real-worker-crash-no-replacement', 'native-stat-version-directory-missing', 'issued-target-and-root-confinement', 'single-FD-stream-across-rename', 'cross-chunk-UTF8-binary-rejection', 'growth-cap-plus-one', 'stream-consumer-early-return', 'paused-decoder-lease-after-FD-close', 'cancel-before-stream-ready-preserves-worker'],
     notValidated: ['ext4', 'NFS', 'native-blocked-NFS-syscall', 'directory-replacement-races', 'all-native-FS-methods', 'hard-byte-inode-quota', 'published-artifact'],
   }))

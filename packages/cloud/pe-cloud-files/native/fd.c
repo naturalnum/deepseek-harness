@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <linux/openat2.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -28,6 +29,7 @@ static napi_value fail(napi_env env, int error) {
     case EPERM: code = "EPERM"; break;
     case EDQUOT: code = "EDQUOT"; break;
     case ENOSPC: code = "ENOSPC"; break;
+    case ENAMETOOLONG: code = "ENAMETOOLONG"; break;
     default: code = "EIO"; break;
   }
   napi_throw_error(env, code, "Linux FD operation failed");
@@ -174,6 +176,93 @@ static napi_value close_anchor(napi_env env, napi_callback_info info) {
   return result;
 }
 
+static int fd_spelling(int fd, char *buffer, size_t limit) {
+  char proc_path[64];
+  int length = snprintf(proc_path, sizeof(proc_path), "/proc/self/fd/%d", fd);
+  if (length < 0 || (size_t)length >= sizeof(proc_path)) return EIO;
+  ssize_t count = readlink(proc_path, buffer, limit + 1);
+  if (count < 0) return errno;
+  if ((size_t)count > limit) return ENAMETOOLONG;
+  buffer[count] = 0;
+  return count > 0 && buffer[0] == '/' ? 0 : ESTALE;
+}
+
+static int same_identity(int left, int right) {
+  struct stat a, b;
+  if (fstat(left, &a) != 0 || fstat(right, &b) != 0) return errno;
+  return a.st_dev == b.st_dev && a.st_ino == b.st_ino ? 0 : ESTALE;
+}
+
+static int verify_anchor_path(owned_fds *owned, const char *path) {
+  int fd = open(path, O_PATH | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+  if (fd < 0) return errno;
+  int error = same_identity(owned->anchor, fd);
+  if (close(fd) != 0 && error == 0) error = errno;
+  return error;
+}
+
+static napi_value canonical_path(napi_env env, napi_callback_info info) {
+  size_t count = 2;
+  napi_value args[2], result;
+  double extent;
+  owned_fds *owned = state(env);
+  if (!owned || owned->anchor < 0 || owned->reader < 0) return fail(env, EINVAL);
+  if (napi_get_cb_info(env, info, &count, args, NULL, NULL) != napi_ok || count != 2
+    || napi_get_value_double(env, args[1], &extent) != napi_ok
+    || !(extent >= 1 && extent <= 16384) || extent != (uint32_t)extent) return fail(env, EINVAL);
+  char *path = text(env, args[0]);
+  if (!path || path[0] != '/') { free(path); return fail(env, EINVAL); }
+  size_t limit = (size_t)extent;
+  char *buffers = malloc(4 * (limit + 1));
+  if (!buffers) { free(path); return fail(env, ENOMEM); }
+  char *root = buffers, *target = root + limit + 1;
+  char *root_after = target + limit + 1, *target_after = root_after + limit + 1;
+  int error = fd_spelling(owned->anchor, root, limit);
+  if (error == 0) error = fd_spelling(owned->reader, target, limit);
+  const char *relative = NULL;
+  if (error == 0) {
+    size_t root_length = strlen(root);
+    if (strcmp(root, target) == 0) relative = ".";
+    else if (root_length == 1 && root[0] == '/') relative = target + 1;
+    else if (strncmp(root, target, root_length) == 0 && target[root_length] == '/') relative = target + root_length + 1;
+    else error = ESTALE;
+  }
+  if (error == 0) {
+    /* The spelling only addresses a re-open: the same anchored kernel operation enforces authority. */
+    struct open_how how = {0};
+    how.flags = O_PATH | O_CLOEXEC;
+    how.resolve = RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS;
+    int fd = (int)syscall(SYS_openat2, owned->anchor, relative, &how, sizeof(how));
+    if (fd < 0) error = errno;
+    else {
+      error = same_identity(owned->reader, fd);
+      if (close(fd) != 0 && error == 0) error = errno;
+    }
+  }
+  if (error == 0) error = fd_spelling(owned->anchor, root_after, limit);
+  if (error == 0) error = fd_spelling(owned->reader, target_after, limit);
+  if (error == 0 && (strcmp(root, root_after) != 0 || strcmp(target, target_after) != 0)) error = ESTALE;
+  if (error == 0) error = verify_anchor_path(owned, path);
+  /* Bounded root-NUL-target bytes preserve physical spelling without lossy UTF-8 conversion. */
+  if (error == 0) {
+    size_t root_length = strlen(root), target_length = strlen(target);
+    size_t length = root_length + 1 + target_length;
+    void *bytes = NULL;
+    napi_value backing;
+    if (napi_create_arraybuffer(env, length, &bytes, &backing) != napi_ok) error = EIO;
+    else {
+      unsigned char *output = bytes;
+      memcpy(output, root, root_length);
+      output[root_length] = 0;
+      memcpy(output + root_length + 1, target, target_length);
+      if (napi_create_typedarray(env, napi_uint8_array, length, backing, 0, &result) != napi_ok) error = EIO;
+    }
+  }
+  free(buffers);
+  free(path);
+  return error == 0 ? result : fail(env, error);
+}
+
 static napi_value probe_kernel(napi_env env, napi_callback_info info) {
   (void)info;
   /* The probe holds no project or shared-storage capability and closes both descriptors. */
@@ -213,12 +302,13 @@ static napi_value init(napi_env env, napi_value exports) {
     {"closeRead", NULL, close_read, NULL, NULL, NULL, napi_default, NULL},
     {"openMetadata", NULL, open_metadata, NULL, NULL, NULL, napi_default, NULL},
     {"closeAnchor", NULL, close_anchor, NULL, NULL, NULL, napi_default, NULL},
+    {"canonicalPath", NULL, canonical_path, NULL, NULL, NULL, napi_default, NULL},
     {"probeKernel", NULL, probe_kernel, NULL, NULL, NULL, napi_default, NULL}
   };
   napi_value abi;
-  napi_create_uint32(env, 3, &abi);
+  napi_create_uint32(env, 4, &abi);
   napi_set_named_property(env, exports, "abiVersion", abi);
-  napi_define_properties(env, exports, 6, methods);
+  napi_define_properties(env, exports, 7, methods);
   return exports;
 }
 

@@ -28,6 +28,22 @@ export interface FdTaskRequest {
   readonly cancel: SharedArrayBuffer
 }
 
+/** One read-only directory observation, routed beneath a previously approved anchor. */
+export interface FdDirectoryRequest {
+  readonly kind: 'directory'
+  readonly id: OperationId
+  readonly root: FdRootIdentity
+  readonly relativePath: string
+  readonly cancel: SharedArrayBuffer
+}
+
+/** Kernel-verified physical spelling and actual directory classification. */
+export interface FdDirectoryObservation {
+  readonly anchorPath: string
+  readonly canonicalPath: string
+  readonly directory: boolean
+}
+
 /** Bounded FD metadata; native brands are constructed by the owning backend. */
 export interface FdMetadata {
   readonly identity: string
@@ -44,10 +60,19 @@ export interface FdStreamControl {
 
 /** Success follows FD closure except stream-ready/chunk, which retain actual operation ownership. */
 export type FdWorkerReply =
-  | { readonly kind: 'ready'; readonly abiVersion: 3 }
+  | { readonly kind: 'ready'; readonly abiVersion: 4 }
   | { readonly kind: 'startup-failed'; readonly code: FsErrorCode; readonly syscallCode?: string }
   | { readonly kind: 'reply'; readonly id: OperationId; readonly ok: true; readonly bytes: Uint8Array<ArrayBuffer> }
   | { readonly kind: 'stat-reply'; readonly id: OperationId; readonly metadata: FdMetadata | undefined }
   | { readonly kind: 'stream-ready' | 'stream-end'; readonly id: OperationId }
   | { readonly kind: 'stream-chunk'; readonly id: OperationId; readonly bytes: Uint8Array<ArrayBuffer> }
   | { readonly kind: 'reply'; readonly id: OperationId; readonly ok: false; readonly code: FsErrorCode; readonly syscallCode?: string }
+  | { readonly kind: 'directory-reply'; readonly id: OperationId; readonly ok: true; readonly value: FdDirectoryObservation }
+  | {
+    readonly kind: 'directory-reply'
+    readonly id: OperationId
+    readonly ok: false
+    readonly phase: 'anchor' | 'target' | 'verify'
+    readonly code: FsErrorCode
+    readonly syscallCode?: string
+  }

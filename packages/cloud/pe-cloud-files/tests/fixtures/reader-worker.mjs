@@ -4,7 +4,7 @@ const { mode = 'normal', data = 'A你🙂Z', chunkSize = 2, gate } = workerData
 const state = gate === undefined ? undefined : new Int32Array(gate)
 const bytes = typeof data === 'string' ? new TextEncoder().encode(data) : new Uint8Array(data)
 let active
-parentPort.postMessage({ kind: 'ready', abiVersion: 3 })
+parentPort.postMessage({ kind: 'ready', abiVersion: 4 })
 parentPort.on('message', request => {
   if (request.kind === 'stat') {
     if (mode === 'bad-metadata') {

@@ -3,8 +3,9 @@ import { randomUUID } from 'node:crypto'
 import type { Worker } from 'node:worker_threads'
 import type { OperationId } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { FsErrorCode } from '@deepseek-ai/dsh-fs'
-import type { FdTaskRequest, FdRootIdentity, FdMetadata } from './worker-protocol.ts'
+import type { FdTaskRequest, FdRootIdentity, FdMetadata, FdDirectoryRequest, FdDirectoryObservation } from './worker-protocol.ts'
 import { FilesFailure } from './error.ts'
+import { DirectoryMetadataFailure } from './directory-error.ts'
 
 /** Transport failure retains the native error category without private paths. */
 export class FdWorkerFailure extends Error {
@@ -34,6 +35,12 @@ interface PendingStat extends PendingBase {
   readonly resolve: (info: FdMetadata | undefined) => void
   readonly reject: (error: Error) => void
 }
+interface PendingDirectory extends PendingBase {
+  readonly kind: 'directory'
+  readonly maxPathBytes: number
+  readonly resolve: (value: FdDirectoryObservation) => void
+  readonly reject: (error: Error) => void
+}
 interface Pull {
   readonly resolve: (result: IteratorResult<Uint8Array<ArrayBuffer>>) => void
   readonly reject: (error: Error) => void
@@ -47,12 +54,13 @@ interface PendingStream extends PendingBase {
   cancelled: boolean
   total: number
 }
-type Pending = PendingRead | PendingStat | PendingStream
+type Pending = PendingRead | PendingStat | PendingStream | PendingDirectory
 
 function object(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null }
 function wireError(value: Record<string, unknown>): FdWorkerFailure | undefined {
   if (typeof value.code !== 'string'
-    || !['FS_NOT_FOUND', 'FS_NOT_REGULAR_FILE', 'FS_NOT_TEXT', 'FS_TOO_LARGE', 'FS_PERMISSION_DENIED', 'FS_ABORTED', 'FS_IO_ERROR'].includes(value.code)
+    || !['FS_NOT_FOUND', 'FS_NOT_DIRECTORY', 'FS_NOT_REGULAR_FILE', 'FS_NOT_TEXT', 'FS_TOO_LARGE',
+      'FS_PERMISSION_DENIED', 'FS_ABORTED', 'FS_IO_ERROR'].includes(value.code)
     || (value.syscallCode !== undefined && (typeof value.syscallCode !== 'string' || !/^[A-Z]{1,16}$/.test(value.syscallCode)))) return undefined
   return new FdWorkerFailure(value.code as FsErrorCode, value.syscallCode)
 }
@@ -125,6 +133,25 @@ export class FdWorkerClient {
       const pending: PendingStat = { kind: 'stat', ...this.base(0, signal), resolve, reject }
       this.pending = pending
       this.postTask(pending, root, relativePath)
+    })
+  }
+
+  /**
+   * Inspect a target through a verified anchor and bounded physical-spelling observation.
+   * @param root Previously approved fixed root and independently verified identity.
+   * @param relativePath Relative spelling resolved by the kernel beneath that root.
+   * @param maxPathBytes Maximum raw and decoded canonical path length in bytes.
+   * @param signal Signals cancellation without erasing actual work ownership.
+   * @returns Metadata only after verified re-open and actual descriptor closure.
+   */
+  directory(root: FdRootIdentity, relativePath: string, maxPathBytes: number, signal: AbortSignal): Promise<FdDirectoryObservation> {
+    try { this.assertAvailable(signal) } catch (error) {
+      return Promise.reject(new DirectoryMetadataFailure('unavailable', 'transport', { cause: error }))
+    }
+    return new Promise((resolve, reject) => {
+      const pending: PendingDirectory = { kind: 'directory', ...this.base(0, signal), maxPathBytes, resolve, reject }
+      this.pending = pending
+      this.post({ kind: 'directory', id: pending.id, root, relativePath, cancel: pending.cancel.buffer } satisfies FdDirectoryRequest)
     })
   }
 
@@ -207,7 +234,7 @@ export class FdWorkerClient {
     return { id, maxBytes, cancel, removeAbort: () => { signal.removeEventListener('abort', abort) } }
   }
 
-  private postTask(pending: Pending, root: FdRootIdentity, relativePath: string): void {
+  private postTask(pending: PendingRead | PendingStat | PendingStream, root: FdRootIdentity, relativePath: string): void {
     this.post({
       kind: pending.kind, id: pending.id, root, relativePath, maxBytes: pending.maxBytes, cancel: pending.cancel.buffer,
     } satisfies FdTaskRequest)
@@ -230,7 +257,7 @@ export class FdWorkerClient {
     if (this.failure !== undefined) return
     if (!object(value)) { this.failProtocol(); return }
     if (value.kind === 'ready') {
-      if (value.abiVersion !== 3 || this.readyResolved || this.closed) { this.failProtocol(); return }
+      if (value.abiVersion !== 4 || this.readyResolved || this.closed) { this.failProtocol(); return }
       this.readyResolved = true
       this.resolveReady()
       return
@@ -243,6 +270,7 @@ export class FdWorkerClient {
     }
     const pending = this.pending
     if (pending === undefined || value.id !== pending.id) { this.failProtocol(); return }
+    if (pending.kind === 'directory') { this.directoryMessage(pending, value); return }
     if (value.kind === 'reply' && value.ok === false) {
       const error = wireError(value)
       if (error === undefined) this.failProtocol()
@@ -265,6 +293,40 @@ export class FdWorkerClient {
     pending.removeAbort()
     this.pending = undefined
     pending.resolve(new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength))
+  }
+
+  private directoryMessage(pending: PendingDirectory, value: Record<string, unknown>): void {
+    if (value.kind !== 'directory-reply') { this.failProtocol(); return }
+    if (value.ok === true) {
+      const observation = value.value
+      if (!object(observation) || typeof observation.directory !== 'boolean'
+        || typeof observation.anchorPath !== 'string' || !observation.anchorPath.startsWith('/')
+        || observation.anchorPath.includes('\0') || Buffer.byteLength(observation.anchorPath) > pending.maxPathBytes
+        || typeof observation.canonicalPath !== 'string' || !observation.canonicalPath.startsWith('/')
+        || observation.canonicalPath.includes('\0') || Buffer.byteLength(observation.canonicalPath) > pending.maxPathBytes) {
+        this.failProtocol()
+        return
+      }
+      const prefix = observation.anchorPath === '/' ? '/' : `${observation.anchorPath}/`
+      if (observation.canonicalPath !== observation.anchorPath && !observation.canonicalPath.startsWith(prefix)) {
+        this.failProtocol()
+        return
+      }
+      pending.removeAbort()
+      this.pending = undefined
+      pending.resolve({ anchorPath: observation.anchorPath, canonicalPath: observation.canonicalPath, directory: observation.directory })
+      return
+    }
+    const error = value.ok === false ? wireError(value) : undefined
+    const phase = value.phase
+    if (error === undefined || (phase !== 'anchor' && phase !== 'target' && phase !== 'verify')) { this.failProtocol(); return }
+    const reason = phase === 'target' && error.code === 'FS_NOT_FOUND' && error.syscallCode === 'ENOENT' ? 'missing'
+      : phase === 'target' && error.code === 'FS_NOT_DIRECTORY' && error.syscallCode === 'ENOTDIR' ? 'not-directory' : 'unavailable'
+    pending.removeAbort()
+    this.pending = undefined
+    pending.reject(new DirectoryMetadataFailure(reason, phase, {
+      cause: error, ...error.syscallCode === undefined ? {} : { syscallCode: error.syscallCode },
+    }))
   }
 
   private streamMessage(pending: PendingStream, value: Record<string, unknown>): void {
@@ -296,7 +358,8 @@ export class FdWorkerClient {
     if (pending === undefined) return
     pending.removeAbort()
     this.pending = undefined
-    if (pending.kind === 'stream') pending.finish(error)
+    if (pending.kind === 'directory') pending.reject(new DirectoryMetadataFailure('unavailable', 'transport', { cause: error }))
+    else if (pending.kind === 'stream') pending.finish(error)
     else pending.reject(error)
   }
 

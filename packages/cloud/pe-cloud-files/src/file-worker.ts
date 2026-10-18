@@ -3,7 +3,7 @@ import { createRequire } from 'node:module'
 import { fstatSync, readSync } from 'node:fs'
 import { isAbsolute } from 'node:path'
 import { parentPort, workerData } from 'node:worker_threads'
-import type { FdTaskRequest, FdWorkerInput, FdWorkerReply, FdMetadata } from './worker-protocol.ts'
+import type { FdTaskRequest, FdWorkerInput, FdWorkerReply, FdMetadata, FdDirectoryRequest } from './worker-protocol.ts'
 import type { FsErrorCode } from '@deepseek-ai/dsh-fs'
 
 interface LinuxFdHelper {
@@ -12,13 +12,14 @@ interface LinuxFdHelper {
   openMetadata(this: void, relativePath: string): number
   closeRead(this: void): void
   closeAnchor(this: void): void
+  canonicalPath(this: void, rootPath: string, maxPathBytes: number): Uint8Array
   probeKernel(this: void): void
 }
 
 function isHelper(value: unknown): value is LinuxFdHelper {
-  return record(value) && value.abiVersion === 3
+  return record(value) && value.abiVersion === 4
     && typeof value.openAnchor === 'function' && typeof value.openRead === 'function' && typeof value.closeRead === 'function'
-    && typeof value.openMetadata === 'function' && typeof value.closeAnchor === 'function' && typeof value.probeKernel === 'function'
+    && typeof value.canonicalPath === 'function' && typeof value.openMetadata === 'function' && typeof value.closeAnchor === 'function' && typeof value.probeKernel === 'function'
 }
 
 class WorkerFailure extends Error {
@@ -66,6 +67,7 @@ function helper(path: string): LinuxFdHelper {
   const openMetadata = loaded.openMetadata
   const closeRead = loaded.closeRead
   const closeAnchor = loaded.closeAnchor
+  const canonicalPath = loaded.canonicalPath
   const probeKernel = loaded.probeKernel
   return {
     openAnchor: (path, device, inode) => { openAnchor(path, device, inode) },
@@ -81,6 +83,11 @@ function helper(path: string): LinuxFdHelper {
     },
     closeRead: () => { closeRead() },
     closeAnchor: () => { closeAnchor() },
+    canonicalPath: (path, maxPathBytes) => {
+      const raw: unknown = canonicalPath(path, maxPathBytes)
+      if (!(raw instanceof Uint8Array) || raw.byteLength > 2 * maxPathBytes + 1) throw new WorkerFailure('FS_IO_ERROR')
+      return raw
+    },
     probeKernel: () => { probeKernel() },
   }
 }
@@ -146,7 +153,7 @@ function readBytes(native: LinuxFdHelper, request: FdTaskRequest, limits: FdWork
   } finally { native.closeRead() }
 }
 
-function openWithRetry(native: LinuxFdHelper, request: FdTaskRequest, limits: FdWorkerInput, metadata: boolean): number {
+function openWithRetry(native: LinuxFdHelper, request: Pick<FdTaskRequest, 'relativePath' | 'cancel'>, limits: FdWorkerInput, metadata: boolean): number {
   let attempts = 0
   while (true) {
     if (Atomics.load(new Int32Array(request.cancel), 0) !== 0) throw new WorkerFailure('FS_ABORTED')
@@ -171,6 +178,79 @@ function metadata(native: LinuxFdHelper, request: FdTaskRequest, limits: FdWorke
       type: info.isFile() ? 'file' : 'directory', ...info.isFile() ? { size: Number(info.size) } : {},
     }
   } finally { native.closeRead() }
+}
+
+function directoryRequest(value: unknown, limits: FdWorkerInput): FdDirectoryRequest {
+  if (!record(value) || value.kind !== 'directory' || typeof value.id !== 'string' || !/^[a-f0-9-]{36}$/.test(value.id)
+    || !record(value.root) || typeof value.root.rootPath !== 'string' || !isAbsolute(value.root.rootPath)
+    || value.root.rootPath.includes('\0') || Buffer.byteLength(value.root.rootPath) > limits.maxPathBytes
+    || typeof value.root.rootDevice !== 'string' || !/^\d{1,20}$/.test(value.root.rootDevice)
+    || typeof value.root.rootInode !== 'string' || !/^\d{1,20}$/.test(value.root.rootInode)
+    || typeof value.relativePath !== 'string' || value.relativePath.length === 0 || isAbsolute(value.relativePath)
+    || value.relativePath.includes('\0') || Buffer.byteLength(value.relativePath) > limits.maxPathBytes
+    || !(value.cancel instanceof SharedArrayBuffer) || value.cancel.byteLength !== 4) throw new WorkerFailure('FS_PERMISSION_DENIED')
+  return {
+    kind: 'directory', id: value.id as FdDirectoryRequest['id'], relativePath: value.relativePath, cancel: value.cancel,
+    root: { rootPath: value.root.rootPath, rootDevice: value.root.rootDevice, rootInode: value.root.rootInode },
+  }
+}
+
+function observeDirectory(native: LinuxFdHelper, request: FdDirectoryRequest, limits: FdWorkerInput): FdWorkerReply {
+  let phase: 'anchor' | 'target' | 'verify' = 'anchor'
+  let anchor = false
+  let reader = false
+  const assertRunning = (): void => {
+    if (Atomics.load(new Int32Array(request.cancel), 0) !== 0) throw new WorkerFailure('FS_ABORTED')
+  }
+  const closeReader = (): void => {
+    try { native.closeRead() } catch (error) { throw new AnchorCloseFailure('Metadata FD close is unconfirmed', { cause: error }) }
+    reader = false
+  }
+  try {
+    assertRunning()
+    native.openAnchor(request.root.rootPath, request.root.rootDevice, request.root.rootInode)
+    anchor = true
+    phase = 'target'
+    const fd = openWithRetry(native, request, limits, true)
+    reader = true
+    phase = 'verify'
+    const info = fstatSync(fd, { bigint: true })
+    if ((!info.isDirectory() && !info.isFile()) || (info.isFile() && info.nlink !== 1n)) throw new WorkerFailure('FS_PERMISSION_DENIED')
+    let canonicalPath: string
+    let anchorPath: string
+    let attempts = 0
+    while (true) {
+      assertRunning()
+      try {
+        const bytes = native.canonicalPath(request.root.rootPath, limits.maxPathBytes)
+        const separator = bytes.indexOf(0)
+        if (separator < 1 || separator > limits.maxPathBytes || bytes.byteLength - separator - 1 > limits.maxPathBytes) {
+          throw new WorkerFailure('FS_IO_ERROR')
+        }
+        anchorPath = new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(0, separator))
+        canonicalPath = new TextDecoder('utf-8', { fatal: true }).decode(bytes.subarray(separator + 1))
+        break
+      } catch (error) {
+        if (!record(error) || error.code !== 'EAGAIN' || attempts++ >= limits.maxResolveRetries) throw error
+      }
+    }
+    assertRunning()
+    closeReader()
+    closeAnchor(native)
+    anchor = false
+    return { kind: 'directory-reply', id: request.id, ok: true, value: { anchorPath, canonicalPath, directory: info.isDirectory() } }
+  } catch (error) {
+    if (error instanceof AnchorCloseFailure) throw error
+    if (reader) closeReader()
+    if (anchor) closeAnchor(native)
+    const observed = failure(error)
+    const syscallCode = observed.syscallCode !== undefined && /^[A-Z]{1,16}$/.test(observed.syscallCode) ? observed.syscallCode : undefined
+    return {
+      kind: 'directory-reply', id: request.id, ok: false, phase,
+      code: syscallCode === 'ENOTDIR' ? 'FS_NOT_DIRECTORY' : observed.code,
+      ...syscallCode === undefined ? {} : { syscallCode },
+    }
+  }
 }
 
 function start(): void {
@@ -225,6 +305,12 @@ function start(): void {
       return
     }
     if (active !== undefined) { port.close(); return }
+    if (record(raw) && raw.kind === 'directory') {
+      let request: FdDirectoryRequest
+      try { request = directoryRequest(raw, limits) } catch (_error) { port.close(); return }
+      port.postMessage(observeDirectory(native, request, limits))
+      return
+    }
     let request: FdTaskRequest
     try { request = taskRequest(raw, limits) } catch (_error) {
       // Malformed private commands require actual exit and helper environment cleanup.
@@ -262,7 +348,7 @@ function start(): void {
       port.postMessage({ kind: 'reply', id: request.id, ok: false, ...failure(error) } satisfies FdWorkerReply)
     }
   })
-  port.postMessage({ kind: 'ready', abiVersion: 3 } satisfies FdWorkerReply)
+  port.postMessage({ kind: 'ready', abiVersion: 4 } satisfies FdWorkerReply)
 }
 
 start()

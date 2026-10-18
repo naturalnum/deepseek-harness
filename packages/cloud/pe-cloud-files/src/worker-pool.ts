@@ -14,6 +14,8 @@ import type { ResidentResult } from './work-queue.ts'
 import { FilesWorkOwner } from './work-owner.ts'
 import { FdWorkerClient, FdWorkerFailure } from './worker-client.ts'
 import { FilesFailure } from './error.ts'
+import { createDirectoryReadPort } from './directory.ts'
+import type { DirectoryReadPort } from './directory.ts'
 
 /** Required finite root capacities; no storage or account-readiness evidence is represented here. */
 export interface FilesPoolConfig extends FilesLimits, FdWorkerInput {
@@ -28,6 +30,7 @@ export interface FilesPoolConfig extends FilesLimits, FdWorkerInput {
 /** Internal fixed-root read capability, not the native FileSystem or a client-facing project scope. */
 export interface PoolReadPort {
   readonly reader: FixedRootReader
+  readonly directory: DirectoryReadPort
   stat(relativePath: string, signal?: AbortSignal): Promise<ResidentResult<FsInfo | undefined>>
   streamText(relativePath: string, signal?: AbortSignal): Promise<AsyncIterable<string>>
   readBytes(relativePath: string, maxBytes: number, signal?: AbortSignal): Promise<ResidentResult<Uint8Array<ArrayBuffer>>>
@@ -194,8 +197,14 @@ export class LinuxFilesPool implements DrainParticipant {
     const reader = createFixedRootReader(fixedRoot.rootPath, {
       maxPathBytes: this.config.maxPathBytes, assertCurrent: checkCurrent, stat, streamText,
     })
+    const directory = createDirectoryReadPort(fixedRoot.rootPath, {
+      maxPathBytes: this.config.maxPathBytes, replyOverheadBytes: this.config.replyOverheadBytes, assertCurrent: checkCurrent,
+      inspect: (relativePath, reservedBytes, signal) => run(reservedBytes,
+        (client, control) => client.directory(fixedRoot, relativePath, this.config.maxPathBytes, control), signal),
+    })
     return Object.freeze({
       reader,
+      directory,
       stat: async (path: string, signal?: AbortSignal): Promise<ResidentResult<FsInfo | undefined>> => {
         const held = await stat(path, signal)
         return { value: held.value === undefined ? undefined : nativeInfo(held.value), release: () => { held.release() } }
