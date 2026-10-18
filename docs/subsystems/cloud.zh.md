@@ -31,4 +31,6 @@ files 根预建固定 worker 池。单账户排空保留共享池；根关闭时
 
 云端请求一致性使用 [access 持有的请求类型](../../packages/cloud/pe-cloud-access/src/types.ts)。客户端账户和代际字段表达预期，不是认证凭据。原生 HTTP、流和控制器适配保留原来的传输消息及原生 Session 状态。
 
+Access 持有 `CloudBootstrap` 及其浏览器安全校验器 `decodeCloudBootstrap`。响应包含展示身份、配方、不透明连接代际及脱敏能力。`BootstrapDecodeLimits` 限制紧凑 JSON 字节、UTF-8 字符串字节和列表项总量；载体另在 JSON 解析前限制原始响应字节。解码返回独立且深冻结的元数据，不证明认证、能力批准或账户 ready。禁用能力描述区分未批准功能和临时通道不可用；配置字段只描述允许选择及应用等级，不携带值或提交权限。
+
 端点清单不会把内部 Session 适配器接入原生派发。当前原生 owner 路径跳过 remote-access policy，因此开放 Session 方法还需要接入云端项目与 Preset 校验，在原生副作用之前执行。公开 Controller 薄适配正在验证；如需增加原生扩展，先审查契约。实际派发链通过消费者验证前，账户准入继续关闭。

@@ -24,11 +24,11 @@ Validate fixed-origin deployment inputs and reject stale account/generation expe
 <a id="use-this-package"></a>
 ## Use this package
 
-Use `/schema` for pure configuration and request-expectation checks. The package entry and `/root` expose the root Loader plugin and `AuthAccessError`. `BetterAuthAccess` is an internal implementation for same-package root assembly, without an additional SDK subpath. `AuthenticatedPrincipal.accountId` directly uses runtime's `AccountId` type.
+Use the browser-safe `/schema` for structural `AccessConfigSchema`, request-expectation checks and the unique `decodeCloudBootstrap` decoder; C-11 wire types live at `/types`. Full Host `parseAccessConfig` remains internal to authentication/root and is no longer re-exported through `/schema`. The package entry and `/root` expose the root Loader plugin and `AuthAccessError`. `BetterAuthAccess` is an internal implementation for same-package root assembly, without an additional SDK subpath. `AuthenticatedPrincipal.accountId` directly uses runtime's `AccountId` type.
 
 ### Configuration
 
-All configuration is explicit; examples do not supply production defaults. The complete schema lives in [config.ts](src/config.ts). The root currently rejects even valid configuration, so this package provides no successful mount example.
+All configuration is explicit; examples do not supply production defaults. The structural schema lives in [config-schema.ts](src/config-schema.ts); [config.ts](src/config.ts) retains full Host policy with unchanged Node IP semantics. The root currently rejects even valid configuration, so this package provides no successful mount example.
 
 | Fields | Requirement |
 | --- | --- |
@@ -47,6 +47,12 @@ All configuration is explicit; examples do not supply production defaults. The c
 ### Request bindings
 
 Preserve every carrier-field occurrence for `parseRequestExpectation`; missing, repeated, empty, padded or control-character values fail with HTTP 409. After real authentication, compare the expected account before owner lookup, then compare the generation after acquiring the current graph. Pure comparison success grants no Peer, project scope or business permission; `AccountUse.assertCurrent()` remains required before dispatch and every WS logical stream.
+
+### Bootstrap metadata
+
+`decodeCloudBootstrap(input, limits)` validates the strict C-11 account, version, generation and capability descriptions and returns detached, deeply frozen data. Supply explicit `maxBodyBytes`, `maxStringBytes` and combined `maxListItems`; no limits are defaulted. The body budget includes keys, delimiters and escaped UTF-8 strings in the complete compact result. The caller still bounds raw HTTP bytes before `JSON.parse`; all three limits may be derived from its `maxBootstrapResponseBytes`.
+
+Unknown fields, invalid availability/reason pairs, non-false restricted capabilities and invalid budgets fail without echoing input. Decoding does not authenticate, issue a generation or verify providers/readiness. Configuration application levels describe the server response; they do not submit changes or select the server's actual decision. The production bootstrap route and real account projection remain closed.
 
 ### Authentication adapter
 
@@ -78,6 +84,8 @@ Revocation or lifetime end closes admission and destroys carriers, then awaits n
 
 | Source | Responsibility |
 | --- | --- |
+| [bootstrap.ts](src/bootstrap.ts) | Strict bounded C-11 decoder and detached read-only metadata. |
+| [config-schema.ts](src/config-schema.ts) | Browser-safe structural configuration schema. |
 | [auth.ts](src/auth.ts) | Real library calls, fixed-login rechecks and actual-work retention. |
 | [peers.ts](src/peers.ts) | Internal login Peer, independent borrow, native carriers and retained cleanup. |
 | [auth-trust.ts](src/auth-trust.ts) | Fixed-origin transport checks. |
@@ -104,7 +112,7 @@ Revocation or lifetime end closes admission and destroys carriers, then awaits n
 
 #### What the model sees
 
-`BetterAuthAccess` and binding checks add no model-visible content or tool schema; they do not dispatch an Agent request.
+Authentication, binding checks and `decodeCloudBootstrap` add no model-visible content or tool schema; they do not dispatch an Agent request.
 
 #### Token effect
 

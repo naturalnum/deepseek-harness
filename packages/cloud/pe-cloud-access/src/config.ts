@@ -1,40 +1,9 @@
-/** Required deployment configuration for C-02 admission and authentication rechecks. */
+/** Host deployment policy, preserving Node IP semantics before authentication or root activation. */
 import { isIP } from 'node:net'
-import z from '@deepseek-ai/schemastery'
-import type { AccessConfig, BindingFieldNames } from './types.ts'
+import { AccessConfigSchema } from './config-schema.ts'
+import type { AccessConfig } from './types.ts'
 
-const MAX_TIMER_MS = 2_147_483_647
-
-/** Dedicated headers cannot replace Cookie, Host, Origin, or authorization headers. */
-const BindingFieldsSchema: z<BindingFieldNames> = z.object({
-  accountHeader: z.string().pattern(/^x-[a-z0-9-]+$/).required(),
-  generationHeader: z.string().pattern(/^x-[a-z0-9-]+$/).required(),
-  accountQuery: z.string().pattern(/^[A-Za-z][A-Za-z0-9_-]*$/).required(),
-  generationQuery: z.string().pattern(/^[A-Za-z][A-Za-z0-9_-]*$/).required(),
-})
-
-/** Required finite values have no example-derived production defaults. */
-export const AccessConfigSchema: z<AccessConfig> = z.object({
-  publicOrigin: z.string().required(),
-  deploymentMode: z.union(['development', 'production']).required(),
-  trustedProxyAddresses: z.array(String).required(),
-  authSecretRef: z.string().pattern(/\S/).required(),
-  sessionRecheckMs: z.natural().min(1).max(MAX_TIMER_MS).required(),
-  authCheckTimeoutMs: z.natural().min(1).max(MAX_TIMER_MS).required(),
-  maxPeers: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
-  maxPeersPerAccount: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
-  maxPeerWaiters: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
-  maxPeerWaitersPerAccount: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
-  maxPeerCarriers: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
-  maxPeerCarriersPerAccount: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
-  maxPeerCarriersPerLogin: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
-  peerCloseTimeoutMs: z.natural().min(1).max(MAX_TIMER_MS).required(),
-  maxAuthOperations: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
-  maxTrackedLogins: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
-  maxTrackedLoginsPerAccount: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
-  maxAuthInvalidations: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
-  bindingFields: BindingFieldsSchema.required(),
-})
+export { AccessConfigSchema } from './config-schema.ts'
 
 /**
  * Parse deployment inputs before installing any request handler.

@@ -15,14 +15,17 @@
   en: b563e4ec4727d0de
   zh: 0b283b30acc898ed
 /deepseek-ai-dsh-pe-cloud-access/use-this-package:
-  en: 1568eb347a383f44
-  zh: 9c7912f1d1caf4e2
+  en: 30c3f5df55ff963e
+  zh: 189a3c950518041b
 /deepseek-ai-dsh-pe-cloud-access/use-this-package/configuration:
-  en: ef74b7d60780d5bf
-  zh: 932bdf5a467e6d51
+  en: 2876d592f5436ce4
+  zh: 4908b654ae0687db
 /deepseek-ai-dsh-pe-cloud-access/use-this-package/request-bindings:
   en: fbd4b203ac4e1e8a
   zh: bbe076dc0a81a9b5
+/deepseek-ai-dsh-pe-cloud-access/use-this-package/bootstrap-metadata:
+  en: 5728a7a1bfe7bd35
+  zh: 36a809cbbdde02b0
 /deepseek-ai-dsh-pe-cloud-access/use-this-package/authentication-adapter:
   en: 79d163a1614ba442
   zh: cb2536c149f226c9
@@ -30,8 +33,8 @@
   en: cb1578a2d1ac8f90
   zh: 7a47300b08602bd7
 /deepseek-ai-dsh-pe-cloud-access/understand-the-implementation:
-  en: e0c0d354c54873e5
-  zh: 8e12faf6463e356a
+  en: 42dd859284e568fb
+  zh: d7f044d7a97821a2
 /deepseek-ai-dsh-pe-cloud-access/further-exploration:
   en: 4cd687a6806208b0
   zh: 4a5d543ea4ad8513
@@ -42,8 +45,8 @@
   en: cd8530c72534ee6b
   zh: 16dbf6046e7e51fd
 /deepseek-ai-dsh-pe-cloud-access/model-experience/request-context-and-condition/what-the-model-sees:
-  en: 7860100314691acc
-  zh: e97e011dce58d3cd
+  en: 62c60f186d3acdd4
+  zh: abf7838606a27afd
 /deepseek-ai-dsh-pe-cloud-access/model-experience/request-context-and-condition/token-effect:
   en: 6c6e5c1adc822cd0
   zh: e58aaa8fc8a31efc

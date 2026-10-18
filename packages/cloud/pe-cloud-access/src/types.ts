@@ -58,3 +58,75 @@ export interface RequestBindingFailure {
   readonly requestId: Branded<'pe-request-id'>
   readonly retry: 'after-status-check'
 }
+
+/** Descriptive feature availability; no state confers server authorization or account readiness. */
+export type BootstrapCapability =
+  | Readonly<{ state: 'available' }>
+  | Readonly<{ state: 'disabled'; reason: 'not-approved' }>
+  | Readonly<{ state: 'temporarily-unavailable'; reason: 'channel-unavailable' }>
+
+/** Actual approved subprocess modes and consumer identifiers, supplied by the server. */
+export interface BootstrapSubprocessCapabilities {
+  readonly spawn: boolean
+  readonly pipes: boolean
+  readonly control: boolean
+  readonly inherit: boolean
+  readonly terminal: boolean
+  readonly consumers: readonly string[]
+}
+
+/** One approved plugin's public installation controls; no import path or configuration values. */
+export interface BootstrapPlugin {
+  readonly id: string
+  readonly installable: boolean
+  readonly toggleable: boolean
+}
+
+/** A configuration field description; its application level never authorizes a submission. */
+export interface BootstrapConfigurationField {
+  readonly namespace: string
+  readonly path: string
+  readonly application: 'live' | 'local-remount' | 'graph-rebuild'
+}
+
+/** Sanitized configuration controls; no values, schemas, credentials or backend code locations. */
+export interface BootstrapConfiguration {
+  readonly catalogVersion: string
+  readonly plugins: readonly BootstrapPlugin[]
+  readonly skills: Readonly<{ manage: boolean }>
+  readonly credentials: Readonly<{ write: boolean }>
+  readonly fields: readonly BootstrapConfigurationField[]
+}
+
+/** C-11 metadata from the server's actual recipe and providers; decoding does not verify those facts. */
+export interface BootstrapCapabilities {
+  readonly projects: BootstrapCapability
+  readonly filePreview: BootstrapCapability
+  readonly shell: BootstrapCapability
+  readonly developmentServices: BootstrapCapability
+  readonly servicePreview: BootstrapCapability
+  readonly sandboxScope: 'session'
+  readonly backgroundJobs: false
+  readonly localDesktop: false
+  readonly arbitraryBackendPlugins: false
+  readonly subprocess: BootstrapSubprocessCapabilities
+  readonly configuration: BootstrapConfiguration
+}
+
+/** Browser wire metadata, distinct from the adapter-origin-tracked AuthenticatedPrincipal. */
+export interface CloudBootstrap {
+  readonly account: Readonly<{ id: string; displayName: string }>
+  readonly recipeVersion: string
+  readonly connectionGeneration: string
+  readonly capabilities: BootstrapCapabilities
+}
+
+/** Explicit decoder budgets; the caller still bounds raw response bytes before JSON.parse. */
+export interface BootstrapDecodeLimits {
+  /** Maximum UTF-8 bytes of the complete compact validated JSON result, including keys and delimiters. */
+  readonly maxBodyBytes: number
+  /** Maximum UTF-8 bytes per string value, including protocol string values. */
+  readonly maxStringBytes: number
+  /** Combined maximum entries across consumers, plugins and configuration fields; zero permits only empty lists. */
+  readonly maxListItems: number
+}

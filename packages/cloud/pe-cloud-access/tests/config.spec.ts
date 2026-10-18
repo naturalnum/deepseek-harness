@@ -59,6 +59,18 @@ describe('access deployment inputs', () => {
     expect(parseAccessConfig({ ...valid, trustedProxyAddresses: ['127.0.0.1', '::1'] }).trustedProxyAddresses).toEqual(['127.0.0.1', '::1'])
   })
 
+  it.each(['127.0.0.1', '::1', '::ffff:127.0.0.1', 'fe80::1%eth0.2', 'fe80::1%eth-0', 'fe80::1%foo:bar'])(
+    'retains Node exact-IP acceptance for %s', (address) => {
+      expect(parseAccessConfig({ ...config(), trustedProxyAddresses: [address] }).trustedProxyAddresses).toEqual([address])
+    },
+  )
+
+  it.each(['127.1', '0177.0.0.1', '127.0.0.01', '::ffff:192.168.001.1', '::ffff:0x7f.0.0.1'])(
+    'retains Node exact-IP rejection for %s', (address) => {
+      expect(() => parseAccessConfig({ ...config(), trustedProxyAddresses: [address] })).toThrow()
+    },
+  )
+
   it('rejects a per-account peer capacity larger than global capacity', () => {
     expect(() => parseAccessConfig({ ...config(), maxPeersPerAccount: 5 })).toThrow()
   })

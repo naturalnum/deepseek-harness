@@ -24,11 +24,11 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-通过 `/schema` 使用纯配置及请求预期校验。包入口和 `/root` 导出根 Loader 插件及 `AuthAccessError`。`BetterAuthAccess` 是同包根装配使用的内部实现，不增加 SDK 子路径。`AuthenticatedPrincipal.accountId` 直接使用 runtime 的 `AccountId` 类型。
+通过浏览器安全的 `/schema` 使用结构 `AccessConfigSchema`、请求预期校验及唯一 `decodeCloudBootstrap` 解码器；C-11 线类型位于 `/types`。完整 Host `parseAccessConfig` 留在认证/root 内部，不再由 `/schema` 转出。包入口和 `/root` 导出根 Loader 插件及 `AuthAccessError`。`BetterAuthAccess` 是同包根装配使用的内部实现，不增加 SDK 子路径。`AuthenticatedPrincipal.accountId` 直接使用 runtime 的 `AccountId` 类型。
 
 ### 配置
 
-所有配置均显式提供，示例不充当生产默认值。完整 schema 见 [config.ts](src/config.ts)。根入口目前也会拒绝合法配置，因此本包不提供可成功挂载的示例。
+所有配置均显式提供，示例不充当生产默认值。结构 schema 见 [config-schema.ts](src/config-schema.ts)；[config.ts](src/config.ts) 保留完整 Host 策略，Node IP 语义不变。根入口目前也会拒绝合法配置，因此本包不提供可成功挂载的示例。
 
 | 字段 | 要求 |
 | --- | --- |
@@ -47,6 +47,12 @@ kind: "package-reference"
 ### 请求绑定
 
 向 `parseRequestExpectation` 提供载体字段的全部出现值；缺失、重复、空值、首尾空白或控制字符均以 HTTP 409 失败。真实认证后，先比较预期账户再查询 owner，取得当前图后再比较代际。纯比较通过不会授予 Peer、项目范围或业务权限；派发及每个 WS 逻辑流前仍须执行 `AccountUse.assertCurrent()`。
+
+### Bootstrap 元数据
+
+`decodeCloudBootstrap(input, limits)` 严格校验 C-11 的账户、版本、代际和能力描述，返回独立副本及深只读数据。显式传入 `maxBodyBytes`、`maxStringBytes` 和合计 `maxListItems`，不补默认值。正文预算计入完整紧凑结果的字段名、分隔符和转义后 UTF-8 字符串。调用方仍须在 `JSON.parse` 前限制原始 HTTP 字节；三项上限均可由其 `maxBootstrapResponseBytes` 派生。
+
+未知字段、错误状态/reason 组合、非 false 的受限能力及非法预算均拒绝，错误不回显输入。解码不认证、不签发代际，也不核验 provider 或 ready。配置应用等级仅描述服务端响应，不提交变更或决定服务端实际应用方式。生产 bootstrap 路由与真实账户投影仍未开放。
 
 ### 认证适配器
 
@@ -78,6 +84,8 @@ kind: "package-reference"
 
 | 源码 | 职责 |
 | --- | --- |
+| [bootstrap.ts](src/bootstrap.ts) | 严格有界的 C-11 解码器及独立只读元数据。 |
+| [config-schema.ts](src/config-schema.ts) | 浏览器安全的结构配置 schema。 |
 | [auth.ts](src/auth.ts) | 真实库调用、固定登录复查及实际工作保留。 |
 | [peers.ts](src/peers.ts) | 内部登录 Peer、独立借用、原生载体和清理保留。 |
 | [auth-trust.ts](src/auth-trust.ts) | 固定源传输检查。 |
@@ -104,7 +112,7 @@ kind: "package-reference"
 
 #### 模型可见内容
 
-`BetterAuthAccess` 及绑定检查不添加模型可见内容或工具 schema，也不派发 Agent 请求。
+认证、绑定检查及 `decodeCloudBootstrap` 不添加模型可见内容或工具 schema，也不派发 Agent 请求。
 
 #### Token 影响
 
