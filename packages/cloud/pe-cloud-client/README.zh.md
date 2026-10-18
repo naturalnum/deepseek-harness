@@ -71,9 +71,9 @@ Host 可选字段 `web` 通过一个结构化 `__DSH_CLOUD_WEB__` 全局值选�
 
 内部 bootstrap attempt 只发起一次同源、文档相对路径的 GET，不自动重试。调用者提供类型拥有者的解码器；本包不定义替代 bootstrap DTO。取消或超时使结果拒绝，而 `settled` 追踪实际 fetch/body 结束，`cleanup` 独立记录已确认或仍不明的清理结果。晚到数据不能调用解码器。响应有显式字节上限。
 
-内部原生 transport 捕获 access 包的 `RequestExpectation` 和 `BindingFieldNames`。它保留原生 RPC 正文及请求关联，为 HTTP 添加专用头，为原生 WS 和导航 URL 添加专用 query 字段。预期值冲突、外部源或应用挂载路径外的请求在发送前拒绝。HTTP 401 和 `cloud/stale-generation` 使原绑定生命周期失效；其他 409 响应保留原字节供原生处理。它不替换旧请求预期值，也不重放修改。
+内部原生 transport 捕获 access 包的 `RequestExpectation` 和 `BindingFieldNames`。它保留原生 RPC 正文及请求关联，为 HTTP 添加专用头，为原生 WS 和导航 URL 添加专用 query 字段。预期值冲突、外部源或应用挂载路径外的请求在发送前拒绝。HTTP 401 和 `cloud/stale-generation` 使原绑定生命周期失效；其他 409 响应保留原字节供原生处理。它不替换旧请求预期值，也不重放修改。transport 开放期间，每次 socket 关闭都会请求一次正式 bootstrap 身份复核；同时最多保留一个检查，直到其实际 fetch 与正文清理结束。HTTP 401 响应头立即撤销旧页面，解码后账户或代际不符同样使旧绑定失效。身份一致或网络错误、超时、HTTP 503 等暂时失败时，保留捕获的绑定和原生重连策略。响应清理未确认仍会停止载体并保留清理失败。
 
-关闭时立即拒绝新操作、取消在途 fetch，并请求 socket 关闭。缺少结束确认时状态为 `unconfirmed`；实际工作仍被追踪，稍后结束可确认关闭。这只说明载体清理，不证明 Agent 已取消或账户已排空。限额覆盖等待响应头的 fetch、socket、bootstrap 字节及检查的错误字节；成功响应正文和原生订阅生命周期仍由原生应用持有。
+关闭时立即拒绝新操作、取消在途 fetch 和身份复核，并请求 socket 关闭。关闭会等待每个检查的实际结束，包括迟到响应的取消，而不把检查结果的提前返回当成清理完成。缺少结束确认时状态为 `unconfirmed`；实际工作仍被追踪，稍后结束可确认关闭。这只说明载体清理，不证明 Agent 已取消或账户已排空。限额覆盖等待响应头的 fetch、socket、bootstrap 字节及检查的错误字节；成功响应正文和原生订阅生命周期仍由原生应用持有。
 
 fetch 正文已被捕获 signal 的同一个取消原因置为 errored 时，按其终态确认，不再调用源取消。实际 source cancel 拒绝仍保留清理未确认，即使返回同一个原因；区分依据为原 reader 的 closed/errored 结算，实际取消工作仍被等待。
 

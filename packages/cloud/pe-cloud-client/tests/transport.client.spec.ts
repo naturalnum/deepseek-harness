@@ -5,6 +5,7 @@ import type { ConnectionHandle, ConnectionWebSocket, RpcFetch } from '@deepseek-
 import { describe, expect, it, vi } from 'vitest'
 import { BoundTransport, type BoundTransportInput } from '../src/client/transport.ts'
 import { ClientFailure } from '../src/client/errors.ts'
+import { BootstrapAttempt } from '../src/client/bootstrap.ts'
 
 class Socket implements ConnectionWebSocket {
   private readonly listeners = new Map<object, () => void>()
@@ -35,7 +36,122 @@ function input(fetch: RpcFetch, overrides: Partial<BoundTransportInput> = {}): B
   }
 }
 
+function identityChecks(fetch: RpcFetch, timeout = 50) {
+  const attempts: BootstrapAttempt<void>[] = []
+  const revalidate = vi.fn((signal: AbortSignal) => {
+    const attempt = new BootstrapAttempt({
+      baseUrl: 'https://example.test/app/', fetch,
+      config: { bootstrapPath: 'cloud/bootstrap', bootstrapTimeoutMs: timeout, maxBootstrapResponseBytes: 64 },
+      decode: () => {},
+    }, signal)
+    attempts.push(attempt)
+    return attempt
+  })
+  return { attempts, revalidate }
+}
+
 describe('captured native carrier', () => {
+  it.each(['same identity', 'network failure', 'HTTP 503', 'oversized response'])('keeps captured identity after a WS recheck with %s', async (outcome) => {
+    const socket = new Socket(), send = vi.fn(async () => new Response('native'))
+    const checks = identityChecks(vi.fn(async () => {
+      if (outcome === 'network failure') throw new TypeError('network unavailable')
+      if (outcome === 'HTTP 503') return new Response(null, { status: 503 })
+      return outcome === 'oversized response' ? new Response('x'.repeat(65)) : Response.json({})
+    }))
+    const transport = new BoundTransport(input(send, { createWebSocket: () => socket, revalidate: checks.revalidate }))
+    transport.hooks.createWebSocket!('wss://example.test/app/api/remote.mux')
+    socket.finish()
+    expect(checks.revalidate).toHaveBeenCalledOnce()
+    await checks.attempts[0]!.settled
+    expect(transport.getSnapshot()).toMatchObject({ phase: 'open', reason: undefined })
+    expect(transport.navigationUrl('api/export')).toContain('peAccount=a&peGeneration=a-generation')
+    expect(send).not.toHaveBeenCalled()
+    expect(await (await transport.hooks.fetch!('api/x', {})).text()).toBe('native')
+    expect(send).toHaveBeenCalledOnce()
+    await transport.close()
+    expect(checks.revalidate).toHaveBeenCalledOnce()
+  })
+
+  it('holds the single recheck slot after timeout until late headers and cancellation actually settle', async () => {
+    vi.useFakeTimers()
+    const late = Promise.withResolvers<Response>(), cancelled = vi.fn()
+    const fetcher = vi.fn<RpcFetch>().mockReturnValueOnce(late.promise).mockResolvedValue(Response.json({}))
+    const checks = identityChecks(fetcher)
+    const transport = new BoundTransport(input(async () => new Response(), { revalidate: checks.revalidate }))
+    const disconnect = (): void => {
+      const socket = transport.hooks.createWebSocket!('wss://example.test/app/api/remote.mux') as Socket
+      socket.finish()
+    }
+    try {
+      disconnect()
+      disconnect()
+      expect(checks.revalidate).toHaveBeenCalledOnce()
+      await vi.advanceTimersByTimeAsync(50)
+      expect(checks.attempts[0]!.getSnapshot()).toMatchObject({ settled: false, cleanup: 'pending' })
+      disconnect()
+      expect(checks.revalidate).toHaveBeenCalledOnce()
+      expect(transport.getSnapshot().phase).toBe('open')
+      late.resolve(new Response(new ReadableStream({ cancel: cancelled })))
+      await checks.attempts[0]!.settled
+      await vi.advanceTimersByTimeAsync(0)
+      expect(cancelled).toHaveBeenCalledOnce()
+      disconnect()
+      expect(checks.revalidate).toHaveBeenCalledTimes(2)
+      await checks.attempts[1]!.settled
+      await transport.close()
+    } finally {
+      late.resolve(new Response())
+      await transport.close()
+      vi.useRealTimers()
+    }
+  })
+
+  it.each([false, true])('aborts a WS recheck and joins actual late body cancellation (reject=%s)', async (reject) => {
+    const late = Promise.withResolvers<Response>(), cancel = Promise.withResolvers<undefined>()
+    const cancelling = Promise.withResolvers<undefined>()
+    const checks = identityChecks(() => late.promise, 1000)
+    const settings = input(async () => new Response(), { revalidate: checks.revalidate })
+    settings.limits.closeTimeoutMs = 1000
+    const transport = new BoundTransport(settings)
+    const socket = transport.hooks.createWebSocket!('wss://example.test/app/api/remote.mux') as Socket
+    socket.finish()
+    const closing = transport.close(), complete = vi.fn()
+    void closing.then(complete, complete)
+    const outcome = reject ? expect(closing).rejects.toMatchObject({ code: 'close-unconfirmed' }) : closing
+    await expect(checks.attempts[0]!.result).rejects.toMatchObject({ code: 'closed' })
+    expect(checks.attempts[0]!.getSnapshot().settled).toBe(false)
+    late.resolve(new Response(new ReadableStream({ cancel() { cancelling.resolve(undefined); return cancel.promise } })))
+    await cancelling.promise
+    expect(complete).not.toHaveBeenCalled()
+    if (reject) cancel.reject(new Error('actual cancellation rejected'))
+    else cancel.resolve(undefined)
+    await outcome
+    expect(checks.attempts[0]!.getSnapshot()).toMatchObject({ settled: true, cleanup: reject ? 'unconfirmed' : 'confirmed' })
+    expect(transport.getSnapshot().phase).toBe(reject ? 'unconfirmed' : 'closed')
+    expect(checks.revalidate).toHaveBeenCalledOnce()
+  })
+
+  it('keeps recheck cleanup pending after the close deadline until its real carrier settles', async () => {
+    vi.useFakeTimers()
+    const late = Promise.withResolvers<Response>()
+    const checks = identityChecks(() => late.promise, 1000)
+    const transport = new BoundTransport(input(async () => new Response(), { revalidate: checks.revalidate }))
+    const socket = transport.hooks.createWebSocket!('wss://example.test/app/api/remote.mux') as Socket
+    socket.finish()
+    const closing = transport.close(), rejected = expect(closing).rejects.toMatchObject({ code: 'close-unconfirmed' })
+    try {
+      await vi.advanceTimersByTimeAsync(100)
+      await rejected
+      expect(transport.getSnapshot().phase).toBe('unconfirmed')
+      expect(checks.attempts[0]!.getSnapshot().settled).toBe(false)
+      late.resolve(new Response())
+      await checks.attempts[0]!.settled
+      await vi.advanceTimersByTimeAsync(0)
+      expect(transport.getSnapshot().phase).toBe('closed')
+      expect(transport.close()).toBe(closing)
+    } finally { late.resolve(new Response()); vi.useRealTimers() }
+  })
+
   it('uses the real native Connection envelope and keeps A binding after caller inputs change', async () => {
     const requests: Array<{ url: string; headers: Headers; envelope: Record<string, unknown> }> = []
     const expectation = { accountId: 'a', connectionGeneration: 'a-generation' }

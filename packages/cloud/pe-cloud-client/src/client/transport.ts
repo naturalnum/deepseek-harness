@@ -4,6 +4,7 @@ import type {
 } from '@deepseek-ai/dsh-client-connection/client'
 import type { BindingFieldNames, RequestExpectation } from '@deepseek-ai/dsh-pe-cloud-access/types'
 import type { CloudClientConfig } from '../types.ts'
+import type { BootstrapAttempt } from './bootstrap.ts'
 import { ClientFailure, type ClientFailureCode } from './errors.ts'
 import { readResponse, cancelResponseReader } from './read-response.ts'
 
@@ -15,6 +16,12 @@ export interface BoundTransportInput {
   readonly fetch: RpcFetch
   readonly createWebSocket: ConnectionWebSocketFactory
   readonly limits: Pick<CloudClientConfig, 'maxPendingFetches' | 'maxSockets' | 'maxErrorResponseBytes' | 'closeTimeoutMs'>
+  /**
+   * Recheck the captured identity after socket closure; omission leaves native reconnect behavior unchanged.
+   * Identity rejection closes the carrier; transient failures preserve it. Cleanup uncertainty remains a close
+   * failure, and actual settlement owns the single check slot.
+   */
+  readonly revalidate?: (signal: AbortSignal) => BootstrapAttempt<void>
   /** Revoke page persistence synchronously before any carrier is stopped. */
   readonly beforeClose?: (reason: ClientFailureCode) => void
 }
@@ -45,13 +52,16 @@ export class BoundTransport {
   private phase: TransportSnapshot['phase'] = 'open'
   private reason: ClientFailureCode | undefined
   private closing: Promise<void> | undefined
+  private revalidation: Promise<void> | undefined
   private readonly beforeClose: BoundTransportInput['beforeClose']
+  private readonly revalidate: BoundTransportInput['revalidate']
   /** Native installer input; the original Connection still owns envelopes and correlation. */
   readonly hooks: ClientTransportHooks
 
   /** @param input - owner-validated expectations/field names and real native carrier factories. */
   constructor(input: BoundTransportInput) {
     this.beforeClose = input.beforeClose
+    this.revalidate = input.revalidate
     this.base = new URL(input.baseUrl)
     if (!['http:', 'https:'].includes(this.base.protocol) || !this.base.pathname.endsWith('/')
       || this.base.search !== '' || this.base.hash !== '' || this.base.username !== '' || this.base.password !== '') {
@@ -88,7 +98,7 @@ export class BoundTransport {
   }
 
   /**
-   * Reject new operations synchronously, then await real pending carriers within the close budget.
+   * Reject new operations synchronously, then abort and join pending carriers and identity checks within the close budget.
    * A missed deadline retains unconfirmed state until the actual carriers settle.
    * @param reason - local disposition; omitted for an ordinary page lifetime end.
    * @returns the single close observation, rejecting when stop cannot be confirmed in budget.
@@ -112,6 +122,7 @@ export class BoundTransport {
     }
     const work = Promise.allSettled([
       ...this.pending,
+      ...this.revalidation === undefined ? [] : [this.revalidation],
       ...uses.filter(use => use.socket.readyState !== 3).map(use => use.done),
     ]).then(() => {
       if (this.cleanupFailures.length > 0) throw new ClientFailure('close-unconfirmed', new AggregateError(this.cleanupFailures))
@@ -225,6 +236,34 @@ export class BoundTransport {
     }
   }
 
+  private revalidateBinding(): void {
+    const revalidate = this.revalidate
+    if (this.phase !== 'open' || revalidate === undefined || this.revalidation !== undefined) return
+    const completion = Promise.withResolvers<void>()
+    this.revalidation = completion.promise
+    const check = async (): Promise<void> => {
+      const attempt = revalidate(this.abort.signal)
+      let failure: unknown
+      try { await attempt.result } catch (error) {
+        failure = error
+        if (this.phase === 'open' && error instanceof ClientFailure
+          && (error.code === 'unauthenticated' || error.code === 'stale-generation')) {
+          // close joins this check; the check must never await that same close.
+          void this.close(error.code)
+        }
+      }
+      await attempt.settled
+      if (attempt.getSnapshot().cleanup === 'unconfirmed') throw new ClientFailure('close-unconfirmed', failure)
+    }
+    void check().catch((error: unknown) => {
+      this.cleanupFailures.push(error)
+      if (this.phase === 'open') void this.close('close-unconfirmed')
+    }).finally(() => {
+      this.revalidation = undefined
+      completion.resolve()
+    })
+  }
+
   private openSocket(createSocket: ConnectionWebSocketFactory, input: string): ConnectionWebSocket {
     this.assertOpen()
     if (this.sockets.size >= this.limits.maxSockets) throw new ClientFailure('capacity')
@@ -235,6 +274,7 @@ export class BoundTransport {
       socket.removeEventListener('close', closed)
       this.sockets.delete(use)
       stopped.resolve()
+      this.revalidateBinding()
     }
     this.sockets.add(use)
     socket.addEventListener('close', closed, { once: true })

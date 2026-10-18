@@ -120,6 +120,111 @@ it('uses canonical bootstrap then the real Cloud Loader entry before native cach
   expect(f.values.size).toBe(0)
 })
 
+it.each(['401', 'different account', 'different generation'])('revalidates canonical identity after native WS closure (%s)', async (outcome) => {
+  const f = fixture(), socket = new Socket()
+  const preparation = PreparedCloudPage.prepare({ ...f.input, createWebSocket: () => socket }, new AbortController().signal)
+  onTestFinished(() => preparation.dispose())
+  const page = await preparation.ready
+  const graph = native(page)
+  await page.start(graph.entry)
+  expect(f.values.size).toBe(1)
+  f.fetcher.mockResolvedValueOnce(outcome === '401'
+    ? new Response(null, { status: 401 })
+    : Response.json(outcome === 'different account' ? bootstrap('B', 'G1') : bootstrap('A', 'G2')))
+
+  socket.close()
+
+  await vi.waitFor(() => { expect(page.getSnapshot().phase).toBe('stopped') })
+  expect(page.lifetime.transport.getSnapshot()).toMatchObject({
+    phase: 'closed', reason: outcome === '401' ? 'unauthenticated' : 'stale-generation',
+  })
+  expect(f.values.size).toBe(0)
+  expect(graph.ctx.get('connection')).toBeUndefined()
+  expect(f.fetcher).toHaveBeenCalledTimes(3)
+  expect(f.fetcher).toHaveBeenLastCalledWith(new URL('https://example.test/app/cloud/bootstrap'), expect.objectContaining({
+    method: 'GET', credentials: 'same-origin', cache: 'no-store', redirect: 'error',
+  }))
+  expect(f.fetcher.mock.lastCall?.[1].signal).toBeInstanceOf(AbortSignal)
+})
+
+it('keeps the native page and captured binding after the canonical identity is unchanged', async () => {
+  const f = fixture(), socket = new Socket()
+  const preparation = PreparedCloudPage.prepare({ ...f.input, createWebSocket: () => socket }, new AbortController().signal)
+  onTestFinished(() => preparation.dispose())
+  const page = await preparation.ready
+  const graph = native(page)
+  await page.start(graph.entry)
+  socket.close()
+  const checking = page.lifetime.transport['revalidation']
+  if (checking === undefined) throw new Error('Native WS closure did not start its identity check')
+  await checking
+  expect(page.getSnapshot().phase).toBe('running')
+  expect(page.lifetime.transport.getSnapshot()).toMatchObject({ phase: 'open', reason: undefined })
+  expect(page.nativeOptions.persistence.getItem('draft.same-session')).toBe('"A"')
+  expect(graph.ctx.get('connection')).toBeDefined()
+  expect(f.fetcher).toHaveBeenCalledTimes(3)
+  expect(f.requests).toHaveLength(1)
+})
+
+it('keeps page cleanup unconfirmed when a WS identity recheck cannot cancel its rejected body', async () => {
+  const f = fixture(), socket = new Socket()
+  const cancelling = Promise.withResolvers<undefined>(), cancelled = Promise.withResolvers<undefined>()
+  const preparation = PreparedCloudPage.prepare({ ...f.input, createWebSocket: () => socket }, new AbortController().signal)
+  const page = await preparation.ready
+  const graph = native(page)
+  await page.start(graph.entry)
+  const report = vi.spyOn(console, 'error').mockImplementation(() => {})
+  onTestFinished(async () => {
+    cancelled.resolve(undefined)
+    await Promise.allSettled([preparation.dispose()])
+    report.mockRestore()
+  })
+  f.fetcher.mockResolvedValueOnce(new Response(new ReadableStream({
+    cancel() { cancelling.resolve(undefined); return cancelled.promise },
+  }), { status: 401 }))
+
+  socket.close()
+
+  await cancelling.promise
+  expect(page.lifetime.persistence.getSnapshot().phase).toBe('revoked')
+  expect(() => { page.nativeOptions.persistence.setItem('late', 'denied') }).toThrow()
+  expect(page.lifetime.transport.getSnapshot()).toMatchObject({ phase: 'closing', reason: 'unauthenticated' })
+  cancelled.reject(new Error('body cleanup failed'))
+  await vi.waitFor(() => { expect(page.getSnapshot().phase).toBe('unconfirmed') })
+  await expect(preparation.dispose()).rejects.toThrow('cleanup unconfirmed')
+  expect(page.lifetime.persistence.getSnapshot()).toMatchObject({ phase: 'revoked', cleanup: 'not-requested' })
+  expect(f.values.size).toBe(1)
+  expect(report).toHaveBeenCalled()
+})
+
+it('discards late 401 headers after a WS identity check timed out without invalidating the page', async () => {
+  const f = fixture(), socket = new Socket(), late = Promise.withResolvers<Response>()
+  const preparation = PreparedCloudPage.prepare({ ...f.input, createWebSocket: () => socket }, new AbortController().signal)
+  const page = await preparation.ready
+  const graph = native(page)
+  await page.start(graph.entry)
+  f.fetcher.mockReturnValueOnce(late.promise)
+  const cancelled = vi.fn()
+  vi.useFakeTimers()
+  try {
+    socket.close()
+    const checking = page.lifetime.transport['revalidation']
+    if (checking === undefined) throw new Error('Native WS closure did not start its identity check')
+    await vi.advanceTimersByTimeAsync(config.bootstrapTimeoutMs)
+    expect(page.getSnapshot().phase).toBe('running')
+    late.resolve(new Response(new ReadableStream({ cancel: cancelled }), { status: 401 }))
+    await checking
+    expect(cancelled).toHaveBeenCalledOnce()
+    expect(page.getSnapshot().phase).toBe('running')
+    expect(page.lifetime.transport.getSnapshot()).toMatchObject({ phase: 'open', reason: undefined })
+    expect(page.nativeOptions.persistence.getItem('draft.same-session')).toBe('"A"')
+  } finally {
+    late.resolve(new Response())
+    await preparation.dispose()
+    vi.useRealTimers()
+  }
+})
+
 it.each([401, 409])('does not issue an owner, touch storage or activate native services after bootstrap HTTP %s', async (status) => {
   const f = fixture()
   const input = { ...f.input, fetch: vi.fn(async () => new Response(null, { status })) }

@@ -65,6 +65,7 @@ declare module '@deepseek-ai/cordis' {
  * One decoded browser page. The Cloud Loader entry consumes this exact owner and
  * installs the existing native Connection with captured carriers. The fixed Cloud
  * recipe must omit ordinary Connection plugin activation; it remains a module supplier.
+ * Socket closure rechecks canonical identity without replacing the captured owner.
  */
 export class PreparedCloudPage {
   /** Sanitized canonical metadata; this is not server authorization or an account-ready proof. */
@@ -83,12 +84,28 @@ export class PreparedCloudPage {
     this.bootstrap = bootstrap
     this.config = Object.freeze({ ...input.config })
     this.location = Object.freeze({ hostname: new URL(input.baseUrl).hostname })
+    const expectation = { accountId: bootstrap.account.id, connectionGeneration: bootstrap.connectionGeneration }
     this.lifetime = new CloudPageLifetime({
-      expectation: { accountId: bootstrap.account.id, connectionGeneration: bootstrap.connectionGeneration },
+      expectation,
       storage: input.storage, persistenceLimits: input.persistenceLimits,
       transport: {
         baseUrl: input.baseUrl, fields: input.fields, fetch: input.fetch,
         createWebSocket: input.createWebSocket, limits: this.config,
+        revalidate: signal => new BootstrapAttempt({
+          baseUrl: input.baseUrl, config: this.config,
+          fetch: async (target, init) => {
+            const response = await input.fetch(target, init)
+            // Revoke on headers; BootstrapAttempt still owns response disposal.
+            if (response.status === 401 && !init.signal?.aborted) void this.lifetime.transport.close('unauthenticated')
+            return response
+          },
+          decode: (value) => {
+            const current = decodeCloudBootstrap(value, input.decodeLimits)
+            if (current.account.id !== expectation.accountId || current.connectionGeneration !== expectation.connectionGeneration) {
+              throw new ClientFailure('stale-generation')
+            }
+          },
+        }, signal),
       },
     })
     this.nativeOptions = Object.freeze({
