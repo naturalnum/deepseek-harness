@@ -37,7 +37,8 @@
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/dsh-fs": "workspace:*",
-    "@deepseek-ai/dsh-pe-cloud-runtime": "workspace:*"
+    "@deepseek-ai/dsh-pe-cloud-runtime": "workspace:*",
+    "@deepseek-ai/dsh-workspace": "workspace:*"
   },
   "dependencies": {
     "@deepseek-ai/schemastery": "workspace:~"
@@ -46,7 +47,14 @@
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/dsh-fs": "workspace:*",
     "@deepseek-ai/dsh-pe-cloud-runtime": "workspace:*",
-    "@deepseek-ai/dsh-app-boot": "workspace:*"
+    "@deepseek-ai/dsh-app-boot": "workspace:*",
+    "@deepseek-ai/dsh-workspace": "workspace:*",
+    "@deepseek-ai/dsh-session": "workspace:*",
+    "@deepseek-ai/dsh-session-persistence": "workspace:*",
+    "@deepseek-ai/dsh-session-persistence-jsonl": "workspace:*",
+    "@deepseek-ai/dsh-storage": "workspace:*",
+    "@deepseek-ai/dsh-storage-json": "workspace:*",
+    "@deepseek-ai/dsh-storage-domain": "workspace:*"
   },
   "repository": {
     "type": "git",

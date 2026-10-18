@@ -22,6 +22,9 @@
     },
     {
       "path": "../pe-cloud-runtime"
+    },
+    {
+      "path": "../../workspace/workspace"
     }
   ]
 }
