@@ -6676,6 +6676,9 @@ importers:
         specifier: 8.16.3
         version: 8.16.3
     devDependencies:
+      '@deepseek-ai/dsh-app-boot':
+        specifier: workspace:*
+        version: link:../../boot/app-boot
       '@deepseek-ai/dsh-credentials':
         specifier: workspace:*
         version: link:../../credentials/credentials

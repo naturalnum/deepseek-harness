@@ -1,4 +1,9 @@
-import { Context } from '@deepseek-ai/cordis'
+import { Context, FiberState } from '@deepseek-ai/cordis'
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { setImmediate as nextTurn } from 'node:timers/promises'
+import { boot, StartupError } from '@deepseek-ai/dsh-app-boot'
 import { CredentialProvider, type ResolvedCredential } from '@deepseek-ai/dsh-credentials'
 import type { CredentialInfo, CredentialRef, CredentialKey, CredentialRecord } from '@deepseek-ai/dsh-credentials/types'
 import type { Branded } from '@deepseek-ai/dsh-brand'
@@ -12,6 +17,7 @@ import * as root from '../src/root.ts'
 
 const contexts: Context[] = []
 const gates: Array<() => void> = []
+const directories: string[] = []
 const requestId = 'root-schema-test' as Branded<'pe-request-id'>
 const testSecret = 'root-resource-test-secret-thirty-two-bytes-123456'
 
@@ -63,10 +69,138 @@ async function context(): Promise<{ ctx: Context; credentials: TestCredentials }
 afterEach(async () => {
   for (const release of gates.splice(0)) release()
   await Promise.all(contexts.splice(0).map(ctx => ctx.fiber.dispose()))
+  for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true })
   vi.restoreAllMocks()
 })
 
+function bootAuthentication(read: TestCredentials['resolveRead']): {
+  readonly actual: Promise<Context>
+  readonly context: () => Context
+  readonly credentialDisposed: () => boolean
+} {
+  const directory = realpathSync(mkdtempSync(join(tmpdir(), 'access-root-loader-')))
+  directories.push(directory)
+  const path = join(directory, 'cordis.yml')
+  // boot's required-entry policy uses entry ids. This id makes authentication failure fatal without installing a Web server.
+  writeFileSync(path, JSON.stringify([
+    { id: 'credentials', name: 'cordis:controlled-root-credentials' },
+    { id: 'webserver', name: 'cordis:actual-access-root', config: { ...config(), secretResolveTimeoutMs: 2000 } },
+  ]))
+  let context: Context | undefined
+  let credentialDisposed = false
+  const actual = boot('access-root-loader-regression', path, [], (ctx) => {
+    context = ctx
+    contexts.push(ctx)
+    Object.assign(ctx.loader.builtins, {
+      'actual-access-root': root,
+      'controlled-root-credentials': {
+        apply(scope: Context): void {
+          const credentials = new TestCredentials(scope)
+          credentials.resolveRead = read
+          scope.effect(() => () => { credentialDisposed = true }, 'access test: observe credential provider disposal')
+        },
+      },
+    })
+  })
+  return {
+    actual,
+    context: () => {
+      if (context === undefined) throw new Error('Actual boot preparation did not run')
+      return context
+    },
+    credentialDisposed: () => credentialDisposed,
+  }
+}
+
 describe('root authentication resources remain closed on incomplete or failed initialization', () => {
+  it('keeps real Loader boot pending and propagates a missing secret through startup failure and provider cleanup', async () => {
+    const secret = Promise.withResolvers<ResolvedCredential | undefined>()
+    const entered = Promise.withResolvers<undefined>()
+    gates.push(() => { secret.resolve(undefined) })
+    const read = vi.fn(() => { entered.resolve(undefined); return secret.promise })
+    const close = vi.spyOn(PeAuthService.prototype, 'close')
+    const unhandled = vi.fn()
+    process.on('unhandledRejection', unhandled)
+    const loading = bootAuthentication(read)
+    let settled = false
+    const outcome = loading.actual.then(
+      (value) => { settled = true; return { state: 'fulfilled' as const, value } },
+      (error: unknown) => { settled = true; return { state: 'rejected' as const, error } },
+    )
+    try {
+      await entered.promise
+      const ctx = loading.context()
+      const entry = [...ctx.loader.entries()].find(entry => entry.options.id === 'webserver')
+      expect(entry?.fiber?.state).toBe(FiberState.LOADING)
+      expect(ctx.get('peAuth')).toBeUndefined()
+      await nextTurn()
+      expect(settled).toBe(false)
+      expect(loading.credentialDisposed()).toBe(false)
+      secret.resolve(undefined)
+      const result = await outcome
+      expect(result.state).toBe('rejected')
+      if (result.state !== 'rejected') throw new Error('Missing authentication secret did not reject boot')
+      expect(result.error).toBeInstanceOf(StartupError)
+      if (!(result.error instanceof StartupError)) throw new Error('Expected native boot startup diagnostics')
+      const failure = result.error.entries.find(entry => entry.id === 'webserver')
+      expect(failure?.module).toBe('cordis:actual-access-root')
+      expect(failure?.required).toBe(true)
+      if (failure?.outcome.kind !== 'failed') throw new Error('Authentication activation failure was not retained')
+      expect(failure.outcome.error).toMatchObject({ code: 'cloud/account-unavailable' })
+      const service = close.mock.contexts[0]
+      if (!(service instanceof PeAuthService)) throw new Error('Actual authentication cleanup was not called')
+      expect(service.observe()).toMatchObject({ phase: 'closed', pendingSecrets: 0, poolAllocated: false, requestAdmission: 'closed' })
+      expect(ctx.get('peAuth')).toBeUndefined()
+      expect(ctx.get('credentials')).toBeUndefined()
+      expect(loading.credentialDisposed()).toBe(true)
+      expect(read).toHaveBeenCalledTimes(1)
+      await nextTurn()
+      expect(unhandled).not.toHaveBeenCalled()
+    } finally {
+      secret.resolve(undefined)
+      await outcome
+      await loading.context().fiber.dispose()
+      process.off('unhandledRejection', unhandled)
+    }
+  })
+
+  it('holds actual Loader disposal until the pending credential read settles without an unhandled rejection', async () => {
+    const secret = Promise.withResolvers<ResolvedCredential | undefined>()
+    const entered = Promise.withResolvers<undefined>()
+    gates.push(() => { secret.resolve(undefined) })
+    const close = vi.spyOn(PeAuthService.prototype, 'close')
+    const unhandled = vi.fn()
+    process.on('unhandledRejection', unhandled)
+    const loading = bootAuthentication(() => { entered.resolve(undefined); return secret.promise })
+    const outcome = loading.actual.then(value => value, (error: unknown) => error)
+    try {
+      await entered.promise
+      const ctx = loading.context()
+      expect(ctx.get('peAuth')).toBeUndefined()
+      let disposed = false
+      const closing = ctx.fiber.dispose().then(() => { disposed = true })
+      await nextTurn()
+      expect(disposed).toBe(false)
+      const service = close.mock.contexts[0]
+      if (!(service instanceof PeAuthService)) throw new Error('Actual authentication cleanup was not called')
+      expect(service.observe()).toMatchObject({ pendingSecrets: 1, poolAllocated: false, requestAdmission: 'closed' })
+      secret.resolve(undefined)
+      await closing
+      await outcome
+      expect(disposed).toBe(true)
+      expect(service.observe()).toMatchObject({ phase: 'closed', pendingSecrets: 0, poolAllocated: false })
+      expect(ctx.get('peAuth')).toBeUndefined()
+      expect(loading.credentialDisposed()).toBe(true)
+      await nextTurn()
+      expect(unhandled).not.toHaveBeenCalled()
+    } finally {
+      secret.resolve(undefined)
+      await outcome
+      await loading.context().fiber.dispose()
+      process.off('unhandledRejection', unhandled)
+    }
+  })
+
   it('requires every database and pool setting instead of accepting ambient connection defaults', () => {
     for (const field of Object.keys(config().database)) {
       const missing = { ...config(), database: Object.fromEntries(Object.entries(config().database).filter(([key]) => key !== field)) }

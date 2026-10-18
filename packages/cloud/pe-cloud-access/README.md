@@ -51,6 +51,8 @@ All configuration is explicit; examples do not supply production defaults. Brows
 
 `PeAuthService.observe()` exposes only resource phase/counts and `requestAdmission: 'closed'`. Startup or secret timeout retains actual work; a timed-out secret still consumes its slot. `close()` joins actual startup, library operations and secret reads before awaiting `Pool.end()`, and repeated calls join the same cleanup. Failed cleanup retains resources and reports `cloud/stop-unconfirmed`. No HTTP/WS/bootstrap handler or additional listener is installed; authentication initialization does not establish account readiness.
 
+Root `apply` is an async Loader effect returning `Promise<void>`; Loader activation waits for authentication initialization and observes its rejection. Obtain the provider through `ctx.get('peAuth')`, or use `PeAuthService.mountRoot` from trusted same-process assembly. A missing secret fails the actual Loader entry and withdraws its provider; native boot's required-entry policy decides whether that entry failure rejects application startup.
+
 ### Request bindings
 
 Preserve every carrier-field occurrence for `parseRequestExpectation`; missing, repeated, empty, padded or control-character values fail with HTTP 409. After real authentication, compare the expected account before owner lookup, then compare the generation after acquiring the current graph. Pure comparison success grants no Peer, project scope or business permission; `AccountUse.assertCurrent()` remains required before dispatch and every WS logical stream.

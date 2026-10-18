@@ -21,9 +21,9 @@ export const Config = AuthRootConfigSchema
  * Initialize root authentication resources without opening any shared Web route.
  * @param ctx - Root Context with official credentials.
  * @param config - Explicit authentication, database and secret budgets.
- * @returns The root resource provider after library schema inspection; account and request admission remain closed.
+ * @returns After library schema inspection; the resource provider is available through ctx.get('peAuth').
  * @throws AuthAccessError on failed or timed-out initialization; actual cleanup remains retained.
  */
-export function apply(ctx: Context, config: Config): Promise<PeAuthService> {
-  return PeAuthService.mountRoot(ctx, config)
+export async function apply(ctx: Context, config: Config): Promise<void> {
+  await PeAuthService.mountRoot(ctx, config)
 }

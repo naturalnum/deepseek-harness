@@ -51,6 +51,8 @@ kind: "package-reference"
 
 `PeAuthService.observe()` 仅暴露资源阶段/计数及 `requestAdmission: 'closed'`。启动或秘密超时保留实际工作；超时秘密仍占用容量。`close()` 先等待实际启动、库操作及秘密读取，再等待 `Pool.end()`；重复调用共用同一清理。清理失败保留资源并报告 `cloud/stop-unconfirmed`。不安装 HTTP/WS/bootstrap handler 或额外监听；认证初始化不代表账户 ready。
 
+根 `apply` 是返回 `Promise<void>` 的 async Loader effect；Loader 激活会等待认证初始化并观察其拒绝。通过 `ctx.get('peAuth')` 取得提供者，或在可信同进程装配中使用 `PeAuthService.mountRoot`。缺少秘密会使真实 Loader 入口失败并撤回提供者；原生 boot 的必需入口策略决定该入口失败是否拒绝应用启动。
+
 ### 请求绑定
 
 向 `parseRequestExpectation` 提供载体字段的全部出现值；缺失、重复、空值、首尾空白或控制字符均以 HTTP 409 失败。真实认证后，先比较预期账户再查询 owner，取得当前图后再比较代际。纯比较通过不会授予 Peer、项目范围或业务权限；派发及每个 WS 逻辑流前仍须执行 `AccountUse.assertCurrent()`。
