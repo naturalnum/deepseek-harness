@@ -82,6 +82,34 @@ function entry(ctx: Context, id: string) {
 }
 
 describe('private native account assembly', () => {
+  it('checks original before-read admission before parsing a private Profile patch', () => {
+    const f = fixture('pre-read'), denied = new Error('Actual before-read admission refused')
+    writeFileSync(f.profile.patchPath, '[unterminated')
+    expect(() => f.start({ assertBeforeNativeRead: () => { throw denied } })).toThrow(denied)
+    // The same actual reader fails parsing when the mechanism-only caller omits admission.
+    expect(() => f.start()).toThrow()
+    expect(handles).toHaveLength(0)
+  })
+
+  it('rejects excessive required entries before boot and bounds actual native entry collection', async () => {
+    const f = fixture('entry-limit')
+    expect(() => f.start({ maxEntries: f.input.requiredEntryIds.length - 1 }))
+      .toThrow(expect.objectContaining({ code: 'cloud/invalid-config' }))
+    const rows: unknown = JSON.parse(readFileSync(f.profile.patchPath, 'utf8'))
+    if (!Array.isArray(rows)) throw new Error('Native fixture patch array absent')
+    const patches: readonly unknown[] = rows
+    writeFileSync(f.profile.patchPath, JSON.stringify([...patches, { insert: [{ id: 'extra', name: 'cordis:extra' }] }]))
+    const handle = f.start({ maxEntries: f.input.requiredEntryIds.length, async prepare(ctx, binding) {
+      await f.input.prepare(ctx, binding)
+      ctx.loader.builtins.extra = { apply() {} }
+    } })
+    const outcome = await handle.result
+    expect(outcome.status).toBe('failed')
+    if (outcome.status !== 'failed') throw new Error('Oversized native graph was accepted')
+    expect(outcome.cause).toMatchObject({ code: 'cloud/account-unavailable', message: 'Native entries exceed the explicit inventory limit' })
+    expect(outcome.disposal.status).toBe('confirmed')
+  })
+
   it('boots two real Profiles in one PID with independent paths, environment, bindings and one root Include', async () => {
     const cwd = process.cwd()
     const environment = { ...process.env }

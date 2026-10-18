@@ -43,6 +43,12 @@
     },
     {
       "path": "../../credentials/credentials-local"
+    },
+    {
+      "path": "../../api/gateway/tsconfig.host.json"
+    },
+    {
+      "path": "../../typert/protocol"
     }
   ]
 }

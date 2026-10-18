@@ -180,9 +180,9 @@ export type RootRecipeIssue = 'runtime-control-unavailable' | 'version-mismatch'
   | 'provider-duplicate-or-missing' | 'provider-owner-mismatch' | 'provider-not-current' | 'participant-missing' | 'participant-provider-mismatch'
   | 'manifest-replaced-or-missing' | 'manifest-not-immutable' | 'storage-root-capability-missing' | 'recipe-revoked' | 'runtime-closed'
 
-/** Observed facts only; this slice cannot produce a seal without the real storage capability. */
+/** Current audit observations; sealed requires every original Root fact and actual files storage owner. */
 export interface RootRecipeObservation {
-  readonly status: 'unsealed' | 'blocked' | 'revoked' | 'closed'
+  readonly status: 'unsealed' | 'blocked' | 'sealed' | 'revoked' | 'closed'
   readonly recipeVersion?: string
   readonly rootEntries: number
   readonly providers: number
@@ -195,7 +195,7 @@ export interface AccountRuntimeService {
   /**
    * Audit actual Root facts; missing real storage keeps sealing rejected.
    * @param input Fixed requirements and original object identities, never caller readiness assertions.
-   * @throws AccountRuntimeError while incomplete, revoked or closed; no successful seal is available yet.
+   * @throws AccountRuntimeError while any actual Root or storage requirement is incomplete, revoked or closed.
    */
   sealRecipe(input: RootRecipeInput): void
   /**

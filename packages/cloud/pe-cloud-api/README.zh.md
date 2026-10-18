@@ -62,7 +62,9 @@ Controller 准入使用实际安装的图 AccountBinding 及与实际 LLM 守卫
 
 Controller 必须接收固定的 `NativeSessionGuards.projectDirectory` 能力，持有实际安装的精确 binding，并由可信 files 装配提供可等待的 `prepare(cwd)`。其原生 protected 覆盖在目录准备前后检查 binding、业务准入、已审核暴露和处理者可用性，关闭或被替换的图不能因迟到结果创建 Agent。能力使用既有有界 files lane，并独立核验批准项目；cwd 是输入，不是授权。S2 已有批准项目可在注册窗关闭后继续验证，新目录仍遵守 provider 原有批准要求。该适配不回退宿主 mkdir、不增加 files 池，也不重开注册窗。
 
-可信 runtime 在准备阶段，以精确 binding、独立的挂载/业务核验、部署开放策略和根签发保存屏障构造公开 `CloudAccountApi` 服务。其 `providers` 提供固定的原生编辑器和凭据构造函数；原生安装方法沿用既有 Controller、AgentLoop 和 LLM 守卫。空 `/account` 入口要求这个精确准备好的 `peCloudApi` owner。服务存在和入口激活不发布账户就绪：runtime 仍负责实际 files/Workspace/Preset/模型核验、inventory 审核及 ready 发布。当前产品 runtime 尚未连接这些交接。
+可信 runtime 在准备阶段，以精确 binding、独立的挂载/业务核验、部署开放策略和根签发保存屏障构造公开 `CloudAccountApi` 服务。其 `providers` 提供固定的原生编辑器和凭据构造函数；原生安装方法沿用既有 Controller、AgentLoop 和 LLM 守卫。空 `/account` 入口要求这个精确准备好的 `peCloudApi` owner。服务存在和入口激活不发布账户就绪：runtime 仍负责实际 files/Workspace/Preset/模型核验、inventory 审核及 ready 发布。
+
+`auditPrepared(owner, signal?)` 要求 factory 的原始未发布权限，以及同一共享策略和有限原生清单上限。它在异步策略读取前后检查装配/未发布权限，从实际受守卫 Controller 方法及原生 Typert 标记/路由推导选中处理器，失败时撤销先前审核。继承但未受守卫的方法不能满足 manifest 声明。它不执行业务操作，也不授予 ready；业务调用仍要求独立 ready 检查。
 
 `assertBootstrapCurrent(owner, signal?)` 要求原始共享策略回调及正数有限 `maxNativeInventoryEntries`，没有默认值。该预算在遍历前计入所有选中开放清单条目，再于单次扫描中在检查每个实际 runtime 和 fiber 前计数；超限在读取策略元数据前拒绝。它在策略元数据读取前后核验挂载/业务准入、已审核开放清单、原 Controller/AgentLoop/LLM 对象、它们唯一的 ACTIVE 拥有 fiber 和实际 LLM listener。重复安装、替换或 listener 销毁均拒绝。省略回调或预算保留一般准备能力，但此断言保持关闭。取消跟随调用者与图 lifetime。该断言不创建业务资源，也不返回 catalog 或 ready 权限。
 
@@ -128,7 +130,7 @@ Pause 关闭顶层准入，但允许已登记工作完成；只有静止、无�
 - 其他凭据 provider、PluginManager 写入及技能发布/投影仍未覆盖。Watch 刷新和可选监听器工作保留原生语义，安装 hook 不代表它们已被核定为持久保存。
 - F09 影响预检、受控提交、插件/key/技能修改及版本资源 hook 保持关闭。
 - 原生 Profile 测试覆盖默认模型、Settings、直接 editor、本地 credentials、constructor 期迁移及迟到的启动/写入结算。实际私有 Controller 装配测试覆盖原生 Gateway 派发、创建、prompt、fork、同步 cancel 及恢复尝试的先后顺序。完整账户持久化恢复、认证 Web 及完整云端配方验收仍需集成；产品构建及这些检查由主控负责。
-- 历史测试使用真实 JSONL 读取和冷 follow 恢复。私有 AgentLoop 适配守卫普通工厂激活，但生产装配及可信项目/模型/Preset 提供者尚未集成。其他激活及 child 路径仍待审核；账户装配继续关闭。
+- 历史测试使用真实 JSONL 读取和冷 follow 恢复。普通 AgentLoop 激活使用共享项目/model/Preset 策略；生产 ready 还要求原 storage owner、准备期审核及实际 runtime ready 提交。其他激活及 child 路径在单独完成作用域审核前继续拒绝。
 
 <a id="dev-note"></a>
 ### 开发备注

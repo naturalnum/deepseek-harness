@@ -1,5 +1,6 @@
 /** Private account-graph admission and native Session Controller assembly. */
-import type { Context } from '@deepseek-ai/cordis'
+import { symbols, type Context } from '@deepseek-ai/cordis'
+import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import SessionController from '@deepseek-ai/dsh-api-session-controller'
 import type {
   SessionCreateRequest, SessionCreateValue, SessionPromptRequest, SessionPromptValue,
@@ -11,6 +12,7 @@ import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type {} from '@deepseek-ai/dsh-pe-cloud-runtime/account'
 import { CloudApiError } from './errors.ts'
 import type { ExposurePolicy } from './exposure.ts'
+import type { ExposureInventory } from './types.ts'
 
 /** Fixed files-owned directory capability for one installed account graph; not a path-derived grant. */
 export interface NativeSessionDirectory {
@@ -246,4 +248,45 @@ export function createNativeController(
   const admission = new NativeSessionAdmission(ctx, binding, assertCurrent, policy, guards)
   admission.assertBinding()
   return new AccountSessionController(ctx, config, admission)
+}
+
+/**
+ * Read only the actual cloud subclass's guarded native Remote implementations.
+ * @param controller Original API-created Controller, never a manifest or a caller descriptor.
+ * @param recipeVersion Current installed graph recipe.
+ * @param maximum Explicit upper bound on native method metadata.
+ * @returns Native RPC/stream declarations backed by the original guarded methods; no Fetch adapter exists here.
+ * @throws CloudApiError for foreign bindings, replaced implementations or excessive native metadata.
+ */
+export function inspectNativeController(
+  controller: SessionController, recipeVersion: string, maximum: number,
+): ExposureInventory {
+  const target: unknown = Reflect.get(controller, symbols.original)
+  const actual = target instanceof AccountSessionController ? target : controller
+  if (!(actual instanceof AccountSessionController)) {
+    throw new CloudApiError('cloud/account-unavailable', 'Prepared inventory requires the original guarded Controller.')
+  }
+  const binding = actual.typertRemote
+  if (binding.service !== actual || binding.serviceKey !== 'sessionController' || binding.namespace !== 'session') {
+    throw new CloudApiError('cloud/stale-generation', 'Native Controller dispatch binding changed.')
+  }
+  const methods = remoteMethods(actual)
+  if (!Number.isSafeInteger(maximum) || maximum < 1 || methods.length > maximum) {
+    throw new CloudApiError('cloud/account-unavailable', 'Native method inventory exceeds its explicit limit.')
+  }
+  const rpc: ExposureInventory['rpcEndpoints'][number][] = [], stream: ExposureInventory['streamEndpoints'][number][] = []
+  for (const marker of methods) {
+    const method = marker.method
+    if (!['create', 'prompt', 'fork', 'cancel', 'page', 'follow'].includes(method)) continue
+    if ((marker.exportName ?? method) !== method || (marker.mode ?? 'rpc') !== (method === 'follow' ? 'stream' : 'rpc')
+      || Reflect.get(actual, method) !== Reflect.get(AccountSessionController.prototype, method)) {
+      throw new CloudApiError('cloud/account-unavailable', 'The original native guarded method changed.')
+    }
+    const row = Object.freeze({ endpoint: `${binding.namespace}/${method}`, handlerId: `native:${binding.serviceKey}`,
+      guard: method === 'create' ? 'account-project' as const : 'account-session' as const })
+    if (method === 'follow') stream.push(row)
+    else rpc.push(row)
+  }
+  return Object.freeze({ recipeVersion, rpcEndpoints: Object.freeze(rpc), streamEndpoints: Object.freeze(stream),
+    exactFetchRoutes: Object.freeze([]) })
 }

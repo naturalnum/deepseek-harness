@@ -1,5 +1,6 @@
-/** Private actual-mount ownership and removable observers; production ports remain unavailable. */
+/** Private actual mount, ready CAS and drain ownership with removable observers. */
 import type { Context } from '@deepseek-ai/cordis'
+import type { RootStorageOwner, StaticAccountStorageLease } from '@deepseek-ai/dsh-pe-cloud-files/root'
 import type { LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { deriveAccountLayout, type LayoutDeployment } from './account-layout.ts'
 import { mountAccount, requireAccountProductionPorts, AccountMountPrerequisiteError, type AccountRecipe } from './account-mount.ts'
@@ -9,7 +10,7 @@ import type { RuntimeCapacity } from './capacity.ts'
 import type { PostgresOwnerStore } from './owner-store.ts'
 import { AccountRuntimeError } from './errors.ts'
 import { OwnerPgNotSubmittedError } from './owner-pg-errors.ts'
-import type { AccountBinding, AccountId, AccountMountInput, AccountUse, InstanceId, MountCapacityReservation } from './types.ts'
+import type { AccountBinding, AccountId, AccountMountInput, AccountUse, DrainParticipant, InstanceId, MountCapacityReservation } from './types.ts'
 
 /** Explicit limits for waiters and graph borrows, separate from actual mount/drain capacity. */
 export interface AccountFactoryLimits {
@@ -40,7 +41,7 @@ export class AccountMountWaitError extends AccountRuntimeError {
   }
 }
 
-/** Native disposal observation only; none of these results proves account clean or releases its owner. */
+/** Close status; native disposal alone never establishes account clean or releases its owner. */
 export type AccountNativeCloseObservation = Readonly<{
   accountId: AccountId
   status: 'not-started' | 'observed' | 'unknown'
@@ -66,11 +67,16 @@ interface Slot {
   context?: Context
   native?: NativeAccountBootHandle
   integration?: AccountNativeIntegration
+  storageOwner?: RootStorageOwner
+  storageParticipant?: DrainParticipant
+  storagePreparation?: Promise<StaticAccountStorageLease>
+  storageLease?: StaticAccountStorageLease
   controller?: AbortController
   settlement?: Settlement
   closing?: Promise<AccountNativeCloseObservation>
   closeRequested: boolean
   borrows: number
+  borrowsEnded?: ReturnType<typeof Promise.withResolvers<undefined>>
   releaseAfterClose: boolean
 }
 
@@ -215,6 +221,7 @@ export class AccountFactory {
       || slot.context === undefined || slot.context.get('peAccount') !== binding) {
       throw new AccountRuntimeError('cloud/stale-generation', 'Account graph generation is no longer current')
     }
+    slot.storageLease?.assertCurrent()
     slot.context.fiber.assertActive()
   }
 
@@ -224,9 +231,12 @@ export class AccountFactory {
    */
   assertBusinessCurrent(binding: AccountBinding): void {
     this.assertMountCurrent(binding)
-    if (this.slots.get(binding.accountId)?.state !== 'ready') {
+    const slot = this.slots.get(binding.accountId)
+    if (slot?.state !== 'ready') {
       throw new AccountRuntimeError('cloud/account-unavailable', 'The account graph has not passed production readiness')
     }
+    slot.recipe.native?.assertRootCurrent()
+    this.assertMountCurrent(binding)
   }
 
   /**
@@ -253,6 +263,7 @@ export class AccountFactory {
     if (slot === undefined || slot.state !== 'ready' || slot.context === undefined) {
       throw new AccountRuntimeError('cloud/account-unavailable', 'The account graph has not passed production readiness')
     }
+    this.assertBusinessCurrent(binding)
     if (this.borrows >= this.limits.maxBorrows || slot.borrows >= this.limits.maxBorrowsPerAccount) this.full()
     this.borrows++
     slot.borrows++
@@ -261,14 +272,14 @@ export class AccountFactory {
       binding, context: slot.context,
       assertCurrent: () => {
         if (released) throw new AccountRuntimeError('cloud/stale-generation', 'This account borrow has been released')
-        this.assertMountCurrent(binding)
-        if (slot.state !== 'ready') throw new AccountRuntimeError('cloud/account-unavailable', 'Account business admission is closed')
+        this.assertBusinessCurrent(binding)
       },
       release: () => {
         if (released) return
         released = true
         slot.borrows--
         this.borrows--
+        if (slot.borrows === 0) slot.borrowsEnded?.resolve(undefined)
       },
     })
   }
@@ -290,23 +301,28 @@ export class AccountFactory {
   }
 
   /**
-   * Stop native assembly/disposal within a real drain reservation. This cannot release a PG owner/account slot.
+   * Join original native/save/provider work within a real drain reservation before any clean owner release.
    * @param accountId Existing slot whose original actual claim/boot must settle.
-   * @returns One retained native-close observation, including unknown failures.
+   * @returns One retained close observation; unknown work keeps its owner and capacity.
    */
   stopNative(accountId: AccountId): Promise<AccountNativeCloseObservation> {
     const slot = this.slots.get(accountId)
     if (slot === undefined) throw new AccountRuntimeError('cloud/account-unavailable', 'No retained account slot exists')
     if (slot.closing !== undefined) return slot.closing
     const drain = this.capacity.reserveDrain(accountId)
+    const published = slot.state === 'ready'
     slot.closeRequested = true
     // A graph with save hooks stays alive until its existing barrier confirms actual settlement.
-    if (slot.integration === undefined) slot.controller?.abort()
+    slot.controller?.abort()
     const initial = slot.integration === undefined ? slot.native?.dispose() : undefined
     // Cleanup may reject before the original mount settles; retain its error for the joined await below.
     void initial?.catch((_cause: unknown) => {})
     slot.closing = (async () => {
       try {
+        let transition = published && slot.owners !== undefined && slot.binding !== undefined
+          ? slot.owners.beginDrain({ accountId, epoch: slot.binding.epoch }) : undefined
+        // A submitted metadata transition retains its own result while original native shutdown proceeds.
+        void transition?.catch((_cause: unknown) => {})
         const saves = await slot.integration?.stop()
         if (saves?.status === 'unknown') {
           slot.state = 'unknown'
@@ -315,19 +331,57 @@ export class AccountFactory {
         slot.controller?.abort()
         // Actual failure is retained separately; native cleanup still has to join its settlement.
         try { await slot.result.promise } catch (_cause: unknown) { /* original failure remains in slot.settlement */ }
+        if (slot.borrows !== 0) {
+          slot.borrowsEnded ??= Promise.withResolvers<undefined>()
+          await slot.borrowsEnded.promise
+        }
         const native = await (initial ?? slot.native?.dispose())
         if (native?.status === 'unknown') {
           slot.state = 'unknown'
           return Object.freeze({ accountId, status: 'unknown', native })
+        }
+        if (slot.storageLease !== undefined && slot.native === undefined && slot.context === undefined && slot.integration === undefined) {
+          // Native boot never returned a handle or created a Context; no account lane or execution port was issued.
+          await slot.storageLease.closeAfterActualDrain()
+        } else if (slot.storageLease !== undefined) {
+          const binding = slot.binding, integration = slot.integration, preparation = slot.recipe.native
+          const observed = integration?.observeNativeDrain()
+          if (binding === undefined || integration === undefined || preparation === undefined || observed === undefined
+            || saves?.status !== 'confirmed' || native?.status !== 'confirmed' || slot.storageParticipant === undefined) {
+            throw new AccountRuntimeError('cloud/stop-unconfirmed', 'Production native teardown lacks original drain evidence')
+          }
+          const deadline = Date.now() + preparation.stopTimeoutMs
+          const execution = await preparation.execution.stopEpoch(binding, deadline)
+          const files = await slot.storageParticipant.stopEpoch(binding, deadline)
+          if (execution.status !== 'confirmed' || files.status !== 'confirmed') {
+            throw new AccountRuntimeError('cloud/stop-unconfirmed', 'Original files or execution work has not settled')
+          }
+          if (transition === undefined && slot.owners !== undefined) {
+            transition = slot.owners.beginDrain({ accountId, epoch: binding.epoch })
+          }
+          await transition
+          await slot.storageLease.closeAfterActualDrain()
+          if (slot.owners !== undefined) {
+            await slot.owners.release({ accountId, epoch: binding.epoch }, {
+              accountId, epoch: binding.epoch, ...observed, configSaves: saves, participants: [files, execution],
+              contextDisposed: true, disposalErrors: [],
+            })
+            integration.releaseAfterActualDrain()
+            slot.releaseAfterClose = true
+            slot.state = 'closed'
+          }
+        }
+        if (slot.state === 'unknown') {
+          return Object.freeze({ accountId, status: 'unknown', ...native === undefined ? {} : { native } })
         }
         drain.release()
         if (slot.releaseAfterClose) {
           slot.reservation.releaseAccount()
           this.slots.delete(accountId)
         }
-        if (slot.state !== 'unknown') slot.state = 'closed'
+        slot.state = 'closed'
         return Object.freeze({
-          accountId, status: slot.state === 'unknown' ? 'unknown' : native === undefined ? 'not-started' : 'observed',
+          accountId, status: native === undefined ? 'not-started' : 'observed',
           ...native === undefined ? {} : { native },
         })
       } catch (cause) {
@@ -340,7 +394,7 @@ export class AccountFactory {
 
   /**
    * Close admission, then join bounded native cleanup without destroying the shared capacity owner.
-   * @returns A retained list of native-only observations, never an account-clean receipt.
+   * @returns Retained close observations; each production release requires all original drain evidence.
    */
   close(): Promise<readonly AccountNativeCloseObservation[]> {
     this.closed = true
@@ -413,15 +467,22 @@ export class AccountFactory {
         slot.binding = binding
         this.assertMountCurrent(binding)
         try {
+          const unpublished = (): void => {
+            this.assertMountCurrent(binding)
+            if (slot.state !== 'mounting' && slot.state !== 'mounted-unpublished') {
+              throw new AccountRuntimeError('cloud/account-unavailable', 'Account registration is outside unpublished assembly')
+            }
+          }
           if (slot.recipe.native !== undefined) {
-            slot.integration = new AccountNativeIntegration(slot.recipe.native)
+            const preparation = slot.recipe.native, lease = slot.storageLease
+            slot.integration = new AccountNativeIntegration(lease === undefined ? preparation : { ...preparation,
+              files: (_owner, current) => {
+                if (current !== binding) throw new AccountRuntimeError('cloud/stale-generation', 'Storage bind belongs to another native graph')
+                return lease.bindInstalled(binding, (installed: AccountBinding) => { this.assertMountCurrent(installed) }, unpublished)
+              },
+            })
             slot.integration.prepare(ctx, binding,
-              (current) => { this.assertMountCurrent(current) }, (current) => { this.assertBusinessCurrent(current) }, () => {
-                this.assertMountCurrent(binding)
-                if (slot.state !== 'mounting') {
-                  throw new AccountRuntimeError('cloud/account-unavailable', 'Account registration is outside its mounting window')
-                }
-              })
+              (current) => { this.assertMountCurrent(current) }, (current) => { this.assertBusinessCurrent(current) }, unpublished)
           }
           await slot.recipe.prepare(ctx, binding)
           this.assertMountCurrent(binding)
@@ -430,7 +491,7 @@ export class AccountFactory {
           throw cause
         }
       },
-    })
+    }, slot.storageLease)
     const outcome = await slot.native.result
     if (!this.isClosing(slot) || slot.integration === undefined) {
       slot.state = outcome.status === 'mounted' ? 'mounted-unpublished' : outcome.disposal.status === 'unknown' ? 'unknown' : 'failed'
@@ -461,15 +522,32 @@ export class AccountFactory {
       environment: request.environment,
     })
     slot.input = input
-    requireAccountProductionPorts()
+    const storage = requireAccountProductionPorts(slot.recipe)
+    slot.storageOwner = storage.owner
+    slot.storageParticipant = storage.files
+    slot.storagePreparation = storage.owner.prepareAccount(input)
+    slot.storageLease = await slot.storagePreparation
+    slot.storageLease.assertCurrent()
+    if (this.isClosing(slot)) throw new AccountRuntimeError('cloud/account-unavailable', 'Account mounting closed during storage preparation')
+    slot.storageLease.assertBeforeNativeRead(slot.recipe.profile, slot.recipe.configPath)
     request.recipe.native?.assertRootCurrent()
     const outcome = await this.runNative(slot, input)
     if (outcome.status === 'failed') return outcome
-    // The same missing real handoffs also block the commit; mounted is never a ready certificate.
-    requireAccountProductionPorts()
+    const originalStorage = requireAccountProductionPorts(slot.recipe)
+    if (originalStorage.owner !== slot.storageOwner || originalStorage.files !== slot.storageParticipant) {
+      throw new AccountRuntimeError('cloud/stale-generation', 'The original storage owner changed during assembly')
+    }
+    if (slot.integration === undefined) throw new AccountMountPrerequisiteError()
+    await slot.integration.finishBootstrap()
+    slot.storageLease.assertCurrent()
     request.recipe.native?.assertRootCurrent()
     this.assertMountCurrent(outcome.binding)
     await owners.ready({ accountId: owner.accountId, epoch: owner.epoch }, owner.recipeVersion)
+    const committedStorage = requireAccountProductionPorts(slot.recipe)
+    if (committedStorage.owner !== slot.storageOwner || committedStorage.files !== slot.storageParticipant) {
+      throw new AccountRuntimeError('cloud/stale-generation', 'The original storage owner changed during ready commit')
+    }
+    slot.storageLease.assertCurrent()
     request.recipe.native?.assertRootCurrent()
     this.assertMountCurrent(outcome.binding)
     slot.state = 'ready'

@@ -1,7 +1,8 @@
-/** Actual Root Loader/provider audit; storage admission stays closed until a real files capability exists. */
+/** Actual Root Loader/provider audit retaining the original files storage owner through admission. */
 import { Context, FiberState, symbols, type Fiber } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-app-boot'
 import { ExposureService } from '@deepseek-ai/dsh-pe-cloud-api'
+import { RootStorageOwner } from '@deepseek-ai/dsh-pe-cloud-files/root'
 import { AccountRuntimeError } from './errors.ts'
 import type { DrainParticipant, RootRecipeInput, RootRecipeIssue, RootRecipeObservation, RootRecipeRole } from './types.ts'
 
@@ -26,6 +27,7 @@ interface Candidate {
   readonly providers: readonly { key: string; value: object; fiber: Fiber }[]
   readonly participants: readonly RegisteredRootParticipant[]
   readonly manifest: object | undefined
+  readonly storage?: Readonly<{ pool: object; owner: RootStorageOwner }>
 }
 
 function object(value: unknown): value is object {
@@ -59,7 +61,7 @@ export class RootRecipeAudit {
   constructor(
     private readonly owner: Context,
     private readonly participants: () => readonly RegisteredRootParticipant[],
-    private readonly control: () => Readonly<{ phase: string; recipeVersion: string | undefined }>,
+    private readonly control: () => Readonly<{ phase: string; recipeVersion: string | undefined; maximum: number | undefined }>,
   ) {
     const changed = (): void => { this.revoke() }
     owner.on('internal/plugin', changed)
@@ -72,7 +74,7 @@ export class RootRecipeAudit {
 
   /**
    * Audit actual entries, providers, immutable manifest and participant identity.
-   * Storage has no usable public issuer yet, so even complete non-storage facts reject sealing.
+   * Sealing also requires the original pool's actual current storage owner.
    * @param input Fixed recipe expectations and original provider/manifest objects, not success assertions.
    * @throws AccountRuntimeError; inspect() retains bounded safe facts and the concrete missing checks.
    */
@@ -91,6 +93,22 @@ export class RootRecipeAudit {
     }
     const control = this.control()
     if (control.phase !== 'active') issue('runtime-control-unavailable')
+    if (control.phase === 'active' && (control.maximum === undefined || !Number.isSafeInteger(control.maximum) || control.maximum < 1)) {
+      issue('root-config-unproven')
+      this.record(input.recipeVersion, [], [], [], undefined, issues)
+      this.fail()
+    }
+    let remaining = control.maximum
+    const consume = (count = 1): void => {
+      // Component-only diagnostics have no actual Root control and can never seal.
+      if (remaining === undefined) return
+      if (count > remaining) {
+        issue('root-config-unproven')
+        this.record(input.recipeVersion, [], [], [], undefined, issues)
+        this.fail()
+      }
+      remaining -= count
+    }
     if (control.recipeVersion !== undefined && control.recipeVersion !== input.recipeVersion) issue('version-mismatch')
     if (input.entrypoints.length !== ROLES.length || new Set(input.entrypoints).size !== ROLES.length
       || ROLES.some(role => !input.entrypoints.includes(role))) issue('entrypoint-catalog-mismatch')
@@ -102,7 +120,8 @@ export class RootRecipeAudit {
       || PROVIDERS.some(key => !input.providers.some(row => row.key === key))) issue('provider-missing')
     const root = this.owner.root
     const loader = root.get('loader')
-    const rows = loader === undefined ? [] : [...loader.entries()]
+    const rows: Entry[] = []
+    for (const entry of loader?.entries() ?? []) { consume(); rows.push(entry) }
     const facts = new Map<Entry, EntryFact>()
     const rootEntries = new Map<string, Entry>()
     for (const expected of input.roots) {
@@ -129,19 +148,26 @@ export class RootRecipeAudit {
       }
     }
     const providers: Candidate['providers'][number][] = []
+    const implementations = new Map<string, { fiber: Fiber; value: unknown } | null>()
+    for (const runtime of root.registry.values()) {
+      consume()
+      for (const fiber of runtime.fibers) {
+        consume()
+        if (fiber.ctx.root !== root || fiber.state !== FiberState.ACTIVE) continue
+        for (const expected of input.providers) {
+          const implementation = fiber.store?.[expected.key]
+          if (implementation === undefined || implementation.fiber !== fiber) continue
+          implementations.set(expected.key, implementations.has(expected.key) ? null : { fiber, value: implementation.value })
+        }
+      }
+    }
     for (const expected of input.providers) {
       const value: unknown = root.get(expected.key)
       if (!object(value) || original(value) !== original(expected.value)) { issue('provider-replaced-or-missing'); continue }
-      const implementations: { fiber: Fiber; value: unknown }[] = []
-      for (const runtime of root.registry.values()) for (const fiber of runtime.fibers) {
-        if (fiber.ctx.root !== root || fiber.state !== FiberState.ACTIVE) continue
-        const implementation = fiber.store?.[expected.key]
-        if (implementation !== undefined && implementation.fiber === fiber) implementations.push({ fiber, value: implementation.value })
-      }
       const entry = rows.find(row => row.options.id === expected.entryId)
-      const implementation = implementations[0]
-      if (implementations.length !== 1) { issue('provider-duplicate-or-missing'); continue }
-      if (entry?.fiber === undefined || implementation === undefined || !descends(implementation.fiber, entry.fiber)
+      const implementation = implementations.get(expected.key)
+      if (implementation == null) { issue('provider-duplicate-or-missing'); continue }
+      if (entry?.fiber === undefined || !descends(implementation.fiber, entry.fiber)
         || !object(implementation.value) || original(implementation.value) !== original(value)) {
         issue('provider-owner-mismatch'); continue
       }
@@ -175,21 +201,29 @@ export class RootRecipeAudit {
     else {
       manifest = exposure.policy.manifest
       const m = exposure.policy.manifest
+      for (const rows of [m.rpcEndpoints, m.streamEndpoints, m.exactFetchRoutes, m.allowedSettings]) consume(rows.length)
+      for (const row of m.allowedSettings) consume(row.fields.length)
       if (m.recipeVersion !== input.recipeVersion) issue('version-mismatch')
       if (!Object.isFrozen(m) || [m.rpcEndpoints, m.streamEndpoints, m.exactFetchRoutes, m.allowedSettings].some(list =>
         !Object.isFrozen(list) || list.some(row => !Object.isFrozen(row)))
         || m.allowedSettings.some(row => !Object.isFrozen(row.fields))) issue('manifest-not-immutable')
     }
-    // No storage descriptor or boolean can fill the absent files-owned verifier/capability.
-    issue('storage-root-capability-missing')
+    let storage: Candidate['storage']
+    try {
+      const pool = root.get('peFilesPool'), owner = pool?.requireStorageOwner()
+      if (pool === undefined || !(owner instanceof RootStorageOwner)) throw new Error('missing')
+      owner.assertRootCurrent()
+      storage = { pool: original(pool), owner }
+    } catch (_cause) { issue('storage-root-capability-missing') }
     const detached: RootRecipeInput = Object.freeze({
       recipeVersion: input.recipeVersion, entrypoints: Object.freeze([...input.entrypoints]),
       roots: Object.freeze(input.roots.map(row => Object.freeze({ ...row }))),
       providers: Object.freeze(input.providers.map(row => Object.freeze({ ...row }))), manifest: input.manifest,
     })
-    this.candidate = { input: detached, facts: [...facts.values()], providers, participants: [...registered], manifest }
+    this.candidate = { input: detached, facts: [...facts.values()], providers, participants: [...registered], manifest,
+      ...storage === undefined ? {} : { storage } }
     this.record(input.recipeVersion, [...rootEntries.values()], providers, registered, manifest, issues)
-    this.fail()
+    if (issues.length !== 0) this.fail()
   }
 
   /**
@@ -200,7 +234,7 @@ export class RootRecipeAudit {
   assertSealed(recipeVersion: string): void {
     this.recheck()
     if (this.state.recipeVersion !== undefined && recipeVersion !== this.state.recipeVersion) this.revoke()
-    this.fail()
+    if (this.state.status !== 'sealed') this.fail()
   }
 
   /** Revoke previous audit facts after replacement, reload or explicit administrative closure. */
@@ -222,6 +256,64 @@ export class RootRecipeAudit {
    */
   inspect(): RootRecipeObservation { this.recheck(); return this.state }
 
+  /**
+   * Capture the fixed Root entry specifiers and original providers after native startup commits.
+   * @param recipeVersion Actual Root deployment recipe.
+   * @param maximum Existing deployment bound on native entries/runtimes/fibers.
+   * @throws AccountRuntimeError for incomplete, ambiguous, excessive or unsealed actual facts.
+   */
+  sealCurrent(recipeVersion: string, maximum: number): void {
+    if (this.state.status === 'closed') this.fail()
+    this.revoke()
+    let remaining = maximum
+    const unavailable: () => never = () => {
+      this.candidate = undefined
+      this.record(recipeVersion, [], [], [], undefined, ['root-config-unproven'])
+      return this.fail()
+    }
+    if (!Number.isSafeInteger(maximum) || maximum < 1) unavailable()
+    const consume = (): void => { if (remaining-- < 1) unavailable() }
+    const root = this.owner.root, loader = root.get('loader')
+    if (loader === undefined) unavailable()
+    const entries: Entry[] = []
+    for (const entry of loader.entries()) { consume(); entries.push(entry) }
+    const roots: RootRecipeInput['roots'][number][] = []
+    for (const role of ROOT_ROLES) {
+      const specifier = role === 'opensandbox/root' ? '@deepseek-ai/dsh-pe-opensandbox/root'
+        : '@deepseek-ai/dsh-pe-cloud-' + role
+      const matches = entries.filter(row => row.options.name === specifier), entry = matches[0]
+      if (matches.length !== 1 || entry === undefined || !object(entry.moduleNamespace)) unavailable()
+      roots.push({ role, entryId: entry.options.id, module: entry.moduleNamespace })
+    }
+    const providers: RootRecipeInput['providers'][number][] = []
+    const implementations = new Map<string, { fiber: Fiber; value: object }>()
+    for (const runtime of root.registry.values()) {
+      consume()
+      for (const fiber of runtime.fibers) {
+        consume()
+        if (fiber.ctx.root !== root || fiber.state !== FiberState.ACTIVE) continue
+        for (const key of PROVIDERS) {
+          const installed = fiber.store?.[key], value: unknown = installed?.value
+          if (installed === undefined || installed.fiber !== fiber) continue
+          if (!object(value) || implementations.has(key)) unavailable()
+          implementations.set(key, { fiber, value: original(value) })
+        }
+      }
+    }
+    for (const key of PROVIDERS) {
+      const value: unknown = root.get(key), installed = implementations.get(key)
+      if (!object(value) || installed === undefined || original(value) !== installed.value) unavailable()
+      const matches = entries.filter(row => row.fiber !== undefined && descends(installed.fiber, row.fiber))
+      const entry = matches.find(row => !matches.some(other => other !== row && other.fiber !== undefined
+        && row.fiber !== undefined && descends(other.fiber, row.fiber)))
+      if (entry === undefined) unavailable()
+      providers.push({ key, entryId: entry.options.id, value: installed.value })
+    }
+    const exposure = root.get('peExposure')
+    if (!(exposure instanceof ExposureService)) unavailable()
+    this.seal({ recipeVersion, entrypoints: ROLES, roots, providers, manifest: exposure.policy.manifest })
+  }
+
   private recheck(): void {
     const candidate = this.candidate
     if (candidate === undefined) return
@@ -239,6 +331,13 @@ export class RootRecipeAudit {
       const now = this.participants()
       if (now.length !== candidate.participants.length || candidate.participants.some(row => !now.includes(row))) throw new Error('changed')
       if (candidate.manifest !== undefined && this.owner.root.get('peExposure')?.policy.manifest !== candidate.manifest) throw new Error('changed')
+      if (candidate.storage !== undefined) {
+        const pool = this.owner.root.get('peFilesPool')
+        if (pool === undefined || original(pool) !== candidate.storage.pool || pool.requireStorageOwner() !== candidate.storage.owner) {
+          throw new Error('changed')
+        }
+        candidate.storage.owner.assertRootCurrent()
+      }
     } catch (_cause) { this.revoke() }
   }
 
@@ -274,7 +373,7 @@ export class RootRecipeAudit {
     recipeVersion: string, roots: readonly unknown[], providers: readonly unknown[], participants: readonly unknown[],
     _manifest: object | undefined, issues: readonly RootRecipeIssue[],
   ): void {
-    this.state = Object.freeze({ status: 'blocked', recipeVersion, rootEntries: roots.length, providers: providers.length,
+    this.state = Object.freeze({ status: issues.length === 0 ? 'sealed' : 'blocked', recipeVersion, rootEntries: roots.length, providers: providers.length,
       participants: participants.length, issues: Object.freeze([...issues]) })
   }
 

@@ -255,6 +255,8 @@ it('boots the actual factory NativeLoader with API hooks, guarded native provide
   expect(f.guards).toHaveBeenCalledTimes(1)
   const denied = { code: 'cloud/account-unavailable' }
   await expect(ctx.peCloudApi.assertBootstrapCurrent(ctx)).rejects.toMatchObject(denied)
+  // Unpublished authority cannot replace the original native Typert Gateway absent from this fixture.
+  await expect(ctx.peCloudApi.auditPrepared(ctx)).rejects.toThrow('Bootstrap requires the original guarded native providers and shared policy.')
   await expect(ctx.sessionController.create({ cwd: f.project })).rejects.toMatchObject(denied)
   await expect(ctx.agents.create({ sessionId: SessionId('must-not-write'), meta: { cwd: f.project } })).rejects.toMatchObject(denied)
   const stream = ctx.llm.stream({ provider: 'unused', model: 'unused', messages: [] })[Symbol.asyncIterator]()

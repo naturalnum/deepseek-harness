@@ -16,6 +16,10 @@ export interface NativeAccountBootInput {
   readonly environment: LaunchEnvironmentSnapshot
   readonly requiredEntryIds: readonly string[]
   readonly maxObservedEvents: number
+  /** Production uses its existing native entry budget; omission remains native-mechanism-only. */
+  readonly maxEntries?: number
+  /** Original files lease checks exact Profile/base addresses before native Profile or configuration I/O. */
+  readonly assertBeforeNativeRead?: () => void
   /** Build/verify/inject ports from this exact installed binding; await setup and register native teardown. */
   prepare(ctx: Context, binding: AccountBinding): void | Promise<void>
 }
@@ -48,6 +52,10 @@ function validateLocations(input: NativeAccountBootInput): void {
   if (!Number.isSafeInteger(input.maxObservedEvents) || input.maxObservedEvents <= 0) {
     throw new AccountRuntimeError('cloud/invalid-config', 'Native diagnostic observation requires a positive finite event bound')
   }
+  if (input.maxEntries !== undefined && (!Number.isSafeInteger(input.maxEntries) || input.maxEntries < 1
+    || input.requiredEntryIds.length > input.maxEntries)) {
+    throw new AccountRuntimeError('cloud/invalid-config', 'Required native entries exceed the explicit inventory limit')
+  }
   if (input.requiredEntryIds.length === 0 || new Set(input.requiredEntryIds).size !== input.requiredEntryIds.length) {
     throw new AccountRuntimeError('cloud/invalid-config', 'Native assembly requires distinct required entry ids')
   }
@@ -70,6 +78,7 @@ export function startNativeAccountBoot(input: NativeAccountBootInput): NativeAcc
   const profile = Object.freeze(structuredClone(input.profile))
   const environment = input.environment
   const requiredIds = [...input.requiredEntryIds]
+  input.assertBeforeNativeRead?.()
   const patches = readProfilePatches('pe-cloud-account', profile)
   const observer = new Context()
   let context: Context | undefined
@@ -87,6 +96,7 @@ export function startNativeAccountBoot(input: NativeAccountBootInput): NativeAcc
   const disposeContext = async (): Promise<void> => { await context?.fiber.dispose() }
   const result: Promise<NativeAccountBootOutcome> = (async () => {
     try {
+      input.assertBeforeNativeRead?.()
       const mounted = await boot('pe-cloud-account', input.configPath, patches, async (ctx) => {
         context = ctx
         // The observer's own fiber survives the account root's disposable chain.
@@ -110,7 +120,13 @@ export function startNativeAccountBoot(input: NativeAccountBootInput): NativeAcc
       if (closing(input.binding) || loader === undefined) {
         throw new AccountRuntimeError('cloud/account-unavailable', 'Native account startup ended before assembly settled')
       }
-      const entries = [...loader.entries()]
+      const entries: NonNullable<Context['fiber']['entry']>[] = []
+      for (const entry of loader.entries()) {
+        if (input.maxEntries !== undefined && entries.length >= input.maxEntries) {
+          throw new AccountRuntimeError('cloud/account-unavailable', 'Native entries exceed the explicit inventory limit')
+        }
+        entries.push(entry)
+      }
       for (const id of requiredIds) {
         const matches = entries.filter(entry => entry.options.id === id)
         if (matches.length !== 1 || matches[0]?.fiber?.state !== FiberState.ACTIVE) {

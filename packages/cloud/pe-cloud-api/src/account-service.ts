@@ -3,13 +3,14 @@ import { Context, FiberState, Service, symbols, type Fiber } from '@deepseek-ai/
 import type AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import type SessionController from '@deepseek-ai/dsh-api-session-controller'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
+import TypertGateway from '@deepseek-ai/dsh-api-gateway'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import { prepareAccountApiInstall, type AccountApiInstall } from './account-install.ts'
 import { CloudApiError } from './errors.ts'
 import type { ExposurePolicy } from './exposure.ts'
 import { installActualLlmGuard } from './llm-guard.ts'
 import { createNativeAgentLoop, type NativeAgentFactoryGuards } from './native-agent-factory.ts'
-import { createNativeController, type NativeSessionGuards } from './native.ts'
+import { createNativeController, inspectNativeController, type NativeSessionGuards } from './native.ts'
 import type { ConfigSaveBarrier, ConfigSaveReceipt } from './save-hooks.ts'
 import type { EndpointExposure, ExactFetchExposure, ExposureInventory, ExposureManifest } from './types.ts'
 
@@ -27,6 +28,8 @@ export interface AccountApiPreparation {
   readonly assertBootstrapCurrent?: (signal: AbortSignal) => Promise<void>
   /** Positive finite bound shared by visited native runtimes, fibers and selected exposure rows; no default. */
   readonly maxNativeInventoryEntries?: number
+  /** Factory-owned unpublished mounting window; required only by prepared native auditing. */
+  readonly assertUnpublished?: () => void
 }
 
 type NativeKey = 'sessionController' | 'agentLoop' | 'llm'
@@ -55,6 +58,7 @@ export class CloudAccountApi extends Service {
   private readonly businessCurrent: AccountApiPreparation['assertBusinessCurrent']
   private readonly bootstrapCurrent: AccountApiPreparation['assertBootstrapCurrent']
   private readonly maxNativeInventoryEntries: AccountApiPreparation['maxNativeInventoryEntries']
+  private readonly unpublished: AccountApiPreparation['assertUnpublished']
   // These cells retain original installations across caller-scoped Cordis proxies.
   private readonly native: Partial<Record<NativeKey, NativeInstallation>> = {}
   private readonly streamGuard: { dispose?: () => void } = {}
@@ -80,6 +84,7 @@ export class CloudAccountApi extends Service {
     this.businessCurrent = input.assertBusinessCurrent
     this.bootstrapCurrent = input.assertBootstrapCurrent
     this.maxNativeInventoryEntries = input.maxNativeInventoryEntries
+    this.unpublished = input.assertUnpublished
     this.installation = installation
     this.providers = Object.freeze({ configEditor: installation.configEditor, credentials: installation.credentials })
     this.assertInstalled()
@@ -118,6 +123,63 @@ export class CloudAccountApi extends Service {
     this.assertInstalled(owner)
     this.admit()
     this.assertNativeCurrent(owner)
+  }
+
+  /**
+   * Audit actual native handlers while the original factory still owns unpublished assembly.
+   * This requires mounting authority rather than business-ready admission and publishes no account.
+   * @param owner Actual consumer scope in this original graph.
+   * @param signal Optional observer cancellation, combined with the graph lifetime.
+   * @returns Settlement after original policy/provider checks and the actual handler inventory audit.
+   * @throws CloudApiError without the original unpublished callback, native owners or bounded policy;
+   * original policy/cancellation failures retain identity.
+   */
+  async auditPrepared(owner: Context, signal?: AbortSignal): Promise<void> {
+    const control = signal === undefined ? this.binding.lifetime : AbortSignal.any([signal, this.binding.lifetime])
+    const current = (): void => {
+      control.throwIfAborted()
+      this.assertInstalled(owner)
+      if (this.unpublished === undefined) this.nativeUnavailable()
+      this.unpublished()
+      this.assertInstalled(owner)
+    }
+    current()
+    this.installation.exposure.invalidate()
+    const check = this.bootstrapCurrent, gateway = owner.get('typertGateway')
+    if (check === undefined || !(gateway instanceof TypertGateway)
+      || original(owner.root.get('typertGateway') ?? {}) !== original(gateway)) this.nativeUnavailable()
+    this.assertNativeCurrent(owner, false)
+    await check(control)
+    current()
+    if (original(owner.get('typertGateway') ?? {}) !== original(gateway)) this.nativeUnavailable()
+    this.assertNativeCurrent(owner, false)
+    const installed = this.native.sessionController, maximum = this.maxNativeInventoryEntries
+    if (installed === undefined || maximum === undefined) this.nativeUnavailable()
+    const controller = owner.get('sessionController')
+    if (controller === undefined || original(controller) !== installed.value) this.nativeUnavailable()
+    const inventory = inspectNativeController(controller, this.binding.recipeVersion, maximum)
+    const typert = owner.get('typert')
+    if (typert === undefined) this.nativeUnavailable()
+    for (const [rows, mode] of [[inventory.rpcEndpoints, 'rpc'], [inventory.streamEndpoints, 'stream']] as const) {
+      for (const row of rows) {
+        const descriptor = typert.local.get(row.endpoint)
+        if (descriptor === undefined) {
+          if (typert.local.hasSeen(row.endpoint)) this.nativeUnavailable()
+          continue // Actual Gateway source discovery reads these same original native markers.
+        }
+        const method = row.endpoint.slice('session/'.length)
+        if (descriptor.service !== 'sessionController' || descriptor.namespace !== 'session' || descriptor.method !== method
+          || (descriptor.implementation ?? descriptor.method) !== method || (descriptor.mode ?? 'rpc') !== mode) this.nativeUnavailable()
+      }
+    }
+    try {
+      this.installation.exposure.audit(inventory)
+      current()
+      this.assertNativeCurrent(owner)
+    } catch (cause) {
+      this.installation.exposure.invalidate()
+      throw cause
+    }
   }
 
   /**
@@ -269,7 +331,7 @@ export class CloudAccountApi extends Service {
     throw new CloudApiError('cloud/account-unavailable', 'Bootstrap requires the original guarded native providers and shared policy.')
   }
 
-  private assertNativeCurrent(owner: Context): void {
+  private assertNativeCurrent(owner: Context, audited = true): void {
     owner.fiber.assertActive()
     if (this.streamGuard.dispose === undefined) this.nativeUnavailable()
     const maximum = this.maxNativeInventoryEntries
@@ -306,6 +368,7 @@ export class CloudAccountApi extends Service {
       }
     }
     if (Object.values(counts).some(count => count !== 1)) this.nativeUnavailable()
+    if (!audited) return
     for (const row of exposure.manifest.rpcEndpoints) exposure.requireRpc(row.endpoint)
     for (const row of exposure.manifest.streamEndpoints) exposure.requireStream(row.endpoint)
     for (const row of exposure.manifest.exactFetchRoutes) exposure.requireFetch(row.method, row.path)

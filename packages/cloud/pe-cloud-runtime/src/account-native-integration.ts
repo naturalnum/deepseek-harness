@@ -1,6 +1,8 @@
 /** Factory-owned native API/execution installation; files and storage authorization precede production boot. */
-import { FiberState, type Context } from '@deepseek-ai/cordis'
+import { FiberState, symbols, type Context, type Fiber } from '@deepseek-ai/cordis'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
+import AgentRegistry from '@deepseek-ai/dsh-agent'
+import SessionPersistence from '@deepseek-ai/dsh-session-persistence'
 import SessionController from '@deepseek-ai/dsh-api-session-controller'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import { CloudAccountApi, type ConfigSaveBarrier, type ConfigSaveCoordinator, type ConfigSaveReceipt,
@@ -8,7 +10,7 @@ import { CloudAccountApi, type ConfigSaveBarrier, type ConfigSaveCoordinator, ty
 import * as ApiAccount from '@deepseek-ai/dsh-pe-cloud-api/account'
 import { CloudAccountFiles, type AccountFilesPreparation } from '@deepseek-ai/dsh-pe-cloud-files'
 import * as FilesAccount from '@deepseek-ai/dsh-pe-cloud-files/account'
-import { installAccountExecutionPort, type AccountExecutionPort, type SandboxCoordinator } from '@deepseek-ai/dsh-pe-opensandbox'
+import { assertClosedAccountExecution, installAccountExecutionPort, type AccountExecutionPort, type SandboxCoordinator } from '@deepseek-ai/dsh-pe-opensandbox'
 import * as ExecutionAccount from '@deepseek-ai/dsh-pe-opensandbox/account'
 import * as RuntimeAccount from './account.ts'
 import { AccountRuntimeError } from './errors.ts'
@@ -53,11 +55,21 @@ export class AccountNativeIntegration {
   private execution: AccountExecutionPort | undefined
   private prepared = false
   private stopping: Promise<ConfigSaveReceipt | undefined> | undefined
+  private bootstrap: (() => Promise<void>) | undefined
+  private bootstrapping: Promise<void> | undefined
+  private loopFiber: Fiber | undefined
+  private agents: Context['agents'] | undefined
+  private persistence: Context['sessionPersistence'] | undefined
+  private nativeDrain: Readonly<{ nativeIdle: true; persistenceFlushed: true }> | undefined
 
   /**
    * @param input Actual Root resources; storage approval is independently required before production boot.
    */
-  constructor(private readonly input: AccountNativePreparation) {}
+  constructor(private readonly input: AccountNativePreparation) {
+    if (!Number.isSafeInteger(input.maxNativeInventoryEntries) || input.maxNativeInventoryEntries < 1) {
+      throw new AccountRuntimeError('cloud/invalid-config', 'Native preparation requires its existing finite inventory limit')
+    }
+  }
 
   /**
    * Issue from the exact installed binding and fix native constructors before Include activation.
@@ -84,6 +96,7 @@ export class AccountNativeIntegration {
       assertBusinessCurrent: (current) => { this.input.assertRootCurrent(); businessCurrent(current) },
       assertBootstrapCurrent: signal => requireGuards(ctx).assertBootstrapCurrent(signal),
       maxNativeInventoryEntries: this.input.maxNativeInventoryEntries,
+      assertUnpublished: unpublished,
     })
     this.api = api
     this.execution = this.input.execution.bindAccount(ctx, binding, () => { mountCurrent(binding) })
@@ -115,7 +128,15 @@ export class AccountNativeIntegration {
     }
     const project = (owner: Context) => {
       requireGuards(owner)
-      const entries = [...owner.loader.entries()].filter(entry => entry.moduleNamespace === FilesAccount)
+      const entries: NonNullable<Fiber['entry']>[] = []
+      let visited = 0
+      for (const entry of owner.loader.entries()) {
+        if (++visited > input.maxNativeInventoryEntries) {
+          throw new AccountRuntimeError('cloud/account-unavailable', 'Native files inventory exceeds its explicit limit')
+        }
+        if (entry.moduleNamespace === FilesAccount) entries.push(entry)
+        if (entries.length > 1) throw new AccountRuntimeError('cloud/account-unavailable', 'Native files account entry is duplicated')
+      }
       if (entries.length !== 1 || entries[0]?.fiber?.state !== FiberState.ACTIVE) {
         throw new AccountRuntimeError('cloud/account-unavailable', 'The actual files account entry is not uniquely active')
       }
@@ -145,8 +166,14 @@ export class AccountNativeIntegration {
     }
     const agentLoop = {
       inject: [...AgentLoop.inject, 'peCloudApi'], Config: AgentLoop.Config,
-      apply(owner: Context, config: ConstructorParameters<typeof AgentLoop>[1]) {
+      apply: (owner: Context, config: ConstructorParameters<typeof AgentLoop>[1]) => {
         api.createAgentLoop(owner, requireGuards(owner).agents, config)
+        this.loopFiber = owner.fiber
+        const agents = owner.get('agents'), persistence = owner.get('sessionPersistence')
+        const rawAgents: unknown = agents === undefined ? undefined : Reflect.get(agents, symbols.original) ?? agents
+        const rawPersistence: unknown = persistence === undefined ? undefined : Reflect.get(persistence, symbols.original) ?? persistence
+        this.agents = rawAgents instanceof AgentRegistry ? rawAgents : undefined
+        this.persistence = rawPersistence instanceof SessionPersistence ? rawPersistence : undefined
       },
     }
     const llm = {
@@ -175,8 +202,71 @@ export class AccountNativeIntegration {
       }
     }
     Object.assign(builtins, entries)
+    this.bootstrap = async () => {
+      this.input.assertRootCurrent()
+      mountCurrent(binding)
+      unpublished()
+      const installed = project(ctx)
+      if (this.agents === undefined || this.persistence === undefined || this.loopFiber?.state !== FiberState.ACTIVE) {
+        throw new AccountRuntimeError('cloud/account-unavailable', 'Native Agent lifecycle and persistence owners are missing')
+      }
+      assertClosedAccountExecution(ctx)
+      const saves = await api.pauseAccountChanges(Date.now() + input.stopTimeoutMs, binding.lifetime)
+      if (saves.status !== 'confirmed') {
+        throw new AccountRuntimeError('cloud/stop-unconfirmed', 'Original native startup configuration saves have not settled')
+      }
+      this.input.assertRootCurrent()
+      mountCurrent(binding)
+      unpublished()
+      for (const provider of [api.providers.configEditor, api.providers.credentials]) {
+        let count = 0, visited = 0
+        for (const entry of ctx.loader.entries()) {
+          if (++visited > input.maxNativeInventoryEntries) {
+            throw new AccountRuntimeError('cloud/account-unavailable', 'Native writer inventory exceeds its explicit limit')
+          }
+          if (entry.moduleNamespace !== provider) continue
+          if (++count !== 1 || entry.fiber?.state !== FiberState.ACTIVE || entry.fiber.runtime?.callback !== provider) {
+            throw new AccountRuntimeError('cloud/account-unavailable', 'The original guarded native writer is inactive or replaced')
+          }
+        }
+        if (count !== 1) throw new AccountRuntimeError('cloud/account-unavailable', 'The original guarded native writer is missing')
+      }
+      await api.auditPrepared(ctx)
+      this.input.assertRootCurrent()
+      mountCurrent(binding)
+      unpublished()
+      if (project(ctx) !== installed) throw new AccountRuntimeError('cloud/stale-generation', 'Prepared files project changed')
+      assertClosedAccountExecution(ctx)
+      api.resumeAccountChanges()
+    }
     ctx.effect(() => () => { api.invalidate(); this.execution?.close() }, 'pe-cloud-runtime: revoke prepared API and execution')
     mountCurrent(binding)
+  }
+
+  /**
+   * Verify actual original native owners and handlers before the factory's ready CAS.
+   * @returns The retained unpublished audit; failure grants no business admission.
+   */
+  finishBootstrap(): Promise<void> {
+    if (this.stopping !== undefined || this.bootstrap === undefined) {
+      return Promise.reject(new AccountRuntimeError('cloud/account-unavailable', 'Native bootstrap audit is absent or closing'))
+    }
+    this.bootstrapping ??= this.bootstrap()
+    return this.bootstrapping
+  }
+
+  /**
+   * Read only the original native lifecycle and persistence settlement.
+   * @returns Actual joined observations, absent until both original native owners have settled.
+   */
+  observeNativeDrain(): Readonly<{ nativeIdle: true; persistenceFlushed: true }> | undefined { return this.nativeDrain }
+
+  /** Release the original save slot only after factory-owned complete drain and owner commit. */
+  releaseAfterActualDrain(): void {
+    if (this.nativeDrain === undefined || this.saves === undefined) {
+      throw new AccountRuntimeError('cloud/stop-unconfirmed', 'Original native drain evidence is absent')
+    }
+    this.input.saves.releaseAccount(this.saves)
   }
 
   /**
@@ -188,7 +278,19 @@ export class AccountNativeIntegration {
     this.execution?.close()
     this.stopping ??= (async () => {
       const receipt = await this.saves?.stopConfigSaves(Date.now() + this.input.stopTimeoutMs)
-      if (receipt?.status === 'confirmed') await this.api?.withdraw()
+      if (receipt?.status === 'confirmed') {
+        // The original audit may still own a native metadata read; joining is not a successful audit.
+        try { await this.bootstrapping } catch (_cause) { /* factory retains the original assembly failure */ }
+        await this.loopFiber?.dispose()
+        if (this.agents !== undefined && this.agents.list().length !== 0) {
+          throw new AccountRuntimeError('cloud/stop-unconfirmed', 'Native Agent lifecycle work has not settled')
+        }
+        await this.persistence?.flush()
+        if (this.loopFiber !== undefined && this.agents !== undefined && this.persistence !== undefined) {
+          this.nativeDrain = Object.freeze({ nativeIdle: true, persistenceFlushed: true })
+        }
+        await this.api?.withdraw()
+      }
       return receipt
     })()
     return this.stopping

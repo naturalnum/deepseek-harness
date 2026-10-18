@@ -1,13 +1,15 @@
-/** Root control composition retains actual PG/native work; missing production ports still prevent account ready. */
+/** Root control composition retains original PG/storage/native work through ready and drain settlement. */
 import { posix } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'
 import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import { ConfigSaveCoordinator } from '@deepseek-ai/dsh-pe-cloud-api'
+import type {} from '@deepseek-ai/dsh-cmdline'
+import type {} from '@deepseek-ai/dsh-pe-cloud-files/root'
 import type { RuntimeRootConfig } from './root-config.ts'
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { AccountFactory, type AccountFactoryRequest, type AccountNativeCloseObservation } from './account-factory.ts'
 import { deriveAccountLayout, defaultProjectLayout } from './account-layout.ts'
-import { AccountMountPrerequisiteError, requireAccountProductionPorts, type AccountRecipe } from './account-mount.ts'
+import { AccountMountPrerequisiteError, type AccountRecipe } from './account-mount.ts'
 import { PgOwnerExecutor } from './owner-pg-executor.ts'
 import { RuntimeInstanceControl } from './instance-control.ts'
 import { PostgresOwnerStore } from './owner-store.ts'
@@ -60,6 +62,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
     this.capacity = new RuntimeCapacity(resolved)
     this.recipe = new RootRecipeAudit(ctx, () => [...this.participants.values()], () => ({
       phase: this.control?.phase ?? 'component', recipeVersion: this.control?.config.recipeVersion,
+      maximum: this.control?.config.native.maxEntries,
     }))
     const rootClose = ctx.root.effect(() => () => this.close(), 'pe-cloud-runtime: join actual control at root disposal')
     ctx.effect(() => async () => {
@@ -156,7 +159,10 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
     if (credentials === undefined) throw new AccountRuntimeError('cloud/invalid-config', 'Runtime root requires the formal credentials service')
     const runtime = new PeAccountRuntime(ctx, resolved)
     const actual = runtime.startControl(resolved, credentials)
-    try { await observe(actual, resolved.startupTimeoutMs, 'Runtime root startup observation expired') }
+    try {
+      await observe(actual, resolved.startupTimeoutMs, 'Runtime root startup observation expired')
+      runtime.armRecipeSeal(resolved)
+    }
     catch (cause) {
       runtime.controlFailure(cause)
       await runtime.close()
@@ -179,7 +185,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
    * Missing real production ports independently reject before native boot and ready CAS.
    * @param accountId Authenticated account; browser expectations never select this value.
    * @param signal Optional observer abandonment; absence waits to accountWaitTimeoutMs.
-   * @returns A ready AccountUse only after the factory's actual production checks; unavailable in this slice.
+   * @returns A ready AccountUse only after actual storage/native audit and ready CAS rechecks.
    */
   acquireAccount(accountId: AccountId, signal?: AbortSignal): Promise<AccountUse> {
     const control = this.activeControl()
@@ -338,7 +344,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
     let native: readonly AccountNativeCloseObservation[] = []
     try { native = await control.factory.close() } catch (cause) { faults.push(cause) }
     for (const observation of native) {
-      // No account-clean evidence is available: preserve the durable owner rather than release it.
+      // Known complete production drains have already released; incomplete generations remain quarantined.
       try {
         const owner = await control.owners.locate(observation.accountId)
         if (owner?.ownerInstanceId === control.instance.identity.instanceId
@@ -347,6 +353,12 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
         }
       } catch (cause) { faults.push(cause) }
       if (observation.status === 'unknown') faults.push(observation.cause ?? new AccountRuntimeError('cloud/stop-unconfirmed', 'Native account shutdown is not confirmed'))
+    }
+    if (native.some(observation => observation.status === 'unknown')) {
+      control.failure ??= faults[0]
+      control.phase = 'failed'
+      this.ctx.logger.error('Actual account drain remains unresolved; original Root control resources and ownership remain retained')
+      throw new AccountRuntimeError('cloud/stop-unconfirmed', 'Root retains actual unresolved account work')
     }
     try { control.saves.close() } catch (cause) { faults.push(cause) }
     try { await control.instance.close() } catch (cause) { faults.push(cause) }
@@ -367,7 +379,10 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
     const { config } = control
     const exposure = this.ctx.root.get('peExposure')
     const execution = this.ctx.root.get('peSandboxCoordinator')
-    if (exposure === undefined || execution === undefined) throw new AccountMountPrerequisiteError()
+    const files = this.ctx.root.get('peFilesPool')
+    if (exposure === undefined || execution === undefined || files === undefined) throw new AccountMountPrerequisiteError()
+    const storage = files.requireStorageOwner()
+    storage.assertRootCurrent()
     const instanceId = control.instance.identity.instanceId
     const layout = deriveAccountLayout(accountId, instanceId, config.paths)
     return Object.freeze({
@@ -382,15 +397,30 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
         configPath: config.native.configPath, bareModuleBaseUrl: config.native.bareModuleBaseUrl,
         requiredEntryIds: config.native.requiredEntryIds, maxObservedEvents: config.native.maxObservedEvents,
         maxPathBytes: config.paths.maxPathBytes,
+        storage: Object.freeze({ owner: storage, files }),
         native: { saves: control.saves, exposure: exposure.policy, execution, stopTimeoutMs: config.shutdownTimeoutMs,
           maxNativeInventoryEntries: config.native.maxEntries,
           guards: (ctx, binding, files) => createAccountPolicy(
             ctx, binding, files, config.accountPolicy, exposure.policy, config.native.maxEntries,
           ),
           assertRootCurrent: () => { this.assertRecipeSealed(config.recipeVersion) } },
-        prepare: requireAccountProductionPorts,
+        prepare: (_ctx, binding) => {
+          storage.assertRootCurrent()
+          this.assertRecipeSealed(config.recipeVersion)
+          this.assertMountCurrent(binding)
+        },
       } satisfies AccountRecipe),
     })
+  }
+
+  private armRecipeSeal(config: RuntimeRootConfig): void {
+    const ready = this.ctx.root.get('appReady')
+    if (ready === undefined) return
+    this.ctx.effect(() => ready.onReady(() => {
+      if (this.closed || this.control?.phase !== 'active') return
+      try { this.recipe.sealCurrent(config.recipeVersion, config.native.maxEntries) }
+      catch (_cause) { this.ctx.logger.error('Cloud Root recipe audit did not seal; account admission remains closed. Inspect the retained audit.') }
+    }), 'pe-cloud-runtime: audit Root after native startup commits')
   }
 
   private activeControl(): RootControl {

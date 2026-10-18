@@ -6,6 +6,8 @@ import { AccountRuntimeError } from './errors.ts'
 import { startNativeAccountBoot, type NativeAccountBootHandle } from './native-boot.ts'
 import type { AccountBinding, AccountMountInput } from './types.ts'
 import type { AccountNativePreparation } from './account-native-integration.ts'
+import { RootStorageOwner, type StaticAccountStorageLease } from '@deepseek-ai/dsh-pe-cloud-files/root'
+import type { DrainParticipant } from './types.ts'
 
 /** Private, deployment-selected native recipe; no caller-selected module paths or account capability. */
 export interface AccountRecipe {
@@ -17,11 +19,13 @@ export interface AccountRecipe {
   readonly maxPathBytes: number
   /** Actual Root-issued API/execution resources; absent for isolated native-mechanism fixtures. */
   readonly native?: AccountNativePreparation
+  /** Original files Root owner and participant, retained by the private production factory only. */
+  readonly storage?: Readonly<{ owner: RootStorageOwner; files: DrainParticipant }>
   /** Install graph-lived dependencies before Include; this is native preparation, not a replaceable mounter. */
   prepare(ctx: Context, binding: AccountBinding): void | Promise<void>
 }
 
-/** Mandatory provider handoffs have no production issuer in this slice. */
+/** Production preparation rejects absent original storage and native provider handoffs. */
 export class AccountMountPrerequisiteError extends AccountRuntimeError {
   /** Missing real providers; these names cannot be supplied as approval flags. */
   readonly missing = Object.freeze(['files-bootstrap-and-native-fs', 'execution-port', 'api-save-and-exposure', 'all-writer-quota'])
@@ -36,10 +40,18 @@ export class AccountMountPrerequisiteError extends AccountRuntimeError {
 /**
  * Refuse production preparation before native services could fall back to unrestricted providers.
  * No configuration value or native mounted result can satisfy the missing handoffs.
- * @throws AccountMountPrerequisiteError unconditionally until the real provider composition is implemented.
+ * @param recipe Trusted deployment recipe with original storage and native providers.
+ * @returns The original storage handoff after its Root and execution checks pass.
+ * @throws AccountMountPrerequisiteError when an original mandatory provider is absent.
  */
-export function requireAccountProductionPorts(): void {
-  throw new AccountMountPrerequisiteError()
+export function requireAccountProductionPorts(recipe?: AccountRecipe): NonNullable<AccountRecipe['storage']> {
+  const storage = recipe?.storage, native = recipe?.native
+  if (storage === undefined || !(storage.owner instanceof RootStorageOwner) || storage.files.id !== 'files'
+    || native === undefined || native.guards === undefined) throw new AccountMountPrerequisiteError()
+  storage.owner.assertRootCurrent()
+  native.assertRootCurrent()
+  native.execution.assertReady()
+  return storage
 }
 
 /**
@@ -48,10 +60,11 @@ export function requireAccountProductionPorts(): void {
  * checks only address agreement. It never publishes AccountUse or runs the owner ready CAS.
  * @param input Trusted generation, canonical layout, and exact native environment snapshot.
  * @param recipe Deployment-selected Profile and native preparation with explicit budgets.
+ * @param lease Original production storage lease; absent only for isolated native-mechanism assembly.
  * @returns Actual native boot/disposal ownership, including partial startup.
  * @throws AccountRuntimeError for mismatched Profile addresses or ended generation; native read failures retain their identity.
  */
-export function mountAccount(input: AccountMountInput, recipe: AccountRecipe): NativeAccountBootHandle {
+export function mountAccount(input: AccountMountInput, recipe: AccountRecipe, lease?: StaticAccountStorageLease): NativeAccountBootHandle {
   const expectedCwd = defaultProjectLayout(input.layout, recipe.maxPathBytes).root
   if (recipe.profile.dir !== input.layout.profileRoot || recipe.profile.patchPath !== input.layout.patchPath
     || recipe.profile.home !== input.layout.privateRoot || recipe.profile.cwd !== expectedCwd) {
@@ -61,6 +74,8 @@ export function mountAccount(input: AccountMountInput, recipe: AccountRecipe): N
     binding: input.binding, environment: input.environment, profile: recipe.profile,
     configPath: recipe.configPath, bareModuleBaseUrl: recipe.bareModuleBaseUrl,
     requiredEntryIds: recipe.requiredEntryIds, maxObservedEvents: recipe.maxObservedEvents,
+    ...recipe.native === undefined ? {} : { maxEntries: recipe.native.maxNativeInventoryEntries },
+    ...lease === undefined ? {} : { assertBeforeNativeRead: () => { lease.assertBeforeNativeRead(recipe.profile, recipe.configPath) } },
     prepare: (ctx, binding) => recipe.prepare(ctx, binding),
   })
 }

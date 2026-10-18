@@ -30,7 +30,7 @@ import Tools from '@deepseek-ai/dsh-tools'
 import Typert from '@deepseek-ai/dsh-typert-registry'
 import FsLocal from '@deepseek-ai/dsh-fs-local'
 import LlmRuntime, { LlmAdapter, type GenerateOptions, type StreamChunk } from '@deepseek-ai/dsh-llm'
-import { CloudAccountApi, ConfigSaveCoordinator, ExposureService, type ConfigSaveBarrier } from '@deepseek-ai/dsh-pe-cloud-api'
+import { CloudAccountApi, ConfigSaveCoordinator, ExposureService, type ConfigSaveBarrier, type EndpointExposure } from '@deepseek-ai/dsh-pe-cloud-api'
 import { CloudAccountFiles, type AccountFilesPreparation } from '@deepseek-ai/dsh-pe-cloud-files'
 import * as FilesAccount from '@deepseek-ai/dsh-pe-cloud-files/account'
 import { remoteMethods, type PeerId } from '@deepseek-ai/dsh-typert-protocol'
@@ -64,7 +64,7 @@ export class TextAdapter extends LlmAdapter {
  * Own one persistent Node directory; repeated graph starts preserve its actual native Workspace and JSONL data.
  * @returns Native graph starter and explicit finite deployment policy, without a PG owner, quota grant or AccountUse.
  */
-export function policyFixture() {
+export function policyFixture(extraRpc: readonly EndpointExposure[] = []) {
   const home = realpathSync(mkdtempSync(join(tmpdir(), 'm8z-account-policy-')))
   const privateRoot = join(home, 'private'), projects = join(home, 'projects'), project = join(projects, 'default-workspace')
   const profileRoot = join(privateRoot, 'profile'), credentials = join(privateRoot, 'credentials.yaml')
@@ -82,10 +82,10 @@ export function policyFixture() {
   const saves = new ConfigSaveCoordinator({ maxAccounts: 2, maxRunning: 1, maxQueued: 2, maxQueuedPerAccount: 1,
     maxTrackedOperations: 4, maxTrackedOperationsPerAccount: 2, maxNestedPerOperation: 1, maxWaitersPerAccount: 2 })
   const shared = new Context()
-  const manifest = { recipeVersion: 'm8z', rpcEndpoints: ['create', 'prompt', 'cancel', 'page'].map(method => ({
+  const manifest = { recipeVersion: 'm8z', rpcEndpoints: [...['create', 'prompt', 'cancel', 'page'].map(method => ({
     endpoint: 'session/' + method, handlerId: 'native:sessionController',
     guard: method === 'create' ? 'account-project' as const : 'account-session' as const,
-  })), streamEndpoints: [{ endpoint: 'session/follow', handlerId: 'native:sessionController', guard: 'account-session' as const }],
+  })), ...extraRpc], streamEndpoints: [{ endpoint: 'session/follow', handlerId: 'native:sessionController', guard: 'account-session' as const }],
   exactFetchRoutes: [], allowedSettings: [] }
   const exposure = new ExposureService(shared, manifest).policy
   const graphs: { close(): Promise<void> }[] = []
@@ -167,6 +167,7 @@ export function policyFixture() {
           assertMountCurrent: actualGraph, assertBusinessCurrent: actualGraph,
           ...bootstrapPolicy ? { assertBootstrapCurrent: (signal: AbortSignal) => requireGuards().assertBootstrapCurrent(signal) } : {},
           ...bootstrapInventory,
+          assertUnpublished: () => { actualGraph(binding) },
         })
         class NodeFileSystem extends FsLocal {
           static inject = ['peAccount']

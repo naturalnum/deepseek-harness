@@ -8,6 +8,7 @@ import { ExposureService } from '@deepseek-ai/dsh-pe-cloud-api'
 import z from '@deepseek-ai/schemastery'
 import { afterEach, expect, it } from 'vitest'
 import { PeAccountRuntime } from '../src/root.ts'
+import { RootRecipeAudit } from '../src/recipe-audit.ts'
 import type { AccountRuntimeService, DrainParticipant, RootRecipeInput, RootRecipeRole } from '../src/types.ts'
 
 const contexts: Context[] = []
@@ -178,6 +179,18 @@ it('rejects missing requirements and retains finite observations for an overlong
   expect(() => { f.runtime.sealRecipe({ ...f.input, entrypoints: [...roles, ...roles] }) }).toThrow('not sealed')
   expect(f.runtime.inspectRecipe()).toMatchObject({ status: 'blocked', rootEntries: 0, providers: 0, participants: 0,
     issues: ['entrypoint-catalog-mismatch'] })
+})
+
+it('bounds actual Loader capture before retaining Root facts without granting component control', async () => {
+  const f = await fixture()
+  const audit = new RootRecipeAudit(f.ctx, () => [], () => ({ phase: 'component', recipeVersion: undefined, maximum: 1 }))
+  expect(() => { audit.seal(f.input) }).toThrow('not sealed')
+  expect(audit.inspect()).toMatchObject({ status: 'blocked', rootEntries: 0, providers: 0, participants: 0,
+    issues: ['runtime-control-unavailable', 'root-config-unproven'] })
+  expect(() => { audit.sealCurrent('m8m', 1) }).toThrow('not sealed')
+  expect(audit.inspect()).toMatchObject({ status: 'blocked', rootEntries: 0, providers: 0, participants: 0,
+    issues: ['root-config-unproven'] })
+  expect(() => { audit.assertSealed('m8m') }).toThrow('not sealed')
 })
 
 it('requires current installed ingress beyond initialized authentication resources and revokes after it closes', async () => {

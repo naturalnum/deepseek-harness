@@ -73,6 +73,15 @@
     },
     {
       "path": "../../core/agent-default-model"
+    },
+    {
+      "path": "../../boot/cmdline"
+    },
+    {
+      "path": "../../session/session-persistence"
+    },
+    {
+      "path": "../../core/agent"
     }
   ],
   "exclude": [
