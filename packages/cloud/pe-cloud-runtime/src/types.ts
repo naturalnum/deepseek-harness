@@ -162,6 +162,8 @@ export interface AccountRuntimeService {
   locateAccount(accountId: AccountId): Promise<AccountOwner | undefined>
   /** Enter actual root acquisition; optional signal abandons only this observer. */
   acquireAccount(accountId: AccountId, signal?: AbortSignal): Promise<AccountUse>
+  /** Borrow only the exact ready generation; never claim, mount or select a replacement graph. */
+  borrowAccount(binding: AccountBinding): Promise<AccountUse>
   /** Check installed mounting/current identity independently of business readiness. */
   assertMountCurrent(binding: AccountBinding): void
   /** Require exact live ready publication without capturing a request borrow. */

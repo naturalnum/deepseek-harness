@@ -124,6 +124,8 @@ describe.skipIf(privateConfig === undefined)('actual root Loader on the controll
     const binding = { accountId, epoch: owner.epoch, recipeVersion: owner.recipeVersion, lifetime: new AbortController().signal }
     expect(() => { fixture.runtime.assertMountCurrent(binding) }).toThrow('no longer current')
     expect(() => { fixture.runtime.assertBusinessCurrent(binding) }).toThrow('no longer current')
+    await expect(fixture.runtime.borrowAccount(binding)).rejects.toMatchObject({ code: 'cloud/stale-generation' })
+    expect(fixture.runtime.inspectControl()).toMatchObject({ accounts: 1 })
     await fixture.ctx.fiber.dispose()
     const retained = await database.query<{ phase: string; epoch: string }>(
       'SELECT phase, epoch::text FROM public.pe_account_owners WHERE account_id = $1', [accountId])

@@ -11,6 +11,7 @@ import * as Root from '../src/root.ts'
 import * as Index from '../src/index.ts'
 import { RuntimeRootConfigSchema } from '../src/schema.ts'
 import { rootConfig, RootCredentials } from './root-control-fixture.ts'
+import type { AccountBinding } from '../src/types.ts'
 
 const directories: string[] = []
 const contexts: Context[] = []
@@ -42,6 +43,21 @@ it('requires explicit root budgets and a formal reference without accepting a pa
   expect(() => RuntimeRootConfigSchema({ ...config, database: { ...config.database, passwordRef: 'not a ref' } })).toThrow()
   expect(() => RuntimeRootConfigSchema({ ...config, pg: { ...config.pg, lockTimeoutMs: Infinity } })).toThrow()
   expect(() => z.resolve({ ...config, saves: undefined }, RuntimeRootConfigSchema, {})).toThrow()
+})
+
+it('cannot borrow a graph through a component-only or closed root and never reserves a mount for that request', async () => {
+  const ctx = new Context()
+  contexts.push(ctx)
+  const runtime = new Root.PeAccountRuntime(ctx, { maxMountedAccounts: 2, maxConcurrentMounts: 1, maxConcurrentDrains: 1 })
+  const binding: AccountBinding = {
+    accountId: 'not-mounted' as AccountBinding['accountId'], epoch: '1' as AccountBinding['epoch'],
+    recipeVersion: 'not-mounted', lifetime: new AbortController().signal,
+  }
+  await expect(runtime.borrowAccount(binding)).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+  expect(runtime.inspectControl()).toMatchObject({ phase: 'component', accounts: 0 })
+  await runtime.close()
+  await expect(runtime.borrowAccount(binding)).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+  expect(runtime.inspectControl()).toMatchObject({ accounts: 0 })
 })
 
 it('retains the original secret resolution during Loader closure, without starting a database or graph', async () => {

@@ -43,7 +43,7 @@ kind: "package-reference"
 
 函数入口创建唯一既有容量持有者、PG executor、进程登记组件、owner store、账户 factory 和 API 配置保存 coordinator。它先迁移两张控制表并登记生成的进程身份，再提供 active 根控制面。初始化不等待下游 files/execution 贡献；参与者检查归账户领取，避免 Loader 注入环。真实账户准备尚未集成，因此保存 coordinator 尚不持有账户屏障。
 
-`locateAccount()` 读取实际 PG 元数据；`acquireAccount()` 用根选定路径、配方和独立账户环境进入既有保留型 factory。`assertMountCurrent()` 检查已安装的准备期/当前身份；`assertBusinessCurrent()` 还要求 factory 的 ready 状态。根控制面 active 或原生 mounted 均不发布账户 ready。四项生产 provider 缺口检查全部保持关闭。
+`locateAccount()` 读取实际 PG 元数据；`acquireAccount()` 用根选定路径、配方和独立账户环境进入既有保留型 factory。`borrowAccount(binding)` 为登录 Peer 独立借用精确的 ready 代际；它不会领取 owner、装配账户或替换为较新的图。`assertMountCurrent()` 检查已安装的准备期/当前身份；`assertBusinessCurrent()` 还要求 factory 的 ready 状态。根控制面 active 或原生 mounted 均不发布账户 ready。四项生产 provider 缺口检查全部保持关闭。
 
 Provider 经根服务登记必需的 `files` 和 `execution` 参与者。登记归调用 fiber 所有，重复项会被拒绝。缺参与者时拒绝装配容量预留；通过此检查不等于配方封口。配置保存使用 API 单独持有的屏障，不是第三个参与者。
 

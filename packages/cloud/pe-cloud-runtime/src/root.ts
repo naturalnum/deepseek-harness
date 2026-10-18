@@ -180,6 +180,15 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
   }
 
   /**
+   * Borrow the original ready graph for a login Peer without starting another acquisition.
+   * @param binding Exact runtime-installed generation retained by the trusted caller.
+   * @returns A fresh independent lifecycle reference; stale, unpublished and closed graphs reject.
+   */
+  async borrowAccount(binding: AccountBinding): Promise<AccountUse> {
+    return this.activeControl().factory.borrowCurrent(binding)
+  }
+
+  /**
    * Check the exact installed graph during restricted native preparation as well as ready.
    * @param binding Original graph binding, never a request borrow.
    */
