@@ -17,12 +17,14 @@ import { getStaticModules } from './seed.ts'
 import { installWindowDragRecall } from './window-drag/recall.ts'
 import './base.css'
 
-/** Optional module transport and pre-activation page persistence inputs. */
+/** Optional module transport, page persistence and pre-activation Context preparation. */
 export type BootSeams = Pick<ClientModuleCreateOptions, 'loadBundle'> & {
   /** Page-owned port captured before activation; absent uses ordinary browser storage. */
   persistence?: ClientPersistence
   /** Cloud owners require an explicit port; missing input fails before module loading. */
   requirePersistence?: boolean
+  /** Provide page-owned dependencies before native plugins activate; disposal joins actual settlement. */
+  prepareContext?: (ctx: Context) => void | Promise<void>
 }
 
 /** Browser boot entry consumed by `apps/web`. */
@@ -30,6 +32,7 @@ export class AppWebEntry {
   private readonly container: HTMLElement
   private readonly seams: BootSeams | undefined
   private readonly persistence: ClientPersistence | undefined
+  private readonly prepareContext: BootSeams['prepareContext']
   private readonly page: BootPage
   private ctx: Context | undefined
   private running: Promise<void> | undefined
@@ -44,7 +47,7 @@ export class AppWebEntry {
   /**
    * Draw the boot page; {@link run} starts the loader.
    * @param container - Application mount point.
-   * @param seams - Optional transport replacement and captured page persistence.
+   * @param seams - Optional transport replacement, captured persistence and Context preparation.
    * @throws Error before module loading when persistence is required but absent.
    */
   constructor(container: HTMLElement, seams?: BootSeams) {
@@ -54,6 +57,7 @@ export class AppWebEntry {
     this.container = container
     this.seams = seams?.loadBundle === undefined ? undefined : { loadBundle: seams.loadBundle }
     this.persistence = seams?.persistence
+    this.prepareContext = seams?.prepareContext
     this.page = new BootPage(container)
   }
 
@@ -130,6 +134,10 @@ export class AppWebEntry {
           if (this.isDisposed()) this.stopFiber(fiber)
         }
       })
+      if (this.prepareContext !== undefined) {
+        await this.prepareContext(ctx)
+        if (this.isDisposed()) return
+      }
       this.page.setTotal(this.manifest.plugins.length)
       await bootClient({
         ctx,

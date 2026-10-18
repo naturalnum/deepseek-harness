@@ -22,6 +22,7 @@ afterEach(() => {
 function fixture(options: {
   persistence?: ClientPersistence
   requirePersistence?: boolean
+  prepareContext?: (ctx: Context) => void | Promise<void>
   immediately?: boolean
   bundle?: Promise<undefined>
   activate?: (ctx: Context) => Promise<void> | void
@@ -61,6 +62,7 @@ function fixture(options: {
   const entry = new AppWebEntry(container, {
     ...(options.persistence === undefined ? {} : { persistence: options.persistence }),
     ...(options.requirePersistence === undefined ? {} : { requirePersistence: options.requirePersistence }),
+    ...(options.prepareContext === undefined ? {} : { prepareContext: options.prepareContext }),
     loadBundle: async () => {
       loading.resolve(undefined)
       await options.bundle
@@ -312,6 +314,89 @@ describe('AppWebEntry disposal', () => {
   })
 })
 
+
+describe('AppWebEntry Context preparation', () => {
+  it('awaits page inputs after persistence installation and before the first native store read', async () => {
+    const release = Promise.withResolvers<undefined>(), entered = Promise.withResolvers<undefined>()
+    const prepared = Object.freeze({ name: 'page input' })
+    const getItem = vi.fn(() => '"restored"')
+    const persistence: ClientPersistence = {
+      getItem, setItem: vi.fn(), removeItem: vi.fn(), keys: () => [],
+    }
+    const f = fixture({ persistence, requirePersistence: true,
+      prepareContext: async (ctx) => {
+        expect(ctx.get('clientPersistence')).toBe(persistence)
+        entered.resolve(undefined)
+        await release.promise
+        ctx.provide('preparedPageInput', prepared)
+      },
+      activate: (ctx) => {
+        expect(ctx.get('preparedPageInput')).toBe(prepared)
+        const store = createSnapshotStore('', { persist: { name: 'prepared.cache', storage: ctx.get('clientPersistence') } })
+        expect(store.getSnapshot()).toBe('restored')
+      },
+    })
+    const boot = f.entry.run()
+    try {
+      await entered.promise
+      expect(f.apply).not.toHaveBeenCalled()
+      expect(getItem).not.toHaveBeenCalled()
+      release.resolve(undefined)
+      await boot
+      expect(f.mount).toHaveBeenCalledOnce()
+      expect(f.create.mock.calls[0]![0]).not.toHaveProperty('prepareContext')
+    } finally { release.resolve(undefined); await boot; await f.entry.dispose() }
+  })
+
+  it('reports preparation failure without activating native plugins and disposes its effects', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const reason = new Error('page preparation failed'), stopped = vi.fn(), failure = vi.fn()
+    const f = fixture({ prepareContext: (ctx) => {
+      ctx.effect(() => stopped, 'test: prepared page input')
+      return Promise.reject(reason)
+    } })
+    await f.entry.run(failure)
+    expect(failure).toHaveBeenCalledWith(reason)
+    expect(f.apply).not.toHaveBeenCalled()
+    expect(f.mount).not.toHaveBeenCalled()
+    await f.entry.dispose()
+    expect(stopped).toHaveBeenCalledOnce()
+  })
+
+  it.each(['resolve', 'reject'] as const)('joins late preparation %s during disposal without activating a successor graph', async (mode) => {
+    const entered = Promise.withResolvers<Context>(), release = Promise.withResolvers<undefined>()
+    const reason = new Error('late preparation failure'), stopped = vi.fn(), failure = vi.fn()
+    const f = fixture({ prepareContext: async (ctx) => {
+      ctx.effect(() => stopped, 'test: prepared page input')
+      entered.resolve(ctx)
+      await release.promise
+      ctx.provide('preparedPageInput', 'late')
+    } })
+    const boot = f.entry.run(failure)
+    const ctx = await entered.promise
+    const closing = f.entry.dispose(), done = completion(closing)
+    try {
+      f.container.textContent = 'successor page'
+      await Promise.resolve()
+      expect(done).not.toHaveBeenCalled()
+      expect(stopped).not.toHaveBeenCalled()
+      if (mode === 'resolve') {
+        release.resolve(undefined)
+        await Promise.all([boot, closing])
+      } else {
+        const actual = sharedFailure(boot, closing)
+        release.reject(reason)
+        expect(await actual).toBe(reason)
+      }
+      expect(f.apply).not.toHaveBeenCalled()
+      expect(f.mount).not.toHaveBeenCalled()
+      expect(failure).not.toHaveBeenCalled()
+      expect(f.container.textContent).toBe('successor page')
+      expect(stopped).toHaveBeenCalledOnce()
+      expect(ctx.get('preparedPageInput', false)).toBeUndefined()
+    } finally { release.resolve(undefined); await Promise.allSettled([boot, closing]) }
+  })
+})
 
 describe('AppWebEntry page persistence', () => {
   it('rejects a required missing port before loading any module', () => {

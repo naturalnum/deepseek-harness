@@ -27,6 +27,8 @@ The Web boot kernel creates the module system, prefetches `immediately` entries,
 
 `AppWebEntry` accepts a generic `ClientPersistence` dependency for `getItem`, `setItem`, `removeItem` and logical `keys`. With `requirePersistence`, a missing dependency rejects before boot DOM or module-system creation. The supplied object is installed on the fresh Context before Loader activation. Snapshot stores, Slot store materialization and direct UI caches capture that same page dependency; ordinary browser composition retains its browser-storage behavior. Custom store wrappers must forward the optional persistence argument of `StoreHandle.create`.
 
+`AppWebEntry` also accepts optional trusted `prepareContext(ctx)` preparation after installing persistence and lifecycle tracking, before `bootClient`. Actual preparation is awaited; failure prevents plugin activation, and disposal joins it before releasing the Context. The callback is separate from module-loader options and late completion cannot restart a disposed entry.
+
 A deployment owner may provide a bounded, revocable implementation, such as the [Cloud page lifetime](../../packages/cloud/pe-cloud-client/README.md). That owner fixes the account/generation namespace, revokes writes before native or carrier teardown, and clears its namespace only after actual settlement. The generic port carries no authentication or Host persistence authority.
 
 ## Remote communication
