@@ -147,7 +147,7 @@ Loader 结算后，app-boot 在仅 optional 条目未激活时输出警告。如
 
 ### Helper 行为
 
-可选的[配置影响路径](src/config-impact.ts) 为已稳定、根文件为空的平坦 root Include 中的一项配置编辑准备绑定身份与版本的 Loader 决定。它在持久化与协调应用期间预留实际树变更，并拒绝未应用 patch、结构变化、未知依赖及无法证明的 live 影响。通常的协调应用路径保持不变。此有限扩展不对任意重挂分类，也不证明其依赖闭包；调用方须保持不支持的修改关闭。
+可选的[配置影响路径](src/config-impact.ts) 为已稳定、根文件为空的平坦 root Include 中的一项配置编辑准备绑定身份与版本的 Loader 决定。它在持久化与协调应用期间预留实际树变更，并拒绝未应用 patch、结构变化、未知依赖及无法证明的 live 影响。Host helper 为 `Loader.withUpdateGuard(guard, operation, scope)` 提供新建的 Node `AsyncLocalStorage`，作为类型化的 `LoaderUpdateScope` 能力，并在 operation 实际结算后禁用它。通用 Loader 不导入 Node 异步作用域，普通浏览器更新不创建该能力；guarded 调用缺少显式作用域时拒绝。异步后代跨 await 保留 guard，并发未绑定变更与嵌套预留均被拒绝。通常的协调应用路径保持不变。此有限扩展不对任意重挂分类，也不证明其依赖闭包；调用方须保持不支持的修改关闭。
 
 每个导出各负责启动的一个阶段：配置解析与快照回放、分层环境加载、明确报错的保护机制、激活审计、patch 解析、根 include 挂载、配置 dump 渲染与 profile 组合。各导出的约定在代码中，不在本 README——见 [`src/index.ts`](src/index.ts) 与 [`src/profile.ts`](src/profile.ts)。
 

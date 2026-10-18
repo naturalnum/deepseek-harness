@@ -1,5 +1,4 @@
 import { Context, FiberState, Inject, Service, type Fiber } from '@deepseek-ai/cordis'
-import { AsyncLocalStorage } from 'node:async_hooks'
 import { defineProperty, isNullable, type Dict } from '@deepseek-ai/cosmokit'
 import { ModuleLoader } from './internal.ts'
 import { Entry, type EntryOptions, type EntryConfigUpdatePlan } from './config/entry.ts'
@@ -101,6 +100,26 @@ export interface LoaderUpdateGuard {
 }
 
 /**
+ * Host-owned async execution scope for one guarded operation. Only the operation
+ * and its async descendants may observe its guard; unrelated work observes none.
+ * The provider must preserve this isolation across awaits until actual settlement.
+ */
+export interface LoaderUpdateScope {
+  /**
+   * Read the guard bound to this async execution.
+   * @returns The operation's guard, or undefined outside its async descendants.
+   */
+  getStore(): LoaderUpdateGuard | undefined
+  /**
+   * Execute and return the complete operation in its isolated async scope.
+   * @param guard - guard to bind only to this operation and its descendants.
+   * @param operation - complete mutation operation, including awaited child work.
+   * @returns The original operation's actual settlement and result.
+   */
+  run<T>(guard: LoaderUpdateGuard, operation: () => Promise<T>): Promise<T>
+}
+
+/**
  * Service that owns a loader entry tree and imports configured plugins.
  *
  * Subclasses provide persistence by implementing `write()` on `EntryTree`.
@@ -116,8 +135,7 @@ export class Loader extends EntryTree {
   public internal = ModuleLoader.fromInternal()
 
   public builtins: Dict<any> = Object.create(null)
-  private activeUpdateGuard: LoaderUpdateGuard | undefined
-  private readonly updateScope = new AsyncLocalStorage<LoaderUpdateGuard>()
+  private updateReservation: { guard: LoaderUpdateGuard; scope: LoaderUpdateScope } | undefined
 
   /**
    * Active mutation checks for this Loader.
@@ -125,24 +143,30 @@ export class Loader extends EntryTree {
    * @throws If a concurrent unbound update attempts a reserved tree mutation.
    */
   get updateGuard(): LoaderUpdateGuard | undefined {
-    if (this.activeUpdateGuard !== undefined && this.updateScope.getStore() !== this.activeUpdateGuard) {
+    const reservation = this.updateReservation
+    if (reservation === undefined) return undefined
+    if (reservation.scope.getStore() !== reservation.guard) {
       throw new Error('Loader configuration is reserved by a guarded update')
     }
-    return this.activeUpdateGuard
+    return reservation.guard
   }
 
   /**
    * Reserve this Loader's mutations for one checked native update operation.
    * @param guard - synchronous checks at the actual mutation points.
    * @param operation - complete persistence/application operation; await all child updates.
+   * @param scope - Host-owned async scope; undefined rejects before reserving or executing work.
    * @returns The operation's result after the reservation releases.
-   * @throws If another guarded operation already reserves this Loader.
+   * @throws If scope is absent or another guarded operation already reserves this Loader.
    */
-  async withUpdateGuard<T>(guard: LoaderUpdateGuard, operation: () => Promise<T>): Promise<T> {
-    if (this.activeUpdateGuard !== undefined) throw new Error('Loader configuration is already reserved')
-    this.activeUpdateGuard = guard
-    try { return await this.updateScope.run(guard, operation) }
-    finally { this.activeUpdateGuard = undefined }
+  async withUpdateGuard<T>(
+    guard: LoaderUpdateGuard, operation: () => Promise<T>, scope: LoaderUpdateScope | undefined,
+  ): Promise<T> {
+    if (scope === undefined) throw new Error('Loader guarded update requires an async execution scope')
+    if (this.updateReservation !== undefined) throw new Error('Loader configuration is already reserved')
+    this.updateReservation = { guard, scope }
+    try { return await scope.run(guard, operation) }
+    finally { this.updateReservation = undefined }
   }
 
   constructor(ctx: Context, public config: Loader.Config = {}) {

@@ -1,9 +1,11 @@
 /** Guarded saves use real profile composition and Loader decisions, without a cloud diff. */
+import { AsyncLocalStorage } from 'node:async_hooks'
 import * as fs from 'node:fs/promises'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest'
 import { FiberState, type Context, type Fiber } from '@deepseek-ai/cordis'
 import type { ProfileConfigUpdatePlan } from '@deepseek-ai/dsh-app-boot'
+import type { LoaderUpdateGuard } from '@deepseek-ai/cordis-plugin-loader'
 import z from '@deepseek-ai/schemastery'
 import { configurationFixture } from '../../../settings/settings/tests/configuration-fixture.ts'
 
@@ -212,9 +214,12 @@ it('binds the actual Loader options to the opaque prepared plan', async () => {
   const entry = first(ctx)
   const options = structuredClone(entry.options)
   const plan = entry.prepareConfigUpdate({ ...raw(ctx), count: 4 })
+  const scope = new AsyncLocalStorage<LoaderUpdateGuard>()
+  onTestFinished(() => { scope.disable() })
   await expect(ctx.loader.withUpdateGuard({
     entry: () => plan, group() {}, create() {}, remove() {},
-  }, () => entry.update({ config: { ...raw(ctx), ordinary: 'unplanned' } }))).rejects.toThrow('prepared options')
+  }, () => entry.update({ config: { ...raw(ctx), ordinary: 'unplanned' } }),
+  scope)).rejects.toThrow('prepared options')
   expect(entry.options).toEqual(options)
 })
 
@@ -246,4 +251,107 @@ it('reports a required post-commit failure without an unguarded rollback or remo
   expect(entry.fiber).toBe(fiber)
   expect(disposed).not.toHaveBeenCalled()
   expect(ctx.settings.describe().find(row => row.ns === 'first')!.value).toMatchObject({ count: 5 })
+})
+
+
+it('rejects a guarded mutation without a host scope before invoking its operation', async () => {
+  const { ctx } = await configurationFixture({ hmr: false })
+  const operation = vi.fn(async () => {})
+  const guard: LoaderUpdateGuard = { entry() { return undefined }, group() {}, create() {}, remove() {} }
+  await expect(ctx.loader.withUpdateGuard(guard, operation, undefined)).rejects.toThrow('requires an async execution scope')
+  expect(operation).not.toHaveBeenCalled()
+  expect(ctx.loader.updateGuard).toBeUndefined()
+  await first(ctx).update({ config: { ...raw(ctx), count: 3 } })
+  expect(raw(ctx).count).toBe(3)
+})
+
+it('isolates awaited guarded descendants, refuses nested and unbound mutations, and releases only on actual settlement', async () => {
+  const { ctx } = await configurationFixture({ hmr: false })
+  const entry = first(ctx), options = structuredClone(entry.options)
+  const next = { ...raw(ctx), count: 4 }
+  const plan = entry.prepareConfigUpdate(next)
+  const guard: LoaderUpdateGuard = { entry: () => plan, group() {}, create() {}, remove() {} }
+  const scope = new AsyncLocalStorage<LoaderUpdateGuard>()
+  const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  let settled = false
+  const updating = ctx.loader.withUpdateGuard(guard, async () => {
+    await Promise.resolve()
+    expect(ctx.loader.updateGuard).toBe(guard)
+    await expect(ctx.loader.withUpdateGuard(guard, async () => {}, scope)).rejects.toThrow('already reserved')
+    entered.resolve(undefined)
+    await release.promise
+    await Promise.resolve().then(async () => {
+      expect(ctx.loader.updateGuard).toBe(guard)
+      await entry.update({ config: next })
+    })
+    return 'settled-result'
+  }, scope)
+  void updating.then(() => { settled = true }, () => { settled = true })
+  onTestFinished(async () => { release.resolve(undefined); await Promise.allSettled([updating]); scope.disable() })
+  await entered.promise
+  expect(() => ctx.loader.updateGuard).toThrow('reserved')
+  await expect(entry.update({ config: { ...raw(ctx), count: 8 } })).rejects.toThrow('reserved')
+  await expect(entry.parent.update([...entry.parent.data])).rejects.toThrow('reserved')
+  await expect(entry.parent.create({ name: 'unbound-create' })).rejects.toThrow('reserved')
+  expect(() => { entry.parent.remove(entry.options.id) }).toThrow('reserved')
+  expect(entry.options).toEqual(options)
+  expect(settled).toBe(false)
+  release.resolve(undefined)
+  await expect(updating).resolves.toBe('settled-result')
+  expect(ctx.loader.updateGuard).toBeUndefined()
+  expect(raw(ctx).count).toBe(4)
+  await entry.update({ config: { ...raw(ctx), count: 6 } })
+  expect(raw(ctx).count).toBe(6)
+})
+
+it('retains the reservation through a pending rejection and releases it after the original failure', async () => {
+  const { ctx } = await configurationFixture({ hmr: false })
+  const guard: LoaderUpdateGuard = { entry() { return undefined }, group() {}, create() {}, remove() {} }
+  const scope = new AsyncLocalStorage<LoaderUpdateGuard>()
+  const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  const failure = new Error('actual guarded operation failed')
+  const updating = ctx.loader.withUpdateGuard(guard, async () => {
+    entered.resolve(undefined)
+    await release.promise
+    throw failure
+  }, scope)
+  const rejected = expect(updating).rejects.toBe(failure)
+  onTestFinished(async () => { release.resolve(undefined); await Promise.allSettled([updating]); scope.disable() })
+  await entered.promise
+  await expect(first(ctx).update({ config: { ...raw(ctx), count: 8 } })).rejects.toThrow('reserved')
+  release.resolve(undefined)
+  await rejected
+  expect(ctx.loader.updateGuard).toBeUndefined()
+  await first(ctx).update({ config: { ...raw(ctx), count: 3 } })
+  expect(raw(ctx).count).toBe(3)
+})
+
+it('keeps independent Loader reservations isolated while one Host save waits for persistence', async () => {
+  const firstProfile = await configurationFixture({ hmr: false })
+  const secondProfile = await configurationFixture({ hmr: false })
+  const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  const real = await vi.importActual<typeof fs>('node:fs/promises')
+  vi.mocked(fs.rename).mockImplementationOnce(async (from, to) => {
+    entered.resolve(undefined)
+    await release.promise
+    await real.rename(from, to)
+  })
+  const stopFirst = firstProfile.ctx.configEditor.registerImpactGuard({ check() {} })
+  const stopSecond = secondProfile.ctx.configEditor.registerImpactGuard({ check() {} })
+  const saving = firstProfile.ctx.settings.update('first', { count: 5 })
+  onTestFinished(async () => {
+    release.resolve(undefined)
+    await Promise.allSettled([saving])
+    await stopFirst()
+    await stopSecond()
+  })
+  await entered.promise
+  await secondProfile.ctx.settings.update('first', { count: 7 })
+  expect(raw(secondProfile.ctx).count).toBe(7)
+  await expect(first(firstProfile.ctx).update({ config: { ...raw(firstProfile.ctx), count: 9 } })).rejects.toThrow('reserved')
+  release.resolve(undefined)
+  await saving
+  expect(raw(firstProfile.ctx).count).toBe(5)
+  expect(firstProfile.ctx.loader.updateGuard).toBeUndefined()
+  expect(secondProfile.ctx.loader.updateGuard).toBeUndefined()
 })

@@ -1,4 +1,5 @@
 /** Live-only profile plans bind the existing patch composition to Loader's actual update checks. */
+import { AsyncLocalStorage } from 'node:async_hooks'
 import { readFileSync } from 'node:fs'
 import { isDeepStrictEqual } from 'node:util'
 import { FiberState, type Context } from '@deepseek-ai/cordis'
@@ -163,9 +164,14 @@ export async function withProfileConfigUpdate<T>(plan: ProfileConfigUpdatePlan, 
     }) },
     remove: () => checked(() => { throw new Error('Live profile config update cannot stop entries') }),
   }
-  return state.ctx.loader.withUpdateGuard(guard, async () => {
-    const result = await operation()
-    if (failure !== undefined) throw failure
-    return result
-  })
+  const scope = new AsyncLocalStorage<LoaderUpdateGuard>()
+  try {
+    return await state.ctx.loader.withUpdateGuard(guard, async () => {
+      const result = await operation()
+      if (failure !== undefined) throw failure
+      return result
+    }, scope)
+  } finally {
+    scope.disable()
+  }
 }
