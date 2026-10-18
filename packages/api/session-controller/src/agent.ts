@@ -1,7 +1,6 @@
 /** Agent activation, composition, and model-selection policy owned by API Session. */
 
 import { randomUUID } from 'node:crypto'
-import { mkdir } from 'node:fs/promises'
 import type { Context } from '@deepseek-ai/cordis'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
 import type {
@@ -173,8 +172,14 @@ export class ApiSessionAgentController {
   private readonly selections = new WeakMap<Agent, InstalledSelection>()
   private readonly imageAdmissionChains = new WeakMap<Agent, Promise<void>>()
 
-  /** @param ctx - Host context carrying Agent, model, persistence, and Typert services. */
-  constructor(private readonly ctx: Context) {
+  /**
+   * @param ctx - Host context carrying Agent, model, persistence, and Typert services.
+   * @param ensureProjectDirectory - fixed owning Controller callback, awaited before new Agent creation.
+   */
+  constructor(
+    private readonly ctx: Context,
+    private readonly ensureProjectDirectory: (cwd: string) => Promise<void>,
+  ) {
     ctx.typert.lookups.configure('agent', async (sessionId: SessionId) => {
       const found = await this.resolveAgent(sessionId)
       if ('error' in found) throw found.error
@@ -561,11 +566,7 @@ export class ApiSessionAgentController {
   }
 
   private async createAgent(sessionId: SessionId, cwd: string, composition: ApiSessionComposition): Promise<Agent> {
-    try {
-      await mkdir(cwd, { recursive: true })
-    } catch (error: unknown) {
-      throw new Error(`failed to ensure project directory "${cwd}": ${String(error)}`, { cause: error })
-    }
+    await this.ensureProjectDirectory(cwd)
     return (await this.ctx.agents.create({
       sessionId,
       agentOptions: this.agentOptions(),

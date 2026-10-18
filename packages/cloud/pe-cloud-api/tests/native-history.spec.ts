@@ -67,6 +67,7 @@ async function fixture(exposure: 'history' | 'closed' | 'rpc-follow' = 'history'
     if (!admitted) throw denied
   })
   const guards = {
+    projectDirectory: { binding, prepare: async () => { throw denied } },
     assertHandlerEnabled: vi.fn<NativeSessionGuards['assertHandlerEnabled']>(),
     resolveCreate: vi.fn<NativeSessionGuards['resolveCreate']>(async () => { throw denied }),
     assertActiveScope: vi.fn<NativeSessionGuards['assertActiveScope']>(() => { throw denied }),

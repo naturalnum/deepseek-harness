@@ -1,6 +1,7 @@
 /** Session Remote owner: cold reads, explicit Agent commands, and live control state. */
 
 import { hostname } from 'node:os'
+import { mkdir } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-fs'
@@ -159,7 +160,7 @@ export class SessionController extends TypertRemoteService {
     ctx.typert.resources.register('session', { field: 'sessionId' })
     const resolved = SessionController.Config(config)
     installModelSelectionProjection(ctx)
-    this.agents = new ApiSessionAgentController(ctx)
+    this.agents = new ApiSessionAgentController(ctx, this.ensureProjectDirectory.bind(this))
     this.commands = new SessionCommandController(ctx, this.agents, process.cwd())
     ctx.effect(() => ctx.fileUploads.registerAgentResolver(async (sessionId) => {
       const result = await this.agents.resolveAgent(sessionId)
@@ -264,6 +265,25 @@ export class SessionController extends TypertRemoteService {
       })
     }
     return inspectApiSession(this.ctx, sessionId, signal)
+  }
+
+  /**
+   * Prepare the resolved project directory before creating a new Agent or Session.
+   * The constructor captures this method without invoking it; use a method override,
+   * since subclass fields are initialized after capture. Overrides must await
+   * their actual directory operation and reject if preparation is unavailable;
+   * failure prevents Agent creation without a fallback to the default implementation.
+   * Reusing or resuming an existing Session does not prepare a new directory.
+   * @param cwd - directory selected by the native create command.
+   * @returns completion of recursive directory preparation; an existing directory is accepted.
+   * @throws Error with the native filesystem failure as cause when default preparation fails.
+   */
+  protected async ensureProjectDirectory(cwd: string): Promise<void> {
+    try {
+      await mkdir(cwd, { recursive: true })
+    } catch (error: unknown) {
+      throw new Error(`failed to ensure project directory "${cwd}": ${String(error)}`, { cause: error })
+    }
   }
 
   /**

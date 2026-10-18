@@ -18,6 +18,7 @@ function setup() {
     recipeVersion: binding.recipeVersion, rpcEndpoints: [], streamEndpoints: [], exactFetchRoutes: [], allowedSettings: [],
   })
   const guards: NativeSessionGuards = {
+    projectDirectory: { binding, prepare: async () => {} },
     assertHandlerEnabled: vi.fn(), resolveCreate: vi.fn<NativeSessionGuards['resolveCreate']>(async request => request),
     assertSessionProject: vi.fn(async () => {}), assertActiveScope: vi.fn(),
   }

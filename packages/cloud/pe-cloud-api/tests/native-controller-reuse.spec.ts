@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-fs'
 import Gateway from '@deepseek-ai/dsh-api-gateway'
 import RemoteAccess from '@deepseek-ai/dsh-api-remote-access'
 import SessionController from '@deepseek-ai/dsh-api-session-controller'
@@ -42,7 +43,7 @@ class CountingAdapter extends LlmAdapter {
 
 afterEach(() => { vi.restoreAllMocks() })
 
-async function fixture() {
+async function fixture(accountId = 'reuse') {
   const directory = realpathSync(mkdtempSync(join(fileURLToPath(new URL('.', import.meta.url)), 'controller-reuse-')))
   const project = join(directory, 'approved-project')
   const outside = join(directory, 'outside-project')
@@ -69,7 +70,7 @@ async function fixture() {
   })
   const lifetime = new AbortController()
   const binding: AccountBinding = Object.freeze({
-    accountId: brandString<AccountId>('reuse'), epoch: brandString<OwnerEpoch>('1'),
+    accountId: brandString<AccountId>(accountId), epoch: brandString<OwnerEpoch>('1'),
     recipeVersion: 'd08-reuse-review', lifetime: lifetime.signal,
   })
   ctx.provide('peAccount', binding)
@@ -91,6 +92,7 @@ async function fixture() {
     assertDirectory(ctx.workingDirectory.get(agent.session))
   })
   const guards = {
+    projectDirectory: { binding, prepare: vi.fn(async (cwd: string) => { assertDirectory(cwd) }) },
     assertHandlerEnabled: vi.fn<NativeSessionGuards['assertHandlerEnabled']>(),
     assertActiveScope,
     resolveCreate: vi.fn(async (request: SessionCreateRequest): Promise<SessionCreateRequest> => {
@@ -126,7 +128,7 @@ async function fixture() {
   })
   if (controller === undefined) throw new Error('Fixture controller did not mount.')
   const peer: PeerScope = {
-    id: brandString<PeerId>('controller-reuse'), ctx, principal: { kind: 'owner' },
+    id: brandString<PeerId>('controller-reuse-' + accountId), ctx, principal: { kind: 'owner' },
     interactions: 'answer', signal: new AbortController().signal, dispose: async () => {},
   }
   const adapter = new CountingAdapter()
@@ -154,6 +156,87 @@ it('dispatches inherited native Remote markers to one public Controller subclass
   expect(nativeCreate).toHaveBeenCalledExactlyOnceWith({ cwd: project })
   expect(ctx.sessions.get(result.sessionId)!.header.cwd).toBe(project)
   expect(ctx.agents.get(result.sessionId)).toBeDefined()
+})
+
+it('awaits the fixed graph directory capability inside actual native creation before Agent publication', async () => {
+  const { ctx, guards, project, create } = await fixture()
+  const entered = Promise.withResolvers<undefined>()
+  const release = Promise.withResolvers<undefined>()
+  guards.projectDirectory.prepare.mockImplementationOnce(async (cwd) => {
+    expect(cwd).toBe(project)
+    entered.resolve(undefined)
+    await release.promise
+  })
+  const nativeCreate = vi.spyOn(ctx.agents, 'create')
+  const operation = create()
+  onTestFinished(async () => { release.resolve(undefined); await Promise.allSettled([operation]) })
+  await entered.promise
+  expect(nativeCreate).not.toHaveBeenCalled()
+  expect(ctx.sessions.list()).toEqual([])
+  release.resolve(undefined)
+  const result = await operation
+  expect(guards.projectDirectory.prepare).toHaveBeenCalledExactlyOnceWith(project)
+  expect(nativeCreate).toHaveBeenCalledOnce()
+  expect(ctx.agents.get(result.sessionId)).toBeDefined()
+})
+
+it.each(['lifetime', 'replacement', 'business', 'handler', 'fiber'] as const)(
+  'rejects a late directory result after %s admission closes, before native Agent creation',
+  async (closed) => {
+    const { ctx, binding, lifetime, guards, assertCurrent, create } = await fixture()
+    const sessions = ctx.sessions
+    const entered = Promise.withResolvers<undefined>()
+    const release = Promise.withResolvers<undefined>()
+    guards.projectDirectory.prepare.mockImplementationOnce(async () => { entered.resolve(undefined); await release.promise })
+    const nativeCreate = vi.spyOn(ctx.agents, 'create')
+    const operation = create()
+    const rejected = expect(operation).rejects.toMatchObject({ code: 'gateway/internal' })
+    onTestFinished(async () => { release.resolve(undefined); await Promise.allSettled([operation]) })
+    await entered.promise
+    expect(nativeCreate).not.toHaveBeenCalled()
+    if (closed === 'lifetime') lifetime.abort()
+    else if (closed === 'replacement') ctx.set('peAccount', { ...binding, epoch: brandString<OwnerEpoch>('2') })
+    else if (closed === 'business') assertCurrent.mockImplementation(() => { throw new Error('Business admission closed.') })
+    else if (closed === 'fiber') await ctx.fiber.dispose()
+    else guards.assertHandlerEnabled.mockImplementation(() => { throw new Error('The native handler was disabled.') })
+    release.resolve(undefined)
+    await rejected
+    expect(nativeCreate).not.toHaveBeenCalled()
+    expect(sessions.list()).toEqual([])
+  },
+)
+
+it('keeps provider rejection and mismatched graph capability ahead of native Agent creation', async () => {
+  const { ctx, guards, binding, create } = await fixture()
+  const nativeCreate = vi.spyOn(ctx.agents, 'create')
+  guards.projectDirectory.prepare.mockRejectedValueOnce(new Error('Directory backend unavailable.'))
+  await expect(create()).rejects.toThrow('Directory backend unavailable.')
+  expect(nativeCreate).not.toHaveBeenCalled()
+  guards.projectDirectory.binding = { ...binding }
+  await expect(create()).rejects.toThrow('Session directory capability belongs to another account graph')
+  expect(guards.projectDirectory.prepare).toHaveBeenCalledOnce()
+  expect(nativeCreate).not.toHaveBeenCalled()
+  expect(ctx.sessions.list()).toEqual([])
+})
+
+it('leaves B creation usable while A directory work waits and its graph then closes', async () => {
+  const a = await fixture('A')
+  const b = await fixture('B')
+  const entered = Promise.withResolvers<undefined>()
+  const release = Promise.withResolvers<undefined>()
+  a.guards.projectDirectory.prepare.mockImplementationOnce(async () => { entered.resolve(undefined); await release.promise })
+  const operation = a.create()
+  const rejected = expect(operation).rejects.toMatchObject({ code: 'gateway/internal' })
+  onTestFinished(async () => { release.resolve(undefined); await Promise.allSettled([operation]) })
+  await entered.promise
+  const accepted = await b.create()
+  expect(b.ctx.agents.get(accepted.sessionId)).toBeDefined()
+  expect(a.ctx.sessions.list()).toEqual([])
+  a.lifetime.abort()
+  release.resolve(undefined)
+  await rejected
+  expect(a.ctx.sessions.list()).toEqual([])
+  expect(b.ctx.agents.get(accepted.sessionId)).toBeDefined()
 })
 
 it('waits for async shared create admission and rechecks the epoch before calling native super', async () => {

@@ -60,6 +60,8 @@ Page 和 follow 对普通 Session 地址等待共享项目守卫。Page 在原�
 
 Controller 准入使用实际安装的图 AccountBinding 及与实际 LLM 守卫共用的可信 business-ready 回调，独立于 HTTP/Peer AccountUse 生命周期。外部 AccountUse 也必须满足 business-ready；视图的 graph/mount-current 审核不能代替这一检查。装配须声明原生依赖、保留所属 fiber，并排除第二个基础 Controller。共享守卫失败、binding 过期、开放审核撤销或处理者停用都会阻止委派。原生进程内调用保留守卫抛出的错误；传输序列化遵循现有 Gateway 规则。原生业务结果与失败保持原义。
 
+Controller 必须接收固定的 `NativeSessionGuards.projectDirectory` 能力，持有实际安装的精确 binding，并由可信 files 装配提供可等待的 `prepare(cwd)`。其原生 protected 覆盖在目录准备前后检查 binding、业务准入、已审核暴露和处理者可用性，关闭或被替换的图不能因迟到结果创建 Agent。能力使用既有有界 files lane，并独立核验批准项目；cwd 是输入，不是授权。S2 已有批准项目可在注册窗关闭后继续验证，新目录仍遵守 provider 原有批准要求。该适配不回退宿主 mkdir、不增加 files 池，也不重开注册窗。
+
 工厂须提供真实 files/Workspace/Preset/模型守卫，包括不另建批准表的同步活跃 scope 核验。可信端口和生命周期要求完成集成前，账户入口保持关闭。
 
 [私有 AgentLoop 工厂](src/native-agent-factory.ts) 检查同一实际安装的图绑定，在原生持久化创建或恢复写入 ownership 前，等待共享项目/模型/Preset 准入。它保留原 setup 及其同步 commit，在 setup 后及 commit 前后核验实际准备的 Agent。普通根 Session 允许省略委托深度或深度为零；parent/subagent/seeded 路径、启动 agents 及 direct AgentLoop.create 保持关闭。所属配方声明原生 AgentLoop 依赖，并排除第二个 loop。

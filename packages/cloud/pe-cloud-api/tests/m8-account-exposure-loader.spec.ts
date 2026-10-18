@@ -146,6 +146,7 @@ async function fixture() {
       Config: SessionController.Config,
       apply(scope: Context, config: ConstructorParameters<typeof SessionController>[1]): void {
         const guards: NativeSessionGuards = {
+          projectDirectory: { binding, prepare: async () => { throw new Error('Creation is outside this history fixture.') } },
           assertHandlerEnabled(handlerId) {
             if (!nativeFacts(scope, requireController()).some(row => row.handlerId === handlerId)) {
               throw new CloudApiError('cloud/account-unavailable', 'The registered native handler is absent.')

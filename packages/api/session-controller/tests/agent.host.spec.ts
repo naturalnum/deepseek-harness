@@ -1,6 +1,3 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
@@ -22,15 +19,12 @@ import { installSessionReadTestServices, testSessionPersistence } from './test-r
 
 const roots: Context[] = []
 
-/** Session cwd roots created per test, removed after their context settles. */
-const tempDirs: string[] = []
-
 afterEach(async () => {
   await Promise.all(roots.splice(0).map(ctx => ctx.fiber.dispose()))
-  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
-async function harness(): Promise<{ ctx: Context; agents: ApiSessionAgentController }> {
+async function harness(ensureProjectDirectory = async (_cwd: string): Promise<void> => {}):
+Promise<{ ctx: Context; agents: ApiSessionAgentController }> {
   const ctx = new Context()
   roots.push(ctx)
   await ctx.plugin(TypertRegistry)
@@ -43,7 +37,7 @@ async function harness(): Promise<{ ctx: Context; agents: ApiSessionAgentControl
     currentSelection: () => ({ provider: 'fixture', model: 'fixture-model' }),
     saveSelection: () => Promise.resolve(),
   } as never)
-  return { ctx, agents: new ApiSessionAgentController(ctx) }
+  return { ctx, agents: new ApiSessionAgentController(ctx, ensureProjectDirectory) }
 }
 
 function header(id: string, cwd: string | null = '/workspace'): SessionHeader {
@@ -350,13 +344,13 @@ describe('ApiSession creation', () => {
     })
   })
 
-  it('surfaces directory creation failure', async () => {
-    const { agents } = await harness()
-    const parent = mkdtempSync(join(tmpdir(), 'dsh-session-controller-file-'))
-    tempDirs.push(parent)
-    const file = join(parent, 'file')
-    writeFileSync(file, 'not a directory')
-    await expect(agents.createSession({ cwd: join(file, 'child'), reusable: () => true }))
-      .rejects.toThrow('failed to ensure project directory')
+  it('retains the owning Controller directory preparation failure before Agent creation', async () => {
+    const failure = new Error('directory provider unavailable')
+    const ensure = vi.fn(async () => { throw failure })
+    const { ctx, agents } = await harness(ensure)
+    const create = vi.spyOn(ctx.agents, 'create')
+    await expect(agents.createSession({ cwd: '/project', reusable: () => true })).rejects.toBe(failure)
+    expect(ensure).toHaveBeenCalledWith('/project')
+    expect(create).not.toHaveBeenCalled()
   })
 })

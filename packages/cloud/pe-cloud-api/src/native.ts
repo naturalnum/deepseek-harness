@@ -12,12 +12,28 @@ import type {} from '@deepseek-ai/dsh-pe-cloud-runtime/account'
 import { CloudApiError } from './errors.ts'
 import type { ExposurePolicy } from './exposure.ts'
 
+/** Fixed files-owned directory capability for one installed account graph; not a path-derived grant. */
+export interface NativeSessionDirectory {
+  /** Exact installed graph binding used when the trusted files capability was issued. */
+  readonly binding: AccountBinding
+  /**
+   * Prepare an already approved project through the existing bounded files lane.
+   * Existing S2 projects may use directory validation after registration closes.
+   * New directories still require the files provider's original approval/window.
+   * @param cwd - native resolved project path, which does not itself confer authority.
+   * @returns actual directory preparation/validation completion; failures retain native meaning.
+   */
+  prepare(cwd: string): Promise<void>
+}
+
 /**
  * Shared guards supplied by trusted account assembly, using the files-owned
  * project resolver and approved native Preset/model configuration. These
  * callbacks neither issue account identity nor establish a second Session store.
  */
 export interface NativeSessionGuards {
+  /** Fixed graph-owned directory capability; never an HTTP/Peer AccountUse borrow. */
+  readonly projectDirectory: NativeSessionDirectory
   /** Require a handler in this account's actual enabled native composition. */
   assertHandlerEnabled(handlerId: string): void
   /** Resolve and verify the project's location and approved Preset without creating a Session. */
@@ -33,13 +49,19 @@ export interface NativeSessionGuards {
 }
 
 class NativeSessionAdmission {
+  private readonly directory: NativeSessionDirectory
+  private readonly prepareDirectory: NativeSessionDirectory['prepare']
+
   constructor(
     private readonly ctx: Context,
     private readonly binding: AccountBinding,
     private readonly assertCurrent: (binding: AccountBinding) => void,
     private readonly policy: ExposurePolicy,
     private readonly guards: NativeSessionGuards,
-  ) {}
+  ) {
+    this.directory = guards.projectDirectory
+    this.prepareDirectory = this.directory.prepare.bind(this.directory)
+  }
 
   assertBinding(): void {
     if (this.binding.lifetime.aborted || this.ctx.get('peAccount') !== this.binding || this.ctx.root.get('peAccount') !== this.binding) {
@@ -57,6 +79,21 @@ class NativeSessionAdmission {
       throw new CloudApiError('cloud/account-unavailable', 'A verified project location is required before native creation.')
     }
     return resolved
+  }
+
+  async ensureProjectDirectory(cwd: string): Promise<void> {
+    this.admit('session/create', 'account-project')
+    this.assertDirectoryBinding()
+    await this.prepareDirectory(cwd)
+    this.admit('session/create', 'account-project')
+    this.assertDirectoryBinding()
+  }
+
+  private assertDirectoryBinding(): void {
+    this.assertBinding()
+    if (this.directory.binding !== this.binding) {
+      throw new CloudApiError('cloud/stale-generation', 'The Session directory capability belongs to another account graph.')
+    }
   }
 
   async session(endpoint: 'session/prompt' | 'session/fork', sessionId: SessionId): Promise<void> {
@@ -115,6 +152,10 @@ class AccountSessionController extends SessionController {
     config: ConstructorParameters<typeof SessionController>[1],
     private readonly admission: NativeSessionAdmission,
   ) { super(ctx, config) }
+
+  protected override ensureProjectDirectory(cwd: string): Promise<void> {
+    return this.admission.ensureProjectDirectory(cwd)
+  }
 
   override async create(request: SessionCreateRequest): Promise<SessionCreateValue> {
     const resolved = await this.admission.create(request)
@@ -189,7 +230,7 @@ class AccountSessionController extends SessionController {
  * @param assertCurrent - trusted graph admission shared with the actual LLM guard;
  * never AccountUse.assertCurrent bound to an HTTP/Peer borrow.
  * @param policy - deployment policy audited against this graph's native inventory.
- * @param guards - shared project/Preset/active-Agent checks; not fixture policy.
+ * @param guards - shared project/Preset/active-Agent checks and the fixed files directory capability.
  * @param config - original native Controller configuration.
  * @returns the registered native Controller, owned by ctx's fiber.
  * @throws CloudApiError for a mismatched installation binding; native construction errors retain identity.
