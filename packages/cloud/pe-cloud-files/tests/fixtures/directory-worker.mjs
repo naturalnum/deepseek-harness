@@ -4,7 +4,7 @@ import { posix } from 'node:path'
 const { mode = 'normal', gate, maxPathBytes = 256 } = workerData
 const state = gate === undefined ? undefined : new Int32Array(gate)
 const physicalRoot = '/physical'
-parentPort.postMessage({ kind: 'ready', abiVersion: 4 })
+parentPort.postMessage({ kind: 'ready', abiVersion: 5 })
 parentPort.on('message', request => {
   if (request.kind !== 'directory') throw new Error('unexpected metadata fixture request')
   if (state !== undefined) Atomics.add(state, 2, 1)

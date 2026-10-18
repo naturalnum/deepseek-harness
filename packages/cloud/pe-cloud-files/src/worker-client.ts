@@ -6,6 +6,9 @@ import type { FsErrorCode } from '@deepseek-ai/dsh-fs'
 import type { FdTaskRequest, FdRootIdentity, FdMetadata, FdDirectoryRequest, FdDirectoryObservation } from './worker-protocol.ts'
 import { FilesFailure } from './error.ts'
 import { DirectoryMetadataFailure } from './directory-error.ts'
+import { parseLeafFrame, leafPreparation, DirectoryPreparationFailure } from './leaf-frame.ts'
+import type { LeafFrame } from './leaf-frame.ts'
+import type { DirectoryPrepareOutcome, DirectoryCreatedIdentity } from './directory-responsibility.ts'
 
 /** Transport failure retains the native error category without private paths. */
 export class FdWorkerFailure extends Error {
@@ -41,6 +44,13 @@ interface PendingDirectory extends PendingBase {
   readonly resolve: (value: FdDirectoryObservation) => void
   readonly reject: (error: Error) => void
 }
+interface PendingLeaf extends PendingBase {
+  readonly kind: 'leaf-prepare' | 'leaf-cleanup'
+  readonly root: FdRootIdentity
+  readonly identity?: DirectoryCreatedIdentity
+  readonly resolve: (frame: LeafFrame) => void
+  readonly reject: (error: Error) => void
+}
 interface Pull {
   readonly resolve: (result: IteratorResult<Uint8Array<ArrayBuffer>>) => void
   readonly reject: (error: Error) => void
@@ -54,7 +64,7 @@ interface PendingStream extends PendingBase {
   cancelled: boolean
   total: number
 }
-type Pending = PendingRead | PendingStat | PendingStream | PendingDirectory
+type Pending = PendingRead | PendingStat | PendingStream | PendingDirectory | PendingLeaf
 
 function object(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null }
 function wireError(value: Record<string, unknown>): FdWorkerFailure | undefined {
@@ -152,6 +162,49 @@ export class FdWorkerClient {
       const pending: PendingDirectory = { kind: 'directory', ...this.base(0, signal), maxPathBytes, resolve, reject }
       this.pending = pending
       this.post({ kind: 'directory', id: pending.id, root, relativePath, cancel: pending.cancel.buffer } satisfies FdDirectoryRequest)
+    })
+  }
+
+  /**
+   * Prepare one granted leaf; typed no-create failures remain failing business outcomes.
+   * @param root Fixed trusted parent identity.
+   * @param leaf Frozen server-selected basename.
+   * @param signal Actual-operation cancellation, separate from an observer's wait.
+   * @returns Actual creation facts after closed-FD frame or conservative transport failure.
+   */
+  async prepareLeaf(root: FdRootIdentity, leaf: string, signal: AbortSignal): Promise<DirectoryPrepareOutcome> {
+    try { this.assertAvailable(signal) } catch (_error) { return { kind: 'not-created-failure', failure: { errno: 11, phase: 0 } } }
+    const result = leafPreparation(await this.leaf(root, leaf, signal))
+    if (!signal.aborted) return result
+    if (result.kind === 'created') return { kind: 'created-known-failure', identity: result.identity, failure: { errno: 125, phase: 8 } }
+    if (result.kind === 'unchanged') return { kind: 'not-created-failure', failure: { errno: 125, phase: 8 } }
+    return result
+  }
+
+  /**
+   * Remove only the original exact empty leaf through an already-owned cleanup operation.
+   * @param root Original fixed parent.
+   * @param leaf Original server-selected basename.
+   * @param identity Actual created leaf identity.
+   * @param signal Actual cleanup signal; observer cancellation does not cancel this ownership.
+   * @returns Cleaned only after the successful closed-FD frame; other frames reject with bounded cause.
+   */
+  async removeEmptyLeaf(
+    root: FdRootIdentity, leaf: string, identity: DirectoryCreatedIdentity, signal: AbortSignal,
+  ): Promise<'cleaned'> {
+    this.assertAvailable(signal)
+    const result = await this.leaf(root, leaf, signal, identity)
+    if (result.tag !== 6) throw new DirectoryPreparationFailure('unknown', result.failure)
+    return 'cleaned'
+  }
+
+  private leaf(root: FdRootIdentity, leaf: string, signal: AbortSignal, identity?: DirectoryCreatedIdentity): Promise<LeafFrame> {
+    return new Promise((resolve, reject) => {
+      const pending: PendingLeaf = { ...this.base(64, signal), kind: identity === undefined ? 'leaf-prepare' : 'leaf-cleanup',
+        root, resolve, reject, ...identity === undefined ? {} : { identity } }
+      this.pending = pending
+      this.post({ kind: pending.kind, id: pending.id, root, leaf, cancel: pending.cancel.buffer,
+        ...identity === undefined ? {} : { identity } })
     })
   }
 
@@ -257,7 +310,7 @@ export class FdWorkerClient {
     if (this.failure !== undefined) return
     if (!object(value)) { this.failProtocol(); return }
     if (value.kind === 'ready') {
-      if (value.abiVersion !== 4 || this.readyResolved || this.closed) { this.failProtocol(); return }
+      if (value.abiVersion !== 5 || this.readyResolved || this.closed) { this.failProtocol(); return }
       this.readyResolved = true
       this.resolveReady()
       return
@@ -271,6 +324,15 @@ export class FdWorkerClient {
     const pending = this.pending
     if (pending === undefined || value.id !== pending.id) { this.failProtocol(); return }
     if (pending.kind === 'directory') { this.directoryMessage(pending, value); return }
+    if (pending.kind === 'leaf-prepare' || pending.kind === 'leaf-cleanup') {
+      const parsed = value.kind === `${pending.kind}-reply`
+        ? parseLeafFrame(value.frame, pending.kind === 'leaf-prepare' ? 1 : 2, pending.root, pending.identity) : undefined
+      if (parsed === undefined) { this.failProtocol(); return }
+      pending.removeAbort()
+      this.pending = undefined
+      pending.resolve(parsed)
+      return
+    }
     if (value.kind === 'reply' && value.ok === false) {
       const error = wireError(value)
       if (error === undefined) this.failProtocol()

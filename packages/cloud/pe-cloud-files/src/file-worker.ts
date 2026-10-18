@@ -3,8 +3,10 @@ import { createRequire } from 'node:module'
 import { fstatSync, readSync } from 'node:fs'
 import { isAbsolute } from 'node:path'
 import { parentPort, workerData } from 'node:worker_threads'
-import type { FdTaskRequest, FdWorkerInput, FdWorkerReply, FdMetadata, FdDirectoryRequest } from './worker-protocol.ts'
+import type { FdTaskRequest, FdWorkerInput, FdWorkerReply, FdMetadata, FdDirectoryRequest, FdLeafRequest } from './worker-protocol.ts'
 import type { FsErrorCode } from '@deepseek-ai/dsh-fs'
+import { directoryWorkBudget } from './directory-budget.ts'
+import { cancelledLeafFrame, parseLeafFrame } from './leaf-frame.ts'
 
 interface LinuxFdHelper {
   openAnchor(this: void, path: string, device: string, inode: string): void
@@ -14,10 +16,16 @@ interface LinuxFdHelper {
   closeAnchor(this: void): void
   canonicalPath(this: void, rootPath: string, maxPathBytes: number): Uint8Array
   probeKernel(this: void): void
+  prepareLeaf(this: void, path: string, device: string, inode: string, leaf: string, limit: number, retries: number): Uint8Array
+  removeEmptyLeaf(
+    this: void, path: string, device: string, inode: string, leaf: string,
+    leafDevice: string, leafInode: string, limit: number, retries: number,
+  ): Uint8Array
 }
 
 function isHelper(value: unknown): value is LinuxFdHelper {
-  return record(value) && value.abiVersion === 4
+  return record(value) && value.abiVersion === 5
+    && typeof value.prepareLeaf === 'function' && typeof value.removeEmptyLeaf === 'function'
     && typeof value.openAnchor === 'function' && typeof value.openRead === 'function' && typeof value.closeRead === 'function'
     && typeof value.canonicalPath === 'function' && typeof value.openMetadata === 'function' && typeof value.closeAnchor === 'function' && typeof value.probeKernel === 'function'
 }
@@ -69,6 +77,8 @@ function helper(path: string): LinuxFdHelper {
   const closeAnchor = loaded.closeAnchor
   const canonicalPath = loaded.canonicalPath
   const probeKernel = loaded.probeKernel
+  const prepareLeaf = loaded.prepareLeaf
+  const removeEmptyLeaf = loaded.removeEmptyLeaf
   return {
     openAnchor: (path, device, inode) => { openAnchor(path, device, inode) },
     openRead: (path) => {
@@ -89,7 +99,40 @@ function helper(path: string): LinuxFdHelper {
       return raw
     },
     probeKernel: () => { probeKernel() },
+    prepareLeaf: (path, device, inode, leaf, limit, retries) => prepareLeaf(path, device, inode, leaf, limit, retries),
+    removeEmptyLeaf: (path, device, inode, leaf, leafDevice, leafInode, limit, retries) =>
+      removeEmptyLeaf(path, device, inode, leaf, leafDevice, leafInode, limit, retries),
   }
+}
+
+function leafRequest(value: unknown, limits: FdWorkerInput): FdLeafRequest {
+  if (!record(value) || (value.kind !== 'leaf-prepare' && value.kind !== 'leaf-cleanup')
+    || typeof value.id !== 'string' || value.id.length !== 36 || !/^[a-f0-9-]{36}$/.test(value.id)
+    || !record(value.root) || typeof value.root.rootPath !== 'string' || typeof value.root.rootDevice !== 'string'
+    || typeof value.root.rootInode !== 'string' || typeof value.leaf !== 'string'
+    || !(value.cancel instanceof SharedArrayBuffer) || value.cancel.byteLength !== 4) throw new WorkerFailure('FS_IO_ERROR')
+  const root = { rootPath: value.root.rootPath, rootDevice: value.root.rootDevice, rootInode: value.root.rootInode }
+  directoryWorkBudget({ parent: root, leaf: value.leaf }, { maxPathBytes: limits.maxPathBytes, replyOverheadBytes: 1 })
+  if (value.kind === 'leaf-prepare') return { kind: value.kind, id: value.id as FdLeafRequest['id'], root, leaf: value.leaf, cancel: value.cancel }
+  const identity = value.identity
+  if (!record(identity) || typeof identity.device !== 'string' || identity.device.length > 20 || !/^\d{1,20}$/.test(identity.device)
+    || typeof identity.inode !== 'string' || identity.inode.length > 20 || !/^\d{1,20}$/.test(identity.inode)) throw new WorkerFailure('FS_IO_ERROR')
+  return { kind: value.kind, id: value.id as FdLeafRequest['id'], root, leaf: value.leaf, cancel: value.cancel,
+    identity: { device: identity.device, inode: identity.inode } }
+}
+
+function leafOperation(native: LinuxFdHelper, request: FdLeafRequest, limits: FdWorkerInput): Uint8Array<ArrayBuffer> {
+  const operation = request.kind === 'leaf-prepare' ? 1 : 2
+  if (Atomics.load(new Int32Array(request.cancel), 0) !== 0) return cancelledLeafFrame(operation)
+  const { root, leaf } = request
+  const raw: unknown = request.kind === 'leaf-prepare'
+    ? native.prepareLeaf(root.rootPath, root.rootDevice, root.rootInode, leaf, limits.maxPathBytes, limits.maxResolveRetries)
+    : native.removeEmptyLeaf(root.rootPath, root.rootDevice, root.rootInode, leaf,
+      request.identity.device, request.identity.inode, limits.maxPathBytes, limits.maxResolveRetries)
+  if (parseLeafFrame(raw, operation, root, request.kind === 'leaf-cleanup' ? request.identity : undefined) === undefined
+    || !(raw instanceof Uint8Array) || !(raw.buffer instanceof ArrayBuffer)) throw new WorkerFailure('FS_IO_ERROR')
+  // Cancellation after C must retain its real creation/unlink facts instead of replacing the reply.
+  return new Uint8Array(raw.buffer, 0, 64)
 }
 
 function failure(error: unknown): { code: FsErrorCode; syscallCode?: string } {
@@ -305,6 +348,14 @@ function start(): void {
       return
     }
     if (active !== undefined) { port.close(); return }
+    if (record(raw) && (raw.kind === 'leaf-prepare' || raw.kind === 'leaf-cleanup')) {
+      // Invalid frames/N-API exceptions are fatal; actual exit leaves creation ownership unknown.
+      const request = leafRequest(raw, limits)
+      const frame = leafOperation(native, request, limits)
+      port.postMessage({ kind: request.kind === 'leaf-prepare' ? 'leaf-prepare-reply' : 'leaf-cleanup-reply',
+        id: request.id, frame } satisfies FdWorkerReply, [frame.buffer])
+      return
+    }
     if (record(raw) && raw.kind === 'directory') {
       let request: FdDirectoryRequest
       try { request = directoryRequest(raw, limits) } catch (_error) { port.close(); return }
@@ -348,7 +399,7 @@ function start(): void {
       port.postMessage({ kind: 'reply', id: request.id, ok: false, ...failure(error) } satisfies FdWorkerReply)
     }
   })
-  port.postMessage({ kind: 'ready', abiVersion: 4 } satisfies FdWorkerReply)
+  port.postMessage({ kind: 'ready', abiVersion: 5 } satisfies FdWorkerReply)
 }
 
 start()

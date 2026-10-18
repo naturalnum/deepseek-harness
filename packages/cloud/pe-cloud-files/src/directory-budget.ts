@@ -56,9 +56,11 @@ export function directoryWorkBudget(intent: DirectoryIntent, limits: DirectoryBu
   const identityBytes = 4 * 4 * 20 + 128
   const recordBytes = 2048 // Responsibility, controls and one queue-entry/object allowance.
   const observerBytes = 1024 // One pending observer, timer, abort listener and fixed completion state.
-  const outcomeBytes = 4 * overhead + 256 // Bounded result/failure records; no retained raw error or stack.
+  const frameBytes = 64
+  const nativeScratchBytes = 2048 // stat/statfs, bounded arguments and nested identity verification calls.
+  const outcomeBytes = 4 * overhead + 256 + 2 * frameBytes // Fixed facts; no retained raw error or stack.
   // Four native path buffers, raw/UTF-16/clone peaks, one I/O record, input and reply copies.
-  const ioBytes = 12 * (pathLimit + 1) + intentBytes + 4 * overhead + 2048
+  const ioBytes = 12 * (pathLimit + 1) + intentBytes + 4 * overhead + 2048 + 4 * frameBytes + nativeScratchBytes
   const responsibilityBytes = intentBytes + identityBytes + recordBytes + observerBytes + outcomeBytes + ioBytes
   const totalBytes = responsibilityBytes + ioBytes
   if (![ioBytes, responsibilityBytes, totalBytes].every(value => Number.isSafeInteger(value) && value > 0)) capacity()

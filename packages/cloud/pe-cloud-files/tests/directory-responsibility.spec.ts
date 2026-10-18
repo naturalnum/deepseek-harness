@@ -24,7 +24,7 @@ afterEach(() => { vi.useRealTimers() })
 
 describe('bounded independent directory responsibility', () => {
   it('accounts exact fixed records, identity copies and independent complete cleanup scratch', () => {
-    expect(budget).toEqual({ ioBytes: 3836, responsibilityBytes: 7852, totalBytes: 11688 })
+    expect(budget).toEqual({ ioBytes: 6140, responsibilityBytes: 10284, totalBytes: 16424 })
     expect(Object.isFrozen(budget)).toBe(true)
     const uuid = directoryWorkBudget({ ...intent, leaf: randomUUID() }, bounds)
     expect(uuid.totalBytes).toBeGreaterThan(budget.totalBytes)

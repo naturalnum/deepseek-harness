@@ -1,6 +1,7 @@
 /** Internal worker messages, not account authorization or a public filesystem protocol. */
 import type { OperationId } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { FsErrorCode } from '@deepseek-ai/dsh-fs'
+import type { DirectoryCreatedIdentity } from './directory-responsibility.ts'
 
 /** Internal verified-root identity; the runtime factory still owns authorization and quota. */
 export interface FdRootIdentity {
@@ -44,6 +45,14 @@ export interface FdDirectoryObservation {
   readonly directory: boolean
 }
 
+/** Fixed-parent single-leaf commands; only a trusted isolated-fixture grant may issue them. */
+export type FdLeafRequest = {
+  readonly id: OperationId
+  readonly root: FdRootIdentity
+  readonly leaf: string
+  readonly cancel: SharedArrayBuffer
+} & ({ readonly kind: 'leaf-prepare' } | { readonly kind: 'leaf-cleanup'; readonly identity: DirectoryCreatedIdentity })
+
 /** Bounded FD metadata; native brands are constructed by the owning backend. */
 export interface FdMetadata {
   readonly identity: string
@@ -60,7 +69,8 @@ export interface FdStreamControl {
 
 /** Success follows FD closure except stream-ready/chunk, which retain actual operation ownership. */
 export type FdWorkerReply =
-  | { readonly kind: 'ready'; readonly abiVersion: 4 }
+  | { readonly kind: 'ready'; readonly abiVersion: 5 }
+  | { readonly kind: 'leaf-prepare-reply' | 'leaf-cleanup-reply'; readonly id: OperationId; readonly frame: Uint8Array<ArrayBuffer> }
   | { readonly kind: 'startup-failed'; readonly code: FsErrorCode; readonly syscallCode?: string }
   | { readonly kind: 'reply'; readonly id: OperationId; readonly ok: true; readonly bytes: Uint8Array<ArrayBuffer> }
   | { readonly kind: 'stat-reply'; readonly id: OperationId; readonly metadata: FdMetadata | undefined }

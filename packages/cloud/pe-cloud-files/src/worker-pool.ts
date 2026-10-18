@@ -16,6 +16,27 @@ import { FdWorkerClient, FdWorkerFailure } from './worker-client.ts'
 import { FilesFailure } from './error.ts'
 import { createDirectoryReadPort } from './directory.ts'
 import type { DirectoryReadPort } from './directory.ts'
+import type { DirectoryIntent } from './directory-budget.ts'
+import { directoryWorkBudget } from './directory-budget.ts'
+import type { DirectoryObservation, DirectoryPrepareOutcome } from './directory-responsibility.ts'
+
+/** Privileged fixture input; layout/stat/mode/name alone never establishes this namespace guarantee. */
+export interface IsolatedLeafGrant {
+  readonly backend: 'root-owned-isolated-linux-tmpfs'
+  readonly binding: AccountBinding
+  readonly parent: FdRootIdentity
+  readonly leaf: string
+  /** The trusted fixture must hold the complete unpublished namespace window; not an RPC-supplied assertion. */
+  assertExclusive(this: void): void
+}
+
+/** Fixed-grant component only; no caller-selected path, callback, transfer or recursive ensure. */
+export interface PreparedLeafPort {
+  prepare(): {
+    readonly observation: DirectoryObservation
+    readonly control: { expose(): string; cleanup(signal?: AbortSignal): Promise<'cleaned' | 'unknown'> }
+  }
+}
 
 /** Required finite root capacities; no storage or account-readiness evidence is represented here. */
 export interface FilesPoolConfig extends FilesLimits, FdWorkerInput {
@@ -31,6 +52,7 @@ export interface FilesPoolConfig extends FilesLimits, FdWorkerInput {
 export interface PoolReadPort {
   readonly reader: FixedRootReader
   readonly directory: DirectoryReadPort
+  derivePreparedLeaf(grant: IsolatedLeafGrant): PreparedLeafPort
   stat(relativePath: string, signal?: AbortSignal): Promise<ResidentResult<FsInfo | undefined>>
   streamText(relativePath: string, signal?: AbortSignal): Promise<AsyncIterable<string>>
   readBytes(relativePath: string, maxBytes: number, signal?: AbortSignal): Promise<ResidentResult<Uint8Array<ArrayBuffer>>>
@@ -134,7 +156,8 @@ export class LinuxFilesPool implements DrainParticipant {
    */
   bind(binding: AccountBinding, root: FdRootIdentity, assertCurrent: () => void): PoolReadPort {
     this.assertHealthy()
-    if (!isAbsolute(root.rootPath) || root.rootPath.includes('\0') || root.rootPath.split('/').includes('..')
+    if (root.rootPath.length > this.config.maxPathBytes || !isAbsolute(root.rootPath)
+      || root.rootPath.includes('\0') || root.rootPath.split('/').includes('..')
       || Buffer.byteLength(root.rootPath) > this.config.maxPathBytes
       || !/^\d{1,20}$/.test(root.rootDevice) || !/^\d{1,20}$/.test(root.rootInode)) {
       throw new FdWorkerFailure('FS_PERMISSION_DENIED')
@@ -153,13 +176,7 @@ export class LinuxFilesPool implements DrainParticipant {
     const run = <T>(
       bytes: number, work: (client: FdWorkerClient, control: AbortSignal) => Promise<T>, signal?: AbortSignal,
     ): Promise<ResidentResult<T>> =>
-      port.run(bytes, async (control) => {
-        this.assertHealthy()
-        const slot = this.slots.find(candidate => !candidate.busy && candidate.client.available)
-        if (slot === undefined) throw new FilesFailure('cloud/capacity', 'files has no healthy idle worker slot')
-        slot.busy = true
-        try { return await work(slot.client, control) } finally { slot.busy = false }
-      }, signal)
+      port.run(bytes, control => this.withSlot(false, client => work(client, control)), signal)
     const stat = async (path: string, signal?: AbortSignal): Promise<ResidentResult<FdMetadata | undefined>> => {
       const reservation = pathBytes(path) + 4 * (256 + 64) + this.config.replyOverheadBytes
       return await run(reservation, (client, control) => client.stat(fixedRoot, path, control), signal)
@@ -205,6 +222,36 @@ export class LinuxFilesPool implements DrainParticipant {
     return Object.freeze({
       reader,
       directory,
+      derivePreparedLeaf: (grant: IsolatedLeafGrant): PreparedLeafPort => {
+        checkCurrent()
+        if (grant.binding !== binding
+          || grant.parent.rootPath !== fixedRoot.rootPath || grant.parent.rootDevice !== fixedRoot.rootDevice
+          || grant.parent.rootInode !== fixedRoot.rootInode) throw new FdWorkerFailure('FS_PERMISSION_DENIED')
+        const intent: DirectoryIntent = Object.freeze({ parent: fixedRoot, leaf: grant.leaf })
+        directoryWorkBudget(intent, this.config)
+        const assertWindow = grant.assertExclusive
+        assertWindow()
+        return Object.freeze({ prepare: () => {
+          checkCurrent()
+          assertWindow()
+          const owned = port.prepareDirectory(intent, this.config, async (control, fixed): Promise<DirectoryPrepareOutcome> => {
+            try { assertWindow(); this.assertHealthy() } catch (_error) {
+              return { kind: 'not-created-failure', failure: { errno: 13, phase: 0 } }
+            }
+            if (!this.slots.some(slot => !slot.busy && slot.client.available)) {
+              return { kind: 'not-created-failure', failure: { errno: 11, phase: 0 } }
+            }
+            return await this.withSlot(false, client => client.prepareLeaf(fixed.parent, fixed.leaf, control))
+          })
+          return Object.freeze({ observation: owned.observation, control: Object.freeze({
+            expose: () => { assertWindow(); return owned.control.expose() },
+            cleanup: (signal?: AbortSignal) => owned.control.cleanup(async (identity, control, fixed) => {
+              assertWindow()
+              return await this.withSlot(true, client => client.removeEmptyLeaf(fixed.parent, fixed.leaf, identity, control))
+            }, signal),
+          }) })
+        } })
+      },
       stat: async (path: string, signal?: AbortSignal): Promise<ResidentResult<FsInfo | undefined>> => {
         const held = await stat(path, signal)
         return { value: held.value === undefined ? undefined : nativeInfo(held.value), release: () => { held.release() } }
@@ -264,6 +311,7 @@ export class LinuxFilesPool implements DrainParticipant {
     busy: number
     exited: number
     rootReservedBytes: number
+    work: ReturnType<FilesWorkOwner['inspect']>
   }> {
     return {
       state: this.state, workers: this.slots.length,
@@ -271,6 +319,7 @@ export class LinuxFilesPool implements DrainParticipant {
       busy: this.slots.filter(slot => slot.busy).length,
       exited: this.slots.filter(slot => slot.exited).length,
       rootReservedBytes: this.state === 'closed' ? 0 : this.config.workerCount * this.config.workerReservationBytes,
+      work: this.owner.inspect(),
     }
   }
 
@@ -305,13 +354,24 @@ export class LinuxFilesPool implements DrainParticipant {
     if (this.state === 'closing' || this.state === 'closed') return
     this.state = 'closing'
     this.owner.close()
-    for (const slot of this.slots) void slot.client.close()
-    void Promise.all([this.owner.whenClosed(), ...this.slots.map(slot => slot.client.exited)]).then(() => {
+    void this.owner.whenClosed().then(async () => {
+      for (const slot of this.slots) void slot.client.close()
+      await Promise.all(this.slots.map(slot => slot.client.exited))
       this.state = 'closed'
       this.closed.resolve()
       for (const finish of this.closedObservers) finish()
       this.closedObservers.clear()
     })
+  }
+
+  private async withSlot<T>(cleanup: boolean, work: (client: FdWorkerClient) => Promise<T>): Promise<T> {
+    if (cleanup) {
+      if (this.state !== 'running' && this.state !== 'closing') throw new FdWorkerFailure('FS_IO_ERROR')
+    } else this.assertHealthy()
+    const slot = this.slots.find(candidate => !candidate.busy && candidate.client.available)
+    if (slot === undefined) throw new FilesFailure('cloud/capacity', 'files has no healthy idle worker slot')
+    slot.busy = true
+    try { return await work(slot.client) } finally { slot.busy = false }
   }
 
   private assertHealthy(): void {

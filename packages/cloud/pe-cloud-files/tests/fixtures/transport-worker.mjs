@@ -1,7 +1,7 @@
 /** Test transport only: the gate models a blocked operation, not filesystem confinement. */
 import { parentPort, workerData } from 'node:worker_threads'
 const { mode, gate } = workerData
-if (mode !== 'no-ready') parentPort.postMessage({ kind: 'ready', abiVersion: mode === 'old-abi' ? 3 : 4 })
+if (mode !== 'no-ready') parentPort.postMessage({ kind: 'ready', abiVersion: mode === 'old-abi' ? 4 : mode === 'old-abi3' ? 3 : 5 })
 parentPort.on('message', request => {
   if (mode === 'blocked') {
     const state = new Int32Array(gate)

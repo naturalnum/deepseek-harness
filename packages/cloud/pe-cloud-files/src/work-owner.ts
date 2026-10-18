@@ -141,6 +141,12 @@ export class FilesWorkOwner implements DrainParticipant {
    */
   pending(): readonly OperationId[] { return this.queue.pending() }
 
+  /**
+   * Inspect the existing scheduler without introducing another work table.
+   * @returns Actual global work counts and held reservations, including directory responsibility.
+   */
+  inspect(): ReturnType<FilesWorkQueue['inspect']> { return this.queue.inspect() }
+
   private stopGeneration(binding: AccountBinding): void {
     const generation = this.active.get(binding.accountId)
     if (generation?.binding !== binding) return

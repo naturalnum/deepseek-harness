@@ -2,6 +2,8 @@
 import type { OperationId } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { DirectoryIntent, DirectoryWorkBudget } from './directory-budget.ts'
 import { FilesFailure } from './error.ts'
+import { DirectoryPreparationFailure } from './leaf-frame.ts'
+import type { LeafFailureDetails } from './leaf-frame.ts'
 
 /** A future audited backend supplies decimal identities bounded to 20 digits each. */
 export interface DirectoryCreatedIdentity {
@@ -12,6 +14,9 @@ export interface DirectoryCreatedIdentity {
 /** Only an actual bounded backend result can confirm unchanged state or a newly owned leaf. */
 export type DirectoryPrepareOutcome = { readonly kind: 'unchanged' }
   | { readonly kind: 'created'; readonly identity: DirectoryCreatedIdentity }
+  | { readonly kind: 'not-created-failure'; readonly failure: LeafFailureDetails }
+  | { readonly kind: 'created-known-failure'; readonly identity: DirectoryCreatedIdentity; readonly failure: LeafFailureDetails }
+  | { readonly kind: 'created-unknown-failure'; readonly failure: LeafFailureDetails }
 
 /** Audited component callback receives the queue's frozen intent; it is not a directory backend. */
 export type DirectoryPrepareWork = (signal: AbortSignal, intent: DirectoryIntent) => Promise<DirectoryPrepareOutcome>
@@ -58,7 +63,8 @@ function observationFailure(reason: unknown): Error {
 }
 
 function createdIdentity(value: unknown): DirectoryCreatedIdentity | undefined {
-  if (typeof value !== 'object' || value === null || !('kind' in value) || value.kind !== 'created'
+  if (typeof value !== 'object' || value === null || !('kind' in value)
+    || (value.kind !== 'created' && value.kind !== 'created-known-failure')
     || !('identity' in value) || typeof value.identity !== 'object' || value.identity === null
     || !('device' in value.identity) || !('inode' in value.identity)
     || typeof value.identity.device !== 'string' || !/^\d{1,20}$/.test(value.identity.device)
@@ -70,7 +76,8 @@ function createdIdentity(value: unknown): DirectoryCreatedIdentity | undefined {
 export class DirectoryResponsibility {
   /** Bounded observer and owner controls; neither can assert a registered-project transfer. */
   readonly port: OwnedDirectoryWork
-  private actual: 'pending' | 'created' | 'unchanged' | 'unknown' | 'cancelled' = 'pending'
+  private actual: 'pending' | 'created' | 'unchanged' | 'unknown' | 'cancelled' | 'not-created' = 'pending'
+  private failure: LeafFailureDetails | undefined
   private identity: DirectoryCreatedIdentity | undefined
   private exposed = false
   private released = false
@@ -93,7 +100,7 @@ export class DirectoryResponsibility {
         expose: () => {
           this.assertBusiness()
           if (this.cleanupState !== 'idle' || (this.released && this.actual !== 'unchanged')
-            || this.actual === 'unknown' || this.actual === 'cancelled') throw unavailable()
+            || this.actual === 'unknown' || this.actual === 'cancelled' || this.failure !== undefined) throw unavailable()
           this.exposed = true
           const parent = this.intent.parent.rootPath
           return `${parent === '/' ? '' : parent}/${this.intent.leaf}`
@@ -119,6 +126,14 @@ export class DirectoryResponsibility {
    * @returns Notification to run after the queue has released running/I/O capacity.
    */
   prepared(result: { kind: 'success'; value: unknown } | { kind: 'failure'; reason: unknown }, invoked: boolean): () => void {
+    const value = result.kind === 'success' ? result.value : undefined
+    if (typeof value === 'object' && value !== null && 'failure' in value
+      && typeof value.failure === 'object' && value.failure !== null && 'errno' in value.failure && 'phase' in value.failure
+      && typeof value.failure.errno === 'number' && Number.isInteger(value.failure.errno) && value.failure.errno > 0
+      && value.failure.errno <= 4095 && typeof value.failure.phase === 'number'
+      && Number.isInteger(value.failure.phase) && value.failure.phase >= 0 && value.failure.phase <= 8) {
+      this.failure = Object.freeze({ errno: value.failure.errno, phase: value.failure.phase })
+    }
     if (!invoked) {
       this.actual = 'cancelled'
       this.releaseOnce()
@@ -126,12 +141,17 @@ export class DirectoryResponsibility {
       && 'kind' in result.value && result.value.kind === 'unchanged') {
       this.actual = 'unchanged'
       this.releaseOnce()
+    } else if (typeof value === 'object' && value !== null && 'kind' in value
+      && value.kind === 'not-created-failure' && this.failure !== undefined) {
+      this.actual = 'not-created'
+      this.releaseOnce()
     } else {
       this.identity = result.kind === 'success' ? createdIdentity(result.value) : undefined
       this.actual = this.identity === undefined ? 'unknown' : 'created'
     }
     return () => {
       if (result.kind === 'failure') this.reject(result.reason)
+      else if (this.failure !== undefined) this.reject(this.preparationFailure())
       else if (this.actual === 'created' || this.actual === 'unchanged') this.resolve(this.actual)
       else this.reject(unavailable())
     }
@@ -174,6 +194,7 @@ export class DirectoryResponsibility {
   private waitPrepared(signal?: AbortSignal): Promise<'created' | 'unchanged'> {
     if (signal?.aborted) return Promise.reject(observationFailure(signal.reason))
     if (this.stopped) return Promise.reject(new FilesFailure('cloud/stale-generation', 'directory generation is stopping'))
+    if (this.failure !== undefined) return Promise.reject(this.preparationFailure())
     if (this.actual === 'created' || this.actual === 'unchanged') return Promise.resolve(this.actual)
     if (this.actual !== 'pending') return Promise.reject(unavailable())
     return this.observe('prepare', signal).then((value) => {
@@ -228,5 +249,10 @@ export class DirectoryResponsibility {
     if (this.released) return
     this.released = true
     this.release()
+  }
+
+  private preparationFailure(): DirectoryPreparationFailure {
+    return new DirectoryPreparationFailure(this.actual === 'not-created' ? 'not-created'
+      : this.actual === 'created' ? 'created-known' : 'unknown', this.failure ?? { errno: 5, phase: 0 })
   }
 }
