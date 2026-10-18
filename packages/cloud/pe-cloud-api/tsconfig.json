@@ -40,6 +40,9 @@
     },
     {
       "path": "../../core/agent-loop"
+    },
+    {
+      "path": "../../credentials/credentials-local"
     }
   ]
 }
