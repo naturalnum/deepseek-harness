@@ -36,6 +36,7 @@ import {
 } from '@deepseek-ai/dsh-typert-protocol'
 import type {
   InvokeRemoteRequest,
+  RemoteEventQueueLimits,
   TypertGateway,
   TypertGatewayErrorCode,
   TypertGatewayWireStream,
@@ -75,6 +76,7 @@ import {
 
 export type {
   InvokeRemoteRequest,
+  RemoteEventQueueLimits,
   TypertGateway,
   TypertGatewayErrorCode,
   TypertGatewayWireStream,
@@ -124,6 +126,7 @@ interface RegisteredRemoteEventSource {
   readonly lifetime: AbortController
   readonly done: Promise<void>
   readonly host: RemoteEventHostInfo
+  readonly limits?: RemoteEventQueueLimits
 }
 
 interface RemoteEventClient {
@@ -374,24 +377,30 @@ export class TypertGatewayService extends Service implements TypertGateway {
    * Register the sole application-selected forwarded-event source.
    * @param source - stream factory installed by the Remote assembly.
    * @param host - stable Host facts included in each Client generation's opening frame.
+   * @param limits - optional positive finite per-client item, resident-byte and complete-frame limits; no defaults.
    * @returns disposer removing this source and cancelling its active streams.
    */
   registerRemoteEvents(
     source: TypertRemoteEventSource,
     host: RemoteEventHostInfo,
+    limits?: RemoteEventQueueLimits,
   ): () => Promise<void> {
+    const queueLimits = limits === undefined ? undefined : remoteEventQueueLimits(limits)
     if (this.remoteEvents !== undefined) {
       throw new Error('typert gateway: forwarded Remote event source is already registered')
     }
     const lifetime = new AbortController()
     const stream = source(lifetime.signal)
+    let failure: { readonly error: unknown } | undefined
     const done = this.consumeRemoteEvents(stream, lifetime.signal).catch((error: unknown) => {
+      if (queueLimits !== undefined && !isStreamCancellation(error, lifetime.signal)) failure ??= { error }
       if (this.remoteEvents?.lifetime !== lifetime || lifetime.signal.aborted) return
       this.closeRemoteEvents(error)
       this.remoteEvents = undefined
       lifetime.abort(error)
     })
-    const registration: RegisteredRemoteEventSource = { lifetime, done, host: { home: host.home } }
+    const registration: RegisteredRemoteEventSource = { lifetime, done, host: { home: host.home },
+      ...queueLimits === undefined ? {} : { limits: queueLimits } }
     this.remoteEvents = registration
     return async () => {
       if (this.remoteEvents === registration) {
@@ -401,6 +410,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
         this.closeRemoteEvents(error)
       }
       await registration.done
+      if (failure !== undefined) throw failure.error
     }
   }
 
@@ -603,19 +613,22 @@ export class TypertGatewayService extends Service implements TypertGateway {
     const client: RemoteEventClient = {
       peer,
       id: clientId,
-      queue: new RemoteEventQueue(),
+      queue: new RemoteEventQueue(registration.limits),
       signal: lifetime,
       deliveries: new Map(),
       principal: peer.principal,
       // oxlint-disable-next-line typescript/no-unnecessary-condition -- other packages merge non-owner kinds into PrincipalMap.
       answers: peer.principal.kind === 'owner',
     }
+    const ready = { ...REMOTE_EVENT_STREAM_READY, clientId, host: registration.host }
+    client.queue.frameBytes(ready)
     this.remoteEventClients.set(clientId, client)
-    if (client.answers) {
-      for (const pending of this.pendingRemoteEvents.values()) this.deliverRemoteEvent(pending, client)
-    }
     try {
-      yield { ...REMOTE_EVENT_STREAM_READY, clientId, host: registration.host }
+      if (client.answers) {
+        for (const pending of this.pendingRemoteEvents.values()) this.deliverRemoteEvent(pending, client)
+      }
+      client.queue.assertAvailable()
+      yield ready
       yield* client.queue.iterate(lifetime)
     } finally {
       this.removeRemoteEventClient(client)
@@ -659,7 +672,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
         if (resources === undefined) continue
         if (this.ctx.remoteAccess.decide({ principal: client.principal, action: `event:${frame.event}`, resources }).kind === 'deny') continue
       }
-      client.queue.push(wire)
+      this.queueRemoteEvent(client, wire)
     }
   }
 
@@ -729,7 +742,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
   private deliverRemoteEvent(pending: PendingRemoteEvent, client: RemoteEventClient): void {
     pending.deliveries.add(client)
     client.deliveries.set(pending.id, pending)
-    client.queue.push(pending.frame)
+    this.queueRemoteEvent(client, pending.frame)
   }
 
   private receiveRemoteEventResult(
@@ -756,6 +769,10 @@ export class TypertGatewayService extends Service implements TypertGateway {
   private removeRemoteEventDelivery(pending: PendingRemoteEvent, client: RemoteEventClient): void {
     pending.deliveries.delete(client)
     client.deliveries.delete(pending.id)
+  }
+
+  private queueRemoteEvent(client: RemoteEventClient, frame: RemoteEventWireFrame): void {
+    if (!client.queue.push(frame)) this.removeRemoteEventClient(client)
   }
 
   private removeRemoteEventClient(client: RemoteEventClient): void {
@@ -785,7 +802,7 @@ export class TypertGatewayService extends Service implements TypertGateway {
       type: 'cancel',
       eventId: pending.id,
     }
-    for (const client of clients) client.queue.push(cancellation)
+    for (const client of clients) this.queueRemoteEvent(client, cancellation)
   }
 
   private closeRemoteEvents(reason: unknown): void {
@@ -1213,27 +1230,66 @@ type RemoteEventWireFrame =
   | RemoteEventInvocationFrame
   | RemoteEventCancellationFrame
 
+function remoteEventQueueLimits(input: RemoteEventQueueLimits): Readonly<RemoteEventQueueLimits> {
+  for (const value of [input.maxQueuedEvents, input.maxQueuedBytes, input.maxFrameBytes]) {
+    if (!Number.isSafeInteger(value) || value < 1) throw new TypeError('Remote event queue limits must be positive finite safe integers')
+  }
+  return Object.freeze({ maxQueuedEvents: input.maxQueuedEvents, maxQueuedBytes: input.maxQueuedBytes,
+    maxFrameBytes: input.maxFrameBytes })
+}
+
 /** Pull-driven queue owned by one connected Client event generation. */
 class RemoteEventQueue {
-  private readonly frames = new Deque<RemoteEventWireFrame>()
+  private readonly frames = new Deque<{ readonly frame: RemoteEventWireFrame; readonly bytes: number }>()
   private waiter: (() => void) | undefined
   private closed = false
+  private bytes = 0
+  private failure: { readonly error: unknown } | undefined
 
-  push(frame: RemoteEventWireFrame): void {
-    if (this.closed) return
-    this.frames.pushBack(frame)
-    this.waiter?.()
+  constructor(private readonly limits?: Readonly<RemoteEventQueueLimits>) {}
+
+  frameBytes(frame: RemoteEventWireFrame | RemoteEventReadyFrame): number {
+    if (this.limits === undefined) return 0
+    const bytes = Buffer.byteLength(JSON.stringify(frame), 'utf8')
+    if (bytes > this.limits.maxFrameBytes) throw new RangeError('Remote event frame exceeds its explicit byte limit')
+    return bytes
+  }
+
+  assertAvailable(): void {
+    if (this.failure !== undefined) throw this.failure.error
+  }
+
+  push(frame: RemoteEventWireFrame): boolean {
+    if (this.closed) return false
+    try {
+      if (this.limits !== undefined && this.frames.size >= this.limits.maxQueuedEvents) {
+        throw new RangeError('Remote event client exceeds its explicit queued-event limit')
+      }
+      const bytes = this.frameBytes(frame)
+      if (this.limits !== undefined && bytes > this.limits.maxQueuedBytes - this.bytes) {
+        throw new RangeError('Remote event client exceeds its explicit resident-byte limit')
+      }
+      this.frames.pushBack({ frame, bytes })
+      this.bytes += bytes
+      this.waiter?.()
+      return true
+    } catch (error) {
+      this.failure ??= { error }
+      this.end()
+      return false
+    }
   }
 
   end(): void {
     if (this.closed) return
     this.closed = true
+    if (this.limits !== undefined) { this.frames.clear(); this.bytes = 0 }
     this.waiter?.()
   }
 
   /**
    * Yield buffered and later frames until the queue ends or `signal` aborts.
-   * An abort discards the frames still buffered, so a revoked Peer receives none of them.
+   * Limited queues retain their first overflow failure and discard resident frames on closure.
    * @param signal - Client generation lifetime.
    * @returns the queued wire frames in push order.
    */
@@ -1242,13 +1298,22 @@ class RemoteEventQueue {
     signal.addEventListener('abort', abort, { once: true })
     try {
       while (true) {
-        while (this.frames.size > 0 && !signal.aborted) yield this.frames.popFront() as RemoteEventWireFrame
+        this.assertAvailable()
+        while (this.frames.size > 0 && !signal.aborted) {
+          this.assertAvailable()
+          const item = this.frames.popFront()
+          if (item === undefined) break
+          this.bytes -= item.bytes
+          yield item.frame
+        }
+        this.assertAvailable()
         if (this.closed || signal.aborted) return
         await new Promise<void>((resolve) => { this.waiter = resolve })
         this.waiter = undefined
       }
     } finally {
       signal.removeEventListener('abort', abort)
+      this.end()
     }
   }
 }

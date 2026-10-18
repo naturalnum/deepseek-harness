@@ -104,6 +104,8 @@ A successful `selectModel` response acknowledges the Session-local selection wit
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-api-session-controller) is the exhaustive source for accepted fields and their JSDoc.
 
+A trusted Host subclass may override the protected `controlBufferLimits()` hook to return explicit `SessionControlBufferLimits`: positive finite safe-integer `maxQueuedEvents`, `maxQueuedBytes` and `maxFrameBytes`. The hook runs when each original control generation opens, after construction; its default is `undefined`. Native control validates complete baseline/replacement frame bytes and charges buffered frames before enqueue. Dequeue releases resident bytes; bounded cancellation/disposal clears resident frames. Overflow retains the first error and fails that actual stream without terminating healthy streams or publishing a replacement baseline. Omission preserves existing buffering and the disposal drain. The Remote `control(signal)` signature and Client wire arguments do not change; the hook supplies no Session authorization.
+
 -----
 
 <a id="model-experience"></a>

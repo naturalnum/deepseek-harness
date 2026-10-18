@@ -104,6 +104,8 @@ GUI 模型选择要求确切提供方／模型对出现在可用目录中；不�
 
 生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-api-session-controller)是所有受支持字段及其 JSDoc 的完整来源。
 
+可信 Host 子类可覆盖 protected `controlBufferLimits()` hook，返回显式 `SessionControlBufferLimits`：正数、有限安全整数 `maxQueuedEvents`、`maxQueuedBytes` 和 `maxFrameBytes`。Hook 在构造完成后、每次原 control 流代际打开时读取，默认返回 `undefined`。原生 control 校验完整 baseline/替换帧字节，并在入队前对缓冲帧计费。退队释放驻留字节；有预算的取消/销毁会清空驻留帧。超限保留首个错误，使对应实际流失败，不终止健康流，也不发布替代 baseline。省略时保留既有缓冲和销毁后的排空行为。Remote `control(signal)` 签名及 Client wire 参数不变；hook 不提供 Session 授权。
+
 -----
 
 <a id="model-experience"></a>

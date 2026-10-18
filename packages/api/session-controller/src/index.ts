@@ -24,7 +24,7 @@ import {
   type ApiSessionAgentResult,
 } from './agent.ts'
 import { SessionCommandController, hasPromptContent } from './commands.ts'
-import { SessionControlController } from './control.ts'
+import { SessionControlController, type SessionControlBufferLimits } from './control.ts'
 import { SessionHistoryController } from './history.ts'
 import { SessionFileReferences } from './file-references.ts'
 import { ApiSessionList } from './list.ts'
@@ -71,6 +71,7 @@ import type {
 
 export type * from './types.ts'
 export { ApiSessionNotFound } from './agent.ts'
+export type { SessionControlBufferLimits } from './control.ts'
 export { SessionFileReferences } from './file-references.ts'
 export { SessionSkillCatalog } from './skill-catalog.ts'
 
@@ -611,13 +612,20 @@ export class SessionController extends TypertRemoteService {
   }
 
   /**
+   * Supply optional explicit native control-buffer limits when a control generation opens.
+   * The hook runs after construction; omission keeps the original native buffering behavior.
+   * @returns per-generation queue/frame limits, or undefined for unchanged native behavior.
+   */
+  protected controlBufferLimits(): SessionControlBufferLimits | undefined { return undefined }
+
+  /**
    * Stream a complete live-control baseline followed by replacement frames.
    * @param signal - cancellation owned by the Remote stream carrier.
    * @returns one complete baseline followed by live replacement frames.
    */
   @Remote({ mode: 'stream' })
   async *control(signal: AbortSignal): AsyncIterable<SessionControlFrame> {
-    for await (const frame of this.controlState.control(signal)) {
+    for await (const frame of this.controlState.control(signal, this.controlBufferLimits())) {
       switch (frame.type) {
         case 'baseline': {
           const projections = Object.fromEntries(Object.entries(frame.value.projections)
