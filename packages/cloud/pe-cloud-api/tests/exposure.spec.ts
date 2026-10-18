@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import z from '@deepseek-ai/schemastery'
 import ExposureService from '../src/root.ts'
 import { ExposurePolicy } from '../src/exposure.ts'
 import { ExposureManifestSchema } from '../src/schema.ts'
@@ -102,7 +103,7 @@ describe('reviewed exposure', () => {
     expect(() => new ExposurePolicy({ ...input, exactFetchRoutes: [{
       method: 'POST', path: '/api/session/prompt', handlerId: 'native/other', guard: 'authenticated-account',
     }] })).toThrow('shadow')
-    expect(() => ExposureManifestSchema({ recipeVersion: 'd08-m0' })).toThrow()
+    expect(() => z.resolve({ recipeVersion: 'd08-m0' }, ExposureManifestSchema, {})).toThrow()
   })
 
   it('revokes a root policy when its fiber is disposed and refuses incomplete account mount', async () => {
@@ -119,7 +120,7 @@ describe('reviewed exposure', () => {
     policy.audit(manifest())
     await fiber.dispose()
     expect(() => policy.requireRpc('session/prompt')).toThrow()
-    expect(() => mountAccount(ctx, {})).toThrow(expect.objectContaining({ code: 'cloud/account-unavailable' }))
+    expect(() => { mountAccount(ctx, {}) }).toThrow(expect.objectContaining({ code: 'cloud/account-unavailable' }))
     await ctx.fiber.dispose()
   })
 })

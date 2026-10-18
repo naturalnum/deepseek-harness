@@ -3,7 +3,8 @@ import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
 import { createContext, runInContext } from 'node:vm'
 import { Context, FiberState } from '@deepseek-ai/cordis'
-import Loader from '@deepseek-ai/cordis-plugin-loader'
+import Loader, { type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
+import z from '@deepseek-ai/schemastery'
 import { bootInjections, ClientModuleRegistry } from '@deepseek-ai/dsh-client-modules'
 import { parseBootManifest, stripClientSuffix, type ClientModuleLoaderTarget } from '@deepseek-ai/dsh-client-modules/client'
 import { getStaticModules } from '@deepseek-ai/dsh-client-web'
@@ -53,6 +54,10 @@ async function composition() {
   return ctx
 }
 
+async function appendEntry(ctx: Context, entry: EntryOptions): Promise<void> {
+  await ctx.loader.root.update([...ctx.loader.root.data, entry])
+}
+
 function rows(ctx: Context): IndexInjection[] {
   const table: IndexInjection[] = []
   ctx.emit('webserver/index-inject', table)
@@ -82,8 +87,8 @@ describe('existing Cloud declaration public Web injection', () => {
 
   it('owns one detached structured global row until its declaration is disposed', async () => {
     const ctx = await composition(), input = manifest()
-    await ctx.loader.create({ id: 'modules', name: 'cordis:modules' })
-    await ctx.loader.create({ id: 'cloud', name: 'cordis:cloud', inject: ['clientModules'], config: { web: input } })
+    await appendEntry(ctx, { id: 'modules', name: 'cordis:modules' })
+    await appendEntry(ctx, { id: 'cloud', name: 'cordis:cloud', inject: ['clientModules'], config: { web: input } })
     await ctx.loader.await()
     const fiber = ctx.loader.resolve('cloud').fiber
     if (fiber === undefined) throw new Error('Actual Cloud declaration did not import')
@@ -100,7 +105,7 @@ describe('existing Cloud declaration public Web injection', () => {
 
   it('rejects missing budgets before contributing any row', async () => {
     const ctx = new Context(), rows: IndexInjection[] = []
-    expect(() => Config({ web: { ...manifest(), auth: {} } })).toThrow()
+    expect(() => z.resolve({ web: { ...manifest(), auth: {} } }, Config, {})).toThrow()
     ctx.emit('webserver/index-inject', rows)
     expect(rows).toEqual([])
     await ctx.fiber.dispose()
@@ -108,7 +113,8 @@ describe('existing Cloud declaration public Web injection', () => {
 
   it('rejects extra authentication identity before registering its injection', async () => {
     const ctx = new Context(), rows: IndexInjection[] = []
-    await expect(apply(ctx, Config({ web: { ...manifest(), token: 'unsupported' } }))).rejects.toThrow()
+    const input = { web: { ...manifest(), token: 'unsupported' } }
+    await expect(apply(ctx, Config(input))).rejects.toThrow()
     ctx.emit('webserver/index-inject', rows)
     expect(rows).toEqual([])
     await ctx.fiber.dispose()
@@ -126,12 +132,12 @@ describe('existing Cloud declaration public Web injection', () => {
 
   it.each([false, true])('supplies module-only Connection and fixed browser services before activation (providerFirst=%s)', async (providerFirst) => {
     const ctx = await composition()
-    if (providerFirst) await ctx.loader.create({ id: 'modules', name: 'cordis:modules' })
-    await ctx.loader.create({ id: 'cloud', name: 'cordis:cloud', inject: ['clientModules'], config: { web: manifest() } })
+    if (providerFirst) await appendEntry(ctx, { id: 'modules', name: 'cordis:modules' })
+    await appendEntry(ctx, { id: 'cloud', name: 'cordis:cloud', inject: ['clientModules'], config: { web: manifest() } })
     if (!providerFirst) {
       expect(ctx.loader.resolve('cloud').fiber?.state).toBe(FiberState.PENDING)
       expect(rows(ctx)).toEqual([])
-      await ctx.loader.create({ id: 'modules', name: 'cordis:modules' })
+      await appendEntry(ctx, { id: 'modules', name: 'cordis:modules' })
     }
     await ctx.loader.await()
     expect(ctx.loader.resolve('cloud').fiber?.state).toBe(FiberState.ACTIVE)
@@ -156,15 +162,15 @@ describe('existing Cloud declaration public Web injection', () => {
 
   it('closes the whole browser manifest through the actual Registry and fourteen published UI declarations', async () => {
     const ctx = await composition(), resolveHost = createRequire(HOST_BASE_URL)
-    await ctx.loader.create({ id: 'modules', name: 'cordis:modules' })
+    await appendEntry(ctx, { id: 'modules', name: 'cordis:modules' })
     // Builtin source-test rows have no package metadata; supply their real browser exports through the original registry.
     ctx.effect(() => ctx.clientModules.registerClientPackages([
       '@deepseek-ai/dsh-client-modules', '@deepseek-ai/dsh-pe-cloud-client',
     ], HOST_BASE_URL), 'test: actual browser faces for source-test Loader builtins')
     for (const row of FIRST_SCREEN_UI_ROWS) {
-      await ctx.loader.create({ ...row, name: pathToFileURL(resolveHost.resolve(row.name)).href })
+      await appendEntry(ctx, { ...row, name: pathToFileURL(resolveHost.resolve(row.name)).href })
     }
-    await ctx.loader.create({ id: 'cloud', name: 'cordis:cloud', inject: ['clientModules'], config: { web: manifest() } })
+    await appendEntry(ctx, { id: 'cloud', name: 'cordis:cloud', inject: ['clientModules'], config: { web: manifest() } })
     await ctx.loader.await()
     for (const id of ['modules', 'cloud', ...FIRST_SCREEN_UI_ROWS.map(row => row.id)]) {
       expect(ctx.loader.resolve(id).fiber?.state, id).toBe(FiberState.ACTIVE)
@@ -236,7 +242,7 @@ describe('existing Cloud declaration public Web injection', () => {
   it('rejects Web configuration without the original row dependency instead of publishing an incomplete manifest', async () => {
     const ctx = await composition()
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    await ctx.loader.create({ id: 'cloud', name: 'cordis:cloud', config: { web: manifest() } })
+    await appendEntry(ctx, { id: 'cloud', name: 'cordis:cloud', config: { web: manifest() } })
     await ctx.loader.await()
     const fiber = ctx.loader.resolve('cloud').fiber
     expect(fiber?.state).toBe(FiberState.FAILED)
@@ -247,16 +253,14 @@ describe('existing Cloud declaration public Web injection', () => {
 
   it('joins the actual async module withdrawal before native Cloud disposal completes', async () => {
     const ctx = await composition(), held = Promise.withResolvers<undefined>()
-    await ctx.loader.create({ id: 'modules', name: 'cordis:modules' })
-    const register = Reflect.get(ClientModuleRegistry.prototype, 'registerClientPackages')
+    await appendEntry(ctx, { id: 'modules', name: 'cordis:modules' })
+    const register = ctx.clientModules.registerClientPackages.bind(ctx.clientModules)
     let withdrawing = false, holdWithdrawals = false
-    vi.spyOn(ClientModuleRegistry.prototype, 'registerClientPackages').mockImplementation(function (
-      this: ClientModuleRegistry, packages, baseUrl, options,
-    ) {
-      const remove = register.call(this, packages, baseUrl, options)
+    vi.spyOn(ctx.clientModules, 'registerClientPackages').mockImplementation((packages, baseUrl, options) => {
+      const remove = register(packages, baseUrl, options)
       return async () => { withdrawing = true; if (holdWithdrawals) await held.promise; await remove() }
     })
-    await ctx.loader.create({ id: 'cloud', name: 'cordis:cloud', inject: ['clientModules'], config: { web: manifest() } })
+    await appendEntry(ctx, { id: 'cloud', name: 'cordis:cloud', inject: ['clientModules'], config: { web: manifest() } })
     await ctx.loader.await()
     await ctx.loader.resolve('cloud').fiber?.await()
     holdWithdrawals = true
@@ -277,8 +281,8 @@ describe('existing Cloud declaration public Web injection', () => {
       await gate.promise
       new ClientModuleRegistry(scope)
     } }
-    await ctx.loader.create({ id: 'cloud', name: 'cordis:cloud', inject: ['clientModules'], config: { web: manifest() } })
-    await ctx.loader.create({ id: 'modules', name: 'cordis:delayedModules' })
+    await appendEntry(ctx, { id: 'cloud', name: 'cordis:cloud', inject: ['clientModules'], config: { web: manifest() } })
+    await appendEntry(ctx, { id: 'modules', name: 'cordis:delayedModules' })
     let settled = false
     const startup = ctx.loader.await().then(() => { settled = true })
     try {
@@ -296,9 +300,9 @@ describe('existing Cloud declaration public Web injection', () => {
   it('retains original registration failure on the Cloud Loader entry and publishes no manifest', async () => {
     const ctx = await composition()
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    await ctx.loader.create({ id: 'modules', name: 'cordis:modules' })
+    await appendEntry(ctx, { id: 'modules', name: 'cordis:modules' })
     const remove = ctx.clientModules.registerClientPackages(['@deepseek-ai/dsh-client-connection'], HOST_BASE_URL, { activate: false })
-    await ctx.loader.create({ id: 'cloud', name: 'cordis:cloud', inject: ['clientModules'], config: { web: manifest() } })
+    await appendEntry(ctx, { id: 'cloud', name: 'cordis:cloud', inject: ['clientModules'], config: { web: manifest() } })
     await ctx.loader.await()
     const fiber = ctx.loader.resolve('cloud').fiber
     expect(fiber?.state).toBe(FiberState.FAILED)
@@ -311,9 +315,9 @@ describe('existing Cloud declaration public Web injection', () => {
   it('withdraws module-only Connection if the fixed BFF batch fails before public injection', async () => {
     const ctx = await composition()
     vi.spyOn(console, 'error').mockImplementation(() => {})
-    await ctx.loader.create({ id: 'modules', name: 'cordis:modules' })
+    await appendEntry(ctx, { id: 'modules', name: 'cordis:modules' })
     const remove = ctx.clientModules.registerClientPackages(['@deepseek-ai/dsh-api-remotes'], HOST_BASE_URL, { activate: true })
-    await ctx.loader.create({ id: 'cloud', name: 'cordis:cloud', inject: ['clientModules'], config: { web: manifest() } })
+    await appendEntry(ctx, { id: 'cloud', name: 'cordis:cloud', inject: ['clientModules'], config: { web: manifest() } })
     await ctx.loader.await()
     const fiber = ctx.loader.resolve('cloud').fiber
     expect(fiber?.state).toBe(FiberState.FAILED)

@@ -136,7 +136,10 @@ export class CloudIngress {
    */
   invalidateLogin(loginId: AuthenticatedPrincipal['authSessionId']): Promise<void> { return this.peers.invalidateLogin(loginId) }
 
-  /** @returns Actual registrations, owner/Web identity and operation counts; never calls assertRecipeSealed. */
+  /**
+   * Inspect retained ingress state without opening business admission.
+   * @returns Actual registrations, owner/Web identity and operation counts; never calls assertRecipeSealed.
+   */
   observe(): IngressObservation {
     const web = this.ctx.get('webServer')
     const original = (value: object): object => {

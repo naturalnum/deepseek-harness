@@ -194,7 +194,7 @@ it('admits Settings and direct editor saves once through required application un
     'settings/write', 'settings/write', 'settings/write', 'config-editor/edit', 'agent-default-model/saveSelection',
   ])
   expect(tracked.pending.size).toBe(0)
-  expect(ctx.settings.describe().find(row => row.ns === 'first')!.value.count).toBe(7)
+  expect(ctx.settings.describe().find(row => row.ns === 'first')!.value).toMatchObject({ count: 7 })
   expect(ctx.agentDefaultModel.currentSelection().model).toBe('nested')
 })
 
@@ -211,7 +211,7 @@ it('denies Settings and direct editor saves before file or live-value mutation',
   expect(mutate).not.toHaveBeenCalled()
   expect(fs.rename).not.toHaveBeenCalled()
   expect(readFileSync(profile.patchPath, 'utf8')).toBe(before)
-  expect(ctx.settings.describe().find(row => row.ns === 'first')!.value.count).toBe(2)
+  expect(ctx.settings.describe().find(row => row.ns === 'first')!.value).toMatchObject({ count: 2 })
   expect(tracked.submitted).toEqual([])
 })
 
@@ -223,7 +223,8 @@ it('retains Settings publication failure after a committed editor operation', as
   const describe = ctx.settings.describe.bind(ctx.settings)
   vi.spyOn(ctx.settings, 'describe').mockImplementation((...args) => {
     const rows = describe(...args)
-    if (rows.find(row => row.ns === 'first')!.value.count === 8) throw failure
+    const value = rows.find(row => row.ns === 'first')!.value
+    if (value !== null && typeof value === 'object' && 'count' in value && value.count === 8) throw failure
     return rows
   })
   await expect(ctx.settings.update('first', { count: 8 })).rejects.toBe(failure)
@@ -253,7 +254,7 @@ it('does not re-enter a single-slot admission queue from nested editor saves', a
   ])
   expect(writers).toEqual(['settings/write', 'agent-default-model/saveSelection', 'config-editor/edit'])
   expect(ctx.agentDefaultModel.currentSelection().model).toBe('queued')
-  expect(ctx.settings.describe().find(row => row.ns === 'first')!.value.count).toBe(5)
+  expect(ctx.settings.describe().find(row => row.ns === 'first')!.value).toMatchObject({ count: 5 })
 })
 
 it('re-admits a detached continuation after its original save settles, including rejection', async () => {
@@ -311,5 +312,5 @@ it('admits legacy rename separately from each section and retains a caught secti
   expect(String(tracked.failures[0])).toContain('No configurable plugin entry "missing"')
   expect(tracked.pending.size).toBe(0)
   expect(existsSync(legacy)).toBe(false)
-  expect(restored.settings.describe().find(row => row.ns === 'first')!.value.count).toBe(4)
+  expect(restored.settings.describe().find(row => row.ns === 'first')!.value).toMatchObject({ count: 4 })
 })

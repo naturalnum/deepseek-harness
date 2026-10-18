@@ -17,7 +17,10 @@ export class StreamCapacity {
   /** @param limits Explicit root/global/account/Peer capacities. */
   constructor(private readonly limits: Limits) {}
 
-  /** @returns Actual retained slots, including unknown cleanup. */
+  /**
+   * Count logical streams retained through actual settlement.
+   * @returns Actual retained slots, including unknown cleanup.
+   */
   get pending(): number { return this.total }
 
   /**
