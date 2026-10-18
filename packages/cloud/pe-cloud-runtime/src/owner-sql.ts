@@ -32,6 +32,13 @@ SET heartbeat_at = statement_timestamp(), updated_at = statement_timestamp()
 WHERE account_id = $1 AND owner_instance_id = $2 AND epoch = $3::bigint
 RETURNING ${projection}`
 
+/** Commit only an exact mounting generation and approved recipe; no graph or provider is inspected here. */
+export const readyOwnerSql = `UPDATE public.pe_account_owners
+SET phase = 'ready', updated_at = statement_timestamp()
+WHERE account_id = $1 AND owner_instance_id = $2 AND epoch = $3::bigint
+  AND phase = 'mounting' AND recipe_version = $4
+RETURNING ${projection}`
+
 /** Known setup cleanup or a ready graph can enter draining; this never publishes ready or unquarantines. */
 export const beginOwnerDrainSql = `UPDATE public.pe_account_owners
 SET phase = 'draining', updated_at = statement_timestamp()

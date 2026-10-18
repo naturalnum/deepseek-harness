@@ -61,6 +61,8 @@ Provider 经根服务登记必需的 `files` 和 `execution` 参与者。登记�
 
 `claim()` 对不存在的行要求 null，对 unowned 行要求精确旧 epoch。parked 行仅可由保留的实例领取。每次成功领取递增保留的 bigint epoch，并返回 mounting 元数据。相同的本地在途领取共享一次数据库 Promise，数量受 `maxConcurrentMounts` 限制；账户工厂仍须合并完整图装配。Heartbeat 只更新观察时间，不授权接管。
 
+私有工厂只有在实际图、provider、保存及暴露清单审核成功后，才能调用 `ready(expected, recipeVersion)`。CAS 只接受账户、进程实例、epoch 和配方精确匹配的 mounting 元数据；旧代、重复或不匹配提交均拒绝。它不执行这些审核，也不发布 `AccountUse`。已提交写入失败时保留未知结果责任。
+
 `beginDrain()` 接受 ready 图或 mounting 图的已知清理，不发布 ready 或解除隔离。之后，`release()` 和 `park()` 要求完整且匹配的 runtime 证据：原生 idle、配置保存 confirmed、两个参与者 confirmed、持久化已 flush、Context 已 dispose 且无销毁错误。匹配但不完整的证据改为隔离 owner。隔离态没有普通释放或领取出口。Store 保留 unowned 行，不删除或重置 epoch；epoch 从不转为 Number。
 
 被拒绝的 mutation 可能已经提交而结果未知。Store 保留该账户及尝试的 epoch，关闭该账户后续写入，并允许读取状态，不重放或自动解除未知。其他账户继续受正常 CAS 及容量规则约束。每次 mutation 前预留责任记录；未知记录保留在配置上界内，耗尽时拒绝新观察，不丢弃旧记录。迁移失败使整个 store 保持关闭。完整 runtime 必须经可信生命周期完成对账；构造存储 adapter 不代表获准恢复。

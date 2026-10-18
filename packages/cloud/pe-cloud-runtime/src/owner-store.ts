@@ -3,7 +3,7 @@ import { AccountRuntimeError } from './errors.ts'
 import { OwnerPgNotSubmittedError } from './owner-pg-errors.ts'
 import { accountOwnerMigrationSql } from './migrations/account-owners.ts'
 import { ownerEpoch, readOwnerRow } from './owner-row.ts'
-import { beginOwnerDrainSql, claimOwnerSql, finishOwnerDrainSql, heartbeatOwnerSql, locateOwnerSql, quarantineOwnerSql } from './owner-sql.ts'
+import { beginOwnerDrainSql, claimOwnerSql, finishOwnerDrainSql, heartbeatOwnerSql, locateOwnerSql, quarantineOwnerSql, readyOwnerSql } from './owner-sql.ts'
 import { RuntimeConfigSchema } from './schema.ts'
 import type { AccountId, AccountOwner, OwnerEpoch, RuntimeConfig } from './types.ts'
 import type { OwnerClaim, OwnerDrainEvidence, OwnerExpectation, OwnerPgExecutor, OwnerStoreIdentity } from './owner-types.ts'
@@ -97,6 +97,21 @@ export class PostgresOwnerStore {
    */
   heartbeat(expected: OwnerExpectation): Promise<AccountOwner> {
     return this.mutate(heartbeatOwnerSql, this.expectedValues(expected), expected)
+  }
+
+  /**
+   * Commit mounting metadata after the private factory has verified its actual graph and providers.
+   * This CAS does not perform that audit, publish AccountUse, or authorize a caller-supplied ready flag.
+   * A rejected submitted write retains the same unknown-result responsibility as other mutations.
+   * @param expected Exact account and epoch owned by this store's process instance.
+   * @param recipeVersion Approved recipe already verified by the factory for this mounting graph.
+   * @returns Ready metadata only when phase, instance, epoch and recipe still match.
+   */
+  ready(expected: OwnerExpectation, recipeVersion: string): Promise<AccountOwner> {
+    if (recipeVersion.length === 0) {
+      throw new AccountRuntimeError('cloud/invalid-config', 'Owner readiness requires an approved recipe version')
+    }
+    return this.mutate(readyOwnerSql, [...this.expectedValues(expected), recipeVersion], expected)
   }
 
   /**
