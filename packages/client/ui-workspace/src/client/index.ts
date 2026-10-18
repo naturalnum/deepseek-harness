@@ -116,7 +116,7 @@ export function apply(ctx: Context): void {
   // store: the browser declares the handle, and the UiWorkspace service writes
   // view order through the same instance the renderer hands the browser.
   const viewHandle = createWorkspaceViewStore()
-  const viewInstance = viewHandle.create()
+  const viewInstance = viewHandle.create(undefined, ctx.get('clientPersistence'))
   const viewStore: typeof viewHandle = { ...viewHandle, create: () => viewInstance }
   const rowToast = createSnapshotStore<RowToastState | null>(null)
   let toastSeq = 0

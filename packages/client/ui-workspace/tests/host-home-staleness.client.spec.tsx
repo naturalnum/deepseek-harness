@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { createSnapshotStore, type ClientPersistence } from '@deepseek-ai/dsh-client-store'
 /**
  * Host home reaches the browsing region through the assembled renderer, which
  * memoizes a root entry's inject result for the whole registration — so a home
@@ -14,6 +14,8 @@ import type { PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import { SlotTestRuntime, usePinnedBrowserLanguages } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { apply, inject } from '@deepseek-ai/dsh-client-ui-workspace/client'
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
+import type { WorkspaceViewStoreHandle } from '../src/client/contract/slots.ts'
 
 usePinnedBrowserLanguages('zh-CN')
 
@@ -27,8 +29,9 @@ function SidebarFrame({ renderSlot }: FrameProps) {
 }
 
 /** The assembled sidebar over one Workspace inside the POSIX home the Host reports. */
-async function bench() {
+async function bench(persistence?: ClientPersistence) {
   const runtime = await SlotTestRuntime.create()
+  if (persistence !== undefined) runtime.ctx.provide('clientPersistence', persistence)
   runtime.ctx.provide('shortcuts', { register: () => () => {}, catalog: createSnapshotStore([]) })
   runtime.ctx.provide('uiConversation', {})
   runtime.ctx.provide('layout', { selectPanel: vi.fn(), beginNavigation: () => new AbortController().signal })
@@ -66,6 +69,63 @@ function closeHoverCard(): void {
   fireEvent.pointerLeave(row)
   act(() => { vi.advanceTimersByTime(800) })
 }
+
+function viewingStore(runtime: SlotTestRuntime) {
+  const handle = runtime.slots.entries('sidebar.workspaces')[0]?.store as WorkspaceViewStoreHandle | undefined
+  if (handle === undefined) throw new Error('Actual Workspace browser viewing store absent')
+  return { handle, instance: handle.create() }
+}
+
+describe('Workspace viewing persistence through apply', () => {
+  const key = 'dsh.workspace.view.v5'
+  const raw = JSON.stringify({ groupBy: 'workspace-tree', orderBy: 'updated', groupExpansion: {}, sessionOrderByAccount: {} })
+
+  it('captures each page port before reading and keeps retired view writes away from the other page and raw cache', async () => {
+    localStorage.setItem(key, raw)
+    const cache = () => {
+      const data = new Map<string, string>()
+      let active = true
+      const current = () => { if (!active) throw new Error('retired page port') }
+      const port: ClientPersistence = {
+        getItem: (name) => { current(); return data.get(name) ?? null },
+        setItem: (name, value) => { current(); data.set(name, value) },
+        removeItem: (name) => { current(); data.delete(name) },
+        keys: () => { current(); return [...data.keys()] },
+      }
+      return { data, port, revoke: () => { active = false } }
+    }
+    const aCache = cache(), bCache = cache()
+    const a = await bench(aCache.port), b = await bench(bCache.port)
+    const aView = viewingStore(a.runtime), bView = viewingStore(b.runtime)
+    expect(aView.instance.getSnapshot().groupBy).toBe('workspace')
+    expect(bView.instance.getSnapshot().groupBy).toBe('workspace')
+    a.runtime.renderRoot()
+    fireEvent.click(screen.getByRole('button', { name: '视图选项' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '单列表' }))
+    expect(JSON.parse(aCache.data.get(key)!)).toMatchObject({ groupBy: 'flat' })
+    expect(bView.instance.getSnapshot().groupBy).toBe('workspace')
+    expect(localStorage.getItem(key)).toBe(raw)
+    a.runtime.ctx.set('clientPersistence', bCache.port)
+    expect(aView.handle.create(undefined, bCache.port)).toBe(aView.instance)
+    act(() => { aView.instance.actions.setGroupBy('workspace-tree') })
+    expect(JSON.parse(aCache.data.get(key)!)).toMatchObject({ groupBy: 'workspace-tree' })
+    const aBefore = [...aCache.data], bBefore = [...bCache.data]
+    aCache.revoke()
+    expect(() => { act(() => { aView.instance.actions.setGroupBy('flat') }) }).toThrow('retired page port')
+    expect(() => { aView.instance.clearPersisted() }).toThrow('retired page port')
+    expect([...aCache.data]).toEqual(aBefore)
+    expect([...bCache.data]).toEqual(bBefore)
+    expect(localStorage.getItem(key)).toBe(raw)
+  })
+
+  it('retains ordinary browser restoration and writes when no page port is provided', async () => {
+    localStorage.setItem(key, raw)
+    const { runtime } = await bench(), { instance } = viewingStore(runtime)
+    expect(instance.getSnapshot().groupBy).toBe('workspace-tree')
+    instance.actions.setGroupBy('flat')
+    expect(JSON.parse(localStorage.getItem(key)!)).toMatchObject({ groupBy: 'flat' })
+  })
+})
 
 describe('Host home in the assembled browsing region', () => {
   it('abbreviates the path once a home learned after first render reaches the rows', async () => {
