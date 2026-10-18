@@ -148,8 +148,69 @@ export interface RuntimeControlObservation {
   readonly hasFailure: boolean
 }
 
+/** Fixed C13 entry scopes; only the five root roles activate in the Root graph. */
+export type RootRecipeRole = 'access/root' | 'runtime/root' | 'api/root' | 'files/root' | 'opensandbox/root'
+  | 'runtime/account' | 'api/account' | 'files/account' | 'opensandbox/account' | 'instructions/session' | 'client/client'
+
+/** Root-side immutable expectations; these declare requirements and never certify their fulfillment. */
+export interface RootRecipeInput {
+  readonly recipeVersion: string
+  /** All eleven approved entry scopes; account/session/client declarations do not activate in Root. */
+  readonly entrypoints: readonly RootRecipeRole[]
+  readonly roots: readonly {
+    readonly role: 'access/root' | 'runtime/root' | 'api/root' | 'files/root' | 'opensandbox/root'
+    readonly entryId: string
+    /** Original approved module namespace/class, compared with the actual Loader import. */
+    readonly module: object
+  }[]
+  readonly providers: readonly {
+    readonly key: 'peAuth' | 'peAccountRuntime' | 'peExposure' | 'peFilesPool' | 'peSandboxCoordinator' | 'webServer' | 'credentials' | 'clientModules'
+    readonly entryId: string
+    /** Original actual provider; ownership and uniqueness are read from native fibers. */
+    readonly value: object
+  }[]
+  /** Exact frozen manifest object held by the real API root provider; no copied approval record. */
+  readonly manifest: object
+}
+
+/** Safe finite issue identities; no input paths, credentials or configuration values are exposed. */
+export type RootRecipeIssue = 'runtime-control-unavailable' | 'version-mismatch' | 'entrypoint-catalog-mismatch'
+  | 'root-entry-missing' | 'root-entry-duplicate-or-missing' | 'root-module-replaced' | 'root-entry-inactive'
+  | 'root-config-unproven' | 'account-entry-in-root' | 'provider-missing' | 'provider-replaced-or-missing'
+  | 'provider-duplicate-or-missing' | 'provider-owner-mismatch' | 'provider-not-current' | 'participant-missing' | 'participant-provider-mismatch'
+  | 'manifest-replaced-or-missing' | 'manifest-not-immutable' | 'storage-root-capability-missing' | 'recipe-revoked' | 'runtime-closed'
+
+/** Observed facts only; this slice cannot produce a seal without the real storage capability. */
+export interface RootRecipeObservation {
+  readonly status: 'unsealed' | 'blocked' | 'revoked' | 'closed'
+  readonly recipeVersion?: string
+  readonly rootEntries: number
+  readonly providers: number
+  readonly participants: number
+  readonly issues: readonly RootRecipeIssue[]
+}
+
 /** Shared service definition; providers need no dependency on Host control implementation. */
 export interface AccountRuntimeService {
+  /**
+   * Audit actual Root facts; missing real storage keeps sealing rejected.
+   * @param input Fixed requirements and original object identities, never caller readiness assertions.
+   * @throws AccountRuntimeError while incomplete, revoked or closed; no successful seal is available yet.
+   */
+  sealRecipe(input: RootRecipeInput): void
+  /**
+   * Require the current complete seal before external admission.
+   * @param recipeVersion Exact deployment recipe required by the caller.
+   * @throws AccountRuntimeError without a current complete seal.
+   */
+  assertRecipeSealed(recipeVersion: string): void
+  /** Revoke current audit authority before a recipe change. */
+  revokeRecipe(): void
+  /**
+   * Inspect current identities and invalidate changed audit facts without issuing admission authority.
+   * @returns Frozen bounded counts and finite safe issue identities.
+   */
+  inspectRecipe(): RootRecipeObservation
   /** Register the caller-owned files or execution contribution; duplicates and closed admission reject. */
   registerDrainParticipant(participant: DrainParticipant): () => void | Promise<void>
   /** Reject missing mandatory participants; success is not recipe sealing. */

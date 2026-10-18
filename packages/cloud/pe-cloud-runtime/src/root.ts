@@ -7,14 +7,15 @@ import type { RuntimeRootConfig } from './root-config.ts'
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { AccountFactory, type AccountFactoryRequest, type AccountNativeCloseObservation } from './account-factory.ts'
 import { deriveAccountLayout, defaultProjectLayout } from './account-layout.ts'
-import { requireAccountProductionPorts } from './account-mount.ts'
+import { AccountMountPrerequisiteError, requireAccountProductionPorts } from './account-mount.ts'
 import { PgOwnerExecutor } from './owner-pg-executor.ts'
 import { RuntimeInstanceControl } from './instance-control.ts'
 import { PostgresOwnerStore } from './owner-store.ts'
 import { RuntimeCapacity } from './capacity.ts'
+import { RootRecipeAudit, type RegisteredRootParticipant } from './recipe-audit.ts'
 import { AccountRuntimeError } from './errors.ts'
 import { RuntimeConfigSchema, RuntimeRootConfigSchema } from './schema.ts'
-import type { AccountBinding, AccountId, AccountOwner, AccountRuntimeService, AccountUse, RuntimeControlObservation, DrainCapacityReservation, DrainParticipant, MountCapacityReservation, ParticipantId, RuntimeConfig } from './types.ts'
+import type { AccountBinding, AccountId, AccountOwner, AccountRuntimeService, AccountUse, RuntimeControlObservation, DrainCapacityReservation, DrainParticipant, MountCapacityReservation, ParticipantId, RootRecipeInput, RootRecipeObservation, RuntimeConfig } from './types.ts'
 
 export { AccountRuntimeError } from './errors.ts'
 export type * from './types.ts'
@@ -41,7 +42,8 @@ interface RootControl {
 export class PeAccountRuntime extends Service implements AccountRuntimeService {
   static Config = RuntimeConfigSchema
 
-  private readonly participants = new Map<ParticipantId, DrainParticipant>()
+  private readonly participants = new Map<ParticipantId, RegisteredRootParticipant>()
+  private readonly recipe: RootRecipeAudit
   private readonly capacity: RuntimeCapacity
   private closed = false
   private control: RootControl | undefined
@@ -55,6 +57,9 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
     const resolved = RuntimeConfigSchema(config)
     super(ctx, 'peAccountRuntime')
     this.capacity = new RuntimeCapacity(resolved)
+    this.recipe = new RootRecipeAudit(ctx, () => [...this.participants.values()], () => ({
+      phase: this.control?.phase ?? 'component', recipeVersion: this.control?.config.recipeVersion,
+    }))
     const rootClose = ctx.root.effect(() => () => this.close(), 'pe-cloud-runtime: join actual control at root disposal')
     ctx.effect(() => async () => {
       try { await this.close() } finally { await rootClose() }
@@ -73,10 +78,35 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
       throw new AccountRuntimeError('cloud/invalid-config', `Duplicate mandatory drain participant: ${participant.id}`)
     }
     return this.ctx.effect(() => {
-      this.participants.set(participant.id, participant)
-      return () => { this.participants.delete(participant.id) }
+      const registered = { participant, fiber: this.ctx.fiber }
+      this.recipe.revoke()
+      this.participants.set(participant.id, registered)
+      return () => { this.recipe.revoke(); this.participants.delete(participant.id) }
     }, 'pe-cloud-runtime: drain participant')
   }
+
+  /**
+   * Audit the actual Loader/providers and immutable deployment manifest before traffic.
+   * @param input Fixed recipe requirements, not a caller-supplied success receipt.
+   * @throws AccountRuntimeError while any fact or real storage capability is unavailable.
+   */
+  sealRecipe(input: RootRecipeInput): void { this.assertOpen(); this.recipe.seal(input) }
+
+  /**
+   * Require a current complete seal before external admission.
+   * @param recipeVersion Expected fixed deployment version.
+   * @throws AccountRuntimeError for unsealed, revoked, closed or incomplete storage admission.
+   */
+  assertRecipeSealed(recipeVersion: string): void { this.assertOpen(); this.recipe.assertSealed(recipeVersion) }
+
+  /** Revoke root admission before replacing or reloading the recipe. */
+  revokeRecipe(): void { this.recipe.revoke() }
+
+  /**
+   * Recheck the retained audit without authorizing traffic.
+   * @returns Current safe audit facts; missing storage always prevents sealing.
+   */
+  inspectRecipe(): RootRecipeObservation { return this.recipe.inspect() }
 
   /**
    * Reject an incomplete root before a future recipe audit can consider its other evidence.
@@ -144,14 +174,15 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
   }
 
   /**
-   * Enter the retained concrete factory with root-selected inputs and a finite observer budget.
-   * Missing real production ports still reject before native boot and ready CAS.
+   * Require a current recipe seal before any PG claim, then enter the retained concrete factory.
+   * Missing real production ports independently reject before native boot and ready CAS.
    * @param accountId Authenticated account; browser expectations never select this value.
    * @param signal Optional observer abandonment; absence waits to accountWaitTimeoutMs.
    * @returns A ready AccountUse only after the factory's actual production checks; unavailable in this slice.
    */
   acquireAccount(accountId: AccountId, signal?: AbortSignal): Promise<AccountUse> {
     const control = this.activeControl()
+    this.assertRecipeSealed(control.config.recipeVersion)
     this.assertRequiredParticipants()
     let request = control.requests.get(accountId)
     const fresh = request === undefined
@@ -180,11 +211,12 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
   }
 
   /**
-   * Borrow the original ready graph for a login Peer without starting another acquisition.
+   * Require the current recipe seal and borrow the original ready graph for a login Peer.
    * @param binding Exact runtime-installed generation retained by the trusted caller.
    * @returns A fresh independent lifecycle reference; stale, unpublished and closed graphs reject.
    */
   async borrowAccount(binding: AccountBinding): Promise<AccountUse> {
+    this.assertRecipeSealed(binding.recipeVersion)
     return this.activeControl().factory.borrowCurrent(binding)
   }
 
@@ -195,10 +227,13 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
   assertMountCurrent(binding: AccountBinding): void { this.activeControl().factory.assertMountCurrent(binding) }
 
   /**
-   * Admit business only after exact ready publication, independently of mount-current checks.
+   * Admit business only with a current recipe seal and exact ready publication.
    * @param binding Original installed graph binding; unpublished, stale and closed graphs reject.
    */
-  assertBusinessCurrent(binding: AccountBinding): void { this.activeControl().factory.assertBusinessCurrent(binding) }
+  assertBusinessCurrent(binding: AccountBinding): void {
+    this.assertRecipeSealed(binding.recipeVersion)
+    this.activeControl().factory.assertBusinessCurrent(binding)
+  }
 
   /**
    * Inspect root-control counts without deployment paths, secrets, SQL or native Contexts.
@@ -220,6 +255,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
    */
   close(): Promise<void> {
     this.closed = true
+    this.recipe.close()
     const control = this.control
     if (control === undefined) { this.capacity.close(); return Promise.resolve() }
     if (control.closing !== undefined) return control.closing
@@ -328,6 +364,9 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
 
   private accountRequest(control: RootControl, accountId: AccountId): AccountFactoryRequest {
     const { config } = control
+    const exposure = this.ctx.root.get('peExposure')
+    const execution = this.ctx.root.get('peSandboxCoordinator')
+    if (exposure === undefined || execution === undefined) throw new AccountMountPrerequisiteError()
     const instanceId = control.instance.identity.instanceId
     const layout = deriveAccountLayout(accountId, instanceId, config.paths)
     return Object.freeze({
@@ -342,6 +381,8 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
         configPath: config.native.configPath, bareModuleBaseUrl: config.native.bareModuleBaseUrl,
         requiredEntryIds: config.native.requiredEntryIds, maxObservedEvents: config.native.maxObservedEvents,
         maxPathBytes: config.paths.maxPathBytes,
+        native: { saves: control.saves, exposure: exposure.policy, execution, stopTimeoutMs: config.shutdownTimeoutMs,
+          assertRootCurrent: () => { this.assertRecipeSealed(config.recipeVersion) } },
         prepare: requireAccountProductionPorts,
       }),
     })
@@ -366,6 +407,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
     const control = this.control
     if (control === undefined) return
     control.failure ??= cause
+    this.recipe.revoke()
     if (!this.closed) control.phase = 'failed'
     this.ctx.logger.error('Runtime root control failed or became uncertain; new account admission is closed and status requires inspection')
   }

@@ -41,13 +41,19 @@ kind: "package-reference"
 
 实际根配置包括 `recipeVersion`、`internalAddress`、明确的心跳/启动/停止/账户观察预算、凭据解析时间和字节限制、PostgreSQL 连接字段及 `passwordRef`、有限 `pg`/`factory`/`saves` 容量、规范化的共享/本地路径，以及固定原生配方位置、必需条目和诊断上限。根要求正式 `credentials` 服务，先预检引用，再为每次实际 PG 连接重新解析；不读取 `process.env`，不使用账户凭据提供者。等待被放弃后，解析仍计入容量直至实际结算。
 
-函数入口创建唯一既有容量持有者、PG executor、进程登记组件、owner store、账户 factory 和 API 配置保存 coordinator。它先迁移两张控制表并登记生成的进程身份，再提供 active 根控制面。初始化不等待下游 files/execution 贡献；参与者检查归账户领取，避免 Loader 注入环。真实账户准备尚未集成，因此保存 coordinator 尚不持有账户屏障。
+函数入口创建唯一既有容量持有者、PG executor、进程登记组件、owner store、账户 factory 和 API 配置保存 coordinator。它先迁移两张控制表并登记生成的进程身份，再提供 active 根控制面。初始化不等待下游 files/execution 贡献；参与者检查归账户领取，避免 Loader 注入环。原生准备期间，factory 从精确安装的 binding 签发该 coordinator 的屏障，并在实际保存及其余账户排空检查完成前持续持有。
 
-`locateAccount()` 读取实际 PG 元数据；`acquireAccount()` 用根选定路径、配方和独立账户环境进入既有保留型 factory。`borrowAccount(binding)` 为登录 Peer 独立借用精确的 ready 代际；它不会领取 owner、装配账户或替换为较新的图。`assertMountCurrent()` 检查已安装的准备期/当前身份；`assertBusinessCurrent()` 还要求 factory 的 ready 状态。根控制面 active 或原生 mounted 均不发布账户 ready。四项生产 provider 缺口检查全部保持关闭。
+`locateAccount()` 读取实际 PG 元数据；`acquireAccount()` 在领取 owner 或创建原生图前要求当前配方已封口，再用根选定输入进入保留型 factory。`borrowAccount(binding)` 要求配方封口，并为登录 Peer 独立借用精确的 ready 代际；它不会领取 owner、装配账户或替换为较新的图。`assertMountCurrent()` 检查已安装的准备期/当前身份；`assertBusinessCurrent()` 还要求配方封口和 factory 的 ready 状态。根控制面 active 或原生 mounted 均不发布账户 ready。四项生产 provider 缺口检查全部保持关闭。
 
 Provider 经根服务登记必需的 `files` 和 `execution` 参与者。登记归调用 fiber 所有，重复项会被拒绝。缺参与者时拒绝装配容量预留；通过此检查不等于配方封口。配置保存使用 API 单独持有的屏障，不是第三个参与者。
 
 账户工厂持有容量预留，直至实际工作结算。`settleMount()` 释放并发装配槽并保留账户槽。装配或排空仍持有账户时，`releaseAccount()` 拒绝释放。请求超时不授权这两种释放。根卸载先关闭新准入，并等待实际控制清理后再关闭容量。观察过期会报告不确定状态并保留实际关闭 Promise。
+
+### Root recipe admission
+
+`sealRecipe()` 核验实际 Root Loader 条目、原始模块 namespace、唯一服务实现及其所属 fiber、API provider 持有的精确冻结 manifest，以及 files/execution 登记与实际 provider 的对应关系。它检查原生配置快照和 provider 健康状态，不接受 ready 标记。11 项角色目录固定入口作用域：5 项在 Root 激活；账户、Session 和客户端角色仅声明各自图的作用域，不为此审核而激活。
+
+`inspectRecipe()` 返回冻结的计数和有限问题标识，不暴露路径、凭据或 provider 对象。Loader 变化、provider 替换或关闭、参与者移除、显式 `revokeRecipe()` 及 runtime 关闭都会使保留的审核失效。`assertRecipeSealed()` 仅允许完整且当前的审核准入。真实 files 持有的存储根签发者尚未接入，因此每次封口均以 `storage-root-capability-missing` 拒绝；配置值、FD 身份及调用方证书不能替代所有写入者的 bytes/inodes 配额核验。
 
 ### Account layout
 
@@ -97,9 +103,13 @@ Provider 经根服务登记必需的 `files` 和 `execution` 参与者。登记�
 
 私有[装配桥](src/account-mount.ts)将 Profile 目录、patch、home 和默认项目候选与唯一布局核对，并把同一个原生 `LaunchEnvironmentSnapshot` 对象交给 boot。私有[工厂](src/account-factory.ts)为每个账户保留一次实际操作。即使每次创建新的 request 外壳，只要账户/实例/配方值及可信资源引用一致，调用仍会合并；不同 binding、配方、环境或部署输入会拒绝。有界、可撤销的等待者共享一次结算订阅；截止或观察者取消均不停止装配或释放其容量。
 
+Factory 的[原生集成](src/account-native-integration.ts)在 Include 前创建公开 `CloudAccountApi` owner 并安装实际 Root 签发的 closed execution port。固定私有 builtin 消费 API 的原生 editor/credentials provider、Controller、AgentLoop 和 LLM guard。提供受限 files lane 后会构造公开 `CloudAccountFiles`；其实际 `/account` 入口持有原生 Registry/default/FS 安装。Controller 构造只捕获固定 binding 和原 files owner，不读取部分完成的项目。API 业务准入通过后，目录操作要求唯一 ACTIVE 的 files/account 入口，并读取该 owner 当前的 `project()` 能力；操作后再次核对同一个项目。Guard 构造也必须延迟项目读取。Files 初始化仍在途时，原生 provider 依赖可能已激活；必需入口检查和业务准入仍阻止发布不完整的图。Factory 装配/未发布登记检查与 Root 封口/业务 ready 检查保持独立。缺 files 或共享项目/model/Preset guard 时不会改用宽松回调。
+
+正常 factory 关闭先停止既有保存屏障并撤回原生 hook，再销毁账户图。在途写入继续持有图；保存证据未知时保留原生资源和排空容量。终止保存屏障在 Root 完成其余排空检查前仍归 Root 持有。原生部分启动失败仍属于不确定清理路径；其屏障和账户责任持续保留，不授权 clean 释放。
+
 装配容量随实际启动及已开始的原生清理结算。仅原生销毁不能证明完整排空，因此账户预留仍保留。工厂关闭外部准入时仍保留内部排空预留及原生销毁责任；清理未知继续持有排空容量。只有确定在 claim 前或从未提交的失败且没有原生资源时，才释放未启动账户槽。已提交结果未知保留原槽，不盲目重启。
 
-实际根经唯一 factory 调用 PG 路径，随后在启动原生 fallback 或提交 ready 之前拒绝缺失的生产交接。独立的 native-only 路径为既有可信代际执行真实 Loader 装配，不授予 `AccountUse`。当前借用要求同一个已安装、有效、ready 的图及尚未释放的引用；release 幂等且不 cancel Agent。真实 files/execution/API/存储能力签发仍缺失，因此任何生产路径都无法满足该 ready 条件或发布借用。原生 mounted 结果及配置标记均不能提供这些能力。
+实际根在配方未封口时于 PG 领取前拒绝 acquire。其私有 request 提供 factory 原生集成所消费的同一 coordinator、exposure policy 和 execution issuer。包内 factory 在原生启动或 ready CAS 前独立拒绝缺失的生产交接。独立的 native-only 路径为既有可信代际执行真实 Loader 装配，不授予 `AccountUse`。当前借用要求同一个已安装、有效、ready 的图及尚未释放的引用；release 幂等且不 cancel Agent。生产存储授权和共享项目/model/Preset guard 仍未接通，因此任何生产路径都不能发布借用。原生 mounted 结果及配置标记均不能提供这些能力。
 
 </details>
 
@@ -137,10 +147,11 @@ Provider 经根服务登记必需的 `files` 和 `execution` 参与者。登记�
 
 该基础尚不能准入生产账户流量。
 
-- **账户工厂** — 共享实际装配协调器已接入 Root；access 装配仍未提供。真实 provider/API/存储交接、配方封口及生产 `AccountUse` 发布仍不可用；仅原生装配及数据库领取不等于完成账户 acquire。
+- **账户工厂** — API 与 closed execution 接线已通过实际 native-only Loader 装配运行。生产账户准备仍缺 Root 签发的受限 files/存储授权和共享项目/model/Preset guard。四项生产前置检查仍保持关闭；原生装配及数据库领取不等于完成账户 acquire。
+- **根封口** — 已核验非存储 Root 事实，但封口仍不能成功。实际 files provider 必须直接提供复核可信部署记录、当前 mount 身份、所有写入者 namespace 及 bytes/inodes/private-reserve 上界的能力，Root 才能准入。非 Root 声明仍须在实际账户、Session 和客户端装配中核验。
 - **布局接线** — 私有原生桥已核对 layout/Profile 一致性，但布局数据不能创建 files 能力或验证存储。已包含 environments 父根，尚无按 Session 的环境派生。
 - **数据库集成与恢复** — 实际根持有 PG 部署配置、迁移、登记及串行实例 heartbeat 调度。恢复审计、分配对账及可信 RecoveryProof 应用仍未提供；本模块不能重领隔离态 owner。
-- **必需证据** — 参与者存在不验证存储配额、原生 provider、配置保存 hook、manifest、进程停止或销毁成功。容量预留不执行参与者排空。
+- **必需证据** — 参与者存在不验证存储配额、进程停止或完整账户销毁。Private Profile/patch 读取及所有原生配置/JSONL 写入都须在 boot 前取得真实的所有写入者存储授权；prepare 期间才核准目录已经太晚。容量预留不执行参与者排空。
 - **账户交接** — 只有包内工厂 helper 安装 binding。Helper 要求可信 owner 输入，自身不核验 PG 归属；测试提供 binding 夹具，不据此宣称账户图 ready。
 - **关闭顺序** — 根卸载等待启动、在途 heartbeat、native factory 关闭、保存 coordinator 关闭、进程登记关闭及实际 PG/凭据结算。缺账户 clean 证据时保留或隔离 owner，不释放。完整 Agent/provider 排空、保存收据、持久化 flush 及共享 provider 关闭仍是未来 clean 账户释放的前置条件。
 

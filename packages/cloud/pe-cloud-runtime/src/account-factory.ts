@@ -4,6 +4,7 @@ import type { LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environm
 import { deriveAccountLayout, type LayoutDeployment } from './account-layout.ts'
 import { mountAccount, requireAccountProductionPorts, AccountMountPrerequisiteError, type AccountRecipe } from './account-mount.ts'
 import type { NativeAccountBootHandle, NativeAccountBootOutcome, NativeDisposalObservation } from './native-boot.ts'
+import { AccountNativeIntegration } from './account-native-integration.ts'
 import type { RuntimeCapacity } from './capacity.ts'
 import type { PostgresOwnerStore } from './owner-store.ts'
 import { AccountRuntimeError } from './errors.ts'
@@ -64,6 +65,7 @@ interface Slot {
   binding?: AccountBinding
   context?: Context
   native?: NativeAccountBootHandle
+  integration?: AccountNativeIntegration
   controller?: AbortController
   settlement?: Settlement
   closing?: Promise<AccountNativeCloseObservation>
@@ -298,12 +300,19 @@ export class AccountFactory {
     if (slot.closing !== undefined) return slot.closing
     const drain = this.capacity.reserveDrain(accountId)
     slot.closeRequested = true
-    slot.controller?.abort()
-    const initial = slot.native?.dispose()
+    // A graph with save hooks stays alive until its existing barrier confirms actual settlement.
+    if (slot.integration === undefined) slot.controller?.abort()
+    const initial = slot.integration === undefined ? slot.native?.dispose() : undefined
     // Cleanup may reject before the original mount settles; retain its error for the joined await below.
     void initial?.catch((_cause: unknown) => {})
     slot.closing = (async () => {
       try {
+        const saves = await slot.integration?.stop()
+        if (saves?.status === 'unknown') {
+          slot.state = 'unknown'
+          return Object.freeze({ accountId, status: 'unknown' })
+        }
+        slot.controller?.abort()
         // Actual failure is retained separately; native cleanup still has to join its settlement.
         try { await slot.result.promise } catch (_cause: unknown) { /* original failure remains in slot.settlement */ }
         const native = await (initial ?? slot.native?.dispose())
@@ -403,13 +412,30 @@ export class AccountFactory {
         slot.context = ctx
         slot.binding = binding
         this.assertMountCurrent(binding)
-        await slot.recipe.prepare(ctx, binding)
-        this.assertMountCurrent(binding)
+        try {
+          if (slot.recipe.native !== undefined) {
+            slot.integration = new AccountNativeIntegration(slot.recipe.native)
+            slot.integration.prepare(ctx, binding,
+              (current) => { this.assertMountCurrent(current) }, (current) => { this.assertBusinessCurrent(current) }, () => {
+                this.assertMountCurrent(binding)
+                if (slot.state !== 'mounting') {
+                  throw new AccountRuntimeError('cloud/account-unavailable', 'Account registration is outside its mounting window')
+                }
+              })
+          }
+          await slot.recipe.prepare(ctx, binding)
+          this.assertMountCurrent(binding)
+        } catch (cause) {
+          await slot.integration?.stop()
+          throw cause
+        }
       },
     })
     const outcome = await slot.native.result
-    slot.state = outcome.status === 'mounted' ? 'mounted-unpublished' : outcome.disposal.status === 'unknown' ? 'unknown' : 'failed'
-    if (this.isClosing(slot)) {
+    if (!this.isClosing(slot) || slot.integration === undefined) {
+      slot.state = outcome.status === 'mounted' ? 'mounted-unpublished' : outcome.disposal.status === 'unknown' ? 'unknown' : 'failed'
+    }
+    if (this.isClosing(slot) && slot.integration === undefined) {
       const native = await slot.native.dispose()
       if (native.status === 'unknown') slot.state = 'unknown'
     }
@@ -436,12 +462,15 @@ export class AccountFactory {
     })
     slot.input = input
     requireAccountProductionPorts()
+    request.recipe.native?.assertRootCurrent()
     const outcome = await this.runNative(slot, input)
     if (outcome.status === 'failed') return outcome
     // The same missing real handoffs also block the commit; mounted is never a ready certificate.
     requireAccountProductionPorts()
+    request.recipe.native?.assertRootCurrent()
     this.assertMountCurrent(outcome.binding)
     await owners.ready({ accountId: owner.accountId, epoch: owner.epoch }, owner.recipeVersion)
+    request.recipe.native?.assertRootCurrent()
     this.assertMountCurrent(outcome.binding)
     slot.state = 'ready'
     return outcome

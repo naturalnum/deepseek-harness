@@ -10,8 +10,6 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import * as Root from '../src/root.ts'
 import type { AccountId, DrainParticipant } from '../src/types.ts'
-import { AccountMountPrerequisiteError } from '../src/account-mount.ts'
-import { deriveAccountLayout } from '../src/account-layout.ts'
 import { instanceTestConnection } from './instance-test-connection.ts'
 import { RootCredentials, rootConfig } from './root-control-fixture.ts'
 
@@ -99,7 +97,7 @@ describe.skipIf(privateConfig === undefined)('actual root Loader on the controll
     expect(sessions.rows[0]?.count).toBe('0')
   })
 
-  it('uses one root factory for repeated real claims, never starts native fallback/ready, and quarantines rather than releasing retained owners', async () => {
+  it('refuses unsealed actual root acquisition before any claim or native graph despite registered participants', async () => {
     const fixture = await root()
     const make = (id: DrainParticipant['id']): DrainParticipant => ({
       id, stopEpoch: async binding => ({ participant: id, accountId: binding.accountId, epoch: binding.epoch,
@@ -107,29 +105,12 @@ describe.skipIf(privateConfig === undefined)('actual root Loader on the controll
     })
     fixture.runtime.registerDrainParticipant(make('files'))
     fixture.runtime.registerDrainParticipant(make('execution'))
-    const accountId = brandString<AccountId>('m8e-' + randomUUID())
-    const attempts = Array.from({ length: 20 }, () => fixture.runtime.acquireAccount(accountId))
-    const results = await Promise.allSettled(attempts)
-    expect(results.every(result => result.status === 'rejected' && result.reason instanceof AccountMountPrerequisiteError)).toBe(true)
-    const owner = await fixture.runtime.locateAccount(accountId)
-    expect(owner).toMatchObject({ accountId, epoch: '1', phase: 'mounting', recipeVersion: fixture.config.recipeVersion })
-    expect(fixture.runtime.inspectControl()).toMatchObject({ accounts: 1 })
-    const abandoned = brandString<AccountId>('m8e-abandoned-' + randomUUID())
-    await expect(fixture.runtime.acquireAccount(abandoned, AbortSignal.abort())).rejects.toMatchObject({ reason: 'observer-cancelled' })
-    expect(await fixture.runtime.locateAccount(abandoned)).toBeUndefined()
-    expect(fixture.runtime.inspectControl()).toMatchObject({ accounts: 1 })
-    if (owner?.ownerInstanceId === null || owner?.ownerInstanceId === undefined) throw new Error('Actual claim has no instance identity')
-    const layout = deriveAccountLayout(accountId, owner.ownerInstanceId, fixture.config.paths)
-    expect(existsSync(layout.accountRoot)).toBe(false)
-    const binding = { accountId, epoch: owner.epoch, recipeVersion: owner.recipeVersion, lifetime: new AbortController().signal }
-    expect(() => { fixture.runtime.assertMountCurrent(binding) }).toThrow('no longer current')
-    expect(() => { fixture.runtime.assertBusinessCurrent(binding) }).toThrow('no longer current')
-    await expect(fixture.runtime.borrowAccount(binding)).rejects.toMatchObject({ code: 'cloud/stale-generation' })
-    expect(fixture.runtime.inspectControl()).toMatchObject({ accounts: 1 })
+    const accountId = brandString<AccountId>('m8m-' + randomUUID())
+    expect(() => fixture.runtime.acquireAccount(accountId)).toThrow('not sealed')
+    expect(await fixture.runtime.locateAccount(accountId)).toBeUndefined()
+    expect(fixture.runtime.inspectControl()).toMatchObject({ accounts: 0 })
+    expect(existsSync(fixture.config.paths.sharedAccountsRoot)).toBe(false)
     await fixture.ctx.fiber.dispose()
-    const retained = await database.query<{ phase: string; epoch: string }>(
-      'SELECT phase, epoch::text FROM public.pe_account_owners WHERE account_id = $1', [accountId])
-    expect(retained.rows[0]).toEqual({ phase: 'quarantined', epoch: '1' })
     expect((await fixture.record()).phase).toBe('closed')
   })
 

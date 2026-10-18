@@ -5,6 +5,7 @@ import { defaultProjectLayout } from './account-layout.ts'
 import { AccountRuntimeError } from './errors.ts'
 import { startNativeAccountBoot, type NativeAccountBootHandle } from './native-boot.ts'
 import type { AccountBinding, AccountMountInput } from './types.ts'
+import type { AccountNativePreparation } from './account-native-integration.ts'
 
 /** Private, deployment-selected native recipe; no caller-selected module paths or account capability. */
 export interface AccountRecipe {
@@ -14,6 +15,8 @@ export interface AccountRecipe {
   readonly requiredEntryIds: readonly string[]
   readonly maxObservedEvents: number
   readonly maxPathBytes: number
+  /** Actual Root-issued API/execution resources; absent for isolated native-mechanism fixtures. */
+  readonly native?: AccountNativePreparation
   /** Install graph-lived dependencies before Include; this is native preparation, not a replaceable mounter. */
   prepare(ctx: Context, binding: AccountBinding): void | Promise<void>
 }

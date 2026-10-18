@@ -34,6 +34,21 @@
     },
     {
       "path": "../pe-cloud-api"
+    },
+    {
+      "path": "../../core/agent-loop"
+    },
+    {
+      "path": "../../api/session-controller/tsconfig.host.json"
+    },
+    {
+      "path": "../../llm/llm"
+    },
+    {
+      "path": "../pe-cloud-files"
+    },
+    {
+      "path": "../pe-opensandbox"
     }
   ],
   "exclude": [

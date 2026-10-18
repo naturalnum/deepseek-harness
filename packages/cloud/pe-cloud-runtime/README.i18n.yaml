@@ -18,8 +18,11 @@
   en: 4024fca4848201dd
   zh: d4d3a4a32bce7481
 /deepseek-ai-dsh-pe-cloud-runtime/use-this-package/configuration:
-  en: d66a7fc66fd92e9d
-  zh: e243dd1957758001
+  en: daedbf3c35877a3b
+  zh: a973c054839687d1
+/deepseek-ai-dsh-pe-cloud-runtime/use-this-package/root-recipe-admission:
+  en: e08ba7498a097d71
+  zh: 7c7a9384e46f2157
 /deepseek-ai-dsh-pe-cloud-runtime/use-this-package/account-layout:
   en: 6dca03564bdb4901
   zh: ac3334cfa17f4c99
@@ -30,8 +33,8 @@
   en: 5a8a0334c587ea9e
   zh: c299860644a51718
 /deepseek-ai-dsh-pe-cloud-runtime/understand-the-implementation:
-  en: 90026ca4c5a635fe
-  zh: 2faf3ad5eaaf6d53
+  en: 27ec5cd9a242b98d
+  zh: 02df85bb45feb715
 /deepseek-ai-dsh-pe-cloud-runtime/further-exploration:
   en: 2fa24c229fe3b6f5
   zh: 26b60b08a23f39b3
@@ -51,8 +54,8 @@
   en: c182b5207d0e08db
   zh: 37b342fdfead1f72
 /deepseek-ai-dsh-pe-cloud-runtime/known-limitations-and-deferred-work:
-  en: c4b81a6d8890ae69
-  zh: 9288ed02693be3fb
+  en: a12f066da9d335b2
+  zh: a5b8aab6f360002e
 /deepseek-ai-dsh-pe-cloud-runtime/known-limitations-and-deferred-work/dev-note:
   en: e67f633dc6fe7773
   zh: 8ec3e73528ddb1a6
