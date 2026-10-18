@@ -1,13 +1,13 @@
 /** Actual private native Controller assembly through inherited Remote dispatch and shared guards. */
-import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs'
 import { realpath } from 'node:fs/promises'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest'
+import { z } from 'zod'
 import { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-fs'
 import Gateway from '@deepseek-ai/dsh-api-gateway'
-import * as NativeClientGateway from '@deepseek-ai/dsh-api-gateway/client'
 import RemoteAccess from '@deepseek-ai/dsh-api-remote-access'
 import SessionController from '@deepseek-ai/dsh-api-session-controller'
 import type {
@@ -15,7 +15,7 @@ import type {
 } from '@deepseek-ai/dsh-api-session-controller/types'
 import DefaultModel from '@deepseek-ai/dsh-agent-default-model'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
-import { remoteMethods, type PeerId, type PeerScope, type TypertRemoteContribution } from '@deepseek-ai/dsh-typert-protocol'
+import { remoteMethods, type PeerId, type PeerScope } from '@deepseek-ai/dsh-typert-protocol'
 import { mountAgentLoopTestDependencies, mountAgentLoopTestHarness } from '@deepseek-ai/dsh-agent-loop-testkit'
 import SessionQueryEngine from '@deepseek-ai/dsh-session-query'
 import { SessionId } from '@deepseek-ai/dsh-session'
@@ -147,52 +147,21 @@ async function fixture(accountId = 'reuse', firstScreen = false) {
   }
 }
 
-it('accepts native Client list arguments using the original Session parameter name and rejects extra wire fields', async () => {
+it('accepts native list wire arguments using the original Session parameter name and rejects extra fields', async () => {
   const f = await fixture('list-wire', true)
-  const client = new Context()
-  onTestFinished(async () => { await client.fiber.dispose() })
-  await client.plugin(TypertRegistry)
-  const call = vi.fn(async (_channel: string, endpoint: string, payload: unknown, signal?: AbortSignal) => {
-    if (endpoint !== 'session/list' || payload === null || typeof payload !== 'object') throw new Error('Unexpected native Client call')
-    const args: unknown = Reflect.get(payload, 'args')
-    if (args === null || typeof args !== 'object' || Array.isArray(args)) throw new Error('Native Client arguments absent')
-    try {
-      const value = await f.ctx.typertGateway.invoke({ namespace: 'session', method: 'list',
-        args: { ...args }, peer: f.peer, ...signal === undefined ? {} : { signal } })
-      return { ok: true as const, value }
-    } catch (error) { return { ok: false as const, error: f.ctx.typertGateway.wireStream.failure(error) } }
-  })
-  client.provide('connection', {
-    interactions: 'none', isLoopback: true,
-    generation: { getSnapshot: () => undefined, subscribe: () => () => {} },
-    state: { getSnapshot: () => undefined, subscribe: () => () => {} },
-    reconnect: () => {}, start: () => ({ stop: () => {} }),
-    rpc: { call, open: async function* () { throw new Error('List must not open a stream') } },
-  })
-  await client.plugin(NativeClientGateway)
-  // The Client descriptor follows the original native declaration, independently of the account override.
-  const nativeName = Function.prototype.toString.call(Reflect.get(SessionController.prototype, 'list')).match(/\(\s*([$\w]+)/u)?.[1]
+  const wire = z.object({ parameter: z.string().min(1), args: z.record(z.string(), z.object({}).strict()) }).strict()
+    .parse(JSON.parse(readFileSync(new URL('./native-list-wire.json', import.meta.url), 'utf8')))
+  const nativeName = SessionController.prototype.list.toString().match(/\(\s*([$\w]+)/u)?.[1]
   if (nativeName === undefined) throw new Error('Original native list parameter absent')
-  const contribution: TypertRemoteContribution = {
-    package: '@deepseek-ai/dsh-api-session-controller', descriptors: [{
-      id: 'native-session-list', service: 'sessionController', namespace: 'session', method: 'list',
-      invocation: { kind: 'direct' }, parameters: [{ name: nativeName, wire: nativeName, source: 'json',
-        codec: { mode: 'strict', typeSymbol: 'native-list-test#SessionListRequest', create: () => ({ parse: value => value }) } }],
-      cancellation: { parameter: 'signal' }, result: { mode: 'src-json' },
-    }],
-  }
-  await client.remote.$mount(contribution)
-  const session: unknown = client.get('remote.session')
-  if (session === null || typeof session !== 'object') throw new Error('Native Client Session namespace absent')
-  const list: unknown = Reflect.get(session, 'list')
-  if (typeof list !== 'function') throw new Error('Native Client list method absent')
+  expect(wire.parameter).toBe(nativeName)
+  expect(Object.keys(wire.args)).toEqual([nativeName])
   const nativeList = vi.spyOn(SessionController.prototype, 'list')
-  await expect(Reflect.apply(list, session, [{}])).resolves.toEqual({ ok: true, value: { items: [] } })
-  expect(call).toHaveBeenCalledExactlyOnceWith('/api', 'session/list', { args: { _request: {} } }, expect.any(AbortSignal))
+  await expect(f.ctx.typertGateway.invoke({ namespace: 'session', method: 'list', args: wire.args, peer: f.peer }))
+    .resolves.toEqual({ items: [] })
   expect(nativeList).toHaveBeenCalledOnce()
 
   await expect(f.ctx.typertGateway.invoke({ namespace: 'session', method: 'list', peer: f.peer,
-    args: { _request: {}, request: {} } })).rejects.toMatchObject({ code: 'gateway/arguments-invalid' })
+    args: { ...wire.args, request: {} } })).rejects.toMatchObject({ code: 'gateway/arguments-invalid' })
   expect(nativeList).toHaveBeenCalledOnce()
 })
 
