@@ -2,7 +2,7 @@
 import type { RpcFetch } from '@deepseek-ai/dsh-client-connection/client'
 import type { CloudClientConfig } from '../types.ts'
 import { ClientFailure } from './errors.ts'
-import { readResponse } from './read-response.ts'
+import { readResponse, cancelResponseReader } from './read-response.ts'
 
 function failureOf(reason: unknown, cancelled: boolean): Error {
   return reason instanceof Error ? reason : new ClientFailure(cancelled ? 'closed' : 'bootstrap-rejected', reason)
@@ -122,7 +122,10 @@ export class BootstrapAttempt<T> {
 
   private async discard(response: Response, reason?: unknown): Promise<void> {
     try {
-      await response.body?.cancel(reason)
+      if (response.body === null) return
+      const reader = response.body.getReader()
+      try { await cancelResponseReader(reader, reason, this.abort.signal) }
+      finally { reader.releaseLock() }
     } catch (error) {
       throw new ClientFailure('close-unconfirmed', error)
     }

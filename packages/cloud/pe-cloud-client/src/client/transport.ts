@@ -5,7 +5,7 @@ import type {
 import type { BindingFieldNames, RequestExpectation } from '@deepseek-ai/dsh-pe-cloud-access/types'
 import type { CloudClientConfig } from '../types.ts'
 import { ClientFailure, type ClientFailureCode } from './errors.ts'
-import { readResponse } from './read-response.ts'
+import { readResponse, cancelResponseReader } from './read-response.ts'
 
 /** The page captures these inputs only after the owner's real bootstrap decoder succeeds. */
 export interface BoundTransportInput {
@@ -183,12 +183,12 @@ export class BoundTransport {
   private async send(send: RpcFetch, target: URL, init: RequestInit, signal: AbortSignal): Promise<Response> {
     const response = await send(target, init)
     if (signal.aborted) {
-      await this.discard(response, signal.reason)
+      await this.discard(response, signal)
       signal.throwIfAborted()
     }
     if (response.status === 401) {
       void this.close('unauthenticated')
-      await this.discard(response)
+      await this.discard(response, signal)
       throw new ClientFailure('unauthenticated')
     }
     if (response.status !== 409) return response
@@ -213,9 +213,12 @@ export class BoundTransport {
     return new Response(bytes, { status: response.status, statusText: response.statusText, headers: response.headers })
   }
 
-  private async discard(response: Response, reason?: unknown): Promise<void> {
+  private async discard(response: Response, signal: AbortSignal): Promise<void> {
+    if (response.body === null) return
     try {
-      await response.body?.cancel(reason)
+      const reader = response.body.getReader()
+      try { await cancelResponseReader(reader, signal.aborted ? signal.reason : undefined, signal) }
+      finally { reader.releaseLock() }
     } catch (error) {
       this.cleanupFailures.push(error)
       throw new ClientFailure('close-unconfirmed', error)

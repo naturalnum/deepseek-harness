@@ -150,6 +150,33 @@ describe('captured native carrier', () => {
     await Promise.all([a.close(), b.close()])
   })
 
+  it('confirms a 401 fetch body already errored by the exact shared abort without calling source cancellation', async () => {
+    const cancel = vi.fn()
+    const transport = new BoundTransport(input(async (_url, init) => {
+      const signal = init.signal
+      if (signal == null) throw new Error('Captured fetch signal absent')
+      return new Response(new ReadableStream<Uint8Array>({
+        start(controller) { signal.addEventListener('abort', () => { controller.error(signal.reason) }, { once: true }) },
+        cancel,
+      }), { status: 401 })
+    }))
+    await expect(transport.hooks.fetch!('api/x', {})).rejects.toMatchObject({ code: 'unauthenticated' })
+    await transport.close()
+    expect(cancel).not.toHaveBeenCalled()
+    expect(transport.getSnapshot()).toMatchObject({ phase: 'closed', reason: 'unauthenticated', pendingFetches: 0 })
+  })
+
+  it('retains a real source cancellation failure even when it equals the shared abort reason', async () => {
+    const transport = new BoundTransport(input(async (_url, init) => {
+      const signal = init.signal
+      if (signal == null) throw new Error('Captured fetch signal absent')
+      return new Response(new ReadableStream<Uint8Array>({ cancel() { throw signal.reason } }), { status: 401 })
+    }))
+    await expect(transport.hooks.fetch!('api/x', {})).rejects.toMatchObject({ code: 'close-unconfirmed' })
+    await expect(transport.close()).rejects.toMatchObject({ code: 'close-unconfirmed' })
+    expect(transport.getSnapshot()).toMatchObject({ phase: 'unconfirmed', pendingFetches: 0 })
+  })
+
   it('does not turn a rejected body stop into confirmed carrier cleanup', async () => {
     const late = Promise.withResolvers<Response>()
     const transport = new BoundTransport(input(() => late.promise))

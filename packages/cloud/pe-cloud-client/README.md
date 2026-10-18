@@ -67,6 +67,8 @@ The internal native transport captures the access package's `RequestExpectation`
 
 Closing rejects new operations immediately, aborts pending fetches, and requests socket closure. Missing acknowledgement produces `unconfirmed`; pending work remains tracked and can later establish actual closure. This is carrier cleanup, not proof of Agent cancellation or account drain. Limits bound pending header fetches, sockets, bootstrap bytes and inspected error bytes; successful response-body and native subscription lifetimes remain with the native application.
 
+A fetch body already errored by the exact captured abort reason is settled without source cancellation. A source cancellation rejection still leaves cleanup unconfirmed, even if it returns that same reason. The distinction uses the original reader’s closed/errored completion and retains actual cancellation work.
+
 | Source | Role |
 |---|---|
 | [Browser entry](src/client/index.ts) | Consumes the prepared owner and installs original Connection. |

@@ -122,3 +122,52 @@ describe('bootstrap request ownership', () => {
     expect(attempt.getSnapshot()).toEqual({ phase: 'failed', settled: true, cleanup: 'unconfirmed' })
   })
 })
+
+it('confirms a cancelled bootstrap body already errored by its exact fetch signal without decoding', async () => {
+  const controller = new AbortController(), reason = new Error('Original bootstrap cancellation')
+  const reading = Promise.withResolvers<undefined>(), decode = vi.fn((value: unknown) => value), cancel = vi.fn()
+  const attempt = new BootstrapAttempt({ baseUrl: 'https://example.test/app/', config,
+    fetch: async (_target, init) => {
+      const signal = init.signal
+      if (signal == null) throw new Error('Original bootstrap signal absent')
+      return new Response(new ReadableStream<Uint8Array>({
+        start(source) { signal.addEventListener('abort', () => { source.error(signal.reason) }, { once: true }) },
+        pull() { reading.resolve(undefined) }, cancel,
+      }))
+    }, decode,
+  }, controller.signal)
+  const rejected = expect(attempt.result).rejects.toBe(reason)
+  await reading.promise
+  controller.abort(reason)
+  await rejected
+  await attempt.settled
+  expect(cancel).not.toHaveBeenCalled()
+  expect(decode).not.toHaveBeenCalled()
+  expect(attempt.getSnapshot()).toEqual({ phase: 'cancelled', settled: true, cleanup: 'confirmed' })
+})
+
+it('joins late bootstrap headers whose actual body is already errored by the original abort', async () => {
+  const controller = new AbortController(), reason = new Error('Bootstrap cancelled before headers')
+  const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  const decode = vi.fn((value: unknown) => value), cancel = vi.fn()
+  const attempt = new BootstrapAttempt({ baseUrl: 'https://example.test/app/', config,
+    fetch: async (_target, init) => {
+      const signal = init.signal
+      if (signal == null) throw new Error('Original bootstrap signal absent')
+      entered.resolve(undefined)
+      await release.promise
+      return new Response(new ReadableStream<Uint8Array>({ start(source) { source.error(signal.reason) }, cancel }))
+    }, decode,
+  }, controller.signal)
+  const rejected = expect(attempt.result).rejects.toBe(reason)
+  try {
+    await entered.promise
+    controller.abort(reason)
+    await rejected
+    expect(attempt.getSnapshot().settled).toBe(false)
+  } finally { release.resolve(undefined) }
+  await attempt.settled
+  expect(cancel).not.toHaveBeenCalled()
+  expect(decode).not.toHaveBeenCalled()
+  expect(attempt.getSnapshot()).toEqual({ phase: 'cancelled', settled: true, cleanup: 'confirmed' })
+})

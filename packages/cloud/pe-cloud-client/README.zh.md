@@ -67,6 +67,8 @@ kind: "package-reference"
 
 关闭时立即拒绝新操作、取消在途 fetch，并请求 socket 关闭。缺少结束确认时状态为 `unconfirmed`；实际工作仍被追踪，稍后结束可确认关闭。这只说明载体清理，不证明 Agent 已取消或账户已排空。限额覆盖等待响应头的 fetch、socket、bootstrap 字节及检查的错误字节；成功响应正文和原生订阅生命周期仍由原生应用持有。
 
+fetch 正文已被捕获 signal 的同一个取消原因置为 errored 时，按其终态确认，不再调用源取消。实际 source cancel 拒绝仍保留清理未确认，即使返回同一个原因；区分依据为原 reader 的 closed/errored 结算，实际取消工作仍被等待。
+
 | 源码 | 职责 |
 |---|---|
 | [浏览器入口](src/client/index.ts) | 消费已准备的 owner，并安装原始 Connection。 |

@@ -16,7 +16,7 @@ export async function readResponse(response: Response, maxBytes: number, signal:
   let size = 0
   let cancelled: Promise<void> | undefined
   const cancel = (): void => {
-    cancelled ??= reader.cancel(signal.reason)
+    cancelled ??= cancelResponseReader(reader, signal.reason, signal)
     // The operation awaits this same promise before settling.
     void cancelled.catch((_error: unknown) => {})
   }
@@ -35,7 +35,7 @@ export async function readResponse(response: Response, maxBytes: number, signal:
     }
   } catch (error) {
     try {
-      await (cancelled ?? reader.cancel(error))
+      await (cancelled ?? cancelResponseReader(reader, error, signal))
     } catch (cleanupError) {
       throw new ClientFailure('close-unconfirmed', new AggregateError([error, cleanupError]))
     }
@@ -51,4 +51,25 @@ export async function readResponse(response: Response, maxBytes: number, signal:
     offset += chunk.byteLength
   }
   return bytes
+}
+
+/**
+ * Join actual reader cancellation, accepting only an already-errored body with the exact captured abort reason.
+ * @param reader Original owned reader; the caller retains lock release.
+ * @param reason Reason passed to source cancellation.
+ * @param signal Original operation signal, not an inferred error code or name.
+ * @returns Actual cancellation settlement; a source cancellation failure still rejects.
+ */
+export async function cancelResponseReader(
+  reader: ReadableStreamDefaultReader<Uint8Array>, reason: unknown, signal: AbortSignal,
+): Promise<void> {
+  const terminal = reader.closed.then(
+    () => ({ failed: false as const }),
+    (error: unknown) => ({ failed: true as const, error }),
+  )
+  try { await reader.cancel(reason) } catch (error) {
+    const state = await terminal
+    // A rejected source cancel closes the reader. An aborted fetch body is already errored and invokes no source cancel.
+    if (!state.failed || !signal.aborted || error !== signal.reason || state.error !== signal.reason) throw error
+  }
 }
