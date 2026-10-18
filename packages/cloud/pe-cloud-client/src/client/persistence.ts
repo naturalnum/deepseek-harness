@@ -1,15 +1,9 @@
 /** Bounded page cache captured from one decoded bootstrap account and generation. */
 import type { ClientPersistence } from '@deepseek-ai/dsh-client-store'
 import type { RequestExpectation } from '@deepseek-ai/dsh-pe-cloud-access/types'
+import type { CloudPersistenceLimits } from '../types.ts'
 
-/** Explicit finite UTF-8 budgets; total includes the physical key and serialized envelope. */
-export interface CloudPersistenceLimits {
-  readonly maxKeys: number
-  readonly maxKeyBytes: number
-  readonly maxValueBytes: number
-  readonly maxTotalBytes: number
-  readonly maxNamespaceBytes: number
-}
+export type { CloudPersistenceLimits } from '../types.ts'
 
 /** Owner-supplied browser storage; never replaced on window or Storage.prototype. */
 export interface CloudPersistenceStorage {

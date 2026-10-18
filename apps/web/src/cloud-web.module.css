@@ -1,0 +1,96 @@
+.shell {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  color: var(--dsw-alias-label-primary, CanvasText);
+  background: var(--dsw-alias-bg-base, Canvas);
+  color-scheme: light dark;
+}
+
+.chrome {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--dsw-alias-border-l4, ButtonBorder);
+}
+
+.content {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: min(100%, 360px);
+  margin: auto;
+}
+
+.title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 500;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.input,
+.button {
+  box-sizing: border-box;
+  min-height: 36px;
+  border: 1px solid var(--dsw-alias-border-l4, ButtonBorder);
+  border-radius: var(--dsw-radius-sm, 8px);
+  padding: 8px 12px;
+  font: inherit;
+}
+
+.input {
+  width: 100%;
+  color: var(--dsw-alias-label-primary, FieldText);
+  background: var(--dsw-alias-bg-base, Field);
+}
+
+.button {
+  color: var(--dsw-alias-label-primary, ButtonText);
+  background: var(--dsw-alias-bg-layer-2, ButtonFace);
+  cursor: pointer;
+}
+
+.button:disabled {
+  cursor: wait;
+}
+
+.notice {
+  min-height: 40px;
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+
+:global(#root).native {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+
+.shell [hidden] {
+  display: none;
+}
+
+@media (max-width: 480px) {
+  .content { padding: 16px; }
+  .chrome { padding: 8px 12px; }
+}

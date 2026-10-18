@@ -33,4 +33,5 @@ export { CloudPageLifetime } from './page-lifetime.ts'
 export type { CloudNativeEntry, CloudPageLifetimeInput, CloudPageSnapshot } from './page-lifetime.ts'
 
 export { PreparedCloudPage } from './prepared-page.ts'
+export { ClientFailure, type ClientFailureCode } from './errors.ts'
 export type { CloudPagePreparation, CloudPagePreparationInput, CloudPreparedNativeOptions } from './prepared-page.ts'

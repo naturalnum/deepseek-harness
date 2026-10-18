@@ -3,6 +3,9 @@
 import { basename, resolve } from 'node:path'
 import { BundleInputIsolation, physicalBundleInput } from './bundle-input-isolation.ts'
 
+/** Exact generated helper ID exposed by Rolldown's public RUNTIME_MODULE_ID. */
+const ROLLDOWN_RUNTIME_MODULE_ID = '\0rolldown/runtime.js'
+
 /** The emitted chunk fields used to follow the product's actual output graph. */
 export interface WebOutputChunk {
   type: 'chunk'
@@ -12,8 +15,10 @@ export interface WebOutputChunk {
   modules: Record<string, unknown>
   imports: string[]
   dynamicImports: string[]
-  implicitlyLoadedBefore: string[]
-  referencedFiles: string[]
+  /** Rollup-only implicit chunk edges; absent from Rolldown's public OutputChunk. */
+  implicitlyLoadedBefore?: string[]
+  /** Rollup-only emitted-file edges; Vite URL and asset metadata are tracked independently. */
+  referencedFiles?: string[]
   viteMetadata?: { importedCss: Set<string>; importedAssets: Set<string> }
 }
 
@@ -32,8 +37,11 @@ export type WebOutputBundle = Record<string, WebOutputChunk | WebOutputAsset>
 export interface WebModuleInfo {
   importedIds: readonly string[]
   dynamicallyImportedIds: readonly string[]
-  isExternal: boolean
-  isIncluded: boolean | null
+  /** Rollup flags are absent from Rolldown's public ModuleInfo. */
+  isExternal?: boolean
+  isIncluded?: boolean | null
+  /** At output time, Rolldown reports null code for external modules. */
+  code?: string | null
 }
 
 interface AssetReference {
@@ -45,6 +53,7 @@ interface AssetReference {
 /** Output graphs are rebuilt each time; cached transforms retain their file-input observations. */
 export class WebProductBundleIsolation {
   private readonly cssInputs = new Map<string, Set<string>>()
+  private readonly moduleFiles = new Map<string, Map<string, Set<string>>>()
   private readonly chunks = new Map<string, WebOutputChunk>()
   private readonly references: AssetReference[] = []
   private readonly workerInputs = new Map<string, Set<string>>()
@@ -74,6 +83,31 @@ export class WebProductBundleIsolation {
     this.cssInputs.set(module, inputs)
   }
 
+  /**
+   * Replace one Vite hook's file observations while retaining cached observations from other hooks.
+   * @param module - Actual load or transform module ID.
+   * @param hook - Stable recorder identity for that Vite hook.
+   */
+  moduleFileTransform(module: string, hook: string): void {
+    const hooks = this.moduleFiles.get(module) ?? new Map<string, Set<string>>()
+    hooks.set(hook, new Set<string>())
+    this.moduleFiles.set(module, hooks)
+  }
+
+  /**
+   * Record actual addWatchFile calls, including Vite's complete worker subbuild watch list.
+   * @param module - Module whose Vite hook requested this file.
+   * @param hook - Stable recorder identity for that Vite hook.
+   * @param file - Original file passed to the build context's addWatchFile.
+   */
+  moduleFileDependency(module: string, hook: string, file: string): void {
+    const hooks = this.moduleFiles.get(module) ?? new Map<string, Set<string>>()
+    const files = hooks.get(hook) ?? new Set<string>()
+    files.add(file)
+    hooks.set(hook, files)
+    this.moduleFiles.set(module, hooks)
+  }
+
   /** Record Vite's asset URL edges without changing their rendered values. */
   assetReference(file: string, host: string, type: 'asset' | 'public'): void {
     this.references.push({ file, host, type })
@@ -88,8 +122,8 @@ export class WebProductBundleIsolation {
         modules: { ...item.modules },
         imports: [...item.imports],
         dynamicImports: [...item.dynamicImports],
-        implicitlyLoadedBefore: [...item.implicitlyLoadedBefore],
-        referencedFiles: [...item.referencedFiles],
+        implicitlyLoadedBefore: item.implicitlyLoadedBefore === undefined ? [] : [...item.implicitlyLoadedBefore],
+        referencedFiles: item.referencedFiles === undefined ? [] : [...item.referencedFiles],
         ...(item.viteMetadata === undefined ? {} : { viteMetadata: {
           importedCss: new Set(item.viteMetadata.importedCss),
           importedAssets: new Set(item.viteMetadata.importedAssets),
@@ -98,7 +132,7 @@ export class WebProductBundleIsolation {
     }
   }
 
-  /** Each Vite worker subbuild has one entry and owns its complete watched input set. */
+  /** Capture worker graph inputs; Vite also forwards its complete watch list to the calling module. */
   workerBundle(bundle: WebOutputBundle, watchedFiles: readonly string[]): void {
     const inputs = new Set(watchedFiles)
     const entries: string[] = []
@@ -153,20 +187,29 @@ export class WebProductBundleIsolation {
     }
     const checkModule = (id: string): void => {
       if (visitedModules.has(id)) return
-      visitedModules.add(id)
       this.inputs.assertInput(id)
       const info = moduleInfo(id)
+      // This generated helper has no public record and does not prove an application input.
+      if (info === null && id === ROLLDOWN_RUNTIME_MODULE_ID) return
       if (info === null) throw new Error(`Web product isolation: module ${id} has no Rollup module record`)
-      if (info.isExternal) throw new Error(`Web product isolation: external module ${id} has no bundled input proof`)
+      visitedModules.add(id)
+      if (info.isExternal === true || info.isExternal === undefined && info.code === null) {
+        throw new Error(`Web product isolation: external module ${id} has no bundled input proof`)
+      }
       if (/\.(?:css|less|sass|scss|styl|stylus|pcss|postcss|sss)(?:$|\?)/i.test(id) && !this.cssInputs.has(id)) {
         throw new Error(`Web product isolation: stylesheet ${id} has no recorded transform inputs`)
       }
       if (/[?&](?:sharedworker|worker)(?:&|$)/.test(id)) checkWorker(physicalBundleInput(id) ?? id)
       for (const file of this.cssInputs.get(id) ?? []) this.inputs.assertInput(file)
+      for (const files of this.moduleFiles.get(id)?.values() ?? []) {
+        for (const file of files) this.inputs.assertInput(file)
+      }
       for (const child of [...info.importedIds, ...info.dynamicallyImportedIds]) {
         const childInfo = moduleInfo(child)
+        if (childInfo === null && child === ROLLDOWN_RUNTIME_MODULE_ID) continue
         if (childInfo === null) throw new Error(`Web product isolation: module ${child} has no Rollup module record`)
-        if (childInfo.isIncluded || childInfo.isExternal) checkModule(child)
+        // An absent inclusion flag is unknown, never evidence that a dependency was excluded.
+        if (childInfo.isIncluded !== false || childInfo.isExternal === true) checkModule(child)
       }
     }
     for (const name of queue) {
@@ -178,7 +221,9 @@ export class WebProductBundleIsolation {
       if (this.workerInputs.has(file)) checkWorker(file)
       else if (item.type === 'chunk') {
         for (const id of Object.keys(item.modules)) checkModule(id)
-        queue.push(...item.imports, ...item.dynamicImports, ...item.implicitlyLoadedBefore, ...item.referencedFiles)
+        queue.push(...item.imports, ...item.dynamicImports)
+        if (item.implicitlyLoadedBefore !== undefined) queue.push(...item.implicitlyLoadedBefore)
+        if (item.referencedFiles !== undefined) queue.push(...item.referencedFiles)
         queue.push(...item.viteMetadata?.importedCss ?? [], ...item.viteMetadata?.importedAssets ?? [])
       } else if (cssOwners.has(file)) {
         for (const id of cssOwners.get(file) ?? []) checkModule(id)

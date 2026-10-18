@@ -25,13 +25,19 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-`/schema` 导出提供浏览器安全的公共配置校验；`/types` 包含其配置类型。Host 入口只声明浏览器包。
+`/schema` 导出提供浏览器安全的公共配置校验；`/types` 包含其配置类型。Host 入口声明浏览器包，并可选地注入公开 Web 部署输入，不提供业务服务或认证路由。
 
 ### 适用场景
 
 先从原始原生模块表导入本包公开 `/client` 命名空间，再在 Cordis 激活前调用 `PreparedCloudPage.prepare(input, signal)`。其 `ready` promise 在 bootstrap 请求结算后交付已解码页面 owner，并不证明服务端账户图就绪。用同一张表构造 `AppWebEntry(container, { ...page.nativeOptions, modules })`，随后等待 `page.start(entry)`；不能第二次调用 bootstrap facade 的 `create()`。保留 preparation，并在替换页面前等待 `preparation.dispose()`。只有 Cloud `/client` entry 安装 Connection；Host 通过 `registerClientPackages(..., { activate: false })` 声明原始 Connection 模块，使其普通插件不被激活。
 
 ### 最小配置
+
+Host 可选字段 `web` 通过一个结构化 `__DSH_CLOUD_WEB__` 全局值选择既有 `apps/web` Cloud 入口。省略时保留普通启动。`parseCloudWebManifest` 要求显式提供 `client`、`decodeLimits`、`persistenceLimits`、`fields` 与 `auth`；认证预算为 `requestTimeoutMs`、`maxRequestBytes` 与 `maxResponseBytes`。固定 bootstrap 路径为 `cloud/bootstrap`，绑定字段必须与 access 配置一致。不支持的身份、token 与当前账户字段会被拒绝。
+
+带有 `web` 的 Host Loader row 必须显式声明 `inject: ['clientModules']`。声明使用原始 registry 及其 Loader 树的可信解析 base，以 `activate: false` 登记固定原生 Connection 包，再在同一个依赖作用域中拥有公开注入。实际登记完成后 Cloud row 才激活；卸载须加入异步撤回。缺少依赖声明或登记失败时拒绝，不发布公开 manifest。没有 `web` 时，声明不要求 registry，也不登记模块。浏览器输入不能选择包名或解析路径。
+
+应用拥有本地化 Cookie 登录与退出控件。它丢弃有界认证响应正文，再使用原始动态 factory 和正式准备流程。`/client` 重导出同一 factory 的 `ClientFailure` 与 `ClientFailureCode`。退出先撤销并加入原页面清理，再执行真实 sign-out。未知 mutation 不会重放；显式状态恢复通过重载执行只读 bootstrap。有效登录 Cookie 仍存在时，服务端必须拒绝身份替换，包括跨标签页替换。 普通刷新保留本代际缓存。BFCache 保留的文档停止旧原生图，并要求显式检查状态后恢复。
 
 原生浏览器 Loader 用 `{ name }` 创建 entry，不传每项配置，因此 `/client` 接受空配置并拒绝覆盖。将下表全部字段显式传入准备输入的 `config`；`/schema` 负责校验，不提供生产默认值。准备还要求显式 `decodeLimits`、`persistenceLimits`、绑定字段名、真实存储、fetch 和 WebSocket 工厂。在 `prepareContext` 绑定准备好的 owner 前，不准入原生缓存读取或 Connection。
 

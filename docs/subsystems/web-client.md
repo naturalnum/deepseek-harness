@@ -33,6 +33,8 @@ The optional synchronous `beforeDispose()` runs once after the disposal promise 
 
 An optional trusted `modules` input reuses the original public `ClientModuleLoader` after pre-Context page preparation. `AppWebEntry` uses that table and manifest without a second bootstrap `create()` call; prefetch, native activation and disposal keep their existing ownership. Omission creates the table normally, and the reuse input is not forwarded as a module-creation option.
 
+The existing `apps/web` entry can select Cloud startup from an optional public deployment manifest. Its application-owned login and exit controls precede or surround the original native mount; Cookie authentication, canonical preparation and joined disposal follow the [Cloud client](../../packages/cloud/pe-cloud-client/README.md) requirements. The deployment manifest carries no account identity or mutable current-page authority.
+
 A deployment owner may provide a bounded, revocable implementation, such as the [Cloud page lifetime](../../packages/cloud/pe-cloud-client/README.md). That owner fixes the account/generation namespace, revokes writes before native or carrier teardown, and clears its namespace only after actual settlement. The generic port carries no authentication or Host persistence authority.
 
 ## Remote communication

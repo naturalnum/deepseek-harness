@@ -33,6 +33,8 @@ Web boot kernel 创建模块系统、预取 `immediately` entry、挂载 vendore
 
 可选的可信输入 `modules` 在 Context 创建前的页面准备完成后复用原始公开 `ClientModuleLoader`。`AppWebEntry` 使用该表及其 manifest，不再次调用 bootstrap `create()`；预取、原生激活及销毁保留现有所有权。省略时正常创建模块表，复用输入不会作为模块创建选项转发。
 
+既有 `apps/web` 入口可根据可选的公开部署 manifest 选择 Cloud 启动。应用拥有的登录与退出控件在原始原生挂载前或外围显示；Cookie 认证、正式准备及加入销毁遵循 [Cloud client](../../packages/cloud/pe-cloud-client/README.zh.md) 的要求。部署 manifest 不携带账户身份或可变的当前页面授权。
+
 部署 owner 可提供有界且可撤销的实现，例如 [Cloud 页面生命周期](../../packages/cloud/pe-cloud-client/README.zh.md)。该 owner 固定账户/代际命名空间，在原生或载体销毁之前撤销写入，并只在实际结算后清理自身命名空间。通用 port 不携带认证或 Host 持久化授权。
 
 ## Remote 通信

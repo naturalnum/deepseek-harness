@@ -4,7 +4,7 @@
  * entry points. A readable index renders at the dist root and configured index
  * path; missing paths return 404, traversal outside the dist root is 403,
  * unknown extensions ship as octet-stream, and non-GET/HEAD is 405. Every
- * index response first passes Connection's browser authentication, then the
+ * index response uses the configured document authentication, then the
  * webserver's index render (structured injection rows, then raw taps).
  * Non-index assets stay public. The dist location is workspace knowledge of
  * the composing application, so `distIndex` is typically supplied through a
@@ -23,17 +23,20 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 /** Stable Cordis plugin name. */
 export const name = 'frontend-static'
 
-/** Services required before the authenticated fallback seat can be claimed. */
-export const inject = ['webServer', 'connection']
+/** The ordinary mode waits for Connection in an owned dependency scope. */
+export const inject = ['webServer']
 
-/** Plugin config: the dist anchor. */
+/** Distribution anchor and index document authentication. */
 export interface Config {
   /** Absolute path of index.html inside the dist root. */
   distIndex: string
+  /** Public mode serves a login document; named business routes retain their own authentication. */
+  indexAuth?: 'connection' | 'public'
 }
 
 export const Config: z<Config> = z.object({
   distIndex: z.string().required(),
+  indexAuth: z.union(['connection', 'public']).default('connection'),
 })
 
 const HTML_MIME = 'text/html; charset=utf-8'
@@ -118,23 +121,27 @@ export function apply(ctx: Context, config: Config): void {
     const body = ctx.webServer.renderIndex(await readFile(distIndex, 'utf8'))
     return body.replace(/<head(?:\s[^>]*)?>/i, open => `${open}<base href="./">`)
   }
-  ctx.effect(() => ctx.webServer.registerFallback(async (req, res) => {
-    // Non-GET/HEAD without a matching named route is 405 (fallback-only
-    // semantics: named routes own their method handling).
-    if (req.method !== 'GET' && req.method !== 'HEAD') {
-      res.writeHead(405)
-      res.end()
-      return
-    }
-    /* v8 ignore next -- node:http always sets url on server requests */
-    const rawPath = new URL(req.url ?? '/', 'http://x').pathname
-    await serveStatic(
-      decodeURIComponent(rawPath),
-      res,
-      distRoot,
-      distIndex,
-      () => ctx.connection.authorizeIndex(req, res),
-      renderIndex,
-    )
-  }), 'frontend-static: fallback seat')
+  const install = (owner: Context, authorize: (req: import('node:http').IncomingMessage, res: ServerResponse) => boolean): void => {
+    owner.effect(() => owner.webServer.registerFallback(async (req, res) => {
+      // Non-GET/HEAD without a matching named route is 405 (fallback-only
+      // semantics: named routes own their method handling).
+      if (req.method !== 'GET' && req.method !== 'HEAD') {
+        res.writeHead(405)
+        res.end()
+        return
+      }
+      /* v8 ignore next -- node:http always sets url on server requests */
+      const rawPath = new URL(req.url ?? '/', 'http://x').pathname
+      await serveStatic(
+        decodeURIComponent(rawPath),
+        res,
+        distRoot,
+        distIndex,
+        () => authorize(req, res),
+        renderIndex,
+      )
+    }), 'frontend-static: fallback seat')
+  }
+  if (config.indexAuth === 'public') install(ctx, () => true)
+  else ctx.inject(['connection'], (owner) => { install(owner, (req, res) => owner.connection.authorizeIndex(req, res)) })
 }

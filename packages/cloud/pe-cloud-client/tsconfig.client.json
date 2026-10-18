@@ -8,6 +8,7 @@
   "files": [
     "src/types.ts",
     "src/config.ts",
+    "src/schema.ts",
     "src/client/index.ts",
     "src/client/errors.ts",
     "src/client/read-response.ts",

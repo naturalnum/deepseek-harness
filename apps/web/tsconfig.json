@@ -214,6 +214,7 @@
     "tests/workflow-run.e2e.ts"
   ],
   "references": [
+    { "path": "../../packages/cloud/pe-cloud-client/tsconfig.client.json" },
     { "path": "../../packages/experimental/auto-review" },
     {
       "path": "../../packages/client/store"

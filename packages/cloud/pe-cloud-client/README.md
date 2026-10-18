@@ -25,13 +25,19 @@ Prepare one Cloud page from a bounded canonical bootstrap response before starti
 <a id="use-this-package"></a>
 ## Use this package
 
-The `/schema` export provides browser-safe public configuration validation; `/types` contains its configuration types. The Host entry only declares the browser package.
+The `/schema` export provides browser-safe public configuration validation; `/types` contains its configuration types. The Host entry declares the browser package and optionally injects public Web deployment inputs, without business services or authentication routes.
 
 ### When to choose it
 
 Import this public `/client` namespace from the original native module table, then use `PreparedCloudPage.prepare(input, signal)` before Cordis activation. Its `ready` promise yields a decoded page owner after the bootstrap request settles; it does not certify a server account graph. Construct `AppWebEntry(container, { ...page.nativeOptions, modules })` with that same table and await `page.start(entry)`; do not call the bootstrap facade's `create()` twice. Retain the preparation and await `preparation.dispose()` before replacing the page. Only the Cloud `/client` entry installs Connection; the Host declares the original Connection module with `registerClientPackages(..., { activate: false })` so its ordinary plugin is not activated.
 
 ### Minimal configuration
+
+The optional Host `web` field selects the existing `apps/web` Cloud entry through one structured `__DSH_CLOUD_WEB__` global. Omission preserves ordinary startup. `parseCloudWebManifest` requires explicit `client`, `decodeLimits`, `persistenceLimits`, `fields` and `auth`; authentication budgets are `requestTimeoutMs`, `maxRequestBytes` and `maxResponseBytes`. The fixed bootstrap path is `cloud/bootstrap`; binding fields must match access configuration. Unsupported identity, token and current-account fields reject.
+
+A Host Loader row with `web` must explicitly declare `inject: ['clientModules']`. The declaration consumes the original registry and its Loader tree's trusted resolution base to register the fixed native Connection package with `activate: false`, then owns the public injection in the same dependency scope. Actual registration completes before the Cloud row activates; unloading joins its async withdrawal. A missing dependency declaration or failed registration rejects without publishing the public manifest. Without `web`, the declaration requires no registry and registers no module. Browser inputs cannot select package names or resolution paths.
+
+The application owns localized Cookie login and exit controls. It discards bounded authentication response bodies, then uses the original dynamic factory and canonical preparation. `/client` re-exports the same factory's `ClientFailure` and `ClientFailureCode`. Logout revokes and joins the original page before real sign-out. Unknown mutations are not replayed; explicit status recovery reloads for read-only bootstrap. The server must reject identity replacement while a valid login Cookie remains, including across tabs. Ordinary refresh preserves its generation cache. A document retained in BFCache stops its old native graph and requires explicit status recovery.
 
 The native browser Loader creates entries with `{ name }` and no per-entry configuration, so `/client` accepts empty configuration and rejects overrides. Supply every field below in the preparation input's `config`; `/schema` owns validation and supplies no production defaults. Preparation additionally requires explicit `decodeLimits`, `persistenceLimits`, binding field names, real storage, fetch and WebSocket factories. No native cache read or Connection is admitted before the prepared owner is bound by `prepareContext`.
 

@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Serve the built Web shell to browsers from its configured distribution directory. The root and configured index path render the bootstrapped index; existing assets are served directly, while missing or non-file paths return 404, traversal returns 403, and unsupported methods return 405. Index access requires a valid process token or browser cookie, but static assets remain public. Only one instance can handle unmatched routes at a time; a second activation fails, and unloading the active instance makes unmatched requests return 404.
+Serve the built Web shell to browsers from its configured distribution directory. The root and configured index path render the bootstrapped index; existing assets are served directly, while missing or non-file paths return 404, traversal returns 403, and unsupported methods return 405. Index access uses Connection authentication by default; explicit public mode serves a login document. Static assets remain public. Only one instance can handle unmatched routes at a time; a second activation fails, and unloading the active instance makes unmatched requests return 404.
 
 ## Table of Contents
 
@@ -25,7 +25,7 @@ Serve the built Web shell to browsers from its configured distribution directory
 <a id="use-this-package"></a>
 ## Use this package
 
-Compose this plugin in a browser-facing host that serves the built Web shell: it claims the webserver's fallback seat and answers every request no named route matches. It needs one config value — where the built frontend's `index.html` lives.
+Compose this plugin in a browser-facing host that serves the built Web shell: it claims the webserver's fallback seat and answers every request no named route matches. Required `distIndex` locates the built `index.html`; optional `indexAuth` selects document authentication.
 
 ### Minimal configuration
 
@@ -38,6 +38,8 @@ Compose this plugin in a browser-facing host that serves the built Web shell: it
 `distIndex` is an assembly fact of the composing application: [`dsh-web-app`](../../bundle/web-app/README.md) resolves it through the frontend package's exports and mounts this plugin; a deployment never hardcodes it.
 
 ### What the server enforces
+
+`indexAuth` defaults to `connection`: an owned dependency scope waits for Connection before claiming the fallback and releases it when that provider withdraws. `indexAuth: public` claims the same fallback without Connection, allowing an unauthenticated login document. Public mode adds no business service or authorization; named authentication, bootstrap and API routes retain their own handlers and checks ahead of the fallback.
 
 Requests are served from the dist root (the directory containing `distIndex`). The dist root and the configured index path render `index.html` with HTTP 200; any other existing file is served directly with its MIME type, and unknown extensions ship as `application/octet-stream`. A path that resolves outside the root is rejected with 403, so a crafted path cannot read files above the dist. An absent or non-file target inside the dist root — a missing file, a directory, or a missing configured index — returns an empty 404. Non-GET/HEAD requests without a matching named route are answered 405. Every successful index response is rendered through the webserver's `renderIndex`, so the boot manifest reaches the page on `/` and on the configured index path.
 

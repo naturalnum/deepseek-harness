@@ -4,10 +4,11 @@ import { existsSync, mkdtempSync, mkdirSync, realpathSync, rmSync, symlinkSync, 
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
+import type { Plugin } from 'vite'
 import { browserDependencyAnalysis, productWebBundleIsolation } from '../apps/web/product-isolation.ts'
-import { WebProductBundleIsolation } from './web-product-bundle-isolation.ts'
+import { WebProductBundleIsolation, type WebOutputBundle, type WebOutputChunk } from './web-product-bundle-isolation.ts'
 import { EXPERIMENTAL_PACKAGE_NAME_EXCEPTIONS } from './experimental-package-policy.ts'
 import { BundleInputIsolation } from './bundle-input-isolation.ts'
 
@@ -218,6 +219,336 @@ describe('default Web bundle input isolation', () => {
       'index.html': { type: 'asset', fileName: 'index.html', names: ['index.html'], originalFileNames: ['index.html'] },
       'worker.js': { type: 'asset', fileName: 'worker.js', names: [], originalFileNames: [] },
     }, () => null) }).toThrow(/worker.js has no recorded original files/)
+  })
+})
+
+describe('output graph compatibility without a build', () => {
+  function graph() {
+    const root = fileURLToPath(new URL('../', import.meta.url)), web = join(root, 'apps/web')
+    const source = join(web, 'src/main.ts')
+    const forbidden = join(root, 'packages/experimental/agent-team/src/index.ts')
+    const inputs = new WebProductBundleIsolation(root, web)
+    const chunk = (overrides: Partial<WebOutputChunk> = {}): WebOutputChunk => ({
+      type: 'chunk', fileName: 'main.js', facadeModuleId: source,
+      modules: { [source]: {} }, imports: [], dynamicImports: [], ...overrides,
+    })
+    const bundle: WebOutputBundle = {
+      'index.html': { type: 'asset', fileName: 'index.html', names: ['index.html'], originalFileNames: ['index.html'] },
+      'main.js': chunk(),
+    }
+    inputs.assetReference('main.js', 'index.html', 'asset')
+    const moduleInfo = () => ({ importedIds: [], dynamicallyImportedIds: [], isIncluded: true, isExternal: false })
+    const verify = (): void => { inputs.captureChunks(bundle); inputs.verify(bundle, moduleInfo) }
+    return { inputs, chunk, bundle, forbidden, source, moduleInfo, verify, root, web }
+  }
+
+  function runHook(hook: unknown, context: object, ...args: unknown[]): unknown {
+    if (typeof hook === 'function') return Reflect.apply(hook, context, args)
+    if (hook !== null && typeof hook === 'object' && 'handler' in hook && typeof hook.handler === 'function') {
+      return Reflect.apply(hook.handler, context, args)
+    }
+    throw new Error('Expected a callable plugin hook')
+  }
+
+  function adapter() {
+    const test = graph(), plugins = productWebBundleIsolation(test.root, test.web)
+    const capture = plugins[0]!, guard = plugins[1]!
+    const forwarded: string[] = []
+    const context = { addWatchFile(file: string) { forwarded.push(file) } }
+    const worker: Plugin = { name: 'vite:worker',
+      load: { order: 'pre', async handler(id) { this.addWatchFile(id); return 'loaded' } },
+      transform: { order: 'post', async handler(code) { this.addWatchFile(code); return code } },
+    }
+    const url: Plugin = { name: 'vite:worker-import-meta-url',
+      transform: { order: 'pre', async handler(code) { this.addWatchFile(code); return code } },
+    }
+    const css: Plugin = { name: 'vite:css', transform(code) { this.addWatchFile(code); return code } }
+    runHook(guard.configResolved, {}, { plugins: [worker, url, css], build: { write: true } })
+    const config = runHook(guard.config, {}, {}) as {
+      worker: { plugins(): Plugin[] }
+      experimental: { renderBuiltUrl(file: string, context: { hostId: string; type: 'asset' }): unknown }
+    }
+    runHook(guard.buildStart, {})
+    config.experimental.renderBuiltUrl('main.js', { hostId: 'index.html', type: 'asset' })
+    const verify = (): void => {
+      runHook(capture.generateBundle, {}, {}, test.bundle)
+      runHook(guard.generateBundle, { getModuleInfo: test.moduleInfo }, {}, test.bundle)
+    }
+    return { ...test, guard, worker, url, css, config, context, forwarded, verify }
+  }
+
+  it('checks public Rolldown module records without Rollup inclusion and external flags', () => {
+    const test = graph()
+    test.inputs.captureChunks(test.bundle)
+    expect(() => { test.inputs.verify(test.bundle, () => ({ code: '', importedIds: [], dynamicallyImportedIds: [] })) })
+      .not.toThrow()
+    expect(() => { test.inputs.verify(test.bundle, id => ({ code: '', importedIds: id === test.source ? [test.forbidden] : [],
+      dynamicallyImportedIds: [] })) }).toThrow(/experimental input/)
+    expect(() => { test.inputs.verify(test.bundle, () => ({ code: null, importedIds: [], dynamicallyImportedIds: [] })) })
+      .toThrow(/has no bundled input proof/)
+  })
+
+  it('keeps Rollup explicitly excluded dependencies excluded', () => {
+    const test = graph()
+    test.inputs.captureChunks(test.bundle)
+    expect(() => { test.inputs.verify(test.bundle, id => ({ ...test.moduleInfo(), isIncluded: id === test.source,
+      importedIds: id === test.source ? [test.forbidden] : [],
+    })) }).not.toThrow()
+  })
+
+  it.each(['transform', 'url'] as const)('checks real worker watch-file calls from %s without getWatchFiles', async (hook) => {
+    const test = adapter()
+    const result = await runHook((hook === 'url' ? test.url : test.worker).transform, test.context, test.forbidden, test.source)
+    expect(result).toBe(test.forbidden)
+    expect(test.forwarded).toEqual([test.forbidden])
+    expect(test.verify).toThrow(/experimental input/)
+  })
+
+  it('records worker load dependencies separately from the module id', async () => {
+    const test = adapter()
+    const load: Plugin = { name: 'vite:worker', load(id) { this.addWatchFile(test.forbidden); return id }, transform: () => null }
+    const url: Plugin = { name: 'vite:worker-import-meta-url', transform: () => null }
+    const css: Plugin = { name: 'vite:css', transform: () => null }
+    runHook(test.guard.configResolved, {}, { plugins: [load, url, css], build: { write: true } })
+    await runHook(load.load, test.context, test.source)
+    expect(test.verify).toThrow(/experimental input/)
+  })
+
+  it.each(['?worker', '?worker&inline', '?sharedworker', '?sharedworker&inline'])(
+    'keeps the complete forwarded file list for %s wrappers without emitted worker assets', async (query) => {
+      const test = adapter(), id = test.source + query
+      const load: Plugin = { name: 'vite:worker',
+        load() { this.addWatchFile(test.forbidden); return 'wrapper' }, transform: () => null,
+      }
+      const url: Plugin = { name: 'vite:worker-import-meta-url', transform: () => null }
+      const css: Plugin = { name: 'vite:css', transform: () => null }
+      runHook(test.guard.configResolved, {}, { plugins: [load, url, css], build: { write: true } })
+      const worker = test.config.worker.plugins()[0]!
+      runHook(worker.generateBundle, { getModuleIds: () => [test.source].values() }, {}, { 'worker.js': test.chunk() })
+      await runHook(load.load, test.context, id)
+      test.bundle['main.js'] = test.chunk({ modules: { [id]: {} } })
+      expect(test.forwarded).toEqual([test.forbidden])
+      expect(test.verify).toThrow(/experimental input/)
+    },
+  )
+
+  it('preserves separate load and transform observations and replaces only a rerun hook', async () => {
+    const test = adapter()
+    await runHook(test.worker.transform, test.context, test.forbidden, test.source)
+    await runHook(test.url.transform, test.context, test.source, test.source)
+    expect(test.verify).toThrow(/experimental input/)
+    await runHook(test.worker.transform, test.context, test.source, test.source)
+    expect(test.verify).not.toThrow()
+  })
+
+  it('retains cached worker watch observations across a build reset', async () => {
+    const test = adapter()
+    await runHook(test.url.transform, test.context, test.forbidden, test.source)
+    runHook(test.guard.buildStart, {})
+    test.config.experimental.renderBuiltUrl('main.js', { hostId: 'index.html', type: 'asset' })
+    expect(test.verify).toThrow(/experimental input/)
+  })
+
+  it('captures all worker graph module ids on a Rolldown context without getWatchFiles', () => {
+    const test = adapter(), worker = test.config.worker.plugins()[0]!
+    const workerChunk = test.chunk({ fileName: 'worker.js', modules: { [test.source]: {} } })
+    runHook(worker.generateBundle, { getModuleIds: () => [test.source, test.forbidden].values() }, {}, { 'worker.js': workerChunk })
+    test.bundle['worker.js'] = { type: 'asset', fileName: 'worker.js', names: [], originalFileNames: [] }
+    test.config.experimental.renderBuiltUrl('worker.js', { hostId: 'main.js', type: 'asset' })
+    expect(test.verify).toThrow(/experimental input/)
+  })
+
+  it('accepts a clean worker graph with only the public Rolldown plugin context APIs', () => {
+    const test = adapter(), worker = test.config.worker.plugins()[0]!
+    runHook(worker.generateBundle, { getModuleIds: () => [test.source].values() }, {}, {
+      'worker.js': test.chunk({ fileName: 'worker.js' }),
+    })
+    test.bundle['worker.js'] = { type: 'asset', fileName: 'worker.js', names: [], originalFileNames: [] }
+    test.config.experimental.renderBuiltUrl('worker.js', { hostId: 'main.js', type: 'asset' })
+    expect(test.verify).not.toThrow()
+  })
+
+  it('preserves worker hook metadata while recording inputs', () => {
+    const test = adapter()
+    expect(test.worker.load).toMatchObject({ order: 'pre' })
+    expect(test.worker.transform).toMatchObject({ order: 'post' })
+    expect(test.url.transform).toMatchObject({ order: 'pre' })
+  })
+
+  it('keeps Rollup worker watch files that are absent from its module graph', () => {
+    const test = adapter(), worker = test.config.worker.plugins()[0]!
+    runHook(worker.generateBundle, {
+      getModuleIds: () => [test.source].values(), getWatchFiles: () => [test.forbidden],
+    }, {}, { 'worker.js': test.chunk({ fileName: 'worker.js' }) })
+    test.bundle['worker.js'] = { type: 'asset', fileName: 'worker.js', names: [], originalFileNames: [] }
+    test.config.experimental.renderBuiltUrl('worker.js', { hostId: 'main.js', type: 'asset' })
+    expect(test.verify).toThrow(/experimental input/)
+  })
+
+  it('keeps CSS addWatchFile ownership after sharing the context adapter', () => {
+    const test = adapter()
+    runHook(test.css.transform, test.context, test.forbidden, test.source)
+    expect(test.forwarded).toEqual([test.forbidden])
+    expect(test.verify).toThrow(/experimental input/)
+  })
+
+  it('fails closed when Vite worker hook instrumentation is unavailable', () => {
+    const test = adapter()
+    expect(() => runHook(test.guard.configResolved, {}, { plugins: [test.css], build: { write: true } }))
+      .toThrow(/worker input instrumentation is unavailable/)
+  })
+
+  it('accepts the public Rolldown chunk fields without Rollup-only edge metadata', () => {
+    const test = graph()
+    expect(Object.hasOwn(test.bundle['main.js']!, 'implicitlyLoadedBefore')).toBe(false)
+    expect(Object.hasOwn(test.bundle['main.js']!, 'referencedFiles')).toBe(false)
+    expect(test.verify).not.toThrow()
+  })
+
+  it.each(['imports', 'dynamicImports', 'implicitlyLoadedBefore'] as const)('follows present %s edges to forbidden chunks', (edge) => {
+    const test = graph()
+    test.bundle['main.js'] = test.chunk({ [edge]: ['forbidden.js'] })
+    test.bundle['forbidden.js'] = test.chunk({ fileName: 'forbidden.js', modules: { [test.forbidden]: {} } })
+    expect(test.verify).toThrow(/experimental input/)
+  })
+
+  it.each(['imports', 'dynamicImports', 'implicitlyLoadedBefore', 'referencedFiles'] as const)('rejects missing output reached through %s', (edge) => {
+    const test = graph()
+    test.bundle['main.js'] = test.chunk({ [edge]: ['missing.js'] })
+    expect(test.verify).toThrow(/referenced output missing.js is missing/)
+  })
+
+  it('preserves a present Rollup referencedFiles asset edge', () => {
+    const test = graph()
+    test.bundle['main.js'] = test.chunk({ implicitlyLoadedBefore: [], referencedFiles: ['forbidden.bin'] })
+    test.bundle['forbidden.bin'] = { type: 'asset', fileName: 'forbidden.bin', names: [], originalFileNames: [test.forbidden] }
+    expect(test.verify).toThrow(/experimental input/)
+  })
+
+  it('keeps Vite imported-asset edges when Rollup-only fields are absent', () => {
+    const test = graph()
+    test.bundle['main.js'] = test.chunk({ viteMetadata: { importedCss: new Set(), importedAssets: new Set(['forbidden.bin']) } })
+    test.bundle['forbidden.bin'] = { type: 'asset', fileName: 'forbidden.bin', names: [], originalFileNames: [test.forbidden] }
+    expect(test.verify).toThrow(/experimental input/)
+  })
+
+  it('keeps captured pure-CSS ownership after Vite removes the wrapper chunk', () => {
+    const test = graph()
+    test.bundle['main.js'] = test.chunk({ viteMetadata: { importedCss: new Set(['style.css']), importedAssets: new Set() } })
+    test.bundle['style.js'] = test.chunk({ fileName: 'style.js', modules: { [test.forbidden]: {} },
+      viteMetadata: { importedCss: new Set(['style.css']), importedAssets: new Set() } })
+    test.bundle['style.css'] = { type: 'asset', fileName: 'style.css', names: [], originalFileNames: [] }
+    test.inputs.captureChunks(test.bundle)
+    delete test.bundle['style.js']
+    expect(() => { test.inputs.verify(test.bundle, test.moduleInfo) }).toThrow(/experimental input/)
+  })
+
+  it('keeps recorded asset URL edges when Rollup-only fields are absent', () => {
+    const test = graph()
+    test.inputs.assetReference('forbidden.bin', 'main.js', 'asset')
+    test.bundle['forbidden.bin'] = { type: 'asset', fileName: 'forbidden.bin', names: [], originalFileNames: [test.forbidden] }
+    expect(test.verify).toThrow(/experimental input/)
+  })
+
+  it('keeps recorded public-file ownership checks when Rollup-only fields are absent', () => {
+    const test = graph()
+    test.inputs.assetReference(test.forbidden, 'main.js', 'public')
+    expect(test.verify).toThrow(/experimental input/)
+  })
+
+  it('keeps included module dependency ownership checks when Rollup-only fields are absent', () => {
+    const test = graph()
+    test.inputs.captureChunks(test.bundle)
+    expect(() => { test.inputs.verify(test.bundle, id => ({ ...test.moduleInfo(),
+      importedIds: id === test.source ? [test.forbidden] : [],
+    })) }).toThrow(/experimental input/)
+  })
+
+  it('still rejects missing and external module records when Rollup-only fields are absent', () => {
+    const test = graph()
+    test.inputs.captureChunks(test.bundle)
+    expect(() => { test.inputs.verify(test.bundle, () => null) }).toThrow(/has no Rollup module record/)
+    const external = () => ({ ...test.moduleInfo(), isExternal: true })
+    expect(() => { test.inputs.verify(test.bundle, external) }).toThrow(/has no bundled input proof/)
+  })
+
+  it('accepts only the exact generated Rolldown runtime without a public module record', () => {
+    const test = graph(), runtime = '\0rolldown/runtime.js'
+    test.bundle['main.js'] = test.chunk({ modules: { [runtime]: {}, [test.source]: {} } })
+    test.inputs.captureChunks(test.bundle)
+    expect(() => { test.inputs.verify(test.bundle, id => id === runtime ? null : test.moduleInfo()) }).not.toThrow()
+  })
+
+  it.each(['importedIds', 'dynamicallyImportedIds'] as const)('accepts the exact generated runtime on a module %s edge', (edge) => {
+    const test = graph(), runtime = '\0rolldown/runtime.js'
+    test.inputs.captureChunks(test.bundle)
+    expect(() => { test.inputs.verify(test.bundle, id => id === runtime ? null : { ...test.moduleInfo(), [edge]: [runtime] }) })
+      .not.toThrow()
+  })
+
+  it.each([
+    '\0virtual:rolldown/runtime.js', '\0rolldown/runtime.js?raw', '\0rolldown/runtime.js?worker',
+    '\0rolldown/runtime.js/extra', '\0rolldown/runtime.jsx', 'rolldown/runtime.js',
+    '\0other/runtime.js',
+  ])('rejects a different virtual runtime identity without a module record: %j', (id) => {
+    const test = graph()
+    test.bundle['main.js'] = test.chunk({ modules: { [id]: {}, [test.source]: {} } })
+    test.inputs.captureChunks(test.bundle)
+    expect(() => { test.inputs.verify(test.bundle, value => value === id ? null : test.moduleInfo()) })
+      .toThrow(/has no Rollup module record/)
+  })
+
+  it('keeps physical path rejection for a literal backslash runtime lookalike', () => {
+    const test = graph(), lookalike = '\\0rolldown/runtime.js'
+    test.bundle['main.js'] = test.chunk({ modules: { [lookalike]: {}, [test.source]: {} } })
+    test.inputs.captureChunks(test.bundle)
+    expect(() => { test.inputs.verify(test.bundle, () => null) }).toThrow(/input .* is missing/)
+  })
+
+  it('does not count a generated runtime as proof of a reachable application module', () => {
+    const test = graph()
+    test.bundle['main.js'] = test.chunk({ modules: { '\0rolldown/runtime.js': {} } })
+    test.inputs.captureChunks(test.bundle)
+    expect(() => { test.inputs.verify(test.bundle, () => null) }).toThrow(/index.html has no recorded reachable modules/)
+  })
+
+  it('still checks a public module record supplied for the exact runtime identity', () => {
+    const test = graph(), runtime = '\0rolldown/runtime.js'
+    test.bundle['main.js'] = test.chunk({ modules: { [runtime]: {}, [test.source]: {} } })
+    test.inputs.captureChunks(test.bundle)
+    expect(() => { test.inputs.verify(test.bundle, () => ({ ...test.moduleInfo(), isExternal: true })) })
+      .toThrow(/has no bundled input proof/)
+    expect(() => { test.inputs.verify(test.bundle, id => ({ ...test.moduleInfo(),
+      importedIds: id === runtime ? [test.forbidden] : [],
+    })) }).toThrow(/experimental input/)
+  })
+
+  it('does not hide a forbidden sibling module beside the generated runtime', () => {
+    const test = graph(), runtime = '\0rolldown/runtime.js'
+    test.bundle['main.js'] = test.chunk({ modules: { [runtime]: {}, [test.forbidden]: {} } })
+    test.inputs.captureChunks(test.bundle)
+    expect(() => { test.inputs.verify(test.bundle, id => id === runtime ? null : test.moduleInfo()) }).toThrow(/experimental input/)
+  })
+
+  it.each(['imports', 'dynamicImports', 'implicitlyLoadedBefore', 'referencedFiles'] as const)(
+    'checks %s edges of a chunk that contains the generated runtime', (edge) => {
+      const test = graph(), runtime = '\0rolldown/runtime.js'
+      test.bundle['main.js'] = test.chunk({ imports: ['runtime.js'] })
+      test.bundle['runtime.js'] = test.chunk({ fileName: 'runtime.js', modules: { [runtime]: {} }, [edge]: ['forbidden.js'] })
+      test.bundle['forbidden.js'] = test.chunk({ fileName: 'forbidden.js', modules: { [test.forbidden]: {} } })
+      test.inputs.captureChunks(test.bundle)
+      expect(() => { test.inputs.verify(test.bundle, id => id === runtime ? null : test.moduleInfo()) }).toThrow(/experimental input/)
+    },
+  )
+
+  it('keeps asset and worker ownership checks on a chunk containing the generated runtime', () => {
+    const test = graph(), runtime = '\0rolldown/runtime.js'
+    test.bundle['main.js'] = test.chunk({ modules: { [runtime]: {}, [test.source]: {} },
+      viteMetadata: { importedCss: new Set(), importedAssets: new Set(['worker.js']) } })
+    test.bundle['worker.js'] = { type: 'asset', fileName: 'worker.js', names: [], originalFileNames: [] }
+    test.inputs.workerBundle({ 'worker.js': test.chunk({ fileName: 'worker.js', modules: { [test.forbidden]: {} } }) }, [test.forbidden])
+    test.inputs.captureChunks(test.bundle)
+    expect(() => { test.inputs.verify(test.bundle, id => id === runtime ? null : test.moduleInfo()) }).toThrow(/experimental input/)
   })
 })
 

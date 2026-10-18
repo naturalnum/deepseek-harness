@@ -933,6 +933,9 @@ importers:
       '@deepseek-ai/dsh-llm-mock-server':
         specifier: workspace:*
         version: link:../../packages/test-support/llm-mock-server
+      '@deepseek-ai/dsh-pe-cloud-client':
+        specifier: workspace:*
+        version: link:../../packages/cloud/pe-cloud-client
       '@deepseek-ai/dsh-pwsh-local':
         specifier: workspace:*
         version: link:../../packages/shell/pwsh-local
@@ -6867,6 +6870,9 @@ importers:
       '@deepseek-ai/dsh-client-web':
         specifier: workspace:*
         version: link:../../client/web
+      '@deepseek-ai/dsh-host-webserver':
+        specifier: workspace:*
+        version: link:../../host/webserver
       '@deepseek-ai/dsh-pe-cloud-access':
         specifier: workspace:*
         version: link:../pe-cloud-access
