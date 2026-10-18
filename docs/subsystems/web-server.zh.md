@@ -103,9 +103,10 @@ Host `ctx.connection` members consumed by transport-independent adapters.
 /**
  * Compose exact Fetch routes and the shared-channel RPC interceptor.
  * @param channel - shared channel mounted by Connection.
+ * @param beforeDispatch - optional final target admission; omission retains ordinary native dispatch.
  * @returns Fetch handler for trusted, authenticated requests.
  */
-createSharedFetchHandler(channel: '/api'): ConnectionFetchHandler
+createSharedFetchHandler(channel: '/api', beforeDispatch?: ConnectionDispatchGuard): ConnectionFetchHandler
 
 /**
  * Apply Connection's Host/Origin checks and browser authentication to
@@ -156,7 +157,7 @@ authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexRespons
 authenticatedUrl(baseUrl: string): string
 ```
 
-Types: [Principal](typert.zh.md)
+Types: [ConnectionDispatchGuard](../../packages/client/connection/README.zh.md) · [Principal](typert.zh.md)
 
 Source: [`packages/client/connection/src/rpc.ts`](../../packages/client/connection/src/rpc.ts)
 

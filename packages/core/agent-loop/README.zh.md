@@ -70,6 +70,10 @@ const handle = await ctx.agents.create({
 
 每次 inbox 变更都会提交一条规范化的 `agent/inbox/spliced` 事件。投影注册表会同步折叠该事件，因此 `Session.append()` 返回时，实时投影已经反映该 splice。插入、编辑、移除、领取与取消都通过同一组标准 splice 坐标回放。普通删除携带 `outcome: 'canceled'` 并发出 `agent/inbox/discarded { message }`；领取使用不带 outcome 的纯删除，并发出 `agent/inbox/claimed`。每次插入都会发出 `agent/inbox/inserted { message }`。`MessageId` 在两个待处理列表之间保持唯一。需要被移除消息的消费方应使用 claimed 或 discarded 通知，而不依赖 splice 前的 `session/event` 投影视图。
 
+### 停止 Loop
+
+外部生命周期 owner 可调用 `ctx.agentLoop.stop()`，永久关闭创建、恢复及配置启动准入，同时保持插件和依赖已挂载。每次调用均返回同一个 Promise，包括 abort 回调重入及后续 Context 销毁。它等待所属 Agent teardown、启动 continuation 及晚到持久化句柄清理；实际清理失败在重复调用时仍保持 rejected。普通创建或恢复失败仍由原调用者接收。Stop 不禁用 Loader entry，也不写入 Profile。同一个已停工厂不能重启。所属 setup、发布、Agent 工作或清理回调不得等待自身 stop，因为 stop 也在等待这些回调。外部 owner 仍负责完整 Context 销毁。
+
 ### 一个步骤做什么
 
 每个步骤都会发送会话的派生历史——最新的非空 `system/message` 节点是有效提示词，渲染提示词为空时则没有系统消息——及其可见工具 schema；模型的工具调用经过受守卫的工具流水线，每个被接纳的事实都会在下一步据此派生之前追加到会话日志。并行安全调用最多可重叠 `maxParallelToolCalls` 个；独占调用单独运行并构成排序屏障。取消是协作式的：`agent.cancel()` 中止当前活动，并在未设置 `keepInbox` 时清除待处理工作；被取消的流会终结已送达用户的文本。

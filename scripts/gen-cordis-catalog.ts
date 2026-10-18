@@ -50,6 +50,14 @@ export { REGION_BEGIN, REGION_END }
  * errors, so the partition can never silently drift from the service API.
  */
 export const SERVICE_PAGE: Record<string, string> = {
+  peAccount: 'cloud.md',
+  peAccountExecution: 'cloud.md',
+  peAccountRuntime: 'cloud.md',
+  peAuth: 'cloud.md',
+  peCloudApi: 'cloud.md',
+  peCloudFiles: 'cloud.md',
+  peExposure: 'cloud.md',
+  peSandboxCoordinator: 'cloud.md',
   translator: 'translation.md',
   cotTranslation: 'translation.md',
   speechToText: 'voice-input.md',
@@ -161,8 +169,8 @@ export const SERVICE_PAGE: Record<string, string> = {
  * or names itself here. Client-face keys (the projection analyzes the host
  * face only) name the package README that owns their surface.
  *
- * Two categories remain, and neither is a projection gap a scanning rule could
- * close. An OPTIONAL key (`key?: X`) is a value the launcher or boot code
+ * Named values outside the Host service projection keep explicit documentation
+ * owners here. An OPTIONAL key (`key?: X`) is a value the launcher or boot code
  * installs before the tree mounts, which the analyzer skips by rule because no
  * plugin provides it and `inject` cannot reach it. A client-face key belongs to
  * the browser Context, which this host-face program never sees; the browser
@@ -170,6 +178,9 @@ export const SERVICE_PAGE: Record<string, string> = {
  * to a model as `cordis_runtime_inspect what:"client"`).
  */
 export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
+  clientPersistence: 'client-side captured logical-key storage port — packages/client/store/README.md owns the API',
+  peCloudPage: 'client-side pre-Cordis prepared page owner — packages/cloud/pe-cloud-client/README.md owns the lifecycle',
+  peFilesPool: 'root-only LinuxFilesPool instance value, not a Cordis Service subclass — packages/cloud/pe-cloud-files/README.md owns pool startup, static storage and actual shutdown',
   invocation: 'not a service: per-call accessor (RemoteInvocation | undefined) the Gateway derives for each Remote call — packages/api/gateway/README.md owns the contract',
   webTerminals: 'client-side terminal view models — packages/api/terminal-controller/README.md owns the API',
   appReady: 'not a service: launcher-provided successful-startup signal — packages/boot/cmdline/README.md owns the launcher contract',
@@ -278,12 +289,47 @@ export const EVENT_WALK_EXEMPTIONS: Record<string, string> = {
 }
 
 /**
- * One primary subsystems page per project type used by a generated
- * signature. This stays curated because union names intentionally do not
+ * One primary documentation page per project type used by a generated
+ * signature, including package READMEs that own native extension hooks.
+ * This stays curated because union names intentionally do not
  * reuse the type-equivalence manifest's map-symbol entries and some symbols
  * appear on more than one page.
  */
 export const LINK_MAP: Readonly<Record<string, string>> = {
+  AccountBinding: 'cloud.md',
+  AccountExecutionPort: 'cloud.md',
+  AccountFilesProject: 'cloud.md',
+  AccountId: 'cloud.md',
+  AccountOwner: 'cloud.md',
+  AccountUse: 'cloud.md',
+  AgentLoop: 'core.md',
+  AuthRootObservation: 'cloud.md',
+  ConfigImpactGuard: '../../packages/boot/config-editor/README.md',
+  ConfigSaveReceipt: 'cloud.md',
+  ConfigSaveSubmissionHook: '../../packages/boot/config-editor/README.md',
+  ConnectionDispatchGuard: '../../packages/client/connection/README.md',
+  CredentialSaveSubmissionHook: '../../packages/credentials/credentials/README.md',
+  DrainCapacityReservation: 'cloud.md',
+  DrainParticipant: 'cloud.md',
+  EndpointExposure: 'cloud.md',
+  ExactFetchExposure: 'cloud.md',
+  ExposureInventory: 'cloud.md',
+  FirstScreenEventInput: 'cloud.md',
+  FirstScreenEvents: 'cloud.md',
+  FirstScreenNativeInput: 'cloud.md',
+  MountCapacityReservation: 'cloud.md',
+  NativeAgentFactoryGuards: 'cloud.md',
+  NativeFirstScreen: 'cloud.md',
+  NativeSessionGuards: 'cloud.md',
+  NodeStreamTransport: '../../packages/api/gateway/README.md',
+  NodeStreamTransportOptions: '../../packages/api/gateway/README.md',
+  ParticipantReceipt: 'cloud.md',
+  PluginSaveSubmissionHook: '../../packages/boot/plugin-manager/README.md',
+  RemoteEventQueueLimits: '../../packages/api/gateway/README.md',
+  RootRecipeInput: 'cloud.md',
+  RootRecipeObservation: 'cloud.md',
+  RuntimeControlObservation: 'cloud.md',
+  SessionController: 'session.md',
   Principal: 'typert.md',
   PrincipalMap: 'typert.md',
   RemoteAccessResource: 'typert.md',
@@ -843,6 +889,7 @@ export const FOUNDATION_TYPE_NAMES: ReadonlySet<string> = new Set([
   'Entry', 'Array',
   'Plugin',
   'AbortSignal',
+  'ConstructorParameters',
   'AsyncIterable',
   'Context',
   'Error',

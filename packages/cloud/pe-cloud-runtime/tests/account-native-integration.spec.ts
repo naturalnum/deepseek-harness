@@ -1,10 +1,10 @@
 /** Actual factory/Profile/Include/native providers; owned Node paths and closed business are fixtures, never quota evidence. */
 import type {} from '@deepseek-ai/dsh-subprocess'
 import * as fs from 'node:fs/promises'
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, readFileSync, statSync } from 'node:fs'
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { Context, FiberState } from '@deepseek-ai/cordis'
+import { Context, FiberState, symbols } from '@deepseek-ai/cordis'
 import { boot, initProfile } from '@deepseek-ai/dsh-app-boot'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
@@ -33,6 +33,7 @@ import * as Locale from '@deepseek-ai/dsh-client-locale'
 import Typert from '@deepseek-ai/dsh-typert-registry'
 import SessionQuery from '@deepseek-ai/dsh-session-query'
 import * as Jsonl from '@deepseek-ai/dsh-session-persistence-jsonl'
+import SessionPersistence from '@deepseek-ai/dsh-session-persistence'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { PeAccountRuntime } from '../src/root.ts'
@@ -73,6 +74,7 @@ async function fixture(options: {
   copiedFilesBinding?: boolean
   stopTimeoutMs?: number
   earlyLlmAndController?: boolean
+  readonlyBase?: boolean
   verifyDirectory?: (ctx: Context) => Promise<void>
   controllerEntered?: (ctx: Context) => void
 } = {}) {
@@ -107,6 +109,7 @@ async function fixture(options: {
   writeFileSync(anchor, '{"name":"m8s-native-fixture","private":true}\n')
   const configPath = join(layout.profileRoot, 'cordis.yml')
   writeFileSync(configPath, '[]\n')
+  if (options.readonlyBase) chmodSync(configPath, 0o444)
   mkdirSync(layout.credentialsRoot, { recursive: true })
   const credentialPath = join(layout.credentialsRoot, 'credentials.yaml')
   writeFileSync(credentialPath, 'version: 1\nrefs: {}\n', { mode: 0o600 })
@@ -315,6 +318,56 @@ it.each(['admission', 'fiber'] as const)('joins native teardown after Root %s cl
   expect(ctx.get('peCloudApi')).toBeUndefined()
   expect(f.barriers[0]?.snapshot()).toMatchObject({ admission: 'stopped', pending: [], failures: [] })
   expect(f.factory.inspect()).toMatchObject({ pending: 0, borrows: 0, waiters: 0, unknown: 0 })
+})
+
+it('stops the native Loop before whole graph disposal without changing a readonly base or Loader entries', async () => {
+  const f = await fixture({ firstScreen: true, readonlyBase: true })
+  const outcome = await f.start()
+  if (outcome.status === 'failed') throw outcome.cause
+  const ctx = outcome.context
+  const configPath = f.recipe.configPath, patchPath = f.layout.patchPath
+  const base = readFileSync(configPath), patch = readFileSync(patchPath)
+  const entries = [...ctx.loader.entries()].map(entry => ({ entry, fiber: entry.fiber, disabled: entry.options.disabled }))
+  const loop = entries.find(row => row.entry.options.id === 'loop')?.fiber
+  const raw: unknown = Reflect.get(ctx.sessionPersistence, symbols.original) ?? ctx.sessionPersistence
+  if (!(raw instanceof SessionPersistence)) throw new Error('Original native SessionPersistence is absent')
+  const flush = raw.flush.bind(raw)
+  const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  cleanups.push(async () => { release.resolve(undefined) })
+  const stopped = vi.spyOn(NativeLoop.prototype, 'stop')
+  vi.spyOn(raw, 'flush').mockImplementation(async () => {
+    entered.resolve(undefined)
+    await release.promise
+    await flush()
+  })
+  let updates = 0
+  ctx.on('loader/config-update', () => { updates++ })
+  vi.mocked(fs.rename).mockClear()
+  // This Loader composition deliberately has no approved live Agent; native stop tests own live JSONL coverage.
+  expect(ctx.agents.list()).toEqual([])
+  expect(ctx.sessions.list()).toEqual([])
+  const stopping = f.factory.stopNative(outcome.binding.accountId)
+  await entered.promise
+  expect(stopped).toHaveBeenCalledTimes(1)
+  expect(loop?.state).toBe(FiberState.ACTIVE)
+  for (const row of entries) {
+    expect(row.entry.fiber).toBe(row.fiber)
+    expect(row.fiber?.state).toBe(FiberState.ACTIVE)
+    expect(row.entry.options.disabled).toBe(row.disabled)
+  }
+  expect(updates).toBe(0)
+  expect(readFileSync(configPath)).toEqual(base)
+  expect(readFileSync(patchPath)).toEqual(patch)
+  release.resolve(undefined)
+  await expect(stopping).resolves.toMatchObject({ status: 'observed', native: {
+    status: 'confirmed', errorEvents: 0, warningEvents: 0, overflow: false,
+  } })
+  expect(loop?.state).toBe(FiberState.DISPOSED)
+  expect(updates).toBe(0)
+  expect(readFileSync(configPath)).toEqual(base)
+  expect(readFileSync(patchPath)).toEqual(patch)
+  expect(vi.mocked(fs.rename).mock.calls.filter(([, target]) => target === configPath || target === patchPath)).toEqual([])
+  expect(f.barriers[0]?.snapshot()).toMatchObject({ admission: 'stopped', pending: [], failures: [] })
 })
 
 it('retains the actual graph and save hooks while an admitted native credential rename is pending', async () => {

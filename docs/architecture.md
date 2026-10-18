@@ -72,7 +72,7 @@ Events are the extension points, and picking the right domain is the first decis
 - **Agent events** (`agent/*`) carry a live `Agent`: inbox, step, status, request, validation, continuation. Use one to observe or intercept work in flight.
 - **Capability events** attach policy and adapters to a seam (`fs/*`, `tools/*`, `telemetry/*`) without importing the loop.
 
-AgentLoop awaits serial `agent/created` before queued work and rolls back failed initialization. Unload retains resources through Agent teardown; [agent-loop](../packages/core/agent-loop/README.md#understand-the-implementation) defines ordering.
+AgentLoop awaits serial `agent/created` before queued work and rolls back failed initialization. Owners can call `ctx.agentLoop.stop()` to end its work before graph disposal. Teardown retains required resources; [agent-loop](../packages/core/agent-loop/README.md#understand-the-implementation) defines ordering.
 
 The [event map](event-producer-consumer.md) lists every event's producers and consumers.
 

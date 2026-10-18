@@ -78,7 +78,7 @@ Provider 经根服务登记必需的 `files` 和 `execution` 参与者。登记�
 
 可选 `native.firstScreen` 选择固定只读首屏切片。提供时，`maxHomeBytes`、`maxCollectionItems`、`maxFrameBytes`、`maxQueuedEvents`、`maxQueuedBytes` 均须显式为正数、有限安全整数；省略时保持关闭，不补默认值。Root 通过配方传递原始预算，并从同一账户的规范 Profile 得到预期 home，在原生 boot 前核对一致。既有 `native.maxEntries` 继续限制原生 owner/marker 清单。元数据或配置条目名称不能满足实际 prepared 审核。
 
-私有 builtin 只提供受守卫的 Workspace/Settings 构造器和保留的原事件注册 Loader scope。构造器不读取未完成的 files 项目。Unpublished bootstrap 先取得实际 files project，要求原共享 Session 只读策略，向真实 Gateway 注册事件源，再执行 `auditPrepared`；business-ready 发布及之后的 `assertBootstrapCurrent` 仍独立。共享策略允许在 Workspace 关联前检查实际 live Session/Agent 元数据，按原 Workspace 关系核对冷列表元数据，不新增 Session 库、成员缓存，也不从 id/cwd 签发 ProjectScope。Stop 先等待事件撤销，再销毁 AgentLoop、检查原生 idle 并刷新持久化。源或 disposer 失败仍为未确认，不能证明 clean release。Integration 将既有 `maxQueuedEvents`、`maxQueuedBytes` 和 `maxFrameBytes` 同时交给受守卫 reader 与原 Gateway 注册。Reader 捕获这些值，供原 protected control-buffer hook 使用；每个原生 control 代际和事件 client 都沿用原有界队列。下游慢读超限只终止对应流，实际 source 失败仍保留既有审核撤销与未确认清理语义。不增加配置字段、预算默认值或队列。
+私有 builtin 只提供受守卫的 Workspace/Settings 构造器和保留的原事件注册 Loader scope。构造器不读取未完成的 files 项目。Unpublished bootstrap 先取得实际 files project，要求原共享 Session 只读策略，向真实 Gateway 注册事件源，再执行 `auditPrepared`；business-ready 发布及之后的 `assertBootstrapCurrent` 仍独立。共享策略允许在 Workspace 关联前检查实际 live Session/Agent 元数据，按原 Workspace 关系核对冷列表元数据，不新增 Session 库、成员缓存，也不从 id/cwd 签发 ProjectScope。Stop 先等待事件撤销，再调用原 `AgentLoop.stop()`、检查原生 idle 并刷新持久化。源或 disposer 失败仍为未确认，不能证明 clean release。Integration 将既有 `maxQueuedEvents`、`maxQueuedBytes` 和 `maxFrameBytes` 同时交给受守卫 reader 与原 Gateway 注册。Reader 捕获这些值，供原 protected control-buffer hook 使用；每个原生 control 代际和事件 client 都沿用原有界队列。下游慢读超限只终止对应流，实际 source 失败仍保留既有审核撤销与未确认清理语义。不增加配置字段、预算默认值或队列。
 
 ### Account layout
 
@@ -130,7 +130,7 @@ Provider 经根服务登记必需的 `files` 和 `execution` 参与者。登记�
 
 Factory 的[原生集成](src/account-native-integration.ts)在 Include 前创建公开 `CloudAccountApi` owner 并安装实际 Root 签发的 closed execution port。固定私有 builtin 消费 API 的原生 editor/credentials provider、Controller、AgentLoop 和 LLM guard。提供受限 files lane 后会构造公开 `CloudAccountFiles`；其实际 `/account` 入口持有原生 Registry/default/FS 安装。Controller 构造只捕获固定 binding 和原 files owner，不读取部分完成的项目。API 业务准入通过后，目录操作要求唯一 ACTIVE 的 files/account 入口，并读取该 owner 当前的 `project()` 能力；操作后再次核对同一个项目。Guard 构造也必须延迟项目读取。Files 初始化仍在途时，原生 provider 依赖可能已激活；必需入口检查和业务准入仍阻止发布不完整的图。Factory 装配/未发布登记检查与 Root 封口/业务 ready 检查保持独立。缺 files 或共享项目/model/Preset guard 时不会改用宽松回调。
 
-Factory 关闭时先关闭准入和图 lifetime，等待原保存屏障，销毁所属 AgentLoop fiber，核对原 AgentRegistry 为空并 flush SessionPersistence，再撤回原生 hook 和销毁图。它等待剩余借用及实际 execution/files 参与者后才关闭原 storage lease。Clean owner 释放还要求 confirmed 原生销毁、保存和参与者证据，以及实际 PG drain/release CAS。工作或元数据结果未知时保留容量和归属；账户排空未知时 Root 继续持有控制资源。
+Factory 关闭时先关闭准入和图 lifetime，等待原保存屏障，调用原 AgentLoop 服务的终态 `stop()` 并保持其 fiber 及持久化 provider 已挂载，核对原 AgentRegistry 为空并 flush SessionPersistence，再撤回原生 hook 和销毁图。它等待剩余借用及实际 execution/files 参与者后才关闭原 storage lease。Clean owner 释放还要求 confirmed 原生销毁、保存和参与者证据，以及实际 PG drain/release CAS。工作或元数据结果未知时保留容量和归属；账户排空未知时 Root 继续持有控制资源。
 
 装配容量随实际启动及已开始的原生清理结算。仅原生销毁不能证明完整排空，因此账户预留仍保留。工厂关闭外部准入时仍保留内部排空预留及原生销毁责任；清理未知继续持有排空容量。只有确定在 claim 前或从未提交的失败且没有原生资源时，才释放未启动账户槽。已提交结果未知保留原槽，不盲目重启。
 

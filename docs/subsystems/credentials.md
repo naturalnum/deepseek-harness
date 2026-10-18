@@ -143,6 +143,17 @@ A CredentialKey answers "what credential does this plugin hold for this id". Not
 
 ```ts cordis-catalog
 /**
+ * Install the sole save hook for provider-instrumented submissions.
+ * Providers opt in by calling submitSave before entering their own queue.
+ * A provider subclass may register during construction, before Service.init.
+ * The caller must stop and settle protected work before withdrawing the hook.
+ * @param hook - synchronous admission and actual-Promise observation.
+ * @returns awaitable disposer; caller unload also removes the hook.
+ * @throws If a hook is already installed.
+ */
+registerSaveHook(hook: CredentialSaveSubmissionHook): () => Promise<void>
+
+/**
  * Resolve one reference to its current value. Resolution is per call:
  * consumers re-resolve at each operation and must not cache across
  * operations — that per-operation read is what makes a changed credential
@@ -221,6 +232,8 @@ abstract modifyRecord( key: CredentialKey, mutate: (current: CredentialRecord | 
  */
 abstract deleteRecord(key: CredentialKey): Promise<void>
 ```
+
+Types: [CredentialSaveSubmissionHook](../../packages/credentials/credentials/README.md)
 
 Source: [`packages/credentials/credentials/src/index.ts`](../../packages/credentials/credentials/src/index.ts)
 

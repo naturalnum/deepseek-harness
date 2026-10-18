@@ -446,8 +446,9 @@ currentSelection(): ModelSelection
  * Save the complete default model selection. A deployment without a configuration
  * editor keeps its composition entry. Saves commit in submission order; a failed
  * save rejects its caller without blocking later saves.
+ * Admission runs through ConfigEditor's save hook before entering this service's queue.
  * @param next - resolved selection accepted by an entry point.
- * @returns fulfillment after the optional profile write settles.
+ * @returns fulfillment after the optional profile write and reconciliation settle.
  */
 async saveSelection(next: ModelSelection): Promise<void>
 ```
@@ -462,6 +463,13 @@ Concrete agent factory and driver service.
 
 ```ts cordis-catalog
 /**
+ * Permanently close factory admission and drain owned Agents and startup work without unloading the plugin.
+ * Call from an external lifecycle owner; owned setup, publication, work and cleanup callbacks must not await their own stop.
+ * @returns The same Promise on every call, retaining actual cleanup success or failure; Context disposal joins it too.
+ */
+stop(): Promise<void>
+
+/**
  * Create an agent and session under one caller-supplied identity, owned by
  * the accessing fiber. Constructor-driven config calls mint a fresh combined
  * id before entering this boundary. When a persistence backend is mounted,
@@ -471,7 +479,7 @@ Concrete agent factory and driver service.
  * @param meta - optional fresh-session workspace metadata.
  * @returns the published running agent.
  */
-async create(id: SessionId, options: AgentOptions = {}, meta: Pick<SessionHeader, 'cwd'> = {}): Promise<Agent>
+create(id: SessionId, options: AgentOptions = {}, meta: Pick<SessionHeader, 'cwd'> = {}): Promise<Agent>
 
 /**
  * Create an owned agent on a caller-supplied session id.

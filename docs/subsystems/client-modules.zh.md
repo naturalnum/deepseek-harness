@@ -145,6 +145,16 @@ The web plugin table service: incremental `dsh.client` scan + wire composition +
 graph(): WebBootGraph
 
 /**
+ * Declare browser packages without activating their Host plugins.
+ * Invalid declarations or missing artifacts reject the batch and withdraw its sources.
+ * @param packages - approved package specifiers whose manifests declare dsh.client.
+ * @param baseUrl - resolution base of the deployment-owned package installation.
+ * @param options - optional activation choice; false supplies modules only, while omission or true also activates plugins.
+ * @returns awaitable disposer removing these declarations, also called when the caller unloads.
+ */
+registerClientPackages(packages: readonly string[], baseUrl: string, options?: { readonly activate?: boolean }): () => Promise<void>
+
+/**
  * Absolute path of an entry's client bundle.
  * @param id - entry id (package name).
  * @returns the path, or undefined for an unknown id.

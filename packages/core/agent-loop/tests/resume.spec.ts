@@ -863,7 +863,7 @@ describe('the session-persistence Agent Note: AgentLoop factory create/resume', 
     await ctx.fiber.dispose()
   })
 
-  it('AgentLoop unload aborts a never-settling persistence open and awaits wrapper settlement', async () => {
+  it('AgentLoop unload aborts the resume caller and joins the actual late persistence open and close', async () => {
     const sessionId = SessionId('resume-load-factory-unload')
     const root = await persistSession(sessionId)
     const ctx = new Context()
@@ -891,16 +891,19 @@ describe('the session-persistence Agent Note: AgentLoop factory create/resume', 
     const resuming = ctx.agents.resume({ resumeSessionId: sessionId, agentOptions: { provider: 'mock', model: 'mock' } })
     await openStarted.promise
     const rejection = expect(promptly(resuming)).rejects.toThrow(/agent loop is not active/)
-    await promptly(loopFiber.dispose())
+    const disposing = loopFiber.dispose()
+    let disposed = false
+    void disposing.then(() => { disposed = true })
     await rejection
+    expect(disposed).toBe(false)
 
     expect(published).toEqual([])
     expect(ctx.agents.get(sessionId)).toBeUndefined()
     expect(ctx.sessions.get(sessionId)).toBeUndefined()
-    // The abandoned handle is closed once the hung open finally settles.
     const abandoned = abandonedHandleStub()
     lateOpen.resolve(abandoned.handle)
-    await expect.poll(() => abandoned.close.mock.calls.length).toBe(1)
+    await promptly(disposing)
+    expect(abandoned.close).toHaveBeenCalledTimes(1)
     expect(published).toEqual([])
     await ctx.fiber.dispose()
   })
@@ -1332,6 +1335,7 @@ describe('configured-start failure edges', () => {
 
     await expect(promptly(resuming)).rejects.toThrow(/creation aborted/)
     expect(ctx.agents.get(sessionId)).toBeUndefined()
+    gate.reject(new Error('cancelled backend open settled'))
     await ctx.fiber.dispose()
   })
 

@@ -211,25 +211,59 @@ export interface AccountRuntimeService {
    * @returns Frozen bounded counts and finite safe issue identities.
    */
   inspectRecipe(): RootRecipeObservation
-  /** Register the caller-owned files or execution contribution; duplicates and closed admission reject. */
+  /**
+   * Register the caller-owned files or execution contribution; duplicates and closed admission reject.
+   * @param participant Actual files/root or execution/root owner of the tracked work.
+   * @returns Idempotent disposer owned by the caller's effect scope; withdrawal also revokes the recipe seal.
+   */
   registerDrainParticipant(participant: DrainParticipant): () => void | Promise<void>
   /** Reject missing mandatory participants; success is not recipe sealing. */
   assertRequiredParticipants(): void
-  /** Reserve bounded actual mount work after participant registration; no owner is claimed. */
+  /**
+   * Reserve bounded actual mount work after participant registration; no owner is claimed.
+   * @param accountId Trusted account whose factory owns the local reservation.
+   * @returns Reservation retaining mount capacity until actual mounting settles and account capacity through graph disposal.
+   */
   reserveMountCapacity(accountId: AccountId): MountCapacityReservation
-  /** Retain a finite drain slot until actual settlement. */
+  /**
+   * Retain a finite drain slot until actual settlement.
+   * @param accountId Account already holding this root's local account reservation.
+   * @returns Drain reservation released by its owner only after actual drain settlement.
+   */
   reserveDrainCapacity(accountId: AccountId): DrainCapacityReservation
-  /** Read actual PG metadata without creating or reclaiming an owner. */
+  /**
+   * Read actual PG metadata without creating or reclaiming an owner.
+   * @param accountId Authenticated account identity selected by trusted access.
+   * @returns Current PostgreSQL owner metadata, or undefined for confirmed absence.
+   */
   locateAccount(accountId: AccountId): Promise<AccountOwner | undefined>
-  /** Enter actual root acquisition; optional signal abandons only this observer. */
+  /**
+   * Enter actual root acquisition; optional signal abandons only this observer.
+   * @param accountId Authenticated account selected by trusted access, never a browser expectation.
+   * @param signal Optional observer cancellation; with or without it, the configured account wait deadline applies.
+   * @returns Fresh borrow of the ready graph after actual storage/native audits and ready CAS rechecks.
+   */
   acquireAccount(accountId: AccountId, signal?: AbortSignal): Promise<AccountUse>
-  /** Borrow only the exact ready generation; never claim, mount or select a replacement graph. */
+  /**
+   * Borrow only the exact ready generation; never claim, mount or select a replacement graph.
+   * @param binding Exact runtime-installed ready generation retained by the trusted caller.
+   * @returns Fresh independently released borrow; stale, unpublished and closed graphs reject.
+   */
   borrowAccount(binding: AccountBinding): Promise<AccountUse>
-  /** Check installed mounting/current identity independently of business readiness. */
+  /**
+   * Check installed mounting/current identity independently of business readiness.
+   * @param binding Original installed graph binding to check, never a request borrow.
+   */
   assertMountCurrent(binding: AccountBinding): void
-  /** Require exact live ready publication without capturing a request borrow. */
+  /**
+   * Require exact live ready publication without capturing a request borrow.
+   * @param binding Original installed graph binding whose ready publication and current recipe seal must hold.
+   */
   assertBusinessCurrent(binding: AccountBinding): void
-  /** Return safe retained control counts without credentials or paths. */
+  /**
+   * Return safe retained control counts without credentials or paths.
+   * @returns Frozen control phase, bounded counts and failure presence; these observations do not grant readiness.
+   */
   inspectControl(): RuntimeControlObservation
   /** Close new admission and join actual retained root control work. */
   close(): Promise<void>

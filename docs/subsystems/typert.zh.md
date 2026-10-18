@@ -657,6 +657,16 @@ Resolve strict generated definitions or conservative SRC markers against current
 
 ```ts cordis-catalog
 /**
+ * Create a native Node mux pinned to an externally authenticated Peer.
+ * The caller owns authentication, Host/Origin checks, and the Peer's lifetime.
+ * @param peer - fixed live Peer selected by the external carrier.
+ * @param beforeOpen - synchronous guard before each logical-stream dispatch; a throw refuses that stream.
+ * @param options - optional frame limit and pre-allocation logical resource reservation; settlement is synchronous.
+ * @returns carrier closed explicitly or when the calling Context unloads.
+ */
+createNodeStreamTransport( peer: PeerScope, beforeOpen: (endpoint: string) => void, options?: NodeStreamTransportOptions, ): NodeStreamTransport
+
+/**
  * Check for an active owner Client event stream, the only kind that can answer forwarded waterfalls.
  * @returns whether an owner stream is open and has not been cancelled.
  */
@@ -666,9 +676,10 @@ hasLiveClient(): boolean
  * Register the sole application-selected forwarded-event source.
  * @param source - stream factory installed by the Remote assembly.
  * @param host - stable Host facts included in each Client generation's opening frame.
+ * @param limits - optional positive finite per-client item, resident-byte and complete-frame limits; no defaults.
  * @returns disposer removing this source and cancelling its active streams.
  */
-registerRemoteEvents( source: TypertRemoteEventSource, host: RemoteEventHostInfo, ): () => Promise<void>
+registerRemoteEvents( source: TypertRemoteEventSource, host: RemoteEventHostInfo, limits?: RemoteEventQueueLimits, ): () => Promise<void>
 
 /**
  * Invoke one live Remote method through strict generated reflection or SRC markers.
@@ -685,6 +696,8 @@ async invoke(request: InvokeRemoteRequest): Promise<unknown>
  */
 async stream(request: InvokeRemoteRequest): Promise<AsyncIterable<unknown>>
 ```
+
+Types: [NodeStreamTransport](../../packages/api/gateway/README.zh.md) · [NodeStreamTransportOptions](../../packages/api/gateway/README.zh.md) · [RemoteEventQueueLimits](../../packages/api/gateway/README.zh.md)
 
 Source: [`packages/api/gateway/src/index.ts`](../../packages/api/gateway/src/index.ts)
 <!-- END GENERATED cordis-surface -->

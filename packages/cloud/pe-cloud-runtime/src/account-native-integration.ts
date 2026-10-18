@@ -77,6 +77,7 @@ export class AccountNativeIntegration {
   private bootstrap: (() => Promise<void>) | undefined
   private bootstrapping: Promise<void> | undefined
   private loopFiber: Fiber | undefined
+  private loop: AgentLoop | undefined
   private agents: Context['agents'] | undefined
   private persistence: Context['sessionPersistence'] | undefined
   private nativeDrain: Readonly<{ nativeIdle: true; persistenceFlushed: true }> | undefined
@@ -205,7 +206,7 @@ export class AccountNativeIntegration {
     const agentLoop = {
       inject: [...AgentLoop.inject, 'peCloudApi'], Config: AgentLoop.Config,
       apply: (owner: Context, config: ConstructorParameters<typeof AgentLoop>[1]) => {
-        api.createAgentLoop(owner, requireGuards(owner).agents, config)
+        this.loop = api.createAgentLoop(owner, requireGuards(owner).agents, config)
         this.loopFiber = owner.fiber
         const agents = owner.get('agents'), persistence = owner.get('sessionPersistence')
         const rawAgents: unknown = agents === undefined ? undefined : Reflect.get(agents, symbols.original) ?? agents
@@ -344,7 +345,7 @@ export class AccountNativeIntegration {
         // The original audit may still own a native metadata read; joining is not a successful audit.
         try { await this.bootstrapping } catch (_cause) { /* factory retains the original assembly failure */ }
         await this.api?.stopFirstScreenEvents()
-        await this.loopFiber?.dispose()
+        await this.loop?.stop()
         if (this.agents !== undefined && this.agents.list().length !== 0) {
           throw new AccountRuntimeError('cloud/stop-unconfirmed', 'Native Agent lifecycle work has not settled')
         }

@@ -72,6 +72,37 @@ Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnp
 Persist complete raw configs and apply them through the normal Loader path.
 
 ```ts cordis-catalog
+/**
+ * Install one live-only impact policy for actual edits through this editor.
+ * Without a guard the original reconciliation and rollback path is unchanged.
+ * @param guard - policy for the native plan, without a cloud field allowlist.
+ * @returns awaitable disposer; caller unload removes the guard.
+ * @throws If another impact guard is installed.
+ */
+registerImpactGuard(guard: ConfigImpactGuard): () => Promise<void>
+
+/**
+ * Install the sole hook for explicit save submissions through this editor.
+ * The caller must stop and settle protected writers before withdrawing the hook.
+ * Nested submissions in one admitted operation share its hook and completion.
+ * @param hook - synchronous admission and Promise observation owned by the caller.
+ * @returns awaitable disposer; caller unload also removes the hook.
+ * @throws If a hook is already installed.
+ */
+registerSaveHook(hook: ConfigSaveSubmissionHook): () => Promise<void>
+
+/**
+ * Submit one instrumented save before its writer enters any private queue.
+ * Without a hook, invoke submit directly and return its original Promise.
+ * Nested submissions through the same editor share the admitted operation;
+ * callers must await all nested work. A continuation after settlement submits anew.
+ * @param writer - native writer identifier, without config values or secrets.
+ * @param submit - actual queue submission and all required write/application work.
+ * @returns the original operation Promise, or the hook's admitted operation Promise.
+ * @throws If synchronous admission rejects the submission.
+ */
+submitSave<T>(writer: string, submit: () => Promise<T>): Promise<T>
+
 /** Addressable profile rows; nested Includes have independent configuration ownership.
  * @returns Active entries with unique profile patch ids.
  */
@@ -83,12 +114,17 @@ entries(): Entry[]
 configuration(): Array<{ entry: Entry; inherited: Record<string, unknown>; override: Record<string, unknown> }>
 
 /** Validate, persist, and reconcile a plugin's next config; ordinary fields keep normal lifecycle rules.
+ * An impact guard selects the restricted live path; unsupported plans reject before writing.
+ * A required post-replacement failure remains failed with its committed state for caller diagnosis;
+ * that path never falls back to an unguarded rollback or remount.
  * @param entry Current Loader entry, also used to detect replacement during the write.
  * @param change Derive a raw config from the current entry and its inherited layer.
  * @returns Fulfillment after Loader reconciliation completes.
  */
 async edit( entry: Entry, change: (current: Record<string, unknown>, inherited: Record<string, unknown>) => Record<string, unknown>, ): Promise<void>
 ```
+
+Types: [ConfigImpactGuard](../../packages/boot/config-editor/README.md) · [ConfigSaveSubmissionHook](../../packages/boot/config-editor/README.md)
 
 Source: [`packages/boot/config-editor/src/index.ts`](../../packages/boot/config-editor/src/index.ts)
 
@@ -143,6 +179,15 @@ Source: [`packages/boot/hmr/src/index.ts`](../../packages/boot/hmr/src/index.ts)
 Manage profile files and apply their declared reload lifecycle.
 
 ```ts cordis-catalog
+/**
+ * Install the sole hook for this manager's native state-change submissions.
+ * Stop and settle protected operations before withdrawing the hook.
+ * @param hook - synchronous admission and typed ChangeResult observation.
+ * @returns awaitable disposer; caller unload also removes the hook.
+ * @throws If a hook is already installed.
+ */
+registerSaveHook(hook: PluginSaveSubmissionHook): () => Promise<void>
+
 /** Read exact plugin-version exemptions saved in this profile.
  * @returns Accepted package-name@version keys with the runtime versions they may run on, and any
  * record or file problem the reader rejected, which the caller reports instead of failing.
@@ -231,6 +276,8 @@ Manage profile files and apply their declared reload lifecycle.
  */
 @Remote removeBundle(name: string): Promise<ChangeResult>
 ```
+
+Types: [PluginSaveSubmissionHook](../../packages/boot/plugin-manager/README.md)
 
 Source: [`packages/boot/plugin-manager/src/index.ts`](../../packages/boot/plugin-manager/src/index.ts)
 

@@ -94,9 +94,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async saveSelection(next: ModelSelection): Promise<void>',
-        description: 'Save the complete default model selection. A deployment without a configuration editor keeps its composition entry. Saves commit in submission order; a failed save rejects its caller without blocking later saves.',
+        description: 'Save the complete default model selection. A deployment without a configuration editor keeps its composition entry. Saves commit in submission order; a failed save rejects its caller without blocking later saves. Admission runs through ConfigEditor\'s save hook before entering this service\'s queue.',
         parameters: [{ name: 'next', description: 'resolved selection accepted by an entry point.' }],
-        returns: 'fulfillment after the optional profile write settles.',
+        returns: 'fulfillment after the optional profile write and reconciliation settle.',
       },
     ],
   },
@@ -111,7 +111,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
       },
       {
-        signature: 'async create(id: SessionId, options: AgentOptions = {}, meta: Pick<SessionHeader, \'cwd\'> = {}): Promise<Agent>',
+        signature: 'stop(): Promise<void>',
+        description: 'Permanently close factory admission and drain owned Agents and startup work without unloading the plugin. Call from an external lifecycle owner; owned setup, publication, work and cleanup callbacks must not await their own stop.',
+        parameters: [],
+        returns: 'The same Promise on every call, retaining actual cleanup success or failure; Context disposal joins it too.',
+      },
+      {
+        signature: 'create(id: SessionId, options: AgentOptions = {}, meta: Pick<SessionHeader, \'cwd\'> = {}): Promise<Agent>',
         description: 'Create an agent and session under one caller-supplied identity, owned by the accessing fiber. Constructor-driven config calls mint a fresh combined id before entering this boundary. When a persistence backend is mounted, the session\'s durable identity and any seed are stored before publication.',
         parameters: [{ name: 'id', description: 'shared agent/session identity.' }, { name: 'options', description: 'concrete loop options.' }, { name: 'meta', description: 'optional fresh-session workspace metadata.' }],
         returns: 'the published running agent.',
@@ -599,6 +605,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the graph served as `window.__DSH_BOOT__`.',
       },
       {
+        signature: 'registerClientPackages(packages: readonly string[], baseUrl: string, options?: { readonly activate?: boolean }): () => Promise<void>',
+        description: 'Declare browser packages without activating their Host plugins. Invalid declarations or missing artifacts reject the batch and withdraw its sources.',
+        parameters: [{ name: 'packages', description: 'approved package specifiers whose manifests declare dsh.client.' }, { name: 'baseUrl', description: 'resolution base of the deployment-owned package installation.' }, { name: 'options', description: 'optional activation choice; false supplies modules only, while omission or true also activates plugins.' }],
+        returns: 'awaitable disposer removing these declarations, also called when the caller unloads.',
+      },
+      {
         signature: 'clientPath(id: string): string | undefined',
         description: 'Absolute path of an entry\'s client bundle.',
         parameters: [{ name: 'id', description: 'entry id (package name).' }],
@@ -719,6 +731,27 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Persist complete raw configs and apply them through the normal Loader path.',
     methods: [
       {
+        signature: 'registerImpactGuard(guard: ConfigImpactGuard): () => Promise<void>',
+        description: 'Install one live-only impact policy for actual edits through this editor. Without a guard the original reconciliation and rollback path is unchanged.',
+        parameters: [{ name: 'guard', description: 'policy for the native plan, without a cloud field allowlist.' }],
+        returns: 'awaitable disposer; caller unload removes the guard.',
+        throws: ['If another impact guard is installed.'],
+      },
+      {
+        signature: 'registerSaveHook(hook: ConfigSaveSubmissionHook): () => Promise<void>',
+        description: 'Install the sole hook for explicit save submissions through this editor. The caller must stop and settle protected writers before withdrawing the hook. Nested submissions in one admitted operation share its hook and completion.',
+        parameters: [{ name: 'hook', description: 'synchronous admission and Promise observation owned by the caller.' }],
+        returns: 'awaitable disposer; caller unload also removes the hook.',
+        throws: ['If a hook is already installed.'],
+      },
+      {
+        signature: 'submitSave<T>(writer: string, submit: () => Promise<T>): Promise<T>',
+        description: 'Submit one instrumented save before its writer enters any private queue. Without a hook, invoke submit directly and return its original Promise. Nested submissions through the same editor share the admitted operation; callers must await all nested work. A continuation after settlement submits anew.',
+        parameters: [{ name: 'writer', description: 'native writer identifier, without config values or secrets.' }, { name: 'submit', description: 'actual queue submission and all required write/application work.' }],
+        returns: 'the original operation Promise, or the hook\'s admitted operation Promise.',
+        throws: ['If synchronous admission rejects the submission.'],
+      },
+      {
         signature: 'entries(): Entry[]',
         description: 'Addressable profile rows; nested Includes have independent configuration ownership.',
         parameters: [],
@@ -732,7 +765,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'async edit( entry: Entry, change: (current: Record<string, unknown>, inherited: Record<string, unknown>) => Record<string, unknown>, ): Promise<void>',
-        description: 'Validate, persist, and reconcile a plugin\'s next config; ordinary fields keep normal lifecycle rules.',
+        description: 'Validate, persist, and reconcile a plugin\'s next config; ordinary fields keep normal lifecycle rules. An impact guard selects the restricted live path; unsupported plans reject before writing. A required post-replacement failure remains failed with its committed state for caller diagnosis; that path never falls back to an unguarded rollback or remount.',
         parameters: [{ name: 'entry', description: 'Current Loader entry, also used to detect replacement during the write.' }, { name: 'change', description: 'Derive a raw config from the current entry and its inherited layer.' }],
         returns: 'Fulfillment after Loader reconciliation completes.',
       },
@@ -764,9 +797,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
       },
       {
-        signature: 'createSharedFetchHandler(channel: \'/api\'): ConnectionFetchHandler',
+        signature: 'createSharedFetchHandler(channel: \'/api\', beforeDispatch?: ConnectionDispatchGuard): ConnectionFetchHandler',
         description: 'Compose exact Fetch routes and the shared-channel RPC interceptor.',
-        parameters: [{ name: 'channel', description: 'shared channel mounted by Connection.' }],
+        parameters: [{ name: 'channel', description: 'shared channel mounted by Connection.' }, { name: 'beforeDispatch', description: 'optional final target admission; omission retains ordinary native dispatch.' }],
         returns: 'Fetch handler for trusted, authenticated requests.',
       },
       {
@@ -831,6 +864,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     summary: 'Abstract credential service over two key spaces that answer two questions.',
     description: 'Abstract credential service over two key spaces that answer two questions.\n\nA CredentialRef answers "what is behind this environment-variable name": the provider-managed store first, then ambient fallbacks such as the process environment and `.env` files. One seam-wide rule binds that half: an empty stored value is absent everywhere — `resolve` skips it, `describe` reports it unconfigured — so a blank never masquerades as a configured secret.\n\nA CredentialKey answers "what credential does this plugin hold for this id". Nothing can layer here — an authorization grant has no environment to be read from — so presence of the record is the whole fact, and modifyRecord is the only write path because a correct write depends on the current value (a token refresh is read-decide-replace under one lock).',
     methods: [
+      {
+        signature: 'registerSaveHook(hook: CredentialSaveSubmissionHook): () => Promise<void>',
+        description: 'Install the sole save hook for provider-instrumented submissions. Providers opt in by calling submitSave before entering their own queue. A provider subclass may register during construction, before Service.init. The caller must stop and settle protected work before withdrawing the hook.',
+        parameters: [{ name: 'hook', description: 'synchronous admission and actual-Promise observation.' }],
+        returns: 'awaitable disposer; caller unload also removes the hook.',
+        throws: ['If a hook is already installed.'],
+      },
       {
         signature: 'abstract resolve(ref: CredentialRef): Promise<ResolvedCredential | undefined>',
         description: 'Resolve one reference to its current value. Resolution is per call: consumers re-resolve at each operation and must not cache across operations — that per-operation read is what makes a changed credential reach the next operation without a restart.',
@@ -1635,6 +1675,320 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'peAccount',
+    summary: 'Trusted immutable input for one account graph; lifetime is never a request signal.',
+    description: 'Trusted immutable input for one account graph; lifetime is never a request signal.',
+    methods: [],
+  },
+  {
+    key: 'peAccountExecution',
+    summary: 'Internal factory capability; it cannot select an account, backend, or process.',
+    description: 'Internal factory capability; it cannot select an account, backend, or process.',
+    methods: [
+      {
+        signature: 'assertCurrent(ctx: Context): void',
+        description: 'Check the exact issued object, current graph and permanent admission state.',
+        parameters: [{ name: 'ctx', description: 'actual installation or native caller context.' }],
+      },
+      {
+        signature: 'deny(ctx: Context, signal?: AbortSignal): never',
+        description: 'Refuse user execution before preparation; a pre-aborted caller retains its reason.',
+        parameters: [{ name: 'ctx', description: 'actual native caller context with its installed port.' }, { name: 'signal', description: 'optional caller cancellation; omission adds no caller cancellation.' }],
+        returns: 'never; no handle or execution-world resource is created.',
+      },
+      {
+        signature: 'claim(ctx: Context): void',
+        description: 'Reserve the sole native provider pair for this generation.',
+        parameters: [{ name: 'ctx', description: 'account Loader effect scope; unloading permanently closes this port.' }],
+      },
+      {
+        signature: 'close(): void',
+        description: 'Permanently close only this generation; internal stop observation remains available.',
+        parameters: [],
+      },
+    ],
+  },
+  {
+    key: 'peAccountRuntime',
+    summary: 'Shared service definition; providers need no dependency on Host control implementation.',
+    description: 'Shared service definition; providers need no dependency on Host control implementation.',
+    methods: [
+      {
+        signature: 'sealRecipe(input: RootRecipeInput): void',
+        description: 'Audit actual Root facts; missing real storage keeps sealing rejected.',
+        parameters: [{ name: 'input', description: 'Fixed requirements and original object identities, never caller readiness assertions.' }],
+        throws: ['AccountRuntimeError while any actual Root or storage requirement is incomplete, revoked or closed.'],
+      },
+      {
+        signature: 'assertRecipeSealed(recipeVersion: string): void',
+        description: 'Require the current complete seal before external admission.',
+        parameters: [{ name: 'recipeVersion', description: 'Exact deployment recipe required by the caller.' }],
+        throws: ['AccountRuntimeError without a current complete seal.'],
+      },
+      {
+        signature: 'revokeRecipe(): void',
+        description: 'Revoke current audit authority before a recipe change.',
+        parameters: [],
+      },
+      {
+        signature: 'inspectRecipe(): RootRecipeObservation',
+        description: 'Inspect current identities and invalidate changed audit facts without issuing admission authority.',
+        parameters: [],
+        returns: 'Frozen bounded counts and finite safe issue identities.',
+      },
+      {
+        signature: 'registerDrainParticipant(participant: DrainParticipant): () => void | Promise<void>',
+        description: 'Register the caller-owned files or execution contribution; duplicates and closed admission reject.',
+        parameters: [{ name: 'participant', description: 'Actual files/root or execution/root owner of the tracked work.' }],
+        returns: 'Idempotent disposer owned by the caller\'s effect scope; withdrawal also revokes the recipe seal.',
+      },
+      {
+        signature: 'assertRequiredParticipants(): void',
+        description: 'Reject missing mandatory participants; success is not recipe sealing.',
+        parameters: [],
+      },
+      {
+        signature: 'reserveMountCapacity(accountId: AccountId): MountCapacityReservation',
+        description: 'Reserve bounded actual mount work after participant registration; no owner is claimed.',
+        parameters: [{ name: 'accountId', description: 'Trusted account whose factory owns the local reservation.' }],
+        returns: 'Reservation retaining mount capacity until actual mounting settles and account capacity through graph disposal.',
+      },
+      {
+        signature: 'reserveDrainCapacity(accountId: AccountId): DrainCapacityReservation',
+        description: 'Retain a finite drain slot until actual settlement.',
+        parameters: [{ name: 'accountId', description: 'Account already holding this root\'s local account reservation.' }],
+        returns: 'Drain reservation released by its owner only after actual drain settlement.',
+      },
+      {
+        signature: 'locateAccount(accountId: AccountId): Promise<AccountOwner | undefined>',
+        description: 'Read actual PG metadata without creating or reclaiming an owner.',
+        parameters: [{ name: 'accountId', description: 'Authenticated account identity selected by trusted access.' }],
+        returns: 'Current PostgreSQL owner metadata, or undefined for confirmed absence.',
+      },
+      {
+        signature: 'acquireAccount(accountId: AccountId, signal?: AbortSignal): Promise<AccountUse>',
+        description: 'Enter actual root acquisition; optional signal abandons only this observer.',
+        parameters: [{ name: 'accountId', description: 'Authenticated account selected by trusted access, never a browser expectation.' }, { name: 'signal', description: 'Optional observer cancellation; with or without it, the configured account wait deadline applies.' }],
+        returns: 'Fresh borrow of the ready graph after actual storage/native audits and ready CAS rechecks.',
+      },
+      {
+        signature: 'borrowAccount(binding: AccountBinding): Promise<AccountUse>',
+        description: 'Borrow only the exact ready generation; never claim, mount or select a replacement graph.',
+        parameters: [{ name: 'binding', description: 'Exact runtime-installed ready generation retained by the trusted caller.' }],
+        returns: 'Fresh independently released borrow; stale, unpublished and closed graphs reject.',
+      },
+      {
+        signature: 'assertMountCurrent(binding: AccountBinding): void',
+        description: 'Check installed mounting/current identity independently of business readiness.',
+        parameters: [{ name: 'binding', description: 'Original installed graph binding to check, never a request borrow.' }],
+      },
+      {
+        signature: 'assertBusinessCurrent(binding: AccountBinding): void',
+        description: 'Require exact live ready publication without capturing a request borrow.',
+        parameters: [{ name: 'binding', description: 'Original installed graph binding whose ready publication and current recipe seal must hold.' }],
+      },
+      {
+        signature: 'inspectControl(): RuntimeControlObservation',
+        description: 'Return safe retained control counts without credentials or paths.',
+        parameters: [],
+        returns: 'Frozen control phase, bounded counts and failure presence; these observations do not grant readiness.',
+      },
+      {
+        signature: 'close(): Promise<void>',
+        description: 'Close new admission and join actual retained root control work.',
+        parameters: [],
+      },
+    ],
+  },
+  {
+    key: 'peAuth',
+    summary: 'Owns one finite authentication pool and its actual secret/library work, without publishing raw resources.',
+    description: 'Owns one finite authentication pool and its actual secret/library work, without publishing raw resources.',
+    methods: [
+      {
+        signature: 'observe(): AuthRootObservation',
+        description: 'Inspect bounded resource counts without exposing secrets, SQL, raw pools or a readiness certificate.',
+        parameters: [],
+        returns: 'A frozen snapshot; request admission stays closed independently of authentication initialization.',
+      },
+      {
+        signature: 'close(): Promise<void>',
+        description: 'Stop new secret/authentication work and join actual startup, library queries, secret reads and Pool.end. Caller abandonment never ends the pool early. Repeated calls join the same cleanup; failure remains unconfirmed.',
+        parameters: [],
+        returns: 'Actual resource settlement, without a timer that could certify an early release.',
+      },
+    ],
+  },
+  {
+    key: 'peCloudApi',
+    summary: 'One account\'s API providers and save controls; runtime retains assembly and drain ownership.',
+    description: 'One account\'s API providers and save controls; runtime retains assembly and drain ownership.',
+    methods: [
+      {
+        signature: 'readonly binding: AccountBinding',
+        description: 'Exact runtime-installed graph binding; presence does not publish business readiness.',
+        parameters: [],
+      },
+      {
+        signature: 'readonly providers: Readonly<Pick<AccountApiInstall, \'configEditor\' | \'credentials\'>>',
+        description: 'Native constructors fixed before their Loader activation, using this graph\'s existing save hooks.',
+        parameters: [],
+      },
+      {
+        signature: 'assertInstalled(owner: Context = this.ctx): void',
+        description: 'Require this exact service and binding without granting business admission.',
+        parameters: [{ name: 'owner', description: 'Native Loader scope; omitted checks the API owner\'s own scope.' }],
+      },
+      {
+        signature: 'async assertBootstrapCurrent(owner: Context, signal?: AbortSignal): Promise<void>',
+        description: 'Check original native installations and the shared policy without creating or writing business resources. Mount/business admission and native ownership are checked around the awaited policy metadata read. Selected exposure rows and visited runtimes/fibers share the explicit preparation budget; missing or exceeded budgets reject.',
+        parameters: [{ name: 'owner', description: 'Actual consumer scope in this account graph.' }, { name: 'signal', description: 'Optional observer cancellation, combined with the original graph lifetime.' }],
+        returns: 'Settlement of the current checks; no readiness token, catalog or account authority is issued.',
+        throws: ['CloudApiError for absent policy, removed/replaced native installations or closed admission; policy failures and cancellation retain their original identity.'],
+      },
+      {
+        signature: 'async auditPrepared(owner: Context, signal?: AbortSignal): Promise<void>',
+        description: 'Audit actual native handlers while the original factory still owns unpublished assembly. This requires mounting authority rather than business-ready admission and publishes no account.',
+        parameters: [{ name: 'owner', description: 'Actual consumer scope in this original graph.' }, { name: 'signal', description: 'Optional observer cancellation, combined with the graph lifetime.' }],
+        returns: 'Settlement after original policy/provider checks and the actual handler inventory audit.',
+        throws: ['CloudApiError without the original unpublished callback, native owners or bounded policy; original policy/cancellation failures retain identity.'],
+      },
+      {
+        signature: 'audit(inventory: ExposureInventory): void',
+        description: 'Audit this view against actual native inventory supplied by trusted assembly.',
+        parameters: [{ name: 'inventory', description: 'Mounted handlers and reviewed guards, never configuration availability flags.' }],
+      },
+      {
+        signature: 'invalidate(): void',
+        description: 'Revoke only this graph\'s inventory during replacement or drain.',
+        parameters: [],
+      },
+      {
+        signature: 'requireRpc(endpoint: string): EndpointExposure',
+        description: 'Require a reviewed native unary endpoint after business admission.',
+        parameters: [{ name: 'endpoint', description: 'Native unary URL endpoint.' }],
+        returns: 'The audited declaration after business admission.',
+      },
+      {
+        signature: 'requireStream(endpoint: string): EndpointExposure',
+        description: 'Require a reviewed native logical-stream endpoint after business admission.',
+        parameters: [{ name: 'endpoint', description: 'Native logical-stream endpoint.' }],
+        returns: 'Its audited declaration after business admission.',
+      },
+      {
+        signature: 'requireFetch(method: string, pathname: string): ExactFetchExposure',
+        description: 'Require an exact reviewed Fetch route after business admission.',
+        parameters: [{ name: 'method', description: 'Original HTTP method.' }, { name: 'pathname', description: 'Original canonical pathname.' }],
+        returns: 'Its exact audited declaration after business admission.',
+      },
+      {
+        signature: 'prepareFirstScreen(owner: Context, input: Omit<FirstScreenNativeInput, \'api\' | \'binding\'>): NativeFirstScreen',
+        description: 'Prepare fixed readonly native constructors; original Loader activation and complete auditing still follow.',
+        parameters: [{ name: 'owner', description: 'Independent graph\'s prepare scope.' }, { name: 'input', description: 'Actual files-owned project, shared Session metadata check and explicit native limits.' }],
+        returns: 'Original constructor installation, with no readiness publication or directory creation.',
+      },
+      {
+        signature: 'installFirstScreenEvents(owner: Context, input: Omit<FirstScreenEventInput, \'api\' | \'native\'>): FirstScreenEvents',
+        description: 'Register the actual bounded native event subset on the original Gateway.',
+        parameters: [{ name: 'owner', description: 'Original registration Loader fiber after readonly native providers activate.' }, { name: 'input', description: 'Exact graph profile home and all required event bounds.' }],
+        returns: 'Actual registration/disposer; native Gateway owns ready and wire framing.',
+      },
+      {
+        signature: 'async stopFirstScreenEvents(): Promise<void>',
+        description: 'Join the original cached event-source withdrawal before native teardown.',
+        parameters: [],
+        returns: 'Actual registration/disposer settlement; absent registration has no work.',
+      },
+      {
+        signature: 'createController( owner: Context, guards: NativeSessionGuards, config: ConstructorParameters<typeof SessionController>[1], ): SessionController',
+        description: 'Construct the sole native Controller in its actual Loader fiber.',
+        parameters: [{ name: 'owner', description: 'Owning native entry inside this independent graph.' }, { name: 'guards', description: 'Shared files/project/Preset and enabled-handler checks, including the fixed directory capability.' }, { name: 'config', description: 'Original native Controller configuration.' }],
+        returns: 'The registered native subclass; this does not audit or publish the graph.',
+      },
+      {
+        signature: 'createAgentLoop(owner: Context, guards: NativeAgentFactoryGuards, config: ConstructorParameters<typeof AgentLoop>[1]): AgentLoop',
+        description: 'Install the sole guarded native factory before business admission opens.',
+        parameters: [{ name: 'owner', description: 'Owning native entry inside this independent graph.' }, { name: 'guards', description: 'Shared pre-write and prepared-Agent checks.' }, { name: 'config', description: 'Original native configuration, with no startup agents.' }],
+        returns: 'The real native AgentLoop provider; every operation still checks business admission.',
+      },
+      {
+        signature: 'installLlmGuard(owner: Context, allowed: (provider: string, model: string) => boolean): () => void',
+        description: 'Install actual model dispatch admission in the native LLM scope.',
+        parameters: [{ name: 'owner', description: 'Native LLM scope in this graph.' }, { name: 'allowed', description: 'Same approved provider/model set as selection and catalog projection.' }],
+        returns: 'The native effect disposer; no model request is made here.',
+      },
+      {
+        signature: 'pauseAccountChanges(deadlineAtMs: number, signal?: AbortSignal): Promise<ConfigSaveReceipt>',
+        description: 'Pause new top-level configuration submissions while retaining admitted native work.',
+        parameters: [{ name: 'deadlineAtMs', description: 'Finite observation deadline; actual submitted writes remain owned.' }, { name: 'signal', description: 'Optional observer cancellation; absence waits to the deadline.' }],
+        returns: 'The existing save barrier\'s pause evidence.',
+      },
+      {
+        signature: 'resumeAccountChanges(): void',
+        description: 'Reopen only after runtime\'s actual re-audit and the barrier\'s quiescence check.',
+        parameters: [],
+      },
+      {
+        signature: 'stopConfigSaves(deadlineAtMs: number, signal?: AbortSignal): Promise<ConfigSaveReceipt>',
+        description: 'Close configuration submissions and retain actual native save settlement.',
+        parameters: [{ name: 'deadlineAtMs', description: 'Finite observation deadline; timeout does not stop actual native writes.' }, { name: 'signal', description: 'Optional observer cancellation; absence waits to the deadline.' }],
+        returns: 'Existing terminal save evidence, available after business admission closes.',
+      },
+      {
+        signature: 'async withdraw(): Promise<void>',
+        description: 'Withdraw only after confirmed terminal save settlement, before disposing native providers.',
+        parameters: [],
+      },
+    ],
+  },
+  {
+    key: 'peCloudFiles',
+    summary: 'One graph\'s real Registry/FS installation; shared pool drain and directory responsibility stay with their original owners.',
+    description: 'One graph\'s real Registry/FS installation; shared pool drain and directory responsibility stay with their original owners.',
+    methods: [
+      {
+        signature: 'readonly binding: AccountBinding',
+        description: 'Exact runtime-installed graph binding, independent of account business readiness.',
+        parameters: [],
+      },
+      {
+        signature: 'assertInstalled(owner: Context = this.ctx): void',
+        description: 'Require this exact prepared owner and current binding without granting business admission.',
+        parameters: [{ name: 'owner', description: 'Native scope in the original account graph; omission checks the calling service scope.' }],
+      },
+      {
+        signature: 'install(owner: Context): Promise<AccountFilesProject>',
+        description: 'Install the sole original native Registry, await its default result, then install its fixed S2 FileSystem. One Promise retains actual settlement; failure is terminal for this owner and does not certify cleanup.',
+        parameters: [{ name: 'owner', description: 'Actual files/account Loader scope, which owns both native child fibers.' }],
+        returns: 'The actual project after provider activation and directory verification; no ready or clean claim.',
+      },
+      {
+        signature: 'project(): AccountFilesProject',
+        description: 'Read the installed actual project for trusted API/runtime assembly.',
+        parameters: [],
+        returns: 'The original Workspace object and files-owned directory capability, while both native providers remain current.',
+        throws: ['FilesFailure before successful installation, after provider disposal or for a foreign/stale graph.'],
+      },
+    ],
+  },
+  {
+    key: 'peExposure',
+    summary: 'Root policy provider; registering it does not publish account readiness.',
+    description: 'Root policy provider; registering it does not publish account readiness.',
+    methods: [
+      {
+        signature: 'readonly policy: ExposurePolicy',
+        description: 'Deployment exposure policy whose inventory audit is revoked on service disposal.',
+        parameters: [],
+      },
+      {
+        signature: 'readonly approvedConfiguration: ApprovedConfigurationCatalog | undefined',
+        description: 'Explicit immutable approval description; it grants no account installation or mutation permission.',
+        parameters: [],
+      },
+    ],
+  },
+  {
     key: 'permissionPresets',
     summary: 'Owns the deployment\'s configured permission presets, the fixed Auto integration hook, and their write path.',
     description: 'Owns the deployment\'s configured permission presets, the fixed Auto integration hook, and their write path. Requires a confining `ctx.shell` executor and `ctx.approval`; unmatched knob values are reported as CUSTOM_PRESET, not an error.',
@@ -1679,6 +2033,30 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'peSandboxCoordinator',
+    summary: 'A concrete implementation must register as runtime\'s mandatory execution participant and verify its own required execution capabilities or explicit closed mode before readiness.',
+    description: 'A concrete implementation must register as runtime\'s mandatory execution participant and verify its own required execution capabilities or explicit closed mode before readiness. This definition supplies neither an implementation nor an empty-work stopping receipt.',
+    methods: [
+      {
+        signature: 'abstract assertReady(): void',
+        description: 'Check actual registration and declared requirements; closed mode authorizes no execution.',
+        parameters: [],
+      },
+      {
+        signature: 'abstract bindAccount(ctx: Context, binding: AccountBinding, assertCurrent: () => void): AccountExecutionPort',
+        description: 'Issue one restricted port from runtime\'s trusted native prepare scope.',
+        parameters: [{ name: 'ctx', description: 'independent account graph with its actual installed binding.' }, { name: 'binding', description: 'exact installed runtime generation, never serialized identity.' }, { name: 'assertCurrent', description: 'runtime-owned graph-current check, valid during mounting.' }],
+        returns: 'an account-only port; issuance does not establish account readiness.',
+      },
+      {
+        signature: 'abstract stopEpoch(binding: AccountBinding, deadlineAtMs: number): Promise<ParticipantReceipt>',
+        description: 'Stop all actual work and nonterminal allocations for this exact generation.',
+        parameters: [{ name: 'binding', description: 'runtime-owned account and epoch; includes idle and uncertain allocations.' }, { name: 'deadlineAtMs', description: 'caller\'s finite waiting deadline, which does not release cleanup ownership.' }],
+        returns: 'confirmed only after all ranges, I/O and late starts have stopped; otherwise unknown.',
+      },
+    ],
+  },
+  {
     key: 'planMode',
     summary: '`ctx.planMode`: owns logged plan state, applies and narrates selected state at step start, the `plan:policy` section, the `/plan` command, and the stable exit tool.',
     description: '`ctx.planMode`: owns logged plan state, applies and narrates selected state at step start, the `plan:policy` section, the `/plan` command, and the stable exit tool. Client carriers expose the projection\'s cropped `{ active, pending }` view.',
@@ -1702,6 +2080,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     summary: 'Manage profile files and apply their declared reload lifecycle.',
     description: 'Manage profile files and apply their declared reload lifecycle.',
     methods: [
+      {
+        signature: 'registerSaveHook(hook: PluginSaveSubmissionHook): () => Promise<void>',
+        description: 'Install the sole hook for this manager\'s native state-change submissions. Stop and settle protected operations before withdrawing the hook.',
+        parameters: [{ name: 'hook', description: 'synchronous admission and typed ChangeResult observation.' }],
+        returns: 'awaitable disposer; caller unload also removes the hook.',
+        throws: ['If a hook is already installed.'],
+      },
       {
         signature: '@Remote listVersionExemptions(): { exemptions: Record<string, string[]>; warnings: string[] }',
         description: 'Read exact plugin-version exemptions saved in this profile.',
@@ -3552,15 +3937,21 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
       },
       {
+        signature: 'createNodeStreamTransport( peer: PeerScope, beforeOpen: (endpoint: string) => void, options?: NodeStreamTransportOptions, ): NodeStreamTransport',
+        description: 'Create a native Node mux pinned to an externally authenticated Peer. The caller owns authentication, Host/Origin checks, and the Peer\'s lifetime.',
+        parameters: [{ name: 'peer', description: 'fixed live Peer selected by the external carrier.' }, { name: 'beforeOpen', description: 'synchronous guard before each logical-stream dispatch; a throw refuses that stream.' }, { name: 'options', description: 'optional frame limit and pre-allocation logical resource reservation; settlement is synchronous.' }],
+        returns: 'carrier closed explicitly or when the calling Context unloads.',
+      },
+      {
         signature: 'hasLiveClient(): boolean',
         description: 'Check for an active owner Client event stream, the only kind that can answer forwarded waterfalls.',
         parameters: [],
         returns: 'whether an owner stream is open and has not been cancelled.',
       },
       {
-        signature: 'registerRemoteEvents( source: TypertRemoteEventSource, host: RemoteEventHostInfo, ): () => Promise<void>',
+        signature: 'registerRemoteEvents( source: TypertRemoteEventSource, host: RemoteEventHostInfo, limits?: RemoteEventQueueLimits, ): () => Promise<void>',
         description: 'Register the sole application-selected forwarded-event source.',
-        parameters: [{ name: 'source', description: 'stream factory installed by the Remote assembly.' }, { name: 'host', description: 'stable Host facts included in each Client generation\'s opening frame.' }],
+        parameters: [{ name: 'source', description: 'stream factory installed by the Remote assembly.' }, { name: 'host', description: 'stable Host facts included in each Client generation\'s opening frame.' }, { name: 'limits', description: 'optional positive finite per-client item, resident-byte and complete-frame limits; no defaults.' }],
         returns: 'disposer removing this source and cancelling its active streams.',
       },
       {
@@ -4658,6 +5049,14 @@ export const EVENT_API: readonly EventApiEntry[] = [
 /** Shapes of every exported type the Service and Event signatures reference (transitively), sorted by name. */
 export const TYPE_API: readonly TypeApiEntry[] = [
   {
+    name: 'AccountApiInstall',
+    declaration: 'export interface AccountApiInstall {\n    readonly binding: AccountBinding;\n    readonly exposure: ExposurePolicy;\n    readonly configEditor: typeof ConfigEditor;\n    readonly credentials: typeof LocalCredentialProvider;\n    assertInstalled(owner: Context): void;\n    pauseAccountChanges(deadlineAtMs: number, signal?: AbortSignal): Promise<ConfigSaveReceipt>;\n    resumeAccountChanges(): void;\n    stopConfigSaves(deadlineAtMs: number, signal?: AbortSignal): Promise<ConfigSaveReceipt>;\n    withdraw(): Promise<void>;\n}',
+  },
+  {
+    name: 'AccountApiPreparation',
+    declaration: 'export interface AccountApiPreparation {\n    readonly binding: AccountBinding;\n    readonly rootExposure: ExposurePolicy;\n    readonly selected: ExposureManifest;\n    readonly saves: ConfigSaveBarrier;\n    readonly assertMountCurrent: (binding: AccountBinding) => void;\n    readonly assertBusinessCurrent: (binding: AccountBinding) => void;\n    readonly assertBootstrapCurrent?: (signal: AbortSignal) => Promise<void>;\n    readonly maxNativeInventoryEntries?: number;\n    readonly assertUnpublished?: () => void;\n}',
+  },
+  {
     name: 'AccountBonusBatch',
     declaration: 'export interface AccountBonusBatch {\n    readonly accountId: AccountUserId;\n    readonly bonuses: readonly AccountBonusNotification[];\n}',
   },
@@ -4676,6 +5075,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'AccountDetails',
     declaration: 'export interface AccountDetails {\n    readonly profile: {\n        readonly status: \'ready\';\n        readonly value: AccountProfile;\n    } | {\n        readonly status: \'failed\';\n    };\n    readonly balance: {\n        readonly status: \'ready\';\n        readonly value: readonly AccountWallet[];\n        readonly bonusWallets: readonly AccountWallet[];\n    } | {\n        readonly status: \'failed\';\n    };\n}',
+  },
+  {
+    name: 'AccountExecutionPort',
+    declaration: 'export interface AccountExecutionPort {\n    readonly binding: AccountBinding;\n    assertCurrent(ctx: Context): void;\n    deny(ctx: Context, signal?: AbortSignal): never;\n    claim(ctx: Context): void;\n    close(): void;\n}',
+  },
+  {
+    name: 'AccountFilesProject',
+    declaration: 'export interface AccountFilesProject {\n    readonly binding: AccountBinding;\n    readonly workspace: Workspace;\n    readonly projectDirectory: S2ProjectDirectory;\n}',
   },
   {
     name: 'AccountLinks',
@@ -4724,6 +5131,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'AgentHandle',
     declaration: 'export interface AgentHandle {\n    agent: Agent;\n    dispose(): Promise<void>;\n}',
+  },
+  {
+    name: 'AgentLoop',
+    declaration: 'export class AgentLoop extends Service implements AgentFactory {\n    static inject;\n    static Config: z<{\n        agents?: Config[\'agents\'];\n        maxParallelToolCalls?: number;\n    }, Config>;\n    readonly config: Config;\n    constructor(ctx: Context, config: Config);\n    stop(): Promise<void>;\n    create(id: SessionId, options: AgentOptions = {}, meta: Pick<SessionHeader, \'cwd\'> = {}): Promise<Agent>;\n    async createAgent(ownerCtx: Context, options: CreateAgentOptions): Promise<AgentHandle>;\n    async resume(ownerCtx: Context, options: ResumeAgentOptions): Promise<AgentHandle>;\n}',
   },
   {
     name: 'AgentOptions',
@@ -4808,6 +5219,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ApprovalRequestEvent',
     declaration: 'export interface ApprovalRequestEvent {\n    readonly agent: Agent;\n    readonly toolName: string;\n    readonly callId?: ToolCallId;\n    readonly reason?: string;\n    readonly displayReason?: {\n        readonly en: string;\n        readonly [locale: string]: string;\n    };\n    readonly signal?: AbortSignal;\n}',
+  },
+  {
+    name: 'ApprovedConfigurationCatalog',
+    declaration: 'export interface ApprovedConfigurationCatalog {\n    readonly recipeVersion: string;\n    readonly catalogVersion: string;\n    readonly maxEntries: number;\n    readonly maxStringBytes: number;\n    readonly maxCatalogBytes: number;\n    readonly plugins: readonly ApprovedConfigurationPlugin[];\n    readonly skills: Readonly<{\n        mode: \'closed\';\n    }>;\n    readonly credentials: Readonly<{\n        mode: \'read-only\';\n    }>;\n    readonly fields: readonly never[];\n}',
+  },
+  {
+    name: 'ApprovedConfigurationPlugin',
+    declaration: 'export interface ApprovedConfigurationPlugin {\n    readonly id: string;\n    readonly entryId: string;\n    readonly moduleName: string;\n    readonly packageName: string;\n    readonly packageVersion: string;\n    readonly installable: false;\n    readonly toggleable: false;\n}',
   },
   {
     name: 'ArchiveSessionOptions',
@@ -4946,6 +5365,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type AuthorizationStatus = \'authorized\' | \'cancelled\';',
   },
   {
+    name: 'AuthRootObservation',
+    declaration: 'export interface AuthRootObservation {\n    readonly phase: \'starting\' | \'initialized\' | \'failed\' | \'closing\' | \'closed\';\n    readonly requestAdmission: \'closed\';\n    readonly pendingSecrets: number;\n    readonly pendingAuthentication: number;\n    readonly poolAllocated: boolean;\n    readonly ingress?: IngressObservation;\n}',
+  },
+  {
     name: 'BackendRegistry',
     declaration: 'export class BackendRegistry {\n    register(name: string, backend: StorageBackend): () => void;\n    get(name: string): StorageBackend;\n    names(): string[];\n}',
   },
@@ -4996,6 +5419,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ClientArtifactBaseline',
     declaration: 'export interface ClientArtifactBaseline {\n    readonly path: string;\n    readonly mtimeMs: number;\n    readonly ctimeMs: number;\n    readonly size: number;\n}',
+  },
+  {
+    name: 'CloudAccountApi',
+    declaration: 'export class CloudAccountApi extends Service {\n    readonly binding: AccountBinding;\n    readonly providers: Readonly<Pick<AccountApiInstall, \'configEditor\' | \'credentials\'>>;\n    constructor(ctx: Context, input: AccountApiPreparation);\n    assertInstalled(owner: Context = this.ctx): void;\n    async assertBootstrapCurrent(owner: Context, signal?: AbortSignal): Promise<void>;\n    async auditPrepared(owner: Context, signal?: AbortSignal): Promise<void>;\n    audit(inventory: ExposureInventory): void;\n    invalidate(): void;\n    requireRpc(endpoint: string): EndpointExposure;\n    requireStream(endpoint: string): EndpointExposure;\n    requireFetch(method: string, pathname: string): ExactFetchExposure;\n    prepareFirstScreen(owner: Context, input: Omit<FirstScreenNativeInput, \'api\' | \'binding\'>): NativeFirstScreen;\n    installFirstScreenEvents(owner: Context, input: Omit<FirstScreenEventInput, \'api\' | \'native\'>): FirstScreenEvents;\n    async stopFirstScreenEvents(): Promise<void>;\n    createController(owner: Context, guards: NativeSessionGuards, config: ConstructorParameters<typeof SessionController>[1]): SessionController;\n    createAgentLoop(owner: Context, guards: NativeAgentFactoryGuards, config: ConstructorParameters<typeof AgentLoop>[1]): AgentLoop;\n    installLlmGuard(owner: Context, allowed: (provider: string, model: string) => boolean): () => void;\n    pauseAccountChanges(deadlineAtMs: number, signal?: AbortSignal): Promise<ConfigSaveReceipt>;\n    resumeAccountChanges(): v /* …truncated — full shape in source */',
   },
   {
     name: 'CollectedOutput',
@@ -5082,6 +5509,46 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ComputerUseProviderName = Branded<\'ComputerUseProviderName\'>;',
   },
   {
+    name: 'ConfigEditor',
+    declaration: 'export class ConfigEditor extends Service {\n    static inject;\n    constructor(private readonly ownerContext: Context);\n    registerImpactGuard(guard: ConfigImpactGuard): () => Promise<void>;\n    registerSaveHook(hook: ConfigSaveSubmissionHook): () => Promise<void>;\n    submitSave<T>(writer: string, submit: () => Promise<T>): Promise<T>;\n    get documentPath(): string;\n    entries(): Entry[];\n    configuration(): Array<{\n        entry: Entry;\n        inherited: Record<string, unknown>;\n        override: Record<string, unknown>;\n    }>;\n    async edit(entry: Entry, change: (current: Record<string, unknown>, inherited: Record<string, unknown>) => Record<string, unknown>): Promise<void>;\n}',
+  },
+  {
+    name: 'ConfigImpactGuard',
+    declaration: 'export interface ConfigImpactGuard {\n    check(plan: ProfileConfigUpdatePlan): void | Promise<void>;\n}',
+  },
+  {
+    name: 'ConfigSaveAdmission',
+    declaration: 'export type ConfigSaveAdmission = \'open\' | \'paused\' | \'stopped\';',
+  },
+  {
+    name: 'ConfigSaveBarrier',
+    declaration: 'export interface ConfigSaveBarrier extends NativeConfigSaveHook {\n    readonly binding: AccountBinding;\n    admitWithApply<T>(kind: ConfigSaveKind, persist: () => Promise<T>, apply: (value: T) => Promise<void>): Promise<T>;\n    snapshot(): ConfigSaveSnapshot;\n    pauseAccountChanges(deadlineAtMs: number, signal?: AbortSignal): Promise<ConfigSaveReceipt>;\n    resumeAccountChanges(): void;\n    stopConfigSaves(deadlineAtMs: number, signal?: AbortSignal): Promise<ConfigSaveReceipt>;\n}',
+  },
+  {
+    name: 'ConfigSaveFailure',
+    declaration: 'export interface ConfigSaveFailure extends ConfigSaveOperation {\n    readonly outcome: \'failed\' | \'unknown\';\n    readonly code: \'config-save/operation-failed\' | \'config-save/outcome-unknown\';\n}',
+  },
+  {
+    name: 'ConfigSaveKind',
+    declaration: 'export type ConfigSaveKind = \'default-model\' | \'settings\' | \'config-editor\' | \'plugin-selection\' | \'credentials\' | \'skill-publish\' | \'skill-projection\';',
+  },
+  {
+    name: 'ConfigSaveOperation',
+    declaration: 'export interface ConfigSaveOperation {\n    readonly operationId: OperationId;\n    readonly kind: ConfigSaveKind;\n}',
+  },
+  {
+    name: 'ConfigSaveReceipt',
+    declaration: 'export type ConfigSaveReceipt = Readonly<{\n    accountId: AccountId;\n    epoch: OwnerEpoch;\n    admission: \'paused\' | \'stopped\';\n    evidenceRefs: readonly string[];\n}> & (Readonly<{\n    status: \'confirmed\';\n    pendingOperationIds: readonly [\n    ];\n    failures: readonly [\n    ];\n}> | Readonly<{\n    status: \'unknown\';\n    pendingOperationIds: readonly OperationId[];\n    failures: readonly ConfigSaveFailure[];\n    reason: \'pending\' | \'failed\' | \'deadline\' | \'observer-cancelled\';\n}>);',
+  },
+  {
+    name: 'ConfigSaveSnapshot',
+    declaration: 'export interface ConfigSaveSnapshot {\n    readonly accountId: AccountId;\n    readonly epoch: OwnerEpoch;\n    readonly admission: ConfigSaveAdmission;\n    readonly pending: readonly ConfigSaveOperation[];\n    readonly failures: readonly ConfigSaveFailure[];\n}',
+  },
+  {
+    name: 'ConfigSaveSubmissionHook',
+    declaration: 'export interface ConfigSaveSubmissionHook {\n    submit<T>(writer: string, submit: () => Promise<T>): Promise<T>;\n}',
+  },
+  {
     name: 'ConfigureCall',
     declaration: 'export type ConfigureCall = (controls: Readonly<LlmCallControls>, model: Readonly<LlmResolvedModelInfo>) => LlmCallControls;',
   },
@@ -5096,6 +5563,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ConnectionAdmission',
     declaration: 'export type ConnectionAdmission = {\n    readonly peer: PeerScope;\n    readonly release: () => Promise<void>;\n} | {\n    readonly rejection: 401 | 403 | 409;\n};',
+  },
+  {
+    name: 'ConnectionDispatch',
+    declaration: 'export type ConnectionDispatch = {\n    readonly kind: \'rpc\';\n    readonly endpoint: string;\n} | {\n    readonly kind: \'fetch\';\n    readonly method: string;\n    readonly pathname: string;\n};',
+  },
+  {
+    name: 'ConnectionDispatchGuard',
+    declaration: 'export type ConnectionDispatchGuard = (dispatch: ConnectionDispatch) => void;',
   },
   {
     name: 'ConnectionFetchHandler',
@@ -5282,6 +5757,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type CredentialKey = Branded<\'CredentialKey\'>;',
   },
   {
+    name: 'CredentialProvider',
+    declaration: 'export abstract class CredentialProvider extends Service {\n    constructor(ctx: Context);\n    registerSaveHook(hook: CredentialSaveSubmissionHook): () => Promise<void>;\n    abstract resolve(ref: CredentialRef): Promise<ResolvedCredential | undefined>;\n    abstract describe(ref: CredentialRef): Promise<CredentialInfo>;\n    abstract set(ref: CredentialRef, value: string): Promise<void>;\n    abstract unset(ref: CredentialRef): Promise<void>;\n    abstract readRecord(key: CredentialKey): Promise<CredentialRecord | undefined>;\n    abstract describeRecord(key: CredentialKey): Promise<CredentialRecordInfo>;\n    abstract listRecords(): Promise<readonly CredentialRecordEntry[]>;\n    abstract modifyRecord(key: CredentialKey, mutate: (current: CredentialRecord | undefined) => Promise<CredentialRecord | undefined>): Promise<CredentialRecord | undefined>;\n    abstract deleteRecord(key: CredentialKey): Promise<void>;\n}',
+  },
+  {
     name: 'CredentialRecord',
     declaration: 'export type CredentialRecord = ApiKeyRecord | GrantRecord;',
   },
@@ -5296,6 +5775,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'CredentialRef',
     declaration: 'export type CredentialRef = Branded<\'CredentialRef\'>;',
+  },
+  {
+    name: 'CredentialSaveOperation',
+    declaration: 'export type CredentialSaveOperation = {\n    readonly kind: \'set\' | \'unset\';\n    readonly ref: CredentialRef;\n} | {\n    readonly kind: \'modify-record\' | \'delete-record\';\n    readonly key: CredentialKey;\n} | {\n    readonly kind: \'migrate-flat-document\';\n};',
+  },
+  {
+    name: 'CredentialSaveSubmissionHook',
+    declaration: 'export interface CredentialSaveSubmissionHook {\n    submit<T>(operation: CredentialSaveOperation, submit: () => Promise<T>): Promise<T>;\n}',
   },
   {
     name: 'CronInput',
@@ -5458,6 +5945,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface EncodedImageAttachment {\n    mediaType: ImageMediaType;\n    data: string;\n    name?: string;\n}',
   },
   {
+    name: 'EndpointExposure',
+    declaration: 'export interface EndpointExposure {\n    readonly endpoint: string;\n    readonly handlerId: string;\n    readonly guard: ExposureGuard;\n}',
+  },
+  {
     name: 'EpochHeader',
     declaration: 'export interface EpochHeader {\n    config: LlmCallConfig;\n    adapterDefaults?: LlmCallConfigAdapterDefaults;\n    tools?: ToolSchema[];\n    system?: never;\n}',
   },
@@ -5472,6 +5963,26 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'EveryScheduleRecord',
     declaration: 'export interface EveryScheduleRecord {\n    readonly id: ScheduleId;\n    readonly kind: \'every\';\n    readonly title: string;\n    readonly prompt: string;\n    readonly everySeconds: number;\n    readonly scheduledAt: string;\n}',
+  },
+  {
+    name: 'ExactFetchExposure',
+    declaration: 'export interface ExactFetchExposure {\n    readonly method: string;\n    readonly path: string;\n    readonly handlerId: string;\n    readonly guard: ExposureGuard;\n}',
+  },
+  {
+    name: 'ExposureGuard',
+    declaration: 'export type ExposureGuard = \'authenticated-account\' | \'account-project\' | \'account-session\' | \'account-attachment\';',
+  },
+  {
+    name: 'ExposureInventory',
+    declaration: 'export interface ExposureInventory {\n    readonly recipeVersion: string;\n    readonly rpcEndpoints: readonly EndpointExposure[];\n    readonly streamEndpoints: readonly EndpointExposure[];\n    readonly exactFetchRoutes: readonly ExactFetchExposure[];\n}',
+  },
+  {
+    name: 'ExposureManifest',
+    declaration: 'export interface ExposureManifest {\n    readonly recipeVersion: string;\n    readonly rpcEndpoints: readonly EndpointExposure[];\n    readonly streamEndpoints: readonly EndpointExposure[];\n    readonly exactFetchRoutes: readonly ExactFetchExposure[];\n    readonly allowedSettings: readonly SettingsExposure[];\n}',
+  },
+  {
+    name: 'ExposurePolicy',
+    declaration: 'export class ExposurePolicy {\n    readonly manifest: ExposureManifest;\n    constructor(input: ExposureManifest);\n    audit(inventory: ExposureInventory): void;\n    invalidate(): void;\n    requireRpc(endpoint: string): EndpointExposure;\n    requireStream(endpoint: string): EndpointExposure;\n    requireFetch(method: string, pathname: string): ExactFetchExposure;\n    assertSettingsFields(namespace: string, fields: readonly string[]): void;\n}',
   },
   {
     name: 'FeedbackCategory',
@@ -5516,6 +6027,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'FinishReasonMap',
     declaration: 'export interface FinishReasonMap {\n    \'stop\': {\n        kind: \'stop\';\n    };\n    \'tool-calls\': {\n        kind: \'tool-calls\';\n    };\n    \'max-tokens\': {\n        kind: \'max-tokens\';\n    };\n    \'aborted\': {\n        kind: \'aborted\';\n        failure: LlmFailure;\n    };\n    \'error\': {\n        kind: \'error\';\n        failure: LlmFailure;\n    };\n}',
+  },
+  {
+    name: 'FirstScreenEventInput',
+    declaration: 'export interface FirstScreenEventInput {\n    readonly api: CloudAccountApi;\n    readonly native: NativeFirstScreen;\n    readonly home: string;\n    readonly maxHomeBytes: number;\n    readonly maxInventoryEntries: number;\n    readonly maxQueuedEvents: number;\n    readonly maxQueuedBytes: number;\n    readonly maxFrameBytes: number;\n}',
+  },
+  {
+    name: 'FirstScreenEvents',
+    declaration: 'export interface FirstScreenEvents {\n    inspect(): {\n        readonly endpoint: \'$events\';\n        readonly gateway: Gateway;\n        readonly fiber: Fiber;\n        readonly owner: Fiber;\n        readonly home: string;\n        readonly queuedEvents: number;\n        readonly queuedBytes: number;\n    };\n    assertAdmitted(): void;\n    dispose(): Promise<void>;\n}',
+  },
+  {
+    name: 'FirstScreenNativeInput',
+    declaration: 'export interface FirstScreenNativeInput {\n    readonly api: CloudAccountApi;\n    readonly binding: AccountBinding;\n    readonly project: () => {\n        readonly binding: AccountBinding;\n        readonly workspace: Workspace;\n    };\n    readonly assertSessionRead: (id: SessionId) => void;\n    readonly maxInventoryEntries: number;\n    readonly maxCollectionItems: number;\n    readonly maxFrameBytes: number;\n}',
   },
   {
     name: 'FrequencyTooHighError',
@@ -5688,6 +6211,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'IndexInjectionPlacement',
     declaration: 'export type IndexInjectionPlacement = \'head\' | \'body\';',
+  },
+  {
+    name: 'IngressObservation',
+    declaration: 'export interface IngressObservation {\n    readonly state: \'absent\' | \'prepared\' | \'installing\' | \'installed\' | \'closing\' | \'closed\' | \'unknown\';\n    readonly current: boolean;\n    readonly registeredRoutes: number;\n    readonly pendingOperations: number;\n}',
   },
   {
     name: 'InspectOptions',
@@ -5976,6 +6503,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'LocalAtInput',
     declaration: 'export interface LocalAtInput {\n    readonly date: string;\n    readonly time: string;\n    readonly time_zone: string;\n}',
+  },
+  {
+    name: 'LocalCredentialProvider',
+    declaration: 'export class LocalCredentialProvider extends CredentialProvider {\n    static Config: z<Config>;\n    constructor(ctx: Context, public config: Config);\n    async *[Service.init](): AsyncGenerator<() => Promise<void> | void, void, void>;\n    override resolve(ref: CredentialRef): Promise<ResolvedCredential | undefined>;\n    override describe(ref: CredentialRef): Promise<CredentialInfo>;\n    override async set(ref: CredentialRef, value: string): Promise<void>;\n    override async unset(ref: CredentialRef): Promise<void>;\n    override readRecord(key: CredentialKey): Promise<CredentialRecord | undefined>;\n    override describeRecord(key: CredentialKey): Promise<CredentialRecordInfo>;\n    override listRecords(): Promise<readonly CredentialRecordEntry[]>;\n    override async modifyRecord(key: CredentialKey, mutate: (current: CredentialRecord | undefined) => Promise<CredentialRecord | undefined>): Promise<CredentialRecord | undefined>;\n    override async deleteRecord(key: CredentialKey): Promise<void>;\n}',
   },
   {
     name: 'LocalizedText',
@@ -6278,8 +6809,40 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type ModTier = \'prepend\' | \'user\' | \'append\' | \'builtin\' | \'core\';',
   },
   {
+    name: 'NativeAgentFactoryGuards',
+    declaration: 'export interface NativeAgentFactoryGuards {\n    assertCreate(options: CreateOptions, signal: AbortSignal): Promise<void>;\n    assertResume(options: ResumeOptions, signal: AbortSignal): Promise<void>;\n    assertPrepared(agent: PreparedAgent): void;\n}',
+  },
+  {
+    name: 'NativeConfigSaveHook',
+    declaration: 'export interface NativeConfigSaveHook {\n    admit<T>(kind: ConfigSaveKind, submit: () => Promise<T>): Promise<T>;\n}',
+  },
+  {
     name: 'NativeFileApplication',
     declaration: 'export interface NativeFileApplication {\n    readonly id: string;\n    readonly name: string;\n    readonly default: boolean;\n    readonly icon: string | null;\n}',
+  },
+  {
+    name: 'NativeFirstScreen',
+    declaration: 'export interface NativeFirstScreen {\n    readonly binding: AccountBinding;\n    readonly workspaceController: typeof WorkspaceController;\n    readonly settingsController: typeof SettingsController;\n    assertCurrent(): void;\n    inspect(): ExposureInventory;\n    assertSessionRead(id: SessionId): void;\n}',
+  },
+  {
+    name: 'NativeSessionDirectory',
+    declaration: 'export interface NativeSessionDirectory {\n    readonly binding: AccountBinding;\n    prepare(cwd: string): Promise<void>;\n}',
+  },
+  {
+    name: 'NativeSessionGuards',
+    declaration: 'export interface NativeSessionGuards {\n    readonly projectDirectory: NativeSessionDirectory;\n    readonly firstScreen?: NativeSessionReadGuards;\n    assertHandlerEnabled(handlerId: string): void;\n    resolveCreate(request: SessionCreateRequest): Promise<SessionCreateRequest>;\n    assertSessionProject(sessionId: SessionId): Promise<void>;\n    assertActiveScope(agent: NonNullable<ReturnType<Context[\'agents\'][\'get\']>>): void;\n}',
+  },
+  {
+    name: 'NativeSessionReadGuards',
+    declaration: 'export interface NativeSessionReadGuards {\n    readonly maxCollectionItems: number;\n    readonly maxFrameBytes: number;\n    readonly maxQueuedEvents: number;\n    readonly maxQueuedBytes: number;\n    readonly assertSessionRead: (id: SessionId, summary?: SessionSummary) => void;\n}',
+  },
+  {
+    name: 'NodeStreamTransport',
+    declaration: 'export interface NodeStreamTransport {\n    handleUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): void;\n    close(): Promise<void>;\n}',
+  },
+  {
+    name: 'NodeStreamTransportOptions',
+    declaration: 'export interface NodeStreamTransportOptions {\n    readonly maxFrameBytes: number;\n    readonly acquireStream: (endpoint: string) => (status: \'confirmed\' | \'unknown\') => void;\n}',
   },
   {
     name: 'NotFutureError',
@@ -6442,6 +7005,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PluginRegistries {\n    readonly registry: Registry;\n    readonly fallbackRegistries: readonly string[];\n    readonly resolved: string | null;\n}',
   },
   {
+    name: 'PluginSaveOperation',
+    declaration: 'export interface PluginSaveOperation {\n    readonly stage: ChangeResult[\'stage\'];\n    readonly reason: PluginChange[\'reason\'];\n}',
+  },
+  {
+    name: 'PluginSaveSubmissionHook',
+    declaration: 'export interface PluginSaveSubmissionHook {\n    submit(operation: PluginSaveOperation, submit: () => Promise<ChangeResult>): Promise<ChangeResult>;\n}',
+  },
+  {
     name: 'PluginSpecInspection',
     declaration: 'export type PluginSpecInspection = {\n    readonly status: \'accepted\';\n    readonly kind: InstallSpecKind;\n    readonly name?: string;\n    readonly version?: string;\n    readonly description?: string;\n    readonly bundle: boolean | null;\n    readonly registry: Registry;\n    readonly host?: string;\n} | {\n    readonly status: \'refused\';\n    readonly problem: PluginInspectProblem;\n    readonly reason: string;\n    readonly registries?: Registry[];\n};',
   },
@@ -6512,6 +7083,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ProductTelemetryRecord',
     declaration: 'export type ProductTelemetryRecord = OTelEventRecord;',
+  },
+  {
+    name: 'ProfileConfigUpdatePlan',
+    declaration: 'export interface ProfileConfigUpdatePlan {\n    readonly entries: readonly EntryConfigUpdatePlan[];\n    readonly impact: EntryConfigUpdatePlan[\'impact\'];\n}',
   },
   {
     name: 'ProfilePnpmInvocation',
@@ -6746,6 +7321,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface RemoteEventHostInfo {\n    readonly home: string;\n}',
   },
   {
+    name: 'RemoteEventQueueLimits',
+    declaration: 'export interface RemoteEventQueueLimits {\n    readonly maxQueuedEvents: number;\n    readonly maxQueuedBytes: number;\n    readonly maxFrameBytes: number;\n}',
+  },
+  {
     name: 'RemoteStream',
     declaration: 'export type RemoteStream<Out, In = never> = AsyncIterable<Out> & {\n    readonly [STREAM_UPLINK]?: In;\n};',
   },
@@ -6832,6 +7411,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'RunnerFailureRule',
     declaration: 'export interface RunnerFailureRule {\n    allowedExitCodes?: readonly number[];\n    fatalSignatures: readonly string[];\n    informationalLines?: readonly string[];\n}',
+  },
+  {
+    name: 'S2ProjectDirectory',
+    declaration: 'export interface S2ProjectDirectory {\n    readonly binding: AccountBinding;\n    prepare(cwd: string): Promise<void>;\n}',
   },
   {
     name: 'SandboxEnforcement',
@@ -7064,6 +7647,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SessionControlFrame',
     declaration: 'export type SessionControlFrame = {\n    readonly type: \'baseline\';\n    readonly value: SessionControlBaseline;\n} | ({\n    readonly type: \'projection\';\n} & SessionProjectionUpdate);',
+  },
+  {
+    name: 'SessionController',
+    declaration: 'export class SessionController extends TypertRemoteService {\n    static inject;\n    static Config: z<Config, ResolvedConfig>;\n    constructor(ctx: Context, config: Config, internals: SessionControllerInternals = {});\n    resolveAgent(sessionId: SessionId): Promise<ApiSessionAgentResult>;\n    inspect(sessionId: SessionId, signal?: AbortSignal): Promise<SessionInspection>;\n    @Remote(\'list\')\n    async list(_request: SessionListRequest, signal: AbortSignal): Promise<SessionListValue>;\n    @Remote(\'search\')\n    async search(request: SessionSearchRequest, signal: AbortSignal): Promise<SessionSearchValue>;\n    @Remote(\'create\')\n    create(request: SessionCreateRequest): Promise<SessionCreateValue>;\n    @Remote(\'selectModel\')\n    selectModel(request: SessionSelectModelRequest): Promise<SessionSelectModelValue>;\n    @Remote\n    async initializeDefaultModel(): Promise<void>;\n    @Remote(\'modelCatalog\')\n    modelCatalog(): Promise<ModelCatalog>;\n    @Remote\n    canOpenWorkspacePath(): boolean;\n    workspaceDesktop(): {\n        name: string;\n        available: boolean;\n        fileManager: \'finder\' | \'explorer\' | \'directory\' | null;\n    };\n    @Remote(\'openWorkspacePath\')\n    async openWorkspacePath(request: SessionOpenWorkspacePathRequest, signal: AbortSignal): Promise<SessionOpenWorkspacePathValue>;\n    @Remote(\'workspacePathApplications\')\n    async workspacePathApplications(request: {\n        readonly path: string;\n    }, signal: AbortSignal): Promise<readonly SessionWorkspacePathAp /* …truncated — full shape in source */',
+  },
+  {
+    name: 'SessionControllerInternals',
+    declaration: 'export interface SessionControllerInternals {\n    readonly openPath?: (path: string, signal: AbortSignal) => Promise<void>;\n    readonly fileApplications?: typeof nativeFileApplications;\n    readonly openFileApplication?: typeof openNativeFileApplication;\n    readonly revealPath?: (path: string, signal: AbortSignal) => Promise<void>;\n    readonly canOpenPath?: () => boolean;\n}',
   },
   {
     name: 'SessionCreateRequest',
@@ -7550,6 +8141,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type SessionWorkspacePathApplication = NativeFileApplication;',
   },
   {
+    name: 'SettingsController',
+    declaration: 'export class SettingsController extends TypertRemoteService {\n    constructor(ctx: Context, internals: SettingsControllerInternals = {});\n    @Remote\n    describe(): SettingsDescribeValue;\n    @Remote\n    update(ns: string, patch: Record<string, JsonValue>, expectedRevision: number | undefined): Promise<SettingsNamespaceView>;\n    @Remote\n    replace(ns: string, section: Record<string, JsonValue>, expectedRevision: number | undefined): Promise<SettingsNamespaceView>;\n    @Remote\n    async mutate(ns: string, ops: SettingsPathOpView[], expectedRevision: number | undefined): Promise<SettingsNamespaceView>;\n    @Remote\n    async openSettingsDocument(signal: AbortSignal): Promise<SettingsDocumentOpenValue>;\n}',
+  },
+  {
+    name: 'SettingsControllerInternals',
+    declaration: 'export interface SettingsControllerInternals {\n    readonly openTextFile?: (path: string, signal: AbortSignal) => Promise<void>;\n}',
+  },
+  {
     name: 'SettingsDescribeOptions',
     declaration: 'export interface SettingsDescribeOptions {\n    redactSecrets?: boolean;\n}',
   },
@@ -7564,6 +8163,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SettingsDocumentOpenValue',
     declaration: 'export interface SettingsDocumentOpenValue {\n    readonly opened: true;\n}',
+  },
+  {
+    name: 'SettingsExposure',
+    declaration: 'export interface SettingsExposure {\n    readonly namespace: string;\n    readonly fields: readonly string[];\n}',
   },
   {
     name: 'SettingsNamespace',
@@ -8563,7 +9166,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'WebBootEntry',
-    declaration: 'export interface WebBootEntry {\n    id: string;\n    url: string;\n    rev: string;\n    inject?: string[];\n    immediately?: boolean;\n    external?: string[];\n}',
+    declaration: 'export interface WebBootEntry {\n    id: string;\n    url: string;\n    rev: string;\n    inject?: string[];\n    immediately?: boolean;\n    external?: string[];\n    activate?: boolean;\n}',
   },
   {
     name: 'WebBootGraph',
@@ -8760,6 +9363,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WorkspaceChangesSummary',
     declaration: 'export interface WorkspaceChangesSummary {\n    turn: number;\n    cwd: string;\n    files: WorkspaceChangedFile[];\n    total: number;\n    added: number;\n    deleted: number;\n    snapshot?: {\n        before: string;\n        after: string;\n    };\n}',
+  },
+  {
+    name: 'WorkspaceController',
+    declaration: 'export class WorkspaceController extends TypertRemoteService {\n    static inject;\n    static Config: z<Config, ResolvedConfig>;\n    constructor(ctx: Context, config: Config = {});\n    @Remote(\'create\')\n    create(request: WorkspaceCreateRequest): Promise<WorkspaceCreateValue>;\n    @Remote(\'initializeDefault\')\n    async initializeDefault(signal: AbortSignal): Promise<WorkspaceValue | undefined>;\n    @Remote(\'rename\')\n    rename(request: WorkspaceRenameRequest): Promise<WorkspaceValue>;\n    @Remote(\'delete\')\n    delete(request: WorkspaceDeleteRequest): Promise<WorkspaceDeleteValue>;\n    @Remote(\'insertBefore\')\n    insertBefore(request: WorkspaceInsertBeforeRequest): Promise<WorkspaceOrderValue>;\n    @Remote(\'insertSessionBefore\')\n    insertSessionBefore(request: WorkspaceInsertSessionBeforeRequest): Promise<WorkspaceValue>;\n    @Remote(\'archiveSession\')\n    archiveSession(request: WorkspaceArchiveSessionRequest): Promise<WorkspaceArchiveValue>;\n    @Remote(\'unarchiveSession\')\n    unarchiveSession(request: WorkspaceUnarchiveSessionRequest): Promise<WorkspaceArchiveValue>;\n    @Remote(\'pinSession\')\n    pinSession(request: WorkspacePinSessionRequest): Promise<WorkspacePinValue>;\n    @Remote(\'unpinSession\')\n    unpinSession(request: WorkspaceUnpinSessionRequest): Promise<WorkspacePinValue>;\n    @Remote({ mode: \'stream\' })\n    async *follow(signal: AbortSignal): AsyncIterable<WorkspaceFollowFrame>;\n}',
   },
   {
     name: 'WorkspaceCreateRequest',
