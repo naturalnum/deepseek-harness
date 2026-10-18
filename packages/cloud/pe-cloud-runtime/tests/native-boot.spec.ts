@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { Context, FiberState } from '@deepseek-ai/cordis'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { initProfile, type ProfileContext } from '@deepseek-ai/dsh-app-boot'
+import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import Settings from '@deepseek-ai/dsh-settings'
 import ConfigEditor from '@deepseek-ai/dsh-config-editor'
 import { ConfigSaveCoordinator, type ConfigSaveBarrier } from '@deepseek-ai/dsh-pe-cloud-api'
@@ -54,7 +55,7 @@ function fixture(label: string) {
   const input: NativeAccountBootInput = {
     binding: { accountId: brandString<AccountId>(label), epoch: brandString<OwnerEpoch>('9007199254740993'), recipeVersion: 'm2-mechanism', lifetime: controller.signal },
     profile, configPath, bareModuleBaseUrl: new URL('../../../../package.json', import.meta.url).href,
-    environmentLayers: [{ source: 'process', values }],
+    environment: createLaunchEnvironmentSnapshot([{ source: 'process', values }]),
     requiredEntryIds: ['include', 'account', 'config-editor', 'settings', 'probe'], maxObservedEvents: 8,
     prepare(ctx) {
       Object.assign(ctx.loader.builtins, { 'runtime-account': AccountEntry, editor: ConfigEditor, settings: Settings, probe: NativeAccountProbe })
@@ -105,6 +106,7 @@ describe('private native account assembly', () => {
       expect(ctx.nativeAccountProbe.binding).toBe(ctx.peAccount)
       expect(Object.isFrozen(ctx.peAccount)).toBe(true)
       expect(ctx.nativeAccountProbe.environment.get('HOME')?.value).toBe(f.profile.home)
+      expect(ctx.nativeAccountProbe.environment).toBe(f.input.environment)
       expect(ctx.nativeAccountProbe.environment.get('PE_M2_ACCOUNT_MARKER')?.value).toBe(f.profile.name)
       expect(ctx.get('dshHomePath')).toBeTypeOf('function')
     }

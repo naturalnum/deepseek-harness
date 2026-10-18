@@ -2,9 +2,7 @@
 import { isAbsolute } from 'node:path'
 import { Context, FiberState } from '@deepseek-ai/cordis'
 import { boot, readProfilePatches, type ProfileContext } from '@deepseek-ai/dsh-app-boot'
-import {
-  createLaunchEnvironmentSnapshot, DSH_LAUNCH_ENVIRONMENT_KEY, type LaunchEnvironmentLayerInput,
-} from '@deepseek-ai/dsh-launch-environment'
+import { DSH_LAUNCH_ENVIRONMENT_KEY, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { installAccountBinding, requireAccountBinding } from './binding.ts'
 import { AccountRuntimeError } from './errors.ts'
 import type { AccountBinding } from './types.ts'
@@ -15,7 +13,7 @@ export interface NativeAccountBootInput {
   readonly profile: ProfileContext
   readonly configPath: string
   readonly bareModuleBaseUrl: string
-  readonly environmentLayers: readonly LaunchEnvironmentLayerInput[]
+  readonly environment: LaunchEnvironmentSnapshot
   readonly requiredEntryIds: readonly string[]
   readonly maxObservedEvents: number
   /** Build/verify/inject ports from this exact installed binding; await setup and register native teardown. */
@@ -70,7 +68,7 @@ export function startNativeAccountBoot(input: NativeAccountBootInput): NativeAcc
     throw new AccountRuntimeError('cloud/stale-generation', 'Account generation lifetime has ended')
   }
   const profile = Object.freeze(structuredClone(input.profile))
-  const environment = Object.freeze(createLaunchEnvironmentSnapshot(input.environmentLayers))
+  const environment = input.environment
   const requiredIds = [...input.requiredEntryIds]
   const patches = readProfilePatches('pe-cloud-account', profile)
   const observer = new Context()

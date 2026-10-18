@@ -89,6 +89,12 @@ Provider 经根服务登记必需的 `files` 和 `execution` 参与者。登记�
 
 私有[原生 Profile 适配](src/native-boot.ts)通过公开 app boot 创建独立根，在 `prepare` 中提供复制的 ProfileContext、显式启动环境及不可变 binding，并且只装配一次 root Include。所有保存/files/execution port 均须在 `prepare` 内使用同一个已安装 binding 构造、核验及注入，并保留其图 lifetime。等待 setup 完成后，prepare 在返回 boot 前再次核验已安装代际的寿命及关闭请求。若 setup 期间代际结束或收到关闭请求，不启动任何 Include entry，并继续等待实际清理。已装配图仍由 runtime 驱动销毁。它不安装账户 CLI、信号处理、代理、watcher 或代码 HMR。调用者必须先核验真实根能力和固定配方。装配结果仅说明原生装配完成。适配持有 boot/disposal Promise，并有界观察错误，覆盖部分启动和异步 disposer 失败；错误或观察溢出均阻止原生销毁 confirmed。该观察不代表业务工作排空或账户 clean。
 
+私有[装配桥](src/account-mount.ts)将 Profile 目录、patch、home 和默认项目候选与唯一布局核对，并把同一个原生 `LaunchEnvironmentSnapshot` 对象交给 boot。私有[工厂](src/account-factory.ts)为每个账户保留一次实际操作。即使每次创建新的 request 外壳，只要账户/实例/配方值及可信资源引用一致，调用仍会合并；不同 binding、配方、环境或部署输入会拒绝。有界、可撤销的等待者共享一次结算订阅；截止或观察者取消均不停止装配或释放其容量。
+
+装配容量随实际启动及已开始的原生清理结算。仅原生销毁不能证明完整排空，因此账户预留仍保留。工厂关闭外部准入时仍保留内部排空预留及原生销毁责任；清理未知继续持有排空容量。只有确定在 claim 前或从未提交的失败且没有原生资源时，才释放未启动账户槽。已提交结果未知保留原槽，不盲目重启。
+
+PG 路径使用真实 owner store，随后在启动原生 fallback 或提交 ready 之前拒绝缺失的生产交接。独立的 native-only 路径为既有可信代际执行真实 Loader 装配，不授予 `AccountUse`。当前借用要求同一个已安装、有效、ready 的图及尚未释放的引用；release 幂等且不 cancel Agent。真实 files/execution/API/存储能力签发仍缺失，因此任何生产路径都无法满足该 ready 条件或发布借用。原生 mounted 结果及配置标记均不能提供这些能力。
+
 </details>
 
 -----
@@ -125,8 +131,8 @@ Provider 经根服务登记必需的 `files` 和 `execution` 参与者。登记�
 
 该基础尚不能准入生产账户流量。
 
-- **账户工厂** — 尚无共享图装配 Promise、`AccountUse`、围绕私有原生适配的生产配方/port 集成、配方封口及 ready 发布。数据库领取合并不等于完成账户 acquire。
-- **布局接线** — 布局数据及私有地址 helper 尚未连接到原生 boot 或 files 能力创建。已包含 environments 父根，尚无按 Session 的环境派生。
+- **账户工厂** — 私有共享实际装配及借用协调器尚未接入 Root 或 access。真实 provider/API/存储交接、配方封口及生产 `AccountUse` 发布仍不可用；仅原生装配及数据库领取不等于完成账户 acquire。
+- **布局接线** — 私有原生桥已核对 layout/Profile 一致性，但布局数据不能创建 files 能力或验证存储。已包含 environments 父根，尚无按 Session 的环境派生。
 - **数据库集成与恢复** — 私有 pg 适配及实例组件尚未接入根部署配置或启动。尚无根 heartbeat 调度、恢复审计、分配对账及可信 RecoveryProof 应用；本模块不能重领隔离态 owner。
 - **必需证据** — 参与者存在不验证存储配额、原生 provider、配置保存 hook、manifest、进程停止或销毁成功。容量预留不执行参与者排空。
 - **账户交接** — 只有包内工厂 helper 安装 binding。Helper 要求可信 owner 输入，自身不核验 PG 归属；测试提供 binding 夹具，不据此宣称账户图 ready。
