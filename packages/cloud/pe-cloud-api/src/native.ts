@@ -258,13 +258,16 @@ class AccountSessionController extends SessionController {
 
   override async *control(signal: AbortSignal): AsyncIterable<SessionControlFrame> {
     const control = this.admission.historySignal(signal)
+    signal.throwIfAborted()
     control.throwIfAborted()
     this.admission.admitRead('session/control')
     const source = super.control(control)[Symbol.asyncIterator]()
     try {
       while (true) {
+        signal.throwIfAborted()
         this.admission.admitRead('session/control')
         const next = await source.next()
+        signal.throwIfAborted()
         control.throwIfAborted()
         this.admission.admitRead('session/control')
         if (next.done) return
@@ -288,17 +291,21 @@ class AccountSessionController extends SessionController {
 
   override async *follow(request: SessionFollowRequest, signal: AbortSignal): AsyncIterable<SessionFollowFrame> {
     const nativeSignal = this.admission.historySignal(signal)
+    signal.throwIfAborted()
     nativeSignal.throwIfAborted()
     await this.admission.history('session/follow', request.address)
+    signal.throwIfAborted()
     this.admission.admitHistory('session/follow')
     nativeSignal.throwIfAborted()
     const source = super.follow(request, nativeSignal)[Symbol.asyncIterator]()
     try {
       while (true) {
         // Native cold promotion resumes after the snapshot yield, inside the next advance.
+        signal.throwIfAborted()
         this.admission.admitHistory('session/follow')
         nativeSignal.throwIfAborted()
         const next = await source.next()
+        signal.throwIfAborted()
         this.admission.admitHistory('session/follow')
         nativeSignal.throwIfAborted()
         if (next.done) return

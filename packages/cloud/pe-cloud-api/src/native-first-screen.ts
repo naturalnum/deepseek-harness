@@ -205,13 +205,16 @@ export function prepareNativeFirstScreen(ctx: Context, input: FirstScreenNativeI
     }
     override async *follow(signal: AbortSignal): AsyncIterable<WorkspaceFollowFrame> {
       const control = AbortSignal.any([signal, input.binding.lifetime])
+      signal.throwIfAborted()
       control.throwIfAborted()
       admit('workspace/follow')
       const source = super.follow(control)[Symbol.asyncIterator]()
       try {
         while (true) {
+          signal.throwIfAborted()
           admit('workspace/follow')
           const next = await source.next()
+          signal.throwIfAborted()
           control.throwIfAborted()
           admit('workspace/follow')
           if (next.done) return

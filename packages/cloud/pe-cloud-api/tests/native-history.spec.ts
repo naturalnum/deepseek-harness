@@ -2,21 +2,29 @@
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createServer } from 'node:http'
+import { Socket } from 'node:net'
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Gateway from '@deepseek-ai/dsh-api-gateway'
+import * as NativeStreamServer from '@deepseek-ai/dsh-api-gateway/src/stream-server.ts'
 import RemoteAccess from '@deepseek-ai/dsh-api-remote-access'
 import SessionController from '@deepseek-ai/dsh-api-session-controller'
 import type { SessionAddress } from '@deepseek-ai/dsh-api-session-controller/types'
 import DefaultModel from '@deepseek-ai/dsh-agent-default-model'
+import { apply as applyConnection, inject as connectionInject } from '@deepseek-ai/dsh-client-connection'
+import LocalCredentials from '@deepseek-ai/dsh-credentials-local'
 import { mountAgentLoopTestDependencies, mountAgentLoopTestHarness } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import SessionQueryEngine from '@deepseek-ai/dsh-session-query'
 import * as Jsonl from '@deepseek-ai/dsh-session-persistence-jsonl'
 import TypertRegistry from '@deepseek-ai/dsh-typert-registry'
 import { remoteMethods, type PeerId, type PeerScope } from '@deepseek-ai/dsh-typert-protocol'
-import { brandString } from '@deepseek-ai/dsh-brand'
-import type { AccountBinding, AccountId, OwnerEpoch } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
+import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
+import type { AccountBinding, AccountId, AccountUse, OwnerEpoch } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
+import { BetterAuthAccess } from '@deepseek-ai/dsh-pe-cloud-access/src/auth.ts'
+import { LoginPeerRegistry } from '@deepseek-ai/dsh-pe-cloud-access/src/peers.ts'
+import type { AccessConfig, AuthenticatedPrincipal } from '@deepseek-ai/dsh-pe-cloud-access/types'
 import { CloudApiError } from '../src/errors.ts'
 import { createNativeController, type NativeSessionGuards } from '../src/native.ts'
 import { ExposurePolicy } from '../src/exposure.ts'
@@ -303,6 +311,184 @@ it.each(['caller', 'graph'] as const)('propagates %s cancellation into a waiting
   await expect(next).rejects.toMatchObject({ code: kind === 'caller' ? 'gateway/cancelled' : 'cloud/stale-generation' })
   expect(f.listeners()).toEqual(withAgent.map(count => count - 1))
 })
+
+it.each([
+  { outcome: 'returns the login Peer Use', failReturn: false },
+  { outcome: 'retains the login Peer Use on real native return failure', failReturn: true },
+])('$outcome after graph cancellation races a native Session follow carrier', async ({ failReturn }) => {
+  const f = await fixture()
+  await f.ctx.plugin(LocalCredentials, { dshHome: f.project, path: join(f.project, 'peer-credentials.yaml'), watch: false })
+  await f.ctx.plugin({ apply: applyConnection, inject: [...connectionInject] })
+  const address = await f.cold('graph-carrier-cancellation')
+  const returnFailure = new Error('Native follow return failed after actual cleanup')
+  const returned = vi.fn()
+  if (failReturn) {
+    // oxlint-disable-next-line typescript/unbound-method -- Delegate with each invocation's actual receiver below.
+    const follow = SessionController.prototype.follow
+    vi.spyOn(SessionController.prototype, 'follow').mockImplementation(function (this: SessionController, request, signal) {
+      const source = follow.call(this, request, signal)
+      const iterator = source[Symbol.asyncIterator]()
+      if (iterator.return === undefined) throw new Error('Actual native iterator return required')
+      const actualReturn = iterator.return.bind(iterator)
+      vi.spyOn(iterator, 'return').mockImplementation(async (value) => {
+        await actualReturn(value)
+        returned()
+        throw returnFailure
+      })
+      return source
+    })
+  }
+  const principal: AuthenticatedPrincipal = {
+    accountId: f.binding.accountId,
+    authSessionId: brandString<AuthenticatedPrincipal['authSessionId']>('history-login'),
+  }
+  const requestId = brandString<Branded<'pe-request-id'>>('history-graph-carrier')
+  // Authentication and runtime authority stay outside this keyless component test.
+  const auth = Object.create(BetterAuthAccess.prototype) as BetterAuthAccess
+  vi.spyOn(auth, 'assertLoginCurrent').mockImplementation(() => {})
+  vi.spyOn(auth, 'recheckLogin').mockResolvedValue(undefined)
+  vi.spyOn(auth, 'authenticate').mockResolvedValue(principal)
+  const release = vi.fn()
+  const use: AccountUse = {
+    binding: f.binding, context: f.ctx, assertCurrent: () => { f.lifetime.signal.throwIfAborted() }, release,
+  }
+  const settings: AccessConfig = {
+    publicOrigin: 'http://127.0.0.1:4100', deploymentMode: 'development', trustedProxyAddresses: [], authSecretRef: 'test-only',
+    sessionRecheckMs: 60_000, authCheckTimeoutMs: 1000, maxPeers: 1, maxPeersPerAccount: 1,
+    maxPeerWaiters: 1, maxPeerWaitersPerAccount: 1, maxPeerCarriers: 1, maxPeerCarriersPerAccount: 1,
+    maxPeerCarriersPerLogin: 1, peerCloseTimeoutMs: 1000,
+    maxAuthOperations: 1, maxTrackedLogins: 1, maxTrackedLoginsPerAccount: 1, maxAuthInvalidations: 1,
+    bindingFields: { accountHeader: 'x-pe-account', generationHeader: 'x-pe-generation', accountQuery: 'peAccount', generationQuery: 'peGeneration' },
+  }
+  const failures: unknown[] = []
+  const gatewayCancellationChecks: { aborted: boolean; sameReason: boolean; errorCode: unknown; cancelled: boolean }[] = []
+  const isCancellation = NativeStreamServer.isStreamCancellation
+  vi.spyOn(NativeStreamServer, 'isStreamCancellation').mockImplementation((error: unknown, signal) => {
+    const cancelled = isCancellation(error, signal)
+    gatewayCancellationChecks.push({
+      aborted: signal.aborted, sameReason: error === signal.reason,
+      errorCode: error !== null && typeof error === 'object' && 'code' in error ? error.code : undefined, cancelled,
+    })
+    return cancelled
+  })
+  const transportCreation = vi.spyOn(Gateway.prototype, 'createNodeStreamTransport')
+  const registry = new LoginPeerRegistry(settings, auth, {
+    borrow: async (binding) => { expect(binding).toBe(f.binding); return use },
+    beforeHttp: () => {}, beforeStream: () => {}, cleanupFailed: (failure) => { failures.push(failure) },
+    streams: { maxFrameBytes: 65536, maxLogicalStreams: 1, maxLogicalStreamsPerAccount: 1, maxLogicalStreamsPerPeer: 1 },
+  })
+  // Same memory-only socket behavior as the access owner's carrier tests; no TCP listener.
+  class MemorySocket extends Socket {
+    other: MemorySocket | undefined
+    override _read(): void {}
+    override _write(chunk: Buffer, _encoding: BufferEncoding, callback: (error?: Error | null) => void): void {
+      if (this.other === undefined || this.other.destroyed) { callback(new Error('Memory peer closed')); return }
+      this.other.push(Buffer.from(chunk))
+      callback()
+    }
+    override _writev(chunks: { chunk: Buffer; encoding: BufferEncoding }[], callback: (error?: Error | null) => void): void {
+      this._write(Buffer.concat(chunks.map(item => Buffer.from(item.chunk))), 'utf8', callback)
+    }
+    override _final(callback: (error?: Error | null) => void): void { this.other?.push(null); callback() }
+    override _destroy(error: Error | null, callback: (error?: Error | null) => void): void {
+      this.other?.push(null)
+      callback(error)
+      process.nextTick(() => { this.emit('close', error !== null) })
+    }
+  }
+  const client = new MemorySocket(), incoming = new MemorySocket()
+  client.other = incoming
+  incoming.other = client
+  const server = createServer()
+  const handshake = Promise.withResolvers<undefined>()
+  client.on('error', (error) => { handshake.reject(error) })
+  incoming.on('error', (error) => { handshake.reject(error) })
+  let bytes = Buffer.alloc(0), upgraded = false
+  const frames: unknown[] = []
+  client.on('data', (data: Buffer) => {
+    bytes = Buffer.concat([bytes, data])
+    if (!upgraded) {
+      const end = bytes.indexOf('\r\n\r\n')
+      if (end < 0) return
+      expect(bytes.subarray(0, end).toString('utf8')).toContain('101 Switching Protocols')
+      bytes = bytes.subarray(end + 4)
+      upgraded = true
+      handshake.resolve(undefined)
+    }
+    while (bytes.length >= 2) {
+      const opcode = bytes[0]! & 15
+      let length = bytes[1]! & 127, offset = 2
+      if (length === 126) { if (bytes.length < 4) return; length = bytes.readUInt16BE(2); offset = 4 }
+      if (length === 127) throw new Error('Bounded fixture frame required')
+      if (bytes.length < offset + length) return
+      if (opcode === 1) frames.push(JSON.parse(bytes.subarray(offset, offset + length).toString('utf8')))
+      bytes = bytes.subarray(offset + length)
+    }
+  })
+  try {
+    const handle = await registry.acquire(principal, f.binding, Date.now() + 1000, undefined, requestId)
+    const created = transportCreation.mock.results[0]
+    if (created?.type !== 'return') throw new Error('Actual Peer transport required')
+    const transport = created.value, actualClose = transport.close.bind(transport)
+    let transportFailure: unknown
+    vi.spyOn(transport, 'close').mockImplementation(() => {
+      const actual = actualClose()
+      void actual.catch((error: unknown) => { transportFailure = error })
+      return actual
+    })
+    server.on('upgrade', (request, socket, head) => {
+      void registry.handleUpgrade(handle, request, socket, head, requestId).catch((error: unknown) => {
+        handshake.reject(error)
+        socket.destroy()
+      })
+    })
+    server.emit('connection', incoming)
+    client.write('GET /api/remote.mux HTTP/1.1\r\nHost: 127.0.0.1:4100\r\nOrigin: http://127.0.0.1:4100\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n')
+    await handshake.promise
+    const body = Buffer.from(JSON.stringify({
+      type: 'open', streamId: 'history', endpoint: 'session/follow', payload: { args: { request: { address, assistantStream: true } } },
+    }))
+    expect(body.length).toBeLessThan(65536)
+    const header = Buffer.alloc(8)
+    header[0] = 0x81
+    header[1] = 0x80 | 126
+    header.writeUInt16BE(body.length, 2)
+    header.set([1, 2, 3, 4], 4)
+    const masked = Buffer.from(body.map((value, index) => value ^ header[4 + index % 4]!))
+    client.write(Buffer.concat([header, masked]))
+    const event: unknown = expect.objectContaining({ type: 'session/end-seed' })
+    const value: unknown = expect.objectContaining({ type: 'event', event })
+    await vi.waitFor(() => {
+      expect(frames).toContainEqual(expect.objectContaining({ type: 'item', value }))
+    })
+    const withAgent = f.listeners()
+    f.lifetime.abort()
+    let closeFailure: unknown
+    await registry.closeBinding(f.binding, Date.now() + 1000).catch((error: unknown) => { closeFailure = error })
+    expect(handle.peer.signal.aborted).toBe(true)
+    if (failReturn) {
+      expect(returned).toHaveBeenCalledOnce()
+      expect(transportFailure).toBe(returnFailure)
+      expect(closeFailure).toMatchObject({ code: 'cloud/stop-unconfirmed' })
+      expect(failures).toHaveLength(1)
+      expect(release).not.toHaveBeenCalled()
+      expect(registry.reservedPeers).toBe(1)
+    } else {
+      expect.soft(transportFailure).toBeUndefined()
+      expect.soft(closeFailure).toBeUndefined()
+      expect.soft(failures).toEqual([])
+      expect.soft(release, JSON.stringify({ gatewayCancellationChecks })).toHaveBeenCalledOnce()
+      expect.soft(registry.reservedPeers).toBe(0)
+    }
+    expect.soft(f.listeners()).toEqual(withAgent.map(count => count - 1))
+  } finally {
+    client.destroy()
+    incoming.destroy()
+    await registry.close(Date.now() + 1000).catch((_error: unknown) => {
+      // Retained component cleanup failure is asserted above; no runtime/PG owner is released here.
+    })
+  }
+}, 5000)
 
 it.each(['page', 'follow'] as const)('keeps undeclared %s closed before scope or native reads', async (method) => {
   const f = await fixture('closed')
