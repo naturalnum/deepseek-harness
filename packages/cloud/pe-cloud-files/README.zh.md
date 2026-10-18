@@ -39,17 +39,19 @@ kind: "package-reference"
 <details>
 <summary>实现细节——点击展开</summary>
 
-[工作队列](src/work-queue.ts) 在准入前预留全局及每个 lane 的字节，限制并发与排队工作，取消排队任务时不启动它，并在调用者取消或超时后继续追踪运行中的工作。每次操作都要求包含自身开销的正安全整数预留。零预留在后端调用前被拒绝，因此保留的记录不能绕过驻留预算。成功结算的结果会保留其预留，直至消费者释放结果。关闭 lane 会停止新工作并保留未结算记录；关闭队列则停止所有 lane。
+[工作队列](src/work-queue.ts) 在准入前预留全局及每个 lane 的字节，限制并发与排队工作，取消排队任务时不启动它，并在调用者取消或超时后继续追踪运行中的工作。每次操作都要求包含自身开销的正安全整数预留。零预留在后端调用前被拒绝，因此保留的记录不能绕过驻留预算。成功结算的结果会保留其预留，直至消费者释放结果。关闭 lane 会停止新业务工作并保留未结算记录；关闭队列则封闭全部 lane 的业务准入，同时允许已有责任的清理。
 
 各个结算观察者独立运行：某个观察者失败会被报告，但不阻止预算释放、后续观察者或排队工作。错误报告器失败时，默认启用的诊断日志提供兜底，不暴露原始异常文本。在延迟调用后端之前，最后一次取消检查会阻止已取消工作启动。
 
 [文件工作所有者](src/work-owner.ts) 消费 runtime 持有的账户绑定、operation-id、参与者及收据类型。它把作为内部对象能力的 lane 绑定到精确代际及可信当前 owner 回调，在原代仍持有工作时拒绝另一代，并在实际工作及被持有结果结算之前报告 unknown。生命周期取消会停止准入；排空等待超时后会移除其结算观察者，工作所有者仍继续追踪实际工作。
 
+私有[目录责任](src/directory-responsibility.ts)在同一 lane 上原子登记长期保留的责任与准备 I/O。[预算计算](src/directory-budget.ts)在派发前预留有界意图与身份副本、记录、单个观察者、结果帧及一次完整清理所需的临时空间。实际准备结算归还 running 容量与 I/O 字节；已创建或 unknown 的责任继续持有正数预留及 operation id。观察者取消或期限到达不会取消该责任。只有原 private 责任可以通过共享 running/queued 限额调度清理，业务关闭后仍使用其预留空间。公开地址不可逆；exposed 或 unknown 责任不能假报 clean，未解决责任阻止 lane 退休或换代。这些控制当前只接受经过审核的组件回调，不提供 mkdir 后端、受保护父目录证明、原生注册移交或文件系统权限。服务端选择的意图允许固定默认 leaf `default-workspace` 与新项目一次生成的 UUID；名称合法及持有 AccountLayout 对象都不授予写入权限。Linux 池仍在 root 停止时立即关闭 slot，并在 closing 状态拒绝工作；接入真实 owned-directory worker 清理之前，必须另行修改池生命周期。
+
 该内部工作 port 无法选择另一账户或关闭共享队列；它不是原生文件系统，也不是已签发的存储能力。队列计量预留，不在任意回调内部强制分配大小，因此只有经过审核的有界后端才可提交生产工作。
 
 私有 [Linux worker](src/file-worker.ts) 在启动时探测必需的内核操作，不保留账户目录。[ABI 4 N-API helper](native/fd.c) 核验固定根身份，并使用 `openat2` 在该 anchor 之下操作，不回退魔术链接解析或可移植后端。元数据通过 `O_PATH` FD 取得，为目录或单硬链接普通文件返回原生版本字段；路径缺失返回 undefined，特殊文件及硬链接被拒绝。非流式读取在回复前关闭 FD 及 anchor；流式读取保留单个 FD，直至实际 EOF、取消或 worker 退出。
 
-同一绑定 lane 还提供只读 [directory port](src/directory.ts)，包含 `canonicalPath` 与 `isDirectory`。helper 有界观察 FD 的物理拼写，在同一 anchor 下重开并比较身份，复核 anchor，关闭描述符后才成功。目标 ENOENT/ENOTDIR 可以是确定缺失或非目录失败；anchor 丢失、验证失败、容量、旧代、取消及传输故障继续作为 unavailable 并保留 cause。私有 `DirectoryMetadataFailure` 记录原因与失败阶段。该 port 没有 `ensureDirectory`，不能安装为完整的原生 Workspace 目录依赖。ABI 4 的路径及关闭行为仍须由主控在真实 Linux 验证。
+同一绑定 lane 还提供只读 [directory port](src/directory.ts)，包含 `canonicalPath` 与 `isDirectory`。helper 有界观察 FD 的物理拼写，在同一 anchor 下重开并比较身份，复核 anchor，关闭描述符后才成功。目标 ENOENT/ENOTDIR 可以是确定缺失或非目录失败；anchor 丢失、验证失败、容量、旧代、取消及传输故障继续作为 unavailable 并保留 cause。私有 `DirectoryMetadataFailure` 记录原因与失败阶段。该 port 没有 `ensureDirectory`，不能安装为完整的原生 Workspace 目录依赖。发布包 Loader 与 ABI 4 worker 检查覆盖只读 Linux 路径及关闭行为，不验证目录创建或清理。
 
 绑定 port 暴露内部 [reader](src/read-only.ts)，提供 account-instructions 所需的原生 `resolve`、`stat`、`streamText` 及 `processPath` 方法签名。解析只在预先授权的根内进行并签发 opaque target；每次后续操作核验精确签发 reader 与当前 epoch。绝对路径不能选择另一项目。该适配不提供完整文件系统服务，也不签发可信根。
 
@@ -93,7 +95,7 @@ kind: "package-reference"
 
 以下集成缺失时，生产启用持续关闭。
 
-- 共享根池提供内部元数据、只读物理目录观察及有界字节和文本读取。批准目录 ensure、创建责任及完整 Workspace 目录适配仍延期。其余原生文件系统方法、完整 target 及写入语义、链接竞态验收、完整分配计量与字节及 inode 硬配额尚未完成。
+- 共享根池提供内部元数据、只读物理目录观察及有界字节和文本读取。私有调度保留临时目录责任，但批准的 ensure/mkdir、安全内核清理、原生注册移交及完整 Workspace 目录适配仍延期。其余原生文件系统方法、完整 target 及写入语义、链接竞态验收、完整分配计量与字节及 inode 硬配额尚未完成。
 - 账户绑定与收据类型来自 runtime 包。根入口在 worker 启动后注册 files 参与者，但投入生产前，仍须由可信工厂签发经过批准的存储及根能力，并接通完整后端。
 - 原生 FileSystem 适配、完整流式及目录和写入计量、附件接收与暂存、指令、技能投影及部署存储证明仍不可用。helper 二进制必须由已审核的 Linux 部署配方构建并固定；本包不分发已经验证的二进制。
 - 真实 Loader 生命周期检查及 Linux tmpfs syscall 测试覆盖元数据及版本观察、跨 rename 的单 FD 文本读取、文件增长限额、UTF-8 校验、池复用、实际 worker 故障及期限内 unknown 结果。它们不证明 ext4/NFS 隔离、阻塞的 NFS syscall、硬配额、F02、F03、F05、账户就绪或 Web 流程成立。启用之前仍须检查完整生产装配及发布产物消费者。

@@ -18,7 +18,10 @@ const pools = []
 const extraWorkers = []
 try {
   fs.writeFileSync(path.join(temporary, 'package.json'), '{"type":"module"}\n')
-  for (const file of ['error', 'types', 'work-queue', 'work-owner', 'worker-protocol', 'file-worker', 'worker-client', 'worker-pool', 'read-only', 'directory', 'directory-error']) {
+  for (const file of [
+    'error', 'types', 'work-queue', 'work-owner', 'worker-protocol', 'file-worker', 'worker-client', 'worker-pool',
+    'read-only', 'directory', 'directory-error', 'directory-budget', 'directory-responsibility',
+  ]) {
     const output = ts.transpileModule(fs.readFileSync(path.join(packageRoot, 'src', `${file}.ts`), 'utf8'), {
       fileName: `${file}.ts`,
       compilerOptions: { target: ts.ScriptTarget.ES2024, module: ts.ModuleKind.ESNext, rewriteRelativeImportExtensions: true },

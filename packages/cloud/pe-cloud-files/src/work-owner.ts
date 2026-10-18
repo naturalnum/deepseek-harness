@@ -4,12 +4,18 @@ import type { FilesLimits } from './types.ts'
 import { FilesFailure } from './error.ts'
 import { FilesWorkQueue } from './work-queue.ts'
 import type { ResidentResult, WorkLane } from './work-queue.ts'
+import type { DirectoryIntent, DirectoryBudgetLimits } from './directory-budget.ts'
+import type { DirectoryPrepareWork, DirectoryCleanupWork, OwnedDirectoryWork } from './directory-responsibility.ts'
 
 /** Internal port for an audited files backend, not an RPC or a native FileSystem substitute. */
 export interface BoundFilesWork {
   readonly stopping: AbortSignal
   assertCurrent(): void
   run<T>(reservedBytes: number, work: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<ResidentResult<T>>
+  /** Register a bounded private responsibility on this same lane; this does not authorize directory writes. */
+  prepareDirectory(
+    intent: DirectoryIntent, limits: DirectoryBudgetLimits, work: DirectoryPrepareWork,
+  ): OwnedDirectoryWork
 }
 
 interface Generation {
@@ -18,7 +24,7 @@ interface Generation {
   readonly stopping: AbortController
 }
 
-/** Registers and observes only actual file work; it never grants storage authority or ready state. */
+/** Owns actual file work and temporary directory responsibility; it never grants storage authority or ready state. */
 export class FilesWorkOwner implements DrainParticipant {
   readonly id: Extract<DrainParticipant['id'], 'files'> = 'files'
   private readonly queue: FilesWorkQueue
@@ -52,16 +58,32 @@ export class FilesWorkOwner implements DrainParticipant {
       binding.lifetime.removeEventListener('abort', abort)
       if (this.active.get(binding.accountId) === generation) this.active.delete(binding.accountId)
     })
+    const current = (): void => {
+      assertCurrent()
+      if (binding.lifetime.aborted || this.retired.has(binding)) this.stale()
+    }
     return Object.freeze({
       stopping: stopping.signal,
       assertCurrent: () => {
-        assertCurrent()
-        if (binding.lifetime.aborted || this.retired.has(binding)) this.stale()
+        current()
       },
       run: <T>(bytes: number, work: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal) => {
-        assertCurrent()
-        if (binding.lifetime.aborted || this.retired.has(binding)) this.stale()
+        current()
         return lane.run(bytes, work, signal)
+      },
+      prepareDirectory: (
+        intent: DirectoryIntent, limits: DirectoryBudgetLimits, work: DirectoryPrepareWork,
+      ) => {
+        current()
+        const owned = lane.prepareDirectory(intent, limits, work)
+        return Object.freeze({
+          observation: owned.observation,
+          control: Object.freeze({
+            expose: () => { current(); return owned.control.expose() },
+            // Existing responsibility cleanup survives business closure; it cannot issue a new intent.
+            cleanup: (work: DirectoryCleanupWork, signal?: AbortSignal) => owned.control.cleanup(work, signal),
+          }),
+        })
       },
     })
   }
@@ -71,7 +93,7 @@ export class FilesWorkOwner implements DrainParticipant {
    * An unknown receipt retains operation ownership; a later check may confirm actual settlement.
    * @param binding Exact input previously bound by the trusted factory.
    * @param deadlineAtMs Finite absolute server-time deadline within the Node timer range.
-   * @returns Confirmed only once all work and service-held results have settled/released.
+   * @returns Confirmed only once actual work, held results and temporary directory responsibility have ended.
    */
   async stopEpoch(binding: AccountBinding, deadlineAtMs: number): Promise<ParticipantReceipt> {
     const generation = this.active.get(binding.accountId)
