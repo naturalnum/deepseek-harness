@@ -54,6 +54,8 @@ kind: "package-reference"
 
 根拥有不可变策略，并在其 fiber 销毁时撤销审核。[开放清单实现](src/exposure.ts) 使用精确映射，不解码路径或按前缀授权。[私有原生装配](src/native.ts) 注册公开 SessionController 的唯一子类，继承其 Config、DTO、Remote 标记及业务方法。Create、prompt 和 fork 等待共享项目/Preset 核验，并在调用原生 super 前立即复核准入。同步 cancel 检查实际附着 Agent 的既有 scope，随后保留原生取消或 notfound，不加载 Session。
 
+私有[账户暴露视图](src/account-exposure.ts) 从根的冻结 manifest 中选择同配方子集。RPC 与流类别、Fetch 方法/路径、handler、guard 和 settings 字段必须对应根的精确声明。每图拥有自己的 inventory 审核和销毁失效；A 的审核或失效不改变 B 或根。审核及操作准入核验实际安装的精确 AccountBinding 与可信 runtime current 回调。现有 ExposurePolicy 消费者可直接接收该视图，不增加 Loader 服务或全局账户注册表。
+
 Page 和 follow 对普通 Session 地址等待共享项目守卫。Page 在原生读取前和返回结果前复核准入。Follow 要求已审核的流声明，并在每次推进原生迭代器前及交付结果前检查准入和取消。原生迭代器接收调用者与图生命周期的取消，继续独占历史、promotion 及清理责任。Subagent 历史地址在单独范围审核前继续拒绝。
 
 Controller 准入使用实际安装的图 AccountBinding 及与实际 LLM 守卫共用的可信 runtime 回调，独立于 HTTP/Peer AccountUse 生命周期。装配须声明原生依赖、保留所属 fiber，并排除第二个基础 Controller。共享守卫失败、binding 过期、开放审核撤销或处理者停用都会阻止委派。原生进程内调用保留守卫抛出的错误；传输序列化遵循现有 Gateway 规则。原生业务结果与失败保持原义。
@@ -113,7 +115,7 @@ Pause 关闭顶层准入，但允许已登记工作完成；只有静止、无�
 
 必需集成缺失时，账户入口明确失败。
 
-- 原生清单提取、传输选路、项目核验和绑定签发属于外部集成要求；本包不发布 ready。
+- 原生清单提取、传输选路、项目核验和绑定签发属于外部集成要求；本包不发布 ready。账户视图测试使用模拟 inventory，只证明策略隔离，不代表真实原生 UI 入口清单或 bootstrap capabilities。
 - F06 对所有可达原生 writer 的提交覆盖及 runtime 装配仍不完整。协调器和已审核的原生适配不构成完整 F06 验收；账户入口中的模型选择和配置写入保持关闭。
 - 启动期凭据迁移、其他凭据 provider、PluginManager 写入及技能发布/投影仍未覆盖。Watch 刷新和可选监听器工作保留原生语义，安装 hook 不代表它们已被核定为持久保存。
 - F09 影响预检、受控提交、插件/key/技能修改及版本资源 hook 保持关闭。
