@@ -11,6 +11,8 @@ runtime 包持有[账户身份及生命周期类型](../../packages/cloud/pe-clo
 
 `AccountBinding` 是单个账户图的不可变可信输入。它的 lifetime signal 属于该图；取消调用者的等待不会取消图的生命周期。`AccountUse` 借用原生 Context，在调用原生工作前立即检查当前准入，并且只释放这次借用。两者都不接受浏览器 JSON 输入。
 
+`AccountStorageKey` 是服务端派生的稳定目录键。`AccountLayout` 包含共享账户数据和进程本地可重建索引的不可变绝对地址；地址不证明目录存在，也不授予文件权限或配额。`AccountMountInput` 将该布局与精确图 binding、当前进程身份及原生 `LaunchEnvironmentSnapshot` 组合。runtime 先派生账户与项目候选地址，再由 files 核验或准备；默认项目资格和登记仍由原生 Workspace 负责。
+
 私有原生启动适配在挂载一个原生 root Include 前，安装独立的 `ProfileContext`、启动环境和账户 binding。port 准备使用实际安装的同一个 binding。准备结束后，适配器先复查该生命周期，再将控制权交回原生 boot；调用者停止等待后，boot 与销毁仍持有实际 Promise。原生树挂载完成后，仍须通过工厂的 provider、保存及暴露清单审核，才能服务账户。
 
 <a id="actual-work-and-capacity"></a>

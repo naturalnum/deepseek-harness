@@ -1,11 +1,14 @@
 /** Runtime-owned account identities and lifecycle inputs; none are browser credentials. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { Branded } from '@deepseek-ai/dsh-brand'
+import type { LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 
 export type * from './owner-types.ts'
 
 /** Authenticated database user id, admitted by access before runtime use. */
 export type AccountId = Branded<'pe-account-id'>
+/** Stable server-derived directory key; it grants no account or filesystem authority. */
+export type AccountStorageKey = Branded<'pe-account-storage-key'>
 /** PG bigint encoded as a lossless decimal string; each new graph receives a new value. */
 export type OwnerEpoch = Branded<'pe-owner-epoch'>
 /** Server-generated identity that changes on every process start. */
@@ -21,6 +24,50 @@ export interface AccountBinding {
   readonly epoch: OwnerEpoch
   readonly recipeVersion: string
   readonly lifetime: AbortSignal
+}
+
+/** Immutable absolute addresses only; files/deployment separately verify anchors, protection, and quota. */
+export interface AccountLayout {
+  /** Server-derived stable key, independent of graph epoch and process identity. */
+  readonly storageKey: AccountStorageKey
+  /** Shared root containing this account's private, projects, and environments directories. */
+  readonly accountRoot: string
+  /** Native account data excluded from project mounts. */
+  readonly privateRoot: string
+  /** Account-owned native Profile directory. */
+  readonly profileRoot: string
+  /** Native Profile patch file within profileRoot. */
+  readonly patchPath: string
+  /** Private native credential storage address. */
+  readonly credentialsRoot: string
+  /** Private authoritative native Session history address. */
+  readonly sessionsRoot: string
+  /** Private native storage backend address. */
+  readonly storageRoot: string
+  /** Private attachment-original storage address. */
+  readonly attachmentsRoot: string
+  /** Private account skill installation address. */
+  readonly skillsRoot: string
+  /** Private account instruction-source address. */
+  readonly instructionsRoot: string
+  /** Parent for server-selected project directory keys; not a ProjectScope. */
+  readonly projectsRoot: string
+  /** Parent for session environments; individual environment derivation is separate. */
+  readonly environmentsRoot: string
+  /** Process-local derived index, reconstructible from native history. */
+  readonly localIndexRoot: string
+}
+
+/** Trusted same-process assembly data, never a serialized capability or a readiness declaration. */
+export interface AccountMountInput {
+  /** Exact generation admitted by the runtime; lifetime belongs to the graph. */
+  readonly binding: AccountBinding
+  /** Current server-generated process identity shared with the PostgreSQL owner store. */
+  readonly instanceId: InstanceId
+  /** Addresses only; possession does not authorize filesystem access. */
+  readonly layout: AccountLayout
+  /** Explicit account launch values; credentials go only to their required native consumers. */
+  readonly environment: LaunchEnvironmentSnapshot
 }
 
 /** One borrowed native account graph; releasing a borrow does not cancel an Agent. */

@@ -41,6 +41,14 @@ Providers register the mandatory `files` and `execution` participants through th
 
 The account factory owns each capacity reservation until the actual work settles. `settleMount()` releases the concurrent mount slot while retaining the account slot. `releaseAccount()` rejects while mounting or draining still holds that account. A request timeout does not authorize either release. Root unload closes new local reservations without reporting existing work stopped.
 
+### Account layout
+
+`/types` declares one `AccountLayout` for shared private/Profile/patch, credentials, Sessions, storage, attachment originals, skills, instructions, projects, environments, and the process-local Session index. `AccountMountInput` pairs those addresses with the existing binding, startup InstanceId, and native `LaunchEnvironmentSnapshot`. These are trusted assembly data; paths grant no directory access, readiness, or quota evidence. Credentials go only to their required native consumers.
+
+The private [address helper](src/account-layout.ts) accepts explicit normalized POSIX shared/cache roots and a positive finite UTF-8 byte limit. It bounds characters before scanning UTF-8 and checks every output. A fixed v1 domain and explicit byte length frame the exact authenticated id before SHA-256; no raw id or title becomes a directory segment. Shared paths stay stable across epochs and process restarts. Only the rebuildable local index includes the startup InstanceId.
+
+The default project candidate uses the fixed `default-workspace` basename, preserving native title handling. Native eligibility, history checks, and the default-deletion marker still decide initialization. New project candidates use a server UUID selected once; callers retain that candidate through actual preparation. The helpers create no directories or Workspace records. Real parent protection, FD capabilities, quota, and current-generation checks belong to files/deployment and the runtime lifecycle.
+
 ### PostgreSQL owner storage
 
 The private owner store accepts a root-owned PostgreSQL query adapter and a server-generated instance identity. The same-package account factory owns this implementation; it is not an exported account-management SDK. The adapter binds parameters and enforces finite connection, statement, and query budgets. `migrate()` runs atomic DDL for `pe_account_owners`; concurrent migration calls serialize in PostgreSQL, and incompatible existing columns or constraints reject without resetting rows.
@@ -114,6 +122,7 @@ Local bookkeeping does not alter a model request prefix or retained Session hist
 This foundation cannot admit production account traffic.
 
 - **Account factory** — shared graph mount promises, `AccountUse`, production recipe/port integration around the private native adapter, sealing, and ready publication are absent. Database claim coalescing does not complete account acquisition.
+- **Layout integration** — layout data and private address helpers are not connected to native boot or files capability creation. The environments parent is included; per-Session environment derivation is absent.
 - **Database integration and recovery** — the private pg adapter and instance component are not attached to root deployment configuration or startup. Root heartbeat scheduling, recovery audit, allocation reconciliation, and trusted RecoveryProof application are absent; quarantined ownership cannot be reclaimed here.
 - **Required evidence** — participant presence does not verify storage quotas, native providers, config-save hooks, manifests, stopped processes, or disposal success. Capacity reservations perform no participant drain.
 - **Account handoff** — only the same-package factory helper installs a binding. The helper requires trusted owner input and does not itself verify PG ownership; tests supply binding fixtures without claiming an account graph is ready.

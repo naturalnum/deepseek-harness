@@ -43,6 +43,14 @@ Provider 经根服务登记必需的 `files` 和 `execution` 参与者。登记�
 
 账户工厂持有容量预留，直至实际工作结算。`settleMount()` 释放并发装配槽并保留账户槽。装配或排空仍持有账户时，`releaseAccount()` 拒绝释放。请求超时不授权这两种释放。根卸载关闭新的本地预留，不报告既有工作已停止。
 
+### Account layout
+
+`/types` 声明唯一的 `AccountLayout`，包含共享 private/Profile/patch、凭据、Session、storage、附件原件、技能、指令、项目、环境及进程本地 Session 索引地址。`AccountMountInput` 将这些地址与既有 binding、启动 InstanceId 及原生 `LaunchEnvironmentSnapshot` 配对。这些是可信装配数据；路径不授予目录访问、ready 或配额证据。凭据只交给需要的原生消费者。
+
+私有[地址 helper](src/account-layout.ts)接受显式、词法规范的 POSIX 共享根/缓存根及正数有限 UTF-8 字节上限。它先限制字符数，再扫描 UTF-8，并核验每项输出。固定 v1 域及明确字节长度框定认证 id 的精确字节后作 SHA-256；不将原始 id 或标题用作目录片段。共享路径跨 epoch 和进程重启保持稳定，只有可重建本地索引含启动 InstanceId。
+
+默认项目候选使用固定的 `default-workspace` basename，保留原生标题处理。是否初始化仍由原生资格、历史复查及默认删除标记决定。新项目候选使用一次服务端 UUID；调用方在实际准备期间保留该候选。Helper 不创建目录或 Workspace 记录。真实父目录保护、FD 能力、配额及当前代际检查归 files/部署与 runtime 生命周期持有。
+
 ### PostgreSQL owner storage
 
 私有 owner store 接受根持有的 PostgreSQL query adapter 及服务端生成的实例身份。该实现归包内账户工厂持有，不是导出的账户管理 SDK。Adapter 绑定参数，并限制连接、statement 及 query 预算。`migrate()` 执行 `pe_account_owners` 的原子 DDL；并发迁移在 PostgreSQL 内串行，既有字段或约束不兼容时拒绝，不重置记录。
@@ -116,6 +124,7 @@ Provider 经根服务登记必需的 `files` 和 `execution` 参与者。登记�
 该基础尚不能准入生产账户流量。
 
 - **账户工厂** — 尚无共享图装配 Promise、`AccountUse`、围绕私有原生适配的生产配方/port 集成、配方封口及 ready 发布。数据库领取合并不等于完成账户 acquire。
+- **布局接线** — 布局数据及私有地址 helper 尚未连接到原生 boot 或 files 能力创建。已包含 environments 父根，尚无按 Session 的环境派生。
 - **数据库集成与恢复** — 私有 pg 适配及实例组件尚未接入根部署配置或启动。尚无根 heartbeat 调度、恢复审计、分配对账及可信 RecoveryProof 应用；本模块不能重领隔离态 owner。
 - **必需证据** — 参与者存在不验证存储配额、原生 provider、配置保存 hook、manifest、进程停止或销毁成功。容量预留不执行参与者排空。
 - **账户交接** — 只有包内工厂 helper 安装 binding。Helper 要求可信 owner 输入，自身不核验 PG 归属；测试提供 binding 夹具，不据此宣称账户图 ready。

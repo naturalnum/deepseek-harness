@@ -11,6 +11,8 @@ The runtime package owns [account identity and lifecycle types](../../packages/c
 
 `AccountBinding` is immutable trusted input for one account graph. Its lifetime signal belongs to the graph; cancelling a caller's wait does not cancel that lifetime. `AccountUse` borrows a native Context, checks current admission immediately before native work, and releases only the borrow. Neither value is accepted from browser JSON.
 
+`AccountStorageKey` is a stable, server-derived directory key. `AccountLayout` contains immutable absolute addresses for shared account data and a process-local rebuildable index; addresses establish neither existence, filesystem authority nor quota. `AccountMountInput` combines that layout with the exact graph binding, current process identity and native `LaunchEnvironmentSnapshot`. Runtime derives account and project candidates before files verifies or prepares them; default-project eligibility and registration remain native Workspace responsibilities.
+
 The private native boot adapter installs an independent `ProfileContext`, launch environment and account binding before mounting one native root Include. Port preparation receives the exact installed binding. After preparation, the adapter rechecks that lifetime before returning control to native boot; boot and disposal retain their actual Promises after a caller stops waiting. A mounted native tree still requires the factory's provider, save and exposure audits before it can serve an account.
 
 <a id="actual-work-and-capacity"></a>
