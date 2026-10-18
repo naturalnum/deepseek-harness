@@ -18,6 +18,44 @@ type WorkspaceId = Branded<'WorkspaceId'>
 
 `WorkspaceId` 是[品牌化 id](core.zh.md#branded-ids)。路径标识与之分离：`realpathNormalize`（`fs.realpath`；尾部斜杠、`..` 与符号链接全部解析）是唯一的一套唯一性规范——工作区路径以规范化形式存储，唯一性即规范路径的字符串相等（指向已被拥有目录的符号链接会与之冲突），attach 时的会话 cwd 检查也走同一套规范。
 
+## 目录元数据
+
+`WorkspaceDirectoryMetadata` 提供规范路径、目录观察和递归目录准备。注册表在初始化时选择一次，并与其实体共享；默认使用 Node。提供者保持 realpath 路径身份。[包的安装说明](../../packages/workspace/workspace/README.zh.md) 定义提供者选择和生命周期细节。
+
+```ts type-equiv
+/**
+ * Graph-lived directory I/O selected before the Workspace registry starts.
+ * Determinate absence and path-component failures use
+ * `WorkspaceDirectoryMetadataError` with `missing` or `not-directory`;
+ * every other rejection is unavailable and retains its original cause.
+ * Providers own actual I/O settlement after a caller stops waiting.
+ */
+interface WorkspaceDirectoryMetadata {
+  /**
+   * Canonicalize an existing fully qualified path using realpath semantics.
+   * @param path - Fully qualified path already checked by the native registry.
+   * @returns its canonical absolute spelling; aliases share one identity.
+   */
+  canonicalPath(path: string): Promise<string>
+
+  /**
+   * Check actual directory metadata; unavailable observations must reject.
+   * @param path - Fully qualified directory candidate.
+   * @returns true for a directory, false for an observed existing non-directory.
+   */
+  isDirectory(path: string): Promise<boolean>
+
+  /**
+   * Recursively ensure a directory, preserving an existing directory.
+   * @param path - Fully qualified requested directory.
+   * @returns after the directory exists; failure may leave completed creation.
+   */
+  ensureDirectory(path: string): Promise<void>
+}
+```
+
+`WorkspaceDirectoryMetadataError` 区分 `missing`、`not-directory` 和 `unavailable`，并将提供者失败保留为 `cause`。只有确定的文件系统结果进入缺失处理。不可用的观察使状态、附加和索引操作拒绝，不替换为目录缺失事实；启动不会因这类失败而写入成功初始化标记。
+
 ## 工作区实体
 
 消费方只看到 `Workspace` 接口；实现保持包内私有。
@@ -111,6 +149,9 @@ interface Workspace {
    * Live directory check, uncached: whether {@link path} currently exists and
    * is a directory. A missing directory never mutates the record — the
    * directory may only be temporarily moved.
+   * An injected metadata provider rejects unavailable observations, including
+   * a closed graph; the default Node backend retains its missing-dir behavior
+   * for filesystem errors.
    * @returns `'ok'` when the directory exists, `'missing-dir'` otherwise.
    */
   status(): Promise<'ok' | 'missing-dir'>

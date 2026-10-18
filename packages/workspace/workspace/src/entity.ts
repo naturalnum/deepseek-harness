@@ -8,12 +8,12 @@
  * @module @deepseek-ai/dsh-workspace/src/entity
  */
 
-import { stat } from 'node:fs/promises'
 import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type { KvTable } from '@deepseek-ai/dsh-storage-domain'
 import type { WorkspaceRecord } from './spec.ts'
 import type { Workspace, WorkspaceId } from './types.ts'
-import { realpathNormalize } from './paths.ts'
+import type { DirectoryMetadataAccess } from './metadata.ts'
+import { WorkspaceDirectoryMetadataError } from './metadata.ts'
 
 /** An insertSessionBefore request named a session or anchor not on the account (storage failures stay plain errors). */
 export class WorkspaceMoveInvalidError extends Error {
@@ -32,6 +32,11 @@ export class WorkspaceMoveInvalidError extends Error {
  * index backing the `sessionIds` projection, and attach-time header reads.
  */
 export interface WorkspaceEntityHost {
+  /**
+   * Read the creating registry's fixed directory provider.
+   * @returns the graph-lived metadata access shared by every entity.
+   */
+  metadata(): DirectoryMetadataAccess
   /**
    * Resolve the open `workspaces` table.
    * @returns the table; throws while the registry has not started yet.
@@ -108,12 +113,15 @@ export class WorkspaceEntity implements Workspace {
   }
 
   async attachSession(sessionId: SessionId): Promise<void> {
+    const metadata = this.host.metadata()
+    metadata.assertAvailable()
     // Validation is skipped when the settled snapshot already accounts the
     // id: the cwd fact was checked when it first attached and both inputs
     // (stored header cwd, workspace path) are immutable. Membership itself is
     // decided on the write chain inside `mutate`, never on this snapshot.
     if (!this.record.sessionIds.includes(sessionId)) {
       const header = await this.host.readSessionHeader(sessionId)
+      metadata.assertAvailable()
       if (header.cwd === undefined) {
         throw new Error(
           `cannot attach session '${sessionId}' to workspace '${this.record.path}': `
@@ -122,15 +130,16 @@ export class WorkspaceEntity implements Workspace {
       }
       let cwd: string
       try {
-        cwd = await realpathNormalize(header.cwd)
+        cwd = await metadata.canonicalPath(header.cwd)
       } catch (error) {
+        if (metadata.injected && error instanceof WorkspaceDirectoryMetadataError && error.reason === 'unavailable') throw error
         throw new Error(
           `cannot attach session '${sessionId}' to workspace '${this.record.path}': `
           + `its cwd '${header.cwd}' does not resolve, so it cannot be validated`,
           { cause: error },
         )
       }
-      if (!(await stat(cwd)).isDirectory()) {
+      if (!(await metadata.isDirectory(cwd))) {
         throw new Error(
           `cannot attach session '${sessionId}' to workspace '${this.record.path}': `
           + `its cwd '${header.cwd}' is not a directory`,
@@ -142,11 +151,14 @@ export class WorkspaceEntity implements Workspace {
           + `its cwd resolves to '${cwd}'`,
         )
       }
+      metadata.assertAvailable()
       this.host.rememberSessionPath(sessionId, cwd)
     }
+    metadata.assertAvailable()
     await this.mutate(record => record.sessionIds.includes(sessionId)
       ? record
       : { ...record, sessionIds: [sessionId, ...record.sessionIds] })
+    metadata.assertAvailable()
   }
 
   async insertSessionBefore(sessionId: SessionId, beforeSessionId?: SessionId): Promise<void> {
@@ -179,11 +191,13 @@ export class WorkspaceEntity implements Workspace {
   }
 
   async status(): Promise<'ok' | 'missing-dir'> {
+    const metadata = this.host.metadata()
     try {
-      return (await stat(this.record.path)).isDirectory() ? 'ok' : 'missing-dir'
-    } catch {
-      // Any stat failure (ENOENT, dangling parent, permission loss) means the
-      // directory is not usable right now; the record itself never mutates.
+      return await metadata.isDirectory(this.record.path) ? 'ok' : 'missing-dir'
+    } catch (error) {
+      if (metadata.injected && error instanceof WorkspaceDirectoryMetadataError && error.reason === 'unavailable') throw error
+      // Injected providers reach this branch only for determinate absence or
+      // non-directory results. Node retains its original any-stat-error rule.
       return 'missing-dir'
     }
   }

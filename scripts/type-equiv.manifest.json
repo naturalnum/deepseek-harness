@@ -1978,6 +1978,11 @@
     },
     {
       "doc": "docs/subsystems/workspace.md",
+      "symbol": "WorkspaceDirectoryMetadata",
+      "source": "packages/workspace/workspace/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/workspace.md",
       "symbol": "Workspace",
       "source": "packages/workspace/workspace/src/types.ts"
     },

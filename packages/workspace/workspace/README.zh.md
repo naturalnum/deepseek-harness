@@ -119,6 +119,10 @@ Workspace 注册不意味着拥有其目录。未来的破坏性文件系统操�
 
 ### 生命周期
 
+Host 子类可覆盖 protected `createDirectoryMetadata()` 方法，返回已就绪的 `WorkspaceDirectoryMetadata` 提供者。注册表在初始化开始、打开领域之前，一次选定并绑定其 `canonicalPath`、`isDirectory` 和 `ensureDirectory` 方法；原生注册表和实体的全部目录操作均使用同一提供者。返回 `undefined` 保留原有 Node 后端。必需提供者不可用时必须抛错，不支持迟到安装或替换；所属图关闭后，注入操作及晚到结果均拒绝。提供者继续持有实际 I/O 和未完成目录创建的责任；注册表关闭不表示 I/O 已结算，也不会删除目录。
+
+注入提供者仅用 `WorkspaceDirectoryMetadataError` 的 `missing` 和 `not-directory` 原因报告确定的 ENOENT 与 ENOTDIR。其他拒绝均为 `unavailable` 并保留原始 `cause`；原生头部索引和成员附加上抛该失败，`status()` 也拒绝而非报告 `missing-dir`。初始化在引导写入前解析本次 live 头部快照，不把仅 live 头部加入历史分组。不可用观察不会写入成功初始化标记或剪除失败头部的成员关系，此前已完成的独立持久化写入仍已完成。默认 Node 后端保留既有错误行为。
+
 启动时，注册表打开领域、若存在标记则补全被标记的变更、校验已存状态——重复路径、重复会话记账与顺序漂移都会明确报错——并在尚未初始化时先凭持久化头部引导历史、最后写入已初始化标记，因此被中断的引导可以安全恢复。全新空注册表一旦初始化即成为正式状态，绝不会再次引导。
 
 ### 失败与恢复

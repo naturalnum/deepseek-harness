@@ -10,6 +10,36 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { TypertResource } from '@deepseek-ai/dsh-typert-protocol'
 
 /**
+ * Graph-lived directory I/O selected before the Workspace registry starts.
+ * Determinate absence and path-component failures use
+ * `WorkspaceDirectoryMetadataError` with `missing` or `not-directory`;
+ * every other rejection is unavailable and retains its original cause.
+ * Providers own actual I/O settlement after a caller stops waiting.
+ */
+export interface WorkspaceDirectoryMetadata {
+  /**
+   * Canonicalize an existing fully qualified path using realpath semantics.
+   * @param path - Fully qualified path already checked by the native registry.
+   * @returns its canonical absolute spelling; aliases share one identity.
+   */
+  canonicalPath(path: string): Promise<string>
+
+  /**
+   * Check actual directory metadata; unavailable observations must reject.
+   * @param path - Fully qualified directory candidate.
+   * @returns true for a directory, false for an observed existing non-directory.
+   */
+  isDirectory(path: string): Promise<boolean>
+
+  /**
+   * Recursively ensure a directory, preserving an existing directory.
+   * @param path - Fully qualified requested directory.
+   * @returns after the directory exists; failure may leave completed creation.
+   */
+  ensureDirectory(path: string): Promise<void>
+}
+
+/**
  * Identifies one workspace record. A generated uuid, never the path: path
  * normalization rewrites paths, and a reference anchor must stay stable.
  */
@@ -147,6 +177,9 @@ export interface Workspace {
    * Live directory check, uncached: whether {@link path} currently exists and
    * is a directory. A missing directory never mutates the record — the
    * directory may only be temporarily moved.
+   * An injected metadata provider rejects unavailable observations, including
+   * a closed graph; the default Node backend retains its missing-dir behavior
+   * for filesystem errors.
    * @returns `'ok'` when the directory exists, `'missing-dir'` otherwise.
    */
   status(): Promise<'ok' | 'missing-dir'>

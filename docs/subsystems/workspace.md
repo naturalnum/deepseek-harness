@@ -18,6 +18,44 @@ type WorkspaceId = Branded<'WorkspaceId'>
 
 `WorkspaceId` is a [branded id](core.md#branded-ids). Path identity is separate: `realpathNormalize` (`fs.realpath`; trailing slashes, `..`, and symlinks resolved) is the one uniqueness canon — workspace paths are stored canonicalized, uniqueness is string equality of canonical paths (a symlink to an owned directory collides), and attach-time session cwd checks go through the same canon.
 
+## Directory metadata
+
+`WorkspaceDirectoryMetadata` supplies canonical path, directory observation and recursive directory preparation. The registry selects it once at initialization and shares it with its entities; the default uses Node. Providers preserve realpath identity. [Package installation](../../packages/workspace/workspace/README.md) owns provider selection and lifecycle details.
+
+```ts type-equiv
+/**
+ * Graph-lived directory I/O selected before the Workspace registry starts.
+ * Determinate absence and path-component failures use
+ * `WorkspaceDirectoryMetadataError` with `missing` or `not-directory`;
+ * every other rejection is unavailable and retains its original cause.
+ * Providers own actual I/O settlement after a caller stops waiting.
+ */
+interface WorkspaceDirectoryMetadata {
+  /**
+   * Canonicalize an existing fully qualified path using realpath semantics.
+   * @param path - Fully qualified path already checked by the native registry.
+   * @returns its canonical absolute spelling; aliases share one identity.
+   */
+  canonicalPath(path: string): Promise<string>
+
+  /**
+   * Check actual directory metadata; unavailable observations must reject.
+   * @param path - Fully qualified directory candidate.
+   * @returns true for a directory, false for an observed existing non-directory.
+   */
+  isDirectory(path: string): Promise<boolean>
+
+  /**
+   * Recursively ensure a directory, preserving an existing directory.
+   * @param path - Fully qualified requested directory.
+   * @returns after the directory exists; failure may leave completed creation.
+   */
+  ensureDirectory(path: string): Promise<void>
+}
+```
+
+`WorkspaceDirectoryMetadataError` distinguishes `missing`, `not-directory` and `unavailable`, preserving the provider failure as `cause`. Only determinate filesystem results enter absence handling. Unavailable observations reject status, attachment and indexing without replacing them with missing-directory facts; startup does not write a successful initialization marker because of such a failure.
+
 ## The workspace entity
 
 Consumers see only the `Workspace` interface; the implementation stays package-private.
@@ -111,6 +149,9 @@ interface Workspace {
    * Live directory check, uncached: whether {@link path} currently exists and
    * is a directory. A missing directory never mutates the record — the
    * directory may only be temporarily moved.
+   * An injected metadata provider rejects unavailable observations, including
+   * a closed graph; the default Node backend retains its missing-dir behavior
+   * for filesystem errors.
    * @returns `'ok'` when the directory exists, `'missing-dir'` otherwise.
    */
   status(): Promise<'ok' | 'missing-dir'>

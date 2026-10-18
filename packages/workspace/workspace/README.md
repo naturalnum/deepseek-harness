@@ -118,6 +118,10 @@ The registry opens the `workspace` domain (version 2): a `workspaces` table keye
 
 ### Lifecycle
 
+Host subclasses may override the protected `createDirectoryMetadata()` method with an already-ready `WorkspaceDirectoryMetadata` provider. The registry selects and binds its `canonicalPath`, `isDirectory`, and `ensureDirectory` methods once at the start of initialization, before opening the domain; every native registry and entity directory operation uses that same provider. Returning `undefined` retains the original Node backend. Required providers must throw when unavailable. There is no later installation or replacement, and injected operations reject once the owning graph closes, including late results. Providers retain ownership of actual I/O and incomplete directory creation; closing the registry does not establish I/O settlement or remove directories.
+
+Injected providers report only definite ENOENT and ENOTDIR outcomes with `WorkspaceDirectoryMetadataError` reasons `missing` and `not-directory`. Every other rejection is `unavailable` with its original `cause`; native header indexing and attachment propagate that failure, and `status()` rejects instead of reporting `missing-dir`. Initialization resolves its live-header snapshot before bootstrap writes, without adding live-only headers to historical groups. An unavailable observation does not write a successful initialization marker or prune the failed header's membership. Previously completed independent persistence writes remain completed. The default Node backend keeps its existing error behavior.
+
 On start, the registry opens the domain, completes a marked mutation if one is pending, validates stored state — duplicate paths, duplicate session accounts, and order drift all fail loud — and, when not yet initialized, bootstraps history from persisted headers before writing the initialized marker last, so an interrupted bootstrap resumes safely. A fresh empty registry is real once initialized; it never re-bootstraps.
 
 ### Failure and recovery

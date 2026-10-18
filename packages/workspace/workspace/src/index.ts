@@ -6,7 +6,6 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { mkdir, stat } from 'node:fs/promises'
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
@@ -15,14 +14,16 @@ import { WorkspaceEntity } from './entity.ts'
 import type { WorkspaceEntityHost } from './entity.ts'
 
 export { WorkspaceMoveInvalidError } from './entity.ts'
-import { defaultWorkspaceTitle, fullyQualifiedWorkspacePath, realpathNormalize } from './paths.ts'
+import { defaultWorkspaceTitle, fullyQualifiedWorkspacePath } from './paths.ts'
+import { DirectoryMetadataAccess, WorkspaceDirectoryMetadataError } from './metadata.ts'
 import { workspaceDomainSpec } from './spec.ts'
 import type { WorkspaceDomainState, WorkspaceRecord } from './spec.ts'
-import type { SessionActivity, Workspace, WorkspaceId as WorkspaceIdBrand } from './types.ts'
+import type { SessionActivity, Workspace, WorkspaceDirectoryMetadata, WorkspaceId as WorkspaceIdBrand } from './types.ts'
 
 export type {
-  SessionActivity, SessionActivityItem, SessionActivityKind, SessionActivityKindMap, Workspace,
+  SessionActivity, SessionActivityItem, SessionActivityKind, SessionActivityKindMap, Workspace, WorkspaceDirectoryMetadata,
 } from './types.ts'
+export { WorkspaceDirectoryMetadataError } from './metadata.ts'
 export { workspaceDomainState, workspaceRecord, workspaceDomainSpec } from './spec.ts'
 export type { WorkspaceDomainState, WorkspaceRecord } from './spec.ts'
 export { realpathNormalize } from './paths.ts'
@@ -154,6 +155,11 @@ interface BootstrapGroup {
   readonly newestAt: number
 }
 
+type HeaderObservation = { readonly header: SessionHeader } & (
+  | { readonly kind: 'path'; readonly path: string }
+  | { readonly kind: 'missing' | 'invalid'; readonly reason: string }
+)
+
 const sameIds = (left: readonly WorkspaceId[], right: readonly WorkspaceId[]): boolean =>
   left.length === right.length && left.every((id, index) => id === right[index])
 
@@ -179,8 +185,10 @@ export class WorkspaceRegistry extends Service {
   private readonly missingSessionPaths = new Set<SessionId>()
   private readonly invalidSessionPaths = new Map<SessionId, string>()
   private operationTail: Promise<void> = Promise.resolve()
+  private directoryMetadata?: DirectoryMetadataAccess
 
   private readonly host: WorkspaceEntityHost = {
+    metadata: () => this.requireDirectoryMetadata(),
     table: () => this.requireTable(),
     candidateMatches: (id, path) => this.sessionPaths.get(id) === path || this.missingSessionPaths.has(id),
     readSessionHeader: id => this.readSessionHeader(id),
@@ -195,25 +203,54 @@ export class WorkspaceRegistry extends Service {
     super(ctx, 'workspaceRegistry')
   }
 
+  /**
+   * Select an already-ready graph-lived provider once, before opening storage.
+   * Subclass fields have initialized when this method runs. Required providers
+   * must throw if unavailable; there is no later provider replacement.
+   * @returns the injected provider, or undefined for the original Node backend.
+   */
+  protected createDirectoryMetadata(): WorkspaceDirectoryMetadata | undefined {
+    return undefined
+  }
+
   /** Open the domain, finish bootstrap when required, and rebuild the ordered cache. */
   protected async [Service.init](): Promise<void> {
+    if (this.directoryMetadata !== undefined) throw new Error('Workspace directory metadata is already selected')
+    const metadata = new DirectoryMetadataAccess(this.createDirectoryMetadata(), () => this.ctx.fiber.uid === null)
+    this.directoryMetadata = metadata
+    this.ctx.effect(() => () => { metadata.close() }, 'workspace.metadataClose')
     const domain = await this.ctx.storageDomain.open(workspaceDomainSpec)
     this.ctx.effect(() => () => domain.close(), 'workspace.domainClose')
+    metadata.assertAvailable()
     this.table = domain.table('workspaces')
     this.global = domain.global
     this.state = domain.global.get()
 
     await this.recoverPendingMutation()
+    metadata.assertAvailable()
     this.validateStoredState(this.state)
+    let liveObservations: HeaderObservation[] | undefined
     if (!this.state.initialized) {
       const headers = await this.listStoredHeaders()
+      metadata.assertAvailable()
       await this.replaceHeaderIndex(headers)
+      if (metadata.injected) {
+        // Resolve the live snapshot before bootstrap durability, but keep
+        // live-only headers out of the persisted-history bootstrap groups.
+        liveObservations = []
+        for (const session of this.ctx.get('sessions')?.list() ?? []) {
+          liveObservations.push(await this.observeHeader(session.header))
+        }
+      }
+      metadata.assertAvailable()
       await this.bootstrap(headers)
     } else if (this.table.size > 0) {
       await this.replaceHeaderIndex(await this.listStoredHeaders())
     }
 
-    await this.indexLiveSessions()
+    if (liveObservations === undefined) await this.indexLiveSessions()
+    else for (const observation of liveObservations) this.publishHeader(observation)
+    metadata.assertAvailable()
     this.validateStoredState(this.requireState())
     this.rebuildEntities()
     this.reportFilteredCandidates()
@@ -236,11 +273,17 @@ export class WorkspaceRegistry extends Service {
   // drop the parameter with its @param clause and the `create(path, title?)`
   // lines in this package's README pair.
   async create(path: string, title?: string): Promise<Workspace> {
-    const canonical = await realpathNormalize(path)
-    if (!(await stat(canonical)).isDirectory()) {
+    const metadata = this.requireDirectoryMetadata()
+    const canonical = await metadata.canonicalPath(path)
+    if (!(await metadata.isDirectory(canonical))) {
       throw new Error(`cannot create a workspace at '${canonical}': path is not a directory`)
     }
-    return await this.enqueueOperation(() => this.createCanonical(canonical, title))
+    const workspace = await this.enqueueOperation(() => {
+      metadata.assertAvailable()
+      return this.createCanonical(canonical, title)
+    })
+    metadata.assertAvailable()
+    return workspace
   }
 
   /**
@@ -256,7 +299,9 @@ export class WorkspaceRegistry extends Service {
    * @returns the initialized Workspace, or undefined when automatic creation is ineligible.
    */
   initializeDefault(resolveDirectory: () => Promise<string>): Promise<Workspace | undefined> {
+    const metadata = this.requireDirectoryMetadata()
     return this.enqueueOperation(async () => {
+      metadata.assertAvailable()
       const state = this.requireState()
       if (state.defaultWorkspaceId !== undefined) return this.entities.get(state.defaultWorkspaceId)
       const sessions = this.ctx.get('sessions')
@@ -265,12 +310,17 @@ export class WorkspaceRegistry extends Service {
         || sessions.list().length > 0 || (await this.listStoredHeaders()).length > 0) return undefined
 
       const path = await resolveDirectory()
+      metadata.assertAvailable()
       if (!fullyQualifiedWorkspacePath(path)) throw new TypeError(`Workspace path is not fully qualified: '${path}'`)
-      await mkdir(path, { recursive: true })
-      const canonical = await realpathNormalize(path)
+      await metadata.ensureDirectory(path)
+      const canonical = await metadata.canonicalPath(path)
       // A Session can start outside the registry queue while directory preparation awaits I/O.
       if ((await this.listStoredHeaders()).length > 0 || sessions.list().length > 0) return undefined
+      metadata.assertAvailable()
       return this.createCanonical(canonical, defaultWorkspaceTitle(path), true)
+    }).then((workspace) => {
+      metadata.assertAvailable()
+      return workspace
     })
   }
 
@@ -500,7 +550,7 @@ export class WorkspaceRegistry extends Service {
    * @returns the workspace owning the canonical path, when one exists.
    */
   async resolveByPath(path: string): Promise<Workspace | undefined> {
-    const canonical = await realpathNormalize(path)
+    const canonical = await this.requireDirectoryMetadata().canonicalPath(path)
     for (const entity of this.entities.values()) {
       if (entity.path === canonical) return entity
     }
@@ -805,27 +855,42 @@ export class WorkspaceRegistry extends Service {
   }
 
   private async indexHeader(header: SessionHeader): Promise<void> {
+    this.publishHeader(await this.observeHeader(header))
+  }
+
+  private async observeHeader(header: SessionHeader): Promise<HeaderObservation> {
+    const metadata = this.requireDirectoryMetadata()
+    if (header.cwd === undefined) return { header, kind: 'invalid', reason: 'header has no cwd' }
+    if (metadata.injected && !fullyQualifiedWorkspacePath(header.cwd)) {
+      return { header, kind: 'invalid', reason: `cwd '${header.cwd}' does not resolve` }
+    }
+    try {
+      const path = await metadata.canonicalPath(header.cwd)
+      if (!(await metadata.isDirectory(path))) {
+        return { header, kind: 'invalid', reason: `cwd '${header.cwd}' is not a directory` }
+      }
+      return { header, kind: 'path', path }
+    } catch (error) {
+      if (metadata.injected && error instanceof WorkspaceDirectoryMetadataError && error.reason === 'unavailable') throw error
+      const missing = metadata.injected
+        ? error instanceof WorkspaceDirectoryMetadataError && error.reason === 'missing'
+        : fullyQualifiedWorkspacePath(header.cwd) && error instanceof Error && 'code' in error && error.code === 'ENOENT'
+      return { header, kind: missing ? 'missing' : 'invalid', reason: `cwd '${header.cwd}' does not resolve` }
+    }
+  }
+
+  private publishHeader(observation: HeaderObservation): void {
+    this.requireDirectoryMetadata().assertAvailable()
+    const { header } = observation
     this.headers.set(header.id, header)
     this.sessionPaths.delete(header.id)
     this.missingSessionPaths.delete(header.id)
-    if (header.cwd === undefined) {
-      this.invalidSessionPaths.set(header.id, 'header has no cwd')
-      return
-    }
-    try {
-      const path = await realpathNormalize(header.cwd)
-      if (!(await stat(path)).isDirectory()) {
-        this.invalidSessionPaths.set(header.id, `cwd '${header.cwd}' is not a directory`)
-        return
-      }
-      this.sessionPaths.set(header.id, path)
+    if (observation.kind === 'path') {
+      this.sessionPaths.set(header.id, observation.path)
       this.invalidSessionPaths.delete(header.id)
-    } catch (error) {
-      if (fullyQualifiedWorkspacePath(header.cwd)
-        && error instanceof Error && 'code' in error && error.code === 'ENOENT') {
-        this.missingSessionPaths.add(header.id)
-      }
-      this.invalidSessionPaths.set(header.id, `cwd '${header.cwd}' does not resolve`)
+    } else {
+      if (observation.kind === 'missing') this.missingSessionPaths.add(header.id)
+      this.invalidSessionPaths.set(header.id, observation.reason)
     }
   }
 
@@ -879,6 +944,11 @@ export class WorkspaceRegistry extends Service {
   private requireTable(): KvTable<WorkspaceId, WorkspaceRecord> {
     if (this.table === undefined) throw new Error('workspace registry is not started yet')
     return this.table
+  }
+
+  private requireDirectoryMetadata(): DirectoryMetadataAccess {
+    if (this.directoryMetadata === undefined) throw new Error('workspace registry is not started yet')
+    return this.directoryMetadata
   }
 
   private requireState(): WorkspaceDomainState {
