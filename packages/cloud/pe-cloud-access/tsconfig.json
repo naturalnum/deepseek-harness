@@ -40,6 +40,18 @@
     },
     {
       "path": "../pe-cloud-runtime/tsconfig.host.json"
+    },
+    {
+      "path": "../pe-cloud-files"
+    },
+    {
+      "path": "../pe-opensandbox"
+    },
+    {
+      "path": "../../boot/app-boot"
+    },
+    {
+      "path": "../../../vendor/loader"
     }
   ]
 }

@@ -22,6 +22,8 @@ export interface AuthIngressConfig {
 
 /** Explicit root resources; SSL enables certificate verification with the system trust store. */
 export interface AuthRootConfig extends AccessConfig {
+  /** Omission retains component compatibility; first-trial deployment explicitly disables library sign-up. */
+  readonly disableSignUp?: boolean
   readonly database: {
     readonly host: string
     readonly port: number
@@ -55,6 +57,7 @@ const text = () => z.string().pattern(/^\S+$/).required()
 export const AuthRootConfigSchema: z<AuthRootConfig> = z.intersect([
   AccessConfigSchema,
   z.object({
+    disableSignUp: z.boolean(),
     database: z.object({
       host: text(), port: z.natural().min(1).max(65535).required(), user: text(), database: text(),
       passwordRef: z.string().pattern(/^[A-Za-z_][A-Za-z0-9_]*$/).required(), ssl: z.boolean().required(),

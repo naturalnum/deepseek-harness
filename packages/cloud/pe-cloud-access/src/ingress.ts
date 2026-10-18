@@ -5,7 +5,7 @@ import type { Duplex } from 'node:stream'
 import { FiberState, symbols, type Context } from '@deepseek-ai/cordis'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { WebRoute, WebServer } from '@deepseek-ai/dsh-host-webserver'
-import { CloudAccountApi, CloudApiError } from '@deepseek-ai/dsh-pe-cloud-api'
+import { CloudAccountApi, CloudApiError, type ExposureService } from '@deepseek-ai/dsh-pe-cloud-api'
 import { AccountRuntimeError } from '@deepseek-ai/dsh-pe-cloud-runtime'
 import type { AccountId, AccountRuntimeService, AccountUse } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import { API_PATH } from '@deepseek-ai/dsh-client-connection'
@@ -17,6 +17,7 @@ import { assertExpectedAccount, assertExpectedGeneration, RequestBindingError } 
 import { readRequestExpectation } from './expectation.ts'
 import { ConnectionGenerations } from './generations.ts'
 import { LoginPeerRegistry, type LoginPeer } from './peers.ts'
+import { produceCloudBootstrap } from './bootstrap-producer.ts'
 import type { AuthIngressConfig } from './root-config.ts'
 import type { AccessConfig, AuthenticatedPrincipal, RequestExpectation, IngressObservation } from './types.ts'
 
@@ -25,6 +26,7 @@ interface Dependencies {
   readonly web: WebServer
   readonly runtime: AccountRuntimeService
   readonly recipeVersion: string
+  readonly exposure?: ExposureService
   readonly assertAuthenticationCurrent: () => void
 }
 interface Operation {
@@ -192,11 +194,28 @@ export class CloudIngress {
         const verified = await this.auth.authenticateForBootstrap(request, operation.id, this.limits.maxBootstrapResponseBytes)
         this.assertOperation(operation)
         this.bindAccount(operation, verified.principal.accountId)
-        await this.withAccount(operation, verified.principal, undefined, (use) => {
-          this.accountApi(use.context, use.binding).assertInstalled(use.context)
-          this.generations.current(use.binding, operation.id)
-          // No actual approved catalog/capability projection is installed yet; never manufacture a successful C11 body.
-          return Promise.reject(new AuthAccessError('cloud/account-unavailable', operation.id))
+        await this.withAccount(operation, verified.principal, undefined, async (use) => {
+          const current = (): void => {
+            this.assertOperation(operation)
+            this.auth.assertLoginCurrent(verified.principal, operation.id)
+            use.assertCurrent()
+            const exposure = this.ctx.get('peExposure')
+            if (exposure === undefined || this.dependencies.exposure === undefined
+              || (Reflect.get(exposure, symbols.original) ?? exposure)
+                !== (Reflect.get(this.dependencies.exposure, symbols.original) ?? this.dependencies.exposure)) {
+              throw new AuthAccessError('cloud/account-unavailable', operation.id)
+            }
+          }
+          const projected = await produceCloudBootstrap(use.context, use.binding, this.dependencies.exposure,
+            () => this.ctx.get('pluginPackages'),
+            verified.account, this.limits.maxBootstrapResponseBytes,
+            AbortSignal.any([operation.observer.signal, use.binding.lifetime]), current,
+            () => this.generations.current(use.binding, operation.id))
+          current()
+          projected.assertCurrent()
+          response.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store',
+            'content-length': Buffer.byteLength(projected.body, 'utf8') })
+          response.end(projected.body)
         })
         return
       }
@@ -250,6 +269,7 @@ export class CloudIngress {
   ): Promise<void> {
     await this.dependencies.runtime.locateAccount(principal.accountId)
     this.assertOperation(operation)
+    this.auth.assertLoginCurrent(principal, operation.id)
     const use = await this.dependencies.runtime.acquireAccount(principal.accountId, operation.observer.signal)
     // The actual ingress operation owns even a late borrow through response/error transfer settlement.
     operation.use = use
@@ -263,6 +283,7 @@ export class CloudIngress {
     if (expected !== undefined) assertExpectedGeneration(expected, generation, operation.id)
     await consume(use)
     this.assertCurrent(operation.id)
+    this.auth.assertLoginCurrent(principal, operation.id)
     if (!operation.upgraded) use.assertCurrent()
   }
 

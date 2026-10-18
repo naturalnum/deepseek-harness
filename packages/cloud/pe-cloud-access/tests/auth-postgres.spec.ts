@@ -112,6 +112,120 @@ describe.skipIf(configPath === undefined)('real isolated PostgreSQL17 authentica
       const principalB = await current.authenticate(request(cookieB), requestId)
       expect(principalA.accountId).not.toBe(principalB.accountId)
       expect(principalA.accountId).not.toBe('client-forged-account')
+      const nativeAuth = Reflect.get(current, 'auth') as Auth
+      for (const endpoint of ['sign-in/email', 'sign-up/email']) {
+        const mutation = vi.spyOn(nativeAuth, 'handler')
+        try {
+          const refused = await fetch(`${origin}/cloud/auth/${endpoint}`, {
+            method: 'POST', headers: { origin, cookie: cookieA, 'content-type': 'application/json' },
+            body: JSON.stringify({ email: emails.get(cookieB), password: 'Probe-password-12345!', name: 'must-not-replace' }),
+          })
+          expect(refused.status).toBe(409)
+          expect(await refused.json()).toMatchObject({ code: 'cloud/login-active', retry: 'never' })
+          expect(refused.headers.getSetCookie()).toHaveLength(0)
+          expect(mutation).not.toHaveBeenCalled()
+          expect((await current.authenticate(request(cookieA), requestId)).accountId).toBe(principalA.accountId)
+          expect((await current.authenticate(request(cookieB), requestId)).accountId).toBe(principalB.accountId)
+        } finally { mutation.mockRestore() }
+      }
+      const raceCookie = await signup('replacement-race')
+      const readSession = nativeAuth.api.getSession.bind(nativeAuth.api)
+      const queried = Promise.withResolvers<undefined>(), releaseLookup = Promise.withResolvers<undefined>()
+      const lookup = vi.spyOn(nativeAuth.api, 'getSession').mockImplementationOnce(async (input) => {
+        const actual = await readSession(input)
+        queried.resolve(undefined)
+        await releaseLookup.promise
+        return actual
+      })
+      const replacement = fetch(`${origin}/cloud/auth/sign-in/email`, {
+        method: 'POST', headers: { origin, cookie: raceCookie, 'content-type': 'application/json' },
+        body: JSON.stringify({ email: emails.get(cookieB), password: 'Probe-password-12345!' }),
+      })
+      try {
+        await queried.promise
+        const signout = await fetch(`${origin}/cloud/auth/sign-out`, { method: 'POST', headers: { origin, cookie: raceCookie } })
+        expect(signout.status).toBe(200)
+      } finally { releaseLookup.resolve(undefined); lookup.mockRestore() }
+      expect((await replacement).status).toBe(409)
+      const oldTab = await fetch(`${origin}/cloud/auth/sign-in/email`, {
+        method: 'POST', headers: { origin, cookie: raceCookie, 'content-type': 'application/json' },
+        body: JSON.stringify({ email: emails.get(cookieB), password: 'Probe-password-12345!' }),
+      })
+      expect(oldTab.status).toBe(409)
+      expect(oldTab.headers.getSetCookie()).toHaveLength(0)
+      const closed = await BetterAuthAccess.create({ ...config, disableSignUp: true }, pool, secret, async () => {})
+      adapter = closed
+      try {
+        const refused = await fetch(`${origin}/cloud/auth/sign-up/email`, { method: 'POST',
+          headers: { origin, 'content-type': 'application/json' },
+          body: JSON.stringify({ email: `closed-${randomUUID()}@access.example.test`, name: 'closed', password: 'Probe-password-12345!' }) })
+        expect(refused.status).toBe(400)
+        expect(refused.headers.getSetCookie()).toHaveLength(0)
+        const login = await fetch(`${origin}/cloud/auth/sign-in/email`, { method: 'POST',
+          headers: { origin, 'content-type': 'application/json' },
+          body: JSON.stringify({ email: emails.get(cookieB), password: 'Probe-password-12345!' }) })
+        expect(login.status).toBe(200)
+        expect(login.headers.getSetCookie().length).toBeGreaterThan(0)
+      } finally { adapter = current; await closed.close() }
+      const timed = await BetterAuthAccess.create({ ...config, authCheckTimeoutMs: 50 }, pool, secret, async () => {})
+      const timedNative = Reflect.get(timed, 'auth') as Auth
+      const readAnonymous = timedNative.api.getSession.bind(timedNative.api)
+      const releaseAnonymous = Promise.withResolvers<undefined>(), anonymousRead = Promise.withResolvers<undefined>()
+      const delayedAnonymous = vi.spyOn(timedNative.api, 'getSession').mockImplementationOnce(async (input) => {
+        const actual = await readAnonymous(input)
+        anonymousRead.resolve(undefined)
+        await releaseAnonymous.promise
+        return actual
+      })
+      const timedMutation = vi.spyOn(timedNative, 'handler')
+      adapter = timed
+      try {
+        const attempt = fetch(`${origin}/cloud/auth/sign-in/email`, { method: 'POST',
+          headers: { origin, 'content-type': 'application/json' },
+          body: JSON.stringify({ email: emails.get(cookieB), password: 'Probe-password-12345!' }) })
+        await anonymousRead.promise
+        const result = await attempt
+        expect(result.status).toBe(503)
+        expect(result.headers.getSetCookie()).toHaveLength(0)
+        expect(timed.pendingOperations).toBeGreaterThan(0)
+      } finally {
+        releaseAnonymous.resolve(undefined)
+        adapter = current
+        await timed.close()
+        delayedAnonymous.mockRestore()
+      }
+      expect(timedMutation).not.toHaveBeenCalled()
+      timedMutation.mockRestore()
+      const late = await BetterAuthAccess.create({ ...config, authCheckTimeoutMs: 500 }, pool, secret, async () => {})
+      const lateNative = Reflect.get(late, 'auth') as Auth
+      const actualHandler = lateNative.handler.bind(lateNative)
+      const committed = Promise.withResolvers<undefined>(), releaseResult = Promise.withResolvers<undefined>()
+      const lateMutation = vi.spyOn(lateNative, 'handler').mockImplementationOnce(async (input) => {
+        const actual = await actualHandler(input)
+        expect(actual.status).toBe(200)
+        expect(actual.headers.getSetCookie().length).toBeGreaterThan(0)
+        committed.resolve(undefined)
+        await releaseResult.promise
+        return actual
+      })
+      adapter = late
+      try {
+        const attempt = fetch(`${origin}/cloud/auth/sign-in/email`, { method: 'POST',
+          headers: { origin, 'content-type': 'application/json' },
+          body: JSON.stringify({ email: emails.get(cookieB), password: 'Probe-password-12345!' }) })
+        await committed.promise
+        const unknown = await attempt
+        expect(unknown.status).toBe(503)
+        expect(unknown.headers.getSetCookie()).toHaveLength(0)
+        expect(late.pendingOperations).toBeGreaterThan(0)
+      } finally {
+        releaseResult.resolve(undefined)
+        adapter = current
+        await late.close()
+      }
+      expect(lateMutation).toHaveBeenCalledTimes(1)
+      lateMutation.mockRestore()
+      expect((await current.authenticate(request(cookieB), requestId)).accountId).toBe(principalB.accountId)
       const wrongPassword = await fetch(`${origin}/cloud/auth/sign-in/email`, {
         method: 'POST', headers: { origin, 'content-type': 'application/json' },
         body: JSON.stringify({ email: emails.get(cookieA), password: 'incorrect-password' }),
@@ -143,7 +257,6 @@ describe.skipIf(configPath === undefined)('real isolated PostgreSQL17 authentica
       await current.recheckLogin(principalA, requestId)
       await current.recheckLogin(principalB, requestId)
       // Only delay the real library's already-read result; no session or principal is fabricated.
-      const nativeAuth = Reflect.get(current, 'auth') as Auth
       const originalGetSession = nativeAuth.api.getSession.bind(nativeAuth.api)
       let readComplete: () => void = () => {}
       let releaseRead: () => void = () => {}

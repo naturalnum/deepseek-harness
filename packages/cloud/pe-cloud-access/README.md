@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Validate fixed-origin deployment inputs and reject stale account/generation expectations before native business work. `BetterAuthAccess` delegates authentication to pinned Better Auth and PostgreSQL, returning identity only from verified user/session rows. The `/root` Loader entry owns authentication resources through `peAuth`; optional ingress registers on the existing shared Web service. The actual root seal still rejects business admission while storage and account prerequisites are incomplete.
+Validate fixed-origin deployment inputs and reject stale account/generation expectations before native business work. `BetterAuthAccess` delegates authentication to pinned Better Auth and PostgreSQL, returning identity only from verified user/session rows. The `/root` Loader entry owns authentication resources through `peAuth`; optional ingress registers on the existing shared Web service. The actual Root seal and current account publication gate every request independently of authentication initialization.
 
 ## Table of Contents
 
@@ -28,7 +28,7 @@ Use the browser-safe `/schema` for structural `AccessConfigSchema`, request-expe
 
 ### Configuration
 
-All configuration is explicit; examples do not supply production defaults. Browser structural inputs live in [config-schema.ts](src/config-schema.ts); [config.ts](src/config.ts) retains full Host policy with unchanged Node IP semantics. Root requires [root-config.ts](src/root-config.ts), official `credentials` and an already deployed Better Auth schema. Omitting `ingress` retains resource-only initialization; configuring it requires the Loader entry's `inject` to include `webServer`, `peAccountRuntime` and `peExposure`, so these actual providers are active at schema inspection. Missing providers fail initialization. Production business remains closed.
+All configuration is explicit; examples do not supply production defaults. Browser structural inputs live in [config-schema.ts](src/config-schema.ts); [config.ts](src/config.ts) retains full Host policy with unchanged Node IP semantics. Root requires [root-config.ts](src/root-config.ts), official `credentials` and an already deployed Better Auth schema. Omitting `ingress` retains resource-only initialization; configuring it requires the Loader entry's `inject` to include `webServer`, `peAccountRuntime` and `peExposure`, so these actual providers are active at schema inspection. Missing providers fail initialization. Configuration alone grants no business admission.
 
 | Fields | Requirement |
 | --- | --- |
@@ -46,6 +46,7 @@ All configuration is explicit; examples do not supply production defaults. Brows
 | `database` | Explicit `host`, `port`, `user`, `database`, `passwordRef`, `ssl`; SSL verifies the server certificate with system trust. |
 | `pool` | Explicit positive `maxConnections`, `connectionTimeoutMs`, `statementTimeoutMs`, `lockTimeoutMs`, `idleTimeoutMs`, `idleTransactionTimeoutMs`, `maxLifetimeSeconds`; lock timeout cannot exceed statement timeout. |
 | `startupTimeoutMs`, `secretResolveTimeoutMs`, `maxSecretOperations`, `maxSecretBytes` | Finite startup/secret waits and actual-read capacity; byte cap is at least 32 and applies to each secret, including UTF-8. |
+| Optional `disableSignUp` | Delegates to pinned Better Auth; omission preserves sign-up compatibility, while the first trial explicitly sets `true`. |
 | Optional `ingress` | Requires positive finite `maxOperations`, `maxOperationsPerAccount`, `requestTimeoutMs`, `maxAuthRequestBodyBytes`, `maxRequestBodyBytes`, `maxBootstrapResponseBytes`, `maxGenerationBindings`, `maxFrameBytes`, `maxLogicalStreams`, `maxLogicalStreamsPerAccount`, `maxLogicalStreamsPerPeer`; child capacities cannot exceed parents. Presence grants no readiness. |
 
 `peAuth` resolves the authentication secret through `ctx.credentials` and resolves the password again for each physical pool connection. References use the official credential-reference grammar; root reads no environment variables or default connection. The pool pins its schema to `public`; server statement/lock/idle-transaction limits stop SQL work, while no client query timer claims early completion. Startup checks all library migration categories, including indexes, unsafe changes and schema problems, without compiling or running DDL. Apply migrations explicitly during deployment.
@@ -60,13 +61,13 @@ Preserve every carrier-field occurrence for `parseRequestExpectation`; missing, 
 
 Private ingress owns `/cloud/auth`, `/cloud/bootstrap`, `/cloud/settings`, `/api` and native `/api/remote.mux` upgrade registrations. Every handler/continuation checks the actual seal; registration does not wait for sealing or create a Loader cycle. Raw header and WS query occurrences are preserved without fallback. Bounded opaque generation tokens require actual runtime business-current checks. Request borrows last through HTTP response/error settlement; upgraded sockets use the independent Peer borrow. Full root capacity closes the carrier without queuing.
 
-The native final-dispatch callback rechecks the original request, login, Use, generation and graph-local `CloudAccountApi` after actual route/envelope selection. Every logical stream checks its original Peer and per-graph policy. Native frame limits and acquire/actual-settle callbacks enforce global/account/Peer stream capacity; unknown cleanup retains slots and schedules closure without awaiting its own transport. Missing actual catalog/capability descriptions and C06 control keep bootstrap/settings refused.
+The native final-dispatch callback rechecks the original request, login, Use, generation and graph-local `CloudAccountApi` after actual route/envelope selection. Every logical stream checks its original Peer and per-graph policy. Native frame limits and acquire/actual-settle callbacks enforce global/account/Peer stream capacity; unknown cleanup retains slots and schedules closure without awaiting its own transport. Bootstrap additionally requires original catalog, native policy and installed-package evidence; C06 settings remains closed.
 
 ### Bootstrap metadata
 
 `decodeCloudBootstrap(input, limits)` validates the strict C-11 account, version, generation and capability descriptions and returns detached, deeply frozen data. Supply explicit `maxBodyBytes`, `maxStringBytes` and combined `maxListItems`; no limits are defaulted. The body budget includes keys, delimiters and escaped UTF-8 strings in the complete compact result. The caller still bounds raw HTTP bytes before `JSON.parse`; all three limits may be derived from its `maxBootstrapResponseBytes`.
 
-Unknown fields, invalid availability/reason pairs, non-false restricted capabilities and invalid budgets fail without echoing input. Decoding does not authenticate, issue a generation or verify providers/readiness. Configuration application levels describe the server response; they do not submit changes or select the server's actual decision. The production bootstrap route and real graph/generation assembly remain closed.
+Unknown fields, invalid availability/reason pairs, non-false restricted capabilities and invalid budgets fail without echoing input. Decoding does not authenticate, issue a generation or verify providers/readiness. Configuration application levels describe the server response; they do not submit changes or select the server's actual decision. The private producer joins original `CloudAccountApi.assertBootstrapCurrent`, files/project membership, closed execution and bounded Loader/package checks. It rechecks the original login, Root, Use, generation and installations before sending bounded JSON with `no-store`. Approval rows alone never establish installation; missing facts reject the entire bootstrap.
 
 ### Authentication adapter
 
@@ -77,6 +78,8 @@ Unknown fields, invalid availability/reason pairs, non-false restricted capabili
 Internal `authenticateForBootstrap(request, requestId, maxDisplayNameBytes)` shares the same authentication operation and library lookup as `authenticate`, returning its normal principal and a frozen account projection from that verified user's name. The explicit positive byte limit is checked first against character length, then UTF-8 bytes. The principal and its login records gain no name field; later authentication can observe a changed name while prior projections stay immutable. Oversized names return `cloud/capacity`; an invalid limit returns `cloud/account-unavailable` before DB work. Neither failure exposes the name or account id.
 
 `handleNodeRequest` delegates untouched bytes to Better Auth's Node bridge after Host/Origin/TLS/proxy checks. Ingress supplies byte limits and observer cancellation; standard streams count raw chunks before parsing and join actual request/response cancellation. The library bridge's early Promise does not release response ownership. Forwarded headers determine neither identity nor auth origin. Production cookies are Secure, HttpOnly and SameSite=Lax. WS requires exactly one matching original Origin before auth DB work; HTTP may omit it, with mutating authentication CSRF checks still library-owned.
+
+`sign-in/email` and `sign-up/email` first query the original Cookie through the library with identity caching/refresh disabled. A valid login or a stale presented session Cookie returns typed `cloud/login-active`/409 with `retry: never`, requiring actual sign-out; lookup failure never means anonymous. A late lookup after timeout or cancellation cannot enter the mutation. Initially anonymous requests have no shared server transition identifier, so cross-tab/node ordering of newly issued cookies is not certified.
 
 `revokeLogin` deletes through the library before its session-deletion hook notifies the login invalidator. `planMigrations` returns the library-generated plan without applying it. Auth operations reserve one finite slot covering the real query and invalidation cleanup; nested hooks do not reserve another slot. A timed-out wait retains that slot in `pendingOperations` until actual work settles. `close` stops admission and waits without ending the caller-owned pool. No Agent task is cancelled by authentication failure.
 
@@ -101,6 +104,7 @@ Revocation or lifetime end closes admission and destroys carriers, then awaits n
 | Source | Responsibility |
 | --- | --- |
 | [bootstrap.ts](src/bootstrap.ts) | Strict bounded C-11 decoder and detached read-only metadata. |
+| [bootstrap-producer.ts](src/bootstrap-producer.ts), [bootstrap-inventory.ts](src/bootstrap-inventory.ts) | Original graph assertions, actual Loader/package inventory and bounded C11 projection. |
 | [config-schema.ts](src/config-schema.ts) | Browser-safe structural configuration schema. |
 | [auth.ts](src/auth.ts) | Real library calls, fixed-login rechecks and actual-work retention. |
 | [peers.ts](src/peers.ts) | Internal login Peer, independent borrow, native carriers and retained cleanup. |
@@ -147,9 +151,9 @@ Request authentication and binding checks change no prompt prefix or model cache
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- Actual recipe audit still rejects missing production storage authority; account production prerequisites remain separate. `CloudAccountApi` and native dispatch/stream hooks are wired without substituting root policy. Registered ingress still refuses business work. Library initialization and refusal tests do not establish S1/S2 or full F01 browser/WS success.
+- Production admission requires actual storage authority, recipe audit and account publication; these remain separate from metadata projection. `CloudAccountApi` and native dispatch/stream hooks are wired without substituting root policy. Unsealed ingress refuses business work. Library initialization and refusal tests do not establish S1/S2 or full F01 browser/WS success.
 - Proxy forwarding remains restricted to the configured fixed origin; forwarded client-IP chains and cross-instance service identity/routing require separate deployment integration.
-- Root rejects a nonempty library migration plan and never runs migrations. Actual C11 catalog/capability descriptions, C06 control and approved navigation-download carrier selection remain pending; native HTTP currently requires binding headers, while WS uses query fields. Formal producer/consumer builds and real PG/Web integration are required before opening the complete chain.
+- Root rejects a nonempty library migration plan and never runs migrations. Root must supply the actual approved public control catalog; infrastructure omitted from it still requires original API/files/execution assertions. C06 control and approved navigation-download carrier selection remain pending; native HTTP currently requires binding headers, while WS uses query fields. Formal producer/consumer builds and real PG/Web integration are required before opening the complete chain.
 
 <a id="dev-note"></a>
 ### Dev Note

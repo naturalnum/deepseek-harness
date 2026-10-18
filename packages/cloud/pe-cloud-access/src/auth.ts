@@ -11,6 +11,7 @@ import type { AccessConfig, AuthenticatedPrincipal, CloudBootstrap } from './typ
 import { AuthAccessError } from './auth-error.ts'
 import { assertAuthTransport } from './auth-trust.ts'
 import { trackBody, type TrackedBody } from './body-stream.ts'
+import { getSessionCookie } from 'better-auth/cookies'
 
 type NodeAuth = typeof import('better-auth/node')
 type AuthFactory = typeof import('better-auth')['betterAuth']
@@ -32,6 +33,7 @@ interface LoginCheck {
 interface AuthInvocation {
   readonly requestId: Branded<'pe-request-id'>
   failure: 'cloud/capacity' | 'cloud/account-unavailable' | undefined
+  timedOut: boolean
 }
 interface AuthNodeLimits {
   readonly maxBodyBytes: number
@@ -61,7 +63,7 @@ export class BetterAuthAccess {
   private readonly bridges = new Set<Promise<void>>()
 
   private constructor(
-    config: AccessConfig, database: Pool, secret: string, invalidate: LoginInvalidator,
+    config: AccessConfig & { readonly disableSignUp?: boolean }, database: Pool, secret: string, invalidate: LoginInvalidator,
     factory: AuthFactory, apiError: ApiErrorFactory, node: NodeAuth,
   ) {
     this.config = parseAccessConfig(config)
@@ -74,7 +76,7 @@ export class BetterAuthAccess {
       baseURL: this.config.publicOrigin,
       basePath: '/cloud/auth',
       trustedOrigins: [this.config.publicOrigin],
-      emailAndPassword: { enabled: true },
+      emailAndPassword: { enabled: true, disableSignUp: config.disableSignUp ?? false },
       session: { cookieCache: { enabled: false } },
       advanced: {
         useSecureCookies: new URL(this.config.publicOrigin).protocol === 'https:',
@@ -108,7 +110,9 @@ export class BetterAuthAccess {
    * @returns the real library adapter, without mounting any route or claiming readiness.
    * @throws Error if dependencies are unavailable or the loaded Better Auth version differs from 1.7.10.
    */
-  static async create(config: AccessConfig, database: Pool, secret: string, invalidate: LoginInvalidator): Promise<BetterAuthAccess> {
+  static async create(
+    config: AccessConfig & { readonly disableSignUp?: boolean }, database: Pool, secret: string, invalidate: LoginInvalidator,
+  ): Promise<BetterAuthAccess> {
     const [{ betterAuth, APIError }, node] = await Promise.all([import('better-auth'), import('better-auth/node')])
     const adapter = new BetterAuthAccess(config, database, secret, invalidate, betterAuth, APIError, node)
     if ((await adapter.auth.$context).version !== '1.7.10') throw new Error('cloud access requires Better Auth 1.7.10')
@@ -309,9 +313,30 @@ export class BetterAuthAccess {
         catch (_error) { throw new AuthAccessError('cloud/stop-unconfirmed', requestId) }
       }
       try {
-        result = await this.withDeadline(() => {
+        result = await this.withDeadline(async () => {
+          const current = (): void => {
+            signal.throwIfAborted()
+            const invocation = this.invocation.getStore()
+            if (!this.accepting || invocation?.timedOut === true) {
+              throw new AuthAccessError('cloud/account-unavailable', requestId)
+            }
+            if (invocation?.failure !== undefined) throw new AuthAccessError(invocation.failure, requestId)
+            limits?.assertCurrent?.()
+          }
+          current()
+          const path = url.pathname.replace(/\/+$/, '')
+          if (incoming.method === 'POST' && (path === '/cloud/auth/sign-in/email' || path === '/cloud/auth/sign-up/email')) {
+            // A stale presented session cookie also needs explicit sign-out: a late old-tab request cannot start a replacement.
+            const presented = getSessionCookie(headers) !== null
+            const login = await this.auth.api.getSession({ headers, query: { disableCookieCache: true, disableRefresh: true } })
+            current()
+            if (login !== null || presented) throw new AuthAccessError('cloud/login-active', requestId)
+          }
+          current()
+          const result = await this.auth.handler(new Request(url, init))
+          try { current() } catch (error) { await discard(result); throw error }
           limits?.assertCurrent?.()
-          return this.auth.handler(new Request(url, init))
+          return result
         }, requestId)
         received = result
         limits?.assertCurrent?.()
@@ -407,7 +432,7 @@ export class BetterAuthAccess {
     if (this.pending.size >= this.config.maxAuthOperations) throw new AuthAccessError('cloud/capacity', requestId)
     const ordinal = ++this.ordinal
     const actualStatus: { settled: boolean } = { settled: false }
-    const invocation: AuthInvocation = { requestId, failure: undefined }
+    const invocation: AuthInvocation = { requestId, failure: undefined, timedOut: false }
     const actual = Promise.resolve().then(() => this.invocation.run(invocation, async () => {
       const result = await operation(ordinal)
       // Better Auth sign-out may contain deletion errors; a failed cloud hook cannot become a successful response.
@@ -417,7 +442,10 @@ export class BetterAuthAccess {
     void actual.then(() => { actualStatus.settled = true }, () => { actualStatus.settled = true })
     let timer: ReturnType<typeof setTimeout> | undefined
     const timeout = new Promise<never>((_resolve, reject) => {
-      timer = setTimeout(() => { reject(new AuthAccessError('cloud/account-unavailable', requestId)) }, this.config.authCheckTimeoutMs)
+      timer = setTimeout(() => {
+        invocation.timedOut = true
+        reject(new AuthAccessError('cloud/account-unavailable', requestId))
+      }, this.config.authCheckTimeoutMs)
     })
     const waited = Promise.race([actual, timeout]).catch(async (error: unknown) => {
       await onFailure?.()

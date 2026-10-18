@@ -6,6 +6,8 @@ import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { AccountId } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import { BetterAuthAccess } from '../src/auth.ts'
 import type { AccessConfig, AuthenticatedPrincipal } from '../src/types.ts'
+import type { Auth, BetterAuthOptions } from 'better-auth'
+import { AuthAccessError } from '../src/auth-error.ts'
 import { carrier } from './ingress-fixture.ts'
 
 const requestId = 'server-auth-test' as Branded<'pe-request-id'>
@@ -52,6 +54,51 @@ afterEach(async () => {
 })
 
 describe('pinned Better Auth/PostgreSQL adapter denial paths', () => {
+  it.each(['/cloud/auth/sign-in/email', '/cloud/auth/sign-up/email/'])(
+    'does not enter the library mutation at %s when the original Cookie lookup is unavailable', async (path) => {
+      const { adapter } = await create()
+      const native = Reflect.get(adapter, 'auth') as Auth
+      const session = vi.spyOn(native.api, 'getSession')
+      const mutate = vi.spyOn(native, 'handler')
+      const { request, response, socket } = carrier(path, 'POST', ['Content-Type', 'application/json', 'Content-Length', '2'])
+      request.push(Buffer.from('{}'))
+      request.push(null)
+      try {
+        await adapter.handleNodeRequest(request, response, requestId, { maxBodyBytes: 128, signal: new AbortController().signal })
+        expect(response.statusCode).toBe(503)
+        expect(session).toHaveBeenCalledWith(expect.objectContaining({ query: { disableCookieCache: true, disableRefresh: true } }))
+        expect(mutate).not.toHaveBeenCalled()
+        expect(response.getHeader('set-cookie')).toBeUndefined()
+      } finally { request.destroy(); response.destroy(); socket.destroy() }
+    })
+
+  it('reports sign-out-required with a typed status/code and never suggests a retry', () => {
+    const failure = new AuthAccessError('cloud/login-active', requestId)
+    expect({ status: failure.status, body: failure.toJSON() }).toMatchInlineSnapshot(`
+      {
+        "body": {
+          "code": "cloud/login-active",
+          "message": "Sign out before starting another login in this browser.",
+          "requestId": "server-auth-test",
+          "retry": "never",
+        },
+        "status": 409,
+      }
+    `)
+  })
+
+  it('passes explicit disableSignUp to the original pinned library while omission preserves compatibility', async () => {
+    const { adapter } = await create()
+    const initial = Reflect.get(adapter, 'options') as BetterAuthOptions
+    expect(initial.emailAndPassword).toEqual({ enabled: true, disableSignUp: false })
+    const pool = new pg.Pool({ host: '127.0.0.1', port: 1, max: 1, connectionTimeoutMillis: 30 })
+    pools.push(pool)
+    const closed = await BetterAuthAccess.create({ ...config(), disableSignUp: true }, pool,
+      'integration-test-secret-with-thirty-two-characters-12345', async () => {})
+    adapters.push(closed)
+    const configured = Reflect.get(closed, 'options') as BetterAuthOptions
+    expect(configured.emailAndPassword).toEqual({ enabled: true, disableSignUp: true })
+  })
   it('joins the actual Better Auth Node response before releasing a failed PostgreSQL authentication request', async () => {
     const { adapter } = await create()
     const { request, response, socket } = carrier('/cloud/auth/get-session')

@@ -23,6 +23,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
   interface RemoteErrorDetailsMap {
     'cloud/unauthenticated': SafeDetails
     'cloud/forbidden': SafeDetails
+    'cloud/login-active': SafeDetails
     'cloud/account-unavailable': SafeDetails
     'cloud/capacity': SafeDetails
     'cloud/stop-unconfirmed': SafeDetails

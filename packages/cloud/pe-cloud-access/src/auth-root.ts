@@ -140,7 +140,7 @@ export class PeAuthService extends Service {
         throw new AuthAccessError('cloud/account-unavailable', this.requestId)
       }
       this.ingress = new CloudIngress(this.ctx, this.config, this.config.ingress, this.auth, {
-        web, runtime, recipeVersion: exposure.policy.manifest.recipeVersion,
+        web, runtime, exposure, recipeVersion: exposure.policy.manifest.recipeVersion,
         assertAuthenticationCurrent: () => {
           if (this.phase !== 'initialized') throw new AuthAccessError('cloud/account-unavailable', this.requestId)
         },

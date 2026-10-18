@@ -115,6 +115,11 @@ function bootAuthentication(read: TestCredentials['resolveRead']): {
 }
 
 describe('root authentication resources remain closed on incomplete or failed initialization', () => {
+  it('preserves the explicit library sign-up policy through Root configuration parsing', () => {
+    expect(parseAuthRootConfig({ ...config(), disableSignUp: true }).disableSignUp).toBe(true)
+    expect(parseAuthRootConfig({ ...config(), disableSignUp: false }).disableSignUp).toBe(false)
+    expect(() => AuthRootConfigSchema({ ...config(), disableSignUp: 'yes' })).toThrow()
+  })
   it('keeps real Loader boot pending and propagates a missing secret through startup failure and provider cleanup', async () => {
     const secret = Promise.withResolvers<ResolvedCredential | undefined>()
     const entered = Promise.withResolvers<undefined>()

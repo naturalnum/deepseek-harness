@@ -6676,6 +6676,9 @@ importers:
         specifier: 8.16.3
         version: 8.16.3
     devDependencies:
+      '@deepseek-ai/cordis-plugin-loader':
+        specifier: workspace:~
+        version: link:../../../vendor/loader
       '@deepseek-ai/cordis':
         specifier: workspace:~
         version: link:../../../vendor/cordis
@@ -6706,6 +6709,12 @@ importers:
       '@deepseek-ai/dsh-pe-cloud-api':
         specifier: workspace:*
         version: link:../pe-cloud-api
+      '@deepseek-ai/dsh-pe-cloud-files':
+        specifier: workspace:*
+        version: link:../pe-cloud-files
+      '@deepseek-ai/dsh-pe-opensandbox':
+        specifier: workspace:*
+        version: link:../pe-opensandbox
       '@deepseek-ai/dsh-pe-cloud-runtime':
         specifier: workspace:*
         version: link:../pe-cloud-runtime
