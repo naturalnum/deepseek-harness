@@ -81,6 +81,46 @@ function visible(id: string, effects: { mounted: number; disposed: number; hits:
 }
 
 describe('client manifest entries', () => {
+  it('materializes a supplied library for a real plugin without activating it during startup, refresh or rebuild', async () => {
+    const libraryApply = vi.fn(), consumerApply = vi.fn()
+    const supplier = row('library', 'r0', { activate: false })
+    const consumer = row('consumer', 'r0', { external: ['library/client'] })
+    const b = await bench(graph(supplier, consumer), {
+      library: () => ({ value: 'original-library', apply: libraryApply }),
+      consumer: (require) => {
+        const library: unknown = require('library/client')
+        consumerApply(library)
+        return { apply() {} }
+      },
+    })
+    expect(consumerApply).toHaveBeenCalledWith(expect.objectContaining({ value: 'original-library' }))
+    expect(libraryApply).not.toHaveBeenCalled()
+    expect([...b.ctx.loader.entries()].map(entry => entry.options.name)).toEqual(['consumer'])
+    await b.modules.entries.sync(graph(supplier, consumer))
+    await b.modules.entries.sync(graph({ ...supplier, rev: 'r1' }, consumer))
+    expect(libraryApply).not.toHaveBeenCalled()
+    expect([...b.ctx.loader.entries()].map(entry => entry.options.name)).toEqual(['consumer'])
+    await b.modules.entries.sync(graph({ ...supplier, rev: 'r1', activate: true }, consumer))
+    expect(libraryApply).toHaveBeenCalledOnce()
+    await b.modules.entries.sync(graph({ ...supplier, rev: 'r1', activate: false }, consumer))
+    expect([...b.ctx.loader.entries()].map(entry => entry.options.name)).toEqual(['consumer'])
+    expect(libraryApply).toHaveBeenCalledOnce()
+  })
+
+  it('does not activate a late downloaded plugin after its declaration changes to module supply only', async () => {
+    const applied = vi.fn(), waiting = deferred(), entered = deferred()
+    const b = await bench(graph(), { library: () => ({ apply: applied }) })
+    b.arrival(async () => { entered.resolve(); await waiting.promise })
+    const old = b.modules.entries.sync(graph(row('library')))
+    await entered.promise
+    const current = b.modules.entries.sync(graph(row('library', 'r0', { activate: false })))
+    waiting.resolve()
+    await Promise.all([old, current])
+    expect(applied).not.toHaveBeenCalled()
+    expect([...b.ctx.loader.entries()]).toEqual([])
+    expect((await b.modules.import('library'))).toHaveProperty('apply')
+  })
+
   it('adds, drains removal and re-enables one instance with styles; unrelated entries survive', async () => {
     const effects = { mounted: 0, disposed: 0, hits: 0 }
     const cleanup = deferred()

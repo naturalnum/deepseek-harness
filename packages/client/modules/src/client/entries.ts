@@ -29,7 +29,7 @@ const FAILED = 3 as FiberState.FAILED
 
 /** Revisions and requests identify desired code; URLs only select its immutable delivery resource. */
 function entryTargets(manifest: BootManifest): string {
-  return JSON.stringify(manifest.modules.map(row => [row.id, row.rev, row.inject, row.external]))
+  return JSON.stringify([manifest.modules.map(row => [row.id, row.rev, row.inject, row.external]), manifest.plugins])
 }
 
 /** Manages only entries created from the Host manifest; other Loader contributors retain ownership. */
@@ -222,6 +222,7 @@ export class ClientEntries {
     }
     for (const row of manifest.modules) {
       if (!this.current(generation)) break
+      if (!wanted.has(row.id)) continue
       try {
         const entry = this.managed.get(row.id)
         if (entry === undefined) {

@@ -33,7 +33,7 @@ kind: "package-reference"
 
 浏览器插件包在其 `package.json` 中以 `platform: 'web'` 声明 `dsh.client`，导出 `./client` bundle，并在 `dsh.client.external` 下列出任何基座之外的模块请求。宿主半侧把每份声明变成 `/plugins` 下提供的 bundle，并让动态提供方先于其消费方加载。
 
-Host 可通过 `registerClientPackages(packages, baseUrl)` 声明已批准的浏览器包，而不激活它们的 Host 插件。安装 base URL 决定包解析位置。注册表沿用 Loader 条目的元数据、bundle 和模块图校验；重复声明或批次失败时不发布新图，并撤回该批来源。返回的可等待 disposer 移除声明，调用方卸载时执行相同清理。调用方负责包审批及版本选择。
+Host 可通过 `registerClientPackages(packages, baseUrl, options?)` 声明已批准的浏览器包，而不激活它们的 Host 插件。省略 options 或使用 `activate: true` 时仍激活浏览器插件；`activate: false` 供应其原始模块，但不创建浏览器 Loader 条目。图更新及产物重建会保留该选择；仅供应模块的声明与同一已激活 Host 来源冲突。安装 base URL 决定包解析位置。注册表沿用 Loader 条目的元数据、bundle 和模块图校验；重复声明或批次失败时不发布新图，并撤回该批来源。返回的可等待 disposer 移除声明，调用方卸载时执行相同清理。调用方负责包审批及版本选择。
 
 ### 浏览器加载什么
 

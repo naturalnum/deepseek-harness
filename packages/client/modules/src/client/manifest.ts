@@ -65,6 +65,8 @@ export interface WebBootEntry {
   immediately?: boolean
   /** Non-baseline module specifiers this row requests; omitted when it requests none. */
   external?: string[]
+  /** False supplies the module without activating a Cordis plugin; omission and true activate normally. */
+  activate?: boolean
 }
 
 /** Initial scheduling phase for one revisioned combo script. */
@@ -264,6 +266,9 @@ export function parseBootManifest(wire: unknown): BootManifest {
     if (row.immediately !== undefined && typeof row.immediately !== 'boolean') {
       throw new Error(`client-modules: boot manifest entry ${where} immediately must be a boolean`)
     }
+    if (row.activate !== undefined && typeof row.activate !== 'boolean') {
+      throw new Error(`client-modules: boot manifest entry ${where} activate must be a boolean`)
+    }
     moduleFields.push({
       id: row.id,
       url: row.url,
@@ -271,11 +276,13 @@ export function parseBootManifest(wire: unknown): BootManifest {
       inject: inject === undefined ? [] : [...inject],
       external: external === undefined ? [] : [...external],
     })
-    plugins.push({
-      id: row.id,
-      inject: inject === undefined ? [] : [...inject],
-      immediately: row.immediately === true,
-    })
+    if (row.activate !== false) {
+      plugins.push({
+        id: row.id,
+        inject: inject === undefined ? [] : [...inject],
+        immediately: row.immediately === true,
+      })
+    }
   }
 
   const entryIds = new Set(moduleFields.map(row => row.id))

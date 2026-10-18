@@ -667,6 +667,20 @@ describe('failure modes', () => {
 })
 
 describe('boot manifest wire', () => {
+  it('retains module suppliers while activating only omitted or true declarations and refuses malformed choices', () => {
+    const entries = [
+      { id: 'library', url: '/library.js', rev: '1', activate: false },
+      { id: 'normal', url: '/normal.js', rev: '1' },
+      { id: 'explicit', url: '/explicit.js', rev: '1', activate: true },
+    ]
+    const wire = { rev: 'graph', entries,
+      batches: [{ phase: 'application', url: '/batch.js', rev: 'batch', entries: entries.map(row => row.id) }] }
+    const manifest = parseBootManifest(wire)
+    expect(manifest.modules.map(row => row.id)).toEqual(['library', 'normal', 'explicit'])
+    expect(manifest.plugins.map(row => row.id)).toEqual(['normal', 'explicit'])
+    expect(() => parseBootManifest({ ...wire, entries: [{ ...entries[0], activate: 'false' }] })).toThrow('activate must be a boolean')
+  })
+
   it('normalizes absent shared-module fields and carries the declared ones', () => {
     const manifest = parseBootManifest({
       rev: 'graph',

@@ -81,6 +81,8 @@ interface ResolvedPkgMeta {
 
 /** One active Loader source and the browser package manifest it resolves to. */
 interface ClientPackageSource extends ResolvedPkgMeta {
+  /** Whether this declaration also activates the browser plugin. */
+  activate: boolean
   /** Loader specifier from the active row. */
   loaderName: string
   /** Resolution base of the config tree that owns the row. */
@@ -484,7 +486,7 @@ function buildBatch(
 }
 
 /** Graph row for one bundle rev (the reference carries the rev as its cache-busting query). */
-function graphRow(id: string, rev: string, fields: WebBootRowFields): WebBootEntry {
+function graphRow(id: string, rev: string, fields: WebBootRowFields, activate = true): WebBootEntry {
   return {
     id,
     url: comboReference([id], rev),
@@ -492,6 +494,7 @@ function graphRow(id: string, rev: string, fields: WebBootRowFields): WebBootEnt
     ...(fields.inject !== undefined ? { inject: fields.inject } : {}),
     ...(fields.immediately ? { immediately: true } : {}),
     ...(fields.external.length > 0 ? { external: fields.external } : {}),
+    ...activate ? {} : { activate: false },
   }
 }
 
@@ -686,18 +689,22 @@ export class ClientModuleRegistry extends Service {
    * Invalid declarations or missing artifacts reject the batch and withdraw its sources.
    * @param packages - approved package specifiers whose manifests declare dsh.client.
    * @param baseUrl - resolution base of the deployment-owned package installation.
+   * @param options - optional activation choice; false supplies modules only, while omission or true also activates plugins.
    * @returns awaitable disposer removing these declarations, also called when the caller unloads.
    */
-  registerClientPackages(packages: readonly string[], baseUrl: string): () => Promise<void> {
+  registerClientPackages(packages: readonly string[], baseUrl: string, options?: { readonly activate?: boolean }): () => Promise<void> {
     const sources = packages.map((loaderName) => {
       const resolved = this.resolveMeta(loaderName, baseUrl)
       if (resolved === null) throw new Error(`client-modules: ${loaderName} does not declare dsh.client`)
-      return { ...resolved, loaderName, baseUrl, sourceKey: this.sourceKey(loaderName, baseUrl) }
+      return { ...resolved, loaderName, baseUrl, sourceKey: this.sourceKey(loaderName, baseUrl), activate: options?.activate !== false }
     })
     const seen = new Set<string>()
     for (const source of sources) {
       if (seen.has(source.sourceKey) || this.declaredSources.has(source.sourceKey)) {
         throw new Error(`client-modules: duplicate browser declaration ${source.loaderName}`)
+      }
+      if (!source.activate && this.sources.has(source.sourceKey)) {
+        throw new Error(`client-modules: module-only declaration conflicts with active Host entry ${source.loaderName}`)
       }
       seen.add(source.sourceKey)
     }
@@ -774,7 +781,7 @@ export class ClientModuleRegistry extends Service {
     if (rev === record.entry.rev) return rev
     const bundle = readFileSync(record.meta.clientPath)
     record.baseline = baseline
-    record.entry = graphRow(id, rev, record.meta)
+    record.entry = graphRow(id, rev, record.meta, record.entry.activate !== false)
     record.bundle = bundle
     this.composed = this.compose()
     for (const notify of this.rebuildListeners) {
@@ -1047,7 +1054,12 @@ export class ClientModuleRegistry extends Service {
     for (const entry of this.ctx.loader.entries()) {
       if (entry.options.name !== entryName || entry.fiber === undefined || entry.disabled) continue
       const source = this.resolveSource(entry)
-      if (source !== undefined) nextSources.set(source.sourceKey, source)
+      if (source !== undefined) {
+        if (nextSources.get(source.sourceKey)?.activate === false) {
+          throw new Error(`client-modules: active Host entry conflicts with module-only declaration ${source.loaderName}`)
+        }
+        nextSources.set(source.sourceKey, source)
+      }
     }
 
     const affectedPackages = new Set<string>()
@@ -1079,7 +1091,7 @@ export class ClientModuleRegistry extends Service {
     }
     const resolved = this.resolveMeta(loaderName, baseUrl)
     if (resolved === null) return undefined
-    return { ...resolved, loaderName, baseUrl, sourceKey: this.sourceKey(loaderName, baseUrl) }
+    return { ...resolved, loaderName, baseUrl, sourceKey: this.sourceKey(loaderName, baseUrl), activate: true }
   }
 
   private reconcilePackage(packageName: string): boolean {
@@ -1097,12 +1109,13 @@ export class ClientModuleRegistry extends Service {
     }
     const source = sources[0]
     if (source === undefined) return this.table.delete(packageName)
-    if (this.table.get(packageName)?.sourceKey === source.sourceKey) return false
+    const current = this.table.get(packageName)
+    if (current?.sourceKey === source.sourceKey && (current.entry.activate !== false) === source.activate) return false
     // Startup and HMR share revisions so unchanged artifacts survive a server restart.
     const snapshot = this.initialBundleSnapshot(packageName, source.meta.clientPath)
     const rev = artifactRevision(snapshot.baseline)
     this.table.set(packageName, {
-      entry: graphRow(packageName, rev, source.meta),
+      entry: graphRow(packageName, rev, source.meta, source.activate),
       loaderName: source.loaderName,
       sourceKey: source.sourceKey,
       meta: source.meta,
