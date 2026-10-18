@@ -33,4 +33,8 @@ files 根预建固定 worker 池。单账户排空保留共享池；根关闭时
 
 Access 持有 `CloudBootstrap` 及其浏览器安全校验器 `decodeCloudBootstrap`。响应包含展示身份、配方、不透明连接代际及脱敏能力。`BootstrapDecodeLimits` 限制紧凑 JSON 字节、UTF-8 字符串字节和列表项总量；载体另在 JSON 解析前限制原始响应字节。解码返回独立且深冻结的元数据，不证明认证、能力批准或账户 ready。禁用能力描述区分未批准功能和临时通道不可用；配置字段只描述允许选择及应用等级，不携带值或提交权限。
 
-端点清单不会把内部 Session 适配器接入原生派发。当前原生 owner 路径跳过 remote-access policy，因此开放 Session 方法还需要接入云端项目与 Preset 校验，在原生副作用之前执行。公开 Controller 薄适配正在验证；如需增加原生扩展，先审查契约。实际派发链通过消费者验证前，账户准入继续关闭。
+`PeAuthService` 由 access/root 安装，拥有一个有界 PostgreSQL 池、官方凭据读取、实际 Better Auth 初始化及 schema 检查。`AuthRootConfig` 在浏览器安全访问配置之外，显式设置数据库、池、凭据和启动预算。观察结果只提供有界资源计数及关闭的请求准入。缺失 schema 或初始化失败时保留清理责任；提供者不执行迁移、不注册路由。共享 HTTP/WS 准入仍须通过 runtime 的实际根配方审核并具备账户提供者。
+
+可信 runtime 在准备阶段，以精确账户 binding、根签发配置保存屏障、部署开放上限及独立挂载/业务准入核验安装 `CloudAccountApi`。固定的原生编辑器和凭据构造函数在初始化前安装保存 hook。Controller、AgentLoop 和 LLM 安装沿用既有原生守卫；`/account` 核验这个准备好的服务。安装和入口激活不发布就绪。每次业务操作要求独立的当前 ready 核验，inventory 审核和终止保存结算各自保留生命周期规则。
+
+原生 Session 适配保留原有派发、DTO 和 Session 状态，并在实际副作用前执行守卫。可等待的目录准备在创建 Agent 前使用账户固定 files 能力。账户发布前仍须完成产品路由、项目/Preset/模型核验、实际原生 inventory 及持久存储授权。

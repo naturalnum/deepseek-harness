@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-校验固定源部署输入，在原生业务执行前拒绝陈旧的账户/代际预期。`BetterAuthAccess` 将认证交给固定版本的 Better Auth 和 PostgreSQL，仅从已验证的用户及登录会话记录返回身份。runtime、生命周期及传输准入尚未完成集成时，`/root` Loader 入口拒绝装配。
+校验固定源部署输入，在原生业务执行前拒绝陈旧的账户/代际预期。`BetterAuthAccess` 将认证交给固定版本的 Better Auth 和 PostgreSQL，仅从已验证的用户及登录会话记录返回身份。`/root` Loader 入口通过 `peAuth` 持有真实认证资源；根 seal 和账户路由未完成时，请求准入保持关闭。
 
 ## 目录
 
@@ -24,11 +24,11 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-通过浏览器安全的 `/schema` 使用结构 `AccessConfigSchema`、请求预期校验及唯一 `decodeCloudBootstrap` 解码器；C-11 线类型位于 `/types`。完整 Host `parseAccessConfig` 留在认证/root 内部，不再由 `/schema` 转出。包入口和 `/root` 导出根 Loader 插件及 `AuthAccessError`。`BetterAuthAccess` 是同包根装配使用的内部实现，不增加 SDK 子路径。`AuthenticatedPrincipal.accountId` 直接使用 runtime 的 `AccountId` 类型。
+通过浏览器安全的 `/schema` 使用结构 `AccessConfigSchema`、请求预期校验及唯一 `decodeCloudBootstrap` 解码器；C-11 线类型位于 `/types`。完整 Host 配置解析留在认证/root 内部。包入口和 `/root` 导出根 Loader 插件、`PeAuthService` 及 `AuthAccessError`。`BetterAuthAccess` 是同包根装配使用的内部实现，不增加 SDK 子路径。`AuthenticatedPrincipal.accountId` 直接使用 runtime 的 `AccountId` 类型。
 
 ### 配置
 
-所有配置均显式提供，示例不充当生产默认值。结构 schema 见 [config-schema.ts](src/config-schema.ts)；[config.ts](src/config.ts) 保留完整 Host 策略，Node IP 语义不变。根入口目前也会拒绝合法配置，因此本包不提供可成功挂载的示例。
+所有配置均显式提供，示例不充当生产默认值。浏览器结构输入见 [config-schema.ts](src/config-schema.ts)；[config.ts](src/config.ts) 保留完整 Host 策略，Node IP 语义不变。根还要求 [root-config.ts](src/root-config.ts)、正式 `credentials` 服务及已部署的 Better Auth schema。目前没有开放生产路由。
 
 | 字段 | 要求 |
 | --- | --- |
@@ -43,6 +43,13 @@ kind: "package-reference"
 | `maxTrackedLogins`、`maxTrackedLoginsPerAccount` | 已验证登录状态的有限上限，包含为旧读取保留的失效状态。 |
 | `maxAuthInvalidations` | 未缓存登录 ID 的有限失效记录；数据库删除前先预留。 |
 | `bindingFields` | 账户/代际使用不同专用头和 query 名称，实际名称仍须产品传输审核。 |
+| `database` | 显式 `host`、`port`、`user`、`database`、`passwordRef`、`ssl`；SSL 使用系统信任验证服务端证书。 |
+| `pool` | 显式正值 `maxConnections`、`connectionTimeoutMs`、`statementTimeoutMs`、`lockTimeoutMs`、`idleTimeoutMs`、`idleTransactionTimeoutMs`、`maxLifetimeSeconds`；锁超时不得大于语句超时。 |
+| `startupTimeoutMs`、`secretResolveTimeoutMs`、`maxSecretOperations`、`maxSecretBytes` | 有限启动/秘密等待和实际读取容量；每个秘密的字节上限至少为 32，并按 UTF-8 计数。 |
+
+`peAuth` 通过 `ctx.credentials` 解析认证秘密，每个池物理连接再次解析密码。引用使用正式凭据引用语法；根不读取环境变量或默认连接。池将 schema 固定为 `public`；服务端语句/锁/事务空闲上限负责停止 SQL 工作，不用客户端查询定时器宣称提前结算。启动检查库返回的所有迁移类别，包含索引、不安全变更及 schema 问题，不编译或执行 DDL。迁移须在部署时显式执行。
+
+`PeAuthService.observe()` 仅暴露资源阶段/计数及 `requestAdmission: 'closed'`。启动或秘密超时保留实际工作；超时秘密仍占用容量。`close()` 先等待实际启动、库操作及秘密读取，再等待 `Pool.end()`；重复调用共用同一清理。清理失败保留资源并报告 `cloud/stop-unconfirmed`。不安装 HTTP/WS/bootstrap handler 或额外监听；认证初始化不代表账户 ready。
 
 ### 请求绑定
 
@@ -92,7 +99,9 @@ kind: "package-reference"
 | [peers.ts](src/peers.ts) | 内部登录 Peer、独立借用、原生载体和清理保留。 |
 | [auth-trust.ts](src/auth-trust.ts) | 固定源传输检查。 |
 | [binding.ts](src/binding.ts) | 客户端预期解析与比较。 |
-| [root.ts](src/root.ts) | Loader 入口及明确的未完成装配拒绝。 |
+| [root.ts](src/root.ts) | 根持有认证资源的 Loader 入口。 |
+| [root-config.ts](src/root-config.ts) | Host 数据库及秘密预算。 |
+| [auth-root.ts](src/auth-root.ts) | 真实池/库初始化、schema 检查及实际清理。 |
 
 </details>
 
@@ -128,9 +137,9 @@ kind: "package-reference"
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- 根仍拒绝装配：真实 runtime 借用工厂、manifest/原生选路及有限根请求准入尚未集成；内部 Peer 组件尚未接入根。库级认证检查不代表 S1/S2 或完整 F01 浏览器/WS 流程成立。
+- 根请求准入保持关闭：缺少真实根 seal 签发者，runtime 尚未集成准备好的图内 `peCloudApi`，Peer/原生路由尚未接线。runtime 已有 `borrowAccount(binding)`，但必需的 files、execution、API 保存/暴露和全写入者 quota 生产交接仍拒绝创建账户。每图暴露策略已经存在，不能以根策略替代。库级认证检查不代表 S1/S2 或完整 F01 浏览器/WS 流程成立。
 - 代理转发仅限已配置固定源；转发客户端 IP 链及跨实例服务身份/选路须另行部署集成。
-- 生成的认证 SQL 须经过部署迁移审核及打包。根激活不会运行迁移。调用方须提供有界池配置，并对未知操作继续承担清理责任。
+- 生成的认证 SQL 须经过部署迁移审核及打包。根拒绝非空库迁移计划，且从不执行迁移。共享 Web 选路仍须具备实际流正文限制、根请求预算及 seal 准入，才能将流量交给原始 Better Auth Node bridge。
 
 <a id="dev-note"></a>
 ### 开发备注

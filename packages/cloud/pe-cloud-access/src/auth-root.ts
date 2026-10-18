@@ -1,0 +1,168 @@
+/** Root-owned Better Auth resources; no request route opens without the separate root admission audit. */
+import { randomUUID } from 'node:crypto'
+import { Context, Service } from '@deepseek-ai/cordis'
+import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
+import type { Branded } from '@deepseek-ai/dsh-brand'
+import pg from 'pg'
+import { BetterAuthAccess } from './auth.ts'
+import { AuthAccessError } from './auth-error.ts'
+import { parseAuthRootConfig, type AuthRootConfig } from './root-config.ts'
+
+import { assertAuthSchemaCurrent } from './auth-schema.ts'
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    peAuth: PeAuthService
+  }
+}
+
+/** Safe resource observation; initialized authentication never certifies account or request admission. */
+export interface AuthRootObservation {
+  readonly phase: 'starting' | 'initialized' | 'failed' | 'closing' | 'closed'
+  readonly requestAdmission: 'closed'
+  readonly pendingSecrets: number
+  readonly pendingAuthentication: number
+  readonly poolAllocated: boolean
+}
+
+/** Owns one finite authentication pool and its actual secret/library work, without publishing raw resources. */
+export class PeAuthService extends Service {
+  private readonly requestId = randomUUID() as Branded<'pe-request-id'>
+  private readonly secrets = new Set<Promise<string>>()
+  private phase: AuthRootObservation['phase'] = 'starting'
+  private pool: pg.Pool | undefined
+  private auth: BetterAuthAccess | undefined
+  private starting: Promise<void> = Promise.resolve()
+  private closing: Promise<void> | undefined
+
+  private constructor(ctx: Context, private readonly config: AuthRootConfig, private readonly credentials: CredentialProvider) {
+    super(ctx, 'peAuth')
+    const rootClose = ctx.root.effect(() => () => this.close(), 'pe-cloud-access: retain actual authentication resources')
+    ctx.effect(() => async () => {
+      try { await this.close() } finally { await rootClose() }
+    }, 'pe-cloud-access: close authentication before releasing dependencies')
+  }
+
+  /**
+   * Resolve official credentials, create the real pool/library and inspect deployed migrations.
+   * No HTTP/WS/bootstrap route or listener is registered; missing root seal and graph API handoffs keep admission closed.
+   * @param ctx - Root Loader scope with the official credentials service.
+   * @param config - Explicit Host database and operation budgets.
+   * @returns The installed resource provider after a gap-free library schema inspection.
+   * @throws AuthAccessError on missing credentials, timeout, schema gaps or DB/library failure. Cleanup remains retained.
+   */
+  static async mountRoot(ctx: Context, config: AuthRootConfig): Promise<PeAuthService> {
+    const resolved = parseAuthRootConfig(config)
+    const credentials = ctx.get('credentials')
+    const requestId = randomUUID() as Branded<'pe-request-id'>
+    if (credentials === undefined || ctx.get('peAuth') !== undefined) throw new AuthAccessError('cloud/account-unavailable', requestId)
+    const service = new PeAuthService(ctx, resolved, credentials)
+    service.starting = service.start()
+    try {
+      await service.wait(service.starting, resolved.startupTimeoutMs)
+      return service
+    } catch (_error) {
+      // The caller sees a fixed error; actual startup and cleanup remain owned by the service effects.
+      if (service.phase === 'starting') service.phase = 'failed'
+      void service.close().catch(() => { ctx.logger.error('Cloud authentication cleanup is unconfirmed; admission remains closed.') })
+      throw new AuthAccessError('cloud/account-unavailable', service.requestId)
+    }
+  }
+
+  /**
+   * Inspect bounded resource counts without exposing secrets, SQL, raw pools or a readiness certificate.
+   * @returns A frozen snapshot; request admission stays closed independently of authentication initialization.
+   */
+  observe(): AuthRootObservation {
+    return Object.freeze({
+      phase: this.phase, requestAdmission: 'closed', pendingSecrets: this.secrets.size,
+      pendingAuthentication: this.auth?.pendingOperations ?? 0, poolAllocated: this.pool !== undefined,
+    })
+  }
+
+  /**
+   * Stop new secret/authentication work and join actual startup, library queries, secret reads and Pool.end.
+   * Caller abandonment never ends the pool early. Repeated calls join the same cleanup; failure remains unconfirmed.
+   * @returns Actual resource settlement, without a timer that could certify an early release.
+   */
+  close(): Promise<void> {
+    if (this.closing !== undefined) return this.closing
+    this.phase = 'closing'
+    this.closing = this.finishClose().catch(() => { throw new AuthAccessError('cloud/stop-unconfirmed', this.requestId) })
+    return this.closing
+  }
+
+  private async start(): Promise<void> {
+    const secret = await this.resolveSecret(this.config.authSecretRef, true)
+    this.assertStarting()
+    const limits = this.config.pool
+    this.pool = new pg.Pool({
+      host: this.config.database.host, port: this.config.database.port,
+      user: this.config.database.user, database: this.config.database.database,
+      password: () => this.resolveSecret(this.config.database.passwordRef, false),
+      ssl: this.config.database.ssl ? { rejectUnauthorized: true } : false,
+      max: limits.maxConnections, min: 0, connectionTimeoutMillis: limits.connectionTimeoutMs,
+      idleTimeoutMillis: limits.idleTimeoutMs, maxLifetimeSeconds: limits.maxLifetimeSeconds,
+      statement_timeout: limits.statementTimeoutMs, lock_timeout: limits.lockTimeoutMs,
+      idle_in_transaction_session_timeout: limits.idleTransactionTimeoutMs,
+      // A client query timer can settle before PostgreSQL stops work. The server statement timeout owns SQL cancellation.
+      query_timeout: 0, application_name: 'pe-cloud-access', client_encoding: 'UTF8', options: '-c search_path=public',
+    })
+    this.pool.on('error', () => {
+      if (this.phase === 'closed' || this.phase === 'closing') return
+      this.phase = 'failed'
+      this.ctx.logger.error('Cloud authentication database failed; admission remains closed.')
+      void this.close().catch(() => { this.ctx.logger.error('Cloud authentication cleanup is unconfirmed; admission remains closed.') })
+    })
+    this.auth = await BetterAuthAccess.create(this.config, this.pool, secret, async () => {
+      // No Peer can exist while this resource-only provider has no request routes.
+    })
+    this.assertStarting()
+    const plan = await this.auth.planMigrations(this.requestId)
+    assertAuthSchemaCurrent(plan, this.requestId)
+    this.assertStarting()
+    this.phase = 'initialized'
+  }
+
+  private resolveSecret(reference: string, authenticationSecret: boolean): Promise<string> {
+    if (this.phase !== 'starting' && this.phase !== 'initialized') return Promise.reject(new AuthAccessError('cloud/account-unavailable', this.requestId))
+    if (this.secrets.size >= this.config.maxSecretOperations) return Promise.reject(new AuthAccessError('cloud/capacity', this.requestId))
+    const actual = Promise.resolve().then(async () => {
+      const resolved = await this.credentials.resolve(credentialRef(reference))
+      const value = resolved?.value
+      if (value === undefined || value.length === 0 || value.length > this.config.maxSecretBytes
+        || Buffer.byteLength(value, 'utf8') > this.config.maxSecretBytes
+        || (authenticationSecret && Buffer.byteLength(value, 'utf8') < 32)) {
+        throw new AuthAccessError('cloud/account-unavailable', this.requestId)
+      }
+      return value
+    })
+    this.secrets.add(actual)
+    void actual.then(() => { this.secrets.delete(actual) }, () => { this.secrets.delete(actual) })
+    return this.wait(actual, this.config.secretResolveTimeoutMs)
+      .catch(() => { throw new AuthAccessError('cloud/account-unavailable', this.requestId) })
+  }
+
+  private assertStarting(): void {
+    if (this.phase !== 'starting') throw new AuthAccessError('cloud/account-unavailable', this.requestId)
+  }
+
+  private async finishClose(): Promise<void> {
+    await Promise.allSettled([this.starting])
+    await this.auth?.close()
+    await Promise.allSettled([...this.secrets])
+    await this.pool?.end()
+    this.pool = undefined
+    this.auth = undefined
+    this.phase = 'closed'
+  }
+
+  private async wait<T>(actual: Promise<T>, timeoutMs: number): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      return await Promise.race([actual, new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => { reject(new AuthAccessError('cloud/account-unavailable', this.requestId)) }, timeoutMs)
+      })])
+    } finally { clearTimeout(timer) }
+  }
+}

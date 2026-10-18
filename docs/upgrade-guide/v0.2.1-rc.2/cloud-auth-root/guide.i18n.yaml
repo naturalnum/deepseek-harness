@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for guide.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/upgrade-guide/v0.2.1-rc.2/cloud-auth-root/guide.md
+/:
+  en: e4a82106fb6b14e3
+  zh: 0cd7517d389f25f2
+/configure-cloud-authentication-resources:
+  en: 3175d685f286d886
+  zh: 6c0c6308a5440241
+/configure-cloud-authentication-resources/change:
+  en: 687fe8d3b58b9e5f
+  zh: bd52bf107acf5a29
+/configure-cloud-authentication-resources/migration:
+  en: faaae8a2dda7c0fc
+  zh: 52a892e3f4b6f5e1

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { parseAccessConfig } from '../src/config.ts'
-import { apply } from '../src/root.ts'
+import { apply, type Config } from '../src/root.ts'
 import type { AccessConfig } from '../src/types.ts'
 
 function config(): AccessConfig {
@@ -95,9 +95,10 @@ describe('access deployment inputs', () => {
     expect(() => parseAccessConfig({ ...config(), maxTrackedLoginsPerAccount: 17 })).toThrow()
   })
 
-  it('fails root assembly while real authentication and routing adapters are absent', async () => {
+  it('rejects component-only configuration without allocating root resources', async () => {
     const ctx = new Context()
-    expect(() => apply(ctx, config())).toThrow('cannot admit traffic')
+    await expect(apply(ctx, config() as Config)).rejects.toThrow('explicit valid database')
+    expect(ctx.get('peAuth')).toBeUndefined()
     await ctx.fiber.dispose()
   })
 })

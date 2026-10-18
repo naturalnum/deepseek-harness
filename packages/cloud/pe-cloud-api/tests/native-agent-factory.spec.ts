@@ -108,6 +108,23 @@ it('rejects nonempty startup agents before native registration or persistence si
   expect(f.ctx.sessions.list()).toEqual([])
 })
 
+it('installs while business admission is closed, then denies creation before native persistence until publication is admitted', async () => {
+  const f = await fixture(false)
+  f.assertCurrent.mockImplementation(() => { throw f.denied })
+  const persistence = vi.spyOn(f.ctx.sessionPersistence, 'create')
+  await f.mount()
+  expect(f.ctx.get('agentLoop')).toBeDefined()
+  expect(f.assertCurrent).not.toHaveBeenCalled()
+  await expect(f.ctx.agents.create(f.createOptions())).rejects.toBe(f.denied)
+  expect(f.guards.assertCreate).not.toHaveBeenCalled()
+  expect(persistence).not.toHaveBeenCalled()
+  expect(f.ctx.sessions.list()).toEqual([])
+  f.assertCurrent.mockImplementation((actual) => { expect(actual).toBe(f.binding) })
+  const created = await f.ctx.agents.create(f.createOptions())
+  expect(created.agent.id).toBe(SessionId('ordinary'))
+  expect(persistence).toHaveBeenCalledOnce()
+})
+
 it('rejects direct create and parent/seeded metadata without entering native create', async () => {
   const f = await fixture()
   const native = vi.spyOn(AgentLoop.prototype, 'createAgent')

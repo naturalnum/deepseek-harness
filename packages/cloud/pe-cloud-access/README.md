@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Validate fixed-origin deployment inputs and reject stale account/generation expectations before native business work. `BetterAuthAccess` delegates authentication to pinned Better Auth and PostgreSQL, returning identity only from verified user/session rows. The `/root` Loader entry rejects assembly while runtime, lifecycle and transport admission are incomplete.
+Validate fixed-origin deployment inputs and reject stale account/generation expectations before native business work. `BetterAuthAccess` delegates authentication to pinned Better Auth and PostgreSQL, returning identity only from verified user/session rows. The `/root` Loader entry owns real authentication resources through `peAuth`; request admission remains closed while the root seal and account routing are incomplete.
 
 ## Table of Contents
 
@@ -24,11 +24,11 @@ Validate fixed-origin deployment inputs and reject stale account/generation expe
 <a id="use-this-package"></a>
 ## Use this package
 
-Use the browser-safe `/schema` for structural `AccessConfigSchema`, request-expectation checks and the unique `decodeCloudBootstrap` decoder; C-11 wire types live at `/types`. Full Host `parseAccessConfig` remains internal to authentication/root and is no longer re-exported through `/schema`. The package entry and `/root` expose the root Loader plugin and `AuthAccessError`. `BetterAuthAccess` is an internal implementation for same-package root assembly, without an additional SDK subpath. `AuthenticatedPrincipal.accountId` directly uses runtime's `AccountId` type.
+Use the browser-safe `/schema` for structural `AccessConfigSchema`, request-expectation checks and the unique `decodeCloudBootstrap` decoder; C-11 wire types live at `/types`. Full Host configuration parsing remains internal to authentication/root. The package entry and `/root` expose the root Loader plugin, `PeAuthService` and `AuthAccessError`. `BetterAuthAccess` is an internal implementation for same-package root assembly, without an additional SDK subpath. `AuthenticatedPrincipal.accountId` directly uses runtime's `AccountId` type.
 
 ### Configuration
 
-All configuration is explicit; examples do not supply production defaults. The structural schema lives in [config-schema.ts](src/config-schema.ts); [config.ts](src/config.ts) retains full Host policy with unchanged Node IP semantics. The root currently rejects even valid configuration, so this package provides no successful mount example.
+All configuration is explicit; examples do not supply production defaults. Browser structural inputs live in [config-schema.ts](src/config-schema.ts); [config.ts](src/config.ts) retains full Host policy with unchanged Node IP semantics. Root additionally requires [root-config.ts](src/root-config.ts), the official `credentials` service and an already deployed Better Auth schema. No production route is open.
 
 | Fields | Requirement |
 | --- | --- |
@@ -43,6 +43,13 @@ All configuration is explicit; examples do not supply production defaults. The s
 | `maxTrackedLogins`, `maxTrackedLoginsPerAccount` | Finite verified-login state limits, including invalidation state retained for older reads. |
 | `maxAuthInvalidations` | Finite invalidation records for uncached login ids; reserve before database deletion. |
 | `bindingFields` | Distinct dedicated account/generation header and query names, pending product transport review. |
+| `database` | Explicit `host`, `port`, `user`, `database`, `passwordRef`, `ssl`; SSL verifies the server certificate with system trust. |
+| `pool` | Explicit positive `maxConnections`, `connectionTimeoutMs`, `statementTimeoutMs`, `lockTimeoutMs`, `idleTimeoutMs`, `idleTransactionTimeoutMs`, `maxLifetimeSeconds`; lock timeout cannot exceed statement timeout. |
+| `startupTimeoutMs`, `secretResolveTimeoutMs`, `maxSecretOperations`, `maxSecretBytes` | Finite startup/secret waits and actual-read capacity; byte cap is at least 32 and applies to each secret, including UTF-8. |
+
+`peAuth` resolves the authentication secret through `ctx.credentials` and resolves the password again for each physical pool connection. References use the official credential-reference grammar; root reads no environment variables or default connection. The pool pins its schema to `public`; server statement/lock/idle-transaction limits stop SQL work, while no client query timer claims early completion. Startup checks all library migration categories, including indexes, unsafe changes and schema problems, without compiling or running DDL. Apply migrations explicitly during deployment.
+
+`PeAuthService.observe()` exposes only resource phase/counts and `requestAdmission: 'closed'`. Startup or secret timeout retains actual work; a timed-out secret still consumes its slot. `close()` joins actual startup, library operations and secret reads before awaiting `Pool.end()`, and repeated calls join the same cleanup. Failed cleanup retains resources and reports `cloud/stop-unconfirmed`. No HTTP/WS/bootstrap handler or additional listener is installed; authentication initialization does not establish account readiness.
 
 ### Request bindings
 
@@ -92,7 +99,9 @@ Revocation or lifetime end closes admission and destroys carriers, then awaits n
 | [peers.ts](src/peers.ts) | Internal login Peer, independent borrow, native carriers and retained cleanup. |
 | [auth-trust.ts](src/auth-trust.ts) | Fixed-origin transport checks. |
 | [binding.ts](src/binding.ts) | Client expectation parsing and comparison. |
-| [root.ts](src/root.ts) | Loader entry and explicit incomplete-assembly rejection. |
+| [root.ts](src/root.ts) | Loader entry for root-owned authentication resources. |
+| [root-config.ts](src/root-config.ts) | Host database and secret budgets. |
+| [auth-root.ts](src/auth-root.ts) | Real pool/library initialization, schema inspection and actual cleanup. |
 
 </details>
 
@@ -128,9 +137,9 @@ Request authentication and binding checks change no prompt prefix or model cache
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- Root still rejects assembly: the real runtime borrow factory, manifest/native routing and finite root request admission are not integrated; the internal Peer component is not wired into root. A library authentication check does not establish S1/S2 or the full F01 browser/WS flow.
+- Root request admission remains closed: a real root seal issuer is absent, runtime has not integrated the prepared graph-local `peCloudApi`, and the Peer/native routes are not wired. Runtime has `borrowAccount(binding)`, but its required files, execution, API save/exposure and all-writer quota production handoffs still reject account creation. Graph exposure policy already exists and cannot be replaced with root policy. A library authentication check does not establish S1/S2 or the full F01 browser/WS flow.
 - Proxy forwarding remains restricted to the configured fixed origin; forwarded client-IP chains and cross-instance service identity/routing require separate deployment integration.
-- Generated authentication SQL requires deployment migration review and packaging. Migrations are never run by root activation. The caller must supply bounded pool settings and retain cleanup responsibility for unknown operations.
+- Generated authentication SQL requires deployment migration review and packaging. Root rejects a nonempty library migration plan and never runs migrations. Shared Web routing still needs actual streamed body limits, root request budgets and seal admission before the original Better Auth Node bridge may receive traffic.
 
 <a id="dev-note"></a>
 ### Dev Note

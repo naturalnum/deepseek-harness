@@ -45,7 +45,7 @@ class FactoryAdmission {
     private readonly guards: NativeAgentFactoryGuards,
   ) {}
 
-  admit(owner: Context): void {
+  installed(owner: Context): void {
     this.ctx.fiber.assertActive()
     owner.fiber.assertActive()
     if (this.binding.lifetime.aborted || this.ctx.get('peAccount') !== this.binding
@@ -53,6 +53,10 @@ class FactoryAdmission {
       || owner.root.get('peAccount') !== this.binding) {
       throw new CloudApiError('cloud/stale-generation', 'The native Agent factory and owner have different graph bindings.')
     }
+  }
+
+  admit(owner: Context): void {
+    this.installed(owner)
     this.assertCurrent(this.binding)
   }
 
@@ -161,7 +165,9 @@ class AccountAgentLoop extends AgentLoop {
 /**
  * Register the sole graph-bound native AgentLoop without enabling account entry.
  * The caller supplies native dependencies/configuration, excludes a second loop,
- * and retains its fiber through native teardown. Shared guards must approve all
+ * verifies mount authority, and retains its fiber through native teardown.
+ * Installation checks the installed graph identity while business may remain closed;
+ * every create/resume and publication still requires assertCurrent. Shared guards must approve all
  * project/model/Preset inputs; unknown composition is never an implicit approval.
  * Only ordinary root create/resume is admitted. Startup agents, parent/seeded
  * paths and direct AgentLoop.create stay closed. Original setup/commit, native
@@ -186,6 +192,6 @@ export function createNativeAgentLoop(
   config: ConstructorParameters<typeof AgentLoop>[1],
 ): AgentLoop {
   const admission = new FactoryAdmission(ctx, binding, assertCurrent, guards)
-  admission.admit(ctx)
+  admission.installed(ctx)
   return new AccountAgentLoop(ctx, config, admission)
 }

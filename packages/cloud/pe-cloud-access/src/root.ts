@@ -1,28 +1,29 @@
-/** Root Loader entry; incomplete authentication and routing assembly fails before exposing traffic. */
+/** Root Loader entry for actual authentication resources; request admission stays closed pending the root audit. */
 import type { Context } from '@deepseek-ai/cordis'
-import { AccessConfigSchema, parseAccessConfig } from './config.ts'
-import type { AccessConfig } from './types.ts'
+import { PeAuthService } from './auth-root.ts'
+import { AuthRootConfigSchema, type AuthRootConfig } from './root-config.ts'
 export { AuthAccessError } from './auth-error.ts'
+export { PeAuthService } from './auth-root.ts'
 
 /** Stable root plugin name. */
 export const name = 'pe-cloud-access/root'
 
-/** This increment installs no service or handler while mandatory adapters are absent. */
-export const inject: string[] = []
+/** Authentication resources consume the official root credential provider. */
+export const inject = ['credentials']
 
 /** Root-only deployment configuration. */
-export interface Config extends AccessConfig {}
+export interface Config extends AuthRootConfig {}
 
 /** Required Loader configuration; cross-field validation runs before assembly. */
-export const Config = AccessConfigSchema
+export const Config = AuthRootConfigSchema
 
 /**
- * Validate root configuration, then reject unavailable production assembly.
- * @param _ctx - Root Context; no route or authentication service is installed yet.
- * @param config - Explicit deployment configuration.
- * @throws Error until the selected authentication library, runtime, manifest and native transport adapters are integrated.
+ * Initialize root authentication resources without opening any shared Web route.
+ * @param ctx - Root Context with official credentials.
+ * @param config - Explicit authentication, database and secret budgets.
+ * @returns The root resource provider after library schema inspection; account and request admission remain closed.
+ * @throws AuthAccessError on failed or timed-out initialization; actual cleanup remains retained.
  */
-export function apply(_ctx: Context, config: Config): never {
-  parseAccessConfig(config)
-  throw new Error('pe-cloud-access/root cannot admit traffic: database-backed authentication, account runtime, exposure manifest and native HTTP/WS adapters are not integrated')
+export function apply(ctx: Context, config: Config): Promise<PeAuthService> {
+  return PeAuthService.mountRoot(ctx, config)
 }

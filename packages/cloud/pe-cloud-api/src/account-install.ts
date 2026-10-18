@@ -22,6 +22,8 @@ export interface AccountApiInstall {
   readonly configEditor: typeof ConfigEditor
   /** Fixed native local provider subclass; requires an explicit absolute path and watch=false. */
   readonly credentials: typeof LocalCredentialProvider
+  /** @param owner Owning graph scope; rejects withdrawal, a closed fiber or a different installed binding. */
+  assertInstalled(owner: Context): void
   /**
    * Pause top-level configuration submissions, retaining actual admitted work.
    * @param deadlineAtMs - finite absolute server observation deadline.
@@ -124,7 +126,7 @@ export function prepareAccountApiInstall(
   }
 
   return Object.freeze({
-    binding, exposure, configEditor: AccountConfigEditor, credentials: AccountCredentials,
+    binding, exposure, configEditor: AccountConfigEditor, credentials: AccountCredentials, assertInstalled,
     pauseAccountChanges: (deadlineAtMs: number, signal?: AbortSignal) => saves.pauseAccountChanges(deadlineAtMs, signal),
     resumeAccountChanges: () => { saves.resumeAccountChanges() },
     stopConfigSaves: (deadlineAtMs: number, signal?: AbortSignal) => saves.stopConfigSaves(deadlineAtMs, signal),
