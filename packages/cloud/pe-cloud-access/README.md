@@ -63,6 +63,8 @@ Private ingress owns `/cloud/auth`, `/cloud/bootstrap`, `/cloud/settings`, `/api
 
 The native final-dispatch callback rechecks the original request, login, Use, generation and graph-local `CloudAccountApi` after actual route/envelope selection. Every logical stream checks its original Peer and per-graph policy. Native frame limits and acquire/actual-settle callbacks enforce global/account/Peer stream capacity; unknown cleanup retains slots and schedules closure without awaiting its own transport. Bootstrap additionally requires original catalog, native policy and installed-package evidence; C06 settings remains closed.
 
+HTTP and upgrade admission reserve finite carrier capacity before joining an ongoing or due database recheck of the Peer’s original Cookie. Dispatch still requires confirmed freshness and the original request/account checks; logical WS opens retain their synchronous guards.
+
 ### Bootstrap metadata
 
 `decodeCloudBootstrap(input, limits)` validates the strict C-11 account, version, generation and capability descriptions and returns detached, deeply frozen data. Supply explicit `maxBodyBytes`, `maxStringBytes` and combined `maxListItems`; no limits are defaulted. The body budget includes keys, delimiters and escaped UTF-8 strings in the complete compact result. The caller still bounds raw HTTP bytes before `JSON.parse`; all three limits may be derived from its `maxBootstrapResponseBytes`.

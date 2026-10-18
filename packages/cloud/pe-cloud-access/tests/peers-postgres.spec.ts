@@ -131,6 +131,7 @@ interface Fixture {
   readonly failures: unknown[]
   readonly borrow: LoginPeerPorts['borrow']
   readonly expireA: () => Promise<void>
+  readonly closeDatabase: () => Promise<void>
 }
 
 async function setup(
@@ -210,11 +211,12 @@ async function setup(
     })
     await auth.close()
     for (const ctx of contexts.values()) await ctx.fiber.dispose()
-    await pool.end()
+    if (!pool.ended) await pool.end()
     for (const directory of directories) await rm(directory, { recursive: true, force: true })
   })
   return { auth, registry, a: a.principal, b: b.principal, cookieA: a.cookie, cookieB: b.cookie,
     bindingA, bindingB, lifetimeA, contexts, borrows, releases, failures, invalidations, borrow: ports.borrow,
+    closeDatabase: () => pool.end(),
     expireA: async () => {
       await pool.query('UPDATE "session" SET "expiresAt" = $1 WHERE "id" = $2', [new Date(Date.now() - 1000), a.principal.authSessionId])
     },
@@ -225,9 +227,12 @@ const acquire = (fixture: Fixture, principal = fixture.a, binding = fixture.bind
   fixture.registry.acquire(principal, binding, Date.now() + 2000, undefined, requestId)
 
 /** Route fixture over memory sockets only, deliberately no native product boot or TCP listener. */
-function memoryHttp(fixture: Fixture, handle: LoginPeer, cookie = fixture.cookieA): Promise<unknown> {
+function memoryHttp(
+  fixture: Fixture, handle: LoginPeer, cookie = fixture.cookieA, onRequest?: (request: IncomingMessage) => void,
+): Promise<unknown> {
   const server = createServer((req, res) => {
-    void fixture.registry.handleNodeRequest(handle, req, res, 65536, requestId).catch((_error: unknown) => {
+    onRequest?.(req)
+    void Promise.resolve().then(() => fixture.registry.handleNodeRequest(handle, req, res, 65536, requestId)).catch((_error: unknown) => {
       // The client request observes the rejected exchange; fixture routing only closes its response here.
       res.destroy()
     })
@@ -300,6 +305,21 @@ function openStream(socket: MemorySocket, id: string): void {
   const mask = header.subarray(2)
   const masked = Buffer.from(body.map((value, index) => value ^ mask[index % 4]!))
   socket.write(Buffer.concat([header, masked]))
+}
+
+/** Hold only a real library/PG result; the original adapter still validates and timestamps it. */
+function holdLoginResult(fixture: Fixture): { entered: Promise<undefined>; release: () => void } {
+  const library = Reflect.get(fixture.auth, 'auth') as Auth
+  const getSession = library.api.getSession.bind(library.api)
+  const entered = Promise.withResolvers<undefined>()
+  const gate = Promise.withResolvers<undefined>()
+  vi.spyOn(library.api, 'getSession').mockImplementationOnce(async (input) => {
+    const result = await getSession(input)
+    entered.resolve(undefined)
+    await gate.promise
+    return result
+  })
+  return { entered: entered.promise, release: () => { gate.resolve(undefined) } }
 }
 
 afterEach(async () => {
@@ -473,6 +493,250 @@ describe.skipIf(configPath === undefined)('internal login Peer with real PG/nati
     await vi.waitFor(() => { expect(() => { fixture.registry.assertCurrent(handle, requestId) }).not.toThrow() })
     expect(recheck).toHaveBeenCalledWith(handle.principal, expect.any(String))
     expect(handle.peer.signal.aborted).toBe(false)
+  })
+
+  it.each(['http', 'upgrade'] as const)('waits for the pinned Cookie result when a fresh %s carrier arrives after S', async (carrier) => {
+    const fixture = await setup({ sessionRecheckMs: 600, authCheckTimeoutMs: 5000 })
+    const fresh = await fixture.auth.authenticate(authRequest(fixture.cookieA), requestId)
+    const handle = await acquire(fixture, fresh)
+    const library = Reflect.get(fixture.auth, 'auth') as Auth
+    const getSession = library.api.getSession.bind(library.api)
+    const entered = Promise.withResolvers<undefined>()
+    const gate = Promise.withResolvers<undefined>()
+    vi.spyOn(library.api, 'getSession').mockImplementationOnce(async (input) => {
+      const result = await getSession(input)
+      entered.resolve(undefined)
+      await gate.promise
+      return result
+    })
+    let settled = false
+    let result: Promise<unknown> | undefined
+    try {
+      await entered.promise
+      const current = await fixture.auth.authenticate(authRequest(fixture.cookieA), requestId)
+      expect(await acquire(fixture, current)).toBe(handle)
+      result = carrier === 'http' ? memoryHttp(fixture, handle) : memoryWebsocket(fixture, handle)
+      void result.then(() => { settled = true }, () => { settled = true })
+      await new Promise(resolve => setTimeout(resolve, 30))
+      expect(settled).toBe(false)
+      expect(fixture.registry.reservedCarriers).toBe(1)
+      expect(fixture.contexts.get(fresh.accountId)!.accessPeerFixture.peers).toEqual([])
+      gate.resolve(undefined)
+      if (carrier === 'http') {
+        await expect(result).resolves.toMatchObject({ result: { ok: true, value: { peer: handle.peer.id } } })
+        expect(fixture.contexts.get(fresh.accountId)!.accessPeerFixture.peers).toEqual([handle.peer.id])
+      } else {
+        const websocket = await result as Awaited<ReturnType<typeof memoryWebsocket>>
+        expect(fixture.registry.reservedCarriers).toBe(1)
+        openStream(websocket.socket, 'after-recheck')
+        await vi.waitFor(() => { expect(fixture.contexts.get(fresh.accountId)!.accessPeerFixture.peers).toEqual([handle.peer.id]) })
+        websocket.socket.destroy()
+      }
+      expect(handle.principal).toBe(fresh)
+    } finally {
+      gate.resolve(undefined)
+      await result?.catch((_error: unknown) => { /* The assertion above owns a refused exchange. */ })
+    }
+  })
+
+  it.each(['http', 'upgrade'] as const)('settles a waiting %s carrier after real revocation without joining itself through cleanup', async (carrier) => {
+    const fixture = await setup({ sessionRecheckMs: 600, authCheckTimeoutMs: 10_000, peerCloseTimeoutMs: 10_000 })
+    const fresh = await fixture.auth.authenticate(authRequest(fixture.cookieA), requestId)
+    const handle = await acquire(fixture, fresh)
+    const held = holdLoginResult(fixture)
+    let result: Promise<unknown> | undefined
+    try {
+      await held.entered
+      result = carrier === 'http' ? memoryHttp(fixture, handle) : memoryWebsocket(fixture, handle)
+      void result.catch((_error: unknown) => { /* Revocation intentionally closes this exchange. */ })
+      await vi.waitFor(() => {
+        expect(fixture.registry.reservedCarriers).toBe(1)
+        expect(fixture.auth.pendingOperations).toBe(1)
+      })
+      await fixture.auth.revokeLogin(fresh.authSessionId, requestId)
+      expect(handle.peer.signal.aborted).toBe(true)
+      expect(fixture.releases.size).toBe(0)
+      held.release()
+      await expect(result).rejects.toThrow()
+      await fixture.registry.closeBinding(fixture.bindingA, Date.now() + 2000)
+      expect(fixture.registry.reservedCarriers).toBe(0)
+      expect(fixture.registry.reservedPeers).toBe(0)
+      expect(fixture.auth.pendingOperations).toBe(0)
+      expect(fixture.releases.get(fresh.accountId)).toBe(1)
+      expect(fixture.contexts.get(fresh.accountId)!.accessPeerFixture.peers).toEqual([])
+      expect(fixture.failures).toEqual([])
+    } finally {
+      held.release()
+      await result?.catch((_error: unknown) => { /* The assertions above own the revoked exchange. */ })
+    }
+  })
+
+  it('retains the finite carrier and Use while a real carrier lookup prevents recheck admission', async () => {
+    const fixture = await setup({ sessionRecheckMs: 600, maxAuthOperations: 1, authCheckTimeoutMs: 10_000, peerCloseTimeoutMs: 10_000 })
+    const fresh = await fixture.auth.authenticate(authRequest(fixture.cookieA), requestId)
+    const handle = await acquire(fixture, fresh)
+    const held = holdLoginResult(fixture)
+    const result = memoryHttp(fixture, handle)
+    void result.catch((_error: unknown) => { /* The full auth capacity closes this exchange. */ })
+    try {
+      await held.entered
+      await vi.waitFor(() => { expect(handle.peer.signal.aborted).toBe(true) }, { timeout: 2000 })
+      expect(fixture.registry.reservedCarriers).toBe(1)
+      expect(fixture.registry.reservedPeers).toBe(1)
+      expect(fixture.releases.size).toBe(0)
+      held.release()
+      await expect(result).rejects.toThrow()
+      await fixture.registry.closeBinding(fixture.bindingA, Date.now() + 2000)
+      expect(fixture.registry.reservedCarriers).toBe(0)
+      expect(fixture.registry.reservedPeers).toBe(0)
+      expect(fixture.releases.get(fresh.accountId)).toBe(1)
+      expect(fixture.contexts.get(fresh.accountId)!.accessPeerFixture.peers).toEqual([])
+      expect(fixture.failures).toEqual([])
+    } finally {
+      held.release()
+      await result.catch((_error: unknown) => { /* The assertions above own the refused exchange. */ })
+    }
+  })
+
+  it('joins the pinned Cookie recheck when carrier authentication crosses S', async () => {
+    const fixture = await setup({ sessionRecheckMs: 600, authCheckTimeoutMs: 5000 })
+    const fresh = await fixture.auth.authenticate(authRequest(fixture.cookieA), requestId)
+    const handle = await acquire(fixture, fresh)
+    const library = Reflect.get(fixture.auth, 'auth') as Auth
+    const getSession = library.api.getSession.bind(library.api)
+    const carrierEntered = Promise.withResolvers<undefined>()
+    const carrierGate = Promise.withResolvers<undefined>()
+    const recheckEntered = Promise.withResolvers<undefined>()
+    const recheckGate = Promise.withResolvers<undefined>()
+    vi.spyOn(library.api, 'getSession').mockImplementationOnce(async (input) => {
+      const result = await getSession(input)
+      carrierEntered.resolve(undefined)
+      await carrierGate.promise
+      return result
+    }).mockImplementationOnce(async (input) => {
+      const result = await getSession(input)
+      recheckEntered.resolve(undefined)
+      await recheckGate.promise
+      return result
+    })
+    let settled = false
+    const result = memoryHttp(fixture, handle)
+    void result.then(() => { settled = true }, () => { settled = true })
+    try {
+      await carrierEntered.promise
+      await recheckEntered.promise
+      carrierGate.resolve(undefined)
+      await new Promise(resolve => setTimeout(resolve, 30))
+      expect(settled).toBe(false)
+      expect(fixture.registry.reservedCarriers).toBe(1)
+      expect(fixture.contexts.get(fresh.accountId)!.accessPeerFixture.peers).toEqual([])
+      recheckGate.resolve(undefined)
+      await expect(result).resolves.toMatchObject({ result: { ok: true, value: { peer: handle.peer.id } } })
+      expect(handle.principal).toBe(fresh)
+      expect(fixture.contexts.get(fresh.accountId)!.accessPeerFixture.peers).toEqual([handle.peer.id])
+    } finally {
+      carrierGate.resolve(undefined)
+      recheckGate.resolve(undefined)
+      await result.catch((_error: unknown) => { /* The assertion above owns a refused exchange. */ })
+    }
+  })
+
+  it('bounds waiting carriers and refuses a disconnected HTTP request after the shared result arrives', async () => {
+    const fixture = await setup({ sessionRecheckMs: 600, authCheckTimeoutMs: 5000, maxPeerCarriersPerLogin: 1 })
+    const fresh = await fixture.auth.authenticate(authRequest(fixture.cookieA), requestId)
+    const handle = await acquire(fixture, fresh)
+    const held = holdLoginResult(fixture)
+    const received = Promise.withResolvers<IncomingMessage>()
+    let result: Promise<unknown> | undefined
+    try {
+      await held.entered
+      result = memoryHttp(fixture, handle, fixture.cookieA, (request) => { received.resolve(request) })
+      void result.catch((_error: unknown) => { /* This caller disconnects while its shared query stays owned. */ })
+      const request = await received.promise
+      await vi.waitFor(() => {
+        expect(fixture.registry.reservedCarriers).toBe(1)
+        expect(fixture.auth.pendingOperations).toBe(1)
+      })
+      await expect(memoryWebsocket(fixture, handle)).rejects.toMatchObject({ code: 'cloud/capacity', status: 429 })
+      request.destroy()
+      await expect(result).rejects.toThrow()
+      expect(fixture.registry.reservedCarriers).toBe(1)
+      expect(handle.peer.signal.aborted).toBe(false)
+      expect(fixture.releases.size).toBe(0)
+      expect(fixture.contexts.get(fresh.accountId)!.accessPeerFixture.peers).toEqual([])
+      held.release()
+      await vi.waitFor(() => { expect(fixture.registry.reservedCarriers).toBe(0) })
+      expect(handle.peer.signal.aborted).toBe(false)
+      await expect(memoryHttp(fixture, handle)).resolves.toMatchObject({ result: { ok: true, value: { peer: handle.peer.id } } })
+      expect(fixture.contexts.get(fresh.accountId)!.accessPeerFixture.peers).toEqual([handle.peer.id])
+    } finally {
+      held.release()
+      await result?.catch((_error: unknown) => { /* The assertions above own the disconnected exchange. */ })
+    }
+  })
+
+  it.each(['epoch', 'root'] as const)('retains actual carrier cleanup when %s ends during the original Cookie recheck', async (ending) => {
+    const fixture = await setup({ sessionRecheckMs: 600, authCheckTimeoutMs: 10_000, peerCloseTimeoutMs: 10_000 })
+    const fresh = await fixture.auth.authenticate(authRequest(fixture.cookieA), requestId)
+    const handle = await acquire(fixture, fresh)
+    const held = holdLoginResult(fixture)
+    let result: Promise<unknown> | undefined
+    let closing: Promise<void> | undefined
+    try {
+      await held.entered
+      result = memoryHttp(fixture, handle)
+      void result.catch((_error: unknown) => { /* Ending the owner closes this waiting exchange. */ })
+      await vi.waitFor(() => {
+        expect(fixture.registry.reservedCarriers).toBe(1)
+        expect(fixture.auth.pendingOperations).toBe(1)
+      })
+      if (ending === 'epoch') fixture.lifetimeA.abort()
+      closing = ending === 'epoch' ? fixture.registry.closeBinding(fixture.bindingA, Date.now() + 2000)
+        : fixture.registry.close(Date.now() + 2000)
+      await vi.waitFor(() => { expect(handle.peer.signal.aborted).toBe(true) })
+      expect(fixture.releases.size).toBe(0)
+      expect(fixture.registry.reservedCarriers).toBe(1)
+      held.release()
+      await expect(result).rejects.toThrow()
+      await closing
+      expect(fixture.registry.reservedCarriers).toBe(0)
+      expect(fixture.registry.reservedPeers).toBe(0)
+      expect(fixture.releases.get(fresh.accountId)).toBe(1)
+      expect(fixture.contexts.get(fresh.accountId)!.accessPeerFixture.peers).toEqual([])
+      expect(fixture.failures).toEqual([])
+    } finally {
+      held.release()
+      await result?.catch((_error: unknown) => { /* The assertions above own the ended exchange. */ })
+      await closing
+    }
+  })
+
+  it('fails closed on a real PG pool failure while preserving the pending carrier owner', async () => {
+    const fixture = await setup({ sessionRecheckMs: 600, authCheckTimeoutMs: 10_000, peerCloseTimeoutMs: 10_000 })
+    const fresh = await fixture.auth.authenticate(authRequest(fixture.cookieA), requestId)
+    const handle = await acquire(fixture, fresh)
+    const held = holdLoginResult(fixture)
+    const result = memoryHttp(fixture, handle)
+    void result.catch((_error: unknown) => { /* The real database failure closes this carrier. */ })
+    try {
+      await held.entered
+      await fixture.closeDatabase()
+      await vi.waitFor(() => { expect(handle.peer.signal.aborted).toBe(true) }, { timeout: 2000 })
+      expect(fixture.registry.reservedCarriers).toBe(1)
+      expect(fixture.releases.size).toBe(0)
+      held.release()
+      await expect(result).rejects.toThrow()
+      await fixture.registry.closeBinding(fixture.bindingA, Date.now() + 2000)
+      expect(fixture.registry.reservedCarriers).toBe(0)
+      expect(fixture.registry.reservedPeers).toBe(0)
+      expect(fixture.auth.pendingOperations).toBe(0)
+      expect(fixture.releases.get(fresh.accountId)).toBe(1)
+      expect(fixture.contexts.get(fresh.accountId)!.accessPeerFixture.peers).toEqual([])
+      expect(fixture.failures).toEqual([])
+    } finally {
+      held.release()
+      await result.catch((_error: unknown) => { /* The assertions above own the failed exchange. */ })
+    }
   })
 
   it('counts preparing epochs against the account limit before real borrow settles', async () => {

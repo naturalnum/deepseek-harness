@@ -181,18 +181,10 @@ export class LoginPeerRegistry {
    * @throws AuthAccessError when freshness or account lifetime cannot be confirmed.
    */
   assertCurrent(handle: LoginPeer, requestId: RequestId): void {
-    const entry = this.handles.get(handle)
-    if (entry === undefined || entry.phase !== 'ready' || entry.use === undefined) throw new AuthAccessError('cloud/account-unavailable', requestId)
-    try {
-      if (entry.binding.lifetime.aborted) throw new AuthAccessError('cloud/account-unavailable', requestId)
-      entry.use.assertCurrent()
-    } catch (error) {
-      void this.startClose(entry, requestId)
-      throw this.safe(error, requestId)
-    }
+    const entry = this.currentEntry(handle, requestId)
     try { this.auth.assertLoginCurrent(entry.principal, requestId) }
     catch (error) {
-      if (error instanceof AuthAccessError && error.code === 'cloud/account-unavailable') this.beginRecheck(entry)
+      if (error instanceof AuthAccessError && error.code === 'cloud/account-unavailable') void this.beginRecheck(entry)
       else void this.startClose(entry, requestId)
       throw this.safe(error, requestId)
     }
@@ -200,6 +192,7 @@ export class LoginPeerRegistry {
 
   /**
    * Reauthenticate this carrier before invoking the real native HTTP bridge with the fixed Peer.
+   * A finite carrier reservation joins any due original-Cookie recheck before synchronous dispatch guards.
    * @param handle - Shared login Peer; root already checked client account/generation expectations.
    * @param request - Original raw Node request, preserving native JSON and stream decoding.
    * @param response - Original Node response; disconnect closes only this carrier.
@@ -234,6 +227,7 @@ export class LoginPeerRegistry {
 
   /**
    * Transfer a reauthenticated socket to the real native stream mux; stream opens guard the pinned login.
+   * Admission may join an original-Cookie recheck; logical stream opens remain synchronous.
    * @param handle - Fixed login Peer selected by trusted root routing.
    * @param request - Original upgrade request with exactly one same-origin Origin, checked before auth DB work.
    * @param socket - Caller-owned until admission; caller contains early refusals, admitted failures destroy it.
@@ -405,17 +399,28 @@ export class LoginPeerRegistry {
 
   private schedule(entry: Entry): void {
     if (entry.phase !== 'ready') return
-    entry.timer = setTimeout(() => { entry.timer = undefined; this.beginRecheck(entry) }, this.config.sessionRecheckMs)
+    entry.timer = setTimeout(() => { entry.timer = undefined; void this.beginRecheck(entry) }, this.config.sessionRecheckMs)
     entry.timer.unref()
   }
 
-  private beginRecheck(entry: Entry): void {
-    if (entry.phase !== 'ready' || entry.recheck !== undefined) return
+  private beginRecheck(entry: Entry): Promise<void> | undefined {
+    if (entry.phase !== 'ready') return undefined
+    if (entry.recheck !== undefined) return entry.recheck
     clearTimeout(entry.timer)
     entry.timer = undefined
-    entry.recheck = this.auth.recheckLogin(entry.principal, this.requestId()).then(() => {
+    const requestId = this.requestId()
+    const recheck = this.auth.recheckLogin(entry.principal, requestId).then(() => {
       this.schedule(entry)
-    }, async () => { await this.startClose(entry, this.requestId()) }).finally(() => { entry.recheck = undefined })
+    }, (error: unknown) => {
+      // Full cleanup joins carrier tasks, which may be awaiting this result. Its owner joins cleanup separately.
+      void this.startClose(entry, requestId)
+      throw this.safe(error, requestId)
+    }).finally(() => { entry.recheck = undefined })
+    entry.recheck = recheck
+    void recheck.catch((_error: unknown) => {
+      // Timer-owned failures already close the entry; waiting carriers observe the same rejection.
+    })
+    return recheck
   }
 
   private startClose(entry: Entry, requestId: RequestId): Promise<void> {
@@ -484,9 +489,7 @@ export class LoginPeerRegistry {
   }
 
   private admitCarrier(handle: LoginPeer, requestId: RequestId): Entry {
-    this.assertCurrent(handle, requestId)
-    const entry = this.handles.get(handle)
-    if (entry === undefined) throw new AuthAccessError('cloud/account-unavailable', requestId)
+    const entry = this.currentEntry(handle, requestId)
     if (this.carriers >= this.config.maxPeerCarriers
       || this.count(this.carrierCounts, entry.binding.accountId) >= this.config.maxPeerCarriersPerAccount
       || this.count(this.loginCarrierCounts, entry.principal.authSessionId) >= this.config.maxPeerCarriersPerLogin) throw new AuthAccessError('cloud/capacity', requestId)
@@ -502,8 +505,36 @@ export class LoginPeerRegistry {
     if (principal.accountId !== entry.principal.accountId || principal.authSessionId !== entry.principal.authSessionId) {
       throw new AuthAccessError('cloud/unauthenticated', requestId)
     }
-    if (entry.handle === undefined) throw new AuthAccessError('cloud/account-unavailable', requestId)
-    this.assertCurrent(entry.handle, requestId)
+    const handle = entry.handle
+    if (handle === undefined) throw new AuthAccessError('cloud/account-unavailable', requestId)
+    this.currentEntry(handle, requestId)
+    let recheck = entry.recheck
+    if (recheck === undefined) {
+      try { this.auth.assertLoginCurrent(entry.principal, requestId) }
+      catch (error) {
+        if (error instanceof AuthAccessError && error.code === 'cloud/account-unavailable') recheck = this.beginRecheck(entry)
+        else {
+          void this.startClose(entry, requestId)
+          throw this.safe(error, requestId)
+        }
+      }
+    }
+    await recheck
+    if (request.destroyed) throw new AuthAccessError('cloud/account-unavailable', requestId)
+    this.assertCurrent(handle, requestId)
+  }
+
+  private currentEntry(handle: LoginPeer, requestId: RequestId): Entry {
+    const entry = this.handles.get(handle)
+    if (entry === undefined || entry.phase !== 'ready' || entry.use === undefined) throw new AuthAccessError('cloud/account-unavailable', requestId)
+    try {
+      if (entry.binding.lifetime.aborted) throw new AuthAccessError('cloud/account-unavailable', requestId)
+      entry.use.assertCurrent()
+    } catch (error) {
+      void this.startClose(entry, requestId)
+      throw this.safe(error, requestId)
+    }
+    return entry
   }
 
   private trackCarrier(entry: Entry, actual: Promise<void>, release: () => void): Promise<void> {

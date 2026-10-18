@@ -63,6 +63,8 @@ kind: "package-reference"
 
 原生最终分派 callback 在实际路由/envelope 选择后复核原请求、登录、Use、代际及图内 `CloudAccountApi`。每个逻辑流检查原 Peer 和每图策略。原生帧上限及 acquire/实际 settle callback 限制全局/账户/Peer 流容量；未知清理保留槽位并调度关闭，不等待自己的 transport。bootstrap 还要求原目录、原生策略及实际安装包证据；C06 settings 保持关闭。
 
+HTTP 和 upgrade 准入先预留有限 carrier 容量，再加入正在进行或已到期的 Peer 原 Cookie 查库复核。派发仍须通过复核时效及原请求/账户检查；WS 逻辑流打开保留同步守卫。
+
 ### Bootstrap 元数据
 
 `decodeCloudBootstrap(input, limits)` 严格校验 C-11 的账户、版本、代际和能力描述，返回独立副本及深只读数据。显式传入 `maxBodyBytes`、`maxStringBytes` 和合计 `maxListItems`，不补默认值。正文预算计入完整紧凑结果的字段名、分隔符和转义后 UTF-8 字符串。调用方仍须在 `JSON.parse` 前限制原始 HTTP 字节；三项上限均可由其 `maxBootstrapResponseBytes` 派生。
