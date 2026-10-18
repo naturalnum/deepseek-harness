@@ -18,9 +18,10 @@ const pools = []
 const extraWorkers = []
 try {
   fs.writeFileSync(path.join(temporary, 'package.json'), '{"type":"module"}\n')
+  fs.symlinkSync(path.join(packageRoot, 'node_modules'), path.join(temporary, 'node_modules'), 'dir')
   for (const file of [
     'error', 'types', 'work-queue', 'work-owner', 'worker-protocol', 'file-worker', 'worker-client', 'worker-pool',
-    'read-only', 'directory', 'directory-error', 'directory-budget', 'directory-responsibility', 'leaf-frame',
+    'read-only', 'directory', 'directory-error', 'directory-budget', 'directory-responsibility', 'leaf-frame', 'workspace-adapter',
   ]) {
     const output = ts.transpileModule(fs.readFileSync(path.join(packageRoot, 'src', `${file}.ts`), 'utf8'), {
       fileName: `${file}.ts`,

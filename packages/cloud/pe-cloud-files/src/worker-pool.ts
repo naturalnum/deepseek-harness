@@ -19,6 +19,7 @@ import type { DirectoryReadPort } from './directory.ts'
 import type { DirectoryIntent } from './directory-budget.ts'
 import { directoryWorkBudget } from './directory-budget.ts'
 import type { DirectoryObservation, DirectoryPrepareOutcome } from './directory-responsibility.ts'
+import { createBoundWorkspaceRegistry } from './workspace-adapter.ts'
 
 /** Privileged fixture input; layout/stat/mode/name alone never establishes this namespace guarantee. */
 export interface IsolatedLeafGrant {
@@ -53,6 +54,13 @@ export interface PoolReadPort {
   readonly reader: FixedRootReader
   readonly directory: DirectoryReadPort
   derivePreparedLeaf(grant: IsolatedLeafGrant): PreparedLeafPort
+  /**
+   * Fix the native Workspace dependency before its graph starts; this grants no production authority.
+   * @param defaultGrant Trusted fixed default leaf under this exact binding and parent.
+   * @param assertUnpublished Trusted recipe guard held through actual registration and identity verification.
+   * @returns Native subclass with same-lane metadata and privately completed directory transfer.
+   */
+  createWorkspaceRegistry(defaultGrant: IsolatedLeafGrant, assertUnpublished: () => void): ReturnType<typeof createBoundWorkspaceRegistry>
   stat(relativePath: string, signal?: AbortSignal): Promise<ResidentResult<FsInfo | undefined>>
   streamText(relativePath: string, signal?: AbortSignal): Promise<AsyncIterable<string>>
   readBytes(relativePath: string, maxBytes: number, signal?: AbortSignal): Promise<ResidentResult<Uint8Array<ArrayBuffer>>>
@@ -219,38 +227,66 @@ export class LinuxFilesPool implements DrainParticipant {
       inspect: (relativePath, reservedBytes, signal) => run(reservedBytes,
         (client, control) => client.directory(fixedRoot, relativePath, this.config.maxPathBytes, control), signal),
     })
+    const derivePreparedLeaf = (grant: IsolatedLeafGrant): PreparedLeafPort => {
+      checkCurrent()
+      if (grant.binding !== binding
+        || grant.parent.rootPath !== fixedRoot.rootPath || grant.parent.rootDevice !== fixedRoot.rootDevice
+        || grant.parent.rootInode !== fixedRoot.rootInode) throw new FdWorkerFailure('FS_PERMISSION_DENIED')
+      const intent: DirectoryIntent = Object.freeze({ parent: fixedRoot, leaf: grant.leaf })
+      directoryWorkBudget(intent, this.config)
+      const assertWindow = grant.assertExclusive
+      assertWindow()
+      return Object.freeze({ prepare: () => {
+        checkCurrent()
+        assertWindow()
+        const owned = port.prepareDirectory(intent, this.config, async (control, fixed): Promise<DirectoryPrepareOutcome> => {
+          try { assertWindow(); this.assertHealthy() } catch (_error) {
+            return { kind: 'not-created-failure', failure: { errno: 13, phase: 0 } }
+          }
+          if (!this.slots.some(slot => !slot.busy && slot.client.available)) {
+            return { kind: 'not-created-failure', failure: { errno: 11, phase: 0 } }
+          }
+          return await this.withSlot(false, client => client.prepareLeaf(fixed.parent, fixed.leaf, control))
+        })
+        return Object.freeze({ observation: owned.observation, control: Object.freeze({
+          expose: () => { assertWindow(); return owned.control.expose() },
+          cleanup: (signal?: AbortSignal) => owned.control.cleanup(async (identity, control, fixed) => {
+            assertWindow()
+            return await this.withSlot(true, client => client.removeEmptyLeaf(fixed.parent, fixed.leaf, identity, control))
+          }, signal),
+        }) })
+      } })
+    }
     return Object.freeze({
       reader,
       directory,
-      derivePreparedLeaf: (grant: IsolatedLeafGrant): PreparedLeafPort => {
-        checkCurrent()
-        if (grant.binding !== binding
-          || grant.parent.rootPath !== fixedRoot.rootPath || grant.parent.rootDevice !== fixedRoot.rootDevice
-          || grant.parent.rootInode !== fixedRoot.rootInode) throw new FdWorkerFailure('FS_PERMISSION_DENIED')
-        const intent: DirectoryIntent = Object.freeze({ parent: fixedRoot, leaf: grant.leaf })
-        directoryWorkBudget(intent, this.config)
-        const assertWindow = grant.assertExclusive
-        assertWindow()
-        return Object.freeze({ prepare: () => {
-          checkCurrent()
-          assertWindow()
-          const owned = port.prepareDirectory(intent, this.config, async (control, fixed): Promise<DirectoryPrepareOutcome> => {
-            try { assertWindow(); this.assertHealthy() } catch (_error) {
-              return { kind: 'not-created-failure', failure: { errno: 13, phase: 0 } }
-            }
-            if (!this.slots.some(slot => !slot.busy && slot.client.available)) {
-              return { kind: 'not-created-failure', failure: { errno: 11, phase: 0 } }
-            }
-            return await this.withSlot(false, client => client.prepareLeaf(fixed.parent, fixed.leaf, control))
-          })
-          return Object.freeze({ observation: owned.observation, control: Object.freeze({
-            expose: () => { assertWindow(); return owned.control.expose() },
-            cleanup: (signal?: AbortSignal) => owned.control.cleanup(async (identity, control, fixed) => {
+      derivePreparedLeaf,
+      createWorkspaceRegistry: (defaultGrant: IsolatedLeafGrant, assertUnpublished: () => void) => {
+        const defaultPort = derivePreparedLeaf(defaultGrant)
+        const assertWindow = (): void => { checkCurrent(); assertUnpublished(); defaultGrant.assertExclusive() }
+        return createBoundWorkspaceRegistry({
+          directory, defaultGrant, assertWindow,
+          prepareDefault: () => defaultPort.prepare(),
+          prepareRegistration: (grant) => {
+            assertWindow()
+            const work = (grant === defaultGrant ? defaultPort : derivePreparedLeaf(grant)).prepare()
+            const record = port.captureRegistration(work.observation)
+            const assertCandidate = grant.assertExclusive
+            return { work, record, assertWindow: () => { assertWindow(); assertCandidate() } }
+          },
+          identity: async (record) => {
+            assertWindow()
+            const held = await stat(record.intent.leaf)
+            try {
               assertWindow()
-              return await this.withSlot(true, client => client.removeEmptyLeaf(fixed.parent, fixed.leaf, identity, control))
-            }, signal),
-          }) })
-        } })
+              const value = held.value
+              if (value?.type !== 'directory') throw new FdWorkerFailure('FS_PERMISSION_DENIED')
+              // FdWorkerClient validates this private backend identity; public FsInfo.version stays opaque.
+              const separator = value.identity.indexOf(':')
+              return Object.freeze({ device: value.identity.slice(0, separator), inode: value.identity.slice(separator + 1) })
+            } finally { held.release() }
+          },
+        })
       },
       stat: async (path: string, signal?: AbortSignal): Promise<ResidentResult<FsInfo | undefined>> => {
         const held = await stat(path, signal)

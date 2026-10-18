@@ -1,11 +1,13 @@
-/** Bounded temporary directory ownership; no mkdir, native registration, transfer proof or storage grant. */
+/** Bounded temporary directory ownership and private native registration completion; no storage grant. */
 import type { OperationId } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { DirectoryIntent, DirectoryWorkBudget } from './directory-budget.ts'
 import { FilesFailure } from './error.ts'
 import { DirectoryPreparationFailure } from './leaf-frame.ts'
 import type { LeafFailureDetails } from './leaf-frame.ts'
+import type WorkspaceRegistry from '@deepseek-ai/dsh-workspace'
+import type { Workspace } from '@deepseek-ai/dsh-workspace'
 
-/** A future audited backend supplies decimal identities bounded to 20 digits each. */
+/** Private backend FD identity; each decimal field is bounded to 20 digits. */
 export interface DirectoryCreatedIdentity {
   readonly device: string
   readonly inode: string
@@ -76,7 +78,9 @@ function createdIdentity(value: unknown): DirectoryCreatedIdentity | undefined {
 export class DirectoryResponsibility {
   /** Bounded observer and owner controls; neither can assert a registered-project transfer. */
   readonly port: OwnedDirectoryWork
-  private actual: 'pending' | 'created' | 'unchanged' | 'unknown' | 'cancelled' | 'not-created' = 'pending'
+  private actual: 'pending' | 'created' | 'unchanged' | 'unknown' | 'cancelled' | 'not-created' | 'registered' = 'pending'
+  private registrationActive = false
+  private registrationUncertain = false
   private failure: LeafFailureDetails | undefined
   private identity: DirectoryCreatedIdentity | undefined
   private exposed = false
@@ -140,7 +144,7 @@ export class DirectoryResponsibility {
     } else if (result.kind === 'success' && typeof result.value === 'object' && result.value !== null
       && 'kind' in result.value && result.value.kind === 'unchanged') {
       this.actual = 'unchanged'
-      this.releaseOnce()
+      if (!this.registrationActive && !this.registrationUncertain) this.releaseOnce()
     } else if (typeof value === 'object' && value !== null && 'kind' in value
       && value.kind === 'not-created-failure' && this.failure !== undefined) {
       this.actual = 'not-created'
@@ -148,6 +152,11 @@ export class DirectoryResponsibility {
     } else {
       this.identity = result.kind === 'success' ? createdIdentity(result.value) : undefined
       this.actual = this.identity === undefined ? 'unknown' : 'created'
+    }
+    // A late valid backend reply cannot restore cleanup after the native owner already lost its wait.
+    if (this.registrationUncertain && !this.released) {
+      this.actual = 'unknown'
+      this.identity = undefined
     }
     return () => {
       if (result.kind === 'failure') this.reject(result.reason)
@@ -189,6 +198,57 @@ export class DirectoryResponsibility {
   cleanupIdentity(): DirectoryCreatedIdentity {
     if (this.identity === undefined) throw unavailable()
     return this.identity
+  }
+
+  /** Attach the package-private native registration owner before preparation can settle. */
+  beginRegistration(): void {
+    this.assertBusiness()
+    if (this.released || this.registrationActive || this.registrationUncertain || this.cleanupState !== 'idle'
+      || (this.actual !== 'pending' && this.actual !== 'created' && this.actual !== 'unchanged')) throw unavailable()
+    this.registrationActive = true
+  }
+
+  /**
+   * Fix the pre-registration FD identity; an owned created inode can never be replaced by a later stat.
+   * @param identity Actual same-lane metadata observed under the original namespace window.
+   */
+  rememberRegistrationIdentity(identity: DirectoryCreatedIdentity): void {
+    this.assertBusiness()
+    if (!this.registrationActive || this.released || this.failure !== undefined
+      || (this.actual !== 'created' && this.actual !== 'unchanged')) throw unavailable()
+    if (this.identity !== undefined && (this.identity.device !== identity.device || this.identity.inode !== identity.inode)) {
+      throw unavailable()
+    }
+    this.identity = Object.freeze({ ...identity })
+  }
+
+  /**
+   * End temporary ownership after the private adapter awaited a real fulfilled native registration.
+   * This record is never exposed through PreparedLeafPort controls; cache membership alone is not completion evidence.
+   * @param registry Exact native instance whose public call the adapter actually awaited.
+   * @param workspace Actual fulfilled public result, checked again under the unpublished graph window.
+   * @param canonical Fresh same-lane physical path.
+   * @param identity Fresh internal FD identity, never decoded from an opaque consumer FsVersion.
+   */
+  transferRegistered(registry: WorkspaceRegistry, workspace: Workspace, canonical: string, identity: DirectoryCreatedIdentity): void {
+    this.assertBusiness()
+    if (!this.registrationActive || this.stopped || this.released || !this.exposed || this.failure !== undefined
+      || (this.actual !== 'created' && this.actual !== 'unchanged') || this.cleanupState !== 'idle'
+      || this.identity?.device !== identity.device || this.identity.inode !== identity.inode
+      || workspace.path !== canonical || registry.get(workspace.id) !== workspace) throw unavailable()
+    this.actual = 'registered'
+    this.registrationActive = false
+    this.identity = undefined
+    this.releaseOnce()
+  }
+
+  /** Preserve a native rejection, undefined result or late graph closure without inferring rollback or safe cleanup. */
+  registrationFailed(): void {
+    this.registrationActive = false
+    if (this.released) return
+    this.registrationUncertain = true
+    this.actual = 'unknown'
+    this.identity = undefined
   }
 
   private waitPrepared(signal?: AbortSignal): Promise<'created' | 'unchanged'> {

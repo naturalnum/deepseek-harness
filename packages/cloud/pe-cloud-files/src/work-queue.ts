@@ -6,7 +6,7 @@ import { FilesFailure } from './error.ts'
 import { directoryWorkBudget } from './directory-budget.ts'
 import type { DirectoryIntent, DirectoryBudgetLimits } from './directory-budget.ts'
 import { DirectoryResponsibility } from './directory-responsibility.ts'
-import type { DirectoryPrepareWork, DirectoryCleanupWork, OwnedDirectoryWork } from './directory-responsibility.ts'
+import type { DirectoryPrepareWork, DirectoryCleanupWork, OwnedDirectoryWork, DirectoryObservation } from './directory-responsibility.ts'
 
 /** Retains the complete reservation until the consumer releases its result. */
 export interface ResidentResult<T> {
@@ -28,6 +28,8 @@ export interface WorkLane {
   prepareDirectory(
     intent: DirectoryIntent, limits: DirectoryBudgetLimits, work: DirectoryPrepareWork,
   ): OwnedDirectoryWork
+  /** Package-private registration attachment; no transfer is exposed on the observation or generic control. */
+  captureRegistration(observation: DirectoryObservation): DirectoryResponsibility
   close(): void
   pending(): readonly OperationId[]
   onSettled(listener: () => void): () => void
@@ -117,6 +119,15 @@ export class FilesWorkQueue {
         intent: DirectoryIntent, limits: DirectoryBudgetLimits, work: DirectoryPrepareWork,
       ) =>
         this.prepareDirectory(lane, intent, limits, work),
+      captureRegistration: (observation: DirectoryObservation) => {
+        this.assertBusiness(lane)
+        for (const record of lane.directories) {
+          if (record.port.observation !== observation) continue
+          record.beginRegistration()
+          return record
+        }
+        throw new FilesFailure('cloud/stale-generation', 'directory registration does not belong to this lane')
+      },
       close: () => { this.closeLane(lane) },
       pending: () => this.lanePending(lane),
       onSettled: (listener: () => void) => {

@@ -5,7 +5,7 @@ import { FilesFailure } from './error.ts'
 import { FilesWorkQueue } from './work-queue.ts'
 import type { ResidentResult, WorkLane } from './work-queue.ts'
 import type { DirectoryIntent, DirectoryBudgetLimits } from './directory-budget.ts'
-import type { DirectoryPrepareWork, DirectoryCleanupWork, OwnedDirectoryWork } from './directory-responsibility.ts'
+import type { DirectoryPrepareWork, DirectoryCleanupWork, OwnedDirectoryWork, DirectoryObservation, DirectoryResponsibility } from './directory-responsibility.ts'
 
 /** Internal port for an audited files backend, not an RPC or a native FileSystem substitute. */
 export interface BoundFilesWork {
@@ -16,6 +16,8 @@ export interface BoundFilesWork {
   prepareDirectory(
     intent: DirectoryIntent, limits: DirectoryBudgetLimits, work: DirectoryPrepareWork,
   ): OwnedDirectoryWork
+  /** Internal native adapter attachment, checked against the exact current generation. */
+  captureRegistration(observation: DirectoryObservation): DirectoryResponsibility
 }
 
 interface Generation {
@@ -85,6 +87,7 @@ export class FilesWorkOwner implements DrainParticipant {
           }),
         })
       },
+      captureRegistration: (observation: DirectoryObservation) => { current(); return lane.captureRegistration(observation) },
     })
   }
 

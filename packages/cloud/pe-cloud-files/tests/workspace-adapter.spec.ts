@@ -1,0 +1,362 @@
+/** Real native Loader/JSONL/StorageDomain, with a TEST ONLY Node-backed files worker transport. */
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { randomUUID } from 'node:crypto'
+import { Worker } from 'node:worker_threads'
+import { Context, FiberState } from '@deepseek-ai/cordis'
+import { boot } from '@deepseek-ai/dsh-app-boot'
+import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-session-persistence'
+import Storage, { storageBackendServiceKey, type StorageBackend, type KvUnit } from '@deepseek-ai/dsh-storage'
+import * as JsonStorage from '@deepseek-ai/dsh-storage-json'
+import * as DomainStorage from '@deepseek-ai/dsh-storage-domain'
+import * as Jsonl from '@deepseek-ai/dsh-session-persistence-jsonl'
+import { WorkspaceDirectoryMetadataError, WorkspaceId } from '@deepseek-ai/dsh-workspace'
+import type { AccountBinding, AccountId, OwnerEpoch } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
+import { expect, it, onTestFinished, vi } from 'vitest'
+import { LinuxFilesPool, type IsolatedLeafGrant } from '../src/worker-pool.ts'
+import { directoryWorkBudget } from '../src/directory-budget.ts'
+import type { ControlledWorkspaceRegistry } from '../src/workspace-adapter.ts'
+
+function committed(value: unknown): boolean {
+  return typeof value === 'object' && value !== null && 'workspaceIds' in value
+    && Array.isArray(value.workspaceIds) && value.workspaceIds.length > 0
+    && (!('pendingMutation' in value) || value.pendingMutation === undefined)
+}
+
+async function fixture(mode = 'normal', waitTimeoutMs = 3000) {
+  const home = realpathSync(mkdtempSync(join(tmpdir(), 'm7c-files-')))
+  const projects = join(home, 'projects'), storageRoot = join(home, 'storage'), sessionsRoot = join(home, 'sessions')
+  mkdirSync(projects)
+  const info = statSync(projects, { bigint: true })
+  const root = Object.freeze({ rootPath: projects, rootDevice: String(info.dev), rootInode: String(info.ino) })
+  const lifetime = new AbortController()
+  const binding: AccountBinding = Object.freeze({ accountId: 'A' as AccountId, epoch: '1' as OwnerEpoch,
+    recipeVersion: 'test-only-unpublished', lifetime: lifetime.signal })
+  let current = true, unpublished = true
+  const assertWindow = () => { if (!current || !unpublished || lifetime.signal.aborted) throw new Error('test graph window closed') }
+  const gate = new SharedArrayBuffer(24), counters = new Int32Array(gate), workers: Worker[] = []
+  const budget = directoryWorkBudget({ parent: root, leaf: randomUUID() }, { maxPathBytes: 256, replyOverheadBytes: 32 })
+  const pool = new LinuxFilesPool({
+    maxLanes: 1, maxRunning: 1, maxRunningPerLane: 1, maxQueued: 1, maxQueuedPerLane: 1,
+    maxResidentBytes: budget.totalBytes + 128, maxResidentBytesPerLane: budget.totalBytes, waitTimeoutMs,
+    workerCount: 1, minimumHealthyWorkers: 1, workerReservationBytes: 128, replyOverheadBytes: 32,
+    readyTimeoutMs: 2000, drainTimeoutMs: 10, helperPath: '/test-only/not-loaded.node',
+    maxReadBytes: 32, maxPathBytes: 256, maxResolveRetries: 2, readChunkBytes: 2,
+  }, () => {
+    const worker = new Worker(new URL('./fixtures/workspace-worker.mjs', import.meta.url), { workerData: { mode, gate } })
+    workers.push(worker)
+    return worker
+  })
+  const roots: Context[] = []
+  onTestFinished(async () => {
+    Atomics.store(counters, 5, 1); Atomics.notify(counters, 5)
+    try {
+      for (const ctx of roots) await ctx.fiber.dispose()
+      await pool.stop(Date.now() + 20)
+      await Promise.all(workers.map(worker => worker.terminate()))
+    } finally { rmSync(home, { recursive: true, force: true }) }
+  })
+  await pool.start()
+  const bound = pool.bind(binding, root, assertWindow)
+  const grant = (leaf: string): IsolatedLeafGrant => Object.freeze({ backend: 'root-owned-isolated-linux-tmpfs',
+    binding, parent: root, leaf, assertExclusive: assertWindow })
+  const defaultGrant = grant('default-workspace')
+  const Registry = bound.createWorkspaceRegistry(defaultGrant, assertWindow)
+  let beforeRecord: ((table: string, key: string) => Promise<void>) | undefined
+  let afterCommit: (() => Promise<void>) | undefined
+  // Faults/gates wrap the public backend interface; every successful write still uses the original JSON medium.
+  const controlledJson = { name: 'test-json', inject: ['storage'], apply(ctx: Context) {
+    const original = new JsonStorage.JsonStorageBackend(storageRoot)
+    const backend: StorageBackend = {
+      kv: { open: async (descriptor) => {
+        const unit = await original.kv.open(descriptor)
+        const wrapped: KvUnit = {
+          loadAll: () => unit.loadAll(),
+          putRecord: async (table, key, value) => { await beforeRecord?.(table, key); await unit.putRecord(table, key, value) },
+          deleteRecord: (table, key) => unit.deleteRecord(table, key),
+          setGlobal: async (value) => { await unit.setGlobal(value); if (committed(value)) await afterCommit?.() },
+          close: () => unit.close(),
+        }
+        return wrapped
+      } },
+      close: () => original.close(),
+    }
+    ctx.effect(() => {
+      const unregister = ctx.storage.backend.register('json', backend)
+      return async () => { unregister(); await backend.close() }
+    })
+    ctx.provide(storageBackendServiceKey('json'), backend)
+  } }
+  let generation = 0
+  const start = async (options: { binding?: AccountBinding; registry?: boolean } = {}) => {
+    const config = join(home, `cordis-${++generation}.yml`)
+    writeFileSync(config, JSON.stringify([
+      { id: 'sessions', name: 'cordis:m7c-sessions' }, { id: 'storage', name: 'cordis:m7c-storage' },
+      { id: 'json', name: 'cordis:m7c-json' }, { id: 'domain', name: 'cordis:m7c-domain', config: { backend: 'json' } },
+      { id: 'jsonl', name: 'cordis:m7c-jsonl', config: { root: sessionsRoot, compression: 'none' } },
+      ...options.registry === false ? [] : [{ id: 'workspace', name: 'cordis:m7c-workspace' }],
+    ]))
+    const ctx = await boot('m7c-files', config, [], (rootContext) => {
+      roots.push(rootContext)
+      rootContext.provide('peAccount', options.binding ?? binding)
+      Object.assign(rootContext.loader.builtins, { 'm7c-sessions': SessionStore, 'm7c-storage': Storage,
+        'm7c-json': controlledJson, 'm7c-domain': DomainStorage, 'm7c-jsonl': Jsonl, 'm7c-workspace': Registry })
+    })
+    const entry = [...ctx.loader.entries()].find(row => row.options.id === 'workspace')
+    return { ctx, entry, registry(): ControlledWorkspaceRegistry {
+      const instance = ctx.get('workspaceRegistry')
+      if (instance === undefined || !(instance instanceof Registry)) throw new Error('test registry absent')
+      return instance
+    }, close: () => ctx.fiber.dispose() }
+  }
+  return { home, projects, storageRoot, sessionsRoot, pool, bound, binding, defaultGrant, grant, start, counters,
+    setBeforeRecord: (callback?: (table: string, key: string) => Promise<void>) => { beforeRecord = callback },
+    setAfterCommit: (callback?: () => Promise<void>) => { afterCommit = callback },
+    closeWindow: () => { unpublished = false }, restoreWindow: () => { unpublished = true },
+    stale: () => { current = false }, workers,
+  }
+}
+
+async function persistSession(ctx: Context, id: SessionId, cwd: string): Promise<void> {
+  const prepared = ctx.sessions.prepare(id, { meta: { cwd } })
+  const handle = await ctx.sessionPersistence.create(prepared.header)
+  try { await handle.flush() } finally { await handle.close() }
+  await ctx.sessionPersistence.flush()
+}
+
+it('uses one lane through actual default persistence, repeats and cold restore without recreating its directory', async () => {
+  const test = await fixture(), graph = await test.start()
+  expect(graph.entry?.fiber?.state).toBe(FiberState.ACTIVE)
+  expect(graph.ctx.get('peAccount')).toBe(test.binding)
+  const workspace = await graph.registry().initializeDefault(async () => { throw new Error('desktop resolver must not run') })
+  expect(workspace?.path).toBe(join(test.projects, 'default-workspace'))
+  expect(workspace?.title).toBe('default-workspace')
+  expect(test.pool.inspect().work).toMatchObject({ lanes: 1, running: 0, residentBytes: 0, pending: 0 })
+  expect(existsSync(workspace!.path)).toBe(true)
+  const preparations = Atomics.load(test.counters, 0)
+  expect(preparations).toBe(1)
+  expect(await graph.registry().initializeDefault(async () => 'unused')).toBe(workspace)
+  const id = SessionId('default-real-jsonl')
+  await persistSession(graph.ctx, id, workspace!.path)
+  await workspace!.attachSession(id)
+  expect(await workspace!.status()).toBe('ok')
+  expect(await graph.registry().resolveByPath(workspace!.path)).toBe(workspace)
+  await graph.close()
+  const cold = await test.start()
+  expect(cold.registry().get(workspace!.id)?.sessionIds).toEqual([id])
+  expect((await cold.registry().initializeDefault(async () => 'unused'))?.id).toBe(workspace!.id)
+  expect(Atomics.load(test.counters, 0)).toBe(preparations)
+  expect(test.pool.inspect().work).toMatchObject({ residentBytes: 0, pending: 0 })
+  await cold.registry().delete(workspace!.id)
+  await cold.close()
+  const deleted = await test.start()
+  expect(await deleted.registry().initializeDefault(async () => 'unused')).toBeUndefined()
+  expect(Atomics.load(test.counters, 0)).toBe(preparations)
+  expect(existsSync(workspace!.path)).toBe(true)
+  expect(test.workers).toHaveLength(1)
+})
+
+it('transfers server UUID projects without retaining dynamic tickets and refreshes later native persisted-only headers', async () => {
+  const test = await fixture(), graph = await test.start()
+  for (let index = 0; index < 8; index++) {
+    const leaf = randomUUID(), candidate = test.grant(leaf)
+    const workspace = await graph.registry().createProject(candidate, `client/title/${index}`)
+    expect(workspace.path).toBe(join(test.projects, leaf))
+    expect(workspace.title).toBe(`client/title/${index}`)
+    expect(existsSync(workspace.path)).toBe(true)
+    expect(test.pool.inspect().work).toMatchObject({ running: 0, residentBytes: 0, pending: 0 })
+  }
+  const discovered = graph.registry().list()[0]!
+  const cwd = discovered.path
+  const beforeIndex = Atomics.load(test.counters, 1)
+  const id = SessionId('later-cache-miss-header')
+  await persistSession(graph.ctx, id, cwd)
+  await graph.registry().pinSession(id)
+  expect(Atomics.load(test.counters, 1)).toBeGreaterThan(beforeIndex)
+  await discovered.attachSession(id)
+  expect(discovered.sessionIds).toEqual([id])
+  expect(await discovered.status()).toBe('ok')
+  expect(Atomics.load(test.counters, 0)).toBe(8)
+  expect(test.pool.inspect().work).toMatchObject({ residentBytes: 0, pending: 0 })
+})
+
+it('keeps Rdir while a native early entity exists and transfers only after the actual durable return', async () => {
+  const test = await fixture(), graph = await test.start()
+  const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  onTestFinished(() => { release.resolve(undefined) })
+  test.setBeforeRecord(async (_table, key) => {
+    // Native get exposes this exact entity before the durable write; it must not release Rdir.
+    expect(graph.registry().get(WorkspaceId(key))).toBeDefined()
+    entered.resolve(undefined)
+    await release.promise
+  })
+  const pending = graph.registry().createProject(test.grant(randomUUID()))
+  await entered.promise
+  expect(graph.registry().list()).toEqual([])
+  expect(test.pool.inspect().work).toMatchObject({ running: 0, pending: 1 })
+  expect(test.pool.inspect().work.residentBytes).toBeGreaterThan(0)
+  release.resolve(undefined)
+  const workspace = await pending
+  expect(graph.registry().get(workspace.id)).toBe(workspace)
+  expect(readFileSync(join(test.storageRoot, 'workspace.json'), 'utf8')).toContain(workspace.id)
+  expect(test.pool.inspect().work).toMatchObject({ residentBytes: 0, pending: 0 })
+})
+
+it('holds an unchanged default responsibility until native completion and gives ordinary create no mkdir authority', async () => {
+  const test = await fixture(), graph = await test.start()
+  mkdirSync(join(test.projects, 'default-workspace'))
+  const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  onTestFinished(() => { release.resolve(undefined) })
+  test.setBeforeRecord(async () => { entered.resolve(undefined); await release.promise })
+  const pending = graph.registry().initializeDefault(async () => 'unused')
+  await entered.promise
+  expect(test.pool.inspect().work).toMatchObject({ running: 0, pending: 1 })
+  expect(test.pool.inspect().work.residentBytes).toBeGreaterThan(0)
+  release.resolve(undefined)
+  const workspace = await pending
+  expect(workspace?.path).toBe(join(test.projects, 'default-workspace'))
+  expect(test.pool.inspect().work).toMatchObject({ residentBytes: 0, pending: 0 })
+  const missing = join(test.projects, randomUUID())
+  await expect(graph.registry().create(missing)).rejects.toMatchObject({ reason: 'missing' })
+  await expect(graph.registry().resolveByPath(join(test.home, 'private'))).rejects.toMatchObject({ reason: 'unavailable' })
+  expect(existsSync(missing)).toBe(false)
+  expect(Atomics.load(test.counters, 0)).toBe(1)
+})
+
+it('keeps a timed-out native preparation unknown after its late successful actual reply', async () => {
+  const test = await fixture('blocked-prepare', 100), graph = await test.start(), candidate = test.grant(randomUUID())
+  const pending = graph.registry().createProject(candidate)
+  await expect(pending).rejects.toMatchObject({ reason: 'unavailable' })
+  expect(Atomics.load(test.counters, 4)).toBe(1)
+  Atomics.store(test.counters, 5, 1); Atomics.notify(test.counters, 5)
+  await vi.waitFor(() => { expect(test.pool.inspect().work.running).toBe(0) })
+  const work = test.bound.derivePreparedLeaf(candidate).prepare()
+  await expect(work.observation.waitPrepared()).rejects.toThrow()
+  await expect(work.control.cleanup()).rejects.toThrow()
+  expect(test.pool.inspect().work).toMatchObject({ pending: 1 })
+  expect(graph.registry().list()).toEqual([])
+  expect(Atomics.load(test.counters, 3)).toBe(0)
+})
+
+it('does not transfer or clean after the native second history check returns undefined', async () => {
+  const test = await fixture('blocked-prepare'), graph = await test.start()
+  const pending = graph.registry().initializeDefault(async () => 'unused')
+  await vi.waitFor(() => { expect(Atomics.load(test.counters, 4)).toBe(1) })
+  await persistSession(graph.ctx, SessionId('racing-real-header'), join(test.projects, 'default-workspace'))
+  Atomics.store(test.counters, 5, 1); Atomics.notify(test.counters, 5)
+  expect(await pending).toBeUndefined()
+  expect(test.pool.inspect().work).toMatchObject({ running: 0, pending: 1 })
+  const original = test.bound.derivePreparedLeaf(test.defaultGrant).prepare()
+  await expect(original.control.cleanup()).rejects.toThrow()
+  expect(Object.keys(original.control).sort()).toEqual(['cleanup', 'expose'])
+  expect(Atomics.load(test.counters, 3)).toBe(0)
+  expect((await test.pool.stopEpoch(test.binding, Date.now())).status).toBe('unknown')
+})
+
+it('retains unknown on an actual native JSON record-write rejection and never swaps the candidate', async () => {
+  const test = await fixture(), graph = await test.start(), candidate = test.grant(randomUUID())
+  const failure = new Error('test public JSON write rejection')
+  test.setBeforeRecord(async () => { throw failure })
+  await expect(graph.registry().createProject(candidate)).rejects.toBe(failure)
+  expect(graph.registry().list()).toEqual([])
+  expect(existsSync(join(test.projects, candidate.leaf))).toBe(true)
+  const work = test.bound.derivePreparedLeaf(candidate).prepare()
+  await expect(work.observation.waitPrepared()).rejects.toThrow()
+  await expect(work.control.cleanup()).rejects.toThrow()
+  await expect(graph.registry().createProject(candidate)).rejects.toThrow()
+  expect(Atomics.load(test.counters, 0)).toBe(1)
+  expect(Atomics.load(test.counters, 3)).toBe(0)
+  expect(test.pool.inspect().work).toMatchObject({ pending: 1 })
+})
+
+it.each(['window', 'candidate-window', 'generation', 'identity-change'])('retains unknown after durable registration when %s verification fails', async (mode) => {
+  const test = await fixture(mode), graph = await test.start()
+  let candidateWindow = true
+  const candidate: IsolatedLeafGrant = Object.freeze({ ...test.grant(randomUUID()), assertExclusive: () => {
+    if (!candidateWindow) throw new Error('test candidate window closed')
+  } })
+  if (mode !== 'identity-change') test.setAfterCommit(async () => {
+    if (mode === 'window') test.closeWindow()
+    else if (mode === 'candidate-window') candidateWindow = false
+    else test.stale()
+  })
+  await expect(graph.registry().createProject(candidate)).rejects.toThrow()
+  expect(graph.registry().list()).toHaveLength(1)
+  expect(existsSync(join(test.projects, candidate.leaf))).toBe(true)
+  test.restoreWindow()
+  candidateWindow = true
+  if (mode !== 'generation') {
+    const work = test.bound.derivePreparedLeaf(candidate).prepare()
+    await expect(work.observation.waitPrepared()).rejects.toThrow()
+    await expect(work.control.cleanup()).rejects.toThrow()
+  }
+  expect(test.pool.inspect().work).toMatchObject({ running: 0, pending: 1 })
+  expect(Atomics.load(test.counters, 3)).toBe(0)
+})
+
+it('never recovers post-create parent verification into native registration or cleanup', async () => {
+  const test = await fixture('parent-failure'), graph = await test.start(), candidate = test.grant(randomUUID())
+  await expect(graph.registry().createProject(candidate)).rejects.toMatchObject({ reason: 'unavailable' })
+  test.closeWindow(); test.restoreWindow()
+  expect(await test.bound.directory.isDirectory(join(test.projects, candidate.leaf))).toBe(true)
+  const work = test.bound.derivePreparedLeaf(candidate).prepare()
+  await expect(work.control.cleanup()).rejects.toThrow()
+  expect(graph.registry().list()).toEqual([])
+  expect(Atomics.load(test.counters, 3)).toBe(0)
+  expect(test.pool.inspect().work).toMatchObject({ pending: 1 })
+})
+
+it('rejects an A adapter mounted with B or a copied binding before Workspace storage or files effects', async () => {
+  const test = await fixture()
+  const wrong = Object.freeze({ ...test.binding, accountId: 'B' as AccountId })
+  const graph = await test.start({ binding: wrong })
+  expect(graph.entry?.fiber?.state).toBe(FiberState.FAILED)
+  await expect(graph.entry!.fiber!.await()).rejects.toBeInstanceOf(WorkspaceDirectoryMetadataError)
+  expect(Atomics.load(test.counters, 0)).toBe(0)
+  expect(Atomics.load(test.counters, 1)).toBe(0)
+  expect(Atomics.load(test.counters, 2)).toBe(0)
+  expect(existsSync(join(test.storageRoot, 'workspace.json'))).toBe(false)
+  expect(test.pool.inspect().work).toMatchObject({ residentBytes: 0, pending: 0 })
+  await graph.close()
+  const copied = await test.start({ binding: Object.freeze({ ...test.binding }) })
+  expect(copied.entry?.fiber?.state).toBe(FiberState.FAILED)
+  await expect(copied.entry!.fiber!.await()).rejects.toBeInstanceOf(WorkspaceDirectoryMetadataError)
+  expect(Atomics.load(test.counters, 1)).toBe(0)
+})
+
+it('retains unknown when the actual native Registry fiber closes after the durable write', async () => {
+  const test = await fixture(), graph = await test.start(), registry = graph.registry(), candidate = test.grant(randomUUID())
+  let disposal: Promise<void> | undefined
+  test.setAfterCommit(async () => { disposal = graph.close() })
+  await expect(registry.createProject(candidate)).rejects.toMatchObject({ reason: 'unavailable' })
+  await disposal
+  expect(registry.list()).toHaveLength(1)
+  expect(existsSync(join(test.projects, candidate.leaf))).toBe(true)
+  const work = test.bound.derivePreparedLeaf(candidate).prepare()
+  await expect(work.control.cleanup()).rejects.toThrow()
+  expect(test.pool.inspect().work).toMatchObject({ pending: 1 })
+  expect(Atomics.load(test.counters, 3)).toBe(0)
+})
+
+it('rejects an A adapter in a B root even when the child service scope provides the exact A binding', async () => {
+  const test = await fixture()
+  const wrong = Object.freeze({ ...test.binding, accountId: 'B' as AccountId })
+  const graph = await test.start({ binding: wrong, registry: false })
+  const Registry = test.bound.createWorkspaceRegistry(test.defaultGrant, () => {})
+  const child = graph.ctx.isolate('peAccount')
+  child.provide('peAccount', test.binding)
+  let failure: unknown
+  await child.plugin({ name: 'foreign-workspace-scope', inject: ['peAccount'], apply(ctx: Context) {
+    expect(ctx.get('peAccount')).toBe(test.binding)
+    expect(ctx.root.get('peAccount')).toBe(wrong)
+    try { new Registry(ctx) } catch (error) { failure = error }
+  } })
+  expect(failure).toBeInstanceOf(WorkspaceDirectoryMetadataError)
+  expect(Atomics.load(test.counters, 0)).toBe(0)
+  expect(Atomics.load(test.counters, 1)).toBe(0)
+  expect(Atomics.load(test.counters, 2)).toBe(0)
+  expect(existsSync(join(test.storageRoot, 'workspace.json'))).toBe(false)
+  expect(test.pool.inspect().work).toMatchObject({ residentBytes: 0, pending: 0 })
+})
