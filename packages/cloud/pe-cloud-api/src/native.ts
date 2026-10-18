@@ -246,11 +246,11 @@ class AccountSessionController extends SessionController {
   /** Actual optional reader installation, used only by native inventory inspection. */
   hasFirstScreenReader(): boolean { return this.admission.hasReader() }
 
-  override async list(request: SessionListRequest, signal: AbortSignal): Promise<SessionListValue> {
+  override async list(_request: SessionListRequest, signal: AbortSignal): Promise<SessionListValue> {
     const control = this.admission.historySignal(signal)
     control.throwIfAborted()
     this.admission.admitRead('session/list')
-    const value = await super.list(request, control)
+    const value = await super.list(_request, control)
     control.throwIfAborted()
     this.admission.read('session/list', value)
     return value
