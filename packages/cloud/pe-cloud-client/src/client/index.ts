@@ -1,26 +1,27 @@
-/** Browser Loader entry; unavailable bootstrap assembly cannot publish a ready client. */
+/** Browser Loader entry consuming the exact pre-Cordis prepared page owner. */
 import type { Context } from '@deepseek-ai/cordis'
-import { CloudClientConfigSchema, parseCloudClientConfig } from '../config.ts'
-import type { CloudClientConfig } from '../types.ts'
+import z from '@deepseek-ai/schemastery'
 
 /** Stable browser plugin name. */
 export const name = 'pe-cloud-client/client'
-/** No native carrier is installed before the bootstrap adapter exists. */
+/** Prepared ownership is checked explicitly before installing any native carrier. */
 export const inject: string[] = []
-/** Public browser configuration, excluding credentials and account paths. */
-export interface Config extends CloudClientConfig {}
-/** Required finite browser limits. */
-export const Config = CloudClientConfigSchema
+/** Browser Loader entry configuration; preparation owns all explicit budgets. */
+export interface Config {}
+/** The native browser Loader supplies no per-entry configuration. */
+export const Config: z<Config> = z.object({})
 
 /**
- * Reject incomplete assembly before opening an unbound native connection.
- * @param _ctx - browser Context; no connection, store, or subscription is installed.
- * @param config - reviewed public browser configuration.
- * @throws Error until the access bootstrap decoder and pre-Cordis/native-cache assembly are connected.
+ * Consume the fixed owner prepared before AppWebEntry starts its native graph.
+ * @param ctx - real Cloud Loader entry Context carrying the pre-activation owner.
+ * @param config - empty native Loader configuration; overrides are rejected.
+ * @throws Error before native Connection installation when preparation is absent or invalid.
  */
-export function apply(_ctx: Context, config: Config): never {
-  parseCloudClientConfig(config)
-  throw new Error('pe-cloud-client/client cannot start: access bootstrap decoding, pre-Cordis native startup and account cache partitioning are not integrated')
+export function apply(ctx: Context, config: Config): void {
+  const owner = ctx.get('peCloudPage')
+  if (owner === undefined) throw new Error('pe-cloud-client/client requires its pre-Cordis prepared page owner')
+  if (Object.keys(config).length !== 0) throw new Error('pe-cloud-client/client requires empty Loader configuration; limits belong to preparation')
+  owner.activate(ctx)
 }
 
 export { CloudPagePersistence, CloudPersistenceError } from './persistence.ts'
@@ -30,3 +31,6 @@ export type {
 } from './persistence.ts'
 export { CloudPageLifetime } from './page-lifetime.ts'
 export type { CloudNativeEntry, CloudPageLifetimeInput, CloudPageSnapshot } from './page-lifetime.ts'
+
+export { PreparedCloudPage } from './prepared-page.ts'
+export type { CloudPagePreparation, CloudPagePreparationInput, CloudPreparedNativeOptions } from './prepared-page.ts'

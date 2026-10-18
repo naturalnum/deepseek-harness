@@ -29,6 +29,10 @@ The Web boot kernel creates the module system, prefetches `immediately` entries,
 
 `AppWebEntry` also accepts optional trusted `prepareContext(ctx)` preparation after installing persistence and lifecycle tracking, before `bootClient`. Actual preparation is awaited; failure prevents plugin activation, and disposal joins it before releasing the Context. The callback is separate from module-loader options and late completion cannot restart a disposed entry.
 
+The optional synchronous `beforeDispose()` runs once after the disposal promise is published and before boot-page or child cleanup. It revokes page-owned inputs without awaiting the same native disposal; callback failure remains observable while actual cleanup still joins. Neither callback is forwarded to module creation.
+
+An optional trusted `modules` input reuses the original public `ClientModuleLoader` after pre-Context page preparation. `AppWebEntry` uses that table and manifest without a second bootstrap `create()` call; prefetch, native activation and disposal keep their existing ownership. Omission creates the table normally, and the reuse input is not forwarded as a module-creation option.
+
 A deployment owner may provide a bounded, revocable implementation, such as the [Cloud page lifetime](../../packages/cloud/pe-cloud-client/README.md). That owner fixes the account/generation namespace, revokes writes before native or carrier teardown, and clears its namespace only after actual settlement. The generic port carries no authentication or Host persistence authority.
 
 ## Remote communication

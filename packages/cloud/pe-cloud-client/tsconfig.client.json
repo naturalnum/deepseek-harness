@@ -14,7 +14,8 @@
     "src/client/bootstrap.ts",
     "src/client/transport.ts",
     "src/client/persistence.ts",
-    "src/client/page-lifetime.ts"
+    "src/client/page-lifetime.ts",
+    "src/client/prepared-page.ts"
   ],
   "references": [
     {

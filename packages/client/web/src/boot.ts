@@ -8,7 +8,7 @@
 import { Context, type Fiber } from '@deepseek-ai/cordis'
 import type { ClientPersistence } from '@deepseek-ai/dsh-client-store'
 import type {
-  BootManifest, ClientModuleCreateOptions, ClientModuleSystem, DshWindow,
+  BootManifest, ClientModuleCreateOptions, ClientModuleLoader, DshWindow,
 } from '@deepseek-ai/dsh-client-modules/client'
 import { bootClient } from './boot-client.ts'
 import { BootPage } from './boot-page.ts'
@@ -19,12 +19,16 @@ import './base.css'
 
 /** Optional module transport, page persistence and pre-activation Context preparation. */
 export type BootSeams = Pick<ClientModuleCreateOptions, 'loadBundle'> & {
+  /** Reuse the original prepared module table; omission creates it through the native bootstrap facade. */
+  modules?: ClientModuleLoader
   /** Page-owned port captured before activation; absent uses ordinary browser storage. */
   persistence?: ClientPersistence
   /** Cloud owners require an explicit port; missing input fails before module loading. */
   requirePersistence?: boolean
   /** Provide page-owned dependencies before native plugins activate; disposal joins actual settlement. */
   prepareContext?: (ctx: Context) => void | Promise<void>
+  /** Synchronously revoke page-owned inputs before any native cleanup; must not await this entry's disposal. */
+  beforeDispose?: () => void
 }
 
 /** Browser boot entry consumed by `apps/web`. */
@@ -33,6 +37,8 @@ export class AppWebEntry {
   private readonly seams: BootSeams | undefined
   private readonly persistence: ClientPersistence | undefined
   private readonly prepareContext: BootSeams['prepareContext']
+  private readonly beforeDispose: BootSeams['beforeDispose']
+  private readonly preparedModules: BootSeams['modules']
   private readonly page: BootPage
   private ctx: Context | undefined
   private running: Promise<void> | undefined
@@ -41,7 +47,7 @@ export class AppWebEntry {
   private readonly fibers = new Set<Fiber>()
   private readonly stopping: Promise<unknown[]>[] = []
   private stopDragRecall: (() => void) | undefined
-  private modules!: ClientModuleSystem
+  private modules!: ClientModuleLoader
   private manifest!: BootManifest
 
   /**
@@ -58,6 +64,8 @@ export class AppWebEntry {
     this.seams = seams?.loadBundle === undefined ? undefined : { loadBundle: seams.loadBundle }
     this.persistence = seams?.persistence
     this.prepareContext = seams?.prepareContext
+    this.beforeDispose = seams?.beforeDispose
+    this.preparedModules = seams?.modules
     this.page = new BootPage(container)
   }
 
@@ -102,7 +110,7 @@ export class AppWebEntry {
       const transport = (globalThis as {
         __DSH_TRANSPORT__?: { loadBundle?: ClientModuleCreateOptions['loadBundle'] }
       }).__DSH_TRANSPORT__
-      this.modules = moduleLoader.create({
+      this.modules = this.preparedModules ?? moduleLoader.create({
         boot: win.__DSH_BOOT__,
         staticModules: getStaticModules(),
         ...transport?.loadBundle === undefined ? {} : { loadBundle: transport.loadBundle },
@@ -170,6 +178,8 @@ export class AppWebEntry {
    * Permanently stop further activation and mounting, then join the actual run
    * and native cleanup. Repeated calls share completion, including failures.
    * External readiness and bundle work must settle; disposal does not cancel it.
+   * beforeDispose runs synchronously once, before any cleanup; its failure is
+   * retained while actual native cleanup still runs and settles.
    * @returns Resolves once startup and owned cleanup have settled.
    * @throws The startup or cleanup failure, including the first native cleanup
    * error reported through Cordis logging; aggregates when several failures remain.
@@ -178,7 +188,9 @@ export class AppWebEntry {
     if (this.disposal !== undefined) return this.disposal
     const completion = Promise.withResolvers<void>()
     this.disposal = completion.promise
-    void this.finishDisposal().then(completion.resolve, completion.reject)
+    const failures: unknown[] = []
+    try { this.beforeDispose?.() } catch (reason) { failures.push(reason) }
+    void this.finishDisposal(failures).then(completion.resolve, completion.reject)
     return this.disposal
   }
 
@@ -193,8 +205,8 @@ export class AppWebEntry {
     })())
   }
 
-  private async finishDisposal(): Promise<void> {
-    const failures: unknown[] = []
+  private async finishDisposal(failures: unknown[]): Promise<void> {
+    const callbackFailed = failures.length > 0
     const running = Promise.allSettled(this.running === undefined ? [] : [this.running])
     const stopDragRecall = (): void => {
       const stop = this.stopDragRecall
@@ -218,6 +230,7 @@ export class AppWebEntry {
     if (this.cleanupFailure !== undefined && !failures.includes(this.cleanupFailure)) failures.push(this.cleanupFailure)
     if (failures.length === 1) {
       const reason = failures[0]
+      if (callbackFailed) throw reason
       throw reason instanceof Error ? reason : new Error('web boot: disposal failed', { cause: reason })
     }
     if (failures.length > 1) throw new AggregateError(failures, 'web boot: startup and disposal failed')

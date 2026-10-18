@@ -7,6 +7,7 @@ import type {
 } from '@deepseek-ai/dsh-client-modules/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AppWebEntry } from '../src/boot.ts'
+import { getStaticModules } from '../src/seed.ts'
 
 const win = globalThis as DshWindow
 
@@ -23,6 +24,8 @@ function fixture(options: {
   persistence?: ClientPersistence
   requirePersistence?: boolean
   prepareContext?: (ctx: Context) => void | Promise<void>
+  beforeDispose?: () => void
+  precreatedModules?: boolean
   immediately?: boolean
   bundle?: Promise<undefined>
   activate?: (ctx: Context) => Promise<void> | void
@@ -59,17 +62,22 @@ function fixture(options: {
     activating.resolve(undefined)
     await options.activate?.(ctx)
   }
+  const loadBundle = async () => {
+    loading.resolve(undefined)
+    await options.bundle
+    target.load({ id: 'renderer', factory: () => ({ apply: activate }) })
+  }
+  const preparedModules = options.precreatedModules === true
+    ? target.create({ boot: win.__DSH_BOOT__, staticModules: getStaticModules(), loadBundle }) : undefined
   const entry = new AppWebEntry(container, {
+    ...(preparedModules === undefined ? {} : { modules: preparedModules }),
     ...(options.persistence === undefined ? {} : { persistence: options.persistence }),
     ...(options.requirePersistence === undefined ? {} : { requirePersistence: options.requirePersistence }),
     ...(options.prepareContext === undefined ? {} : { prepareContext: options.prepareContext }),
-    loadBundle: async () => {
-      loading.resolve(undefined)
-      await options.bundle
-      target.load({ id: 'renderer', factory: () => ({ apply: activate }) })
-    },
+    ...(options.beforeDispose === undefined ? {} : { beforeDispose: options.beforeDispose }),
+    loadBundle,
   })
-  return { entry, container, create, apply, mount, unmount, loading: loading.promise, activating: activating.promise }
+  return { entry, container, create, apply, mount, unmount, preparedModules, loading: loading.promise, activating: activating.promise }
 }
 
 /** Observe completion without replacing the operation's own promise. */
@@ -90,6 +98,34 @@ async function sharedFailure(boot: Promise<void>, closing: Promise<void>): Promi
 }
 
 describe('AppWebEntry disposal', () => {
+  it('reuses the original prepared module table without calling the single-use bootstrap create again', async () => {
+    let observed: unknown
+    const f = fixture({ precreatedModules: true, activate(ctx) { observed = ctx.loader.internal } })
+    expect(f.create).toHaveBeenCalledOnce()
+    await f.entry.run()
+    expect(f.create).toHaveBeenCalledOnce()
+    expect(f.apply).toHaveBeenCalledOnce()
+    expect(observed === f.preparedModules).toBe(true)
+    expect(f.container.textContent).toBe('native application')
+    await f.entry.dispose()
+    expect(f.unmount).toHaveBeenCalledOnce()
+  })
+
+  it('joins native prefetch on a supplied module table and prevents late activation after disposal', async () => {
+    const bundle = Promise.withResolvers<undefined>()
+    const f = fixture({ precreatedModules: true, immediately: true, bundle: bundle.promise })
+    const boot = f.entry.run()
+    await f.loading
+    const closing = f.entry.dispose(), completed = completion(closing)
+    await Promise.resolve()
+    expect(completed).not.toHaveBeenCalled()
+    bundle.resolve(undefined)
+    await Promise.all([boot, closing])
+    expect(f.create).toHaveBeenCalledOnce()
+    expect(f.apply).not.toHaveBeenCalled()
+    expect(f.mount).not.toHaveBeenCalled()
+  })
+
   it('does not start after disposal and shares one completed disposal', async () => {
     const f = fixture()
     const closing = f.entry.dispose()
@@ -421,5 +457,60 @@ describe('AppWebEntry page persistence', () => {
     expect(options).not.toHaveProperty('persistence')
     expect(options).not.toHaveProperty('requirePersistence')
     await f.entry.dispose()
+  })
+})
+
+
+describe('AppWebEntry synchronous disposal notification', () => {
+  it('publishes disposal before the callback and invokes it once before native child cleanup', async () => {
+    const events: string[] = []
+    let reentered: Promise<void> | undefined
+    const notified = vi.fn(() => {
+      events.push('revoke')
+      reentered = f.entry.dispose()
+      expect(f.unmount).not.toHaveBeenCalled()
+    })
+    const f = fixture({ beforeDispose: notified, activate: (ctx) => {
+      ctx.effect(() => () => { events.push('child-stop') }, 'test: child cleanup')
+    } })
+    await f.entry.run()
+    const closing = f.entry.dispose()
+    expect(reentered).toBe(closing)
+    await closing
+    expect(f.entry.dispose()).toBe(closing)
+    expect(notified).toHaveBeenCalledOnce()
+    expect(events).toEqual(['revoke', 'child-stop'])
+    expect(f.unmount).toHaveBeenCalledOnce()
+    expect(f.create.mock.calls[0]![0]).not.toHaveProperty('beforeDispose')
+  })
+
+  it.each([new Error('page revocation callback failed'), { code: 'revocation-uncertain' }])(
+    'retains a synchronous callback failure while joining actual native child cleanup (%#)', async (failure) => {
+      const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+      const notified = vi.fn(() => { throw failure })
+      const f = fixture({ beforeDispose: notified, activate: (ctx) => {
+        ctx.effect(() => () => { entered.resolve(undefined); return release.promise }, 'test: actual child cleanup')
+      } })
+      await f.entry.run()
+      const closing = f.entry.dispose(), done = completion(closing)
+      const rejected = expect(closing).rejects.toBe(failure)
+      await entered.promise
+      expect(done).not.toHaveBeenCalled()
+      expect(f.entry.dispose()).toBe(closing)
+      release.resolve(undefined)
+      await rejected
+      expect(notified).toHaveBeenCalledOnce()
+      expect(f.unmount).toHaveBeenCalledOnce()
+    })
+
+  it('notifies before disposal even when startup never ran', async () => {
+    const notified = vi.fn()
+    const f = fixture({ beforeDispose: notified })
+    const closing = f.entry.dispose()
+    expect(notified).toHaveBeenCalledOnce()
+    await closing
+    await f.entry.run()
+    expect(f.create).not.toHaveBeenCalled()
+    expect(notified).toHaveBeenCalledOnce()
   })
 })

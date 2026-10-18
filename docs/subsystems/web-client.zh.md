@@ -29,6 +29,10 @@ Web boot kernel 创建模块系统、预取 `immediately` entry、挂载 vendore
 
 `AppWebEntry` 还接受可选的可信 `prepareContext(ctx)`，在持久化与生命周期跟踪安装后、`bootClient` 前准备 Context。entry 等待实际准备结算；失败阻止插件激活，销毁在释放 Context 前加入该工作。此回调独立于模块加载器选项，迟到完成不能重启已销毁的 entry。
 
+可选的同步 `beforeDispose()` 在销毁 promise 发布后、启动页或任意子插件清理前只运行一次。它撤销页面拥有的输入，不等待同一个原生销毁；回调失败保持可观察，实际清理仍须加入。两个回调都不会转发给模块创建。
+
+可选的可信输入 `modules` 在 Context 创建前的页面准备完成后复用原始公开 `ClientModuleLoader`。`AppWebEntry` 使用该表及其 manifest，不再次调用 bootstrap `create()`；预取、原生激活及销毁保留现有所有权。省略时正常创建模块表，复用输入不会作为模块创建选项转发。
+
 部署 owner 可提供有界且可撤销的实现，例如 [Cloud 页面生命周期](../../packages/cloud/pe-cloud-client/README.zh.md)。该 owner 固定账户/代际命名空间，在原生或载体销毁之前撤销写入，并只在实际结算后清理自身命名空间。通用 port 不携带认证或 Host 持久化授权。
 
 ## Remote 通信

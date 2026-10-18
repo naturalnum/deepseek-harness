@@ -1,4 +1,4 @@
-/** Public limits and incomplete Loader activation do not admit a browser. */
+/** Preparation limits stay explicit; a real Loader entry requires its pre-Cordis owner. */
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it } from 'vitest'
 import { parseCloudClientConfig } from '../src/config.ts'
@@ -21,10 +21,10 @@ describe('public browser configuration', () => {
     expect(() => parseCloudClientConfig({ ...valid, bootstrapPath })).toThrow()
   })
 
-  it('rejects Loader activation with no canonical bootstrap/native-cache assembly', async () => {
+  it('rejects Loader activation without its prepared owner', async () => {
     const ctx = new Context()
     try {
-      expect(() => apply(ctx, valid)).toThrow('access bootstrap decoding')
+      expect(() => { apply(ctx, {}) }).toThrow('pre-Cordis prepared page owner')
       expect(ctx.get('connection')).toBeUndefined()
     } finally {
       await ctx.fiber.dispose()

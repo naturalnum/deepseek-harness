@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-你可以校验公共 bootstrap 限额，并通过包内测试检查 HTTP、WebSocket 与导航请求的固定账户绑定。取消与晚到响应仍与已确认清理分开表达。bootstrap 解码、原生启动和账户缓存分区尚未接通，因此浏览器入口拒绝激活，本包尚不提供可用的登录或对话。
+在启动原生 `AppWebEntry` 前，通过有界、正式解码的 bootstrap 响应准备一个 Cloud 页面。`/client` Loader entry 消费这一精确 owner，并用捕获的账户／代际 carrier 安装既有原生 Connection。缺失或退役的准备状态会拒绝。本包不实现登录表单，也不证明后端账户已就绪。
 
 ## 目录
 
@@ -29,11 +29,11 @@ kind: "package-reference"
 
 ### 适用场景
 
-在云端集成时，使用配置校验器和包内测试检查载体行为。`/client` Loader 入口校验限额后拒绝激活，因为 access 的正式 bootstrap 解码器、Cordis 启动前的应用装配和账户缓存分区尚未接通。它不打开 socket、不挂载会话页面，也不发布 ready 服务。
+先从原始原生模块表导入本包公开 `/client` 命名空间，再在 Cordis 激活前调用 `PreparedCloudPage.prepare(input, signal)`。其 `ready` promise 在 bootstrap 请求结算后交付已解码页面 owner，并不证明服务端账户图就绪。用同一张表构造 `AppWebEntry(container, { ...page.nativeOptions, modules })`，随后等待 `page.start(entry)`；不能第二次调用 bootstrap facade 的 `create()`。保留 preparation，并在替换页面前等待 `preparation.dispose()`。只有 Cloud `/client` entry 安装 Connection；Host 通过 `registerClientPackages(..., { activate: false })` 声明原始 Connection 模块，使其普通插件不被激活。
 
 ### 最小配置
 
-目前没有可用的浏览器挂载方式：合法配置也会进入明确的装配拒绝。相关适配接通前，不应将此入口纳入 ready 浏览器配方。下列字段均必填，没有生产默认值；可接受限额由[配置 schema](src/config.ts) 唯一规定。
+原生浏览器 Loader 用 `{ name }` 创建 entry，不传每项配置，因此 `/client` 接受空配置并拒绝覆盖。将下表全部字段显式传入准备输入的 `config`；`/schema` 负责校验，不提供生产默认值。准备还要求显式 `decodeLimits`、`persistenceLimits`、绑定字段名、真实存储、fetch 和 WebSocket 工厂。在 `prepareContext` 绑定准备好的 owner 前，不准入原生缓存读取或 Connection。
 
 | 字段 | 默认值 | 含义 |
 |---|---|---|
@@ -52,6 +52,12 @@ kind: "package-reference"
 
 本包将 bootstrap 请求结果和原生载体生命周期与权威账户、Session 状态分开。
 
+`/client` 为 Cordis 启动前的拥有者导出 `PreparedCloudPage`，以及它复用的既有 `CloudPageLifetime` 和 `CloudPagePersistence` 组件。准备流程调用 access 的正式 `decodeCloudBootstrap`，只创建一个固定生命周期和缓存端口，并提供包含必需端口、激活前 owner 绑定和销毁前同步撤销存储与 carrier 准入的原生选项。真实 Loader 的 `apply` 核验 owner 后，以捕获的 hooks 调用公开 `installConnection`；不写全局当前账户或全局 transport。
+
+缓存接受有限正安全整数 `maxKeys`、`maxKeyBytes`、`maxValueBytes`、`maxTotalBytes` 和 `maxNamespaceBytes`。字节预算按 UTF-8 计算；总量包含物理命名空间键和序列化 envelope。键保持逻辑形式，枚举只暴露该命名空间。账户／代际元组使用不会发生分隔符碰撞的 JSON 编码。不恢复旧的未分区缓存。每次变更原子替换一个有界 envelope；同账户／同代际页面并发使用后写覆盖的完整快照，可能丢失独立更新。撤销仅作用于已签发的本地端口，不宣称跨标签页全局撤销。
+
+`dispose()` 同步撤销旧端口，停止捕获的 carrier 与原生图，等待其实际清理，然后仅移除并核验旧命名空间。自动 401／stale-generation 关闭和缓存失败进入同一流程。迟到原生订阅不能通过已撤销端口写入或删除。停止失败时保留命名空间；移除失败时保留未确认状态。原生 disposer 挂起时继续等待。清理错误通过返回的 promise、页面／缓存快照和默认启用的控制台报告保持可观察。相同账户／代际刷新恢复自己的缓存；不同代际获得另一个命名空间。
+
 <details>
 <summary>实现细节 — 点击展开</summary>
 
@@ -63,7 +69,7 @@ kind: "package-reference"
 
 | 源码 | 职责 |
 |---|---|
-| [浏览器入口](src/client/index.ts) | 拒绝不完整的客户端装配。 |
+| [浏览器入口](src/client/index.ts) | 消费已准备的 owner，并安装原始 Connection。 |
 | [Bootstrap attempt](src/client/bootstrap.ts) | 分开追踪结果、实际结束和清理。 |
 | [固定载体](src/client/transport.ts) | 在原生载体外添加 access 预期值。 |
 | [行为测试](tests/transport.client.spec.ts) | 检查原生 Connection envelope 与生命周期拒绝。 |
@@ -96,12 +102,6 @@ kind: "package-reference"
 
 直接令牌开销为零。bootstrap 校验、绑定捕获和载体清理不添加系统文本、工具声明、保留的 Session 内容或独立模型请求。
 
-`/client` 还为 Cordis 启动前的页面拥有者导出 `CloudPageLifetime`、`CloudPagePersistence` 及其类型。用已解码的固定账户／代际、真实存储、carrier 工厂和显式持久化预算构造生命周期。将 `page.nativeOptions` 传给 `AppWebEntry`，在原生 Connection 激活前安装 `page.transport.hooks`，然后调用 `page.start(entry)`。必需原生端口缺失时在模块加载前拒绝。Loader 的 `apply` entry 仍拒绝未完成的生产装配。
-
-缓存接受有限正安全整数 `maxKeys`、`maxKeyBytes`、`maxValueBytes`、`maxTotalBytes` 和 `maxNamespaceBytes`。字节预算按 UTF-8 计算；总量包含物理命名空间键和序列化 envelope。键保持逻辑形式，枚举只暴露该命名空间。账户／代际元组使用不会发生分隔符碰撞的 JSON 编码。不恢复旧的未分区缓存。每次变更原子替换一个有界 envelope；同账户／同代际页面并发使用后写覆盖的完整快照，可能丢失独立更新。撤销仅作用于已签发的本地端口，不宣称跨标签页全局撤销。
-
-`dispose()` 同步撤销旧端口，停止捕获的 carrier 与原生图，等待其实际清理，然后仅移除并核验旧命名空间。自动 401／stale-generation 关闭和缓存失败进入同一流程。迟到原生订阅不能通过已撤销端口写入或删除。停止失败时保留命名空间；移除失败时保留未确认状态。原生 disposer 挂起时继续等待。清理错误通过返回的 promise、页面／缓存快照和默认启用的控制台报告保持可观察。相同账户／代际刷新恢复自己的缓存；不同代际获得另一个命名空间。
-
 #### KV 缓存影响
 
 本包不追加或替换模型请求令牌，也不发起独立模型请求。它不添加改变前缀的内容；模型装配、提供方缓存可用性与复用由包外负责。
@@ -110,11 +110,11 @@ kind: "package-reference"
 
 <a id="known-limitations-and-deferred-work"></a>
 
-以下缺口使内部载体尚不能提供 ready 浏览器应用。
+以下限制仍超出本地 bootstrap 与原生入口接线的范围。
 
-- Access 尚无正式 bootstrap DTO/解码器或代际签发器。内部解码回调是本地测试/装配输入，不是公共 wire 协议或生产集成。
-- 原生启动必须在 Gateway 构造前安装固定载体。未实现全局 fetch/Storage patch、新 mux、会话 UI、登录表单或账户 ready 状态。
-- 页面生命周期和原生缓存端口需要真实 bootstrap／页面拥有者。resources、upload Worker 和 downloads 仍须协调准入；不发布就绪的云端应用。
+- 正式解码器校验元数据，不验证认证、代际签发或 provider 实际可用性。Root 必须在真实认证账户准入后才提供 bootstrap。
+- 原生 Web kernel 必须在 `bootClient` 前等待 `prepareContext`。缺失 owner、错误端口、重复 Connection provider 或退役页面生命周期均被拒绝；插件字面顺序不授予准备权限。
+- resources、upload Worker 和 downloads 仍须通过同一绑定协调准入。本包不新增独立 mux 或替代 Session UI，也不发布完整 Web 验收结论。
 - 生产浏览器装配和 S1/S2 验收需要独立集成证据。组件清理与缓存测试不能证明完整账户准入或服务端排空。
 
 <a id="dev-note"></a>

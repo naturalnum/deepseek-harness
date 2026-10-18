@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-You can validate public bootstrap limits and use package-local tests to check fixed account bindings across HTTP, WebSocket, and navigation requests. Cancellation and late responses remain distinguishable from confirmed cleanup. The browser entry rejects activation while bootstrap decoding, native startup, and account cache partitioning are disconnected, so this package does not yet provide a working login or conversation.
+Prepare one Cloud page from a bounded canonical bootstrap response before starting the native `AppWebEntry`. The `/client` Loader entry consumes that exact prepared owner and installs the existing native Connection with captured account/generation carriers. Missing or stale preparation fails closed. This package does not implement a login form or prove backend account readiness.
 
 ## Table of Contents
 
@@ -29,11 +29,11 @@ The `/schema` export provides browser-safe public configuration validation; `/ty
 
 ### When to choose it
 
-Use the configuration validator and package-local tests to inspect carrier behavior during cloud integration. The `/client` Loader entry validates its limits, then rejects activation because the canonical access bootstrap decoder, pre-Cordis application startup, and account cache partitioning are not connected. It opens no socket, mounts no session page, and publishes no ready service.
+Import this public `/client` namespace from the original native module table, then use `PreparedCloudPage.prepare(input, signal)` before Cordis activation. Its `ready` promise yields a decoded page owner after the bootstrap request settles; it does not certify a server account graph. Construct `AppWebEntry(container, { ...page.nativeOptions, modules })` with that same table and await `page.start(entry)`; do not call the bootstrap facade's `create()` twice. Retain the preparation and await `preparation.dispose()` before replacing the page. Only the Cloud `/client` entry installs Connection; the Host declares the original Connection module with `registerClientPackages(..., { activate: false })` so its ordinary plugin is not activated.
 
 ### Minimal configuration
 
-No working browser mount is available: even valid configuration reaches the explicit assembly rejection. Keep this entry out of a ready browser recipe until those adapters are connected. Every field below is required, with no production default; the [configuration schema](src/config.ts) owns the accepted limits.
+The native browser Loader creates entries with `{ name }` and no per-entry configuration, so `/client` accepts empty configuration and rejects overrides. Supply every field below in the preparation input's `config`; `/schema` owns validation and supplies no production defaults. Preparation additionally requires explicit `decodeLimits`, `persistenceLimits`, binding field names, real storage, fetch and WebSocket factories. No native cache read or Connection is admitted before the prepared owner is bound by `prepareContext`.
 
 | Field | Default | Meaning |
 |---|---|---|
@@ -52,7 +52,7 @@ No working browser mount is available: even valid configuration reaches the expl
 
 The package keeps bootstrap request outcomes and native carrier lifetimes separate from authoritative account and Session state.
 
-`/client` also exports `CloudPageLifetime`, `CloudPagePersistence`, and their types for the pre-Cordis page owner. Construct the lifetime from a decoded fixed account/generation, actual storage, carrier factories and explicit persistence limits. Pass `page.nativeOptions` to `AppWebEntry`, install `page.transport.hooks` before native Connection activation, then call `page.start(entry)`. A missing required native port rejects before module loading. The Loader `apply` entry still rejects incomplete production assembly.
+`/client` exports `PreparedCloudPage` for the pre-Cordis owner, plus the existing `CloudPageLifetime` and `CloudPagePersistence` components it reuses. Preparation calls access's canonical `decodeCloudBootstrap`, creates exactly one fixed lifetime and cache port, and exposes native options containing the required port, pre-activation owner binding and synchronous pre-disposal storage and carrier admission revocation. The real Loader `apply` verifies that owner before invoking public `installConnection` with captured hooks; it never writes a global current account or global transport.
 
 The cache accepts finite positive safe-integer `maxKeys`, `maxKeyBytes`, `maxValueBytes`, `maxTotalBytes`, and `maxNamespaceBytes`. Byte budgets use UTF-8; total includes the physical namespace key and serialized envelope. Keys are logical and enumeration exposes only that namespace. Account/generation tuples use JSON encoding without delimiter collisions. No legacy unpartitioned cache is restored. Each mutation atomically replaces one bounded envelope; concurrent same-account/same-generation pages use last-writer-wins whole snapshots and may lose independent updates. Revocation is local to the issued port; it makes no cross-tab global-revocation claim.
 
@@ -69,7 +69,7 @@ Closing rejects new operations immediately, aborts pending fetches, and requests
 
 | Source | Role |
 |---|---|
-| [Browser entry](src/client/index.ts) | Rejects incomplete client assembly. |
+| [Browser entry](src/client/index.ts) | Consumes the prepared owner and installs original Connection. |
 | [Bootstrap attempt](src/client/bootstrap.ts) | Tracks result, settlement, and cleanup separately. |
 | [Captured carrier](src/client/transport.ts) | Adds access expectations around native carriers. |
 | [Behavior tests](tests/transport.client.spec.ts) | Exercise native Connection envelopes and lifetime rejection. |
@@ -110,11 +110,11 @@ The package appends or replaces no model-request tokens and issues no independen
 
 <a id="known-limitations-and-deferred-work"></a>
 
-These gaps prevent the internal carriers from providing a ready browser application.
+These limits remain outside local bootstrap and native-entry wiring.
 
-- Access has no canonical bootstrap DTO/decoder or generation issuer yet. The internal decoder callback is a local test/composition input, not a public wire protocol or production integration.
-- Native startup must install captured carriers before Gateway construction. No global fetch/Storage patch, new mux, session UI, login form, or account-ready state is implemented.
-- The page lifetime and native cache port require a real bootstrap/page owner. Resources, upload Worker and downloads still require coordinated admission; no ready cloud application is published.
+- The canonical decoder validates metadata, not authentication, generation issuance or actual provider availability. Root must serve bootstrap only after its real authenticated account admission.
+- The native Web kernel must await `prepareContext` before `bootClient`. Missing owner, wrong port, duplicate Connection provider and stale page lifetimes reject; lexical plugin order grants no preparation authority.
+- Resources, upload Worker and downloads still require coordinated admission through the same binding. This package adds no independent mux or replacement Session UI, and does not publish complete Web acceptance.
 - Production browser composition and S1/S2 acceptance require independent integration evidence. Component cleanup and cache tests do not establish full account admission or server drain.
 
 <a id="dev-note"></a>
