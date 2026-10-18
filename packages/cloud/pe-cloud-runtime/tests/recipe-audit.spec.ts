@@ -25,11 +25,13 @@ async function fixture(options: {
   duplicateProvider?: boolean
   wrongRegistration?: boolean
   disabledFiles?: boolean
+  resourceOnlyAuth?: boolean
 } = {}) {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), 'm8m-root-recipe-')))
   directories.push(directory)
   let filesOpen = true
   let executionOpen = true
+  let ingressOpen = true
   const files: DrainParticipant & { inspect(): object } = {
     id: 'files', inspect: () => ({ state: filesOpen ? 'running' : 'closing', healthy: 1 }),
     stopEpoch: async binding => ({ participant: 'files', accountId: binding.accountId, epoch: binding.epoch,
@@ -40,7 +42,9 @@ async function fixture(options: {
     stopEpoch: async binding => ({ participant: 'execution', accountId: binding.accountId, epoch: binding.epoch,
       status: 'unknown', pendingOperationIds: [], evidenceRefs: [], reason: 'external-execution-resource-fixture' }),
   }
-  const auth = { observe: () => ({ phase: 'initialized' }) }
+  const auth = { observe: () => ({ phase: 'initialized', ...options.resourceOnlyAuth ? {} : {
+    ingress: { state: ingressOpen ? 'installed' : 'closing', current: ingressOpen, registeredRoutes: 3, pendingOperations: 0 },
+  } }) }
   const infra = { webServer: {}, credentials: {}, clientModules: {} }
   const access = { Config: z.object({}), apply(ctx: Context) { ctx.provide('peAuth', auth) } }
   const isolatedAccess = { Config: z.object({}), apply(ctx: Context) { ctx.provide('peAuth', { ...auth }) } }
@@ -94,6 +98,7 @@ async function fixture(options: {
   }
   return { ctx, runtime, input, files, execution, closeFiles: () => { filesOpen = false },
     closeExecution: () => { executionOpen = false },
+    closeIngress: () => { ingressOpen = false },
     entry: (id: string) => {
       const entry = [...ctx.loader.entries()].find(row => row.options.id === id)
       if (entry === undefined) throw new Error('Fixture entry missing')
@@ -173,6 +178,20 @@ it('rejects missing requirements and retains finite observations for an overlong
   expect(() => { f.runtime.sealRecipe({ ...f.input, entrypoints: [...roles, ...roles] }) }).toThrow('not sealed')
   expect(f.runtime.inspectRecipe()).toMatchObject({ status: 'blocked', rootEntries: 0, providers: 0, participants: 0,
     issues: ['entrypoint-catalog-mismatch'] })
+})
+
+it('requires current installed ingress beyond initialized authentication resources and revokes after it closes', async () => {
+  const resourceOnly = await fixture({ resourceOnlyAuth: true })
+  expect(() => { resourceOnly.runtime.sealRecipe(resourceOnly.input) }).toThrow('not sealed')
+  expect(resourceOnly.runtime.inspectRecipe().issues).toContain('provider-not-current')
+  expect(resourceOnly.runtime.inspectRecipe().providers).toBe(7)
+  const installed = await fixture()
+  expect(() => { installed.runtime.sealRecipe(installed.input) }).toThrow('not sealed')
+  expect(installed.runtime.inspectRecipe().issues).not.toContain('provider-not-current')
+  installed.closeIngress()
+  expect(installed.runtime.inspectRecipe().status).toBe('revoked')
+  expect(() => { installed.runtime.sealRecipe(installed.input) }).toThrow('not sealed')
+  expect(installed.runtime.inspectRecipe().issues).toContain('provider-not-current')
 })
 
 it.each(['files', 'execution'] as const)('rejects a closed actual %s provider without needing a Loader unload', async (kind) => {

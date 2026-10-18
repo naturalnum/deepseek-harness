@@ -43,6 +43,7 @@ it('requires explicit root budgets and a formal reference without accepting a pa
   expect(() => RuntimeRootConfigSchema({ ...config, database: { ...config.database, passwordRef: 'not a ref' } })).toThrow()
   expect(() => RuntimeRootConfigSchema({ ...config, pg: { ...config.pg, lockTimeoutMs: Infinity } })).toThrow()
   expect(() => z.resolve({ ...config, saves: undefined }, RuntimeRootConfigSchema, {})).toThrow()
+  expect(() => z.resolve({ ...config, accountPolicy: undefined }, RuntimeRootConfigSchema, {})).toThrow()
 })
 
 it('cannot borrow a graph through a component-only or closed root and never reserves a mount for that request', async () => {

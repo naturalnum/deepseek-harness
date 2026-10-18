@@ -254,7 +254,11 @@ export class RootRecipeAudit {
         if (typeof method !== 'function') return false
         const observed: unknown = Reflect.apply(method, value, [])
         if (!object(observed)) return false
-        if (key === 'peAuth') return Reflect.get(observed, 'phase') === 'initialized'
+        if (key === 'peAuth') {
+          const ingress: unknown = Reflect.get(observed, 'ingress')
+          return Reflect.get(observed, 'phase') === 'initialized' && object(ingress)
+            && Reflect.get(ingress, 'state') === 'installed' && Reflect.get(ingress, 'current') === true
+        }
         const config: unknown = entry.fiber?.config
         if (!object(config)) return false
         const minimum: unknown = Reflect.get(config, 'minimumHealthyWorkers')

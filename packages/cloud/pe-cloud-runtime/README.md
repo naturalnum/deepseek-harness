@@ -49,9 +49,28 @@ The account factory owns each capacity reservation until the actual work settles
 
 ### Root recipe admission
 
-`sealRecipe()` audits actual Root Loader entries, original module namespaces, unique service implementations and their owning fibers, the API provider's exact frozen manifest, and files/execution registrations against their actual providers. It checks native configuration snapshots and provider health rather than accepting a readiness flag. The eleven-role catalog fixes entry scopes: five roles activate in Root; account, Session and client roles remain declarations for their own graphs and are never activated for this audit.
+`sealRecipe()` audits actual Root Loader entries, original module namespaces, unique service implementations and their owning fibers, the API provider's exact frozen manifest, and files/execution registrations against their actual providers. It checks native configuration snapshots and provider health rather than accepting a readiness flag. Authentication health also requires its actual ingress to remain installed and current; resource-only initialization cannot satisfy Root admission. The eleven-role catalog fixes entry scopes: five roles activate in Root; account, Session and client roles remain declarations for their own graphs and are never activated for this audit.
 
 `inspectRecipe()` returns frozen counts and finite issue identities without paths, credentials or provider objects. Loader changes, provider replacement or closure, participant removal, explicit `revokeRecipe()` and runtime closure invalidate the retained audit. `assertRecipeSealed()` rejects admission unless the complete audit is current. No real files-owned storage-root issuer is connected, so every seal attempt currently rejects with `storage-root-capability-missing`; configuration values, FD identity and caller-supplied certificates cannot replace all-writer byte/inode quota verification.
+
+### Account policy
+
+The actual Root request supplies one shared project/model/Preset policy to Controller, AgentLoop and LLM admission. Its required `accountPolicy` fields select exact deployment data; none opens business admission.
+
+| Field | Meaning |
+| --- | --- |
+| `maxModelRoutes` | Positive finite upper bound on the nonempty `models` list. |
+| `models` | Unique exact `{provider, model}` pairs; no implicit provider, model or wildcard matching. |
+| `maxPolicyStringBytes` | Positive UTF-8 limit for provider/model, Preset id and both native entry ids. |
+| `presetId` | The single approved native CloudPreset and configured default. |
+| `presetEntryId` | Actual Loader declaration, implemented by native `agent-preset`. |
+| `agentLoopEntryId` | Actual guarded native AgentLoop entry, whose startup agents remain empty. |
+| `presetConfigSha256` | Exactly 64 lowercase hex characters for the trusted resolved declaration's canonical JSON digest. |
+| `maxPresetConfigBytes` | Positive bound on canonical UTF-8 digest input and its traversal. |
+
+The declaration digest uses SHA-256, sorted object keys and original array order. Functions, JS expressions, non-JSON objects and aliases reject. The bounded encoder rejects excess input during traversal. Approval also requires the original active Loader entries, unchanged native configuration plans, actual Preset inventory and the Agent's retained composition without leaked services.
+
+Business callbacks take the original files owner's current Workspace and directory capability. Create requests resolve only to that Workspace; history/resume reads actual native Session observations and header-validated Workspace membership. Ordinary cold JSONL restoration preserves its SessionId and is accepted; imported/forked or subagent identity remains rejected. Exact model routes must have a registered native provider, and create/resume uses native model resolution with current checks around awaits. LLM dispatch keeps the synchronous route/provider check. Guard construction reads no partial files project.
 
 ### Account layout
 
@@ -107,7 +126,7 @@ Normal factory shutdown stops the existing save barrier and withdraws native hoo
 
 Mount capacity settles with actual startup and any started native cleanup. Account reservations survive native-only disposal because it cannot prove full drain. Factory shutdown closes external admission while retaining internal drain reservations and native disposal ownership; unresolved cleanup retains its drain capacity. Only a definite pre-claim or never-submitted failure with no native resources releases an unstarted account slot. Submitted uncertainty keeps the original slot and prevents blind restart.
 
-The actual root refuses acquisition before PG claims while its recipe is unsealed. Its private request supplies the same coordinator, exposure policy and execution issuer consumed by the factory's native integration. The same-package factory independently rejects missing production handoffs before native startup or ready CAS. The separate native-only path executes concrete Loader assembly for a previously trusted generation; it grants no `AccountUse`. Current borrowing requires the exact installed, live, ready graph and an unreleased reference; release is idempotent and does not cancel an Agent. Production storage authorization and shared project/model/Preset guards remain unconnected, so no production path can publish a borrow. Neither a native mounted result nor a configuration flag supplies those capabilities.
+The actual root refuses acquisition before PG claims while its recipe is unsealed. Its private request supplies the same coordinator, exposure policy, execution issuer and [concrete account policy](src/account-policy.ts) consumed by native integration. The same-package factory independently rejects missing production handoffs before native startup or ready CAS. The separate native-only path executes concrete Loader assembly for a previously trusted generation; it grants no `AccountUse`. Current borrowing requires the exact installed, live, ready graph and an unreleased reference; release is idempotent and does not cancel an Agent. Production storage authorization remains unconnected, so no production path can publish a borrow. Neither a native mounted result nor a configuration flag supplies those capabilities.
 
 </details>
 
@@ -145,7 +164,7 @@ Local bookkeeping does not alter a model request prefix or retained Session hist
 
 The actual root establishes its control plane; production account traffic remains unavailable.
 
-- **Account factory** — API and closed-execution wiring run through actual native-only Loader mounts. Production account preparation still lacks Root-issued restricted files/storage authority and shared project/model/Preset guards. All four production prerequisite checks remain closed; native assembly and a database claim do not complete account acquisition.
+- **Account factory** — API, closed execution and concrete project/model/Preset guards have native component consumers. Production preparation still lacks its complete Root-issued files/storage handoff. All four production prerequisite checks remain closed; a component text turn or cold recovery does not publish `AccountUse` or complete Web admission.
 - **Root sealing** — non-storage Root facts are audited, but no seal can succeed. The actual files provider must supply a direct revalidation capability for trusted deployment records, current mount identity, every writer namespace and byte/inode/private-reserve bounds before Root can admit traffic. Non-Root declarations still require verification in their actual account, Session and client assemblies.
 - **Layout integration** — the private native bridge checks layout/Profile agreement, but layout data cannot create files capabilities or validate storage. The environments parent is included; per-Session environment derivation is absent.
 - **Database integration and recovery** — actual root owns PG deployment configuration, migrations, registration, and serialized instance heartbeat scheduling. Recovery audit, allocation reconciliation, and trusted RecoveryProof application remain absent; quarantined ownership cannot be reclaimed here.

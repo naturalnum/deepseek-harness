@@ -7,12 +7,13 @@ import type { RuntimeRootConfig } from './root-config.ts'
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { AccountFactory, type AccountFactoryRequest, type AccountNativeCloseObservation } from './account-factory.ts'
 import { deriveAccountLayout, defaultProjectLayout } from './account-layout.ts'
-import { AccountMountPrerequisiteError, requireAccountProductionPorts } from './account-mount.ts'
+import { AccountMountPrerequisiteError, requireAccountProductionPorts, type AccountRecipe } from './account-mount.ts'
 import { PgOwnerExecutor } from './owner-pg-executor.ts'
 import { RuntimeInstanceControl } from './instance-control.ts'
 import { PostgresOwnerStore } from './owner-store.ts'
 import { RuntimeCapacity } from './capacity.ts'
 import { RootRecipeAudit, type RegisteredRootParticipant } from './recipe-audit.ts'
+import { createAccountPolicy } from './account-policy.ts'
 import { AccountRuntimeError } from './errors.ts'
 import { RuntimeConfigSchema, RuntimeRootConfigSchema } from './schema.ts'
 import type { AccountBinding, AccountId, AccountOwner, AccountRuntimeService, AccountUse, RuntimeControlObservation, DrainCapacityReservation, DrainParticipant, MountCapacityReservation, ParticipantId, RootRecipeInput, RootRecipeObservation, RuntimeConfig } from './types.ts'
@@ -382,9 +383,12 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
         requiredEntryIds: config.native.requiredEntryIds, maxObservedEvents: config.native.maxObservedEvents,
         maxPathBytes: config.paths.maxPathBytes,
         native: { saves: control.saves, exposure: exposure.policy, execution, stopTimeoutMs: config.shutdownTimeoutMs,
+          guards: (ctx, binding, files) => createAccountPolicy(
+            ctx, binding, files, config.accountPolicy, exposure.policy, config.native.maxEntries,
+          ),
           assertRootCurrent: () => { this.assertRecipeSealed(config.recipeVersion) } },
         prepare: requireAccountProductionPorts,
-      }),
+      } satisfies AccountRecipe),
     })
   }
 

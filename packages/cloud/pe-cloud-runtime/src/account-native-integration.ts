@@ -32,7 +32,7 @@ export interface AccountNativePreparation {
   /** Existing restricted lane/grant issuer; absence cannot supply a native files owner. */
   readonly files?: (ctx: Context, binding: AccountBinding) => AccountFilesPreparation
   /** Actual files/project/Preset/model provider; absence rejects guarded native entry activation. */
-  readonly guards?: (ctx: Context, binding: AccountBinding) => AccountNativeGuards
+  readonly guards?: (ctx: Context, binding: AccountBinding, files: CloudAccountFiles) => AccountNativeGuards
 }
 
 /** Fixed private builtin names for the native account recipe, not additional package Loader exports. */
@@ -97,14 +97,14 @@ export class AccountNativeIntegration {
     let guards: AccountNativeGuards | undefined
     const requireGuards = (owner: Context): AccountNativeGuards => {
       api.assertInstalled(owner)
-      guards ??= input.guards?.(ctx, binding)
-      if (guards === undefined) {
-        throw new AccountRuntimeError('cloud/account-unavailable', 'Native account project, model and Preset guards are not connected')
-      }
       if (filesOwner === undefined) {
         throw new AccountRuntimeError('cloud/account-unavailable', 'The actual account files owner is not connected')
       }
       filesOwner.assertInstalled(owner)
+      guards ??= input.guards?.(ctx, binding, filesOwner)
+      if (guards === undefined) {
+        throw new AccountRuntimeError('cloud/account-unavailable', 'Native account project, model and Preset guards are not connected')
+      }
       return guards
     }
     const project = (owner: Context) => {

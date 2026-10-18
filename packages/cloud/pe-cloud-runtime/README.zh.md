@@ -51,9 +51,28 @@ Provider 经根服务登记必需的 `files` 和 `execution` 参与者。登记�
 
 ### Root recipe admission
 
-`sealRecipe()` 核验实际 Root Loader 条目、原始模块 namespace、唯一服务实现及其所属 fiber、API provider 持有的精确冻结 manifest，以及 files/execution 登记与实际 provider 的对应关系。它检查原生配置快照和 provider 健康状态，不接受 ready 标记。11 项角色目录固定入口作用域：5 项在 Root 激活；账户、Session 和客户端角色仅声明各自图的作用域，不为此审核而激活。
+`sealRecipe()` 核验实际 Root Loader 条目、原始模块 namespace、唯一服务实现及其所属 fiber、API provider 持有的精确冻结 manifest，以及 files/execution 登记与实际 provider 的对应关系。它检查原生配置快照和 provider 健康状态，不接受 ready 标记。认证健康还要求实际 ingress 保持已安装且当前有效；仅资源初始化不能满足 Root 准入。11 项角色目录固定入口作用域：5 项在 Root 激活；账户、Session 和客户端角色仅声明各自图的作用域，不为此审核而激活。
 
 `inspectRecipe()` 返回冻结的计数和有限问题标识，不暴露路径、凭据或 provider 对象。Loader 变化、provider 替换或关闭、参与者移除、显式 `revokeRecipe()` 及 runtime 关闭都会使保留的审核失效。`assertRecipeSealed()` 仅允许完整且当前的审核准入。真实 files 持有的存储根签发者尚未接入，因此每次封口均以 `storage-root-capability-missing` 拒绝；配置值、FD 身份及调用方证书不能替代所有写入者的 bytes/inodes 配额核验。
+
+### Account policy
+
+实际 Root request 向 Controller、AgentLoop 和 LLM 准入提供同一套项目/model/Preset 策略。必需的 `accountPolicy` 字段选择精确部署数据；这些字段本身不开放业务准入。
+
+| 字段 | 含义 |
+| --- | --- |
+| `maxModelRoutes` | 非空 `models` 列表的正数有限上界。 |
+| `models` | 唯一且精确的 `{provider, model}` 对；不推断 provider、model 或通配符匹配。 |
+| `maxPolicyStringBytes` | Provider/model、Preset id 和两个原生 entry id 的正数 UTF-8 上界。 |
+| `presetId` | 唯一批准的原生 CloudPreset，且须为配置的默认值。 |
+| `presetEntryId` | 实际 Loader 声明，由原生 `agent-preset` 实现。 |
+| `agentLoopEntryId` | 实际受保护的原生 AgentLoop 入口，其启动 agents 保持为空。 |
+| `presetConfigSha256` | 可信已解析声明的规范 JSON 摘要，精确为 64 个小写十六进制字符。 |
+| `maxPresetConfigBytes` | 规范 UTF-8 摘要输入及遍历的正数上界。 |
+
+声明摘要使用 SHA-256、排序后的对象键和原数组顺序。函数、JS 表达式、非 JSON 对象和别名均拒绝。有界编码器在遍历期间拒绝超量输入。批准还要求原始 ACTIVE Loader 条目、未变化的原生配置 plan、实际 Preset inventory，以及 Agent 保留且无服务泄漏的组合。
+
+业务回调从原 files owner 读取当前 Workspace 和目录能力。Create 请求只解析到该 Workspace；历史/恢复读取实际原生 Session observation 和经过头校验的 Workspace 成员关系。普通 JSONL 冷恢复保留其 SessionId 并被接受；导入/分叉或 subagent 身份仍拒绝。精确模型路由必须存在已注册的原生 provider，create/resume 使用原生模型解析并在 await 前后复核。LLM 派发保持同步路由/provider 检查。Guard 构造不读取部分完成的 files 项目。
 
 ### Account layout
 
@@ -109,7 +128,7 @@ Factory 的[原生集成](src/account-native-integration.ts)在 Include 前创�
 
 装配容量随实际启动及已开始的原生清理结算。仅原生销毁不能证明完整排空，因此账户预留仍保留。工厂关闭外部准入时仍保留内部排空预留及原生销毁责任；清理未知继续持有排空容量。只有确定在 claim 前或从未提交的失败且没有原生资源时，才释放未启动账户槽。已提交结果未知保留原槽，不盲目重启。
 
-实际根在配方未封口时于 PG 领取前拒绝 acquire。其私有 request 提供 factory 原生集成所消费的同一 coordinator、exposure policy 和 execution issuer。包内 factory 在原生启动或 ready CAS 前独立拒绝缺失的生产交接。独立的 native-only 路径为既有可信代际执行真实 Loader 装配，不授予 `AccountUse`。当前借用要求同一个已安装、有效、ready 的图及尚未释放的引用；release 幂等且不 cancel Agent。生产存储授权和共享项目/model/Preset guard 仍未接通，因此任何生产路径都不能发布借用。原生 mounted 结果及配置标记均不能提供这些能力。
+实际根在配方未封口时于 PG 领取前拒绝 acquire。其私有 request 提供原生集成所消费的同一 coordinator、exposure policy、execution issuer 和[具体账户策略](src/account-policy.ts)。包内 factory 在原生启动或 ready CAS 前独立拒绝缺失的生产交接。独立的 native-only 路径为既有可信代际执行真实 Loader 装配，不授予 `AccountUse`。当前借用要求同一个已安装、有效、ready 的图及尚未释放的引用；release 幂等且不 cancel Agent。生产存储授权仍未接通，因此任何生产路径都不能发布借用。原生 mounted 结果及配置标记均不能提供这些能力。
 
 </details>
 
@@ -147,7 +166,7 @@ Factory 的[原生集成](src/account-native-integration.ts)在 Include 前创�
 
 该基础尚不能准入生产账户流量。
 
-- **账户工厂** — API 与 closed execution 接线已通过实际 native-only Loader 装配运行。生产账户准备仍缺 Root 签发的受限 files/存储授权和共享项目/model/Preset guard。四项生产前置检查仍保持关闭；原生装配及数据库领取不等于完成账户 acquire。
+- **账户工厂** — API、closed execution 和具体项目/model/Preset guard 已有原生组件消费者。生产准备仍缺完整 Root 签发的 files/存储交接。四项生产前置检查仍保持关闭；组件文本回合或冷恢复不发布 `AccountUse`，也不代表 Web 准入通过。
 - **根封口** — 已核验非存储 Root 事实，但封口仍不能成功。实际 files provider 必须直接提供复核可信部署记录、当前 mount 身份、所有写入者 namespace 及 bytes/inodes/private-reserve 上界的能力，Root 才能准入。非 Root 声明仍须在实际账户、Session 和客户端装配中核验。
 - **布局接线** — 私有原生桥已核对 layout/Profile 一致性，但布局数据不能创建 files 能力或验证存储。已包含 environments 父根，尚无按 Session 的环境派生。
 - **数据库集成与恢复** — 实际根持有 PG 部署配置、迁移、登记及串行实例 heartbeat 调度。恢复审计、分配对账及可信 RecoveryProof 应用仍未提供；本模块不能重领隔离态 owner。

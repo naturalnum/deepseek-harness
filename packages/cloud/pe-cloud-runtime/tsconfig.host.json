@@ -49,6 +49,30 @@
     },
     {
       "path": "../pe-opensandbox"
+    },
+    {
+      "path": "../../../vendor/loader"
+    },
+    {
+      "path": "../../preset/agent-preset"
+    },
+    {
+      "path": "../../preset/agent-preset-registry"
+    },
+    {
+      "path": "../../session-query/session-query"
+    },
+    {
+      "path": "../../typert/protocol"
+    },
+    {
+      "path": "../../core/session"
+    },
+    {
+      "path": "../../session/working-directory"
+    },
+    {
+      "path": "../../core/agent-default-model"
     }
   ],
   "exclude": [

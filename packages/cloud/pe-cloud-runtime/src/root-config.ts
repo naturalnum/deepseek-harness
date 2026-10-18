@@ -4,6 +4,8 @@ import type { ConfigSaveLimits } from '@deepseek-ai/dsh-pe-cloud-api/types'
 import type { RuntimeConfig } from './types.ts'
 import type { AccountFactoryLimits } from './account-factory.ts'
 import type { OwnerPgLimits } from './owner-pg-executor.ts'
+import type { AccountPolicyConfig } from './account-policy.ts'
+import { AccountRuntimeError } from './errors.ts'
 
 /** Required deployment inputs for the actual root Loader; component capacities stay separate. */
 export interface RuntimeRootConfig extends RuntimeConfig {
@@ -27,6 +29,7 @@ export interface RuntimeRootConfig extends RuntimeConfig {
   readonly pg: OwnerPgLimits
   readonly factory: AccountFactoryLimits
   readonly saves: ConfigSaveLimits
+  readonly accountPolicy: AccountPolicyConfig
   readonly paths: {
     readonly sharedAccountsRoot: string
     readonly localCacheRoot: string
@@ -47,6 +50,33 @@ const positive = () => z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(
 const timer = () => z.natural().min(1).max(2_147_483_647).required()
 const text = () => z.string().pattern(/\S/).required()
 
+const accountPolicyFields: z<AccountPolicyConfig> = z.object({
+  maxModelRoutes: positive(), maxPolicyStringBytes: positive(), maxPresetConfigBytes: positive(),
+  models: z.array(z.object({ provider: text(), model: text() })).required(),
+  presetId: text(), presetEntryId: text(), agentLoopEntryId: text(),
+  presetConfigSha256: z.string().pattern(/^[0-9a-f]{64}$/).required(),
+}).required()
+
+/** Explicit finite model routes and exact fixed-Preset expectations; no field certifies account readiness. */
+export const AccountPolicyConfigSchema: z<AccountPolicyConfig> = z.transform(accountPolicyFields, (config) => {
+  const invalid = (): never => { throw new AccountRuntimeError('cloud/invalid-config', 'Account policy exceeds its finite limits or repeats a route') }
+  if (config.models.length === 0 || config.models.length > config.maxModelRoutes
+    || config.presetEntryId === config.agentLoopEntryId) invalid()
+  const bounded = (value: string): void => {
+    if (value.length > config.maxPolicyStringBytes || Buffer.byteLength(value) > config.maxPolicyStringBytes) invalid()
+  }
+  for (const value of [config.presetId, config.presetEntryId, config.agentLoopEntryId]) bounded(value)
+  const providers = new Map<string, Set<string>>()
+  for (const route of config.models) {
+    bounded(route.provider); bounded(route.model)
+    const models = providers.get(route.provider) ?? new Set<string>()
+    if (models.has(route.model)) invalid()
+    models.add(route.model)
+    providers.set(route.provider, models)
+  }
+  return config
+}).required()
+
 /** Actual root deployment schema; no component configuration or absent field enables production. */
 export const RuntimeRootConfigSchema: z<RuntimeRootConfig> = z.object({
   maxMountedAccounts: positive(), maxConcurrentMounts: positive(), maxConcurrentDrains: positive(),
@@ -54,6 +84,7 @@ export const RuntimeRootConfigSchema: z<RuntimeRootConfig> = z.object({
   heartbeatIntervalMs: timer(), heartbeatTimeoutMs: timer(), startupTimeoutMs: timer(),
   shutdownTimeoutMs: timer(), secretResolveTimeoutMs: timer(),
   maxSecretBytes: positive(), accountWaitTimeoutMs: timer(),
+  accountPolicy: AccountPolicyConfigSchema,
   database: z.object({
     host: text(), port: z.natural().min(1).max(65535).required(), user: text(), database: text(),
     passwordRef: z.string().pattern(/^[A-Za-z_][A-Za-z0-9_]*$/).required(), ssl: z.boolean().required(),

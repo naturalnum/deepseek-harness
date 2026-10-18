@@ -2,6 +2,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { CredentialProvider, type ResolvedCredential } from '@deepseek-ai/dsh-credentials'
 import type { RuntimeRootConfig } from '../src/root-config.ts'
+import { accountPresetConfigDigest } from '../src/account-policy.ts'
 
 /** Read-only external secret fixture; every call retains the caller-provided actual resolution. */
 export class RootCredentials extends CredentialProvider {
@@ -30,6 +31,9 @@ export function rootConfig(directory: string): RuntimeRootConfig {
     factory: { maxWaiters: 24, maxWaitersPerAccount: 20, maxBorrows: 24, maxBorrowsPerAccount: 20 },
     saves: { maxAccounts: 4, maxRunning: 2, maxQueued: 8, maxQueuedPerAccount: 4,
       maxTrackedOperations: 16, maxTrackedOperationsPerAccount: 8, maxNestedPerOperation: 2, maxWaitersPerAccount: 8 },
+    accountPolicy: { maxModelRoutes: 1, maxPolicyStringBytes: 64, maxPresetConfigBytes: 256,
+      models: [{ provider: 'unmounted', model: 'unmounted' }], presetId: 'root-fixture', presetEntryId: 'cloud-preset',
+      presetConfigSha256: accountPresetConfigDigest({ id: 'root-fixture', plugins: [] }, 256), agentLoopEntryId: 'cloud-agent-loop' },
     paths: { sharedAccountsRoot: directory + '/accounts', localCacheRoot: directory + '/cache', maxPathBytes: 4096 },
     native: { configPath: directory + '/account.cordis.yml', installAnchor: directory + '/package.json',
       bareModuleBaseUrl: new URL('../../../../package.json', import.meta.url).href,
