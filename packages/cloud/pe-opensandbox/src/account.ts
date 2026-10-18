@@ -3,8 +3,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import { requireExecution } from './capabilities.ts'
 import { executionRequirementsSchema } from './config.ts'
 import type { ExecutionRequirements } from './types.ts'
-import { requireAccountExecutionPort } from './closed-owner.ts'
-import { ClosedShellExecutor, ClosedSubprocessRuntime } from './closed-providers.ts'
+import { requireAccountExecutionPort, installClosedExecutionProviders } from './closed-owner.ts'
 import { ExecutionStateError } from './errors.ts'
 
 /** Loader identity for the account-native execution composition. */
@@ -31,7 +30,5 @@ export function apply(ctx: Context, config: Config): void {
     || ctx.root.get('shell') !== undefined || ctx.root.get('subprocess') !== undefined) {
     throw new ExecutionStateError('cloud/invalid-config', 'The account already has a native execution provider.')
   }
-  port.claim(ctx)
-  new ClosedShellExecutor(ctx, port)
-  new ClosedSubprocessRuntime(ctx, port)
+  installClosedExecutionProviders(ctx, port)
 }

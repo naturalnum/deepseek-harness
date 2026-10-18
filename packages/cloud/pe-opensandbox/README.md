@@ -39,6 +39,8 @@ Both entries require explicit closed mode and an empty capability declaration. T
 
 Runtime first installs its immutable binding in an independent account graph. During native prepare, the trusted factory calls the root coordinator’s `bindAccount` with that exact installed object and its graph-current check, then calls `installAccountExecutionPort` before the account entry. Missing, copied, foreign or shadowed bindings and ports fail. Duplicate providers and exhausted capacity fail. Closed registration does not satisfy other account readiness checks.
 
+Trusted bootstrap assembly may call `assertClosedAccountExecution(ctx)` to require that the original live port still owns the original active native Shell and subprocess providers. Missing, uninstalled, shadowed, replaced or stopped providers reject; this read does not execute a command, stop the port or issue drain evidence.
+
 -----
 
 <a id="understand-the-implementation"></a>

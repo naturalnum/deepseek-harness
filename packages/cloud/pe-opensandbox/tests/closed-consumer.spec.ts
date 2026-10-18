@@ -12,8 +12,10 @@ import * as ShellEnv from '@deepseek-ai/dsh-shell-env'
 import { provideWorkingDirectoryFixture } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { boot } from '@deepseek-ai/dsh-app-boot'
 import { installAccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/src/binding.ts'
+import type {} from '@deepseek-ai/dsh-pe-cloud-runtime/account'
 import { installAccountExecutionPort } from '../src/closed-owner.ts'
 import * as account from '../src/account.ts'
+import { assertClosedAccountExecution } from '../src/index.ts'
 import { ClosedShellExecutor } from '../src/closed-providers.ts'
 import { closedRoot, installedAccount } from './closed-fixture.ts'
 
@@ -37,6 +39,7 @@ it('routes a real native bash tool call to the closed provider and never execute
   expect([...ctx.loader.entries()].filter(entry => entry.options.id !== 'include')).toHaveLength(5)
   const resolve = vi.spyOn(ClosedShellExecutor.prototype, 'resolve')
   onTestFinished(() => { resolve.mockRestore() })
+  expect(() => { assertClosedAccountExecution(ctx) }).not.toThrow()
   const marker = join(directory, 'must-not-exist')
   const result = await ctx.tools.execute({
     callId: ToolCallId('closed-bash'), name: 'bash', signal: new AbortController().signal,

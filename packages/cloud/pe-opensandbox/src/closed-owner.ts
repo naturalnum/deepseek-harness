@@ -1,9 +1,10 @@
 /** Closed execution owns registrations and refusal only; it has no backend or process dependency. */
 import { randomUUID } from 'node:crypto'
-import type { Context } from '@deepseek-ai/cordis'
+import { FiberState, symbols, type Context } from '@deepseek-ai/cordis'
 import type { AccountBinding, AccountId, ParticipantReceipt } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import { assertInstalledExecutionBinding, type AccountExecutionPort } from './account-port.ts'
 import { ExecutionStateError, ExecutionUnavailableError } from './errors.ts'
+import { ClosedShellExecutor, ClosedSubprocessRuntime } from './closed-providers.ts'
 
 interface Registration {
   readonly binding: AccountBinding
@@ -13,6 +14,7 @@ interface Registration {
   readonly detach: () => void
   state: 'open' | 'stopped'
   claimed: boolean
+  providers?: { readonly ctx: Context; readonly shell: ClosedShellExecutor; readonly subprocess: ClosedSubprocessRuntime }
 }
 
 class ClosedPort implements AccountExecutionPort {
@@ -26,6 +28,8 @@ class ClosedPort implements AccountExecutionPort {
     throw new ExecutionUnavailableError({ availableCapabilities: [], missingCapabilities: [], missingPrerequisites: [] }, 'disabled')
   }
   claim(ctx: Context): void { this.owner.claim(this, ctx) }
+  installProviders(ctx: Context): void { this.owner.installProviders(this, ctx) }
+  assertProviders(ctx: Context): void { this.owner.assertProviders(this, ctx) }
   close(): void { this.owner.closePort(this) }
 }
 
@@ -120,6 +124,41 @@ export class ClosedExecutionOwner {
   }
 
   /**
+   * Install and retain the original native refusal pair in its sole account entry.
+   * @param port Original issued port.
+   * @param ctx Actual account entry scope.
+   */
+  installProviders(port: AccountExecutionPort, ctx: Context): void {
+    this.claim(port, ctx)
+    const registration = this.ownedPort(port)
+    const shell = new ClosedShellExecutor(ctx, port)
+    const subprocess = new ClosedSubprocessRuntime(ctx, port)
+    registration.providers = { ctx, shell, subprocess }
+  }
+
+  /**
+   * Read actual native provider ownership without executing or stopping anything.
+   * @param port Original issued port.
+   * @param ctx Current account consumer scope.
+   */
+  assertProviders(port: AccountExecutionPort, ctx: Context): void {
+    this.assertPort(port, ctx)
+    const providers = this.ownedPort(port).providers
+    if (providers === undefined || providers.ctx.fiber.state !== FiberState.ACTIVE) this.stale()
+    const original = (value: unknown): unknown => {
+      if (value === null || (typeof value !== 'object' && typeof value !== 'function')) return value
+      const target: unknown = Reflect.get(value, symbols.original)
+      return target !== null && (typeof target === 'object' || typeof target === 'function') ? target : value
+    }
+    for (const [key, expected] of [['shell', providers.shell], ['subprocess', providers.subprocess]] as const) {
+      const local = ctx.get(key), root = ctx.root.get(key), provided = providers.ctx.fiber.store?.[key]
+      if (local === undefined || root === undefined || original(local) !== expected || original(root) !== expected
+        || provided?.fiber !== providers.ctx.fiber || original(provided.value) !== expected) this.stale()
+    }
+    this.assertPort(port, ctx)
+  }
+
+  /**
    * Close this issued generation without using the business-current guard.
    * @param port - exact issued port, including an already stopped one.
    */
@@ -205,4 +244,29 @@ export function installAccountExecutionPort(ctx: Context, port: AccountExecution
     unprovide()
     throw new ExecutionStateError('cloud/stale-generation', 'Execution port installation must be visible in its account root.')
   }
+}
+
+/**
+ * Install the exact native refusal pair after the account recipe's closed-mode checks.
+ * @param ctx Actual account entry scope.
+ * @param port Original issued and installed closed port.
+ */
+export function installClosedExecutionProviders(ctx: Context, port: AccountExecutionPort): void {
+  if (!(port instanceof ClosedPort) || requireAccountExecutionPort(ctx) !== port) {
+    throw new ExecutionStateError('cloud/stale-generation', 'Execution requires the original installed refusal port.')
+  }
+  ClosedPort.prototype.installProviders.call(port, ctx)
+}
+
+/**
+ * Require the installed closed execution owner and its original active native provider pair.
+ * @param ctx Actual account consumer scope with the runtime-installed binding.
+ * @throws ExecutionStateError when the port, generation or original provider pair is missing, stopped or replaced.
+ */
+export function assertClosedAccountExecution(ctx: Context): void {
+  const port = requireAccountExecutionPort(ctx)
+  if (!(port instanceof ClosedPort)) {
+    throw new ExecutionStateError('cloud/stale-generation', 'Execution requires the original installed refusal port.')
+  }
+  ClosedPort.prototype.assertProviders.call(port, ctx)
 }

@@ -39,6 +39,8 @@ kind: "package-reference"
 
 runtime 先在独立账户图中安装不可变绑定。原生 prepare 期间，可信工厂将安装后的精确对象及图当前性检查传给根协调器的 `bindAccount`，再在账户入口之前调用 `installAccountExecutionPort`。绑定或 port 缺失、复制、跨图或被影子替换都会失败；重复提供方或容量耗尽也会失败。关闭登记不替代其他账户就绪检查。
 
+可信 bootstrap 装配可调用 `assertClosedAccountExecution(ctx)`，确认原始有效 port 仍持有原始且活跃的原生 Shell 和子进程提供方。缺失、未安装、影子替换、更换或已停止的提供方均被拒绝；此读取不会执行命令、停止 port 或签发 drain 证据。
+
 -----
 
 <a id="understand-the-implementation"></a>

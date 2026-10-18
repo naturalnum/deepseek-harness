@@ -4,6 +4,7 @@ import { PeAccountRuntime } from '@deepseek-ai/dsh-pe-cloud-runtime/root'
 import type { ShellExecSpec } from '@deepseek-ai/dsh-shell'
 import type { SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { installAccountExecutionPort } from '../src/closed-owner.ts'
+import { assertClosedAccountExecution } from '../src/index.ts'
 import { assessExecution } from '../src/capabilities.ts'
 import type { AccountExecutionPort } from '../src/account-port.ts'
 import * as root from '../src/root.ts'
@@ -184,4 +185,29 @@ it('still refuses missing closed mode, nonempty requirements and an account with
   await expect(missing.ctx.plugin(account, { mode: 'closed', requiredCapabilities: [] })).rejects.toMatchObject({ code: 'cloud/stale-generation' })
   expect(() => { Reflect.apply(root.Config, undefined, [{ mode: 'enabled', requiredCapabilities: [] }]) }).toThrow()
   expect(() => { r.owner.assertReady() }).not.toThrow()
+})
+
+it('reports closed capabilities only for the original active native provider pair without consuming or stopping its port', async () => {
+  const r = await closedRoot(), a = await closedAccount(r.owner), b = await closedAccount(r.owner, 'b')
+  expect(() => { assertClosedAccountExecution(a.ctx) }).not.toThrow()
+  expect(() => { assertClosedAccountExecution(b.ctx) }).not.toThrow()
+  expect(() => a.ctx.shell.resolve({ command: 'x' })).toThrow(expect.objectContaining(disabled))
+  const shadow = a.ctx.isolate('shell')
+  shadow.provide('shell', b.ctx.shell)
+  expect(() => { assertClosedAccountExecution(shadow) }).toThrow(expect.objectContaining({ code: 'cloud/stale-generation' }))
+  expect(() => { assertClosedAccountExecution(a.ctx) }).not.toThrow()
+  await a.fiber.dispose()
+  expect(() => { assertClosedAccountExecution(a.ctx) }).toThrow(expect.objectContaining({ code: 'cloud/stale-generation' }))
+  expect(() => { assertClosedAccountExecution(b.ctx) }).not.toThrow()
+  b.lifetime.abort()
+  expect(() => { assertClosedAccountExecution(b.ctx) }).toThrow(expect.objectContaining({ code: 'cloud/stale-generation' }))
+})
+
+it('refuses a live issued port whose native account provider pair was never installed', async () => {
+  const r = await closedRoot(), a = installedAccount()
+  const port = r.owner.bindAccount(a.ctx, a.binding, a.current)
+  installAccountExecutionPort(a.ctx, port)
+  expect(() => { port.assertCurrent(a.ctx) }).not.toThrow()
+  expect(() => { assertClosedAccountExecution(a.ctx) }).toThrow(expect.objectContaining({ code: 'cloud/stale-generation' }))
+  expect(() => { port.assertCurrent(a.ctx) }).not.toThrow()
 })
