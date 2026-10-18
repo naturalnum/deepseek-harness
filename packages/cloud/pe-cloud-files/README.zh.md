@@ -75,7 +75,7 @@ ABI 6 增加自持 FD 的单 leaf 准备及 exact empty-directory 清理，创�
 
 [静态存储 owner](src/storage-owner.ts) 通过独立只读的 [probe ABI1](native/storage-probe.c) 读取 root 持有、hash 固定的部署记录。Root 在实际分配、同步并持续持有 backing 资源后才写入记录。既有 slot 测量 ext4 身份、有限字节与 inode 容量、backing 元数据、arena 可用 reserve、受保护祖先和应用权限。root 初始化要求应用根只读、记录的非 root UID/GID、全部 capability 集合为零、NoNewPrivs 及 seccomp。这些观察不识别 seccomp filter 或设备策略：可信 Root 装配必须持续持有该限制，并实际验证 mount/device/loop/execute 尝试被拒绝。宿主或整个 VM 存储失败属于基础设施故障；账户获准写入导致另一账户或 control 失败仍属于部署失败。hash 及要求值不能替代实时观察或 Root 对资源的持有。
 
-root probe 配置在账户准入前，从全局预留有界记录、proc、资产副本、native 临时空间及持有事实。同一时间仅运行一个账户核验；额外并发核验直接拒绝，不另设队列。观察超时后，busy slot、root operation id 及预留持续保留，直至实际回复或退出。组件传输及 macOS 均不能签发真实存储 owner。ABI6 及其 S2 行为保持独立；Linux helper 编译、实际权限限制、字节与 inode 耗尽后 control/其他账户持续写入，均须由部署验证。
+root probe 配置在账户准入前，从全局预留有界记录、proc、资产副本、native 临时空间及持有事实。同一时间仅运行一个账户核验。两组固定分配最多保留两条准备／lease 记录，并串行等待核验；重复的同代输入共享原 Promise。核验失败会关闭准入，root 关闭或排队代际被取消时，会在后续 I/O 前拒绝。等待中的核验责任一直保留到实际结算。观察超时后，busy slot、root operation id 及预留持续保留，直至实际回复或退出。组件传输及 macOS 均不能签发真实存储 owner。ABI6 及其 S2 行为保持独立；Linux helper 编译、实际权限限制、字节与 inode 耗尽后 control/其他账户持续写入，均须由部署验证。
 
 </details>
 

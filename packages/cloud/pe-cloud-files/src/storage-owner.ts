@@ -38,6 +38,7 @@ interface Mount {
 
 function failure(): never { throw new FilesFailure('files/prerequisite-missing', 'The actual static storage deployment is unavailable or mismatched.') }
 function stale(): never { throw new FilesFailure('cloud/stale-generation', 'The static storage lease is closed or belongs to another generation.') }
+function assertLifetime(signal: AbortSignal): void { if (signal.aborted) stale() }
 function text(bytes: Uint8Array): string { return new TextDecoder('utf-8', { fatal: true }).decode(bytes) }
 function bytes(facts: StorageProbeFacts): bigint { return BigInt(facts.blockBytes) * BigInt(facts.blocks) }
 function directory(facts: StorageProbeFacts): boolean { return (facts.mode & 0o170000) === 0o040000 }
@@ -89,7 +90,7 @@ export class RootStorageOwner {
   private state: 'new' | 'checking' | 'open' | 'closed' | 'failed' = 'new'
   private initialization?: Promise<void>
   private plan?: StaticStoragePlan
-  private preparing = false
+  private preparationTail: Promise<void> = Promise.resolve()
   private readonly leases: Array<{ input: AccountMountInput; result: Promise<StaticAccountStorageLease> }> = []
 
   /**
@@ -129,6 +130,7 @@ export class RootStorageOwner {
    * Verify a preplaced authentic assignment before any native Profile I/O; this never allocates or remounts.
    * @param input Original factory input, carrying its PG generation and server-derived layout.
    * @returns The same retained preparation for the same original generation; another live generation rejects.
+   * The two retained assignments verify serially; closed admission or an ended lifetime rejects before queued I/O.
    */
   prepareAccount(input: AccountMountInput): Promise<StaticAccountStorageLease> {
     this.assertRootCurrent()
@@ -143,27 +145,27 @@ export class RootStorageOwner {
       return existing.result
     }
     if (this.leases.length >= 2) failure()
-    if (this.preparing) throw new FilesFailure('cloud/capacity', 'files root is verifying another static assignment')
-    this.preparing = true
     const entry: { input: AccountMountInput; result: Promise<StaticAccountStorageLease> } = {
-      input, result: Promise.resolve().then(async () => {
+      input, result: this.preparationTail.then(async () => {
         this.assertRootCurrent()
+        assertLifetime(input.binding.lifetime)
         try {
           await this.readPlan()
           await this.verify(plan)
         } catch (error) { this.failedInitialization(); throw error }
         this.assertRootCurrent()
-        if (input.binding.lifetime.aborted) stale()
+        assertLifetime(input.binding.lifetime)
         const lease = new StaticAccountStorageLease(this, account, input, plan, this.driver, () => {
           const index = this.leases.indexOf(entry)
           if (index >= 0) this.leases.splice(index, 1)
         })
         lease.assertLayout()
         return lease
-      }).finally(() => { this.preparing = false }),
+      }),
     }
     this.leases.push(entry)
-    void entry.result.catch(() => {})
+    // The entry retains the original rejection; the tail joins only its actual settlement.
+    this.preparationTail = entry.result.then(() => {}, () => {})
     return entry.result
   }
 
