@@ -45,6 +45,8 @@ Client 列表行和驻留 Session 使用当前 `sessionListMetadata` 投影纠�
 
 Host 子类可以覆盖受保护的 `ensureProjectDirectory(cwd): Promise<void>`。控制器在构造期间捕获回调，并在每次新 Agent/Session 创建前等待它，包括不存在的指定标识，以及复用被拒绝后选择的新标识。默认实现通过 Node 递归建目录，失败保留文件系统 cause。覆盖实现提供完整目录操作；拒绝会停止创建，不再运行默认实现。已有 live 复用和冷恢复保留原生行为。目录完成本身不发布 Session；身份核验、队列、preset 装配、持久化和回滚仍由原有创建流程拥有。
 
+Host 子类可以覆盖 `preparePromptFiles(agent, receiptIds, signal?)`，在全部同 Agent 凭证解析完成后、内容准入及 prompt 绑定前等待文件准备。去重后的凭证保留内容顺序。拒绝会阻止投递，凭证所有权保持不变；已接受请求的重试跳过准备。默认实现不执行操作，纯文本 prompt 不调用此钩子。覆盖实现负责取消和实际准备结算，钩子不退休凭证。
+
 Client 列表刷新保留未变化的行对象，并在顺序和值均相同时复用条目数组。每行的 `retainedBy` 包含正数的本地引用来源计数，Host 元数据刷新不能覆盖它们。缓存成员检查使用每次刷新构建的 ID 集合，因此对账成本随当前列表和保留缓存的规模线性增长。 Host 摘要更新会替换运行状态与 Agent 可用性；本地 create/fork 响应只补充已有行缺失的元数据。普通 Session 被移除后，仅在目录仍有子项时保留其投影 store。
 
 后台 job 的名册行与观测流属于 [`dsh-api-job-controller`](../job-controller/README.zh.md)；控制流只承载投影。

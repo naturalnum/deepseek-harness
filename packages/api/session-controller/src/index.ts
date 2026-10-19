@@ -9,6 +9,7 @@ import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { errorChain, ReasoningEffortId, type MessageSource } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-client-file-upload'
+import type { FileUploadReceiptId } from '@deepseek-ai/dsh-client-file-upload/types'
 import { canOpenNativePath, nativeFileManager, nativeFileApplications, openNativeFileApplication, openNativeAssociatedPath, revealNativePath } from '@deepseek-ai/dsh-native-command'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionInspection } from '@deepseek-ai/dsh-session-persistence'
@@ -162,7 +163,7 @@ export class SessionController extends TypertRemoteService {
     const resolved = SessionController.Config(config)
     installModelSelectionProjection(ctx)
     this.agents = new ApiSessionAgentController(ctx, this.ensureProjectDirectory.bind(this))
-    this.commands = new SessionCommandController(ctx, this.agents, process.cwd())
+    this.commands = new SessionCommandController(ctx, this.agents, process.cwd(), this.preparePromptFiles.bind(this))
     ctx.effect(() => ctx.fileUploads.registerAgentResolver(async (sessionId) => {
       const result = await this.agents.resolveAgent(sessionId)
       if ('error' in result) throw result.error
@@ -286,6 +287,20 @@ export class SessionController extends TypertRemoteService {
       throw new Error(`failed to ensure project directory "${cwd}": ${String(error)}`, { cause: error })
     }
   }
+
+  /**
+   * Prepare resolved file receipts before content admission and prompt binding.
+   * Captured during construction without invocation; integrations override this
+   * method and await actual preparation. Failure leaves the prompt undelivered
+   * and does not bind or retire receipts. The default performs no work.
+   * @param agent - exact Agent selected by the native prompt command.
+   * @param receiptIds - unique receipts already resolved for this Agent, in content order.
+   * @param signal - caller cancellation for the integration's preparation.
+   * @returns completion when referenced files are ready for prompt admission.
+   */
+  protected preparePromptFiles(
+    _agent: Agent, _receiptIds: readonly FileUploadReceiptId[], _signal?: AbortSignal,
+  ): Promise<void> { return Promise.resolve() }
 
   /**
    * Read all visible Session rows without resuming an Agent.
@@ -503,7 +518,7 @@ export class SessionController extends TypertRemoteService {
       ...(clientTimeZone === undefined ? {} : { clientTimeZone }),
       ...(principal === undefined ? {} : { principal }),
     }
-    return this.commands.prompt(request, source)
+    return this.commands.prompt(request, source, signal)
   }
 
   /**

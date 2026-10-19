@@ -2,7 +2,7 @@ import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
 import { createInboxStub } from '@deepseek-ai/dsh-agent-loop-testkit'
 import type { Agent, ModelSelectionRef } from '@deepseek-ai/dsh-agent'
-import AttachmentStore, { AttachmentId } from '@deepseek-ai/dsh-attachment'
+import AttachmentStore, { AttachmentError, AttachmentId } from '@deepseek-ai/dsh-attachment'
 import type {
   FileAttachmentRef, ImageAttachmentRef, SaveFileAttachment, SaveFileStreamAttachment,
 } from '@deepseek-ai/dsh-attachment'
@@ -20,7 +20,9 @@ import type { SessionRequestId } from '../src/types.ts'
 
 const SESSION = SessionId('upload-session')
 
-async function uploadHarness(origin?: 'subagent'): Promise<{
+async function uploadHarness(
+  origin?: 'subagent', prepareFiles?: ConstructorParameters<typeof SessionCommandController>[3],
+): Promise<{
   ctx: Context
   controller: SessionCommandController
   uploads: FileUploads
@@ -101,7 +103,7 @@ async function uploadHarness(origin?: 'subagent'): Promise<{
   if (uploadRoute === undefined) throw new Error('file upload route was not registered')
   return {
     ctx,
-    controller: new SessionCommandController(ctx, agents, '/workspace'),
+    controller: new SessionCommandController(ctx, agents, '/workspace', prepareFiles),
     uploads,
     agent,
     followup,
@@ -481,5 +483,97 @@ describe('Session file uploads', () => {
         code: 'gateway/internal',
         message: 'failed to store file upload: Error: disk unavailable',
       })
+  })
+})
+
+describe('Prompt file preparation', () => {
+  it('waits on the exact Agent and unique resolved receipts before image admission or receipt binding', async () => {
+    const entered = Promise.withResolvers<undefined>(), ready = Promise.withResolvers<undefined>()
+    const prepare = vi.fn(async () => { entered.resolve(undefined); await ready.promise })
+    const { controller, uploads, agent, followup, saveImages } = await uploadHarness(undefined, prepare)
+    const first = await uploads.upload(agent, { data: 'AAAA', name: 'first.txt' }, new AbortController().signal)
+    const second = await uploads.upload(agent, { data: 'AAAA', name: 'second.txt' }, new AbortController().signal)
+    const bind = vi.spyOn(uploads, 'bindPrompt')
+    const image: ImageAttachmentRef = {
+      attachmentId: AttachmentId(`sha256:${'ab'.repeat(32)}`), mediaType: 'image/png', bytes: 3, width: 1, height: 1,
+    }
+    saveImages.mockResolvedValueOnce([image])
+    const signal = new AbortController().signal
+    const prompting = controller.prompt(promptRequest([
+      { type: 'file', receiptId: first.receiptId },
+      { type: 'image', mediaType: 'image/png', data: 'AAAA' },
+      { type: 'file', receiptId: second.receiptId },
+      { type: 'file', receiptId: first.receiptId },
+    ]), USER_SOURCE, signal)
+    try {
+      await entered.promise
+      expect(prepare).toHaveBeenCalledExactlyOnceWith(agent, [first.receiptId, second.receiptId], signal)
+      expect(saveImages).not.toHaveBeenCalled()
+      expect(bind).not.toHaveBeenCalled()
+      expect(followup).not.toHaveBeenCalled()
+      ready.resolve(undefined)
+      await expect(prompting).resolves.toEqual({ accepted: true })
+      expect(saveImages).toHaveBeenCalledOnce()
+      expect(bind).toHaveBeenCalledExactlyOnceWith(agent, [first.receiptId, second.receiptId], 'req-1')
+      expect(followup).toHaveBeenCalledOnce()
+    } finally {
+      ready.resolve(undefined)
+      await Promise.allSettled([prompting])
+    }
+  })
+
+  it('keeps the resolved receipt available when preparation rejects', async () => {
+    const prepare = vi.fn(async () => { throw new AttachmentError('File preparation failed.', 'ATTACHMENT_READ_FAILED') })
+    const { controller, uploads, agent, followup, saveImages } = await uploadHarness(undefined, prepare)
+    const receipt = await uploads.upload(agent, { data: 'AAAA' }, new AbortController().signal)
+    const bind = vi.spyOn(uploads, 'bindPrompt')
+    await expect(controller.prompt(promptRequest([
+      { type: 'file', receiptId: receipt.receiptId },
+      { type: 'image', mediaType: 'image/png', data: 'AAAA' },
+    ]), USER_SOURCE)).rejects.toMatchObject({
+      code: 'session/attachment-invalid', details: { reason: 'ATTACHMENT_READ_FAILED' },
+    })
+    expect(bind).not.toHaveBeenCalled()
+    expect(saveImages).not.toHaveBeenCalled()
+    expect(followup).not.toHaveBeenCalled()
+    expect(uploads.resolve(agent, receipt.receiptId)).toEqual(receipt.file)
+  })
+
+  it('rejects a foreign same-id Session receipt before invoking preparation', async () => {
+    const prepare = vi.fn(async () => {})
+    const owner = await uploadHarness(), other = await uploadHarness(undefined, prepare)
+    const receipt = await owner.uploads.upload(owner.agent, { data: 'AAAA' }, new AbortController().signal)
+    expect(owner.agent.id).toBe(other.agent.id)
+    expect(owner.agent.session).not.toBe(other.agent.session)
+    await expect(other.controller.prompt(promptRequest([
+      { type: 'file', receiptId: receipt.receiptId },
+    ]), USER_SOURCE)).rejects.toMatchObject({
+      code: 'session/attachment-invalid', details: { reason: 'FILE_NOT_STAGED' },
+    })
+    expect(prepare).not.toHaveBeenCalled()
+    expect(other.followup).not.toHaveBeenCalled()
+  })
+
+  it('does not prepare files for text-only prompts', async () => {
+    const prepare = vi.fn(async () => {})
+    const { controller, followup } = await uploadHarness(undefined, prepare)
+    await expect(controller.prompt(promptRequest([{ type: 'text', text: 'hello' }]), USER_SOURCE))
+      .resolves.toEqual({ accepted: true })
+    expect(prepare).not.toHaveBeenCalled()
+    expect(followup).toHaveBeenCalledOnce()
+  })
+
+  it('keeps native accepted-request deduplication ahead of preparation and retired receipt lookup', async () => {
+    const prepare = vi.fn(async () => {})
+    const { controller, uploads, agent, followup } = await uploadHarness(undefined, prepare)
+    const receipt = await uploads.upload(agent, { data: 'AAAA' }, new AbortController().signal)
+    const request = promptRequest([{ type: 'file', receiptId: receipt.receiptId }])
+    await controller.prompt(request, USER_SOURCE)
+    agent.inbox.append('next-turn', followup.mock.calls[0]?.[0] as UserMessage)
+    uploads.retirePrompt(agent, request.requestId)
+    expect(uploads.resolve(agent, receipt.receiptId)).toBeUndefined()
+    await expect(controller.prompt(request, USER_SOURCE)).resolves.toEqual({ accepted: true })
+    expect(prepare).toHaveBeenCalledOnce()
+    expect(followup).toHaveBeenCalledOnce()
   })
 })

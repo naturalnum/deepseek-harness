@@ -95,11 +95,15 @@ export class SessionCommandController {
    * @param ctx - Host context carrying Agent, model, attachment, title, and Workspace services.
    * @param agents - sole owner of create, resume, and Session-local model selection.
    * @param defaultCwd - project directory used when create names neither a Workspace nor a cwd.
+   * @param prepareFiles - optional awaited preparation after all receipts resolve and before content admission or receipt binding.
    */
   constructor(
     private readonly ctx: Context,
     private readonly agents: ApiSessionAgentController,
     private readonly defaultCwd: string,
+    private readonly prepareFiles?: (
+      agent: Agent, receiptIds: readonly FileUploadReceiptId[], signal?: AbortSignal,
+    ) => Promise<void>,
   ) {}
 
   /**
@@ -314,9 +318,10 @@ export class SessionCommandController {
    * has already validated the content and built the durable message source.
    * @param request - Session identity, prompt content, and delivery mode.
    * @param source - the `user-rpc` source recorded on the accepted message.
+   * @param signal - caller cancellation passed to optional file preparation.
    * @returns acknowledgement that the Agent accepted the prompt.
    */
-  async prompt(request: SessionPromptRequest, source: MessageSource): Promise<SessionPromptValue> {
+  async prompt(request: SessionPromptRequest, source: MessageSource, signal?: AbortSignal): Promise<SessionPromptValue> {
     const agent = await this.resolveAgent(request.sessionId)
     if (hasPromptRequest(agent, request.requestId)) return { accepted: true }
     const hasImage = request.content.some(part => part.type === 'image')
@@ -337,6 +342,7 @@ export class SessionCommandController {
           request.content,
           receiptId => this.ctx.fileUploads.resolve(agent, receiptId),
         )
+        if (admission.receiptIds.length > 0) await this.prepareFiles?.(agent, admission.receiptIds, signal)
         const content = await this.ctx.attachments.admitPromptContent(admission.content)
         const message: UserMessage = createUserMessage({ content, source })
         if (this.ctx.agents.get(agent.id) !== agent) {
