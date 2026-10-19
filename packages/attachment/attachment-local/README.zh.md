@@ -87,7 +87,7 @@ kind: "package-reference"
 
 请求版本位于由 `dshCachePath` 解析的 `<DSH_HOME>/cache/attachments/request-images/`；显式 `dshHome` 设置同时适用于缓存与持久存储。在两次请求之间清空此缓存会保留持久附件，后续读取会重新生成请求版本。`readImageRequest` 在不放大的前提下缩放到路由选定的目标尺寸，缩放只按长边给定，短边由编码器按路由预测的方式推出，随后通过相同的 alpha 路由与质量阶梯应用独立编码字节目标。缓存身份包含附件 id、变换版本、目标尺寸、字节目标与固定编码参数；缓存字节会先通过文件头探测格式、8-bit sRGB/sRGBA、尺寸与 alpha 信息，不匹配时重新生成。并发调用方共享一次变换与缓存写入，且只在没有等待方时由取消停止共享工作。`imageHostPath` 派生规范化对象的宿主路径，挂载的文件系统可以把该路径映射进执行世界，而不会写入持久历史。
 
-通用文件字节的唯一规范对象位于 `<DSH_HOME>/attachments/v1/file-objects/<digest-prefix>/<digest>`。每条引用路径 `<DSH_HOME>/attachments/v1/files/<digest-prefix>/<digest>/<name>` 都是只读硬链接，所以名称不同但字节相同的文件不会重复占用磁盘。`readFileStream` 以有界分块读取引用路径，并在消费方成功结束前校验完整摘要与记录的字节数。对象缺失、被改写或截断时，消费方会失败，不会得到字节已经变化的完整导出。
+通用文件字节的唯一规范对象位于 `<DSH_HOME>/attachments/v1/file-objects/<digest-prefix>/<digest>`。每条引用路径 `<DSH_HOME>/attachments/v1/files/<digest-prefix>/<digest>/<name>` 都是只读硬链接，所以名称不同但字节相同的文件不会重复占用磁盘。`readFileStream` 以有界分块读取引用路径，并在消费方成功结束前校验完整摘要与记录的字节数。对象缺失、被改写或截断时，消费方会失败，不会得到字节已经变化的完整导出。每次文件读取都会等待源流实际关闭后，才结算正常结束、取消、读取失败或迭代器提前返回。
 
 ### 源码地图
 

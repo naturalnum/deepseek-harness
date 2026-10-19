@@ -139,6 +139,7 @@ export async function saveFileStreamVerbatim(
 
 /**
  * Read one stored file in bounded chunks and verify its byte count and digest.
+ * Iteration settles only after the source stream closes, including early return.
  * @param root - absolute `DSH_HOME/attachments/v1` root.
  * @param ref - durable file reference from the session log.
  * @param signal - optional cancellation for filesystem reads.
@@ -154,6 +155,10 @@ export async function* readFileStreamVerbatim(
   const stream = createReadStream(storedFilePath(root, ref), {
     highWaterMark: 1 << 16,
     ...(signal === undefined ? {} : { signal }),
+  })
+  const closed = new Promise<void>((resolve) => {
+    if (stream.closed) resolve()
+    else stream.once('close', resolve)
   })
   const hash = createHash('sha256')
   let bytes = 0
@@ -173,6 +178,7 @@ export async function* readFileStreamVerbatim(
     throw new AttachmentError('Unable to read file attachment.', 'ATTACHMENT_READ_FAILED', { cause: error })
   } finally {
     stream.destroy()
+    await closed
   }
   signal?.throwIfAborted()
   if (bytes !== ref.bytes || hash.digest('hex') !== sha256) {
