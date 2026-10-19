@@ -1,8 +1,10 @@
 /** Content-addressed, owner-private local attachment storage. */
 
 import { createHash, randomUUID } from 'node:crypto'
-import { constants, createReadStream } from 'node:fs'
+import { close as closeDescriptor, constants, createReadStream, open as openDescriptor, read as readDescriptor } from 'node:fs'
+import type { NoParamCallback } from 'node:fs'
 import { chmod, link, mkdir, open, readFile, unlink } from 'node:fs/promises'
+import type { FileHandle } from 'node:fs/promises'
 import { dirname, join, parse, resolve } from 'node:path'
 import {
   AttachmentError,
@@ -21,6 +23,30 @@ import type { DetectedImage } from './image.ts'
 
 const ID_PATTERN = /^sha256:([a-f0-9]{64})$/
 const durableHomes = new Set<string>()
+
+/**
+ * An owned descriptor close or temporary unlink did not settle successfully.
+ * Callers must retain cleanup responsibility; this error never authorizes retrying close or rolling back a published object.
+ */
+export class AttachmentCleanupError extends AttachmentError {
+  /** @param cause Original close/unlink failure, or bounded operation and cleanup failures together. */
+  constructor(cause: unknown) {
+    super('Attachment resource cleanup is unconfirmed.', 'ATTACHMENT_WRITE_FAILED', { cause })
+    this.name = 'AttachmentCleanupError'
+  }
+}
+
+async function closeOwned(handle: FileHandle): Promise<void> {
+  try {
+    await handle.close()
+  } catch (cause) {
+    throw new AttachmentCleanupError(cause)
+  }
+}
+
+function cleanupFailure(operation: unknown, cleanup: unknown): AttachmentCleanupError {
+  return new AttachmentCleanupError(new AggregateError([operation, cleanup], 'Attachment operation and cleanup failed.'))
+}
 
 function digest(data: Uint8Array): string {
   return createHash('sha256').update(data).digest('hex')
@@ -137,7 +163,7 @@ async function syncDirectory(path: string): Promise<void> {
   try {
     await handle.sync()
   } finally {
-    await handle.close()
+    await closeOwned(handle)
   }
   /* v8 ignore stop */
 }
@@ -318,9 +344,11 @@ async function stageImmutableObject(
   const boundary = await ensureDurableHome(dirname(dirname(resolve(root))))
   await ensureDurableDirectory(staging, boundary)
   const temporary = join(staging, randomUUID())
-  let handle
+  let handle: FileHandle | undefined
+  let ownsTemporary = false
   try {
     handle = await open(temporary, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600)
+    ownsTemporary = true
     const hash = createHash('sha256')
     let bytes = 0
     for await (const chunk of data) {
@@ -332,18 +360,30 @@ async function stageImmutableObject(
     signal?.throwIfAborted()
     await handle.sync()
     signal?.throwIfAborted()
-    await handle.close()
+    const closing = handle
     handle = undefined
+    await closeOwned(closing)
     return { path: temporary, boundary, sha256: hash.digest('hex'), bytes }
   } catch (error) {
-    /* v8 ignore next -- A descriptor remains open only when write, sync, or close fails. */
-    if (handle !== undefined) await handle.close().catch(
-      /* v8 ignore next -- Close failure is superseded by the storage operation that entered cleanup. */
-      () => {},
-    )
-    await removeTemporary(temporary)
-    if (error instanceof AttachmentError || signal?.aborted === true) throw error
-    throw new AttachmentError('Unable to persist attachment.', 'ATTACHMENT_WRITE_FAILED', { cause: error })
+    let failure = error
+    if (handle !== undefined) {
+      const closing = handle
+      handle = undefined
+      try {
+        await closeOwned(closing)
+      } catch (closeError) {
+        failure = cleanupFailure(failure, closeError)
+      }
+    }
+    if (ownsTemporary) {
+      try {
+        await removeTemporary(temporary)
+      } catch (cleanupError) {
+        failure = cleanupFailure(failure, cleanupError)
+      }
+    }
+    if (failure instanceof AttachmentError || signal?.aborted === true) throw failure
+    throw new AttachmentError('Unable to persist attachment.', 'ATTACHMENT_WRITE_FAILED', { cause: failure })
   }
 }
 
@@ -353,6 +393,7 @@ async function publishStagedObject(
   staged: StagedImmutableObject,
 ): Promise<void> {
   const parent = dirname(target)
+  let cleanupAttempted = false
   try {
     await ensureDurableDirectory(parent, staged.boundary)
     try {
@@ -366,7 +407,8 @@ async function publishStagedObject(
     }
     // Windows shares the read-only attribute across hard links and refuses to
     // unlink either name once it is set, so discard the staging name first.
-    await unlink(staged.path)
+    cleanupAttempted = true
+    await removeTemporary(staged.path)
     // The target remains the sole link for a new object; this also restores
     // read-only mode when the deduplication path observes an existing object.
     await chmod(target, 0o400)
@@ -381,7 +423,13 @@ async function publishStagedObject(
       if (dirname(level) === level) break
     }
   } catch (error) {
-    await removeTemporary(staged.path)
+    if (!cleanupAttempted) {
+      try {
+        await removeTemporary(staged.path)
+      } catch (cleanupError) {
+        throw cleanupFailure(error, cleanupError)
+      }
+    }
     if (error instanceof AttachmentError) throw error
     throw new AttachmentError('Unable to persist attachment.', 'ATTACHMENT_WRITE_FAILED', { cause: error })
   }
@@ -389,8 +437,31 @@ async function publishStagedObject(
 
 async function digestFile(path: string): Promise<string> {
   const hash = createHash('sha256')
-  for await (const chunk of createReadStream(path) as AsyncIterable<Buffer>) hash.update(chunk)
-  return hash.digest('hex')
+  let closeFailure: AttachmentCleanupError | undefined
+  const stream = createReadStream(path, {
+    fs: {
+      open: openDescriptor,
+      read: readDescriptor,
+      close(fd: number, callback: NoParamCallback) {
+        closeDescriptor(fd, (error) => {
+          if (error !== null) closeFailure = new AttachmentCleanupError(error)
+          callback(error)
+        })
+      },
+    },
+  })
+  const closed = new Promise<void>((resolve) => {
+    if (stream.closed) resolve()
+    else stream.once('close', resolve)
+  })
+  try {
+    for await (const chunk of stream as AsyncIterable<Buffer>) hash.update(chunk)
+    return hash.digest('hex')
+  } finally {
+    stream.destroy()
+    await closed
+    if (closeFailure !== undefined) throw closeFailure
+  }
 }
 
 async function removeTemporary(path: string): Promise<void> {
@@ -398,7 +469,9 @@ async function removeTemporary(path: string): Promise<void> {
     /* v8 ignore next -- Cleanup can observe a staging name already removed after successful linking. */
     (cleanupError: unknown) => {
       /* v8 ignore next -- Any cleanup failure except an absent staging name must remain visible. */
-      if (!(cleanupError instanceof Error && 'code' in cleanupError && cleanupError.code === 'ENOENT')) throw cleanupError
+      if (!(cleanupError instanceof Error && 'code' in cleanupError && cleanupError.code === 'ENOENT')) {
+        throw new AttachmentCleanupError(cleanupError)
+      }
     },
   )
 }

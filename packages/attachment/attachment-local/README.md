@@ -89,6 +89,8 @@ Request versions live below `<DSH_HOME>/cache/attachments/request-images/`, reso
 
 Generic-file bytes have one canonical object at `<DSH_HOME>/attachments/v1/file-objects/<digest-prefix>/<digest>`. Each reference path at `<DSH_HOME>/attachments/v1/files/<digest-prefix>/<digest>/<name>` is a read-only hard link, so different names for equal bytes do not duplicate disk content. `readFileStream` reads the reference path in bounded chunks and verifies the complete digest and recorded byte count before a consumer can finish successfully. A missing, changed, or truncated object fails its consumer instead of producing a complete export with different bytes. Each file read waits for its source stream to close before completion, cancellation, read failure, or an early iterator return settles.
 
+An ordinary cancellation or write error returns only after owned descriptors close and temporary cleanup succeeds. A failed close or temporary unlink raises the exported `AttachmentCleanupError` (`ATTACHMENT_WRITE_FAILED`), preserving its cause; callers retain the unsettled work or storage responsibility and must not retry a failed close. Deduplication integrity reads also wait for their stream to close and report close failures through this error. Already published private objects remain stored even when the save rejects; the storage owner must retain their capacity charge.
+
 ### Source map
 
 | File | Role |
