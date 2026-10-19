@@ -5,7 +5,7 @@ import { FsError } from '@deepseek-ai/dsh-fs'
 import type { FsInfo, FsTarget } from '@deepseek-ai/dsh-fs'
 import { validateLimits } from './config.ts'
 import type { Config, InstructionSource } from './types.ts'
-import type { InstructionContents, InstructionDirectory, InstructionReader } from './internal-types.ts'
+import type { InstructionContents, InstructionDirectory } from './internal-types.ts'
 import { jsonStringBytes } from './budget.ts'
 
 const sourceOrder = { platform: 0, account: 1, project: 2 } as const
@@ -40,11 +40,11 @@ function orderedDirectories(directories: readonly InstructionDirectory[], config
 }
 
 async function candidate(
-  reader: InstructionReader,
   directory: InstructionDirectory,
   name: string,
   signal: AbortSignal,
 ): Promise<{ target: FsTarget; info: FsInfo } | undefined> {
+  const { reader } = directory
   let target: FsTarget
   try {
     target = await reader.resolve(name, { cwd: reader.processPath(directory.target), signal })
@@ -63,18 +63,17 @@ async function candidate(
 /**
  * Select AGENTS.md, or CLAUDE.md only when AGENTS.md is absent, in each directory.
  * The caller supplies directories already restricted to the approved source roots
- * and project root-to-cwd chain, and a files-owned read-only reader that enforces
- * account/epoch validity, FD safety, stream credit and aggregate I/O reservations.
+ * and project root-to-cwd chain. Each directory carries its own files-owned
+ * read-only reader that enforces account/epoch validity, FD safety, stream credit
+ * and aggregate I/O reservations.
  * This function never discovers a project, performs direct host I/O, or creates a sandbox.
- * @param reader - restricted native operations; an unrestricted provider is invalid.
- * @param directories - approved sources, with project ancestors ordered root to cwd.
+ * @param directories - approved sources and their fixed restricted readers, with project ancestors ordered root to cwd.
  * @param config - explicit source limits, including the candidate-directory count.
  * @param signal - cancellation inherited from the real turn and account lifetime.
  * @returns immutable complete contents; empty sources mean confirmed optional absence.
  * @throws the original provider or cancellation error, or FS_TOO_LARGE; no partial result is returned.
  */
 export async function loadInstructionContents(
-  reader: InstructionReader,
   directories: readonly InstructionDirectory[],
   config: Config,
   signal: AbortSignal,
@@ -86,18 +85,18 @@ export async function loadInstructionContents(
   let totalBytes = 0
   for (const directory of ordered) {
     signal.throwIfAborted()
-    let selected = await candidate(reader, directory, 'AGENTS.md', signal)
+    let selected = await candidate(directory, 'AGENTS.md', signal)
     let name = 'AGENTS.md'
     if (selected === undefined) {
       name = 'CLAUDE.md'
-      selected = await candidate(reader, directory, name, signal)
+      selected = await candidate(directory, name, signal)
     }
     if (selected === undefined) continue
     const limit = Math.min(config.maxFileBytes, config.maxTotalBytes - totalBytes)
     if (selected.info.size !== undefined && selected.info.size > limit) {
       throw new FsError('Instruction source exceeds its byte budget.', 'FS_TOO_LARGE')
     }
-    const chunks = await reader.streamText(selected.target, signal)
+    const chunks = await directory.reader.streamText(selected.target, signal)
     const parts: string[] = []
     let bytes = 0
     for await (const chunk of chunks) {

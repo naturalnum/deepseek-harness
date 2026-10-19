@@ -14,14 +14,16 @@ function caps(maxSnapshotBytes = 8192, maxResidentBytes?: number): Config {
 describe('complete native instruction snapshots', () => {
   it('orders every source, records actual-text hashes and freezes the complete payload', async () => {
     const reader = new Reader()
-    reader.files.set('/platform/AGENTS.md', { chunks: ['platform'] })
-    reader.files.set('/account/CLAUDE.md', { chunks: ['account'] })
+    const platform = new Reader()
+    const account = new Reader()
+    platform.files.set('/platform/AGENTS.md', { chunks: ['platform'] })
+    account.files.set('/account/CLAUDE.md', { chunks: ['account'] })
     reader.files.set('/project/AGENTS.md', { chunks: ['root'] })
     reader.files.set('/project/CLAUDE.md', { chunks: ['excluded'] })
     reader.files.set('/project/nested/AGENTS.md', { chunks: ['child'] })
-    const message = await prepareInstructionSnapshot(reader, [
-      directory('project', '/project/nested', 'nested'), directory('account', '/account', 'preferences'),
-      directory('project', '/project', '.'), directory('platform', '/platform', 'declaration'),
+    const message = await prepareInstructionSnapshot([
+      directory(reader, 'project', '/project/nested', 'nested'), directory(account, 'account', '/account', 'preferences'),
+      directory(reader, 'project', '/project', '.'), directory(platform, 'platform', '/platform', 'declaration'),
     ], identity, caps(), signal())
     const snapshot = message.source.snapshot
     expect(message.source.kind).toBe('pe-account-instructions')
@@ -49,23 +51,23 @@ describe('complete native instruction snapshots', () => {
     const reader = new Reader()
     const text = '\u0001"界\n'
     reader.files.set('/project/AGENTS.md', { chunks: [text] })
-    const dirs = [directory('project', '/project', '.')]
-    const first = await prepareInstructionSnapshot(reader, dirs, identity, caps(), signal())
+    const dirs = [directory(reader, 'project', '/project', '.')]
+    const first = await prepareInstructionSnapshot(dirs, identity, caps(), signal())
     const exact = Buffer.byteLength(JSON.stringify(first), 'utf8')
     expect(jsonBytes(first)).toBe(exact)
     expect(exact).toBeGreaterThan(Buffer.byteLength(first.source.snapshot.text, 'utf8'))
-    const admitted = await prepareInstructionSnapshot(reader, dirs, identity, caps(exact), signal())
+    const admitted = await prepareInstructionSnapshot(dirs, identity, caps(exact), signal())
     expect(jsonBytes(admitted)).toBe(exact)
-    await expect(prepareInstructionSnapshot(reader, dirs, identity, caps(exact - 1), signal()))
+    await expect(prepareInstructionSnapshot(dirs, identity, caps(exact - 1), signal()))
       .rejects.toMatchObject({ code: 'FS_TOO_LARGE' })
   })
 
   it('rejects labels and copy-budget shortages before any reader operation', async () => {
     const reader = new Reader()
-    await expect(prepareInstructionSnapshot(reader, [directory('account', '/account', 'x'.repeat(8192))],
+    await expect(prepareInstructionSnapshot([directory(reader, 'account', '/account', 'x'.repeat(8192))],
       identity, caps(), signal())).rejects.toMatchObject({ code: 'FS_TOO_LARGE' })
     const config = caps()
-    await expect(prepareInstructionSnapshot(reader, [directory('project', '/project', '.')], identity,
+    await expect(prepareInstructionSnapshot([directory(reader, 'project', '/project', '.')], identity,
       caps(8192, config.maxResidentBytes - 1), signal())).rejects.toMatchObject({ code: 'cloud/invalid-config' })
     expect(reader.probes).toEqual([])
   })
@@ -73,9 +75,9 @@ describe('complete native instruction snapshots', () => {
   it('bounds identity metadata and empty-snapshot framing independently of source bytes', async () => {
     const reader = new Reader()
     const enormous = { ...identity, accountId: 'a'.repeat(8192) as typeof identity.accountId }
-    await expect(prepareInstructionSnapshot(reader, [], enormous, caps(), signal()))
+    await expect(prepareInstructionSnapshot([], enormous, caps(), signal()))
       .rejects.toMatchObject({ code: 'FS_TOO_LARGE' })
-    const empty = await prepareInstructionSnapshot(reader, [], identity, caps(), signal())
+    const empty = await prepareInstructionSnapshot([], identity, caps(), signal())
     expect(empty.source.snapshot.sources).toEqual([])
     expect(empty.source.snapshot.text).toContain('No optional instruction files are present.')
     expect(empty.source.snapshot.totalBytes).toBeGreaterThan(0)
@@ -85,8 +87,8 @@ describe('complete native instruction snapshots', () => {
   it('rejects sibling, skipped-parent and escaping display chains without granting path authority', async () => {
     const reader = new Reader()
     for (const labels of [['.', 'a', 'b'], ['.', 'a/b'], ['a'], ['../outside'], ['/outside'], ['a\\b']]) {
-      const dirs = labels.map(label => directory('project', '/approved', label))
-      await expect(prepareInstructionSnapshot(reader, dirs, identity, caps(), signal()))
+      const dirs = labels.map(label => directory(reader, 'project', '/approved', label))
+      await expect(prepareInstructionSnapshot(dirs, identity, caps(), signal()))
         .rejects.toMatchObject({ code: 'FS_SANDBOX_DENIED' })
     }
     expect(reader.probes).toEqual([])
@@ -95,7 +97,7 @@ describe('complete native instruction snapshots', () => {
   it('hashes the exact concatenated text even across surrogate boundaries', async () => {
     const reader = new Reader()
     reader.files.set('/project/AGENTS.md', { chunks: ['\uD83D', '\uDE00'] })
-    const message = await prepareInstructionSnapshot(reader, [directory('project', '/project', '.')], identity, caps(), signal())
+    const message = await prepareInstructionSnapshot([directory(reader, 'project', '/project', '.')], identity, caps(), signal())
     expect(message.source.snapshot.sources[0]).toMatchObject({
       text: '😀', hash: createHash('sha256').update('😀', 'utf8').digest('hex'),
     })
@@ -106,7 +108,7 @@ describe('complete native instruction snapshots', () => {
     const failure = new FsError('temporarily unavailable', 'FS_IO_ERROR')
     reader.files.set('/project/AGENTS.md', { chunks: [], error: failure })
     reader.files.set('/project/CLAUDE.md', { chunks: ['must not load'] })
-    await expect(prepareInstructionSnapshot(reader, [directory('project', '/project', '.')], identity, caps(), signal()))
+    await expect(prepareInstructionSnapshot([directory(reader, 'project', '/project', '.')], identity, caps(), signal()))
       .rejects.toBe(failure)
     expect(reader.probes).toEqual(['/project/AGENTS.md'])
   })

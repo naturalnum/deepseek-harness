@@ -30,6 +30,9 @@
       "path": "../pe-cloud-runtime/tsconfig.account.json"
     },
     {
+      "path": "../pe-cloud-files"
+    },
+    {
       "path": "../../workspace/workspace"
     },
     {

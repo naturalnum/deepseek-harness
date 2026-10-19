@@ -13,6 +13,8 @@
 #include <sys/syscall.h>
 #include <sys/vfs.h>
 #include <unistd.h>
+#include <inttypes.h>
+#include <linux/fs.h>
 
 typedef struct { int anchor; int reader; uint64_t mount_id; } owned_fds;
 
@@ -300,6 +302,206 @@ static napi_value probe_kernel(napi_env env, napi_callback_info info) {
   return result;
 }
 
+#ifdef DSH_FD_TEXT_ABI
+/* ABI7 is a separate build. ABI6 never exports mutation authority. */
+static const char *text_errno(int error) {
+  switch (error) {
+    case ECANCELED: return "ECANCELED";
+    case EEXIST: return "EEXIST";
+    case ENOENT: return "ENOENT";
+    case ENOTDIR: return "ENOTDIR";
+    case EISDIR: return "EISDIR";
+    case ELOOP: return "ELOOP";
+    case EXDEV: return "EXDEV";
+    case ESTALE: return "ESTALE";
+    case EAGAIN: return "EAGAIN";
+    case EPERM: return "EPERM";
+    case EACCES: return "EACCES";
+    case EDQUOT: return "EDQUOT";
+    case ENOSPC: return "ENOSPC";
+    case EFBIG: return "EFBIG";
+    default: return "EIO";
+  }
+}
+
+static napi_value text_failure(napi_env env, int error, int unknown, int stale) {
+  napi_value code, message, failure, outcome;
+  napi_create_string_utf8(env, stale ? "DSH_TEXT_STALE" : text_errno(error), NAPI_AUTO_LENGTH, &code);
+  napi_create_string_utf8(env, "Bounded text publication failed.", NAPI_AUTO_LENGTH, &message);
+  napi_create_error(env, code, message, &failure);
+  napi_create_string_utf8(env, unknown ? "unknown" : "not-published", NAPI_AUTO_LENGTH, &outcome);
+  napi_set_named_property(env, failure, "outcome", outcome);
+  napi_throw(env, failure);
+  return NULL;
+}
+
+static int text_version(const struct stat *s, char *output, size_t extent) {
+  int count = snprintf(output, extent, "%ju:%ju:%jd:%jd:%jd", (uintmax_t)s->st_dev, (uintmax_t)s->st_ino,
+    (intmax_t)s->st_size, (intmax_t)s->st_mtim.tv_sec * 1000000000 + s->st_mtim.tv_nsec,
+    (intmax_t)s->st_ctim.tv_sec * 1000000000 + s->st_ctim.tv_nsec);
+  return count > 0 && (size_t)count < extent;
+}
+
+static int text_relative(const char *path) {
+  if (!path || !*path || *path == '/') return 0;
+  const char *part = path;
+  for (const char *p = path;; p++) {
+    if (*p != '/' && *p != 0) continue;
+    size_t n = (size_t)(p - part);
+    if (n == 0 || (n == 1 && part[0] == '.') || (n == 2 && part[0] == '.' && part[1] == '.')) return 0;
+    if (*p == 0) return 1;
+    part = p + 1;
+  }
+}
+
+static int text_parent(owned_fds *owned, const char *relative) {
+  struct open_how how = {0};
+  how.flags = O_RDONLY | O_DIRECTORY | O_CLOEXEC;
+  how.resolve = RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_XDEV | RESOLVE_NO_SYMLINKS;
+  return (int)syscall(SYS_openat2, owned->anchor, relative, &how, sizeof(how));
+}
+
+static int text_cancelled(int32_t *cancel) { return __atomic_load_n(cancel, __ATOMIC_SEQ_CST) != 0; }
+
+static napi_value write_text(napi_env env, napi_callback_info info) {
+  napi_value args[8], backing, result = NULL;
+  size_t count = 8, length = 0, offset = 0, cancel_length = 0;
+  napi_typedarray_type type;
+  void *content = NULL, *cancel_data = NULL;
+  double maximum;
+  owned_fds *owned = state(env);
+  if (!owned || owned->anchor < 0 || owned->reader != -1
+    || napi_get_cb_info(env, info, &count, args, NULL, NULL) != napi_ok || count != 8
+    || napi_get_typedarray_info(env, args[3], &type, &length, &content, &backing, &offset) != napi_ok || type != napi_uint8_array
+    || napi_get_value_double(env, args[4], &maximum) != napi_ok || !(maximum >= 1 && maximum <= 2147483646) || maximum != (uint32_t)maximum
+    || length > (size_t)maximum
+    || napi_get_typedarray_info(env, args[7], &type, &cancel_length, &cancel_data, &backing, &offset) != napi_ok
+    || type != napi_int32_array || cancel_length != 1) return text_failure(env, EINVAL, 0, 0);
+  char *root = text(env, args[0]), *path = text(env, args[1]), *temporary = text(env, args[2]);
+  char *guard = text(env, args[5]), *expected = text(env, args[6]);
+  size_t expected_length = 1;
+  if (!expected && napi_get_value_string_utf8(env, args[6], NULL, 0, &expected_length) == napi_ok && expected_length == 0) expected = strdup("");
+  int error = 0, unknown = 0, stale = 0, parent = -1, previous = -1, output = -1, created = 0, published = 0;
+  int existed = 0, before_available = 0;
+  size_t before_size = 0;
+  unsigned char *before = NULL;
+  struct stat prior, after, temp_identity;
+  char prior_version[192], final_version[192];
+  const char *parent_path = ".", *leaf = NULL;
+  if (!root || root[0] != '/' || !text_relative(path) || !temporary || !text_relative(temporary) || strchr(temporary, '/')
+    || strncmp(temporary, ".dsh-text-", 10) != 0 || strlen(temporary) > 64 || !guard || !expected
+    || (strcmp(guard, "unconditional") && strcmp(guard, "create") && strcmp(guard, "replace"))) { error = EINVAL; goto done; }
+  char *slash = strrchr(path, '/');
+  leaf = slash ? slash + 1 : path;
+  if (slash) { *slash = 0; parent_path = path; }
+  if (text_cancelled(cancel_data)) { error = ECANCELED; goto done; }
+  error = verify_anchor_path(owned, root);
+  if (error) goto done;
+  parent = text_parent(owned, parent_path);
+  if (parent < 0) { error = errno; goto done; }
+  previous = openat(parent, leaf, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC);
+  if (previous < 0 && errno != ENOENT) { error = errno; goto done; }
+  existed = previous >= 0;
+  if (existed) {
+    if (fstat(previous, &prior) != 0) { error = errno; goto done; }
+    if (!S_ISREG(prior.st_mode)) { error = EISDIR; goto done; }
+    if (prior.st_nlink != 1) { error = EPERM; goto done; }
+    if (!text_version(&prior, prior_version, sizeof(prior_version))) { error = EIO; goto done; }
+  }
+  if (!strcmp(guard, "create") && existed) { error = EEXIST; goto done; }
+  if (!strcmp(guard, "replace") && (!existed || strcmp(prior_version, expected))) { error = ESTALE; stale = 1; goto done; }
+  if (existed && prior.st_size >= 0 && (uintmax_t)prior.st_size <= (uintmax_t)maximum) {
+    before = malloc((size_t)maximum + 1);
+    if (!before) { error = ENOMEM; goto done; }
+    while (before_size < (size_t)maximum + 1) {
+      if (text_cancelled(cancel_data)) { error = ECANCELED; goto done; }
+      ssize_t n = read(previous, before + before_size, (size_t)maximum + 1 - before_size);
+      if (n < 0) { if (errno == EINTR) continue; error = errno; goto done; }
+      if (n == 0) break;
+      before_size += (size_t)n;
+    }
+    before_available = before_size < (size_t)maximum && length < (size_t)maximum;
+  }
+  output = openat(parent, temporary, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
+  if (output < 0) { error = errno; goto done; }
+  created = 1;
+  if (fstat(output, &temp_identity) != 0) { error = errno; unknown = 1; goto done; }
+  for (size_t written = 0; written < length;) {
+    if (text_cancelled(cancel_data)) { error = ECANCELED; goto done; }
+    ssize_t n = write(output, (unsigned char *)content + written, length - written);
+    if (n < 0) { if (errno == EINTR) continue; error = errno; goto done; }
+    if (n == 0) { error = EIO; goto done; }
+    written += (size_t)n;
+  }
+  if (fsync(output) != 0) { error = errno; goto done; }
+  if (text_cancelled(cancel_data)) { error = ECANCELED; goto done; }
+  error = verify_anchor_path(owned, root);
+  if (error) goto done;
+  int checked_parent = text_parent(owned, parent_path);
+  if (checked_parent < 0) { error = errno; goto done; }
+  error = same_identity(parent, checked_parent);
+  if (close(checked_parent) != 0) { if (!error) error = errno; unknown = 1; }
+  if (error) goto done;
+  struct stat current;
+  if (fstatat(parent, leaf, &current, AT_SYMLINK_NOFOLLOW) == 0) {
+    char current_version[192];
+    if (!S_ISREG(current.st_mode) || current.st_nlink != 1) { error = EPERM; goto done; }
+    if (!existed || !text_version(&current, current_version, sizeof(current_version)) || strcmp(current_version, prior_version)) {
+      error = ESTALE; stale = 1; goto done;
+    }
+  } else if (errno != ENOENT) { error = errno; goto done; }
+  else if (existed) { error = ESTALE; stale = 1; goto done; }
+  if (text_cancelled(cancel_data)) { error = ECANCELED; goto done; }
+  int flags = !existed ? RENAME_NOREPLACE : 0;
+  if (syscall(SYS_renameat2, parent, temporary, parent, leaf, flags) != 0) { error = errno; goto done; }
+  published = 1;
+  if (fsync(parent) != 0 || fstat(output, &after) != 0) { error = errno; unknown = 1; goto done; }
+  if (!text_version(&after, final_version, sizeof(final_version))) { error = EIO; unknown = 1; goto done; }
+  error = verify_anchor_path(owned, root);
+  if (error) goto done;
+  checked_parent = text_parent(owned, parent_path);
+  if (checked_parent < 0) { error = errno; goto done; }
+  error = same_identity(parent, checked_parent);
+  if (close(checked_parent) != 0) { if (!error) error = errno; unknown = 1; }
+  if (error) goto done;
+  if (fstatat(parent, leaf, &current, AT_SYMLINK_NOFOLLOW) != 0) { error = errno; goto done; }
+  char published_version[192];
+  if (!S_ISREG(current.st_mode) || current.st_nlink != 1 || !text_version(&current, published_version, sizeof(published_version))
+    || strcmp(final_version, published_version)) { error = ESTALE; goto done; }
+done:
+  if (created && !published && !unknown) {
+    struct stat current;
+    if (fstatat(parent, temporary, &current, AT_SYMLINK_NOFOLLOW) != 0
+      || current.st_dev != temp_identity.st_dev || current.st_ino != temp_identity.st_ino || !S_ISREG(current.st_mode) || current.st_nlink != 1
+      || unlinkat(parent, temporary, 0) != 0 || fsync(parent) != 0) unknown = 1;
+  }
+  if (output >= 0 && close(output) != 0) { if (!error) error = errno; unknown = 1; }
+  if (previous >= 0 && close(previous) != 0) { if (!error) error = errno; unknown = 1; }
+  if (parent >= 0 && close(parent) != 0) { if (!error) error = errno; unknown = 1; }
+  if (published && error) unknown = 1;
+  if (!error && !unknown) {
+    napi_value operation, version, prior_bytes;
+    if (napi_create_object(env, &result) != napi_ok
+      || napi_create_string_utf8(env, existed ? "update" : "create", NAPI_AUTO_LENGTH, &operation) != napi_ok
+      || napi_create_string_utf8(env, final_version, NAPI_AUTO_LENGTH, &version) != napi_ok) { error = EIO; unknown = 1; }
+    if (!error) {
+      if (before_available) {
+        void *bytes;
+        napi_value storage;
+        if (napi_create_arraybuffer(env, before_size, &bytes, &storage) != napi_ok
+          || napi_create_typedarray(env, napi_uint8_array, before_size, storage, 0, &prior_bytes) != napi_ok) { error = EIO; unknown = 1; }
+        else if (before_size) memcpy(bytes, before, before_size);
+      } else napi_get_null(env, &prior_bytes);
+      if (!error && (napi_set_named_property(env, result, "operation", operation) != napi_ok
+        || napi_set_named_property(env, result, "version", version) != napi_ok
+        || napi_set_named_property(env, result, "before", prior_bytes) != napi_ok)) { error = EIO; unknown = 1; }
+    }
+  }
+  free(root); free(path); free(temporary); free(guard); free(expected); free(before);
+  return error || unknown ? text_failure(env, error ? error : EIO, unknown, stale) : result;
+}
+#endif
+
 /* ABI6 leaf operations own their complete FD lifetime and return a fixed, path-free fact frame. */
 enum { LEAF_ATTEMPT = 1, LEAF_CREATED = 2, LEAF_ID = 4, LEAF_UNLINK = 8,
   LEAF_REMOVED = 16, LEAF_CLOSED = 32, LEAF_PARENT = 64, LEAF_SYNCED = 128, LEAF_MOUNT = 256 };
@@ -530,6 +732,9 @@ static napi_value init(napi_env env, napi_value exports) {
   owned->mount_id = 0;
   if (napi_set_instance_data(env, owned, cleanup, NULL) != napi_ok) { free(owned); return fail(env, EIO); }
   napi_property_descriptor methods[] = {
+#ifdef DSH_FD_TEXT_ABI
+    {"writeText", NULL, write_text, NULL, NULL, NULL, napi_default, NULL},
+#endif
     {"openAnchor", NULL, open_anchor, NULL, NULL, NULL, napi_default, NULL},
     {"openRead", NULL, open_read, NULL, NULL, NULL, napi_default, NULL},
     {"closeRead", NULL, close_read, NULL, NULL, NULL, napi_default, NULL},
@@ -543,9 +748,13 @@ static napi_value init(napi_env env, napi_value exports) {
     {"removeExt4Leaf", NULL, remove_ext4_leaf, NULL, NULL, NULL, napi_default, NULL}
   };
   napi_value abi;
+#ifdef DSH_FD_TEXT_ABI
+  napi_create_uint32(env, 7, &abi);
+#else
   napi_create_uint32(env, 6, &abi);
+#endif
   napi_set_named_property(env, exports, "abiVersion", abi);
-  napi_define_properties(env, exports, 11, methods);
+  napi_define_properties(env, exports, sizeof(methods) / sizeof(methods[0]), methods);
   return exports;
 }
 

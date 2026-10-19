@@ -26,6 +26,7 @@
     "@deepseek-ai/dsh-fs": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-pe-cloud-runtime": "workspace:*",
+    "@deepseek-ai/dsh-pe-cloud-files": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-workspace": "workspace:*"
   },
@@ -39,6 +40,7 @@
     "@deepseek-ai/dsh-fs": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-pe-cloud-runtime": "workspace:*",
+    "@deepseek-ai/dsh-pe-cloud-files": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-session-format": "workspace:*",
     "@deepseek-ai/dsh-session-format-catalog": "workspace:*",

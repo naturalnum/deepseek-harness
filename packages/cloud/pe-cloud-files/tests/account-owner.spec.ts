@@ -61,7 +61,12 @@ async function fixture(mode = 'normal') {
       backend: 'root-owned-isolated-linux-tmpfs', assertExclusive: () => { assertMountCurrent(binding) } })
     const input: AccountFilesPreparation = { binding, port, defaultGrant, assertMountCurrent, assertUnpublished }
     let owner: CloudAccountFiles | undefined, context: Context | undefined
-    const start = async (options: { missingOwner?: boolean; duplicateEntry?: boolean; priorRegistry?: boolean } = {}) => {
+    const start = async (options: {
+      missingOwner?: boolean
+      duplicateEntry?: boolean
+      priorRegistry?: boolean
+      createFileSystem?: AccountFilesPreparation['createFileSystem']
+    } = {}) => {
       const configPath = join(dir, 'cordis.yml')
       writeFileSync(configPath, JSON.stringify([
         { id: 'sessions', name: 'cordis:m8r-sessions' }, { id: 'storage', name: 'cordis:m8r-storage' },
@@ -75,7 +80,9 @@ async function fixture(mode = 'normal') {
       const ctx = await boot('m8r-files-' + name, configPath, [], (scope) => {
         context = scope; roots.push(scope)
         scope.provide('peAccount', binding)
-        if (!options.missingOwner) owner = new CloudAccountFiles(scope, input)
+        if (!options.missingOwner) owner = new CloudAccountFiles(scope, {
+          ...input, ...options.createFileSystem === undefined ? {} : { createFileSystem: options.createFileSystem },
+        })
         Object.assign(scope.loader.builtins, { 'm8r-sessions': SessionStore, 'm8r-storage': Storage,
           'm8r-json': JsonStorage, 'm8r-domain': DomainStorage, 'm8r-jsonl': Jsonl,
           'm8r-native-registry': WorkspaceRegistry, 'm8r-account': AccountEntry })
@@ -136,6 +143,26 @@ it('keeps one native installation owner and rejects another graph, duplicate pre
   expect(gc.entry?.fiber?.state).toBe(FiberState.ACTIVE)
   expect(Atomics.load(f.counters, 0)).toBe(3)
   expect(f.workers).toHaveLength(1)
+})
+
+it('prepares the actual Registry and refuses a fallback FS when selected provider preparation fails', async () => {
+  const f = await fixture(), account = f.prepare('A')
+  const rejected = new Error('selected backend unavailable')
+  let selected = 0
+  const graph = await account.start({ createFileSystem: async (workspace, assertInstalled) => {
+    selected++
+    const owner = account.context()
+    if (owner === undefined) throw new Error('Missing actual prepared graph')
+    assertInstalled(owner)
+    expect(owner.get('workspaceRegistry')?.get(workspace.id)).toBe(workspace)
+    expect(owner.get('fs')).toBeUndefined()
+    throw rejected
+  } })
+  await expect(graph.entry?.fiber?.await()).rejects.toBe(rejected)
+  expect(selected).toBe(1)
+  expect(graph.ctx.get('workspaceRegistry')).toBeUndefined()
+  expect(graph.ctx.get('fs')).toBeUndefined()
+  expect(() => graph.owner().project()).toThrow('not completed')
 })
 
 it('rejects an unprepared native entry and nonempty Loader configuration without a filesystem', async () => {

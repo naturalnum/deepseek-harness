@@ -1,4 +1,4 @@
-/** Graph-owned files preparation installs the existing native Registry and S2 filesystem in one account fiber. */
+/** Graph-owned preparation installs the native Registry and its selected restricted filesystem in one account fiber. */
 import { Context, FiberState, Service, type Fiber } from '@deepseek-ai/cordis'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
@@ -6,12 +6,35 @@ import type { IsolatedLeafGrant, PoolReadPort } from './worker-pool.ts'
 import type { ControlledWorkspaceRegistryConstructor } from './workspace-adapter.ts'
 import type { S2ProjectDirectory, S2ProjectPort } from './s2-project.ts'
 import { FilesFailure } from './error.ts'
+import type { InstructionReadReaders } from './instruction-read-work.ts'
+import type { ResidentResult } from './work-queue.ts'
 
 /** Trusted runtime preparation only; Loader JSON cannot select an account, path, backend or plugin. */
 export interface AccountFilesPreparation {
   readonly binding: AccountBinding
   readonly port: Pick<PoolReadPort, 'createWorkspaceRegistry'>
   readonly defaultGrant: IsolatedLeafGrant
+  /**
+   * Select an already reviewed native provider for the actual registered project before its sole FS installs.
+   * @param workspace Original native Registry object, never a path-selected project.
+   * @param assertInstalled Same graph and original active Registry checks for the provider's lifetime.
+   * @returns Native constructor after its actual restricted backend preparation; omission keeps metadata-only S2 behavior.
+   */
+  readonly createFileSystem?: (
+    workspace: Workspace, assertInstalled: (owner: Context) => void,
+  ) => Promise<S2ProjectPort['FileSystem']>
+  /**
+   * Reserve and consume independent source readers for the original native project.
+   * @param workspace Exact registered object; callers must first approve the actual Agent/Session relationship.
+   * @param reservedBytes Complete snapshot construction and retained-result storage.
+   * @param build Consumes fixed readers inside the one files-owned operation.
+   * @param signal Turn/account cancellation; actual work remains with the original lane.
+   * @returns Complete result retained until release; omission keeps instruction reads unavailable.
+   */
+  readonly withInstructionReaders?: <T>(
+    workspace: Workspace, reservedBytes: number,
+    build: (readers: InstructionReadReaders, control: AbortSignal) => Promise<T>, signal: AbortSignal,
+  ) => Promise<ResidentResult<T>>
   /** Require the exact installed mounting/current graph and deployment authority, independently of business readiness. */
   readonly assertMountCurrent: (binding: AccountBinding) => void
   /** Require the original unpublished installation/registration window. */
@@ -46,7 +69,11 @@ export class CloudAccountFiles extends Service {
   /** Exact runtime-installed graph binding, independent of account business readiness. */
   readonly binding: AccountBinding
   // Keep native constructor identity stable through Cordis caller-scoped method tracing.
-  private readonly providers: { readonly Registry: ControlledWorkspaceRegistryConstructor }
+  private readonly providers: {
+    readonly Registry: ControlledWorkspaceRegistryConstructor
+    readonly createFileSystem: AccountFilesPreparation['createFileSystem']
+    readonly withInstructionReaders: AccountFilesPreparation['withInstructionReaders']
+  }
   private readonly checkGraph: (owner: Context) => void
   private readonly unpublished: AccountFilesPreparation['assertUnpublished']
   private readonly identity = Symbol('account-files-owner')
@@ -86,7 +113,7 @@ export class CloudAccountFiles extends Service {
     checkGraph(ctx)
     super(ctx, 'peCloudFiles')
     this.binding = input.binding
-    this.providers = { Registry }
+    this.providers = { Registry, createFileSystem: input.createFileSystem, withInstructionReaders: input.withInstructionReaders }
     this.checkGraph = checkGraph
     this.unpublished = input.assertUnpublished
     this.assertInstalled()
@@ -106,7 +133,8 @@ export class CloudAccountFiles extends Service {
   }
 
   /**
-   * Install the sole original native Registry, await its default result, then install its fixed S2 FileSystem.
+   * Install the sole original native Registry, await its default result, then prepare and install its selected native FileSystem.
+   * Without a trusted provider factory, retain the metadata-only S2 implementation.
    * One Promise retains actual settlement; failure is terminal for this owner and does not certify cleanup.
    * @param owner Actual files/account Loader scope, which owns both native child fibers.
    * @returns The actual project after provider activation and directory verification; no ready or clean claim.
@@ -142,6 +170,34 @@ export class CloudAccountFiles extends Service {
     return work.project
   }
 
+  /**
+   * Consume source readers only for this owner's original installed native project.
+   * The trusted caller owns exact active Agent/Session admission; no path or id grants authority here.
+   * @param workspace Exact Registry object returned by project(), after shared native admission.
+   * @param reservedBytes Complete snapshot storage held through native message handoff.
+   * @param build Consumes independent source readers without another lane reservation.
+   * @param signal Cancellation leaves actual work with the same files participant.
+   * @returns Complete retained result after source I/O settles; stale results are released and rejected.
+   */
+  async withInstructionReaders<T>(
+    workspace: Workspace, reservedBytes: number,
+    build: (readers: InstructionReadReaders, control: AbortSignal) => Promise<T>, signal: AbortSignal,
+  ): Promise<ResidentResult<T>> {
+    const project = this.project(), read = this.providers.withInstructionReaders
+    if (project.workspace !== workspace || read === undefined) {
+      throw new FilesFailure('files/prerequisite-missing', 'The original project instruction sources are unavailable.')
+    }
+    signal.throwIfAborted()
+    const held = await read(workspace, reservedBytes, build, signal)
+    try {
+      signal.throwIfAborted()
+      if (this.project() !== project) {
+        throw new FilesFailure('cloud/stale-generation', 'The instruction source project changed during preparation.')
+      }
+      return held
+    } catch (error) { held.release(); throw error }
+  }
+
   private async mount(owner: Context, work: Installation): Promise<AccountFilesProject> {
     this.assertInstalled(owner)
     this.unpublished()
@@ -165,8 +221,16 @@ export class CloudAccountFiles extends Service {
     }
     const workspace = registry.get(scope.workspaceId)
     if (workspace === undefined) throw new FilesFailure('files/prerequisite-missing', 'The native default Workspace is absent.')
-    work.scope = scope
-    work.filesystem = owner.plugin(scope.FileSystem)
+    const FileSystem = this.providers.createFileSystem === undefined ? scope.FileSystem
+      : await this.providers.createFileSystem(workspace, (consumer) => {
+        this.assertInstalled(consumer)
+        this.assertRegistry(work)
+      })
+    this.assertInstalled(owner)
+    this.unpublished()
+    this.assertRegistry(work)
+    work.scope = Object.freeze({ ...scope, FileSystem })
+    work.filesystem = owner.plugin(FileSystem)
     await work.filesystem.await()
     this.assertInstalled(owner)
     this.unpublished()

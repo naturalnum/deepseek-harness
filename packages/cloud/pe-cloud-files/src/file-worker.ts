@@ -1,16 +1,21 @@
 /** Linux-only private worker: all blocking root/open/stat/read/close calls stay here. */
 import { createRequire } from 'node:module'
+import { randomUUID } from 'node:crypto'
 import { fstatSync, readSync } from 'node:fs'
 import { isAbsolute } from 'node:path'
 import { parentPort, workerData } from 'node:worker_threads'
-import type { FdTaskRequest, FdWorkerInput, FdWorkerReply, FdMetadata, FdDirectoryRequest, FdLeafRequest } from './worker-protocol.ts'
+import type { FdTaskRequest, FdWorkerInput, FdWorkerReply, FdMetadata, FdDirectoryRequest, FdLeafRequest, FdTextWriteRequest } from './worker-protocol.ts'
 import type { FsErrorCode } from '@deepseek-ai/dsh-fs'
+import { FsVersion } from '@deepseek-ai/dsh-fs'
 import { directoryWorkBudget } from './directory-budget.ts'
 import { cancelledLeafFrame, parseLeafFrame } from './leaf-frame.ts'
 import { createStorageWorker, storageRequest } from './storage-worker.ts'
 import type { StaticStorageConfig } from './storage-types.ts'
 
 interface LinuxFdHelper {
+  readonly abiVersion: 6 | 7
+  writeText?(this: void, rootPath: string, relativePath: string, temporary: string, bytes: Uint8Array,
+    maximum: number, guard: string, expected: string, cancel: Int32Array<SharedArrayBuffer>): unknown
   openAnchor(this: void, path: string, device: string, inode: string, mountId: string): void
   openRead(this: void, relativePath: string): number
   openMetadata(this: void, relativePath: string): number
@@ -33,7 +38,8 @@ interface LinuxFdHelper {
 }
 
 function isHelper(value: unknown): value is LinuxFdHelper {
-  return record(value) && value.abiVersion === 6
+  return record(value) && (value.abiVersion === 6 || value.abiVersion === 7)
+    && (value.abiVersion !== 7 || typeof value.writeText === 'function')
     && typeof value.prepareExt4Leaf === 'function' && typeof value.removeExt4Leaf === 'function'
     && typeof value.prepareLeaf === 'function' && typeof value.removeEmptyLeaf === 'function'
     && typeof value.openAnchor === 'function' && typeof value.openRead === 'function' && typeof value.closeRead === 'function'
@@ -106,6 +112,8 @@ function helper(path: string): LinuxFdHelper {
   const prepareExt4Leaf = loaded.prepareExt4Leaf
   const removeExt4Leaf = loaded.removeExt4Leaf
   return {
+    abiVersion: loaded.abiVersion,
+    ...loaded.writeText === undefined ? {} : { writeText: loaded.writeText },
     openAnchor: (path, device, inode, mountId) => {
       try { openAnchor(path, device, inode, mountId) } catch (error) {
         if (record(error) && error.code === 'DSH_FD_CLOSE') throw new AnchorCloseFailure('Mount validation close is unconfirmed')
@@ -218,6 +226,64 @@ function taskRequest(value: unknown, limits: FdWorkerInput): FdTaskRequest {
   return {
     kind: value.kind as FdTaskRequest['kind'], id: value.id as FdTaskRequest['id'], relativePath: value.relativePath, maxBytes: value.maxBytes, cancel: value.cancel,
     root: { rootPath: value.root.rootPath, rootDevice: value.root.rootDevice, rootInode: value.root.rootInode, ...mountField(value.root) },
+  }
+}
+
+function textWriteRequest(value: unknown, limits: FdWorkerInput): FdTextWriteRequest {
+  if (!record(value) || value.kind !== 'text-write' || typeof value.content !== 'string'
+    || Buffer.byteLength(value.content) > limits.maxReadBytes || value.maxBytes !== limits.maxReadBytes) throw new WorkerFailure('FS_TOO_LARGE')
+  const request = taskRequest({ ...value, kind: 'read' }, limits)
+  const expected = value.expected
+  const base = { ...request, kind: 'text-write' as const, content: value.content }
+  if (expected === undefined) return base
+  if (record(expected) && expected.kind === 'createIfAbsent') return { ...base, expected: { kind: 'createIfAbsent' } }
+  if (record(expected) && expected.kind === 'replaceIfVersion' && typeof expected.version === 'string'
+    && /^-?\d{1,30}(?::-?\d{1,30}){4}$/.test(expected.version)) {
+    return { ...base, expected: { kind: 'replaceIfVersion', version: FsVersion(expected.version) } }
+  }
+  throw new WorkerFailure('FS_PERMISSION_DENIED')
+}
+
+function textWrite(native: LinuxFdHelper, request: FdTextWriteRequest): FdWorkerReply {
+  let opened = false
+  let attempted = false
+  try {
+    if (native.abiVersion !== 7 || native.writeText === undefined) throw new WorkerFailure('FS_PERMISSION_DENIED')
+    native.openAnchor(request.root.rootPath, request.root.rootDevice, request.root.rootInode, request.root.rootMountId ?? '0')
+    opened = true
+    const expected = request.expected
+    attempted = true
+    const result = native.writeText(request.root.rootPath, request.relativePath, `.dsh-text-${randomUUID()}.tmp`,
+      Buffer.from(request.content, 'utf8'), request.maxBytes,
+      expected === undefined ? 'unconditional' : expected.kind === 'createIfAbsent' ? 'create' : 'replace',
+      expected?.kind === 'replaceIfVersion' ? expected.version : '', new Int32Array(request.cancel))
+    if (!record(result) || (result.operation !== 'create' && result.operation !== 'update')
+      || typeof result.version !== 'string' || !/^-?\d{1,30}(?::-?\d{1,30}){4}$/.test(result.version)
+      || (result.before !== null && (!(result.before instanceof Uint8Array) || result.before.byteLength > request.maxBytes))) {
+      throw new AnchorCloseFailure('Text publication reply is unconfirmed')
+    }
+    let before: string | null = null
+    if (result.before instanceof Uint8Array && !result.before.subarray(0, 8192).includes(0)) {
+      try { before = new TextDecoder('utf-8', { fatal: true }).decode(result.before).replace(/\r\n?/g, '\n') }
+      catch (error) { if (!(error instanceof TypeError)) throw error /* Non-text prior content has no contextual diff. */ }
+    }
+    closeAnchor(native)
+    opened = false
+    return { kind: 'text-write-reply', id: request.id, result: { operation: result.operation, version: result.version,
+      before, after: request.content.replace(/\r\n?/g, '\n') } }
+  } catch (error) {
+    if (error instanceof AnchorCloseFailure) throw error
+    if (opened) closeAnchor(native)
+    const outcome = !attempted || record(error) && error.outcome === 'not-published' || error instanceof WorkerFailure ? 'not-published' : 'unknown'
+    const observed = failure(error)
+    const code = record(error) && error.code === 'DSH_TEXT_STALE' ? 'FS_STALE_VERSION'
+      : record(error) && error.code === 'EEXIST' ? 'FS_NOT_OBSERVED'
+        : record(error) && error.code === 'ECANCELED' ? 'FS_ABORTED'
+          : record(error) && error.code === 'EFBIG' ? 'FS_TOO_LARGE'
+            : record(error) && error.code === 'EISDIR' ? 'FS_NOT_REGULAR_FILE' : observed.code
+    const syscallCode = code === 'FS_STALE_VERSION' ? 'ESTALE' : observed.syscallCode
+    return { kind: 'text-write-failure', id: request.id, code: outcome === 'unknown' ? 'FS_IO_ERROR' : code, outcome,
+      ...syscallCode === undefined ? {} : { syscallCode } }
   }
 }
 
@@ -406,6 +472,12 @@ function start(): void {
       return
     }
     if (active !== undefined) { port.close(); return }
+    if (record(raw) && raw.kind === 'text-write') {
+      let request: FdTextWriteRequest
+      try { request = textWriteRequest(raw, limits) } catch (_error) { port.close(); return }
+      port.postMessage(textWrite(native, request))
+      return
+    }
     if (record(raw) && ['storage-probe', 'storage-record', 'storage-view'].includes(String(raw.kind))) {
       if (storage === undefined) throw new WorkerFailure('FS_PERMISSION_DENIED')
       const request = storageRequest(raw, limits.maxPathBytes)
@@ -474,7 +546,7 @@ function start(): void {
       port.postMessage({ kind: 'reply', id: request.id, ok: false, ...failure(error) } satisfies FdWorkerReply)
     }
   })
-  port.postMessage({ kind: 'ready', abiVersion: 6, ...storage === undefined ? {} : { storageProbeVersion: 1 as const } } satisfies FdWorkerReply)
+  port.postMessage({ kind: 'ready', abiVersion: native.abiVersion, ...storage === undefined ? {} : { storageProbeVersion: 1 as const } } satisfies FdWorkerReply)
 }
 
 start()

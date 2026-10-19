@@ -11,6 +11,7 @@ import { CloudAccountApi, type ConfigSaveBarrier, type ConfigSaveCoordinator, ty
 import * as ApiAccount from '@deepseek-ai/dsh-pe-cloud-api/account'
 import { CloudAccountFiles, type AccountFilesPreparation } from '@deepseek-ai/dsh-pe-cloud-files'
 import * as FilesAccount from '@deepseek-ai/dsh-pe-cloud-files/account'
+import * as InstructionsSession from '@deepseek-ai/dsh-pe-account-instructions/session'
 import { assertClosedAccountExecution, installAccountExecutionPort, type AccountExecutionPort, type SandboxCoordinator } from '@deepseek-ai/dsh-pe-opensandbox'
 import * as ExecutionAccount from '@deepseek-ai/dsh-pe-opensandbox/account'
 import * as RuntimeAccount from './account.ts'
@@ -57,6 +58,7 @@ export interface AccountNativePreparation {
 /** Fixed private builtin names for the native account recipe, not additional package Loader exports. */
 export const ACCOUNT_NATIVE_ENTRIES = Object.freeze({
   runtime: 'pe-cloud-runtime-account', api: 'pe-cloud-api-account', files: 'pe-cloud-files-account', execution: 'pe-cloud-execution-account',
+  instructions: 'pe-account-instructions-session',
   editor: 'pe-cloud-config-editor', credentials: 'pe-cloud-credentials',
   controller: 'pe-cloud-session-controller', agentLoop: 'pe-cloud-agent-loop', llm: 'pe-cloud-llm',
 })
@@ -178,6 +180,33 @@ export class AccountNativeIntegration {
         throw new AccountRuntimeError('cloud/stale-generation', 'The account files project changed during directory preparation')
       }
     } })
+    if (filesOwner !== undefined) {
+      const sources = filesOwner
+      const active = (agent: Parameters<AccountNativeGuards['sessions']['assertActiveScope']>[0]): void => {
+        this.input.assertRootCurrent()
+        businessCurrent(binding)
+        sources.assertInstalled(agent.ctx)
+        requireGuards(agent.ctx).sessions.assertActiveScope(agent)
+      }
+      new InstructionsSession.AccountInstructionSources(ctx, {
+        binding,
+        assertInstalled: (owner) => { api.assertInstalled(owner); sources.assertInstalled(owner) },
+        assertCurrent: active,
+        async withSources(agent, bytes, build, signal) {
+          active(agent)
+          const installed = project(agent.ctx)
+          return sources.withInstructionReaders(installed.workspace, bytes, async (readers, control) => {
+            active(agent)
+            const value = await build(installed.workspace.id, readers, control)
+            active(agent)
+            if (project(agent.ctx) !== installed) {
+              throw new AccountRuntimeError('cloud/stale-generation', 'The native instruction project changed during preparation')
+            }
+            return value
+          }, signal)
+        },
+      })
+    }
     const readSession = (id: SessionId, summary?: SessionSummary): void => {
       const approved = requireGuards(ctx), check = approved.assertSessionRead
       if (check === undefined) {
@@ -228,6 +257,7 @@ export class AccountNativeIntegration {
       [ACCOUNT_NATIVE_ENTRIES.runtime]: RuntimeAccount,
       [ACCOUNT_NATIVE_ENTRIES.api]: ApiAccount,
       [ACCOUNT_NATIVE_ENTRIES.files]: FilesAccount,
+      [ACCOUNT_NATIVE_ENTRIES.instructions]: InstructionsSession,
       [ACCOUNT_NATIVE_ENTRIES.execution]: ExecutionAccount,
       [ACCOUNT_NATIVE_ENTRIES.editor]: api.providers.configEditor,
       [ACCOUNT_NATIVE_ENTRIES.credentials]: api.providers.credentials,

@@ -6,7 +6,7 @@ import { validateLimits } from './config.ts'
 import { loadInstructionContents } from './load.ts'
 import type { Config } from './config.ts'
 import type { InstructionMessage, InstructionMessageSource, InstructionSnapshot } from './types.ts'
-import type { InstructionDirectory, InstructionReader } from './internal-types.ts'
+import type { InstructionDirectory } from './internal-types.ts'
 
 const INTRO = 'Complete instruction snapshot for the current turn. Earlier instruction snapshots are historical.\n'
 const EMPTY = 'No optional instruction files are present.\n'
@@ -19,8 +19,7 @@ const EMPTY = 'No optional instruction files are present.\n'
  * cloned; maxResidentBytes checks the source-buffer and handoff-copy text plan.
  * Acquiring actual shared reservations remains the files owner's responsibility.
  * Empty optional sources produce an explicit empty snapshot; failures produce none.
- * @param reader - existing restricted native read operations.
- * @param directories - approved source targets; project labels identify the full root-to-cwd chain.
+ * @param directories - approved source targets and their fixed read-only readers; project labels identify the full root-to-cwd chain.
  * @param identity - validated C-09 identity data, not an authorization token.
  * @param config - explicit source, envelope and conservative storage budgets.
  * @param signal - current turn/account cancellation.
@@ -28,7 +27,6 @@ const EMPTY = 'No optional instruction files are present.\n'
  * @throws original provider/cancellation errors, FS_TOO_LARGE, or invalid configuration.
  */
 export async function prepareInstructionSnapshot(
-  reader: InstructionReader,
   directories: readonly InstructionDirectory[],
   identity: Pick<InstructionSnapshot, 'accountId' | 'workspaceId' | 'epoch'>,
   config: Config,
@@ -44,7 +42,7 @@ export async function prepareInstructionSnapshot(
   const source: InstructionMessageSource = { kind: 'pe-account-instructions', form: 'instructions', snapshot: initial }
   const seed = createUserMessage({ content: [], source })
   if (jsonBytes(seed) > config.maxSnapshotBytes) throw new FsError('Instruction message metadata exceeds its byte budget.', 'FS_TOO_LARGE')
-  const contents = await loadInstructionContents(reader, directories, config, signal)
+  const contents = await loadInstructionContents(directories, config, signal)
   const parts = [INTRO]
   if (contents.sources.length === 0) parts.push(EMPTY)
   for (const entry of contents.sources) {

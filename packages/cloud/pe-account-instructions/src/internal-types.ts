@@ -8,11 +8,12 @@ export interface InstructionContents {
   readonly totalBytes: number
 }
 
-/** Directory target and label supplied by the owning scope adapter. */
+/** Approved directory and its fixed read-only capability, supplied by its owning scope adapter. */
 export interface InstructionDirectory {
   readonly kind: InstructionSourceKind
   readonly relativeName: string
   readonly target: FsTarget
+  readonly reader: InstructionReader
 }
 
 /** Native operations on a restricted, read-only files capability. */

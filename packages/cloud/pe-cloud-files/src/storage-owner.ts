@@ -15,7 +15,10 @@ export interface StaticStorageDriver {
   probe(path: string): Promise<StorageProbeFacts>
   view(): Promise<FdStorageView>
   assertPoolCurrent(): void
-  bind(binding: AccountBinding, root: FdRootIdentity, current: () => void): PoolReadPort
+  bind(
+    binding: AccountBinding, root: FdRootIdentity, current: () => void,
+    privateParent?: FdRootIdentity & { readonly rootMountId: string },
+  ): PoolReadPort
   joinEpoch(binding: AccountBinding): Promise<void>
 }
 
@@ -323,8 +326,12 @@ export class StaticAccountStorageLease {
     const current = (): void => { this.assertCurrent(); assertCurrent(binding) }
     const parent = Object.freeze({ rootPath: this.account.projects.rootPath, rootDevice: this.account.projects.rootDevice,
       rootInode: this.account.projects.rootInode, rootMountId: this.account.projects.rootMountId })
-    const port = this.driver.bind(binding, parent, current)
+    const privateParent = Object.freeze({ rootPath: this.account.private.rootPath, rootDevice: this.account.private.rootDevice,
+      rootInode: this.account.private.rootInode, rootMountId: this.account.private.rootMountId })
+    const port = this.driver.bind(binding, parent, current, privateParent)
     const preparation: AccountFilesPreparation = Object.freeze({ binding, port,
+      createFileSystem: (...args: Parameters<PoolReadPort['createTextFileSystem']>) => port.createTextFileSystem(...args),
+      withInstructionReaders: port.withInstructionReaders,
       defaultGrant: Object.freeze({ binding, parent, backend: 'root-owned-isolated-ext4', leaf: 'default-workspace',
         assertDeployment: current, assertExclusive: current }),
       assertMountCurrent: (actual: AccountBinding) => { if (actual !== binding) stale(); current() },

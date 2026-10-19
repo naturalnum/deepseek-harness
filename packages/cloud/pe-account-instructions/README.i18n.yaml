@@ -3,26 +3,26 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/cloud/pe-account-instructions/README.md
 /:
-  en: c63b58eaae60bc4c
-  zh: ae38945f98367cf4
+  en: 466203da079e2aaf
+  zh: 3672cb6ed99bc4e0
 /deepseek-ai-dsh-pe-account-instructions:
   en: d2b90732d5dac65d
   zh: f4cf24d091bf3945
 /deepseek-ai-dsh-pe-account-instructions/summary:
-  en: 9b5b4dee8681ef8b
-  zh: 4cf91ed93e1f7862
+  en: 82b954ca6e422ae6
+  zh: fecfaafc16fb7282
 /deepseek-ai-dsh-pe-account-instructions/table-of-contents:
   en: d152484eb41ac6b4
   zh: 9f0336825ccdaacd
 /deepseek-ai-dsh-pe-account-instructions/use-this-package:
-  en: 14c71c1802e7770b
-  zh: de410681c06af5af
+  en: 884fe72fb890413a
+  zh: 199d93b517c80fa8
 /deepseek-ai-dsh-pe-account-instructions/use-this-package/minimal-configuration:
-  en: a56c070e98b03e52
-  zh: e1bed35420da3154
+  en: e3a83b3ed0644564
+  zh: 0f9c09adaf095376
 /deepseek-ai-dsh-pe-account-instructions/understand-the-implementation:
-  en: dbd718ba5e639af2
-  zh: 2e485e6bbbaef8ed
+  en: 2bd111b411ad0cec
+  zh: d76d6b8d8e40148b
 /deepseek-ai-dsh-pe-account-instructions/further-exploration:
   en: 7d1a5649e0b18e90
   zh: 8f265a6c4f1a4698
@@ -33,17 +33,17 @@
   en: 7298c7fafe2bf9a6
   zh: 827edda7de6e265e
 /deepseek-ai-dsh-pe-account-instructions/model-experience/instruction-context/what-the-model-sees:
-  en: 2f808aedf8e187f0
-  zh: 218cfb8177dc80a0
+  en: 78f576820ddf8d82
+  zh: afb87dd798d56c6b
 /deepseek-ai-dsh-pe-account-instructions/model-experience/instruction-context/what-the-model-sees/complete-snapshot-framing:
   en: 0262516aee7e8120
   zh: 1b23d193b4b06d5a
 /deepseek-ai-dsh-pe-account-instructions/model-experience/instruction-context/token-effect:
-  en: a4bbd8078ce7dd80
-  zh: 9c7919b7c971a47a
+  en: 43e9340f9afba521
+  zh: 7c815604b4f3a33c
 /deepseek-ai-dsh-pe-account-instructions/model-experience/instruction-context/kv-cache-effect:
-  en: 5b3599d5f3a91014
-  zh: 2f3c082f3f9878e1
+  en: 1b974e8fa1916193
+  zh: 345c8d75a71b34dc
 /deepseek-ai-dsh-pe-account-instructions/known-limitations-and-deferred-work:
   en: 53c4acea1d004506
   zh: 609244929b041c53

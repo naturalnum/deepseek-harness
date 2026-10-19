@@ -1,6 +1,7 @@
 /** Internal worker messages, not account authorization or a public filesystem protocol. */
 import type { OperationId } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { FsErrorCode } from '@deepseek-ai/dsh-fs'
+import type { FsWriteIntent } from '@deepseek-ai/dsh-fs'
 import type { DirectoryCreatedIdentity } from './directory-responsibility.ts'
 import type { StaticStorageConfig } from './storage-types.ts'
 
@@ -47,6 +48,26 @@ export interface FdTaskRequest {
   readonly cancel: SharedArrayBuffer
 }
 
+/** ABI7 text mutation; the existing parent must already be beneath the fixed anchor. */
+export interface FdTextWriteRequest {
+  readonly kind: 'text-write'
+  readonly id: OperationId
+  readonly root: FdRootIdentity
+  readonly relativePath: string
+  readonly content: string
+  readonly expected?: FsWriteIntent
+  readonly maxBytes: number
+  readonly cancel: SharedArrayBuffer
+}
+
+/** Closed-descriptor successful publication; text decoding belongs to the worker. */
+export interface FdTextWriteResult {
+  readonly operation: 'create' | 'update'
+  readonly version: string
+  readonly before: string | null
+  readonly after: string
+}
+
 /** One read-only directory observation, routed beneath a previously approved anchor. */
 export interface FdDirectoryRequest {
   readonly kind: 'directory'
@@ -91,7 +112,15 @@ export interface FdStreamControl {
 
 /** Success follows FD closure except stream-ready/chunk, which retain actual operation ownership. */
 export type FdWorkerReply =
-  | { readonly kind: 'ready'; readonly abiVersion: 6; readonly storageProbeVersion?: 1 }
+  | { readonly kind: 'ready'; readonly abiVersion: 6 | 7; readonly storageProbeVersion?: 1 }
+  | { readonly kind: 'text-write-reply'; readonly id: OperationId; readonly result: FdTextWriteResult }
+  | {
+    readonly kind: 'text-write-failure'
+    readonly id: OperationId
+    readonly code: FsErrorCode
+    readonly syscallCode?: string
+    readonly outcome: 'not-published' | 'unknown'
+  }
   | { readonly kind: 'storage-probe-reply'; readonly id: OperationId; readonly frame: Uint8Array<ArrayBuffer> }
   | { readonly kind: 'storage-record-reply'; readonly id: OperationId; readonly bytes: Uint8Array<ArrayBuffer> }
   | { readonly kind: 'storage-view-reply'; readonly id: OperationId; readonly view: FdStorageView }

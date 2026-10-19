@@ -2,9 +2,9 @@
 import { randomUUID } from 'node:crypto'
 import type { Worker } from 'node:worker_threads'
 import type { OperationId } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
-import type { FsErrorCode } from '@deepseek-ai/dsh-fs'
+import type { FsErrorCode, FsWriteIntent } from '@deepseek-ai/dsh-fs'
 import type { FdTaskRequest, FdRootIdentity, FdMetadata, FdDirectoryRequest, FdDirectoryObservation, LeafBackend,
-  FdStorageRequest, FdStorageView } from './worker-protocol.ts'
+  FdStorageRequest, FdStorageView, FdTextWriteRequest, FdTextWriteResult } from './worker-protocol.ts'
 import { FilesFailure } from './error.ts'
 import { DirectoryMetadataFailure } from './directory-error.ts'
 import { parseLeafFrame, leafPreparation, DirectoryPreparationFailure } from './leaf-frame.ts'
@@ -16,6 +16,14 @@ import type { StorageProbeFacts } from './storage-types.ts'
 /** Transport failure retains the native error category without private paths. */
 export class FdWorkerFailure extends Error {
   constructor(readonly code: FsErrorCode, readonly syscallCode?: string) { super(code) }
+}
+
+/** Distinguishes confirmed nonpublication from unresolved mutation or cleanup. */
+export class FdTextWriteFailure extends FdWorkerFailure {
+  constructor(readonly outcome: 'not-published' | 'unknown', code: FsErrorCode, syscallCode?: string, options?: ErrorOptions) {
+    super(code, syscallCode)
+    if (options?.cause !== undefined) this.cause = options.cause
+  }
 }
 
 /** One outstanding pull, with an independent actual-completion promise for queue ownership. */
@@ -39,6 +47,12 @@ interface PendingRead extends PendingBase {
 interface PendingStat extends PendingBase {
   readonly kind: 'stat'
   readonly resolve: (info: FdMetadata | undefined) => void
+  readonly reject: (error: Error) => void
+}
+interface PendingTextWrite extends PendingBase {
+  readonly kind: 'text-write'
+  readonly content: string
+  readonly resolve: (value: FdTextWriteResult) => void
   readonly reject: (error: Error) => void
 }
 interface PendingDirectory extends PendingBase {
@@ -73,13 +87,13 @@ interface PendingStream extends PendingBase {
   cancelled: boolean
   total: number
 }
-type Pending = PendingRead | PendingStat | PendingStream | PendingDirectory | PendingLeaf | PendingStorage
+type Pending = PendingRead | PendingStat | PendingStream | PendingDirectory | PendingLeaf | PendingStorage | PendingTextWrite
 
 function object(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null }
 function wireError(value: Record<string, unknown>): FdWorkerFailure | undefined {
   if (typeof value.code !== 'string'
     || !['FS_NOT_FOUND', 'FS_NOT_DIRECTORY', 'FS_NOT_REGULAR_FILE', 'FS_NOT_TEXT', 'FS_TOO_LARGE',
-      'FS_PERMISSION_DENIED', 'FS_ABORTED', 'FS_IO_ERROR'].includes(value.code)
+      'FS_PERMISSION_DENIED', 'FS_ABORTED', 'FS_IO_ERROR', 'FS_NOT_OBSERVED', 'FS_STALE_VERSION'].includes(value.code)
     || (value.syscallCode !== undefined && (typeof value.syscallCode !== 'string' || !/^[A-Z]{1,16}$/.test(value.syscallCode)))) return undefined
   return new FdWorkerFailure(value.code as FsErrorCode, value.syscallCode)
 }
@@ -100,6 +114,7 @@ export class FdWorkerClient {
   readonly exited: Promise<number>
   private readyResolved = false
   private storageVersion: 1 | undefined
+  private abiVersion: 6 | 7 | undefined
   private closed = false
   private failure: Error | undefined
   private pending: Pending | undefined
@@ -120,6 +135,37 @@ export class FdWorkerClient {
       if (!this.readyResolved) this.rejectReady(error)
       this.failPending(error)
       this.resolveExit(code)
+    })
+  }
+
+  /** Whether this exact prebuilt worker completed the independent text-capable ABI handshake. */
+  get supportsTextWrites(): boolean { return this.abiVersion === 7 }
+
+  /**
+   * Publish one bounded UTF-8 replacement; cancellation never releases actual transport ownership.
+   * @param root Already authorized fixed project anchor.
+   * @param relativePath Existing-parent target beneath that anchor.
+   * @param content Complete bounded UTF-8 content; the result alone normalizes newlines.
+   * @param expected Native create/version guard, or unconditional replacement.
+   * @param maxBytes Explicit existing text byte limit.
+   * @param signal Shared cancellation observed before publication.
+   * @returns Durable outcome after descriptors close; unknown effects reject distinctly.
+   */
+  writeText(
+    root: FdRootIdentity, relativePath: string, content: string, expected: FsWriteIntent | undefined,
+    maxBytes: number, signal: AbortSignal,
+  ): Promise<FdTextWriteResult> {
+    try { this.assertAvailable(signal) } catch (error) {
+      if (error instanceof FdWorkerFailure) throw new FdTextWriteFailure('not-published', error.code, error.syscallCode, { cause: error })
+      throw error
+    }
+    if (!this.supportsTextWrites) throw new FdTextWriteFailure('not-published', 'FS_PERMISSION_DENIED')
+    if (Buffer.byteLength(content, 'utf8') > maxBytes) throw new FdTextWriteFailure('not-published', 'FS_TOO_LARGE')
+    return new Promise((resolve, reject) => {
+      const pending: PendingTextWrite = { kind: 'text-write', ...this.base(maxBytes, signal), content, resolve, reject }
+      this.pending = pending
+      this.post({ kind: 'text-write', id: pending.id, root, relativePath, content, maxBytes,
+        ...expected === undefined ? {} : { expected }, cancel: pending.cancel.buffer } satisfies FdTextWriteRequest)
     })
   }
 
@@ -381,9 +427,10 @@ export class FdWorkerClient {
     if (this.failure !== undefined) return
     if (!object(value)) { this.failProtocol(); return }
     if (value.kind === 'ready') {
-      if (value.abiVersion !== 6 || this.readyResolved || this.closed
+      if ((value.abiVersion !== 6 && value.abiVersion !== 7) || this.readyResolved || this.closed
         || (value.storageProbeVersion !== undefined && value.storageProbeVersion !== 1)) { this.failProtocol(); return }
       this.storageVersion = value.storageProbeVersion
+      this.abiVersion = value.abiVersion
       this.readyResolved = true
       this.resolveReady()
       return
@@ -396,6 +443,7 @@ export class FdWorkerClient {
     }
     const pending = this.pending
     if (pending === undefined || value.id !== pending.id) { this.failProtocol(); return }
+    if (pending.kind === 'text-write') { this.textWriteMessage(pending, value); return }
     if (pending.kind === 'directory') { this.directoryMessage(pending, value); return }
     if (pending.kind === 'leaf-prepare' || pending.kind === 'leaf-cleanup') {
       const parsed = value.kind === `${pending.kind}-reply`
@@ -431,6 +479,27 @@ export class FdWorkerClient {
     pending.removeAbort()
     this.pending = undefined
     pending.resolve(new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength))
+  }
+
+  private textWriteMessage(pending: PendingTextWrite, value: Record<string, unknown>): void {
+    if (value.kind === 'text-write-failure') {
+      const error = wireError(value)
+      if (error === undefined || (value.outcome !== 'not-published' && value.outcome !== 'unknown')) { this.failProtocol(); return }
+      pending.removeAbort()
+      this.pending = undefined
+      pending.reject(new FdTextWriteFailure(value.outcome, value.outcome === 'unknown' ? 'FS_IO_ERROR' : error.code,
+        error.syscallCode, { cause: error }))
+      return
+    }
+    const result = value.result
+    if (value.kind !== 'text-write-reply' || !object(result)
+      || (result.operation !== 'create' && result.operation !== 'update')
+      || typeof result.version !== 'string' || !/^-?\d{1,30}(?::-?\d{1,30}){4}$/.test(result.version)
+      || (result.before !== null && (typeof result.before !== 'string' || Buffer.byteLength(result.before) > pending.maxBytes))
+      || result.after !== pending.content.replace(/\r\n?/g, '\n') || (result.operation === 'create' && result.before !== null)) { this.failProtocol(); return }
+    pending.removeAbort()
+    this.pending = undefined
+    pending.resolve({ operation: result.operation, version: result.version, before: result.before, after: result.after })
   }
 
   private directoryMessage(pending: PendingDirectory, value: Record<string, unknown>): void {
@@ -498,6 +567,7 @@ export class FdWorkerClient {
     this.pending = undefined
     if (pending.kind === 'directory') pending.reject(new DirectoryMetadataFailure('unavailable', 'transport', { cause: error }))
     else if (pending.kind === 'stream') pending.finish(error)
+    else if (pending.kind === 'text-write') pending.reject(new FdTextWriteFailure('unknown', 'FS_IO_ERROR', undefined, { cause: error }))
     else pending.reject(error)
   }
 

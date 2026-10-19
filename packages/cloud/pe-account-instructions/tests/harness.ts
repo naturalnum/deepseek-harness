@@ -20,22 +20,37 @@ export interface Source {
 }
 
 export class Reader implements InstructionReader {
+  private readonly targets = new WeakSet<FsTarget>()
   readonly probes: string[] = []
   readonly reads: string[] = []
   readonly closed: string[] = []
   readonly yielded: string[] = []
   readonly files = new Map<string, Source>()
 
+  constructor(private readonly root = '/approved') {}
+
   async resolve(path: string, options?: { cwd?: string; signal?: AbortSignal }): Promise<FsTarget> {
     options?.signal?.throwIfAborted()
-    const absolute = posix.resolve(options?.cwd ?? '/approved', path)
+    const absolute = posix.resolve(options?.cwd ?? this.root, path)
     this.probes.push(absolute)
     const failure = this.files.get(absolute)?.error
     if (failure !== undefined) throw failure
-    return target(absolute)
+    return this.target(absolute)
   }
-  processPath(file: FsTarget): string { return file.displayPath }
+  target(path: string): FsTarget {
+    const file = { targetKey: FsTargetKey(path), displayPath: path }
+    this.targets.add(file)
+    return file
+  }
+  private assertOwnTarget(file: FsTarget): void {
+    if (!this.targets.has(file)) throw new FsError('Target belongs to another reader.', 'FS_SANDBOX_DENIED')
+  }
+  processPath(file: FsTarget): string {
+    this.assertOwnTarget(file)
+    return file.displayPath
+  }
   async stat(file: FsTarget): Promise<FsInfo | undefined> {
+    this.assertOwnTarget(file)
     const source = this.files.get(file.displayPath)
     if (source === undefined) return undefined
     return {
@@ -45,6 +60,7 @@ export class Reader implements InstructionReader {
     }
   }
   async streamText(file: FsTarget): Promise<AsyncIterable<string>> {
+    this.assertOwnTarget(file)
     const source = this.files.get(file.displayPath)
     if (source === undefined) throw new FsError('missing', 'FS_NOT_FOUND')
     this.reads.push(file.displayPath)
@@ -68,7 +84,6 @@ export function budget(maxFileBytes: number, maxTotalBytes: number, maxFiles = 8
   return { ...caps, maxResidentBytes: 1_000_000 }
 }
 export const signal = (): AbortSignal => new AbortController().signal
-export function target(path: string): FsTarget { return { targetKey: FsTargetKey(path), displayPath: path } }
-export function directory(kind: InstructionDirectory['kind'], path: string, label: string): InstructionDirectory {
-  return { kind, relativeName: label, target: target(path) }
+export function directory(reader: Reader, kind: InstructionDirectory['kind'], path: string, label: string): InstructionDirectory {
+  return { reader, kind, relativeName: label, target: reader.target(path) }
 }

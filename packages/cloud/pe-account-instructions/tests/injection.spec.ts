@@ -10,17 +10,20 @@ import { sessionFormatCatalog } from '@deepseek-ai/dsh-session-format-catalog'
 import { snapshotSessionFormatJson } from '@deepseek-ai/dsh-session-format'
 import { normalizeSessionLog, redactSessionSnapshotIds } from '@deepseek-ai/dsh-session-snapshot'
 import { FsError } from '@deepseek-ai/dsh-fs'
-import type { InstructionMessage } from '../src/types.ts'
 import { prepareInstructionSnapshot } from '../src/snapshot.ts'
 import { Reader, limits, directory, identity, signal } from './harness.ts'
 import { mountAgentLoopTestDependencies, mountAgentLoopTestHarness } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
 import { installInstructionInjection } from '../src/injection.ts'
+import type { PreparedInstruction } from '../src/injection.ts'
 
-async function context(text: string): Promise<InstructionMessage> {
+async function context(text: string): Promise<PreparedInstruction> {
   const reader = new Reader()
   reader.files.set('/project/AGENTS.md', { chunks: [text] })
-  return prepareInstructionSnapshot(reader, [directory('project', '/project', '.')], identity, limits, signal())
+  return {
+    message: await prepareInstructionSnapshot([directory(reader, 'project', '/project', '.')], identity, limits, signal()),
+    release() {},
+  }
 }
 function prompt(): UserMessage {
   return createUserMessage({ content: [{ type: 'text', text: 'start' }], source: { kind: 'user' } })
@@ -263,8 +266,10 @@ it('logs an explicit empty snapshot on the next turn after optional sources disa
     const reader = new Reader()
     reader.files.set('/project/AGENTS.md', { chunks: ['initial instructions'] })
     await ctx.plugin((owner) => {
-      installInstructionInjection(owner, signal(), () => {}, async (_agent, control) =>
-        prepareInstructionSnapshot(reader, [directory('project', '/project', '.')], identity, limits, control))
+      installInstructionInjection(owner, signal(), () => {}, async (_agent, control) => ({
+        message: await prepareInstructionSnapshot([directory(reader, 'project', '/project', '.')], identity, limits, control),
+        release() {},
+      }))
     })
     const agent = await harness.create(SessionId('empty-next-turn'), { provider: 'test', model: 'test' })
     agent.followup(prompt())
@@ -294,8 +299,10 @@ it('does not call the model or log partial instruction context when the reader f
     const reader = new Reader()
     reader.files.set('/project/AGENTS.md', { chunks: [], error: new FsError('unavailable', 'FS_IO_ERROR') })
     await ctx.plugin((owner) => {
-      installInstructionInjection(owner, signal(), () => {}, async (_agent, control) =>
-        prepareInstructionSnapshot(reader, [directory('project', '/project', '.')], identity, limits, control))
+      installInstructionInjection(owner, signal(), () => {}, async (_agent, control) => ({
+        message: await prepareInstructionSnapshot([directory(reader, 'project', '/project', '.')], identity, limits, control),
+        release() {},
+      }))
     })
     const agent = await harness.create(SessionId('reader-failure'), { provider: 'test', model: 'test' })
     agent.followup(prompt())
@@ -321,7 +328,7 @@ it('aborts on disposal and waits for observable preparation to settle', async ()
     ctx.llm.registerAdapter(['test'], adapter)
     const started = Promise.withResolvers<undefined>()
     const aborted = Promise.withResolvers<undefined>()
-    const release = Promise.withResolvers<InstructionMessage>()
+    const release = Promise.withResolvers<PreparedInstruction>()
     const fiber = await ctx.plugin((owner) => {
       installInstructionInjection(owner, new AbortController().signal, () => {}, async (_agent, control) => {
         control.addEventListener('abort', () => { aborted.resolve(undefined) }, { once: true })
@@ -356,7 +363,7 @@ it('rejects a generation that ends during preparation without admitting its mess
     ctx.llm.registerAdapter(['test'], adapter)
     const account = new AbortController()
     const ready = Promise.withResolvers<undefined>()
-    const release = Promise.withResolvers<InstructionMessage>()
+    const release = Promise.withResolvers<PreparedInstruction>()
     await ctx.plugin((owner) => {
       installInstructionInjection(owner, account.signal, () => {
         account.signal.throwIfAborted()

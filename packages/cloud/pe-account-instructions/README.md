@@ -1,5 +1,5 @@
 ---
-description: "Configure finite instruction source limits and inspect why account file instructions remain disabled."
+description: "Configure bounded native instruction snapshots through an account-prepared source adapter."
 kind: "package-reference"
 ---
 
@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-File instructions are unavailable until trusted account/project validation and restricted read-only file access are connected. Missing prerequisites produce a configuration error before any instruction file is read. Keep the instruction row disabled; this package does not discover the host home, traverse project parents or allocate sandboxes.
+File instructions require an account-prepared adapter for trusted Agent/project validation and reserved, restricted source reads. Missing prerequisites produce a configuration error before any instruction file is read. Deployments without that adapter must keep the instruction row disabled. This package does not discover the host home, traverse project parents or allocate sandboxes.
 
 ## Table of Contents
 
@@ -25,11 +25,11 @@ File instructions are unavailable until trusted account/project validation and r
 <a id="use-this-package"></a>
 ## Use this package
 
-The `/session` Loader entry always rejects activation with `cloud/invalid-config`: the account/project and restricted read-only files adapters are not connected. A deployment must keep this row disabled and exclude the native automatic instruction loader; neither an empty result nor a pending injection warning enables instructions. The root exports configuration and instruction data types, without mounting behavior.
+Account preparation constructs `new AccountInstructionSources(ctx, input)` from `/session` with the exact installed binding, shared active-Agent checks and the files owner's `withSources` operation. That operation reserves complete snapshot storage and supplies each source's independent restricted reader plus the actual native Workspace id. Construction creates no source authority. `/session` rejects activation with `cloud/invalid-config` when preparation is absent, stale or foreign. Keep the row disabled until the real adapter is connected, and exclude the native automatic instruction loader. The root exports configuration and instruction data types without mounting behavior.
 
 ### Minimal configuration
 
-No successful mount configuration is available until the owner adapters are connected. The [configuration schema](src/config.ts) requires all five limits below; every value must be a positive safe integer. These limits do not substitute for files-owned global/account admission, stream credit or physical storage isolation.
+The prepared owner must exist before the Loader row activates. The [configuration schema](src/config.ts) requires all five limits below; every value must be a positive safe integer. These limits do not substitute for files-owned global/account admission, stream credit or physical storage isolation.
 
 | Field | Default | Meaning |
 | --- | --- | --- |
@@ -49,11 +49,11 @@ No successful mount configuration is available until the owner adapters are conn
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The package-local reader accepts only directory targets already authorized by the API/files owners, then orders platform, account and project sources. Project labels must form the complete root-to-cwd chain; that presentation check does not authorize their targets. For each directory, an existing AGENTS.md, including an empty file, suppresses CLAUDE.md. Only confirmed absence permits fallback. Provider failures, special files, cancellation and excess bytes fail the complete operation without a partial result. No direct host filesystem access, home discovery, project creation, parent traversal or sandbox allocation occurs.
+The package-local loader accepts only directory targets already authorized by the API/files owners, then orders platform, account and project sources. Each directory carries its fixed restricted read-only reader; platform, account and project sources use their respective readers for candidate selection and content streams. Project labels must form the complete root-to-cwd chain; that presentation check does not authorize their targets. For each directory, an existing AGENTS.md, including an empty file, suppresses CLAUDE.md. Only confirmed absence permits fallback through that directory's reader. Provider failures, special files, cancellation and excess bytes fail the complete operation without a partial result. No direct host filesystem access, home discovery, project creation, parent traversal or sandbox allocation occurs.
 
 The snapshot builder measures the complete encoded envelope before joining the rendered text or cloning the final message. It hashes exactly the text retained in each source and stores the complete snapshot under the native producer attribution. `snapshot.totalBytes` counts the rendered model-visible text, including labels and framing; `maxSnapshotBytes` additionally covers all JSON metadata and repeated content.
 
-The pre-step adapter calls the waterfall continuation and prepares one immutable native message per real Session turn. It marks acceptance only after the exact message enters the native `user/message` log; a dropped decision can offer the same snapshot at a later step. Each entering step rechecks the owner's admission. Cancellation combines turn, account-generation and plugin lifetimes; `turn/end` clears the derived cache, including rejected preparation. Disposal cancels preparation and waits for observable work to settle. Files still owns actual global reservations and I/O drain; these helpers do not introduce an authorization protocol or context queue.
+The pre-step adapter calls the waterfall continuation and prepares one immutable native message per real Session turn. The preparation callback returns the message with a files-owned retained-reservation release operation, after its actual I/O has settled. The adapter releases that reservation when the exact message enters the native `user/message` log; a dropped decision retains it and can offer the same snapshot at a later step. Each entering step rechecks the owner's admission. Cancellation combines turn, account-generation and plugin lifetimes; `turn/end`, generation withdrawal and disposal release any unaccepted result. Disposal cancels preparation and waits for pending preparation to settle, releasing late results. Files still owns actual global reservations and I/O drain; these helpers do not introduce an authorization protocol or context queue.
 
 | Source | Responsibility |
 | --- | --- |
@@ -85,7 +85,7 @@ These references explain the native lifecycle and context consumed by this packa
 
 #### What the model sees
 
-The formal `/session` entry still rejects activation. The internal native consumer, exercised by the package fixture, appends one instructions-form context per turn, with platform/account/project origins preserved in metadata and headings. An empty source set uses `No optional instruction files are present.` after the same introduction, so the next turn explicitly supersedes earlier optional instructions. Its complete framing is:
+With the prepared owner installed, the native consumer appends one instructions-form context per turn, with platform/account/project origins preserved in metadata and headings. An empty source set uses `No optional instruction files are present.` after the same introduction, so the next turn explicitly supersedes earlier optional instructions. Its complete framing is:
 
 ##### Complete snapshot framing
 
@@ -98,11 +98,11 @@ Complete instruction snapshot for the current turn. Earlier instruction snapshot
 
 #### Token effect
 
-The formal disabled entry adds no tokens or model calls. The internal consumer adds the complete bounded rendered text once per entered turn; tool continuations and request retries reuse the same snapshot.
+An unprepared entry adds no tokens or model calls. The native consumer adds the complete bounded rendered text once per entered turn; tool continuations and request retries reuse the same snapshot.
 
 #### KV Cache effect
 
-The internal consumer appends the current snapshot without rewriting older messages or the system prompt. A new turn appends updated instructions; provider cache availability remains outside this package. The formal disabled entry changes no model prefix.
+The native consumer appends the current snapshot without rewriting older messages or the system prompt. A new turn appends updated instructions; provider cache availability remains outside this package. An unprepared entry changes no model prefix.
 
 ## Known Limitations and Deferred Work
 

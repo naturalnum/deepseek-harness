@@ -6648,6 +6648,9 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: workspace:*
         version: link:../../llm/llm
+      '@deepseek-ai/dsh-pe-cloud-files':
+        specifier: workspace:*
+        version: link:../pe-cloud-files
       '@deepseek-ai/dsh-pe-cloud-runtime':
         specifier: workspace:*
         version: link:../pe-cloud-runtime
@@ -7010,6 +7013,9 @@ importers:
       '@deepseek-ai/dsh-llm':
         specifier: workspace:*
         version: link:../../llm/llm
+      '@deepseek-ai/dsh-pe-account-instructions':
+        specifier: workspace:*
+        version: link:../pe-account-instructions
       '@deepseek-ai/dsh-pe-cloud-api':
         specifier: workspace:*
         version: link:../pe-cloud-api

@@ -80,6 +80,8 @@ Provider 经根服务登记必需的 `files` 和 `execution` 参与者。登记�
 
 私有 builtin 只提供受守卫的 Workspace/Settings 构造器和保留的原事件注册 Loader scope。构造器不读取未完成的 files 项目。Unpublished bootstrap 先取得实际 files project，要求原共享 Session 只读策略，向真实 Gateway 注册事件源，再执行 `auditPrepared`；business-ready 发布及之后的 `assertBootstrapCurrent` 仍独立。共享策略允许在 Workspace 关联前检查实际 live Session/Agent 元数据，按原 Workspace 关系核对冷列表元数据，不新增 Session 库、成员缓存，也不从 id/cwd 签发 ProjectScope。Stop 先等待事件撤销，再调用原 `AgentLoop.stop()`、检查原生 idle 并刷新持久化。源或 disposer 失败仍为未确认，不能证明 clean release。Integration 将既有 `maxQueuedEvents`、`maxQueuedBytes` 和 `maxFrameBytes` 同时交给受守卫 reader 与原 Gateway 注册。Reader 捕获这些值，供原 protected control-buffer hook 使用；每个原生 control 代际和事件 client 都沿用原有界队列。下游慢读超限只终止对应流，实际 source 失败仍保留既有审核撤销与未确认清理语义。不增加配置字段、预算默认值或队列。
 
+原 files 持有者存在时，账户图准备还会创建图内的 `AccountInstructionSources` 服务。其回调复用共享活跃 Agent 的项目、模型与 Preset 检查，并使用 files 持有者的独立来源 reader 和完整快照预留。固定 Preset 通过已准备的 builtin 加载原 `/session` 命名空间。适配器准备不启动来源 I/O，缺少该 Preset 配置行时也不启用指令。
+
 ### Account layout
 
 `/types` 声明唯一的 `AccountLayout`，包含共享 private/Profile/patch、凭据、Session、storage、附件原件、技能、指令、项目、环境及进程本地 Session 索引地址。`AccountMountInput` 将这些地址与既有 binding、启动 InstanceId 及原生 `LaunchEnvironmentSnapshot` 配对。这些是可信装配数据；路径不授予目录访问、ready 或配额证据。凭据只交给需要的原生消费者。

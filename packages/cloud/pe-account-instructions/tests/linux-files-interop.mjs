@@ -126,20 +126,20 @@ async function main() {
     })
     /** @type {import('../lib/types/internal-types.js').InstructionDirectory[]} */
     const directoriesA = [
-      { kind: 'project', relativeName: 'nested', target: await portA.reader.resolve('nested') },
-      { kind: 'project', relativeName: '.', target: await portA.reader.resolve('.') },
+      { kind: 'project', relativeName: 'nested', reader: portA.reader, target: await portA.reader.resolve('nested') },
+      { kind: 'project', relativeName: '.', reader: portA.reader, target: await portA.reader.resolve('.') },
     ]
     /** @type {import('../lib/types/internal-types.js').InstructionDirectory[]} */
     const directoriesB = [
-      { kind: 'project', relativeName: 'nested', target: await portB.reader.resolve('nested') },
-      { kind: 'project', relativeName: '.', target: await portB.reader.resolve('.') },
+      { kind: 'project', relativeName: 'nested', reader: portB.reader, target: await portB.reader.resolve('nested') },
+      { kind: 'project', relativeName: '.', reader: portB.reader, target: await portB.reader.resolve('.') },
     ]
     const identityA = { accountId: bindingA.accountId, workspaceId: WorkspaceId('fixture-workspace-A'), epoch: bindingA.epoch }
     const identityB = { accountId: bindingB.accountId, workspaceId: WorkspaceId('fixture-workspace-B'), epoch: bindingB.epoch }
     const caps = { maxFiles: 8, maxFileBytes: 1024, maxTotalBytes: 4096, maxSnapshotBytes: 16384, maxResidentBytes: 1_000_000 }
     const [snapshotA, snapshotB] = await Promise.all([
-      prepareInstructionSnapshot(portA.reader, directoriesA, identityA, caps, control.signal),
-      prepareInstructionSnapshot(portB.reader, directoriesB, identityB, caps, control.signal),
+      prepareInstructionSnapshot(directoriesA, identityA, caps, control.signal),
+      prepareInstructionSnapshot(directoriesB, identityB, caps, control.signal),
     ])
     assert.deepEqual(snapshotA.source.snapshot.sources.map(source => [source.relativeName, source.text]), [
       ['AGENTS.md', textA], ['nested/CLAUDE.md', childA],
@@ -171,26 +171,26 @@ async function main() {
     assert.equal(chunks.join(''), textA)
 
     const exactBytes = Buffer.byteLength(JSON.stringify(snapshotA), 'utf8')
-    const exact = await prepareInstructionSnapshot(portA.reader, directoriesA, identityA,
+    const exact = await prepareInstructionSnapshot(directoriesA, identityA,
       { ...caps, maxSnapshotBytes: exactBytes }, control.signal)
     assert.equal(Buffer.byteLength(JSON.stringify(exact), 'utf8'), exactBytes)
-    await assert.rejects(prepareInstructionSnapshot(portA.reader, directoriesA, identityA,
+    await assert.rejects(prepareInstructionSnapshot(directoriesA, identityA,
       { ...caps, maxSnapshotBytes: exactBytes - 1 }, control.signal),
     error => error instanceof FsError && error.code === 'FS_TOO_LARGE')
 
     const invalidTarget = await portA.reader.resolve('invalid')
-    await assert.rejects(prepareInstructionSnapshot(portA.reader,
-      [{ kind: 'project', relativeName: '.', target: invalidTarget }], identityA, caps, control.signal),
+    await assert.rejects(prepareInstructionSnapshot(
+      [{ kind: 'project', relativeName: '.', reader: portA.reader, target: invalidTarget }], identityA, caps, control.signal),
     error => error instanceof FsError && error.code === 'FS_NOT_TEXT'
       && error.message === 'File is not valid UTF-8 text.' && error.cause instanceof TypeError)
     const deniedTarget = await portA.reader.resolve('denied')
-    await assert.rejects(prepareInstructionSnapshot(portA.reader,
-      [{ kind: 'project', relativeName: '.', target: deniedTarget }], identityA, caps, control.signal),
+    await assert.rejects(prepareInstructionSnapshot(
+      [{ kind: 'project', relativeName: '.', reader: portA.reader, target: deniedTarget }], identityA, caps, control.signal),
     error => error instanceof FsError && error.code === 'FS_PERMISSION_DENIED')
     const originalFailure = new Error('Fixture owner admission ended')
     admissionFailure = originalFailure
     try {
-      await assert.rejects(prepareInstructionSnapshot(portA.reader, directoriesA, identityA, caps, control.signal),
+      await assert.rejects(prepareInstructionSnapshot(directoriesA, identityA, caps, control.signal),
         error => error === originalFailure)
     } finally { admissionFailure = undefined }
     assert.ok(checks.A > 0 && checks.B > 0)
