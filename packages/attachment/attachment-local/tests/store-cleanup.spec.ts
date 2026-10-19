@@ -122,6 +122,12 @@ async function setup(): Promise<{ root: string; target: string; data: Uint8Array
   return { root, data, digest, target: join(root, 'file-objects', digest.slice(0, 2), digest) }
 }
 
+function observed<T>(values: readonly T[]): T {
+  const value = values[0]
+  if (value === undefined) throw new Error('The actual IO observation is missing')
+  return value
+}
+
 async function rejected(operation: Promise<unknown>): Promise<unknown> {
   try { await operation } catch (error) { return error }
   throw new Error('Operation unexpectedly resolved')
@@ -161,10 +167,10 @@ describe('attachment store actual cleanup settlement', () => {
       .then((error) => { settled = true; return error })
     await entered.promise
     expect(settled).toBe(false)
-    expect(fstatSync(io.stageFds[0]).isFile()).toBe(true)
+    expect(fstatSync(observed(io.stageFds)).isFile()).toBe(true)
     closing.release()
     expect(await operation).toBe(reason)
-    expect(() => fstatSync(io.stageFds[0])).toThrow()
+    expect(() => fstatSync(observed(io.stageFds))).toThrow()
     expect(await readdir(join(value.root, 'tmp'))).toEqual([])
     expect(io.stageCloses).toBe(1)
   })
@@ -177,7 +183,7 @@ describe('attachment store actual cleanup settlement', () => {
     expect(error).toBeInstanceOf(AttachmentCleanupError)
     expect(error).toHaveProperty('cause', cause)
     expect(io.stageCloses).toBe(1)
-    expect(fstatSync(io.stageFds[0]).isFile()).toBe(true)
+    expect(fstatSync(observed(io.stageFds)).isFile()).toBe(true)
     expect(await readdir(join(value.root, 'tmp'))).toEqual([])
   })
 
@@ -192,7 +198,7 @@ describe('attachment store actual cleanup settlement', () => {
     expect(error.cause.errors[0]).toBe(original)
     expect(error.cause.errors[1]).toHaveProperty('cause', closeError)
     expect(io.stageCloses).toBe(1)
-    expect(fstatSync(io.stageFds[0]).isFile()).toBe(true)
+    expect(fstatSync(observed(io.stageFds)).isFile()).toBe(true)
   })
 
   it('preserves an ordinary AttachmentError when its actual cleanup succeeds', async () => {
@@ -200,7 +206,7 @@ describe('attachment store actual cleanup settlement', () => {
     const original = new AttachmentError('source rejected', 'ATTACHMENT_CORRUPT')
     async function* source(): AsyncIterable<Uint8Array> { yield value.data; throw original }
     expect(await rejected(publishImmutableObjectStream(value.root, source(), () => value.target))).toBe(original)
-    expect(() => fstatSync(io.stageFds[0])).toThrow()
+    expect(() => fstatSync(observed(io.stageFds))).toThrow()
     expect(await readdir(join(value.root, 'tmp'))).toEqual([])
   })
 
@@ -214,7 +220,7 @@ describe('attachment store actual cleanup settlement', () => {
     if (!(error instanceof AttachmentCleanupError) || !(error.cause instanceof AggregateError)) throw error
     expect(error.cause.errors[0]).toBe(original)
     expect(error.cause.errors[1]).toHaveProperty('cause', cleanup)
-    expect(() => fstatSync(io.stageFds[0])).toThrow()
+    expect(() => fstatSync(observed(io.stageFds))).toThrow()
     expect((await readdir(join(value.root, 'tmp'))).length).toBe(1)
     expect(io.unlinks).toBe(1)
   })
@@ -241,11 +247,11 @@ describe('attachment store actual cleanup settlement', () => {
     const operation = publishImmutableObject(value.root, value.target, value.data, value.digest).then(() => { settled = true })
     await entered.promise
     expect(settled).toBe(false)
-    expect(fstatSync(io.digestFds[0]).isFile()).toBe(true)
+    expect(fstatSync(observed(io.digestFds)).isFile()).toBe(true)
     closing.release()
     await operation
-    expect(io.streams[0].closed).toBe(true)
-    expect(() => fstatSync(io.digestFds[0])).toThrow()
+    expect(observed(io.streams).closed).toBe(true)
+    expect(() => fstatSync(observed(io.digestFds))).toThrow()
   })
 
   it('exposes digest close failure with the existing private object retained and its FD still owned', async () => {
@@ -256,7 +262,7 @@ describe('attachment store actual cleanup settlement', () => {
     expect(error).toBeInstanceOf(AttachmentCleanupError)
     expect(error).toHaveProperty('cause', io.digestCloseError)
     expect(io.digestCloses).toBe(1)
-    expect(fstatSync(io.digestFds[0]).isFile()).toBe(true)
+    expect(fstatSync(observed(io.digestFds)).isFile()).toBe(true)
     expect(new Uint8Array(await readFile(value.target))).toEqual(value.data)
     expect(await readdir(join(value.root, 'tmp'))).toEqual([])
   })
@@ -281,12 +287,12 @@ describe('attachment store actual cleanup settlement', () => {
       .then((error) => { settled = true; return error })
     await entered.promise
     expect(settled).toBe(false)
-    expect(fstatSync(io.digestFds[0]).isDirectory()).toBe(true)
+    expect(fstatSync(observed(io.digestFds)).isDirectory()).toBe(true)
     closing.release()
     const error = await operation
     expect(error).toBeInstanceOf(AttachmentError)
     expect(error).not.toBeInstanceOf(AttachmentCleanupError)
-    expect(() => fstatSync(io.digestFds[0])).toThrow()
+    expect(() => fstatSync(observed(io.digestFds))).toThrow()
     expect(await readdir(join(value.root, 'tmp'))).toEqual([])
   })
 })

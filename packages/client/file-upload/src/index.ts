@@ -1,9 +1,10 @@
 /** Host file-upload service: streamed intake and Session-owned staged receipts. */
 
 import { randomUUID } from 'node:crypto'
+import { z } from 'zod'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { FileAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type { FileAttachmentRef, SaveFileStreamAttachment } from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-client-connection'
 import type { CommandFileReceiptResolver } from '@deepseek-ai/dsh-commands'
 import type { Session, SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
@@ -13,6 +14,18 @@ import { FILE_UPLOAD_PATH } from './protocol.ts'
 import type { EncodedFileUploadRequest, FileUploadReceiptId, FileUploadValue } from './types.ts'
 
 export type * from './types.ts'
+export { FILE_UPLOAD_PATH } from './protocol.ts'
+
+/** Native intake configuration; omitted capacity resolves to 128 occupied slots. */
+export type Config = z.input<typeof FileUploads.Config>
+
+/** An intake whose owned work has not confirmed settlement; its slot must remain occupied. */
+export class FileUploadIntakeUnconfirmedError extends Error {
+  constructor() {
+    super('File upload intake settlement is unconfirmed.')
+    this.name = 'FileUploadIntakeUnconfirmedError'
+  }
+}
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -55,13 +68,29 @@ class PromptFileBindingGuard implements PromptFileBinding {
 /** Host service owning upload storage and receipts keyed by each receiving Agent's exact Session. */
 export class FileUploads extends TypertRemoteService {
   static inject = ['agents', 'attachments', 'commands', 'connection']
+  static Config = z.object({
+    maxPendingReceipts: z.number().int().positive().default(128)
+      .describe('Maximum staged receipts and in-flight native intakes combined.'),
+  })
 
-  private readonly stagedFiles = new WeakMap<Session, Map<FileUploadReceiptId, StagedFileUpload>>()
-  private agentResolver: AgentResolver | undefined
+  private readonly stagedFiles = new Map<Session, Map<FileUploadReceiptId, StagedFileUpload>>()
+  private readonly disposedSessions = new WeakSet<Session>()
+  private readonly intakes = new Set<Promise<FileUploadValue>>()
+  private readonly maxPendingReceipts: number
+  private readonly state: { occupied: number; closed: boolean; agentResolver: AgentResolver | undefined } = {
+    occupied: 0,
+    closed: false,
+    agentResolver: undefined,
+  }
 
-  /** @param ctx - Host context carrying Agent, attachment, command, and Connection services. */
-  constructor(ctx: Context) {
+  /**
+   * @param ctx - Host context carrying Agent, attachment, command, and Connection services.
+   * @param config - finite native receipt/intake capacity; defaults to 128.
+   */
+  constructor(ctx: Context, config: Config = {}) {
+    const resolved = FileUploads.Config.parse(config)
     super(ctx, 'fileUploads')
+    this.maxPendingReceipts = resolved.maxPendingReceipts
     const resolve: CommandFileReceiptResolver = (agent, receiptId) =>
       this.resolve(agent, receiptId as FileUploadReceiptId)
     ctx.effect(
@@ -78,7 +107,16 @@ export class FileUploads extends TypertRemoteService {
       'file-upload: streaming route',
     )
     ctx.on('session/event', (session, event) => { this.observeSessionEvent(session, event) })
-    ctx.on('session/disposed', (session) => { this.stagedFiles.delete(session) })
+    ctx.on('session/disposed', (session) => {
+      this.disposedSessions.add(session)
+      this.dropSession(session)
+    })
+    ctx.effect(() => async () => {
+      this.state.closed = true
+      for (const session of this.stagedFiles.keys()) this.dropSession(session)
+      await Promise.allSettled(this.intakes)
+      if (this.state.occupied !== 0) throw new FileUploadIntakeUnconfirmedError()
+    }, 'file-upload: intake settlement')
   }
 
   /**
@@ -87,10 +125,10 @@ export class FileUploads extends TypertRemoteService {
    * @returns disposer removing this resolver.
    */
   registerAgentResolver(resolve: AgentResolver): () => void {
-    if (this.agentResolver !== undefined) throw new Error('file-upload: Agent resolver is already registered')
-    this.agentResolver = resolve
+    if (this.state.agentResolver !== undefined) throw new Error('file-upload: Agent resolver is already registered')
+    this.state.agentResolver = resolve
     return () => {
-      if (this.agentResolver === resolve) this.agentResolver = undefined
+      if (this.state.agentResolver === resolve) this.state.agentResolver = undefined
     }
   }
 
@@ -104,10 +142,10 @@ export class FileUploads extends TypertRemoteService {
   @Remote('upload')
   upload(agent: Agent, request: EncodedFileUploadRequest, signal: AbortSignal): Promise<FileUploadValue> {
     signal.throwIfAborted()
-    return this.commit(agent, async () => this.ctx.attachments.admitEncodedFile({
+    return this.intake(retainReceipt => this.commit(agent, async () => this.ctx.attachments.admitEncodedFile({
       data: request.data,
       ...(request.name === undefined ? {} : { name: request.name }),
-    }))
+    }), retainReceipt))
   }
 
   /**
@@ -121,12 +159,28 @@ export class FileUploads extends TypertRemoteService {
     readonly signal?: AbortSignal
     readonly name?: string
   }): Promise<FileUploadValue> {
-    const agent = await this.resolveAgent(request.sessionId)
-    return this.commit(agent, async () => this.ctx.attachments.saveFileStream({
-      data: request.data,
-      ...(request.signal === undefined ? {} : { signal: request.signal }),
-      ...(request.name === undefined ? {} : { name: request.name }),
-    }))
+    return this.intake(async (retainReceipt) => {
+      const agent = await this.resolveAgent(request.sessionId)
+      return this.commit(agent, async () => this.storeFileStream(agent, {
+        data: request.data,
+        ...(request.signal === undefined ? {} : { signal: request.signal }),
+        ...(request.name === undefined ? {} : { name: request.name }),
+      }), retainReceipt)
+    })
+  }
+
+  /**
+   * Store the original stream before this service publishes its receipt.
+   * Overrides may await admission without pulling the body and must retain owned
+   * storage work until it settles; rejection does not establish rollback or source closure.
+   * Throw FileUploadIntakeUnconfirmedError if owned work cannot confirm settlement.
+   * @param agent - exact ordinary Agent resolved by this service for the upload.
+   * @param input - original ordered bytes, cancellation signal, and optional name.
+   * @returns the authoritative stored reference after the override's work settles.
+   */
+  protected storeFileStream(agent: Agent, input: SaveFileStreamAttachment): Promise<FileAttachmentRef> {
+    void agent
+    return this.ctx.attachments.saveFileStream(input)
   }
 
   /**
@@ -176,13 +230,40 @@ export class FileUploads extends TypertRemoteService {
     this.retire(agent.session, requestId)
   }
 
-  private async commit(agent: Agent, save: () => Promise<FileAttachmentRef>): Promise<FileUploadValue> {
+  private intake(run: (retainReceipt: () => void) => Promise<FileUploadValue>): Promise<FileUploadValue> {
+    if (this.state.closed || this.state.occupied >= this.maxPendingReceipts) {
+      return Promise.reject(new RemoteError('session/attachment-invalid' as never,
+        'File upload intake is closed or at capacity.', { reason: 'FILE_UPLOAD_CAPACITY' } as never))
+    }
+    this.state.occupied++
+    let disposition: 'pending' | 'staged' | 'unconfirmed' = 'pending'
+    const job = Promise.resolve().then(() => run(() => { disposition = 'staged' })).catch((error: unknown) => {
+      if (error instanceof FileUploadIntakeUnconfirmedError) {
+        disposition = 'unconfirmed'
+        this.state.closed = true
+      }
+      throw error
+    }).finally(() => {
+      if (disposition === 'pending') this.state.occupied--
+      this.intakes.delete(job)
+    })
+    this.intakes.add(job)
+    return job
+  }
+
+  private async commit(
+    agent: Agent, save: () => Promise<FileAttachmentRef>, retainReceipt: () => void,
+  ): Promise<FileUploadValue> {
     this.assertOrdinaryAgent(agent)
+    this.assertCurrentAgent(agent)
+    const attachments = this.ctx.attachments
     let file: FileAttachmentRef
     try {
       file = await save()
     } catch (error) {
-      if (this.ctx.attachments.isAttachmentError(error)) {
+      if (error instanceof FileUploadIntakeUnconfirmedError) throw error
+      if (error instanceof Error && error.cause instanceof FileUploadIntakeUnconfirmedError) throw error.cause
+      if (attachments.isAttachmentError(error)) {
         throw new RemoteError('session/attachment-invalid' as never, error.message, { reason: error.code } as never)
       }
       throw new RemoteError(
@@ -192,13 +273,7 @@ export class FileUploads extends TypertRemoteService {
         { cause: error },
       )
     }
-    if (this.ctx.agents.get(agent.id) !== agent) {
-      throw new RemoteError(
-        'session/not-found',
-        `session "${agent.id}" was disposed before its file upload completed`,
-        { sessionId: agent.id },
-      )
-    }
+    this.assertCurrentAgent(agent)
     let staged = this.stagedFiles.get(agent.session)
     if (staged === undefined) {
       staged = new Map()
@@ -206,13 +281,31 @@ export class FileUploads extends TypertRemoteService {
     }
     const receiptId = randomUUID() as FileUploadReceiptId
     staged.set(receiptId, { file })
+    retainReceipt()
     return { receiptId, file }
+  }
+
+  private assertCurrentAgent(agent: Agent): void {
+    if (this.state.closed || this.disposedSessions.has(agent.session) || this.ctx.agents.get(agent.id) !== agent) {
+      throw new RemoteError(
+        'session/not-found',
+        `session "${agent.id}" was disposed before its file upload completed`,
+        { sessionId: agent.id },
+      )
+    }
+  }
+
+  private dropSession(session: Session): void {
+    const staged = this.stagedFiles.get(session)
+    if (staged === undefined) return
+    this.state.occupied -= staged.size
+    this.stagedFiles.delete(session)
   }
 
   private async resolveAgent(sessionId: SessionId): Promise<Agent> {
     const live = this.ctx.agents.get(sessionId)
     if (live !== undefined) return live
-    const resolver = this.agentResolver
+    const resolver = this.state.agentResolver
     if (resolver === undefined) {
       throw new RemoteError('session/not-found', `session "${sessionId}" is not attached`, { sessionId })
     }
@@ -239,7 +332,10 @@ export class FileUploads extends TypertRemoteService {
     const staged = this.stagedFiles.get(session)
     if (staged === undefined) return
     for (const [receiptId, upload] of staged) {
-      if (upload.requestId === requestId) staged.delete(receiptId)
+      if (upload.requestId === requestId) {
+        staged.delete(receiptId)
+        this.state.occupied--
+      }
     }
     if (staged.size === 0) this.stagedFiles.delete(session)
   }

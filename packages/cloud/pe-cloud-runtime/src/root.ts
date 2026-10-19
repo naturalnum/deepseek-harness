@@ -400,6 +400,7 @@ export class PeAccountRuntime extends Service implements AccountRuntimeService {
         storage: Object.freeze({ owner: storage, files }),
         native: { saves: control.saves, exposure: exposure.policy, execution, stopTimeoutMs: config.shutdownTimeoutMs,
           maxNativeInventoryEntries: config.native.maxEntries,
+          ...config.native.attachments === undefined ? {} : { attachments: config.native.attachments },
           ...config.native.firstScreen === undefined ? {} : { firstScreen: {
             ...config.native.firstScreen, home: layout.privateRoot,
           } },

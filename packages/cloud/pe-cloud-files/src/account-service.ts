@@ -1,5 +1,5 @@
 /** Graph-owned preparation installs the native Registry and its selected restricted filesystem in one account fiber. */
-import { Context, FiberState, Service, type Fiber } from '@deepseek-ai/cordis'
+import { Context, FiberState, Service, symbols, type Fiber } from '@deepseek-ai/cordis'
 import type { AccountBinding, AccountUse } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import type { IsolatedLeafGrant, PoolReadPort } from './worker-pool.ts'
@@ -8,6 +8,10 @@ import type { S2ProjectDirectory, S2ProjectPort } from './s2-project.ts'
 import { FilesFailure } from './error.ts'
 import type { InstructionReadReaders } from './instruction-read-work.ts'
 import type { ResidentResult } from './work-queue.ts'
+import type { FileAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import { LocalAttachmentStore } from '@deepseek-ai/dsh-attachment-local'
+import { createAccountAttachmentStore, type AccountAttachmentBackend } from './account-attachment-store.ts'
+import type { StageFileResult } from './stage-bridge.ts'
 
 /** Trusted runtime preparation only; Loader JSON cannot select an account, path, backend or plugin. */
 export interface AccountFilesPreparation {
@@ -22,7 +26,14 @@ export interface AccountFilesPreparation {
    */
   readonly createFileSystem?: (
     workspace: Workspace, assertInstalled: (owner: Context) => void,
+    mapProcessPath?: (caller: Context, hostPath: string) => string | undefined,
   ) => Promise<S2ProjectPort['FileSystem']>
+  /** Original lane mutation capabilities; omission keeps attachment intake and staging closed. */
+  readonly attachments?: Pick<PoolReadPort, 'assertStagingAvailable' | 'stageFiles' | 'runNativeMutation'>
+  /** Trusted synchronous lookup of an active request's verified copies; never a private-root prefix grant. */
+  readonly attachmentProjection?: Pick<AccountAttachmentBackend, 'mapFileHostPath'> & {
+    mapProcessPath(caller: Context, hostPath: string): string | undefined
+  }
   /** Same-lane metadata capability for an exact native Registry object. */
   readonly projectFor?: (workspace: Workspace, assertRegistered: () => void, signal?: AbortSignal) => Promise<AccountFilesProject>
   /** Ready-only creation from the original borrow; the trusted lease selects the UUID and grant. */
@@ -86,7 +97,10 @@ export class CloudAccountFiles extends Service {
     readonly projectFor: AccountFilesPreparation['projectFor']
     readonly createProject: AccountFilesPreparation['createProject']
     readonly assertContentAvailable: AccountFilesPreparation['assertContentAvailable']
+    readonly attachments: AccountFilesPreparation['attachments']
+    readonly attachmentProjection: AccountFilesPreparation['attachmentProjection']
   }
+  private readonly attachmentProvider: { Store?: typeof LocalAttachmentStore } = {}
   private readonly checkGraph: (owner: Context) => void
   private readonly unpublished: AccountFilesPreparation['assertUnpublished']
   private readonly identity = Symbol('account-files-owner')
@@ -127,10 +141,82 @@ export class CloudAccountFiles extends Service {
     super(ctx, 'peCloudFiles')
     this.binding = input.binding
     this.providers = { Registry, createFileSystem: input.createFileSystem, withInstructionReaders: input.withInstructionReaders,
-      projectFor: input.projectFor, createProject: input.createProject, assertContentAvailable: input.assertContentAvailable }
+      projectFor: input.projectFor, createProject: input.createProject, assertContentAvailable: input.assertContentAvailable,
+      attachments: input.attachments, attachmentProjection: input.attachmentProjection }
     this.checkGraph = checkGraph
     this.unpublished = input.assertUnpublished
     this.assertInstalled()
+    if (input.attachmentProjection !== undefined) {
+      this.attachmentProvider.Store = createAccountAttachmentStore({
+        binding: this.binding, assertCurrent: () => { this.assertInstalled() },
+        assertInstalled: (caller) => { this.assertInstalled(caller) },
+        mapFileHostPath: input.attachmentProjection.mapFileHostPath.bind(input.attachmentProjection),
+      })
+    }
+  }
+
+  /**
+   * Select the single native provider constructor prepared for this graph.
+   * @returns Native class with unchanged Config and persistence, after the staging capability check.
+   */
+  attachmentStore(): typeof LocalAttachmentStore {
+    this.assertInstalled()
+    this.providers.attachments?.assertStagingAvailable()
+    const Store = this.attachmentProvider.Store
+    if (this.providers.attachments === undefined || Store === undefined) {
+      throw new FilesFailure('files/prerequisite-missing', 'Account attachment preparation is unavailable.')
+    }
+    return Store
+  }
+
+  /**
+   * Copy approved native refs using the original store and this account's existing mutation lane.
+   * @param workspace Actual registered project selected by the native Agent owner.
+   * @param buildRefs Collect native receipts or accepted Session refs inside the positive batch reservation.
+   * @param assertAuthorized Exact Agent/Session/provider checks, repeated before source I/O.
+   * @param signal Actual caller cancellation, combined with the original account lifetime by the pool.
+   * @returns Closed publications whose retained reservation must be released after handoff.
+   */
+  async stageAttachments(
+    workspace: Workspace, buildRefs: () => readonly FileAttachmentRef[], assertAuthorized: () => void, signal?: AbortSignal,
+  ): Promise<ResidentResult<readonly StageFileResult[]>> {
+    const port = this.providers.attachments, Store = this.attachmentProvider.Store
+    if (port === undefined || Store === undefined) throw new FilesFailure('files/prerequisite-missing', 'Account attachment staging is unavailable.')
+    const original = this.ctx.get('attachments')
+    if (!(original instanceof Store)) throw new FilesFailure('files/prerequisite-missing', 'The original native attachment store is unavailable.')
+    const current = (): void => {
+      this.assertWorkspace(workspace)
+      assertAuthorized()
+      const currentStore = this.ctx.get('attachments')
+      if (currentStore === undefined || (Reflect.get(currentStore, symbols.original) ?? currentStore)
+        !== (Reflect.get(original, symbols.original) ?? original)) {
+        throw new FilesFailure('cloud/stale-generation', 'The native attachment store changed during staging.')
+      }
+    }
+    current()
+    const held = await port.stageFiles(workspace, () => buildRefs().map(ref => ({ ref, open: (control: AbortSignal) => {
+      current()
+      return original.readFileStream(ref, control)
+    } })), current, signal)
+    try { current(); signal?.throwIfAborted(); return held }
+    catch (error) { held.release(); throw error }
+  }
+
+  /**
+   * Admit native upload persistence on the same files mutation owner before any stream is pulled.
+   * @param reservationBytes Complete finite intake/cleanup/result reservation.
+   * @param assertAuthorized Original Agent and provider checks; no path-derived authority.
+   * @param execute Native persistence operation whose actual settlement remains owned by the pool.
+   * @param signal Observation cancellation; an unconfirmed failure retains the original positive reservation.
+   * @returns The native result retained until release.
+   */
+  runAttachmentIntake<T>(
+    reservationBytes: number, assertAuthorized: () => void, execute: (control: AbortSignal) => Promise<T>, signal?: AbortSignal,
+  ): Promise<ResidentResult<T>> {
+    this.assertInstalled()
+    const port = this.providers.attachments
+    if (port === undefined) throw new FilesFailure('files/prerequisite-missing', 'Account attachment intake is unavailable.')
+    return port.runNativeMutation(reservationBytes, () => { this.assertInstalled(); assertAuthorized() }, execute, signal)
   }
 
   /**
@@ -306,7 +392,7 @@ export class CloudAccountFiles extends Service {
       : await this.providers.createFileSystem(workspace, (consumer) => {
         this.assertInstalled(consumer)
         this.assertRegistry(work)
-      })
+      }, this.providers.attachmentProjection?.mapProcessPath.bind(this.providers.attachmentProjection))
     this.assertInstalled(owner)
     this.unpublished()
     this.assertRegistry(work)

@@ -91,6 +91,15 @@
     },
     {
       "path": "../../api/workspace-files/tsconfig.host.json"
+    },
+    {
+      "path": "../../client/file-upload/tsconfig.host.json"
+    },
+    {
+      "path": "../../attachment/attachment-local"
+    },
+    {
+      "path": "../../attachment/attachment"
     }
   ],
   "exclude": [

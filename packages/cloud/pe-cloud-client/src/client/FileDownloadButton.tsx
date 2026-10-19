@@ -61,10 +61,12 @@ export function FileDownloadButton(props: FileDownloadButtonProps): ReactElement
   }
   const failure = current !== undefined && result?.kind === 'failed' ? result : undefined
   return <>
-    <Button onClick={save} disabled={current === undefined || pending || signal.aborted} aria-busy={pending && current !== undefined}>
+    <Button style={{ whiteSpace: 'nowrap', flexShrink: 0 }} onClick={save}
+      disabled={current === undefined || pending || signal.aborted} aria-busy={pending && current !== undefined}>
       {pending && current !== undefined ? labels.pending : labels.download}
     </Button>
-    {pending && current !== undefined && <Button onClick={() => { void current.owner.cancel() }}>{labels.cancel}</Button>}
+    {pending && current !== undefined && <Button style={{ whiteSpace: 'nowrap', flexShrink: 0 }}
+      onClick={() => { void current.owner.cancel() }}>{labels.cancel}</Button>}
     {current !== undefined && result?.kind === 'started' && <span role="status">{labels.started}</span>}
     {current !== undefined && result?.kind === 'cancelled' && <span role="status">{labels.cancelled}</span>}
     {failure !== undefined && <span role="alert">{

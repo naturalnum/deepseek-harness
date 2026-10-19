@@ -22,6 +22,37 @@ import type { AuthIngressConfig } from './root-config.ts'
 import type { AccessConfig, AuthenticatedPrincipal, RequestExpectation, IngressObservation } from './types.ts'
 
 type RequestId = Branded<'pe-request-id'>
+type GuardStage = 'run.start' | 'request.url' | 'request.transport' | 'ingress.current'
+  | 'auth.handler' | 'auth.authenticate' | 'auth.login-current' | 'request.binding' | 'account.bind'
+  | 'account.locate' | 'account.acquire' | 'account.use-current' | 'account.binding' | 'account.generation'
+  | 'bootstrap.authenticate' | 'bootstrap.produce' | 'bootstrap.current' | 'bootstrap.transfer'
+  | 'peer.acquire' | 'peer.generation' | 'peer.http' | 'peer.upgrade' | 'route.unsupported'
+  | 'beforeHttp.peer' | 'beforeHttp.request' | 'beforeDispatch.peer' | 'beforeDispatch.request'
+  | 'beforeDispatch.api' | 'beforeDispatch.peer-current' | 'native.invoke-or-transfer'
+
+const FAILURE_CODES: readonly string[] = Object.freeze([
+  'cloud/unauthenticated', 'cloud/forbidden', 'cloud/login-active', 'cloud/account-unavailable',
+  'cloud/account-starting', 'cloud/account-quarantined', 'cloud/stop-unconfirmed', 'cloud/capacity',
+  'cloud/invalid-config', 'cloud/config-conflict', 'cloud/config-busy', 'cloud/stale-generation',
+  'cloud/model-not-allowed', 'cloud/invalid-project-title',
+  'ECONNRESET', 'ECONNREFUSED', 'EPIPE', 'ETIMEDOUT', 'ENOENT', 'EACCES', 'EPERM',
+  'ERR_STREAM_PREMATURE_CLOSE', 'ERR_STREAM_WRITE_AFTER_END', 'ERR_HTTP_HEADERS_SENT', 'ABORT_ERR',
+])
+
+// Diagnostic reads never invoke error accessors or serialize an error object.
+function errorData(value: unknown, key: 'code' | 'cause' | 'requestId'): unknown {
+  if (value === null || typeof value !== 'object') return undefined
+  try {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key)
+    return descriptor !== undefined && 'value' in descriptor ? descriptor.value : undefined
+  } catch (_error) { return undefined } // A proxy cannot make diagnostics replace the original failure.
+}
+
+function failureCode(value: unknown): string {
+  const code = errorData(value, 'code')
+  return typeof code === 'string' && code.length <= 48 && FAILURE_CODES.includes(code) ? code : 'unknown'
+}
+
 interface Dependencies {
   readonly web: WebServer
   readonly runtime: AccountRuntimeService
@@ -43,6 +74,7 @@ interface Operation {
   use: AccountUse | undefined
   releaseFault: boolean
   cleanupUnknown: boolean
+  stage: GuardStage
 }
 
 /** Actual route owner; only PeAuthService constructs this outside same-package tests. */
@@ -79,17 +111,25 @@ export class CloudIngress {
       },
       beforeHttp: (request, peer) => {
         const id = this.requestId()
+        this.requestStage(request, 'beforeHttp.peer')
         this.assertPeer(peer, id)
+        this.requestStage(request, 'beforeHttp.request')
         this.assertRequest(request, peer, id)
+        this.requestStage(request, 'peer.http')
       },
       beforeDispatch: (request, dispatch, peer) => {
         const id = this.requestId()
+        this.requestStage(request, 'beforeDispatch.peer')
         this.assertPeer(peer, id)
+        this.requestStage(request, 'beforeDispatch.request')
         this.assertRequest(request, peer, id)
+        this.requestStage(request, 'beforeDispatch.api')
         const api = this.accountApi(peer.peer.ctx, peer.binding)
         if (dispatch.kind === 'rpc') api.requireRpc(dispatch.endpoint)
         else api.requireFetch(dispatch.method, dispatch.pathname)
+        this.requestStage(request, 'beforeDispatch.peer-current')
         this.assertPeer(peer, id)
+        this.requestStage(request, 'native.invoke-or-transfer')
       },
       beforeStream: (endpoint, peer) => {
         const id = this.requestId()
@@ -182,23 +222,32 @@ export class CloudIngress {
 
   private handleHttp(request: IncomingMessage, response: ServerResponse): Promise<void> {
     return this.run(request, response, undefined, async (operation) => {
+      operation.stage = 'request.url'
       const url = this.url(request, operation.id)
+      operation.stage = 'request.transport'
       this.assertTransport(request, operation.id, 'http')
+      operation.stage = 'ingress.current'
       this.assertOperation(operation)
       if (url.pathname === '/cloud/auth' || url.pathname.startsWith('/cloud/auth/')) {
+        operation.stage = 'auth.handler'
         await this.auth.handleNodeRequest(request, response, operation.id, {
           maxBodyBytes: this.limits.maxAuthRequestBodyBytes, signal: operation.observer.signal,
-          assertCurrent: () => { this.assertOperation(operation) },
+          assertCurrent: () => { operation.stage = 'ingress.current'; this.assertOperation(operation); operation.stage = 'auth.handler' },
         })
+        operation.stage = 'ingress.current'
         this.assertCurrent(operation.id)
         return
       }
       if (url.pathname === '/cloud/bootstrap' && request.method === 'GET') {
+        operation.stage = 'bootstrap.authenticate'
         const verified = await this.auth.authenticateForBootstrap(request, operation.id, this.limits.maxBootstrapResponseBytes)
+        operation.stage = 'ingress.current'
         this.assertOperation(operation)
+        operation.stage = 'account.bind'
         this.bindAccount(operation, verified.principal.accountId)
         await this.withAccount(operation, verified.principal, undefined, async (use) => {
           const current = (): void => {
+            operation.stage = 'bootstrap.current'
             this.assertOperation(operation)
             this.auth.assertLoginCurrent(verified.principal, operation.id)
             use.assertCurrent()
@@ -209,6 +258,7 @@ export class CloudIngress {
               throw new AuthAccessError('cloud/account-unavailable', operation.id)
             }
           }
+          operation.stage = 'bootstrap.produce'
           const projected = await produceCloudBootstrap(use.context, use.binding, this.dependencies.exposure,
             () => this.ctx.get('pluginPackages'),
             verified.account, this.limits.maxBootstrapResponseBytes,
@@ -216,6 +266,7 @@ export class CloudIngress {
             () => this.generations.current(use.binding, operation.id))
           current()
           projected.assertCurrent()
+          operation.stage = 'bootstrap.transfer'
           response.writeHead(200, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store',
             'content-length': Buffer.byteLength(projected.body, 'utf8') })
           response.end(projected.body)
@@ -223,43 +274,64 @@ export class CloudIngress {
         return
       }
       if (url.pathname === API_PATH || url.pathname.startsWith(API_PATH + '/')) {
+        operation.stage = 'auth.authenticate'
         const principal = await this.auth.authenticate(request, operation.id)
+        operation.stage = 'ingress.current'
         this.assertOperation(operation)
+        operation.stage = 'request.binding'
         const expected = readRequestExpectation(request, url, this.config.bindingFields, 'headers', operation.id)
         assertExpectedAccount(expected, principal.accountId, operation.id)
         this.requests.set(request, { operation, expected })
+        operation.stage = 'account.bind'
         this.bindAccount(operation, principal.accountId)
         await this.withAccount(operation, principal, expected, async (use) => {
+          operation.stage = 'peer.acquire'
           const peer = await this.peers.acquire(principal, use.binding, Date.now() + this.limits.requestTimeoutMs,
             operation.observer.signal, operation.id)
+          operation.stage = 'ingress.current'
           this.assertOperation(operation)
+          operation.stage = 'peer.generation'
           this.pinGeneration(peer, operation.id)
+          operation.stage = 'peer.http'
           await this.peers.handleNodeRequest(peer, request, response, this.limits.maxRequestBodyBytes, operation.id)
+          operation.stage = 'ingress.current'
           this.assertCurrent(operation.id)
         })
         return
       }
       // C06 settings requires its exclusive save/reconfiguration owner, never an ordinary AccountUse callback.
+      operation.stage = 'route.unsupported'
       throw new AuthAccessError('cloud/account-unavailable', operation.id)
     })
   }
 
   private handleUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): Promise<void> {
     return this.run(request, undefined, socket, async (operation) => {
+      operation.stage = 'request.transport'
       this.assertTransport(request, operation.id, 'websocket')
+      operation.stage = 'ingress.current'
       this.assertOperation(operation)
+      operation.stage = 'auth.authenticate'
       const principal = await this.auth.authenticate(request, operation.id)
+      operation.stage = 'ingress.current'
       this.assertOperation(operation)
+      operation.stage = 'request.binding'
       const expected = readRequestExpectation(request, this.url(request, operation.id), this.config.bindingFields, 'query', operation.id)
       assertExpectedAccount(expected, principal.accountId, operation.id)
+      operation.stage = 'account.bind'
       this.bindAccount(operation, principal.accountId)
       await this.withAccount(operation, principal, expected, async (use) => {
+        operation.stage = 'peer.acquire'
         const peer = await this.peers.acquire(principal, use.binding, Date.now() + this.limits.requestTimeoutMs,
           operation.observer.signal, operation.id)
+        operation.stage = 'ingress.current'
         this.assertOperation(operation)
+        operation.stage = 'peer.generation'
         this.pinGeneration(peer, operation.id)
+        operation.stage = 'peer.upgrade'
         await this.peers.handleUpgrade(peer, request, socket, head, operation.id)
         operation.upgraded = true
+        operation.stage = 'ingress.current'
         this.assertOperation(operation)
         this.releaseUse(operation)
       })
@@ -270,23 +342,35 @@ export class CloudIngress {
     operation: Operation, principal: AuthenticatedPrincipal,
     expected: Parameters<typeof assertExpectedGeneration>[0] | undefined, consume: (use: AccountUse) => Promise<void>,
   ): Promise<void> {
+    operation.stage = 'account.locate'
     await this.dependencies.runtime.locateAccount(principal.accountId)
+    operation.stage = 'ingress.current'
     this.assertOperation(operation)
+    operation.stage = 'auth.login-current'
     this.auth.assertLoginCurrent(principal, operation.id)
+    operation.stage = 'account.acquire'
     const use = await this.dependencies.runtime.acquireAccount(principal.accountId, operation.observer.signal)
     // The actual ingress operation owns even a late borrow through response/error transfer settlement.
     operation.use = use
+    operation.stage = 'ingress.current'
     this.assertOperation(operation)
+    operation.stage = 'auth.login-current'
     this.auth.assertLoginCurrent(principal, operation.id)
+    operation.stage = 'account.use-current'
     use.assertCurrent()
+    operation.stage = 'account.binding'
     if (use.binding.accountId !== principal.accountId || use.binding.recipeVersion !== this.dependencies.recipeVersion) {
       throw new AuthAccessError('cloud/account-unavailable', operation.id)
     }
+    operation.stage = 'account.generation'
     const generation = this.generations.current(use.binding, operation.id)
     if (expected !== undefined) assertExpectedGeneration(expected, generation, operation.id)
     await consume(use)
+    operation.stage = 'ingress.current'
     this.assertCurrent(operation.id)
+    operation.stage = 'auth.login-current'
     this.auth.assertLoginCurrent(principal, operation.id)
+    operation.stage = 'account.use-current'
     if (!operation.upgraded) use.assertCurrent()
   }
 
@@ -323,6 +407,7 @@ export class CloudIngress {
     const operation: Operation = {
       id, request, response, socket, observer, transferred, actual: Promise.resolve(), accountId: undefined,
       timedOut: false, upgraded: false, use: undefined, releaseFault: false, cleanupUnknown: false,
+      stage: 'run.start',
     }
     const timedOut = Promise.withResolvers<void>()
     const timer = setTimeout(() => {
@@ -371,6 +456,7 @@ export class CloudIngress {
   }
 
   private sendFailure(operation: Operation, error: unknown): void {
+    this.recordFailure(operation, error)
     const failure = this.failure(error, operation.id)
     const body = JSON.stringify(failure.toJSON())
     const response = operation.response
@@ -387,6 +473,32 @@ export class CloudIngress {
       if (operation.upgraded) { operation.socket?.destroy(); return }
       operation.socket?.end(`HTTP/1.1 ${failure.status} Rejected\r\nConnection: close\r\nContent-Type: application/json\r\n`
         + `Content-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`, () => { operation.socket?.destroy() })
+    }
+  }
+
+  private requestStage(request: IncomingMessage, stage: GuardStage): void {
+    const entry = this.requests.get(request)
+    if (entry !== undefined) entry.operation.stage = stage
+  }
+
+  private recordFailure(operation: Operation, error: unknown): void {
+    try {
+      const cause = errorData(error, 'cause')
+      const nested = errorData(cause, 'cause')
+      const originalId = error instanceof AuthAccessError || error instanceof RequestBindingError
+        ? errorData(error, 'requestId') : undefined
+      const requestId = typeof originalId === 'string' && originalId.length === 36
+        && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(originalId) ? originalId : operation.id
+      this.ctx.logger.warn('Cloud ingress request failed: %j', {
+        requestId, stage: operation.stage, code: failureCode(error),
+        causeCodes: [cause === undefined ? null : failureCode(cause), nested === undefined ? null : failureCode(nested)],
+        headersSent: operation.response?.headersSent ?? false,
+        writableEnded: operation.response?.writableEnded ?? false,
+        destroyed: operation.response?.destroyed ?? operation.socket?.destroyed ?? false,
+      })
+    } catch (_error) {
+      try { console.error('Cloud ingress failure diagnostics unavailable.') }
+      catch (_fallbackError) { /* Observability must not change the original response or cleanup. */ }
     }
   }
 

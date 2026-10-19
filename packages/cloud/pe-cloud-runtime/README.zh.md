@@ -84,6 +84,8 @@ Provider 经根服务登记必需的 `files` 和 `execution` 参与者。登记�
 
 原 files 持有者存在时，账户图准备还会创建图内的 `AccountInstructionSources` 服务。其回调复用共享活跃 Agent 的项目、模型与 Preset 检查，并使用 files 持有者的独立来源 reader 和完整快照预留。固定 Preset 通过已准备的 builtin 加载原 `/session` 命名空间。适配器准备不启动来源 I/O，缺少该 Preset 配置行时也不启用指令。
 
+可选 `native.attachments` 显式提供 surface 节点、引用及元数据上限、prompt 和上传容量、上传预留及原生待处理收据数；省略时两个附件 builtin 保持关闭。准备阶段选择唯一原生存储及 FileUploads 服务，将 Controller 可等待文件钩子委托给原来的同 Agent 收据。前置 pre-step listener 在 files 预算内收集有界原生 Session surface 与本次 claimed 消息，先于其他 listener 的路径计价和消费。最终原生 LLM 请求只能使用该准备集合，原始消息与持久引用不改写。两个同步路径映射均检查当前实际 Agent、项目与调用者。结果仅保留到该请求，拒绝、idle、销毁或 lifetime 结束时撤销，释放前继续占用原驻留预算。当前宿主文件系统将已验证副本映射为自身；后续沙盒 backend 的相同文件映射须单独验收。
+
 ### Account layout
 
 `/types` 声明唯一的 `AccountLayout`，包含共享 private/Profile/patch、凭据、Session、storage、附件原件、技能、指令、项目、环境及进程本地 Session 索引地址。`AccountMountInput` 将这些地址与既有 binding、启动 InstanceId 及原生 `LaunchEnvironmentSnapshot` 配对。这些是可信装配数据；路径不授予目录访问、ready 或配额证据。凭据只交给需要的原生消费者。

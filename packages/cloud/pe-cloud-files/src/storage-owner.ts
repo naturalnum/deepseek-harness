@@ -333,8 +333,10 @@ export class StaticAccountStorageLease {
       rootInode: this.account.private.rootInode, rootMountId: this.account.private.rootMountId })
     const port = this.driver.bind(binding, parent, current, privateParent)
     const preparation: AccountFilesPreparation = Object.freeze<AccountFilesPreparation>({ binding, port,
-      assertContentAvailable: port.assertContentAvailable,
-      createFileSystem: (workspace, assertInstalled) => port.createTextFileSystem(workspace, assertInstalled, resolveProject),
+      assertContentAvailable: () => { port.assertContentAvailable() },
+      attachments: port,
+      createFileSystem: (workspace, assertInstalled, mapProcessPath) =>
+        port.createTextFileSystem(workspace, assertInstalled, resolveProject, mapProcessPath),
       projectFor: (workspace, assertRegistered, signal) => port.projectFor(workspace, assertRegistered, signal),
       createProject: async (registry, use, title, signal) => {
         signal.throwIfAborted()

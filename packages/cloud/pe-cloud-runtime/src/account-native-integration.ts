@@ -23,6 +23,9 @@ import * as RuntimeAccount from './account.ts'
 import { AccountRuntimeError } from './errors.ts'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { AccountBinding, AccountUse } from './types.ts'
+import { AccountAttachments, type AccountAttachmentLimits } from './account-attachments.ts'
+import { LocalAttachmentStore } from '@deepseek-ai/dsh-attachment-local'
+import { FileUploads } from '@deepseek-ai/dsh-client-file-upload'
 
 /** Shared approved project/model/Preset checks, supplied by the trusted fixed account composition. */
 export interface AccountNativeGuards {
@@ -55,6 +58,8 @@ export interface AccountNativePreparation {
   readonly stopTimeoutMs: number
   /** Existing Root native.maxEntries bounds each bootstrap native inventory read. */
   readonly maxNativeInventoryEntries: number
+  /** Omission keeps streamed uploads and attachment-path projection closed. */
+  readonly attachments?: AccountAttachmentLimits
   /** Optional fixed readonly first-screen composition; every limit and exact graph home is required when selected. */
   readonly firstScreen?: {
     readonly home: string
@@ -81,6 +86,7 @@ export const ACCOUNT_NATIVE_ENTRIES = Object.freeze({
   editor: 'pe-cloud-config-editor', credentials: 'pe-cloud-credentials',
   controller: 'pe-cloud-session-controller', agentLoop: 'pe-cloud-agent-loop', llm: 'pe-cloud-llm',
   workspaceFiles: 'pe-cloud-workspace-files',
+  attachments: 'pe-cloud-attachment-store', uploads: 'pe-cloud-file-uploads',
 })
 
 /** Additional fixed private builtins selected only with explicit first-screen inputs. */
@@ -144,6 +150,12 @@ export class AccountNativeIntegration {
     this.execution = this.input.execution.bindAccount(ctx, binding, () => { mountCurrent(binding) })
     installAccountExecutionPort(ctx, this.execution)
     let filesOwner: CloudAccountFiles | undefined
+    const attachmentLimits = this.input.attachments
+    const attachments = attachmentLimits === undefined ? undefined : new AccountAttachments(
+      ctx, binding, attachmentLimits,
+      () => requireFiles(ctx), agent => requireGuards(agent.ctx).projectForAgent(agent),
+      (caller) => { api.assertInstalled(caller); this.input.assertRootCurrent(); businessCurrent(binding) },
+    )
     if (this.input.files !== undefined) {
       const files = this.input.files(ctx, binding, async (caller, signal) => {
         const admit = (): void => {
@@ -174,6 +186,7 @@ export class AccountNativeIntegration {
         throw new AccountRuntimeError('cloud/stale-generation', 'Files preparation requires the exact installed graph binding')
       }
       filesOwner = new CloudAccountFiles(ctx, { ...files,
+        ...attachments === undefined ? {} : { attachmentProjection: attachments },
         assertMountCurrent: (current) => { mountCurrent(current); files.assertMountCurrent(current) },
         assertUnpublished: () => { unpublished(); files.assertUnpublished() },
       })
@@ -334,6 +347,7 @@ export class AccountNativeIntegration {
       inject: [...SessionController.inject, 'peCloudApi'], Config: SessionController.Config,
       apply(owner: Context, config: ConstructorParameters<typeof SessionController>[1]) {
         api.createController(owner, { ...requireGuards(owner).sessions, projectDirectory,
+          ...attachments === undefined ? {} : { preparePromptFiles: attachments.preparePromptFiles.bind(attachments) },
           ...firstScreenInput === undefined ? {} : { firstScreen: {
             assertSessionRead: readSession, maxCollectionItems: firstScreenInput.maxCollectionItems,
             maxFrameBytes: firstScreenInput.maxFrameBytes,
@@ -378,6 +392,23 @@ export class AccountNativeIntegration {
         inject: [...WorkspaceFiles.inject, 'peCloudApi'], Config: WorkspaceFiles.Config,
         apply(owner: Context, nativeConfig: ConstructorParameters<typeof WorkspaceFiles>[1]) {
           api.createWorkspaceFiles(owner, nativeConfig)
+        },
+      },
+      ...attachments === undefined || attachmentLimits === undefined ? {} : {
+        [ACCOUNT_NATIVE_ENTRIES.attachments]: {
+          inject: ['peCloudFiles'], Config: LocalAttachmentStore.Config,
+          apply(owner: Context, config: ConstructorParameters<typeof LocalAttachmentStore>[1]) {
+            if (filesOwner === undefined) throw new AccountRuntimeError('cloud/account-unavailable', 'The original account files owner is unavailable')
+            const Store = filesOwner.attachmentStore()
+            new Store(owner, config)
+          },
+        },
+        [ACCOUNT_NATIVE_ENTRIES.uploads]: {
+          inject: [...FileUploads.inject, 'peCloudApi'],
+          apply(owner: Context) {
+            api.createFileUploads(owner, { maxPendingReceipts: attachmentLimits.maxPendingReceipts,
+              storeFileStream: attachments.storeFileStream.bind(attachments) })
+          },
         },
       },
     }

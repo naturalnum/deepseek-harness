@@ -115,6 +115,8 @@ Pause 关闭顶层准入，但允许已登记工作完成；只有静止、无�
 <a id="model-experience"></a>
 ## Model Experience
 
+可选原生上传装配继承 FileUploads 的流式路由、Agent 解析、收据绑定与退休，显式选择其原待处理收据及上传容量。账户适配在原生收据发布前等待受控存储钩子，encoded 文件上传及内联编码图片保持关闭。准备审核检查唯一 ACTIVE owner、未替换原生依赖及流式路由，再开放精确 POST 路径。原生 Session Controller 在原 prompt 准入、绑定与投递前等待同 Agent 文件准备，已接受请求去重仍最先执行。账户适配不重写上传存储、收据表或 prompt 投递。
+
 ### Model-call admission
 
 #### What the model sees

@@ -32,7 +32,7 @@ kind: "package-reference"
   name: '@deepseek-ai/dsh-client-file-upload'
 ```
 
-本包没有 Cordis 配置字段。`Blob` 在专用 Worker 内通过 XMLHttpRequest 发送，因此服务可以报告浏览器上传进度，并在浏览器提供总量时一并报告。`ReadableStream` 会转移给该 Worker，再增量传入 Fetch；进度只报告已消费字节，不包含总量。`AbortSignal` 会终止专用 Worker，或传递给页面自己提供的载体。精确字节使用生成的 Remote。
+Host 选项 `maxPendingReceipts` 必须为正安全整数，默认为 128。它共同限制暂存凭证和在途原生 intake，包括零字节上传及冷 Agent 解析；满额时会在拉取请求体前拒绝新 intake。退休和 Session 销毁只释放实际移除的凭证，未结束的原生工作继续占用名额。`Blob` 在专用 Worker 内通过 XMLHttpRequest 发送，因此服务可以报告浏览器上传进度，并在浏览器提供总量时一并报告。`ReadableStream` 会转移给该 Worker，再增量传入 Fetch；进度只报告已消费字节，不包含总量。`AbortSignal` 会终止专用 Worker，或传递给页面自己提供的载体。精确字节使用生成的 Remote。
 
 页面所有者可以在上传插件激活前，向新建的 Client Context 安装 `ctx.provide('fileUploadHooks', { fetch: capturedFetch })`。服务只捕获一次该 Fetch 函数，优先于旧的 `__DSH_FILE_UPLOAD__` 钩子；之后修改依赖或全局值不会重定向已有实例。载体负责身份绑定、撤销和实际请求结算。它接收原始请求体与 signal；此 Fetch 路径不产生上传进度事件，也不重试结果未知的上传。
 
@@ -46,7 +46,7 @@ kind: "package-reference"
 
 Client 插件提供 `ctx.fileUpload`。其 `upload()` 方法接收所属 Session 标识，组装原始路由请求，并为精确字节调用生成的 Remote。提供方捕获可选的 Context 自有 `fileUploadHooks.fetch`，再回退到旧的 Cordis 启动前 `__DSH_FILE_UPLOAD__` 钩子。两种输入都没有时，每个 Blob 或 stream 请求拥有一个短期 Worker，并在完成、失败或取消后释放。存在 Fetch 载体时，服务通过该捕获函数发送请求体；Web Worker runtime 会通过请求帧转移 stream 请求体，再以带背压的分片形式交给 Host HTTP bridge。
 
-Host 插件提供 `ctx.fileUploads`。它拥有经过认证的流式路由、编码 Remote 兜底、命令凭证解析器与暂存凭证生命周期；编码准入、附件错误识别与字节存储仍由 `ctx.attachments` 提供。Host 调用方传入具有运行时所属上下文的 Agent；凭证表以该 Agent 的准确 Session 对象为键。Session Controller 注册可恢复休眠普通 Agent 的解析器，并在 prompt 准入时消费凭证。Prompt 投递通过可释放事务持有每个凭证绑定。成功投递提交事务前，释放会恢复原绑定；提交后，队列或历史观察会退休该凭证。
+Host 插件提供 `ctx.fileUploads`。它拥有经过认证的流式路由、编码 Remote 兜底、命令凭证解析器与暂存凭证生命周期；编码准入、附件错误识别与字节存储仍由 `ctx.attachments` 提供。Host 调用方传入具有运行时所属上下文的 Agent；凭证表以该 Agent 的准确 Session 对象为键。Host 子类可重写会被等待的 `storeFileStream(agent, input)` 步骤，在存储开始前按该已解析 Agent 准入原始流；默认实现转发给附件存储，钩子完成前不会发布凭证。钩子拒绝不代表存储已回滚或源已关闭。重写者用 `FileUploadIntakeUnconfirmedError` 表示未确认工作：其名额继续占用、新 intake 被关闭，owner 销毁也会报告结算未确认。Owner 销毁会等待实际 intake promise；物理 Request/socket 结束仍由 Connection/ingress owner 持有。原始请求体迭代器在提前返回时取消 reader 并等待当前读取；取消或等待失败仍视为未确认。Session Controller 注册可恢复休眠普通 Agent 的解析器，并在 prompt 准入时消费凭证。Prompt 投递通过可释放事务持有每个凭证绑定。成功投递提交事务前，释放会恢复原绑定；提交后，队列或历史观察会退休该凭证。
 
 | 文件 | 职责 |
 |---|---|

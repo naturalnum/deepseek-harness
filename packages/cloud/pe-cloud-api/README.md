@@ -115,6 +115,8 @@ Service-ready hook installation cannot account for earlier initialization writes
 <a id="model-experience"></a>
 ## Model Experience
 
+Optional native upload assembly inherits FileUploads' streamed route, Agent resolution, receipt binding and retirement. Its original pending-receipt/intake capacity is explicitly selected; the account adapter awaits the controlled store hook before native receipt publication. Encoded file upload and inline encoded images remain closed. Prepared audit checks the unique active owner, unchanged native dependencies and streaming route before exposing the exact POST path. The native Session Controller awaits same-Agent file preparation before its original prompt admission/bind/delivery, and keeps accepted-request deduplication first. No account adapter reimplements upload storage, receipt tables or prompt delivery.
+
 ### Model-call admission
 
 #### What the model sees

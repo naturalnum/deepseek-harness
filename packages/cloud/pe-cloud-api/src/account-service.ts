@@ -10,6 +10,8 @@ import { prepareAccountApiInstall, type AccountApiInstall } from './account-inst
 import { CloudApiError } from './errors.ts'
 import { CloudProjectsService, type CloudProjectsPreparation } from './cloud-projects.ts'
 import { createNativeWorkspaceFiles, type NativeWorkspaceFiles } from './native-files.ts'
+import { createNativeUploads, type NativeUploads, type NativeUploadPreparation } from './native-uploads.ts'
+import { FILE_UPLOAD_PATH, type FileUploads } from '@deepseek-ai/dsh-client-file-upload'
 import { prepareNativeFirstScreen, type FirstScreenNativeInput, type NativeFirstScreen } from './native-first-screen.ts'
 import { registerFirstScreenEvents, type FirstScreenEventInput, type FirstScreenEvents } from './first-screen-events.ts'
 import type { ExposurePolicy } from './exposure.ts'
@@ -70,6 +72,7 @@ export class CloudAccountApi extends Service {
   private readonly firstScreen: { native?: NativeFirstScreen; events?: FirstScreenEvents } = {}
   private readonly projects: { native?: CloudProjectsService } = {}
   private readonly files: { native?: NativeWorkspaceFiles } = {}
+  private readonly uploads: { native?: NativeUploads } = {}
   // Cordis traces services through caller-scoped proxies; their object identities differ.
   private readonly identity = Symbol('account-api-owner')
 
@@ -177,7 +180,7 @@ export class CloudAccountApi extends Service {
       streamEndpoints: [...sessionInventory.streamEndpoints, ...firstScreen?.streamEndpoints ?? [],
         ...files?.streamEndpoints ?? [], ...events === undefined ? [] : [{ endpoint: events.endpoint, handlerId: 'native:typertGateway',
           guard: 'authenticated-account' as const }]],
-      exactFetchRoutes: [],
+      exactFetchRoutes: this.uploads.native?.inspect().exactFetchRoutes ?? [],
     }
     if (inventory.rpcEndpoints.length + inventory.streamEndpoints.length > maximum) this.nativeUnavailable()
     const typert = owner.get('typert')
@@ -266,6 +269,10 @@ export class CloudAccountApi extends Service {
    */
   requireFetch(method: string, pathname: string): ExactFetchExposure {
     this.admit()
+    if (pathname === FILE_UPLOAD_PATH) {
+      if (this.uploads.native === undefined) this.nativeUnavailable()
+      this.uploads.native.assertCurrent()
+    }
     return this.installation.exposure.requireFetch(method, pathname)
   }
 
@@ -354,6 +361,21 @@ export class CloudAccountApi extends Service {
     const controller = createNativeController(owner, this.binding, this.businessCurrent, this.installation.exposure, guards, config)
     this.native.sessionController = { value: original(controller), fiber: owner.fiber }
     return controller
+  }
+
+  /**
+   * Construct the sole original native upload owner with controlled streamed persistence.
+   * @param owner Actual Loader entry, with native dependencies ready.
+   * @param input Same-Agent storage admission and finite native receipt capacity.
+   * @returns Native service; its streamed route remains subject to the audited exposure policy.
+   */
+  createFileUploads(owner: Context, input: NativeUploadPreparation): FileUploads {
+    this.assertInstalled(owner)
+    if (this.uploads.native !== undefined || this.maxNativeInventoryEntries === undefined) this.duplicateNative()
+    const native = createNativeUploads(owner, this.binding, () => { this.assertInstalled(owner) },
+      () => { this.requireFetch('POST', FILE_UPLOAD_PATH) }, this.maxNativeInventoryEntries, input)
+    this.uploads.native = native
+    return native.value
   }
 
   /**
@@ -497,6 +519,7 @@ export class CloudAccountApi extends Service {
     }
     this.projects.native?.assertCurrent()
     this.files.native?.assertCurrent()
+    this.uploads.native?.assertCurrent()
     if (!audited) return
     for (const row of exposure.manifest.rpcEndpoints) exposure.requireRpc(row.endpoint)
     for (const row of exposure.manifest.streamEndpoints) exposure.requireStream(row.endpoint)

@@ -59,6 +59,15 @@ export const Config: z<Config> = z.object({
     maxReplyBytes: z.natural().min(1).max(2147483647).required(),
     operationTimeoutMs: z.natural().min(1).max(2147483647).required(),
   })]),
+  staging: z.union([z.object({
+    helperPath: z.string().required(),
+    maxFileBytes: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
+    maxBatchRefs: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
+    maxBatchBytes: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
+    maxSourceChunkBytes: z.natural().min(1).max(2147483647).required(),
+    operationTimeoutMs: z.natural().min(1).max(2147483647).required(),
+    reservationBytes: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
+  })]),
 })
 
 /**

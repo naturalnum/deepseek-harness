@@ -11,6 +11,10 @@ import { directoryWorkBudget } from './directory-budget.ts'
 import { cancelledLeafFrame, parseLeafFrame } from './leaf-frame.ts'
 import { createStorageWorker, storageRequest } from './storage-worker.ts'
 import type { StaticStorageConfig } from './storage-types.ts'
+import { loadStagingNative, StagingFailure } from './staging-native.ts'
+import type { StagingFacts, StagingTransaction } from './staging-native.ts'
+import { validStageName } from './worker-protocol.ts'
+import type { FdStagingWorkerInput, FdStageRequest } from './worker-protocol.ts'
 
 interface LinuxFdHelper {
   readonly abiVersion: 6 | 7 | 8
@@ -86,7 +90,53 @@ function input(value: unknown): FdWorkerInput {
     maxReadBytes: value.maxReadBytes, maxPathBytes: value.maxPathBytes,
     maxResolveRetries: value.maxResolveRetries, readChunkBytes: value.readChunkBytes,
     ...value.storageProbe === undefined ? {} : { storageProbe: storageConfig(value.storageProbe) },
+    ...value.staging === undefined ? {} : { staging: stagingInput(value.staging, value.maxPathBytes, value.readChunkBytes) },
   }
+}
+
+function stagingInput(value: unknown, pathBytes: number, chunkBytes: number): FdStagingWorkerInput {
+  if (!record(value) || typeof value.helperPath !== 'string' || !isAbsolute(value.helperPath) || !value.helperPath.endsWith('.node')
+    || Buffer.byteLength(value.helperPath) > pathBytes
+    || ['maxFileBytes', 'maxBatchRefs', 'maxBatchBytes', 'maxSourceChunkBytes', 'operationTimeoutMs', 'maxReplyBytes', 'reservationBytes']
+      .some(key => typeof value[key] !== 'number' || !Number.isSafeInteger(value[key]) || value[key] < 1)
+    || typeof value.maxFileBytes !== 'number' || value.maxFileBytes < chunkBytes || typeof value.maxBatchRefs !== 'number'
+    || typeof value.maxBatchBytes !== 'number' || typeof value.maxSourceChunkBytes !== 'number' || value.maxSourceChunkBytes < chunkBytes
+    || typeof value.operationTimeoutMs !== 'number' || value.operationTimeoutMs > 2_147_483_647
+    || typeof value.maxReplyBytes !== 'number' || value.maxReplyBytes > 2_147_483_647 || typeof value.reservationBytes !== 'number') {
+    throw new WorkerFailure('FS_PERMISSION_DENIED')
+  }
+  return { helperPath: value.helperPath, maxFileBytes: value.maxFileBytes, maxBatchRefs: value.maxBatchRefs,
+    maxBatchBytes: value.maxBatchBytes, maxSourceChunkBytes: value.maxSourceChunkBytes, operationTimeoutMs: value.operationTimeoutMs,
+    maxReplyBytes: value.maxReplyBytes, reservationBytes: value.reservationBytes }
+}
+
+function stageBegin(raw: unknown, limits: FdWorkerInput): Extract<FdStageRequest, { kind: 'stage-begin' }> {
+  if (!record(raw) || raw.kind !== 'stage-begin' || !record(raw.file) || limits.staging === undefined) throw new WorkerFailure('FS_PERMISSION_DENIED')
+  const base = taskRequest({ ...raw, kind: 'read', relativePath: '.', maxBytes: 0 }, limits)
+  const file = raw.file
+  if (Object.keys(file).length !== 3 || typeof file.digest !== 'string' || !/^[a-f0-9]{64}$/.test(file.digest)
+    || typeof file.name !== 'string' || !validStageName(file.name) || !Number.isSafeInteger(file.expectedBytes)
+    || typeof file.expectedBytes !== 'number' || file.expectedBytes < 0 || file.expectedBytes > limits.staging.maxFileBytes
+    || base.root.rootMountId === undefined
+    || Buffer.byteLength(`${base.root.rootPath}/.pe/attachments/${file.digest}/${file.name}`) > limits.maxPathBytes) {
+    throw new WorkerFailure('FS_PERMISSION_DENIED')
+  }
+  return { kind: 'stage-begin', id: base.id, root: base.root, cancel: base.cancel,
+    file: { digest: file.digest, name: file.name, expectedBytes: file.expectedBytes } }
+}
+
+function wireStagingFacts(value: StagingFacts): StagingFacts {
+  // Native begin owns a non-cloneable handle; only these bounded facts may cross the worker boundary.
+  return { kind: value.kind, code: value.code, publication: value.publication, closed: value.closed, clean: value.clean,
+    temporaryPresent: value.temporaryPresent, writtenBytes: value.writtenBytes, readBytes: value.readBytes,
+    sequence: value.sequence, retainedCreatedDirectories: value.retainedCreatedDirectories }
+}
+
+function stageFailureCode(facts: StagingFacts): FsErrorCode {
+  if (facts.code === 'ECANCELED' || facts.code === 'ETIMEDOUT') return 'FS_ABORTED'
+  if (facts.code === 'EFBIG') return 'FS_TOO_LARGE'
+  if (['EACCES', 'EPERM', 'ELOOP', 'EXDEV', 'EINVAL'].includes(facts.code)) return 'FS_PERMISSION_DENIED'
+  return 'FS_IO_ERROR'
 }
 
 function contentLimits(value: unknown, maxPathBytes: number): FdContentLimits {
@@ -562,6 +612,7 @@ function start(): void {
   let limits: FdWorkerInput
   let native: LinuxFdHelper
   let storage: ReturnType<typeof createStorageWorker> | undefined
+  let staging: ReturnType<typeof loadStagingNative> | undefined
   try {
     const raw: unknown = workerData
     limits = input(raw)
@@ -569,6 +620,7 @@ function start(): void {
     native = helper(limits.helperPath)
     if (native.abiVersion === 8 && limits.content === undefined) throw new WorkerFailure('FS_PERMISSION_DENIED')
     native.probeKernel()
+    if (limits.staging !== undefined) staging = loadStagingNative(limits.staging.helperPath)
   } catch (error) {
     port.postMessage({ kind: 'startup-failed', ...failure(error) } satisfies FdWorkerReply)
     port.close()
@@ -576,6 +628,53 @@ function start(): void {
   }
   let active: { request: FdTaskRequest; fd: number; total: number } | undefined
   let endedStreamId: FdTaskRequest['id'] | undefined
+  type ActiveStage = {
+    readonly request: Extract<FdStageRequest, { kind: 'stage-begin' }>
+    readonly transaction: StagingTransaction
+    readonly source: ReturnType<typeof Promise.withResolvers<undefined>>
+    phase: 'writing' | 'finishing'
+    sourceReceived: boolean
+  }
+  let activeStage: ActiveStage | undefined
+  let endedStageId: FdTaskRequest['id'] | undefined
+  const postStage = (reply: FdWorkerReply): void => {
+    if (limits.staging === undefined || Buffer.byteLength(JSON.stringify(reply)) > limits.staging.maxReplyBytes) {
+      port.close(); return
+    }
+    port.postMessage(reply)
+  }
+  const settleStage = (state: ActiveStage | undefined, receipt: StagingFacts, id: FdTaskRequest['id']): void => {
+    if (state !== undefined && activeStage !== state) return
+    const facts = wireStagingFacts(receipt)
+    activeStage = undefined
+    endedStageId = id
+    if ((facts.kind === 'published' || facts.kind === 'reused') && facts.closed && facts.clean && !facts.temporaryPresent) {
+      postStage({ kind: 'stage-result', id, result: { outcome: facts.kind, facts } })
+    } else postStage({ kind: 'stage-failure', id, code: stageFailureCode(facts), facts })
+    if (!facts.closed || !facts.clean || facts.kind === 'unknown' || facts.publication === 'unknown') port.close()
+  }
+  const stageError = (state: ActiveStage | undefined, error: unknown, id: FdTaskRequest['id']): void => {
+    if (error instanceof StagingFailure) settleStage(state, error.facts, id)
+    else {
+      // Native/wrapper defects without trustworthy closure facts cannot become ordinary released failures.
+      state?.source.reject(error)
+      port.close()
+    }
+  }
+  const finishStage = async (state: ActiveStage): Promise<void> => {
+    state.phase = 'finishing'
+    try {
+      while (true) {
+        if (state.transaction.state.kind === 'existing') {
+          while (!state.transaction.readExisting().eof) { /* One bounded block; companion checks cancellation/deadline each time. */ }
+        }
+        const facts = await state.transaction.finalize()
+        if (facts.kind === 'existing') continue
+        settleStage(state, facts, state.request.id)
+        return
+      }
+    } catch (error) { stageError(state, error, state.request.id) }
+  }
   const endStream = (error?: unknown): void => {
     if (active === undefined) throw new Error('files stream has no owned FD')
     const { request } = active
@@ -589,6 +688,68 @@ function start(): void {
       : { kind: 'reply', id: request.id, ok: false, ...failure(error) } satisfies FdWorkerReply)
   }
   port.on('message', (raw: unknown) => {
+    if (record(raw) && raw.kind === 'stage-begin') {
+      if (active !== undefined || activeStage !== undefined) { port.close(); return }
+      let request: Extract<FdStageRequest, { kind: 'stage-begin' }>
+      try { request = stageBegin(raw, limits) } catch (error) {
+        port.postMessage({ kind: 'stage-rejected', id: raw.id, code: error instanceof WorkerFailure ? error.code : 'FS_PERMISSION_DENIED' }); return
+      }
+      const companion = staging, config = limits.staging
+      if (companion === undefined || config === undefined) {
+        postStage({ kind: 'stage-rejected', id: request.id, code: 'FS_PERMISSION_DENIED' }); return
+      }
+      const source = Promise.withResolvers<undefined>()
+      void source.promise.catch(() => {})
+      try {
+        const transaction = companion.begin({ rootPath: request.root.rootPath,
+          device: request.root.rootDevice, inode: request.root.rootInode,
+          mountId: request.root.rootMountId ?? '0', digest: request.file.digest, name: request.file.name,
+          expectedBytes: request.file.expectedBytes,
+          maxBytes: config.maxFileBytes, maxChunkBytes: limits.readChunkBytes, maxPathBytes: limits.maxPathBytes,
+          timeoutMs: config.operationTimeoutMs, cancel: new Int32Array(request.cancel) }, () => source.promise)
+        const state: ActiveStage = { request, transaction, source, phase: 'writing', sourceReceived: false }
+        activeStage = state
+        if (transaction.state.kind === 'existing') void finishStage(state)
+        else postStage({ kind: 'stage-ready', id: request.id })
+      } catch (error) { stageError(undefined, error, request.id) }
+      return
+    }
+    if (record(raw) && typeof raw.kind === 'string' && raw.kind.startsWith('stage-')) {
+      const state = activeStage
+      if (state === undefined && raw.kind === 'stage-abort' && raw.id === endedStageId) return
+      if (state === undefined || raw.id !== state.request.id) { port.close(); return }
+      if (raw.kind === 'stage-abort') {
+        state.source.reject(new WorkerFailure('FS_ABORTED'))
+        try { settleStage(state, state.transaction.abort(), state.request.id) } catch (error) {
+          stageError(state, error, state.request.id)
+        }
+        return
+      }
+      if (raw.kind === 'stage-source-complete' && !state.sourceReceived) {
+        state.sourceReceived = true; state.source.resolve(undefined); return
+      }
+      if (raw.kind === 'stage-finish' && state.phase === 'writing') { void finishStage(state); return }
+      if (raw.kind === 'stage-chunk' && state.phase === 'writing') {
+        const bytes = raw.bytes
+        if (raw.sequence !== state.transaction.state.sequence || !(bytes instanceof Uint8Array) || !(bytes.buffer instanceof ArrayBuffer)
+          || bytes.byteOffset !== 0 || bytes.byteLength !== bytes.buffer.byteLength
+          || bytes.byteLength < 1 || bytes.byteLength > limits.readChunkBytes) {
+          state.source.reject(new WorkerFailure('FS_PERMISSION_DENIED'))
+          try { settleStage(state, state.transaction.abort(), state.request.id) } catch (error) {
+            stageError(state, error, state.request.id)
+          }
+          return
+        }
+        try {
+          const facts = state.transaction.write(bytes)
+          postStage({ kind: 'stage-ack', id: state.request.id, sequence: facts.sequence, total: facts.writtenBytes })
+        } catch (error) { stageError(state, error, state.request.id) }
+        return
+      }
+      state.source.reject(new WorkerFailure('FS_PERMISSION_DENIED'))
+      port.close(); return
+    }
+    if (activeStage !== undefined) { port.close(); return }
     if (record(raw) && (raw.kind === 'stream-pull' || raw.kind === 'stream-cancel')) {
       if (active === undefined && raw.kind === 'stream-cancel' && raw.id === endedStreamId) return
       if (active === undefined || raw.id !== active.request.id) { port.close(); return }
@@ -698,7 +859,8 @@ function start(): void {
       port.postMessage({ kind: 'reply', id: request.id, ok: false, ...failure(error) } satisfies FdWorkerReply)
     }
   })
-  port.postMessage({ kind: 'ready', abiVersion: native.abiVersion, ...storage === undefined ? {} : { storageProbeVersion: 1 as const } } satisfies FdWorkerReply)
+  port.postMessage({ kind: 'ready', abiVersion: native.abiVersion, ...storage === undefined ? {} : { storageProbeVersion: 1 as const },
+    ...staging === undefined ? {} : { stagingAbiVersion: 1 as const } } satisfies FdWorkerReply)
 }
 
 start()

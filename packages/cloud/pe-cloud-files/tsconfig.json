@@ -25,6 +25,12 @@
     },
     {
       "path": "../../workspace/workspace"
+    },
+    {
+      "path": "../../attachment/attachment"
+    },
+    {
+      "path": "../../attachment/attachment-local"
     }
   ]
 }

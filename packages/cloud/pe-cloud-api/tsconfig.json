@@ -79,6 +79,21 @@
     },
     {
       "path": "../../api/workspace-files/tsconfig.host.json"
+    },
+    {
+      "path": "../../client/file-upload/tsconfig.host.json"
+    },
+    {
+      "path": "../../core/agent"
+    },
+    {
+      "path": "../../attachment/attachment"
+    },
+    {
+      "path": "../../client/connection/tsconfig.host.json"
+    },
+    {
+      "path": "../../interaction/commands"
     }
   ]
 }

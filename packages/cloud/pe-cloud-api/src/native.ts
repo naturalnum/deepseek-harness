@@ -10,6 +10,8 @@ import type {
 } from '@deepseek-ai/dsh-api-session-controller/types'
 import { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
+import type { FileUploadReceiptId } from '@deepseek-ai/dsh-client-file-upload/types'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-pe-cloud-runtime/account'
 import { CloudApiError } from './errors.ts'
 import { firstScreenJsonBytes } from './first-screen-json.ts'
@@ -66,6 +68,8 @@ export interface NativeSessionGuards {
    * @param agent - actual attached native Agent, after graph-binding validation.
    */
   assertActiveScope(agent: NonNullable<ReturnType<Context['agents']['get']>>): void
+  /** Await same-Agent native receipt copies before the original Controller admits or binds prompt content. */
+  readonly preparePromptFiles?: (agent: Agent, receiptIds: readonly FileUploadReceiptId[], signal?: AbortSignal) => Promise<void>
 }
 
 class NativeSessionAdmission {
@@ -133,6 +137,13 @@ class NativeSessionAdmission {
     await this.guards.assertSessionProject(sessionId)
   }
 
+  promptInput(request: SessionPromptRequest): void {
+    this.admit('session/prompt', 'account-session')
+    if (request.content.some(part => part.type === 'image')) {
+      throw new CloudApiError('cloud/forbidden', 'Inline encoded image intake is unavailable in this account recipe.')
+    }
+  }
+
   async history(endpoint: 'session/page' | 'session/follow', address: SessionAddress): Promise<void> {
     this.admitHistory(endpoint)
     // Subagent history has separate parent/mode authority; this slice admits only ordinary Sessions.
@@ -192,6 +203,16 @@ class NativeSessionAdmission {
     }
   }
 
+  async preparePromptFiles(agent: Agent, ids: readonly FileUploadReceiptId[], signal?: AbortSignal): Promise<void> {
+    this.admit('session/prompt', 'account-session')
+    this.guards.assertActiveScope(agent)
+    const prepare = this.guards.preparePromptFiles
+    if (prepare === undefined) throw new CloudApiError('cloud/forbidden', 'File prompt admission is unavailable.')
+    await prepare(agent, ids, signal)
+    this.guards.assertActiveScope(agent)
+    this.admit('session/prompt', 'account-session')
+  }
+
   admit(endpoint: string, guard: 'account-project' | 'account-session', mode: 'rpc' | 'stream' = 'rpc'): void {
     this.assertBinding()
     this.ctx.fiber.assertActive()
@@ -216,6 +237,10 @@ class AccountSessionController extends SessionController {
     return this.admission.ensureProjectDirectory(cwd)
   }
 
+  protected override preparePromptFiles(agent: Agent, ids: readonly FileUploadReceiptId[], signal?: AbortSignal): Promise<void> {
+    return this.admission.preparePromptFiles(agent, ids, signal)
+  }
+
   protected override controlBufferLimits(): SessionControlBufferLimits | undefined {
     return this.admission.controlBufferLimits()
   }
@@ -227,6 +252,7 @@ class AccountSessionController extends SessionController {
   }
 
   override async prompt(request: SessionPromptRequest, signal: AbortSignal): Promise<SessionPromptValue> {
+    this.admission.promptInput(request)
     await this.admission.session('session/prompt', request.sessionId)
     this.admission.admit('session/prompt', 'account-session')
     return super.prompt(request, signal)

@@ -26,7 +26,7 @@ async function fixture() {
   const runtime = new PeAccountRuntime(ctx, { maxMountedAccounts: 2, maxConcurrentMounts: 1, maxConcurrentDrains: 1 })
   const pool = new pg.Pool({ host: '127.0.0.1', port: 1, user: 'test', database: 'unavailable', password: 'test', max: 1, connectionTimeoutMillis: 30 })
   const auth = await BetterAuthAccess.create(accessConfig(), pool, 'ingress-test-secret-thirty-two-characters-123456', async () => {})
-  const authCurrent = vi.fn(() => { throw new AuthAccessError('cloud/account-unavailable', 'test' as AuthAccessError['requestId']) })
+  const authCurrent = vi.fn((): void => { throw new AuthAccessError('cloud/account-unavailable', 'test' as AuthAccessError['requestId']) })
   const ingress = new CloudIngress(ctx, accessConfig(), ingressConfig(), auth, {
     web, runtime, recipeVersion: 'ingress-test', assertAuthenticationCurrent: authCurrent,
   })
@@ -54,6 +54,14 @@ async function fixture() {
   }
 }
 
+function responseRequestId(body: string): string {
+  const value: unknown = JSON.parse(body)
+  if (value === null || typeof value !== 'object' || !('requestId' in value) || typeof value.requestId !== 'string') {
+    throw new Error('Actual safe response request id missing')
+  }
+  return value.requestId
+}
+
 describe('shared Web ingress under the actual unsealed runtime', () => {
   it.each([
     ['/cloud/auth', '/cloud/auth/sign-in/email', 'POST'],
@@ -62,6 +70,7 @@ describe('shared Web ingress under the actual unsealed runtime', () => {
     ['/api', '/api/session/list', 'POST'],
   ])('returns safe 503 from the actual %s registration before any authentication, owner or native call', async (routePath, path, method) => {
     const f = await fixture()
+    const log = vi.spyOn(f.ctx.logger, 'warn').mockImplementation(() => {})
     await f.ingress.install()
     const route = f.register.mock.calls.map(call => call[0]).find(route => route.path === routePath)
     if (route === undefined) throw new Error('Actual shared Web route was not registered')
@@ -74,10 +83,105 @@ describe('shared Web ingress under the actual unsealed runtime', () => {
     expect(wire).not.toContain('must-not-be-read')
     expect(wire).not.toContain('old-account')
     expect(wire).toContain('cache-control: no-store')
+    const body = wire.slice(wire.indexOf('\r\n\r\n') + 4)
+    expect(Buffer.byteLength(body)).toBe(212)
+    expect(log).toHaveBeenCalledExactlyOnceWith('Cloud ingress request failed: %j', {
+      requestId: responseRequestId(body), stage: 'ingress.current', code: 'cloud/account-unavailable',
+      causeCodes: [null, null], headersSent: false, writableEnded: false, destroyed: false,
+    })
+    expect(JSON.stringify(log.mock.calls)).not.toMatch(/must-not-be-read|old-account/)
     expect(f.seal).toHaveBeenCalledWith('ingress-test')
     for (const operation of [f.authCurrent, f.authenticate, f.bootstrap, f.authHandler,
       f.locate, f.acquire, f.borrow, f.http, f.stream, f.query, read]) expect(operation).not.toHaveBeenCalled()
     expect(request.destroyed).toBe(true)
+  })
+
+  it('records the original machine codes before mapping, reads only two causes and omits private error/request data', async () => {
+    const f = await fixture()
+    const log = vi.spyOn(f.ctx.logger, 'warn').mockImplementation(() => {})
+    const forbidden = vi.fn(() => 'PRIVATE_ERROR_ACCESSOR')
+    const nested = { code: 'EPIPE' }
+    Object.defineProperty(nested, 'cause', { get: forbidden })
+    const error = Object.assign(new Error('PRIVATE_MESSAGE'), {
+      code: 'cloud/account-starting', cause: { code: 'ECONNRESET', cause: nested },
+    })
+    Object.defineProperty(error, 'message', { get: forbidden })
+    Object.defineProperty(error, 'stack', { get: forbidden })
+    f.seal.mockImplementationOnce(() => { throw error })
+    await f.ingress.install()
+    const route = f.register.mock.calls.map(call => call[0]).find(value => value.path === '/api')
+    if (route === undefined) throw new Error('Actual API route missing')
+    const { request, response, socket } = carrier('/api/session/list?private=PRIVATE_PATH', 'POST', [
+      'Cookie', 'PRIVATE_COOKIE', 'X-Pe-Account', 'PRIVATE_ACCOUNT', 'X-Private-Key', 'PRIVATE_KEY',
+    ])
+    request.push('PRIVATE_BODY')
+    await route.handler(request, response)
+    expect(response.statusCode).toBe(503)
+    const wire = Buffer.concat(socket.output).toString('utf8')
+    const body = wire.slice(wire.indexOf('\r\n\r\n') + 4)
+    expect(Buffer.byteLength(body)).toBe(212)
+    expect(JSON.parse(body)).toMatchObject({ code: 'cloud/account-unavailable', retry: 'after-status-check' })
+    expect(log).toHaveBeenCalledExactlyOnceWith('Cloud ingress request failed: %j', {
+      requestId: responseRequestId(body), stage: 'ingress.current', code: 'cloud/account-starting',
+      causeCodes: ['ECONNRESET', 'EPIPE'], headersSent: false, writableEnded: false, destroyed: false,
+    })
+    expect(forbidden).not.toHaveBeenCalled()
+    expect(JSON.stringify(log.mock.calls)).not.toContain('PRIVATE_')
+    expect(f.query).not.toHaveBeenCalled()
+    expect(f.ingress.observe().pendingOperations).toBe(0)
+  })
+
+  it.each(['PRIVATE_CODE', 'x'.repeat(49), 'EPIPE\nPRIVATE_CODE', 'accessor', 'proxy', 'cycle'])(
+    'bounds and allowlists diagnostics at the actual authentication stage: %s', async (code) => {
+      const f = await fixture()
+      const log = vi.spyOn(f.ctx.logger, 'warn').mockImplementation(() => {})
+      const accessor = vi.fn(() => 'PRIVATE_ACCESSOR')
+      const error = Object.assign(new Error('PRIVATE_MESSAGE'), { code })
+      if (code === 'accessor') Object.defineProperty(error, 'code', { get: accessor })
+      if (code === 'proxy') Object.defineProperty(error, 'cause', { value: new Proxy({}, {
+        getOwnPropertyDescriptor: () => { throw new Error('PRIVATE_PROXY') },
+      }) })
+      if (code === 'cycle') { error.code = 'EPIPE'; Object.defineProperty(error, 'cause', { value: error }) }
+      f.seal.mockImplementation(() => {})
+      f.authCurrent.mockImplementation(() => {})
+      f.authenticate.mockRejectedValueOnce(error)
+      await f.ingress.install()
+      const route = f.register.mock.calls.map(call => call[0]).find(value => value.path === '/api')
+      if (route === undefined) throw new Error('Actual API route missing')
+      const { request, response, socket } = carrier('/api/session/list', 'POST', ['Cookie', 'PRIVATE_COOKIE'])
+      await route.handler(request, response)
+      const wire = Buffer.concat(socket.output).toString('utf8')
+      const body = wire.slice(wire.indexOf('\r\n\r\n') + 4)
+      expect(response.statusCode).toBe(503)
+      expect(Buffer.byteLength(body)).toBe(212)
+      expect(log).toHaveBeenCalledExactlyOnceWith('Cloud ingress request failed: %j', {
+        requestId: responseRequestId(body), stage: 'auth.authenticate', code: code === 'cycle' ? 'EPIPE' : 'unknown',
+        causeCodes: code === 'cycle' ? ['EPIPE', 'EPIPE'] : code === 'proxy' ? ['unknown', null] : [null, null],
+        headersSent: false, writableEnded: false, destroyed: false,
+      })
+      expect(accessor).not.toHaveBeenCalled()
+      expect(JSON.stringify(log.mock.calls)).not.toContain('PRIVATE_')
+      expect(f.query).not.toHaveBeenCalled()
+    },
+  )
+
+  it('keeps the original response and cleanup when the diagnostic exporter fails', async () => {
+    const f = await fixture()
+    vi.spyOn(f.ctx.logger, 'warn').mockImplementation(() => { throw new Error('PRIVATE_EXPORTER') })
+    const fallback = vi.spyOn(console, 'error').mockImplementation(() => {})
+    await f.ingress.install()
+    const route = f.register.mock.calls.map(call => call[0]).find(value => value.path === '/api')
+    if (route === undefined) throw new Error('Actual API route missing')
+    const { request, response, socket } = carrier('/api/session/list', 'POST')
+    await route.handler(request, response)
+    expect(response.statusCode).toBe(503)
+    const wire = Buffer.concat(socket.output).toString('utf8')
+    expect(Buffer.byteLength(wire.slice(wire.indexOf('\r\n\r\n') + 4))).toBe(212)
+    expect(wire).not.toContain('PRIVATE_EXPORTER')
+    expect(fallback).toHaveBeenCalledExactlyOnceWith('Cloud ingress failure diagnostics unavailable.')
+    expect(request.destroyed).toBe(true)
+    expect(f.ingress.observe().pendingOperations).toBe(0)
+    expect(f.query).not.toHaveBeenCalled()
   })
 
   it('rejects the actual native upgrade route with 503 before authentication or native socket ownership', async () => {

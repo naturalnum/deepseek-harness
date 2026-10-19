@@ -287,6 +287,17 @@ it('waits for async shared create admission and rechecks the epoch before callin
   expect(nativeCreate).not.toHaveBeenCalled()
 })
 
+it('keeps inline encoded image storage closed before native prompt or cold Session work', async () => {
+  const { ctx, guards, invoke } = await fixture()
+  const nativePrompt = vi.spyOn(SessionController.prototype, 'prompt')
+  await expect(invoke('prompt', { sessionId: SessionId('encoded-image-closed'), requestId: 'closed-image',
+    content: [{ type: 'image', mediaType: 'image/png', data: 'AA==' }] }))
+    .rejects.toMatchObject({ code: 'cloud/forbidden' })
+  expect(nativePrompt).not.toHaveBeenCalled()
+  expect(guards.assertSessionProject).not.toHaveBeenCalled()
+  expect(ctx.sessions.list()).toEqual([])
+})
+
 it('guards real native prompt and fork before super, then preserves actual AgentLoop and fork creation', async () => {
   const { ctx, guards, denied, invoke, create, adapter, project } = await fixture()
   const created = await create()

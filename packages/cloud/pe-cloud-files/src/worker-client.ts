@@ -12,18 +12,39 @@ import type { LeafFrame } from './leaf-frame.ts'
 import type { DirectoryPrepareOutcome, DirectoryCreatedIdentity } from './directory-responsibility.ts'
 import { parseStorageProbeFrame } from './storage-probe.ts'
 import type { StorageProbeFacts } from './storage-types.ts'
+import type { StagingFacts } from './staging-native.ts'
+import type { FdStageFile, FdStageResult } from './worker-protocol.ts'
 
 /** Transport failure retains the native error category without private paths. */
 export class FdWorkerFailure extends Error {
   constructor(readonly code: FsErrorCode, readonly syscallCode?: string) { super(code) }
 }
 
-/** Distinguishes confirmed nonpublication from unresolved mutation or cleanup. */
-export class FdTextWriteFailure extends FdWorkerFailure {
+/** Shared mutation disposition; an unknown result never releases actual-operation ownership. */
+export class FdMutationFailure extends FdWorkerFailure {
   constructor(readonly outcome: 'not-published' | 'unknown', code: FsErrorCode, syscallCode?: string, options?: ErrorOptions) {
     super(code, syscallCode)
     if (options?.cause !== undefined) this.cause = options.cause
   }
+}
+
+/** Text publication retains its original error class and shared mutation disposition. */
+export class FdTextWriteFailure extends FdMutationFailure {}
+
+/** Staging distinguishes proven sink cleanup from uncertain effects; source closure remains separate. */
+export class FdStageFailure extends FdMutationFailure {
+  constructor(outcome: 'not-published' | 'unknown', code: FsErrorCode, readonly facts?: StagingFacts, options?: ErrorOptions) {
+    super(outcome, outcome === 'unknown' ? 'FS_IO_ERROR' : code, undefined, options)
+  }
+}
+
+/** One borrowed worker transaction; abort signals intent, settled waits for actual reply or exit. */
+export interface FdStageSink {
+  readonly ready: Promise<'write' | 'reused'>
+  readonly settled: Promise<FdStageResult>
+  write(bytes: Uint8Array<ArrayBuffer>): Promise<void>
+  finishSource(): Promise<FdStageResult>
+  abort(): void
 }
 
 /** One outstanding pull, with an independent actual-completion promise for queue ownership. */
@@ -61,6 +82,27 @@ interface PendingTextWrite extends PendingBase {
   readonly resolve: (value: FdTextWriteResult) => void
   readonly reject: (error: Error) => void
 }
+type StageStep = { readonly kind: 'starting' } | { readonly kind: 'writing'; readonly sequence: number; readonly total: number }
+  | {
+    readonly kind: 'ack'
+    readonly sequence: number
+    readonly total: number
+    readonly size: number
+    readonly resolve: () => void
+    readonly reject: (error: Error) => void
+  }
+  | { readonly kind: 'finishing' }
+interface PendingStage extends PendingBase {
+  readonly kind: 'stage'
+  readonly file: FdStageFile
+  readonly chunkBytes: number
+  readonly frameBytes: number
+  readonly resolveReady: (mode: 'write' | 'reused') => void
+  readonly rejectReady: (error: Error) => void
+  readonly resolve: (result: FdStageResult) => void
+  readonly reject: (error: Error) => void
+  step: StageStep
+}
 interface PendingDirectory extends PendingBase {
   readonly kind: 'directory'
   readonly maxPathBytes: number
@@ -94,7 +136,7 @@ interface PendingStream extends PendingBase {
   total: number
 }
 type Pending = PendingContent | PendingRead | PendingStat | PendingStream | PendingDirectory
-  | PendingLeaf | PendingStorage | PendingTextWrite
+  | PendingLeaf | PendingStorage | PendingTextWrite | PendingStage
 
 function object(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null }
 function wireError(value: Record<string, unknown>): FdWorkerFailure | undefined {
@@ -126,6 +168,21 @@ function pathMetadata(value: unknown, named = false): FdPathMetadata | undefined
     ...typeof value.size === 'number' ? { size: value.size } : {} }
 }
 
+function stagingFacts(value: unknown, maximum: number, chunk: number): value is StagingFacts {
+  if (!object(value) || Object.keys(value).length !== 10
+    || Object.keys(value).some(key => !['kind', 'code', 'publication', 'closed', 'clean', 'temporaryPresent',
+      'writtenBytes', 'readBytes', 'sequence', 'retainedCreatedDirectories'].includes(key))) return false
+  return ['write', 'written', 'existing', 'existing-chunk', 'published', 'reused', 'aborted', 'failed', 'unknown'].includes(String(value.kind))
+    && typeof value.code === 'string' && /^[A-Z0-9_]{1,64}$/.test(value.code)
+    && ['none', 'published', 'unknown'].includes(String(value.publication))
+    && [value.closed, value.clean, value.temporaryPresent].every(item => typeof item === 'boolean')
+    && [value.writtenBytes, value.readBytes, value.sequence, value.retainedCreatedDirectories]
+      .every(item => typeof item === 'number' && Number.isSafeInteger(item) && item >= 0)
+    && typeof value.writtenBytes === 'number' && value.writtenBytes <= maximum
+    && typeof value.readBytes === 'number' && value.readBytes <= maximum + chunk
+    && typeof value.retainedCreatedDirectories === 'number' && value.retainedCreatedDirectories <= 3
+}
+
 /** One exclusive prebuilt slot; a stream owns the slot between pulls as well as during reads. */
 export class FdWorkerClient {
   /** Resolves after the required worker ABI handshake, or rejects on startup failure. */
@@ -135,6 +192,7 @@ export class FdWorkerClient {
   private readyResolved = false
   private storageVersion: 1 | undefined
   private abiVersion: 6 | 7 | 8 | undefined
+  private stagingVersion: 1 | undefined
   private closed = false
   private failure: Error | undefined
   private pending: Pending | undefined
@@ -163,6 +221,63 @@ export class FdWorkerClient {
 
   /** Whether the worker supports bounded nofollow/list/range commands. */
   get supportsContentReads(): boolean { return this.abiVersion === 8 }
+
+  /** The separate staging companion must complete its own real worker handshake. */
+  get supportsStaging(): boolean { return this.stagingVersion === 1 }
+
+  /**
+   * Begin one closed-lifecycle binary sink on the already borrowed slot.
+   * @param root Original selected persistent project anchor.
+   * @param file Native-authorized and bounded descriptor.
+   * @param chunkBytes Complete binary-frame cap; exactly one ACK may be pending.
+   * @param frameBytes Existing complete metadata-frame cap.
+   * @param signal Actual work cancellation; abort never settles ownership by itself.
+   * @returns A sink whose settled promise waits for the actual terminal reply or worker exit.
+   */
+  beginStage(root: FdRootIdentity, file: FdStageFile, chunkBytes: number, frameBytes: number, signal: AbortSignal): FdStageSink {
+    try { this.assertAvailable(signal) } catch (error) {
+      throw new FdStageFailure(error instanceof FdWorkerFailure || error instanceof FilesFailure ? 'not-published' : 'unknown',
+        error instanceof FdWorkerFailure ? error.code : 'FS_IO_ERROR', undefined, { cause: error })
+    }
+    if (!this.supportsStaging || !Number.isSafeInteger(chunkBytes) || chunkBytes < 1
+      || !Number.isSafeInteger(frameBytes) || frameBytes < 1) throw new FdStageFailure('not-published', 'FS_PERMISSION_DENIED')
+    const ready = Promise.withResolvers<'write' | 'reused'>(), completed = Promise.withResolvers<FdStageResult>()
+    void ready.promise.catch(() => {}); void completed.promise.catch(() => {})
+    const pending: PendingStage = { kind: 'stage', ...this.base(file.expectedBytes, signal), file, chunkBytes, frameBytes,
+      resolveReady: ready.resolve, rejectReady: ready.reject, resolve: completed.resolve, reject: completed.reject, step: { kind: 'starting' } }
+    this.pending = pending
+    this.post({ kind: 'stage-begin', id: pending.id, root, file, cancel: pending.cancel.buffer })
+    return {
+      ready: ready.promise, settled: completed.promise,
+      write: (bytes) => {
+        const step = pending.step
+        if (this.pending !== pending || step.kind !== 'writing' || Atomics.load(pending.cancel, 0) !== 0
+          || !(bytes instanceof Uint8Array) || !(bytes.buffer instanceof ArrayBuffer) || bytes.byteOffset !== 0
+          || bytes.byteLength !== bytes.buffer.byteLength || bytes.byteLength < 1 || bytes.byteLength > chunkBytes
+          || step.total + bytes.byteLength > file.expectedBytes) {
+          this.cancelStage(pending)
+          return Promise.reject(new FdStageFailure('not-published', 'FS_TOO_LARGE'))
+        }
+        return new Promise<void>((resolve, reject) => {
+          pending.step = { kind: 'ack', sequence: step.sequence, total: step.total, size: bytes.byteLength, resolve, reject }
+          this.post({ kind: 'stage-chunk', id: pending.id, sequence: step.sequence, bytes }, [bytes.buffer])
+        })
+      },
+      finishSource: () => {
+        const step = pending.step
+        if (this.pending !== pending || step.kind !== 'writing' || step.total !== file.expectedBytes
+          || Atomics.load(pending.cancel, 0) !== 0) {
+          this.cancelStage(pending)
+          return Promise.reject(new FdStageFailure('not-published', 'FS_ABORTED'))
+        }
+        pending.step = { kind: 'finishing' }
+        this.post({ kind: 'stage-source-complete', id: pending.id })
+        this.post({ kind: 'stage-finish', id: pending.id })
+        return completed.promise
+      },
+      abort: () => { this.cancelStage(pending) },
+    }
+  }
 
   /**
    * Publish one bounded UTF-8 replacement; cancellation never releases actual transport ownership.
@@ -516,6 +631,7 @@ export class FdWorkerClient {
     const id = randomUUID() as OperationId
     const cancel = new Int32Array(new SharedArrayBuffer(4))
     const abort = (): void => {
+      if (this.pending?.id === id && this.pending.kind === 'stage') { this.cancelStage(this.pending); return }
       Atomics.store(cancel, 0, 1)
       if (this.pending?.id === id && this.pending.kind === 'stream') this.cancelPending(this.pending)
     }
@@ -529,8 +645,13 @@ export class FdWorkerClient {
     } satisfies FdTaskRequest)
   }
 
-  private post(message: object): void {
-    try { this.worker.postMessage(message) } catch (_error) { this.failProtocol() }
+  private post(message: object, transfer: ArrayBuffer[] = []): void {
+    try { this.worker.postMessage(message, transfer) } catch (_error) { this.failProtocol() }
+  }
+
+  private cancelStage(pending: PendingStage): void {
+    if (this.pending !== pending || Atomics.exchange(pending.cancel, 0, 1) !== 0) return
+    this.post({ kind: 'stage-abort', id: pending.id })
   }
 
   private cancelPending(pending: PendingStream): void {
@@ -547,9 +668,11 @@ export class FdWorkerClient {
     if (!object(value)) { this.failProtocol(); return }
     if (value.kind === 'ready') {
       if ((value.abiVersion !== 6 && value.abiVersion !== 7 && value.abiVersion !== 8) || this.readyResolved || this.closed
-        || (value.storageProbeVersion !== undefined && value.storageProbeVersion !== 1)) { this.failProtocol(); return }
+        || (value.storageProbeVersion !== undefined && value.storageProbeVersion !== 1)
+        || (value.stagingAbiVersion !== undefined && value.stagingAbiVersion !== 1)) { this.failProtocol(); return }
       this.storageVersion = value.storageProbeVersion
       this.abiVersion = value.abiVersion
+      this.stagingVersion = value.stagingAbiVersion
       this.readyResolved = true
       this.resolveReady()
       return
@@ -562,6 +685,7 @@ export class FdWorkerClient {
     }
     const pending = this.pending
     if (pending === undefined || value.id !== pending.id) { this.failProtocol(); return }
+    if (pending.kind === 'stage') { this.stageMessage(pending, value); return }
     if (pending.kind === 'text-write') { this.textWriteMessage(pending, value); return }
     if (pending.kind === 'directory') { this.directoryMessage(pending, value); return }
     if (pending.kind === 'leaf-prepare' || pending.kind === 'leaf-cleanup') {
@@ -599,6 +723,58 @@ export class FdWorkerClient {
     pending.removeAbort()
     this.pending = undefined
     pending.resolve(new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength))
+  }
+
+  private stageMessage(pending: PendingStage, value: Record<string, unknown>): void {
+    let encoded: string
+    try { encoded = JSON.stringify(value) } catch (_error) { this.failProtocol(); return }
+    if (Buffer.byteLength(encoded) > pending.frameBytes) { this.failProtocol(); return }
+    const step = pending.step
+    if (value.kind === 'stage-ready' && step.kind === 'starting' && Object.keys(value).length === 2) {
+      pending.step = { kind: 'writing', sequence: 0, total: 0 }; pending.resolveReady('write'); return
+    }
+    if (value.kind === 'stage-ack' && step.kind === 'ack' && Object.keys(value).length === 4
+      && value.sequence === step.sequence + 1 && value.total === step.total + step.size) {
+      pending.step = { kind: 'writing', sequence: step.sequence + 1, total: step.total + step.size }; step.resolve(); return
+    }
+    if (value.kind === 'stage-rejected' && step.kind === 'starting' && Object.keys(value).length === 3) {
+      const error = wireError(value)
+      if (error === undefined) { this.failProtocol(); return }
+      this.finishStage(pending, new FdStageFailure('not-published', error.code)); return
+    }
+    if (value.kind === 'stage-failure' && Object.keys(value).length === 4
+      && stagingFacts(value.facts, pending.maxBytes, pending.chunkBytes)) {
+      const error = wireError(value)
+      if (error === undefined) { this.failProtocol(); return }
+      const facts = value.facts
+      const unknown = !facts.closed || !facts.clean || facts.temporaryPresent || facts.kind === 'unknown' || facts.publication === 'unknown'
+      const failure = new FdStageFailure(unknown ? 'unknown' : 'not-published', error.code, facts)
+      if (unknown) {
+        this.failure = failure
+        if (facts.closed) this.finishStage(pending, failure)
+        void this.close()
+      } else this.finishStage(pending, failure)
+      return
+    }
+    const result = value.result
+    if (value.kind === 'stage-result' && Object.keys(value).length === 3 && object(result) && Object.keys(result).length === 2
+      && (result.outcome === 'published' || result.outcome === 'reused') && stagingFacts(result.facts, pending.maxBytes, pending.chunkBytes)
+      && result.facts.kind === result.outcome && result.facts.closed && result.facts.clean && !result.facts.temporaryPresent
+      && result.facts.publication !== 'unknown'
+      && (result.outcome === 'published' ? step.kind === 'finishing' && result.facts.publication === 'published'
+        && result.facts.writtenBytes === pending.maxBytes : (step.kind === 'starting' || step.kind === 'finishing')
+          && result.facts.readBytes === pending.maxBytes)) {
+      const complete: FdStageResult = { outcome: result.outcome, facts: result.facts }
+      pending.removeAbort(); this.pending = undefined
+      pending.resolveReady('reused'); pending.resolve(complete); return
+    }
+    this.failProtocol()
+  }
+
+  private finishStage(pending: PendingStage, error: FdStageFailure): void {
+    pending.removeAbort(); this.pending = undefined
+    if (pending.step.kind === 'ack') pending.step.reject(error)
+    pending.rejectReady(error); pending.reject(error)
   }
 
   private textWriteMessage(pending: PendingTextWrite, value: Record<string, unknown>): void {
@@ -683,6 +859,10 @@ export class FdWorkerClient {
   private failPending(error: Error): void {
     const pending = this.pending
     if (pending === undefined) return
+    if (pending.kind === 'stage') {
+      this.finishStage(pending, error instanceof FdStageFailure ? error : new FdStageFailure('unknown', 'FS_IO_ERROR', undefined, { cause: error }))
+      return
+    }
     pending.removeAbort()
     this.pending = undefined
     if (pending.kind === 'directory') pending.reject(new DirectoryMetadataFailure('unavailable', 'transport', { cause: error }))

@@ -3,7 +3,7 @@
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
-import type { FileUploads } from './index.ts'
+import { FileUploadIntakeUnconfirmedError, type FileUploads } from './index.ts'
 import type { FileUploadValue } from './types.ts'
 
 type FileUploadHttpResult =
@@ -66,16 +66,58 @@ export async function handleFileUploadHttp(service: FileUploads, request: Reques
   })
 }
 
-async function* requestBodyChunks(body: ReadableStream<Uint8Array> | null): AsyncIterable<Uint8Array> {
-  if (body === null) return
-  const reader = body.getReader()
-  try {
-    while (true) {
-      const chunk = await reader.read()
-      if (chunk.done) return
-      yield chunk.value
-    }
-  } finally {
-    reader.releaseLock()
+function requestBodyChunks(body: ReadableStream<Uint8Array> | null): AsyncIterableIterator<Uint8Array> {
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
+  let reading: Promise<ReadableStreamReadResult<Uint8Array>> | undefined
+  let ending: Promise<IteratorResult<Uint8Array>> | undefined
+  let unconfirmed: FileUploadIntakeUnconfirmedError | undefined
+  let ended = false
+  const pendingReturn = (): Promise<IteratorResult<Uint8Array>> | undefined => ending
+  const done = (): IteratorResult<Uint8Array> => ({ done: true, value: undefined })
+  const release = () => {
+    try { reader?.releaseLock(); reader = undefined }
+    catch { throw unconfirmed ??= new FileUploadIntakeUnconfirmedError() }
+  }
+  return {
+    [Symbol.asyncIterator]() { return this },
+    async next() {
+      if (unconfirmed !== undefined) throw unconfirmed
+      if (ending !== undefined) { await ending; return done() }
+      if (ended || body === null) return done()
+      if (reading !== undefined) throw unconfirmed ??= new FileUploadIntakeUnconfirmedError()
+      reader ??= body.getReader()
+      const active = reading = reader.read()
+      try {
+        const chunk = await active
+        const closing = pendingReturn()
+        if (closing !== undefined) { await closing; return done() }
+        if (chunk.done) { ended = true; release(); return done() }
+        return { done: false, value: chunk.value }
+      } catch (error) {
+        const closing = pendingReturn()
+        if (closing !== undefined) await closing
+        else { ended = true; release() }
+        throw error
+      } finally {
+        if (reading === active) reading = undefined
+      }
+    },
+    return() {
+      if (unconfirmed !== undefined) return Promise.reject(unconfirmed)
+      if (ending !== undefined) return ending
+      if (ended || body === null) { ended = true; return Promise.resolve(done()) }
+      ended = true
+      const active = reading
+      ending = (async () => {
+        try {
+          reader ??= body.getReader()
+          await reader.cancel()
+          if (active !== undefined) await active
+          release()
+          return done()
+        } catch { throw unconfirmed ??= new FileUploadIntakeUnconfirmedError() }
+      })()
+      return ending
+    },
   }
 }

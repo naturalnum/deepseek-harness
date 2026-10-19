@@ -4,6 +4,7 @@ import type { FsErrorCode } from '@deepseek-ai/dsh-fs'
 import type { FsWriteIntent } from '@deepseek-ai/dsh-fs'
 import type { DirectoryCreatedIdentity } from './directory-responsibility.ts'
 import type { StaticStorageConfig } from './storage-types.ts'
+import type { StagingFacts } from './staging-native.ts'
 
 /** Internal verified-root identity; the runtime factory still owns authorization and quota. */
 export interface FdRootIdentity {
@@ -24,7 +25,64 @@ export interface FdWorkerInput {
   /** Explicit ABI8 content capacities; absent on ABI6/7 workers. */
   readonly content?: FdContentLimits
   readonly storageProbe?: StaticStorageConfig
+  /** Omission disables the separate companion; no capability is inferred from ABI8. */
+  readonly staging?: FdStagingWorkerInput
 }
+
+/** Root-selected staging capacities; every field is required when staging is enabled. */
+export interface FdStagingLimits {
+  readonly helperPath: string
+  readonly maxFileBytes: number
+  readonly maxBatchRefs: number
+  readonly maxBatchBytes: number
+  readonly maxSourceChunkBytes: number
+  readonly operationTimeoutMs: number
+  /** Root-approved complete batch reservation, including separately reviewed opaque overhead. */
+  readonly reservationBytes: number
+}
+
+/** The pool forwards its existing complete metadata-frame capacity; there is no new default. */
+export interface FdStagingWorkerInput extends FdStagingLimits {
+  readonly maxReplyBytes: number
+}
+
+/** Derived only after native-ref authorization; this private descriptor grants no account authority. */
+export interface FdStageFile {
+  readonly digest: string
+  readonly name: string
+  readonly expectedBytes: number
+}
+
+/** Shared pure spelling gate; the native companion independently enforces every component again. */
+export function validStageName(name: string): boolean {
+  return !!name && name !== '.' && name !== '..' && name.trim() === name && !/[. ]$/.test(name)
+    && !/[\u0000-\u001f\u007f/\\<>:"|?*]/.test(name) && Buffer.byteLength(name) <= 255
+    && Buffer.from(name).toString('utf8') === name && !/^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(name)
+}
+
+/** Native closed publication facts; source closure is independently joined by the main bridge. */
+export interface FdStageResult {
+  readonly outcome: 'published' | 'reused'
+  readonly facts: StagingFacts
+}
+
+/** A single-credit transaction; completion is a message captured by a worker-owned promise. */
+export type FdStageRequest = {
+  readonly kind: 'stage-begin'
+  readonly id: OperationId
+  readonly root: FdRootIdentity
+  readonly file: FdStageFile
+  readonly cancel: SharedArrayBuffer
+} | { readonly kind: 'stage-chunk'; readonly id: OperationId; readonly sequence: number; readonly bytes: Uint8Array<ArrayBuffer> }
+  | { readonly kind: 'stage-source-complete' | 'stage-finish' | 'stage-abort'; readonly id: OperationId }
+
+/** Frames are finite metadata only; binary chunks travel solely toward the sink. */
+export type FdStageReply =
+  | { readonly kind: 'stage-ready'; readonly id: OperationId }
+  | { readonly kind: 'stage-ack'; readonly id: OperationId; readonly sequence: number; readonly total: number }
+  | { readonly kind: 'stage-result'; readonly id: OperationId; readonly result: FdStageResult }
+  | { readonly kind: 'stage-rejected'; readonly id: OperationId; readonly code: FsErrorCode }
+  | { readonly kind: 'stage-failure'; readonly id: OperationId; readonly code: FsErrorCode; readonly facts: StagingFacts }
 
 /** Root-only static deployment commands; they never use a fabricated account lane. */
 export type FdStorageRequest = {
@@ -147,7 +205,8 @@ export interface FdStreamControl {
 
 /** Success follows FD closure except stream-ready/chunk, which retain actual operation ownership. */
 export type FdWorkerReply =
-  | { readonly kind: 'ready'; readonly abiVersion: 6 | 7 | 8; readonly storageProbeVersion?: 1 }
+  | FdStageReply
+  | { readonly kind: 'ready'; readonly abiVersion: 6 | 7 | 8; readonly storageProbeVersion?: 1; readonly stagingAbiVersion?: 1 }
   | { readonly kind: 'lstat-reply'; readonly id: OperationId; readonly metadata: FdPathMetadata | undefined }
   | { readonly kind: 'list-reply'; readonly id: OperationId; readonly entries: readonly FdDirectoryEntry[] }
   | { readonly kind: 'range-reply'; readonly id: OperationId; readonly bytes: Uint8Array<ArrayBuffer> }

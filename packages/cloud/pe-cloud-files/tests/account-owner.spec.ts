@@ -62,7 +62,7 @@ async function fixture(mode = 'normal') {
     const defaultGrant: IsolatedLeafGrant = Object.freeze({ binding, parent: root, leaf: 'default-workspace',
       backend: 'root-owned-isolated-linux-tmpfs', assertExclusive: () => { assertMountCurrent(binding) } })
     const input: AccountFilesPreparation = { binding, port, defaultGrant, assertMountCurrent, assertUnpublished,
-      projectFor: port.projectFor }
+      projectFor: (...args) => port.projectFor(...args) }
     let owner: CloudAccountFiles | undefined, context: Context | undefined
     const start = async (options: {
       missingOwner?: boolean
@@ -70,6 +70,8 @@ async function fixture(mode = 'normal') {
       priorRegistry?: boolean
       createFileSystem?: AccountFilesPreparation['createFileSystem']
       assertContentAvailable?: AccountFilesPreparation['assertContentAvailable']
+      attachments?: AccountFilesPreparation['attachments']
+      attachmentProjection?: AccountFilesPreparation['attachmentProjection']
     } = {}) => {
       const configPath = join(dir, 'cordis.yml')
       writeFileSync(configPath, JSON.stringify([
@@ -87,6 +89,8 @@ async function fixture(mode = 'normal') {
         if (!options.missingOwner) owner = new CloudAccountFiles(scope, {
           ...input, ...options.createFileSystem === undefined ? {} : { createFileSystem: options.createFileSystem },
           ...options.assertContentAvailable === undefined ? {} : { assertContentAvailable: options.assertContentAvailable },
+          ...options.attachments === undefined ? {} : { attachments: options.attachments },
+          ...options.attachmentProjection === undefined ? {} : { attachmentProjection: options.attachmentProjection },
         })
         Object.assign(scope.loader.builtins, { 'm8r-sessions': SessionStore, 'm8r-storage': Storage,
           'm8r-json': JsonStorage, 'm8r-domain': DomainStorage, 'm8r-jsonl': Jsonl,
@@ -184,6 +188,23 @@ it('does not infer content readiness from a fully installed S2 provider', async 
   const f = await fixture(), account = f.prepare('A'), graph = await account.start()
   expect(graph.ctx.get('fs')).toBeInstanceOf(FileSystem)
   expect(() => { graph.owner().assertContentAvailable() }).toThrow('unavailable')
+})
+
+it('keeps one native attachment constructor identity through real caller-scoped service access', async () => {
+  const f = await fixture(), account = f.prepare('A')
+  const unavailable = () => Promise.reject(new Error('This identity fixture opens no attachment I/O'))
+  const graph = await account.start({
+    attachments: { assertStagingAvailable: () => {}, stageFiles: unavailable, runNativeMutation: unavailable },
+    attachmentProjection: { mapFileHostPath: () => undefined, mapProcessPath: () => undefined },
+  })
+  const Store = graph.owner().attachmentStore(), constructors: (typeof Store)[] = []
+  await graph.ctx.plugin({ inject: ['peCloudFiles'], apply(caller: Context) {
+    constructors.push(caller.peCloudFiles.attachmentStore())
+  } })
+  expect(constructors).toEqual([Store])
+  const provider = await graph.ctx.plugin(Store, { dshHome: join(account.projects, 'fixture-attachments') })
+  expect(provider.state).toBe(FiberState.ACTIVE)
+  expect(graph.ctx.get('attachments')).toBeInstanceOf(Store)
 })
 
 it('keeps one native installation owner and rejects another graph, duplicate preparation and duplicate entry', async () => {

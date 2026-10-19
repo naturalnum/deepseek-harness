@@ -6,22 +6,23 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import type { AccountBinding, AccountUse, DrainParticipant, OperationId, ParticipantReceipt } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { FilesLimits } from './types.ts'
-import type { FdWorkerInput, FdRootIdentity } from './worker-protocol.ts'
+import type { FdWorkerInput, FdRootIdentity, FdStagingLimits } from './worker-protocol.ts'
 import { FsError, FsVersion } from '@deepseek-ai/dsh-fs'
-import type { FsInfo, FsWriteIntent, FsWriteOutcome } from '@deepseek-ai/dsh-fs'
+import type { FsErrorCode, FsInfo, FsWriteIntent, FsWriteOutcome } from '@deepseek-ai/dsh-fs'
 import { createFixedRootReader, decodeTextStream, nativeInfo } from './read-only.ts'
 import type { FixedRootReader } from './read-only.ts'
 import type { FdByteStream } from './worker-client.ts'
 import type { FdMetadata } from './worker-protocol.ts'
 import type { ResidentResult } from './work-queue.ts'
 import { FilesWorkOwner } from './work-owner.ts'
-import { FdWorkerClient, FdWorkerFailure, FdTextWriteFailure } from './worker-client.ts'
+import { FdWorkerClient, FdWorkerFailure, FdMutationFailure, FdTextWriteFailure, FdStageFailure } from './worker-client.ts'
 import { createTextProjectFileSystem, decodeBoundedText } from './text-project.ts'
 import type { NativeTextFileSystemConstructor, ResolveAccountFileProject, TextProjectBackend } from './text-project.ts'
 import type { AccountFilesProject } from './account-service.ts'
 import { FilesFailure } from './error.ts'
 import { createDirectoryReadPort } from './directory.ts'
 import type { DirectoryReadPort } from './directory.ts'
+import { DirectoryMetadataFailure } from './directory-error.ts'
 import type { DirectoryIntent } from './directory-budget.ts'
 import { directoryWorkBudget } from './directory-budget.ts'
 import type { DirectoryObservation, DirectoryPrepareOutcome } from './directory-responsibility.ts'
@@ -33,6 +34,8 @@ import type { StaticStorageConfig } from './storage-types.ts'
 import { staticStorageReservation } from './storage-probe.ts'
 import { runInstructionReadWork } from './instruction-read-work.ts'
 import type { InstructionReadReaders } from './instruction-read-work.ts'
+import { executeStageBatch, planStageBatch, validateStagingLimits } from './stage-bridge.ts'
+import type { StageSources, StageFileResult, StageBatchPlan } from './stage-bridge.ts'
 
 /** Privileged fixture input; layout/stat/mode/name alone never establishes this namespace guarantee. */
 export type IsolatedLeafGrant = {
@@ -59,7 +62,8 @@ export interface PreparedLeafPort {
 }
 
 /** Required finite root capacities; no storage or account-readiness evidence is represented here. */
-export interface FilesPoolConfig extends FilesLimits, Omit<FdWorkerInput, 'storageProbe'> {
+export interface FilesPoolConfig extends FilesLimits, Omit<FdWorkerInput, 'storageProbe' | 'staging'> {
+  readonly staging?: FdStagingLimits
   readonly staticStorage?: StaticStorageConfig
   readonly workerCount: number
   readonly minimumHealthyWorkers: number
@@ -75,6 +79,30 @@ export interface PoolReadPort {
   readonly directory: DirectoryReadPort
   /** Require this current healthy lane, explicit content limits and actual ABI8 handshakes for every pool slot. */
   assertContentAvailable(): void
+  /** Require the separate staging companion on the original current pool; omission rejects. */
+  assertStagingAvailable(): void
+  /**
+   * Stage a trusted native-source batch in one actual mutation reservation and borrowed worker.
+   * @param workspace Exact native Registry object selected by account admission.
+   * @param sources Native refs and original-provider closures; lazy collection runs under the reservation before source/sink open.
+   * @param assertRegistered Original providers, binding and exact Workspace guard.
+   * @param signal Observation cancellation signals actual work; ownership remains until closed or unknown.
+   * @returns Closed results retained through release; unknown preserves the original task and mutation block.
+   */
+  stageFiles(
+    workspace: Workspace, sources: StageSources, assertRegistered: () => void, signal?: AbortSignal,
+  ): Promise<ResidentResult<readonly StageFileResult[]>>
+  /**
+   * Controlled native intake work on this same mutation owner; no intake business or receipt service is supplied here.
+   * @param reservationBytes Complete Root-reviewed source/storage/result/cleanup reservation.
+   * @param assertCurrent Original selected owner/provider guard.
+   * @param execute Trusted native operation joined through actual closure; only proven closed failures may use FdMutationFailure.
+   * @param signal Observation cancellation signals actual work without releasing its ownership.
+   * @returns Actual result retained through release; plain/unconfirmed failures preserve unknown work.
+   */
+  runNativeMutation<T>(
+    reservationBytes: number, assertCurrent: () => void, execute: (control: AbortSignal) => Promise<T>, signal?: AbortSignal,
+  ): Promise<ResidentResult<T>>
   /**
    * Prepare an opt-in text provider for the actual registered default Workspace, without installing it.
    * @param workspace Original native Registry object; never a client-selected root.
@@ -84,6 +112,7 @@ export interface PoolReadPort {
    */
   createTextFileSystem(
     workspace: Workspace, assertInstalled: (ctx: Context) => void, resolveProject: ResolveAccountFileProject,
+    mapProcessPath?: (caller: Context, hostPath: string) => string | undefined,
   ): Promise<NativeTextFileSystemConstructor>
   /** Derive a directory capability only after the owning Registry selected its exact object. */
   projectFor(workspace: Workspace, assertRegistered: () => void, signal?: AbortSignal): Promise<AccountFilesProject>
@@ -133,6 +162,7 @@ function workerInput(config: FilesPoolConfig): FdWorkerInput {
     helperPath: config.helperPath, maxReadBytes: config.maxReadBytes, maxPathBytes: config.maxPathBytes,
     maxResolveRetries: config.maxResolveRetries, readChunkBytes: config.readChunkBytes,
     ...config.content === undefined ? {} : { content: { ...config.content } },
+    ...config.staging === undefined ? {} : { staging: { ...config.staging, maxReplyBytes: config.replyOverheadBytes } },
     ...config.staticStorage === undefined ? {} : { storageProbe: config.staticStorage },
   }
 }
@@ -161,10 +191,11 @@ function deadline(value: number): number {
 }
 
 function validate(config: FilesPoolConfig): void {
+  if (config.staging !== undefined) validateStagingLimits(config.staging, config.maxPathBytes, config.readChunkBytes)
   const content = config.content
-  if (content !== undefined && (Object.values(content).some(value => !Number.isSafeInteger(value) || value < 1 || value > 2_147_483_647)
-    || content.maxNameBytes > config.maxPathBytes
-    || [content.maxEntries, content.maxNameBytes, content.maxReplyBytes, content.operationTimeoutMs].some(value => value === undefined))) {
+  if (content !== undefined && ([content.maxEntries, content.maxNameBytes, content.maxReplyBytes, content.operationTimeoutMs]
+    .some(value => !Number.isSafeInteger(value) || value < 1 || value > 2_147_483_647)
+    || content.maxNameBytes > config.maxPathBytes)) {
     throw new FilesFailure('files/prerequisite-missing', 'files content capacities require explicit bounded values')
   }
   for (const value of [
@@ -266,6 +297,12 @@ export class LinuxFilesPool implements DrainParticipant {
         throw new FilesFailure('files/prerequisite-missing', 'The original files pool has no verified ABI8 content capability.')
       }
     }
+    const assertStagingAvailable = (): void => {
+      checkCurrent()
+      if (this.config.staging === undefined || this.slots.some(slot => !slot.client.supportsStaging)) {
+        throw new FilesFailure('files/prerequisite-missing', 'The original pool has no verified staging companion.')
+      }
+    }
     const pathBytes = (path: string): number => {
       if (path.length === 0 || isAbsolute(path) || path.includes('\0') || path.split('/').includes('..')) {
         throw new FdWorkerFailure('FS_PERMISSION_DENIED')
@@ -334,16 +371,20 @@ export class LinuxFilesPool implements DrainParticipant {
         }, signal),
     })
     const directory = directoryFor(checkCurrent)
-    const projectRoot = async (
-      workspace: Workspace, signal?: AbortSignal, assertRegistered: () => void = checkCurrent,
-    ): Promise<FdRootIdentity> => {
-      checkCurrent()
-      assertRegistered()
+    const projectLeaf = (workspace: Workspace): string => {
       const leaf = posix.relative(fixedRoot.rootPath, workspace.path)
       if (leaf !== 'default-workspace' && !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(leaf)) {
         throw new FdWorkerFailure('FS_PERMISSION_DENIED')
       }
       directoryWorkBudget({ parent: fixedRoot, leaf }, this.config)
+      return leaf
+    }
+    const projectRoot = async (
+      workspace: Workspace, signal?: AbortSignal, assertRegistered: () => void = checkCurrent,
+    ): Promise<FdRootIdentity> => {
+      checkCurrent()
+      assertRegistered()
+      const leaf = projectLeaf(workspace)
       const canonical = await directoryFor(assertRegistered).canonicalPath(workspace.path, signal)
       assertRegistered()
       if (canonical !== workspace.path) throw new FdWorkerFailure('FS_PERMISSION_DENIED')
@@ -359,46 +400,48 @@ export class LinuxFilesPool implements DrainParticipant {
           ...fixedRoot.rootMountId === undefined ? {} : { rootMountId: fixedRoot.rootMountId } })
       } finally { held.release() }
     }
-    let textTail = Promise.resolve()
-    let textUnknown = false
-    const writeText = (
-      project: FdRootIdentity, path: string, content: string, expected: FsWriteIntent | undefined, signal?: AbortSignal,
-      assertProject: () => void = checkCurrent,
-    ): Promise<ResidentResult<FsWriteOutcome>> => {
+    let mutationTail = Promise.resolve()
+    let mutationUnknown = false
+    // Only trusted same-lane executors enter here; observation never settles their actual work.
+    const runMutation = <T>(
+      reservation: number, assertProject: () => void,
+      execute: (client: FdWorkerClient, control: AbortSignal) => Promise<T>,
+      failure: (outcome: 'not-published' | 'unknown', code: FsErrorCode, cause?: unknown) => FdMutationFailure,
+      signal?: AbortSignal, delivery: 'native-handoff' | 'retained-result' = 'native-handoff',
+    ): Promise<ResidentResult<T>> => {
       checkCurrent()
       assertProject()
-      if (textUnknown) return Promise.reject(new FdTextWriteFailure('unknown', 'FS_IO_ERROR'))
-      if (this.slots.some(slot => !slot.client.supportsTextWrites)) return Promise.reject(new FdTextWriteFailure('not-published', 'FS_PERMISSION_DENIED'))
-      if (Buffer.byteLength(content) > this.config.maxReadBytes) return Promise.reject(new FdTextWriteFailure('not-published', 'FS_TOO_LARGE'))
-      const reservation = pathBytes(path) + 2 * Buffer.byteLength(project.rootPath)
-        + 32 * (this.config.maxReadBytes + 1) + 8 * Buffer.byteLength(content) + 4 * 320 + this.config.replyOverheadBytes
-      const answer = Promise.withResolvers<ResidentResult<FsWriteOutcome>>()
+      if (mutationUnknown) return Promise.reject(failure('unknown', 'FS_IO_ERROR'))
+      const answer = Promise.withResolvers<ResidentResult<T>>()
       let invoked = false
-      const work = port.run(reservation, async (control) => {
+      const work = port.run<T>(reservation, async (control) => {
         invoked = true
-        const previous = textTail
+        const previous = mutationTail
         const turn = Promise.withResolvers<void>()
-        textTail = turn.promise
+        mutationTail = turn.promise
         try {
           await previous
           checkCurrent()
           assertProject()
-          if (control.aborted) throw new FdTextWriteFailure('not-published', 'FS_ABORTED')
-          if (textUnknown) throw new FdTextWriteFailure('not-published', 'FS_IO_ERROR')
+          if (control.aborted) throw failure('not-published', 'FS_ABORTED')
+          if (mutationUnknown) throw failure('not-published', 'FS_IO_ERROR')
+          const execution = { entered: false }
           try {
-            const value = await this.withSlot(false,
-              client => client.writeText(project, path, content, expected, this.config.maxReadBytes, control))
+            const value = await this.withSlot(false, (client) => { execution.entered = true; return execute(client, control) })
+            // Stage releases running capacity at actual closure; the original queue keeps its resident result.
+            if (delivery === 'retained-result') return value
             const consumed = Promise.withResolvers<void>()
-            // A native write waits for actual publication facts even if its queue observer has left.
-            answer.resolve({ value: { ...value, version: FsVersion(value.version) }, release: consumed.resolve })
+            // Actual publication facts survive cancellation/deadline of the queue observer.
+            answer.resolve({ value, release: consumed.resolve })
             await consumed.promise
+            return value
           } catch (error) {
-            if (error instanceof FilesFailure) throw new FdTextWriteFailure('not-published', 'FS_IO_ERROR', undefined, { cause: error })
-            if (!(error instanceof FdTextWriteFailure) || error.outcome === 'unknown') {
-              textUnknown = true
+            if (!execution.entered && error instanceof FilesFailure) throw failure('not-published', 'FS_IO_ERROR', error)
+            if (!(error instanceof FdMutationFailure) || error.outcome === 'unknown') {
+              mutationUnknown = true
               answer.reject(error)
               turn.resolve()
-              console.error('Cloud text publication or cleanup is unconfirmed; '
+              console.error('Cloud file publication or cleanup is unconfirmed; '
                 + 'account operation and budget remain retained. Do not retry the write.')
               // Unresolved publication/cleanup keeps this original operation and its complete reservation.
               await new Promise<never>(() => {})
@@ -410,11 +453,31 @@ export class LinuxFilesPool implements DrainParticipant {
           throw error
         } finally { turn.resolve() }
       }, signal)
-      void work.then((result) => { result.release() }, (error: unknown) => {
-        if (!invoked) answer.reject(signal?.aborted
-          ? new FdTextWriteFailure('not-published', 'FS_ABORTED', undefined, { cause: error }) : error)
+      void work.then((result) => {
+        if (delivery === 'retained-result') answer.resolve(result)
+        else result.release()
+      }, (error: unknown) => {
+        if (!invoked || delivery === 'retained-result') answer.reject(signal?.aborted && delivery === 'native-handoff'
+          ? failure('not-published', 'FS_ABORTED', error) : error)
       })
       return answer.promise
+    }
+    const writeText = (
+      project: FdRootIdentity, path: string, content: string, expected: FsWriteIntent | undefined, signal?: AbortSignal,
+      assertProject: () => void = checkCurrent,
+    ): Promise<ResidentResult<FsWriteOutcome>> => {
+      checkCurrent()
+      assertProject()
+      if (mutationUnknown) return Promise.reject(new FdTextWriteFailure('unknown', 'FS_IO_ERROR'))
+      if (this.slots.some(slot => !slot.client.supportsTextWrites)) return Promise.reject(new FdTextWriteFailure('not-published', 'FS_PERMISSION_DENIED'))
+      if (Buffer.byteLength(content) > this.config.maxReadBytes) return Promise.reject(new FdTextWriteFailure('not-published', 'FS_TOO_LARGE'))
+      const reservation = pathBytes(path) + 2 * Buffer.byteLength(project.rootPath)
+        + 32 * (this.config.maxReadBytes + 1) + 8 * Buffer.byteLength(content) + 4 * 320 + this.config.replyOverheadBytes
+      return runMutation(reservation, assertProject, async (client, control) => {
+        const value = await client.writeText(project, path, content, expected, this.config.maxReadBytes, control)
+        return { ...value, version: FsVersion(value.version) }
+      }, (outcome, code, cause) => new FdTextWriteFailure(outcome, code, undefined,
+        cause === undefined ? undefined : { cause }), signal)
     }
     const projectBackend = async (
       workspace: Workspace, assertRegistered: () => void, assertInstalled: (ctx: Context) => void, signal?: AbortSignal,
@@ -546,6 +609,68 @@ export class LinuxFilesPool implements DrainParticipant {
       reader,
       directory,
       assertContentAvailable,
+      assertStagingAvailable,
+      runNativeMutation: <T>(reservationBytes: number, assertOwner: () => void,
+        execute: (control: AbortSignal) => Promise<T>, signal?: AbortSignal): Promise<ResidentResult<T>> => {
+        assertStagingAvailable()
+        if (!Number.isSafeInteger(reservationBytes) || reservationBytes < 1 || reservationBytes > this.config.maxResidentBytesPerLane) {
+          return Promise.reject(new FdMutationFailure('not-published', 'FS_TOO_LARGE'))
+        }
+        return runMutation(reservationBytes, () => { checkCurrent(); assertOwner() }, (_client, actual) => execute(actual),
+          (outcome, code, cause) => new FdMutationFailure(outcome, code, undefined, cause === undefined ? undefined : { cause }), signal)
+      },
+      stageFiles: async (workspace: Workspace, sources: StageSources, assertRegistered: () => void, signal?: AbortSignal) => {
+        const current = (): void => { checkCurrent(); assertRegistered() }
+        current()
+        assertStagingAvailable()
+        const staging = this.config.staging
+        if (staging === undefined) throw new FdStageFailure('not-published', 'FS_PERMISSION_DENIED')
+        const leaf = projectLeaf(workspace)
+        if (!Number.isSafeInteger(staging.reservationBytes) || staging.reservationBytes < 1
+          || staging.reservationBytes > this.config.maxResidentBytesPerLane) throw new FdStageFailure('not-published', 'FS_TOO_LARGE')
+        const selection = { rootPath: workspace.path,
+          ...fixedRoot.rootMountId === undefined ? {} : { rootMountId: fixedRoot.rootMountId } }
+        const supplied = typeof sources === 'function' || sources.length === 0
+          ? undefined : planStageBatch(sources, selection, staging, this.config)
+        const result = await runMutation(staging.reservationBytes, current, async (client, control) => {
+          let plan: StageBatchPlan
+          try {
+            const collected = typeof sources === 'function' ? sources() : sources
+            if (Array.isArray(collected) && collected.length === 0) return Object.freeze([])
+            plan = supplied ?? planStageBatch(collected, selection, staging, this.config)
+          } catch (error) {
+            // Collection and planning have opened neither source nor sink; no publication or cleanup is pending.
+            throw new FdStageFailure('not-published', error instanceof FdWorkerFailure ? error.code : 'FS_IO_ERROR', undefined,
+              { cause: error })
+          }
+          // Derive the real project identity inside this same reservation/slot, never via another lane run.
+          let selected: FdRootIdentity
+          try {
+            const directory = await client.directory(fixedRoot, leaf, this.config.maxPathBytes, control)
+            current()
+            if (!directory.directory || directory.canonicalPath !== workspace.path) throw new FdStageFailure('not-published', 'FS_PERMISSION_DENIED')
+            const info = await client.stat(fixedRoot, leaf, control)
+            current()
+            if (info?.type !== 'directory') throw new FdStageFailure('not-published', 'FS_PERMISSION_DENIED')
+            const [device, inode] = info.identity.split(':')
+            if (device === undefined || inode === undefined || fixedRoot.rootMountId === undefined) {
+              throw new FdStageFailure('not-published', 'FS_PERMISSION_DENIED')
+            }
+            selected = Object.freeze({ rootPath: workspace.path, rootDevice: device, rootInode: inode, rootMountId: fixedRoot.rootMountId })
+          } catch (error) {
+            if (error instanceof DirectoryMetadataFailure || error instanceof FdWorkerFailure || error instanceof FilesFailure) {
+              throw error instanceof FdMutationFailure ? error : new FdStageFailure('not-published',
+                error instanceof FdWorkerFailure ? error.code : 'FS_IO_ERROR', undefined, { cause: error })
+            }
+            throw error
+          }
+          return await executeStageBatch({ beginStage: (root, file, chunk, actual) =>
+            client.beginStage(root, file, chunk, this.config.replyOverheadBytes, actual) }, selected, plan, staging,
+          this.config.readChunkBytes, current, control)
+        }, (outcome, code, cause) => new FdStageFailure(outcome, code, undefined,
+          cause === undefined ? undefined : { cause }), signal, 'retained-result')
+        try { current(); return result } catch (error) { result.release(); throw error }
+      },
       derivePreparedLeaf,
       createWorkspaceRegistry: (defaultGrant: IsolatedLeafGrant, assertUnpublished: () => void) => {
         const defaultPort = derivePreparedLeaf(defaultGrant)
@@ -625,10 +750,12 @@ export class LinuxFilesPool implements DrainParticipant {
       },
       createTextFileSystem: async (
         workspace: Workspace, assertInstalled: (ctx: Context) => void, resolveProject: ResolveAccountFileProject,
+        mapProcessPath?: (caller: Context, hostPath: string) => string | undefined,
       ): Promise<NativeTextFileSystemConstructor> => {
         checkCurrent()
         await projectRoot(workspace)
         return createTextProjectFileSystem({ binding, bootstrapWorkspace: workspace, resolveProject, assertInstalled,
+          ...mapProcessPath === undefined ? {} : { mapProcessPath },
           assertCurrent: checkCurrent,
           project: (selected, assertSelection, signal) => projectBackend(selected, assertSelection, assertInstalled, signal) })
       },
@@ -756,6 +883,7 @@ export class LinuxFilesPool implements DrainParticipant {
       if (this.slots.some(slot => slot.client.supportsContentReads !== (this.config.content !== undefined))) {
         throw new FdWorkerFailure('FS_PERMISSION_DENIED')
       }
+      if (this.slots.some(slot => slot.client.supportsStaging !== (this.config.staging !== undefined))) throw new FdWorkerFailure('FS_PERMISSION_DENIED')
       if (this.state !== 'starting') throw new FdWorkerFailure('FS_IO_ERROR')
       this.state = 'running'
       this.assertHealthy()

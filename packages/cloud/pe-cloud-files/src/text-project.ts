@@ -64,6 +64,8 @@ export interface AccountTextBackend {
   readonly binding: AccountBinding
   readonly bootstrapWorkspace: Workspace
   readonly resolveProject: ResolveAccountFileProject
+  /** Exact active-request verified-copy lookup; omission exposes no host path mapping. */
+  readonly mapProcessPath?: (caller: Context, hostPath: string) => string | undefined
   assertCurrent(): void
   assertInstalled(ctx: Context): void
   project(workspace: Workspace, assertSelection: () => void, signal?: AbortSignal): Promise<TextProjectBackend>
@@ -208,6 +210,10 @@ export function createTextProjectFileSystem(account: AccountTextBackend): Native
       const record = this.target(target)
       return posix.join(record.backend.workspace.path, record.relative)
     }
+    override processPathFromHostPath(hostPath: string): string | undefined {
+      this.current()
+      return account.mapProcessPath?.(this.ctx, hostPath)
+    }
     override fileUrl(target: FsTarget): string { return pathToFileURL(this.processPath(target)).href }
     override contains(parent: FsTarget, child: FsTarget): boolean {
       const a = this.target(parent), b = this.target(child)
@@ -256,6 +262,9 @@ export function createTextProjectFileSystem(account: AccountTextBackend): Native
         const { record, check } = await this.selectedTarget(target, signal)
         this.content(record)
         if (record.relative === '.') throw new FsError('A regular file target is required.', 'FS_NOT_REGULAR_FILE')
+        if (record.relative === '.pe/attachments' || record.relative.startsWith('.pe/attachments/')) {
+          throw new FsError('Stored attachment copies are read-only.', 'FS_PERMISSION_DENIED')
+        }
         const result = await record.backend.writeText(record.relative, content, expected, signal)
         try { check(); return result.value } finally { result.release() }
       } catch (error) {
