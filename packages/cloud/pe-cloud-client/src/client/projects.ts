@@ -4,7 +4,7 @@ import type {} from '@deepseek-ai/dsh-api-gateway/client'
 import { registerCloudProjectSlots } from './project-slots.ts'
 
 /**
- * Supply the generated cloudProjects Remote and fill both original directory-flow holes.
+ * Mount the generated cloudProjects Remote before activating namespace-dependent directory-flow actions.
  * @param ctx Cloud Loader entry after its original prepared page has activated the native carrier.
  */
 export function installCloudProjects(ctx: Context): void {
@@ -13,10 +13,12 @@ export function installCloudProjects(ctx: Context): void {
     const unmount = await owner.remote.$mount(contribution)
     try {
       owner.fiber.assertActive()
-      registerCloudProjectSlots(owner, async (title, signal) => {
-        const result = await owner.remote.cloudProjects.create({ title }, signal)
-        if (!result.ok) throw result.error
-        return result.value.workspace.path
+      await owner.inject(['remote.cloudProjects'], (scope) => {
+        registerCloudProjectSlots(scope, async (title, signal) => {
+          const result = await scope.remote.cloudProjects.create({ title }, signal)
+          if (!result.ok) throw result.error
+          return result.value.workspace.path
+        })
       })
       return unmount
     } catch (error) { await unmount(); throw error }
