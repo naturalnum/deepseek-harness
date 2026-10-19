@@ -6685,12 +6685,12 @@ importers:
         specifier: 8.16.3
         version: 8.16.3
     devDependencies:
-      '@deepseek-ai/cordis-plugin-loader':
-        specifier: workspace:~
-        version: link:../../../vendor/loader
       '@deepseek-ai/cordis':
         specifier: workspace:~
         version: link:../../../vendor/cordis
+      '@deepseek-ai/cordis-plugin-loader':
+        specifier: workspace:~
+        version: link:../../../vendor/loader
       '@deepseek-ai/dsh-api-gateway':
         specifier: workspace:*
         version: link:../../api/gateway
@@ -6706,6 +6706,9 @@ importers:
       '@deepseek-ai/dsh-client-connection':
         specifier: workspace:*
         version: link:../../client/connection
+      '@deepseek-ai/dsh-client-file-upload':
+        specifier: workspace:*
+        version: link:../../client/file-upload
       '@deepseek-ai/dsh-credentials':
         specifier: workspace:*
         version: link:../../credentials/credentials
@@ -6721,12 +6724,12 @@ importers:
       '@deepseek-ai/dsh-pe-cloud-files':
         specifier: workspace:*
         version: link:../pe-cloud-files
-      '@deepseek-ai/dsh-pe-opensandbox':
-        specifier: workspace:*
-        version: link:../pe-opensandbox
       '@deepseek-ai/dsh-pe-cloud-runtime':
         specifier: workspace:*
         version: link:../pe-cloud-runtime
+      '@deepseek-ai/dsh-pe-opensandbox':
+        specifier: workspace:*
+        version: link:../pe-opensandbox
       '@deepseek-ai/dsh-typert-protocol':
         specifier: workspace:*
         version: link:../../typert/protocol

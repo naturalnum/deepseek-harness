@@ -1,6 +1,7 @@
 /** Producer contract tests on a native policy graph; execution/inventory/content stubs prove no product readiness or ABI8. */
 import { Context } from '@deepseek-ai/cordis'
-import { CloudApiError, ExposureService, type EndpointExposure } from '@deepseek-ai/dsh-pe-cloud-api'
+import { CloudApiError, ExposureService, type EndpointExposure, type ExactFetchExposure } from '@deepseek-ai/dsh-pe-cloud-api'
+import { FILE_UPLOAD_PATH } from '@deepseek-ai/dsh-client-file-upload'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { policyFixture } from '../../pe-cloud-runtime/tests/account-policy-fixture.ts'
 import { produceCloudBootstrap } from '../src/bootstrap-producer.ts'
@@ -19,12 +20,13 @@ const fileRpc = ['read', 'stat', 'list', 'readBytes'].map(method => ({ endpoint:
   handlerId: 'native:workspaceFiles', guard: 'account-session' as const }))
 const changes = { endpoint: 'workspaceFiles/changes', handlerId: 'native:workspaceFiles', guard: 'account-session' as const }
 
-async function fixture(rpc: readonly EndpointExposure[] = [], streams: readonly EndpointExposure[] = []) {
+async function fixture(rpc: readonly EndpointExposure[] = [], streams: readonly EndpointExposure[] = [],
+  fetch: readonly ExactFetchExposure[] = []) {
   const native = policyFixture([], bounds), graph = await native.start(), root = new Context()
   onTestFinished(async () => { vi.restoreAllMocks(); await root.fiber.dispose() })
   const manifest = native.exposureOwner.policy.manifest
   const exposure = new ExposureService(root, { ...manifest, rpcEndpoints: [...manifest.rpcEndpoints, ...rpc],
-    streamEndpoints: [...manifest.streamEndpoints, ...streams], approvedConfiguration: {
+    streamEndpoints: [...manifest.streamEndpoints, ...streams], exactFetchRoutes: fetch, approvedConfiguration: {
       recipeVersion: manifest.recipeVersion, catalogVersion: 'producer-contract', maxEntries: 128,
       maxStringBytes: 128, maxCatalogBytes: 8192, plugins: [{ id: 'unit-catalog', entryId: 'unit-catalog',
         moduleName: '@deepseek-ai/dsh-pe-cloud-api', packageName: '@deepseek-ai/dsh-pe-cloud-api',
@@ -37,12 +39,35 @@ async function fixture(rpc: readonly EndpointExposure[] = [], streams: readonly 
     rpc.find(row => row.endpoint === endpoint) ?? requireRpc(endpoint))
   const auditedStream = vi.spyOn(graph.api, 'requireStream').mockImplementation(endpoint =>
     streams.find(row => row.endpoint === endpoint) ?? requireStream(endpoint))
+  const requireFetch = graph.api.requireFetch.bind(graph.api)
+  const auditedFetch = vi.spyOn(graph.api, 'requireFetch').mockImplementation((method, path) =>
+    fetch.find(row => row.method === method && row.path === path) ?? requireFetch(method, path))
   const content = vi.spyOn(graph.files, 'assertContentAvailable').mockImplementation(() => {})
   const produce = () => produceCloudBootstrap(graph.ctx, graph.binding, exposure, () => undefined,
     { id: graph.binding.accountId, displayName: 'Producer contract' }, 8192, graph.binding.lifetime,
     () => { graph.ctx.fiber.assertActive() }, () => 'producer-generation')
-  return { produce, graph, auditedRpc, auditedStream, content }
+  return { produce, graph, auditedRpc, auditedStream, auditedFetch, content }
 }
+
+const upload: ExactFetchExposure = { method: 'POST', path: FILE_UPLOAD_PATH,
+  handlerId: 'native:fileUploads', guard: 'account-session' }
+
+it('permits only the selected native upload and withdraws bootstrap when its original route owner rejects', async () => {
+  const f = await fixture(fileRpc, [changes], [upload]), result = await f.produce()
+  expect(f.auditedFetch).toHaveBeenCalledWith(upload.method, upload.path)
+  expect(JSON.parse(result.body)).toMatchObject({ capabilities: { filePreview: { state: 'available' } } })
+  f.auditedFetch.mockImplementation(() => { throw new CloudApiError('cloud/account-unavailable', 'Native upload ended') })
+  expect(result.assertCurrent).toThrow('Native upload ended')
+})
+
+it.each([
+  { ...upload, method: 'GET' }, { ...upload, path: '/unreviewed-upload' },
+  { ...upload, handlerId: 'other:upload' }, { ...upload, guard: 'authenticated-account' as const },
+])('rejects an unreviewed upload declaration before trusting its owner stub: %j', async (row) => {
+  const f = await fixture([], [], [row])
+  await expect(f.produce()).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+  expect(f.auditedFetch).not.toHaveBeenCalled()
+})
 
 it('preserves the old first-trial wire and does not request a content capability for its metadata-only files owner', async () => {
   const f = await fixture(), result = await f.produce()

@@ -52,6 +52,9 @@
     },
     {
       "path": "../../../vendor/loader"
+    },
+    {
+      "path": "../../client/file-upload/tsconfig.host.json"
     }
   ]
 }

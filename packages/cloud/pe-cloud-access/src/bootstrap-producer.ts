@@ -5,6 +5,7 @@ import { CloudAccountFiles } from '@deepseek-ai/dsh-pe-cloud-files'
 import { assertClosedAccountExecution } from '@deepseek-ai/dsh-pe-opensandbox'
 import type { PluginPackages } from '@deepseek-ai/dsh-app-boot'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
+import { FILE_UPLOAD_PATH } from '@deepseek-ai/dsh-client-file-upload'
 import { decodeCloudBootstrap } from './bootstrap.ts'
 import { inspectBootstrapConfiguration } from './bootstrap-inventory.ts'
 import type { CloudBootstrap } from './types.ts'
@@ -68,7 +69,12 @@ export async function produceCloudBootstrap(
       || registry.get(project.workspace.id) !== project.workspace) unavailable()
     assertClosedAccountExecution(ctx)
     // Execution and configuration remain closed; file exposure still requires its original audited native owners.
-    if (manifest.allowedSettings.length !== 0 || manifest.exactFetchRoutes.length !== 0) unavailable()
+    if (manifest.allowedSettings.length !== 0 || manifest.exactFetchRoutes.length > 1) unavailable()
+    for (const row of manifest.exactFetchRoutes) {
+      if (row.method !== 'POST' || row.path !== FILE_UPLOAD_PATH
+        || row.handlerId !== 'native:fileUploads' || row.guard !== 'account-session') unavailable()
+      api.requireFetch(row.method, row.path)
+    }
     const budget = catalog.maxEntries
     if (manifest.rpcEndpoints.length + manifest.streamEndpoints.length > budget) unavailable()
     for (const row of manifest.rpcEndpoints) {

@@ -54,7 +54,8 @@
     "@deepseek-ai/dsh-pe-cloud-api": "workspace:*",
     "@deepseek-ai/dsh-pe-cloud-files": "workspace:*",
     "@deepseek-ai/dsh-pe-opensandbox": "workspace:*",
-    "@deepseek-ai/dsh-app-boot": "workspace:*"
+    "@deepseek-ai/dsh-app-boot": "workspace:*",
+    "@deepseek-ai/dsh-client-file-upload": "workspace:*"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
@@ -73,6 +74,7 @@
     "@deepseek-ai/dsh-host-webserver": "workspace:*",
     "@deepseek-ai/dsh-pe-cloud-files": "workspace:*",
     "@deepseek-ai/dsh-pe-opensandbox": "workspace:*",
-    "@deepseek-ai/cordis-plugin-loader": "workspace:~"
+    "@deepseek-ai/cordis-plugin-loader": "workspace:~",
+    "@deepseek-ai/dsh-client-file-upload": "workspace:*"
   }
 }
