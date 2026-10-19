@@ -66,3 +66,28 @@ describe('explicit public Web deployment inputs', () => {
     expect(() => parseCloudWebManifest({ ...web, decodeLimits: [] })).toThrow()
   })
 })
+
+it('keeps legacy seven-field inputs closed and accepts only the explicit optional download cap', () => {
+  const legacy = parseCloudClientConfig(valid)
+  expect(Object.keys(legacy)).toHaveLength(7)
+  expect(Object.hasOwn(legacy, 'maxDownloadBytes')).toBe(false)
+  expect(Object.hasOwn(parseCloudWebManifest(web).client, 'maxDownloadBytes')).toBe(false)
+  for (const maxDownloadBytes of [1, 65536, Number.MAX_SAFE_INTEGER]) {
+    const input = { ...valid, maxDownloadBytes }
+    expect(parseCloudClientConfig(input)).toEqual(input)
+    const manifest = parseCloudWebManifest({ ...web, client: input })
+    expect(manifest.client).toEqual(input)
+    expect(Object.isFrozen(manifest.client)).toBe(true)
+    expect(Object.keys(manifest.client)).toHaveLength(8)
+  }
+  expect(() => parseCloudClientConfig({ ...valid, download: 65536 })).toThrow()
+  expect(() => parseCloudClientConfig({ ...valid, maxDownloadBytes: 65536, token: 'extra' })).toThrow()
+  expect(() => parseCloudWebManifest({ ...web, client: { ...valid, maxDownloadBytes: 65536, current: 'extra' } })).toThrow()
+})
+
+it.each([0, -1, 1.5, Infinity, NaN, Number.MAX_SAFE_INTEGER + 1, undefined, null, '65536'])(
+  'rejects a present download cap that is not a finite positive safe integer: %s', (maxDownloadBytes) => {
+    expect(() => parseCloudClientConfig({ ...valid, maxDownloadBytes })).toThrow()
+    expect(() => parseCloudWebManifest({ ...web, client: { ...valid, maxDownloadBytes } })).toThrow()
+  },
+)

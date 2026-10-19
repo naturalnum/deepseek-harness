@@ -53,6 +53,12 @@ export const Config: z<Config> = z.object({
   maxPathBytes: z.natural().min(1).max(16384).required(),
   maxResolveRetries: z.natural().max(Number.MAX_SAFE_INTEGER).required(),
   readChunkBytes: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
+  content: z.union([z.object({
+    maxEntries: z.natural().min(1).max(2147483647).required(),
+    maxNameBytes: z.natural().min(1).max(16384).required(),
+    maxReplyBytes: z.natural().min(1).max(2147483647).required(),
+    operationTimeoutMs: z.natural().min(1).max(2147483647).required(),
+  })]),
 })
 
 /**

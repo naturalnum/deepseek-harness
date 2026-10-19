@@ -21,6 +21,8 @@ export interface FdWorkerInput {
   readonly maxPathBytes: number
   readonly maxResolveRetries: number
   readonly readChunkBytes: number
+  /** Explicit ABI8 content capacities; absent on ABI6/7 workers. */
+  readonly content?: FdContentLimits
   readonly storageProbe?: StaticStorageConfig
 }
 
@@ -37,6 +39,39 @@ export interface FdStorageView {
   readonly mountInfo: Uint8Array<ArrayBuffer>
   readonly status: Uint8Array<ArrayBuffer>
 }
+
+/** Deployment-selected bounds for the independent content-capable worker. */
+export interface FdContentLimits {
+  readonly maxEntries: number
+  readonly maxNameBytes: number
+  readonly maxReplyBytes: number
+  readonly operationTimeoutMs: number
+}
+
+/** Final-component nofollow metadata; observing a symlink grants no read authority. */
+export interface FdPathMetadata {
+  readonly identity: string
+  readonly version: string
+  readonly type: 'file' | 'directory' | 'symlink' | 'other'
+  readonly size?: number
+}
+
+/** One direct child observed without following its final component. */
+export interface FdDirectoryEntry extends FdPathMetadata {
+  readonly name: string
+}
+
+/** ABI8-only read commands; complete reply bytes include names and metadata. */
+export type FdContentRequest = {
+  readonly id: OperationId
+  readonly root: FdRootIdentity
+  readonly relativePath: string
+  readonly cancel: SharedArrayBuffer
+} & (
+  | { readonly kind: 'lstat' }
+  | { readonly kind: 'list'; readonly maxEntries: number; readonly maxBytes: number }
+  | { readonly kind: 'range'; readonly offset: number; readonly length: number; readonly maxBytes: number }
+)
 
 /** One bounded operation beneath the port's fixed root. */
 export interface FdTaskRequest {
@@ -112,7 +147,10 @@ export interface FdStreamControl {
 
 /** Success follows FD closure except stream-ready/chunk, which retain actual operation ownership. */
 export type FdWorkerReply =
-  | { readonly kind: 'ready'; readonly abiVersion: 6 | 7; readonly storageProbeVersion?: 1 }
+  | { readonly kind: 'ready'; readonly abiVersion: 6 | 7 | 8; readonly storageProbeVersion?: 1 }
+  | { readonly kind: 'lstat-reply'; readonly id: OperationId; readonly metadata: FdPathMetadata | undefined }
+  | { readonly kind: 'list-reply'; readonly id: OperationId; readonly entries: readonly FdDirectoryEntry[] }
+  | { readonly kind: 'range-reply'; readonly id: OperationId; readonly bytes: Uint8Array<ArrayBuffer> }
   | { readonly kind: 'text-write-reply'; readonly id: OperationId; readonly result: FdTextWriteResult }
   | {
     readonly kind: 'text-write-failure'

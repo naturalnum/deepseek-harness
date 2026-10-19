@@ -19,6 +19,8 @@ export interface CloudClientConfig {
   maxPendingFetches: number
   maxSockets: number
   closeTimeoutMs: number
+  /** Optional complete-file download acceptance cap; absence keeps download actions unregistered. */
+  maxDownloadBytes?: number
 }
 
 /** Public deployment inputs for the existing Web entry; contains no login or account state. */

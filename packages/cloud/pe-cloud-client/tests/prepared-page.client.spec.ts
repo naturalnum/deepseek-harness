@@ -7,6 +7,9 @@ import { Context, FiberState } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { installConnection, type ConnectionHandle, type ConnectionWebSocket } from '@deepseek-ai/dsh-client-connection/client'
+import * as FileUploadClient from '@deepseek-ai/dsh-client-file-upload/client'
+import type { ClientFileUploadHooks } from '@deepseek-ai/dsh-client-file-upload/types'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { CloudBootstrap } from '@deepseek-ai/dsh-pe-cloud-access/types'
 import { afterEach, expect, it, onTestFinished, vi } from 'vitest'
 import * as cloud from '../src/client/index.ts'
@@ -41,6 +44,7 @@ class Socket implements ConnectionWebSocket {
 }
 function fixture(response = bootstrap()) {
   const values = new Map<string, string>(), requests: Headers[] = [], sockets: string[] = []
+  const uploads: { url: URL; init: RequestInit }[] = []
   const storage = {
     getItem: vi.fn((key: string) => values.get(key) ?? null),
     setItem: (key: string, value: string) => { values.set(key, value) }, removeItem: (key: string) => { values.delete(key) },
@@ -48,6 +52,14 @@ function fixture(response = bootstrap()) {
   const fetcher = vi.fn<CloudPagePreparationInput['fetch']>(async (url, init) => {
     if (new URL(url).pathname.endsWith('/cloud/bootstrap')) return Response.json(response)
     requests.push(new Headers(init.headers))
+    if (new URL(url).pathname.endsWith('/api/session/uploadFileBinary')) {
+      if (!(init.body instanceof Blob)) throw new TypeError('Native upload fixture requires the original Blob')
+      uploads.push({ url: new URL(url), init })
+      return Response.json({ ok: true, value: {
+        receiptId: `receipt-${response.account.id}-${response.connectionGeneration}`,
+        file: { attachmentId: `file-${response.account.id}`, name: 'file.bin', bytes: init.body.size },
+      } })
+    }
     if (typeof init.body !== 'string') throw new TypeError('Native RPC fixture requires a JSON body')
     const body: unknown = JSON.parse(init.body)
     const rpcId = typeof body === 'object' && body !== null && 'rpcId' in body ? body.rpcId : undefined
@@ -60,7 +72,7 @@ function fixture(response = bootstrap()) {
     decodeLimits: { maxBodyBytes: 8192, maxStringBytes: 256, maxListItems: 32 },
     persistenceLimits: { maxKeys: 20, maxKeyBytes: 128, maxValueBytes: 1000, maxTotalBytes: 5000, maxNamespaceBytes: 200 },
   }
-  return { input, values, storage, fetcher, requests, sockets }
+  return { input, values, storage, fetcher, requests, sockets, uploads }
 }
 
 /** The real Loader owns both modules; only immutable module arrival and a finite native consumer are fixtures. */
@@ -273,11 +285,13 @@ const win = globalThis as DshWindow
 afterEach(() => {
   delete win.__DSH_BOOT__
   delete win.__ModuleLoader__
+  delete (globalThis as { __DSH_FILE_UPLOAD__?: ClientFileUploadHooks }).__DSH_FILE_UPLOAD__
   document.body.replaceChildren()
 })
 
 function actualNative(
   page: PreparedCloudPage, gate?: { entered: () => void; release: Promise<undefined> }, beforeBind?: (ctx: Context) => void,
+  options: { upload?: boolean; afterBind?: (ctx: Context) => void } = {},
 ) {
   const container = document.createElement('div')
   document.body.append(container)
@@ -298,11 +312,12 @@ function actualNative(
   win.__DSH_BOOT__ = {
     rev: 'prepared-cloud', entries: [
       { id: 'cloud', url: '/cloud.js', rev: '1' }, { id: 'renderer', url: '/renderer.js', rev: '1' },
+      ...options.upload ? [{ id: 'upload', url: '/upload.js', rev: '1' }] : [],
     ],
-    batches: [{ phase: 'application', url: '/application.js', rev: '1', entries: ['cloud', 'renderer'] }],
+    batches: [{ phase: 'application', url: '/application.js', rev: '1', entries: ['cloud', 'renderer', ...options.upload ? ['upload'] : []] }],
   }
   const renderer = {
-    inject: ['connection'],
+    inject: ['connection', ...options.upload ? ['fileUpload'] : []],
     apply(ctx: Context) {
       expect(ctx.get('peCloudPage')).toBe(page)
       const source = createSnapshotStore('', { persist: { name: 'native.view', storage: ctx.get('clientPersistence') } })
@@ -327,12 +342,19 @@ function actualNative(
     prepareContext: async (ctx) => {
       root = ctx
       if (gate !== undefined) { gate.entered(); await gate.release }
+      if (options.upload) ctx.provide('remote', {} as never)
       beforeBind?.(ctx)
       page.nativeOptions.prepareContext(ctx)
+      expect(Object.isFrozen(ctx.get('fileUploadHooks'))).toBe(true)
+      expect(ctx.get('fileUploadHooks')?.fetch).toBe(captured.fetch)
+      expect(ctx.get('fileUpload')).toBeUndefined()
+      expect(ctx.get('connection')).toBeUndefined()
+      options.afterBind?.(ctx)
     },
     loadBundle: async () => {
       target.load({ id: 'cloud', factory: () => cloud })
       target.load({ id: 'renderer', factory: () => renderer })
+      if (options.upload) target.load({ id: 'upload', factory: () => FileUploadClient })
     },
   })
   return { entry, root: () => root, mounted: () => mounted, cleanup }
@@ -421,4 +443,175 @@ it('keeps cancelled bootstrap cleanup pending until the real late carrier settle
   expect(preparation.getSnapshot()).toMatchObject({ settled: true, cleanup: 'confirmed' })
   expect(f.storage.getItem).not.toHaveBeenCalled()
   expect(f.values.size).toBe(0)
+})
+
+it('binds upload fetch before native Loader startup and keeps A/B original carriers independent', async () => {
+  const fa = fixture(bootstrap('A', 'G1')), fb = fixture(bootstrap('B', 'G2'))
+  const pa = PreparedCloudPage.prepare(fa.input, new AbortController().signal)
+  const pb = PreparedCloudPage.prepare(fb.input, new AbortController().signal)
+  onTestFinished(async () => { await Promise.all([pa.dispose(), pb.dispose()]) })
+  const a = await pa.ready, b = await pb.ready
+  const appA = actualNative(a, undefined, undefined, { upload: true })
+  await a.start(appA.entry)
+  const appB = actualNative(b, undefined, undefined, { upload: true })
+  await b.start(appB.entry)
+  const uploadA = appA.root()?.get('fileUpload'), uploadB = appB.root()?.get('fileUpload')
+  if (uploadA === undefined || uploadB === undefined) throw new Error('Native upload providers were not mounted')
+  const legacy = vi.fn(() => Promise.reject(new Error('Legacy upload must not select Cloud identity')))
+  ;(globalThis as { __DSH_FILE_UPLOAD__?: ClientFileUploadHooks }).__DSH_FILE_UPLOAD__ = { fetch: legacy }
+  const fileA = new File(['data'], 'same.bin'), fileB = new File(['data'], 'same.bin')
+  const controller = new AbortController()
+  const [resultA, resultB] = await Promise.all([
+    uploadA.upload('same-session' as SessionId, fileA, fileA.name, controller.signal),
+    uploadB.upload('same-session' as SessionId, fileB, fileB.name, controller.signal),
+  ])
+  expect(resultA).toMatchObject({ ok: true, value: { receiptId: 'receipt-A-G1' } })
+  expect(resultB).toMatchObject({ ok: true, value: { receiptId: 'receipt-B-G2' } })
+  expect(fa.uploads[0]?.init.body).toBe(fileA)
+  expect(fb.uploads[0]?.init.body).toBe(fileB)
+  expect(fa.uploads[0]?.url.pathname).toBe('/app/api/session/uploadFileBinary')
+  expect(fa.uploads[0]?.url.searchParams.get('sessionId')).toBe('same-session')
+  expect(fa.requests[0]?.get('x-account')).toBe('A')
+  expect(fa.requests[0]?.get('x-generation')).toBe('G1')
+  expect(fb.requests[0]?.get('x-account')).toBe('B')
+  expect(fb.requests[0]?.get('x-generation')).toBe('G2')
+  expect(fa.uploads[0]?.init.credentials).toBe('same-origin')
+  expect(legacy).not.toHaveBeenCalled()
+})
+
+it.each(['existing service', 'foreign hooks', 'mutable matching hooks'] as const)(
+  'rejects upload preparation with %s before native consumers start', async (conflict) => {
+    const f = fixture(), preparation = PreparedCloudPage.prepare(f.input, new AbortController().signal)
+    const page = await preparation.ready
+    const app = actualNative(page, undefined, (ctx) => {
+      if (conflict === 'existing service') ctx.provide('fileUpload', { upload: () => Promise.reject(new Error('unused')) })
+      else {
+        const fetch = page.lifetime.transport.hooks.fetch
+        if (fetch === undefined) throw new Error('Fixture has no captured fetch')
+        ctx.provide('fileUploadHooks', conflict === 'foreign hooks'
+          ? Object.freeze({ fetch: () => Promise.reject(new Error('foreign carrier')) }) : { fetch })
+      }
+    })
+    const reports = vi.spyOn(console, 'error').mockImplementation(() => {})
+    onTestFinished(async () => {
+      await Promise.allSettled([preparation.dispose(), app.entry.dispose()])
+      reports.mockRestore()
+    })
+    await expect(page.start(app.entry)).rejects.toThrow(conflict === 'existing service' ? 'before the native upload service' : 'incompatible')
+    expect(app.mounted()).toBe(false)
+    expect(f.fetcher).toHaveBeenCalledOnce()
+  },
+)
+
+it('reuses only an already frozen upload hook with the exact captured fetch', async () => {
+  const f = fixture(), preparation = PreparedCloudPage.prepare(f.input, new AbortController().signal)
+  onTestFinished(() => preparation.dispose())
+  const page = await preparation.ready
+  const fetch = page.lifetime.transport.hooks.fetch
+  if (fetch === undefined) throw new Error('Fixture has no captured fetch')
+  const hooks = Object.freeze({ fetch })
+  const app = actualNative(page, undefined, ctx => ctx.provide('fileUploadHooks', hooks), { upload: true })
+  await page.start(app.entry)
+  expect(app.root()?.get('fileUploadHooks')).toBe(hooks)
+  expect(app.root()?.get('fileUpload')).toBeDefined()
+})
+
+it.each(['duplicate bind', 'provider replacement'] as const)('rejects upload %s before activation', async (conflict) => {
+  const f = fixture(), preparation = PreparedCloudPage.prepare(f.input, new AbortController().signal)
+  const page = await preparation.ready
+  const app = actualNative(page, undefined, undefined, { afterBind: (ctx) => {
+    if (conflict === 'duplicate bind') page.nativeOptions.prepareContext(ctx)
+    else {
+      const hooks = ctx.get('fileUploadHooks')
+      if (hooks === undefined) throw new Error('Prepared hook is missing')
+      ctx.set('fileUploadHooks', Object.freeze({ fetch: hooks.fetch }))
+    }
+  } })
+  const reports = vi.spyOn(console, 'error').mockImplementation(() => {})
+  onTestFinished(async () => {
+    await Promise.allSettled([preparation.dispose(), app.entry.dispose()])
+    reports.mockRestore()
+  })
+  await expect(page.start(app.entry)).rejects.toThrow(conflict === 'duplicate bind' ? 'already bound' : 'entries did not activate')
+  expect(app.mounted()).toBe(false)
+  expect(f.fetcher).toHaveBeenCalledOnce()
+})
+
+it('rejects an absent captured upload fetch before binding the native owner', async () => {
+  const f = fixture(), preparation = PreparedCloudPage.prepare(f.input, new AbortController().signal)
+  const page = await preparation.ready
+  Object.defineProperty(page.lifetime.transport, 'hooks', { value: Object.freeze({}) })
+  const app = actualNative(page)
+  const reports = vi.spyOn(console, 'error').mockImplementation(() => {})
+  onTestFinished(async () => {
+    await Promise.allSettled([preparation.dispose(), app.entry.dispose()])
+    reports.mockRestore()
+  })
+  await expect(page.start(app.entry)).rejects.toThrow('captured upload fetch')
+  expect(app.root()?.get('peCloudPage')).toBeUndefined()
+  expect(app.mounted()).toBe(false)
+})
+
+it('refuses upload preparation on a child Context before publishing a page provider', async () => {
+  const f = fixture(), preparation = PreparedCloudPage.prepare(f.input, new AbortController().signal)
+  const page = await preparation.ready
+  const app = actualNative(page, undefined, (ctx) => {
+    const child = ctx.plugin(() => {})
+    page.nativeOptions.prepareContext(child.ctx)
+  })
+  const reports = vi.spyOn(console, 'error').mockImplementation(() => {})
+  onTestFinished(async () => {
+    await Promise.allSettled([preparation.dispose(), app.entry.dispose()])
+    reports.mockRestore()
+  })
+  await expect(page.start(app.entry)).rejects.toThrow('native root Context')
+  expect(app.root()?.get('fileUploadHooks')).toBeUndefined()
+  expect(app.root()?.get('peCloudPage')).toBeUndefined()
+  expect(app.mounted()).toBe(false)
+})
+
+it('revokes native upload admission while the original transport retains and discards a late response', async () => {
+  const f = fixture(), preparation = PreparedCloudPage.prepare(f.input, new AbortController().signal)
+  const page = await preparation.ready
+  const app = actualNative(page, undefined, undefined, { upload: true })
+  const late = Promise.withResolvers<Response>()
+  onTestFinished(async () => {
+    late.resolve(new Response())
+    await Promise.allSettled([preparation.dispose(), app.entry.dispose()])
+  })
+  await page.start(app.entry)
+  const service = app.root()?.get('fileUpload')
+  if (service === undefined) throw new Error('Native upload provider is missing')
+  f.fetcher.mockReturnValueOnce(late.promise)
+  const pending = service.upload('same-session' as SessionId, new File(['data'], 'late.bin'))
+  const rejected = expect(pending).rejects.toMatchObject({ code: 'closed' })
+  expect(page.lifetime.transport.getSnapshot().pendingFetches).toBe(1)
+  let closed = false
+  const closing = page.dispose().then(() => { closed = true })
+  expect(f.fetcher.mock.lastCall?.[1].signal?.aborted).toBe(true)
+  await expect(service.upload('same-session' as SessionId, new Blob())).rejects.toMatchObject({ code: 'closed' })
+  expect(f.fetcher).toHaveBeenCalledTimes(2) // Bootstrap and the original upload only.
+  await Promise.resolve()
+  expect(closed).toBe(false)
+  expect(page.lifetime.transport.getSnapshot()).toMatchObject({ phase: 'closing', pendingFetches: 1 })
+  const cancelled = vi.fn()
+  late.resolve(new Response(new ReadableStream({ cancel: cancelled })))
+  await rejected
+  await closing
+  expect(cancelled).toHaveBeenCalledOnce()
+  expect(page.lifetime.transport.getSnapshot()).toMatchObject({ phase: 'closed', pendingFetches: 0 })
+  expect(app.root()?.get('fileUpload')).toBeUndefined()
+  expect(page.getSnapshot().phase).toBe('stopped')
+  expect(f.values.size).toBe(0)
+})
+
+it.each([undefined, 128])('reads only the captured optional download limit %s', async (maxDownloadBytes) => {
+  const f = fixture()
+  const input = { ...f.input, config: { ...config, ...maxDownloadBytes === undefined ? {} : { maxDownloadBytes } } }
+  const preparation = PreparedCloudPage.prepare(input, new AbortController().signal)
+  onTestFinished(() => preparation.dispose())
+  const page = await preparation.ready
+  expect(page.maxDownloadBytes).toBe(maxDownloadBytes)
+  Object.assign(input.config, { maxDownloadBytes: 256 })
+  expect(page.maxDownloadBytes).toBe(maxDownloadBytes)
 })

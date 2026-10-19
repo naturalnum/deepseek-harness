@@ -6,6 +6,7 @@ export type CloudApiErrorCode =
   | 'cloud/forbidden' | 'cloud/invalid-config' | 'cloud/account-unavailable'
   | 'cloud/stale-generation' | 'cloud/model-not-allowed'
   | 'cloud/config-busy' | 'cloud/capacity'
+  | 'cloud/invalid-project-title'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface RemoteErrorDetailsMap {
@@ -16,6 +17,7 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'cloud/model-not-allowed': Record<string, never>
     'cloud/config-busy': Record<string, never>
     'cloud/capacity': {}
+    'cloud/invalid-project-title': Record<string, never>
   }
 }
 

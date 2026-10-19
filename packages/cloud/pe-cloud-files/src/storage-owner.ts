@@ -1,6 +1,6 @@
 /** Static two-account guest storage admission; actual native services and shared-pool lifetime keep their original owners. */
 import { posix } from 'node:path'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import type { AccountBinding, AccountMountInput } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { AccountFilesPreparation } from './account-service.ts'
 import type { PoolReadPort } from './worker-pool.ts'
@@ -8,6 +8,7 @@ import type { FdRootIdentity, FdStorageView } from './worker-protocol.ts'
 import type { StaticStorageAccount, StaticStorageConfig, StaticStorageDomain, StaticStoragePlan, StorageProbeFacts } from './storage-types.ts'
 import { parseStaticStoragePlan } from './storage-probe.ts'
 import { FilesFailure } from './error.ts'
+import type { ResolveAccountFileProject } from './text-project.ts'
 
 /** Root initialization/probing uses the original prestarted slots and its separate finite resident reservation. */
 export interface StaticStorageDriver {
@@ -257,7 +258,7 @@ export class RootStorageOwner {
 
 /** Retained exact-generation use of already provisioned domains; it cannot close the shared pool or issue another account. */
 export class StaticAccountStorageLease {
-  private installed?: { binding: AccountBinding; preparation: AccountFilesPreparation }
+  private installed?: { binding: AccountBinding; preparation: AccountFilesPreparation; resolveProject: ResolveAccountFileProject }
   private closing?: Promise<void>
 
   /**
@@ -308,10 +309,12 @@ export class StaticAccountStorageLease {
    * @param binding Exact installed object, carrying the original lifetime and PG generation.
    * @param assertCurrent Factory's current check, valid before business publication.
    * @param assertUnpublished Original factory registration window, never a ready flag.
+   * @param resolveProject Trusted runtime selection derived asynchronously from the current native caller.
    * @returns Existing M8R inputs over exactly one same-pool projects lane.
    */
   bindInstalled(
     binding: AccountBinding, assertCurrent: (binding: AccountBinding) => void, assertUnpublished: () => void,
+    resolveProject: ResolveAccountFileProject,
   ): AccountFilesPreparation {
     this.assertLayout()
     const original = this.input.binding
@@ -319,7 +322,7 @@ export class StaticAccountStorageLease {
       || binding.lifetime !== original.lifetime) stale()
     assertCurrent(binding)
     if (this.installed !== undefined) {
-      if (this.installed.binding !== binding) stale()
+      if (this.installed.binding !== binding || this.installed.resolveProject !== resolveProject) stale()
       return this.installed.preparation
     }
     assertUnpublished()
@@ -329,14 +332,26 @@ export class StaticAccountStorageLease {
     const privateParent = Object.freeze({ rootPath: this.account.private.rootPath, rootDevice: this.account.private.rootDevice,
       rootInode: this.account.private.rootInode, rootMountId: this.account.private.rootMountId })
     const port = this.driver.bind(binding, parent, current, privateParent)
-    const preparation: AccountFilesPreparation = Object.freeze({ binding, port,
-      createFileSystem: (...args: Parameters<PoolReadPort['createTextFileSystem']>) => port.createTextFileSystem(...args),
+    const preparation: AccountFilesPreparation = Object.freeze<AccountFilesPreparation>({ binding, port,
+      assertContentAvailable: port.assertContentAvailable,
+      createFileSystem: (workspace, assertInstalled) => port.createTextFileSystem(workspace, assertInstalled, resolveProject),
+      projectFor: (workspace, assertRegistered, signal) => port.projectFor(workspace, assertRegistered, signal),
+      createProject: async (registry, use, title, signal) => {
+        signal.throwIfAborted()
+        use.assertCurrent()
+        current()
+        if (use.binding !== binding) stale()
+        const assertOperation = (): void => { current(); use.assertCurrent() }
+        const grant = Object.freeze({ binding, parent, backend: 'root-owned-isolated-ext4' as const, leaf: randomUUID(),
+          assertDeployment: assertOperation, assertExclusive: assertOperation })
+        return await registry.createAdmittedProject(use, grant, title, signal)
+      },
       withInstructionReaders: port.withInstructionReaders,
       defaultGrant: Object.freeze({ binding, parent, backend: 'root-owned-isolated-ext4', leaf: 'default-workspace',
         assertDeployment: current, assertExclusive: current }),
       assertMountCurrent: (actual: AccountBinding) => { if (actual !== binding) stale(); current() },
       assertUnpublished: () => { current(); assertUnpublished() } })
-    this.installed = { binding, preparation }
+    this.installed = { binding, preparation, resolveProject }
     return preparation
   }
 

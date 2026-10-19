@@ -3,6 +3,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { FileUploadRuntime } from './runtime.ts'
 import type { FileUploadService } from './contract.ts'
+import type { ClientFileUploadHooks } from '../types.ts'
 
 export type { FileUploadProgress, FileUploadService } from './contract.ts'
 export type { FileUploadReceiptId, FileUploadValue } from '../types.ts'
@@ -11,6 +12,8 @@ declare module '@deepseek-ai/cordis' {
   interface Context {
     /** Session-addressed browser service for staged file uploads. */
     fileUpload: FileUploadService
+    /** Optional page-owned carrier; install before the upload service captures its fetch. */
+    fileUploadHooks: ClientFileUploadHooks
   }
 }
 

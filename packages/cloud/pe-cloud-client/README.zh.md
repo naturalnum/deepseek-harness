@@ -20,6 +20,8 @@ kind: "package-reference"
 - [已知限制与后续工作](#known-limitations-and-deferred-work)
 - [开发备注](#dev-note)
 
+Cloud Loader 另挂载生成的 API 项目创建贡献，并向两个原生 Workspace 目录流程 slot 注册本地化标题表单。返回的原生 Workspace 路径交原 `onPicked` 回调采用，保留原生幂等登记。空白或超长标题不提交；每次打开最多上报一次成功分配。取消会中止请求 signal 并忽略迟到的采用结果，实际工作仍由原 transport 与服务端拥有者追踪。已提交创建失败或取消后，该流程实例禁止重提并提示刷新检查项目，不重放未知分配。
+
 -----
 
 <a id="use-this-package"></a>
@@ -52,8 +54,11 @@ Host 可选字段 `web` 通过一个结构化 `__DSH_CLOUD_WEB__` 全局值选�
 | `maxPendingFetches` | 必填 | 等待响应头或本包错误正文处理的 fetch 数量上限。 |
 | `maxSockets` | 必填 | 单个固定载体拥有的 socket 数量上限。 |
 | `closeTimeoutMs` | 必填 | 关闭观察截止时间；到期不代表清理已确认。 |
+| `maxDownloadBytes` | 无默认值 | 可选的正安全整数下载接收上限；省略时不注册两个下载动作。 |
 
 -----
+
+Cloud entry 仅在显式提供 `maxDownloadBytes` 且 bootstrap filePreview 为 available 时，向原生文档预览 actions 和 unpreviewable slots 安装下载动作。注册适配器以框架注入的 SessionId、owner.absolutePath 和原生 `sessionFileAddress` 构造地址，捕获唯一原 readBytes 方法及已准备 transport 的 signal，不读取全局选中 Session。其独立 `CloudFileDownload`/`FileDownloadButton` 只请求完整字节并保存 `application/octet-stream` Blob。更小的消费者接收上限不替代原生读取及 body 内存限制。每次读取保留至结算；页面撤销、声明退出、替换和卸载均丢弃迟到结果，并回收临时锚点/Blob URL。文案归 cloud-file-download namespace，并随 Cordis scope 撤销。发起浏览器保存不证明操作系统已写入文件，也不能回滚已发出的请求。旧七字段输入仍合法且不注册下载；原生预览与服务端授权保持权威。
 
 <a id="understand-the-implementation"></a>
 ## 理解实现

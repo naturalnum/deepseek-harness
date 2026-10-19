@@ -1,5 +1,5 @@
 /** Real native Loader/JSONL/StorageDomain, with a TEST ONLY Node-backed files worker transport. */
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { randomUUID } from 'node:crypto'
@@ -13,7 +13,7 @@ import * as JsonStorage from '@deepseek-ai/dsh-storage-json'
 import * as DomainStorage from '@deepseek-ai/dsh-storage-domain'
 import * as Jsonl from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { WorkspaceDirectoryMetadataError, WorkspaceId, type WorkspaceDirectoryMetadata } from '@deepseek-ai/dsh-workspace'
-import type { AccountBinding, AccountId, OwnerEpoch } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
+import type { AccountBinding, AccountId, AccountUse, OwnerEpoch } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { LinuxFilesPool, type IsolatedLeafGrant } from '../src/worker-pool.ts'
 import { directoryWorkBudget } from '../src/directory-budget.ts'
@@ -25,7 +25,7 @@ function committed(value: unknown): boolean {
     && (!('pendingMutation' in value) || value.pendingMutation === undefined)
 }
 
-async function fixture(mode = 'normal', waitTimeoutMs = 3000) {
+async function fixture(mode = 'normal', waitTimeoutMs = 3000, readyCreation = false) {
   const home = realpathSync(mkdtempSync(join(tmpdir(), 'm7c-files-')))
   const projects = join(home, 'projects'), storageRoot = join(home, 'storage'), sessionsRoot = join(home, 'sessions')
   mkdirSync(projects)
@@ -40,7 +40,8 @@ async function fixture(mode = 'normal', waitTimeoutMs = 3000) {
   // Namespace protection remains valid after publication; it does not grant another native registration window.
   const assertExclusive = () => { assertCurrent() }
   const gate = new SharedArrayBuffer(24), counters = new Int32Array(gate), workers: Worker[] = []
-  const budget = directoryWorkBudget({ parent: root, leaf: randomUUID() }, { maxPathBytes: 256, replyOverheadBytes: 32 })
+  const budget = directoryWorkBudget({ parent: root, leaf: randomUUID() },
+    { maxPathBytes: 256, replyOverheadBytes: 32 + (readyCreation ? 4 * 256 : 0) })
   const pool = new LinuxFilesPool({
     maxLanes: 1, maxRunning: 1, maxRunningPerLane: 1, maxQueued: 1, maxQueuedPerLane: 1,
     maxResidentBytes: budget.totalBytes + 128, maxResidentBytesPerLane: budget.totalBytes, waitTimeoutMs,
@@ -171,6 +172,84 @@ it('uses one lane through actual default persistence, repeats and cold restore w
   expect(Atomics.load(test.counters, 0)).toBe(preparations)
   expect(existsSync(workspace!.path)).toBe(true)
   expect(test.workers).toHaveLength(1)
+})
+
+it('rejects public registration of an existing unknown directory and preserves native alias idempotence', async () => {
+  const test = await fixture(), graph = await test.start(), registry = graph.registry()
+  const workspace = await registry.createProject(test.grant(randomUUID()), 'original')
+  const alias = join(test.projects, 'alias'), unknown = join(test.projects, randomUUID())
+  symlinkSync(workspace.path, alias)
+  mkdirSync(unknown)
+  test.closeWindow()
+  expect(await registry.create(alias, 'ignored')).toBe(workspace)
+  expect(workspace.title).toBe('original')
+  await expect(registry.create(unknown, 'forbidden')).rejects.toMatchObject({ reason: 'unavailable' })
+  expect(registry.list()).toEqual([workspace])
+  await registry.delete(workspace.id)
+  await expect(registry.create(alias)).rejects.toMatchObject({ reason: 'unavailable' })
+  expect(registry.list()).toEqual([])
+  expect(test.pool.inspect().work).toMatchObject({ pending: 0, residentBytes: 0 })
+})
+
+it('registers ready UUID projects on the original lane and retains responsibility through actual native completion', async () => {
+  const test = await fixture('normal', 3000, true), graph = await test.start(), registry = graph.registry()
+  await registry.initializeDefault(async () => 'unused')
+  test.closeWindow()
+  const entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  onTestFinished(() => { release.resolve(undefined) })
+  test.setBeforeRecord(async () => { entered.resolve(undefined); await release.promise })
+  let released = false
+  // Test-only borrow shape; actual Runtime ready admission is exercised by its owner integration tests.
+  const use: AccountUse = { binding: test.binding, context: graph.ctx,
+    assertCurrent() { if (released) throw new Error('test borrow ended') }, release() { released = true } }
+  const candidate = test.grant(randomUUID()), cancel = new AbortController()
+  await expect(registry.createProject(test.grant(randomUUID()))).rejects.toThrow('window closed')
+  const pending = registry.createAdmittedProject(use, candidate, 'display/title/only', cancel.signal)
+  await entered.promise
+  await expect(registry.create(join(test.projects, candidate.leaf))).rejects.toMatchObject({ reason: 'unavailable' })
+  cancel.abort()
+  expect(test.pool.inspect().work).toMatchObject({ lanes: 1, running: 0, pending: 1 })
+  expect(test.pool.inspect().work.residentBytes).toBeGreaterThan(0)
+  expect(released).toBe(false)
+  release.resolve(undefined)
+  const workspace = await pending
+  expect(workspace.path).toBe(join(test.projects, candidate.leaf))
+  expect(workspace.title).toBe('display/title/only')
+  expect(registry.get(workspace.id)).toBe(workspace)
+  expect(readFileSync(join(test.storageRoot, 'workspace.json'), 'utf8')).toContain(workspace.id)
+  expect(test.workers).toHaveLength(1)
+  expect(test.pool.inspect().work).toMatchObject({ residentBytes: 0, pending: 0 })
+  use.release()
+})
+
+it('rejects a foreign ready borrow and oversized title before directory preparation', async () => {
+  const test = await fixture('normal', 3000, true), graph = await test.start(), registry = graph.registry()
+  test.closeWindow()
+  const use: AccountUse = { binding: test.binding, context: graph.ctx, assertCurrent() {}, release() {} }
+  await expect(registry.createAdmittedProject({ ...use, binding: { ...test.binding } }, test.grant(randomUUID()),
+    'foreign', new AbortController().signal)).rejects.toMatchObject({ reason: 'unavailable' })
+  await expect(registry.createAdmittedProject(use, test.grant(randomUUID()), 'x'.repeat(257),
+    new AbortController().signal)).rejects.toMatchObject({ code: 'FS_TOO_LARGE' })
+  expect(Atomics.load(test.counters, 0)).toBe(0)
+  expect(registry.list()).toEqual([])
+  expect(test.pool.inspect().work).toMatchObject({ pending: 0, residentBytes: 0 })
+})
+
+it('retains ready registration responsibility when the actual borrow expires after durable native commit', async () => {
+  const test = await fixture('normal', 3000, true), graph = await test.start(), registry = graph.registry()
+  test.closeWindow()
+  let active = true
+  const use: AccountUse = { binding: test.binding, context: graph.ctx,
+    assertCurrent() { if (!active) throw new Error('test borrow expired') }, release() { active = false } }
+  const candidate = test.grant(randomUUID())
+  test.setAfterCommit(async () => { active = false })
+  await expect(registry.createAdmittedProject(use, candidate, 'retained', new AbortController().signal))
+    .rejects.toThrow('test borrow expired')
+  expect(registry.list()).toHaveLength(1)
+  expect(existsSync(join(test.projects, candidate.leaf))).toBe(true)
+  expect(test.pool.inspect().work).toMatchObject({ running: 0, pending: 1 })
+  expect(test.pool.inspect().work.residentBytes).toBeGreaterThan(0)
+  expect(Atomics.load(test.counters, 3)).toBe(0)
 })
 
 it('transfers server UUID projects without retaining dynamic tickets and refreshes later native persisted-only headers', async () => {
@@ -582,14 +661,12 @@ it('rejects an unowned root Context and a second native provider installation', 
 })
 
 
-it('cannot mint S2 scope from a manually registered directory that is not the native default', async () => {
+it('cannot mint a default S2 scope from an admitted nondefault project', async () => {
   const test = await fixture(), graph = await test.start(), registry = graph.registry()
-  const path = join(test.projects, 'default-workspace')
-  mkdirSync(path)
-  await registry.create(path)
+  await registry.createProject(test.grant(randomUUID()))
   test.closeWindow()
   await expect(registry.createS2Project()).rejects.toThrow()
   expect(graph.ctx.get('fs')).toBeUndefined()
-  expect(Atomics.load(test.counters, 0)).toBe(0)
+  expect(Atomics.load(test.counters, 0)).toBe(1)
   expect(test.pool.inspect().work).toMatchObject({ residentBytes: 0, pending: 0 })
 })

@@ -163,15 +163,15 @@ interface FileUploadTransport {
 export class FileUploadRuntime extends Service implements FileUploadService {
   private readonly transport: FileUploadTransport
 
-  /** @param ctx - providing Client context. */
+  /** @param ctx - providing Client context; an optional fileUploadHooks carrier is captured once. */
   constructor(ctx: Context) {
     super(ctx, 'fileUpload')
-    const hook = (globalThis as ClientFileUploadGlobal).__DSH_FILE_UPLOAD__
+    const hook = ctx.get('fileUploadHooks') ?? (globalThis as ClientFileUploadGlobal).__DSH_FILE_UPLOAD__
     this.transport = hook === undefined ? workerTransport() : customTransport(hook.fetch)
   }
 
   /**
-   * Post one body with the carrier selected before Cordis boot.
+   * Post one body with the carrier captured when this service was constructed.
    * @param request - target, body, cancellation, and progress observer.
    * @returns the response status and text body.
    */

@@ -34,6 +34,8 @@ kind: "package-reference"
 
 本包没有 Cordis 配置字段。`Blob` 在专用 Worker 内通过 XMLHttpRequest 发送，因此服务可以报告浏览器上传进度，并在浏览器提供总量时一并报告。`ReadableStream` 会转移给该 Worker，再增量传入 Fetch；进度只报告已消费字节，不包含总量。`AbortSignal` 会终止专用 Worker，或传递给页面自己提供的载体。精确字节使用生成的 Remote。
 
+页面所有者可以在上传插件激活前，向新建的 Client Context 安装 `ctx.provide('fileUploadHooks', { fetch: capturedFetch })`。服务只捕获一次该 Fetch 函数，优先于旧的 `__DSH_FILE_UPLOAD__` 钩子；之后修改依赖或全局值不会重定向已有实例。载体负责身份绑定、撤销和实际请求结算。它接收原始请求体与 signal；此 Fetch 路径不产生上传进度事件，也不重试结果未知的上传。
+
 -----
 
 <a id="understand-the-implementation"></a>
@@ -42,7 +44,7 @@ kind: "package-reference"
 <details>
 <summary>实现细节——点击展开</summary>
 
-Client 插件提供 `ctx.fileUpload`。其 `upload()` 方法接收所属 Session 标识，组装原始路由请求，并为精确字节调用生成的 Remote。提供方只读取一次可选的 Cordis 启动前 `__DSH_FILE_UPLOAD__` 钩子。没有该钩子时，每个 Blob 或 stream 请求拥有一个短期 Worker，并在完成、失败或取消后释放。存在该钩子时，服务通过页面自己提供的 Fetch 载体发送请求体；Web Worker runtime 会通过请求帧转移 stream 请求体，再以带背压的分片形式交给 Host HTTP bridge。
+Client 插件提供 `ctx.fileUpload`。其 `upload()` 方法接收所属 Session 标识，组装原始路由请求，并为精确字节调用生成的 Remote。提供方捕获可选的 Context 自有 `fileUploadHooks.fetch`，再回退到旧的 Cordis 启动前 `__DSH_FILE_UPLOAD__` 钩子。两种输入都没有时，每个 Blob 或 stream 请求拥有一个短期 Worker，并在完成、失败或取消后释放。存在 Fetch 载体时，服务通过该捕获函数发送请求体；Web Worker runtime 会通过请求帧转移 stream 请求体，再以带背压的分片形式交给 Host HTTP bridge。
 
 Host 插件提供 `ctx.fileUploads`。它拥有经过认证的流式路由、编码 Remote 兜底、命令凭证解析器与暂存凭证生命周期；编码准入、附件错误识别与字节存储仍由 `ctx.attachments` 提供。Host 调用方传入具有运行时所属上下文的 Agent；凭证表以该 Agent 的准确 Session 对象为键。Session Controller 注册可恢复休眠普通 Agent 的解析器，并在 prompt 准入时消费凭证。Prompt 投递通过可释放事务持有每个凭证绑定。成功投递提交事务前，释放会恢复原绑定；提交后，队列或历史观察会退休该凭证。
 
@@ -86,6 +88,7 @@ Host 插件提供 `ctx.fileUploads`。它拥有经过认证的流式路由、编
 以下限制适用于传输操作本身。
 
 - **上传不能断点续传**：失败或取消后的重试会从第一个字节开始。
+- **Fetch 取消由载体负责** — 转发 abort 不代表服务端已经清理。载体必须拒绝已撤销的页面并处理迟到响应；服务等待其 promise，不重放结果未知的上传。
 - **stream 请求体只能使用一次**：转移 `ReadableStream` 会锁定调用方的对象，因此重试必须重新创建 stream。
 - **stream 进度没有总量**：stream API 不携带字节长度，因此调用方只能收到已消费字节数。
 - **浏览器 Worker 必须自包含**：其源代码由函数字符串生成。如果实现需要运行时 import，就必须迁移为由 tsdown 打包的独立 Worker 入口。

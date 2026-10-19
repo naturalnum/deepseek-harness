@@ -475,10 +475,14 @@ export class AccountFactory {
           }
           if (slot.recipe.native !== undefined) {
             const preparation = slot.recipe.native, lease = slot.storageLease
-            slot.integration = new AccountNativeIntegration(lease === undefined ? preparation : { ...preparation,
-              files: (_owner, current) => {
-                if (current !== binding) throw new AccountRuntimeError('cloud/stale-generation', 'Storage bind belongs to another native graph')
-                return lease.bindInstalled(binding, (installed: AccountBinding) => { this.assertMountCurrent(installed) }, unpublished)
+            slot.integration = new AccountNativeIntegration({ ...preparation,
+              borrowAccount: (current: AccountBinding) => this.borrowCurrent(current),
+              ...lease === undefined ? {} : {
+                files: (_owner, current, getFileProject) => {
+                  if (current !== binding) throw new AccountRuntimeError('cloud/stale-generation', 'Storage bind belongs to another native graph')
+                  return lease.bindInstalled(binding,
+                    (installed: AccountBinding) => { this.assertMountCurrent(installed) }, unpublished, getFileProject)
+                },
               },
             })
             slot.integration.prepare(ctx, binding,

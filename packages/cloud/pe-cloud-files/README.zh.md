@@ -34,6 +34,10 @@ kind: "package-reference"
 在原生账户 boot 准备阶段，可信 runtime 使用 exact installed binding、既有有限 lane 的 Registry 构造口、固定 default grant，以及分开的挂载/current 和未发布窗口核验，构造 [CloudAccountFiles](src/account-service.ts)。该输入不接受共享根池、调用者选择的路径、Workspace receipt 或插件。Loader 稳定后，`project()` 向 API/runtime 装配交付实际原生 Workspace 及其 files 持有的 `projectDirectory`。缺失或异图 owner、非空配置、竞争 provider 及旧代都会拒绝。本包不提供宿主文件系统回退。
 
 
+`project()` 保持 bootstrap-default 含义。`projectFor(actualWorkspace, signal)` 仅为原 Registry 仍持有的精确对象派生目录能力，不替换文件系统，也不按路径选择项目。`createProject(use, title, signal)` 要求原始 ready borrow；存储 lease 在原 projects 父目录下固定一次 server UUID。显示标题受 `maxPathBytes` 限制，并与目录责任共用预留，持续到实际原生登记结果结算。准入后的取消不会放弃该修改。原生 ID、规范路径唯一性、成员关系及持久顺序仍归 Registry 持有。登记结果 unknown 时保留责任，不能报告干净排空。原未发布准备和 default 初始化检查保持独立。
+
+`CloudAccountFiles.assertContentAvailable()` 要求原安装已经成功结算、唯一原 Registry/FS provider 仍有效，且通过可信准备回调。存储 lease 将回调交给原绑定池，核验当前代际、池健康、显式 content 限额和真实 ABI8 worker 握手。S2 遗漏、ABI 混用、worker 不可用或半安装状态都会拒绝。Runtime 须在安装结算后、接纳依赖内容能力的配方之前调用该断言；方法存在本身不授予就绪。
+
 生产工厂首先通过原池的 `requireStorageOwner()` 取得实际存储 owner。可选的根配置 `staticStorage` 见 [StaticStorageConfig](src/storage-types.ts)；省略仅支持组件调用者，不授予 owner。准备核验恰好两份预置账户分配之一。工厂须在原生 Profile 读取前保留实际 lease，核验其 Profile/base 地址，再把规范的 installed runtime 代际仅绑定一次到原 projects lane。另一个仍活动的 epoch 会被拒绝。runtime 等待 native/save/execution writer 后，lease 关闭继续等待该 lane 的实际工作与持有结果；它从不归还持久容量或重新挂载存储。本地索引及 environment 执行写入不获得授权。
 
 -----
@@ -60,15 +64,25 @@ kind: "package-reference"
 
 ABI 6 增加自持 FD 的单 leaf 准备及 exact empty-directory 清理，创建模式为 `0700`，并实际核验 tmpfs 后端。固定 64 字节帧记录变更阶段、父目录及 leaf 身份、原 mkdir errno 与实际描述符关闭。ABI 6 将 tmpfs 与 ext4 分支分开；ext4 要求精确 mount id、ext4 类型、文件系统根 inode 及同 mount 解析。持久准备同步 leaf 及父目录，持久清理在删除后同步父目录；成功帧必须明确包含 mount 和同步事实。变更后的同步失败保留 unknown 责任。这些内核观察不建立部署归属、物理容量预留或生产授权。确证未创建的失败仍拒绝业务，但结算其临时责任；完整验证成功的 created 帧之后取消仍保留身份与责任。创建后的父目录验证失败会永久禁用清理，即使路径或窗口断言随后恢复；丢回复、worker 故障及模糊结果继续为 unknown。清理要求原 private 身份和仍有效的完整 namespace 独占窗口；空目录或路径缺失本身从不证明可安全删除。close 错误先退役 FD 号，再使 worker 致命失败，避免 finalizer 重试可能已被复用的号码。本实现仍不提供通用递归准备；真实发布包 ABI 6 syscall 验证仍由主控负责。
 
-[Workspace 适配](src/workspace-adapter.ts)在注册窗口有效时、原生初始化前固定全部三个目录方法。其构造函数及 metadata 选择要求 Context 及其独立根都持有绑定的原始 `peAccount` 代际对象。读取方法复用已有池与 lane，并在 I/O 前后检查当前图。注册窗口关闭后，读取仍可使用；目录准备、公开地址及责任转交仍要求该独立窗口。`ensureDirectory` 仅允许预授的 `default-workspace` leaf；公开原生默认初始化器继续决定资格、历史二次检查及持久身份。薄覆盖使用账户项目地址替换桌面 Documents resolver。窗口关闭后，原生默认初始化仍可返回已有默认项目，或其已删除／无资格状态；实际请求新目录会在登记 ticket 或 mkdir 前被拒绝。新项目接收一次选定的服务端 UUID grant，与显示标题无关，然后调用原始原生 `create` 操作。
+[Workspace 适配](src/workspace-adapter.ts)在注册窗口有效时、原生初始化前固定全部三个目录方法。其构造函数及 metadata 选择要求 Context 及其独立根都持有绑定的原始 `peAccount` 代际对象。读取方法复用已有池与 lane，并在 I/O 前后检查当前图。注册窗口关闭后，读取仍可使用；未发布流程的目录准备、公开地址及责任转交仍要求该独立窗口。`ensureDirectory` 仅允许预授的 `default-workspace` leaf；公开原生默认初始化器继续决定资格、历史二次检查及持久身份。薄覆盖使用账户项目地址替换桌面 Documents resolver。窗口关闭后，原生默认初始化仍可返回已有默认项目，或其已删除／无资格状态；实际请求新目录会在登记 ticket 或 mkdir 前被拒绝。新项目接收一次选定的服务端 UUID grant，与显示标题无关，然后调用原始原生 `create` 操作。
 
-仅当实际原生注册 Promise 以 Workspace 成功返回后，临时目录责任才移交。私有适配在注册前后核验原 ticket、当前未发布图及每个候选的完整 namespace 窗口、匹配的物理路径与内部 FD 身份。原生缓存成员仅用于交叉检查。移交释放长期预留，不删除目录，也不保留项目到 ticket 的映射。undefined 结果、拒绝、迟到的图关闭、身份不符及准备等待丢失都保留 unknown 责任并禁止清理；随后成功的准备回复不能逆转这种不确定性。普通 prepared-leaf 控制仍仅有公开地址与清理。
+公共 `Registry.create(path, title)` 仅解析已登记的原生对象，包括其规范 alias，并在查找后确认仍为本 Registry 的同一已登记对象。存在但未知的目录会拒绝，不调用原生创建。只有私有固定 grant 和 ready 准入准备流程可以通过原生 `create` 登记新对象；default 初始化保留原生私有路径。
+
+仅当实际原生注册 Promise 以 Workspace 成功返回后，临时目录责任才移交。私有适配在注册前后核验原 ticket、原始未发布窗口或该操作的 ready borrow，以及每个候选的完整 namespace 窗口、匹配的物理路径与内部 FD 身份。原生缓存成员仅用于交叉检查。移交释放长期预留，不删除目录，也不保留项目到 ticket 的映射。undefined 结果、拒绝、迟到的图关闭、身份不符及准备等待丢失都保留 unknown 责任并禁止清理；随后成功的准备回复不能逆转这种不确定性。普通 prepared-leaf 控制仍仅有公开地址与清理。
 
 原生 Registry 的内部 `createS2Project()` 取得实际 default Workspace 结果，并从同一 lane 的私有 worker 元数据派生独立项目根。[S2 provider](src/s2-project.ts) 实现完整原生 FileSystem 方法表，仅授予 `resolve`、`stat` 与 `processPath`；内容读取、列目录、预览、watch 及修改都在派发前以原生文件系统错误拒绝。其固定图持有的 `projectDirectory.prepare(cwd)` 在注册窗口关闭后通过同一个项目 reader 验证已注册目录，不会按输入地址创建目录。构造安装核验原账户根并拒绝重复 provider。Workspace 删除、旧代、anchor 被替换及伪造 target 都会被拒绝。[账户 owner](src/account-service.ts) 经 `/account` 安装这些原生 provider；该组件不签发生产存储能力。
 
-持有图可以在安装唯一文件系统之前，通过已有绑定 port 显式请求 `createTextFileSystem(actualDefaultWorkspace, assertInstalled)`。按需选择的[文本 provider](src/text-project.ts)在每次调用时要求原始 Registry Workspace 对象、精确账户绑定及当前已安装图。它提供原生 target 解析、元数据、进程路径、文件 URL、包含关系、有界文本读取／流及 `writeText`；其他内容方法拒绝。规范路径 key 在原子替换及别名之间保持稳定。原 S2 provider 及其默认选择不变。
+持有图在安装唯一文件系统前，通过原绑定 port 请求 `createTextFileSystem(actualDefaultWorkspace, assertInstalled, resolveProject)`。导出的异步 `ResolveAccountFileProject` 回调先从实际原生调用者取得 `AccountFileSelection`，再解释模型路径；Files 独立核验原 provider、账户绑定和精确 Registry 对象。每个 target 私有捕获该 selection、同 lane 项目 backend 及其原 FD anchor，不保留永久项目 backend Map。同步进程路径、URL 和包含关系方法检查捕获的 selection，不查询 header。异步 target 操作在 I/O 前后同时复核原 selection 和新的调用者 selection，拒绝其他项目及失效 scope。绝对路径不授予选择其他项目的权限。规范 key 在所选项目内跨原子替换与 alias 保持稳定。[文本 provider](src/text-project.ts) 提供解析、元数据、进程路径、文件 URL、包含关系、有界文本读取／流及 `writeText`；额外原始内容方法要求下述 ABI8 能力。原 S2 provider 继续可用。
+
+显式配置 ABI8 `content` 且真实 worker 握手通过后，同一 router 授予路径级不跟随最终链接的 `lstat`、`listDir`、完整 `readBytes` 及定位窗口 `readByteRange`。选择 scope 先于解释 lstat 路径。目录项取得同 provider、同捕获项目 backend 签发的有效 target；链接和特殊项映射为 `other`，其 target 永久仅授予元数据观测，不能据此读取、写入或列目录。完整字节读取复用既有 worker read 的上限加一字节探测，返回精确 backing buffer；实际 cap 取调用者 cap、`maxReadBytes`、`maxReplyBytes` 减 128 字节封装三者的最小值。range 长度须满足两项配置字节限额，完整文件可以更大。派发前，同 lane 的一份正数预留覆盖 native/path 临时空间、回复与名称／元数据副本、展开后的目录 target 和字节结果，持续到交付。算术溢出或单 lane 容量不足会拒绝；取消后原操作继续持有到 worker 实际回复或退出，不新增池或 backend 缓存。`editText` 仍不可用，`watch` 明确以 unsupported 拒绝。
 
 helper 默认构建仍为 ABI6。使用 `-DDSH_FD_TEXT_ABI` 构建并独立命名的资产报告 ABI7，增加有界文本发布能力；它不得覆盖正在运行的 ABI6 资产。worker 接受两者，但 ABI6 文本写入在派发前拒绝。现有 `maxReadBytes` 限制完整原始文本读取、UTF-8 写入输入及可选旧内容上下文；上下文达到上限或包含二进制／非法 UTF-8 时返回 `before: null`。结果上下文规范化换行，存储和读取的文本保留输入字节。本切片不新增文本限额配置。
+
+独立命名的 ABI8 资产要求同时使用 `-DDSH_FD_TEXT_ABI` 与 `-DDSH_FD_CONTENT_ABI`；默认 ABI6 及 ABI7 的导出保持不变。ABI8 worker 要求显式 `content` 限额：`maxEntries`、`maxNameBytes`、`maxReplyBytes` 及 `operationTimeoutMs`。传输层增加 `lstat(root, path, signal)`、`list(root, path, maxEntries, maxBytes, signal)` 及 `readRange(root, path, offset, length, maxBytes, signal)`；ABI6/7 在派发前拒绝这些命令。这些私有方法不安装或授予原生 FileSystem 能力。
+
+ABI8 `lstat` 移除尾分隔符后以 `O_PATH | O_NOFOLLOW` 打开最终目录项，报告 file/directory/symlink/other 元数据及确定的目标缺失，并保留普通文件的单链接规则。`list` 在已核验项目 anchor 内逐项遍历直接子项，不跟随各子项的最终链接，关闭描述符后返回按 UTF-8 字节排序的名称及元数据。配置中的名称／条目限额及调用者的完整元数据回复限额在超额时拒绝，不静默截断。原生准入在保留每项之前计入 128 字节封装、512 字节元数据及原始名称字节数的六倍，worker/client 还核对完整回复的 UTF-8 JSON 大小。非法 UTF-8 名称及含路径组件歧义的名称拒绝。列出的 symlink 仅授予目录项元数据 target，不授予跟随目标或内容权限。`readRange` 仅读取安全位置窗口，包含 EOF／零长度的空结果，不要求完整文件大小落在窗口上限内。完整字节回复在 `maxReplyBytes` 下另计 128 字节封装；完整读取仍沿用上限加一字节的规则。
+
+内容操作检查取消及单调时钟期限，复核原始 anchor，在回复前关闭文件／目录描述符。目录枚举还会重新打开选定目录以比较身份。阻塞 syscall 的责任保留至其返回或 worker 实际退出；期限不表示内核操作已经中断。关闭未确认或原生回复畸形会使 worker 致命失败，client 将 pending 工作保留至实际退出。内容方法不创建目录、不发布附件，也不启动 watch。按需运行的 [Linux 内容检查](tests/linux-content-interop.mjs) 通过新构建的 worker 验证独立编译的 ABI8 helper；生产部署及 pool/provider 接线需要各自的证据。
 
 文本修改先进入原有有界队列，再等待执行顺序；同一绑定 lane 的全部写入串行执行，包含别名。ABI7 事务要求规范父目录已经存在，以 `0600` 模式创建独占的同目录临时文件，写入并同步它，复核根／父目录／目标身份及版本，以 rename 发布并同步父目录。仅缺失时创建及匹配版本替换沿用原生意图与错误分类。成功前复核发布结果并关闭描述符。确证发布前失败时，仅移除自身精确临时身份并同步清理。原生写入取消和队列期限仅向实际 I/O 发停止信号，不会抢在回复之前结束原生等待；发布后取消仍在收到确认后返回实际结果。排队写入可以在后端调用前取消。原任务持有结果预留，直至原生消费者释放它。丢回复、发布不确定、清理失败或关闭含糊都会保留原 operation id 及完整正数预留，拒绝后续写入并阻止账户排空报告 clean。自动重试或恢复不会将此类工作声明为 clean。本切片不授予递归创建父目录、外部 writer 的比较并交换、附件暂存或 `editText`。
 
@@ -123,9 +137,9 @@ root probe 配置在账户准入前，从全局预留有界记录、proc、资�
 
 完整 S3 文件能力的生产启用仍要求以下集成。
 
-- 共享根池在可信隔离图内提供完整 Workspace 元数据适配。注册移交要求其未发布窗口；发布后的图仍为当前图时，元数据读取可以继续。这项生命周期区分不提供生产存储授权。静态准入覆盖恰好两组由 Root 预置、独立的 private/projects 域及有界辅助挂载。动态分配、通用递归准备及 live 并发注册与删除仍不可用。显式的文本与指令 reader 路径不代表完整 S3、完整 target／写入覆盖、链接竞态或完整分配计量已经验收。后端字符串或 statfs 结果不能提供实际部署归属、权限隔离或全部 writer 的字节及 inode reserve。
+- 共享根池在可信隔离图内提供完整 Workspace 元数据适配。注册移交要求原未发布窗口或实际 ready borrow；发布后的图仍为当前图时，元数据读取可以继续。这项生命周期区分不提供生产存储授权。静态准入覆盖恰好两组由 Root 预置、独立的 private/projects 域及有界辅助挂载。动态分配、通用递归准备及 live 并发注册与删除仍不可用。显式的文本与指令 reader 路径不代表完整 S3、完整 target／写入覆盖、链接竞态或完整分配计量已经验收。后端字符串或 statfs 结果不能提供实际部署归属、权限隔离或全部 writer 的字节及 inode reserve。
 - 账户绑定与收据类型来自 runtime 包。根入口在 worker 启动后注册 files 参与者，但投入生产前，可信工厂仍须在 Profile I/O 前持有实际存储 owner/lease，并接通完整获准配方。
-- 默认 S2 FileSystem 仅授予元数据方法；可信准备可以选择上述有界文本 provider 及固定来源的 `withInstructionReaders`。完整流式／目录／写入覆盖与计量、附件接收与暂存及技能投影仍不可用。这些显式增量不证明完整 S3 或真实 Web 流程已经验收。两份 helper 二进制必须由已审核的 Linux 部署配方构建并固定；本包不分发已经验证的二进制。
+- 默认 S2 FileSystem 仅授予元数据方法；可信准备可以选择上述有界文本 provider 及固定来源的 `withInstructionReaders`。ABI8 内容准备还授予上述有界只读方法。附件接收／暂存、技能投影、editText 和 watch 仍不可用；完整链接竞态与分配验收仍要求独立证据。这些显式增量不证明完整 S3 或真实 Web 流程已经验收。选用的每份 helper 二进制必须由已审核的 Linux 部署配方构建并固定；本包不分发已经验证的二进制。
 - Workspace 源码测试使用真实原生 Loader、JSONL 与 JSON StorageDomain，配合仅供测试的 Node-backed worker 传输；它们不建立内核或配额事实。独立的发布版 ABI 6 Linux 检查验证精确 ext4 mount 身份，拒绝错误 mount id 及同设备的嵌套 bind，并在干净卸载及新容器/Node 进程中恢复同一原生 Workspace 与 Session JSONL event hash。这些组件检查不验收账户入口的完整产品配方。目录同步故障注入、原生 WorkingDirectory/SessionController 装配、生产全部 writer 的隔离与硬配额、总物理 reserve、崩溃/断电恢复及 Web 流程仍是独立要求。
 - 文本源码测试也使用该测试专用 Node 传输。按需运行的 [ABI7 Linux 检查](tests/linux-text-interop.mjs)要求独立构建的 helper、发布 worker 入口及获准测试父目录。它检查原生创建／更新／版本结果、有界上下文、链接拒绝、发布前取消、临时清理及描述符关闭。它不建立部署隔离、运行中取消的故障覆盖、同步失败恢复或崩溃／断电耐久性。使用新候选之前仍须验证发布 ABI7；此处不提供已验证二进制。
 

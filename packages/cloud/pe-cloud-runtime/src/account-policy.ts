@@ -10,9 +10,11 @@ import SessionController from '@deepseek-ai/dsh-api-session-controller'
 import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/types'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import { CloudApiError, type ExposureService } from '@deepseek-ai/dsh-pe-cloud-api'
-import { CloudAccountFiles } from '@deepseek-ai/dsh-pe-cloud-files'
+import { CloudAccountFiles, type AccountFileSelection } from '@deepseek-ai/dsh-pe-cloud-files'
 import { SessionQueryError } from '@deepseek-ai/dsh-session-query'
-import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
+import { scopeChainOf, scopeOf } from '@deepseek-ai/dsh-scope'
+import { SessionId, type Session, type SessionHeader } from '@deepseek-ai/dsh-session'
+import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import { remoteMethods } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-working-directory'
 import type { AccountBinding } from './types.ts'
@@ -154,13 +156,67 @@ class AccountPolicy {
     return project
   }
 
-  async directory(signal?: AbortSignal) {
+  assertWorkspace(workspace: Workspace): void {
+    this.current()
+    if (this.provider('workspaceRegistry').get(workspace.id) !== workspace) refuse()
+  }
+
+  workspaceAt(cwd: string | undefined): Workspace {
+    this.current()
+    if (cwd === undefined) refuse()
+    const matches = this.provider('workspaceRegistry').list().filter(workspace => workspace.path === cwd)
+    const workspace = matches[0]
+    if (matches.length !== 1 || workspace === undefined) refuse()
+    this.assertWorkspace(workspace)
+    return workspace
+  }
+
+  private member(id: SessionId): Workspace | undefined {
+    this.current()
+    const matches = this.provider('workspaceRegistry').list().filter(workspace => workspace.sessionIds.includes(id))
+    if (matches.length > 1) refuse()
+    const workspace = matches[0]
+    if (workspace !== undefined) this.assertWorkspace(workspace)
+    return workspace
+  }
+
+  observedProject(id: SessionId, header: SessionHeader): Workspace {
+    this.current()
+    const workspace = this.member(id)
+    if (workspace === undefined || header.id !== id || header.agentPreset !== this.config.presetId) refuse()
+    this.header(header, workspace.path)
+    this.pin()
+    this.assertWorkspace(workspace)
+    return workspace
+  }
+
+  private sessionProject(session: Session, attached: boolean): Workspace {
+    this.current()
+    const workspace = this.workspaceAt(session.header.cwd)
+    if (session.id !== session.header.id || session.header.agentPreset !== this.config.presetId) refuse()
+    this.header(session.header, workspace.path)
+    if (this.provider('workingDirectory').get(session) !== workspace.path
+      || this.provider('sessionProjections').stateOf(session, 'agentPreset') !== this.config.presetId) refuse()
+    if (attached && (this.provider('sessions').get(session.id) !== session || this.member(session.id) !== workspace)) refuse()
+    return workspace
+  }
+
+  liveSessionProject(session: Session): Workspace {
+    const workspace = this.sessionProject(session, true)
+    const agent = this.provider('agents').get(session.id)
+    if (agent !== undefined && (agent.session !== session || this.prepared(agent, true) !== workspace)) refuse()
+    return workspace
+  }
+
+  async directory(workspace: Workspace, signal?: AbortSignal) {
     const control = signal === undefined ? this.binding.lifetime : AbortSignal.any([signal, this.binding.lifetime])
     control.throwIfAborted()
-    const project = this.project()
-    await project.projectDirectory.prepare(project.workspace.path)
+    this.assertWorkspace(workspace)
+    const project = await this.files.projectFor(workspace, control)
+    await project.projectDirectory.prepare(workspace.path)
     control.throwIfAborted()
-    if (this.project() !== project) refuse()
+    this.assertWorkspace(workspace)
+    if (project.binding !== this.binding || project.workspace !== workspace || project.projectDirectory.binding !== this.binding) refuse()
     return project
   }
 
@@ -195,19 +251,18 @@ class AccountPolicy {
     const control = signal === undefined ? this.binding.lifetime : AbortSignal.any([signal, this.binding.lifetime])
     control.throwIfAborted()
     if (id !== undefined && id !== this.config.presetId) refuse()
-    const project = this.project()
     this.pin()
     const presets = this.provider('agentPresets')
     if (!(presets instanceof AgentPresets) || presets.defaultId !== this.config.presetId) refuse()
     const resolved = await presets.resolve(this.config.presetId)
     control.throwIfAborted()
     this.current()
-    if (this.project() !== project || presets.defaultId !== this.config.presetId
+    if (presets.defaultId !== this.config.presetId
       || resolved.id !== this.config.presetId || resolved.broken !== undefined) refuse()
     const inventory = await presets.compositionInventory()
     control.throwIfAborted()
     this.current()
-    if (this.project() !== project || presets.defaultId !== this.config.presetId) refuse()
+    if (presets.defaultId !== this.config.presetId) refuse()
     const row = inventory[0]
     if (inventory.length !== 1 || row === undefined || row.id !== this.config.presetId || row.broken !== undefined
       || !row.isDefault || row.rows.length > this.maxEntries
@@ -235,11 +290,9 @@ class AccountPolicy {
     control.throwIfAborted()
     const { provider, model } = selection ?? {}
     if (provider === undefined || model === undefined || !this.allowedModel(provider, model)) modelDenied()
-    const project = this.project()
     const resolved = await this.provider('llm').resolveModelInfo(provider, model, control)
     control.throwIfAborted()
     this.current()
-    if (this.project() !== project) refuse()
     if (resolved.provider !== provider || resolved.id !== model || !this.allowedModel(provider, model)) modelDenied()
   }
 
@@ -249,6 +302,9 @@ class AccountPolicy {
     const project = this.project(), { provider, model } = this.defaultModel()
     if (provider === undefined || model === undefined) modelDenied()
     const selection = { provider, model }
+    const filesSelected = this.exposure.manifest.rpcEndpoints.some(row => row.endpoint.startsWith('workspaceFiles/'))
+      || this.exposure.manifest.streamEndpoints.some(row => row.endpoint.startsWith('workspaceFiles/'))
+    if (filesSelected) this.files.assertContentAvailable()
     this.handlers('native:sessionController')
     await this.preset(this.config.presetId, control)
     await this.model(selection, control)
@@ -256,6 +312,7 @@ class AccountPolicy {
     this.current()
     const current = this.defaultModel()
     if (this.project() !== project || current.provider !== selection.provider || current.model !== selection.model) unavailable()
+    if (filesSelected) this.files.assertContentAvailable()
     this.handlers('native:sessionController')
   }
 
@@ -264,71 +321,123 @@ class AccountPolicy {
       || (header.delegationDepth ?? 0) !== 0 || header.isSeeded) refuse()
   }
 
-  async history(id: SessionId, signal?: AbortSignal, mode: 'member' | 'create-probe' = 'member'): Promise<void> {
+  async history(
+    id: SessionId, signal?: AbortSignal, mode: 'member' | 'create-probe' = 'member', expected?: Workspace,
+  ): Promise<Workspace> {
     const control = signal === undefined ? this.binding.lifetime : AbortSignal.any([signal, this.binding.lifetime])
-    const project = await this.directory(control)
-    if (mode === 'member' && !project.workspace.sessionIds.includes(id)) refuse()
+    const member = this.member(id)
+    if ((mode === 'member' && member === undefined) || (member !== undefined && expected !== undefined && member !== expected)) refuse()
+    const workspace = member ?? expected
+    if (workspace === undefined) refuse()
+    await this.directory(workspace, control)
     const query = this.provider('sessionQuery')
     using observed = await query.observeSession(id, { projectionMode: 'all', signal: control })
     control.throwIfAborted()
     this.current()
-    this.header(observed.header, project.workspace.path)
-    if (observed.header.id !== id || !project.workspace.sessionIds.includes(id)
-      || this.project() !== project || observed.projections?.values.workingDirectory !== project.workspace.path) refuse()
-    const preset = observed.projections.values.agentPreset
-    if (preset !== this.config.presetId) refuse()
-    await this.preset(preset, control)
-    this.current()
-    if (this.project() !== project || !project.workspace.sessionIds.includes(id)) refuse()
+    if (this.observedProject(id, observed.header) !== workspace
+      || observed.projections?.values.workingDirectory !== workspace.path
+      || observed.projections.values.agentPreset !== this.config.presetId) refuse()
+    await this.preset(this.config.presetId, control)
+    control.throwIfAborted()
+    this.assertWorkspace(workspace)
+    if (!workspace.sessionIds.includes(id)) refuse()
+    return workspace
   }
 
   readSession(id: SessionId, summary?: SessionSummary): void {
     this.current()
-    const project = this.project()
     this.pin()
     if (this.modules === undefined) unavailable()
-    if (summary !== undefined) {
-      if (summary.sessionId !== id || summary.cwd !== project.workspace.path
-        || summary.origin !== undefined || summary.parentSessionId !== undefined) refuse()
-      const values = summary.projections?.values
-      if ((values?.workingDirectory !== undefined && values.workingDirectory !== project.workspace.path)
-        || (values?.agentPreset !== undefined && values.agentPreset !== this.config.presetId)) refuse()
-    }
     const sessions = this.provider('sessions'), agents = this.provider('agents')
     const session = sessions.get(id), agent = agents.get(id)
+    let workspace: Workspace | undefined
     if (agent !== undefined) {
       if (agent.session !== session) refuse()
-      this.prepared(agent, false)
+      workspace = this.prepared(agent, false)
     } else if (session !== undefined) {
-      // Original Session publication can precede Agent and Workspace publication.
-      // Read only actual store/projection facts; this does not issue command/history authority.
-      if (session.id !== id || session.header.id !== id) refuse()
-      this.header(session.header, project.workspace.path)
-      if (this.provider('workingDirectory').get(session) !== project.workspace.path
-        || this.provider('sessionProjections').stateOf(session, 'agentPreset') !== this.config.presetId) refuse()
-    } else if (!project.workspace.sessionIds.includes(id)) refuse()
-    // A cold or removed id has only the original approved Workspace's existing readonly relationship.
-    // Exact history/commands still perform their original persisted-header and Preset observation.
-    this.current()
-    if (this.project() !== project) refuse()
+      // Native publication precedes Agent and Workspace attachment; readonly metadata does not authorize file operations.
+      workspace = this.sessionProject(session, false)
+    } else workspace = this.member(id)
+    if (workspace === undefined) refuse()
+    if (summary !== undefined) {
+      if (summary.sessionId !== id || summary.cwd !== workspace.path
+        || summary.origin !== undefined || summary.parentSessionId !== undefined) refuse()
+      const values = summary.projections?.values
+      if ((values?.workingDirectory !== undefined && values.workingDirectory !== workspace.path)
+        || (values?.agentPreset !== undefined && values.agentPreset !== this.config.presetId)) refuse()
+    }
+    this.assertWorkspace(workspace)
   }
 
-  prepared(agent: Agent, attached: boolean): void {
+  prepared(agent: Agent, attached: boolean): Workspace {
     this.current()
-    const project = this.project()
+    const workspace = this.sessionProject(agent.session, false)
     if (this.facts === undefined || this.modules === undefined || agent.ctx.root !== this.ctx.root
       || agent.ctx.get('peAccount') !== this.binding || agent.id !== agent.session.header.id) refuse()
     agent.ctx.fiber.assertActive()
-    this.header(agent.session.header, project.workspace.path)
-    if (!this.allowedModel(agent.options.provider ?? '', agent.options.model ?? '')
-      || this.provider('workingDirectory').get(agent.session) !== project.workspace.path
-      || this.provider('sessionProjections').stateOf(agent.session, 'agentPreset') !== this.config.presetId) refuse()
+    if (!this.allowedModel(agent.options.provider ?? '', agent.options.model ?? '')) refuse()
     const presets = this.provider('agentPresets')
     const composition = presets.inspectCompositions(agent.ctx), row = composition[0]
     if (presets.composedPreset(agent.ctx) !== this.config.presetId || composition.length !== 1 || row === undefined
       || row.id !== this.config.presetId || row.leakedServices.length !== 0 || row.modules.length !== this.modules.length
       || row.modules.some((module, index) => module.moduleName !== this.modules?.[index])) refuse()
-    if (attached && (this.provider('agents').get(agent.id) !== agent || !project.workspace.sessionIds.includes(agent.id))) refuse()
+    if (attached && (this.provider('agents').get(agent.id) !== agent || this.provider('sessions').get(agent.id) !== agent.session
+      || this.member(agent.id) !== workspace)) refuse()
+    this.assertWorkspace(workspace)
+    return workspace
+  }
+
+  async fileProject(caller: Context, signal?: AbortSignal): Promise<AccountFileSelection> {
+    const control = signal === undefined ? this.binding.lifetime : AbortSignal.any([signal, this.binding.lifetime])
+    control.throwIfAborted()
+    this.current()
+    caller.fiber.assertActive()
+    if (caller.root !== this.ctx.root || caller.get('peAccount') !== this.binding) {
+      throw new CloudApiError('cloud/stale-generation', 'The file caller belongs to another account graph.')
+    }
+    const agent = this.provider('agents').currentInitiator()
+    if (agent !== undefined) {
+      const callerScope = scopeOf(caller)
+      // Shared account services may be untagged; a tagged child cannot borrow its causal parent's file authority.
+      const assertCaller = (): void => {
+        if (callerScope !== undefined && !scopeChainOf(scopeOf(agent.ctx)).includes(callerScope)) refuse()
+      }
+      assertCaller()
+      const workspace = this.prepared(agent, true)
+      return { workspace, assertCurrent: () => {
+        this.current()
+        assertCaller()
+        if (this.prepared(agent, true) !== workspace) refuse()
+      } }
+    }
+    const invocation = caller.invocation
+    if (invocation?.service !== 'workspaceFiles' || invocation.request.namespace !== 'workspaceFiles') refuse()
+    const raw = invocation.request.args['workspaceFileScopeId']
+    if (typeof raw !== 'string') refuse()
+    const id = SessionId(raw), session = this.provider('sessions').get(id)
+    if (session !== undefined) {
+      const workspace = this.liveSessionProject(session)
+      return { workspace, assertCurrent: () => {
+        this.current()
+        if (this.liveSessionProject(session) !== workspace) refuse()
+      } }
+    }
+    // Observe only after original membership admission; a wire id cannot trigger a foreign private-log read.
+    const workspace = this.member(id)
+    if (workspace === undefined) refuse()
+    const observed = await this.provider('sessionPersistence').stat(id, { signal: control })
+    control.throwIfAborted()
+    if (observed === undefined) refuse()
+    const header = observed.header
+    if (this.observedProject(id, header) !== workspace) refuse()
+    await this.preset(this.config.presetId, control)
+    control.throwIfAborted()
+    this.assertWorkspace(workspace)
+    return { workspace, assertCurrent: () => {
+      this.current()
+      const live = this.provider('sessions').get(id)
+      if ((live === undefined ? this.observedProject(id, header) : this.liveSessionProject(live)) !== workspace) refuse()
+    } }
   }
 
   handlers(handlerId: string): void {
@@ -367,47 +476,59 @@ export function createAccountPolicy(
 ): AccountNativeGuards {
   const policy = new AccountPolicy(ctx, binding, files, config, exposure, maxEntries)
   return {
+    assertWorkspace: (workspace) => { policy.assertWorkspace(workspace) },
+    projectForAgent: agent => policy.prepared(agent, true),
+    projectForSession: session => policy.liveSessionProject(session),
+    projectForObservedHeader: (id, header) => policy.observedProject(id, header),
+    projectForDirectory: cwd => policy.workspaceAt(cwd),
+    getFileProject: (caller, signal) => policy.fileProject(caller, signal),
     assertBootstrapCurrent: signal => policy.assertBootstrapCurrent(signal),
     assertSessionRead: (id, summary) => { policy.readSession(id, summary) },
     sessions: {
       assertHandlerEnabled: (id) => { policy.handlers(id) },
       resolveCreate: async (request) => {
-        const project = await policy.directory()
-        if ((request.workspaceId !== undefined && request.cwd !== undefined)
-          || (request.workspaceId !== undefined && request.workspaceId !== project.workspace.id)
-          || (request.cwd !== undefined && request.cwd !== project.workspace.path)) refuse()
+        if (request.workspaceId !== undefined && request.cwd !== undefined) refuse()
+        const workspace = request.workspaceId === undefined
+          ? request.cwd === undefined ? policy.project().workspace : policy.workspaceAt(request.cwd)
+          : ctx.get('workspaceRegistry')?.get(request.workspaceId)
+        if (workspace === undefined) refuse()
+        policy.assertWorkspace(workspace)
+        await policy.directory(workspace)
         await policy.preset(request.agentPreset)
         await policy.model(policy.defaultModel())
         if (request.sessionId !== undefined) {
-          const member = project.workspace.sessionIds.includes(request.sessionId)
-          try { await policy.history(request.sessionId, undefined, 'create-probe') }
+          const member = workspace.sessionIds.includes(request.sessionId)
+          try { await policy.history(request.sessionId, undefined, 'create-probe', workspace) }
           catch (error) {
-            if (member || project.workspace.sessionIds.includes(request.sessionId)
+            if (member || workspace.sessionIds.includes(request.sessionId)
               || !(error instanceof SessionQueryError) || error.code !== 'SESSION_QUERY_SESSION_NOT_FOUND') throw error
           }
         }
         policy.current()
-        if (policy.project() !== project) refuse()
+        policy.assertWorkspace(workspace)
         return { ...request.sessionId === undefined ? {} : { sessionId: request.sessionId },
-          workspaceId: project.workspace.id, agentPreset: config.presetId }
+          workspaceId: workspace.id, agentPreset: config.presetId }
       },
-      assertSessionProject: id => policy.history(id),
+      assertSessionProject: async (id) => { await policy.history(id) },
       assertActiveScope: (agent) => { policy.prepared(agent, true) },
     },
     agents: {
       assertCreate: async (options, signal) => {
-        const project = await policy.directory(signal)
-        policy.header(options.meta ?? {}, project.workspace.path)
-        if (options.meta?.cwd !== project.workspace.path || options.meta.agentPreset !== config.presetId) refuse()
+        const workspace = policy.workspaceAt(options.meta?.cwd)
+        await policy.directory(workspace, signal)
+        policy.header(options.meta ?? {}, workspace.path)
+        if (options.meta?.agentPreset !== config.presetId) refuse()
         await policy.preset(options.meta.agentPreset, signal)
         await policy.model(options.agentOptions, signal)
         policy.current()
-        if (policy.project() !== project) refuse()
+        policy.assertWorkspace(workspace)
       },
       assertResume: async (options, signal) => {
-        await policy.history(options.resumeSessionId, signal)
+        const workspace = await policy.history(options.resumeSessionId, signal)
         await policy.model(options.agentOptions, signal)
         policy.current()
+        policy.assertWorkspace(workspace)
+        if (!workspace.sessionIds.includes(options.resumeSessionId)) refuse()
       },
       assertPrepared: (agent) => { policy.prepared(agent, false) },
     },

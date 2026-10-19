@@ -9,9 +9,14 @@ export const instructionLimits = {
   maxFiles: 8, maxFileBytes: 256, maxTotalBytes: 512, maxSnapshotBytes: 8192, maxResidentBytes: 400000,
 }
 
-export function instructionSourceFixture(options: { beforeBuild?: () => Promise<void>; failure?: FsError } = {}) {
+export function instructionSourceFixture(options: {
+  beforeBuild?: () => Promise<void>
+  beforeRead?: () => Promise<void>
+  failure?: FsError
+} = {}) {
   const adapter = new TextAdapter()
   const text = { account: 'account source belongs to this graph', project: 'project source belongs to its native Workspace' }
+  const projects = new WeakMap<Workspace, string>()
   const state = { reservations: [] as number[], workspaces: [] as Workspace[], heldBytes: 0, releases: 0, reads: [] as string[] }
 
   const bind = (assertCurrent: () => void): NonNullable<AccountFilesPreparation['withInstructionReaders']> =>
@@ -21,6 +26,7 @@ export function instructionSourceFixture(options: { beforeBuild?: () => Promise<
       state.reservations.push(bytes)
       state.workspaces.push(workspace)
       state.heldBytes += bytes
+      const contents = { account: text.account, project: projects.get(workspace) ?? text.project }
       const release = (): void => { state.releases++; state.heldBytes -= bytes }
       const reader = (kind: keyof typeof text, root: string): InstructionReadReaders['project'] => {
         const issued = new WeakMap<FsTarget, string>()
@@ -49,7 +55,7 @@ export function instructionSourceFixture(options: { beforeBuild?: () => Promise<
           async stat(target, control) {
             const path = file(target, control)
             return { version: FsVersion('instruction-fixture'), type: path === '' ? 'directory' : 'file',
-              size: path === '' ? 0 : Buffer.byteLength(text[kind]) }
+              size: path === '' ? 0 : Buffer.byteLength(contents[kind]) }
           },
           async streamText(target, control) {
             const path = file(target, control)
@@ -58,7 +64,9 @@ export function instructionSourceFixture(options: { beforeBuild?: () => Promise<
               current()
               control?.throwIfAborted()
               state.reads.push(`${kind}/${path}`)
-              yield text[kind]
+              await options.beforeRead?.()
+              current()
+              yield contents[kind]
               current()
             })()
           },
@@ -74,7 +82,7 @@ export function instructionSourceFixture(options: { beforeBuild?: () => Promise<
         return { value, release }
       } catch (error) { release(); throw error }
     }
-  return { adapter, text, state, bind }
+  return { adapter, text, state, bind, setProject: (workspace: Workspace, value: string) => { projects.set(workspace, value) } }
 }
 
 export type InstructionSourceFixture = ReturnType<typeof instructionSourceFixture>

@@ -70,7 +70,7 @@ async function fixture(mode = 'normal') {
   const read = <T>(
     build: (readers: InstructionReadReaders, control: AbortSignal) => Promise<T>, signal = lifetime.signal,
   ): Promise<ResidentResult<T>> => {
-    const task = port.withInstructionReaders(workspace, 8192, build, signal).then((held) => {
+    const task = port.withInstructionReaders(workspace, 8192, build, signal, () => { signal.throwIfAborted() }).then((held) => {
       releases.push(() => { held.release() })
       return held
     })
@@ -155,7 +155,7 @@ it('rejects a real account-source symlink to private credentials without reading
   const build = vi.fn(async () => 'must not build')
   await expect(test.read(build)).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
   expect(build).not.toHaveBeenCalled()
-  expect(Atomics.load(test.counters, 6)).toBe(1)
+  expect(Atomics.load(test.counters, 6)).toBe(2)
   expect(Atomics.load(test.counters, 1)).toBe(0)
   expect(test.pool.inspect()).toMatchObject({ healthy: 1, busy: 0,
     work: { pending: 0, residentBytes: 0, running: 0, queued: 0 } })

@@ -1,4 +1,4 @@
-/* Linux-only N-API helper. Each worker owns one anchor and one read/metadata/leaf descriptor. */
+/* Linux-only N-API helper; descriptors belong to one worker environment or bounded call. */
 #define _GNU_SOURCE
 #include <node_api.h>
 #include <errno.h>
@@ -15,6 +15,13 @@
 #include <unistd.h>
 #include <inttypes.h>
 #include <linux/fs.h>
+#ifdef DSH_FD_CONTENT_ABI
+#ifndef DSH_FD_TEXT_ABI
+#error "ABI8 requires the explicit ABI7 text flag as well"
+#endif
+#include <dirent.h>
+#include <time.h>
+#endif
 
 typedef struct { int anchor; int reader; uint64_t mount_id; } owned_fds;
 
@@ -41,6 +48,11 @@ static napi_value fail(napi_env env, int error) {
     case EDQUOT: code = "EDQUOT"; break;
     case ENOSPC: code = "ENOSPC"; break;
     case ENAMETOOLONG: code = "ENAMETOOLONG"; break;
+    #ifdef DSH_FD_CONTENT_ABI
+    case EFBIG: code = "EFBIG"; break;
+    case ECANCELED: code = "ECANCELED"; break;
+    case ETIMEDOUT: code = "ETIMEDOUT"; break;
+    #endif
     default: code = "EIO"; break;
   }
   napi_throw_error(env, code, "Linux FD operation failed");
@@ -715,6 +727,189 @@ static napi_value remove_empty_leaf(napi_env env, napi_callback_info info) { ret
 static napi_value prepare_ext4_leaf(napi_env env, napi_callback_info info) { return leaf_operation(env, info, 0, 1); }
 static napi_value remove_ext4_leaf(napi_env env, napi_callback_info info) { return leaf_operation(env, info, 1, 1); }
 
+
+#ifdef DSH_FD_CONTENT_ABI
+/* ABI8 adds bounded read-only content observations; ABI6/7 exports remain separate. */
+static napi_value content_close_failure(napi_env env) {
+  napi_throw_error(env, "DSH_FD_CLOSE", "Content descriptor close is unconfirmed");
+  return NULL;
+}
+
+static int verify_content_root(owned_fds *owned, const char *path, int *close_unknown) {
+  int fd = open(path, O_PATH | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+  if (fd < 0) return errno;
+  int error = same_identity(owned->anchor, fd);
+  if (!error && owned->mount_id) error = mount_identity(fd, owned->mount_id);
+  if (close(fd) != 0) *close_unknown = 1;
+  return error;
+}
+
+static napi_value open_path_metadata(napi_env env, napi_callback_info info) {
+  size_t count = 1;
+  napi_value args[1], result;
+  owned_fds *owned = state(env);
+  if (!owned || owned->anchor < 0 || owned->reader >= 0
+    || napi_get_cb_info(env, info, &count, args, NULL, NULL) != napi_ok || count != 1) return fail(env, EINVAL);
+  char *path = text(env, args[0]);
+  if (!path || path[0] == '/') { free(path); return fail(env, EINVAL); }
+  /* A trailing slash would make the kernel follow the final directory link despite O_NOFOLLOW. */
+  size_t end = strlen(path);
+  while (end > 1 && path[end - 1] == '/') path[--end] = 0;
+  struct open_how how = {0};
+  how.flags = O_PATH | O_NOFOLLOW | O_CLOEXEC;
+  how.resolve = RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_XDEV;
+  int fd = (int)syscall(SYS_openat2, owned->anchor, path, &how, sizeof(how));
+  int error = errno;
+  free(path);
+  if (fd < 0) return fail(env, error);
+  struct stat observed;
+  error = fstat(fd, &observed) == 0 ? 0 : errno;
+  if (!error && S_ISREG(observed.st_mode) && observed.st_nlink != 1) error = EPERM;
+  if (error) {
+    if (close(fd) != 0) return content_close_failure(env);
+    return fail(env, error);
+  }
+  owned->reader = fd;
+  napi_create_int32(env, fd, &result);
+  return result;
+}
+
+static napi_value verify_content_anchor(napi_env env, napi_callback_info info) {
+  size_t count = 1;
+  napi_value args[1], result;
+  owned_fds *owned = state(env);
+  if (!owned || owned->anchor < 0
+    || napi_get_cb_info(env, info, &count, args, NULL, NULL) != napi_ok || count != 1) return fail(env, EINVAL);
+  char *root = text(env, args[0]);
+  if (!root || root[0] != '/') { free(root); return fail(env, EINVAL); }
+  int close_unknown = 0;
+  int error = verify_content_root(owned, root, &close_unknown);
+  free(root);
+  if (close_unknown) return content_close_failure(env);
+  if (error) return fail(env, error);
+  napi_get_undefined(env, &result);
+  return result;
+}
+
+static int content_number(napi_env env, napi_value value, uint32_t *result) {
+  double number;
+  if (napi_get_value_double(env, value, &number) != napi_ok || !(number >= 1 && number <= 2147483647)
+    || number != (uint32_t)number) return 0;
+  *result = (uint32_t)number;
+  return 1;
+}
+
+static int content_clock(uint64_t *result) {
+  struct timespec now;
+  if (clock_gettime(CLOCK_MONOTONIC, &now) != 0) return errno;
+  *result = (uint64_t)now.tv_sec * 1000000000ULL + (uint64_t)now.tv_nsec;
+  return 0;
+}
+
+static int content_running(int32_t *cancel, uint64_t deadline) {
+  if (__atomic_load_n(cancel, __ATOMIC_SEQ_CST)) return ECANCELED;
+  uint64_t now = 0;
+  int error = content_clock(&now);
+  return error ? error : now >= deadline ? ETIMEDOUT : 0;
+}
+
+static int content_metadata(napi_env env, const struct stat *info, napi_value *result) {
+  char identity[64], version[192];
+  if (info->st_size < 0 || (uintmax_t)info->st_size > 9007199254740991ULL) return EFBIG;
+  int n = snprintf(identity, sizeof(identity), "%ju:%ju", (uintmax_t)info->st_dev, (uintmax_t)info->st_ino);
+  if (n < 1 || (size_t)n >= sizeof(identity) || !text_version(info, version, sizeof(version))) return EIO;
+  const char *type = S_ISREG(info->st_mode) ? "file" : S_ISDIR(info->st_mode) ? "directory" : S_ISLNK(info->st_mode) ? "symlink" : "other";
+  napi_value value;
+  if (napi_create_object(env, result) != napi_ok) return EIO;
+  napi_create_string_utf8(env, identity, NAPI_AUTO_LENGTH, &value); napi_set_named_property(env, *result, "identity", value);
+  napi_create_string_utf8(env, version, NAPI_AUTO_LENGTH, &value); napi_set_named_property(env, *result, "version", value);
+  napi_create_string_utf8(env, type, NAPI_AUTO_LENGTH, &value); napi_set_named_property(env, *result, "type", value);
+  if (S_ISREG(info->st_mode) || S_ISLNK(info->st_mode)) {
+    napi_create_double(env, (double)info->st_size, &value); napi_set_named_property(env, *result, "size", value);
+  }
+  return 0;
+}
+
+static napi_value list_directory(napi_env env, napi_callback_info info) {
+  napi_value args[7], backing, entries, entry, name;
+  size_t count = 7, cancel_length = 0, offset = 0;
+  uint32_t max_entries, max_bytes, max_name, timeout;
+  napi_typedarray_type type;
+  void *cancel = NULL;
+  owned_fds *owned = state(env);
+  if (!owned || owned->anchor < 0 || owned->reader >= 0
+    || napi_get_cb_info(env, info, &count, args, NULL, NULL) != napi_ok || count != 7
+    || !content_number(env, args[2], &max_entries) || !content_number(env, args[3], &max_bytes)
+    || !content_number(env, args[4], &max_name) || max_name > 16384 || !content_number(env, args[5], &timeout)
+    || napi_get_typedarray_info(env, args[6], &type, &cancel_length, &cancel, &backing, &offset) != napi_ok
+    || type != napi_int32_array || cancel_length != 1) return fail(env, EINVAL);
+  char *root = text(env, args[0]), *path = text(env, args[1]);
+  int error = 0, close_unknown = 0, fd = -1, child = -1;
+  DIR *directory = NULL;
+  uint64_t start = 0, deadline = 0, charged = 128;
+  uint32_t length = 0;
+  if (!root || root[0] != '/' || !path || path[0] == '/') { error = EINVAL; goto done; }
+  error = content_clock(&start); if (error) goto done;
+  deadline = start + (uint64_t)timeout * 1000000ULL;
+  error = content_running(cancel, deadline); if (error) goto done;
+  error = verify_content_root(owned, root, &close_unknown); if (error || close_unknown) goto done;
+  struct open_how how = {0};
+  how.flags = O_RDONLY | O_DIRECTORY | O_NONBLOCK | O_CLOEXEC;
+  how.resolve = RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_XDEV;
+  fd = (int)syscall(SYS_openat2, owned->anchor, path, &how, sizeof(how));
+  if (fd < 0) { error = errno; goto done; }
+  directory = fdopendir(fd);
+  if (!directory) { error = errno; goto done; }
+  fd = -1; /* closedir owns the descriptor. */
+  if (napi_create_array(env, &entries) != napi_ok) { error = EIO; goto done; }
+  while (1) {
+    error = content_running(cancel, deadline); if (error) goto done;
+    errno = 0;
+    struct dirent *row = readdir(directory);
+    if (!row) { error = errno; break; }
+    if (!strcmp(row->d_name, ".") || !strcmp(row->d_name, "..")) continue;
+    size_t name_length = strlen(row->d_name);
+    /* Six bytes per raw name byte covers JSON escaping; 512 covers all metadata and delimiters. */
+    uint64_t charge = 512ULL + 6ULL * name_length;
+    if (length >= max_entries || name_length > max_name || charged + charge > max_bytes) { error = EFBIG; goto done; }
+    charged += charge;
+    struct open_how child_how = {0};
+    child_how.flags = O_PATH | O_NOFOLLOW | O_CLOEXEC;
+    child_how.resolve = RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_XDEV;
+    child = (int)syscall(SYS_openat2, dirfd(directory), row->d_name, &child_how, sizeof(child_how));
+    if (child < 0) { error = errno; goto done; }
+    struct stat observed;
+    if (fstat(child, &observed) != 0) { error = errno; goto done; }
+    if (S_ISREG(observed.st_mode) && observed.st_nlink != 1) { error = EPERM; goto done; }
+    error = content_metadata(env, &observed, &entry); if (error) goto done;
+    if (napi_create_buffer_copy(env, name_length, row->d_name, NULL, &name) != napi_ok) { error = EIO; goto done; }
+    napi_set_named_property(env, entry, "nameBytes", name);
+    int closing = child; child = -1;
+    if (close(closing) != 0) { close_unknown = 1; goto done; }
+    napi_set_element(env, entries, length++, entry);
+  }
+  if (!error) {
+    int verify = (int)syscall(SYS_openat2, owned->anchor, path, &how, sizeof(how));
+    if (verify < 0) error = errno;
+    else {
+      error = same_identity(dirfd(directory), verify);
+      if (close(verify) != 0) close_unknown = 1;
+    }
+  }
+  if (!error) error = verify_content_root(owned, root, &close_unknown);
+  if (!error) error = content_running(cancel, deadline);
+  if (!error && charged > max_bytes) error = EFBIG;
+done:
+  free(root); free(path);
+  if (child >= 0 && close(child) != 0) close_unknown = 1;
+  if (directory) { DIR *closing = directory; directory = NULL; if (closedir(closing) != 0) close_unknown = 1; }
+  if (fd >= 0 && close(fd) != 0) close_unknown = 1;
+  if (close_unknown) return content_close_failure(env);
+  if (error) return fail(env, error);
+  return entries;
+}
+#endif
+
 static void cleanup(napi_env env, void *data, void *hint) {
   (void)env;
   (void)hint;
@@ -732,6 +927,11 @@ static napi_value init(napi_env env, napi_value exports) {
   owned->mount_id = 0;
   if (napi_set_instance_data(env, owned, cleanup, NULL) != napi_ok) { free(owned); return fail(env, EIO); }
   napi_property_descriptor methods[] = {
+#ifdef DSH_FD_CONTENT_ABI
+    {"openPathMetadata", NULL, open_path_metadata, NULL, NULL, NULL, napi_default, NULL},
+    {"verifyContentAnchor", NULL, verify_content_anchor, NULL, NULL, NULL, napi_default, NULL},
+    {"listDirectory", NULL, list_directory, NULL, NULL, NULL, napi_default, NULL},
+#endif
 #ifdef DSH_FD_TEXT_ABI
     {"writeText", NULL, write_text, NULL, NULL, NULL, napi_default, NULL},
 #endif
@@ -748,7 +948,9 @@ static napi_value init(napi_env env, napi_value exports) {
     {"removeExt4Leaf", NULL, remove_ext4_leaf, NULL, NULL, NULL, napi_default, NULL}
   };
   napi_value abi;
-#ifdef DSH_FD_TEXT_ABI
+#ifdef DSH_FD_CONTENT_ABI
+  napi_create_uint32(env, 8, &abi);
+#elif defined(DSH_FD_TEXT_ABI)
   napi_create_uint32(env, 7, &abi);
 #else
   napi_create_uint32(env, 6, &abi);

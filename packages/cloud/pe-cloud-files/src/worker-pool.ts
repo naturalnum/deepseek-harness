@@ -4,10 +4,10 @@ import { Worker } from 'node:worker_threads'
 import { isAbsolute, posix } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
-import type { AccountBinding, DrainParticipant, OperationId, ParticipantReceipt } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
+import type { AccountBinding, AccountUse, DrainParticipant, OperationId, ParticipantReceipt } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { FilesLimits } from './types.ts'
 import type { FdWorkerInput, FdRootIdentity } from './worker-protocol.ts'
-import { FsVersion } from '@deepseek-ai/dsh-fs'
+import { FsError, FsVersion } from '@deepseek-ai/dsh-fs'
 import type { FsInfo, FsWriteIntent, FsWriteOutcome } from '@deepseek-ai/dsh-fs'
 import { createFixedRootReader, decodeTextStream, nativeInfo } from './read-only.ts'
 import type { FixedRootReader } from './read-only.ts'
@@ -17,7 +17,8 @@ import type { ResidentResult } from './work-queue.ts'
 import { FilesWorkOwner } from './work-owner.ts'
 import { FdWorkerClient, FdWorkerFailure, FdTextWriteFailure } from './worker-client.ts'
 import { createTextProjectFileSystem, decodeBoundedText } from './text-project.ts'
-import type { NativeTextFileSystemConstructor } from './text-project.ts'
+import type { NativeTextFileSystemConstructor, ResolveAccountFileProject, TextProjectBackend } from './text-project.ts'
+import type { AccountFilesProject } from './account-service.ts'
 import { FilesFailure } from './error.ts'
 import { createDirectoryReadPort } from './directory.ts'
 import type { DirectoryReadPort } from './directory.ts'
@@ -26,6 +27,7 @@ import { directoryWorkBudget } from './directory-budget.ts'
 import type { DirectoryObservation, DirectoryPrepareOutcome } from './directory-responsibility.ts'
 import { createS2ProjectPort } from './s2-project.ts'
 import { createBoundWorkspaceRegistry } from './workspace-adapter.ts'
+import type { WorkspacePreparation } from './workspace-adapter.ts'
 import { RootStorageOwner } from './storage-owner.ts'
 import type { StaticStorageConfig } from './storage-types.ts'
 import { staticStorageReservation } from './storage-probe.ts'
@@ -71,24 +73,33 @@ export interface FilesPoolConfig extends FilesLimits, Omit<FdWorkerInput, 'stora
 export interface PoolReadPort {
   readonly reader: FixedRootReader
   readonly directory: DirectoryReadPort
+  /** Require this current healthy lane, explicit content limits and actual ABI8 handshakes for every pool slot. */
+  assertContentAvailable(): void
   /**
    * Prepare an opt-in text provider for the actual registered default Workspace, without installing it.
    * @param workspace Original native Registry object; never a client-selected root.
    * @param assertInstalled Owning graph/provider checks, repeated by the native constructor and every call.
+   * @param resolveProject Trusted asynchronous caller selection, captured before interpreting each model path.
    * @returns Native constructor bound to a verified project FD root on this same lane; requires ABI7 for writes.
    */
-  createTextFileSystem(workspace: Workspace, assertInstalled: (ctx: Context) => void): Promise<NativeTextFileSystemConstructor>
+  createTextFileSystem(
+    workspace: Workspace, assertInstalled: (ctx: Context) => void, resolveProject: ResolveAccountFileProject,
+  ): Promise<NativeTextFileSystemConstructor>
+  /** Derive a directory capability only after the owning Registry selected its exact object. */
+  projectFor(workspace: Workspace, assertRegistered: () => void, signal?: AbortSignal): Promise<AccountFilesProject>
   /**
    * Read independent account/project instruction sources on this original lane.
-   * @param workspace Exact default Registry object approved by the account owner.
+   * @param workspace Exact Registry object approved by the account owner.
    * @param reservedBytes Complete snapshot construction and retained-result storage.
    * @param build Consumes fixed readers inside one reservation and one borrowed worker slot.
    * @param signal Turn/account cancellation; actual work remains tracked to settlement.
+   * @param assertRegistered Original provider and exact native Registry object guard.
    * @returns Complete retained result; absence of a verified private parent rejects before content I/O.
    */
   withInstructionReaders<T>(
     this: void, workspace: Workspace, reservedBytes: number,
     build: (readers: InstructionReadReaders, control: AbortSignal) => Promise<T>, signal: AbortSignal,
+    assertRegistered: () => void,
   ): Promise<ResidentResult<T>>
   derivePreparedLeaf(grant: IsolatedLeafGrant): PreparedLeafPort
   /**
@@ -121,6 +132,7 @@ function workerInput(config: FilesPoolConfig): FdWorkerInput {
   return {
     helperPath: config.helperPath, maxReadBytes: config.maxReadBytes, maxPathBytes: config.maxPathBytes,
     maxResolveRetries: config.maxResolveRetries, readChunkBytes: config.readChunkBytes,
+    ...config.content === undefined ? {} : { content: { ...config.content } },
     ...config.staticStorage === undefined ? {} : { storageProbe: config.staticStorage },
   }
 }
@@ -149,6 +161,12 @@ function deadline(value: number): number {
 }
 
 function validate(config: FilesPoolConfig): void {
+  const content = config.content
+  if (content !== undefined && (Object.values(content).some(value => !Number.isSafeInteger(value) || value < 1 || value > 2_147_483_647)
+    || content.maxNameBytes > config.maxPathBytes
+    || [content.maxEntries, content.maxNameBytes, content.maxReplyBytes, content.operationTimeoutMs].some(value => value === undefined))) {
+    throw new FilesFailure('files/prerequisite-missing', 'files content capacities require explicit bounded values')
+  }
   for (const value of [
     config.workerCount, config.minimumHealthyWorkers, config.workerReservationBytes, config.replyOverheadBytes,
     config.readyTimeoutMs, config.drainTimeoutMs, config.maxReadBytes, config.maxPathBytes, config.readChunkBytes,
@@ -242,6 +260,12 @@ export class LinuxFilesPool implements DrainParticipant {
     const preferencesParent = privateParent === undefined ? undefined : Object.freeze({ ...privateParent })
     const port = this.owner.bind(binding, assertCurrent)
     const checkCurrent = (): void => { this.assertHealthy(); port.assertCurrent() }
+    const assertContentAvailable = (): void => {
+      checkCurrent()
+      if (this.config.content === undefined || this.slots.some(slot => !slot.client.supportsContentReads)) {
+        throw new FilesFailure('files/prerequisite-missing', 'The original files pool has no verified ABI8 content capability.')
+      }
+    }
     const pathBytes = (path: string): number => {
       if (path.length === 0 || isAbsolute(path) || path.includes('\0') || path.split('/').includes('..')) {
         throw new FdWorkerFailure('FS_PERMISSION_DENIED')
@@ -254,12 +278,18 @@ export class LinuxFilesPool implements DrainParticipant {
       bytes: number, work: (client: FdWorkerClient, control: AbortSignal) => Promise<T>, signal?: AbortSignal,
     ): Promise<ResidentResult<T>> =>
       port.run(bytes, control => this.withSlot(false, client => work(client, control)), signal)
-    const stat = async (path: string, signal?: AbortSignal): Promise<ResidentResult<FdMetadata | undefined>> => {
+    const stat = async (
+      path: string, signal?: AbortSignal, assertProject: () => void = checkCurrent,
+    ): Promise<ResidentResult<FdMetadata | undefined>> => {
+      assertProject()
       const reservation = pathBytes(path) + 4 * (256 + 64) + this.config.replyOverheadBytes
-      return await run(reservation, (client, control) => client.stat(fixedRoot, path, control), signal)
+      return await run(reservation, (client, control) => { assertProject(); return client.stat(fixedRoot, path, control) }, signal)
     }
-    const streamText = async (path: string, signal?: AbortSignal, readRoot = fixedRoot): Promise<AsyncIterable<string>> => {
+    const streamText = async (
+      path: string, signal?: AbortSignal, readRoot = fixedRoot, assertProject: () => void = checkCurrent,
+    ): Promise<AsyncIterable<string>> => {
       checkCurrent()
+      assertProject()
       if (signal?.aborted) throw new FdWorkerFailure('FS_ABORTED')
       // Includes raw worker/transfer buffers, decoder state, UTF-16 text and a held delivered chunk.
       const projectBytes = readRoot === fixedRoot ? 0 : 2 * Buffer.byteLength(readRoot.rootPath)
@@ -272,6 +302,7 @@ export class LinuxFilesPool implements DrainParticipant {
         const caller = new AbortController()
         const control = signal === undefined ? caller.signal : AbortSignal.any([caller.signal, signal])
         const work = run(reservation, async (client, actualControl) => {
+          assertProject()
           const stream = client.stream(readRoot, path, maxBytes, chunkBytes, actualControl)
           started.resolve(stream)
           try { await stream.finished } finally { await consumed.promise }
@@ -281,6 +312,7 @@ export class LinuxFilesPool implements DrainParticipant {
           const stream = await started.promise
           yield* decodeTextStream(stream, () => {
             checkCurrent()
+            assertProject()
             if (control.aborted) throw new FdWorkerFailure('FS_ABORTED')
           })
         } finally {
@@ -292,18 +324,33 @@ export class LinuxFilesPool implements DrainParticipant {
     const reader = createFixedRootReader(fixedRoot.rootPath, {
       maxPathBytes: this.config.maxPathBytes, assertCurrent: checkCurrent, stat, streamText,
     })
-    const directory = createDirectoryReadPort(fixedRoot.rootPath, {
-      maxPathBytes: this.config.maxPathBytes, replyOverheadBytes: this.config.replyOverheadBytes, assertCurrent: checkCurrent,
+    const directoryFor = (assertProject: () => void): DirectoryReadPort => createDirectoryReadPort(fixedRoot.rootPath, {
+      maxPathBytes: this.config.maxPathBytes, replyOverheadBytes: this.config.replyOverheadBytes,
+      assertCurrent: () => { checkCurrent(); assertProject() },
       inspect: (relativePath, reservedBytes, signal) => run(reservedBytes + 4 * (fixedRoot.rootMountId?.length ?? 0),
-        (client, control) => client.directory(fixedRoot, relativePath, this.config.maxPathBytes, control), signal),
+        (client, control) => {
+          assertProject()
+          return client.directory(fixedRoot, relativePath, this.config.maxPathBytes, control)
+        }, signal),
     })
-    const projectRoot = async (workspace: Workspace, signal?: AbortSignal): Promise<FdRootIdentity> => {
+    const directory = directoryFor(checkCurrent)
+    const projectRoot = async (
+      workspace: Workspace, signal?: AbortSignal, assertRegistered: () => void = checkCurrent,
+    ): Promise<FdRootIdentity> => {
       checkCurrent()
+      assertRegistered()
       const leaf = posix.relative(fixedRoot.rootPath, workspace.path)
-      if (leaf !== 'default-workspace') throw new FdWorkerFailure('FS_PERMISSION_DENIED')
-      const held = await stat(leaf, signal)
+      if (leaf !== 'default-workspace' && !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(leaf)) {
+        throw new FdWorkerFailure('FS_PERMISSION_DENIED')
+      }
+      directoryWorkBudget({ parent: fixedRoot, leaf }, this.config)
+      const canonical = await directoryFor(assertRegistered).canonicalPath(workspace.path, signal)
+      assertRegistered()
+      if (canonical !== workspace.path) throw new FdWorkerFailure('FS_PERMISSION_DENIED')
+      const held = await stat(leaf, signal, assertRegistered)
       try {
         checkCurrent()
+        assertRegistered()
         const info = held.value
         if (info?.type !== 'directory') throw new FdWorkerFailure('FS_NOT_DIRECTORY')
         const [rootDevice, rootInode] = info.identity.split(':')
@@ -316,8 +363,10 @@ export class LinuxFilesPool implements DrainParticipant {
     let textUnknown = false
     const writeText = (
       project: FdRootIdentity, path: string, content: string, expected: FsWriteIntent | undefined, signal?: AbortSignal,
+      assertProject: () => void = checkCurrent,
     ): Promise<ResidentResult<FsWriteOutcome>> => {
       checkCurrent()
+      assertProject()
       if (textUnknown) return Promise.reject(new FdTextWriteFailure('unknown', 'FS_IO_ERROR'))
       if (this.slots.some(slot => !slot.client.supportsTextWrites)) return Promise.reject(new FdTextWriteFailure('not-published', 'FS_PERMISSION_DENIED'))
       if (Buffer.byteLength(content) > this.config.maxReadBytes) return Promise.reject(new FdTextWriteFailure('not-published', 'FS_TOO_LARGE'))
@@ -333,6 +382,7 @@ export class LinuxFilesPool implements DrainParticipant {
         try {
           await previous
           checkCurrent()
+          assertProject()
           if (control.aborted) throw new FdTextWriteFailure('not-published', 'FS_ABORTED')
           if (textUnknown) throw new FdTextWriteFailure('not-published', 'FS_IO_ERROR')
           try {
@@ -366,13 +416,105 @@ export class LinuxFilesPool implements DrainParticipant {
       })
       return answer.promise
     }
-    const derivePreparedLeaf = (grant: IsolatedLeafGrant): PreparedLeafPort => {
+    const projectBackend = async (
+      workspace: Workspace, assertRegistered: () => void, assertInstalled: (ctx: Context) => void, signal?: AbortSignal,
+    ): Promise<TextProjectBackend> => {
+      const current = (): void => { checkCurrent(); assertRegistered() }
+      current()
+      const project = await projectRoot(workspace, signal, current)
+      const projectStat = (path: string, control?: AbortSignal): Promise<ResidentResult<FdMetadata | undefined>> => {
+        current()
+        return run(pathBytes(path) + 2 * Buffer.byteLength(project.rootPath) + 4 * 320 + this.config.replyOverheadBytes,
+          (client, actual) => { current(); return client.stat(project, path, actual) }, control)
+      }
+      const projectReader = createFixedRootReader(project.rootPath, {
+        maxPathBytes: this.config.maxPathBytes, assertCurrent: current, stat: projectStat,
+        streamText: (path, control) => streamText(path, control, project, current),
+      })
+      const projectDirectory = createDirectoryReadPort(project.rootPath, {
+        maxPathBytes: this.config.maxPathBytes, replyOverheadBytes: this.config.replyOverheadBytes, assertCurrent: current,
+        inspect: (path, reservation, control) => run(reservation,
+          (client, actual) => { current(); return client.directory(project, path, this.config.maxPathBytes, actual) }, control),
+      })
+      const contentLimits = () => {
+        current()
+        try { assertContentAvailable() } catch (error) { throw new FsError('ABI8 content capability is unavailable.', 'FS_PERMISSION_DENIED', { cause: error }) }
+        if (this.config.content === undefined) throw new FdWorkerFailure('FS_PERMISSION_DENIED')
+        return this.config.content
+      }
+      const contentBudget = (path: string, resultBytes: number, entries = 0): number => {
+        const bytes = pathBytes(path) + 4 * Buffer.byteLength(project.rootPath) + 12 * (this.config.maxPathBytes + 1)
+          + 8 * resultBytes + entries * (2048 + 8 * (Buffer.byteLength(path) + this.config.maxPathBytes + 128))
+          + 4 * this.config.replyOverheadBytes
+        if (!Number.isSafeInteger(bytes) || bytes <= 0 || bytes > this.config.maxResidentBytesPerLane) throw new FdWorkerFailure('FS_TOO_LARGE')
+        return bytes
+      }
+      const contentRun = <T>(
+        bytes: number, work: (client: FdWorkerClient, actual: AbortSignal) => Promise<T>, control?: AbortSignal,
+      ): Promise<ResidentResult<T>> => run(bytes, (client, actual) => {
+        current()
+        assertContentAvailable()
+        return work(client, actual)
+      }, control).catch((error: unknown) => {
+        if ((control?.aborted === true && error === control.reason)
+          || error instanceof FilesFailure && error.code === 'files/aborted') {
+          throw new FsError('File operation aborted.', 'FS_ABORTED', { cause: error })
+        }
+        throw error
+      })
+      return Object.freeze({ binding, workspace, reader: projectReader, maxPathBytes: this.config.maxPathBytes,
+        assertInstalled, assertCurrent: current,
+        lstat: (path: string, control?: AbortSignal) => {
+          contentLimits()
+          // The ABI8 transport fixes this complete metadata frame ceiling at 1024 bytes.
+          return contentRun(contentBudget(path, 1024), (client, actual) => client.lstat(project, path, actual), control)
+        },
+        listDir: (path: string, control?: AbortSignal) => {
+          const content = contentLimits()
+          // Covers native rows, decoded/transport copies, main-thread entries, issued targets and their retained paths.
+          return contentRun(contentBudget(path, content.maxReplyBytes, content.maxEntries),
+            (client, actual) => client.list(project, path, content.maxEntries, content.maxReplyBytes, actual), control)
+        },
+        readBytes: (path: string, maxBytes: number, control?: AbortSignal) => {
+          const content = contentLimits()
+          if (!Number.isSafeInteger(maxBytes) || maxBytes < 0 || content.maxReplyBytes < 128) throw new FdWorkerFailure('FS_TOO_LARGE')
+          const cap = Math.min(maxBytes, this.config.maxReadBytes, content.maxReplyBytes - 128)
+          return contentRun(contentBudget(path, cap + 1), (client, actual) => client.read(project, path, cap, actual), control)
+        },
+        readByteRange: (path: string, range: { offset: number; length: number }, control?: AbortSignal) => {
+          const content = contentLimits()
+          const { offset, length } = range
+          if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(length) || length < 0
+            || !Number.isSafeInteger(offset + length) || length > this.config.maxReadBytes
+            || length + 128 > content.maxReplyBytes) throw new FdWorkerFailure('FS_TOO_LARGE')
+          return contentRun(contentBudget(path, length),
+            (client, actual) => client.readRange(project, path, offset, length, length, actual), control)
+        },
+        canonicalPath: (path: string, control?: AbortSignal) => projectDirectory.canonicalPath(posix.join(project.rootPath, path), control),
+        readText: (path: string, control?: AbortSignal) => {
+          current()
+          return run(pathBytes(path) + 2 * Buffer.byteLength(project.rootPath)
+            + 8 * (this.config.maxReadBytes + 1) + this.config.replyOverheadBytes,
+          async (client, actual) => {
+            current()
+            return decodeBoundedText(await client.read(project, path, this.config.maxReadBytes, actual))
+          }, control)
+        },
+        writeText: (path: string, content: string, expected?: FsWriteIntent, control?: AbortSignal) => {
+          current()
+          return writeText(project, path, content, expected, control, current)
+        },
+      })
+    }
+    const derivePreparedLeaf = (grant: IsolatedLeafGrant, retainedBytes = 0): PreparedLeafPort => {
       checkCurrent()
+      if (!Number.isSafeInteger(retainedBytes) || retainedBytes < 0) throw new FdWorkerFailure('FS_TOO_LARGE')
       if (grant.binding !== binding
         || grant.parent.rootPath !== fixedRoot.rootPath || grant.parent.rootDevice !== fixedRoot.rootDevice
         || grant.parent.rootInode !== fixedRoot.rootInode || grant.parent.rootMountId !== fixedRoot.rootMountId) throw new FdWorkerFailure('FS_PERMISSION_DENIED')
       const intent: DirectoryIntent = Object.freeze({ parent: fixedRoot, leaf: grant.leaf })
-      directoryWorkBudget(intent, this.config)
+      const directoryLimits = { maxPathBytes: this.config.maxPathBytes, replyOverheadBytes: this.config.replyOverheadBytes + retainedBytes }
+      directoryWorkBudget(intent, directoryLimits)
       const exclusive = grant.assertExclusive
       const deployment = grant.backend === 'root-owned-isolated-ext4' ? grant.assertDeployment : undefined
       const backend = grant.backend === 'root-owned-isolated-ext4' ? 'ext4' : 'tmpfs'
@@ -382,7 +524,7 @@ export class LinuxFilesPool implements DrainParticipant {
       return Object.freeze({ prepare: () => {
         checkCurrent()
         assertWindow()
-        const owned = port.prepareDirectory(intent, this.config, async (control, fixed): Promise<DirectoryPrepareOutcome> => {
+        const owned = port.prepareDirectory(intent, directoryLimits, async (control, fixed): Promise<DirectoryPrepareOutcome> => {
           try { assertWindow(); this.assertHealthy() } catch (_error) {
             return { kind: 'not-created-failure', failure: { errno: 13, phase: 0 } }
           }
@@ -403,6 +545,7 @@ export class LinuxFilesPool implements DrainParticipant {
     return Object.freeze({
       reader,
       directory,
+      assertContentAvailable,
       derivePreparedLeaf,
       createWorkspaceRegistry: (defaultGrant: IsolatedLeafGrant, assertUnpublished: () => void) => {
         const defaultPort = derivePreparedLeaf(defaultGrant)
@@ -414,18 +557,40 @@ export class LinuxFilesPool implements DrainParticipant {
           assertGraph(); assertUnpublished(); defaultGrant.assertExclusive()
           if (defaultGrant.backend === 'root-owned-isolated-ext4') defaultGrant.assertDeployment()
         }
+        const registration = (grant: IsolatedLeafGrant, guard: () => void, retainedBytes = 0): WorkspacePreparation => {
+          guard()
+          const work = (grant === defaultGrant && retainedBytes === 0 ? defaultPort : derivePreparedLeaf(grant, retainedBytes)).prepare()
+          const record = port.captureRegistration(work.observation)
+          const current = (): void => {
+            guard(); grant.assertExclusive()
+            if (grant.backend === 'root-owned-isolated-ext4') grant.assertDeployment()
+          }
+          return { work, record, assertWindow: current, readIdentity: async () => {
+            current()
+            const held = await stat(record.intent.leaf)
+            try {
+              current()
+              const value = held.value
+              if (value?.type !== 'directory') throw new FdWorkerFailure('FS_PERMISSION_DENIED')
+              const [device, inode] = value.identity.split(':')
+              if (device === undefined || inode === undefined) throw new FdWorkerFailure('FS_IO_ERROR')
+              return Object.freeze({ device, inode })
+            } finally { held.release() }
+          } }
+        }
         return createBoundWorkspaceRegistry({
           directory, defaultGrant, assertCurrent: assertGraph, assertWindow,
           prepareDefault: () => defaultPort.prepare(),
-          prepareRegistration: (grant) => {
-            assertWindow()
-            const work = (grant === defaultGrant ? defaultPort : derivePreparedLeaf(grant)).prepare()
-            const record = port.captureRegistration(work.observation)
-            const assertCandidate = grant.assertExclusive
-            return { work, record, assertWindow: () => {
-              assertWindow(); assertCandidate()
-              if (grant.backend === 'root-owned-isolated-ext4') grant.assertDeployment()
-            } }
+          prepareRegistration: grant => registration(grant, assertWindow),
+          prepareAdmittedRegistration: (grant: IsolatedLeafGrant, use: AccountUse, title: string | undefined) => {
+            const titleBytes = title === undefined ? 0 : Buffer.byteLength(title)
+            if (titleBytes > this.config.maxPathBytes) throw new FdWorkerFailure('FS_TOO_LARGE')
+            const admitted = (): void => {
+              assertGraph(); use.assertCurrent()
+              if (use.binding !== binding) throw new FdWorkerFailure('FS_PERMISSION_DENIED')
+            }
+            // Native title storage remains reserved through registration, on this same responsibility.
+            return registration(grant, admitted, 4 * titleBytes)
           },
           project: async (workspace, assertRegistryCurrent, assertInstalled) => {
             assertRegistryCurrent()
@@ -455,56 +620,45 @@ export class LinuxFilesPool implements DrainParticipant {
             })
             return createS2ProjectPort({ binding, workspace, reader: projectReader, assertCurrent: assertRegistryCurrent, assertInstalled })
           },
-          identity: async (record) => {
-            assertWindow()
-            const held = await stat(record.intent.leaf)
-            try {
-              assertWindow()
-              const value = held.value
-              if (value?.type !== 'directory') throw new FdWorkerFailure('FS_PERMISSION_DENIED')
-              // FdWorkerClient validates this private backend identity; public FsInfo.version stays opaque.
-              const separator = value.identity.indexOf(':')
-              return Object.freeze({ device: value.identity.slice(0, separator), inode: value.identity.slice(separator + 1) })
-            } finally { held.release() }
-          },
+
         })
       },
       createTextFileSystem: async (
-        workspace: Workspace, assertInstalled: (ctx: Context) => void,
+        workspace: Workspace, assertInstalled: (ctx: Context) => void, resolveProject: ResolveAccountFileProject,
       ): Promise<NativeTextFileSystemConstructor> => {
         checkCurrent()
-        const project = await projectRoot(workspace)
-        const projectStat = (path: string, signal?: AbortSignal): Promise<ResidentResult<FdMetadata | undefined>> =>
-          run(pathBytes(path) + 2 * Buffer.byteLength(project.rootPath) + 4 * 320 + this.config.replyOverheadBytes,
-            (client, control) => client.stat(project, path, control), signal)
-        const projectReader = createFixedRootReader(project.rootPath, {
-          maxPathBytes: this.config.maxPathBytes, assertCurrent: checkCurrent, stat: projectStat,
-          streamText: (path, signal) => streamText(path, signal, project),
-        })
-        const projectDirectory = createDirectoryReadPort(project.rootPath, {
-          maxPathBytes: this.config.maxPathBytes, replyOverheadBytes: this.config.replyOverheadBytes, assertCurrent: checkCurrent,
-          inspect: (path, reservation, signal) => run(reservation,
-            (client, control) => client.directory(project, path, this.config.maxPathBytes, control), signal),
-        })
-        return createTextProjectFileSystem({ binding, workspace, reader: projectReader, assertInstalled,
+        await projectRoot(workspace)
+        return createTextProjectFileSystem({ binding, bootstrapWorkspace: workspace, resolveProject, assertInstalled,
           assertCurrent: checkCurrent,
-          canonicalPath: (path, signal) => projectDirectory.canonicalPath(posix.join(project.rootPath, path), signal),
-          readText: (path, signal) => run(pathBytes(path) + 2 * Buffer.byteLength(project.rootPath)
-            + 8 * (this.config.maxReadBytes + 1) + this.config.replyOverheadBytes,
-          async (client, control) => decodeBoundedText(await client.read(project, path, this.config.maxReadBytes, control)), signal),
-          writeText: (path, content, expected, signal) => writeText(project, path, content, expected, signal),
-        })
+          project: (selected, assertSelection, signal) => projectBackend(selected, assertSelection, assertInstalled, signal) })
+      },
+      projectFor: async (workspace: Workspace, assertRegistered: () => void, signal?: AbortSignal): Promise<AccountFilesProject> => {
+        const backend = await projectBackend(workspace, assertRegistered, () => { assertRegistered() }, signal)
+        const projectDirectory = Object.freeze({ binding, prepare: async (cwd: string): Promise<void> => {
+          backend.assertCurrent()
+          if (cwd !== workspace.path) throw new FdWorkerFailure('FS_PERMISSION_DENIED')
+          const target = await backend.reader.resolve('.')
+          const info = await backend.reader.stat(target)
+          backend.assertCurrent()
+          if (info?.type !== 'directory' || backend.reader.processPath(target) !== workspace.path) {
+            throw new FdWorkerFailure('FS_NOT_DIRECTORY')
+          }
+        } })
+        backend.assertCurrent()
+        return Object.freeze({ binding, workspace, projectDirectory })
       },
       withInstructionReaders: async <T>(
         workspace: Workspace, reservedBytes: number,
         build: (readers: InstructionReadReaders, control: AbortSignal) => Promise<T>, signal: AbortSignal,
+        assertRegistered: () => void,
       ): Promise<ResidentResult<T>> => {
-        checkCurrent()
+        const current = (): void => { checkCurrent(); assertRegistered() }
+        current()
         if (preferencesParent === undefined) {
           throw new FilesFailure('files/prerequisite-missing', 'The account instruction storage owner is unavailable.')
         }
-        return runInstructionReadWork({ projectRoot: await projectRoot(workspace, signal), privateParent: preferencesParent,
-          requestedResidentBytes: reservedBytes, build, signal, assertCurrent: checkCurrent,
+        return runInstructionReadWork({ projectRoot: await projectRoot(workspace, signal, current), privateParent: preferencesParent,
+          requestedResidentBytes: reservedBytes, build, signal, assertCurrent: current,
           config: { maxPathBytes: this.config.maxPathBytes, maxReadBytes: this.config.maxReadBytes,
             readChunkBytes: this.config.readChunkBytes, replyOverheadBytes: this.config.replyOverheadBytes,
             maxReservationBytes: this.config.maxResidentBytesPerLane },
@@ -599,6 +753,9 @@ export class LinuxFilesPool implements DrainParticipant {
           reject(error instanceof Error ? error : new FdWorkerFailure('FS_IO_ERROR'))
         })
       })
+      if (this.slots.some(slot => slot.client.supportsContentReads !== (this.config.content !== undefined))) {
+        throw new FdWorkerFailure('FS_PERMISSION_DENIED')
+      }
       if (this.state !== 'starting') throw new FdWorkerFailure('FS_IO_ERROR')
       this.state = 'running'
       this.assertHealthy()

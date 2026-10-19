@@ -85,6 +85,12 @@
     },
     {
       "path": "../../core/agent"
+    },
+    {
+      "path": "../../core/scope"
+    },
+    {
+      "path": "../../api/workspace-files/tsconfig.host.json"
     }
   ],
   "exclude": [

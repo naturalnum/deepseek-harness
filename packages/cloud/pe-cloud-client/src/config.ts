@@ -13,7 +13,11 @@ export const CloudClientConfigSchema: z<CloudClientConfig> = z.object({
   maxPendingFetches: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
   maxSockets: z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required(),
   closeTimeoutMs: z.natural().min(1).max(MAX_TIMER_MS).required(),
+  maxDownloadBytes: z.natural().min(1).max(Number.MAX_SAFE_INTEGER),
 })
+
+const CLIENT_FIELDS = ['bootstrapPath', 'bootstrapTimeoutMs', 'maxBootstrapResponseBytes',
+  'maxErrorResponseBytes', 'maxPendingFetches', 'maxSockets', 'closeTimeoutMs'] as const
 
 /**
  * Validate public browser configuration before starting any network operation.
@@ -22,11 +26,21 @@ export const CloudClientConfigSchema: z<CloudClientConfig> = z.object({
  * @throws Error when a limit or relative route is invalid.
  */
 export function parseCloudClientConfig(input: unknown): CloudClientConfig {
-  const config = CloudClientConfigSchema(input as CloudClientConfig)
+  const value = fields(input, CLIENT_FIELDS, ['maxDownloadBytes'])
+  let limit: number | undefined
+  if (Object.hasOwn(value, 'maxDownloadBytes')) {
+    const candidate = value['maxDownloadBytes']
+    if (typeof candidate !== 'number' || !Number.isSafeInteger(candidate) || candidate < 1) {
+      throw new TypeError('maxDownloadBytes must be a finite positive safe integer when present')
+    }
+    limit = candidate
+  }
+  const config = { ...CloudClientConfigSchema(input as CloudClientConfig) }
+  delete config.maxDownloadBytes
   if (!/^[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/.test(config.bootstrapPath)) {
     throw new Error('cloud client bootstrapPath must be a document-relative route without query or fragment')
   }
-  return config
+  return limit === undefined ? config : { ...config, maxDownloadBytes: limit }
 }
 
 const positive = (): z<number> => z.natural().min(1).max(Number.MAX_SAFE_INTEGER).required()
@@ -54,14 +68,15 @@ export const CloudWebManifestSchema: z<CloudWebManifest> = z.object({
   }).required(),
 })
 
-function fields(input: unknown, keys: readonly string[]): Record<string, unknown> {
+function fields(input: unknown, keys: readonly string[], optional: readonly string[] = []): Record<string, unknown> {
   const prototype: unknown = input === null || typeof input !== 'object' ? undefined : Object.getPrototypeOf(input)
   if (input === null || typeof input !== 'object' || Array.isArray(input)
     || (prototype !== Object.prototype && prototype !== null)) {
     throw new TypeError('Cloud Web deployment inputs must be plain objects')
   }
   const record = input as Record<string, unknown>
-  if (Object.keys(record).length !== keys.length || keys.some(key => !Object.hasOwn(record, key))) {
+  if (keys.some(key => !Object.hasOwn(record, key))
+    || Object.keys(record).some(key => !keys.includes(key) && !optional.includes(key))) {
     throw new TypeError('Cloud Web deployment inputs contain missing or unsupported fields')
   }
   return record
@@ -75,14 +90,12 @@ function fields(input: unknown, keys: readonly string[]): Record<string, unknown
  */
 export function parseCloudWebManifest(input: unknown): CloudWebManifest {
   const value = fields(input, ['client', 'decodeLimits', 'persistenceLimits', 'fields', 'auth'])
-  fields(value['client'], ['bootstrapPath', 'bootstrapTimeoutMs', 'maxBootstrapResponseBytes',
-    'maxErrorResponseBytes', 'maxPendingFetches', 'maxSockets', 'closeTimeoutMs'])
+  const client = parseCloudClientConfig(value['client'])
   fields(value['decodeLimits'], ['maxBodyBytes', 'maxStringBytes', 'maxListItems'])
   fields(value['persistenceLimits'], ['maxKeys', 'maxKeyBytes', 'maxValueBytes', 'maxTotalBytes', 'maxNamespaceBytes'])
   fields(value['fields'], ['accountHeader', 'generationHeader', 'accountQuery', 'generationQuery'])
   fields(value['auth'], ['requestTimeoutMs', 'maxRequestBytes', 'maxResponseBytes'])
   const parsed = CloudWebManifestSchema(input as CloudWebManifest)
-  const client = parseCloudClientConfig(parsed.client)
   if (client.bootstrapPath !== 'cloud/bootstrap'
     || parsed.fields.accountHeader === parsed.fields.generationHeader
     || parsed.fields.accountQuery === parsed.fields.generationQuery) {

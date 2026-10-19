@@ -113,9 +113,13 @@ describe('captured native carrier', () => {
     const settings = input(async () => new Response(), { revalidate: checks.revalidate })
     settings.limits.closeTimeoutMs = 1000
     const transport = new BoundTransport(settings)
+    const admission = transport.signal
+    expect(admission.aborted).toBe(false)
     const socket = transport.hooks.createWebSocket!('wss://example.test/app/api/remote.mux') as Socket
     socket.finish()
     const closing = transport.close(), complete = vi.fn()
+    expect(transport.signal).toBe(admission)
+    expect(admission.aborted).toBe(true)
     void closing.then(complete, complete)
     const outcome = reject ? expect(closing).rejects.toMatchObject({ code: 'close-unconfirmed' }) : closing
     await expect(checks.attempts[0]!.result).rejects.toMatchObject({ code: 'closed' })

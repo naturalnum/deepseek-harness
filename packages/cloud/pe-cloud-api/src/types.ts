@@ -1,6 +1,11 @@
 /** API-owned exposure declarations; native Session and Remote DTOs stay in DSH. */
 export type * from './save-hooks.ts'
 
+/** Display metadata only; allocation paths and Workspace identity never come from the caller. */
+export interface CloudProjectCreateRequest {
+  readonly title?: string
+}
+
 /** Resource verifier selected by each reviewed entry. */
 export type ExposureGuard = 'authenticated-account' | 'account-project' | 'account-session' | 'account-attachment'
 

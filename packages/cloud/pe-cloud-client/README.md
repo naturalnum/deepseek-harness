@@ -20,6 +20,8 @@ Prepare one Cloud page from a bounded canonical bootstrap response before starti
 - [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
 - [Dev Note](#dev-note)
 
+The Cloud Loader also mounts the generated API project-creation contribution and fills both native Workspace directory-flow slots with a localized title form. It adopts the returned native Workspace path through the original `onPicked` callback, preserving native idempotent registration. Blank and overlong titles do not submit; each open reports at most one successful allocation. Cancelling aborts the request signal and ignores late adoption while the original transport and server owner retain actual work. A failed or cancelled submitted creation disables resubmission in that flow instance and directs the user to refresh and inspect projects; no unknown allocation is replayed.
+
 -----
 
 <a id="use-this-package"></a>
@@ -52,8 +54,11 @@ The native browser Loader creates entries with `{ name }` and no per-entry confi
 | `maxPendingFetches` | required | Maximum fetches waiting for headers or owned error-body handling. |
 | `maxSockets` | required | Maximum sockets owned by one captured carrier. |
 | `closeTimeoutMs` | required | Close-observation deadline; expiry does not confirm cleanup. |
+| `maxDownloadBytes` | no default | Optional positive safe-integer download acceptance cap; omitted keeps both download actions unregistered. |
 
 -----
+
+The Cloud entry installs downloads into the native document preview actions and unpreviewable slots only when explicit `maxDownloadBytes` is present and bootstrap filePreview is available. The registered adapter uses the framework-injected SessionId and owner.absolutePath with native `sessionFileAddress`, captures one original readBytes method and the prepared transport signal, and never reads global Session selection. Its independent `CloudFileDownload`/`FileDownloadButton` request complete bytes and save only an `application/octet-stream` Blob. A smaller consumer acceptance cap does not replace native read/body memory limits. One read remains owned until settlement; page revocation, declaration withdrawal, replacement and unmount discard late results, and temporary anchors/Blob URLs are released. Locale dictionaries belong to cloud-file-download and leave with the Cordis scope. A browser save request does not confirm an operating-system write or permit rollback of an issued request. Legacy seven-field inputs remain valid and keep downloads closed; native preview and server authorization remain authoritative.
 
 <a id="understand-the-implementation"></a>
 ## Understand the implementation

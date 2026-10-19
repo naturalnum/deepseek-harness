@@ -44,6 +44,10 @@ kind: "package-reference"
 
 清单审核将配置声明与原生已挂载处理者比较。额外注册的原生入口保持关闭。根匹配只声明部署策略；每个账户还须核对当前 runtime 绑定、实际启用处理者和资源。
 
+`CloudAccountApi.prepareCloudProjects(owner, { createProject })` 在清单审核前安装唯一、增量的 `cloudProjects/create` Remote。请求只有可选显示标题；显式空白或超过 256 UTF-8 字节的标题在分配前拒绝。可信回调捕获账户能力，经 files 分配并返回原生 `WorkspaceValue`。原生 `workspace/create(path)` 保留既有目录登记与幂等含义。取消仍等待实际回调结算，不承诺回滚；未知结果不得重放。精确开放行为 `cloudProjects/create`、`native:cloudProjects`、`authenticated-account`。
+
+`CloudAccountApi.createWorkspaceFiles(owner, nativeConfig)` 在完整原生 inject 依赖就绪后，于实际 Loader fiber 构造唯一原生 WorkspaceFiles。它捕获原绑定及 fs、sandboxPolicy、sessions、typert 注册，并在清单审核及 workspaceFiles RPC/stream 准入时复核 value、fiber 和唯一性。清单由全部原生 Remote marker 及其 mode 推导，开放范围仍由 manifest 精确选择。原生类、DTO、lookup、文件 I/O 和流清理保持原义。部署必须保留要求可信 Agent 或原 Gateway invocation 的 Runtime resolver；本注册不授予路径权限，也不新增 watch 支持。
+
 -----
 
 <a id="understand-the-implementation"></a>
@@ -66,7 +70,7 @@ Controller 必须接收固定的 `NativeSessionGuards.projectDirectory` 能力�
 
 `auditPrepared(owner, signal?)` 要求 factory 的原始未发布权限，以及同一共享策略和有限原生清单上限。它在异步策略读取前后检查装配/未发布权限，从实际受守卫 Controller 方法及原生 Typert 标记/路由推导选中处理器，失败时撤销先前审核。继承但未受守卫的方法不能满足 manifest 声明。它不执行业务操作，也不授予 ready；业务调用仍要求独立 ready 检查。
 
-固定可选首屏装配将 `session/list` 和 `session/control` 委派给原 SessionController，将 `workspace/follow` 委派给原 WorkspaceController，并保留原生、按 Peer 读取的 `remoteAccess/follow`。列表行与 control 帧共用原 AccountPolicy 的只读元数据检查；它可在 Workspace 关联前检查已发布 Session，不签发命令或历史权限。冷 id 只保留原批准 Workspace 的既有只读关系，原生列表行还核对实际项目、父关系和已有投影字段。集合数量及完整原生结果/帧字节都有显式有限上界。Reader 还必须提供 `maxQueuedEvents` 和 `maxQueuedBytes`；它验证并复制这些值及帧上界，通过 `controlBufferLimits()` 交给原生 control 队列。因此原生 baseline 检查可先于 Cloud 结果检查拒绝。这里不改变 Remote 参数，也不引入队列实现。原六个 Session 守卫继续保留。
+固定可选首屏装配将 `session/list` 和 `session/control` 委派给原 SessionController，将 `workspace/follow` 委派给原 WorkspaceController，并保留原生、按 Peer 读取的 `remoteAccess/follow`。列表行与 control 帧共用原 AccountPolicy 的只读元数据检查；它可在 Workspace 关联前检查已发布 Session，不签发命令或历史权限。冷 id 只保留原批准 Workspace 的既有只读关系，原生列表行还核对实际项目、父关系和已有投影字段。Workspace 流通过共享项目守卫核验每个精确 Registry 对象，支持多个批准项目，并要求每个返回 Session 都具有唯一项目关系。原生 `workspace/create(path)` 仅复用已登记的批准项目；目录分配使用单独的云项目能力。集合数量及完整原生结果/帧字节都有显式有限上界。Reader 还必须提供 `maxQueuedEvents` 和 `maxQueuedBytes`；它验证并复制这些值及帧上界，通过 `controlBufferLimits()` 交给原生 control 队列。因此原生 baseline 检查可先于 Cloud 结果检查拒绝。这里不改变 Remote 参数，也不引入队列实现。原六个 Session 守卫继续保留。
 
 `workspace/initializeDefault` 以拒绝目录解析器调用原 Registry helper，只能复用 files owner 持有的精确默认 Workspace。它不打开 Documents 回退、不创建目录，也不重开注册窗。`settings/describe` 投影真实 ACTIVE `locale` 命名空间及其 `preference` 值；provider 或 locale fiber 缺失、替换均拒绝。`writable=false` 和 `hasDocument=false` 描述此 Cloud API 可用的操作，不表示磁盘上不存在 settings 文档。`allowedSettings` 必须为空。模型选择/目录及其它 Settings 方法仍不在首版范围。
 

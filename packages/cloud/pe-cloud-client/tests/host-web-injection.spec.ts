@@ -16,7 +16,7 @@ import { apply, Config } from '../src/index.ts'
 const HOST_BASE_URL = new URL('../', import.meta.url).href
 const BROWSER_CLIENT_PACKAGES = [
   '@deepseek-ai/dsh-api-gateway', '@deepseek-ai/dsh-api-remote-access', '@deepseek-ai/dsh-api-session-controller',
-  '@deepseek-ai/dsh-api-workspace-controller', '@deepseek-ai/dsh-api-remotes',
+  '@deepseek-ai/dsh-api-workspace-controller', '@deepseek-ai/dsh-api-workspace-files', '@deepseek-ai/dsh-api-remotes',
   '@deepseek-ai/dsh-client-file-upload', '@deepseek-ai/dsh-typert-registry',
 ]
 const FIRST_SCREEN_UI_ROWS = [
@@ -142,7 +142,7 @@ describe('existing Cloud declaration public Web injection', () => {
     await ctx.loader.await()
     expect(ctx.loader.resolve('cloud').fiber?.state).toBe(FiberState.ACTIVE)
     const graph = ctx.clientModules.graph()
-    expect(graph.entries).toHaveLength(8)
+    expect(graph.entries).toHaveLength(BROWSER_CLIENT_PACKAGES.length + 1)
     expect(graph.entries.find(row => row.id === '@deepseek-ai/dsh-client-connection')).toMatchObject({ activate: false })
     expect(parseBootManifest(graph).plugins.map(row => row.id).sort()).toEqual([...BROWSER_CLIENT_PACKAGES].sort())
     expect(parseBootManifest(graph).modules.map(row => row.id).sort())
@@ -181,7 +181,10 @@ describe('existing Cloud declaration public Web injection', () => {
       '@deepseek-ai/dsh-client-modules', '@deepseek-ai/dsh-pe-cloud-client', '@deepseek-ai/dsh-client-connection',
       ...BROWSER_CLIENT_PACKAGES, ...FIRST_SCREEN_UI_ROWS.map(row => row.name),
     ].sort())
-    expect(boot.plugins).toHaveLength(23)
+    expect(boot.plugins.map(row => row.id).sort()).toEqual([
+      '@deepseek-ai/dsh-client-modules', '@deepseek-ai/dsh-pe-cloud-client',
+      ...BROWSER_CLIENT_PACKAGES, ...FIRST_SCREEN_UI_ROWS.map(row => row.name),
+    ].sort())
     expect(graph.entries.filter(row => row.activate === false).map(row => row.id)).toEqual(['@deepseek-ai/dsh-client-connection'])
     for (const row of boot.modules) {
       for (const dependency of row.inject) expect(ids.has(dependency), `${row.id} inject ${dependency}`).toBe(true)
@@ -189,7 +192,7 @@ describe('existing Cloud declaration public Web injection', () => {
         expect(ids.has(stripClientSuffix(external)) || Object.hasOwn(platform, external), `${row.id} external ${external}`).toBe(true)
       }
     }
-    for (const service of ['connection', 'typertGateway', 'remote', 'sessionController', 'workspaceController', 'fileUpload']) {
+    for (const service of ['connection', 'typertGateway', 'remote', 'sessionController', 'workspaceController', 'workspaceFiles', 'cloudProjects', 'fileUpload']) {
       expect(ctx.get(service), service).toBeUndefined()
     }
     expect([...ctx.loader.entries()].map(row => row.options.name).sort()).toEqual([

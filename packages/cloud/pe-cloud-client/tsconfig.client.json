@@ -16,7 +16,16 @@
     "src/client/transport.ts",
     "src/client/persistence.ts",
     "src/client/page-lifetime.ts",
-    "src/client/prepared-page.ts"
+    "src/client/prepared-page.ts",
+    "src/client/projects.ts",
+    "src/client/project-flow.tsx",
+    "src/client/project-slots.ts",
+    "src/client/locales.ts",
+    "src/client/file-download.ts",
+    "src/client/FileDownloadButton.tsx",
+    "src/client/downloads.ts",
+    "src/client/FileDownloadAction.tsx",
+    "src/client/download/locales.ts"
   ],
   "references": [
     {
@@ -33,6 +42,33 @@
     },
     {
       "path": "../../client/store"
+    },
+    {
+      "path": "../../api/gateway/tsconfig.client.json"
+    },
+    {
+      "path": "../../client/ui-primitives"
+    },
+    {
+      "path": "../../client/ui-workspace"
+    },
+    {
+      "path": "../../client/ui-renderer"
+    },
+    {
+      "path": "../../client/locale/tsconfig.client.json"
+    },
+    {
+      "path": "../../api/workspace-files/tsconfig.client.json"
+    },
+    {
+      "path": "../../util/workspace-path"
+    },
+    {
+      "path": "../../client/file-upload/tsconfig.client.json"
+    },
+    {
+      "path": "../../client/ui-sidebar-documentpreview/tsconfig.client.json"
     }
   ]
 }

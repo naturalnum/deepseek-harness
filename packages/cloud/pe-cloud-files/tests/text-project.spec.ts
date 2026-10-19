@@ -1,8 +1,10 @@
 /** Native Loader/Registry/FS consumers; worker I/O below is explicitly a TEST ONLY Node transport. */
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Worker } from 'node:worker_threads'
+import { AsyncLocalStorage } from 'node:async_hooks'
+import { randomUUID } from 'node:crypto'
 import { Context, FiberState } from '@deepseek-ai/cordis'
 import { boot } from '@deepseek-ai/dsh-app-boot'
 import { FsVersion } from '@deepseek-ai/dsh-fs'
@@ -15,8 +17,12 @@ import { WorkspaceRegistry } from '@deepseek-ai/dsh-workspace'
 import type { AccountBinding, AccountId, OwnerEpoch } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { LinuxFilesPool } from '../src/worker-pool.ts'
+import type { AccountFileSelection } from '../src/text-project.ts'
+import type { FdContentLimits, FdWorkerInput } from '../src/worker-protocol.ts'
 
-async function fixture(mode = 'normal', abiVersion = 7, waitTimeoutMs = 3000) {
+const contentLimits: FdContentLimits = Object.freeze({ maxEntries: 8, maxNameBytes: 64, maxReplyBytes: 8192, operationTimeoutMs: 3000 })
+
+async function fixture(mode = 'normal', abiVersion = 7, waitTimeoutMs = 3000, content?: FdContentLimits) {
   const home = realpathSync(mkdtempSync(join(tmpdir(), 'text-project-')))
   const projects = join(home, 'projects'), project = join(projects, 'default-workspace')
   mkdirSync(project, { recursive: true })
@@ -27,14 +33,19 @@ async function fixture(mode = 'normal', abiVersion = 7, waitTimeoutMs = 3000) {
   let current = true, installed = true
   const assertCurrent = (): void => { if (!current) throw new Error('test graph retired') }
   const gate = new SharedArrayBuffer(16), counters = new Int32Array(gate), workers: Worker[] = []
+  const workerInputs: FdWorkerInput[] = []
   const pool = new LinuxFilesPool({
     maxLanes: 1, maxRunning: 2, maxRunningPerLane: 2, maxQueued: 2, maxQueuedPerLane: 2,
-    maxResidentBytes: 131072, maxResidentBytesPerLane: 65536, waitTimeoutMs,
+    maxResidentBytes: content === undefined ? 131072 : 1048576,
+    maxResidentBytesPerLane: content === undefined ? 65536 : 524288, waitTimeoutMs,
     workerCount: 2, minimumHealthyWorkers: 1, workerReservationBytes: 128, replyOverheadBytes: 64,
     readyTimeoutMs: 2000, drainTimeoutMs: 20, helperPath: '/test-only/not-loaded.node',
     maxReadBytes: 64, maxPathBytes: 1024, maxResolveRetries: 2, readChunkBytes: 2,
-  }, () => {
-    const worker = new Worker(new URL('./fixtures/text-worker.mjs', import.meta.url), { workerData: { mode, gate, abiVersion } })
+    ...content === undefined ? {} : { content },
+  }, (input) => {
+    workerInputs.push(input)
+    const worker = new Worker(new URL('./fixtures/text-worker.mjs', import.meta.url),
+      { workerData: { mode, gate, abiVersion: mode === 'content-mixed' && workerInputs.length === 2 ? 7 : abiVersion, content: input.content } })
     workers.push(worker)
     return worker
   })
@@ -64,14 +75,31 @@ async function fixture(mode = 'normal', abiVersion = 7, waitTimeoutMs = 3000) {
       'text-json': JsonStorage, 'text-domain': DomainStorage, 'text-jsonl': Jsonl, 'text-workspace': WorkspaceRegistry })
   })
   const workspace = await graph.workspaceRegistry.create(project)
+  const selection = new AsyncLocalStorage<AccountFileSelection>()
+  let resolverFailure: Error | undefined
+  let beforeSelection: (() => Promise<void>) | undefined
+  const select = async (): Promise<AccountFileSelection> => {
+    await beforeSelection?.()
+    if (resolverFailure !== undefined) throw resolverFailure
+    return selection.getStore() ?? { workspace, assertCurrent }
+  }
   const Constructor = await port.createTextFileSystem(workspace, (actual) => {
     if (!installed || actual.root !== graph.root) throw new Error('test provider detached')
-  })
+  }, select)
   const fiber = await graph.plugin(Constructor)
   expect(fiber.state).toBe(FiberState.ACTIVE)
-  return { graph, fs: graph.fs, fiber, pool, binding, project, port, workspace, Constructor, counters,
+  return { graph, fs: graph.fs, fiber, pool, binding, project, port, workspace, Constructor, counters, workerInputs,
     release: () => { Atomics.store(counters, 2, 1); Atomics.notify(counters, 2) },
-    stale: () => { current = false }, detach: () => { installed = false }, workers }
+    stale: () => { current = false }, detach: () => { installed = false }, workers,
+    selected: <T>(scope: AccountFileSelection, work: () => T): T => selection.run(scope, work),
+    failResolver: (error: Error) => { resolverFailure = error },
+    beforeSelection: (callback: () => Promise<void>) => { beforeSelection = callback },
+    anotherProject: async () => {
+      const path = join(projects, randomUUID())
+      mkdirSync(path)
+      return await graph.workspaceRegistry.create(path)
+    },
+  }
 }
 
 it('uses the native FS with stable alias targets, guarded create/update outcomes and raw text reads', async () => {
@@ -122,7 +150,7 @@ it('refuses foreign targets, unregistered graphs, out-of-project roots and ungra
   await expect(test.fs.resolve('file', { cwd: test.project + '-other' })).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
   const elsewhere = join(test.project, 'nested')
   mkdirSync(elsewhere)
-  await expect(test.port.createTextFileSystem(await test.graph.workspaceRegistry.create(elsewhere), () => {})).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+  await expect(test.port.createTextFileSystem(await test.graph.workspaceRegistry.create(elsewhere), () => {}, async () => ({ workspace: test.workspace, assertCurrent: () => {} }))).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
   await expect(test.fs.listDir(target)).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
   await expect(test.fs.readBytes(target, undefined, 64)).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
   const bare = new Context()
@@ -242,7 +270,7 @@ it('cancels a truly queued write before invoking its backend and retains only th
   const abort = new AbortController()
   const queued = test.fs.writeText(target, 'queued', undefined, abort.signal)
   const rejected = expect(queued).rejects.toMatchObject({ code: 'FS_ABORTED', cause: { outcome: 'not-published' } })
-  expect(test.pool.inspect().work.queued).toBe(1)
+  await vi.waitFor(() => { expect(test.pool.inspect().work.queued).toBe(1) })
   abort.abort(); await rejected
   expect(test.pool.inspect().work).toMatchObject({ running: 2, queued: 0, pending: 2 })
   expect(Atomics.load(test.counters, 0)).toBe(1)
@@ -281,4 +309,201 @@ it.each(['unknown', 'unknown-after-cancel', 'unknown-stale', 'crash', 'bad-reply
   const receipt = await test.pool.stopEpoch(test.binding, Date.now() + 20)
   expect(receipt.status).toBe('unknown')
   expect(receipt.pendingOperationIds.length).toBeGreaterThan(0)
+})
+
+
+it('routes two actual registered projects through one FS and keeps equal relative names independent', async () => {
+  const test = await fixture(), other = await test.anotherProject()
+  const a = { workspace: test.workspace, assertCurrent: () => {} }, b = { workspace: other, assertCurrent: () => {} }
+  const ta = await test.selected(a, () => test.fs.resolve('same.txt'))
+  const tb = await test.selected(b, () => test.fs.resolve('same.txt'))
+  expect(ta.targetKey).not.toBe(tb.targetKey)
+  await Promise.all([test.selected(a, () => test.fs.writeText(ta, 'A')), test.selected(b, () => test.fs.writeText(tb, 'B'))])
+  expect(await test.selected(a, () => test.fs.readText(ta))).toBe('A')
+  expect(await test.selected(b, () => test.fs.readText(tb))).toBe('B')
+  expect(test.fs.processPath(ta)).toBe(join(test.project, 'same.txt'))
+  expect(test.fs.processPath(tb)).toBe(join(other.path, 'same.txt'))
+  expect(test.fs.contains(ta, tb)).toBe(false)
+  await expect(test.selected(a, () => test.fs.resolve(join(other.path, 'same.txt')))).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+  await expect(test.selected(b, () => test.fs.readText(ta))).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+  expect(test.graph.registry.get(test.Constructor)?.fibers.length).toBe(1)
+  expect(test.workers).toHaveLength(2)
+  expect(test.pool.inspect().work.residentBytes).toBe(0)
+})
+
+it('checks captured selections on sync methods and rejects copied or foreign Workspace objects', async () => {
+  const test = await fixture(), other = await test.anotherProject()
+  let active = true
+  const scope = { workspace: other, assertCurrent: () => { if (!active) throw new Error('captured scope ended') } }
+  const target = await test.selected(scope, () => test.fs.resolve('file'))
+  active = false
+  expect(() => test.fs.processPath(target)).toThrow('captured scope ended')
+  await expect(test.selected(scope, () => test.fs.stat(target))).rejects.toThrow('captured scope ended')
+  const copied = { ...test.workspace }
+  await expect(test.selected({ workspace: copied, assertCurrent: () => {} }, () => test.fs.resolve('file')))
+    .rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+  expect(Atomics.load(test.counters, 0)).toBe(0)
+})
+
+it('awaits the trusted resolver before interpreting a path', async () => {
+  const test = await fixture()
+  const error = new Error('cold header unavailable')
+  test.failResolver(error)
+  await expect(test.fs.resolve('../outside')).rejects.toBe(error)
+})
+
+it('rejects a captured scope that expires while the trusted resolver awaits cold metadata', async () => {
+  const test = await fixture(), entered = Promise.withResolvers<undefined>(), release = Promise.withResolvers<undefined>()
+  onTestFinished(() => { release.resolve(undefined) })
+  let active = true
+  const scope = { workspace: test.workspace, assertCurrent: () => { if (!active) throw new Error('cold selection expired') } }
+  test.beforeSelection(async () => { entered.resolve(undefined); await release.promise })
+  const pending = test.selected(scope, () => test.fs.resolve('../outside'))
+  const rejected = expect(pending).rejects.toThrow('cold selection expired')
+  await entered.promise
+  active = false
+  release.resolve(undefined)
+  await rejected
+  expect(test.pool.inspect().work).toMatchObject({ pending: 0, residentBytes: 0 })
+  expect(Atomics.load(test.counters, 0)).toBe(0)
+})
+
+it('keeps an issued target on its original directory identity after that project path is replaced', async () => {
+  const test = await fixture(), target = await test.fs.resolve('file')
+  writeFileSync(join(test.project, 'file'), 'original')
+  renameSync(test.project, `${test.project}-old`)
+  mkdirSync(test.project)
+  writeFileSync(join(test.project, 'file'), 'replacement')
+  await expect(test.fs.readText(target)).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+  await expect(test.fs.writeText(target, 'forbidden')).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+  expect(readFileSync(join(test.project, 'file'), 'utf8')).toBe('replacement')
+  expect(test.pool.inspect().work).toMatchObject({ pending: 0, residentBytes: 0 })
+})
+
+it('requires actual ABI8 handshakes and forwards every explicit content capacity', async () => {
+  const test = await fixture('normal', 8, 3000, contentLimits)
+  expect(test.workerInputs.map(input => input.content)).toEqual([contentLimits, contentLimits])
+  expect(() => { test.port.assertContentAvailable() }).not.toThrow()
+  test.stale()
+  expect(() => { test.port.assertContentAvailable() }).toThrow('retired')
+})
+
+it.each(['no-config', 'content-mixed'])('rejects ABI8 capability mismatch before mounting the FS: %s', async (mode) => {
+  await expect(fixture(mode, 8, 3000, mode === 'no-config' ? undefined : contentLimits))
+    .rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+})
+
+it('observes the final path without following a dangling link and selects its real project before lstat', async () => {
+  const test = await fixture('normal', 8, 3000, contentLimits)
+  writeFileSync(join(test.project, 'text'), 'abc')
+  symlinkSync('missing', join(test.project, 'dangling'))
+  expect(await test.fs.lstat('missing')).toBeUndefined()
+  expect(await test.fs.lstat('text')).toMatchObject({ type: 'file', size: 3 })
+  expect(await test.fs.lstat('dangling/')).toMatchObject({ type: 'symlink' })
+  await expect(test.fs.lstat('../outside')).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+  await expect(test.fs.lstat('text', { cwd: `${test.project}-other` })).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+  const unavailable = new Error('trusted selection unavailable')
+  test.failResolver(unavailable)
+  await expect(test.fs.lstat('../outside')).rejects.toBe(unavailable)
+  expect(test.pool.inspect().work).toMatchObject({ pending: 0, residentBytes: 0 })
+})
+
+it('issues valid directory-entry targets and keeps observed links metadata-only across later replacement', async () => {
+  const test = await fixture('normal', 8, 3000, contentLimits)
+  mkdirSync(join(test.project, 'folder'))
+  writeFileSync(join(test.project, '你.txt'), 'raw')
+  symlinkSync('你.txt', join(test.project, 'alias'))
+  const root = await test.fs.resolve('.'), entries = await test.fs.listDir(root)
+  expect(entries.map(entry => [entry.name, entry.type])).toEqual([['alias', 'other'], ['folder', 'directory'], ['你.txt', 'file']])
+  for (const entry of entries) expect(test.fs.contains(root, entry.target)).toBe(true)
+  const file = entries.find(entry => entry.type === 'file')!, link = entries.find(entry => entry.name === 'alias')!
+  expect(file.target.targetKey).toBe((await test.fs.resolve('你.txt')).targetKey)
+  expect(await test.fs.readBytes(file.target, undefined, 3)).toEqual(new Uint8Array([114, 97, 119]))
+  expect(await test.fs.stat(link.target)).toMatchObject({ type: 'other' })
+  await expect(test.fs.readBytes(link.target, undefined, 64)).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+  await expect(test.fs.readText(link.target)).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+  await expect(test.fs.readByteRange(link.target, { offset: 0, length: 1 })).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+  await expect(test.fs.listDir(link.target)).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+  await expect(test.fs.writeText(link.target, 'forbidden')).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+  rmSync(join(test.project, 'alias'))
+  writeFileSync(join(test.project, 'alias'), 'replacement')
+  await expect(test.fs.readBytes(link.target, undefined, 64)).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+  await expect(test.fs.watch(root, () => {}, new AbortController().signal)).rejects.toThrow('watching is unsupported')
+  expect(test.pool.inspect().work).toMatchObject({ pending: 0, residentBytes: 0 })
+})
+
+it.each(['entries', 'name', 'reply'])('rejects the entire directory reply at the configured %s bound', async (kind) => {
+  const limits = { ...contentLimits, ...kind === 'entries' ? { maxEntries: 1 }
+    : kind === 'name' ? { maxNameBytes: 1 } : { maxReplyBytes: 600 } }
+  const test = await fixture('normal', 8, 3000, limits), root = await test.fs.resolve('.')
+  writeFileSync(join(test.project, 'aa'), 'x')
+  if (kind === 'entries') writeFileSync(join(test.project, 'b'), 'x')
+  await expect(test.fs.listDir(root)).rejects.toMatchObject({ code: 'FS_TOO_LARGE' })
+  expect(test.pool.inspect().work).toMatchObject({ pending: 0, residentBytes: 0 })
+})
+
+it('reads exact bounded byte windows without imposing the full-file cap on a window', async () => {
+  const test = await fixture('normal', 8, 3000, contentLimits)
+  writeFileSync(join(test.project, 'large'), new Uint8Array(Array.from({ length: 128 }, (_, index) => index)))
+  writeFileSync(join(test.project, 'empty'), '')
+  const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0, 255])
+  writeFileSync(join(test.project, 'image.png'), png)
+  const bytes = await test.fs.readBytes(await test.fs.resolve('image.png'), undefined, 64)
+  expect(bytes).toEqual(png)
+  expect(bytes.buffer.byteLength).toBe(png.byteLength)
+  const target = await test.fs.resolve('large')
+  expect(await test.fs.readByteRange(target, { offset: 64, length: 4 })).toEqual(new Uint8Array([64, 65, 66, 67]))
+  expect(await test.fs.readByteRange(target, { offset: 126, length: 4 })).toEqual(new Uint8Array([126, 127]))
+  expect(await test.fs.readByteRange(target, { offset: 1000, length: 4 })).toEqual(new Uint8Array())
+  expect(await test.fs.readByteRange(target, { offset: 0, length: 0 })).toEqual(new Uint8Array())
+  expect(await test.fs.readBytes(await test.fs.resolve('empty'), undefined, 0)).toEqual(new Uint8Array())
+  await expect(test.fs.readBytes(target, undefined, 128)).rejects.toMatchObject({ code: 'FS_TOO_LARGE' })
+  for (const range of [{ offset: -1, length: 1 }, { offset: 0, length: 65 }, { offset: Number.MAX_SAFE_INTEGER, length: 1 }]) {
+    await expect(test.fs.readByteRange(target, range)).rejects.toMatchObject({ code: 'FS_TOO_LARGE' })
+  }
+  await expect(test.fs.readBytes(target, undefined, -1)).rejects.toMatchObject({ code: 'FS_TOO_LARGE' })
+  expect(test.pool.inspect().work).toMatchObject({ pending: 0, residentBytes: 0 })
+})
+
+it('refuses a file that grows past the full-byte cap after its earlier metadata observation', async () => {
+  const test = await fixture('content-grow', 8, 3000, contentLimits)
+  writeFileSync(join(test.project, 'file'), 'small')
+  const target = await test.fs.resolve('file')
+  expect((await test.fs.stat(target))?.size).toBe(5)
+  await expect(test.fs.readBytes(target, undefined, 8)).rejects.toMatchObject({ code: 'FS_TOO_LARGE' })
+  expect(test.pool.inspect().work).toMatchObject({ pending: 0, residentBytes: 0 })
+})
+
+it('keeps list targets and raw reads on their captured original project and scope', async () => {
+  const test = await fixture('normal', 8, 3000, contentLimits), other = await test.anotherProject()
+  writeFileSync(join(test.project, 'file'), 'A')
+  writeFileSync(join(other.path, 'file'), 'B')
+  let active = true
+  const a = { workspace: test.workspace, assertCurrent() { if (!active) throw new Error('entry scope expired') } }
+  const b = { workspace: other, assertCurrent() {} }
+  const entries = await test.selected(a, async () => test.fs.listDir(await test.fs.resolve('.')))
+  const target = entries[0]!.target
+  expect(await test.selected(a, () => test.fs.readBytes(target, undefined, 1))).toEqual(new Uint8Array([65]))
+  await expect(test.selected(b, () => test.fs.readByteRange(target, { offset: 0, length: 1 })))
+    .rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+  await expect(test.selected(a, () => test.fs.lstat(join(other.path, 'file')))).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+  await expect(test.fs.readBytes({ ...target }, undefined, 1)).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+  active = false
+  expect(() => test.fs.processPath(target)).toThrow('entry scope expired')
+  await expect(test.selected(a, () => test.fs.readBytes(target, undefined, 1))).rejects.toThrow('entry scope expired')
+  expect(test.pool.inspect().work).toMatchObject({ pending: 0, residentBytes: 0 })
+})
+
+it('retains a cancelled listing reservation until its actual worker reply and closure', async () => {
+  const test = await fixture('content-block', 8, 3000, contentLimits), root = await test.fs.resolve('.')
+  const controller = new AbortController(), pending = test.fs.listDir(root, controller.signal)
+  const rejected = expect(pending).rejects.toMatchObject({ code: 'FS_ABORTED' })
+  await vi.waitFor(() => { expect(Atomics.load(test.counters, 1)).toBe(1) })
+  const retained = test.pool.inspect().work.residentBytes
+  expect(retained).toBeGreaterThan(0)
+  controller.abort()
+  await rejected
+  expect(test.pool.inspect().work).toMatchObject({ running: 1, pending: 1, residentBytes: retained })
+  test.release()
+  await vi.waitFor(() => { expect(test.pool.inspect().work).toMatchObject({ running: 0, pending: 0, residentBytes: 0 }) })
 })

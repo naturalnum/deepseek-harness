@@ -1,12 +1,33 @@
 /** Concrete native policy callbacks and ordinary JSONL cold recovery; no runtime owner/ready or Web acceptance is inferred. */
 import { createHash } from 'node:crypto'
+import { mkdirSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { Context } from '@deepseek-ai/cordis'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import { CloudApiError } from '@deepseek-ai/dsh-pe-cloud-api'
+import { CloudApiError, ExposureService } from '@deepseek-ai/dsh-pe-cloud-api'
 import { SessionQueryError } from '@deepseek-ai/dsh-session-query'
-import { expect, it, vi } from 'vitest'
-import { accountPresetConfigDigest } from '../src/account-policy.ts'
+import { expect, it, onTestFinished, vi } from 'vitest'
+import { accountPresetConfigDigest, createAccountPolicy } from '../src/account-policy.ts'
 import { AccountPolicyConfigSchema } from '../src/schema.ts'
 import { policyFixture } from './account-policy-fixture.ts'
+
+it.each(['rpc', 'stream'] as const)('rejects %s file exposure during Runtime bootstrap when the original Node files owner has no content grant', async (mode) => {
+  const f = policyFixture(), graph = await f.start(), manifest = f.exposureOwner.policy.manifest
+  const row = { endpoint: mode === 'rpc' ? 'workspaceFiles/read' : 'workspaceFiles/changes',
+    handlerId: 'native:workspaceFiles', guard: 'account-session' as const }
+  const root = new Context()
+  onTestFinished(async () => { await root.fiber.dispose() })
+  const exposure = new ExposureService(root, { ...manifest,
+    rpcEndpoints: [...manifest.rpcEndpoints, ...mode === 'rpc' ? [row] : []],
+    streamEndpoints: [...manifest.streamEndpoints, ...mode === 'stream' ? [row] : []],
+  }).policy
+  const selected = createAccountPolicy(graph.ctx, graph.binding, graph.files, f.config, exposure, graph.maxEntries)
+  const content = vi.spyOn(graph.files, 'assertContentAvailable')
+  await expect(selected.assertBootstrapCurrent(graph.binding.lifetime)).rejects.toMatchObject({ code: 'files/prerequisite-missing' })
+  expect(content).toHaveBeenCalledTimes(1)
+  await expect(graph.guards.assertBootstrapCurrent(graph.binding.lifetime)).resolves.toBeUndefined()
+  expect(content).toHaveBeenCalledTimes(1)
+})
 
 it('uses the actual files Workspace, finite registered model and fixed native Preset instead of all-refusing callbacks', async () => {
   const f = policyFixture(), graph = await f.start()
@@ -19,6 +40,56 @@ it('uses the actual files Workspace, finite registered model and fixed native Pr
   expect(graph.ctx.agents.get(created.sessionId)?.session.header.cwd).toBe(f.project)
   expect(graph.files.project().workspace.sessionIds).toContain(created.sessionId)
   await graph.guards.sessions.assertSessionProject(created.sessionId)
+})
+
+it('selects the requested original registered project while retaining the bootstrap default and fixed Preset/model', async () => {
+  const f = policyFixture(), graph = await f.start(), a = graph.files.project().workspace
+  const secondPath = join(dirname(f.project), 'second-project')
+  mkdirSync(secondPath)
+  const b = await graph.ctx.workspaceRegistry.create(secondPath, 'Second project')
+  await expect(graph.guards.sessions.resolveCreate({ workspaceId: b.id })).resolves.toMatchObject({
+    workspaceId: b.id, agentPreset: f.config.presetId,
+  })
+  const created = await graph.ctx.sessionController.create({ workspaceId: b.id })
+  const agent = graph.ctx.agents.get(created.sessionId)
+  if (agent === undefined) throw new Error('Actual native Agent absent')
+  expect(graph.guards.projectForAgent(agent)).toBe(b)
+  expect(graph.guards.projectForSession(agent.session)).toBe(b)
+  expect(graph.guards.projectForObservedHeader(agent.id, agent.session.header)).toBe(b)
+  expect(agent.session.header.cwd).toBe(b.path)
+  expect(b.sessionIds).toContain(agent.id)
+  expect(a.sessionIds).not.toContain(agent.id)
+  expect(graph.files.project().workspace).toBe(a)
+  await graph.guards.sessions.assertSessionProject(agent.id)
+  expect(graph.adapter.calls).toBe(0)
+  expect(graph.directoryCalls).toContain(b.path)
+  await expect(graph.guards.getFileProject(graph.ctx)).rejects.toMatchObject({ code: 'cloud/forbidden' })
+  await b.detachSession(agent.id)
+  expect(() => graph.guards.projectForAgent(agent)).toThrow(expect.objectContaining({ code: 'cloud/forbidden' }))
+})
+
+it('retains native cross-project attachment refusal and rejects detached history before observation', async () => {
+  const f = policyFixture(), graph = await f.start(), a = graph.files.project().workspace
+  const secondPath = join(dirname(f.project), 'second-project')
+  mkdirSync(secondPath)
+  const b = await graph.ctx.workspaceRegistry.create(secondPath)
+  const created = await graph.ctx.sessionController.create({})
+  await expect(b.attachSession(created.sessionId)).rejects.toThrow('its cwd resolves to')
+  expect(a.sessionIds).toContain(created.sessionId)
+  const observe = vi.spyOn(graph.ctx.sessionQuery, 'observeSession')
+  await a.detachSession(created.sessionId)
+  await expect(graph.guards.sessions.assertSessionProject(created.sessionId)).rejects.toMatchObject({ code: 'cloud/forbidden' })
+  expect(observe).not.toHaveBeenCalled()
+})
+
+it('requires the exact current Workspace object rather than another account native object or a deleted project', async () => {
+  const a = await policyFixture([], undefined, 'workspace-a').start()
+  const b = await policyFixture([], undefined, 'workspace-b').start()
+  expect(() => { a.guards.assertWorkspace(b.files.project().workspace) })
+    .toThrow(expect.objectContaining({ code: 'cloud/forbidden' }))
+  const workspace = a.files.project().workspace
+  await a.ctx.workspaceRegistry.delete(workspace.id)
+  expect(() => { a.guards.assertWorkspace(workspace) }).toThrow(expect.objectContaining({ code: 'cloud/forbidden' }))
 })
 
 it("rejects another account's missing native history and commands before querying it and preserves the denial on the wire", async () => {

@@ -2,11 +2,14 @@
 import { Context, FiberState, Service, symbols, type Fiber } from '@deepseek-ai/cordis'
 import type AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import type SessionController from '@deepseek-ai/dsh-api-session-controller'
+import type WorkspaceFiles from '@deepseek-ai/dsh-api-workspace-files'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import TypertGateway from '@deepseek-ai/dsh-api-gateway'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import { prepareAccountApiInstall, type AccountApiInstall } from './account-install.ts'
 import { CloudApiError } from './errors.ts'
+import { CloudProjectsService, type CloudProjectsPreparation } from './cloud-projects.ts'
+import { createNativeWorkspaceFiles, type NativeWorkspaceFiles } from './native-files.ts'
 import { prepareNativeFirstScreen, type FirstScreenNativeInput, type NativeFirstScreen } from './native-first-screen.ts'
 import { registerFirstScreenEvents, type FirstScreenEventInput, type FirstScreenEvents } from './first-screen-events.ts'
 import type { ExposurePolicy } from './exposure.ts'
@@ -65,6 +68,8 @@ export class CloudAccountApi extends Service {
   private readonly native: Partial<Record<NativeKey, NativeInstallation>> = {}
   private readonly streamGuard: { dispose?: () => void } = {}
   private readonly firstScreen: { native?: NativeFirstScreen; events?: FirstScreenEvents } = {}
+  private readonly projects: { native?: CloudProjectsService } = {}
+  private readonly files: { native?: NativeWorkspaceFiles } = {}
   // Cordis traces services through caller-scoped proxies; their object identities differ.
   private readonly identity = Symbol('account-api-owner')
 
@@ -163,11 +168,14 @@ export class CloudAccountApi extends Service {
     const sessionInventory = inspectNativeController(controller, this.binding.recipeVersion, maximum)
     const firstScreen = this.firstScreen.native?.inspect()
     const events = this.firstScreen.events?.inspect()
+    const projects = this.projects.native?.inspect()
+    const files = this.files.native?.inspect()
     const inventory: ExposureInventory = {
       recipeVersion: this.binding.recipeVersion,
-      rpcEndpoints: [...sessionInventory.rpcEndpoints, ...firstScreen?.rpcEndpoints ?? []],
+      rpcEndpoints: [...sessionInventory.rpcEndpoints, ...firstScreen?.rpcEndpoints ?? [], ...projects?.rpcEndpoints ?? [],
+        ...files?.rpcEndpoints ?? []],
       streamEndpoints: [...sessionInventory.streamEndpoints, ...firstScreen?.streamEndpoints ?? [],
-        ...events === undefined ? [] : [{ endpoint: events.endpoint, handlerId: 'native:typertGateway',
+        ...files?.streamEndpoints ?? [], ...events === undefined ? [] : [{ endpoint: events.endpoint, handlerId: 'native:typertGateway',
           guard: 'authenticated-account' as const }]],
       exactFetchRoutes: [],
     }
@@ -218,6 +226,11 @@ export class CloudAccountApi extends Service {
   requireRpc(endpoint: string): EndpointExposure {
     this.admit()
     const row = this.installation.exposure.requireRpc(endpoint)
+    if (endpoint.startsWith('workspaceFiles/')) this.assertWorkspaceFilesCurrent()
+    if (endpoint === 'cloudProjects/create') {
+      if (this.projects.native === undefined) this.nativeUnavailable()
+      this.projects.native.assertCurrent()
+    }
     if (endpoint === 'workspace/initializeDefault' || endpoint === 'settings/describe') {
       if (this.firstScreen.native === undefined) this.nativeUnavailable()
       this.firstScreen.native.assertCurrent()
@@ -233,6 +246,7 @@ export class CloudAccountApi extends Service {
   requireStream(endpoint: string): EndpointExposure {
     this.admit()
     const row = this.installation.exposure.requireStream(endpoint)
+    if (endpoint.startsWith('workspaceFiles/')) this.assertWorkspaceFilesCurrent()
     if (endpoint === 'workspace/follow' || endpoint === 'remoteAccess/follow') {
       if (this.firstScreen.native === undefined) this.nativeUnavailable()
       this.firstScreen.native.assertCurrent()
@@ -270,6 +284,37 @@ export class CloudAccountApi extends Service {
     const native = prepareNativeFirstScreen(owner, { ...input, api: this, binding: this.binding })
     this.firstScreen.native = native
     return native
+  }
+
+  /**
+   * Install the account's sole project allocator before native auditing and business publication.
+   * @param owner Original independent account preparation scope.
+   * @param input Trusted files/Registry callback; receives no client-selected path or authority.
+   * @returns The additive Remote owner, registered on the original graph.
+   */
+  prepareCloudProjects(owner: Context, input: CloudProjectsPreparation): CloudProjectsService {
+    this.assertInstalled(owner)
+    if (this.projects.native !== undefined) this.duplicateNative()
+    const native = new CloudProjectsService(owner, this, input)
+    this.projects.native = native
+    return native
+  }
+
+  /**
+   * Register the sole unchanged native WorkspaceFiles in its actual Loader fiber.
+   * @param owner Original Loader scope with the complete native inject list ready.
+   * @param nativeConfig Original WorkspaceFiles page/list caps, resolved by its native Config.
+   * @returns The original native service; existing filesystem provider and native Gateway retain authorization and I/O ownership.
+   */
+  createWorkspaceFiles(owner: Context, nativeConfig: ConstructorParameters<typeof WorkspaceFiles>[1]): WorkspaceFiles {
+    this.assertInstalled(owner)
+    if (this.files.native !== undefined) this.duplicateNative()
+    const maximum = this.maxNativeInventoryEntries
+    if (maximum === undefined) this.nativeUnavailable()
+    const native = createNativeWorkspaceFiles(owner, this.binding, () => { this.assertInstalled(owner) }, maximum, nativeConfig)
+    this.files.native = native
+    owner.effect(() => () => { this.invalidate() }, 'pe-cloud-api: withdraw original WorkspaceFiles')
+    return native.value
   }
 
   /**
@@ -403,6 +448,11 @@ export class CloudAccountApi extends Service {
     throw new CloudApiError('cloud/account-unavailable', 'Bootstrap requires the original guarded native providers and shared policy.')
   }
 
+  private assertWorkspaceFilesCurrent(): void {
+    if (this.files.native === undefined) this.nativeUnavailable()
+    this.files.native.assertCurrent()
+  }
+
   private assertNativeCurrent(owner: Context, audited = true): void {
     owner.fiber.assertActive()
     if (this.streamGuard.dispose === undefined) this.nativeUnavailable()
@@ -445,6 +495,8 @@ export class CloudAccountApi extends Service {
       if (this.firstScreen.events === undefined) this.nativeUnavailable()
       this.firstScreen.events.inspect()
     }
+    this.projects.native?.assertCurrent()
+    this.files.native?.assertCurrent()
     if (!audited) return
     for (const row of exposure.manifest.rpcEndpoints) exposure.requireRpc(row.endpoint)
     for (const row of exposure.manifest.streamEndpoints) exposure.requireStream(row.endpoint)

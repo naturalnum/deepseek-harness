@@ -1,4 +1,4 @@
-/** Graph-lived Workspace metadata with unpublished-only registration; native business/persistence remains native-owned. */
+/** Graph-lived Workspace metadata and private registration windows; native persistence remains Registry-owned. */
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-pe-cloud-runtime/account'
 import WorkspaceRegistry, { WorkspaceDirectoryMetadataError } from '@deepseek-ai/dsh-workspace'
@@ -9,6 +9,7 @@ import type { DirectoryCreatedIdentity, DirectoryResponsibility } from './direct
 import { DirectoryMetadataFailure } from './directory-error.ts'
 import type { S2ProjectPort } from './s2-project.ts'
 import { DirectoryPreparationFailure } from './leaf-frame.ts'
+import type { AccountUse } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 
 /** Native service plus the private server-candidate entry; not re-exported by package entrypoints. */
 export interface ControlledWorkspaceRegistry extends WorkspaceRegistry {
@@ -19,6 +20,15 @@ export interface ControlledWorkspaceRegistry extends WorkspaceRegistry {
    * @returns Actual durable native Workspace after private ownership transfer.
    */
   createProject(grant: IsolatedLeafGrant, title?: string): Promise<Workspace>
+  /**
+   * Register a lease-issued UUID during one actual ready borrow; keep its responsibility until native settlement.
+   * @param use Original ready borrow, retained by its caller through the actual returned Promise.
+   * @param grant Lease-issued fixed UUID and original protected projects parent.
+   * @param title Bounded native display title; never selects a disk address.
+   * @param signal Admission cancellation; started work remains with the original lane.
+   * @returns Actual durable native Workspace after private responsibility transfer; unknown failures retain responsibility.
+   */
+  createAdmittedProject(use: AccountUse, grant: IsolatedLeafGrant, title: string | undefined, signal: AbortSignal): Promise<Workspace>
   /**
    * Obtain a fixed S2 scope from the actual native default result; no path argument grants a project.
    * @returns Same-lane native FS constructor and existing-project directory validation.
@@ -37,6 +47,7 @@ export interface WorkspacePreparation {
   readonly work: ReturnType<PreparedLeafPort['prepare']>
   readonly record: DirectoryResponsibility
   assertWindow(): void
+  readIdentity(): Promise<DirectoryCreatedIdentity>
 }
 
 /** Existing same-lane reads and the separate unpublished registration window. */
@@ -47,7 +58,7 @@ export interface WorkspaceAdapterBackend {
   assertWindow(): void
   prepareDefault(): ReturnType<PreparedLeafPort['prepare']>
   prepareRegistration(grant: IsolatedLeafGrant): WorkspacePreparation
-  identity(record: DirectoryResponsibility): Promise<DirectoryCreatedIdentity>
+  prepareAdmittedRegistration(grant: IsolatedLeafGrant, use: AccountUse, title: string | undefined): WorkspacePreparation
   project(workspace: Workspace, assertCurrent: () => void, assertInstalled: (ctx: Context) => void): Promise<S2ProjectPort>
 }
 
@@ -104,6 +115,7 @@ export function createBoundWorkspaceRegistry(backend: WorkspaceAdapterBackend): 
   }
   const assertInstallation = (ctx: Context): void => { assertBinding(ctx); backend.assertWindow() }
   return class BoundWorkspaceRegistry extends WorkspaceRegistry {
+    private readonly identity = Symbol('bound-workspace-registry')
     constructor(ctx: Context) {
       assertInstallation(ctx)
       super(ctx)
@@ -112,6 +124,14 @@ export function createBoundWorkspaceRegistry(backend: WorkspaceAdapterBackend): 
     protected override createDirectoryMetadata(): WorkspaceDirectoryMetadata {
       assertInstallation(this.ctx)
       return provider
+    }
+
+    override async create(path: string, _title?: string): Promise<Workspace> {
+      assertBinding(this.ctx)
+      const existing = await super.resolveByPath(path)
+      assertBinding(this.ctx)
+      if (existing === undefined || this.get(existing.id) !== existing || !this.list().includes(existing)) throw unavailable()
+      return existing
     }
 
     override async initializeDefault(_resolveDirectory: () => Promise<string>): Promise<Workspace | undefined> {
@@ -124,7 +144,7 @@ export function createBoundWorkspaceRegistry(backend: WorkspaceAdapterBackend): 
           prepared = captured
           await metadata(() => captured.work.observation.waitPrepared())
           captured.assertWindow()
-          captured.record.rememberRegistrationIdentity(await backend.identity(captured.record))
+          captured.record.rememberRegistrationIdentity(await captured.readIdentity())
           captured.assertWindow()
           return captured.work.control.expose()
         })
@@ -155,7 +175,35 @@ export function createBoundWorkspaceRegistry(backend: WorkspaceAdapterBackend): 
         prepared = captured
         await metadata(() => captured.work.observation.waitPrepared())
         captured.assertWindow()
-        captured.record.rememberRegistrationIdentity(await backend.identity(captured.record))
+        captured.record.rememberRegistrationIdentity(await captured.readIdentity())
+        captured.assertWindow()
+        const result = await super.create(captured.work.control.expose(), title)
+        await this.finishRegistration(captured, result)
+        return result
+      } catch (error) {
+        prepared?.record.registrationFailed()
+        throw error
+      } finally { prepared = undefined }
+    }
+
+    async createAdmittedProject(
+      use: AccountUse, grant: IsolatedLeafGrant, title: string | undefined, signal: AbortSignal,
+    ): Promise<Workspace> {
+      signal.throwIfAborted()
+      assertBinding(this.ctx)
+      use.assertCurrent()
+      const active = use.context.get('workspaceRegistry')
+      if (use.binding !== backend.defaultGrant.binding || use.context.root !== this.ctx.root
+        || !(active instanceof BoundWorkspaceRegistry) || active.identity !== this.identity
+        || grant.binding !== use.binding || grant.leaf === 'default-workspace') throw unavailable()
+      let prepared: WorkspacePreparation | undefined
+      try {
+        const captured = backend.prepareAdmittedRegistration(grant, use, title)
+        prepared = captured
+        // Caller cancellation after admission never abandons the original native mutation Promise.
+        await metadata(() => captured.work.observation.waitPrepared())
+        captured.assertWindow()
+        captured.record.rememberRegistrationIdentity(await captured.readIdentity())
         captured.assertWindow()
         const result = await super.create(captured.work.control.expose(), title)
         await this.finishRegistration(captured, result)
@@ -185,7 +233,7 @@ export function createBoundWorkspaceRegistry(backend: WorkspaceAdapterBackend): 
       prepared.assertWindow()
       const path = prepared.record.intent.parent.rootPath
       const canonical = await metadata(() => backend.directory.canonicalPath(`${path === '/' ? '' : path}/${prepared.record.intent.leaf}`))
-      const identity = await backend.identity(prepared.record)
+      const identity = await prepared.readIdentity()
       prepared.assertWindow()
       prepared.record.transferRegistered(this, result, canonical, identity)
     }

@@ -11,6 +11,7 @@ const CLOUD_WEB_CLIENT_PACKAGES = [
   '@deepseek-ai/dsh-api-remote-access',
   '@deepseek-ai/dsh-api-session-controller',
   '@deepseek-ai/dsh-api-workspace-controller',
+  '@deepseek-ai/dsh-api-workspace-files',
   '@deepseek-ai/dsh-api-remotes',
   '@deepseek-ai/dsh-client-file-upload',
   '@deepseek-ai/dsh-typert-registry',

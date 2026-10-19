@@ -10,15 +10,18 @@ import { boot, initProfile } from '@deepseek-ai/dsh-app-boot'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { createLaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { CloudAccountApi, ConfigSaveCoordinator, ExposureService, type ConfigSaveBarrier } from '@deepseek-ai/dsh-pe-cloud-api'
-import { CloudAccountFiles, type AccountFilesPreparation } from '@deepseek-ai/dsh-pe-cloud-files'
+import { CloudAccountFiles, type AccountFilesPreparation, type ResolveAccountFileProject } from '@deepseek-ai/dsh-pe-cloud-files'
 import WorkspaceRegistry, { type Workspace } from '@deepseek-ai/dsh-workspace'
 import Storage from '@deepseek-ai/dsh-storage'
 import * as JsonStorage from '@deepseek-ai/dsh-storage-json'
 import * as DomainStorage from '@deepseek-ai/dsh-storage-domain'
 import * as ExecutionRoot from '@deepseek-ai/dsh-pe-opensandbox/root'
 import NativeController, { type SessionRequestId } from '@deepseek-ai/dsh-api-session-controller'
+import WorkspaceFiles from '@deepseek-ai/dsh-api-workspace-files'
+import SandboxPolicyService from '@deepseek-ai/dsh-sandbox-policy'
+import * as ToolFs from '@deepseek-ai/dsh-tool-fs'
 import NativeLoop from '@deepseek-ai/dsh-agent-loop'
-import LlmRuntime, { createUserMessage } from '@deepseek-ai/dsh-llm'
+import LlmRuntime, { createUserMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
 import Agents from '@deepseek-ai/dsh-agent'
 import AgentPreset from '@deepseek-ai/dsh-agent-preset'
 import AgentPresets from '@deepseek-ai/dsh-agent-preset-registry'
@@ -52,6 +55,8 @@ import { AccountPolicyConfigSchema } from '../src/schema.ts'
 import { AccountRuntimeError } from '../src/errors.ts'
 import type { NativeAccountBootHandle } from '../src/native-boot.ts'
 import { instructionLimits, instructionSourceFixture, type InstructionSourceFixture } from './instruction-source-fixture.ts'
+import { nativeProjectDeriver, nativeRoutedFileSystem } from './native-project-fixture.ts'
+import type { PeerId } from '@deepseek-ai/dsh-typert-protocol'
 import type { AccountBinding, AccountId, AccountMountInput, OwnerEpoch } from '../src/types.ts'
 
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -87,6 +92,10 @@ async function fixture(options: {
   verifyDirectory?: (ctx: Context) => Promise<void>
   controllerEntered?: (ctx: Context) => void
   instructionSources?: InstructionSourceFixture
+  nativeFiles?: boolean
+  auditedFileCalls?: boolean
+  installFileApi?: boolean
+  beforeBootstrap?: (ctx: Context) => void
 } = {}) {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), 'm8s-native-integration-')))
   directories.push(directory)
@@ -101,7 +110,10 @@ async function fixture(options: {
     { id: 'exposure', name: 'cordis:exposure', config: { recipeVersion: 'm8s',
       rpcEndpoints: options.instructionSources === undefined ? [] : ['create', 'prompt', 'cancel', 'page'].map(method => ({
         endpoint: 'session/' + method, handlerId: 'native:sessionController', guard: method === 'create' ? 'account-project' : 'account-session',
-      })), streamEndpoints: [], exactFetchRoutes: [], allowedSettings: [] } },
+      })).concat(options.auditedFileCalls ? ['read', 'stat'].map(method => ({ endpoint: `workspaceFiles/${method}`,
+        handlerId: 'native:workspaceFiles', guard: 'account-session' })) : []),
+      streamEndpoints: options.auditedFileCalls ? [{ endpoint: 'workspaceFiles/changes',
+        handlerId: 'native:workspaceFiles', guard: 'account-session' }] : [], exactFetchRoutes: [], allowedSettings: [] } },
     { id: 'execution', name: 'cordis:execution', config: { mode: 'closed', requiredCapabilities: [], maxBoundAccounts: 2 } },
   ]))
   const root = await boot('m8s-shared-root', sharedPath, [], (ctx) => {
@@ -141,14 +153,18 @@ async function fixture(options: {
   }
   const declaration = { id: 'instruction-chat', plugins: [
     { id: 'file-instructions', name: 'cordis:' + names.instructions, config: instructionLimits },
+    ...options.nativeFiles ? [{ id: 'native-tools', name: 'cordis:m8s-tool-fs',
+      config: { read: true, write: true, edit: false, readImage: false } }] : [],
   ] }
   const policy = AccountPolicyConfigSchema({ maxModelRoutes: 2, maxPolicyStringBytes: 128,
     models: [{ provider: 'local-text', model: 'plain-text' }], presetId: declaration.id, presetEntryId: 'instruction-preset',
     presetConfigSha256: accountPresetConfigDigest(declaration, 8192), maxPresetConfigBytes: 8192, agentLoopEntryId: 'loop' })
   const guards = vi.fn((_ctx: Context, _installed: AccountBinding, files: CloudAccountFiles): AccountNativeGuards => {
     if (options.instructionSources !== undefined) return createAccountPolicy(_ctx, _installed, files, policy, root.peExposure.policy, 128)
-    const unavailable = (): never => { throw new Error('No fixture project/model/Preset approval') }
+    const unavailable = (): never => { throw new AccountRuntimeError('cloud/account-unavailable', 'No fixture project/model/Preset approval') }
     return {
+      assertWorkspace: unavailable, projectForAgent: unavailable, projectForSession: unavailable,
+      projectForObservedHeader: unavailable, projectForDirectory: unavailable, getFileProject: async () => unavailable(),
       sessions: { assertHandlerEnabled: unavailable,
         resolveCreate: async () => unavailable(), assertSessionProject: async () => unavailable(), assertActiveScope: unavailable },
       agents: { assertCreate: async () => unavailable(), assertResume: async () => unavailable(), assertPrepared: unavailable },
@@ -156,6 +172,7 @@ async function fixture(options: {
       assertBootstrapCurrent: async () => unavailable(),
     }
   })
+  let resolveFiles: ResolveAccountFileProject | undefined
   const dependencies = { async apply(ctx: Context) {
     await ctx.plugin(Typert)
     await ctx.plugin(RemoteAccess)
@@ -187,6 +204,10 @@ async function fixture(options: {
     { id: 'default-model', name: 'cordis:m8s-model', config: options.instructionSources === undefined
       ? { provider: 'unused', model: 'unused' } : { provider: 'local-text', model: 'plain-text' } },
     { id: 'working-directory', name: 'cordis:m8s-working-directory' },
+    ...options.nativeFiles ? [{ id: 'sandbox-policy', name: 'cordis:m8s-sandbox-policy',
+      config: { mode: 'workspace-write', workspaceRoot: project } }] : [],
+    ...options.auditedFileCalls || options.installFileApi ? [{ id: 'native-file-api', name: 'cordis:' + names.workspaceFiles,
+      config: { maxBytes: 4096, maxFileBytes: 4096, maxLines: 20, maxEntries: 20 } }] : [],
     ...options.instructionSources === undefined ? [] : [
       { id: 'instruction-adapter', name: 'cordis:m8s-instruction-adapter' },
       { id: 'instruction-presets', name: 'cordis:m8s-presets', config: { default: declaration.id } },
@@ -220,7 +241,8 @@ async function fixture(options: {
         assertCurrent(componentGraph.binding)
       },
       ...options.missingGuards ? {} : { guards },
-      files(_ctx, installed): AccountFilesPreparation {
+      files(_ctx, installed, getFileProject): AccountFilesPreparation {
+        resolveFiles = getFileProject
         // This external Node-port fixture supplies no Linux FD, quota, exclusive namespace or production storage certificate.
         class FixtureFileSystem extends FsLocal {
           static inject = ['peAccount']
@@ -228,10 +250,12 @@ async function fixture(options: {
         }
         class FixtureRegistry extends WorkspaceRegistry {
           async createProject(_grant: unknown, _title?: string): Promise<Workspace> { throw new Error('Unexercised registration fixture') }
+          async createAdmittedProject(): Promise<Workspace> { throw new Error('No component ready borrow grants project registration') }
           async createS2Project() {
             const workspace = await this.initializeDefault(async () => project)
             if (workspace === undefined) throw new Error('Native default project is not eligible')
-            return { binding: installed, workspaceId: workspace.id, FileSystem: FixtureFileSystem,
+            return { binding: installed, workspaceId: workspace.id,
+              FileSystem: options.nativeFiles ? nativeRoutedFileSystem(project, getFileProject) : FixtureFileSystem,
               projectDirectory: { binding: installed, prepare: async (cwd: string) => {
                 assertCurrent(installed)
                 if (cwd !== workspace.path || !statSync(cwd).isDirectory()) throw new Error('Outside the Node fixture project')
@@ -242,6 +266,7 @@ async function fixture(options: {
         const info = statSync(layout.projectsRoot, { bigint: true })
         return { binding: options.copiedFilesBinding ? { ...installed } : installed,
           port: { createWorkspaceRegistry: () => FixtureRegistry },
+          projectFor: nativeProjectDeriver(installed, () => { assertCurrent(installed) }),
           ...options.instructionSources === undefined ? {} : {
             withInstructionReaders: options.instructionSources.bind(() => { assertCurrent(installed) }),
           },
@@ -253,6 +278,7 @@ async function fixture(options: {
       } },
     prepare(ctx) {
       Object.assign(ctx.loader.builtins, { 'm8s-dependencies': dependencies, 'm8s-jsonl': Jsonl, 'm8s-model': DefaultModel,
+        'm8s-sandbox-policy': SandboxPolicyService,
         'm8s-working-directory': WorkingDirectory, 'm8ax-settings': Settings, 'm8ax-locale': Locale,
         // A separately guarded native LLM lets all Controller dependencies activate before files/account settles.
         'm8s-early-llm': { inject: ['peCloudApi'], apply(owner: Context) {
@@ -262,7 +288,7 @@ async function fixture(options: {
       })
       if (options.instructionSources !== undefined) {
         const { adapter } = options.instructionSources
-        Object.assign(ctx.loader.builtins, { 'm8s-presets': AgentPresets, 'm8s-preset': AgentPreset,
+        Object.assign(ctx.loader.builtins, { 'm8s-presets': AgentPresets, 'm8s-preset': AgentPreset, 'm8s-tool-fs': ToolFs,
           'm8s-instruction-adapter': { inject: ['llm'], apply(owner: Context) {
             owner.effect(() => owner.llm.registerAdapter(['local-text'], adapter))
           } },
@@ -312,14 +338,21 @@ async function fixture(options: {
         } catch (error) { await integration.stop(); throw error }
       } })
       const outcome = await componentNative.result
-      if (outcome.status === 'mounted') await integration?.finishBootstrap()
+      if (outcome.status === 'mounted') {
+        options.beforeBootstrap?.(outcome.context)
+        await integration?.finishBootstrap()
+      }
       return outcome
     }
     const outcome = await factory.startNativeMount(input, recipe)
     if (outcome.status === 'mounted') context = outcome.context
     return outcome
   }
-  return { factory, capacity, root, saves, barriers, input, recipe, start, guards, project, layout, credentialPath, lifetime }
+  return { factory, capacity, root, saves, barriers, input, recipe, start, guards, project, layout, credentialPath, lifetime,
+    fileProject: (caller: Context, signal?: AbortSignal) => {
+      if (resolveFiles === undefined) throw new Error('Original native Files callback absent')
+      return resolveFiles(caller, signal)
+    } }
 }
 
 it('boots the actual factory NativeLoader with API hooks, guarded native providers and root-issued closed execution', async () => {
@@ -330,6 +363,7 @@ it('boots the actual factory NativeLoader with API hooks, guarded native provide
   expect(ctx.root).not.toBe(f.root)
   expect(ctx.peCloudApi).toBeInstanceOf(CloudAccountApi)
   expect(ctx.peCloudFiles).toBeInstanceOf(CloudAccountFiles)
+  expect(ctx.get('workspaceFiles')).toBeUndefined()
   expect(ctx.peCloudFiles.project().projectDirectory.binding).toBe(binding)
   expect(ctx.workspaceRegistry.get(ctx.peCloudFiles.project().workspace.id)).toBe(ctx.peCloudFiles.project().workspace)
   expect(ctx.sessionController).toBeInstanceOf(NativeController)
@@ -577,6 +611,8 @@ it('uses the approved Preset private instruction builtin in a native turn and re
   const created = await ctx.sessionController.create({})
   const agent = ctx.agents.get(created.sessionId)
   if (agent === undefined) throw new Error('The actual approved native Agent is absent')
+  const currentDirectory = vi.spyOn(ctx.workingDirectory, 'get')
+  expect(ctx.workingDirectory.get(agent.session)).toBe(project.workspace.path)
   expect(ctx.agentPresets.composedPreset(agent.ctx)).toBe('instruction-chat')
   expect(ctx.agentPresets.inspectCompositions(agent.ctx)[0]?.modules.map(module => module.moduleName))
     .toEqual(['cordis:' + names.instructions])
@@ -586,6 +622,7 @@ it('uses the approved Preset private instruction builtin in a native turn and re
     .resolves.toEqual({ accepted: true })
   await agent.whenIdle()
   expect(sources.adapter.calls).toBe(1)
+  expect(currentDirectory).toHaveBeenCalledWith(agent.session)
   expect(sources.state.reservations).toEqual([instructionLimits.maxResidentBytes])
   expect(sources.state.workspaces).toEqual([project.workspace])
   expect(sources.state.workspaces[0]).toBe(project.workspace)
@@ -616,6 +653,196 @@ it('uses the approved Preset private instruction builtin in a native turn and re
   await expect(f.factory.borrowCurrent(outcome.binding)).rejects.toMatchObject({ code: 'cloud/stale-generation' })
 })
 
+it('isolates native parallel ToolFS writes, instruction snapshots and cold Gateway reads across two registered projects', async () => {
+  // Content handshake is stubbed only in this Node routing/API component; this never certifies ABI8 or production content.
+  const sources = instructionSourceFixture(), f = await fixture({ instructionSources: sources, nativeFiles: true,
+    auditedFileCalls: true, beforeBootstrap: (ctx) => { vi.spyOn(ctx.peCloudFiles, 'assertContentAvailable').mockImplementation(() => {}) } })
+  const outcome = await f.start()
+  if (outcome.status === 'failed') throw outcome.cause
+  const ctx = outcome.context, originalFs = ctx.fs, a = ctx.peCloudFiles.project().workspace
+  const nativeEntry = [...ctx.loader.entries()].find(row => row.options.id === 'native-file-api')
+  const policyEntry = [...ctx.loader.entries()].find(row => row.options.id === 'sandbox-policy')
+  expect(nativeEntry?.options.name).toBe('cordis:' + names.workspaceFiles)
+  expect(nativeEntry?.fiber?.state).toBe(FiberState.ACTIVE)
+  const builtin: unknown = ctx.loader.builtins[names.workspaceFiles]
+  if ((builtin === null || typeof builtin !== 'object') && typeof builtin !== 'function') throw new Error('Native file builtin absent')
+  expect(Reflect.get(builtin, 'Config') === WorkspaceFiles.Config).toBe(true)
+  expect(Reflect.get(builtin, 'inject')).toEqual([...WorkspaceFiles.inject, 'peCloudApi'])
+  expect(policyEntry?.moduleNamespace === SandboxPolicyService).toBe(true)
+  expect(ctx.sandboxPolicy instanceof SandboxPolicyService).toBe(true)
+  expect(ctx.sandboxPolicy.defaultMode).toBe('workspace-write')
+  expect(ctx.sandboxPolicy.workspaceRoot).toBe(f.project)
+  expect(ctx.workspaceFiles instanceof WorkspaceFiles).toBe(true)
+  const nativeFiles: unknown = Reflect.get(ctx.workspaceFiles, symbols.original) ?? ctx.workspaceFiles
+  if (!(nativeFiles instanceof WorkspaceFiles)) throw new Error('Original native WorkspaceFiles absent')
+  expect(nativeFiles.read === WorkspaceFiles.prototype.read).toBe(true)
+  expect(nativeFiles.stat === WorkspaceFiles.prototype.stat).toBe(true)
+  const secondPath = join(f.layout.projectsRoot, 'second-project')
+  mkdirSync(secondPath)
+  const b = await ctx.workspaceRegistry.create(secondPath, 'Second project')
+  const workspaces = [a, b]
+  const turns = new Map<string, number>()
+  for (const [i, workspace] of workspaces.entries()) sources.setProject(workspace, `private instruction project ${i}`)
+  vi.spyOn(sources.adapter, 'stream').mockImplementation(async function* (options) {
+    const instruction = options.messages.find(message => message.source?.kind === 'pe-account-instructions')
+    if (instruction?.source?.kind !== 'pe-account-instructions') throw new Error('Native C09 snapshot absent')
+    const id = instruction.source.snapshot.workspaceId, turn = (turns.get(id) ?? 0) + 1
+    turns.set(id, turn)
+    const index = workspaces.findIndex(workspace => workspace.id === id)
+    if (index < 0) throw new Error('Unknown original Workspace')
+    if (turn <= 2) {
+      yield { type: 'block-start', index: 0, blockType: 'tool-call' }
+      yield { type: 'block-end', index: 0, block: { type: 'tool-call', id: ToolCallId(`${id}-${turn}`),
+        name: turn === 1 ? 'write' : 'read', arguments: JSON.stringify({ file_path: 'result.txt',
+          ...turn === 1 ? { content: `private output project ${index}` } : {} }) } }
+      yield { type: 'finish', reason: { kind: 'tool-calls' } }
+    } else {
+      yield { type: 'block-start', index: 0, blockType: 'text' }
+      yield { type: 'block-end', index: 0, block: { type: 'text', text: `done project ${index}` } }
+      yield { type: 'finish', reason: { kind: 'stop' } }
+    }
+  })
+  const created = await Promise.all(workspaces.map(workspace => ctx.sessionController.create({ workspaceId: workspace.id })))
+  const agents = created.map(({ sessionId }) => {
+    const agent = ctx.agents.get(sessionId)
+    if (agent === undefined) throw new Error('Actual native Agent absent')
+    return agent
+  })
+  const result = f.guards.mock.results[0], firstAgent = agents[0], secondAgent = agents[1]
+  if (result?.type !== 'return' || firstAgent === undefined || secondAgent === undefined) throw new Error('Native guards/Agents absent')
+  const approved = result.value
+  await expect(ctx.agents.withInitiator(firstAgent, () => approved.getFileProject(secondAgent.ctx)))
+    .rejects.toMatchObject({ code: 'cloud/forbidden' })
+  const retained = await ctx.agents.withInitiator(firstAgent, () => approved.getFileProject(firstAgent.ctx))
+  expect(retained.workspace).toBe(a)
+  await a.detachSession(firstAgent.id)
+  expect(() => { retained.assertCurrent() }).toThrow(expect.objectContaining({ code: 'cloud/forbidden' }))
+  await a.attachSession(firstAgent.id)
+  for (const agent of agents) agent.followup(createUserMessage({ content: [{ type: 'text', text: 'write and read result.txt' }],
+    source: { kind: 'user' } }))
+  await Promise.all(agents.map(agent => agent.whenIdle()))
+  for (const [i, agent] of agents.entries()) {
+    const workspace = workspaces[i]
+    if (workspace === undefined) throw new Error('Workspace absent')
+    expect(readFileSync(join(workspace.path, 'result.txt'), 'utf8')).toBe(`private output project ${i}`)
+    const log = JSON.stringify(agent.session.snapshotEvents())
+    expect(log).toContain(`private output project ${i}`)
+    expect(log).toContain(`private instruction project ${i}`)
+    expect(log).not.toContain(`private output project ${1 - i}`)
+    expect(log).not.toContain(`private instruction project ${1 - i}`)
+    expect(turns.get(workspace.id)).toBe(3)
+  }
+  expect((Reflect.get(ctx.fs, symbols.original) ?? ctx.fs) === (Reflect.get(originalFs, symbols.original) ?? originalFs)).toBe(true)
+  expect(ctx.peCloudFiles.project().workspace).toBe(a)
+  await ctx.sessionPersistence.flush()
+  const logNames = (await fs.readdir(f.layout.sessionsRoot, { recursive: true })).filter(name => name.endsWith('.jsonl'))
+  const persisted = await Promise.all(logNames.map(name => fs.readFile(join(f.layout.sessionsRoot, name), 'utf8')))
+  expect(persisted).toHaveLength(2)
+  for (const [i, agent] of agents.entries()) {
+    const log = persisted.find(value => value.includes(agent.id))
+    expect(log).toContain(`private instruction project ${i}`)
+    expect(log).toContain(`private output project ${i}`)
+    expect(log).not.toContain(`private instruction project ${1 - i}`)
+    expect(log).not.toContain(`private output project ${1 - i}`)
+  }
+  await ctx.agentLoop.stop()
+  expect(ctx.agents.list()).toEqual([])
+  expect(ctx.sessions.list()).toEqual([])
+  const peer = { id: brandString<PeerId>('two-project-component'), ctx, principal: { kind: 'owner' as const },
+    interactions: 'answer' as const, signal: outcome.binding.lifetime, dispose: async () => {} }
+  const read = (id: SessionId, path = 'result.txt') => ctx.typertGateway.invoke({ namespace: 'workspaceFiles', method: 'read',
+    args: { workspaceFileScopeId: id, path, range: {} }, peer, signal: outcome.binding.lifetime })
+  const fullQuery = vi.spyOn(ctx.sessionQuery, 'observeSession')
+  const selecting = vi.spyOn(approved, 'getFileProject')
+  const values = await Promise.all(agents.map(agent => read(agent.id)))
+  expect(values).toEqual([expect.objectContaining({ text: 'private output project 0' }),
+    expect.objectContaining({ text: 'private output project 1' })])
+  expect(fullQuery).not.toHaveBeenCalled()
+  for (const agent of agents) {
+    await expect(ctx.typertGateway.invoke({ namespace: 'workspaceFiles', method: 'stat',
+      args: { workspaceFileScopeId: agent.id, path: 'result.txt' }, peer, signal: outcome.binding.lifetime }))
+      .resolves.toMatchObject({ bytes: Buffer.byteLength('private output project 0') })
+  }
+  const first = agents[0]
+  if (first === undefined) throw new Error('First native Agent absent')
+  const feed = (await ctx.typertGateway.stream({ namespace: 'workspaceFiles', method: 'changes',
+    args: { workspaceFileScopeId: first.id, path: 'result.txt' }, peer, signal: outcome.binding.lifetime }))[Symbol.asyncIterator]()
+  try { expect(await feed.next()).toMatchObject({ done: false, value: { kind: 'ready' } }) }
+  finally { await feed.return?.() }
+  await expect(read(first.id, join(b.path, 'result.txt'))).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+  await a.detachSession(first.id)
+  await expect(read(first.id)).rejects.toMatchObject({ code: 'cloud/forbidden' })
+  const caller = selecting.mock.calls[0]?.[0]
+  if (caller === undefined) throw new Error('Original Gateway file caller absent')
+  const providers = [...ctx.registry.values()].flatMap(runtime => [...runtime.fibers])
+    .filter(fiber => fiber.ctx.root === ctx.root && fiber.store?.fs?.fiber === fiber)
+  expect(providers).toHaveLength(1)
+  const provider = providers[0]
+  if (provider === undefined) throw new Error('Original native FS provider absent')
+  await provider.dispose()
+  selecting.mockClear()
+  await expect(f.fileProject(caller)).rejects.toMatchObject({ code: 'cloud/account-unavailable' })
+  expect(selecting).not.toHaveBeenCalled()
+})
+
+it('rejects unselected native Gateway file calls before shared project selection or content reads', async () => {
+  const sources = instructionSourceFixture(), f = await fixture({ instructionSources: sources, nativeFiles: true, installFileApi: true })
+  const outcome = await f.start()
+  if (outcome.status === 'failed') throw outcome.cause
+  const ctx = outcome.context, result = f.guards.mock.results[0]
+  if (result?.type !== 'return') throw new Error('Original policy absent')
+  const selecting = vi.spyOn(result.value, 'getFileProject')
+  const created = await ctx.sessionController.create({})
+  writeFileSync(join(f.project, 'private.txt'), 'must not be read')
+  await ctx.sessionPersistence.flush()
+  await ctx.agentLoop.stop()
+  expect(ctx.workspaceFiles instanceof WorkspaceFiles).toBe(true)
+  const content = vi.spyOn(ctx.fs, 'streamText')
+  await expect(ctx.typertGateway.invoke({ namespace: 'workspaceFiles', method: 'read',
+    args: { workspaceFileScopeId: created.sessionId, path: 'private.txt', range: {} },
+    peer: { id: brandString<PeerId>('unselected-native-file'), ctx, principal: { kind: 'owner' }, interactions: 'answer',
+      signal: outcome.binding.lifetime, dispose: async () => {} } })).rejects.toMatchObject({ code: 'cloud/forbidden' })
+  expect(selecting).not.toHaveBeenCalled()
+  expect(content).not.toHaveBeenCalled()
+})
+
+it('requires the real native SandboxPolicy provider when the private file builtin is explicitly installed', async () => {
+  const sources = instructionSourceFixture(), f = await fixture({ instructionSources: sources, installFileApi: true })
+  const outcome = await f.start()
+  expect(outcome.status).toBe('failed')
+  expect(sources.adapter.calls).toBe(0)
+})
+
+it('rejects a foreign native Session and a real no-cwd history even though the native policy fallback names an owned project', async () => {
+  const f = await fixture({ instructionSources: instructionSourceFixture(), nativeFiles: true, auditedFileCalls: true,
+    beforeBootstrap: (ctx) => { vi.spyOn(ctx.peCloudFiles, 'assertContentAvailable').mockImplementation(() => {}) } })
+  const other = await fixture({ instructionSources: instructionSourceFixture() })
+  const outcome = await f.start(), foreign = await other.start()
+  if (outcome.status === 'failed') throw outcome.cause
+  if (foreign.status === 'failed') throw foreign.cause
+  const ctx = outcome.context, created = await foreign.context.sessionController.create({})
+  const own = await ctx.sessionController.create({})
+  writeFileSync(join(f.project, 'private.txt'), 'owned data remains private')
+  await ctx.sessionPersistence.flush()
+  await ctx.agentLoop.stop()
+  const detached = ctx.sessions.prepare(SessionId('native-file-fallback-without-cwd'), { meta: { agentPreset: 'instruction-chat' } })
+  const writer = await ctx.sessionPersistence.create(detached.header)
+  await writer.flush()
+  await writer.close()
+  expect(detached.header.cwd).toBeUndefined()
+  expect(ctx.sandboxPolicy.resolve()).toEqual({ mode: 'workspace-write', workspaceRoot: f.project })
+  const content = vi.spyOn(ctx.fs, 'streamText')
+  const read = (id: SessionId) => ctx.typertGateway.invoke({ namespace: 'workspaceFiles', method: 'read',
+    args: { workspaceFileScopeId: id, path: 'private.txt', range: {} },
+    peer: { id: brandString<PeerId>('native-file-foreign-scope'), ctx, principal: { kind: 'owner' }, interactions: 'answer',
+      signal: outcome.binding.lifetime, dispose: async () => {} } })
+  expect(created.sessionId).not.toBe(own.sessionId)
+  await expect(read(created.sessionId)).rejects.toBeInstanceOf(Error)
+  await expect(read(detached.header.id)).rejects.toMatchObject({ code: 'cloud/forbidden' })
+  expect(content).not.toHaveBeenCalled()
+  await expect(read(own.sessionId)).resolves.toMatchObject({ text: 'owned data remains private' })
+})
+
 it('rejects a copied files binding before an instruction Preset can admit any model or source work', async () => {
   const sources = instructionSourceFixture()
   const f = await fixture({ instructionSources: sources, copiedFilesBinding: true })
@@ -624,6 +851,39 @@ it('rejects a copied files binding before an instruction Preset can admit any mo
   expect(sources.adapter.calls).toBe(0)
   expect(sources.state.reservations).toEqual([])
   expect(sources.state.reads).toEqual([])
+})
+
+it.each(['before-build', 'during-read'] as const)('rejects a real native cwd change %s without publishing mixed instructions or entering the model', async (phase) => {
+  const entered = Promise.withResolvers<undefined>(), proceed = Promise.withResolvers<undefined>()
+  const gate = async (): Promise<void> => { entered.resolve(undefined); await proceed.promise }
+  const sources = instructionSourceFixture(phase === 'before-build' ? { beforeBuild: gate } : { beforeRead: gate })
+  const f = await fixture({ instructionSources: sources })
+  cleanups.push(async () => { proceed.resolve(undefined) })
+  const outcome = await f.start()
+  if (outcome.status === 'failed') throw outcome.cause
+  const ctx = outcome.context, created = await ctx.sessionController.create({})
+  const agent = ctx.agents.get(created.sessionId)
+  if (agent === undefined) throw new Error('Actual approved native Agent absent')
+  const child = join(f.project, 'nested-current-directory')
+  mkdirSync(child)
+  expect(ctx.workingDirectory instanceof WorkingDirectory).toBe(true)
+  expect(ctx.workingDirectory.get(agent.session)).toBe(f.project)
+  try {
+    agent.followup(createUserMessage({ content: [{ type: 'text', text: 'capture the original instruction cwd' }], source: { kind: 'user' } }))
+    await entered.promise
+    expect(sources.state.heldBytes).toBe(instructionLimits.maxResidentBytes)
+    await expect(ctx.workingDirectory.set(agent, child, outcome.binding.lifetime)).resolves.toBe(child)
+    expect(ctx.workingDirectory.get(agent.session)).toBe(child)
+    expect(agent.session.header.cwd).toBe(f.project)
+  } finally { proceed.resolve(undefined) }
+  await agent.whenIdle()
+  expect(sources.adapter.calls).toBe(0)
+  expect(sources.state.reservations).toEqual([instructionLimits.maxResidentBytes])
+  expect(sources.state.heldBytes).toBe(0)
+  expect(sources.state.releases).toBe(1)
+  expect(agent.session.deriveMessages().some(message => message.source.kind === 'pe-account-instructions')).toBe(false)
+  if (phase === 'before-build') expect(sources.state.reads).toEqual([])
+  else expect(sources.state.reads.length).toBeGreaterThan(0)
 })
 
 it('returns the instruction reservation when its original graph is withdrawn during native preparation', async () => {

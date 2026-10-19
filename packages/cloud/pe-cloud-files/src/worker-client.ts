@@ -4,7 +4,7 @@ import type { Worker } from 'node:worker_threads'
 import type { OperationId } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { FsErrorCode, FsWriteIntent } from '@deepseek-ai/dsh-fs'
 import type { FdTaskRequest, FdRootIdentity, FdMetadata, FdDirectoryRequest, FdDirectoryObservation, LeafBackend,
-  FdStorageRequest, FdStorageView, FdTextWriteRequest, FdTextWriteResult } from './worker-protocol.ts'
+  FdStorageRequest, FdStorageView, FdTextWriteRequest, FdTextWriteResult, FdContentRequest, FdPathMetadata, FdDirectoryEntry } from './worker-protocol.ts'
 import { FilesFailure } from './error.ts'
 import { DirectoryMetadataFailure } from './directory-error.ts'
 import { parseLeafFrame, leafPreparation, DirectoryPreparationFailure } from './leaf-frame.ts'
@@ -49,6 +49,12 @@ interface PendingStat extends PendingBase {
   readonly resolve: (info: FdMetadata | undefined) => void
   readonly reject: (error: Error) => void
 }
+interface PendingContent extends PendingBase {
+  readonly kind: 'lstat' | 'list' | 'range'
+  readonly maxEntries: number
+  readonly accept: (value: Record<string, unknown>) => void
+  readonly reject: (error: Error) => void
+}
 interface PendingTextWrite extends PendingBase {
   readonly kind: 'text-write'
   readonly content: string
@@ -87,7 +93,8 @@ interface PendingStream extends PendingBase {
   cancelled: boolean
   total: number
 }
-type Pending = PendingRead | PendingStat | PendingStream | PendingDirectory | PendingLeaf | PendingStorage | PendingTextWrite
+type Pending = PendingContent | PendingRead | PendingStat | PendingStream | PendingDirectory
+  | PendingLeaf | PendingStorage | PendingTextWrite
 
 function object(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null }
 function wireError(value: Record<string, unknown>): FdWorkerFailure | undefined {
@@ -106,6 +113,19 @@ function metadata(value: unknown): FdMetadata | undefined {
   return { identity: value.identity, version: value.version, type: value.type, ...typeof value.size === 'number' ? { size: value.size } : {} }
 }
 
+function pathMetadata(value: unknown, named = false): FdPathMetadata | undefined {
+  if (!object(value) || Object.keys(value).some(key => !['identity', 'version', 'type', 'size', ...named ? ['name'] : []].includes(key))
+    || typeof value.identity !== 'string' || !/^\d{1,20}:\d{1,20}$/.test(value.identity)
+    || typeof value.version !== 'string' || !/^-?\d{1,30}(?::-?\d{1,30}){4}$/.test(value.version)
+    || !value.version.startsWith(value.identity + ':')
+    || typeof value.size === 'number' && Number(value.version.split(':')[2]) !== value.size
+    || !['file', 'directory', 'symlink', 'other'].includes(String(value.type))
+    || (value.type === 'file' || value.type === 'symlink'
+      ? typeof value.size !== 'number' || !Number.isSafeInteger(value.size) || value.size < 0 : value.size !== undefined)) return undefined
+  return { identity: value.identity, version: value.version, type: value.type as FdPathMetadata['type'],
+    ...typeof value.size === 'number' ? { size: value.size } : {} }
+}
+
 /** One exclusive prebuilt slot; a stream owns the slot between pulls as well as during reads. */
 export class FdWorkerClient {
   /** Resolves after the required worker ABI handshake, or rejects on startup failure. */
@@ -114,7 +134,7 @@ export class FdWorkerClient {
   readonly exited: Promise<number>
   private readyResolved = false
   private storageVersion: 1 | undefined
-  private abiVersion: 6 | 7 | undefined
+  private abiVersion: 6 | 7 | 8 | undefined
   private closed = false
   private failure: Error | undefined
   private pending: Pending | undefined
@@ -139,7 +159,10 @@ export class FdWorkerClient {
   }
 
   /** Whether this exact prebuilt worker completed the independent text-capable ABI handshake. */
-  get supportsTextWrites(): boolean { return this.abiVersion === 7 }
+  get supportsTextWrites(): boolean { return this.abiVersion === 7 || this.abiVersion === 8 }
+
+  /** Whether the worker supports bounded nofollow/list/range commands. */
+  get supportsContentReads(): boolean { return this.abiVersion === 8 }
 
   /**
    * Publish one bounded UTF-8 replacement; cancellation never releases actual transport ownership.
@@ -166,6 +189,102 @@ export class FdWorkerClient {
       this.pending = pending
       this.post({ kind: 'text-write', id: pending.id, root, relativePath, content, maxBytes,
         ...expected === undefined ? {} : { expected }, cancel: pending.cancel.buffer } satisfies FdTextWriteRequest)
+    })
+  }
+
+  /**
+   * Observe the final entry without following it; absence returns undefined.
+   * @param root Previously authorized fixed project identity.
+   * @param relativePath Bounded project-relative path.
+   * @param signal Cancellation retains transport ownership until reply or exit.
+   * @returns Closed-FD path metadata; ABI6/7 reject before dispatch.
+   */
+  lstat(root: FdRootIdentity, relativePath: string, signal: AbortSignal): Promise<FdPathMetadata | undefined> {
+    return this.content({ kind: 'lstat' }, root, relativePath, 1024, 0, signal, (value) => {
+      if (value.kind !== 'lstat-reply') throw new FdWorkerFailure('FS_IO_ERROR')
+      const result = pathMetadata(value.metadata)
+      if (value.metadata !== undefined && result === undefined) throw new FdWorkerFailure('FS_IO_ERROR')
+      return result
+    })
+  }
+
+  /**
+   * List direct children with strict complete-reply and entry bounds; excess rejects.
+   * @param root Previously authorized fixed project identity.
+   * @param relativePath Project-relative directory.
+   * @param maxEntries Maximum direct children, not a recursive traversal limit.
+   * @param maxBytes Complete encoded reply budget including names and metadata.
+   * @param signal Cancellation retains actual ownership.
+   * @returns Stable UTF-8 byte-sorted nofollow entries after all descriptors close.
+   */
+  list(
+    root: FdRootIdentity, relativePath: string, maxEntries: number, maxBytes: number, signal: AbortSignal,
+  ): Promise<readonly FdDirectoryEntry[]> {
+    return this.content({ kind: 'list', maxEntries, maxBytes }, root, relativePath, maxBytes, maxEntries, signal, (value) => {
+      if (value.kind !== 'list-reply' || !Array.isArray(value.entries) || value.entries.length > maxEntries) throw new FdWorkerFailure('FS_IO_ERROR')
+      const entries: FdDirectoryEntry[] = []
+      let previous: Buffer | undefined
+      for (const entry of value.entries) {
+        const info = pathMetadata(entry, true)
+        if (!object(entry) || info === undefined || typeof entry.name !== 'string' || !entry.name
+          || entry.name === '.' || entry.name === '..' || /[/\\\0]/.test(entry.name)
+          || Buffer.byteLength(entry.name) > maxBytes || Buffer.from(entry.name).toString('utf8') !== entry.name) throw new FdWorkerFailure('FS_IO_ERROR')
+        const name = Buffer.from(entry.name)
+        if (previous !== undefined && Buffer.compare(previous, name) >= 0) throw new FdWorkerFailure('FS_IO_ERROR')
+        previous = name
+        entries.push({ name: entry.name, ...info })
+      }
+      return entries
+    })
+  }
+
+  /**
+   * Read at most length bytes at a safe positional offset, including an empty EOF result.
+   * @param root Previously authorized fixed project identity.
+   * @param relativePath Project-relative regular file.
+   * @param offset Nonnegative safe byte offset.
+   * @param length Nonnegative safe window length.
+   * @param maxBytes Inclusive window byte ceiling; no full-file-size restriction.
+   * @param signal Cancellation retains actual ownership.
+   * @returns Exact transferred window after descriptor closure.
+   */
+  readRange(
+    root: FdRootIdentity, relativePath: string, offset: number, length: number, maxBytes: number, signal: AbortSignal,
+  ): Promise<Uint8Array<ArrayBuffer>> {
+    if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(length) || length < 0
+      || !Number.isSafeInteger(offset + length) || length > maxBytes) return Promise.reject(new FdWorkerFailure('FS_TOO_LARGE'))
+    return this.content({ kind: 'range', offset, length, maxBytes }, root, relativePath, maxBytes, 0, signal, (value) => {
+      const bytes = value.bytes
+      if (value.kind !== 'range-reply' || !(bytes instanceof Uint8Array) || !(bytes.buffer instanceof ArrayBuffer)
+        || bytes.byteOffset !== 0 || bytes.byteLength !== bytes.buffer.byteLength || bytes.byteLength > length) throw new FdWorkerFailure('FS_IO_ERROR')
+      return new Uint8Array(bytes.buffer)
+    })
+  }
+
+  private content<T>(
+    command: { kind: 'lstat' } | { kind: 'list'; maxEntries: number; maxBytes: number }
+      | { kind: 'range'; offset: number; length: number; maxBytes: number },
+    root: FdRootIdentity, relativePath: string, maxBytes: number, maxEntries: number, signal: AbortSignal,
+    decode: (value: Record<string, unknown>) => T,
+  ): Promise<T> {
+    try {
+      this.assertAvailable(signal)
+      if (!this.supportsContentReads) throw new FdWorkerFailure('FS_PERMISSION_DENIED')
+      if (!Number.isSafeInteger(maxBytes) || maxBytes < 0 || maxBytes > 2_147_483_647 || (command.kind === 'list'
+        && (!Number.isSafeInteger(maxEntries) || maxEntries < 1 || maxBytes < 1))) throw new FdWorkerFailure('FS_TOO_LARGE')
+    } catch (error) { return Promise.reject(error instanceof Error ? error : new FdWorkerFailure('FS_IO_ERROR')) }
+    return new Promise((resolve, reject) => {
+      const pending: PendingContent = { kind: command.kind, ...this.base(maxBytes, signal), maxEntries, reject, accept: (value) => {
+        try {
+          const keys = command.kind === 'list' ? ['kind', 'id', 'entries'] : command.kind === 'lstat' ? ['kind', 'id', 'metadata'] : ['kind', 'id', 'bytes']
+          if (Object.keys(value).length !== keys.length || Object.keys(value).some(key => !keys.includes(key))) throw new FdWorkerFailure('FS_IO_ERROR')
+          const result = decode(value)
+          if (command.kind !== 'range' && Buffer.byteLength(JSON.stringify(value)) > maxBytes) throw new FdWorkerFailure('FS_IO_ERROR')
+          pending.removeAbort(); this.pending = undefined; resolve(result)
+        } catch (_error) { this.failProtocol() }
+      } }
+      this.pending = pending
+      this.post({ ...command, id: pending.id, root, relativePath, cancel: pending.cancel.buffer } satisfies FdContentRequest)
     })
   }
 
@@ -427,7 +546,7 @@ export class FdWorkerClient {
     if (this.failure !== undefined) return
     if (!object(value)) { this.failProtocol(); return }
     if (value.kind === 'ready') {
-      if ((value.abiVersion !== 6 && value.abiVersion !== 7) || this.readyResolved || this.closed
+      if ((value.abiVersion !== 6 && value.abiVersion !== 7 && value.abiVersion !== 8) || this.readyResolved || this.closed
         || (value.storageProbeVersion !== undefined && value.storageProbeVersion !== 1)) { this.failProtocol(); return }
       this.storageVersion = value.storageProbeVersion
       this.abiVersion = value.abiVersion
@@ -460,6 +579,7 @@ export class FdWorkerClient {
       else this.failPending(error)
       return
     }
+    if (pending.kind === 'lstat' || pending.kind === 'list' || pending.kind === 'range') { pending.accept(value); return }
     if (pending.kind === 'storage-probe' || pending.kind === 'storage-record' || pending.kind === 'storage-view') {
       pending.accept(value); return
     }

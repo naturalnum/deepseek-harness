@@ -1,8 +1,8 @@
 /** TEST ONLY Node transport. This supplies no Linux FD, confinement, sync or quota evidence. */
 import { parentPort, workerData } from 'node:worker_threads'
-import { lstatSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs'
-import { join, relative } from 'node:path'
-const { mode = 'normal', gate, abiVersion = 7 } = workerData
+import { closeSync, lstatSync, openSync, readFileSync, readdirSync, readSync, realpathSync, renameSync, statSync, writeFileSync } from 'node:fs'
+import { dirname, join, relative } from 'node:path'
+const { mode = 'normal', gate, abiVersion = 7, content } = workerData
 const state = new Int32Array(gate)
 const version = info => `${info.dev}:${info.ino}:${info.size}:${info.mtimeNs}:${info.ctimeNs}`
 const normalize = text => text.replace(/\r\n?/g, '\n')
@@ -21,6 +21,60 @@ parentPort.on('message', request => {
   const anchor = statSync(root.rootPath, { bigint: true })
   if (String(anchor.dev) !== root.rootDevice || String(anchor.ino) !== root.rootInode) {
     failed('FS_PERMISSION_DENIED', 'ESTALE')
+    return
+  }
+  if (['lstat', 'list', 'range'].includes(request.kind) || (abiVersion === 8 && request.kind === 'read')) {
+    try {
+      if (abiVersion !== 8 || content === undefined) { failed('FS_PERMISSION_DENIED'); return }
+      if (mode === 'content-block' && request.kind === 'list') block()
+      if (Atomics.load(new Int32Array(request.cancel), 0) !== 0) { failed('FS_ABORTED', 'ECANCELED'); return }
+      const within = target => {
+        const resolved = realpathSync(target), tail = relative(root.rootPath, resolved)
+        if (tail === '..' || tail.startsWith('../')) throw Object.assign(new Error('outside fixture root'), { code: 'EACCES' })
+      }
+      if (request.relativePath !== '.') within(dirname(path))
+      const metadata = name => {
+        const info = lstatSync(name, { bigint: true })
+        if (info.isFile() && info.nlink !== 1n) throw Object.assign(new Error('hard link'), { code: 'EACCES' })
+        return { identity: `${info.dev}:${info.ino}`, version: version(info),
+          type: info.isFile() ? 'file' : info.isDirectory() ? 'directory' : info.isSymbolicLink() ? 'symlink' : 'other',
+          ...info.isFile() || info.isSymbolicLink() ? { size: Number(info.size) } : {} }
+      }
+      if (request.kind === 'lstat') {
+        let info
+        try { info = metadata(path) } catch (error) { if (error.code !== 'ENOENT' && error.code !== 'ENOTDIR') throw error }
+        parentPort.postMessage({ kind: 'lstat-reply', id, metadata: info })
+      } else if (request.kind === 'list') {
+        within(path)
+        const names = readdirSync(path)
+        if (names.length > request.maxEntries || names.some(name => Buffer.byteLength(name) > content.maxNameBytes)) {
+          failed('FS_TOO_LARGE', 'EFBIG'); return
+        }
+        const entries = names.sort((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b)))
+          .map(name => ({ name, ...metadata(join(path, name)) }))
+        const reply = { kind: 'list-reply', id, entries }
+        if (Buffer.byteLength(JSON.stringify(reply)) > request.maxBytes
+          || 128 + entries.reduce((sum, entry) => sum + 512 + 6 * Buffer.byteLength(entry.name), 0) > request.maxBytes) {
+          failed('FS_TOO_LARGE', 'EFBIG'); return
+        }
+        parentPort.postMessage(reply)
+      } else {
+        within(path)
+        const info = statSync(path, { bigint: true })
+        if (!info.isFile() || info.nlink !== 1n) { failed('FS_NOT_REGULAR_FILE'); return }
+        if (mode === 'content-grow' && request.kind === 'read') writeFileSync(path, 'x'.repeat(request.maxBytes + 1))
+        const length = request.kind === 'read' ? request.maxBytes + 1 : request.length
+        const raw = new Uint8Array(length), fd = openSync(path, 'r')
+        let size
+        try { size = readSync(fd, raw, 0, length, request.kind === 'read' ? 0 : request.offset) } finally { closeSync(fd) }
+        if (request.kind === 'read' && size > request.maxBytes) { failed('FS_TOO_LARGE'); return }
+        const bytes = request.kind === 'read' ? raw.subarray(0, size) : raw.slice(0, size)
+        parentPort.postMessage(request.kind === 'read' ? { kind: 'reply', id, ok: true, bytes }
+          : { kind: 'range-reply', id, bytes }, [bytes.buffer])
+      }
+    } catch (error) {
+      failed(error.code === 'ENOENT' ? 'FS_NOT_FOUND' : error.code === 'ENOTDIR' ? 'FS_NOT_DIRECTORY' : 'FS_PERMISSION_DENIED', error.code)
+    }
     return
   }
   if (request.kind === 'directory') {

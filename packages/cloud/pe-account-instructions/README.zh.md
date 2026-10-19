@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-文件指令要求账户预先装配适配器，提供可信 Agent/项目核验和有预留的受限来源读取。缺失前置能力会在读取任何指令文件之前产生配置错误。未接入适配器的部署必须保持指令配置行禁用。本包不发现宿主 home，不上溯项目父目录，也不分配沙盒。
+文件指令要求账户预先装配适配器，提供可信 Agent/项目核验和有预留的受限来源读取。缺失前置能力会在读取任何指令文件之前产生配置错误。未接入适配器的部署必须保持指令配置行禁用。本包不发现宿主 home，不在项目根以上查找，也不分配沙盒。
 
 ## 目录
 
@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-账户准备通过 `/session` 导出的 `new AccountInstructionSources(ctx, input)` 传入精确装配 binding、共享活跃 Agent 检查及 files 持有者的 `withSources` 操作。该操作预留完整快照存储，并交付各来源独立的受限 reader 和真实原生 Workspace id。构造过程不创建来源权限。准备缺失、过期或属于其他图时，`/session` 以 `cloud/invalid-config` 拒绝激活。真实适配接通前保持此行禁用，并排除原生自动指令发现。根入口只导出配置及指令数据类型，不挂载行为。
+账户准备通过 `/session` 导出的 `new AccountInstructionSources(ctx, input)` 传入精确装配 binding、共享活跃 Agent 检查及 files 持有者的 `withSources` 操作。该操作预留完整快照存储，并交付各来源独立的受限 reader、真实原生 Workspace id 及已提交的原生 cwd。适配器须在原 Agent/Workspace 核验及来源预留内，用原生 `WorkingDirectory.get(agent.session)` 捕获 cwd；Session header、项目根或 home 都不能替代它。构造过程不创建来源权限。准备缺失、过期或属于其他图时，`/session` 以 `cloud/invalid-config` 拒绝激活。真实适配接通前保持此行禁用，并排除原生自动指令发现。根入口只导出配置及指令数据类型，不挂载行为。
 
 ### 最小配置
 
@@ -49,7 +49,7 @@ Loader 配置行激活前必须存在已准备的持有者。[配置 schema](src
 <details>
 <summary>实现细节 — 点击展开</summary>
 
-包内加载器只接受 API/files 持有者已授权的目录目标，再按平台、账户、项目排序。每个目录携带固定的受限只读 reader；平台、账户、项目来源各自通过所属 reader 选择候选并读取内容流。项目标签必须构成完整的项目根至 cwd 链；该展示检查不授予目录目标权限。对每个目录，存在 AGENTS.md 时，即使为空，也不读 CLAUDE.md。仅确认缺失才允许通过该目录的 reader 读取后备候选。provider 故障、特殊文件、取消和超额均使整个操作失败，不返回部分结果。不直接访问宿主文件系统，不发现 home，不创建项目，不上溯父目录，也不分配沙盒。
+Session 入口根据固定项目 reader 和捕获的原生 cwd，派生项目根至当前 cwd 的完整目录链；父目录、兄弟目录或其他来源的 cwd 都会拒绝。共享的增量检查在解析其余目录目标或查找候选文件之前，限制整条链的数量和编码标签字节。包内加载器接收已授权目录目标，并按平台、账户、项目排序。每个目录携带固定的受限只读 reader；平台、账户、项目来源各自通过所属 reader 选择候选并读取内容流。项目标签必须构成完整的项目根至 cwd 链；该检查不授予目录目标权限。对每个目录，存在 AGENTS.md 时，即使为空，也不读 CLAUDE.md。仅确认缺失才允许通过该目录的 reader 读取后备候选。provider 故障、特殊文件、取消和超额均使整个操作失败，不返回部分结果。不直接访问宿主文件系统，不发现 home，不创建项目，不在项目根以上查找，也不分配沙盒。
 
 快照构建器在拼接渲染文本或克隆最终消息之前，计算完整编码消息的大小。每个来源的 hash 对应实际保留的正文，完整快照保存在原生生产者来源字段中。`snapshot.totalBytes` 计入模型可见渲染文本及其标签和包装；`maxSnapshotBytes` 还覆盖全部 JSON 元数据和重复内容。
 
@@ -57,7 +57,8 @@ pre-step 适配先调用 waterfall 后续处理，为每个真实 Session 的每
 
 | 源码 | 职责 |
 | --- | --- |
-| [session.ts](src/session.ts) | Loader 激活及缺失适配时的明确失败。 |
+| [session.ts](src/session.ts) | 准备来源的持有、原生 cwd 目录链及 Loader 激活。 |
+| [directories.ts](src/directories.ts) | 候选 I/O 前的目录链标签增量限制与来源排序。 |
 | [load.ts](src/load.ts) | 有序候选选择和有界源正文读取。 |
 | [snapshot.ts](src/snapshot.ts) | 完整 C-09 内容与原生不可变消息构造。 |
 | [budget.ts](src/budget.ts) | 编码消息大小及保守副本计量。 |
@@ -108,11 +109,11 @@ Complete instruction snapshot for the current turn. Earlier instruction snapshot
 
 <a id="known-limitations-and-deferred-work"></a>
 
-下列约束阻止文件指令启用。
+部署验收仍需下列集成。
 
-- **持有者接线** — API 持有的可信 Agent/Session 项目解析器，以及 files 持有的私有指令只读能力尚未接通。通用原生 FileSystem 不满足这些前置要求。快照数据使用 runtime 持有的 AccountBinding 类型与原生 WorkspaceId，持有这些数据不代表获得权限。
+- **部署准入** — 组件只在可信适配器提供实际原生当前目录时支持嵌套 cwd。Runtime 准入及 files 项目目录准备仍限制 cwd 为项目根；部署须在开放嵌套 Session 前审阅这些拥有者核验。当前 reader 签发者不提供独立平台来源。AccountBinding 与 WorkspaceId 数据不授予来源权限。
 - **共享预算与 I/O** — 单快照文本计划是保守值，不是 RSS 测量或进程上限，也不取得 root files 的全局/账户预留。真实 port 必须预留声明的字节、落实有限流 credit 与 FD/版本限制，并将实际 I/O 追踪到排空结束。files worker 缓冲、实际硬配额及其他消费者不在此 fixture 的证明范围内。
-- **验收** — [包内原生日志 fixture](tests/fixtures/recorded/session.v4.jsonl) 使用有界内存 reader 核对编码消息及原生重建。它不是发行 Profile 的快照，也不证明真实 files 授权边界。账户/Preset 装配、完整恢复/子会话流程、发布包消费，以及 V-24/V-26/V-28 验收仍是启用指令的前置条件。
+- **验收** — [包内原生日志 fixture](tests/fixtures/recorded/session.v4.jsonl) 使用有界内存 reader 核对编码消息及原生重建。[Loader/原生 Agent 组件测试](tests/loader-nested.spec.ts)核对嵌套选择、工具/cwd 变化期间快照固定、下轮重载及读取前限额；[来源故障测试](tests/loader-priority.spec.ts)核对模型与日志实际拒绝及预留归还。这些检查不建立 Linux 来源授权、物理配额、发布包或 Web 验收。完整恢复/子会话流程及 V-24/V-26/V-28 部署验收仍是独立要求。
 
 <a id="dev-note"></a>
 ### 开发备注

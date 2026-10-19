@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-File instructions require an account-prepared adapter for trusted Agent/project validation and reserved, restricted source reads. Missing prerequisites produce a configuration error before any instruction file is read. Deployments without that adapter must keep the instruction row disabled. This package does not discover the host home, traverse project parents or allocate sandboxes.
+File instructions require an account-prepared adapter for trusted Agent/project validation and reserved, restricted source reads. Missing prerequisites produce a configuration error before any instruction file is read. Deployments without that adapter must keep the instruction row disabled. This package does not discover the host home, search above the project root or allocate sandboxes.
 
 ## Table of Contents
 
@@ -25,7 +25,7 @@ File instructions require an account-prepared adapter for trusted Agent/project 
 <a id="use-this-package"></a>
 ## Use this package
 
-Account preparation constructs `new AccountInstructionSources(ctx, input)` from `/session` with the exact installed binding, shared active-Agent checks and the files owner's `withSources` operation. That operation reserves complete snapshot storage and supplies each source's independent restricted reader plus the actual native Workspace id. Construction creates no source authority. `/session` rejects activation with `cloud/invalid-config` when preparation is absent, stale or foreign. Keep the row disabled until the real adapter is connected, and exclude the native automatic instruction loader. The root exports configuration and instruction data types without mounting behavior.
+Account preparation constructs `new AccountInstructionSources(ctx, input)` from `/session` with the exact installed binding, shared active-Agent checks and the files owner's `withSources` operation. That operation reserves complete snapshot storage and supplies each source's independent restricted reader, actual native Workspace id and committed native cwd. The adapter captures cwd with native `WorkingDirectory.get(agent.session)` inside the original Agent/Workspace checks and source reservation; the Session header, project root and home cannot replace it. Construction creates no source authority. `/session` rejects activation with `cloud/invalid-config` when preparation is absent, stale or foreign. Keep the row disabled until the real adapter is connected, and exclude the native automatic instruction loader. The root exports configuration and instruction data types without mounting behavior.
 
 ### Minimal configuration
 
@@ -49,7 +49,7 @@ The prepared owner must exist before the Loader row activates. The [configuratio
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The package-local loader accepts only directory targets already authorized by the API/files owners, then orders platform, account and project sources. Each directory carries its fixed restricted read-only reader; platform, account and project sources use their respective readers for candidate selection and content streams. Project labels must form the complete root-to-cwd chain; that presentation check does not authorize their targets. For each directory, an existing AGENTS.md, including an empty file, suppresses CLAUDE.md. Only confirmed absence permits fallback through that directory's reader. Provider failures, special files, cancellation and excess bytes fail the complete operation without a partial result. No direct host filesystem access, home discovery, project creation, parent traversal or sandbox allocation occurs.
+The Session entry derives the complete project-root-to-current-cwd chain from the fixed project reader and captured native cwd. It rejects a parent, sibling or different source cwd. A shared incremental check bounds the whole chain’s count and encoded labels before resolving its remaining directory targets or looking up candidate files. The package-local loader accepts already-authorized directory targets and orders platform, account and project sources. Each directory carries its fixed restricted read-only reader; platform, account and project sources use their respective readers for candidate selection and content streams. Project labels must form the complete root-to-cwd chain; that check does not authorize their targets. For each directory, an existing AGENTS.md, including an empty file, suppresses CLAUDE.md. Only confirmed absence permits fallback through that directory's reader. Provider failures, special files, cancellation and excess bytes fail the complete operation without a partial result. No direct host filesystem access, home discovery, project creation, search above the project root or sandbox allocation occurs.
 
 The snapshot builder measures the complete encoded envelope before joining the rendered text or cloning the final message. It hashes exactly the text retained in each source and stores the complete snapshot under the native producer attribution. `snapshot.totalBytes` counts the rendered model-visible text, including labels and framing; `maxSnapshotBytes` additionally covers all JSON metadata and repeated content.
 
@@ -57,7 +57,8 @@ The pre-step adapter calls the waterfall continuation and prepares one immutable
 
 | Source | Responsibility |
 | --- | --- |
-| [session.ts](src/session.ts) | Loader activation and explicit missing-adapter failure. |
+| [session.ts](src/session.ts) | Prepared source ownership, native cwd chain and Loader activation. |
+| [directories.ts](src/directories.ts) | Incremental chain-label bounds and source ordering before candidate I/O. |
 | [load.ts](src/load.ts) | Ordered candidate selection and bounded source-text reading. |
 | [snapshot.ts](src/snapshot.ts) | Complete C-09 payload and native immutable message construction. |
 | [budget.ts](src/budget.ts) | Encoded-envelope size and conservative copy accounting. |
@@ -108,11 +109,11 @@ The native consumer appends the current snapshot without rewriting older message
 
 <a id="known-limitations-and-deferred-work"></a>
 
-These constraints prevent enabling file instructions.
+Deployment acceptance still requires the following integrations.
 
-- **Owner integration** — the API-owned trusted Agent/Session project resolver and files-owned private instruction read capability are not connected. A general native FileSystem does not satisfy these prerequisites. Snapshot data uses the runtime owner's AccountBinding types and native WorkspaceId; possession does not grant authority.
+- **Deployment admission** — the component supports nested cwd only when the trusted adapter supplies the actual native current directory. Runtime admission and files project-directory preparation still restrict cwd to the project root; deployments must review those owning checks before opening nested Sessions. The current reader issuer supplies no independent platform source. AccountBinding and WorkspaceId data grant no source authority.
 - **Shared budgets and I/O** — the per-snapshot text plan is conservative, is not an RSS measurement or process cap, and does not acquire root files global/account reservations. The real port must reserve the declared bytes, enforce finite stream credit and FD/version restrictions, and retain actual I/O through drain. Files worker buffers, physical quotas and other consumers remain outside this fixture's evidence.
-- **Acceptance** — [the package-local native log fixture](tests/fixtures/recorded/session.v4.jsonl) checks encoded messages and native reconstruction with a bounded in-memory reader. It is not a shipped-profile snapshot or evidence for real files authorization. Account/Preset wiring, complete restore/child flows, published-package consumption and V-24/V-26/V-28 acceptance remain prerequisites for enabling instructions.
+- **Acceptance** — [the package-local native log fixture](tests/fixtures/recorded/session.v4.jsonl) checks encoded messages and native reconstruction with a bounded in-memory reader. The [Loader/native-Agent component tests](tests/loader-nested.spec.ts) check nested selection, unchanged snapshots across tool/cwd changes, next-turn reload and pre-read limits; [source-failure tests](tests/loader-priority.spec.ts) check actual model/log rejection and reservation release. These checks establish no Linux source authorization, physical quota, published-package or Web acceptance. Complete restore/child flows and V-24/V-26/V-28 deployment acceptance remain separate requirements.
 
 <a id="dev-note"></a>
 ### Dev Note

@@ -76,6 +76,9 @@
     },
     {
       "path": "../../boot/app-boot"
+    },
+    {
+      "path": "../../api/workspace-files/tsconfig.host.json"
     }
   ]
 }

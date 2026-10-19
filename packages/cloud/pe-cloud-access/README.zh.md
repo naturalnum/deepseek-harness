@@ -71,6 +71,8 @@ HTTP 和 upgrade 准入先预留有限 carrier 容量，再加入正在进行或
 
 未知字段、错误状态/reason 组合、非 false 的受限能力及非法预算均拒绝，错误不回显输入。解码不认证、不签发代际，也不核验 provider 或 ready。配置应用等级仅描述服务端响应，不提交变更或决定服务端实际应用方式。私有 producer 等待原 `CloudAccountApi.assertBootstrapCurrent`、files/project 成员关系、closed execution 及有界 Loader/包检查。发送有界 JSON（`no-store`）前再次检查原登录、Root、Use、代际和安装。批准项本身不代表已安装；事实缺失时拒绝整个 bootstrap。
 
+producer 只新增允许精确的 `cloudProjects/create` RPC，以及原生 `workspaceFiles/read`、`stat`、`list`、`readBytes` RPC 和 `workspaceFiles/changes` stream。这两个 namespace 的其他方法及错误的 RPC/stream 类别均拒绝。每个选中条目都经原 API owner 的当前注册审计。只有完整文件组被选中，且原 Files owner 的 `assertContentAvailable()` 通过，包含已结算的 ABI8、content 和 provider 前提时，`filePreview` 才为 available。部分文件组仍显示 disabled；任何选中的文件端点都要求该内容断言。Runtime 在 ready 前也检查相同前提。未选择文件端点的 first-trial 配方保持 preview disabled。项目元数据沿用原字段；执行、配置及其他未批准能力保持关闭。
+
 ### 认证适配器
 
 `BetterAuthAccess.create` 要求 Better Auth 1.7.10、调用方持有的有限 PostgreSQL 池及已解析密钥。它核对已加载库版本、禁用 cookie 身份缓存，并将基础 URL/路径固定为批准源和 `/cloud/auth`。原始 cookie 交给认证库；客户端账户字段不能产生 principal。

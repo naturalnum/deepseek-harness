@@ -1,4 +1,4 @@
-/** C11 projection from original graph owners and the closed first-trial policy, without business mutation. */
+/** C11 projection from original graph owners and explicitly audited closed execution/file policies. */
 import { symbols, type Context } from '@deepseek-ai/cordis'
 import { CloudAccountApi, CloudApiError, ExposureService } from '@deepseek-ai/dsh-pe-cloud-api'
 import { CloudAccountFiles } from '@deepseek-ai/dsh-pe-cloud-files'
@@ -14,6 +14,11 @@ function original(value: object): object {
   const target: unknown = Reflect.get(value, symbols.original)
   return target !== null && (typeof target === 'object' || typeof target === 'function') ? target : value
 }
+
+const fileRpcEndpoints: readonly string[] = [
+  'workspaceFiles/read', 'workspaceFiles/stat', 'workspaceFiles/list', 'workspaceFiles/readBytes',
+]
+const fileStreamEndpoint = 'workspaceFiles/changes'
 
 /**
  * Read original account providers and emit only the existing bounded C11 wire fields.
@@ -45,6 +50,10 @@ export async function produceCloudBootstrap(
   api.assertInstalled(ctx)
   files.assertInstalled(ctx)
   const project = files.project(), registry = ctx.get('workspaceRegistry')
+  const selectedFiles = manifest.rpcEndpoints.some(row => row.endpoint.startsWith('workspaceFiles/'))
+    || manifest.streamEndpoints.some(row => row.endpoint.startsWith('workspaceFiles/'))
+  const previewSelected = fileRpcEndpoints.every(endpoint => manifest.rpcEndpoints.some(row => row.endpoint === endpoint))
+    && manifest.streamEndpoints.some(row => row.endpoint === fileStreamEndpoint)
   const factsCurrent = (): void => {
     signal.throwIfAborted()
     current()
@@ -58,20 +67,23 @@ export async function produceCloudBootstrap(
       || currentRegistry === undefined || original(currentRegistry) !== original(registry)
       || registry.get(project.workspace.id) !== project.workspace) unavailable()
     assertClosedAccountExecution(ctx)
-    // This producer supports the explicitly closed first trial. Other feature policies need their original owner.
+    // Execution and configuration remain closed; file exposure still requires its original audited native owners.
     if (manifest.allowedSettings.length !== 0 || manifest.exactFetchRoutes.length !== 0) unavailable()
     const budget = catalog.maxEntries
     if (manifest.rpcEndpoints.length + manifest.streamEndpoints.length > budget) unavailable()
     for (const row of manifest.rpcEndpoints) {
       if (!/^(?:session|workspace|remoteAccess)\//.test(row.endpoint) && row.endpoint !== 'settings/describe'
-        && row.endpoint !== '$events/result') unavailable()
+        && row.endpoint !== '$events/result' && row.endpoint !== 'cloudProjects/create'
+        && !fileRpcEndpoints.includes(row.endpoint)) unavailable()
       api.requireRpc(row.endpoint)
     }
     for (const row of manifest.streamEndpoints) {
-      if (!/^(?:session|workspace|remoteAccess)\//.test(row.endpoint) && row.endpoint !== '$events') unavailable()
+      if (!/^(?:session|workspace|remoteAccess)\//.test(row.endpoint) && row.endpoint !== '$events'
+        && row.endpoint !== fileStreamEndpoint) unavailable()
       api.requireStream(row.endpoint)
     }
     if (api.requireStream('workspace/follow').guard !== 'account-project') unavailable()
+    if (selectedFiles) files.assertContentAvailable()
   }
   factsCurrent()
   const inventory = await inspectBootstrapConfiguration(ctx, catalog, factsCurrent, resolvePackages)
@@ -88,7 +100,7 @@ export async function produceCloudBootstrap(
   assertCurrent()
   const disabled = Object.freeze({ state: 'disabled', reason: 'not-approved' } as const)
   const value = decodeCloudBootstrap({ account, recipeVersion: binding.recipeVersion, connectionGeneration: token,
-    capabilities: { projects: { state: 'available' }, filePreview: disabled, shell: disabled,
+    capabilities: { projects: { state: 'available' }, filePreview: previewSelected ? { state: 'available' } : disabled, shell: disabled,
       developmentServices: disabled, servicePreview: disabled, sandboxScope: 'session', backgroundJobs: false,
       localDesktop: false, arbitraryBackendPlugins: false,
       subprocess: { spawn: false, pipes: false, control: false, inherit: false, terminal: false, consumers: [] },

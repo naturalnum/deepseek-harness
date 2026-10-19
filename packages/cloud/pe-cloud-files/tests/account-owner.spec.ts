@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync, wri
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { Worker } from 'node:worker_threads'
+import { randomUUID } from 'node:crypto'
 import { Context, FiberState } from '@deepseek-ai/cordis'
 import { boot } from '@deepseek-ai/dsh-app-boot'
 import SessionStore from '@deepseek-ai/dsh-session'
@@ -18,12 +19,13 @@ import { CloudAccountFiles, type AccountFilesPreparation } from '../src/account-
 import * as AccountEntry from '../src/account.ts'
 import { LinuxFilesPool, type IsolatedLeafGrant } from '../src/worker-pool.ts'
 import { directoryWorkBudget } from '../src/directory-budget.ts'
+import type { ControlledWorkspaceRegistry } from '../src/workspace-adapter.ts'
 
 async function fixture(mode = 'normal') {
   const home = realpathSync(mkdtempSync(join(tmpdir(), 'm8r-files-owner-')))
   const gate = new SharedArrayBuffer(24), counters = new Int32Array(gate), workers: Worker[] = [], roots: Context[] = []
   const budget = directoryWorkBudget({ parent: { rootPath: join(home, 'A', 'projects'), rootDevice: '1', rootInode: '2' },
-    leaf: 'default-workspace' }, { maxPathBytes: 256, replyOverheadBytes: 32 })
+    leaf: randomUUID() }, { maxPathBytes: 256, replyOverheadBytes: 32 })
   const pool = new LinuxFilesPool({ maxLanes: 3, maxRunning: 1, maxRunningPerLane: 1, maxQueued: 2, maxQueuedPerLane: 1,
     maxResidentBytes: 3 * budget.totalBytes + 128, maxResidentBytesPerLane: budget.totalBytes, waitTimeoutMs: 5000,
     workerCount: 1, minimumHealthyWorkers: 1, workerReservationBytes: 128, replyOverheadBytes: 32,
@@ -59,13 +61,15 @@ async function fixture(mode = 'normal') {
     const port = pool.bind(binding, root, () => { assertMountCurrent(binding) })
     const defaultGrant: IsolatedLeafGrant = Object.freeze({ binding, parent: root, leaf: 'default-workspace',
       backend: 'root-owned-isolated-linux-tmpfs', assertExclusive: () => { assertMountCurrent(binding) } })
-    const input: AccountFilesPreparation = { binding, port, defaultGrant, assertMountCurrent, assertUnpublished }
+    const input: AccountFilesPreparation = { binding, port, defaultGrant, assertMountCurrent, assertUnpublished,
+      projectFor: port.projectFor }
     let owner: CloudAccountFiles | undefined, context: Context | undefined
     const start = async (options: {
       missingOwner?: boolean
       duplicateEntry?: boolean
       priorRegistry?: boolean
       createFileSystem?: AccountFilesPreparation['createFileSystem']
+      assertContentAvailable?: AccountFilesPreparation['assertContentAvailable']
     } = {}) => {
       const configPath = join(dir, 'cordis.yml')
       writeFileSync(configPath, JSON.stringify([
@@ -82,6 +86,7 @@ async function fixture(mode = 'normal') {
         scope.provide('peAccount', binding)
         if (!options.missingOwner) owner = new CloudAccountFiles(scope, {
           ...input, ...options.createFileSystem === undefined ? {} : { createFileSystem: options.createFileSystem },
+          ...options.assertContentAvailable === undefined ? {} : { assertContentAvailable: options.assertContentAvailable },
         })
         Object.assign(scope.loader.builtins, { 'm8r-sessions': SessionStore, 'm8r-storage': Storage,
           'm8r-json': JsonStorage, 'm8r-domain': DomainStorage, 'm8r-jsonl': Jsonl,
@@ -125,6 +130,60 @@ it('installs real native Registry and FS through files/account before returning 
   expect(first).toBe(repeat)
   expect(await repeat).toBe(project)
   expect(f.workers).toHaveLength(1)
+})
+
+it('derives an exact registered project without changing the bootstrap and survives default deletion for other projects', async () => {
+  const f = await fixture(), account = f.prepare('A'), graph = await account.start()
+  const owner = graph.owner(), original = owner.project()
+  const registry = graph.ctx.workspaceRegistry as ControlledWorkspaceRegistry
+  const leaf = randomUUID()
+  const workspace = await registry.createProject({ ...account.input.defaultGrant, leaf })
+  account.closeWindow()
+  const selected = await owner.projectFor(workspace)
+  expect(owner.project()).toBe(original)
+  expect(selected.workspace).toBe(workspace)
+  expect(selected.binding).toBe(account.binding)
+  await selected.projectDirectory.prepare(workspace.path)
+  await expect(owner.projectFor({ ...workspace })).rejects.toMatchObject({ code: 'cloud/stale-generation' })
+  await registry.delete(original.workspace.id)
+  expect(() => owner.project()).toThrow('no longer current')
+  await (await owner.projectFor(workspace)).projectDirectory.prepare(workspace.path)
+  await registry.delete(workspace.id)
+  await expect(selected.projectDirectory.prepare(workspace.path)).rejects.toThrow('no longer current')
+  expect(f.workers).toHaveLength(1)
+  expect(f.pool.inspect().work).toMatchObject({ pending: 0, residentBytes: 0 })
+})
+
+it('requires a settled original installation before invoking the trusted content-capability assertion', async () => {
+  const f = await fixture(), account = f.prepare('A'), original = account.input.assertMountCurrent
+  let observedPartial = false, checks = 0, available = true
+  vi.spyOn(account.input, 'assertMountCurrent').mockImplementation((binding) => {
+    original(binding)
+    if (!observedPartial && account.context()?.get('fs') !== undefined) {
+      observedPartial = true
+      expect(() => { account.owner()!.assertContentAvailable() }).toThrow('not completed')
+      expect(checks).toBe(0)
+    }
+  })
+  // This callback tests owner wiring only; the ABI8 pool/router tests exercise real worker handshakes separately.
+  const graph = await account.start({ assertContentAvailable: () => {
+    checks++
+    if (!available) throw new Error('trusted pool capability ended')
+  } })
+  expect(observedPartial).toBe(true)
+  expect(() => { graph.owner().assertContentAvailable() }).not.toThrow()
+  expect(checks).toBe(1)
+  available = false
+  expect(() => { graph.owner().assertContentAvailable() }).toThrow('trusted pool capability ended')
+  await graph.entry!.fiber!.dispose()
+  expect(() => { graph.owner().assertContentAvailable() }).toThrow()
+  expect(checks).toBe(2)
+})
+
+it('does not infer content readiness from a fully installed S2 provider', async () => {
+  const f = await fixture(), account = f.prepare('A'), graph = await account.start()
+  expect(graph.ctx.get('fs')).toBeInstanceOf(FileSystem)
+  expect(() => { graph.owner().assertContentAvailable() }).toThrow('unavailable')
 })
 
 it('keeps one native installation owner and rejects another graph, duplicate preparation and duplicate entry', async () => {
@@ -252,7 +311,7 @@ it('revokes the installed project after actual native default deletion without a
   const project = graph.owner().project()
   await graph.ctx.get('workspaceRegistry')!.delete(project.workspace.id)
   expect(() => graph.owner().project()).toThrow('no longer current')
-  await expect(project.projectDirectory.prepare(project.workspace.path)).rejects.toThrow('no longer current')
+  await expect(project.projectDirectory.prepare(project.workspace.path)).rejects.toMatchObject({ reason: 'unavailable' })
   expect(Atomics.load(f.counters, 0)).toBe(1)
   expect(Atomics.load(f.counters, 3)).toBe(0)
 })

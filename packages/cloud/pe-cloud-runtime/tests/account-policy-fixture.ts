@@ -41,6 +41,7 @@ import { accountPresetConfigDigest, createAccountPolicy, type AccountPolicyConfi
 import { AccountPolicyConfigSchema } from '../src/schema.ts'
 import { ACCOUNT_NATIVE_ENTRIES } from '../src/account-native-integration.ts'
 import { startNativeAccountBoot } from '../src/native-boot.ts'
+import { nativeProjectDeriver } from './native-project-fixture.ts'
 import type { AccountBinding, AccountId, OwnerEpoch } from '../src/types.ts'
 
 class ExactQuery extends SessionQuery {
@@ -100,7 +101,7 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
     { endpoint: '$events', handlerId: 'native:typertGateway', guard: 'authenticated-account' as const },
   ]],
   exactFetchRoutes: [], allowedSettings: [] }
-  const exposure = new ExposureService(shared, manifest).policy
+  const exposureOwner = new ExposureService(shared, manifest), exposure = exposureOwner.policy
   const graphs: { close(): Promise<void> }[] = []
   onTestFinished(async () => {
     try { for (const graph of graphs.toReversed()) await graph.close(); saves.close(); await shared.fiber.dispose() }
@@ -146,7 +147,9 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
         requireApi().createController(owner, { ...requireGuards().sessions, projectDirectory: { binding,
           prepare: async (cwd) => {
             if (files === undefined) throw new Error('Component files absent')
-            await files.project().projectDirectory.prepare(cwd)
+            const workspace = requireGuards().projectForDirectory(cwd)
+            await (await files.projectFor(workspace)).projectDirectory.prepare(cwd)
+            requireGuards().assertWorkspace(workspace)
           } }, ...firstScreen === undefined ? {} : { firstScreen: {
           ...firstScreen, assertSessionRead: (id, summary) => {
             const check = requireGuards().assertSessionRead
@@ -203,6 +206,7 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
         }
         class NodeRegistry extends WorkspaceRegistry {
           async createProject(_grant: unknown): Promise<Workspace> { throw new Error('No component registration entry') }
+          async createAdmittedProject(): Promise<Workspace> { throw new Error('No component ready borrow grants project registration') }
           async createS2Project() {
             const workspace = await this.initializeDefault(async () => project)
             if (workspace === undefined) throw new Error('Native default Workspace absent')
@@ -216,6 +220,7 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
         }
         const info = statSync(projects, { bigint: true })
         const input: AccountFilesPreparation = { binding, port: { createWorkspaceRegistry: () => NodeRegistry },
+          projectFor: nativeProjectDeriver(binding, () => { actualGraph(binding) }, (cwd) => { directoryCalls.push(cwd) }),
           defaultGrant: { binding, backend: 'root-owned-isolated-linux-tmpfs', leaf: 'default-workspace',
             parent: { rootPath: projects, rootDevice: String(info.dev), rootInode: String(info.ino) },
             assertExclusive: () => { actualGraph(binding) } },
@@ -228,6 +233,7 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
         guards = createAccountPolicy(owner, binding, files, selected, exposure, maxEntries)
         if (firstScreen !== undefined) {
           nativeFirstScreen = api.prepareFirstScreen(owner, { ...firstScreen, maxInventoryEntries: maxEntries,
+            assertWorkspace: (workspace) => { requireGuards().assertWorkspace(workspace) },
             project: () => {
               if (files === undefined) throw new Error('Original fixture files owner absent')
               return files.project()
@@ -293,5 +299,5 @@ export function policyFixture(extraRpc: readonly EndpointExposure[] = [],
       expectEventDisposalFailure: (error: unknown) => { expectedEventFailure = { error } },
       withdrawProvider: () => { adapterRegistration?.() }, withdrawLlmGuard: () => { removeLlmGuard?.() } }
   }
-  return { start, config, declaration, project, privateRoot, patchPath }
+  return { start, config, declaration, project, privateRoot, patchPath, exposureOwner }
 }

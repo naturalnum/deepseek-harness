@@ -1,6 +1,8 @@
 /** Browser Loader entry consuming the exact pre-Cordis prepared page owner. */
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import { installCloudProjects } from './projects.ts'
+import { installCloudFileDownloads } from './downloads.ts'
 
 /** Stable browser plugin name. */
 export const name = 'pe-cloud-client/client'
@@ -22,6 +24,8 @@ export function apply(ctx: Context, config: Config): void {
   if (owner === undefined) throw new Error('pe-cloud-client/client requires its pre-Cordis prepared page owner')
   if (Object.keys(config).length !== 0) throw new Error('pe-cloud-client/client requires empty Loader configuration; limits belong to preparation')
   owner.activate(ctx)
+  installCloudProjects(ctx)
+  installCloudFileDownloads(ctx, owner)
 }
 
 export { CloudPagePersistence, CloudPersistenceError } from './persistence.ts'

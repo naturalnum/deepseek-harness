@@ -1,7 +1,9 @@
 /** Fixed native first-screen readers; original registries, DTOs and iteration remain authoritative. */
 import { FiberState, symbols, type Context, type Fiber } from '@deepseek-ai/cordis'
 import WorkspaceController from '@deepseek-ai/dsh-api-workspace-controller'
-import type { WorkspaceFollowFrame, WorkspaceValue, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/types'
+import type {
+  WorkspaceCreateRequest, WorkspaceCreateValue, WorkspaceFollowFrame, WorkspaceValue, WorkspaceView,
+} from '@deepseek-ai/dsh-api-workspace-controller/types'
 import SettingsController from '@deepseek-ai/dsh-api-settings-controller'
 import RemoteAccess from '@deepseek-ai/dsh-api-remote-access'
 import WorkspaceRegistry, { type Workspace } from '@deepseek-ai/dsh-workspace'
@@ -25,6 +27,8 @@ export interface FirstScreenNativeInput {
   readonly api: CloudAccountApi
   readonly binding: AccountBinding
   readonly project: () => { readonly binding: AccountBinding; readonly workspace: Workspace }
+  /** Validate one exact current Registry object without choosing a project from its display path. */
+  readonly assertWorkspace: (workspace: Workspace) => void
   /** Check actual native Session metadata for readonly publication; never issue a ProjectScope from an id or cwd. */
   readonly assertSessionRead: (id: SessionId) => void
   readonly maxInventoryEntries: number
@@ -122,6 +126,7 @@ export function prepareNativeFirstScreen(ctx: Context, input: FirstScreenNativeI
     if (!(registry instanceof WorkspaceRegistry) || !(access instanceof RemoteAccess)) unavailable()
     const project = input.project()
     if (project.binding !== input.binding || registry.get(project.workspace.id) !== project.workspace) unavailable()
+    input.assertWorkspace(project.workspace)
     const registryFact = firstScreenNativeOwner(owner, 'workspaceRegistry', registry, input.maxInventoryEntries)
     const accessFact = firstScreenNativeOwner(owner, 'remoteAccess', access, input.maxInventoryEntries)
     if (approved !== undefined && (approved.workspace !== project.workspace || registryOwner?.value !== registryFact.value
@@ -160,34 +165,51 @@ export function prepareNativeFirstScreen(ctx: Context, input: FirstScreenNativeI
   const bounded = (value: unknown): void => {
     firstScreenJsonBytes(value, input.maxFrameBytes)
   }
-  const sessions = (ids: readonly SessionId[]): void => {
+  const sessions = (ids: readonly SessionId[], workspace?: Workspace): void => {
     if (ids.length > input.maxCollectionItems || approved === undefined) unavailable()
+    const registry = ctx.get('workspaceRegistry')
+    if (!(registry instanceof WorkspaceRegistry)) unavailable()
+    const projects = workspace === undefined ? registry.list() : [workspace]
+    if (projects.length > input.maxCollectionItems) unavailable()
     for (const id of ids) {
-      if (!approved.workspace.sessionIds.includes(id)) unavailable()
+      const owners = projects.filter(candidate => candidate.sessionIds.includes(id))
+      if (owners.length !== 1 || owners[0] === undefined) unavailable()
+      input.assertWorkspace(owners[0])
       input.assertSessionRead(id)
     }
   }
   const view = (value: WorkspaceView): void => {
-    if (approved === undefined || value.workspaceId !== approved.workspace.id || value.path !== approved.workspace.path) unavailable()
-    sessions(value.sessionIds)
+    const workspace = ctx.get('workspaceRegistry')?.get(value.workspaceId)
+    if (workspace === undefined || value.path !== workspace.path) unavailable()
+    input.assertWorkspace(workspace)
+    sessions(value.sessionIds, workspace)
   }
   const frame = (value: WorkspaceFollowFrame): void => {
     switch (value.type) {
       case 'baseline': case 'replace':
-        if (value.value.items.length !== 1 || value.value.items[0] === undefined) unavailable()
-        view(value.value.items[0])
+        if (value.value.items.length > input.maxCollectionItems) unavailable()
+        for (const item of value.value.items) view(item)
         sessions(value.value.archivedSessionIds)
         sessions(value.value.pinnedSessionIds)
         break
       case 'upsert': view(value.workspace); break
-      case 'remove': if (value.workspaceId !== approved?.workspace.id) unavailable(); break
-      case 'order': if (value.workspaceIds.length !== 1 || value.workspaceIds[0] !== approved?.workspace.id) unavailable(); break
+      // Removal carries no content capability; its original account Registry owns the emitted identity.
+      case 'remove': break
+      case 'order':
+        if (value.workspaceIds.length > input.maxCollectionItems
+          || new Set(value.workspaceIds).size !== value.workspaceIds.length) unavailable()
+        for (const id of value.workspaceIds) {
+          const workspace = ctx.get('workspaceRegistry')?.get(id)
+          if (workspace === undefined) unavailable()
+          input.assertWorkspace(workspace)
+        }
+        break
       case 'archived': sessions(value.archivedSessionIds); break
       case 'pinned': sessions(value.pinnedSessionIds); break
     }
     bounded(value)
   }
-  const admit = (endpoint: 'workspace/follow' | 'workspace/initializeDefault' | 'settings/describe'): void => {
+  const admit = (endpoint: 'workspace/follow' | 'workspace/initializeDefault' | 'workspace/create' | 'settings/describe'): void => {
     current()
     const row = endpoint === 'workspace/follow' ? input.api.requireStream(endpoint) : input.api.requireRpc(endpoint)
     if (row.guard !== (endpoint === 'settings/describe' ? 'authenticated-account' : 'account-project')) unavailable()
@@ -202,6 +224,22 @@ export function prepareNativeFirstScreen(ctx: Context, input: FirstScreenNativeI
       super(owner, config)
       workspaceOwner = { value: this, fiber: owner.fiber }
       owner.effect(() => () => { input.api.invalidate() })
+    }
+    override async create(request: WorkspaceCreateRequest): Promise<WorkspaceCreateValue> {
+      admit('workspace/create')
+      const registry = this.ctx.workspaceRegistry
+      const workspace = await registry.resolveByPath(request.path)
+      if (workspace === undefined || registry.get(workspace.id) !== workspace) {
+        throw new CloudApiError('cloud/forbidden', 'Choose an existing approved project or create a Cloud project.')
+      }
+      input.assertWorkspace(workspace)
+      admit('workspace/create')
+      const value = await super.create(request)
+      admit('workspace/create')
+      if (registry.get(workspace.id) !== workspace || value.workspace.workspaceId !== workspace.id) unavailable()
+      view(value.workspace)
+      bounded(value)
+      return value
     }
     override async *follow(signal: AbortSignal): AsyncIterable<WorkspaceFollowFrame> {
       const control = AbortSignal.any([signal, input.binding.lifetime])
@@ -274,7 +312,7 @@ export function prepareNativeFirstScreen(ctx: Context, input: FirstScreenNativeI
       current()
       const rpc: ExposureInventory['rpcEndpoints'][number][] = [], streams: ExposureInventory['streamEndpoints'][number][] = []
       for (const [expected, key, namespace, selected, prototype] of [
-        [workspaceOwner, 'workspaceController', 'workspace', ['follow', 'initializeDefault'], AccountWorkspaceController.prototype],
+        [workspaceOwner, 'workspaceController', 'workspace', ['follow', 'initializeDefault', 'create'], AccountWorkspaceController.prototype],
         [settingsOwner, 'settingsController', 'settings', ['describe'], AccountSettingsController.prototype],
         [accessOwner, 'remoteAccess', 'remoteAccess', ['follow'], RemoteAccess.prototype],
       ] as const) {

@@ -1,0 +1,8 @@
+- id: instructions
+  name: cordis:instructions
+  config:
+    maxFiles: 8
+    maxFileBytes: 1024
+    maxTotalBytes: 4096
+    maxSnapshotBytes: 256
+    maxResidentBytes: 400000

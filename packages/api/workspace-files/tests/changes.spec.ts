@@ -80,6 +80,34 @@ async function ownedEndpoint() {
 }
 
 describe('workspaceFiles.changes — target frames', () => {
+  it('keeps the caller filesystem context through setup and later invalidations', async () => {
+    harness.endpoint()
+    const marker = Symbol('workspace-files-caller')
+    const caller = harness.ctx.extend({ [marker]: true })
+    const filesystem = harness.ctx.fs
+    const resolve = filesystem.resolve.bind(filesystem)
+    const stat = filesystem.stat.bind(filesystem)
+    const contexts: unknown[] = []
+    vi.spyOn(filesystem, 'resolve').mockImplementation(function (this: FileSystem, path, options) {
+      contexts.push(Reflect.get(this.ctx, marker))
+      return resolve(path, options)
+    })
+    vi.spyOn(filesystem, 'stat').mockImplementation(function (this: FileSystem, target, signal) {
+      contexts.push(Reflect.get(this.ctx, marker))
+      return stat(target, signal)
+    })
+    const stream = open(caller.workspaceFiles, '.')
+    await ready(stream)
+    const changed = watch.mock.calls[0]?.[1]
+    expect(changed).toBeDefined()
+    changed?.()
+    await expect(stream.next()).resolves.toMatchObject({ done: false, value: { kind: 'change' } })
+    expect(contexts).toHaveLength(4)
+    expect(contexts.every(value => value === true)).toBe(true)
+    await stream.close()
+    expect(unwatch).toHaveBeenCalledOnce()
+  })
+
   it('acknowledges readiness before draining target observations queued during root resolution', async () => {
     const path = join(harness.workspace, 'early.txt')
     await writeFile(path, 'current contents')

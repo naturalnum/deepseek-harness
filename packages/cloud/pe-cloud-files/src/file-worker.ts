@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { fstatSync, readSync } from 'node:fs'
 import { isAbsolute } from 'node:path'
 import { parentPort, workerData } from 'node:worker_threads'
-import type { FdTaskRequest, FdWorkerInput, FdWorkerReply, FdMetadata, FdDirectoryRequest, FdLeafRequest, FdTextWriteRequest } from './worker-protocol.ts'
+import type { FdTaskRequest, FdWorkerInput, FdWorkerReply, FdMetadata, FdDirectoryRequest, FdLeafRequest, FdTextWriteRequest, FdContentLimits, FdContentRequest, FdPathMetadata, FdDirectoryEntry } from './worker-protocol.ts'
 import type { FsErrorCode } from '@deepseek-ai/dsh-fs'
 import { FsVersion } from '@deepseek-ai/dsh-fs'
 import { directoryWorkBudget } from './directory-budget.ts'
@@ -13,9 +13,13 @@ import { createStorageWorker, storageRequest } from './storage-worker.ts'
 import type { StaticStorageConfig } from './storage-types.ts'
 
 interface LinuxFdHelper {
-  readonly abiVersion: 6 | 7
+  readonly abiVersion: 6 | 7 | 8
   writeText?(this: void, rootPath: string, relativePath: string, temporary: string, bytes: Uint8Array,
     maximum: number, guard: string, expected: string, cancel: Int32Array<SharedArrayBuffer>): unknown
+  openPathMetadata?(this: void, relativePath: string): number
+  verifyContentAnchor?(this: void, rootPath: string): void
+  listDirectory?(this: void, rootPath: string, relativePath: string, maxEntries: number, maxBytes: number,
+    maxNameBytes: number, timeoutMs: number, cancel: Int32Array<SharedArrayBuffer>): unknown
   openAnchor(this: void, path: string, device: string, inode: string, mountId: string): void
   openRead(this: void, relativePath: string): number
   openMetadata(this: void, relativePath: string): number
@@ -38,8 +42,10 @@ interface LinuxFdHelper {
 }
 
 function isHelper(value: unknown): value is LinuxFdHelper {
-  return record(value) && (value.abiVersion === 6 || value.abiVersion === 7)
-    && (value.abiVersion !== 7 || typeof value.writeText === 'function')
+  return record(value) && (value.abiVersion === 6 || value.abiVersion === 7 || value.abiVersion === 8)
+    && (value.abiVersion === 6 || typeof value.writeText === 'function')
+    && (value.abiVersion !== 8 || typeof value.openPathMetadata === 'function'
+      && typeof value.verifyContentAnchor === 'function' && typeof value.listDirectory === 'function')
     && typeof value.prepareExt4Leaf === 'function' && typeof value.removeExt4Leaf === 'function'
     && typeof value.prepareLeaf === 'function' && typeof value.removeEmptyLeaf === 'function'
     && typeof value.openAnchor === 'function' && typeof value.openRead === 'function' && typeof value.closeRead === 'function'
@@ -76,10 +82,21 @@ function input(value: unknown): FdWorkerInput {
   }
   return {
     helperPath: value.helperPath,
+    ...value.content === undefined ? {} : { content: contentLimits(value.content, value.maxPathBytes) },
     maxReadBytes: value.maxReadBytes, maxPathBytes: value.maxPathBytes,
     maxResolveRetries: value.maxResolveRetries, readChunkBytes: value.readChunkBytes,
     ...value.storageProbe === undefined ? {} : { storageProbe: storageConfig(value.storageProbe) },
   }
+}
+
+function contentLimits(value: unknown, maxPathBytes: number): FdContentLimits {
+  if (!record(value) || ['maxEntries', 'maxNameBytes', 'maxReplyBytes', 'operationTimeoutMs'].some(key =>
+    typeof value[key] !== 'number' || !Number.isSafeInteger(value[key]) || value[key] < 1 || value[key] > 2_147_483_647)
+    || typeof value.maxEntries !== 'number' || typeof value.maxNameBytes !== 'number' || value.maxNameBytes > maxPathBytes
+    || value.maxNameBytes > 16384
+    || typeof value.maxReplyBytes !== 'number' || typeof value.operationTimeoutMs !== 'number') throw new WorkerFailure('FS_PERMISSION_DENIED')
+  return { maxEntries: value.maxEntries, maxNameBytes: value.maxNameBytes, maxReplyBytes: value.maxReplyBytes,
+    operationTimeoutMs: value.operationTimeoutMs }
 }
 
 function storageConfig(value: unknown): StaticStorageConfig {
@@ -113,6 +130,9 @@ function helper(path: string): LinuxFdHelper {
   const removeExt4Leaf = loaded.removeExt4Leaf
   return {
     abiVersion: loaded.abiVersion,
+    ...loaded.openPathMetadata === undefined ? {} : { openPathMetadata: loaded.openPathMetadata },
+    ...loaded.verifyContentAnchor === undefined ? {} : { verifyContentAnchor: loaded.verifyContentAnchor },
+    ...loaded.listDirectory === undefined ? {} : { listDirectory: loaded.listDirectory },
     ...loaded.writeText === undefined ? {} : { writeText: loaded.writeText },
     openAnchor: (path, device, inode, mountId) => {
       try { openAnchor(path, device, inode, mountId) } catch (error) {
@@ -248,7 +268,7 @@ function textWrite(native: LinuxFdHelper, request: FdTextWriteRequest): FdWorker
   let opened = false
   let attempted = false
   try {
-    if (native.abiVersion !== 7 || native.writeText === undefined) throw new WorkerFailure('FS_PERMISSION_DENIED')
+    if ((native.abiVersion !== 7 && native.abiVersion !== 8) || native.writeText === undefined) throw new WorkerFailure('FS_PERMISSION_DENIED')
     native.openAnchor(request.root.rootPath, request.root.rootDevice, request.root.rootInode, request.root.rootMountId ?? '0')
     opened = true
     const expected = request.expected
@@ -284,6 +304,124 @@ function textWrite(native: LinuxFdHelper, request: FdTextWriteRequest): FdWorker
     const syscallCode = code === 'FS_STALE_VERSION' ? 'ESTALE' : observed.syscallCode
     return { kind: 'text-write-failure', id: request.id, code: outcome === 'unknown' ? 'FS_IO_ERROR' : code, outcome,
       ...syscallCode === undefined ? {} : { syscallCode } }
+  }
+}
+
+function contentRequest(value: unknown, limits: FdWorkerInput): FdContentRequest {
+  if (!record(value) || !['lstat', 'list', 'range'].includes(String(value.kind))) throw new WorkerFailure('FS_PERMISSION_DENIED')
+  const base = taskRequest({ ...value, kind: 'read', maxBytes: value.kind === 'range' ? value.maxBytes : 0 }, limits)
+  const shared = { id: base.id, root: base.root, relativePath: base.relativePath, cancel: base.cancel }
+  if (value.kind === 'lstat') return { ...shared, kind: 'lstat' }
+  const config = limits.content
+  if (config === undefined) throw new WorkerFailure('FS_PERMISSION_DENIED')
+  if (value.kind === 'list') {
+    if (typeof value.maxEntries !== 'number' || !Number.isSafeInteger(value.maxEntries) || value.maxEntries < 1
+      || value.maxEntries > config.maxEntries || typeof value.maxBytes !== 'number' || !Number.isSafeInteger(value.maxBytes)
+      || value.maxBytes < 1 || value.maxBytes > config.maxReplyBytes) throw new WorkerFailure('FS_TOO_LARGE')
+    return { ...shared, kind: 'list', maxEntries: value.maxEntries, maxBytes: value.maxBytes }
+  }
+  if (typeof value.offset !== 'number' || !Number.isSafeInteger(value.offset) || value.offset < 0
+    || typeof value.length !== 'number' || !Number.isSafeInteger(value.length) || value.length < 0
+    || !Number.isSafeInteger(value.offset + value.length) || value.length > base.maxBytes) throw new WorkerFailure('FS_TOO_LARGE')
+  return { ...shared, kind: 'range', offset: value.offset, length: value.length, maxBytes: base.maxBytes }
+}
+
+function closeContentRead(native: LinuxFdHelper): void {
+  try { native.closeRead() } catch (error) { throw new AnchorCloseFailure('Content FD close is unconfirmed', { cause: error }) }
+}
+
+function contentOperation(native: LinuxFdHelper, request: FdContentRequest, limits: FdWorkerInput): FdWorkerReply {
+  let opened = false
+  try {
+    const config = limits.content
+    if (native.abiVersion !== 8 || config === undefined || native.openPathMetadata === undefined
+      || native.listDirectory === undefined || native.verifyContentAnchor === undefined) throw new WorkerFailure('FS_PERMISSION_DENIED')
+    const deadline = performance.now() + config.operationTimeoutMs
+    const running = (): void => {
+      if (Atomics.load(new Int32Array(request.cancel), 0) !== 0) throw new WorkerFailure('FS_ABORTED', 'ECANCELED')
+      if (performance.now() >= deadline) throw new WorkerFailure('FS_ABORTED', 'ETIMEDOUT')
+    }
+    if (request.kind === 'range' && request.length + 128 > config.maxReplyBytes) throw new WorkerFailure('FS_TOO_LARGE')
+    running()
+    native.openAnchor(request.root.rootPath, request.root.rootDevice, request.root.rootInode, request.root.rootMountId ?? '0')
+    opened = true
+    let reply: FdWorkerReply
+    if (request.kind === 'list') {
+      const rows = native.listDirectory(request.root.rootPath, request.relativePath, request.maxEntries,
+        request.maxBytes, config.maxNameBytes, Math.max(1, Math.ceil(deadline - performance.now())), new Int32Array(request.cancel))
+      if (!Array.isArray(rows) || rows.length > request.maxEntries) throw new AnchorCloseFailure('Unbounded native directory reply')
+      const entries: FdDirectoryEntry[] = rows.map((row: unknown) => {
+        running()
+        if (!record(row) || !(row.nameBytes instanceof Uint8Array) || row.nameBytes.byteLength > config.maxNameBytes
+          || typeof row.identity !== 'string' || !/^\d{1,20}:\d{1,20}$/.test(row.identity)
+          || typeof row.version !== 'string' || !/^-?\d{1,30}(?::-?\d{1,30}){4}$/.test(row.version)
+          || !row.version.startsWith(row.identity + ':')
+          || typeof row.size === 'number' && Number(row.version.split(':')[2]) !== row.size
+          || !['file', 'directory', 'symlink', 'other'].includes(String(row.type))
+          || (row.type === 'file' || row.type === 'symlink'
+            ? typeof row.size !== 'number' || !Number.isSafeInteger(row.size) || row.size < 0 : row.size !== undefined)) throw new AnchorCloseFailure('Invalid native directory metadata')
+        let name: string
+        try { name = new TextDecoder('utf-8', { fatal: true }).decode(row.nameBytes) }
+        catch (_error) { throw new WorkerFailure('FS_IO_ERROR') }
+        if (!name || name === '.' || name === '..' || /[/\\\0]/.test(name)) throw new WorkerFailure('FS_PERMISSION_DENIED')
+        return { name, identity: row.identity, version: row.version, type: row.type as FdPathMetadata['type'],
+          ...typeof row.size === 'number' ? { size: row.size } : {} }
+      })
+      entries.sort((a, b) => { running(); return Buffer.compare(Buffer.from(a.name), Buffer.from(b.name)) })
+      reply = { kind: 'list-reply', id: request.id, entries }
+    } else {
+      let fd: number | undefined, attempts = 0
+      try {
+        while (true) {
+          running()
+          try { fd = request.kind === 'lstat' ? native.openPathMetadata(request.relativePath) : native.openRead(request.relativePath); break }
+          catch (error) {
+            if (request.kind === 'lstat' && record(error) && (error.code === 'ENOENT' || error.code === 'ENOTDIR')) break
+            if (!record(error) || error.code !== 'EAGAIN' || attempts++ >= limits.maxResolveRetries) throw error
+          }
+        }
+        if (request.kind === 'lstat') {
+          let metadata: FdPathMetadata | undefined
+          if (fd !== undefined) {
+            const info = fstatSync(fd, { bigint: true })
+            if (info.size < 0n || info.size > BigInt(Number.MAX_SAFE_INTEGER)) throw new WorkerFailure('FS_TOO_LARGE')
+            metadata = { identity: `${info.dev}:${info.ino}`, version: `${info.dev}:${info.ino}:${info.size}:${info.mtimeNs}:${info.ctimeNs}`,
+              type: info.isFile() ? 'file' : info.isDirectory() ? 'directory' : info.isSymbolicLink() ? 'symlink' : 'other',
+              ...info.isFile() || info.isSymbolicLink() ? { size: Number(info.size) } : {} }
+          }
+          reply = { kind: 'lstat-reply', id: request.id, metadata }
+        } else {
+          if (fd === undefined) throw new WorkerFailure('FS_IO_ERROR')
+          const info = fstatSync(fd, { bigint: true })
+          if (!info.isFile() || info.nlink !== 1n) throw new WorkerFailure('FS_NOT_REGULAR_FILE')
+          const bytes = new Uint8Array(request.length)
+          let total = 0
+          while (total < bytes.byteLength) {
+            running()
+            const count = readSync(fd, bytes, total, Math.min(limits.readChunkBytes, bytes.byteLength - total), request.offset + total)
+            if (count === 0) break
+            total += count
+          }
+          running()
+          reply = { kind: 'range-reply', id: request.id, bytes: total === bytes.byteLength ? bytes : bytes.slice(0, total) }
+        }
+      } finally { if (fd !== undefined) closeContentRead(native) }
+    }
+    running()
+    native.verifyContentAnchor(request.root.rootPath)
+    closeAnchor(native); opened = false
+    running()
+    if (request.kind !== 'range' && Buffer.byteLength(JSON.stringify(reply)) > Math.min(config.maxReplyBytes,
+      request.kind === 'list' ? request.maxBytes : 1024)) throw new WorkerFailure('FS_TOO_LARGE')
+    return reply
+  } catch (error) {
+    if (error instanceof AnchorCloseFailure || record(error) && error.code === 'DSH_FD_CLOSE') throw error
+    if (opened) closeAnchor(native)
+    const observed = failure(error)
+    const code = record(error) && error.code === 'EFBIG' ? 'FS_TOO_LARGE'
+      : record(error) && error.code === 'ENOTDIR' ? 'FS_NOT_DIRECTORY'
+        : record(error) && (error.code === 'ECANCELED' || error.code === 'ETIMEDOUT') ? 'FS_ABORTED' : observed.code
+    return { kind: 'reply', id: request.id, ok: false, ...observed, code }
   }
 }
 
@@ -429,6 +567,7 @@ function start(): void {
     limits = input(raw)
     if (limits.storageProbe !== undefined) storage = createStorageWorker(limits.storageProbe, limits.maxPathBytes, limits.helperPath)
     native = helper(limits.helperPath)
+    if (native.abiVersion === 8 && limits.content === undefined) throw new WorkerFailure('FS_PERMISSION_DENIED')
     native.probeKernel()
   } catch (error) {
     port.postMessage({ kind: 'startup-failed', ...failure(error) } satisfies FdWorkerReply)
@@ -472,6 +611,19 @@ function start(): void {
       return
     }
     if (active !== undefined) { port.close(); return }
+    if (record(raw) && ['lstat', 'list', 'range'].includes(String(raw.kind))) {
+      let request: FdContentRequest
+      try { request = contentRequest(raw, limits) } catch (error) {
+        if (error instanceof WorkerFailure && error.code === 'FS_TOO_LARGE') {
+          port.postMessage({ kind: 'reply', id: raw.id, ok: false, code: error.code }); return
+        }
+        port.close(); return
+      }
+      const reply = contentOperation(native, request, limits)
+      if (reply.kind === 'range-reply') port.postMessage(reply, [reply.bytes.buffer])
+      else port.postMessage(reply)
+      return
+    }
     if (record(raw) && raw.kind === 'text-write') {
       let request: FdTextWriteRequest
       try { request = textWriteRequest(raw, limits) } catch (_error) { port.close(); return }

@@ -2,6 +2,8 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { installConnection, type ConnectionHandle, type ConnectionWebSocketFactory, type RpcFetch } from '@deepseek-ai/dsh-client-connection/client'
 import type { ClientPersistence } from '@deepseek-ai/dsh-client-store'
+import type {} from '@deepseek-ai/dsh-client-file-upload/client'
+import type { ClientFileUploadHooks } from '@deepseek-ai/dsh-client-file-upload/types'
 import { decodeCloudBootstrap } from '@deepseek-ai/dsh-pe-cloud-access/schema'
 import type { BindingFieldNames, BootstrapDecodeLimits, CloudBootstrap } from '@deepseek-ai/dsh-pe-cloud-access/types'
 import { parseCloudClientConfig } from '../config.ts'
@@ -46,7 +48,7 @@ export interface CloudPreparedNativeOptions {
   readonly persistence: ClientPersistence
   readonly requirePersistence: true
   /**
-   * Bind this prepared owner to the native entry's private root before plugins activate.
+   * Bind this prepared owner and its captured upload carrier before plugins activate.
    * @param ctx - native root Context, already carrying the exact captured persistence port.
    */
   readonly prepareContext: (ctx: Context) => void
@@ -63,7 +65,7 @@ declare module '@deepseek-ai/cordis' {
 
 /**
  * One decoded browser page. The Cloud Loader entry consumes this exact owner and
- * installs the existing native Connection with captured carriers. The fixed Cloud
+ * supplies upload fetch before boot and installs the native Connection with captured carriers. The fixed Cloud
  * recipe must omit ordinary Connection plugin activation; it remains a module supplier.
  * Socket closure rechecks canonical identity without replacing the captured owner.
  */
@@ -77,6 +79,7 @@ export class PreparedCloudPage {
   private root: Context | undefined
   private activation: Context | undefined
   private connection: ConnectionHandle | undefined
+  private uploadHooks: ClientFileUploadHooks | undefined
   private readonly config: Readonly<CloudClientConfig>
   private readonly location: { readonly hostname: string }
 
@@ -183,7 +186,7 @@ export class PreparedCloudPage {
   /**
    * Activate through pe-cloud-client/client on this prepared native root only.
    * @param ctx - Cloud Loader entry Context on the previously bound root.
-   * @throws Error if ownership, cache, lifecycle or the sole Connection provider differs.
+   * @throws Error if ownership, cache, upload carrier, lifecycle or the sole Connection provider differs.
    */
   activate(ctx: Context): void {
     this.assertCurrent(ctx)
@@ -225,25 +228,42 @@ export class PreparedCloudPage {
   getSnapshot(): CloudPageSnapshot { return this.lifetime.getSnapshot() }
 
   /**
+   * Read the optional limit captured with this page's original configuration.
+   * @returns maximum download bytes, or undefined when downloads are not configured.
+   */
+  get maxDownloadBytes(): number | undefined { return this.config.maxDownloadBytes }
+
+  /**
    * Revoke, stop, join and clear through the existing captured lifetime.
    * @returns actual local cleanup, rejecting any unconfirmed stop or namespace removal.
    */
   dispose(): Promise<void> { return this.lifetime.dispose() }
 
   private bind(ctx: Context): void {
+    if (ctx !== ctx.root) throw new Error('Cloud page preparation requires its native root Context')
     if (this.root !== undefined || ctx.get('peCloudPage', false) !== undefined) throw new Error('Cloud page owner is already bound')
     if (ctx.get('connection', false) !== undefined) throw new Error('Cloud page requires the sole native Connection installer')
+    if (ctx.get('fileUpload', false) !== undefined) throw new Error('Cloud page requires upload preparation before the native upload service')
     if (this.lifetime.getSnapshot().phase !== 'running'
       || this.lifetime.persistence.getSnapshot().phase !== 'active'
       || ctx.get('clientPersistence') !== this.lifetime.nativeOptions.persistence) {
       throw new Error('Cloud page requires its prepared persistence before native activation')
     }
+    const fetch = this.lifetime.transport.hooks.fetch
+    if (fetch === undefined) throw new Error('Cloud page requires its captured upload fetch')
+    const existing = ctx.get('fileUploadHooks', false)
+    if (existing !== undefined && (existing.fetch !== fetch || !Object.isFrozen(existing))) {
+      throw new Error('Cloud page upload carrier is incompatible with its prepared owner')
+    }
+    this.uploadHooks = existing ?? Object.freeze({ fetch })
+    if (existing === undefined) ctx.provide('fileUploadHooks', this.uploadHooks)
     this.root = ctx.root
     ctx.provide('peCloudPage', this)
   }
 
   private assertCurrent(ctx: Context): void {
     if (this.root === undefined || ctx.root !== this.root || ctx.get('peCloudPage') !== this
+      || this.uploadHooks === undefined || ctx.get('fileUploadHooks') !== this.uploadHooks
       || ctx.get('clientPersistence') !== this.nativeOptions.persistence
       || this.lifetime.persistence.getSnapshot().phase !== 'active'
       || this.lifetime.getSnapshot().phase !== 'running') {

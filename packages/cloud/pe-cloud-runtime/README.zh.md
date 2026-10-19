@@ -72,9 +72,11 @@ Provider 经根服务登记必需的 `files` 和 `execution` 参与者。登记�
 
 声明摘要使用 SHA-256、排序后的对象键和原数组顺序。函数、JS 表达式、非 JSON 对象和别名均拒绝。有界编码器在遍历期间拒绝超量输入。批准还要求原始 ACTIVE Loader 条目、未变化的原生配置 plan、实际 Preset inventory，以及 Agent 保留且无服务泄漏的组合。
 
-业务回调从原 files owner 读取当前 Workspace 和目录能力。Create 请求只解析到该 Workspace；历史/恢复读取实际原生 Session observation 和经过头校验的 Workspace 成员关系。普通 JSONL 冷恢复保留其 SessionId 并被接受；导入/分叉或 subagent 身份仍拒绝。精确模型路由必须存在已注册的原生 provider，create/resume 使用原生模型解析并在 await 前后复核。LLM 派发保持同步路由/provider 检查。Guard 构造不读取部分完成的 files 项目。
+业务回调从同一原生 Registry 选择原始 Workspace。`project()` 仍只表示 bootstrap 默认项目；显式 create 请求可选择另一个已登记 Workspace。历史、prompt 和 resume 在读取私有 Session 前要求唯一原始成员关系，并保留完整 persisted header、投影、目录和固定 Preset 校验。显式创建仅接受账户 Registry 中非成员 id 的原生 notfound；成员日志缺失及其他查询错误继续传播。独立账户可在各自存储创建相同 SessionId。普通 JSONL 冷恢复保留 SessionId；导入、分叉及 subagent 身份仍拒绝。精确模型路由要求原始已登记 provider，并通过原生模型解析及 await 前后 current 检查。Guard 构造不读取未完成的 files 项目。
 
-同一策略通过惰性闭包提供 API 的只读 bootstrap 断言。Root 将既有 `native.maxEntries` 作为选中开放清单条目及实际遍历的原生 runtime/fiber 的共享上界，不新增部署值或默认值。它核验原 Workspace、固定原生 Preset/default/composition、当前默认模型元数据和实际 native handler，并在 await 后复核 provider 与选择。它不准备目录、不创建或恢复 Session/Agent、不解析凭据，也不请求模型推理。构造不读取未完成的 files 项目，不捕获请求级 `AccountUse`。该断言不替代生产存储交接或 Root seal。
+唯一账户 FS 接收惰性的共享选择回调。 原 `workspaceFiles` invocation 先按所选 RPC/stream 类别经原 API owner 准入，包含当前唯一的原生注册检查；未选中或已撤销的注册在共享项目选择前拒绝。原生工具调用要求精确已发布的 Agent、Session 和成员关系，带 scope 标记的调用方，其不透明 scope key 必须属于该 Agent 保留的原生 scope 链；共享账户服务可以没有标记，仅继承因果父 Agent 不授予带独立标记的子 Agent 文件访问。原生 `workspaceFiles` 调用使用原 invocation 的 SessionId。冷文件选择先核验成员关系，再只读取实际持久化 header，检查固定 Preset 及当前 owner，不加载完整 Session 消息，也不以目标路径授予项目权限。返回的 selection 继续核验同一原始 Workspace、owner 和成员关系。文件调用没有可变 active project 或默认回退。
+
+同一策略通过惰性闭包提供 API 的只读 bootstrap 断言。 若选中任何 `workspaceFiles` 端点，它还会在异步检查前后要求原 Files owner 的 `assertContentAvailable()`；仅具元数据能力的 S2 无法通过启用文件端点的 ready 检查。未选择文件端点的配方保留原先前提。Root 将既有 `native.maxEntries` 作为选中开放清单条目及实际遍历的原生 runtime/fiber 的共享上界，不新增部署值或默认值。它核验原 Workspace、固定原生 Preset/default/composition、当前默认模型元数据和实际 native handler，并在 await 后复核 provider 与选择。它不准备目录、不创建或恢复 Session/Agent、不解析凭据，也不请求模型推理。构造不读取未完成的 files 项目，不捕获请求级 `AccountUse`。该断言不替代生产存储交接或 Root seal。
 
 可选 `native.firstScreen` 选择固定只读首屏切片。提供时，`maxHomeBytes`、`maxCollectionItems`、`maxFrameBytes`、`maxQueuedEvents`、`maxQueuedBytes` 均须显式为正数、有限安全整数；省略时保持关闭，不补默认值。Root 通过配方传递原始预算，并从同一账户的规范 Profile 得到预期 home，在原生 boot 前核对一致。既有 `native.maxEntries` 继续限制原生 owner/marker 清单。元数据或配置条目名称不能满足实际 prepared 审核。
 
@@ -130,7 +132,9 @@ Provider 经根服务登记必需的 `files` 和 `execution` 参与者。登记�
 
 私有[装配桥](src/account-mount.ts)将 Profile 目录、patch、home 和默认项目候选与唯一布局核对，并把同一个原生 `LaunchEnvironmentSnapshot` 对象交给 boot。私有[工厂](src/account-factory.ts)为每个账户保留一次实际操作。即使每次创建新的 request 外壳，只要账户/实例/配方值及可信资源引用一致，调用仍会合并；不同 binding、配方、环境或部署输入会拒绝。有界、可撤销的等待者共享一次结算订阅；截止或观察者取消均不停止装配或释放其容量。
 
-Factory 的[原生集成](src/account-native-integration.ts)在 Include 前创建公开 `CloudAccountApi` owner 并安装实际 Root 签发的 closed execution port。固定私有 builtin 消费 API 的原生 editor/credentials provider、Controller、AgentLoop 和 LLM guard。提供受限 files lane 后会构造公开 `CloudAccountFiles`；其实际 `/account` 入口持有原生 Registry/default/FS 安装。Controller 构造只捕获固定 binding 和原 files owner，不读取部分完成的项目。API 业务准入通过后，目录操作要求唯一 ACTIVE 的 files/account 入口，并读取该 owner 当前的 `project()` 能力；操作后再次核对同一个项目。Guard 构造也必须延迟项目读取。Files 初始化仍在途时，原生 provider 依赖可能已激活；必需入口检查和业务准入仍阻止发布不完整的图。Factory 装配/未发布登记检查与 Root 封口/业务 ready 检查保持独立。缺 files 或共享项目/model/Preset guard 时不会改用宽松回调。
+Factory 的[原生集成](src/account-native-integration.ts)在 Include 前创建公开 `CloudAccountApi` owner 并安装实际 Root 签发的 closed execution port。 固定私有 `ACCOUNT_NATIVE_ENTRIES.workspaceFiles` builtin 只在配方显式安装该入口时激活。它保留原生 WorkspaceFiles 的 Config 和全部 inject，额外要求 `peCloudApi`，并经原 API owner 构造不变的原生服务。配方须安装真实 sandbox-policy provider，显式选择部署模式和 fallback root；该 fallback 不授予项目权限。固定私有 builtin 消费 API 的原生 editor/credentials provider、Controller、AgentLoop 和 LLM guard。受限 files lane 构造原始 `CloudAccountFiles`，其 `/account` 入口持有原生 Registry/default/FS 安装。API 业务准入后，目录准备从原始已登记 Workspace 派生 `projectFor(workspace)`，并在 await 后复核 binding、owner 和 Workspace；新派生能力 wrapper 不要求对象身份相同。指令准备先选择 Agent 的 Workspace，再保留完整 snapshot 预算，并在 reservation 内使用同步共享检查。原生依赖可能在 files 初始化期间激活，必需入口检查与业务准入仍阻止不完整发布。缺 files 或共享 guard 时保持关闭。
+
+选中清单包含 `cloudProjects/create` 时，准备阶段要求原始 `borrowAccount` 回调。处理器检查 Root 和业务 current，借用精确 ready account，完整等待原 files owner 的创建，核验返回的原生 Workspace，并返回原生 WorkspaceValue。创建 Promise 结算后才在 `finally` 释放原 borrow，包含 abort 和错误路径。不选中该端点时无需创建 borrow。
 
 Factory 关闭时先关闭准入和图 lifetime，等待原保存屏障，调用原 AgentLoop 服务的终态 `stop()` 并保持其 fiber 及持久化 provider 已挂载，核对原 AgentRegistry 为空并 flush SessionPersistence，再撤回原生 hook 和销毁图。它等待剩余借用及实际 execution/files 参与者后才关闭原 storage lease。Clean owner 释放还要求 confirmed 原生销毁、保存和参与者证据，以及实际 PG drain/release CAS。工作或元数据结果未知时保留容量和归属；账户排空未知时 Root 继续持有控制资源。
 

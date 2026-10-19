@@ -2,14 +2,19 @@
 import { FiberState, symbols, type Context, type Fiber } from '@deepseek-ai/cordis'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import AgentRegistry from '@deepseek-ai/dsh-agent'
+import type { Agent } from '@deepseek-ai/dsh-agent'
 import SessionPersistence from '@deepseek-ai/dsh-session-persistence'
 import SessionController from '@deepseek-ai/dsh-api-session-controller'
+import WorkspaceFiles from '@deepseek-ai/dsh-api-workspace-files'
 import type { SessionSummary } from '@deepseek-ai/dsh-api-session-controller/types'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
-import { CloudAccountApi, type ConfigSaveBarrier, type ConfigSaveCoordinator, type ConfigSaveReceipt,
+import { CloudAccountApi, CloudApiError, type ConfigSaveBarrier, type ConfigSaveCoordinator, type ConfigSaveReceipt,
   type ExposureService } from '@deepseek-ai/dsh-pe-cloud-api'
 import * as ApiAccount from '@deepseek-ai/dsh-pe-cloud-api/account'
-import { CloudAccountFiles, type AccountFilesPreparation } from '@deepseek-ai/dsh-pe-cloud-files'
+import { CloudAccountFiles, type AccountFilesPreparation, type ResolveAccountFileProject } from '@deepseek-ai/dsh-pe-cloud-files'
+import type { Workspace } from '@deepseek-ai/dsh-workspace'
+import type { Session, SessionHeader } from '@deepseek-ai/dsh-session'
+import type {} from '@deepseek-ai/dsh-working-directory'
 import * as FilesAccount from '@deepseek-ai/dsh-pe-cloud-files/account'
 import * as InstructionsSession from '@deepseek-ai/dsh-pe-account-instructions/session'
 import { assertClosedAccountExecution, installAccountExecutionPort, type AccountExecutionPort, type SandboxCoordinator } from '@deepseek-ai/dsh-pe-opensandbox'
@@ -17,10 +22,22 @@ import * as ExecutionAccount from '@deepseek-ai/dsh-pe-opensandbox/account'
 import * as RuntimeAccount from './account.ts'
 import { AccountRuntimeError } from './errors.ts'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { AccountBinding } from './types.ts'
+import type { AccountBinding, AccountUse } from './types.ts'
 
 /** Shared approved project/model/Preset checks, supplied by the trusted fixed account composition. */
 export interface AccountNativeGuards {
+  /** Require an original currently registered Workspace in this exact graph, without I/O. */
+  readonly assertWorkspace: (workspace: Workspace) => void
+  /** Select from the exact published Agent/Session and committed project facts. */
+  readonly projectForAgent: (agent: Agent) => Workspace
+  /** Select from the exact published native Session, without resuming an Agent. */
+  readonly projectForSession: (session: Session) => Workspace
+  /** Private handoff from an actual native header observation; ids and paths grant no authority. */
+  readonly projectForObservedHeader: (id: SessionId, header: SessionHeader) => Workspace
+  /** Native Controller directory input after shared admission; never a model file target. */
+  readonly projectForDirectory: (cwd: string) => Workspace
+  /** Shared Agent or original file-RPC selection, with native cold observation when needed. */
+  readonly getFileProject: ResolveAccountFileProject
   readonly sessions: Omit<Parameters<CloudAccountApi['createController']>[1], 'projectDirectory'>
   readonly agents: Parameters<CloudAccountApi['createAgentLoop']>[1]
   readonly allowedModel: Parameters<CloudAccountApi['installLlmGuard']>[1]
@@ -49,8 +66,10 @@ export interface AccountNativePreparation {
   }
   /** Actual Root seal recheck for business dispatch and ready publication, independent of mounting. */
   readonly assertRootCurrent: () => void
+  /** Original factory borrow for the installed ready graph; required only for selected cloud project creation. */
+  readonly borrowAccount?: (binding: AccountBinding) => Promise<AccountUse>
   /** Existing restricted lane/grant issuer; absence cannot supply a native files owner. */
-  readonly files?: (ctx: Context, binding: AccountBinding) => AccountFilesPreparation
+  readonly files?: (ctx: Context, binding: AccountBinding, getFileProject: ResolveAccountFileProject) => AccountFilesPreparation
   /** Actual files/project/Preset/model provider; absence rejects guarded native entry activation. */
   readonly guards?: (ctx: Context, binding: AccountBinding, files: CloudAccountFiles) => AccountNativeGuards
 }
@@ -61,6 +80,7 @@ export const ACCOUNT_NATIVE_ENTRIES = Object.freeze({
   instructions: 'pe-account-instructions-session',
   editor: 'pe-cloud-config-editor', credentials: 'pe-cloud-credentials',
   controller: 'pe-cloud-session-controller', agentLoop: 'pe-cloud-agent-loop', llm: 'pe-cloud-llm',
+  workspaceFiles: 'pe-cloud-workspace-files',
 })
 
 /** Additional fixed private builtins selected only with explicit first-screen inputs. */
@@ -125,7 +145,31 @@ export class AccountNativeIntegration {
     installAccountExecutionPort(ctx, this.execution)
     let filesOwner: CloudAccountFiles | undefined
     if (this.input.files !== undefined) {
-      const files = this.input.files(ctx, binding)
+      const files = this.input.files(ctx, binding, async (caller, signal) => {
+        const admit = (): void => {
+          this.input.assertRootCurrent()
+          businessCurrent(binding)
+          const invocation = caller.invocation
+          if (invocation?.service === 'workspaceFiles' || invocation?.request.namespace === 'workspaceFiles') {
+            if (invocation.service !== 'workspaceFiles' || invocation.request.namespace !== 'workspaceFiles') {
+              throw new CloudApiError('cloud/forbidden', 'The native file invocation namespace is not selected.')
+            }
+            const endpoint = `workspaceFiles/${invocation.request.method}`, manifest = this.input.exposure.manifest
+            if (manifest.rpcEndpoints.some(row => row.endpoint === endpoint)) api.requireRpc(endpoint)
+            else if (manifest.streamEndpoints.some(row => row.endpoint === endpoint)) api.requireStream(endpoint)
+            else throw new CloudApiError('cloud/forbidden', 'The native file endpoint is not selected.')
+          }
+        }
+        admit()
+        const selected = await requireGuards(caller).getFileProject(caller, signal)
+        const assertCurrent = (): void => {
+          admit()
+          selected.assertCurrent()
+          requireGuards(ctx).assertWorkspace(selected.workspace)
+        }
+        assertCurrent()
+        return { workspace: selected.workspace, assertCurrent }
+      })
       if (files.binding !== binding) {
         throw new AccountRuntimeError('cloud/stale-generation', 'Files preparation requires the exact installed graph binding')
       }
@@ -148,7 +192,7 @@ export class AccountNativeIntegration {
       }
       return guards
     }
-    const project = (owner: Context) => {
+    const requireFiles = (owner: Context): CloudAccountFiles => {
       requireGuards(owner)
       const entries: NonNullable<Fiber['entry']>[] = []
       let visited = 0
@@ -165,18 +209,61 @@ export class AccountNativeIntegration {
       if (filesOwner === undefined) {
         throw new AccountRuntimeError('cloud/account-unavailable', 'The actual account files owner is not connected')
       }
-      const installed = filesOwner.project()
+      return filesOwner
+    }
+    const project = (owner: Context) => {
+      const installed = requireFiles(owner).project()
       if (installed.binding !== binding || installed.projectDirectory.binding !== binding) {
         throw new AccountRuntimeError('cloud/stale-generation', 'Native project directory belongs to another graph binding')
       }
       return installed
     }
+    if (input.exposure.manifest.rpcEndpoints.some(row => row.endpoint === 'cloudProjects/create')) {
+      const borrow = input.borrowAccount
+      if (borrow === undefined) {
+        throw new AccountRuntimeError('cloud/account-unavailable', 'Cloud project creation requires the original ready-account borrow.')
+      }
+      api.prepareCloudProjects(ctx, { createProject: async (title, signal) => {
+        this.input.assertRootCurrent()
+        businessCurrent(binding)
+        signal.throwIfAborted()
+        const use = await borrow(binding)
+        try {
+          use.assertCurrent()
+          if (use.binding !== binding || use.context !== ctx) {
+            throw new AccountRuntimeError('cloud/stale-generation', 'Project creation requires the original installed account borrow.')
+          }
+          signal.throwIfAborted()
+          const workspace = await requireFiles(ctx).createProject(use, title, signal)
+          requireGuards(ctx).assertWorkspace(workspace)
+          use.assertCurrent()
+          this.input.assertRootCurrent()
+          businessCurrent(binding)
+          return { workspace: { workspaceId: workspace.id, path: workspace.path, title: workspace.title,
+            sessionIds: [...workspace.sessionIds], createdAt: workspace.createdAt, updatedAt: workspace.updatedAt } }
+        } finally { use.release() }
+      } })
+    }
     // Files may expose native dependencies before its final directory verification settles.
     // API business admission precedes this fixed-binding projection; construction never reads a partial project.
     const projectDirectory = Object.freeze({ binding, prepare: async (cwd: string) => {
-      const installed = project(ctx)
+      this.input.assertRootCurrent()
+      businessCurrent(binding)
+      const approved = requireGuards(ctx), workspace = approved.projectForDirectory(cwd)
+      const source = requireFiles(ctx)
+      const installed = await source.projectFor(workspace, binding.lifetime)
+      this.input.assertRootCurrent()
+      businessCurrent(binding)
+      approved.assertWorkspace(workspace)
       await installed.projectDirectory.prepare(cwd)
-      if (project(ctx) !== installed) {
+      this.input.assertRootCurrent()
+      businessCurrent(binding)
+      approved.assertWorkspace(workspace)
+      const checked = await requireFiles(ctx).projectFor(workspace, binding.lifetime)
+      this.input.assertRootCurrent()
+      businessCurrent(binding)
+      approved.assertWorkspace(workspace)
+      if (checked.binding !== binding || checked.workspace !== workspace || checked.projectDirectory.binding !== binding) {
         throw new AccountRuntimeError('cloud/stale-generation', 'The account files project changed during directory preparation')
       }
     } })
@@ -194,16 +281,38 @@ export class AccountNativeIntegration {
         assertCurrent: active,
         async withSources(agent, bytes, build, signal) {
           active(agent)
-          const installed = project(agent.ctx)
-          return sources.withInstructionReaders(installed.workspace, bytes, async (readers, control) => {
-            active(agent)
-            const value = await build(installed.workspace.id, readers, control)
-            active(agent)
-            if (project(agent.ctx) !== installed) {
-              throw new AccountRuntimeError('cloud/stale-generation', 'The native instruction project changed during preparation')
+          const approved = requireGuards(agent.ctx), workspace = approved.projectForAgent(agent)
+          const directory = ctx.get('workingDirectory')
+          if (directory === undefined) {
+            throw new AccountRuntimeError('cloud/account-unavailable', 'Native instruction sources require the original WorkingDirectory provider')
+          }
+          const originalDirectory: unknown = Reflect.get(directory, symbols.original) ?? directory
+          const currentCwd = (): string => {
+            const local = agent.ctx.get('workingDirectory'), account = ctx.get('workingDirectory'), root = ctx.root.get('workingDirectory')
+            if (local === undefined || account === undefined || root === undefined
+              || [local, account, root].some(value => (Reflect.get(value, symbols.original) ?? value) !== originalDirectory)) {
+              throw new AccountRuntimeError('cloud/stale-generation', 'The native instruction WorkingDirectory provider changed')
             }
+            return local.get(agent.session)
+          }
+          const cwd = currentCwd()
+          const current = (): void => {
+            active(agent)
+            if (approved.projectForAgent(agent) !== workspace || currentCwd() !== cwd) {
+              throw new AccountRuntimeError('cloud/stale-generation', 'The native instruction project or current directory changed during preparation')
+            }
+          }
+          current()
+          const installed = await sources.projectFor(workspace, signal)
+          current()
+          const held = await sources.withInstructionReaders(installed.workspace, bytes, async (readers, control) => {
+            current()
+            const value = await build(installed.workspace.id, readers, control, currentCwd())
+            current()
             return value
           }, signal)
+          try { current(); return held }
+          catch (error) { held.release(); throw error }
         },
       })
     }
@@ -216,7 +325,8 @@ export class AccountNativeIntegration {
     }
     const firstScreenInput = input.firstScreen
     const firstScreen = firstScreenInput === undefined ? undefined : api.prepareFirstScreen(ctx, {
-      project: () => project(ctx), assertSessionRead: readSession,
+      project: () => project(ctx),
+      assertWorkspace: (workspace) => { requireGuards(ctx).assertWorkspace(workspace) }, assertSessionRead: readSession,
       maxInventoryEntries: input.maxNativeInventoryEntries,
       maxCollectionItems: firstScreenInput.maxCollectionItems, maxFrameBytes: firstScreenInput.maxFrameBytes,
     })
@@ -264,6 +374,12 @@ export class AccountNativeIntegration {
       [ACCOUNT_NATIVE_ENTRIES.controller]: controller,
       [ACCOUNT_NATIVE_ENTRIES.agentLoop]: agentLoop,
       [ACCOUNT_NATIVE_ENTRIES.llm]: llm,
+      [ACCOUNT_NATIVE_ENTRIES.workspaceFiles]: {
+        inject: [...WorkspaceFiles.inject, 'peCloudApi'], Config: WorkspaceFiles.Config,
+        apply(owner: Context, nativeConfig: ConstructorParameters<typeof WorkspaceFiles>[1]) {
+          api.createWorkspaceFiles(owner, nativeConfig)
+        },
+      },
     }
     let eventOwner: Context | undefined
     const firstScreenEntries = firstScreen === undefined || firstScreenInput === undefined ? {} : {

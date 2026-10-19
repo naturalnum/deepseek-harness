@@ -41,6 +41,8 @@ export interface TransportSnapshot {
 
 /** A single immutable account/generation lifetime, installed before native Connection starts. */
 export class BoundTransport {
+  /** Captured page admission lifetime; abortion grants no carrier or server cleanup receipt. */
+  get signal(): AbortSignal { return this.abort.signal }
   private readonly base: URL
   private readonly expectation: Readonly<RequestExpectation>
   private readonly fields: Readonly<BindingFieldNames>

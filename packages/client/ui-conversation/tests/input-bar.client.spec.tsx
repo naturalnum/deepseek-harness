@@ -23,7 +23,9 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { SessionListState, SessionSnapshot } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { ContextPressureProjection } from '@deepseek-ai/dsh-token-meter/client'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
-import type { Context } from '@deepseek-ai/cordis'
+import { Context } from '@deepseek-ai/cordis'
+import * as FileUploadClient from '@deepseek-ai/dsh-client-file-upload/client'
+import type { FileUploadService } from '@deepseek-ai/dsh-client-file-upload/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SubmitOutcome } from '../src/client/contract/input.ts'
 import { SessionInputShell } from '../src/client/input/facade.ts'
@@ -1244,6 +1246,35 @@ describe('running and lock semantics', () => {
     view.unmount()
     expect(shell.canPickFiles()).toBe(false)
     expect(shell.pickFiles()).toBe(false)
+  })
+
+  it('sends the selected File through the native upload service captured for its page', async () => {
+    const ctx = new Context()
+    onTestFinished(() => ctx.fiber.dispose())
+    const fetch = vi.fn((_input: string | URL, _init: RequestInit) => Promise.resolve(new Response(JSON.stringify({
+      ok: true,
+      value: { receiptId: 'component-receipt', file: { attachmentId: 'component-file', name: 'native.bin', bytes: 4 } },
+    }))))
+    ctx.provide('fileUploadHooks', { fetch })
+    ctx.provide('remote', {} as never)
+    await ctx.plugin(FileUploadClient)
+    const body = new File(['data'], 'native.bin', { type: 'application/octet-stream' })
+    const controller = new AbortController()
+    const progress = vi.fn()
+    const pending: ReturnType<FileUploadService['upload']>[] = []
+    const { view } = bench({ addFiles: (files) => {
+      for (const file of files) pending.push(ctx.fileUpload.upload(SID, file, file.name, controller.signal, progress))
+      return null
+    } })
+    const input = view.container.querySelector<HTMLInputElement>('input[type="file"]')
+    if (input === null) throw new Error('Native composer file input was not mounted')
+    fireEvent.change(input, { target: { files: [body] } })
+    expect(pending).toHaveLength(1)
+    await expect(pending[0]).resolves.toMatchObject({ ok: true, value: { receiptId: 'component-receipt' } })
+    expect(fetch).toHaveBeenCalledWith('api/session/uploadFileBinary?sessionId=s1&name=native.bin', {
+      method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body, signal: controller.signal,
+    })
+    expect(progress).not.toHaveBeenCalled()
   })
 
   it('parent-offline running continuable locks Send but keeps independent Stop usable', () => {

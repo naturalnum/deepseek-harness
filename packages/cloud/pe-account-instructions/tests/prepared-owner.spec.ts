@@ -9,7 +9,8 @@ import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import * as instructions from '../src/session.ts'
-import { Reader, identity, limits } from './harness.ts'
+import { identity, limits } from './harness.ts'
+import { instructionFixture } from './loader-harness.ts'
 
 class Adapter extends LlmAdapter {
   readonly requests: GenerateOptions[] = []
@@ -22,18 +23,18 @@ class Adapter extends LlmAdapter {
 }
 
 it('activates through the native Loader with a prepared source owner and logs its bounded snapshot', async () => {
-  const ctx = new Context()
+  const fixture = await instructionFixture()
+  const { ctx, root, project: reader } = fixture
   const released = vi.fn()
   try {
-    await mountAgentLoopTestDependencies(ctx)
+    await mountAgentLoopTestDependencies(ctx, { workingDirectory: true })
     const harness = await mountAgentLoopTestHarness(ctx)
     const adapter = new Adapter()
     ctx.llm.registerAdapter(['test'], adapter)
     const binding: AccountBinding = { accountId: identity.accountId, epoch: identity.epoch,
       recipeVersion: 'prepared-source-test', lifetime: new AbortController().signal }
     ctx.provide('peAccount', binding)
-    const reader = new Reader('/project')
-    reader.files.set('/project/AGENTS.md', { chunks: ['source owner content'] })
+    reader.files.set(`${root}/AGENTS.md`, { chunks: ['source owner content'] })
     const reserve = vi.fn()
     new instructions.AccountInstructionSources(ctx, {
       binding,
@@ -42,9 +43,9 @@ it('activates through the native Loader with a prepared source owner and logs it
         expect(ctx.agents.get(agent.id)).toBe(agent)
         expect(ctx.sessions.get(agent.id)).toBe(agent.session)
       },
-      async withSources(_agent, bytes, build, signal) {
+      async withSources(agent, bytes, build, signal) {
         reserve(bytes)
-        const value = await build(identity.workspaceId, { project: reader }, signal)
+        const value = await build(identity.workspaceId, { project: reader }, signal, ctx.workingDirectory.get(agent.session))
         return { value, release: released }
       },
     })
@@ -55,19 +56,19 @@ it('activates through the native Loader with a prepared source owner and logs it
       config: { path: new URL('./fixtures/cordis.yml', import.meta.url).href } })
     await ctx.loader.await()
     expect((await auditRows(ctx.loader)).failed).toEqual([])
-    const agent = await harness.create(SessionId('prepared-source-owner'), { provider: 'test', model: 'test' })
+    const agent = await harness.create(SessionId('prepared-source-owner'), { provider: 'test', model: 'test' }, { cwd: root })
     agent.followup(createUserMessage({ content: [{ type: 'text', text: 'start' }], source: { kind: 'user' } }))
     await agent.whenIdle()
     expect(adapter.requests).toHaveLength(1)
     expect(reserve).toHaveBeenCalledWith(400000)
-    expect(reader.reads).toEqual(['/project/AGENTS.md'])
+    expect(reader.reads).toEqual([`${root}/AGENTS.md`])
     const message = agent.session.deriveMessages().find(value => value.source.kind === 'pe-account-instructions')
     if (message?.source.kind !== 'pe-account-instructions') throw new Error('Missing native instruction context')
     expect(message.source.snapshot).toMatchObject(identity)
     expect(message.source.snapshot.sources[0]?.text).toBe('source owner content')
     expect(released).toHaveBeenCalledTimes(1)
   } finally {
-    await ctx.fiber.dispose()
+    await fixture.close()
   }
   expect(released).toHaveBeenCalledTimes(1)
 })

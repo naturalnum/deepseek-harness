@@ -1,5 +1,7 @@
 /** Session Loader entry consumes a graph-prepared source owner without granting filesystem authority. */
 import { Service, type Context } from '@deepseek-ai/cordis'
+import { posix } from 'node:path'
+import { FsError } from '@deepseek-ai/dsh-fs'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { AccountBinding } from '@deepseek-ai/dsh-pe-cloud-runtime/types'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace'
@@ -10,6 +12,7 @@ import { InstructionConfigurationError } from './error.ts'
 import { installInstructionInjection } from './injection.ts'
 import { prepareInstructionSnapshot } from './snapshot.ts'
 import type { InstructionDirectory } from './internal-types.ts'
+import { orderInstructionDirectories } from './directories.ts'
 
 export { Config } from './config.ts'
 
@@ -30,17 +33,57 @@ export interface AccountInstructionPreparation {
   assertCurrent(agent: Agent): void
   /**
    * Reserve complete source, construction and handoff storage on the original files lane.
+   * Capture cwd from native WorkingDirectory.get(agent.session) inside that reservation and the original Agent/Workspace checks.
+   * The immutable Session header, project root and home cannot substitute for that current value.
    * @param agent Exact active Agent whose native project determines the allowed sources.
    * @param reservedBytes Complete snapshot storage, before any source content is read.
-   * @param build Receives only owner-issued independent readers and the actual native Workspace id.
+   * @param build Receives independent readers, the actual native Workspace id and its captured native current cwd.
    * @param signal Turn/generation/plugin cancellation; actual I/O remains owned until settlement.
    * @returns The built result with a non-throwing release; source I/O and FD closure have actually settled.
    */
   withSources<T>(
     agent: Agent, reservedBytes: number,
-    build: (workspaceId: WorkspaceId, readers: InstructionReadReaders, signal: AbortSignal) => Promise<T>,
+    build: (workspaceId: WorkspaceId, readers: InstructionReadReaders, signal: AbortSignal, cwd: string) => Promise<T>,
     signal: AbortSignal,
   ): Promise<{ readonly value: T; release(): void }>
+}
+
+async function sourceDirectories(
+  readers: InstructionReadReaders, cwd: string, config: Config, signal: AbortSignal,
+): Promise<InstructionDirectory[]> {
+  signal.throwIfAborted()
+  const target = await readers.project.resolve('.', { signal })
+  const root = readers.project.processPath(target)
+  if (![root, cwd].every(path => posix.isAbsolute(path) && posix.normalize(path) === path
+    && !path.includes('\0') && !path.includes('\\'))) {
+    throw new FsError('Instruction directories require canonical project paths.', 'FS_SANDBOX_DENIED')
+  }
+  const relative = posix.relative(root, cwd)
+  if (relative === '..' || relative.startsWith('../')) {
+    throw new FsError('Instruction cwd is outside the approved project.', 'FS_SANDBOX_DENIED')
+  }
+  type Pending = Pick<InstructionDirectory, 'kind' | 'relativeName' | 'reader'>
+  function* descriptions(): Iterable<Pending> {
+    if (readers.account !== undefined) yield { kind: 'account', relativeName: '.', reader: readers.account }
+    yield { kind: 'project', relativeName: '.', reader: readers.project }
+    if (relative === '') return
+    let end = relative.indexOf('/')
+    while (true) {
+      yield { kind: 'project', relativeName: end < 0 ? relative : relative.slice(0, end), reader: readers.project }
+      if (end < 0) return
+      end = relative.indexOf('/', end + 1)
+    }
+  }
+  const ordered = orderInstructionDirectories(descriptions(), config)
+  const directories: InstructionDirectory[] = []
+  for (const entry of ordered) {
+    signal.throwIfAborted()
+    const resolved = entry.kind === 'project' && entry.relativeName === '.' ? target
+      : await entry.reader.resolve(entry.relativeName, { signal, ...entry.kind === 'project' ? { cwd: root } : {} })
+    directories.push({ ...entry, target: resolved })
+  }
+  signal.throwIfAborted()
+  return directories
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -85,13 +128,9 @@ export class AccountInstructionSources extends Service {
     }, async (agent, signal) => {
       this.assertInstalled(owner)
       input.assertCurrent(agent)
-      const held = await input.withSources(agent, config.maxResidentBytes, async (workspaceId, readers, control) => {
+      const held = await input.withSources(agent, config.maxResidentBytes, async (workspaceId, readers, control, cwd) => {
         const identity = { accountId: input.binding.accountId, epoch: input.binding.epoch, workspaceId }
-        const directories: InstructionDirectory[] = []
-        if (readers.account !== undefined) directories.push({ kind: 'account', relativeName: '.', reader: readers.account,
-          target: await readers.account.resolve('.', { signal: control }) })
-        directories.push({ kind: 'project', relativeName: '.', reader: readers.project,
-          target: await readers.project.resolve('.', { signal: control }) })
+        const directories = await sourceDirectories(readers, cwd, config, control)
         return prepareInstructionSnapshot(directories, identity, config, control)
       }, signal)
       try {
